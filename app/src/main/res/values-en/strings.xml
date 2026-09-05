@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Lord TTS</string>
+    <string name="settings_title">Nateq Settings</string>
+    <string name="section_voice_selection">Voice Selection</string>
+    <string name="engine_select">Choose Engine</string>
+    <string name="save_settings">Save settings</string>
+    <string name="saved_successfully">Settings saved</string>
+    <string name="reset_settings">Restore defaults</string>
+    <string name="reset_confirm_title">Restore defaults?</string>
+    <string name="reset_confirm_message">All settings will be returned to their default values. Do you want to continue?</string>
+    <string name="reset_done">Defaults restored</string>
+    <string name="reset_cancel">Cancel</string>
+    <string name="section_time_announcement">Time Announcement</string>
+    <string name="section_general_settings">General Settings</string>
+    <string name="section_pronunciation_dict">Pronunciation Dictionary</string>
+    <string name="cd_test_voice_button">Play a sample voice for testing</string>
+    <string name="speech_rate_label">Speech rate</string>
+    <string name="speech_rate_summary">Adjust the speaking rate</string>
+    <string name="pitch_label">Pitch</string>
+    <string name="pitch_summary">Adjust the pitch (low/high)</string>
+    <string name="volume_label">Volume</string>
+    <string name="volume_summary">Adjust the volume level</string>
+
+    <!-- Voice categories -->
+    <string name="voice_category_default">Default voice</string>
+    <string name="voice_category_time">Clock voice</string>
+    <string name="voice_category_numbers">Numbers voice</string>
+    <string name="voice_category_notifications">Notifications voice</string>
+
+    <!-- Time announcement settings -->
+    <string name="time_announcement_enabled">Enable time announcement</string>
+    <string name="time_announcement_interval">Time announcement interval</string>
+    <string name="time_announcement_format">Time announcement format</string>
+    <string name="time_display_24h">Use 24-hour clock</string>
+    <string name="hijri_date_enabled">Speak dates in the Hijri calendar</string>
+    <string name="time_quiet_schedule_title">Quiet hours per day</string>
+    <string name="time_quiet_schedule_summary">Hours when automatic time announcements stop. Example: 23 to 7 = quiet from 11 PM to 7 AM</string>
+    <string name="time_quiet_start_hint">From</string>
+    <string name="time_quiet_end_hint">To</string>
+    <string name="day_sunday">Sunday</string>
+    <string name="day_monday">Monday</string>
+    <string name="day_tuesday">Tuesday</string>
+    <string name="day_wednesday">Wednesday</string>
+    <string name="day_thursday">Thursday</string>
+    <string name="day_friday">Friday</string>
+    <string name="day_saturday">Saturday</string>
+
+    <!-- Category descriptions -->
+    <string name="voice_category_default_summary">The voice used for general text</string>
+    <string name="voice_category_time_summary">The dedicated voice for the clock</string>
+    <string name="voice_category_numbers_summary">The dedicated voice for numbers</string>
+    <string name="voice_category_notifications_summary">The dedicated voice for notifications</string>
+
+    <!-- Sample texts per language and category -->
+    <string name="sample_text_default_ar">مرحباً، هذه عينة من صوت ناطق</string>
+    <string name="sample_text_time_ar">الساعة الآن العاشرة وخمس عشرة دقيقة</string>
+    <string name="sample_text_numbers_ar">واحد اثنان ثلاثة أربعة خمسة</string>
+    <string name="sample_text_notifications_ar">لديك إشعار جديد</string>
+    <string name="sample_text_default_en">Hello, this is a sample of Nateq voice</string>
+    <string name="sample_text_time_en">It is now ten fifteen in the morning</string>
+    <string name="sample_text_numbers_en">One two three four five</string>
+    <string name="sample_text_notifications_en">You have a new notification</string>
+    <string name="sample_text_preview_ar">نص تجريبي: بسم الله الرحمن الرحيم.</string>
+    <string name="sample_text_activity_ar">مرحباً، هذا نص تجريبي للناطق.</string>
+    <string name="sample_text_activity_en">Hello, this is a sample text for Nateq.</string>
+
+    <!-- Pronunciation dictionary -->
+    <string name="dict_add_entry">Add a new entry</string>
+    <string name="dict_edit_entry">Edit entry</string>
+    <string name="dict_delete_entry">Delete entry</string>
+    <string name="dict_import">Import dictionary</string>
+    <string name="dict_export">Export dictionary</string>
+
+    <!-- General settings -->
+    <string name="default_speech_rate_label">Default rate</string>
+    <string name="default_pitch_label">Default pitch</string>
+    <string name="default_volume_label">Default volume level</string>
+    <string name="clock_widget_enabled">Clock widget on the home screen</string>
+
+    <!-- Permissions and accessibility -->
+    <string name="permission_notifications_granted">Notification permission granted</string>
+    <string name="permission_notifications_denied">Notification permission is required for time announcements and spoken notifications. You can enable it in the app settings.</string>
+    <string name="permission_denied_title">Permission required</string>
+    <string name="permission_open_settings">Open settings</string>
+    <string name="permission_sms_granted">SMS reading permission granted</string>
+    <string name="permission_sms_denied">SMS reading permission is required for reading incoming messages aloud. You can enable it in the app settings.</string>
+
+
+    <!-- Battery announcement -->
+    <string name="section_battery_announcement">Battery level announcement</string>
+    <string name="battery_announcement_enabled">Enable battery announcement</string>
+    <string name="battery_announcement_levels">Enabled levels</string>
+    <string name="battery_announcement_levels_summary">Choose which percentages are announced (multiples of 5%)</string>
+    <string name="battery_announcement_voice">Battery speech voice</string>
+    <string name="battery_announcement_rate">Battery speech rate</string>
+    <string name="battery_announcement_volume">Battery speech volume</string>
+
+    <!-- Notification reading -->
+    <string name="section_notification_reading">Notification reading</string>
+    <string name="notification_reading_enabled">Enable notification reading</string>
+    <string name="notification_reading_enabled_summary">Speak notifications of the chosen apps as they arrive</string>
+    <string name="notification_listener_settings">Notification access permission</string>
+    <string name="notification_listener_settings_summary">Grant the app notification listening permission from the system settings</string>
+    <string name="notification_permission_needed">Please grant notification access permission first from settings</string>
+    <string name="notification_apps_title">Notification reading apps</string>
+    <string name="notification_apps_summary">Choose which apps\' notifications are read aloud</string>
+    <string name="notification_apps_all">All apps</string>
+    <string name="notification_apps_saved">App selection saved</string>
+    <string name="app_whatsapp">WhatsApp</string>
+    <string name="app_whatsapp_business">WhatsApp Business</string>
+    <string name="app_telegram">Telegram</string>
+    <string name="app_telegram_web">Telegram Web</string>
+    <string name="app_messenger">Messenger</string>
+    <string name="app_instagram">Instagram</string>
+
+    <!-- Backup and restore -->
+    <string name="backup_settings">Backup settings</string>
+    <string name="restore_settings">Restore backup</string>
+    <string name="backup_saved">Backup created</string>
+    <string name="backup_failed">Could not create backup</string>
+    <string name="restore_confirm_title">Restore backup?</string>
+    <string name="restore_confirm_message">All current settings, the dictionary, and caller names will be replaced by those in the backup. The file may contain contact names — keep it safe.</string>
+    <string name="restore_done">Restore completed successfully</string>
+    <string name="restore_failed">Restore failed — the file is invalid or incomplete</string>
+
+    <!-- Caller announcement -->
+    <string name="section_caller_announcement">Caller announcement</string>
+    <string name="caller_announcement_enabled">Enable caller announcement</string>
+    <string name="caller_announcement_repeat">Number of repeats</string>
+    <string name="caller_announcement_rate">Caller speech rate</string>
+    <string name="caller_announcement_volume">Caller speech volume</string>
+
+    <!-- Caller announcement permissions (requested on enable) -->
+    <string name="caller_permission_needed">Caller announcement needs call log and phone state permission</string>
+    <string name="caller_permission_granted_both">Permissions granted; caller name will be spoken from call log or contacts</string>
+    <string name="caller_permission_granted_phone_only">Phone state granted; name may not arrive on Android 12+ without call log</string>
+    <string name="caller_permission_granted_contacts_only">Contacts granted; name may not arrive on Android 12+ without call log</string>
+
+    <string name="section_sms_reading">Read incoming messages</string>
+    <string name="sms_reading_mode">Message reading mode</string>
+    <string name="sms_reading_voice">Message reading voice</string>
+    <string name="sms_reading_rate">Message reading rate</string>
+    <string name="sms_reading_volume">Message reading volume</string>
+
+    <!-- Extra UI strings (translatable) -->
+    <string name="dict_add_title">Add to pronunciation dictionary</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="enter_word_and_pronunciation">Enter the word and its pronunciation</string>
+    <string name="no_voices_available">No voices available</string>
+    <string name="time_interval_15">Every 15 minutes</string>
+    <string name="time_interval_30">Every 30 minutes</string>
+    <string name="time_interval_45">Every 45 minutes</string>
+    <string name="time_interval_60">Every 60 minutes</string>
+    <string name="time_format_natural">Natural Arabic</string>
+    <string name="time_format_digital">Digital</string>
+    <string name="sms_mode_full">Enabled</string>
+    <string name="sms_mode_off">Disabled</string>
+    <string name="sms_mode_source">Read message source only</string>
+    <string name="repeat_once">Once</string>
+    <string name="repeat_twice">Twice</string>
+    <string name="repeat_3">3 times</string>
+    <string name="repeat_4">4 times</string>
+    <string name="repeat_5">5 times</string>
+    <string name="expand">Expand</string>
+    <string name="collapse">Collapse</string>
+    <string name="battery_level_contentdesc">Battery level %1$d percent</string>
+    <string name="voice_name_arabic">Arabic</string>
+    <string name="voice_name_english">English</string>
+    <string name="voice_provider_system">System voice</string>
+    <string name="language_default">Language: follow device</string>
+    <string name="language_change_to_en">Switch to English</string>
+    <string name="language_change_to_ar">Switch to Arabic</string>
+    <string name="language_current_label">Language:</string>
+    <string name="section_number_reading">Number reading</string>
+    <string name="number_reading_mode">Number reading mode</string>
+    <string name="number_reading_mode_summary">Applies to all numbers in announcements</string>
+    <string name="number_mode_single">Single (digit by digit)</string>
+    <string name="number_mode_pairs">Pairs (two digits)</string>
+    <string name="number_mode_triples">Triples</string>
+    <string name="number_mode_quadruples">Quadruples</string>
+    <string name="number_mode_quintuples">Five-digit</string>
+    <string name="number_mode_sextuples">Six-digit</string>
+    <string name="number_mode_septuples">Seven-digit</string>
+    <string name="number_mode_octuples">Eight-digit</string>
+    <string name="speech_language_switch">Announcement speech language</string>
+    <string name="speech_language_to_en">Switch to English</string>
+    <string name="speech_language_to_ar">Switch to Arabic</string>
+    <string name="auto_convert_enabled">Use automatic language conversion</string>
+    <string name="auto_convert_summary">Choose two voices for each language and switch automatically when the screen reader language changes</string>
+    <string name="auto_convert_lang1_button">First language</string>
+    <string name="auto_convert_lang2_button">Second language</string>
+    <string name="auto_convert_dialog_title">Language settings</string>
+    <string name="auto_convert_engine">Engine</string>
+    <string name="auto_convert_language">Language</string>
+    <string name="auto_convert_voice">Voice</string>
+    <string name="auto_convert_volume">Volume</string>
+    <string name="auto_convert_pitch">Pitch</string>
+    <string name="auto_convert_rate">Rate</string>
+    <string name="auto_convert_save">Save</string>
+    <string name="auto_convert_saved">Language settings saved</string>
+    <string name="auto_convert_none">No options available</string>
+    <string name="auto_convert_loading">Loading…</string>
+
+    <!-- Shared literal strings -->
+    <string name="toggle_on">On</string>
+    <string name="toggle_off">Off</string>
+    <string name="dict_word_hint">Word</string>
+    <string name="dict_phonetic_hint">Pronunciation</string>
+
+    <!-- Foreground announcements service -->
+    <string name="announce_service_channel_name">Time and battery announcements</string>
+    <string name="announce_service_channel_description">Keeps Nateq running in the background to announce time and battery level</string>
+    <string name="announce_service_notification_title">Nateq announcements running</string>
+    <string name="announce_service_notification_text">Nateq is running in the background to announce time and battery</string>
+    <string name="announce_action_speak_now">Announce time now</string>
+    <string name="announce_action_stop">Stop announcements</string>
+
+    <!-- Back bar from section screen to list -->
+    <string name="back_label">Back to main list</string>
+    <string name="section_opened">Opened section: %1$s</string>
+    <string name="back_to_home">Back to main list</string>
+
+    <!-- Master switch and engine settings -->
+    <string name="all_announcements_enabled">All announcements enabled</string>
+    <string name="all_announcements_summary">Turning it off silently stops automatic announcements (time, battery, messages, notifications, caller)</string>
+    <string name="set_default_engine">Make Lord TTS the default speech engine</string>
+    <string name="set_default_engine_hint">Choose Lord TTS from the engine list, then tap its settings icon to set its preferred language</string>
+
+    <!-- Number pronunciation preview -->
+    <string name="number_preview_hint">Preview number speech</string>
+    <string name="number_preview_placeholder">Enter any number to test</string>
+    <string name="number_preview_button">Speak</string>
+    <string name="preview_stop">Stop</string>
+    <string name="number_preview_invalid">Enter a valid number first</string>
+
+    <!-- Custom caller names -->
+    <string name="caller_custom_names">Custom caller names</string>
+    <string name="caller_names_title">Custom caller names</string>
+    <string name="caller_names_empty">No custom names yet — add a number with a name to be spoken</string>
+    <string name="caller_names_number_hint">Phone number</string>
+    <string name="caller_names_name_hint">Spoken name</string>
+    <string name="caller_names_add">Add</string>
+    <string name="caller_names_delete">Delete</string>
+    <string name="caller_names_saved">Caller names saved</string>
+    <string name="caller_names_duplicate">This number is already added</string>
+
+    <!-- Dictionary import/export -->
+    <string name="dict_imported_ok">Dictionary imported</string>
+    <string name="dict_exported_ok">Dictionary exported</string>
+    <string name="dict_import_failed">Failed to import dictionary</string>
+    <string name="dict_export_failed">Failed to export dictionary</string>
+
+    <!-- Quick settings tile -->
+    <string name="tile_label_on">Nateq: announcements on</string>
+    <string name="tile_label_off">Nateq: announcements off</string>
+    <string name="tile_label_description">Toggle all Nateq announcements (time, battery, messages, notifications, caller)</string>
+
+    <!-- Talking clock widget -->
+    <string name="widget_clock_description">Talking clock — tap to speak the current time</string>
+    <string name="widget_clock_tap_to_speak">Tap to speak the current time</string>
+    <string name="widget_clock_disabled">Enable time announcements to allow widget announcements</string>
+</resources>

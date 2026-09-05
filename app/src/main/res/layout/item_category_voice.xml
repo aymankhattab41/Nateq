@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:layout_marginBottom="8dp">
+
+    <!-- اسم الفئة — مربوط بمختار الصوت حتى يقرأ TalkBack سياق الفئة -->
+    <TextView
+        android:id="@+id/tv_category_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:labelFor="@id/spinner_category_voice"
+        android:textAppearance="?attr/textAppearanceSubtitle1" />
+
+    <!-- وصف الفئة -->
+    <TextView
+        android:id="@+id/tv_category_description"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textAppearance="?attr/textAppearanceBody2"
+        android:layout_marginTop="4dp"
+        android:textColor="@color/text_secondary" />
+
+    <!-- اختيار الصوت -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="12dp"
+        android:gravity="center_vertical">
+
+        <androidx.appcompat.widget.AppCompatSpinner
+            android:id="@+id/spinner_category_voice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp" />
+
+    </LinearLayout>
+
+    <!-- سرعة النطق -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginTop="12dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/tv_category_speech_rate_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/speech_rate_label"
+                android:textAppearance="?attr/textAppearanceBody2"
+                android:layout_marginEnd="16dp" />
+
+            <TextView
+                android:id="@+id/tv_category_speech_rate_value"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="1.0x"
+                android:textAppearance="?attr/textAppearanceBody2" />
+
+        </LinearLayout>
+
+        <SeekBar
+            android:id="@+id/seek_category_speech_rate"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="200"
+            android:progress="100"
+            android:contentDescription="@string/speech_rate_summary" />
+
+    </LinearLayout>
+
+    <!-- نبرة الصوت -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginTop="12dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/tv_category_pitch_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/pitch_label"
+                android:textAppearance="?attr/textAppearanceBody2"
+                android:layout_marginEnd="16dp" />
+
+            <TextView
+                android:id="@+id/tv_category_pitch_value"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="1.0x"
+                android:textAppearance="?attr/textAppearanceBody2" />
+
+        </LinearLayout>
+
+        <SeekBar
+            android:id="@+id/seek_category_pitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="200"
+            android:progress="100"
+            android:contentDescription="@string/pitch_summary" />
+
+    </LinearLayout>
+
+    <!-- مستوى الصوت -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginTop="12dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/tv_category_volume_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/volume_label"
+                android:textAppearance="?attr/textAppearanceBody2"
+                android:layout_marginEnd="16dp" />
+
+            <TextView
+                android:id="@+id/tv_category_volume_value"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="100%"
+                android:textAppearance="?attr/textAppearanceBody2" />
+
+        </LinearLayout>
+
+        <SeekBar
+            android:id="@+id/seek_category_volume"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="100"
+            android:progress="100"
+            android:contentDescription="@string/volume_summary" />
+
+    </LinearLayout>
+
+    <!-- زر تشغيل عينة -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_test_category_voice"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/cd_test_voice_button"
+        android:minHeight="48dp" />
+
+</LinearLayout>

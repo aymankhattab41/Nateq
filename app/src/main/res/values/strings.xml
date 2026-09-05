@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Lord TTS</string>
+    <string name="settings_title">إعدادات ناطق</string>
+    <string name="section_voice_selection">اختيار الأصوات</string>
+    <string name="engine_select">اختيار المحرك</string>
+    <string name="save_settings">حفظ الإعدادات</string>
+    <string name="saved_successfully">تم الحفظ</string>
+    <string name="reset_settings">استعادة الافتراضيات</string>
+    <string name="reset_confirm_title">استعادة الافتراضيات؟</string>
+    <string name="reset_confirm_message">سيتم إرجاع كل الإعدادات إلى قيمها الافتراضية. هل تريد المتابعة؟</string>
+    <string name="reset_done">تم استعادة الافتراضيات</string>
+    <string name="reset_cancel">إلغاء</string>
+    <string name="section_time_announcement">إعلان الوقت</string>
+    <string name="section_general_settings">إعدادات عامة</string>
+    <string name="section_pronunciation_dict">قاموس النطق</string>
+    <string name="cd_test_voice_button">تشغيل عيّنة صوتية للاختبار</string>
+    <string name="speech_rate_label">سرعة النطق</string>
+    <string name="speech_rate_summary">ضبط سرعة النطق</string>
+    <string name="pitch_label">نبرة الصوت</string>
+    <string name="pitch_summary">ضبط نبرة الصوت (منخفضة/عالية)</string>
+    <string name="volume_label">مستوى الصوت</string>
+    <string name="volume_summary">ضبط مستوى الصوت</string>
+
+    <!-- فئات الأصوات -->
+    <string name="voice_category_default">الصوت الافتراضي</string>
+    <string name="voice_category_time">صوت الساعة</string>
+    <string name="voice_category_numbers">صوت الأرقام</string>
+    <string name="voice_category_notifications">صوت الإشعارات</string>
+
+    <!-- إعدادات إعلان الوقت -->
+    <string name="time_announcement_enabled">تفعيل إعلان الوقت</string>
+    <string name="time_announcement_interval">فاصل إعلان الوقت</string>
+    <string name="time_announcement_format">صيغة إعلان الوقت</string>
+    <string name="time_display_24h">عرض الساعة بنظام 24 ساعة</string>
+    <string name="hijri_date_enabled">نطق التواريخ بالتقويم الهجري</string>
+    <string name="time_quiet_schedule_title">ساعات الهدوء لكل يوم</string>
+    <string name="time_quiet_schedule_summary">ساعات صمت تُوقف الإعلان التلقائي للوقت. مثال: 23 إلى 7 = هدوء من 11 ليلاً حتى 7 صباحاً</string>
+    <string name="time_quiet_start_hint">من</string>
+    <string name="time_quiet_end_hint">إلى</string>
+    <string name="day_sunday">الأحد</string>
+    <string name="day_monday">الاثنين</string>
+    <string name="day_tuesday">الثلاثاء</string>
+    <string name="day_wednesday">الأربعاء</string>
+    <string name="day_thursday">الخميس</string>
+    <string name="day_friday">الجمعة</string>
+    <string name="day_saturday">السبت</string>
+
+    <!-- وصف الفئات -->
+    <string name="voice_category_default_summary">الصوت المستخدم للنصوص العامة</string>
+    <string name="voice_category_time_summary">الصوت المخصص لنطق الساعة</string>
+    <string name="voice_category_numbers_summary">الصوت المخصص لنطق الأرقام</string>
+    <string name="voice_category_notifications_summary">الصوت المخصص لنطق الإشعارات</string>
+
+    <!-- نصوص العينة لكل لغة وفئة -->
+    <string name="sample_text_default_ar">مرحباً، هذه عينة من صوت ناطق</string>
+    <string name="sample_text_time_ar">الساعة الآن العاشرة وخمس عشرة دقيقة</string>
+    <string name="sample_text_numbers_ar">واحد اثنان ثلاثة أربعة خمسة</string>
+    <string name="sample_text_notifications_ar">لديك إشعار جديد</string>
+    <string name="sample_text_default_en">Hello, this is a sample of Nateq voice</string>
+    <string name="sample_text_time_en">It is now ten fifteen in the morning</string>
+    <string name="sample_text_numbers_en">One two three four five</string>
+    <string name="sample_text_notifications_en">You have a new notification</string>
+    <string name="sample_text_preview_ar">نص تجريبي: بسم الله الرحمن الرحيم.</string>
+    <string name="sample_text_activity_ar">مرحباً، هذا نص تجريبي للناطق.</string>
+    <string name="sample_text_activity_en">Hello, this is a sample text for Nateq.</string>
+
+    <!-- قاموس النطق -->
+    <string name="dict_add_entry">إضافة إدخال جديد</string>
+    <string name="dict_edit_entry">تعديل الإدخال</string>
+    <string name="dict_delete_entry">حذف الإدخال</string>
+    <string name="dict_import">استيراد قاموس</string>
+    <string name="dict_export">تصدير قاموس</string>
+
+    <!-- إعدادات عامة -->
+    <string name="default_speech_rate_label">السرعة الافتراضية</string>
+    <string name="default_pitch_label">النبرة الافتراضية</string>
+    <string name="default_volume_label">مستوى الصوت الافتراضي</string>
+    <string name="clock_widget_enabled">أداة الساعة على الشاشة الرئيسية</string>
+
+    <!-- الأذونات وإمكانية الوصول -->
+    <string name="permission_notifications_granted">تم منح إذن الإشعارات</string>
+    <string name="permission_notifications_denied">إذن الإشعارات مطلوب لعمل إعلانات الوقت والإشعارات الصوتية. يمكنك تفعيله من إعدادات التطبيق.</string>
+    <string name="permission_denied_title">إذن مطلوب</string>
+    <string name="permission_open_settings">فتح الإعدادات</string>
+    <string name="permission_sms_granted">تم منح إذن قراءة الرسائل</string>
+    <string name="permission_sms_denied">إذن قراءة الرسائل مطلوب لميزة قراءة الرسائل الواردة. يمكنك تفعيله من إعدادات التطبيق.</string>
+
+
+    <!-- إعلان مستوى البطارية -->
+    <string name="section_battery_announcement">إعلان مستوى البطارية</string>
+    <string name="battery_announcement_enabled">تفعيل إعلان البطارية</string>
+    <string name="battery_announcement_levels">المستويات المفعّلة</string>
+    <string name="battery_announcement_levels_summary">اختر النسب التي يُعلن عنها (مضاعفات 5%)</string>
+    <string name="battery_announcement_voice">صوت نطق البطارية</string>
+    <string name="battery_announcement_rate">سرعة نطق البطارية</string>
+    <string name="battery_announcement_volume">مستوى صوت البطارية</string>
+
+    <!-- قراءة الإشعارات -->
+    <string name="section_notification_reading">قراءة الإشعارات بالصوت</string>
+    <string name="notification_reading_enabled">تفعيل قراءة الإشعارات</string>
+    <string name="notification_reading_enabled_summary">نطق إشعارات التطبيقات المختارة عند وصولها</string>
+    <string name="notification_listener_settings">إذن الوصول للإشعارات</string>
+    <string name="notification_listener_settings_summary">منح التطبيق إذن الاستماع للإشعارات من إعدادات النظام</string>
+    <string name="notification_permission_needed">يُرجى منح إذن الوصول للإشعارات أولاً من الإعدادات</string>
+    <string name="notification_apps_title">تطبيقات قراءة الإشعارات</string>
+    <string name="notification_apps_summary">اختيار التطبيقات التي تُنطق إشعاراتها</string>
+    <string name="notification_apps_all">كل التطبيقات</string>
+    <string name="notification_apps_saved">تم حفظ اختيار التطبيقات</string>
+    <string name="app_whatsapp">واتساب</string>
+    <string name="app_whatsapp_business">واتساب للأعمال</string>
+    <string name="app_telegram">تلجرام</string>
+    <string name="app_telegram_web">تلجرام ويب</string>
+    <string name="app_messenger">ماسنجر</string>
+    <string name="app_instagram">إنستجرام</string>
+
+    <!-- النسخ الاحتياطي والاستعادة -->
+    <string name="backup_settings">نسخ احتياطي للإعدادات</string>
+    <string name="restore_settings">استعادة نسخة احتياطية</string>
+    <string name="backup_saved">تم إنشاء النسخة الاحتياطية</string>
+    <string name="backup_failed">تعذّر إنشاء النسخة الاحتياطية</string>
+    <string name="restore_confirm_title">استعادة النسخة الاحتياطية؟</string>
+    <string name="restore_confirm_message">سيتم استبدال كل الإعدادات الحالية والقاموس وأسماء المتصلين بما في النسخة. الملف قد يحوي أسماء جهات اتصال — يُحفظ في مكان آمن.</string>
+    <string name="restore_done">تمت الاستعادة بنجاح</string>
+    <string name="restore_failed">تعذّرت الاستعادة — الملف غير صالح أو ناقص</string>
+
+    <!-- إعلان اسم المتصل -->
+    <string name="section_caller_announcement">إعلان المتصل</string>
+    <string name="caller_announcement_enabled">تفعيل إعلان المتصل</string>
+    <string name="caller_announcement_repeat">عدد مرات التكرار</string>
+    <string name="caller_announcement_rate">سرعة نطق المتصل</string>
+    <string name="caller_announcement_volume">مستوى صوت المتصل</string>
+
+    <!-- أذونات إعلان المتصل (تُطلب عند التفعيل) -->
+    <string name="caller_permission_needed">لن يُنطق اسم المتصل إلا بعد منح إذن سجل المكالمات وحالة الهاتف</string>
+    <string name="caller_permission_granted_both">تم منح الأذونات؛ سيُنطق اسم المتصل إن وُجد في سجل المكالمات أو دفتر الاتصالات</string>
+    <string name="caller_permission_granted_phone_only">تم منح إذن حالة الهاتف فقط؛ قد لا يصل الاسم على أندرويد 12+ دون سجل المكالمات</string>
+    <string name="caller_permission_granted_contacts_only">تم منح إذن قراءة جهات الاتصال فقط؛ قد لا يصل الاسم على أندرويد 12+ دون سجل المكالمات</string>
+
+    <string name="section_sms_reading">قراءة الرسائل الواردة</string>
+    <string name="sms_reading_mode">وضع قراءة الرسائل</string>
+    <string name="sms_reading_voice">صوت قراءة الرسائل</string>
+    <string name="sms_reading_rate">سرعة نطق الرسائل</string>
+    <string name="sms_reading_volume">مستوى صوت الرسائل</string>
+
+    <!-- نصوص واجهة إضافية (قابلة للترجمة) -->
+    <string name="dict_add_title">إضافة إلى قاموس النطق</string>
+    <string name="save">حفظ</string>
+    <string name="cancel">إلغاء</string>
+    <string name="enter_word_and_pronunciation">أدخل الكلمة والنطق</string>
+    <string name="no_voices_available">لا توجد أصوات</string>
+    <string name="time_interval_15">كل 15 دقيقة</string>
+    <string name="time_interval_30">كل 30 دقيقة</string>
+    <string name="time_interval_45">كل 45 دقيقة</string>
+    <string name="time_interval_60">كل 60 دقيقة</string>
+    <string name="time_format_natural">العربية الطبيعية</string>
+    <string name="time_format_digital">رقمية</string>
+    <string name="sms_mode_full">مفعل</string>
+    <string name="sms_mode_off">معطل</string>
+    <string name="sms_mode_source">قراءة مصدر الرسالة فقط</string>
+    <string name="repeat_once">مرة واحدة</string>
+    <string name="repeat_twice">مرتان</string>
+    <string name="repeat_3">3 مرات</string>
+    <string name="repeat_4">4 مرات</string>
+    <string name="repeat_5">5 مرات</string>
+    <string name="expand">عرض المحتوى</string>
+    <string name="collapse">إخفاء المحتوى</string>
+    <string name="battery_level_contentdesc">نسبة البطارية %1$d بالمئة</string>
+    <string name="voice_name_arabic">العربية</string>
+    <string name="voice_name_english">الإنجليزية</string>
+    <string name="voice_provider_system">صوت النظام</string>
+    <string name="language_default">اللغة: حسب لغة الهاتف</string>
+    <string name="language_change_to_en">التغيير إلى الإنجليزية</string>
+    <string name="language_change_to_ar">التغيير إلى العربية</string>
+    <string name="language_current_label">اللغة:</string>
+    <string name="section_number_reading">نطق الأرقام</string>
+    <string name="number_reading_mode">طريقة نطق الأرقام</string>
+    <string name="number_reading_mode_summary">ينطبق على كل الأرقام في الإعلانات</string>
+    <string name="number_mode_single">مفردة (رقم رقم)</string>
+    <string name="number_mode_pairs">زوجي (رقمين رقمين)</string>
+    <string name="number_mode_triples">ثلاثي</string>
+    <string name="number_mode_quadruples">رباعي</string>
+    <string name="number_mode_quintuples">خماسي</string>
+    <string name="number_mode_sextuples">سداسي</string>
+    <string name="number_mode_septuples">سباعي</string>
+    <string name="number_mode_octuples">ثماني</string>
+    <string name="speech_language_switch">لغة نطق الإعلانات</string>
+    <string name="speech_language_to_en">التحويل إلى الإنجليزية</string>
+    <string name="speech_language_to_ar">التحويل إلى العربية</string>
+    <string name="auto_convert_enabled">استخدام التحويل التلقائي بين اللغات</string>
+    <string name="auto_convert_summary">اختيار صوتين مختلفين لكل لغة والتبديل بينهما تلقائياً عند تغيّر لغة القارئ</string>
+    <string name="auto_convert_lang1_button">اللغة الأولى</string>
+    <string name="auto_convert_lang2_button">اللغة الثانية</string>
+    <string name="auto_convert_dialog_title">إعدادات اللغة</string>
+    <string name="auto_convert_engine">المحرك</string>
+    <string name="auto_convert_language">اللغة</string>
+    <string name="auto_convert_voice">الصوت</string>
+    <string name="auto_convert_volume">مستوى الصوت</string>
+    <string name="auto_convert_pitch">النبرة</string>
+    <string name="auto_convert_rate">السرعة</string>
+    <string name="auto_convert_save">حفظ</string>
+    <string name="auto_convert_saved">تم حفظ إعدادات اللغة</string>
+    <string name="auto_convert_none">لا توجد خيارات متاحة</string>
+    <string name="auto_convert_loading">جاري تحميل …</string>
+
+    <!-- النصوص الحرفية الموحّدة -->
+    <string name="toggle_on">مفعل</string>
+    <string name="toggle_off">معطل</string>
+    <string name="dict_word_hint">الكلمة</string>
+    <string name="dict_phonetic_hint">النطق الصوتي</string>
+
+    <!-- خدمة إعلانات الوقت/البطارية الأمامية -->
+    <string name="announce_service_channel_name">إعلانات الوقت والبطارية</string>
+    <string name="announce_service_channel_description">تبقي ناطقاً عاملاً في الخلفية ليعلن الوقت ومستوى البطارية</string>
+    <string name="announce_service_notification_title">إعلانات ناطق مستمرة</string>
+    <string name="announce_service_notification_text">يعمل ناطق في الخلفية لإعلان الوقت والبطارية</string>
+    <string name="announce_action_speak_now">أعلن الوقت الآن</string>
+    <string name="announce_action_stop">إيقاف الإعلانات</string>
+
+    <!-- شريط العودة من شاشة القسم إلى القائمة -->
+    <string name="back_label">الرجوع إلى القائمة الرئيسية</string>
+    <string name="section_opened">فُتح قسم: %1$s</string>
+    <string name="back_to_home">عادت القائمة الرئيسية</string>
+
+    <!-- المفتاح الرئيسي وإعدادات المحرك -->
+    <string name="all_announcements_enabled">كل الإعلانات مفعّلة</string>
+    <string name="all_announcements_summary">إيقافه يُوقف الإعلانات التلقائية (الوقت، البطارية، الرسائل، الإشعارات، المتصل) بصمت</string>
+    <string name="set_default_engine">جعل Lord TTS المحرك الافتراضي للنطق</string>
+    <string name="set_default_engine_hint">اختر Lord TTS من قائمة المحركات ثم اضغط أيقونة الإعدادات بجانبه لاختيار لغته المفضلة</string>
+
+    <!-- معاينة نطق الأرقام -->
+    <string name="number_preview_hint">معاينة نطق رقم</string>
+    <string name="number_preview_placeholder">أدخل أي رقم للتجربة</string>
+    <string name="number_preview_button">نطق</string>
+    <string name="preview_stop">إيقاف</string>
+    <string name="number_preview_invalid">أدخل رقماً صحيحاً أولاً</string>
+
+    <!-- أسماء المتصلين المخصصة -->
+    <string name="caller_custom_names">أسماء متصلين مخصصة</string>
+    <string name="caller_names_title">أسماء المتصلين المخصصة</string>
+    <string name="caller_names_empty">لا توجد أسماء مخصصة — أضف رقماً باسم يُنطق به</string>
+    <string name="caller_names_number_hint">رقم الهاتف</string>
+    <string name="caller_names_name_hint">الاسم الذي يُنطق</string>
+    <string name="caller_names_add">إضافة</string>
+    <string name="caller_names_delete">حذف</string>
+    <string name="caller_names_saved">تم حفظ أسماء المتصلين</string>
+    <string name="caller_names_duplicate">هذا الرقم مضاف مسبقاً</string>
+
+    <!-- استيراد/تصدير القاموس -->
+    <string name="dict_imported_ok">تم استيراد القاموس</string>
+    <string name="dict_exported_ok">تم تصدير القاموس</string>
+    <string name="dict_import_failed">فشل استيراد القاموس</string>
+    <string name="dict_export_failed">فشل تصدير القاموس</string>
+
+    <!-- بلاط الإعدادات السريعة -->
+    <string name="tile_label_on">ناطق: الإعلانات مفعّلة</string>
+    <string name="tile_label_off">ناطق: الإعلانات متوقفة</string>
+    <string name="tile_label_description">تبديل كل إعلانات ناطق (الوقت، البطارية، الرسائل، الإشعارات، المتصل)</string>
+
+    <!-- ودجت الساعة الناطقة -->
+    <string name="widget_clock_description">ساعة ناطقة — اضغط لنطق الوقت الحالي</string>
+    <string name="widget_clock_tap_to_speak">اضغط لنطق الوقت الحالي</string>
+    <string name="widget_clock_disabled">فعّل إعلانات الوقت للسماح لإعلانات الودجت</string>
+</resources>

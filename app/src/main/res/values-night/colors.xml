@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ألوان رئيسية (وضع ليلي) -->
+    <color name="colorPrimary">#64B5F6</color>
+    <color name="colorPrimaryVariant">#42A5F5</color>
+    <color name="colorOnPrimary">#0D47A1</color>
+    <color name="colorSecondary">#81C784</color>
+    <color name="colorSecondaryVariant">#66BB6A</color>
+    <color name="colorOnSecondary">#003F13</color>
+    <color name="colorSurface">#121212</color>
+    <color name="colorOnSurface">#FFFFFF</color>
+    <color name="colorError">#CF6679</color>
+    <color name="colorOnError">#000000</color>
+    <color name="colorBackground">#121212</color>
+    <color name="colorOnBackground">#FFFFFF</color>
+
+    <!-- نص ثانوي فاتح يتباين جيداً على خلفية داكنة -->
+    <color name="text_secondary">#B3FFFFFF</color>
+
+    <!-- فاصل فاتح على خلفية داكنة -->
+    <color name="divider_color">#33FFFFFF</color>
+</resources>

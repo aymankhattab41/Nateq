@@ -1,0 +1,25 @@
+package com.aymankhattab.nateq.engine
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+
+/**
+ * يعيد تشغيل [AnnouncementSchedulerService] بعد إقلاع الجهاز، حتى تبقى
+ * إعلانات الوقت/البطارية تعمل دون فتح التطبيق.
+ *
+ * لا يعمل إلا بعد فتح القفل الأول للمستخدم (BOOT_COMPLETED)، وإذا كان
+ * أي إعلان مفعّلاً؛ الخدمة نفسها نوعها specialUse فلا يقيدها أندرويد 15
+ * عند الإقلاع (بخلاف mediaPlayback).
+ */
+class AnnouncementBootReceiver : BroadcastReceiver() {
+
+    override fun onReceive(context: Context, intent: Intent?) {
+        if (intent?.action != Intent.ACTION_BOOT_COMPLETED) return
+        try {
+            AnnouncementSchedulerService.startIfNeeded(context)
+        } catch (t: Throwable) {
+            android.util.Log.e("NATEQ_ANNOUNCE", "boot restart failed", t)
+        }
+    }
+}

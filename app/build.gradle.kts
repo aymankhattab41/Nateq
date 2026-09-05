@@ -1,0 +1,101 @@
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
+
+import java.util.Properties
+import com.android.build.gradle.internal.api.BaseVariantOutputImpl
+
+// بيانات مفتاح التوقيع تُقرأ من key.properties (مُستثنى من git، لا يُرفع).
+// إن لم يجد الملف أو كان ناقصاً يفشل بناء release بخطأ واضح («لم تُضبط كلمة
+// مرور المخزن») بدل التراجع الصامت إلى توقيع debug الذي يجعل الـ APK غير قابل
+// للنشر — بينما يبقى بناء debug غير مؤثر بالكامل.
+val keyProperties = Properties().apply {
+    val f = rootProject.file("key.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
+android {
+    namespace = "com.aymankhattab.nateq"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "com.aymankhattab.nateq"
+        // أندرويد 7.0 = API 24 (الحد الأدنى المطلوب في الخطة)
+        minSdk = 24
+        // آخر نسخة مستقرة مدعومة وقت البناء - حدّثها عند صدور نسخ أحدث
+        targetSdk = 35
+        versionCode = 2
+        versionName = "0.2.0"
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = rootProject.file(keyProperties.getProperty("storeFile") ?: "key/lord-tts.jks")
+            storePassword = keyProperties.getProperty("storePassword")
+            keyAlias = keyProperties.getProperty("keyAlias")
+            keyPassword = keyProperties.getProperty("keyPassword")
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true // لتقليل حجم الـ APK قدر الإمكان
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            // الدائم: توقيع release من الـ keystore فقط. نقص بياناته = فشل
+            // صريح في البناء (لا debug fallback أبداً — غير قابل للنشر).
+            signingConfig = signingConfigs.getByName("release")
+        }
+        debug {
+            isMinifyEnabled = false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    buildFeatures {
+        viewBinding = true
+    }
+}
+
+// إعادة تسمية مخرجات APK بمسمى ثابت lord_tts.apk بدل app-release.apk
+android {
+    applicationVariants.all {
+        outputs.all {
+            (this as BaseVariantOutputImpl).outputFileName = "lord_tts.apk"
+        }
+    }
+}
+
+dependencies {
+    // خفيفة الوزن ومقصودة - لا تستخدم SDKs ضخمة من كل شركة، بل REST مباشر
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.android.material:material:1.12.0") // مكونات واجهة متوافقة مع TalkBack افتراضيًا
+    implementation("androidx.preference:preference-ktx:1.2.1")   // شاشة إعدادات جاهزة ومتوافقة إتاحيًا
+    // تشفير مفاتيح الـ API (EncryptedSharedPreferences + Android Keystore).
+    // نُبقي على alpha06 لأنها آخر نسخة فيها API مشفّر يعمل عبر minSdk 24 دون
+    // ComponentFactory/تطبيق DenyList فك جذر؛ الأنساق الأحدث (stable المعلنة
+    // كـ 1.1.0 غير نازلة) تعتمد معيّنات مختلفة. التخزين عندنا مؤقت/محلي فقط
+    // ولا يجوز ترقية عشوائية تُقلب صيغة التخزين وتكسر مفاتيح المستخدمين.
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    // Gson للـ serialization في ProfileManager و PronunciationDictionary
+    implementation("com.google.code.gson:gson:2.10.1")
+
+    // كوروتينز لإدارة الطلبات غير المتزامنة بدون تجميد الخدمة
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+}

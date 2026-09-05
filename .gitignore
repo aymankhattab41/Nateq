@@ -1,0 +1,19 @@
+*.iml
+.gradle
+/local.properties
+/.idea/
+.DS_Store
+/build
+/app/build
+/.kotlin/
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# بيانات التوقيع (حسّاسة) — لا تُرفع إلى git إطلاقاً
+/key/
+/key.properties
+*.jks
+*.keystore
+*.html

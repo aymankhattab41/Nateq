@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- اللون الأساسي للتطبيق (أزرق) -->
+    <color name="colorPrimary">#1565C0</color>
+    <color name="colorPrimaryVariant">#0D47A1</color>
+    <color name="colorOnPrimary">#FFFFFF</color>
+
+    <!-- اللون الثانوي (أخضر) -->
+    <color name="colorSecondary">#2E7D32</color>
+    <color name="colorSecondaryVariant">#1B5E20</color>
+    <color name="colorOnSecondary">#FFFFFF</color>
+
+    <!-- السطوح والخلفية: أبيض مع نص أسود -->
+    <color name="colorSurface">#FFFFFF</color>
+    <color name="colorOnSurface">#000000</color>
+
+    <!-- لون الخطأ مع نصه -->
+    <color name="colorError">#B00020</color>
+    <color name="colorOnError">#FFFFFF</color>
+
+    <!-- الخلفية العامة -->
+    <color name="colorBackground">#FFFFFF</color>
+    <color name="colorOnBackground">#000000</color>
+
+    <!-- نص ثانوي (رمادي شفاف) — أعلى من عتبة WCAG AA (5.74:1 على الأبيض) -->
+    <color name="text_secondary">#99000000</color>
+
+    <!-- لون الفواصل (رمادي شفاف) -->
+    <color name="divider_color">#33000000</color>
+</resources>

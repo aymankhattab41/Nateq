@@ -1,0 +1,34 @@
+package com.aymankhattab.nateq.settings
+
+import android.app.Activity
+import android.content.Intent
+import android.os.Bundle
+import android.speech.tts.TextToSpeech
+import com.aymankhattab.nateq.R
+
+/**
+ * Activity لتوفير نص تجريبي لكل لغة — مطلوبة من نظام TTS
+ * تستجيب لـ android.speech.tts.engine.GET_SAMPLE_TEXT
+ */
+class GetSampleTextActivity : Activity() {
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        // المفاتيح النصية للـ Intent extras (قيم TextToSpeech.EXTRA_* غير متاحة في هذا API)
+        val lang = intent.getStringExtra("language")
+
+        val returnData = Intent()
+
+        // نص تجريبي مناسب لكل لغة
+        val sampleText = when {
+            lang == "ar" -> getString(R.string.sample_text_activity_ar)
+            lang == "en" -> getString(R.string.sample_text_activity_en)
+            else -> getString(R.string.sample_text_activity_ar)
+        }
+
+        returnData.putExtra("sample", sampleText)
+        setResult(RESULT_OK, returnData)
+        finish()
+    }
+}
