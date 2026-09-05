@@ -1,10 +1,9 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
 }
 
 import java.util.Properties
-import com.android.build.gradle.internal.api.BaseVariantOutputImpl
+import com.android.build.api.variant.VariantOutput
 
 // بيانات مفتاح التوقيع تُقرأ من key.properties (مُستثنى من git، لا يُرفع).
 // إن لم يجد الملف أو كان ناقصاً يفشل بناء release بخطأ واضح («لم تُضبط كلمة
@@ -17,16 +16,17 @@ val keyProperties = Properties().apply {
 
 android {
     namespace = "com.aymankhattab.nateq"
-    compileSdk = 35
+    // أندرويد 17 = API 37 (المنصة المستهدفة بالتحديث الأخير)
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.aymankhattab.nateq"
         // أندرويد 7.0 = API 24 (الحد الأدنى المطلوب في الخطة)
         minSdk = 24
-        // آخر نسخة مستقرة مدعومة وقت البناء - حدّثها عند صدور نسخ أحدث
-        targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        // أندرويد 17 = API 37: أحدث نسخة مثبّتة محلياً وهدف التوافق الحالي
+        targetSdk = 37
+        versionCode = 3
+        versionName = "0.3.0"
     }
 
     signingConfigs {
@@ -59,8 +59,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
+    // AGP 9 دمج Kotlin: يُضبط جذر الأداة (JDK 17) وأسماء الأهداف معاً
+    // (النطم kotlinOptions القديم أُزيل من DSL).
+    kotlin {
+        jvmToolchain(17)
     }
 
     buildFeatures {
@@ -69,10 +71,12 @@ android {
 }
 
 // إعادة تسمية مخرجات APK بمسمى ثابت lord_tts.apk بدل app-release.apk
-android {
-    applicationVariants.all {
-        outputs.all {
-            (this as BaseVariantOutputImpl).outputFileName = "lord_tts.apk"
+// (androidComponents هي واجهة AGP الحديثة، تبقى صالحة في AGP 9+ بدل
+//  applicationVariants/outputs القديمة التي أُزيلت).
+androidComponents {
+    onVariants(androidComponents.selector().all()) { variant ->
+        variant.outputs.forEach { output ->
+            output.outputFileName.set("lord_tts.apk")
         }
     }
 }
