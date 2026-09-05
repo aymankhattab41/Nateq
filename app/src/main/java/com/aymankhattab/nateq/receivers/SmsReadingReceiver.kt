@@ -81,7 +81,7 @@ try {
 
                 // نقرر لغة النطق حسب النص الفعلي المَنطوق (المحتوى عربي أم إنجليزي)
                 val isArabic = LocaleUtils.containsArabic(text)
-                val locale = if (isArabic) Locale("ar") else Locale("en")
+                val locale = if (isArabic) Locale.forLanguageTag("ar") else Locale.forLanguageTag("en")
 
                 // متحدث مشترك واحد لكل الإعلانات (يمنع تقاطع أصوات متعددة)
                 val speech = AnnouncementSpeaker.getInstance(context)

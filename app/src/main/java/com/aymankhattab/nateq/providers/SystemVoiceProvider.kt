@@ -84,7 +84,11 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
         val normLanguage = normalizeLanguage(locale.language)
         val voiceId = "nateq-$normLanguage-local"
         val normLocale = if (normLanguage != locale.language) {
-            Locale(normLanguage, locale.country.orEmpty())
+            if (locale.country.isNullOrEmpty()) {
+                Locale.forLanguageTag(normLanguage)
+            } else {
+                Locale.forLanguageTag("$normLanguage-${locale.country}")
+            }
         } else {
             locale
         }

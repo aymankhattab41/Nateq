@@ -371,3 +371,47 @@
 - تقييدات RECEIVE_SMS/CALL_LOG: توثيق "Allow restricted settings" للمستخدم.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## جلسة أندرويد 17 — إصلاح وقت التشغيل (مكتملة)
+
+### المشكلة
+السبب الجذري الوظيفي من تقرير platform: أندرويد 17 شَدّد قواعد الصوت في الخلفية،
+والتطبيق ينطق عبر محرك TTS خارجي من عملية خلفية دون تركيز صوتي مُنال فعلياً
+(نتيجة requestAudioFocus تُتجاهل)، ودون خدمة أمامية عند نطق المتصل/SMS/الإشعارات.
+
+### المنفَّذ
+1. **الـ Manifest**: إضافة `MODIFY_AUDIO_SETTINGS` — كانت ناقصة منذ البداية،
+   وبدونها كان `requestAudioFocus()` يرمي SecurityException يُبتلع بصمت،
+   فلا يحصل التطبيق على تركيز صوتي أبداً (إذن عادي يُمنح عند التثبيت).
+2. **AnnouncementSpeaker** (`app/.../util/AnnouncementSpeaker.kt`):
+   - نتيجة `requestAudioFocus()` تُحترم الآن (GRANTED/DELAYED/FAILED):
+     - DELAYED → يُخزَّن النطق ويُطلق فور وصول AUDIOFOCUS_GAIN، مع مؤقّت
+       أمان 3 ثوانٍ يمنع ضياع إعلان المتصل/الرسالة إن تأخر التسليم.
+     - FAILED → تأجيل 400ms ثم نطق بأفضل جهد (لا تُفقد الإعلانات الحرجة).
+   - `setAcceptsDelayedFocusGain(true)` للتعامل مع طلبات التركيز المؤجلة على أندرويد 17.
+   - LOSS_TRANSIENT_CAN_DUCK لم يعد يقطع النطق (الإعلان قصير، نستمر).
+   - نظام تتبع حالة التركيز hasAudioFocus + تنظيف مؤكد (لا تسريب نطق معلّق).
+   - قبل النطق في الخلفية: `AnnouncementSchedulerService.startIfNeeded()` إن
+     لم تكن الخدمة الأمامية قائمة (شرط أندرويد 15+ لصوت الخلفية) — يخدم المتصل
+     و SMS و الإشعارات أيضاً، لا فقط الساعة/البطارية.
+3. **AnnouncementSchedulerService**: حقل `isRunning` (Volatile) لتحديد ما إن
+   كانت الخدمة الأمامية قائمة قبل طلب النطق من الخلفية.
+4. **إزالة تحذيرات التهجير** (من SDK الجديد):
+   - `Locale("ar")`/`Locale("ar","SA")` → `Locale.forLanguageTag(...)`
+     (في VoiceCatalog، والـ receivers الأربعة، وVoiceSelectionFragment،
+      وSystemVoiceProvider، وNateqTtsService).
+   - `announceForAccessibility(...)` → غلاف `View.announceCompat(...)` جديد
+     في `app/.../util/AnnounceCompat.kt` يحتوي التحذير في نقطة واحدة دون
+     تغيير السلوك (بديل ACTION_ANNOUNCE يغيّر النص المُنطق من دلالات العقدة).
+
+### النتيجة
+- `assembleRelease` **خضراء** والبناء **خالٍ تماماً من أي تحذير** (كان ~48).
+- الناتج: `lord_tts.apk` بوزن **2.1MB** (versionCode 3 / versionName 0.3.0).
+- اختبارات الوحدة: **6/6 خضراء**.
+
+### ملاحظات أمنية حقيقية (من تقرير security) — للتوثيق لا الكود
+- RECEIVE_SMS/CALL_LOG مقيدتان تقييداً صارماً من أندرويد 15؛ عند التثبيت يدوياً
+  قد يحتاج المستخدم تفعيل "Allow restricted settings" من إعدادات النظام ليعمل
+  إعلان المتصل/قراءة الرسائل.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

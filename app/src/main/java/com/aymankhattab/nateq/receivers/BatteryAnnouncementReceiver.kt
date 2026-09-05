@@ -47,7 +47,7 @@ class BatteryAnnouncementReceiver : BroadcastReceiver() {
 
         val voiceId = settings.getBatteryAnnouncementVoiceId()
         val isArabic = voiceId?.contains("nateq-ar") == true
-        val locale = if (isArabic) Locale("ar") else Locale("en")
+        val locale = if (isArabic) Locale.forLanguageTag("ar") else Locale.forLanguageTag("en")
 
         when (action) {
             Intent.ACTION_POWER_CONNECTED -> {

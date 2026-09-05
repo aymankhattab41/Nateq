@@ -70,7 +70,7 @@ class NateqNotificationListener : NotificationListenerService() {
             val appName = getAppName(pkg)
             val speechText = buildSpeechText(appName, title, text)
             val isArabic = LocaleUtils.containsArabic(speechText)
-            val locale = if (isArabic) Locale("ar") else Locale("en")
+            val locale = if (isArabic) Locale.forLanguageTag("ar") else Locale.forLanguageTag("en")
 
             // سجلّ مجرّد من مضمون الإشعار (قد يحوي OTP/حساسيات) — الطول والحزمة فقط.
             Log.d(TAG, "Notification from $pkg: ${speechText.length} chars")

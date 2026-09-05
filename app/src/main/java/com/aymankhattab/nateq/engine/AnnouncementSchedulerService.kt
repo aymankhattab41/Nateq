@@ -49,6 +49,13 @@ class AnnouncementSchedulerService : Service() {
         private const val ACTION_ANNOUNCE_NOW = "com.aymankhattab.nateq.action.ANNOUNCE_NOW"
         private const val ACTION_STOP = "com.aymankhattab.nateq.action.ANNOUNCE_STOP"
 
+        // هل الخدمة الأمامية قائمة الآن؟ يستخدمها AnnouncementSpeaker ليقرر إن
+        // كان يشغّلها قبل النطق من الخلفية (شرط أندرويد 15+ لصوت الخلفية).
+        @Volatile
+        @JvmStatic
+        var isRunning = false
+            private set
+
         /** تشغيل الخدمة من الواجهة (يفسح إيقاف المستخدم السابق). */
         @JvmStatic
         fun requestStart(context: Context) {
@@ -112,6 +119,7 @@ class AnnouncementSchedulerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        isRunning = true
         createNotificationChannel()
         startAsForeground(buildNotification())
 
@@ -199,6 +207,7 @@ class AnnouncementSchedulerService : Service() {
     }
 
     override fun onDestroy() {
+        isRunning = false
         stopInternal()
         super.onDestroy()
     }

@@ -76,7 +76,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 val speechRate = settings.getCallerAnnouncementRate()
                 val volume = settings.getCallerAnnouncementVolume()
                 val hasArabic = LocaleUtils.containsArabic(text)
-                val locale = if (hasArabic) Locale("ar") else Locale("en")
+                val locale = if (hasArabic) Locale.forLanguageTag("ar") else Locale.forLanguageTag("en")
 
                 AnnouncementSpeaker.getInstance(context)
                     .speak(text, locale, speechRate, 1.0f, volume)

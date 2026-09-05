@@ -27,8 +27,8 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
      * تحت لغته الأم كصوتٍ واحد.
      */
     fun supportedLocales(): List<Locale> = listOf(
-        Locale("ar"), // العربية (تشمل لهجات مصر/السعودية/الإمارات)
-        Locale("en")  // الإنجليزية (تشمل أمريكا/بريطانيا وأخرى)
+        Locale.forLanguageTag("ar"), // العربية (تشمل لهجات مصر/السعودية/الإمارات)
+        Locale.forLanguageTag("en")  // الإنجليزية (تشمل أمريكا/بريطانيا وأخرى)
     )
 
     /**

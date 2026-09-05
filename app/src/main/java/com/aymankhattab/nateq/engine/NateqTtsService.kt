@@ -178,7 +178,9 @@ class NateqTtsService : TextToSpeechService() {
         // حل الصوت والكتالوج متسقين مع اللغتين المدعومتين (العربية/الإنجليزية).
         val normLanguage = normalizeLanguageCode(request.language)
         val normCountry = normalizeCountryCode(request.country)
-        val languageTag = Locale(normLanguage, normCountry.orEmpty()).toLanguageTag()
+        val languageTag = Locale.forLanguageTag(
+            if (normCountry.isNullOrEmpty()) normLanguage else "$normLanguage-$normCountry"
+        ).toLanguageTag()
 
         callback.start(
             /* sampleRateInHz = */ 22050,

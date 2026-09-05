@@ -8,6 +8,7 @@ import android.os.Build
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
+import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
 import com.aymankhattab.nateq.providers.EnginePicker
 import com.aymankhattab.nateq.settings.SettingsRepository
 import java.util.Locale
@@ -44,7 +45,16 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
 
     private val appContext = context.applicationContext
     private val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var audioFocusRequest: AudioFocusRequest? = null
+    private var hasAudioFocus = false
+
+    // النطق المنتظر لحين وصول Audio Focus المؤجل (DELAYED): يُخزَّن الإجراء
+    // ويُطلق فور استلام AUDIOFOCUS_GAIN، مع مؤقّت أمان يمنع ضياع الإعلان
+    // إن لم يتحرر التركيز أبداً.
+    private var pendingFocusAction: (() -> Unit)? = null
+    private var pendingFocusTimer: Runnable? = null
+
     private var tts: TextToSpeech? = null
     private var nowSpeaking = false
 
@@ -143,7 +153,51 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
         // نُفوض النطق دائماً لمحركٍ مثبّت (منهج MultiTTS): يستبعد اختيار المحرك
         // حزمة LORD نفسها، فيمرّ `tts.speak()` عبر محركٍ خارجي مستقر بدل حلقة
         // ربط النظام TextToSpeech → خدمة LORD التي قد تُسقط الصوت على Samsung.
-        requestAudioFocus()
+
+        // أندرويد 15+ يقيد صوت الخلفية: النطق من مستقبلات المتصل/الرسائل/الإشعارات
+        // لا يُضمن دون خدمة أمامية. نشغّل خدمة الإعلانات (specialUse) إن لم تكن
+        // قائمة حتى تُحتسب العملية "أمامية" وتسمح للـ TTS الخارجي بالنطق.
+        try {
+            if (!AnnouncementSchedulerService.isRunning) {
+                AnnouncementSchedulerService.startIfNeeded(appContext)
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "scheduler service start failed", t)
+        }
+
+        // نتيجة منح التركيز تُحترم: على أندرويد 17 قد يُنبّه النظام بطلبٍ
+        // مؤجل (DELAYED) أو مرفوض (FAILED) بدل المنح الفوري.
+        when (requestAudioFocus()) {
+            AudioManager.AUDIOFOCUS_REQUEST_DELAYED -> {
+                // التركيز سيُسلَّم لاحقاً عبر onAudioFocusChange؛ ننتظر وصول
+                // AUDIOFOCUS_GAIN ثم ننطق. مؤقّت الأمان يضمن المحاولة حتى لو
+                // تأخر تسليم التركيز أو لم يصل (لا تُفقد إعلانات المتصل/الرسائل).
+                pendingFocusAction = { startSpeech(text, locale, speechRate, pitch, volume) }
+                val timer = Runnable {
+                    val action = pendingFocusAction
+                    pendingFocusAction = null
+                    pendingFocusTimer = null
+                    action?.invoke()
+                }
+                pendingFocusTimer = timer
+                mainHandler.postDelayed(timer, 3000)
+            }
+            AudioManager.AUDIOFOCUS_REQUEST_FAILED ->
+                // لا تركيز حالياً (مشغّل صوتي آخر يرفض التنازل): نؤجل قليلاً ثم
+                // ننطق بأفضل جهد حتى لا تُفقد الإعلانات الحرجة.
+                mainHandler.postDelayed({
+                    if (pendingFocusAction == null) {
+                        startSpeech(text, locale, speechRate, pitch, volume)
+                    }
+                }, 400)
+            else ->
+                // AUDIOFOCUS_REQUEST_GRANTED: التركيز مُنح فوراً — ننطق مباشرة.
+                startSpeech(text, locale, speechRate, pitch, volume)
+        }
+    }
+
+    /** تهيئة المحرك ثم نطق النص بتأجيل قصير يسمح لاتصال TTS بالاستقرار. */
+    private fun startSpeech(text: String, locale: Locale, speechRate: Float, pitch: Float, volume: Float) {
         ensureInit { ready ->
             if (!ready) {
                 releaseAudioFocus()
@@ -151,7 +205,7 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
             }
             // تأجيل قصير يسمح لاتصال محرك TTS بالاستقرار بعد onInit (حتى لو أعلن
             // Success مبكراً، قد يبقى ربط النظام معلقاً لحظياً ويُسقط speak فورياً).
-            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            mainHandler.postDelayed({
                 doSpeak(text, locale, speechRate, pitch, volume, attempt = 1)
             }, 150)
         }
@@ -185,7 +239,7 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
         val utteranceId = "nateq_announce_${System.currentTimeMillis()}"
         val status = tts.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
         if (status == TextToSpeech.ERROR && attempt < 3) {
-            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            mainHandler.postDelayed({
                 doSpeak(text, locale, speechRate, pitch, volume, attempt + 1)
             }, 250)
         } else if (status == TextToSpeech.ERROR) {
@@ -204,23 +258,39 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
         shutdownSafely()
     }
 
-    /** طلب تخفيف صوت الوسائط أثناء النطق (Audio Ducking) */
+    // طلب تخفيف صوت الوسائط أثناء النطق (Audio Ducking).
+    // عند وصول التركيز المؤجل (DELAYED) يُطلق هذا المستمع النطق المنتظر.
     private val onAudioFocusChange = AudioManager.OnAudioFocusChangeListener { focusChange ->
         when (focusChange) {
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                // تسليم التركيز المؤجل وصل — شغّل النطق المُخزّن.
+                hasAudioFocus = true
+                val action = pendingFocusAction
+                pendingFocusAction = null
+                pendingFocusTimer?.let { mainHandler.removeCallbacks(it) }
+                pendingFocusTimer = null
+                action?.invoke()
+            }
             AudioManager.AUDIOFOCUS_LOSS,
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                 // فقد التركيز (مكالمة/وسائط) — أوقف النطق فوراً
+                hasAudioFocus = false
                 tts?.stop()
                 nowSpeaking = false
                 releaseAudioFocus()
             }
+            // AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK: إعلاننا قصير، نستمر دون حاجة
+            // لخفض الصوت (النظام يخفض الوسائط المخالفة لا إعلاننا).
         }
     }
 
-    private fun requestAudioFocus() {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+    /**
+     * يطلب Audio Focus متقطع قابل للخفض (MAY_DUCK).
+     * @return نتيجة النظام: GRANTED / DELAYED / FAILED (يُحترم الجميع).
+     */
+    private fun requestAudioFocus(): Int {
+        return try {
+            val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val focusReq = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
                     .setAudioAttributes(
                         AudioAttributes.Builder()
@@ -228,7 +298,9 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
                             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                             .build()
                     )
-                    .setAcceptsDelayedFocusGain(false)
+                    // نحتاج قبول التأجيل: على أندرويد 17 قد يُنبّه النظام بطلبٍ
+                    // مؤجل (DELAYED) عند ارتفاع ضغط الصوت في الخلفية.
+                    .setAcceptsDelayedFocusGain(true)
                     .setOnAudioFocusChangeListener(onAudioFocusChange)
                     .build()
                 audioFocusRequest = focusReq
@@ -241,13 +313,23 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
                     AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
                 )
             }
+            if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) hasAudioFocus = true
+            result
         } catch (t: Throwable) {
+            // بدون إذن MODIFY_AUDIO_SETTINGS في الـ Manifest يرمي النظام
+            // SecurityException هنا — نلتقطه ونُعد النطق بلا تركيز (أفضل جهد).
             Log.w(TAG, "requestAudioFocus failed", t)
+            AudioManager.AUDIOFOCUS_REQUEST_FAILED
         }
     }
 
-    /** التخلي عن Audio Focus بعد انتهاء النطق */
+    /** التخلي عن Audio Focus بعد انتهاء النطق. */
     private fun releaseAudioFocus() {
+        hasAudioFocus = false
+        // إلغاء أي نطق معلّق بانتظار التركيز حتى لا يُنطق نص قديم لاحقاً.
+        pendingFocusAction = null
+        pendingFocusTimer?.let { mainHandler.removeCallbacks(it) }
+        pendingFocusTimer = null
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }

@@ -35,6 +35,7 @@ import com.aymankhattab.nateq.engine.NumberSpeech
 import com.aymankhattab.nateq.engine.PronunciationDictionary
 import com.aymankhattab.nateq.providers.EnginePicker
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
+import com.aymankhattab.nateq.util.announceCompat
 import java.util.Calendar
 import java.util.Locale
 
@@ -292,8 +293,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
         // تهيئة الأصوات هنا بعد الانضمام للسياق (لا يجوز في مُنشئ/خاصية تستدعي getString())
         nateqVoices = listOf(
-            NateqVoice("nateq-ar-local", "ar", getString(R.string.voice_name_arabic), Locale("ar")),
-            NateqVoice("nateq-en-local", "en", getString(R.string.voice_name_english), Locale("en"))
+            NateqVoice("nateq-ar-local", "ar", getString(R.string.voice_name_arabic), Locale.forLanguageTag("ar")),
+            NateqVoice("nateq-en-local", "en", getString(R.string.voice_name_english), Locale.forLanguageTag("en"))
         )
 
         // صندوق المحركات داخل قسم اللغة الأولى/الثانية (اختيار محرك TTS للنطق)
@@ -663,7 +664,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         seekVol.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 tvVol.text = "$progress%"
-                if (fromUser) seekBar.announceForAccessibility("$progress%")
+                if (fromUser) seekBar.announceCompat("$progress%")
             }
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {}
@@ -675,7 +676,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 val v = progress / 100f
                 tvPitch.text = String.format(java.util.Locale.US, "%.1fx", v)
-                if (fromUser) seekBar.announceForAccessibility(String.format(java.util.Locale.US, "%.1fx", v))
+                if (fromUser) seekBar.announceCompat(String.format(java.util.Locale.US, "%.1fx", v))
             }
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {}
@@ -687,7 +688,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 val v = progress / 100f
                 tvRate.text = String.format(java.util.Locale.US, "%.1fx", v)
-                if (fromUser) seekBar.announceForAccessibility(String.format(java.util.Locale.US, "%.1fx", v))
+                if (fromUser) seekBar.announceCompat(String.format(java.util.Locale.US, "%.1fx", v))
             }
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {}
@@ -730,7 +731,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             }
 
             tvSaved.text = getString(R.string.auto_convert_saved)
-            tvSaved.announceForAccessibility(getString(R.string.auto_convert_saved))
+            tvSaved.announceCompat(getString(R.string.auto_convert_saved))
         }
 
         // ===== زر استماع (تجربة) =====
@@ -1176,7 +1177,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         tvSectionTitle?.text = sectionName
         // إعلان مسموع لفتح القسم + نقل تركيز الوصول إلى زر العودة
         tvBackToList?.let { bt ->
-            bt.announceForAccessibility(getString(R.string.section_opened, sectionName))
+            bt.announceCompat(getString(R.string.section_opened, sectionName))
             focusForAccessibility(bt)
         }
     }
@@ -1203,7 +1204,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
         // عند العودة من قسم فقط: نعيد التركيز للمفتاح الرئيسي مع إعلان مسموع
         if (returning) {
-            switchAllAnnouncements.announceForAccessibility(getString(R.string.back_to_home))
+            switchAllAnnouncements.announceCompat(getString(R.string.back_to_home))
             focusForAccessibility(switchAllAnnouncements)
         }
     }
@@ -1534,7 +1535,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 val value = progress / 100f
                 tvBatteryRateValue.text = String.format(Locale.US, "%.1fx", value)
                 runCatching { settings.setBatteryAnnouncementRate(value) }
-                if (fromUser) seekBar.announceForAccessibility(String.format(Locale.US, "%.1fx", value))
+                if (fromUser) seekBar.announceCompat(String.format(Locale.US, "%.1fx", value))
             }
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {}
@@ -1548,7 +1549,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 tvBatteryVolumeValue.text = "$progress%"
                 runCatching { settings.setBatteryAnnouncementVolume(progress / 100f) }
-                if (fromUser) seekBar.announceForAccessibility("$progress%")
+                if (fromUser) seekBar.announceCompat("$progress%")
             }
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {}
@@ -1686,7 +1687,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 val value = progress / 100f
                 tvCallerRateValue.text = String.format(Locale.US, "%.1fx", value)
                 runCatching { settings.setCallerAnnouncementRate(value) }
-                if (fromUser) seekBar.announceForAccessibility(String.format(Locale.US, "%.1fx", value))
+                if (fromUser) seekBar.announceCompat(String.format(Locale.US, "%.1fx", value))
             }
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {}
@@ -1700,7 +1701,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 tvCallerVolumeValue.text = "$progress%"
                 runCatching { settings.setCallerAnnouncementVolume(progress / 100f) }
-                if (fromUser) seekBar.announceForAccessibility("$progress%")
+                if (fromUser) seekBar.announceCompat("$progress%")
             }
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {}
@@ -1760,7 +1761,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 val value = progress / 100f
                 tvSmsRateValue.text = String.format(Locale.US, "%.1fx", value)
                 runCatching { settings.setSmsReadingRate(value) }
-                if (fromUser) seekBar.announceForAccessibility(String.format(Locale.US, "%.1fx", value))
+                if (fromUser) seekBar.announceCompat(String.format(Locale.US, "%.1fx", value))
             }
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {}
@@ -1774,7 +1775,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 tvSmsVolumeValue.text = "$progress%"
                 runCatching { settings.setSmsReadingVolume(progress / 100f) }
-                if (fromUser) seekBar.announceForAccessibility("$progress%")
+                if (fromUser) seekBar.announceCompat("$progress%")
             }
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {}
@@ -1799,7 +1800,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 val value = progress / 100f
                 tvDefaultSpeechRateValue.text = String.format(Locale.US, "%.1fx", value)
                 runCatching { settings.setDefaultSpeechRate(value) }
-                if (fromUser) seekBar.announceForAccessibility(String.format(Locale.US, "%.1fx", value))
+                if (fromUser) seekBar.announceCompat(String.format(Locale.US, "%.1fx", value))
                 updateSectionStatuses()
             }
 
@@ -1812,7 +1813,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 val value = progress / 100f
                 tvDefaultPitchValue.text = String.format(Locale.US, "%.1fx", value)
                 runCatching { settings.setDefaultPitch(value) }
-                if (fromUser) seekBar.announceForAccessibility(String.format(Locale.US, "%.1fx", value))
+                if (fromUser) seekBar.announceCompat(String.format(Locale.US, "%.1fx", value))
                 updateSectionStatuses()
             }
 
@@ -1824,7 +1825,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 tvDefaultVolumeValue.text = "$progress%"
                 runCatching { settings.setDefaultVolume(progress / 100f) }
-                if (fromUser) seekBar.announceForAccessibility("$progress%")
+                if (fromUser) seekBar.announceCompat("$progress%")
                 updateSectionStatuses()
             }
 
@@ -1912,7 +1913,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     val value = progress / 100f
                     holder.tvRateValue.text = String.format(Locale.US, "%.1fx", value)
                     runCatching { settings.setSpeechRateForCategory(category, value) }
-                    if (fromUser) seekBar.announceForAccessibility(String.format(Locale.US, "%.1fx", value))
+                    if (fromUser) seekBar.announceCompat(String.format(Locale.US, "%.1fx", value))
                 }
 
                 override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -1924,7 +1925,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     val value = progress / 100f
                     holder.tvPitchValue.text = String.format(Locale.US, "%.1fx", value)
                     runCatching { settings.setPitchForCategory(category, value) }
-                    if (fromUser) seekBar.announceForAccessibility(String.format(Locale.US, "%.1fx", value))
+                    if (fromUser) seekBar.announceCompat(String.format(Locale.US, "%.1fx", value))
                 }
 
                 override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -1935,7 +1936,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                     holder.tvVolumeValue.text = "$progress%"
                     runCatching { settings.setVolumeForCategory(category, progress / 100f) }
-                    if (fromUser) seekBar.announceForAccessibility("$progress%")
+                    if (fromUser) seekBar.announceCompat("$progress%")
                 }
 
                 override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -2072,7 +2073,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         btnSave?.setOnClickListener {
             Toast.makeText(requireContext(), getString(R.string.saved_successfully), Toast.LENGTH_SHORT).show()
             view?.findViewById<View>(R.id.btn_save_settings)
-                ?.announceForAccessibility(getString(R.string.saved_successfully))
+                ?.announceCompat(getString(R.string.saved_successfully))
         }
 
         // استعادة الافتراضيات: مسح كل الإعدادات ثم إعادة بناء الواجهة لتحميل
@@ -2085,7 +2086,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     runCatching { settings.resetAllToDefault() }
                     Toast.makeText(requireContext(), getString(R.string.reset_done), Toast.LENGTH_SHORT).show()
                     view?.findViewById<View>(R.id.btn_reset_settings)
-                        ?.announceForAccessibility(getString(R.string.reset_done))
+                        ?.announceCompat(getString(R.string.reset_done))
                     // إعادة تحميل كل القيم الإفتراضية في الواجهة الحالية:
                     // نعيد استدعاء محضِّرات الإعدادات المباشرة (Skip المحرك/الملفات).
                     setupTimeAnnouncementSettings()
@@ -2305,7 +2306,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 getString(R.string.speech_language_to_ar)
             }
             // إعلان مسموع للبدّل حتى يعرف المستمع أن اللغة تبدّلت (TalkBack/قراءة الشاشة)
-            btnSpeechLanguage.announceForAccessibility(
+            btnSpeechLanguage.announceCompat(
                 getString(R.string.speech_language_switch) + " — " + btnSpeechLanguage.text
             )
             updateSectionStatuses()

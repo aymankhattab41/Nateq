@@ -10,6 +10,10 @@
     <!-- الخدمة الأمامية الخاصة بالإعلانات الدورية (نوع متخصص لا يقيده
          أندرويد 15 عند الإقلاع، بخلاف mediaPlayback) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- ضروري لطلب Audio Focus قبل نطق الإعلان (بدونه يرمي النظام
+         SecurityException ويُبتلع طلب التركيز فيفشل صوت الخلفية) — إذن عادي
+         يُمنح عند التثبيت تلقائياً بلا طلب وقت التشغيل -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- إعادة تشغيل جدولة الإعلانات بعد إقلاع الجهاز -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- لطلب إعفاء من تحسين البطارية (للخدمة الخلفية) -->

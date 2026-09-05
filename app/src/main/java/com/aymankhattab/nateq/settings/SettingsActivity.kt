@@ -13,6 +13,7 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.commit
 import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
+import com.aymankhattab.nateq.util.announceCompat
 
 /**
  * الشاشة الرئيسية للإعدادات. بسيطة ومباشرة عمدًا (بدون Nested navigation
@@ -31,7 +32,7 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
 
     private val requestNotificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
-            findViewById<View>(android.R.id.content).announceForAccessibility(getString(R.string.permission_notifications_granted))
+            findViewById<View>(android.R.id.content).announceCompat(getString(R.string.permission_notifications_granted))
         } else {
             showPermissionDeniedDialog(R.string.permission_notifications_denied)
         }
@@ -39,7 +40,7 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
 
     private val requestSmsPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
-            findViewById<View>(android.R.id.content).announceForAccessibility(getString(R.string.permission_sms_granted))
+            findViewById<View>(android.R.id.content).announceCompat(getString(R.string.permission_sms_granted))
         } else {
             showPermissionDeniedDialog(R.string.permission_sms_denied)
         }
