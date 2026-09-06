@@ -100,6 +100,23 @@
     <string name="charging_disconnect_announcement_enabled">الإعلان عند فصل الشاحن</string>
     <string name="power_saver_mode_enabled">وضع توفير الطاقة: تقليل إعلان الوقت عند انخفاض البطارية</string>
     <string name="power_saver_battery_threshold_label">عتبة توفير الطاقة (%)</string>
+
+    <!-- صحة الجهاز (نطق الحالة عند الطلب) -->
+    <string name="section_device_health">صحة الجهاز</string>
+    <string name="device_health_summary">نطق حالة الجهاز عند الطلب: البطارية، حالة الشحن، مساحة التخزين، والذاكرة</string>
+    <string name="device_health_speak_button">نطق حالة الجهاز الآن</string>
+    <string name="device_health_stop_button">إيقاف النطق</string>
+    <string name="device_health_battery_label">مستوى البطارية</string>
+    <string name="device_health_charging_label">حالة الشحن</string>
+    <string name="device_health_storage_label">مساحة التخزين</string>
+    <string name="device_health_memory_label">الذاكرة</string>
+    <string name="device_health_none_selected">اختر عنصراً واحداً على الأقل لنطقه</string>
+
+    <!-- سلاسل نطق حالة الجهاز (تُنطق بلغة صوت النطق المختار) -->
+    <string name="device_health_battery_speech">مستوى البطارية {percent} بالمئة</string>
+    <string name="device_health_storage_speech">المساحة المتاحة {free} غيغابايت من أصل {total} غيغابايت</string>
+    <string name="device_health_memory_speech">الذاكرة المتاحة {free} غيغابايت من أصل {total} غيغابايت</string>
+
     <string name="caller_announcement_template_hint">قالب إعلان المتصل</string>
     <string name="caller_announcement_template_placeholder" formatted="false">استخدم {name} لاسم المتصل — اتركه فارغاً للنطق الافتراضي</string>
     <string name="sms_announcement_template_hint">قالب قراءة الرسائل</string>

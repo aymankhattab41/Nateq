@@ -68,6 +68,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private lateinit var smsSection: SmsReadingController
     private lateinit var generalSection: GeneralSettingsController
     private lateinit var numberSection: NumberReadingController
+    private lateinit var deviceHealthSection: DeviceHealthController
 
     // مفتاح تبديل لغة التطبيق (أسفل الشاشة)
     private lateinit var btnToggleLanguage: com.google.android.material.button.MaterialButton
@@ -360,6 +361,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         numberSection = NumberReadingController(
             this, settings, { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
+        deviceHealthSection = DeviceHealthController(
+            this, settings, { accordion.updateSectionStatuses() }
+        ).apply { setup(view) }
         setupLanguageToggle()
         engineSection.setupAutoConvertUI(view)
         setupSaveAndResetButtons()
@@ -601,7 +605,13 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             .show()
     }
 
-    private fun speakWithVoice(languageTag: String, text: String) {
+    /** إيقاف النطق الجاري للمتحدث الخاص بمعاينات الأقسام (يُستخدمه ضابط
+     *  صحة الجهاز وزر إيقاف معاينة الأرقام). */
+    internal fun stopPreviewSpeech() {
+        announcementSpeaker?.stop()
+    }
+
+    internal fun speakWithVoice(languageTag: String, text: String) {
         // نستخدم نفس مسار الإعلانات الصوتية التلقائية (AnnouncementSpeaker)
         // الذي يربط المحرك المختار فعليا عبر setEngineByPackageName —
         // لا نعتمد على المحرك الافتراضي للنظام حتى لا يكون "نحن" أنفسنا.
@@ -683,6 +693,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     smsSection.setup(requireView())
                     generalSection.setup(requireView())
                     numberSection.setup(requireView())
+                    deviceHealthSection.setup(requireView())
                     rvCategories.adapter?.notifyDataSetChanged()
                     // تحديث نصوص حالة الأقسام بعد إعادة التحميل حتى تعكس القيم
                     // الافتراضية فوراً (كانت تبقى على القيم القديمة المحذوفة).
@@ -735,6 +746,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         smsSection.setup(v)
         generalSection.setup(v)
         numberSection.setup(v)
+        deviceHealthSection.setup(v)
         rvCategories.adapter?.notifyDataSetChanged()
         refreshDictAdapter()
         accordion.updateSectionStatuses()

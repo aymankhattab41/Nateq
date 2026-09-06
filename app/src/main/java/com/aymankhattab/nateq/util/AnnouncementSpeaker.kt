@@ -197,16 +197,15 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
                 mainHandler.postDelayed(timer, 3000)
             }
 AudioManager.AUDIOFOCUS_REQUEST_FAILED ->
-    // لا تركيز حالي (مشغّل صوتي آخر يرفض التنازل): نؤجل قليلاً ثم
-    // ننطق بأفضل جهد حتى لا تُفقد الإعلانات الحرجة.
-    // نلغي أي إجراء Pendingwas attendre et on tente quand même le speech
-    // car la perte de focus signifie qu'on doit le réacquérir.
-    mainHandler.postDelayed({
-        // نحذف أي إجراء سابق حتى لا يتعارض مع محاولتنا الجديدة
-        pendingFocusAction = null
-        pendingFocusTimer = null
-        startSpeech(text, locale, speechRate, pitch, volume)
-    }, 400)
+                // لا تركيز حالي (مشغّل صوتي آخر يرفض التنازل): نؤجل قليلاً ثم
+                // ننطق بأفضل جهد حتى لا تُفقد الإعلانات الحرجة، فنعيد المحاولة
+                // بعد مؤقّت قصير لاستعادة التركيز.
+                mainHandler.postDelayed({
+                    // نحذف أي إجراء سابق حتى لا يتعارض مع محاولتنا الجديدة
+                    pendingFocusAction = null
+                    pendingFocusTimer = null
+                    startSpeech(text, locale, speechRate, pitch, volume)
+                }, 400)
             else ->
                 // AUDIOFOCUS_REQUEST_GRANTED: التركيز مُنح فوراً — ننطق مباشرة.
                 startSpeech(text, locale, speechRate, pitch, volume)

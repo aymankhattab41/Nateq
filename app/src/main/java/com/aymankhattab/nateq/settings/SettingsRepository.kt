@@ -31,6 +31,20 @@ class SettingsRepository(private val context: Context) {
         /** تطبيقات الإشعارات الافتراضية قبل أي اختيار صريح. */
         const val NOTIF_READ_ALL = "all_apps"
 
+        /** عناصر قسم «صحة الجهاز» القابلة للنطق عند الطلب. */
+        const val DEVICE_HEALTH_BATTERY = "battery"
+        const val DEVICE_HEALTH_CHARGING = "charging"
+        const val DEVICE_HEALTH_STORAGE = "storage"
+        const val DEVICE_HEALTH_MEMORY = "memory"
+
+        /** العناصر الافتراضية المختارة في قسم صحة الجهاز (كلها). */
+        val DEFAULT_DEVICE_HEALTH_ITEMS = setOf(
+            DEVICE_HEALTH_BATTERY,
+            DEVICE_HEALTH_CHARGING,
+            DEVICE_HEALTH_STORAGE,
+            DEVICE_HEALTH_MEMORY
+        )
+
         /** أقصى عدد يُقبل من أسماء المتصلين المخصصة (حماية من استيراد فائض). */
         private const val MAX_CALLER_ENTRIES = 2000
 
@@ -446,6 +460,24 @@ class SettingsRepository(private val context: Context) {
 
     // ============ إعدادات إعلان مستوى البطارية ============
 
+    /** العناصر المختارة في قسم «صحة الجهاز» للنطق عند الطلب. */
+    fun getDeviceHealthItems(): Set<String> =
+        prefs.getStringSet("device_health_items", null)
+            ?.filter { it in validDeviceHealthItems() }
+            ?.toSet() ?: DEFAULT_DEVICE_HEALTH_ITEMS
+
+    fun setDeviceHealthItems(items: Set<String>) =
+        prefs.edit().putStringSet(
+            "device_health_items", items.filter { it in validDeviceHealthItems() }.toMutableSet()
+        ).apply()
+
+    private fun validDeviceHealthItems(): Set<String> = setOf(
+        DEVICE_HEALTH_BATTERY,
+        DEVICE_HEALTH_CHARGING,
+        DEVICE_HEALTH_STORAGE,
+        DEVICE_HEALTH_MEMORY
+    )
+
     /** تفعيل/إيقاف إعلان مستوى البطارية */
     fun isBatteryAnnouncementEnabled(): Boolean = prefs.getBoolean("battery_announcement_enabled", false)
     fun setBatteryAnnouncementEnabled(enabled: Boolean) =
@@ -663,6 +695,7 @@ class SettingsRepository(private val context: Context) {
         "battery_announcement_levels" -> value.filter {
             it.toIntOrNull()?.let { n -> n in 5..100 && n % 5 == 0 } == true
         }.toSet()
+        "device_health_items" -> value.filter { it in validDeviceHealthItems() }.toSet()
         else -> value
     }
 

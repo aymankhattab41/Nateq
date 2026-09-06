@@ -312,6 +312,12 @@ internal class SettingsAccordionController(
             R.id.tv_general_settings_status, R.id.ll_general_settings_content,
             general
         )
+        val deviceHealth = fragment.getString(R.string.section_device_health)
+        accordionEntry(
+            view, R.id.ll_device_health_header, R.id.tv_device_health_arrow,
+            R.id.tv_device_health_status, R.id.ll_device_health_content,
+            deviceHealth
+        )
     }
 
     /** تحديث أسطر الحالة لكل قسم (يُستدعى عند التهيئة وبعد كل تغيير أساسي) */
@@ -325,6 +331,7 @@ internal class SettingsAccordionController(
         setSectionStatus(R.id.ll_caller_announcement_settings, buildCallerStatus())
         setSectionStatus(R.id.ll_sms_reading_settings, buildSmsStatus())
         setSectionStatus(R.id.ll_general_settings_content, buildGeneralStatus())
+        setSectionStatus(R.id.ll_device_health_content, buildDeviceHealthStatus())
     }
 
     private fun buildEngineStatus(): String {
@@ -463,6 +470,26 @@ internal class SettingsAccordionController(
         val volumeText = (volume * 100).toInt().toString() + "%"
         return fragment.getString(R.string.default_speech_rate_label) + ": " +
             rateText + "، " + volumeText
+    }
+
+    private fun buildDeviceHealthStatus(): String {
+        val items = runCatching { settings.getDeviceHealthItems() }
+            .getOrDefault(SettingsRepository.DEFAULT_DEVICE_HEALTH_ITEMS)
+        val labels = mutableListOf<String>()
+        if (SettingsRepository.DEVICE_HEALTH_BATTERY in items) {
+            labels.add(fragment.getString(R.string.device_health_battery_label))
+        }
+        if (SettingsRepository.DEVICE_HEALTH_CHARGING in items) {
+            labels.add(fragment.getString(R.string.device_health_charging_label))
+        }
+        if (SettingsRepository.DEVICE_HEALTH_STORAGE in items) {
+            labels.add(fragment.getString(R.string.device_health_storage_label))
+        }
+        if (SettingsRepository.DEVICE_HEALTH_MEMORY in items) {
+            labels.add(fragment.getString(R.string.device_health_memory_label))
+        }
+        return if (labels.isEmpty()) fragment.getString(R.string.toggle_off)
+        else labels.joinToString("، ")
     }
 
     // ===== قسم أدوات التطبيق القابل للطي =====

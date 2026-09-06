@@ -100,6 +100,23 @@
     <string name="charging_disconnect_announcement_enabled">Announce when the charger is unplugged</string>
     <string name="power_saver_mode_enabled">Power saver: reduce time announcements when the battery is low</string>
     <string name="power_saver_battery_threshold_label">Power saver threshold (%)</string>
+
+    <!-- Device health (on-demand status announcement) -->
+    <string name="section_device_health">Device health</string>
+    <string name="device_health_summary">Announce device status on demand: battery level, charging state, storage space, and memory</string>
+    <string name="device_health_speak_button">Announce device status now</string>
+    <string name="device_health_stop_button">Stop announcement</string>
+    <string name="device_health_battery_label">Battery level</string>
+    <string name="device_health_charging_label">Charging state</string>
+    <string name="device_health_storage_label">Storage space</string>
+    <string name="device_health_memory_label">Memory</string>
+    <string name="device_health_none_selected">Select at least one item to announce</string>
+
+    <!-- Device health speech strings (spoken in the chosen speech voice language) -->
+    <string name="device_health_battery_speech">Battery level {percent} percent</string>
+    <string name="device_health_storage_speech">Free space {free} of {total} gigabytes</string>
+    <string name="device_health_memory_speech">Available memory {free} of {total} gigabytes</string>
+
     <string name="caller_announcement_template_hint">Caller announcement template</string>
     <string name="caller_announcement_template_placeholder" formatted="false">Use {name} for the caller\'s name — leave empty for the default phrase</string>
     <string name="sms_announcement_template_hint">Message reading template</string>
