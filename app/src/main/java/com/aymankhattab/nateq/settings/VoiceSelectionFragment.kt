@@ -38,7 +38,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
     companion object {
         // رابط تواصل المطوّر الرسمي — يُفتح خارجياً في المتصفح فلا يحتاج أي إذن.
-        // ⚠️ بديل مؤقت: استبدله بمعرّف قناتك/بوتك النهائي عند جاهزيتك.
+        // المعرّف الرسمي لبوت الدعم: @LordTTSBot (أنشئ عبر @BotFather).
         const val DEVELOPER_SUPPORT_URL = "https://t.me/LordTTSBot"
     }
 
