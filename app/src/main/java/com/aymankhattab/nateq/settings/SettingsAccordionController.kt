@@ -54,6 +54,9 @@ internal class SettingsAccordionController(
     /** حالة طي قسم «أدوات التطبيق» (مفتوح افتراضياً). */
     private var toolsSectionOpen = true
 
+    /** حالة طي قسم «مساعدة» (مفتوح افتراضياً). */
+    private var helpSectionOpen = true
+
     /** تحذير لمرة واحدة في الجلسة إذا كان إذن الإشعارات مرفوضاً (الأزرار لن تظهر). */
     private var notificationsHiddenWarned = false
 
@@ -77,6 +80,7 @@ internal class SettingsAccordionController(
         fragment.requireActivity().onBackPressedDispatcher.addCallback(owner, backCallback)
         setupAccordionSections(view)
         setupToolsSection(view)
+        setupHelpSection(view)
         showHome()
     }
 
@@ -136,8 +140,6 @@ internal class SettingsAccordionController(
         dictHeader?.visibility = View.GONE
         dictContent?.visibility = View.GONE
         setHomeActionsVisible(false)
-        fragment.view?.findViewById<View>(R.id.btn_toggle_language)?.visibility = View.GONE
-        fragment.view?.findViewById<View>(R.id.btn_contact_developer)?.visibility = View.GONE
         setSectionDividersVisible(false)
         svSettingsScroll?.scrollTo(0, 0)
         var sectionName = ""
@@ -200,8 +202,6 @@ internal class SettingsAccordionController(
         dictHeader?.visibility = View.VISIBLE
         dictContent?.visibility = dictContentPriorVisibility
         setHomeActionsVisible(true)
-        fragment.view?.findViewById<View>(R.id.btn_toggle_language)?.visibility = View.VISIBLE
-        fragment.view?.findViewById<View>(R.id.btn_contact_developer)?.visibility = View.VISIBLE
         setSectionDividersVisible(true)
         svSettingsScroll?.scrollTo(0, 0)
         for (e in accordionEntries) {
@@ -254,6 +254,13 @@ internal class SettingsAccordionController(
             fragment.view?.findViewById<View>(R.id.ll_tools_content)?.visibility = View.VISIBLE
         } else if (!visible) {
             fragment.view?.findViewById<View>(R.id.ll_tools_content)?.visibility = v
+        }
+        // قسم المساعدة يتبعه نفس المنطق
+        fragment.view?.findViewById<View>(R.id.ll_help_header)?.visibility = v
+        if (visible && helpSectionOpen) {
+            fragment.view?.findViewById<View>(R.id.ll_help_content)?.visibility = View.VISIBLE
+        } else if (!visible) {
+            fragment.view?.findViewById<View>(R.id.ll_help_content)?.visibility = v
         }
     }
 
@@ -492,6 +499,26 @@ internal class SettingsAccordionController(
         }
         return if (labels.isEmpty()) fragment.getString(R.string.toggle_off)
         else labels.joinToString("، ")
+    }
+
+    // ===== قسم مساعدة قابل للطي (راسل المطور / اللغة / البحث عن تحديثات) =====
+    private fun setupHelpSection(view: View) {
+        val header = view.findViewById<View>(R.id.ll_help_header) ?: return
+        val content = view.findViewById<View>(R.id.ll_help_content) ?: return
+        val arrow = view.findViewById<TextView>(R.id.tv_help_arrow) ?: return
+        val base = fragment.getString(R.string.help_section)
+        header.contentDescription = base
+        header.setOnClickListener {
+            helpSectionOpen = content.visibility != View.VISIBLE
+            content.visibility = if (helpSectionOpen) View.VISIBLE else View.GONE
+            arrow.text = if (helpSectionOpen) "▼" else sectionArrowGlyph()
+            header.announceCompat(
+                fragment.getString(
+                    if (helpSectionOpen) R.string.section_opened else R.string.section_collapsed,
+                    base
+                )
+            )
+        }
     }
 
     // ===== قسم أدوات التطبيق القابل للطي =====

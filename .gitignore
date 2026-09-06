@@ -21,3 +21,6 @@ local.properties
 # ملفات تقارير وسجلات: لا تُرفع إلى git (محتواها توصية أو محلي)
 *.txt
 *.log
+
+# كاش وأسرار wrangler (Cloudflare) — لا تُرفع أبداً (قد تحوي بيانات حساب)
+relay-worker/.wrangler/

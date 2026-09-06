@@ -1865,30 +1865,81 @@
             android:importantForAccessibility="yes" />
         </LinearLayout>
 
-    <!-- زر تبديل لغة التطبيق -->
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_toggle_language"
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        <!-- مساعدة: راسل المطور / تغيير اللغة / البحث عن تحديثات — قابلة للطي -->
+        <LinearLayout
+            android:id="@+id/ll_help_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:layout_marginBottom="16dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
             android:minHeight="48dp"
-            android:text="@string/language_default" />
+            android:padding="4dp"
+            android:layout_marginTop="16dp"
+            android:background="?attr/selectableItemBackground"
+            android:focusable="true"
+            android:accessibilityHeading="true"
+            android:importantForAccessibility="yes">
 
-        <!-- زر التواصل مع المطوّر: يفتح محادثة تليجرام الرسمية خارجياً
-             دون الكشف عن بريد/رقم المطوّر في الواجهة -->
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_contact_developer"
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:importantForAccessibility="no"
+                android:text="@string/help_section"
+                android:textAppearance="?attr/textAppearanceHeadline6" />
+
+            <TextView
+                android:id="@+id/tv_help_arrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="▼"
+                android:textSize="14sp"
+                android:paddingStart="8dp"
+                android:importantForAccessibility="no" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/ll_help_content"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="16dp"
-            android:minHeight="48dp"
-            android:text="@string/contact_developer"
-            android:contentDescription="@string/contact_developer_desc"
-            android:importantForAccessibility="yes" />
+            android:orientation="vertical">
+
+            <!-- زر التواصل مع المطوّر: يفتح محادثة تليجرام الرسمية خارجياً
+                 دون الكشف عن بريد/رقم المطوّر في الواجهة -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_contact_developer"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:minHeight="48dp"
+                android:text="@string/contact_developer"
+                android:contentDescription="@string/contact_developer_desc"
+                android:importantForAccessibility="yes" />
+
+            <!-- زر تغيير لغة التطبيق -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_toggle_language"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/language_default" />
+
+            <!-- زر البحث عن تحديثات: يفتح صفحة الإصدارات خارجياً بلا إذن إنترنت -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_check_updates"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="16dp"
+                android:minHeight="48dp"
+                android:text="@string/check_updates"
+                android:contentDescription="@string/check_updates_desc"
+                android:importantForAccessibility="yes" />
+        </LinearLayout>
 
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

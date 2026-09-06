@@ -33,6 +33,12 @@
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <!-- لقراءة الرسائل النصية الواردة بالصوت (قراءة الرسائل) -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <!-- الوصول للإنترنت لفحص وجود تحديث جديد من GitHub Releases وتنزيل الـ APK.
+         يُستخدم للفحص/التحميل فقط؛ لا تُرفع أي بيانات أو إعدادات للمستخدم. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- طلب تثبيت حزم من مصادر خارجية (تفعيل ميزة التحديث الذاتي).
+         لا يثبّت شيئاً صمتاً: يعرض شاشة موافقة النظام دائماً. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- رؤية محركات TTS الطرفية (package visibility على أندرويد 11+):
          بدون هذا لا يرى ناطق إلا المحركات المدمجة (سامسونج/جوجل)،
@@ -199,6 +205,18 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/speaking_clock_widget_info" />
         </receiver>
+
+        <!-- FileProvider: يعرض ملف الـ APK المُنزَل لمثبّت الحزم (package installer)
+             عبر رابطة content:// آمنة (الملف محلي ولا يُرفع لأي طرف) -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
     </application>
 </manifest>

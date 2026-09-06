@@ -12,7 +12,10 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.switchmaterial.SwitchMaterial
+import kotlinx.coroutines.launch
+import com.aymankhattab.nateq.util.UpdateChecker
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -373,6 +376,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             this, settings, { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
         setupLanguageToggle()
+        setupCheckUpdates()
         engineSection.setupAutoConvertUI(view)
         setupSaveAndResetButtons()
         setupBackupRestoreButtons()
@@ -679,6 +683,68 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             ).show()
             view?.announceCompat(getString(R.string.contact_developer_no_handler))
         }
+    }
+
+    // ===== البحث عن تحديثات =====
+    private fun setupCheckUpdates() {
+        val btn = view?.findViewById<View>(R.id.btn_check_updates) ?: return
+        btn.setOnClickListener { onCheckUpdatesClicked() }
+    }
+
+    private fun onCheckUpdatesClicked() {
+        val context = requireContext()
+        val currentCode = runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionCode
+        }.getOrDefault(0)
+
+        // إشارة للبدء ثم فحص في الخلفية
+        Toast.makeText(
+            context, getString(R.string.check_updates), Toast.LENGTH_SHORT
+        ).show()
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            when (val res = UpdateChecker.check(currentCode)) {
+                is UpdateChecker.CheckResult.UpdateAvailable -> {
+                    // موافقة مسبقة ضمنية من التفعيل: نبدأ التنزيل مباشرة
+                    startApkDownload(context, res.apkUrl)
+                }
+                is UpdateChecker.CheckResult.UpToDate -> {
+                    Toast.makeText(
+                        context, getString(R.string.check_updates_up_to_date), Toast.LENGTH_SHORT
+                    ).show()
+                    view?.announceCompat(getString(R.string.check_updates_up_to_date))
+                }
+                is UpdateChecker.CheckResult.NetworkError -> {
+                    Toast.makeText(
+                        context, getString(R.string.check_updates_network_error), Toast.LENGTH_SHORT
+                    ).show()
+                    view?.announceCompat(getString(R.string.check_updates_network_error))
+                }
+            }
+        }
+    }
+
+    private fun startApkDownload(context: android.content.Context, apkUrl: String) {
+        val downloadId = UpdateChecker.enqueueDownload(context, apkUrl)
+
+        // مستمع مؤقت مشترك يفتح شاشة التثبيت عند اكتمال تنزيل الـ APK.
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(ctx: android.content.Context, intent: Intent) {
+                val id = intent.getLongExtra(
+                    android.app.DownloadManager.EXTRA_DOWNLOAD_ID, -1L
+                )
+                if (id != downloadId) return
+                try {
+                    ctx.unregisterReceiver(this)
+                } catch (_: IllegalArgumentException) { /* سبق تسجيله أو فُكّ */ }
+                val apk = UpdateChecker.downloadedApk(ctx)
+                UpdateChecker.promptInstall(ctx, apk)
+            }
+        }
+        context.registerReceiver(
+            receiver,
+            android.content.IntentFilter(android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE)
+        )
     }
 
     // ===== زر الحفظ + زر استعادة الافتراضيات =====

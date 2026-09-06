@@ -214,6 +214,12 @@
     <string name="contact_developer">راسل المطور</string>
     <string name="contact_developer_desc">فتح محادثة تليجرام الرسمية للتواصل مع المطوّر</string>
     <string name="contact_developer_no_handler">لا يوجد تطبيق يدعم فتح الرابط حالياً</string>
+    <string name="help_section">مساعدة</string>
+    <string name="check_updates">البحث عن تحديثات</string>
+    <string name="check_updates_desc">التحقق من وجود إصدار أحدث من التطبيق</string>
+    <string name="check_updates_downloading_title">تنزيل الإصدار الجديد</string>
+    <string name="check_updates_up_to_date">التطبيق محدّث لأحدث إصدار</string>
+    <string name="check_updates_network_error">تعذّر الوصول للخادم. تحقق من اتصال الإنترنت</string>
     <string name="language_change_to_en">التغيير إلى الإنجليزية</string>
     <string name="language_change_to_ar">التغيير إلى العربية</string>
     <string name="language_current_label">اللغة:</string>

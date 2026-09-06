@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- مسارات قابلة للمشاركة عبر FileProvider لتثبيت الـ APK المُنزَل.
+     نحن نشارك ملفات داخل مجلد التطبيق (filesDir) فقط عبر المسار المسمى
+     "downloads" — لا شيء عام ولا خارج الملحق. -->
+<paths>
+    <files-path
+        name="downloads"
+        path="downloads/" />
+</paths>
