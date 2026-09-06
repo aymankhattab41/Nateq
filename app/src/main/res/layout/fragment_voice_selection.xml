@@ -1876,5 +1876,19 @@
             android:minHeight="48dp"
             android:text="@string/language_default" />
 
+        <!-- زر التواصل مع المطوّر: يفتح محادثة تليجرام الرسمية خارجياً
+             دون الكشف عن بريد/رقم المطوّر في الواجهة -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_contact_developer"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="16dp"
+            android:minHeight="48dp"
+            android:text="@string/contact_developer"
+            android:contentDescription="@string/contact_developer_desc"
+            android:importantForAccessibility="yes" />
+
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

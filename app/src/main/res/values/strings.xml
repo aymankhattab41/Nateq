@@ -211,6 +211,9 @@
     <string name="voice_name_english">الإنجليزية</string>
     <string name="voice_provider_system">صوت النظام</string>
     <string name="language_default">اللغة: حسب لغة الهاتف</string>
+    <string name="contact_developer">راسل المطور</string>
+    <string name="contact_developer_desc">فتح محادثة تليجرام الرسمية للتواصل مع المطوّر</string>
+    <string name="contact_developer_no_handler">لا يوجد تطبيق يدعم فتح الرابط حالياً</string>
     <string name="language_change_to_en">التغيير إلى الإنجليزية</string>
     <string name="language_change_to_ar">التغيير إلى العربية</string>
     <string name="language_current_label">اللغة:</string>

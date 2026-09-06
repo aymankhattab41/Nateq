@@ -37,8 +37,9 @@ import java.util.Locale
 class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
     companion object {
-        // (حدود النسخ الاحتياطي انتقلت إلى SettingsViewModel.MAX_BACKUP_* — لم يعد
-        //  الفصيل مسؤولاً عن المنطق بل عن تشغيله فقط في مواضع SAF).
+        // رابط تواصل المطوّر الرسمي — يُفتح خارجياً في المتصفح فلا يحتاج أي إذن.
+        // ⚠️ بديل مؤقت: استبدله بمعرّف قناتك/بوتك النهائي عند جاهزيتك.
+        const val DEVELOPER_SUPPORT_URL = "https://t.me/LordTTSBot"
     }
 
     // طبقة الحالة المحقونة عبر Hilt (تحوي مصدرَي الإعدادات والقاموس).
@@ -72,6 +73,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
     // مفتاح تبديل لغة التطبيق (أسفل الشاشة)
     private lateinit var btnToggleLanguage: com.google.android.material.button.MaterialButton
+
+    // زر التواصل مع المطوّر (يُفتح خارجياً بلا أذونات)
+    private lateinit var btnContactDeveloper: com.google.android.material.button.MaterialButton
 
     // Dictionary
     private lateinit var llDictHeader: android.widget.LinearLayout
@@ -337,6 +341,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
         // مفتاح تبديل لغة التطبيق (أسفل الشاشة)
         btnToggleLanguage = view.findViewById(R.id.btn_toggle_language)
+
+        // زر التواصل مع المطوّر: يفتح رابط الدعم خارجياً دون كشف وسيلة التواصل
+        btnContactDeveloper = view.findViewById(R.id.btn_contact_developer)
+        btnContactDeveloper.setOnClickListener { openDeveloperSupport() }
 
         // إنشاء ضابطات الأقسام وربطها (المرحلة ج): كل ضابط يسحب عناصره
         // ويبني مستمعيه عند setup()، وonStatusChanged تُحدّث أسطر حالة الأكورديون.
@@ -656,6 +664,20 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             }
             // إعادة إنشاء النشاط لتطبيق اللغة فورياً (UI + افتراضيات)
             requireActivity().recreate()
+        }
+    }
+
+    // ===== زر التواصل مع المطوّر =====
+    private fun openDeveloperSupport() {
+        runCatching {
+            startActivity(
+                Intent(Intent.ACTION_VIEW, android.net.Uri.parse(DEVELOPER_SUPPORT_URL))
+            )
+        }.onFailure {
+            Toast.makeText(
+                requireContext(), R.string.contact_developer_no_handler, Toast.LENGTH_SHORT
+            ).show()
+            view?.announceCompat(getString(R.string.contact_developer_no_handler))
         }
     }
 

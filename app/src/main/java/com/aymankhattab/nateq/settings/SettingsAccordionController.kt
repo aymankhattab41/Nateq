@@ -137,6 +137,7 @@ internal class SettingsAccordionController(
         dictContent?.visibility = View.GONE
         setHomeActionsVisible(false)
         fragment.view?.findViewById<View>(R.id.btn_toggle_language)?.visibility = View.GONE
+        fragment.view?.findViewById<View>(R.id.btn_contact_developer)?.visibility = View.GONE
         setSectionDividersVisible(false)
         svSettingsScroll?.scrollTo(0, 0)
         var sectionName = ""
@@ -200,6 +201,7 @@ internal class SettingsAccordionController(
         dictContent?.visibility = dictContentPriorVisibility
         setHomeActionsVisible(true)
         fragment.view?.findViewById<View>(R.id.btn_toggle_language)?.visibility = View.VISIBLE
+        fragment.view?.findViewById<View>(R.id.btn_contact_developer)?.visibility = View.VISIBLE
         setSectionDividersVisible(true)
         svSettingsScroll?.scrollTo(0, 0)
         for (e in accordionEntries) {

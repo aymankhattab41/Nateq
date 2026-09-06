@@ -215,6 +215,9 @@
     <string name="voice_name_english">English</string>
     <string name="voice_provider_system">System voice</string>
     <string name="language_default">Language: follow device</string>
+    <string name="contact_developer">Contact the developer</string>
+    <string name="contact_developer_desc">Open the official Telegram chat to reach the developer</string>
+    <string name="contact_developer_no_handler">No app available to open the link right now</string>
     <string name="language_change_to_en">Switch to English</string>
     <string name="language_change_to_ar">Switch to Arabic</string>
     <string name="language_current_label">Language:</string>
