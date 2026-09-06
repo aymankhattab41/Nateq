@@ -1,5 +1,7 @@
 package com.aymankhattab.nateq.util
 
+import android.content.Context
+import android.content.res.Configuration
 import java.util.Locale
 
 /** أدوات توحيد رموز اللغات والبلدان بين شكلَي ISO-2 وISO-3. */
@@ -44,12 +46,15 @@ object LocaleUtils {
         }
     }
 
-    /** هل يحتوي النص على أي حرف عربي (الأساسي + الإضافة + الممتد-A)؟ */
+    /** هل يحتوي النص على أي حرف عربي (الأساسي + الإضافة + الممتد-A
+     *  + نماذج العرض A/B للنصوص القديمة)؟ */
     fun containsArabic(text: String): Boolean {
         return text.any {
             it in '\u0600'..'\u06FF' ||
                 it in '\u0750'..'\u077F' ||
-                it in '\u08A0'..'\u08FF'
+                it in '\u08A0'..'\u08FF' ||
+                it in '\uFB50'..'\uFDFF' ||
+                it in '\uFE70'..'\uFEFF'
         }
     }
 
@@ -69,5 +74,25 @@ object LocaleUtils {
             )
         }
         return sb.toString()
+    }
+
+    /** جلب سلسلة مورد بلغة نطق محددة (وليست لغة واجهة التطبيق):
+     * تتيح لمستقبلات النطق (رسائل/مكالمات/بطارية) أن تُعلن بلسان
+     * الصوت المختار (ar-local / en-local) حتى لو كانت واجهة التطبيق
+     * بالعربية أو الإنجليزية. الجلب يجبر اللغة المطلوبة صراحةً عبر
+     * Context مستقل فلا يؤثر تبديل لغة الواجهة على سلاسل النطق.
+     * @return قيمة المورد باللغة المطلوبة. */
+    fun stringForSpeech(context: Context, languageTag: String, arabicRes: Int, englishRes: Int): String {
+        val isArabic = languageTag.startsWith("ar", ignoreCase = true)
+        if (isArabic) {
+            val config = Configuration(context.resources.configuration).apply {
+                setLocale(Locale.forLanguageTag("ar"))
+            }
+            return context.createConfigurationContext(config).getString(arabicRes)
+        }
+        val config = Configuration(context.resources.configuration).apply {
+            setLocale(Locale.forLanguageTag("en"))
+        }
+        return context.createConfigurationContext(config).getString(englishRes)
     }
 }

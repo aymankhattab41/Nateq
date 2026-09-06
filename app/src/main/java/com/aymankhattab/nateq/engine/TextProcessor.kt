@@ -7,6 +7,15 @@ import java.util.*
 import java.util.regex.Matcher
 import java.util.regex.Pattern
 
+/** بيانات وحدة قياس: المفرد والجمع والمثنى وجنس الوحدة لدعم التوافق النحوي مع العدد */
+private data class UnitInfo(
+    val symbol: String,
+    val singular: String,
+    val plural: String,
+    val dual: String,
+    val isFeminine: Boolean
+)
+
 /**
  * معالج النصوص الذكي - يحول النصوص الخام إلى نصوص قابلة للنطق طبيعياً
  * يدعم: الأرقام، التواريخ، الأوقات، العملات، الوحدات، الاختصارات
@@ -19,7 +28,7 @@ class TextProcessor(private val context: Context) {
         // بدلاً من Pattern.compile() داخل كل استدعاء للدوال
         // ======================================================
 
-// أنماط التواريخ
+        // أنماط التواريخ
         private val PATTERN_DATE_YMD  = Pattern.compile("""(\d{4})[-/](\d{1,2})[-/](\d{1,2})""")
         private val PATTERN_DATE_DMY  = Pattern.compile("""(\d{1,2})[-/](\d{1,2})[-/](\d{4})""")
         private val PATTERN_DATE_DOTY = Pattern.compile("""(\d{1,2})\.(\d{1,2})\.(\d{4})""")
@@ -33,17 +42,36 @@ class TextProcessor(private val context: Context) {
         // أنماط الأوقات
         private val PATTERN_TIME = Pattern.compile("""(\d{1,2}):(\d{2})(?::(\d{2}))?""")
 
-        // أنماط الأرقام
+// أنماط الأرقام
         private val PATTERN_NUMBER = Pattern.compile("""(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?)""")
+
+        // أنماط أرقام الهواتف: بداية اختيارية + ثم 7-15 رقم مع فواصل (مسافة/شرطة/نقطة)
+        // تُحسب الأرقام الفعلية في المعالجة؛ النمط يلتقط المتواليات الطويلة فقط.
+        private val PATTERN_PHONE = Pattern.compile("""(?<!\d)\+?\d[\d\s()\-.]{6,}\d(?!\d)""")
+
+        // أنماط الروابط: http(s)://... أو www.example.com — يُنطق اسم النطاق بدل
+        // قراءتها حرفاً حرفاً (كانت تُقرأ «أتش تي تي بي نقطة...» المزعجة).
+        private val PATTERN_URL = Pattern.compile(
+            """(?i)\b((?:https?://|www\.)[^\s<>"']+)"""
+        )
+
+        // الأرقام الرومانية (ساعات كبند/فصول/قوائم): تُنطق ككلمات أو أرقام عادية.
+        // يعترف فقط بالملييئة وإن كانت كبيرة (IvXLCDM) بحدود كلمات حقيقية.
+        private val PATTERN_ROMAN = Pattern.compile("""(?<![\p{Alpha}])[IVXLCDM]{1,8}(?![\p{Alpha}])""")
 
         // أنماط كود العملة
         private val PATTERN_CURRENCY_CODE = Pattern.compile(
             """\b(USD|EUR|GBP|SAR|AED|KWD|QAR|OMR|BHD|EGP|TND|DZD|MAD|JPY|CNY|INR|KRW|RUB)\s+(\d+(?:[.,]\d+)?)\b"""
         )
 
-// أنماط تنظيف المسافات
+        // أنماط تنظيف المسافات
         private val PATTERN_MULTI_SPACE  = Pattern.compile("""\s+""")
         private val PATTERN_SPACE_BEFORE = Pattern.compile("""\s+([،؛.!?])""")
+
+        // فاصلة/نقطة الآلاف: الفاصل المتلوّ بثلاث خانات بالضبط ثم نهاية أو حرف
+        // غير رقمي يُعتبر فاصلة آلاف (تُحذف). يعمل على النمطين الأمريكي
+        // 1,234.56 والأوروبي 1.234,56 دون انهيار.
+        private val PATTERN_THOUSANDS = Pattern.compile("""[.,](?=\d{3}(?:\D|$))""")
 
         // ======================================================
         // جداول الرموز/العملات/الوحدات وأنماطها المُجمَّعة مرة واحدة
@@ -81,62 +109,62 @@ class TextProcessor(private val context: Context) {
 
         private val UNIT_NAMES = listOf(
             // طول
-            "km" to "كيلومتر",
-            "م" to "متر",
-            "سم" to "سنتيمتر",
-            "مم" to "مليمتر",
-            "inch" to "بوصة",
-            "ft" to "قدم",
-            "yd" to "ياردة",
-            "mi" to "ميل",
+            UnitInfo("km", "كيلومتر", "كيلومترات", "كيلومتران", false),
+            UnitInfo("م", "متر", "أمتار", "متران", false),
+            UnitInfo("سم", "سنتيمتر", "سنتيمترات", "سنتيمتران", false),
+            UnitInfo("مم", "مليمتر", "مليمترات", "مليمتران", false),
+            UnitInfo("inch", "بوصة", "بوصات", "بوصتان", true),
+            UnitInfo("ft", "قدم", "أقدام", "قدمان", true),
+            UnitInfo("yd", "ياردة", "ياردات", "ياردتان", true),
+            UnitInfo("mi", "ميل", "أميال", "ميلان", false),
 
             // وزن
-            "kg" to "كيلوغرام",
-            "غ" to "غرام",
-            "ملغ" to "مليغرام",
-            "lb" to "رطل",
-            "oz" to "أونصة",
+            UnitInfo("kg", "كيلوغرام", "كيلوغرامات", "كيلوغرامان", false),
+            UnitInfo("غ", "غرام", "غرامات", "غرامان", false),
+            UnitInfo("ملغ", "مليغرام", "مليغرامات", "مليغرامان", false),
+            UnitInfo("lb", "رطل", "أرطال", "رطلان", false),
+            UnitInfo("oz", "أونصة", "أونصات", "أونصتان", true),
 
             // حجم
-            "لتر" to "لتر",
-            "مل" to "مليلتر",
-            "غالون" to "غالون",
+            UnitInfo("لتر", "لتر", "لترات", "لتران", false),
+            UnitInfo("مل", "مليلتر", "مليلترات", "مليلتران", false),
+            UnitInfo("غالون", "غالون", "غالونات", "غالونان", false),
 
             // حرارة
-            "°C" to "درجة مئوية",
-            "°F" to "درجة فهرنهايت",
-            "K" to "كلفن",
+            UnitInfo("°C", "درجة مئوية", "درجات مئوية", "درجتان مئويتان", true),
+            UnitInfo("°F", "درجة فهرنهايت", "درجات فهرنهايت", "درجتان فهرنهايت", true),
+            UnitInfo("K", "كلفن", "كلفنات", "كلفنان", false),
 
             // سرعة
-            "كم/س" to "كيلومتر في الساعة",
-            "م/ث" to "متر في الثانية",
+            UnitInfo("كم/س", "كيلومتر في الساعة", "كيلومترات في الساعة", "كيلومتران في الساعة", false),
+            UnitInfo("م/ث", "متر في الثانية", "أمتار في الثانية", "متران في الثانية", false),
 
             // بيانات
-            "KB" to "كيلوبايت",
-            "MB" to "ميجابايت",
-            "GB" to "جيجابايت",
-            "TB" to "تيرابايت",
-            "كبت" to "كيلوبت",
-            "مبت" to "ميجابت",
-            "جببت" to "جيجابت",
+            UnitInfo("KB", "كيلوبايت", "كيلوبايتات", "كيلوبايتان", false),
+            UnitInfo("MB", "ميجابايت", "ميجابايتات", "ميجابايتان", false),
+            UnitInfo("GB", "جيجابايت", "جيجابايتات", "جيجابايتان", false),
+            UnitInfo("TB", "تيرابايت", "تيرابايتات", "تيرابايتان", false),
+            UnitInfo("كبت", "كيلوبت", "كيلوبتات", "كيلوبتان", false),
+            UnitInfo("مبت", "ميجابت", "ميجابتات", "ميجابتان", false),
+            UnitInfo("جببت", "جيجابت", "جيجابتات", "جيجابتان", false),
 
             // وقت
-            "ث" to "ثانية",
-            "د" to "دقيقة",
-            "س" to "ساعة",
-            "ي" to "يوم",
-            "أسبوع" to "أسبوع",
-            "شهر" to "شهر",
-            "سنة" to "سنة"
+            UnitInfo("ث", "ثانية", "ثوان", "ثانيتان", true),
+            UnitInfo("د", "دقيقة", "دقائق", "دقيقتان", true),
+            UnitInfo("س", "ساعة", "ساعات", "ساعتان", true),
+            UnitInfo("ي", "يوم", "أيام", "يومان", false),
+            UnitInfo("أسبوع", "أسبوع", "أسابيع", "أسبوعان", false),
+            UnitInfo("شهر", "شهر", "أشهر", "شهران", false),
+            UnitInfo("سنة", "سنة", "سنوات", "سنتان", true)
         )
 
-        private val UNIT_PATTERNS = UNIT_NAMES.map { (unit, name) ->
-            Pattern.compile("""\b(\d+(?:[.,]\d+)?)\s*${Pattern.quote(unit)}\b""") to name
+        private val UNIT_PATTERNS = UNIT_NAMES.map { info ->
+            Pattern.compile("""\b(\d+(?:[.,]\d+)?)\s*${Pattern.quote(info.symbol)}\b""") to info
         }
 
         private val SYMBOL_NAMES = mapOf(
-            "%" to "بالمائة",
-            "٪" to "بالمائة",
+            "%" to "بالمئة",
+            "٪" to "بالمئة",
             "°" to "درجة",
             "°C" to "درجة مئوية",
             "°F" to "درجة فهرنهايت",
@@ -174,7 +202,7 @@ private val pronunciationDict = PronunciationDictionary(context)
 
     /**
      * معالجة نص كامل وتحويله لصيغة نطق طبيعية.
-* @param languageTag كود اللغة (مثلاً "ar"، "en"، "ar-EG")
+     * @param languageTag كود اللغة (مثلاً "ar"، "en"، "ar-EG")
      *                    — المعالجة مخصصة للغة العربية فقط؛ اللغات الأخرى تُعاد كما هي.
      */
     fun process(text: String, languageTag: String = "ar"): String {
@@ -203,8 +231,17 @@ private val pronunciationDict = PronunciationDictionary(context)
         // 4. معالجة العملات
         result = processCurrencies(result)
 
-        // 5. معالجة الوحدات
+// 5. معالجة الوحدات
         result = processUnits(result)
+
+        // 5.3 معالجة الروابط: استخراج اسم النطاق ونطقه (مع التعامل مع subdomain)
+        result = processUrls(result)
+
+        // 5.4 معالجة الأرقام الرومانية (الساعات/الفصول) بأنطقها كأرقام
+        result = processRomanNumerals(result)
+
+        // 5.5 معالجة أرقام الهواتف (تُنطق رقماً رقماً قبل الأرقام العادية)
+        result = processPhoneNumbers(result)
 
         // 6. معالجة الأرقام العادية
         result = processNumbers(result)
@@ -236,11 +273,11 @@ private val pronunciationDict = PronunciationDictionary(context)
                 val month: String
                 val year: String
                 if (isYMD) {
-                    // YYYY-MM-DD format
+// YYYY-MM-DD format
                     year = matcher.group(1)!!
                     month = matcher.group(2)!!
                     day = matcher.group(3)!!
-} else {
+                } else {
                     // DD-MM-YYYY format
                     day = matcher.group(1)!!
                     month = matcher.group(2)!!
@@ -277,7 +314,146 @@ private val pronunciationDict = PronunciationDictionary(context)
         return buffer.toString()
     }
 
-/** معالجة العملات: $100 → مائة دولار، 50€ → خمسون يورو */
+    /** معالجة أرقام الهواتف: تُنطق رقماً رقماً بدل إغلاقها كعدد كامل
+     * («خمسمائة وواحد مليون…»). يعترف بأرقام من 7 إلى 15 خانة مع فواصل اختيارية
+     * (مسافة/شرطة/نقطة/أقواس) وبداية + اختيارية. */
+    private fun processPhoneNumbers(text: String): String {
+        val matcher = PATTERN_PHONE.matcher(text)
+        val buffer = StringBuffer()
+        while (matcher.find()) {
+            val raw = matcher.group(0)!!
+            val digits = raw.filter { it.isDigit() }
+            // تحقق إضافي ضد التطابقات الكاذبة: تواريخ (12.12.2024) وعناوين IP
+            // (192.168.1.100) ليست هواتف رغم وقوع أرقامها ضمن المدى 7..15.
+            if (looksLikeDate(raw) || looksLikeIpAddress(raw)) {
+                matcher.appendReplacement(buffer, Matcher.quoteReplacement(raw))
+                continue
+            }
+            // تقبّل فقط ما يقع في مدى أرقام الهواتف الشائعة؛ ما عداه يُترك كما هو.
+            if (digits.length !in 7..15) {
+                matcher.appendReplacement(buffer, Matcher.quoteReplacement(raw))
+                continue
+            }
+            val isArabic = com.aymankhattab.nateq.util.LocaleUtils.containsArabic(text)
+            val spokenDigits = digits.map { it.digitToInt() }
+                .joinToString(" ") {
+                    // الأرقام تُنطق كأرقام مجردة (مذكرة): «خمسة» لا «خمس».
+                    if (isArabic) NumberSpeech.toArabicWords(it, isFeminine = false)
+                    else NumberSpeech.toEnglishWords(it)
+                }
+            matcher.appendReplacement(buffer, Matcher.quoteReplacement(spokenDigits))
+        }
+        matcher.appendTail(buffer)
+        return buffer.toString()
+    }
+
+    /** هل التطابق يشبه تاريخاً (3 مجموعات رقمية مفصولة بنقطة/شرطة، آخرها 2-4 أرقام)؟ */
+    private fun looksLikeDate(raw: String): Boolean {
+        val parts = raw.split(Regex("""[-/.]""")).filter { it.isNotBlank() }
+        if (parts.size != 3) return false
+        val lens = parts.map { it.length }
+        // يوم/شهر (1-2) وسنة (2-4) — الأجزاء الثلاثة كلها أرقام خالصة
+        if (parts.any { !it.all(Char::isDigit) }) return false
+        return lens[0] in 1..2 && lens[1] in 1..2 && lens[2] in 2..4
+    }
+
+    /** هل التطابق عنوان IP (4 مجموعات من 1-3 أرقام مفصولة بنقاط، ودون علامة +)؟ */
+    private fun looksLikeIpAddress(raw: String): Boolean {
+        if (raw.startsWith("+")) return false
+        val parts = raw.split('.')
+        if (parts.size != 4) return false
+        return parts.all { it.isNotEmpty() && it.length <= 3 && it.all(Char::isDigit) }
+    }
+
+    /**
+     * معالجة الروابط: تحويل «https://example.com/path?q=1» إلى نطق دال على
+     * اسم النطاق («موقع example.com») بدل قراءة الشعار والمحارف حرفاً حرفاً.
+     * يُحفظ اسم النطاق ليُنطق كما هو (مقروء، فذلك أفضل لمواقع مكتوبة بحروف
+     * لاتينية) وتُحذف بقية أجزاء الرابط بصمت.
+     */
+    private fun processUrls(text: String): String {
+        val matcher = PATTERN_URL.matcher(text)
+        val buffer = StringBuffer()
+        while (matcher.find()) {
+            val raw = matcher.group(1)!!
+            // نستخرج اسم النطاق: www.example.com أو example.com أو example.com:8080/path
+            var host = raw
+                .removePrefix("https://").removePrefix("http://")
+                .removePrefix("www.")
+            // قطع كل ما بعد أول / أو ? أو # (المسار/الاستعلام/الربط)
+            val slash = host.indexOfFirst { it == '/' || it == '?' || it == '#' }
+            if (slash >= 0) host = host.substring(0, slash)
+            // إزالة المنفذ إن وجد (example.com:8080) وعلامات الترقيم الختامية
+            host = host.substringBefore(":").trimEnd('.', ',', '،', ')', ';', '!', '؟')
+            if (host.isBlank()) {
+                matcher.appendReplacement(buffer, Matcher.quoteReplacement(raw))
+                continue
+            }
+            // نطق «موقع» + اسم النطاق مقروءاً (أنسب للمواقع المكتوبة بحروف لاتينية
+            // من القراءة حرفاً حرفاً). تُحذف اللواحق الشائعة (com/net/org) للاختصار.
+            val name = when {
+                host.endsWith(".com") || host.endsWith(".net") || host.endsWith(".org") ->
+                    host.substringBeforeLast('.')
+                else -> host
+            }
+            val spoken = "موقع $name"
+            matcher.appendReplacement(buffer, Matcher.quoteReplacement(spoken))
+        }
+        matcher.appendTail(buffer)
+        return buffer.toString()
+    }
+
+    /**
+     * معالجة الأرقام الرومانية: «III» كرقم ساعة → «ثلاثة»، «XIV» → «أربعة عشر».
+     * يُتحقق من الصحة النحوية (نقصان/زيادة) قبل التحويل؛ إن كانت متوالية
+     * رومانية غير صحيحة (مثل تاريخ «MMXXIV») تُترك كما هي للتواريخ.
+     */
+    private fun processRomanNumerals(text: String): String {
+        val matcher = PATTERN_ROMAN.matcher(text)
+        val buffer = StringBuffer()
+        while (matcher.find()) {
+            val rom = matcher.group(0)!!
+            val value = romanToInt(rom) ?: run {
+                // غير صالح/غير معترف → لا نلمسه (ربما تاريخ أو اختصار)
+                matcher.appendReplacement(buffer, Matcher.quoteReplacement(rom))
+                continue
+            }
+            val spoken = numberToWords(value.toLong())
+            matcher.appendReplacement(buffer, Matcher.quoteReplacement(spoken))
+        }
+        matcher.appendTail(buffer)
+        return buffer.toString()
+    }
+
+    /** تحويل رقم روماني إلى Int، أو null عند تركيبة غير صالحة. */
+    private fun romanToInt(s: String): Int? {
+        val map = mapOf('I' to 1, 'V' to 5, 'X' to 10, 'L' to 50, 'C' to 100, 'D' to 500, 'M' to 1000)
+        var total = 0
+        var prev = 0
+        for (c in s.reversed()) {
+            val v = map[c] ?: return null
+            if (v < prev) total -= v else total += v
+            prev = v
+        }
+        // تحقق من الصحة: لا تكرار لأكثر من 3 لـ I/X/C، ولا 4 لـ V/L/D.
+        val repeats = listOf('I', 'X', 'C', 'M').any { ch -> s.filter { it == ch }.length > 3 }
+            || listOf('V', 'L', 'D').any { ch -> s.filter { it == ch }.length > 1 }
+        // قيمة معقولة كرقم ترتيبي (تجنب تحويل CC/DD/MM التواريخ إلى أرقام)
+        if (repeats || total > 3999) return null
+        return total
+    }
+
+    /** تحليل مبلغ رقمي مع تمييز صحيح بين فاصلة الآلاف وفاصلة الكسور:
+     * فاصلة تليها ثلاث خانات بالضبط تُعتبر فاصلة آلاف (تُحذف)،
+     * وأي فاصلة أخرى تُعتبر فاصلة كسور (تُستبدل بنقطة).
+     * @return القيمة العددية أو صفراً عند تعذر الفهم (لا نهيار للنطق).
+     */
+    private fun parseAmount(raw: String): Double {
+        val cleaned = PATTERN_THOUSANDS.matcher(raw).replaceAll("")
+        return cleaned.replace(',', '.').toDoubleOrNull() ?: 0.0
+    }
+
+    /** معالجة العملات: $100 → مائة دولار، 50€ → خمسون يورو */
     private fun processCurrencies(text: String): String {
         var result = text
 
@@ -286,7 +462,7 @@ private val pronunciationDict = PronunciationDictionary(context)
             val matcher = pattern.matcher(result)
             val buffer = StringBuffer()
             while (matcher.find()) {
-                val amount = matcher.group(1)!!.replace(',', '.').toDouble()
+                val amount = parseAmount(matcher.group(1)!!)
                 val amountText = numberToWords(amount)
                 matcher.appendReplacement(buffer, Matcher.quoteReplacement("$amountText $name"))
             }
@@ -299,7 +475,7 @@ private val pronunciationDict = PronunciationDictionary(context)
             val matcher = pattern.matcher(result)
             val buffer = StringBuffer()
             while (matcher.find()) {
-                val amount = matcher.group(1)!!.replace(',', '.').toDouble()
+                val amount = parseAmount(matcher.group(1)!!)
                 val amountText = numberToWords(amount)
                 matcher.appendReplacement(buffer, Matcher.quoteReplacement("$amountText $name"))
             }
@@ -313,7 +489,7 @@ private val pronunciationDict = PronunciationDictionary(context)
         val codeBuffer = StringBuffer()
         while (codeMatcher.find()) {
             val code = codeMatcher.group(1)!!
-            val amount = codeMatcher.group(2)!!.replace(',', '.').toDouble()
+            val amount = parseAmount(codeMatcher.group(2)!!)
             val name = when (code) {
                 "USD" -> "دولار أمريكي"
                 "EUR" -> "يورو"
@@ -347,18 +523,51 @@ private val pronunciationDict = PronunciationDictionary(context)
     /** معالجة الوحدات: 5km → خمسة كيلومترات، 25°C → خمس وعشرون درجة مئوية */
     private fun processUnits(text: String): String {
         var result = text
-        for ((pattern, name) in UNIT_PATTERNS) {
+        for ((pattern, info) in UNIT_PATTERNS) {
             val matcher = pattern.matcher(result)
             val buffer = StringBuffer()
             while (matcher.find()) {
-                val number = matcher.group(1)!!.replace(',', '.').toDouble()
-                val numberText = numberToWords(number)
-                matcher.appendReplacement(buffer, Matcher.quoteReplacement("$numberText $name"))
+                val number = parseAmount(matcher.group(1)!!)
+                val replacement = numberWithUnit(number, info)
+                matcher.appendReplacement(buffer, Matcher.quoteReplacement(replacement))
             }
             matcher.appendTail(buffer)
             result = buffer.toString()
         }
         return result
+    }
+
+    /**
+     * نطق عدد مع وحدة قياس مع التوافق النحوي (الجنس والعدد):
+     *  1 ← «كيلومتر واحد» / «دقيقة واحدة»،
+     *  2 ← المثنى («كيلومتران» / «دقيقتان»)،
+     *  3–10 ← الجمع مع اتفاق جنس العدد («خمسة كيلومترات» / «خمس دقائق»)،
+     *  ما فوق ← العدد ثم الوحدة المفردة («خمسة وعشرون كيلومتر»).
+     */
+    private fun numberWithUnit(value: Double, info: UnitInfo): String {
+        if (value % 1.0 != 0.0 || value < 0.0) {
+            return "${numberToWords(value)} ${info.singular}"
+        }
+        val n = value.toInt()
+        return when (n) {
+            0 -> "${numberToWords(0.0)} ${info.singular}"
+            1 -> "${info.singular} ${if (info.isFeminine) "واحدة" else "واحد"}"
+            2 -> info.dual
+            in 3..10 -> "${unitNumberWord(n, info.isFeminine)} ${info.plural}"
+            else -> "${numberToWords(n.toDouble())} ${info.singular}"
+        }
+    }
+
+    /**
+     * لفظ العدد (3–10) مع مراعاة قاعدة العدد في العربية:
+     * العدد يأخذ صيغة مؤنثة مع المعدود المذكر (خمسة كيلومترات)
+     * وصيغة مذكرة مع المعدود المؤنث (خمس دقائق).
+     */
+    private fun unitNumberWord(digit: Int, isFeminine: Boolean): String {
+        val forMasculine = arrayOf("", "", "ثلاثة", "أربعة", "خمسة", "ستة", "سبعة", "ثمانية", "تسعة", "عشرة")
+        val forFeminine  = arrayOf("", "", "ثلاث", "أربع", "خمس", "ست", "سبع", "ثمان", "تسع", "عشر")
+        val table = if (isFeminine) forFeminine else forMasculine
+        return if (digit in 3..10) table[digit] else ""
     }
 
     /** معالجة الأرقام العادية: 1234 → ألف ومائتان وأربعة وثلاثون */
@@ -398,9 +607,11 @@ private val pronunciationDict = PronunciationDictionary(context)
      *  - 1,234.56 → 1234.56 (فاصلة آلاف + فاصلة عشرية)
      *  - 3.14 → 3.14 (عشري)
      */
-    private fun parseNumberText(numberStr: String): String {
-        // آخر نقطة هي الفاصلة العشرية؛ ما قبلها فواصل الآلاف
-        val number: Double = numberStr.replace(",", "").toDoubleOrNull() ?: return numberStr
+private fun parseNumberText(numberStr: String): String {
+        // الفاصلة/النقطة التي بعدها 3 خانات فاصلة آلاف تُحذف؛ وما تبقى من
+        // فواصل/نقاط (الكسور) يُوحَّد إلى نقطة — يغطي النمط الأمريكي والأوروبي.
+        val cleaned = PATTERN_THOUSANDS.matcher(numberStr).replaceAll("")
+        val number = cleaned.replace(',', '.').toDoubleOrNull() ?: return numberStr
         return numberToWords(number)
     }
 
@@ -421,18 +632,21 @@ private val pronunciationDict = PronunciationDictionary(context)
         ).replaceAll("$1").trim()
     }
 
-/** تنسيق التاريخ بالعربية (ميلادي أو هجري حسب إعداد المستخدم) */
+    /** تنسيق التاريخ بالعربية (ميلادي أو هجري حسب إعداد المستخدم) */
     private fun formatDate(day: Int, month: Int, year: Int): String {
         if (month !in 1..12) return "التاريخ غير صالح"
+        if (day !in 1..31) return "التاريخ غير صالح"
+        // مسار الهجري: إن فشل التحويل (نادر) نتراجع للصيغة الميلادية الصحيحة
+        // ولا نُمرر قيماً ميلادية عبر أسماء الشهور الهجرية (كان ينتج نطقاً مختلطاً
+        // مثل «خمسة عشر محرم 2024»).
         if (runCatching {
                 com.aymankhattab.nateq.settings.SettingsRepository(context).isHijriDateEnabled()
             }.getOrDefault(false)
         ) {
-            val (hDay, hMonth, hYear) = runCatching { toHijri(day, month, year) }
-                .getOrDefault(Triple(day, month, year))
-            if (hMonth in 1..12) {
-                return "${numberToWords(hDay.toLong())} ${HIJRI_MONTHS[hMonth]} " +
-                    "${numberToWords(hYear.toLong())}"
+            val hijri = runCatching { toHijri(day, month, year) }.getOrNull()
+            if (hijri != null && hijri.second in 1..12 && hijri.first in 1..30) {
+                return "${numberToWords(hijri.first.toLong())} ${HIJRI_MONTHS[hijri.second]} " +
+                    "${numberToWords(hijri.third.toLong())}"
             }
         }
         val months = arrayOf(
@@ -470,6 +684,21 @@ private val pronunciationDict = PronunciationDictionary(context)
         val period = if (hour < 12) "صباحاً" else "مساءً"
         val hourText = numberToWords(hour12.toLong())
 
+        fun minutesPart(count: Int): String = when (count) {
+            1 -> "دقيقة واحدة"
+            2 -> "دقيقتان"
+            in 3..10 -> "${NumberSpeech.toArabicWords(count)} دقائق"
+            else -> "${NumberSpeech.toArabicWords(count)} دقيقة"
+        }
+
+        // صيغة دقائق سياق «إلا» (منصوبة): «إلا خمس دقائق»، «إلا دقيقة واحدة»، «إلا دقيقتين»
+        fun minutesOmissionPart(count: Int): String = when (count) {
+            1 -> "دقيقة واحدة"
+            2 -> "دقيقتين"
+            in 3..10 -> "${NumberSpeech.toArabicWords(count)} دقائق"
+            else -> "${NumberSpeech.toArabicWords(count)} دقيقة"
+        }
+
         return when (minute) {
             0 -> "$hourText $period"
             15 -> "$hourText والربع $period"
@@ -479,19 +708,19 @@ private val pronunciationDict = PronunciationDictionary(context)
                 val nextHourText = numberToWords(nextHour.toLong())
                 "$nextHourText إلا ربع $period"
             }
-            in 1..29 -> "$hourText و ${numberToWords(minute.toLong())} دقيقة $period"
-            in 31..44 -> "$hourText و ${numberToWords(minute.toLong())} دقيقة $period"
+            in 1..29 -> "$hourText و ${minutesPart(minute)} $period"
+            in 31..44 -> "$hourText و ${minutesPart(minute)} $period"
             in 46..59 -> {
                 val remaining = 60 - minute
                 val nextHour = if (hour12 == 12) 1 else hour12 + 1
                 val nextHourText = numberToWords(nextHour.toLong())
-                "$nextHourText إلا ${numberToWords(remaining.toLong())} دقيقة $period"
+                "$nextHourText إلا ${minutesOmissionPart(remaining)} $period"
             }
             else -> "$hourText $period"
         }
     }
 
-/** تطبيع الأرقام الشرقية والفارسية والهندية إلى غربية — يفوّض إلى util المشترك */
+    /** تطبيع الأرقام الشرقية والفارسية والهندية إلى غربية — يفوّض إلى util المشترك */
     private fun normalizeIndicDigits(text: String): String {
         return com.aymankhattab.nateq.util.LocaleUtils.normalizeIndicDigits(text)
     }
@@ -509,11 +738,12 @@ private val pronunciationDict = PronunciationDictionary(context)
             val cp = text.codePointAt(i)
             val chars = Character.charCount(cp)
 
-            // نطاقات الإيموجي الأساسي (ما عدا العربية والعامة)
+// نطاقات الإيموجي الأساسي (ما عدا العربية والعامة)
             val isEmoji = isEmojiCodePoint(cp)
 
-            // تعديلات لون البشرة و variation selectors و ZWJ
-            val isModifier = cp in 0x1F3FB..0x1F3FF || cp in 0xFE00..0xFE0F || cp == 0x200D
+            // تعديلات variation selectors و ZWJ (ألوان البشرة تَشمَلها
+            // نطاقات الإيموجي 1F300-1FAFF فتُستبدل بمسافة تلقائياً).
+            val isModifier = cp in 0xFE00..0xFE0F || cp == 0x200D
 
             if (isEmoji) {
                 // استبدال الإيموجي بمسافة
@@ -530,14 +760,13 @@ private val pronunciationDict = PronunciationDictionary(context)
         return Normalizer.normalize(sb.toString().trim(), Normalizer.Form.NFC)
     }
 
-    private fun isEmojiCodePoint(cp: Int): Boolean {
+private fun isEmojiCodePoint(cp: Int): Boolean {
         // نطاقات الإيموجي الشائعة (صفحات متنوعة)
         return cp in 0x1F300..0x1FAFF ||
             cp in 0x2600..0x27BF ||
             cp in 0x2B00..0x2BFF ||
-            cp in 0x1F000..0x1F02F ||
-            cp in 0xFE0F.toInt()..0xFE0F.toInt() ||
-            cp in 0x1F1E6..0x1F1FF  // أعلام الدول
+            cp in 0x1F000..0x1F1FF ||  // الكتل المكملة: ماهجونغ/دومينو/لعب/أعلام
+            cp == 0xFE0F // مؤشر شكل الإيموجي (variation selector)
     }
 
     /** تحويل رقم لكلمات عربية (يدعم حتى التريليونات، والكسور العشرية) */
@@ -549,16 +778,22 @@ private val pronunciationDict = PronunciationDictionary(context)
             val abs = Math.abs(d)
             val integerPart = abs.toLong()
 
-            // استخراج الأرقام العشرية بعد الفاصلة كسلسلة (بدون صفر متكرر ختامي)
+// استخراج الأرقام العشرية بعد الفاصلة كسلسلة (بدون صفر متكرر ختامي)
             var decimalStr = formatDecimal(abs - integerPart)
             val decimalDigits = decimalStr.trimEnd('0')
             if (decimalDigits.isEmpty()) {
                 return if (negative) "ناقص ${numberToWords(integerPart)}" else numberToWords(integerPart)
             }
             val base = if (negative) "ناقص " else ""
-            // نطق الأرقام العشرية واحداً واحداً (مثل النطق الطبيعي للفاصلة)
-            val digitWord = numberToWords(decimalDigits.toLong())
-            return "$base${numberToWords(integerPart)} فاصلة $digitWord"
+            val intWord = numberToWords(integerPart)
+            // نطق طبيعي للكسور الشائعة: «ونصف/وربع/وثلاثة أرباع» بدل «فاصلة ...»
+            return when (decimalDigits) {
+                "5" -> if (integerPart == 0L) "${base}نصف" else "$base$intWord ونصف"
+                "25" -> if (integerPart == 0L) "${base}ربع" else "$base$intWord وربع"
+                "75" -> if (integerPart == 0L) "${base}ثلاثة أرباع" else "$base$intWord وثلاثة أرباع"
+                // غيرها: نطق الأرقام العشرية واحداً واحداً (مثل النطق الطبيعي للفاصلة)
+                else -> "$base$intWord فاصلة ${numberToWords(decimalDigits.toLong())}"
+            }
         }
 
         val num = number.toLong()

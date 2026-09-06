@@ -3,7 +3,9 @@
     <!-- ألوان رئيسية (وضع ليلي) -->
     <color name="colorPrimary">#64B5F6</color>
     <color name="colorPrimaryVariant">#42A5F5</color>
-    <color name="colorOnPrimary">#0D47A1</color>
+    <!-- نص أزرق داكن على أزرق فاتح: تباين 6.06:1 ≥ 4.5 (WCAG AA) —
+         اللون السابق #0D47A1 كان 3.9:1 وهو دون العتبة. -->
+    <color name="colorOnPrimary">#0A2E5E</color>
     <color name="colorSecondary">#81C784</color>
     <color name="colorSecondaryVariant">#66BB6A</color>
     <color name="colorOnSecondary">#003F13</color>
@@ -19,4 +21,7 @@
 
     <!-- فاصل فاتح على خلفية داكنة -->
     <color name="divider_color">#33FFFFFF</color>
+
+    <!-- نص/أيقونة أداة الساعة الناطقة (تُعرض فوق خلفية زرقاء داكنة دائماً) -->
+    <color name="widget_foreground">#FFFFFF</color>
 </resources>

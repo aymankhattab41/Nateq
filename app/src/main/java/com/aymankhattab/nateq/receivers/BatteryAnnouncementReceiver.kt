@@ -3,9 +3,11 @@ package com.aymankhattab.nateq.receivers
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.engine.NumberSpeech
 import com.aymankhattab.nateq.settings.SettingsRepository
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
+import com.aymankhattab.nateq.util.LocaleUtils
 import java.util.Locale
 import kotlinx.coroutines.launch
 
@@ -46,19 +48,28 @@ class BatteryAnnouncementReceiver : BroadcastReceiver() {
         if (!settings.isAllAnnouncementsEnabled()) return
 
         val voiceId = settings.getBatteryAnnouncementVoiceId()
-        val isArabic = voiceId?.contains("nateq-ar") == true
+        // يقبل الصيغ القديمة (nateq-ar-…) والصيغ الموحّدة الحالية (ar-local)
+        val isArabic = voiceId?.let {
+            it.contains("nateq-ar") || it.startsWith("ar-local", ignoreCase = true)
+        } == true
         val locale = if (isArabic) Locale.forLanguageTag("ar") else Locale.forLanguageTag("en")
 
         when (action) {
             Intent.ACTION_POWER_CONNECTED -> {
                 if (!settings.isChargingCompleteAnnouncementEnabled()) return
-                val text = if (isArabic) "تم توصيل الشاحن" else "Charger connected"
+                val text = LocaleUtils.stringForSpeech(
+                    context, if (isArabic) "ar" else "en",
+                    R.string.battery_connected, R.string.battery_connected
+                )
                 speak(context, settings, text, locale)
             }
 
             Intent.ACTION_POWER_DISCONNECTED -> {
                 if (!settings.isChargingDisconnectAnnouncementEnabled()) return
-                val text = if (isArabic) "تم فصل الشاحن" else "Charger disconnected"
+                val text = LocaleUtils.stringForSpeech(
+                    context, if (isArabic) "ar" else "en",
+                    R.string.battery_disconnected, R.string.battery_disconnected
+                )
                 speak(context, settings, text, locale)
             }
 
@@ -81,10 +92,10 @@ class BatteryAnnouncementReceiver : BroadcastReceiver() {
                     val allowFullAnnounce = !enabledLevels.contains(100)
                     if (allowFullAnnounce && notAnnouncedRecently(context, "full")) {
                         markAnnounced(context, "full")
-                        val fullText = if (isArabic)
-                            "البطارية ممتلئة، يمكنك فصل الشاحن"
-                        else
-                            "Battery full, you can unplug the charger"
+                        val fullText = LocaleUtils.stringForSpeech(
+                            context, if (isArabic) "ar" else "en",
+                            R.string.battery_full_unplug, R.string.battery_full_unplug
+                        )
                         speak(context, settings, fullText, locale)
                     }
                 }
@@ -93,25 +104,38 @@ class BatteryAnnouncementReceiver : BroadcastReceiver() {
                 if (notAnnouncedRecently(context, "%$percentage")) return
                 markAnnounced(context, "%$percentage")
 
-                val text = buildLevelText(percentage, isArabic)
+                val text = buildLevelText(context, percentage, isArabic)
                 speak(context, settings, text, locale)
             }
         }
     }
 
-    private fun buildLevelText(percentage: Int, isArabic: Boolean): String = when {
-        percentage == 100 -> if (isArabic) "البطارية ممتلئة" else "Battery full"
-        percentage == 50 -> if (isArabic) "البطارية عند الخمسين بالمئة" else "Battery fifty percent"
-        percentage == 20 -> if (isArabic) "البطارية عند العشرين بالمئة، يُنصح بالشحن" else "Battery low, twenty percent, please charge"
-        percentage == 10 -> if (isArabic) "البطارية عند عشرة بالمئة، الشحن ضروري جداً" else "Battery critical, ten percent, charge immediately"
-        percentage < 10 -> if (isArabic)
-            "البطارية وصلت ${NumberSpeech.toArabicWords(percentage)} بالمئة"
+    private fun buildLevelText(context: Context, percentage: Int, isArabic: Boolean): String {
+        val lang = if (isArabic) "ar" else "en"
+        val percentWords = if (isArabic)
+            NumberSpeech.toArabicWords(percentage)
         else
-            "Battery reached ${NumberSpeech.toEnglishWords(percentage)} percent"
-        else -> if (isArabic)
-            "البطارية ${NumberSpeech.toArabicWords(percentage)} بالمئة"
-        else
-            "Battery ${NumberSpeech.toEnglishWords(percentage)} percent"
+            NumberSpeech.toEnglishWords(percentage)
+        return when (percentage) {
+            100 -> LocaleUtils.stringForSpeech(
+                context, lang, R.string.battery_full, R.string.battery_full
+            )
+            50 -> LocaleUtils.stringForSpeech(
+                context, lang, R.string.battery_level_50, R.string.battery_level_50
+            )
+            20 -> LocaleUtils.stringForSpeech(
+                context, lang, R.string.battery_level_20, R.string.battery_level_20
+            )
+            10 -> LocaleUtils.stringForSpeech(
+                context, lang, R.string.battery_level_10, R.string.battery_level_10
+            )
+            in 0..9 -> LocaleUtils.stringForSpeech(
+                context, lang, R.string.battery_reached, R.string.battery_reached
+            ).replace("{percent}", percentWords)
+            else -> LocaleUtils.stringForSpeech(
+                context, lang, R.string.battery_at, R.string.battery_at
+            ).replace("{percent}", percentWords)
+        }
     }
 
     private fun speak(context: Context, settings: SettingsRepository, text: String, locale: Locale) {

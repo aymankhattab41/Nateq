@@ -11,12 +11,11 @@ import android.provider.ContactsContract
 import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.settings.SettingsRepository
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.LocaleUtils
 import java.util.Locale
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /**
@@ -43,7 +42,8 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
 
         // goAsync() يمنع Android من قتل المستقبل قبل انتهاء العمل اللاتزامني
         val pendingResult = goAsync()
-        GlobalScope.launch(Dispatchers.IO) {
+        val appScope = (context.applicationContext as com.aymankhattab.nateq.NateqApplication).appScope
+        appScope.launch {
             try {
                 val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE) ?: return@launch
                 if (state != TelephonyManager.EXTRA_STATE_RINGING) return@launch
@@ -67,6 +67,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 )
 
                 val text = buildAnnouncementText(
+                    context,
                     number = incomingNumber,
                     contactName = contactName,
                     repeat = settings.getCallerAnnouncementRepeat(),
@@ -78,8 +79,17 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 val hasArabic = LocaleUtils.containsArabic(text)
                 val locale = if (hasArabic) Locale.forLanguageTag("ar") else Locale.forLanguageTag("en")
 
-                AnnouncementSpeaker.getInstance(context)
-                    .speak(text, locale, speechRate, 1.0f, volume)
+                val speaker = AnnouncementSpeaker.getInstance(context)
+                // نعيد ضبط الصوت المفضّل لدورة المتصل قبل كل نطق (عربي/إنجليزي
+                // حسب لغة النص الفعلي) حتى لا يبقى عالقاً على صوتٍ من دورة سابقة
+                // (إشعار/رسالة...) — نفس النمط المطبّق في SmsReadingReceiver.
+                val callerVoice = if (hasArabic) {
+                    settings.getCallerAnnouncementArabicVoiceId()
+                } else {
+                    settings.getCallerAnnouncementEnglishVoiceId()
+                }
+                speaker.resetVoice(callerVoice)
+                speaker.speak(text, locale, speechRate, 1.0f, volume)
             } catch (t: Throwable) {
                 Log.e(TAG, "onReceive failed", t)
             } finally {
@@ -90,6 +100,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
 
     /** النص الصادق حسب ما هو متاح فعلاً (لا يدّعي "غير محفوظ" جزافاً). */
     private fun buildAnnouncementText(
+        context: Context,
         number: String?,
         contactName: String?,
         repeat: Int,
@@ -100,9 +111,9 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 .replace("{name}", contactName ?: number.orEmpty())
                 .replace("{number}", number.orEmpty())
                 .trim()
-            if (filled.isBlank()) buildDefaultCallerPhrase(number, contactName) else filled
+            if (filled.isBlank()) buildDefaultCallerPhrase(context, number, contactName) else filled
         } else {
-            buildDefaultCallerPhrase(number, contactName)
+            buildDefaultCallerPhrase(context, number, contactName)
         }
         return buildString {
             for (i in 1..repeat) {
@@ -112,10 +123,25 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun buildDefaultCallerPhrase(number: String?, contactName: String?): String = when {
-        contactName != null -> "اتصال وارد من $contactName"
-        !number.isNullOrBlank() -> "اتصال وارد من رقم غير محفوظ"
-        else -> "اتصال وارد"
+    /**
+     * عبارة النطق الافتراضية مع قرار اللغة من الاسم/الرقم (عربي أم إنجليزي)
+     * وليس من لغة واجهة التطبيق: مرسل عربي يُنطق بالعربية والعكس.
+     */
+    private fun buildDefaultCallerPhrase(context: Context, number: String?, contactName: String?): String {
+        val dynamicText = (contactName ?: number).orEmpty()
+        val isArabic = !dynamicText.any { it.isLetter() } || LocaleUtils.containsArabic(dynamicText)
+        val lang = if (isArabic) "ar" else "en"
+        return when {
+            contactName != null -> LocaleUtils.stringForSpeech(
+                context, lang, R.string.caller_from, R.string.caller_from
+            ).replace("{name}", contactName)
+            !number.isNullOrBlank() -> LocaleUtils.stringForSpeech(
+                context, lang, R.string.caller_from_number, R.string.caller_from_number
+            )
+            else -> LocaleUtils.stringForSpeech(
+                context, lang, R.string.caller_only, R.string.caller_only
+            )
+        }
     }
 
     /**

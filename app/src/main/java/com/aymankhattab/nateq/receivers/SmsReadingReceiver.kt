@@ -6,6 +6,7 @@ import android.content.Intent
 import android.provider.Telephony
 import android.telephony.SmsMessage
 import android.util.Log
+import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.settings.SettingsRepository
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.LocaleUtils
@@ -38,10 +39,10 @@ class SmsReadingReceiver : BroadcastReceiver() {
         if (intent?.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
 
         // goAsync() يمنع Android من قتل المستقبل قبل انتهاء العمل اللاتزامني
-val pendingResult = goAsync()
+        val pendingResult = goAsync()
         val appScope = (context.applicationContext as com.aymankhattab.nateq.NateqApplication).appScope
         appScope.launch {
-try {
+            try {
                 val settings = SettingsRepository(context)
                 val mode = settings.getSmsReadingMode()
                 if (mode == MODE_OFF) return@launch
@@ -61,22 +62,33 @@ try {
                     body.append(msg.messageBody ?: "")
                 }
 
-                val displayAddress = sender ?: "مرسل مجهول"
+                val displayAddress = sender ?: context.getString(R.string.sms_unknown_sender)
                 val voiceId = settings.getSmsReadingVoiceId()
                 val speechRate = settings.getSmsReadingRate()
                 val volume = settings.getSmsReadingVolume()
 
                 val content = body.toString().trim()
+                // تحديد لغة النطق من المحتوى والمرسل (افتراضي العربية عند عدم
+                // وجود حروف حاسمة، مثل مرسل رقمي فقط أو رسالة فارغة).
+                val dynamicText = "$displayAddress $content"
+                val useArabicVoice = !dynamicText.any { it.isLetter() } ||
+                    LocaleUtils.containsArabic(dynamicText)
                 // القالب المخصص (إن حُدِّد) يتيح للمستخدم صياغة كلامه: {name} للمرسل و{message} للرسالة.
                 val template = settings.getSmsAnnouncementTemplate()
+                val smsFrom = LocaleUtils.stringForSpeech(
+                    context,
+                    if (useArabicVoice) "ar" else "en",
+                    R.string.sms_from,
+                    R.string.sms_from
+                ).replace("{name}", displayAddress)
                 val text = if (template.isNotBlank()) {
                     template
                         .replace("{name}", displayAddress)
                         .replace("{message}", content.ifBlank { displayAddress })
                 } else when {
-                    content.isBlank() -> "رسالة من $displayAddress"
-                    mode == MODE_SOURCE -> "رسالة من $displayAddress"
-                    else -> "رسالة من $displayAddress. $content"
+                    content.isBlank() -> smsFrom
+                    mode == MODE_SOURCE -> smsFrom
+                    else -> "$smsFrom، $content"
                 }
 
                 // نقرر لغة النطق حسب النص الفعلي المَنطوق (المحتوى عربي أم إنجليزي)
@@ -90,7 +102,7 @@ try {
             } finally {
                 pendingResult.finish()
             }
-}
+        }
     }
 }
 

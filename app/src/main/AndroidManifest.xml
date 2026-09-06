@@ -45,8 +45,8 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Nateq"
-        tools:targetApi="35">
+        android:theme="@style/Theme.LordTts"
+        tools:targetApi="37">
 
         <!-- ============================================= -->
         <!-- خدمة محرك النطق - هذا هو قلب التطبيق          -->

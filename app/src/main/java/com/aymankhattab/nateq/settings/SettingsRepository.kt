@@ -28,8 +28,11 @@ class SettingsRepository(private val context: Context) {
         const val VOICE_CATEGORY_NOTIFICATIONS = "notifications"
         const val VOICE_CATEGORY_DEFAULT = "default"
 
-        /** علامة "كل التطبيقات" في اختيار تطبيقات قراءة الإشعارات. */
+        /** تطبيقات الإشعارات الافتراضية قبل أي اختيار صريح. */
         const val NOTIF_READ_ALL = "all_apps"
+
+        /** أقصى عدد يُقبل من أسماء المتصلين المخصصة (حماية من استيراد فائض). */
+        private const val MAX_CALLER_ENTRIES = 2000
 
         /** التطبيقات الافتراضية التي تُقرأ إشعاراتها قبل أي اختيار صريح. */
         val DEFAULT_NOTIFICATION_APPS = setOf(
@@ -51,14 +54,31 @@ class SettingsRepository(private val context: Context) {
         }
 
     // أسماء المتصلين = بيانات شخصية (PII) تُخزَّن في ملف مشفَّر منفصل؛
-    // عند تعذر التشفير (Keystore معطوب…) تعود لتخزين عادي ولا يكسر التشغيل.
+    // عند تعذر التشفير (Keystore معطوب…) تُحتفظ في الذاكرة لهذه الجلسة فقط
+    // ولا تُكتب في تفضيلات نصية عادية أبداً (منع تسريب PII).
     @Volatile
     private var callerSecurePrefs: SharedPreferences? = null
+
+    private val memoryCallerNames = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     fun reload() {
         // MODE_MULTI_PROCESS مهملة ومسببة تضارب بيانات — نعيد القراءة من القرص بـ MODE_PRIVATE
         // ولضمان استقبال آخر قيمة مكتوبة من العملية الأخرى، نُغلق ونُعيد فتح كائن SharedPreferences
         prefs = context.getSharedPreferences(NEW_PREFS, Context.MODE_PRIVATE)
+    }
+
+    /**
+     * يوحّد معرّفات الأصوات القديمة التي تبدأ بـ «nateq-ar» أو «nateq-en» مع
+     * الصيغة الحالية (ar-local/en-local) حتى تبقى القيم المخزنة قبل إعادة
+     * التسمية تعمل.
+     */
+    private fun normalizeVoiceId(id: String?): String? {
+        if (id == null) return null
+        return when {
+            id.contains("nateq-ar", ignoreCase = true) -> "ar-local"
+            id.contains("nateq-en", ignoreCase = true) -> "en-local"
+            else -> id
+        }
     }
 
     /**
@@ -125,7 +145,7 @@ class SettingsRepository(private val context: Context) {
         prefs.edit().putInt("number_reading_mode", mode).apply()
 
     /** الصوت المفضّل لكل لغة (languageTag -> voiceId) */
-    fun getPreferredVoiceId(languageTag: String): String? = prefs.getString("preferred_voice_$languageTag", null)
+    fun getPreferredVoiceId(languageTag: String): String? = normalizeVoiceId(prefs.getString("preferred_voice_$languageTag", null))
     fun setPreferredVoiceId(languageTag: String, voiceId: String) =
         prefs.edit().putString("preferred_voice_$languageTag", voiceId).apply()
 
@@ -149,9 +169,25 @@ class SettingsRepository(private val context: Context) {
     fun setSelectedEnginePackage(pkg: String?) =
         prefs.edit().putString("selected_engine_package", pkg).apply()
 
-    /** مسح كل إعدادات التطبيق وإعادتها إلى القيم الافتراضية */
+    /** مسح كل إعدادات التطبيق وإعادتها إلى القيم الافتراضية، بما فيها
+     *  أسماء المتصلين المخصصة (PII) المخزنة في الملف المشفر وملفات الحالة. */
     fun resetAllToDefault() {
         prefs.edit().clear().apply()
+        memoryCallerNames.clear()
+        // مسح ملف أسماء المتصلين المشفر. إن تعذّر الوصول إليه (Keystore معطوب)
+        // نحذف الملف نفسه مباشرةً (الحذف لا يحتاج المفتاح) حتى لا يبقى PII
+        // غير قابل للمسح على القرص.
+        val caller = getCallerPrefs()
+        if (caller != null) {
+            caller.edit().clear().apply()
+        } else {
+            runCatching { context.deleteSharedPreferences("nateq_secure_caller_names") }
+        }
+        // مسح ملفات الحالة والقاموس والـ fallback القديم.
+        runCatching { context.deleteSharedPreferences(OLD_PREFS) }
+        runCatching { context.deleteSharedPreferences(FALLBACK_PREFS) }
+        runCatching { context.deleteSharedPreferences("nateq_pronunciation_dict") }
+        runCatching { context.deleteSharedPreferences("nateq_battery_state") }
     }
 
     // ============ المفتاح الرئيسي ووضع توفير الطاقة ============
@@ -172,6 +208,8 @@ class SettingsRepository(private val context: Context) {
 
     /** العتبة (نسبة مئوية) التي يعمل الاحدها وضع توفير الطاقة لإعلان الوقت. */
     fun getPowerSaverBatteryThreshold(): Int = prefs.getInt("power_saver_battery_threshold", 20)
+    fun setPowerSaverBatteryThreshold(threshold: Int) =
+        prefs.edit().putInt("power_saver_battery_threshold", threshold.coerceIn(0, 100)).apply()
 
     /** إعلان اكتمال الشحن (وصول 100% والمتصالة). */
     fun isChargingCompleteAnnouncementEnabled(): Boolean =
@@ -202,6 +240,12 @@ class SettingsRepository(private val context: Context) {
                     androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
                 ).also { callerSecurePrefs = it }
             } catch (_: Throwable) {
+                // Keystore معطوب/مفتاح ضائع: لا نقرأ ولا نكتب الأسماء (PII)
+                // هنا أبداً. نحذف الملف المشفر نفسه (الحذف لا يحتاج المفتاح)
+                // حتى لا يبقى PRІ ميت على القرص، ونُشغّل تحذيراً لمرة واحدة
+                // عبر علامة في الذاكرة يقرأها المتصلون عند الحاجة.
+                callerSecurePrefs = null
+                runCatching { context.deleteSharedPreferences("nateq_secure_caller_names") }
                 null
             }
         }
@@ -210,7 +254,9 @@ class SettingsRepository(private val context: Context) {
     /** أسماء متصلين مخصصة: خريطة رقم هاتف (بدون ترميز البلد) -> الاسم المعلَن. */
     fun getCustomCallerNames(): Map<String, String> {
         val raw = getCallerPrefs()?.getString("caller_names", null)
-            ?: prefs.getString("custom_caller_names", null) ?: return emptyMap()
+            ?: memoryCallerNames.takeIf { it.isNotEmpty() }?.let { m ->
+                m.entries.joinToString("\n") { "${it.key}\t${it.value}" }
+            } ?: return emptyMap()
         return raw.lines()
             .filter { it.isNotBlank() }
             .mapNotNull { line ->
@@ -222,7 +268,17 @@ class SettingsRepository(private val context: Context) {
     }
 
     fun setCustomCallerNames(names: Map<String, String>) {
-        val raw = names.entries.mapNotNull { e ->
+        // تعقيم أثناء الاستيراد (من النسخ الاحتياطي أو واجهة الإدخال): نتصفّى
+        // المفاتيح لتكون أرقاماً فقط (مع رمز + اختياري)، وحد أقصى لطول الرقم
+        // والاسم، وحد أقصى لعدد الإدخالات، حتى لا يدخل ملف JSON خبيث/فاسد
+        // من SAF كمية مهولة بلا حدود إلى المخزن المشفر.
+        val cleaned = names
+            .filterKeys { it.matches(Regex("^[+]?[0-9\\s()\\-]{3,32}$")) }
+            .filterValues { it.isNotBlank() && it.trim().length <= 100 }
+            .entries
+            .take(MAX_CALLER_ENTRIES)
+            .associate { (k, v) -> k.trim() to v.trim() }
+        val raw = cleaned.entries.mapNotNull { e ->
             if (e.key.isBlank() || e.value.isBlank()) null
             else "${e.key.trim()}\t${e.value.trim()}"
         }.joinToString("\n")
@@ -230,7 +286,10 @@ class SettingsRepository(private val context: Context) {
         if (secure != null) {
             secure.edit().putString("caller_names", raw).apply()
         } else {
-            prefs.edit().putString("custom_caller_names", raw).apply()
+            // عند فشل التخزين المشفّر (Keystore معطوب) لا نكتب أسماء المتصلين
+            // (PII) في تفضيلات نصية عادية أبداً — تُحفظ في الذاكرة لهذه الجلسة.
+            memoryCallerNames.clear()
+            cleaned.forEach { (k, v) -> memoryCallerNames[k] = v }
         }
     }
 
@@ -251,7 +310,7 @@ class SettingsRepository(private val context: Context) {
     // ============ إعدادات إعلان الوقت ============
 
     /** الصوت المفضّل لكل فئة (category -> voiceId) */
-    fun getPreferredVoiceIdForCategory(category: String): String? = prefs.getString("preferred_voice_$category", null)
+    fun getPreferredVoiceIdForCategory(category: String): String? = normalizeVoiceId(prefs.getString("preferred_voice_$category", null))
     fun setPreferredVoiceIdForCategory(category: String, voiceId: String) =
         prefs.edit().putString("preferred_voice_$category", voiceId).apply()
 
@@ -383,8 +442,8 @@ class SettingsRepository(private val context: Context) {
     fun setBatteryAnnouncementLevels(levels: Set<String>) =
         prefs.edit().putStringSet("battery_announcement_levels", levels.toMutableSet()).apply()
 
-    /** صوت إعلان البطارية (معرّف nateq-*) */
-    fun getBatteryAnnouncementVoiceId(): String? = prefs.getString("battery_announcement_voice", null)
+    /** صوت إعلان البطارية (معرّف صوت موحّد) */
+    fun getBatteryAnnouncementVoiceId(): String? = normalizeVoiceId(prefs.getString("battery_announcement_voice", null))
     fun setBatteryAnnouncementVoiceId(voiceId: String?) =
         prefs.edit().putString("battery_announcement_voice", voiceId).apply()
 
@@ -410,13 +469,13 @@ class SettingsRepository(private val context: Context) {
     fun setCallerAnnouncementRepeat(repeat: Int) =
         prefs.edit().putInt("caller_announcement_repeat", repeat).apply()
 
-    /** صوت إعلان المتصل بلغة عربية (معرّف nateq-*) */
-    fun getCallerAnnouncementArabicVoiceId(): String? = prefs.getString("caller_announcement_voice_ar", null)
+    /** صوت إعلان المتصل بلغة عربية (معرّف صوت موحّد) */
+    fun getCallerAnnouncementArabicVoiceId(): String? = normalizeVoiceId(prefs.getString("caller_announcement_voice_ar", null))
     fun setCallerAnnouncementArabicVoiceId(voiceId: String?) =
         prefs.edit().putString("caller_announcement_voice_ar", voiceId).apply()
 
-    /** صوت إعلان المتصل بلغة إنجليزية (معرّف nateq-*) */
-    fun getCallerAnnouncementEnglishVoiceId(): String? = prefs.getString("caller_announcement_voice_en", null)
+    /** صوت إعلان المتصل بلغة إنجليزية (معرّف صوت موحّد) */
+    fun getCallerAnnouncementEnglishVoiceId(): String? = normalizeVoiceId(prefs.getString("caller_announcement_voice_en", null))
     fun setCallerAnnouncementEnglishVoiceId(voiceId: String?) =
         prefs.edit().putString("caller_announcement_voice_en", voiceId).apply()
 
@@ -442,8 +501,8 @@ class SettingsRepository(private val context: Context) {
     fun setSmsReadingMode(mode: String) =
         prefs.edit().putString("sms_reading_mode", mode).apply()
 
-    /** صوت قراءة الرسائل (معرّف nateq-*) */
-    fun getSmsReadingVoiceId(): String? = prefs.getString("sms_reading_voice", null)
+    /** صوت قراءة الرسائل (معرّف صوت موحّد) */
+    fun getSmsReadingVoiceId(): String? = normalizeVoiceId(prefs.getString("sms_reading_voice", null))
     fun setSmsReadingVoiceId(voiceId: String?) =
         prefs.edit().putString("sms_reading_voice", voiceId).apply()
 

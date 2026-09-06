@@ -24,9 +24,9 @@ import com.aymankhattab.nateq.util.announceCompat
  * 4) قاموس النطق
  * 5) إعدادات عامة
  *
- * تطلب الأذونات عند أول استخدام: إشعارات وقراءة الرسائل فقط.
+ * تطلب الأذونات عند أول استخدام: إشعارات فقط (وقراءة الرسائل عند تفعيلها).
  * لا تُفتح شاشات مقيّدة بالإذن المهمل REQUEST_IGNORE_BATTERY_OPTIMIZATIONS.
- * لا يطلب إمكانية الوصول أبداً (ناطق محرك TTS عادي وليس خدمة وصول).
+ * لا يطلب إمكانية الوصول أبداً (Lord TTS محرك TTS عادي وليس خدمة وصول).
  */
 class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
 
@@ -35,14 +35,6 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
             findViewById<View>(android.R.id.content).announceCompat(getString(R.string.permission_notifications_granted))
         } else {
             showPermissionDeniedDialog(R.string.permission_notifications_denied)
-        }
-    }
-
-    private val requestSmsPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) {
-            findViewById<View>(android.R.id.content).announceCompat(getString(R.string.permission_sms_granted))
-        } else {
-            showPermissionDeniedDialog(R.string.permission_sms_denied)
         }
     }
 
@@ -78,13 +70,10 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
             }
         }
 
-        // 1.5 إذن قراءة الرسائل الواردة (RECEIVE_SMS)
-        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECEIVE_SMS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            requestSmsPermission.launch(android.Manifest.permission.RECEIVE_SMS)
-            return
-        }
         // انتهت سلسلة الأذونات — لا يوجد طلب إمكانية وصول.
-        // (ناطق محرك TTS عادي، وليس خدمة وصول، فلا يطلبها.)
+        // (Lord TTS محرك TTS عادي، وليس خدمة وصول، فلا يطلبها.)
+        // إذن RECEIVE_SMS لا يُطلب هنا على الإطلاق: يُطلب فقط عندما يفعّل
+        // المستخدم قراءة الرسائل فعلياً من شاشة الإعدادات (مجدداً وعلى حاجة).
         // لا يُطلب إعفاء البطارية تلقائياً: شاشته الخاصة تتطلب إذناً مقيّداً
         // (REQUEST_IGNORE_BATTERY_OPTIMIZATIONS) ورمي SecurityException بدونه،
         // ويكفي أن يضبطه المستخدم يدوياً من إعدادات النظام إن أراد.

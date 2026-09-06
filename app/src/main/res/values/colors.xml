@@ -27,4 +27,7 @@
 
     <!-- لون الفواصل (رمادي شفاف) -->
     <color name="divider_color">#33000000</color>
+
+    <!-- نص/أيقونة أداة الساعة الناطقة (تُعرض فوق خلفية زرقاء داكنة دائماً) -->
+    <color name="widget_foreground">#FFFFFF</color>
 </resources>

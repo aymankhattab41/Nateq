@@ -7,6 +7,7 @@ import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.settings.SettingsRepository
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.LocaleUtils
@@ -98,20 +99,33 @@ class NateqNotificationListener : NotificationListenerService() {
     }
 
     private fun buildSpeechText(appName: String, title: String?, text: String?): String {
+        // لغة النطق من محتوى الإشعار (اسم التطبيق/العنوان/النص) لا من لغة الواجهة
+        val dynamicText = "$appName ${title.orEmpty()} ${text.orEmpty()}"
+        val isArabic = !dynamicText.any { it.isLetter() } || LocaleUtils.containsArabic(dynamicText)
+        val lang = if (isArabic) "ar" else "en"
         return when {
-            !title.isNullOrBlank() && !text.isNullOrBlank() -> "إشعار من $appName: $title. $text"
-            !title.isNullOrBlank() -> "إشعار من $appName: $title"
-            !text.isNullOrBlank() -> "إشعار من $appName: $text"
-            else -> "إشعار جديد من $appName"
+            !title.isNullOrBlank() && !text.isNullOrBlank() -> LocaleUtils.stringForSpeech(
+                applicationContext, lang, R.string.notif_from_title_text, R.string.notif_from_title_text
+            ).replace("{app}", appName).replace("{title}", title).replace("{text}", text)
+            !title.isNullOrBlank() -> LocaleUtils.stringForSpeech(
+                applicationContext, lang, R.string.notif_from_title, R.string.notif_from_title
+            ).replace("{app}", appName).replace("{title}", title)
+            !text.isNullOrBlank() -> LocaleUtils.stringForSpeech(
+                applicationContext, lang, R.string.notif_from_text, R.string.notif_from_text
+            ).replace("{app}", appName).replace("{text}", text)
+            else -> LocaleUtils.stringForSpeech(
+                applicationContext, lang, R.string.notif_new, R.string.notif_new
+            ).replace("{app}", appName)
         }
     }
 
     private fun getAppName(packageName: String): String {
         return when (packageName) {
-            "com.whatsapp", "com.whatsapp.w4b" -> "واتساب"
-            "org.telegram.messenger", "org.telegram.messenger.web" -> "تلجرام"
-            "com.facebook.orca" -> "ماسنجر"
-            "com.instagram.android" -> "إنستجرام"
+            "com.whatsapp" -> getString(R.string.app_whatsapp)
+            "com.whatsapp.w4b" -> getString(R.string.app_whatsapp_business)
+            "org.telegram.messenger", "org.telegram.messenger.web" -> getString(R.string.app_telegram)
+            "com.facebook.orca" -> getString(R.string.app_messenger)
+            "com.instagram.android" -> getString(R.string.app_instagram)
             else -> packageName.substringAfterLast('.')
         }
     }

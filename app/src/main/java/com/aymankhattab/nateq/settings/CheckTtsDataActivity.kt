@@ -17,11 +17,13 @@ class CheckTtsDataActivity : Activity() {
 
         val returnData = Intent()
 
-        // الأصوات المدعومة (أسماء Voices كما في onGetVoices)
-        // أسماء قياسية BCP-47 ("ar", "en") تطابق onGetVoices تماماً.
+        // الأصوات المدعومة (أسماء Voices كما في onGetVoices).
+        // يجب أن تطابق أسماء الـ Voice المُعلنة في tts_engine.xml/onGetVoices
+        // ("ar-local"/"en-local") بالضبط وإلا تختفي الأصوات أو يضيع voiceId
+        // المختار في شاشة إعدادات TTS على سامسونج (آلية CHECK_TTS_DATA).
         returnData.putStringArrayListExtra(
             TextToSpeech.Engine.EXTRA_AVAILABLE_VOICES,
-            arrayListOf("ar", "en")
+            arrayListOf("ar-local", "en-local")
         )
 
         // لا توجد أصوات غير متاحة (الكل متاح)

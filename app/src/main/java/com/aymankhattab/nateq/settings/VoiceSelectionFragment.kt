@@ -5,6 +5,7 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.util.Log
 import android.content.pm.PackageManager
+import android.os.Build
 import android.speech.tts.TextToSpeech
 import android.speech.tts.TextToSpeech.Engine
 import android.speech.tts.Voice
@@ -24,6 +25,7 @@ import android.text.Editable
 import android.text.TextWatcher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.OnBackPressedCallback
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import com.google.android.material.switchmaterial.SwitchMaterial
 import androidx.fragment.app.Fragment
@@ -47,6 +49,12 @@ import java.util.Locale
  * 4. قاموس النطق الشخصي
  */
 class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
+
+    companion object {
+        // حدود دفاعية ضد ملفات النسخ الاحتياطي الخبيثة/الضخمة (SAF أو مصادر أخرى)
+        private const val MAX_BACKUP_BYTES = 2 * 1024 * 1024   // 2 MB
+        private const val MAX_BACKUP_ENTRIES = 5000            // أسماء متصلين + إعدادات
+    }
 
     private lateinit var settings: SettingsRepository
     private lateinit var pronunciationDict: PronunciationDictionary
@@ -90,6 +98,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private lateinit var tvBatteryRateValue: TextView
     private lateinit var seekBatteryVolume: SeekBar
     private lateinit var tvBatteryVolumeValue: TextView
+    private lateinit var switchChargingComplete: SwitchMaterial
+    private lateinit var switchChargingDisconnect: SwitchMaterial
+    private lateinit var switchPowerSaver: SwitchMaterial
+    private lateinit var llPowerSaverThreshold: android.widget.LinearLayout
+    private lateinit var tvPowerSaverThresholdValue: TextView
+    private lateinit var seekPowerSaverThreshold: SeekBar
 
     // Notification reading settings
     private lateinit var switchNotificationReading: SwitchMaterial
@@ -110,6 +124,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private lateinit var tvSmsRateValue: TextView
     private lateinit var seekSmsVolume: SeekBar
     private lateinit var tvSmsVolumeValue: TextView
+    private lateinit var etCallerTemplate: com.google.android.material.textfield.TextInputEditText
+    private lateinit var etSmsTemplate: com.google.android.material.textfield.TextInputEditText
+    private lateinit var spinnerCallerVoiceAr: Spinner
+    private lateinit var spinnerCallerVoiceEn: Spinner
 
     // Language switcher
     private lateinit var btnToggleLanguage: com.google.android.material.button.MaterialButton
@@ -153,6 +171,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 if (ok) R.string.dict_imported_ok else R.string.dict_import_failed,
                 Toast.LENGTH_SHORT
             ).show()
+            view?.announceCompat(getString(if (ok) R.string.dict_imported_ok else R.string.dict_import_failed))
             if (ok) refreshDictAdapter()
         }
     }
@@ -172,6 +191,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 if (ok) R.string.dict_exported_ok else R.string.dict_export_failed,
                 Toast.LENGTH_SHORT
             ).show()
+            view?.announceCompat(getString(if (ok) R.string.dict_exported_ok else R.string.dict_export_failed))
         }
     }
 
@@ -191,6 +211,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 if (ok) R.string.backup_saved else R.string.backup_failed,
                 Toast.LENGTH_SHORT
             ).show()
+            view?.announceCompat(getString(if (ok) R.string.backup_saved else R.string.backup_failed))
         }
     }
 
@@ -207,8 +228,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     refreshAllSettingsUi()
                     AnnouncementSchedulerService.requestStart(requireContext())
                     Toast.makeText(requireContext(), R.string.restore_done, Toast.LENGTH_LONG).show()
+                    view?.announceCompat(getString(R.string.restore_done))
                 } else {
                     Toast.makeText(requireContext(), R.string.restore_failed, Toast.LENGTH_LONG).show()
+                    view?.announceCompat(getString(R.string.restore_failed))
                 }
             }
         }
@@ -250,16 +273,45 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 else -> R.string.caller_permission_granted_contacts_only
             }
             Toast.makeText(requireContext(), msg, Toast.LENGTH_LONG).show()
+            view?.announceCompat(getString(msg))
         } else {
             switchCallerAnnouncement.isChecked = false
             runCatching { settings.setCallerAnnouncementEnabled(false) }
             updateSectionStatuses()
             Toast.makeText(requireContext(), R.string.caller_permission_needed, Toast.LENGTH_LONG).show()
+            view?.announceCompat(getString(R.string.caller_permission_needed))
         }
     }
 
     /** يمنع مناداة المستمع من رد الطلب (تفادي إعادة طلب الأذونات دورياً) */
     private var callerSwitchGuard = false
+
+    // طلب إذن قراءة الرسائل الواردة لحظة تفعيل قراءة الرسائل فقط (لا عند
+    // أول تشغيل). الوضع المختار (full/source) لا يُحفظ إلا بعد المنح الفعلي
+    // حتى لا يبقى مفعّلاً زوراً عند رفض المستخدم الإذن (بند [9]).
+    private var pendingSmsMode: String? = null
+
+    private val smsPermLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val pending = pendingSmsMode
+        pendingSmsMode = null
+        if (granted) {
+            // مُنح الإذن: الآن فقط نُثبّت الوضع المعلّق المطلوب (full/source).
+            if (pending != null) {
+                runCatching { settings.setSmsReadingMode(pending) }
+            }
+            view?.announceCompat(getString(R.string.permission_sms_granted))
+            AnnouncementSchedulerService.requestStart(requireContext())
+        } else {
+            // رُفض: نعيد المفتاح إلى "off" (لم يكن قد حُفظ) ونعلن السبب.
+            if (pending != null) {
+                runCatching { settings.setSmsReadingMode("off") }
+                if (::spinnerSmsMode.isInitialized) spinnerSmsMode.setSelection(2)
+            }
+            view?.announceCompat(getString(R.string.sms_permission_needed))
+        }
+    }
 
     // ===== الأكورديون: أقسام قابلة للطي بعنوان حالة (يُفتح قسم واحد فقط) =====
     private data class AccordionEntry(
@@ -293,8 +345,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
         // تهيئة الأصوات هنا بعد الانضمام للسياق (لا يجوز في مُنشئ/خاصية تستدعي getString())
         nateqVoices = listOf(
-            NateqVoice("nateq-ar-local", "ar", getString(R.string.voice_name_arabic), Locale.forLanguageTag("ar")),
-            NateqVoice("nateq-en-local", "en", getString(R.string.voice_name_english), Locale.forLanguageTag("en"))
+            NateqVoice("ar-local", "ar", getString(R.string.voice_name_arabic), Locale.forLanguageTag("ar")),
+            NateqVoice("en-local", "en", getString(R.string.voice_name_english), Locale.forLanguageTag("en"))
         )
 
         // صندوق المحركات داخل قسم اللغة الأولى/الثانية (اختيار محرك TTS للنطق)
@@ -335,6 +387,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             runCatching { settings.setAllAnnouncementsEnabled(checked) }
             if (checked) {
                 AnnouncementSchedulerService.requestStart(requireContext())
+                warnIfNotificationsHidden()
             } else {
                 runCatching {
                     requireContext().stopService(
@@ -343,6 +396,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 }
             }
             updateSectionStatuses()
+            view?.announceCompat(getString(if (checked) R.string.announcement_turned_on else R.string.announcement_turned_off))
         }
 
         // زر جعل Lord المحرك الافتراضي (يفتح شاشة TTS النظامية لاختياره يدوياً)
@@ -356,6 +410,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 )
             }
             Toast.makeText(requireContext(), R.string.set_default_engine_hint, Toast.LENGTH_LONG).show()
+            view?.announceCompat(getString(R.string.set_default_engine_hint))
         }
 
         // معاينة نطق رقم
@@ -397,6 +452,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         tvBatteryRateValue = view.findViewById(R.id.tv_battery_rate_value)
         seekBatteryVolume = view.findViewById(R.id.seek_battery_volume)
         tvBatteryVolumeValue = view.findViewById(R.id.tv_battery_volume_value)
+        switchChargingComplete = view.findViewById(R.id.switch_charging_complete_announcement)
+        switchChargingDisconnect = view.findViewById(R.id.switch_charging_disconnect_announcement)
+        switchPowerSaver = view.findViewById(R.id.switch_power_saver_mode)
+        llPowerSaverThreshold = view.findViewById(R.id.ll_power_saver_threshold)
+        tvPowerSaverThresholdValue = view.findViewById(R.id.tv_power_saver_threshold_value)
+        seekPowerSaverThreshold = view.findViewById(R.id.seek_power_saver_threshold)
 
         // Notification reading settings
         switchNotificationReading = view.findViewById(R.id.switch_notification_reading)
@@ -416,6 +477,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         seekSmsRate = view.findViewById(R.id.seek_sms_reading_rate)
         tvSmsRateValue = view.findViewById(R.id.tv_sms_reading_rate_value)
         seekSmsVolume = view.findViewById(R.id.seek_sms_reading_volume)
+        etCallerTemplate = view.findViewById(R.id.et_caller_template)
+        etSmsTemplate = view.findViewById(R.id.et_sms_template)
+        spinnerCallerVoiceAr = view.findViewById(R.id.spinner_caller_voice_ar)
+        spinnerCallerVoiceEn = view.findViewById(R.id.spinner_caller_voice_en)
         tvSmsVolumeValue = view.findViewById(R.id.tv_sms_reading_volume_value)
 
         btnToggleLanguage = view.findViewById(R.id.btn_toggle_language)
@@ -442,6 +507,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         setupSaveAndResetButtons()
         setupBackupRestoreButtons()
         setupAccordionSections()
+        setupToolsSection()
         updateSectionStatuses()
         llDetailBack = view.findViewById(R.id.ll_detail_back)
         llMasterSwitch = view.findViewById(R.id.ll_master_switch)
@@ -451,6 +517,15 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         view.findViewById<View>(R.id.btn_back_to_list).setOnClickListener { showHome() }
         requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backCallback)
         showHome()
+    }
+
+    override fun onDestroyView() {
+        // إغلاق المتحدث المستقل الخاص بالمعاينة (إن أُنشئ) حتى لا يبقى محرك
+        // TTS مفتوحاً بعد مغادرة الشاشة. المثيل هنا خاص بالشاشة وليس المشترك
+        // (getInstance) الذي تُدار حياته في مستقبلات الإعلانات التلقائية.
+        announcementSpeaker?.stop()
+        announcementSpeaker = null
+        super.onDestroyView()
     }
 
     // ===== صندوق المحركات (اختيار محرك TTS ضمن قسم اللغة الأولى/الثانية) =====
@@ -664,10 +739,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         seekVol.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 tvVol.text = "$progress%"
-                if (fromUser) seekBar.announceCompat("$progress%")
             }
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                seekBar.announceCompat("${seekBar.progress}%")
+            }
         })
 
         seekPitch.progress = (savedPitch * 100).toInt().coerceIn(0, 200)
@@ -676,10 +752,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 val v = progress / 100f
                 tvPitch.text = String.format(java.util.Locale.US, "%.1fx", v)
-                if (fromUser) seekBar.announceCompat(String.format(java.util.Locale.US, "%.1fx", v))
             }
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                val v = seekBar.progress / 100f
+                seekBar.announceCompat(String.format(java.util.Locale.US, "%.1fx", v))
+            }
         })
 
         seekRate.progress = (savedRate * 100).toInt().coerceIn(0, 200)
@@ -688,10 +766,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 val v = progress / 100f
                 tvRate.text = String.format(java.util.Locale.US, "%.1fx", v)
-                if (fromUser) seekBar.announceCompat(String.format(java.util.Locale.US, "%.1fx", v))
             }
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                val v = seekBar.progress / 100f
+                seekBar.announceCompat(String.format(java.util.Locale.US, "%.1fx", v))
+            }
         })
 
         // ===== زر حفظ: يخزّن كل قيم هذه اللغة =====
@@ -774,47 +854,57 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private fun playbackPreview(enginePkg: String, voiceName: String, volume: Float, pitch: Float, rate: Float) {
         lateinit var previewTts: TextToSpeech
         previewTts = TextToSpeech(requireContext()) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                runCatching { previewTts.setEngineByPackageName(enginePkg) }
-                try {
-                    val avail = runCatching { previewTts.getVoices() }.getOrDefault(emptySet())
-                    val voice = avail.firstOrNull { it.name == voiceName }
-                    if (voice != null) {
-                        // نضبط المحرك على لسان الصوت المختار حتى لا يقرأ النص
-                        // بلغة المحرك الافتراضية (مثلاً الإنجليزية رغم اختيار العربي).
-                        runCatching { previewTts.setVoice(voice) }
-                        runCatching { previewTts.language = voice.locale }
-                    }
-                } catch (_: Exception) {}
-                previewTts.setSpeechRate(rate)
-                runCatching { previewTts.setPitch(pitch) }
-                // نمرر مستوى الصوت للمحرك عبر المعاملات (كان بلا مستوى صوت إطلاقاً)
-                // ليقترب ناتج المعاينة من النطق الفعلي الذي يطبق نفس القيم.
-                val params = android.os.Bundle().apply {
-                    putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume)
+            if (status != TextToSpeech.SUCCESS) {
+                // فشل تهيئة محرك المعاينة: نغلق فوراً حتى لا تبقى نسخة TTS معلقة
+                runCatching { previewTts.shutdown() }
+                return@TextToSpeech
+            }
+            runCatching { previewTts.setEngineByPackageName(enginePkg) }
+            try {
+                val avail = runCatching { previewTts.getVoices() }.getOrDefault(emptySet())
+                val voice = avail.firstOrNull { it.name == voiceName }
+                if (voice != null) {
+                    // نضبط المحرك على لسان الصوت المختار حتى لا يقرأ النص
+                    // بلغة المحرك الافتراضية (مثلاً الإنجليزية رغم اختيار العربي).
+                    runCatching { previewTts.setVoice(voice) }
+                    runCatching { previewTts.language = voice.locale }
                 }
-                // نعرض عينة بنفس لغة الصوت: عربي إن كان الصوت عربياً وإلا إنجليزي.
-                // (سبق: كان النص تجريبياً إنجليزياً دائماً فبدا للمستخدم أن الصوت إنجليزي.)
-                val sampleText = if (voiceName.lowercase().contains("ar") || voiceName.lowercase().contains("arab"))
-                    getString(R.string.sample_text_preview_ar)
-                else
-                    getString(R.string.sample_text_default_en)
+            } catch (_: Exception) {}
+            previewTts.setSpeechRate(rate)
+            runCatching { previewTts.setPitch(pitch) }
+            // نمرر مستوى الصوت للمحرك عبر المعاملات (كان بلا مستوى صوت إطلاقاً)
+            // ليقترب ناتج المعاينة من النطق الفعلي الذي يطبق نفس القيم.
+            val params = android.os.Bundle().apply {
+                putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume)
+            }
+            // نعرض عينة بنفس لغة الصوت: عربي إن كان الصوت عربياً وإلا إنجليزي.
+            // (سبق: كان النص تجريبياً إنجليزياً دائماً فبدا للمستخدم أن الصوت إنجليزي.)
+            val sampleText = if (voiceName.lowercase().contains("ar") || voiceName.lowercase().contains("arab"))
+                getString(R.string.sample_text_preview_ar)
+            else
+                getString(R.string.sample_text_default_en)
+            val speakResult = runCatching {
                 previewTts.speak(
                     sampleText,
                     TextToSpeech.QUEUE_FLUSH,
                     params,
                     "preview"
                 )
-                previewTts.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
-                    override fun onStart(utteranceId: String?) {}
-
-                    @Deprecated("Java Deprecated")
-                    override fun onDone(utteranceId: String?) { previewTts.shutdown() }
-
-                    @Deprecated("Java Deprecated")
-                    override fun onError(utteranceId: String?) { previewTts.shutdown() }
-                })
+            }.getOrDefault(TextToSpeech.ERROR)
+            if (speakResult == TextToSpeech.ERROR) {
+                // فشل النطق (مثلاً المحرك دون لغة محمّلة): نغلق فوراً عوضاً عن تعليقه
+                runCatching { previewTts.shutdown() }
+                return@TextToSpeech
             }
+            previewTts.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) {}
+
+                @Deprecated("Java Deprecated")
+                override fun onDone(utteranceId: String?) { previewTts.shutdown() }
+
+                @Deprecated("Java Deprecated")
+                override fun onError(utteranceId: String?) { previewTts.shutdown() }
+            })
         }
     }
 
@@ -842,6 +932,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     refreshDictAdapter()
                 } else {
                     Toast.makeText(requireContext(), getString(R.string.enter_word_and_pronunciation), Toast.LENGTH_SHORT).show()
+                    view?.announceCompat(getString(R.string.enter_word_and_pronunciation))
                 }
             }
             .setNegativeButton(getString(R.string.cancel), null)
@@ -862,6 +953,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         val number = raw.toIntOrNull()
         if (number == null) {
             Toast.makeText(requireContext(), R.string.number_preview_invalid, Toast.LENGTH_SHORT).show()
+            view?.announceCompat(getString(R.string.number_preview_invalid))
             return
         }
         val forced = runCatching { settings.getAnnouncementSpeechLanguage() }.getOrNull()
@@ -964,10 +1056,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 }
                 if (duplicate) {
                     Toast.makeText(requireContext(), R.string.caller_names_duplicate, Toast.LENGTH_LONG).show()
+                    view?.announceCompat(getString(R.string.caller_names_duplicate))
                 }
                 runCatching { settings.setCustomCallerNames(newNames) }
                 if (!duplicate) {
                     Toast.makeText(requireContext(), R.string.caller_names_saved, Toast.LENGTH_SHORT).show()
+                    view?.announceCompat(getString(R.string.caller_names_saved))
                 }
             }
             .setNegativeButton(getString(R.string.cancel), null)
@@ -1002,19 +1096,23 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             runCatching { settings.setTimeAnnouncementEnabled(checked) }
             if (checked) AnnouncementSchedulerService.requestStart(requireContext())
             updateSectionStatuses()
+            view?.announceCompat(getString(if (checked) R.string.announcement_turned_on else R.string.announcement_turned_off))
         }
         switchTime24h.isChecked =
             runCatching { settings.isTime24Hour() }.getOrDefault(false)
         switchTime24h.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setTime24Hour(checked) }
+            view?.announceCompat(getString(if (checked) R.string.toggle_on else R.string.toggle_off))
         }
         switchHijriDate.isChecked =
             runCatching { settings.isHijriDateEnabled() }.getOrDefault(false)
         switchHijriDate.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setHijriDateEnabled(checked) }
+            view?.announceCompat(getString(if (checked) R.string.toggle_on else R.string.toggle_off))
         }
         switchClockWidget.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setClockWidgetEnabled(checked) }
+            view?.announceCompat(getString(if (checked) R.string.toggle_on else R.string.toggle_off))
         }
         spinnerTimeInterval.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
@@ -1153,6 +1251,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         refreshCardDesc(e.content)
     }
 
+    /** حالة طي قسم «أدوات التطبيق» (مفتوح افتراضياً). */
+    private var toolsSectionOpen = true
+
     /** فتح شاشة قسم فرعي: إخفاء كل شيء عدا القسم المطلوب + شريط العودة */
     private fun openSection(content: View) {
         detailOpen = true
@@ -1170,16 +1271,49 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         for (e in accordionEntries) {
             val target = e.content === content
             if (target) sectionName = e.header.tag as? String ?: ""
-            e.header.visibility = if (target) View.VISIBLE else View.GONE
+            // رأس القسم المفتوح يُخفى أيضاً: tvSectionTitle يعرض اسمه أعلى الشاشة
+            e.header.visibility = View.GONE
             e.status?.visibility = if (target) View.VISIBLE else View.GONE
             e.content.visibility = if (target) View.VISIBLE else View.GONE
         }
         tvSectionTitle?.text = sectionName
-        // إعلان مسموع لفتح القسم + نقل تركيز الوصول إلى زر العودة
-        tvBackToList?.let { bt ->
-            bt.announceCompat(getString(R.string.section_opened, sectionName))
-            focusForAccessibility(bt)
+        // إعلان مسموع لفتح القسم + نقل تركيز الوصول إلى أول عنصر تفاعلي في المحتوى
+        val focusTarget = findFirstFocusableView(content)
+            ?: tvBackToList
+        focusTarget?.let {
+            it.announceCompat(getString(R.string.section_opened, sectionName))
+            focusForAccessibility(it)
         }
+    }
+
+    /** إيجاد أول عرض قابل للتركيز في الشجرة (أول عنصر تفاعلي لفتح القسم) */
+    private fun findFirstFocusableView(root: View): View? {
+        var found: View? = null
+        forEachView(root) { v ->
+            if (found == null && v.isFocusable && v.visibility == View.VISIBLE) {
+                found = v
+            }
+        }
+        return found
+    }
+
+    /** تحذير لمرة واحدة في الجلسة إذا كان إذن الإشعارات مرفوضاً (الأزرار لن تظهر). */
+    private var notificationsHiddenWarned = false
+    private fun warnIfNotificationsHidden() {
+        if (notificationsHiddenWarned) return
+        if (Build.VERSION.SDK_INT < 33) return
+        val granted = ContextCompat.checkSelfPermission(
+            requireContext(),
+            android.Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) return
+        notificationsHiddenWarned = true
+        Toast.makeText(
+            requireContext(),
+            getString(R.string.notification_permission_actions_hidden),
+            Toast.LENGTH_LONG
+        ).show()
+        view?.announceCompat(getString(R.string.notification_permission_actions_hidden))
     }
 
     /** العودة إلى القائمة الرئيسية: تُظهر كل البطاقات وتطوي المحتويات */
@@ -1214,7 +1348,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         target.post {
             target.requestFocus(View.FOCUS_FORWARD)
             target.sendAccessibilityEvent(
-                android.view.accessibility.AccessibilityEvent.TYPE_VIEW_FOCUSED
+                android.view.accessibility.AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED
             )
         }
     }
@@ -1236,13 +1370,16 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
     }
 
-    /** إظهار/إخفاء أزرار الحفظ والاستعادة في القائمة الرئيسية */
+    /** إظهار/إخفاء أدوات القائمة الرئيسية (الحفظ/الاستعادة/النسخ) */
     private fun setHomeActionsVisible(visible: Boolean) {
         val v = if (visible) View.VISIBLE else View.GONE
-        view?.findViewById<View>(R.id.btn_save_settings)?.visibility = v
-        view?.findViewById<View>(R.id.btn_reset_settings)?.visibility = v
-        view?.findViewById<View>(R.id.btn_backup_settings)?.visibility = v
-        view?.findViewById<View>(R.id.btn_restore_settings)?.visibility = v
+        view?.findViewById<View>(R.id.ll_tools_header)?.visibility = v
+        // المحتوى يسترجع حالته الأصلية (مفتوح إن كان مفتوحاً قبل الدخول لقسم)
+        if (visible && toolsSectionOpen) {
+            view?.findViewById<View>(R.id.ll_tools_content)?.visibility = View.VISIBLE
+        } else if (!visible) {
+            view?.findViewById<View>(R.id.ll_tools_content)?.visibility = v
+        }
     }
 
     /** تسجيل الأقسام التسعة كبطاقات في القائمة الرئيسية (تُفتح كل منها شاشة فرعية) */
@@ -1478,6 +1615,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             runCatching { settings.setBatteryAnnouncementEnabled(checked) }
             if (checked) AnnouncementSchedulerService.requestStart(requireContext())
             updateSectionStatuses()
+            view?.announceCompat(getString(if (checked) R.string.announcement_turned_on else R.string.announcement_turned_off))
         }
 
         // عنوان المستويات قابل للتوسيع/الطي
@@ -1534,11 +1672,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 val value = progress / 100f
                 tvBatteryRateValue.text = String.format(Locale.US, "%.1fx", value)
-                runCatching { settings.setBatteryAnnouncementRate(value) }
-                if (fromUser) seekBar.announceCompat(String.format(Locale.US, "%.1fx", value))
             }
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                runCatching { settings.setBatteryAnnouncementRate(seekBar.progress / 100f) }
+                seekBar.announceCompat(String.format(Locale.US, "%.1fx", seekBar.progress / 100f))
+            }
         })
 
         // مستوى الصوت
@@ -1548,11 +1687,54 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         seekBatteryVolume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 tvBatteryVolumeValue.text = "$progress%"
-                runCatching { settings.setBatteryAnnouncementVolume(progress / 100f) }
-                if (fromUser) seekBar.announceCompat("$progress%")
             }
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                runCatching { settings.setBatteryAnnouncementVolume(seekBar.progress / 100f) }
+                seekBar.announceCompat("${seekBar.progress}%")
+            }
+        })
+
+        // إعلان اكتمال الشحن (100%)
+        switchChargingComplete.isChecked =
+            runCatching { settings.isChargingCompleteAnnouncementEnabled() }.getOrDefault(true)
+        switchChargingComplete.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setChargingCompleteAnnouncementEnabled(checked) }
+            view?.announceCompat(getString(if (checked) R.string.announcement_turned_on else R.string.announcement_turned_off))
+        }
+
+        // إعلان فصل الشاحن
+        switchChargingDisconnect.isChecked =
+            runCatching { settings.isChargingDisconnectAnnouncementEnabled() }.getOrDefault(true)
+        switchChargingDisconnect.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setChargingDisconnectAnnouncementEnabled(checked) }
+            view?.announceCompat(getString(if (checked) R.string.announcement_turned_on else R.string.announcement_turned_off))
+        }
+
+        // وضع توفير الطاقة + عتبته
+        switchPowerSaver.isChecked =
+            runCatching { settings.isPowerSaverModeEnabled() }.getOrDefault(false)
+        val powerThreshold =
+            runCatching { settings.getPowerSaverBatteryThreshold() }.getOrDefault(20)
+        tvPowerSaverThresholdValue.text = "$powerThreshold%"
+        seekPowerSaverThreshold.progress = powerThreshold.coerceIn(0, 100)
+        llPowerSaverThreshold.visibility = if (switchPowerSaver.isChecked) View.VISIBLE else View.GONE
+        seekPowerSaverThreshold.visibility = if (switchPowerSaver.isChecked) View.VISIBLE else View.GONE
+        switchPowerSaver.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setPowerSaverModeEnabled(checked) }
+            llPowerSaverThreshold.visibility = if (checked) View.VISIBLE else View.GONE
+            seekPowerSaverThreshold.visibility = if (checked) View.VISIBLE else View.GONE
+            view?.announceCompat(getString(if (checked) R.string.announcement_turned_on else R.string.announcement_turned_off))
+        }
+        seekPowerSaverThreshold.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                tvPowerSaverThresholdValue.text = "$progress%"
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                runCatching { settings.setPowerSaverBatteryThreshold(seekBar.progress) }
+                seekBar.announceCompat("${seekBar.progress}%")
+            }
         })
     }
 
@@ -1564,6 +1746,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             runCatching { settings.setNotificationReadingEnabled(checked) }
             if (checked) AnnouncementSchedulerService.requestStart(requireContext())
             updateSectionStatuses()
+            view?.announceCompat(getString(if (checked) R.string.announcement_turned_on else R.string.announcement_turned_off))
         }
 
         // فتح إعدادات إذن الوصول للإشعارات من النظام
@@ -1573,11 +1756,13 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             }.getOrDefault(false)
             if (granted) {
                 Toast.makeText(requireContext(), R.string.notification_reading_enabled_summary, Toast.LENGTH_SHORT).show()
+                view?.announceCompat(getString(R.string.notification_reading_enabled_summary))
             } else {
                 try {
                     startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                 } catch (t: Throwable) {
                     Toast.makeText(requireContext(), R.string.notification_permission_needed, Toast.LENGTH_LONG).show()
+                    view?.announceCompat(getString(R.string.notification_permission_needed))
                 }
             }
         }
@@ -1630,6 +1815,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     R.string.notification_apps_saved,
                     Toast.LENGTH_SHORT
                 ).show()
+                view?.announceCompat(getString(R.string.notification_apps_saved))
                 updateSectionStatuses()
             }
             .setNegativeButton(R.string.cancel, null)
@@ -1656,6 +1842,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 runCatching { settings.setCallerAnnouncementEnabled(false) }
                 // لا نوقف الخدمة؛ إن لم يبقَ أي إعلان مفعّل تتوقف هي نفسها.
                 updateSectionStatuses()
+                view?.announceCompat(getString(R.string.announcement_turned_off))
             }
         }
 
@@ -1686,11 +1873,13 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 val value = progress / 100f
                 tvCallerRateValue.text = String.format(Locale.US, "%.1fx", value)
-                runCatching { settings.setCallerAnnouncementRate(value) }
-                if (fromUser) seekBar.announceCompat(String.format(Locale.US, "%.1fx", value))
             }
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                val value = seekBar.progress / 100f
+                runCatching { settings.setCallerAnnouncementRate(value) }
+                seekBar.announceCompat(String.format(Locale.US, "%.1fx", value))
+            }
         })
 
         // مستوى الصوت
@@ -1700,39 +1889,103 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         seekCallerVolume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 tvCallerVolumeValue.text = "$progress%"
-                runCatching { settings.setCallerAnnouncementVolume(progress / 100f) }
-                if (fromUser) seekBar.announceCompat("$progress%")
             }
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                runCatching { settings.setCallerAnnouncementVolume(seekBar.progress / 100f) }
+                seekBar.announceCompat("${seekBar.progress}%")
+            }
         })
+
+        // قالب إعلان المتصل: {name} لاسم المتصل
+        etCallerTemplate.setText(runCatching { settings.getCallerAnnouncementTemplate() }.getOrNull())
+        etCallerTemplate.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                runCatching {
+                    settings.setCallerAnnouncementTemplate(s?.toString()?.trim()?.takeIf { it.isNotBlank() })
+                }
+            }
+        })
+
+        // صوت نطق الأسماء العربية في إعلان المتصل
+        spinnerCallerVoiceAr.adapter = simpleAdapter(nateqVoices.map { it.displayName })
+        val savedCallerVoiceAr = runCatching { settings.getCallerAnnouncementArabicVoiceId() }.getOrNull()
+        if (savedCallerVoiceAr != null) {
+            val idx = nateqVoices.indexOfFirst { it.name == savedCallerVoiceAr }
+            if (idx >= 0) spinnerCallerVoiceAr.setSelection(idx)
+        }
+        spinnerCallerVoiceAr.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                runCatching { settings.setCallerAnnouncementArabicVoiceId(nateqVoices[position].name) }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        // صوت نطق الأسماء الإنجليزية في إعلان المتصل
+        spinnerCallerVoiceEn.adapter = simpleAdapter(nateqVoices.map { it.displayName })
+        val savedCallerVoiceEn = runCatching { settings.getCallerAnnouncementEnglishVoiceId() }.getOrNull()
+        if (savedCallerVoiceEn != null) {
+            val idx = nateqVoices.indexOfFirst { it.name == savedCallerVoiceEn }
+            if (idx >= 0) spinnerCallerVoiceEn.setSelection(idx)
+        }
+        spinnerCallerVoiceEn.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                runCatching { settings.setCallerAnnouncementEnglishVoiceId(nateqVoices[position].name) }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
     }
 
     // ===== قراءة الرسائل الواردة =====
     private fun setupSmsReadingSettings() {
-        // وضع القراءة: مفعل / معطل / قراءة مصدر الرسالة فقط
+        // وضع القراءة: مفعل / قراءة مصدر الرسالة فقط / معطل
         val modes = listOf(
             getString(R.string.sms_mode_full),
-            getString(R.string.sms_mode_off),
-            getString(R.string.sms_mode_source)
+            getString(R.string.sms_mode_source),
+            getString(R.string.sms_mode_off)
         )
         spinnerSmsMode.adapter = simpleAdapter(modes)
         val savedMode = runCatching { settings.getSmsReadingMode() }.getOrDefault("off")
         val modeIndex = when (savedMode) {
             "full" -> 0
-            "source" -> 2
-            else -> 1 // "off"
+            "source" -> 1
+            else -> 2 // "off"
         }
         spinnerSmsMode.setSelection(modeIndex)
         spinnerSmsMode.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 val mode = when (position) {
                     0 -> "full"
-                    1 -> "off"
-                    else -> "source"
+                    1 -> "source"
+                    else -> "off"
                 }
-                runCatching { settings.setSmsReadingMode(mode) }
-                if (mode != "off") AnnouncementSchedulerService.requestStart(requireContext())
+                if (mode == "off") {
+                    // "off": يُحفظ فوراً (لا يتطلب إذناً) ويرفع أي وضع معلّق.
+                    pendingSmsMode = null
+                    runCatching { settings.setSmsReadingMode("off") }
+                    updateSectionStatuses()
+                    return
+                }
+                // وضع غير "off" (full/source): لا يُحفظ حتى منح الإذن.
+                if (ContextCompat.checkSelfPermission(
+                        requireContext(),
+                        android.Manifest.permission.RECEIVE_SMS
+                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) {
+                    pendingSmsMode = mode
+                    runCatching {
+                        smsPermLauncher.launch(android.Manifest.permission.RECEIVE_SMS)
+                    }
+                } else {
+                    // الإذن ممنوح من قبل: نحفظ مباشرة.
+                    pendingSmsMode = null
+                    runCatching { settings.setSmsReadingMode(mode) }
+                    AnnouncementSchedulerService.requestStart(requireContext())
+                }
+                // تنبيه سياسة أندرويد 17: رسائل OTP تُحجب 3 ساعات أولى بعد التفعيل.
+                view?.announceCompat(getString(R.string.sms_otp_block_hint))
                 updateSectionStatuses()
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
@@ -1760,11 +2013,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 val value = progress / 100f
                 tvSmsRateValue.text = String.format(Locale.US, "%.1fx", value)
-                runCatching { settings.setSmsReadingRate(value) }
-                if (fromUser) seekBar.announceCompat(String.format(Locale.US, "%.1fx", value))
             }
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                runCatching { settings.setSmsReadingRate(seekBar.progress / 100f) }
+                seekBar.announceCompat(String.format(Locale.US, "%.1fx", seekBar.progress / 100f))
+            }
         })
 
         // مستوى الصوت
@@ -1774,11 +2028,24 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         seekSmsVolume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 tvSmsVolumeValue.text = "$progress%"
-                runCatching { settings.setSmsReadingVolume(progress / 100f) }
-                if (fromUser) seekBar.announceCompat("$progress%")
             }
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                runCatching { settings.setSmsReadingVolume(seekBar.progress / 100f) }
+                seekBar.announceCompat("${seekBar.progress}%")
+            }
+        })
+
+        // قالب قراءة الرسائل: {name} للمرسل و{message} للرسالة
+        etSmsTemplate.setText(runCatching { settings.getSmsAnnouncementTemplate() }.getOrNull())
+        etSmsTemplate.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                runCatching {
+                    settings.setSmsAnnouncementTemplate(s?.toString()?.trim()?.takeIf { it.isNotBlank() })
+                }
+            }
         })
     }
 
@@ -1799,38 +2066,44 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 val value = progress / 100f
                 tvDefaultSpeechRateValue.text = String.format(Locale.US, "%.1fx", value)
-                runCatching { settings.setDefaultSpeechRate(value) }
-                if (fromUser) seekBar.announceCompat(String.format(Locale.US, "%.1fx", value))
-                updateSectionStatuses()
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                val value = seekBar.progress / 100f
+                runCatching { settings.setDefaultSpeechRate(value) }
+                seekBar.announceCompat(String.format(Locale.US, "%.1fx", value))
+                updateSectionStatuses()
+            }
         })
 
         seekDefaultPitch.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 val value = progress / 100f
                 tvDefaultPitchValue.text = String.format(Locale.US, "%.1fx", value)
-                runCatching { settings.setDefaultPitch(value) }
-                if (fromUser) seekBar.announceCompat(String.format(Locale.US, "%.1fx", value))
-                updateSectionStatuses()
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                val value = seekBar.progress / 100f
+                runCatching { settings.setDefaultPitch(value) }
+                seekBar.announceCompat(String.format(Locale.US, "%.1fx", value))
+                updateSectionStatuses()
+            }
         })
 
         seekDefaultVolume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 tvDefaultVolumeValue.text = "$progress%"
-                runCatching { settings.setDefaultVolume(progress / 100f) }
-                if (fromUser) seekBar.announceCompat("$progress%")
-                updateSectionStatuses()
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                val value = seekBar.progress / 100f
+                runCatching { settings.setDefaultVolume(value) }
+                seekBar.announceCompat("${seekBar.progress}%")
+                updateSectionStatuses()
+            }
         })
     }
 
@@ -1912,35 +2185,38 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                     val value = progress / 100f
                     holder.tvRateValue.text = String.format(Locale.US, "%.1fx", value)
-                    runCatching { settings.setSpeechRateForCategory(category, value) }
-                    if (fromUser) seekBar.announceCompat(String.format(Locale.US, "%.1fx", value))
                 }
 
                 override fun onStartTrackingTouch(seekBar: SeekBar) {}
-                override fun onStopTrackingTouch(seekBar: SeekBar) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar) {
+                    runCatching { settings.setSpeechRateForCategory(category, seekBar.progress / 100f) }
+                    holder.seekRate.announceCompat(String.format(Locale.US, "%.1fx", seekBar.progress / 100f))
+                }
             })
 
             holder.seekPitch.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                     val value = progress / 100f
                     holder.tvPitchValue.text = String.format(Locale.US, "%.1fx", value)
-                    runCatching { settings.setPitchForCategory(category, value) }
-                    if (fromUser) seekBar.announceCompat(String.format(Locale.US, "%.1fx", value))
                 }
 
                 override fun onStartTrackingTouch(seekBar: SeekBar) {}
-                override fun onStopTrackingTouch(seekBar: SeekBar) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar) {
+                    runCatching { settings.setPitchForCategory(category, seekBar.progress / 100f) }
+                    holder.seekPitch.announceCompat(String.format(Locale.US, "%.1fx", seekBar.progress / 100f))
+                }
             })
 
             holder.seekVolume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                     holder.tvVolumeValue.text = "$progress%"
-                    runCatching { settings.setVolumeForCategory(category, progress / 100f) }
-                    if (fromUser) seekBar.announceCompat("$progress%")
                 }
 
                 override fun onStartTrackingTouch(seekBar: SeekBar) {}
-                override fun onStopTrackingTouch(seekBar: SeekBar) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar) {
+                    runCatching { settings.setVolumeForCategory(category, seekBar.progress / 100f) }
+                    holder.seekVolume.announceCompat("${seekBar.progress}%")
+                }
             })
 
             holder.btnTest.setOnClickListener {
@@ -2018,10 +2294,17 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> showDictEditDialog(entry)
-                    1 -> {
-                        runCatching { pronunciationDict.removeEntry(entry.first) }
-                        refreshDictAdapter()
-                    }
+1 -> {
+                            runCatching { pronunciationDict.removeEntry(entry.first) }
+                            // announcement بنتيجة الحذف لتوفر تغذية rückfeed لقارئ الشاشة
+                            announcementSpeaker?.speak(
+                                getString(R.string.dict_removed),
+                                if (com.aymankhattab.nateq.util.LocaleUtils.containsArabic(entry.second)) Locale.forLanguageTag("ar")
+                                    else Locale.forLanguageTag("en"),
+                                1.0f, 1.0f, 1.0f
+                            )
+                            refreshDictAdapter()
+                        }
                 }
             }
             .show()
@@ -2051,13 +2334,21 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         val isArabic = current.startsWith("ar", ignoreCase = true)
         // يعرض اللغة الحالية ثم الإجراء نحو اللغة الأخرى
         btnToggleLanguage.text = if (isArabic) {
-            getString(R.string.language_current_label) + " العربية — " + getString(R.string.language_change_to_en)
+            getString(R.string.language_current_label) + " " + getString(R.string.language_arabic) + " — " + getString(R.string.language_change_to_en)
         } else {
-            getString(R.string.language_current_label) + " English — " + getString(R.string.language_change_to_ar)
+            getString(R.string.language_current_label) + " " + getString(R.string.language_english) + " — " + getString(R.string.language_change_to_ar)
         }
 
         btnToggleLanguage.setOnClickListener {
-            runCatching { settings.setAppLanguage(if (isArabic) "en" else "ar") }
+            val newLang = if (isArabic) "en" else "ar"
+            runCatching { settings.setAppLanguage(newLang) }
+            // تطبيق اللغة على مستوى التطبيق (AppCompatDelegate) قبل إعادة إنشاء
+            // النشاط حتى تُنشأ موارد النشاط الجديد باللغة الجديدة فعلياً.
+            runCatching {
+                AppCompatDelegate.setApplicationLocales(
+                    androidx.core.os.LocaleListCompat.forLanguageTags(newLang)
+                )
+            }
             // إعادة إنشاء النشاط لتطبيق اللغة فورياً (UI + افتراضيات)
             requireActivity().recreate()
         }
@@ -2097,6 +2388,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     setupGeneralSettings()
                     setupNumberReadingSettings()
                     rvCategories.adapter?.notifyDataSetChanged()
+                    // تحديث نصوص حالة الأقسام بعد إعادة التحميل حتى تعكس القيم
+                    // الافتراضية فوراً (كانت تبقى على القيم القديمة المحذوفة).
+                    updateSectionStatuses()
                 }
                 .setNegativeButton(R.string.reset_cancel, null)
                 .show()
@@ -2106,7 +2400,15 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     // ===== النسخ الاحتياطي / الاستعادة =====
     private fun setupBackupRestoreButtons() {
         view?.findViewById<View>(R.id.btn_backup_settings)?.setOnClickListener {
-            runCatching { createBackupLauncher.launch("nateq_backup.json") }
+            // تحذير صريح قبل التصدير: الملف نص صريح قد يحوي بيانات شخصية
+            AlertDialog.Builder(requireContext())
+                .setTitle(R.string.backup_export_warning_title)
+                .setMessage(R.string.backup_export_warning_message)
+                .setPositiveButton(R.string.backup_settings) { _, _ ->
+                    runCatching { createBackupLauncher.launch("lord_tts_backup.json") }
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
         }
         view?.findViewById<View>(R.id.btn_restore_settings)?.setOnClickListener {
             AlertDialog.Builder(requireContext())
@@ -2124,6 +2426,26 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
+        }
+    }
+
+    // ===== قسم أدوات التطبيق القابل للطي =====
+    private fun setupToolsSection() {
+        val header = view?.findViewById<View>(R.id.ll_tools_header) ?: return
+        val content = view?.findViewById<View>(R.id.ll_tools_content) ?: return
+        val arrow = view?.findViewById<TextView>(R.id.tv_tools_arrow) ?: return
+        val base = getString(R.string.tools_section)
+        header.contentDescription = base
+        header.setOnClickListener {
+            toolsSectionOpen = content.visibility != View.VISIBLE
+            content.visibility = if (toolsSectionOpen) View.VISIBLE else View.GONE
+            arrow.text = if (toolsSectionOpen) "▼" else sectionArrowGlyph()
+            header.announceCompat(
+                getString(
+                    if (toolsSectionOpen) R.string.section_opened else R.string.section_collapsed,
+                    base
+                )
+            )
         }
     }
 
@@ -2194,6 +2516,14 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         return try {
             val root = org.json.JSONObject(text)
             if (root.optInt("version", 0) != 1) return false
+
+            // حدود دفاعية ضد ملفات النسخ الاحتياطي الخبيثة/الضخمة الواردة من SAF
+            if (text.length > MAX_BACKUP_BYTES) return false
+            val callerNames = root.optJSONObject("callerNames")
+            val callerCount = callerNames?.length() ?: 0
+            val settingsCount = root.optJSONObject("settings")?.length() ?: 0
+            if (callerCount + settingsCount > MAX_BACKUP_ENTRIES) return false
+
             var applied = false
 
             val dictArr = root.optJSONArray("dictionary")
@@ -2208,7 +2538,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             }
 
             val callers = root.optJSONObject("callerNames")
-            if (callers != null) {
+            if (callers != null && callers.length() > 0) {
                 val map = HashMap<String, String>()
                 val names = callers.names() ?: org.json.JSONArray()
                 for (i in 0 until names.length()) {
@@ -2220,14 +2550,21 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             }
 
             val settingsObj = root.optJSONObject("settings")
-            if (settingsObj != null) {
+            if (settingsObj != null && settingsObj.length() > 0) {
                 val restored = HashMap<String, Any>()
                 val names = settingsObj.names() ?: org.json.JSONArray()
                 for (i in 0 until names.length()) {
                     val key = names.getString(i)
                     val entry = settingsObj.optJSONObject(key) ?: continue
                     when (entry.optString("type")) {
-                        "int" -> restored[key] = entry.optLong("value").toInt()
+                        // "int": نتحقق أن القيمة الطويلة ضمن حدود Int الصحيحة
+                        // قبل التحويل حتى لا يُقلب Long خارج المدى إشارته (بند 17)
+                        // ويصبح إعداداً معطوباً بلا إنذار بدل رفضه.
+                        "int" -> {
+                            val longValue = entry.optLong("value", Long.MIN_VALUE)
+                            if (longValue < Int.MIN_VALUE || longValue > Int.MAX_VALUE) continue
+                            restored[key] = longValue.toInt()
+                        }
                         "float" -> restored[key] = entry.optDouble("value", 0.0).toFloat()
                         "bool" -> restored[key] = entry.optBoolean("value")
                         "string" -> restored[key] = entry.optString("value")

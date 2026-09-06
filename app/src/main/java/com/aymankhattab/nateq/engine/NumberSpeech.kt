@@ -9,8 +9,12 @@ package com.aymankhattab.nateq.engine
  */
 object NumberSpeech {
 
-    /** تحويل رقم إلى كلمات إنجليزية (للأرقام المنفصلة) */
-    fun toEnglishWords(number: Int): String {
+    /**
+     * تحويل رقم إلى كلمات إنجليزية (للأرقام المنفصلة).
+     * يدعم حتى 9999. معامل isFeminine غير مؤثر في الإنجليزية لكنه يبقى
+     * للتوافق مع الاستدعاءات الموحّدة (لا جنس في الإنجليزية).
+     */
+    fun toEnglishWords(number: Int, isFeminine: Boolean = false): String {
         return when (number) {
             in 0..12 -> listOf(
                 "zero", "one", "two", "three", "four", "five", "six", "seven",
@@ -28,95 +32,124 @@ object NumberSpeech {
                 val ones = number % 10
                 if (ones == 0) tens else "$tens ${toEnglishWords(ones)}"
             }
-            100 -> "one hundred"
+            in 100..999 -> {
+                val hundreds = listOf(
+                    "one", "two", "three", "four", "five", "six",
+                    "seven", "eight", "nine"
+                )[(number / 100) - 1]
+                val remainder = number % 100
+                if (remainder == 0) "$hundreds hundred"
+                else "$hundreds hundred ${toEnglishWords(remainder)}"
+            }
+            in 1000..9999 -> {
+                val thousands = listOf(
+                    "one", "two", "three", "four", "five", "six",
+                    "seven", "eight", "nine"
+                )[(number / 1000) - 1]
+                val remainder = number % 1000
+                if (remainder == 0) "$thousands thousand"
+                else "$thousands thousand ${toEnglishWords(remainder)}"
+            }
             else -> number.toString()
         }
     }
 
-    /** تحويل رقم إلى كلمات عربية */
-    fun toArabicWords(number: Int): String {
-        return when (number) {
+    /**
+     * تحويل رقم إلى كلمات عربية. يدعم حتى 9999.
+     *
+     * @param isFeminine عندما true تُنطق آحاد العدد بصيغة المعدود المؤنث
+     *   («خمس دقائق»، «واحدة وخمسون»)، وعند false بصيغة المعدود المذكر
+     *   («خمسة»، «خمسون» كأرقام مجردة) — تناسب numberToWords في TextProcessor
+     *   وتزيل التناقض الذي كان ينتج «خمس» عند نطق الرقم 5 منفرداً.
+     */
+    fun toArabicWords(number: Int, isFeminine: Boolean = true): String {
+        val onesF = arrayOf(
+            "", "واحدة", "اثنتين", "ثلاث", "أربع", "خمس", "ست", "سبع",
+            "ثماني", "تسع"
+        )
+        val onesM = arrayOf(
+            "", "واحد", "اثنان", "ثلاثة", "أربعة", "خمسة", "ستة", "سبعة",
+            "ثمانية", "تسعة"
+        )
+        val ones = if (isFeminine) onesF else onesM
+        val teensF = arrayOf(
+            "عشر", "إحدى عشرة", "اثنتي عشرة", "ثلاث عشرة", "أربع عشرة",
+            "خمس عشرة", "ست عشرة", "سبع عشرة", "ثماني عشرة", "تسع عشرة"
+        )
+        val teensM = arrayOf(
+            "عشرة", "أحد عشر", "اثنا عشر", "ثلاثة عشر", "أربعة عشر",
+            "خمسة عشر", "ستة عشر", "سبعة عشر", "ثمانية عشر", "تسعة عشر"
+        )
+        val teens = if (isFeminine) teensF else teensM
+        val tensNames = arrayOf(
+            "", "", "عشرون", "ثلاثون", "أربعون", "خمسون", "ستون",
+            "سبعون", "ثمانون", "تسعون"
+        )
+
+        fun under100(n: Int): String = when (n) {
             0 -> "صفر"
-            1 -> "واحدة"
-            2 -> "اثنتين"
-            3 -> "ثلاث"
-            4 -> "أربع"
-            5 -> "خمس"
-            6 -> "ست"
-            7 -> "سبع"
-            8 -> "ثماني"
-            9 -> "تسع"
-            10 -> "عشر"
-            11 -> "إحدى عشرة"
-            12 -> "اثنتي عشرة"
-            13 -> "ثلاث عشرة"
-            14 -> "أربع عشرة"
-            15 -> "خمس عشرة"
-            16 -> "ست عشرة"
-            17 -> "سبع عشرة"
-            18 -> "ثماني عشرة"
-            19 -> "تسع عشرة"
-            20 -> "عشرون"
-            21 -> "إحدى وعشرون"
-            22 -> "اثنتان وعشرون"
-            23 -> "ثلاث وعشرون"
-            24 -> "أربع وعشرون"
-            25 -> "خمس وعشرون"
-            26 -> "ست وعشرون"
-            27 -> "سبع وعشرون"
-            28 -> "ثماني وعشرون"
-            29 -> "تسع وعشرون"
-            30 -> "ثلاثون"
-            31 -> "إحدى وثلاثون"
-            32 -> "اثنتان وثلاثون"
-            33 -> "ثلاث وثلاثون"
-            34 -> "أربع وثلاثون"
-            35 -> "خمس وثلاثون"
-            36 -> "ست وثلاثون"
-            37 -> "سبع وثلاثون"
-            38 -> "ثماني وثلاثون"
-            39 -> "تسع وثلاثون"
-            40 -> "أربعون"
-            41 -> "إحدى وأربعون"
-            42 -> "اثنتان وأربعون"
-            43 -> "ثلاث وأربعون"
-            44 -> "أربع وأربعون"
-            45 -> "خمس وأربعون"
-            46 -> "ست وأربعون"
-            47 -> "سبع وأربعون"
-            48 -> "ثماني وأربعون"
-            49 -> "تسع وأربعون"
-            50 -> "خمسون"
-            51 -> "إحدى وخمسون"
-            52 -> "اثنتان وخمسون"
-            53 -> "ثلاث وخمسون"
-            54 -> "أربع وخمسون"
-            55 -> "خمس وخمسون"
-            56 -> "ست وخمسون"
-            57 -> "سبع وخمسون"
-            58 -> "ثماني وخمسون"
-            59 -> "تسع وخمسون"
-            60 -> "ستون"
-            in 61..99 -> {
-                val tens = listOf(
-                    "ستون", "سبعون", "ثمانون", "تسعون"
-                )[(number / 10) - 6]
-                val ones = number % 10
-                if (ones == 0) tens else when (ones) {
-                    1 -> "واحد و$tens"
-                    2 -> "اثنان و$tens"
-                    3 -> "ثلاثة و$tens"
-                    4 -> "أربعة و$tens"
-                    5 -> "خمسة و$tens"
-                    6 -> "ستة و$tens"
-                    7 -> "سبعة و$tens"
-                    8 -> "ثمانية و$tens"
-                    else -> "تسعة و$tens"
+            in 1..9 -> ones[n]
+            in 10..19 -> teens[n - 10]
+            else -> {
+                val ten = n / 10
+                val one = n % 10
+                if (one == 0) tensNames[ten]
+                else if (isFeminine) {
+                    // مؤنث: «إحدى وخمسون»، «اثنتان وخمسون»، «خمس وخمسون»
+                    when (one) {
+                        1 -> "إحدى و${tensNames[ten]}"
+                        2 -> "اثنتان و${tensNames[ten]}"
+                        else -> "${ones[one]} و${tensNames[ten]}"
+                    }
+                } else {
+                    // مذكر: «أحد وخمسون»، «اثنان وخمسون»، «خمسة وخمسون»
+                    when (one) {
+                        1 -> "أحد و${tensNames[ten]}"
+                        2 -> "اثنان و${tensNames[ten]}"
+                        else -> "${ones[one]} و${tensNames[ten]}"
+                    }
                 }
             }
-            100 -> "مئة"
+        }
+
+        fun hundredsWord(h: Int): String = when (h) {
+            1 -> if (isFeminine) "مئة" else "مائة"
+            2 -> "مائتان"
+            in 3..10 -> "${onesM[h]}مائة"
+            else -> "${numberToWordsHelper(h)}مائة"
+        }
+
+        return when {
+            number in 0..99 -> under100(number)
+            number in 100..999 -> {
+                val h = number / 100
+                val r = number % 100
+                if (r == 0) hundredsWord(h)
+                else "${hundredsWord(h)} و${under100(r)}"
+            }
+            number in 1000..9999 -> {
+                val t = number / 1000
+                val r = number % 1000
+                val thousand = when (t) {
+                    1 -> "ألف"
+                    2 -> "ألفان"
+                    in 3..10 -> "${onesM[t]} آلاف"
+                    else -> "${under100(t)} ألفاً"
+                }
+                if (r == 0) thousand
+                else if (r < 100) "$thousand و${under100(r)}"
+                else "$thousand و${toArabicWords(r, isFeminine)}"
+            }
             else -> number.toString()
         }
+    }
+
+    /** محوّل مؤقت لمئات أكبر من 10 (لا يُستخدم فعلياً إلا بصيغة مذكر). */
+    private fun numberToWordsHelper(n: Int): String = when (n) {
+        in 3..10 -> arrayOf(
+            "", "", "", "ثلاث", "أربع", "خمس", "ست", "سبع", "ثمان", "تسع", "عشر"
+        )[n]
+        else -> n.toString()
     }
 
     /**
@@ -134,7 +167,8 @@ object NumberSpeech {
         if (safeMode == 1) {
             val digits = n.toString().map { it.digitToInt() }
             val words = digits.joinToString(" ") {
-                if (isEnglish) toEnglishWords(it) else toArabicWords(it)
+                // الرقم يُنطق مجرداً (مذكراً): «خمسة» لا «خمس».
+                if (isEnglish) toEnglishWords(it) else toArabicWords(it, isFeminine = false)
             }
             return (sign + words).trim()
         }
@@ -154,7 +188,7 @@ object NumberSpeech {
         }
         val words = groups.map { g ->
             val v = try { g.toInt() } catch (t: Throwable) { 0 }
-            if (isEnglish) toEnglishWords(v) else toArabicWords(v)
+            if (isEnglish) toEnglishWords(v) else toArabicWords(v, isFeminine = false)
         }.joinToString(", ")
         return (sign + words).trim()
     }

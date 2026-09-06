@@ -29,6 +29,16 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
     companion object {
         private const val TAG = "NATEQ_TTS"
 
+        // نطاق الإيموجي الشائع (بلوكات Unicode): رموز التباين (2600-27BF)،
+        // الأسهم/الرموز الإضافية (2B00-2BFF)، الأعلام الإقليمية (1F1E6-1F1FF)
+        // والبلوكات التكميلية كلها تُغطى بزوج الاستبدال العام (D83C-DBFF + DC00-DFFF)
+        // مع متغير التباين FE0F والرابط الصفري ZWJ (200D). يُستخدم لتنظيف النصوص
+        // الخارجية (SMS/إشعارات/اسم المتصل) قبل النطق عبر المحرك الخارجي حتى
+        // لا يُقرأ الإيموجي باسمه الإنجليزي (مثل بعض المحركات).
+        private val EMOJI_REGEX = Regex(
+            "[\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u200D\uD83C-\uDBFF\uDC00-\uDFFF]+"
+        )
+
         // مثيل واحد مشترك لكل عملية. تعدد المتحدثات (مثيل لكل مستقبِل) كان
         // يفتح محرك TTS منفصلاً في كل مرة فيتقاطع صوتان ويستنزف الذاكرة.
         @Volatile
@@ -182,14 +192,17 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
                 pendingFocusTimer = timer
                 mainHandler.postDelayed(timer, 3000)
             }
-            AudioManager.AUDIOFOCUS_REQUEST_FAILED ->
-                // لا تركيز حالياً (مشغّل صوتي آخر يرفض التنازل): نؤجل قليلاً ثم
-                // ننطق بأفضل جهد حتى لا تُفقد الإعلانات الحرجة.
-                mainHandler.postDelayed({
-                    if (pendingFocusAction == null) {
-                        startSpeech(text, locale, speechRate, pitch, volume)
-                    }
-                }, 400)
+AudioManager.AUDIOFOCUS_REQUEST_FAILED ->
+    // لا تركيز حالي (مشغّل صوتي آخر يرفض التنازل): نؤجل قليلاً ثم
+    // ننطق بأفضل جهد حتى لا تُفقد الإعلانات الحرجة.
+    // نلغي أي إجراء Pendingwas attendre et on tente quand même le speech
+    // car la perte de focus signifie qu'on doit le réacquérir.
+    mainHandler.postDelayed({
+        // نحذف أي إجراء سابق حتى لا يتعارض مع محاولتنا الجديدة
+        pendingFocusAction = null
+        pendingFocusTimer = null
+        startSpeech(text, locale, speechRate, pitch, volume)
+    }, 400)
             else ->
                 // AUDIOFOCUS_REQUEST_GRANTED: التركيز مُنح فوراً — ننطق مباشرة.
                 startSpeech(text, locale, speechRate, pitch, volume)
@@ -215,7 +228,7 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
         val tts = tts ?: return
         tts.setSpeechRate(speechRate)
         tts.setPitch(pitch)
-        // تطبيق الصوت المفضّل بالاسم (مثل "nateq-ar-local") عندما يَعرضه المحرك
+        // تطبيق الصوت المفضّل بالاسم (مثل "ar-local") عندما يَعرضه المحرك
         // المربوط فعلاً (محرك LORD نفسه). إذا لم يجده المحرك (محرك خارجي مثل
         // جوجل/MultiTTS لا يملك هذه الأسماء) نرجع لتحديد اللغة فقط، فيبقى
         // اختيار الصوت محدوداً بلسان المحرك كما هو متوقَّع.
@@ -236,8 +249,15 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
                 putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume)
             }
         }
+        // تنظيف النص من الإيموجي قبل النطق (نصوص خارجية قد تحوي رموزاً يُقرؤها
+        // المحرك الخارجي أسماءها الإنجليزية). نحافظ على الحرف بين الكلمات.
+        // وتطبيع NFC يرمم النصوص القادمة مشكولةً Bidi/NFD من الجذر (SMS/إشعارات).
+        val cleanText = java.text.Normalizer.normalize(
+            EMOJI_REGEX.replace(text, " "),
+            java.text.Normalizer.Form.NFC
+        )
         val utteranceId = "nateq_announce_${System.currentTimeMillis()}"
-        val status = tts.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+        val status = tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
         if (status == TextToSpeech.ERROR && attempt < 3) {
             mainHandler.postDelayed({
                 doSpeak(text, locale, speechRate, pitch, volume, attempt + 1)
@@ -256,6 +276,22 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
         tts?.stop()
         releaseAudioFocus()
         shutdownSafely()
+    }
+
+    /**
+     * إغلاق تام عند خروج الخدمة الأمامية (onDestroy): يوقف النطق، يُبطل كل
+     * المؤقتات المعلّقة (انتظار التركيز المؤجل + محاولات إعادة النطق)، يحرر
+     * التركيز، ويُغلق محرك TTS نهائياً (بند [7] — منع تسريب مؤقتات/محرك).
+     */
+    fun shutdown() {
+        mainHandler.removeCallbacksAndMessages(null)
+        tts?.stop()
+        pendingFocusAction = null
+        pendingFocusTimer?.let { mainHandler.removeCallbacks(it) }
+        pendingFocusTimer = null
+        releaseAudioFocus()
+        shutdownSafely()
+        nowSpeaking = false
     }
 
     // طلب تخفيف صوت الوسائط أثناء النطق (Audio Ducking).

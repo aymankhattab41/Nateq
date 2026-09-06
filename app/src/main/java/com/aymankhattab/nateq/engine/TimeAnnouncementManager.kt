@@ -44,17 +44,32 @@ class TimeAnnouncementManager(
     private var isRunning = false
 
     /** نطاق عمليات النطق اللاتزامنية — يعيش مع عمر المدير */
-    private val announceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val announceJob = SupervisorJob()
+    private val announceScope = CoroutineScope(announceJob + Dispatchers.IO)
 
-    /** بدء جدولة إعلان الوقت */
+    /** بدء جدولة إعلان الوقت. عند إعادة التفعيل أثناء تشغيل الخدمة (isRunning=true)
+     *  يعيد الجدولة نظيفاً بدل الانتظار الصامت للفاصل الجديد (بند [6]): يُلغى
+     *  الجدول القديم ويُبنى جديد بتأجيل فوري قصير فيُنطق الوقت قريباً وليس
+     *  بعد فاصل كامل. */
     fun start() {
-        if (isRunning) return
         if (!settings.isTimeAnnouncementEnabled()) return
+
+        val wasRunning = isRunning
+        if (isRunning) {
+            // إيقاف الجدول القديم أولاً ثم إعادة بنائه من جديد دون إلغاء نطاق
+            // العمليات اللاتزامنية (announceJob لا يُلغى هنا حتى لا يُفقد نطق معلّق).
+            scheduler?.shutdownNow()
+            scheduler = null
+        }
 
         isRunning = true
         scheduler = Executors.newSingleThreadScheduledExecutor()
 
-        // جدولة المهمة الأولى للبداية القادمة للفاصل
+        if (!wasRunning) {
+            // أول تفعيل: ننطق حالاً بدل انتظار بداية الفاصل (مزامنة فورية).
+            announceCurrentTime()
+        }
+        // إعادة جدولة الإعلان القادم من نقطة الصفر (وليس من الجدول القديم).
         scheduleNextAnnouncement()
     }
 
@@ -63,6 +78,8 @@ class TimeAnnouncementManager(
         isRunning = false
         scheduler?.shutdownNow()
         scheduler = null
+        // إلغاء أي عمليات نطق لاتزامنية معلّقة حتى لا تتسرب مع عمر المدير.
+        announceJob.cancel()
     }
 
     /** جدولة الإعلان القادم */
@@ -183,7 +200,9 @@ class TimeAnnouncementManager(
                 val pref = settings.getPreferredVoiceIdForCategory(SettingsRepository.VOICE_CATEGORY_TIME)
                 val isEnglish = when {
                     forced != null -> forced.startsWith("en", ignoreCase = true)
-                    pref != null -> pref.startsWith("nateq-en", ignoreCase = true)
+                    // يقبل الصيغ القديمة (nateq-en-…) والصيغ الموحّدة الحالية (en-local)
+                    pref != null -> pref.startsWith("nateq-en", ignoreCase = true) ||
+                        pref.startsWith("en-local", ignoreCase = true)
                     else -> effectiveAppLanguage() == ENGLISH_LANGUAGE_TAG
                 }
                 val languageTag = if (isEnglish) ENGLISH_LANGUAGE_TAG else "ar"
@@ -252,6 +271,8 @@ class TimeAnnouncementManager(
         } else {
             hour
         }
+        // منتصف الليل بالصيغة الرقمية 24h لا يُنطق «صفر» بل «منتصف الليل»
+        val midnightPhrase = use24h && hour == 0
         return if (isEnglish) {
             if (minute == 0) {
                 NumberSpeech.toEnglishWords(displayedHour) + if (use24h || hour < 12) "" else " PM"
@@ -261,9 +282,14 @@ class TimeAnnouncementManager(
             }
         } else {
             if (minute == 0) {
-                "الساعة الآن ${NumberSpeech.toArabicWords(displayedHour)}"
+                if (midnightPhrase) "الساعة الآن منتصف الليل"
+                else "الساعة الآن ${NumberSpeech.toArabicWords(displayedHour)}"
             } else {
-                "الساعة الآن ${NumberSpeech.toArabicWords(displayedHour)} و ${NumberSpeech.toArabicWords(minute)} دقيقة"
+                if (midnightPhrase) {
+                    "الساعة الآن منتصف الليل و ${arabicMinutePhrase(minute)}"
+                } else {
+                    "الساعة الآن ${NumberSpeech.toArabicWords(displayedHour)} و ${arabicMinutePhrase(minute)}"
+                }
             }
         }
     }
@@ -272,44 +298,68 @@ class TimeAnnouncementManager(
     private fun formatEnglishNaturalTime(hour: Int, minute: Int): String {
         val hour12 = if (hour == 0) 12 else if (hour > 12) hour - 12 else hour
         val nextHour = if (hour12 == 12) 1 else hour12 + 1
+        val period = if (hour < 12) "AM" else "PM"
 
         return when (minute) {
-            0 -> "$hour12 o'clock"
-            15 -> "quarter past $hour12"
-            30 -> "half past $hour12"
-            45 -> "quarter to $nextHour"
-            in 1..14 -> "$minute minutes past $hour12"
-            in 16..29 -> "$minute minutes past $hour12"
-            in 31..44 -> "${60 - minute} minutes to $nextHour"
-            in 46..59 -> "${60 - minute} minutes to $nextHour"
-            else -> "$hour12 o'clock"
+            0 -> "$hour12 o'clock $period"
+            15 -> "quarter past $hour12 $period"
+            30 -> "half past $hour12 $period"
+            45 -> "quarter to $nextHour $period"
+            in 1..14 -> "${minute} minute${if (minute == 1) "" else "s"} past $hour12 $period"
+            in 16..29 -> "$minute minutes past $hour12 $period"
+            in 31..44 -> "${60 - minute} minutes to $nextHour $period"
+            in 46..59 -> "${60 - minute} minutes to $nextHour $period"
+            else -> "$hour12 o'clock $period"
         }
+    }
+
+    /** صيغة «عدد + دقيقة» كاملة مطابقة نحويّاً: «دقيقة واحدة»، «دقيقتان»،
+     * «ثلاث دقائق»، «أربع عشرة دقيقة». */
+    private fun arabicMinutePhrase(count: Int): String = when (count) {
+        1 -> "دقيقة واحدة"
+        2 -> "دقيقتان"
+        in 3..10 -> "${NumberSpeech.toArabicWords(count)} دقائق"
+        else -> "${NumberSpeech.toArabicWords(count)} دقيقة"
+    }
+
+    /** صيغة سياق «إلا» (المثنى منصوب): «إلا دقيقة واحدة»، «إلا دقيقتين». */
+    private fun arabicMinuteOmissionPhrase(count: Int): String = when (count) {
+        1 -> "دقيقة واحدة"
+        2 -> "دقيقتين"
+        in 3..10 -> "${NumberSpeech.toArabicWords(count)} دقائق"
+        else -> "${NumberSpeech.toArabicWords(count)} دقيقة"
     }
 
     /** تنسيق الوقت بالعربية الطبيعية: "الساعة الآن العاشرة والربع" */
     private fun formatArabicNaturalTime(hour: Int, minute: Int): String {
         val hour12 = if (hour == 0) 12 else if (hour > 12) hour - 12 else hour
         val arabicHour = NumberSpeech.toArabicWords(hour12)
+        // صبيحة/مساء للصيغة الطبيعية على نحو ما أعلنه TextProcessor للصيغة الرقمية.
+        val period = when (hour) {
+            12 -> "ظهراً"
+            in 0..11 -> "صباحاً"
+            else -> "مساءً"
+        }
 
         return when (minute) {
-            0 -> "الساعة الآن $arabicHour"
-            15 -> "الساعة الآن $arabicHour والربع"
-            30 -> "الساعة الآن $arabicHour والنصف"
+            0 -> "الساعة الآن $arabicHour $period"
+            15 -> "الساعة الآن $arabicHour والربع $period"
+            30 -> "الساعة الآن $arabicHour والنصف $period"
             45 -> {
                 val nextHour = if (hour12 == 12) 1 else hour12 + 1
                 val nextArabicHour = NumberSpeech.toArabicWords(nextHour)
-                "الساعة الآن $nextArabicHour إلا ربع"
+                "الساعة الآن $nextArabicHour إلا ربع $period"
             }
-            in 1..14 -> "الساعة الآن $arabicHour و ${NumberSpeech.toArabicWords(minute)} دقيقة"
-            in 16..29 -> "الساعة الآن $arabicHour و ${NumberSpeech.toArabicWords(minute)} دقيقة"
-            in 31..44 -> "الساعة الآن $arabicHour و ${NumberSpeech.toArabicWords(minute)} دقيقة"
+            in 1..14 -> "الساعة الآن $arabicHour و ${arabicMinutePhrase(minute)} $period"
+            in 16..29 -> "الساعة الآن $arabicHour و ${arabicMinutePhrase(minute)} $period"
+            in 31..44 -> "الساعة الآن $arabicHour و ${arabicMinutePhrase(minute)} $period"
             in 46..59 -> {
                 val remaining = 60 - minute
                 val nextHour = if (hour12 == 12) 1 else hour12 + 1
                 val nextArabicHour = NumberSpeech.toArabicWords(nextHour)
-                "الساعة الآن $nextArabicHour إلا ${NumberSpeech.toArabicWords(remaining)} دقيقة"
+                "الساعة الآن $nextArabicHour إلا ${arabicMinuteOmissionPhrase(remaining)} $period"
             }
-            else -> "الساعة الآن $arabicHour"
+            else -> "الساعة الآن $arabicHour $period"
         }
     }
 

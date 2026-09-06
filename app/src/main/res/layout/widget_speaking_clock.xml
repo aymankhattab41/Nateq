@@ -4,7 +4,9 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/ic_launcher_background"
+    android:contentDescription="@string/widget_clock_tap_to_speak"
     android:gravity="center"
+    android:importantForAccessibility="yes"
     android:orientation="vertical"
     android:padding="4dp">
 
@@ -15,14 +17,14 @@
         android:layout_height="24dp"
         android:importantForAccessibility="no"
         android:src="@drawable/ic_number_reading"
-        android:tint="#FFFFFF" />
+        android:tint="@color/widget_foreground" />
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:importantForAccessibility="no"
         android:text="@string/widget_clock_tap_to_speak"
-        android:textColor="#FFFFFF"
-        android:textSize="11sp" />
+        android:textColor="@color/widget_foreground"
+        android:textSize="14sp" />
 
 </LinearLayout>

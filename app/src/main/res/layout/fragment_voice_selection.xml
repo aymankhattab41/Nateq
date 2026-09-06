@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/sv_settings_scroll"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -54,6 +55,7 @@
                 android:id="@+id/switch_all_announcements"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:minHeight="48dp"
                 android:layout_marginTop="8dp"
                 android:text="@string/all_announcements_enabled"
                 android:textOff="@string/toggle_off"
@@ -157,7 +159,8 @@
                 android:layout_height="wrap_content"
                 android:minHeight="48dp"
                 android:focusable="true"
-                android:importantForAccessibility="yes" />
+                android:importantForAccessibility="yes"
+                android:contentDescription="@string/spinner_engine_content" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <!-- فتح إعدادات TTS لاختيار LORD كمحرك افتراضي (لا يمكن فعله برمجياً) -->
@@ -325,6 +328,7 @@
                 android:id="@+id/switch_time_announcement"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:minHeight="48dp"
                 android:text="@string/time_announcement_enabled"
                 android:textOff="@string/toggle_off"
                 android:textOn="@string/toggle_on" />
@@ -340,7 +344,8 @@
                     android:id="@+id/spinner_time_interval"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:minHeight="48dp" />
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/spinner_time_interval_content" />
             </com.google.android.material.textfield.TextInputLayout>
 
             <!-- ساعات الهدوء لكل يوم -->
@@ -359,7 +364,8 @@
                 android:layout_marginTop="4dp"
                 android:text="@string/time_quiet_schedule_summary"
                 android:textAppearance="?attr/textAppearanceCaption"
-                android:textColor="@color/text_secondary" />
+                android:textColor="@color/text_secondary"
+                android:importantForAccessibility="no" />
 
             <LinearLayout
                 android:id="@+id/ll_quiet_schedule"
@@ -379,7 +385,8 @@
                     android:id="@+id/spinner_time_format"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:minHeight="48dp" />
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/spinner_time_format_content" />
             </com.google.android.material.textfield.TextInputLayout>
 
             <!-- تنسيق 12/24 ساعة -->
@@ -387,6 +394,7 @@
                 android:id="@+id/switch_time_display_24h"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:minHeight="48dp"
                 android:layout_marginTop="16dp"
                 android:text="@string/time_display_24h"
                 android:textOff="@string/toggle_off"
@@ -397,6 +405,7 @@
                 android:id="@+id/switch_hijri_date"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:minHeight="48dp"
                 android:layout_marginTop="16dp"
                 android:text="@string/hijri_date_enabled"
                 android:textOff="@string/toggle_off"
@@ -407,6 +416,7 @@
                 android:id="@+id/switch_clock_widget"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:minHeight="48dp"
                 android:layout_marginTop="16dp"
                 android:text="@string/clock_widget_enabled"
                 android:textOff="@string/toggle_off"
@@ -526,7 +536,8 @@
                 android:id="@+id/spinner_number_reading_mode"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:minHeight="48dp" />
+                android:minHeight="48dp"
+                android:contentDescription="@string/spinner_number_reading_mode_content" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <!-- معاينة نطق رقم عند إدخاله (مع زر الإيقاف) -->
@@ -648,9 +659,74 @@
                 android:id="@+id/switch_battery_announcement"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:minHeight="48dp"
                 android:text="@string/battery_announcement_enabled"
                 android:textOff="@string/toggle_off"
                 android:textOn="@string/toggle_on" />
+
+            <!-- إعلان اكتمال الشحن -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_charging_complete_announcement"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/charging_complete_announcement_enabled"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <!-- إعلان فصل الشاحن -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_charging_disconnect_announcement"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/charging_disconnect_announcement_enabled"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <!-- وضع توفير الطاقة -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_power_saver_mode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/power_saver_mode_enabled"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <!-- عتبة توفير الطاقة -->
+            <LinearLayout
+                android:id="@+id/ll_power_saver_threshold"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/power_saver_battery_threshold_label"
+                    android:textAppearance="?attr/textAppearanceBody2"
+                    android:layout_marginEnd="16dp" />
+
+                <TextView
+                    android:id="@+id/tv_power_saver_threshold_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="20%"
+                    android:textAppearance="?attr/textAppearanceBody2" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seek_power_saver_threshold"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:max="100"
+                android:visibility="gone" />
 
             <!-- عنوان المستويات (قابل للتوسيع) -->
             <LinearLayout
@@ -704,7 +780,8 @@
                     android:id="@+id/spinner_battery_voice"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:minHeight="48dp" />
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/spinner_battery_voice_content" />
             </com.google.android.material.textfield.TextInputLayout>
 
             <!-- سرعة النطق -->
@@ -835,6 +912,7 @@
                 android:id="@+id/switch_notification_reading"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:minHeight="48dp"
                 android:text="@string/notification_reading_enabled"
                 android:textOff="@string/toggle_off"
                 android:textOn="@string/toggle_on" />
@@ -965,6 +1043,7 @@
                 android:id="@+id/switch_caller_announcement"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:minHeight="48dp"
                 android:text="@string/caller_announcement_enabled"
                 android:textOff="@string/toggle_off"
                 android:textOn="@string/toggle_on" />
@@ -979,7 +1058,8 @@
                     android:id="@+id/spinner_caller_repeat"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:minHeight="48dp" />
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/spinner_caller_repeat_content" />
             </com.google.android.material.textfield.TextInputLayout>
 
             <!-- أسماء المتصلين المخصصة (رقم -> اسم يُنطق به) -->
@@ -992,6 +1072,52 @@
                 android:minHeight="48dp"
                 android:text="@string/caller_custom_names"
                 android:importantForAccessibility="yes" />
+
+            <!-- قالب إعلان المتصل -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/ll_caller_template_input"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:hint="@string/caller_announcement_template_hint"
+                app:helperText="@string/caller_announcement_template_placeholder">
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/et_caller_template"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:inputType="text"
+                    android:maxLines="2"
+                    android:importantForAccessibility="yes" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- صوت نطق الأسماء العربية -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:hint="@string/caller_announcement_voice_ar">
+                <androidx.appcompat.widget.AppCompatSpinner
+                    android:id="@+id/spinner_caller_voice_ar"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/caller_announcement_voice_ar" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- صوت نطق الأسماء الإنجليزية -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:hint="@string/caller_announcement_voice_en">
+                <androidx.appcompat.widget.AppCompatSpinner
+                    android:id="@+id/spinner_caller_voice_en"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/caller_announcement_voice_en" />
+            </com.google.android.material.textfield.TextInputLayout>
 
             <!-- سرعة النطق -->
             <LinearLayout
@@ -1125,7 +1251,8 @@
                     android:id="@+id/spinner_sms_reading_mode"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:minHeight="48dp" />
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/spinner_sms_reading_mode_content" />
             </com.google.android.material.textfield.TextInputLayout>
 
             <!-- اختيار الصوت -->
@@ -1138,7 +1265,8 @@
                     android:id="@+id/spinner_sms_reading_voice"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:minHeight="48dp" />
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/spinner_sms_reading_voice_content" />
             </com.google.android.material.textfield.TextInputLayout>
 
             <!-- سرعة النطق -->
@@ -1203,6 +1331,24 @@
                 android:progress="100"
                 android:contentDescription="@string/sms_reading_volume" />
 
+            <!-- قالب قراءة الرسائل -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/ll_sms_template_input"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:hint="@string/sms_announcement_template_hint"
+                app:helperText="@string/sms_announcement_template_placeholder">
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/et_sms_template"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:inputType="textMultiLine"
+                    android:maxLines="3"
+                    android:importantForAccessibility="yes" />
+            </com.google.android.material.textfield.TextInputLayout>
+
         </LinearLayout>
 
         <!-- فاصل -->
@@ -1213,8 +1359,6 @@
             android:layout_marginBottom="16dp"
             android:tag="section_divider"
             android:background="@color/divider_color" />
-
-        <!-- قسم التحويل التلقائي بين اللغات (أصلاً أعلى الشاشة) -->
 
         <!-- إعدادات عامة (قابلة للطي) -->
         <LinearLayout
@@ -1485,12 +1629,51 @@
             android:maxHeight="300dp" />
         </LinearLayout>
 
+    <!-- أدوات التطبيق: الحفظ / الاستعادة / النسخ — قابلة للطي -->
+        <LinearLayout
+            android:id="@+id/ll_tools_header"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:minHeight="48dp"
+            android:padding="4dp"
+            android:layout_marginTop="16dp"
+            android:background="?attr/selectableItemBackground"
+            android:focusable="true"
+            android:accessibilityHeading="true"
+            android:importantForAccessibility="yes">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:importantForAccessibility="no"
+                android:text="@string/tools_section"
+                android:textAppearance="?attr/textAppearanceHeadline6" />
+
+            <TextView
+                android:id="@+id/tv_tools_arrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="▼"
+                android:textSize="14sp"
+                android:paddingStart="8dp"
+                android:importantForAccessibility="no" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/ll_tools_content"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
     <!-- زر حفظ الإعدادات -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_save_settings"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="16dp"
             android:minHeight="48dp"
             android:text="@string/save_settings"
             android:importantForAccessibility="yes" />
@@ -1527,6 +1710,7 @@
             android:minHeight="48dp"
             android:text="@string/restore_settings"
             android:importantForAccessibility="yes" />
+        </LinearLayout>
 
     <!-- زر تبديل لغة التطبيق -->
         <com.google.android.material.button.MaterialButton

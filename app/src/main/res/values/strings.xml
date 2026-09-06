@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Lord TTS</string>
-    <string name="settings_title">إعدادات ناطق</string>
+    <string name="settings_title">إعدادات Lord TTS</string>
     <string name="section_voice_selection">اختيار الأصوات</string>
     <string name="engine_select">اختيار المحرك</string>
     <string name="save_settings">حفظ الإعدادات</string>
+    <string name="tools_section">أدوات التطبيق</string>
     <string name="saved_successfully">تم الحفظ</string>
     <string name="reset_settings">استعادة الافتراضيات</string>
     <string name="reset_confirm_title">استعادة الافتراضيات؟</string>
@@ -53,17 +54,17 @@
     <string name="voice_category_notifications_summary">الصوت المخصص لنطق الإشعارات</string>
 
     <!-- نصوص العينة لكل لغة وفئة -->
-    <string name="sample_text_default_ar">مرحباً، هذه عينة من صوت ناطق</string>
+    <string name="sample_text_default_ar">مرحباً، هذه عينة من صوت Lord TTS</string>
     <string name="sample_text_time_ar">الساعة الآن العاشرة وخمس عشرة دقيقة</string>
     <string name="sample_text_numbers_ar">واحد اثنان ثلاثة أربعة خمسة</string>
     <string name="sample_text_notifications_ar">لديك إشعار جديد</string>
-    <string name="sample_text_default_en">Hello, this is a sample of Nateq voice</string>
+    <string name="sample_text_default_en">Hello, this is a sample of Lord TTS voice</string>
     <string name="sample_text_time_en">It is now ten fifteen in the morning</string>
     <string name="sample_text_numbers_en">One two three four five</string>
     <string name="sample_text_notifications_en">You have a new notification</string>
     <string name="sample_text_preview_ar">نص تجريبي: بسم الله الرحمن الرحيم.</string>
-    <string name="sample_text_activity_ar">مرحباً، هذا نص تجريبي للناطق.</string>
-    <string name="sample_text_activity_en">Hello, this is a sample text for Nateq.</string>
+    <string name="sample_text_activity_ar">مرحباً، هذا نص تجريبي لـ Lord TTS.</string>
+    <string name="sample_text_activity_en">Hello, this is a sample text for Lord TTS.</string>
 
     <!-- قاموس النطق -->
     <string name="dict_add_entry">إضافة إدخال جديد</string>
@@ -95,6 +96,14 @@
     <string name="battery_announcement_voice">صوت نطق البطارية</string>
     <string name="battery_announcement_rate">سرعة نطق البطارية</string>
     <string name="battery_announcement_volume">مستوى صوت البطارية</string>
+    <string name="charging_complete_announcement_enabled">الإعلان عند اكتمال الشحن (100%)</string>
+    <string name="charging_disconnect_announcement_enabled">الإعلان عند فصل الشاحن</string>
+    <string name="power_saver_mode_enabled">وضع توفير الطاقة: تقليل إعلان الوقت عند انخفاض البطارية</string>
+    <string name="power_saver_battery_threshold_label">عتبة توفير الطاقة (%)</string>
+    <string name="caller_announcement_template_hint">قالب إعلان المتصل</string>
+    <string name="caller_announcement_template_placeholder" formatted="false">استخدم {name} لاسم المتصل — اتركه فارغاً للنطق الافتراضي</string>
+    <string name="sms_announcement_template_hint">قالب قراءة الرسائل</string>
+    <string name="sms_announcement_template_placeholder" formatted="false">استخدم {name} للمرسل و{message} للرسالة — اتركه فارغاً للنطق الافتراضي</string>
 
     <!-- قراءة الإشعارات -->
     <string name="section_notification_reading">قراءة الإشعارات بالصوت</string>
@@ -103,6 +112,7 @@
     <string name="notification_listener_settings">إذن الوصول للإشعارات</string>
     <string name="notification_listener_settings_summary">منح التطبيق إذن الاستماع للإشعارات من إعدادات النظام</string>
     <string name="notification_permission_needed">يُرجى منح إذن الوصول للإشعارات أولاً من الإعدادات</string>
+    <string name="notification_permission_actions_hidden">إذن الإشعارات مرفوض: سيعمل الإعلان لكن لن ترى أزرار «أعلن الآن» و«إيقاف» في الإشعار</string>
     <string name="notification_apps_title">تطبيقات قراءة الإشعارات</string>
     <string name="notification_apps_summary">اختيار التطبيقات التي تُنطق إشعاراتها</string>
     <string name="notification_apps_all">كل التطبيقات</string>
@@ -119,8 +129,10 @@
     <string name="restore_settings">استعادة نسخة احتياطية</string>
     <string name="backup_saved">تم إنشاء النسخة الاحتياطية</string>
     <string name="backup_failed">تعذّر إنشاء النسخة الاحتياطية</string>
+    <string name="backup_export_warning_title">تصدير النسخة الاحتياطية؟</string>
+    <string name="backup_export_warning_message">سيُكتب هذا الملف كنص صريح وقد يحوي إعداداتك وبيانات شخصية (أسماء المتصلين وكلمات النطق). يُحفظ في مكان آمن ولا يُشارك إلا مع من تثق به.</string>
     <string name="restore_confirm_title">استعادة النسخة الاحتياطية؟</string>
-    <string name="restore_confirm_message">سيتم استبدال كل الإعدادات الحالية والقاموس وأسماء المتصلين بما في النسخة. الملف قد يحوي أسماء جهات اتصال — يُحفظ في مكان آمن.</string>
+    <string name="restore_confirm_message">سيتم استبدال كل الإعدادات الحالية والقاموس وأسماء المتصلين بما ورد في النسخة. الملف قد يحوي أسماء جهات اتصال — يُحفظ في مكان آمن.</string>
     <string name="restore_done">تمت الاستعادة بنجاح</string>
     <string name="restore_failed">تعذّرت الاستعادة — الملف غير صالح أو ناقص</string>
 
@@ -130,6 +142,8 @@
     <string name="caller_announcement_repeat">عدد مرات التكرار</string>
     <string name="caller_announcement_rate">سرعة نطق المتصل</string>
     <string name="caller_announcement_volume">مستوى صوت المتصل</string>
+    <string name="caller_announcement_voice_ar">صوت نطق الأسماء العربية</string>
+    <string name="caller_announcement_voice_en">صوت نطق الأسماء الإنجليزية</string>
 
     <!-- أذونات إعلان المتصل (تُطلب عند التفعيل) -->
     <string name="caller_permission_needed">لن يُنطق اسم المتصل إلا بعد منح إذن سجل المكالمات وحالة الهاتف</string>
@@ -158,6 +172,16 @@
     <string name="sms_mode_full">مفعل</string>
     <string name="sms_mode_off">معطل</string>
     <string name="sms_mode_source">قراءة مصدر الرسالة فقط</string>
+    <string name="sms_permission_needed">تتطلب قراءة الرسائل منح إذن الوصول إلى الرسائل النصية</string>
+    <string name="sms_otp_block_hint">تحذير: رسائل OTP تُحجب 3 ساعات أولى بعد التفعيل حسب سياسة أندرويد 17</string>
+    <string name="spinner_engine_content">محرك النطق</string>
+    <string name="spinner_time_interval_content">فاصل إعلان الوقت (بالدقائق)</string>
+    <string name="spinner_time_format_content">تنسيق إعلان الوقت</string>
+    <string name="spinner_number_reading_mode_content">طريقة نطق الأرقام</string>
+    <string name="spinner_battery_voice_content">صوت نطق البطارية</string>
+    <string name="spinner_caller_repeat_content">عدد مرات التكرار</string>
+    <string name="spinner_sms_reading_mode_content">وضع قراءة الرسائل</string>
+    <string name="spinner_sms_reading_voice_content">صوت نطق الرسائل</string>
     <string name="repeat_once">مرة واحدة</string>
     <string name="repeat_twice">مرتان</string>
     <string name="repeat_3">3 مرات</string>
@@ -173,6 +197,8 @@
     <string name="language_change_to_en">التغيير إلى الإنجليزية</string>
     <string name="language_change_to_ar">التغيير إلى العربية</string>
     <string name="language_current_label">اللغة:</string>
+    <string name="language_arabic">العربية</string>
+    <string name="language_english">الإنجليزية</string>
     <string name="section_number_reading">نطق الأرقام</string>
     <string name="number_reading_mode">طريقة نطق الأرقام</string>
     <string name="number_reading_mode_summary">ينطبق على كل الأرقام في الإعلانات</string>
@@ -211,20 +237,43 @@
 
     <!-- خدمة إعلانات الوقت/البطارية الأمامية -->
     <string name="announce_service_channel_name">إعلانات الوقت والبطارية</string>
-    <string name="announce_service_channel_description">تبقي ناطقاً عاملاً في الخلفية ليعلن الوقت ومستوى البطارية</string>
-    <string name="announce_service_notification_title">إعلانات ناطق مستمرة</string>
-    <string name="announce_service_notification_text">يعمل ناطق في الخلفية لإعلان الوقت والبطارية</string>
+    <string name="announce_service_channel_description">تبقي Lord TTS عاملاً في الخلفية ليعلن الوقت ومستوى البطارية</string>
+    <string name="announce_service_notification_title">إعلانات Lord TTS مستمرة</string>
+    <string name="announce_service_notification_text">يعمل Lord TTS في الخلفية لإعلان الوقت والبطارية</string>
     <string name="announce_action_speak_now">أعلن الوقت الآن</string>
     <string name="announce_action_stop">إيقاف الإعلانات</string>
 
     <!-- شريط العودة من شاشة القسم إلى القائمة -->
     <string name="back_label">الرجوع إلى القائمة الرئيسية</string>
     <string name="section_opened">فُتح قسم: %1$s</string>
+    <string name="section_collapsed">طُوي قسم: %1$s</string>
     <string name="back_to_home">عادت القائمة الرئيسية</string>
 
     <!-- المفتاح الرئيسي وإعدادات المحرك -->
     <string name="all_announcements_enabled">كل الإعلانات مفعّلة</string>
     <string name="all_announcements_summary">إيقافه يُوقف الإعلانات التلقائية (الوقت، البطارية، الرسائل، الإشعارات، المتصل) بصمت</string>
+    <string name="announcement_turned_on">مفعّل</string>
+    <string name="announcement_turned_off">معطّل</string>
+
+    <!-- سلاسل النطق الصوتي (تُنطق بلغة صوت النطق المختار، وليس لغة الواجهة) -->
+    <string name="sms_unknown_sender">مرسل مجهول</string>
+    <string name="sms_from">رسالة من {name}</string>
+    <string name="caller_from">اتصال وارد من {name}</string>
+    <string name="caller_from_number">اتصال وارد من رقم غير محفوظ</string>
+    <string name="caller_only">اتصال وارد</string>
+    <string name="notif_from_title_text">إشعار من {app}: {title}. {text}</string>
+    <string name="notif_from_title">إشعار من {app}: {title}</string>
+    <string name="notif_from_text">إشعار من {app}: {text}</string>
+    <string name="notif_new">إشعار جديد من {app}</string>
+    <string name="battery_connected">تم توصيل الشاحن</string>
+    <string name="battery_disconnected">تم فصل الشاحن</string>
+    <string name="battery_full_unplug">البطارية ممتلئة، يمكنك فصل الشاحن</string>
+    <string name="battery_full">البطارية ممتلئة</string>
+    <string name="battery_level_50">البطارية عند الخمسين بالمئة</string>
+    <string name="battery_level_20">البطارية عند العشرين بالمئة، يُنصح بالشحن</string>
+    <string name="battery_level_10">البطارية عند عشرة بالمئة، الشحن ضروري جداً</string>
+    <string name="battery_reached">البطارية وصلت {percent} بالمئة</string>
+    <string name="battery_at">البطارية {percent} بالمئة</string>
     <string name="set_default_engine">جعل Lord TTS المحرك الافتراضي للنطق</string>
     <string name="set_default_engine_hint">اختر Lord TTS من قائمة المحركات ثم اضغط أيقونة الإعدادات بجانبه لاختيار لغته المفضلة</string>
 
@@ -251,14 +300,15 @@
     <string name="dict_exported_ok">تم تصدير القاموس</string>
     <string name="dict_import_failed">فشل استيراد القاموس</string>
     <string name="dict_export_failed">فشل تصدير القاموس</string>
+    <string name="dict_removed">تم حذف الإدخال من القاموس</string>
 
     <!-- بلاط الإعدادات السريعة -->
-    <string name="tile_label_on">ناطق: الإعلانات مفعّلة</string>
-    <string name="tile_label_off">ناطق: الإعلانات متوقفة</string>
-    <string name="tile_label_description">تبديل كل إعلانات ناطق (الوقت، البطارية، الرسائل، الإشعارات، المتصل)</string>
+    <string name="tile_label_on">Lord TTS: الإعلانات مفعّلة</string>
+    <string name="tile_label_off">Lord TTS: الإعلانات متوقفة</string>
+    <string name="tile_label_description">تبديل كل إعلانات Lord TTS (الوقت، البطارية، الرسائل، الإشعارات، المتصل)</string>
 
-    <!-- ودجت الساعة الناطقة -->
-    <string name="widget_clock_description">ساعة ناطقة — اضغط لنطق الوقت الحالي</string>
+    <!-- أداة الساعة -->
+    <string name="widget_clock_description">أداة الساعة — اضغط لنطق الوقت الحالي</string>
     <string name="widget_clock_tap_to_speak">اضغط لنطق الوقت الحالي</string>
-    <string name="widget_clock_disabled">فعّل إعلانات الوقت للسماح لإعلانات الودجت</string>
+    <string name="widget_clock_disabled">فعّل إعلانات الوقت للسماح لإعلانات أداة الساعة</string>
 </resources>

@@ -113,7 +113,8 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
         volume: Float,
         onAudioChunk: (ByteArray) -> Unit,
         enginePackage: String?,
-        voiceLocale: Locale?
+        voiceLocale: Locale?,
+        desiredVoiceName: String?
     ) {
         // **تفويض النطق لمحركٍ مثبّت** (منهج MultiTTS): نصّل دائماً عبر محرك TTS
         // خارجي نربط به مباشرةً (جوجل/سامسونج/طرفي). تُفضَّل المحركات الطرفية
@@ -146,7 +147,8 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
                 volume,
                 onAudioChunk,
                 cont,
-                cancelled
+                cancelled,
+                desiredVoiceName
             )
         }
     }
@@ -175,7 +177,8 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
         volume: Float,
         onAudioChunk: (ByteArray) -> Unit,
         cont: kotlin.coroutines.Continuation<Unit>,
-        cancelled: AtomicBoolean
+        cancelled: AtomicBoolean,
+        desiredVoiceName: String?
     ) {
         val done = AtomicBoolean(false)
         val attemptWith = { currentEngine: String? ->
@@ -193,26 +196,26 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
                     tts = TextToSpeech(context, { status ->
                         if (done.getAndSet(true)) return@TextToSpeech
                         if (status == TextToSpeech.SUCCESS && !cancelled.get()) {
-                            val ok = synthesizeInternal(text, voice, speechRate, pitch, volume, onAudioChunk, cancelled)
+                            val ok = synthesizeInternal(text, voice, speechRate, pitch, volume, onAudioChunk, cancelled, desiredVoiceName)
                             if (ok) {
                                 cont.resume(Unit)
                             } else {
                                 // فشل النطق — جرّب محرك جوجل إن أمكن.
-                                retryWithGoogle(engine, voice, text, speechRate, pitch, volume, onAudioChunk, cont, cancelled)
+                                retryWithGoogle(engine, voice, text, speechRate, pitch, volume, onAudioChunk, cont, cancelled, desiredVoiceName)
                             }
                         } else {
                             Log.e(TAG, "[Provider] engine init failed: $currentEngine status=$status")
-                            retryWithGoogle(engine, voice, text, speechRate, pitch, volume, onAudioChunk, cont, cancelled)
+                            retryWithGoogle(engine, voice, text, speechRate, pitch, volume, onAudioChunk, cont, cancelled, desiredVoiceName)
                         }
                     }, currentEngine)
                     ttsEngine = currentEngine
                 } else if (done.getAndSet(true)) {
                     // مثيل نفس المحرك جاهز — ننطق مباشرة بإعادة استخدامه.
-                    val ok = synthesizeInternal(text, voice, speechRate, pitch, volume, onAudioChunk, cancelled)
+                    val ok = synthesizeInternal(text, voice, speechRate, pitch, volume, onAudioChunk, cancelled, desiredVoiceName)
                     if (ok) {
                         cont.resume(Unit)
                     } else {
-                        retryWithGoogle(engine, voice, text, speechRate, pitch, volume, onAudioChunk, cont, cancelled)
+                        retryWithGoogle(engine, voice, text, speechRate, pitch, volume, onAudioChunk, cont, cancelled, desiredVoiceName)
                     }
                 }
             }
@@ -235,14 +238,15 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
         volume: Float,
         onAudioChunk: (ByteArray) -> Unit,
         cont: kotlin.coroutines.Continuation<Unit>,
-        cancelled: AtomicBoolean
+        cancelled: AtomicBoolean,
+        desiredVoiceName: String?
     ) {
         if (cancelled.get()) return
         val google = EnginePicker.googleEnginePackage(context)
         // لا نتراجع إلى جوجل إذا كان هو بالفعل المحرك الأصلي المستخدَم.
         if (google != null && google != originalEngine && EnginePicker.installedEnginePackages(context).contains(google)) {
             Log.w(TAG, "[Provider] falling back to Google engine: $google")
-            synthesizeWithEngine(google, text, voice, speechRate, pitch, volume, onAudioChunk, cont, cancelled)
+            synthesizeWithEngine(google, text, voice, speechRate, pitch, volume, onAudioChunk, cont, cancelled, desiredVoiceName)
         } else {
             cont.resume(Unit)
         }
@@ -259,7 +263,8 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
         pitch: Float,
         volume: Float,
         onAudioChunk: (ByteArray) -> Unit,
-        cancelled: AtomicBoolean
+        cancelled: AtomicBoolean,
+        desiredVoiceName: String?
     ): Boolean {
         val engine = tts
         if (engine == null) return false
@@ -271,6 +276,15 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
         engine.setSpeechRate(1.0f)
         engine.setPitch(1.0f)
         engine.setLanguage(voice.locale)
+        // إن اختار المستخدم صوتاً محدداً من حوار التحويل (اسم صوت في محرك
+        // خارجي مثل MultiTTS) نطبّقه هنا عبر `voice`، مع التراجع الصامت إلى
+        // اللغة إذا لم يجده المحرك (تجنّباً لكسر النطق لمجرد اسم غير مطابق).
+        if (!desiredVoiceName.isNullOrBlank()) {
+            runCatching {
+                val matching = engine.voices?.firstOrNull { it.name == desiredVoiceName }
+                if (matching != null) engine.voice = matching
+            }
+        }
 
         val utteranceId = "nateq_${System.currentTimeMillis()}"
         val params = android.os.Bundle().apply {
@@ -331,14 +345,18 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
 
             if (finished && !failed && tempFile.exists() && tempFile.length() > 44) {
                 try {
-                    val audioBytes = tempFile.readBytes()
-                    // تخطّي رأس WAV: نحسب بداية بيانات الصوت (خانة data) بدل
-                    // افتراض 44 بايت ثابت، لأن بعض المحركات تكتب رأساً أطول.
-                    val pcmData = extractPcm(audioBytes)
-                    // المعالجة الرقمية الموحّدة للنبرة والسرعة ومستوى الصوت.
-                    val scaledData = applyAudioEffects(pcmData, speechRate, pitch, volume)
-                    onAudioChunk(scaledData)
-                    success = true
+                    // قراءة بيانات الصوت مباشرة من ملف التخليق (تخطّي رأس WAV
+                    // وقائمة الخانات) دون قراءة الملف كاملاً ثم نسخه — كان ذلك
+                    // يرفع ذروة الذاكرة 2-3× حجم الملف للنصوص الطويلة.
+                    val pcmData = extractPcm(tempFile)
+                    if (pcmData.isEmpty()) {
+                        Log.e(TAG, "[Provider] extractPcm returned empty")
+                    } else {
+                        // المعالجة الرقمية الموحّدة للنبرة والسرعة ومستوى الصوت.
+                        val scaledData = applyAudioEffects(pcmData, speechRate, pitch, volume)
+                        onAudioChunk(scaledData)
+                        success = true
+                    }
                 } catch (e: Exception) {
                     Log.e(TAG, "[Provider] read audio failed", e)
                 } finally {
@@ -358,34 +376,63 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
     }
 
     /**
-     * يستخرج بيانات PCM الخام من ملف WAV بتخطّي رأس الملف وقائمة chunk بصيغة
+     * يستخرج بيانات PCM الخام من ملف WAV بتخطّي الرأس وقائمة الخانات بصيغة
      * آمنة، حتى مع رؤوس أطول من 44 بايتاً (ببعض المحركات مثل MultiTTS).
+     * يقرأ من القرص مباشرة (RandomAccessFile) فيقرأ خانة data وحدها دون
+     * نسخ الملف كاملاً إلى الذاكرة.
      */
-    private fun extractPcm(wav: ByteArray): ByteArray {
-        if (wav.size < 12) return wav
-        // NUL + توقيع 4 بايت "RIFF"؟
-        if (wav[0] != 'R'.code.toByte() || wav[1] != 'I'.code.toByte() ||
-            wav[2] != 'F'.code.toByte() || wav[3] != 'F'.code.toByte()
-        ) {
-            // ليس ملف WAV صالح — نُعيده كما هو تحسباً.
-            return wav
-        }
-        var offset = 12 // بعد "RIFF"+الحجم+"WAVE"
-        while (offset + 8 <= wav.size) {
-            val chunkIdSize = 4
-            val chunkId = wav.copyOfRange(offset, offset + chunkIdSize)
-                .toString(Charsets.US_ASCII)
-            val chunkSize = readLeInt(wav, offset + 4)
-            if (chunkId == "data") {
-                val dataStart = offset + 8
-                val dataLen = minOf(chunkSize, wav.size - dataStart)
-                if (dataLen <= 0) return ByteArray(0)
-                return wav.copyOfRange(dataStart, dataStart + dataLen)
+    private fun extractPcm(file: java.io.File): ByteArray {
+        try {
+            java.io.RandomAccessFile(file, "r").use { raf ->
+                val fileLen = raf.length()
+                if (fileLen < 12) return ByteArray(0)
+
+                val sig = ByteArray(12)
+                raf.readFully(sig)
+                if (sig[0] != 'R'.code.toByte() || sig[1] != 'I'.code.toByte() ||
+                    sig[2] != 'F'.code.toByte() || sig[3] != 'F'.code.toByte()
+                ) {
+                    // ليس ملف WAV صالح — نقرأه كاملاً تحسباً.
+                    raf.seek(0)
+                    val all = ByteArray(fileLen.toInt())
+                    raf.readFully(all)
+                    return all
+                }
+
+                var offset = 12L // بعد "RIFF"+الحجم+"WAVE"
+                while (offset + 8 <= fileLen) {
+                    raf.seek(offset)
+                    val header = ByteArray(8)
+                    raf.readFully(header)
+                    val chunkId = String(header, 0, 4, Charsets.US_ASCII)
+                    val chunkSize = readLeInt(header, 4)
+                    if (chunkId == "data") {
+                        return readDataSection(raf, offset + 8, chunkSize.toLong(), fileLen)
+                    }
+                    offset += 8 + chunkSize
+                }
+                // لم نعثر على خانة data — نعود لافتراض 44 بايت احتياطاً.
+                return if (fileLen > 44) readDataSection(raf, 44L, fileLen - 44, fileLen) else ByteArray(0)
             }
-            offset += 8 + chunkSize
+        } catch (e: Exception) {
+            // أي خطأ قراءة — نُرجع فارغاً فيتخلى المتصل عن الملف.
+            return ByteArray(0)
         }
-        // لم نعثر على خانة data — نعود لافتراض 44 بايت احتياطاً.
-        return if (wav.size > 44) wav.copyOfRange(44, wav.size) else wav
+    }
+
+    /** قراءة خانة بيانات صوتية بطول معلوم بدءاً من الموضع المحدد. */
+    private fun readDataSection(
+        raf: java.io.RandomAccessFile,
+        start: Long,
+        len: Long,
+        fileLen: Long
+    ): ByteArray {
+        val dataLen = minOf(len, fileLen - start).coerceAtLeast(0L).toInt()
+        if (dataLen <= 0) return ByteArray(0)
+        raf.seek(start)
+        val out = ByteArray(dataLen)
+        raf.readFully(out)
+        return out
     }
 
     /** قراءة عدد صحيح صغير التدرج (little-endian) بطول 4 بايت */

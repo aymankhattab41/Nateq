@@ -15,6 +15,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
@@ -70,6 +71,10 @@ class NateqTtsService : TextToSpeechService() {
     }
 
     override fun onDestroy() {
+        // إلغاء كل العمليات اللاتزامنية المعلّقة للخدمة حتى لا تتسرب مع عمر
+        // عملية المحرك، ثم إغلاق النطق الجاري إن وُجد.
+        currentJob?.cancel()
+        serviceScope.cancel()
         super.onDestroy()
     }
 
@@ -248,6 +253,7 @@ class NateqTtsService : TextToSpeechService() {
                 val finalVolume = convertTarget?.let { it.convertVolume } ?: volume
                 val finalEngine = if (matchesRequest) convertTarget?.let { it.convertEngine } else null
                 val finalLocale = if (matchesRequest) convertTarget?.let { it.convertLocale } else null
+                val finalVoiceName = if (matchesRequest) convertTarget?.let { it.convertVoiceName } else null
 
                 provider.synthesize(processedText, voice, finalRate, finalPitch, finalVolume, { chunk ->
                     // المنهج المُثبَت (كما في TtsService الرسمي لـ espeak-ng/MultiTTS):
@@ -261,7 +267,7 @@ class NateqTtsService : TextToSpeechService() {
                         callback.audioAvailable(chunk, offset, bytesToWrite)
                         offset += bytesToWrite
                     }
-                }, finalEngine, finalLocale)
+                }, finalEngine, finalLocale, finalVoiceName)
                 callback.done()
             } catch (e: CancellationException) {
                 // إلغاء صريح (onStop): لا نكمل ولا نُطلق خطأً زائفاً — النظام
@@ -304,6 +310,9 @@ class NateqTtsService : TextToSpeechService() {
         val langTag = if (autoConvert) {
             if (slot == 1) settings.getConvertLanguageTag1() else settings.getConvertLanguageTag2()
         } else null
+        val voiceName = if (autoConvert) {
+            if (slot == 1) settings.getConvertVoice1() else settings.getConvertVoice2()
+        } else null
 
         // إن لم يُعدّل المستخدم أي شريط ولا يوجد محرك مختار → ن relies على الإعدادات العامة.
         val hasAdjustment = (rate != 1.0f) || (pitch != 1.0f) || (volume != 1.0f)
@@ -316,7 +325,8 @@ class NateqTtsService : TextToSpeechService() {
             convertLocale = if (tag != null) tag else null,
             convertRate = rate,
             convertPitch = pitch,
-            convertVolume = volume
+            convertVolume = volume,
+            convertVoiceName = voiceName
         )
     }
 
@@ -327,6 +337,8 @@ class NateqTtsService : TextToSpeechService() {
         val convertLocale: Locale?,
         val convertRate: Float,
         val convertPitch: Float,
-        val convertVolume: Float
+        val convertVolume: Float,
+        // اسم الصوت المختار داخل المحرك (اختياري — يُطبَّق إن وُجد بالمحرك).
+        val convertVoiceName: String?
     )
 }

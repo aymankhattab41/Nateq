@@ -39,7 +39,8 @@ interface VoiceProvider {
         volume: Float,
         onAudioChunk: (ByteArray) -> Unit,
         enginePackage: String? = null,
-        voiceLocale: Locale? = null
+        voiceLocale: Locale? = null,
+        desiredVoiceName: String? = null
     )
 }
 

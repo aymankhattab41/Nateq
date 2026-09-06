@@ -49,16 +49,16 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
     private val offlineFeature = setOf(TextToSpeech.Engine.KEY_FEATURE_EMBEDDED_SYNTHESIS)
 
     private fun voiceNameFor(locale: Locale): String {
-        // أسماء الأصوات المعلنة في tts_engine.xml هي "nateq-ar-local"/"nateq-en-local"،
+        // أسماء الأصوات المعلنة في tts_engine.xml هي "ar-local"/"en-local"،
         // وهي نفسها المعرّفات التي يخزنها تطبيقنا في الإعدادات (بطارية/رسائل/متصل/فئات)
         // والمعرّفات التي يُنتجها SystemVoiceProvider.listVoices(). لذلك يجب أن تطابق
         // onGetVoices هنا هذه الأسماء بالضبط — وإلا يفشل الإبقاء على اختيار الصوت في
         // شاشة سامسونج (رفض findIndexOfValue) ويضيع voiceId في كل عمليات البحث
         // `voices.find { it.id == name }`. الـ locale يبقى ar/en لكل منهما.
         return when (locale.language.lowercase(java.util.Locale.ROOT)) {
-            "ar" -> "nateq-ar-local"
-            "en" -> "nateq-en-local"
-            else -> "nateq-${locale.language.lowercase(java.util.Locale.ROOT)}-local"
+            "ar" -> "ar-local"
+            "en" -> "en-local"
+            else -> "${locale.language.lowercase(java.util.Locale.ROOT)}-local"
         }
     }
 
