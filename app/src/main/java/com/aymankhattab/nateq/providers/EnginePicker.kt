@@ -14,17 +14,30 @@ import android.content.pm.ResolveInfo
 object EnginePicker {
 
     /** محركات النطق الحقيقية التي نمنحها الأولوية عند اختيار تلقائي، لأنها
-     *  مضمونةً تُنتج صوتاً قياسياً (على عكس قارئات الشاشة). */
+     *  مضمونةً تُنتج صوتاً قياسياً (على عكس قارئات الشاشة). الترتيب يفضّل
+     *  MultiTTS (صوت قياسي مرن) ثم محرك النظام الرسمي (جوجل فسامسونج فـ AOSP). */
     private val preferredEngines = listOf(
-        "com.iflytek.speechcloud",
-        "com.svox.pico",
-        "com.nuance.dragon.voice",
-        "com.ivona.tts",
-        "org.nobody.multitts"
+        "org.nobody.multitts",
+        "com.google.android.tts",
+        "com.samsung.SMT",
+        "com.svox.pico"
+    )
+
+    /** قارئات الشاشة التي تُستثنى من الاختيار التلقائي: لا تُنتج صوتاً عبر
+     *  TextToSpeech.synthesize القياسي فتجعل المستخدم بلا صوت. تبقى ظاهرة
+     *  في واجهة المحركات للاختيار اليدوي الصريح (بعض المستخدمين يفضّلها). */
+    private val screenReaderPackages = setOf(
+        "com.google.android.marvin.talkback",   // TalkBack جوجل
+        "com.samsung.accessibility"             // TalkBack سامسونج
     )
 
     /** محرك TTS مثبّت في النظام مع تسميته الظاهرة للمستخدم */
     data class InstalledEngine(val packageName: String, val label: String)
+
+    /** هل الحزمة قارئ شاشة (لا تُختار تلقائياً)؟ */
+    fun isScreenReader(packageName: String): Boolean {
+        return packageName in screenReaderPackages
+    }
 
     /** كل محركات TTS المثبتة في النظام (تُستعلم ديناميكياً) مع تسمياتها */
     fun installedEngines(context: Context): List<InstalledEngine> {
@@ -52,20 +65,27 @@ object EnginePicker {
     }
 
     /**
-     * يختار المحرك الذي ينطق به التطبيق عند عدم تحديد المستخدم لمحرك يدوياً:
-     * 1) محرك مفضَّل معروف بنطقٍ حقيقي (MultiTTS/غيرها) إن وُجد.
-     * 2) وإلا جوجل (ملاذ أخير مضمون الأصوات على كل أندرويد).
-     * يُتجنَّب في الاختيار التلقائي قارئات الشاشة (Jieshuo/SmartVoice/TalkBack)
-     * لأنها لا تُنتج صوتاً عبر synthesize القياسي فتجعل «لا صوت يُسمع».
-     * محركات الطرف الأخرى المجهولة لا يُدهَب إليها تلقائياً خشية انعدام الأصوات.
+     * يختار المحرك المفضّل من قائمة الحزم المثبتة وفق ترتيب [preferredEngines]،
+     * ثم أي محرك مثبّت ليس قارئ شاشة كمسار احتياطي آمن (بدل العودة null).
+     * منطق نقي قابل للاختبار دون Context.
      */
-    fun pickEnginePackage(context: Context): String? {
-        val installed = installedEnginePackages(context)
+    fun pickPreferredEngineFrom(installed: Collection<String>): String? {
         preferredEngines.forEach { pkg ->
             if (installed.contains(pkg)) return pkg
         }
-        // الملاذ الأخير المضمون: جوجل.
-        return installed.firstOrNull { it == "com.google.android.tts" }
+        // المسار الاحتياطي: أي محرك حقيقي (غير قارئ شاشة) بدل null.
+        return installed.firstOrNull { !isScreenReader(it) }
+    }
+
+    /**
+     * يختار المحرك الذي ينطق به التطبيق عند عدم تحديد المستخدم لمحرك يدوياً:
+     * 1) محرك مفضَّل معروف بنطقٍ حقيقي (MultiTTS/جوجل/سامسونج…) إن وُجد.
+     * 2) وإلا أي محرك مثبّت ليس قارئ شاشة (ملاذ أخير).
+     * يُتجنَّب في الاختيار التلقائي قارئات الشاشة (TalkBack/…)
+     * لأنها لا تُنتج صوتاً عبر synthesize القياسي فتجعل «لا صوت يُسمع».
+     */
+    fun pickEnginePackage(context: Context): String? {
+        return pickPreferredEngineFrom(installedEnginePackages(context))
     }
 
     /** حزمة محرك جوجل (الملاذ الأخير المضمون) إن كانت مثبّتة. */

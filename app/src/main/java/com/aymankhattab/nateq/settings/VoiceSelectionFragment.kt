@@ -567,10 +567,13 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 override fun onNothingSelected(parent: AdapterView<*>?) {}
             }
 
-            // نستعيد المحرك المحفوظ، أو نفضّل MultiTTS إن لم يكن محفوظاً.
+            // نستعيد المحرك المحفوظ، أو نفضّل محركاً حقيقياً غير قارئ شاشة
+            // (نفس ترتيب اختيار النطق التلقائي في EnginePicker).
             val saved = settings.getSelectedEnginePackage()
-            val target = engineIndexOf(saved)
-                ?: if (saved == null) engineIndexOf("org.nobody.multitts") else null
+            val preferred = EnginePicker.pickPreferredEngineFrom(
+                engines.map { it.packageName }
+            )
+            val target = engineIndexOf(saved) ?: if (saved == null) engineIndexOf(preferred) else null
             if (target != null && target < engines.size) {
                 spinnerEngine.setSelection(target)
             }
