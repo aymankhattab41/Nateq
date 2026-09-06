@@ -1,0 +1,11 @@
+name = "lord-tts-support-relay"
+main = "src/index.js"
+compatibility_date = "2026-09-06"
+
+# السرّان التاليان لا يُحفظان في هذا الملف، بل تُضبطان في Cloudflare:
+#   - TELEGRAM_BOT_TOKEN: رمز البوت (من @BotFather) — سرّ
+#   - SUPPORT_CHAT_ID: معرّفك الرقمي في تليجرام (من @userinfobot) — خاص
+#
+# ضبطهما عبر الأمر (في هذا المجلد):
+#   npx wrangler secret put TELEGRAM_BOT_TOKEN
+#   npx wrangler secret put SUPPORT_CHAT_ID
