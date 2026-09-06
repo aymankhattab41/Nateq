@@ -82,7 +82,13 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
         // مع الـ Voice المُعلن في onGetVoices ولينطق المحرك باللغة الصحيحة.
         // نطبّع كود اللغة من ISO-3 (eng, ara) إلى ISO-2 (en, ar).
         val normLanguage = normalizeLanguage(locale.language)
-        val voiceId = "nateq-$normLanguage-local"
+        // معرفات الأصوات يجب أن تطابق أسماء onGetVoices/tts_engine.xml
+        // ("ar-EG"/"en-US") حتى تعمل مطابقة id في الفئات والإعلانات.
+        val voiceId = when (normLanguage) {
+            "ar" -> "ar-EG"
+            "en" -> "en-US"
+            else -> "nateq-$normLanguage-local"
+        }
         val normLocale = if (normLanguage != locale.language) {
             if (locale.country.isNullOrEmpty()) {
                 Locale.forLanguageTag(normLanguage)
@@ -209,7 +215,7 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
                         }
                     }, currentEngine)
                     ttsEngine = currentEngine
-                } else if (done.getAndSet(true)) {
+                } else if (!done.getAndSet(true)) {
                     // مثيل نفس المحرك جاهز — ننطق مباشرة بإعادة استخدامه.
                     val ok = synthesizeInternal(text, voice, speechRate, pitch, volume, onAudioChunk, cancelled, desiredVoiceName)
                     if (ok) {

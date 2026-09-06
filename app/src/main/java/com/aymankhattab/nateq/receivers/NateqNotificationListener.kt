@@ -95,7 +95,14 @@ class NateqNotificationListener : NotificationListenerService() {
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
         AnnouncementSpeaker.getInstance(applicationContext).stop()
-        Log.w(TAG, "NotificationListener disconnected")
+        Log.w(TAG, "NotificationListener disconnected — محاولة إعادة الربط")
+        // إعادة الربط التلقائي بعد فصل النظام (توفير الطاقة/إيقاف مؤقت)
+        // حتى لا تتوقف قراءة الإشعارات دون تدخل المستخدم.
+        try {
+            requestRebind(ComponentName(this, NateqNotificationListener::class.java))
+        } catch (t: Throwable) {
+            Log.e(TAG, "requestRebind failed", t)
+        }
     }
 
     private fun buildSpeechText(appName: String, title: String?, text: String?): String {

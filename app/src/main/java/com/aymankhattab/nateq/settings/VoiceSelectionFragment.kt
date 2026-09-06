@@ -345,8 +345,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
         // تهيئة الأصوات هنا بعد الانضمام للسياق (لا يجوز في مُنشئ/خاصية تستدعي getString())
         nateqVoices = listOf(
-            NateqVoice("ar-local", "ar", getString(R.string.voice_name_arabic), Locale.forLanguageTag("ar")),
-            NateqVoice("en-local", "en", getString(R.string.voice_name_english), Locale.forLanguageTag("en"))
+            NateqVoice("ar-EG", "ar", getString(R.string.voice_name_arabic), Locale.forLanguageTag("ar")),
+            NateqVoice("en-US", "en", getString(R.string.voice_name_english), Locale.forLanguageTag("en"))
         )
 
         // صندوق المحركات داخل قسم اللغة الأولى/الثانية (اختيار محرك TTS للنطق)

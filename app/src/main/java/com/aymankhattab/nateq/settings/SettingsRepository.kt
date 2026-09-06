@@ -68,15 +68,17 @@ class SettingsRepository(private val context: Context) {
     }
 
     /**
-     * يوحّد معرّفات الأصوات القديمة التي تبدأ بـ «nateq-ar» أو «nateq-en» مع
-     * الصيغة الحالية (ar-local/en-local) حتى تبقى القيم المخزنة قبل إعادة
-     * التسمية تعمل.
+     * يوحّد معرّفات الأصوات القديمة (nateq-ar*, nateq-en*, ar-local, en-local)
+     * مع الصيغة الحالية (ar-EG/en-US) حتى تبقى القيم المخزنة قبل إعادة
+     * التسمية تعمل وتعرض بشكل صحيح في شاشات الإعدادات.
      */
     private fun normalizeVoiceId(id: String?): String? {
         if (id == null) return null
         return when {
-            id.contains("nateq-ar", ignoreCase = true) -> "ar-local"
-            id.contains("nateq-en", ignoreCase = true) -> "en-local"
+            id.contains("nateq-ar", ignoreCase = true) ||
+                id.equals("ar-local", ignoreCase = true) -> "ar-EG"
+            id.contains("nateq-en", ignoreCase = true) ||
+                id.equals("en-local", ignoreCase = true) -> "en-US"
             else -> id
         }
     }

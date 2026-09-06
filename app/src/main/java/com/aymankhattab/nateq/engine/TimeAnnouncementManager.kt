@@ -200,9 +200,10 @@ class TimeAnnouncementManager(
                 val pref = settings.getPreferredVoiceIdForCategory(SettingsRepository.VOICE_CATEGORY_TIME)
                 val isEnglish = when {
                     forced != null -> forced.startsWith("en", ignoreCase = true)
-                    // يقبل الصيغ القديمة (nateq-en-…) والصيغ الموحّدة الحالية (en-local)
+                    // يقبل الصيغ القديمة (nateq-en-…، en-local) والصيغ الموحّدة الحالية (en-US)
                     pref != null -> pref.startsWith("nateq-en", ignoreCase = true) ||
-                        pref.startsWith("en-local", ignoreCase = true)
+                        pref.startsWith("en-local", ignoreCase = true) ||
+                        pref.startsWith("en-US", ignoreCase = true)
                     else -> effectiveAppLanguage() == ENGLISH_LANGUAGE_TAG
                 }
                 val languageTag = if (isEnglish) ENGLISH_LANGUAGE_TAG else "ar"

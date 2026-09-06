@@ -19,11 +19,11 @@ class CheckTtsDataActivity : Activity() {
 
         // الأصوات المدعومة (أسماء Voices كما في onGetVoices).
         // يجب أن تطابق أسماء الـ Voice المُعلنة في tts_engine.xml/onGetVoices
-        // ("ar-local"/"en-local") بالضبط وإلا تختفي الأصوات أو يضيع voiceId
+        // ("ar-EG"/"en-US") بالضبط وإلا تختفي الأصوات أو يضيع voiceId
         // المختار في شاشة إعدادات TTS على سامسونج (آلية CHECK_TTS_DATA).
         returnData.putStringArrayListExtra(
             TextToSpeech.Engine.EXTRA_AVAILABLE_VOICES,
-            arrayListOf("ar-local", "en-local")
+            arrayListOf("ar-EG", "en-US")
         )
 
         // لا توجد أصوات غير متاحة (الكل متاح)

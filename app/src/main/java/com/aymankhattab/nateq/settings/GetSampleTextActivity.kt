@@ -20,11 +20,11 @@ class GetSampleTextActivity : Activity() {
 
         val returnData = Intent()
 
-        // نص تجريبي مناسب لكل لغة
-        val sampleText = when {
-            lang == "ar" -> getString(R.string.sample_text_activity_ar)
-            lang == "en" -> getString(R.string.sample_text_activity_en)
-            else -> getString(R.string.sample_text_activity_ar)
+        // نص تجريبي مناسب لكل لغة (يُرسل النظام رمزاً مثل "ar" أو "ar-EG")
+        val sampleText = if (lang?.startsWith("en", ignoreCase = true) == true) {
+            getString(R.string.sample_text_activity_en)
+        } else {
+            getString(R.string.sample_text_activity_ar)
         }
 
         returnData.putExtra("sample", sampleText)

@@ -48,9 +48,10 @@ class BatteryAnnouncementReceiver : BroadcastReceiver() {
         if (!settings.isAllAnnouncementsEnabled()) return
 
         val voiceId = settings.getBatteryAnnouncementVoiceId()
-        // يقبل الصيغ القديمة (nateq-ar-…) والصيغ الموحّدة الحالية (ar-local)
+        // يقبل الصيغ القديمة (nateq-ar-…، ar-local) والصيغ الموحّدة الحالية (ar-EG)
         val isArabic = voiceId?.let {
-            it.contains("nateq-ar") || it.startsWith("ar-local", ignoreCase = true)
+            it.contains("nateq-ar") || it.startsWith("ar-local", ignoreCase = true) ||
+                it.startsWith("ar-EG", ignoreCase = true)
         } == true
         val locale = if (isArabic) Locale.forLanguageTag("ar") else Locale.forLanguageTag("en")
 
