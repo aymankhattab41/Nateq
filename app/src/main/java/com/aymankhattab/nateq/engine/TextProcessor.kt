@@ -282,7 +282,9 @@ result = processCurrencies(result)
         result = processRomanNumerals(result)
 
         // 5.5 معالجة أرقام الهواتف (تُنطق رقماً رقماً قبل الأرقام العادية)
-        result = processPhoneNumbers(result)
+        // نمرّر العربية من languageTag لا من فحص النص: رقم هاتف وحيد (بلا حروف
+        // عربية) كان يُنطق إنجليزياً خطأً في السياق العربي (رقم مصري يبدأ 01…).
+        result = processPhoneNumbers(result, languageTag.startsWith("ar"))
 
         // 6. معالجة الأرقام العادية
         result = processNumbers(result)
@@ -388,7 +390,7 @@ result = processCurrencies(result)
     /** معالجة أرقام الهواتف: تُنطق رقماً رقماً بدل إغلاقها كعدد كامل
      * («خمسمائة وواحد مليون…»). يعترف بأرقام من 7 إلى 15 خانة مع فواصل اختيارية
      * (مسافة/شرطة/نقطة/أقواس) وبداية + اختيارية. */
-    private fun processPhoneNumbers(text: String): String {
+    private fun processPhoneNumbers(text: String, isArabicContext: Boolean): String {
         val matcher = PATTERN_PHONE.matcher(text)
         val buffer = StringBuffer()
         while (matcher.find()) {
@@ -405,7 +407,10 @@ result = processCurrencies(result)
                 matcher.appendReplacement(buffer, Matcher.quoteReplacement(raw))
                 continue
             }
-            val isArabic = com.aymankhattab.nateq.util.LocaleUtils.containsArabic(text)
+            // لغة النطق تأتي من سياق المعالجة (languageTag) لا من أحرف النص:
+            // النص الإنجليزي عاد مبكراً في process()، والرقم المجرد يُنطق
+            // عربياً في السياق العربي.
+            val isArabic = isArabicContext
             val spokenDigits = digits.map { it.digitToInt() }
                 .joinToString(" ") {
                     // الأرقام تُنطق كأرقام مجردة (مذكرة): «خمسة» لا «خمس».
