@@ -4,7 +4,6 @@ import android.Manifest
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.LayoutInflater
@@ -20,7 +19,6 @@ import android.widget.Toast
 import android.text.Editable
 import android.text.TextWatcher
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import com.google.android.material.switchmaterial.SwitchMaterial
@@ -262,7 +260,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             switchCallerAnnouncement.isChecked = true
             callerSwitchGuard = false
             AnnouncementSchedulerService.requestStart(requireContext())
-            updateSectionStatuses()
+            accordion.updateSectionStatuses()
             val msg = when {
                 callLogGranted -> R.string.caller_permission_granted_both
                 phoneGranted -> R.string.caller_permission_granted_phone_only
@@ -273,7 +271,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         } else {
             switchCallerAnnouncement.isChecked = false
             runCatching { settings.setCallerAnnouncementEnabled(false) }
-            updateSectionStatuses()
+            accordion.updateSectionStatuses()
             Toast.makeText(requireContext(), R.string.caller_permission_needed, Toast.LENGTH_LONG).show()
             view?.announceCompat(getString(R.string.caller_permission_needed))
         }
@@ -309,30 +307,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
     }
 
-    // ===== الأكورديون: أقسام قابلة للطي بعنوان حالة (يُفتح قسم واحد فقط) =====
-    private data class AccordionEntry(
-        val header: View,
-        val arrow: TextView,
-        val status: TextView?,
-        val content: View
-    )
-
-    private val accordionEntries = mutableListOf<AccordionEntry>()
-
-    // ===== التنقّل بين المستويين: القائمة الرئيسية وشاشة القسم =====
-    private var llDetailBack: android.widget.LinearLayout? = null
-    private var llMasterSwitch: android.widget.LinearLayout? = null
-    private var svSettingsScroll: androidx.core.widget.NestedScrollView? = null
-    private var tvSectionTitle: TextView? = null
-    private var tvBackToList: com.google.android.material.button.MaterialButton? = null
-    private var detailOpen = false
-    private var dictContentPriorVisibility = View.GONE
-
-    private val backCallback = object : OnBackPressedCallback(false) {
-        override fun handleOnBackPressed() {
-            if (detailOpen) showHome()
-        }
-    }
+    // ===== ضابط الأكورديون والتنقّل: بطاقات الأقسام وبناء أسطر الحالة =====
+    private lateinit var accordion: SettingsAccordionController
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -346,8 +322,17 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
         // صندوق المحركات داخل قسم اللغة الأولى/الثانية (اختيار محرك TTS للنطق)
         spinnerEngine = view.findViewById(R.id.spinner_engine)
+        accordion = SettingsAccordionController(
+            this,
+            settings,
+            nateqVoices,
+            engines,
+            spinnerEngine
+        ).apply {
+            setup(view, viewLifecycleOwner)
+        }
         engineSection = EngineSectionController(this, settings, engines).apply {
-            onStatusChanged = { updateSectionStatuses() }
+            onStatusChanged = { accordion.updateSectionStatuses() }
         }
         engineSection.setupEngineSpinner(spinnerEngine)
 
@@ -385,7 +370,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             runCatching { settings.setAllAnnouncementsEnabled(checked) }
             if (checked) {
                 AnnouncementSchedulerService.requestStart(requireContext())
-                warnIfNotificationsHidden()
+                accordion.warnIfNotificationsHidden()
             } else {
                 runCatching {
                     requireContext().stopService(
@@ -393,7 +378,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     )
                 }
             }
-            updateSectionStatuses()
+            accordion.updateSectionStatuses()
             view?.announceCompat(getString(if (checked) R.string.announcement_turned_on else R.string.announcement_turned_off))
         }
 
@@ -510,20 +495,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         setupGeneralSettings()
         setupLanguageToggle()
         setupNumberReadingSettings()
-engineSection.setupAutoConvertUI(view)
+        engineSection.setupAutoConvertUI(view)
         setupSaveAndResetButtons()
         setupBackupRestoreButtons()
-        setupAccordionSections()
-        setupToolsSection()
-        updateSectionStatuses()
-        llDetailBack = view.findViewById(R.id.ll_detail_back)
-        llMasterSwitch = view.findViewById(R.id.ll_master_switch)
-        svSettingsScroll = view.findViewById(R.id.sv_settings_scroll)
-        tvSectionTitle = view.findViewById(R.id.tv_detail_section_title)
-        tvBackToList = view.findViewById(R.id.btn_back_to_list)
-        view.findViewById<View>(R.id.btn_back_to_list).setOnClickListener { showHome() }
-        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backCallback)
-        showHome()
+        accordion.updateSectionStatuses()
     }
 
     override fun onDestroyView() {
@@ -727,7 +702,7 @@ engineSection.setupAutoConvertUI(view)
         switchTimeAnnouncement.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setTimeAnnouncementEnabled(checked) }
             if (checked) AnnouncementSchedulerService.requestStart(requireContext())
-            updateSectionStatuses()
+            accordion.updateSectionStatuses()
             view?.announceCompat(getString(if (checked) R.string.announcement_turned_on else R.string.announcement_turned_off))
         }
         switchTime24h.isChecked =
@@ -755,7 +730,7 @@ engineSection.setupAutoConvertUI(view)
                     else -> 15
                 }
                 runCatching { settings.setTimeAnnouncementInterval(value) }
-                updateSectionStatuses()
+                accordion.updateSectionStatuses()
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}
@@ -838,392 +813,6 @@ engineSection.setupAutoConvertUI(view)
         }
     }
 
-    // ===== الأكورديون: بطاقات الأقسام والتنقّل لشاشة القسم =====
-    private fun accordionEntry(
-        headerId: Int,
-        arrowId: Int,
-        statusId: Int,
-        contentId: Int,
-        base: String
-    ) {
-        val header = view?.findViewById<View>(headerId) ?: return
-        val arrow = view?.findViewById<TextView>(arrowId) ?: return
-        val status = view?.findViewById<TextView>(statusId)
-        val content = view?.findViewById<View>(contentId) ?: return
-        header.tag = base
-        accordionEntries.add(AccordionEntry(header, arrow, status, content))
-        // في القائمة الرئيسية: فتح شاشة القسم عند الضغط على البطاقة
-        header.setOnClickListener { openSection(content) }
-        content.visibility = View.GONE
-        arrow.text = sectionArrowGlyph()
-        refreshCardDesc(content)
-    }
-
-    /** سهم بطاقة القسم: يشير لليسار في RTL (اتجاه التقدّم) ولليمين في LTR */
-    private fun sectionArrowGlyph(): String {
-        val rtl = resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
-        return if (rtl) "‹" else "›"
-    }
-
-    /** وصف وصول موحّد لبطاقة القسم: الأساس + الحالة */
-    private fun refreshCardDesc(content: View) {
-        val e = accordionEntries.firstOrNull { it.content === content } ?: return
-        val base = e.header.tag as? String ?: ""
-        val statusText = e.status?.text?.toString()?.trim().orEmpty()
-        e.header.contentDescription = if (statusText.isNotEmpty()) {
-            base + "، " + statusText
-        } else {
-            base
-        }
-    }
-
-    private fun setSectionStatus(contentId: Int, text: String) {
-        val e = accordionEntries.firstOrNull { it.content.id == contentId } ?: return
-        e.status?.text = text
-        refreshCardDesc(e.content)
-    }
-
-    /** حالة طي قسم «أدوات التطبيق» (مفتوح افتراضياً). */
-    private var toolsSectionOpen = true
-
-    /** فتح شاشة قسم فرعي: إخفاء كل شيء عدا القسم المطلوب + شريط العودة */
-    private fun openSection(content: View) {
-        detailOpen = true
-        backCallback.isEnabled = true
-        llDetailBack?.visibility = View.VISIBLE
-        llMasterSwitch?.visibility = View.GONE
-        dictContentPriorVisibility = llDictContent.visibility
-        llDictHeader.visibility = View.GONE
-        llDictContent.visibility = View.GONE
-        setHomeActionsVisible(false)
-        view?.findViewById<View>(R.id.btn_toggle_language)?.visibility = View.GONE
-        setSectionDividersVisible(false)
-        svSettingsScroll?.scrollTo(0, 0)
-        var sectionName = ""
-        for (e in accordionEntries) {
-            val target = e.content === content
-            if (target) sectionName = e.header.tag as? String ?: ""
-            // رأس القسم المفتوح يُخفى أيضاً: tvSectionTitle يعرض اسمه أعلى الشاشة
-            e.header.visibility = View.GONE
-            e.status?.visibility = if (target) View.VISIBLE else View.GONE
-            e.content.visibility = if (target) View.VISIBLE else View.GONE
-        }
-        tvSectionTitle?.text = sectionName
-        // إعلان مسموع لفتح القسم + نقل تركيز الوصول إلى أول عنصر تفاعلي في المحتوى
-        val focusTarget = findFirstFocusableView(content)
-            ?: tvBackToList
-        focusTarget?.let {
-            it.announceCompat(getString(R.string.section_opened, sectionName))
-            focusForAccessibility(it)
-        }
-    }
-
-    /** إيجاد أول عرض قابل للتركيز في الشجرة (أول عنصر تفاعلي لفتح القسم) */
-    private fun findFirstFocusableView(root: View): View? {
-        var found: View? = null
-        forEachView(root) { v ->
-            if (found == null && v.isFocusable && v.visibility == View.VISIBLE) {
-                found = v
-            }
-        }
-        return found
-    }
-
-    /** تحذير لمرة واحدة في الجلسة إذا كان إذن الإشعارات مرفوضاً (الأزرار لن تظهر). */
-    private var notificationsHiddenWarned = false
-    private fun warnIfNotificationsHidden() {
-        if (notificationsHiddenWarned) return
-        if (Build.VERSION.SDK_INT < 33) return
-        val granted = ContextCompat.checkSelfPermission(
-            requireContext(),
-            android.Manifest.permission.POST_NOTIFICATIONS
-        ) == PackageManager.PERMISSION_GRANTED
-        if (granted) return
-        notificationsHiddenWarned = true
-        Toast.makeText(
-            requireContext(),
-            getString(R.string.notification_permission_actions_hidden),
-            Toast.LENGTH_LONG
-        ).show()
-        view?.announceCompat(getString(R.string.notification_permission_actions_hidden))
-    }
-
-    /** العودة إلى القائمة الرئيسية: تُظهر كل البطاقات وتطوي المحتويات */
-    private fun showHome() {
-        val returning = detailOpen
-        detailOpen = false
-        backCallback.isEnabled = false
-        llDetailBack?.visibility = View.GONE
-        llMasterSwitch?.visibility = View.VISIBLE
-        llDictHeader.visibility = View.VISIBLE
-        llDictContent.visibility = dictContentPriorVisibility
-        setHomeActionsVisible(true)
-        view?.findViewById<View>(R.id.btn_toggle_language)?.visibility = View.VISIBLE
-        setSectionDividersVisible(true)
-        svSettingsScroll?.scrollTo(0, 0)
-        for (e in accordionEntries) {
-            e.header.visibility = View.VISIBLE
-            e.status?.visibility = View.VISIBLE
-            e.content.visibility = View.GONE
-            e.arrow.visibility = View.VISIBLE
-            e.arrow.text = sectionArrowGlyph()
-        }
-        // عند العودة من قسم فقط: نعيد التركيز للمفتاح الرئيسي مع إعلان مسموع
-        if (returning) {
-            switchAllAnnouncements.announceCompat(getString(R.string.back_to_home))
-            focusForAccessibility(switchAllAnnouncements)
-        }
-    }
-
-    /** نقل تركيز الوصول إلى عرض معيّن عبر واجهات عامة */
-    private fun focusForAccessibility(target: View) {
-        target.post {
-            target.requestFocus(View.FOCUS_FORWARD)
-            target.sendAccessibilityEvent(
-                android.view.accessibility.AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED
-            )
-        }
-    }
-
-    /** إظهار/إخفاء الفواصل بين بطاقات القائمة (تُخفى داخل شاشات الأقسام) */
-    private fun setSectionDividersVisible(visible: Boolean) {
-        val v = if (visible) View.VISIBLE else View.GONE
-        val root = view ?: return
-        forEachView(root) { if (it.tag == "section_divider") it.visibility = v }
-    }
-
-    /** تجوال الشجرة كاملة وتنفيذ إجراء على كل عرض (بديل findViewsWithTag) */
-    private fun forEachView(current: View, action: (View) -> Unit) {
-        action(current)
-        if (current is android.view.ViewGroup) {
-            for (i in 0 until current.childCount) {
-                current.getChildAt(i).let { forEachView(it, action) }
-            }
-        }
-    }
-
-    /** إظهار/إخفاء أدوات القائمة الرئيسية (الحفظ/الاستعادة/النسخ) */
-    private fun setHomeActionsVisible(visible: Boolean) {
-        val v = if (visible) View.VISIBLE else View.GONE
-        view?.findViewById<View>(R.id.ll_tools_header)?.visibility = v
-        // المحتوى يسترجع حالته الأصلية (مفتوح إن كان مفتوحاً قبل الدخول لقسم)
-        if (visible && toolsSectionOpen) {
-            view?.findViewById<View>(R.id.ll_tools_content)?.visibility = View.VISIBLE
-        } else if (!visible) {
-            view?.findViewById<View>(R.id.ll_tools_content)?.visibility = v
-        }
-    }
-
-    /** تسجيل الأقسام التسعة كبطاقات في القائمة الرئيسية (تُفتح كل منها شاشة فرعية) */
-    private fun setupAccordionSections() {
-        accordionEntries.clear()
-        val engine = getString(R.string.section_voice_selection)
-        val cats = getString(R.string.voice_category_default)
-        val time = getString(R.string.section_time_announcement)
-        val num = getString(R.string.section_number_reading)
-        val battery = getString(R.string.section_battery_announcement)
-        val notif = getString(R.string.section_notification_reading)
-        val caller = getString(R.string.section_caller_announcement)
-        val sms = getString(R.string.section_sms_reading)
-        val general = getString(R.string.section_general_settings)
-        accordionEntry(
-            R.id.ll_engine_header, R.id.tv_engine_arrow,
-            R.id.tv_engine_status, R.id.ll_engine_content,
-            engine
-        )
-        accordionEntry(
-            R.id.ll_categories_header, R.id.tv_categories_arrow,
-            R.id.tv_categories_status, R.id.ll_categories_content,
-            cats
-        )
-        accordionEntry(
-            R.id.ll_time_announcement_header, R.id.tv_time_announcement_arrow,
-            R.id.tv_time_announcement_status, R.id.ll_time_announcement_settings,
-            time
-        )
-        accordionEntry(
-            R.id.ll_number_reading_header, R.id.tv_number_reading_arrow,
-            R.id.tv_number_reading_status, R.id.ll_numbers_content,
-            num
-        )
-        accordionEntry(
-            R.id.ll_battery_announcement_header, R.id.tv_battery_announcement_arrow,
-            R.id.tv_battery_announcement_status, R.id.ll_battery_announcement_settings,
-            battery
-        )
-        accordionEntry(
-            R.id.ll_notification_reading_header, R.id.tv_notification_reading_arrow,
-            R.id.tv_notification_reading_status, R.id.ll_notification_reading_settings,
-            notif
-        )
-        accordionEntry(
-            R.id.ll_caller_announcement_header, R.id.tv_caller_announcement_arrow,
-            R.id.tv_caller_announcement_status, R.id.ll_caller_announcement_settings,
-            caller
-        )
-        accordionEntry(
-            R.id.ll_sms_reading_header, R.id.tv_sms_reading_arrow,
-            R.id.tv_sms_reading_status, R.id.ll_sms_reading_settings,
-            sms
-        )
-        accordionEntry(
-            R.id.ll_general_settings_header, R.id.tv_general_settings_arrow,
-            R.id.tv_general_settings_status, R.id.ll_general_settings_content,
-            general
-        )
-    }
-
-    /** تحديث أسطر الحالة لكل قسم (يُستدعى عند التهيئة وبعد كل تغيير أساسي) */
-    private fun updateSectionStatuses() {
-        setSectionStatus(R.id.ll_engine_content, buildEngineStatus())
-        setSectionStatus(R.id.ll_categories_content, buildCategoriesStatus())
-        setSectionStatus(R.id.ll_time_announcement_settings, buildTimeStatus())
-        setSectionStatus(R.id.ll_numbers_content, buildNumberStatus())
-        setSectionStatus(R.id.ll_battery_announcement_settings, buildBatteryStatus())
-        setSectionStatus(R.id.ll_notification_reading_settings, buildNotificationStatus())
-        setSectionStatus(R.id.ll_caller_announcement_settings, buildCallerStatus())
-        setSectionStatus(R.id.ll_sms_reading_settings, buildSmsStatus())
-        setSectionStatus(R.id.ll_general_settings_content, buildGeneralStatus())
-    }
-
-    private fun buildEngineStatus(): String {
-        val auto = runCatching { settings.isAutoConvertEnabled() }.getOrDefault(false)
-        val engine = engines.getOrNull(spinnerEngine.selectedItemPosition)?.label
-            ?: getString(R.string.no_voices_available)
-        val autoLabel = if (auto) getString(R.string.toggle_on)
-        else getString(R.string.toggle_off)
-        return getString(R.string.auto_convert_enabled) + ": " +
-            autoLabel + "، " + engine
-    }
-
-    private fun buildCategoriesStatus(): String {
-        val saved = runCatching {
-            settings.getPreferredVoiceIdForCategory(SettingsRepository.VOICE_CATEGORY_DEFAULT)
-        }.getOrNull()
-        val name = nateqVoices.firstOrNull { it.name == saved }?.displayName
-            ?: nateqVoices.firstOrNull()?.displayName
-            ?: getString(R.string.no_voices_available)
-        return getString(R.string.voice_category_default) + ": " + name
-    }
-
-    private fun buildTimeStatus(): String {
-        val enabled = runCatching { settings.isTimeAnnouncementEnabled() }
-            .getOrDefault(true)
-        val interval = runCatching { settings.getTimeAnnouncementInterval() }
-            .getOrDefault(30)
-        val intervalLabel = getString(
-            when (interval) {
-                15 -> R.string.time_interval_15
-                30 -> R.string.time_interval_30
-                45 -> R.string.time_interval_45
-                else -> R.string.time_interval_60
-            }
-        )
-        val quietStart = runCatching { settings.getQuietStartForDay(Calendar.DAY_OF_WEEK) }
-            .getOrDefault(23)
-        val quietEnd = runCatching { settings.getQuietEndForDay(Calendar.DAY_OF_WEEK) }
-            .getOrDefault(7)
-        return buildString {
-            val on = if (enabled) getString(R.string.toggle_on)
-            else getString(R.string.toggle_off)
-            append(on)
-            append("، ").append(intervalLabel)
-            append("، ").append(getString(R.string.time_quiet_schedule_title))
-            append(": ").append(quietStart).append("/").append(quietEnd)
-        }
-    }
-
-    private fun buildNumberStatus(): String {
-        val mode = runCatching { settings.getNumberReadingMode() }
-            .getOrDefault(1).coerceIn(1, 8)
-        val label = getString(
-            when (mode) {
-                1 -> R.string.number_mode_single
-                2 -> R.string.number_mode_pairs
-                3 -> R.string.number_mode_triples
-                4 -> R.string.number_mode_quadruples
-                5 -> R.string.number_mode_quintuples
-                6 -> R.string.number_mode_sextuples
-                7 -> R.string.number_mode_septuples
-                else -> R.string.number_mode_octuples
-            }
-        )
-        return getString(R.string.number_reading_mode) + ": " + label
-    }
-
-    private fun buildBatteryStatus(): String {
-        val enabled = runCatching { settings.isBatteryAnnouncementEnabled() }
-            .getOrDefault(false)
-        val levels = runCatching { settings.getBatteryAnnouncementLevels() }
-            .getOrDefault(emptySet())
-        val on = if (enabled) getString(R.string.toggle_on)
-        else getString(R.string.toggle_off)
-        val summary = levels.sortedDescending().joinToString("، ") { "$it%" }
-        return buildString {
-            append(on)
-            if (summary.isNotEmpty()) append("، ").append(summary)
-        }
-    }
-
-    private fun buildNotificationStatus(): String {
-        val enabled = runCatching { settings.isNotificationReadingEnabled() }
-            .getOrDefault(false)
-        val sel = runCatching { settings.getNotificationAppsSelection() }
-            .getOrDefault(SettingsRepository.DEFAULT_NOTIFICATION_APPS)
-        val on = if (enabled) getString(R.string.toggle_on)
-        else getString(R.string.toggle_off)
-        val apps = if (SettingsRepository.NOTIF_READ_ALL in sel) {
-            getString(R.string.notification_apps_all)
-        } else {
-            sel.size.toString()
-        }
-        return buildString {
-            append(on)
-            append("، ").append(getString(R.string.notification_apps_title))
-            append(": ").append(apps)
-        }
-    }
-
-    private fun buildCallerStatus(): String {
-        val enabled = runCatching { settings.isCallerAnnouncementEnabled() }
-            .getOrDefault(false)
-        val repeat = runCatching { settings.getCallerAnnouncementRepeat() }
-            .getOrDefault(1).coerceIn(1, 5)
-        val on = if (enabled) getString(R.string.toggle_on)
-        else getString(R.string.toggle_off)
-        val label = getString(
-            when (repeat) {
-                1 -> R.string.repeat_once
-                2 -> R.string.repeat_twice
-                3 -> R.string.repeat_3
-                4 -> R.string.repeat_4
-                else -> R.string.repeat_5
-            }
-        )
-        return on + "، " + label
-    }
-
-    private fun buildSmsStatus(): String {
-        val mode = runCatching { settings.getSmsReadingMode() }.getOrDefault("off")
-        val label = getString(
-            when (mode) {
-                "full" -> R.string.sms_mode_full
-                "source" -> R.string.sms_mode_source
-                else -> R.string.sms_mode_off
-            }
-        )
-        return getString(R.string.sms_reading_mode) + ": " + label
-    }
-
-    private fun buildGeneralStatus(): String {
-        val rate = runCatching { settings.getDefaultSpeechRate() }.getOrDefault(1.0f)
-        val volume = runCatching { settings.getDefaultVolume() }.getOrDefault(1.0f)
-        val rateText = String.format(java.util.Locale.US, "%.1fx", rate)
-        val volumeText = (volume * 100).toInt().toString() + "%"
-        return getString(R.string.default_speech_rate_label) + ": " +
-            rateText + "، " + volumeText
-    }
-
     /** توسيع/طي قسم قابل للطي، ويُحدّث السهم (▼/▲) ووصف الأب بحالة الطي */
     private fun toggleCollapsible(content: View, arrow: TextView, header: View) {
         val collapsed = content.visibility == View.GONE || content.visibility == View.INVISIBLE
@@ -1246,7 +835,7 @@ engineSection.setupAutoConvertUI(view)
         switchBatteryAnnouncement.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setBatteryAnnouncementEnabled(checked) }
             if (checked) AnnouncementSchedulerService.requestStart(requireContext())
-            updateSectionStatuses()
+            accordion.updateSectionStatuses()
             view?.announceCompat(getString(if (checked) R.string.announcement_turned_on else R.string.announcement_turned_off))
         }
 
@@ -1377,7 +966,7 @@ engineSection.setupAutoConvertUI(view)
         switchNotificationReading.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setNotificationReadingEnabled(checked) }
             if (checked) AnnouncementSchedulerService.requestStart(requireContext())
-            updateSectionStatuses()
+            accordion.updateSectionStatuses()
             view?.announceCompat(getString(if (checked) R.string.announcement_turned_on else R.string.announcement_turned_off))
         }
 
@@ -1448,7 +1037,7 @@ engineSection.setupAutoConvertUI(view)
                     Toast.LENGTH_SHORT
                 ).show()
                 view?.announceCompat(getString(R.string.notification_apps_saved))
-                updateSectionStatuses()
+                accordion.updateSectionStatuses()
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
@@ -1473,7 +1062,7 @@ engineSection.setupAutoConvertUI(view)
             } else {
                 runCatching { settings.setCallerAnnouncementEnabled(false) }
                 // لا نوقف الخدمة؛ إن لم يبقَ أي إعلان مفعّل تتوقف هي نفسها.
-                updateSectionStatuses()
+                accordion.updateSectionStatuses()
                 view?.announceCompat(getString(R.string.announcement_turned_off))
             }
         }
@@ -1492,7 +1081,7 @@ engineSection.setupAutoConvertUI(view)
         spinnerCallerRepeat.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 runCatching { settings.setCallerAnnouncementRepeat(position + 1) }
-                updateSectionStatuses()
+                accordion.updateSectionStatuses()
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
@@ -1597,7 +1186,7 @@ engineSection.setupAutoConvertUI(view)
                     // "off": يُحفظ فوراً (لا يتطلب إذناً) ويرفع أي وضع معلّق.
                     pendingSmsMode = null
                     runCatching { settings.setSmsReadingMode("off") }
-                    updateSectionStatuses()
+                    accordion.updateSectionStatuses()
                     return
                 }
                 // وضع غير "off" (full/source): لا يُحفظ حتى منح الإذن.
@@ -1618,7 +1207,7 @@ engineSection.setupAutoConvertUI(view)
                 }
                 // تنبيه سياسة أندرويد 17: رسائل OTP تُحجب 3 ساعات أولى بعد التفعيل.
                 view?.announceCompat(getString(R.string.sms_otp_block_hint))
-                updateSectionStatuses()
+                accordion.updateSectionStatuses()
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
@@ -1705,7 +1294,7 @@ engineSection.setupAutoConvertUI(view)
                 val value = seekBar.progress / 100f
                 runCatching { settings.setDefaultSpeechRate(value) }
                 seekBar.announceCompat(String.format(Locale.US, "%.1fx", value))
-                updateSectionStatuses()
+                accordion.updateSectionStatuses()
             }
         })
 
@@ -1720,7 +1309,7 @@ engineSection.setupAutoConvertUI(view)
                 val value = seekBar.progress / 100f
                 runCatching { settings.setDefaultPitch(value) }
                 seekBar.announceCompat(String.format(Locale.US, "%.1fx", value))
-                updateSectionStatuses()
+                accordion.updateSectionStatuses()
             }
         })
 
@@ -1734,7 +1323,7 @@ engineSection.setupAutoConvertUI(view)
                 val value = seekBar.progress / 100f
                 runCatching { settings.setDefaultVolume(value) }
                 seekBar.announceCompat("${seekBar.progress}%")
-                updateSectionStatuses()
+                accordion.updateSectionStatuses()
             }
         })
     }
@@ -2022,7 +1611,7 @@ engineSection.setupAutoConvertUI(view)
                     rvCategories.adapter?.notifyDataSetChanged()
                     // تحديث نصوص حالة الأقسام بعد إعادة التحميل حتى تعكس القيم
                     // الافتراضية فوراً (كانت تبقى على القيم القديمة المحذوفة).
-                    updateSectionStatuses()
+                    accordion.updateSectionStatuses()
                 }
                 .setNegativeButton(R.string.reset_cancel, null)
                 .show()
@@ -2061,26 +1650,6 @@ engineSection.setupAutoConvertUI(view)
         }
     }
 
-    // ===== قسم أدوات التطبيق القابل للطي =====
-    private fun setupToolsSection() {
-        val header = view?.findViewById<View>(R.id.ll_tools_header) ?: return
-        val content = view?.findViewById<View>(R.id.ll_tools_content) ?: return
-        val arrow = view?.findViewById<TextView>(R.id.tv_tools_arrow) ?: return
-        val base = getString(R.string.tools_section)
-        header.contentDescription = base
-        header.setOnClickListener {
-            toolsSectionOpen = content.visibility != View.VISIBLE
-            content.visibility = if (toolsSectionOpen) View.VISIBLE else View.GONE
-            arrow.text = if (toolsSectionOpen) "▼" else sectionArrowGlyph()
-            header.announceCompat(
-                getString(
-                    if (toolsSectionOpen) R.string.section_opened else R.string.section_collapsed,
-                    base
-                )
-            )
-        }
-    }
-
     /** إعادة تحميل كل قيم الواجهة بعد الاستعادة (دون إعادة إنشاء النشاط). */
     private fun refreshAllSettingsUi() {
         setupTimeAnnouncementSettings()
@@ -2092,7 +1661,7 @@ engineSection.setupAutoConvertUI(view)
         setupNumberReadingSettings()
         rvCategories.adapter?.notifyDataSetChanged()
         refreshDictAdapter()
-        updateSectionStatuses()
+        accordion.updateSectionStatuses()
     }
 
     // (منطق النسخ الاحتياطي/الاستعادة — buildBackupJson/applyBackupJson بحدودهما —
@@ -2157,7 +1726,7 @@ engineSection.setupAutoConvertUI(view)
             btnSpeechLanguage.announceCompat(
                 getString(R.string.speech_language_switch) + " — " + btnSpeechLanguage.text
             )
-            updateSectionStatuses()
+            accordion.updateSectionStatuses()
         }
     }
 
