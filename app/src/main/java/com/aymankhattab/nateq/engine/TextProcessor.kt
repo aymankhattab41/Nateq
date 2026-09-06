@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.engine
 
 import android.content.Context
+import com.aymankhattab.nateq.settings.SettingsRepository
 import java.math.BigDecimal
 import java.text.Normalizer
 import java.util.*
@@ -20,7 +21,12 @@ private data class UnitInfo(
  * معالج النصوص الذكي - يحول النصوص الخام إلى نصوص قابلة للنطق طبيعياً
  * يدعم: الأرقام، التواريخ، الأوقات، العملات، الوحدات، الاختصارات
  */
-class TextProcessor(private val context: Context) {
+class TextProcessor(
+    private val context: Context,
+    /** المرجع المحقون عبر Hilt إن وُجد (يمرره NateqTtsService)، وإلا يُبنى
+     *  محلياً — قراءة لحظية لتفضيل التاريخ الهجري لا أكثر. */
+    private val injectedSettings: SettingsRepository? = null
+) {
 
     companion object {
         // ======================================================
@@ -162,17 +168,13 @@ class TextProcessor(private val context: Context) {
             Pattern.compile("""\b(\d+(?:[.,]\d+)?)\s*${Pattern.quote(info.symbol)}\b""") to info
         }
 
-        private val SYMBOL_NAMES = mapOf(
+        // رموز تُستبدل دائماً (معناها ثابت لا يتبدل بسياق):
+        private val SYMBOL_NAMES_GENERAL = mapOf(
             "%" to "بالمئة",
             "٪" to "بالمئة",
-            "°" to "درجة",
             "°C" to "درجة مئوية",
             "°F" to "درجة فهرنهايت",
-            "+" to "زائد",
-            "-" to "ناقص",
-            "×" to "مضروب في",
-            "÷" to "مقسوم على",
-            "=" to "يساوي",
+            "°" to "درجة",
             ">" to "أكبر من",
             "<" to "أصغر من",
             "≥" to "أكبر من أو يساوي",
@@ -183,18 +185,44 @@ class TextProcessor(private val context: Context) {
             "√" to "جذر",
             "π" to "باي",
             "#" to "رقم",
-            "@" to "عند",
             "&" to "و",
-            "/" to "على",
-            "\\" to "مائل عكسي",
             "|" to "أو",
             "~" to "تقريباً",
-            "*" to "نجمة",
-            "_" to "شرطة سفلية"
+            "_" to "شرطة سفلية",
+            "\\" to "شرطة مائلة عكسية"
         )
 
-        private val SYMBOL_PATTERNS = SYMBOL_NAMES.map { (symbol, replacement) ->
-            Pattern.compile(Pattern.quote(symbol)) to replacement
+        // رموز حسابية تُستبدل فقط بين رقمين (فلا تتحول "ملاحظة - هام" إلى
+        // "ملاحظة ناقص هام"، ولا تعارَض كلمة عادية معها). الكسر 1/2 يُنطق
+        // «واحد على اثنين» كما في العربية السياقية.
+        private val SYMBOL_ARITHMETIC = mapOf(
+            "+" to " زائد ",
+            "-" to " ناقص ",
+            "×" to " في ",
+            "÷" to " على ",
+            "/" to " على ",
+            "*" to " في ",
+            "=" to " يساوي "
+        )
+
+        // @: لا تُستبدل داخل بريد إلكتروني (حرف/رقم على طرفيها)، بل فقط
+        // حين تكون معزولة (مثل "نلتقي @ 5").
+        private val PATTERN_AT = Pattern.compile("(?<!\\p{L})(?<![0-9])@(?![0-9])(?!\\p{L})")
+
+        /** أنماط منتهية تجمع الرموز العامة (الأطول أولاً لضمان °C قبل °) ثم
+         *  الحسابية المقيدة بين الرقمين ثم @ المعزولة. */
+        private val SYMBOL_PATTERNS: List<Pair<Pattern, String>> = buildList {
+            addAll(
+                SYMBOL_NAMES_GENERAL.entries.sortedByDescending { it.key.length }
+                    .map { Pattern.compile(Pattern.quote(it.key)) to it.value }
+            )
+            addAll(
+                SYMBOL_ARITHMETIC.map { (op, word) ->
+                    // لاحظ: \Q..\E لإبعاد الرموز الخاصة (بما فيها * و /) عن المعنى النمطي.
+                    Pattern.compile("(?<=\\d)\\s*\\Q$op\\E\\s*(?=\\d)") to word
+                }
+            )
+            add(PATTERN_AT to " عند ")
         }
     }
 
@@ -212,15 +240,28 @@ private val pronunciationDict = PronunciationDictionary(context)
         // (لا يجوز تحويل أرقام إنجليزية إلى كلمات عربية)
         if (languageTag.startsWith("ar").not()) return text
 
-        // 0. تطبيع الأرقام الشرقية (٠١٢٣٤٥٦٧٨٩) إلى غربية (0123456789)
+// 0. تطبيع الأرقام الشرقية (٠١٢٣٤٥٦٧٨٩) إلى غربية (0123456789)
         //    لأن أنماط \d في Java لا تطابق الأرقام الشرقية
         var result = normalizeIndicDigits(text)
+
+        // 0.05 تجريد التشكيل العربي (حركات/تنوين/شدّة/سكون/كشيدة) قبل كل المطابقات
+        //    حتى يطابق القاموس والأنماط الكلماتَ المشكولة وتتوقف الأخطاء النطقية
+        result = stripTashkeel(result)
 
         // 0.1 معالجة الإيموجي: إزالتها وتنظيف التركيبات المعقدة حتى لا تشوّش النطق
         result = processEmojis(result)
 
-        // 1. تطبيق القاموس الشخصي أولاً (أعلى أولوية)
+// 1. تطبيق القاموس الشخصي أولاً (أعلى أولوية)
         result = pronunciationDict.apply(result)
+
+        // 1.5 المسار السريع (Fast-path): إن لم يحتوِ النص على أي محفِّز لأرقام
+        //     الرموز/الصيغ (أرقام، فواصل، رموز عملة، حروف رومانية...) — أي نص
+        //     عربي صافٍ بلا أرقام — نتخطى كل مراحل regex الثقيلة (التواريخ/
+        //     الأوقات/العملات/الروابط/الرومانية/الهواتف/الأرقام/الرموز) ونذهب
+        //     مباشرةً لتنظيف المسافات. يوفّر تريليونات المطابقات على كل إعلان.
+        if (!requiresRegexPipeline(result)) {
+            return cleanupSpaces(result)
+        }
 
         // 2. معالجة التواريخ
         result = processDates(result)
@@ -229,9 +270,9 @@ private val pronunciationDict = PronunciationDictionary(context)
         result = processTimes(result)
 
         // 4. معالجة العملات
-        result = processCurrencies(result)
+result = processCurrencies(result)
 
-// 5. معالجة الوحدات
+        // 5. معالجة الوحدات
         result = processUnits(result)
 
         // 5.3 معالجة الروابط: استخراج اسم النطاق ونطقه (مع التعامل مع subdomain)
@@ -249,10 +290,40 @@ private val pronunciationDict = PronunciationDictionary(context)
         // 7. معالجة الرموز الشائعة
         result = processSymbols(result)
 
-        // 8. تنظيف المسافات الزائدة
+// 8. تنظيف المسافات الزائدة
         result = cleanupSpaces(result)
 
         return result
+    }
+
+    /**
+     * فحص سريع لكل الحروف: هل يحتوي النص أي محفِّز يستدعي مراحل regex الثقيلة؟
+     * المحفِّزات هي: أي حرف/رقم لاتيني (أرقام/فواصل/رموز/حروف رومانية وعملات
+     * ورسميات مثل USD/SAR)، رموز العملة (€¥₹…)، أي رمز حسابي/عام، وعلامات عربية
+     * خاصة (٪، ﷼) — فإذا خلا النص منها (عربي خالص بلا أرقام) نتخطى كل المراحل
+     * ونكتفي بالتنظيف، فيتسارع معالجة السنة/الرسائل/الإشعارات العادية بشكل كبير.
+     */
+    private fun requiresRegexPipeline(text: String): Boolean {
+        for (i in text.indices) {
+            val code = text[i].code
+            when {
+                // أي حرف/رقم/علامة لاتينية (استثناء الفراغ) — يشمل الأرقام
+                // والفواصل ورموز العمليات و @ و # وحروف العملات والرومانية
+                // والرسمية، وعلامات مثل ° × ÷ (كلها دون U+0600).
+                code < 0x600 && code != 0x20 -> return true
+                // ٪ (عربي للمئة) — تُستبدل في SYMBOL_NAMES_GENERAL
+                code == 0x66A -> return true
+                // رموز عملة خارج ASCII (€¥₹…)
+                code in 0x20A0..0x20CF -> return true
+                // رموز النظام الرياضية/المنطقية (≥≤≠≈∞√…)
+                code in 0x2200..0x22FF -> return true
+                // باي اليوناني (يُستبدل في SYMBOL_NAMES_GENERAL)
+                code == 0x03C0 -> return true
+                // ﷼ (ريال سعودي)
+                code == 0xFDFC -> return true
+            }
+        }
+        return false
     }
 
     /** معالجة التواريخ: 2024-03-15 → 15 مارس 2024 */
@@ -640,7 +711,7 @@ private fun parseNumberText(numberStr: String): String {
         // ولا نُمرر قيماً ميلادية عبر أسماء الشهور الهجرية (كان ينتج نطقاً مختلطاً
         // مثل «خمسة عشر محرم 2024»).
         if (runCatching {
-                com.aymankhattab.nateq.settings.SettingsRepository(context).isHijriDateEnabled()
+                (injectedSettings ?: SettingsRepository(context)).isHijriDateEnabled()
             }.getOrDefault(false)
         ) {
             val hijri = runCatching { toHijri(day, month, year) }.getOrNull()
@@ -726,6 +797,27 @@ private fun parseNumberText(numberStr: String): String {
     }
 
     /**
+     * تجريد التشكيل العربي من النص (حركات، تنوين، شدّة، سكون، تطويل/كشيدة،
+     * والعلامات الإملائية الرافدة) دون لمس الحروف أو فواصل الكلمات.
+     * ضروري قبل مطابقة الأنماط والقواميس: علامات Unicode الفاصلة عن الحرف
+     * (Mn) تجعل [Character.isLetter] تعود false وتفكك تعبيرات regex العربية،
+     * كما أن الكلمة المشكولة لا تُطابق مدخلات القاموس المكتوبة بلا تشكيل.
+     * تُطبَّق على مدخل المعالجة فقط، وبالتالي لا تُحذف من نصٍّ ليس عربياً.
+     */
+    private fun stripTashkeel(text: String): String {
+        if (text.isEmpty()) return text
+        val sb = StringBuilder(text.length)
+        for (ch in text) {
+            val cp = ch.code
+            // نطاقات التشكيل العربي الكاملة (U+0610–U+061A، U+064B–U+065F،
+            // U+0670–U+0673) بالإضافة للتطويل/الكشيدة (U+0640).
+            if (cp in 0x0610..0x061A || cp == 0x0640 || cp in 0x064B..0x065F || cp in 0x0670..0x0673) continue
+            sb.append(ch)
+        }
+        return sb.toString()
+    }
+
+    /**
      * معالجة الإيموجي: إزالة الإيموجي وتركيباتها المعقدة (ZWJ, skin tone modifiers,
      * variation selectors, flags) بطريقة آمنة حتى لا تشوّش النطق.
      * تُستبدل بمسافة للحفاظ على الفصل بين الكلمات.
@@ -769,21 +861,26 @@ private fun isEmojiCodePoint(cp: Int): Boolean {
             cp == 0xFE0F // مؤشر شكل الإيموجي (variation selector)
     }
 
-    /** تحويل رقم لكلمات عربية (يدعم حتى التريليونات، والكسور العشرية) */
+/** تحويل رقم لكلمات عربية (يدعم حتى التريليونات، والكسور العشرية) */
     fun numberToWords(number: Number): String {
         // معالجة الكسور العشرية: فصل الجزء الصحيح والعشري ونطق "فاصلة" ثم الأرقام
+        // نعتمد التمثيل العشري المباشر (BigDecimal.valueOf) بدل طرح الجزء الصحيح
+        // من الديبل — الطرح كان يُدخل أخطاء الفاصلة العائمة (0.14000000000000012)
+        // وتفقد الأصفار البادئة/الوسطية للكسر (3.05 تُنطق سابقاً «ثلاثة فاصلة خمسة»).
         if (number is Double || number is Float) {
             val d = number.toDouble()
             val negative = d < 0
             val abs = Math.abs(d)
-            val integerPart = abs.toLong()
-
-// استخراج الأرقام العشرية بعد الفاصلة كسلسلة (بدون صفر متكرر ختامي)
-            var decimalStr = formatDecimal(abs - integerPart)
-            val decimalDigits = decimalStr.trimEnd('0')
-            if (decimalDigits.isEmpty()) {
-                return if (negative) "ناقص ${numberToWords(integerPart)}" else numberToWords(integerPart)
+            // تمثيل عشري نظيف بدون أصفار ختامية (مثل 3.05 → "3.05").
+            val plain = BigDecimal.valueOf(abs).stripTrailingZeros().toPlainString()
+            val dot = plain.indexOf('.')
+            if (dot < 0) {
+                val integerOnly = plain.toLong()
+                return if (negative) "ناقص ${numberToWords(integerOnly)}" else numberToWords(integerOnly)
             }
+            val integerPart = plain.substring(0, dot).toLong()
+            // خانات الكسر كما وردت (الأصفار البادئة والوسطية محفوظة: "05" ،"009").
+            val decimalDigits = plain.substring(dot + 1)
             val base = if (negative) "ناقص " else ""
             val intWord = numberToWords(integerPart)
             // نطق طبيعي للكسور الشائعة: «ونصف/وربع/وثلاثة أرباع» بدل «فاصلة ...»
@@ -791,8 +888,10 @@ private fun isEmojiCodePoint(cp: Int): Boolean {
                 "5" -> if (integerPart == 0L) "${base}نصف" else "$base$intWord ونصف"
                 "25" -> if (integerPart == 0L) "${base}ربع" else "$base$intWord وربع"
                 "75" -> if (integerPart == 0L) "${base}ثلاثة أرباع" else "$base$intWord وثلاثة أرباع"
-                // غيرها: نطق الأرقام العشرية واحداً واحداً (مثل النطق الطبيعي للفاصلة)
-                else -> "$base$intWord فاصلة ${numberToWords(decimalDigits.toLong())}"
+                // غيرها: نطق الخانات رقماً رقماً مع إبقاء الأصفار («05» → صفر خمسة)
+                else -> "$base$intWord فاصلة " + decimalDigits
+                    .map { digit -> numberToWords(digit.toString().toLong()) }
+                    .joinToString(" ")
             }
         }
 
@@ -849,16 +948,9 @@ private fun isEmojiCodePoint(cp: Int): Boolean {
                 }
                 result = if (result.isEmpty()) part else "$part و$result"
             }
-            n /= 1000
+n /= 1000
             groupIndex++
         }
         return result
-    }
-
-/** تحويل الكسر العشري إلى سلسلة أرقام (بلا البادئة 0.) */
-    private fun formatDecimal(value: Double): String {
-        val s = BigDecimal.valueOf(value).stripTrailingZeros().toPlainString()
-        val dot = s.indexOf('.')
-        return if (dot >= 0) s.substring(dot + 1) else s
     }
 }

@@ -8,6 +8,7 @@ import android.os.Build
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
+import com.aymankhattab.nateq.NateqApplication
 import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
 import com.aymankhattab.nateq.providers.EnginePicker
 import com.aymankhattab.nateq.settings.SettingsRepository
@@ -94,8 +95,11 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
         pendingInitCallbacks.add(onReady)
 
         // المحرك المختار من المستخدم (مثل MultiTTS أو Lord نفسه) له الأولوية
+        // يُفضَّل الحقل المحقون في NateqApplication (نفس كائن Hilt المشترك
+        // من كل عملية)، وإلا يُبنى محلياً — قراءة لحظية غير محفوظة.
+        val injected = (appContext as? NateqApplication)?.settingsRepository
         val savedEngine = try {
-            SettingsRepository(appContext).getSelectedEnginePackage()
+            (injected ?: SettingsRepository(appContext)).getSelectedEnginePackage()
         } catch (e: Exception) {
             null
         }

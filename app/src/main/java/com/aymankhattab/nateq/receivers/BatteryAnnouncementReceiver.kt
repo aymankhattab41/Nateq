@@ -3,6 +3,7 @@ package com.aymankhattab.nateq.receivers
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.aymankhattab.nateq.NateqApplication
 import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.engine.NumberSpeech
 import com.aymankhattab.nateq.settings.SettingsRepository
@@ -43,7 +44,11 @@ class BatteryAnnouncementReceiver : BroadcastReceiver() {
     }
 
     private fun handle(context: Context, intent: Intent, action: String?) {
-        val settings = SettingsRepository(context)
+        // يُسجَّل هذا المستقبل يدوياً من AnnouncementSchedulerService (لا عبر
+        // Hilt)، فيُفضَّل الحقل المحقون من التطبيق وإلا يُبنى محلياً.
+        val appContext = context.applicationContext
+        val settings = (appContext as? NateqApplication)?.settingsRepository
+            ?: SettingsRepository(context)
         // المفتاح الرئيسي يُوقف كل الإعلانات دفعة واحدة.
         if (!settings.isAllAnnouncementsEnabled()) return
 

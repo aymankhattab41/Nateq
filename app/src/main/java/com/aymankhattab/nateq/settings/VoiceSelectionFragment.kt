@@ -29,6 +29,7 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import com.google.android.material.switchmaterial.SwitchMaterial
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.aymankhattab.nateq.R
@@ -38,6 +39,7 @@ import com.aymankhattab.nateq.engine.PronunciationDictionary
 import com.aymankhattab.nateq.providers.EnginePicker
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.announceCompat
+import dagger.hilt.android.AndroidEntryPoint
 import java.util.Calendar
 import java.util.Locale
 
@@ -48,16 +50,22 @@ import java.util.Locale
  * 3. إعدادات إعلان الوقت
  * 4. قاموس النطق الشخصي
  */
+@AndroidEntryPoint
 class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
     companion object {
-        // حدود دفاعية ضد ملفات النسخ الاحتياطي الخبيثة/الضخمة (SAF أو مصادر أخرى)
-        private const val MAX_BACKUP_BYTES = 2 * 1024 * 1024   // 2 MB
-        private const val MAX_BACKUP_ENTRIES = 5000            // أسماء متصلين + إعدادات
+        // (حدود النسخ الاحتياطي انتقلت إلى SettingsViewModel.MAX_BACKUP_* — لم يعد
+        //  الفصيل مسؤولاً عن المنطق بل عن تشغيله فقط في مواضع SAF).
     }
 
-    private lateinit var settings: SettingsRepository
-    private lateinit var pronunciationDict: PronunciationDictionary
+    // طبقة الحالة المحقونة عبر Hilt (تحوي مصدرَي الإعدادات والقاموس).
+    private val vm: SettingsViewModel by viewModels()
+
+    private val settings: SettingsRepository
+        get() = vm.settings
+
+    private val pronunciationDict: PronunciationDictionary
+        get() = vm.pronunciationDict
 
     private lateinit var rvCategories: RecyclerView
     private lateinit var rvPronunciationDict: RecyclerView
@@ -143,6 +151,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
     // المفتاح الرئيسي لكل الإعلانات
     private lateinit var switchAllAnnouncements: SwitchMaterial
+
+    private lateinit var switchLockScreenPrivacy: SwitchMaterial
     private lateinit var btnSetDefaultEngine: com.google.android.material.button.MaterialButton
 
     // معاينة نطق رقم
@@ -201,7 +211,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     ) { uri ->
         if (uri != null) {
             val ok = runCatching {
-                val json = buildBackupJson()
+                val json = vm.buildBackupJson()
                 requireContext().contentResolver.openOutputStream(uri)?.use { out ->
                     out.write(json.toByteArray(Charsets.UTF_8))
                 }
@@ -224,7 +234,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
             }.getOrNull()
             if (text != null) {
-                if (applyBackupJson(text)) {
+                if (vm.applyBackupJson(text)) {
                     refreshAllSettingsUi()
                     AnnouncementSchedulerService.requestStart(requireContext())
                     Toast.makeText(requireContext(), R.string.restore_done, Toast.LENGTH_LONG).show()
@@ -340,8 +350,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        settings = SettingsRepository(requireContext())
-        pronunciationDict = PronunciationDictionary(requireContext())
+        // لا إنشاء مباشر للإعدادات/القاموس: كلاهما محقون عبر SettingsViewModel.
 
         // تهيئة الأصوات هنا بعد الانضمام للسياق (لا يجوز في مُنشئ/خاصية تستدعي getString())
         nateqVoices = listOf(
@@ -396,6 +405,15 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 }
             }
             updateSectionStatuses()
+            view?.announceCompat(getString(if (checked) R.string.announcement_turned_on else R.string.announcement_turned_off))
+        }
+
+        // حماية خصوصية قفل الشاشة: حجب تفاصيل الرسائل/الإشعارات/المتصل عند القفل
+        switchLockScreenPrivacy = view.findViewById(R.id.switch_lock_screen_privacy)
+        switchLockScreenPrivacy.isChecked =
+            runCatching { settings.isLockScreenPrivacyEnabled() }.getOrDefault(true)
+        switchLockScreenPrivacy.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setLockScreenPrivacyEnabled(checked) }
             view?.announceCompat(getString(if (checked) R.string.announcement_turned_on else R.string.announcement_turned_off))
         }
 
@@ -2463,129 +2481,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         updateSectionStatuses()
     }
 
-    /** بناء ملف JSON كامل: إعدادات مصنفة الأنواع + القاموس + أسماء المتصلين. */
-    private fun buildBackupJson(): String {
-        return try {
-            val root = org.json.JSONObject()
-            root.put("version", 1)
-            root.put("exportedAt", System.currentTimeMillis())
-
-            val settingsObj = org.json.JSONObject()
-            settings.exportSettings().forEach { (key, value) ->
-                val entry = org.json.JSONObject()
-                when (value) {
-                    is Float -> { entry.put("type", "float"); entry.put("value", value.toDouble()) }
-                    is Int -> { entry.put("type", "int"); entry.put("value", value) }
-                    is Long -> { entry.put("type", "int"); entry.put("value", value) }
-                    is Boolean -> { entry.put("type", "bool"); entry.put("value", value) }
-                    is String -> { entry.put("type", "string"); entry.put("value", value) }
-                    is Set<*> -> {
-                        val arr = org.json.JSONArray()
-                        for (item in value) arr.put(item.toString())
-                        entry.put("type", "stringset"); entry.put("value", arr)
-                    }
-                    else -> return@forEach
-                }
-                settingsObj.put(key, entry)
-            }
-            root.put("settings", settingsObj)
-
-            val dictArr = org.json.JSONArray()
-            pronunciationDict.getAllEntries().forEach { (word, phon) ->
-                dictArr.put(org.json.JSONArray().put(word).put(phon))
-            }
-            root.put("dictionary", dictArr)
-
-            val callers = org.json.JSONObject()
-            runCatching { settings.getCustomCallerNames() }.getOrDefault(emptyMap())
-                .forEach { (num, name) -> callers.put(num, name) }
-            root.put("callerNames", callers)
-
-            root.toString()
-        } catch (t: Throwable) {
-            ""
-        }
-    }
-
-    /**
-     * تطبيق نسخة احتياطية: يتحقق من البنية ثم يستعيد القاموس والأسماء ثم
-     * الإعدادات (آخرها لأن استعادتها تمسح القرص) — وتُعقَّل قيم النطاقات
-     * داخل SettingsRepository.importSettings.
-     */
-    private fun applyBackupJson(text: String): Boolean {
-        return try {
-            val root = org.json.JSONObject(text)
-            if (root.optInt("version", 0) != 1) return false
-
-            // حدود دفاعية ضد ملفات النسخ الاحتياطي الخبيثة/الضخمة الواردة من SAF
-            if (text.length > MAX_BACKUP_BYTES) return false
-            val callerNames = root.optJSONObject("callerNames")
-            val callerCount = callerNames?.length() ?: 0
-            val settingsCount = root.optJSONObject("settings")?.length() ?: 0
-            if (callerCount + settingsCount > MAX_BACKUP_ENTRIES) return false
-
-            var applied = false
-
-            val dictArr = root.optJSONArray("dictionary")
-            if (dictArr != null) {
-                val map = org.json.JSONObject()
-                for (i in 0 until dictArr.length()) {
-                    val pair = dictArr.optJSONArray(i) ?: continue
-                    if (pair.length() < 2) continue
-                    map.put(pair.getString(0), pair.getString(1))
-                }
-                applied = pronunciationDict.importFromJson(map.toString()) || applied
-            }
-
-            val callers = root.optJSONObject("callerNames")
-            if (callers != null && callers.length() > 0) {
-                val map = HashMap<String, String>()
-                val names = callers.names() ?: org.json.JSONArray()
-                for (i in 0 until names.length()) {
-                    val key = names.getString(i)
-                    map[key] = callers.getString(key)
-                }
-                settings.setCustomCallerNames(map)
-                applied = true
-            }
-
-            val settingsObj = root.optJSONObject("settings")
-            if (settingsObj != null && settingsObj.length() > 0) {
-                val restored = HashMap<String, Any>()
-                val names = settingsObj.names() ?: org.json.JSONArray()
-                for (i in 0 until names.length()) {
-                    val key = names.getString(i)
-                    val entry = settingsObj.optJSONObject(key) ?: continue
-                    when (entry.optString("type")) {
-                        // "int": نتحقق أن القيمة الطويلة ضمن حدود Int الصحيحة
-                        // قبل التحويل حتى لا يُقلب Long خارج المدى إشارته (بند 17)
-                        // ويصبح إعداداً معطوباً بلا إنذار بدل رفضه.
-                        "int" -> {
-                            val longValue = entry.optLong("value", Long.MIN_VALUE)
-                            if (longValue < Int.MIN_VALUE || longValue > Int.MAX_VALUE) continue
-                            restored[key] = longValue.toInt()
-                        }
-                        "float" -> restored[key] = entry.optDouble("value", 0.0).toFloat()
-                        "bool" -> restored[key] = entry.optBoolean("value")
-                        "string" -> restored[key] = entry.optString("value")
-                        "stringset" -> {
-                            val arr = entry.optJSONArray("value") ?: continue
-                            val set = HashSet<String>()
-                            for (j in 0 until arr.length()) set.add(arr.getString(j))
-                            restored[key] = set
-                        }
-                    }
-                }
-                if (restored.isNotEmpty()) {
-                    applied = settings.importSettings(restored) || applied
-                }
-            }
-
-            applied
-        } catch (t: Throwable) {
-            false
-        }
-    }
+    // (منطق النسخ الاحتياطي/الاستعادة — buildBackupJson/applyBackupJson بحدودهما —
+    //  انتقل إلى SettingsViewModel، والفصيل يعرض النتيجة في مواضع SAF فقط.)
 
     // ===== إعدادات نطق الأرقام + مفتاح لغة النطق =====
     private fun setupNumberReadingSettings() {

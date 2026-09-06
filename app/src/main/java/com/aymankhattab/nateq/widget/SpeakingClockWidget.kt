@@ -6,11 +6,9 @@ import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.content.Intent
 import android.widget.RemoteViews
+import com.aymankhattab.nateq.NateqApplication
 import com.aymankhattab.nateq.R
-import com.aymankhattab.nateq.engine.SynthesisRequestHandler
 import com.aymankhattab.nateq.engine.TimeAnnouncementManager
-import com.aymankhattab.nateq.engine.VoiceCatalog
-import com.aymankhattab.nateq.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.settings.SettingsRepository
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import java.util.Locale
@@ -28,24 +26,6 @@ class SpeakingClockWidget : AppWidgetProvider() {
 
     companion object {
         private const val ACTION_SPEAK = "com.aymankhattab.nateq.action.WIDGET_SPEAK"
-
-        // مثيل واحد مشترك لمدير إعلان الوقت عبر عملية التطبيق، يُعوَّض مرة واحدة
-        // ويُعاد استخدامه لكل ضغطة على الأداة. كان إنشاء مدير جديد عند كل نقرة
-        // يُطلق CoroutineScope جديداً بلا إغلاق فيتسرب تدريجياً عبر عمر الودجت.
-        @Volatile
-        private var timeManager: TimeAnnouncementManager? = null
-
-        @Synchronized
-        private fun sharedTimeManager(context: Context): TimeAnnouncementManager {
-            timeManager?.let { return it }
-            val appContext = context.applicationContext
-            val settings = SettingsRepository(appContext)
-            val providers = listOf(SystemVoiceProvider(appContext))
-            val catalog = VoiceCatalog(providers)
-            val handler = SynthesisRequestHandler(catalog, settings)
-            return TimeAnnouncementManager(appContext, settings, catalog, handler)
-                .also { timeManager = it }
-        }
     }
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
@@ -67,7 +47,10 @@ class SpeakingClockWidget : AppWidgetProvider() {
     private fun handleSpeak(context: Context) {
         try {
             val appContext = context.applicationContext
-            val settings = SettingsRepository(appContext)
+            // يُفضَّل الحقل المحقون عبر Hilt (كائن مشترك)، وإلا يُبنى محلياً —
+            // AppWidgetProvider لا يُحقن تلقائياً من Hilt (يُنشئه النظام مباشرة).
+            val settings = (appContext as? NateqApplication)?.settingsRepository
+                ?: SettingsRepository(appContext)
             // المفتاح الموضعي للأداة (من شاشة إعلان الوقت) يقرر إن كانت تنطق عند اللمس.
             if (!settings.isClockWidgetEnabled()) {
                 // نُعلم المستخدم بمعطّلية النطق بدل الصمت.
@@ -79,8 +62,10 @@ class SpeakingClockWidget : AppWidgetProvider() {
             }
 
             // نعتمد نفس إعلان الوقت (النص والصيغة والصوت) عبر TimeAnnouncementManager
-            // لنطق تطابق تماماً إعلان «أعلن الآن» في التطبيق والخدمة.
-            sharedTimeManager(appContext).announceNow()
+            // لنطق تطابق تماماً إعلان «أعلن الآن» في التطبيق والخدمة. نستخدم المثيل
+            // المشترك عبر العملية (نفس كائن مستقبل المنبه) فلا يتسرب نطاق ولا
+            // يتضاعف المحرك.
+            TimeAnnouncementManager.shared(appContext).announceNow()
         } catch (t: Throwable) {
             android.util.Log.e("NATEQ_TTS", "widget speak failed", t)
         }

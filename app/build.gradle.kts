@@ -1,5 +1,7 @@
 plugins {
     id("com.android.application")
+    id("com.google.devtools.ksp")
+    id("com.google.dagger.hilt.android")
 }
 
 import java.util.Properties
@@ -94,11 +96,18 @@ dependencies {
     // ولا يجوز ترقية عشوائية تُقلب صيغة التخزين وتكسر مفاتيح المستخدمين.
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
-    // Gson للـ serialization في ProfileManager و PronunciationDictionary
+    // Gson للـ serialization في PronunciationDictionary (النسخ الاحتياطي للقاموس)
     implementation("com.google.code.gson:gson:2.10.1")
 
     // كوروتينز لإدارة الطلبات غير المتزامنة بدون تجميد الخدمة
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // حقن التبعيات (Hilt) + ViewModel لحوكمة الشاشات وتفكيك الفصيل الكبير
+    implementation("com.google.dagger:hilt-android:2.59")
+    ksp("com.google.dagger:hilt-compiler:2.59")
+    implementation("androidx.hilt:hilt-navigation-fragment:1.2.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
+    implementation("androidx.fragment:fragment-ktx:1.8.6")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

@@ -14,6 +14,7 @@ import androidx.fragment.app.commit
 import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
 import com.aymankhattab.nateq.util.announceCompat
+import dagger.hilt.android.AndroidEntryPoint
 
 /**
  * الشاشة الرئيسية للإعدادات. بسيطة ومباشرة عمدًا (بدون Nested navigation
@@ -28,6 +29,7 @@ import com.aymankhattab.nateq.util.announceCompat
  * لا تُفتح شاشات مقيّدة بالإذن المهمل REQUEST_IGNORE_BATTERY_OPTIMIZATIONS.
  * لا يطلب إمكانية الوصول أبداً (Lord TTS محرك TTS عادي وليس خدمة وصول).
  */
+@AndroidEntryPoint
 class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
 
     private val requestNotificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->

@@ -10,9 +10,11 @@ import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.settings.SettingsRepository
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.LocaleUtils
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.Locale
+import javax.inject.Inject
 
 /**
  * مستقبل قراءة الرسائل النصية الواردة (SMS) بالصوت.
@@ -26,6 +28,7 @@ import java.util.Locale
  * ملاحظة: على أندرويد 19+ لا يُسمح بتسجيل مستقبل SMS ديناميكياً،
  * لذا يجب أن يُعلن في الـ Manifest بـ exported="true".
  */
+@AndroidEntryPoint
 class SmsReadingReceiver : BroadcastReceiver() {
 
     companion object {
@@ -35,6 +38,10 @@ class SmsReadingReceiver : BroadcastReceiver() {
         const val MODE_SOURCE = "source"
     }
 
+    /** مصدر الإعدادات المحقون — كائن مشترك عبر عمليات التطبيق. */
+    @Inject
+    lateinit var settingsRepository: SettingsRepository
+
     override fun onReceive(context: Context, intent: Intent?) {
         if (intent?.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
 
@@ -43,7 +50,7 @@ class SmsReadingReceiver : BroadcastReceiver() {
         val appScope = (context.applicationContext as com.aymankhattab.nateq.NateqApplication).appScope
         appScope.launch {
             try {
-                val settings = SettingsRepository(context)
+val settings = settingsRepository
                 val mode = settings.getSmsReadingMode()
                 if (mode == MODE_OFF) return@launch
                 // المفتاح الرئيسي يُوقف كل الإعلانات دفعة واحدة.
@@ -68,6 +75,11 @@ class SmsReadingReceiver : BroadcastReceiver() {
                 val volume = settings.getSmsReadingVolume()
 
                 val content = body.toString().trim()
+                // خصوصية قفل الشاشة: عند القفل لا يُنطق محتوى الرسالة (قد يحوي
+                // كود تحقق OTP أو معلومة خاصة) بل المصدر فقط — مهما كان الوضع.
+                val privacyLocked = settings.isLockScreenPrivacyEnabled()
+                        && settings.isDeviceScreenLocked()
+                val effectiveMode = if (privacyLocked) MODE_SOURCE else mode
                 // تحديد لغة النطق من المحتوى والمرسل (افتراضي العربية عند عدم
                 // وجود حروف حاسمة، مثل مرسل رقمي فقط أو رسالة فارغة).
                 val dynamicText = "$displayAddress $content"
@@ -75,19 +87,33 @@ class SmsReadingReceiver : BroadcastReceiver() {
                     LocaleUtils.containsArabic(dynamicText)
                 // القالب المخصص (إن حُدِّد) يتيح للمستخدم صياغة كلامه: {name} للمرسل و{message} للرسالة.
                 val template = settings.getSmsAnnouncementTemplate()
+                // فلتر رمز التحقق (OTP): إذا كشفت الرسالة كلمة تحقق مرفقة برقم
+                // متجاور 4-8 خانات (كود تفعيل بنك/منصة)، لا يُنطق الرمز نفسه في
+                // الأماكن العامة بل عبارة أمنية عامة — حتى مع النطق الكامل.
+                val isOtp = LocaleUtils.containsOtp(content)
                 val smsFrom = LocaleUtils.stringForSpeech(
                     context,
                     if (useArabicVoice) "ar" else "en",
                     R.string.sms_from,
                     R.string.sms_from
                 ).replace("{name}", displayAddress)
-                val text = if (template.isNotBlank()) {
+                val text = if (privacyLocked) {
+                    // خصوصية القفل: المصدر فقط، ولا حتى عبارة الرمز.
+                    smsFrom
+                } else if (isOtp) {
+                    LocaleUtils.stringForSpeech(
+                        context,
+                        if (useArabicVoice) "ar" else "en",
+                        R.string.sms_otp_safe,
+                        R.string.sms_otp_safe
+                    ).replace("{name}", displayAddress)
+                } else if (template.isNotBlank()) {
                     template
                         .replace("{name}", displayAddress)
                         .replace("{message}", content.ifBlank { displayAddress })
                 } else when {
                     content.isBlank() -> smsFrom
-                    mode == MODE_SOURCE -> smsFrom
+                    effectiveMode == MODE_SOURCE -> smsFrom
                     else -> "$smsFrom، $content"
                 }
 
@@ -95,10 +121,13 @@ class SmsReadingReceiver : BroadcastReceiver() {
                 val isArabic = LocaleUtils.containsArabic(text)
                 val locale = if (isArabic) Locale.forLanguageTag("ar") else Locale.forLanguageTag("en")
 
-                // متحدث مشترك واحد لكل الإعلانات (يمنع تقاطع أصوات متعددة)
+// متحدث مشترك واحد لكل الإعلانات (يمنع تقاطع أصوات متعددة)
                 val speech = AnnouncementSpeaker.getInstance(context)
                 speech.resetVoice(voiceId)
                 speech.speak(text, locale, speechRate, 1.0f, volume)
+            } catch (t: Throwable) {
+                // أي استثناء (قراءة PDU/حزمة/نطق) يُسجَّل دون إسقاط العملية
+                Log.e(TAG, "فشل قراءة الرسالة النصية", t)
             } finally {
                 pendingResult.finish()
             }

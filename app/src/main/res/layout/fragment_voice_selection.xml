@@ -69,6 +69,25 @@
                 android:textSize="12sp"
                 android:textColor="@color/text_secondary"
                 android:importantForAccessibility="no" />
+
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_lock_screen_privacy"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:layout_marginTop="8dp"
+                android:text="@string/lock_screen_privacy_enabled"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:text="@string/lock_screen_privacy_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:importantForAccessibility="no" />
         </LinearLayout>
 
         <!-- فاصل -->

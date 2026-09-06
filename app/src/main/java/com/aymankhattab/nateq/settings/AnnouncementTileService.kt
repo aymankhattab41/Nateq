@@ -6,17 +6,24 @@ import android.util.Log
 import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 /**
  * بلاطة الإعدادات السريعة «إعلانات ناطق»:
  * ضغطة واحدة تُطفئ/تُشغّل كل الإعلانات التلقائية (المفتاح الرئيسي)، ومع كل
  * تشغيل تحاول تشغيل الخدمة الأمامية فوراً ليعمل الوضع معطّلاً/مفعّلاً لحظياً.
  */
+@AndroidEntryPoint
 class AnnouncementTileService : TileService() {
 
     companion object {
         private const val TAG = "NATEQ_TILE"
     }
+
+    /** مصدر الإعدادات المحقون — كائن مشترك عبر عمليات التطبيق. */
+    @Inject
+    lateinit var settingsRepository: SettingsRepository
 
     override fun onStartListening() {
         super.onStartListening()
@@ -30,7 +37,7 @@ class AnnouncementTileService : TileService() {
     override fun onClick() {
         super.onClick()
         try {
-            val settings = SettingsRepository(this)
+            val settings = settingsRepository
             val enabled = settings.isAllAnnouncementsEnabled()
             settings.setAllAnnouncementsEnabled(!enabled)
             if (enabled) {
@@ -53,7 +60,7 @@ class AnnouncementTileService : TileService() {
 
     private fun updateTile() {
         val tile = qsTile ?: return
-        val settings = SettingsRepository(this)
+        val settings = settingsRepository
         val enabled = settings.isAllAnnouncementsEnabled()
         tile.state = if (enabled) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
         val label = getString(if (enabled) R.string.tile_label_on else R.string.tile_label_off)

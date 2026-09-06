@@ -11,6 +11,7 @@ import android.util.Log
 import com.aymankhattab.nateq.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.settings.SettingsRepository
 import com.aymankhattab.nateq.util.LocaleUtils
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -20,6 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
+import javax.inject.Inject
 
 /**
  * ==========================================================
@@ -31,11 +33,18 @@ import java.util.Locale
  *  2) لا يُجمّد الخيط الرئيسي (نستخدم Coroutines).
  *  3) يدعم onStop بشكل صحيح لإيقاف النطق فورًا عند طلب المستخدم.
  */
+@AndroidEntryPoint
 class NateqTtsService : TextToSpeechService() {
 
     companion object {
         private const val TAG = "NATEQ_TTS"
     }
+
+    /** مصدر الإعدادات الفريد لعملية:tts — يحقنه Hilt عبر NateqApplication
+     *  (Application يشغّل في كل عملية). يُعاد تحميله من القرص في كل
+     *  onSynthesizeText لأن العملية:tts منفصلة عن عملية الواجهة. */
+    @Inject
+    lateinit var settingsRepository: SettingsRepository
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -54,12 +63,17 @@ class NateqTtsService : TextToSpeechService() {
         // كأول شيء هنا (قبل super.onCreate()) وإلا تنهار الخدمة في حلقة على الإنشاء.
         // applicationContext متاح فور إنشاء كائن الخدمة، وإنشاء هذه الكائنات النقية
         // (غير المرتبطة بدورة حياة Android) آمن تماماً في هذا الموضع.
-        settings = SettingsRepository(applicationContext)
+        // عند الاستدعاء من TalkBack/النظام بُني الكائن عبر Hilt (Hilt_...) فيكون
+        // settingsRepository محقوناً؛ ونبني بقية الشبكة بعناية قبل super.
+        // حماية ثانية: إن فشل الحقن لأي سبب نتراجع لكائن محلي حتى لا تنهار
+        // الخدمة قبل super.onCreate() في حلقة (طبّاق لتوقيت TextToSpeechService).
+        settings = if (::settingsRepository.isInitialized) settingsRepository
+        else SettingsRepository(applicationContext)
 
-        val providers = listOf(SystemVoiceProvider(applicationContext))
+        val providers = listOf(SystemVoiceProvider(applicationContext, settings))
         catalog = VoiceCatalog(providers)
         requestHandler = SynthesisRequestHandler(catalog, settings)
-        textProcessor = TextProcessor(applicationContext)
+        textProcessor = TextProcessor(applicationContext, settings)
 
         // ملفوف بحمايات حتى لا تنهار الخدمة عند أي خطأ تهيئة — لو انهارت هنا
         // يرفض نظام سامسونج المحرك برسالة "يستمر التطبيق في التوقف".
@@ -187,15 +201,11 @@ class NateqTtsService : TextToSpeechService() {
             if (normCountry.isNullOrEmpty()) normLanguage else "$normLanguage-$normCountry"
         ).toLanguageTag()
 
-        callback.start(
-            /* sampleRateInHz = */ 22050,
-            /* audioFormat = */ android.media.AudioFormat.ENCODING_PCM_16BIT,
-            /* channelCount = */ 1
-        )
-
         // التخليق يتم على IO thread عبر Coroutine، لكن onSynthesizeText نفسها
         // نظام أندرويد بيستدعيها بالفعل على خيط عامل (worker thread) مخصص،
         // فاستخدام runBlocking هنا آمن ولا يجمّد الواجهة الرئيسية.
+        // (يبدأ callback.start() لاحقاً بمعدل العينات الفعلي من المزوّد،
+        //  لتعامل ملفات 24k/44.1k بسرعةٍ ونبرةٍ صحيحة.)
         currentJob = serviceScope.launch {
             try {
                 // إعادة تحميل الإعدادات من القرص لأن `:tts` process منفصل
@@ -255,15 +265,41 @@ class NateqTtsService : TextToSpeechService() {
                 val finalLocale = if (matchesRequest) convertTarget?.let { it.convertLocale } else null
                 val finalVoiceName = if (matchesRequest) convertTarget?.let { it.convertVoiceName } else null
 
-                provider.synthesize(processedText, voice, finalRate, finalPitch, finalVolume, { chunk ->
+                // تخليق الصوت الفعلي عبر المزوّد. يُبلّغنا التنسيق (معدل عينات/قنوات) قبل
+                // أول شريحة، فنبدأ callback.start بالقيم الفعلية بدل 22050 الثابتة التي
+                // كانت تجعل Android يشغّل ملفات 24k/44.1k بسرعة ونبرة خاطئتين.
+                var started = false
+                provider.synthesize(processedText, voice, finalRate, finalPitch, finalVolume, { sampleRateInHz, channelCount ->
+                    if (!started) {
+                        callback.start(
+                            /* sampleRateInHz = */ sampleRateInHz,
+                            /* audioFormat = */ android.media.AudioFormat.ENCODING_PCM_16BIT,
+                            /* channelCount = */ channelCount
+                        )
+                        started = true
+                    }
+                }, { chunk, validLength ->
+                    // ضمانة: إن لم يبلّغ المزوّد بالتنسيق مطلقاً نبدأ بالقيم
+                    // الافتراضية قبل أول بايت حتى يبقى التخليق صالحاً دائماً.
+                    if (!started) {
+                        callback.start(
+                            /* sampleRateInHz = */ 22050,
+                            /* audioFormat = */ android.media.AudioFormat.ENCODING_PCM_16BIT,
+                            /* channelCount = */ 1
+                        )
+                        started = true
+                    }
                     // المنهج المُثبَت (كما في TtsService الرسمي لـ espeak-ng/MultiTTS):
                     // لا يجوز تمرير كامل المخزن المؤقت دفعةً واحدة؛ يُقسَّم إلى أجزاء
                     // بمقدار callback.getMaxBufferSize() وإلا يرفض النظام التخليق
                     // ويهبط الصوت. نقسّم كل دفعة من المزوّد احتراماً لقيود الـ callback.
+                    // المعامل الثاني (validLength) هو طول البيانات الصالح الصريح —
+                    // فقد تكون مصفوفة الشريحة بحجم أكبر من بياناتها الفعلية (مسبح
+                    // مُعاد استخدامه)، فيُمسح حتى length فقط.
                     val maxBytes = callback.maxBufferSize
                     var offset = 0
-                    while (offset < chunk.size) {
-                        val bytesToWrite = minOf(maxBytes, chunk.size - offset)
+                    while (offset < validLength) {
+                        val bytesToWrite = minOf(maxBytes, validLength - offset)
                         callback.audioAvailable(chunk, offset, bytesToWrite)
                         offset += bytesToWrite
                     }

@@ -203,6 +203,23 @@ class SettingsRepository(private val context: Context) {
     fun setAllAnnouncementsEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("all_announcements_enabled", enabled).apply()
 
+    // ============ خصوصية قفل الشاشة ============
+
+    /**
+     * عندما يكون مقفلاً (الشاشة قفلت)، تُحجب تفاصيل الرسائل والإشعارات
+     * (المحتوى/العنوان/اسم المتصل) عن النطق فلا يُسمع كود تحقق (OTP) أو
+     * رسالة خاصة بصوتٍ عالٍ في مكان عام — ويُكتفى بالمصدر أو المضمون العام.
+     */
+    fun isLockScreenPrivacyEnabled(): Boolean = prefs.getBoolean("lock_screen_privacy_enabled", true)
+    fun setLockScreenPrivacyEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("lock_screen_privacy_enabled", enabled).apply()
+
+    /** هل شاشة الجهاز مقفلة فعلاً (قفل أمان)؟ يعود false عند عدم وجود قفل. */
+    fun isDeviceScreenLocked(): Boolean {
+        val km = context.getSystemService(android.app.KeyguardManager::class.java) ?: return false
+        return km.isDeviceLocked
+    }
+
     /** وضع توفير الطاقة: يُخفَّف إعلان الوقت عند انخفاض البطارية عن العتبة. */
     fun isPowerSaverModeEnabled(): Boolean = prefs.getBoolean("power_saver_mode_enabled", false)
     fun setPowerSaverModeEnabled(enabled: Boolean) =

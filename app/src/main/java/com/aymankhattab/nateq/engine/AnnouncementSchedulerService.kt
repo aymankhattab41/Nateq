@@ -16,26 +16,30 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.R
-import com.aymankhattab.nateq.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.receivers.BatteryAnnouncementReceiver
 import com.aymankhattab.nateq.settings.SettingsActivity
 import com.aymankhattab.nateq.settings.SettingsRepository
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 /**
  * الخدمة الأمامية الخاصة بالإعلانات (إعلان الوقت الدوري + مستوى البطارية).
  *
  * لماذا خدمة أمامية بدل العمل دون خدمة؟
- * - جدولة ساعة مضمونة: تعيش في عملية التطبيق الرئيسية طوال الجلسة ويحميها
- *   النظام من القتل عند الخمول (Doze) بشرط إشعار دائم.
  * - استقبال أحداث البطارية: لا يمكن تسجيل BATTERY_CHANGED في الـ manifest
  *   (ممنوع من أندرويد 8+)؛ الخدمة الأمامية تضمن بقاء عملية التطبيق حية
  *   ليلتقط بها مستقبل البطارية المسجَّل ديناميكياً.
  * - معالجة حديثة للإعدادات: تعمل في نفس عملية الواجهة، فلا مشكلة تشارك
  *   SharedPreferences بين العمليات (كانت سبب تجمّد إعدادات عملية :tts).
  *
+ * جدولة إعلان الوقت أصبحت عبر مستقبل [TimeAlarmReceiver] بآلية AlarmManager
+ * (بند 9)، فتنجو من قتل النظام للعملية وتجمّد Doze دون الحاجة لبقاء الخدمة
+ * حية. الخدمة تبقى هنا مستضيفةً مستقبل البطارية وكذلك "أعلن الآن" وزر الإيقاف.
+ *
  * تُعاد جدولتها بعد الإقلاع عبر [AnnouncementBootReceiver]، وتُفتح من شاشة
  * الإعدادات عند تفعيل أي إعلان، ويمكن إيقافها من زر الإشعار.
  */
+@AndroidEntryPoint
 class AnnouncementSchedulerService : Service() {
 
     companion object {
@@ -68,6 +72,8 @@ class AnnouncementSchedulerService : Service() {
         @JvmStatic
         fun startIfNeeded(context: Context): Boolean {
             if (wasUserStopped(context)) return false
+            // قراءة لحظية (في اقلاع/فتح واجهة قد لا يكون Hilt مهيأ بعد الإقلاع):
+            // تُبنى مرجع خفيف للتحقق فقط ولا يُحفظ إلا داخل المدير عند حاجة.
             val settings = try {
                 SettingsRepository(context)
             } catch (t: Throwable) {
@@ -111,6 +117,10 @@ class AnnouncementSchedulerService : Service() {
         }
     }
 
+    /** مصدر الإعدادات المحقون — يصبح الكائن الوحيد المشترك عبر عملية الواجهة. */
+    @Inject
+    lateinit var settingsRepository: SettingsRepository
+
     private lateinit var settings: SettingsRepository
     private var timeManager: TimeAnnouncementManager? = null
     private var batteryReceiver: BatteryAnnouncementReceiver? = null
@@ -123,12 +133,10 @@ class AnnouncementSchedulerService : Service() {
         createNotificationChannel()
         startAsForeground(buildNotification())
 
-        settings = SettingsRepository(this)
-        val providers = listOf(SystemVoiceProvider(this))
-        val catalog = VoiceCatalog(providers)
-        val requestHandler = SynthesisRequestHandler(catalog, settings)
-        val manager = TimeAnnouncementManager(this, settings, catalog, requestHandler)
-        timeManager = manager
+        settings = settingsRepository
+        // المدير المشترك عبر العملية (نفس كائن الودجت ومستقبل المنبه) — تُبنى
+        // مكوناته مرة واحدة ويُستخدم لبدء/إيقاف منبه الوقت و"أعلن الآن".
+        timeManager = TimeAnnouncementManager.shared(this, settingsRepository)
 
         // مزامنة أولية: تبدأ إعلان الوقت إن كان مفعلاً، وتُسجّل مستقبل
         // البطارية/الشحن (لا يُسجَّل من الـ manifest؛ BATTERY_CHANGED ممنوع
@@ -146,6 +154,13 @@ class AnnouncementSchedulerService : Service() {
             ACTION_ANNOUNCE_NOW -> announceNow()
             ACTION_STOP -> {
                 markUserStopped(this)
+                // إيقاف المستخدم الصريح: نُلغي منبه إعلان الوقت أيضاً حتى لا
+                // يستمر المستقبل المستقل بالنطق بعد أن طلب المستخدم الإيقاف.
+                try {
+                    timeManager?.stop()
+                } catch (t: Throwable) {
+                    Log.w(TAG, "time manager stop failed", t)
+                }
                 stopInternal()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -213,7 +228,10 @@ class AnnouncementSchedulerService : Service() {
     }
 
     private fun stopInternal() {
-        timeManager?.stop()
+        // لا نُلغي منبه إعلان الوقت هنا عمداً: مستقبل TIME_ALARM مستقل ويُعاود
+        // جدولة نفسه، ولا يجب قتله عند كشف النظام للخدمة (قتل الخدمة ≠ إيقاف
+        // مستخدم). الإنعاش العائد عبر startIfNeeded/STICKY عليه هو ما يعيد
+        // الزامن، والمدير نفسه يتأكد من الإعدادات في كل tick.
         timeManager = null
         batteryReceiver?.let {
             try {

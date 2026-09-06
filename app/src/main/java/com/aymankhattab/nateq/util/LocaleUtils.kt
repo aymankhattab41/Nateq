@@ -76,6 +76,29 @@ object LocaleUtils {
         return sb.toString()
     }
 
+    /** هل الرسالة نص تحقق بحرف (OTP)؟ — يُحمي المستخدم من نطق رموز التحقق
+     *  المرسلة من البنوك والمنصات (كود التفعيل/كلمة المرور المؤقتة) بصوتٍ
+     *  عالٍ في الأماكن العامة. الكشف يتطلب اجتماع شرطين (ليُقلّل من
+     *  النتائج الكاذبة): وجود كلمة تحقق ووجود رقم متجاور من 4 إلى 8 خانات.
+     */
+    fun containsOtp(text: String): Boolean {
+        if (text.isBlank()) return false
+        val norm = normalizeIndicDigits(text)
+        val keyword = OTP_KEYWORD.containsMatchIn(norm)
+        val code = OTP_CODE.containsMatchIn(norm)
+        return keyword && code
+    }
+
+    private val OTP_KEYWORD = Regex(
+        "رمز التحقق|رمز التفعيل|كود التحقق|كود التفعيل|كلمة المرور|كلمة السر|" +
+            "الرقم السري|رقم التحقق|رقم التفعيل|otp|one[ -]?time password|" +
+            "verification code|activation code|security code|passcode|" +
+            "تأكيد الدخول|كود الدخول",
+        RegexOption.IGNORE_CASE
+    )
+
+    private val OTP_CODE = Regex("(?<![0-9])[0-9]{4,8}(?![0-9])")
+
     /** جلب سلسلة مورد بلغة نطق محددة (وليست لغة واجهة التطبيق):
      * تتيح لمستقبلات النطق (رسائل/مكالمات/بطارية) أن تُعلن بلسان
      * الصوت المختار (ar-EG / en-US) حتى لو كانت واجهة التطبيق

@@ -254,10 +254,13 @@
     <string name="all_announcements_summary">إيقافه يُوقف الإعلانات التلقائية (الوقت، البطارية، الرسائل، الإشعارات، المتصل) بصمت</string>
     <string name="announcement_turned_on">مفعّل</string>
     <string name="announcement_turned_off">معطّل</string>
+    <string name="lock_screen_privacy_enabled">حماية خصوصية قفل الشاشة</string>
+    <string name="lock_screen_privacy_summary">عند قفل الشاشة، لا تُنطق تفاصيل الرسائل والإشعارات وأسماء المتصلين (حماية لكلمات التحقق OTP والخصوصية)</string>
 
     <!-- سلاسل النطق الصوتي (تُنطق بلغة صوت النطق المختار، وليس لغة الواجهة) -->
     <string name="sms_unknown_sender">مرسل مجهول</string>
     <string name="sms_from">رسالة من {name}</string>
+    <string name="sms_otp_safe">رسالة من {name} تحتوي على رمز تحقق سري</string>
     <string name="caller_from">اتصال وارد من {name}</string>
     <string name="caller_from_number">اتصال وارد من رقم غير محفوظ</string>
     <string name="caller_only">اتصال وارد</string>

@@ -1,24 +1,25 @@
 package com.aymankhattab.nateq.engine
 
 import android.content.Context
+import com.aymankhattab.nateq.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.providers.VoiceDescriptor
+import com.aymankhattab.nateq.receivers.TimeAlarmReceiver
 import com.aymankhattab.nateq.settings.SettingsRepository
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import kotlin.math.max
 import java.util.Calendar
 import java.util.Locale
-import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledExecutorService
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
  * مدير إعلان الوقت - مسؤول عن:
  * 1. تنسيق الوقت باللغة العربية الطبيعية (الربع، النصف، إلا ربع)
- * 2. جدولة إعلان الوقت الدوري
+ * 2. جدولة إعلان الوقت الدوري عبر [AlarmManager] (مستقبل مستقل لا يموت
+ *    مع قتل العملية أو تجمّد Doze) بدل مؤقتات RAM داخل الخدمة (بند 9).
  * 3. فحص ساعات الهدوء
  */
 class TimeAnnouncementManager(
@@ -31,6 +32,31 @@ class TimeAnnouncementManager(
     companion object {
         // وسم الإنجليزية لعناصر النطق الأساسية عند تبعية لغة التطبيق لفئة إنجليزية
         const val ENGLISH_LANGUAGE_TAG = "en"
+
+        // مثيل مشترك واحد عبر العملية يستخدمه مستقبل المنبه والودجت، حتى لا
+        // يتضاعف المحرك/المرشح ولا تتعارض حالا نطق متزامنة (كان الودجت يبني
+        // مديراً جديداً عند كل نقرة فيتسرب CoroutineScope تدريجياً).
+        @Volatile
+        private var sharedInstance: TimeAnnouncementManager? = null
+
+        /** الحصول على المدير المشترك الوحيد (يبني أول مرة مع مكوناته).
+         *  يُمرَّر [settings] اختيارياً من الكائن المحقون في الخدمة ليُستعمل
+         *  نفس المرجع (تجنب كائنات متعددة عبر العملية)؛ وإلا يُبنى محلياً لو
+         *  كانت الدعوة من مستقبل المنبه أو الودجت اللذين لا يمرران مرجعاً. */
+        @JvmStatic
+        fun shared(context: Context, settings: SettingsRepository? = null): TimeAnnouncementManager {
+            return sharedInstance ?: synchronized(this) {
+                sharedInstance ?: run {
+                    val appContext = context.applicationContext
+                    val sharedSettings = settings ?: SettingsRepository(appContext)
+                    val providers = listOf(SystemVoiceProvider(appContext, sharedSettings))
+                    val catalog = VoiceCatalog(providers)
+                    val handler = SynthesisRequestHandler(catalog, sharedSettings)
+                    TimeAnnouncementManager(appContext, sharedSettings, catalog, handler)
+                        .also { sharedInstance = it }
+                }
+            }
+        }
     }
 
     /** لغة التطبيق الفعلية: المختارة يدوياً دوناً عن الافتراضي، إن لم تُختر فتتبع لغة النظام */
@@ -40,72 +66,90 @@ class TimeAnnouncementManager(
         return if (base.startsWith("ar", ignoreCase = true)) "ar" else "en"
     }
 
-    private var scheduler: ScheduledExecutorService? = null
     private var isRunning = false
 
     /** نطاق عمليات النطق اللاتزامنية — يعيش مع عمر المدير */
     private val announceJob = SupervisorJob()
     private val announceScope = CoroutineScope(announceJob + Dispatchers.IO)
 
-    /** بدء جدولة إعلان الوقت. عند إعادة التفعيل أثناء تشغيل الخدمة (isRunning=true)
-     *  يعيد الجدولة نظيفاً بدل الانتظار الصامت للفاصل الجديد (بند [6]): يُلغى
-     *  الجدول القديم ويُبنى جديد بتأجيل فوري قصير فيُنطق الوقت قريباً وليس
-     *  بعد فاصل كامل. */
+    /** آخر عملية نطق معلّقة (عقدة فرعية تُلغى في stop) دون إنهاء نطاق الجذر
+     *  حتى تستمر عمليات النطق بعد إعادة تشغيل الخدمة (بند المحور التاسع). */
+    private var activeAnnounceJob: Job? = null
+
+    /** بدء جدولة إعلان الوقت عبر منبه النظام. عند إعادة التفعيل أثناء تشغيل
+     *  الخدمة (isRunning=true) يُلغى المنبه القديم ويُبنى جديد بتأجيل فوري قصير
+     *  فيُنطق الوقت قريباً وليس بعد فاصل كامل (بند [6]). */
     fun start() {
         if (!settings.isTimeAnnouncementEnabled()) return
 
         val wasRunning = isRunning
-        if (isRunning) {
-            // إيقاف الجدول القديم أولاً ثم إعادة بنائه من جديد دون إلغاء نطاق
-            // العمليات اللاتزامنية (announceJob لا يُلغى هنا حتى لا يُفقد نطق معلّق).
-            scheduler?.shutdownNow()
-            scheduler = null
-        }
-
         isRunning = true
-        scheduler = Executors.newSingleThreadScheduledExecutor()
+
+        // إلغاء أي منبه سابق (نفس PendingIntent يستبدله عند جدولة جديدة) —
+        // لا حاجة لإعادة البناء لأن آلية الجدولة واحدة دائماً عبر AlarmManager.
+        TimeAlarmReceiver.cancel(context)
 
         if (!wasRunning) {
             // أول تفعيل: ننطق حالاً بدل انتظار بداية الفاصل (مزامنة فورية).
             announceCurrentTime()
         }
-        // إعادة جدولة الإعلان القادم من نقطة الصفر (وليس من الجدول القديم).
-        scheduleNextAnnouncement()
+        // إعادة جدولة الإعلان القادم من نقطة الصفر (وليس من المنبه القديم).
+        scheduleNextAlarm()
     }
 
-    /** إيقاف جدولة إعلان الوقت */
+    /** إيقاف جدولة إعلان الوقت (إلغاء منبه النظام المعلّق) */
     fun stop() {
         isRunning = false
-        scheduler?.shutdownNow()
-        scheduler = null
-        // إلغاء أي عمليات نطق لاتزامنية معلّقة حتى لا تتسرب مع عمر المدير.
-        announceJob.cancel()
+        TimeAlarmReceiver.cancel(context)
+        // إلغاء عمليات النطق اللاتزامنية المعلّقة فقط (العقدة الفرعية) دون
+        // قتل نطاق الجذر — كان إلغاء announceJob.cancel() يمنع النطق تماماً
+        // بعد إعادة تشغيل الخدمة (لا يمكن إعادة استخدام Job مُلغى).
+        activeAnnounceJob?.cancel()
+        activeAnnounceJob = null
     }
 
-    /** جدولة الإعلان القادم */
-    private fun scheduleNextAnnouncement() {
-        scheduler?.schedule({
-            if (!isRunning) return@schedule
+    /**
+     * تنفيذ منبه الوقت المستقل ([TimeAlarmReceiver]): يُنطق الوقت الآن ثم
+     * يعيد جدولة الفاصل التالي. يُستدعى من مستقبل المنبه مباشرةً دون مرورٍ
+     * بالخدمة، فلا يتوقف الإعلان عند قتل النظام للعملية أو تجمّدها في Doze.
+     */
+    fun onAlarmTick() {
+        // إيقاف تشغيل نهائي معطّل (بند [6]): بدون العبارة التالية يستمر
+        // مستقبل المنبه بالنطق حتى بعد تعطيل الإعلان من الإعدادات.
+        if (!settings.isTimeAnnouncementEnabled()) {
+            TimeAlarmReceiver.cancel(context)
+            isRunning = false
+            return
+        }
+        // الجدولة تعمل الآن عبر المنبه؛ نعلّم الحالة «تعمل» حتى لا يُعيد
+        // start() (مثلاً عند تشغيل الخدمة من داخل النطق عبر startIfNeeded)
+        // نطقَ الوقت فورياً مرة ثانية فيتضاعف الإعلان.
+        isRunning = true
 
-            // المفتاح الرئيسي يُوقف الإعلان التلقائي الدوري (ويُستثنى طلب
-            // «أعلن الآن» الصريح الذي يمر عبر announceNow() خارج هذا المسار).
-            if (!settings.isAllAnnouncementsEnabled()) {
-                scheduleNextAnnouncement()
-                return@schedule
-            }
+        // المفتاح الرئيسي يُوقف الإعلان التلقائي الدوري (ويُستثنى طلب
+        // «أعلن الآن» الصريح الذي يمر عبر announceNow() خارج هذا المسار).
+        if (!settings.isAllAnnouncementsEnabled()) {
+            scheduleNextAlarm()
+            return
+        }
 
-            // فحص ساعات الهدوء
-            if (isInQuietHours()) {
-                scheduleNextAnnouncement()
-                return@schedule
-            }
+        // فحص ساعات الهدوء
+        if (isInQuietHours()) {
+            scheduleNextAlarm()
+            return
+        }
 
-            // نطق الوقت الحالي
-            announceCurrentTime()
+        // نطق الوقت الحالي ثم جدولة الإعلان القادم
+        announceCurrentTime()
+        scheduleNextAlarm()
+    }
 
-            // جدولة الإعلان القادم
-            scheduleNextAnnouncement()
-        }, calculateInitialDelay(), TimeUnit.MILLISECONDS)
+    /** جدولة الإعلان القادم عبر منبه النظام الدقيق. */
+    private fun scheduleNextAlarm() {
+        TimeAlarmReceiver.scheduleNext(
+            context,
+            System.currentTimeMillis() + calculateInitialDelay()
+        )
     }
 
     /** حساب التأخير لأول إعلان (للبداية القادمة للفاصل) */
@@ -192,7 +236,9 @@ class TimeAnnouncementManager(
 
     /** المنطق المشترك لنطق الوقت بالصوت المفضل للفئة وبإعداداتها. */
     private fun speakCurrentTime() {
-        announceScope.launch {
+        // تُستبدل أي عقدة نطق سابقة (تتراكم النطقات المتداخلة عند تكرار الطلب).
+        activeAnnounceJob?.cancel()
+        activeAnnounceJob = announceScope.launch {
             try {
                 // ترتيب تحديد لغة نطق الساعة:
                 // 1) مفتاح النطق EN/AR إن حُدِّد، 2) صوت الفئة المفضَّل، 3) لغة التطبيق الفعلية.

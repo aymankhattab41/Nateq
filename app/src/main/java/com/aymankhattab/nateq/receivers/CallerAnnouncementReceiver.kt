@@ -15,7 +15,9 @@ import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.settings.SettingsRepository
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.LocaleUtils
+import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
+import javax.inject.Inject
 import kotlinx.coroutines.launch
 
 /**
@@ -31,11 +33,16 @@ import kotlinx.coroutines.launch
  *   (READ_CONTACTS) ثم في سجل المكالمات (READ_CALL_LOG عبر CallerInfo).
  * - إن لم يُمنح الإذنان يُنطق "اتصال وارد" العام.
  */
+@AndroidEntryPoint
 class CallerAnnouncementReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "NATEQ_CALLER"
     }
+
+    /** مصدر الإعدادات المحقون — كائن واحد مشترك عبر العمليات (keeps تفضيلات المتصل). */
+    @Inject
+    lateinit var settingsRepository: SettingsRepository
 
     override fun onReceive(context: Context, intent: Intent?) {
         if (intent?.action != TelephonyManager.ACTION_PHONE_STATE_CHANGED) return
@@ -48,7 +55,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE) ?: return@launch
                 if (state != TelephonyManager.EXTRA_STATE_RINGING) return@launch
 
-                val settings = SettingsRepository(context)
+                val settings = settingsRepository
                 if (!settings.isCallerAnnouncementEnabled()) return@launch
                 // المفتاح الرئيسي يُوقف كل الإعلانات دفعة واحدة.
                 if (!settings.isAllAnnouncementsEnabled()) return@launch
@@ -66,12 +73,18 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     hasReadCallLog = hasPermission(context, Manifest.permission.READ_CALL_LOG)
                 )
 
+                // خصوصية قفل الشاشة: عند القفل نكتفي بعبارة عامة «اتصال وارد» دون
+                // اسم المتصل أو رقمه — حماية للخصوصية (قد يكون المتصل حسّاساً).
+                val privacyLocked = settings.isLockScreenPrivacyEnabled()
+                        && settings.isDeviceScreenLocked()
+
                 val text = buildAnnouncementText(
                     context,
                     number = incomingNumber,
                     contactName = contactName,
                     repeat = settings.getCallerAnnouncementRepeat(),
-                    template = settings.getCallerAnnouncementTemplate()
+                    template = settings.getCallerAnnouncementTemplate(),
+                    privacyLocked = privacyLocked
                 )
 
                 val speechRate = settings.getCallerAnnouncementRate()
@@ -104,9 +117,15 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         number: String?,
         contactName: String?,
         repeat: Int,
-        template: String?
+        template: String?,
+        privacyLocked: Boolean
     ): String {
-        val phrase = if (!template.isNullOrBlank()) {
+        // عند القفل ننطق العبارة العامة فقط حتى لو ضبط المستخدم قالباً أو اسم من.
+        val phrase = if (privacyLocked) {
+            LocaleUtils.stringForSpeech(
+                context, "ar", R.string.caller_only, R.string.caller_only
+            )
+        } else if (!template.isNullOrBlank()) {
             val filled = template
                 .replace("{name}", contactName ?: number.orEmpty())
                 .replace("{number}", number.orEmpty())

@@ -113,8 +113,9 @@ class PronunciationDictionary(private val context: Context) {
             // رموز رياضية
             "دورى" to "دوري",
 
-            // عملات
-            "ريال" to "ريال سعودي",
+            // عملات — يُستخدم الرمز ر.س وما إليه من الوحدات؛ ولا تُحوَّل كلمة
+            // "ريال" العامة (قد تكون قطرياً/عمانياً/مغربياً) فيجري إصلاح
+            // "50 ريال قطري" من قبل الاستبدال الافتراضي الخاطئ.
             "درهم" to "درهم إماراتي",
             "دينار" to "دينار كويتي",
             "جنيه" to "جنيه مصري",
@@ -125,7 +126,6 @@ class PronunciationDictionary(private val context: Context) {
             "ثث" to "الثلاثاء",
             "أرب" to "الأربعاء",
             "خم" to "الخميس",
-            "جم" to "الجمعة",
             "سبت" to "السبت",
 
             // شهور
@@ -145,6 +145,15 @@ class PronunciationDictionary(private val context: Context) {
         for ((key, value) in defaults) {
             if (!entries.containsKey(key)) {
                 entries[key] = value
+            }
+        }
+        // تنظيف إدخالات قديمة ضارة خُزّنت في نسخ سابقة على أجهزة المستخدمين
+        // (استُبدل لفظ كتابةً وفاق بحيث شوّهت «50 ريال قطري» و«500 جم»):
+        // - "ريال" كانت تُحوَّل دائماً إلى "ريال سعودي".
+        // - "جم" (غرام) كانت تُحوَّل إلى "الجمعة".
+        for ((key, badValue) in mapOf("ريال" to "ريال سعودي", "جم" to "الجمعة")) {
+            if (entries[key] == badValue) {
+                entries.remove(key)
             }
         }
         save()

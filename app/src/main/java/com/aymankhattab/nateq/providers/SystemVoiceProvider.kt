@@ -33,23 +33,95 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  * "المحرك الافتراضي" في شاشة إعدادات TTS النظامية التي قد تُسقطها
  * المَشغّلون كسامسونج. ومستبعدٌ دائماً كونُه نفسه، فلا يحدث تكرار ذاتي.
  */
-class SystemVoiceProvider(private val context: Context) : VoiceProvider {
+class SystemVoiceProvider(
+    private val context: Context,
+    /** المرجع المحقون عبر Hilt إن وُجد (يمرره NateqTtsService/TimeAnnouncementManager)،
+     *  وإلا يُبنى محلياً — قراءة لحظية لا تُحفظ فلا يعَ وزير إن كان null. */
+    private val injectedSettings: SettingsRepository? = null
+) : VoiceProvider {
 
     companion object {
         private const val TAG = "NATEQ_TTS"
+
+        /** قيمة احتياطية إذا تعذّر قراءة ترويسة WAV (تطابق القيمة السابقة ثابتة). */
+        private const val FALLBACK_SAMPLE_RATE = 22050
 
         /** أقصى مدة انتظار لكتابة المحرك ملف الصوت قبل اعتبار التخليق فاشلاً. */
         private const val MAX_SYNTH_WAIT_MS = 30_000L
 
         /** دورية فحص الإلغاء أثناء انتظار اكتمال الكتابة. */
         private const val CANCELLATION_POLL_MS = 100L
+
+        /**
+         * الحجم الأدنى المخزَّن في المسبح (بايت). الصفائف الصغيرة أرخص في
+         * الإنشاء والنسخ، فلا فائدة من خزنها — نُعيدها للمُجمّع مباشرة.
+         */
+        private const val POOL_MIN_SIZE_BYTES = 4096
+
+        /**
+         * أقصى سعة للعناصر في المسبح. حدٌّ صغير يمنع تسرّب الذاكرة عندما
+         * تُرك النصوص الطويلة صفائفَ ضخمة خاملةً في القائمة؛ الثمانية عناصر
+         * تكفي لتداخل النطق وتتابع الإعلانات الشائعة (ساعة/إشعار+رسائل…).
+         */
+        private const val POOL_MAX_CAPACITY = 8
     }
+
+    /**
+     * مسبح صفائف PCM قابل لإعادة الاستخدام. بيانات الصوت أسرع مصادر تشكيل
+     * المصفوفات في مسار التخليق (تُقرأ للملف ثم تُكتب وقد تُعاد معالجة مستوى
+     * الصوت)، وإعادة إنشائها في كل إعلان تُرهق المُجمّع وتُؤجج GC. نستعيد
+     * الصفائف المستهلكة (بعد أن ينسخها المُتلقّي عبر [synthesize]) ونعيد
+     * استخدامها للطلب التالي بدل إنشاء جديد.
+     *
+     * ## حساسية الحجم (مهم)
+     * لا نخزّن إلا بالحجم الحرفي: يُسترجَع فقط ما يطابق [minSize] تماماً.
+     * السبب أن المستهلك يقرأ حتى `length` الصريح في عقد [VoiceProvider.synthesize]
+     * ويقرأ `available` (لكن صف "أكبر" سيحمل قمامة زاويّة لا يصح إرسالها)،
+     * والأسلم أن يتطابق `array.size == length` فيبقى المعنى الدقيق دون فرق.
+     */
+    private class BytePool {
+        /** رامي/مستقبل أحادي — FIFO بسيط كافٍ. */
+        private val available: ArrayDeque<ByteArray> = ArrayDeque()
+        private val lock = Any()
+
+        /** يُرجع مخزّناً بالحجم الحرفي المطلوب أو ينشئ جديداً عند عدم التطابق. */
+        fun acquire(minSize: Int): ByteArray {
+            if (minSize < POOL_MIN_SIZE_BYTES) return ByteArray(minSize)
+            synchronized(lock) {
+                val it = available.iterator()
+                while (it.hasNext()) {
+                    val candidate = it.next()
+                    if (candidate.size == minSize) {
+                        it.remove()
+                        return candidate
+                    }
+                }
+            }
+            return ByteArray(minSize)
+        }
+
+        /** يُخزّن صفيفاً لإعادة الاستخدام فقط بحجم مطابق للقابل (لا الجرّ غير الدقيق). */
+        fun release(array: ByteArray): Boolean {
+            if (array.size < POOL_MIN_SIZE_BYTES) return false
+            synchronized(lock) {
+                if (available.size >= POOL_MAX_CAPACITY) return false
+                available.addLast(array)
+                return true
+            }
+        }
+    }
+
+    /** نتيجة استخراج الصوت من ملف WAV: بيانات PCM ومعدل العينات الحقيقي. */
+    private data class PcmExtract(val pcm: ByteArray, val sampleRateInHz: Int)
 
     override val providerId = "system"
     override val displayName: String
         get() = context.getString(R.string.voice_provider_system)
 
     private var tts: TextToSpeech? = null
+
+    /** مسبح صفائف PCM المُعاد استخدامها عبر طلبات النطق (انظر [BytePool]). */
+    private val pcmPool = BytePool()
 
     /** حزمة المحرك المرتبط حالياً للتحقق من إعادة الاستخدام عند ثباتها */
     private var ttsEngine: String? = null
@@ -65,7 +137,7 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
     private fun pickEnginePackage(): String? {
         // المحرك المختار من المستخدم (مثل MultiTTS) له الأولوية
         val selected = try {
-            SettingsRepository(context).getSelectedEnginePackage()
+            (injectedSettings ?: SettingsRepository(context)).getSelectedEnginePackage()
         } catch (e: Exception) {
             null
         }
@@ -117,7 +189,8 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
         speechRate: Float,
         pitch: Float,
         volume: Float,
-        onAudioChunk: (ByteArray) -> Unit,
+        onFormatInfo: (sampleRateInHz: Int, channelCount: Int) -> Unit,
+        onAudioChunk: (ByteArray, Int) -> Unit,
         enginePackage: String?,
         voiceLocale: Locale?,
         desiredVoiceName: String?
@@ -151,6 +224,7 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
                 speechRate,
                 pitch,
                 volume,
+                onFormatInfo,
                 onAudioChunk,
                 cont,
                 cancelled,
@@ -174,14 +248,15 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
      * يفشل synthesizeToFile) يتراجع تلقائياً إلى محرك جوجل المدمج كملاذ أخير حتى
      * لا يبقى التطبيق صامتاً على أي جهاز.
      */
-    private fun synthesizeWithEngine(
+private fun synthesizeWithEngine(
         engine: String?,
         text: String,
         voice: VoiceDescriptor,
         speechRate: Float,
         pitch: Float,
         volume: Float,
-        onAudioChunk: (ByteArray) -> Unit,
+        onFormatInfo: (sampleRateInHz: Int, channelCount: Int) -> Unit,
+        onAudioChunk: (ByteArray, Int) -> Unit,
         cont: kotlin.coroutines.Continuation<Unit>,
         cancelled: AtomicBoolean,
         desiredVoiceName: String?
@@ -202,26 +277,26 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
                     tts = TextToSpeech(context, { status ->
                         if (done.getAndSet(true)) return@TextToSpeech
                         if (status == TextToSpeech.SUCCESS && !cancelled.get()) {
-                            val ok = synthesizeInternal(text, voice, speechRate, pitch, volume, onAudioChunk, cancelled, desiredVoiceName)
+                            val ok = synthesizeInternal(text, voice, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cancelled, desiredVoiceName)
                             if (ok) {
                                 cont.resume(Unit)
                             } else {
                                 // فشل النطق — جرّب محرك جوجل إن أمكن.
-                                retryWithGoogle(engine, voice, text, speechRate, pitch, volume, onAudioChunk, cont, cancelled, desiredVoiceName)
+                                retryWithGoogle(engine, voice, text, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cont, cancelled, desiredVoiceName)
                             }
                         } else {
                             Log.e(TAG, "[Provider] engine init failed: $currentEngine status=$status")
-                            retryWithGoogle(engine, voice, text, speechRate, pitch, volume, onAudioChunk, cont, cancelled, desiredVoiceName)
+                            retryWithGoogle(engine, voice, text, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cont, cancelled, desiredVoiceName)
                         }
                     }, currentEngine)
                     ttsEngine = currentEngine
                 } else if (!done.getAndSet(true)) {
                     // مثيل نفس المحرك جاهز — ننطق مباشرة بإعادة استخدامه.
-                    val ok = synthesizeInternal(text, voice, speechRate, pitch, volume, onAudioChunk, cancelled, desiredVoiceName)
+                    val ok = synthesizeInternal(text, voice, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cancelled, desiredVoiceName)
                     if (ok) {
                         cont.resume(Unit)
                     } else {
-                        retryWithGoogle(engine, voice, text, speechRate, pitch, volume, onAudioChunk, cont, cancelled, desiredVoiceName)
+                        retryWithGoogle(engine, voice, text, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cont, cancelled, desiredVoiceName)
                     }
                 }
             }
@@ -242,7 +317,8 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
         speechRate: Float,
         pitch: Float,
         volume: Float,
-        onAudioChunk: (ByteArray) -> Unit,
+        onFormatInfo: (sampleRateInHz: Int, channelCount: Int) -> Unit,
+        onAudioChunk: (ByteArray, Int) -> Unit,
         cont: kotlin.coroutines.Continuation<Unit>,
         cancelled: AtomicBoolean,
         desiredVoiceName: String?
@@ -252,7 +328,7 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
         // لا نتراجع إلى جوجل إذا كان هو بالفعل المحرك الأصلي المستخدَم.
         if (google != null && google != originalEngine && EnginePicker.installedEnginePackages(context).contains(google)) {
             Log.w(TAG, "[Provider] falling back to Google engine: $google")
-            synthesizeWithEngine(google, text, voice, speechRate, pitch, volume, onAudioChunk, cont, cancelled, desiredVoiceName)
+            synthesizeWithEngine(google, text, voice, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cont, cancelled, desiredVoiceName)
         } else {
             cont.resume(Unit)
         }
@@ -268,19 +344,21 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
         speechRate: Float,
         pitch: Float,
         volume: Float,
-        onAudioChunk: (ByteArray) -> Unit,
+        onFormatInfo: (sampleRateInHz: Int, channelCount: Int) -> Unit,
+        onAudioChunk: (ByteArray, Int) -> Unit,
         cancelled: AtomicBoolean,
         desiredVoiceName: String?
     ): Boolean {
+        // حقل cancelled و مجموعة params — (توقيع internal)
         val engine = tts
         if (engine == null) return false
-        // نهج موحد الرقمية (يتسق عبر كل المحركات والأجهزة):
-        // - النبرة والسرعة ومستوى الصوت تُعالج كلها رقمياً لاحقاً في
-        //   [applyAudioEffects] لضمان الأثر حتى مع المحركات التي تتجاهل
-        //   setPitch/setSpeechRate (مثل جوجل). لذلك يُضبط المحرك على قيم
-        //   محايدة (1.0) لئلا يتضاعف التأثير (المحرك + نحن).
-        engine.setSpeechRate(1.0f)
-        engine.setPitch(1.0f)
+        // السرعة والنبرة تُمرَّران مباشرةً للمحرك (engine.setSpeechRate/setPitch)
+        // بدل التعديل الخطي الرقمي اليدوي الذي كان يلغي أثرهما بتشويه معدني
+        // (وفق توصية التقرير: إعادة أخذ العينات بنسبة p ثم عكسها ترك الصوت
+        //  بنفس النبرة والمدة مع تنعيم مضاعف مشوّه). مستوى الصوت (volume)
+        // يبقى رقمياً لأنه تطبيق معامل مضاعف محايد لا يشوّه.
+        engine.setSpeechRate(speechRate)
+        engine.setPitch(pitch)
         engine.setLanguage(voice.locale)
         // إن اختار المستخدم صوتاً محدداً من حوار التحويل (اسم صوت في محرك
         // خارجي مثل MultiTTS) نطبّقه هنا عبر `voice`، مع التراجع الصامت إلى
@@ -354,14 +432,25 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
                     // قراءة بيانات الصوت مباشرة من ملف التخليق (تخطّي رأس WAV
                     // وقائمة الخانات) دون قراءة الملف كاملاً ثم نسخه — كان ذلك
                     // يرفع ذروة الذاكرة 2-3× حجم الملف للنصوص الطويلة.
-                    val pcmData = extractPcm(tempFile)
-                    if (pcmData.isEmpty()) {
+                    val extracted = extractPcm(tempFile)
+                    if (extracted.pcm.isEmpty()) {
                         Log.e(TAG, "[Provider] extractPcm returned empty")
                     } else {
-                        // المعالجة الرقمية الموحّدة للنبرة والسرعة ومستوى الصوت.
-                        val scaledData = applyAudioEffects(pcmData, speechRate, pitch, volume)
-                        onAudioChunk(scaledData)
+                        // إبلاغ المتصل بالتنسيق الفعلي (معدل عينات/قنوات) قبل أي شريحة
+                        // حتى يبدأ callback.start() بهما بدل 22050 الثابتة.
+                        onFormatInfo(extracted.sampleRateInHz, 1)
+                        // مستوى الصوت فقط يُعالج رقماً (المعامل المضاعف المحايد):
+                        // السرعة والنبرة صارتا تخصان المحرك عبر setSpeechRate/setPitch.
+                        val validLength = extracted.pcm.size
+                        val scaledData = if (volume != 1.0f) applyVolume(extracted.pcm, volume) else extracted.pcm
+                        // الطول الصالح صريح عبر المعامل الثاني: فقد يكون حجم
+                        // مصفوفة الشريحة أكبر (مسبح مُعاد استخدامه) — والبيانات
+                        // الصحيحة حتى validLength فقط.
+                        onAudioChunk(scaledData, validLength)
                         success = true
+                        // المستهلك نسخ الشريحة (audioAvailable) ولم يُمسك بمرجعها —
+                        // فنُرجع المخزن للمسبح لإعادة استخدامه في الطلب التالي.
+                        pcmPool.release(scaledData)
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "[Provider] read audio failed", e)
@@ -382,29 +471,35 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
     }
 
     /**
-     * يستخرج بيانات PCM الخام من ملف WAV بتخطّي الرأس وقائمة الخانات بصيغة
-     * آمنة، حتى مع رؤوس أطول من 44 بايتاً (ببعض المحركات مثل MultiTTS).
-     * يقرأ من القرص مباشرة (RandomAccessFile) فيقرأ خانة data وحدها دون
-     * نسخ الملف كاملاً إلى الذاكرة.
+     * يستخرج بيانات PCM الخام ومعدل العينات الحقيقي من ملف WAV بتخطّي الرأس
+     * وقائمة الخانات بصيغة آمنة، حتى مع رؤوس أطول من 44 بايتاً (ببعض المحركات
+     * مثل MultiTTS). يقرأ من القرص مباشرة (RandomAccessFile) فيقرأ خانة data
+     * وحدها دون نسخ الملف كاملاً إلى الذاكرة.
+     *
+     * معدل العينات يُقرأ من خانة `fmt ` (بايتات sampleRate في موضعها القياسي)
+     * حتى يمررها المتصل لـ callback.start() بدل القيمة الثابتة 22050 التي كانت
+     * تجعل Android يشغّل ملفات 24k/44.1k بسرعة ونبرة خاطئتين.
+     * @return [PcmExtract] أو كائناً بمصفوفة فارغة عند التعذر.
      */
-    private fun extractPcm(file: java.io.File): ByteArray {
+    private fun extractPcm(file: java.io.File): PcmExtract {
         try {
             java.io.RandomAccessFile(file, "r").use { raf ->
                 val fileLen = raf.length()
-                if (fileLen < 12) return ByteArray(0)
+                if (fileLen < 12) return PcmExtract(pcmPool.acquire(0), FALLBACK_SAMPLE_RATE)
 
                 val sig = ByteArray(12)
                 raf.readFully(sig)
                 if (sig[0] != 'R'.code.toByte() || sig[1] != 'I'.code.toByte() ||
                     sig[2] != 'F'.code.toByte() || sig[3] != 'F'.code.toByte()
                 ) {
-                    // ليس ملف WAV صالح — نقرأه كاملاً تحسباً.
+                    // ليس ملف WAV صالح — نقرأه كاملاً تحسباً (من المسبح إن كان بعيار ملائم).
                     raf.seek(0)
-                    val all = ByteArray(fileLen.toInt())
+                    val all = pcmPool.acquire(fileLen.toInt())
                     raf.readFully(all)
-                    return all
+                    return PcmExtract(all, FALLBACK_SAMPLE_RATE)
                 }
 
+                var sampleRate = FALLBACK_SAMPLE_RATE
                 var offset = 12L // بعد "RIFF"+الحجم+"WAVE"
                 while (offset + 8 <= fileLen) {
                     raf.seek(offset)
@@ -413,20 +508,35 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
                     val chunkId = String(header, 0, 4, Charsets.US_ASCII)
                     val chunkSize = readLeInt(header, 4)
                     if (chunkId == "data") {
-                        return readDataSection(raf, offset + 8, chunkSize.toLong(), fileLen)
+                        return PcmExtract(
+                            readDataSection(raf, offset + 8, chunkSize.toLong(), fileLen),
+                            sampleRate
+                        )
+                    }
+                    if (chunkId == "fmt " && chunkSize >= 16) {
+                        // تنسيق: formatTag(2) + channels(2) + sampleRate(4) + byteRate(4) + ...
+                        raf.seek(offset + 8)
+                        val fmt = ByteArray(16)
+                        raf.readFully(fmt)
+                        // معدل العيّنات في الموضع 4 (وليس 8 الذي يحمل byteRate).
+                        val rate = readLeInt(fmt, 4)
+                        // عينات سليمة (14.1k–192k) وإلا نُبقي الاحتياطية 22050.
+                        if (rate in 14100..192000) sampleRate = rate
                     }
                     offset += 8 + chunkSize
                 }
                 // لم نعثر على خانة data — نعود لافتراض 44 بايت احتياطاً.
-                return if (fileLen > 44) readDataSection(raf, 44L, fileLen - 44, fileLen) else ByteArray(0)
+                val pcm = if (fileLen > 44) readDataSection(raf, 44L, fileLen - 44, fileLen) else pcmPool.acquire(0)
+                return PcmExtract(pcm, sampleRate)
             }
         } catch (e: Exception) {
             // أي خطأ قراءة — نُرجع فارغاً فيتخلى المتصل عن الملف.
-            return ByteArray(0)
+            return PcmExtract(pcmPool.acquire(0), FALLBACK_SAMPLE_RATE)
         }
     }
 
-    /** قراءة خانة بيانات صوتية بطول معلوم بدءاً من الموضع المحدد. */
+    /** قراءة خانة بيانات صوتية بطول معلوم بدءاً من الموضع المحدد.
+     *  يُستخرج المخزن الناتج من المسبح مُعاد الاستخدام (لا إنشاء جديد). */
     private fun readDataSection(
         raf: java.io.RandomAccessFile,
         start: Long,
@@ -436,7 +546,7 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
         val dataLen = minOf(len, fileLen - start).coerceAtLeast(0L).toInt()
         if (dataLen <= 0) return ByteArray(0)
         raf.seek(start)
-        val out = ByteArray(dataLen)
+        val out = pcmPool.acquire(dataLen)
         raf.readFully(out)
         return out
     }
@@ -448,9 +558,15 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
             ((bytes[offset + 2].toInt() and 0xFF) shl 16) or
             ((bytes[offset + 3].toInt() and 0xFF) shl 24)
 
-    /** تطبيق مستوى الصوت على بيانات PCM */
+    /** مستوى الصوت يُطبَّق رقماً (معامل مضاعف محايد لا يشوّه الصوت):
+     *  السرعة والنبرة صارتا تمرَّران مباشرةً للمحرك في [synthesizeInternal]
+     *  عبر setSpeechRate/setPitch (مسار المحرك الأصلي بجودة أعلى)، فلا داعي
+     *  لإعادة أخذ العينات اليدوية التي كانت تشوّه النطق.
+     *
+     *  يُستخرج المخزن المؤقت الناتج من المسبح (ويُرجَّع المصدر إليه عند
+     *  اختلافه) حتى لا نُنشئ صفيفاً جديداً في كل إعلان أثناء معالجة المستوى. */
     private fun applyVolume(pcmData: ByteArray, volume: Float): ByteArray {
-        val result = ByteArray(pcmData.size)
+        val result = pcmPool.acquire(pcmData.size)
         for (i in 0 until pcmData.size step 2) {
             // Read 16-bit sample (little endian)
             val sample = (pcmData[i + 1].toInt() shl 8) or (pcmData[i].toInt() and 0xFF)
@@ -460,67 +576,7 @@ class SystemVoiceProvider(private val context: Context) : VoiceProvider {
             result[i] = (scaled and 0xFF).toByte()
             result[i + 1] = (scaled ushr 8).toByte()
         }
-        return result
-    }
-
-    /**
-     * إعادة أخذ عينات خطية (linear interpolation) لبيانات PCM أحادية 16-bit.
-     * أفضل جودة من الاستيفاء بالجار الأقرب (nearest-neighbor) الذي كان يُسبب
-     * تشوّهاً وتقطيعاً عند تغيير السرعة/النبرة.
-     * @param factor <1 يسرّع (نحذف عينات)، >1 يبطّئ (نكرر عينات).
-     * @return مصفوفة جديدة بالطول الجديد.
-     */
-    private fun resample(data: ByteArray, factor: Float): ByteArray {
-        if (factor == 1.0f || data.size < 4) return data
-        val totalSamples = data.size / 2
-        val newSamples = kotlin.math.max((totalSamples / factor).toInt(), 1)
-        val out = ByteArray(newSamples * 2)
-        val samples = ShortArray(totalSamples)
-        for (i in 0 until totalSamples) {
-            samples[i] = ((data[i * 2 + 1].toInt() shl 8) or (data[i * 2].toInt() and 0xFF)).toShort()
-        }
-        for (j in 0 until newSamples) {
-            val srcPos = j * factor
-            val i0 = srcPos.toInt().coerceIn(0, totalSamples - 1)
-            val i1 = (i0 + 1).coerceIn(0, totalSamples - 1)
-            val frac = (srcPos - i0).toFloat()
-            val interpolated = (samples[i0].toFloat() * (1f - frac) + samples[i1].toFloat() * frac)
-                .toInt()
-                .coerceIn(-32768, 32767)
-            out[j * 2] = (interpolated and 0xFF).toByte()
-            out[j * 2 + 1] = (interpolated ushr 8).toByte()
-        }
-        return out
-    }
-
-    /**
-     * تغيير نبرة الكلام مع الحفاظ على مدّته الزمنية (pitch shift بسيط):
-     * نعيد أخذ العينات بنسبة 1/pitch (ترتفع/تنخفض النغمة)، ثم نعكسها طولياً
-     * لاستعادة المدة الزمنية الأصلية دون تغيير سرعة النطق.
-     */
-    private fun applyPitch(pcmData: ByteArray, pitch: Float): ByteArray {
-        if (pitch == 1.0f || pcmData.size < 4) return pcmData
-        val p = pitch.coerceIn(0.5f, 2.0f)
-        val first = resample(pcmData, 1.0f / p) // غيّر النغمة (غيّر المدة مؤقتاً)
-        // أعد أخذ العينات للطول الأصلي لاستعادة المدة: نسبة = الطول/الأصلي/الأول.
-        val ratio = pcmData.size.toFloat() / first.size
-        return if (ratio == 1.0f) first else resample(first, ratio)
-    }
-
-    /**
-     * السلسلة الكاملة لتأثيرات التحكم الصوتي. عند القيم الافتراضية
-     * (rate=1, pitch=1, volume=1) تُعاد [pcmData] كما هي دون تغيير.
-     *
-     * النبرة تُعالَج رقمياً (عبر [applyPitch]) هنا لتُضمَن على كل محرك بغضّ
-     * النظر عن احترام المحرك لـ setPitch (جوجل يتجاهلها أحياناً). لذلك يُضبط
-     * المحرك على نبرة محايدة (setPitch=1.0) في [synthesizeInternal] لئلا
-     * يتضاعف التأثير (المحرك + نحن).
-     */
-    private fun applyAudioEffects(pcmData: ByteArray, speechRate: Float, pitch: Float, volume: Float): ByteArray {
-        var result = pcmData
-        if (pitch != 1.0f) result = applyPitch(result, pitch)
-        if (speechRate != 1.0f) result = resample(result, 1.0f / speechRate)
-        if (volume != 1.0f) result = applyVolume(result, volume)
+        if (result !== pcmData) pcmPool.release(pcmData)
         return result
     }
 }

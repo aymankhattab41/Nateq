@@ -16,6 +16,10 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- إعادة تشغيل جدولة الإعلانات بعد إقلاع الجهاز -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- لمنبهات إعلان الوقت الدقيقة عبر AlarmManager (setExactAndAllowWhileIdle): 
+         يُمنح تلقائياً بلا طلب وقت التشغيل، ومع بديل setAlarmClock يعمل إعلان
+         الوقت حتى في Doze دون هذا الإذن أيضاً -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- لطلب إعفاء من تحسين البطارية (للخدمة الخلفية) -->
 
     <!-- لسماع بث PHONE_STATE ومعرفة حالة المكالمة (إعلان المتصل) —
@@ -122,6 +126,18 @@
             android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- مستقبل إعلان الوقت المستقل: يُوقَظ عبر AlarmManager عند رأس الفاصل
+             حتى لو قُتلت العملية أو تجمّدت في Doze، وينطق الوقت ويرسب المنبه
+             التالي بنفسه (بند 9 — لا مؤقتات داخل RAM تُفقد). غير مُصدَّر للخارج،
+             لا يستقبل إلا بثّ PendingIntent الخاص بالتطبيق -->
+        <receiver
+            android:name=".receivers.TimeAlarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.aymankhattab.nateq.action.TIME_ANNOUNCE_TICK" />
             </intent-filter>
         </receiver>
 

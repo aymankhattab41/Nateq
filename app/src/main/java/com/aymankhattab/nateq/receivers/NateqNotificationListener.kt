@@ -11,12 +11,15 @@ import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.settings.SettingsRepository
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.LocaleUtils
+import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
+import javax.inject.Inject
 
 /**
  * خدمة الاستماع للإشعارات — تقرأ إشعارات التطبيقات المهمة (واتساب، تلجرام، إلخ) بالصوت.
  * يجب منح الإذن يدوياً من: الإعدادات ← التطبيقات الخاصة ← الوصول للإشعارات.
  */
+@AndroidEntryPoint
 class NateqNotificationListener : NotificationListenerService() {
 
     companion object {
@@ -33,6 +36,10 @@ class NateqNotificationListener : NotificationListenerService() {
         }
     }
 
+    /** مصدر الإعدادات المحقون — نفس كائن عملية المحرك المُدار من Hilt. */
+    @Inject
+    lateinit var settingsRepository: SettingsRepository
+
     private var lastNotifTime = 0L
     private val minIntervalMs = 3000L // الحد الأدنى بين إشعارين متتاليين
 
@@ -41,7 +48,7 @@ class NateqNotificationListener : NotificationListenerService() {
         try {
             val pkg = sbn.packageName ?: return
 
-            val settings = SettingsRepository(applicationContext)
+            val settings = settingsRepository
             if (!settings.isNotificationReadingEnabled()) return
             // المفتاح الرئيسي يُوقف كل الإعلانات دفعة واحدة.
             if (!settings.isAllAnnouncementsEnabled()) return
@@ -69,7 +76,11 @@ class NateqNotificationListener : NotificationListenerService() {
             if (title.isNullOrBlank() && text.isNullOrBlank()) return
 
             val appName = getAppName(pkg)
-            val speechText = buildSpeechText(appName, title, text)
+            // خصوصية قفل الشاشة: عند القفل يُنطق اسم التطبيق فقط دون العنوان والنص
+            // (حماية لكلمات تحقق OTP وغيرها من الحساسيات في الإشعارات).
+            val privacyLocked = settings.isLockScreenPrivacyEnabled()
+                    && settings.isDeviceScreenLocked()
+            val speechText = buildSpeechText(appName, title, text, privacyLocked)
             val isArabic = LocaleUtils.containsArabic(speechText)
             val locale = if (isArabic) Locale.forLanguageTag("ar") else Locale.forLanguageTag("en")
 
@@ -105,11 +116,17 @@ class NateqNotificationListener : NotificationListenerService() {
         }
     }
 
-    private fun buildSpeechText(appName: String, title: String?, text: String?): String {
+    private fun buildSpeechText(appName: String, title: String?, text: String?, privacyLocked: Boolean): String {
         // لغة النطق من محتوى الإشعار (اسم التطبيق/العنوان/النص) لا من لغة الواجهة
         val dynamicText = "$appName ${title.orEmpty()} ${text.orEmpty()}"
         val isArabic = !dynamicText.any { it.isLetter() } || LocaleUtils.containsArabic(dynamicText)
         val lang = if (isArabic) "ar" else "en"
+        // عند قفل الشاشة نكتفي باسم التطبيق دون أي مضمون.
+        if (privacyLocked) {
+            return LocaleUtils.stringForSpeech(
+                applicationContext, lang, R.string.notif_new, R.string.notif_new
+            ).replace("{app}", appName)
+        }
         return when {
             !title.isNullOrBlank() && !text.isNullOrBlank() -> LocaleUtils.stringForSpeech(
                 applicationContext, lang, R.string.notif_from_title_text, R.string.notif_from_title_text
