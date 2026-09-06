@@ -381,6 +381,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         setupSaveAndResetButtons()
         setupBackupRestoreButtons()
         accordion.updateSectionStatuses()
+        // فحص تلقائي عند فتح التطبيق: يُنبه بوجود تحديث (صامت إن لم يوجد)
+        checkForUpdatesOnStart()
     }
 
     override fun onDestroyView() {
@@ -691,37 +693,68 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         btn.setOnClickListener { onCheckUpdatesClicked() }
     }
 
+    /** فحص تلقائي عند بدء الشاشة (صامت عند عدم وجود تحديث). */
+    internal fun checkForUpdatesOnStart() {
+        performUpdateCheck(showFeedback = false)
+    }
+
+    /** فحص عند ضغط زر «البحث عن تحديثات» (مع رسائل واضحة). */
     private fun onCheckUpdatesClicked() {
+        performUpdateCheck(showFeedback = true)
+    }
+
+    /** منطق الفحص المشترك: إن وُجد تحديث يعرض نافذة «نعم/لا» قبل التنزيل. */
+    private fun performUpdateCheck(showFeedback: Boolean) {
         val context = requireContext()
         val currentCode = runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0).versionCode
         }.getOrDefault(0)
 
-        // إشارة للبدء ثم فحص في الخلفية
-        Toast.makeText(
-            context, getString(R.string.check_updates), Toast.LENGTH_SHORT
-        ).show()
+        if (showFeedback) {
+            Toast.makeText(
+                context, getString(R.string.check_updates), Toast.LENGTH_SHORT
+            ).show()
+        }
 
         viewLifecycleOwner.lifecycleScope.launch {
             when (val res = UpdateChecker.check(currentCode)) {
                 is UpdateChecker.CheckResult.UpdateAvailable -> {
-                    // موافقة مسبقة ضمنية من التفعيل: نبدأ التنزيل مباشرة
-                    startApkDownload(context, res.apkUrl)
+                    showUpdatePrompt(context, res.tag, res.apkUrl)
                 }
                 is UpdateChecker.CheckResult.UpToDate -> {
-                    Toast.makeText(
-                        context, getString(R.string.check_updates_up_to_date), Toast.LENGTH_SHORT
-                    ).show()
-                    view?.announceCompat(getString(R.string.check_updates_up_to_date))
+                    if (showFeedback) {
+                        Toast.makeText(
+                            context, getString(R.string.check_updates_up_to_date), Toast.LENGTH_SHORT
+                        ).show()
+                        view?.announceCompat(getString(R.string.check_updates_up_to_date))
+                    }
                 }
                 is UpdateChecker.CheckResult.NetworkError -> {
-                    Toast.makeText(
-                        context, getString(R.string.check_updates_network_error), Toast.LENGTH_SHORT
-                    ).show()
-                    view?.announceCompat(getString(R.string.check_updates_network_error))
+                    if (showFeedback) {
+                        Toast.makeText(
+                            context, getString(R.string.check_updates_network_error), Toast.LENGTH_SHORT
+                        ).show()
+                        view?.announceCompat(getString(R.string.check_updates_network_error))
+                    }
                 }
             }
         }
+    }
+
+    /** نافذة يسألها المستخدم: هل يريد التحديث الآن الآن؟ */
+    private fun showUpdatePrompt(
+        context: android.content.Context,
+        versionTag: String,
+        apkUrl: String
+    ) {
+        AlertDialog.Builder(context)
+            .setTitle(R.string.update_available_title)
+            .setMessage(R.string.update_available_message)
+            .setPositiveButton(R.string.update_now) { _, _ ->
+                startApkDownload(context, apkUrl)
+            }
+            .setNegativeButton(R.string.update_later, null)
+            .show()
     }
 
     private fun startApkDownload(context: android.content.Context, apkUrl: String) {

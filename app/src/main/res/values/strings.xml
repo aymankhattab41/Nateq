@@ -219,6 +219,10 @@
     <string name="check_updates_desc">التحقق من وجود إصدار أحدث من التطبيق</string>
     <string name="check_updates_downloading_title">تنزيل الإصدار الجديد</string>
     <string name="check_updates_up_to_date">التطبيق محدّث لأحدث إصدار</string>
+    <string name="update_available_title">يوجد تحديث</string>
+    <string name="update_available_message">يتوفر إصدار أحدث من التطبيق. هل تريد تحديثه الآن؟</string>
+    <string name="update_now">نعم، حدّث الآن</string>
+    <string name="update_later">ليس الآن</string>
     <string name="check_updates_network_error">تعذّر الوصول للخادم. تحقق من اتصال الإنترنت</string>
     <string name="language_change_to_en">التغيير إلى الإنجليزية</string>
     <string name="language_change_to_ar">التغيير إلى العربية</string>

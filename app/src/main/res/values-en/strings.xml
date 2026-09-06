@@ -223,6 +223,10 @@
     <string name="check_updates_desc">Check if a newer version is available</string>
     <string name="check_updates_downloading_title">Downloading the update</string>
     <string name="check_updates_up_to_date">App is up to date</string>
+    <string name="update_available_title">Update available</string>
+    <string name="update_available_message">A newer version is available. Would you like to update now?</string>
+    <string name="update_now">Yes, update now</string>
+    <string name="update_later">Not now</string>
     <string name="check_updates_network_error">Could not reach the server. Check your internet connection</string>
     <string name="language_change_to_en">Switch to English</string>
     <string name="language_change_to_ar">Switch to Arabic</string>
