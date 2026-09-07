@@ -1,12 +1,15 @@
 package com.aymankhattab.nateq.receivers
 
+import android.Manifest
 import android.app.Notification
 import android.content.ComponentName
 import android.content.Context
+import android.content.pm.PackageManager
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.settings.SettingsRepository
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
@@ -52,15 +55,29 @@ class NateqNotificationListener : NotificationListenerService() {
             if (!settings.isNotificationReadingEnabled()) return
             // المفتاح الرئيسي يُوقف كل الإعلانات دفعة واحدة.
             if (!settings.isAllAnnouncementsEnabled()) return
-            // قراءة التطبيقات المختارة فقط (للمستخدم حرية اختيار قائمتها).
-            if (!settings.shouldReadNotificationApp(pkg)) return
 
-            // تجنّب النطق المزدوج: إن كان الإشعار من تطبيق الرسائل النصية
-            // الافتراضي وقراءة SMS مفعّلة، فسيَنطقه مستقبل الرسائل بنفسه.
+            // إشعار من تطبيق الرسائل النصية مع قراءة SMS مفعّلة: يُعالج بمسار SMS
+            // المستقل (قبل فحص قائمة تطبيقات قراءة الإشعارات العادية) لأنه ميزة
+            // منفصلة لها إعداداتها الخاصة.
+            // - إن كان RECEIVE_SMS ممنوحاً فسيَنطقه SmsReadingReceiver مباشرة (نتجنب هنا).
+            // - إن لم يكن ممنوحاً نقرأ الرسالة عبر خدمة الاستماع للإشعارات (NLS)
+            //   بإعدادات SMS المتخصصة (الصوت/السرعة/الخصوصية/فلتر OTP) بدل الإذن المقيّد.
             val defaultSmsApp = runCatching {
                 android.provider.Telephony.Sms.getDefaultSmsPackage(applicationContext)
             }.getOrNull()
-            if (pkg == defaultSmsApp && settings.getSmsReadingMode() != SmsReadingReceiver.MODE_OFF) return
+            val isSmsApp = pkg == defaultSmsApp
+            val smsMode = settings.getSmsReadingMode()
+            if (isSmsApp && smsMode != SmsReadingReceiver.MODE_OFF) {
+                val hasSmsPermission = ContextCompat.checkSelfPermission(
+                    applicationContext, Manifest.permission.RECEIVE_SMS
+                ) == PackageManager.PERMISSION_GRANTED
+                if (hasSmsPermission) return
+                handleSmsNotification(sbn, settings, smsMode)
+                return
+            }
+
+            // قراءة التطبيقات المختارة فقط (للمستخدم حرية اختيار قائمتها).
+            if (!settings.shouldReadNotificationApp(pkg)) return
 
             // تجنب تكرار الإشعارات المتتالية بشكل سريع
             val now = System.currentTimeMillis()
@@ -114,6 +131,71 @@ class NateqNotificationListener : NotificationListenerService() {
         } catch (t: Throwable) {
             Log.e(TAG, "requestRebind failed", t)
         }
+    }
+
+    /** قراءة الرسائل النصية الواردة عبر إشعار تطبيق الرسائل (بديل NLS بدل إذن RECEIVE_SMS). */
+    private fun handleSmsNotification(
+        sbn: StatusBarNotification,
+        settings: SettingsRepository,
+        smsMode: String
+    ) {
+        val notification = sbn.notification ?: return
+        val extras = notification.extras
+
+        // في إشعارات تطبيقات الرسائل: العنوان يحمل اسم/رقم المرسل عادةً والنص المحتوى.
+        val sender = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim()
+        val body = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim()
+        if (sender.isNullOrBlank() && body.isNullOrBlank()) return
+
+        val displayAddress = sender ?: getString(R.string.sms_unknown_sender)
+        val voiceId = settings.getSmsReadingVoiceId()
+        val speechRate = settings.getSmsReadingRate()
+        val volume = settings.getSmsReadingVolume()
+
+        val content = body ?: ""
+        // خصوصية قفل الشاشة: عند القفل يُنطق المصدر فقط دون المحتوى (حماية OTP).
+        val privacyLocked = settings.isLockScreenPrivacyEnabled()
+                && settings.isDeviceScreenLocked()
+        val effectiveMode = if (privacyLocked) SmsReadingReceiver.MODE_SOURCE else smsMode
+
+        val dynamicText = "$displayAddress $content"
+        val useArabicVoice = !dynamicText.any { it.isLetter() } ||
+            LocaleUtils.containsArabic(dynamicText)
+
+        val template = settings.getSmsAnnouncementTemplate()
+        // فلتر رمز التحقق (OTP): لا يُنطق الرمز نفسه في الأماكن العامة.
+        val isOtp = LocaleUtils.containsOtp(content)
+        val smsFrom = LocaleUtils.stringForSpeech(
+            applicationContext,
+            if (useArabicVoice) "ar" else "en",
+            R.string.sms_from,
+            R.string.sms_from
+        ).replace("{name}", displayAddress)
+
+        val text = when {
+            privacyLocked -> smsFrom
+            isOtp -> LocaleUtils.stringForSpeech(
+                applicationContext,
+                if (useArabicVoice) "ar" else "en",
+                R.string.sms_otp_safe,
+                R.string.sms_otp_safe
+            ).replace("{name}", displayAddress)
+            template.isNotBlank() -> template
+                .replace("{name}", displayAddress)
+                .replace("{message}", content.ifBlank { displayAddress })
+            content.isBlank() -> smsFrom
+            effectiveMode == SmsReadingReceiver.MODE_SOURCE -> smsFrom
+            else -> "$smsFrom، $content"
+        }
+
+        val isArabic = LocaleUtils.containsArabic(text)
+        val locale = if (isArabic) Locale.forLanguageTag("ar") else Locale.forLanguageTag("en")
+
+        Log.d(TAG, "SMS via NLS from $displayAddress: ${text.length} chars")
+
+        val speech = AnnouncementSpeaker.getInstance(applicationContext)
+        speech.resetVoice(voiceId)
+        speech.speak(text, locale, speechRate, 1.0f, volume)
     }
 
     private fun buildSpeechText(appName: String, title: String?, text: String?, privacyLocked: Boolean): String {

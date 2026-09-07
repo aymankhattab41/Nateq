@@ -190,6 +190,7 @@
     <string name="sms_mode_off">معطل</string>
     <string name="sms_mode_source">قراءة مصدر الرسالة فقط</string>
     <string name="sms_permission_needed">تتطلب قراءة الرسائل منح إذن الوصول إلى الرسائل النصية</string>
+    <string name="sms_reading_via_nls">سُتفعل قراءة الرسائل عبر خدمة الاستماع للإشعارات بدلاً من إذن الرسائل</string>
     <string name="sms_otp_block_hint">تحذير: رسائل OTP تُحجب 3 ساعات أولى بعد التفعيل حسب سياسة أندرويد 17</string>
     <string name="spinner_engine_content">محرك النطق</string>
     <string name="spinner_time_interval_content">فاصل إعلان الوقت (بالدقائق)</string>

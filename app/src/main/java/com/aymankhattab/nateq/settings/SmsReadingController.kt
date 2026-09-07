@@ -11,6 +11,7 @@ import android.widget.TextView
 import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
+import com.aymankhattab.nateq.receivers.NateqNotificationListener
 import com.aymankhattab.nateq.util.announceCompat
 import java.util.Locale
 
@@ -71,15 +72,28 @@ internal class SmsReadingController(
                     onStatusChanged()
                     return
                 }
-                // وضع غير "off" (full/source): لا يُحفظ حتى منح الإذن.
+                // وضع غير "off" (full/source): يتطلب إحدى قناتي الاستقبال لكي يعمل فعلاً:
+                // 1) إذن RECEIVE_SMS (المستقبل المباشر للبث SMS_RECEIVED)، أو
+                // 2) خدمة الاستماع للإشعارات (NLS) كبديل بلا إذن قيود.
                 if (ContextCompat.checkSelfPermission(
                         fragment.requireContext(),
                         android.Manifest.permission.RECEIVE_SMS
                     ) != PackageManager.PERMISSION_GRANTED
                 ) {
-                    pendingSmsMode = mode
-                    runCatching {
-                        fragment.smsPermLauncher.launch(android.Manifest.permission.RECEIVE_SMS)
+                    // RECEIVE_SMS غير ممنوح: إن كانت NLS مفعّلة (من قسم قراءة
+                    // الإشعارات) نعتمد عليها مباشرة دون طلب الإذن المقيد.
+                    if (NateqNotificationListener.isPermissionGranted(fragment.requireContext()) &&
+                        settings.isNotificationReadingEnabled()
+                    ) {
+                        pendingSmsMode = null
+                        runCatching { settings.setSmsReadingMode(mode) }
+                        AnnouncementSchedulerService.requestStart(fragment.requireContext())
+                        fragment.view?.announceCompat(fragment.getString(R.string.sms_reading_via_nls))
+                    } else {
+                        pendingSmsMode = mode
+                        runCatching {
+                            fragment.smsPermLauncher.launch(android.Manifest.permission.RECEIVE_SMS)
+                        }
                     }
                 } else {
                     // الإذن ممنوح من قبل: نحفظ مباشرة.

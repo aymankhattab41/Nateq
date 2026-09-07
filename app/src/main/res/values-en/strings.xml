@@ -203,6 +203,7 @@
     <string name="sms_mode_off">Disabled</string>
     <string name="sms_mode_source">Read message source only</string>
     <string name="sms_permission_needed">Reading messages requires granting SMS permission</string>
+    <string name="sms_reading_via_nls">Message reading will use the notification listener service instead of SMS permission</string>
     <string name="repeat_once">Once</string>
     <string name="repeat_twice">Twice</string>
     <string name="repeat_3">3 times</string>
