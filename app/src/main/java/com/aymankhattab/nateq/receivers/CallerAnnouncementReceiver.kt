@@ -53,6 +53,16 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         val appScope = (context.applicationContext as com.aymankhattab.nateq.NateqApplication).appScope
         appScope.launch {
             try {
+                // فحص وقائي: وصول بث PHONE_STATE بحد ذاته يتطلب منح READ_PHONE_STATE
+                // وقت الإرسال (النظام يفلتر المستقبلين، وليس إعلان الـ Manifest فقط).
+                // لكن سحب النظام التلقائي للإذن (ابتداءً من أندرويد 11، ويشتد على
+                // أندرويد 17) قد يخطف البث قبل وصوله — إن وصلنا هنا رغم فقدانه
+                // نتوقف بهدوء بدل نطق نص وسط مكالمة أو رمي SecurityException.
+                if (!hasPermission(context, Manifest.permission.READ_PHONE_STATE)) {
+                    Log.w(TAG, "READ_PHONE_STATE revoked; caller announcement silent-skip")
+                    return@launch
+                }
+
                 val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE) ?: return@launch
                 if (state != TelephonyManager.EXTRA_STATE_RINGING) return@launch
 

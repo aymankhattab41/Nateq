@@ -2042,11 +2042,26 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:layout_marginBottom="16dp"
+                android:layout_marginBottom="8dp"
                 android:minHeight="48dp"
                 android:text="@string/check_updates"
                 android:contentDescription="@string/check_updates_desc"
                 android:importantForAccessibility="yes" />
+
+            <!-- زر الإبلاغ عن خطأ: يجمع سطور الأخطاء من سجل التطبيق ويشاركها -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_report_error"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="16dp"
+                android:minHeight="48dp"
+                android:text="@string/report_error"
+                android:contentDescription="@string/report_error_desc"
+                android:importantForAccessibility="yes"
+                app:icon="@drawable/ic_report_bug"
+                app:iconGravity="textStart" />
         </LinearLayout>
 
         <View

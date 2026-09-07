@@ -83,6 +83,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     // زر التواصل مع المطوّر (يُفتح خارجياً بلا أذونات)
     private lateinit var btnContactDeveloper: com.google.android.material.button.MaterialButton
 
+    // زر الإبلاغ عن خطأ (يجمع الأخطاء من سجل التطبيق ويشاركها)
+    private lateinit var btnReportError: com.google.android.material.button.MaterialButton
+
     // المفتاح الرئيسي لكل الإعلانات
     private lateinit var switchAllAnnouncements: SwitchMaterial
 
@@ -366,6 +369,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         // زر التواصل مع المطوّر: يفتح رابط الدعم خارجياً دون كشف وسيلة التواصل
         btnContactDeveloper = view.findViewById(R.id.btn_contact_developer)
         btnContactDeveloper.setOnClickListener { openDeveloperSupport() }
+
+        // زر الإبلاغ عن خطأ: يجمع سطور الأخطاء من السجل ويشاركها عبر وسائل المشاركة
+        btnReportError = view.findViewById(R.id.btn_report_error)
+        btnReportError.setOnClickListener { onReportErrorClicked() }
 
         // إنشاء ضابطات الأقسام وربطها (المرحلة ج): كل ضابط يسحب عناصره
         // ويبني مستمعيه عند setup()، وonStatusChanged تُحدّث أسطر حالة الأكورديون.
@@ -702,6 +709,91 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 requireContext(), R.string.contact_developer_no_handler, Toast.LENGTH_SHORT
             ).show()
             view?.announceCompat(getString(R.string.contact_developer_no_handler))
+        }
+    }
+
+    // ===== الإبلاغ عن خطأ: جمع الأخطاء من السجل ومشاركتها =====
+    private fun onReportErrorClicked() {
+        val context = requireContext()
+        Toast.makeText(context, R.string.report_error_collecting, Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            val report = runCatching { buildErrorReport(context) }.getOrNull()
+            if (report == null || report.second.isEmpty()) {
+                Toast.makeText(context, R.string.report_error_empty, Toast.LENGTH_SHORT).show()
+                view?.announceCompat(getString(R.string.report_error_empty))
+                return@launch
+            }
+            shareErrorReport(context, report.second.joinToString("\n"), report.first)
+        }
+    }
+
+    /**
+     * يجمع سطور الأخطاء من سجل التقنية عبر logcat (عملية التطبيق الحالية فقط)،
+     * ويُبقي مستوى الخطورة E/F ضمن وسومنا فقط — أي لا يُخرج السجل كله.
+     * يعيد نصاً مسبوقاً بترويسة تعريف (جهاز/إصدار/وقت) إن وُجدت أسطر،
+     * وإلا نصاً فارغاً.
+     */
+    private suspend fun buildErrorReport(context: android.content.Context) =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            // نجمع سطور الأخطاء/الاستثناءات للتطبيق نفسه فقط — لا السجل كله:
+            // نقرأ آخر 1500 سطر لعملية التطبيق الحالية (تحديداً بالـ PID)،
+            // ونُبقي ما يحمل مستوى ERROR (E) أو Fatal (F) ضمن وسوم ناتك.
+            val filtered = mutableListOf<String>()
+            try {
+                val process = Runtime.getRuntime().exec(
+                    arrayOf(
+                        "logcat", "-d",
+                        "-t", "1500",
+                        "--pid", android.os.Process.myPid().toString()
+                    )
+                )
+                process.inputStream.bufferedReader().useLines { lines ->
+                    for (line in lines) {
+                        val lower = line.lowercase()
+                        // تنسيق logcat الافتراضي (brief): الحرف الأول هو مستوى الخطورة
+                        // (V/D/I/W/E/F). نبقي E (Error) وF (Fatal) فقط — أي لا نُخرج كل السجل.
+                        val isErrorLevel = line.isNotEmpty() &&
+                            (line[0] == 'E' || line[0] == 'F')
+                        // نقيّد المصدر بحزمتنا/وسومها دون سجل النظام الآخر
+                        val isOurTag = lower.contains("nateq") || lower.contains("lordt")
+                        if (isErrorLevel && isOurTag) filtered.add(line)
+                    }
+                }
+                process.waitFor()
+            } catch (e: Exception) {
+                android.util.Log.e("NATEQ_APP", "logcat collect failed", e)
+            }
+            if (filtered.isEmpty()) return@withContext "" to emptyList<String>()
+            val info = context.packageManager.getPackageInfo(context.packageName, 0)
+            val versionName = info.versionName ?: "?"
+            val versionCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P)
+                info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()
+            val header = buildString {
+                appendLine("Lord TTS — Error Report")
+                appendLine("Version: $versionName ($versionCode)")
+                appendLine("Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+                appendLine("Android: ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})")
+                appendLine("Time: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date())}")
+                appendLine("-----")
+            }
+            header to filtered
+        }
+
+    /** يفتح وسائل المشاركة (اقتراح نصوص، بريد…) بالمحتوى المجمّع. */
+    private fun shareErrorReport(context: android.content.Context, body: String, header: String) {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, getString(R.string.report_error_subject))
+            putExtra(Intent.EXTRA_TEXT, header + body)
+        }
+        val chooser = Intent.createChooser(send, getString(R.string.report_error))
+        runCatching {
+            startActivity(chooser)
+        }.onFailure {
+            Toast.makeText(
+                context, R.string.report_error_no_handler, Toast.LENGTH_SHORT
+            ).show()
+            view?.announceCompat(getString(R.string.report_error_no_handler))
         }
     }
 

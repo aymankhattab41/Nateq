@@ -1,7 +1,11 @@
 package com.aymankhattab.nateq.settings
 
 import android.Manifest
+import android.app.AlertDialog
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
@@ -38,6 +42,9 @@ internal class CallerAnnouncementController(
 
     /** يمنع مناداة المستمع من رد الطلب (تفادي إعادة طلب الأذونات دورياً) */
     private var callerSwitchGuard = false
+
+    /** يمنع تكرار حوار «أُلغيت أذونات المتصل» أكثر من مرة لكل دورة فتح إعدادات */
+    private var callerRevokedDialogShown = false
 
     fun setup(view: View) {
         switchCallerAnnouncement = view.findViewById(R.id.switch_caller_announcement)
@@ -190,6 +197,51 @@ internal class CallerAnnouncementController(
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
+
+        // استرداد ذكي: إذا كانت ميزة المتصّل مفعّلة لكن أذوناتها سُحبت (سحب النظام
+        // التلقائي للأذونات غير المستخدمة، خصوصاً على أندرويد 11+ وأندرويد 17)
+        // نكتشف ذلك فور فتح الإعدادات ونعرض إعادة المنح بدل تركه صامتاً خلفياً.
+        checkRevokedPermissionsAndRecover()
+    }
+
+    /**
+     * إذا أُبقيت ميزة المتصّل مفعّلة لكن أذوناتها الأساسية سُحبت تلقائياً
+     * (بلا منح READ_PHONE_STATE لا يُسلَّم بث PHONE_STATE أصلاً فيُصمت الإعلان
+     * تماماً)، نعرض حواراً يشرح السبب ويقدّم إعادة الطلب أو فتح إعدادات النظام.
+     */
+    private fun checkRevokedPermissionsAndRecover() {
+        val enabled = runCatching { settings.isCallerAnnouncementEnabled() }.getOrDefault(false)
+        if (!enabled || callerRevokedDialogShown) return
+        val phoneGranted = ContextCompat.checkSelfPermission(
+            fragment.requireContext(), Manifest.permission.READ_PHONE_STATE
+        ) == PackageManager.PERMISSION_GRANTED
+        if (phoneGranted) return
+        callerRevokedDialogShown = true
+        AlertDialog.Builder(fragment.requireContext())
+            .setTitle(R.string.caller_permission_revoked_title)
+            .setMessage(R.string.caller_permission_revoked_message)
+            .setPositiveButton(R.string.caller_permission_grant_again) { _, _ ->
+                // إعادة طلب الأذونات المفقودة (نفس مجموعة التفعيل الأولى)
+                val needed = mutableListOf(
+                    Manifest.permission.READ_PHONE_STATE,
+                    Manifest.permission.READ_CALL_LOG
+                )
+                if (ContextCompat.checkSelfPermission(
+                        fragment.requireContext(), Manifest.permission.READ_CONTACTS
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    needed.add(Manifest.permission.READ_CONTACTS)
+                }
+                fragment.callerPermLauncher.launch(needed.toTypedArray())
+            }
+            .setNegativeButton(R.string.permission_open_settings) { _, _ ->
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", fragment.requireActivity().packageName, null)
+                }
+                fragment.startActivity(intent)
+            }
+            .setNeutralButton(android.R.string.cancel, null)
+            .show()
     }
 
     /** نتيجة طلب أذونات المتصل: التفّعيل الفعلي لا يتم إلا بعد منح أي إذن. */

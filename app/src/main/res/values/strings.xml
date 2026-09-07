@@ -189,6 +189,9 @@
     <string name="caller_permission_granted_both">تم منح الأذونات؛ سيُنطق اسم المتصل إن وُجد في سجل المكالمات أو دفتر الاتصالات</string>
     <string name="caller_permission_granted_phone_only">تم منح إذن حالة الهاتف فقط؛ قد لا يصل الاسم على أندرويد 12+ دون سجل المكالمات</string>
     <string name="caller_permission_granted_contacts_only">تم منح إذن قراءة جهات الاتصال فقط؛ قد لا يصل الاسم على أندرويد 12+ دون سجل المكالمات</string>
+    <string name="caller_permission_revoked_title">سُحبت أذونات المتصل</string>
+    <string name="caller_permission_revoked_message">يُسحب النظام أذونات الهاتف تلقائياً عند عدم استخدام تطبيق كـ Lord TTS فترة طويلة. إعلان اسم المتصل مفعّل لكنه فاقد إذن حالة الهاتف، فلن يُنطق المتصل فعلياً حتى تُعاد الأذونات</string>
+    <string name="caller_permission_grant_again">إعادة منح الأذونات</string>
 
     <string name="section_sms_reading">قراءة الرسائل الواردة</string>
     <string name="sms_reading_mode">وضع قراءة الرسائل</string>
@@ -240,6 +243,12 @@
     <string name="contact_developer_desc">فتح محادثة تليجرام الرسمية للتواصل مع المطوّر</string>
     <string name="contact_developer_no_handler">لا يوجد تطبيق يدعم فتح الرابط حالياً</string>
     <string name="help_section">مساعدة</string>
+    <string name="report_error">الإبلاغ عن خطأ</string>
+    <string name="report_error_desc">جمع سطور الأخطاء من سجل التطبيق ومشاركتها مع المطوّر</string>
+    <string name="report_error_collecting">جاري تجميع التقرير…</string>
+    <string name="report_error_empty">لا توجد أخطاء مسجّلة في سجل التطبيق حالياً</string>
+    <string name="report_error_no_handler">لا يوجد تطبيق يستطيع مشاركة النص حالياً</string>
+    <string name="report_error_subject">تقرير خطأ — Lord TTS</string>
     <string name="check_updates">البحث عن تحديثات</string>
     <string name="check_updates_desc">التحقق من وجود إصدار أحدث من التطبيق</string>
     <string name="check_updates_downloading_title">تنزيل الإصدار الجديد</string>
