@@ -719,7 +719,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         performUpdateCheck(showFeedback = true)
     }
 
-    /** منطق الفحص المشترك: إن وُجد تحديث يعرض نافذة «نعم/لا» قبل التنزيل. */
+    /** منطق الفحص المشترك: إن وُجد تحديث يبدأ التنزيل مباشرة (بلا نافذة تأكيد). */
     private fun performUpdateCheck(showFeedback: Boolean) {
         val context = requireContext()
         val currentCode = runCatching {
@@ -740,7 +740,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         viewLifecycleOwner.lifecycleScope.launch {
             when (val res = UpdateChecker.check(currentCode)) {
                 is UpdateChecker.CheckResult.UpdateAvailable -> {
-                    showUpdatePrompt(context, res.tag, res.apkUrl)
+                    startApkDownload(context, res.apkUrl)
                 }
                 is UpdateChecker.CheckResult.UpToDate -> {
                     if (showFeedback) {
@@ -762,23 +762,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
     }
 
-    /** نافذة يسألها المستخدم: هل يريد التحديث الآن الآن؟ */
-    private fun showUpdatePrompt(
-        context: android.content.Context,
-        versionTag: String,
-        apkUrl: String
-    ) {
-        AlertDialog.Builder(context)
-            .setTitle(R.string.update_available_title)
-            .setMessage(R.string.update_available_message)
-            .setPositiveButton(R.string.update_now) { _, _ ->
-                startApkDownload(context, apkUrl)
-            }
-            .setNegativeButton(R.string.update_later, null)
-            .show()
-    }
-
+    /** ينزّل الـ APK مباشرة ويعرض إشعاراً بأن التنزيل بدأ (لا نافذة تأكيد). */
     private fun startApkDownload(context: android.content.Context, apkUrl: String) {
+        Toast.makeText(
+            context, getString(R.string.check_updates_downloading_title), Toast.LENGTH_SHORT
+        ).show()
         val downloadId = UpdateChecker.enqueueDownload(context, apkUrl)
 
         // مستمع مؤقت مشترك يفتح شاشة التثبيت عند اكتمال تنزيل الـ APK.
