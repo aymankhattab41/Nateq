@@ -25,13 +25,26 @@
     <!-- لسماع بث PHONE_STATE ومعرفة حالة المكالمة (إعلان المتصل) —
          يُطلب وقت التشغيل عند تفعيل الميزة -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-    <!-- للبحث عن اسم المتصل في دفتر الاتصالات (إعلان المتصل) -->
+    <!-- إعلان المتصل [READ_CONTACTS] — للبحث عن اسم المتصل في دفتر الاتصالات.
+         سياسة Google Play: هذه الأذونات القيود (بيانات دفتر الاتصال) معرّضة
+         لطلب "Permissions Declaration Form" عند رفع الـ APK على Play Console.
+         التبرير المطلوب في الاستمارة: تطبيق إتاحة (Accessibility) للمكفوفين
+         وضعاف البصر، يُنطق اسم المتصل بالصوت عند وصول مكالمة. يجب إرفاق
+         فيديو استخدام يوضح الميزة. ممنوع حذف الإذن أو خفض الوظيفة. -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
-    <!-- للوصول إلى رقم المتصل على أندرويد 12+ — بدونه أو بدون أن يكون
-         التطبيق الافتراضي للاتصال لا يُسلَّم النظامُ رقمَ المتصل (EXTRA_INCOMING_NUMBER).
-         يستخدمه ناطق أيضاً للبحث عن الاسم في سجل المكالمات -->
+    <!-- إعلان المتصل [READ_CALL_LOG] — الوصول إلى رقم المتصل على أندرويد 12+
+         (بدونه لا يُسلَّم EXTRA_INCOMING_NUMBER إلا لطلبات الاتصال الافتراضية)
+         والبحث عن الاسم في سجل المكالمات. سياسة Google Play: إذن قيود يتطلب
+         "Permissions Declaration Form" عند الرفع على Play Console بعنوان
+         تطبيق إتاحة (Accessibility) للمكفوفين وضعاف البصر مع فيديو استخدام
+         يوضح إعلان المتصل. لا يُحذف: ميزة إعلان المتصل مبنية عليه. -->
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
-    <!-- لقراءة الرسائل النصية الواردة بالصوت (قراءة الرسائل) -->
+    <!-- قراءة الرسائل الواردة [RECEIVE_SMS] — نطق محتوى الرسائل النصية الواردة
+         بالصوت للمكفوفين وضعاف البصر. سياسة Google Play: SMS/Receiving innately
+         مقيّدة وقد تُرفض تلقائياً لغير تطبيق الرسائل الافتراضي؛ رفعها يتطلب
+         "Permissions Declaration Form" مع تبرير الإتاحة (Accessibility) وفيديو
+         استخدام يوضح قراءة الرسائل اللفظية. ممنوع حذفها (الميزة تعمل بها فعلاً)
+         لكن يجب تجهيز نص التبرير في PLAY_STORE_PERMISSIONS_JUSTIFICATION.md. -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <!-- الوصول للإنترنت لفحص وجود تحديث جديد من GitHub Releases وتنزيل الـ APK.
          يُستخدم للفحص/التحميل فقط؛ لا تُرفع أي بيانات أو إعدادات للمستخدم. -->
@@ -52,6 +65,7 @@
     <application
         android:name=".NateqApplication"
         android:allowBackup="false"
+        android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"

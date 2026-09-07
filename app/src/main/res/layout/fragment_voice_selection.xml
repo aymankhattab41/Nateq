@@ -4,8 +4,7 @@
     android:id="@+id/sv_settings_scroll"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true"
-    android:fitsSystemWindows="true">
+    android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"

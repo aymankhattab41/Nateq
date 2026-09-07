@@ -12,6 +12,8 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.switchmaterial.SwitchMaterial
 import kotlinx.coroutines.launch
@@ -215,6 +217,19 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         // لا إنشاء مباشر للإعدادات/القاموس: كلاهما محقون عبر SettingsViewModel.
+
+        // edge-to-edge (إلزامي من targetSdk 35+): نطبّق الوسائد يدوياً عبر
+        // ViewCompat.setOnApplyWindowInsetsListener بدل android:fitsSystemWindows
+        // (الحل المهمل) حتى لا تُغطى أي عناصر تفاعلية تحت شريط الحالة/التنقل.
+        // تُعاد الوسائد عند كل تغيير (إظهار/إخفاء الأشرطة) فتنزلق العبارة العليا
+        // والملاحة السفلية تحت النظام تلقائياً.
+        ViewCompat.setOnApplyWindowInsetsListener(
+            view.findViewById(R.id.sv_settings_scroll)
+        ) { v, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.setPadding(0, bars.top, 0, bars.bottom)
+            insets
+        }
 
         // تهيئة الأصوات هنا بعد الانضمام للسياق (لا يجوز في مُنشئ/خاصية تستدعي getString())
         nateqVoices = listOf(

@@ -43,8 +43,9 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // أندرويد 15 يفرض edge-to-edge: نفعّله صراحة لتُطبق الوسائد
-        // (status bar/nav bar) على محتوى القائمة عبر fitsSystemWindows.
+        // أندرويد 15 يفرض edge-to-edge: نفعّله صراحة (أشرطة شفافة وأيقونات مناسبة).
+        // الوسائد (status bar/nav bar) تطبَّق يدوياً من الفصيل عبر
+        // ViewCompat.setOnApplyWindowInsetsListener على جذر القائمة القابلة للتمرير.
         enableEdgeToEdge()
 
         if (savedInstanceState == null) {
