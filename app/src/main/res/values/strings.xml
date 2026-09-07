@@ -6,6 +6,9 @@
     <string name="engine_select">اختيار المحرك</string>
     <string name="save_settings">حفظ الإعدادات</string>
     <string name="tools_section">أدوات التطبيق</string>
+    <string name="group_special_title">إعدادات خاصة</string>
+    <string name="group_general_title">إعدادات عامة</string>
+    <string name="group_advanced_title">إعدادات متقدمة</string>
     <string name="saved_successfully">تم الحفظ</string>
     <string name="reset_settings">استعادة الافتراضيات</string>
     <string name="reset_confirm_title">استعادة الافتراضيات؟</string>
@@ -280,6 +283,7 @@
 
     <!-- شريط العودة من شاشة القسم إلى القائمة -->
     <string name="back_label">الرجوع إلى القائمة الرئيسية</string>
+    <string name="back_to_group">الرجوع إلى %1$s</string>
     <string name="section_opened">فُتح قسم: %1$s</string>
     <string name="section_collapsed">طُوي قسم: %1$s</string>
     <string name="back_to_home">عادت القائمة الرئيسية</string>

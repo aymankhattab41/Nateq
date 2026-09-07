@@ -6,6 +6,9 @@
     <string name="engine_select">Choose Engine</string>
     <string name="save_settings">Save settings</string>
     <string name="tools_section">App tools</string>
+    <string name="group_special_title">Special Settings</string>
+    <string name="group_general_title">General Settings</string>
+    <string name="group_advanced_title">Advanced Settings</string>
     <string name="saved_successfully">Settings saved</string>
     <string name="reset_settings">Restore defaults</string>
     <string name="reset_confirm_title">Restore defaults?</string>

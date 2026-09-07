@@ -83,11 +83,6 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     // زر التواصل مع المطوّر (يُفتح خارجياً بلا أذونات)
     private lateinit var btnContactDeveloper: com.google.android.material.button.MaterialButton
 
-    // Dictionary
-    private lateinit var llDictHeader: android.widget.LinearLayout
-    private lateinit var tvDictArrow: TextView
-    private lateinit var llDictContent: android.widget.LinearLayout
-
     // المفتاح الرئيسي لكل الإعلانات
     private lateinit var switchAllAnnouncements: SwitchMaterial
 
@@ -350,13 +345,6 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         // أسماء المتصلين المخصصة
         btnCallerNames = view.findViewById(R.id.btn_caller_names)
         btnCallerNames.setOnClickListener { showCallerNamesDialog() }
-
-        // Dictionary collapsible header
-        llDictHeader = view.findViewById(R.id.ll_dict_header)
-        tvDictArrow = view.findViewById(R.id.tv_dict_arrow)
-        llDictContent = view.findViewById(R.id.ll_dict_content)
-        llDictHeader.tag = getString(R.string.section_pronunciation_dict)
-        llDictHeader.setOnClickListener { toggleCollapsible(llDictContent, tvDictArrow, llDictHeader) }
 
         // مفتاح تبديل لغة التطبيق (أسفل الشاشة)
         btnToggleLanguage = view.findViewById(R.id.btn_toggle_language)

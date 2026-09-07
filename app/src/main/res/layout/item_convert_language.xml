@@ -35,35 +35,37 @@
         android:textAppearance="?attr/textAppearanceTitleMedium"
         android:importantForAccessibility="yes" />
 
-    <!-- اختيار المحرك الذي ينطق بهذه اللغة -->
+    <!-- اختیار المحرك الذي ينطق بهذه اللغة -->
     <com.google.android.material.textfield.TextInputLayout
         android:id="@+id/til_convert_row_engine"
+        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         android:hint="@string/auto_convert_engine">
-        <androidx.appcompat.widget.AppCompatSpinner
-            android:id="@+id/spinner_convert_row_engine"
+        <com.google.android.material.textfield.MaterialAutoCompleteTextView
+            android:id="@+id/actv_convert_row_engine"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:inputType="none"
             android:minHeight="48dp"
-            android:focusable="true"
             android:importantForAccessibility="yes" />
     </com.google.android.material.textfield.TextInputLayout>
 
-    <!-- اختيار الصوت داخل ذاك المحرك -->
+    <!-- اختیار الصوت داخل ذاك المحرك -->
     <com.google.android.material.textfield.TextInputLayout
         android:id="@+id/til_convert_row_voice"
+        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         android:hint="@string/auto_convert_voice">
-        <androidx.appcompat.widget.AppCompatSpinner
-            android:id="@+id/spinner_convert_row_voice"
+        <com.google.android.material.textfield.MaterialAutoCompleteTextView
+            android:id="@+id/actv_convert_row_voice"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:inputType="none"
             android:minHeight="48dp"
-            android:focusable="true"
             android:importantForAccessibility="yes" />
     </com.google.android.material.textfield.TextInputLayout>
 

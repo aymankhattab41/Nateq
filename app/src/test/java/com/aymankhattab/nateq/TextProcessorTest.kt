@@ -88,9 +88,10 @@ class TextProcessorTest {
 
     @Test
     fun currencyAndNumber_arabic() {
-        // «جنيه» في القاموس الشخصي → «جنيه مصري»
+        // القاموس الشخصي افتراضياً فارغ (يبنيه المستخدم بالإضافة/الاستيراد)،
+        // فكلمة «جنيه» لا تُتوسَّع تلقائياً، والأرقام تُنطق طبيعياً.
         val out = processor.process("100 جنيه", "ar")
-        assertEquals("مائة جنيه مصري", out)
+        assertEquals("مائة جنيه", out)
     }
 
     @Test

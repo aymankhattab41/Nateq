@@ -19,6 +19,8 @@ class PronunciationDictionary(private val context: Context) {
         private const val MAX_IMPORT_ENTRIES = 5000
         private const val MAX_KEY_LENGTH = 200
         private const val MAX_VALUE_LENGTH = 200
+        // مفتاح تتبّع هجرة حذف الإدخالات الافتراضية القديمة (تُنفَّذ مرة واحدة)
+        private const val KEY_DEFAULTS_MIGRATED = "defaults_migrated_to_empty"
     }
 
     // لا يجوز أبداً أن يرمي إنشاء التخزين المشفّر: خدمة :tts تُنشئ هذا الكائن
@@ -50,12 +52,13 @@ class PronunciationDictionary(private val context: Context) {
 
     init {
         load()
-        addDefaultEntries()
+        removeLegacyDefaultsOnce()
     }
 
-    /** إضافة إدخالات افتراضية عربية شائعة */
-    private fun addDefaultEntries() {
-        val defaults = mapOf(
+    /** الإدخالات الافتراضية القديمة التي كانت تُزرَع تلقائياً في نسخ سابقة؛
+     *  تُحذف عند الترقية ليبقى القاموس افتراضياً فارغاً ويبنيه المستخدم وحده
+     *  (إضافة/تعديل/استيراد/تصدير) دون كلمات مفروضة من التطبيق. */
+    private fun legacyDefaultEntries(): Map<String, String> = mapOf(
             // اختصارات طبية — مع النقطة فقط لمنع الاستبدال غير المقصود في النصوص العادية
             "د." to "دكتور",
             "أ.د" to "أستاذ دكتور",
@@ -142,21 +145,31 @@ class PronunciationDictionary(private val context: Context) {
             "ديس" to "ديسمبر"
         )
 
-        for ((key, value) in defaults) {
-            if (!entries.containsKey(key)) {
-                entries[key] = value
+    /** هجرة لمرة واحدة: حذف الإدخالات الافتراضية القديمة المخزّنة عند المستخدم.
+     *  تُحذف المزاوجات المطابقة للافتراضي فقط (لا تُمسّ تعديلات المستخدم على نفس المفتاح). */
+    private fun removeLegacyDefaultsOnce() {
+        val sp = prefs ?: return
+        if (sp.getBoolean(KEY_DEFAULTS_MIGRATED, false)) return
+        var changed = false
+        for ((key, value) in legacyDefaultEntries()) {
+            if (entries[key] == value) {
+                entries.remove(key)
+                changed = true
             }
         }
         // تنظيف إدخالات قديمة ضارة خُزّنت في نسخ سابقة على أجهزة المستخدمين
-        // (استُبدل لفظ كتابةً وفاق بحيث شوّهت «50 ريال قطري» و«500 جم»):
-        // - "ريال" كانت تُحوَّل دائماً إلى "ريال سعودي".
-        // - "جم" (غرام) كانت تُحوَّل إلى "الجمعة".
+        // (استُبدل لفظ كتابةً وفاق بحيث شوّهت «50 ريال قطري» و«500 جم»)
         for ((key, badValue) in mapOf("ريال" to "ريال سعودي", "جم" to "الجمعة")) {
             if (entries[key] == badValue) {
                 entries.remove(key)
+                changed = true
             }
         }
-        save()
+        if (changed) {
+            ahoCorasick = null
+            save()
+        }
+        sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
     }
 
     /** تطبيق القاموس على نص */

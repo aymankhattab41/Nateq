@@ -25,9 +25,10 @@ internal data class AccordionEntry(
 )
 
 /**
- * ضابط الأكورديون والتنقل على مستويين (القائمة الرئيسية وشاشة القسم):
- * بطاقات الأقسام القابلة للفتح، زر العودة، أسطر حالة كل قسم، وقسم
- * «أدوات التطبيق» القابل للطي.
+ * ضابط التنقّل على ثلاثة مستويات (الرئيسية ← المجموعة ← القسم):
+ * القائمة الرئيسية تعرض المفتاح الرئيسي وأزرار المجموعات الثلاث المستقلة
+ * (إعدادات خاصة/عامة/متقدمة)، والضغط على أي زر يدخل إلى شاشة مجموعته،
+ * ومنها تُفتح بطاقات الأقسام كشاشات فرعية، مع زر رجوع تدريجي ومفتاح النظام.
  */
 internal class SettingsAccordionController(
     private val fragment: Fragment,
@@ -39,48 +40,52 @@ internal class SettingsAccordionController(
 
     private val accordionEntries = mutableListOf<AccordionEntry>()
 
-    // ===== التنقّل بين المستويين: القائمة الرئيسية وشاشة القسم =====
+    // ===== المجموعات (إعدادات خاصة / عامة / متقدمة) =====
+    private class GroupState(val headerId: Int, val contentId: Int)
+
+    private val groupStates = listOf(
+        GroupState(R.id.ll_group_special_header, R.id.ll_group_special_content),
+        GroupState(R.id.ll_group_general_header, R.id.ll_group_general_content),
+        GroupState(R.id.ll_group_advanced_header, R.id.ll_group_advanced_content)
+    )
+
+    /** مستويات التنقّل: الرئيسية / شاشة مجموعة / شاشة قسم فرعي */
+    private enum class Level { HOME, GROUP, SECTION }
+
+    private var level = Level.HOME
+
+    /** المجموعة المفتوحة حالياً (شاشة مجموعتها أو قسمٌ داخلها) */
+    private var currentGroup: GroupState? = null
+
+    // ===== التنقّل بين المستويات: الرئيسية ومجموعة وقسم =====
     private var llDetailBack: android.widget.LinearLayout? = null
     private var llMasterSwitch: android.widget.LinearLayout? = null
     private var svSettingsScroll: NestedScrollView? = null
     private var tvSectionTitle: TextView? = null
     private var tvBackToList: MaterialButton? = null
-    private var dictHeader: View? = null
-    private var dictContent: View? = null
     private var switchHome: SwitchMaterial? = null
-    private var detailOpen = false
-    private var dictContentPriorVisibility = View.GONE
-
-    /** حالة طي قسم «أدوات التطبيق» (مفتوح افتراضياً). */
-    private var toolsSectionOpen = true
-
-    /** حالة طي قسم «مساعدة» (مفتوح افتراضياً). */
-    private var helpSectionOpen = true
 
     /** تحذير لمرة واحدة في الجلسة إذا كان إذن الإشعارات مرفوضاً (الأزرار لن تظهر). */
     private var notificationsHiddenWarned = false
 
     private val backCallback = object : OnBackPressedCallback(false) {
         override fun handleOnBackPressed() {
-            if (detailOpen) showHome()
+            goBack()
         }
     }
 
-    /** يربط عروض التنقل ويسجّل بطاقات الأقسام ومستمع زر العودة وقسم الأدوات. */
+    /** يربط عروض التنقّل ويسجّل بطاقات الأقسام ومستمع زر العودة وأزرار المجموعات. */
     fun setup(view: View, owner: LifecycleOwner) {
         llDetailBack = view.findViewById(R.id.ll_detail_back)
         llMasterSwitch = view.findViewById(R.id.ll_master_switch)
         svSettingsScroll = view.findViewById(R.id.sv_settings_scroll)
         tvSectionTitle = view.findViewById(R.id.tv_detail_section_title)
         tvBackToList = view.findViewById(R.id.btn_back_to_list)
-        dictHeader = view.findViewById(R.id.ll_dict_header)
-        dictContent = view.findViewById(R.id.ll_dict_content)
         switchHome = view.findViewById(R.id.switch_all_announcements)
-        view.findViewById<View>(R.id.btn_back_to_list).setOnClickListener { showHome() }
+        view.findViewById<View>(R.id.btn_back_to_list).setOnClickListener { goBack() }
         fragment.requireActivity().onBackPressedDispatcher.addCallback(owner, backCallback)
         setupAccordionSections(view)
-        setupToolsSection(view)
-        setupHelpSection(view)
+        setupGroupSections(view)
         showHome()
     }
 
@@ -99,7 +104,7 @@ internal class SettingsAccordionController(
         val content = root.findViewById<View>(contentId) ?: return
         header.tag = base
         accordionEntries.add(AccordionEntry(header, arrow, status, content))
-        // في القائمة الرئيسية: فتح شاشة القسم عند الضغط على البطاقة
+        // داخل شاشة المجموعة: فتح شاشة القسم عند الضغط على البطاقة
         header.setOnClickListener { openSection(content) }
         content.visibility = View.GONE
         arrow.text = sectionArrowGlyph()
@@ -132,14 +137,17 @@ internal class SettingsAccordionController(
 
     /** فتح شاشة قسم فرعي: إخفاء كل شيء عدا القسم المطلوب + شريط العودة */
     private fun openSection(content: View) {
-        detailOpen = true
+        level = Level.SECTION
         backCallback.isEnabled = true
         llDetailBack?.visibility = View.VISIBLE
         llMasterSwitch?.visibility = View.GONE
-        dictContentPriorVisibility = dictContent?.visibility ?: View.GONE
-        dictHeader?.visibility = View.GONE
-        dictContent?.visibility = View.GONE
-        setHomeActionsVisible(false)
+        // المجموعة الحاوية للقسم تُبقى ظاهرة (محتوى القسم يعيش داخلها)
+        val group = groupStates.firstOrNull { g ->
+            val container = fragment.view?.findViewById<View>(g.contentId)
+            container != null && isDescendantOf(content, container)
+        }
+        currentGroup = group
+        applyGroupVisibility(false, group)
         setSectionDividersVisible(false)
         svSettingsScroll?.scrollTo(0, 0)
         var sectionName = ""
@@ -149,15 +157,74 @@ internal class SettingsAccordionController(
             // رأس القسم المفتوح يُخفى أيضاً: tvSectionTitle يعرض اسمه أعلى الشاشة
             e.header.visibility = View.GONE
             e.status?.visibility = if (target) View.VISIBLE else View.GONE
+            e.arrow.visibility = View.GONE
             e.content.visibility = if (target) View.VISIBLE else View.GONE
         }
         tvSectionTitle?.text = sectionName
+        // زر العودة في مستوى القسم يعود إلى شاشته المجموعة (وليس القائمة الرئيسية)
+        tvBackToList?.text = if (group != null) {
+            fragment.getString(R.string.back_to_group, groupTitle(group))
+        } else {
+            fragment.getString(R.string.back_label)
+        }
         // إعلان مسموع لفتح القسم + نقل تركيز الوصول إلى أول عنصر تفاعلي في المحتوى
         val focusTarget = findFirstFocusableView(content)
             ?: tvBackToList
         focusTarget?.let {
             it.announceCompat(fragment.getString(R.string.section_opened, sectionName))
             focusForAccessibility(it)
+        }
+    }
+
+    /** فتح شاشة مجموعة (إعدادات خاصة/عامة/متقدمة): بطاقات المجموعة فقط + شريط العودة */
+    private fun openGroup(group: GroupState) {
+        level = Level.GROUP
+        currentGroup = group
+        backCallback.isEnabled = true
+        llDetailBack?.visibility = View.VISIBLE
+        llMasterSwitch?.visibility = View.GONE
+        applyGroupVisibility(false, group)
+        svSettingsScroll?.scrollTo(0, 0)
+        val container = fragment.view?.findViewById<View>(group.contentId) ?: return
+        for (e in accordionEntries) {
+            val inGroup = isDescendantOf(e.header, container)
+            e.header.visibility = if (inGroup) View.VISIBLE else View.GONE
+            e.status?.visibility = if (inGroup) View.VISIBLE else View.GONE
+            e.arrow.visibility = if (inGroup) View.VISIBLE else View.GONE
+            e.arrow.text = sectionArrowGlyph()
+            e.content.visibility = View.GONE
+        }
+        val groupTitle = groupTitle(group)
+        tvSectionTitle?.text = groupTitle
+        // زر العودة في مستوى المجموعة يعود للقائمة الرئيسية
+        tvBackToList?.text = fragment.getString(R.string.back_label)
+        val focusTarget = findFirstFocusableView(container)
+            ?: tvBackToList
+        focusTarget?.let {
+            it.announceCompat(fragment.getString(R.string.section_opened, groupTitle))
+            focusForAccessibility(it)
+        }
+    }
+
+    /** إظهار/إخفاء رؤوس وحاويات المجموعات: الرئيسية تُظهر الرؤوس فقط، وشاشة المجموعة حاويتها */
+    private fun applyGroupVisibility(home: Boolean, active: GroupState?) {
+        groupStates.forEach { g ->
+            fragment.view?.findViewById<View>(g.headerId)?.visibility =
+                if (home) View.VISIBLE else View.GONE
+            fragment.view?.findViewById<View>(g.contentId)?.visibility =
+                if (!home && active != null && g.contentId == active.contentId) View.VISIBLE
+                else View.GONE
+        }
+    }
+
+    /** رجوع تدريجي: قسم ← مجموعة ← رئيسية (أو تسليم المفتاح للنظام فوق الرئيسية) */
+    private fun goBack() {
+        val group = currentGroup
+        when {
+            level == Level.SECTION && group != null -> openGroup(group)
+            level == Level.GROUP -> showHome()
+            level == Level.SECTION -> showHome()
+            else -> { /* في الرئيسية: يعالج مفتاح الرجوع النظامي الخروج من الشاشة */ }
         }
     }
 
@@ -192,26 +259,25 @@ internal class SettingsAccordionController(
         )
     }
 
-    /** العودة إلى القائمة الرئيسية: تُظهر كل البطاقات وتطوي المحتويات */
+    /** العودة إلى القائمة الرئيسية: المفتاح الرئيسي + أزرار المجموعات الثلاث فقط */
     fun showHome() {
-        val returning = detailOpen
-        detailOpen = false
+        val returning = level != Level.HOME
+        level = Level.HOME
+        currentGroup = null
         backCallback.isEnabled = false
         llDetailBack?.visibility = View.GONE
         llMasterSwitch?.visibility = View.VISIBLE
-        dictHeader?.visibility = View.VISIBLE
-        dictContent?.visibility = dictContentPriorVisibility
-        setHomeActionsVisible(true)
+        applyGroupVisibility(true, null)
         setSectionDividersVisible(true)
         svSettingsScroll?.scrollTo(0, 0)
+        // بطاقات الأقسام لا تظهر إلا داخل شاشات مجموعاتها
         for (e in accordionEntries) {
-            e.header.visibility = View.VISIBLE
-            e.status?.visibility = View.VISIBLE
+            e.header.visibility = View.GONE
+            e.status?.visibility = View.GONE
+            e.arrow.visibility = View.GONE
             e.content.visibility = View.GONE
-            e.arrow.visibility = View.VISIBLE
-            e.arrow.text = sectionArrowGlyph()
         }
-        // عند العودة من قسم فقط: نعيد التركيز للمفتاح الرئيسي مع إعلان مسموع
+        // عند العودة من مستوى أعمق: نعيد تركيز المفتاح الرئيسي مع إعلان مسموع
         if (returning) {
             switchHome?.announceCompat(fragment.getString(R.string.back_to_home))
             switchHome?.let { focusForAccessibility(it) }
@@ -245,29 +311,23 @@ internal class SettingsAccordionController(
         }
     }
 
-    /** إظهار/إخفاء أدوات القائمة الرئيسية (الحفظ/الاستعادة/النسخ) */
-    private fun setHomeActionsVisible(visible: Boolean) {
-        val v = if (visible) View.VISIBLE else View.GONE
-        fragment.view?.findViewById<View>(R.id.ll_tools_header)?.visibility = v
-        // المحتوى يسترجع حالته الأصلية (مفتوح إن كان مفتوحاً قبل الدخول لقسم)
-        if (visible && toolsSectionOpen) {
-            fragment.view?.findViewById<View>(R.id.ll_tools_content)?.visibility = View.VISIBLE
-        } else if (!visible) {
-            fragment.view?.findViewById<View>(R.id.ll_tools_content)?.visibility = v
+    /** هل child داخل سلالة ancestor في شجرة العروض؟ (بديل isDescendantOf API 33+) */
+    private fun isDescendantOf(child: View, ancestor: View): Boolean {
+        var current: View? = child
+        while (current != null) {
+            if (current === ancestor) return true
+            current = current.parent as? View
         }
-        // قسم المساعدة يتبعه نفس المنطق
-        fragment.view?.findViewById<View>(R.id.ll_help_header)?.visibility = v
-        if (visible && helpSectionOpen) {
-            fragment.view?.findViewById<View>(R.id.ll_help_content)?.visibility = View.VISIBLE
-        } else if (!visible) {
-            fragment.view?.findViewById<View>(R.id.ll_help_content)?.visibility = v
-        }
+        return false
     }
 
-    /** تسجيل الأقسام كبطاقات في القائمة الرئيسية (تُفتح كل منها شاشة فرعية) */
+    /** تسجيل الأقسام كبطاقات تُفتح كلٌّ منها شاشةً فرعية */
     private fun setupAccordionSections(view: View) {
         accordionEntries.clear()
         val engine = fragment.getString(R.string.section_voice_selection)
+        val dict = fragment.getString(R.string.section_pronunciation_dict)
+        val tools = fragment.getString(R.string.tools_section)
+        val help = fragment.getString(R.string.help_section)
         val cats = fragment.getString(R.string.voice_category_default)
         val time = fragment.getString(R.string.section_time_announcement)
         val num = fragment.getString(R.string.section_number_reading)
@@ -278,7 +338,7 @@ internal class SettingsAccordionController(
         val general = fragment.getString(R.string.section_general_settings)
         val deviceHealth = fragment.getString(R.string.section_device_health)
 
-        // المجموعة الأولى: إعدادات عادية
+        // مجموعة «إعدادات خاصة»: الوقت / الإشعارات / الرسائل / نطق المتصل
         accordionEntry(
             view, R.id.ll_time_announcement_header, R.id.tv_time_announcement_arrow,
             R.id.tv_time_announcement_status, R.id.ll_time_announcement_settings,
@@ -300,12 +360,7 @@ internal class SettingsAccordionController(
             caller
         )
 
-        // المجموعة الثانية: إعدادات متقدمة
-        accordionEntry(
-            view, R.id.ll_engine_header, R.id.tv_engine_arrow,
-            R.id.tv_engine_status, R.id.ll_engine_content,
-            engine
-        )
+        // مجموعة «إعدادات عامة»: فئات الأصوات / قراءة الأرقام / البطارية / عام / صحة الجهاز
         accordionEntry(
             view, R.id.ll_categories_header, R.id.tv_categories_arrow,
             R.id.tv_categories_status, R.id.ll_categories_content,
@@ -330,6 +385,28 @@ internal class SettingsAccordionController(
             view, R.id.ll_device_health_header, R.id.tv_device_health_arrow,
             R.id.tv_device_health_status, R.id.ll_device_health_content,
             deviceHealth
+        )
+
+        // مجموعة «إعدادات متقدمة»: اختيار الأصوات / قاموس النطق / أدوات التطبيق / مساعدة
+        accordionEntry(
+            view, R.id.ll_engine_header, R.id.tv_engine_arrow,
+            R.id.tv_engine_status, R.id.ll_engine_content,
+            engine
+        )
+        accordionEntry(
+            view, R.id.ll_dict_header, R.id.tv_dict_arrow,
+            0, R.id.ll_dict_content,
+            dict
+        )
+        accordionEntry(
+            view, R.id.ll_tools_header, R.id.tv_tools_arrow,
+            0, R.id.ll_tools_content,
+            tools
+        )
+        accordionEntry(
+            view, R.id.ll_help_header, R.id.tv_help_arrow,
+            0, R.id.ll_help_content,
+            help
         )
     }
 
@@ -505,43 +582,29 @@ internal class SettingsAccordionController(
         else labels.joinToString("، ")
     }
 
-    // ===== قسم مساعدة قابل للطي (راسل المطور / اللغة / البحث عن تحديثات) =====
-    private fun setupHelpSection(view: View) {
-        val header = view.findViewById<View>(R.id.ll_help_header) ?: return
-        val content = view.findViewById<View>(R.id.ll_help_content) ?: return
-        val arrow = view.findViewById<TextView>(R.id.tv_help_arrow) ?: return
-        val base = fragment.getString(R.string.help_section)
-        header.contentDescription = base
-        header.setOnClickListener {
-            helpSectionOpen = content.visibility != View.VISIBLE
-            content.visibility = if (helpSectionOpen) View.VISIBLE else View.GONE
-            arrow.text = if (helpSectionOpen) "▼" else sectionArrowGlyph()
-            header.announceCompat(
-                fragment.getString(
-                    if (helpSectionOpen) R.string.section_opened else R.string.section_collapsed,
-                    base
-                )
+    /** تسجيل أزرار المجموعات كأزرار مستقلة: ضغطة تفتح شاشة المجموعة */
+    private fun setupGroupSections(view: View) {
+        groupStates.forEach { g ->
+            val header = view.findViewById<View>(g.headerId) ?: return@forEach
+            val arrow = view.findViewById<TextView>(
+                when (g.headerId) {
+                    R.id.ll_group_special_header -> R.id.tv_group_special_arrow
+                    R.id.ll_group_general_header -> R.id.tv_group_general_arrow
+                    else -> R.id.tv_group_advanced_arrow
+                }
             )
+            header.contentDescription = groupTitle(g)
+            arrow?.text = sectionArrowGlyph()
+            header.setOnClickListener { openGroup(g) }
         }
     }
 
-    // ===== قسم أدوات التطبيق القابل للطي =====
-    private fun setupToolsSection(view: View) {
-        val header = view.findViewById<View>(R.id.ll_tools_header) ?: return
-        val content = view.findViewById<View>(R.id.ll_tools_content) ?: return
-        val arrow = view.findViewById<TextView>(R.id.tv_tools_arrow) ?: return
-        val base = fragment.getString(R.string.tools_section)
-        header.contentDescription = base
-        header.setOnClickListener {
-            toolsSectionOpen = content.visibility != View.VISIBLE
-            content.visibility = if (toolsSectionOpen) View.VISIBLE else View.GONE
-            arrow.text = if (toolsSectionOpen) "▼" else sectionArrowGlyph()
-            header.announceCompat(
-                fragment.getString(
-                    if (toolsSectionOpen) R.string.section_opened else R.string.section_collapsed,
-                    base
-                )
-            )
+    /** عنوان المجموعة المقروء (إعدادات خاصة/عامة/متقدمة) */
+    private fun groupTitle(group: GroupState): String = fragment.getString(
+        when (group.headerId) {
+            R.id.ll_group_special_header -> R.string.group_special_title
+            R.id.ll_group_general_header -> R.string.group_general_title
+            else -> R.string.group_advanced_title
         }
-    }
+    )
 }

@@ -101,17 +101,43 @@
         <!-- عنوان القسم: اختيار الأصوات للغات (قابل للطي) -->
         
         <!-- إعدادات عادية -->
-        <TextView
-            android:id="@+id/tv_group_normal_title"
+        
+        <LinearLayout
+            android:id="@+id/ll_group_special_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="إعدادات عادية"
-            android:textAppearance="?attr/textAppearanceHeadline6"
-            android:textColor="@color/text_secondary"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="4dp"
-            android:importantForAccessibility="yes"
-            android:accessibilityHeading="true" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:minHeight="48dp"
+            android:padding="4dp"
+            android:layout_marginTop="16dp"
+            android:background="?attr/selectableItemBackground"
+            android:focusable="true"
+            android:accessibilityHeading="true"
+            android:importantForAccessibility="yes">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:importantForAccessibility="no"
+                android:text="@string/group_special_title"
+                android:textAppearance="?attr/textAppearanceHeadline6" />
+
+            <TextView
+                android:id="@+id/tv_group_special_arrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="‹"
+                android:textSize="14sp"
+                android:paddingStart="8dp"
+                android:importantForAccessibility="no" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/ll_group_special_content"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
 <LinearLayout
             android:id="@+id/ll_time_announcement_header"
             android:layout_width="match_parent"
@@ -260,19 +286,13 @@
                 android:textOff="@string/toggle_off"
                 android:textOn="@string/toggle_on" />
 
-        </LinearLayout>
-
-        <!-- فاصل -->
-        <View
+        </LinearLayout>        <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:layout_marginTop="24dp"
-            android:layout_marginBottom="16dp"
-            android:tag="section_divider"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="4dp"
             android:background="@color/divider_color" />
-
-        <!-- قسم نطق الأرقام (قابل للطي) -->
-        <LinearLayout
+<LinearLayout
             android:id="@+id/ll_notification_reading_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -391,19 +411,13 @@
                     android:importantForAccessibility="no" />
             </LinearLayout>
 
-        </LinearLayout>
-
-        <!-- فاصل -->
-        <View
+        </LinearLayout>        <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:layout_marginTop="24dp"
-            android:layout_marginBottom="16dp"
-            android:tag="section_divider"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="4dp"
             android:background="@color/divider_color" />
-
-        <!-- قسم إعلان اسم المتصل (قابل للطي) -->
-        <LinearLayout
+<LinearLayout
             android:id="@+id/ll_sms_reading_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -559,19 +573,13 @@
                     android:importantForAccessibility="yes" />
             </com.google.android.material.textfield.TextInputLayout>
 
-        </LinearLayout>
-
-        <!-- فاصل -->
-        <View
+        </LinearLayout>        <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:layout_marginTop="24dp"
-            android:layout_marginBottom="16dp"
-            android:tag="section_divider"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="4dp"
             android:background="@color/divider_color" />
-
-        <!-- إعدادات عامة (قابلة للطي) -->
-        <LinearLayout
+<LinearLayout
             android:id="@+id/ll_caller_announcement_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -764,198 +772,50 @@
                 android:contentDescription="@string/caller_announcement_volume" />
 
         </LinearLayout>
-
-        <!-- فاصل -->
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="24dp"
-            android:layout_marginBottom="16dp"
-            android:tag="section_divider"
-            android:background="@color/divider_color" />
-
-        <!-- قسم قراءة الرسائل الواردة (قابل للطي) -->
-        
-        <!-- فاصل بين المجموعتين -->
+        </LinearLayout>
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginTop="16dp"
             android:layout_marginBottom="4dp"
             android:background="@color/divider_color" />
-
-        <!-- إعدادات متقدمة -->
-        <TextView
-            android:id="@+id/tv_group_advanced_title"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="إعدادات متقدمة"
-            android:textAppearance="?attr/textAppearanceHeadline6"
-            android:textColor="@color/text_secondary"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="4dp"
-            android:importantForAccessibility="yes"
-            android:accessibilityHeading="true" />
-<LinearLayout
-            android:id="@+id/ll_engine_header"
+        <LinearLayout
+            android:id="@+id/ll_group_general_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:minHeight="48dp"
             android:padding="4dp"
+            android:layout_marginTop="16dp"
             android:background="?attr/selectableItemBackground"
             android:focusable="true"
             android:accessibilityHeading="true"
             android:importantForAccessibility="yes">
 
             <TextView
-                android:id="@+id/tv_section_title"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:importantForAccessibility="no"
-                android:text="@string/section_voice_selection"
+                android:text="@string/group_general_title"
                 android:textAppearance="?attr/textAppearanceHeadline6" />
 
             <TextView
-                android:id="@+id/tv_engine_arrow"
+                android:id="@+id/tv_group_general_arrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="▲"
+                android:text="‹"
                 android:textSize="14sp"
                 android:paddingStart="8dp"
                 android:importantForAccessibility="no" />
         </LinearLayout>
-
-        <TextView
-            android:id="@+id/tv_engine_status"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textAppearance="?attr/textAppearanceCaption"
-            android:textColor="@color/text_secondary"
-            android:importantForAccessibility="no" />
-
-        <!-- قسم المحرك: إعدادات المحرك والتحويل التلقائي -->
         <LinearLayout
-            android:id="@+id/ll_engine_content"
+            android:id="@+id/ll_group_general_content"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical">
-        <!-- قسم التحويل التلقائي بين اللغات -->
-        <TextView
-            android:id="@+id/tv_auto_convert_title"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/auto_convert_summary"
-            android:textAppearance="?attr/textAppearanceBody2"
-            android:importantForAccessibility="yes" />
-
-        <com.google.android.material.checkbox.MaterialCheckBox
-            android:id="@+id/checkbox_auto_convert"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:minHeight="48dp"
-            android:text="@string/auto_convert_enabled"
-            android:importantForAccessibility="yes" />
-
-        <!-- صندوق المحركات (داخل قسم التحويل التلقائي بين اللغات) -->
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/til_engine"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:hint="@string/engine_select">
-            <androidx.appcompat.widget.AppCompatSpinner
-                android:id="@+id/spinner_engine"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="48dp"
-                android:focusable="true"
-                android:importantForAccessibility="yes"
-                android:contentDescription="@string/spinner_engine_content" />
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <!-- لا يوجد أي محرك TTS على الجهاز إطلاقاً: رسالة + زر تثبيت من المتجر -->
-        <TextView
-            android:id="@+id/tv_no_engines_message"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:padding="12dp"
-            android:visibility="gone"
-            android:text="@string/no_tts_engines_message"
-            android:textAppearance="?attr/textAppearanceBody2"
-            android:importantForAccessibility="yes" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_install_engine"
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:minHeight="48dp"
-            android:visibility="gone"
-            android:text="@string/install_engine_from_store"
-            android:importantForAccessibility="yes" />
-
-        <!-- فتح إعدادات TTS لاختيار LORD كمحرك افتراضي (لا يمكن فعله برمجياً) -->
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_set_default_engine"
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:minHeight="48dp"
-            android:text="@string/set_default_engine"
-            android:importantForAccessibility="yes" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_convert_languages"
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:minHeight="48dp"
-            android:text="@string/convert_languages_button"
-            android:importantForAccessibility="yes" />
-
-        <!-- توضيح اختياري (نص فقط، غير افتراضي): سبب غياب بعض اللغات -->
-        <com.google.android.material.checkbox.MaterialCheckBox
-            android:id="@+id/checkbox_language_install_hint"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:minHeight="48dp"
-            android:text="@string/language_install_hint_toggle"
-            android:importantForAccessibility="yes" />
-
-        <TextView
-            android:id="@+id/tv_language_install_hint"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:padding="8dp"
-            android:visibility="gone"
-            android:text="@string/language_install_hint"
-            android:textAppearance="?attr/textAppearanceBody2"
-            android:importantForAccessibility="yes" />
-
-        </LinearLayout>
-
-        <!-- فاصل -->
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="24dp"
-            android:layout_marginBottom="16dp"
-            android:tag="section_divider"
-            android:background="@color/divider_color" />
-
-        <!-- قسم فئات الأصوات المخصصة (قابل للطي) -->
-        <LinearLayout
+<LinearLayout
             android:id="@+id/ll_categories_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -1011,19 +871,13 @@
                 android:nestedScrollingEnabled="false"
                 android:minHeight="400dp" />
 
-        </LinearLayout>
-
-        <!-- فاصل -->
-        <View
+        </LinearLayout>        <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:layout_marginTop="24dp"
-            android:layout_marginBottom="16dp"
-            android:tag="section_divider"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="4dp"
             android:background="@color/divider_color" />
-
-        <!-- قسم إعدادات إعلان الوقت (قابل للطي) -->
-        <LinearLayout
+<LinearLayout
             android:id="@+id/ll_number_reading_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -1182,19 +1036,13 @@
 
         </LinearLayout>
 
-        </LinearLayout>
-
-        <!-- فاصل -->
-        <View
+        </LinearLayout>        <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:layout_marginTop="24dp"
-            android:layout_marginBottom="16dp"
-            android:tag="section_divider"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="4dp"
             android:background="@color/divider_color" />
-
-        <!-- قسم إعلان مستوى البطارية (قابل للطي) -->
-        <LinearLayout
+<LinearLayout
             android:id="@+id/ll_battery_announcement_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -1435,19 +1283,13 @@
                 android:progress="100"
                 android:contentDescription="@string/battery_announcement_volume" />
 
-        </LinearLayout>
-
-        <!-- فاصل -->
-        <View
+        </LinearLayout>        <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:layout_marginTop="24dp"
-            android:layout_marginBottom="16dp"
-            android:tag="section_divider"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="4dp"
             android:background="@color/divider_color" />
-
-        <!-- قسم قراءة الإشعارات (قابل للطي) -->
-        <LinearLayout
+<LinearLayout
             android:id="@+id/ll_general_settings_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -1615,19 +1457,13 @@
 
             </LinearLayout>
 
-        </LinearLayout>
-
-        <!-- فاصل -->
-        <View
+        </LinearLayout>        <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:layout_marginTop="24dp"
-            android:layout_marginBottom="16dp"
-            android:tag="section_divider"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="4dp"
             android:background="@color/divider_color" />
-
-        <!-- صحة الجهاز عند الطلب (قابل للطي) -->
-        <LinearLayout
+<LinearLayout
             android:id="@+id/ll_device_health_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -1750,18 +1586,203 @@
             </LinearLayout>
 
         </LinearLayout>
-
-        <!-- فاصل -->
+        </LinearLayout>
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:layout_marginTop="24dp"
-            android:layout_marginBottom="16dp"
-            android:tag="section_divider"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="4dp"
             android:background="@color/divider_color" />
-
-        <!-- قاموس النطق الشخصي (قابل للتوسيع) -->
         <LinearLayout
+            android:id="@+id/ll_group_advanced_header"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:minHeight="48dp"
+            android:padding="4dp"
+            android:layout_marginTop="16dp"
+            android:background="?attr/selectableItemBackground"
+            android:focusable="true"
+            android:accessibilityHeading="true"
+            android:importantForAccessibility="yes">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:importantForAccessibility="no"
+                android:text="@string/group_advanced_title"
+                android:textAppearance="?attr/textAppearanceHeadline6" />
+
+            <TextView
+                android:id="@+id/tv_group_advanced_arrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="‹"
+                android:textSize="14sp"
+                android:paddingStart="8dp"
+                android:importantForAccessibility="no" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/ll_group_advanced_content"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+<LinearLayout
+            android:id="@+id/ll_engine_header"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:minHeight="48dp"
+            android:padding="4dp"
+            android:background="?attr/selectableItemBackground"
+            android:focusable="true"
+            android:accessibilityHeading="true"
+            android:importantForAccessibility="yes">
+
+            <TextView
+                android:id="@+id/tv_section_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:importantForAccessibility="no"
+                android:text="@string/section_voice_selection"
+                android:textAppearance="?attr/textAppearanceHeadline6" />
+
+            <TextView
+                android:id="@+id/tv_engine_arrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="▲"
+                android:textSize="14sp"
+                android:paddingStart="8dp"
+                android:importantForAccessibility="no" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tv_engine_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textAppearance="?attr/textAppearanceCaption"
+            android:textColor="@color/text_secondary"
+            android:importantForAccessibility="no" />
+
+        <!-- قسم المحرك: إعدادات المحرك والتحويل التلقائي -->
+        <LinearLayout
+            android:id="@+id/ll_engine_content"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+        <!-- قسم التحويل التلقائي بين اللغات -->
+        <TextView
+            android:id="@+id/tv_auto_convert_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/auto_convert_summary"
+            android:textAppearance="?attr/textAppearanceBody2"
+            android:importantForAccessibility="yes" />
+
+        <com.google.android.material.checkbox.MaterialCheckBox
+            android:id="@+id/checkbox_auto_convert"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:minHeight="48dp"
+            android:text="@string/auto_convert_enabled"
+            android:importantForAccessibility="yes" />
+
+        <!-- صندوق المحركات (داخل قسم التحويل التلقائي بين اللغات) -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/til_engine"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:hint="@string/engine_select">
+            <androidx.appcompat.widget.AppCompatSpinner
+                android:id="@+id/spinner_engine"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:focusable="true"
+                android:importantForAccessibility="yes"
+                android:contentDescription="@string/spinner_engine_content" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- لا يوجد أي محرك TTS على الجهاز إطلاقاً: رسالة + زر تثبيت من المتجر -->
+        <TextView
+            android:id="@+id/tv_no_engines_message"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:padding="12dp"
+            android:visibility="gone"
+            android:text="@string/no_tts_engines_message"
+            android:textAppearance="?attr/textAppearanceBody2"
+            android:importantForAccessibility="yes" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_install_engine"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:minHeight="48dp"
+            android:visibility="gone"
+            android:text="@string/install_engine_from_store"
+            android:importantForAccessibility="yes" />
+
+        <!-- فتح إعدادات TTS لاختيار LORD كمحرك افتراضي (لا يمكن فعله برمجياً) -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_set_default_engine"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:minHeight="48dp"
+            android:text="@string/set_default_engine"
+            android:importantForAccessibility="yes" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_convert_languages"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:minHeight="48dp"
+            android:text="@string/convert_languages_button"
+            android:importantForAccessibility="yes" />
+
+        <!-- توضيح اختياري (نص فقط، غير افتراضي): سبب غياب بعض اللغات -->
+        <com.google.android.material.checkbox.MaterialCheckBox
+            android:id="@+id/checkbox_language_install_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:minHeight="48dp"
+            android:text="@string/language_install_hint_toggle"
+            android:importantForAccessibility="yes" />
+
+        <TextView
+            android:id="@+id/tv_language_install_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:padding="8dp"
+            android:visibility="gone"
+            android:text="@string/language_install_hint"
+            android:textAppearance="?attr/textAppearanceBody2"
+            android:importantForAccessibility="yes" />
+
+        </LinearLayout>        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="4dp"
+            android:background="@color/divider_color" />
+<LinearLayout
             android:id="@+id/ll_dict_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -1847,10 +1868,13 @@
             android:nestedScrollingEnabled="true"
             android:minHeight="200dp"
             android:maxHeight="300dp" />
-        </LinearLayout>
-
-    <!-- أدوات التطبيق: الحفظ / الاستعادة / النسخ — قابلة للطي -->
-        <LinearLayout
+        </LinearLayout>        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="4dp"
+            android:background="@color/divider_color" />
+<LinearLayout
             android:id="@+id/ll_tools_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -1930,10 +1954,13 @@
             android:minHeight="48dp"
             android:text="@string/restore_settings"
             android:importantForAccessibility="yes" />
-        </LinearLayout>
-
-        <!-- مساعدة: راسل المطور / تغيير اللغة / البحث عن تحديثات — قابلة للطي -->
-        <LinearLayout
+        </LinearLayout>        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="4dp"
+            android:background="@color/divider_color" />
+<LinearLayout
             android:id="@+id/ll_help_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -2007,6 +2034,8 @@
                 android:contentDescription="@string/check_updates_desc"
                 android:importantForAccessibility="yes" />
         </LinearLayout>
+        </LinearLayout>
+
 
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>
