@@ -245,7 +245,7 @@
     <string name="speech_language_to_en">التحويل إلى الإنجليزية</string>
     <string name="speech_language_to_ar">التحويل إلى العربية</string>
     <string name="auto_convert_enabled">استخدام التحويل التلقائي بين اللغات</string>
-    <string name="auto_convert_summary">اختيار صوتين مختلفين لكل لغة والتبديل بينهما تلقائياً عند تغيّر لغة القارئ</string>
+    <string name="auto_convert_summary">اختر لكل لغةٍ محركها وصوتها وأشرطتها ليُنطق بها النص المنطوق تلقائياً — لعدد غير محدود من اللغات</string>
     <string name="auto_convert_lang1_button">اللغة الأولى</string>
     <string name="auto_convert_lang2_button">اللغة الثانية</string>
     <string name="auto_convert_dialog_title">إعدادات اللغة</string>
@@ -259,6 +259,10 @@
     <string name="auto_convert_saved">تم حفظ إعدادات اللغة</string>
     <string name="auto_convert_none">لا توجد خيارات متاحة</string>
     <string name="auto_convert_loading">جاري تحميل …</string>
+    <string name="convert_languages_button">إعداد جميع اللغات…</string>
+    <string name="convert_languages_dialog_title">إعداد لغات التحويل التلقائي</string>
+    <string name="convert_languages_hint">اختر لكل لغةٍ محركها وصوتها وأشرطتها ثم اضغط حفظ. اللغة المحفوظة بدون محرك تُطبّق أشرطتها فقط.</string>
+    <string name="convert_languages_loading">جارٍ اكتشاف اللغات عبر كل المحركات المثبتة…</string>
 
     <!-- النصوص الحرفية الموحّدة -->
     <string name="toggle_on">مفعل</string>

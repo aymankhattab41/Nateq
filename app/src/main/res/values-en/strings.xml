@@ -249,7 +249,7 @@
     <string name="speech_language_to_en">Switch to English</string>
     <string name="speech_language_to_ar">Switch to Arabic</string>
     <string name="auto_convert_enabled">Use automatic language conversion</string>
-    <string name="auto_convert_summary">Choose two voices for each language and switch automatically when the screen reader language changes</string>
+    <string name="auto_convert_summary">Choose an engine, voice, and sliders for each language so spoken text is converted automatically — for any number of languages</string>
     <string name="auto_convert_lang1_button">First language</string>
     <string name="auto_convert_lang2_button">Second language</string>
     <string name="auto_convert_dialog_title">Language settings</string>
@@ -263,6 +263,10 @@
     <string name="auto_convert_saved">Language settings saved</string>
     <string name="auto_convert_none">No options available</string>
     <string name="auto_convert_loading">Loading…</string>
+    <string name="convert_languages_button">Set up all languages…</string>
+    <string name="convert_languages_dialog_title">Auto-convert language settings</string>
+    <string name="convert_languages_hint">Pick an engine, voice, and sliders for each language, then save. A language saved without an engine applies its sliders only.</string>
+    <string name="convert_languages_loading">Discovering languages across all installed engines…</string>
 
     <!-- Shared literal strings -->
     <string name="toggle_on">On</string>

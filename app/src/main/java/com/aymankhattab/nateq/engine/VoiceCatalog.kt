@@ -1,16 +1,138 @@
 package com.aymankhattab.nateq.engine
 
+import android.content.Context
 import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
+import com.aymankhattab.nateq.providers.EnginePicker
 import com.aymankhattab.nateq.providers.VoiceDescriptor
 import com.aymankhattab.nateq.providers.VoiceProvider
+import com.aymankhattab.nateq.util.LocaleUtils
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.resume
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
+
+/** محرك TTS يوفّر لغةً محددة، مع الأصوات المتاحة له داخلها. */
+data class EngineWithVoices(
+    val enginePackage: String,
+    val engineLabel: String,
+    /** الأصوات (android.speech.tts.Voice) التي يقدّمها هذا المحرك لهذه اللغة. */
+    val voices: List<Voice>
+)
 
 /**
  * يجمّع كل الأصوات المتاحة من كل المزودين (النشطين/المُهيّئين فقط)
- * في قائمة واحدة موحّدة، ليعرضها النظام وقارئ الشاشة للمستخدم.
+ * في قائمة واحدة موحّدة، كما يدير اكتشاف اللغات المتاحة فعلياً عبر
+ * كل محركات TTS المثبتة (ديناميكياً بدل قائمة ar/en الثابتة) مع بقاء
+ * العربية والإنجليزية كحد أدنى مضمون دائماً مهما تعثر الاكتشاف.
  */
 class VoiceCatalog(private val providers: List<VoiceProvider>) {
+
+    companion object {
+        private const val TAG = "NATEQ_TTS"
+
+        /** مهلة استجابة المحرك الواحد أثناء الاكتشاف (ثوانٍ) — بعض المحركات تعلّق. */
+        private const val ENGINE_PROBE_TIMEOUT_MS = 10_000L
+
+        /**
+         * يكتشف فعلياً كل اللغات المتاحة عبر كل محركات TTS المثبتة في النظام:
+         * يبني لكل محرك نسخة مؤقتة من [TextToSpeech] ويسألها [getVoices]، ثم
+         * يغلقه فوراً ([shutdown]) مهما كانت النتيجة حتى لا تُسرّب موارد.
+         *
+         * النتيجة: languageTag -> قائمة المحركات التي توفّر اللغة، وكل محرك
+         * يحمل أصواته لهذه اللغة مجمّعةً تحت اللسان نفسه (بلا تكرار محركات).
+         */
+        suspend fun discoverAllLanguagesAcrossEngines(context: Context): Map<String, List<EngineWithVoices>> {
+            val engines = EnginePicker.installedEngines(context)
+            // lang -> engine -> voices
+            val grouped = mutableMapOf<String, MutableMap<String, MutableList<Voice>>>()
+            engines.forEach { engine ->
+                val voices = runCatching {
+                    probeEngineVoices(context, engine.packageName)
+                }.getOrDefault(emptyList())
+                for (voice in voices) {
+                    val lang = LocaleUtils.normalizeLanguageCode(voice.locale?.language)
+                    if (lang.isBlank()) continue
+                    grouped.getOrPut(lang) { LinkedHashMap() }
+                        .getOrPut(engine.packageName) { mutableListOf() }
+                        .add(voice)
+                }
+            }
+            return grouped.mapValues { (_, byEngine) ->
+                byEngine.map { (pkg, engineVoices) ->
+                    val label = engines.firstOrNull { it.packageName == pkg }?.label ?: pkg
+                    EngineWithVoices(pkg, label, engineVoices.toList())
+                }
+            }
+        }
+
+        /** يسبر محركاً واحداً: نسخة مؤقتة + استعلام الأصوات، ثم إغلاق إجباري. */
+        @Suppress("DEPRECATION")
+        private suspend fun probeEngineVoices(
+            context: Context,
+            enginePackage: String
+        ): List<Voice> {
+            val result: List<Voice>? = withTimeoutOrNull(ENGINE_PROBE_TIMEOUT_MS) {
+                suspendCancellableCoroutine<List<Voice>> { cont ->
+                    lateinit var probe: TextToSpeech
+                    val finished = AtomicBoolean(false)
+                    @Suppress("DEPRECATION")
+                    probe = TextToSpeech(context, { status ->
+                        // حارس: النسخة تغلق مرة واحدة فقط مهما تكرر استدعاء المستمع.
+                        if (finished.getAndSet(true)) {
+                            runCatching { probe.shutdown() }
+                            return@TextToSpeech
+                        }
+                        try {
+                            if (status != TextToSpeech.SUCCESS) {
+                                cont.resume(emptyList())
+                            } else {
+                                val bound = runCatching { probe.setEngineByPackageName(enginePackage) }
+                                    .getOrDefault(TextToSpeech.ERROR)
+                                val voices = if (bound == TextToSpeech.SUCCESS) {
+                                    @Suppress("DEPRECATION")
+                                    runCatching { probe.getVoices() }.getOrDefault(emptySet())
+                                } else emptySet<Voice>()
+                                cont.resume(voices.toList())
+                            }
+                        } catch (_: Throwable) {
+                            cont.resume(emptyList())
+                        } finally {
+                            runCatching { probe.shutdown() }
+                        }
+                    })
+                    // إن أُغلق الاكتشاف (مهلة/إلغاء) نغلق النسخة المعلقة.
+                    cont.invokeOnCancellation {
+                        if (finished.getAndSet(true)) return@invokeOnCancellation
+                        runCatching { probe.shutdown() }
+                    }
+                }
+            }
+            return result ?: emptyList()
+        }
+    }
+
+    /**
+     * ذاكرة الاكتشاف داخل عملية المحرك (:tts) — تُبنى خلفياً عند إنشاء الخدمة
+     * ومرة كل عهد فتح قوائم الأصوات، وحين تكون فارغة تعود القوائم للحد الأدنى
+     * المضمون (العربية/الإنجليزية) فتبقى الخدمة تعمل دائماً.
+     */
+    @Volatile
+    private var discoveredByLanguage: Map<String, List<EngineWithVoices>>? = null
+
+    @Volatile
+    private var lastDiscoveryAtMs = 0L
+
+    /** يُحدّث ذاكرة الاكتشاف (يستدعيها المتصل بعد اكتشاف خلفي). */
+    fun applyDiscovery(map: Map<String, List<EngineWithVoices>>) {
+        discoveredByLanguage = map
+        lastDiscoveryAtMs = System.currentTimeMillis()
+    }
+
+    /** هل الاكتشاف مُعدَم أو انتهت صلاحيته (بعد مرور ttlMs)؟ */
+    fun needsRefresh(ttlMs: Long): Boolean =
+        lastDiscoveryAtMs == 0L || System.currentTimeMillis() - lastDiscoveryAtMs > ttlMs
 
     suspend fun allAvailableVoices(locale: Locale): List<VoiceDescriptor> =
         providers
@@ -22,14 +144,16 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
 
     /**
      * اللغات المدعومة إجمالاً (تُستخدم في onIsLanguageAvailable).
-     * مبسّطة إلى لغتين فقط كما طلب المستخدم: "العربية" و"الإنجليزية"،
-     * وتندرج كل اللهجات/البلدان المشتقة (مصر/سعودية/إمارات، أمريكا/بريطانيا)
-     * تحت لغته الأم كصوتٍ واحد.
+     * تُبنى ديناميكياً من نتيجة الاكتشاف عبر كل المحركات، مع بقاء العربية
+     * والإنجليزية كحد أدنى مضمون دائماً حتى لو لم يُكتشف أي محرك إضافي.
      */
-    fun supportedLocales(): List<Locale> = listOf(
-        Locale.forLanguageTag("ar"), // العربية (تشمل لهجات مصر/السعودية/الإمارات)
-        Locale.forLanguageTag("en")  // الإنجليزية (تشمل أمريكا/بريطانيا وأخرى)
-    )
+    fun supportedLocales(): List<Locale> {
+        val languages = LinkedHashSet<String>()
+        discoveredByLanguage?.keys?.forEach { languages.add(it) }
+        languages.add("ar") // الحد الأدنى المضمون دائماً
+        languages.add("en")
+        return languages.map { Locale.forLanguageTag(it) }.sortedBy { it.language }
+    }
 
     /**
      * قائمة الأصوات (android.speech.tts.Voice) المُعلنة للنظام.
@@ -49,15 +173,12 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
     private val offlineFeature = setOf(TextToSpeech.Engine.KEY_FEATURE_EMBEDDED_SYNTHESIS)
 
     private fun voiceNameFor(locale: Locale): String {
-        // أسماء الأصوات المعلنة في tts_engine.xml هي "ar-EG"/"en-US"،
-        // وهي نفسها المعرّفات التي يخزنها تطبيقنا في الإعدادات (بطارية/رسائل/متصل/فئات)
-        // والمعرّفات التي يُنتجها SystemVoiceProvider.listVoices(). لذلك يجب أن تطابق
-        // onGetVoices هنا هذه الأسماء بالضبط — وإلا يفشل الإبقاء على اختيار الصوت في
-        // شاشة سامسونج (رفض findIndexOfValue) ويضيع voiceId في كل عمليات البحث
-        // `voices.find { it.id == name }`. الـ locale يبقى ar/en لكل منهما.
-        // صيغة "رمز بلد ISO صريح" (EG/US) بدل "-local" لأن سامسونج يحاول تحليل
-        // اسم الصوت ككائن Locale في شاشة "Default engine/اللغة"، والاسم غير القياسي
-        // مثل "ar-local" يُبنى عنه عنصر null فيُسقط الإعدادات بانفجار NPE.
+        // أسماء الأصوات المعلنة في tts_engine.xml هي "ar-EG"/"en-US" للغتين
+        // الأساسيتين، وهي نفسها المعرّفات التي يخزنها تطبيقنا في الإعدادات
+        // (بطارية/رسائل/متصل/فئات) والمعرّفات التي يُنتجها SystemVoiceProvider.
+        // للّغات المكتشفة حديثاً (fr/de/zh/…) نُصدِر "<lang>-local" كاسم صوت
+        // موحّد يُمكّن النظام من حفظ اختيار المستخدم لهذه اللغات؛ النطق الفعلي
+        // يذهب إلى المحرك الطرفي عبر خريطة التحويل (desiredVoiceName/engine).
         return when (locale.language.lowercase(java.util.Locale.ROOT)) {
             "ar" -> "ar-EG"
             "en" -> "en-US"

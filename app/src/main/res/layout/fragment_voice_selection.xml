@@ -164,7 +164,7 @@
             android:text="@string/auto_convert_enabled"
             android:importantForAccessibility="yes" />
 
-        <!-- صندوق المحركات (داخل قسم اللغة الأولى/الثانية) -->
+        <!-- صندوق المحركات (داخل قسم التحويل التلقائي بين اللغات) -->
         <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/til_engine"
             android:layout_width="match_parent"
@@ -193,23 +193,13 @@
             android:importantForAccessibility="yes" />
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_convert_lang1"
+            android:id="@+id/btn_convert_languages"
             style="@style/Widget.MaterialComponents.Button.OutlinedButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:minHeight="48dp"
-            android:text="@string/auto_convert_lang1_button"
-            android:importantForAccessibility="yes" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_convert_lang2"
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:minHeight="48dp"
-            android:text="@string/auto_convert_lang2_button"
+            android:text="@string/convert_languages_button"
             android:importantForAccessibility="yes" />
 
         </LinearLayout>

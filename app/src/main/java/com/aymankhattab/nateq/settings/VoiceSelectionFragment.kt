@@ -2,6 +2,7 @@
 
 import android.app.AlertDialog
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -63,8 +64,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private val engines = mutableListOf<EngineInfo>()
     private lateinit var engineSection: EngineSectionController
 
-    // أعضاء المحرك وحوار التحويل (setupEngineSpinner/loadEngineCatalog/
-    // setupAutoConvertUI/showConvertDialog...) انتقلت إلى EngineSectionController.
+    // قسم المحرك والتحويل التلقائي (setupEngineSpinner/setupAutoConvertUI/
+    // قائمة اللغات المكتشفة لكل المحركات...) انتقل بالكامل إلى EngineSectionController.
 
     // ضابطات أقسام الشاشة (نقل منطق الإعدادات إليها — المرحلة ج من التفكيك)
     private lateinit var timeSection: TimeAnnouncementController
@@ -722,7 +723,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private fun performUpdateCheck(showFeedback: Boolean) {
         val context = requireContext()
         val currentCode = runCatching {
-            context.packageManager.getPackageInfo(context.packageName, 0).versionCode
+            val info = context.packageManager.getPackageInfo(context.packageName, 0)
+            val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+                info.longVersionCode
+            else
+                @Suppress("DEPRECATION") info.versionCode.toLong()
+            code.toInt()
         }.getOrDefault(0)
 
         if (showFeedback) {

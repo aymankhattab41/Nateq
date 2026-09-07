@@ -59,6 +59,11 @@
 -keep class * extends com.google.gson.reflect.TypeToken { *; }
 -keepclassmembers class * extends com.google.gson.reflect.TypeToken { *; }
 
+# تفضيلات التحويل لكل لغة (LanguageSpeechPrefs): تتسلسل/تتجزأ عبر Gson انعكاسياً
+# من SharedPreferences، فلو شُفّر اسمها أو حقولها انكسرت JSON المحفوظة (قراءة فارغة).
+# ثبّتها كما هي: الحقول (engine/voiceName/rate/pitch/volume) هي مفاتيح JSON ذاتها.
+-keep class com.aymankhattab.nateq.engine.LanguageSpeechPrefs { *; }
+
 # رموز XML/RTL ومعلومات ضرورية للانعكاس
 -keepattributes XmlAttribute
 

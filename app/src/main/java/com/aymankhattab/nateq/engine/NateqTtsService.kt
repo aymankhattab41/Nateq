@@ -38,6 +38,9 @@ class NateqTtsService : TextToSpeechService() {
 
     companion object {
         private const val TAG = "NATEQ_TTS"
+
+        /** مدة صلاحية ذاكرة اكتشاف اللغات (5 دقائق) — لا يُسبر كل محرك بعدها إلا لضرورة. */
+        private const val DISCOVERY_TTL_MS = 5 * 60 * 1000L
     }
 
     /** مصدر الإعدادات الفريد لعملية:tts — يحقنه Hilt عبر NateqApplication
@@ -75,6 +78,17 @@ class NateqTtsService : TextToSpeechService() {
         requestHandler = SynthesisRequestHandler(catalog, settings)
         textProcessor = TextProcessor(applicationContext, settings)
 
+        // اكتشاف اللغات المتاحة عبر كل محركات TTS المثبتة كخلفية: يملأ ذاكرة
+        // الكتالوج دون أن يُعقّل إنشاء الخدمة أبداً؛ وحتى لو تعذّر يبقى حد
+        // ar/en المضمون قائماً فتبقى الخدمة تُنطق دائماً.
+        serviceScope.launch {
+            try {
+                maybeRefreshDiscovery()
+            } catch (t: Throwable) {
+                Log.w(TAG, "الاكتشاف الخلفي الأولي للغات فشل", t)
+            }
+        }
+
         // ملفوف بحمايات حتى لا تنهار الخدمة عند أي خطأ تهيئة — لو انهارت هنا
         // يرفض نظام سامسونج المحرك برسالة "يستمر التطبيق في التوقف".
         try {
@@ -94,6 +108,7 @@ class NateqTtsService : TextToSpeechService() {
 
     override fun onIsLanguageAvailable(lang: String?, country: String?, variant: String?): Int {
         Log.d(TAG, "onIsLanguageAvailable() lang=$lang country=$country variant=$variant")
+        refreshDiscoveryIfNeeded()
         if (lang == null) return TextToSpeech.LANG_NOT_SUPPORTED
 
         val normLang = normalizeLanguageCode(lang)
@@ -148,6 +163,7 @@ class NateqTtsService : TextToSpeechService() {
 
     override fun onGetVoices(): MutableList<Voice> {
         Log.d(TAG, "onGetVoices() CALLED")
+        refreshDiscoveryIfNeeded()
         val voices = catalog.supportedVoices()
         Log.d(TAG, "onGetVoices() returning ${voices.size} voices: ${voices.map { it.name }}")
         return voices.toMutableList()
@@ -321,44 +337,61 @@ class NateqTtsService : TextToSpeechService() {
     }
 
     /**
+     * يكتشف اللغات عبر كل المحركات إن انقضت مدة صلاحية الذاكرة أو لم تُبنَ
+     * بعد. يعمل في الخلفية دائماً ([Dispatchers.IO]) ولا يرمي؛ تعثّر الاكتشاف
+     * يُبقي الحد الأدنى ar/en مضموناً في القوائم.
+     */
+    private suspend fun maybeRefreshDiscovery() {
+        if (!catalog.needsRefresh(DISCOVERY_TTL_MS)) return
+        val discovered = runCatching {
+            VoiceCatalog.discoverAllLanguagesAcrossEngines(applicationContext)
+        }.getOrDefault(emptyMap())
+        catalog.applyDiscovery(discovered)
+        Log.d(TAG, "maybeRefreshDiscovery: ${discovered.size} لغة عبر كل المحركات المثبتة")
+    }
+
+    /** إطلاق تحديث الاكتشاف دون انتظار (يُستدعى من دوال الاستعلام المتزامنة). */
+    private fun refreshDiscoveryIfNeeded() {
+        if (!catalog.needsRefresh(DISCOVERY_TTL_MS)) return
+        serviceScope.launch {
+            try {
+                maybeRefreshDiscovery()
+            } catch (t: Throwable) {
+                Log.w(TAG, "تحديث اللغات الخلفي فشل", t)
+            }
+        }
+    }
+
+    /**
      * يُحدّد هدف التحويل للطلب الحالي.
      *
      * الأشرطة (سرعة/نبرة/صوت) داخل حوار اللغة تُطبَّق دائماً بغضّ النظر عن
      * حالة checkbox «التحويل التلقائي»؛ لأن المستخدم قد يعدّل شريطاً يتوقع
      * أن يسمع الفرق فوراً.
      *
-     * التبديل التلقائي للمحرك/اللغة (engine/locale) فقط هو ما يتطلب تفعيل
-     * checkbox.
+     * التبديل التلقائي للمحرك/الصوت (engine) فقط هو ما يتطلب تفعيل checkbox.
+     * القراءة مباشرة من الخريطة الديناميكية (getEnginePreferenceForLanguage)
+     * بلا أي افتراض ضمني: كل لغة تُقرأ بمفتاحها الموحّد، واللغة بلا إعداد
+     * (أو بلا تحويل فعلي) تُرجع null ولا يُتلاعب بنصها.
      */
     private fun resolveConvertTarget(requestLang: String?): ConvertTarget? {
-        val reqLang = normalizeLanguageCode(requestLang)
-        val slot = if (reqLang == "ar") 1 else if (reqLang == "en") 2 else 1
+        val prefs = settings.getEnginePreferenceForLanguage(requestLang ?: "und")
 
-        val rate = if (slot == 1) settings.getConvertRate1() else settings.getConvertRate2()
-        val pitch = if (slot == 1) settings.getConvertPitch1() else settings.getConvertPitch2()
-        val volume = if (slot == 1) settings.getConvertVolume1() else settings.getConvertVolume2()
+        val rate = prefs.rate
+        val pitch = prefs.pitch
+        val volume = prefs.volume
 
-        // المحرك/اللغة فقط تتطلب تفعيل التحويل التلقائي.
+        // المحرك/الصوت فقط يتطلبان تفعيل التحويل التلقائي.
         val autoConvert = settings.isAutoConvertEnabled()
-        val engine = if (autoConvert) {
-            if (slot == 1) settings.getConvertEngine1() else settings.getConvertEngine2()
-        } else null
-        val langTag = if (autoConvert) {
-            if (slot == 1) settings.getConvertLanguageTag1() else settings.getConvertLanguageTag2()
-        } else null
-        val voiceName = if (autoConvert) {
-            if (slot == 1) settings.getConvertVoice1() else settings.getConvertVoice2()
-        } else null
+        val engine = if (autoConvert) prefs.engine else null
+        val voiceName = if (autoConvert) prefs.voiceName else null
 
-        // إن لم يُعدّل المستخدم أي شريط ولا يوجد محرك مختار → ن relies على الإعدادات العامة.
-        val hasAdjustment = (rate != 1.0f) || (pitch != 1.0f) || (volume != 1.0f)
-        if (!hasAdjustment && engine == null) return null
-
-        val tag = if (langTag != null) Locale.forLanguageTag(langTag) else null
+        // إن لم يُعدّل المستخدم أي شريط ولا يوجد محرك مختار → نعتمد الإعدادات العامة.
+        if (rate == 1.0f && pitch == 1.0f && volume == 1.0f && engine == null) return null
 
         return ConvertTarget(
             convertEngine = engine,
-            convertLocale = if (tag != null) tag else null,
+            convertLocale = null,
             convertRate = rate,
             convertPitch = pitch,
             convertVolume = volume,
@@ -368,7 +401,10 @@ class NateqTtsService : TextToSpeechService() {
 
     /** بيانات هدف التحويل التلقائي المرفوعة إلى [SystemVoiceProvider]. */
     data class ConvertTarget(
-        // المحرك/اللغة null عند عدم تفعيل التبديل (يتزامن مع المحدد يدوياً).
+        // المحرك/الصوت null عند عدم تفعيل التبديل (يتزامن مع المحدد يدوياً).
+        // الوجهة (locale) لم تعد تُخزَّن صراحةً: المحرك + اسم الصوت داخل
+        // [getEnginePreferenceForLanguage] يحددان لغة النطق الفعلية وتُقرأ
+        // الخريطة بمفتاح لغة النص الطالب نفسها.
         val convertEngine: String?,
         val convertLocale: Locale?,
         val convertRate: Float,

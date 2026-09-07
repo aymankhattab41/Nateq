@@ -3,6 +3,8 @@ package com.aymankhattab.nateq.settings
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
+import com.aymankhattab.nateq.engine.ConvertPreferencesCodec
+import com.aymankhattab.nateq.engine.LanguageSpeechPrefs
 
 /**
  * الوسيط الوحيد للقراءة/الكتابة في الإعدادات.
@@ -59,6 +61,12 @@ class SettingsRepository(private val context: Context) {
         )
 
         const val KEY_QUIET_MIGRATED = "_quiet_days_migrated"
+
+        /** مفتاح خريطة تفضيلات التحويل لكل لغة (JSON عبر ConvertPreferencesCodec). */
+        private const val KEY_CONVERT_PREFS_JSON = "convert_language_prefs"
+
+        /** وسم ترحيل سلوتات اللغة 1/2 القديمة إلى الخريطة الديناميكية (مرة واحدة). */
+        private const val KEY_CONVERT_SLOTS_MIGRATED = "_convert_slots_migrated"
     }
 
     @Volatile
@@ -573,6 +581,93 @@ class SettingsRepository(private val context: Context) {
     fun isAutoConvertEnabled(): Boolean = prefs.getBoolean("auto_convert_enabled", false)
     fun setAutoConvertEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("auto_convert_enabled", enabled).apply()
+
+    // ---- الخريطة الديناميكية للتحويل التلقائي (languageTag -> تفضيلات) ----
+    // استبدلنا نظام سلوتات «اللغة 1/اللغة 2» الثابت (ar/en فقط) بتخزين عام
+    // محفوظ كخريطة JSON في SharedPreferences عبر GsonTypes+ConvertPreferencesCodec،
+    // ليُدعم عدد غير محدود من اللغات. قراءة NateqTtsService.resolveConvertTarget
+    // تتم مباشرةً من هذه الخريطة، ويُرحَّل أي إعداد قديم من السلوتات تلقائياً
+    // عند أول وصول (ensureConvertSlotsMigrated) دون حذفها نفسها.
+
+    /**
+     * تفضيلات التحويل للغة معينة (محرك/صوت/سرعة/نبرة/صوت). تُطبَّع علامة اللغة
+     * إلى كود ISO-2 قبل البحث. اللغة بلا أي إعداد → مدخل افتراضي (لا تحويل).
+     */
+    fun getEnginePreferenceForLanguage(languageTag: String): LanguageSpeechPrefs {
+        ensureConvertSlotsMigrated()
+        return readConvertPrefs()[
+            ConvertPreferencesCodec.normalizeLanguageTag(languageTag)
+        ] ?: LanguageSpeechPrefs()
+    }
+
+    /**
+     * يعين تفضيل محرك/صوت/أشرطة للغة معينة في الخريطة الديناميكية.
+     * مدخل بلا أي تعديلات (كل القيم الافتراضية) يُحذف من الخريطة (لا تحويل).
+     */
+    fun setEnginePreferenceForLanguage(
+        languageTag: String,
+        engine: String?,
+        voiceName: String?,
+        rate: Float,
+        pitch: Float,
+        volume: Float
+    ) {
+        ensureConvertSlotsMigrated()
+        val map = readConvertPrefs().toMutableMap()
+        val key = ConvertPreferencesCodec.normalizeLanguageTag(languageTag)
+        val entry = ConvertPreferencesCodec.entryForSave(engine, voiceName, rate, pitch, volume)
+        if (entry.hasAdjustment) map[key] = entry else map.remove(key)
+        writeConvertPrefs(map)
+    }
+
+    /** كل تفضيلات التحويل الحالية (لغة -> مدخل) للعرض في قائمة الإعدادات. */
+    fun allConvertLanguagePreferences(): Map<String, LanguageSpeechPrefs> {
+        ensureConvertSlotsMigrated()
+        return readConvertPrefs()
+    }
+
+    private fun readConvertPrefs(): Map<String, LanguageSpeechPrefs> {
+        val json = prefs.getString(KEY_CONVERT_PREFS_JSON, null)
+        return if (json.isNullOrBlank()) emptyMap() else ConvertPreferencesCodec.fromJson(json)
+    }
+
+    private fun writeConvertPrefs(map: Map<String, LanguageSpeechPrefs>) {
+        prefs.edit().putString(KEY_CONVERT_PREFS_JSON, ConvertPreferencesCodec.toJson(map)).apply()
+    }
+
+    /**
+     * ترحيل تلقائي لمرة واحدة من سلوتات «اللغة الأولى/اللغة الثانية» القديمة
+     * إلى الخريطة الديناميكية، فلا يفقد من خزّن إعداداته قبل التحديث شيئاً.
+     * لا تحذف السلوتات نفسها (تبقى قابلة للقراءة للتوافقية العكسية) — يُمهَّر
+     * وسم الترحيل فوراً كحارس حتى لا يتكرر العمل إذا فشل لاحقاً.
+     */
+    private fun ensureConvertSlotsMigrated() {
+        if (prefs.getBoolean(KEY_CONVERT_SLOTS_MIGRATED, false)) return
+        prefs.edit().putBoolean(KEY_CONVERT_SLOTS_MIGRATED, true).apply()
+
+        val map = readConvertPrefs().toMutableMap()
+        // السلوت الأول كان بحقّ اللغة العربية افتراضياً، والثاني الإنجليزية.
+        ConvertPreferencesCodec.mergeLegacySlot(
+            map, getConvertLanguageTag1(),
+            ConvertPreferencesCodec.entryForSave(
+                getConvertEngine1(), normalizeVoiceId(getConvertVoice1()),
+                getConvertRate1(), getConvertPitch1(), getConvertVolume1()
+            ),
+            "ar"
+        )
+        ConvertPreferencesCodec.mergeLegacySlot(
+            map, getConvertLanguageTag2(),
+            ConvertPreferencesCodec.entryForSave(
+                getConvertEngine2(), normalizeVoiceId(getConvertVoice2()),
+                getConvertRate2(), getConvertPitch2(), getConvertVolume2()
+            ),
+            "en"
+        )
+        if (map != readConvertPrefs()) writeConvertPrefs(map)
+        Log.w(TAG, "تم ترحيل سلوتات التحويل القديمة إلى الخريطة الديناميكية ($map)")
+    }
+
+    // --- السلوتات القديمة (تُبقى للتوافقية العكسية؛ تُرحَّل تلقائياً أعلاه) ---
 
     /** محرك اللغة الأولى (حزمة محرك TTS) */
     fun getConvertEngine1(): String? = prefs.getString("convert_lang1_engine", null)
