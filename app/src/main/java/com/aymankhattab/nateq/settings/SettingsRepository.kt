@@ -582,6 +582,11 @@ class SettingsRepository(private val context: Context) {
     fun setAutoConvertEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("auto_convert_enabled", enabled).apply()
 
+    /** إظهار التوضيح الاختياري «بعض اللغات قد لا تظهر…» (نص فقط، غير افتراضي). */
+    fun isLanguageInstallHintEnabled(): Boolean = prefs.getBoolean("show_language_install_hint", false)
+    fun setLanguageInstallHintEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("show_language_install_hint", enabled).apply()
+
     // ---- الخريطة الديناميكية للتحويل التلقائي (languageTag -> تفضيلات) ----
     // استبدلنا نظام سلوتات «اللغة 1/اللغة 2» الثابت (ar/en فقط) بتخزين عام
     // محفوظ كخريطة JSON في SharedPreferences عبر GsonTypes+ConvertPreferencesCodec،

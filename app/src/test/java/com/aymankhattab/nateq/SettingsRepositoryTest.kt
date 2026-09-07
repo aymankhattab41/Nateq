@@ -104,4 +104,14 @@ class SettingsRepositoryTest {
         assertFalse(repo.isTime24Hour())
         assertFalse(repo.isHijriDateEnabled())
     }
+
+    @Test
+    fun languageInstallHint_defaultOffAndRoundTrip() {
+        // توضيح «اللغات غير المثبتة» غير افتراضي (مخفي) حتى يفعّله المستخدم
+        assertFalse(repo.isLanguageInstallHintEnabled())
+        repo.setLanguageInstallHintEnabled(true)
+        assertTrue(repo.isLanguageInstallHintEnabled())
+        repo.setLanguageInstallHintEnabled(false)
+        assertFalse(repo.isLanguageInstallHintEnabled())
+    }
 }

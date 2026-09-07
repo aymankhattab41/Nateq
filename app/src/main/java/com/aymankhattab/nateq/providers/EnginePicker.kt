@@ -25,10 +25,15 @@ object EnginePicker {
 
     /** قارئات الشاشة التي تُستثنى من الاختيار التلقائي: لا تُنتج صوتاً عبر
      *  TextToSpeech.synthesize القياسي فتجعل المستخدم بلا صوت. تبقى ظاهرة
-     *  في واجهة المحركات للاختيار اليدوي الصريح (بعض المستخدمين يفضّلها). */
+     *  في واجهة المحركات للاختيار اليدوي الصريح (بعض المستخدمين يفضّلها).
+     *  Talkman/Jieshuo (com.nirenr.talkman) قارئ ومحرك معاً: يسجّل نفسه
+     *  TTS عبر eSpeak ويردّ بـ getVoices لغاتٍ نظرية (af/am/…) بلا بيانات
+     *  مثبتة فعلياً على الجهاز — يستثنى من المساهمة باللغات المكتشفة ويبقى
+     *  قابلاً للاختيار اليدوي كأي قارئ آخر. */
     private val screenReaderPackages = setOf(
         "com.google.android.marvin.talkback",   // TalkBack جوجل
-        "com.samsung.accessibility"             // TalkBack سامسونج
+        "com.samsung.accessibility",            // TalkBack سامسونج
+        "com.nirenr.talkman"                    // Jieshuo/Talkman (قارئ + محرك eSpeak)
     )
 
     /** محرك TTS مثبّت في النظام مع تسميته الظاهرة للمستخدم */
@@ -75,6 +80,17 @@ object EnginePicker {
         }
         // المسار الاحتياطي: أي محرك حقيقي (غير قارئ شاشة) بدل null.
         return installed.firstOrNull { !isScreenReader(it) }
+    }
+
+    /**
+     * يختار محرك الاحتياط بعد فشل المحرك الأصلي في النطق: يستبعد المحرك
+     * الفاشل من القائمة ثم يعتمد على [pickPreferredEngineFrom] على كامل
+     * المتبقي — فيُفضَّل جوجل (وإن لم يوجد، أي محرك حقيقي آخر بالترتيب:
+     * MultiTTS/سامسونج/…). يدعم الأسواق التي لا تصلها خدمة جوجل (الصين مثلاً).
+     * منطق نقي قابل للاختبار دون Context.
+     */
+    fun pickFallbackEngineFrom(installed: Collection<String>, failedPackage: String?): String? {
+        return pickPreferredEngineFrom(installed.filter { it != failedPackage })
     }
 
     /**

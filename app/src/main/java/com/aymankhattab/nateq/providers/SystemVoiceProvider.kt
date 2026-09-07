@@ -309,7 +309,11 @@ private fun synthesizeWithEngine(
         }
     }
 
-    /** عند فشل المحرك الأصلي، يتراجع إلى محرك جوجل المدمج (إن وُجد). */
+    /**
+     * عند فشل المحرك الأصلي، يتراجع إلى أفضل محرك متبقٍ من القائمة الكاملة
+     * (جوجل أولاً إن وُجد، وإلا MultiTTS/سامسونج/أي محرك حقيقي) — ليغطي أجهزة
+     * الأسواق التي لا تصلها خدمة جوجل (الصين مثلاً). لا يُعاد المحرك الفاشل.
+     */
     private fun retryWithGoogle(
         originalEngine: String?,
         voice: VoiceDescriptor,
@@ -324,11 +328,12 @@ private fun synthesizeWithEngine(
         desiredVoiceName: String?
     ) {
         if (cancelled.get()) return
-        val google = EnginePicker.googleEnginePackage(context)
-        // لا نتراجع إلى جوجل إذا كان هو بالفعل المحرك الأصلي المستخدَم.
-        if (google != null && google != originalEngine && EnginePicker.installedEnginePackages(context).contains(google)) {
-            Log.w(TAG, "[Provider] falling back to Google engine: $google")
-            synthesizeWithEngine(google, text, voice, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cont, cancelled, desiredVoiceName)
+        val remaining = EnginePicker.installedEnginePackages(context)
+        val fallback = EnginePicker.pickFallbackEngineFrom(remaining, originalEngine)
+        // لا نُعيد المحرك الأصلي الفاشل، ولا نتراجع إن لم يبقَ أي محرك.
+        if (fallback != null && fallback != originalEngine && EnginePicker.installedEnginePackages(context).contains(fallback)) {
+            Log.w(TAG, "[Provider] falling back to engine: $fallback")
+            synthesizeWithEngine(fallback, text, voice, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cont, cancelled, desiredVoiceName)
         } else {
             cont.resume(Unit)
         }

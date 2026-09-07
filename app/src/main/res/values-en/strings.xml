@@ -193,6 +193,8 @@
     <string name="cancel">Cancel</string>
     <string name="enter_word_and_pronunciation">Enter the word and its pronunciation</string>
     <string name="no_voices_available">No voices available</string>
+    <string name="no_tts_engines_message">No text-to-speech engine was found on this device. Install a TTS engine from the app store so voice announcements can work.</string>
+    <string name="install_engine_from_store">Install Google text-to-speech from the store</string>
     <string name="time_interval_15">Every 15 minutes</string>
     <string name="time_interval_30">Every 30 minutes</string>
     <string name="time_interval_45">Every 45 minutes</string>
@@ -267,6 +269,8 @@
     <string name="convert_languages_dialog_title">Auto-convert language settings</string>
     <string name="convert_languages_hint">Pick an engine, voice, and sliders for each language, then save. A language saved without an engine applies its sliders only.</string>
     <string name="convert_languages_loading">Discovering languages across all installed engines…</string>
+    <string name="language_install_hint_toggle">Show explanation about uninstalled languages</string>
+    <string name="language_install_hint">Some languages may not appear because their speech data isn\'t installed on your device yet — you can install it from Android Settings &gt; Languages &gt; Text-to-speech.</string>
 
     <!-- Shared literal strings -->
     <string name="toggle_on">On</string>

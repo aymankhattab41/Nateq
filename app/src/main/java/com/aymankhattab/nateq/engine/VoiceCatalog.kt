@@ -24,8 +24,11 @@ data class EngineWithVoices(
 /**
  * يجمّع كل الأصوات المتاحة من كل المزودين (النشطين/المُهيّئين فقط)
  * في قائمة واحدة موحّدة، كما يدير اكتشاف اللغات المتاحة فعلياً عبر
- * كل محركات TTS المثبتة (ديناميكياً بدل قائمة ar/en الثابتة) مع بقاء
- * العربية والإنجليزية كحد أدنى مضمون دائماً مهما تعثر الاكتشاف.
+ * كل محركات TTS المثبتة (ديناميكياً بدل قائمة ar/en الثابتة). يُعتمد
+ * في الاكتشاف حصرياً على نتيجة [TextToSpeech.getVoices] الفعلية لكل
+ * محرك — فلا تُعرض لغةُ لم تُرجعها getVoices حتى لو أعلن المحرك دعمها
+ * نظرياً — مع فحص إضافي isLanguageAvailable يستبعد لغات البيانات غير
+ * المثبتة ([TextToSpeech.LANG_MISSING_DATA]).
  */
 class VoiceCatalog(private val providers: List<VoiceProvider>) {
 
@@ -39,31 +42,94 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
          * يكتشف فعلياً كل اللغات المتاحة عبر كل محركات TTS المثبتة في النظام:
          * يبني لكل محرك نسخة مؤقتة من [TextToSpeech] ويسألها [getVoices]، ثم
          * يغلقه فوراً ([shutdown]) مهما كانت النتيجة حتى لا تُسرّب موارد.
+         * لكل لغة مرشّحة يفحص [TextToSpeech.isLanguageAvailable] فيستبعد أي
+         * لغة تعود [TextToSpeech.LANG_MISSING_DATA] (بيانات غير مثبتة).
          *
          * النتيجة: languageTag -> قائمة المحركات التي توفّر اللغة، وكل محرك
          * يحمل أصواته لهذه اللغة مجمّعةً تحت اللسان نفسه (بلا تكرار محركات).
          */
         suspend fun discoverAllLanguagesAcrossEngines(context: Context): Map<String, List<EngineWithVoices>> {
+            // نستبعد قارئات الشاشة (TalkBack/Jieshuo/Talkman…) من مساهمة اللغات:
+            // يسجّلون أنفسهم محركات TTS لكن قرارهم (getVoices/isLanguageAvailable)
+            // يعلن لغات نظريةً (eSpeak مثلاً) بلا بيانات مثبتة فعلياً على الجهاز،
+            // فتظهر في القائمة لغاتٌ لا تُنطق. يبقى الاختيار اليدوي صريحاً لهم.
             val engines = EnginePicker.installedEngines(context)
-            // lang -> engine -> voices
-            val grouped = mutableMapOf<String, MutableMap<String, MutableList<Voice>>>()
+                .filterNot { EnginePicker.isScreenReader(it.packageName) }
+            val voicesByEngine = mutableMapOf<String, List<Voice>>()
             engines.forEach { engine ->
-                val voices = runCatching {
+                voicesByEngine[engine.packageName] = runCatching {
                     probeEngineVoices(context, engine.packageName)
                 }.getOrDefault(emptyList())
+            }
+            return groupVoicesByLanguage(
+                engines.map { it.packageName to it.label },
+                voicesByEngine
+            )
+        }
+
+        /**
+         * يبني خريطة (languageTag -> المحركات التي توفرها) من أصوات المحركات
+         * الفعلية فقط (بعد فلترة [filterVoicesWithInstalledData]) — أي لغة لم
+         * تُرجعها getVoices لا تُدرج إطلاقاً حتى لو أعلن المحرك دعمها نظرياً.
+         * دالة نقية قابلة للاختبار الآلي.
+         */
+        fun groupVoicesByLanguage(
+            engineLabels: List<Pair<String, String>>,
+            voicesByEngine: Map<String, List<Voice>>
+        ): Map<String, List<EngineWithVoices>> {
+            // lang -> engine -> voices
+            val grouped = mutableMapOf<String, MutableMap<String, MutableList<Voice>>>()
+            for ((pkg, voices) in voicesByEngine) {
                 for (voice in voices) {
                     val lang = LocaleUtils.normalizeLanguageCode(voice.locale?.language)
                     if (lang.isBlank()) continue
                     grouped.getOrPut(lang) { LinkedHashMap() }
-                        .getOrPut(engine.packageName) { mutableListOf() }
+                        .getOrPut(pkg) { mutableListOf() }
                         .add(voice)
                 }
             }
+            val labelByPkg = engineLabels.toMap()
             return grouped.mapValues { (_, byEngine) ->
                 byEngine.map { (pkg, engineVoices) ->
-                    val label = engines.firstOrNull { it.packageName == pkg }?.label ?: pkg
-                    EngineWithVoices(pkg, label, engineVoices.toList())
+                    EngineWithVoices(pkg, labelByPkg[pkg] ?: pkg, engineVoices.toList())
                 }
+            }
+        }
+
+        /**
+         * فحص إضافي صريح لتوفر البيانات الصوتية: يستبعد أي أصواتٍ لغتُها تعود
+         * من دالة التوفر (عادةً [TextToSpeech.isLanguageAvailable]) بنتيجة
+         * [TextToSpeech.LANG_MISSING_DATA] — بياناتُها غير مثبتة على الجهاز
+         * بعد — ويستبعد أيضاً أي صوتَ غير جاهز محلياً: صوته يحمل ميزة
+         * [TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED] (لم يُنزَّل بعد)
+         * أو صوته يتطلب اتصالَ شبكة ([Voice.isNetworkConnectionRequired]):
+         * بعض المحركات (جوجل خاصةً) تُعلن اللسانَ متاحاً في التوفر لكن صوتَها
+         * المطابق يُخلَّق عبر الشبكة لا من ملفات محلية مثبّتة، فيُستظهر في
+         * القائمة لغةٌ لا تُنطق (توزّع "متاح" وليس جاهزاً للعمل الفعلي).
+         * المعايير الثلاثة معاً تحجب اللغة من واجهة الاختيار تماماً (لا
+         * تُعرض حتى معطّلة/رمادية) مع بقاء صندوق المحركات اليدوي كما هو.
+         * دالة نقية قابلة للاختبار الآلي.
+         */
+        fun filterVoicesWithInstalledData(
+            voices: List<Voice>,
+            languageAvailability: (Locale) -> Int
+        ): List<Voice> {
+            val missingLangs = voices
+                .mapNotNull { voice ->
+                    LocaleUtils.normalizeLanguageCode(voice.locale?.language)
+                        .takeIf { it.isNotBlank() }
+                }
+                .distinct()
+                .filter { languageAvailability(Locale.forLanguageTag(it)) == TextToSpeech.LANG_MISSING_DATA }
+                .toSet()
+            val isNotInstalled = { voice: Voice ->
+                voice.features.orEmpty().contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) ||
+                    voice.isNetworkConnectionRequired
+            }
+            if (missingLangs.isEmpty() && voices.none(isNotInstalled)) return voices
+            return voices.filter { voice ->
+                val lang = LocaleUtils.normalizeLanguageCode(voice.locale?.language)
+                lang !in missingLangs && !isNotInstalled(voice)
             }
         }
 
@@ -101,7 +167,15 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                                     @Suppress("DEPRECATION")
                                     val voices = runCatching { probe?.getVoices().orEmpty() }
                                         .getOrDefault(emptySet())
-                                    cont.resume(voices.toList())
+                                    // الاعتماد على النتيجة الفعلية لـ getVoices فقط، مع
+                                    // فحص صريح لكل لغة: بيانات غير مثبتة (LANG_MISSING_DATA)
+                                    // تُحجب من القائمة النهائية تماماً.
+                                    val installed = filterVoicesWithInstalledData(voices.toList()) { locale ->
+                                        val availability = runCatching { probe?.isLanguageAvailable(locale) }
+                                            .getOrNull()
+                                        availability ?: TextToSpeech.LANG_NOT_SUPPORTED
+                                    }
+                                    cont.resume(installed)
                                 }
                             } catch (_: Throwable) {
                                 cont.resume(emptyList())

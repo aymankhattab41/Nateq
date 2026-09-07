@@ -815,8 +815,12 @@ private fun parseNumberText(numberStr: String): String {
         for (ch in text) {
             val cp = ch.code
             // نطاقات التشكيل العربي الكاملة (U+0610–U+061A، U+064B–U+065F،
-            // U+0670–U+0673) بالإضافة للتطويل/الكشيدة (U+0640).
-            if (cp in 0x0610..0x061A || cp == 0x0640 || cp in 0x064B..0x065F || cp in 0x0670..0x0673) continue
+            // U+0670–U+0673) بالإضافة للتطويل/الكشيدة (U+0640). يُضاف نطاق
+            // «العربية الممتدة - A» (U+08A0–U+08FF) الذي يحمل تشكيل الأوردو
+            // والسندية والبشتو (علامات منفصلة عن الحرف) فيُجرَّد مثله تماماً.
+            if (cp in 0x0610..0x061A || cp == 0x0640 || cp in 0x064B..0x065F ||
+                cp in 0x0670..0x0673 || cp in 0x08A0..0x08FF
+            ) continue
             sb.append(ch)
         }
         return sb.toString()

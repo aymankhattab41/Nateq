@@ -41,6 +41,10 @@
 -keep class com.aymankhattab.nateq.engine.NateqTtsService { *; }
 -keep class * extends android.speech.tts.TextToSpeechService { *; }
 -keep class * extends android.speech.tts.TextToSpeech$UtteranceProgressListener { *; }
+# أصناف android.speech.tts التي يستدعيها نظام TTS نفسه عبر انعكاس (SynthesisCallback,
+# SynthesisRequest, Voice, TextToSpeech, UtteranceProgressListener …) — تُستخدم
+# في توقيعات NateqTtsService وتنفيذات مخصّصة من الكود، فتبقى بأسمائها كاملة
+-keep class android.speech.tts.* { *; }
 
 # المستقبلات (receiver) التي تسجّلها بأسمائها في Manifest
 -keep class com.aymankhattab.nateq.receivers.** { *; }
@@ -59,6 +63,32 @@
 -keep class * extends com.google.gson.reflect.TypeToken { *; }
 -keepclassmembers class * extends com.google.gson.reflect.TypeToken { *; }
 
+# GsonTypes: البنّاء اليدوي لكائنات ParameterizedType (Map<String, X>) —
+# يعتمد Gson عليها انعكاسياً (getRawType/getActualTypeArguments)، فلو شُفّر
+# اسمها أو أعضاؤها فشل فكّ JSON وفسدت التفضيلات المحفوظة على الجاهز.
+-keep class com.aymankhattab.nateq.engine.GsonTypes { *; }
+-keep class com.aymankhattab.nateq.engine.ParameterizedTypes { *; }
+
+# ============================================================
+#  Hilt / Dagger — المكوّنات والأصناف المولّدة لا تُعاد تسميتها
+# ============================================================
+# Hilt يجمع المكوّنات (Components) عند الإقلاع عبر انعكاس على أسماء
+# الأصناف المولّدة (Dagger*_HiltComponents_*). إعادة التسمية تكسر الحقن
+# وتفشل الشاشات/الخدمات بلا رسالة واضحة.
+-keep class dagger.hilt.** { *; }
+-keep class * extends dagger.hilt.internal.GeneratedComponent { *; }
+-keep class * extends dagger.hilt.internal.GeneratedComponentManager { *; }
+# أصناف Hilt_* المولّدة (Hilt_NateqTtsService, Hilt_SettingsActivity …)
+# هي ما يرثه كل صنف مزيّن بـ @AndroidEntryPoint؛ أسماءها تُحلّ انعكاسياً
+-keep class com.aymankhattab.nateq.Hilt_* { *; }
+-keep class com.aymankhattab.nateq.**.Hilt_* { *; }
+# أصناف Dagger المولّدة (Dagger*_HiltComponents_*): تُبنى عبر Hilt من كود
+# النشاط/الخدمة مباشرة؛ حفظها يضمن ثبات تسلسل بناية المكوّنات في كل إصدار
+-keep class com.aymankhattab.nateq.**Dagger*_HiltComponents_* { *; }
+-keepclassmembers class * {
+    @dagger.hilt.android.scopes.* <methods>;
+}
+
 # تفضيلات التحويل لكل لغة (LanguageSpeechPrefs): تتسلسل/تتجزأ عبر Gson انعكاسياً
 # من SharedPreferences، فلو شُفّر اسمها أو حقولها انكسرت JSON المحفوظة (قراءة فارغة).
 # ثبّتها كما هي: الحقول (engine/voiceName/rate/pitch/volume) هي مفاتيح JSON ذاتها.
@@ -69,6 +99,11 @@
 
 # مكتبة security-crypto (مفاتيح) قد تستخدم انعكاساً لا يدعمه R8
 -keep class com.google.android.gms.security.** { *; }
+
+# androidx.security.crypto (EncryptedSharedPreferences/MasterKey): واجهة الـ API
+# نفسها + كل ما يعتمد عليه MasterKey.holder (حاويات/فورمات Keystore) — تحفظ
+# كما هي حتى لا ينكسر فك تشفير التفضيلات/القاموس في أول تشغيل release على جهاز
+-keep class androidx.security.crypto.** { *; }
 
 # Tink (تشغّل EncryptedSharedPreferences/Keystore): يتعامل مع تنسيقات مفاتيح
 # ومواد مشفّرة عبر انعكاس/تسلسل يسقط مع R8 — إبقاؤه كما هو ضروري لئلا يفقد

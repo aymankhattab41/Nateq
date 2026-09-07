@@ -101,9 +101,51 @@ class TextProcessorTest {
     }
 
     @Test
+    fun urduText_withoutExtendedMarks_unchanged() {
+        // نص أوردو عادي (لا يحمل رموز النطاق الممتد) — لا يتأثر بالتوسيع الجديد
+        val input = "\u067E\u0627\u06A9\u0633\u062A\u0627\u0646\u06CC " + // پاکستانی
+            "\u0645\u06CC\u0631\u06D2 " + // میرے
+            "\u062F\u0648\u0633\u062A " + // دوست
+            "\u06C1\u06CC\u06BA" // ہیں
+        assertEquals(input, processor.process(input, "ar"))
+    }
+
+    @Test
+    fun urduText_withExtendedTashkeel_stripped() {
+        // نص أوردو مشكول بعلامة من نطاق التشكيل العربي الممتد
+        // (U+08A0–U+08FF، هنا تعني الضمة الأوردية U+08EE). تُجرّد العلامة لكن
+        // تبقى الحروف الأوردية نفسها (پ ک ی ے ہ ں) سالمة تماماً.
+        val marked = "\u067E\u0627\u06A9\u08EE\u0633\u062A\u0627\u0646\u06CC " + // پاکستانی (ضمة ممتدة)
+            "\u0645\u06CC\u0631\u06D2 " + // میرے
+            "\u062F\u0648\u0633\u062A\u08F0 " + // دوست (فتحتان مفتوحتان U+08F0)
+            "\u06C1\u06CC\u06BA" // ہیں
+        val expected = "پاکستانی میرے دوست ہیں"
+        assertEquals(expected, processor.process(marked, "ar"))
+    }
+
+    @Test
     fun emoji_removed() {
         val out = processor.process("مرحبا 😊", "ar")
         // يُنظّف الإيموجي؛ النص المتبقي يبقى أو يُرجَّع بعد تنظيف المسافات
         assertEquals("مرحبا", out)
+    }
+
+    @Test
+    fun emoji_compoundFamily_removedCompletely() {
+        // إيموجي مركّب بعائلة (👨‍👩‍👧‍👦 عبر ZWJ) — يُحذف بالكامل بلا مسافات
+        // مزدوجة ولا رموز متبقية (\u200D أو وحدات نصية محجرة).
+        val input = "مرحبا \uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67\u200D\uD83D\uDC66"
+        val out = processor.process(input, "ar")
+        assertEquals("مرحبا", out)
+        assertTrue(!out.contains("\u200D"))
+    }
+
+    @Test
+    fun emoji_countryFlag_removedCompletely() {
+        // علم سعودية 🇸🇦 (زوج مؤشرَي منطقة) — يُحذف بالكامل بلا رموز متبقية
+        val input = "مرحبا \uD83C\uDDF8\uD83C\uDDE6"
+        val out = processor.process(input, "ar")
+        assertEquals("مرحبا", out)
+        assertTrue(!out.contains("\uD83C"))
     }
 }

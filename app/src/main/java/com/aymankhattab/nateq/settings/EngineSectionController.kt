@@ -2,7 +2,10 @@ package com.aymankhattab.nateq.settings
 
 import android.app.AlertDialog
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.speech.tts.TextToSpeech
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.AdapterView
@@ -52,6 +55,8 @@ internal class EngineSectionController(
         // داخل Jieshuo/TalkMan) التي لا تُستعلم على أندرويد 7+ دونها.
         engines.addAll(discoverEngines())
 
+        bindNoEnginesUi()
+
         if (engines.isEmpty()) {
             spinnerEngine.adapter = simpleAdapter(
                 fragment.requireContext(),
@@ -76,6 +81,36 @@ internal class EngineSectionController(
             val target = engineIndexOf(saved) ?: if (saved == null) engineIndexOf(preferred) else null
             if (target != null && target < engines.size) {
                 spinnerEngine.setSelection(target)
+            }
+        }
+    }
+
+    /** عند غياب أي محرك TTS إطلاقاً: يُظهر رسالة توجيهية + زر تثبيت من المتجر. */
+    private fun bindNoEnginesUi() {
+        val view = fragment.view ?: return
+        val message = view.findViewById<TextView>(R.id.tv_no_engines_message)
+        val btn = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btn_install_engine)
+        val noEngines = engines.isEmpty()
+        message.visibility = if (noEngines) View.VISIBLE else View.GONE
+        btn.visibility = if (noEngines) View.VISIBLE else View.GONE
+        if (noEngines) {
+            btn.setOnClickListener { openEngineInPlayStore() }
+        }
+    }
+
+    /** يفتح صفحة Google TTS على متجر التطبيقات، مع مسار احتياطي عبر المتصفح. */
+    private fun openEngineInPlayStore() {
+        val ctx = fragment.requireContext()
+        // market:// يفتح الـ Play Store مباشرة؛ وإن لم يوجد معالج نتراجع للرابط عبر الويب.
+        val playStoreUri = Uri.parse("market://details?id=com.google.android.tts")
+        val opened = runCatching {
+            ctx.startActivity(Intent(Intent.ACTION_VIEW, playStoreUri))
+        }.isSuccess
+        if (!opened) {
+            runCatching {
+                ctx.startActivity(
+                    Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=com.google.android.tts"))
+                )
             }
         }
     }
@@ -107,19 +142,46 @@ internal class EngineSectionController(
 
         btn.isEnabled = runCatching { settings.isAutoConvertEnabled() }.getOrDefault(false)
         btn.setOnClickListener { showConvertLanguagesDialog() }
+
+        setupLanguageInstallHint(view)
+    }
+
+    /**
+     * يربط التوضيح الاختياري (نص فقط، غير افتراضي) عن سبب غياب بعض اللغات:
+     * بياناتها الصوتية غير مثبتة على الجهاز. مخفي افتراضياً حتى يفعّله
+     * المستخدم صراحةً عبر شريط الاختيار.
+     */
+    private fun setupLanguageInstallHint(view: View) {
+        val chk = view.findViewById<com.google.android.material.checkbox.MaterialCheckBox>(R.id.checkbox_language_install_hint)
+        val tv = view.findViewById<TextView>(R.id.tv_language_install_hint)
+
+        chk.isChecked = runCatching { settings.isLanguageInstallHintEnabled() }.getOrDefault(false)
+        tv.visibility = if (chk.isChecked) View.VISIBLE else View.GONE
+        chk.setOnClickListener { v ->
+            val enabled = (v as com.google.android.material.checkbox.MaterialCheckBox).isChecked
+            runCatching { settings.setLanguageInstallHintEnabled(enabled) }
+            tv.visibility = if (enabled) View.VISIBLE else View.GONE
+        }
     }
 
     /** قائمة كل المحركات المتاحة عبر INTENT_ACTION_TTS_SERVICE (MATCH_ALL) */
     private fun discoverEngines(): List<EngineInfo> {
-        return EnginePicker.installedEngines(fragment.requireContext())
-            .map { EngineInfo(it.packageName, it.label) }
+        val discovered = EnginePicker.installedEngines(fragment.requireContext())
+        // سجل تشخيصي لفوز شكاوى «لا يظهر محركي» على أجهزة Xiaomi/Huawei/Oppo
+        // التي قد تُقيّد package visibility رغم <queries> الصحيحة في الـ Manifest.
+        Log.i(
+            "NATEQ_ENGINE_DISCOVERY",
+            "installedEngines count=${discovered.size} packages=[${discovered.joinToString(", ") { it.packageName }}]"
+        )
+        return discovered.map { EngineInfo(it.packageName, it.label) }
     }
 
     /**
-     * يفتح قائمة كل اللغات المكتشفة عبر كل محركات TTS المثبتة، صفاً لكل لغة.
-     * العربية والإنجليزية مضمونتان دائماً في القائمة حتى لو تعذّر الاكتشاف
-     * (محركات فارغة → تبقى أشرطة اللغة قابلة للحفظ). الاكتشاف خلفي بدون
-     * تجميد: يُعرض مؤشر تحميل ثم تُبني الصفوف فور جاهزية النتائج.
+     * يفتح قائمة كل اللغات المكتشفة فعلياً عبر كل محركات TTS المثبتة، صفاً
+     * لكل لغة — من أصوات getVoices فقط، بلا لغات افتراضية أو نظرية. أي لغة
+     * تُعلن بياناتها غير مثبتة (LANG_MISSING_DATA) تُحجب من القائمة تماماً.
+     * الاكتشاف خلفي بدون تجميد: يُعرض مؤشر تحميل ثم تُبني الصفوف فور
+     * جاهزية النتائج.
      */
     fun showConvertLanguagesDialog() {
         val ctx = fragment.requireContext()
@@ -157,15 +219,22 @@ internal class EngineSectionController(
         dialog.show()
     }
 
-    /** يُبني صفوف اللغات: العربية/الإنجليزية مضمونتان أولاً ثم بقية المكتشف. */
+    /**
+     * يُبني صفوف اللغات من المكتشف الفعلي فقط — لا تُعرض أي لغة لم تُرجعها
+     * getVoices — مع ضمان إدراج العربية والإنجليزية دائماً كحد أدنى مضمون:
+     * قد يحجبا الاكتشافُ حين تُعلن كل أصواتهما عبر محركٍ ما بياناتٍ غير
+     * مثبتة (LANG_MISSING_DATA/NOT_INSTALLED أو عبر الشبكة فقط)، فلا بدّ
+     * من بقائهما في القائمة بعرض لغتهما مع بقبه صندوق المحركات فارغاً
+     * (أشرطة قابلة للحفظ — نفس سلوك البرتب الصف «بلا محرك» في المهايئ).
+     */
     private fun buildLanguageRows(
         discovered: Map<String, List<EngineWithVoices>>
     ): List<LanguageRow> {
-        val keys = LinkedHashSet<String>()
-        keys.add("ar")
-        keys.add("en")
-        discovered.keys.sorted().forEach { keys.add(it) }
-        return keys.map { tag ->
+        val tags = LinkedHashSet<String>()
+        tags.addAll(discovered.keys.sorted())
+        tags.add("ar") // الحد الأدنى المضمون دائماً
+        tags.add("en")
+        return tags.map { tag ->
             LanguageRow(
                 languageTag = tag,
                 displayName = Locale.forLanguageTag(tag).displayName,

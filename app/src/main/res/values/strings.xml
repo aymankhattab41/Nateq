@@ -180,6 +180,8 @@
     <string name="cancel">إلغاء</string>
     <string name="enter_word_and_pronunciation">أدخل الكلمة والنطق</string>
     <string name="no_voices_available">لا توجد أصوات</string>
+    <string name="no_tts_engines_message">لم يُعثر على أي محرك نطق (TTS) على هذا الجهاز. ثبّت محرك نطق من متجر التطبيقات حتى يعمل النطق الصوتي.</string>
+    <string name="install_engine_from_store">تثبيت محرك Google الناطق من المتجر</string>
     <string name="time_interval_15">كل 15 دقيقة</string>
     <string name="time_interval_30">كل 30 دقيقة</string>
     <string name="time_interval_45">كل 45 دقيقة</string>
@@ -263,6 +265,8 @@
     <string name="convert_languages_dialog_title">إعداد لغات التحويل التلقائي</string>
     <string name="convert_languages_hint">اختر لكل لغةٍ محركها وصوتها وأشرطتها ثم اضغط حفظ. اللغة المحفوظة بدون محرك تُطبّق أشرطتها فقط.</string>
     <string name="convert_languages_loading">جارٍ اكتشاف اللغات عبر كل المحركات المثبتة…</string>
+    <string name="language_install_hint_toggle">إظهار توضيح اللغات غير المثبتة</string>
+    <string name="language_install_hint">بعض اللغات قد لا تظهر لأن بياناتها الصوتية غير مثبتة على جهازك بعد — يمكنك تثبيتها من إعدادات Android > اللغات > تحويل النص إلى كلام.</string>
 
     <!-- النصوص الحرفية الموحّدة -->
     <string name="toggle_on">مفعل</string>

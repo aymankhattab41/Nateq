@@ -181,6 +181,29 @@
                 android:contentDescription="@string/spinner_engine_content" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!-- لا يوجد أي محرك TTS على الجهاز إطلاقاً: رسالة + زر تثبيت من المتجر -->
+        <TextView
+            android:id="@+id/tv_no_engines_message"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:padding="12dp"
+            android:visibility="gone"
+            android:text="@string/no_tts_engines_message"
+            android:textAppearance="?attr/textAppearanceBody2"
+            android:importantForAccessibility="yes" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_install_engine"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:minHeight="48dp"
+            android:visibility="gone"
+            android:text="@string/install_engine_from_store"
+            android:importantForAccessibility="yes" />
+
         <!-- فتح إعدادات TTS لاختيار LORD كمحرك افتراضي (لا يمكن فعله برمجياً) -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_set_default_engine"
@@ -200,6 +223,27 @@
             android:layout_marginTop="12dp"
             android:minHeight="48dp"
             android:text="@string/convert_languages_button"
+            android:importantForAccessibility="yes" />
+
+        <!-- توضيح اختياري (نص فقط، غير افتراضي): سبب غياب بعض اللغات -->
+        <com.google.android.material.checkbox.MaterialCheckBox
+            android:id="@+id/checkbox_language_install_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:minHeight="48dp"
+            android:text="@string/language_install_hint_toggle"
+            android:importantForAccessibility="yes" />
+
+        <TextView
+            android:id="@+id/tv_language_install_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:padding="8dp"
+            android:visibility="gone"
+            android:text="@string/language_install_hint"
+            android:textAppearance="?attr/textAppearanceBody2"
             android:importantForAccessibility="yes" />
 
         </LinearLayout>
