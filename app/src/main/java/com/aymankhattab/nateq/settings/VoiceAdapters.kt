@@ -28,7 +28,8 @@ internal class CategoryVoiceAdapter(
         SettingsRepository.VOICE_CATEGORY_DEFAULT,
         SettingsRepository.VOICE_CATEGORY_TIME,
         SettingsRepository.VOICE_CATEGORY_NUMBERS,
-        SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+        SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS,
+        SettingsRepository.VOICE_CATEGORY_EMOJI
     )
 
     inner class CatVH(itemView: View) : RecyclerView.ViewHolder(itemView) {
@@ -56,6 +57,7 @@ internal class CategoryVoiceAdapter(
             SettingsRepository.VOICE_CATEGORY_TIME -> context.getString(R.string.voice_category_time)
             SettingsRepository.VOICE_CATEGORY_NUMBERS -> context.getString(R.string.voice_category_numbers)
             SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS -> context.getString(R.string.voice_category_notifications)
+            SettingsRepository.VOICE_CATEGORY_EMOJI -> context.getString(R.string.voice_category_emoji)
             else -> context.getString(R.string.voice_category_default)
         }
         holder.tvCategory.text = catLabel
@@ -66,6 +68,8 @@ internal class CategoryVoiceAdapter(
                 context.getString(R.string.voice_category_numbers_summary)
             SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS ->
                 context.getString(R.string.voice_category_notifications_summary)
+            SettingsRepository.VOICE_CATEGORY_EMOJI ->
+                context.getString(R.string.voice_category_emoji_summary)
             else -> context.getString(R.string.voice_category_default_summary)
         }
 
@@ -155,6 +159,8 @@ internal class CategoryVoiceAdapter(
                     context.getString(R.string.sample_text_numbers_en)
                 !isArabic && category == SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS ->
                     context.getString(R.string.sample_text_notifications_en)
+                !isArabic && category == SettingsRepository.VOICE_CATEGORY_EMOJI ->
+                    context.getString(R.string.sample_text_emoji_en)
                 !isArabic -> context.getString(R.string.sample_text_default_en)
                 category == SettingsRepository.VOICE_CATEGORY_TIME ->
                     context.getString(R.string.sample_text_time_ar)
@@ -162,6 +168,8 @@ internal class CategoryVoiceAdapter(
                     context.getString(R.string.sample_text_numbers_ar)
                 category == SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS ->
                     context.getString(R.string.sample_text_notifications_ar)
+                category == SettingsRepository.VOICE_CATEGORY_EMOJI ->
+                    context.getString(R.string.sample_text_emoji_ar)
                 else -> context.getString(R.string.sample_text_default_ar)
             }
             onTestVoice(voice.languageTag, text)

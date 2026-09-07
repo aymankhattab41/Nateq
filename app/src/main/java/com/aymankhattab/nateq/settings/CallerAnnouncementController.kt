@@ -27,6 +27,7 @@ internal class CallerAnnouncementController(
 
     private lateinit var switchCallerAnnouncement: SwitchMaterial
     private lateinit var spinnerCallerRepeat: Spinner
+    private lateinit var spinnerCallerInterval: Spinner
     private lateinit var seekCallerRate: SeekBar
     private lateinit var tvCallerRateValue: TextView
     private lateinit var seekCallerVolume: SeekBar
@@ -41,6 +42,7 @@ internal class CallerAnnouncementController(
     fun setup(view: View) {
         switchCallerAnnouncement = view.findViewById(R.id.switch_caller_announcement)
         spinnerCallerRepeat = view.findViewById(R.id.spinner_caller_repeat)
+        spinnerCallerInterval = view.findViewById(R.id.spinner_caller_interval)
         seekCallerRate = view.findViewById(R.id.seek_caller_rate)
         tvCallerRateValue = view.findViewById(R.id.tv_caller_rate_value)
         seekCallerVolume = view.findViewById(R.id.seek_caller_volume)
@@ -92,7 +94,24 @@ internal class CallerAnnouncementController(
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
-        // سرعة النطق
+        // الفاصل الزمني (بالثواني) بين كل مرة نطق
+        val intervals = (1..10).map { s ->
+            fragment.requireContext().resources.getQuantityString(
+                R.plurals.caller_announcement_interval_seconds, s, s
+            )
+        }
+        spinnerCallerInterval.adapter = fragment.simpleAdapter(intervals)
+        val savedInterval = runCatching { settings.getCallerAnnouncementIntervalSeconds() }
+            .getOrDefault(3)
+        spinnerCallerInterval.setSelection((savedInterval - 1).coerceIn(0, intervals.size - 1))
+        spinnerCallerInterval.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                runCatching { settings.setCallerAnnouncementIntervalSeconds(position + 1) }
+                onStatusChanged()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
         val callerRate = runCatching { settings.getCallerAnnouncementRate() }.getOrDefault(1.0f)
         tvCallerRateValue.text = String.format(Locale.US, "%.1fx", callerRate)
         seekCallerRate.progress = (callerRate * 100).toInt().coerceIn(0, 200)

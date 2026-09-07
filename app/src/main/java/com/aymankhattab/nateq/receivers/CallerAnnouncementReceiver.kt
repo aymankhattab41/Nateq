@@ -18,6 +18,7 @@ import com.aymankhattab.nateq.util.LocaleUtils
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
 import javax.inject.Inject
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -82,7 +83,6 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     context,
                     number = incomingNumber,
                     contactName = contactName,
-                    repeat = settings.getCallerAnnouncementRepeat(),
                     template = settings.getCallerAnnouncementTemplate(),
                     privacyLocked = privacyLocked
                 )
@@ -102,13 +102,24 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     settings.getCallerAnnouncementEnglishVoiceId()
                 }
                 speaker.resetVoice(callerVoice)
-                speaker.speak(text, locale, speechRate, 1.0f, volume)
+
+                // تكرار النطق «repeat» مرات مع فاصل «intervalMs» بين كل مرة نطق
+                // وليس نطقاً واحداً يجمع العبارة بفواصل — فيُسمع المتصل بوضوح
+                // مع توقف حقيقي بين التكرارات.
+                val repeat = settings.getCallerAnnouncementRepeat().coerceIn(1, 5)
+                val intervalMs = settings.getCallerAnnouncementIntervalSeconds()
+                    .coerceIn(1, 10) * 1000L
+                for (i in 0 until repeat) {
+                    speaker.speak(text, locale, speechRate, 1.0f, volume)
+                    if (i < repeat - 1) delay(intervalMs)
+                }
             } catch (t: Throwable) {
                 Log.e(TAG, "onReceive failed", t)
-            } finally {
-                pendingResult.finish()
             }
         }
+        // لا نُبقي المُستقبَل حياً طوال مدة التكرارات (قد تبلغ 5 × 10 ثوانٍ)؛
+        // النطق يكمل في appScope عبر الخدمة الأمامية التي يبدأها المتحدث.
+        pendingResult.finish()
     }
 
     /** النص الصادق حسب ما هو متاح فعلاً (لا يدّعي "غير محفوظ" جزافاً). */
@@ -116,12 +127,11 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         context: Context,
         number: String?,
         contactName: String?,
-        repeat: Int,
         template: String?,
         privacyLocked: Boolean
     ): String {
         // عند القفل ننطق العبارة العامة فقط حتى لو ضبط المستخدم قالباً أو اسم من.
-        val phrase = if (privacyLocked) {
+        return if (privacyLocked) {
             LocaleUtils.stringForSpeech(
                 context, "ar", R.string.caller_only, R.string.caller_only
             )
@@ -133,12 +143,6 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             if (filled.isBlank()) buildDefaultCallerPhrase(context, number, contactName) else filled
         } else {
             buildDefaultCallerPhrase(context, number, contactName)
-        }
-        return buildString {
-            for (i in 1..repeat) {
-                if (i > 1) append("، ")
-                append(phrase)
-            }
         }
     }
 

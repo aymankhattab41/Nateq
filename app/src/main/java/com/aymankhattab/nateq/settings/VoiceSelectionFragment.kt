@@ -319,6 +319,20 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             )
         }
 
+        // نطق الإيموجي ورموز المشاعر: تُنطق الأسماء بدل حذف الرموز من النطق
+        val switchEmojiReading = view.findViewById<SwitchMaterial>(R.id.switch_emoji_reading)
+        switchEmojiReading.isChecked =
+            runCatching { settings.isEmojiPronunciationEnabled() }.getOrDefault(true)
+        switchEmojiReading.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setEmojiPronunciationEnabled(checked) }
+            accordion.updateSectionStatuses()
+            view?.announceCompat(
+                getString(
+                    if (checked) R.string.announcement_turned_on else R.string.announcement_turned_off
+                )
+            )
+        }
+
         // زر جعل Lord المحرك الافتراضي (يفتح شاشة TTS النظامية لاختياره يدوياً)
         btnSetDefaultEngine = view.findViewById(R.id.btn_set_default_engine)
         btnSetDefaultEngine.setOnClickListener {

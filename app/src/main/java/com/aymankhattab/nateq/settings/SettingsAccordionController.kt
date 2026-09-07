@@ -328,6 +328,7 @@ internal class SettingsAccordionController(
         val dict = fragment.getString(R.string.section_pronunciation_dict)
         val tools = fragment.getString(R.string.tools_section)
         val help = fragment.getString(R.string.help_section)
+        val emoji = fragment.getString(R.string.section_emoji_reading)
         val cats = fragment.getString(R.string.voice_category_default)
         val time = fragment.getString(R.string.section_time_announcement)
         val num = fragment.getString(R.string.section_number_reading)
@@ -408,6 +409,11 @@ internal class SettingsAccordionController(
             0, R.id.ll_help_content,
             help
         )
+        accordionEntry(
+            view, R.id.ll_emoji_header, R.id.tv_emoji_arrow,
+            R.id.tv_emoji_status, R.id.ll_emoji_content,
+            emoji
+        )
     }
 
     /** تحديث أسطر الحالة لكل قسم (يُستدعى عند التهيئة وبعد كل تغيير أساسي) */
@@ -422,6 +428,7 @@ internal class SettingsAccordionController(
         setSectionStatus(R.id.ll_sms_reading_settings, buildSmsStatus())
         setSectionStatus(R.id.ll_general_settings_content, buildGeneralStatus())
         setSectionStatus(R.id.ll_device_health_content, buildDeviceHealthStatus())
+        setSectionStatus(R.id.ll_emoji_content, buildEmojiStatus())
     }
 
     private fun buildEngineStatus(): String {
@@ -527,6 +534,8 @@ internal class SettingsAccordionController(
             .getOrDefault(false)
         val repeat = runCatching { settings.getCallerAnnouncementRepeat() }
             .getOrDefault(1).coerceIn(1, 5)
+        val interval = runCatching { settings.getCallerAnnouncementIntervalSeconds() }
+            .getOrDefault(3).coerceIn(1, 10)
         val on = if (enabled) fragment.getString(R.string.toggle_on)
         else fragment.getString(R.string.toggle_off)
         val label = fragment.getString(
@@ -538,7 +547,18 @@ internal class SettingsAccordionController(
                 else -> R.string.repeat_5
             }
         )
-        return on + "، " + label
+        val intervalLabel = fragment.resources.getQuantityString(
+            R.plurals.caller_announcement_interval_seconds, interval, interval
+        )
+        return "$on، $label، $intervalLabel"
+    }
+
+    private fun buildEmojiStatus(): String {
+        val enabled = runCatching { settings.isEmojiPronunciationEnabled() }
+            .getOrDefault(true)
+        val on = if (enabled) fragment.getString(R.string.toggle_on)
+        else fragment.getString(R.string.toggle_off)
+        return fragment.getString(R.string.emoji_reading_enabled) + ": " + on
     }
 
     private fun buildSmsStatus(): String {

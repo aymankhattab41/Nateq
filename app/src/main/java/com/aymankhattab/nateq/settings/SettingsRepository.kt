@@ -29,6 +29,7 @@ class SettingsRepository(private val context: Context) {
         const val VOICE_CATEGORY_NUMBERS = "numbers"
         const val VOICE_CATEGORY_NOTIFICATIONS = "notifications"
         const val VOICE_CATEGORY_DEFAULT = "default"
+        const val VOICE_CATEGORY_EMOJI = "emoji"
 
         /** تطبيقات الإشعارات الافتراضية قبل أي اختيار صريح. */
         const val NOTIF_READ_ALL = "all_apps"
@@ -224,6 +225,16 @@ class SettingsRepository(private val context: Context) {
     fun isAllAnnouncementsEnabled(): Boolean = prefs.getBoolean("all_announcements_enabled", true)
     fun setAllAnnouncementsEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("all_announcements_enabled", enabled).apply()
+
+    // ============ نطق الإيموجي ورموز المشاعر ============
+
+    /**
+     * هل تُنطق أسماء الإيموجي ورموز المشاعر في النصوص (بدل حذفها)؟
+     * مفعّل افتراضياً: يُنطق «وجه مبتسم» بدل صمت الإيموجي.
+     */
+    fun isEmojiPronunciationEnabled(): Boolean = prefs.getBoolean("emoji_pronunciation_enabled", true)
+    fun setEmojiPronunciationEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("emoji_pronunciation_enabled", enabled).apply()
 
     // ============ خصوصية قفل الشاشة ============
 
@@ -528,6 +539,12 @@ class SettingsRepository(private val context: Context) {
     fun setCallerAnnouncementRepeat(repeat: Int) =
         prefs.edit().putInt("caller_announcement_repeat", repeat).apply()
 
+    /** الفاصل الزمني (بالثواني) بين كل مرة نطق لاسم المتصل — 1..10 ثوانٍ */
+    fun getCallerAnnouncementIntervalSeconds(): Int =
+        prefs.getInt("caller_announcement_interval_seconds", 3)
+    fun setCallerAnnouncementIntervalSeconds(seconds: Int) =
+        prefs.edit().putInt("caller_announcement_interval_seconds", seconds).apply()
+
     /** صوت إعلان المتصل بلغة عربية (معرّف صوت موحّد) */
     fun getCallerAnnouncementArabicVoiceId(): String? = normalizeVoiceId(prefs.getString("caller_announcement_voice_ar", null))
     fun setCallerAnnouncementArabicVoiceId(voiceId: String?) =
@@ -779,6 +796,7 @@ class SettingsRepository(private val context: Context) {
             if (value in intArrayOf(15, 30, 45, 60)) value else 30
         key == "number_reading_mode" -> value.coerceIn(1, 8)
         key == "caller_announcement_repeat" -> value.coerceIn(1, 5)
+        key == "caller_announcement_interval_seconds" -> value.coerceIn(1, 10)
         key == "power_saver_battery_threshold" -> value.coerceIn(0, 100)
         else -> value
     }

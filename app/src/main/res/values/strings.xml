@@ -31,6 +31,7 @@
     <string name="voice_category_time">صوت الساعة</string>
     <string name="voice_category_numbers">صوت الأرقام</string>
     <string name="voice_category_notifications">صوت الإشعارات</string>
+    <string name="voice_category_emoji">نطق الإيموجي</string>
 
     <!-- إعدادات إعلان الوقت -->
     <string name="time_announcement_enabled">تفعيل إعلان الوقت</string>
@@ -55,16 +56,19 @@
     <string name="voice_category_time_summary">الصوت المخصص لنطق الساعة</string>
     <string name="voice_category_numbers_summary">الصوت المخصص لنطق الأرقام</string>
     <string name="voice_category_notifications_summary">الصوت المخصص لنطق الإشعارات</string>
+    <string name="voice_category_emoji_summary">الصوت والسرعة والنبرة ومستوى الصوت لنطق أسماء الإيموجي</string>
 
     <!-- نصوص العينة لكل لغة وفئة -->
     <string name="sample_text_default_ar">مرحباً، هذه عينة من صوت Lord TTS</string>
     <string name="sample_text_time_ar">الساعة الآن العاشرة وخمس عشرة دقيقة</string>
     <string name="sample_text_numbers_ar">واحد اثنان ثلاثة أربعة خمسة</string>
     <string name="sample_text_notifications_ar">لديك إشعار جديد</string>
+    <string name="sample_text_emoji_ar">رحلة سعيدة ودّيًّا، ابتسامة وقلب 😊❤️</string>
     <string name="sample_text_default_en">Hello, this is a sample of Lord TTS voice</string>
     <string name="sample_text_time_en">It is now ten fifteen in the morning</string>
     <string name="sample_text_numbers_en">One two three four five</string>
     <string name="sample_text_notifications_en">You have a new notification</string>
+    <string name="sample_text_emoji_en">Have a happy trip, a smile and a heart 😊❤️</string>
     <string name="sample_text_preview_ar">نص تجريبي: بسم الله الرحمن الرحيم.</string>
     <string name="sample_text_activity_ar">مرحباً، هذا نص تجريبي لـ Lord TTS.</string>
     <string name="sample_text_activity_en">Hello, this is a sample text for Lord TTS.</string>
@@ -164,6 +168,21 @@
     <string name="caller_announcement_volume">مستوى صوت المتصل</string>
     <string name="caller_announcement_voice_ar">صوت نطق الأسماء العربية</string>
     <string name="caller_announcement_voice_en">صوت نطق الأسماء الإنجليزية</string>
+    <string name="caller_announcement_interval">الفاصل بين كل نطق (بالثواني)</string>
+    <string name="spinner_caller_interval_content">الفاصل الزمني بين التكرارات (بالثواني)</string>
+
+    <!-- الفاصل الزمني بالثواني بين تكرارات إعلان المتصل (عربي) -->
+    <plurals name="caller_announcement_interval_seconds">
+        <item quantity="one">ثانية واحدة</item>
+        <item quantity="two">ثانيتان</item>
+        <item quantity="few">%d ثوانٍ</item>
+        <item quantity="other">%d ثانية</item>
+    </plurals>
+
+    <!-- نطق الإيموجي ورموز المشاعر -->
+    <string name="section_emoji_reading">نطق الإيموجي</string>
+    <string name="emoji_reading_enabled">نطق الإيموجي ورموز المشاعر</string>
+    <string name="emoji_reading_helper">يُنطق اسم الإيموجي بدل حذفه من النص (مثال: 😀 تُنطق «وجه مبتسم»). عند الإيقاف تُحذف رموز المشاعر من النطق.</string>
 
     <!-- أذونات إعلان المتصل (تُطلب عند التفعيل) -->
     <string name="caller_permission_needed">لن يُنطق اسم المتصل إلا بعد منح إذن سجل المكالمات وحالة الهاتف</string>

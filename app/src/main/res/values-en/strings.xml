@@ -31,6 +31,7 @@
     <string name="voice_category_time">Clock voice</string>
     <string name="voice_category_numbers">Numbers voice</string>
     <string name="voice_category_notifications">Notifications voice</string>
+    <string name="voice_category_emoji">Emoji speech</string>
 
     <!-- Time announcement settings -->
     <string name="time_announcement_enabled">Enable time announcement</string>
@@ -55,16 +56,19 @@
     <string name="voice_category_time_summary">The dedicated voice for the clock</string>
     <string name="voice_category_numbers_summary">The dedicated voice for numbers</string>
     <string name="voice_category_notifications_summary">The dedicated voice for notifications</string>
+    <string name="voice_category_emoji_summary">The voice, speed, pitch and volume for reading emoji names</string>
 
     <!-- Sample texts per language and category -->
     <string name="sample_text_default_ar">مرحباً، هذه عينة من صوت Lord TTS</string>
     <string name="sample_text_time_ar">الساعة الآن العاشرة وخمس عشرة دقيقة</string>
     <string name="sample_text_numbers_ar">واحد اثنان ثلاثة أربعة خمسة</string>
     <string name="sample_text_notifications_ar">لديك إشعار جديد</string>
+    <string name="sample_text_emoji_ar">رحلة سعيدة ودّيًّا، ابتسامة وقلب 😊❤️</string>
     <string name="sample_text_default_en">Hello, this is a sample of Lord TTS voice</string>
     <string name="sample_text_time_en">It is now ten fifteen in the morning</string>
     <string name="sample_text_numbers_en">One two three four five</string>
     <string name="sample_text_notifications_en">You have a new notification</string>
+    <string name="sample_text_emoji_en">Have a happy trip, a smile and a heart 😊❤️</string>
     <string name="sample_text_preview_ar">نص تجريبي: بسم الله الرحمن الرحيم.</string>
     <string name="sample_text_activity_ar">مرحباً، هذا نص تجريبي لـ Lord TTS.</string>
     <string name="sample_text_activity_en">Hello, this is a sample text for Lord TTS.</string>
@@ -126,6 +130,19 @@
     <string name="sms_announcement_template_placeholder" formatted="false">Use {name} for the sender and {message} for the message — leave empty for the default phrase</string>
     <string name="caller_announcement_voice_ar">Arabic names speech voice</string>
     <string name="caller_announcement_voice_en">English names speech voice</string>
+    <string name="caller_announcement_interval">Interval between repeats (seconds)</string>
+    <string name="spinner_caller_interval_content">Time interval between repeats (seconds)</string>
+
+    <!-- Seconds between caller announcement repeats (English) -->
+    <plurals name="caller_announcement_interval_seconds">
+        <item quantity="one">%d second</item>
+        <item quantity="other">%d seconds</item>
+    </plurals>
+
+    <!-- Emoji and emoticon pronunciation -->
+    <string name="section_emoji_reading">Emoji pronunciation</string>
+    <string name="emoji_reading_enabled">Speak emoji and emoticon names</string>
+    <string name="emoji_reading_helper">Emoji names are spoken instead of being removed from text (e.g. 😀 is read as "beaming face"). When off, emoticon symbols are dropped from speech.</string>
 
     <!-- Notification reading -->
     <string name="section_notification_reading">Notification reading</string>

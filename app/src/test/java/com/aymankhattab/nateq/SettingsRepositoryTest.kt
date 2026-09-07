@@ -114,4 +114,20 @@ class SettingsRepositoryTest {
         repo.setLanguageInstallHintEnabled(false)
         assertFalse(repo.isLanguageInstallHintEnabled())
     }
+
+    @Test
+    fun callerInterval_defaultAndRoundTrip() {
+        assertEquals(3, repo.getCallerAnnouncementIntervalSeconds())
+        repo.setCallerAnnouncementIntervalSeconds(7)
+        assertEquals(7, repo.getCallerAnnouncementIntervalSeconds())
+    }
+
+    @Test
+    fun emojiPronunciation_defaultOnAndRoundTrip() {
+        assertTrue(repo.isEmojiPronunciationEnabled())
+        repo.setEmojiPronunciationEnabled(false)
+        assertFalse(repo.isEmojiPronunciationEnabled())
+        repo.setEmojiPronunciationEnabled(true)
+        assertTrue(repo.isEmojiPronunciationEnabled())
+    }
 }

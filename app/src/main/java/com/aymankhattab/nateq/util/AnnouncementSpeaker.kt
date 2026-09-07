@@ -10,9 +10,23 @@ import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import com.aymankhattab.nateq.NateqApplication
 import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
+import com.aymankhattab.nateq.engine.EmojiSpeech
+import com.aymankhattab.nateq.engine.SpeechPart
 import com.aymankhattab.nateq.providers.EnginePicker
 import com.aymankhattab.nateq.settings.SettingsRepository
 import java.util.Locale
+
+/**
+ * إعدادات نطق أسماء الإيموجي (فئة «نطق الإيموجي») — تُقرأ من الإعدادات مرة
+ * واحدة لكل دورة نطق وتُطبق على مقاطع أسماء الإيموجي فقط.
+ */
+internal data class EmojiSpeechConfig(
+    val voiceId: String?,
+    val arabic: Boolean,
+    val rate: Float,
+    val pitch: Float,
+    val volume: Float
+)
 
 /**
  * متحدث مستقل يستخدمه التطبيق للإعلانات الصوتية التلقائية
@@ -52,6 +66,14 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
                 shared ?: AnnouncementSpeaker(context.applicationContext).also { shared = it }
             }
         }
+
+        /** هل معرّف الصوت إنجليزي؟ يقبل الصيغ القديمة (nateq-en…/en-local) والموحّدة (en-US). */
+        private fun isEnglishVoiceName(voiceId: String?): Boolean =
+            voiceId?.let {
+                it.startsWith("nateq-en", ignoreCase = true) ||
+                    it.startsWith("en-local", ignoreCase = true) ||
+                    it.startsWith("en-US", ignoreCase = true)
+            } ?: false
     }
 
     private val appContext = context.applicationContext
@@ -156,14 +178,23 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
     }
 
     /**
-     * ينطق نصاً فورياً (يدفع طابور نطق جديد).
+     * ينطق نصاً (يدفع طابور نطق جديد).
      * @param text النص المراد نطقه
      * @param locale لغة النص لتحديد صوت المحرك المناسب
      * @param speechRate سرعة النطق (1.0 = طبيعي)
      * @param pitch النبرة (1.0 = طبيعي)
      * @param volume مستوى الصوت (0.0..1.0) — يُطبّق عبر معامل الصوت إن أمكن
+     *
+     * عند تفعيل «نطق الإيموجي» يُقسَّم النص تلقائياً إلى مقاطع، ويُنطق كل اسم
+     * إيموجي بإعدادات فئة «نطق الإيموجي» المستقلة (صوت/سرعة/نبرة/مستوى صوت)
+     * عبر جملة متتابعة بعده — فلا تُقرأ أسماء الإيموجي بالصوت الافتراضي.
      */
     fun speak(text: String, locale: Locale, speechRate: Float, pitch: Float, volume: Float) {
+        // إعدادات نطق الإيموجي تُحسم قبل طلب التركيز حتى تكون المقاطع جاهزة
+        // للدورة (بلا قراءة متكررة للإعدادات عند كل عودة تركيز).
+        val emojiCfg = resolveEmojiConfig(locale)
+        val parts = if (emojiCfg != null) EmojiSpeech.split(text, emojiCfg.arabic) else null
+
         // نُفوض النطق دائماً لمحركٍ مثبّت (منهج MultiTTS): يستبعد اختيار المحرك
         // حزمة LORD نفسها، فيمرّ `tts.speak()` عبر محركٍ خارجي مستقر بدل حلقة
         // ربط النظام TextToSpeech → خدمة LORD التي قد تُسقط الصوت على Samsung.
@@ -186,7 +217,9 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
                 // التركيز سيُسلَّم لاحقاً عبر onAudioFocusChange؛ ننتظر وصول
                 // AUDIOFOCUS_GAIN ثم ننطق. مؤقّت الأمان يضمن المحاولة حتى لو
                 // تأخر تسليم التركيز أو لم يصل (لا تُفقد إعلانات المتصل/الرسائل).
-                pendingFocusAction = { startSpeech(text, locale, speechRate, pitch, volume) }
+                pendingFocusAction = {
+                    startSpeech(text, locale, speechRate, pitch, volume, emojiCfg, parts)
+                }
                 val timer = Runnable {
                     val action = pendingFocusAction
                     pendingFocusAction = null
@@ -204,16 +237,52 @@ AudioManager.AUDIOFOCUS_REQUEST_FAILED ->
                     // نحذف أي إجراء سابق حتى لا يتعارض مع محاولتنا الجديدة
                     pendingFocusAction = null
                     pendingFocusTimer = null
-                    startSpeech(text, locale, speechRate, pitch, volume)
+                    startSpeech(text, locale, speechRate, pitch, volume, emojiCfg, parts)
                 }, 400)
             else ->
                 // AUDIOFOCUS_REQUEST_GRANTED: التركيز مُنح فوراً — ننطق مباشرة.
-                startSpeech(text, locale, speechRate, pitch, volume)
+                startSpeech(text, locale, speechRate, pitch, volume, emojiCfg, parts)
         }
     }
 
-    /** تهيئة المحرك ثم نطق النص بتأجيل قصير يسمح لاتصال TTS بالاستقرار. */
-    private fun startSpeech(text: String, locale: Locale, speechRate: Float, pitch: Float, volume: Float) {
+    /**
+     * يقرأ إعدادات فئة «نطق الإيموجي» من الإعدادات؛ يعيد null عند التعطيل
+     * (يبقى السلوك القديم: استبعاد الإيموجي من النطق).
+     */
+    private fun resolveEmojiConfig(baseLocale: Locale): EmojiSpeechConfig? {
+        return try {
+            val settings = (appContext as? NateqApplication)?.settingsRepository
+                ?: SettingsRepository(appContext)
+            if (!settings.isEmojiPronunciationEnabled()) return null
+            val voiceId = settings.getPreferredVoiceIdForCategory(SettingsRepository.VOICE_CATEGORY_EMOJI)
+            EmojiSpeechConfig(
+                voiceId = voiceId,
+                // لغة التسمية: صوت الإيموجي المختار يحددها، وإلا فتمرّ للغة النص الفعلية
+                arabic = if (voiceId != null) {
+                    !isEnglishVoiceName(voiceId)
+                } else {
+                    baseLocale.language.startsWith("ar")
+                },
+                rate = settings.getSpeechRateForCategory(SettingsRepository.VOICE_CATEGORY_EMOJI),
+                pitch = settings.getPitchForCategory(SettingsRepository.VOICE_CATEGORY_EMOJI),
+                volume = settings.getVolumeForCategory(SettingsRepository.VOICE_CATEGORY_EMOJI)
+            )
+        } catch (t: Throwable) {
+            Log.w(TAG, "emoji config resolve failed", t)
+            null
+        }
+    }
+
+    /** تهيئة المحرك ثم نطق المقاطع بتأجيل قصير يسمح لاتصال TTS بالاستقرار. */
+    private fun startSpeech(
+        text: String,
+        locale: Locale,
+        speechRate: Float,
+        pitch: Float,
+        volume: Float,
+        emojiCfg: EmojiSpeechConfig?,
+        parts: List<SpeechPart>?
+    ) {
         ensureInit { ready ->
             if (!ready) {
                 releaseAudioFocus()
@@ -222,12 +291,54 @@ AudioManager.AUDIOFOCUS_REQUEST_FAILED ->
             // تأجيل قصير يسمح لاتصال محرك TTS بالاستقرار بعد onInit (حتى لو أعلن
             // Success مبكراً، قد يبقى ربط النظام معلقاً لحظياً ويُسقط speak فورياً).
             mainHandler.postDelayed({
-                doSpeak(text, locale, speechRate, pitch, volume, attempt = 1)
+                doSpeakParts(text, locale, speechRate, pitch, volume, emojiCfg, parts, attempt = 1)
             }, 150)
         }
     }
 
-    private fun doSpeak(text: String, locale: Locale, speechRate: Float, pitch: Float, volume: Float, attempt: Int) {
+    /** ينطق المقاطع بالتتابع: النص بصوت الإعلان، وأسماء الإيموجي بصوت فئتها. */
+    private fun doSpeakParts(
+        text: String,
+        locale: Locale,
+        speechRate: Float,
+        pitch: Float,
+        volume: Float,
+        emojiCfg: EmojiSpeechConfig?,
+        parts: List<SpeechPart>?,
+        attempt: Int
+    ) {
+        val segments = parts ?: listOf(SpeechPart(text, false))
+        segments.forEachIndexed { index, part ->
+            val queueMode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+            if (part.isEmojiName && emojiCfg != null) {
+                val emojiLocale = if (emojiCfg.arabic) {
+                    Locale.forLanguageTag("ar")
+                } else {
+                    Locale.forLanguageTag("en")
+                }
+                doSpeak(
+                    part.text, emojiLocale, emojiCfg.rate, emojiCfg.pitch, emojiCfg.volume,
+                    partVoice = emojiCfg.voiceId, queueMode = queueMode, attempt = attempt
+                )
+            } else {
+                doSpeak(
+                    part.text, locale, speechRate, pitch, volume,
+                    partVoice = voiceId, queueMode = queueMode, attempt = attempt
+                )
+            }
+        }
+    }
+
+    private fun doSpeak(
+        text: String,
+        locale: Locale,
+        speechRate: Float,
+        pitch: Float,
+        volume: Float,
+        partVoice: String?,
+        queueMode: Int,
+        attempt: Int
+    ) {
         val tts = tts ?: return
         tts.setSpeechRate(speechRate)
         tts.setPitch(pitch)
@@ -235,7 +346,7 @@ AudioManager.AUDIOFOCUS_REQUEST_FAILED ->
         // المربوط فعلاً (محرك LORD نفسه). إذا لم يجده المحرك (محرك خارجي مثل
         // جوجل/MultiTTS لا يملك هذه الأسماء) نرجع لتحديد اللغة فقط، فيبقى
         // اختيار الصوت محدوداً بلسان المحرك كما هو متوقَّع.
-        val vid = voiceId
+        val vid = partVoice
         if (vid != null) {
             val voice = runCatching { tts.voices }.getOrNull()
                 ?.firstOrNull { it.name == vid }
@@ -253,17 +364,18 @@ AudioManager.AUDIOFOCUS_REQUEST_FAILED ->
             }
         }
         // تنظيف النص من الإيموجي قبل النطق (نصوص خارجية قد تحوي رموزاً يُقرؤها
-        // المحرك الخارجي أسماءها الإنجليزية). نحافظ على الحرف بين الكلمات.
+        // المحرك الخارجي أسماءها الإنجليزية). في مسار نطق الإيموجي لا يصل
+        // إيموجي لمقاطع النص (قُسمت أصلاً) فالتنظيف هنا لا مساس به.
         // وتطبيع NFC يرمم النصوص القادمة مشكولةً Bidi/NFD من الجذر (SMS/إشعارات).
         val cleanText = java.text.Normalizer.normalize(
             EMOJI_REGEX.replace(text, " "),
             java.text.Normalizer.Form.NFC
         )
         val utteranceId = "nateq_announce_${System.currentTimeMillis()}"
-        val status = tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+        val status = tts.speak(cleanText, queueMode, params, utteranceId)
         if (status == TextToSpeech.ERROR && attempt < 3) {
             mainHandler.postDelayed({
-                doSpeak(text, locale, speechRate, pitch, volume, attempt + 1)
+                doSpeak(text, locale, speechRate, pitch, volume, partVoice, queueMode, attempt + 1)
             }, 250)
         } else if (status == TextToSpeech.ERROR) {
             // استنفاد المحاولات: تصريف الموارد حتى لا يبقى التركيز مكتوم الصوت

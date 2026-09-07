@@ -228,6 +228,10 @@ class TextProcessor(
 
 private val pronunciationDict = PronunciationDictionary(context)
 
+    /** هل نطق أسماء الإيموجي مفعّل؟ بلا حقنة Settings (الاختبارات) يُفترض مفعّل. */
+    private val emojiEnabled: Boolean
+        get() = injectedSettings?.isEmojiPronunciationEnabled() ?: true
+
     /**
      * معالجة نص كامل وتحويله لصيغة نطق طبيعية.
      * @param languageTag كود اللغة (مثلاً "ar"، "en"، "ar-EG")
@@ -236,20 +240,29 @@ private val pronunciationDict = PronunciationDictionary(context)
     fun process(text: String, languageTag: String = "ar"): String {
         if (text.isBlank()) return text
 
-        // المعالجة مخصصة للعربية فقط؛ الإنجليزية واللغات الأخرى تُعاد كما هي
-        // (لا يجوز تحويل أرقام إنجليزية إلى كلمات عربية)
-        if (languageTag.startsWith("ar").not()) return text
+        // نطق أسماء الإيموجي (بدل حذفها) قبل مسار العربية ليغطي الإنجليزية
+        // واللغات الأخرى أيضاً — الناتج لا يُمرَّر لأي تحويل لاحق خارج العربية.
+        val expanded = if (emojiEnabled) expandEmojis(text, languageTag) else null
 
-// 0. تطبيع الأرقام الشرقية (٠١٢٣٤٥٦٧٨٩) إلى غربية (0123456789)
+        // المعالجة مخصصة للعربية فقط؛ الإنجليزية واللغات الأخرى تُعاد كما هي
+        // بعد توسيع الإيموجي فقط (لا يجوز تحويل أرقام إنجليزية إلى كلمات عربية)
+        if (languageTag.startsWith("ar").not()) {
+            return if (expanded != null) cleanupSpaces(expanded) else text
+        }
+
+        // text قد يحوي إيموجي عُرضت أسماؤها (expanded) أو تُحذف لاحقاً (expandEmojis == null)
+        var result = expanded ?: text
+
+        // 0. تطبيع الأرقام الشرقية (٠١٢٣٤٥٦٧٨٩) إلى غربية (0123456789)
         //    لأن أنماط \d في Java لا تطابق الأرقام الشرقية
-        var result = normalizeIndicDigits(text)
+        result = normalizeIndicDigits(result)
 
         // 0.05 تجريد التشكيل العربي (حركات/تنوين/شدّة/سكون/كشيدة) قبل كل المطابقات
         //    حتى يطابق القاموس والأنماط الكلماتَ المشكولة وتتوقف الأخطاء النطقية
         result = stripTashkeel(result)
 
-        // 0.1 معالجة الإيموجي: إزالتها وتنظيف التركيبات المعقدة حتى لا تشوّش النطق
-        result = processEmojis(result)
+        // عند تعطيل نطق الإيموجي: السلوك السابق — إزالتها وتنظيف التركيبات
+        if (expanded == null) result = stripEmojis(result)
 
 // 1. تطبيق القاموس الشخصي أولاً (أعلى أولوية)
         result = pronunciationDict.apply(result)
@@ -826,12 +839,82 @@ private fun parseNumberText(numberStr: String): String {
         return sb.toString()
     }
 
-    /**
-     * معالجة الإيموجي: إزالة الإيموجي وتركيباتها المعقدة (ZWJ, skin tone modifiers,
-     * variation selectors, flags) بطريقة آمنة حتى لا تشوّش النطق.
-     * تُستبدل بمسافة للحفاظ على الفصل بين الكلمات.
+/**
+     * توسيع الإيموجي ورموز المشاعر إلى أسمائها القابلة للنطق (عربي/إنجليزي
+     * حسب languageTag). يشمل: كودات Unicode الموثّقة في EmojiNames، الإيموجي
+     * النصيّ (☺), رموز المشاعر النصية (":)", ":) ", "<3"…)، والأعلام (رمزا
+     * منطقة متجاوران). الإيموجي غير الموثّق يُنطق بالكلمة العامة الثابتة.
+     * تُسقط تعديلات ألوان البشرة ومؤشرات الأشكال و ZWJ بصمت، ويُدمج
+     * الإيموجي المركّب (عائلة/مهنة) باسم أول مكوّن. عند تعطيل المفتاح لا
+     * تُستدعى هذه الدالة (تُستخدم stripEmojis بدلها).
      */
-    private fun processEmojis(text: String): String {
+    private fun expandEmojis(text: String, languageTag: String): String {
+        val arabic = languageTag.startsWith("ar")
+        val fallback = if (arabic) EmojiNames.AR_FALLBACK else EmojiNames.EN_FALLBACK
+        val base = EmojiNames.applyAsciiEmoticons(text, arabic)
+        val sb = StringBuilder(base.length)
+        var i = 0
+        val len = base.length
+        while (i < len) {
+            val cp = base.codePointAt(i)
+            val chars = Character.charCount(cp)
+            when {
+                EmojiNames.isEmojiModifier(cp) -> {
+                    // تعديلات منفصلة (ZWJ/ألوان بشرة/مؤشر أشكال) تُسقط بصمت
+                    i += chars
+                }
+                EmojiNames.isRegionalIndicator(cp) -> {
+                    val nextIdx = i + chars
+                    if (nextIdx < len) {
+                        val next = base.codePointAt(nextIdx)
+                        if (EmojiNames.isRegionalIndicator(next)) {
+                            val code = EmojiNames.buildCountryCode(cp, next)
+                            sb.append(' ').append(EmojiNames.flagReadingName(code, arabic))
+                            i = nextIdx + Character.charCount(next)
+                            continue
+                        }
+                    }
+                    // علم غير مكتمل (رمز واحد بلا قرين): نطق عام
+                    sb.append(' ').append(fallback)
+                    i += chars
+                }
+                EmojiNames.isEmojiBlockCp(cp) -> {
+                    val name = if (arabic) EmojiNames.arName(cp) else EmojiNames.enName(cp)
+                    sb.append(' ').append(name ?: fallback)
+                    i += chars
+                    // تجاوز بقية المجموعة: ألوان بشرة، مؤشرات أشكال، وعناصر
+                    // ما بعد ZWJ (عائلة/مهنة) حتى لا تُنطق مقاطع متناثرة
+                    var zwjSeen = false
+                    while (i < len) {
+                        val c2 = base.codePointAt(i)
+                        val c2chars = Character.charCount(c2)
+                        when {
+                            c2 in 0x1F3FB..0x1F3FF || c2 in 0xFE0E..0xFE0F -> i += c2chars
+                            c2 == 0x200D -> {
+                                zwjSeen = true; i += c2chars
+                            }
+                            EmojiNames.isEmojiBlockCp(c2) && zwjSeen -> {
+                                i += c2chars; zwjSeen = false
+                            }
+                            else -> break
+                        }
+                    }
+                }
+                else -> {
+                    sb.append(base, i, i + chars)
+                    i += chars
+                }
+            }
+        }
+        return Normalizer.normalize(sb.toString().trim(), Normalizer.Form.NFC)
+    }
+
+    /**
+     * معالجة الإيموجي عند تعطيل «نطق الإيموجي»: إزالة الإيموجي وتركيباتها
+     * المعقدة (ZWJ, skin tone modifiers, variation selectors, flags) بطريقة
+     * آمنة حتى لا تشوّش النطق. تُستبدل بمسافة للحفاظ على الفصل بين الكلمات.
+     */
+    private fun stripEmojis(text: String): String {
         val sb = StringBuilder(text.length)
         var i = 0
         val len = text.length

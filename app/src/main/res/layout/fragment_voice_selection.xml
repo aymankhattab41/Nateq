@@ -652,6 +652,20 @@
                     android:contentDescription="@string/spinner_caller_repeat_content" />
             </com.google.android.material.textfield.TextInputLayout>
 
+            <!-- الفاصل الزمني بين كل مرة نطق -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:hint="@string/caller_announcement_interval">
+                <androidx.appcompat.widget.AppCompatSpinner
+                    android:id="@+id/spinner_caller_interval"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/spinner_caller_interval_content" />
+            </com.google.android.material.textfield.TextInputLayout>
+
             <!-- أسماء المتصلين المخصصة (رقم -> اسم يُنطق به) -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_caller_names"
@@ -2033,6 +2047,81 @@
                 android:text="@string/check_updates"
                 android:contentDescription="@string/check_updates_desc"
                 android:importantForAccessibility="yes" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="4dp"
+            android:background="@color/divider_color" />
+
+        <LinearLayout
+            android:id="@+id/ll_emoji_header"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:minHeight="48dp"
+            android:padding="4dp"
+            android:background="?attr/selectableItemBackground"
+            android:focusable="true"
+            android:accessibilityHeading="true"
+            android:importantForAccessibility="yes"
+            android:contentDescription="@string/section_emoji_reading">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:importantForAccessibility="no"
+                android:text="@string/section_emoji_reading"
+                android:textAppearance="?attr/textAppearanceHeadline6" />
+
+            <TextView
+                android:id="@+id/tv_emoji_arrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="▼"
+                android:textSize="14sp"
+                android:paddingStart="8dp"
+                android:importantForAccessibility="no" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tv_emoji_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textAppearance="?attr/textAppearanceCaption"
+            android:textColor="@color/text_secondary"
+            android:importantForAccessibility="no" />
+
+        <!-- محتوى نطق الإيموجي (قابل للطي) -->
+        <LinearLayout
+            android:id="@+id/ll_emoji_content"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="12dp"
+            android:visibility="gone">
+
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_emoji_reading"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/emoji_reading_enabled"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/emoji_reading_helper"
+                android:textAppearance="?attr/textAppearanceBody2"
+                android:textColor="@color/text_secondary" />
         </LinearLayout>
         </LinearLayout>
 
