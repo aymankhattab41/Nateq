@@ -264,7 +264,7 @@ internal class SettingsAccordionController(
         }
     }
 
-    /** تسجيل الأقسام التسعة كبطاقات في القائمة الرئيسية (تُفتح كل منها شاشة فرعية) */
+    /** تسجيل الأقسام كبطاقات في القائمة الرئيسية (تُفتح كل منها شاشة فرعية) */
     private fun setupAccordionSections(view: View) {
         accordionEntries.clear()
         val engine = fragment.getString(R.string.section_voice_selection)
@@ -276,6 +276,31 @@ internal class SettingsAccordionController(
         val caller = fragment.getString(R.string.section_caller_announcement)
         val sms = fragment.getString(R.string.section_sms_reading)
         val general = fragment.getString(R.string.section_general_settings)
+        val deviceHealth = fragment.getString(R.string.section_device_health)
+
+        // المجموعة الأولى: إعدادات عادية
+        accordionEntry(
+            view, R.id.ll_time_announcement_header, R.id.tv_time_announcement_arrow,
+            R.id.tv_time_announcement_status, R.id.ll_time_announcement_settings,
+            time
+        )
+        accordionEntry(
+            view, R.id.ll_notification_reading_header, R.id.tv_notification_reading_arrow,
+            R.id.tv_notification_reading_status, R.id.ll_notification_reading_settings,
+            notif
+        )
+        accordionEntry(
+            view, R.id.ll_sms_reading_header, R.id.tv_sms_reading_arrow,
+            R.id.tv_sms_reading_status, R.id.ll_sms_reading_settings,
+            sms
+        )
+        accordionEntry(
+            view, R.id.ll_caller_announcement_header, R.id.tv_caller_announcement_arrow,
+            R.id.tv_caller_announcement_status, R.id.ll_caller_announcement_settings,
+            caller
+        )
+
+        // المجموعة الثانية: إعدادات متقدمة
         accordionEntry(
             view, R.id.ll_engine_header, R.id.tv_engine_arrow,
             R.id.tv_engine_status, R.id.ll_engine_content,
@@ -285,11 +310,6 @@ internal class SettingsAccordionController(
             view, R.id.ll_categories_header, R.id.tv_categories_arrow,
             R.id.tv_categories_status, R.id.ll_categories_content,
             cats
-        )
-        accordionEntry(
-            view, R.id.ll_time_announcement_header, R.id.tv_time_announcement_arrow,
-            R.id.tv_time_announcement_status, R.id.ll_time_announcement_settings,
-            time
         )
         accordionEntry(
             view, R.id.ll_number_reading_header, R.id.tv_number_reading_arrow,
@@ -302,26 +322,10 @@ internal class SettingsAccordionController(
             battery
         )
         accordionEntry(
-            view, R.id.ll_notification_reading_header, R.id.tv_notification_reading_arrow,
-            R.id.tv_notification_reading_status, R.id.ll_notification_reading_settings,
-            notif
-        )
-        accordionEntry(
-            view, R.id.ll_caller_announcement_header, R.id.tv_caller_announcement_arrow,
-            R.id.tv_caller_announcement_status, R.id.ll_caller_announcement_settings,
-            caller
-        )
-        accordionEntry(
-            view, R.id.ll_sms_reading_header, R.id.tv_sms_reading_arrow,
-            R.id.tv_sms_reading_status, R.id.ll_sms_reading_settings,
-            sms
-        )
-        accordionEntry(
             view, R.id.ll_general_settings_header, R.id.tv_general_settings_arrow,
             R.id.tv_general_settings_status, R.id.ll_general_settings_content,
             general
         )
-        val deviceHealth = fragment.getString(R.string.section_device_health)
         accordionEntry(
             view, R.id.ll_device_health_header, R.id.tv_device_health_arrow,
             R.id.tv_device_health_status, R.id.ll_device_health_content,

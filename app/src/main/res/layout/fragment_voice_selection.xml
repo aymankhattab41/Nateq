@@ -99,7 +99,704 @@
             android:background="@color/divider_color" />
 
         <!-- عنوان القسم: اختيار الأصوات للغات (قابل للطي) -->
+        
+        <!-- إعدادات عادية -->
+        <TextView
+            android:id="@+id/tv_group_normal_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="إعدادات عادية"
+            android:textAppearance="?attr/textAppearanceHeadline6"
+            android:textColor="@color/text_secondary"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="4dp"
+            android:importantForAccessibility="yes"
+            android:accessibilityHeading="true" />
+<LinearLayout
+            android:id="@+id/ll_time_announcement_header"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:minHeight="48dp"
+            android:padding="4dp"
+            android:background="?attr/selectableItemBackground"
+            android:focusable="true"
+            android:accessibilityHeading="true"
+            android:importantForAccessibility="yes">
+
+            <TextView
+                android:id="@+id/tv_time_announcement_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:importantForAccessibility="no"
+                android:text="@string/section_time_announcement"
+                android:textAppearance="?attr/textAppearanceHeadline6" />
+
+            <TextView
+                android:id="@+id/tv_time_announcement_arrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="▼"
+                android:textSize="14sp"
+                android:paddingStart="8dp"
+                android:importantForAccessibility="no" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tv_time_announcement_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textAppearance="?attr/textAppearanceCaption"
+            android:textColor="@color/text_secondary"
+            android:importantForAccessibility="no" />
+
         <LinearLayout
+            android:id="@+id/ll_time_announcement_settings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="12dp"
+            android:visibility="gone">
+
+            <!-- تفعيل/إيقاف إعلان الوقت -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_time_announcement"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/time_announcement_enabled"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <!-- فاصل إعلان الوقت -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_time_interval"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:hint="@string/time_announcement_interval">
+                <androidx.appcompat.widget.AppCompatSpinner
+                    android:id="@+id/spinner_time_interval"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/spinner_time_interval_content" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- ساعات الهدوء لكل يوم -->
+            <TextView
+                android:id="@+id/tv_quiet_schedule_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/time_quiet_schedule_title"
+                android:textAppearance="?attr/textAppearanceBody2"
+                android:importantForAccessibility="yes" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/time_quiet_schedule_summary"
+                android:textAppearance="?attr/textAppearanceCaption"
+                android:textColor="@color/text_secondary"
+                android:importantForAccessibility="no" />
+
+            <LinearLayout
+                android:id="@+id/ll_quiet_schedule"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginTop="8dp" />
+
+            <!-- صيغة إعلان الوقت -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_time_format"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:hint="@string/time_announcement_format">
+                <androidx.appcompat.widget.AppCompatSpinner
+                    android:id="@+id/spinner_time_format"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/spinner_time_format_content" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- تنسيق 12/24 ساعة -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_time_display_24h"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:layout_marginTop="16dp"
+                android:text="@string/time_display_24h"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <!-- التاريخ الهجري بدل الميلادي -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_hijri_date"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:layout_marginTop="16dp"
+                android:text="@string/hijri_date_enabled"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <!-- أداة الساعة على الشاشة الرئيسية -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_clock_widget"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:layout_marginTop="16dp"
+                android:text="@string/clock_widget_enabled"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+        </LinearLayout>
+
+        <!-- فاصل -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="16dp"
+            android:tag="section_divider"
+            android:background="@color/divider_color" />
+
+        <!-- قسم نطق الأرقام (قابل للطي) -->
+        <LinearLayout
+            android:id="@+id/ll_notification_reading_header"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:minHeight="48dp"
+            android:padding="4dp"
+            android:background="?attr/selectableItemBackground"
+            android:focusable="true"
+            android:accessibilityHeading="true"
+            android:importantForAccessibility="yes">
+
+            <TextView
+                android:id="@+id/tv_notification_reading_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:importantForAccessibility="no"
+                android:text="@string/section_notification_reading"
+                android:textAppearance="?attr/textAppearanceHeadline6" />
+
+            <TextView
+                android:id="@+id/tv_notification_reading_arrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="▼"
+                android:textSize="14sp"
+                android:paddingStart="8dp"
+                android:importantForAccessibility="no" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tv_notification_reading_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textAppearance="?attr/textAppearanceCaption"
+            android:textColor="@color/text_secondary"
+            android:importantForAccessibility="no" />
+
+        <LinearLayout
+            android:id="@+id/ll_notification_reading_settings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="12dp"
+            android:visibility="gone">
+
+            <!-- تفعيل/إيقاف قراءة الإشعارات -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_notification_reading"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/notification_reading_enabled"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <!-- رابط فتح إعدادات إذن الوصول للإشعارات -->
+            <LinearLayout
+                android:id="@+id/ll_notification_listener_settings"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginTop="4dp"
+                android:minHeight="48dp"
+                android:padding="4dp"
+                android:background="?attr/selectableItemBackground"
+                android:focusable="true"
+                android:importantForAccessibility="yes"
+                android:contentDescription="@string/notification_listener_settings_summary">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/notification_listener_settings"
+                    android:textAppearance="?attr/textAppearanceBody2"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/notification_listener_settings_summary"
+                    android:textAppearance="?attr/textAppearanceCaption"
+                    android:textColor="@color/text_secondary"
+                    android:importantForAccessibility="no" />
+            </LinearLayout>
+
+            <!-- اختيار تطبيقات قراءة الإشعارات -->
+            <LinearLayout
+                android:id="@+id/ll_notification_apps_settings"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginTop="4dp"
+                android:minHeight="48dp"
+                android:padding="4dp"
+                android:background="?attr/selectableItemBackground"
+                android:focusable="true"
+                android:importantForAccessibility="yes"
+                android:contentDescription="@string/notification_apps_title">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/notification_apps_title"
+                    android:textAppearance="?attr/textAppearanceBody2"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/notification_apps_summary"
+                    android:textAppearance="?attr/textAppearanceCaption"
+                    android:textColor="@color/text_secondary"
+                    android:importantForAccessibility="no" />
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <!-- فاصل -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="16dp"
+            android:tag="section_divider"
+            android:background="@color/divider_color" />
+
+        <!-- قسم إعلان اسم المتصل (قابل للطي) -->
+        <LinearLayout
+            android:id="@+id/ll_sms_reading_header"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:minHeight="48dp"
+            android:padding="4dp"
+            android:background="?attr/selectableItemBackground"
+            android:focusable="true"
+            android:accessibilityHeading="true"
+            android:importantForAccessibility="yes">
+
+            <TextView
+                android:id="@+id/tv_sms_reading_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:importantForAccessibility="no"
+                android:text="@string/section_sms_reading"
+                android:textAppearance="?attr/textAppearanceHeadline6" />
+
+            <TextView
+                android:id="@+id/tv_sms_reading_arrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="▼"
+                android:textSize="14sp"
+                android:paddingStart="8dp"
+                android:importantForAccessibility="no" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tv_sms_reading_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textAppearance="?attr/textAppearanceCaption"
+            android:textColor="@color/text_secondary"
+            android:importantForAccessibility="no" />
+
+        <LinearLayout
+            android:id="@+id/ll_sms_reading_settings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="12dp"
+            android:visibility="gone">
+
+            <!-- وضع قراءة الرسائل: مفعل / معطل / قراءة مصدر الرسالة فقط -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/sms_reading_mode">
+                <androidx.appcompat.widget.AppCompatSpinner
+                    android:id="@+id/spinner_sms_reading_mode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/spinner_sms_reading_mode_content" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- اختيار الصوت -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:hint="@string/sms_reading_voice">
+                <androidx.appcompat.widget.AppCompatSpinner
+                    android:id="@+id/spinner_sms_reading_voice"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/spinner_sms_reading_voice_content" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- سرعة النطق -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/sms_reading_rate"
+                    android:textAppearance="?attr/textAppearanceBody2"
+                    android:layout_marginEnd="16dp" />
+
+                <TextView
+                    android:id="@+id/tv_sms_reading_rate_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="1.0x"
+                    android:textAppearance="?attr/textAppearanceBody2" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seek_sms_reading_rate"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:max="200"
+                android:progress="100"
+                android:contentDescription="@string/sms_reading_rate" />
+
+            <!-- مستوى الصوت -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/sms_reading_volume"
+                    android:textAppearance="?attr/textAppearanceBody2"
+                    android:layout_marginEnd="16dp" />
+
+                <TextView
+                    android:id="@+id/tv_sms_reading_volume_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="100%"
+                    android:textAppearance="?attr/textAppearanceBody2" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seek_sms_reading_volume"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:max="100"
+                android:progress="100"
+                android:contentDescription="@string/sms_reading_volume" />
+
+            <!-- قالب قراءة الرسائل -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/ll_sms_template_input"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:hint="@string/sms_announcement_template_hint"
+                app:helperText="@string/sms_announcement_template_placeholder">
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/et_sms_template"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:inputType="textMultiLine"
+                    android:maxLines="3"
+                    android:importantForAccessibility="yes" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+        </LinearLayout>
+
+        <!-- فاصل -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="16dp"
+            android:tag="section_divider"
+            android:background="@color/divider_color" />
+
+        <!-- إعدادات عامة (قابلة للطي) -->
+        <LinearLayout
+            android:id="@+id/ll_caller_announcement_header"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:minHeight="48dp"
+            android:padding="4dp"
+            android:background="?attr/selectableItemBackground"
+            android:focusable="true"
+            android:accessibilityHeading="true"
+            android:importantForAccessibility="yes">
+
+            <TextView
+                android:id="@+id/tv_caller_announcement_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:importantForAccessibility="no"
+                android:text="@string/section_caller_announcement"
+                android:textAppearance="?attr/textAppearanceHeadline6" />
+
+            <TextView
+                android:id="@+id/tv_caller_announcement_arrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="▼"
+                android:textSize="14sp"
+                android:paddingStart="8dp"
+                android:importantForAccessibility="no" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tv_caller_announcement_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textAppearance="?attr/textAppearanceCaption"
+            android:textColor="@color/text_secondary"
+            android:importantForAccessibility="no" />
+
+        <LinearLayout
+            android:id="@+id/ll_caller_announcement_settings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="12dp"
+            android:visibility="gone">
+
+            <!-- تفعيل/إيقاف إعلان المتصل -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_caller_announcement"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/caller_announcement_enabled"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <!-- عدد مرات التكرار -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:hint="@string/caller_announcement_repeat">
+                <androidx.appcompat.widget.AppCompatSpinner
+                    android:id="@+id/spinner_caller_repeat"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/spinner_caller_repeat_content" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- أسماء المتصلين المخصصة (رقم -> اسم يُنطق به) -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_caller_names"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:minHeight="48dp"
+                android:text="@string/caller_custom_names"
+                android:importantForAccessibility="yes" />
+
+            <!-- قالب إعلان المتصل -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/ll_caller_template_input"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:hint="@string/caller_announcement_template_hint"
+                app:helperText="@string/caller_announcement_template_placeholder">
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/et_caller_template"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:inputType="text"
+                    android:maxLines="2"
+                    android:importantForAccessibility="yes" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- صوت نطق الأسماء العربية -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:hint="@string/caller_announcement_voice_ar">
+                <androidx.appcompat.widget.AppCompatSpinner
+                    android:id="@+id/spinner_caller_voice_ar"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/caller_announcement_voice_ar" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- صوت نطق الأسماء الإنجليزية -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:hint="@string/caller_announcement_voice_en">
+                <androidx.appcompat.widget.AppCompatSpinner
+                    android:id="@+id/spinner_caller_voice_en"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/caller_announcement_voice_en" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- سرعة النطق -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/caller_announcement_rate"
+                    android:textAppearance="?attr/textAppearanceBody2"
+                    android:layout_marginEnd="16dp" />
+
+                <TextView
+                    android:id="@+id/tv_caller_rate_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="1.0x"
+                    android:textAppearance="?attr/textAppearanceBody2" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seek_caller_rate"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:max="200"
+                android:progress="100"
+                android:contentDescription="@string/caller_announcement_rate" />
+
+            <!-- مستوى الصوت -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/caller_announcement_volume"
+                    android:textAppearance="?attr/textAppearanceBody2"
+                    android:layout_marginEnd="16dp" />
+
+                <TextView
+                    android:id="@+id/tv_caller_volume_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="100%"
+                    android:textAppearance="?attr/textAppearanceBody2" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seek_caller_volume"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:max="100"
+                android:progress="100"
+                android:contentDescription="@string/caller_announcement_volume" />
+
+        </LinearLayout>
+
+        <!-- فاصل -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="16dp"
+            android:tag="section_divider"
+            android:background="@color/divider_color" />
+
+        <!-- قسم قراءة الرسائل الواردة (قابل للطي) -->
+        
+        <!-- فاصل بين المجموعتين -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="4dp"
+            android:background="@color/divider_color" />
+
+        <!-- إعدادات متقدمة -->
+        <TextView
+            android:id="@+id/tv_group_advanced_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="إعدادات متقدمة"
+            android:textAppearance="?attr/textAppearanceHeadline6"
+            android:textColor="@color/text_secondary"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="4dp"
+            android:importantForAccessibility="yes"
+            android:accessibilityHeading="true" />
+<LinearLayout
             android:id="@+id/ll_engine_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -326,166 +1023,6 @@
             android:background="@color/divider_color" />
 
         <!-- قسم إعدادات إعلان الوقت (قابل للطي) -->
-        <LinearLayout
-            android:id="@+id/ll_time_announcement_header"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:minHeight="48dp"
-            android:padding="4dp"
-            android:background="?attr/selectableItemBackground"
-            android:focusable="true"
-            android:accessibilityHeading="true"
-            android:importantForAccessibility="yes">
-
-            <TextView
-                android:id="@+id/tv_time_announcement_title"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:importantForAccessibility="no"
-                android:text="@string/section_time_announcement"
-                android:textAppearance="?attr/textAppearanceHeadline6" />
-
-            <TextView
-                android:id="@+id/tv_time_announcement_arrow"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="▼"
-                android:textSize="14sp"
-                android:paddingStart="8dp"
-                android:importantForAccessibility="no" />
-        </LinearLayout>
-
-        <TextView
-            android:id="@+id/tv_time_announcement_status"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textAppearance="?attr/textAppearanceCaption"
-            android:textColor="@color/text_secondary"
-            android:importantForAccessibility="no" />
-
-        <LinearLayout
-            android:id="@+id/ll_time_announcement_settings"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginTop="12dp"
-            android:visibility="gone">
-
-            <!-- تفعيل/إيقاف إعلان الوقت -->
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switch_time_announcement"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="48dp"
-                android:text="@string/time_announcement_enabled"
-                android:textOff="@string/toggle_off"
-                android:textOn="@string/toggle_on" />
-
-            <!-- فاصل إعلان الوقت -->
-            <com.google.android.material.textfield.TextInputLayout
-                android:id="@+id/til_time_interval"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:hint="@string/time_announcement_interval">
-                <androidx.appcompat.widget.AppCompatSpinner
-                    android:id="@+id/spinner_time_interval"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:minHeight="48dp"
-                    android:contentDescription="@string/spinner_time_interval_content" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <!-- ساعات الهدوء لكل يوم -->
-            <TextView
-                android:id="@+id/tv_quiet_schedule_title"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:text="@string/time_quiet_schedule_title"
-                android:textAppearance="?attr/textAppearanceBody2"
-                android:importantForAccessibility="yes" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="@string/time_quiet_schedule_summary"
-                android:textAppearance="?attr/textAppearanceCaption"
-                android:textColor="@color/text_secondary"
-                android:importantForAccessibility="no" />
-
-            <LinearLayout
-                android:id="@+id/ll_quiet_schedule"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:layout_marginTop="8dp" />
-
-            <!-- صيغة إعلان الوقت -->
-            <com.google.android.material.textfield.TextInputLayout
-                android:id="@+id/til_time_format"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:hint="@string/time_announcement_format">
-                <androidx.appcompat.widget.AppCompatSpinner
-                    android:id="@+id/spinner_time_format"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:minHeight="48dp"
-                    android:contentDescription="@string/spinner_time_format_content" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <!-- تنسيق 12/24 ساعة -->
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switch_time_display_24h"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="48dp"
-                android:layout_marginTop="16dp"
-                android:text="@string/time_display_24h"
-                android:textOff="@string/toggle_off"
-                android:textOn="@string/toggle_on" />
-
-            <!-- التاريخ الهجري بدل الميلادي -->
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switch_hijri_date"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="48dp"
-                android:layout_marginTop="16dp"
-                android:text="@string/hijri_date_enabled"
-                android:textOff="@string/toggle_off"
-                android:textOn="@string/toggle_on" />
-
-            <!-- أداة الساعة على الشاشة الرئيسية -->
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switch_clock_widget"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="48dp"
-                android:layout_marginTop="16dp"
-                android:text="@string/clock_widget_enabled"
-                android:textOff="@string/toggle_off"
-                android:textOn="@string/toggle_on" />
-
-        </LinearLayout>
-
-        <!-- فاصل -->
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="24dp"
-            android:layout_marginBottom="16dp"
-            android:tag="section_divider"
-            android:background="@color/divider_color" />
-
-        <!-- قسم نطق الأرقام (قابل للطي) -->
         <LinearLayout
             android:id="@+id/ll_number_reading_header"
             android:layout_width="match_parent"
@@ -910,509 +1447,6 @@
             android:background="@color/divider_color" />
 
         <!-- قسم قراءة الإشعارات (قابل للطي) -->
-        <LinearLayout
-            android:id="@+id/ll_notification_reading_header"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:minHeight="48dp"
-            android:padding="4dp"
-            android:background="?attr/selectableItemBackground"
-            android:focusable="true"
-            android:accessibilityHeading="true"
-            android:importantForAccessibility="yes">
-
-            <TextView
-                android:id="@+id/tv_notification_reading_title"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:importantForAccessibility="no"
-                android:text="@string/section_notification_reading"
-                android:textAppearance="?attr/textAppearanceHeadline6" />
-
-            <TextView
-                android:id="@+id/tv_notification_reading_arrow"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="▼"
-                android:textSize="14sp"
-                android:paddingStart="8dp"
-                android:importantForAccessibility="no" />
-        </LinearLayout>
-
-        <TextView
-            android:id="@+id/tv_notification_reading_status"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textAppearance="?attr/textAppearanceCaption"
-            android:textColor="@color/text_secondary"
-            android:importantForAccessibility="no" />
-
-        <LinearLayout
-            android:id="@+id/ll_notification_reading_settings"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginTop="12dp"
-            android:visibility="gone">
-
-            <!-- تفعيل/إيقاف قراءة الإشعارات -->
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switch_notification_reading"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="48dp"
-                android:text="@string/notification_reading_enabled"
-                android:textOff="@string/toggle_off"
-                android:textOn="@string/toggle_on" />
-
-            <!-- رابط فتح إعدادات إذن الوصول للإشعارات -->
-            <LinearLayout
-                android:id="@+id/ll_notification_listener_settings"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:layout_marginTop="4dp"
-                android:minHeight="48dp"
-                android:padding="4dp"
-                android:background="?attr/selectableItemBackground"
-                android:focusable="true"
-                android:importantForAccessibility="yes"
-                android:contentDescription="@string/notification_listener_settings_summary">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/notification_listener_settings"
-                    android:textAppearance="?attr/textAppearanceBody2"
-                    android:importantForAccessibility="no" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/notification_listener_settings_summary"
-                    android:textAppearance="?attr/textAppearanceCaption"
-                    android:textColor="@color/text_secondary"
-                    android:importantForAccessibility="no" />
-            </LinearLayout>
-
-            <!-- اختيار تطبيقات قراءة الإشعارات -->
-            <LinearLayout
-                android:id="@+id/ll_notification_apps_settings"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:layout_marginTop="4dp"
-                android:minHeight="48dp"
-                android:padding="4dp"
-                android:background="?attr/selectableItemBackground"
-                android:focusable="true"
-                android:importantForAccessibility="yes"
-                android:contentDescription="@string/notification_apps_title">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/notification_apps_title"
-                    android:textAppearance="?attr/textAppearanceBody2"
-                    android:importantForAccessibility="no" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/notification_apps_summary"
-                    android:textAppearance="?attr/textAppearanceCaption"
-                    android:textColor="@color/text_secondary"
-                    android:importantForAccessibility="no" />
-            </LinearLayout>
-
-        </LinearLayout>
-
-        <!-- فاصل -->
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="24dp"
-            android:layout_marginBottom="16dp"
-            android:tag="section_divider"
-            android:background="@color/divider_color" />
-
-        <!-- قسم إعلان اسم المتصل (قابل للطي) -->
-        <LinearLayout
-            android:id="@+id/ll_caller_announcement_header"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:minHeight="48dp"
-            android:padding="4dp"
-            android:background="?attr/selectableItemBackground"
-            android:focusable="true"
-            android:accessibilityHeading="true"
-            android:importantForAccessibility="yes">
-
-            <TextView
-                android:id="@+id/tv_caller_announcement_title"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:importantForAccessibility="no"
-                android:text="@string/section_caller_announcement"
-                android:textAppearance="?attr/textAppearanceHeadline6" />
-
-            <TextView
-                android:id="@+id/tv_caller_announcement_arrow"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="▼"
-                android:textSize="14sp"
-                android:paddingStart="8dp"
-                android:importantForAccessibility="no" />
-        </LinearLayout>
-
-        <TextView
-            android:id="@+id/tv_caller_announcement_status"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textAppearance="?attr/textAppearanceCaption"
-            android:textColor="@color/text_secondary"
-            android:importantForAccessibility="no" />
-
-        <LinearLayout
-            android:id="@+id/ll_caller_announcement_settings"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginTop="12dp"
-            android:visibility="gone">
-
-            <!-- تفعيل/إيقاف إعلان المتصل -->
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switch_caller_announcement"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="48dp"
-                android:text="@string/caller_announcement_enabled"
-                android:textOff="@string/toggle_off"
-                android:textOn="@string/toggle_on" />
-
-            <!-- عدد مرات التكرار -->
-            <com.google.android.material.textfield.TextInputLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:hint="@string/caller_announcement_repeat">
-                <androidx.appcompat.widget.AppCompatSpinner
-                    android:id="@+id/spinner_caller_repeat"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:minHeight="48dp"
-                    android:contentDescription="@string/spinner_caller_repeat_content" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <!-- أسماء المتصلين المخصصة (رقم -> اسم يُنطق به) -->
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_caller_names"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:minHeight="48dp"
-                android:text="@string/caller_custom_names"
-                android:importantForAccessibility="yes" />
-
-            <!-- قالب إعلان المتصل -->
-            <com.google.android.material.textfield.TextInputLayout
-                android:id="@+id/ll_caller_template_input"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:hint="@string/caller_announcement_template_hint"
-                app:helperText="@string/caller_announcement_template_placeholder">
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/et_caller_template"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:minHeight="48dp"
-                    android:inputType="text"
-                    android:maxLines="2"
-                    android:importantForAccessibility="yes" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <!-- صوت نطق الأسماء العربية -->
-            <com.google.android.material.textfield.TextInputLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:hint="@string/caller_announcement_voice_ar">
-                <androidx.appcompat.widget.AppCompatSpinner
-                    android:id="@+id/spinner_caller_voice_ar"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:minHeight="48dp"
-                    android:contentDescription="@string/caller_announcement_voice_ar" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <!-- صوت نطق الأسماء الإنجليزية -->
-            <com.google.android.material.textfield.TextInputLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:hint="@string/caller_announcement_voice_en">
-                <androidx.appcompat.widget.AppCompatSpinner
-                    android:id="@+id/spinner_caller_voice_en"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:minHeight="48dp"
-                    android:contentDescription="@string/caller_announcement_voice_en" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <!-- سرعة النطق -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginTop="12dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/caller_announcement_rate"
-                    android:textAppearance="?attr/textAppearanceBody2"
-                    android:layout_marginEnd="16dp" />
-
-                <TextView
-                    android:id="@+id/tv_caller_rate_value"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="1.0x"
-                    android:textAppearance="?attr/textAppearanceBody2" />
-            </LinearLayout>
-
-            <SeekBar
-                android:id="@+id/seek_caller_rate"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:max="200"
-                android:progress="100"
-                android:contentDescription="@string/caller_announcement_rate" />
-
-            <!-- مستوى الصوت -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginTop="12dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/caller_announcement_volume"
-                    android:textAppearance="?attr/textAppearanceBody2"
-                    android:layout_marginEnd="16dp" />
-
-                <TextView
-                    android:id="@+id/tv_caller_volume_value"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="100%"
-                    android:textAppearance="?attr/textAppearanceBody2" />
-            </LinearLayout>
-
-            <SeekBar
-                android:id="@+id/seek_caller_volume"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:max="100"
-                android:progress="100"
-                android:contentDescription="@string/caller_announcement_volume" />
-
-        </LinearLayout>
-
-        <!-- فاصل -->
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="24dp"
-            android:layout_marginBottom="16dp"
-            android:tag="section_divider"
-            android:background="@color/divider_color" />
-
-        <!-- قسم قراءة الرسائل الواردة (قابل للطي) -->
-        <LinearLayout
-            android:id="@+id/ll_sms_reading_header"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:minHeight="48dp"
-            android:padding="4dp"
-            android:background="?attr/selectableItemBackground"
-            android:focusable="true"
-            android:accessibilityHeading="true"
-            android:importantForAccessibility="yes">
-
-            <TextView
-                android:id="@+id/tv_sms_reading_title"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:importantForAccessibility="no"
-                android:text="@string/section_sms_reading"
-                android:textAppearance="?attr/textAppearanceHeadline6" />
-
-            <TextView
-                android:id="@+id/tv_sms_reading_arrow"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="▼"
-                android:textSize="14sp"
-                android:paddingStart="8dp"
-                android:importantForAccessibility="no" />
-        </LinearLayout>
-
-        <TextView
-            android:id="@+id/tv_sms_reading_status"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textAppearance="?attr/textAppearanceCaption"
-            android:textColor="@color/text_secondary"
-            android:importantForAccessibility="no" />
-
-        <LinearLayout
-            android:id="@+id/ll_sms_reading_settings"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginTop="12dp"
-            android:visibility="gone">
-
-            <!-- وضع قراءة الرسائل: مفعل / معطل / قراءة مصدر الرسالة فقط -->
-            <com.google.android.material.textfield.TextInputLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="@string/sms_reading_mode">
-                <androidx.appcompat.widget.AppCompatSpinner
-                    android:id="@+id/spinner_sms_reading_mode"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:minHeight="48dp"
-                    android:contentDescription="@string/spinner_sms_reading_mode_content" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <!-- اختيار الصوت -->
-            <com.google.android.material.textfield.TextInputLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:hint="@string/sms_reading_voice">
-                <androidx.appcompat.widget.AppCompatSpinner
-                    android:id="@+id/spinner_sms_reading_voice"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:minHeight="48dp"
-                    android:contentDescription="@string/spinner_sms_reading_voice_content" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <!-- سرعة النطق -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginTop="12dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/sms_reading_rate"
-                    android:textAppearance="?attr/textAppearanceBody2"
-                    android:layout_marginEnd="16dp" />
-
-                <TextView
-                    android:id="@+id/tv_sms_reading_rate_value"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="1.0x"
-                    android:textAppearance="?attr/textAppearanceBody2" />
-            </LinearLayout>
-
-            <SeekBar
-                android:id="@+id/seek_sms_reading_rate"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:max="200"
-                android:progress="100"
-                android:contentDescription="@string/sms_reading_rate" />
-
-            <!-- مستوى الصوت -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginTop="12dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/sms_reading_volume"
-                    android:textAppearance="?attr/textAppearanceBody2"
-                    android:layout_marginEnd="16dp" />
-
-                <TextView
-                    android:id="@+id/tv_sms_reading_volume_value"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="100%"
-                    android:textAppearance="?attr/textAppearanceBody2" />
-            </LinearLayout>
-
-            <SeekBar
-                android:id="@+id/seek_sms_reading_volume"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:max="100"
-                android:progress="100"
-                android:contentDescription="@string/sms_reading_volume" />
-
-            <!-- قالب قراءة الرسائل -->
-            <com.google.android.material.textfield.TextInputLayout
-                android:id="@+id/ll_sms_template_input"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:hint="@string/sms_announcement_template_hint"
-                app:helperText="@string/sms_announcement_template_placeholder">
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/et_sms_template"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:minHeight="48dp"
-                    android:inputType="textMultiLine"
-                    android:maxLines="3"
-                    android:importantForAccessibility="yes" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-        </LinearLayout>
-
-        <!-- فاصل -->
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="24dp"
-            android:layout_marginBottom="16dp"
-            android:tag="section_divider"
-            android:background="@color/divider_color" />
-
-        <!-- إعدادات عامة (قابلة للطي) -->
         <LinearLayout
             android:id="@+id/ll_general_settings_header"
             android:layout_width="match_parent"

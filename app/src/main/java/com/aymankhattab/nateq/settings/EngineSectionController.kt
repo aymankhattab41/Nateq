@@ -220,21 +220,16 @@ internal class EngineSectionController(
     }
 
     /**
-     * يُبني صفوف اللغات من المكتشف الفعلي فقط — لا تُعرض أي لغة لم تُرجعها
-     * getVoices — مع ضمان إدراج العربية والإنجليزية دائماً كحد أدنى مضمون:
-     * قد يحجبا الاكتشافُ حين تُعلن كل أصواتهما عبر محركٍ ما بياناتٍ غير
-     * مثبتة (LANG_MISSING_DATA/NOT_INSTALLED أو عبر الشبكة فقط)، فلا بدّ
-     * من بقائهما في القائمة بعرض لغتهما مع بقبه صندوق المحركات فارغاً
-     * (أشرطة قابلة للحفظ — نفس سلوك البرتب الصف «بلا محرك» في المهايئ).
+     * يُبني صفو اللغتين الثابتتين (الوضع المزدوج) حصراً: العربية والإنجليزية
+     * تُبنى في التطبيق دائماً بلا اكتشاف — لا تُعرض أي لغة إضافية مهما اكتشف
+     * المحركات، حتى لو أعلن اكتشافُها لغاتٍ أُخرى. المحركات والأصوات تبقى
+     * مستقراةً من الجهاز (لا تُبنى الأصوات نظرياً)، وتُقرأ من خريطة الاكتشاف
+     * لمطابقة اللغتين الثابتتين فقط.
      */
     private fun buildLanguageRows(
         discovered: Map<String, List<EngineWithVoices>>
     ): List<LanguageRow> {
-        val tags = LinkedHashSet<String>()
-        tags.addAll(discovered.keys.sorted())
-        tags.add("ar") // الحد الأدنى المضمون دائماً
-        tags.add("en")
-        return tags.map { tag ->
+        return listOf("ar", "en").map { tag ->
             LanguageRow(
                 languageTag = tag,
                 displayName = Locale.forLanguageTag(tag).displayName,
