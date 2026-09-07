@@ -183,59 +183,71 @@ internal class EngineSectionController(
         pitch: Float,
         rate: Float
     ) {
-        lateinit var previewTts: TextToSpeech
-        previewTts = TextToSpeech(fragment.requireContext()) { status ->
-            if (status != TextToSpeech.SUCCESS) {
-                // فشل تهيئة محرك المعاينة: نغلق فوراً حتى لا تبقى نسخة TTS معلقة
-                runCatching { previewTts.shutdown() }
-                return@TextToSpeech
-            }
-            runCatching { previewTts.setEngineByPackageName(enginePkg) }
-            try {
-                val avail = runCatching { previewTts.getVoices() }.getOrDefault(emptySet())
-                val voice = avail.firstOrNull { it.name == voiceName }
-                if (voice != null) {
-                    // نضبط المحرك على لسان الصوت المختار حتى لا يقرأ النص
-                    // بلغة المحرك الافتراضية (مثلاً الإنجليزية رغم اختيار العربي).
-                    runCatching { previewTts.setVoice(voice) }
-                    runCatching { previewTts.language = voice.locale }
+        var previewTts: TextToSpeech? = null
+        // ربط مباشر بالمحرك المعيّن (منشئ ثلاثي المعاملات) بدل الافتراضي ثم
+        // setEngineByPackageName: معاينة العينة يجب أن تعمل حتى لو كان محرك
+        // النطق الافتراضي للنظام هو حزمة LORD نفسها (التطبيق محرك TTS أصلياً).
+        val created = runCatching {
+            @Suppress("DEPRECATION")
+            previewTts = TextToSpeech(fragment.requireContext(), { status ->
+                if (status != TextToSpeech.SUCCESS) {
+                    // فشل تهيئة محرك المعاينة: نغلق فوراً حتى لا تبقى نسخة TTS معلقة
+                    runCatching { previewTts?.shutdown() }
+                    return@TextToSpeech
                 }
-            } catch (_: Exception) {}
-            previewTts.setSpeechRate(rate)
-            runCatching { previewTts.setPitch(pitch) }
-            // نمرر مستوى الصوت للمحرك عبر المعاملات (كان بلا مستوى صوت إطلاقاً)
-            // ليقترب ناتج المعاينة من النطق الفعلي الذي يطبق نفس القيم.
-            val params = android.os.Bundle().apply {
-                putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume)
-            }
-            // نعرض عينة بنفس لغة الصوت: عربي إن كان الصوت عربياً وإلا إنجليزي.
-            // (سبق: كان النص تجريبياً إنجليزياً دائماً فبدا للمستخدم أن الصوت إنجليزي.)
-            val sampleText = if (voiceName.lowercase().contains("ar") || voiceName.lowercase().contains("arab"))
-                fragment.getString(R.string.sample_text_preview_ar)
-            else
-                fragment.getString(R.string.sample_text_default_en)
-            val speakResult = runCatching {
-                previewTts.speak(
-                    sampleText,
-                    TextToSpeech.QUEUE_FLUSH,
-                    params,
-                    "preview"
-                )
-            }.getOrDefault(TextToSpeech.ERROR)
-            if (speakResult == TextToSpeech.ERROR) {
-                // فشل النطق (مثلاً المحرك دون لغة محمّلة): نغلق فوراً عوضاً عن تعليقه
-                runCatching { previewTts.shutdown() }
-                return@TextToSpeech
-            }
-            previewTts.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) {}
+                try {
+                    val avail = runCatching { previewTts?.getVoices().orEmpty() }.getOrDefault(emptySet())
+                    val voice = avail.firstOrNull { it.name == voiceName }
+                    if (voice != null) {
+                        // نضبط المحرك على لسان الصوت المختار حتى لا يقرأ النص
+                        // بلغة المحرك الافتراضية (مثلاً الإنجليزية رغم اختيار العربي).
+                        runCatching { previewTts?.setVoice(voice) }
+                        runCatching { previewTts?.let { it.language = voice.locale } }
+                    }
+                } catch (_: Exception) {}
+                previewTts?.setSpeechRate(rate)
+                runCatching { previewTts?.setPitch(pitch) }
+                // نمرر مستوى الصوت للمحرك عبر المعاملات (كان بلا مستوى صوت إطلاقاً)
+                // ليقترب ناتج المعاينة من النطق الفعلي الذي يطبق نفس القيم.
+                // السرعة والنبرة تمران عبر setSpeechRate/setPitch (لا توجد ثوابت
+                // عامة لهما في Bundle الكلامة).
+                val params = android.os.Bundle().apply {
+                    putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume)
+                }
+                // نعرض عينة بنفس لغة الصوت: عربي إن كان الصوت عربياً وإلا إنجليزي.
+                // (سبق: كان النص تجريبياً إنجليزياً دائماً فبدا للمستخدم أن الصوت إنجليزي.)
+                val sampleText = if (voiceName.lowercase().contains("ar") || voiceName.lowercase().contains("arab"))
+                    fragment.getString(R.string.sample_text_preview_ar)
+                else
+                    fragment.getString(R.string.sample_text_default_en)
+                val speakResult = runCatching {
+                    previewTts?.speak(
+                        sampleText,
+                        TextToSpeech.QUEUE_FLUSH,
+                        params,
+                        "preview"
+                    )
+                }.getOrDefault(TextToSpeech.ERROR)
+                if (speakResult == TextToSpeech.ERROR) {
+                    // فشل النطق (مثلاً المحرك دون لغة محمّلة): نغلق فوراً عوضاً عن تعليقه
+                    runCatching { previewTts?.shutdown() }
+                    return@TextToSpeech
+                }
+                previewTts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {}
 
-                @Deprecated("Java Deprecated")
-                override fun onDone(utteranceId: String?) { previewTts.shutdown() }
+                    @Deprecated("Java Deprecated")
+                    override fun onDone(utteranceId: String?) { previewTts?.shutdown() }
 
-                @Deprecated("Java Deprecated")
-                override fun onError(utteranceId: String?) { previewTts.shutdown() }
-            })
+                    @Deprecated("Java Deprecated")
+                    override fun onError(utteranceId: String?) { previewTts?.shutdown() }
+                })
+            }, enginePkg)
+        }
+        if (created.isFailure) {
+            // تعذّر ربط محرك المعاينة بذاته (حزمة غير صالحة): لا نترك نسخة معلقة.
+            runCatching { previewTts?.shutdown() }
+            return
         }
     }
 }

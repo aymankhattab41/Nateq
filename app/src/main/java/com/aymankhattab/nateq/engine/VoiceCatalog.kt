@@ -67,7 +67,16 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             }
         }
 
-        /** يسبر محركاً واحداً: نسخة مؤقتة + استعلام الأصوات، ثم إغلاق إجباري. */
+        /**
+         * يسبر محركاً واحداً: نسخة مؤقتة تُربط بالمحرك المعيّن مباشرةً
+         * (منشئ ثلاثي المعاملات) ثم استعلام الأصوات ثم إغلاق إجباري.
+         *
+         * الربط المباشر ضروري: الربط عبر المُنشئ الافتراضي ثم
+         * `setEngineByPackageName` ملحوظ كـ Deprecated وغير موثوق على كل
+         * الأجهزة — خصوصاً حين يكون محرك النطق الافتراضي هو حزمة LORD نفسها
+         * (التطبيق محرك TTS أصلياً)، إذ كان الاكتشاف يعود بأصوات المحرك
+         * الافتراضي (فارغة) بدل المحرك المقصود فيتسرب غيابُ لغات.
+         */
         @Suppress("DEPRECATION")
         private suspend fun probeEngineVoices(
             context: Context,
@@ -75,37 +84,40 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
         ): List<Voice> {
             val result: List<Voice>? = withTimeoutOrNull(ENGINE_PROBE_TIMEOUT_MS) {
                 suspendCancellableCoroutine<List<Voice>> { cont ->
-                    lateinit var probe: TextToSpeech
-                    val finished = AtomicBoolean(false)
                     @Suppress("DEPRECATION")
-                    probe = TextToSpeech(context, { status ->
-                        // حارس: النسخة تغلق مرة واحدة فقط مهما تكرر استدعاء المستمع.
-                        if (finished.getAndSet(true)) {
-                            runCatching { probe.shutdown() }
-                            return@TextToSpeech
-                        }
-                        try {
-                            if (status != TextToSpeech.SUCCESS) {
-                                cont.resume(emptyList())
-                            } else {
-                                val bound = runCatching { probe.setEngineByPackageName(enginePackage) }
-                                    .getOrDefault(TextToSpeech.ERROR)
-                                val voices = if (bound == TextToSpeech.SUCCESS) {
-                                    @Suppress("DEPRECATION")
-                                    runCatching { probe.getVoices() }.getOrDefault(emptySet())
-                                } else emptySet<Voice>()
-                                cont.resume(voices.toList())
+                    var probe: TextToSpeech? = null
+                    val finished = AtomicBoolean(false)
+                    val created = runCatching {
+                        probe = TextToSpeech(context, { status ->
+                            // حارس: النسخة تغلق مرة واحدة فقط مهما تكرر استدعاء المستمع.
+                            if (finished.getAndSet(true)) {
+                                runCatching { probe?.shutdown() }
+                                return@TextToSpeech
                             }
-                        } catch (_: Throwable) {
-                            cont.resume(emptyList())
-                        } finally {
-                            runCatching { probe.shutdown() }
-                        }
-                    })
+                            try {
+                                if (status != TextToSpeech.SUCCESS) {
+                                    cont.resume(emptyList())
+                                } else {
+                                    @Suppress("DEPRECATION")
+                                    val voices = runCatching { probe?.getVoices().orEmpty() }
+                                        .getOrDefault(emptySet())
+                                    cont.resume(voices.toList())
+                                }
+                            } catch (_: Throwable) {
+                                cont.resume(emptyList())
+                            } finally {
+                                runCatching { probe?.shutdown() }
+                            }
+                        }, enginePackage)
+                    }
+                    if (created.isFailure) {
+                        // محرك غير قابل للربط (حزمة غير صالحة أو منزوعة): لا أصوات.
+                        cont.resume(emptyList())
+                    }
                     // إن أُغلق الاكتشاف (مهلة/إلغاء) نغلق النسخة المعلقة.
                     cont.invokeOnCancellation {
                         if (finished.getAndSet(true)) return@invokeOnCancellation
-                        runCatching { probe.shutdown() }
+                        runCatching { probe?.shutdown() }
                     }
                 }
             }
