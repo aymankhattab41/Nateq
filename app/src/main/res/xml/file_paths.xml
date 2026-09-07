@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- مسارات قابلة للمشاركة عبر FileProvider لتثبيت الـ APK المُنزَل.
-     نحن نشارك ملفات داخل مجلد التطبيق (filesDir) فقط عبر المسار المسمى
-     "downloads" — لا شيء عام ولا خارج الملحق. -->
+     مسار التنزيل في التخزين الخارجي المُخصَّص للتطبيق (getExternalFilesDir)
+     لأن DownloadManager يرفض وجهات app_internal على أندرويد 10+. -->
 <paths>
-    <files-path
+    <external-files-path
         name="downloads"
         path="downloads/" />
 </paths>

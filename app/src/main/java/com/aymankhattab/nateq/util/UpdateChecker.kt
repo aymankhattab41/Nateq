@@ -59,9 +59,12 @@ internal object UpdateChecker {
             }
         }
 
-    /** مسار مجلد التخزين المحلي للتنزيلات. */
-    private fun downloadsDir(context: Context) =
-        File(context.filesDir, "downloads").apply { mkdirs() }
+    /** مسار مجلد التخزين المحلي للتنزيلات.
+     *  يستخدم التخزين الخارجي المُخصَّص للتطبيق (getExternalFilesDir) لأن
+     *  DownloadManager على أندرويد 10+ يرفض الوجهات داخل app_internal
+     *  (SecurityException: Unsupported path) ويقبل فقط مسارات التخزين الخارجي. */
+    private fun downloadsDir(context: Context): File =
+        File(context.getExternalFilesDir(null), "downloads").apply { mkdirs() }
 
     /** مسار ملف الـ APK المُنزَل. */
     fun downloadedApk(context: Context): File =
