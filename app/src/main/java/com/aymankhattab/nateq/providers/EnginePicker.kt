@@ -83,14 +83,19 @@ object EnginePicker {
     }
 
     /**
-     * يختار محرك الاحتياط بعد فشل المحرك الأصلي في النطق: يستبعد المحرك
-     * الفاشل من القائمة ثم يعتمد على [pickPreferredEngineFrom] على كامل
-     * المتبقي — فيُفضَّل جوجل (وإن لم يوجد، أي محرك حقيقي آخر بالترتيب:
-     * MultiTTS/سامسونج/…). يدعم الأسواق التي لا تصلها خدمة جوجل (الصين مثلاً).
-     * منطق نقي قابل للاختبار دون Context.
+     * يختار محرك الاحتياط بعد فشل محرك أو أكثر في النطق: يستبعد **كل** المحركات
+     * الفاشلة سابقاً (سجل [failedEngines]) من القائمة ثم يعتمد على
+     * [pickPreferredEngineFrom] على المتبقّي — فيُفضَّل جوجل (وإن لم يوجد، أي
+     * محرك حقيقي آخر بالترتيب: MultiTTS/سامسونج/…). يدعم الأسواق التي لا تصلها
+     * خدمة جوجل (الصين مثلاً). منطق نقي قابل للاختبار دون Context.
+     *
+     * بالاستبعاد التراكمي يُمنع «تأرجح التراجع» (ping-pong): لو فشل المحركان
+     * A ثم B معاً فلن يُعاد A (المفضّل الأول) لأن الاثنين مستبعدان من القائمة
+     * — فكان الاستبعادُ السابق للمحرك الأخير الفاشل فقط يُعيد الأعلى أولويةً
+     * وتترنّح المحاولة بين المحركين حتى استنفاد الذاكرة.
      */
-    fun pickFallbackEngineFrom(installed: Collection<String>, failedPackage: String?): String? {
-        return pickPreferredEngineFrom(installed.filter { it != failedPackage })
+    fun pickFallbackEngineFrom(installed: Collection<String>, failedEngines: Set<String>): String? {
+        return pickPreferredEngineFrom(installed.filter { it !in failedEngines })
     }
 
     /**

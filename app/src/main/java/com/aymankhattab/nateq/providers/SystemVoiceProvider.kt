@@ -64,6 +64,13 @@ class SystemVoiceProvider(
         private const val CANCELLATION_POLL_MS = 100L
 
         /**
+         * سقف أقصى للمحاولات الفاشلة قبل التوقف (بعد فشل محركين نتوقف بدل
+         * التأرجح اللانهائي بينهما). المحرك المختار يدوياً يُحسب ضمن السقف:
+         * لو فشل ثم فشل خلفه محرك آخر، يوقف التراجع قبل استنفاد القائمة.
+         */
+        private const val MAX_RETRIES = 2
+
+        /**
          * الحجم الأدنى المخزَّن في المسبح (بايت). الصفائف الصغيرة أرخص في
          * الإنشاء والنسخ، فلا فائدة من خزنها — نُعيدها للمُجمّع مباشرة.
          */
@@ -255,7 +262,10 @@ class SystemVoiceProvider(
                 onAudioChunk,
                 cont,
                 cancelled,
-                desiredVoiceName
+                desiredVoiceName,
+                // سجل بكل المحركات التي فشلت خلال هذه الجولة للتراجع التراكمي
+                // (يمنع إعادة اختيار محركٍ فشل سابقاً — منعاً لتأرجح ping-pong).
+                failedEngines = mutableSetOf()
             )
         }
     }
@@ -270,12 +280,15 @@ class SystemVoiceProvider(
         }
     }
 
-    /**
+/**
      * يُنفّذ النطق عبر المحرك المعطى، وعند فشل المحرك الطرفي (مثل SmartVoice الذي
-     * يفشل synthesizeToFile) يتراجع تلقائياً إلى محرك جوجل المدمج كملاذ أخير حتى
-     * لا يبقى التطبيق صامتاً على أي جهاز.
+     * يفشل synthesizeToFile) يتراجع تلقائياً إلى أفضل محرك متبقٍ (جوجل أولاً إن
+     * وُجد) كملاذ أخير حتى لا يبقى التطبيق صامتاً على أي جهاز. كل محرك يفشل
+     * يُضاف إلى [failedEngines] ويُستبعد من كل اختيار لاحق — فلا يُعاد محركٌ
+     * فشل سابقاً ولا يحدث تأرجح بين محركين، وبسقف [MAX_RETRIES] نتوقف عند
+     * استنفاد المحاولات بدل الحلقة اللانهائية.
      */
-private fun synthesizeWithEngine(
+    private fun synthesizeWithEngine(
         engine: String?,
         text: String,
         voice: VoiceDescriptor,
@@ -286,7 +299,8 @@ private fun synthesizeWithEngine(
         onAudioChunk: (ByteArray, Int) -> Unit,
         cont: kotlin.coroutines.Continuation<Unit>,
         cancelled: AtomicBoolean,
-        desiredVoiceName: String?
+        desiredVoiceName: String?,
+        failedEngines: MutableSet<String>
     ) {
         val done = AtomicBoolean(false)
         val attemptWith = { currentEngine: String? ->
@@ -314,12 +328,12 @@ private fun synthesizeWithEngine(
                                 onSuccess = { cont.resume(Unit) },
                                 onFailure = {
                                     // فشل النطق — جرّب محرك جوجل إن أمكن.
-                                    retryWithGoogle(engine, voice, text, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cont, cancelled, desiredVoiceName)
+                                    retryWithGoogle(currentEngine, voice, text, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cont, cancelled, desiredVoiceName, failedEngines)
                                 }
                             )
                         } else {
                             Log.e(TAG, "[Provider] engine init failed: $currentEngine status=$status")
-                            retryWithGoogle(engine, voice, text, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cont, cancelled, desiredVoiceName)
+                            retryWithGoogle(currentEngine, voice, text, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cont, cancelled, desiredVoiceName, failedEngines)
                         }
                     }, currentEngine)
                     ttsEngine = currentEngine
@@ -333,7 +347,7 @@ private fun synthesizeWithEngine(
                         },
                         onSuccess = { cont.resume(Unit) },
                         onFailure = {
-                            retryWithGoogle(engine, voice, text, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cont, cancelled, desiredVoiceName)
+                            retryWithGoogle(currentEngine, voice, text, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cont, cancelled, desiredVoiceName, failedEngines)
                         }
                     )
                 }
@@ -349,11 +363,14 @@ private fun synthesizeWithEngine(
 
     /**
      * عند فشل المحرك الأصلي، يتراجع إلى أفضل محرك متبقٍ من القائمة الكاملة
-     * (جوجل أولاً إن وُجد، وإلا MultiTTS/سامسونج/أي محرك حقيقي) — ليغطي أجهزة
-     * الأسواق التي لا تصلها خدمة جوجل (الصين مثلاً). لا يُعاد المحرك الفاشل.
+     * (جوجل أولاً إن وُجد، وإلا MultiTTS/سامسونج/أي محرك حقيقي) — ليغطي
+     * أجهزة الأسواق التي لا تصلها خدمة جوجل (الصين مثلاً). المحرك الفاشل يُضاف
+     * إلى [failedEngines] ويُستبعد مع كل ما فشل قبله من كل اختيار لاحق، فلا
+     * يحدث تأرجح لانهائي بين محركين (A يختار B، وB يُعيد A) يستنزف الذاكرة —
+     * وبسقف [MAX_RETRIES] تتوقف المحاولات عند بلوغه بلا N محاولة.
      */
     private fun retryWithGoogle(
-        originalEngine: String?,
+        failedEngine: String?,
         voice: VoiceDescriptor,
         text: String,
         speechRate: Float,
@@ -363,15 +380,27 @@ private fun synthesizeWithEngine(
         onAudioChunk: (ByteArray, Int) -> Unit,
         cont: kotlin.coroutines.Continuation<Unit>,
         cancelled: AtomicBoolean,
-        desiredVoiceName: String?
+        desiredVoiceName: String?,
+        failedEngines: MutableSet<String>
     ) {
         if (cancelled.get()) return
-        val remaining = EnginePicker.installedEnginePackages(context)
-        val fallback = EnginePicker.pickFallbackEngineFrom(remaining, originalEngine)
-        // لا نُعيد المحرك الأصلي الفاشل، ولا نتراجع إن لم يبقَ أي محرك.
-        if (fallback != null && fallback != originalEngine && EnginePicker.installedEnginePackages(context).contains(fallback)) {
-            Log.w(TAG, "[Provider] falling back to engine: $fallback")
-            synthesizeWithEngine(fallback, text, voice, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cont, cancelled, desiredVoiceName)
+        if (failedEngine != null) failedEngines.add(failedEngine)
+        // سقف أقصى للمحاولات: عند بلوغه نتوقف بدل المحاولات اللامتناهية.
+        if (failedEngines.size >= MAX_RETRIES) {
+            Log.w(TAG, "[Provider] max retries reached ($MAX_RETRIES): $failedEngines")
+            cont.resume(Unit)
+            return
+        }
+        val fallback = EnginePicker.pickFallbackEngineFrom(
+            EnginePicker.installedEnginePackages(context),
+            failedEngines
+        )
+        if (fallback != null) {
+            Log.w(TAG, "[Provider] falling back to engine: $fallback (failed so far: $failedEngines)")
+            synthesizeWithEngine(
+                fallback, text, voice, speechRate, pitch, volume,
+                onFormatInfo, onAudioChunk, cont, cancelled, desiredVoiceName, failedEngines
+            )
         } else {
             cont.resume(Unit)
         }

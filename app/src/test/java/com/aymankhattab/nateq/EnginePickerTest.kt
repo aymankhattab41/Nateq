@@ -82,7 +82,7 @@ class EnginePickerTest {
             "com.nirenr.talkman",
             "com.svox.pico"
         )
-        assertEquals("com.svox.pico", EnginePicker.pickFallbackEngineFrom(installed, null))
+        assertEquals("com.svox.pico", EnginePicker.pickFallbackEngineFrom(installed, emptySet()))
     }
 
     // ===== pickFallbackEngineFrom: احتياطي بعد فشل المحرك الأصلي =====
@@ -92,7 +92,7 @@ class EnginePickerTest {
         val installed = listOf("com.samsung.SMT", "com.google.android.tts", "com.svox.pico")
         assertEquals(
             "com.google.android.tts",
-            EnginePicker.pickFallbackEngineFrom(installed, "org.nobody.multitts")
+            EnginePicker.pickFallbackEngineFrom(installed, setOf("org.nobody.multitts"))
         )
     }
 
@@ -102,7 +102,7 @@ class EnginePickerTest {
         val installed = listOf("com.samsung.SMT", "com.svox.pico", "com.thirdparty.tts")
         assertEquals(
             "com.samsung.SMT",
-            EnginePicker.pickFallbackEngineFrom(installed, "org.nobody.multitts")
+            EnginePicker.pickFallbackEngineFrom(installed, setOf("org.nobody.multitts"))
         )
     }
 
@@ -110,13 +110,29 @@ class EnginePickerTest {
     fun fallback_skipsFailedEngine() {
         // المحرك الفاشل نفسه (جوجل هنا) مستبعد — يجب ألا يُعاد
         val installed = listOf("com.google.android.tts", "com.svox.pico")
-        assertEquals("com.svox.pico", EnginePicker.pickFallbackEngineFrom(installed, "com.google.android.tts"))
+        assertEquals("com.svox.pico", EnginePicker.pickFallbackEngineFrom(installed, setOf("com.google.android.tts")))
     }
 
     @Test
     fun fallback_returnsNull_WhenNothingRemains() {
-        assertNull(EnginePicker.pickFallbackEngineFrom(listOf("com.google.android.tts"), "com.google.android.tts"))
-        assertNull(EnginePicker.pickFallbackEngineFrom(emptyList(), null))
+        assertNull(EnginePicker.pickFallbackEngineFrom(listOf("com.google.android.tts"), setOf("com.google.android.tts")))
+        assertNull(EnginePicker.pickFallbackEngineFrom(emptyList(), emptySet()))
+    }
+
+    @Test
+    fun fallback_noPingPong_acrossMultipleFailures() {
+        // فشل A ثم B معاً (التراجع التراكمي): لا يُعاد A الأعلى أولويةً — هذا
+        // بالضبط ما كان يسبب التأرجح اللانهائي A↔B باستبعادِ المحرك الأخير فقط.
+        val installed = listOf("org.nobody.multitts", "com.google.android.tts", "com.svox.pico")
+        // فشل MultiTTS (A) ثم جوجل (B): يقع على المحرك الثالث ولا يُعاد A.
+        assertEquals(
+            "com.svox.pico",
+            EnginePicker.pickFallbackEngineFrom(installed, setOf("org.nobody.multitts", "com.google.android.tts"))
+        )
+        // فشل كل المحركات: توقف كامل بلا عودة للمحرك الأول.
+        assertNull(EnginePicker.pickFallbackEngineFrom(installed, setOf("org.nobody.multitts", "com.google.android.tts", "com.svox.pico")))
+        // محركان فقط وفشلا معاً: لا شيء يبقى ولا تُعاد إعادة أولوية.
+        assertNull(EnginePicker.pickFallbackEngineFrom(listOf("org.nobody.multitts", "com.google.android.tts"), setOf("org.nobody.multitts", "com.google.android.tts")))
     }
 
     @Test
@@ -126,12 +142,12 @@ class EnginePickerTest {
             "com.google.android.marvin.talkback",
             "com.random.othertts"
         )
-        assertEquals("com.random.othertts", EnginePicker.pickFallbackEngineFrom(installed, null))
+        assertEquals("com.random.othertts", EnginePicker.pickFallbackEngineFrom(installed, emptySet()))
     }
 
     @Test
     fun fallback_prefersMultiTts_OverGoogle_AfterAnotherFails() {
         val installed = listOf("org.nobody.multitts", "com.google.android.tts")
-        assertEquals("org.nobody.multitts", EnginePicker.pickFallbackEngineFrom(installed, "com.samsung.SMT"))
+        assertEquals("org.nobody.multitts", EnginePicker.pickFallbackEngineFrom(installed, setOf("com.samsung.SMT")))
     }
 }
