@@ -371,6 +371,9 @@
     <string name="dict_import_failed">فشل استيراد القاموس</string>
     <string name="dict_export_failed">فشل تصدير القاموس</string>
     <string name="dict_removed">تم حذف الإدخال من القاموس</string>
+    <string name="dict_import_mode_title">طريقة استيراد القاموس</string>
+    <string name="dict_import_merge">دمج مع الإدخالات الحالية</string>
+    <string name="dict_import_replace">استبدال كامل</string>
 
     <!-- بلاط الإعدادات السريعة -->
     <string name="tile_label_on">Lord TTS: الإعلانات مفعّلة</string>

@@ -103,23 +103,19 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     // استيراد/تصدير القاموس عبر شاشة الوثائق (SAF)
     private lateinit var btnImportDict: com.google.android.material.button.MaterialButton
     private lateinit var btnExportDict: com.google.android.material.button.MaterialButton
+    // نص ملف القاموس المُختار من SAF لحين اختيار طريقة الاستيراد (دمج/استبدال)
+    private var pendingImportJson: String? = null
 
     private val openDictLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            val ok = runCatching {
-                val text = requireContext().contentResolver.openInputStream(uri)
+            // نقرأ الملف أولاً ثم نعرض حوار طريقة الاستيراد (دمج/استبدال)
+            runCatching {
+                pendingImportJson = requireContext().contentResolver.openInputStream(uri)
                     ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
-                text != null && pronunciationDict.importFromJson(text)
-            }.getOrDefault(false)
-            Toast.makeText(
-                requireContext(),
-                if (ok) R.string.dict_imported_ok else R.string.dict_import_failed,
-                Toast.LENGTH_SHORT
-            ).show()
-            view?.announceCompat(getString(if (ok) R.string.dict_imported_ok else R.string.dict_import_failed))
-            if (ok) refreshDictAdapter()
+            }
+            showImportModeDialog()
         }
     }
 
@@ -140,6 +136,37 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             ).show()
             view?.announceCompat(getString(if (ok) R.string.dict_exported_ok else R.string.dict_export_failed))
         }
+    }
+
+    /** حوار طريقة الاستيراد: دمج مع الإدخالات الحالية أو استبدال كامل، ثم تطبيق
+     *  ملف القاموس المُختار من SAF بالطريقة المختارة (يُحفظ نصه في
+     *  [pendingImportJson] كي لا يقفز حوار الطريقة خارج سياق النتيجة). */
+    private fun showImportModeDialog() {
+        val json = pendingImportJson ?: return
+        val options = arrayOf(
+            getString(R.string.dict_import_merge),
+            getString(R.string.dict_import_replace)
+        )
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.dict_import_mode_title)
+            .setItems(options) { _, which ->
+                pendingImportJson = null
+                val ok = runCatching {
+                    pronunciationDict.importFromJson(json, merge = which == 0)
+                }.getOrDefault(false)
+                Toast.makeText(
+                    requireContext(),
+                    if (ok) R.string.dict_imported_ok else R.string.dict_import_failed,
+                    Toast.LENGTH_SHORT
+                ).show()
+                view?.announceCompat(
+                    getString(if (ok) R.string.dict_imported_ok else R.string.dict_import_failed)
+                )
+                if (ok) refreshDictAdapter()
+            }
+            .setNegativeButton(getString(R.string.cancel)) { _, _ -> pendingImportJson = null }
+            .setOnCancelListener { pendingImportJson = null }
+            .show()
     }
 
     // ===== النسخ الاحتياطي / الاستعادة الكاملان (إعدادات + قاموس + أسماء متصلين) =====

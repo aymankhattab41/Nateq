@@ -47,6 +47,12 @@ class NateqTtsService : TextToSpeechService() {
     @Inject
     lateinit var settingsRepository: SettingsRepository
 
+    /** قاموس النطق الشخصي — سنجلتون Hilt موحَّد مع نسخة الواجهة، ويُرصد طابعه
+     *  على القرص عند كل تطبيق (في [PronunciationDictionary.apply]) ليلتقط
+     *  التعديلات القادمة من عملية الواجهة المنفصلة عن عملية :tts. */
+    @Inject
+    lateinit var pronunciationDictionary: PronunciationDictionary
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private lateinit var settings: SettingsRepository
@@ -71,10 +77,13 @@ class NateqTtsService : TextToSpeechService() {
         settings = if (::settingsRepository.isInitialized) settingsRepository
         else SettingsRepository(applicationContext)
 
+        val dict = if (::pronunciationDictionary.isInitialized) pronunciationDictionary
+        else PronunciationDictionary(applicationContext)
+
         val providers = listOf(SystemVoiceProvider(applicationContext, settings))
         catalog = VoiceCatalog(providers)
         requestHandler = SynthesisRequestHandler(catalog, settings)
-        textProcessor = TextProcessor(applicationContext, settings)
+        textProcessor = TextProcessor(applicationContext, settings, dict)
 
         // اكتشاف اللغات المتاحة عبر كل محركات TTS المثبتة كخلفية: يملأ ذاكرة
         // الكتالوج دون أن يُعقّل إنشاء الخدمة أبداً؛ وحتى لو تعذّر يبقى حد

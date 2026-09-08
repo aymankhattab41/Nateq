@@ -370,6 +370,9 @@
     <string name="dict_import_failed">Failed to import dictionary</string>
     <string name="dict_export_failed">Failed to export dictionary</string>
     <string name="dict_removed">Dictionary entry deleted</string>
+    <string name="dict_import_mode_title">Import method</string>
+    <string name="dict_import_merge">Merge with existing entries</string>
+    <string name="dict_import_replace">Replace all</string>
 
     <!-- Quick settings tile -->
     <string name="tile_label_on">Lord TTS: announcements on</string>

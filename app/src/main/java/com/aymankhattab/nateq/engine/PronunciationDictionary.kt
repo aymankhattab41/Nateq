@@ -50,9 +50,20 @@ class PronunciationDictionary(private val context: Context) {
     // نوع بالمفتاح النصي القيمة النصية بلا TypeToken (مقاوم لقصّ R8 للتوقيعات)
     private val typeToken: Type = GsonTypes.mapStringOf(String::class.java)
 
+    // ملف التفضيلات المشفّر على القرص — يُرصد طابعه لاكتشاف تعديلات عملية
+    // الواجهة المنفصلة عن عملية :tts دون إعادة فتح التفضيلات في كل نطق.
+    private val prefsFile: java.io.File? =
+        if (prefs != null) context.filesDir?.parentFile
+            ?.let { java.io.File(it, "shared_prefs/nateq_pronunciation_dict.xml") }
+        else null
+    // آخر طابع قرأه هذا المثيل من القرص؛ null = يجب إعادة القراءة.
+    @Volatile
+    private var lastStamp: Long? = null
+
     init {
         load()
         removeLegacyDefaultsOnce()
+        if (prefs != null) lastStamp = currentStamp()
     }
 
     /** الإدخالات الافتراضية القديمة التي كانت تُزرَع تلقائياً في نسخ سابقة؛
@@ -172,8 +183,40 @@ class PronunciationDictionary(private val context: Context) {
         sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
     }
 
+    /** هل التخزين المشفّر متاح فعلاً (Keystore سليم) أم يُعمل بالذاكرة فقط؟ */
+    fun isPersistent(): Boolean = prefs != null
+
+    /** إعادة تحميل الإدخالات من القرص المشفّر — يلتقط التعديلات التي كتبتها
+     *  عملية الواجهة المنفصلة عن عملية :tts (الإنشاء يُحمّل مرة واحدة فقط). */
+    fun reload() {
+        if (prefs == null) return
+        entries.clear()
+        load()
+        ahoCorasick = null
+        lastStamp = currentStamp()
+    }
+
+    /** إعادة تحميل فورية فقط إذا تغيّر طابع الملف على القرص منذ آخر قراءة —
+     *  فحص طابع أرخص بكثير من إعادة فتح التفضيلات المشفّرة في كل نطق، ويُدعى
+     *  تلقائياً من [apply] ليلتقط تعديلات عملية الواجهة دون إعادة تشغيل الخدمة. */
+    fun reloadIfChanged(): Boolean {
+        if (prefs == null) return false
+        val stamp = currentStamp()
+        if (lastStamp == stamp) return false
+        entries.clear()
+        load()
+        ahoCorasick = null
+        lastStamp = stamp
+        return true
+    }
+
+    private fun currentStamp(): Long =
+        prefsFile?.let { if (it.exists()) it.lastModified() else 0L } ?: 0L
+
     /** تطبيق القاموس على نص */
     fun apply(text: String): String {
+        // اكتشاف تعديلات عملية الواجهة على القرص قبل كل تطبيق
+        reloadIfChanged()
         val machine = ahoCorasick ?: synchronized(this) {
             ahoCorasick ?: AhoCorasick(entries.toMap()).also { ahoCorasick = it }
         }
@@ -201,21 +244,48 @@ class PronunciationDictionary(private val context: Context) {
     /** الحصول على جميع الإدخالات */
     fun getAllEntries(): Map<String, String> = entries.toMap()
 
-    /** استيراد قاموس من JSON */
-    fun importFromJson(json: String): Boolean {
+    /** استيراد قاموس من JSON — يتخطى الصفوف غير الصالحة بدل إفشال الاستيراد
+     *  كاملاً، ويدعم الدمج مع الإدخالات الحالية أو الاستبدال الكامل.
+     *  @param merge true: يُدمج مع الحالي (تتغلب الإدخالات الجديدة على المفاتيح
+     *               المكررة مع بقاء بقية الحالي)؛ false: يحل محله بالكامل.
+     *  @return true إن طُبِّق صف صالح واحد على الأقل (الذاكرة تتحدّث دائماً؛
+     *          لا يُعدّ فشل التخزين المشفّر نجاحاً). */
+    fun importFromJson(json: String, merge: Boolean = false): Boolean {
         if (json.length > MAX_IMPORT_BYTES) return false
-        return try {
-            val map = gson.fromJson(json, typeToken) as Map<String, String>
-            if (map.size > MAX_IMPORT_ENTRIES) return false
-            if (map.keys.any { it.isBlank() || it.length > MAX_KEY_LENGTH }) return false
-            if (map.values.any { it.length > MAX_VALUE_LENGTH }) return false
-            entries.clear()
-            entries.putAll(map)
-            ahoCorasick = null
-            save()
+        val map = try {
+            gson.fromJson(json, typeToken) as? Map<*, *>
         } catch (e: Exception) {
-            false
+            return false
+        } ?: return false
+
+        // فلترة الصفوف الصالحة فقط: مفتاح/قيمة نصيان غير فارغين ضمن الحدود
+        val valid = LinkedHashMap<String, String>()
+        for ((rawKey, rawValue) in map) {
+            if (rawKey !is String || rawValue !is String) continue
+            val key = rawKey.trim()
+            val value = rawValue.trim()
+            if (key.isEmpty() || key.length > MAX_KEY_LENGTH) continue
+            if (value.isEmpty() || value.length > MAX_VALUE_LENGTH) continue
+            valid[key] = value
         }
+        if (valid.isEmpty()) return false
+
+        if (!merge) entries.clear()
+
+        // السقف التراكمي: الحالي أولاً ثم الجديد بترتيبه حتى MAX_IMPORT_ENTRIES
+        var size = entries.size
+        var imported = 0
+        for ((key, value) in valid) {
+            if (size >= MAX_IMPORT_ENTRIES) break
+            entries[key] = value
+            size++
+            imported++
+        }
+        if (imported == 0) return false
+
+        ahoCorasick = null
+        val sp = prefs ?: return true
+        return save()
     }
 
     /** تصدير القاموس إلى JSON */
@@ -237,6 +307,7 @@ class PronunciationDictionary(private val context: Context) {
         return try {
             val json = gson.toJson(entries)
             sp.edit().putString("dictionary", json).apply()
+            lastStamp = currentStamp()
             true
         } catch (e: Exception) {
             false
@@ -315,9 +386,12 @@ private class AhoCorasick(entries: Map<String, String>) {
             val value = node.value ?: continue
             val start = i - key.length + 1
             if (start < 0) continue
-            // حدود الكلمة: لا حرف (بأي لغة) قبلها ولا بعدها
-            if (start > 0 && text[start - 1].isLetter()) continue
-            if (i + 1 < n && text[i + 1].isLetter()) continue
+            // حدود الكلمة: لا حرف ولا رقم (بأي لغة) قبلها ولا بعدها — الرقم جزءٌ
+            // من الكلمة فيمنع إفساد "50م" قبل مرحلة الوحدات، ويُعفى شرط "ما بعد"
+            // للمفاتيح المنتهية بنقطة ليُسمح باختصارات مثل "د.أحمد".
+            val endsWithDot = key.endsWith('.')
+            if (start > 0 && text[start - 1].isLetterOrDigit()) continue
+            if (!endsWithDot && i + 1 < n && text[i + 1].isLetterOrDigit()) continue
             matches.add(Match(start, i + 1, value))
         }
 

@@ -32,10 +32,13 @@ class TextProcessor(
     private val context: Context,
     /** المرجع المحقون عبر Hilt إن وُجد (يمرره NateqTtsService)، وإلا يُبنى
      *  محلياً — قراءة لحظية لتفضيل التاريخ الهجري لا أكثر. */
-    private val injectedSettings: SettingsRepository? = null
+    private val injectedSettings: SettingsRepository? = null,
+    /** القاموس المحقون عبر Hilt إن وُجد (يمرره NateqTtsService) — وإلا يُبنى
+     *  محلياً للاختبارات؛ مثيل موحَّد مع نسخة الواجهة ورصد لحظي لقرصه. */
+    private val injectedDict: PronunciationDictionary? = null
 ) {
 
-    private val pronunciationDict = PronunciationDictionary(context)
+    private val pronunciationDict = injectedDict ?: PronunciationDictionary(context)
 
     /** هل نطق أسماء الإيموجي مفعّل؟ بلا حقنة Settings (الاختبارات) يُفترض مفعّل. */
     private val emojiEnabled: Boolean
