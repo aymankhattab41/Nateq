@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq.receivers
+package com.aymankhattab.nateq.core.audio.announcement
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -6,13 +6,11 @@ import android.content.Intent
 import android.provider.Telephony
 import android.telephony.SmsMessage
 import android.util.Log
-import com.aymankhattab.nateq.R
+import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.data.SettingsRepository
-import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.LanguageCode
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.Locale
 import javax.inject.Inject
@@ -46,12 +44,12 @@ class SmsReadingReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         if (intent?.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
 
-        // goAsync() يمنع Android من قتل المستقبل قبل انتهاء العمل اللاتزامني
+// goAsync() يمنع Android من قتل المستقبل قبل انتهاء العمل اللاتزامني
         val pendingResult = goAsync()
-        val appScope = (context.applicationContext as com.aymankhattab.nateq.NateqApplication).appScope
+        val appScope = (context.applicationContext as AnnouncementAppContext).appScope
         appScope.launch {
             try {
-val settings = settingsRepository
+                val settings = settingsRepository
                 val mode = settings.getSmsReadingMode()
                 if (mode == MODE_OFF) return@launch
                 // المفتاح الرئيسي يُوقف كل الإعلانات دفعة واحدة.

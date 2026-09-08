@@ -145,7 +145,7 @@
         <!-- exported=true + permission=READ_PHONE_STATE ضروريان معاً لوصول
              بث PHONE_STATE المحمي من النظام إلى هذا المستقبل -->
         <receiver
-            android:name=".receivers.CallerAnnouncementReceiver"
+            android:name="com.aymankhattab.nateq.core.audio.announcement.CallerAnnouncementReceiver"
             android:exported="true"
             android:permission="android.permission.READ_PHONE_STATE">
             <intent-filter>
@@ -155,7 +155,7 @@
 
         <!-- إعادة تشغيل جدولة الإعلانات (الساعة/البطارية) بعد إقلاع الجهاز -->
         <receiver
-            android:name=".engine.AnnouncementBootReceiver"
+            android:name="com.aymankhattab.nateq.core.audio.announcement.AnnouncementBootReceiver"
             android:enabled="true"
             android:exported="true"
             android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
@@ -169,7 +169,7 @@
              التالي بنفسه (بند 9 — لا مؤقتات داخل RAM تُفقد). غير مُصدَّر للخارج،
              لا يستقبل إلا بثّ PendingIntent الخاص بالتطبيق -->
         <receiver
-            android:name=".receivers.TimeAlarmReceiver"
+            android:name="com.aymankhattab.nateq.core.audio.announcement.TimeAlarmReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.aymankhattab.nateq.action.TIME_ANNOUNCE_TICK" />
@@ -180,7 +180,7 @@
              البطارية في عملية التطبيق الرئيسية (لا عملية المحرك :tts) وتعمل
              بإشعار دائم قابل للإيقاف، مع زرار "أعلن الآن" -->
         <service
-            android:name=".engine.AnnouncementSchedulerService"
+            android:name="com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService"
             android:exported="false"
             android:foregroundServiceType="specialUse"
             android:label="@string/app_name"
@@ -192,7 +192,7 @@
 
         <!-- مستقبل قراءة الرسائل الواردة -->
         <receiver
-            android:name=".receivers.SmsReadingReceiver"
+            android:name="com.aymankhattab.nateq.core.audio.announcement.SmsReadingReceiver"
             android:exported="true"
             android:permission="android.permission.BROADCAST_SMS">
             <intent-filter android:priority="999">
@@ -202,7 +202,7 @@
 
         <!-- خدمة قراءة الإشعارات - تحتاج إذن يدوي من الإعدادات -->
         <service
-            android:name=".receivers.NateqNotificationListener"
+            android:name="com.aymankhattab.nateq.core.audio.announcement.NateqNotificationListener"
             android:exported="true"
             android:label="@string/app_name"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">

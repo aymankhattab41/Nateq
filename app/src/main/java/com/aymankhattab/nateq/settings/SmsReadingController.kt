@@ -11,8 +11,8 @@ import android.widget.Spinner
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.R
-import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
-import com.aymankhattab.nateq.receivers.NateqNotificationListener
+import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
+import com.aymankhattab.nateq.core.audio.announcement.NateqNotificationListener
 import com.aymankhattab.nateq.util.announceCompat
 import java.util.Locale
 import com.aymankhattab.nateq.core.data.SettingsRepository

@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
+import com.aymankhattab.nateq.core.audio.announcement.AnnouncementAppContext
 import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.StartupTempSweeper
@@ -27,11 +28,11 @@ import javax.inject.Inject
  * حتى لا تُقرأ قيم قديمة مخزنة مؤقتاً.
  */
 @HiltAndroidApp
-class NateqApplication : Application() {
+class NateqApplication : Application(), AnnouncementAppContext {
 
     /** مصدر الإعدادات الوحيد المحقون — ينشئه Hilt مرة واحدة في كل عملية. */
     @Inject
-    lateinit var settingsRepository: SettingsRepository
+    override lateinit var settingsRepository: SettingsRepository
 
     /** نطاق عام يعيش مع التطبيق — بديل GlobalScope للمستقبلات اللاحقة.
      *  يُرفق معالج أخطاء عام يمنع إسقاط العملية عند أي استثناء لا يُلتقط
@@ -40,7 +41,7 @@ class NateqApplication : Application() {
         Log.e("NATEQ_APP", "استثناء غير مُلتقط في النطاق العام", t)
     }
 
-    val appScope = CoroutineScope(SupervisorJob() + AppDispatchers.io + appCoroutineExceptionHandler)
+    override val appScope = CoroutineScope(SupervisorJob() + AppDispatchers.io + appCoroutineExceptionHandler)
 
     override fun onCreate() {
         super.onCreate()

@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq.receivers
+package com.aymankhattab.nateq.core.audio.announcement
 
 import android.app.AlarmManager
 import android.app.PendingIntent
@@ -7,8 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
-import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
-import com.aymankhattab.nateq.engine.TimeAnnouncementManager
 
 /**
  * مستقبل إعلان الوقت التلقائي المستقل — يُوقَظ عبر [AlarmManager] عند رأس

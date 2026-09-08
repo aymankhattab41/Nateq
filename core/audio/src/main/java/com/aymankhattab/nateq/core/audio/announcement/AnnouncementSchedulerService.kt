@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq.engine
+package com.aymankhattab.nateq.core.audio.announcement
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -15,11 +15,8 @@ import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
-import com.aymankhattab.nateq.R
-import com.aymankhattab.nateq.receivers.BatteryAnnouncementReceiver
-import com.aymankhattab.nateq.settings.SettingsActivity
+import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -379,7 +376,7 @@ class AnnouncementSchedulerService : Service() {
         // حتى لا تبقى موقتات/Hوandler معلّقة تشغّل النطق بعد أكبر عمراً
         // (بند [7]) — المتحدث المشترك يُعاد بناؤه عند الحاجة لاحقاً.
         try {
-            com.aymankhattab.nateq.util.AnnouncementSpeaker.getInstance(this).shutdown()
+            AnnouncementSpeaker.getInstance(this).shutdown()
         } catch (t: Throwable) {
             Log.w(TAG, "announcement speaker shutdown failed", t)
         }
@@ -410,10 +407,16 @@ class AnnouncementSchedulerService : Service() {
     }
 
     private fun buildNotification(): Notification {
+        // إشعار الخدمة يفتح شاشة إعدادات :app. لا نعتمد على مرجع الطبقة compile-time
+        // (core:audio لا يرى :app) فنستدعيها باسمها القياسي للصف؛ أداء مطابق تماماً
+        // لِـ Intent(this, SettingsActivity::class.java) ويحافظ على المكوّن المُصدَّر.
         val openSettings = PendingIntent.getActivity(
             this,
             0,
-            Intent(this, SettingsActivity::class.java),
+            Intent().setClassName(
+                this,
+                "com.aymankhattab.nateq.settings.SettingsActivity"
+            ),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val announceNow = PendingIntent.getService(
@@ -448,8 +451,8 @@ class AnnouncementSchedulerService : Service() {
     private fun startAsForeground(notification: Notification) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                ServiceCompat.startForeground(
-                    this,
+                // الطريقة الأصلية (API 34+) — النوع معرف فيه صراحةً (نوع SPECIAL_USE)
+                startForeground(
                     NOTIFICATION_ID,
                     notification,
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE

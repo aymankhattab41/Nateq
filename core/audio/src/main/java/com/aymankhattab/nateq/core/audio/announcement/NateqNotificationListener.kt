@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq.receivers
+package com.aymankhattab.nateq.core.audio.announcement
 
 import android.Manifest
 import android.app.Notification
@@ -10,9 +10,8 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
 import androidx.core.content.ContextCompat
-import com.aymankhattab.nateq.R
+import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.data.SettingsRepository
-import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.LanguageCode
 import dagger.hilt.android.AndroidEntryPoint

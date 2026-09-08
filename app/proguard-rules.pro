@@ -24,21 +24,24 @@
 # لأن النظام ينشئها بهذه الأسماء (بقية الأصناف تُشفّر وتُعبّب بحرية).
 # (يضيف AGP الـ keep تلقائياً لمكونات الـ Manifest؛ هذه صراحة وقايةً مستقبلية)
 -keep public class com.aymankhattab.nateq.NateqApplication
--keep public class com.aymankhattab.nateq.engine.NateqTtsService
+-keep public class com.aymankhattab.nateq.core.audio.engine.NateqTtsService
 -keep public class com.aymankhattab.nateq.settings.SettingsActivity
 -keep public class com.aymankhattab.nateq.settings.CheckTtsDataActivity
 -keep public class com.aymankhattab.nateq.settings.GetSampleTextActivity
--keep public class com.aymankhattab.nateq.receivers.**
+# مكونات الإعلانات (انتقلت من receivers إلى :core:audio.announcement في 5ب)
+-keep public class com.aymankhattab.nateq.core.audio.announcement.AnnouncementBootReceiver
+-keep public class com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
+-keep public class com.aymankhattab.nateq.core.audio.announcement.TimeAlarmReceiver
+-keep public class com.aymankhattab.nateq.core.audio.announcement.SmsReadingReceiver
+-keep public class com.aymankhattab.nateq.core.audio.announcement.CallerAnnouncementReceiver
+-keep public class com.aymankhattab.nateq.core.audio.announcement.NateqNotificationListener
 
 # المكونات المنشأة خارج حزمة receivers — مذكورة في Manifest (أداة/بلاطة/خدمة جدولة/إقلاع)
--keep public class com.aymankhattab.nateq.engine.AnnouncementBootReceiver
--keep public class com.aymankhattab.nateq.engine.AnnouncementSchedulerService
 -keep public class com.aymankhattab.nateq.settings.AnnouncementTileService
 -keep public class com.aymankhattab.nateq.widget.SpeakingClockWidget
--keep public class com.aymankhattab.nateq.receivers.NateqNotificationListener
 
 # خدمة المحرك TTS (مذكورة في Manifest) + الأنواع التي يطلبها النظام عبر TTS Service
--keep class com.aymankhattab.nateq.engine.NateqTtsService { *; }
+-keep class com.aymankhattab.nateq.core.audio.engine.NateqTtsService { *; }
 -keep class * extends android.speech.tts.TextToSpeechService { *; }
 -keep class * extends android.speech.tts.TextToSpeech$UtteranceProgressListener { *; }
 # أصناف android.speech.tts التي يستدعيها نظام TTS نفسه عبر انعكاس (SynthesisCallback,
@@ -46,8 +49,9 @@
 # في توقيعات NateqTtsService وتنفيذات مخصّصة من الكود، فتبقى بأسمائها كاملة
 -keep class android.speech.tts.* { *; }
 
-# المستقبلات (receiver) التي تسجّلها بأسمائها في Manifest
--keep class com.aymankhattab.nateq.receivers.** { *; }
+# المستقبلات (receiver) التي تسجّلها بأسمائها في Manifest — الآن في :core:audio.
+# طبقة الإعلانات كاملة تُحفظ (المتحدث/الجدولة/المستقبلات) كما حُفظت receiver سابقاً
+-keep class com.aymankhattab.nateq.core.audio.announcement.** { *; }
 
 # الوصول عبر انعكاس من أطراف المساعدة (AccessibilityService)
 -keep class * extends android.accessibilityservice.AccessibilityService { *; }

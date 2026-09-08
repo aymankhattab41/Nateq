@@ -5,8 +5,8 @@ import android.provider.Settings
 import android.view.View
 import android.widget.Toast
 import com.aymankhattab.nateq.R
-import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
-import com.aymankhattab.nateq.receivers.NateqNotificationListener
+import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
+import com.aymankhattab.nateq.core.audio.announcement.NateqNotificationListener
 import com.aymankhattab.nateq.util.announceCompat
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.switchmaterial.SwitchMaterial

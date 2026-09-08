@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq.util
+package com.aymankhattab.nateq.core.audio.announcement
 
 import android.content.Context
 import android.media.AudioAttributes
@@ -8,14 +8,13 @@ import android.os.Build
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
-import com.aymankhattab.nateq.AnnouncementSchedulerLauncher
-import com.aymankhattab.nateq.NateqApplication
 import com.aymankhattab.nateq.engine.EmojiSpeech
 import com.aymankhattab.nateq.core.audio.engine.LanguageSegmenter
 import com.aymankhattab.nateq.core.audio.engine.Segment
 import com.aymankhattab.nateq.engine.SpeechPart
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.util.LanguageCode
 import java.util.Locale
 
 /**
@@ -142,9 +141,9 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
         pendingInitCallbacks.add(onReady)
 
         // المحرك المختار من المستخدم (مثل MultiTTS أو Lord نفسه) له الأولوية
-        // يُفضَّل الحقل المحقون في NateqApplication (نفس كائن Hilt المشترك
-        // من كل عملية)، وإلا يُبنى محلياً — قراءة لحظية غير محفوظة.
-        val injected = (appContext as? NateqApplication)?.settingsRepository
+        // يُفضَّل الحقل المحقون في التطبيق عبر AnnouncementAppContext (نفس كائن
+        // Hilt المشترك من كل عملية)، وإلا يُبنى محلياً — قراءة لحظية غير محفوظة.
+        val injected = (appContext as? AnnouncementAppContext)?.settingsRepository
         val savedEngine = try {
             (injected ?: SettingsRepository(appContext)).getSelectedEnginePackage()
         } catch (e: Exception) {
@@ -243,8 +242,8 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
         // لا يُضمن دون خدمة أمامية. نشغّل خدمة الإعلانات (specialUse) إن لم تكن
         // قائمة حتى تُحتسب العملية "أمامية" وتسمح للـ TTS الخارجي بالنطق.
         try {
-            if (!AnnouncementSchedulerLauncher.isSchedulerRunning) {
-                AnnouncementSchedulerLauncher.startSchedulerIfNeeded(appContext)
+            if (!AnnouncementSchedulerService.isRunning) {
+                AnnouncementSchedulerService.startIfNeeded(appContext)
             }
         } catch (t: Throwable) {
             Log.w(TAG, "scheduler service start failed", t)
@@ -291,7 +290,7 @@ AudioManager.AUDIOFOCUS_REQUEST_FAILED ->
      */
     private fun resolveEmojiConfig(baseLocale: Locale): EmojiSpeechConfig? {
         return try {
-            val settings = (appContext as? NateqApplication)?.settingsRepository
+            val settings = (appContext as? AnnouncementAppContext)?.settingsRepository
                 ?: SettingsRepository(appContext)
             if (!settings.isEmojiPronunciationEnabled()) return null
             val voiceId = settings.getPreferredVoiceIdForCategory(SettingsRepository.VOICE_CATEGORY_EMOJI)
@@ -434,7 +433,7 @@ AudioManager.AUDIOFOCUS_REQUEST_FAILED ->
         // صوتُ EN المخصص (إن حُفظ في إعدادات اللغة)؛ وإلا صوت الإعلان الحالي
         // إن كان إنجليزياً؛ وإلا null ← المحرك يعلّق Locale("en") بنفسه.
         return runCatching {
-            (appContext as? NateqApplication)?.settingsRepository
+            (appContext as? AnnouncementAppContext)?.settingsRepository
                 ?: SettingsRepository(appContext)
         }.getOrNull()?.getPreferredVoiceId(LanguageCode.EN.tag)
             ?: if (isEnglishVoiceName(voiceId)) voiceId else null

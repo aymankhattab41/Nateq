@@ -5,4 +5,37 @@
     <string name="voice_provider_system">صوت النظام</string>
     <string name="voice_name_arabic">العربية</string>
     <string name="voice_name_english">الإنجليزية</string>
+
+    <!-- البند 5ب — طبقة الإعلانات: سلاسل خدمة الإعلانات الأمامية ومستقبلات
+         البطارية/الرسائل/المتصل/الإشعارات. نسخ من :app وتبقى قيم :app مسيطرة -->
+    <string name="announce_service_channel_name">إعلانات الوقت والبطارية</string>
+    <string name="announce_service_channel_description">تبقي Lord TTS عاملاً في الخلفية ليعلن الوقت ومستوى البطارية</string>
+    <string name="announce_service_notification_title">إعلانات Lord TTS مستمرة</string>
+    <string name="announce_service_notification_text">يعمل Lord TTS في الخلفية لإعلان الوقت والبطارية</string>
+    <string name="announce_action_speak_now">أعلن الوقت الآن</string>
+    <string name="announce_action_stop">إيقاف الإعلانات</string>
+    <string name="battery_connected">تم توصيل الشاحن</string>
+    <string name="battery_disconnected">تم فصل الشاحن</string>
+    <string name="battery_full_unplug">البطارية ممتلئة، يمكنك فصل الشاحن</string>
+    <string name="battery_full">البطارية ممتلئة</string>
+    <string name="battery_level_50">البطارية عند الخمسين بالمئة</string>
+    <string name="battery_level_20">البطارية عند العشرين بالمئة، يُنصح بالشحن</string>
+    <string name="battery_level_10">البطارية عند عشرة بالمئة، الشحن ضروري جداً</string>
+    <string name="battery_reached">البطارية وصلت {percent} بالمئة</string>
+    <string name="battery_at">البطارية {percent} بالمئة</string>
+    <string name="sms_unknown_sender">مرسل مجهول</string>
+    <string name="sms_from">رسالة من {name}</string>
+    <string name="sms_otp_safe">رسالة من {name} تحتوي على رمز تحقق سري</string>
+    <string name="caller_only">اتصال وارد</string>
+    <string name="caller_from">اتصال وارد من {name}</string>
+    <string name="caller_from_number">اتصال وارد من رقم غير محفوظ</string>
+    <string name="notif_new">إشعار جديد من {app}</string>
+    <string name="notif_from_title_text">إشعار من {app}: {title}. {text}</string>
+    <string name="notif_from_title">إشعار من {app}: {title}</string>
+    <string name="notif_from_text">إشعار من {app}: {text}</string>
+    <string name="app_whatsapp">واتساب</string>
+    <string name="app_whatsapp_business">واتساب للأعمال</string>
+    <string name="app_telegram">تلجرام</string>
+    <string name="app_messenger">ماسنجر</string>
+    <string name="app_instagram">إنستجرام</string>
 </resources>

@@ -1,8 +1,7 @@
-package com.aymankhattab.nateq
+package com.aymankhattab.nateq.core.audio.announcement
 
 import android.content.Intent
 import android.os.BatteryManager
-import com.aymankhattab.nateq.receivers.BatteryAnnouncementReceiver
 import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

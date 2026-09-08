@@ -1,13 +1,11 @@
-package com.aymankhattab.nateq.receivers
+package com.aymankhattab.nateq.core.audio.announcement
 
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.aymankhattab.nateq.NateqApplication
-import com.aymankhattab.nateq.R
+import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.engine.NumberSpeech
 import com.aymankhattab.nateq.core.data.SettingsRepository
-import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.LanguageCode
 import java.util.Locale
@@ -64,7 +62,7 @@ class BatteryAnnouncementReceiver : BroadcastReceiver() {
         if (action == Intent.ACTION_BATTERY_CHANGED && !isNewLevel(intent!!)) return
         // goAsync() يمنع Android من قتل المستقبل قبل انتهاء العمل اللاتزامني
         val pendingResult = goAsync()
-        val appScope = (context.applicationContext as com.aymankhattab.nateq.NateqApplication).appScope
+        val appScope = (context.applicationContext as AnnouncementAppContext).appScope
         appScope.launch {
             try {
                 handle(context, intent, action)
@@ -80,7 +78,7 @@ class BatteryAnnouncementReceiver : BroadcastReceiver() {
         // يُسجَّل هذا المستقبل يدوياً من AnnouncementSchedulerService (لا عبر
         // Hilt)، فيُفضَّل الحقل المحقون من التطبيق وإلا يُبنى محلياً.
         val appContext = context.applicationContext
-        val settings = (appContext as? NateqApplication)?.settingsRepository
+        val settings = (appContext as? AnnouncementAppContext)?.settingsRepository
             ?: SettingsRepository(context)
         // المفتاح الرئيسي يُوقف كل الإعلانات دفعة واحدة.
         if (!settings.isAllAnnouncementsEnabled()) return

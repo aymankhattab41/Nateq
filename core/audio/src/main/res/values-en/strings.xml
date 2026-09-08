@@ -3,4 +3,36 @@
     <string name="voice_provider_system">System voice</string>
     <string name="voice_name_arabic">Arabic</string>
     <string name="voice_name_english">English</string>
+
+    <!-- البند 5ب — طبقة الإعلانات: نسخ من :app (قيم :app مسيطرة عند الدمج) -->
+    <string name="announce_service_channel_name">Time and battery announcements</string>
+    <string name="announce_service_channel_description">Keeps Lord TTS running in the background to announce time and battery level</string>
+    <string name="announce_service_notification_title">Lord TTS announcements running</string>
+    <string name="announce_service_notification_text">Lord TTS is running in the background to announce time and battery</string>
+    <string name="announce_action_speak_now">Announce time now</string>
+    <string name="announce_action_stop">Stop announcements</string>
+    <string name="battery_connected">Charger connected</string>
+    <string name="battery_disconnected">Charger disconnected</string>
+    <string name="battery_full_unplug">Battery full, you can unplug the charger</string>
+    <string name="battery_full">Battery full</string>
+    <string name="battery_level_50">Battery at fifty percent</string>
+    <string name="battery_level_20">Battery low, twenty percent, please charge</string>
+    <string name="battery_level_10">Battery critical, ten percent, charge immediately</string>
+    <string name="battery_reached">Battery reached {percent} percent</string>
+    <string name="battery_at">Battery {percent} percent</string>
+    <string name="sms_unknown_sender">Unknown sender</string>
+    <string name="sms_from">Message from {name}</string>
+    <string name="sms_otp_safe">A message from {name} containing a secure verification code</string>
+    <string name="caller_only">Incoming call</string>
+    <string name="caller_from">Incoming call from {name}</string>
+    <string name="caller_from_number">Incoming call from an unsaved number</string>
+    <string name="notif_new">New notification from {app}</string>
+    <string name="notif_from_title_text">Notification from {app}: {title}. {text}</string>
+    <string name="notif_from_title">Notification from {app}: {title}</string>
+    <string name="notif_from_text">Notification from {app}: {text}</string>
+    <string name="app_whatsapp">WhatsApp</string>
+    <string name="app_whatsapp_business">WhatsApp Business</string>
+    <string name="app_telegram">Telegram</string>
+    <string name="app_messenger">Messenger</string>
+    <string name="app_instagram">Instagram</string>
 </resources>

@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq.engine
+package com.aymankhattab.nateq.core.audio.announcement
 
 import android.content.Context
 import com.aymankhattab.nateq.core.common.AppDispatchers
@@ -6,9 +6,8 @@ import com.aymankhattab.nateq.core.audio.engine.SynthesisRequestHandler
 import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
 import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
-import com.aymankhattab.nateq.receivers.TimeAlarmReceiver
 import com.aymankhattab.nateq.core.data.SettingsRepository
-import com.aymankhattab.nateq.util.AnnouncementSpeaker
+import com.aymankhattab.nateq.engine.NumberSpeech
 import com.aymankhattab.nateq.util.LanguageCode
 import kotlin.math.max
 import java.util.Calendar
@@ -293,7 +292,7 @@ class TimeAnnouncementManager(
                         pref.startsWith("en-US", ignoreCase = true)
                     else -> effectiveAppLanguage() == ENGLISH_LANGUAGE_TAG
                 }
-val languageTag = if (isEnglish) ENGLISH_LANGUAGE_TAG else LanguageCode.AR.tag
+                val languageTag = if (isEnglish) ENGLISH_LANGUAGE_TAG else LanguageCode.AR.tag
                 val locale = Locale.forLanguageTag(languageTag)
 
                 val timeText = formatCurrentTime(isEnglish)

@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq.receivers
+package com.aymankhattab.nateq.core.audio.announcement
 
 import android.Manifest
 import android.content.BroadcastReceiver
@@ -11,9 +11,8 @@ import android.provider.ContactsContract
 import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.content.ContextCompat
-import com.aymankhattab.nateq.R
+import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.data.SettingsRepository
-import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.LanguageCode
 import dagger.hilt.android.AndroidEntryPoint
@@ -51,7 +50,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
 
         // goAsync() يمنع Android من قتل المستقبل قبل انتهاء العمل اللاتزامني
         val pendingResult = goAsync()
-        val appScope = (context.applicationContext as com.aymankhattab.nateq.NateqApplication).appScope
+        val appScope = (context.applicationContext as AnnouncementAppContext).appScope
         appScope.launch {
             try {
                 // فحص وقائي: وصول بث PHONE_STATE بحد ذاته يتطلب منح READ_PHONE_STATE

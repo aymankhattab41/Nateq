@@ -25,10 +25,10 @@ import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.core.data.UpdateChecker
 import androidx.recyclerview.widget.RecyclerView
 import com.aymankhattab.nateq.R
-import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
+import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
 import com.aymankhattab.nateq.engine.NumberSpeech
 import com.aymankhattab.nateq.engine.PronunciationDictionary
-import com.aymankhattab.nateq.util.AnnouncementSpeaker
+import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.LanguageCode
 import dagger.hilt.android.AndroidEntryPoint

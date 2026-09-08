@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq.engine
+package com.aymankhattab.nateq.core.audio.announcement
 
 import android.content.BroadcastReceiver
 import android.content.Context

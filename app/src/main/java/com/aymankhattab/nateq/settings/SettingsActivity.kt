@@ -11,7 +11,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.commit
 import com.aymankhattab.nateq.R
-import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
+import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
 import com.aymankhattab.nateq.util.announceCompat
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dagger.hilt.android.AndroidEntryPoint

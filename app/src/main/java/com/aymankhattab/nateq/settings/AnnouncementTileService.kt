@@ -4,8 +4,8 @@ import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.util.Log
 import com.aymankhattab.nateq.R
-import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
-import com.aymankhattab.nateq.util.AnnouncementSpeaker
+import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
+import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import com.aymankhattab.nateq.core.data.SettingsRepository

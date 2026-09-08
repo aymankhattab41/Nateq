@@ -4,10 +4,10 @@ import android.app.AlarmManager
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.core.audio.engine.SynthesisRequestHandler
-import com.aymankhattab.nateq.engine.TimeAnnouncementManager
+import com.aymankhattab.nateq.core.audio.announcement.TimeAnnouncementManager
 import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
 import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
-import com.aymankhattab.nateq.receivers.TimeAlarmReceiver
+import com.aymankhattab.nateq.core.audio.announcement.TimeAlarmReceiver
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import java.lang.reflect.Method
 import java.util.Calendar

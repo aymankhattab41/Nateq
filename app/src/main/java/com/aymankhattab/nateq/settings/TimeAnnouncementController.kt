@@ -15,7 +15,7 @@ import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
 import com.aymankhattab.nateq.R
-import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
+import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
 import com.aymankhattab.nateq.util.announceCompat
 import com.google.android.material.switchmaterial.SwitchMaterial
 import java.util.Calendar
