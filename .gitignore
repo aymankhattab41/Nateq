@@ -5,6 +5,8 @@
 .DS_Store
 /build
 /app/build
+# مخرجات بناء الوحدات المعيارية (البند 4): كل /build داخل أي وحدة
+**/build/
 /.kotlin/
 /captures
 .externalNativeBuild

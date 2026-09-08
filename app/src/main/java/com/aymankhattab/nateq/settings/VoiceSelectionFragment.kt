@@ -18,10 +18,11 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.switchmaterial.SwitchMaterial
 import kotlinx.coroutines.launch
-import com.aymankhattab.nateq.util.UpdateChecker
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.aymankhattab.nateq.core.common.AppDispatchers
+import com.aymankhattab.nateq.util.UpdateChecker
 import androidx.recyclerview.widget.RecyclerView
 import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
@@ -784,7 +785,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
      * وإلا نصاً فارغاً.
      */
     private suspend fun buildErrorReport(context: android.content.Context) =
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        kotlinx.coroutines.withContext(AppDispatchers.io) {
             // نجمع سطور الأخطاء/الاستثناءات للتطبيق نفسه فقط — لا السجل كله:
             // نقرأ آخر 1500 سطر لعملية التطبيق الحالية (تحديداً بالـ PID)،
             // ونُبقي ما يحمل مستوى ERROR (E) أو Fatal (F) ضمن وسوم ناتك.

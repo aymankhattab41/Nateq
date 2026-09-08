@@ -8,8 +8,8 @@ import android.os.Build
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
+import com.aymankhattab.nateq.AnnouncementSchedulerLauncher
 import com.aymankhattab.nateq.NateqApplication
-import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
 import com.aymankhattab.nateq.engine.EmojiSpeech
 import com.aymankhattab.nateq.engine.LanguageSegmenter
 import com.aymankhattab.nateq.engine.Segment
@@ -243,8 +243,8 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
         // لا يُضمن دون خدمة أمامية. نشغّل خدمة الإعلانات (specialUse) إن لم تكن
         // قائمة حتى تُحتسب العملية "أمامية" وتسمح للـ TTS الخارجي بالنطق.
         try {
-            if (!AnnouncementSchedulerService.isRunning) {
-                AnnouncementSchedulerService.startIfNeeded(appContext)
+            if (!AnnouncementSchedulerLauncher.isSchedulerRunning) {
+                AnnouncementSchedulerLauncher.startSchedulerIfNeeded(appContext)
             }
         } catch (t: Throwable) {
             Log.w(TAG, "scheduler service start failed", t)

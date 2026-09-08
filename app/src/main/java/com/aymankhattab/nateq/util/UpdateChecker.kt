@@ -5,10 +5,10 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
+import com.aymankhattab.nateq.core.common.AppDispatchers
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
@@ -28,7 +28,7 @@ internal object UpdateChecker {
     }
 
     internal suspend fun check(currentVersionCode: Int): CheckResult =
-        withContext(Dispatchers.IO) {
+        withContext(AppDispatchers.io) {
             try {
                 val conn = URL(RELEASES_API).openConnection() as HttpURLConnection
                 try {

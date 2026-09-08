@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.engine.pipeline
 
 import android.content.Context
+import com.aymankhattab.nateq.core.engine.SynthesisConfig
 import com.aymankhattab.nateq.settings.SettingsRepository
 import java.util.Calendar
 import java.util.Locale
@@ -14,7 +15,7 @@ import java.util.regex.Pattern
  */
 internal class DateStep(
     private val context: Context,
-    private val injectedSettings: SettingsRepository? = null
+    private val injectedSettings: SynthesisConfig? = null
 ) : TextProcessingStep {
 
     private companion object {

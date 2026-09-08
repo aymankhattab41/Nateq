@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.engine
 
 import android.content.Context
+import com.aymankhattab.nateq.core.engine.SynthesisConfig
 import com.aymankhattab.nateq.engine.pipeline.CleanupStep
 import com.aymankhattab.nateq.engine.pipeline.CurrencyStep
 import com.aymankhattab.nateq.engine.pipeline.DateStep
@@ -17,7 +18,6 @@ import com.aymankhattab.nateq.engine.pipeline.TextProcessingStep
 import com.aymankhattab.nateq.engine.pipeline.TimeStep
 import com.aymankhattab.nateq.engine.pipeline.UnitStep
 import com.aymankhattab.nateq.engine.pipeline.UrlStep
-import com.aymankhattab.nateq.settings.SettingsRepository
 import com.aymankhattab.nateq.util.LanguageCode
 import java.text.Normalizer
 
@@ -33,7 +33,7 @@ class TextProcessor(
     private val context: Context,
     /** المرجع المحقون عبر Hilt إن وُجد (يمرره NateqTtsService)، وإلا يُبنى
      *  محلياً — قراءة لحظية لتفضيل التاريخ الهجري لا أكثر. */
-    private val injectedSettings: SettingsRepository? = null,
+    private val injectedSettings: SynthesisConfig? = null,
     /** القاموس المحقون عبر Hilt إن وُجد (يمرره NateqTtsService) — وإلا يُبنى
      *  محلياً للاختبارات؛ مثيل موحَّد مع نسخة الواجهة ورصد لحظي لقرصه. */
     private val injectedDict: PronunciationDictionary? = null

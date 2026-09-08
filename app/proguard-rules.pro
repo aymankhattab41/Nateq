@@ -66,8 +66,8 @@
 # GsonTypes: البنّاء اليدوي لكائنات ParameterizedType (Map<String, X>) —
 # يعتمد Gson عليها انعكاسياً (getRawType/getActualTypeArguments)، فلو شُفّر
 # اسمها أو أعضاؤها فشل فكّ JSON وفسدت التفضيلات المحفوظة على الجاهز.
--keep class com.aymankhattab.nateq.engine.GsonTypes { *; }
--keep class com.aymankhattab.nateq.engine.ParameterizedTypes { *; }
+-keep class com.aymankhattab.nateq.core.common.json.GsonTypes { *; }
+-keep class com.aymankhattab.nateq.core.common.json.ParameterizedTypes { *; }
 
 # ============================================================
 #  Hilt / Dagger — المكوّنات والأصناف المولّدة لا تُعاد تسميتها

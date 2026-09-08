@@ -16,13 +16,13 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.aymankhattab.nateq.R
+import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.engine.EngineWithVoices
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.aymankhattab.nateq.engine.VoiceCatalog
 import com.aymankhattab.nateq.providers.EnginePicker
 import com.aymankhattab.nateq.util.LanguageCode
 import java.util.Locale
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -197,11 +197,11 @@ internal class EngineSectionController(
             .setPositiveButton(fragment.getString(R.string.reset_cancel), null)
             .create()
 
-        fragment.lifecycleScope.launch(Dispatchers.IO) {
+        fragment.lifecycleScope.launch(AppDispatchers.io) {
             val discovered = runCatching {
                 VoiceCatalog.discoverAllLanguagesAcrossEngines(ctx.applicationContext)
             }.getOrDefault(emptyMap())
-            withContext(Dispatchers.Main) {
+            withContext(AppDispatchers.main) {
                 val rows = buildLanguageRows(discovered)
                 val adapter = LanguageConvertAdapter(
                     ctx,

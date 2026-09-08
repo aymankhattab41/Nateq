@@ -8,6 +8,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
 import android.util.Log
+import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.providers.VoiceDescriptor
 import com.aymankhattab.nateq.settings.SettingsRepository
@@ -18,7 +19,6 @@ import java.io.ByteArrayOutputStream
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -61,7 +61,7 @@ class NateqTtsService : TextToSpeechService() {
     @Inject
     lateinit var pronunciationDictionary: PronunciationDictionary
 
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val serviceScope = CoroutineScope(SupervisorJob() + AppDispatchers.io)
 
     private lateinit var settings: SettingsRepository
     private lateinit var catalog: VoiceCatalog
@@ -510,7 +510,7 @@ class NateqTtsService : TextToSpeechService() {
 
     /**
      * يكتشف اللغات عبر كل المحركات إن انقضت مدة صلاحية الذاكرة أو لم تُبنَ
-     * بعد. يعمل في الخلفية دائماً ([Dispatchers.IO]) ولا يرمي؛ تعثّر الاكتشاف
+     * بعد. يعمل في الخلفية دائماً ([AppDispatchers.io]) ولا يرمي؛ تعثّر الاكتشاف
      * يُبقي الحد الأدنى ar/en مضموناً في القوائم.
      */
     private suspend fun maybeRefreshDiscovery() {

@@ -9,6 +9,7 @@ import android.speech.tts.UtteranceProgressListener
 import android.util.LruCache
 import android.util.Log
 import com.aymankhattab.nateq.R
+import com.aymankhattab.nateq.core.data.VoicePrefsProvider
 import com.aymankhattab.nateq.settings.SettingsRepository
 import com.aymankhattab.nateq.util.ConnectivityMonitor
 import com.aymankhattab.nateq.util.LanguageCode
@@ -44,7 +45,7 @@ class SystemVoiceProvider(
     private val context: Context,
     /** المرجع المحقون عبر Hilt إن وُجد (يمرره NateqTtsService/TimeAnnouncementManager)،
      *  وإلا يُبنى محلياً — قراءة لحظية لا تُحفظ فلا يعَ وزير إن كان null. */
-    private val injectedSettings: SettingsRepository? = null
+    private val injectedSettings: VoicePrefsProvider? = null
 ) : VoiceProvider {
 
     /**

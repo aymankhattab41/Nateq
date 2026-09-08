@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq.engine
+package com.aymankhattab.nateq.core.common.json
 
 import java.lang.reflect.ParameterizedType
 import java.lang.reflect.Type

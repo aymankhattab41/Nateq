@@ -84,6 +84,15 @@ androidComponents {
 }
 
 dependencies {
+    // البند 4 — الوحدات التي تفكّك إليها :app شفرة المصدر تدرّجياً:
+    // تتبنى :app كل الوحدات وتوزّع الشفرة عليها لاحقاً (تبقى الملفات في
+    // مكانها الحالي حتى تُنقل بالكامل في مراحل لاحقة).
+    implementation(project(":core:common"))
+    implementation(project(":core:engine"))
+    implementation(project(":core:audio"))
+    implementation(project(":core:data"))
+    implementation(project(":feature:settings"))
+
     // خفيفة الوزن ومقصودة - لا تستخدم SDKs ضخمة من كل شركة، بل REST مباشر
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.7.0")

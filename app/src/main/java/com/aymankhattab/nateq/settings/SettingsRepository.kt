@@ -3,6 +3,8 @@ package com.aymankhattab.nateq.settings
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
+import com.aymankhattab.nateq.core.data.VoicePrefsProvider
+import com.aymankhattab.nateq.core.engine.SynthesisConfig
 import com.aymankhattab.nateq.engine.ConvertPreferencesCodec
 import com.aymankhattab.nateq.engine.LanguageSpeechPrefs
 import com.aymankhattab.nateq.util.LanguageCode
@@ -18,7 +20,8 @@ import com.aymankhattab.nateq.util.NateqJson
  * في أول تشغيل: يرحّل الإعدادات من الملف المشفر القديم (nateq_secure_settings)
  * إلى الملف الجديد إذا كان الملف الجديد فارغاً.
  */
-class SettingsRepository(private val context: Context) {
+class SettingsRepository(private val context: Context) :
+    SynthesisConfig, VoicePrefsProvider {
 
     companion object {
         private const val TAG = "NATEQ_TTS"
@@ -211,7 +214,7 @@ class SettingsRepository(private val context: Context) {
         prefs.edit().putFloat("volume_$languageTag", volume.coerceIn(0f, 1f)).apply()
 
     /** حزمة محرك TTS الذي اختاره المستخدم في شاشة الإعدادات */
-    fun getSelectedEnginePackage(): String? = prefs.getString("selected_engine_package", null)
+    override fun getSelectedEnginePackage(): String? = prefs.getString("selected_engine_package", null)
     fun setSelectedEnginePackage(pkg: String?) =
         prefs.edit().putString("selected_engine_package", pkg).apply()
 
@@ -253,7 +256,7 @@ class SettingsRepository(private val context: Context) {
      * هل تُنطق أسماء الإيموجي ورموز المشاعر في النصوص (بدل حذفها)؟
      * مفعّل افتراضياً: يُنطق «وجه مبتسم» بدل صمت الإيموجي.
      */
-    fun isEmojiPronunciationEnabled(): Boolean = prefs.getBoolean("emoji_pronunciation_enabled", true)
+    override fun isEmojiPronunciationEnabled(): Boolean = prefs.getBoolean("emoji_pronunciation_enabled", true)
     fun setEmojiPronunciationEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("emoji_pronunciation_enabled", enabled).apply()
 
@@ -414,22 +417,22 @@ class SettingsRepository(private val context: Context) {
     // ============ إعدادات إعلان الوقت ============
 
     /** الصوت المفضّل لكل فئة (category -> voiceId) */
-    fun getPreferredVoiceIdForCategory(category: String): String? = normalizeVoiceId(prefs.getString("preferred_voice_$category", null))
+    override fun getPreferredVoiceIdForCategory(category: String): String? = normalizeVoiceId(prefs.getString("preferred_voice_$category", null))
     fun setPreferredVoiceIdForCategory(category: String, voiceId: String) =
         prefs.edit().putString("preferred_voice_$category", voiceId).apply()
 
     /** سرعة النطق لكل فئة */
-    fun getSpeechRateForCategory(category: String): Float = prefs.getFloat("speech_rate_$category", 1.0f)
+    override fun getSpeechRateForCategory(category: String): Float = prefs.getFloat("speech_rate_$category", 1.0f)
     fun setSpeechRateForCategory(category: String, rate: Float) =
         prefs.edit().putFloat("speech_rate_$category", rate.coerceIn(0f, 2f)).apply()
 
     /** نبرة الصوت لكل فئة */
-    fun getPitchForCategory(category: String): Float = prefs.getFloat("pitch_$category", 1.0f)
+    override fun getPitchForCategory(category: String): Float = prefs.getFloat("pitch_$category", 1.0f)
     fun setPitchForCategory(category: String, pitch: Float) =
         prefs.edit().putFloat("pitch_$category", pitch.coerceIn(0f, 2f)).apply()
 
     /** مستوى الصوت لكل فئة */
-    fun getVolumeForCategory(category: String): Float = prefs.getFloat("volume_$category", 1.0f)
+    override fun getVolumeForCategory(category: String): Float = prefs.getFloat("volume_$category", 1.0f)
     fun setVolumeForCategory(category: String, volume: Float) =
         prefs.edit().putFloat("volume_$category", volume.coerceIn(0f, 1f)).apply()
 
@@ -503,7 +506,7 @@ class SettingsRepository(private val context: Context) {
         prefs.edit().putBoolean("time_display_24h", enabled).apply()
 
     /** نطق التواريخ بالتقويم الهجري (أم القرى) بدل الميلادي */
-    fun isHijriDateEnabled(): Boolean = prefs.getBoolean("hijri_date", false)
+    override fun isHijriDateEnabled(): Boolean = prefs.getBoolean("hijri_date", false)
     fun setHijriDateEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("hijri_date", enabled).apply()
 

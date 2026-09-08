@@ -4,12 +4,12 @@ import android.app.Application
 import android.util.Log
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
+import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.settings.SettingsRepository
 import com.aymankhattab.nateq.util.StartupTempSweeper
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -40,7 +40,7 @@ class NateqApplication : Application() {
         Log.e("NATEQ_APP", "استثناء غير مُلتقط في النطاق العام", t)
     }
 
-    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + appCoroutineExceptionHandler)
+    val appScope = CoroutineScope(SupervisorJob() + AppDispatchers.io + appCoroutineExceptionHandler)
 
     override fun onCreate() {
         super.onCreate()

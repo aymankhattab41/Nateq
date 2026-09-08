@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.engine
 
 import android.content.Context
+import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.providers.VoiceDescriptor
 import com.aymankhattab.nateq.receivers.TimeAlarmReceiver
@@ -11,7 +12,6 @@ import kotlin.math.max
 import java.util.Calendar
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -71,7 +71,7 @@ class TimeAnnouncementManager(
 
     /** نطاق عمليات النطق اللاتزامنية — يعيش مع عمر المدير */
     private val announceJob = SupervisorJob()
-    private val announceScope = CoroutineScope(announceJob + Dispatchers.IO)
+    private val announceScope = CoroutineScope(announceJob + AppDispatchers.io)
 
     /** آخر عملية نطق معلّقة (عقدة فرعية تُلغى في stop) دون إنهاء نطاق الجذر
      *  حتى تستمر عمليات النطق بعد إعادة تشغيل الخدمة (بند المحور التاسع). */

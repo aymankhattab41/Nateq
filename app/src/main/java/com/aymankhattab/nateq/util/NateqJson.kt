@@ -1,6 +1,6 @@
 package com.aymankhattab.nateq.util
 
-import com.aymankhattab.nateq.engine.GsonTypes
+import com.aymankhattab.nateq.core.common.json.GsonTypes
 import com.google.gson.Gson
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
