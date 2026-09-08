@@ -17,7 +17,7 @@ import com.aymankhattab.nateq.engine.TextProcessor
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.LocaleUtils
 import dagger.hilt.android.AndroidEntryPoint
-import java.io.ByteArrayOutputStream
+
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -47,7 +47,13 @@ class NateqTtsService : TextToSpeechService() {
          *  إنشاء لعملية :tts التي تُقتل بين الجلسات غالباً. */
         private const val DISCOVERY_TTL_MS = 60 * 60 * 1000L
 
-        /** أدنى معدل عينات موحّد لبث المقاطع المختلطة (22050 = معيار LORD). */
+        /** معيار البث الموحّد للنص المختلط (44100 مونو 16-bit) — ثابتٌ ليُتاح
+         *  التدفق مقطعاً بمقطعٍ دون تجميع كامل الصوت في الذاكرة (الذروة = أكبر
+         *  مقطعٍ لا مجمل المدة)، ويحفظ جودةً لا تقل عن المعيار التاريخي 22050. */
+        private const val MIXED_UNIFIED_RATE = 44_100
+
+        /** معدل احتياط لمعدلِ مصدرٍ غير معلوم في المقاطع المختلطة (22050 =
+         *  معيار LORD) — يظهر فقط إن تخلف المزوّد عن إبلاغ معدله قبل الشريحة. */
         private const val MIN_UNIFIED_RATE = 22_050
     }
 
@@ -73,7 +79,14 @@ class NateqTtsService : TextToSpeechService() {
     /** مقسم النصوص المختلطة الكتابات (منطق نقي مشترك بلا حالة). */
     private val segmenter = LanguageSegmenter()
 
+    /** الرحلة اللاتزامنية للتخليق الحالي — تُلغى عند إيقاف أو استباق طلبٍ جديد. */
     @Volatile private var currentJob: kotlinx.coroutines.Job? = null
+
+    /** يُميّز سبب إلغاء [currentJob]: إيقاف صريح (onStop) أم استباق بطلبٍ جديد.
+     *  عند الإيقاف لا نُنشئ خطأً زائفاً (النظام يعرف أنه أُوقف عمداً)، وعند
+     *  الاستباق نُنهي callback الطلب القديم حتى لا يعلق طابور النظام فينتقل
+     *  للطلب الجديد. */
+    @Volatile private var stopping = false
 
     @Volatile private var currentLanguage = arrayOf(LanguageCode.AR.tag, "", "")
 
@@ -123,6 +136,10 @@ class NateqTtsService : TextToSpeechService() {
         // عملية المحرك، ثم إغلاق النطق الجاري إن وُجد.
         currentJob?.cancel()
         serviceScope.cancel()
+        // إغلاق موارد المزوّدين (TextToSpeech المربوط بالمحرك الخارجي + مراقب
+        // الإنترنت + منفّذ الخلفية) كي لا تبقى روابط Binder IPC معلقة بعد
+        // تدمير الخدمة — حارس isInitialized لمسارات التدمير المبكر قبل onCreate.
+        if (::catalog.isInitialized) catalog.shutdown()
         super.onDestroy()
     }
 
@@ -220,6 +237,9 @@ class NateqTtsService : TextToSpeechService() {
     }
 
     override fun onStop() {
+        // إيقاف صريح (لكن هذا الخيط فرعيٌّ عبر كل الخدمات الأساسية): نرفع العلم
+        // ثم نلغي التخليق الجاري — الطلبات اللاحقة تُلغى كاستباق لا كإيقاف.
+        stopping = true
         currentJob?.cancel()
     }
 
@@ -242,9 +262,16 @@ class NateqTtsService : TextToSpeechService() {
         // callbacks من خيط المزوّد — السلوك القياسي لمحركات TTS غير المتزامنة
         // (MultiTTS/espeak). لو علِق المحرك الطرفي تُنهي مهله الداخلية المتكيّفة
         // (1.5–8 ث داخل SystemVoiceProvider) الطلبَ بدل تعليق الخيط بلا سقف.
-        // إلغاء onStop() يُبطل currentJob فتتوقف استجابة الصوت فوراً.
+        // **معالجة السباق:** عند وصول طلبٍ جديد تُلغى الرحلة السابقة النشطة قبل
+        // إطلاق الجديدة حتى لا تتكدس الكوروتينات ولا تتزامن طلبات الصوت عبر
+        // البث الصوتي (يستبِق الأحدثُ الأقدم — سلوك قارئ الشاشة عند التمرير
+        // السريع). إلغاءٌ من onStop() يُبطل currentJob فتتوقف استجابة الصوت
+        // فوراً؛ وإلغاءٌ بالاستباق يُنهي callback الطلب القديم بـ error() فينتقل
+        // طابور النظام للطلب الجديد (دونها يعلق الـ queue فلا يُنطق شيء).
         // (يبدأ callback.start() لاحقاً بمعدل العينات الفعلي من المزوّد،
         //  لتعامل ملفات 24k/44.1k بسرعةٍ ونبرةٍ صحيحة.)
+        stopping = false
+        currentJob?.cancel()
         currentJob = serviceScope.launch {
             try {
                 // إعادة تحميل الإعدادات من القرص لأن `:tts` process منفصل
@@ -271,9 +298,19 @@ class NateqTtsService : TextToSpeechService() {
                     synthesizeMixed(segments, callback)
                 }
             } catch (e: CancellationException) {
-                // إلغاء صريح (onStop): لا نكمل ولا نُطلق خطأً زائفاً — النظام
-                // يعرف أن النطق أُوقف عمداً وسيكون على اتصاله مع onStop.
-                Log.d(TAG, "onSynthesizeText cancelled")
+                // إبطال صريح: الإيقاف (onStop) معروف للنظام فلا نُطلق خطأً
+                // زائفاً، أما الاستباق بطلبٍ جديد فنُنهي الـ callback حتى لا
+                // يعلق طابور النظام بطلبٍ ميت فيُحرر الصوت للطلب الأحدث.
+                if (stopping) {
+                    Log.d(TAG, "onSynthesizeText cancelled (stop)")
+                } else {
+                    Log.d(TAG, "onSynthesizeText cancelled (preempt)")
+                    try {
+                        callback.error()
+                    } catch (_: Exception) {
+                        // الخدمة قد تكون في طريقها للإيقاف — لا شيء نفعله.
+                    }
+                }
             } catch (e: Exception) {
                 callback.error()
             }
@@ -322,14 +359,20 @@ class NateqTtsService : TextToSpeechService() {
         val autoConvert = requestHandler.isAutoConvertEnabled()
         val convertTarget = resolveConvertTarget(request.language)
         // السرعة: نجمع بين قناة قارئ الشاشة وقناة إعداد LORD نفسه.
-        // - إذا ضبط المستخدم في سرعة LORD للغة/الافتراضية قيمةً مخزّنة
-        //   (≠1.0) فالأولوية لها حتى يؤثر إعداد LORD فعلاً.
-        // - وإلا (الافتراضي 1.0) نستعمل سرعة القارئ (request.getSpeechRate())
-        //   فيُتبع النظامُ/القارئ عندما لا يعرّف LORD قيمةً خاصة.
+        // - تفضيل LORD الصريح لهذه اللغة أولاً — يحتسب ولو كان 1.0x (قد يريده
+        //   المستخدم «طبيعياً» بينما السرعة العامة 1.5x).
+        // - ثم السرعة العامة المخزّنة (≠1.0) حتى يؤثر إعداد «ناطق» فعلاً.
+        // - وإلا (لم يعرّف LORD شيئاً) نستعمل سرعة القارئ (request.getSpeechRate())
+        //   فيُتبع النظامُ/القارئ ولا يُعطَّل قارئ شاشة النظام بلا تفضيل LORD.
+        val explicitLordRate = requestHandler.getExplicitLanguageRate(languageTag)
         val lordRate = requestHandler.getSpeechRate(languageTag)
         val reqRate = request.getSpeechRate().toFloat()
-        val speechRate: Float =
-            if (lordRate != 1.0f) lordRate else if (reqRate > 0f) reqRate else lordRate
+        val speechRate: Float = when {
+            explicitLordRate != null -> explicitLordRate
+            lordRate != 1.0f -> lordRate
+            reqRate > 0f -> reqRate
+            else -> lordRate
+        }
         val pitch = requestHandler.getPitch(languageTag)
         val volume = requestHandler.getVolume(languageTag)
 
@@ -399,14 +442,31 @@ class NateqTtsService : TextToSpeechService() {
                 offset += bytesToWrite
             }
         }, finalEngine, finalLocale, finalVoiceName)
-        callback.done()
+
+        // **ضمانة انهيار:** done() قبل start() ترمي IllegalStateException في إطار
+        // أندرويد — إن فشل المحرك بصمت (لا تنسيق ولا شريحة) يبقى started=false
+        // فنُنهي بـ error() لا بـ done(). والاستثناءات الرامية قبل هذا الموضع
+        // تصل إلى catch في onSynthesizeText (إنهاءٌ واحد error() بلا ازدواج).
+        if (started) {
+            callback.done()
+        } else {
+            callback.error()
+        }
     }
 
     /** النص المختلط الكتابات: لكل مقطعٍ لغوي يُعالَج النص بدليل لغته (العربية
      *  بقنواتها الكاملة وسواها بالتنظيف فقط)، ويُحل صوت المقطع من كتالوجه أو من
-     *  تراجع الجهاز الافتراضي، ويُخلَّق بلغته ومحركِه — ثم تُعاد عينات مخرجات
-     *  المقاطع المختلفة إلى معيارٍ صوتي موحّد (المعدل الأعلى ≥22050، مونو) فتُدفع
-     *  كلها دفعةً واحدة عبر callback بنفس تقسيم getMaxBufferSize المُثبَت.
+     *  تراجع الجهاز الافتراضي، ويُخلَّق بلغته ومحركِه — ثم تُعاد عينات كل مقطع
+     *  فور إنتاجه إلى معيارٍ صوتي موحّد ثابت ([MIXED_UNIFIED_RATE]، مونو) وتُدفع
+     *  للـ callback مقطعاً مقطعاً بلا تجميع صوت المقرّأ كاملاً في الذاكرة.
+     *
+     * ## لماذا معيار ثابت بدل "المعدل الأعلى" كما كان؟
+     * المعيار القديم جمّع أولاً كل عينات المقاطع (بما يوازي كامل مدة النص) في
+     * الذاكرة ليعرف أعلى معدل ثم أعاد المعاينة وبثّ — فقراءة مقالٍ طويل متعدد
+     * اللغات قد تستهلك عشرات الميغابايت وتُسقط عملية :tts بـ OOM. مع المعيار
+     * الثابت يصح التدفق: كل مقطع يُعاد معاينته لحظ إنتاجه ويُدفع فوراً، فيبقى
+     * الذروة = أكبر مقطعٍ وحده لا مجمل النص (و44100 أعلى من المعيار التاريخي
+     * 22050 فلا يُخسر صوت — الخفض إلى أقل مستوى كان افتراضَ الدفع الأصلي).
      *
      * مقطعٌ يعجز محركُه عن التخليق يُسقط وحده (يُسجَّل ويُكمل البقية) بدل قطع
      * النطق كلياً؛ وإن فشل الكل تُرك callback.error() كملاذٍ أخير. */
@@ -414,10 +474,8 @@ class NateqTtsService : TextToSpeechService() {
         segments: List<Segment>,
         callback: SynthesisCallback
     ) {
-        class SegmentAudio(val pcm: ByteArray, val rate: Int, val channels: Int)
-
-        val audios = ArrayList<SegmentAudio>()
-        var highestRate = MIN_UNIFIED_RATE
+        var started = false
+        val maxBytes = callback.maxBufferSize
         for (segment in segments) {
             val segTag = segment.languageTag
             val processed = textProcessor.process(segment.text, segTag)
@@ -441,10 +499,12 @@ class NateqTtsService : TextToSpeechService() {
             val finalLocale = if (matches) convert?.convertLocale else null
             val finalVoiceName = if (matches) convert?.convertVoiceName else null
 
-            val pcmOut = ByteArrayOutputStream()
+            // بث المقطع فور إنتاجه: شريحة المزوّد تُعاد معاينتها إلى المعيار
+            // الموحّد وتُدفع للـ callback مباشرةً — لا تُجمَع مع مقاطع أخرى ولا
+            // يبقى مرجعها بعد عودة المعالج (المزوّد يعيد شريحته للمسبح بعدها).
             var nativeRate = 0
             var nativeChannels = 1
-            val rendered = try {
+            try {
                 provider.synthesize(
                     processed,
                     voice,
@@ -456,56 +516,41 @@ class NateqTtsService : TextToSpeechService() {
                         nativeChannels = channelCount
                     },
                     { chunk, validLength ->
-                        // الشريحة قد تأتي من مسبحٍ مُعاد استخدامه؛ يُنسخ فوراً.
-                        pcmOut.write(chunk, 0, validLength)
+                        // إن لم يُبلِّغ المزوّد بالمعدل قبل الشريحة (مسارات طارئة)
+                        // نعتبره معيار LORD الأساسي لئلا يُبثّ معدلٌ غير معلوم.
+                        val rate = if (nativeRate > 0) nativeRate else MIN_UNIFIED_RATE
+                        val mono = PcmResampler.convert(
+                            chunk, rate, nativeChannels, MIXED_UNIFIED_RATE
+                        )
+                        if (mono.isEmpty()) return@synthesize
+                        if (!started) {
+                            callback.start(
+                                /* sampleRateInHz = */ MIXED_UNIFIED_RATE,
+                                /* audioFormat = */ android.media.AudioFormat.ENCODING_PCM_16BIT,
+                                /* channelCount = */ 1
+                            )
+                            started = true
+                        }
+                        var offset = 0
+                        while (offset < mono.size) {
+                            val bytesToWrite = minOf(maxBytes, mono.size - offset)
+                            callback.audioAvailable(mono, offset, bytesToWrite)
+                            offset += bytesToWrite
+                        }
                     },
                     finalEngine,
                     finalLocale,
                     finalVoiceName
                 )
-                true
             } catch (e: CancellationException) {
                 throw e
             } catch (t: Throwable) {
                 Log.w(TAG, "synthesizeMixed: مقطع $segTag فشل تخليقه — يُسقط وحده", t)
-                false
-            }
-            if (!rendered || pcmOut.size() == 0) continue
-            if (nativeRate <= 0) nativeRate = MIN_UNIFIED_RATE
-            if (nativeRate > highestRate) highestRate = nativeRate
-            audios.add(SegmentAudio(pcmOut.toByteArray(), nativeRate, nativeChannels))
-        }
-        if (audios.isEmpty()) {
-            callback.error()
-            return
-        }
-
-        // البث الموحّد: تُعاد عينات كل مقطع إلى معيار واحد ثم تُدفع تباعاً.
-        var started = false
-        val maxBytes = callback.maxBufferSize
-        for (audio in audios) {
-            val mono = PcmResampler.convert(audio.pcm, audio.rate, audio.channels, highestRate)
-            if (!started) {
-                callback.start(
-                    /* sampleRateInHz = */ highestRate,
-                    /* audioFormat = */ android.media.AudioFormat.ENCODING_PCM_16BIT,
-                    /* channelCount = */ 1
-                )
-                started = true
-            }
-            var offset = 0
-            while (offset < mono.size) {
-                val bytesToWrite = minOf(maxBytes, mono.size - offset)
-                callback.audioAvailable(mono, offset, bytesToWrite)
-                offset += bytesToWrite
             }
         }
         if (!started) {
-            callback.start(
-                /* sampleRateInHz = */ highestRate,
-                /* audioFormat = */ android.media.AudioFormat.ENCODING_PCM_16BIT,
-                /* channelCount = */ 1
-            )
+            callback.error()
+            return
         }
         callback.done()
     }

@@ -213,6 +213,33 @@ class SettingsRepository(private val context: Context) :
     fun setVolume(languageTag: String, volume: Float) =
         prefs.edit().putFloat("volume_$languageTag", volume.coerceIn(0f, 1f)).apply()
 
+    /** يُرجع مفتاح التفضيل الفعلي للغة: بالوسم الكامل (ar-EG) إن وُجد، ثم
+     *  بكود اللغة وحده (ar) إن وُجد — تراجعٌ تدريجي لتعميم تفضيل الأهل على
+     *  كل لهجاتها. null إن لم يُحفظ أي تفضيل لها. */
+    private fun languagePrefKey(prefix: String, languageTag: String): String? {
+        val tagKey = "$prefix$languageTag"
+        if (prefs.contains(tagKey)) return tagKey
+        val lang = java.util.Locale.forLanguageTag(languageTag).language
+        if (lang.isNotBlank() && lang != languageTag) {
+            val baseKey = "$prefix$lang"
+            if (prefs.contains(baseKey)) return baseKey
+        }
+        return null
+    }
+
+    /** سرعة نطق مخزّنة صراحةً للغة (وسم كامل أو كود اللغة) — null إن لم
+     *  يُعيّن المستخدم قيمةً لها. «1.0x الصريح» يُحترم ولا يُخلط مع الغياب. */
+    fun getSpeechRateOrNull(languageTag: String): Float? =
+        languagePrefKey("speech_rate_", languageTag)?.let { prefs.getFloat(it, 1.0f) }
+
+    /** نبرة مخزّنة صراحةً للغة (وسم كامل أو كود اللغة) — null إن لم تُعيّن. */
+    fun getPitchOrNull(languageTag: String): Float? =
+        languagePrefKey("pitch_", languageTag)?.let { prefs.getFloat(it, 1.0f) }
+
+    /** مستوى صوت مخزّن صراحةً للغة (وسم كامل أو كود اللغة) — null إن لم يُعيّن. */
+    fun getVolumeOrNull(languageTag: String): Float? =
+        languagePrefKey("volume_", languageTag)?.let { prefs.getFloat(it, 1.0f) }
+
     /** حزمة محرك TTS الذي اختاره المستخدم في شاشة الإعدادات */
     override fun getSelectedEnginePackage(): String? = prefs.getString("selected_engine_package", null)
     fun setSelectedEnginePackage(pkg: String?) =

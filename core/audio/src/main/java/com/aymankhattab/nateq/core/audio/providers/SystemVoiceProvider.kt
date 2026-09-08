@@ -231,9 +231,21 @@ class SystemVoiceProvider(
 
     override fun isConfigured(): Boolean = true // متاح دائمًا
 
-    /** تعطيل مراقب الاتصال عند تدمير المزوّد (إطلاق موارد المراقبة). */
+    /**
+     * إغلاق نهائي لكل موارد المزوّد عند تدمير الخدمة: يحرر رابط الـ IPC
+     * للمحرك المربوط ([TextToSpeech.shutdown])، يوقف منفّذ الخلفية، يلغي
+     * مهلات التهيئة المعلقة، ويفرّغ كاش PCM. يُستدعى مرة واحدة من
+     * [NateqTtsService.onDestroy] — استدعاءات لاحقة لا تفعل شيئاً.
+     */
     override fun shutdown() {
         connectivity.unregister()
+        runCatching { tts?.stop() }
+        runCatching { tts?.shutdown() }
+        tts = null
+        ttsEngine = null
+        pcmCache.evictAll()
+        mainHandler.removeCallbacksAndMessages(null)
+        runCatching { synthExecutor.shutdownNow() }
     }
 
     /**

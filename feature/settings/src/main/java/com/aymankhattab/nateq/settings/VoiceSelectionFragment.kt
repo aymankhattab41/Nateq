@@ -868,14 +868,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     /** منطق الفحص المشترك: إن وُجد تحديث يبدأ التنزيل مباشرة (بلا نافذة تأكيد). */
     private fun performUpdateCheck(showFeedback: Boolean) {
         val context = requireContext()
-        val currentCode = runCatching {
+        val currentName = runCatching {
             val info = context.packageManager.getPackageInfo(context.packageName, 0)
-            val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
-                info.longVersionCode
-            else
-                @Suppress("DEPRECATION") info.versionCode.toLong()
-            code.toInt()
-        }.getOrDefault(0)
+            info.versionName
+        }.getOrNull() ?: ""
 
         if (showFeedback) {
             Toast.makeText(
@@ -884,7 +880,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
 
         viewLifecycleOwner.lifecycleScope.launch {
-            when (val res = UpdateChecker.check(currentCode)) {
+            when (val res = UpdateChecker.check(currentName)) {
                 is UpdateChecker.CheckResult.UpdateAvailable -> {
                     startApkDownload(context, res.apkUrl)
                 }

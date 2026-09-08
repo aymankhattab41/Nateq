@@ -26,19 +26,47 @@ object UpdateChecker {
     private const val RELEASES_API = "https://api.github.com/repos/$REPO/releases/latest"
     private const val APK_NAME = "lord_tts.apk"
 
+    /** يجرد بادئة إصدار واحدة (v/V) إن وُجدت — لا حاجة إلا لها. */
+    private fun stripVersionPrefix(value: String): String {
+        val s = value.trim()
+        return if (s.isNotEmpty() && (s.first() == 'v' || s.first() == 'V')) s.drop(1) else s
+    }
+
+    /** مقارنة SemVer لعنصري إصدار («v0.4.1»/«0.4.1») بلا البادئة: يرجع true
+     *  إذا كان [remote] أحدث فعلاً من [current]. مكوّنٌ مكوّن بالأرقام، والجزء
+     *  غير الرقمي في مكوّن يُتجاهل، والمكوّن المنقوص يُكمَّل بصفر. وسمٌ بلا أي
+     *  رقم (مثل «latest») ليس تحديثاً أبداً. منطق نقي قابل للاختبار بلا أندرويد. */
+    fun isNewerVersion(remote: String, current: String): Boolean {
+        val rParts = stripVersionPrefix(remote).split('.').mapNotNull { it.toIntOrNull() }
+        val cParts = stripVersionPrefix(current).split('.').mapNotNull { it.toIntOrNull() }
+        if (rParts.isEmpty()) return false
+        val maxLen = maxOf(rParts.size, cParts.size)
+        for (i in 0 until maxLen) {
+            val r = rParts.getOrElse(i) { 0 }
+            val c = cParts.getOrElse(i) { 0 }
+            if (r > c) return true
+            if (r < c) return false
+        }
+        return false
+    }
+
     sealed class CheckResult {
         data class UpdateAvailable(val tag: String, val apkUrl: String) : CheckResult()
         object UpToDate : CheckResult()
         object NetworkError : CheckResult()
     }
 
-    suspend fun check(currentVersionCode: Int): CheckResult =
+    suspend fun check(currentVersionName: String): CheckResult =
         withContext(AppDispatchers.io) {
             try {
                 val conn = URL(RELEASES_API).openConnection() as HttpURLConnection
                 try {
                     conn.connectTimeout = 10_000
                     conn.readTimeout = 10_000
+                    // GitHub يرفض الطلبات المجهولة (403 بتقييد المعدل): ترويسات
+                    // هوية واضحة + Accept للنسخة الثالثة الحالية من واجهة Releases.
+                    conn.setRequestProperty("User-Agent", "Lord-TTS/UpdateChecker (Nateq)")
+                    conn.setRequestProperty("Accept", "application/vnd.github.v3+json")
                     if (conn.responseCode != 200) return@withContext CheckResult.NetworkError
                     val body = conn.inputStream.bufferedReader().use { it.readText() }
                     // تجزئة استجابة GitHub عبر مظلة JSON الموحّدة (البند 3):
@@ -46,20 +74,21 @@ object UpdateChecker {
                     val root = NateqJson.parseObject(body)
                         ?: return@withContext CheckResult.NetworkError
                     val tag = root.optString("tag_name")
-                    val remoteCode = tag.trimStart('v', 'V')
-                        .takeWhile { it.isDigit() }
-                        .toIntOrNull() ?: return@withContext CheckResult.UpToDate
+                    // مقارنة SemVer مكوّن مكوّن (لا قراءةٌ حرفية للرقم الأول كما
+                    // كان takeWhile الأمعور — كان يعلّق «v0.4.1» على الرقم 0
+                    // فيُعطَّل التنبيه لكل اللهجات SemVer).
+                    if (!isNewerVersion(tag, currentVersionName)) {
+                        return@withContext CheckResult.UpToDate
+                    }
                     val assets = root.optArray("assets")
                     val apkAsset = (0 until (assets?.size() ?: 0))
                         .mapNotNull { assets?.get(it)?.optObject() }
                         .firstOrNull { it.optString("name") == APK_NAME }
-                    if (remoteCode > currentVersionCode && apkAsset != null) {
-                        val urlEl = apkAsset.optMember("browser_download_url")
-                        if (urlEl == null) return@withContext CheckResult.NetworkError
-                        CheckResult.UpdateAvailable(tag, urlEl.optString())
-                    } else {
-                        CheckResult.UpToDate
-                    }
+                    // إصدار أحدث لكن منشوره بلا مرفق الـ APK المتوقع → لا شيء ننزله.
+                    if (apkAsset == null) return@withContext CheckResult.UpToDate
+                    val urlEl = apkAsset.optMember("browser_download_url")
+                    if (urlEl == null) return@withContext CheckResult.NetworkError
+                    CheckResult.UpdateAvailable(tag, urlEl.optString())
                 } finally {
                     conn.disconnect()
                 }

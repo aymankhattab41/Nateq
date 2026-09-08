@@ -30,22 +30,23 @@ class SynthesisRequestHandler(
     }
 
     fun getSpeechRate(languageTag: String): Float {
-        // سرعة هذه اللغة إن حُفظت (speech_rate_en/ar)، وإلا نرجع إلى السرعة
-        // الافتراضية العامة (default_speech_rate) بدل 1.0 الثابتة، حتى يؤثر
-        // إعداد «السرعة الافتراضية» في شاشة ناطق على النطق الفعلي.
-        val perLang = settings.getSpeechRate(languageTag)
-        return if (perLang != 1.0f) perLang else settings.getDefaultSpeechRate()
+        // تفضيل هذه اللغة الصريح إن حُفظ (حتى لو كان 1.0x)، وإلا الرجوع إلى
+        // السرعة العامة الافتراضية — لا يُعتبر 1.0x «غياباً» فيُفقد اختيار
+        // المستخدم ويُعاد تطبيق قيمة عامة أخرى فوق إرادته.
+        return settings.getSpeechRateOrNull(languageTag) ?: settings.getDefaultSpeechRate()
     }
 
-    fun getPitch(languageTag: String): Float {
-        val perLang = settings.getPitch(languageTag)
-        return if (perLang != 1.0f) perLang else settings.getDefaultPitch()
-    }
+    fun getPitch(languageTag: String): Float =
+        settings.getPitchOrNull(languageTag) ?: settings.getDefaultPitch()
 
-    fun getVolume(languageTag: String): Float {
-        val perLang = settings.getVolume(languageTag)
-        return if (perLang != 1.0f) perLang else settings.getDefaultVolume()
-    }
+    fun getVolume(languageTag: String): Float =
+        settings.getVolumeOrNull(languageTag) ?: settings.getDefaultVolume()
+
+    /** القيمة الصريحة لسرعة هذه اللغة إن عيّنها المستخدم — null إن لم يعيّن.
+     *  يسمح للمستدعي بالتمييز بين «1.0x صريح» (تفضيل حقيقي) و«بلا تفضيل» — وهو
+     *  ما يساويه الربط مع 1.0f بوَحدة في synthesizeSingle. */
+    fun getExplicitLanguageRate(languageTag: String): Float? =
+        settings.getSpeechRateOrNull(languageTag)
 
     fun getSpeechRateForCategory(category: String): Float {
         return settings.getSpeechRateForCategory(category)

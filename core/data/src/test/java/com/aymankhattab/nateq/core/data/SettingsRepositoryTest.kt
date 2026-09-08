@@ -146,6 +146,43 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun speechRatePitchVolumeOrNull_unsetReturnsNull_and_explicitRawPreserved() {
+        // غياب التفضيل ≠ «1.0x صريح»: الفارق حاسم كي لا يهبط تفضيلٌ صريح
+        // قدره 1.0x إلى القيمة العامة بدل احترام اختيار المستخدم.
+        assertNull(repo.getSpeechRateOrNull("ar"))
+        assertNull(repo.getPitchOrNull("ar"))
+        assertNull(repo.getVolumeOrNull("ar"))
+        repo.setSpeechRate("ar", 1.0f)
+        repo.setPitch("ar", 1.0f)
+        repo.setVolume("ar", 1.0f)
+        assertEquals(1.0f, repo.getSpeechRateOrNull("ar")!!, 0.0f)
+        assertEquals(1.0f, repo.getPitchOrNull("ar")!!, 0.0f)
+        assertEquals(1.0f, repo.getVolumeOrNull("ar")!!, 0.0f)
+    }
+
+    @Test
+    fun languagePrefs_dialectFallsBackToLanguageCode() {
+        // ar-EG/en-GB بلا تفضيل خاصٍ بهما يعودان تدريجياً إلى تفضيل اللغة
+        // الأم (ar/en) بدل الافتراضي الصامت.
+        repo.setSpeechRate("ar", 1.25f)
+        repo.setPitch("en", 1.4f)
+        repo.setVolume("ar", 0.8f)
+        assertEquals(1.25f, repo.getSpeechRateOrNull("ar-EG")!!, 0.0f)
+        assertEquals(1.4f, repo.getPitchOrNull("en-GB")!!, 0.0f)
+        assertEquals(0.8f, repo.getVolumeOrNull("ar-SA")!!, 0.0f)
+        assertNull(repo.getPitchOrNull("ar-EG"))
+    }
+
+    @Test
+    fun languagePrefs_dialectTagWinsOverLanguageCode() {
+        // التفضيل الخاص باللهجة (الوسم الكامل) يُغلَّب على تفضيل اللغة الأم.
+        repo.setSpeechRate("ar", 1.0f)
+        repo.setSpeechRate("ar-EG", 1.4f)
+        assertEquals(1.4f, repo.getSpeechRateOrNull("ar-EG")!!, 0.0f)
+        assertEquals(1.0f, repo.getSpeechRateOrNull("ar")!!, 0.0f)
+    }
+
+    @Test
     fun categoryRatePitchVolume_clamped() {
         val cat = SettingsRepository.VOICE_CATEGORY_TIME
         repo.setSpeechRateForCategory(cat, -1f)

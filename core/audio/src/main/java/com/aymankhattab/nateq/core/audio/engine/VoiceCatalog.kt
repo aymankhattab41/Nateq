@@ -229,6 +229,15 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
     fun findProvider(providerId: String): VoiceProvider? =
         providers.find { it.providerId == providerId }
 
+    /** إغلاق نهائي لكل المزودين (الاتصالات الخارجية لمن يحتاجها) — يُستدعى من
+     *  [NateqTtsService.onDestroy] حتى لا تبقى روابط Binder IPC معلقة بعد تدمير
+     *  الخدمة. استدعاءات لاحقة لا أثر لها (كل مزود يضمن التسامح). */
+    fun shutdown() {
+        providers.forEach { provider ->
+            runCatching { provider.shutdown() }
+        }
+    }
+
     /**
      * اللغات المدعومة إجمالاً (تُستخدم في onIsLanguageAvailable).
      * تُبنى ديناميكياً من نتيجة الاكتشاف عبر كل المحركات، مع بقاء العربية
