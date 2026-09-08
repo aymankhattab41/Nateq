@@ -13,7 +13,8 @@ internal object NumberStep : TextProcessingStep {
 
     override fun apply(input: String): String {
         val matcher = PATTERN_NUMBER.matcher(input)
-        val buffer = StringBuffer()
+        val sb = StringBuilder(input.length + 32)
+        var cursor = 0
 
         while (matcher.find()) {
             val numberStr = matcher.group(1)!!
@@ -26,19 +27,29 @@ internal object NumberStep : TextProcessingStep {
             // إذا محاط برموز عملة أو وقت، تخطيه
             val currencySymbols = setOf('$', '€', '£', '¥', '₹', '₽', '₩', '﷼')
             if (before in currencySymbols || after in currencySymbols) {
-                matcher.appendReplacement(buffer, java.util.regex.Matcher.quoteReplacement(numberStr))
+                sb.append(input, cursor, end)
+                cursor = end
                 continue
             }
             if (before == ':' || after == ':') {
-                matcher.appendReplacement(buffer, java.util.regex.Matcher.quoteReplacement(numberStr))
+                sb.append(input, cursor, end)
+                cursor = end
                 continue
             }
 
-            val numberText = parseNumberText(numberStr)
-            matcher.appendReplacement(buffer, java.util.regex.Matcher.quoteReplacement(numberText))
+            // سالب ملتصق ببداية العدد منفصلاً عمّا قبله («-1.5» و«التخفيض -5»)
+            // يُنطق «ناقص …» بدل ترك «-» عائمة أمام العدد المنطوق؛ والمحوِّل
+            // يدعم الأعداد السالبة مباشرةً (بند 15). أما «x-5» المتلاصقة بحرف
+            // فتُترك كما كانت (ليست عدداً سالباً لغوياً).
+            val minus = start > 0 && input[start - 1] == '-' &&
+                (start == 1 || !input[start - 2].isLetterOrDigit())
+            sb.append(input, cursor, if (minus) start - 1 else start)
+            sb.append(if (minus) "ناقص " else "")
+            sb.append(parseNumberText(numberStr))
+            cursor = end
         }
-        matcher.appendTail(buffer)
-        return buffer.toString()
+        sb.append(input, cursor, input.length)
+        return sb.toString()
     }
 
     /**
