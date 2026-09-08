@@ -1,0 +1,9 @@
+{
+  "name": "lord-tts-support-relay",
+  "private": true,
+  "description": "ناقل رسائل دعم Lord TTS على Cloudflare Workers",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

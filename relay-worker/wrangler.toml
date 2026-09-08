@@ -11,3 +11,12 @@ compatibility_date = "2026-09-06"
 #   npx wrangler secret put TELEGRAM_BOT_TOKEN
 #   npx wrangler secret put SUPPORT_CHAT_ID
 #   npx wrangler secret put WEBHOOK_SECRET
+#
+# قيود معدل الرسائل (كل مرسل): عداد عبر Cloudflare KV يُعيد [RATE_LIMITS] —
+# نافذة 60 ثانية وحدّ 20 رسالة (ثوابت في src/index.js). أنشئ الـ namespace
+# مرة واحدة ثم ضع الـ id الناتج في السطر التالي:
+#   npx wrangler kv namespace create RATE_LIMITS
+# حتى تُنشئه لا يُفعَّل الحدّ (الكود يتسامح غيابه ولا يوقف الناقل).
+[[kv_namespaces]]
+binding = "RATE_LIMITS"
+id = "REPLACE_WITH_RATE_LIMITS_NAMESPACE_ID"
