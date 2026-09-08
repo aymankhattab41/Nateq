@@ -127,7 +127,7 @@ class BatteryAnnouncementReceiver : BroadcastReceiver() {
                 // ولا يُكرَّر إذا كان مستوى 100 مفعلاً أصلاً (يُغطيه إعلان المستوى).
                 if (percentage == 100 && plugged && settings.isChargingCompleteAnnouncementEnabled()) {
                     val allowFullAnnounce = !enabledLevels.contains(100)
-                    if (allowFullAnnounce && notAnnouncedRecently(context, "full")) {
+                    if (allowFullAnnounce && !announcedRecently(context, "full")) {
                         markAnnounced(context, "full")
                         val fullText = LocaleUtils.stringForSpeech(
                             context, if (isArabic) LanguageCode.AR.tag else LanguageCode.EN.tag,
@@ -138,7 +138,7 @@ class BatteryAnnouncementReceiver : BroadcastReceiver() {
                 }
 
                 if (percentage !in enabledLevels) return
-                if (notAnnouncedRecently(context, "%$percentage")) return
+                if (announcedRecently(context, "%$percentage")) return
                 markAnnounced(context, "%$percentage")
 
                 val text = buildLevelText(context, percentage, isArabic)
@@ -181,17 +181,20 @@ class BatteryAnnouncementReceiver : BroadcastReceiver() {
         AnnouncementSpeaker.getInstance(context).speak(text, locale, speechRate, 1.0f, volume)
     }
 
-    /** منع تكرار نفس الإعلان خلال 5 دقائق (دورة شحن كاملة يمر الزمن كافياً). */
-    private fun notAnnouncedRecently(context: Context, key: String): Boolean {
+    /** منع تكرار نفس الإعلان خلال 5 دقائق (دورة شحن كاملة يمر الزمن كافياً).
+     *  تُرجع true إذا نطق هذا المفتاح فعلاً خلال 5 دقائق مضت. التوقيت بالجدار
+     *  الزمني (System.currentTimeMillis) لا بعداد الإقلاع: بعد إعادة تشغيل
+     *  الهاتف يبدأ elapsedRealtime من الصفر فتصير الفروق مع الختوم القديمة
+     *  سالبة ويتجمد إعلان المستوى حتى تنقضي المدة القديمة كاملة. */
+    internal fun announcedRecently(context: Context, key: String, now: Long = System.currentTimeMillis()): Boolean {
         val prefs = context.getSharedPreferences("nateq_battery_state", Context.MODE_PRIVATE)
         val last = prefs.getLong("battery_last_announced_$key", -1L)
-        val bootTime = android.os.SystemClock.elapsedRealtime()
-        return bootTime - last >= 5 * 60 * 1000L
+        return now - last < 5 * 60 * 1000L
     }
 
-    private fun markAnnounced(context: Context, key: String) {
+    internal fun markAnnounced(context: Context, key: String) {
         context.getSharedPreferences("nateq_battery_state", Context.MODE_PRIVATE)
-            .edit().putLong("battery_last_announced_$key", android.os.SystemClock.elapsedRealtime())
+            .edit().putLong("battery_last_announced_$key", System.currentTimeMillis())
             .apply()
     }
 }
