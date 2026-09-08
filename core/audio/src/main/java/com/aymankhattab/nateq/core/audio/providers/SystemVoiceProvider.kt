@@ -14,6 +14,7 @@ import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.ConnectivityMonitor
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.LocaleUtils
+import com.aymankhattab.nateq.util.VoiceIdContract
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
@@ -275,12 +276,10 @@ class SystemVoiceProvider(
         // نطبّع كود اللغة من ISO-3 (eng, ara) إلى ISO-2 (en, ar).
         val normLanguage = normalizeLanguage(locale.language)
         // معرفات الأصوات يجب أن تطابق أسماء onGetVoices/tts_engine.xml
-        // ("ar-EG"/"en-US") حتى تعمل مطابقة id في الفئات والإعلانات.
-        val voiceId = when (normLanguage) {
-            LanguageCode.AR.tag -> "ar-EG"
-            LanguageCode.EN.tag -> "en-US"
-            else -> "nateq-$normLanguage-local"
-        }
+        // ("ar-EG"/"en-US"/"<lang>-local") — عبر عقد موحّد يشارك الكتالوج
+        // في استخدامه، حتى تعمل مطابقة id في الفئات والإعلانات لكل اللغات
+        // (كانت اللغات غير ar/en تخرج "nateq-<lang>-local" وتساقط اختيارها).
+        val voiceId = VoiceIdContract.createId(normLanguage)
         val normLocale = if (normLanguage != locale.language) {
             if (locale.country.isNullOrEmpty()) {
                 Locale.forLanguageTag(normLanguage)
@@ -294,10 +293,25 @@ class SystemVoiceProvider(
             VoiceDescriptor(
                 id = voiceId,
                 providerId = providerId,
-                displayName = if (normLanguage == LanguageCode.AR.tag) context.getString(R.string.voice_name_arabic) else context.getString(R.string.voice_name_english),
+                displayName = when (normLanguage) {
+                    // العربية/الإنجليزية بأسماء الترجمة الحالية (كاملة بكل الواجهات).
+                    LanguageCode.AR.tag -> context.getString(R.string.voice_name_arabic)
+                    LanguageCode.EN.tag -> context.getString(R.string.voice_name_english)
+                    // أي لغة أجنبية باسمها الحقيقي بلغة واجهة التطبيق
+                    // (كانت كل اللغات تُعرض "الإنجليزية" خطأً).
+                    else -> displayNameFor(normLocale)
+                },
                 locale = normLocale
             )
         )
+    }
+
+    /** اسم لغة أجنبية بلغة واجهة التطبيق (لا لغة النظام) بحرف أول كبير حيث ينطبق. */
+    private fun displayNameFor(locale: Locale): String {
+        val appLocale = context.resources.configuration.locales.get(0) ?: Locale.getDefault()
+        return locale.getDisplayName(appLocale).replaceFirstChar { ch ->
+            if (ch.isLowerCase()) ch.titlecase(appLocale) else ch.toString()
+        }
     }
 
     /** تطبيع كود اللغة من ISO-3 إلى ISO-2 (مثل eng→en، ara→ar) */

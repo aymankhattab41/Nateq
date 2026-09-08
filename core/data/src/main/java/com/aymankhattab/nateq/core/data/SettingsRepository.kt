@@ -9,6 +9,7 @@ import com.aymankhattab.nateq.engine.ConvertPreferencesCodec
 import com.aymankhattab.nateq.engine.LanguageSpeechPrefs
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.NateqJson
+import com.aymankhattab.nateq.util.VoiceIdContract
 
 /**
  * الوسيط الوحيد للقراءة/الكتابة في الإعدادات.
@@ -115,20 +116,12 @@ class SettingsRepository(private val context: Context) :
         prefsFileLastModified() != prefsLastModified
 
     /**
-     * يوحّد معرّفات الأصوات القديمة (nateq-ar*, nateq-en*, ar-local, en-local)
-     * مع الصيغة الحالية (ar-EG/en-US) حتى تبقى القيم المخزنة قبل إعادة
-     * التسمية تعمل وتعرض بشكل صحيح في شاشات الإعدادات.
+     * يوحّد معرّفات الأصوات القديمة (nateq-ar*, nateq-en*, ar-local, en-local
+     * وكذلك البديل الخاطئ الأحدث nateq-<lang>-local) مع الصيغة الحالية
+     * (ar-EG/en-US/<lang>-local) حتى تبقى القيم المخزنة قبل إعادة التسمية
+     * تعمل وتعرض بشكل صحيح في شاشات الإعدادات. القاعدة كلها في [VoiceIdContract].
      */
-    private fun normalizeVoiceId(id: String?): String? {
-        if (id == null) return null
-        return when {
-            id.contains("nateq-ar", ignoreCase = true) ||
-                id.equals("ar-local", ignoreCase = true) -> "ar-EG"
-            id.contains("nateq-en", ignoreCase = true) ||
-                id.equals("en-local", ignoreCase = true) -> "en-US"
-            else -> id
-        }
-    }
+    private fun normalizeVoiceId(id: String?): String? = VoiceIdContract.normalize(id)
 
     /**
      * يرحّل الإعدادات من الملف المشفر القديم إلى الملف الجديد

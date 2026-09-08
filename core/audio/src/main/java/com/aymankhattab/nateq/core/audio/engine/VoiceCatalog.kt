@@ -8,9 +8,14 @@ import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.LocaleUtils
+import com.aymankhattab.nateq.util.VoiceIdContract
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -56,11 +61,25 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             // فتظهر في القائمة لغاتٌ لا تُنطق. يبقى الاختيار اليدوي صريحاً لهم.
             val engines = EnginePicker.installedEngines(context)
                 .filterNot { EnginePicker.isScreenReader(it.packageName) }
-            val voicesByEngine = mutableMapOf<String, List<Voice>>()
-            engines.forEach { engine ->
-                voicesByEngine[engine.packageName] = runCatching {
-                    probeEngineVoices(context, engine.packageName)
-                }.getOrDefault(emptyList())
+            // الفحص بالتوازي (كل محرك في مهمة IO مستقلة): كان متتابعاً فتبلغ
+            // مدة الفحص N×10 ث بعشرة محركات بطيئة، الآن أقصى انتظار كحدود
+            // المحرك الأبطأ نفسه (~10 ث) فتنفتح شاشة المحول بسرعة.
+            val voicesByEngine = try {
+                coroutineScope {
+                    engines
+                        .map { engine ->
+                            async(Dispatchers.IO) {
+                                engine.packageName to probeEngineVoices(context, engine.packageName)
+                            }
+                        }
+                        .awaitAll()
+                        .toMap()
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // إلغاء تعاوني (onStop/استباق): لا نصطاده مع بقية الأخطاء.
+                throw e
+            } catch (_: Throwable) {
+                emptyMap<String, List<Voice>>()
             }
             return groupVoicesByLanguage(
                 engines.map { it.packageName to it.label },
@@ -275,11 +294,9 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
         // للّغات المكتشفة حديثاً (fr/de/zh/…) نُصدِر "<lang>-local" كاسم صوت
         // موحّد يُمكّن النظام من حفظ اختيار المستخدم لهذه اللغات؛ النطق الفعلي
         // يذهب إلى المحرك الطرفي عبر خريطة التحويل (desiredVoiceName/engine).
-        return when (locale.language.lowercase(java.util.Locale.ROOT)) {
-            LanguageCode.AR.tag -> "ar-EG"
-            LanguageCode.EN.tag -> "en-US"
-            else -> "${locale.language.lowercase(java.util.Locale.ROOT)}-local"
-        }
+        // الصيغة كلها مولّدة من عقد واحد ([VoiceIdContract]) يشارك المزوّد
+        // في استخدامه فلا تنحرف الأسماء المعلنة عن معرّفات الواصفات مجدداً.
+        return VoiceIdContract.createId(locale.language)
     }
 
     fun supportedVoices(): List<Voice> =

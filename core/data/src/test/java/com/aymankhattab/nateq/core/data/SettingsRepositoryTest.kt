@@ -93,6 +93,12 @@ class SettingsRepositoryTest {
         assertEquals("en-US", repo.getPreferredVoiceId("en"))
         repo.setPreferredVoiceId("ar", "ar-local")
         assertEquals("ar-EG", repo.getPreferredVoiceId("ar"))
+        // البديل الخاطئ الأحدث من المزوّد: nateq-<lang>-local يُطبع للصيغة الموحّدة
+        repo.setPreferredVoiceId("fr", "nateq-fr-local")
+        assertEquals("fr-local", repo.getPreferredVoiceId("fr"))
+        // الصيغة الموحّدة الحالية تمرّ كما هي
+        repo.setPreferredVoiceId("fr", "fr-local")
+        assertEquals("fr-local", repo.getPreferredVoiceId("fr"))
     }
 
     @Test
