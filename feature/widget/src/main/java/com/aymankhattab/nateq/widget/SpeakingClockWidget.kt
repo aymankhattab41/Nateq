@@ -11,11 +11,11 @@ import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
 import android.widget.RemoteViews
-import com.aymankhattab.nateq.NateqApplication
-import com.aymankhattab.nateq.R
+import com.aymankhattab.nateq.feature.widget.R
+import com.aymankhattab.nateq.core.audio.announcement.AnnouncementAppContext
+import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
 import com.aymankhattab.nateq.core.audio.announcement.TimeAnnouncementManager
 import com.aymankhattab.nateq.core.data.SettingsRepository
-import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.LanguageCode
 import java.util.Locale
 
@@ -92,7 +92,9 @@ class SpeakingClockWidget : AppWidgetProvider() {
             speaker.onSpeechComplete = { finish() }
 
             // المفتاح الموضعي للأداة (من شاشة إعلان الوقت) يقرر إن كانت تنطق عند اللمس.
-            val settings = (appContext as? NateqApplication)?.settingsRepository
+            // مصدر الإعدادات المحقون في التطبيق يُسترجع عبر عقد إتاحة :core:audio
+            // (تطبّقه NateqApplication) بدل الاعتماد المباشر على فئة التطبيق من :app.
+            val settings = (appContext as? AnnouncementAppContext)?.settingsRepository
                 ?: SettingsRepository(appContext)
             if (!settings.isClockWidgetEnabled()) {
                 val language = runCatching { settings.getAppLanguage() }.getOrNull()

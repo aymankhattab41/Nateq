@@ -1,0 +1,5 @@
+<resources>
+<string name="widget_clock_description">أداة الساعة — اضغط لنطق الوقت الحالي</string>
+<string name="widget_clock_tap_to_speak">اضغط لنطق الوقت الحالي</string>
+<string name="widget_clock_disabled">أداة الساعة معطّلة حالياً. فعّلها من مفتاح «أداة الساعة» في قسم إعلان الوقت بالإعدادات</string>
+</resources>

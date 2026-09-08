@@ -92,6 +92,7 @@ dependencies {
     implementation(project(":core:audio"))
     implementation(project(":core:data"))
     implementation(project(":feature:settings"))
+    implementation(project(":feature:widget"))
 
     // خفيفة الوزن ومقصودة - لا تستخدم SDKs ضخمة من كل شركة، بل REST مباشر
     implementation("androidx.core:core-ktx:1.15.0")
