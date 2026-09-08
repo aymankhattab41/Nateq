@@ -7,6 +7,7 @@ import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
 import java.util.Locale
+import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /** ضابط قسم «الإعدادات العامة»: السرعة/النبرة/مستوى الصوت الافتراضية. */
 internal class GeneralSettingsController(

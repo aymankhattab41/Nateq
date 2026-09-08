@@ -13,6 +13,7 @@ import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
 import com.aymankhattab.nateq.util.announceCompat
 import com.google.android.material.switchmaterial.SwitchMaterial
 import java.util.Locale
+import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /** ضابط قسم «إعلان مستوى البطارية»: المستويات/الصوت/السرعة/مستوى صوت الشحن. */
 internal class BatteryAnnouncementController(

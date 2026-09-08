@@ -8,6 +8,7 @@ import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /**
  * بلاطة الإعدادات السريعة «إعلانات ناطق»:

@@ -15,6 +15,7 @@ import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
 import com.aymankhattab.nateq.receivers.NateqNotificationListener
 import com.aymankhattab.nateq.util.announceCompat
 import java.util.Locale
+import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /** ضابط قسم «قراءة الرسائل الواردة»: وضع القراءة بالأذونات، الأصوات، السرعة والقالب. */
 internal class SmsReadingController(

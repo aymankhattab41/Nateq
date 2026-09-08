@@ -3,7 +3,7 @@ package com.aymankhattab.nateq
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.engine.PronunciationDictionary
-import com.aymankhattab.nateq.settings.SettingsRepository
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.settings.SettingsViewModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

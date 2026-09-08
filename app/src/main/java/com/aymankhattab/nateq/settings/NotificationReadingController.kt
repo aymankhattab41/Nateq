@@ -10,6 +10,7 @@ import com.aymankhattab.nateq.receivers.NateqNotificationListener
 import com.aymankhattab.nateq.util.announceCompat
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.switchmaterial.SwitchMaterial
+import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /** ضابط قسم «قراءة الإشعارات»: المفتاح + فتح إعدادات صلاحية النظام + اختيار التطبيقات. */
 internal class NotificationReadingController(

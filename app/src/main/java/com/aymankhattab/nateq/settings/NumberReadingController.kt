@@ -8,6 +8,7 @@ import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.announceCompat
 import java.util.Locale
+import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /** ضابط قسم «نطق الأرقام + مفتاح لغة النطق». */
 internal class NumberReadingController(

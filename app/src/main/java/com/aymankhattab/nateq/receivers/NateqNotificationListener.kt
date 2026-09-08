@@ -11,7 +11,7 @@ import android.service.notification.StatusBarNotification
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.R
-import com.aymankhattab.nateq.settings.SettingsRepository
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.LanguageCode

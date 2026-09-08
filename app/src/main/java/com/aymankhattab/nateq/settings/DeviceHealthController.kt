@@ -17,6 +17,7 @@ import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.announceCompat
 import java.util.Locale
 import kotlin.math.roundToInt
+import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /**
  * ضابط قسم «صحة الجهاز»: نطق حالة الجهاز عند الطلب — مستوى البطارية، حالة

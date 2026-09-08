@@ -2,7 +2,7 @@ package com.aymankhattab.nateq.di
 
 import android.content.Context
 import com.aymankhattab.nateq.engine.PronunciationDictionary
-import com.aymankhattab.nateq.settings.SettingsRepository
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn

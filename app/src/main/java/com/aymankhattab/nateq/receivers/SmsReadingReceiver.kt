@@ -7,7 +7,7 @@ import android.provider.Telephony
 import android.telephony.SmsMessage
 import android.util.Log
 import com.aymankhattab.nateq.R
-import com.aymankhattab.nateq.settings.SettingsRepository
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.LanguageCode

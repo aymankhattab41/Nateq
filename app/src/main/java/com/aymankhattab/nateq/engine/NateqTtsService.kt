@@ -11,7 +11,7 @@ import android.util.Log
 import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.providers.VoiceDescriptor
-import com.aymankhattab.nateq.settings.SettingsRepository
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.LocaleUtils
 import dagger.hilt.android.AndroidEntryPoint

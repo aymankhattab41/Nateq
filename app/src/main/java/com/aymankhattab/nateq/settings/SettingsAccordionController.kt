@@ -15,6 +15,7 @@ import com.aymankhattab.nateq.util.announceCompat
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.switchmaterial.SwitchMaterial
 import java.util.Calendar
+import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /** بطاقة قسم في القائمة الرئيسية: رأس + سهم + حالة + محتوى (يُفتح كشاشة فرعية). */
 internal data class AccordionEntry(

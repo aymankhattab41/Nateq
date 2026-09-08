@@ -20,7 +20,7 @@ import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.receivers.BatteryAnnouncementReceiver
 import com.aymankhattab.nateq.settings.SettingsActivity
-import com.aymankhattab.nateq.settings.SettingsRepository
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 

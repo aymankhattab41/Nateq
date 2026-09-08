@@ -1,11 +1,11 @@
-﻿package com.aymankhattab.nateq
+package com.aymankhattab.nateq
 
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.NetworkInfo
 import androidx.test.core.app.ApplicationProvider
-import com.aymankhattab.nateq.util.ConnectivityMonitor
+import com.aymankhattab.nateq.core.data.ConnectivityMonitor
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before

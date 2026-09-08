@@ -1,7 +1,7 @@
 package com.aymankhattab.nateq.engine
 
 import com.aymankhattab.nateq.providers.VoiceDescriptor
-import com.aymankhattab.nateq.settings.SettingsRepository
+import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /**
  * يحدد أي صوت (من أي مزود) يجب استخدامه لطلب نطق معيّن،

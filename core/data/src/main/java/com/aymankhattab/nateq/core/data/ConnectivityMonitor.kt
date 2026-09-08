@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq.util
+package com.aymankhattab.nateq.core.data
 
 import android.content.Context
 import android.net.ConnectivityManager

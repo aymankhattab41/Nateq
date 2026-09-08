@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq.util
+package com.aymankhattab.nateq.core.data
 
 import android.app.DownloadManager
 import android.content.Context
@@ -6,6 +6,11 @@ import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
 import com.aymankhattab.nateq.core.common.AppDispatchers
+import com.aymankhattab.nateq.util.NateqJson
+import com.aymankhattab.nateq.util.optArray
+import com.aymankhattab.nateq.util.optMember
+import com.aymankhattab.nateq.util.optObject
+import com.aymankhattab.nateq.util.optString
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -15,19 +20,19 @@ import kotlinx.coroutines.withContext
  * فحص التحديثات وتنزيل الـ APK الجديد من GitHub Releases.
  * يستخدم مستودع المشروع العام كخادم توزيع.
  */
-internal object UpdateChecker {
+object UpdateChecker {
 
     private const val REPO = "aymankhattab41/Nateq"
     private const val RELEASES_API = "https://api.github.com/repos/$REPO/releases/latest"
     private const val APK_NAME = "lord_tts.apk"
 
-    internal sealed class CheckResult {
+    sealed class CheckResult {
         data class UpdateAvailable(val tag: String, val apkUrl: String) : CheckResult()
         object UpToDate : CheckResult()
         object NetworkError : CheckResult()
     }
 
-    internal suspend fun check(currentVersionCode: Int): CheckResult =
+    suspend fun check(currentVersionCode: Int): CheckResult =
         withContext(AppDispatchers.io) {
             try {
                 val conn = URL(RELEASES_API).openConnection() as HttpURLConnection

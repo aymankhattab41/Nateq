@@ -1,7 +1,7 @@
 package com.aymankhattab.nateq
 
 import androidx.test.core.app.ApplicationProvider
-import com.aymankhattab.nateq.util.StartupTempSweeper
+import com.aymankhattab.nateq.core.data.StartupTempSweeper
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

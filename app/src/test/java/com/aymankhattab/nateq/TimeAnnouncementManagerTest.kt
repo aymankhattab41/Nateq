@@ -8,7 +8,7 @@ import com.aymankhattab.nateq.engine.TimeAnnouncementManager
 import com.aymankhattab.nateq.engine.VoiceCatalog
 import com.aymankhattab.nateq.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.receivers.TimeAlarmReceiver
-import com.aymankhattab.nateq.settings.SettingsRepository
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import java.lang.reflect.Method
 import java.util.Calendar
 import org.junit.After

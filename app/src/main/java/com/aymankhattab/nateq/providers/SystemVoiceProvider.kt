@@ -10,8 +10,8 @@ import android.util.LruCache
 import android.util.Log
 import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.core.data.VoicePrefsProvider
-import com.aymankhattab.nateq.settings.SettingsRepository
-import com.aymankhattab.nateq.util.ConnectivityMonitor
+import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.core.data.ConnectivityMonitor
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.LocaleUtils
 import java.util.Locale

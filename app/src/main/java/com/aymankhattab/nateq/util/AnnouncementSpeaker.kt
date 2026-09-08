@@ -15,7 +15,7 @@ import com.aymankhattab.nateq.engine.LanguageSegmenter
 import com.aymankhattab.nateq.engine.Segment
 import com.aymankhattab.nateq.engine.SpeechPart
 import com.aymankhattab.nateq.providers.EnginePicker
-import com.aymankhattab.nateq.settings.SettingsRepository
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import java.util.Locale
 
 /**

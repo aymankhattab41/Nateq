@@ -6,7 +6,7 @@ import android.content.Intent
 import com.aymankhattab.nateq.NateqApplication
 import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.engine.NumberSpeech
-import com.aymankhattab.nateq.settings.SettingsRepository
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.LanguageCode

@@ -15,6 +15,7 @@ import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import java.util.Locale
+import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /** صف لغةٍ في قائمة إعداد التحويل التلقائي (كل صف = لغة مكتشفة عبر المحركات). */
 internal data class LanguageRow(

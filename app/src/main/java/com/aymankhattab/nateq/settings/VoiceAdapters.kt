@@ -13,6 +13,7 @@ import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
 import java.util.Locale
+import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /**
  * مسند فئات الأصوات: لكل فئة (الافتراضية/الوقت/الأرقام/الإشعارات) صوت وسرعة

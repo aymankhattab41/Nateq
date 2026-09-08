@@ -25,6 +25,7 @@ import com.aymankhattab.nateq.util.LanguageCode
 import java.util.Locale
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /** بيانات محرك TTS معروض في قوائم الاختيار. */
 internal data class EngineInfo(val packageName: String, val label: String)

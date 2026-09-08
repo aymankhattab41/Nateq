@@ -14,7 +14,7 @@ import android.widget.RemoteViews
 import com.aymankhattab.nateq.NateqApplication
 import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.engine.TimeAnnouncementManager
-import com.aymankhattab.nateq.settings.SettingsRepository
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.LanguageCode
 import java.util.Locale

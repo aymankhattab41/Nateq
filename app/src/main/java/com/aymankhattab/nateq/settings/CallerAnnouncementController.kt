@@ -21,6 +21,7 @@ import com.aymankhattab.nateq.util.setSeekStateDescription
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.switchmaterial.SwitchMaterial
 import java.util.Locale
+import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /** ضابط قسم «إعلان اسم المتصل»: التفعيل بالأذونات، التكرار، السرعة، القالب والأصوات. */
 internal class CallerAnnouncementController(

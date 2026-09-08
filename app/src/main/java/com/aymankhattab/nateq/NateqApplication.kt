@@ -5,8 +5,8 @@ import android.util.Log
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
 import com.aymankhattab.nateq.core.common.AppDispatchers
-import com.aymankhattab.nateq.settings.SettingsRepository
-import com.aymankhattab.nateq.util.StartupTempSweeper
+import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.core.data.StartupTempSweeper
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope

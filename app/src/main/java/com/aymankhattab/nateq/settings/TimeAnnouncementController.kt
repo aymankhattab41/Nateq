@@ -19,6 +19,7 @@ import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
 import com.aymankhattab.nateq.util.announceCompat
 import com.google.android.material.switchmaterial.SwitchMaterial
 import java.util.Calendar
+import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /** ضابط قسم «إعلان الوقت»: الفاصل الزمني/الصيغة/ساعات الهدوء/التاريخ الهجري. */
 internal class TimeAnnouncementController(
