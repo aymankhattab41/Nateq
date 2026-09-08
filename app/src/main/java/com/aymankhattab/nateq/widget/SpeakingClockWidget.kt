@@ -3,8 +3,13 @@ package com.aymankhattab.nateq.widget
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
+import android.os.PowerManager
+import android.util.Log
 import android.widget.RemoteViews
 import com.aymankhattab.nateq.NateqApplication
 import com.aymankhattab.nateq.R
@@ -26,6 +31,11 @@ class SpeakingClockWidget : AppWidgetProvider() {
 
     companion object {
         private const val ACTION_SPEAK = "com.aymankhattab.nateq.action.WIDGET_SPEAK"
+
+        // مهلة أمان قصوى لبقاء goAsync/WakeLock: حتى لو لم يُستدعَ خطاف اكتمال
+        // النطق (فشل تهيئة محرك TTS أو محرك لا يردّ) لا يبقى قفلاً ولا عنصر
+        // معالجة معلّقاً يتجاوز هذه المدة.
+        private const val SPEAK_TIMEOUT_MS = 20_000L
     }
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
@@ -37,30 +47,59 @@ class SpeakingClockWidget : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        if (intent.action == ACTION_SPEAK) {
-            // تحقق صارم أن البث موجّه لمكوّننا (حزمة + صف) وليس لحزمة تحمل اسمنا
-            // فقط — أي تطبيق خارجي قد يعيّن ComponentName صراحةً بحزمة تطبيقنا
-            // فيتجاوز فحص اسم الحزمة وحده. رفض أي مكوّن غير مطابق تماماً.
-            val cn = intent.component
-            if (cn?.packageName != context.packageName) return
-            if (cn.className != SpeakingClockWidget::class.java.name) return
-            handleSpeak(context)
-        }
+        if (intent.action != ACTION_SPEAK) return
+        // تحقق صارم أن البث موجّه لمكوّننا (حزمة + صف) وليس لحزمة تحمل اسمنا
+        // فقط — أي تطبيق خارجي قد يعيّن ComponentName صراحةً بحزمة تطبيقنا
+        // فيتجاوز فحص اسم الحزمة وحده. رفض أي مكوّن غير مطابق تماماً.
+        val cn = intent.component
+        if (cn?.packageName != context.packageName) return
+        if (cn.className != SpeakingClockWidget::class.java.name) return
+
+        // Android 14+ يجمد العملية فور عودة onReceive قبل اكتمال تهيئة محرك
+        // TTS فيصمت الودجت. goAsync() يُبقي العملية محاسبةً، وWakeLock مؤقت
+        // يُبقي المعالج نشطاً حتى يُنطق الوقت فعلياً (ثم نحرر العنصرين).
+        handleSpeak(context, goAsync())
     }
 
-    private fun handleSpeak(context: Context) {
+    private fun handleSpeak(context: Context, pendingResult: BroadcastReceiver.PendingResult?) {
+        val appContext = context.applicationContext
+        var wakeLock: PowerManager.WakeLock? = null
+        var finished = false
+        val mainHandler = Handler(Looper.getMainLooper())
+
+        val finish = {
+            if (!finished) {
+                finished = true
+                mainHandler.removeCallbacksAndMessages(null)
+                AnnouncementSpeaker.getInstance(appContext).onSpeechComplete = null
+                runCatching { if (wakeLock?.isHeld == true) wakeLock?.release() }
+                runCatching { pendingResult?.finish() }
+            }
+        }
+        val safety = Runnable { finish() }
+        mainHandler.postDelayed(safety, SPEAK_TIMEOUT_MS)
+
         try {
-            val appContext = context.applicationContext
-            // يُفضَّل الحقل المحقون عبر Hilt (كائن مشترك)، وإلا يُبنى محلياً —
-            // AppWidgetProvider لا يُحقن تلقائياً من Hilt (يُنشئه النظام مباشرة).
+            val powerManager = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
+            wakeLock = powerManager?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Nateq:WidgetSpeak")
+            wakeLock?.setReferenceCounted(false)
+            wakeLock?.acquire(SPEAK_TIMEOUT_MS)
+
+            // تحرير goAsync فور اكتمال آخر جملة (onDone/onError) من المتحدث
+            // المشترك — النطق لا يقتصر على «الوقت» فقط بل قد يكون رسالة التعطيل.
+            val speaker = AnnouncementSpeaker.getInstance(appContext)
+            speaker.onSpeechComplete = { finish() }
+
+            // المفتاح الموضعي للأداة (من شاشة إعلان الوقت) يقرر إن كانت تنطق عند اللمس.
             val settings = (appContext as? NateqApplication)?.settingsRepository
                 ?: SettingsRepository(appContext)
-            // المفتاح الموضعي للأداة (من شاشة إعلان الوقت) يقرر إن كانت تنطق عند اللمس.
             if (!settings.isClockWidgetEnabled()) {
-                // نُعلم المستخدم بمعطّلية النطق بدل الصمت.
-                AnnouncementSpeaker.getInstance(appContext).speak(
+                val language = runCatching { settings.getAppLanguage() }.getOrNull()
+                    ?: Locale.getDefault().language
+                val tag = if (language.startsWith("ar", ignoreCase = true)) "ar" else "en"
+                speaker.speak(
                     appContext.getString(R.string.widget_clock_disabled),
-                    Locale.forLanguageTag("ar"), 1.0f, 1.0f, 1.0f
+                    Locale.forLanguageTag(tag), 1.0f, 1.0f, 1.0f
                 )
                 return
             }
@@ -71,7 +110,8 @@ class SpeakingClockWidget : AppWidgetProvider() {
             // يتضاعف المحرك.
             TimeAnnouncementManager.shared(appContext).announceNow()
         } catch (t: Throwable) {
-            android.util.Log.e("NATEQ_TTS", "widget speak failed", t)
+            Log.e("NATEQ_TTS", "widget speak failed", t)
+            finish()
         }
     }
 

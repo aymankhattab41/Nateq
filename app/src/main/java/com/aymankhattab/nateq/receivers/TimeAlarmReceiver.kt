@@ -19,7 +19,8 @@ import com.aymankhattab.nateq.engine.TimeAnnouncementManager
  *   أو تجمّدها في Doze؛ المنبه المسجَّل في مرحلة النظام يوقظها موثوقاً.
  * - يستخدم [TimeAnnouncementManager] المشترك (نفس كائن الودجت) فلا يتضاعف
  *   المحرك أو تتعارض حالتان؛ والإذن المعلن في الـ manifest هو
- *   SCHEDULE_EXACT_ALARM مع بديل جدولة غير دقيقة بنافذة قصيرة تعمل بلا إذن.
+ *   SCHEDULE_EXACT_ALARM مع بديل منبّه مرن (setAndAllowWhileIdle) يعمل بلا إذن
+ *   ويُطلق في Doze العميق قرب الوقت المستهدف.
  */
 class TimeAlarmReceiver : BroadcastReceiver() {
 
@@ -53,13 +54,13 @@ class TimeAlarmReceiver : BroadcastReceiver() {
                 } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     // بدون إذن المنبهات الدقيقة على أندرويد 12+، لا يعمل
                     // setAlarmClock ولا setExact* (SecurityException). نستخدم
-                    // جدولة غير دقيقة بنافذة قصيرة (45 ثانية) تُطلق قرب الوقت
-                    // المطلوب ولا تحتاج أي إذن — فيبقى إعلان الوقت يعمل دائماً،
-                    // ويتجاوز الدقة متى منح المستخدم الإذن عبر الإعدادات.
-                    alarmManager.setWindow(
+                    // منبهاً مرناً يطلق قرب الوقت المطلوب لكنه يُطلق حتى في
+                    // Doze العميق ولا يحتاج أي إذن — فيبقى إعلان الوقت يعمل
+                    // دائماً، ويتجاوز الدقة متى منح المستخدم الإذن (بند 13.3:
+                    // واجهة طلب SCHEDULE_EXACT_ALARM في الإعدادات).
+                    alarmManager.setAndAllowWhileIdle(
                         AlarmManager.RTC_WAKEUP,
                         triggerAtMillis,
-                        45_000L,
                         pendingIntent
                     )
                 } else {

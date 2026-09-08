@@ -383,5 +383,10 @@
     <!-- أداة الساعة -->
     <string name="widget_clock_description">أداة الساعة — اضغط لنطق الوقت الحالي</string>
     <string name="widget_clock_tap_to_speak">اضغط لنطق الوقت الحالي</string>
-    <string name="widget_clock_disabled">فعّل إعلانات الوقت للسماح لإعلانات أداة الساعة</string>
+    <string name="widget_clock_disabled">أداة الساعة معطّلة حالياً. فعّلها من مفتاح «أداة الساعة» في قسم إعلان الوقت بالإعدادات</string>
+
+    <!-- منح إذن المنبهات الدقيقة (بند 13.3) -->
+    <string name="exact_alarm_permission_title">دقة إعلان الوقت باللحظة</string>
+    <string name="exact_alarm_permission_summary">منح الإذن يجعل إعلان الوقت في اللحظة المضبوطة. بدونه يعمل الإعلان بمنبّه مرن يقترب من الموعد المستهدف (يتأخر قليلاً في وضع توفير البطارية).</string>
+    <string name="exact_alarm_permission_grant">فتح إعدادات المنبهات الدقيقة</string>
 </resources>

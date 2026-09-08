@@ -286,6 +286,44 @@
                 android:textOff="@string/toggle_off"
                 android:textOn="@string/toggle_on" />
 
+            <!-- طلب إذن المنبهات الدقيقة (يظهر فقط عند غياب الإذن على أندرويد 12+) -->
+            <LinearLayout
+                android:id="@+id/ll_exact_alarm_permission"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:orientation="vertical"
+                android:padding="12dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/tv_exact_alarm_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/exact_alarm_permission_title"
+                    android:textAppearance="?attr/textAppearanceBody2" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/exact_alarm_permission_summary"
+                    android:textAppearance="?attr/textAppearanceCaption"
+                    android:textColor="@color/text_secondary" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_exact_alarm_permission"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:minHeight="48dp"
+                    android:text="@string/exact_alarm_permission_grant" />
+            </LinearLayout>
+
         </LinearLayout>        <View
             android:layout_width="match_parent"
             android:layout_height="1dp"

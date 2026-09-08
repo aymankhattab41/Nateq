@@ -522,8 +522,10 @@ class SettingsRepository(private val context: Context) {
     fun setDefaultVolume(volume: Float) =
         prefs.edit().putFloat("default_volume", volume.coerceIn(0f, 1f)).apply()
 
-    /** تفعيل أداة الساعة على الشاشة الرئيسية */
-    fun isClockWidgetEnabled(): Boolean = prefs.getBoolean("clock_widget_enabled", false)
+    /** تفعيل أداة الساعة على الشاشة الرئيسية (افتراضياً مفعّلة — بند [13.4]):
+     *  أداة الساعة ناطقة بطبعها ولا ينبغي أن تكون بالافتراضي معطّلة فتخيب
+     *  عند أول إضافة للشاشة الرئيسية. */
+    fun isClockWidgetEnabled(): Boolean = prefs.getBoolean("clock_widget_enabled", true)
     fun setClockWidgetEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("clock_widget_enabled", enabled).apply()
 

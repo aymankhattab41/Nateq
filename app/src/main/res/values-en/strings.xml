@@ -382,5 +382,10 @@
     <!-- Talking clock widget -->
     <string name="widget_clock_description">Talking clock — tap to speak the current time</string>
     <string name="widget_clock_tap_to_speak">Tap to speak the current time</string>
-    <string name="widget_clock_disabled">Enable time announcements to allow widget announcements</string>
+    <string name="widget_clock_disabled">The clock widget is disabled. Enable it from the "Clock widget" switch under Time Announcement settings</string>
+
+    <!-- Grant exact alarm permission (item 13.3) -->
+    <string name="exact_alarm_permission_title">Time announcements at the exact minute</string>
+    <string name="exact_alarm_permission_summary">Granting permission makes time announcements fire at the exact minute. Without it a flexible alarm fires near the intended time (slightly delayed during battery saver).</string>
+    <string name="exact_alarm_permission_grant">Open exact alarm settings</string>
 </resources>

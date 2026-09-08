@@ -1,5 +1,11 @@
 package com.aymankhattab.nateq.settings
 
+import android.app.AlarmManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
@@ -61,7 +67,8 @@ internal class TimeAnnouncementController(
         setupQuietScheduleRows(view)
 
         switchClockWidget.isChecked =
-            runCatching { settings.isClockWidgetEnabled() }.getOrDefault(false)
+            runCatching { settings.isClockWidgetEnabled() }.getOrDefault(true)
+        setupExactAlarmPermissionRow(view)
 
         switchTimeAnnouncement.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setTimeAnnouncementEnabled(checked) }
@@ -114,6 +121,33 @@ internal class TimeAnnouncementController(
         45 -> 2
         60 -> 3
         else -> 0
+    }
+
+    /**
+     * بند [13.3]: صف «منح إذن المنبهات الدقيقة» — يظهر فقط على أندرويد 12+
+     * حين لا يمتلك التطبيق إمكانية جدولة المنبهات الدقيقة، ويفتح شاشة
+     * النظام المخصصة لمنح الإذن. بدونه يظل الإعلان يعمل بمنبّه مرن يقترب من
+     * اللحظة المستهدفة (setAndAllowWhileIdle) دون أيقونة منبه دائمة في
+     * شريط الحالة.
+     */
+    private fun setupExactAlarmPermissionRow(view: View) {
+        val row = view.findViewById<View>(R.id.ll_exact_alarm_permission) ?: return
+        val alarmManager = fragment.requireContext().getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+        val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            (alarmManager == null || !alarmManager.canScheduleExactAlarms())
+        row.visibility = if (needsPermission) View.VISIBLE else View.GONE
+        val onClick = View.OnClickListener {
+            runCatching {
+                val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                    data = Uri.parse("package:${fragment.requireContext().packageName}")
+                }
+                fragment.startActivity(intent)
+            }.onFailure {
+                android.util.Log.w("NATEQ_TTS", "exact alarm settings not opened", it)
+            }
+        }
+        row.setOnClickListener(onClick)
+        view.findViewById<View>(R.id.btn_exact_alarm_permission)?.setOnClickListener(onClick)
     }
 
     /**

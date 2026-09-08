@@ -92,6 +92,15 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
     private var nowSpeaking = false
 
     /**
+     * خطاف يُستدعى عند اكتمال آخر جملة في دورة النطق الحالية (onDone/onError
+     * للـ lastQueuedUtteranceId فقط). تستخدمه أداة الساعة لتحرير goAsync() و
+     * WakeLock المؤقت عقب اكتمال النطق فعلياً — تأخير التحرير حتى بقاء العملية
+     * حية بينما يُهيّئ محرك TTS وينطق (Android 14+ يجمد العملية بعد onReceive).
+     */
+    @Volatile
+    var onSpeechComplete: (() -> Unit)? = null
+
+    /**
      * معرّف آخر جزء أُرسل إلى المحرك في دورات النطق الحالية. يُقارن به عند
      * استقبال onDone/onError لنحرر التركيز الصوتي فقط عند اكتمال الجزء الأخير،
      * لا بعد أول جزء — فالإعلان متعدد المقاطع (نص + أسماء إيموجي متتابعة) يبقى
@@ -171,6 +180,7 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
                     // محمياً من تشويش التطبيقات الأخرى حتى ينتهي كامل النطق.
                     if (utteranceId != null && utteranceId == lastQueuedUtteranceId) {
                         releaseAudioFocus()
+                        onSpeechComplete?.invoke()
                     }
                     nowSpeaking = false
                     // الإبقاء على المحرك حياً بين الإعلانات لتجنب إعادة ربط
@@ -181,6 +191,7 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
                 override fun onError(utteranceId: String?) {
                     if (utteranceId != null && utteranceId == lastQueuedUtteranceId) {
                         releaseAudioFocus()
+                        onSpeechComplete?.invoke()
                     }
                     nowSpeaking = false
                 }

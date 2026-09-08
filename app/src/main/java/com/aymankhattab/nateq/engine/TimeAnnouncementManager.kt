@@ -89,6 +89,13 @@ class TimeAnnouncementManager(
         // لا حاجة لإعادة البناء لأن آلية الجدولة واحدة دائماً عبر AlarmManager.
         TimeAlarmReceiver.cancel(context)
 
+        // أثناء ساعات الهدوء لا ننطق ولا نرسل فترات: نضبط منبهاً واحداً عند
+        // نهاية الهدوء بالضبط (لا صحوة كل فاصل في Doze تنهك البطارية).
+        if (isInQuietHours()) {
+            scheduleQuietEndAlarm()
+            return
+        }
+
         if (!wasRunning) {
             // أول تفعيل: ننطق حالاً بدل انتظار بداية الفاصل (مزامنة فورية).
             announceCurrentTime()
@@ -135,7 +142,9 @@ class TimeAnnouncementManager(
 
         // فحص ساعات الهدوء
         if (isInQuietHours()) {
-            scheduleNextAlarm()
+            // أثناء الهدوء لا تصحو العملية كل فاصل: منبه واحد موقوت عند لحظة
+            // انتهاء الهدوء (يُعلن عند مروره ثم يعود الجدول الطبيعي).
+            scheduleQuietEndAlarm()
             return
         }
 
@@ -150,6 +159,35 @@ class TimeAnnouncementManager(
             context,
             System.currentTimeMillis() + calculateInitialDelay()
         )
+    }
+
+    /**
+     * أثناء ساعات الهدوء: حساب أقرب لحظة مستقبلية لنهاية فترة الهدوء الحالية
+     * (اليوم عند ساعة النهاية، وإلا غداً إن كانت النهاية بالأمس بالنسبة للآن —
+     * يغطي الفترات العابرة لمنتصف الليل كـ 23→7) وضبط منبه واحد عندها بدل
+     * صحوة كل فاصل دون أي نطق (بند [13.2] — استنزاف بطارية ساعات الهدوء).
+     */
+    private fun calculateQuietEndMillis(): Long {
+        val now = System.currentTimeMillis()
+        val endHour = settings.getQuietEndForDay(Calendar.getInstance().get(Calendar.DAY_OF_WEEK))
+        val today = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, endHour)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        var candidate = today.timeInMillis
+        if (candidate <= now) {
+            val tomorrow = today.clone() as Calendar
+            tomorrow.add(Calendar.DAY_OF_YEAR, 1)
+            candidate = tomorrow.timeInMillis
+        }
+        return candidate
+    }
+
+    /** ضبط المنبه الوحيد عند نهاية ساعات الهدوء (يستقبله [TimeAlarmReceiver] نفسه). */
+    private fun scheduleQuietEndAlarm() {
+        TimeAlarmReceiver.scheduleNext(context, calculateQuietEndMillis())
     }
 
     /** حساب التأخير لأول إعلان (للبداية القادمة للفاصل) */
