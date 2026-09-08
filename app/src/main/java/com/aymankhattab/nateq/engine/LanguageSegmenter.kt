@@ -1,5 +1,7 @@
 package com.aymankhattab.nateq.engine
 
+import com.aymankhattab.nateq.util.LanguageCode
+
 /**
  * مقطع لغوي واحد ضمن نصٍ مختلط الكتابات — يُنطق هذا المقطع بلغة [languageTag]
  * ومحركها وصوتها المخصصين، ثم يليه المقطع التالي بذاك الجهاز اللغوي.
@@ -21,8 +23,8 @@ data class Segment(
 class LanguageSegmenter {
 
     companion object {
-        /** لغة السقوط لسائر الكتابات ضمن الطلب العربي. */
-        const val EN_FALLBACK = "en"
+        /** لغة السقوط لسائر الكتابات ضمن الطلب العربي (الإنجليزية). */
+        val EN_FALLBACK: String get() = LanguageCode.EN.tag
 
         private val ARABIC_RANGES = arrayOf(
             0x0600..0x06FF, // العربية الأساسية (شاملة التشكيل والأرقام العربية-الهندية)
@@ -88,7 +90,7 @@ class LanguageSegmenter {
                     // وإلا فهو بيني\ختامي: نطاق المقطع المفتوح يشمل إحداثياته.
                 }
                 else -> {
-                    val language = if (run.kind == Kind.ARABIC) "ar" else fallback
+                    val language = if (run.kind == Kind.ARABIC) LanguageCode.AR.tag else fallback
                     if (openLanguage == null) {
                         openStart = if (leadingStart != -1) leadingStart else run.start
                         leadingStart = -1
@@ -149,7 +151,7 @@ class LanguageSegmenter {
      *  الطلب نفسها حتى يُنطق النص الأجنبي بصوت لغته عند طلبٍ غير عربي. */
     private fun nonArabicFallback(requestLanguage: String): String {
         val language = requestLanguage.takeWhile { it.isLetter() }
-        return if (language.isBlank() || language.startsWith("ar", ignoreCase = true)) {
+        return if (language.isBlank() || LanguageCode.isArabic(language)) {
             EN_FALLBACK
         } else {
             language

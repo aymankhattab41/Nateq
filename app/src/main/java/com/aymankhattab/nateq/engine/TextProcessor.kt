@@ -18,6 +18,7 @@ import com.aymankhattab.nateq.engine.pipeline.TimeStep
 import com.aymankhattab.nateq.engine.pipeline.UnitStep
 import com.aymankhattab.nateq.engine.pipeline.UrlStep
 import com.aymankhattab.nateq.settings.SettingsRepository
+import com.aymankhattab.nateq.util.LanguageCode
 import java.text.Normalizer
 
 /**
@@ -73,7 +74,7 @@ class TextProcessor(
      * @param languageTag كود اللغة (مثلاً "ar"، "en"، "ar-EG")
      *                    — المعالجة مخصصة للغة العربية فقط؛ اللغات الأخرى تُعاد كما هي.
      */
-    fun process(text: String, languageTag: String = "ar"): String {
+    fun process(text: String, languageTag: String = LanguageCode.AR.tag): String {
         if (text.isBlank()) return text
 
         // نطق أسماء الإيموجي (بدل حذفها) قبل مسار العربية ليغطي الإنجليزية
@@ -82,7 +83,7 @@ class TextProcessor(
 
         // المعالجة مخصصة للعربية فقط؛ الإنجليزية واللغات الأخرى تُعاد كما هي
         // بعد توسيع الإيموجي فقط (لا يجوز تحويل أرقام إنجليزية إلى كلمات عربية)
-        if (languageTag.startsWith("ar").not()) {
+        if (!LanguageCode.isArabic(languageTag)) {
             return if (expanded != null) CleanupStep.apply(expanded) else text
         }
 
@@ -141,7 +142,7 @@ class TextProcessor(
      * تُستدعى هذه الدالة (تُستخدم خطوة الإزالة بدلها).
      */
     private fun expandEmojis(text: String, languageTag: String): String {
-        val arabic = languageTag.startsWith("ar")
+        val arabic = LanguageCode.isArabic(languageTag)
         val fallback = if (arabic) EmojiNames.AR_FALLBACK else EmojiNames.EN_FALLBACK
         val base = EmojiNames.applyAsciiEmoticons(text, arabic)
         val sb = StringBuilder(base.length)

@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import com.aymankhattab.nateq.engine.ConvertPreferencesCodec
 import com.aymankhattab.nateq.engine.LanguageSpeechPrefs
+import com.aymankhattab.nateq.util.LanguageCode
 
 /**
  * الوسيط الوحيد للقراءة/الكتابة في الإعدادات.
@@ -727,7 +728,7 @@ class SettingsRepository(private val context: Context) {
                 getConvertEngine1(), normalizeVoiceId(getConvertVoice1()),
                 getConvertRate1(), getConvertPitch1(), getConvertVolume1()
             ),
-            "ar"
+            LanguageCode.AR.tag
         )
         ConvertPreferencesCodec.mergeLegacySlot(
             map, getConvertLanguageTag2(),
@@ -735,7 +736,7 @@ class SettingsRepository(private val context: Context) {
                 getConvertEngine2(), normalizeVoiceId(getConvertVoice2()),
                 getConvertRate2(), getConvertPitch2(), getConvertVolume2()
             ),
-            "en"
+            LanguageCode.EN.tag
         )
         if (map != readConvertPrefs()) writeConvertPrefs(map)
         Log.w(TAG, "تم ترحيل سلوتات التحويل القديمة إلى الخريطة الديناميكية (${map.size} عنصر)")

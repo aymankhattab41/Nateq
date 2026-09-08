@@ -16,6 +16,7 @@ import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.engine.TimeAnnouncementManager
 import com.aymankhattab.nateq.settings.SettingsRepository
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
+import com.aymankhattab.nateq.util.LanguageCode
 import java.util.Locale
 
 /**
@@ -96,7 +97,7 @@ class SpeakingClockWidget : AppWidgetProvider() {
             if (!settings.isClockWidgetEnabled()) {
                 val language = runCatching { settings.getAppLanguage() }.getOrNull()
                     ?: Locale.getDefault().language
-                val tag = if (language.startsWith("ar", ignoreCase = true)) "ar" else "en"
+                val tag = if (LanguageCode.isArabic(language)) LanguageCode.AR.tag else LanguageCode.EN.tag
                 speaker.speak(
                     appContext.getString(R.string.widget_clock_disabled),
                     Locale.forLanguageTag(tag), 1.0f, 1.0f, 1.0f

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import com.aymankhattab.nateq.R
+import com.aymankhattab.nateq.util.LanguageCode
 
 /**
  * Activity لتوفير نص تجريبي لكل لغة — مطلوبة من نظام TTS
@@ -21,7 +22,7 @@ class GetSampleTextActivity : Activity() {
         val returnData = Intent()
 
         // نص تجريبي مناسب لكل لغة (يُرسل النظام رمزاً مثل "ar" أو "ar-EG")
-        val sampleText = if (lang?.startsWith("en", ignoreCase = true) == true) {
+        val sampleText = if (lang?.let { LanguageCode.isEnglish(it) } == true) {
             getString(R.string.sample_text_activity_en)
         } else {
             getString(R.string.sample_text_activity_ar)

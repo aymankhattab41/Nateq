@@ -10,6 +10,7 @@ import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.settings.SettingsRepository
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.LocaleUtils
+import com.aymankhattab.nateq.util.LanguageCode
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -93,7 +94,7 @@ val settings = settingsRepository
                 val isOtp = LocaleUtils.containsOtp(content)
                 val smsFrom = LocaleUtils.stringForSpeech(
                     context,
-                    if (useArabicVoice) "ar" else "en",
+                    if (useArabicVoice) LanguageCode.AR.tag else LanguageCode.EN.tag,
                     R.string.sms_from,
                     R.string.sms_from
                 ).replace("{name}", displayAddress)
@@ -103,7 +104,7 @@ val settings = settingsRepository
                 } else if (isOtp) {
                     LocaleUtils.stringForSpeech(
                         context,
-                        if (useArabicVoice) "ar" else "en",
+                        if (useArabicVoice) LanguageCode.AR.tag else LanguageCode.EN.tag,
                         R.string.sms_otp_safe,
                         R.string.sms_otp_safe
                     ).replace("{name}", displayAddress)
@@ -119,7 +120,7 @@ val settings = settingsRepository
 
                 // نقرر لغة النطق حسب النص الفعلي المَنطوق (المحتوى عربي أم إنجليزي)
                 val isArabic = LocaleUtils.containsArabic(text)
-                val locale = if (isArabic) Locale.forLanguageTag("ar") else Locale.forLanguageTag("en")
+                val locale = if (isArabic) Locale.forLanguageTag(LanguageCode.AR.tag) else Locale.forLanguageTag(LanguageCode.EN.tag)
 
 // متحدث مشترك واحد لكل الإعلانات (يمنع تقاطع أصوات متعددة)
                 val speech = AnnouncementSpeaker.getInstance(context)

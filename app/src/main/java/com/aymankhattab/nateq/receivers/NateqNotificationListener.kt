@@ -14,6 +14,7 @@ import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.settings.SettingsRepository
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.LocaleUtils
+import com.aymankhattab.nateq.util.LanguageCode
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
 import javax.inject.Inject
@@ -99,7 +100,7 @@ class NateqNotificationListener : NotificationListenerService() {
                     && settings.isDeviceScreenLocked()
             val speechText = buildSpeechText(appName, title, text, privacyLocked)
             val isArabic = LocaleUtils.containsArabic(speechText)
-            val locale = if (isArabic) Locale.forLanguageTag("ar") else Locale.forLanguageTag("en")
+            val locale = if (isArabic) Locale.forLanguageTag(LanguageCode.AR.tag) else Locale.forLanguageTag(LanguageCode.EN.tag)
 
             // سجلّ مجرّد من مضمون الإشعار (قد يحوي OTP/حساسيات) — الطول والحزمة فقط.
             Log.d(TAG, "Notification from $pkg: ${speechText.length} chars")
@@ -167,7 +168,7 @@ class NateqNotificationListener : NotificationListenerService() {
         val isOtp = LocaleUtils.containsOtp(content)
         val smsFrom = LocaleUtils.stringForSpeech(
             applicationContext,
-            if (useArabicVoice) "ar" else "en",
+            if (useArabicVoice) LanguageCode.AR.tag else LanguageCode.EN.tag,
             R.string.sms_from,
             R.string.sms_from
         ).replace("{name}", displayAddress)
@@ -176,7 +177,7 @@ class NateqNotificationListener : NotificationListenerService() {
             privacyLocked -> smsFrom
             isOtp -> LocaleUtils.stringForSpeech(
                 applicationContext,
-                if (useArabicVoice) "ar" else "en",
+                if (useArabicVoice) LanguageCode.AR.tag else LanguageCode.EN.tag,
                 R.string.sms_otp_safe,
                 R.string.sms_otp_safe
             ).replace("{name}", displayAddress)
@@ -189,7 +190,7 @@ class NateqNotificationListener : NotificationListenerService() {
         }
 
         val isArabic = LocaleUtils.containsArabic(text)
-        val locale = if (isArabic) Locale.forLanguageTag("ar") else Locale.forLanguageTag("en")
+        val locale = if (isArabic) Locale.forLanguageTag(LanguageCode.AR.tag) else Locale.forLanguageTag(LanguageCode.EN.tag)
 
         Log.d(TAG, "SMS via NLS: ${text.length} chars")
 
@@ -202,7 +203,7 @@ class NateqNotificationListener : NotificationListenerService() {
         // لغة النطق من محتوى الإشعار (اسم التطبيق/العنوان/النص) لا من لغة الواجهة
         val dynamicText = "$appName ${title.orEmpty()} ${text.orEmpty()}"
         val isArabic = !dynamicText.any { it.isLetter() } || LocaleUtils.containsArabic(dynamicText)
-        val lang = if (isArabic) "ar" else "en"
+        val lang = if (isArabic) LanguageCode.AR.tag else LanguageCode.EN.tag
         // عند قفل الشاشة نكتفي باسم التطبيق دون أي مضمون.
         if (privacyLocked) {
             return LocaleUtils.stringForSpeech(

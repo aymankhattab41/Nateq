@@ -13,6 +13,7 @@ import android.widget.Toast
 import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.engine.NumberSpeech
 import com.aymankhattab.nateq.util.LocaleUtils
+import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.announceCompat
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -96,9 +97,9 @@ internal class DeviceHealthController(
         val forced = runCatching { settings.getAnnouncementSpeechLanguage() }.getOrNull()
         val appLang = runCatching { settings.getAppLanguage() }.getOrNull()
             ?: Locale.getDefault().language
-        val isEnglish = if (forced != null) forced.startsWith("en", ignoreCase = true)
-            else appLang.startsWith("en", ignoreCase = true)
-        val langTag = if (isEnglish) "en" else "ar"
+        val isEnglish = if (forced != null) LanguageCode.isEnglish(forced)
+            else LanguageCode.isEnglish(appLang)
+        val langTag = if (isEnglish) LanguageCode.EN.tag else LanguageCode.AR.tag
 
         val parts = mutableListOf<String>()
         if (SettingsRepository.DEVICE_HEALTH_BATTERY in selected) {

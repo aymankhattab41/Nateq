@@ -11,6 +11,7 @@ import android.util.Log
 import com.aymankhattab.nateq.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.providers.VoiceDescriptor
 import com.aymankhattab.nateq.settings.SettingsRepository
+import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.LocaleUtils
 import dagger.hilt.android.AndroidEntryPoint
 import java.io.ByteArrayOutputStream
@@ -72,7 +73,7 @@ class NateqTtsService : TextToSpeechService() {
 
     @Volatile private var currentJob: kotlinx.coroutines.Job? = null
 
-    @Volatile private var currentLanguage = arrayOf("ar", "", "")
+    @Volatile private var currentLanguage = arrayOf(LanguageCode.AR.tag, "", "")
 
     override fun onCreate() {
         // مهم: TextToSpeechService.onCreate() يستدعي onLoadLanguage()/onIsLanguageAvailable()
@@ -347,8 +348,8 @@ class NateqTtsService : TextToSpeechService() {
         val convertLang = convertTarget?.convertLocale?.language
         val normLanguage = normalizeLanguageCode(request.language)
         val matchesRequest = convertLang == null || normLanguage == convertLang
-                || (normLanguage == "ar" && convertLang == "ara")
-                || (normLanguage == "en" && convertLang == "eng")
+                || (normLanguage == LanguageCode.AR.tag && convertLang == "ara")
+                || (normLanguage == LanguageCode.EN.tag && convertLang == "eng")
 
         val finalRate = convertTarget?.let { it.convertRate } ?: speechRate
         val finalPitch = convertTarget?.let { it.convertPitch } ?: pitch

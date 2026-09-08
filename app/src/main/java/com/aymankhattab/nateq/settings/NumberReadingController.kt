@@ -5,6 +5,7 @@ import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Spinner
 import com.aymankhattab.nateq.R
+import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.announceCompat
 import java.util.Locale
 
@@ -51,9 +52,9 @@ internal class NumberReadingController(
         // مفتاح لغة نطق الإعلانات (EN/AR) — يعرض الإجراء نحو اللغة المعاكسة للحالية
         val current = runCatching { settings.getAnnouncementSpeechLanguage() }.getOrNull()
         val isArabic = if (current == null) {
-            Locale.getDefault().language.startsWith("ar", ignoreCase = true)
+            LanguageCode.isArabic(Locale.getDefault().language)
         } else {
-            current.startsWith("ar", ignoreCase = true)
+            LanguageCode.isArabic(current)
         }
         btnSpeechLanguage.text = if (isArabic) {
             fragment.getString(R.string.speech_language_to_en)
@@ -64,14 +65,14 @@ internal class NumberReadingController(
             // يُقرأ الوضع الحالي في كل ضغطة (لا قيمة مأسورة) ثم يُقلب نحو المعاكس
             val lang = runCatching { settings.getAnnouncementSpeechLanguage() }.getOrNull()
             val isArabicNow = if (lang == null) {
-                Locale.getDefault().language.startsWith("ar", ignoreCase = true)
+                LanguageCode.isArabic(Locale.getDefault().language)
             } else {
-                lang.startsWith("ar", ignoreCase = true)
+                LanguageCode.isArabic(lang)
             }
-            val next = if (isArabicNow) "en" else "ar"
+            val next = if (isArabicNow) LanguageCode.EN.tag else LanguageCode.AR.tag
             runCatching { settings.setAnnouncementSpeechLanguage(next) }
             // النص يعرض الإجراء نحو المعاكس للحالة الجديدة
-            btnSpeechLanguage.text = if (next == "ar") {
+            btnSpeechLanguage.text = if (next == LanguageCode.AR.tag) {
                 fragment.getString(R.string.speech_language_to_en)
             } else {
                 fragment.getString(R.string.speech_language_to_ar)

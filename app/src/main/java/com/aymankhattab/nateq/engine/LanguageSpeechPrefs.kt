@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.engine
 
+import com.aymankhattab.nateq.util.LanguageCode
 import com.google.gson.Gson
 
 /**
@@ -39,7 +40,7 @@ object ConvertPreferencesCodec {
 
     /** رموز ISO-3 الشائعة المفضّلة لإرجاعها إلى ISO-2 الموحّد للخريطة. */
     private val ISO3_TO_ISO2 = mapOf(
-        "ara" to "ar", "eng" to "en", "fra" to "fr", "deu" to "de",
+        "ara" to LanguageCode.AR.tag, "eng" to LanguageCode.EN.tag, "fra" to "fr", "deu" to "de",
         "spa" to "es", "ita" to "it", "rus" to "ru", "zho" to "zh",
         "jpn" to "ja", "kor" to "ko", "por" to "pt", "tur" to "tr",
         "nld" to "nl", "ell" to "el", "swe" to "sv", "pol" to "pl",

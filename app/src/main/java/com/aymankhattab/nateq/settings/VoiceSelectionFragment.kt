@@ -29,6 +29,7 @@ import com.aymankhattab.nateq.engine.NumberSpeech
 import com.aymankhattab.nateq.engine.PronunciationDictionary
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.announceCompat
+import com.aymankhattab.nateq.util.LanguageCode
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
 
@@ -260,8 +261,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
         // تهيئة الأصوات هنا بعد الانضمام للسياق (لا يجوز في مُنشئ/خاصية تستدعي getString())
         nateqVoices = listOf(
-            NateqVoice("ar-EG", "ar", getString(R.string.voice_name_arabic), Locale.forLanguageTag("ar")),
-            NateqVoice("en-US", "en", getString(R.string.voice_name_english), Locale.forLanguageTag("en"))
+            NateqVoice("ar-EG", LanguageCode.AR.tag, getString(R.string.voice_name_arabic), Locale.forLanguageTag(LanguageCode.AR.tag)),
+            NateqVoice("en-US", LanguageCode.EN.tag, getString(R.string.voice_name_english), Locale.forLanguageTag(LanguageCode.EN.tag))
         )
 
         // صندوق المحركات داخل قسم اللغة الأولى/الثانية (اختيار محرك TTS للنطق)
@@ -523,11 +524,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         val forced = runCatching { settings.getAnnouncementSpeechLanguage() }.getOrNull()
         val appLang = runCatching { settings.getAppLanguage() }.getOrNull()
             ?: Locale.getDefault().language
-        val isEnglish = if (forced != null) forced.startsWith("en", ignoreCase = true)
-            else appLang.startsWith("en", ignoreCase = true)
+        val isEnglish = if (forced != null) LanguageCode.isEnglish(forced)
+            else LanguageCode.isEnglish(appLang)
         val mode = runCatching { settings.getNumberReadingMode() }.getOrDefault(1).coerceIn(1, 8)
         val text = NumberSpeech.formatByMode(mode, number, isEnglish)
-        val langTag = if (isEnglish) "en" else "ar"
+        val langTag = if (isEnglish) LanguageCode.EN.tag else LanguageCode.AR.tag
         speakWithVoice(langTag, text)
     }
 
@@ -680,9 +681,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                             if (com.aymankhattab.nateq.util.LocaleUtils
                                     .containsArabic(entry.second)
                             ) {
-                                Locale.forLanguageTag("ar")
+                                Locale.forLanguageTag(LanguageCode.AR.tag)
                             } else {
-                                Locale.forLanguageTag("en")
+                                Locale.forLanguageTag(LanguageCode.EN.tag)
                             },
                             1.0f, 1.0f, 1.0f
                         )
@@ -720,7 +721,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             .getOrNull()
             ?: Locale.getDefault().language
 
-        val isArabic = current.startsWith("ar", ignoreCase = true)
+        val isArabic = LanguageCode.isArabic(current)
         // يعرض اللغة الحالية ثم الإجراء نحو اللغة الأخرى
         btnToggleLanguage.text = if (isArabic) {
             getString(R.string.language_current_label) + " " +
@@ -733,7 +734,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
 
         btnToggleLanguage.setOnClickListener {
-            val newLang = if (isArabic) "en" else "ar"
+            val newLang = if (isArabic) LanguageCode.EN.tag else LanguageCode.AR.tag
             runCatching { settings.setAppLanguage(newLang) }
             // تطبيق اللغة على مستوى التطبيق (AppCompatDelegate) قبل إعادة إنشاء
             // النشاط حتى تُنشأ موارد النشاط الجديد باللغة الجديدة فعلياً.

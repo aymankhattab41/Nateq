@@ -9,6 +9,7 @@ import com.aymankhattab.nateq.engine.NumberSpeech
 import com.aymankhattab.nateq.settings.SettingsRepository
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.LocaleUtils
+import com.aymankhattab.nateq.util.LanguageCode
 import java.util.Locale
 import kotlinx.coroutines.launch
 
@@ -90,13 +91,13 @@ class BatteryAnnouncementReceiver : BroadcastReceiver() {
             it.contains("nateq-ar") || it.startsWith("ar-local", ignoreCase = true) ||
                 it.startsWith("ar-EG", ignoreCase = true)
         } == true
-        val locale = if (isArabic) Locale.forLanguageTag("ar") else Locale.forLanguageTag("en")
+        val locale = if (isArabic) Locale.forLanguageTag(LanguageCode.AR.tag) else Locale.forLanguageTag(LanguageCode.EN.tag)
 
         when (action) {
             Intent.ACTION_POWER_CONNECTED -> {
                 if (!settings.isChargingCompleteAnnouncementEnabled()) return
                 val text = LocaleUtils.stringForSpeech(
-                    context, if (isArabic) "ar" else "en",
+                    context, if (isArabic) LanguageCode.AR.tag else LanguageCode.EN.tag,
                     R.string.battery_connected, R.string.battery_connected
                 )
                 speak(context, settings, text, locale)
@@ -105,7 +106,7 @@ class BatteryAnnouncementReceiver : BroadcastReceiver() {
             Intent.ACTION_POWER_DISCONNECTED -> {
                 if (!settings.isChargingDisconnectAnnouncementEnabled()) return
                 val text = LocaleUtils.stringForSpeech(
-                    context, if (isArabic) "ar" else "en",
+                    context, if (isArabic) LanguageCode.AR.tag else LanguageCode.EN.tag,
                     R.string.battery_disconnected, R.string.battery_disconnected
                 )
                 speak(context, settings, text, locale)
@@ -131,7 +132,7 @@ class BatteryAnnouncementReceiver : BroadcastReceiver() {
                     if (allowFullAnnounce && notAnnouncedRecently(context, "full")) {
                         markAnnounced(context, "full")
                         val fullText = LocaleUtils.stringForSpeech(
-                            context, if (isArabic) "ar" else "en",
+                            context, if (isArabic) LanguageCode.AR.tag else LanguageCode.EN.tag,
                             R.string.battery_full_unplug, R.string.battery_full_unplug
                         )
                         speak(context, settings, fullText, locale)
@@ -149,7 +150,7 @@ class BatteryAnnouncementReceiver : BroadcastReceiver() {
     }
 
     private fun buildLevelText(context: Context, percentage: Int, isArabic: Boolean): String {
-        val lang = if (isArabic) "ar" else "en"
+        val lang = if (isArabic) LanguageCode.AR.tag else LanguageCode.EN.tag
         val percentWords = if (isArabic)
             NumberSpeech.toArabicWords(percentage)
         else

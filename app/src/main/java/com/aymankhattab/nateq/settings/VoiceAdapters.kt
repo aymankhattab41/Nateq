@@ -9,6 +9,7 @@ import android.widget.Spinner
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.aymankhattab.nateq.R
+import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
 import java.util.Locale
@@ -155,7 +156,7 @@ internal class CategoryVoiceAdapter(
 
         holder.btnTest.setOnClickListener {
             val voice = voices[holder.spinnerVoice.selectedItemPosition]
-            val isArabic = !voice.languageTag.startsWith("en", ignoreCase = true)
+            val isArabic = !LanguageCode.isEnglish(voice.languageTag)
             val text = when {
                 !isArabic && category == SettingsRepository.VOICE_CATEGORY_TIME ->
                     context.getString(R.string.sample_text_time_en)

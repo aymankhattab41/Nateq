@@ -6,6 +6,7 @@ import android.speech.tts.Voice
 import com.aymankhattab.nateq.providers.EnginePicker
 import com.aymankhattab.nateq.providers.VoiceDescriptor
 import com.aymankhattab.nateq.providers.VoiceProvider
+import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.LocaleUtils
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
@@ -236,8 +237,8 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
     fun supportedLocales(): List<Locale> {
         val languages = LinkedHashSet<String>()
         discoveredByLanguage?.keys?.forEach { languages.add(it) }
-        languages.add("ar") // الحد الأدنى المضمون دائماً
-        languages.add("en")
+        languages.add(LanguageCode.AR.tag) // الحد الأدنى المضمون دائماً
+        languages.add(LanguageCode.EN.tag)
         return languages.map { Locale.forLanguageTag(it) }.sortedBy { it.language }
     }
 
@@ -266,8 +267,8 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
         // موحّد يُمكّن النظام من حفظ اختيار المستخدم لهذه اللغات؛ النطق الفعلي
         // يذهب إلى المحرك الطرفي عبر خريطة التحويل (desiredVoiceName/engine).
         return when (locale.language.lowercase(java.util.Locale.ROOT)) {
-            "ar" -> "ar-EG"
-            "en" -> "en-US"
+            LanguageCode.AR.tag -> "ar-EG"
+            LanguageCode.EN.tag -> "en-US"
             else -> "${locale.language.lowercase(java.util.Locale.ROOT)}-local"
         }
     }

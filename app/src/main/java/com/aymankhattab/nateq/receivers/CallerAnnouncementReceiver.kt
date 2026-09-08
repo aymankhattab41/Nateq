@@ -15,6 +15,7 @@ import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.settings.SettingsRepository
 import com.aymankhattab.nateq.util.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.LocaleUtils
+import com.aymankhattab.nateq.util.LanguageCode
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
 import javax.inject.Inject
@@ -100,7 +101,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 val speechRate = settings.getCallerAnnouncementRate()
                 val volume = settings.getCallerAnnouncementVolume()
                 val hasArabic = LocaleUtils.containsArabic(text)
-                val locale = if (hasArabic) Locale.forLanguageTag("ar") else Locale.forLanguageTag("en")
+                val locale = if (hasArabic) Locale.forLanguageTag(LanguageCode.AR.tag) else Locale.forLanguageTag(LanguageCode.EN.tag)
 
                 val speaker = AnnouncementSpeaker.getInstance(context)
                 // نعيد ضبط الصوت المفضّل لدورة المتصل قبل كل نطق (عربي/إنجليزي
@@ -147,7 +148,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         // عند القفل ننطق العبارة العامة فقط حتى لو ضبط المستخدم قالباً أو اسم من.
         return if (privacyLocked) {
             LocaleUtils.stringForSpeech(
-                context, "ar", R.string.caller_only, R.string.caller_only
+                context, LanguageCode.AR.tag, R.string.caller_only, R.string.caller_only
             )
         } else if (!template.isNullOrBlank()) {
             val filled = template
@@ -167,7 +168,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
     private fun buildDefaultCallerPhrase(context: Context, number: String?, contactName: String?): String {
         val dynamicText = (contactName ?: number).orEmpty()
         val isArabic = !dynamicText.any { it.isLetter() } || LocaleUtils.containsArabic(dynamicText)
-        val lang = if (isArabic) "ar" else "en"
+        val lang = if (isArabic) LanguageCode.AR.tag else LanguageCode.EN.tag
         return when {
             contactName != null -> LocaleUtils.stringForSpeech(
                 context, lang, R.string.caller_from, R.string.caller_from

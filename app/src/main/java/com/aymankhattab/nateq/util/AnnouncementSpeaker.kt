@@ -301,7 +301,7 @@ AudioManager.AUDIOFOCUS_REQUEST_FAILED ->
                 arabic = if (voiceId != null) {
                     !isEnglishVoiceName(voiceId)
                 } else {
-                    baseLocale.language.startsWith("ar")
+                    baseLocale.language.let { LanguageCode.isArabic(it) }
                 },
                 rate = settings.getSpeechRateForCategory(SettingsRepository.VOICE_CATEGORY_EMOJI),
                 pitch = settings.getPitchForCategory(SettingsRepository.VOICE_CATEGORY_EMOJI),
@@ -389,9 +389,9 @@ AudioManager.AUDIOFOCUS_REQUEST_FAILED ->
         segments.forEach { part ->
             if (part.isEmojiName && emojiCfg != null) {
                 val emojiLocale = if (emojiCfg.arabic) {
-                    Locale.forLanguageTag("ar")
+                    Locale.forLanguageTag(LanguageCode.AR.tag)
                 } else {
-                    Locale.forLanguageTag("en")
+                    Locale.forLanguageTag(LanguageCode.EN.tag)
                 }
                 units.add(
                     SpeakUnit(part.text, emojiLocale, emojiCfg.rate, emojiCfg.pitch,
@@ -416,14 +416,14 @@ AudioManager.AUDIOFOCUS_REQUEST_FAILED ->
         baseVolume: Float
     ) {
         val languageSegments = runCatching {
-            languageSegmenter.segment(text, "ar")
+            languageSegmenter.segment(text, LanguageCode.AR.tag)
         }.getOrDefault(emptyList())
-        val effective = if (languageSegments.isEmpty()) listOf(Segment(text, "ar"))
+        val effective = if (languageSegments.isEmpty()) listOf(Segment(text, LanguageCode.AR.tag))
         else languageSegments
         val enVoice = englishFallbackVoice()
         effective.forEach { segment ->
-            val arabic = segment.languageTag.startsWith("ar", ignoreCase = true)
-            val segmentLocale = if (arabic) baseLocale else Locale.forLanguageTag("en")
+            val arabic = LanguageCode.isArabic(segment.languageTag)
+            val segmentLocale = if (arabic) baseLocale else Locale.forLanguageTag(LanguageCode.EN.tag)
             val segmentVoice = if (arabic) voiceId else enVoice
             out.add(SpeakUnit(segment.text, segmentLocale, baseRate, basePitch, baseVolume, segmentVoice))
         }
@@ -436,7 +436,7 @@ AudioManager.AUDIOFOCUS_REQUEST_FAILED ->
         return runCatching {
             (appContext as? NateqApplication)?.settingsRepository
                 ?: SettingsRepository(appContext)
-        }.getOrNull()?.getPreferredVoiceId("en")
+        }.getOrNull()?.getPreferredVoiceId(LanguageCode.EN.tag)
             ?: if (isEnglishVoiceName(voiceId)) voiceId else null
     }
 

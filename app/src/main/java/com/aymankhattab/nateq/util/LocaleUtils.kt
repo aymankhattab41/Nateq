@@ -14,8 +14,8 @@ object LocaleUtils {
      */
     fun normalizeLanguageCode(code: String?): String = code?.lowercase()?.let {
         when (it) {
-            "ara" -> "ar"
-            "eng" -> "en"
+            "ara" -> LanguageCode.AR.tag
+            "eng" -> LanguageCode.EN.tag
             "fra" -> "fr"
             "deu" -> "de"
             "spa" -> "es"
@@ -26,7 +26,7 @@ object LocaleUtils {
             "kor" -> "ko"
             else -> it
         }
-    } ?: "ar"
+    } ?: LanguageCode.AR.tag
 
     /** توحيد رمز البلد من الشكل ISO-3 (EGY, USA) إلى ISO-2 (EG, US). */
     fun normalizeCountryCode(code: String?): String? = code?.uppercase()?.let {
@@ -106,15 +106,14 @@ object LocaleUtils {
      * Context مستقل فلا يؤثر تبديل لغة الواجهة على سلاسل النطق.
      * @return قيمة المورد باللغة المطلوبة. */
     fun stringForSpeech(context: Context, languageTag: String, arabicRes: Int, englishRes: Int): String {
-        val isArabic = languageTag.startsWith("ar", ignoreCase = true)
-        if (isArabic) {
+        if (LanguageCode.isArabic(languageTag)) {
             val config = Configuration(context.resources.configuration).apply {
-                setLocale(Locale.forLanguageTag("ar"))
+                setLocale(Locale.forLanguageTag(LanguageCode.AR.tag))
             }
             return context.createConfigurationContext(config).getString(arabicRes)
         }
         val config = Configuration(context.resources.configuration).apply {
-            setLocale(Locale.forLanguageTag("en"))
+            setLocale(Locale.forLanguageTag(LanguageCode.EN.tag))
         }
         return context.createConfigurationContext(config).getString(englishRes)
     }

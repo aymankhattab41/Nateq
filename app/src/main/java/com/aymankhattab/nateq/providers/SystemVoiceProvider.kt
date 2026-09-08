@@ -11,6 +11,7 @@ import android.util.Log
 import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.settings.SettingsRepository
 import com.aymankhattab.nateq.util.ConnectivityMonitor
+import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.LocaleUtils
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
@@ -195,7 +196,7 @@ class SystemVoiceProvider(
         val validLength: Int
     )
 
-    override val providerId = "system"
+    override val providerId = SYSTEM_PROVIDER_ID
     override val displayName: String
         get() = context.getString(R.string.voice_provider_system)
 
@@ -262,8 +263,8 @@ class SystemVoiceProvider(
         // معرفات الأصوات يجب أن تطابق أسماء onGetVoices/tts_engine.xml
         // ("ar-EG"/"en-US") حتى تعمل مطابقة id في الفئات والإعلانات.
         val voiceId = when (normLanguage) {
-            "ar" -> "ar-EG"
-            "en" -> "en-US"
+            LanguageCode.AR.tag -> "ar-EG"
+            LanguageCode.EN.tag -> "en-US"
             else -> "nateq-$normLanguage-local"
         }
         val normLocale = if (normLanguage != locale.language) {
@@ -279,7 +280,7 @@ class SystemVoiceProvider(
             VoiceDescriptor(
                 id = voiceId,
                 providerId = providerId,
-                displayName = if (normLanguage == "ar") context.getString(R.string.voice_name_arabic) else context.getString(R.string.voice_name_english),
+                displayName = if (normLanguage == LanguageCode.AR.tag) context.getString(R.string.voice_name_arabic) else context.getString(R.string.voice_name_english),
                 locale = normLocale
             )
         )

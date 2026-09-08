@@ -20,6 +20,7 @@ import com.aymankhattab.nateq.engine.EngineWithVoices
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.aymankhattab.nateq.engine.VoiceCatalog
 import com.aymankhattab.nateq.providers.EnginePicker
+import com.aymankhattab.nateq.util.LanguageCode
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -314,8 +315,8 @@ internal fun buildAllLanguageRows(
     discovered: Map<String, List<EngineWithVoices>>
 ): List<LanguageRow> {
     val tags = LinkedHashSet<String>()
-    tags.add("ar")
-    tags.add("en")
+    tags.add(LanguageCode.AR.tag)
+    tags.add(LanguageCode.EN.tag)
     discovered.keys.sorted().forEach { tags.add(it) }
     return tags.map { tag ->
         LanguageRow(
