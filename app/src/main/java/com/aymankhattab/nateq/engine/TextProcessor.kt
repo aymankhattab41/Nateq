@@ -895,8 +895,14 @@ private fun parseNumberText(numberStr: String): String {
     /** تنسيق الوقت بالعربية */
     private fun formatTime(hour: Int, minute: Int): String {
         val hour12 = if (hour == 0) 12 else if (hour > 12) hour - 12 else hour
-        val period = if (hour < 12) "صباحاً" else "مساءً"
-        val hourText = numberToWords(hour12.toLong())
+        val period = when {
+            hour == 12 -> "ظهراً"
+            hour < 12 -> "صباحاً"
+            else -> "مساءً"
+        }
+        // الساعة تُنطق بالصيغة الترتيبية المؤنثة المعرّفة بأل:
+        // «الثانية والنصف مساءً» لا «اثنان والنصف مساءً».
+        val hourText = NumberSpeech.toOrdinalHourWord(hour12)
 
         fun minutesPart(count: Int): String = when (count) {
             1 -> "دقيقة واحدة"
@@ -919,7 +925,7 @@ private fun parseNumberText(numberStr: String): String {
             30 -> "$hourText والنصف $period"
             45 -> {
                 val nextHour = if (hour12 == 12) 1 else hour12 + 1
-                val nextHourText = numberToWords(nextHour.toLong())
+                val nextHourText = NumberSpeech.toOrdinalHourWord(nextHour)
                 "$nextHourText إلا ربع $period"
             }
             in 1..29 -> "$hourText و ${minutesPart(minute)} $period"
@@ -927,7 +933,7 @@ private fun parseNumberText(numberStr: String): String {
             in 46..59 -> {
                 val remaining = 60 - minute
                 val nextHour = if (hour12 == 12) 1 else hour12 + 1
-                val nextHourText = numberToWords(nextHour.toLong())
+                val nextHourText = NumberSpeech.toOrdinalHourWord(nextHour)
                 "$nextHourText إلا ${minutesOmissionPart(remaining)} $period"
             }
             else -> "$hourText $period"

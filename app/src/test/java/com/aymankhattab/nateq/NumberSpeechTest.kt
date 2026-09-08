@@ -30,6 +30,23 @@ class NumberSpeechTest {
     }
 
     @Test
+    fun toOrdinalHourWord_arabicFeminineOrdinal() {
+        // الساعة تُنطق دائماً ترتيبية مؤنثة معرّفة بأل لكل الساعات 1–12
+        assertEquals("الواحدة", NumberSpeech.toOrdinalHourWord(1))
+        assertEquals("الثانية", NumberSpeech.toOrdinalHourWord(2))
+        assertEquals("الثالثة", NumberSpeech.toOrdinalHourWord(3))
+        assertEquals("الرابعة", NumberSpeech.toOrdinalHourWord(4))
+        assertEquals("الخامسة", NumberSpeech.toOrdinalHourWord(5))
+        assertEquals("السادسة", NumberSpeech.toOrdinalHourWord(6))
+        assertEquals("السابعة", NumberSpeech.toOrdinalHourWord(7))
+        assertEquals("الثامنة", NumberSpeech.toOrdinalHourWord(8))
+        assertEquals("التاسعة", NumberSpeech.toOrdinalHourWord(9))
+        assertEquals("العاشرة", NumberSpeech.toOrdinalHourWord(10))
+        assertEquals("الحادية عشرة", NumberSpeech.toOrdinalHourWord(11))
+        assertEquals("الثانية عشرة", NumberSpeech.toOrdinalHourWord(12))
+    }
+
+    @Test
     fun formatByMode_singleDigits() {
         assertEquals("واحد اثنان ثلاثة", NumberSpeech.formatByMode(1, 123, false))
     }

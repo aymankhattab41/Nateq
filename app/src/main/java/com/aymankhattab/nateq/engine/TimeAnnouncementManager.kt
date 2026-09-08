@@ -328,14 +328,16 @@ class TimeAnnouncementManager(
                     if (use24h || hour < 12) "" else " PM"
             }
         } else {
+            // الساعة تُنطق بالصيغة الترتيبية المؤنثة المعرّفة بأل:
+            // «الساعة الآن الثانية» لا «اثنتين».
             if (minute == 0) {
                 if (midnightPhrase) "الساعة الآن منتصف الليل"
-                else "الساعة الآن ${NumberSpeech.toArabicWords(displayedHour)}"
+                else "الساعة الآن ${NumberSpeech.toOrdinalHourWord(displayedHour)}"
             } else {
                 if (midnightPhrase) {
                     "الساعة الآن منتصف الليل و ${arabicMinutePhrase(minute)}"
                 } else {
-                    "الساعة الآن ${NumberSpeech.toArabicWords(displayedHour)} و ${arabicMinutePhrase(minute)}"
+                    "الساعة الآن ${NumberSpeech.toOrdinalHourWord(displayedHour)} و ${arabicMinutePhrase(minute)}"
                 }
             }
         }
@@ -380,7 +382,9 @@ class TimeAnnouncementManager(
     /** تنسيق الوقت بالعربية الطبيعية: "الساعة الآن العاشرة والربع" */
     private fun formatArabicNaturalTime(hour: Int, minute: Int): String {
         val hour12 = if (hour == 0) 12 else if (hour > 12) hour - 12 else hour
-        val arabicHour = NumberSpeech.toArabicWords(hour12)
+        // الساعة تُنطق بالصيغة الترتيبية المؤنثة المعرّفة بأل:
+        // «الثانية صباحاً» لا «اثنتين صباحاً».
+        val arabicHour = NumberSpeech.toOrdinalHourWord(hour12)
         // صبيحة/مساء للصيغة الطبيعية على نحو ما أعلنه TextProcessor للصيغة الرقمية.
         val period = when (hour) {
             12 -> "ظهراً"
@@ -394,7 +398,7 @@ class TimeAnnouncementManager(
             30 -> "الساعة الآن $arabicHour والنصف $period"
             45 -> {
                 val nextHour = if (hour12 == 12) 1 else hour12 + 1
-                val nextArabicHour = NumberSpeech.toArabicWords(nextHour)
+                val nextArabicHour = NumberSpeech.toOrdinalHourWord(nextHour)
                 "الساعة الآن $nextArabicHour إلا ربع $period"
             }
             in 1..14 -> "الساعة الآن $arabicHour و ${arabicMinutePhrase(minute)} $period"
@@ -403,7 +407,7 @@ class TimeAnnouncementManager(
             in 46..59 -> {
                 val remaining = 60 - minute
                 val nextHour = if (hour12 == 12) 1 else hour12 + 1
-                val nextArabicHour = NumberSpeech.toArabicWords(nextHour)
+                val nextArabicHour = NumberSpeech.toOrdinalHourWord(nextHour)
                 "الساعة الآن $nextArabicHour إلا ${arabicMinuteOmissionPhrase(remaining)} $period"
             }
             else -> "الساعة الآن $arabicHour $period"
