@@ -18,7 +18,8 @@ import com.aymankhattab.nateq.util.LanguageCode
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
 import javax.inject.Inject
-import kotlinx.coroutines.delay
+import android.os.Handler
+import android.os.Looper
 import kotlinx.coroutines.launch
 
 /**
@@ -113,24 +114,35 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 }
                 speaker.resetVoice(callerVoice)
 
-                // تكرار النطق «repeat» مرات مع فاصل «intervalMs» بين كل مرة نطق
-                // وليس نطقاً واحداً يجمع العبارة بفواصل — فيُسمع المتصل بوضوح
-                // مع توقف حقيقي بين التكرارات.
+                // تكرار النطق «repeat» مرات مع فاصل «intervalMs» بين كل مرة.
+                // الأول يقع فوراً ثم يُحرَّر pendingResult (الخدمة الأمامية تبقى
+                // حيّة فيحافظ على العملية)، والتكرارات المتبقية تُجدَّل عبر Handler
+                // على MainLooper مستقلة عن دورة حياة البث — لا نقاءً بمهلة goAsync.
                 val repeat = settings.getCallerAnnouncementRepeat().coerceIn(1, 5)
                 val intervalMs = settings.getCallerAnnouncementIntervalSeconds()
                     .coerceIn(1, 10) * 1000L
-                for (i in 0 until repeat) {
-                    speaker.speak(text, locale, speechRate, 1.0f, volume)
-                    if (i < repeat - 1) delay(intervalMs)
+                speaker.speak(text, locale, speechRate, 1.0f, volume)
+                if (repeat > 1) {
+                    val appCtx = context.applicationContext
+                    val handler = Handler(Looper.getMainLooper())
+                    for (i in 1 until repeat) {
+                        handler.postDelayed({
+                            try {
+                                AnnouncementSpeaker.getInstance(appCtx)
+                                    .speak(text, locale, speechRate, 1.0f, volume)
+                            } catch (t: Throwable) {
+                                Log.e(TAG, "repeat speak failed", t)
+                            }
+                        }, intervalMs * i.toLong())
+                    }
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "onReceive failed", t)
             } finally {
-                // يبقى المستقبَل حياً حتى يُنهي الكوروتين عمله (فحوص الأذونات،
-                // البحث عن اسم المتصل، إطلاق النطق) ثم يُطلق finish() — لا
-                // finish() مبكراً قبل بدء التنفيذ الذي كان يتيح للنظام قتل العملية
-                // أثناء رنين الهاتف قبل نطق الاسم. بعد الإطلاق يكمل النطق عبر
-                // الخدمة الأمامية التي يبدأها المتحدث (نفس نمط SmsReadingReceiver).
+                // نُطلق finish() بعد النطق الأول مباشرة؛ التكرارات المجدولة عبر
+                // Handler لا تتعلّق بحياة البث (الخدمة الأمامية التي يبدأها
+                // المتحدث تُبقي العملية حيّة). لا finish مبكر جداً قبل إطلاق
+                // نطق الاسم كما كان يسمح للنظام بقتل العملية أثناء الرنين.
                 pendingResult.finish()
             }
         }
@@ -184,14 +196,32 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
     /**
      * الاسم المخصص من خريطة المستخدم (رقم -> اسم). تُطابق الأرقام بحذف كل
      * ما ليس رقماً (أرقام "063...", "+63...", " 06 3..." كلها متطابقة).
+     * تُستبعد القيم الخاصة غير الحقيقية («-1» للمجهول/الخاص و«UNKNOWN»)
+     * قبل التطبيع حتى لا ينطق التطبيق اسم جهة اتصالٍ تتصادف أرقامها مع «1»
+     * (كملحق رموز الولايات المتحدة) لمكالمةٍ مجهولةٍ فعلياً.
      */
     private fun resolveCustomName(settings: SettingsRepository, number: String?): String? {
-        if (number.isNullOrBlank()) return null
-        val norm = number.filter { it.isDigit() }
-        if (norm.isEmpty()) return null
+        val normalized = normalizeCallerNumber(number) ?: return null
         return settings.getCustomCallerNames()
-            .entries.firstOrNull { it.key.filter { c -> c.isDigit() } == norm }
+            .entries.firstOrNull { it.key.filter { c -> c.isDigit() } == normalized }
             ?.value
+    }
+
+    /**
+     * تطبيع رقم المتصل للبحث عنه: يُستبعد ختم «لا معرّف/خاص/مجهول» الشائع في
+     * EXTRA_INCOMING_NUMBER («-1» و«UNKNOWN» ونظائره) والقيم الخالية أو الخالية
+     * بالأرقام، فيُعاد null بلا بحث. خلاف ذلك تُستخرج خاناته الرقمية فقط.
+     */
+    private fun normalizeCallerNumber(number: String?): String? {
+        if (number.isNullOrBlank()) return null
+        val trimmed = number.trim()
+        if (trimmed == "-1" || trimmed.equals("UNKNOWN", ignoreCase = true) ||
+            trimmed.startsWith("unknown", ignoreCase = true) || trimmed == "0"
+        ) {
+            return null
+        }
+        val digits = trimmed.filter { it.isDigit() }
+        return digits.takeIf { it.isNotEmpty() }
     }
 
     private fun hasReadContacts(context: Context): Boolean =
@@ -212,6 +242,9 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         hasReadCallLog: Boolean
     ): String? {
         if (number.isNullOrBlank()) return null
+        // رقم خاص/مجهول («-1»/«UNKNOWN»/…): بلا بحث — قد يطابق سجلّ مكالمة
+        // مخزّنٍ سابقاً فيُنطق اسمٌ خاطئ لمكالمةٍ مجهولة.
+        if (normalizeCallerNumber(number) == null) return null
         val fromContacts = if (hasReadContacts) lookupContactName(context, number) else null
         if (fromContacts != null) return fromContacts
         if (hasReadCallLog) return lookupNameViaCallLog(context, number)
