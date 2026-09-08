@@ -16,7 +16,9 @@ data class Segment(
  * المقاطع العربية تُنطق بالعربية، وسائر حروف الكتابة تُنسب (سقوطاً) إما للغة
  * الطلب نفسها إذا لم تكن عربية وإما للإنجليزية افتراضياً. المحايدات — مسافات/
  * أرقام/ترقيم/رموز — تلتحق بالمقطع المجاور ولا تُكسر عن سياقها، فالتجميع عبر
- * كل المقاطع يعيد النص الأصلي حرفياً بلا فقدان.
+ * كل المقاطع يعيد النص الأصلي حرفياً بلا فقدان. النصُّ بلا حروفٍ إطلاقاً
+ * (أرقام ورموز فقط) يُنسب كلُّه للغة طلبه نفسها — فلا ينتقل نطق «١٢٣» أو
+ * «123» ضمن طلبٍ عربي إلى صوتٍ إنجليزي كما كان.
  *
  * لا يعتمد المقسم على أي كائن Android — منطق نقي قابل للاختبار مباشرة.
  */
@@ -59,25 +61,33 @@ class LanguageSegmenter {
     private data class Run(val kind: Kind, val start: Int, val endExclusive: Int)
 
     /**
-     * @param requestLanguage لغة الطلب القادمة من النظام: العربية «وغير المعروفة»
-     *  سقوطُها لسائر الكتابات هي [EN_FALLBACK]؛ أي طلبٍ آخر (fr/de/…) تُنسب له
-     *  الكتابات غير العربية مباشرة ليُنطق النص الأجنبي بصوت لغته.
+     * @param fallbackLanguage لغة السقوط القادمة من الطلب/الإعلان: العربية
+     *  «وغير المعروفة/الفارغة» سقوطُها لحروف الكتابات سائرٍ هي [EN_FALLBACK]؛ أي
+     *  طلبٍ آخر (fr/de/…) تُنسب له الحروف غير العربية مباشرة ليُنطق النص الأجنبي
+     *  بصوت لغته. والنصُّ المَحايد وحده (أرقام/رموز بلا حروف) يُنسب كلُّه للغة
+     *  السقوط نفسها — فلا تُنطق «١٢٣» أو «123» ضمن طلبٍ عربي بصوتٍ إنجليزي.
      * @return مقاطع النص المتجاورة بلغاتها؛ النص الخالي يُرجع مقطعاً واحداً
      *  بلغة السقوط حتى لا يُعالَج النص الفارغ بشكلٍ خاص في المسارات العليا.
      */
-    fun segment(text: String, requestLanguage: String): List<Segment> {
-        val fallback = nonArabicFallback(requestLanguage)
-        if (text.isEmpty()) return listOf(Segment("", fallback))
-        return merge(text, fallback)
+    fun segment(
+        text: String,
+        fallbackLanguage: String = LanguageCode.AR.tag
+    ): List<Segment> {
+        return merge(text, scriptFallback(fallbackLanguage), neutralFallback(fallbackLanguage))
     }
 
     /** يبني المقاطع من الجولات عبر «مقطعٍ مفتوح» يمتد على إحداثيات النص الأصلي:
  *  المحايد بعدُ يلتحق بالمقطع المفتوح (رأسيٌّ يدخل في فتحته الأولى)، والمحايد
  *  بين ركضتين من لغةٍ واحدة يضمّهما معاً دون تفتيت، والمحايد الختامي يشمله
- *  نطاقُ المقطع الأخير حتى نهاية النص. */
-    private fun merge(text: String, fallback: String): List<Segment> {
+ *  نطاقُ المقطع الأخير حتى نهاية النص. النص بلا جولاتِ حروفٍ إطلاقاً (أو فارغ)
+ *  يُرجع مقطعاً واحداً بلغة [neutralFallback] كي تبقى الأرقام بلسان طلبها. */
+    private fun merge(
+        text: String,
+        scriptFallback: String,
+        neutralFallback: String
+    ): List<Segment> {
         val runs = buildRuns(text)
-        if (runs.isEmpty()) return listOf(Segment(text, fallback))
+        if (runs.isEmpty()) return listOf(Segment(text, neutralFallback))
 
         val segments = ArrayList<Segment>()
         var openStart = -1
@@ -90,7 +100,7 @@ class LanguageSegmenter {
                     // وإلا فهو بيني\ختامي: نطاق المقطع المفتوح يشمل إحداثياته.
                 }
                 else -> {
-                    val language = if (run.kind == Kind.ARABIC) LanguageCode.AR.tag else fallback
+                    val language = if (run.kind == Kind.ARABIC) LanguageCode.AR.tag else scriptFallback
                     if (openLanguage == null) {
                         openStart = if (leadingStart != -1) leadingStart else run.start
                         leadingStart = -1
@@ -107,7 +117,7 @@ class LanguageSegmenter {
         if (openLanguage != null) {
             segments.add(Segment(text.substring(openStart, text.length), openLanguage))
         }
-        if (segments.isEmpty()) return listOf(Segment(text, fallback))
+        if (segments.isEmpty()) return listOf(Segment(text, neutralFallback))
         return segments
     }
 
@@ -147,14 +157,26 @@ class LanguageSegmenter {
         return false
     }
 
-    /** لغة سقوط الكتابات غير العربية: طلب عربي/فارغ ← [EN_FALLBACK]؛ وإلا فبِلغة
-     *  الطلب نفسها حتى يُنطق النص الأجنبي بصوت لغته عند طلبٍ غير عربي. */
-    private fun nonArabicFallback(requestLanguage: String): String {
+    /** لغة سقوط حروف الكتابات غير العربية: طلب عربي/فارغ ← [EN_FALLBACK]؛ وإلا
+     *  بِلغة الطلب نفسها حتى يُنطق النص الأجنبي بصوت لغته عند طلبٍ غير عربي. */
+    private fun scriptFallback(requestLanguage: String): String {
         val language = requestLanguage.takeWhile { it.isLetter() }
         return if (language.isBlank() || LanguageCode.isArabic(language)) {
             EN_FALLBACK
         } else {
             language
+        }
+    }
+
+    /** لغة ما لا يحوي حروفاً إطلاقاً (أرقام/رموز/مسافات فقط): لغة الطلب نفسها
+     *  إن عُرفت — فالأرقام تُنطق بلسان طلبها ولو كان عربياً — وإلا [EN_FALLBACK]
+     *  للطلب الغامض/الفارغ (التاريخي). */
+    private fun neutralFallback(requestLanguage: String): String {
+        val language = requestLanguage.takeWhile { it.isLetter() }
+        return when {
+            language.isBlank() -> EN_FALLBACK
+            LanguageCode.isArabic(language) -> LanguageCode.AR.tag
+            else -> language
         }
     }
 }

@@ -78,17 +78,45 @@ class LanguageSegmenterTest {
     }
 
     @Test
-    fun neutralOnlyText_singleSegmentWithFallback() {
+    fun neutralOnlyText_singleSegmentWithArabicRequest() {
         val (texts, tags) = textsAndTags("123 456 !", "ar")
         assertEquals(listOf("123 456 !"), texts)
+        assertEquals(listOf("ar"), tags)
+    }
+
+    @Test
+    fun arabicIndicDigitsOnly_withArabicRequest_usesArabic() {
+        val (texts, tags) = textsAndTags("١٢٣٤٥", "ar")
+        assertEquals(listOf("١٢٣٤٥"), texts)
+        assertEquals(listOf("ar"), tags)
+    }
+
+    @Test
+    fun neutralOnlyText_withNonArabicRequest_usesRequestLanguage() {
+        val (texts, tags) = textsAndTags("123 456 !", "fr")
+        assertEquals(listOf("123 456 !"), texts)
+        assertEquals(listOf("fr"), tags)
+    }
+
+    @Test
+    fun neutralOnlyText_withBlankRequest_usesEnglishFallback() {
+        val (texts, tags) = textsAndTags("123", "")
+        assertEquals(listOf("123"), texts)
         assertEquals(listOf("en"), tags)
     }
 
     @Test
-    fun emptyText_singleEmptySegment() {
+    fun arabicRequest_digitsOnlyArabic_butLatinWordsStillEnglish() {
+        val (texts, tags) = textsAndTags("Status 123", "ar")
+        assertEquals(listOf("Status 123"), texts)
+        assertEquals(listOf("en"), tags)
+    }
+
+    @Test
+    fun emptyText_singleEmptySegment_usesRequestLanguage() {
         val (texts, tags) = textsAndTags("", "ar")
         assertEquals(listOf(""), texts)
-        assertEquals(listOf("en"), tags)
+        assertEquals(listOf("ar"), tags)
     }
 
     @Test

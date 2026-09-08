@@ -13,6 +13,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
@@ -925,9 +926,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 UpdateChecker.promptInstall(ctx, apk)
             }
         }
-        context.registerReceiver(
+        ContextCompat.registerReceiver(
+            context,
             receiver,
-            android.content.IntentFilter(android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE)
+            android.content.IntentFilter(android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE),
+            ContextCompat.RECEIVER_NOT_EXPORTED
         )
     }
 
