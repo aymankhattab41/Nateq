@@ -49,6 +49,10 @@
     <!-- الوصول للإنترنت لفحص وجود تحديث جديد من GitHub Releases وتنزيل الـ APK.
          يُستخدم للفحص/التحميل فقط؛ لا تُرفع أي بيانات أو إعدادات للمستخدم. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- استشعار حالة الاتصال بالإنترنت لتسجيل ConnectivityManager.NetworkCallback
+         والتراجع الفوري للأصوات المحلية عند انقطاع الإنترنت بدل انتظار مهلة
+         التوليد كاملة (صوت جوجل السحابي يعجز بدون اتصال). إذن عادي يُمنح تلقائياً. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- طلب تثبيت حزم من مصادر خارجية (تفعيل ميزة التحديث الذاتي).
          لا يثبّت شيئاً صمتاً: يعرض شاشة موافقة النظام دائماً. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />

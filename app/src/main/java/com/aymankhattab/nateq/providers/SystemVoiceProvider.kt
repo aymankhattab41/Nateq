@@ -9,6 +9,7 @@ import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.settings.SettingsRepository
+import com.aymankhattab.nateq.util.ConnectivityMonitor
 import com.aymankhattab.nateq.util.LocaleUtils
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
@@ -56,6 +57,14 @@ class SystemVoiceProvider(
 
     /** معالج نبض Main للجدولة الزمنية لمهلة التهيئة [INIT_TIMEOUT_MS] (غير حاصر). */
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    /**
+     * مراقب حالة الإنترنت الاستباقي ([ConnectivityMonitor]) — يسجّل
+     * ConnectivityManager.NetworkCallback ويخبرنا لحظياً عند انقطاع الاتصال،
+     * فيتخلى المزوّد فوراً عن الأصوات التي تتطلب شبكة (جوجل السحابي) ويلجأ
+     * محلياً دون انتظار مهلة التوليد كاملة (Guid: التراجع الفوري بلا تأخير).
+     */
+    private val connectivity = ConnectivityMonitor(context)
 
     companion object {
         private const val TAG = "NATEQ_TTS"
@@ -185,6 +194,11 @@ class SystemVoiceProvider(
     private var ttsEngine: String? = null
 
     override fun isConfigured(): Boolean = true // متاح دائمًا
+
+    /** تعطيل مراقب الاتصال عند تدمير المزوّد (إطلاق موارد المراقبة). */
+    override fun shutdown() {
+        connectivity.unregister()
+    }
 
     /**
      * يختار المحرك الذي ينطق به التطبيق:
@@ -504,7 +518,31 @@ class SystemVoiceProvider(
         if (!desiredVoiceName.isNullOrBlank()) {
             runCatching {
                 val matching = engine.voices?.firstOrNull { it.name == desiredVoiceName }
-                if (matching != null) engine.voice = matching
+                if (matching != null) {
+                    // صوتٌ يتطلب اتصالاً (جوجل السحابي) مع غياب الإنترنت: تراجع فوري
+                    // دون دفع المحرك لانتظارِ مهلة التوليد كاملة عبثاً — الحالة يُرسلها
+                    // [connectivity] استباقياً عبر NetworkCallback ومحسوبة حيّاً لحظياً.
+                    if (matching.isNetworkConnectionRequired && !connectivity.isOnlineNow()) {
+                        Log.w(
+                            TAG,
+                            "[Provider] offline & voice requires network ($desiredVoiceName) — فوري محلي"
+                        )
+                        return false
+                    }
+                    engine.voice = matching
+                }
+            }
+        }
+        // إن لم يُحدَّد اسم صوت (المحرك الافتراضي) لكن المحرك نفسه صوته الافتراضي
+        // سحابي (جوجل يعتمد الشبكة افتراضياً للعربية/الهندية مثلاً)، فالفحص نفسه:
+        // الإنترنت غائب → تركُ التوليد فوراً وإرجاع فوري (يتولى المتصل التراجع).
+        if (!connectivity.isOnlineNow()) {
+            val currentRequiresNetwork = runCatching {
+                engine.voice?.isNetworkConnectionRequired == true
+            }.getOrDefault(false)
+            if (currentRequiresNetwork) {
+                Log.w(TAG, "[Provider] offline & default engine voice requires network — فوري محلي")
+                return false
             }
         }
 
