@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq.engine
+package com.aymankhattab.nateq.core.audio.engine
 
 import kotlin.math.min
 import kotlin.math.roundToInt

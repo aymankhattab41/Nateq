@@ -1,11 +1,11 @@
-package com.aymankhattab.nateq.engine
+package com.aymankhattab.nateq.core.audio.engine
 
 import android.content.Context
 import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
-import com.aymankhattab.nateq.providers.EnginePicker
-import com.aymankhattab.nateq.providers.VoiceDescriptor
-import com.aymankhattab.nateq.providers.VoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.EnginePicker
+import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
+import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.LocaleUtils
 import java.util.Locale

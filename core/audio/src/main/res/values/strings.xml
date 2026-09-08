@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- البند 5أ — موردو أصوات النظام: أسماء تُنتج من SystemVoiceProvider (في :core:audio).
+     القيم هنا نسخ من :app، وتبقى قيم :app هي السائدة عند الدمج (app > library). -->
+<resources>
+    <string name="voice_provider_system">صوت النظام</string>
+    <string name="voice_name_arabic">العربية</string>
+    <string name="voice_name_english">الإنجليزية</string>
+</resources>

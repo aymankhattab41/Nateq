@@ -17,10 +17,10 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.core.common.AppDispatchers
-import com.aymankhattab.nateq.engine.EngineWithVoices
+import com.aymankhattab.nateq.core.audio.engine.EngineWithVoices
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.aymankhattab.nateq.engine.VoiceCatalog
-import com.aymankhattab.nateq.providers.EnginePicker
+import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
+import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.util.LanguageCode
 import java.util.Locale
 import kotlinx.coroutines.launch

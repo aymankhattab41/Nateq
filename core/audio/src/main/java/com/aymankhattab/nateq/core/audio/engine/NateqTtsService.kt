@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq.engine
+package com.aymankhattab.nateq.core.audio.engine
 
 import android.content.Intent
 import android.os.Build
@@ -8,10 +8,12 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
 import android.util.Log
+import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.common.AppDispatchers
-import com.aymankhattab.nateq.providers.SystemVoiceProvider
-import com.aymankhattab.nateq.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.engine.PronunciationDictionary
+import com.aymankhattab.nateq.engine.TextProcessor
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.LocaleUtils
 import dagger.hilt.android.AndroidEntryPoint
@@ -287,7 +289,7 @@ class NateqTtsService : TextToSpeechService() {
      *  عند فساد الكتالوج فيُعالَج في مواقع الاستدعاء. */
     private suspend fun resolveVoiceWithFallback(
         languageTag: String
-    ): Pair<VoiceDescriptor, com.aymankhattab.nateq.providers.VoiceProvider?> {
+    ): Pair<VoiceDescriptor, com.aymankhattab.nateq.core.audio.providers.VoiceProvider?> {
         val voice = requestHandler.resolveVoiceForLocale(languageTag)
         if (voice != null) {
             return voice to catalog.findProvider(voice.providerId)

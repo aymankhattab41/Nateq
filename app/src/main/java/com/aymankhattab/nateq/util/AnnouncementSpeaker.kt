@@ -11,10 +11,10 @@ import android.util.Log
 import com.aymankhattab.nateq.AnnouncementSchedulerLauncher
 import com.aymankhattab.nateq.NateqApplication
 import com.aymankhattab.nateq.engine.EmojiSpeech
-import com.aymankhattab.nateq.engine.LanguageSegmenter
-import com.aymankhattab.nateq.engine.Segment
+import com.aymankhattab.nateq.core.audio.engine.LanguageSegmenter
+import com.aymankhattab.nateq.core.audio.engine.Segment
 import com.aymankhattab.nateq.engine.SpeechPart
-import com.aymankhattab.nateq.providers.EnginePicker
+import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import java.util.Locale
 

@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq.providers
+package com.aymankhattab.nateq.core.audio.providers
 
 import java.util.Locale
 

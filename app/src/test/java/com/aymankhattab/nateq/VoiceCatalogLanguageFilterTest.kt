@@ -2,8 +2,8 @@ package com.aymankhattab.nateq
 
 import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
-import com.aymankhattab.nateq.engine.VoiceCatalog
-import com.aymankhattab.nateq.providers.EnginePicker
+import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
+import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

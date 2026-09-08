@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.engine
 
+import com.aymankhattab.nateq.core.audio.engine.PcmResampler
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertSame

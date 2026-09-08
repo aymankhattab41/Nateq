@@ -2,8 +2,10 @@ package com.aymankhattab.nateq.engine
 
 import android.content.Context
 import com.aymankhattab.nateq.core.common.AppDispatchers
-import com.aymankhattab.nateq.providers.SystemVoiceProvider
-import com.aymankhattab.nateq.providers.VoiceDescriptor
+import com.aymankhattab.nateq.core.audio.engine.SynthesisRequestHandler
+import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
+import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.receivers.TimeAlarmReceiver
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.AnnouncementSpeaker

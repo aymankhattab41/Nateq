@@ -1,6 +1,6 @@
 package com.aymankhattab.nateq.settings
 
-import com.aymankhattab.nateq.engine.EngineWithVoices
+import com.aymankhattab.nateq.core.audio.engine.EngineWithVoices
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

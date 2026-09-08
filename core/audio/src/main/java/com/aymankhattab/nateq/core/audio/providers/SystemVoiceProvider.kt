@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq.providers
+package com.aymankhattab.nateq.core.audio.providers
 
 import android.content.Context
 import android.os.Handler
@@ -8,7 +8,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.LruCache
 import android.util.Log
-import com.aymankhattab.nateq.R
+import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.data.VoicePrefsProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.ConnectivityMonitor
@@ -93,9 +93,10 @@ class SystemVoiceProvider(
          * مهلة انتظار اكتمال كتابة المحرك لملف الصوت حسب طول النص (بالمللي ثانية).
          * للنصوص القصيرة 1.5–3 ثوانٍ فقط: قارئات الشاشة لا تحتمل مهلة 30 ثانية لكل
          * محرك (وتصل سلسلة التراجع بين محركين إلى 60 ثانية — بطء غير مقبول)،
-         * والنصوص الطويلة تحصل على مهلة أوسع لكتابة الملف كاملاً.
+         * والنصوص الطويلة تحصل على مهلة أوسع لكتابة الملف كاملاً. عامة (لا internal)
+         * لأن اختبارها في وحدة :app مباشرة (نفس نمط UpdateChecker في :core:data).
          */
-        internal fun synthesisTimeoutMs(textLength: Int): Long = when {
+        fun synthesisTimeoutMs(textLength: Int): Long = when {
             textLength <= 10 -> 1500L
             textLength <= 80 -> 2000L
             textLength <= 300 -> 3000L

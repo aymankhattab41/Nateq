@@ -1,6 +1,6 @@
 package com.aymankhattab.nateq
 
-import com.aymankhattab.nateq.providers.EnginePicker
+import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

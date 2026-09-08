@@ -1,6 +1,6 @@
 package com.aymankhattab.nateq
 
-import com.aymankhattab.nateq.providers.SystemVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

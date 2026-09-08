@@ -93,7 +93,7 @@
         <!-- عليه النظام وقارئ الشاشة كمحرك TTS متاح        -->
         <!-- ============================================= -->
         <service
-            android:name=".engine.NateqTtsService"
+            android:name="com.aymankhattab.nateq.core.audio.engine.NateqTtsService"
             android:process=":tts"
             android:exported="true"
             android:label="@string/app_name"
