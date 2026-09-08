@@ -1,7 +1,7 @@
 package com.aymankhattab.nateq.core.audio.engine
 
+import kotlin.math.abs
 import kotlin.math.min
-import kotlin.math.roundToInt
 
 /**
  * معالجة PCM قبل بث المقاطع المختلطة اللغات بمعيارٍ صوتي موحّد: خفض الاستريو
@@ -42,29 +42,45 @@ object PcmResampler {
             for (channel in 0 until channelCount) {
                 sum += sampleAt(pcm, frame * channelCount + channel)
             }
-            val average = ((sum + channelCount / 2L) / channelCount)
-            writeSample(out, frame, average.toInt())
+            // متوسّط متوازن تماماً (نصفاً بعيداً عن الصفر بإشارةٍ ثابتة) بلا انحياز
+            // DC: خطأ ±0.5 متناوب صِفر-أفقي. بدل الـ (+1)/2 السابق الذي زاد الموجب
+            // نحو +0.5 (انحياز مسموع) وأفسد الزوج السالب المطابق (-1,-1) إلى 0
+            // (إسكات الطقطقة الخفيفة)؛ والإزاحة shr 1 المقتَرحة وحدها تُطبق -0.5
+            // على القيم كليهما فلا تُلغي الانحياز بل تقلبه، لذا يُعتمد نصفٌ بعيدٌ.
+            val magnitude = (abs(sum) + channelCount / 2L) / channelCount
+            val average = (if (sum >= 0L) magnitude else -magnitude).toInt()
+            writeSample(out, frame, average)
         }
         return out
     }
 
     /** إعادة أخذ العينات باستيفاء خطي: إخراج [outFrames] وفق النسبة بين
-     *  المعدّلين، مع كبح عند حواف الإخراج. */
+     *  المعدّلين، كلياً بفاصلة ثابتة 16.16 على المحور الزمني (لا Double/Float
+     *  ولا قسمة/roundToInt داخل الحلقة)، مع كبح عند حواف الإخراج. */
     fun resample(pcm: ByteArray, inRate: Int, outRate: Int): ByteArray {
         val inFrames = pcm.size / 2
         if (inFrames == 0) return pcm
         val outFrames = (inFrames.toLong() * outRate / inRate).toInt()
         val out = ByteArray(outFrames * 2)
-        val step = inRate.toDouble() / outRate
+        // نسبة إعادة الأخذ كاملة 16.16: الموضع كامل 16 بت علوية والكسر 16
+        // سفلية. يُتراكم جمعياً (عملية Long واحدة لكل فريم) بدل مضاعفة عائمةٍ
+        // لكل عينة، فيبقى المنتصف [0, 65535] جاهزاً للاستيفاء.
+        val step = (inRate.toLong() shl 16) / outRate
+        var position = 0L
         for (outFrame in 0 until outFrames) {
-            val position = outFrame * step
-            val i0 = position.toInt()
+            // مكبح الحافة: بعد التراكم الكسري قد يبلغ الموضع فريم المدخل الأخير
+            // أو يتجاوزه بأقل من فريمٍ — لا يُخرج موضعَ القراءة عن حدود المصفوفة.
+            val i0 = min((position ushr 16).toInt(), inFrames - 1)
             val i1 = min(i0 + 1, inFrames - 1)
-            val fraction = (position - i0).toFloat()
+            val fraction = (position and 0xFFFF).toInt()
             val s0 = sampleAt(pcm, i0)
             val s1 = sampleAt(pcm, i1)
-            val interpolated = (s0 + (s1 - s0) * fraction).roundToInt()
+            val delta = (s1 - s0).toLong()
+            // استيفاء: s0 + Δ·frac/65536 — حسمٌ +0x8000 يُطابق roundToInt
+            // (نحو +∞) لكلتا الإشارتين، فالصيغة متطابقة الحرف كما كانت.
+            val interpolated = (s0 + ((delta * fraction + 0x8000L) shr 16)).toInt()
             writeSample(out, outFrame, interpolated)
+            position += step
         }
         return out
     }
