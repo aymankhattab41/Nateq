@@ -17,6 +17,28 @@ private data class UnitInfo(
     val isFeminine: Boolean
 )
 
+/** بيانات عملة: المفرد والجمع والمثنى والجنس، مع اسم وحدتها الفرعية
+ *  («سنت / قرش / هللة») وجنسها وجمعها لنطق الكسور (0.50 → «وخمسون سنتاً»). */
+private data class CurrencyInfo(
+    val name: String,
+    val plural: String,
+    val dual: String,
+    val isFeminine: Boolean,
+    val subunit: String,
+    val subunitPlural: String,
+    val subunitFeminine: Boolean
+)
+
+/** مفردات مقياس عدد (ألف/مليون/مليار/…) بأشكال العدد المختلفة لاختيار
+ *  التمييز الصحيح: مفرد، مثنى، جمع، منصوب (11–99)، وصيغة الإضافة بعد مئة. */
+private data class ScaleWords(
+    val one: String,
+    val two: String,
+    val plural: String,
+    val accusative: String,
+    val inHundred: String
+)
+
 /**
  * معالج النصوص الذكي - يحول النصوص الخام إلى نصوص قابلة للنطق طبيعياً
  * يدعم: الأرقام، التواريخ، الأوقات، العملات، الوحدات، الاختصارات
@@ -104,32 +126,54 @@ private val PATTERN_CURRENCY_CODE = Pattern.compile(
         //  تُنشئ ~30 نمطاً في كل جملة عربية).
         // ======================================================
 
-        private val CURRENCY_SYMBOLS = mapOf<String, String>(
-            "\$" to "دولار",
-            "€" to "يورو",
-            "£" to "جنيه استرليني",
-            "¥" to "ين ياباني",
-            "₹" to "روبية هندية",
-            "₽" to "روبل روسي",
-            "₩" to "وون كوري",
-            "﷼" to "ريال",
-            "د.إ" to "درهم إماراتي",
-            "ر.س" to "ريال سعودي",
-            "د.ك" to "دينار كويتي",
-            "ر.ق" to "ريال قطري",
-            "ر.ع" to "ريال عماني",
-            "د.ب" to "دينار بحريني",
-            "ج.م" to "جنيه مصري",
-            "د.ت" to "دينار تونسي",
-            "د.ج" to "دينار جزائري",
-            "ر.م" to "ريال مغربي"
+        private val CURRENCY_SYMBOLS = mapOf<String, CurrencyInfo>(
+            "\$" to CurrencyInfo("دولار", "دولارات", "دولاران", false, "سنت", "سنتات", false),
+            "€" to CurrencyInfo("يورو", "يورو", "يوروان", false, "سنت", "سنتات", false),
+            "£" to CurrencyInfo("جنيه استرليني", "جنيهات استرلينية", "جنيهان استرلينيان", false, "بنس", "بنسات", false),
+            "¥" to CurrencyInfo("ين ياباني", "ين ياباني", "ينان يابانيان", false, "سن", "سنات", false),
+            "₹" to CurrencyInfo("روبية هندية", "روبيات هندية", "روبيتان هنديتان", true, "بيسة", "بيسات", true),
+            "₽" to CurrencyInfo("روبل روسي", "روبلات روسية", "روبلان روسيان", false, "كوبيك", "كوبيكات", false),
+            "₩" to CurrencyInfo("وون كوري", "وون كوري", "وونان كوريان", false, "جون", "جونات", false),
+            "﷼" to CurrencyInfo("ريال", "ريالات", "ريالان", false, "هللة", "هللات", true),
+            "د.إ" to CurrencyInfo("درهم إماراتي", "دراهم إماراتية", "درهمان إماراتيان", false, "فلس", "فلوس", false),
+            "ر.س" to CurrencyInfo("ريال سعودي", "ريالات سعودية", "ريالان سعوديان", false, "هللة", "هللات", true),
+            "د.ك" to CurrencyInfo("دينار كويتي", "دنانير كويتية", "ديناران كويتيان", false, "فلس", "فلوس", false),
+            "ر.ق" to CurrencyInfo("ريال قطري", "ريالات قطرية", "ريالان قطريان", false, "درهم", "دراهم", false),
+            "ر.ع" to CurrencyInfo("ريال عماني", "ريالات عمانية", "ريالان عمانيان", false, "بيسة", "بيسات", true),
+            "د.ب" to CurrencyInfo("دينار بحريني", "دنانير بحرينية", "ديناران بحرينيان", false, "فلس", "فلوس", false),
+            "ج.م" to CurrencyInfo("جنيه مصري", "جنيهات مصرية", "جنيهان مصريان", false, "قرش", "قروش", false),
+            "د.ت" to CurrencyInfo("دينار تونسي", "دنانير تونسية", "ديناران تونسيان", false, "مليم", "مليمات", false),
+            "د.ج" to CurrencyInfo("دينار جزائري", "دنانير جزائرية", "ديناران جزائريان", false, "سنتيم", "سنتيمات", false),
+            "ر.م" to CurrencyInfo("ريال مغربي", "ريالات مغربية", "ريالان مغربيان", false, "سنتيم", "سنتيمات", false)
         )
 
-        private val CURRENCY_PATTERNS_BEFORE = CURRENCY_SYMBOLS.map { (symbol, name) ->
-            Pattern.compile("""${Pattern.quote(symbol)}\s*(\d+(?:[.,]\d{3})*(?:[.,]\d+)?)\b""") to name
+        // أكواد العملات العالمية مع بياناتها النحوية الكاملة
+        private val CURRENCY_CODE_INFO = mapOf<String, CurrencyInfo>(
+            "USD" to CurrencyInfo("دولار أمريكي", "دولارات أمريكية", "دولاران أمريكيان", false, "سنت", "سنتات", false),
+            "EUR" to CurrencyInfo("يورو", "يورو", "يوروان", false, "سنت", "سنتات", false),
+            "GBP" to CurrencyInfo("جنيه استرليني", "جنيهات استرلينية", "جنيهان استرلينيان", false, "بنس", "بنسات", false),
+            "SAR" to CurrencyInfo("ريال سعودي", "ريالات سعودية", "ريالان سعوديان", false, "هللة", "هللات", true),
+            "AED" to CurrencyInfo("درهم إماراتي", "دراهم إماراتية", "درهمان إماراتيان", false, "فلس", "فلوس", false),
+            "KWD" to CurrencyInfo("دينار كويتي", "دنانير كويتية", "ديناران كويتيان", false, "فلس", "فلوس", false),
+            "QAR" to CurrencyInfo("ريال قطري", "ريالات قطرية", "ريالان قطريان", false, "درهم", "دراهم", false),
+            "OMR" to CurrencyInfo("ريال عماني", "ريالات عمانية", "ريالان عمانيان", false, "بيسة", "بيسات", true),
+            "BHD" to CurrencyInfo("دينار بحريني", "دنانير بحرينية", "ديناران بحرينيان", false, "فلس", "فلوس", false),
+            "EGP" to CurrencyInfo("جنيه مصري", "جنيهات مصرية", "جنيهان مصريان", false, "قرش", "قروش", false),
+            "TND" to CurrencyInfo("دينار تونسي", "دنانير تونسية", "ديناران تونسيان", false, "مليم", "مليمات", false),
+            "DZD" to CurrencyInfo("دينار جزائري", "دنانير جزائرية", "ديناران جزائريان", false, "سنتيم", "سنتيمات", false),
+            "MAD" to CurrencyInfo("درهم مغربي", "دراهم مغربية", "درهمان مغربيان", false, "سنتيم", "سنتيمات", false),
+            "JPY" to CurrencyInfo("ين ياباني", "ين ياباني", "ينان يابانيان", false, "سن", "سنات", false),
+            "CNY" to CurrencyInfo("يوان صيني", "يوانات صينية", "يوانان صينيان", false, "فن", "فنات", false),
+            "INR" to CurrencyInfo("روبية هندية", "روبيات هندية", "روبيتان هنديتان", true, "بيسة", "بيسات", true),
+            "KRW" to CurrencyInfo("وون كوري", "وون كوري", "وونان كوريان", false, "جون", "جونات", false),
+            "RUB" to CurrencyInfo("روبل روسي", "روبلات روسية", "روبلان روسيان", false, "كوبيك", "كوبيكات", false)
+        )
+
+        private val CURRENCY_PATTERNS_BEFORE = CURRENCY_SYMBOLS.map { (symbol, info) ->
+            Pattern.compile("""${Pattern.quote(symbol)}\s*(\d+(?:[.,]\d{3})*(?:[.,]\d+)?)\b""") to info
         }
-        private val CURRENCY_PATTERNS_AFTER = CURRENCY_SYMBOLS.map { (symbol, name) ->
-            Pattern.compile("""\b(\d+(?:[.,]\d{3})*(?:[.,]\d+)?)\s*${Pattern.quote(symbol)}""") to name
+        private val CURRENCY_PATTERNS_AFTER = CURRENCY_SYMBOLS.map { (symbol, info) ->
+            Pattern.compile("""\b(\d+(?:[.,]\d{3})*(?:[.,]\d+)?)\s*${Pattern.quote(symbol)}""") to info
         }
 
         private val UNIT_NAMES = listOf(
@@ -627,31 +671,32 @@ result = processCurrencies(result)
         return cleaned.toDoubleOrNull() ?: 0.0
     }
 
-    /** معالجة العملات: $100 → مائة دولار، 50€ → خمسون يورو */
+/** معالجة العملات: $100 → مائة دولار، $1 → دولار واحد، $3 → ثلاثة دولارات،
+     *  $1.50 → دولار واحد وخمسون سنتاً، 50€ → خمسون يورو */
     private fun processCurrencies(text: String): String {
         var result = text
 
         // رموز قبل المبلغ: $100
-        for ((pattern, name) in CURRENCY_PATTERNS_BEFORE) {
+        for ((pattern, info) in CURRENCY_PATTERNS_BEFORE) {
             val matcher = pattern.matcher(result)
             val buffer = StringBuffer()
             while (matcher.find()) {
                 val amount = parseAmount(matcher.group(1)!!)
-                val amountText = numberToWords(amount)
-                matcher.appendReplacement(buffer, Matcher.quoteReplacement("$amountText $name"))
+                val amountText = currencyAmountPhrase(amount, info)
+                matcher.appendReplacement(buffer, Matcher.quoteReplacement(amountText))
             }
             matcher.appendTail(buffer)
             result = buffer.toString()
         }
 
         // رموز بعد المبلغ: 100$
-        for ((pattern, name) in CURRENCY_PATTERNS_AFTER) {
+        for ((pattern, info) in CURRENCY_PATTERNS_AFTER) {
             val matcher = pattern.matcher(result)
             val buffer = StringBuffer()
             while (matcher.find()) {
                 val amount = parseAmount(matcher.group(1)!!)
-                val amountText = numberToWords(amount)
-                matcher.appendReplacement(buffer, Matcher.quoteReplacement("$amountText $name"))
+                val amountText = currencyAmountPhrase(amount, info)
+                matcher.appendReplacement(buffer, Matcher.quoteReplacement(amountText))
             }
             matcher.appendTail(buffer)
             result = buffer.toString()
@@ -664,34 +709,50 @@ result = processCurrencies(result)
         while (codeMatcher.find()) {
             val code = codeMatcher.group(1)!!
             val amount = parseAmount(codeMatcher.group(2)!!)
-            val name = when (code) {
-                "USD" -> "دولار أمريكي"
-                "EUR" -> "يورو"
-                "GBP" -> "جنيه استرليني"
-                "SAR" -> "ريال سعودي"
-                "AED" -> "درهم إماراتي"
-                "KWD" -> "دينار كويتي"
-                "QAR" -> "ريال قطري"
-                "OMR" -> "ريال عماني"
-                "BHD" -> "دينار بحريني"
-                "EGP" -> "جنيه مصري"
-                "TND" -> "دينار تونسي"
-                "DZD" -> "دينار جزائري"
-                "MAD" -> "درهم مغربي"
-                "JPY" -> "ين ياباني"
-                "CNY" -> "يوان صيني"
-                "INR" -> "روبية هندية"
-                "KRW" -> "وون كوري"
-                "RUB" -> "روبل روسي"
-                else -> code
+            val info = CURRENCY_CODE_INFO[code]
+            if (info == null) {
+                val amountText = numberToWords(amount)
+                codeMatcher.appendReplacement(codeBuffer, Matcher.quoteReplacement("$amountText $code"))
+            } else {
+                codeMatcher.appendReplacement(codeBuffer, Matcher.quoteReplacement(currencyAmountPhrase(amount, info)))
             }
-            val amountText = numberToWords(amount)
-            codeMatcher.appendReplacement(codeBuffer, Matcher.quoteReplacement("$amountText $name"))
         }
         codeMatcher.appendTail(codeBuffer)
         result = codeBuffer.toString()
 
         return result
+    }
+
+    /** نطق مبلغ عملة مع التوافق النحوي الكامل (مفرد/مثنى/جمع/كسور):
+     *  1 ← «دولار واحد»، 2 ← «دولاران»، 3–10 ← «ثلاثة دولارات»،
+     *  ما فوق ← «خمسة وعشرون دولاراً»، والكسور ← «وخمسون سنتاً». */
+    private fun currencyAmountPhrase(amount: Double, info: CurrencyInfo): String {
+        val whole = amount.toLong()
+        val fracHundredths = if (amount >= 0.0) Math.round((amount - whole) * 100.0).toInt() else 0
+        val fracPhrase = currencyFractionPhrase(fracHundredths, info)
+        // مبلغ كسري صرف (0.50$) → «خمسون سنت» بلا «و» افتتاحية.
+        if (whole == 0L && fracPhrase.isNotEmpty()) return fracPhrase
+
+        val wholePhrase = when {
+            whole == 0L -> "صفر ${info.name}"
+            whole == 1L -> "${info.name} ${if (info.isFeminine) "واحدة" else "واحد"}"
+            whole == 2L -> info.dual
+            whole in 3..10 -> "${unitNumberWord(whole.toInt(), info.isFeminine)} ${info.plural}"
+            else -> "${numberToWords(whole.toDouble())} ${info.name}"
+        }
+        return if (fracPhrase.isEmpty()) wholePhrase else "$wholePhrase و$fracPhrase"
+    }
+
+    /** نطق كسور المبلغ (أجزاء المئة) باسم الوحدة الفرعية:
+     *  .01 ← «سنت واحد»، .02 ← «سنتان»، .50 ← «خمسون سنت». */
+    private fun currencyFractionPhrase(hundredths: Int, info: CurrencyInfo): String {
+        if (hundredths <= 0) return ""
+        return when (hundredths) {
+            1 -> "${info.subunit} ${if (info.subunitFeminine) "واحدة" else "واحد"}"
+            2 -> if (info.subunitFeminine) "${info.subunit}تان" else "${info.subunit}ان"
+            in 3..10 -> "${unitNumberWord(hundredths, info.subunitFeminine)} ${info.subunitPlural}"
+            else -> "${numberToWords(hundredths.toDouble())} ${info.subunit}"
+        }
     }
 
     /** معالجة الوحدات: 5km → خمسة كيلومترات، 25°C → خمس وعشرون درجة مئوية */
@@ -728,7 +789,16 @@ result = processCurrencies(result)
             1 -> "${info.singular} ${if (info.isFeminine) "واحدة" else "واحد"}"
             2 -> info.dual
             in 3..10 -> "${unitNumberWord(n, info.isFeminine)} ${info.plural}"
-            else -> "${numberToWords(n.toDouble())} ${info.singular}"
+            else -> {
+                // المعدود المركّب (11–99 فما بين المئات) يلزم آحاده بالمؤنث مع
+                // المعدود المؤنث: «خمس وعشرون سنة» لا «خمسة وعشرون سنة».
+                val numberText = if (info.isFeminine && n in 11..9999) {
+                    NumberSpeech.toArabicWords(n, isFeminine = true)
+                } else {
+                    numberToWords(n.toDouble())
+                }
+                "$numberText ${info.singular}"
+            }
         }
     }
 
@@ -1161,17 +1231,34 @@ val num = number.toLong()
         return result
     }
 
-    /** مقياس مجموعة الأرقام (آلاف/ملايين/مليارات/تريليونات/كوادريليون/كوينتيليون). */
+    /** مقياس مجموعة الأرقام (آلاف/ملايين/مليارات/تريليونات/كوادريليون/كوينتيليون)
+ *  مع تمييزٍ نحوي صحيح:
+ *  - ساكن 1/2 ← مفرد/مثنى («ألف»، «ألفان»)،
+ *  - 3–10 ← جمع («خمسة آلاف»)،
+ *  - 11–99 ← مفرد منصوب («خمسة عشر ألفاً»)،
+ *  - 100 ← إضافة مجرورة («مائة ألف»)، 200 ← «مائتا ألف» (حذف نون المثنى)،
+ *  - مئات مضبوطة ← «ثلاثمائة ألف»، ومئات بآحاد 3–10 ← «مائة وخمسة آلاف». */
     private fun scaleForGroup(groupIndex: Int, group: Int, groupText: String): String {
         if (groupIndex == 0) return ""
-        return when (groupIndex) {
-            1 -> when (group) { 1 -> "ألف"; 2 -> "ألفان"; in 3..10 -> "$groupText آلاف"; else -> "$groupText ألفاً" }
-            2 -> when (group) { 1 -> "مليون"; 2 -> "مليونان"; in 3..10 -> "$groupText ملايين"; else -> "$groupText مليوناً" }
-            3 -> when (group) { 1 -> "مليار"; 2 -> "ملياران"; in 3..10 -> "$groupText مليارات"; else -> "$groupText ملياراً" }
-            4 -> when (group) { 1 -> "تريليون"; 2 -> "تريليونان"; in 3..10 -> "$groupText تريليونات"; else -> "$groupText تريليوناً" }
-            5 -> when (group) { 1 -> "كوادريليون"; 2 -> "كوادريليونان"; in 3..10 -> "$groupText كوادريليونات"; else -> "$groupText كوادريليوناً" }
-            6 -> when (group) { 1 -> "كوينتيليون"; 2 -> "كوينتيليونان"; in 3..10 -> "$groupText كوينتيليونات"; else -> "$groupText كوينتيليوناً" }
-            else -> ""
+        val scale = when (groupIndex) {
+            1 -> ScaleWords("ألف", "ألفان", "آلاف", "ألفاً", "ألف")
+            2 -> ScaleWords("مليون", "مليونان", "ملايين", "مليوناً", "مليون")
+            3 -> ScaleWords("مليار", "ملياران", "مليارات", "ملياراً", "مليار")
+            4 -> ScaleWords("تريليون", "تريليونان", "تريليونات", "تريليوناً", "تريليون")
+            5 -> ScaleWords("كوادريليون", "كوادريليونان", "كوادريليونات", "كوادريليوناً", "كوادريليون")
+            6 -> ScaleWords("كوينتيليون", "كوينتيليونان", "كوينتيليونات", "كوينتيليوناً", "كوينتيليون")
+            else -> return ""
+        }
+        if (group in 1..2) return if (group == 1) scale.one else scale.two
+        if (group in 3..10) return "$groupText ${scale.plural}"
+        if (group in 11..99) return "$groupText ${scale.accusative}"
+        val remainder = group % 100
+        return when {
+            group == 100 -> "مائة ${scale.inHundred}"
+            group == 200 -> "مائتا ${scale.inHundred}"
+            remainder == 0 -> "${convertHundreds(group)} ${scale.inHundred}"
+            remainder in 3..10 -> "$groupText ${scale.plural}"
+            else -> "$groupText ${scale.accusative}"
         }
     }
 

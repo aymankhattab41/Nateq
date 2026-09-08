@@ -232,6 +232,42 @@ class TextProcessorTest {
     }
 
     @Test
+    fun grammatical_alafScale_constructGenitive() {
+        // تمييز الآلاف بالإضافة المجرورة لا النصب:
+        assertEquals("مائة ألف", processor.process("100,000", "ar"))
+        // حذف نون المثنى عند الإضافة:
+        assertEquals("مائتا ألف", processor.process("200,000", "ar"))
+        // آحاد 5 بعد مئة → جمع آلاف:
+        assertEquals("مائة وخمسة آلاف", processor.process("105,000", "ar"))
+        // تمييز الملايين بالإضافة كذلك:
+        assertEquals("مليون ومائتا ألف وخمسمائة", processor.process("1,200,500", "ar"))
+        assertEquals("مائة مليون", processor.process("100,000,000", "ar"))
+        assertEquals("مائتا مليون", processor.process("200,000,000", "ar"))
+        // مئات مضبوطة:
+        assertEquals("ثلاثمائة ألف", processor.process("300,000", "ar"))
+    }
+
+    @Test
+    fun grammatical_feminineCounted_compound() {
+        // آحاد العدد المركّب تلزم بالمؤنث مع المعدود المؤنث:
+        assertEquals("خمس وعشرون سنة", processor.process("25 سنة", "ar"))
+        assertEquals("أربع عشرة سنة", processor.process("14 سنة", "ar"))
+        assertEquals("سبع وثلاثون ساعة", processor.process("37 س", "ar"))
+        assertEquals("خمس وثلاثون دقيقة", processor.process("35 د", "ar"))
+    }
+
+    @Test
+    fun grammatical_currency_singularPluralAndFractions() {
+        // 1 ← المال قبل العدد، 3 ← جمع، والكسور باسم وحدتها الفرعية:
+        assertEquals("دولار واحد", processor.process("""$1""", "ar"))
+        assertEquals("دولاران", processor.process("""$2""", "ar"))
+        assertEquals("ثلاثة دولارات", processor.process("""$3""", "ar"))
+        assertEquals("دولار واحد وخمسون سنت", processor.process("""$1.50""", "ar"))
+        assertEquals("خمسون سنت", processor.process("""0.50$""", "ar"))
+        assertEquals("عشرة ملايين دولار", processor.process("""$10,000,000""", "ar"))
+    }
+
+    @Test
     fun europeanDecimal_separatedDigits() {
         // التنسيق الأوروبي 1.234,56 = 1234.56.
         assertEquals("ألف ومائتان وأربعة وثلاثون فاصلة خمسة ستة", processor.process("1.234,56", "ar"))
