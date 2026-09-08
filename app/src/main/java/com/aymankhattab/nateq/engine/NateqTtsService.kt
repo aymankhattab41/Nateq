@@ -9,16 +9,18 @@ import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
 import android.util.Log
 import com.aymankhattab.nateq.providers.SystemVoiceProvider
+import com.aymankhattab.nateq.providers.VoiceDescriptor
 import com.aymankhattab.nateq.settings.SettingsRepository
 import com.aymankhattab.nateq.util.LocaleUtils
 import dagger.hilt.android.AndroidEntryPoint
+import java.io.ByteArrayOutputStream
+import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import java.util.Locale
 import javax.inject.Inject
 
 /**
@@ -41,6 +43,9 @@ class NateqTtsService : TextToSpeechService() {
          *  داخل الجلسة الطويلة إلا عند الحاجة؛ الاكتشاف يبقى مضموناً عند كل
          *  إنشاء لعملية :tts التي تُقتل بين الجلسات غالباً. */
         private const val DISCOVERY_TTL_MS = 60 * 60 * 1000L
+
+        /** أدنى معدل عينات موحّد لبث المقاطع المختلطة (22050 = معيار LORD). */
+        private const val MIN_UNIFIED_RATE = 22_050
     }
 
     /** مصدر الإعدادات الفريد لعملية:tts — يحقنه Hilt عبر NateqApplication
@@ -61,6 +66,9 @@ class NateqTtsService : TextToSpeechService() {
     private lateinit var catalog: VoiceCatalog
     private lateinit var requestHandler: SynthesisRequestHandler
     private lateinit var textProcessor: TextProcessor
+
+    /** مقسم النصوص المختلطة الكتابات (منطق نقي مشترك بلا حالة). */
+    private val segmenter = LanguageSegmenter()
 
     @Volatile private var currentJob: kotlinx.coroutines.Job? = null
 
@@ -240,99 +248,25 @@ class NateqTtsService : TextToSpeechService() {
                 // عن عملية الإعدادات (SettingsActivity)، وSharedPreferences لا يتشارك
                 // عبر العمليات. بدون reload() تبقى القيم القديمة محشوة في الذاكرة.
                 settings.reload()
-                // **التحويل التلقائي بين اللغات**:
-                // نفحص لغة الطلب ونحسب هدف التحويل. قيم الصوت (rate/pitch/volume)
-                // من حوار اللغة تُطبَّق دائماً، بينما تُفعَّل المحرك/اللغة فقط عند
-                // تفعيل checkbox (تُدار داخلياً في resolveConvertTarget).
-                val autoConvert = requestHandler.isAutoConvertEnabled()
-                val convertTarget = resolveConvertTarget(request.language)
+                // **بند 17 — النصوص المختلطة واللغات:**
+                // 1) تقسيم النص المختلط الكتابات (عربي/إنجليزي/غيرها) إلى مقاطع
+                //    لغوية يُنطق كلٌّ منها بمحركه وصوته المخصصين وصفوفِ لغته؛
+                // 2) حوار اللغات يعرض كل اللغات المكتشفة لا ar/en فقط (البنية
+                //    السفلية جاهزة فعلاً للغات غير محدودة)؛
+                // 3) غياب صوتٍ للغة يتراجع تلقائياً للصوت الافتراضي للجهاز بدل
+                //    قطع النطق كلياً عبر callback.error().
+                val rawText = request.charSequenceText.toString()
+                val segments = segmenter.segment(rawText, languageTag)
 
-                val voice = requestHandler.resolveVoiceForLocale(languageTag)
-                val provider = voice?.let { catalog.findProvider(it.providerId) }
-                // السرعة: نجمع بين قناة قارئ الشاشة وقناة إعداد LORD نفسه.
-                // - إذا ضبط المستخدم في سرعة LORD للغة/الافتراضية قيمةً مخزّنة
-                //   (≠1.0) فالأولوية لها حتى يؤثر إعداد LORD فعلاً.
-                // - وإلا (الافتراضي 1.0) نستعمل سرعة القارئ (request.getSpeechRate())
-                //   فيُتبع النظامُ/القارئ عندما لا يعرّف LORD قيمةً خاصة.
-                val lordRate = requestHandler.getSpeechRate(languageTag)
-                val reqRate = request.getSpeechRate().toFloat()
-                val speechRate: Float =
-                    if (lordRate != 1.0f) lordRate else if (reqRate > 0f) reqRate else lordRate
-                val pitch = requestHandler.getPitch(languageTag)
-                val volume = requestHandler.getVolume(languageTag)
-
-                // عند التفعيل نغلب إعدادات التحويل (السرعة/النبرة/الصوت) ونتجاهل
-                // صوت كتالوج LORD ضمنياً — نقدّم للمزوّد محركاً ولغةً محددين.
-                if (convertTarget != null) {
-                    Log.d(TAG, "onSynthesizeText AUTO-CONVERT lang=$languageTag engine=${convertTarget.convertEngine} loc=${convertTarget.convertLocale} rate=${convertTarget.convertRate}")
+                if (segments.size == 1) {
+                    // نص بلغةٍ واحدة: نفس التدفق التفصيلي السابق حرفياً بلا أي
+                    // تغيير سلوكي — صفر تكلفة للمسار الأكثر شيوعاً.
+                    synthesizeSingle(rawText, languageTag, callback, request)
+                } else {
+                    // نص مختلط الكتابات: نطق كل مقطع بلغته/محركه ثم مزج الصوت
+                    // بمعدلٍ موحّد عبر بثٍّ واحد (مونو).
+                    synthesizeMixed(segments, callback)
                 }
-                Log.d(TAG, "onSynthesizeText lang=$languageTag lordRate=$lordRate reqRate=$reqRate usedRate=$speechRate voice=${voice?.id} provider=${provider?.providerId} autoConvert=$autoConvert")
-
-                if (voice == null || provider == null) {
-                    Log.e(TAG, "onSynthesizeText لا صوت/مزود: voice=$voice provider=$provider")
-                    callback.error()
-                    return@launch
-                }
-
-                // Process text through TextProcessor (numbers, dates, currencies, etc.)
-                val processedText = textProcessor.process(request.charSequenceText.toString(), languageTag)
-
-                // **توجيه locale حسب لغة النص:** engine/locale من التحويل لا يُمرَّران
-                // إلا إذا كانت لغة الهدف تطابق لغة النص الطالبة. هذا يمنع إعادة توجيه
-                // النص الإنجليزي إلى محرك/لغة عربية (locale=ar) وبالعكس، مع بقاء
-                // أشرطة السرعة/النبرة/الصوت تُطبّق دائماً على النص نفسه.
-                val convertLang = convertTarget?.convertLocale?.language
-                val matchesRequest = convertLang == null || normLanguage == convertLang
-                        || (normLanguage == "ar" && convertLang == "ara")
-                        || (normLanguage == "en" && convertLang == "eng")
-
-                val finalRate = convertTarget?.let { it.convertRate } ?: speechRate
-                val finalPitch = convertTarget?.let { it.convertPitch } ?: pitch
-                val finalVolume = convertTarget?.let { it.convertVolume } ?: volume
-                val finalEngine = if (matchesRequest) convertTarget?.let { it.convertEngine } else null
-                val finalLocale = if (matchesRequest) convertTarget?.let { it.convertLocale } else null
-                val finalVoiceName = if (matchesRequest) convertTarget?.let { it.convertVoiceName } else null
-
-                // تخليق الصوت الفعلي عبر المزوّد. يُبلّغنا التنسيق (معدل عينات/قنوات) قبل
-                // أول شريحة، فنبدأ callback.start بالقيم الفعلية بدل 22050 الثابتة التي
-                // كانت تجعل Android يشغّل ملفات 24k/44.1k بسرعة ونبرة خاطئتين.
-                var started = false
-                provider.synthesize(processedText, voice, finalRate, finalPitch, finalVolume, { sampleRateInHz, channelCount ->
-                    if (!started) {
-                        callback.start(
-                            /* sampleRateInHz = */ sampleRateInHz,
-                            /* audioFormat = */ android.media.AudioFormat.ENCODING_PCM_16BIT,
-                            /* channelCount = */ channelCount
-                        )
-                        started = true
-                    }
-                }, { chunk, validLength ->
-                    // ضمانة: إن لم يبلّغ المزوّد بالتنسيق مطلقاً نبدأ بالقيم
-                    // الافتراضية قبل أول بايت حتى يبقى التخليق صالحاً دائماً.
-                    if (!started) {
-                        callback.start(
-                            /* sampleRateInHz = */ 22050,
-                            /* audioFormat = */ android.media.AudioFormat.ENCODING_PCM_16BIT,
-                            /* channelCount = */ 1
-                        )
-                        started = true
-                    }
-                    // المنهج المُثبَت (كما في TtsService الرسمي لـ espeak-ng/MultiTTS):
-                    // لا يجوز تمرير كامل المخزن المؤقت دفعةً واحدة؛ يُقسَّم إلى أجزاء
-                    // بمقدار callback.getMaxBufferSize() وإلا يرفض النظام التخليق
-                    // ويهبط الصوت. نقسّم كل دفعة من المزوّد احتراماً لقيود الـ callback.
-                    // المعامل الثاني (validLength) هو طول البيانات الصالح الصريح —
-                    // فقد تكون مصفوفة الشريحة بحجم أكبر من بياناتها الفعلية (مسبح
-                    // مُعاد استخدامه)، فيُمسح حتى length فقط.
-                    val maxBytes = callback.maxBufferSize
-                    var offset = 0
-                    while (offset < validLength) {
-                        val bytesToWrite = minOf(maxBytes, validLength - offset)
-                        callback.audioAvailable(chunk, offset, bytesToWrite)
-                        offset += bytesToWrite
-                    }
-                }, finalEngine, finalLocale, finalVoiceName)
-                callback.done()
             } catch (e: CancellationException) {
                 // إلغاء صريح (onStop): لا نكمل ولا نُطلق خطأً زائفاً — النظام
                 // يعرف أن النطق أُوقف عمداً وسيكون على اتصاله مع onStop.
@@ -343,6 +277,234 @@ class NateqTtsService : TextToSpeechService() {
         }
         // لا ننتظر انتهاء التخليق (لا runBlocking): الإرجاع فوري والـ callbacks
         // تُستلم لاحقاً من خيط المزوّد — النطق غير حاجز بالكامل كما هو موثّق أعلاه.
+    }
+
+    /** حل الصوت للغةٍ معيّنة مع التراجع التلقائي (بند 17.3): صوت الكتالوج
+     *  المفضّل للغة إن وُجد، وإلا صوتٌ افتراضي للمزود النظامي (محرك الجهاز
+     *  الافتراضي + لغة الطلب) حتى لا يُقطع النطق عند غياب صوتٍ مخصص. الصوت
+     *  المُرجَع دائماً موجود (fallback يضمنه)؛ المزود وحده قد يكون غائباً
+     *  عند فساد الكتالوج فيُعالَج في مواقع الاستدعاء. */
+    private suspend fun resolveVoiceWithFallback(
+        languageTag: String
+    ): Pair<VoiceDescriptor, com.aymankhattab.nateq.providers.VoiceProvider?> {
+        val voice = requestHandler.resolveVoiceForLocale(languageTag)
+        if (voice != null) {
+            return voice to catalog.findProvider(voice.providerId)
+        }
+        Log.w(TAG, "resolveVoiceWithFallback: لا صوت بالكتالوج للغة $languageTag — تراجع لصوت الجهاز الافتراضي")
+        val fallbackVoice = VoiceDescriptor(
+            id = "",
+            providerId = SystemVoiceProvider.SYSTEM_PROVIDER_ID,
+            displayName = "Device Default",
+            locale = Locale.forLanguageTag(languageTag)
+        )
+        return fallbackVoice to catalog.findProvider(SystemVoiceProvider.SYSTEM_PROVIDER_ID)
+    }
+
+    /** المسار الأحادي (نص بلغةٍ واحدة) — نفس التدفق التفصيلي السابق حرفياً:
+     *  حل الصوت (مع تراجع الجهاز الافتراضي)، التحويل التلقائي، أشرطة اللغة، ثم
+     *  تخليق وبث مباشر عبر المزوّد بتقسيم المخزن المؤقت المُثبَت. */
+    private suspend fun synthesizeSingle(
+        rawText: String,
+        languageTag: String,
+        callback: SynthesisCallback,
+        request: SynthesisRequest
+    ) {
+        val (voice, foundProvider) = resolveVoiceWithFallback(languageTag)
+        val provider = foundProvider ?: run {
+            Log.e(TAG, "synthesizeSingle لا مزود متاح إطلاقاً: lang=$languageTag")
+            callback.error()
+            return
+        }
+        val autoConvert = requestHandler.isAutoConvertEnabled()
+        val convertTarget = resolveConvertTarget(request.language)
+        // السرعة: نجمع بين قناة قارئ الشاشة وقناة إعداد LORD نفسه.
+        // - إذا ضبط المستخدم في سرعة LORD للغة/الافتراضية قيمةً مخزّنة
+        //   (≠1.0) فالأولوية لها حتى يؤثر إعداد LORD فعلاً.
+        // - وإلا (الافتراضي 1.0) نستعمل سرعة القارئ (request.getSpeechRate())
+        //   فيُتبع النظامُ/القارئ عندما لا يعرّف LORD قيمةً خاصة.
+        val lordRate = requestHandler.getSpeechRate(languageTag)
+        val reqRate = request.getSpeechRate().toFloat()
+        val speechRate: Float =
+            if (lordRate != 1.0f) lordRate else if (reqRate > 0f) reqRate else lordRate
+        val pitch = requestHandler.getPitch(languageTag)
+        val volume = requestHandler.getVolume(languageTag)
+
+        // عند التفعيل نغلب إعدادات التحويل (السرعة/النبرة/الصوت) ونتجاهل
+        // صوت كتالوج LORD ضمنياً — نقدّم للمزوّد محركاً ولغةً محددين.
+        if (convertTarget != null) {
+            Log.d(TAG, "synthesizeSingle AUTO-CONVERT lang=$languageTag engine=${convertTarget.convertEngine} loc=${convertTarget.convertLocale} rate=${convertTarget.convertRate}")
+        }
+        Log.d(TAG, "synthesizeSingle lang=$languageTag lordRate=$lordRate reqRate=$reqRate usedRate=$speechRate voice=${voice.id} provider=${provider.providerId} autoConvert=$autoConvert")
+
+        // Process text through TextProcessor (numbers, dates, currencies, etc.)
+        val processedText = textProcessor.process(rawText, languageTag)
+
+        // **توجيه locale حسب لغة النص:** engine/locale من التحويل لا يُمرَّران
+        // إلا إذا كانت لغة الهدف تطابق لغة النص الطالبة. هذا يمنع إعادة توجيه
+        // النص الإنجليزي إلى محرك/لغة عربية (locale=ar) وبالعكس، مع بقاء
+        // أشرطة السرعة/النبرة/الصوت تُطبّق دائماً على النص نفسه.
+        val convertLang = convertTarget?.convertLocale?.language
+        val normLanguage = normalizeLanguageCode(request.language)
+        val matchesRequest = convertLang == null || normLanguage == convertLang
+                || (normLanguage == "ar" && convertLang == "ara")
+                || (normLanguage == "en" && convertLang == "eng")
+
+        val finalRate = convertTarget?.let { it.convertRate } ?: speechRate
+        val finalPitch = convertTarget?.let { it.convertPitch } ?: pitch
+        val finalVolume = convertTarget?.let { it.convertVolume } ?: volume
+        val finalEngine = if (matchesRequest) convertTarget?.let { it.convertEngine } else null
+        val finalLocale = if (matchesRequest) convertTarget?.let { it.convertLocale } else null
+        val finalVoiceName = if (matchesRequest) convertTarget?.let { it.convertVoiceName } else null
+
+        // تخليق الصوت الفعلي عبر المزوّد. يُبلّغنا التنسيق (معدل عينات/قنوات) قبل
+        // أول شريحة، فنبدأ callback.start بالقيم الفعلية بدل 22050 الثابتة التي
+        // كانت تجعل Android يشغّل ملفات 24k/44.1k بسرعة ونبرة خاطئتين.
+        var started = false
+        provider.synthesize(processedText, voice, finalRate, finalPitch, finalVolume, { sampleRateInHz, channelCount ->
+            if (!started) {
+                callback.start(
+                    /* sampleRateInHz = */ sampleRateInHz,
+                    /* audioFormat = */ android.media.AudioFormat.ENCODING_PCM_16BIT,
+                    /* channelCount = */ channelCount
+                )
+                started = true
+            }
+        }, { chunk, validLength ->
+            // ضمانة: إن لم يبلّغ المزوّد بالتنسيق مطلقاً نبدأ بالقيم
+            // الافتراضية قبل أول بايت حتى يبقى التخليق صالحاً دائماً.
+            if (!started) {
+                callback.start(
+                    /* sampleRateInHz = */ 22050,
+                    /* audioFormat = */ android.media.AudioFormat.ENCODING_PCM_16BIT,
+                    /* channelCount = */ 1
+                )
+                started = true
+            }
+            // المنهج المُثبَت (كما في TtsService الرسمي لـ espeak-ng/MultiTTS):
+            // لا يجوز تمرير كامل المخزن المؤقت دفعةً واحدة؛ يُقسَّم إلى أجزاء
+            // بمقدار callback.getMaxBufferSize() وإلا يرفض النظام التخليق
+            // ويهبط الصوت. نقسّم كل دفعة من المزوّد احتراماً لقيود الـ callback.
+            // المعامل الثاني (validLength) هو طول البيانات الصالح الصريح —
+            // فقد تكون مصفوفة الشريحة بحجم أكبر من بياناتها الفعلية (مسبح
+            // مُعاد استخدامه)، فيُمسح حتى length فقط.
+            val maxBytes = callback.maxBufferSize
+            var offset = 0
+            while (offset < validLength) {
+                val bytesToWrite = minOf(maxBytes, validLength - offset)
+                callback.audioAvailable(chunk, offset, bytesToWrite)
+                offset += bytesToWrite
+            }
+        }, finalEngine, finalLocale, finalVoiceName)
+        callback.done()
+    }
+
+    /** النص المختلط الكتابات: لكل مقطعٍ لغوي يُعالَج النص بدليل لغته (العربية
+     *  بقنواتها الكاملة وسواها بالتنظيف فقط)، ويُحل صوت المقطع من كتالوجه أو من
+     *  تراجع الجهاز الافتراضي، ويُخلَّق بلغته ومحركِه — ثم تُعاد عينات مخرجات
+     *  المقاطع المختلفة إلى معيارٍ صوتي موحّد (المعدل الأعلى ≥22050، مونو) فتُدفع
+     *  كلها دفعةً واحدة عبر callback بنفس تقسيم getMaxBufferSize المُثبَت.
+     *
+     * مقطعٌ يعجز محركُه عن التخليق يُسقط وحده (يُسجَّل ويُكمل البقية) بدل قطع
+     * النطق كلياً؛ وإن فشل الكل تُرك callback.error() كملاذٍ أخير. */
+    private suspend fun synthesizeMixed(
+        segments: List<Segment>,
+        callback: SynthesisCallback
+    ) {
+        class SegmentAudio(val pcm: ByteArray, val rate: Int, val channels: Int)
+
+        val audios = ArrayList<SegmentAudio>()
+        var highestRate = MIN_UNIFIED_RATE
+        for (segment in segments) {
+            val segTag = segment.languageTag
+            val processed = textProcessor.process(segment.text, segTag)
+            val (voice, foundProvider) = resolveVoiceWithFallback(segTag)
+            val provider = foundProvider
+            if (provider == null) {
+                Log.w(TAG, "synthesizeMixed: لا مزود لمقطع $segTag — يُسقط وحده: ${segment.text}")
+                continue
+            }
+            val segRate = requestHandler.getSpeechRate(segTag)
+            val segPitch = requestHandler.getPitch(segTag)
+            val segVolume = requestHandler.getVolume(segTag)
+            val convert = resolveConvertTarget(segTag)
+            val segLang = segTag.takeWhile { it.isLetter() }
+            val convertLang = convert?.convertLocale?.language
+            val matches = convertLang == null || segLang == convertLang
+            val finalRate = convert?.convertRate ?: segRate
+            val finalPitch = convert?.convertPitch ?: segPitch
+            val finalVolume = convert?.convertVolume ?: segVolume
+            val finalEngine = if (matches) convert?.convertEngine else null
+            val finalLocale = if (matches) convert?.convertLocale else null
+            val finalVoiceName = if (matches) convert?.convertVoiceName else null
+
+            val pcmOut = ByteArrayOutputStream()
+            var nativeRate = 0
+            var nativeChannels = 1
+            val rendered = try {
+                provider.synthesize(
+                    processed,
+                    voice,
+                    finalRate,
+                    finalPitch,
+                    finalVolume,
+                    { sampleRateInHz, channelCount ->
+                        nativeRate = sampleRateInHz
+                        nativeChannels = channelCount
+                    },
+                    { chunk, validLength ->
+                        // الشريحة قد تأتي من مسبحٍ مُعاد استخدامه؛ يُنسخ فوراً.
+                        pcmOut.write(chunk, 0, validLength)
+                    },
+                    finalEngine,
+                    finalLocale,
+                    finalVoiceName
+                )
+                true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                Log.w(TAG, "synthesizeMixed: مقطع $segTag فشل تخليقه — يُسقط وحده", t)
+                false
+            }
+            if (!rendered || pcmOut.size() == 0) continue
+            if (nativeRate <= 0) nativeRate = MIN_UNIFIED_RATE
+            if (nativeRate > highestRate) highestRate = nativeRate
+            audios.add(SegmentAudio(pcmOut.toByteArray(), nativeRate, nativeChannels))
+        }
+        if (audios.isEmpty()) {
+            callback.error()
+            return
+        }
+
+        // البث الموحّد: تُعاد عينات كل مقطع إلى معيار واحد ثم تُدفع تباعاً.
+        var started = false
+        val maxBytes = callback.maxBufferSize
+        for (audio in audios) {
+            val mono = PcmResampler.convert(audio.pcm, audio.rate, audio.channels, highestRate)
+            if (!started) {
+                callback.start(
+                    /* sampleRateInHz = */ highestRate,
+                    /* audioFormat = */ android.media.AudioFormat.ENCODING_PCM_16BIT,
+                    /* channelCount = */ 1
+                )
+                started = true
+            }
+            var offset = 0
+            while (offset < mono.size) {
+                val bytesToWrite = minOf(maxBytes, mono.size - offset)
+                callback.audioAvailable(mono, offset, bytesToWrite)
+                offset += bytesToWrite
+            }
+        }
+        if (!started) {
+            callback.start(
+                /* sampleRateInHz = */ highestRate,
+                /* audioFormat = */ android.media.AudioFormat.ENCODING_PCM_16BIT,
+                /* channelCount = */ 1
+            )
+        }
+        callback.done()
     }
 
     /**

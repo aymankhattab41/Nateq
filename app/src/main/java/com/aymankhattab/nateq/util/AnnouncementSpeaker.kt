@@ -11,6 +11,8 @@ import android.util.Log
 import com.aymankhattab.nateq.NateqApplication
 import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
 import com.aymankhattab.nateq.engine.EmojiSpeech
+import com.aymankhattab.nateq.engine.LanguageSegmenter
+import com.aymankhattab.nateq.engine.Segment
 import com.aymankhattab.nateq.engine.SpeechPart
 import com.aymankhattab.nateq.providers.EnginePicker
 import com.aymankhattab.nateq.settings.SettingsRepository
@@ -90,6 +92,9 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
 
     private var tts: TextToSpeech? = null
     private var nowSpeaking = false
+
+    /** مقسم النصوص المختلطة الكتابات داخل إعلانات التطبيق (منطق نقي بلا حالة). */
+    private val languageSegmenter = LanguageSegmenter()
 
     /**
      * خطاف يُستدعى عند اكتمال آخر جملة في دورة النطق الحالية (onDone/onError
@@ -331,7 +336,9 @@ AudioManager.AUDIOFOCUS_REQUEST_FAILED ->
         }
     }
 
-    /** ينطق المقاطع بالتتابع: النص بصوت الإعلان، وأسماء الإيموجي بصوت فئتها. */
+    /** ينطق المقاطع بالتتابع: النصوص بصوت الإعلان (النص المختلط الكتابات
+     *  يُقسَّم إلى مقاطع لغوية فيُنطق كلٌّ بلغته وصوته — بند 17)، وأسماء
+     *  الإيموجي بصوت فئتها. */
     private fun doSpeakParts(
         text: String,
         locale: Locale,
@@ -342,26 +349,95 @@ AudioManager.AUDIOFOCUS_REQUEST_FAILED ->
         parts: List<SpeechPart>?,
         attempt: Int
     ) {
-        val segments = parts ?: listOf(SpeechPart(text, false))
-        segments.forEachIndexed { index, part ->
+        val units = buildSpeakUnits(text, locale, speechRate, pitch, volume, emojiCfg, parts)
+        units.forEachIndexed { index, unit ->
             val queueMode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+            doSpeak(
+                unit.text,
+                unit.locale,
+                unit.rate,
+                unit.pitch,
+                unit.volume,
+                partVoice = unit.voiceId,
+                queueMode = queueMode,
+                attempt = attempt
+            )
+        }
+    }
+
+    /** وحدة نطق مستقلة بمعاملاتها (لغة/صوت/أشرطة) داخل دورة الإعلان الواحدة. */
+    private data class SpeakUnit(
+        val text: String,
+        val locale: Locale,
+        val rate: Float,
+        val pitch: Float,
+        val volume: Float,
+        val voiceId: String?
+    )
+
+    private fun buildSpeakUnits(
+        text: String,
+        locale: Locale,
+        speechRate: Float,
+        pitch: Float,
+        volume: Float,
+        emojiCfg: EmojiSpeechConfig?,
+        parts: List<SpeechPart>?
+    ): List<SpeakUnit> {
+        val units = ArrayList<SpeakUnit>()
+        val segments = parts ?: listOf(SpeechPart(text, false))
+        segments.forEach { part ->
             if (part.isEmojiName && emojiCfg != null) {
                 val emojiLocale = if (emojiCfg.arabic) {
                     Locale.forLanguageTag("ar")
                 } else {
                     Locale.forLanguageTag("en")
                 }
-                doSpeak(
-                    part.text, emojiLocale, emojiCfg.rate, emojiCfg.pitch, emojiCfg.volume,
-                    partVoice = emojiCfg.voiceId, queueMode = queueMode, attempt = attempt
+                units.add(
+                    SpeakUnit(part.text, emojiLocale, emojiCfg.rate, emojiCfg.pitch,
+                        emojiCfg.volume, emojiCfg.voiceId)
                 )
             } else {
-                doSpeak(
-                    part.text, locale, speechRate, pitch, volume,
-                    partVoice = voiceId, queueMode = queueMode, attempt = attempt
-                )
+                addLanguageUnits(units, part.text, locale, speechRate, pitch, volume)
             }
         }
+        return units
+    }
+
+    /** يضمّ نصاً (قد يكون مختلط الكتابات) للوحدات كلٍّ بلغةٍ مناسبة: عربي ← صوت
+     *  الإعلان الحالي ولغته، إنجليزية/غيرها ← الصوت الإنجليزي المفضّل (إن حُفظ)
+     *  وإلا صوت الإعلان إن كان إنجليزياً وإلا لسان محركٍ إنجليزي (بند 17). */
+    private fun addLanguageUnits(
+        out: MutableList<SpeakUnit>,
+        text: String,
+        baseLocale: Locale,
+        baseRate: Float,
+        basePitch: Float,
+        baseVolume: Float
+    ) {
+        val languageSegments = runCatching {
+            languageSegmenter.segment(text, "ar")
+        }.getOrDefault(emptyList())
+        val effective = if (languageSegments.isEmpty()) listOf(Segment(text, "ar"))
+        else languageSegments
+        val enVoice = englishFallbackVoice()
+        effective.forEach { segment ->
+            val arabic = segment.languageTag.startsWith("ar", ignoreCase = true)
+            val segmentLocale = if (arabic) baseLocale else Locale.forLanguageTag("en")
+            val segmentVoice = if (arabic) voiceId else enVoice
+            out.add(SpeakUnit(segment.text, segmentLocale, baseRate, basePitch, baseVolume, segmentVoice))
+        }
+    }
+
+    /** صوتُ الإنجليزية المفضّل لسقوط مقاطع «en» في الإعلانات المختلطة. */
+    private fun englishFallbackVoice(): String? {
+        // صوتُ EN المخصص (إن حُفظ في إعدادات اللغة)؛ وإلا صوت الإعلان الحالي
+        // إن كان إنجليزياً؛ وإلا null ← المحرك يعلّق Locale("en") بنفسه.
+        return runCatching {
+            (appContext as? NateqApplication)?.settingsRepository
+                ?: SettingsRepository(appContext)
+        }.getOrNull()?.getPreferredVoiceId("en")
+            ?: if (isEnglishVoiceName(voiceId)) voiceId else null
     }
 
     private fun doSpeak(

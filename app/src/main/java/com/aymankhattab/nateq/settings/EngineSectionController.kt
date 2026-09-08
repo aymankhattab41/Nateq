@@ -220,23 +220,14 @@ internal class EngineSectionController(
     }
 
     /**
-     * يُبني صفو اللغتين الثابتتين (الوضع المزدوج) حصراً: العربية والإنجليزية
-     * تُبنى في التطبيق دائماً بلا اكتشاف — لا تُعرض أي لغة إضافية مهما اكتشف
-     * المحركات، حتى لو أعلن اكتشافُها لغاتٍ أُخرى. المحركات والأصوات تبقى
-     * مستقراةً من الجهاز (لا تُبنى الأصوات نظرياً)، وتُقرأ من خريطة الاكتشاف
-     * لمطابقة اللغتين الثابتتين فقط.
+     * يُبني قائمة صفوف اللغات من خريطة الاكتشاف القصوى: العربية والإنجليزية
+     * مضمونتان دائماً في المقدمة (حتى إن لم تُكتشفا من أي محرك)، ثم بقية اللغات
+     * المكتشفة فعلياً عبر كل المحركات المثبتة مرتّبة أبجدياً — لا حصر ثنائياً
+     * بأي لغة. المحركات والأصوات تبقى مستقراة من الجهاز وليست نظرية.
      */
     private fun buildLanguageRows(
         discovered: Map<String, List<EngineWithVoices>>
-    ): List<LanguageRow> {
-        return listOf("ar", "en").map { tag ->
-            LanguageRow(
-                languageTag = tag,
-                displayName = Locale.forLanguageTag(tag).displayName,
-                engines = discovered[tag].orEmpty()
-            )
-        }
-    }
+    ): List<LanguageRow> = buildAllLanguageRows(discovered)
 
     /** يُشغّل تكليفاً تجريبياً عبر محرك مؤقت بأية القيم المختارة دون حفظ */
     @Suppress("DEPRECATION")
@@ -313,6 +304,25 @@ internal class EngineSectionController(
             runCatching { previewTts?.shutdown() }
             return
         }
+    }
+}
+
+/** بناء صفوف لغات التحويل من الناتج الاكتشافي الكامل: «ar» و«en» مضمونتان في
+ *  المقدمة دائماً (حتى لو لم تظهرا في الاكتشاف)، ثم بقية اللغات المرتّبة
+ *  أبجدياً — بلا أي حصر ثنائيّ في اللغتين (بند 17.2: إتاحة كل اللغات المكتشفة). */
+internal fun buildAllLanguageRows(
+    discovered: Map<String, List<EngineWithVoices>>
+): List<LanguageRow> {
+    val tags = LinkedHashSet<String>()
+    tags.add("ar")
+    tags.add("en")
+    discovered.keys.sorted().forEach { tags.add(it) }
+    return tags.map { tag ->
+        LanguageRow(
+            languageTag = tag,
+            displayName = Locale.forLanguageTag(tag).displayName,
+            engines = discovered[tag].orEmpty()
+        )
     }
 }
 

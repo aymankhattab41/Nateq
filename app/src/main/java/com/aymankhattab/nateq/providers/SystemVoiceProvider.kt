@@ -69,6 +69,9 @@ class SystemVoiceProvider(
     companion object {
         private const val TAG = "NATEQ_TTS"
 
+        /** معرف مزود نظام TTS — يُستخدم للتراجع الافتراضي للصوت والمسارات العامة. */
+        const val SYSTEM_PROVIDER_ID = "system"
+
         /** قيمة احتياطية إذا تعذّر قراءة ترويسة WAV (تطابق القيمة السابقة ثابتة). */
         private const val FALLBACK_SAMPLE_RATE = 22050
 
