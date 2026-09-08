@@ -14,7 +14,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
-import com.aymankhattab.nateq.R
+import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
 import com.aymankhattab.nateq.util.announceCompat
 import com.google.android.material.switchmaterial.SwitchMaterial

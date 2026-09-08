@@ -24,7 +24,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.core.data.UpdateChecker
 import androidx.recyclerview.widget.RecyclerView
-import com.aymankhattab.nateq.R
+import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
 import com.aymankhattab.nateq.engine.NumberSpeech
 import com.aymankhattab.nateq.engine.PronunciationDictionary

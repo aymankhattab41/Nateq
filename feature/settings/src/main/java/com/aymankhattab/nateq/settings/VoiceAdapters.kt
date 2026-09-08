@@ -8,7 +8,7 @@ import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
-import com.aymankhattab.nateq.R
+import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription

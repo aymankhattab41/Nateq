@@ -10,7 +10,7 @@ import com.aymankhattab.nateq.util.setSeekStateDescription
 import android.widget.Spinner
 import android.widget.TextView
 import androidx.core.content.ContextCompat
-import com.aymankhattab.nateq.R
+import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
 import com.aymankhattab.nateq.core.audio.announcement.NateqNotificationListener
 import com.aymankhattab.nateq.util.announceCompat

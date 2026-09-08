@@ -8,7 +8,7 @@ import android.widget.ArrayAdapter
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
-import com.aymankhattab.nateq.R
+import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.audio.engine.EngineWithVoices
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.util.announceCompat

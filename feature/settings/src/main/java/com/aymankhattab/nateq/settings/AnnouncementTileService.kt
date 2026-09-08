@@ -3,7 +3,7 @@ package com.aymankhattab.nateq.settings
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.util.Log
-import com.aymankhattab.nateq.R
+import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
 import dagger.hilt.android.AndroidEntryPoint

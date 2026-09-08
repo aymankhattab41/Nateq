@@ -10,7 +10,7 @@ import android.os.Environment
 import android.os.StatFs
 import android.view.View
 import android.widget.Toast
-import com.aymankhattab.nateq.R
+import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.engine.NumberSpeech
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.LanguageCode

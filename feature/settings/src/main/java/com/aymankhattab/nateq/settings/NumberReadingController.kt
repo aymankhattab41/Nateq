@@ -4,7 +4,7 @@ import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Spinner
-import com.aymankhattab.nateq.R
+import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.announceCompat
 import java.util.Locale

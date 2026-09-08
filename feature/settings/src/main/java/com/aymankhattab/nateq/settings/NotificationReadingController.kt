@@ -4,7 +4,7 @@ import android.content.Intent
 import android.provider.Settings
 import android.view.View
 import android.widget.Toast
-import com.aymankhattab.nateq.R
+import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
 import com.aymankhattab.nateq.core.audio.announcement.NateqNotificationListener
 import com.aymankhattab.nateq.util.announceCompat
