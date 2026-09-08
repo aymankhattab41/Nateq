@@ -71,6 +71,10 @@
 <string name="check_updates_downloading_title">Downloading the update</string>
 <string name="check_updates_network_error">Could not reach the server. Check your internet connection</string>
 <string name="check_updates_up_to_date">App is up to date</string>
+<string name="check_updates_confirm_title">Update available</string>
+<string name="check_updates_confirm_message">A newer version of the app is available. Do you want to download it now?</string>
+<string name="check_updates_confirm_yes">Yes</string>
+<string name="check_updates_confirm_no">No</string>
 <string name="clock_widget_enabled">Clock widget on the home screen</string>
 <string name="collapse">Collapse</string>
 <string name="contact_developer">Contact the developer</string>

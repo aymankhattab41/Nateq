@@ -72,6 +72,10 @@
 <string name="check_updates_downloading_title">تنزيل الإصدار الجديد</string>
 <string name="check_updates_network_error">تعذّر الوصول للخادم. تحقق من اتصال الإنترنت</string>
 <string name="check_updates_up_to_date">التطبيق محدّث لأحدث إصدار</string>
+<string name="check_updates_confirm_title">يتوفر تحديث جديد</string>
+<string name="check_updates_confirm_message">يتوفر إصدار أحدث من التطبيق. هل تريد تنزيله الآن؟</string>
+<string name="check_updates_confirm_yes">نعم</string>
+<string name="check_updates_confirm_no">لا</string>
 <string name="clock_widget_enabled">أداة الساعة على الشاشة الرئيسية</string>
 <string name="collapse">إخفاء المحتوى</string>
 <string name="contact_developer">راسل المطور</string>

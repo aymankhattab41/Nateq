@@ -866,7 +866,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         performUpdateCheck(showFeedback = true)
     }
 
-    /** منطق الفحص المشترك: إن وُجد تحديث يبدأ التنزيل مباشرة (بلا نافذة تأكيد). */
+    /** منطق الفحص المشترك: إن وُجد تحديث يعرض حوار «نعم/لا» قبل التنزيل. */
     private fun performUpdateCheck(showFeedback: Boolean) {
         val context = requireContext()
         val currentName = runCatching {
@@ -883,7 +883,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         viewLifecycleOwner.lifecycleScope.launch {
             when (val res = UpdateChecker.check(currentName)) {
                 is UpdateChecker.CheckResult.UpdateAvailable -> {
-                    startApkDownload(context, res.apkUrl)
+                    promptDownloadUpdate(context, res.apkUrl)
                 }
                 is UpdateChecker.CheckResult.UpToDate -> {
                     if (showFeedback) {
@@ -905,7 +905,19 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
     }
 
-    /** ينزّل الـ APK مباشرة ويعرض إشعاراً بأن التنزيل بدأ (لا نافذة تأكيد). */
+    /** حوار تأكيد قبل التنزيل: يسأل المستخدم إن كان يريد تنزيل التحديث (نعم/لا). */
+    private fun promptDownloadUpdate(context: android.content.Context, apkUrl: String) {
+        MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.check_updates_confirm_title)
+            .setMessage(R.string.check_updates_confirm_message)
+            .setPositiveButton(R.string.check_updates_confirm_yes) { _, _ ->
+                startApkDownload(context, apkUrl)
+            }
+            .setNegativeButton(R.string.check_updates_confirm_no, null)
+            .show()
+    }
+
+    /** ينزّل الـ APK ويعرض إشعاراً بأن التنزيل بدأ — يُستدعى بعد موافقة المستخدم. */
     private fun startApkDownload(context: android.content.Context, apkUrl: String) {
         Toast.makeText(
             context, getString(R.string.check_updates_downloading_title), Toast.LENGTH_SHORT
