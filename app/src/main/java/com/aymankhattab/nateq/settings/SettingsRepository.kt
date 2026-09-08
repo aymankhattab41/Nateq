@@ -738,7 +738,7 @@ class SettingsRepository(private val context: Context) {
             "en"
         )
         if (map != readConvertPrefs()) writeConvertPrefs(map)
-        Log.w(TAG, "تم ترحيل سلوتات التحويل القديمة إلى الخريطة الديناميكية ($map)")
+        Log.w(TAG, "تم ترحيل سلوتات التحويل القديمة إلى الخريطة الديناميكية (${map.size} عنصر)")
     }
 
     // --- السلوتات القديمة (تُبقى للتوافقية العكسية؛ تُرحَّل تلقائياً أعلاه) ---

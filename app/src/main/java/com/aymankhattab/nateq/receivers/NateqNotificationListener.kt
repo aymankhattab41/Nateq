@@ -191,7 +191,7 @@ class NateqNotificationListener : NotificationListenerService() {
         val isArabic = LocaleUtils.containsArabic(text)
         val locale = if (isArabic) Locale.forLanguageTag("ar") else Locale.forLanguageTag("en")
 
-        Log.d(TAG, "SMS via NLS from $displayAddress: ${text.length} chars")
+        Log.d(TAG, "SMS via NLS: ${text.length} chars")
 
         val speech = AnnouncementSpeaker.getInstance(applicationContext)
         speech.resetVoice(voiceId)

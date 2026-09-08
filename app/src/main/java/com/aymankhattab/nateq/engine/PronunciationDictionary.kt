@@ -295,9 +295,16 @@ class PronunciationDictionary(private val context: Context) {
         val sp = prefs ?: return
         val json = sp.getString("dictionary", "{}")
         try {
-            val map = gson.fromJson(json, typeToken) as Map<String, String>
-            entries.putAll(map)
-        } catch (e: Exception) {
+            val raw = gson.fromJson(json, typeToken) as? Map<*, *> ?: emptyMap<Any, Any>()
+            for ((k, v) in raw) {
+                if (k !is String || v !is String) continue
+                val key = k.trim()
+                val value = v.trim()
+                if (key.isEmpty() || key.length > MAX_KEY_LENGTH) continue
+                if (value.isEmpty() || value.length > MAX_VALUE_LENGTH) continue
+                entries[key] = value
+            }
+        } catch (_: Exception) {
             entries.clear()
         }
     }
