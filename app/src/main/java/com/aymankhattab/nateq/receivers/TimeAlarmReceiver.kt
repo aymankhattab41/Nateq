@@ -103,7 +103,11 @@ class TimeAlarmReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent?) {
         if (intent?.action != ACTION_TICK) return
-        if (intent.component?.packageName != context.packageName) return
+        // تطابق صارم مع بثّنا (حزمة + صف) وليس حزمة تحمل اسمنا فقط: أي بثّ موجه
+        // لمكوّن آخر داخل حزمتنا (أداة/مستقبل آخر) لا يُشغّل نطق الوقت خطأً.
+        val cn = intent.component
+        if (cn?.packageName != context.packageName) return
+        if (cn.className != TimeAlarmReceiver::class.java.name) return
         try {
             // المدير المشترك (نفس كائن الودجت/الأداة) ينطق ويرسب الفاصل التالي.
             TimeAnnouncementManager.shared(context.applicationContext).onAlarmTick()
