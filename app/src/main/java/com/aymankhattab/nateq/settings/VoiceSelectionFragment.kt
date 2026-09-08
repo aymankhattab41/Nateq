@@ -172,7 +172,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             }.getOrNull()
             if (text != null) {
                 if (vm.applyBackupJson(text)) {
-                    refreshAllSettingsUi()
+                    // إعادة عرض الأقسام تتم تلقائياً: applyBackupJson يرفع مراجعة
+                    // settingsRevision (StateFlow) ويجمعها هذا الفصيل بالأسفل.
                     AnnouncementSchedulerService.requestStart(requireContext())
                     Toast.makeText(requireContext(), R.string.restore_done, Toast.LENGTH_LONG).show()
                     view?.announceCompat(getString(R.string.restore_done))
@@ -406,6 +407,13 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         setupSaveAndResetButtons()
         setupBackupRestoreButtons()
         accordion.updateSectionStatuses()
+
+        // التحديث التفاعلي: المراجعة الابتدائية (0) لا تُحدّث شيئاً، وأي مراجعة
+        // لاحقة (استعادة/إعادة ضبط) تُعيد بناء كل أقسام الواجهة تلقائياً.
+        viewLifecycleOwner.lifecycleScope.launch {
+            vm.settingsRevision.collect { revision -> if (revision > 0) refreshAllSettingsUi() }
+        }
+
         // فحص تلقائي عند فتح التطبيق: يُنبه بوجود تحديث (صامت إن لم يوجد)
         checkForUpdatesOnStart()
     }
@@ -907,21 +915,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     Toast.makeText(requireContext(), getString(R.string.reset_done), Toast.LENGTH_SHORT).show()
                     view?.findViewById<View>(R.id.btn_reset_settings)
                         ?.announceCompat(getString(R.string.reset_done))
-                    // إعادة تحميل كل القيم الإفتراضية في الواجهة الحالية:
-                    // نعيد استدعاء setup() لكل ضابط قسم (تستعيد عناصرها وتربط
-                    // مستمعيها من جديد بالقيم الافتراضية — Skip المحرك/الملفات).
-                    timeSection.setup(requireView())
-                    batterySection.setup(requireView())
-                    notificationSection.setup(requireView())
-                    callerSection.setup(requireView())
-                    smsSection.setup(requireView())
-                    generalSection.setup(requireView())
-                    numberSection.setup(requireView())
-                    deviceHealthSection.setup(requireView())
-                    rvCategories.adapter?.notifyDataSetChanged()
-                    // تحديث نصوص حالة الأقسام بعد إعادة التحميل حتى تعكس القيم
-                    // الافتراضية فوراً (كانت تبقى على القيم القديمة المحذوفة).
-                    accordion.updateSectionStatuses()
+                    // التحديث الكلي للواجهة يتم تلقائياً عبر StateFlow المراجعة
+                    // (notifySettingsChanged) — يستمع له الفصيل فيعيد بناء كل
+                    // الأقسام من القيم الافتراضية دون تكرار كتلة setup() يدوية.
+                    vm.notifySettingsChanged()
                 }
                 .setNegativeButton(R.string.reset_cancel, null)
                 .show()

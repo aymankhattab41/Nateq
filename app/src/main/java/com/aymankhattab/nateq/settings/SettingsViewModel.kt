@@ -4,6 +4,10 @@ import androidx.lifecycle.ViewModel
 import com.aymankhattab.nateq.engine.PronunciationDictionary
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 /**
  * طبقة الحالة الرئيسية لمشهد الإعدادات.
@@ -33,6 +37,18 @@ class SettingsViewModel @Inject constructor(
 
         /** أقصى عدد يُقبل من عناصر النسخة (أسماء متصلين + إعدادات). */
         const val MAX_BACKUP_ENTRIES = 5000
+    }
+
+    // ===== الحالة التفاعلية (البند 8): مراجعة إعدادات تصاعدية =====
+    // مصدر حقيقة التحديث الكلي للواجهة: كل تغيير جماعي (استعادة نسخة، إعادة
+    // ضبط) يرفع المراجعة، ويجمعها الفصيل عبر StateFlow فيُعيد بناء أقسامه
+    // تلقائياً بدل استدعاء refreshAllSettingsUi() يدوياً من كل موضع.
+    private val _settingsRevision = MutableStateFlow(0)
+    val settingsRevision: StateFlow<Int> = _settingsRevision.asStateFlow()
+
+    /** يُعلن أن الإعدادات تغيّرت تغييراً جماعياً يستلزم إعادة عرض الواجهة كلها. */
+    fun notifySettingsChanged() {
+        _settingsRevision.update { it + 1 }
     }
 
     /** بناء ملف JSON كامل: إعدادات مصنفة الأنواع + القاموس + أسماء المتصلين. */
@@ -156,6 +172,6 @@ class SettingsViewModel @Inject constructor(
             applied
         } catch (t: Throwable) {
             false
-        }
+        }.also { applied -> if (applied) notifySettingsChanged() }
     }
 }
