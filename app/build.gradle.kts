@@ -85,9 +85,9 @@ androidComponents {
 
 dependencies {
     // خفيفة الوزن ومقصودة - لا تستخدم SDKs ضخمة من كل شركة، بل REST مباشر
-    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("com.google.android.material:material:1.12.0") // مكونات واجهة متوافقة مع TalkBack افتراضيًا
+    implementation("com.google.android.material:material:1.13.0") // مكونات واجهة متوافقة مع TalkBack افتراضيًا
     implementation("androidx.preference:preference-ktx:1.2.1")   // شاشة إعدادات جاهزة ومتوافقة إتاحيًا
     // تشفير مفاتيح الـ API (EncryptedSharedPreferences + Android Keystore).
     // نُبقي على alpha06 لأنها آخر نسخة فيها API مشفّر يعمل عبر minSdk 24 دون
@@ -97,10 +97,10 @@ dependencies {
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     // Gson للـ serialization في PronunciationDictionary (النسخ الاحتياطي للقاموس)
-    implementation("com.google.code.gson:gson:2.10.1")
+    implementation("com.google.code.gson:gson:2.12.1")
 
     // كوروتينز لإدارة الطلبات غير المتزامنة بدون تجميد الخدمة
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
 
     // حقن التبعيات (Hilt) + ViewModel لحوكمة الشاشات وتفكيك الفصيل الكبير
     implementation("com.google.dagger:hilt-android:2.59")

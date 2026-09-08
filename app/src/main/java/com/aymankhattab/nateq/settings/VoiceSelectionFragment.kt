@@ -560,8 +560,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 hint = getString(R.string.caller_names_name_hint)
                 setText(name)
             }
-            val removeBtn = com.google.android.material.button.MaterialButton(requireContext(), null,
-                com.google.android.material.R.attr.borderlessButtonStyle).apply {
+            val removeBtn = com.google.android.material.button.MaterialButton(
+                requireContext(),
+                null,
+                com.google.android.material.R.style.Widget_MaterialComponents_Button_TextButton
+            ).apply {
                 text = getString(R.string.caller_names_delete)
                 textSize = 13f
                 // أهداف لمس لا تقل عن 48dp لقارئ الشاشة
@@ -592,12 +595,16 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             val emptyHint = TextView(requireContext()).apply {
                 text = getString(R.string.caller_names_empty)
                 textSize = 13f
-                setPadding(0, (16 * resources.displayMetrics.density).toInt(), 0, (16 * resources.displayMetrics.density).toInt())
+                val pad = (16 * resources.displayMetrics.density).toInt()
+                setPadding(0, pad, 0, pad)
             }
             listContainer.addView(emptyHint)
         }
-        val addBtn = com.google.android.material.button.MaterialButton(requireContext(), null,
-            com.google.android.material.R.attr.borderlessButtonStyle).apply {
+        val addBtn = com.google.android.material.button.MaterialButton(
+            requireContext(),
+            null,
+            com.google.android.material.R.style.Widget_MaterialComponents_Button_TextButton
+        ).apply {
             text = getString(R.string.caller_names_add)
             minHeight = (48 * resources.displayMetrics.density).toInt()
         }
