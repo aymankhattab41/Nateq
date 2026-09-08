@@ -70,6 +70,7 @@ internal class SmsReadingController(
                     // "off": يُحفظ فوراً (لا يتطلب إذناً) ويرفع أي وضع معلّق.
                     pendingSmsMode = null
                     runCatching { settings.setSmsReadingMode("off") }
+                    AnnouncementSchedulerService.syncIfRunning(fragment.requireContext())
                     onStatusChanged()
                     return
                 }
@@ -190,6 +191,7 @@ internal class SmsReadingController(
             // رُفض: نعيد المفتاح إلى "off" (لم يكن قد حُفظ) ونعلن السبب.
             if (pending != null) {
                 runCatching { settings.setSmsReadingMode("off") }
+                AnnouncementSchedulerService.syncIfRunning(fragment.requireContext())
                 if (::spinnerSmsMode.isInitialized) spinnerSmsMode.setSelection(2)
             }
             fragment.view?.announceCompat(fragment.getString(R.string.sms_permission_needed))

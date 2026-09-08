@@ -61,6 +61,7 @@ internal class BatteryAnnouncementController(
         switchBatteryAnnouncement.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setBatteryAnnouncementEnabled(checked) }
             if (checked) AnnouncementSchedulerService.requestStart(fragment.requireContext())
+            else AnnouncementSchedulerService.syncIfRunning(fragment.requireContext())
             onStatusChanged()
             fragment.view?.announceCompat(
                 fragment.getString(

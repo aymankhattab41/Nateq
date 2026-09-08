@@ -21,6 +21,33 @@ import kotlinx.coroutines.launch
  */
 class BatteryAnnouncementReceiver : BroadcastReceiver() {
 
+    companion object {
+        // آخر نسبة عولجت من بث البطارية الدائم — يُفلتر بها التكرار في
+        // الذاكرة قبل أي عمل لاتزامني أو قراءة من القرص (بند 16.1).
+        @Volatile
+        private var lastLevelPercent = -1
+
+        /** هل هذا البث يمثل نسبة لم تُعالج بعد؟ يحسب النسبة مثل معالجة
+         *  handler نفسها دون أي I/O؛ وبلا بيانات صالحة يُمرَّر البث فتتجاهله
+         *  المعالجة أصلاً. */
+        @JvmStatic
+        fun isNewLevel(intent: Intent): Boolean {
+            val level = intent.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1)
+            val scale = intent.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1)
+            if (level < 0 || scale <= 0) return true
+            val percent = (level * 100) / scale
+            if (percent == lastLevelPercent) return false
+            lastLevelPercent = percent
+            return true
+        }
+
+        /** تصفير الفلتر بين دورات الاختبار. */
+        @JvmStatic
+        internal fun resetLevelFilterForTesting() {
+            lastLevelPercent = -1
+        }
+    }
+
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action
         if (action != Intent.ACTION_BATTERY_CHANGED &&
@@ -29,6 +56,11 @@ class BatteryAnnouncementReceiver : BroadcastReceiver() {
         ) {
             return
         }
+        // فلترة البث الدائم في الذاكرة (بند 16.1): يُعالج بث البطارية فقط عند
+        // تغيّر النسبة، فلا تُطلق كورووتينات ولا تُفتح SharedPreferences لعشرات
+        // البثات المتكررة بنفس المستوى (حرارة/جهد/شحن). أحداث التوصيل والفصل
+        // أفعال منفصلة لا تمرّ بالفلتر وتُعالج دائماً.
+        if (action == Intent.ACTION_BATTERY_CHANGED && !isNewLevel(intent!!)) return
         // goAsync() يمنع Android من قتل المستقبل قبل انتهاء العمل اللاتزامني
         val pendingResult = goAsync()
         val appScope = (context.applicationContext as com.aymankhattab.nateq.NateqApplication).appScope

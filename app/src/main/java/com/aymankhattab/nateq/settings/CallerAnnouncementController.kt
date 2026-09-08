@@ -76,7 +76,7 @@ internal class CallerAnnouncementController(
                 fragment.callerPermLauncher.launch(needed.toTypedArray())
             } else {
                 runCatching { settings.setCallerAnnouncementEnabled(false) }
-                // لا نوقف الخدمة؛ إن لم يبقَ أي إعلان مفعّل تتوقف هي نفسها.
+                AnnouncementSchedulerService.syncIfRunning(fragment.requireContext())
                 onStatusChanged()
                 fragment.view?.announceCompat(fragment.getString(R.string.announcement_turned_off))
             }
@@ -270,6 +270,7 @@ internal class CallerAnnouncementController(
         } else {
             switchCallerAnnouncement.isChecked = false
             runCatching { settings.setCallerAnnouncementEnabled(false) }
+            AnnouncementSchedulerService.syncIfRunning(fragment.requireContext())
             onStatusChanged()
             Toast.makeText(
                 fragment.requireContext(),

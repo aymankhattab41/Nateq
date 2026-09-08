@@ -60,7 +60,15 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
         // إعادة تشغيل خدمة إعلانات الوقت/البطارية إن كان أي منها مفعّلاً بعد إنجاز
         // نظام الأندرويد (العمليات في الخلفية قد توقفت) دون أن يفتح المستخدم أي إعداد.
         if (savedInstanceState == null) {
-            runCatching { AnnouncementSchedulerService.startIfNeeded(this) }
+            val started = runCatching {
+                AnnouncementSchedulerService.startIfNeeded(this)
+            }.getOrDefault(false)
+            // على أندرويد المحرك تُنفَّذ عمليات الخلفية بعد تأخر؛ إن لم تكن
+            // خدمة الإعلانات مطلوبة كان الوقت هو الوحيد المفعل (بند 16.2)
+            // فنعيد جدولة منبه إعلان الوقت مباشرةً دون تشغيل خدمة أمامية.
+            if (!started) {
+                runCatching { AnnouncementSchedulerService.ensureTimeAlarm(this) }
+            }
         }
     }
 

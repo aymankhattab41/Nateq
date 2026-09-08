@@ -31,6 +31,7 @@ internal class NotificationReadingController(
         switchNotificationReading.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setNotificationReadingEnabled(checked) }
             if (checked) AnnouncementSchedulerService.requestStart(fragment.requireContext())
+            else AnnouncementSchedulerService.syncIfRunning(fragment.requireContext())
             onStatusChanged()
             fragment.view?.announceCompat(
                 fragment.getString(

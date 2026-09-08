@@ -37,8 +37,10 @@ class NateqTtsService : TextToSpeechService() {
     companion object {
         private const val TAG = "NATEQ_TTS"
 
-        /** مدة صلاحية ذاكرة اكتشاف اللغات (5 دقائق) — لا يُسبر كل محرك بعدها إلا لضرورة. */
-        private const val DISCOVERY_TTL_MS = 5 * 60 * 1000L
+        /** مدة صلاحية ذاكرة اكتشاف اللغات (ساعة، بند 16.3) — لا يُسبر كل محرك
+         *  داخل الجلسة الطويلة إلا عند الحاجة؛ الاكتشاف يبقى مضموناً عند كل
+         *  إنشاء لعملية :tts التي تُقتل بين الجلسات غالباً. */
+        private const val DISCOVERY_TTL_MS = 60 * 60 * 1000L
     }
 
     /** مصدر الإعدادات الفريد لعملية:tts — يحقنه Hilt عبر NateqApplication

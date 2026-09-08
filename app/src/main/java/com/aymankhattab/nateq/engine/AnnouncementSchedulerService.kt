@@ -60,14 +60,31 @@ class AnnouncementSchedulerService : Service() {
         var isRunning = false
             private set
 
-        /** تشغيل الخدمة من الواجهة (يفسح إيقاف المستخدم السابق). */
+        /** تشغيل الخدمة من الواجهة (يفسح إيقاف المستخدم السابق). إن كان إعلان
+         *  الوقت هو الوحيد المفعل لا تُشغَّل خدمة أمامية (مستقل بمستقبل المنبه)
+         *  وتُجدول منبه الوقت مباشرةً عبر المدير المشترك — بند 16.2. */
         @JvmStatic
         fun requestStart(context: Context) {
             clearUserStopped(context)
-            startSafely(context, ACTION_START)
+            val settings = try {
+                SettingsRepository(context)
+            } catch (t: Throwable) {
+                null
+            }
+            if (needsForegroundService(settings)) {
+                startSafely(context, ACTION_START)
+            } else if (settings?.isTimeAnnouncementEnabled() == true) {
+                try {
+                    TimeAnnouncementManager.shared(context.applicationContext).start()
+                } catch (t: Throwable) {
+                    Log.w(TAG, "direct time schedule failed", t)
+                }
+            }
         }
 
-        /** تشغيل الخدمة فقط إن كان أي إعلان مفعلاً ولم يوقفها المستخدم يدوياً.
+        /** تشغيل الخدمة فقط إن استوجب أي إعلان مفعّل خدمة أمامية (بطارية/
+         *  متصل/رسائل/إشعارات) ولم يوقفها المستخدم يدوياً. إعلان الوقت وحده
+         *  لا يستوجبها: مستقبل المنبه المستقل يجدول/ينطق بلا خدمة (بند 16.2).
          *  @return true إذا شُغّلت الخدمة */
         @JvmStatic
         fun startIfNeeded(context: Context): Boolean {
@@ -79,17 +96,55 @@ class AnnouncementSchedulerService : Service() {
             } catch (t: Throwable) {
                 null
             } ?: return false
-            val anyEnabled =
-                settings.isTimeAnnouncementEnabled() ||
-                    settings.isBatteryAnnouncementEnabled() ||
-                    settings.isCallerAnnouncementEnabled() ||
-                    settings.getSmsReadingMode() != "off" ||
-                    settings.isNotificationReadingEnabled()
-            if (anyEnabled) {
-                startSafely(context, ACTION_START)
-                return true
+            if (!needsForegroundService(settings)) return false
+            startSafely(context, ACTION_START)
+            return true
+        }
+
+        /** هل الإعلانات الحالية تستوجب بقاء خدمة أمامية؟ («null» أو فشل قراءة
+         *  يُرجع true — نبقي الخدمة احتياطاً ولا نخاطر بفقد إعلان). */
+        private fun needsForegroundService(settings: SettingsRepository?): Boolean {
+            if (settings == null) return true
+            return settings.isBatteryAnnouncementEnabled() ||
+                settings.isCallerAnnouncementEnabled() ||
+                settings.getSmsReadingMode() != "off" ||
+                settings.isNotificationReadingEnabled()
+        }
+
+        /** يعيد تقييم الحاجة للخدمة دون تشغيلها: إن كانت قائمة ثم لم يعد أي
+         *  إعلان يستوجبها (تعطيل البطارية/المتصل/الرسائل/الإشعارات مع بقاء
+         *  الوقت فقط) تُوقف — منبه إعلان الوقت مستقل فلا يُلغى. بلا خدمة
+         *  قائمة لا تفعل شيئاً. */
+        @JvmStatic
+        fun syncIfRunning(context: Context) {
+            if (!isRunning) return
+            val settings = try {
+                SettingsRepository(context)
+            } catch (t: Throwable) {
+                null
+            } ?: return
+            if (!needsForegroundService(settings)) {
+                try {
+                    context.stopService(Intent(context, AnnouncementSchedulerService::class.java))
+                } catch (t: Throwable) {
+                    Log.w(TAG, "sync stop failed", t)
+                }
             }
-            return false
+        }
+
+        /** يضمن بقاء منبه إعلان الوقت مجدوولاً بعد أي انقطاع (إقلاع/إعادة
+         *  فتح) دون إلزام خدمة أمامية: يُجدول مباشرةً إن لم تكن الخدمة قائمة
+         *  ولم يوقفها المستخدم، وبلا تأثير عندما تكون قائمة (تزامنها يغطيه).
+         *  [start] لا ينطق إلا أول تفعيل، فالإعادة الجدولة هنا آمنة. */
+        @JvmStatic
+        fun ensureTimeAlarm(context: Context) {
+            if (isRunning) return
+            if (wasUserStopped(context)) return
+            try {
+                TimeAnnouncementManager.shared(context.applicationContext).start()
+            } catch (t: Throwable) {
+                Log.w(TAG, "ensure time alarm failed", t)
+            }
         }
 
         private fun startSafely(context: Context, action: String) {
@@ -218,6 +273,32 @@ class AnnouncementSchedulerService : Service() {
             } catch (t: Throwable) {
                 Log.e(TAG, "battery receiver registration failed", t)
             }
+        }
+
+        // بند 16.2: إن لم يبقَ إعلان يستوجب خدمة أمامية (تعطيل كل فئات
+        // البطارية/المتصل/الرسائل/الإشعارات مع بقاء «الوقت» أو بدونه) تُوقف
+        // الخدمة ذاتياً؛ منبه إعلان الوقت مستقل عبر مستقبل المنبه ولا يتأثر.
+        // يغطي إعادة البناء STICKY بعد تغيّر الإعدادات خارج المتحكمات.
+        if (!needsForegroundService()) {
+            try {
+                stopInternal()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            } catch (t: Throwable) {
+                Log.w(TAG, "self stop failed", t)
+            }
+        }
+    }
+
+    /** هل تبقى الحاجة للخدمة الأمامية؟ (الوقت وحده لا يستوجبها — بند 16.2) */
+    private fun needsForegroundService(): Boolean {
+        return try {
+            settings.isBatteryAnnouncementEnabled() ||
+                settings.isCallerAnnouncementEnabled() ||
+                settings.getSmsReadingMode() != "off" ||
+                settings.isNotificationReadingEnabled()
+        } catch (t: Throwable) {
+            true // فشل قراءة الإعدادات: نبقي الخدمة احتياطاً
         }
     }
 
