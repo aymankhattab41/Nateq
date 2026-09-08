@@ -16,9 +16,9 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- إعادة تشغيل جدولة الإعلانات بعد إقلاع الجهاز -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- لمنبهات إعلان الوقت الدقيقة عبر AlarmManager (setExactAndAllowWhileIdle): 
-         يُمنح تلقائياً بلا طلب وقت التشغيل، ومع بديل setAlarmClock يعمل إعلان
-         الوقت حتى في Doze دون هذا الإذن أيضاً -->
+    <!-- لمنبهات إعلان الوقت الدقيقة عبر AlarmManager (setExactAndAllowWhileIdle):
+         يُمنح تلقائياً بلا طلب وقت التشغيل؛ وبدونه نستخدم جدولة غير دقيقة بنافذة
+         قصيرة تعمل دائماً بلا إذن (وقت الإعلان مقرّب قليلاً) -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- لطلب إعفاء من تحسين البطارية (للخدمة الخلفية) -->
 

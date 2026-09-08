@@ -58,10 +58,15 @@ internal object UnitStep : TextProcessingStep {
     )
 
     private val UNIT_PATTERNS = UNIT_NAMES.map { info ->
-        // (?U) تُفعل أصناف الأحرف اليونيكودية فتعترف \b بالحروف العربية —
-        // لولاها لم تُطابق الوحدات العربية («5 م»، «10 سم»، «80 كم/س»)
-        // إطلاقاً لأن Java لا تتعامل مع العربية كحروف كلمات.
-        Pattern.compile("""(?U)\b(\d+(?:[.,]\d{3})*(?:[.,]\d+)?)\s*${Pattern.quote(info.symbol)}\b""") to info
+        // حدود الكلمات مُعرَّفة يدوياً بلا وسم (?U): هو وسم Java لا تدعمه ICU4C
+        // (محرك java.util.regex في أندرويد) فيُسقط تحليل النمط خطأً في ART.
+        // البداية \b الصفة ASCII كافية (الأرقام غربية = حروف كلمات)، وتُعرّف
+        // الحدُّ الختاميُّ بإلغاء حرف الكلمة يونيكود (?![\p{L}\p{N}_]) ليعترف
+        // بحدود الكلمات العربية كما كان يفعل (?U)\b بالضبط (5 م ثم حرف = لا
+        // تطابق؛ ثم مسافة/ترقيم/نهاية = تطابق).
+        Pattern.compile(
+            """\b(\d+(?:[.,]\d{3})*(?:[.,]\d+)?)\s*${Pattern.quote(info.symbol)}(?![\p{L}\p{N}_])"""
+        ) to info
     }
 
     override fun apply(input: String): String {

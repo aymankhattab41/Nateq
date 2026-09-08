@@ -19,7 +19,7 @@ import com.aymankhattab.nateq.engine.TimeAnnouncementManager
  *   أو تجمّدها في Doze؛ المنبه المسجَّل في مرحلة النظام يوقظها موثوقاً.
  * - يستخدم [TimeAnnouncementManager] المشترك (نفس كائن الودجت) فلا يتضاعف
  *   المحرك أو تتعارض حالتان؛ والإذن المعلن في الـ manifest هو
- *   SCHEDULE_EXACT_ALARM مع بديل setAlarmClock (يعمل في Doze بلا إذن).
+ *   SCHEDULE_EXACT_ALARM مع بديل جدولة غير دقيقة بنافذة قصيرة تعمل بلا إذن.
  */
 class TimeAlarmReceiver : BroadcastReceiver() {
 
@@ -42,16 +42,28 @@ class TimeAlarmReceiver : BroadcastReceiver() {
                     as? AlarmManager ?: return
                 val pendingIntent = buildPendingIntent(context)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                    !alarmManager.canScheduleExactAlarms()
+                    alarmManager.canScheduleExactAlarms()
                 ) {
-                    // بدون إذن المنبهات الدقيقة على أندرويد 12+: نستخدم
-                    // setAlarmClock — يعمل في Doze ويوقظ دقيقاً بلا إذن زائد.
-                    alarmManager.setAlarmClock(
-                        AlarmManager.AlarmClockInfo(triggerAtMillis, null),
+                    // الإذن ممنوح (Android 12+): منبه دقيق يستيقظ من Doze.
+                    alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        triggerAtMillis,
+                        pendingIntent
+                    )
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    // بدون إذن المنبهات الدقيقة على أندرويد 12+، لا يعمل
+                    // setAlarmClock ولا setExact* (SecurityException). نستخدم
+                    // جدولة غير دقيقة بنافذة قصيرة (45 ثانية) تُطلق قرب الوقت
+                    // المطلوب ولا تحتاج أي إذن — فيبقى إعلان الوقت يعمل دائماً،
+                    // ويتجاوز الدقة متى منح المستخدم الإذن عبر الإعدادات.
+                    alarmManager.setWindow(
+                        AlarmManager.RTC_WAKEUP,
+                        triggerAtMillis,
+                        45_000L,
                         pendingIntent
                     )
                 } else {
-                    // منبه دقيق يستيقظ من Doze (متاح من API 23، minSdk 24 هنا).
+                    // النسخ الأقدم من أندرويد: منبه دقيق من Doze بلا إذن.
                     alarmManager.setExactAndAllowWhileIdle(
                         AlarmManager.RTC_WAKEUP,
                         triggerAtMillis,
