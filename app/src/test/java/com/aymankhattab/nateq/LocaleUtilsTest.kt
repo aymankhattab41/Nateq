@@ -213,4 +213,32 @@ class LocaleUtilsTest {
     fun containsOtp_blank() {
         assertFalse(LocaleUtils.containsOtp("   "))
     }
+
+    @Test
+    fun containsOtp_advancedKeywords() {
+        assertTrue(LocaleUtils.containsOtp("رمز الأمان 482913"))
+        assertTrue(LocaleUtils.containsOtp("كود الأمان 273455"))
+        assertTrue(LocaleUtils.containsOtp("رمز التأكيد 762341"))
+        assertTrue(LocaleUtils.containsOtp("كود التأكيد 90217"))
+        assertTrue(LocaleUtils.containsOtp("الرمز السري 199483"))
+        assertTrue(LocaleUtils.containsOtp("Your confirmation code is 581239"))
+    }
+
+    @Test
+    fun containsOtp_separatedCodeLayouts() {
+        // فواصل شرطية أو مسافات بين خانات الكود تُكشف ضمن حدود 4-8 خانات
+        assertTrue(LocaleUtils.containsOtp("رمز التأكيد 123-456"))
+        assertTrue(LocaleUtils.containsOtp("كود التأكيد 1234 5678"))
+        assertTrue(LocaleUtils.containsOtp("رمز التحقق G-123456"))
+        assertTrue(LocaleUtils.containsOtp("رمز الأمان 12-34-56"))
+    }
+
+    @Test
+    fun containsOtp_separatedStillRequiresBoth() {
+        // الرقم المفصول دون كلمة تحقق ليس OTP — تبقى قاعدة الشرطين
+        assertFalse(LocaleUtils.containsOtp("المبلغ 123-456"))
+        assertFalse(LocaleUtils.containsOtp("التاريخ 10-23-1987"))
+        // الكلمة دون رقم متجاور حقيقي ليست OTP
+        assertFalse(LocaleUtils.containsOtp("رمز التأكيد"))
+    }
 }

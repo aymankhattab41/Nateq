@@ -288,4 +288,34 @@ class SettingsRepositoryTest {
         assertEquals(3, repo2.getNumberReadingMode())
         assertEquals(1.25f, repo2.getDefaultSpeechRate(), 0.0f)
     }
+
+    @Test
+    fun isDeviceScreenLocked_detectsSwipeLockAndScreenOff() {
+        val km = context.getSystemService(android.app.KeyguardManager::class.java)!!
+        val kmShadow = org.robolectric.Shadows.shadowOf(km)
+        val pm = context.getSystemService(android.os.PowerManager::class.java)!!
+        val pmShadow = org.robolectric.Shadows.shadowOf(pm)
+
+        // الشاشة مفتوحة والقفل غير معروض: حجب خاطئ مرفوض
+        pmShadow.setIsInteractive(true)
+        kmShadow.setKeyguardLocked(false)
+        kmShadow.setIsKeyguardSecure(false)
+        assertFalse(repo.isDeviceScreenLocked())
+
+        // قفل غير آمن (Swipe to unlock) والشاشة معروضة: يُعدُّ مقفلاً لإخفاء الحساسيات
+        kmShadow.setKeyguardLocked(true)
+        kmShadow.setIsKeyguardSecure(false)
+        assertTrue(repo.isDeviceScreenLocked())
+
+        // الشاشة مطفأة تماماً: حجب حتى بلا شاشة قفل أمن معروضة
+        kmShadow.setKeyguardLocked(false)
+        pmShadow.setIsInteractive(false)
+        assertTrue(repo.isDeviceScreenLocked())
+
+        // الشاشة مفتوحة وقفل أمن معروض: الحالة التقليدية لـ isDeviceLocked محفوظة
+        pmShadow.setIsInteractive(true)
+        kmShadow.setKeyguardLocked(true)
+        kmShadow.setIsKeyguardSecure(true)
+        assertTrue(repo.isDeviceScreenLocked())
+    }
 }

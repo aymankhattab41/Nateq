@@ -291,10 +291,22 @@ class SettingsRepository(private val context: Context) :
     fun setLockScreenPrivacyEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("lock_screen_privacy_enabled", enabled).apply()
 
-    /** هل شاشة الجهاز مقفلة فعلاً (قفل أمان)؟ يعود false عند عدم وجود قفل. */
+    /** هل شاشة الجهاز مقفلة فعلاً أو مطفأة (حالة خصوصية)؟ يعود false عند عدم وجود قفل. */
+    @Suppress("DEPRECATION")
     fun isDeviceScreenLocked(): Boolean {
-        val km = context.getSystemService(android.app.KeyguardManager::class.java) ?: return false
-        return km.isDeviceLocked
+        val km = context.getSystemService(android.app.KeyguardManager::class.java)
+        val power = context.getSystemService(android.os.PowerManager::class.java)
+        // الشاشة مطفأة: حالة خصوصية أعلى حتى مع قفل غير آمن (Swipe) — نمنع
+        // نطق الحساسيات (OTP) في الجيب أو على الطاولة.
+        if (power != null && !power.isInteractive) return true
+        // isKeyguardLocked يشمل الأقفال غير الآمنة (Swipe) التي تُهملها
+        // isDeviceLocked (فهي تُعرَّف في النظام بأنها secure && locked).
+        return try {
+            km?.isKeyguardLocked ?: false
+        } catch (t: Throwable) {
+            // أنظمة تُقيّد قراءة حالة القفل دون الإذن الأمني: نعود للقفل الآمن فقط.
+            km?.isDeviceLocked ?: false
+        }
     }
 
     /** وضع توفير الطاقة: يُخفَّف إعلان الوقت عند انخفاض البطارية عن العتبة. */
