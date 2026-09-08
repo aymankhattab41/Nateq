@@ -78,10 +78,12 @@ class SettingsRepositoryTest {
     }
 
     @Test
-    fun numberReadingMode_invalidMode_clampedByUIButStored() {
-        // يخزّن ما يُمرَّر (الضبط على 1..8 يتم في طبقة الواجهة) — تحقق من سلامة القراءة
+    fun numberReadingMode_invalidMode_clampedAtRepository() {
+        // بند 9.3: الحدود تُفرض في المخزن نفسه، لا في طبقة الواجهة فقط.
         repo.setNumberReadingMode(99)
-        assertEquals(99, repo.getNumberReadingMode())
+        assertEquals(8, repo.getNumberReadingMode())
+        repo.setNumberReadingMode(0)
+        assertEquals(1, repo.getNumberReadingMode())
     }
 
     @Test
@@ -129,5 +131,119 @@ class SettingsRepositoryTest {
         assertFalse(repo.isEmojiPronunciationEnabled())
         repo.setEmojiPronunciationEnabled(true)
         assertTrue(repo.isEmojiPronunciationEnabled())
+    }
+
+    @Test
+    fun speechRatePitchVolume_clampedPerLanguage() {
+        // بند 9.3: السرعة/النبرة/الصوت لا تتجاوز حدودها في المخزن مهما أرسلت الواجهة.
+        repo.setSpeechRate("ar", -5f)
+        assertEquals(0f, repo.getSpeechRate("ar"), 0.0f)
+        repo.setSpeechRate("ar", 10f)
+        assertEquals(2f, repo.getSpeechRate("ar"), 0.0f)
+        repo.setPitch("ar", 99f)
+        assertEquals(2f, repo.getPitch("ar"), 0.0f)
+        repo.setVolume("ar", 3f)
+        assertEquals(1f, repo.getVolume("ar"), 0.0f)
+    }
+
+    @Test
+    fun categoryRatePitchVolume_clamped() {
+        val cat = SettingsRepository.VOICE_CATEGORY_TIME
+        repo.setSpeechRateForCategory(cat, -1f)
+        assertEquals(0f, repo.getSpeechRateForCategory(cat), 0.0f)
+        repo.setPitchForCategory(cat, 7f)
+        assertEquals(2f, repo.getPitchForCategory(cat), 0.0f)
+        repo.setVolumeForCategory(cat, 5f)
+        assertEquals(1f, repo.getVolumeForCategory(cat), 0.0f)
+    }
+
+    @Test
+    fun defaultRatePitchVolume_clamped() {
+        repo.setDefaultSpeechRate(-2f)
+        assertEquals(0f, repo.getDefaultSpeechRate(), 0.0f)
+        repo.setDefaultPitch(9f)
+        assertEquals(2f, repo.getDefaultPitch(), 0.0f)
+        repo.setDefaultVolume(9f)
+        assertEquals(1f, repo.getDefaultVolume(), 0.0f)
+    }
+
+    @Test
+    fun batteryCallerSmsRateVolume_clamped() {
+        repo.setBatteryAnnouncementRate(4f)
+        assertEquals(2f, repo.getBatteryAnnouncementRate(), 0.0f)
+        repo.setBatteryAnnouncementVolume(4f)
+        assertEquals(1f, repo.getBatteryAnnouncementVolume(), 0.0f)
+        repo.setCallerAnnouncementRate(4f)
+        assertEquals(2f, repo.getCallerAnnouncementRate(), 0.0f)
+        repo.setCallerAnnouncementVolume(4f)
+        assertEquals(1f, repo.getCallerAnnouncementVolume(), 0.0f)
+        repo.setSmsReadingRate(4f)
+        assertEquals(2f, repo.getSmsReadingRate(), 0.0f)
+        repo.setSmsReadingVolume(4f)
+        assertEquals(1f, repo.getSmsReadingVolume(), 0.0f)
+    }
+
+    @Test
+    fun callerRepeatAndInterval_clamped() {
+        repo.setCallerAnnouncementRepeat(9)
+        assertEquals(5, repo.getCallerAnnouncementRepeat())
+        repo.setCallerAnnouncementRepeat(0)
+        assertEquals(1, repo.getCallerAnnouncementRepeat())
+        repo.setCallerAnnouncementIntervalSeconds(100)
+        assertEquals(10, repo.getCallerAnnouncementIntervalSeconds())
+        repo.setCallerAnnouncementIntervalSeconds(0)
+        assertEquals(1, repo.getCallerAnnouncementIntervalSeconds())
+    }
+
+    @Test
+    fun timeInterval_clamped15to60() {
+        repo.setTimeAnnouncementInterval(5)
+        assertEquals(15, repo.getTimeAnnouncementInterval())
+        repo.setTimeAnnouncementInterval(120)
+        assertEquals(60, repo.getTimeAnnouncementInterval())
+        repo.setTimeAnnouncementInterval(45)
+        assertEquals(45, repo.getTimeAnnouncementInterval())
+    }
+
+    @Test
+    fun convertLegacySlotsRatePitchVolume_clamped() {
+        repo.setConvertRate1(-1f)
+        assertEquals(0f, repo.getConvertRate1(), 0.0f)
+        repo.setConvertPitch1(9f)
+        assertEquals(2f, repo.getConvertPitch1(), 0.0f)
+        repo.setConvertVolume1(9f)
+        assertEquals(1f, repo.getConvertVolume1(), 0.0f)
+        repo.setConvertRate2(9f)
+        assertEquals(2f, repo.getConvertRate2(), 0.0f)
+        repo.setConvertPitch2(-3f)
+        assertEquals(0f, repo.getConvertPitch2(), 0.0f)
+        repo.setConvertVolume2(-3f)
+        assertEquals(0f, repo.getConvertVolume2(), 0.0f)
+    }
+
+    @Test
+    fun callerNames_keptInMemoryWhenSecureStoreUnavailable() {
+        // بند 9.2: عند تعذر فتح التخزين المشفر (Keystore) تُحفظ الأسماء في الذاكرة
+        // بلا أي حذف للملف وبلا استثناء — وتظل قابلة للقراءة في نفس الجلسة،
+        // وإعادة الضبط الكاملة تمسحها مع القرص معاً.
+        repo.setCustomCallerNames(
+            mapOf("+20123456789" to "أحمد", "+20198765432" to "فاطمة")
+        )
+        val names = repo.getCustomCallerNames()
+        assertEquals("أحمد", names["+20123456789"])
+        assertEquals("فاطمة", names["+20198765432"])
+        repo.resetAllToDefault()
+        assertTrue(repo.getCustomCallerNames().isEmpty())
+    }
+
+    @Test
+    fun freshRepositoryInstance_readsWritesFromDisk() {
+        // مسار reload(): إعادة الفتح من القرص تُحضر آخر التعديلات المكتوبة.
+        repo.setNumberReadingMode(3)
+        repo.setDefaultSpeechRate(1.25f)
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        val repo2 = SettingsRepository(context)
+        assertEquals(3, repo2.getNumberReadingMode())
+        assertEquals(1.25f, repo2.getDefaultSpeechRate(), 0.0f)
     }
 }
