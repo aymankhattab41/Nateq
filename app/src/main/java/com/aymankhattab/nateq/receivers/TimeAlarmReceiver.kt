@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
+import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
 import com.aymankhattab.nateq.engine.TimeAnnouncementManager
 
 /**
@@ -109,6 +110,11 @@ class TimeAlarmReceiver : BroadcastReceiver() {
         if (cn?.packageName != context.packageName) return
         if (cn.className != TimeAlarmReceiver::class.java.name) return
         try {
+            // شبكة أمان بند 16.2: قبل النطق من سياق المنبه الخلفي وإن لم تكن
+            // خدمة الإعلانات قائمة، تُبدأ خدمة أمامية عابرة تغطي نافذة النطق
+            // بأمان صوت الخلفية (أندرويد 15+/سامسونج) ثم توقف نفسها ذاتياً.
+            // لا يكسر كفاءة البطارية: الحارس لا يتبقى 24/7 لإعلان الوقت وحده.
+            AnnouncementSchedulerService.startForSpeech(context.applicationContext)
             // المدير المشترك (نفس كائن الودجت/الأداة) ينطق ويرسب الفاصل التالي.
             TimeAnnouncementManager.shared(context.applicationContext).onAlarmTick()
         } catch (t: Throwable) {

@@ -10,7 +10,9 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -52,6 +54,10 @@ class AnnouncementSchedulerService : Service() {
         private const val ACTION_START = "com.aymankhattab.nateq.action.ANNOUNCE_START"
         private const val ACTION_ANNOUNCE_NOW = "com.aymankhattab.nateq.action.ANNOUNCE_NOW"
         private const val ACTION_STOP = "com.aymankhattab.nateq.action.ANNOUNCE_STOP"
+        private const val ACTION_TEMPORARY_START = "com.aymankhattab.nateq.action.ANNOUNCE_TEMPORARY_START"
+
+        /** مدة النافذة العابرة: تغطي نطق الوقت القصير وأي بداية بطيئة للمحرك. */
+        private const val TEMPORARY_LIFETIME_MS = 30_000L
 
         // هل الخدمة الأمامية قائمة الآن؟ يستخدمها AnnouncementSpeaker ليقرر إن
         // كان يشغّلها قبل النطق من الخلفية (شرط أندرويد 15+ لصوت الخلفية).
@@ -141,10 +147,33 @@ class AnnouncementSchedulerService : Service() {
             if (isRunning) return
             if (wasUserStopped(context)) return
             try {
+                // شبكة أمان بند 16.2 أولاً (إقلاع/إعادة فتح = سياق خلفي): بدء
+                // عابر للخدمة الأمامية يغطي نطق أول تفعيل بأمان صوت الخلفية،
+                // ثم يُجدول منبه الوقت ويعيد نطق أول تفعيل عبر المدير المشترك.
+                startForSpeech(context)
                 TimeAnnouncementManager.shared(context.applicationContext).start()
             } catch (t: Throwable) {
                 Log.w(TAG, "ensure time alarm failed", t)
             }
+        }
+
+        /** شبكة أمان بند 16.2: ضمان نطق من الخلفية (أندرويد 15+/سامسونج) عبر
+         *  خدمة أمامية بلا استبقاء 24/7. إن كان أي إعلان يستوجب خدمة دائمة
+         *  تُبدأ دائمة كبوابتها المعتادة؛ وإن كان إعلان الوقت وحده تُبدأ عابرة
+         *  لفترة النطق ([ACTION_TEMPORARY_START]) ثم توقف نفسها بمؤقت أمان. */
+        @JvmStatic
+        fun startForSpeech(context: Context) {
+            if (isRunning) return
+            if (wasUserStopped(context)) return
+            val settings = try {
+                SettingsRepository(context)
+            } catch (t: Throwable) {
+                null
+            }
+            startSafely(
+                context,
+                if (needsForegroundService(settings)) ACTION_START else ACTION_TEMPORARY_START
+            )
         }
 
         private fun startSafely(context: Context, action: String) {
@@ -180,6 +209,9 @@ class AnnouncementSchedulerService : Service() {
     private var timeManager: TimeAnnouncementManager? = null
     private var batteryReceiver: BatteryAnnouncementReceiver? = null
 
+    /** جدولة زمنية على خيط الواجهة — تُستخدم لمؤقت النافذة العابرة حصراً. */
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -188,23 +220,20 @@ class AnnouncementSchedulerService : Service() {
         createNotificationChannel()
         startAsForeground(buildNotification())
 
-        settings = settingsRepository
+        // دفاعية: عند بدء النظام للخدمة مباشرة (STICKY) قد تكون الحقول المحقونة
+        // غير جاهزة؛ نبني مرجعاً محلياً عندها (نمط NateqTtsService).
+        settings = if (::settingsRepository.isInitialized) settingsRepository
+        else SettingsRepository(applicationContext)
         // المدير المشترك عبر العملية (نفس كائن الودجت ومستقبل المنبه) — تُبنى
         // مكوناته مرة واحدة ويُستخدم لبدء/إيقاف منبه الوقت و"أعلن الآن".
-        timeManager = TimeAnnouncementManager.shared(this, settingsRepository)
-
-        // مزامنة أولية: تبدأ إعلان الوقت إن كان مفعلاً، وتُسجّل مستقبل
-        // البطارية/الشحن (لا يُسجَّل من الـ manifest؛ BATTERY_CHANGED ممنوع
-        // هناك)، ويُعاد استدعاؤها من onStartCommand عند كل START لتسري
-        // تغييرات الإعدادات فوراً.
-        try {
-            syncWithSettings()
-        } catch (t: Throwable) {
-            Log.e(TAG, "initial sync failed", t)
-        }
+        timeManager = TimeAnnouncementManager.shared(this, settings)
+        // المزامنة الفعلية (الوقت/مستقبل البطارية) تتم في onStartCommand وفق
+        // نوع الطلب: «START» وSTICKY يزامنوان، و«العابر» لا يزامن (بند 16.2).
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // أي أمر جديد يُبطل مؤقت إيقاف النافذة العابرة (قد يصبح فترة دائمة).
+        mainHandler.removeCallbacksAndMessages(null)
         when (intent?.action) {
             ACTION_ANNOUNCE_NOW -> announceNow()
             ACTION_STOP -> {
@@ -220,6 +249,12 @@ class AnnouncementSchedulerService : Service() {
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return START_NOT_STICKY
+            }
+            ACTION_TEMPORARY_START -> {
+                // نافذة نطق عابرة (شبكة أمان بند 16.2 عند إعلان الوقت فقط):
+                // لا نُزامن ولا نُسجّل مستقبل البطارية — الـ tick الجاري يتولى
+                // الجدولة، وتُوقف الخدمة نفسها بعد نافذة الأمان.
+                armTemporarySelfStop()
             }
             else -> {
                 // ACTION_START (من الواجهة/الإقلاع) أو إعادة إنشاء النظام (STICKY):
@@ -302,7 +337,25 @@ class AnnouncementSchedulerService : Service() {
         }
     }
 
+    /** نافذة النطق العابرة (شبكة أمان بند 16.2): بعد [TEMPORARY_LIFETIME_MS]
+     *  تُوقف الخدمة نفسها — الـ tick الجاري جدول التالي عبر مستقبل المنبه
+     *  المستقل فلا يتأثر إعلان الوقت بإيقافها. */
+    private fun armTemporarySelfStop() {
+        mainHandler.removeCallbacksAndMessages(null)
+        mainHandler.postDelayed({
+            if (!isRunning) return@postDelayed
+            try {
+                stopInternal()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            } catch (t: Throwable) {
+                Log.w(TAG, "temporary stop failed", t)
+            }
+        }, TEMPORARY_LIFETIME_MS)
+    }
+
     override fun onDestroy() {
+        mainHandler.removeCallbacksAndMessages(null)
         isRunning = false
         stopInternal()
         super.onDestroy()
