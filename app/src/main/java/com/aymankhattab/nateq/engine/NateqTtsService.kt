@@ -18,8 +18,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
 import javax.inject.Inject
 
@@ -217,9 +215,12 @@ class NateqTtsService : TextToSpeechService() {
             if (normCountry.isNullOrEmpty()) normLanguage else "$normLanguage-$normCountry"
         ).toLanguageTag()
 
-        // التخليق يتم على IO thread عبر Coroutine، لكن onSynthesizeText نفسها
-        // نظام أندرويد بيستدعيها بالفعل على خيط عامل (worker thread) مخصص،
-        // فاستخدام runBlocking هنا آمن ولا يجمّد الواجهة الرئيسية.
+        // التخليق يُنفَّذ على Coroutine داخل serviceScope (IO) وهو غير حاجز
+        // بالكامل: onSynthesizeText ترجع فوراً ويستلم النظام الصوت لاحقاً عبر
+        // callbacks من خيط المزوّد — السلوك القياسي لمحركات TTS غير المتزامنة
+        // (MultiTTS/espeak). لو علِق المحرك الطرفي تُنهي مهله الداخلية المتكيّفة
+        // (1.5–8 ث داخل SystemVoiceProvider) الطلبَ بدل تعليق الخيط بلا سقف.
+        // إلغاء onStop() يُبطل currentJob فتتوقف استجابة الصوت فوراً.
         // (يبدأ callback.start() لاحقاً بمعدل العينات الفعلي من المزوّد،
         //  لتعامل ملفات 24k/44.1k بسرعةٍ ونبرةٍ صحيحة.)
         currentJob = serviceScope.launch {
@@ -329,11 +330,8 @@ class NateqTtsService : TextToSpeechService() {
                 callback.error()
             }
         }
-
-        // ننتظر انتهاء المهمة لأن onSynthesizeText متوقع أن تكون متزامنة
-        // من وجهة نظر واجهة TextToSpeechService. نحدّد سقفاً زمنياً (45 ثانية)
-        // حتى لا تعلق الخدمة إلى الأبد إذا علّق المحرك الطرفي.
-        runBlocking { withTimeoutOrNull(45_000) { currentJob?.join() } }
+        // لا ننتظر انتهاء التخليق (لا runBlocking): الإرجاع فوري والـ callbacks
+        // تُستلم لاحقاً من خيط المزوّد — النطق غير حاجز بالكامل كما هو موثّق أعلاه.
     }
 
     /**
