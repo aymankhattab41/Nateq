@@ -6,6 +6,7 @@ import android.util.Log
 import com.aymankhattab.nateq.engine.ConvertPreferencesCodec
 import com.aymankhattab.nateq.engine.LanguageSpeechPrefs
 import com.aymankhattab.nateq.util.LanguageCode
+import com.aymankhattab.nateq.util.NateqJson
 
 /**
  * الوسيط الوحيد للقراءة/الكتابة في الإعدادات.
@@ -360,6 +361,10 @@ class SettingsRepository(private val context: Context) {
             ?: memoryCallerNames.takeIf { it.isNotEmpty() }?.let { m ->
                 m.entries.joinToString("\n") { "${it.key}\t${it.value}" }
             } ?: return emptyMap()
+        // الصيغة الحالية: خريطة JSON عبر مظلة NateqJson (البند 3). الصيغة
+        // السطرية القديمة «key\tvalue» تُقرأ احتياطاً للتوافقية مع بيانات
+        // الأجهزة المخزّنة قبل هذا الترحيل.
+        NateqJson.parseStringMap(raw)?.let { return it }
         return raw.lines()
             .filter { it.isNotBlank() }
             .mapNotNull { line ->
@@ -381,13 +386,9 @@ class SettingsRepository(private val context: Context) {
             .entries
             .take(MAX_CALLER_ENTRIES)
             .associate { (k, v) -> k.trim() to v.trim() }
-        val raw = cleaned.entries.mapNotNull { e ->
-            if (e.key.isBlank() || e.value.isBlank()) null
-            else "${e.key.trim()}\t${e.value.trim()}"
-        }.joinToString("\n")
         val secure = getCallerPrefs()
         if (secure != null) {
-            secure.edit().putString("caller_names", raw).apply()
+            secure.edit().putString("caller_names", NateqJson.toJson(cleaned)).apply()
         } else {
             // عند فشل التخزين المشفّر (Keystore معطوب) لا نكتب أسماء المتصلين
             // (PII) في تفضيلات نصية عادية أبداً — تُحفظ في الذاكرة لهذه الجلسة.
@@ -659,7 +660,7 @@ class SettingsRepository(private val context: Context) {
 
     // ---- الخريطة الديناميكية للتحويل التلقائي (languageTag -> تفضيلات) ----
     // استبدلنا نظام سلوتات «اللغة 1/اللغة 2» الثابت (ar/en فقط) بتخزين عام
-    // محفوظ كخريطة JSON في SharedPreferences عبر GsonTypes+ConvertPreferencesCodec،
+    // محفوظ كخريطة JSON في SharedPreferences عبر ConvertPreferencesCodec (مظلة NateqJson)،
     // ليُدعم عدد غير محدود من اللغات. قراءة NateqTtsService.resolveConvertTarget
     // تتم مباشرةً من هذه الخريطة، ويُرحَّل أي إعداد قديم من السلوتات تلقائياً
     // عند أول وصول (ensureConvertSlotsMigrated) دون حذفها نفسها.

@@ -2,6 +2,16 @@ package com.aymankhattab.nateq.settings
 
 import androidx.lifecycle.ViewModel
 import com.aymankhattab.nateq.engine.PronunciationDictionary
+import com.aymankhattab.nateq.util.NateqJson
+import com.aymankhattab.nateq.util.optArray
+import com.aymankhattab.nateq.util.optBoolean
+import com.aymankhattab.nateq.util.optDouble
+import com.aymankhattab.nateq.util.optInt
+import com.aymankhattab.nateq.util.optLong
+import com.aymankhattab.nateq.util.optObject
+import com.aymankhattab.nateq.util.optString
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,42 +64,45 @@ class SettingsViewModel @Inject constructor(
     /** بناء ملف JSON كامل: إعدادات مصنفة الأنواع + القاموس + أسماء المتصلين. */
     fun buildBackupJson(): String {
         return try {
-            val root = org.json.JSONObject()
-            root.put("version", 1)
-            root.put("exportedAt", System.currentTimeMillis())
+            val root = JsonObject()
+            root.addProperty("version", 1)
+            root.addProperty("exportedAt", System.currentTimeMillis())
 
-            val settingsObj = org.json.JSONObject()
+            val settingsObj = JsonObject()
             settings.exportSettings().forEach { (key, value) ->
-                val entry = org.json.JSONObject()
+                val entry = JsonObject()
                 when (value) {
-                    is Float -> { entry.put("type", "float"); entry.put("value", value.toDouble()) }
-                    is Int -> { entry.put("type", "int"); entry.put("value", value) }
-                    is Long -> { entry.put("type", "int"); entry.put("value", value) }
-                    is Boolean -> { entry.put("type", "bool"); entry.put("value", value) }
-                    is String -> { entry.put("type", "string"); entry.put("value", value) }
+                    is Float -> { entry.addProperty("type", "float"); entry.addProperty("value", value.toDouble()) }
+                    is Int -> { entry.addProperty("type", "int"); entry.addProperty("value", value) }
+                    is Long -> { entry.addProperty("type", "int"); entry.addProperty("value", value) }
+                    is Boolean -> { entry.addProperty("type", "bool"); entry.addProperty("value", value) }
+                    is String -> { entry.addProperty("type", "string"); entry.addProperty("value", value) }
                     is Set<*> -> {
-                        val arr = org.json.JSONArray()
-                        for (item in value) arr.put(item.toString())
-                        entry.put("type", "stringset"); entry.put("value", arr)
+                        val arr = JsonArray()
+                        for (item in value) arr.add(item.toString())
+                        entry.addProperty("type", "stringset"); entry.add("value", arr)
                     }
                     else -> return@forEach
                 }
-                settingsObj.put(key, entry)
+                settingsObj.add(key, entry)
             }
-            root.put("settings", settingsObj)
+            root.add("settings", settingsObj)
 
-            val dictArr = org.json.JSONArray()
+            val dictArr = JsonArray()
             pronunciationDict.getAllEntries().forEach { (word, phon) ->
-                dictArr.put(org.json.JSONArray().put(word).put(phon))
+                val pair = JsonArray()
+                pair.add(word)
+                pair.add(phon)
+                dictArr.add(pair)
             }
-            root.put("dictionary", dictArr)
+            root.add("dictionary", dictArr)
 
-            val callers = org.json.JSONObject()
+            val callers = JsonObject()
             runCatching { settings.getCustomCallerNames() }.getOrDefault(emptyMap())
-                .forEach { (num, name) -> callers.put(num, name) }
-            root.put("callerNames", callers)
+                .forEach { (num, name) -> callers.addProperty(num, name) }
+            root.add("callerNames", callers)
 
-            root.toString()
+            NateqJson.toJson(root)
         } catch (t: Throwable) {
             ""
         }
@@ -102,48 +115,48 @@ class SettingsViewModel @Inject constructor(
      */
     fun applyBackupJson(text: String): Boolean {
         return try {
-            val root = org.json.JSONObject(text)
-            if (root.optInt("version", 0) != 1) return false
+            val root = NateqJson.parseObject(text) ?: return false
+            if (root.optInt("version") != 1) return false
 
             // حدود دفاعية ضد ملفات النسخ الاحتياطي الخبيثة/الضخمة الواردة من SAF
             if (text.length > MAX_BACKUP_BYTES) return false
-            val callerNames = root.optJSONObject("callerNames")
-            val callerCount = callerNames?.length() ?: 0
-            val settingsCount = root.optJSONObject("settings")?.length() ?: 0
+            val callers = root.optObject("callerNames")
+            val settingsObj = root.optObject("settings")
+            val callerCount = callers?.size() ?: 0
+            val settingsCount = settingsObj?.size() ?: 0
             if (callerCount + settingsCount > MAX_BACKUP_ENTRIES) return false
 
             var applied = false
 
-            val dictArr = root.optJSONArray("dictionary")
+            val dictArr = root.optArray("dictionary")
             if (dictArr != null) {
-                val map = org.json.JSONObject()
-                for (i in 0 until dictArr.length()) {
-                    val pair = dictArr.optJSONArray(i) ?: continue
-                    if (pair.length() < 2) continue
-                    map.put(pair.getString(0), pair.getString(1))
+                val map = JsonObject()
+                for (i in 0 until dictArr.size()) {
+                    // المزاوجات تُخزَّن مصفوفتين [كلمة، نطق] — نُجرّدها بأمان
+                    // والقيود/التنظيف واردة في PronunciationDictionary.importFromJson.
+                    val pairArr = dictArr.get(i).optArray() ?: continue
+                    if (pairArr.size() < 2) continue
+                    val first = pairArr.get(0)
+                    val second = pairArr.get(1)
+                    if (!first.isJsonPrimitive || !second.isJsonPrimitive) continue
+                    map.addProperty(first.asString, second.asString)
                 }
-                applied = pronunciationDict.importFromJson(map.toString()) || applied
+                applied = pronunciationDict.importFromJson(NateqJson.toJson(map)) || applied
             }
 
-            val callers = root.optJSONObject("callerNames")
-            if (callers != null && callers.length() > 0) {
+            if (callers != null && callers.size() > 0) {
                 val map = HashMap<String, String>()
-                val names = callers.names() ?: org.json.JSONArray()
-                for (i in 0 until names.length()) {
-                    val key = names.getString(i)
-                    map[key] = callers.getString(key)
+                for ((key, v) in callers.entrySet()) {
+                    if (v.isJsonPrimitive) map[key] = v.asString
                 }
                 settings.setCustomCallerNames(map)
                 applied = true
             }
 
-            val settingsObj = root.optJSONObject("settings")
-            if (settingsObj != null && settingsObj.length() > 0) {
+            if (settingsObj != null && settingsObj.size() > 0) {
                 val restored = HashMap<String, Any>()
-                val names = settingsObj.names() ?: org.json.JSONArray()
-                for (i in 0 until names.length()) {
-                    val key = names.getString(i)
-                    val entry = settingsObj.optJSONObject(key) ?: continue
+                for ((key, entryEl) in settingsObj.entrySet()) {
+                    val entry = entryEl.optObject() ?: continue
                     when (entry.optString("type")) {
                         // "int": نتحقق أن القيمة الطويلة ضمن حدود Int الصحيحة
                         // قبل التحويل حتى لا يُقلب Long خارج المدى إشارته (بند 17)
@@ -157,9 +170,12 @@ class SettingsViewModel @Inject constructor(
                         "bool" -> restored[key] = entry.optBoolean("value")
                         "string" -> restored[key] = entry.optString("value")
                         "stringset" -> {
-                            val arr = entry.optJSONArray("value") ?: continue
+                            val arr = entry.optArray("value") ?: continue
                             val set = HashSet<String>()
-                            for (j in 0 until arr.length()) set.add(arr.getString(j))
+                            for (j in 0 until arr.size()) {
+                                val v = arr.get(j)
+                                if (v.isJsonPrimitive) set.add(v.asString)
+                            }
                             restored[key] = set
                         }
                     }

@@ -1,7 +1,7 @@
 package com.aymankhattab.nateq.engine
 
 import com.aymankhattab.nateq.util.LanguageCode
-import com.google.gson.Gson
+import com.aymankhattab.nateq.util.NateqJson
 
 /**
  * تفضيلات نطق لغةٍ واحدة داخل نظام التحويل التلقائي:
@@ -35,8 +35,6 @@ data class LanguageSpeechPrefs(
  * القديمة. منطق خالص بلا Context (قابل للاختبار عبر JUnit النقي).
  */
 object ConvertPreferencesCodec {
-
-    private val gson = Gson()
 
     /** رموز ISO-3 الشائعة المفضّلة لإرجاعها إلى ISO-2 الموحّد للخريطة. */
     private val ISO3_TO_ISO2 = mapOf(
@@ -90,11 +88,7 @@ object ConvertPreferencesCodec {
      *  منعكس للأصناف وبالتالي لا يقع في قيم شاذة من المهاجمين/الإصدارات). */
     fun fromJson(json: String?): Map<String, LanguageSpeechPrefs> {
         if (json.isNullOrBlank()) return emptyMap()
-        val root = try {
-            com.google.gson.JsonParser.parseString(json)
-        } catch (_: Throwable) {
-            null
-        } ?: return emptyMap()
+        val root = NateqJson.parseElement(json) ?: return emptyMap()
         if (!root.isJsonObject) return emptyMap()
 
         val out = LinkedHashMap<String, LanguageSpeechPrefs>()
@@ -121,7 +115,7 @@ object ConvertPreferencesCodec {
 
     /** تسلسل الخريطة إلى JSON للخزن في SharedPreferences. */
     fun toJson(map: Map<String, LanguageSpeechPrefs>): String =
-        gson.toJson(map, GsonTypes.mapStringOf(LanguageSpeechPrefs::class.java))
+        NateqJson.toJson(map, NateqJson.mapStringOf(LanguageSpeechPrefs::class.java))
 
     /**
      * ترحيل سلوت قديم (1/2) إلى الخريطة الديناميكية بمفتاح لغة موحّد.

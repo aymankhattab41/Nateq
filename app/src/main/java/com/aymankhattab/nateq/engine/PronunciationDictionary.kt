@@ -3,7 +3,7 @@ package com.aymankhattab.nateq.engine
 import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
-import com.google.gson.Gson
+import com.aymankhattab.nateq.util.NateqJson
 import java.lang.reflect.Type
 import java.util.concurrent.ConcurrentHashMap
 
@@ -42,13 +42,14 @@ class PronunciationDictionary(private val context: Context) {
         null
     }
 
-    private val gson = Gson()
+    // مظلة JSON الموحّدة (البند 3): كل JSON يمر عبر NateqJson في مكان واحد.
     private val entries = ConcurrentHashMap<String, String>()
     // آلة Aho-Corasick يُعاد بناؤها عند تغيّر القاموس (للبحث في تمريرة واحدة)
     @Volatile
     private var ahoCorasick: AhoCorasick? = null
-    // نوع بالمفتاح النصي القيمة النصية بلا TypeToken (مقاوم لقصّ R8 للتوقيعات)
-    private val typeToken: Type = GsonTypes.mapStringOf(String::class.java)
+    // نوع بالمفتاح النصي القيمة النصية — من مظلة NateqJson (لا TypeToken:
+    // مقاوم لقصّ R8 للتوقيعات العامة).
+    private val typeToken: Type = NateqJson.mapStringOf(String::class.java)
 
     // ملف التفضيلات المشفّر على القرص — يُرصد طابعه لاكتشاف تعديلات عملية
     // الواجهة المنفصلة عن عملية :tts دون إعادة فتح التفضيلات في كل نطق.
@@ -252,11 +253,8 @@ class PronunciationDictionary(private val context: Context) {
      *          لا يُعدّ فشل التخزين المشفّر نجاحاً). */
     fun importFromJson(json: String, merge: Boolean = false): Boolean {
         if (json.length > MAX_IMPORT_BYTES) return false
-        val map = try {
-            gson.fromJson(json, typeToken) as? Map<*, *>
-        } catch (e: Exception) {
-            return false
-        } ?: return false
+        // تجزئة بلا رمي عبر المظلة: فاسد/غير مطابق ← null ← نرفض الاستيراد.
+        val map = NateqJson.fromJson<Map<*, *>>(json, typeToken) as? Map<*, *> ?: return false
 
         // فلترة الصفوف الصالحة فقط: مفتاح/قيمة نصيان غير فارغين ضمن الحدود
         val valid = LinkedHashMap<String, String>()
@@ -289,30 +287,27 @@ class PronunciationDictionary(private val context: Context) {
     }
 
     /** تصدير القاموس إلى JSON */
-    fun exportToJson(): String = gson.toJson(entries)
+    fun exportToJson(): String = NateqJson.toJson(entries)
 
     private fun load() {
         val sp = prefs ?: return
         val json = sp.getString("dictionary", "{}")
-        try {
-            val raw = gson.fromJson(json, typeToken) as? Map<*, *> ?: emptyMap<Any, Any>()
-            for ((k, v) in raw) {
-                if (k !is String || v !is String) continue
-                val key = k.trim()
-                val value = v.trim()
-                if (key.isEmpty() || key.length > MAX_KEY_LENGTH) continue
-                if (value.isEmpty() || value.length > MAX_VALUE_LENGTH) continue
-                entries[key] = value
-            }
-        } catch (_: Exception) {
-            entries.clear()
+        // تجزئة بلا رمي: فاسد ← null ← تبقى الخريطة فارغة (كما كان تنظيف catch سابقاً).
+        val raw = NateqJson.fromJson<Map<*, *>>(json, typeToken) as? Map<*, *> ?: emptyMap<Any, Any>()
+        for ((k, v) in raw) {
+            if (k !is String || v !is String) continue
+            val key = k.trim()
+            val value = v.trim()
+            if (key.isEmpty() || key.length > MAX_KEY_LENGTH) continue
+            if (value.isEmpty() || value.length > MAX_VALUE_LENGTH) continue
+            entries[key] = value
         }
     }
 
     private fun save(): Boolean {
         val sp = prefs ?: return false
         return try {
-            val json = gson.toJson(entries)
+            val json = NateqJson.toJson(entries)
             sp.edit().putString("dictionary", json).apply()
             lastStamp = currentStamp()
             true

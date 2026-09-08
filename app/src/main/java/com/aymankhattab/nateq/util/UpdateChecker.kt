@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
-import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -37,17 +36,22 @@ internal object UpdateChecker {
                     conn.readTimeout = 10_000
                     if (conn.responseCode != 200) return@withContext CheckResult.NetworkError
                     val body = conn.inputStream.bufferedReader().use { it.readText() }
-                    val obj = JSONObject(body)
-                    val tag = obj.optString("tag_name", "")
+                    // تجزئة استجابة GitHub عبر مظلة JSON الموحّدة (البند 3):
+                    // استجابة فاسدة/غير كائنية تُعامل كخطأ شبكة كما كان JSONObject سابقاً.
+                    val root = NateqJson.parseObject(body)
+                        ?: return@withContext CheckResult.NetworkError
+                    val tag = root.optString("tag_name")
                     val remoteCode = tag.trimStart('v', 'V')
                         .takeWhile { it.isDigit() }
                         .toIntOrNull() ?: return@withContext CheckResult.UpToDate
-                    val assets = obj.optJSONArray("assets")
-                    val apkAsset = (0 until (assets?.length() ?: 0))
-                        .mapNotNull { assets?.optJSONObject(it) }
+                    val assets = root.optArray("assets")
+                    val apkAsset = (0 until (assets?.size() ?: 0))
+                        .mapNotNull { assets?.get(it)?.optObject() }
                         .firstOrNull { it.optString("name") == APK_NAME }
                     if (remoteCode > currentVersionCode && apkAsset != null) {
-                        CheckResult.UpdateAvailable(tag, apkAsset.getString("browser_download_url"))
+                        val urlEl = apkAsset.optMember("browser_download_url")
+                        if (urlEl == null) return@withContext CheckResult.NetworkError
+                        CheckResult.UpdateAvailable(tag, urlEl.optString())
                     } else {
                         CheckResult.UpToDate
                     }

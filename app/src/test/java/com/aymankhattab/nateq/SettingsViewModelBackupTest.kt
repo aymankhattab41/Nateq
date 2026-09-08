@@ -234,6 +234,37 @@ class SettingsViewModelBackupTest {
         assertEquals(mapOf("0555" to "أحمد"), freshSettings.getCustomCallerNames())
     }
 
+    // ===== توافقية الشكل مع النسخ السابقة (org.json) =====
+
+    @Test
+    fun legacyOrgJsonShapedBackup_isRestored() {
+        // بصيغة كانت تنتجها org.json سابقاً: مدمجةً وبترتيب الحقول نفسها
+        // (version ثم exportedAt ثم settings ثم dictionary ثم callerNames)
+        // — مطابقة حرفياً لما تنتجه Gson اليوم، لضمان استمرار قراءة النسخ
+        // القديمة بعد هجرة البند 3 بلا أي تهجين جديد.
+        val json = """{"version":1,"exportedAt":1600000000000,"settings":{
+            "time_announcement_interval":{"type":"int","value":45},
+            "default_speech_rate":{"type":"float","value":1.25}
+        },"dictionary":[["ص","صفحة"]],
+        "callerNames":{"0123456789":"أحمد"}}"""
+        assertTrue(vm.applyBackupJson(json))
+        assertEquals(45, settings.getTimeAnnouncementInterval())
+        assertEquals(1.25f, settings.getDefaultSpeechRate(), 0.001f)
+        assertEquals("صفحة", dict.getAllEntries()["ص"])
+        assertEquals("أحمد", settings.getCustomCallerNames()["0123456789"])
+    }
+
+    @Test
+    fun legacyTabFormatMemoryFallback_thenWritesJson() {
+        // أسماء المتصلين كانت تُخزَّن سطرياً «key\tvalue» قبل البند 3: مسار
+        // الذاكرة (عند تعطّل Keystore) ما زال يبني تلك الصيغة ثم يقرؤها
+        // احتياطاً، والكتابة اللاحقة تتحول إلى JSON عبر المظلة.
+        settings.setCustomCallerNames(mapOf("+2012345678" to "أحمد"))
+        assertEquals("أحمد", settings.getCustomCallerNames()["+2012345678"])
+        // إعادة الكتابة أعلاه تُخزِّن JSON (مسار الذاكرة في Robolectric) —
+        // لا استثناء ولا فقدان.
+    }
+
     // ===== نسخة فارغة (بدون أي بيانات) =====
 
     @Test
