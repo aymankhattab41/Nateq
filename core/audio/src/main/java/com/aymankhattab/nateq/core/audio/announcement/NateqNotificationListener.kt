@@ -17,6 +17,7 @@ import com.aymankhattab.nateq.util.LanguageCode
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
 import javax.inject.Inject
+import kotlinx.coroutines.launch
 
 /**
  * خدمة الاستماع للإشعارات — تقرأ إشعارات التطبيقات المهمة (واتساب، تلجرام، إلخ) بالصوت.
@@ -37,17 +38,42 @@ class NateqNotificationListener : NotificationListenerService() {
             val cn = ComponentName(context, NateqNotificationListener::class.java)
             return flat.contains(cn.flattenToString())
         }
+
+        /** هل يحوي عنوان/نص الإشعار رمز تحقق سري ينبغي حجبه؟ يُطبَّق فقط مع
+         * تفعيل حماية الخصوصية — نفس منطق فلتر OTP الخاص بالرسائل النصية. */
+        fun shouldMaskOtp(
+            privacyEnabled: Boolean,
+            title: String?,
+            text: String?
+        ): Boolean = privacyEnabled && LocaleUtils.containsOtp(
+            "${title.orEmpty()} ${text.orEmpty()}".trim()
+        )
     }
 
     /** مصدر الإعدادات المحقون — نفس كائن عملية المحرك المُدار من Hilt. */
     @Inject
     lateinit var settingsRepository: SettingsRepository
 
+    @Volatile
     private var lastNotifTime = 0L
     private val minIntervalMs = 3000L // الحد الأدنى بين إشعارين متتاليين
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         sbn ?: return
+        // كل المعالجة (قراءات الإعدادات، استعلام تطبيق الرسائل الافتراضي،
+        // إطارات الواجهة Keyguard، فحص الاستثناءات، النطق) تُنفَّذ على
+        // appScope (Io) — استدعاء NLS يأتي على خيط الخدمة الرئيسي وكانت
+        // عمليات قرص و IPC متزامنة عليه تسبب إسقاط إطارات مع وصول كثيف.
+        (applicationContext as AnnouncementAppContext).appScope.launch {
+            try {
+                onNotificationPostedWorker(sbn)
+            } catch (t: Throwable) {
+                Log.e(TAG, "onNotificationPosted failed", t)
+            }
+        }
+    }
+
+    private fun onNotificationPostedWorker(sbn: StatusBarNotification) {
         try {
             val pkg = sbn.packageName ?: return
 
@@ -87,27 +113,58 @@ class NateqNotificationListener : NotificationListenerService() {
             val notification = sbn.notification ?: return
             val extras = notification.extras
 
-            val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim()
-            val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim()
+            val title = extras.getCharSequence(Notification.EXTRA_TITLE)
+                ?.toString()?.trim()
+            val text = extras.getCharSequence(Notification.EXTRA_TEXT)
+                ?.toString()?.trim()
 
             if (title.isNullOrBlank() && text.isNullOrBlank()) return
 
             val appName = getAppName(pkg)
-            // خصوصية قفل الشاشة: عند القفل يُنطق اسم التطبيق فقط دون العنوان والنص
-            // (حماية لكلمات تحقق OTP وغيرها من الحساسيات في الإشعارات).
-            val privacyLocked = settings.isLockScreenPrivacyEnabled()
-                    && settings.isDeviceScreenLocked()
-            val speechText = buildSpeechText(appName, title, text, privacyLocked)
+            // خصوصية قفل الشاشة: عند القفل يُنطق اسم التطبيق فقط دون العنوان
+            // والنص (حماية لكلمات تحقق OTP وغيرها من الحساسيات في الإشعارات).
+            val privacyEnabled = settings.isLockScreenPrivacyEnabled()
+            val privacyLocked =
+                privacyEnabled && settings.isDeviceScreenLocked()
+            // فلتر OTP الشامل (حماية الخصوصية مفعلة): كلُّ الإشعارات لا مسار
+            // تطبيق الرسائل فقط — واتساب/تلجرام/البنوك تُرسل رموز تحقق تُنطق
+            // علناً دون حجب. يُنطق بدل الرمز عبارة آمنة عامة (نمط حماية SMS).
+            val isOtp = shouldMaskOtp(
+                privacyEnabled, title, text
+            )
+            val speechText = if (isOtp) {
+                val appLang = if (LocaleUtils.containsArabic(appName)) {
+                    LanguageCode.AR.tag
+                } else {
+                    LanguageCode.EN.tag
+                }
+                LocaleUtils.stringForSpeech(
+                    applicationContext, appLang,
+                    R.string.notif_otp_safe, R.string.notif_otp_safe
+                ).replace("{app}", appName)
+            } else {
+                buildSpeechText(appName, title, text, privacyLocked)
+            }
             val isArabic = LocaleUtils.containsArabic(speechText)
-            val locale = if (isArabic) Locale.forLanguageTag(LanguageCode.AR.tag) else Locale.forLanguageTag(LanguageCode.EN.tag)
+            val locale = if (isArabic) {
+                Locale.forLanguageTag(LanguageCode.AR.tag)
+            } else {
+                Locale.forLanguageTag(LanguageCode.EN.tag)
+            }
 
             // سجلّ مجرّد من مضمون الإشعار (قد يحوي OTP/حساسيات) — الطول والحزمة فقط.
             Log.d(TAG, "Notification from $pkg: ${speechText.length} chars")
 
             // احترام إعدادات فئة "صوت الإشعارات" (سرعته/نبرته/مستواه) بدل ثوابت 1.0
-            val speechRate = settings.getSpeechRateForCategory(SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS)
-            val pitch = settings.getPitchForCategory(SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS)
-            val volume = settings.getVolumeForCategory(SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS)
+            val speechRate = settings.getSpeechRateForCategory(
+                SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+            )
+            val pitch = settings.getPitchForCategory(
+                SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+            )
+            val volume = settings.getVolumeForCategory(
+                SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+            )
             AnnouncementSpeaker.getInstance(applicationContext)
                 .speak(speechText, locale, speechRate, pitch, volume)
 

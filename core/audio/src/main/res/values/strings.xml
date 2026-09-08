@@ -33,6 +33,7 @@
     <string name="notif_from_title_text">إشعار من {app}: {title}. {text}</string>
     <string name="notif_from_title">إشعار من {app}: {title}</string>
     <string name="notif_from_text">إشعار من {app}: {text}</string>
+    <string name="notif_otp_safe">إشعار من {app} يحتوي على رمز تحقق سري</string>
     <string name="app_whatsapp">واتساب</string>
     <string name="app_whatsapp_business">واتساب للأعمال</string>
     <string name="app_telegram">تلجرام</string>

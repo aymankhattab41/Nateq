@@ -30,6 +30,7 @@
     <string name="notif_from_title_text">Notification from {app}: {title}. {text}</string>
     <string name="notif_from_title">Notification from {app}: {title}</string>
     <string name="notif_from_text">Notification from {app}: {text}</string>
+    <string name="notif_otp_safe">Notification from {app} containing a secure verification code</string>
     <string name="app_whatsapp">WhatsApp</string>
     <string name="app_whatsapp_business">WhatsApp Business</string>
     <string name="app_telegram">Telegram</string>
