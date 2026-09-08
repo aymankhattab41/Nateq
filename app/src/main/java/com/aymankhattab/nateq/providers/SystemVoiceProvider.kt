@@ -1,6 +1,8 @@
 package com.aymankhattab.nateq.providers
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
@@ -47,9 +49,13 @@ class SystemVoiceProvider(
      * اكتمال كتابة المحرك عبر `await`) خارج Main Looper. سبب الحاجة: استدعاء التهيئة
      * `onInit` يصدر من `TextToSpeech` عبر منشئ المعالِجات على Main thread، وإن بُعِث
      * `onDone` من المحرك الخارجي على Main أيضاً، فالحظر داخل `onInit` يسبب Deadlock
-     * ويجمّد الواجهة حتى المهلة (30 ثانية). نقل الاصطناع إلى خيط خلفي يحرّر Main فوراً.
+     * ويجمّد الواجهة حتى المهلة (قصيرة للنصوص القصيرة). نقل الاصطناع إلى خيط خلفي
+     * يحرّر Main فوراً.
      */
     private val synthExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+
+    /** معالج نبض Main للجدولة الزمنية لمهلة التهيئة [INIT_TIMEOUT_MS] (غير حاصر). */
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     companion object {
         private const val TAG = "NATEQ_TTS"
@@ -57,11 +63,29 @@ class SystemVoiceProvider(
         /** قيمة احتياطية إذا تعذّر قراءة ترويسة WAV (تطابق القيمة السابقة ثابتة). */
         private const val FALLBACK_SAMPLE_RATE = 22050
 
-        /** أقصى مدة انتظار لكتابة المحرك ملف الصوت قبل اعتبار التخليق فاشلاً. */
-        private const val MAX_SYNTH_WAIT_MS = 30_000L
+        /**
+         * مهلة أقصى لتهيئة محرك TTS خارجي: إن علق المحرك داخل
+         * `TextToSpeech(context, listener)` ولم يرُدّ البتة، بقي الكوروتين
+         * معلقاً للأبد — نعتبر التهيئة فاشلة بعد 5 ثوانٍ ونتراجع للمحرك التالي
+         * بدل التجمّد اللانهائي.
+         */
+        private const val INIT_TIMEOUT_MS = 5_000L
 
         /** دورية فحص الإلغاء أثناء انتظار اكتمال الكتابة. */
         private const val CANCELLATION_POLL_MS = 100L
+
+        /**
+         * مهلة انتظار اكتمال كتابة المحرك لملف الصوت حسب طول النص (بالمللي ثانية).
+         * للنصوص القصيرة 1.5–3 ثوانٍ فقط: قارئات الشاشة لا تحتمل مهلة 30 ثانية لكل
+         * محرك (وتصل سلسلة التراجع بين محركين إلى 60 ثانية — بطء غير مقبول)،
+         * والنصوص الطويلة تحصل على مهلة أوسع لكتابة الملف كاملاً.
+         */
+        internal fun synthesisTimeoutMs(textLength: Int): Long = when {
+            textLength <= 10 -> 1500L
+            textLength <= 80 -> 2000L
+            textLength <= 300 -> 3000L
+            else -> 8000L
+        }
 
         /**
          * سقف أقصى للمحاولات الفاشلة قبل التوقف (بعد فشل محركين نتوقف بدل
@@ -235,7 +259,8 @@ class SystemVoiceProvider(
         // (`EnginePicker.installedEnginePackages`) فلا يحدث تكرار ذاتي.
         // إلغاء قابل للتعاون: على عكس suspendCoroutine، يُبلَّغ suspendCancellableCoroutine
         // بالخارج عند إلغاء المهمة (onStop من المحرك)، فنضبط علماً ونتوقف فوراً بدل
-        // انتظار القفل حتى 30 ثانية. الاستئناف بعد الإلغاء يُسقط تلقائياً وهذا متوقع.
+        // انتظار القفل حتى المهلة المتكيّفة بطول النص. الاستئناف بعد الإلغاء
+        // يُسقط تلقائياً وهذا متوقع.
         suspendCancellableCoroutine<Unit> { cont ->
             val cancelled = AtomicBoolean(false)
             cont.invokeOnCancellation {
@@ -315,7 +340,11 @@ class SystemVoiceProvider(
                         tts = null
                     }
                     Log.w(TAG, "[Provider] init engine=$currentEngine")
+                    // علاّمة تحسم سباقاً واحداً فقط بين ردّ onInit ومهلة التهيئة:
+                    // أياً منهما يسبق يحسم المصير، والآخر يُسقط (يمنع مزدوجاً).
+                    val initSettled = AtomicBoolean(false)
                     tts = TextToSpeech(context, { status ->
+                        if (initSettled.getAndSet(true)) return@TextToSpeech
                         if (done.getAndSet(true)) return@TextToSpeech
                         if (status == TextToSpeech.SUCCESS && !cancelled.get()) {
                             // onInit صدر من TextToSpeech على Main Looper؛ نقل الاصطناع
@@ -327,7 +356,7 @@ class SystemVoiceProvider(
                                 },
                                 onSuccess = { cont.resume(Unit) },
                                 onFailure = {
-                                    // فشل النطق — جرّب محرك جوجل إن أمكن.
+                                    // فشل النطق — جرّب محركاً آخر إن أمكن.
                                     retryWithGoogle(currentEngine, voice, text, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cont, cancelled, desiredVoiceName, failedEngines)
                                 }
                             )
@@ -337,6 +366,21 @@ class SystemVoiceProvider(
                         }
                     }, currentEngine)
                     ttsEngine = currentEngine
+                    // مهلة تهيئة أقصاها 5 ثوانٍ: إن علق المحرك ولم يُرِدّ onInit،
+                    // نُسقط المحرك ونتراجع بدل بقاء الكوروتين معلقاً للأبد. غير حاصر
+                    // (منبّه على Main) فلا يُجمّد الخيط ولا يتعارض مع ردّ onInit الآجل.
+                    mainHandler.postDelayed({
+                        if (!initSettled.getAndSet(true) &&
+                            done.compareAndSet(false, true) &&
+                            !cancelled.get()
+                        ) {
+                            Log.w(TAG, "[Provider] engine init timed out after ${INIT_TIMEOUT_MS}ms: $currentEngine")
+                            runCatching { tts?.shutdown() }
+                            tts = null
+                            ttsEngine = null
+                            retryWithGoogle(currentEngine, voice, text, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cont, cancelled, desiredVoiceName, failedEngines)
+                        }
+                    }, INIT_TIMEOUT_MS)
                 } else if (!done.getAndSet(true)) {
                     // مثيل نفس المحرك جاهز — ننطق مباشرة بإعادة استخدامه. ننفّذ الاصطناع
                     // الحاصر على خيط خلفي (اختبارياً قد نصل هنا من مسار Main) حتى لا
@@ -499,10 +543,13 @@ class SystemVoiceProvider(
 
         var success = false
         if (status == TextToSpeech.SUCCESS) {
-            // ننتظر فعلاً حتى يكتب المحرك الملف كاملاً (أو يُلغى الإعلان/النطق)،
-            // بفحص الإلغاء كل 100ms بدل القفل الأعمى 30 ثانية — فإذا أوقف
-            // المستخدم النطق (onStop) نتحرر فوراً ولا نعلق 30 ثانية.
-            val deadline = SystemClock.elapsedRealtime() + MAX_SYNTH_WAIT_MS
+            // ننتظر فعلاً حتى يكتب المحرك الملف كاملاً (أو يُلغى الإعلان/النطق) مع
+            // فحص الإلغاء كل 100ms بدل القفل الأعمى — فإذا أوقف المستخدم النطق
+            // (onStop) نتحرر فوراً. المهلة متكيّفة مع طول النص ([synthesisTimeoutMs]):
+            // للنصوص القصيرة 1.5–3 ثوانٍ فقط (لا يحتمل قارئ الشاشة 30 ثانية انتظار)
+            // وللطويلة أوسع ليكتمل كتابة الملف.
+            val waitMs = synthesisTimeoutMs(text.length)
+            val deadline = SystemClock.elapsedRealtime() + waitMs
             var finished = false
             try {
                 while (true) {
