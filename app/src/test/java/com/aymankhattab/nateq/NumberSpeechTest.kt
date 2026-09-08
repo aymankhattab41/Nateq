@@ -143,4 +143,31 @@ class NumberSpeechTest {
     fun formatByMode_largeGrouping() {
         assertEquals("مائة وثلاثة وعشرون, مائة وثلاثة وعشرون", NumberSpeech.formatByMode(3, 123123, false))
     }
+
+    @Test
+    fun formatByMode_leadingZerosPreserved() {
+        // الرمز 102 في التجميع الزوجي: «02» صفر بادئ لا يُفقد
+        assertEquals("واحد, صفر اثنان", NumberSpeech.formatByMode(2, 102, false))
+        assertEquals("one, zero two", NumberSpeech.formatByMode(2, 102, true))
+        // تجميع ثلاثي لـ 1002: «002» ثلاثة أصفار بادئة
+        assertEquals("واحد, صفر صفر اثنان", NumberSpeech.formatByMode(3, 1002, false))
+        assertEquals("one, zero zero two", NumberSpeech.formatByMode(3, 1002, true))
+    }
+
+    @Test
+    fun formatByMode_groupingUpToEightDigits() {
+        // تجميع خماسي/ثماني يدعم 8 خانات بلا انهيار (كان محدوداً بـ 9999)
+        assertEquals(
+            "ألف ومائتان وأربعة وثلاثون, ستة وخمسون ألفاً وسبعمائة وتسعة وثمانون",
+            NumberSpeech.formatByMode(5, 123456789, false)
+        )
+        assertEquals(
+            "اثنا عشر مليوناً وثلاثمائة وخمسة وأربعون ألفاً وستمائة وثمانية وسبعون",
+            NumberSpeech.formatByMode(8, 12345678, false)
+        )
+        assertEquals(
+            "twelve million three hundred forty five thousand six hundred seventy eight",
+            NumberSpeech.formatByMode(8, 12345678, true)
+        )
+    }
 }

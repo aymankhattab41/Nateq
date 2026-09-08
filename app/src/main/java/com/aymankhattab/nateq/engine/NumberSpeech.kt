@@ -11,8 +11,9 @@ object NumberSpeech {
 
     /**
      * تحويل رقم إلى كلمات إنجليزية (للأرقام المنفصلة).
-     * يدعم حتى 9999. معامل isFeminine غير مؤثر في الإنجليزية لكنه يبقى
-     * للتوافق مع الاستدعاءات الموحّدة (لا جنس في الإنجليزية).
+     * يدعم حتى 99,999,999 (8 خانات) لخدمة التجميع الخماسي..الثُماني.
+     * معامل isFeminine غير مؤثر في الإنجليزية لكنه يبقى للتوافق مع
+     * الاستدعاءات الموحّدة (لا جنس في الإنجليزية).
      */
     fun toEnglishWords(number: Int, isFeminine: Boolean = false): String {
         return when (number) {
@@ -50,7 +51,20 @@ object NumberSpeech {
                 if (remainder == 0) "$thousands thousand"
                 else "$thousands thousand ${toEnglishWords(remainder)}"
             }
-            else -> number.toString()
+            in 10000..999999 -> {
+                val thousands = number / 1000
+                val remainder = number % 1000
+                val thousandWord = toEnglishWords(thousands)
+                if (remainder == 0) "$thousandWord thousand"
+                else "$thousandWord thousand ${toEnglishWords(remainder)}"
+            }
+            else -> {
+                val millions = number / 1000000
+                val remainder = number % 1000000
+                val millionWord = toEnglishWords(millions)
+                if (remainder == 0) "$millionWord million"
+                else "$millionWord million ${toEnglishWords(remainder)}"
+            }
         }
     }
 
@@ -146,7 +160,42 @@ object NumberSpeech {
                 else if (r < 100) "$thousand و${under100(r)}"
                 else "$thousand و${toArabicWords(r, isFeminine)}"
             }
-            else -> number.toString()
+            number in 10000..999999 -> {
+                // تمييز الآلاف (1..999) بالأشكال النحوية الصحيحة:
+                // «خمسة آلاف»، «خمسة عشر ألفاً»، «خمسمائة ألف»، «مائتا ألف».
+                fun thousandPart(t: Int): String = when {
+                    t == 1 -> "ألف"
+                    t == 2 -> "ألفان"
+                    t in 3..10 -> "${onesM[t]} آلاف"
+                    t in 11..99 -> "${toArabicWords(t, isFeminine = false)} ألفاً"
+                    t == 100 -> "مائة ألف"
+                    t == 200 -> "مائتا ألف"
+                    t % 100 == 0 -> "${toArabicWords(t, isFeminine = false)} ألف"
+                    t % 100 in 3..10 -> "${toArabicWords(t, isFeminine = false)} آلاف"
+                    else -> "${toArabicWords(t, isFeminine = false)} ألفاً"
+                }
+                val t = number / 1000
+                val r = number % 1000
+                val thousand = thousandPart(t)
+                if (r == 0) thousand
+                else if (r < 100) "$thousand و${under100(r)}"
+                else "$thousand و${toArabicWords(r, isFeminine)}"
+            }
+            else -> {
+                // الملايين بعد 8 خانات (حتى 99,999,999): تصريف المليون مع
+                // التمييز («مليون»، «مليونان»، «ملايين»، «مليوناً»).
+                val m = number / 1000000
+                val r = number % 1000000
+                val million = when (m) {
+                    1 -> "مليون"
+                    2 -> "مليونان"
+                    in 3..10 -> "${onesM[m]} ملايين"
+                    else -> "${toArabicWords(m, isFeminine = false)} مليوناً"
+                }
+                if (r == 0) million
+                else if (r < 100) "$million و${under100(r)}"
+                else "$million و${toArabicWords(r, isFeminine)}"
+            }
         }
     }
 
@@ -215,8 +264,17 @@ object NumberSpeech {
             index += groupSize
         }
         val words = groups.map { g ->
-            val v = try { g.toInt() } catch (t: Throwable) { 0 }
-            if (isEnglish) toEnglishWords(v) else toArabicWords(v, isFeminine = false)
+            // مجموعة تبدأ بصفر تُنطق رقماً رقماً للحفاظ على الأصفار البادئة:
+            // «02» → «صفر اثنان» لا «اثنان» (يُفسد رموز التحقق OTP مثل 102).
+            if (g.startsWith("0")) {
+                g.map { ch ->
+                    val d = ch.digitToInt()
+                    if (isEnglish) toEnglishWords(d) else toArabicWords(d, isFeminine = false)
+                }.joinToString(" ")
+            } else {
+                val v = try { g.toInt() } catch (t: Throwable) { 0 }
+                if (isEnglish) toEnglishWords(v) else toArabicWords(v, isFeminine = false)
+            }
         }.joinToString(", ")
         return (sign + words).trim()
     }
