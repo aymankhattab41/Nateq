@@ -127,6 +127,22 @@ class LanguageSegmenterTest {
     }
 
     @Test
+    fun arabicExtendedBlocks_classifiedAsArabic() {
+        // يغطي النطاقات العربية الموسّعة الناقصة (البند): العربية الموسّعة-ب
+        // (0x0870..0x089F)، والعربية الموسّعة-ج (0x10EC0..0x10EFF)، ورموز
+        // الرياضيات العربية (0x1EE00..0x1EEFF) — نصٌّ منها ضمن طلبٍ عربي يجب
+        // أن يُصنف كله عربياً لا أجنبياً.
+        val extendedB = "\u0870\u089F"
+        val extendedC = "\uD803\uDEC0\uD803\uDEFF"
+        val mathSymbols = "\uD83B\uDE00\uD83B\uDEFF"
+        val combined = "قاعدة " + extendedB + " " + extendedC + " " + mathSymbols + " نهاية"
+        val (texts, tags) = textsAndTags(combined, "ar")
+        assertEquals("النصوص الموسّعة تُصنَّف كلها عربية", listOf(combined), texts)
+        assertEquals(listOf("ar"), tags)
+        assertEquals(combined, texts.joinToString(""))
+    }
+
+    @Test
     fun cyrillic_withArabicRequest_fallsToEnglish() {
         val (texts, tags) = textsAndTags("Привет мир", "ar")
         assertEquals(listOf("Привет мир"), texts)
