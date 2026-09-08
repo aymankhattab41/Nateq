@@ -41,4 +41,6 @@ dependencies {
     implementation("androidx.hilt:hilt-navigation-fragment:1.2.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
     implementation("androidx.fragment:fragment-ktx:1.8.6")
+
+    testImplementation("junit:junit:4.13.2")
 }

@@ -58,7 +58,7 @@ class LanguageSegmenter {
 
     private enum class Kind { ARABIC, OTHER, NEUTRAL }
 
-    private data class Run(val kind: Kind, val start: Int, val endExclusive: Int)
+    private class Run(val kind: Kind, val start: Int, var endExclusive: Int)
 
     /**
      * @param fallbackLanguage لغة السقوط القادمة من الطلب/الإعلان: العربية
@@ -132,7 +132,7 @@ class LanguageSegmenter {
             index += width
             val last = runs.lastOrNull()
             if (last != null && last.kind == kind) {
-                runs[runs.size - 1] = last.copy(endExclusive = index)
+                last.endExclusive = index
             } else {
                 runs.add(Run(kind, start, index))
             }
