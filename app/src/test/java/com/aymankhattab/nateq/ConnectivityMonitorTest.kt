@@ -3,7 +3,6 @@ package com.aymankhattab.nateq
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.net.NetworkInfo
 import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.core.data.ConnectivityMonitor
 import org.junit.Assert.assertFalse
@@ -44,22 +43,34 @@ class ConnectivityMonitorTest {
         shadowOf(cm).setDefaultNetworkActive(false)
     }
 
-    /** تجعل شبكة Wi-Fi نشطة بمواصفات [caps] (netId=1 == TYPE_WIFI). */
+    /**
+     * تجعل شبكة Wi-Fi (netId=1 == TYPE_WIFI) نشطة بمواصفات [caps].
+     *
+     * ملاحظة: [ConnectivityManager.activeNetwork] في محاكاة Robolectric 4.14 لا
+     * يعود إلا بشبكة «نشطة افتراضياً» ([setDefaultNetworkActive]) مع معلومات
+     * شبكة معلّقتها ([setActiveNetworkInfo]) لشبكة netId يوازي نوعها — والبناء الوحيد
+     * لصنع NetworkInfo في الظل يعتمد فئات/ثوابت مهملة منذ API 29، لذا يُحتوى كتم
+     * التحذير في دالة واحدة موثقة ([activeWifiInfo]) بدل تكراره في كل اختبار.
+     */
     private fun setActiveWifi(caps: NetworkCapabilities) {
-        // عبر مصنع الظل لا المُنشئ المباشر (ثابتات NetworkInfo أعطّلت في المحاكاة).
-        val info = ShadowNetworkInfo.newInstance(
-            NetworkInfo.DetailedState.CONNECTED,
-            ConnectivityManager.TYPE_WIFI,
-            0,
-            true,
-            NetworkInfo.State.CONNECTED
-        )
-        val network = ShadowNetwork.newInstance(ConnectivityManager.TYPE_WIFI)
+        val info = activeWifiInfo()
+        val network = ShadowNetwork.newInstance(1) // netId=1 == TYPE_WIFI — مفتاح الشبكة النشطة عند الظل
         shadowOf(cm).setActiveNetworkInfo(info)
         shadowOf(cm).setDefaultNetworkActive(true)
         shadowOf(cm).addNetwork(network, info)
         shadowOf(cm).setNetworkCapabilities(network, caps)
     }
+
+    /** بنّاء الـ NetworkInfo المهمل — تطلبه محاكاة الظل حصراً لتعريف الشبكة النشطة. */
+    @Suppress("DEPRECATION")
+    private fun activeWifiInfo(): android.net.NetworkInfo =
+        ShadowNetworkInfo.newInstance(
+            android.net.NetworkInfo.DetailedState.CONNECTED,
+            ConnectivityManager.TYPE_WIFI,
+            0,
+            true,
+            android.net.NetworkInfo.State.CONNECTED
+        )
 
     /**
      * نبني [NetworkCapabilities] بإضافة القدرات عبر ظلّها — مُعدِّلات
