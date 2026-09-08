@@ -5,11 +5,13 @@ import android.util.Log
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
 import com.aymankhattab.nateq.settings.SettingsRepository
+import com.aymankhattab.nateq.util.StartupTempSweeper
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -42,6 +44,12 @@ class NateqApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+
+        // تنظيف الملفات المؤقتة اليتيمة عند الإقلاع (بند 19.2) — غير حاصر،
+        // على النطاق العام خلفي فلا يؤخر بدء التطبيق ولا يعطّل إقلاع الخدمات.
+        appScope.launch {
+            runCatching { StartupTempSweeper(applicationContext).sweep() }
+        }
 
         // تطبيق لغة الواجهة المختارة يدوياً؛ في حال لم تُحدَّد تتبع الواجهة لغة النظام تلقائياً.
         // الحقل محقون من Hilt لكن نُبقي الحماية: أي فشل تهيئة (Keystore قديم مثلاً)
