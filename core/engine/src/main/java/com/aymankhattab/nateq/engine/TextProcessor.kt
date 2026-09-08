@@ -58,7 +58,7 @@ class TextProcessor(
     // لترتيب معالجة النص الأصلي: تواريخ → أوقات → عملات → وحدات → روابط →
     // رومانية → هواتف → رموز → أرقام.
     private val heavySteps: List<TextProcessingStep> = listOf(
-        DateStep(context, injectedSettings),
+        DateStep(injectedSettings),
         TimeStep,
         CurrencyStep,
         UnitStep,

@@ -23,4 +23,7 @@ android {
 dependencies {
     // المفوّضون الموحّدون (AppDispatchers) — Dispatchers.Main يحتاج منصة أندرويد.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
+    // Gson — واجهة NateqJson المركزية والـ ParameterizedType (GsonTypes) تعتمدان عليه.
+    // api: NateqJson يكشف أنواع gson (JsonElement/JsonObject...) في API العام.
+    api("com.google.code.gson:gson:2.12.1")
 }

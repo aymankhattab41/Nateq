@@ -1,8 +1,6 @@
 package com.aymankhattab.nateq.engine.pipeline
 
-import android.content.Context
 import com.aymankhattab.nateq.core.engine.SynthesisConfig
-import com.aymankhattab.nateq.settings.SettingsRepository
 import java.util.Calendar
 import java.util.Locale
 import java.util.regex.Matcher
@@ -14,7 +12,6 @@ import java.util.regex.Pattern
  * حسب تفضيل المستخدم إن وُجدت حقنة الإعدادات (قراءة لحظية لا أكثر).
  */
 internal class DateStep(
-    private val context: Context,
     private val injectedSettings: SynthesisConfig? = null
 ) : TextProcessingStep {
 
@@ -80,7 +77,7 @@ internal class DateStep(
         // ولا نُمرر قيماً ميلادية عبر أسماء الشهور الهجرية (كان ينتج نطقاً مختلطاً
         // مثل «خمسة عشر محرم 2024»).
         if (runCatching {
-                (injectedSettings ?: SettingsRepository(context)).isHijriDateEnabled()
+                injectedSettings?.isHijriDateEnabled() == true
             }.getOrDefault(false)
         ) {
             val hijri = runCatching { toHijri(day, month, year) }.getOrNull()

@@ -21,4 +21,15 @@ android {
 
 dependencies {
     implementation(project(":core:common"))
+
+    // PronunciationDictionary — تخزين مشفّر via EncryptedSharedPreferences/MasterKey
+    // (نفس إصدار :app).
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    // اختبارات الوحدة (JVM + Robolectric) — نفس طقم اختبارات :app؛ تُشغَّل عبر
+    // :core:engine:testDebugUnitTest (AGP 9 لا يوفر testReleaseUnitTest).
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
 }
