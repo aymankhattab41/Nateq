@@ -254,8 +254,9 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
         when (requestAudioFocus()) {
             AudioManager.AUDIOFOCUS_REQUEST_DELAYED -> {
                 // التركيز سيُسلَّم لاحقاً عبر onAudioFocusChange؛ ننتظر وصول
-                // AUDIOFOCUS_GAIN ثم ننطق. مؤقّت الأمان يضمن المحاولة حتى لو
-                // تأخر تسليم التركيز أو لم يصل (لا تُفقد إعلانات المتصل/الرسائل).
+                // AUDIOFOCUS_GAIN ثم ننطق. مؤقّت الأمان يحرّر الإعلان ما دام
+                // التركيز قد تحرّر فعلاً (لا نطق أبداً والتركيز ما يزال محجوزاً
+                // لمشغّلٍ آخر — المكالمة الهاتفية أشهره — فيتداخل معه الصوت).
                 pendingFocusAction = {
                     startSpeech(text, locale, speechRate, pitch, volume, emojiCfg, parts)
                 }
@@ -263,21 +264,24 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
                     val action = pendingFocusAction
                     pendingFocusAction = null
                     pendingFocusTimer = null
-                    action?.invoke()
+                    // حارس المسار المؤجل: ننطق عند انقضاء المهلة فقط إن بلغنا
+                    // التركيز فعلاً؛ وإلا إلغاءٌ صامت (بدل إجبار النطق فوق
+                    // مكالمةٍ أو وسائطَ صارمةٍ حجزت التركيز، كما كان يحدث).
+                    if (hasAudioFocus) {
+                        action?.invoke()
+                    } else {
+                        Log.w(TAG, "[Focus] DELAYED أُلغيت الصامتة: التركيز لم يُسلَّم")
+                    }
                 }
                 pendingFocusTimer = timer
                 mainHandler.postDelayed(timer, 3000)
             }
-AudioManager.AUDIOFOCUS_REQUEST_FAILED ->
-                // لا تركيز حالي (مشغّل صوتي آخر يرفض التنازل): نؤجل قليلاً ثم
-                // ننطق بأفضل جهد حتى لا تُفقد الإعلانات الحرجة، فنعيد المحاولة
-                // بعد مؤقّت قصير لاستعادة التركيز.
-                mainHandler.postDelayed({
-                    // نحذف أي إجراء سابق حتى لا يتعارض مع محاولتنا الجديدة
-                    pendingFocusAction = null
-                    pendingFocusTimer = null
-                    startSpeech(text, locale, speechRate, pitch, volume, emojiCfg, parts)
-                }, 400)
+            AudioManager.AUDIOFOCUS_REQUEST_FAILED ->
+                // فشل الحصول على التركيز (المكالمة الهاتفية أشهر الأسباب): إلغاءٌ
+                // فوري صامت — لا ننطق الإعلان فوق صوتٍ ناشطٍ محجوز. لم يكن هذا
+                // التصرف سابقاً (كان يُنطق «أفضل جهد» بعد 400ms) لكنه خارج
+                // آداب النظام ويقطع المحادثة الهاتفية.
+                Log.w(TAG, "[Focus] FAILED — إلغاء الإعلان صامتاً (صوتٌ ناشط يملك التركيز)")
             else ->
                 // AUDIOFOCUS_REQUEST_GRANTED: التركيز مُنح فوراً — ننطق مباشرة.
                 startSpeech(text, locale, speechRate, pitch, volume, emojiCfg, parts)
@@ -599,8 +603,11 @@ AudioManager.AUDIOFOCUS_REQUEST_FAILED ->
                 audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
                 audioFocusRequest = null
             } else {
+                // تمرير نفس المستمع المسجَّل عند الطلب (لا null): null يُطلق
+                // التركيز لكنه يترك تسجيل المستمع في AudioService قائماً فتتسرب
+                // مراجع المستمعين مع تتابع دورات النطق على أندرويد ما قبل O.
                 @Suppress("DEPRECATION")
-                audioManager.abandonAudioFocus(null)
+                audioManager.abandonAudioFocus(onAudioFocusChange)
             }
         } catch (t: Throwable) {
             Log.w(TAG, "releaseAudioFocus failed", t)
