@@ -1,4 +1,5 @@
 <resources>
+<string name="settings_title">Lord TTS Settings</string>
 <string name="all_announcements_enabled">All announcements enabled</string>
 <string name="all_announcements_summary">Turning it off silently stops automatic announcements (time, battery, messages, notifications, caller)</string>
 <string name="announcement_turned_off">Off</string>
