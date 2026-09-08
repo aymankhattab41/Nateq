@@ -6,6 +6,7 @@ import android.text.TextWatcher
 import android.view.View
 import android.widget.AdapterView
 import android.widget.SeekBar
+import com.aymankhattab.nateq.util.setSeekStateDescription
 import android.widget.Spinner
 import android.widget.TextView
 import androidx.core.content.ContextCompat
@@ -132,6 +133,7 @@ internal class SmsReadingController(
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 val value = progress / 100f
                 tvSmsRateValue.text = String.format(Locale.US, "%.1fx", value)
+                seekBar.setSeekStateDescription(tvSmsRateValue.text)
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -148,6 +150,7 @@ internal class SmsReadingController(
         seekSmsVolume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 tvSmsVolumeValue.text = "$progress%"
+                seekBar.setSeekStateDescription(tvSmsVolumeValue.text)
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}

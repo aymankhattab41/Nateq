@@ -1,6 +1,5 @@
 package com.aymankhattab.nateq.settings
 
-import android.app.AlertDialog
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -14,6 +13,7 @@ import androidx.fragment.app.commit
 import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
 import com.aymankhattab.nateq.util.announceCompat
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dagger.hilt.android.AndroidEntryPoint
 
 /**
@@ -83,7 +83,7 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
     }
 
     private fun showPermissionDeniedDialog(messageRes: Int) {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.permission_denied_title)
             .setMessage(messageRes)
             .setPositiveButton(R.string.permission_open_settings) { _, _ ->

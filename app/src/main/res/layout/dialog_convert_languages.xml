@@ -16,7 +16,7 @@
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rv_convert_languages"
         android:layout_width="match_parent"
-        android:layout_height="430dp"
+        android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
         android:clipToPadding="false"
         android:importantForAccessibility="yes" />

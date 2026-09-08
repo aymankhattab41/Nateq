@@ -12,6 +12,7 @@ import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.engine.EngineWithVoices
 import com.aymankhattab.nateq.providers.EnginePicker
 import com.aymankhattab.nateq.util.announceCompat
+import com.aymankhattab.nateq.util.setSeekStateDescription
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import java.util.Locale
 
@@ -192,6 +193,7 @@ internal class LanguageConvertAdapter(
         private fun volumeListener(label: TextView) = object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 label.text = "$progress%"
+                seekBar.setSeekStateDescription(label.text)
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -205,6 +207,7 @@ internal class LanguageConvertAdapter(
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 val v = progress / 100f
                 label.text = String.format(Locale.US, "%.1fx", v)
+                seekBar.setSeekStateDescription(label.text)
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}

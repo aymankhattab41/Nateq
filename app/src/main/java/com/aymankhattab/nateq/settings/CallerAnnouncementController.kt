@@ -1,7 +1,6 @@
 package com.aymankhattab.nateq.settings
 
 import android.Manifest
-import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -18,6 +17,8 @@ import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
 import com.aymankhattab.nateq.util.announceCompat
+import com.aymankhattab.nateq.util.setSeekStateDescription
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.switchmaterial.SwitchMaterial
 import java.util.Locale
 
@@ -126,6 +127,7 @@ internal class CallerAnnouncementController(
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 val value = progress / 100f
                 tvCallerRateValue.text = String.format(Locale.US, "%.1fx", value)
+                seekBar.setSeekStateDescription(tvCallerRateValue.text)
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -143,6 +145,7 @@ internal class CallerAnnouncementController(
         seekCallerVolume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 tvCallerVolumeValue.text = "$progress%"
+                seekBar.setSeekStateDescription(tvCallerVolumeValue.text)
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -217,7 +220,7 @@ internal class CallerAnnouncementController(
         ) == PackageManager.PERMISSION_GRANTED
         if (phoneGranted) return
         callerRevokedDialogShown = true
-        AlertDialog.Builder(fragment.requireContext())
+        MaterialAlertDialogBuilder(fragment.requireContext())
             .setTitle(R.string.caller_permission_revoked_title)
             .setMessage(R.string.caller_permission_revoked_message)
             .setPositiveButton(R.string.caller_permission_grant_again) { _, _ ->

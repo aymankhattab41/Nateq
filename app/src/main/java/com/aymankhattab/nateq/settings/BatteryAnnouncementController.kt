@@ -5,6 +5,7 @@ import android.widget.AdapterView
 import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.SeekBar
+import com.aymankhattab.nateq.util.setSeekStateDescription
 import android.widget.Spinner
 import android.widget.TextView
 import com.aymankhattab.nateq.R
@@ -130,6 +131,7 @@ internal class BatteryAnnouncementController(
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 val value = progress / 100f
                 tvBatteryRateValue.text = String.format(Locale.US, "%.1fx", value)
+                seekBar.setSeekStateDescription(tvBatteryRateValue.text)
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -146,6 +148,7 @@ internal class BatteryAnnouncementController(
         seekBatteryVolume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 tvBatteryVolumeValue.text = "$progress%"
+                seekBar.setSeekStateDescription(tvBatteryVolumeValue.text)
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -201,6 +204,7 @@ internal class BatteryAnnouncementController(
         seekPowerSaverThreshold.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 tvPowerSaverThresholdValue.text = "$progress%"
+                seekBar.setSeekStateDescription(tvPowerSaverThresholdValue.text)
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}

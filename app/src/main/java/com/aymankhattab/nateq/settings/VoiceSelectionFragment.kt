@@ -1,6 +1,6 @@
 ﻿package com.aymankhattab.nateq.settings
 
-import android.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -147,7 +147,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             getString(R.string.dict_import_merge),
             getString(R.string.dict_import_replace)
         )
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.dict_import_mode_title)
             .setItems(options) { _, which ->
                 pendingImportJson = null
@@ -461,7 +461,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
     // ===== قاموس النطق =====
     private fun showDictEditDialog(existing: Pair<String, String>? = null) {
-        val builder = AlertDialog.Builder(requireContext())
+        val builder = MaterialAlertDialogBuilder(requireContext())
         val inflater = LayoutInflater.from(requireContext())
         val dialogView = inflater.inflate(R.layout.dialog_dict_entry, null)
         val etWord = dialogView.findViewById<EditText>(R.id.et_dict_word)
@@ -537,7 +537,14 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         val rows = names.toList().toMutableList()
         val root = android.widget.LinearLayout(requireContext()).apply {
             orientation = android.widget.LinearLayout.VERTICAL
-            setPadding(48, 24, 48, 0)
+            // هوامش بمعامل الكثافة حتى لا تتضخم على الشاشات عالية الدقة
+            val density = resources.displayMetrics.density
+            setPadding(
+                (48 * density).toInt(),
+                (24 * density).toInt(),
+                (48 * density).toInt(),
+                0
+            )
         }
         val listContainer = android.widget.LinearLayout(requireContext()).apply {
             orientation = android.widget.LinearLayout.VERTICAL
@@ -585,7 +592,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             val emptyHint = TextView(requireContext()).apply {
                 text = getString(R.string.caller_names_empty)
                 textSize = 13f
-                setPadding(0, 16, 0, 16)
+                setPadding(0, (16 * resources.displayMetrics.density).toInt(), 0, (16 * resources.displayMetrics.density).toInt())
             }
             listContainer.addView(emptyHint)
         }
@@ -602,7 +609,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         root.addView(scroll, android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(addBtn)
 
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(getString(R.string.caller_names_title))
             .setView(root)
             .setPositiveButton(getString(R.string.save)) { _, _ ->
@@ -654,7 +661,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             getString(R.string.dict_edit_entry),
             getString(R.string.dict_delete_entry)
         )
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> showDictEditDialog(entry)
@@ -934,7 +941,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         // استعادة الافتراضيات: مسح كل الإعدادات ثم إعادة بناء الواجهة لتحميل
         // القيم الافتراضية (بدون إعادة إنشاء الـ Activity).
         btnReset?.setOnClickListener {
-            AlertDialog.Builder(requireContext())
+            MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.reset_confirm_title)
                 .setMessage(R.string.reset_confirm_message)
                 .setPositiveButton(R.string.reset_done) { _, _ ->
@@ -956,7 +963,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private fun setupBackupRestoreButtons() {
         view?.findViewById<View>(R.id.btn_backup_settings)?.setOnClickListener {
             // تحذير صريح قبل التصدير: الملف نص صريح قد يحوي بيانات شخصية
-            AlertDialog.Builder(requireContext())
+            MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.backup_export_warning_title)
                 .setMessage(R.string.backup_export_warning_message)
                 .setPositiveButton(R.string.backup_settings) { _, _ ->
@@ -966,7 +973,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 .show()
         }
         view?.findViewById<View>(R.id.btn_restore_settings)?.setOnClickListener {
-            AlertDialog.Builder(requireContext())
+            MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.restore_confirm_title)
                 .setMessage(R.string.restore_confirm_message)
                 .setPositiveButton(R.string.restore_settings) { _, _ ->

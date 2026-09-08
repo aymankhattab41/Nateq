@@ -8,6 +8,7 @@ import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.engine.AnnouncementSchedulerService
 import com.aymankhattab.nateq.receivers.NateqNotificationListener
 import com.aymankhattab.nateq.util.announceCompat
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.switchmaterial.SwitchMaterial
 
 /** ضابط قسم «قراءة الإشعارات»: المفتاح + فتح إعدادات صلاحية النظام + اختيار التطبيقات. */
@@ -97,7 +98,7 @@ internal class NotificationReadingController(
             }
         }
         val labels = options.map { it.first }.toTypedArray()
-        android.app.AlertDialog.Builder(fragment.requireContext())
+        MaterialAlertDialogBuilder(fragment.requireContext())
             .setTitle(R.string.notification_apps_title)
             .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
                 checked[which] = isChecked

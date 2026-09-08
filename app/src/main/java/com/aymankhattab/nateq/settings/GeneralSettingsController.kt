@@ -5,6 +5,7 @@ import android.widget.SeekBar
 import android.widget.TextView
 import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.util.announceCompat
+import com.aymankhattab.nateq.util.setSeekStateDescription
 import java.util.Locale
 
 /** ضابط قسم «الإعدادات العامة»: السرعة/النبرة/مستوى الصوت الافتراضية. */
@@ -44,6 +45,7 @@ internal class GeneralSettingsController(
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 val value = progress / 100f
                 tvDefaultSpeechRateValue.text = String.format(Locale.US, "%.1fx", value)
+                seekBar.setSeekStateDescription(tvDefaultSpeechRateValue.text)
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -59,6 +61,7 @@ internal class GeneralSettingsController(
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 val value = progress / 100f
                 tvDefaultPitchValue.text = String.format(Locale.US, "%.1fx", value)
+                seekBar.setSeekStateDescription(tvDefaultPitchValue.text)
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -73,6 +76,7 @@ internal class GeneralSettingsController(
         seekDefaultVolume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 tvDefaultVolumeValue.text = "$progress%"
+                seekBar.setSeekStateDescription(tvDefaultVolumeValue.text)
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}

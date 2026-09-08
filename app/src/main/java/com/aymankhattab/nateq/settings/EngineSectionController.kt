@@ -1,6 +1,5 @@
 package com.aymankhattab.nateq.settings
 
-import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -18,6 +17,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.engine.EngineWithVoices
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.aymankhattab.nateq.engine.VoiceCatalog
 import com.aymankhattab.nateq.providers.EnginePicker
 import java.util.Locale
@@ -190,7 +190,7 @@ internal class EngineSectionController(
         val rv = dialogView.findViewById<RecyclerView>(R.id.rv_convert_languages)
 
         tvHint.text = fragment.getString(R.string.convert_languages_loading)
-        val dialog = AlertDialog.Builder(ctx)
+        val dialog = MaterialAlertDialogBuilder(ctx)
             .setTitle(fragment.getString(R.string.convert_languages_dialog_title))
             .setView(dialogView)
             .setPositiveButton(fragment.getString(R.string.reset_cancel), null)

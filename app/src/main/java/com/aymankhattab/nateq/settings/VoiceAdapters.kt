@@ -10,6 +10,7 @@ import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.aymankhattab.nateq.R
 import com.aymankhattab.nateq.util.announceCompat
+import com.aymankhattab.nateq.util.setSeekStateDescription
 import java.util.Locale
 
 /**
@@ -111,6 +112,7 @@ internal class CategoryVoiceAdapter(
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 val value = progress / 100f
                 holder.tvRateValue.text = String.format(Locale.US, "%.1fx", value)
+                holder.seekRate.setSeekStateDescription(holder.tvRateValue.text)
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -126,6 +128,7 @@ internal class CategoryVoiceAdapter(
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 val value = progress / 100f
                 holder.tvPitchValue.text = String.format(Locale.US, "%.1fx", value)
+                holder.seekPitch.setSeekStateDescription(holder.tvPitchValue.text)
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -140,6 +143,7 @@ internal class CategoryVoiceAdapter(
         holder.seekVolume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 holder.tvVolumeValue.text = "$progress%"
+                holder.seekVolume.setSeekStateDescription(holder.tvVolumeValue.text)
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
