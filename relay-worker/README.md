@@ -28,24 +28,33 @@ npx wrangler deploy
 ```bash
 npx wrangler secret put TELEGRAM_BOT_TOKEN
 npx wrangler secret put SUPPORT_CHAT_ID
+npx wrangler secret put WEBHOOK_SECRET
 ```
-أدخل كلاً منهما عند الطلب. **لا يرتفع أي منهما إلى الريبو.**
+أدخل كلاً منها عند الطلب. **لا يُرفع أي منها إلى الريبو.**
+`WEBHOOK_SECRET` سرّ عشوائي طويل (مثل 32+ حرفاً) يقي الناقل من
+الرسائل المزيّفة/الإغراق — توليده بأمر مثل:
+```bash
+openssl rand -hex 32
+```
 
 ## 4) ربط البوت بالـ Worker (webhook)
 **انتبه:** يجب ضبط رمز البوت قبل هذه الخطوة (أو استخدمه مباشرة هنا —
-الرمز يُمرَّر في الحقل `url` ولا يُخزَّن في ملف). نفّذ:
+الرمز يُمرَّر في الحقل `url` ولا يُخزَّن في ملف). مرّر السر عبر
+`secret_token` ليطابقه العامل في ترويسة `X-Telegram-Bot-Api-Secret-Token`:
+قيمة `secret_token` يجب أن **تطابق** `WEBHOOK_SECRET` تماماً. نفّذ:
 
 ```bash
 curl -F "url=https://lord-tts-support-relay.<حسابك>.workers.dev" \
+  -F "secret_token=<WEBHOOK_SECRET>" \
   "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook"
 ```
 
 أو من دون curl — افتح في المتصفح:
 ```
-https://api.telegram.org/bot<رمزك>/setWebhook?url=https://lord-tts-support-relay.<حسابك>.workers.dev
+https://api.telegram.org/bot<رمزك>/setWebhook?url=https://lord-tts-support-relay.<حسابك>.workers.dev&secret_token=<WEBHOOK_SECRET>
 ```
 
-سترد: `{"ok":true,...}`.
+سترُدّ: `{"ok":true,...}`. أي طلب POST لا يحمل السر الصحيح سيُرفض بـ 401.
 
 ## 5) الاختبار
 - افتح `https://t.me/LordTTSBot` وابدأ المحادثة: سيرد البوت بالترحيب.
@@ -67,3 +76,6 @@ https://api.telegram.org/bot<رمزك>/setWebhook?url=https://lord-tts-support-r
 ## أمان
 - الرمز والمعرّف **سريّان**: يُضبطان عبر `wrangler secret put` فقط.
 - لا يُرفع أي منهما إلى git: `wrangler.toml` لا يحتوي أياً منهما.
+- **تحقّق webhook**: يرفض العامل أي POST بلا سرّ صحيح — الحدّ الأدنى من
+  حماية الناقل من الانتحال والإغراق. يجب أن يطابق `secret_token` في
+  `setWebhook` القيمةَ المضبوطة في `WEBHOOK_SECRET`.

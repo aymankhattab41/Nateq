@@ -48,12 +48,35 @@ class TextProcessor(
         // أنماط الأوقات
         private val PATTERN_TIME = Pattern.compile("""(\d{1,2}):(\d{2})(?::(\d{2}))?""")
 
-// أنماط الأرقام
-        private val PATTERN_NUMBER = Pattern.compile("""(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?)""")
+// أنماط الأرقام: «\b» المحيط يضمن التقاط المتوالة الرقمية كاملة (المبالغ
+        // الطويلة بلا فواصل مثل 10000000 تُنطق «عشرة ملايين») ويمنع شطرها
+        // إلى مجموعات ثلاثية، ويُجبر التوسّع ليتجاوز الكسور ذات الخانات الثلاث
+        // (3.14159 تُسلم للعشرية كاملة بدل اقتطاع «3.141»).
+        private val PATTERN_NUMBER = Pattern.compile("""\b(\d+(?:[.,]\d{3})*(?:[.,]\d+)?)\b""")
 
         // أنماط أرقام الهواتف: بداية اختيارية + ثم 7-15 رقم مع فواصل (مسافة/شرطة/نقطة)
         // تُحسب الأرقام الفعلية في المعالجة؛ النمط يلتقط المتواليات الطويلة فقط.
         private val PATTERN_PHONE = Pattern.compile("""(?<!\d)\+?\d[\d\s()\-.]{6,}\d(?!\d)""")
+
+        // بادئات اتصال محلية معروفة تُرجّح أن المتوالية الرقمية هاتف وليست مبلغاً:
+        // مصر (010/011/012/015…) والبادئات 05–09 الشائعة في السعودية والخليج
+        // وشمال أفريقيا وأوروبا.
+        private val LOCAL_PHONE_PREFIXES = listOf(
+            "010", "011", "012", "015", "016", "017", "018", "019",
+            "05", "06", "07", "08", "09"
+        )
+
+        // مؤشرات صريحة قبل رقم روماني («الفصل III»، «الجزء II») تُرجّح أنه رقم
+        // تسلسلي وليس كلمة إنجليزية مكتوبة بحروف رومانية.
+        private val ROMAN_INDICATORS = listOf(
+            "الفصل", "الجزء", "الباب", "القسم", "المقدمة", "الملحق", "الفقرة",
+            "المادة", "السورة", "المجلد",
+            "chapter", "part", "section", "volume", "book", "unit", "lesson", "act"
+        )
+
+        // كلمات إنجليزية شائعة مكوّنة من حروف رومانية ظاهرياً (I، DID، MIX، MID،
+        // CD…) تُستبعد دائماً من تحويل الأرقام الرومانية.
+        private val ENGLISH_ROMAN_WORDS = setOf("I", "ID", "DID", "MIX", "MID", "CD")
 
         // أنماط الروابط: http(s)://... أو www.example.com — يُنطق اسم النطاق بدل
         // قراءتها حرفاً حرفاً (كانت تُقرأ «أتش تي تي بي نقطة...» المزعجة).
@@ -62,22 +85,18 @@ class TextProcessor(
         )
 
         // الأرقام الرومانية (ساعات كبند/فصول/قوائم): تُنطق ككلمات أو أرقام عادية.
-        // يعترف فقط بالملييئة وإن كانت كبيرة (IvXLCDM) بحدود كلمات حقيقية.
+        // يعترف فقط بالملييئة وإن كانت كبيرة (IVXLCDM) بحدود كلمات حقيقية؛
+        // والسياق (مؤشر صريح أو نطاق 1–12) يُقرَّر في المعالجة.
         private val PATTERN_ROMAN = Pattern.compile("""(?<![\p{Alpha}])[IVXLCDM]{1,8}(?![\p{Alpha}])""")
 
         // أنماط كود العملة
-        private val PATTERN_CURRENCY_CODE = Pattern.compile(
-            """\b(USD|EUR|GBP|SAR|AED|KWD|QAR|OMR|BHD|EGP|TND|DZD|MAD|JPY|CNY|INR|KRW|RUB)\s+(\d+(?:[.,]\d+)?)\b"""
+private val PATTERN_CURRENCY_CODE = Pattern.compile(
+            """\b(USD|EUR|GBP|SAR|AED|KWD|QAR|OMR|BHD|EGP|TND|DZD|MAD|JPY|CNY|INR|KRW|RUB)\s+(\d+(?:[.,]\d{3})*(?:[.,]\d+)?)\b"""
         )
 
         // أنماط تنظيف المسافات
         private val PATTERN_MULTI_SPACE  = Pattern.compile("""\s+""")
         private val PATTERN_SPACE_BEFORE = Pattern.compile("""\s+([،؛.!?])""")
-
-        // فاصلة/نقطة الآلاف: الفاصل المتلوّ بثلاث خانات بالضبط ثم نهاية أو حرف
-        // غير رقمي يُعتبر فاصلة آلاف (تُحذف). يعمل على النمطين الأمريكي
-        // 1,234.56 والأوروبي 1.234,56 دون انهيار.
-        private val PATTERN_THOUSANDS = Pattern.compile("""[.,](?=\d{3}(?:\D|$))""")
 
         // ======================================================
         // جداول الرموز/العملات/الوحدات وأنماطها المُجمَّعة مرة واحدة
@@ -107,10 +126,10 @@ class TextProcessor(
         )
 
         private val CURRENCY_PATTERNS_BEFORE = CURRENCY_SYMBOLS.map { (symbol, name) ->
-            Pattern.compile("""${Pattern.quote(symbol)}\s*(\d+(?:[.,]\d+)?)\b""") to name
+            Pattern.compile("""${Pattern.quote(symbol)}\s*(\d+(?:[.,]\d{3})*(?:[.,]\d+)?)\b""") to name
         }
         private val CURRENCY_PATTERNS_AFTER = CURRENCY_SYMBOLS.map { (symbol, name) ->
-            Pattern.compile("""\b(\d+(?:[.,]\d+)?)\s*${Pattern.quote(symbol)}""") to name
+            Pattern.compile("""\b(\d+(?:[.,]\d{3})*(?:[.,]\d+)?)\s*${Pattern.quote(symbol)}""") to name
         }
 
         private val UNIT_NAMES = listOf(
@@ -165,7 +184,10 @@ class TextProcessor(
         )
 
         private val UNIT_PATTERNS = UNIT_NAMES.map { info ->
-            Pattern.compile("""\b(\d+(?:[.,]\d+)?)\s*${Pattern.quote(info.symbol)}\b""") to info
+            // (?U) تُفعل أصناف الأحرف اليونيكودية فتعترف \b بالحروف العربية —
+            // لولاها لم تُطابق الوحدات العربية («5 م»، «10 سم»، «80 كم/س»)
+            // إطلاقاً لأن Java لا تتعامل مع العربية كحروف كلمات.
+            Pattern.compile("""(?U)\b(\d+(?:[.,]\d{3})*(?:[.,]\d+)?)\s*${Pattern.quote(info.symbol)}\b""") to info
         }
 
         // رموز تُستبدل دائماً (معناها ثابت لا يتبدل بسياق):
@@ -208,6 +230,13 @@ class TextProcessor(
         // @: لا تُستبدل داخل بريد إلكتروني (حرف/رقم على طرفيها)، بل فقط
         // حين تكون معزولة (مثل "نلتقي @ 5").
         private val PATTERN_AT = Pattern.compile("(?<!\\p{L})(?<![0-9])@(?![0-9])(?!\\p{L})")
+
+        // كلمات الأعداد (آحاد/مراهقين/عشرات/مئات) لـ numberToWords — مرجعية
+        // مشتركة بين المسارين الطويل (Long) والعشري (String).
+        private val UNITS_WORDS = arrayOf("", "واحد", "اثنان", "ثلاثة", "أربعة", "خمسة", "ستة", "سبعة", "ثمانية", "تسعة")
+        private val TEENS_WORDS = arrayOf("عشرة", "أحد عشر", "اثنا عشر", "ثلاثة عشر", "أربعة عشر", "خمسة عشر", "ستة عشر", "سبعة عشر", "ثمانية عشر", "تسعة عشر")
+        private val TENS_WORDS = arrayOf("", "", "عشرون", "ثلاثون", "أربعون", "خمسون", "ستون", "سبعون", "ثمانون", "تسعون")
+        private val HUNDREDS_WORDS = arrayOf("", "مائة", "مائتان", "ثلاثمائة", "أربعمائة", "خمسمائة", "ستمائة", "سبعمائة", "ثمانمائة", "تسعمائة")
 
         /** أنماط منتهية تجمع الرموز العامة (الأطول أولاً لضمان °C قبل °) ثم
          *  الحسابية المقيدة بين الرقمين ثم @ المعزولة. */
@@ -299,11 +328,13 @@ result = processCurrencies(result)
         // عربية) كان يُنطق إنجليزياً خطأً في السياق العربي (رقم مصري يبدأ 01…).
         result = processPhoneNumbers(result, languageTag.startsWith("ar"))
 
-        // 6. معالجة الأرقام العادية
-        result = processNumbers(result)
-
-        // 7. معالجة الرموز الشائعة
+// 6. معالجة الرموز الشائعة قبل الأرقام: العمليات الحسابية («5 + 3») تتطلب
+        //    بقاء الأرقام خام (أرقام غربية) حتى تنطبق أنماطها (?<=\d)…(?=\d)؛
+        //    لو تحولت الأرقام كلمات أولاً (خمسة + ثلاثة) لتعطل النطق تماماً.
         result = processSymbols(result)
+
+        // 7. معالجة الأرقام العادية
+        result = processNumbers(result)
 
 // 8. تنظيف المسافات الزائدة
         result = cleanupSpaces(result)
@@ -420,6 +451,13 @@ result = processCurrencies(result)
                 matcher.appendReplacement(buffer, Matcher.quoteReplacement(raw))
                 continue
             }
+            // لا تُعامل المتوالية الرقمية كهاتف إلا بدليل قاطع: مفتاح دولي (+)
+            // أو بادئة اتصال محلية معروفة أو فواصل هاتفية قياسية — وإلا فتُترك
+            // للمعالجة الرقمية («10000000» مبلغ = عشرة ملايين لا هاتف يُنطق رقماً).
+            if (!isLikelyPhone(raw, digits)) {
+                matcher.appendReplacement(buffer, Matcher.quoteReplacement(raw))
+                continue
+            }
             // لغة النطق تأتي من سياق المعالجة (languageTag) لا من أحرف النص:
             // النص الإنجليزي عاد مبكراً في process()، والرقم المجرد يُنطق
             // عربياً في السياق العربي.
@@ -452,6 +490,26 @@ result = processCurrencies(result)
         val parts = raw.split('.')
         if (parts.size != 4) return false
         return parts.all { it.isNotEmpty() && it.length <= 3 && it.all(Char::isDigit) }
+    }
+
+    /** ترجيح كون المتوالية رقم هاتف فعلياً (لا مبلغاً أو عدداً مجرداً). */
+    private fun isLikelyPhone(raw: String, digits: String): Boolean {
+        // مفتاح اتصال دولي صريح (+20 …)
+        if (raw.startsWith("+")) return true
+        // بادئة اتصال محلية معروفة (010 مصر، 05 السعودية…)
+        if (LOCAL_PHONE_PREFIXES.any { digits.startsWith(it) }) return true
+        // مجموعات آلاف أوروبية/فرنسية (1 000 000، 12.345.678) ليست هواتف
+        if (looksLikeThousandsGrouping(raw)) return false
+        // فواصل هاتفية قياسية (مسافة/شرطة/أقواس/نقطة)
+        return raw.any { it == ' ' || it == '-' || it == '(' || it == ')' || it == '.' }
+    }
+
+    /** هل التطابق مجرد تجميع آلاف بفواصل (تنسيق أوروبي) وليس هاتفاً؟ */
+    private fun looksLikeThousandsGrouping(raw: String): Boolean {
+        val groups = raw.split(Regex("""[\s().\-]+""")).filter { it.isNotBlank() }
+        if (groups.size < 2) return false
+        if (groups.first().length !in 1..3) return false
+        return groups.drop(1).all { it.length == 3 && it.all(Char::isDigit) }
     }
 
     /**
@@ -507,11 +565,38 @@ result = processCurrencies(result)
                 matcher.appendReplacement(buffer, Matcher.quoteReplacement(rom))
                 continue
             }
+            // كلمات إنجليزية شائعة من حروف رومانية (DID/MIX/MID/CD/I) تُستبعد
+            // دائماً مهما كان السياق.
+            if (rom in ENGLISH_ROMAN_WORDS) {
+                matcher.appendReplacement(buffer, Matcher.quoteReplacement(rom))
+                continue
+            }
+            // دون مؤشر صريح لا نُحوّل إلا الأرقام التسلسلية 1–12 (ساعات/قوائم)؛
+            // ما عداها تُرك — لا نجعل «الفصل MCMXCV» تفقّد سياقها ولا نجعل كلمة
+            // إنجليزية عابرة رقمَ ساعة.
+            if (!hasRomanIndicatorBefore(text, matcher.start()) && value !in 1..12) {
+                matcher.appendReplacement(buffer, Matcher.quoteReplacement(rom))
+                continue
+            }
             val spoken = numberToWords(value.toLong())
             matcher.appendReplacement(buffer, Matcher.quoteReplacement(spoken))
         }
         matcher.appendTail(buffer)
         return buffer.toString()
+    }
+
+    /** هل يسبق التطابق مؤشر صريح («الفصل»، «الجزء»، «chapter»…)؟ */
+    private fun hasRomanIndicatorBefore(text: String, start: Int): Boolean {
+        var before = text.substring(0, start).trimEnd()
+        while (before.isNotEmpty() && !before.last().isLetterOrDigit()) before = before.dropLast(1)
+        if (before.isEmpty()) return false
+        val lower = before.lowercase()
+        return ROMAN_INDICATORS.any { ind ->
+            val indLower = ind.lowercase()
+            if (!lower.endsWith(indLower)) return@any false
+            val prefixLen = lower.length - indLower.length
+            prefixLen == 0 || !lower[prefixLen - 1].isLetterOrDigit()
+        }
     }
 
     /** تحويل رقم روماني إلى Int، أو null عند تركيبة غير صالحة. */
@@ -538,8 +623,8 @@ result = processCurrencies(result)
      * @return القيمة العددية أو صفراً عند تعذر الفهم (لا نهيار للنطق).
      */
     private fun parseAmount(raw: String): Double {
-        val cleaned = PATTERN_THOUSANDS.matcher(raw).replaceAll("")
-        return cleaned.replace(',', '.').toDoubleOrNull() ?: 0.0
+        val cleaned = sanitizeNumerals(raw)
+        return cleaned.toDoubleOrNull() ?: 0.0
     }
 
     /** معالجة العملات: $100 → مائة دولار، 50€ → خمسون يورو */
@@ -653,8 +738,10 @@ result = processCurrencies(result)
      * وصيغة مذكرة مع المعدود المؤنث (خمس دقائق).
      */
     private fun unitNumberWord(digit: Int, isFeminine: Boolean): String {
-        val forMasculine = arrayOf("", "", "ثلاثة", "أربعة", "خمسة", "ستة", "سبعة", "ثمانية", "تسعة", "عشرة")
-        val forFeminine  = arrayOf("", "", "ثلاث", "أربع", "خمس", "ست", "سبع", "ثمان", "تسع", "عشر")
+        // الفهرس يعادل الرقم بالضبط (لا انزياح): كان المصفوفة تحذف منزلة
+        // (خمسة → «ستة أمتار») لغياب العنصر الأول.
+        val forMasculine = arrayOf("", "واحد", "اثنان", "ثلاثة", "أربعة", "خمسة", "ستة", "سبعة", "ثمانية", "تسعة", "عشرة")
+        val forFeminine  = arrayOf("", "واحدة", "اثنتان", "ثلاث", "أربع", "خمس", "ست", "سبع", "ثمان", "تسع", "عشر")
         val table = if (isFeminine) forFeminine else forMasculine
         return if (digit in 3..10) table[digit] else ""
     }
@@ -697,11 +784,49 @@ result = processCurrencies(result)
      *  - 3.14 → 3.14 (عشري)
      */
 private fun parseNumberText(numberStr: String): String {
-        // الفاصلة/النقطة التي بعدها 3 خانات فاصلة آلاف تُحذف؛ وما تبقى من
-        // فواصل/نقاط (الكسور) يُوحَّد إلى نقطة — يغطي النمط الأمريكي والأوروبي.
-        val cleaned = PATTERN_THOUSANDS.matcher(numberStr).replaceAll("")
-        val number = cleaned.replace(',', '.').toDoubleOrNull() ?: return numberStr
+        // الفصل بين فواصل الآلاف والفاصلة العشرية يتم عبر sanitizeNumerals
+        // الذي لا يُهلك الأعداد العشرية ثلاثية الخانات (3.141 تبقى عشرية).
+        val cleaned = sanitizeNumerals(numberStr)
+        val number = cleaned.toDoubleOrNull() ?: return numberStr
         return numberToWords(number)
+    }
+
+    /**
+     * تنظيف تمثيل رقمي خام بفصل دقيق بين فاصل الآلاف وفاصلة الكسور:
+     *  - فاصل آلاف يُحذف (1,234 → 1234، 1.234.567 → 1234567)
+     *  - فاصلة كسور تُوحَّد إلى نقطة (1,5 → 1.5، 1.234,56 → 1234.56)
+     * قاعدة التمييز: آخر فاصل يُعتبر كسوراً إلا إذا كان طرفه ثلاثي الخانات
+     * ضمن متوالية آلاف منسجمة (فحص تنوّع الرموز). الفاصلة المنفردة بطرف ثلاثي
+     * (3.141) تبقى عشرية فلا تُفسد الأعداد العشرية كأعداد صحيحة.
+     */
+    private fun sanitizeNumerals(raw: String): String {
+        val seps = mutableListOf<Int>()
+        for (i in raw.indices) {
+            val ch = raw[i]
+            val digitAround = i > 0 && raw[i - 1].isDigit() && i + 1 < raw.length && raw[i + 1].isDigit()
+            if ((ch == ',' || ch == '.') && digitAround) seps.add(i)
+        }
+        if (seps.isEmpty()) return raw
+
+        val lastIdx = seps.last()
+        val lastCh = raw[lastIdx]
+        val tailLen = raw.length - lastIdx - 1
+
+        val lastIsDecimal = when {
+            tailLen != 3 -> true
+            seps.size == 1 -> lastCh == '.'   // فاصلة وحيدة + طرف ثلاثي: (,) آلاف أمريكية، (.) عشرية
+            else -> seps.any { raw[it] != lastCh }  // تنوّع الرموز: الأخيرة كسور (1,234.567)، وإلا فكلها آلاف
+        }
+
+        val sb = StringBuilder(raw.length)
+        for (i in raw.indices) {
+            when {
+                i == lastIdx && lastIsDecimal -> sb.append('.')
+                i in seps -> Unit
+                else -> sb.append(raw[i])
+            }
+        }
+        return sb.toString()
     }
 
 /** معالجة الرموز الشائعة */
@@ -829,10 +954,12 @@ private fun parseNumberText(numberStr: String): String {
             val cp = ch.code
             // نطاقات التشكيل العربي الكاملة (U+0610–U+061A، U+064B–U+065F،
             // U+0670–U+0673) بالإضافة للتطويل/الكشيدة (U+0640). يُضاف نطاق
-            // «العربية الممتدة - A» (U+08A0–U+08FF) الذي يحمل تشكيل الأوردو
-            // والسندية والبشتو (علامات منفصلة عن الحرف) فيُجرَّد مثله تماماً.
+            // «العربية الممتدة - A» (U+08A0–U+08FF) لا نجرّد منه إلا الحركات
+            // الخالصة (U+08D3–U+08E1 و U+08E3–U+08FF) لأن النطاق كاملاً يحوي
+            // حروفاً هجائية للأوردو والبشتو واللغات الأفريقية ورسم المصحف (كالباء
+            // ذات النقطة السفلية) — مسحها كان يشوّه الكلمات ويحذف حروفاً أصلية.
             if (cp in 0x0610..0x061A || cp == 0x0640 || cp in 0x064B..0x065F ||
-                cp in 0x0670..0x0673 || cp in 0x08A0..0x08FF
+                cp in 0x0670..0x0673 || cp in 0x08D3..0x08E1 || cp in 0x08E3..0x08FF
             ) continue
             sb.append(ch)
         }
@@ -961,6 +1088,10 @@ private fun isEmojiCodePoint(cp: Int): Boolean {
         // وتفقد الأصفار البادئة/الوسطية للكسر (3.05 تُنطق سابقاً «ثلاثة فاصلة خمسة»).
         if (number is Double || number is Float) {
             val d = number.toDouble()
+            // صفر فيصفر/لا نهائي: BigDecimal.valueOf يرفع استثناء نحوله لنطق
+            // صريح بدل الانهيار (SignatureSynthesis يتعامل معها بأمان لاحقاً).
+            if (d.isNaN()) return "ليس رقماً"
+            if (d.isInfinite()) return if (d > 0) "ما لا نهاية" else "ناقص ما لا نهاية"
             val negative = d < 0
             val abs = Math.abs(d)
             // تمثيل عشري نظيف بدون أصفار ختامية (مثل 3.05 → "3.05").
@@ -987,62 +1118,80 @@ private fun isEmojiCodePoint(cp: Int): Boolean {
             }
         }
 
-        val num = number.toLong()
+val num = number.toLong()
         if (num == 0L) return "صفر"
-        if (num < 0L) return "ناقص ${numberToWords(-num)}"
-
-        val units = arrayOf("", "واحد", "اثنان", "ثلاثة", "أربعة", "خمسة", "ستة", "سبعة", "ثمانية", "تسعة")
-        val teens = arrayOf("عشرة", "أحد عشر", "اثنا عشر", "ثلاثة عشر", "أربعة عشر", "خمسة عشر", "ستة عشر", "سبعة عشر", "ثمانية عشر", "تسعة عشر")
-        val tens = arrayOf("", "", "عشرون", "ثلاثون", "أربعون", "خمسون", "ستون", "سبعون", "ثمانون", "تسعون")
-        val hundreds = arrayOf("", "مائة", "مائتان", "ثلاثمائة", "أربعمائة", "خمسمائة", "ستمائة", "سبعمائة", "ثمانمائة", "تسعمائة")
-
-        fun convertHundreds(n: Long): String {
-            if (n == 0L) return ""
-            if (n < 10) return units[n.toInt()]
-            if (n < 20) return teens[(n - 10).toInt()]
-            if (n < 100) {
-                val ten = n / 10
-                val unit = n % 10
-                return when {
-                    unit == 0L -> tens[ten.toInt()]
-                    // "أحد وعشرون" وليس "واحد و عشرون" (قاعدة العدد المركب)
-                    unit == 1L -> "أحد و${tens[ten.toInt()]}"
-                    unit == 2L -> "اثنان و${tens[ten.toInt()]}"
-                    else -> "${units[unit.toInt()]} و${tens[ten.toInt()]}"
-                }
+        if (num < 0L) {
+            // -Long.MIN_VALUE يفيض (قيمته 2^63 خارج المدى الطويل الموجب)؛ ننطقه
+            // عبر تمثيله العشري الصريح بدل نفيٍّ يفيض فلا يتجمّد ولا يغرق.
+            if (num == Long.MIN_VALUE) {
+                return "ناقص ${positiveWordsFromDecimal("9223372036854775808")}"
             }
-            val hundred = n / 100
-            val remainder = n % 100
-            return if (remainder == 0L) hundreds[hundred.toInt()] else "${hundreds[hundred.toInt()]} و${convertHundreds(remainder)}"
+            return "ناقص ${numberToWords(-num)}"
         }
+        return positiveWordsFromDecimal(num.toString())
+    }
 
-        if (num < 1000) return convertHundreds(num)
-
+    /** تحويل تمثيل عشري موجب (أرقام فقط) إلى كلمات عربية حتى الكوينتيليون. */
+    private fun positiveWordsFromDecimal(s: String): String {
+        if (s.all { it == '0' }) return "صفر"
+        val groups = mutableListOf<Int>()
+        var i = s.length
+        while (i > 0) {
+            val start = (i - 3).coerceAtLeast(0)
+            groups.add(s.substring(start, i).toInt())
+            i = start
+        }
         var result = ""
-        var n = num
         var groupIndex = 0
-
-        while (n > 0) {
-            val group = n % 1000
-            if (group != 0L) {
+        for (group in groups) {
+            if (group != 0) {
                 val groupText = convertHundreds(group)
-                val scaleText = when (groupIndex) {
-                    1 -> when (group) { 1L -> "ألف"; 2L -> "ألفان"; in 3L..10L -> "$groupText آلاف"; else -> "$groupText ألفاً" }
-                    2 -> when (group) { 1L -> "مليون"; 2L -> "مليونان"; in 3L..10L -> "$groupText ملايين"; else -> "$groupText مليوناً" }
-                    3 -> when (group) { 1L -> "مليار"; 2L -> "ملياران"; in 3L..10L -> "$groupText مليارات"; else -> "$groupText ملياراً" }
-                    4 -> when (group) { 1L -> "تريليون"; 2L -> "تريليونان"; in 3L..10L -> "$groupText تريليونات"; else -> "$groupText تريليوناً" }
-                    else -> ""
-                }
-                val part = when {
-                    groupIndex == 0 -> groupText
-                    group == 1L || group == 2L -> scaleText  // "ألف" أو "ألفان" بدون "واحد"
-                    else -> scaleText
-                }
+                val scaleText = scaleForGroup(groupIndex, group, groupText)
+                val part = if (groupIndex == 0) groupText else scaleText
                 result = if (result.isEmpty()) part else "$part و$result"
             }
-n /= 1000
             groupIndex++
         }
         return result
+    }
+
+    /** مقياس مجموعة الأرقام (آلاف/ملايين/مليارات/تريليونات/كوادريليون/كوينتيليون). */
+    private fun scaleForGroup(groupIndex: Int, group: Int, groupText: String): String {
+        if (groupIndex == 0) return ""
+        return when (groupIndex) {
+            1 -> when (group) { 1 -> "ألف"; 2 -> "ألفان"; in 3..10 -> "$groupText آلاف"; else -> "$groupText ألفاً" }
+            2 -> when (group) { 1 -> "مليون"; 2 -> "مليونان"; in 3..10 -> "$groupText ملايين"; else -> "$groupText مليوناً" }
+            3 -> when (group) { 1 -> "مليار"; 2 -> "ملياران"; in 3..10 -> "$groupText مليارات"; else -> "$groupText ملياراً" }
+            4 -> when (group) { 1 -> "تريليون"; 2 -> "تريليونان"; in 3..10 -> "$groupText تريليونات"; else -> "$groupText تريليوناً" }
+            5 -> when (group) { 1 -> "كوادريليون"; 2 -> "كوادريليونان"; in 3..10 -> "$groupText كوادريليونات"; else -> "$groupText كوادريليوناً" }
+            6 -> when (group) { 1 -> "كوينتيليون"; 2 -> "كوينتيليونان"; in 3..10 -> "$groupText كوينتيليونات"; else -> "$groupText كوينتيليوناً" }
+            else -> ""
+        }
+    }
+
+    /** تحويل جزء عددي (0–999) إلى كلمات. */
+    private fun convertHundreds(n: Int): String {
+        if (n == 0) return ""
+        if (n < 10) return UNITS_WORDS[n]
+        if (n < 20) return TEENS_WORDS[n - 10]
+        if (n < 100) {
+            val ten = n / 10
+            val unit = n % 10
+            return if (unit == 0) {
+                TENS_WORDS[ten]
+            } else {
+                compoundTwoDigits(unit, ten)
+            }
+        }
+        val hundred = n / 100
+        val remainder = n % 100
+        return if (remainder == 0) HUNDREDS_WORDS[hundred] else "${HUNDREDS_WORDS[hundred]} و${convertHundreds(remainder)}"
+    }
+
+    /** مساعد العدد المركّب (21–99): «أحد وعشرون»، «اثنان وثلاثون»، «خمسة وأربعون». */
+    private fun compoundTwoDigits(unit: Int, ten: Int): String = when (unit) {
+        1 -> "أحد و${TENS_WORDS[ten]}"
+        2 -> "اثنان و${TENS_WORDS[ten]}"
+        else -> "${UNITS_WORDS[unit]} و${TENS_WORDS[ten]}"
     }
 }

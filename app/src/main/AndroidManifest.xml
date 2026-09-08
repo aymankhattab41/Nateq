@@ -62,6 +62,14 @@
         </intent>
     </queries>
 
+    <!-- إذن مخصص موقَّع (signature): لا يملكه إلا التطبيقات الموقّعة بمفتاح التوقيع
+         نفسه، والنظام. يُطبَّق على مستقبِل أداة الساعة الناطقة كطبقة دفاع ثانية
+         (بعد فحص المكوّن في الكود) ضد استدعاء أي تطبيق خارجي لنطق الصوت رغماً
+         عن المستخدم؛ النظام يملكه فيبقى بثّ التحديث APPWIDGET_UPDATE يعمل. -->
+    <permission
+        android:name="com.aymankhattab.nateq.permission.PROTECTED_SPEAK"
+        android:protectionLevel="signature" />
+
     <application
         android:name=".NateqApplication"
         android:allowBackup="false"
@@ -208,10 +216,13 @@
             </intent-filter>
         </service>
 
-        <!-- أداة الساعة الناطقة على الشاشة الرئيسية (تنطق الوقت عند اللمس) -->
+        <!-- أداة الساعة الناطقة على الشاشة الرئيسية (تنطق الوقت عند اللمس).
+             الإذن الموقَّع PROTECTED يمنع أي تطبيق خارجي من بث ACTION_WIDGET_SPEAK
+             لإجبار التطبيق على النطق؛ النظام يملكه فيبقى تحديث الأداة يعمل. -->
         <receiver
             android:name=".widget.SpeakingClockWidget"
-            android:exported="true">
+            android:exported="true"
+            android:permission="com.aymankhattab.nateq.permission.PROTECTED_SPEAK">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>

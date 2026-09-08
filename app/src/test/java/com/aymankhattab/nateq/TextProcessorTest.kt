@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.engine.TextProcessor
 import com.aymankhattab.nateq.settings.SettingsRepository
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -186,5 +187,93 @@ class TextProcessorTest {
     fun asciiEmoticon_englishSpoken() {
         assertEquals("hello smile", processor.process("hello :)", "en"))
         assertEquals("oh laughing", processor.process("oh :D", "en"))
+    }
+
+    // ===== الإصلاحات: معالجة النصوص العربية والحالات الشاذة =====
+
+    @Test
+    fun tashkeel_extendedA_lettersPreserved_marksStripped() {
+        // U+08A0 (باء ذات نقطة سفلية من العربية الممتدة A — حرف هجائي أصلي)
+        // يجب أن يبقى لا يُمسح كنطاق تشكيل خاطئ.
+        assertTrue(processor.process("\u08A0 كلمة", "ar").contains("\u08A0"))
+        // حركة خالصة (الضمة الأوردية U+08EE) تُجرَّد كما كانت.
+        assertFalse(processor.process("\u0628\u08EE", "ar").contains("\u08EE"))
+    }
+
+    @Test
+    fun arithmeticOperations_spokenBetweenNumbers() {
+        // الرموز الحسابية تُعالج قبل الأرقام فلا تتجمد (كانت أرقامُها تتحول
+        // كلمات أولاً فيفشل نمط (?<=\d)…(?=\d)).
+        assertEquals("خمسة زائد ثلاثة", processor.process("5 + 3", "ar"))
+        assertEquals("عشرة ناقص أربعة", processor.process("10 - 4", "ar"))
+        // الكسر 1/2 يُنطق «واحد على اثنان» (numberToWords يستخدم «اثنان» المرفوعة).
+        assertEquals("واحد على اثنان", processor.process("1/2", "ar"))
+    }
+
+    @Test
+    fun decimalNumber_threeFractionDigits_notCorrupted() {
+        // 3.141 عدد عشري لا فاصلة آلاف — لا يتحول إلى 3141.
+        assertEquals("ثلاثة فاصلة واحد أربعة واحد", processor.process("3.141", "ar"))
+    }
+
+    @Test
+    fun thousandsSeparators_stillRemoved() {
+        assertEquals("ألف ومائتان وأربعة وثلاثون", processor.process("1,234", "ar"))
+        assertEquals("مليون ومائتان وأربعة وثلاثون ألفاً وخمسمائة وسبعة وستون",
+            processor.process("1,234,567", "ar"))
+    }
+
+    @Test
+    fun europeanDecimal_separatedDigits() {
+        // التنسيق الأوروبي 1.234,56 = 1234.56.
+        assertEquals("ألف ومائتان وأربعة وثلاثون فاصلة خمسة ستة", processor.process("1.234,56", "ar"))
+    }
+
+    @Test
+    fun romanNumerals_englishWords_keptAsIs() {
+        assertEquals("DID", processor.process("DID", "ar"))
+        assertEquals("MIX", processor.process("MIX", "ar"))
+        assertEquals("MID", processor.process("MID", "ar"))
+        assertEquals("I", processor.process("I", "ar"))
+        assertEquals("قرص CD", processor.process("قرص CD", "ar"))
+    }
+
+    @Test
+    fun romanNumerals_afterIndicator_orSequential_converted() {
+        assertEquals("الفصل ثلاثة", processor.process("الفصل III", "ar"))
+        assertEquals("اثنا عشر", processor.process("XII", "ar"))
+    }
+
+    @Test
+    fun longBareNumber_notPhone_spokenAsNumber() {
+        // المبالغ الطويلة بلا فواصل لا تُعامل هواتف ولا تُنطق رقماً رقماً.
+        assertEquals("المبلغ عشرة ملايين", processor.process("المبلغ 10000000", "ar"))
+        assertEquals("خمسة ملايين", processor.process("5000000", "ar"))
+    }
+
+    @Test
+    fun unit_ArabicSymbols_matchThroughUnicodeBoundaries() {
+        // \b بلا (?U) لا يعترف بحروف عربية ككلمات؛ كانت «5 م» و«10 سم» و
+        // «80 كم/س» لا تُطابق إطلاقاً.
+        assertEquals("خمسة أمتار", processor.process("5 م", "ar"))
+        assertEquals("عشرة سنتيمترات", processor.process("10 سم", "ar"))
+        assertEquals("ثمانون كيلومتر في الساعة", processor.process("80 كم/س", "ar"))
+    }
+
+    @Test
+    fun numberToWords_specialValues_noCrash() {
+        assertTrue(processor.numberToWords(Double.NaN).isNotBlank())
+        assertEquals("ما لا نهاية", processor.numberToWords(Double.POSITIVE_INFINITY))
+        assertEquals("ناقص ما لا نهاية", processor.numberToWords(Double.NEGATIVE_INFINITY))
+        // Long.MIN_VALUE لا يفيض ولا يغرق في حلقة (StackOverflow) ولو مسبوق بالسالب.
+        val minWords = processor.numberToWords(Long.MIN_VALUE)
+        assertTrue(minWords.startsWith("ناقص"))
+        assertTrue(minWords.contains("كوينتيليون"))
+    }
+
+    @Test
+    fun numberToWords_largePositiveLong_supported() {
+        // حتى الكوينتيليون (10^18) — أقصى مدى Long سليم دون صفر يعيد كلمات ناقصة.
+        assertTrue(processor.numberToWords(Long.MAX_VALUE).isNotBlank())
     }
 }

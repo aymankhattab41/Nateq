@@ -91,6 +91,16 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
     private var tts: TextToSpeech? = null
     private var nowSpeaking = false
 
+    /**
+     * معرّف آخر جزء أُرسل إلى المحرك في دورات النطق الحالية. يُقارن به عند
+     * استقبال onDone/onError لنحرر التركيز الصوتي فقط عند اكتمال الجزء الأخير،
+     * لا بعد أول جزء — فالإعلان متعدد المقاطع (نص + أسماء إيموجي متتابعة) يبقى
+     * محمياً من تشويش التطبيقات الأخرى حتى ينتهي كل النطق. Volatile لأن الكتابة
+     * قد تأتي من خيط إرسال (Main أو IO) والقراءة من مستمع المحرك على Main.
+     */
+    @Volatile
+    private var lastQueuedUtteranceId: String? = null
+
     /** تغيير الصوت المفضّل لدورات النطق القادمة (يُعيد الربط إن لزم) */
     fun resetVoice(newVoiceId: String?) {
         if (newVoiceId == voiceId) return
@@ -109,11 +119,12 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
             onReady(true)
             return
         }
-        if (initializing) {
+        // انضمام ذرّي إلى "في طور التهيئة" أو بدؤها مرة واحدة (يحجب الاستدعاءات
+        // المتزامنة من خيوط مختلفة فلا تحدث تهيئة مزدوجة ولا ConcurrentModification).
+        if (initializing.getAndSet(true)) {
             pendingInitCallbacks.add(onReady)
             return
         }
-        initializing = true
         pendingInitCallbacks.add(onReady)
 
         // المحرك المختار من المستخدم (مثل MultiTTS أو Lord نفسه) له الأولوية
@@ -136,9 +147,15 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
             } else {
                 tts = null
             }
-            initializing = false
-            val callbacks = pendingInitCallbacks.toList()
-            pendingInitCallbacks.clear()
+            // سحب كل النداءات المتراكمة دفعةً واحدة (ذرّي تجاه الإضافات اللاحقة)،
+            // ثم إتاحة التهيئة التالية قبل استدعاء النداءات (لا استدعاء تحت قفلٍ
+            // لتجنب أي deadlock لو دخل الـ callback دعوةً متزامنة أخرى).
+            val callbacks = ArrayList<(Boolean) -> Unit>()
+            while (true) {
+                val cb = pendingInitCallbacks.poll() ?: break
+                callbacks.add(cb)
+            }
+            initializing.set(false)
             callbacks.forEach { cb -> cb(success) }
         }
         newTts.apply {
@@ -149,16 +166,23 @@ class AnnouncementSpeaker(context: Context, private var voiceId: String? = null)
 
                 @Deprecated("Java Override")
                 override fun onDone(utteranceId: String?) {
+                    // نحرر التركيز فقط عند اكتمال آخر جزء في الطابور، لا عند أول
+                    // جزء — الإعلان متعدد المقاطع (نص + أسماء إيموجي متتابعة) يبقى
+                    // محمياً من تشويش التطبيقات الأخرى حتى ينتهي كامل النطق.
+                    if (utteranceId != null && utteranceId == lastQueuedUtteranceId) {
+                        releaseAudioFocus()
+                    }
                     nowSpeaking = false
-                    releaseAudioFocus()
                     // الإبقاء على المحرك حياً بين الإعلانات لتجنب إعادة ربط
                     // مكلفة عند كل نطق؛ يُغلق صراحةً عبر stop()/resetVoice().
                 }
 
                 @Deprecated("Java Override")
                 override fun onError(utteranceId: String?) {
+                    if (utteranceId != null && utteranceId == lastQueuedUtteranceId) {
+                        releaseAudioFocus()
+                    }
                     nowSpeaking = false
-                    releaseAudioFocus()
                 }
             })
 
@@ -372,6 +396,9 @@ AudioManager.AUDIOFOCUS_REQUEST_FAILED ->
             java.text.Normalizer.Form.NFC
         )
         val utteranceId = "nateq_announce_${System.currentTimeMillis()}"
+        // سجّل آخر معرّف يُرسَل قبل speak حتى يقارن به المستمع onDone/onError
+        // ليحرر التركيز عند اكتمال آخر جزء فقط (لا بعد أول جزء من الجملة).
+        lastQueuedUtteranceId = utteranceId
         val status = tts.speak(cleanText, queueMode, params, utteranceId)
         if (status == TextToSpeech.ERROR && attempt < 3) {
             mainHandler.postDelayed({
@@ -502,6 +529,11 @@ AudioManager.AUDIOFOCUS_REQUEST_FAILED ->
         tts = null
     }
 
-    private var initializing = false
-    private val pendingInitCallbacks = mutableListOf<(Boolean) -> Unit>()
+    /** ذرّي: يمنع سباق بدء تهيئة المحرك مرتين (single-flight) عبر خيوط متعددة. */
+    private val initializing = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** آمنة للتسابق: تُستدعى `ensureInit` بالتوازي من مستقبِلات/مؤقّتات مختلفة
+     *  (Main/IO)، ويرصد `onInit` (على Main) النتائج. طابور متزامن يمنع
+     *  ConcurrentModificationException في القراءة والإضافة المتزامنتين. */
+    private val pendingInitCallbacks = java.util.concurrent.ConcurrentLinkedQueue<(Boolean) -> Unit>()
 }

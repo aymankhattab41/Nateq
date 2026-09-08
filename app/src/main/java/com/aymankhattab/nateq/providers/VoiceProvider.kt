@@ -51,6 +51,14 @@ interface VoiceProvider {
         voiceLocale: Locale? = null,
         desiredVoiceName: String? = null
     )
+
+    /**
+     * إغلاق نهائي لاتصال المزوّد وتحرير موارده (محرك TTS ورابط الـ Binder IPC
+     * إلى المحرك الخارجي). يُستدعى من [NateqTtsService.onDestroy] حتى لا يبقى
+     * الاتصال معلقاً في النظام بعد تدمير الخدمة. افتراضية فارغة (Unit) للمزودين
+     * غير الضروريين كي لا يُجبر أي مُنفّذ مستقبلي على تنفيذها.
+     */
+    fun shutdown() = Unit
 }
 
 /** وصف موحّد لأي صوت من أي مزود */

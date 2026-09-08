@@ -56,9 +56,16 @@ class NumberSpeechTest {
     @Test
     fun arabicWords_hundreds() {
         assertEquals("مائتان", NumberSpeech.toArabicWords(200))
-        assertEquals("ثلاثةمائة", NumberSpeech.toArabicWords(300))
+        assertEquals("ثلاثمائة", NumberSpeech.toArabicWords(300))
+        assertEquals("أربعمائة", NumberSpeech.toArabicWords(400))
+        assertEquals("خمسمائة", NumberSpeech.toArabicWords(500))
+        assertEquals("ستمائة", NumberSpeech.toArabicWords(600))
+        assertEquals("سبعمائة", NumberSpeech.toArabicWords(700))
+        assertEquals("ثمانمائة", NumberSpeech.toArabicWords(800))
+        assertEquals("تسعمائة", NumberSpeech.toArabicWords(900))
         assertEquals("مئة وخمس", NumberSpeech.toArabicWords(105))
-        assertEquals("أربعةمائة وعشر", NumberSpeech.toArabicWords(410))
+        assertEquals("أربعمائة وعشر", NumberSpeech.toArabicWords(410))
+        assertEquals("خمسمائة وسبعة وسبعون", NumberSpeech.toArabicWords(577, isFeminine = false))
     }
 
     @Test

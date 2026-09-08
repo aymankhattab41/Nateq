@@ -38,8 +38,12 @@ class SpeakingClockWidget : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         if (intent.action == ACTION_SPEAK) {
-            // تحقق أن البث موجّه لمكوّننا أصلاً (يمنع الإطلاق العرضي من مصادر أخرى)
-            if (intent.component?.packageName != context.packageName) return
+            // تحقق صارم أن البث موجّه لمكوّننا (حزمة + صف) وليس لحزمة تحمل اسمنا
+            // فقط — أي تطبيق خارجي قد يعيّن ComponentName صراحةً بحزمة تطبيقنا
+            // فيتجاوز فحص اسم الحزمة وحده. رفض أي مكوّن غير مطابق تماماً.
+            val cn = intent.component
+            if (cn?.packageName != context.packageName) return
+            if (cn.className != SpeakingClockWidget::class.java.name) return
             handleSpeak(context)
         }
     }

@@ -85,6 +85,12 @@ object NumberSpeech {
             "", "", "عشرون", "ثلاثون", "أربعون", "خمسون", "ستون",
             "سبعون", "ثمانون", "تسعون"
         )
+        // أسماء المئات؛ العدد 3-9 يخالف المعدود المؤنث (مائة) وجوباً
+        // بحذف التاء المربوطة: «ثلاثمائة» لا «ثلاثةمائة».
+        val hundredsTable = arrayOf(
+            "", "", "", "ثلاثمائة", "أربعمائة", "خمسمائة",
+            "ستمائة", "سبعمائة", "ثمانمائة", "تسعمائة"
+        )
 
         fun under100(n: Int): String = when (n) {
             0 -> "صفر"
@@ -115,7 +121,7 @@ object NumberSpeech {
         fun hundredsWord(h: Int): String = when (h) {
             1 -> if (isFeminine) "مئة" else "مائة"
             2 -> "مائتان"
-            in 3..10 -> "${onesM[h]}مائة"
+            in 3..9 -> hundredsTable[h]
             else -> "${numberToWordsHelper(h)}مائة"
         }
 
