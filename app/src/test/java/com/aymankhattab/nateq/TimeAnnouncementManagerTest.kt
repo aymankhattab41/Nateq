@@ -299,6 +299,17 @@ class TimeAnnouncementManagerTest {
         assertEquals("stop() يلغي المنبه", 0, scheduledAlarms().size)
     }
 
+    @Test
+    fun start_silent_stillSchedulesExactlyOneAlarm() {
+        // مسار الإقلاع/إعادة الجدولة: start(announceImmediately = false) يجب أن
+        // يجدول منبهاً واحداً بالضبط دون نطق فوري (تغذية Boot Glitch) — البنية
+        // مثل start() العادي، والفرق المقصود في النطقين فقط.
+        TimeAlarmReceiver.cancel(context)
+        manager = newManager()
+        manager.start(announceImmediately = false)
+        assertEquals("start الصامت يُجدول منبهاً واحداً بالضبط", 1, scheduledAlarms().size)
+    }
+
     // ──────────────── أدوات مساعدة ────────────────
 
     /** يعرّف بأنه دالة منطقية بلا استثناء — يُستخدم للدوال التي تُرجع boolean

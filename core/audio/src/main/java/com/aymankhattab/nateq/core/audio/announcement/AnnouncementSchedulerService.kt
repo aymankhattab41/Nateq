@@ -49,9 +49,12 @@ class AnnouncementSchedulerService : Service() {
         private const val KEY_USER_STOPPED = "stopped_by_user"
 
         private const val ACTION_START = "com.aymankhattab.nateq.action.ANNOUNCE_START"
+        private const val ACTION_REQUEST_START =
+            "com.aymankhattab.nateq.action.ANNOUNCE_REQUEST_START"
         private const val ACTION_ANNOUNCE_NOW = "com.aymankhattab.nateq.action.ANNOUNCE_NOW"
         private const val ACTION_STOP = "com.aymankhattab.nateq.action.ANNOUNCE_STOP"
-        private const val ACTION_TEMPORARY_START = "com.aymankhattab.nateq.action.ANNOUNCE_TEMPORARY_START"
+        private const val ACTION_TEMPORARY_START =
+            "com.aymankhattab.nateq.action.ANNOUNCE_TEMPORARY_START"
 
         /** مدة النافذة العابرة: تغطي نطق الوقت القصير وأي بداية بطيئة للمحرك. */
         private const val TEMPORARY_LIFETIME_MS = 30_000L
@@ -65,7 +68,9 @@ class AnnouncementSchedulerService : Service() {
 
         /** تشغيل الخدمة من الواجهة (يفسح إيقاف المستخدم السابق). إن كان إعلان
          *  الوقت هو الوحيد المفعل لا تُشغَّل خدمة أمامية (مستقل بمستقبل المنبه)
-         *  وتُجدول منبه الوقت مباشرةً عبر المدير المشترك — بند 16.2. */
+         *  وتُجدول منبه الوقت مباشرةً عبر المدير المشترك — بند 16.2.
+         *  طلب المستخدم نفسه: يعبَّر بـ ACTION_REQUEST_START لينطق أول تفعيل
+         *  فوراً، بخلاف الإقلاع/الاستئناف (ACTION_START) الذي يبقى صامتاً. */
         @JvmStatic
         fun requestStart(context: Context) {
             clearUserStopped(context)
@@ -75,7 +80,7 @@ class AnnouncementSchedulerService : Service() {
                 null
             }
             if (needsForegroundService(settings)) {
-                startSafely(context, ACTION_START)
+                startSafely(context, ACTION_REQUEST_START)
             } else if (settings?.isTimeAnnouncementEnabled() == true) {
                 try {
                     TimeAnnouncementManager.shared(context.applicationContext).start()
@@ -138,17 +143,20 @@ class AnnouncementSchedulerService : Service() {
         /** يضمن بقاء منبه إعلان الوقت مجدوولاً بعد أي انقطاع (إقلاع/إعادة
          *  فتح) دون إلزام خدمة أمامية: يُجدول مباشرةً إن لم تكن الخدمة قائمة
          *  ولم يوقفها المستخدم، وبلا تأثير عندما تكون قائمة (تزامنها يغطيه).
-         *  [start] لا ينطق إلا أول تفعيل، فالإعادة الجدولة هنا آمنة. */
+         *  [start] لا ينطق إلا أول تفعيل بطلب المستخدم، فإعادة الجدولة هنا
+         *  صامتة — [announceImmediately] = false يمنع نطق الوقت المفاجئ عند
+         *  الإقلاع (Boot Glitch). */
         @JvmStatic
         fun ensureTimeAlarm(context: Context) {
             if (isRunning) return
             if (wasUserStopped(context)) return
             try {
                 // شبكة أمان بند 16.2 أولاً (إقلاع/إعادة فتح = سياق خلفي): بدء
-                // عابر للخدمة الأمامية يغطي نطق أول تفعيل بأمان صوت الخلفية،
-                // ثم يُجدول منبه الوقت ويعيد نطق أول تفعيل عبر المدير المشترك.
+                // عابر للخدمة الأمامية يغطي نطق الإعلانات القادمة بأمان صوت
+                // الخلفية، ثم يُجدول منبه الوقت بلا نطق فوري.
                 startForSpeech(context)
-                TimeAnnouncementManager.shared(context.applicationContext).start()
+                TimeAnnouncementManager.shared(context.applicationContext)
+                    .start(announceImmediately = false)
             } catch (t: Throwable) {
                 Log.w(TAG, "ensure time alarm failed", t)
             }
@@ -253,12 +261,23 @@ class AnnouncementSchedulerService : Service() {
                 // الجدولة، وتُوقف الخدمة نفسها بعد نافذة الأمان.
                 armTemporarySelfStop()
             }
-            else -> {
-                // ACTION_START (من الواجهة/الإقلاع) أو إعادة إنشاء النظام (STICKY):
-                // نعيد مزامنة الإعلانات مع الإعدادات الحالية حتى تسري التغييرات
-                // فوراً دون الحاجة لإعادة بناء الخدمة (بند 8ب في التقرير).
+            ACTION_REQUEST_START -> {
+                // طلب المستخدم لتفعيل الإعلانات (مفتاح/زر/لوحة التفعيل): يُزامن
+                // بنطقٍ فوري للوقت يُقدّم تغذيةً راجعة،
+                // بخلاف الإقلاع والاستئناف.
                 try {
-                    syncWithSettings()
+                    syncWithSettings(announceImmediately = true)
+                } catch (t: Throwable) {
+                    Log.e(TAG, "syncWithSettings failed", t)
+                }
+            }
+            else -> {
+                // ACTION_START (الإقلاع/فتح الإعدادات/شبكة الأمان عند النطق)
+                // أو إعادة إنشاء النظام (STICKY): نعيد مزامنة الإعلانات مع
+                // الإعدادات الحالية حتى تسري التغييرات فوراً (بند 8ب)، مع
+                // نطقٍ صامت عند أول جدولة كي لا يفاجئ الإقلاع المستخدم.
+                try {
+                    syncWithSettings(announceImmediately = false)
                 } catch (t: Throwable) {
                     Log.e(TAG, "syncWithSettings failed", t)
                 }
@@ -268,8 +287,10 @@ class AnnouncementSchedulerService : Service() {
         return START_STICKY
     }
 
-    /** يزامن مكوّنات الإعلان (الوقت/البطارية) مع الإعدادات الحالية في كل START. */
-    private fun syncWithSettings() {
+    /** يزامن مكوّنات الإعلان (الوقت/البطارية) مع الإعدادات الحالية في كل START.
+     *  [announceImmediately] ينقل نية النطق الفوري لأول جدولة (طلبات المستخدم
+     *  فقط) ويمنعها في سياقات الإقلاع/الاستئناف (بند إصلاح Boot Glitch). */
+    private fun syncWithSettings(announceImmediately: Boolean) {
         val manager = timeManager
             ?: return
         val timeEnabled = try {
@@ -279,7 +300,7 @@ class AnnouncementSchedulerService : Service() {
         }
         if (timeEnabled) {
             try {
-                manager.start()
+                manager.start(announceImmediately)
             } catch (t: Throwable) {
                 Log.e(TAG, "time manager start failed", t)
             }

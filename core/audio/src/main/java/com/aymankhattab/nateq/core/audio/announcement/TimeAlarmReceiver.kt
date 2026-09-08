@@ -6,7 +6,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.PowerManager
 import android.util.Log
+import kotlinx.coroutines.launch
 
 /**
  * مستقبل إعلان الوقت التلقائي المستقل — يُوقَظ عبر [AlarmManager] عند رأس
@@ -98,6 +100,27 @@ class TimeAlarmReceiver : BroadcastReceiver() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
         }
+
+        /** مدة نافذة WakeLock العابرة: تغطي ربط محرك النطق وتهيئة الصوت في
+         *  الخلفية بعد صحوة المنبه من Doze دون أن ينام المعالج مجدداً أولاً. */
+        private const val SHORT_WAKE_LOCK_MS = 5_000L
+
+        /** نافذة WakeLock جزئية مؤقتة (5 ثوانٍ): تُحرَّر تلقائياً بوتوقيتها
+         *  (acquire(timeout)) فالتسريب المقيّد مقصود — بلا حاجة لـ release
+         *  يدوي، ولا يستنزف البطارية (منبه كل 15-60 دقيقة لثوانٍ معدودة). */
+        private fun acquireShortWakeLock(context: Context): PowerManager.WakeLock? {
+            return try {
+                val pm = context.getSystemService(PowerManager::class.java)
+                    ?: return null
+                pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$TAG:speech").apply {
+                    setReferenceCounted(false)
+                    acquire(SHORT_WAKE_LOCK_MS)
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "wake lock acquire failed", t)
+                null
+            }
+        }
     }
 
     override fun onReceive(context: Context, intent: Intent?) {
@@ -107,16 +130,28 @@ class TimeAlarmReceiver : BroadcastReceiver() {
         val cn = intent.component
         if (cn?.packageName != context.packageName) return
         if (cn.className != TimeAlarmReceiver::class.java.name) return
-        try {
-            // شبكة أمان بند 16.2: قبل النطق من سياق المنبه الخلفي وإن لم تكن
-            // خدمة الإعلانات قائمة، تُبدأ خدمة أمامية عابرة تغطي نافذة النطق
-            // بأمان صوت الخلفية (أندرويد 15+/سامسونج) ثم توقف نفسها ذاتياً.
-            // لا يكسر كفاءة البطارية: الحارس لا يتبقى 24/7 لإعلان الوقت وحده.
-            AnnouncementSchedulerService.startForSpeech(context.applicationContext)
-            // المدير المشترك (نفس كائن الودجت/الأداة) ينطق ويرسب الفاصل التالي.
-            TimeAnnouncementManager.shared(context.applicationContext).onAlarmTick()
-        } catch (t: Throwable) {
-            Log.e(TAG, "alarm tick failed", t)
+
+        // Doze: بثّ المنبه يوقظ المعالج لنافذة قصيرة فقط. goAsync يُبقي شعاع
+        // البثّ حياً لإنهاء جدولة الـ tick، وWakeLock جزئي مؤقت (5 ثوانٍ)
+        // يغطي نافذة النطق في الخلفية (ربط المحرك وتهيئة الصوت): كان إعلان
+        // كامل معرضاً للضياع لو عاد المعالج للنوم قبل اكتمال التهيئة.
+        val pendingResult = goAsync()
+        val appContext = context.applicationContext
+        val appScope = (appContext as AnnouncementAppContext).appScope
+        appScope.launch {
+            val wakeLock = acquireShortWakeLock(appContext)
+            try {
+                // شبكة أمان بند 16.2: قبل النطق من سياق المنبه الخلفي وإن لم
+                // تكن خدمة الإعلانات قائمة، تُبدأ خدمة أمامية عابرة تغطي نافذة
+                // النطق بأمان صوت الخلفية (أندرويد 15+/سامسونج) ثم توقف نفسها.
+                AnnouncementSchedulerService.startForSpeech(appContext)
+                // المدير المشترك (نفس كائن الودجت/الأداة) ينطق ويرسب الفاصل التالي.
+                TimeAnnouncementManager.shared(appContext).onAlarmTick()
+            } catch (t: Throwable) {
+                Log.e(TAG, "alarm tick failed", t)
+            } finally {
+                pendingResult.finish()
+            }
         }
     }
 }
