@@ -415,4 +415,22 @@ class SettingsRepositoryTest {
         // لغة أخرى بلا إعداد → null (لا تسرّب بين اللغات)
         assertNull(repo.getEngineForLanguage("en"))
     }
+
+    @Test
+    fun enginePerCategory_defaultsNull_roundTrip_removable() {
+        // بلا إعداد → null (يتبع المحرك العام/اللغة)
+        assertNull(repo.getEngineForCategory("caller"))
+        assertNull(repo.getEngineForCategory("battery"))
+        assertNull(repo.getEngineForCategory("time"))
+        assertNull(repo.getEngineForCategory("numbers"))
+        assertNull(repo.getEngineForCategory("notifications"))
+
+        repo.setEngineForCategory("caller", "org.nobody.multitts")
+        assertNull(repo.getEngineForCategory("battery"))
+        assertEquals(
+            "org.nobody.multitts", repo.getEngineForCategory("caller")
+        )
+        repo.setEngineForCategory("caller", null)
+        assertNull(repo.getEngineForCategory("caller"))
+    }
 }

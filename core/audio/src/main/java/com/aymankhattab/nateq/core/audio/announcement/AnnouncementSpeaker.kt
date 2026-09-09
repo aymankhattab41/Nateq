@@ -109,6 +109,10 @@ class AnnouncementSpeaker(
     private var tts: TextToSpeech? = null
     private var nowSpeaking = false
 
+    /** المحرك المرتبط حالياً بالمتحدث — يُقارن قبل النطق بأي محركٍ صريح
+     *  لفئةٍ معيّنة فيُعاد الربط عند الاختلاف (تبديل حي بين فئات الوظائف). */
+    private var boundEngine: String? = null
+
     /** مقسم النصوص المختلطة الكتابات داخل إعلانات
      * التطبيق (منطق نقي بلا حالة). */
     private val languageSegmenter = LanguageSegmenter()
@@ -143,12 +147,28 @@ class AnnouncementSpeaker(
      * يهيّئ المحرك مرة واحدة؛ يعيد true عند الجاهزية.
      * يمنع سباق التهيئة المزدوج (Single-flight): الاستدعاءات المتزامنة أثناء
      * التهيئة تصطّف جميعها وتُستدعى بنتيجة واحدة عند اكتمال onInit.
+     *
+     * [requestedEngine] محرك صريح لفئةٍ معيّنة (متصل/بطارية/وقت): يُفضَّل إن
+     * كان مثبّتاً، ويُعاد ربط المتحدث إن كان مربوطاً بمحركٍ مختلف (تبديل
+     * حي بين الفئات)؛ null → المحرك المختار عام أو التلقائي.
      */
-    private fun ensureInit(onReady: (Boolean) -> Unit) {
+    private fun ensureInit(
+        onReady: (Boolean) -> Unit,
+        requestedEngine: String? = null
+    ) {
         val existing = tts
-        if (existing != null) {
+        val requested = requestedEngine
+            ?.takeIf {
+                it in EnginePicker.installedEnginePackages(appContext)
+            }
+        if (existing != null && boundEngine == requested) {
             onReady(true)
             return
+        }
+        // محرك مختلف للفئة القادمة: أُغلق الربط القديم كاملاً
+        // ثم أُهيّئ الجديد (لا تبقى مثيلات معلقة على محرك آخر).
+        if (existing != null) {
+            shutdownSafely()
         }
         // انضمام ذرّي إلى "في طور التهيئة" أو بدؤها مرة واحدة
         // (يحجب الاستدعاءات المتزامنة من خيوط مختلفة فلا تحدث
@@ -171,7 +191,9 @@ class AnnouncementSpeaker(
         } catch (e: Exception) {
             null
         }
-        val engine = savedEngine ?: EnginePicker.pickEnginePackage(appContext)
+        val engine = requested ?: savedEngine
+            ?: EnginePicker.pickEnginePackage(appContext)
+        boundEngine = engine
         var newTts: TextToSpeech? = null
         newTts = TextToSpeech(appContext) { status ->
             val success = status == TextToSpeech.SUCCESS
@@ -263,7 +285,8 @@ class AnnouncementSpeaker(
         locale: Locale,
         speechRate: Float,
         pitch: Float,
-        volume: Float
+        volume: Float,
+        engineOverride: String? = null
     ) {
         // إعدادات نطق الإيموجي تُحسم قبل طلب التركيز حتى تكون المقاطع جاهزة
         // للدورة (بلا قراءة متكررة للإعدادات عند كل عودة تركيز).
@@ -302,7 +325,7 @@ class AnnouncementSpeaker(
                 pendingFocusAction = {
                     startSpeech(
                         text, locale, speechRate, pitch, volume,
-                        emojiCfg, parts
+                        emojiCfg, parts, engineOverride
                     )
                 }
                 val timer = Runnable {
@@ -336,7 +359,7 @@ class AnnouncementSpeaker(
                 // AUDIOFOCUS_REQUEST_GRANTED: التركيز مُنح فوراً — ننطق مباشرة.
                 startSpeech(
                     text, locale, speechRate, pitch, volume,
-                    emojiCfg, parts
+                    emojiCfg, parts, engineOverride
                 )
         }
     }
@@ -388,9 +411,10 @@ class AnnouncementSpeaker(
         pitch: Float,
         volume: Float,
         emojiCfg: EmojiSpeechConfig?,
-        parts: List<SpeechPart>?
+        parts: List<SpeechPart>?,
+        engineOverride: String? = null
     ) {
-        ensureInit { ready ->
+        ensureInit({ ready ->
             if (!ready) {
                 releaseAudioFocus()
                 return@ensureInit
@@ -404,7 +428,7 @@ class AnnouncementSpeaker(
                     emojiCfg, parts, attempt = 1
                 )
             }, 150)
-        }
+        }, engineOverride)
     }
 
     /** ينطق المقاطع بالتتابع: النصوص بصوت الإعلان (النص المختلط الكتابات

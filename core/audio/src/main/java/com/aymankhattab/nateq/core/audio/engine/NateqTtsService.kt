@@ -133,10 +133,8 @@ class NateqTtsService : TextToSpeechService() {
         // سلسلة التراجع لكل لغة تستند إلى ذاكرة اكتشاف الكتالوج
         // (المحركات القادرة على اللغة فعلياً) بدل القائمة العالمية.
         providers.forEach { provider ->
-            if (provider is SystemVoiceProvider) {
-                provider.capableEnginesFor = { tag ->
-                    catalog.discoveredEnginePackagesFor(tag)
-                }
+            provider.capableEnginesFor = { tag ->
+                catalog.discoveredEnginePackagesFor(tag)
             }
         }
 

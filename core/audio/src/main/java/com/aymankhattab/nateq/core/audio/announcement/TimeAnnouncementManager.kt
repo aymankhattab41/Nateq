@@ -65,10 +65,8 @@ class TimeAnnouncementManager(
                     val catalog = VoiceCatalog(providers)
                     // سلسلة تراجع لغة الإعلان تستند لذكرة اكتشاف الكتالوج.
                     providers.forEach { provider ->
-                        if (provider is SystemVoiceProvider) {
-                            provider.capableEnginesFor = { tag ->
-                                catalog.discoveredEnginePackagesFor(tag)
-                            }
+                        provider.capableEnginesFor = { tag ->
+                            catalog.discoveredEnginePackagesFor(tag)
                         }
                     }
                     val handler = SynthesisRequestHandler(
@@ -387,8 +385,14 @@ class TimeAnnouncementManager(
                 )
 
                 // AnnouncementSpeaker يختار المحرك تلقائياً عبر EnginePicker
+                // — أو محرك فئة الساعة الصريح إن حُدِّد للمنوّهات.
                 val speaker = AnnouncementSpeaker.getInstance(context)
-                speaker.speak(timeText, locale, speechRate, pitch, volume)
+                speaker.speak(
+                    timeText, locale, speechRate, pitch, volume,
+                    engineOverride = settings.getEngineForCategory(
+                        SettingsRepository.VOICE_CATEGORY_TIME
+                    )
+                )
             } catch (t: Throwable) {
                 android.util.Log.e("NATEQ_TTS", "announce time failed", t)
             }
@@ -601,7 +605,10 @@ class TimeAnnouncementManager(
                 AnnouncementSpeaker.getInstance(context)
                     .speak(
                         text, Locale.forLanguageTag(languageTag),
-                        speechRate, pitch, volume
+                        speechRate, pitch, volume,
+                        engineOverride = settings.getEngineForCategory(
+                            SettingsRepository.VOICE_CATEGORY_NUMBERS
+                        )
                     )
             }
         }
@@ -635,7 +642,10 @@ class TimeAnnouncementManager(
                 AnnouncementSpeaker.getInstance(context)
                     .speak(
                         text, Locale.forLanguageTag(languageTag),
-                        speechRate, pitch, volume
+                        speechRate, pitch, volume,
+                        engineOverride = settings.getEngineForCategory(
+                            SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+                        )
                     )
             }
         }

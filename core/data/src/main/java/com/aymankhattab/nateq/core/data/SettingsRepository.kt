@@ -37,6 +37,9 @@ class SettingsRepository(private val context: Context) :
         const val VOICE_CATEGORY_DEFAULT = "default"
         const val VOICE_CATEGORY_EMOJI = "emoji"
 
+        /** فئة إعلان المتصل (محرك/صوت مستقل للإعلان عن المكالمات). */
+        const val ANNOUNCE_CATEGORY_CALLER = "caller"
+
         /** تطبيقات الإشعارات الافتراضية قبل أي اختيار صريح. */
         const val NOTIF_READ_ALL = "all_apps"
 
@@ -654,6 +657,14 @@ val masterKey = androidx.security.crypto.MasterKey
         )
     fun setPreferredVoiceIdForCategory(category: String, voiceId: String) =
         prefs.edit().putString("preferred_voice_$category", voiceId).apply()
+
+    /** محرك النطق الخاص بفئةٍ معيّنة (متصل/بطارية/وقت…)، null = تلقائي
+     *  (يتبع محرك اللغة ثم المحرك المختار العام). يُخزَّن تحت
+     *  `engine_for_<category>` ليستقل كل إعلانٍ بمحركه. */
+    fun getEngineForCategory(category: String): String? =
+        prefs.getString("engine_for_$category", null)
+    fun setEngineForCategory(category: String, engine: String?) =
+        prefs.edit().putString("engine_for_$category", engine).apply()
 
     /** سرعة النطق لكل فئة */
     override fun getSpeechRateForCategory(category: String): Float =

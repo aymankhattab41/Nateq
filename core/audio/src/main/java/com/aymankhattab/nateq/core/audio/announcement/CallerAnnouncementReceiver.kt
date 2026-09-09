@@ -155,7 +155,12 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     .getCallerAnnouncementRepeat().coerceIn(1, 5)
                 val intervalMs = settings.getCallerAnnouncementIntervalSeconds()
                     .coerceIn(1, 10) * 1000L
-                speaker.speak(text, locale, speechRate, 1.0f, volume)
+                speaker.speak(
+                    text, locale, speechRate, 1.0f, volume,
+                    engineOverride = settings.getEngineForCategory(
+                        SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+                    )
+                )
                 if (repeat > 1) {
                     val appCtx = context.applicationContext
                     val handler = Handler(Looper.getMainLooper())
@@ -164,7 +169,12 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                             try {
                                 AnnouncementSpeaker.getInstance(appCtx)
                                     .speak(
-                                        text, locale, speechRate, 1.0f, volume
+                                        text, locale, speechRate, 1.0f, volume,
+                                        engineOverride = settings
+                                            .getEngineForCategory(
+                                                SettingsRepository
+                                                    .ANNOUNCE_CATEGORY_CALLER
+                                            )
                                     )
                             } catch (t: Throwable) {
                                 Log.e(TAG, "repeat speak failed", t)

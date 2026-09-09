@@ -232,7 +232,10 @@ class BatteryAnnouncementReceiver(
         val speechRate = settings.getBatteryAnnouncementRate()
         val volume = settings.getBatteryAnnouncementVolume()
         AnnouncementSpeaker.getInstance(context).speak(
-            text, locale, speechRate, 1.0f, volume
+            text, locale, speechRate, 1.0f, volume,
+            engineOverride = settings.getEngineForCategory(
+                SettingsRepository.DEVICE_HEALTH_BATTERY
+            )
         )
     }
 
