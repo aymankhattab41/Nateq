@@ -648,8 +648,12 @@ class NateqTtsService : TextToSpeechService() {
                         } else {
                             MIN_UNIFIED_RATE
                         }
+                        // الشريحة قادمة من مسبحٍ مُعاد استخدامه: لا تُعالج
+                        // إلا البايتات الصالحة حتى validLength وإلا يُبثّ
+                        // ضجيجٌ من بقايا نطقٍ سابق (Audio Static).
                         val mono = PcmResampler.convert(
-                            chunk, rate, nativeChannels, MIXED_UNIFIED_RATE
+                            chunk, 0, validLength, rate,
+                            nativeChannels, MIXED_UNIFIED_RATE
                         )
                         if (mono.isEmpty()) return@synthesize
                         if (!started) {

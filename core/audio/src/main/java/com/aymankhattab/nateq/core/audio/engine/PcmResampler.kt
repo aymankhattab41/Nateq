@@ -13,37 +13,61 @@ import kotlin.math.min
 object PcmResampler {
 
     /**
-     * @param pcm بيانات PCM 16-bit (LE) بمعدل [inSampleRate]
-     *  وقنوات [inChannels]
-     * @return PCM 16-bit أحادي بقناته الواحدة، بمعدل [outSampleRate].
-     *  الحالات التافهة (معدلان متساويان/مدخل أحادي/مدخل صفر) تُرجع كما هي
-     *  بلا نسخٍ مكلف.
+     * @param pcm مخزن PCM 16-bit (LE) يضمّ بيانات صالحة داخل
+     *  [offset, offset+length)
+     * @param offset إزاحة بدء البيانات الصالحة بالبايت
+     * @param length طول البيانات الصالحة بالبايت — قد يقلّ عن طول
+     *  المصفوفة إذا جاءت الشريحة من مسبحٍ مُعاد استخدامه، فلا تُعالج
+     *  القمامة والبيانات المتبقية من نطق سابق (الضجيج الزاوي)
+     * @param inSampleRate معدل عينات البيانات الصالحة
+     * @param inChannels قنوات البيانات الصالحة
+     * @param outSampleRate معدل الإخراج المطلوب
+     * @return PCM 16-bit أحادي بقناة واحدة بمعدل [outSampleRate].
+     *  عند `length <= 0` أو معدل/قنوات غير صالحة تُرجع مصفوفة فارغة
+     *  (لا تمريرَ للمخزن كما كان — يبقى الإسكات أصحّ من بثّ قمامة).
      */
     fun convert(
         pcm: ByteArray,
+        offset: Int,
+        length: Int,
         inSampleRate: Int,
         inChannels: Int,
         outSampleRate: Int
     ): ByteArray {
-        if (pcm.isEmpty() || inSampleRate <= 0 || outSampleRate <= 0 ||
+        if (length <= 0 || inSampleRate <= 0 || outSampleRate <= 0 ||
             inChannels <= 0
         ) {
-            return pcm
+            return ByteArray(0)
         }
-        val mono = if (inChannels == 1) pcm else downmixToMono(pcm, inChannels)
+        val end = (offset + length).coerceAtMost(pcm.size)
+        if (offset < 0 || end <= offset) return ByteArray(0)
+        val validBytes = end - offset
+        // على خلاف السلوك السابق، لا يُعاد المخزن نفسه: نُخرج نافذة
+        // صالحةً مستقلة عن بقية المخزن (قد يكون مسبحاً مُعاد استخدامه).
+        val mono = if (inChannels == 1) {
+            pcm.copyOfRange(offset, end)
+        } else {
+            downmixToMono(pcm, offset, validBytes, inChannels)
+        }
         if (inSampleRate == outSampleRate) return mono
         return resample(mono, inSampleRate, outSampleRate)
     }
 
     /** خفض القنوات المتعددة إلى مونو بمتوسط العينات المتزامنة
-     * (تُسقط اليُسر/اليمين بلا تتبع طوري خاص — مقبول لنطق الكلام). */
-    fun downmixToMono(pcm: ByteArray, channelCount: Int): ByteArray {
-        val frames = pcm.size / 2 / channelCount
+     * (تُسقط اليُسر/اليمين بلا تتبع طوري خاص — مقبول لنطق الكلام).
+     * يعالج فقط نافذة البيانات الصالحة [offset, offset+length). */
+    fun downmixToMono(
+        pcm: ByteArray,
+        offset: Int,
+        length: Int,
+        channelCount: Int
+    ): ByteArray {
+        val frames = length / 2 / channelCount
         val out = ByteArray(frames * 2)
         for (frame in 0 until frames) {
             var sum = 0L
             for (channel in 0 until channelCount) {
-                sum += sampleAt(pcm, frame * channelCount + channel)
+                sum += sampleAt(pcm, offset, frame * channelCount + channel)
             }
             // متوسّط متوازن تماماً (نصفاً بعيداً عن الصفر بإشارةٍ ثابتة)
             // بلا انحياز DC: خطأ ±0.5 متناوب صِفر-أفقي. بدل الـ (+1)/2
@@ -91,8 +115,11 @@ object PcmResampler {
         return out
     }
 
-    private fun sampleAt(pcm: ByteArray, frame: Int): Int {
-        val index = frame * 2
+    private fun sampleAt(pcm: ByteArray, frame: Int): Int =
+        sampleAt(pcm, 0, frame)
+
+    private fun sampleAt(pcm: ByteArray, offset: Int, frame: Int): Int {
+        val index = offset + frame * 2
         val raw = (pcm[index].toInt() and 0xFF) or
             (pcm[index + 1].toInt() shl 8)
         // ترميز موقّع: عينات int16 من الملف مفكوكة كقيم موقّعة (تتجه للسالب
