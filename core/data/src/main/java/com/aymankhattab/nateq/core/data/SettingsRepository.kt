@@ -77,14 +77,25 @@ class SettingsRepository(private val context: Context) :
     }
 
     @Volatile
-    private var prefs: SharedPreferences =
-        context.getSharedPreferences(NEW_PREFS, Context.MODE_PRIVATE).also {
-            migrateIfNeeded(it)
-        }
+    private var prefs: SharedPreferences = openSharedPrefs().also {
+        migrateIfNeeded(it)
+    }
 
     /** توقيت آخر تعديل لملف الإعدادات — حارس كشف الكتابة من العملية الأخرى. */
     @Volatile
     private var prefsLastModified: Long = prefsFileLastModified()
+
+    /**
+     * يفتح تفضيلات [NEW_PREFS] العادية.
+     *
+     * التطبيق يعمل في عمليتين (main و :tts) وSharedPreferences يحتفظ بكاش
+     * في الذاكرة لكل عملية، فلا يوجد «إعادة فتح» داخل نفس العملية. لذلك
+     * تُعالَج حداثة بيانات العملية الأخرى صراحةً في [reload] بقراءة ملف
+     * القرص الفعلي من جديد — بلا أي اعتماد على MODE_MULTI_PROCESS المكروه
+     * (API 23+) الذي يجعل الإطار يعيد قراءة المخزن داخلياً فيتعذّر اختباره.
+     */
+    private fun openSharedPrefs(): SharedPreferences =
+        context.getSharedPreferences(NEW_PREFS, Context.MODE_PRIVATE)
 
     // أسماء المتصلين = بيانات شخصية (PII) تُخزَّن في ملف مشفَّر منفصل؛
     // عند تعذر التشفير (Keystore معطوب…) تُحتفظ في الذاكرة لهذه الجلسة فقط
@@ -95,25 +106,113 @@ class SettingsRepository(private val context: Context) :
     private val memoryCallerNames = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     fun reload() {
-        // التطبيق يعمل في عمليتين (main و :tts) وSharedPreferences يحتفظ بكاش
-        // في الذاكرة لكل عملية ولا يتحدّث تلقائياً. لتخفيف عبء I/O نُعيد فتح
-        // الملف من القرص فقط عندما يتغيّر توقيته الفعلي (أي كتابة من العملية
-        // الأخرى)، بدل فتح جديد مقابل كل نطق — فنقرأ التعديلات فوراً بلا
-        // قراءة قرص دائمة.
+        // التطبيق يعمل في عمليتين (main و :tts) وSharedPreferences يحتفظ
+        // بكاش في الذاكرة لكل عملية ولا يعيد قراءة القرص تلقائياً. لتخفيف
+        // عبء I/O لا نعيد القراءة إلا عندما يتغيّر توقيت الملف الفعلي (أي
+        // كتابة من العملية الأخرى) بدل قراءة قرص دائمة مع كل نطق.
         if (!prefsFileChanged()) return
-        prefs = context.getSharedPreferences(NEW_PREFS, Context.MODE_PRIVATE)
+        // قراءة صريحة لملف القرص بتنسيق SharedPreferences التوثيقي ثم تطبيق
+        // القراءة على المخزن في الذاكرة (مسح ثم نسخ) — حتمية تعمل على الجهاز
+        // وعبر Robolectric على حد سواء، دون الاعتماد على سلوك داخلي للوسم
+        // المكروه MODE_MULTI_PROCESS.
+        val fresh = runCatching { parsePrefsFile(prefsFile()) }.getOrNull()
+            ?: return
+        val editor = prefs.edit().clear()
+        editor.copyFrom(fresh)
+        editor.putBoolean(KEY_MIGRATED, prefs.getBoolean(KEY_MIGRATED, true))
+        editor.apply()
         prefsLastModified = prefsFileLastModified()
     }
 
     /** مسار ملف الإعدادات المشترك بين العمليات. */
-    private fun prefsFile(): java.io.File =
-        java.io.File(context.applicationInfo.dataDir, "shared_prefs/$NEW_PREFS.xml")
+    private fun prefsFile(): java.io.File = prefsFileFor(NEW_PREFS)
+
+    /** مسار ملف تفضيلات مسجَّل بالاسم (تحت المجلد shared_prefs). */
+    private fun prefsFileFor(name: String): java.io.File =
+        java.io.File(context.applicationInfo.dataDir, "shared_prefs/$name.xml")
 
     private fun prefsFileLastModified(): Long =
         runCatching { prefsFile().lastModified() }.getOrDefault(0L)
 
     private fun prefsFileChanged(): Boolean =
         prefsFileLastModified() != prefsLastModified
+
+    /**
+     * يقرأ ملف تفضيلات XML بتنسيق SharedPreferences ويعيد خريطته القيمية.
+     * صيغة الملف موثقة داخل AOSP (SharedPreferencesImpl.fromXml) وثابتة
+     * لسنوات — المخزن الوحيد لهذا المشروع: map من int/boolean/float/string
+     * و string-set/string.
+     */
+    private fun parsePrefsFile(file: java.io.File): Map<String, Any?> {
+        val parser = android.util.Xml.newPullParser()
+        parser.setInput(java.io.FileInputStream(file), "utf-8")
+        var type = parser.eventType
+        val map = LinkedHashMap<String, Any?>()
+        // حالة عنصر <set> النشط (مجموعة نصوص): الاسم وجمع القيم حتى وسَم
+        // الإغلاق المقابل.
+        var setKey: String? = null
+        var setValues: java.util.HashSet<String>? = null
+        while (type != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
+            if (type == org.xmlpull.v1.XmlPullParser.START_TAG) {
+                val tag = parser.name
+                val key = parser.getAttributeValue(null, "name")
+                when (tag) {
+                    // الجذر فقط: بلا قيم مباشرة.
+                    "map", "string-set" -> {}
+                    "set" -> {
+                        setKey = key
+                        setValues = java.util.HashSet()
+                    }
+                    "string" -> if (setValues != null && key != null) {
+                        setValues.add(parser.nextText())
+                    } else if (key != null) {
+                        map[key] = parser.nextText()
+                    }
+                    else -> if (key != null) {
+                        val raw = parser.getAttributeValue(null, "value")
+                        map[key] = parseScalar(tag, raw)
+                    }
+                }
+            } else if (type == org.xmlpull.v1.XmlPullParser.END_TAG &&
+                parser.name == "set" && setKey != null && setValues != null
+            ) {
+                map[setKey] = setValues
+                setKey = null
+                setValues = null
+            }
+            type = parser.next()
+        }
+        return map
+    }
+
+    /** يحوّل قيمة نصية لوسم عددي/منطقي؛ أي فشل يُترك نصاً خاماً. */
+    private fun parseScalar(tag: String, value: String?): Any? = try {
+        when (tag) {
+            "int" -> value?.toInt()
+            "long" -> value?.toLong()
+            "float" -> value?.toFloat()
+            "boolean" -> value?.toBoolean()
+            "string" -> value
+            else -> value
+        }
+    } catch (_: Throwable) {
+        value
+    }
+
+    /** ينسخ خريطة قراءة من القرص إلى محرر التفضيلات حسب نوع كل قيمة. */
+    private fun SharedPreferences.Editor.copyFrom(values: Map<String, Any?>) {
+        @Suppress("UNCHECKED_CAST")
+        for ((key, value) in values) {
+            when (value) {
+                is Int -> putInt(key, value)
+                is Long -> putLong(key, value)
+                is Float -> putFloat(key, value)
+                is Boolean -> putBoolean(key, value)
+                is String -> putString(key, value)
+                is Set<*> -> putStringSet(key, value as Set<String>)
+            }
+        }
+    }
 
     /**
      * يوحّد معرّفات الأصوات القديمة (nateq-ar*, nateq-en*, ar-local, en-local
@@ -124,12 +223,20 @@ class SettingsRepository(private val context: Context) :
     private fun normalizeVoiceId(id: String?): String? = VoiceIdContract.normalize(id)
 
     /**
-     * يرحّل الإعدادات من الملف المشفر القديم إلى الملف الجديد
-     * في أول مرة فقط. لا يضع علامة المُرحَّل إلا إذا نجح فعلياً.
+     * يرحّل الإعدادات من الملف المشفر القديم إلى الملف الجديد في أول مرة
+     * فقط. لا يضع علامة المُرحَّل إلا إذا نجح فعلياً (أو لم يوجد ملف قديم
+     * أصلاً) — عطل Keystore العابر لا يُعلن الهجرة ولا يُهمل بيانات المستخدم.
      */
     private fun migrateIfNeeded(newPrefs: SharedPreferences) {
         if (newPrefs.getBoolean(KEY_MIGRATED, false)) return
 
+        // هل يوجد الملف المشفر الحقيقي على القرص؟ هو معيار «هل هناك ما
+        // يُرحَّل» — لا نتيجة الفتح التي قد تفشل عابراً (Keystore مباشرة بعد
+        // الإقلاع أو قفل الشاشة) فيبدو المخزن «فارغاً» فتُعلَن الهجرة خطأً
+        // وتُهمل إعدادات المستخدم بلا رجعة.
+        val secureFileExists = prefsFileFor(OLD_PREFS).exists()
+
+        var openedEncrypted = false
         val oldPrefs = try {
             val masterKey = androidx.security.crypto.MasterKey.Builder(context)
                 .setKeyScheme(androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM)
@@ -138,14 +245,21 @@ class SettingsRepository(private val context: Context) :
                 context, OLD_PREFS, masterKey,
                 androidx.security.crypto.EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
+            ).also { openedEncrypted = true }
         } catch (_: Throwable) {
+            // عطل Keystore عابر محتمل: نُجرّب البديل النصي القديم إن حُرِّر
+            // في عطلٍ سابق؛ وإن غاب يُترك الترحيل معلّقاً (بلا وسم).
             try {
                 context.getSharedPreferences(FALLBACK_PREFS, Context.MODE_PRIVATE)
             } catch (_: Throwable) { null }
         }
 
         if (oldPrefs == null || oldPrefs.all.isEmpty()) {
+            // لا توجد بيانات مقروءة للترحيل. إن بقي ملف مشفر على القرص ولم
+            // نستطع قراءته فلا نُعلن الهجرة — يُعاد الفتح عند إنشاء مخزن لاحق
+            // بعد زوال العطل العابر؛ وإن لم يوجد الملف (تثبيت نظيف) أو فُتح
+            // المشفر فارغاً فعلاً فلا شيء يُرحّل، فيُؤشَّر مرة واحدة للأبد.
+            if (!openedEncrypted && secureFileExists) return
             newPrefs.edit().putBoolean(KEY_MIGRATED, true).apply()
             return
         }
@@ -164,12 +278,23 @@ class SettingsRepository(private val context: Context) :
             }
         }
         editor.putBoolean(KEY_MIGRATED, true)
-        // `commit()` متزامن لضمان كتابة البيانات قبل حذف الملف القديم (بلا سباق)
+        // `commit()` متزامن: يضمن كتابة البيانات على القرص قبل حذف الملف
+        // القديم حتى لا يسبق الحذفُ الحفظَ (بلا سباق).
         if (editor.commit()) {
-            context.deleteSharedPreferences(OLD_PREFS)
+            // لا نُحذف الملف المشفر إلا عند النسخ منه مباشرةً؛ أما عند النسخ
+            // من البديل النصي (المشفر غير مقروء عابراً) فيبقى الملف على القرص
+            // بلا حذف — نفس سياسة أسماء المتصلين: لا حذف عند الشك.
+            if (openedEncrypted) {
+                context.deleteSharedPreferences(OLD_PREFS)
+            }
         }
         Log.w(TAG, "تم ترحيل $copied إعداد من الملف القديم إلى الملف الجديد")
     }
+
+    /** هل اكتمل وسم الهجرة من المخزن القديم؟ — رصدٌ للاختبار في نفس الوحدة. */
+    @androidx.annotation.VisibleForTesting
+    internal fun isMigrationCompleted(): Boolean =
+        prefs.getBoolean(KEY_MIGRATED, false)
 
     /** لغة التطبيق المختارة يدوياً: "ar"/"en"/null (null = تتبع لغة النظام) */
     fun getAppLanguage(): String? = prefs.getString("app_language", null)

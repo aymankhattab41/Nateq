@@ -318,4 +318,74 @@ class SettingsRepositoryTest {
         kmShadow.setIsKeyguardSecure(true)
         assertTrue(repo.isDeviceScreenLocked())
     }
+
+    @Test
+    fun reload_refreshesFromDiskWhenFileChangedExternally() {
+        repo.setNumberReadingMode(3)
+        // commit على نفس الاسم يُفرض إتمام الكتابة اللامتزامنة لـ apply()
+        // السابقة على القرص (توثيق SharedPreferences.Editor).
+        context.getSharedPreferences("nateq_settings", Context.MODE_PRIVATE)
+            .edit().putInt("probe_flush", 1).commit()
+        try {
+            // محاكاة كتابة من عملية أخرى: تُعدَّل بيانات الملف XML على القرص
+            // مباشرةً بجوار كائن الكاش في الذاكرة. وحده MODE_MULTI_PROCESS في
+            // reload() يجعل SharedPreferencesImpl يعيد قراءة الملف فعلياً —
+            // لولا ذلك تبقى القيمة القديمة 3 في الذاكرة إلى الأبد.
+            val xmlFile = java.io.File(
+                context.applicationInfo.dataDir,
+                "shared_prefs/nateq_settings.xml"
+            )
+            assertTrue("ملف الإعدادات كُتب على القرص", xmlFile.exists())
+            assertTrue(xmlFile.readText().contains("value=\"3\""))
+            val updated = xmlFile.readText().replace(
+                "name=\"number_reading_mode\" value=\"3\"",
+                "name=\"number_reading_mode\" value=\"7\""
+            )
+            xmlFile.writeText(updated)
+            repo.reload()
+            assertEquals("reload يقرأ آخر كتابة خارجية", 7, repo.getNumberReadingMode())
+        } finally {
+            // استعادة حالة نظيفة حتى لا تتسرب القيمة 7 لبقية الاختبارات.
+            context.getSharedPreferences("nateq_settings", Context.MODE_PRIVATE)
+                .edit().clear().commit()
+        }
+    }
+
+    @Test
+    fun migration_pendingWhenEncryptedOldFileUnreadable() {
+        val oldFile = java.io.File(
+            context.applicationInfo.dataDir,
+            "shared_prefs/nateq_secure_settings.xml"
+        )
+        try {
+            context.getSharedPreferences("nateq_settings", Context.MODE_PRIVATE)
+                .edit().clear().commit()
+            oldFile.parentFile?.mkdirs()
+            // «ملف مشفر» تالف ≈ عطل Keystore عابر: يجب ألا تُعلن الهجرة
+            // (KEY_MIGRATED غائب) وإلا أُهملت إعدادات المستخدم بلا رجعة.
+            oldFile.writeBytes(byteArrayOf(0x00, 0x01, 0x02, 0x03, 0x04))
+            val repo2 = SettingsRepository(context)
+            assertFalse(repo2.isMigrationCompleted())
+        } finally {
+            context.deleteSharedPreferences("nateq_secure_settings")
+            context.getSharedPreferences("nateq_settings", Context.MODE_PRIVATE)
+                .edit().clear().commit()
+        }
+    }
+
+    @Test
+    fun migration_completesWhenNoLegacyFileExists() {
+        try {
+            context.deleteSharedPreferences("nateq_secure_settings")
+            context.getSharedPreferences("nateq_settings", Context.MODE_PRIVATE)
+                .edit().clear().commit()
+            // لا ملف قديم (تثبيت نظيف): أعن الهجرة مرة واحدة بلا بيانات.
+            val repo2 = SettingsRepository(context)
+            assertTrue(repo2.isMigrationCompleted())
+        } finally {
+            context.deleteSharedPreferences("nateq_secure_settings")
+            context.getSharedPreferences("nateq_settings", Context.MODE_PRIVATE)
+                .edit().clear().commit()
+        }
+    }
 }
