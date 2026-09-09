@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.engine.pipeline
 
-/** بيانات وحدة قياس: المفرد والجمع والمثنى وجنس الوحدة لدعم التوافق النحوي مع العدد */
+/** بيانات وحدة قياس: المفرد والجمع والمثنى وجنس الوحدة
+ *  لدعم التوافق النحوي مع العدد */
 internal data class UnitInfo(
     val symbol: String,
     val singular: String,
@@ -18,7 +19,10 @@ internal data class CurrencyInfo(
     val isFeminine: Boolean,
     val subunit: String,
     val subunitPlural: String,
-    val subunitFeminine: Boolean
+    val subunitFeminine: Boolean,
+    /** عدد الوحدات الفرعية في الوحدة الرئيسية: 100 (سنت/قرش/هللة من مئتي جزء)
+     *  أو 1000 (الدينارات الخليجية والريال العماني = 1000 فلس/بيسة/مليم). */
+    val subunitsPerUnit: Int = 100
 )
 
 /** مفردات مقياس عدد (ألف/مليون/مليار/…) بأشكال العدد المختلفة لاختيار

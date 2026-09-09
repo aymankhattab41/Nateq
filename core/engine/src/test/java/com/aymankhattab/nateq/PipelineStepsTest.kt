@@ -2,6 +2,8 @@ package com.aymankhattab.nateq
 
 import com.aymankhattab.nateq.engine.pipeline.AmountParser
 import com.aymankhattab.nateq.engine.pipeline.CurrencyStep
+import com.aymankhattab.nateq.engine.pipeline.DateStep
+import com.aymankhattab.nateq.engine.pipeline.NumberStep
 import com.aymankhattab.nateq.engine.pipeline.NumberWordsConverter
 import com.aymankhattab.nateq.engine.pipeline.RomanNumeralStep
 import com.aymankhattab.nateq.engine.pipeline.SymbolStep
@@ -153,6 +155,65 @@ class PipelineStepsTest {
     @Test
     fun currency_zero() {
         assertEquals("صفر دولار", CurrencyStep.apply("$0"))
+    }
+
+    @Test
+    fun currency_fractionDual_feminineTaaMarbuta() {
+        // الوحدات الفرعية المؤنثة المنتهية بتاء مربوطة تُفتح تاؤها:
+        // «هللة» → «هللتان» و«بيسة» → «بيستان» لا «هللةتان»/«بيسةتان».
+        assertEquals("هللتان", CurrencyStep.apply("0.02 ر.س"))
+        // الريال العماني = 1000 بيسة، فـ«0.002 ر.ع» = بيستان ← «بيستان».
+        assertEquals("بيستان", CurrencyStep.apply("0.002 ر.ع"))
+        assertEquals("عشرون بيسة", CurrencyStep.apply("0.02 ر.ع"))
+        // غير المنتهية بتاء مربوطة تبقى على مثناها القديم («سنت» → «سنتان»).
+        assertEquals("سنتان", CurrencyStep.apply("0.02$"))
+    }
+
+    @Test
+    fun currency_threeDecimal_subunits() {
+        // د.ك/د.ب/ر.ع/د.ت = 1000 وحدة فرعية (فلس/بيسة/مليم) لكل وحدة رئيسية:
+        // كان الضرب الثابت في 100 ينطق «1.500 د.ك» «وخمسون فلس» بدل
+        // «وخمسمائة فلس»، ويُفقد الجزء الكسري من «2.005 د.ت» كلياً.
+        assertEquals("دينار كويتي واحد وخمسمائة فلس", CurrencyStep.apply("1.500 د.ك"))
+        assertEquals(
+            "دينار بحريني واحد ومائتان وخمسون فلس",
+            CurrencyStep.apply("1.250 د.ب")
+        )
+        assertEquals("سبعمائة وخمسون بيسة", CurrencyStep.apply("0.750 ر.ع"))
+        assertEquals(
+            "ديناران تونسيان وخمسة مليمات",
+            CurrencyStep.apply("2.005 د.ت")
+        )
+        // العملات ثنائية الخانات لا تتأثر بالتغيير:
+        assertEquals("دولار واحد وخمسون سنت", CurrencyStep.apply("1.50$"))
+    }
+
+    @Test
+    fun currency_threeDecimal_code() {
+        assertEquals(
+            "دينار كويتي واحد وخمسمائة فلس",
+            CurrencyStep.apply("KWD 1.500")
+        )
+        assertEquals("سبعمائة وخمسون بيسة", CurrencyStep.apply("OMR 0.750"))
+    }
+
+    @Test
+    fun date_noMatchInsideAttachedText() {
+        // حدود الكلمات تمنع التقاط التاريخ داخل متوالية لاصقة من أرقام.
+        assertEquals("x12.05.2024y", DateStep().apply("x12.05.2024y"))
+        // عنوان IP لا يُعامل كتاريخ (لا سنة من 4 خانات)، والتحكم سليم:
+        assertEquals(
+            "اثنا عشر مايو ألفان وأربعة وعشرون",
+            DateStep().apply("12.05.2024")
+        )
+    }
+
+    @Test
+    fun number_ipLeftUnchanged() {
+        // عناوين IP معرّفات شبكة لا تُقرأ عدّاً (كانت «192.168.1» تُشوّه
+        // إلى «مائة واثنان وتسعون ألفاً …»).
+        assertEquals("192.168.1.1", NumberStep.apply("192.168.1.1"))
+        assertEquals("10.20.30.40", NumberStep.apply("10.20.30.40"))
     }
 
     // ═══════════════════════ RomanNumeralStep ═══════════════════════

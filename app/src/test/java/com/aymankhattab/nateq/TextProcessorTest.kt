@@ -288,6 +288,17 @@ class TextProcessorTest {
     }
 
     @Test
+    fun networkIp_leftUnchanged() {
+        // عنوان IP معرّف شبكة لا يُقرأ عدّاً في مسار المعالجة الكامل
+        // (كان «192.168.1» يُشوّه إلى «مائة واثنان وتسعون ألفاً …»).
+        assertEquals(
+            "الخادم 192.168.1.1 يعمل",
+            processor.process("الخادم 192.168.1.1 يعمل", "ar")
+        )
+        assertEquals("10.20.30.40", processor.process("10.20.30.40", "ar"))
+    }
+
+    @Test
     fun europeanDecimal_separatedDigits() {
         // التنسيق الأوروبي 1.234,56 = 1234.56.
         assertEquals("ألف ومائتان وأربعة وثلاثون فاصلة خمسة ستة", processor.process("1.234,56", "ar"))

@@ -7,9 +7,14 @@ internal object NumberStep : TextProcessingStep {
 
     // أنماط الأرقام: «\b» المحيط يضمن التقاط المتوالية الرقمية كاملة (المبالغ
     // الطويلة بلا فواصل مثل 10000000 تُنطق «عشرة ملايين») ويمنع شطرها
-    // إلى مجموعات ثلاثية، ويُجبر التوسّع ليتجاوز الكسور ذات الخانات الثلاث
-    // (3.14159 تُسلم للعشرية كاملة بدل اقتطاع «3.141»).
-    private val PATTERN_NUMBER = Pattern.compile("""\b(\d+(?:[.,]\d{3})*(?:[.,]\d+)?)\b""")
+    // إلى مجموعات ثلاثية، ويجبر النمط على توسّع واحد يغطي الكسور ذات الخانات
+    // الثلاث (3.14159 تُسلم للعشرية كاملة) وسلسلة النقاط كاملة — مثل عنوان
+    // IP (192.168.1.1) — ليكتشفها الحارس أدناه بحدودها بدل شطرها «192.168.1».
+    private val PATTERN_NUMBER = Pattern.compile("""\b(\d+(?:[.,]\d+)*)\b""")
+
+    // عناوين IP: أربع مجموعات من 1–3 أرقام مفصولة بنقاط (192.168.1.1). معرّف
+    // شبكة لا مبلغ يُلفظ، فتُترك كما هي كاملةً من دون قراءتها عدّاً.
+    private val PATTERN_IPV4 = Pattern.compile("""\d{1,3}(?:\.\d{1,3}){3}""")
 
     override fun apply(input: String): String {
         val matcher = PATTERN_NUMBER.matcher(input)
@@ -32,6 +37,14 @@ internal object NumberStep : TextProcessingStep {
                 continue
             }
             if (before == ':' || after == ':') {
+                sb.append(input, cursor, end)
+                cursor = end
+                continue
+            }
+
+            // عناوين IP تُترك كما هي دون نطق: كان «192.168.1.1» يُلتقط شطراً
+            // ويُقرأ «مائة واثنان وتسعون ألفاً ومائة وثمانية وستون فاصلة».
+            if (PATTERN_IPV4.matcher(numberStr).matches()) {
                 sb.append(input, cursor, end)
                 cursor = end
                 continue

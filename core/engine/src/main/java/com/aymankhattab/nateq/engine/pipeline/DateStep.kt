@@ -16,20 +16,28 @@ internal class DateStep(
 ) : TextProcessingStep {
 
     private companion object {
-        // أنماط التواريخ
-        val PATTERN_DATE_YMD = Pattern.compile("""(\d{4})[-/](\d{1,2})[-/](\d{1,2})""")
-        val PATTERN_DATE_DMY = Pattern.compile("""(\d{1,2})[-/](\d{1,2})[-/](\d{4})""")
-        val PATTERN_DATE_DOTY = Pattern.compile("""(\d{1,2})\.(\d{1,2})\.(\d{4})""")
+        // أنماط التواريخ: حدود الكلمات (\\b) في الطرفين تمنع التقاط تاريخ
+        // داخل متوالية أرقام لاصقة («x12.05.2024y» أو نهاية عنوان IP).
+        val PATTERN_DATE_YMD = Pattern.compile(
+            """\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b"""
+        )
+        val PATTERN_DATE_DMY = Pattern.compile(
+            """\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b"""
+        )
+        val PATTERN_DATE_DOTY = Pattern.compile(
+            """\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b"""
+        )
 
         // أشهر السنة الهجرية (بها 12 شهراً كالميلادية)
         val HIJRI_MONTHS = arrayOf(
             "", "محرم", "صفر", "ربيع الأول", "ربيع الآخر", "جمادى الأولى",
-            "جمادى الآخرة", "رجب", "شعبان", "رمضان", "شوال", "ذو القعدة", "ذو الحجة"
+            "جمادى الآخرة", "رجب", "شعبان", "رمضان", "شوال",
+            "ذو القعدة", "ذو الحجة"
         )
     }
 
     override fun apply(input: String): String {
-        // isYMD=true → group1=year,group2=month,group3=day | isYMD=false → group1=day,group2=month,group3=year
+        // isYMD=true → group1=year,group2=month,group3=day. العكس للـ DMY/DOTY.
         val patterns = listOf(
             PATTERN_DATE_YMD to true,   // YYYY-MM-DD أو YYYY/MM/DD
             PATTERN_DATE_DMY to false,  // DD-MM-YYYY أو DD/MM/YYYY
@@ -53,15 +61,21 @@ internal class DateStep(
                     month = matcher.group(2)!!
                     year = matcher.group(3)!!
                 }
-                // حماية من تاريخ شاذ (شهر 13-99 أو يوم 32+) التي تُسقط `months[month]`
+                // حماية من تاريخ شاذ (شهر 13+ أو يوم 32+) تُسقط مصفوفة الأشهر.
                 val dayNum = day.toInt()
                 val monthNum = month.toInt()
                 if (monthNum !in 1..12 || dayNum !in 1..31) {
-                    matcher.appendReplacement(buffer, Matcher.quoteReplacement(matcher.group(0)!!))
+                    matcher.appendReplacement(
+                        buffer,
+                        Matcher.quoteReplacement(matcher.group(0)!!)
+                    )
                     continue
                 }
                 val dateText = formatDate(dayNum, monthNum, year.toInt())
-                matcher.appendReplacement(buffer, Matcher.quoteReplacement(dateText))
+                matcher.appendReplacement(
+                    buffer,
+                    Matcher.quoteReplacement(dateText)
+                )
             }
             matcher.appendTail(buffer)
             result = buffer.toString()
@@ -74,18 +88,27 @@ internal class DateStep(
         if (month !in 1..12) return "التاريخ غير صالح"
         if (day !in 1..31) return "التاريخ غير صالح"
         // مسار الهجري: إن فشل التحويل (نادر) نتراجع للصيغة الميلادية الصحيحة
-        // ولا نُمرر قيماً ميلادية عبر أسماء الشهور الهجرية (كان ينتج نطقاً مختلطاً
-        // مثل «خمسة عشر محرم 2024»).
-        if (runCatching {
-                injectedSettings?.isHijriDateEnabled() == true
-            }.getOrDefault(false)
-        ) {
-            val hijri = runCatching { toHijri(day, month, year) }.getOrNull()
-            if (hijri != null && hijri.second in 1..12 && hijri.first in 1..30) {
-                return "${NumberWordsConverter.numberToWords(hijri.first.toLong())} ${HIJRI_MONTHS[hijri.second]} " +
-                    "${NumberWordsConverter.numberToWords(hijri.third.toLong())}"
+            // ولا نُمرر قيماً ميلادية عبر أسماء الشهور الهجرية (كانت تنتج
+            // نطقاً مختلطاً مثل «خمسة عشر محرم 2024»).
+            if (runCatching {
+                    injectedSettings?.isHijriDateEnabled() == true
+                }.getOrDefault(false)
+            ) {
+                val hijri = runCatching {
+                    toHijri(day, month, year)
+                }.getOrNull()
+                val hijriValid = hijri != null &&
+                    hijri.second in 1..12 && hijri.first in 1..30
+                if (hijriValid) {
+                    val dayHijri = NumberWordsConverter.numberToWords(
+                        hijri.first.toLong()
+                    )
+                    val yearHijri = NumberWordsConverter.numberToWords(
+                        hijri.third.toLong()
+                    )
+                    return "$dayHijri ${HIJRI_MONTHS[hijri.second]} $yearHijri"
+                }
             }
-        }
         val months = arrayOf(
             "", "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
             "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"
@@ -95,8 +118,12 @@ internal class DateStep(
         return "$dayText ${months[month]} $yearText"
     }
 
-    /** تحويل تاريخ ميلادي إلى هجري (تقويم أم القرى المدعوم من أندرويد 7 فما فوق) */
-    private fun toHijri(day: Int, month: Int, year: Int): Triple<Int, Int, Int> {
+    /** تحويل تاريخ ميلادي إلى هجري (تقويم أم القرى المدعوم على أندرويد) */
+    private fun toHijri(
+        day: Int,
+        month: Int,
+        year: Int
+    ): Triple<Int, Int, Int> {
         val gregorian = Calendar.getInstance(Locale.US).apply {
             clear()
             set(year, month - 1, day, 12, 0, 0)
