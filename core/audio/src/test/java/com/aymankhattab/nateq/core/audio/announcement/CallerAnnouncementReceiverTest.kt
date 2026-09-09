@@ -65,6 +65,34 @@ class CallerAnnouncementReceiverTest {
     }
 
     @Test
+    fun `repeatSchedule honors interval and skips window edge`() {
+        assertEquals(
+            listOf(2500L, 5000L, 7500L),
+            CallerAnnouncementReceiver.repeatSchedule(5, 2500L, 10_000L)
+        )
+    }
+
+    @Test
+    fun `repeatSchedule includes only in-window ticks`() {
+        assertEquals(
+            listOf(2000L, 4000L, 6000L, 8000L),
+            CallerAnnouncementReceiver.repeatSchedule(5, 2000L, 10_000L)
+        )
+    }
+
+    @Test
+    fun `repeatSchedule is empty for single or oversized interval`() {
+        assertEquals(
+            emptyList<Long>(),
+            CallerAnnouncementReceiver.repeatSchedule(1, 1000L, 10_000L)
+        )
+        assertEquals(
+            emptyList<Long>(),
+            CallerAnnouncementReceiver.repeatSchedule(5, 10_000L, 10_000L)
+        )
+    }
+
+    @Test
     fun `permission revoked disables enabled and syncs`() {
         val repo = SettingsRepository(context)
         repo.setCallerAnnouncementEnabled(true)

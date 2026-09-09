@@ -18,8 +18,7 @@ import com.aymankhattab.nateq.util.LanguageCode
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
 import javax.inject.Inject
-import android.os.Handler
-import android.os.Looper
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -40,6 +39,33 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "NATEQ_CALLER"
+
+        /** سقف نافذة goAsync حتى لا تبلغ مهلة نظام البث (~10 ثوانٍ) —
+         *  مهما كانت إعدادات التكرار. */
+        private const val BROADCAST_ASYNC_WINDOW_MS = 10_000L
+
+        /** جدول إطلاق تكرارات النطق (بعد النطق الأول): كل [intervalMs]
+         *  حتى بلوغ [windowMs] — لا يُجدوَل أي تكرارٍ على حافةِ السقف أو
+         *  خارجه حتى لا تبلغ عمليةُ البثِ مهلة النظام. خالصٌ قابلٌ للاختبار. */
+        internal fun repeatSchedule(
+            repeat: Int,
+            intervalMs: Long,
+            windowMs: Long
+        ): List<Long> {
+            val count = (repeat - 1).coerceAtLeast(0)
+            if (count == 0) return emptyList()
+            val launches = mutableListOf<Long>()
+            var cursor = 0L
+            var index = 0
+            while (index < count) {
+                index++
+                val next = cursor + intervalMs
+                if (next >= windowMs) break
+                launches += next
+                cursor = next
+            }
+            return launches
+        }
     }
 
     /** مصدر الإعدادات المحقون — كائن واحد مشترك عبر العمليات
@@ -146,11 +172,14 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 }
                 speaker.resetVoice(callerVoice)
 
-                // تكرار النطق «repeat» مرات مع فاصل «intervalMs» بين كل مرة.
-                // الأول يقع فوراً ثم يُحرَّر pendingResult؛ الخدمة الأمامية
-                // التي يبدأها المتحدث تُبقي العملية حيّة. التكرارات المتبقية
-                // تُجدَّل عبر Handler على MainLooper مستقلة عن حياة البث —
-                // لا نقاءً بمهلة goAsync.
+                // تكرار النطق «repeat» مرات بفاصل «intervalMs»؛ الأول
+                // يقع فوراً. تُبقى دورة goAsync حيّةً حتى إطلاق آخر نطقٍ
+                // مجدول: التكرارات ننتظرها داخل الـ coroutine نفسه (لا
+                // Handler مستقل عن حياة البث) — وإلا يُجمّد النظامُ
+                // العمليةَ وقت قفل الشاشة (cgroup freezer على أندرويد
+                // 14+) بعد finish() الفوري فتضيع التكرارات المتبقية.
+                // وسقفُ الانتظار نافذةُ الـ goAsync الآمنة (~10 ثوانٍ)
+                // فلا يقع ANR لبلوغ مهلة البث مهما كبرت الإعدادات.
                 val repeat = settings
                     .getCallerAnnouncementRepeat().coerceIn(1, 5)
                 val intervalMs = settings.getCallerAnnouncementIntervalSeconds()
@@ -163,32 +192,35 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 )
                 if (repeat > 1) {
                     val appCtx = context.applicationContext
-                    val handler = Handler(Looper.getMainLooper())
-                    for (i in 1 until repeat) {
-                        handler.postDelayed({
-                            try {
-                                AnnouncementSpeaker.getInstance(appCtx)
-                                    .speak(
-                                        text, locale, speechRate, 1.0f, volume,
-                                        engineOverride = settings
-                                            .getEngineForCategory(
-                                                SettingsRepository
-                                                    .ANNOUNCE_CATEGORY_CALLER
-                                            )
-                                    )
-                            } catch (t: Throwable) {
-                                Log.e(TAG, "repeat speak failed", t)
-                            }
-                        }, intervalMs * i.toLong())
+                    val schedule = repeatSchedule(
+                        repeat, intervalMs, BROADCAST_ASYNC_WINDOW_MS
+                    )
+                    var previous = 0L
+                    for (offsetMs in schedule) {
+                        delay(offsetMs - previous)
+                        previous = offsetMs
+                        try {
+                            AnnouncementSpeaker.getInstance(appCtx)
+                                .speak(
+                                    text, locale, speechRate, 1.0f,
+                                    volume,
+                                    engineOverride = settings
+                                        .getEngineForCategory(
+                                            SettingsRepository
+                                                .ANNOUNCE_CATEGORY_CALLER
+                                        )
+                                )
+                        } catch (t: Throwable) {
+                            Log.e(TAG, "repeat speak failed", t)
+                        }
                     }
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "onReceive failed", t)
             } finally {
-                // نُطلق finish() بعد النطق الأول مباشرة؛ التكرارات المجدولة عبر
-                // Handler لا تتعلّق بحياة البث (الخدمة الأمامية التي يبدأها
-                // المتحدث تُبقي العملية حيّة). لا finish مبكر جداً قبل إطلاق
-                // نطق الاسم كما كان يسمح للنظام بقتل العملية أثناء الرنين.
+                // finish() بعد آخر تكرارٍ مجدول فعلي (إطلاق كل استدعاءات
+                // النطق) لا بعد الأول مباشرة، فيبقى البث حيّاً ولا يُجمّد
+                // النظامُ العمليةَ قبل اكتمال التكرارات.
                 pendingResult.finish()
             }
         }
