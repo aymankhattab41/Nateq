@@ -54,7 +54,6 @@ internal class EmojiStripStep(
             cp in 0x2600..0x27BF ||
             cp in 0x2B00..0x2BFF ||
             // الكتل المكملة: ماهجونغ/دومينو/لعب/أعلام
-            cp in 0x1F000..0x1F1FF ||
-            cp == 0xFE0F // مؤشر شكل الإيموجي (variation selector)
+            cp in 0x1F000..0x1F1FF
     }
 }

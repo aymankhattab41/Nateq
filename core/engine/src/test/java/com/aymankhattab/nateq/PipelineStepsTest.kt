@@ -4,6 +4,7 @@ import com.aymankhattab.nateq.engine.pipeline.AmountParser
 import com.aymankhattab.nateq.engine.pipeline.CleanupStep
 import com.aymankhattab.nateq.engine.pipeline.CurrencyStep
 import com.aymankhattab.nateq.engine.pipeline.DateStep
+import com.aymankhattab.nateq.engine.pipeline.EmojiStripStep
 import com.aymankhattab.nateq.engine.pipeline.NumberStep
 import com.aymankhattab.nateq.engine.pipeline.NumberWordsConverter
 import com.aymankhattab.nateq.engine.pipeline.PhoneNumberStep
@@ -12,6 +13,7 @@ import com.aymankhattab.nateq.engine.pipeline.SymbolStep
 import com.aymankhattab.nateq.engine.pipeline.UnitStep
 import com.aymankhattab.nateq.engine.pipeline.UrlStep
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -518,5 +520,15 @@ class PipelineStepsTest {
         assertEquals("25 بالمئة", CleanupStep.apply(SymbolStep.apply("25%")))
         assertEquals("5 أكبر من 3", SymbolStep.apply("5>3"))
         assertEquals("37 درجة", CleanupStep.apply(SymbolStep.apply("37°")))
+    }
+
+    @Test
+    fun emojiStrip_fe0f_droppedSilently_notSpace() {
+        // ❤️ = U+2764 + U+FE0F: عند تعطيل نطق الإيموجي يُستبدل القلب بمسافة
+        // ويُحذف محرف التباين FE0F صامتاً (بلا مسافة منه) فلا تتباعد الحروف.
+        val step = EmojiStripStep { false }
+        val input = "أنا\u2764\uFE0Fأحبك"
+        assertEquals("أنا أحبك", step.apply(input))
+        assertTrue(!step.apply(input).contains("\uFE0F"))
     }
 }

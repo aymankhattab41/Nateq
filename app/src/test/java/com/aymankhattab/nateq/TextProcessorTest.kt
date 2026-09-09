@@ -191,6 +191,21 @@ class TextProcessorTest {
     }
 
     @Test
+    fun emoji_dragonFace_spokenByDragonName() {
+        // 🐲 (U+1F432) وجه تنين لا وجه نمر — في العربية والإنجليزية
+        val dragon = String(Character.toChars(0x1F432))
+        assertEquals("وجه تنين", processor.process(dragon, "ar"))
+        assertEquals("dragon face", processor.process(dragon, "en"))
+    }
+
+    @Test
+    fun quranicStopMarks_stripped() {
+        // علامة ضبط مصحفي ملتصقة (شمس + U+06D8) ومنتهى آية (U+06DD) تُجرَّد
+        assertEquals("شمس", processor.process("شمس\u06D8", "ar"))
+        assertEquals("سورة", processor.process("سورة \u06DD", "ar"))
+    }
+
+    @Test
     fun emoji_disabled_removedFromArabicText() {
         // عند إيقاف «نطق الإيموجي»: يُحذف الإيموجي من العربية (السلوك السابق)
         // واللغة الإنجليزية تُعاد كما هي بلا حذف ولا نطق.
