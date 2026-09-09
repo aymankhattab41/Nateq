@@ -26,8 +26,19 @@ $apkFile = Join-Path $repoRoot 'app\build\outputs\apk\release\lord_tts.apk'
 
 function Invoke-Git {
     param([Parameter(Mandatory = $true)][string[]]$GitArgs)
-    $out = & git @GitArgs 2>&1
-    if ($LASTEXITCODE -ne 0) {
+    # PowerShell 5.1 يحوّل أي مخرجات stderr (مثل تحذير CRLF أو تقدم push)
+    # إلى أخطاء حمراء قاطعة مع ErrorActionPreference=Stop وإن نجح git نفسه.
+    # نعيد الضبط مؤقتاً، ونحوّل كل المخرجات إلى نصوص، ونفشل فقط عند كود خروج
+    # غير صفري.
+    $previousEf = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $out = & git @GitArgs 2>&1 | ForEach-Object { "$_" }
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousEf
+    }
+    if ($exitCode -ne 0) {
         throw "فشل git $($GitArgs -join ' '): $(($out | Out-String).Trim())"
     }
     return $out
@@ -36,8 +47,15 @@ function Invoke-Git {
 # أعلى وسم vN على الـ remote (عبر ls-remote)، وهي المرجع الأوثق حتى مع
 # استنساخ جديد أو غياب الأوسمة محلياً.
 function Get-RemoteTagMax {
-    $out = & git ls-remote --tags origin 2>&1
-    if ($LASTEXITCODE -ne 0) {
+    $previousEf = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $out = & git ls-remote --tags origin 2>&1 | ForEach-Object { "$_" }
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousEf
+    }
+    if ($exitCode -ne 0) {
         return $null
     }
     $maxN = $null
@@ -90,18 +108,25 @@ $targetVersion = "0.$targetCode.0"
 $targetTag = "v$targetCode"
 
 # منع النشر المتكرر لنفس الإصدار (محلياً وعلى الـ remote).
-& git rev-parse --verify --quiet "refs/tags/$targetTag" 2>$null
-if ($LASTEXITCODE -eq 0) {
+$previousEf = $ErrorActionPreference
+$ErrorActionPreference = 'SilentlyContinue'
+try {
+    & git rev-parse --verify --quiet "refs/tags/$targetTag" 2>$null
+    $localHas = ($LASTEXITCODE -eq 0)
+} finally {
+    $ErrorActionPreference = $previousEf
+}
+if ($localHas) {
     throw "الوسم $targetTag موجود محلياً — لا نشر متكرر."
 }
-$remoteHas = $null
-$previousEf2 = $ErrorActionPreference
+$remoteHas = Get-RemoteTagMax | Out-Null
+$previousEf = $ErrorActionPreference
 $ErrorActionPreference = 'SilentlyContinue'
 try {
     $remoteHas = & git ls-remote --tags origin 2>$null |
         Select-String -Pattern "refs/tags/$targetTag`$"
 } finally {
-    $ErrorActionPreference = $previousEf2
+    $ErrorActionPreference = $previousEf
 }
 if ($null -ne $remoteHas) {
     throw "الوسم $targetTag موجود على الـ remote — لا نشر متكرر."
@@ -124,17 +149,19 @@ if ($DryRun) {
     exit 0
 }
 
-# 1) رفع الترقيم في build.gradle.kts (بلا BOM حفاظاً على DSL).
+# 1) رفع الترقيم في build.gradle.kts (بلا BOM حفاظاً على DSL) — إن لم يكن
+# مطبقاً مسبقاً (حالة إصدار معلّق بعد تنفيذ ناقص أو إعادة تشغيل).
 $newRaw = $gradleRaw `
     -replace 'versionCode = \d+', "versionCode = $targetCode" `
     -replace 'versionName = "\d+\.\d+\.\d+"', "versionName = `"$targetVersion`""
-if ($newRaw -ceq $gradleRaw) {
-    throw "الترقيم في ملف $gradleFile لا يطابق النمط المتوقع — ألغي الإصدار."
+if ($newRaw -cne $gradleRaw) {
+    [System.IO.File]::WriteAllText(
+        $gradleFile, $newRaw, [System.Text.UTF8Encoding]::new($false)
+    )
+    Write-Host "=> رُفع الترقيم إلى $targetVersion (versionCode $targetCode)"
+} else {
+    Write-Host "=> الترقيم $targetVersion مطبّق مسبقاً — نكمل دون تعديل."
 }
-[System.IO.File]::WriteAllText(
-    $gradleFile, $newRaw, [System.Text.UTF8Encoding]::new($false)
-)
-Write-Host "=> رُفع الترقيم إلى $targetVersion (versionCode $targetCode)"
 
 # 2) الاختبارات ثم البناء — أي فشل يلغي الإصدار.
 Push-Location $repoRoot
@@ -155,10 +182,12 @@ if (-not (Test-Path -LiteralPath $apkFile)) {
     throw "الـ APK غير موجود بعد البناء: $apkFile"
 }
 
-# 3) التزام الترقيم فقط (لا تُضاف أي ملفات عمل أخرى).
+# 3) التصريح بملف الترقيم ثم الالتزام به فقط — حتى لا تنجرف أي تغييرات أخرى
+# مرحّلة أو غير مرحّلة في commit الإصدار.
 Invoke-Git @('add', 'app/build.gradle.kts')
 Invoke-Git @(
-    'commit', '-m', "إصدار v$targetCode — رفع الترقيم الآلي إلى $targetVersion"
+    'commit', '-m', "إصدار v$targetCode — رفع الترقيم الآلي إلى $targetVersion",
+    '--', 'app/build.gradle.kts'
 )
 
 # 4) الوسم ثم الدفع (الفرع والوسم معاً).
@@ -177,7 +206,7 @@ Write-Host "=> إنشاء Release $targetTag على GitHub..."
 $ghOut = & gh release create $targetTag $apkFile `
     --repo 'aymankhattab41/Nateq' `
     --title "Lord TTS $targetVersion" `
-    --generate-notes 2>&1
+    --generate-notes 2>&1 | ForEach-Object { "$_" }
 if ($LASTEXITCODE -ne 0) {
     Write-Warning "فشل gh release create: $(($ghOut | Out-String).Trim())"
     Write-Warning "أعده لاحقاً بـ: gh release create $targetTag $apkFile"
