@@ -50,7 +50,7 @@ class PipelineStepsTest {
 
     @Test
     fun unit_teens_feminine() {
-        assertEquals("اثنتي عشرة ساعة", UnitStep.apply("12 س"))
+        assertEquals("اثنتا عشرة ساعة", UnitStep.apply("12 س"))
     }
 
     @Test
@@ -299,6 +299,57 @@ class PipelineStepsTest {
     @Test
     fun numberToWords_oneMillion() {
         assertEquals("مليون", NumberWordsConverter.numberToWords(1000000))
+    }
+
+    @Test
+    fun numberToWords_alafCompoundHundreds_genitive() {
+        // آحاد 1–2 معطوفة على مائة تُجرّ التمييز: «مائة وواحد ألف» لا ألفاً.
+        assertEquals(
+            "مائة وواحد ألف",
+            NumberWordsConverter.numberToWords(101000)
+        )
+        assertEquals(
+            "مائة واثنان ألف",
+            NumberWordsConverter.numberToWords(102000)
+        )
+    }
+
+    @Test
+    fun numberToWords_millionCompoundHundreds_genitive() {
+        assertEquals(
+            "مائة وواحد مليون",
+            NumberWordsConverter.numberToWords(101000000)
+        )
+        assertEquals(
+            "مائة واثنان مليون",
+            NumberWordsConverter.numberToWords(102000000)
+        )
+        assertEquals(
+            "مائة مليون",
+            NumberWordsConverter.numberToWords(100000000)
+        )
+    }
+
+    @Test
+    fun numberToWords_billionCompoundHundreds_genitive() {
+        // المقاييس الأعلى (مليار/تريليون…) تتبع نفس القاعدة.
+        assertEquals(
+            "مائة وواحد مليار",
+            NumberWordsConverter.numberToWords(101000000000)
+        )
+    }
+
+    @Test
+    fun numberToWords_compoundTens_remainAccusative() {
+        // ما فوق العشرات يبقى منصوباً: «مائة وأحد عشر ألفاً».
+        assertEquals(
+            "مائة وأحد عشر ألفاً",
+            NumberWordsConverter.numberToWords(111000)
+        )
+        assertEquals(
+            "مائة وخمسة وعشرون ألفاً",
+            NumberWordsConverter.numberToWords(125000)
+        )
     }
 
     // ═══════════════════════ AmountParser ═══════════════════════
