@@ -287,6 +287,18 @@ val lang = LocaleUtils.normalizeLanguageCode(
         lastDiscoveryAtMs == 0L ||
             System.currentTimeMillis() - lastDiscoveryAtMs > ttlMs
 
+    /**
+     * محركات TTS المثبّتة المكتشفة التي توفّر لغةً معيّنة فعلياً، أو null
+     * إن لم يكتمل الاكتشاف بعد. تُستخدم في بناء سلسلة التراجع لكل لغة
+     * ([SystemVoiceProvider]) فلا يُحاوَل محركٌ لا ينطق اللغة أصلاً؛ لما
+     * تبقى الذاكرة فارغة يعود null فيتراجع المتصل لقائمة المثبّتة كلها.
+     * تطبيع اللغة بنفس قاعدة الاكتشاف (ISO-2) ليطابق مفتاح الخريطة.
+     */
+    fun discoveredEnginePackagesFor(languageTag: String): List<String>? {
+        val lang = LocaleUtils.normalizeLanguageCode(languageTag)
+        return discoveredByLanguage?.get(lang)?.map { it.enginePackage }
+    }
+
     suspend fun allAvailableVoices(locale: Locale): List<VoiceDescriptor> =
         providers
             .filter { it.isConfigured() }

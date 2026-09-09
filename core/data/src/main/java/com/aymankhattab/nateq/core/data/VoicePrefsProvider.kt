@@ -10,6 +10,13 @@ interface VoicePrefsProvider {
     /** حزمة محرك TTS الذي اختاره المستخدم (null = اختيار تلقائي). */
     fun getSelectedEnginePackage(): String?
 
+    /** محرك TTS الصريح للغةٍ معيّنة (null = بلا تفضيل لغة) — يسري في
+     *  النطق العام حتى مع تعطيل التحويل التلقائي. */
+    fun getEngineForLanguage(languageTag: String): String?
+
+    /** صوت المحرك الصريح (داخل محرك اللغة) للغةٍ معيّنة، null إن لم يُحدَّد. */
+    fun getVoiceForLanguage(languageTag: String): String?
+
     /** الصوت المفضّل لمجموعة صوتية معيّنة (مثل VOICE_CATEGORY_EMOJI). */
     fun getPreferredVoiceIdForCategory(category: String): String?
 

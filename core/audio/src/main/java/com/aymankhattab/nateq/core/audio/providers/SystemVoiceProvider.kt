@@ -52,6 +52,15 @@ class SystemVoiceProvider(
 ) : VoiceProvider {
 
     /**
+     * مصدر «المحركات القادرة على لغةٍ ما» (غالباً [VoiceCatalog]
+     * بذاكرة الاكتشاف)، لبناء سلسلة التراجع لكل لغة بدل القائمة
+     * العالمية. يُحقن بعد البناء (الكتالوج يُنشأ بعد المزوّد)؛
+     * null = لا اكتشاف → التراجع بالقائمة المثبّتة كلها.
+     */
+    @Volatile
+    var capableEnginesFor: ((languageTag: String) -> List<String>?)? = null
+
+    /**
      * مُنفّذ خلفية أحادي الخيط لنقل التنفيذ الحاصر
      * ([synthesizeInternal] الذي ينتظر اكتمال كتابة المحرك
      * عبر `await`) خارج Main Looper. سبب الحاجة:
@@ -290,22 +299,33 @@ class SystemVoiceProvider(
 
     /**
      * يختار المحرك الذي ينطق به التطبيق:
-     * 1) يفضّل المحرك الذي اختاره المستخدم في شاشة الإعدادات (إن وُجد ومثبَّت).
-     * 2) وإلا اختار محركاً طرفياً نصبّه المستخدم (لا جوجل ولا سامسونج)،
+     * 1) يفضّل محرك اللغة الصريح (إن حُدِّدت لغة [languageTag] وكان مثبّتاً).
+     * 2) ثم المحرك الذي اختاره المستخدم في شاشة الإعدادات (إن وُجد ومثبَّت).
+     * 3) وإلا اختار محركاً طرفياً نصبّه المستخدم (لا جوجل ولا سامسونج)،
      *    ويتم عمل fallback إلى جوجل كملاذ أخير.
      */
-    private fun pickEnginePackage(): String? {
+    private fun pickEnginePackage(languageTag: String? = null): String? {
+        val installed = EnginePicker.installedEnginePackages(context)
+        val settings = injectedSettings
+            ?: SettingsRepository(context)
+        // تفضيل اللغة الصريح أولاً (أعلى أولوية: اللغة تقرر محركها).
+        if (languageTag != null) {
+            try {
+                val perLang = settings.getEngineForLanguage(languageTag)
+                if (perLang != null && installed.contains(perLang)) {
+                    return perLang
+                }
+            } catch (e: Exception) {
+                // لا نكسر النطق بخطأ قراءة إعدادات.
+            }
+        }
         // المحرك المختار من المستخدم (مثل MultiTTS) له الأولوية
         val selected = try {
-            (injectedSettings
-                ?: SettingsRepository(context))
-                .getSelectedEnginePackage()
+            settings.getSelectedEnginePackage()
         } catch (e: Exception) {
             null
         }
-        if (selected != null &&
-            EnginePicker.installedEnginePackages(context).contains(selected)
-        ) {
+        if (selected != null && installed.contains(selected)) {
             return selected
         }
         return EnginePicker.pickEnginePackage(context)
@@ -395,7 +415,7 @@ class SystemVoiceProvider(
                 cancelled.set(true)
                 runCatching { tts?.stop() }
             }
-            val ttsEngine = resolveEngine(enginePackage)
+            val ttsEngine = resolveEngine(enginePackage, voiceLocale)
 
             // إذا تُحدَّد لغة عبر التحويل التلقائي،
             // نستخدم صوتاً بلغتها النهائية.
@@ -406,6 +426,10 @@ class SystemVoiceProvider(
             } else {
                 voice
             }
+
+            // لغة النطق الفعلية (بعد التحويل): تُوجّه سلسلة التراجع
+            // للمحركات القادرة على هذه اللغة نفسها لا غيرها.
+            val speechLanguage = effectiveVoice.locale.language
 
             // كاش الذاكرة (بند 19.1): إن وُجدت نسخة جاهزة لنفس النص بذات
             // وسائط الصوت، نُبثّها فوراً من الذاكرة بلا أي تلامس مع القرص أو
@@ -435,6 +459,7 @@ class SystemVoiceProvider(
                 cancelled,
                 desiredVoiceName,
                 cacheKey,
+                speechLanguage,
                 // سجل بكل المحركات التي فشلت خلال هذه الجولة
                 // للتراجع التراكمي (يمنع إعادة اختيار محركٍ
                 // فشل سابقاً — منعاً لتأرجح ping-pong).
@@ -490,9 +515,16 @@ class SystemVoiceProvider(
         }
     }
 
-    /** يحدّد محرك TTS الذي سيُستخدَم، مع التحقق من أنه مثبَّت فعلاً. */
-    private fun resolveEngine(enginePackage: String?): String? {
-        val engine = enginePackage ?: pickEnginePackage()
+    /** يحدّد محرك TTS الذي سيُستخدَم، مع التحقق من أنه مثبَّت فعلاً.
+     *  المحرك الصريح [enginePackage] يفوز، وإلا يُختار لمحركٍ بلسان
+     *  [voiceLocale] (سلسلة لغة الطلب) ثم المحرك العام المتاح. */
+    private fun resolveEngine(
+        enginePackage: String?,
+        voiceLocale: Locale?
+    ): String? {
+        val engine = enginePackage ?: pickEnginePackage(
+            voiceLocale?.language?.takeIf { it.isNotEmpty() }
+        )
         return if (engine != null
             && EnginePicker.installedEnginePackages(
                 context
@@ -529,6 +561,7 @@ class SystemVoiceProvider(
         cancelled: AtomicBoolean,
         desiredVoiceName: String?,
         cacheKey: String?,
+        speechLanguage: String,
         failedEngines: MutableSet<String>
     ) {
         val done = AtomicBoolean(false)
@@ -596,7 +629,8 @@ class SystemVoiceProvider(
                                         speechRate, pitch, volume,
                                         onFormatInfo, onAudioChunk, cont,
                                         cancelled, desiredVoiceName,
-                                        cacheKey, failedEngines)
+                                        cacheKey, speechLanguage,
+                                        failedEngines)
                                         }
                                     )
                                 } else {
@@ -607,7 +641,8 @@ class SystemVoiceProvider(
                                         speechRate, pitch, volume,
                                         onFormatInfo, onAudioChunk, cont,
                                         cancelled, desiredVoiceName,
-                                        cacheKey, failedEngines)
+                                        cacheKey, speechLanguage,
+                                        failedEngines)
                                 }
                             }, currentEngine)
                             ttsEngine = currentEngine
@@ -633,7 +668,7 @@ class SystemVoiceProvider(
                                         speechRate, pitch, volume, onFormatInfo,
                                         onAudioChunk, cont, cancelled,
                                         desiredVoiceName, cacheKey,
-                                        failedEngines)
+                                        speechLanguage, failedEngines)
                                 }
                             }, INIT_TIMEOUT_MS)
                         }
@@ -656,7 +691,8 @@ class SystemVoiceProvider(
                                         speechRate, pitch, volume,
                                         onFormatInfo, onAudioChunk, cont,
                                         cancelled, desiredVoiceName,
-                                        cacheKey, failedEngines)
+                                        cacheKey, speechLanguage,
+                                        failedEngines)
                                 }
                             )
                         }
@@ -697,6 +733,7 @@ class SystemVoiceProvider(
         cancelled: AtomicBoolean,
         desiredVoiceName: String?,
         cacheKey: String?,
+        speechLanguage: String,
         failedEngines: MutableSet<String>
     ) {
         if (cancelled.get()) return
@@ -709,24 +746,54 @@ class SystemVoiceProvider(
             cont.resume(Unit)
             return
         }
-        val fallback = EnginePicker.pickFallbackEngineFrom(
-            EnginePicker.installedEnginePackages(context),
-            failedEngines
-        )
+        // سلسلة التراجع لغةً بلغة: المحركات القادرة على لغة النطق الفعلية
+        // (من اكتشاف الكتالوج إن وُجد) بترتيب: تفضيل اللغة ← المفضَّل ←
+        // الأبجدي، مع استبعاد كل المحركات الفاشلة تراكمياً.
+        val fallback = buildFallbackChain(speechLanguage, failedEngines)
         if (fallback != null) {
             Log.w(TAG,
                 "[Provider] falling back to engine:" +
-                " $fallback (failed so far:" +
-                " $failedEngines)")
+                " $fallback (lang=$speechLanguage," +
+                " failed so far: $failedEngines)")
             synthesizeWithEngine(
                 fallback, text, voice, speechRate,
                 pitch, volume, onFormatInfo, onAudioChunk,
                 cont, cancelled, desiredVoiceName,
-                cacheKey, failedEngines
+                cacheKey, speechLanguage, failedEngines
             )
         } else {
             cont.resume(Unit)
         }
+    }
+
+    /**
+     * يبني أول محركٍ لاحق لسلسلة تراجع لغةٍ معيّنة:
+     * يقرأ تفضيل اللغة الصريح + المحركات القادرة على اللغة (من اكتشاف
+     * الكتالوج إن توفّر، وإلا كل المثبّتة)، ويستثني كل ما فشل سابقاً،
+     * ويرتّبه [EngineRegistry.capableEnginesForLanguage] (تفضيل اللغة ←
+     * المفضَّل ← الأبجدي) — فيُعاد أول عنصرٍ قابل للاختيار، أو null
+     * عند استنفاد كل المسارات (صفر محاولات لاحقة).
+     */
+    private fun buildFallbackChain(
+        speechLanguage: String,
+        failedEngines: MutableSet<String>
+    ): String? {
+        val installed = EnginePicker.installedEnginePackages(context)
+        val discovery = runCatching {
+            capableEnginesFor?.invoke(speechLanguage)
+                ?.filter { it in installed }
+        }.getOrNull()
+        val capable = discovery?.takeIf { it.isNotEmpty() } ?: installed
+        val perLanguagePref = runCatching {
+            (injectedSettings
+                ?: SettingsRepository(context))
+                .getEngineForLanguage(speechLanguage)
+        }.getOrNull()
+        return EngineRegistry.capableEnginesForLanguage(
+            capable = capable,
+            preferredForLanguage = perLanguagePref,
+            excludeFailed = failedEngines
+        ).firstOrNull()
     }
 
     /**

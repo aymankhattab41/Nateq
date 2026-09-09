@@ -130,6 +130,15 @@ class NateqTtsService : TextToSpeechService() {
         catalog = VoiceCatalog(providers)
         requestHandler = SynthesisRequestHandler(catalog, settings)
         textProcessor = TextProcessor(applicationContext, settings, dict)
+        // سلسلة التراجع لكل لغة تستند إلى ذاكرة اكتشاف الكتالوج
+        // (المحركات القادرة على اللغة فعلياً) بدل القائمة العالمية.
+        providers.forEach { provider ->
+            if (provider is SystemVoiceProvider) {
+                provider.capableEnginesFor = { tag ->
+                    catalog.discoveredEnginePackagesFor(tag)
+                }
+            }
+        }
 
         // اكتشاف اللغات المتاحة عبر كل محركات TTS المثبتة كخلفية: يملأ ذاكرة
         // الكتالوج دون أن يُعقّل إنشاء الخدمة أبداً؛ وحتى لو تعذّر يبقى حد
