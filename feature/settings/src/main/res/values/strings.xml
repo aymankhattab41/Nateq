@@ -307,4 +307,7 @@
 <string name="first_run_skip">تخطّي</string>
 <string name="first_run_lang_arabic">العربية</string>
 <string name="first_run_lang_english">English</string>
+<string name="engine_for_category_label">محرك نطق الفئة</string>
+<string name="engine_for_caller_label">محرك نطق المتصل</string>
+<string name="engine_for_battery_label">محرك نطق البطارية</string>
 </resources>

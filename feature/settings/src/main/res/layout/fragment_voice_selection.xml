@@ -761,6 +761,23 @@
                     android:contentDescription="@string/caller_announcement_voice_en" />
             </com.google.android.material.textfield.TextInputLayout>
 
+            <!-- محرك نطق المتصل -->
+            <TextView
+                android:id="@+id/tv_caller_engine_label"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:labelFor="@id/spinner_caller_engine"
+                android:text="@string/engine_for_caller_label"
+                android:textAppearance="?attr/textAppearanceBody2" />
+
+            <androidx.appcompat.widget.AppCompatSpinner
+                android:id="@+id/spinner_caller_engine"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:contentDescription="@string/engine_for_caller_label" />
+
             <!-- سرعة النطق -->
             <LinearLayout
                 android:layout_width="match_parent"
@@ -1272,6 +1289,23 @@
                     android:minHeight="48dp"
                     android:contentDescription="@string/spinner_battery_voice_content" />
             </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- محرك نطق البطارية -->
+            <TextView
+                android:id="@+id/tv_battery_engine_label"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:labelFor="@id/spinner_battery_engine"
+                android:text="@string/engine_for_battery_label"
+                android:textAppearance="?attr/textAppearanceBody2" />
+
+            <androidx.appcompat.widget.AppCompatSpinner
+                android:id="@+id/spinner_battery_engine"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:contentDescription="@string/engine_for_battery_label" />
 
             <!-- سرعة النطق -->
             <LinearLayout

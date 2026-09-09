@@ -16,11 +16,12 @@ import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
 import java.util.Locale
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 
 /**
- * مسند فئات الأصوات: لكل فئة (الافتراضية/الوقت/الأرقام/الإشعارات) صوت وسرعة
- * ونبرة ومستوى صوت باسم زر اختبار نُطقه. أُخرج من الفصيل إلى مستوى الملف ليكون
- * قابلاً لإعادة الاستخدام دون احتياج العضو الداخلي الضمني.
+ * مسند فئات الأصوات: لكل فئة (الافتراضية/الوقت/الأرقام/الإشعارات) محرك وصوت
+ * وسرعة ونبرة ومستوى صوت باسم زر اختبار نُطقه. أُخرج من الفصيل إلى مستوى
+ * الملف ليكون قابلاً لإعادة الاستخدام دون احتياج العضو الداخلي الضمني.
  */
 internal class CategoryVoiceAdapter(
     private val context: Context,
@@ -42,12 +43,28 @@ internal class CategoryVoiceAdapter(
     private val voiceNameAdapter =
         simpleAdapter(context, voices.map { it.displayName })
 
+    // محركات الفئات المثبتة (خيار «تلقائي» أولاً): نفس القائمة لجميع الصفوف
+    private val categoryEngines =
+        runCatching { EnginePicker.installedEngines(context) }
+            .getOrDefault(emptyList())
+    private val engineOptionsAdapter = simpleAdapter(
+        context,
+        buildList {
+            add(context.getString(R.string.first_run_engine_auto))
+            addAll(categoryEngines.map { it.label })
+        }
+    )
+
     inner class CatVH(itemView: View) : RecyclerView.ViewHolder(itemView) {
         /** الفئة المرتبطة حالياً بالحامل (تُحدَّث في bind). */
         var category: String = ""
         val tvCategory: TextView = itemView.findViewById(R.id.tv_category_name)
         val tvCategoryDescription: TextView =
             itemView.findViewById(R.id.tv_category_description)
+        val spinnerEngine: Spinner =
+            itemView.findViewById(R.id.spinner_category_engine)
+        val tvEngineLabel: TextView =
+            itemView.findViewById(R.id.tv_category_engine_label)
         val spinnerVoice: Spinner =
             itemView.findViewById(R.id.spinner_category_voice)
         val seekRate: SeekBar =
@@ -72,6 +89,32 @@ internal class CategoryVoiceAdapter(
         // المستمعات تُثبَّت مرة واحدة عند إنشاء الحامل وتقرأ الفئة المرتبطة
         // حالياً، فلا تُنشأ كائنات جديدة مع كل تمرير أو إعادة ربط.
         holder.spinnerVoice.adapter = voiceNameAdapter
+        holder.spinnerEngine.adapter = engineOptionsAdapter
+        holder.spinnerEngine.onItemSelectedListener =
+            object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: android.widget.AdapterView<*>?,
+                view: View?,
+                pos: Int,
+                id: Long
+            ) {
+                val category = holder.category
+                if (category.isEmpty()) return
+                // الفئة الافتراضية بلا محرك خاص (مخفاة) — لا تُكتب قيمة لها
+                if (category == SettingsRepository.VOICE_CATEGORY_DEFAULT) {
+                    return
+                }
+                val engine = categoryEngines
+                    .getOrNull(pos - 1)?.packageName
+                runCatching {
+                    settings.setEngineForCategory(category, engine)
+                }
+            }
+
+            override fun onNothingSelected(
+                parent: android.widget.AdapterView<*>?
+            ) {}
+        }
         holder.spinnerVoice.onItemSelectedListener =
             object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
@@ -236,6 +279,28 @@ internal class CategoryVoiceAdapter(
                 context.getString(R.string.voice_category_emoji_summary)
             else -> context.getString(R.string.voice_category_default_summary)
         }
+
+        // الفئة الافتراضية بلا محرك خاص: محركها هو العام المختار في الأعلى
+        val isEnginePerCategory = category !=
+            SettingsRepository.VOICE_CATEGORY_DEFAULT
+        holder.tvEngineLabel.visibility = if (isEnginePerCategory) {
+            View.VISIBLE
+        } else {
+            View.GONE
+        }
+        holder.spinnerEngine.visibility = if (isEnginePerCategory) {
+            View.VISIBLE
+        } else {
+            View.GONE
+        }
+        val savedEngine =
+            runCatching { settings.getEngineForCategory(category) }
+                .getOrNull()
+        val engineIdx = categoryEngines
+            .indexOfFirst { it.packageName == savedEngine }
+        holder.spinnerEngine.setSelection(
+            if (engineIdx >= 0) engineIdx + 1 else 0
+        )
 
         val saved =
             runCatching { settings.getPreferredVoiceIdForCategory(category) }

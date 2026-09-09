@@ -16,6 +16,7 @@ import android.widget.Toast
 import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
+import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -54,6 +55,11 @@ internal class CallerAnnouncementController(
         com.google.android.material.textfield.TextInputEditText
     private lateinit var spinnerCallerVoiceAr: Spinner
     private lateinit var spinnerCallerVoiceEn: Spinner
+    private lateinit var spinnerCallerEngine: Spinner
+
+    /** خيارات محرك نطق المتصل: «تلقائي» ثم المحركات المثبتة */
+    private var callerEngineOptions: List<EnginePicker.InstalledEngine> =
+        emptyList()
 
     /** يمنع مناداة المستمع من رد الطلب (تفادي إعادة طلب الأذونات دورياً) */
     private var callerSwitchGuard = false
@@ -74,6 +80,46 @@ internal class CallerAnnouncementController(
         etCallerTemplate = view.findViewById(R.id.et_caller_template)
         spinnerCallerVoiceAr = view.findViewById(R.id.spinner_caller_voice_ar)
         spinnerCallerVoiceEn = view.findViewById(R.id.spinner_caller_voice_en)
+        spinnerCallerEngine = view.findViewById(R.id.spinner_caller_engine)
+
+        // محركات TTS المثبتة + خيار تلقائي
+        callerEngineOptions = runCatching {
+            EnginePicker.installedEngines(fragment.requireContext())
+        }.getOrDefault(emptyList())
+        val engineLabels = buildList {
+            add(fragment.getString(R.string.first_run_engine_auto))
+            addAll(callerEngineOptions.map { it.label })
+        }
+        spinnerCallerEngine.adapter = fragment.simpleAdapter(engineLabels)
+        val savedCallerEngine = runCatching {
+            settings.getEngineForCategory(
+                SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+            )
+        }.getOrNull()
+        val callerEngineIdx = callerEngineOptions
+            .indexOfFirst { it.packageName == savedCallerEngine }
+        spinnerCallerEngine.setSelection(
+            if (callerEngineIdx >= 0) callerEngineIdx + 1 else 0
+        )
+        spinnerCallerEngine.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?, v: View?,
+                pos: Int, id: Long
+            ) {
+                val pkg = callerEngineOptions
+                    .getOrNull(pos - 1)?.packageName
+                runCatching {
+                    settings.setEngineForCategory(
+                        SettingsRepository.ANNOUNCE_CATEGORY_CALLER,
+                        pkg
+                    )
+                }
+                onStatusChanged()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
 
         // المفتاح الرئيسي: عند التفعيل نطلب الأذونات أولاً
         // (لا نفعّل إلا بمنحها)

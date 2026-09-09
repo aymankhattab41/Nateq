@@ -10,6 +10,7 @@ import android.widget.Spinner
 import android.widget.TextView
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
+import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.util.announceCompat
 import com.google.android.material.switchmaterial.SwitchMaterial
 import java.util.Locale
@@ -28,6 +29,7 @@ internal class BatteryAnnouncementController(
     private lateinit var tvBatteryLevelsArrow: TextView
     private lateinit var llBatteryLevels: LinearLayout
     private lateinit var spinnerBatteryVoice: Spinner
+    private lateinit var spinnerBatteryEngine: Spinner
     private lateinit var seekBatteryRate: SeekBar
     private lateinit var tvBatteryRateValue: TextView
     private lateinit var seekBatteryVolume: SeekBar
@@ -47,6 +49,7 @@ internal class BatteryAnnouncementController(
         tvBatteryLevelsArrow = view.findViewById(R.id.tv_battery_levels_arrow)
         llBatteryLevels = view.findViewById(R.id.ll_battery_levels)
         spinnerBatteryVoice = view.findViewById(R.id.spinner_battery_voice)
+        spinnerBatteryEngine = view.findViewById(R.id.spinner_battery_engine)
         seekBatteryRate = view.findViewById(R.id.seek_battery_rate)
         tvBatteryRateValue = view.findViewById(R.id.tv_battery_rate_value)
         seekBatteryVolume = view.findViewById(R.id.seek_battery_volume)
@@ -165,6 +168,46 @@ internal class BatteryAnnouncementController(
                         voices[position].name
                     )
                 }
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        // محرك نطق البطارية
+        val batteryEngineOptions = runCatching {
+            EnginePicker.installedEngines(fragment.requireContext())
+        }.getOrDefault(emptyList())
+        val batteryEngineLabels = buildList {
+            add(fragment.getString(R.string.first_run_engine_auto))
+            addAll(batteryEngineOptions.map { it.label })
+        }
+        spinnerBatteryEngine.adapter =
+            fragment.simpleAdapter(batteryEngineLabels)
+        val savedBatteryEngine = runCatching {
+            settings.getEngineForCategory(
+                SettingsRepository.DEVICE_HEALTH_BATTERY
+            )
+        }.getOrNull()
+        val batteryEngineIdx = batteryEngineOptions
+            .indexOfFirst { it.packageName == savedBatteryEngine }
+        spinnerBatteryEngine.setSelection(
+            if (batteryEngineIdx >= 0) batteryEngineIdx + 1 else 0
+        )
+        spinnerBatteryEngine.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?, v: View?,
+                pos: Int, id: Long
+            ) {
+                val pkg = batteryEngineOptions
+                    .getOrNull(pos - 1)?.packageName
+                runCatching {
+                    settings.setEngineForCategory(
+                        SettingsRepository.DEVICE_HEALTH_BATTERY,
+                        pkg
+                    )
+                }
+                onStatusChanged()
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}
