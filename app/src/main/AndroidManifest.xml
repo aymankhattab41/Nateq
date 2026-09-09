@@ -118,6 +118,13 @@
             </intent-filter>
         </activity>
 
+        <!-- معالج الإعداد الأولي القابل للتخطي: يُعرض مرة واحدة (اختيار
+             لغة الواجهة ومحرك النطق) ولا يُصدَّر لأي تطبيق خارجي -->
+        <activity
+            android:name=".settings.FirstRunSetupActivity"
+            android:exported="false"
+            android:label="@string/first_run_welcome_title" />
+
         <!-- Activity لفحص بيانات TTS (اللغات/الأصوات المتاحة) — مطلوبة من سامسونج -->
         <activity
             android:name=".settings.CheckTtsDataActivity"

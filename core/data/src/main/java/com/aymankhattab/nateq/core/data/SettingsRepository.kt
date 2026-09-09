@@ -981,6 +981,14 @@ val masterKey = androidx.security.crypto.MasterKey
     fun setLanguageInstallHintEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("show_language_install_hint", enabled).apply()
 
+    /** هل اكتمل «معالج الإعداد الأولي» القابل للتخطي؟ يُعرض مرة واحدة عند
+     *  أول تشغيل (اختيار لغة الواجهة ومحرك النطق) ثم يُعلَّم منجزاً
+     *  عند التخطي أو الحفظ فلا يُزعج في التشغيلات التالية. */
+    fun isFirstRunSetupCompleted(): Boolean =
+        prefs.getBoolean("first_run_setup_completed", false)
+    fun setFirstRunSetupCompleted(completed: Boolean) =
+        prefs.edit().putBoolean("first_run_setup_completed", completed).apply()
+
     // ---- الخريطة الديناميكية للتحويل التلقائي (languageTag -> تفضيلات) ----
     // استبدلنا نظام سلوتات «اللغة 1/اللغة 2» الثابت (ar/en فقط) بتخزين عام
     // محفوظ كخريطة JSON في SharedPreferences عبر ConvertPreferencesCodec

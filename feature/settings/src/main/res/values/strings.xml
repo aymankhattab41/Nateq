@@ -298,4 +298,13 @@
         <item quantity="few">%d ثوانٍ</item>
         <item quantity="other">%d ثانية</item>
     </plurals>
+<string name="first_run_welcome_title">أهلاً بك في Lord TTS</string>
+<string name="first_run_welcome_description">اختر لغة الواجهة ومحرك النطق لتبدأ فوراً — يمكنك تغيير كل شيء لاحقاً من الإعدادات.</string>
+<string name="first_run_language_label">لغة الواجهة</string>
+<string name="first_run_engine_label">محرك النطق</string>
+<string name="first_run_engine_auto">تلقائي (الاختيار الذكي)</string>
+<string name="first_run_save">حفظ ومتابعة</string>
+<string name="first_run_skip">تخطّي</string>
+<string name="first_run_lang_arabic">العربية</string>
+<string name="first_run_lang_english">English</string>
 </resources>

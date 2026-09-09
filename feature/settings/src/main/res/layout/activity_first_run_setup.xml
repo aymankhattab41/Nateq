@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="40dp"
+        android:paddingBottom="24dp">
+
+        <TextView
+            android:id="@+id/tv_first_run_welcome_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/first_run_welcome_title"
+            android:textAppearance="?attr/textAppearanceHeadline5"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tv_first_run_welcome_description"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/first_run_welcome_description"
+            android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+        <TextView
+            android:id="@+id/tv_first_run_language_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:text="@string/first_run_language_label"
+            android:textAppearance="?attr/textAppearanceSubtitle1" />
+
+        <Spinner
+            android:id="@+id/spinner_first_run_language"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="4dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            tools:ignore="SpeakableTextPresent" />
+
+        <TextView
+            android:id="@+id/tv_first_run_engine_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/first_run_engine_label"
+            android:textAppearance="?attr/textAppearanceSubtitle1" />
+
+        <Spinner
+            android:id="@+id/spinner_first_run_engine"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="4dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            tools:ignore="SpeakableTextPresent" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_first_run_save"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="32dp"
+            android:text="@string/first_run_save" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_first_run_skip"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/first_run_skip" />
+
+    </LinearLayout>
+</ScrollView>

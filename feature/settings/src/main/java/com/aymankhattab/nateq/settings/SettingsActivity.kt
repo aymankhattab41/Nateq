@@ -13,9 +13,11 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.commit
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.announceCompat
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 /**
  * الشاشة الرئيسية للإعدادات. بسيطة ومباشرة عمدًا (بدون Nested navigation
@@ -32,6 +34,11 @@ import dagger.hilt.android.AndroidEntryPoint
  */
 @AndroidEntryPoint
 class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
+
+    /** مصدر الإعدادات المحقون (نفس سنجلتون التطبيق) لقراءة مفتاح
+     *  اكتمال معالج الإعداد الأولي. */
+    @Inject
+    lateinit var settingsRepository: SettingsRepository
 
     private val requestNotificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -54,6 +61,15 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
         // ViewCompat.setOnApplyWindowInsetsListener على جذر القائمة
         // القابلة للتمرير.
         enableEdgeToEdge()
+
+        // معالج الإعداد الأولي: يُعرض مرة واحدة قبل استكشاف الواجهة.
+        // «تخطّي» يُعلِّم الاكتمال في المخزن؛ لا يُفرض شيء على المستخدم.
+        if (savedInstanceState == null &&
+            runCatching { !settingsRepository.isFirstRunSetupCompleted() }
+                .getOrDefault(false)
+        ) {
+            startActivity(Intent(this, FirstRunSetupActivity::class.java))
+        }
 
         if (savedInstanceState == null) {
             supportFragmentManager.commit {

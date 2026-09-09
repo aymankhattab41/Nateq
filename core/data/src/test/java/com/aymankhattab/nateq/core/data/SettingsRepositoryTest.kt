@@ -124,6 +124,16 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun firstRunSetup_defaultNotCompleted_roundTrip() {
+        // أول تشغيل: المعالج غير منجز فيُعرض مرة واحدة
+        assertFalse(repo.isFirstRunSetupCompleted())
+        repo.setFirstRunSetupCompleted(true)
+        assertTrue(repo.isFirstRunSetupCompleted())
+        repo.setFirstRunSetupCompleted(false)
+        assertFalse(repo.isFirstRunSetupCompleted())
+    }
+
+    @Test
     fun callerInterval_defaultAndRoundTrip() {
         assertEquals(3, repo.getCallerAnnouncementIntervalSeconds())
         repo.setCallerAnnouncementIntervalSeconds(7)

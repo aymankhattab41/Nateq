@@ -293,4 +293,13 @@
         <item quantity="one">%d second</item>
         <item quantity="other">%d seconds</item>
     </plurals>
+<string name="first_run_welcome_title">Welcome to Lord TTS</string>
+<string name="first_run_welcome_description">Choose the interface language and the text-to-speech engine to get started — you can change everything later from Settings.</string>
+<string name="first_run_language_label">Interface language</string>
+<string name="first_run_engine_label">Text-to-speech engine</string>
+<string name="first_run_engine_auto">Auto (smart selection)</string>
+<string name="first_run_save">Save and continue</string>
+<string name="first_run_skip">Skip</string>
+<string name="first_run_lang_arabic">العربية</string>
+<string name="first_run_lang_english">English</string>
 </resources>
