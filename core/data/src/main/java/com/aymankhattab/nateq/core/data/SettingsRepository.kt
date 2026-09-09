@@ -1017,6 +1017,18 @@ val masterKey = androidx.security.crypto.MasterKey
         writeConvertPrefs(map)
     }
 
+    /**
+     * محرك النطق الصريح للغة معيّنة (قراءة من خريطة تفضيلات كل لغة).
+     * يسري في النطق العام حتى مع تعطيل التحويل التلقائي — فهو تفضيلُ لغة
+     * أساسي لا رهينةً بمفتاح التحويل؛ null إن لم يُحدَّد محركٌ للغة.
+     */
+    fun getEngineForLanguage(languageTag: String): String? =
+        getEnginePreferenceForLanguage(languageTag).engine
+
+    /** صوت المحرك الصريح (داخل محرك اللغة) للغة معيّنة، null إن لم يُحدَّد. */
+    fun getVoiceForLanguage(languageTag: String): String? =
+        getEnginePreferenceForLanguage(languageTag).voiceName
+
     /** كل تفضيلات التحويل الحالية (لغة -> مدخل) للعرض في قائمة الإعدادات. */
     fun allConvertLanguagePreferences(): Map<String, LanguageSpeechPrefs> {
         ensureConvertSlotsMigrated()

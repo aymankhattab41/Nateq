@@ -402,4 +402,17 @@ class SettingsRepositoryTest {
                 .edit().clear().commit()
         }
     }
+
+    @Test
+    fun engineAndVoicePerLanguage_accessors() {
+        assertNull(repo.getEngineForLanguage("ar"))
+        assertNull(repo.getVoiceForLanguage("ar"))
+        repo.setEnginePreferenceForLanguage(
+            "ar", "org.nobody.multitts", "multitts-ar", 1.0f, 1.0f, 1.0f
+        )
+        assertEquals("org.nobody.multitts", repo.getEngineForLanguage("ar"))
+        assertEquals("multitts-ar", repo.getVoiceForLanguage("ar"))
+        // لغة أخرى بلا إعداد → null (لا تسرّب بين اللغات)
+        assertNull(repo.getEngineForLanguage("en"))
+    }
 }

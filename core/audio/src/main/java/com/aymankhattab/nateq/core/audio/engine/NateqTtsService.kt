@@ -484,21 +484,22 @@ class NateqTtsService : TextToSpeechService() {
         val finalRate = convertTarget?.let { it.convertRate } ?: speechRate
         val finalPitch = convertTarget?.let { it.convertPitch } ?: pitch
         val finalVolume = convertTarget?.let { it.convertVolume } ?: volume
-        val finalEngine = if (matchesRequest) {
-            convertTarget?.let { it.convertEngine }
-        } else {
-            null
-        }
+        // توجيه المحرك/الصوت: يفضّل هدف التحويل المطابق، وإلا تفضيل لغة النص
+        // نفسه (سارٍ دائماً بلا ربط بحالة «التحويل التلقائي»).
+        val routed = LanguageSpeechRouter.route(
+            matchesRequest = matchesRequest,
+            convertEngine = convertTarget?.convertEngine,
+            convertVoiceName = convertTarget?.convertVoiceName,
+            perLanguageEngine = settings.getEngineForLanguage(languageTag),
+            perLanguageVoiceName = settings.getVoiceForLanguage(languageTag)
+        )
+        val finalEngine = routed.engine
         val finalLocale = if (matchesRequest) {
             convertTarget?.let { it.convertLocale }
         } else {
             null
         }
-        val finalVoiceName = if (matchesRequest) {
-            convertTarget?.let { it.convertVoiceName }
-        } else {
-            null
-        }
+        val finalVoiceName = routed.voiceName
 
         // تخليق الصوت الفعلي عبر المزوّد. يُبلّغنا التنسيق
         // (معدل عينات/قنوات) قبل أول شريحة، فنبدأ
@@ -604,13 +605,16 @@ class NateqTtsService : TextToSpeechService() {
             val finalRate = convert?.convertRate ?: segRate
             val finalPitch = convert?.convertPitch ?: segPitch
             val finalVolume = convert?.convertVolume ?: segVolume
-            val finalEngine = if (matches) convert?.convertEngine else null
+            val routed = LanguageSpeechRouter.route(
+                matchesRequest = matches,
+                convertEngine = convert?.convertEngine,
+                convertVoiceName = convert?.convertVoiceName,
+                perLanguageEngine = settings.getEngineForLanguage(segTag),
+                perLanguageVoiceName = settings.getVoiceForLanguage(segTag)
+            )
+            val finalEngine = routed.engine
             val finalLocale = if (matches) convert?.convertLocale else null
-            val finalVoiceName = if (matches) {
-                convert?.convertVoiceName
-            } else {
-                null
-            }
+            val finalVoiceName = routed.voiceName
 
             // بث المقطع فور إنتاجه: شريحة المزوّد تُعاد معاينتها إلى المعيار
             // الموحّد وتُدفع للـ callback مباشرةً — لا تُجمَع مع مقاطع أخرى ولا
