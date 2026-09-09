@@ -74,11 +74,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private lateinit var rvCategories: RecyclerView
     private lateinit var rvPronunciationDict: RecyclerView
 
-    private lateinit var spinnerEngine: Spinner
+    /** محركات TTS المثبتة (اكتشاف فقط بلا اختيار عام — لا محرك افتراضي). */
     private val engines = mutableListOf<EngineInfo>()
     private lateinit var engineSection: EngineSectionController
 
-    // قسم المحرك والتحويل التلقائي (setupEngineSpinner/setupAutoConvertUI/
+    // قسم المحرك والتحويل التلقائي (الاكتشاف/setupAutoConvertUI/
     // قائمة اللغات المكتشفة لكل المحركات...) انتقل بالكامل إلى
     // EngineSectionController.
 
@@ -284,14 +284,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             )
         )
 
-        // صندوق المحركات داخل قسم اللغة الأولى/الثانية (اختيار محرك TTS للنطق)
-        spinnerEngine = view.findViewById(R.id.spinner_engine)
+        // قسم المحركات: اكتشاف المحركات المثبتة فقط (لا صندوق اختيار عام —
+        // لا محرك افتراضي؛ محرك كل لغة/فئة يُحسم وقت النطق)
         accordion = SettingsAccordionController(
             this,
             settings,
-            nateqVoices,
-            engines,
-            spinnerEngine
+            nateqVoices
         ).apply {
             setup(view, viewLifecycleOwner)
         }
@@ -299,7 +297,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             .apply {
                 onStatusChanged = { accordion.updateSectionStatuses() }
             }
-        engineSection.setupEngineSpinner(spinnerEngine)
+        engineSection.setupEngineDiscovery()
 
         // Categories RecyclerView
         rvCategories = view.findViewById(R.id.rv_categories)

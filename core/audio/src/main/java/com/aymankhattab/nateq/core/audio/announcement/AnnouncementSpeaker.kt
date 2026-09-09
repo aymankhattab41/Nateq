@@ -179,19 +179,10 @@ class AnnouncementSpeaker(
         }
         pendingInitCallbacks.add(onReady)
 
-        // المحرك المختار من المستخدم (مثل MultiTTS أو Lord نفسه) له الأولوية
-        // يُفضَّل الحقل المحقون في التطبيق عبر AnnouncementAppContext (نفس كائن
-        // Hilt المشترك من كل عملية)، وإلا يُبنى محلياً — قراءة
-        // لحظية غير محفوظة.
-        val injected =
-            (appContext as? AnnouncementAppContext)?.settingsRepository
-        val savedEngine = try {
-            (injected ?: SettingsRepository(appContext))
-                .getSelectedEnginePackage()
-        } catch (e: Exception) {
-            null
-        }
-        val engine = requested ?: savedEngine
+        // لا يوجد محرك افتراضي عام: يُحسم المحرك عند النطق إما صراحةً
+        // (requested المحرك الخاص بالفئة/الوظيفة)، وإلا اختيار ديناميكي
+        // عبر [EngineRegistry] (مفضَّل ← أي محرك مثبّت غير قارئ شاشة).
+        val engine = requested
             ?: EnginePicker.pickEnginePackage(appContext)
         boundEngine = engine
         var newTts: TextToSpeech? = null

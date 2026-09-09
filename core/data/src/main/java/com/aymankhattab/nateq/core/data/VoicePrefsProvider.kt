@@ -7,9 +7,6 @@ package com.aymankhattab.nateq.core.data
  */
 interface VoicePrefsProvider {
 
-    /** حزمة محرك TTS الذي اختاره المستخدم (null = اختيار تلقائي). */
-    fun getSelectedEnginePackage(): String?
-
     /** محرك TTS الصريح للغةٍ معيّنة (null = بلا تفضيل لغة) — يسري في
      *  النطق العام حتى مع تعطيل التحويل التلقائي. */
     fun getEngineForLanguage(languageTag: String): String?

@@ -393,12 +393,6 @@ class SettingsRepository(private val context: Context) :
         languagePrefKey("volume_", languageTag)
             ?.let { prefs.getFloat(it, 1.0f) }
 
-    /** حزمة محرك TTS الذي اختاره المستخدم في شاشة الإعدادات */
-    override fun getSelectedEnginePackage(): String? =
-        prefs.getString("selected_engine_package", null)
-    fun setSelectedEnginePackage(pkg: String?) =
-        prefs.edit().putString("selected_engine_package", pkg).apply()
-
     /** مسح كل إعدادات التطبيق وإعادتها إلى القيم الافتراضية، بما فيها
      *  أسماء المتصلين المخصصة (PII) المخزنة في الملف المشفر وملفات الحالة. */
     fun resetAllToDefault() {

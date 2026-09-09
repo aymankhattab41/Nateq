@@ -36,7 +36,6 @@ class SettingsRepositoryTest {
         assertFalse(repo.isTime24Hour())
         assertFalse(repo.isHijriDateEnabled())
         assertEquals("arabic_natural", repo.getTimeAnnouncementFormat())
-        assertNull(repo.getSelectedEnginePackage())
     }
 
     @Test
@@ -306,6 +305,7 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    @Suppress("DEPRECATION")
     fun isDeviceScreenLocked_detectsSwipeLockAndScreenOff() {
         val km = context.getSystemService(
             android.app.KeyguardManager::class.java
@@ -428,7 +428,7 @@ class SettingsRepositoryTest {
 
     @Test
     fun enginePerCategory_defaultsNull_roundTrip_removable() {
-        // بلا إعداد → null (يتبع المحرك العام/اللغة)
+        // بلا إعداد → null (يُحسم المحرك ديناميكياً وقت النطق)
         assertNull(repo.getEngineForCategory("caller"))
         assertNull(repo.getEngineForCategory("battery"))
         assertNull(repo.getEngineForCategory("time"))

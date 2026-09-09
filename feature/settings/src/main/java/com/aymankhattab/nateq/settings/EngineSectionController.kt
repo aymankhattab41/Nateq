@@ -7,9 +7,7 @@ import android.speech.tts.TextToSpeech
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
-import android.widget.AdapterView
 import android.widget.ArrayAdapter
-import android.widget.Spinner
 import android.widget.TextView
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -48,53 +46,16 @@ internal class EngineSectionController(
     /** يربطه المضيف بعد إنشائه ليُعيد بناء أسطر حالة الأقسام عند أي تغيير. */
     var onStatusChanged: () -> Unit = {}
 
-    // ===== صندوق المحركات (اختيار محرك TTS ضمن قسم اللغات) =====
-    fun setupEngineSpinner(spinnerEngine: Spinner) {
+    // ===== صندوق المحركات (اكتشاف فقط بلا اختيار عام) =====
+    /**
+     * يكتشف محركات TTS المثبتة لإظهار حالة القسم ورسالة/زر التثبيت عند غياب
+     * أي محرك. لا يوجد «محرك افتراضي» عام: محرك كل لغة وكل فئة يُحسم
+     * في [EngineRegistry] وقت النطق فقط.
+     */
+    fun setupEngineDiscovery() {
         engines.clear()
-
-        // محركات النظام المتاحة عبر TTS_SERVICE intent.
-        // نستخدم MATCH_ALL ليظهر القارئان/المحركات غير-المُصدَّرة (مثل eSpeak
-        // داخل Jieshuo/TalkMan) التي لا تُستعلم على أندرويد 7+ دونها.
         engines.addAll(discoverEngines())
-
         bindNoEnginesUi()
-
-        if (engines.isEmpty()) {
-            spinnerEngine.adapter = simpleAdapter(
-                fragment.requireContext(),
-                listOf(fragment.getString(R.string.no_voices_available))
-            )
-        } else {
-            spinnerEngine.adapter = simpleAdapter(
-                fragment.requireContext(),
-                engines.map { it.label }
-            )
-            spinnerEngine.onItemSelectedListener =
-                object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(
-                    parent: AdapterView<*>?,
-                    view: View?,
-                    position: Int,
-                    id: Long
-                ) {
-                    onEngineSelected(engines[position])
-                }
-
-                override fun onNothingSelected(parent: AdapterView<*>?) {}
-            }
-
-            // نستعيد المحرك المحفوظ، أو نفضّل محركاً حقيقياً غير قارئ شاشة
-            // (نفس ترتيب اختيار النطق التلقائي في EnginePicker).
-            val saved = settings.getSelectedEnginePackage()
-            val preferred = EnginePicker.pickPreferredEngineFrom(
-                engines.map { it.packageName }
-            )
-            val target = engineIndexOf(saved)
-                ?: if (saved == null) engineIndexOf(preferred) else null
-            if (target != null && target < engines.size) {
-                spinnerEngine.setSelection(target)
-            }
-        }
     }
 
     /** عند غياب أي محرك TTS إطلاقاً: يُظهر رسالة توجيهية
@@ -136,18 +97,6 @@ internal class EngineSectionController(
                 )
             }
         }
-    }
-
-    /** فهرس المحرك بمطابقة الحزمة في قائمة المحركات */
-    private fun engineIndexOf(pkg: String?): Int? {
-        if (pkg == null) return null
-        val idx = engines.indexOfFirst { it.packageName == pkg }
-        return if (idx >= 0) idx else null
-    }
-
-    private fun onEngineSelected(engine: EngineInfo) {
-        // عند اختيار محرك نُخزّنه ليستخدمه مزوّد الصوت عند النطق.
-        settings.setSelectedEnginePackage(engine.packageName)
     }
 
     // ===== التحويل التلقائي عبر كل اللغات =====

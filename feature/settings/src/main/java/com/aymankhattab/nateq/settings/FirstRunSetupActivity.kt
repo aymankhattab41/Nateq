@@ -80,18 +80,14 @@ class FirstRunSetupActivity :
                 android.R.layout.simple_spinner_dropdown_item
             )
         }
-        // المحرك اليدوي المختار سابقاً (إن وُجد وأعيد عرضه) الموقع الافتراضي
-        val savedEngine = runCatching {
-            settingsRepository.getSelectedEnginePackage()
-        }.getOrNull()
-        val savedIndex = engines.indexOfFirst { it.packageName == savedEngine }
-        spinnerEngine.setSelection((savedIndex + 1).coerceAtLeast(0))
+        // المحرك يبدأ «تلقائي» دائماً (لا محرك افتراضي عام): ربط المحرك
+        // بلغة الواجهة يتم فقط عند الحفظ.
 
-findViewById<android.view.View>(R.id.btn_first_run_save)
+        findViewById<android.view.View>(R.id.btn_first_run_save)
             .setOnClickListener {
                 onSaveClicked(spinnerLanguage, spinnerEngine)
             }
-findViewById<android.view.View>(R.id.btn_first_run_skip)
+        findViewById<android.view.View>(R.id.btn_first_run_skip)
             .setOnClickListener { finishSkipped() }
         registerBackAsSkip()
     }

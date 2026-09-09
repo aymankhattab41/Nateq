@@ -35,9 +35,7 @@ internal data class AccordionEntry(
 internal class SettingsAccordionController(
     private val fragment: Fragment,
     private val settings: SettingsRepository,
-    private val voices: List<NateqVoice>,
-    private val engines: List<EngineInfo>,
-    private val spinnerEngine: android.widget.Spinner
+    private val voices: List<NateqVoice>
 ) {
 
     private val accordionEntries = mutableListOf<AccordionEntry>()
@@ -514,14 +512,10 @@ internal class SettingsAccordionController(
         val auto =
             runCatching { settings.isAutoConvertEnabled() }
                 .getOrDefault(false)
-        val engine = engines.getOrNull(
-            spinnerEngine.selectedItemPosition
-        )?.label
-            ?: fragment.getString(R.string.no_voices_available)
         val autoLabel = if (auto) fragment.getString(R.string.toggle_on)
         else fragment.getString(R.string.toggle_off)
         return fragment.getString(R.string.auto_convert_enabled) + ": " +
-            autoLabel + "، " + engine
+            autoLabel
     }
 
     private fun buildCategoriesStatus(): String {

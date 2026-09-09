@@ -122,7 +122,6 @@
 <string name="dict_word_hint">Word</string>
 <string name="emoji_reading_enabled">Speak emoji and emoticon names</string>
 <string name="emoji_reading_helper">Emoji names are spoken instead of being removed from text (e.g. 😀 is read as "beaming face"). When off, emoticon symbols are dropped from speech.</string>
-<string name="engine_select">Choose Engine</string>
 <string name="enter_word_and_pronunciation">Enter the word and its pronunciation</string>
 <string name="exact_alarm_permission_grant">Open exact alarm settings</string>
 <string name="exact_alarm_permission_summary">Granting permission makes time announcements fire at the exact minute. Without it a flexible alarm fires near the intended time (slightly delayed during battery saver).</string>
@@ -249,7 +248,6 @@
 <string name="spinner_battery_voice_content">Battery speech voice</string>
 <string name="spinner_caller_interval_content">Time interval between repeats (seconds)</string>
 <string name="spinner_caller_repeat_content">Number of repeats</string>
-<string name="spinner_engine_content">Speech engine</string>
 <string name="spinner_number_reading_mode_content">Number reading mode</string>
 <string name="spinner_sms_reading_mode_content">Message reading mode</string>
 <string name="spinner_sms_reading_voice_content">Message reading voice</string>

@@ -319,15 +319,8 @@ class SystemVoiceProvider(
                 // لا نكسر النطق بخطأ قراءة إعدادات.
             }
         }
-        // المحرك المختار من المستخدم (مثل MultiTTS) له الأولوية
-        val selected = try {
-            settings.getSelectedEnginePackage()
-        } catch (e: Exception) {
-            null
-        }
-        if (selected != null && installed.contains(selected)) {
-            return selected
-        }
+        // لا يوجد محرك افتراضي عام: القرار النهائي ديناميكي وقت النطق
+        // عبر [EngineRegistry] (مفضَّل ← أي محرك مثبّت غير قارئ شاشة).
         return EnginePicker.pickEnginePackage(context)
     }
 

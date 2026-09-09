@@ -1780,23 +1780,6 @@
             android:text="@string/auto_convert_enabled"
             android:importantForAccessibility="yes" />
 
-        <!-- صندوق المحركات (داخل قسم التحويل التلقائي بين اللغات) -->
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/til_engine"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:hint="@string/engine_select">
-            <androidx.appcompat.widget.AppCompatSpinner
-                android:id="@+id/spinner_engine"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="48dp"
-                android:focusable="true"
-                android:importantForAccessibility="yes"
-                android:contentDescription="@string/spinner_engine_content" />
-        </com.google.android.material.textfield.TextInputLayout>
-
         <!-- لا يوجد أي محرك TTS على الجهاز إطلاقاً: رسالة + زر تثبيت من المتجر -->
         <TextView
             android:id="@+id/tv_no_engines_message"

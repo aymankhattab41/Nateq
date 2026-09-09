@@ -123,7 +123,6 @@
 <string name="dict_word_hint">الكلمة</string>
 <string name="emoji_reading_enabled">نطق الإيموجي ورموز المشاعر</string>
 <string name="emoji_reading_helper">يُنطق اسم الإيموجي بدل حذفه من النص (مثال: 😀 تُنطق «وجه مبتسم»). عند الإيقاف تُحذف رموز المشاعر من النطق.</string>
-<string name="engine_select">اختيار المحرك</string>
 <string name="enter_word_and_pronunciation">أدخل الكلمة والنطق</string>
 <string name="exact_alarm_permission_grant">فتح إعدادات المنبهات الدقيقة</string>
 <string name="exact_alarm_permission_summary">منح الإذن يجعل إعلان الوقت في اللحظة المضبوطة. بدونه يعمل الإعلان بمنبّه مرن يقترب من الموعد المستهدف (يتأخر قليلاً في وضع توفير البطارية).</string>
@@ -252,7 +251,6 @@
 <string name="spinner_battery_voice_content">صوت نطق البطارية</string>
 <string name="spinner_caller_interval_content">الفاصل الزمني بين التكرارات (بالثواني)</string>
 <string name="spinner_caller_repeat_content">عدد مرات التكرار</string>
-<string name="spinner_engine_content">محرك النطق</string>
 <string name="spinner_number_reading_mode_content">طريقة نطق الأرقام</string>
 <string name="spinner_sms_reading_mode_content">وضع قراءة الرسائل</string>
 <string name="spinner_sms_reading_voice_content">صوت نطق الرسائل</string>
