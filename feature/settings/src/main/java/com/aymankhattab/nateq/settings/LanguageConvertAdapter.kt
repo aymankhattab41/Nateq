@@ -17,7 +17,8 @@ import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import java.util.Locale
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
-/** صف لغةٍ في قائمة إعداد التحويل التلقائي (كل صف = لغة مكتشفة عبر المحركات). */
+/** صف لغةٍ في قائمة إعداد التحويل التلقائي
+ *  (كل صف = لغة مكتشفة عبر المحركات). */
 internal data class LanguageRow(
     val languageTag: String,
     val displayName: String,
@@ -29,20 +30,30 @@ internal data class LanguageRow(
  * معرّف قائمة لغات التحويل التلقائي: صف لكل لغةٍ فيه اختيار المحرك ← الصوت
  * داخل ذاك المحرك، وأشرطة مستوى الصوت/النبرة/السرعة، ومعاينة النطق، وحفظ.
  * القراءة/الكتابة تتم عبر الخريطة الديناميكية
- * (SettingsRepository.getEnginePreferenceForLanguage/setEnginePreferenceForLanguage).
+ * (SettingsRepository.getEnginePreferenceForLanguage/
+ *  setEnginePreferenceForLanguage).
  */
 internal class LanguageConvertAdapter(
     private val context: Context,
     private val settings: SettingsRepository,
     private val rows: List<LanguageRow>,
     /** يُستدعى عند طلب معاينة نطق (ينفّذه الضابط عبر محركٍ مؤقت). */
-    private val previewCallback: ((enginePackage: String, voiceName: String, volume: Float, pitch: Float, rate: Float) -> Unit)?
+    private val previewCallback: (
+        enginePackage: String,
+        voiceName: String,
+        volume: Float,
+        pitch: Float,
+        rate: Float
+    ) -> Unit?
 ) : RecyclerView.Adapter<LanguageConvertAdapter.RowViewHolder>() {
 
     /** يُستدعى بعد كل حفظ صف (لتحديث سطر حالة القسم). */
     var onRowSaved: () -> Unit = {}
 
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RowViewHolder {
+    override fun onCreateViewHolder(
+        parent: ViewGroup,
+        viewType: Int
+    ): RowViewHolder {
         val view = LayoutInflater.from(parent.context)
             .inflate(R.layout.item_convert_language, parent, false)
         return RowViewHolder(view)
@@ -54,19 +65,38 @@ internal class LanguageConvertAdapter(
         holder.bind(rows[position])
     }
 
-    inner class RowViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        private val tvTitle = itemView.findViewById<TextView>(R.id.tv_convert_lang_title)
-        private val tvSaved = itemView.findViewById<TextView>(R.id.tv_convert_row_saved)
-        private val actvEngine = itemView.findViewById<MaterialAutoCompleteTextView>(R.id.actv_convert_row_engine)
-        private val actvVoice = itemView.findViewById<MaterialAutoCompleteTextView>(R.id.actv_convert_row_voice)
-        private val seekVol = itemView.findViewById<SeekBar>(R.id.seek_convert_row_volume)
-        private val tvVol = itemView.findViewById<TextView>(R.id.tv_convert_row_volume_value)
-        private val seekPitch = itemView.findViewById<SeekBar>(R.id.seek_convert_row_pitch)
-        private val tvPitch = itemView.findViewById<TextView>(R.id.tv_convert_row_pitch_value)
-        private val seekRate = itemView.findViewById<SeekBar>(R.id.seek_convert_row_rate)
-        private val tvRate = itemView.findViewById<TextView>(R.id.tv_convert_row_rate_value)
-        private val btnSave = itemView.findViewById<com.google.android.material.button.MaterialButton>(R.id.btn_convert_row_save)
-        private val btnPlay = itemView.findViewById<com.google.android.material.button.MaterialButton>(R.id.btn_convert_row_play)
+    inner class RowViewHolder(itemView: View) :
+        RecyclerView.ViewHolder(itemView) {
+        private val tvTitle =
+            itemView.findViewById<TextView>(R.id.tv_convert_lang_title)
+        private val tvSaved =
+            itemView.findViewById<TextView>(R.id.tv_convert_row_saved)
+        private val actvEngine =
+            itemView.findViewById<MaterialAutoCompleteTextView>(
+                R.id.actv_convert_row_engine
+            )
+        private val actvVoice =
+            itemView.findViewById<MaterialAutoCompleteTextView>(
+                R.id.actv_convert_row_voice
+            )
+        private val seekVol =
+            itemView.findViewById<SeekBar>(R.id.seek_convert_row_volume)
+        private val tvVol =
+            itemView.findViewById<TextView>(R.id.tv_convert_row_volume_value)
+        private val seekPitch =
+            itemView.findViewById<SeekBar>(R.id.seek_convert_row_pitch)
+        private val tvPitch =
+            itemView.findViewById<TextView>(R.id.tv_convert_row_pitch_value)
+        private val seekRate =
+            itemView.findViewById<SeekBar>(R.id.seek_convert_row_rate)
+        private val tvRate =
+            itemView.findViewById<TextView>(R.id.tv_convert_row_rate_value)
+        private val btnSave = itemView.findViewById(
+            R.id.btn_convert_row_save
+        ) as com.google.android.material.button.MaterialButton
+        private val btnPlay = itemView.findViewById(
+            R.id.btn_convert_row_play
+        ) as com.google.android.material.button.MaterialButton
 
         private var rowEngines: List<EngineWithVoices> = emptyList()
         private var currentLanguageTag: String = ""
@@ -76,7 +106,9 @@ internal class LanguageConvertAdapter(
             tvTitle.text = row.displayName
             tvSaved.text = ""
             rowEngines = row.engines
-            val saved = settings.getEnginePreferenceForLanguage(row.languageTag)
+            val saved = settings.getEnginePreferenceForLanguage(
+                row.languageTag
+            )
 
             // الأشرطة: تُزرع من القيم المحفوظة وتحدّث القيمة المعروضة مباشرة.
             seekVol.progress = (saved.volume * 100).toInt().coerceIn(0, 100)
@@ -91,9 +123,13 @@ internal class LanguageConvertAdapter(
             seekRate.setOnSeekBarChangeListener(rateLikeListener(tvRate))
 
             if (rowEngines.isEmpty()) {
-                // اللغة واردة حتى بلا محرك (حالتا ar/en المضمونتان عند تعثر الاكتشاف):
-                // لا محرك للاختيار، لكن الأشرطة قابلة للحفظ رغم ذلك.
-                bindDropdown(actvEngine, listOf(context.getString(R.string.auto_convert_none)), null) {}
+                // اللغة واردة حتى بلا محرك (حالتا ar/en المضمونتان عند تعثر
+                // الاكتشاف): لا محرك للاختيار، لكن الأشرطة قابلة للحفظ.
+                bindDropdown(
+                    actvEngine,
+                    listOf(context.getString(R.string.auto_convert_none)),
+                    null
+                ) {}
                 actvEngine.isEnabled = false
                 bindDropdown(actvVoice, emptyList(), null) {}
                 actvVoice.isEnabled = false
@@ -101,9 +137,19 @@ internal class LanguageConvertAdapter(
             } else {
                 actvEngine.isEnabled = true
                 val engineLabels = rowEngines.map { it.engineLabel }
-                val savedEngineIdx = rowEngines.indexOfFirst { it.enginePackage == saved.engine }
-                val target = if (savedEngineIdx >= 0) savedEngineIdx else preferredEngineIndex()
-                bindDropdown(actvEngine, engineLabels, engineLabels[target]) { position ->
+                val savedEngineIdx = rowEngines.indexOfFirst {
+                    it.enginePackage == saved.engine
+                }
+                val target = if (savedEngineIdx >= 0) {
+                    savedEngineIdx
+                } else {
+                    preferredEngineIndex()
+                }
+                bindDropdown(
+                    actvEngine,
+                    engineLabels,
+                    engineLabels[target]
+                ) { position ->
                     if (position >= 0 && position < rowEngines.size) {
                         actvEngine.setText(engineLabels[position], false)
                         populateVoices(rowEngines[position], saved.voiceName)
@@ -119,18 +165,28 @@ internal class LanguageConvertAdapter(
             btnPlay.setOnClickListener { playRow() }
         }
 
-        /** فهرس المحرك المفضّل (نفس نكهة EnginePicker: الطرفي أولاً ثم جوجل). */
+        /** فهرس المحرك المفضّل (نفس نكهة EnginePicker:
+     *  الطرفي أولاً ثم جوجل). */
         private fun preferredEngineIndex(): Int {
-            val preferred = EnginePicker.pickPreferredEngineFrom(rowEngines.map { it.enginePackage })
+            val preferred = EnginePicker.pickPreferredEngineFrom(
+                rowEngines.map { it.enginePackage }
+            )
             val idx = rowEngines.indexOfFirst { it.enginePackage == preferred }
             return if (idx >= 0) idx else 0
         }
 
         /** يملأ قائمة الصوت بأصوات المحرك الحالي لهذه اللغة (بلا تكرار). */
-        private fun populateVoices(engine: EngineWithVoices, savedVoice: String?) {
+        private fun populateVoices(
+        engine: EngineWithVoices,
+        savedVoice: String?
+    ) {
             val voices = engine.voices.distinctBy { it.name }
             if (voices.isEmpty()) {
-                bindDropdown(actvVoice, listOf(context.getString(R.string.auto_convert_none)), null) {}
+                bindDropdown(
+                    actvVoice,
+                    listOf(context.getString(R.string.auto_convert_none)),
+                    null
+                ) {}
                 return
             }
             val voiceLabels = voices.map { it.name }
@@ -146,7 +202,8 @@ internal class LanguageConvertAdapter(
             actvVoice.setOnClickListener { actvVoice.showDropDown() }
         }
 
-        /** يعرض حقل قائمة (كومبو بوكس) بعناصر جاهزة واختيارٍ أولي، مع معالج اختيار. */
+        /** يعرض حقل قائمة (كومبو بوكس) بعناصر جاهزة واختيارٍ أولي،
+     *  مع معالج اختيار. */
         private fun bindDropdown(
             actv: MaterialAutoCompleteTextView,
             items: List<String>,
@@ -159,8 +216,17 @@ internal class LanguageConvertAdapter(
                 items
             )
             actv.setAdapter(adapter)
-            actv.setText(if (current != null && current in items) current else items.firstOrNull().orEmpty(), false)
-            actv.setOnItemClickListener { _, _, position, _ -> onSelect(position) }
+            actv.setText(
+                if (current != null && current in items) {
+                    current
+                } else {
+                    items.firstOrNull().orEmpty()
+                },
+                false
+            )
+            actv.setOnItemClickListener { _, _, position, _ ->
+            onSelect(position)
+        }
         }
 
         /** اسم صوتٍ صالح حالي (أو null إن لم يكن اختيار اللسان صوتَ آخرَ). */
@@ -174,16 +240,29 @@ internal class LanguageConvertAdapter(
             val pitch = seekPitch.progress / 100f
             val rate = seekRate.progress / 100f
             val engineLabel = actvEngine.text?.toString().orEmpty()
-            val engine = rowEngines.firstOrNull { it.engineLabel == engineLabel }?.enginePackage
-            settings.setEnginePreferenceForLanguage(currentLanguageTag, engine, currentVoiceName(), rate, pitch, volume)
+            val engine = rowEngines.firstOrNull {
+                it.engineLabel == engineLabel
+            }?.enginePackage
+            settings.setEnginePreferenceForLanguage(
+                currentLanguageTag,
+                engine,
+                currentVoiceName(),
+                rate,
+                pitch,
+                volume
+            )
             tvSaved.text = context.getString(R.string.auto_convert_saved)
-            tvSaved.announceCompat(context.getString(R.string.auto_convert_saved))
+            tvSaved.announceCompat(
+            context.getString(R.string.auto_convert_saved)
+        )
             onRowSaved()
         }
 
         private fun playRow() {
             val engineLabel = actvEngine.text?.toString().orEmpty()
-            val engine = rowEngines.firstOrNull { it.engineLabel == engineLabel }?.enginePackage ?: return
+            val engine = rowEngines.firstOrNull {
+                it.engineLabel == engineLabel
+            }?.enginePackage ?: return
             val voiceName = currentVoiceName() ?: return
             val volume = seekVol.progress / 100f
             val pitch = seekPitch.progress / 100f
@@ -191,8 +270,13 @@ internal class LanguageConvertAdapter(
             previewCallback?.invoke(engine, voiceName, volume, pitch, rate)
         }
 
-        private fun volumeListener(label: TextView) = object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+        private fun volumeListener(label: TextView) =
+            object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(
+                seekBar: SeekBar,
+                progress: Int,
+                fromUser: Boolean
+            ) {
                 label.text = "$progress%"
                 seekBar.setSeekStateDescription(label.text)
             }
@@ -204,8 +288,13 @@ internal class LanguageConvertAdapter(
             }
         }
 
-        private fun rateLikeListener(label: TextView) = object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+        private fun rateLikeListener(label: TextView) =
+            object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(
+                seekBar: SeekBar,
+                progress: Int,
+                fromUser: Boolean
+            ) {
                 val v = progress / 100f
                 label.text = String.format(Locale.US, "%.1fx", v)
                 seekBar.setSeekStateDescription(label.text)

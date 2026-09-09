@@ -39,13 +39,18 @@ class TextProcessor(
     private val injectedDict: PronunciationDictionary? = null
 ) {
 
-    private val pronunciationDict = injectedDict ?: PronunciationDictionary(context)
+    private val pronunciationDict =
+        injectedDict ?: PronunciationDictionary(context)
 
-    /** هل نطق أسماء الإيموجي مفعّل؟ بلا حقنة Settings (الاختبارات) يُفترض مفعّل. */
+    /**
+     * هل نطق أسماء الإيموجي مفعّل؟ بلا حقنة Settings
+     * (الاختبارات) يُفترض مفعّل.
+     */
     private val emojiEnabled: Boolean
         get() = injectedSettings?.isEmojiPronunciationEnabled() ?: true
 
-    // خطوات التمهيد: تُنفَّذ قبل بوابة المسار السريع (تطبيع/تشكيل/إيموجي/قاموس).
+    // خطوات التمهيد: تُنفَّذ قبل بوابة المسار السريع
+    // (تطبيع/تشكيل/إيموجي/قاموس).
     // «إزالة الإيموجي» شرطية: تعمل فقط عند تعطيل نطقها (إلا تُعيد النص كما هو).
     private val preamble: List<TextProcessingStep> = listOf(
         IndicDigitsStep,
@@ -73,14 +78,19 @@ class TextProcessor(
     /**
      * معالجة نص كامل وتحويله لصيغة نطق طبيعية.
      * @param languageTag كود اللغة (مثلاً "ar"، "en"، "ar-EG")
-     *                    — المعالجة مخصصة للغة العربية فقط؛ اللغات الأخرى تُعاد كما هي.
+     *                    — المعالجة مخصصة للغة العربية فقط؛
+     *                      اللغات الأخرى تُعاد كما هي.
      */
-    fun process(text: String, languageTag: String = LanguageCode.AR.tag): String {
+    fun process(
+        text: String,
+        languageTag: String = LanguageCode.AR.tag
+    ): String {
         if (text.isBlank()) return text
 
         // نطق أسماء الإيموجي (بدل حذفها) قبل مسار العربية ليغطي الإنجليزية
         // واللغات الأخرى أيضاً — الناتج لا يُمرَّر لأي تحويل لاحق خارج العربية.
-        val expanded = if (emojiEnabled) expandEmojis(text, languageTag) else null
+        val expanded =
+            if (emojiEnabled) expandEmojis(text, languageTag) else null
 
         // المعالجة مخصصة للعربية فقط؛ الإنجليزية واللغات الأخرى تُعاد كما هي
         // بعد توسيع الإيموجي فقط (لا يجوز تحويل أرقام إنجليزية إلى كلمات عربية)
@@ -108,7 +118,8 @@ class TextProcessor(
      * المحفِّزات هي: أي حرف/رقم لاتيني (أرقام/فواصل/رموز/حروف رومانية وعملات
      * ورسميات مثل USD/SAR)، رموز العملة (€¥₹…)، أي رمز حسابي/عام، وعلامات عربية
      * خاصة (٪، ﷼) — فإذا خلا النص منها (عربي خالص بلا أرقام) نتخطى كل المراحل
-     * ونكتفي بالتنظيف، فيتسارع معالجة السنة/الرسائل/الإشعارات العادية بشكل كبير.
+     * ونكتفي بالتنظيف، فيتسارع معالجة السنة/الرسائل/
+     * الإشعارات العادية بشكل كبير.
      */
     private fun requiresRegexPipeline(text: String): Boolean {
         for (i in text.indices) {
@@ -144,7 +155,8 @@ class TextProcessor(
      */
     private fun expandEmojis(text: String, languageTag: String): String {
         val arabic = LanguageCode.isArabic(languageTag)
-        val fallback = if (arabic) EmojiNames.AR_FALLBACK else EmojiNames.EN_FALLBACK
+        val fallback = if (arabic) EmojiNames.AR_FALLBACK
+            else EmojiNames.EN_FALLBACK
         val base = EmojiNames.applyAsciiEmoticons(text, arabic)
         val sb = StringBuilder(base.length)
         var i = 0
@@ -163,7 +175,9 @@ class TextProcessor(
                         val next = base.codePointAt(nextIdx)
                         if (EmojiNames.isRegionalIndicator(next)) {
                             val code = EmojiNames.buildCountryCode(cp, next)
-                            sb.append(' ').append(EmojiNames.flagReadingName(code, arabic))
+                            sb.append(' ').append(
+                                EmojiNames.flagReadingName(code, arabic)
+                            )
                             i = nextIdx + Character.charCount(next)
                             continue
                         }
@@ -173,7 +187,8 @@ class TextProcessor(
                     i += chars
                 }
                 EmojiNames.isEmojiBlockCp(cp) -> {
-                    val name = if (arabic) EmojiNames.arName(cp) else EmojiNames.enName(cp)
+                    val name = if (arabic) EmojiNames.arName(cp)
+                        else EmojiNames.enName(cp)
                     sb.append(' ').append(name ?: fallback)
                     i += chars
                     // تجاوز بقية المجموعة: ألوان بشرة، مؤشرات أشكال، وعناصر
@@ -183,7 +198,8 @@ class TextProcessor(
                         val c2 = base.codePointAt(i)
                         val c2chars = Character.charCount(c2)
                         when {
-                            c2 in 0x1F3FB..0x1F3FF || c2 in 0xFE0E..0xFE0F -> i += c2chars
+                            c2 in 0x1F3FB..0x1F3FF ||
+                                c2 in 0xFE0E..0xFE0F -> i += c2chars
                             c2 == 0x200D -> {
                                 zwjSeen = true; i += c2chars
                             }
@@ -205,5 +221,6 @@ class TextProcessor(
 
     /** تحويل رقم لكلمات عربية (يدعم حتى التريليونات، والكسور العشرية) —
      *  يفوّض لمحرك الأعداد المشترك في خط المعالجة. */
-    fun numberToWords(number: Number): String = NumberWordsConverter.numberToWords(number)
+    fun numberToWords(number: Number): String =
+        NumberWordsConverter.numberToWords(number)
 }

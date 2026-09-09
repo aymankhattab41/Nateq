@@ -12,7 +12,8 @@ data class Segment(
 )
 
 /**
- * يقسم نصاً مختلط الكتابات (عربي/إنجليزي/غيرها) إلى مقاطع متجاورة حسب الـ Script:
+ * يقسم نصاً مختلط الكتابات (عربي/إنجليزي/غيرها) إلى مقاطع متجاورة
+ * حسب الـ Script:
  * المقاطع العربية تُنطق بالعربية، وسائر حروف الكتابة تُنسب (سقوطاً) إما للغة
  * الطلب نفسها إذا لم تكن عربية وإما للإنجليزية افتراضياً. المحايدات — مسافات/
  * أرقام/ترقيم/رموز — تلتحق بالمقطع المجاور ولا تُكسر عن سياقها، فالتجميع عبر
@@ -29,7 +30,8 @@ class LanguageSegmenter {
         val EN_FALLBACK: String get() = LanguageCode.EN.tag
 
         private val ARABIC_RANGES = arrayOf(
-            0x0600..0x06FF, // العربية الأساسية (شاملة التشكيل والأرقام العربية-الهندية)
+            0x0600..0x06FF, // العربية الأساسية
+            // (شاملة التشكيل والأرقام العربية-الهندية)
             0x0750..0x077F, // التذييل العربي
             0x0870..0x089F, // العربية الموسّعة-ب
             0x08A0..0x08FF, // العربية الموسّعة-أ
@@ -65,8 +67,9 @@ class LanguageSegmenter {
 
     /**
      * @param fallbackLanguage لغة السقوط القادمة من الطلب/الإعلان: العربية
-     *  «وغير المعروفة/الفارغة» سقوطُها لحروف الكتابات سائرٍ هي [EN_FALLBACK]؛ أي
-     *  طلبٍ آخر (fr/de/…) تُنسب له الحروف غير العربية مباشرة ليُنطق النص الأجنبي
+     *  «وغير المعروفة/الفارغة» سقوطُها لحروف الكتابات سائرٍ هي
+     *  [EN_FALLBACK]؛ أي طلبٍ آخر (fr/de/…) تُنسب له الحروف غير
+     *  العربية مباشرة ليُنطق النص الأجنبي
      *  بصوت لغته. والنصُّ المَحايد وحده (أرقام/رموز بلا حروف) يُنسب كلُّه للغة
      *  السقوط نفسها — فلا تُنطق «١٢٣» أو «123» ضمن طلبٍ عربي بصوتٍ إنجليزي.
      * @return مقاطع النص المتجاورة بلغاتها؛ النص الخالي يُرجع مقطعاً واحداً
@@ -76,7 +79,11 @@ class LanguageSegmenter {
         text: String,
         fallbackLanguage: String = LanguageCode.AR.tag
     ): List<Segment> {
-        return merge(text, scriptFallback(fallbackLanguage), neutralFallback(fallbackLanguage))
+        return merge(
+            text,
+            scriptFallback(fallbackLanguage),
+            neutralFallback(fallbackLanguage)
+        )
     }
 
     /** يبني المقاطع من الجولات عبر «مقطعٍ مفتوح» يمتد على إحداثيات النص الأصلي:
@@ -99,26 +106,39 @@ class LanguageSegmenter {
         for (run in runs) {
             when (run.kind) {
                 Kind.NEUTRAL -> {
-                    if (openLanguage == null && leadingStart == -1) leadingStart = run.start
+                    if (openLanguage == null && leadingStart == -1) {
+                        leadingStart = run.start
+                    }
                     // وإلا فهو بيني\ختامي: نطاق المقطع المفتوح يشمل إحداثياته.
                 }
                 else -> {
-                    val language = if (run.kind == Kind.ARABIC) LanguageCode.AR.tag else scriptFallback
+                    val language =
+                        if (run.kind == Kind.ARABIC) LanguageCode.AR.tag
+                        else scriptFallback
                     if (openLanguage == null) {
-                        openStart = if (leadingStart != -1) leadingStart else run.start
+                        openStart =
+                            if (leadingStart != -1) leadingStart else run.start
                         leadingStart = -1
                         openLanguage = language
                     } else if (openLanguage != language) {
-                        segments.add(Segment(text.substring(openStart, run.start), openLanguage))
+                        segments.add(
+                            Segment(
+                                text.substring(openStart, run.start),
+                                openLanguage
+                            )
+                        )
                         openStart = run.start
                         openLanguage = language
                     }
-                    // نفس اللغة: يمدّ النهاية إلى نهاية الجولة (المحايد بينهما داخلٌ).
+                    // نفس اللغة: يمدّ النهاية إلى نهاية الجولة
+                    // (المحايد بينهما داخلٌ).
                 }
             }
         }
         if (openLanguage != null) {
-            segments.add(Segment(text.substring(openStart, text.length), openLanguage))
+            segments.add(
+                Segment(text.substring(openStart, text.length), openLanguage)
+            )
         }
         if (segments.isEmpty()) return listOf(Segment(text, neutralFallback))
         return segments
@@ -146,8 +166,12 @@ class LanguageSegmenter {
     private fun kindOf(codePoint: Int): Kind {
         // المحايدات أولاً: المسافات والأرقام (بكل أنظمة العدّ) والفواصل لا
         // تنتمي لسكريبتٍ معين أياً كانت خانة المقاطع المجاورة.
-        if (Character.isWhitespace(codePoint) || Character.isDigit(codePoint)) return Kind.NEUTRAL
-        if (NEUTRAL_CATEGORIES.contains(Character.getType(codePoint))) return Kind.NEUTRAL
+        if (Character.isWhitespace(codePoint) || Character.isDigit(codePoint)) {
+            return Kind.NEUTRAL
+        }
+        if (NEUTRAL_CATEGORIES.contains(Character.getType(codePoint))) {
+            return Kind.NEUTRAL
+        }
         if (isArabic(codePoint)) return Kind.ARABIC
         if (Character.isLetter(codePoint)) return Kind.OTHER
         return Kind.NEUTRAL
@@ -172,7 +196,8 @@ class LanguageSegmenter {
     }
 
     /** لغة ما لا يحوي حروفاً إطلاقاً (أرقام/رموز/مسافات فقط): لغة الطلب نفسها
-     *  إن عُرفت — فالأرقام تُنطق بلسان طلبها ولو كان عربياً — وإلا [EN_FALLBACK]
+     *  إن عُرفت — فالأرقام تُنطق بلسان طلبها ولو كان عربياً —
+     *  وإلا [EN_FALLBACK]
      *  للطلب الغامض/الفارغ (التاريخي). */
     private fun neutralFallback(requestLanguage: String): String {
         val language = requestLanguage.takeWhile { it.isLetter() }

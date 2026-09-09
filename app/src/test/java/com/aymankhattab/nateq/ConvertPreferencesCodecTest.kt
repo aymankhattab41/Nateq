@@ -18,11 +18,16 @@ class ConvertPreferencesCodecTest {
 
     @Test
     fun normalizeStripsCountryAndVariant() {
-        assertEquals("ar", ConvertPreferencesCodec.normalizeLanguageTag("ar-EG"))
-        assertEquals("en", ConvertPreferencesCodec.normalizeLanguageTag("en-US"))
-        assertEquals("fr", ConvertPreferencesCodec.normalizeLanguageTag("fr-FR"))
-        assertEquals("en", ConvertPreferencesCodec.normalizeLanguageTag("en_US"))
-        assertEquals("zh", ConvertPreferencesCodec.normalizeLanguageTag("zh-Hans-CN"))
+        assertEquals("ar",
+            ConvertPreferencesCodec.normalizeLanguageTag("ar-EG"))
+        assertEquals("en",
+            ConvertPreferencesCodec.normalizeLanguageTag("en-US"))
+        assertEquals("fr",
+            ConvertPreferencesCodec.normalizeLanguageTag("fr-FR"))
+        assertEquals("en",
+            ConvertPreferencesCodec.normalizeLanguageTag("en_US"))
+        assertEquals("zh",
+            ConvertPreferencesCodec.normalizeLanguageTag("zh-Hans-CN"))
     }
 
     @Test
@@ -37,8 +42,10 @@ class ConvertPreferencesCodecTest {
     @Test
     fun normalizeLowercasesAndToleratesWhitespace() {
         assertEquals("ar", ConvertPreferencesCodec.normalizeLanguageTag("AR"))
-        assertEquals("en", ConvertPreferencesCodec.normalizeLanguageTag("ENG-US"))
-        assertEquals("fr", ConvertPreferencesCodec.normalizeLanguageTag("  FR-fr  "))
+        assertEquals("en",
+            ConvertPreferencesCodec.normalizeLanguageTag("ENG-US"))
+        assertEquals("fr",
+            ConvertPreferencesCodec.normalizeLanguageTag("  FR-fr  "))
     }
 
     @Test
@@ -52,7 +59,9 @@ class ConvertPreferencesCodecTest {
 
     @Test
     fun entryForSaveCoercesRangesAndBlanks() {
-        val e = ConvertPreferencesCodec.entryForSave("", "voice", 5.0f, -3.0f, 9.0f)
+        val e = ConvertPreferencesCodec.entryForSave(
+            "", "voice", 5.0f, -3.0f, 9.0f
+        )
         assertNull(e.engine)
         assertEquals("voice", e.voiceName)
         assertEquals(2.0f, e.rate, 0.001f)
@@ -63,7 +72,9 @@ class ConvertPreferencesCodecTest {
     @Test
     fun hasAdjustmentDetectsRealConfig() {
         assertFalse(LanguageSpeechPrefs().hasAdjustment)
-        assertTrue(LanguageSpeechPrefs(engine = "com.google.android.tts").hasAdjustment)
+        assertTrue(
+            LanguageSpeechPrefs(engine = "com.google.android.tts").hasAdjustment
+        )
         assertTrue(LanguageSpeechPrefs(voiceName = "v").hasAdjustment)
         assertTrue(LanguageSpeechPrefs(rate = 1.25f).hasAdjustment)
         assertTrue(LanguageSpeechPrefs(pitch = 0.9f).hasAdjustment)
@@ -74,7 +85,9 @@ class ConvertPreferencesCodecTest {
 
     @Test
     fun fromJsonParsesValidMap() {
-        val json = """{"ar":{"engine":"com.google.android.tts","voiceName":"ar-EG","rate":0.8,"pitch":1.0,"volume":0.9}}"""
+        val json =
+            """{"ar":{"engine":"com.google.android.tts",""" +
+            """"voiceName":"ar-EG","rate":0.8,"pitch":1.0,"volume":0.9}}"""
         val map = ConvertPreferencesCodec.fromJson(json)
         assertEquals(1, map.size)
         val ar = map["ar"]
@@ -108,20 +121,41 @@ class ConvertPreferencesCodecTest {
 
     @Test
     fun fromJsonRejectsMalformedAndBlank() {
-        assertEquals(emptyMap<String, LanguageSpeechPrefs>(), ConvertPreferencesCodec.fromJson(null))
-        assertEquals(emptyMap<String, LanguageSpeechPrefs>(), ConvertPreferencesCodec.fromJson(""))
-        assertEquals(emptyMap<String, LanguageSpeechPrefs>(), ConvertPreferencesCodec.fromJson("   "))
-        assertEquals(emptyMap<String, LanguageSpeechPrefs>(), ConvertPreferencesCodec.fromJson("{not json"))
-        assertEquals(emptyMap<String, LanguageSpeechPrefs>(), ConvertPreferencesCodec.fromJson("[]"))
+        assertEquals(
+            emptyMap<String, LanguageSpeechPrefs>(),
+            ConvertPreferencesCodec.fromJson(null)
+        )
+        assertEquals(
+            emptyMap<String, LanguageSpeechPrefs>(),
+            ConvertPreferencesCodec.fromJson("")
+        )
+        assertEquals(
+            emptyMap<String, LanguageSpeechPrefs>(),
+            ConvertPreferencesCodec.fromJson("   ")
+        )
+        assertEquals(
+            emptyMap<String, LanguageSpeechPrefs>(),
+            ConvertPreferencesCodec.fromJson("{not json")
+        )
+        assertEquals(
+            emptyMap<String, LanguageSpeechPrefs>(),
+            ConvertPreferencesCodec.fromJson("[]")
+        )
     }
 
     @Test
     fun toJsonRoundTrips() {
         val original = mapOf(
-            "ar" to LanguageSpeechPrefs("com.google.android.tts", "ar-EG", 0.75f, 1.1f, 0.9f),
-            "de" to LanguageSpeechPrefs("org.nobody.multitts", "de-female", 1.0f, 1.0f, 0.5f)
+            "ar" to LanguageSpeechPrefs(
+                "com.google.android.tts", "ar-EG", 0.75f, 1.1f, 0.9f
+            ),
+            "de" to LanguageSpeechPrefs(
+                "org.nobody.multitts", "de-female", 1.0f, 1.0f, 0.5f
+            )
         )
-        val restored = ConvertPreferencesCodec.fromJson(ConvertPreferencesCodec.toJson(original))
+        val restored = ConvertPreferencesCodec.fromJson(
+            ConvertPreferencesCodec.toJson(original)
+        )
         assertEquals(original, restored)
     }
 
@@ -132,12 +166,16 @@ class ConvertPreferencesCodecTest {
         val target = mutableMapOf<String, LanguageSpeechPrefs>()
         ConvertPreferencesCodec.mergeLegacySlot(
             target, null,
-            ConvertPreferencesCodec.entryForSave(null, "ar-EG", 0.8f, 1.0f, 1.0f),
+            ConvertPreferencesCodec.entryForSave(
+                null, "ar-EG", 0.8f, 1.0f, 1.0f
+            ),
             "ar"
         )
         ConvertPreferencesCodec.mergeLegacySlot(
             target, null,
-            ConvertPreferencesCodec.entryForSave("com.svox.pico", null, 1.0f, 1.0f, 0.6f),
+            ConvertPreferencesCodec.entryForSave(
+                "com.svox.pico", null, 1.0f, 1.0f, 0.6f
+            ),
             "en"
         )
         assertEquals(setOf("ar", "en"), target.keys)
@@ -150,7 +188,9 @@ class ConvertPreferencesCodecTest {
         val target = mutableMapOf<String, LanguageSpeechPrefs>()
         ConvertPreferencesCodec.mergeLegacySlot(
             target, "ENG",
-            ConvertPreferencesCodec.entryForSave("com.google.android.tts", null, 1.0f, 1.0f, 1.0f),
+            ConvertPreferencesCodec.entryForSave(
+                "com.google.android.tts", null, 1.0f, 1.0f, 1.0f
+            ),
             "en"
         )
         // "ENG" يُوحَّد إلى "en" فيكتب في مفتاح en نفسه وليس eng
@@ -163,11 +203,15 @@ class ConvertPreferencesCodecTest {
         val target = mutableMapOf<String, LanguageSpeechPrefs>()
         ConvertPreferencesCodec.mergeLegacySlot(
             target, "ar",
-            ConvertPreferencesCodec.entryForSave(null, null, 0.8f, 0.6f, 1.0f), "ar"
+            ConvertPreferencesCodec.entryForSave(
+                null, null, 0.8f, 0.6f, 1.0f
+            ), "ar"
         )
         ConvertPreferencesCodec.mergeLegacySlot(
             target, "fr",
-            ConvertPreferencesCodec.entryForSave(null, null, 1.0f, 1.0f, 1.0f), "fr"
+            ConvertPreferencesCodec.entryForSave(
+                null, null, 1.0f, 1.0f, 1.0f
+            ), "fr"
         )
         assertEquals(setOf("ar"), target.keys)
     }
@@ -175,11 +219,15 @@ class ConvertPreferencesCodecTest {
     @Test
     fun mergeLegacySlotLastWriteWins() {
         val target = mutableMapOf(
-            "ar" to LanguageSpeechPrefs("com.google.android.tts", "ar-EG", 1.0f, 1.0f, 1.0f)
+            "ar" to LanguageSpeechPrefs(
+                "com.google.android.tts", "ar-EG", 1.0f, 1.0f, 1.0f
+            )
         )
         ConvertPreferencesCodec.mergeLegacySlot(
             target, "ar-EG",
-            ConvertPreferencesCodec.entryForSave("com.svox.pico", "male", 1.2f, 1.0f, 0.8f),
+            ConvertPreferencesCodec.entryForSave(
+                "com.svox.pico", "male", 1.2f, 1.0f, 0.8f
+            ),
             "ar"
         )
         assertEquals("com.svox.pico", target["ar"]!!.engine)

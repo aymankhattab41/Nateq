@@ -32,9 +32,13 @@ import dagger.hilt.android.AndroidEntryPoint
 @AndroidEntryPoint
 class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
 
-    private val requestNotificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    private val requestNotificationPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
         if (granted) {
-            findViewById<View>(android.R.id.content).announceCompat(getString(R.string.permission_notifications_granted))
+            findViewById<View>(android.R.id.content).announceCompat(
+                getString(R.string.permission_notifications_granted)
+            )
         } else {
             showPermissionDeniedDialog(R.string.permission_notifications_denied)
         }
@@ -43,9 +47,11 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // أندرويد 15 يفرض edge-to-edge: نفعّله صراحة (أشرطة شفافة وأيقونات مناسبة).
+        // أندرويد 15 يفرض edge-to-edge: نفعّله صراحة
+        // (أشرطة شفافة وأيقونات مناسبة).
         // الوسائد (status bar/nav bar) تطبَّق يدوياً من الفصيل عبر
-        // ViewCompat.setOnApplyWindowInsetsListener على جذر القائمة القابلة للتمرير.
+        // ViewCompat.setOnApplyWindowInsetsListener على جذر القائمة
+        // القابلة للتمرير.
         enableEdgeToEdge()
 
         if (savedInstanceState == null) {
@@ -57,8 +63,10 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
         // طلب الأذونات عند أول تشغيل
         checkAndRequestPermissions()
 
-        // إعادة تشغيل خدمة إعلانات الوقت/البطارية إن كان أي منها مفعّلاً بعد إنجاز
-        // نظام الأندرويد (العمليات في الخلفية قد توقفت) دون أن يفتح المستخدم أي إعداد.
+        // إعادة تشغيل خدمة إعلانات الوقت/البطارية إن كان أي منها مفعّلاً
+        // بعد إنجاز
+        // نظام الأندرويد (العمليات في الخلفية قد توقفت) دون أن يفتح
+        // المستخدم أي إعداد.
         if (savedInstanceState == null) {
             val started = runCatching {
                 AnnouncementSchedulerService.startIfNeeded(this)
@@ -67,7 +75,9 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
             // خدمة الإعلانات مطلوبة كان الوقت هو الوحيد المفعل (بند 16.2)
             // فنعيد جدولة منبه إعلان الوقت مباشرةً دون تشغيل خدمة أمامية.
             if (!started) {
-                runCatching { AnnouncementSchedulerService.ensureTimeAlarm(this) }
+                runCatching {
+                    AnnouncementSchedulerService.ensureTimeAlarm(this)
+                }
             }
         }
     }
@@ -75,8 +85,14 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
     private fun checkAndRequestPermissions() {
         // 1. إذن الإشعارات (أندرويد 13+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                requestNotificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            if (ContextCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.POST_NOTIFICATIONS
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                requestNotificationPermission.launch(
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                )
                 return
             }
         }
@@ -95,9 +111,12 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
             .setTitle(R.string.permission_denied_title)
             .setMessage(messageRes)
             .setPositiveButton(R.string.permission_open_settings) { _, _ ->
-                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                    data = android.net.Uri.fromParts("package", packageName, null)
-                }
+                val intent =
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = android.net.Uri.fromParts(
+                            "package", packageName, null
+                        )
+                    }
                 startActivity(intent)
             }
             .setNegativeButton(android.R.string.cancel, null)

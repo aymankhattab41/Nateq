@@ -45,7 +45,8 @@ object NateqJson {
     }
 
     /** `Map<String, valueClass>` ككائن Type آمن مع R8 (لا TypeToken). */
-    fun mapStringOf(valueClass: Class<*>): Type = GsonTypes.mapStringOf(valueClass)
+    fun mapStringOf(valueClass: Class<*>): Type =
+        GsonTypes.mapStringOf(valueClass)
 
     // ===== شجرة JSON (حلّت محل org.json) =====
 
@@ -63,19 +64,22 @@ object NateqJson {
     fun parseObject(json: String?): JsonObject? =
         parseElement(json)?.takeIf { it.isJsonObject }?.asJsonObject
 
-    /** تجزئة خريطة نصية (كل القيم نصوص فقط). نص ليس كائناً/قيمة غير نصية ← null. */
+    /** تجزئة خريطة نصية (كل القيم نصوص فقط). نص ليس
+     *  كائناً/قيمة غير نصية ← null. */
     fun parseStringMap(json: String?): Map<String, String>? {
         val root = parseObject(json) ?: return null
         val out = LinkedHashMap<String, String>()
         for ((key, value) in root.entrySet()) {
-            if (!value.isJsonPrimitive || !value.asJsonPrimitive.isString) return null
+            if (!value.isJsonPrimitive ||
+                !value.asJsonPrimitive.isString) return null
             out[key] = value.asString
         }
         return out
     }
 }
 
-// ===== مساعدات قراءة دفاعية بنفس دلالات org.json (optString/optJSONObject/…) =====
+// ===== مساعدات قراءة دفاعية بنفس دلالات org.json ====
+// (optString/optJSONObject/…)
 
 /** العُنصر كائناً ثمّ optObject، وإلا null — محاكاة `optJSONObject`. */
 fun JsonElement.optObject(): JsonObject? =
@@ -119,10 +123,13 @@ fun JsonElement.optDouble(default: Double = 0.0): Double {
     }
 }
 
-/** صحيحة آمنة بمحاكاة `optInt` (طويلة مقلوبة فعلياً ثم قصّ — كما في org.json). */
-fun JsonElement.optInt(default: Int = 0): Int = optLong(default.toLong()).toInt()
+/** صحيحة آمنة بمحاكاة `optInt` (طويلة مقلوبة فعلياً
+ *  ثم قصّ — كما في org.json). */
+fun JsonElement.optInt(default: Int = 0): Int =
+    optLong(default.toLong()).toInt()
 
-/** منطقية آمنة (منطقي، أو نص true/false، أو رقم غير صفري) — محاكاة `optBoolean`. */
+/** منطقية آمنة (منطقي، أو نص true/false، أو رقم غير
+ *  صفري) — محاكاة `optBoolean`. */
 fun JsonElement.optBoolean(default: Boolean = false): Boolean {
     if (!isJsonPrimitive) return default
     val p = asJsonPrimitive
@@ -144,7 +151,8 @@ fun JsonObject.optMember(name: String): JsonElement? =
 fun JsonObject.optString(name: String, default: String = ""): String =
     optMember(name)?.optString(default) ?: default
 
-fun JsonObject.optObject(name: String): JsonObject? = optMember(name)?.optObject()
+fun JsonObject.optObject(name: String): JsonObject? =
+    optMember(name)?.optObject()
 
 fun JsonObject.optArray(name: String): JsonArray? = optMember(name)?.optArray()
 

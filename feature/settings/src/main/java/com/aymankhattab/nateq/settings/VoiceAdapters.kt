@@ -37,14 +37,22 @@ internal class CategoryVoiceAdapter(
 
     inner class CatVH(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val tvCategory: TextView = itemView.findViewById(R.id.tv_category_name)
-        val tvCategoryDescription: TextView = itemView.findViewById(R.id.tv_category_description)
-        val spinnerVoice: Spinner = itemView.findViewById(R.id.spinner_category_voice)
-        val seekRate: SeekBar = itemView.findViewById(R.id.seek_category_speech_rate)
-        val tvRateValue: TextView = itemView.findViewById(R.id.tv_category_speech_rate_value)
-        val seekPitch: SeekBar = itemView.findViewById(R.id.seek_category_pitch)
-        val tvPitchValue: TextView = itemView.findViewById(R.id.tv_category_pitch_value)
-        val seekVolume: SeekBar = itemView.findViewById(R.id.seek_category_volume)
-        val tvVolumeValue: TextView = itemView.findViewById(R.id.tv_category_volume_value)
+        val tvCategoryDescription: TextView =
+            itemView.findViewById(R.id.tv_category_description)
+        val spinnerVoice: Spinner =
+            itemView.findViewById(R.id.spinner_category_voice)
+        val seekRate: SeekBar =
+            itemView.findViewById(R.id.seek_category_speech_rate)
+        val tvRateValue: TextView =
+            itemView.findViewById(R.id.tv_category_speech_rate_value)
+        val seekPitch: SeekBar =
+            itemView.findViewById(R.id.seek_category_pitch)
+        val tvPitchValue: TextView =
+            itemView.findViewById(R.id.tv_category_pitch_value)
+        val seekVolume: SeekBar =
+            itemView.findViewById(R.id.seek_category_volume)
+        val tvVolumeValue: TextView =
+            itemView.findViewById(R.id.tv_category_volume_value)
         val btnTest: View = itemView.findViewById(R.id.btn_test_category_voice)
     }
 
@@ -57,10 +65,14 @@ internal class CategoryVoiceAdapter(
     override fun onBindViewHolder(holder: CatVH, position: Int) {
         val category = categoryList[position]
         val catLabel = when (category) {
-            SettingsRepository.VOICE_CATEGORY_TIME -> context.getString(R.string.voice_category_time)
-            SettingsRepository.VOICE_CATEGORY_NUMBERS -> context.getString(R.string.voice_category_numbers)
-            SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS -> context.getString(R.string.voice_category_notifications)
-            SettingsRepository.VOICE_CATEGORY_EMOJI -> context.getString(R.string.voice_category_emoji)
+            SettingsRepository.VOICE_CATEGORY_TIME ->
+                context.getString(R.string.voice_category_time)
+            SettingsRepository.VOICE_CATEGORY_NUMBERS ->
+                context.getString(R.string.voice_category_numbers)
+            SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS ->
+                context.getString(R.string.voice_category_notifications)
+            SettingsRepository.VOICE_CATEGORY_EMOJI ->
+                context.getString(R.string.voice_category_emoji)
             else -> context.getString(R.string.voice_category_default)
         }
         holder.tvCategory.text = catLabel
@@ -70,87 +82,141 @@ internal class CategoryVoiceAdapter(
             SettingsRepository.VOICE_CATEGORY_NUMBERS ->
                 context.getString(R.string.voice_category_numbers_summary)
             SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS ->
-                context.getString(R.string.voice_category_notifications_summary)
+                context.getString(
+                    R.string.voice_category_notifications_summary
+                )
             SettingsRepository.VOICE_CATEGORY_EMOJI ->
                 context.getString(R.string.voice_category_emoji_summary)
             else -> context.getString(R.string.voice_category_default_summary)
         }
 
         // جميع أصوات ناطق (العربية والإنجليزية) في قائمة كل فئة
-        holder.spinnerVoice.adapter = simpleAdapter(context, voices.map { it.displayName })
+        holder.spinnerVoice.adapter =
+            simpleAdapter(context, voices.map { it.displayName })
 
-        val saved = runCatching { settings.getPreferredVoiceIdForCategory(category) }.getOrNull()
+        val saved =
+            runCatching { settings.getPreferredVoiceIdForCategory(category) }
+                .getOrNull()
         if (saved != null) {
             val idx = voices.indexOfFirst { it.name == saved }
             if (idx >= 0) holder.spinnerVoice.setSelection(idx)
         }
 
-        holder.spinnerVoice.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+        holder.spinnerVoice.onItemSelectedListener =
+            object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: android.widget.AdapterView<*>?,
                 view: View?,
                 pos: Int,
                 id: Long
             ) {
-                runCatching { settings.setPreferredVoiceIdForCategory(category, voices[pos].name) }
+                runCatching {
+                    settings.setPreferredVoiceIdForCategory(
+                        category, voices[pos].name
+                    )
+                }
             }
 
-            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+            override fun onNothingSelected(
+                parent: android.widget.AdapterView<*>?
+            ) {}
         }
 
-        val rate = runCatching { settings.getSpeechRateForCategory(category) }.getOrDefault(1.0f)
+        val rate = runCatching { settings.getSpeechRateForCategory(category) }
+            .getOrDefault(1.0f)
         holder.tvRateValue.text = String.format(Locale.US, "%.1fx", rate)
         holder.seekRate.progress = (rate * 100).toInt().coerceIn(0, 200)
 
-        val pitch = runCatching { settings.getPitchForCategory(category) }.getOrDefault(1.0f)
+        val pitch = runCatching { settings.getPitchForCategory(category) }
+            .getOrDefault(1.0f)
         holder.tvPitchValue.text = String.format(Locale.US, "%.1fx", pitch)
         holder.seekPitch.progress = (pitch * 100).toInt().coerceIn(0, 200)
 
-        val volume = runCatching { settings.getVolumeForCategory(category) }.getOrDefault(1.0f)
+        val volume = runCatching { settings.getVolumeForCategory(category) }
+            .getOrDefault(1.0f)
         holder.tvVolumeValue.text = "${(volume * 100).toInt()}%"
         holder.seekVolume.progress = (volume * 100).toInt().coerceIn(0, 100)
 
-        holder.seekRate.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+        holder.seekRate.setOnSeekBarChangeListener(
+            object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(
+                seekBar: SeekBar,
+                progress: Int,
+                fromUser: Boolean
+            ) {
                 val value = progress / 100f
-                holder.tvRateValue.text = String.format(Locale.US, "%.1fx", value)
-                holder.seekRate.setSeekStateDescription(holder.tvRateValue.text)
+                holder.tvRateValue.text =
+                    String.format(Locale.US, "%.1fx", value)
+                holder.seekRate.setSeekStateDescription(
+                    holder.tvRateValue.text
+                )
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {
-                runCatching { settings.setSpeechRateForCategory(category, seekBar.progress / 100f) }
+                runCatching {
+                    settings.setSpeechRateForCategory(
+                        category, seekBar.progress / 100f
+                    )
+                }
                 holder.seekRate.announceCompat(
-                    String.format(Locale.US, "%.1fx", seekBar.progress / 100f)
+                    String.format(
+                        Locale.US, "%.1fx", seekBar.progress / 100f
+                    )
                 )
             }
         })
 
-        holder.seekPitch.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+        holder.seekPitch.setOnSeekBarChangeListener(
+            object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(
+                seekBar: SeekBar,
+                progress: Int,
+                fromUser: Boolean
+            ) {
                 val value = progress / 100f
-                holder.tvPitchValue.text = String.format(Locale.US, "%.1fx", value)
-                holder.seekPitch.setSeekStateDescription(holder.tvPitchValue.text)
+                holder.tvPitchValue.text =
+                    String.format(Locale.US, "%.1fx", value)
+                holder.seekPitch.setSeekStateDescription(
+                    holder.tvPitchValue.text
+                )
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {
-                runCatching { settings.setPitchForCategory(category, seekBar.progress / 100f) }
+                runCatching {
+                    settings.setPitchForCategory(
+                        category, seekBar.progress / 100f
+                    )
+                }
                 holder.seekPitch.announceCompat(
-                    String.format(Locale.US, "%.1fx", seekBar.progress / 100f)
+                    String.format(
+                        Locale.US, "%.1fx", seekBar.progress / 100f
+                    )
                 )
             }
         })
 
-        holder.seekVolume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+        holder.seekVolume.setOnSeekBarChangeListener(
+            object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(
+                seekBar: SeekBar,
+                progress: Int,
+                fromUser: Boolean
+            ) {
                 holder.tvVolumeValue.text = "$progress%"
-                holder.seekVolume.setSeekStateDescription(holder.tvVolumeValue.text)
+                holder.seekVolume.setSeekStateDescription(
+                    holder.tvVolumeValue.text
+                )
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {
-                runCatching { settings.setVolumeForCategory(category, seekBar.progress / 100f) }
+                runCatching {
+                    settings.setVolumeForCategory(
+                        category, seekBar.progress / 100f
+                    )
+                }
                 holder.seekVolume.announceCompat("${seekBar.progress}%")
             }
         })
@@ -159,15 +225,20 @@ internal class CategoryVoiceAdapter(
             val voice = voices[holder.spinnerVoice.selectedItemPosition]
             val isArabic = !LanguageCode.isEnglish(voice.languageTag)
             val text = when {
-                !isArabic && category == SettingsRepository.VOICE_CATEGORY_TIME ->
+                !isArabic && category ==
+                    SettingsRepository.VOICE_CATEGORY_TIME ->
                     context.getString(R.string.sample_text_time_en)
-                !isArabic && category == SettingsRepository.VOICE_CATEGORY_NUMBERS ->
+                !isArabic && category ==
+                    SettingsRepository.VOICE_CATEGORY_NUMBERS ->
                     context.getString(R.string.sample_text_numbers_en)
-                !isArabic && category == SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS ->
+                !isArabic && category ==
+                    SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS ->
                     context.getString(R.string.sample_text_notifications_en)
-                !isArabic && category == SettingsRepository.VOICE_CATEGORY_EMOJI ->
+                !isArabic && category ==
+                    SettingsRepository.VOICE_CATEGORY_EMOJI ->
                     context.getString(R.string.sample_text_emoji_en)
-                !isArabic -> context.getString(R.string.sample_text_default_en)
+                !isArabic ->
+                    context.getString(R.string.sample_text_default_en)
                 category == SettingsRepository.VOICE_CATEGORY_TIME ->
                     context.getString(R.string.sample_text_time_ar)
                 category == SettingsRepository.VOICE_CATEGORY_NUMBERS ->
@@ -212,7 +283,8 @@ internal class PronunciationDictAdapter(
         // وصف مدمج لعقدة الصف الواحدة (الأطفال معطَّلون في XML)
         holder.itemView.contentDescription = "${entry.first}. ${entry.second}"
         // النقر (نقرتان من TalkBack) أو الضغطة المطولة: تعديل/حذف الإدخال —
-        // النقر الجهازي مكافئ لقائمة الأدوات فلا يضيع الإجراء على مستخدمي القارئ.
+        // النقر الجهازي مكافئ لقائمة الأدوات، فلا يضيع الإجراء على
+        // مستخدمي القارئ.
         holder.itemView.setOnClickListener { onRowClick(entry) }
         holder.itemView.setOnLongClickListener {
             onRowClick(entry)

@@ -91,15 +91,18 @@ object LocaleUtils {
     }
 
     private val OTP_KEYWORD = Regex(
-        "رمز التحقق|رمز التفعيل|رمز التأكيد|كود التحقق|كود التفعيل|كود التأكيد|" +
-            "رمز الأمان|كود الأمان|الرقم السري|الرمز السري|كلمة المرور|كلمة السر|" +
+        "رمز التحقق|رمز التفعيل|رمز التأكيد|كود التحقق|" +
+            "كود التفعيل|كود التأكيد|رمز الأمان|كود الأمان|" +
+            "الرقم السري|الرمز السري|كلمة المرور|كلمة السر|" +
             "رقم التحقق|رقم التفعيل|otp|one[ -]?time password|" +
-            "verification code|activation code|confirmation code|security code|" +
+            "verification code|activation code|" +
+            "confirmation code|security code|" +
             "passcode|تأكيد الدخول|كود الدخول",
         RegexOption.IGNORE_CASE
     )
 
-    /** كود 4-8 خانات قد تحوي فاصلَ - أو مسافة بين خاناتها (مثل 123-456 أو 1234 5678). */
+    /** كود 4-8 خانات قد تحوي فاصلَ - أو مسافة بين خاناتها
+     *  (مثل 123-456 أو 1234 5678). */
     private val OTP_CODE = Regex("(?<![0-9])[0-9](?:[- ]?[0-9]){3,7}(?![0-9])")
 
     /** جلب سلسلة مورد بلغة نطق محددة (وليست لغة واجهة التطبيق):
@@ -108,12 +111,18 @@ object LocaleUtils {
      * بالعربية أو الإنجليزية. الجلب يجبر اللغة المطلوبة صراحةً عبر
      * Context مستقل فلا يؤثر تبديل لغة الواجهة على سلاسل النطق.
      * @return قيمة المورد باللغة المطلوبة. */
-    fun stringForSpeech(context: Context, languageTag: String, arabicRes: Int, englishRes: Int): String {
+    fun stringForSpeech(
+        context: Context,
+        languageTag: String,
+        arabicRes: Int,
+        englishRes: Int
+    ): String {
         if (LanguageCode.isArabic(languageTag)) {
             val config = Configuration(context.resources.configuration).apply {
                 setLocale(Locale.forLanguageTag(LanguageCode.AR.tag))
             }
-            return context.createConfigurationContext(config).getString(arabicRes)
+            return context.createConfigurationContext(config)
+                .getString(arabicRes)
         }
         val config = Configuration(context.resources.configuration).apply {
             setLocale(Locale.forLanguageTag(LanguageCode.EN.tag))

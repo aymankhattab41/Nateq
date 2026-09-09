@@ -12,7 +12,8 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
-/** ضابط قسم «قراءة الإشعارات»: المفتاح + فتح إعدادات صلاحية النظام + اختيار التطبيقات. */
+/** ضابط قسم «قراءة الإشعارات»: المفتاح + فتح إعدادات صلاحية النظام
+ *  + اختيار التطبيقات. */
 internal class NotificationReadingController(
     private val fragment: VoiceSelectionFragment,
     private val settings: SettingsRepository,
@@ -23,20 +24,31 @@ internal class NotificationReadingController(
     private lateinit var llNotificationListenerSettings: View
 
     fun setup(view: View) {
-        switchNotificationReading = view.findViewById(R.id.switch_notification_reading)
-        llNotificationListenerSettings = view.findViewById(R.id.ll_notification_listener_settings)
+        switchNotificationReading =
+            view.findViewById(R.id.switch_notification_reading)
+        llNotificationListenerSettings =
+            view.findViewById(R.id.ll_notification_listener_settings)
 
         // المفتاح الرئيسي
         switchNotificationReading.isChecked =
-            runCatching { settings.isNotificationReadingEnabled() }.getOrDefault(false)
+            runCatching { settings.isNotificationReadingEnabled() }
+                .getOrDefault(false)
         switchNotificationReading.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setNotificationReadingEnabled(checked) }
-            if (checked) AnnouncementSchedulerService.requestStart(fragment.requireContext())
-            else AnnouncementSchedulerService.syncIfRunning(fragment.requireContext())
+            if (checked) {
+                AnnouncementSchedulerService.requestStart(
+                    fragment.requireContext()
+                )
+            } else {
+                AnnouncementSchedulerService.syncIfRunning(
+                    fragment.requireContext()
+                )
+            }
             onStatusChanged()
             fragment.view?.announceCompat(
                 fragment.getString(
-                    if (checked) R.string.announcement_turned_on else R.string.announcement_turned_off
+                    if (checked) R.string.announcement_turned_on
+                    else R.string.announcement_turned_off
                 )
             )
         }
@@ -44,7 +56,9 @@ internal class NotificationReadingController(
         // فتح إعدادات إذن الوصول للإشعارات من النظام
         llNotificationListenerSettings.setOnClickListener {
             val granted = runCatching {
-                NateqNotificationListener.isPermissionGranted(fragment.requireContext())
+                NateqNotificationListener.isPermissionGranted(
+                    fragment.requireContext()
+                )
             }.getOrDefault(false)
             if (granted) {
                 Toast.makeText(
@@ -53,7 +67,9 @@ internal class NotificationReadingController(
                     Toast.LENGTH_SHORT
                 ).show()
                 fragment.view?.announceCompat(
-                    fragment.getString(R.string.notification_reading_enabled_summary)
+                    fragment.getString(
+                        R.string.notification_reading_enabled_summary
+                    )
                 )
             } else {
                 try {
@@ -67,7 +83,9 @@ internal class NotificationReadingController(
                         Toast.LENGTH_LONG
                     ).show()
                     fragment.view?.announceCompat(
-                        fragment.getString(R.string.notification_permission_needed)
+                        fragment.getString(
+                            R.string.notification_permission_needed
+                        )
                     )
                 }
             }
@@ -83,13 +101,18 @@ internal class NotificationReadingController(
         val current = runCatching { settings.getNotificationAppsSelection() }
             .getOrDefault(SettingsRepository.DEFAULT_NOTIFICATION_APPS)
         val options = listOf(
-            fragment.getString(R.string.notification_apps_all) to SettingsRepository.NOTIF_READ_ALL,
+            fragment.getString(R.string.notification_apps_all) to
+                SettingsRepository.NOTIF_READ_ALL,
             fragment.getString(R.string.app_whatsapp) to "com.whatsapp",
-            fragment.getString(R.string.app_whatsapp_business) to "com.whatsapp.w4b",
-            fragment.getString(R.string.app_telegram) to "org.telegram.messenger",
-            fragment.getString(R.string.app_telegram_web) to "org.telegram.messenger.web",
+            fragment.getString(R.string.app_whatsapp_business) to
+                "com.whatsapp.w4b",
+            fragment.getString(R.string.app_telegram) to
+                "org.telegram.messenger",
+            fragment.getString(R.string.app_telegram_web) to
+                "org.telegram.messenger.web",
             fragment.getString(R.string.app_messenger) to "com.facebook.orca",
-            fragment.getString(R.string.app_instagram) to "com.instagram.android"
+            fragment.getString(R.string.app_instagram) to
+                "com.instagram.android"
         )
         val checked = BooleanArray(options.size) { i ->
             val pkg = options[i].second
@@ -121,7 +144,9 @@ internal class NotificationReadingController(
                     R.string.notification_apps_saved,
                     Toast.LENGTH_SHORT
                 ).show()
-                fragment.view?.announceCompat(fragment.getString(R.string.notification_apps_saved))
+                fragment.view?.announceCompat(
+                    fragment.getString(R.string.notification_apps_saved)
+                )
                 onStatusChanged()
             }
             .setNegativeButton(R.string.cancel, null)

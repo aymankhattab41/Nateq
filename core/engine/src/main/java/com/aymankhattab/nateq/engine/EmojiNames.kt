@@ -785,7 +785,10 @@ object EmojiNames {
         cp in 0x1F300..0x1FAFF || cp in 0x2600..0x27BF ||
         cp in 0x2B00..0x2BFF || cp in 0x1F000..0x1F1FF
 
-    /** اسم نطق العلم كاملاً («علم السعودية»/«flag of Saudi Arabia») مع تراجعٍ عام. */
+    /**
+     * اسم نطق العلم كاملاً («علم السعودية»/«flag of Saudi Arabia»)
+     * مع تراجعٍ عام.
+     */
     fun flagReadingName(code: String, arabic: Boolean): String {
         val country = flagName(code, arabic)
         return if (country != null) {
@@ -899,6 +902,7 @@ object EmojiNames {
     private fun emojiMap(vararg pairs: Pair<Int, String>): Map<Int, String> =
         pairs.toMap()
 
-    private fun countryMap(vararg pairs: Pair<String, String>): Map<String, String> =
-        pairs.toMap()
+    private fun countryMap(
+        vararg pairs: Pair<String, String>
+    ): Map<String, String> = pairs.toMap()
 }

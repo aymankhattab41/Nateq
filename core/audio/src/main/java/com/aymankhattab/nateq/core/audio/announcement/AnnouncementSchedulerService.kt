@@ -48,15 +48,19 @@ class AnnouncementSchedulerService : Service() {
         private const val PREFS_NAME = "nateq_announce_svc"
         private const val KEY_USER_STOPPED = "stopped_by_user"
 
-        private const val ACTION_START = "com.aymankhattab.nateq.action.ANNOUNCE_START"
+        private const val ACTION_START =
+            "com.aymankhattab.nateq.action.ANNOUNCE_START"
         private const val ACTION_REQUEST_START =
             "com.aymankhattab.nateq.action.ANNOUNCE_REQUEST_START"
-        private const val ACTION_ANNOUNCE_NOW = "com.aymankhattab.nateq.action.ANNOUNCE_NOW"
-        private const val ACTION_STOP = "com.aymankhattab.nateq.action.ANNOUNCE_STOP"
+        private const val ACTION_ANNOUNCE_NOW =
+            "com.aymankhattab.nateq.action.ANNOUNCE_NOW"
+        private const val ACTION_STOP =
+            "com.aymankhattab.nateq.action.ANNOUNCE_STOP"
         private const val ACTION_TEMPORARY_START =
             "com.aymankhattab.nateq.action.ANNOUNCE_TEMPORARY_START"
 
-        /** مدة النافذة العابرة: تغطي نطق الوقت القصير وأي بداية بطيئة للمحرك. */
+        /** مدة النافذة العابرة: تغطي نطق الوقت القصير
+         *  وأي بداية بطيئة للمحرك. */
         private const val TEMPORARY_LIFETIME_MS = 30_000L
 
         // هل الخدمة الأمامية قائمة الآن؟ يستخدمها AnnouncementSpeaker ليقرر إن
@@ -83,7 +87,8 @@ class AnnouncementSchedulerService : Service() {
                 startSafely(context, ACTION_REQUEST_START)
             } else if (settings?.isTimeAnnouncementEnabled() == true) {
                 try {
-                    TimeAnnouncementManager.shared(context.applicationContext).start()
+                    TimeAnnouncementManager.shared(context.applicationContext)
+                    .start()
                 } catch (t: Throwable) {
                     Log.w(TAG, "direct time schedule failed", t)
                 }
@@ -97,7 +102,8 @@ class AnnouncementSchedulerService : Service() {
         @JvmStatic
         fun startIfNeeded(context: Context): Boolean {
             if (wasUserStopped(context)) return false
-            // قراءة لحظية (في اقلاع/فتح واجهة قد لا يكون Hilt مهيأ بعد الإقلاع):
+            // قراءة لحظية (في اقلاع/فتح واجهة قد لا يكون Hilt
+            // مهيأ بعد الإقلاع):
             // تُبنى مرجع خفيف للتحقق فقط ولا يُحفظ إلا داخل المدير عند حاجة.
             val settings = try {
                 SettingsRepository(context)
@@ -111,7 +117,9 @@ class AnnouncementSchedulerService : Service() {
 
         /** هل الإعلانات الحالية تستوجب بقاء خدمة أمامية؟ («null» أو فشل قراءة
          *  يُرجع true — نبقي الخدمة احتياطاً ولا نخاطر بفقد إعلان). */
-        private fun needsForegroundService(settings: SettingsRepository?): Boolean {
+        private fun needsForegroundService(
+            settings: SettingsRepository?
+        ): Boolean {
             if (settings == null) return true
             return settings.isBatteryAnnouncementEnabled() ||
                 settings.isCallerAnnouncementEnabled() ||
@@ -133,7 +141,12 @@ class AnnouncementSchedulerService : Service() {
             } ?: return
             if (!needsForegroundService(settings)) {
                 try {
-                    context.stopService(Intent(context, AnnouncementSchedulerService::class.java))
+                    context.stopService(
+                        Intent(
+                            context,
+                            AnnouncementSchedulerService::class.java
+                        )
+                    )
                 } catch (t: Throwable) {
                     Log.w(TAG, "sync stop failed", t)
                 }
@@ -177,13 +190,19 @@ class AnnouncementSchedulerService : Service() {
             }
             startSafely(
                 context,
-                if (needsForegroundService(settings)) ACTION_START else ACTION_TEMPORARY_START
+                if (needsForegroundService(settings)) {
+                    ACTION_START
+                } else {
+                    ACTION_TEMPORARY_START
+                }
             )
         }
 
         private fun startSafely(context: Context, action: String) {
             try {
-                val intent = Intent(context, AnnouncementSchedulerService::class.java)
+                val intent = Intent(
+                    context, AnnouncementSchedulerService::class.java
+                )
                     .setAction(action)
                 ContextCompat.startForegroundService(context, intent)
             } catch (t: Throwable) {
@@ -206,7 +225,8 @@ class AnnouncementSchedulerService : Service() {
         }
     }
 
-    /** مصدر الإعدادات المحقون — يصبح الكائن الوحيد المشترك عبر عملية الواجهة. */
+    /** مصدر الإعدادات المحقون — يصبح الكائن الوحيد المشترك
+     *  عبر عملية الواجهة. */
     @Inject
     lateinit var settingsRepository: SettingsRepository
 
@@ -236,7 +256,11 @@ class AnnouncementSchedulerService : Service() {
         // نوع الطلب: «START» وSTICKY يزامنوان، و«العابر» لا يزامن (بند 16.2).
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int
+    ): Int {
         // أي أمر جديد يُبطل مؤقت إيقاف النافذة العابرة (قد يصبح فترة دائمة).
         mainHandler.removeCallbacksAndMessages(null)
         when (intent?.action) {
@@ -283,7 +307,8 @@ class AnnouncementSchedulerService : Service() {
                 }
             }
         }
-        // إعادة إنشاء الخدمة إن قتلها النظام (STICKY)، لتعود الجدولة والإعلانات.
+        // إعادة إنشاء الخدمة إن قتلها النظام (STICKY)،
+        // لتعود الجدولة والإعلانات.
         return START_STICKY
     }
 
@@ -319,7 +344,9 @@ class AnnouncementSchedulerService : Service() {
                     addAction(Intent.ACTION_POWER_DISCONNECTED)
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                    registerReceiver(
+                        receiver, filter, Context.RECEIVER_NOT_EXPORTED
+                    )
                 } else {
                     registerReceiver(receiver, filter)
                 }
@@ -421,16 +448,20 @@ class AnnouncementSchedulerService : Service() {
                 getString(R.string.announce_service_channel_name),
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = getString(R.string.announce_service_channel_description)
+                description =
+                    getString(R.string.announce_service_channel_description)
             }
-            getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
+            getSystemService(NotificationManager::class.java)
+                ?.createNotificationChannel(channel)
         }
     }
 
     private fun buildNotification(): Notification {
-        // إشعار الخدمة يفتح شاشة إعدادات :app. لا نعتمد على مرجع الطبقة compile-time
-        // (core:audio لا يرى :app) فنستدعيها باسمها القياسي للصف؛ أداء مطابق تماماً
-        // لِـ Intent(this, SettingsActivity::class.java) ويحافظ على المكوّن المُصدَّر.
+        // إشعار الخدمة يفتح شاشة إعدادات :app. لا نعتمد على
+        // مرجع الطبقة compile-time (core:audio لا يرى :app)
+        // فنستدعيها باسمها القياسي للصف؛ أداء مطابق تماماً
+        // لِـ Intent(this, SettingsActivity::class.java)
+        // ويحافظ على المكوّن المُصدَّر.
         val openSettings = PendingIntent.getActivity(
             this,
             0,
@@ -443,23 +474,33 @@ class AnnouncementSchedulerService : Service() {
         val announceNow = PendingIntent.getService(
             this,
             0,
-            Intent(this, AnnouncementSchedulerService::class.java).setAction(ACTION_ANNOUNCE_NOW),
+            Intent(
+                    this, AnnouncementSchedulerService::class.java
+                ).setAction(ACTION_ANNOUNCE_NOW),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val stopService = PendingIntent.getService(
             this,
             0,
-            Intent(this, AnnouncementSchedulerService::class.java).setAction(ACTION_STOP),
+            Intent(
+                    this, AnnouncementSchedulerService::class.java
+                ).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(getString(R.string.announce_service_notification_title))
-            .setContentText(getString(R.string.announce_service_notification_text))
+            .setContentTitle(
+                getString(R.string.announce_service_notification_title)
+            )
+            .setContentText(
+                getString(R.string.announce_service_notification_text)
+            )
             .setSmallIcon(R.drawable.ic_number_reading)
             .setContentIntent(openSettings)
             .setOngoing(true)
-            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .setForegroundServiceBehavior(
+                NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE
+            )
             .addAction(
                 0,
                 getString(R.string.announce_action_speak_now),
@@ -472,7 +513,8 @@ class AnnouncementSchedulerService : Service() {
     private fun startAsForeground(notification: Notification) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                // الطريقة الأصلية (API 34+) — النوع معرف فيه صراحةً (نوع SPECIAL_USE)
+                // الطريقة الأصلية (API 34+) — النوع معرف
+                // فيه صراحةً (نوع SPECIAL_USE)
                 startForeground(
                     NOTIFICATION_ID,
                     notification,

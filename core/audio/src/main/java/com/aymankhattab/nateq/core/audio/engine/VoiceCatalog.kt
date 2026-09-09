@@ -23,7 +23,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 data class EngineWithVoices(
     val enginePackage: String,
     val engineLabel: String,
-    /** الأصوات (android.speech.tts.Voice) التي يقدّمها هذا المحرك لهذه اللغة. */
+    /** الأصوات (android.speech.tts.Voice) التي يقدّمها هذا
+     *  المحرك لهذه اللغة. */
     val voices: List<Voice>
 )
 
@@ -41,7 +42,8 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
     companion object {
         private const val TAG = "NATEQ_TTS"
 
-        /** مهلة استجابة المحرك الواحد أثناء الاكتشاف (ثوانٍ) — بعض المحركات تعلّق. */
+        /** مهلة استجابة المحرك الواحد أثناء الاكتشاف (ثوانٍ) —
+         *  بعض المحركات تعلّق. */
         private const val ENGINE_PROBE_TIMEOUT_MS = 10_000L
 
         /**
@@ -54,11 +56,15 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
          * النتيجة: languageTag -> قائمة المحركات التي توفّر اللغة، وكل محرك
          * يحمل أصواته لهذه اللغة مجمّعةً تحت اللسان نفسه (بلا تكرار محركات).
          */
-        suspend fun discoverAllLanguagesAcrossEngines(context: Context): Map<String, List<EngineWithVoices>> {
-            // نستبعد قارئات الشاشة (TalkBack/Jieshuo/Talkman…) من مساهمة اللغات:
-            // يسجّلون أنفسهم محركات TTS لكن قرارهم (getVoices/isLanguageAvailable)
-            // يعلن لغات نظريةً (eSpeak مثلاً) بلا بيانات مثبتة فعلياً على الجهاز،
-            // فتظهر في القائمة لغاتٌ لا تُنطق. يبقى الاختيار اليدوي صريحاً لهم.
+        suspend fun discoverAllLanguagesAcrossEngines(
+            context: Context
+        ): Map<String, List<EngineWithVoices>> {
+            // نستبعد قارئات الشاشة (TalkBack/Jieshuo/Talkman…)
+            // من مساهمة اللغات: يسجّلون أنفسهم محركات TTS لكن
+            // قرارهم (getVoices/isLanguageAvailable) يعلن لغات
+            // نظريةً (eSpeak مثلاً) بلا بيانات مثبتة فعلياً
+            // على الجهاز، فتظهر في القائمة لغاتٌ لا تُنطق.
+            // يبقى الاختيار اليدوي صريحاً لهم.
             val engines = EnginePicker.installedEngines(context)
                 .filterNot { EnginePicker.isScreenReader(it.packageName) }
             // الفحص بالتوازي (كل محرك في مهمة IO مستقلة): كان متتابعاً فتبلغ
@@ -69,7 +75,9 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                     engines
                         .map { engine ->
                             async(Dispatchers.IO) {
-                                engine.packageName to probeEngineVoices(context, engine.packageName)
+                                engine.packageName to probeEngineVoices(
+                                    context, engine.packageName
+                                )
                             }
                         }
                         .awaitAll()
@@ -98,10 +106,14 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             voicesByEngine: Map<String, List<Voice>>
         ): Map<String, List<EngineWithVoices>> {
             // lang -> engine -> voices
-            val grouped = mutableMapOf<String, MutableMap<String, MutableList<Voice>>>()
+            val grouped = mutableMapOf<
+            String, MutableMap<String, MutableList<Voice>>
+        >()
             for ((pkg, voices) in voicesByEngine) {
                 for (voice in voices) {
-                    val lang = LocaleUtils.normalizeLanguageCode(voice.locale?.language)
+val lang = LocaleUtils.normalizeLanguageCode(
+                        voice.locale?.language
+                    )
                     if (lang.isBlank()) continue
                     grouped.getOrPut(lang) { LinkedHashMap() }
                         .getOrPut(pkg) { mutableListOf() }
@@ -111,7 +123,11 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             val labelByPkg = engineLabels.toMap()
             return grouped.mapValues { (_, byEngine) ->
                 byEngine.map { (pkg, engineVoices) ->
-                    EngineWithVoices(pkg, labelByPkg[pkg] ?: pkg, engineVoices.toList())
+                    EngineWithVoices(
+                        pkg,
+                        labelByPkg[pkg] ?: pkg,
+                        engineVoices.toList()
+                    )
                 }
             }
         }
@@ -140,15 +156,26 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                         .takeIf { it.isNotBlank() }
                 }
                 .distinct()
-                .filter { languageAvailability(Locale.forLanguageTag(it)) == TextToSpeech.LANG_MISSING_DATA }
+                .filter { locale ->
+                    val availability = languageAvailability(
+                        Locale.forLanguageTag(locale)
+                    )
+                    availability == TextToSpeech.LANG_MISSING_DATA
+                }
                 .toSet()
             val isNotInstalled = { voice: Voice ->
-                voice.features.orEmpty().contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) ||
+                voice.features.orEmpty().contains(
+                    TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED
+                ) ||
                     voice.isNetworkConnectionRequired
             }
-            if (missingLangs.isEmpty() && voices.none(isNotInstalled)) return voices
+            if (missingLangs.isEmpty() && voices.none(isNotInstalled)) {
+                return voices
+            }
             return voices.filter { voice ->
-                val lang = LocaleUtils.normalizeLanguageCode(voice.locale?.language)
+                val lang = LocaleUtils.normalizeLanguageCode(
+                    voice.locale?.language
+                )
                 lang !in missingLangs && !isNotInstalled(voice)
             }
         }
@@ -168,14 +195,17 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             context: Context,
             enginePackage: String
         ): List<Voice> {
-            val result: List<Voice>? = withTimeoutOrNull(ENGINE_PROBE_TIMEOUT_MS) {
+            val result: List<Voice>? = withTimeoutOrNull(
+                ENGINE_PROBE_TIMEOUT_MS
+            ) {
                 suspendCancellableCoroutine<List<Voice>> { cont ->
                     @Suppress("DEPRECATION")
                     var probe: TextToSpeech? = null
                     val finished = AtomicBoolean(false)
                     val created = runCatching {
                         probe = TextToSpeech(context, { status ->
-                            // حارس: النسخة تغلق مرة واحدة فقط مهما تكرر استدعاء المستمع.
+                            // حارس: النسخة تغلق مرة واحدة فقط مهما
+                            // تكرر استدعاء المستمع.
                             if (finished.getAndSet(true)) {
                                 runCatching { probe?.shutdown() }
                                 return@TextToSpeech
@@ -184,18 +214,7 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                                 if (status != TextToSpeech.SUCCESS) {
                                     cont.resume(emptyList())
                                 } else {
-                                    @Suppress("DEPRECATION")
-                                    val voices = runCatching { probe?.getVoices().orEmpty() }
-                                        .getOrDefault(emptySet())
-                                    // الاعتماد على النتيجة الفعلية لـ getVoices فقط، مع
-                                    // فحص صريح لكل لغة: بيانات غير مثبتة (LANG_MISSING_DATA)
-                                    // تُحجب من القائمة النهائية تماماً.
-                                    val installed = filterVoicesWithInstalledData(voices.toList()) { locale ->
-                                        val availability = runCatching { probe?.isLanguageAvailable(locale) }
-                                            .getOrNull()
-                                        availability ?: TextToSpeech.LANG_NOT_SUPPORTED
-                                    }
-                                    cont.resume(installed)
+                                    cont.resume(probeInstalledVoices(probe))
                                 }
                             } catch (_: Throwable) {
                                 cont.resume(emptyList())
@@ -205,17 +224,43 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                         }, enginePackage)
                     }
                     if (created.isFailure) {
-                        // محرك غير قابل للربط (حزمة غير صالحة أو منزوعة): لا أصوات.
+                        // محرك غير قابل للربط (حزمة غير صالحة
+                        // أو منزوعة): لا أصوات.
                         cont.resume(emptyList())
                     }
                     // إن أُغلق الاكتشاف (مهلة/إلغاء) نغلق النسخة المعلقة.
                     cont.invokeOnCancellation {
-                        if (finished.getAndSet(true)) return@invokeOnCancellation
+                        if (finished.getAndSet(true)) {
+                            return@invokeOnCancellation
+                        }
                         runCatching { probe?.shutdown() }
                     }
                 }
             }
             return result ?: emptyList()
+        }
+
+        /**
+         * الأصوات المثبتة فعلياً لنسخة السبر: يقرأ [getVoices] ثم يفلترها
+         * عبر [filterVoicesWithInstalledData] (بيانات غير مثبتة تُحجب).
+         * مستخرجة خارج عمق لامبدا [TextToSpeech] لتقليل التعشيش والتزاماً
+         * بحدود الطول (80 حرفاً لكل سطر).
+         */
+        @Suppress("DEPRECATION")
+        private fun probeInstalledVoices(probe: TextToSpeech?): List<Voice> {
+            // الاعتماد على النتيجة الفعلية لـ getVoices فقط،
+            // مع فحص صريح لكل لغة: البيانات غير المثبتة
+            // (LANG_MISSING_DATA) تُحجب من القائمة النهائية.
+            val voices = runCatching { probe?.getVoices().orEmpty() }
+                .getOrDefault(emptySet())
+            return filterVoicesWithInstalledData(
+                voices.toList()
+            ) { locale ->
+                val availability = runCatching {
+                    probe?.isLanguageAvailable(locale)
+                }.getOrNull()
+                availability ?: TextToSpeech.LANG_NOT_SUPPORTED
+            }
         }
     }
 
@@ -225,7 +270,8 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
      * المضمون (العربية/الإنجليزية) فتبقى الخدمة تعمل دائماً.
      */
     @Volatile
-    private var discoveredByLanguage: Map<String, List<EngineWithVoices>>? = null
+    private var discoveredByLanguage:
+        Map<String, List<EngineWithVoices>>? = null
 
     @Volatile
     private var lastDiscoveryAtMs = 0L
@@ -238,7 +284,8 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
 
     /** هل الاكتشاف مُعدَم أو انتهت صلاحيته (بعد مرور ttlMs)؟ */
     fun needsRefresh(ttlMs: Long): Boolean =
-        lastDiscoveryAtMs == 0L || System.currentTimeMillis() - lastDiscoveryAtMs > ttlMs
+        lastDiscoveryAtMs == 0L ||
+            System.currentTimeMillis() - lastDiscoveryAtMs > ttlMs
 
     suspend fun allAvailableVoices(locale: Locale): List<VoiceDescriptor> =
         providers
@@ -267,7 +314,9 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
         discoveredByLanguage?.keys?.forEach { languages.add(it) }
         languages.add(LanguageCode.AR.tag) // الحد الأدنى المضمون دائماً
         languages.add(LanguageCode.EN.tag)
-        return languages.map { Locale.forLanguageTag(it) }.sortedBy { it.language }
+        return languages
+            .map { Locale.forLanguageTag(it) }
+            .sortedBy { it.language }
     }
 
     /**
@@ -285,7 +334,9 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
      * به مع كتم تحذير الإهمال المحدَّد.
      */
     @Suppress("DEPRECATION")
-    private val offlineFeature = setOf(TextToSpeech.Engine.KEY_FEATURE_EMBEDDED_SYNTHESIS)
+    private val offlineFeature = setOf(
+        TextToSpeech.Engine.KEY_FEATURE_EMBEDDED_SYNTHESIS
+    )
 
     private fun voiceNameFor(locale: Locale): String {
         // أسماء الأصوات المعلنة في tts_engine.xml هي "ar-EG"/"en-US" للغتين

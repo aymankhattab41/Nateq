@@ -46,7 +46,8 @@ class SmsReadingReceiver : BroadcastReceiver() {
 
 // goAsync() يمنع Android من قتل المستقبل قبل انتهاء العمل اللاتزامني
         val pendingResult = goAsync()
-        val appScope = (context.applicationContext as AnnouncementAppContext).appScope
+        val appScope =
+            (context.applicationContext as AnnouncementAppContext).appScope
         appScope.launch {
             try {
                 val settings = settingsRepository
@@ -55,7 +56,8 @@ class SmsReadingReceiver : BroadcastReceiver() {
                 // المفتاح الرئيسي يُوقف كل الإعلانات دفعة واحدة.
                 if (!settings.isAllAnnouncementsEnabled()) return@launch
 
-                val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
+                val messages =
+                Telephony.Sms.Intents.getMessagesFromIntent(intent)
                 if (messages.isEmpty()) return@launch
 
                 // نجمع نص الرسائل (SMS قد يصل مقسّماً لعدة أجزاء)
@@ -68,7 +70,8 @@ class SmsReadingReceiver : BroadcastReceiver() {
                     body.append(msg.messageBody ?: "")
                 }
 
-                val displayAddress = sender ?: context.getString(R.string.sms_unknown_sender)
+                val displayAddress =
+                sender ?: context.getString(R.string.sms_unknown_sender)
                 val voiceId = settings.getSmsReadingVoiceId()
                 val speechRate = settings.getSmsReadingRate()
                 val volume = settings.getSmsReadingVolume()
@@ -84,15 +87,18 @@ class SmsReadingReceiver : BroadcastReceiver() {
                 val dynamicText = "$displayAddress $content"
                 val useArabicVoice = !dynamicText.any { it.isLetter() } ||
                     LocaleUtils.containsArabic(dynamicText)
-                // القالب المخصص (إن حُدِّد) يتيح للمستخدم صياغة كلامه: {name} للمرسل و{message} للرسالة.
+                // القالب المخصص (إن حُدِّد) يتيح للمستخدم صياغة كلامه:
+                // {name} للمرسل و{message} للرسالة.
                 val template = settings.getSmsAnnouncementTemplate()
                 // فلتر رمز التحقق (OTP): إذا كشفت الرسالة كلمة تحقق مرفقة برقم
-                // متجاور 4-8 خانات (كود تفعيل بنك/منصة)، لا يُنطق الرمز نفسه في
-                // الأماكن العامة بل عبارة أمنية عامة — حتى مع النطق الكامل.
+                // متجاور 4-8 خانات (كود تفعيل بنك/منصة)، لا يُنطق الرمز
+                // نفسه في الأماكن العامة بل عبارة أمنية عامة —
+                // حتى مع النطق الكامل.
                 val isOtp = LocaleUtils.containsOtp(content)
                 val smsFrom = LocaleUtils.stringForSpeech(
                     context,
-                    if (useArabicVoice) LanguageCode.AR.tag else LanguageCode.EN.tag,
+                    if (useArabicVoice) LanguageCode.AR.tag
+                    else LanguageCode.EN.tag,
                     R.string.sms_from,
                     R.string.sms_from
                 ).replace("{name}", displayAddress)
@@ -102,23 +108,29 @@ class SmsReadingReceiver : BroadcastReceiver() {
                 } else if (isOtp) {
                     LocaleUtils.stringForSpeech(
                         context,
-                        if (useArabicVoice) LanguageCode.AR.tag else LanguageCode.EN.tag,
+                        if (useArabicVoice) LanguageCode.AR.tag
+                        else LanguageCode.EN.tag,
                         R.string.sms_otp_safe,
                         R.string.sms_otp_safe
                     ).replace("{name}", displayAddress)
                 } else if (template.isNotBlank()) {
                     template
                         .replace("{name}", displayAddress)
-                        .replace("{message}", content.ifBlank { displayAddress })
+                        .replace(
+                            "{message}", content.ifBlank { displayAddress }
+                        )
                 } else when {
                     content.isBlank() -> smsFrom
                     effectiveMode == MODE_SOURCE -> smsFrom
                     else -> "$smsFrom، $content"
                 }
 
-                // نقرر لغة النطق حسب النص الفعلي المَنطوق (المحتوى عربي أم إنجليزي)
+                // نقرر لغة النطق حسب النص الفعلي المَنطوق
+                // (المحتوى عربي أم إنجليزي)
                 val isArabic = LocaleUtils.containsArabic(text)
-                val locale = if (isArabic) Locale.forLanguageTag(LanguageCode.AR.tag) else Locale.forLanguageTag(LanguageCode.EN.tag)
+                val locale =
+                if (isArabic) Locale.forLanguageTag(LanguageCode.AR.tag)
+                else Locale.forLanguageTag(LanguageCode.EN.tag)
 
 // متحدث مشترك واحد لكل الإعلانات (يمنع تقاطع أصوات متعددة)
                 val speech = AnnouncementSpeaker.getInstance(context)

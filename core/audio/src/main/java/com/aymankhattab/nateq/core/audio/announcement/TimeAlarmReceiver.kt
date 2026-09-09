@@ -28,19 +28,23 @@ class TimeAlarmReceiver : BroadcastReceiver() {
     companion object {
         private const val TAG = "NATEQ_ALARM"
 
-        const val ACTION_TICK = "com.aymankhattab.nateq.action.TIME_ANNOUNCE_TICK"
+        const val ACTION_TICK =
+            "com.aymankhattab.nateq.action.TIME_ANNOUNCE_TICK"
 
-        /** requestCode ثابت ليكون PendingIntent واحداً (أي استدعاء لاحق يستبدله). */
+        /** requestCode ثابت ليكون PendingIntent واحداً
+         * (أي استدعاء لاحق يستبدله). */
         private const val REQUEST_CODE = 3701
 
         /**
          * جداولة الفاصل التالي عبر AlarmManager.
-         * @param triggerAtMillis نقطة الزمن المطلقة لإطلاق المنبه (حسب الوقت الحقيقي)
+         * @param triggerAtMillis نقطة الزمن المطلقة لإطلاق المنبه
+         * (حسب الوقت الحقيقي)
          */
         @JvmStatic
         fun scheduleNext(context: Context, triggerAtMillis: Long) {
             try {
-                val alarmManager = context.getSystemService(Context.ALARM_SERVICE)
+                val alarmManager =
+                    context.getSystemService(Context.ALARM_SERVICE)
                     as? AlarmManager ?: return
                 val pendingIntent = buildPendingIntent(context)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
@@ -81,7 +85,8 @@ class TimeAlarmReceiver : BroadcastReceiver() {
         @JvmStatic
         fun cancel(context: Context) {
             try {
-                val alarmManager = context.getSystemService(Context.ALARM_SERVICE)
+                val alarmManager =
+                    context.getSystemService(Context.ALARM_SERVICE)
                     as? AlarmManager ?: return
                 alarmManager.cancel(buildPendingIntent(context))
             } catch (t: Throwable) {
@@ -97,7 +102,8 @@ class TimeAlarmReceiver : BroadcastReceiver() {
                 context,
                 REQUEST_CODE,
                 intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                PendingIntent.FLAG_UPDATE_CURRENT or
+                PendingIntent.FLAG_IMMUTABLE
             )
         }
 
@@ -108,11 +114,15 @@ class TimeAlarmReceiver : BroadcastReceiver() {
         /** نافذة WakeLock جزئية مؤقتة (5 ثوانٍ): تُحرَّر تلقائياً بوتوقيتها
          *  (acquire(timeout)) فالتسريب المقيّد مقصود — بلا حاجة لـ release
          *  يدوي، ولا يستنزف البطارية (منبه كل 15-60 دقيقة لثوانٍ معدودة). */
-        private fun acquireShortWakeLock(context: Context): PowerManager.WakeLock? {
+        private fun acquireShortWakeLock(
+            context: Context
+        ): PowerManager.WakeLock? {
             return try {
                 val pm = context.getSystemService(PowerManager::class.java)
                     ?: return null
-                pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$TAG:speech").apply {
+                pm.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK, "$TAG:speech"
+                ).apply {
                     setReferenceCounted(false)
                     acquire(SHORT_WAKE_LOCK_MS)
                 }
@@ -145,7 +155,8 @@ class TimeAlarmReceiver : BroadcastReceiver() {
                 // تكن خدمة الإعلانات قائمة، تُبدأ خدمة أمامية عابرة تغطي نافذة
                 // النطق بأمان صوت الخلفية (أندرويد 15+/سامسونج) ثم توقف نفسها.
                 AnnouncementSchedulerService.startForSpeech(appContext)
-                // المدير المشترك (نفس كائن الودجت/الأداة) ينطق ويرسب الفاصل التالي.
+                // المدير المشترك (نفس كائن الودجت/الأداة)
+                // ينطق ويرسب الفاصل التالي.
                 TimeAnnouncementManager.shared(appContext).onAlarmTick()
             } catch (t: Throwable) {
                 Log.e(TAG, "alarm tick failed", t)

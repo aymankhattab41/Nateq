@@ -16,7 +16,8 @@ class GetSampleTextActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // المفاتيح النصية للـ Intent extras (قيم TextToSpeech.EXTRA_* غير متاحة في هذا API)
+        // المفاتيح النصية للـ Intent extras (قيم TextToSpeech.EXTRA_*
+        // غير متاحة في هذا API)
         val lang = intent.getStringExtra("language")
 
         val returnData = Intent()

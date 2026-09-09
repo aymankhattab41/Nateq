@@ -18,7 +18,8 @@ internal object AmountParser {
         val seps = mutableListOf<Int>()
         for (i in raw.indices) {
             val ch = raw[i]
-            val digitAround = i > 0 && raw[i - 1].isDigit() && i + 1 < raw.length && raw[i + 1].isDigit()
+            val digitAround = i > 0 && raw[i - 1].isDigit() &&
+                i + 1 < raw.length && raw[i + 1].isDigit()
             if ((ch == ',' || ch == '.') && digitAround) seps.add(i)
         }
         if (seps.isEmpty()) return raw
@@ -29,8 +30,10 @@ internal object AmountParser {
 
         val lastIsDecimal = when {
             tailLen != 3 -> true
-            seps.size == 1 -> lastCh == '.'   // فاصلة وحيدة + طرف ثلاثي: (,) آلاف أمريكية، (.) عشرية
-            else -> seps.any { raw[it] != lastCh }  // تنوّع الرموز: الأخيرة كسور (1,234.567)، وإلا فكلها آلاف
+            seps.size == 1 -> lastCh == '.'
+                // فاصلة وحيدة + طرف ثلاثي: (,) آلاف أمريكية، (.) عشرية
+            else -> seps.any { raw[it] != lastCh }
+                // تنوّع الرموز: الأخيرة كسور (1,234.567)، وإلا فكلها آلاف
         }
 
         val sb = StringBuilder(raw.length)

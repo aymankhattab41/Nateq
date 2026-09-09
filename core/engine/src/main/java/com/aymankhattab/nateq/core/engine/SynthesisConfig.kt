@@ -2,7 +2,8 @@ package com.aymankhattab.nateq.core.engine
 
 /**
  * إعدادات النُطق التي يحتاجها خط إنتاج معالجة النص (pipeline) — يفصلها عن
- * مستودع الإعدادات مباشرةً لتفكيك الوحدات (البند 4). ينفّذها SettingsRepository.
+ * مستودع الإعدادات مباشرةً لتفكيك الوحدات
+ * (البند 4). ينفّذها SettingsRepository.
  */
 interface SynthesisConfig {
 

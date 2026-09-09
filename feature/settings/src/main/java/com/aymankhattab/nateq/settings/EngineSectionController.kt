@@ -65,9 +65,18 @@ internal class EngineSectionController(
                 listOf(fragment.getString(R.string.no_voices_available))
             )
         } else {
-            spinnerEngine.adapter = simpleAdapter(fragment.requireContext(), engines.map { it.label })
-            spinnerEngine.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+            spinnerEngine.adapter = simpleAdapter(
+                fragment.requireContext(),
+                engines.map { it.label }
+            )
+            spinnerEngine.onItemSelectedListener =
+                object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(
+                    parent: AdapterView<*>?,
+                    view: View?,
+                    position: Int,
+                    id: Long
+                ) {
                     onEngineSelected(engines[position])
                 }
 
@@ -80,18 +89,21 @@ internal class EngineSectionController(
             val preferred = EnginePicker.pickPreferredEngineFrom(
                 engines.map { it.packageName }
             )
-            val target = engineIndexOf(saved) ?: if (saved == null) engineIndexOf(preferred) else null
+            val target = engineIndexOf(saved)
+                ?: if (saved == null) engineIndexOf(preferred) else null
             if (target != null && target < engines.size) {
                 spinnerEngine.setSelection(target)
             }
         }
     }
 
-    /** عند غياب أي محرك TTS إطلاقاً: يُظهر رسالة توجيهية + زر تثبيت من المتجر. */
+    /** عند غياب أي محرك TTS إطلاقاً: يُظهر رسالة توجيهية
+     *  + زر تثبيت من المتجر. */
     private fun bindNoEnginesUi() {
         val view = fragment.view ?: return
         val message = view.findViewById<TextView>(R.id.tv_no_engines_message)
-        val btn = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btn_install_engine)
+        val btn: com.google.android.material.button.MaterialButton =
+            view.findViewById(R.id.btn_install_engine)
         val noEngines = engines.isEmpty()
         message.visibility = if (noEngines) View.VISIBLE else View.GONE
         btn.visibility = if (noEngines) View.VISIBLE else View.GONE
@@ -100,18 +112,27 @@ internal class EngineSectionController(
         }
     }
 
-    /** يفتح صفحة Google TTS على متجر التطبيقات، مع مسار احتياطي عبر المتصفح. */
+    /** يفتح صفحة Google TTS على متجر التطبيقات،
+     *  مع مسار احتياطي عبر المتصفح. */
     private fun openEngineInPlayStore() {
         val ctx = fragment.requireContext()
-        // market:// يفتح الـ Play Store مباشرة؛ وإن لم يوجد معالج نتراجع للرابط عبر الويب.
-        val playStoreUri = Uri.parse("market://details?id=com.google.android.tts")
+        // market:// يفتح الـ Play Store مباشرة؛ وإن لم يوجد
+        // معالج نتراجع للرابط عبر الويب.
+        val playStoreUri =
+            Uri.parse("market://details?id=com.google.android.tts")
         val opened = runCatching {
             ctx.startActivity(Intent(Intent.ACTION_VIEW, playStoreUri))
         }.isSuccess
         if (!opened) {
             runCatching {
                 ctx.startActivity(
-                    Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=com.google.android.tts"))
+                    Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse(
+                            "https://play.google.com/store/apps/" +
+                                "details?id=com.google.android.tts"
+                        )
+                    )
                 )
             }
         }
@@ -131,18 +152,24 @@ internal class EngineSectionController(
 
     // ===== التحويل التلقائي عبر كل اللغات =====
     fun setupAutoConvertUI(view: View) {
-        val chk = view.findViewById<com.google.android.material.checkbox.MaterialCheckBox>(R.id.checkbox_auto_convert)
-        val btn = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btn_convert_languages)
+        val chk: com.google.android.material.checkbox.MaterialCheckBox =
+            view.findViewById(R.id.checkbox_auto_convert)
+        val btn: com.google.android.material.button.MaterialButton =
+            view.findViewById(R.id.btn_convert_languages)
 
-        chk.isChecked = runCatching { settings.isAutoConvertEnabled() }.getOrDefault(false)
+        chk.isChecked = runCatching { settings.isAutoConvertEnabled() }
+            .getOrDefault(false)
         chk.setOnClickListener { v ->
-            val enabled = (v as com.google.android.material.checkbox.MaterialCheckBox).isChecked
+            val enabled =
+                (v as com.google.android.material.checkbox.MaterialCheckBox)
+                    .isChecked
             runCatching { settings.setAutoConvertEnabled(enabled) }
             btn.isEnabled = enabled
             onStatusChanged()
         }
 
-        btn.isEnabled = runCatching { settings.isAutoConvertEnabled() }.getOrDefault(false)
+        btn.isEnabled = runCatching { settings.isAutoConvertEnabled() }
+            .getOrDefault(false)
         btn.setOnClickListener { showConvertLanguagesDialog() }
 
         setupLanguageInstallHint(view)
@@ -154,13 +181,17 @@ internal class EngineSectionController(
      * المستخدم صراحةً عبر شريط الاختيار.
      */
     private fun setupLanguageInstallHint(view: View) {
-        val chk = view.findViewById<com.google.android.material.checkbox.MaterialCheckBox>(R.id.checkbox_language_install_hint)
+        val chk: com.google.android.material.checkbox.MaterialCheckBox =
+            view.findViewById(R.id.checkbox_language_install_hint)
         val tv = view.findViewById<TextView>(R.id.tv_language_install_hint)
 
-        chk.isChecked = runCatching { settings.isLanguageInstallHintEnabled() }.getOrDefault(false)
+        chk.isChecked = runCatching { settings.isLanguageInstallHintEnabled() }
+            .getOrDefault(false)
         tv.visibility = if (chk.isChecked) View.VISIBLE else View.GONE
         chk.setOnClickListener { v ->
-            val enabled = (v as com.google.android.material.checkbox.MaterialCheckBox).isChecked
+            val enabled =
+                (v as com.google.android.material.checkbox.MaterialCheckBox)
+                    .isChecked
             runCatching { settings.setLanguageInstallHintEnabled(enabled) }
             tv.visibility = if (enabled) View.VISIBLE else View.GONE
         }
@@ -168,12 +199,17 @@ internal class EngineSectionController(
 
     /** قائمة كل المحركات المتاحة عبر INTENT_ACTION_TTS_SERVICE (MATCH_ALL) */
     private fun discoverEngines(): List<EngineInfo> {
-        val discovered = EnginePicker.installedEngines(fragment.requireContext())
+        val discovered = EnginePicker.installedEngines(
+            fragment.requireContext()
+        )
         // سجل تشخيصي لفوز شكاوى «لا يظهر محركي» على أجهزة Xiaomi/Huawei/Oppo
-        // التي قد تُقيّد package visibility رغم <queries> الصحيحة في الـ Manifest.
+        // التي قد تُقيّد package visibility رغم <queries>
+        // الصحيحة في الـ Manifest.
         Log.i(
             "NATEQ_ENGINE_DISCOVERY",
-            "installedEngines count=${discovered.size} packages=[${discovered.joinToString(", ") { it.packageName }}]"
+            "installedEngines count=${discovered.size} " +
+                "packages=[" +
+                "${discovered.joinToString(", ") { it.packageName }}]"
         )
         return discovered.map { EngineInfo(it.packageName, it.label) }
     }
@@ -187,20 +223,28 @@ internal class EngineSectionController(
      */
     fun showConvertLanguagesDialog() {
         val ctx = fragment.requireContext()
-        val dialogView = LayoutInflater.from(ctx).inflate(R.layout.dialog_convert_languages, null)
-        val tvHint = dialogView.findViewById<TextView>(R.id.tv_convert_languages_hint)
-        val rv = dialogView.findViewById<RecyclerView>(R.id.rv_convert_languages)
+        val dialogView = LayoutInflater.from(ctx).inflate(
+            R.layout.dialog_convert_languages, null
+        )
+        val tvHint =
+            dialogView.findViewById<TextView>(R.id.tv_convert_languages_hint)
+        val rv =
+            dialogView.findViewById<RecyclerView>(R.id.rv_convert_languages)
 
         tvHint.text = fragment.getString(R.string.convert_languages_loading)
         val dialog = MaterialAlertDialogBuilder(ctx)
-            .setTitle(fragment.getString(R.string.convert_languages_dialog_title))
+            .setTitle(
+                fragment.getString(R.string.convert_languages_dialog_title)
+            )
             .setView(dialogView)
             .setPositiveButton(fragment.getString(R.string.reset_cancel), null)
             .create()
 
         fragment.lifecycleScope.launch(AppDispatchers.io) {
             val discovered = runCatching {
-                VoiceCatalog.discoverAllLanguagesAcrossEngines(ctx.applicationContext)
+                VoiceCatalog.discoverAllLanguagesAcrossEngines(
+                    ctx.applicationContext
+                )
             }.getOrDefault(emptyMap())
             withContext(AppDispatchers.main) {
                 val rows = buildLanguageRows(discovered)
@@ -214,7 +258,8 @@ internal class EngineSectionController(
                 adapter.onRowSaved = { onStatusChanged() }
                 rv.layoutManager = LinearLayoutManager(ctx)
                 rv.adapter = adapter
-                tvHint.text = fragment.getString(R.string.convert_languages_hint)
+                tvHint.text =
+                    fragment.getString(R.string.convert_languages_hint)
             }
         }
 
@@ -223,7 +268,8 @@ internal class EngineSectionController(
 
     /**
      * يُبني قائمة صفوف اللغات من خريطة الاكتشاف القصوى: العربية والإنجليزية
-     * مضمونتان دائماً في المقدمة (حتى إن لم تُكتشفا من أي محرك)، ثم بقية اللغات
+     * مضمونتان دائماً في المقدمة (حتى إن لم تُكتشفا من أي محرك)،
+     * ثم بقية اللغات
      * المكتشفة فعلياً عبر كل المحركات المثبتة مرتّبة أبجدياً — لا حصر ثنائياً
      * بأي لغة. المحركات والأصوات تبقى مستقراة من الجهاز وليست نظرية.
      */
@@ -246,37 +292,52 @@ internal class EngineSectionController(
         // النطق الافتراضي للنظام هو حزمة LORD نفسها (التطبيق محرك TTS أصلياً).
         val created = runCatching {
             @Suppress("DEPRECATION")
-            previewTts = TextToSpeech(fragment.requireContext(), { status ->
+            previewTts = TextToSpeech(
+                fragment.requireContext(),
+                { status ->
                 if (status != TextToSpeech.SUCCESS) {
-                    // فشل تهيئة محرك المعاينة: نغلق فوراً حتى لا تبقى نسخة TTS معلقة
+                    // فشل تهيئة محرك المعاينة: نغلق فوراً
+                    // حتى لا تبقى نسخة TTS معلقة
                     runCatching { previewTts?.shutdown() }
                     return@TextToSpeech
                 }
                 try {
-                    val avail = runCatching { previewTts?.getVoices().orEmpty() }.getOrDefault(emptySet())
+                    val avail =
+                        runCatching { previewTts?.getVoices().orEmpty() }
+                            .getOrDefault(emptySet())
                     val voice = avail.firstOrNull { it.name == voiceName }
                     if (voice != null) {
                         // نضبط المحرك على لسان الصوت المختار حتى لا يقرأ النص
-                        // بلغة المحرك الافتراضية (مثلاً الإنجليزية رغم اختيار العربي).
+                        // بلغة المحرك الافتراضية (مثلاً الإنجليزية
+                        // رغم اختيار العربي).
                         runCatching { previewTts?.setVoice(voice) }
-                        runCatching { previewTts?.let { it.language = voice.locale } }
+                        runCatching {
+                            previewTts?.let { it.language = voice.locale }
+                        }
                     }
                 } catch (_: Exception) {}
                 previewTts?.setSpeechRate(rate)
                 runCatching { previewTts?.setPitch(pitch) }
-                // نمرر مستوى الصوت للمحرك عبر المعاملات (كان بلا مستوى صوت إطلاقاً)
+                // نمرر مستوى الصوت للمحرك عبر المعاملات
+                // (كان بلا مستوى صوت إطلاقاً)
                 // ليقترب ناتج المعاينة من النطق الفعلي الذي يطبق نفس القيم.
-                // السرعة والنبرة تمران عبر setSpeechRate/setPitch (لا توجد ثوابت
-                // عامة لهما في Bundle الكلامة).
+                // السرعة والنبرة تمران عبر setSpeechRate/setPitch
+                // (لا توجد ثوابت عامة لهما في Bundle الكلامة).
                 val params = android.os.Bundle().apply {
                     putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume)
                 }
-                // نعرض عينة بنفس لغة الصوت: عربي إن كان الصوت عربياً وإلا إنجليزي.
-                // (سبق: كان النص تجريبياً إنجليزياً دائماً فبدا للمستخدم أن الصوت إنجليزي.)
-                val sampleText = if (voiceName.lowercase().contains("ar") || voiceName.lowercase().contains("arab"))
-                    fragment.getString(R.string.sample_text_preview_ar)
-                else
-                    fragment.getString(R.string.sample_text_default_en)
+                // نعرض عينة بنفس لغة الصوت: عربي إن كان الصوت
+                // عربياً وإلا إنجليزي.
+                // (سبق: كان النص تجريبياً إنجليزياً دائماً فبدا
+                // للمستخدم أن الصوت إنجليزي.)
+                val sampleText =
+                    if (voiceName.lowercase().contains("ar") ||
+                        voiceName.lowercase().contains("arab")
+                    ) {
+                        fragment.getString(R.string.sample_text_preview_ar)
+                    } else {
+                        fragment.getString(R.string.sample_text_default_en)
+                    }
                 val speakResult = runCatching {
                     previewTts?.speak(
                         sampleText,
@@ -286,23 +347,32 @@ internal class EngineSectionController(
                     )
                 }.getOrDefault(TextToSpeech.ERROR)
                 if (speakResult == TextToSpeech.ERROR) {
-                    // فشل النطق (مثلاً المحرك دون لغة محمّلة): نغلق فوراً عوضاً عن تعليقه
+                    // فشل النطق (مثلاً المحرك دون لغة محمّلة):
+                    // نغلق فوراً عوضاً عن تعليقه
                     runCatching { previewTts?.shutdown() }
                     return@TextToSpeech
                 }
-                previewTts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                previewTts?.setOnUtteranceProgressListener(
+                    object : android.speech.tts.UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {}
 
                     @Deprecated("Java Deprecated")
-                    override fun onDone(utteranceId: String?) { previewTts?.shutdown() }
+                    override fun onDone(utteranceId: String?) {
+                        previewTts?.shutdown()
+                    }
 
                     @Deprecated("Java Deprecated")
-                    override fun onError(utteranceId: String?) { previewTts?.shutdown() }
+                    override fun onError(utteranceId: String?) {
+                        previewTts?.shutdown()
+                    }
                 })
-            }, enginePkg)
+            },
+            enginePkg
+        )
         }
         if (created.isFailure) {
-            // تعذّر ربط محرك المعاينة بذاته (حزمة غير صالحة): لا نترك نسخة معلقة.
+            // تعذّر ربط محرك المعاينة بذاته (حزمة غير صالحة):
+            // لا نترك نسخة معلقة.
             runCatching { previewTts?.shutdown() }
             return
         }
@@ -311,7 +381,8 @@ internal class EngineSectionController(
 
 /** بناء صفوف لغات التحويل من الناتج الاكتشافي الكامل: «ar» و«en» مضمونتان في
  *  المقدمة دائماً (حتى لو لم تظهرا في الاكتشاف)، ثم بقية اللغات المرتّبة
- *  أبجدياً — بلا أي حصر ثنائيّ في اللغتين (بند 17.2: إتاحة كل اللغات المكتشفة). */
+ *  أبجدياً — بلا أي حصر ثنائيّ في اللغتين
+ *  (بند 17.2: إتاحة كل اللغات المكتشفة). */
 internal fun buildAllLanguageRows(
     discovered: Map<String, List<EngineWithVoices>>
 ): List<LanguageRow> {
@@ -331,12 +402,17 @@ internal fun buildAllLanguageRows(
 /**
  * محلّل صفوف الـ Spinner الأساسي (مشترك بين كل أقسام الشاشة).
  */
-internal fun simpleAdapter(context: Context, items: List<String>): ArrayAdapter<String> {
+internal fun simpleAdapter(
+    context: Context,
+    items: List<String>
+): ArrayAdapter<String> {
     return ArrayAdapter(
         context,
         android.R.layout.simple_spinner_item,
         items
     ).also {
-        it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        it.setDropDownViewResource(
+            android.R.layout.simple_spinner_dropdown_item
+        )
     }
 }

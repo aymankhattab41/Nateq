@@ -26,12 +26,13 @@ interface VoiceProvider {
      * تخليق الصوت الفعلي.
      * @param text النص المطلوب نطقه
      * @param voice الصوت المختار من [listVoices]
-     * @param speechRate سرعة النطق (1.0 = طبيعي، 0.5 = نصف السرعة، 2.0 = ضعف السرعة)
+     * @param speechRate سرعة النطق (1.0 = طبيعي، 0.5 = نصف السرعة،
+     *                    2.0 = ضعف السرعة)
      * @param pitch نبرة الصوت (1.0 = طبيعي، 0.5 = منخفضة، 2.0 = عالية)
      * @param volume مستوى الصوت (0.0 = صامت، 1.0 = كامل)
      * @param onFormatInfo يُبلّغ قبل أول شريحة بمعدل العينات (Hz) وعدد القنوات
-     *                     الفعليين لموقع WAV الذي ينتجه المحرك، ليُمرَّرا كاملين
-     *                     لـ callback.start() بدل قيمة ثابتة (كانت 22050 دائماً)
+     *              الفعليين لموقع WAV الذي ينتجه المحرك، ليُمرَّرا كاملين
+     *              لـ callback.start() بدل قيمة ثابتة (كانت 22050 دائماً)
      * @param onAudioChunk يُستدعى بكل جزء صوتي جاهز (PCM 16-bit). يمرر الشريحة
      *                     وطولها الصالح الصريح (ByteArray, Int) — فقد تأتي
      *                     الشريحة من مسبح مُعاد الاستخدام بحجم مصفوفة أكبر من
@@ -45,7 +46,8 @@ interface VoiceProvider {
         speechRate: Float,
         pitch: Float,
         volume: Float,
-        onFormatInfo: (sampleRateInHz: Int, channelCount: Int) -> Unit = { _: Int, _: Int -> },
+        onFormatInfo: (sampleRateInHz: Int, channelCount: Int) -> Unit =
+            { _: Int, _: Int -> },
         onAudioChunk: (ByteArray, Int) -> Unit,
         enginePackage: String? = null,
         voiceLocale: Locale? = null,

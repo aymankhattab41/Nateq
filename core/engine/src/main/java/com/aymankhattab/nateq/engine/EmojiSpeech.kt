@@ -17,7 +17,8 @@ object EmojiSpeech {
     fun split(raw: String, arabic: Boolean): List<SpeechPart> {
         if (raw.isEmpty()) return emptyList()
         val base = EmojiNames.applyAsciiEmoticons(raw, arabic)
-        val fallback = if (arabic) EmojiNames.AR_FALLBACK else EmojiNames.EN_FALLBACK
+        val fallback = if (arabic) EmojiNames.AR_FALLBACK
+        else EmojiNames.EN_FALLBACK
         val parts = mutableListOf<SpeechPart>()
         val pending = StringBuilder()
         var i = 0
@@ -45,7 +46,9 @@ object EmojiSpeech {
                         if (EmojiNames.isRegionalIndicator(next)) {
                             val code = EmojiNames.buildCountryCode(cp, next)
                             flushText()
-                            parts.add(SpeechPart(EmojiNames.flagReadingName(code, arabic), true))
+                            parts.add(SpeechPart(
+                                EmojiNames.flagReadingName(code, arabic), true
+                            ))
                             i = nextIdx + Character.charCount(next)
                             continue
                         }
@@ -56,7 +59,8 @@ object EmojiSpeech {
                     i += chars
                 }
                 EmojiNames.isEmojiBlockCp(cp) -> {
-                    val name = if (arabic) EmojiNames.arName(cp) else EmojiNames.enName(cp)
+                    val name = if (arabic) EmojiNames.arName(cp)
+                    else EmojiNames.enName(cp)
                     flushText()
                     parts.add(SpeechPart(name ?: fallback, true))
                     i += chars
@@ -67,7 +71,8 @@ object EmojiSpeech {
                         val c2 = base.codePointAt(i)
                         val c2chars = Character.charCount(c2)
                         when {
-                            c2 in 0x1F3FB..0x1F3FF || c2 in 0xFE0E..0xFE0F -> i += c2chars
+                            c2 in 0x1F3FB..0x1F3FF ||
+                            c2 in 0xFE0E..0xFE0F -> i += c2chars
                             c2 == 0x200D -> {
                                 zwjSeen = true; i += c2chars
                             }

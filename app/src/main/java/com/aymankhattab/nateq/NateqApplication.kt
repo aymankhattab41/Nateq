@@ -37,11 +37,14 @@ class NateqApplication : Application(), AnnouncementAppContext {
     /** نطاق عام يعيش مع التطبيق — بديل GlobalScope للمستقبلات اللاحقة.
      *  يُرفق معالج أخطاء عام يمنع إسقاط العملية عند أي استثناء لا يُلتقط
      *  داخل كوروتينات المستقبلات، ويسجّله في اللوج بدلاً من ذلك. */
-    private val appCoroutineExceptionHandler = CoroutineExceptionHandler { _, t ->
-        Log.e("NATEQ_APP", "استثناء غير مُلتقط في النطاق العام", t)
-    }
+    private val appCoroutineExceptionHandler =
+        CoroutineExceptionHandler { _, t ->
+            Log.e("NATEQ_APP", "استثناء غير مُلتقط في النطاق العام", t)
+        }
 
-    override val appScope = CoroutineScope(SupervisorJob() + AppDispatchers.io + appCoroutineExceptionHandler)
+    override val appScope = CoroutineScope(
+        SupervisorJob() + AppDispatchers.io + appCoroutineExceptionHandler
+    )
 
     override fun onCreate() {
         super.onCreate()
@@ -52,12 +55,18 @@ class NateqApplication : Application(), AnnouncementAppContext {
             runCatching { StartupTempSweeper(applicationContext).sweep() }
         }
 
-        // تطبيق لغة الواجهة المختارة يدوياً؛ في حال لم تُحدَّد تتبع الواجهة لغة النظام تلقائياً.
-        // الحقل محقون من Hilt لكن نُبقي الحماية: أي فشل تهيئة (Keystore قديم مثلاً)
-        // لا يجوز أن يُسقط العملية قبل أي شاشة — التراجع الصامت إلى لغة النظام آمن.
-        val appLang = runCatching { settingsRepository.getAppLanguage() }.getOrNull()
+        // تطبيق لغة الواجهة المختارة يدوياً؛ في حال لم تُحدَّد تتبع
+        // الواجهة لغة النظام تلقائياً.
+        // الحقل محقون من Hilt لكن نُبقي الحماية: أي فشل تهيئة
+        // (Keystore قديم مثلاً) لا يجوز أن يُسقط العملية قبل أي شاشة —
+        // التراجع الصامت إلى لغة النظام آمن.
+        val appLang = runCatching {
+            settingsRepository.getAppLanguage()
+        }.getOrNull()
         if (appLang != null) {
-            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(appLang))
+            AppCompatDelegate.setApplicationLocales(
+                LocaleListCompat.forLanguageTags(appLang)
+            )
         }
     }
 }

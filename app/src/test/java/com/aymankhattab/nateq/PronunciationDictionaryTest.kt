@@ -14,7 +14,8 @@ import org.robolectric.annotation.Config
 
 /**
  * اختبارات قاموس النطق الشخصي (Robolectric).
- * في بيئة الاختبار قد يكون التخزين المشفّر (Keystore) متاحاً أو لا؛ ذاكرة القاموس
+ * في بيئة الاختبار قد يكون التخزين المشفّر (Keystore) متاحاً
+ * أو لا؛ ذاكرة القاموس
  * سليمة في الحالتين، وتُجرَّب نضارة القرص المشفّر بشرط توفر التخزين فعلاً.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -100,7 +101,10 @@ class PronunciationDictionaryTest {
         dict.addEntry("قديم", "مقابل")
         val json = "{\"قديم\":\"مقابل2\", \"جديد\":\"صالح\", \"مفتاح\":\"\"}"
         assertTrue(dict.importFromJson(json, merge = true))
-        assertEquals(mapOf("قديم" to "مقابل2", "جديد" to "صالح"), dict.getAllEntries())
+        assertEquals(
+            mapOf("قديم" to "مقابل2", "جديد" to "صالح"),
+            dict.getAllEntries()
+        )
     }
 
     @Test

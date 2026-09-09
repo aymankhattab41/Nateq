@@ -52,7 +52,10 @@ class NateqJsonTest {
 
     @Test
     fun parseStringMap_acceptsOnlyStringObject() {
-        assertEquals(mapOf("1" to "أحمد"), NateqJson.parseStringMap("""{"1":"أحمد"}"""))
+        assertEquals(
+            mapOf("1" to "أحمد"),
+            NateqJson.parseStringMap("""{"1":"أحمد"}""")
+        )
         assertEquals(emptyMap<String, String>(), NateqJson.parseStringMap("{}"))
         assertNull(NateqJson.parseStringMap("""{"1":5}"""))
         assertNull(NateqJson.parseStringMap("+2012\tأنس"))

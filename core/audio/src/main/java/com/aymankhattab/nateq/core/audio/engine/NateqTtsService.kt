@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.core.audio.engine
 
 import android.content.Intent
+import android.media.AudioFormat
 import android.os.Build
 import android.speech.tts.SynthesisCallback
 import android.speech.tts.SynthesisRequest
@@ -10,6 +11,7 @@ import android.speech.tts.Voice
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
+import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
 import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.engine.PronunciationDictionary
@@ -47,13 +49,18 @@ class NateqTtsService : TextToSpeechService() {
          *  إنشاء لعملية :tts التي تُقتل بين الجلسات غالباً. */
         private const val DISCOVERY_TTL_MS = 60 * 60 * 1000L
 
+        /** ترميز PCM 16-bit المستخدم في كل البث (ثابت أندرويد). */
+        private const val PCM_16BIT = AudioFormat.ENCODING_PCM_16BIT
+
         /** معيار البث الموحّد للنص المختلط (44100 مونو 16-bit) — ثابتٌ ليُتاح
          *  التدفق مقطعاً بمقطعٍ دون تجميع كامل الصوت في الذاكرة (الذروة = أكبر
-         *  مقطعٍ لا مجمل المدة)، ويحفظ جودةً لا تقل عن المعيار التاريخي 22050. */
+         *  مقطعٍ لا مجمل المدة)، ويحفظ جودةً لا تقل عن
+         *  المعيار التاريخي 22050. */
         private const val MIXED_UNIFIED_RATE = 44_100
 
-        /** معدل احتياط لمعدلِ مصدرٍ غير معلوم في المقاطع المختلطة (22050 =
-         *  معيار LORD) — يظهر فقط إن تخلف المزوّد عن إبلاغ معدله قبل الشريحة. */
+        /** معدل احتياط لمعدلِ مصدرٍ غير معلوم في المقاطع
+         *  المختلطة (22050 = معيار LORD) — يظهر فقط إن
+         *  تخلف المزوّد عن إبلاغ معدله قبل الشريحة. */
         private const val MIN_UNIFIED_RATE = 22_050
     }
 
@@ -69,7 +76,9 @@ class NateqTtsService : TextToSpeechService() {
     @Inject
     lateinit var pronunciationDictionary: PronunciationDictionary
 
-    private val serviceScope = CoroutineScope(SupervisorJob() + AppDispatchers.io)
+    private val serviceScope = CoroutineScope(
+        SupervisorJob() + AppDispatchers.io
+    )
 
     private lateinit var settings: SettingsRepository
     private lateinit var catalog: VoiceCatalog
@@ -79,7 +88,8 @@ class NateqTtsService : TextToSpeechService() {
     /** مقسم النصوص المختلطة الكتابات (منطق نقي مشترك بلا حالة). */
     private val segmenter = LanguageSegmenter()
 
-    /** الرحلة اللاتزامنية للتخليق الحالي — تُلغى عند إيقاف أو استباق طلبٍ جديد. */
+    /** الرحلة اللاتزامنية للتخليق الحالي — تُلغى عند
+     *  إيقاف أو استباق طلبٍ جديد. */
     @Volatile private var currentJob: kotlinx.coroutines.Job? = null
 
     /** يُميّز سبب إلغاء [currentJob]: إيقاف صريح (onStop) أم استباق بطلبٍ جديد.
@@ -91,22 +101,32 @@ class NateqTtsService : TextToSpeechService() {
     @Volatile private var currentLanguage = arrayOf(LanguageCode.AR.tag, "", "")
 
     override fun onCreate() {
-        // مهم: TextToSpeechService.onCreate() يستدعي onLoadLanguage()/onIsLanguageAvailable()
-        // قبل انتهاء استدعاء super.onCreate()، لذلك يجب تهيئة كل الـ lateinit
-        // كأول شيء هنا (قبل super.onCreate()) وإلا تنهار الخدمة في حلقة على الإنشاء.
-        // applicationContext متاح فور إنشاء كائن الخدمة، وإنشاء هذه الكائنات النقية
-        // (غير المرتبطة بدورة حياة Android) آمن تماماً في هذا الموضع.
-        // عند الاستدعاء من TalkBack/النظام بُني الكائن عبر Hilt (Hilt_...) فيكون
-        // settingsRepository محقوناً؛ ونبني بقية الشبكة بعناية قبل super.
-        // حماية ثانية: إن فشل الحقن لأي سبب نتراجع لكائن محلي حتى لا تنهار
-        // الخدمة قبل super.onCreate() في حلقة (طبّاق لتوقيت TextToSpeechService).
+        // مهم: TextToSpeechService.onCreate() يستدعي
+        // onLoadLanguage()/onIsLanguageAvailable() قبل انتهاء
+        // استدعاء super.onCreate()، لذلك يجب تهيئة كل
+        // الـ lateinit كأول شيء هنا (قبل super.onCreate())
+        // وإلا تنهار الخدمة في حلقة على الإنشاء.
+        // applicationContext متاح فور إنشاء كائن الخدمة،
+        // وإنشاء هذه الكائنات النقية (غير المرتبطة بدورة
+        // حياة Android) آمن تماماً في هذا الموضع.
+        // عند الاستدعاء من TalkBack/النظام بُني الكائن
+        // عبر Hilt (Hilt_...) فيكون settingsRepository
+        // محقوناً؛ ونبني بقية الشبكة بعناية قبل super.
+        // حماية ثانية: إن فشل الحقن لأي سبب نتراجع لكائن
+        // محلي حتى لا تنهار الخدمة قبل super.onCreate()
+        // في حلقة (طبّاق لتوقيت TextToSpeechService).
         settings = if (::settingsRepository.isInitialized) settingsRepository
         else SettingsRepository(applicationContext)
 
-        val dict = if (::pronunciationDictionary.isInitialized) pronunciationDictionary
-        else PronunciationDictionary(applicationContext)
+        val dict = if (::pronunciationDictionary.isInitialized) {
+            pronunciationDictionary
+        } else {
+            PronunciationDictionary(applicationContext)
+        }
 
-        val providers = listOf(SystemVoiceProvider(applicationContext, settings))
+        val providers = listOf(
+            SystemVoiceProvider(applicationContext, settings)
+        )
         catalog = VoiceCatalog(providers)
         requestHandler = SynthesisRequestHandler(catalog, settings)
         textProcessor = TextProcessor(applicationContext, settings, dict)
@@ -138,13 +158,20 @@ class NateqTtsService : TextToSpeechService() {
         serviceScope.cancel()
         // إغلاق موارد المزوّدين (TextToSpeech المربوط بالمحرك الخارجي + مراقب
         // الإنترنت + منفّذ الخلفية) كي لا تبقى روابط Binder IPC معلقة بعد
-        // تدمير الخدمة — حارس isInitialized لمسارات التدمير المبكر قبل onCreate.
+        // تدمير الخدمة — حارس isInitialized لمسارات التدمير
+        // المبكر قبل onCreate.
         if (::catalog.isInitialized) catalog.shutdown()
         super.onDestroy()
     }
 
-    override fun onIsLanguageAvailable(lang: String?, country: String?, variant: String?): Int {
-        Log.d(TAG, "onIsLanguageAvailable() lang=$lang country=$country variant=$variant")
+    override fun onIsLanguageAvailable(
+        lang: String?,
+        country: String?,
+        variant: String?
+    ): Int {
+        Log.d(TAG,
+            "onIsLanguageAvailable() lang=$lang" +
+            " country=$country variant=$variant")
         refreshDiscoveryIfNeeded()
         if (lang == null) return TextToSpeech.LANG_NOT_SUPPORTED
 
@@ -154,7 +181,11 @@ class NateqTtsService : TextToSpeechService() {
 
         // تطابق تام لأي لغة تدعمها الأصوات الفعلية (بعد تطبيع الكود)
         if (locales.any { it.language == normLang }) {
-            return if (normCountry != null && locales.any { it.language == normLang && it.country == normCountry }) {
+            return if (normCountry != null
+                && locales.any {
+                    it.language == normLang && it.country == normCountry
+                }
+            ) {
                 TextToSpeech.LANG_COUNTRY_AVAILABLE
             } else {
                 TextToSpeech.LANG_AVAILABLE
@@ -165,8 +196,14 @@ class NateqTtsService : TextToSpeechService() {
 
     override fun onGetLanguage(): Array<String> = currentLanguage
 
-    override fun onLoadLanguage(lang: String?, country: String?, variant: String?): Int {
-        Log.d(TAG, "onLoadLanguage() lang=$lang country=$country variant=$variant")
+    override fun onLoadLanguage(
+        lang: String?,
+        country: String?,
+        variant: String?
+    ): Int {
+        Log.d(TAG,
+            "onLoadLanguage() lang=$lang" +
+            " country=$country variant=$variant")
         val normLang = normalizeLanguageCode(lang)
         val normCountry = normalizeCountryCode(country)
         val result = onIsLanguageAvailable(normLang, normCountry, variant)
@@ -184,13 +221,15 @@ class NateqTtsService : TextToSpeechService() {
      * يطبّع كود اللغة من ISO-3 (ara, eng) إلى ISO-2 (ar, en).
      * موحّد في [LocaleUtils.normalizeLanguageCode].
      */
-    private fun normalizeLanguageCode(code: String?): String = LocaleUtils.normalizeLanguageCode(code)
+    private fun normalizeLanguageCode(code: String?): String =
+        LocaleUtils.normalizeLanguageCode(code)
 
     /**
      * يطبّع كود البلد من ISO-3 (EGY, USA) إلى ISO-2 (EG, US).
      * موحّد في [LocaleUtils.normalizeCountryCode].
      */
-    private fun normalizeCountryCode(code: String?): String? = LocaleUtils.normalizeCountryCode(code)
+    private fun normalizeCountryCode(code: String?): String? =
+        LocaleUtils.normalizeCountryCode(code)
 
     // =====================================================
     //  الأصوات (Voices) — المصدر الوحيد لقائمة
@@ -202,7 +241,9 @@ class NateqTtsService : TextToSpeechService() {
         Log.d(TAG, "onGetVoices() CALLED")
         refreshDiscoveryIfNeeded()
         val voices = catalog.supportedVoices()
-        Log.d(TAG, "onGetVoices() returning ${voices.size} voices: ${voices.map { it.name }}")
+        Log.d(TAG,
+            "onGetVoices() returning ${voices.size} voices:" +
+            " ${voices.map { it.name }}")
         return voices.toMutableList()
     }
 
@@ -219,7 +260,10 @@ class NateqTtsService : TextToSpeechService() {
     override fun onLoadVoice(voiceName: String?): Int {
         Log.d(TAG, "onLoadVoice() voiceName=$voiceName")
         if (voiceName == null) return TextToSpeech.ERROR
-        @Suppress("UNUSED_VARIABLE") val voice = catalog.supportedVoices().find { it.name == voiceName }
+        @Suppress("UNUSED_VARIABLE")
+        val voice = catalog.supportedVoices().find {
+            it.name == voiceName
+        }
             ?: return TextToSpeech.ERROR
         // مستقبلاً: أبلّغ SystemVoiceProvider بالصوت المحمّل حالياً
         return TextToSpeech.SUCCESS
@@ -232,51 +276,73 @@ class NateqTtsService : TextToSpeechService() {
     ): String? {
         val normLang = normalizeLanguageCode(lang)
         val name = catalog.defaultVoiceNameForLanguage(normLang)
-        Log.d(TAG, "onGetDefaultVoiceNameFor() lang=$lang -> norm=$normLang -> $name")
+        Log.d(TAG,
+            "onGetDefaultVoiceNameFor() lang=$lang" +
+            " -> norm=$normLang -> $name")
         return name
     }
 
     override fun onStop() {
-        // إيقاف صريح (لكن هذا الخيط فرعيٌّ عبر كل الخدمات الأساسية): نرفع العلم
-        // ثم نلغي التخليق الجاري — الطلبات اللاحقة تُلغى كاستباق لا كإيقاف.
+        // إيقاف صريح (لكن هذا الخيط فرعيٌّ عبر كل الخدمات
+        // الأساسية): نرفع العلم ثم نلغي التخليق الجاري —
+        // الطلبات اللاحقة تُلغى كاستباق لا كإيقاف.
         stopping = true
         currentJob?.cancel()
     }
 
-    override fun onSynthesizeText(request: SynthesisRequest?, callback: SynthesisCallback?) {
+    override fun onSynthesizeText(
+        request: SynthesisRequest?,
+        callback: SynthesisCallback?
+    ) {
         if (request == null || callback == null) return
-        // سجلّ مجرّد: طول النص واللغة فقط (النص قد يحوي OTP/حساسيات يقرؤها TalkBack).
+        // سجلّ مجرّد: طول النص واللغة فقط
+        // (النص قد يحوي OTP/حساسيات يقرؤها TalkBack).
         val reqText = request.charSequenceText?.toString()
-        Log.d(TAG, "onSynthesizeText() len=${reqText?.length} lang=${request.language}")
+        Log.d(TAG,
+            "onSynthesizeText() len=${reqText?.length}" +
+            " lang=${request.language}")
 
         // تطبيع لغة الطلب من ISO-3 (eng, ara) إلى ISO-2 (en, ar) حتى يبقى
         // حل الصوت والكتالوج متسقين مع اللغتين المدعومتين (العربية/الإنجليزية).
         val normLanguage = normalizeLanguageCode(request.language)
         val normCountry = normalizeCountryCode(request.country)
         val languageTag = Locale.forLanguageTag(
-            if (normCountry.isNullOrEmpty()) normLanguage else "$normLanguage-$normCountry"
+            if (normCountry.isNullOrEmpty()) {
+                normLanguage
+            } else {
+                "$normLanguage-$normCountry"
+            }
         ).toLanguageTag()
 
-        // التخليق يُنفَّذ على Coroutine داخل serviceScope (IO) وهو غير حاجز
-        // بالكامل: onSynthesizeText ترجع فوراً ويستلم النظام الصوت لاحقاً عبر
-        // callbacks من خيط المزوّد — السلوك القياسي لمحركات TTS غير المتزامنة
-        // (MultiTTS/espeak). لو علِق المحرك الطرفي تُنهي مهله الداخلية المتكيّفة
-        // (1.5–8 ث داخل SystemVoiceProvider) الطلبَ بدل تعليق الخيط بلا سقف.
-        // **معالجة السباق:** عند وصول طلبٍ جديد تُلغى الرحلة السابقة النشطة قبل
-        // إطلاق الجديدة حتى لا تتكدس الكوروتينات ولا تتزامن طلبات الصوت عبر
-        // البث الصوتي (يستبِق الأحدثُ الأقدم — سلوك قارئ الشاشة عند التمرير
-        // السريع). إلغاءٌ من onStop() يُبطل currentJob فتتوقف استجابة الصوت
-        // فوراً؛ وإلغاءٌ بالاستباق يُنهي callback الطلب القديم بـ error() فينتقل
-        // طابور النظام للطلب الجديد (دونها يعلق الـ queue فلا يُنطق شيء).
-        // (يبدأ callback.start() لاحقاً بمعدل العينات الفعلي من المزوّد،
-        //  لتعامل ملفات 24k/44.1k بسرعةٍ ونبرةٍ صحيحة.)
+        // التخليق يُنفَّذ على Coroutine داخل serviceScope (IO)
+        // وهو غير حاجز بالكامل: onSynthesizeText ترجع فوراً
+        // ويستلم النظام الصوت لاحقاً عبر callbacks من خيط
+        // المزوّد — السلوك القياسي لمحركات TTS غير
+        // المتزامنة (MultiTTS/espeak). لو علِق المحرك
+        // الطرفي تُنهي مهله الداخلية المتكيّفة
+        // (1.5–8 ث داخل SystemVoiceProvider) الطلبَ بدل
+        // تعليق الخيط بلا سقف.
+        // **معالجة السباق:** عند وصول طلبٍ جديد تُلغى
+        // الرحلة السابقة النشطة قبل إطلاق الجديدة حتى لا
+        // تتكدس الكوروتينات ولا تتزامن طلبات الصوت عبر
+        // البث الصوتي (يستبِق الأحدثُ الأقدم — سلوك قارئ
+        // الشاشة عند التمرير السريع). إلغاءٌ من onStop()
+        // يُبطل currentJob فتتوقف استجابة الصوت فوراً؛
+        // وإلغاءٌ بالاستباق يُنهي callback الطلب القديم
+        // بـ error() فينتقل طابور النظام للطلب الجديد
+        // (دونها يعلق الـ queue فلا يُنطق شيء).
+        // (يبدأ callback.start() لاحقاً بمعدل العينات
+        // الفعلي من المزوّد، لتعامل ملفات 24k/44.1k
+        // بسرعةٍ ونبرةٍ صحيحة.)
         stopping = false
         currentJob?.cancel()
         currentJob = serviceScope.launch {
             try {
-                // إعادة تحميل الإعدادات من القرص لأن `:tts` process منفصل
-                // عن عملية الإعدادات (SettingsActivity)، وSharedPreferences لا يتشارك
-                // عبر العمليات. بدون reload() تبقى القيم القديمة محشوة في الذاكرة.
+                // إعادة تحميل الإعدادات من القرص لأن `:tts`
+                // process منفصل عن عملية الإعدادات
+                // (SettingsActivity)، وSharedPreferences لا
+                // يتشارك عبر العمليات. بدون reload() تبقى
+                // القيم القديمة محشوة في الذاكرة.
                 settings.reload()
                 // **بند 17 — النصوص المختلطة واللغات:**
                 // 1) تقسيم النص المختلط الكتابات (عربي/إنجليزي/غيرها) إلى مقاطع
@@ -315,8 +381,9 @@ class NateqTtsService : TextToSpeechService() {
                 callback.error()
             }
         }
-        // لا ننتظر انتهاء التخليق (لا runBlocking): الإرجاع فوري والـ callbacks
-        // تُستلم لاحقاً من خيط المزوّد — النطق غير حاجز بالكامل كما هو موثّق أعلاه.
+        // لا ننتظر انتهاء التخليق (لا runBlocking): الإرجاع
+        // فوري والـ callbacks تُستلم لاحقاً من خيط المزوّد
+        // — النطق غير حاجز بالكامل كما هو موثّق أعلاه.
     }
 
     /** حل الصوت للغةٍ معيّنة مع التراجع التلقائي (بند 17.3): صوت الكتالوج
@@ -326,19 +393,24 @@ class NateqTtsService : TextToSpeechService() {
      *  عند فساد الكتالوج فيُعالَج في مواقع الاستدعاء. */
     private suspend fun resolveVoiceWithFallback(
         languageTag: String
-    ): Pair<VoiceDescriptor, com.aymankhattab.nateq.core.audio.providers.VoiceProvider?> {
+    ): Pair<VoiceDescriptor, VoiceProvider?> {
         val voice = requestHandler.resolveVoiceForLocale(languageTag)
         if (voice != null) {
             return voice to catalog.findProvider(voice.providerId)
         }
-        Log.w(TAG, "resolveVoiceWithFallback: لا صوت بالكتالوج للغة $languageTag — تراجع لصوت الجهاز الافتراضي")
+        Log.w(TAG,
+            "resolveVoiceWithFallback: لا صوت بالكتالوج" +
+            " للغة $languageTag — تراجع لصوت الجهاز" +
+            " الافتراضي")
         val fallbackVoice = VoiceDescriptor(
             id = "",
             providerId = SystemVoiceProvider.SYSTEM_PROVIDER_ID,
             displayName = "Device Default",
             locale = Locale.forLanguageTag(languageTag)
         )
-        return fallbackVoice to catalog.findProvider(SystemVoiceProvider.SYSTEM_PROVIDER_ID)
+        return fallbackVoice to catalog.findProvider(
+            SystemVoiceProvider.SYSTEM_PROVIDER_ID
+        )
     }
 
     /** المسار الأحادي (نص بلغةٍ واحدة) — نفس التدفق التفصيلي السابق حرفياً:
@@ -352,7 +424,9 @@ class NateqTtsService : TextToSpeechService() {
     ) {
         val (voice, foundProvider) = resolveVoiceWithFallback(languageTag)
         val provider = foundProvider ?: run {
-            Log.e(TAG, "synthesizeSingle لا مزود متاح إطلاقاً: lang=$languageTag")
+            Log.e(TAG,
+            "synthesizeSingle لا مزود متاح إطلاقاً:" +
+            " lang=$languageTag")
             callback.error()
             return
         }
@@ -362,9 +436,11 @@ class NateqTtsService : TextToSpeechService() {
         // - تفضيل LORD الصريح لهذه اللغة أولاً — يحتسب ولو كان 1.0x (قد يريده
         //   المستخدم «طبيعياً» بينما السرعة العامة 1.5x).
         // - ثم السرعة العامة المخزّنة (≠1.0) حتى يؤثر إعداد «ناطق» فعلاً.
-        // - وإلا (لم يعرّف LORD شيئاً) نستعمل سرعة القارئ (request.getSpeechRate())
+        // - وإلا (لم يعرّف LORD شيئاً) نستعمل سرعة القارئ
+        //   (request.getSpeechRate())
         //   فيُتبع النظامُ/القارئ ولا يُعطَّل قارئ شاشة النظام بلا تفضيل LORD.
-        val explicitLordRate = requestHandler.getExplicitLanguageRate(languageTag)
+        val explicitLordRate =
+            requestHandler.getExplicitLanguageRate(languageTag)
         val lordRate = requestHandler.getSpeechRate(languageTag)
         val reqRate = request.getSpeechRate().toFloat()
         val speechRate: Float = when {
@@ -379,9 +455,18 @@ class NateqTtsService : TextToSpeechService() {
         // عند التفعيل نغلب إعدادات التحويل (السرعة/النبرة/الصوت) ونتجاهل
         // صوت كتالوج LORD ضمنياً — نقدّم للمزوّد محركاً ولغةً محددين.
         if (convertTarget != null) {
-            Log.d(TAG, "synthesizeSingle AUTO-CONVERT lang=$languageTag engine=${convertTarget.convertEngine} loc=${convertTarget.convertLocale} rate=${convertTarget.convertRate}")
+            Log.d(TAG,
+                "synthesizeSingle AUTO-CONVERT lang=$languageTag" +
+                " engine=${convertTarget.convertEngine}" +
+                " loc=${convertTarget.convertLocale}" +
+                " rate=${convertTarget.convertRate}")
         }
-        Log.d(TAG, "synthesizeSingle lang=$languageTag lordRate=$lordRate reqRate=$reqRate usedRate=$speechRate voice=${voice.id} provider=${provider.providerId} autoConvert=$autoConvert")
+        Log.d(TAG,
+            "synthesizeSingle lang=$languageTag" +
+            " lordRate=$lordRate reqRate=$reqRate" +
+            " usedRate=$speechRate voice=${voice.id}" +
+            " provider=${provider.providerId}" +
+            " autoConvert=$autoConvert")
 
         // Process text through TextProcessor (numbers, dates, currencies, etc.)
         val processedText = textProcessor.process(rawText, languageTag)
@@ -399,54 +484,75 @@ class NateqTtsService : TextToSpeechService() {
         val finalRate = convertTarget?.let { it.convertRate } ?: speechRate
         val finalPitch = convertTarget?.let { it.convertPitch } ?: pitch
         val finalVolume = convertTarget?.let { it.convertVolume } ?: volume
-        val finalEngine = if (matchesRequest) convertTarget?.let { it.convertEngine } else null
-        val finalLocale = if (matchesRequest) convertTarget?.let { it.convertLocale } else null
-        val finalVoiceName = if (matchesRequest) convertTarget?.let { it.convertVoiceName } else null
+        val finalEngine = if (matchesRequest) {
+            convertTarget?.let { it.convertEngine }
+        } else {
+            null
+        }
+        val finalLocale = if (matchesRequest) {
+            convertTarget?.let { it.convertLocale }
+        } else {
+            null
+        }
+        val finalVoiceName = if (matchesRequest) {
+            convertTarget?.let { it.convertVoiceName }
+        } else {
+            null
+        }
 
-        // تخليق الصوت الفعلي عبر المزوّد. يُبلّغنا التنسيق (معدل عينات/قنوات) قبل
-        // أول شريحة، فنبدأ callback.start بالقيم الفعلية بدل 22050 الثابتة التي
-        // كانت تجعل Android يشغّل ملفات 24k/44.1k بسرعة ونبرة خاطئتين.
+        // تخليق الصوت الفعلي عبر المزوّد. يُبلّغنا التنسيق
+        // (معدل عينات/قنوات) قبل أول شريحة، فنبدأ
+        // callback.start بالقيم الفعلية بدل 22050 الثابتة
+        // التي كانت تجعل Android يشغّل ملفات 24k/44.1k
+        // بسرعة ونبرة خاطئتين.
         var started = false
-        provider.synthesize(processedText, voice, finalRate, finalPitch, finalVolume, { sampleRateInHz, channelCount ->
-            if (!started) {
-                callback.start(
-                    /* sampleRateInHz = */ sampleRateInHz,
-                    /* audioFormat = */ android.media.AudioFormat.ENCODING_PCM_16BIT,
-                    /* channelCount = */ channelCount
-                )
-                started = true
-            }
-        }, { chunk, validLength ->
-            // ضمانة: إن لم يبلّغ المزوّد بالتنسيق مطلقاً نبدأ بالقيم
-            // الافتراضية قبل أول بايت حتى يبقى التخليق صالحاً دائماً.
-            if (!started) {
-                callback.start(
-                    /* sampleRateInHz = */ 22050,
-                    /* audioFormat = */ android.media.AudioFormat.ENCODING_PCM_16BIT,
-                    /* channelCount = */ 1
-                )
-                started = true
-            }
-            // المنهج المُثبَت (كما في TtsService الرسمي لـ espeak-ng/MultiTTS):
-            // لا يجوز تمرير كامل المخزن المؤقت دفعةً واحدة؛ يُقسَّم إلى أجزاء
-            // بمقدار callback.getMaxBufferSize() وإلا يرفض النظام التخليق
-            // ويهبط الصوت. نقسّم كل دفعة من المزوّد احتراماً لقيود الـ callback.
-            // المعامل الثاني (validLength) هو طول البيانات الصالح الصريح —
-            // فقد تكون مصفوفة الشريحة بحجم أكبر من بياناتها الفعلية (مسبح
-            // مُعاد استخدامه)، فيُمسح حتى length فقط.
-            val maxBytes = callback.maxBufferSize
-            var offset = 0
-            while (offset < validLength) {
-                val bytesToWrite = minOf(maxBytes, validLength - offset)
-                callback.audioAvailable(chunk, offset, bytesToWrite)
-                offset += bytesToWrite
-            }
+        provider.synthesize(
+            processedText, voice, finalRate, finalPitch, finalVolume,
+            { sampleRateInHz, channelCount ->
+                if (!started) {
+                    callback.start(
+                        /* sampleRateInHz = */ sampleRateInHz,
+                        /* audioFormat = */ PCM_16BIT,
+                        /* channelCount = */ channelCount
+                    )
+                    started = true
+                }
+            }, { chunk, validLength ->
+                // ضمانة: إن لم يبلّغ المزوّد بالتنسيق مطلقاً نبدأ بالقيم
+                // الافتراضية قبل أول بايت حتى يبقى التخليق صالحاً دائماً.
+                if (!started) {
+                    callback.start(
+                        /* sampleRateInHz = */ 22050,
+                        /* audioFormat = */ PCM_16BIT,
+                        /* channelCount = */ 1
+                    )
+                    started = true
+                }
+                // المنهج المُثبَت (كما في TtsService الرسمي
+                // لـ espeak-ng/MultiTTS): لا يجوز تمرير كامل
+                // المخزن المؤقت دفعةً واحدة؛ يُقسَّم إلى أجزاء
+                // بمقدار callback.getMaxBufferSize() وإلا يرفض
+                // النظام التخليق ويهبط الصوت. نقسّم كل دفعة من
+                // المزوّد احتراماً لقيود الـ callback.
+            // المعامل الثاني (validLength) هو طول
+                // البيانات الصالح الصريح — فقد تكون مصفوفة
+                // الشريحة بحجم أكبر من بياناتها الفعلية (مسبح
+                // مُعاد استخدامه)، فيُمسح حتى length فقط.
+                val maxBytes = callback.maxBufferSize
+                var offset = 0
+                while (offset < validLength) {
+                    val bytesToWrite = minOf(maxBytes, validLength - offset)
+                    callback.audioAvailable(chunk, offset, bytesToWrite)
+                    offset += bytesToWrite
+                }
         }, finalEngine, finalLocale, finalVoiceName)
 
-        // **ضمانة انهيار:** done() قبل start() ترمي IllegalStateException في إطار
-        // أندرويد — إن فشل المحرك بصمت (لا تنسيق ولا شريحة) يبقى started=false
-        // فنُنهي بـ error() لا بـ done(). والاستثناءات الرامية قبل هذا الموضع
-        // تصل إلى catch في onSynthesizeText (إنهاءٌ واحد error() بلا ازدواج).
+        // **ضمانة انهيار:** done() قبل start() ترمي
+        // IllegalStateException في إطار أندرويد — إن فشل
+        // المحرك بصمت (لا تنسيق ولا شريحة) يبقى started=false
+        // فنُنهي بـ error() لا بـ done(). والاستثناءات الرامية
+        // قبل هذا الموضع تصل إلى catch في onSynthesizeText
+        // (إنهاءٌ واحد error() بلا ازدواج).
         if (started) {
             callback.done()
         } else {
@@ -457,7 +563,8 @@ class NateqTtsService : TextToSpeechService() {
     /** النص المختلط الكتابات: لكل مقطعٍ لغوي يُعالَج النص بدليل لغته (العربية
      *  بقنواتها الكاملة وسواها بالتنظيف فقط)، ويُحل صوت المقطع من كتالوجه أو من
      *  تراجع الجهاز الافتراضي، ويُخلَّق بلغته ومحركِه — ثم تُعاد عينات كل مقطع
-     *  فور إنتاجه إلى معيارٍ صوتي موحّد ثابت ([MIXED_UNIFIED_RATE]، مونو) وتُدفع
+     *  فور إنتاجه إلى معيارٍ صوتي موحّد ثابت
+     *  ([MIXED_UNIFIED_RATE]، مونو) وتُدفع
      *  للـ callback مقطعاً مقطعاً بلا تجميع صوت المقرّأ كاملاً في الذاكرة.
      *
      * ## لماذا معيار ثابت بدل "المعدل الأعلى" كما كان؟
@@ -482,7 +589,9 @@ class NateqTtsService : TextToSpeechService() {
             val (voice, foundProvider) = resolveVoiceWithFallback(segTag)
             val provider = foundProvider
             if (provider == null) {
-                Log.w(TAG, "synthesizeMixed: لا مزود لمقطع $segTag — يُسقط وحده: ${segment.text}")
+                Log.w(TAG,
+                "synthesizeMixed: لا مزود لمقطع $segTag —" +
+                " يُسقط وحده: ${segment.text}")
                 continue
             }
             val segRate = requestHandler.getSpeechRate(segTag)
@@ -497,7 +606,11 @@ class NateqTtsService : TextToSpeechService() {
             val finalVolume = convert?.convertVolume ?: segVolume
             val finalEngine = if (matches) convert?.convertEngine else null
             val finalLocale = if (matches) convert?.convertLocale else null
-            val finalVoiceName = if (matches) convert?.convertVoiceName else null
+            val finalVoiceName = if (matches) {
+                convert?.convertVoiceName
+            } else {
+                null
+            }
 
             // بث المقطع فور إنتاجه: شريحة المزوّد تُعاد معاينتها إلى المعيار
             // الموحّد وتُدفع للـ callback مباشرةً — لا تُجمَع مع مقاطع أخرى ولا
@@ -516,9 +629,14 @@ class NateqTtsService : TextToSpeechService() {
                         nativeChannels = channelCount
                     },
                     { chunk, validLength ->
-                        // إن لم يُبلِّغ المزوّد بالمعدل قبل الشريحة (مسارات طارئة)
-                        // نعتبره معيار LORD الأساسي لئلا يُبثّ معدلٌ غير معلوم.
-                        val rate = if (nativeRate > 0) nativeRate else MIN_UNIFIED_RATE
+                        // إن لم يُبلِّغ المزوّد بالمعدل قبل الشريحة
+                        // (مسارات طارئة) نعتبره معيار LORD الأساسي
+                        // لئلا يُبثّ معدلٌ غير معلوم.
+                        val rate = if (nativeRate > 0) {
+                            nativeRate
+                        } else {
+                            MIN_UNIFIED_RATE
+                        }
                         val mono = PcmResampler.convert(
                             chunk, rate, nativeChannels, MIXED_UNIFIED_RATE
                         )
@@ -526,14 +644,16 @@ class NateqTtsService : TextToSpeechService() {
                         if (!started) {
                             callback.start(
                                 /* sampleRateInHz = */ MIXED_UNIFIED_RATE,
-                                /* audioFormat = */ android.media.AudioFormat.ENCODING_PCM_16BIT,
+                                /* audioFormat = */ PCM_16BIT,
                                 /* channelCount = */ 1
                             )
                             started = true
                         }
                         var offset = 0
                         while (offset < mono.size) {
-                            val bytesToWrite = minOf(maxBytes, mono.size - offset)
+                            val bytesToWrite = minOf(
+                                maxBytes, mono.size - offset
+                            )
                             callback.audioAvailable(mono, offset, bytesToWrite)
                             offset += bytesToWrite
                         }
@@ -545,7 +665,9 @@ class NateqTtsService : TextToSpeechService() {
             } catch (e: CancellationException) {
                 throw e
             } catch (t: Throwable) {
-                Log.w(TAG, "synthesizeMixed: مقطع $segTag فشل تخليقه — يُسقط وحده", t)
+                Log.w(TAG,
+                "synthesizeMixed: مقطع $segTag فشل تخليقه —" +
+                " يُسقط وحده", t)
             }
         }
         if (!started) {
@@ -557,8 +679,9 @@ class NateqTtsService : TextToSpeechService() {
 
     /**
      * يكتشف اللغات عبر كل المحركات إن انقضت مدة صلاحية الذاكرة أو لم تُبنَ
-     * بعد. يعمل في الخلفية دائماً ([AppDispatchers.io]) ولا يرمي؛ تعثّر الاكتشاف
-     * يُبقي الحد الأدنى ar/en مضموناً في القوائم.
+     * بعد. يعمل في الخلفية دائماً ([AppDispatchers.io])
+     * ولا يرمي؛ تعثّر الاكتشاف يُبقي الحد الأدنى
+     * ar/en مضموناً في القوائم.
      */
     private suspend fun maybeRefreshDiscovery() {
         if (!catalog.needsRefresh(DISCOVERY_TTL_MS)) return
@@ -566,10 +689,13 @@ class NateqTtsService : TextToSpeechService() {
             VoiceCatalog.discoverAllLanguagesAcrossEngines(applicationContext)
         }.getOrDefault(emptyMap())
         catalog.applyDiscovery(discovered)
-        Log.d(TAG, "maybeRefreshDiscovery: ${discovered.size} لغة عبر كل المحركات المثبتة")
+        Log.d(TAG,
+            "maybeRefreshDiscovery: ${discovered.size} لغة" +
+            " عبر كل المحركات المثبتة")
     }
 
-    /** إطلاق تحديث الاكتشاف دون انتظار (يُستدعى من دوال الاستعلام المتزامنة). */
+    /** إطلاق تحديث الاكتشاف دون انتظار
+     * (يُستدعى من دوال الاستعلام المتزامنة). */
     private fun refreshDiscoveryIfNeeded() {
         if (!catalog.needsRefresh(DISCOVERY_TTL_MS)) return
         serviceScope.launch {
@@ -594,7 +720,9 @@ class NateqTtsService : TextToSpeechService() {
      * (أو بلا تحويل فعلي) تُرجع null ولا يُتلاعب بنصها.
      */
     private fun resolveConvertTarget(requestLang: String?): ConvertTarget? {
-        val prefs = settings.getEnginePreferenceForLanguage(requestLang ?: "und")
+        val prefs = settings.getEnginePreferenceForLanguage(
+            requestLang ?: "und"
+        )
 
         val rate = prefs.rate
         val pitch = prefs.pitch
@@ -605,8 +733,11 @@ class NateqTtsService : TextToSpeechService() {
         val engine = if (autoConvert) prefs.engine else null
         val voiceName = if (autoConvert) prefs.voiceName else null
 
-        // إن لم يُعدّل المستخدم أي شريط ولا يوجد محرك مختار → نعتمد الإعدادات العامة.
-        if (rate == 1.0f && pitch == 1.0f && volume == 1.0f && engine == null) return null
+        // إن لم يُعدّل المستخدم أي شريط ولا يوجد محرك
+        // مختار → نعتمد الإعدادات العامة.
+        if (rate == 1.0f && pitch == 1.0f && volume == 1.0f
+            && engine == null
+        ) return null
 
         return ConvertTarget(
             convertEngine = engine,

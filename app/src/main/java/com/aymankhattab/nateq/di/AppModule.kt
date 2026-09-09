@@ -25,11 +25,15 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideSettingsRepository(@ApplicationContext context: Context): SettingsRepository =
+    fun provideSettingsRepository(
+        @ApplicationContext context: Context
+    ): SettingsRepository =
         SettingsRepository(context)
 
     @Provides
     @Singleton
-    fun providePronunciationDictionary(@ApplicationContext context: Context): PronunciationDictionary =
+    fun providePronunciationDictionary(
+        @ApplicationContext context: Context
+    ): PronunciationDictionary =
         PronunciationDictionary(context)
 }

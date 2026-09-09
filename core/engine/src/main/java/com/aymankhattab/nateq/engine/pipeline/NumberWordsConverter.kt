@@ -65,14 +65,17 @@ internal object NumberWordsConverter {
             val intWord = numberToWords(integerPart)
             // نطق طبيعي للكسور الشائعة: «ونصف/وربع/وثلاثة أرباع» بدل «فاصلة…».
             return when (decimalDigits) {
-                "5" -> if (integerPart == 0L) "${base}نصف" else "$base$intWord ونصف"
-                "25" -> if (integerPart == 0L) "${base}ربع" else "$base$intWord وربع"
+                "5" -> if (integerPart == 0L) "${base}نصف"
+                    else "$base$intWord ونصف"
+                "25" -> if (integerPart == 0L) "${base}ربع"
+                    else "$base$intWord وربع"
                 "75" -> if (integerPart == 0L) {
                     "${base}ثلاثة أرباع"
                 } else {
                     "$base$intWord وثلاثة أرباع"
                 }
-                // غيرها: نطق الخانات رقماً رقماً مع إبقاء الأصفار («05» → صفر خمسة)
+                // غيرها: نطق الخانات رقماً رقماً مع إبقاء الأصفار
+                // («05» → صفر خمسة)
                 else -> "$base$intWord فاصلة " + decimalDigits
                     .map { digit -> numberToWords(digit.toString().toLong()) }
                     .joinToString(" ")

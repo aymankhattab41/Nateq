@@ -7,13 +7,18 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** اختبارات معيد أخذ العينات وخافض القنوات (بند 17.1) — منطق نقي بلا Android. */
+/**
+ * اختبارات معيد أخذ العينات وخافض القنوات (بند 17.1) — منطق نقي
+ * بلا Android.
+ */
 class PcmResamplerTest {
 
     private fun encode(vararg values: Int): ByteArray {
         val out = ByteArray(values.size * 2)
         values.forEachIndexed { i, v ->
-            val clamped = v.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+            val clamped = v.coerceIn(
+                Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()
+            )
             out[i * 2] = (clamped and 0xFF).toByte()
             out[i * 2 + 1] = (clamped shr 8).toByte()
         }
@@ -23,8 +28,9 @@ class PcmResamplerTest {
     private fun decode(pcm: ByteArray): IntArray {
         val out = IntArray(pcm.size / 2)
         for (i in out.indices) {
-            out[i] = (pcm[i * 2].toInt() and 0xFF or (pcm[i * 2 + 1].toInt() shl 8))
-                .toShort().toInt()
+            out[i] = (pcm[i * 2].toInt() and 0xFF or
+            (pcm[i * 2 + 1].toInt() shl 8))
+            .toShort().toInt()
         }
         return out
     }
@@ -118,7 +124,8 @@ class PcmResamplerTest {
 
     @Test
     fun threeChannels_negativeSum_balancedAverage() {
-        // قنوات ثلاث بمجاميع سالبة: مسار القنوات ≥3 متوازن لا يُفسد (-2)+(-2)+(-2).
+        // قنوات ثلاث بمجاميع سالبة: مسار القنوات ≥3 متوازن
+        // لا يُفسد (-2)+(-2)+(-2).
         val pcm = encode(-2, -2, -2)
         val result = PcmResampler.convert(pcm, 22050, 3, 22050)
         assertArrayEquals(intArrayOf(-2), decode(result))
@@ -144,7 +151,10 @@ class PcmResamplerTest {
         assertEquals((500L * 48000 / 44100).toInt(), decoded.size)
         var previous = decoded[0]
         for (i in 1 until decoded.size) {
-            assertTrue("عند الفهرس $i: ${decoded[i]} قبل $previous", decoded[i] >= previous)
+            assertTrue(
+                "عند الفهرس $i: ${decoded[i]} قبل $previous",
+                decoded[i] >= previous
+            )
             previous = decoded[i]
         }
         assertTrue(decoded.first() >= 0)

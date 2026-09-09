@@ -48,12 +48,18 @@ class NumberSpeechTest {
 
     @Test
     fun formatByMode_singleDigits() {
-        assertEquals("واحد اثنان ثلاثة", NumberSpeech.formatByMode(1, 123, false))
+        assertEquals(
+            "واحد اثنان ثلاثة",
+            NumberSpeech.formatByMode(1, 123, false)
+        )
     }
 
     @Test
     fun formatByMode_grouping() {
-        assertEquals("اثنا عشر, ثلاثة وثلاثون, خمسة وأربعون", NumberSpeech.formatByMode(2, 123345, false))
+        assertEquals(
+            "اثنا عشر, ثلاثة وثلاثون, خمسة وأربعون",
+            NumberSpeech.formatByMode(2, 123345, false)
+        )
     }
 
     @Test
@@ -82,7 +88,10 @@ class NumberSpeechTest {
         assertEquals("تسعمائة", NumberSpeech.toArabicWords(900))
         assertEquals("مئة وخمس", NumberSpeech.toArabicWords(105))
         assertEquals("أربعمائة وعشر", NumberSpeech.toArabicWords(410))
-        assertEquals("خمسمائة وسبعة وسبعون", NumberSpeech.toArabicWords(577, isFeminine = false))
+        assertEquals(
+            "خمسمائة وسبعة وسبعون",
+            NumberSpeech.toArabicWords(577, isFeminine = false)
+        )
     }
 
     @Test
@@ -90,23 +99,41 @@ class NumberSpeechTest {
         assertEquals("واحد", NumberSpeech.toArabicWords(1, isFeminine = false))
         assertEquals("اثنان", NumberSpeech.toArabicWords(2, isFeminine = false))
         assertEquals("خمسة", NumberSpeech.toArabicWords(5, isFeminine = false))
-        assertEquals("أحد وخمسون", NumberSpeech.toArabicWords(51, isFeminine = false))
-        assertEquals("أحد عشر", NumberSpeech.toArabicWords(11, isFeminine = false))
+        assertEquals(
+            "أحد وخمسون",
+            NumberSpeech.toArabicWords(51, isFeminine = false)
+        )
+        assertEquals(
+            "أحد عشر",
+            NumberSpeech.toArabicWords(11, isFeminine = false)
+        )
     }
 
     @Test
     fun arabicWords_feminineCompound() {
         // مؤنث مركب فوق العشرات
-        assertEquals("إحدى وخمسون", NumberSpeech.toArabicWords(51, isFeminine = true))
-        assertEquals("اثنتان وثلاثون", NumberSpeech.toArabicWords(32, isFeminine = true))
-        assertEquals("خمس وستون", NumberSpeech.toArabicWords(65, isFeminine = true))
+        assertEquals(
+            "إحدى وخمسون",
+            NumberSpeech.toArabicWords(51, isFeminine = true)
+        )
+        assertEquals(
+            "اثنتان وثلاثون",
+            NumberSpeech.toArabicWords(32, isFeminine = true)
+        )
+        assertEquals(
+            "خمس وستون",
+            NumberSpeech.toArabicWords(65, isFeminine = true)
+        )
     }
 
     @Test
     fun arabicWords_feminineTwo_nominative() {
         // مؤنث العدد 2 في موضع الرفع: «اثنتان» لا «اثنتين» (نصباً/جراً).
         assertEquals("اثنتان", NumberSpeech.toArabicWords(2, isFeminine = true))
-        assertEquals("اثنتا عشرة", NumberSpeech.toArabicWords(12, isFeminine = true))
+        assertEquals(
+            "اثنتا عشرة",
+            NumberSpeech.toArabicWords(12, isFeminine = true)
+        )
         assertEquals(
             "مئة واثنتان",
             NumberSpeech.toArabicWords(102, isFeminine = true)
@@ -171,22 +198,37 @@ class NumberSpeechTest {
     @Test
     fun englishWords_largeNumbers() {
         assertEquals("one thousand", NumberSpeech.toEnglishWords(1000))
-        assertEquals("two thousand five hundred", NumberSpeech.toEnglishWords(2500))
-        assertEquals("nine thousand nine hundred ninety nine", NumberSpeech.toEnglishWords(9999))
+        assertEquals(
+            "two thousand five hundred",
+            NumberSpeech.toEnglishWords(2500)
+        )
+        assertEquals(
+            "nine thousand nine hundred ninety nine",
+            NumberSpeech.toEnglishWords(9999)
+        )
     }
 
     @Test
     fun englishWords_hundreds() {
         assertEquals("one hundred", NumberSpeech.toEnglishWords(100))
         assertEquals("one hundred five", NumberSpeech.toEnglishWords(105))
-        assertEquals("three hundred forty one", NumberSpeech.toEnglishWords(341))
+        assertEquals(
+            "three hundred forty one",
+            NumberSpeech.toEnglishWords(341)
+        )
     }
 
     @Test
     fun formatByMode_groupingWithLeadingGroup() {
         // ungrouped تقسيم المجموعات مع مجموعة أولى أصغر (123 → 1, 23)
-        assertEquals("واحد, ثلاثة وعشرون", NumberSpeech.formatByMode(2, 123, false))
-        assertEquals("one, twenty three", NumberSpeech.formatByMode(2, 123, true))
+        assertEquals(
+            "واحد, ثلاثة وعشرون",
+            NumberSpeech.formatByMode(2, 123, false)
+        )
+        assertEquals(
+            "one, twenty three",
+            NumberSpeech.formatByMode(2, 123, true)
+        )
     }
 
     @Test
@@ -197,32 +239,45 @@ class NumberSpeechTest {
 
     @Test
     fun formatByMode_largeGrouping() {
-        assertEquals("مائة وثلاثة وعشرون, مائة وثلاثة وعشرون", NumberSpeech.formatByMode(3, 123123, false))
+        assertEquals(
+            "مائة وثلاثة وعشرون, مائة وثلاثة وعشرون",
+            NumberSpeech.formatByMode(3, 123123, false)
+        )
     }
 
     @Test
     fun formatByMode_leadingZerosPreserved() {
         // الرمز 102 في التجميع الزوجي: «02» صفر بادئ لا يُفقد
-        assertEquals("واحد, صفر اثنان", NumberSpeech.formatByMode(2, 102, false))
+        val expectedTwo = "واحد, صفر اثنان"
+        assertEquals(expectedTwo, NumberSpeech.formatByMode(2, 102, false))
         assertEquals("one, zero two", NumberSpeech.formatByMode(2, 102, true))
         // تجميع ثلاثي لـ 1002: «002» ثلاثة أصفار بادئة
-        assertEquals("واحد, صفر صفر اثنان", NumberSpeech.formatByMode(3, 1002, false))
-        assertEquals("one, zero zero two", NumberSpeech.formatByMode(3, 1002, true))
+        assertEquals(
+            "واحد, صفر صفر اثنان",
+            NumberSpeech.formatByMode(3, 1002, false)
+        )
+        assertEquals(
+            "one, zero zero two",
+            NumberSpeech.formatByMode(3, 1002, true)
+        )
     }
 
     @Test
     fun formatByMode_groupingUpToEightDigits() {
         // تجميع خماسي/ثماني يدعم 8 خانات بلا انهيار (كان محدوداً بـ 9999)
         assertEquals(
-            "ألف ومائتان وأربعة وثلاثون, ستة وخمسون ألفاً وسبعمائة وتسعة وثمانون",
+            "ألف ومائتان وأربعة وثلاثون, ستة وخمسون ألفاً" +
+                " وسبعمائة وتسعة وثمانون",
             NumberSpeech.formatByMode(5, 123456789, false)
         )
         assertEquals(
-            "اثنا عشر مليوناً وثلاثمائة وخمسة وأربعون ألفاً وستمائة وثمانية وسبعون",
+            "اثنا عشر مليوناً وثلاثمائة وخمسة وأربعون ألفاً" +
+                " وستمائة وثمانية وسبعون",
             NumberSpeech.formatByMode(8, 12345678, false)
         )
         assertEquals(
-            "twelve million three hundred forty five thousand six hundred seventy eight",
+            "twelve million three hundred forty five thousand" +
+            " six hundred seventy eight",
             NumberSpeech.formatByMode(8, 12345678, true)
         )
     }

@@ -5,7 +5,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * اختبارات مهلة توليد TTS المتكيّفة مع طول النص — منطق نقي بلا أجهزة (JVM خالص).
+ * اختبارات مهلة توليد TTS المتكيّفة مع طول النص — منطق نقي بلا
+ * أجهزة (JVM خالص).
  * النظام داخل [SystemVoiceProvider] (مهلة ممتدة لإكمال كتابة الملف، وقصيرة
  * للنصوص القصيرة كي لا تحتبس قراءة الشاشة ثوانٍ طوال).
  */
@@ -30,6 +31,9 @@ class SystemVoiceProviderTest {
     @Test
     fun synthesisTimeout_neverExceedsBound() {
         // لا تُجازز السقف في أي حجم (يشمل الحالات القصوى)
-        assertEquals(8000L, SystemVoiceProvider.synthesisTimeoutMs(Int.MAX_VALUE))
+        assertEquals(
+            8000L,
+            SystemVoiceProvider.synthesisTimeoutMs(Int.MAX_VALUE)
+        )
     }
 }

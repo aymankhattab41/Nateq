@@ -46,8 +46,14 @@ private class ParameterizedTypes(
     }
 
     override fun toString(): String {
-        val args = typeArguments.joinToString(", ") { if (it is Class<*>) it.name else it.toString() }
-        return if (typeArguments.isNotEmpty()) "$rawType<$args>" else rawType.toString()
+        val args = typeArguments.joinToString(", ") {
+            if (it is Class<*>) it.name else it.toString()
+        }
+        return if (typeArguments.isNotEmpty()) {
+            "$rawType<$args>"
+        } else {
+            rawType.toString()
+        }
     }
 
     companion object {

@@ -15,7 +15,8 @@ object EnginePicker {
 
     /** محركات النطق الحقيقية التي نمنحها الأولوية عند اختيار تلقائي، لأنها
      *  مضمونةً تُنتج صوتاً قياسياً (على عكس قارئات الشاشة). الترتيب يفضّل
-     *  MultiTTS (صوت قياسي مرن) ثم محرك النظام الرسمي (جوجل فسامسونج فـ AOSP). */
+     *  MultiTTS (صوت قياسي مرن) ثم محرك النظام الرسمي
+     *  (جوجل فسامسونج فـ AOSP). */
     private val preferredEngines = listOf(
         "org.nobody.multitts",
         "com.google.android.tts",
@@ -33,7 +34,8 @@ object EnginePicker {
     private val screenReaderPackages = setOf(
         "com.google.android.marvin.talkback",   // TalkBack جوجل
         "com.samsung.accessibility",            // TalkBack سامسونج
-        "com.nirenr.talkman"                    // Jieshuo/Talkman (قارئ + محرك eSpeak)
+        // Jieshuo/Talkman (قارئ + محرك eSpeak)
+        "com.nirenr.talkman"
     )
 
     /** محرك TTS مثبّت في النظام مع تسميته الظاهرة للمستخدم */
@@ -94,8 +96,13 @@ object EnginePicker {
      * — فكان الاستبعادُ السابق للمحرك الأخير الفاشل فقط يُعيد الأعلى أولويةً
      * وتترنّح المحاولة بين المحركين حتى استنفاد الذاكرة.
      */
-    fun pickFallbackEngineFrom(installed: Collection<String>, failedEngines: Set<String>): String? {
-        return pickPreferredEngineFrom(installed.filter { it !in failedEngines })
+    fun pickFallbackEngineFrom(
+        installed: Collection<String>,
+        failedEngines: Set<String>
+    ): String? {
+        return pickPreferredEngineFrom(
+            installed.filter { it !in failedEngines }
+        )
     }
 
     /**

@@ -32,7 +32,8 @@ class ConnectivityMonitor(context: Context) : AutoCloseable {
 
     private val connectivityManager =
         context.applicationContext
-            .getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            .getSystemService(Context.CONNECTIVITY_SERVICE)
+            as ConnectivityManager
 
     /**
      * حارس الحالة الذرية لـ [callback]: يعصم التسجيل/الإلغاء من التكرار —
@@ -44,8 +45,9 @@ class ConnectivityMonitor(context: Context) : AutoCloseable {
 
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
-            // الحالة تُحسب حيّة من [isOnlineNow] فلا يحمل هذا إلا لوجستية التسجيل؛
-            // الحفاظ على الـ callback معبّراً ومستقبلاً يخدم تفعيل "استشعار فوري".
+            // الحالة تُحسب حيّة من [isOnlineNow] فلا يحمل هذا
+            // إلا لوجستية التسجيل؛ الحفاظ على الـ callback معبّراً
+            // ومستقبلاً يخدم تفعيل "استشعار فوري".
         }
 
         override fun onLost(network: Network) = Unit
@@ -78,7 +80,8 @@ class ConnectivityMonitor(context: Context) : AutoCloseable {
         }
     }
 
-    /** تعطيل المراقب عند حاجة المتصل (إطلاق موارد المراقبة) — أمنٌ عند التكرار. */
+    /** تعطيل المراقب عند حاجة المتصل (إطلاق موارد المراقبة) —
+     *  أمنٌ عند التكرار. */
     fun unregister() {
         // unregisterNetworkCallback على مُعلَّمٍ غير مسجّل يرمي استثناءً؛
         // العلامة الذرية تحسم التحويل true→false مرة واحدة فقط فتتخطى بقية
@@ -95,7 +98,8 @@ class ConnectivityMonitor(context: Context) : AutoCloseable {
      * صحيح فقط إذا كانت الشبكة النشطة محقّقة الاتصال بالإنترنت
      * ([NET_CAPABILITY_INTERNET] مع [NET_CAPABILITY_VALIDATED]) — تُستخدم
      * [ConnectivityManager.activeNetwork] لأنها الشبكة التي ستحمل حركة التوليد
-     * السحابي فعلياً، وهي البديل غير المهجور لـ `allNetworks` (مهجورة منذ API 35).
+     * السحابي فعلياً، وهي البديل غير المهجور لـ `allNetworks`
+     * (مهجورة منذ API 35).
      */
     fun isOnlineNow(): Boolean {
         val cm = connectivityManager

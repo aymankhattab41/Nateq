@@ -123,22 +123,42 @@ class LocaleUtilsTest {
 
     @Test
     fun normalizeIndicDigits_arabicEastern() {
-        assertEquals("0123456789", LocaleUtils.normalizeIndicDigits("\u0660\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669"))
+        assertEquals(
+            "0123456789",
+            LocaleUtils.normalizeIndicDigits(
+                "\u0660\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669"
+            )
+        )
     }
 
     @Test
     fun normalizeIndicDigits_persian() {
-        assertEquals("0123456789", LocaleUtils.normalizeIndicDigits("\u06F0\u06F1\u06F2\u06F3\u06F4\u06F5\u06F6\u06F7\u06F8\u06F9"))
+        assertEquals(
+            "0123456789",
+            LocaleUtils.normalizeIndicDigits(
+                "\u06F0\u06F1\u06F2\u06F3\u06F4\u06F5\u06F6\u06F7\u06F8\u06F9"
+            )
+        )
     }
 
     @Test
     fun normalizeIndicDigits_devanagari() {
-        assertEquals("0123456789", LocaleUtils.normalizeIndicDigits("\u0966\u0967\u0968\u0969\u096A\u096B\u096C\u096D\u096E\u096F"))
+        assertEquals(
+            "0123456789",
+            LocaleUtils.normalizeIndicDigits(
+                "\u0966\u0967\u0968\u0969\u096A\u096B\u096C\u096D\u096E\u096F"
+            )
+        )
     }
 
     @Test
     fun normalizeIndicDigits_mixedPreservesOthers() {
-        assertEquals("0845", LocaleUtils.normalizeIndicDigits("\u0660\u0668\u0664\u0665"))
+        assertEquals(
+            "0845",
+            LocaleUtils.normalizeIndicDigits(
+                "\u0660\u0668\u0664\u0665"
+            )
+        )
         assertEquals("مرحبا 123", LocaleUtils.normalizeIndicDigits("مرحبا 123"))
     }
 
@@ -161,14 +181,21 @@ class LocaleUtilsTest {
     fun containsOtp_englishKeyword() {
         assertTrue(LocaleUtils.containsOtp("Your OTP is 493721"))
         assertTrue(LocaleUtils.containsOtp("verification code 581239"))
-        assertTrue("one time password يقع", LocaleUtils.containsOtp("one time password 199483"))
+        assertTrue(
+            "one time password يقع",
+            LocaleUtils.containsOtp("one time password 199483")
+        )
         assertTrue(LocaleUtils.containsOtp("passcode 437890"))
     }
 
     @Test
     fun containsOtp_indicDigits() {
         // الأرقام الشرقية تُطبَّع قبل الكشف فتتعرف على الكود
-        assertTrue(LocaleUtils.containsOtp("رمز التحقق: \u0664\u0668\u0662\u0669\u0661\u0663"))
+        assertTrue(
+            LocaleUtils.containsOtp(
+                "رمز التحقق: \u0664\u0668\u0662\u0669\u0661\u0663"
+            )
+        )
     }
 
     @Test

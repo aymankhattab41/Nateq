@@ -152,7 +152,10 @@ class PipelineStepsTest {
 
     @Test
     fun currency_thousands_withFraction() {
-        assertEquals("ألف دولار وخمسة وسبعون سنت", CurrencyStep.apply("$1,000.75"))
+        assertEquals(
+            "ألف دولار وخمسة وسبعون سنت",
+            CurrencyStep.apply("$1,000.75")
+        )
     }
 
     @Test
@@ -177,7 +180,10 @@ class PipelineStepsTest {
         // د.ك/د.ب/ر.ع/د.ت = 1000 وحدة فرعية (فلس/بيسة/مليم) لكل وحدة رئيسية:
         // كان الضرب الثابت في 100 ينطق «1.500 د.ك» «وخمسون فلس» بدل
         // «وخمسمائة فلس»، ويُفقد الجزء الكسري من «2.005 د.ت» كلياً.
-        assertEquals("دينار كويتي واحد وخمسمائة فلس", CurrencyStep.apply("1.500 د.ك"))
+        assertEquals(
+            "دينار كويتي واحد وخمسمائة فلس",
+            CurrencyStep.apply("1.500 د.ك")
+        )
         assertEquals(
             "دينار بحريني واحد ومائتان وخمسون فلس",
             CurrencyStep.apply("1.250 د.ب")
@@ -307,17 +313,26 @@ class PipelineStepsTest {
 
     @Test
     fun numberToWords_fractionWithLeadingZeros() {
-        assertEquals("ثلاثة فاصلة صفر خمسة", NumberWordsConverter.numberToWords(3.05))
+        assertEquals(
+            "ثلاثة فاصلة صفر خمسة",
+            NumberWordsConverter.numberToWords(3.05)
+        )
     }
 
     @Test
     fun numberToWords_fractionThreeDigits() {
-        assertEquals("ثلاثة فاصلة واحد أربعة واحد", NumberWordsConverter.numberToWords(3.141))
+        assertEquals(
+            "ثلاثة فاصلة واحد أربعة واحد",
+            NumberWordsConverter.numberToWords(3.141)
+        )
     }
 
     @Test
     fun numberToWords_fractionFiveZeroFive() {
-        assertEquals("ثلاثة فاصلة خمسة صفر خمسة", NumberWordsConverter.numberToWords(3.505))
+        assertEquals(
+            "ثلاثة فاصلة خمسة صفر خمسة",
+            NumberWordsConverter.numberToWords(3.505)
+        )
     }
 
     @Test
@@ -332,17 +347,26 @@ class PipelineStepsTest {
 
     @Test
     fun numberToWords_nan() {
-        assertEquals("ليس رقماً", NumberWordsConverter.numberToWords(Double.NaN))
+        assertEquals(
+            "ليس رقماً",
+            NumberWordsConverter.numberToWords(Double.NaN)
+        )
     }
 
     @Test
     fun numberToWords_positiveInfinity() {
-        assertEquals("ما لا نهاية", NumberWordsConverter.numberToWords(Double.POSITIVE_INFINITY))
+        assertEquals(
+            "ما لا نهاية",
+            NumberWordsConverter.numberToWords(Double.POSITIVE_INFINITY)
+        )
     }
 
     @Test
     fun numberToWords_negativeInfinity() {
-        assertEquals("ناقص ما لا نهاية", NumberWordsConverter.numberToWords(Double.NEGATIVE_INFINITY))
+        assertEquals(
+            "ناقص ما لا نهاية",
+            NumberWordsConverter.numberToWords(Double.NEGATIVE_INFINITY)
+        )
     }
 
     @Test

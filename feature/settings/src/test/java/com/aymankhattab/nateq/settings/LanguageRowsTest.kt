@@ -5,7 +5,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** اختبارات بناء صفوف كل اللغات المكتشفة في حوار التحويل (بند 17.2) — نقي JVM. */
+/** اختبارات بناء صفوف كل اللغات المكتشفة في حوار التحويل
+ *  (بند 17.2) — نقي JVM. */
 class LanguageRowsTest {
 
     private fun enginesOf(vararg packages: String): List<EngineWithVoices> =
@@ -34,7 +35,9 @@ class LanguageRowsTest {
         val rows = buildAllLanguageRows(discovered)
         val tags = rows.map { it.languageTag }
         assertEquals(listOf("ar", "en", "de", "fr"), tags)
-        rows.take(2).forEach { assertTrue("ar/en بلا محرك لا تعني غيابهما", it.engines.isEmpty()) }
+        rows.take(2).forEach {
+            assertTrue("ar/en بلا محرك لا تعني غيابهما", it.engines.isEmpty())
+        }
     }
 
     @Test
@@ -46,13 +49,20 @@ class LanguageRowsTest {
     @Test
     fun enginesCarriedFromDiscovery() {
         val discovered = mapOf("fr" to enginesOf("fr.engine"))
-        val frRow = buildAllLanguageRows(discovered).first { it.languageTag == "fr" }
+        val frRow = buildAllLanguageRows(discovered).first {
+            it.languageTag == "fr"
+        }
         assertEquals("fr.engine", frRow.engines.single().enginePackage)
     }
 
     @Test
     fun displayNames_areNonBlank() {
         val rows = buildAllLanguageRows(mapOf("de" to enginesOf("de.pkg")))
-        rows.forEach { assertTrue("اسم عرض غير فارغ: ${it.languageTag}", it.displayName.isNotBlank()) }
+        rows.forEach {
+            assertTrue(
+                "اسم عرض غير فارغ: ${it.languageTag}",
+                it.displayName.isNotBlank()
+            )
+        }
     }
 }

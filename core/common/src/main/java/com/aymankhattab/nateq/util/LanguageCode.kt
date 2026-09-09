@@ -16,16 +16,21 @@ enum class LanguageCode(val tag: String) {
     EN("en");
 
     companion object {
-        /** هل السلسلة/طابع اللغة يمثل العربية؟ (مطابقة بادئة متسامحة مع الحالة). */
+        /** هل السلسلة/طابع اللغة يمثل العربية؟ (مطابقة بادئة
+         *  متسامحة مع الحالة). */
         fun isArabic(languageTag: String): Boolean =
             languageTag.startsWith(AR.tag, ignoreCase = true)
 
-        /** هل السلسلة/طابع اللغة يمثل الإنجليزية؟ (مطابقة بادئة متسامحة مع الحالة). */
+        /** هل السلسلة/طابع اللغة يمثل الإنجليزية؟ (مطابقة بادئة
+         *  متسامحة مع الحالة). */
         fun isEnglish(languageTag: String): Boolean =
             languageTag.startsWith(EN.tag, ignoreCase = true)
 
-        /** يحلّ سلسلةً إلى ثابت معروف إن طابق أحدها، وإلا null (للغات المكتشفة). */
+        /** يحلّ سلسلةً إلى ثابت معروف إن طابق أحدها، وإلا null
+         *  (للغات المكتشفة). */
         fun fromTagOrNull(languageTag: String): LanguageCode? =
-            entries.firstOrNull { it.tag.equals(languageTag, ignoreCase = true) }
+            entries.firstOrNull {
+                it.tag.equals(languageTag, ignoreCase = true)
+            }
     }
 }

@@ -34,8 +34,14 @@ class TextProcessorTest {
 
     @Test
     fun nonArabicText_isUnchanged() {
-        assertEquals("hello world 123", processor.process("hello world 123", "en"))
-        assertEquals("the number 42", processor.process("the number 42", "en-US"))
+        assertEquals(
+            "hello world 123",
+            processor.process("hello world 123", "en")
+        )
+        assertEquals(
+            "the number 42",
+            processor.process("the number 42", "en-US")
+        )
     }
 
     @Test
@@ -69,12 +75,16 @@ class TextProcessorTest {
         // 12:00 → «الثانية عشرة ظهراً» لا «مساءً»
         assertEquals("الثانية عشرة ظهراً", processor.process("12:00", "ar"))
         // 10:45 → «الحادية عشرة إلا ربع صباحاً»
-        assertEquals("الحادية عشرة إلا ربع صباحاً", processor.process("10:45", "ar"))
+        assertEquals(
+            "الحادية عشرة إلا ربع صباحاً",
+            processor.process("10:45", "ar")
+        )
     }
 
     @Test
     fun phoneNumber_arabicContext_spokenDigitByDigit() {
-        // السياق عربي (languageTag=ar) فتُنطق رقماً رقماً عربياً حتى لو كان النص أرقاماً فقط
+        // السياق عربي (languageTag=ar) فتُنطق رقماً رقماً عربياً
+        // حتى لو كان النص أرقاماً فقط
         val out = processor.process("01001234567", "ar")
         assertEquals(
             "صفر واحد صفر صفر واحد اثنان ثلاثة أربعة خمسة ستة سبعة",
@@ -86,7 +96,8 @@ class TextProcessorTest {
     fun phoneNumber_mixedArabicText_spokenDigitByDigit() {
         // حتى بوجود نص عربي حول الرقم
         val out = processor.process("اتصل بـ 01001234567", "ar")
-        assertTrue(out.contains("صفر واحد صفر صفر واحد اثنان ثلاثة أربعة خمسة ستة سبعة"))
+        val expected = "صفر واحد صفر صفر واحد اثنان ثلاثة أربعة خمسة ستة سبعة"
+        assertTrue(out.contains(expected))
     }
 
     @Test
@@ -114,7 +125,9 @@ class TextProcessorTest {
     @Test
     fun urduText_withoutExtendedMarks_unchanged() {
         // نص أوردو عادي (لا يحمل رموز النطاق الممتد) — لا يتأثر بالتوسيع الجديد
-        val input = "\u067E\u0627\u06A9\u0633\u062A\u0627\u0646\u06CC " + // پاکستانی
+        // پاکستانی
+        val input =
+            "\u067E\u0627\u06A9\u0633\u062A\u0627\u0646\u06CC " +
             "\u0645\u06CC\u0631\u06D2 " + // میرے
             "\u062F\u0648\u0633\u062A " + // دوست
             "\u06C1\u06CC\u06BA" // ہیں
@@ -126,7 +139,9 @@ class TextProcessorTest {
         // نص أوردو مشكول بعلامة من نطاق التشكيل العربي الممتد
         // (U+08A0–U+08FF، هنا تعني الضمة الأوردية U+08EE). تُجرّد العلامة لكن
         // تبقى الحروف الأوردية نفسها (پ ک ی ے ہ ں) سالمة تماماً.
-        val marked = "\u067E\u0627\u06A9\u08EE\u0633\u062A\u0627\u0646\u06CC " + // پاکستانی (ضمة ممتدة)
+        // پاکستانی (ضمة ممتدة)
+        val marked =
+            "\u067E\u0627\u06A9\u08EE\u0633\u062A\u0627\u0646\u06CC " +
             "\u0645\u06CC\u0631\u06D2 " + // میرے
             "\u062F\u0648\u0633\u062A\u08F0 " + // دوست (فتحتان مفتوحتان U+08F0)
             "\u06C1\u06CC\u06BA" // ہیں
@@ -151,7 +166,9 @@ class TextProcessorTest {
     fun emoji_compoundFamily_spokenOnce() {
         // إيموجي مركّب بعائلة (👨‍👩‍👧‍👦 عبر ZWJ) يُنطق باسم أول مكوّن مرة
         // واحدة ولا يبقى أي ZWJ أو وحدات نصية محجرة في الناتج.
-        val input = "مرحبا \uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67\u200D\uD83D\uDC66"
+        val input =
+            "مرحبا \uD83D\uDC68\u200D\uD83D\uDC69\u200D" +
+            "\uD83D\uDC67\u200D\uD83D\uDC66"
         val out = processor.process(input, "ar")
         assertEquals("مرحبا رجل", out)
         assertTrue(!out.contains("\u200D"))
@@ -202,7 +219,10 @@ class TextProcessorTest {
         // تاريخ داخل الرابط (2026-03-09) لا يُفسَّر كتاريخ مستقل: UrlStep تعمل
         // أولاً فتحمي الرابط ومساراته الرقمية من خطوات التاريخ/الوقت/العملة
         // اللاحقة، فيُنطق اسم النطاق ويختفي باقي المسار بصمت (لا كلمات تاريخ).
-        val out = processor.process("راجع https://site.com/news/2026-03-09/post", "ar")
+        val out = processor.process(
+            "راجع https://site.com/news/2026-03-09/post",
+            "ar"
+        )
         assertEquals("راجع موقع site", out)
         assertTrue(!out.contains("مارس"))
         assertTrue(!out.contains("post"))
@@ -225,7 +245,8 @@ class TextProcessorTest {
         // كلمات أولاً فيفشل نمط (?<=\d)…(?=\d)).
         assertEquals("خمسة زائد ثلاثة", processor.process("5 + 3", "ar"))
         assertEquals("عشرة ناقص أربعة", processor.process("10 - 4", "ar"))
-        // الكسر 1/2 يُنطق «واحد على اثنان» (numberToWords يستخدم «اثنان» المرفوعة).
+        // الكسر 1/2 يُنطق «واحد على اثنان»
+        // (numberToWords يستخدم «اثنان» المرفوعة).
         assertEquals("واحد على اثنان", processor.process("1/2", "ar"))
         // الادعاء: العملية الطويلة (8 خانات) لا تُنطق هاتفاً رقماً رقماً
         assertEquals("ألف ناقص ألفان", processor.process("1000 - 2000", "ar"))
@@ -236,12 +257,18 @@ class TextProcessorTest {
     @Test
     fun decimalNumber_threeFractionDigits_notCorrupted() {
         // 3.141 عدد عشري لا فاصلة آلاف — لا يتحول إلى 3141.
-        assertEquals("ثلاثة فاصلة واحد أربعة واحد", processor.process("3.141", "ar"))
+        assertEquals(
+            "ثلاثة فاصلة واحد أربعة واحد",
+            processor.process("3.141", "ar")
+        )
     }
 
     @Test
     fun thousandsSeparators_stillRemoved() {
-        assertEquals("ألف ومائتان وأربعة وثلاثون", processor.process("1,234", "ar"))
+        assertEquals(
+            "ألف ومائتان وأربعة وثلاثون",
+            processor.process("1,234", "ar")
+        )
         assertEquals("مليون ومائتان وأربعة وثلاثون ألفاً وخمسمائة وسبعة وستون",
             processor.process("1,234,567", "ar"))
     }
@@ -255,7 +282,10 @@ class TextProcessorTest {
         // آحاد 5 بعد مئة → جمع آلاف:
         assertEquals("مائة وخمسة آلاف", processor.process("105,000", "ar"))
         // تمييز الملايين بالإضافة كذلك:
-        assertEquals("مليون ومائتا ألف وخمسمائة", processor.process("1,200,500", "ar"))
+        assertEquals(
+            "مليون ومائتا ألف وخمسمائة",
+            processor.process("1,200,500", "ar")
+        )
         assertEquals("مائة مليون", processor.process("100,000,000", "ar"))
         assertEquals("مائتا مليون", processor.process("200,000,000", "ar"))
         // مئات مضبوطة:
@@ -286,9 +316,15 @@ class TextProcessorTest {
         assertEquals("دولار واحد", processor.process("""$1""", "ar"))
         assertEquals("دولاران", processor.process("""$2""", "ar"))
         assertEquals("ثلاثة دولارات", processor.process("""$3""", "ar"))
-        assertEquals("دولار واحد وخمسون سنت", processor.process("""$1.50""", "ar"))
+        assertEquals(
+            "دولار واحد وخمسون سنت",
+            processor.process("""$1.50""", "ar")
+        )
         assertEquals("خمسون سنت", processor.process("""0.50$""", "ar"))
-        assertEquals("عشرة ملايين دولار", processor.process("""$10,000,000""", "ar"))
+        assertEquals(
+            "عشرة ملايين دولار",
+            processor.process("""$10,000,000""", "ar")
+        )
     }
 
     @Test
@@ -305,7 +341,10 @@ class TextProcessorTest {
     @Test
     fun europeanDecimal_separatedDigits() {
         // التنسيق الأوروبي 1.234,56 = 1234.56.
-        assertEquals("ألف ومائتان وأربعة وثلاثون فاصلة خمسة ستة", processor.process("1.234,56", "ar"))
+        assertEquals(
+            "ألف ومائتان وأربعة وثلاثون فاصلة خمسة ستة",
+            processor.process("1.234,56", "ar")
+        )
     }
 
     @Test
@@ -326,7 +365,10 @@ class TextProcessorTest {
     @Test
     fun longBareNumber_notPhone_spokenAsNumber() {
         // المبالغ الطويلة بلا فواصل لا تُعامل هواتف ولا تُنطق رقماً رقماً.
-        assertEquals("المبلغ عشرة ملايين", processor.process("المبلغ 10000000", "ar"))
+        assertEquals(
+            "المبلغ عشرة ملايين",
+            processor.process("المبلغ 10000000", "ar")
+        )
         assertEquals("خمسة ملايين", processor.process("5000000", "ar"))
     }
 
@@ -336,15 +378,25 @@ class TextProcessorTest {
         // «80 كم/س» لا تُطابق إطلاقاً.
         assertEquals("خمسة أمتار", processor.process("5 م", "ar"))
         assertEquals("عشرة سنتيمترات", processor.process("10 سم", "ar"))
-        assertEquals("ثمانون كيلومتر في الساعة", processor.process("80 كم/س", "ar"))
+        assertEquals(
+            "ثمانون كيلومتر في الساعة",
+            processor.process("80 كم/س", "ar")
+        )
     }
 
     @Test
     fun numberToWords_specialValues_noCrash() {
         assertTrue(processor.numberToWords(Double.NaN).isNotBlank())
-        assertEquals("ما لا نهاية", processor.numberToWords(Double.POSITIVE_INFINITY))
-        assertEquals("ناقص ما لا نهاية", processor.numberToWords(Double.NEGATIVE_INFINITY))
-        // Long.MIN_VALUE لا يفيض ولا يغرق في حلقة (StackOverflow) ولو مسبوق بالسالب.
+        assertEquals(
+            "ما لا نهاية",
+            processor.numberToWords(Double.POSITIVE_INFINITY)
+        )
+        assertEquals(
+            "ناقص ما لا نهاية",
+            processor.numberToWords(Double.NEGATIVE_INFINITY)
+        )
+        // Long.MIN_VALUE لا يفيض ولا يغرق في حلقة (StackOverflow) ولو
+        // مسبوق بالسالب.
         val minWords = processor.numberToWords(Long.MIN_VALUE)
         assertTrue(minWords.startsWith("ناقص"))
         assertTrue(minWords.contains("كوينتيليون"))
@@ -352,7 +404,8 @@ class TextProcessorTest {
 
     @Test
     fun numberToWords_largePositiveLong_supported() {
-        // حتى الكوينتيليون (10^18) — أقصى مدى Long سليم دون صفر يعيد كلمات ناقصة.
+        // حتى الكوينتيليون (10^18) — أقصى مدى Long سليم دون صفر يعيد
+        // كلمات ناقصة.
         assertTrue(processor.numberToWords(Long.MAX_VALUE).isNotBlank())
     }
 }

@@ -6,7 +6,9 @@ import java.util.regex.Pattern
 /** معالجة الأوقات: 14:30 → «الثانية والنصف ظهراً». */
 internal object TimeStep : TextProcessingStep {
 
-    private val PATTERN_TIME = Pattern.compile("""(\d{1,2}):(\d{2})(?::(\d{2}))?""")
+    private val PATTERN_TIME = Pattern.compile(
+        """(\d{1,2}):(\d{2})(?::(\d{2}))?"""
+    )
 
     override fun apply(input: String): String {
         val matcher = PATTERN_TIME.matcher(input)
@@ -18,7 +20,9 @@ internal object TimeStep : TextProcessingStep {
             val hour = matcher.group(1)!!.toInt()
             val minute = matcher.group(2)!!.toInt()
             val timeText = formatTime(hour, minute)
-            matcher.appendReplacement(buffer, java.util.regex.Matcher.quoteReplacement(timeText))
+            matcher.appendReplacement(
+                buffer, java.util.regex.Matcher.quoteReplacement(timeText)
+            )
         }
         matcher.appendTail(buffer)
         return buffer.toString()
@@ -43,7 +47,8 @@ internal object TimeStep : TextProcessingStep {
             else -> "${NumberSpeech.toArabicWords(count)} دقيقة"
         }
 
-        // صيغة دقائق سياق «إلا» (منصوبة): «إلا خمس دقائق»، «إلا دقيقة واحدة»، «إلا دقيقتين»
+        // صيغة دقائق سياق «إلا» (منصوبة): «إلا خمس دقائق»،
+        // «إلا دقيقة واحدة»، «إلا دقيقتين»
         fun minutesOmissionPart(count: Int): String = when (count) {
             1 -> "دقيقة واحدة"
             2 -> "دقيقتين"

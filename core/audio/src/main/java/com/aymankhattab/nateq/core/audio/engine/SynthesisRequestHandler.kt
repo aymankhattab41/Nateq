@@ -19,11 +19,15 @@ class SynthesisRequestHandler(
 
         // 1) الصوت المفضّل المحفوظ لهذه اللغة بالضبط
         val preferredVoiceId = settings.getPreferredVoiceId(languageTag)
-        preferredVoiceId?.let { id -> voices.find { it.id == id }?.let { return it } }
+        preferredVoiceId?.let { id ->
+            voices.find { it.id == id }?.let { return it }
+        }
 
         // 2) تراجع: الصوت الافتراضي للغة (حتى لا يصمت TalkBack أبداً)
         val defaultName = catalog.defaultVoiceNameForLanguage(locale.language)
-        defaultName?.let { name -> voices.find { it.id == name }?.let { return it } }
+        defaultName?.let { name ->
+            voices.find { it.id == name }?.let { return it }
+        }
 
         // 3) ملاذ أخير: أول صوت متاح لهذه اللغة
         return voices.firstOrNull()
@@ -33,7 +37,8 @@ class SynthesisRequestHandler(
         // تفضيل هذه اللغة الصريح إن حُفظ (حتى لو كان 1.0x)، وإلا الرجوع إلى
         // السرعة العامة الافتراضية — لا يُعتبر 1.0x «غياباً» فيُفقد اختيار
         // المستخدم ويُعاد تطبيق قيمة عامة أخرى فوق إرادته.
-        return settings.getSpeechRateOrNull(languageTag) ?: settings.getDefaultSpeechRate()
+        return settings.getSpeechRateOrNull(languageTag)
+            ?: settings.getDefaultSpeechRate()
     }
 
     fun getPitch(languageTag: String): Float =

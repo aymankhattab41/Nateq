@@ -13,8 +13,14 @@ class EmojiSpeechSplitterTest {
 
     @Test
     fun emptyText_noParts() {
-        assertEquals(emptyList<Pair<String, Boolean>>(), names(EmojiSpeech.split("", true)))
-        assertEquals(emptyList<Pair<String, Boolean>>(), names(EmojiSpeech.split("", false)))
+        assertEquals(
+            emptyList<Pair<String, Boolean>>(),
+            names(EmojiSpeech.split("", true))
+        )
+        assertEquals(
+            emptyList<Pair<String, Boolean>>(),
+            names(EmojiSpeech.split("", false))
+        )
     }
 
     @Test
@@ -55,26 +61,43 @@ class EmojiSpeechSplitterTest {
     @Test
     fun variantSelector_keepsBaseEmojiOnly() {
         // ❤️ = U+2764 + U+FE0F (مؤشر أشكال): المقطع هو "قلب أحمر" بلا جزيئات
-        assertEquals(listOf("قلب أحمر" to true), names(EmojiSpeech.split("❤️", true)))
+        assertEquals(
+            listOf("قلب أحمر" to true),
+            names(EmojiSpeech.split("❤️", true))
+        )
     }
 
     @Test
     fun flagPair_arabic_usesFlagName() {
-        val sa = String(Character.toChars(0x1F1F8)) + String(Character.toChars(0x1F1E6))
-        assertEquals(listOf("علم السعودية" to true), names(EmojiSpeech.split(sa, true)))
+        val sa = String(Character.toChars(0x1F1F8)) +
+            String(Character.toChars(0x1F1E6))
+        assertEquals(
+            listOf("علم السعودية" to true),
+            names(EmojiSpeech.split(sa, true))
+        )
     }
 
     @Test
     fun flagPair_english_usesFlagName() {
-        val sa = String(Character.toChars(0x1F1F8)) + String(Character.toChars(0x1F1E6))
-        assertEquals(listOf("flag of Saudi Arabia" to true), names(EmojiSpeech.split(sa, false)))
+        val sa = String(Character.toChars(0x1F1F8)) +
+            String(Character.toChars(0x1F1E6))
+        assertEquals(
+            listOf("flag of Saudi Arabia" to true),
+            names(EmojiSpeech.split(sa, false))
+        )
     }
 
     @Test
     fun loneRegionalIndicator_fallsBack() {
         val lone = String(Character.toChars(0x1F1F8))
-        assertEquals(listOf("إيموجي" to true), names(EmojiSpeech.split(lone, true)))
-        assertEquals(listOf("emoji" to true), names(EmojiSpeech.split(lone, false)))
+        assertEquals(
+            listOf("إيموجي" to true),
+            names(EmojiSpeech.split(lone, true))
+        )
+        assertEquals(
+            listOf("emoji" to true),
+            names(EmojiSpeech.split(lone, false))
+        )
     }
 
     @Test
@@ -95,8 +118,14 @@ class EmojiSpeechSplitterTest {
     fun unknownEmoji_fallsBack() {
         // ✇ (U+2707) غير مسجّل في القاموس
         val unknown = String(Character.toChars(0x2707))
-        assertEquals(listOf("إيموجي" to true), names(EmojiSpeech.split(unknown, true)))
-        assertEquals(listOf("emoji" to true), names(EmojiSpeech.split(unknown, false)))
+        assertEquals(
+            listOf("إيموجي" to true),
+            names(EmojiSpeech.split(unknown, true))
+        )
+        assertEquals(
+            listOf("emoji" to true),
+            names(EmojiSpeech.split(unknown, false))
+        )
     }
 
     @Test

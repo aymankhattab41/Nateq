@@ -20,7 +20,8 @@ import javax.inject.Inject
 import kotlinx.coroutines.launch
 
 /**
- * خدمة الاستماع للإشعارات — تقرأ إشعارات التطبيقات المهمة (واتساب، تلجرام، إلخ) بالصوت.
+ * خدمة الاستماع للإشعارات — تقرأ إشعارات التطبيقات المهمة
+ * (واتساب، تلجرام، إلخ) بالصوت.
  * يجب منح الإذن يدوياً من: الإعدادات ← التطبيقات الخاصة ← الوصول للإشعارات.
  */
 @AndroidEntryPoint
@@ -35,7 +36,9 @@ class NateqNotificationListener : NotificationListenerService() {
                 context.contentResolver,
                 "enabled_notification_listeners"
             ) ?: return false
-            val cn = ComponentName(context, NateqNotificationListener::class.java)
+            val cn = ComponentName(
+                context, NateqNotificationListener::class.java
+            )
             return flat.contains(cn.flattenToString())
         }
 
@@ -82,14 +85,17 @@ class NateqNotificationListener : NotificationListenerService() {
             // المفتاح الرئيسي يُوقف كل الإعلانات دفعة واحدة.
             if (!settings.isAllAnnouncementsEnabled()) return
 
-            // إشعار من تطبيق الرسائل النصية مع قراءة SMS مفعّلة: يُعالج بمسار SMS
-            // المستقل (قبل فحص قائمة تطبيقات قراءة الإشعارات العادية) لأنه ميزة
-            // منفصلة لها إعداداتها الخاصة.
-            // - إن كان RECEIVE_SMS ممنوحاً فسيَنطقه SmsReadingReceiver مباشرة (نتجنب هنا).
-            // - إن لم يكن ممنوحاً نقرأ الرسالة عبر خدمة الاستماع للإشعارات (NLS)
-            //   بإعدادات SMS المتخصصة (الصوت/السرعة/الخصوصية/فلتر OTP) بدل الإذن المقيّد.
+            // إشعار من تطبيق الرسائل النصية مع قراءة SMS مفعّلة:
+            // يُعالج بمسار SMS المستقل (قبل فحص قائمة تطبيقات قراءة الإشعارات
+            // العادية) لأنه ميزة منفصلة لها إعداداتها الخاصة.
+            // - إن كان RECEIVE_SMS ممنوحاً فسيَنطقه SmsReadingReceiver
+            //   مباشرة (نتجنب هنا).
+            // - إن لم يكن ممنوحاً نقرأ الرسالة عبر خدمة الاستماع
+            //   للإشعارات (NLS) بإعدادات SMS المتخصصة
+            //   (الصوت/السرعة/الخصوصية/فلتر OTP) بدل الإذن المقيّد.
             val defaultSmsApp = runCatching {
-                android.provider.Telephony.Sms.getDefaultSmsPackage(applicationContext)
+                android.provider.Telephony.Sms
+                    .getDefaultSmsPackage(applicationContext)
             }.getOrNull()
             val isSmsApp = pkg == defaultSmsApp
             val smsMode = settings.getSmsReadingMode()
@@ -152,10 +158,12 @@ class NateqNotificationListener : NotificationListenerService() {
                 Locale.forLanguageTag(LanguageCode.EN.tag)
             }
 
-            // سجلّ مجرّد من مضمون الإشعار (قد يحوي OTP/حساسيات) — الطول والحزمة فقط.
+            // سجلّ مجرّد من مضمون الإشعار (قد يحوي OTP/حساسيات)
+            // — الطول والحزمة فقط.
             Log.d(TAG, "Notification from $pkg: ${speechText.length} chars")
 
-            // احترام إعدادات فئة "صوت الإشعارات" (سرعته/نبرته/مستواه) بدل ثوابت 1.0
+            // احترام إعدادات فئة "صوت الإشعارات"
+            // (سرعته/نبرته/مستواه) بدل ثوابت 1.0
             val speechRate = settings.getSpeechRateForCategory(
                 SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
             )
@@ -184,13 +192,16 @@ class NateqNotificationListener : NotificationListenerService() {
         // إعادة الربط التلقائي بعد فصل النظام (توفير الطاقة/إيقاف مؤقت)
         // حتى لا تتوقف قراءة الإشعارات دون تدخل المستخدم.
         try {
-            requestRebind(ComponentName(this, NateqNotificationListener::class.java))
+            requestRebind(
+                ComponentName(this, NateqNotificationListener::class.java)
+            )
         } catch (t: Throwable) {
             Log.e(TAG, "requestRebind failed", t)
         }
     }
 
-    /** قراءة الرسائل النصية الواردة عبر إشعار تطبيق الرسائل (بديل NLS بدل إذن RECEIVE_SMS). */
+    /** قراءة الرسائل النصية الواردة عبر إشعار تطبيق الرسائل
+     * (بديل NLS بدل إذن RECEIVE_SMS). */
     private fun handleSmsNotification(
         sbn: StatusBarNotification,
         settings: SettingsRepository,
@@ -199,9 +210,12 @@ class NateqNotificationListener : NotificationListenerService() {
         val notification = sbn.notification ?: return
         val extras = notification.extras
 
-        // في إشعارات تطبيقات الرسائل: العنوان يحمل اسم/رقم المرسل عادةً والنص المحتوى.
-        val sender = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim()
-        val body = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim()
+        // في إشعارات تطبيقات الرسائل: العنوان يحمل اسم/رقم المرسل
+        // عادةً والنص المحتوى.
+        val sender = extras.getCharSequence(Notification.EXTRA_TITLE)
+            ?.toString()?.trim()
+        val body = extras.getCharSequence(Notification.EXTRA_TEXT)
+            ?.toString()?.trim()
         if (sender.isNullOrBlank() && body.isNullOrBlank()) return
 
         val displayAddress = sender ?: getString(R.string.sms_unknown_sender)
@@ -210,10 +224,12 @@ class NateqNotificationListener : NotificationListenerService() {
         val volume = settings.getSmsReadingVolume()
 
         val content = body ?: ""
-        // خصوصية قفل الشاشة: عند القفل يُنطق المصدر فقط دون المحتوى (حماية OTP).
+        // خصوصية قفل الشاشة: عند القفل يُنطق المصدر فقط
+        // دون المحتوى (حماية OTP).
         val privacyLocked = settings.isLockScreenPrivacyEnabled()
                 && settings.isDeviceScreenLocked()
-        val effectiveMode = if (privacyLocked) SmsReadingReceiver.MODE_SOURCE else smsMode
+        val effectiveMode =
+            if (privacyLocked) SmsReadingReceiver.MODE_SOURCE else smsMode
 
         val dynamicText = "$displayAddress $content"
         val useArabicVoice = !dynamicText.any { it.isLetter() } ||
@@ -233,7 +249,8 @@ class NateqNotificationListener : NotificationListenerService() {
             privacyLocked -> smsFrom
             isOtp -> LocaleUtils.stringForSpeech(
                 applicationContext,
-                if (useArabicVoice) LanguageCode.AR.tag else LanguageCode.EN.tag,
+if (useArabicVoice) LanguageCode.AR.tag
+                else LanguageCode.EN.tag,
                 R.string.sms_otp_safe,
                 R.string.sms_otp_safe
             ).replace("{name}", displayAddress)
@@ -246,7 +263,9 @@ class NateqNotificationListener : NotificationListenerService() {
         }
 
         val isArabic = LocaleUtils.containsArabic(text)
-        val locale = if (isArabic) Locale.forLanguageTag(LanguageCode.AR.tag) else Locale.forLanguageTag(LanguageCode.EN.tag)
+        val locale =
+            if (isArabic) Locale.forLanguageTag(LanguageCode.AR.tag)
+            else Locale.forLanguageTag(LanguageCode.EN.tag)
 
         Log.d(TAG, "SMS via NLS: ${text.length} chars")
 
@@ -255,10 +274,17 @@ class NateqNotificationListener : NotificationListenerService() {
         speech.speak(text, locale, speechRate, 1.0f, volume)
     }
 
-    private fun buildSpeechText(appName: String, title: String?, text: String?, privacyLocked: Boolean): String {
-        // لغة النطق من محتوى الإشعار (اسم التطبيق/العنوان/النص) لا من لغة الواجهة
+    private fun buildSpeechText(
+        appName: String,
+        title: String?,
+        text: String?,
+        privacyLocked: Boolean
+    ): String {
+        // لغة النطق من محتوى الإشعار (اسم التطبيق/العنوان/النص)
+        // لا من لغة الواجهة
         val dynamicText = "$appName ${title.orEmpty()} ${text.orEmpty()}"
-        val isArabic = !dynamicText.any { it.isLetter() } || LocaleUtils.containsArabic(dynamicText)
+        val isArabic = !dynamicText.any { it.isLetter() } ||
+            LocaleUtils.containsArabic(dynamicText)
         val lang = if (isArabic) LanguageCode.AR.tag else LanguageCode.EN.tag
         // عند قفل الشاشة نكتفي باسم التطبيق دون أي مضمون.
         if (privacyLocked) {
@@ -267,14 +293,23 @@ class NateqNotificationListener : NotificationListenerService() {
             ).replace("{app}", appName)
         }
         return when {
-            !title.isNullOrBlank() && !text.isNullOrBlank() -> LocaleUtils.stringForSpeech(
-                applicationContext, lang, R.string.notif_from_title_text, R.string.notif_from_title_text
-            ).replace("{app}", appName).replace("{title}", title).replace("{text}", text)
+            !title.isNullOrBlank() && !text.isNullOrBlank() ->
+                LocaleUtils.stringForSpeech(
+                    applicationContext, lang,
+                    R.string.notif_from_title_text,
+                    R.string.notif_from_title_text
+                ).replace("{app}", appName)
+                .replace("{title}", title)
+                .replace("{text}", text)
             !title.isNullOrBlank() -> LocaleUtils.stringForSpeech(
-                applicationContext, lang, R.string.notif_from_title, R.string.notif_from_title
+                applicationContext, lang,
+                R.string.notif_from_title,
+                R.string.notif_from_title
             ).replace("{app}", appName).replace("{title}", title)
             !text.isNullOrBlank() -> LocaleUtils.stringForSpeech(
-                applicationContext, lang, R.string.notif_from_text, R.string.notif_from_text
+                applicationContext, lang,
+                R.string.notif_from_text,
+                R.string.notif_from_text
             ).replace("{app}", appName).replace("{text}", text)
             else -> LocaleUtils.stringForSpeech(
                 applicationContext, lang, R.string.notif_new, R.string.notif_new
@@ -286,7 +321,8 @@ class NateqNotificationListener : NotificationListenerService() {
         return when (packageName) {
             "com.whatsapp" -> getString(R.string.app_whatsapp)
             "com.whatsapp.w4b" -> getString(R.string.app_whatsapp_business)
-            "org.telegram.messenger", "org.telegram.messenger.web" -> getString(R.string.app_telegram)
+            "org.telegram.messenger",
+            "org.telegram.messenger.web" -> getString(R.string.app_telegram)
             "com.facebook.orca" -> getString(R.string.app_messenger)
             "com.instagram.android" -> getString(R.string.app_instagram)
             else -> packageName.substringAfterLast('.')

@@ -21,7 +21,8 @@ import com.google.android.material.switchmaterial.SwitchMaterial
 import java.util.Calendar
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
-/** ضابط قسم «إعلان الوقت»: الفاصل الزمني/الصيغة/ساعات الهدوء/التاريخ الهجري. */
+/** ضابط قسم «إعلان الوقت»: الفاصل الزمني/الصيغة/
+ *  ساعات الهدوء/التاريخ الهجري. */
 internal class TimeAnnouncementController(
     private val fragment: VoiceSelectionFragment,
     private val settings: SettingsRepository,
@@ -37,7 +38,8 @@ internal class TimeAnnouncementController(
     private lateinit var switchClockWidget: SwitchMaterial
 
     fun setup(view: View) {
-        switchTimeAnnouncement = view.findViewById(R.id.switch_time_announcement)
+        switchTimeAnnouncement =
+            view.findViewById(R.id.switch_time_announcement)
         spinnerTimeInterval = view.findViewById(R.id.spinner_time_interval)
         llQuietSchedule = view.findViewById(R.id.ll_quiet_schedule)
         spinnerTimeFormat = view.findViewById(R.id.spinner_time_format)
@@ -59,12 +61,17 @@ internal class TimeAnnouncementController(
         )
         spinnerTimeFormat.adapter = fragment.simpleAdapter(formats)
 
-        val intervalPref = runCatching { settings.getTimeAnnouncementInterval() }.getOrDefault(30)
+        val intervalPref =
+            runCatching { settings.getTimeAnnouncementInterval() }
+                .getOrDefault(30)
         spinnerTimeInterval.setSelection(intervalIndex(intervalPref))
-        val formatPref = runCatching { settings.getTimeAnnouncementFormat() }.getOrDefault("arabic_natural")
+        val formatPref =
+            runCatching { settings.getTimeAnnouncementFormat() }
+                .getOrDefault("arabic_natural")
         spinnerTimeFormat.setSelection(if (formatPref == "digital") 1 else 0)
         switchTimeAnnouncement.isChecked =
-            runCatching { settings.isTimeAnnouncementEnabled() }.getOrDefault(true)
+            runCatching { settings.isTimeAnnouncementEnabled() }
+                .getOrDefault(true)
         setupQuietScheduleRows(view)
 
         switchClockWidget.isChecked =
@@ -73,36 +80,60 @@ internal class TimeAnnouncementController(
 
         switchTimeAnnouncement.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setTimeAnnouncementEnabled(checked) }
-            if (checked) AnnouncementSchedulerService.requestStart(fragment.requireContext())
+            if (checked) {
+                AnnouncementSchedulerService.requestStart(
+                    fragment.requireContext()
+                )
+            }
             onStatusChanged()
             fragment.view?.announceCompat(
                 fragment.getString(
-                    if (checked) R.string.announcement_turned_on else R.string.announcement_turned_off
-                )
+                        if (checked) {
+                            R.string.announcement_turned_on
+                        } else {
+                            R.string.announcement_turned_off
+                        }
+                    )
             )
         }
-        switchTime24h.isChecked = runCatching { settings.isTime24Hour() }.getOrDefault(false)
+        switchTime24h.isChecked =
+            runCatching { settings.isTime24Hour() }
+                .getOrDefault(false)
         switchTime24h.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setTime24Hour(checked) }
             fragment.view?.announceCompat(
-                fragment.getString(if (checked) R.string.toggle_on else R.string.toggle_off)
+                fragment.getString(
+                    if (checked) R.string.toggle_on else R.string.toggle_off
+                )
             )
         }
-        switchHijriDate.isChecked = runCatching { settings.isHijriDateEnabled() }.getOrDefault(false)
+        switchHijriDate.isChecked =
+            runCatching { settings.isHijriDateEnabled() }
+                .getOrDefault(false)
         switchHijriDate.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setHijriDateEnabled(checked) }
             fragment.view?.announceCompat(
-                fragment.getString(if (checked) R.string.toggle_on else R.string.toggle_off)
+                fragment.getString(
+                    if (checked) R.string.toggle_on else R.string.toggle_off
+                )
             )
         }
         switchClockWidget.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setClockWidgetEnabled(checked) }
             fragment.view?.announceCompat(
-                fragment.getString(if (checked) R.string.toggle_on else R.string.toggle_off)
+                fragment.getString(
+                    if (checked) R.string.toggle_on else R.string.toggle_off
+                )
             )
         }
-        spinnerTimeInterval.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+        spinnerTimeInterval.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
                 val value = when (position) {
                     1 -> 30
                     2 -> 45
@@ -132,28 +163,43 @@ internal class TimeAnnouncementController(
      * شريط الحالة.
      */
     private fun setupExactAlarmPermissionRow(view: View) {
-        val row = view.findViewById<View>(R.id.ll_exact_alarm_permission) ?: return
-        val alarmManager = fragment.requireContext().getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+        val row = view.findViewById<View>(
+            R.id.ll_exact_alarm_permission
+        ) ?: return
+        val alarmManager = fragment.requireContext().getSystemService(
+            Context.ALARM_SERVICE
+        ) as? AlarmManager
         val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
             (alarmManager == null || !alarmManager.canScheduleExactAlarms())
         row.visibility = if (needsPermission) View.VISIBLE else View.GONE
         val onClick = View.OnClickListener {
             runCatching {
-                val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
-                    data = Uri.parse("package:${fragment.requireContext().packageName}")
+                val intent = Intent(
+                    Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM
+                ).apply {
+                    data = Uri.parse(
+                        "package:${fragment.requireContext().packageName}"
+                    )
                 }
                 fragment.startActivity(intent)
             }.onFailure {
-                android.util.Log.w("NATEQ_TTS", "exact alarm settings not opened", it)
+                android.util.Log.w(
+                    "NATEQ_TTS",
+                    "exact alarm settings not opened",
+                    it
+                )
             }
         }
         row.setOnClickListener(onClick)
-        view.findViewById<View>(R.id.btn_exact_alarm_permission)?.setOnClickListener(onClick)
+        view.findViewById<View>(
+            R.id.btn_exact_alarm_permission
+        )?.setOnClickListener(onClick)
     }
 
     /**
      * يبني صفوف ساعات الهدوء السبعة (يوم → بداية/نهاية) بحقول رقمية 0..23
-     * تُحفظ فور التعديل لكل يوم على حدة (Calendar.DAY_OF_WEEK: 1=الأحد…7=السبت).
+     * تُحفظ فور التعديل لكل يوم على حدة
+ * (Calendar.DAY_OF_WEEK: 1=الأحد…7=السبت).
      */
     private fun setupQuietScheduleRows(view: View) {
         llQuietSchedule.removeAllViews()
@@ -170,12 +216,17 @@ internal class TimeAnnouncementController(
 
         for ((labelRes, day) in days) {
             val dayName = fragment.getString(labelRes)
-            val start = runCatching { settings.getQuietStartForDay(day) }.getOrDefault(23)
-            val end = runCatching { settings.getQuietEndForDay(day) }.getOrDefault(7)
+            val start =
+                runCatching { settings.getQuietStartForDay(day) }
+                    .getOrDefault(23)
+            val end =
+                runCatching { settings.getQuietEndForDay(day) }
+                    .getOrDefault(7)
 
             val startField = EditText(fragment.requireContext()).apply {
                 // اليومية في الـ hint تمنح قارئ الشاشة سياق اليوم لكل حقل
-                hint = dayName + "، " + fragment.getString(R.string.time_quiet_start_hint)
+                hint = dayName + "، " +
+                    fragment.getString(R.string.time_quiet_start_hint)
                 inputType = android.text.InputType.TYPE_CLASS_NUMBER
                 setText(start.toString().padStart(2, '0'))
                 maxLines = 1
@@ -185,7 +236,8 @@ internal class TimeAnnouncementController(
                 })
             }
             val endField = EditText(fragment.requireContext()).apply {
-                hint = dayName + "، " + fragment.getString(R.string.time_quiet_end_hint)
+                hint = dayName + "، " +
+                    fragment.getString(R.string.time_quiet_end_hint)
                 inputType = android.text.InputType.TYPE_CLASS_NUMBER
                 setText(end.toString().padStart(2, '0'))
                 maxLines = 1
@@ -210,10 +262,13 @@ internal class TimeAnnouncementController(
                     label,
                     LinearLayout.LayoutParams(0, -2, 1f)
                 )
-                addView(startField, LinearLayout.LayoutParams(0, -2, 1f).apply {
-                    marginEnd = (8 * density).toInt()
-                    marginStart = (8 * density).toInt()
-                })
+                addView(
+                    startField,
+                    LinearLayout.LayoutParams(0, -2, 1f).apply {
+                        marginEnd = (8 * density).toInt()
+                        marginStart = (8 * density).toInt()
+                    }
+                )
                 addView(endField, LinearLayout.LayoutParams(0, -2, 1f))
             }
             llQuietSchedule.addView(row)
@@ -221,8 +276,18 @@ internal class TimeAnnouncementController(
     }
 
     private fun quietWatcher(save: (Int) -> Unit) = object : TextWatcher {
-        override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+        override fun beforeTextChanged(
+            s: CharSequence?,
+            start: Int,
+            count: Int,
+            after: Int
+        ) {}
+        override fun onTextChanged(
+            s: CharSequence?,
+            start: Int,
+            before: Int,
+            count: Int
+        ) {}
         override fun afterTextChanged(s: Editable?) {
             val hour = s?.toString()?.trim()?.toIntOrNull()
             if (hour != null && hour in 0..23) save(hour)

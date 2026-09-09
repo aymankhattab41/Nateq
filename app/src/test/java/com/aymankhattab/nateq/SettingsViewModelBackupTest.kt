@@ -35,7 +35,8 @@ class SettingsViewModelBackupTest {
         dict = PronunciationDictionary(context)
         vm = SettingsViewModel(settings, dict)
         // تنظيف نظيف قبل كل اختبار
-        context.getSharedPreferences("nateq_settings", 0).edit().clear().commit()
+        context.getSharedPreferences("nateq_settings", 0)
+            .edit().clear().commit()
     }
 
     // ===== الدورة الكاملة: بناء + استعادة =====
@@ -57,14 +58,17 @@ class SettingsViewModelBackupTest {
         dict.addEntry("د.", "دكتور")
 
         // أسماء متصلين
-        settings.setCustomCallerNames(mapOf("0123456789" to "أحمد", "9876543210" to "سارة"))
+        settings.setCustomCallerNames(
+            mapOf("0123456789" to "أحمد", "9876543210" to "سارة")
+        )
 
         // بناء النسخة الاحتياطية
         val json = vm.buildBackupJson()
         assertTrue("JSON غير فارغ", json.isNotEmpty())
 
         // مسح كل شيء وإنشاء مثيلات جديدة
-        context.getSharedPreferences("nateq_settings", 0).edit().clear().commit()
+        context.getSharedPreferences("nateq_settings", 0)
+            .edit().clear().commit()
         val freshSettings = SettingsRepository(context)
         val freshDict = PronunciationDictionary(context)
         val freshVm = SettingsViewModel(freshSettings, freshDict)
@@ -139,7 +143,9 @@ class SettingsViewModelBackupTest {
 
     @Test
     fun oversized_returnsFalse() {
-        val huge = """{"version":1,"settings":{},"callerNames":{},"dictionary":[""" +
+        val huge =
+            """{"version":1,"settings":{},"callerNames":{},""" +
+            """"dictionary":[""" +
             (1..200_000).joinToString(",") { """["$it","value$it"]""" } +
             "]}]"
         assertFalse(vm.applyBackupJson(huge))
@@ -157,7 +163,9 @@ class SettingsViewModelBackupTest {
             }
             append("}")
         }
-        val json = """{"version":1,"settings":{},"callerNames":$callerObj,"dictionary":[]}"""
+        val json =
+            """{"version":1,"settings":{},"callerNames":""" +
+            callerObj + ""","dictionary":[]}"""
         assertFalse(vm.applyBackupJson(json))
     }
 
@@ -171,7 +179,9 @@ class SettingsViewModelBackupTest {
             }
             append("}")
         }
-        val json = """{"version":1,"settings":$settingsObj,"callerNames":{},"dictionary":[]}"""
+        val json =
+            """{"version":1,"settings":""" +
+            settingsObj + ""","callerNames":{},"dictionary":[]}"""
         assertFalse(vm.applyBackupJson(json))
     }
 
@@ -207,7 +217,8 @@ class SettingsViewModelBackupTest {
 
         val json = vm.buildBackupJson()
 
-        context.getSharedPreferences("nateq_settings", 0).edit().clear().commit()
+        context.getSharedPreferences("nateq_settings", 0)
+            .edit().clear().commit()
         val freshDict = PronunciationDictionary(context)
         val freshVm = SettingsViewModel(SettingsRepository(context), freshDict)
         assertTrue(freshVm.applyBackupJson(json))
@@ -226,12 +237,18 @@ class SettingsViewModelBackupTest {
 
         val json = vm.buildBackupJson()
 
-        context.getSharedPreferences("nateq_settings", 0).edit().clear().commit()
+        context.getSharedPreferences("nateq_settings", 0)
+            .edit().clear().commit()
         val freshSettings = SettingsRepository(context)
-        val freshVm = SettingsViewModel(freshSettings, PronunciationDictionary(context))
+        val freshVm = SettingsViewModel(
+            freshSettings, PronunciationDictionary(context)
+        )
         assertTrue(freshVm.applyBackupJson(json))
 
-        assertEquals(mapOf("0555" to "أحمد"), freshSettings.getCustomCallerNames())
+        assertEquals(
+            mapOf("0555" to "أحمد"),
+            freshSettings.getCustomCallerNames()
+        )
     }
 
     // ===== توافقية الشكل مع النسخ السابقة (org.json) =====
@@ -273,8 +290,11 @@ class SettingsViewModelBackupTest {
         // JSON يحتوي على version وexportedAt فقط — لا إعدادات/قاموس/أسماء
         assertTrue(json.contains("\"version\":1"))
         // تطبيق نسخة فارغة يُعيد false (لا تعديلات مmeaningful)
-        context.getSharedPreferences("nateq_settings", 0).edit().clear().commit()
-        val freshVm = SettingsViewModel(SettingsRepository(context), PronunciationDictionary(context))
+        context.getSharedPreferences("nateq_settings", 0)
+            .edit().clear().commit()
+        val freshVm = SettingsViewModel(
+            SettingsRepository(context), PronunciationDictionary(context)
+        )
         assertFalse("نسخة فارغة لا تُعدّل شيئاً", freshVm.applyBackupJson(json))
     }
 }

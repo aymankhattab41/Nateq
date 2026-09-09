@@ -152,7 +152,10 @@ class TextProcessorEdgeCasesTest {
 
     @Test
     fun decimal_fractionThreeDigits() {
-        assertEquals("ثلاثة فاصلة واحد أربعة واحد", processor.process("3.141", "ar"))
+        assertEquals(
+            "ثلاثة فاصلة واحد أربعة واحد",
+            processor.process("3.141", "ar")
+        )
     }
 
     @Test
@@ -175,7 +178,7 @@ class TextProcessorEdgeCasesTest {
         assertEquals("ثلاثة أرباع", processor.process("0.75", "ar"))
     }
 
-    // ═══════════════════════ الأرقام الرومانية عبر المعالج ═══════════════════════
+    // ═══ الأرقام الرومانية عبر المعالج ═══
 
     @Test
     fun roman_largeNumber_withIndicator() {

@@ -55,7 +55,9 @@ class PronunciationDictionary(private val context: Context) {
     // الواجهة المنفصلة عن عملية :tts دون إعادة فتح التفضيلات في كل نطق.
     private val prefsFile: java.io.File? =
         if (prefs != null) context.filesDir?.parentFile
-            ?.let { java.io.File(it, "shared_prefs/nateq_pronunciation_dict.xml") }
+            ?.let {
+                java.io.File(it, "shared_prefs/nateq_pronunciation_dict.xml")
+            }
         else null
     // آخر طابع قرأه هذا المثيل من القرص؛ null = يجب إعادة القراءة.
     @Volatile
@@ -71,7 +73,8 @@ class PronunciationDictionary(private val context: Context) {
      *  تُحذف عند الترقية ليبقى القاموس افتراضياً فارغاً ويبنيه المستخدم وحده
      *  (إضافة/تعديل/استيراد/تصدير) دون كلمات مفروضة من التطبيق. */
     private fun legacyDefaultEntries(): Map<String, String> = mapOf(
-            // اختصارات طبية — مع النقطة فقط لمنع الاستبدال غير المقصود في النصوص العادية
+            // اختصارات طبية — مع النقطة فقط لمنع الاستبدال
+            // غير المقصود في النصوص العادية
             "د." to "دكتور",
             "أ.د" to "أستاذ دكتور",
             "بروفسور" to "بروفيسور",
@@ -158,7 +161,8 @@ class PronunciationDictionary(private val context: Context) {
         )
 
     /** هجرة لمرة واحدة: حذف الإدخالات الافتراضية القديمة المخزّنة عند المستخدم.
-     *  تُحذف المزاوجات المطابقة للافتراضي فقط (لا تُمسّ تعديلات المستخدم على نفس المفتاح). */
+     *  تُحذف المزاوجات المطابقة للافتراضي فقط
+     *  (لا تُمسّ تعديلات المستخدم على نفس المفتاح). */
     private fun removeLegacyDefaultsOnce() {
         val sp = prefs ?: return
         if (sp.getBoolean(KEY_DEFAULTS_MIGRATED, false)) return
@@ -171,7 +175,9 @@ class PronunciationDictionary(private val context: Context) {
         }
         // تنظيف إدخالات قديمة ضارة خُزّنت في نسخ سابقة على أجهزة المستخدمين
         // (استُبدل لفظ كتابةً وفاق بحيث شوّهت «50 ريال قطري» و«500 جم»)
-        for ((key, badValue) in mapOf("ريال" to "ريال سعودي", "جم" to "الجمعة")) {
+        for ((key, badValue) in mapOf(
+            "ريال" to "ريال سعودي", "جم" to "الجمعة"
+        )) {
             if (entries[key] == badValue) {
                 entries.remove(key)
                 changed = true
@@ -199,7 +205,8 @@ class PronunciationDictionary(private val context: Context) {
 
     /** إعادة تحميل فورية فقط إذا تغيّر طابع الملف على القرص منذ آخر قراءة —
      *  فحص طابع أرخص بكثير من إعادة فتح التفضيلات المشفّرة في كل نطق، ويُدعى
-     *  تلقائياً من [apply] ليلتقط تعديلات عملية الواجهة دون إعادة تشغيل الخدمة. */
+     *  تلقائياً من [apply] ليلتقط تعديلات عملية
+     *  الواجهة دون إعادة تشغيل الخدمة. */
     fun reloadIfChanged(): Boolean {
         if (prefs == null) return false
         val stamp = currentStamp()
@@ -219,7 +226,8 @@ class PronunciationDictionary(private val context: Context) {
         // اكتشاف تعديلات عملية الواجهة على القرص قبل كل تطبيق
         reloadIfChanged()
         val machine = ahoCorasick ?: synchronized(this) {
-            ahoCorasick ?: AhoCorasick(entries.toMap()).also { ahoCorasick = it }
+            ahoCorasick ?: AhoCorasick(entries.toMap())
+                .also { ahoCorasick = it }
         }
         return machine.apply(text)
     }
@@ -229,7 +237,9 @@ class PronunciationDictionary(private val context: Context) {
         if (abbreviation.isBlank() || pronunciation.isBlank()) return false
         val key = abbreviation.trim()
         val value = pronunciation.trim()
-        if (key.length > MAX_KEY_LENGTH || value.length > MAX_VALUE_LENGTH) return false
+        if (key.length > MAX_KEY_LENGTH ||
+            value.length > MAX_VALUE_LENGTH
+        ) return false
         entries[key] = value
         ahoCorasick = null // إبطال الآلة عند تغيير القاموس
         return save()
@@ -254,7 +264,8 @@ class PronunciationDictionary(private val context: Context) {
     fun importFromJson(json: String, merge: Boolean = false): Boolean {
         if (json.length > MAX_IMPORT_BYTES) return false
         // تجزئة بلا رمي عبر المظلة: فاسد/غير مطابق ← null ← نرفض الاستيراد.
-        val map = NateqJson.fromJson<Map<*, *>>(json, typeToken) as? Map<*, *> ?: return false
+        val map = NateqJson.fromJson<Map<*, *>>(json, typeToken)
+            as? Map<*, *> ?: return false
 
         // فلترة الصفوف الصالحة فقط: مفتاح/قيمة نصيان غير فارغين ضمن الحدود
         val valid = LinkedHashMap<String, String>()
@@ -292,8 +303,10 @@ class PronunciationDictionary(private val context: Context) {
     private fun load() {
         val sp = prefs ?: return
         val json = sp.getString("dictionary", "{}")
-        // تجزئة بلا رمي: فاسد ← null ← تبقى الخريطة فارغة (كما كان تنظيف catch سابقاً).
-        val raw = NateqJson.fromJson<Map<*, *>>(json, typeToken) as? Map<*, *> ?: emptyMap<Any, Any>()
+        // تجزئة بلا رمي: فاسد ← null ← تبقى الخريطة فارغة
+        // (كما كان تنظيف catch سابقاً).
+        val raw = NateqJson.fromJson<Map<*, *>>(json, typeToken)
+            as? Map<*, *> ?: emptyMap<Any, Any>()
         for ((k, v) in raw) {
             if (k !is String || v !is String) continue
             val key = k.trim()
@@ -336,8 +349,10 @@ private class AhoCorasick(entries: Map<String, String>) {
     private val root = Node()
 
     init {
-        // إدخال المفاتيح الأطول أولاً حتى تُسجَّل المطابقة الأطول في العقد المشتركة
-        for ((key, value) in entries.entries.sortedByDescending { it.key.length }) {
+        // إدخال المفاتيح الأطول أولاً حتى تُسجَّل المطابقة الأطول
+        // في العقد المشتركة
+        for ((key, value) in
+            entries.entries.sortedByDescending { it.key.length }) {
             var node = root
             for (ch in key) {
                 node = node.children.getOrPut(ch) { Node() }
@@ -388,19 +403,25 @@ private class AhoCorasick(entries: Map<String, String>) {
             val value = node.value ?: continue
             val start = i - key.length + 1
             if (start < 0) continue
-            // حدود الكلمة: لا حرف ولا رقم (بأي لغة) قبلها ولا بعدها — الرقم جزءٌ
-            // من الكلمة فيمنع إفساد "50م" قبل مرحلة الوحدات، ويُعفى شرط "ما بعد"
+            // حدود الكلمة: لا حرف ولا رقم (بأي لغة) قبلها
+            // ولا بعدها — الرقم جزءٌ
+            // من الكلمة فيمنع إفساد "50م" قبل مرحلة الوحدات،
+            // ويُعفى شرط "ما بعد"
             // للمفاتيح المنتهية بنقطة ليُسمح باختصارات مثل "د.أحمد".
             val endsWithDot = key.endsWith('.')
             if (start > 0 && text[start - 1].isLetterOrDigit()) continue
-            if (!endsWithDot && i + 1 < n && text[i + 1].isLetterOrDigit()) continue
+            if (!endsWithDot && i + 1 < n &&
+                text[i + 1].isLetterOrDigit()
+            ) continue
             matches.add(Match(start, i + 1, value))
         }
 
         if (matches.isEmpty()) return text
 
         // تمريرة الاستبدال: غير متداخل، والأطول أولاً لكل موضع بداية
-        matches.sortWith(compareBy<Match> { it.start }.thenByDescending { it.end })
+        matches.sortWith(
+            compareBy<Match> { it.start }.thenByDescending { it.end }
+        )
         val result = StringBuilder(n)
         var cursor = 0
         for (m in matches) {

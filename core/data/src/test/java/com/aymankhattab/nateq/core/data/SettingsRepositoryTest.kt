@@ -93,7 +93,8 @@ class SettingsRepositoryTest {
         assertEquals("en-US", repo.getPreferredVoiceId("en"))
         repo.setPreferredVoiceId("ar", "ar-local")
         assertEquals("ar-EG", repo.getPreferredVoiceId("ar"))
-        // البديل الخاطئ الأحدث من المزوّد: nateq-<lang>-local يُطبع للصيغة الموحّدة
+        // البديل الخاطئ الأحدث من المزوّد: nateq-<lang>-local
+        // يُطبع للصيغة الموحّدة
         repo.setPreferredVoiceId("fr", "nateq-fr-local")
         assertEquals("fr-local", repo.getPreferredVoiceId("fr"))
         // الصيغة الموحّدة الحالية تمرّ كما هي
@@ -140,7 +141,8 @@ class SettingsRepositoryTest {
 
     @Test
     fun speechRatePitchVolume_clampedPerLanguage() {
-        // بند 9.3: السرعة/النبرة/الصوت لا تتجاوز حدودها في المخزن مهما أرسلت الواجهة.
+        // بند 9.3: السرعة/النبرة/الصوت لا تتجاوز حدودها في المخزن
+        // مهما أرسلت الواجهة.
         repo.setSpeechRate("ar", -5f)
         assertEquals(0f, repo.getSpeechRate("ar"), 0.0f)
         repo.setSpeechRate("ar", 10f)
@@ -152,7 +154,8 @@ class SettingsRepositoryTest {
     }
 
     @Test
-    fun speechRatePitchVolumeOrNull_unsetReturnsNull_and_explicitRawPreserved() {
+    fun speechRatePitchVolumeOrNull_unsetReturnsNull_and_explicitRawPreserved()
+    {
         // غياب التفضيل ≠ «1.0x صريح»: الفارق حاسم كي لا يهبط تفضيلٌ صريح
         // قدره 1.0x إلى القيمة العامة بدل احترام اختيار المستخدم.
         assertNull(repo.getSpeechRateOrNull("ar"))
@@ -265,7 +268,8 @@ class SettingsRepositoryTest {
 
     @Test
     fun callerNames_keptInMemoryWhenSecureStoreUnavailable() {
-        // بند 9.2: عند تعذر فتح التخزين المشفر (Keystore) تُحفظ الأسماء في الذاكرة
+        // بند 9.2: عند تعذر فتح التخزين المشفر (Keystore) تُحفظ
+        // الأسماء في الذاكرة
         // بلا أي حذف للملف وبلا استثناء — وتظل قابلة للقراءة في نفس الجلسة،
         // وإعادة الضبط الكاملة تمسحها مع القرص معاً.
         repo.setCustomCallerNames(
@@ -283,7 +287,9 @@ class SettingsRepositoryTest {
         // مسار reload(): إعادة الفتح من القرص تُحضر آخر التعديلات المكتوبة.
         repo.setNumberReadingMode(3)
         repo.setDefaultSpeechRate(1.25f)
-        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        org.robolectric.Shadows.shadowOf(
+            android.os.Looper.getMainLooper()
+        ).idle()
         val repo2 = SettingsRepository(context)
         assertEquals(3, repo2.getNumberReadingMode())
         assertEquals(1.25f, repo2.getDefaultSpeechRate(), 0.0f)
@@ -291,7 +297,9 @@ class SettingsRepositoryTest {
 
     @Test
     fun isDeviceScreenLocked_detectsSwipeLockAndScreenOff() {
-        val km = context.getSystemService(android.app.KeyguardManager::class.java)!!
+        val km = context.getSystemService(
+            android.app.KeyguardManager::class.java
+        )!!
         val kmShadow = org.robolectric.Shadows.shadowOf(km)
         val pm = context.getSystemService(android.os.PowerManager::class.java)!!
         val pmShadow = org.robolectric.Shadows.shadowOf(pm)
@@ -302,7 +310,8 @@ class SettingsRepositoryTest {
         kmShadow.setIsKeyguardSecure(false)
         assertFalse(repo.isDeviceScreenLocked())
 
-        // قفل غير آمن (Swipe to unlock) والشاشة معروضة: يُعدُّ مقفلاً لإخفاء الحساسيات
+        // قفل غير آمن (Swipe to unlock) والشاشة معروضة:
+        // يُعدُّ مقفلاً لإخفاء الحساسيات
         kmShadow.setKeyguardLocked(true)
         kmShadow.setIsKeyguardSecure(false)
         assertTrue(repo.isDeviceScreenLocked())
@@ -312,7 +321,8 @@ class SettingsRepositoryTest {
         pmShadow.setIsInteractive(false)
         assertTrue(repo.isDeviceScreenLocked())
 
-        // الشاشة مفتوحة وقفل أمن معروض: الحالة التقليدية لـ isDeviceLocked محفوظة
+        // الشاشة مفتوحة وقفل أمن معروض: الحالة التقليدية لـ
+        // isDeviceLocked محفوظة
         pmShadow.setIsInteractive(true)
         kmShadow.setKeyguardLocked(true)
         kmShadow.setIsKeyguardSecure(true)
@@ -343,7 +353,11 @@ class SettingsRepositoryTest {
             )
             xmlFile.writeText(updated)
             repo.reload()
-            assertEquals("reload يقرأ آخر كتابة خارجية", 7, repo.getNumberReadingMode())
+            assertEquals(
+                "reload يقرأ آخر كتابة خارجية",
+                7,
+                repo.getNumberReadingMode()
+            )
         } finally {
             // استعادة حالة نظيفة حتى لا تتسرب القيمة 7 لبقية الاختبارات.
             context.getSharedPreferences("nateq_settings", Context.MODE_PRIVATE)

@@ -42,29 +42,46 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         private const val TAG = "NATEQ_CALLER"
     }
 
-    /** مصدر الإعدادات المحقون — كائن واحد مشترك عبر العمليات (keeps تفضيلات المتصل). */
+    /** مصدر الإعدادات المحقون — كائن واحد مشترك عبر العمليات
+     * (keeps تفضيلات المتصل). */
     @Inject
     lateinit var settingsRepository: SettingsRepository
 
     override fun onReceive(context: Context, intent: Intent?) {
-        if (intent?.action != TelephonyManager.ACTION_PHONE_STATE_CHANGED) return
+        if (
+            intent?.action != TelephonyManager.ACTION_PHONE_STATE_CHANGED
+        ) {
+            return
+        }
 
         // goAsync() يمنع Android من قتل المستقبل قبل انتهاء العمل اللاتزامني
         val pendingResult = goAsync()
-        val appScope = (context.applicationContext as AnnouncementAppContext).appScope
+        val appScope =
+            (context.applicationContext as AnnouncementAppContext).appScope
         appScope.launch {
             try {
-                // فحص وقائي: وصول بث PHONE_STATE بحد ذاته يتطلب منح READ_PHONE_STATE
-                // وقت الإرسال (النظام يفلتر المستقبلين، وليس إعلان الـ Manifest فقط).
-                // لكن سحب النظام التلقائي للإذن (ابتداءً من أندرويد 11، ويشتد على
-                // أندرويد 17) قد يخطف البث قبل وصوله — إن وصلنا هنا رغم فقدانه
-                // نتوقف بهدوء بدل نطق نص وسط مكالمة أو رمي SecurityException.
-                if (!hasPermission(context, Manifest.permission.READ_PHONE_STATE)) {
-                    Log.w(TAG, "READ_PHONE_STATE revoked; caller announcement silent-skip")
+                // فحص وقائي: وصول بث PHONE_STATE بحد ذاته يتطلب
+                // منح READ_PHONE_STATE وقت الإرسال (النظام يفلتر
+                // المستقبلين، وليس إعلان الـ Manifest فقط). لكن سحب
+                // النظام التلقائي للإذن (ابتداءً من أندرويد 11، ويشتد
+                // على أندرويد 17) قد يخطف البث قبل وصوله — إن وصلنا
+                // هنا رغم فقدانه نتوقف بهدوء بدل نطق نص وسط مكالمة
+                // أو رمي SecurityException.
+                if (!hasPermission(
+                        context, Manifest.permission.READ_PHONE_STATE
+                    )
+                ) {
+                    Log.w(
+                        TAG,
+                        "READ_PHONE_STATE revoked; caller" +
+                        " announcement silent-skip"
+                    )
                     return@launch
                 }
 
-                val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE) ?: return@launch
+                val state =
+                    intent.getStringExtra(TelephonyManager.EXTRA_STATE)
+                        ?: return@launch
                 if (state != TelephonyManager.EXTRA_STATE_RINGING) return@launch
 
                 val settings = settingsRepository
@@ -73,7 +90,9 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 if (!settings.isAllAnnouncementsEnabled()) return@launch
 
                 @Suppress("DEPRECATION")
-                val incomingNumber = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER)
+                val incomingNumber = intent.getStringExtra(
+                    TelephonyManager.EXTRA_INCOMING_NUMBER
+                )
 
                 // الاسم المخصص للمستخدم (خريطة رقم -> اسم) له الأولوية القصوى،
                 // ثم البحث في دفتر الاتصالات ثم سجل المكالمات.
@@ -81,12 +100,17 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 val contactName = customName ?: resolveContactName(
                     context,
                     number = incomingNumber,
-                    hasReadContacts = hasPermission(context, Manifest.permission.READ_CONTACTS),
-                    hasReadCallLog = hasPermission(context, Manifest.permission.READ_CALL_LOG)
+                    hasReadContacts = hasPermission(
+                        context, Manifest.permission.READ_CONTACTS
+                    ),
+                    hasReadCallLog = hasPermission(
+                        context, Manifest.permission.READ_CALL_LOG
+                    )
                 )
 
-                // خصوصية قفل الشاشة: عند القفل نكتفي بعبارة عامة «اتصال وارد» دون
-                // اسم المتصل أو رقمه — حماية للخصوصية (قد يكون المتصل حسّاساً).
+                // خصوصية قفل الشاشة: عند القفل نكتفي بعبارة عامة
+                // «اتصال وارد» دون اسم المتصل أو رقمه — حماية
+                // للخصوصية (قد يكون المتصل حسّاساً).
                 val privacyLocked = settings.isLockScreenPrivacyEnabled()
                         && settings.isDeviceScreenLocked()
 
@@ -101,12 +125,17 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 val speechRate = settings.getCallerAnnouncementRate()
                 val volume = settings.getCallerAnnouncementVolume()
                 val hasArabic = LocaleUtils.containsArabic(text)
-                val locale = if (hasArabic) Locale.forLanguageTag(LanguageCode.AR.tag) else Locale.forLanguageTag(LanguageCode.EN.tag)
+                val locale = if (hasArabic) {
+                    Locale.forLanguageTag(LanguageCode.AR.tag)
+                } else {
+                    Locale.forLanguageTag(LanguageCode.EN.tag)
+                }
 
                 val speaker = AnnouncementSpeaker.getInstance(context)
-                // نعيد ضبط الصوت المفضّل لدورة المتصل قبل كل نطق (عربي/إنجليزي
-                // حسب لغة النص الفعلي) حتى لا يبقى عالقاً على صوتٍ من دورة سابقة
-                // (إشعار/رسالة...) — نفس النمط المطبّق في SmsReadingReceiver.
+                // نعيد ضبط الصوت المفضّل لدورة المتصل قبل كل نطق
+                // (عربي/إنجليزي حسب لغة النص الفعلي) حتى لا يبقى
+                // عالقاً على صوتٍ من دورة سابقة (إشعار/رسالة...) —
+                // نفس النمط المطبّق في SmsReadingReceiver.
                 val callerVoice = if (hasArabic) {
                     settings.getCallerAnnouncementArabicVoiceId()
                 } else {
@@ -115,10 +144,12 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 speaker.resetVoice(callerVoice)
 
                 // تكرار النطق «repeat» مرات مع فاصل «intervalMs» بين كل مرة.
-                // الأول يقع فوراً ثم يُحرَّر pendingResult (الخدمة الأمامية تبقى
-                // حيّة فيحافظ على العملية)، والتكرارات المتبقية تُجدَّل عبر Handler
-                // على MainLooper مستقلة عن دورة حياة البث — لا نقاءً بمهلة goAsync.
-                val repeat = settings.getCallerAnnouncementRepeat().coerceIn(1, 5)
+                // الأول يقع فوراً ثم يُحرَّر pendingResult؛ الخدمة الأمامية
+                // التي يبدأها المتحدث تُبقي العملية حيّة. التكرارات المتبقية
+                // تُجدَّل عبر Handler على MainLooper مستقلة عن حياة البث —
+                // لا نقاءً بمهلة goAsync.
+                val repeat = settings
+                    .getCallerAnnouncementRepeat().coerceIn(1, 5)
                 val intervalMs = settings.getCallerAnnouncementIntervalSeconds()
                     .coerceIn(1, 10) * 1000L
                 speaker.speak(text, locale, speechRate, 1.0f, volume)
@@ -129,7 +160,9 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                         handler.postDelayed({
                             try {
                                 AnnouncementSpeaker.getInstance(appCtx)
-                                    .speak(text, locale, speechRate, 1.0f, volume)
+                                    .speak(
+                                        text, locale, speechRate, 1.0f, volume
+                                    )
                             } catch (t: Throwable) {
                                 Log.e(TAG, "repeat speak failed", t)
                             }
@@ -156,17 +189,25 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         template: String?,
         privacyLocked: Boolean
     ): String {
-        // عند القفل ننطق العبارة العامة فقط حتى لو ضبط المستخدم قالباً أو اسم من.
+        // عند القفل ننطق العبارة العامة فقط حتى لو ضبط
+        // المستخدم قالباً أو اسم من.
         return if (privacyLocked) {
             LocaleUtils.stringForSpeech(
-                context, LanguageCode.AR.tag, R.string.caller_only, R.string.caller_only
+                context,
+                LanguageCode.AR.tag,
+                R.string.caller_only,
+                R.string.caller_only
             )
         } else if (!template.isNullOrBlank()) {
             val filled = template
                 .replace("{name}", contactName ?: number.orEmpty())
                 .replace("{number}", number.orEmpty())
                 .trim()
-            if (filled.isBlank()) buildDefaultCallerPhrase(context, number, contactName) else filled
+            if (filled.isBlank()) {
+                buildDefaultCallerPhrase(context, number, contactName)
+            } else {
+                filled
+            }
         } else {
             buildDefaultCallerPhrase(context, number, contactName)
         }
@@ -176,16 +217,24 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
      * عبارة النطق الافتراضية مع قرار اللغة من الاسم/الرقم (عربي أم إنجليزي)
      * وليس من لغة واجهة التطبيق: مرسل عربي يُنطق بالعربية والعكس.
      */
-    private fun buildDefaultCallerPhrase(context: Context, number: String?, contactName: String?): String {
+    private fun buildDefaultCallerPhrase(
+        context: Context,
+        number: String?,
+        contactName: String?
+    ): String {
         val dynamicText = (contactName ?: number).orEmpty()
-        val isArabic = !dynamicText.any { it.isLetter() } || LocaleUtils.containsArabic(dynamicText)
+        val isArabic = !dynamicText.any { it.isLetter() } ||
+            LocaleUtils.containsArabic(dynamicText)
         val lang = if (isArabic) LanguageCode.AR.tag else LanguageCode.EN.tag
         return when {
             contactName != null -> LocaleUtils.stringForSpeech(
                 context, lang, R.string.caller_from, R.string.caller_from
             ).replace("{name}", contactName)
             !number.isNullOrBlank() -> LocaleUtils.stringForSpeech(
-                context, lang, R.string.caller_from_number, R.string.caller_from_number
+                context,
+                lang,
+                R.string.caller_from_number,
+                R.string.caller_from_number
             )
             else -> LocaleUtils.stringForSpeech(
                 context, lang, R.string.caller_only, R.string.caller_only
@@ -200,10 +249,15 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
      * قبل التطبيع حتى لا ينطق التطبيق اسم جهة اتصالٍ تتصادف أرقامها مع «1»
      * (كملحق رموز الولايات المتحدة) لمكالمةٍ مجهولةٍ فعلياً.
      */
-    private fun resolveCustomName(settings: SettingsRepository, number: String?): String? {
+    private fun resolveCustomName(
+        settings: SettingsRepository,
+        number: String?
+    ): String? {
         val normalized = normalizeCallerNumber(number) ?: return null
         return settings.getCustomCallerNames()
-            .entries.firstOrNull { it.key.filter { c -> c.isDigit() } == normalized }
+            .entries.firstOrNull { entry ->
+                entry.key.filter { c -> c.isDigit() } == normalized
+            }
             ?.value
     }
 
@@ -227,8 +281,10 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
     private fun hasReadContacts(context: Context): Boolean =
         hasPermission(context, Manifest.permission.READ_CONTACTS)
 
-    private fun hasPermission(context: Context, permission: String): Boolean =
-        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+    private fun hasPermission(context: Context, permission: String): Boolean {
+        val granted = ContextCompat.checkSelfPermission(context, permission)
+        return granted == PackageManager.PERMISSION_GRANTED
+    }
 
     /**
      * يحلّ اسم المتصل بأفضل ما تسمح به الأذونات:
@@ -245,14 +301,21 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         // رقم خاص/مجهول («-1»/«UNKNOWN»/…): بلا بحث — قد يطابق سجلّ مكالمة
         // مخزّنٍ سابقاً فيُنطق اسمٌ خاطئ لمكالمةٍ مجهولة.
         if (normalizeCallerNumber(number) == null) return null
-        val fromContacts = if (hasReadContacts) lookupContactName(context, number) else null
+        val fromContacts = if (hasReadContacts) {
+            lookupContactName(context, number)
+        } else {
+            null
+        }
         if (fromContacts != null) return fromContacts
         if (hasReadCallLog) return lookupNameViaCallLog(context, number)
         return null
     }
 
     /** البحث عن الاسم في سجل المكالمات (CACHED_NAME) — يتطلب READ_CALL_LOG. */
-    private fun lookupNameViaCallLog(context: Context, phoneNumber: String): String? {
+    private fun lookupNameViaCallLog(
+        context: Context,
+        phoneNumber: String
+    ): String? {
         return runCatching {
             val uri = android.provider.CallLog.Calls.CONTENT_URI
             val projection = arrayOf(android.provider.CallLog.Calls.CACHED_NAME)
@@ -266,12 +329,15 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             )
             try {
                 if (cursor != null && cursor.moveToFirst()) {
-                    val idx = cursor.getColumnIndex(android.provider.CallLog.Calls.CACHED_NAME)
+                    val idx = cursor.getColumnIndex(
+                        android.provider.CallLog.Calls.CACHED_NAME
+                    )
                     if (idx >= 0) {
                         val cached = cursor.getString(idx)
                         return cached?.takeIf {
-                            it.isNotBlank() && !it.equals(phoneNumber, ignoreCase = true)
-                        }
+        it.isNotBlank() &&
+            !it.equals(phoneNumber, ignoreCase = true)
+    }
                     }
                 }
                 null
@@ -286,7 +352,10 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
      * يُستدعى فقط بعد التحقق من منح READ_CONTACTS (لا رمي SecurityException).
      * استعلام متزامن (نُستدعى من داخل Coroutine على خيط IO).
      */
-    private fun lookupContactName(context: Context, phoneNumber: String): String? {
+    private fun lookupContactName(
+        context: Context,
+        phoneNumber: String
+    ): String? {
         var cursor: Cursor? = null
         return try {
             val uri = Uri.withAppendedPath(
@@ -301,7 +370,9 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 null
             )
             if (cursor != null && cursor.moveToFirst()) {
-                val nameIndex = cursor.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME)
+                val nameIndex = cursor.getColumnIndex(
+                    ContactsContract.PhoneLookup.DISPLAY_NAME
+                )
                 if (nameIndex >= 0) {
                     val name = cursor.getString(nameIndex)
                     return name.takeIf { it.isNotBlank() }

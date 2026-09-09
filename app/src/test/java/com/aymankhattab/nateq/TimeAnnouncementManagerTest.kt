@@ -41,7 +41,8 @@ class TimeAnnouncementManagerTest {
     private lateinit var settings: SettingsRepository
     private lateinit var manager: TimeAnnouncementManager
 
-    private fun dayOfWeek(): Int = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
+    private fun dayOfWeek(): Int =
+        Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
 
     private fun newManager(): TimeAnnouncementManager {
         val providers = listOf(SystemVoiceProvider(context, settings))
@@ -62,14 +63,18 @@ class TimeAnnouncementManagerTest {
         TimeAlarmReceiver.cancel(context)
     }
 
-    private fun scheduledAlarms(): List<ScheduledAlarm> =
-        shadowOf(context.getSystemService(Context.ALARM_SERVICE) as AlarmManager)
-            .getScheduledAlarms()
+    private fun scheduledAlarms(): List<ScheduledAlarm> {
+        val alarmManager =
+            context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        return shadowOf(alarmManager).getScheduledAlarms()
+    }
 
     // ──────────────── Reflection إلى الدوال الخاصة ────────────────
 
     private fun reflect(name: String, vararg paramTypes: Class<*>): Method {
-        val m = TimeAnnouncementManager::class.java.getDeclaredMethod(name, *paramTypes)
+        val m = TimeAnnouncementManager::class.java.getDeclaredMethod(
+            name, *paramTypes
+        )
         m.isAccessible = true
         return m
     }
@@ -85,7 +90,9 @@ class TimeAnnouncementManagerTest {
         reflect("formatEnglishNaturalTime", INT_TYPE, INT_TYPE)
             .invoke(manager, hour, minute) as String
 
-    private fun formatDigital(hour: Int, minute: Int, isEnglish: Boolean, use24h: Boolean): String =
+    private fun formatDigital(
+        hour: Int, minute: Int, isEnglish: Boolean, use24h: Boolean
+    ): String =
         reflect(
             "formatDigitalTime",
             INT_TYPE, INT_TYPE,
@@ -117,7 +124,10 @@ class TimeAnnouncementManagerTest {
 
     @Test
     fun formatArabic_quarterTo() {
-        assertEquals("الساعة الآن الحادية عشرة إلا ربع صباحاً", formatArabic(10, 45))
+        assertEquals(
+            "الساعة الآن الحادية عشرة إلا ربع صباحاً",
+            formatArabic(10, 45)
+        )
     }
 
     @Test
@@ -147,12 +157,18 @@ class TimeAnnouncementManagerTest {
 
     @Test
     fun formatArabic_dualMinutes() {
-        assertEquals("الساعة الآن العاشرة و دقيقتان صباحاً", formatArabic(10, 2))
+        assertEquals(
+            "الساعة الآن العاشرة و دقيقتان صباحاً",
+            formatArabic(10, 2)
+        )
     }
 
     @Test
     fun formatArabic_pluralMinutes() {
-        assertEquals("الساعة الآن الثالثة و عشر دقائق مساءً", formatArabic(15, 10))
+        assertEquals(
+            "الساعة الآن الثالثة و عشر دقائق مساءً",
+            formatArabic(15, 10)
+        )
     }
 
     // ═══════════════════════ التنسيق الإنجليزي الطبيعي ═══════════════════════
@@ -189,12 +205,16 @@ class TimeAnnouncementManagerTest {
 
     @Test
     fun formatDigital_arabic24h_midnightPhrase() {
-        assertEquals("الساعة الآن منتصف الليل", formatDigital(0, 0, false, true))
+        assertEquals(
+            "الساعة الآن منتصف الليل",
+            formatDigital(0, 0, false, true)
+        )
     }
 
     @Test
     fun formatDigital_english12h() {
-        // 13:00 في نظام 12 ساعة → one o'clock? نعم English words: one + "" (لا PM بلا 24h)
+        // 13:00 في نظام 12 ساعة → one o'clock? نعم English words: one + ""
+        // (لا PM بلا 24h)
         val noon = formatDigital(12, 0, true, false)
         assertTrue(noon.startsWith("twelve"))
     }
@@ -256,7 +276,10 @@ class TimeAnnouncementManagerTest {
         TimeAlarmReceiver.cancel(context)
         manager = newManager()
         manager.start()
-        assertEquals("start() يُجدول منبهاً واحداً بالضبط", 1, scheduledAlarms().size)
+        assertEquals(
+            "start() يُجدول منبهاً واحداً بالضبط",
+            1, scheduledAlarms().size
+        )
     }
 
     @Test
@@ -265,7 +288,10 @@ class TimeAnnouncementManagerTest {
         manager = newManager()
         TimeAlarmReceiver.cancel(context)
         manager.start()
-        assertEquals("تعطيل الإعلان لا يُجدول منبهاً", 0, scheduledAlarms().size)
+        assertEquals(
+            "تعطيل الإعلان لا يُجدول منبهاً",
+            0, scheduledAlarms().size
+        )
     }
 
     @Test
@@ -285,7 +311,10 @@ class TimeAnnouncementManagerTest {
         manager = newManager()
         TimeAlarmReceiver.cancel(context)
         manager.onAlarmTick()
-        assertEquals("onAlarmTick يُجدول المنبه التالي", 1, scheduledAlarms().size)
+        assertEquals(
+            "onAlarmTick يُجدول المنبه التالي",
+            1, scheduledAlarms().size
+        )
     }
 
     @Test
@@ -307,7 +336,10 @@ class TimeAnnouncementManagerTest {
         TimeAlarmReceiver.cancel(context)
         manager = newManager()
         manager.start(announceImmediately = false)
-        assertEquals("start الصامت يُجدول منبهاً واحداً بالضبط", 1, scheduledAlarms().size)
+        assertEquals(
+            "start الصامت يُجدول منبهاً واحداً بالضبط",
+            1, scheduledAlarms().size
+        )
     }
 
     // ──────────────── أدوات مساعدة ────────────────

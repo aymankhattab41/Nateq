@@ -13,8 +13,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** اختبار فلتر بث البطارية الدائم (بند 16.1): يُعالج البث الدم مرة واحدة لكل
- *  نسبة منعطف، ويُفلتر التكرار في الذاكرة قبل أي عملية لاتزامنية أو قراءة قرص. */
+/** اختبار فلتر بث البطارية الدائم (بند 16.1): يُعالج البث الدم مرة
+ *  واحدة لكل نسبة منعطف، ويُفلتر التكرار في الذاكرة قبل أي
+ *  عملية لاتزامنية أو قراءة قرص. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class BatteryAnnouncementReceiverTest {
@@ -32,7 +33,9 @@ class BatteryAnnouncementReceiverTest {
     fun setUp() {
         BatteryAnnouncementReceiver.resetLevelFilterForTesting()
         // مسح ختوم نافذة منع التكرار بين الاختبارات حتى لا تتسرب.
-        context.getSharedPreferences("nateq_battery_state", Context.MODE_PRIVATE)
+        context.getSharedPreferences(
+            "nateq_battery_state", Context.MODE_PRIVATE
+        )
             .edit().clear().commit()
     }
 
@@ -68,16 +71,24 @@ class BatteryAnnouncementReceiverTest {
 
     @Test
     fun `invalid level data never blocks processing`() {
-        assertTrue(BatteryAnnouncementReceiver.isNewLevel(batteryIntent(-1, 100)))
-        assertTrue(BatteryAnnouncementReceiver.isNewLevel(batteryIntent(-1, -1)))
+        assertTrue(
+            BatteryAnnouncementReceiver.isNewLevel(batteryIntent(-1, 100))
+        )
+        assertTrue(
+            BatteryAnnouncementReceiver.isNewLevel(batteryIntent(-1, -1))
+        )
     }
 
     @Test
     fun `percent uses same rounding as handler`() {
         // (level*100)/scale — نفس حسابات معالجة الإعلان: 49.9% تُقرَّب إلى 49
         // فتُفلتر بعد معالجة 49%، وليست نسبة جديدة.
-        assertTrue(BatteryAnnouncementReceiver.isNewLevel(batteryIntent(49, 100)))
-        assertFalse(BatteryAnnouncementReceiver.isNewLevel(batteryIntent(499, 1000)))
+        assertTrue(
+            BatteryAnnouncementReceiver.isNewLevel(batteryIntent(49, 100))
+        )
+        assertFalse(
+            BatteryAnnouncementReceiver.isNewLevel(batteryIntent(499, 1000))
+        )
     }
 
     // ===== نافذة منع تكرار الإعلان (5 دقائق) ====
@@ -86,13 +97,17 @@ class BatteryAnnouncementReceiverTest {
     fun `first announcement is allowed`() {
         // بلا ختم سابق يُعدّ مستوى 50 "منطوقاً مؤخراً": مع الانعكاس المنطقي
         // القديم كانت هذه الحالة تُسكت الإعلان всегда (لا ينطق أبداً أول مرة).
-        assertFalse(BatteryAnnouncementReceiver().announcedRecently(context, "%50"))
+        assertFalse(
+            BatteryAnnouncementReceiver().announcedRecently(context, "%50")
+        )
     }
 
     @Test
     fun `immediately after mark is suppressed`() {
         BatteryAnnouncementReceiver().markAnnounced(context, "%50")
-        assertTrue(BatteryAnnouncementReceiver().announcedRecently(context, "%50"))
+        assertTrue(
+            BatteryAnnouncementReceiver().announcedRecently(context, "%50")
+        )
     }
 
     @Test
@@ -103,9 +118,18 @@ class BatteryAnnouncementReceiverTest {
         val markedAt = System.currentTimeMillis()
         BatteryAnnouncementReceiver().markAnnounced(context, "%50")
         // داخل النافذة (بعد دقيقة) ما زال يُمنع.
-        assertTrue(BatteryAnnouncementReceiver().announcedRecently(context, "%50", markedAt + 60_000L))
-        // عند تجاوز الخمس دقائق يُسمح مجدداً (بهامش أمان +5 ثوانٍ فوق هامش الميلي ثانية المتبقية من التخزين).
-        assertFalse(BatteryAnnouncementReceiver().announcedRecently(context, "%50", markedAt + (5 * 60 * 1000L) + 5_000L))
+        assertTrue(
+            BatteryAnnouncementReceiver().announcedRecently(
+                context, "%50", markedAt + 60_000L
+            )
+        )
+        // عند تجاوز الخمس دقائق يُسمح مجدداً (بهامش أمان +5 ثوانٍ فوق
+        // هامش الميلي ثانية المتبقية من التخزين).
+        assertFalse(
+            BatteryAnnouncementReceiver().announcedRecently(
+                context, "%50", markedAt + (5 * 60 * 1000L) + 5_000L
+            )
+        )
     }
 
     @Test
@@ -113,8 +137,12 @@ class BatteryAnnouncementReceiverTest {
         // محاكاة ختمٍ كُتب قبل إعادة تشغيل الهاتف (قبل 10 ساعات): الجدار الزمني
         // يعبر إعادة الإقلاع فيُسمح بالنطق الآن بدل التجمد حتى تنقضي المدة.
         val oldStamp = System.currentTimeMillis() - 10 * 60 * 60 * 1000L
-        context.getSharedPreferences("nateq_battery_state", Context.MODE_PRIVATE)
+        context.getSharedPreferences(
+            "nateq_battery_state", Context.MODE_PRIVATE
+        )
             .edit().putLong("battery_last_announced_%50", oldStamp).commit()
-        assertFalse(BatteryAnnouncementReceiver().announcedRecently(context, "%50"))
+        assertFalse(
+            BatteryAnnouncementReceiver().announcedRecently(context, "%50")
+        )
     }
 }

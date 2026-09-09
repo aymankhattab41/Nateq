@@ -18,10 +18,12 @@ internal class NumberReadingController(
 ) {
 
     private lateinit var spinnerNumberReadingMode: Spinner
-    private lateinit var btnSpeechLanguage: com.google.android.material.button.MaterialButton
+    private lateinit var btnSpeechLanguage:
+            com.google.android.material.button.MaterialButton
 
     fun setup(view: View) {
-        spinnerNumberReadingMode = view.findViewById(R.id.spinner_number_reading_mode)
+        spinnerNumberReadingMode =
+            view.findViewById(R.id.spinner_number_reading_mode)
         btnSpeechLanguage = view.findViewById(R.id.btn_speech_language)
 
         // خيارات طريقة نطق الأرقام (1..8) ثنائية اللغة
@@ -35,23 +37,32 @@ internal class NumberReadingController(
             fragment.getString(R.string.number_mode_septuples),
             fragment.getString(R.string.number_mode_octuples)
         )
-        val savedMode = runCatching { settings.getNumberReadingMode() }.getOrDefault(1).coerceIn(1, 8)
+        val savedMode = runCatching { settings.getNumberReadingMode() }
+            .getOrDefault(1).coerceIn(1, 8)
         spinnerNumberReadingMode.adapter = ArrayAdapter(
             fragment.requireContext(),
             android.R.layout.simple_spinner_dropdown_item,
             modeLabels
         )
         spinnerNumberReadingMode.setSelection(savedMode - 1)
-        spinnerNumberReadingMode.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+        spinnerNumberReadingMode.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
                 runCatching { settings.setNumberReadingMode(position + 1) }
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
-        // مفتاح لغة نطق الإعلانات (EN/AR) — يعرض الإجراء نحو اللغة المعاكسة للحالية
-        val current = runCatching { settings.getAnnouncementSpeechLanguage() }.getOrNull()
+        // مفتاح لغة نطق الإعلانات (EN/AR) — يعرض الإجراء نحو
+        // اللغة المعاكسة للحالية
+        val current = runCatching { settings.getAnnouncementSpeechLanguage() }
+            .getOrNull()
         val isArabic = if (current == null) {
             LanguageCode.isArabic(Locale.getDefault().language)
         } else {
@@ -63,14 +74,17 @@ internal class NumberReadingController(
             fragment.getString(R.string.speech_language_to_ar)
         }
         btnSpeechLanguage.setOnClickListener {
-            // يُقرأ الوضع الحالي في كل ضغطة (لا قيمة مأسورة) ثم يُقلب نحو المعاكس
-            val lang = runCatching { settings.getAnnouncementSpeechLanguage() }.getOrNull()
+            // يُقرأ الوضع الحالي في كل ضغطة (لا قيمة مأسورة)
+            // ثم يُقلب نحو المعاكس
+            val lang = runCatching { settings.getAnnouncementSpeechLanguage() }
+                .getOrNull()
             val isArabicNow = if (lang == null) {
                 LanguageCode.isArabic(Locale.getDefault().language)
             } else {
                 LanguageCode.isArabic(lang)
             }
-            val next = if (isArabicNow) LanguageCode.EN.tag else LanguageCode.AR.tag
+            val next =
+                if (isArabicNow) LanguageCode.EN.tag else LanguageCode.AR.tag
             runCatching { settings.setAnnouncementSpeechLanguage(next) }
             // النص يعرض الإجراء نحو المعاكس للحالة الجديدة
             btnSpeechLanguage.text = if (next == LanguageCode.AR.tag) {
@@ -78,9 +92,11 @@ internal class NumberReadingController(
             } else {
                 fragment.getString(R.string.speech_language_to_ar)
             }
-            // إعلان مسموع للبدّل حتى يعرف المستمع أن اللغة تبدّلت (TalkBack/قراءة الشاشة)
+            // إعلان مسموع للبدّل حتى يعرف المستمع أن اللغة تبدّلت
+            // (TalkBack/قراءة الشاشة)
             btnSpeechLanguage.announceCompat(
-                fragment.getString(R.string.speech_language_switch) + " — " + btnSpeechLanguage.text
+                fragment.getString(R.string.speech_language_switch) +
+                    " — " + btnSpeechLanguage.text
             )
             onStatusChanged()
         }

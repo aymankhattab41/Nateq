@@ -129,9 +129,18 @@ class PronunciationDictionaryRoundTripTest {
 
         // كل نتيجة يجب أن تحتوي الاستبدالات الصحيحة
         for (result in results) {
-            assertTrue("يجب أن يحتوي على 'متر': $result", result.contains("متر"))
-            assertTrue("يجب أن يحتوي على 'كيلوغرام': $result", result.contains("كيلوغرام"))
-            assertTrue("يجب أن يحتوي على 'دكتور': $result", result.contains("دكتور"))
+            assertTrue(
+                "يجب أن يحتوي على 'متر': $result",
+                result.contains("متر")
+            )
+            assertTrue(
+                "يجب أن يحتوي على 'كيلوغرام': $result",
+                result.contains("كيلوغرام")
+            )
+            assertTrue(
+                "يجب أن يحتوي على 'دكتور': $result",
+                result.contains("دكتور")
+            )
         }
     }
 

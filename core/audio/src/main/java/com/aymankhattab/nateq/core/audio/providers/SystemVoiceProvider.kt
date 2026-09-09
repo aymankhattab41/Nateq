@@ -44,22 +44,29 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  */
 class SystemVoiceProvider(
     private val context: Context,
-    /** المرجع المحقون عبر Hilt إن وُجد (يمرره NateqTtsService/TimeAnnouncementManager)،
-     *  وإلا يُبنى محلياً — قراءة لحظية لا تُحفظ فلا يعَ وزير إن كان null. */
+    /** المرجع المحقون عبر Hilt إن وُجد
+     *  (يمرره NateqTtsService/TimeAnnouncementManager)،
+     *  وإلا يُبنى محلياً — قراءة لحظية لا تُحفظ
+     *  فلا يعَ وزير إن كان null. */
     private val injectedSettings: VoicePrefsProvider? = null
 ) : VoiceProvider {
 
     /**
-     * مُنفّذ خلفية أحادي الخيط لنقل التنفيذ الحاصر ([synthesizeInternal] الذي ينتظر
-     * اكتمال كتابة المحرك عبر `await`) خارج Main Looper. سبب الحاجة: استدعاء التهيئة
-     * `onInit` يصدر من `TextToSpeech` عبر منشئ المعالِجات على Main thread، وإن بُعِث
-     * `onDone` من المحرك الخارجي على Main أيضاً، فالحظر داخل `onInit` يسبب Deadlock
-     * ويجمّد الواجهة حتى المهلة (قصيرة للنصوص القصيرة). نقل الاصطناع إلى خيط خلفي
+     * مُنفّذ خلفية أحادي الخيط لنقل التنفيذ الحاصر
+     * ([synthesizeInternal] الذي ينتظر اكتمال كتابة المحرك
+     * عبر `await`) خارج Main Looper. سبب الحاجة:
+     * استدعاء التهيئة `onInit` يصدر من `TextToSpeech` عبر
+     * منشئ المعالِجات على Main thread، وإن بُعِث `onDone`
+     * من المحرك الخارجي على Main أيضاً، فالحظر داخل
+     * `onInit` يسبب Deadlock ويجمّد الواجهة حتى المهلة
+     * (قصيرة للنصوص القصيرة). نقل الاصطناع إلى خيط خلفي
      * يحرّر Main فوراً.
      */
-    private val synthExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val synthExecutor: ExecutorService =
+        Executors.newSingleThreadExecutor()
 
-    /** معالج نبض Main للجدولة الزمنية لمهلة التهيئة [INIT_TIMEOUT_MS] (غير حاصر). */
+    /** معالج نبض Main للجدولة الزمنية
+     *  لمهلة التهيئة [INIT_TIMEOUT_MS] (غير حاصر). */
     private val mainHandler = Handler(Looper.getMainLooper())
 
     /**
@@ -73,10 +80,12 @@ class SystemVoiceProvider(
     companion object {
         private const val TAG = "NATEQ_TTS"
 
-        /** معرف مزود نظام TTS — يُستخدم للتراجع الافتراضي للصوت والمسارات العامة. */
+        /** معرف مزود نظام TTS — يُستخدم للتراجع
+         *  الافتراضي للصوت والمسارات العامة. */
         const val SYSTEM_PROVIDER_ID = "system"
 
-        /** قيمة احتياطية إذا تعذّر قراءة ترويسة WAV (تطابق القيمة السابقة ثابتة). */
+        /** قيمة احتياطية إذا تعذّر قراءة ترويسة WAV
+         *  (تطابق القيمة السابقة ثابتة). */
         private const val FALLBACK_SAMPLE_RATE = 22050
 
         /**
@@ -91,11 +100,15 @@ class SystemVoiceProvider(
         private const val CANCELLATION_POLL_MS = 100L
 
         /**
-         * مهلة انتظار اكتمال كتابة المحرك لملف الصوت حسب طول النص (بالمللي ثانية).
-         * للنصوص القصيرة 1.5–3 ثوانٍ فقط: قارئات الشاشة لا تحتمل مهلة 30 ثانية لكل
-         * محرك (وتصل سلسلة التراجع بين محركين إلى 60 ثانية — بطء غير مقبول)،
-         * والنصوص الطويلة تحصل على مهلة أوسع لكتابة الملف كاملاً. عامة (لا internal)
-         * لأن اختبارها في وحدة :app مباشرة (نفس نمط UpdateChecker في :core:data).
+         * مهلة انتظار اكتمال كتابة المحرك لملف الصوت
+         * حسب طول النص (بالمللي ثانية).
+         * للنصوص القصيرة 1.5–3 ثوانٍ فقط: قارئات الشاشة
+         * لا تحتمل مهلة 30 ثانية لكل محرك (وتصل سلسلة
+         * التراجع بين محركين إلى 60 ثانية — بطء غير مقبول)،
+         * والنصوص الطويلة تحصل على مهلة أوسع لكتابة
+         * الملف كاملاً. عامة (لا internal) لأن اختبارها
+         * في وحدة :app مباشرة (نفس نمط UpdateChecker
+         * في :core:data).
          */
         fun synthesisTimeoutMs(textLength: Int): Long = when {
             textLength <= 10 -> 1500L
@@ -156,7 +169,8 @@ class SystemVoiceProvider(
         private val available: ArrayDeque<ByteArray> = ArrayDeque()
         private val lock = Any()
 
-        /** يُرجع مخزّناً بحجم [minSize] أو أكبر (لا إنشاء إن أمكن) للاستهلاك المتغير. */
+        /** يُرجع مخزّناً بحجم [minSize] أو أكبر
+         *  (لا إنشاء إن أمكن) للاستهلاك المتغير. */
         fun acquire(minSize: Int): ByteArray {
             if (minSize < POOL_MIN_SIZE_BYTES) return ByteArray(minSize)
             synchronized(lock) {
@@ -165,7 +179,8 @@ class SystemVoiceProvider(
                 while (it.hasNext()) {
                     val candidate = it.next()
                     if (candidate.size >= minSize) {
-                        // نفضّل الأقرب استهلاكاً للحجم لتقليل الهدر؛ يغادر أي مرشح.
+                        // نفضّل الأقرب استهلاكاً للحجم لتقليل
+                        // الهدر؛ يغادر أي مرشح.
                         if (best == null || candidate.size < best.size) {
                             best = candidate
                         }
@@ -179,7 +194,9 @@ class SystemVoiceProvider(
             return ByteArray(minSize)
         }
 
-        /** يُخزّن صفيفاً لإعادة الاستخدام (يحتفظ به كما هو، وتُبثّ "الطول الصالح" صراحةً). */
+        /** يُخزّن صفيفاً لإعادة الاستخدام
+         *  (يحتفظ به كما هو، وتُبثّ "الطول الصالح"
+         *  صراحةً). */
         fun release(array: ByteArray): Boolean {
             if (array.size < POOL_MIN_SIZE_BYTES) return false
             synchronized(lock) {
@@ -205,9 +222,12 @@ class SystemVoiceProvider(
 
     private var tts: TextToSpeech? = null
 
-    /** قفل مزامنة دورة حياة [tts]: حسم الربط/الإعادة في [synthesizeWithEngine]
-     *  والإغلاق في [shutdown] يتسابقان فعلياً عند تدمير الخدمة أثناء نطقٍ جارٍ —
-     *  القفل يمنع إنشاء محركٍ جديد في منتصف الإغلاق النهائي. */
+    /** قفل مزامنة دورة حياة [tts]:
+     *  حسم الربط/الإعادة في [synthesizeWithEngine]
+     *  والإغلاق في [shutdown] يتسابقان فعلياً
+     *  عند تدمير الخدمة أثناء نطقٍ جارٍ —
+     *  القفل يمنع إنشاء محركٍ جديد في منتصف
+     *  الإغلاق النهائي. */
     private val ttsLock = Any()
 
     /** حارس idempotence: [shutdown] يُستدعى مرة واحدة من onDestroy؛ استدعاءات
@@ -226,8 +246,11 @@ class SystemVoiceProvider(
      * النبرة/الصوت/المحرك) فيتخلى الكاش تلقائياً عند أي تغيير إعداد. السعة
      * محدودة بالبايت وبطول النص الأقصى فلا يجفّ ذاكرة العملية بالنصوص الطويلة.
      */
-    private val pcmCache = object : LruCache<String, VoiceCacheEntry>(PCM_CACHE_MAX_BYTES) {
-        override fun sizeOf(key: String, value: VoiceCacheEntry): Int = value.pcm.size + 24
+    private val pcmCache = object : LruCache<String,
+        VoiceCacheEntry>(PCM_CACHE_MAX_BYTES) {
+        override fun sizeOf(
+            key: String, value: VoiceCacheEntry
+        ): Int = value.pcm.size + 24
     }
 
     /** بيانات PCM معبّأة للبث من الكاش، مترافقة مع تنسيقها الأصلي. */
@@ -274,7 +297,9 @@ class SystemVoiceProvider(
     private fun pickEnginePackage(): String? {
         // المحرك المختار من المستخدم (مثل MultiTTS) له الأولوية
         val selected = try {
-            (injectedSettings ?: SettingsRepository(context)).getSelectedEnginePackage()
+            (injectedSettings
+                ?: SettingsRepository(context))
+                .getSelectedEnginePackage()
         } catch (e: Exception) {
             null
         }
@@ -310,9 +335,12 @@ class SystemVoiceProvider(
                 id = voiceId,
                 providerId = providerId,
                 displayName = when (normLanguage) {
-                    // العربية/الإنجليزية بأسماء الترجمة الحالية (كاملة بكل الواجهات).
-                    LanguageCode.AR.tag -> context.getString(R.string.voice_name_arabic)
-                    LanguageCode.EN.tag -> context.getString(R.string.voice_name_english)
+                    // العربية/الإنجليزية بأسماء الترجمة
+                    // الحالية (كاملة بكل الواجهات).
+                    LanguageCode.AR.tag ->
+                        context.getString(R.string.voice_name_arabic)
+                    LanguageCode.EN.tag ->
+                        context.getString(R.string.voice_name_english)
                     // أي لغة أجنبية باسمها الحقيقي بلغة واجهة التطبيق
                     // (كانت كل اللغات تُعرض "الإنجليزية" خطأً).
                     else -> displayNameFor(normLocale)
@@ -322,16 +350,20 @@ class SystemVoiceProvider(
         )
     }
 
-    /** اسم لغة أجنبية بلغة واجهة التطبيق (لا لغة النظام) بحرف أول كبير حيث ينطبق. */
+    /** اسم لغة أجنبية بلغة واجهة التطبيق
+     *  (لا لغة النظام) بحرف أول كبير حيث ينطبق. */
     private fun displayNameFor(locale: Locale): String {
-        val appLocale = context.resources.configuration.locales.get(0) ?: Locale.getDefault()
+        val appLocale = context.resources
+            .configuration.locales.get(0)
+            ?: Locale.getDefault()
         return locale.getDisplayName(appLocale).replaceFirstChar { ch ->
             if (ch.isLowerCase()) ch.titlecase(appLocale) else ch.toString()
         }
     }
 
     /** تطبيع كود اللغة من ISO-3 إلى ISO-2 (مثل eng→en، ara→ar) */
-    private fun normalizeLanguage(code: String): String = LocaleUtils.normalizeLanguageCode(code)
+    private fun normalizeLanguage(code: String): String =
+        LocaleUtils.normalizeLanguageCode(code)
 
     override suspend fun synthesize(
         text: String,
@@ -345,13 +377,17 @@ class SystemVoiceProvider(
         voiceLocale: Locale?,
         desiredVoiceName: String?
     ) {
-        // **تفويض النطق لمحركٍ مثبّت** (منهج MultiTTS): نصّل دائماً عبر محرك TTS
-        // خارجي نربط به مباشرةً (جوجل/سامسونج/طرفي). تُفضَّل المحركات الطرفية
-        // إن وُجدت وإلا جوجل، وتُستبعد دائماً حزمة التطبيق نفسه
-        // (`EnginePicker.installedEnginePackages`) فلا يحدث تكرار ذاتي.
-        // إلغاء قابل للتعاون: على عكس suspendCoroutine، يُبلَّغ suspendCancellableCoroutine
-        // بالخارج عند إلغاء المهمة (onStop من المحرك)، فنضبط علماً ونتوقف فوراً بدل
-        // انتظار القفل حتى المهلة المتكيّفة بطول النص. الاستئناف بعد الإلغاء
+        // **تفويض النطق لمحركٍ مثبّت** (منهج MultiTTS):
+        // نصّل دائماً عبر محرك TTS خارجي نربط به مباشرةً
+        // (جوجل/سامسونج/طرفي). تُفضَّل المحركات الطرفية
+        // إن وُجدت وإلا جوجل، وتُستبعد دائماً حزمة التطبيق
+        // نفسه (`EnginePicker.installedEnginePackages`)
+        // فلا يحدث تكرار ذاتي.
+        // إلغاء قابل للتعاون: على عكس suspendCoroutine،
+        // يُبلَّغ suspendCancellableCoroutine بالخارج
+        // عند إلغاء المهمة (onStop من المحرك)، فنضبط علماً
+        // ونتوقف فوراً بدل انتظار القفل حتى المهلة
+        // المتكيّفة بطول النص. الاستئناف بعد الإلغاء
         // يُسقط تلقائياً وهذا متوقع.
         suspendCancellableCoroutine<Unit> { cont ->
             val cancelled = AtomicBoolean(false)
@@ -361,8 +397,11 @@ class SystemVoiceProvider(
             }
             val ttsEngine = resolveEngine(enginePackage)
 
-            // إذا تُحدَّد لغة عبر التحويل التلقائي، نستخدم صوتاً بلغتها النهائية.
-            val effectiveVoice = if (voiceLocale != null && voiceLocale.language.isNotEmpty()) {
+            // إذا تُحدَّد لغة عبر التحويل التلقائي،
+            // نستخدم صوتاً بلغتها النهائية.
+            val effectiveVoice = if (voiceLocale != null
+                && voiceLocale.language.isNotEmpty()
+            ) {
                 voice.copy(locale = voiceLocale)
             } else {
                 voice
@@ -371,7 +410,10 @@ class SystemVoiceProvider(
             // كاش الذاكرة (بند 19.1): إن وُجدت نسخة جاهزة لنفس النص بذات
             // وسائط الصوت، نُبثّها فوراً من الذاكرة بلا أي تلامس مع القرص أو
             // ربط محرك — يلغي تماماً دورة WAV للعبارات المتكررة لدى TalkBack.
-            val cacheKey = buildCacheKey(text, effectiveVoice, speechRate, pitch, volume, ttsEngine)
+            val cacheKey = buildCacheKey(
+                text, effectiveVoice, speechRate,
+                pitch, volume, ttsEngine
+            )
             val cached = if (cacheKey != null) pcmCache.get(cacheKey) else null
             if (cached != null) {
                 onFormatInfo(cached.sampleRateInHz, 1)
@@ -393,8 +435,9 @@ class SystemVoiceProvider(
                 cancelled,
                 desiredVoiceName,
                 cacheKey,
-                // سجل بكل المحركات التي فشلت خلال هذه الجولة للتراجع التراكمي
-                // (يمنع إعادة اختيار محركٍ فشل سابقاً — منعاً لتأرجح ping-pong).
+                // سجل بكل المحركات التي فشلت خلال هذه الجولة
+                // للتراجع التراكمي (يمنع إعادة اختيار محركٍ
+                // فشل سابقاً — منعاً لتأرجح ping-pong).
                 failedEngines = mutableSetOf()
             )
         }
@@ -404,8 +447,9 @@ class SystemVoiceProvider(
      * مفتاح الكاش للعبارة: النص مع كل ما يؤثر في PCM (الصوت المحسوب من المحرك،
      * المعدل، النبرة، مستوى الصوت، وحزمة المحرك المرتبطة). أي تغير فيها يُولّد
      * مفتاحاً مختلفاً فيتخلى الكاش تلقائياً عن القيمة القديمة. النصوص الأطول
-     * من [PCM_CACHE_MAX_TEXT_LENGTH] لا تُخزَّن (PCM كبير ونادراً يتكرر حرفياً) —
-     * تُرجع null فلا يُمسّ الكاش من أصله.
+     * من [PCM_CACHE_MAX_TEXT_LENGTH] لا تُخزَّن
+     * (PCM كبير ونادراً يتكرر حرفياً) — تُرجع null
+     * فلا يُمسّ الكاش من أصله.
      */
     private fun buildCacheKey(
         text: String,
@@ -416,20 +460,30 @@ class SystemVoiceProvider(
         engine: String?
     ): String? {
         if (text.length > PCM_CACHE_MAX_TEXT_LENGTH) return null
-        // تمثيل عائم مضبوط بالبايت حتى لا ينتج عن التنقية العشرية مفاتيح متقلبة.
+        // تمثيل عائم مضبوط بالبايت حتى لا ينتج
+        // عن التنقية العشرية مفاتيح متقلبة.
         val r = speechRate.toRawBits()
         val p = pitch.toRawBits()
         val v = volume.toRawBits()
         return "$text|${voice.id}|$r|$p|$v|$engine|${voice.locale}"
     }
 
-    /** يخزّن نسخة مستقلة من بيانات PCM في الكاش (النسخة آمنة لأن المتلقي والمسبح
-     *  قد يعيدان استخدام المخزن؛ نعطي الكاش نسخته الخاصة التي لا تتغير). */
-    private fun storeInCache(key: String, pcm: ByteArray, sampleRate: Int, validLength: Int) {
+    /** يخزّن نسخة مستقلة من بيانات PCM في الكاش
+     *  (النسخة آمنة لأن المتلقي والمسبح قد يعيدان
+     *  استخدام المخزن؛ نعطي الكاش نسخته الخاصة
+     *  التي لا تتغير). */
+    private fun storeInCache(
+        key: String, pcm: ByteArray,
+        sampleRate: Int, validLength: Int
+    ) {
         try {
             val copy = ByteArray(validLength)
             System.arraycopy(pcm, 0, copy, 0, validLength)
-            val evicted = pcmCache.put(key, VoiceCacheEntry(copy, sampleRate, validLength))
+            val evicted = pcmCache.put(
+                key, VoiceCacheEntry(
+                    copy, sampleRate, validLength
+                )
+            )
             evicted?.pcm?.let { /* تركه للمُجمّع — الكاش لم يعد يحتاجه */ }
         } catch (_: Exception) {
             // فشل التخزين (نفاد ذاكرة لحظي) — نسقط الصف فقط بلا أثر على النطق.
@@ -439,7 +493,11 @@ class SystemVoiceProvider(
     /** يحدّد محرك TTS الذي سيُستخدَم، مع التحقق من أنه مثبَّت فعلاً. */
     private fun resolveEngine(enginePackage: String?): String? {
         val engine = enginePackage ?: pickEnginePackage()
-        return if (engine != null && EnginePicker.installedEnginePackages(context).contains(engine)) {
+        return if (engine != null
+            && EnginePicker.installedEnginePackages(
+                context
+            ).contains(engine)
+        ) {
             engine
         } else {
             pickEnginePackage()
@@ -447,12 +505,16 @@ class SystemVoiceProvider(
     }
 
 /**
-     * يُنفّذ النطق عبر المحرك المعطى، وعند فشل المحرك الطرفي (مثل SmartVoice الذي
-     * يفشل synthesizeToFile) يتراجع تلقائياً إلى أفضل محرك متبقٍ (جوجل أولاً إن
-     * وُجد) كملاذ أخير حتى لا يبقى التطبيق صامتاً على أي جهاز. كل محرك يفشل
-     * يُضاف إلى [failedEngines] ويُستبعد من كل اختيار لاحق — فلا يُعاد محركٌ
-     * فشل سابقاً ولا يحدث تأرجح بين محركين، وبسقف [MAX_RETRIES] نتوقف عند
-     * استنفاد المحاولات بدل الحلقة اللانهائية.
+     * يُنفّذ النطق عبر المحرك المعطى، وعند فشل
+     * المحرك الطرفي (مثل SmartVoice الذي يفشل
+     * synthesizeToFile) يتراجع تلقائياً إلى أفضل
+     * محرك متبقٍ (جوجل أولاً إن وُجد) كملاذ أخير
+     * حتى لا يبقى التطبيق صامتاً على أي جهاز.
+     * كل محرك يفشل يُضاف إلى [failedEngines]
+     * ويُستبعد من كل اختيار لاحق — فلا يُعاد محركٌ
+     * فشل سابقاً ولا يحدث تأرجح بين محركين،
+     * وبسقف [MAX_RETRIES] نتوقف عند استنفاد
+     * المحاولات بدل الحلقة اللانهائية.
      */
     private fun synthesizeWithEngine(
         engine: String?,
@@ -476,77 +538,125 @@ class SystemVoiceProvider(
                 if (!done.getAndSet(true)) cont.resume(Unit)
             } else if (!cancelled.get()) {
                 // دورة حياة tts كلها تحت قفل [ttsLock] لتتزامن مع [shutdown]
-                // (تدمير الخدمة أثناء نطقٍ جارٍ): إن بدأ الإغلاق في المنتصف يتوقف
+                // (تدمير الخدمة أثناء نطقٍ جارٍ):
+                // إن بدأ الإغلاق في المنتصف يتوقف
                 // الربط فوراً — لا محرك جديد بعد التدمير — وتُستأنف الكوروتينة
                 // فارغةً فيتحرر المعتقل. القفل قابل لإعادة الدخول فمسار التراجع
                 // (retryWithGoogle → attemptWith على نفس الخيط) آمن.
                 synchronized(ttsLock) {
                     when {
                         shutdownCalled -> {
-                            Log.w(TAG, "[Provider] engine bind skipped: provider shutting down")
+                            Log.w(TAG,
+                                "[Provider] engine bind skipped:" +
+                                " provider shutting down")
                             if (!done.getAndSet(true)) cont.resume(Unit)
                         }
-                        // نغلق أي محرك سابق قبل ربط محرك جديد (خاصة بعد فشل محرك).
+                        // نغلق أي محرك سابق قبل ربط محرك جديد
+                        // (خاصة بعد فشل محرك).
                         tts == null || ttsEngine != currentEngine -> {
                             if (tts != null) {
                                 runCatching { tts?.shutdown() }
                                 tts = null
                             }
                             Log.w(TAG, "[Provider] init engine=$currentEngine")
-                            // علاّمة تحسم سباقاً واحداً فقط بين ردّ onInit ومهلة التهيئة:
-                            // أياً منهما يسبق يحسم المصير، والآخر يُسقط (يمنع مزدوجاً).
+                            // علاّمة تحسم سباقاً واحداً فقط
+                            // بين ردّ onInit ومهلة التهيئة:
+                            // أياً منهما يسبق يحسم المصير،
+                            // والآخر يُسقط (يمنع مزدوجاً).
                             val initSettled = AtomicBoolean(false)
                             tts = TextToSpeech(context, { status ->
-                                if (initSettled.getAndSet(true)) return@TextToSpeech
+                                if (initSettled.getAndSet(true)) {
+                                    return@TextToSpeech
+                                }
                                 if (done.getAndSet(true)) return@TextToSpeech
-                                if (status == TextToSpeech.SUCCESS && !cancelled.get()) {
-                                    // onInit صدر من TextToSpeech على Main Looper؛ نقل الاصطناع
-                                    // الحاصر (انتظار كتابة الملف) إلى خيط خلفي كي لا يُحظر Main —
-                                    // فلو بعث المحرك onDone على Main أيضاً حصل Deadlock حتى المهلة.
+                                if (status == TextToSpeech.SUCCESS
+                                    && !cancelled.get()
+                                ) {
+                                    // onInit صدر من TextToSpeech
+                                    // على Main Looper؛ نقل الاصطناع
+                                    // الحاصر (انتظار كتابة الملف)
+                                    // إلى خيط خلفي كي لا يُحظر
+                                    // Main — فلو بعث المحرك onDone
+                                    // على Main أيضاً حصل Deadlock
+                                    // حتى المهلة.
                                     runSynthesisOnBackground(
                                         beforeSpeak = {
-                                            synthesizeInternal(text, voice, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cancelled, desiredVoiceName, cacheKey)
+                                            synthesizeInternal(
+                                                text, voice, speechRate,
+                                                pitch, volume, onFormatInfo,
+                                                onAudioChunk, cancelled,
+                                                desiredVoiceName, cacheKey
+                                            )
                                         },
                                         onSuccess = { cont.resume(Unit) },
                                         onFailure = {
-                                            // فشل النطق — جرّب محركاً آخر إن أمكن.
-                                            retryWithGoogle(currentEngine, voice, text, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cont, cancelled, desiredVoiceName, cacheKey, failedEngines)
+                                    // فشل النطق — جرّب محركاً
+                                    // آخر إن أمكن.
+                                    retryWithGoogle(currentEngine, voice, text,
+                                        speechRate, pitch, volume,
+                                        onFormatInfo, onAudioChunk, cont,
+                                        cancelled, desiredVoiceName,
+                                        cacheKey, failedEngines)
                                         }
                                     )
                                 } else {
-                                    Log.e(TAG, "[Provider] engine init failed: $currentEngine status=$status")
-                                    retryWithGoogle(currentEngine, voice, text, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cont, cancelled, desiredVoiceName, cacheKey, failedEngines)
+                                    Log.e(TAG,
+                                        "[Provider] engine init failed:" +
+                                        " $currentEngine status=$status")
+                                    retryWithGoogle(currentEngine, voice, text,
+                                        speechRate, pitch, volume,
+                                        onFormatInfo, onAudioChunk, cont,
+                                        cancelled, desiredVoiceName,
+                                        cacheKey, failedEngines)
                                 }
                             }, currentEngine)
                             ttsEngine = currentEngine
-                            // مهلة تهيئة أقصاها 5 ثوانٍ: إن علق المحرك ولم يُرِدّ onInit،
-                            // نُسقط المحرك ونتراجع بدل بقاء الكوروتين معلقاً للأبد. غير حاصر
-                            // (منبّه على Main) فلا يُجمّد الخيط ولا يتعارض مع ردّ onInit الآجل.
+                            // مهلة تهيئة أقصاها 5 ثوانٍ: إن علق
+                            // المحرك ولم يُرِدّ onInit، نُسقط المحرك
+                            // ونتراجع بدل بقاء الكوروتين معلقاً
+                            // للأبد. غير حاصر (منبّه على Main)
+                            // فلا يُجمّد الخيط ولا يتعارض مع ردّ
+                            // onInit الآجل.
                             mainHandler.postDelayed({
-                                if (!initSettled.getAndSet(true) &&
-                                    done.compareAndSet(false, true) &&
-                                    !cancelled.get()
+                                if (!initSettled.getAndSet(true)
+                                    && done.compareAndSet(false, true)
+                                    && !cancelled.get()
                                 ) {
-                                    Log.w(TAG, "[Provider] engine init timed out after ${INIT_TIMEOUT_MS}ms: $currentEngine")
+                                    Log.w(TAG,
+                                        "[Provider] engine init timed out" +
+                                        " after ${INIT_TIMEOUT_MS}ms:" +
+                                        " $currentEngine")
                                     runCatching { tts?.shutdown() }
                                     tts = null
                                     ttsEngine = null
-                                    retryWithGoogle(currentEngine, voice, text, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cont, cancelled, desiredVoiceName, cacheKey, failedEngines)
+                                    retryWithGoogle(currentEngine, voice, text,
+                                        speechRate, pitch, volume, onFormatInfo,
+                                        onAudioChunk, cont, cancelled,
+                                        desiredVoiceName, cacheKey,
+                                        failedEngines)
                                 }
                             }, INIT_TIMEOUT_MS)
                         }
                         // مثيل نفس المحرك جاهز — ننطق مباشرة بإعادة استخدامه.
                         else -> if (!done.getAndSet(true)) {
-                            // ننفّذ الاصطناع الحاصر على خيط خلفي (اختبارياً قد نصل
-                            // هنا من مسار Main) حتى لا يُحظر Main لو بعث المحرك
-                            // onDone على Main أيضاً.
+                            // ننفّذ الاصطناع الحاصر على خيط خلفي
+                            // (اختبارياً قد نصل هنا من مسار Main)
+                            // حتى لا يُحظر Main لو بعث المحرك onDone
+                            // على Main أيضاً.
                             runSynthesisOnBackground(
                                 beforeSpeak = {
-                                    synthesizeInternal(text, voice, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cancelled, desiredVoiceName, cacheKey)
+                                    synthesizeInternal(text, voice, speechRate,
+                                        pitch, volume, onFormatInfo,
+                                        onAudioChunk, cancelled,
+                                        desiredVoiceName, cacheKey)
                                 },
                                 onSuccess = { cont.resume(Unit) },
                                 onFailure = {
-                                    retryWithGoogle(currentEngine, voice, text, speechRate, pitch, volume, onFormatInfo, onAudioChunk, cont, cancelled, desiredVoiceName, cacheKey, failedEngines)
+                                    retryWithGoogle(currentEngine, voice, text,
+                                        speechRate, pitch, volume,
+                                        onFormatInfo, onAudioChunk, cont,
+                                        cancelled, desiredVoiceName,
+                                        cacheKey, failedEngines)
                                 }
                             )
                         }
@@ -555,7 +665,11 @@ class SystemVoiceProvider(
             }
         }
 
-        if (engine != null && EnginePicker.installedEnginePackages(context).contains(engine)) {
+        if (engine != null
+            && EnginePicker.installedEnginePackages(
+                context
+            ).contains(engine)
+        ) {
             attemptWith(engine)
         } else {
             attemptWith(EnginePicker.pickEnginePackage(context))
@@ -589,7 +703,9 @@ class SystemVoiceProvider(
         if (failedEngine != null) failedEngines.add(failedEngine)
         // سقف أقصى للمحاولات: عند بلوغه نتوقف بدل المحاولات اللامتناهية.
         if (failedEngines.size >= MAX_RETRIES) {
-            Log.w(TAG, "[Provider] max retries reached ($MAX_RETRIES): $failedEngines")
+            Log.w(TAG,
+                "[Provider] max retries reached" +
+                " ($MAX_RETRIES): $failedEngines")
             cont.resume(Unit)
             return
         }
@@ -598,10 +714,15 @@ class SystemVoiceProvider(
             failedEngines
         )
         if (fallback != null) {
-            Log.w(TAG, "[Provider] falling back to engine: $fallback (failed so far: $failedEngines)")
+            Log.w(TAG,
+                "[Provider] falling back to engine:" +
+                " $fallback (failed so far:" +
+                " $failedEngines)")
             synthesizeWithEngine(
-                fallback, text, voice, speechRate, pitch, volume,
-                onFormatInfo, onAudioChunk, cont, cancelled, desiredVoiceName, cacheKey, failedEngines
+                fallback, text, voice, speechRate,
+                pitch, volume, onFormatInfo, onAudioChunk,
+                cont, cancelled, desiredVoiceName,
+                cacheKey, failedEngines
             )
         } else {
             cont.resume(Unit)
@@ -609,10 +730,14 @@ class SystemVoiceProvider(
     }
 
     /**
-     * ينفّذ الاصطناع الحاصر على خيط خلفية غير-`Main` ثم يستأنف/يتراجع وفق النتيجة.
-     * السبب: عند استدعاء النطق من داخل `onInit` يصدر ذلك على Main Looper، وإن بعث
-     * المحرك `onDone` على Main أيضاً فالحظر يسبب Deadlock وتجميد الواجهة حتى المهلة.
-     * نقل عمليّة الانتظار إلى خيط خلفي يحرّر Main فوراً فيكتمل النطق بسرعة.
+     * ينفّذ الاصطناع الحاصر على خيط خلفية غير-`Main`
+     * ثم يستأنف/يتراجع وفق النتيجة.
+     * السبب: عند استدعاء النطق من داخل `onInit`
+     * يصدر ذلك على Main Looper، وإن بعث المحرك
+     * `onDone` على Main أيضاً فالحظر يسبب Deadlock
+     * وتجميد الواجهة حتى المهلة.
+     * نقل عمليّة الانتظار إلى خيط خلفي يحرّر Main
+     * فوراً فيكتمل النطق بسرعة.
      */
     private fun runSynthesisOnBackground(
         beforeSpeak: () -> Boolean,
@@ -631,8 +756,9 @@ class SystemVoiceProvider(
     }
 
     /**
-     * يُنفّذ النطق عبر المحرك المربوط ويُعيد true عند النجاح (صَرْف بيانات صوتية)،
-     * أو false عند الفشل (حتى يتراجع المتصل إلى محرك بديل).
+     * يُنفّذ النطق عبر المحرك المربوط ويُعيد true
+     * عند النجاح (صَرْف بيانات صوتية)، أو false
+     * عند الفشل (حتى يتراجع المتصل إلى محرك بديل).
      */
     private fun synthesizeInternal(
         text: String,
@@ -649,7 +775,8 @@ class SystemVoiceProvider(
         // حقل cancelled و مجموعة params — (توقيع internal)
         val engine = tts
         if (engine == null) return false
-        // السرعة والنبرة تُمرَّران مباشرةً للمحرك (engine.setSpeechRate/setPitch)
+        // السرعة والنبرة تُمرَّران مباشرةً للمحرك
+        // (engine.setSpeechRate/setPitch)
         // بدل التعديل الخطي الرقمي اليدوي الذي كان يلغي أثرهما بتشويه معدني
         // (وفق توصية التقرير: إعادة أخذ العينات بنسبة p ثم عكسها ترك الصوت
         //  بنفس النبرة والمدة مع تنعيم مضاعف مشوّه). مستوى الصوت (volume)
@@ -662,15 +789,22 @@ class SystemVoiceProvider(
         // اللغة إذا لم يجده المحرك (تجنّباً لكسر النطق لمجرد اسم غير مطابق).
         if (!desiredVoiceName.isNullOrBlank()) {
             runCatching {
-                val matching = engine.voices?.firstOrNull { it.name == desiredVoiceName }
+                val matching = engine.voices?.firstOrNull {
+                    it.name == desiredVoiceName
+                }
                 if (matching != null) {
-                    // صوتٌ يتطلب اتصالاً (جوجل السحابي) مع غياب الإنترنت: تراجع فوري
-                    // دون دفع المحرك لانتظارِ مهلة التوليد كاملة عبثاً — الحالة يُرسلها
-                    // [connectivity] استباقياً عبر NetworkCallback ومحسوبة حيّاً لحظياً.
-                    if (matching.isNetworkConnectionRequired && !connectivity.isOnlineNow()) {
+                    // صوتٌ يتطلب اتصالاً (جوجل السحابي)
+                    // مع غياب الإنترنت: تراجع فوري دون دفع
+                    // المحرك لانتظارِ مهلة التوليد كاملة عبثاً —
+                    // الحالة يُرسلها [connectivity] استباقياً
+                    // عبر NetworkCallback ومحسوبة حيّاً لحظياً.
+                    if (matching.isNetworkConnectionRequired
+                        && !connectivity.isOnlineNow()
+                    ) {
                         Log.w(
                             TAG,
-                            "[Provider] offline & voice requires network ($desiredVoiceName) — فوري محلي"
+                            "[Provider] offline & voice requires network" +
+                            " ($desiredVoiceName) — فوري محلي"
                         )
                         return false
                     }
@@ -678,15 +812,19 @@ class SystemVoiceProvider(
                 }
             }
         }
-        // إن لم يُحدَّد اسم صوت (المحرك الافتراضي) لكن المحرك نفسه صوته الافتراضي
-        // سحابي (جوجل يعتمد الشبكة افتراضياً للعربية/الهندية مثلاً)، فالفحص نفسه:
-        // الإنترنت غائب → تركُ التوليد فوراً وإرجاع فوري (يتولى المتصل التراجع).
+        // إن لم يُحدَّد اسم صوت (المحرك الافتراضي)
+        // لكن المحرك نفسه صوته الافتراضي سحابي
+        // (جوجل يعتمد الشبكة افتراضياً للعربية/الهندية
+        // مثلاً)، فالفحص نفسه: الإنترنت غائب → تركُ
+        // التوليد فوراً وإرجاع فوري (يتولى المتصل التراجع).
         if (!connectivity.isOnlineNow()) {
             val currentRequiresNetwork = runCatching {
                 engine.voice?.isNetworkConnectionRequired == true
             }.getOrDefault(false)
             if (currentRequiresNetwork) {
-                Log.w(TAG, "[Provider] offline & default engine voice requires network — فوري محلي")
+                Log.w(TAG,
+                    "[Provider] offline & default engine voice" +
+                    " requires network — فوري محلي")
                 return false
             }
         }
@@ -696,7 +834,10 @@ class SystemVoiceProvider(
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
         }
 
-        val tempFile = java.io.File(context.cacheDir, "nateq_tts_${System.currentTimeMillis()}.wav")
+        val tempFile = java.io.File(
+            context.cacheDir,
+            "nateq_tts_${System.currentTimeMillis()}.wav"
+        )
 
         // synthesizeToFile يُرجع SUCCESS فوراً قبل اكتمال الكتابة، لذلك ننتظر
         // اكتمال الكتابة عبر UtteranceProgressListener قبل قراءة الملف — وإلا
@@ -704,7 +845,8 @@ class SystemVoiceProvider(
         val done = CountDownLatch(1)
         var failed = false
         try {
-            engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            engine.setOnUtteranceProgressListener(
+                object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {}
 
                 @Deprecated("Java Deprecated")
@@ -722,21 +864,30 @@ class SystemVoiceProvider(
             Log.w(TAG, "[Provider] setOnUtteranceProgressListener threw", e)
         }
 
-        val status = engine.synthesizeToFile(text, params, tempFile, utteranceId)
+        val status = engine.synthesizeToFile(
+            text, params, tempFile, utteranceId
+        )
 
         var success = false
         if (status == TextToSpeech.SUCCESS) {
-            // ننتظر فعلاً حتى يكتب المحرك الملف كاملاً (أو يُلغى الإعلان/النطق) مع
-            // فحص الإلغاء كل 100ms بدل القفل الأعمى — فإذا أوقف المستخدم النطق
-            // (onStop) نتحرر فوراً. المهلة متكيّفة مع طول النص ([synthesisTimeoutMs]):
-            // للنصوص القصيرة 1.5–3 ثوانٍ فقط (لا يحتمل قارئ الشاشة 30 ثانية انتظار)
-            // وللطويلة أوسع ليكتمل كتابة الملف.
+            // ننتظر فعلاً حتى يكتب المحرك الملف كاملاً
+            // (أو يُلغى الإعلان/النطق) مع فحص الإلغاء كل
+            // 100ms بدل القفل الأعمى — فإذا أوقف المستخدم
+            // النطق (onStop) نتحرر فوراً. المهلة متكيّفة
+            // مع طول النص ([synthesisTimeoutMs]): للنصوص
+            // القصيرة 1.5–3 ثوانٍ فقط (لا يحتمل قارئ
+            // الشاشة 30 ثانية انتظار) وللطويلة أوسع
+            // ليكتمل كتابة الملف.
             val waitMs = synthesisTimeoutMs(text.length)
             val deadline = SystemClock.elapsedRealtime() + waitMs
             var finished = false
             try {
                 while (true) {
-                    if (done.await(CANCELLATION_POLL_MS, TimeUnit.MILLISECONDS)) {
+                    if (done.await(
+                            CANCELLATION_POLL_MS,
+                            TimeUnit.MILLISECONDS
+                        )
+                    ) {
                         finished = true
                         break
                     }
@@ -751,32 +902,55 @@ class SystemVoiceProvider(
                 Thread.currentThread().interrupt()
             }
 
-            if (finished && !failed && tempFile.exists() && tempFile.length() > 44) {
+            if (finished && !failed && tempFile.exists()
+                && tempFile.length() > 44
+            ) {
                 try {
-                    // قراءة بيانات الصوت مباشرة من ملف التخليق (تخطّي رأس WAV
-                    // وقائمة الخانات) دون قراءة الملف كاملاً ثم نسخه — كان ذلك
-                    // يرفع ذروة الذاكرة 2-3× حجم الملف للنصوص الطويلة.
+                    // قراءة بيانات الصوت مباشرة من ملف
+                    // التخليق (تخطّي رأس WAV وقائمة الخانات)
+                    // دون قراءة الملف كاملاً ثم نسخه — كان
+                    // ذلك يرفع ذروة الذاكرة 2-3× حجم الملف
+                    // للنصوص الطويلة.
                     val extracted = extractPcm(tempFile)
                     if (extracted.pcm.isEmpty() || extracted.validLength == 0) {
                         Log.e(TAG, "[Provider] extractPcm returned empty")
                     } else {
-                        // إبلاغ المتصل بالتنسيق الفعلي (معدل عينات/قنوات) قبل أي شريحة
-                        // حتى يبدأ callback.start() بهما بدل 22050 الثابتة.
+                        // إبلاغ المتصل بالتنسيق الفعلي
+                        // (معدل عينات/قنوات) قبل أي شريحة
+                        // حتى يبدأ callback.start() بهما
+                        // بدل 22050 الثابتة.
                         onFormatInfo(extracted.sampleRateInHz, 1)
-                        // مستوى الصوت فقط يُعالج رقماً (المعامل المضاعف المحايد):
-                        // السرعة والنبرة صارتا تخصان المحرك عبر setSpeechRate/setPitch.
+                        // مستوى الصوت فقط يُعالج رقماً
+                        // (المعامل المضاعف المحايد): السرعة
+                        // والنبرة صارتا تخصان المحرك عبر
+                        // setSpeechRate/setPitch.
                         val validLength = extracted.validLength
-                        val scaledData = if (volume != 1.0f) applyVolume(extracted.pcm, volume, validLength) else extracted.pcm
-                        // منح البثّ إلى الكاش نسخةً مستقلة من البيانات (بند 19.1):
-                        // المتلقي والمسبح قد يعيدان استخدام المخزن، فنسخة الكاش ثابتة.
-                        cacheKey?.let { storeInCache(it, scaledData, extracted.sampleRateInHz, validLength) }
-                        // الطول الصالح صريح عبر المعامل الثاني: فقد يكون حجم
-                        // مصفوفة الشريحة أكبر (مسبح مُعاد استخدامه) — والبيانات
-                        // الصحيحة حتى validLength فقط.
+                        val scaledData = if (volume != 1.0f) {
+                            applyVolume(
+                                extracted.pcm, volume, validLength
+                            )
+                        } else {
+                            extracted.pcm
+                        }
+                        // منح البثّ إلى الكاش نسخةً مستقلة
+                        // من البيانات (بند 19.1): المتلقي
+                        // والمسبح قد يعيدان استخدام المخزن،
+                        // فنسخة الكاش ثابتة.
+                        cacheKey?.let {
+                            storeInCache(
+                                it, scaledData,
+                                extracted.sampleRateInHz, validLength
+                            )
+                        }
+                        // الطول الصالح صريح عبر المعامل الثاني:
+                        // فقد يكون حجم مصفوفة الشريحة أكبر (مسبح
+                        // مُعاد استخدامه) — والبيانات الصحيحة
+                        // حتى validLength فقط.
                         onAudioChunk(scaledData, validLength)
                         success = true
-                        // المستهلك نسخ الشريحة (audioAvailable) ولم يُمسك بمرجعها —
-                        // فنُرجع المخزن للمسبح لإعادة استخدامه في الطلب التالي.
+                        // المستهلك نسخ الشريحة (audioAvailable)
+                        // ولم يُمسك بمرجعها — فنُرجع المخزن للمسبح
+                        // لإعادة استخدامه في الطلب التالي.
                         pcmPool.release(scaledData)
                     }
                 } catch (e: Exception) {
@@ -785,9 +959,16 @@ class SystemVoiceProvider(
                     tempFile.delete()
                 }
             } else {
+                val fileSize = if (tempFile.exists()) {
+                    tempFile.length()
+                } else {
+                    -1
+                }
                 Log.e(
                     TAG,
-                    "[Provider] synthesis not completed: failed=$failed finished=$finished size=${if (tempFile.exists()) tempFile.length() else -1}"
+                    "[Provider] synthesis not completed:" +
+                        " failed=$failed finished=$finished" +
+                        " size=$fileSize"
                 )
                 tempFile.delete()
             }
@@ -812,19 +993,31 @@ class SystemVoiceProvider(
      */
     private fun extractPcm(file: java.io.File): PcmExtract {
         return try {
-            // قراءة تتابعية واحدة بكامل الملف (بدل RandomAccessFile بجولاته
-            // العشوائية أعلاه): جولة قراءة تسلسلية واحدة أسرع بكثير على الفلاش
-            // من فتح/قفز/إغلاق متعدد، وتفريغ تحليل الخانات في الذاكرة مباشرة.
-            // هذا يحذف غالبية زمن I/O الملموس لكل نطق دون أن يمس ضرورة الكتابة
-            // إلى القرص التي تفرضها واجهة TextToSpeech.synthesizeToFile.
+            // قراءة تتابعية واحدة بكامل الملف (بدل
+            // RandomAccessFile بجولاته العشوائية أعلاه):
+            // جولة قراءة تسلسلية واحدة أسرع بكثير على
+            // الفلاش من فتح/قفز/إغلاق متعدد، وتفريغ
+            // تحليل الخانات في الذاكرة مباشرة. هذا يحذف
+            // غالبية زمن I/O الملموس لكل نطق دون أن يمس
+            // ضرورة الكتابة إلى القرص التي تفرضها واجهة
+            // TextToSpeech.synthesizeToFile.
             val bytes = file.readBytes()
             val fileLen = bytes.size
-            if (fileLen < 12) return PcmExtract(ByteArray(0), FALLBACK_SAMPLE_RATE, 0)
+            if (fileLen < 12) {
+                return PcmExtract(
+                    ByteArray(0),
+                    FALLBACK_SAMPLE_RATE,
+                    0
+                )
+            }
 
-            if (bytes[0] != 'R'.code.toByte() || bytes[1] != 'I'.code.toByte() ||
-                bytes[2] != 'F'.code.toByte() || bytes[3] != 'F'.code.toByte()
+            if (bytes[0] != 'R'.code.toByte()
+                || bytes[1] != 'I'.code.toByte()
+                || bytes[2] != 'F'.code.toByte()
+                || bytes[3] != 'F'.code.toByte()
             ) {
-                // ليس ملف WAV صالح — نُبقي البيانات كاملة من مسبح (أو نسخة جديدة).
+                // ليس ملف WAV صالح — نُبقي البيانات
+                // كاملة من مسبح (أو نسخة جديدة).
                 val all = pcmPool.acquire(fileLen)
                 System.arraycopy(bytes, 0, all, 0, fileLen)
                 return PcmExtract(all, FALLBACK_SAMPLE_RATE, fileLen)
@@ -834,30 +1027,51 @@ class SystemVoiceProvider(
             var offset = 12L // بعد "RIFF"+الحجم+"WAVE"
             while (offset + 8 <= fileLen) {
                 if (offset + 8 > bytes.size) break
-                // خانة: مطابقة 4 بايتات هوية + 4 بايتات حجم (little-endian).
-                val chunkId = String(bytes, offset.toInt(), 4, Charsets.US_ASCII)
-                // حجم الخانة كقيمة **غير موقّعة** (اكتشاف البت 31): قراءته إشارةً
-                // كان يجعل المؤشر ينقص في ملفٍ تالف (مثل 0x80000000 = -2147483648)
-                // وقد يدخل في حلقة لا نهائية تعيد نفس المواضع — الآن لا ينقص المؤشر
+                // خانة: مطابقة 4 بايتات هوية + 4 بايتات
+                // حجم (little-endian).
+                val chunkId = String(
+                    bytes, offset.toInt(), 4,
+                    Charsets.US_ASCII
+                )
+                // حجم الخانة كقيمة **غير موقّعة** (اكتشاف
+                // البت 31): قراءته إشارةً كان يجعل المؤشر
+                // ينقص في ملفٍ تالف (مثل 0x80000000 =
+                // -2147483648) وقد يدخل في حلقة لا نهائية
+                // تعيد نفس المواضع — الآن لا ينقص المؤشر
                 // أبداً لأن الحجم Long في 0..2^32-1.
-                val chunkSize = readLeInt(bytes, offset.toInt() + 4).toLong() and 0xFFFFFFFFL
+                val chunkSize = readLeInt(
+                    bytes, offset.toInt() + 4
+                ).toLong() and 0xFFFFFFFFL
                 if (chunkId == "data") {
-                    // خانة البيانات تُحلَّل في الذاكرة بأمان (حتى لو تجاوز الصفوف).
+                    // خانة البيانات تُحلَّل في الذاكرة بأمان
+                    // (حتى لو تجاوز الصفوف).
                     val dataStart = offset + 8
-                    val dataLen = minOf(chunkSize, fileLen - dataStart).coerceAtLeast(0L).toInt()
-                    if (dataLen <= 0) return PcmExtract(ByteArray(0), sampleRate, 0)
+                    val dataLen = minOf(
+                        chunkSize, fileLen - dataStart
+                    ).coerceAtLeast(0L).toInt()
+                    if (dataLen <= 0) {
+                        return PcmExtract(
+                            ByteArray(0), sampleRate, 0
+                        )
+                    }
                     val out = pcmPool.acquire(dataLen)
                     System.arraycopy(bytes, dataStart.toInt(), out, 0, dataLen)
                     return PcmExtract(out, sampleRate, dataLen)
                 }
-                if (chunkId == "fmt " && chunkSize >= 16 && offset + 8 + 16 <= bytes.size) {
-                    // تنسيق: معدل العيّنات في الموضع 4 من جسم الخانة (وليس 8 الذي
-                    // يحمل byteRate) — عينات سليمة 14.1k–192k وإلا نحافظ على الاحتياطية.
+                if (chunkId == "fmt "
+                    && chunkSize >= 16
+                    && offset + 8 + 16 <= bytes.size
+                ) {
+                    // تنسيق: معدل العيّنات في الموضع 4 من
+                    // جسم الخانة (وليس 8 الذي يحمل byteRate) —
+                    // عينات سليمة 14.1k–192k وإلا نحافظ على
+                    // الاحتياطية.
                     val rate = readLeInt(bytes, offset.toInt() + 12)
                     if (rate in 14100..192000) sampleRate = rate
                 }
-                // تقدمٌ حتميٌ موجَّب (chunkSize ≥ 0 دائماً) مع كسرٍ إذا تجاوزت
-                // الخانة نهاية الملف (رأس تالف) بدل مواصلة القراءة من مواقع عشوائية.
+                // تقدمٌ حتميٌ موجَّب (chunkSize ≥ 0 دائماً)
+                // مع كسرٍ إذا تجاوزت الخانة نهاية الملف (رأس
+                // تالف) بدل مواصلة القراءة من مواقع عشوائية.
                 val next = offset + 8 + chunkSize
                 if (next > fileLen) break
                 offset = next
@@ -883,21 +1097,30 @@ class SystemVoiceProvider(
             ((bytes[offset + 2].toInt() and 0xFF) shl 16) or
             ((bytes[offset + 3].toInt() and 0xFF) shl 24)
 
-    /** مستوى الصوت يُطبَّق رقماً (معامل مضاعف محايد لا يشوّه الصوت):
-     *  السرعة والنبرة صارتا تمرَّران مباشرةً للمحرك في [synthesizeInternal]
-     *  عبر setSpeechRate/setPitch (مسار المحرك الأصلي بجودة أعلى)، فلا داعي
-     *  لإعادة أخذ العينات اليدوية التي كانت تشوّه النطق.
+    /** مستوى الصوت يُطبَّق رقماً (معامل مضاعف محايد
+     *  لا يشوّه الصوت): السرعة والنبرة صارتا تمرَّران
+     *  مباشرةً للمحرك في [synthesizeInternal] عبر
+     *  setSpeechRate/setPitch (مسار المحرك الأصلي بجودة
+     *  أعلى)، فلا داعي لإعادة أخذ العينات اليدوية التي
+     *  كانت تشوّه النطق.
      *
-     *  يعالج فقط حتى [validLength] الصالح (لا `pcmData.size`): مع إعادة الاستخدام
-     *  غير الحرفية من المسبح قد تكون المصفوفة أكبر من بياناتها الفعلية، ولا يُمرَّر
-     *  القمامة. الناتج من المسبح (ويُرجَّع المصدر إليه عند اختلافه) فلا نُنشئ صفيفاً
-     *  جديداً في كل إعلان أثناء معالجة المستوى. */
-    private fun applyVolume(pcmData: ByteArray, volume: Float, validLength: Int): ByteArray {
+     *  يعالج فقط حتى [validLength] الصالح (لا
+     *  `pcmData.size`): مع إعادة الاستخدام غير الحرفية
+     *  من المسبح قد تكون المصفوفة أكبر من بياناتها
+     *  الفعلية، ولا يُمرَّر القمامة. الناتج من المسبح
+     *  (ويُرجَّع المصدر إليه عند اختلافه) فلا نُنشئ
+     *  صفيفاً جديداً في كل إعلان أثناء معالجة المستوى. */
+    private fun applyVolume(
+        pcmData: ByteArray,
+        volume: Float,
+        validLength: Int
+    ): ByteArray {
         val result = pcmPool.acquire(validLength)
         var i = 0
         while (i + 1 < validLength) {
             // Read 16-bit sample (little endian)
-            val sample = (pcmData[i + 1].toInt() shl 8) or (pcmData[i].toInt() and 0xFF)
+            val sample = (pcmData[i + 1].toInt() shl 8) or
+                (pcmData[i].toInt() and 0xFF)
             // Apply volume
             val scaled = (sample * volume).toInt().coerceIn(-32768, 32767)
             // Write back as little endian

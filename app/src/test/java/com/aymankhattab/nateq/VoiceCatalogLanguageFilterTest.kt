@@ -23,7 +23,14 @@ import org.robolectric.annotation.Config
 class VoiceCatalogLanguageFilterTest {
 
     private fun voice(locale: Locale): Voice =
-        Voice("voice-" + locale.toLanguageTag(), locale, Voice.QUALITY_HIGH, Voice.LATENCY_LOW, false, emptySet())
+        Voice(
+            "voice-" + locale.toLanguageTag(),
+            locale,
+            Voice.QUALITY_HIGH,
+            Voice.LATENCY_LOW,
+            false,
+            emptySet()
+        )
 
     private fun notInstalledVoice(locale: Locale): Voice =
         Voice(
@@ -41,7 +48,8 @@ class VoiceCatalogLanguageFilterTest {
             locale,
             Voice.QUALITY_HIGH,
             Voice.LATENCY_LOW,
-            true, // isNetworkConnectionRequired: يُخلَّق عبر الشبكة لا من بيانات محلية
+true, // isNetworkConnectionRequired:
+            // يُخلَّق عبر الشبكة لا من بيانات محلية
             emptySet()
         )
 
@@ -55,9 +63,16 @@ class VoiceCatalogLanguageFilterTest {
             notInstalledVoice(Locale.forLanguageTag("as-IN"))
         )
         val filtered = VoiceCatalog.filterVoicesWithInstalledData(voices) {
-            if (it.language == "as") TextToSpeech.LANG_AVAILABLE else TextToSpeech.LANG_AVAILABLE
+            if (it.language == "as") {
+                TextToSpeech.LANG_AVAILABLE
+            } else {
+                TextToSpeech.LANG_AVAILABLE
+            }
         }
-        assertEquals(setOf("ar", "en"), filtered.map { it.locale.language }.toSet())
+        assertEquals(
+            setOf("ar", "en"),
+            filtered.map { it.locale.language }.toSet()
+        )
         assertFalse(filtered.any { it.locale.language == "as" })
     }
 
@@ -70,7 +85,11 @@ class VoiceCatalogLanguageFilterTest {
             networkVoice(Locale.forLanguageTag("bg-BG"))
         )
         val filtered = VoiceCatalog.filterVoicesWithInstalledData(voices) {
-            if (it.language == "bg") TextToSpeech.LANG_AVAILABLE else TextToSpeech.LANG_AVAILABLE
+            if (it.language == "bg") {
+                TextToSpeech.LANG_AVAILABLE
+            } else {
+                TextToSpeech.LANG_AVAILABLE
+            }
         }
         assertEquals(setOf("en"), filtered.map { it.locale.language }.toSet())
         assertFalse(filtered.any { it.locale.language == "bg" })
@@ -85,10 +104,19 @@ class VoiceCatalogLanguageFilterTest {
         )
         // محاكاة: الفرنسية تعلن بياناتها غير مثبتة (LANG_MISSING_DATA)
         val availability = { locale: Locale ->
-            if (locale.language == "fr") TextToSpeech.LANG_MISSING_DATA else TextToSpeech.LANG_AVAILABLE
+            if (locale.language == "fr") {
+                TextToSpeech.LANG_MISSING_DATA
+            } else {
+                TextToSpeech.LANG_AVAILABLE
+            }
         }
-        val filtered = VoiceCatalog.filterVoicesWithInstalledData(voices, availability)
-        assertEquals(setOf("ar", "en"), filtered.map { it.locale.language }.toSet())
+        val filtered = VoiceCatalog.filterVoicesWithInstalledData(
+            voices, availability
+        )
+        assertEquals(
+            setOf("ar", "en"),
+            filtered.map { it.locale.language }.toSet()
+        )
         assertFalse(filtered.any { it.locale.language == "fr" })
     }
 
@@ -101,7 +129,11 @@ class VoiceCatalogLanguageFilterTest {
                     voice(Locale.forLanguageTag("fr-FR"))
                 )
             ) { locale ->
-                if (locale.language == "fr") TextToSpeech.LANG_MISSING_DATA else TextToSpeech.LANG_AVAILABLE
+                if (locale.language == "fr") {
+                    TextToSpeech.LANG_MISSING_DATA
+                } else {
+                    TextToSpeech.LANG_AVAILABLE
+                }
             }
         )
         val finalList = VoiceCatalog.groupVoicesByLanguage(
@@ -115,7 +147,8 @@ class VoiceCatalogLanguageFilterTest {
 
     @Test
     fun languageDeclaredButNeverInVoices_isAbsent() {
-        // المحرك يدّعي نظرياً دعم الألمانية، لكن لا صوت de في getVoices — لا تظهر
+        // المحرك يدّعي نظرياً دعم الألمانية، لكن لا صوت de في getVoices
+        // — لا تظهر
         val voicesByEngine = mapOf(
             "com.google.android.tts" to listOf(
                 voice(Locale.forLanguageTag("en-US"))
@@ -134,7 +167,8 @@ class VoiceCatalogLanguageFilterTest {
     fun screenReaderVoices_notAddedToDiscoveredLanguages() {
         // Talkman/Jieshuo (محرك eSpeak) يردّ لغاتٍ نظرية af/am عبر getVoices
         // رغم عدم تثبيت بياناتها. الاستبعاد يتم قبل discovery بفلترة حزم
-        // قارئات الشاشة (نفس ما يفعله VoiceCatalog.discoverAllLanguagesAcrossEngines)
+        // قارئات الشاشة (نفس ما يفعله
+        // VoiceCatalog.discoverAllLanguagesAcrossEngines)
         val voicesByEngine = mapOf(
             "com.nirenr.talkman" to listOf(
                 voice(Locale.forLanguageTag("af-ZA")),
@@ -142,7 +176,9 @@ class VoiceCatalogLanguageFilterTest {
                 voice(Locale.forLanguageTag("en-US"))
             )
         )
-        val realEngines = voicesByEngine.filterKeys { !EnginePicker.isScreenReader(it) }
+        val realEngines = voicesByEngine.filterKeys {
+            !EnginePicker.isScreenReader(it)
+        }
         val discovered = VoiceCatalog.groupVoicesByLanguage(
             realEngines.map { it.key to it.key },
             realEngines

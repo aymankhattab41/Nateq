@@ -2,7 +2,11 @@ package com.aymankhattab.nateq.engine.pipeline
 
 import java.util.regex.Pattern
 
-/** تنظيف المسافات الزائدة (ضم المتكررة وإزالة ما قبل علامات الترقيم والطرفية). */
+/**
+ * تنظيف المسافات الزائدة
+ * (ضم المتكررة وإزالة ما قبل علامات الترقيم
+ * والطرفية).
+ */
 internal object CleanupStep : TextProcessingStep {
 
     private val PATTERN_MULTI_SPACE = Pattern.compile("""\s+""")

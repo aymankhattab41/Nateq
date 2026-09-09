@@ -13,7 +13,8 @@ import kotlin.math.min
 object PcmResampler {
 
     /**
-     * @param pcm بيانات PCM 16-bit (LE) بمعدل [inSampleRate] وقنوات [inChannels]
+     * @param pcm بيانات PCM 16-bit (LE) بمعدل [inSampleRate]
+     *  وقنوات [inChannels]
      * @return PCM 16-bit أحادي بقناته الواحدة، بمعدل [outSampleRate].
      *  الحالات التافهة (معدلان متساويان/مدخل أحادي/مدخل صفر) تُرجع كما هي
      *  بلا نسخٍ مكلف.
@@ -24,7 +25,9 @@ object PcmResampler {
         inChannels: Int,
         outSampleRate: Int
     ): ByteArray {
-        if (pcm.isEmpty() || inSampleRate <= 0 || outSampleRate <= 0 || inChannels <= 0) {
+        if (pcm.isEmpty() || inSampleRate <= 0 || outSampleRate <= 0 ||
+            inChannels <= 0
+        ) {
             return pcm
         }
         val mono = if (inChannels == 1) pcm else downmixToMono(pcm, inChannels)
@@ -32,8 +35,8 @@ object PcmResampler {
         return resample(mono, inSampleRate, outSampleRate)
     }
 
-    /** خفض القنوات المتعددة إلى مونو بمتوسط العينات المتزامنة (تُسقط اليُسر/اليمين
-     *  بلا تتبع طوري خاص — مقبول لنطق الكلام). */
+    /** خفض القنوات المتعددة إلى مونو بمتوسط العينات المتزامنة
+     * (تُسقط اليُسر/اليمين بلا تتبع طوري خاص — مقبول لنطق الكلام). */
     fun downmixToMono(pcm: ByteArray, channelCount: Int): ByteArray {
         val frames = pcm.size / 2 / channelCount
         val out = ByteArray(frames * 2)
@@ -42,11 +45,12 @@ object PcmResampler {
             for (channel in 0 until channelCount) {
                 sum += sampleAt(pcm, frame * channelCount + channel)
             }
-            // متوسّط متوازن تماماً (نصفاً بعيداً عن الصفر بإشارةٍ ثابتة) بلا انحياز
-            // DC: خطأ ±0.5 متناوب صِفر-أفقي. بدل الـ (+1)/2 السابق الذي زاد الموجب
-            // نحو +0.5 (انحياز مسموع) وأفسد الزوج السالب المطابق (-1,-1) إلى 0
-            // (إسكات الطقطقة الخفيفة)؛ والإزاحة shr 1 المقتَرحة وحدها تُطبق -0.5
-            // على القيم كليهما فلا تُلغي الانحياز بل تقلبه، لذا يُعتمد نصفٌ بعيدٌ.
+            // متوسّط متوازن تماماً (نصفاً بعيداً عن الصفر بإشارةٍ ثابتة)
+            // بلا انحياز DC: خطأ ±0.5 متناوب صِفر-أفقي. بدل الـ (+1)/2
+            // السابق الذي زاد الموجب نحو +0.5 (انحياز مسموع) وأفسد الزوج
+            // السالب المطابق (-1,-1) إلى 0 (إسكات الطقطقة الخفيفة)؛
+            // والإزاحة shr 1 المقتَرحة وحدها تُطبق -0.5 على القيم كليهما
+            // فلا تُلغي الانحياز بل تقلبه، لذا يُعتمد نصفٌ بعيدٌ.
             val magnitude = (abs(sum) + channelCount / 2L) / channelCount
             val average = (if (sum >= 0L) magnitude else -magnitude).toInt()
             writeSample(out, frame, average)
@@ -69,7 +73,8 @@ object PcmResampler {
         var position = 0L
         for (outFrame in 0 until outFrames) {
             // مكبح الحافة: بعد التراكم الكسري قد يبلغ الموضع فريم المدخل الأخير
-            // أو يتجاوزه بأقل من فريمٍ — لا يُخرج موضعَ القراءة عن حدود المصفوفة.
+            // أو يتجاوزه بأقل من فريمٍ — لا يُخرج موضع القراءة عن
+            // حدود المصفوفة.
             val i0 = min((position ushr 16).toInt(), inFrames - 1)
             val i1 = min(i0 + 1, inFrames - 1)
             val fraction = (position and 0xFFFF).toInt()
@@ -78,7 +83,8 @@ object PcmResampler {
             val delta = (s1 - s0).toLong()
             // استيفاء: s0 + Δ·frac/65536 — حسمٌ +0x8000 يُطابق roundToInt
             // (نحو +∞) لكلتا الإشارتين، فالصيغة متطابقة الحرف كما كانت.
-            val interpolated = (s0 + ((delta * fraction + 0x8000L) shr 16)).toInt()
+            val interpolated =
+                (s0 + ((delta * fraction + 0x8000L) shr 16)).toInt()
             writeSample(out, outFrame, interpolated)
             position += step
         }
@@ -87,14 +93,18 @@ object PcmResampler {
 
     private fun sampleAt(pcm: ByteArray, frame: Int): Int {
         val index = frame * 2
-        val raw = (pcm[index].toInt() and 0xFF) or (pcm[index + 1].toInt() shl 8)
+        val raw = (pcm[index].toInt() and 0xFF) or
+            (pcm[index + 1].toInt() shl 8)
         // ترميز موقّع: عينات int16 من الملف مفكوكة كقيم موقّعة (تتجه للسالب
         // فوق 0x7FFF) حتى تستقيم المتوسطات والاستيفاء مع كبح [writeSample].
         return raw.toShort().toInt()
     }
 
     private fun writeSample(out: ByteArray, frame: Int, value: Int) {
-        val clamped = value.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+        val clamped = value.coerceIn(
+            Short.MIN_VALUE.toInt(),
+            Short.MAX_VALUE.toInt()
+        )
         val index = frame * 2
         out[index] = (clamped and 0xFF).toByte()
         out[index + 1] = (clamped shr 8).toByte()

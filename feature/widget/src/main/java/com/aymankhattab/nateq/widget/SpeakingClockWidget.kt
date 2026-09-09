@@ -31,7 +31,8 @@ import java.util.Locale
 class SpeakingClockWidget : AppWidgetProvider() {
 
     companion object {
-        private const val ACTION_SPEAK = "com.aymankhattab.nateq.action.WIDGET_SPEAK"
+        private const val ACTION_SPEAK =
+            "com.aymankhattab.nateq.action.WIDGET_SPEAK"
 
         // مهلة أمان قصوى لبقاء goAsync/WakeLock: حتى لو لم يُستدعَ خطاف اكتمال
         // النطق (فشل تهيئة محرك TTS أو محرك لا يردّ) لا يبقى قفلاً ولا عنصر
@@ -39,7 +40,11 @@ class SpeakingClockWidget : AppWidgetProvider() {
         private const val SPEAK_TIMEOUT_MS = 20_000L
     }
 
-    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+    override fun onUpdate(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetIds: IntArray,
+    ) {
         val views = buildViews(context)
         for (id in appWidgetIds) {
             appWidgetManager.updateAppWidget(id, views)
@@ -62,7 +67,10 @@ class SpeakingClockWidget : AppWidgetProvider() {
         handleSpeak(context, goAsync())
     }
 
-    private fun handleSpeak(context: Context, pendingResult: BroadcastReceiver.PendingResult?) {
+    private fun handleSpeak(
+        context: Context,
+        pendingResult: BroadcastReceiver.PendingResult?,
+    ) {
         val appContext = context.applicationContext
         var wakeLock: PowerManager.WakeLock? = null
         var finished = false
@@ -72,8 +80,11 @@ class SpeakingClockWidget : AppWidgetProvider() {
             if (!finished) {
                 finished = true
                 mainHandler.removeCallbacksAndMessages(null)
-                AnnouncementSpeaker.getInstance(appContext).onSpeechComplete = null
-                runCatching { if (wakeLock?.isHeld == true) wakeLock?.release() }
+                AnnouncementSpeaker.getInstance(appContext)
+                    .onSpeechComplete = null
+                runCatching {
+                    if (wakeLock?.isHeld == true) wakeLock?.release()
+                }
                 runCatching { pendingResult?.finish() }
             }
         }
@@ -81,25 +92,40 @@ class SpeakingClockWidget : AppWidgetProvider() {
         mainHandler.postDelayed(safety, SPEAK_TIMEOUT_MS)
 
         try {
-            val powerManager = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
-            wakeLock = powerManager?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Nateq:WidgetSpeak")
+            val powerManager = appContext
+                .getSystemService(Context.POWER_SERVICE)
+                as? PowerManager
+            wakeLock = powerManager?.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "Nateq:WidgetSpeak",
+            )
             wakeLock?.setReferenceCounted(false)
             wakeLock?.acquire(SPEAK_TIMEOUT_MS)
 
             // تحرير goAsync فور اكتمال آخر جملة (onDone/onError) من المتحدث
-            // المشترك — النطق لا يقتصر على «الوقت» فقط بل قد يكون رسالة التعطيل.
+            // المشترك — النطق لا يقتصر على «الوقت» فقط بل قد يكون رسالة
+            // التعطيل.
             val speaker = AnnouncementSpeaker.getInstance(appContext)
             speaker.onSpeechComplete = { finish() }
 
-            // المفتاح الموضعي للأداة (من شاشة إعلان الوقت) يقرر إن كانت تنطق عند اللمس.
-            // مصدر الإعدادات المحقون في التطبيق يُسترجع عبر عقد إتاحة :core:audio
-            // (تطبّقه NateqApplication) بدل الاعتماد المباشر على فئة التطبيق من :app.
-            val settings = (appContext as? AnnouncementAppContext)?.settingsRepository
-                ?: SettingsRepository(appContext)
+            // المفتاح الموضعي للأداة (من شاشة إعلان الوقت) يقرر إن كانت
+            // تنطق عند اللمس.
+            // مصدر الإعدادات المحقون في التطبيق يُسترجع عبر عقد إتاحة
+            // :core:audio
+            // (تطبّقه NateqApplication) بدل الاعتماد المباشر على فئة
+            // التطبيق من :app.
+            val settings =
+                (appContext as? AnnouncementAppContext)?.settingsRepository
+                    ?: SettingsRepository(appContext)
             if (!settings.isClockWidgetEnabled()) {
-                val language = runCatching { settings.getAppLanguage() }.getOrNull()
+                val language = runCatching { settings.getAppLanguage() }
+                    .getOrNull()
                     ?: Locale.getDefault().language
-                val tag = if (LanguageCode.isArabic(language)) LanguageCode.AR.tag else LanguageCode.EN.tag
+                val tag = if (LanguageCode.isArabic(language)) {
+                    LanguageCode.AR.tag
+                } else {
+                    LanguageCode.EN.tag
+                }
                 speaker.speak(
                     appContext.getString(R.string.widget_clock_disabled),
                     Locale.forLanguageTag(tag), 1.0f, 1.0f, 1.0f
@@ -107,8 +133,10 @@ class SpeakingClockWidget : AppWidgetProvider() {
                 return
             }
 
-            // نعتمد نفس إعلان الوقت (النص والصيغة والصوت) عبر TimeAnnouncementManager
-            // لنطق تطابق تماماً إعلان «أعلن الآن» في التطبيق والخدمة. نستخدم المثيل
+            // نعتمد نفس إعلان الوقت (النص والصيغة والصوت) عبر
+            // TimeAnnouncementManager
+            // لنطق تطابق تماماً إعلان «أعلن الآن» في التطبيق والخدمة. نستخدم
+            // المثيل
             // المشترك عبر العملية (نفس كائن مستقبل المنبه) فلا يتسرب نطاق ولا
             // يتضاعف المحرك.
             TimeAnnouncementManager.shared(appContext).announceNow()
@@ -119,7 +147,10 @@ class SpeakingClockWidget : AppWidgetProvider() {
     }
 
     private fun buildViews(context: Context): RemoteViews {
-        val views = RemoteViews(context.packageName, R.layout.widget_speaking_clock)
+        val views = RemoteViews(
+            context.packageName,
+            R.layout.widget_speaking_clock,
+        )
         val speakIntent = Intent(context, SpeakingClockWidget::class.java)
             .setAction(ACTION_SPEAK)
         val pending = PendingIntent.getBroadcast(
@@ -129,7 +160,8 @@ class SpeakingClockWidget : AppWidgetProvider() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         views.setOnClickPendingIntent(R.id.widget_clock_root, pending)
-        // الأصل الوصلي: الجذر هو عنصر النقر الواحد لقارئ الشاشة (الأطفال معطَّلون)،
+        // الأصل الوصلي: الجذر هو عنصر النقر الواحد لقارئ الشاشة (الأطفال
+        // معطَّلون)،
         // فيقرأ "اضغط للسماع الوقت" ويفعّل النطق بنقرتين مزدوجتين من TalkBack.
         views.setContentDescription(
             R.id.widget_clock_root,

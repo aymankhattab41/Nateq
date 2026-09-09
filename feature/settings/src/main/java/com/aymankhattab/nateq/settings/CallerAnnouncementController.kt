@@ -23,7 +23,8 @@ import com.google.android.material.switchmaterial.SwitchMaterial
 import java.util.Locale
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
-/** ضابط قسم «إعلان اسم المتصل»: التفعيل بالأذونات، التكرار، السرعة، القالب والأصوات. */
+/** ضابط قسم «إعلان اسم المتصل»: التفعيل بالأذونات، التكرار، السرعة،
+ *  القالب والأصوات. */
 internal class CallerAnnouncementController(
     private val fragment: VoiceSelectionFragment,
     private val settings: SettingsRepository,
@@ -38,18 +39,21 @@ internal class CallerAnnouncementController(
     private lateinit var tvCallerRateValue: TextView
     private lateinit var seekCallerVolume: SeekBar
     private lateinit var tvCallerVolumeValue: TextView
-    private lateinit var etCallerTemplate: com.google.android.material.textfield.TextInputEditText
+    private lateinit var etCallerTemplate:
+        com.google.android.material.textfield.TextInputEditText
     private lateinit var spinnerCallerVoiceAr: Spinner
     private lateinit var spinnerCallerVoiceEn: Spinner
 
     /** يمنع مناداة المستمع من رد الطلب (تفادي إعادة طلب الأذونات دورياً) */
     private var callerSwitchGuard = false
 
-    /** يمنع تكرار حوار «أُلغيت أذونات المتصل» أكثر من مرة لكل دورة فتح إعدادات */
+    /** يمنع تكرار حوار «أُلغيت أذونات المتصل» أكثر من مرة
+     *  لكل دورة فتح إعدادات */
     private var callerRevokedDialogShown = false
 
     fun setup(view: View) {
-        switchCallerAnnouncement = view.findViewById(R.id.switch_caller_announcement)
+        switchCallerAnnouncement =
+            view.findViewById(R.id.switch_caller_announcement)
         spinnerCallerRepeat = view.findViewById(R.id.spinner_caller_repeat)
         spinnerCallerInterval = view.findViewById(R.id.spinner_caller_interval)
         seekCallerRate = view.findViewById(R.id.seek_caller_rate)
@@ -60,9 +64,11 @@ internal class CallerAnnouncementController(
         spinnerCallerVoiceAr = view.findViewById(R.id.spinner_caller_voice_ar)
         spinnerCallerVoiceEn = view.findViewById(R.id.spinner_caller_voice_en)
 
-        // المفتاح الرئيسي: عند التفعيل نطلب الأذونات أولاً (لا نفعّل إلا بمنحها)
+        // المفتاح الرئيسي: عند التفعيل نطلب الأذونات أولاً
+        // (لا نفعّل إلا بمنحها)
         switchCallerAnnouncement.isChecked =
-            runCatching { settings.isCallerAnnouncementEnabled() }.getOrDefault(false)
+            runCatching { settings.isCallerAnnouncementEnabled() }
+                .getOrDefault(false)
         switchCallerAnnouncement.setOnCheckedChangeListener { _, checked ->
             if (callerSwitchGuard) return@setOnCheckedChangeListener
             if (checked) {
@@ -71,15 +77,20 @@ internal class CallerAnnouncementController(
                     Manifest.permission.READ_CALL_LOG
                 )
                 val hasContacts = ContextCompat.checkSelfPermission(
-                    fragment.requireContext(), Manifest.permission.READ_CONTACTS
+                    fragment.requireContext(),
+                    Manifest.permission.READ_CONTACTS
                 ) == PackageManager.PERMISSION_GRANTED
                 if (!hasContacts) needed.add(Manifest.permission.READ_CONTACTS)
                 fragment.callerPermLauncher.launch(needed.toTypedArray())
             } else {
                 runCatching { settings.setCallerAnnouncementEnabled(false) }
-                AnnouncementSchedulerService.syncIfRunning(fragment.requireContext())
+                AnnouncementSchedulerService.syncIfRunning(
+                    fragment.requireContext()
+                )
                 onStatusChanged()
-                fragment.view?.announceCompat(fragment.getString(R.string.announcement_turned_off))
+                fragment.view?.announceCompat(
+                    fragment.getString(R.string.announcement_turned_off)
+                )
             }
         }
 
@@ -92,11 +103,23 @@ internal class CallerAnnouncementController(
             fragment.getString(R.string.repeat_5)
         )
         spinnerCallerRepeat.adapter = fragment.simpleAdapter(repeats)
-        val savedRepeat = runCatching { settings.getCallerAnnouncementRepeat() }.getOrDefault(1)
-        spinnerCallerRepeat.setSelection((savedRepeat - 1).coerceIn(0, repeats.size - 1))
-        spinnerCallerRepeat.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                runCatching { settings.setCallerAnnouncementRepeat(position + 1) }
+        val savedRepeat =
+            runCatching { settings.getCallerAnnouncementRepeat() }
+                .getOrDefault(1)
+        spinnerCallerRepeat.setSelection(
+            (savedRepeat - 1).coerceIn(0, repeats.size - 1)
+        )
+        spinnerCallerRepeat.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                runCatching {
+                    settings.setCallerAnnouncementRepeat(position + 1)
+                }
                 onStatusChanged()
             }
 
@@ -110,57 +133,109 @@ internal class CallerAnnouncementController(
             )
         }
         spinnerCallerInterval.adapter = fragment.simpleAdapter(intervals)
-        val savedInterval = runCatching { settings.getCallerAnnouncementIntervalSeconds() }
-            .getOrDefault(3)
-        spinnerCallerInterval.setSelection((savedInterval - 1).coerceIn(0, intervals.size - 1))
-        spinnerCallerInterval.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                runCatching { settings.setCallerAnnouncementIntervalSeconds(position + 1) }
+        val savedInterval =
+            runCatching { settings.getCallerAnnouncementIntervalSeconds() }
+                .getOrDefault(3)
+        spinnerCallerInterval.setSelection(
+            (savedInterval - 1).coerceIn(0, intervals.size - 1)
+        )
+        spinnerCallerInterval.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                runCatching {
+                    settings.setCallerAnnouncementIntervalSeconds(position + 1)
+                }
                 onStatusChanged()
             }
-
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
-        val callerRate = runCatching { settings.getCallerAnnouncementRate() }.getOrDefault(1.0f)
-        tvCallerRateValue.text = String.format(Locale.US, "%.1fx", callerRate)
+        val callerRate =
+            runCatching { settings.getCallerAnnouncementRate() }
+                .getOrDefault(1.0f)
+        tvCallerRateValue.text =
+            String.format(Locale.US, "%.1fx", callerRate)
         seekCallerRate.progress = (callerRate * 100).toInt().coerceIn(0, 200)
-        seekCallerRate.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+        seekCallerRate.setOnSeekBarChangeListener(
+            object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(
+                seekBar: SeekBar,
+                progress: Int,
+                fromUser: Boolean
+            ) {
                 val value = progress / 100f
-                tvCallerRateValue.text = String.format(Locale.US, "%.1fx", value)
-                seekBar.setSeekStateDescription(tvCallerRateValue.text)
+                tvCallerRateValue.text =
+                    String.format(Locale.US, "%.1fx", value)
+                seekBar.setSeekStateDescription(
+                    tvCallerRateValue.text
+                )
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {
                 val value = seekBar.progress / 100f
                 runCatching { settings.setCallerAnnouncementRate(value) }
-                seekBar.announceCompat(String.format(Locale.US, "%.1fx", value))
+                seekBar.announceCompat(
+                    String.format(Locale.US, "%.1fx", value)
+                )
+                onStatusChanged()
             }
         })
 
         // مستوى الصوت
-        val callerVolume = runCatching { settings.getCallerAnnouncementVolume() }.getOrDefault(1.0f)
+        val callerVolume =
+            runCatching { settings.getCallerAnnouncementVolume() }
+                .getOrDefault(1.0f)
         tvCallerVolumeValue.text = "${(callerVolume * 100).toInt()}%"
-        seekCallerVolume.progress = (callerVolume * 100).toInt().coerceIn(0, 100)
-        seekCallerVolume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+        seekCallerVolume.progress =
+            (callerVolume * 100).toInt().coerceIn(0, 100)
+        seekCallerVolume.setOnSeekBarChangeListener(
+            object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(
+                seekBar: SeekBar,
+                progress: Int,
+                fromUser: Boolean
+            ) {
                 tvCallerVolumeValue.text = "$progress%"
-                seekBar.setSeekStateDescription(tvCallerVolumeValue.text)
+                seekBar.setSeekStateDescription(
+                    tvCallerVolumeValue.text
+                )
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {
-                runCatching { settings.setCallerAnnouncementVolume(seekBar.progress / 100f) }
+                runCatching {
+                    settings.setCallerAnnouncementVolume(
+                        seekBar.progress / 100f
+                    )
+                }
                 seekBar.announceCompat("${seekBar.progress}%")
             }
         })
 
         // قالب إعلان المتصل: {name} لاسم المتصل
-        etCallerTemplate.setText(runCatching { settings.getCallerAnnouncementTemplate() }.getOrNull())
+        etCallerTemplate.setText(
+            runCatching { settings.getCallerAnnouncementTemplate() }
+                .getOrNull()
+        )
         etCallerTemplate.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun beforeTextChanged(
+                s: CharSequence?,
+                start: Int,
+                count: Int,
+                after: Int
+            ) {}
+
+            override fun onTextChanged(
+                s: CharSequence?,
+                start: Int,
+                before: Int,
+                count: Int
+            ) {}
             override fun afterTextChanged(s: Editable?) {
                 runCatching {
                     settings.setCallerAnnouncementTemplate(
@@ -171,67 +246,98 @@ internal class CallerAnnouncementController(
         })
 
         // صوت نطق الأسماء العربية في إعلان المتصل
-        spinnerCallerVoiceAr.adapter = fragment.simpleAdapter(voices.map { it.displayName })
+        spinnerCallerVoiceAr.adapter =
+            fragment.simpleAdapter(voices.map { it.displayName })
         val savedCallerVoiceAr =
-            runCatching { settings.getCallerAnnouncementArabicVoiceId() }.getOrNull()
+            runCatching { settings.getCallerAnnouncementArabicVoiceId() }
+                .getOrNull()
         if (savedCallerVoiceAr != null) {
             val idx = voices.indexOfFirst { it.name == savedCallerVoiceAr }
             if (idx >= 0) spinnerCallerVoiceAr.setSelection(idx)
         }
-        spinnerCallerVoiceAr.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                runCatching { settings.setCallerAnnouncementArabicVoiceId(voices[position].name) }
+        spinnerCallerVoiceAr.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                runCatching {
+                    settings.setCallerAnnouncementArabicVoiceId(
+                        voices[position].name
+                    )
+                }
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
         // صوت نطق الأسماء الإنجليزية في إعلان المتصل
-        spinnerCallerVoiceEn.adapter = fragment.simpleAdapter(voices.map { it.displayName })
+        spinnerCallerVoiceEn.adapter =
+            fragment.simpleAdapter(voices.map { it.displayName })
         val savedCallerVoiceEn =
-            runCatching { settings.getCallerAnnouncementEnglishVoiceId() }.getOrNull()
+            runCatching { settings.getCallerAnnouncementEnglishVoiceId() }
+                .getOrNull()
         if (savedCallerVoiceEn != null) {
             val idx = voices.indexOfFirst { it.name == savedCallerVoiceEn }
             if (idx >= 0) spinnerCallerVoiceEn.setSelection(idx)
         }
-        spinnerCallerVoiceEn.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                runCatching { settings.setCallerAnnouncementEnglishVoiceId(voices[position].name) }
+        spinnerCallerVoiceEn.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                runCatching {
+                    settings.setCallerAnnouncementEnglishVoiceId(
+                        voices[position].name
+                    )
+                }
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
-        // استرداد ذكي: إذا كانت ميزة المتصّل مفعّلة لكن أذوناتها سُحبت (سحب النظام
-        // التلقائي للأذونات غير المستخدمة، خصوصاً على أندرويد 11+ وأندرويد 17)
-        // نكتشف ذلك فور فتح الإعدادات ونعرض إعادة المنح بدل تركه صامتاً خلفياً.
+        // استرداد ذكي: إذا كانت ميزة المتصّل مفعّلة لكن أذوناتها سُحبت (سحب
+        // النظام التلقائي للأذونات غير المستخدمة، خصوصاً على أندرويد 11+)
+        // نكتشف ذلك فور فتح الإعدادات ونعرض إعادة المنح بدل تركه صامتاً.
         checkRevokedPermissionsAndRecover()
     }
 
     /**
      * إذا أُبقيت ميزة المتصّل مفعّلة لكن أذوناتها الأساسية سُحبت تلقائياً
-     * (بلا منح READ_PHONE_STATE لا يُسلَّم بث PHONE_STATE أصلاً فيُصمت الإعلان
-     * تماماً)، نعرض حواراً يشرح السبب ويقدّم إعادة الطلب أو فتح إعدادات النظام.
+     * (بلا منح READ_PHONE_STATE لا يُسلَّم بث PHONE_STATE أصلاً فيُصمت
+     * الإعلان تماماً)، نعرض حواراً يشرح السبب ويقدّم إعادة الطلب أو فتح
+     * إعدادات النظام.
      */
     private fun checkRevokedPermissionsAndRecover() {
-        val enabled = runCatching { settings.isCallerAnnouncementEnabled() }.getOrDefault(false)
+        val enabled =
+            runCatching { settings.isCallerAnnouncementEnabled() }
+                .getOrDefault(false)
         if (!enabled || callerRevokedDialogShown) return
         val phoneGranted = ContextCompat.checkSelfPermission(
-            fragment.requireContext(), Manifest.permission.READ_PHONE_STATE
+            fragment.requireContext(),
+            Manifest.permission.READ_PHONE_STATE
         ) == PackageManager.PERMISSION_GRANTED
         if (phoneGranted) return
         callerRevokedDialogShown = true
         MaterialAlertDialogBuilder(fragment.requireContext())
             .setTitle(R.string.caller_permission_revoked_title)
             .setMessage(R.string.caller_permission_revoked_message)
-            .setPositiveButton(R.string.caller_permission_grant_again) { _, _ ->
+            .setPositiveButton(
+                R.string.caller_permission_grant_again
+            ) { _, _ ->
                 // إعادة طلب الأذونات المفقودة (نفس مجموعة التفعيل الأولى)
                 val needed = mutableListOf(
                     Manifest.permission.READ_PHONE_STATE,
                     Manifest.permission.READ_CALL_LOG
                 )
                 if (ContextCompat.checkSelfPermission(
-                        fragment.requireContext(), Manifest.permission.READ_CONTACTS
+                        fragment.requireContext(),
+                        Manifest.permission.READ_CONTACTS
                     ) != PackageManager.PERMISSION_GRANTED
                 ) {
                     needed.add(Manifest.permission.READ_CONTACTS)
@@ -239,8 +345,14 @@ internal class CallerAnnouncementController(
                 fragment.callerPermLauncher.launch(needed.toTypedArray())
             }
             .setNegativeButton(R.string.permission_open_settings) { _, _ ->
-                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                    data = Uri.fromParts("package", fragment.requireActivity().packageName, null)
+                val intent = Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+                ).apply {
+                    data = Uri.fromParts(
+                        "package",
+                        fragment.requireActivity().packageName,
+                        null
+                    )
                 }
                 fragment.startActivity(intent)
             }
@@ -250,35 +362,47 @@ internal class CallerAnnouncementController(
 
     /** نتيجة طلب أذونات المتصل: التفّعيل الفعلي لا يتم إلا بعد منح أي إذن. */
     fun onPermissionsResult(granted: Map<String, Boolean>) {
-        val phoneGranted = granted[Manifest.permission.READ_PHONE_STATE] == true
-        val callLogGranted = granted[Manifest.permission.READ_CALL_LOG] == true
-        val contactsGranted = granted[Manifest.permission.READ_CONTACTS] == true
+        val phoneGranted =
+            granted[Manifest.permission.READ_PHONE_STATE] == true
+        val callLogGranted =
+            granted[Manifest.permission.READ_CALL_LOG] == true
+        val contactsGranted =
+            granted[Manifest.permission.READ_CONTACTS] == true
         if (phoneGranted || callLogGranted || contactsGranted) {
             runCatching { settings.setCallerAnnouncementEnabled(true) }
-            // حارس يمنع المستمع من إعادة طلب الأذونات عند تعيين قيمة المفتاح هنا
+            // حارس يمنع المستمع من إعادة طلب الأذونات عند تعيين قيمة
+            // المفتاح هنا
             callerSwitchGuard = true
             switchCallerAnnouncement.isChecked = true
             callerSwitchGuard = false
-            AnnouncementSchedulerService.requestStart(fragment.requireContext())
+            AnnouncementSchedulerService.requestStart(
+                fragment.requireContext()
+            )
             onStatusChanged()
             val msg = when {
                 callLogGranted -> R.string.caller_permission_granted_both
                 phoneGranted -> R.string.caller_permission_granted_phone_only
                 else -> R.string.caller_permission_granted_contacts_only
             }
-            Toast.makeText(fragment.requireContext(), msg, Toast.LENGTH_LONG).show()
+            Toast.makeText(
+                fragment.requireContext(), msg, Toast.LENGTH_LONG
+            ).show()
             fragment.view?.announceCompat(fragment.getString(msg))
         } else {
             switchCallerAnnouncement.isChecked = false
             runCatching { settings.setCallerAnnouncementEnabled(false) }
-            AnnouncementSchedulerService.syncIfRunning(fragment.requireContext())
+            AnnouncementSchedulerService.syncIfRunning(
+                fragment.requireContext()
+            )
             onStatusChanged()
             Toast.makeText(
                 fragment.requireContext(),
                 R.string.caller_permission_needed,
                 Toast.LENGTH_LONG
             ).show()
-            fragment.view?.announceCompat(fragment.getString(R.string.caller_permission_needed))
+            fragment.view?.announceCompat(
+                fragment.getString(R.string.caller_permission_needed)
+            )
         }
     }
 }

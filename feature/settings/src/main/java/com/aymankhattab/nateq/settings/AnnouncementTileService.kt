@@ -45,7 +45,11 @@ class AnnouncementTileService : TileService() {
                 // كان مفعّلاً وأصبح معطّلاً: أوقف أي نطق جارٍ وصفّر الخدمة.
                 AnnouncementSpeaker.getInstance(this).stop()
                 try {
-                    stopService(android.content.Intent(this, AnnouncementSchedulerService::class.java))
+                    stopService(
+                        android.content.Intent(
+                            this, AnnouncementSchedulerService::class.java
+                        )
+                    )
                 } catch (t: Throwable) {
                     Log.w(TAG, "stopService failed", t)
                 }
@@ -64,12 +68,14 @@ class AnnouncementTileService : TileService() {
         val settings = settingsRepository
         val enabled = settings.isAllAnnouncementsEnabled()
         tile.state = if (enabled) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
-        val label = getString(if (enabled) R.string.tile_label_on else R.string.tile_label_off)
+        val label = getString(
+            if (enabled) R.string.tile_label_on else R.string.tile_label_off
+        )
         tile.label = label
         // الوصف الثابت (مضبوط من السلاسل) يُغني عن الصوتية المتغيرة في flags.
         tile.subtitle = getString(R.string.tile_label_description)
-        // بدون contentDescription: يقرأ النظام label تلقائياً (تسمية) + حالة STATE —
-        // إضافته تُكرّر القراءة لنفس النص.
+        // بدون contentDescription: يقرأ النظام label تلقائياً (تسمية) +
+        // حالة STATE — إضافته تُكرّر القراءة لنفس النص.
         tile.updateTile()
     }
 }

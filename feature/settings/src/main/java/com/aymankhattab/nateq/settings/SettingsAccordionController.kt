@@ -17,7 +17,8 @@ import com.google.android.material.switchmaterial.SwitchMaterial
 import java.util.Calendar
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
-/** بطاقة قسم في القائمة الرئيسية: رأس + سهم + حالة + محتوى (يُفتح كشاشة فرعية). */
+/** بطاقة قسم في القائمة الرئيسية: رأس + سهم + حالة + محتوى
+ *  (يُفتح كشاشة فرعية). */
 internal data class AccordionEntry(
     val header: View,
     val arrow: TextView,
@@ -45,9 +46,18 @@ internal class SettingsAccordionController(
     private class GroupState(val headerId: Int, val contentId: Int)
 
     private val groupStates = listOf(
-        GroupState(R.id.ll_group_special_header, R.id.ll_group_special_content),
-        GroupState(R.id.ll_group_general_header, R.id.ll_group_general_content),
-        GroupState(R.id.ll_group_advanced_header, R.id.ll_group_advanced_content)
+        GroupState(
+            R.id.ll_group_special_header,
+            R.id.ll_group_special_content
+        ),
+        GroupState(
+            R.id.ll_group_general_header,
+            R.id.ll_group_general_content
+        ),
+        GroupState(
+            R.id.ll_group_advanced_header,
+            R.id.ll_group_advanced_content
+        )
     )
 
     /** مستويات التنقّل: الرئيسية / شاشة مجموعة / شاشة قسم فرعي */
@@ -66,7 +76,8 @@ internal class SettingsAccordionController(
     private var tvBackToList: MaterialButton? = null
     private var switchHome: SwitchMaterial? = null
 
-    /** تحذير لمرة واحدة في الجلسة إذا كان إذن الإشعارات مرفوضاً (الأزرار لن تظهر). */
+    /** تحذير لمرة واحدة في الجلسة إذا كان إذن الإشعارات مرفوضاً
+ *  (الأزرار لن تظهر). */
     private var notificationsHiddenWarned = false
 
     private val backCallback = object : OnBackPressedCallback(false) {
@@ -75,7 +86,8 @@ internal class SettingsAccordionController(
         }
     }
 
-    /** يربط عروض التنقّل ويسجّل بطاقات الأقسام ومستمع زر العودة وأزرار المجموعات. */
+    /** يربط عروض التنقّل ويسجّل بطاقات الأقسام ومستمع زر العودة
+ *  وأزرار المجموعات. */
     fun setup(view: View, owner: LifecycleOwner) {
         llDetailBack = view.findViewById(R.id.ll_detail_back)
         llMasterSwitch = view.findViewById(R.id.ll_master_switch)
@@ -83,8 +95,10 @@ internal class SettingsAccordionController(
         tvSectionTitle = view.findViewById(R.id.tv_detail_section_title)
         tvBackToList = view.findViewById(R.id.btn_back_to_list)
         switchHome = view.findViewById(R.id.switch_all_announcements)
-        view.findViewById<View>(R.id.btn_back_to_list).setOnClickListener { goBack() }
-        fragment.requireActivity().onBackPressedDispatcher.addCallback(owner, backCallback)
+        view.findViewById<View>(R.id.btn_back_to_list)
+            .setOnClickListener { goBack() }
+        fragment.requireActivity().onBackPressedDispatcher
+            .addCallback(owner, backCallback)
         setupAccordionSections(view)
         setupGroupSections(view)
         showHome()
@@ -114,13 +128,16 @@ internal class SettingsAccordionController(
 
     /** سهم بطاقة القسم: يشير لليسار في RTL (اتجاه التقدّم) ولليمين في LTR */
     private fun sectionArrowGlyph(): String {
-        val rtl = fragment.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
+        val rtl = fragment.resources.configuration.layoutDirection ==
+            View.LAYOUT_DIRECTION_RTL
         return if (rtl) "‹" else "›"
     }
 
     /** وصف وصول موحّد لبطاقة القسم: الأساس + الحالة */
     private fun refreshCardDesc(content: View) {
-        val e = accordionEntries.firstOrNull { it.content === content } ?: return
+        val e = accordionEntries.firstOrNull {
+            it.content === content
+        } ?: return
         val base = e.header.tag as? String ?: ""
         val statusText = e.status?.text?.toString()?.trim().orEmpty()
         e.header.contentDescription = if (statusText.isNotEmpty()) {
@@ -131,7 +148,9 @@ internal class SettingsAccordionController(
     }
 
     private fun setSectionStatus(contentId: Int, text: String) {
-        val e = accordionEntries.firstOrNull { it.content.id == contentId } ?: return
+        val e = accordionEntries.firstOrNull {
+            it.content.id == contentId
+        } ?: return
         e.status?.text = text
         refreshCardDesc(e.content)
     }
@@ -155,29 +174,35 @@ internal class SettingsAccordionController(
         for (e in accordionEntries) {
             val target = e.content === content
             if (target) sectionName = e.header.tag as? String ?: ""
-            // رأس القسم المفتوح يُخفى أيضاً: tvSectionTitle يعرض اسمه أعلى الشاشة
+            // رأس القسم المفتوح يُخفى أيضاً: tvSectionTitle يعرض اسمه
+            // أعلى الشاشة
             e.header.visibility = View.GONE
             e.status?.visibility = if (target) View.VISIBLE else View.GONE
             e.arrow.visibility = View.GONE
             e.content.visibility = if (target) View.VISIBLE else View.GONE
         }
         tvSectionTitle?.text = sectionName
-        // زر العودة في مستوى القسم يعود إلى شاشته المجموعة (وليس القائمة الرئيسية)
+        // زر العودة في مستوى القسم يعود إلى شاشته المجموعة
+        // (وليس القائمة الرئيسية)
         tvBackToList?.text = if (group != null) {
             fragment.getString(R.string.back_to_group, groupTitle(group))
         } else {
             fragment.getString(R.string.back_label)
         }
-        // إعلان مسموع لفتح القسم + نقل تركيز الوصول إلى أول عنصر تفاعلي في المحتوى
+        // إعلان مسموع لفتح القسم + نقل تركيز الوصول إلى أول عنصر
+        // تفاعلي في المحتوى
         val focusTarget = findFirstFocusableView(content)
             ?: tvBackToList
         focusTarget?.let {
-            it.announceCompat(fragment.getString(R.string.section_opened, sectionName))
+            it.announceCompat(
+                fragment.getString(R.string.section_opened, sectionName)
+            )
             focusForAccessibility(it)
         }
     }
 
-    /** فتح شاشة مجموعة (إعدادات خاصة/عامة/متقدمة): بطاقات المجموعة فقط + شريط العودة */
+    /** فتح شاشة مجموعة (إعدادات خاصة/عامة/متقدمة): بطاقات المجموعة
+ *  فقط + شريط العودة */
     private fun openGroup(group: GroupState) {
         level = Level.GROUP
         currentGroup = group
@@ -186,7 +211,8 @@ internal class SettingsAccordionController(
         llMasterSwitch?.visibility = View.GONE
         applyGroupVisibility(false, group)
         svSettingsScroll?.scrollTo(0, 0)
-        val container = fragment.view?.findViewById<View>(group.contentId) ?: return
+        val container = fragment.view
+            ?.findViewById<View>(group.contentId) ?: return
         for (e in accordionEntries) {
             val inGroup = isDescendantOf(e.header, container)
             e.header.visibility = if (inGroup) View.VISIBLE else View.GONE
@@ -202,30 +228,38 @@ internal class SettingsAccordionController(
         val focusTarget = findFirstFocusableView(container)
             ?: tvBackToList
         focusTarget?.let {
-            it.announceCompat(fragment.getString(R.string.section_opened, groupTitle))
+            it.announceCompat(
+                fragment.getString(R.string.section_opened, groupTitle)
+            )
             focusForAccessibility(it)
         }
     }
 
-    /** إظهار/إخفاء رؤوس وحاويات المجموعات: الرئيسية تُظهر الرؤوس فقط، وشاشة المجموعة حاويتها */
+    /** إظهار/إخفاء رؤوس وحاويات المجموعات: الرئيسية تُظهر الرؤوس فقط،
+ *  وشاشة المجموعة حاويتها */
     private fun applyGroupVisibility(home: Boolean, active: GroupState?) {
         groupStates.forEach { g ->
             fragment.view?.findViewById<View>(g.headerId)?.visibility =
                 if (home) View.VISIBLE else View.GONE
             fragment.view?.findViewById<View>(g.contentId)?.visibility =
-                if (!home && active != null && g.contentId == active.contentId) View.VISIBLE
+                if (!home && active != null &&
+                    g.contentId == active.contentId
+                ) View.VISIBLE
                 else View.GONE
         }
     }
 
-    /** رجوع تدريجي: قسم ← مجموعة ← رئيسية (أو تسليم المفتاح للنظام فوق الرئيسية) */
+    /** رجوع تدريجي: قسم ← مجموعة ← رئيسية (أو تسليم المفتاح
+ *  للنظام فوق الرئيسية) */
     private fun goBack() {
         val group = currentGroup
         when {
             level == Level.SECTION && group != null -> openGroup(group)
             level == Level.GROUP -> showHome()
             level == Level.SECTION -> showHome()
-            else -> { /* في الرئيسية: يعالج مفتاح الرجوع النظامي الخروج من الشاشة */ }
+            else -> {
+            // في الرئيسية: يعالج مفتاح الرجوع النظامي الخروج من الشاشة
+        }
         }
     }
 
@@ -233,14 +267,17 @@ internal class SettingsAccordionController(
     private fun findFirstFocusableView(root: View): View? {
         var found: View? = null
         forEachView(root) { v ->
-            if (found == null && v.isFocusable && v.visibility == View.VISIBLE) {
+            if (found == null && v.isFocusable &&
+                v.visibility == View.VISIBLE
+            ) {
                 found = v
             }
         }
         return found
     }
 
-    /** تحذير لمرة واحدة في الجلسة إذا كان إذن الإشعارات مرفوضاً (الأزرار لن تظهر). */
+    /** تحذير لمرة واحدة في الجلسة إذا كان إذن الإشعارات مرفوضاً
+ *  (الأزرار لن تظهر). */
     fun warnIfNotificationsHidden() {
         if (notificationsHiddenWarned) return
         if (Build.VERSION.SDK_INT < 33) return
@@ -252,7 +289,9 @@ internal class SettingsAccordionController(
         notificationsHiddenWarned = true
         Toast.makeText(
             fragment.requireContext(),
-            fragment.getString(R.string.notification_permission_actions_hidden),
+            fragment.getString(
+                R.string.notification_permission_actions_hidden
+            ),
             Toast.LENGTH_LONG
         ).show()
         fragment.view?.announceCompat(
@@ -260,7 +299,8 @@ internal class SettingsAccordionController(
         )
     }
 
-    /** العودة إلى القائمة الرئيسية: المفتاح الرئيسي + أزرار المجموعات الثلاث فقط */
+    /** العودة إلى القائمة الرئيسية: المفتاح الرئيسي + أزرار
+ *  المجموعات الثلاث فقط */
     fun showHome() {
         val returning = level != Level.HOME
         level = Level.HOME
@@ -280,7 +320,9 @@ internal class SettingsAccordionController(
         }
         // عند العودة من مستوى أعمق: نعيد تركيز المفتاح الرئيسي مع إعلان مسموع
         if (returning) {
-            switchHome?.announceCompat(fragment.getString(R.string.back_to_home))
+            switchHome?.announceCompat(
+                fragment.getString(R.string.back_to_home)
+            )
             switchHome?.let { focusForAccessibility(it) }
         }
     }
@@ -290,7 +332,8 @@ internal class SettingsAccordionController(
         target.post {
             target.requestFocus(View.FOCUS_FORWARD)
             target.sendAccessibilityEvent(
-                android.view.accessibility.AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED
+                android.view.accessibility.AccessibilityEvent
+                    .TYPE_VIEW_ACCESSIBILITY_FOCUSED
             )
         }
     }
@@ -299,7 +342,9 @@ internal class SettingsAccordionController(
     private fun setSectionDividersVisible(visible: Boolean) {
         val v = if (visible) View.VISIBLE else View.GONE
         val root = fragment.view ?: return
-        forEachView(root) { if (it.tag == "section_divider") it.visibility = v }
+        forEachView(root) {
+            if (it.tag == "section_divider") it.visibility = v
+        }
     }
 
     /** تجوال الشجرة كاملة وتنفيذ إجراء على كل عرض (بديل findViewsWithTag) */
@@ -312,7 +357,8 @@ internal class SettingsAccordionController(
         }
     }
 
-    /** هل child داخل سلالة ancestor في شجرة العروض؟ (بديل isDescendantOf API 33+) */
+    /** هل child داخل سلالة ancestor في شجرة العروض؟
+ *  (بديل isDescendantOf API 33+) */
     private fun isDescendantOf(child: View, ancestor: View): Boolean {
         var current: View? = child
         while (current != null) {
@@ -342,13 +388,19 @@ internal class SettingsAccordionController(
 
         // مجموعة «إعدادات خاصة»: الوقت / الإشعارات / الرسائل / نطق المتصل
         accordionEntry(
-            view, R.id.ll_time_announcement_header, R.id.tv_time_announcement_arrow,
-            R.id.tv_time_announcement_status, R.id.ll_time_announcement_settings,
+            view,
+            R.id.ll_time_announcement_header,
+            R.id.tv_time_announcement_arrow,
+            R.id.tv_time_announcement_status,
+            R.id.ll_time_announcement_settings,
             time
         )
         accordionEntry(
-            view, R.id.ll_notification_reading_header, R.id.tv_notification_reading_arrow,
-            R.id.tv_notification_reading_status, R.id.ll_notification_reading_settings,
+            view,
+            R.id.ll_notification_reading_header,
+            R.id.tv_notification_reading_arrow,
+            R.id.tv_notification_reading_status,
+            R.id.ll_notification_reading_settings,
             notif
         )
         accordionEntry(
@@ -357,12 +409,16 @@ internal class SettingsAccordionController(
             sms
         )
         accordionEntry(
-            view, R.id.ll_caller_announcement_header, R.id.tv_caller_announcement_arrow,
-            R.id.tv_caller_announcement_status, R.id.ll_caller_announcement_settings,
+            view,
+            R.id.ll_caller_announcement_header,
+            R.id.tv_caller_announcement_arrow,
+            R.id.tv_caller_announcement_status,
+            R.id.ll_caller_announcement_settings,
             caller
         )
 
-        // مجموعة «إعدادات عامة»: فئات الأصوات / قراءة الأرقام / البطارية / عام / صحة الجهاز
+        // مجموعة «إعدادات عامة»: فئات الأصوات / قراءة الأرقام / البطارية
+        // / عام / صحة الجهاز
         accordionEntry(
             view, R.id.ll_categories_header, R.id.tv_categories_arrow,
             R.id.tv_categories_status, R.id.ll_categories_content,
@@ -374,13 +430,19 @@ internal class SettingsAccordionController(
             num
         )
         accordionEntry(
-            view, R.id.ll_battery_announcement_header, R.id.tv_battery_announcement_arrow,
-            R.id.tv_battery_announcement_status, R.id.ll_battery_announcement_settings,
+            view,
+            R.id.ll_battery_announcement_header,
+            R.id.tv_battery_announcement_arrow,
+            R.id.tv_battery_announcement_status,
+            R.id.ll_battery_announcement_settings,
             battery
         )
         accordionEntry(
-            view, R.id.ll_general_settings_header, R.id.tv_general_settings_arrow,
-            R.id.tv_general_settings_status, R.id.ll_general_settings_content,
+            view,
+            R.id.ll_general_settings_header,
+            R.id.tv_general_settings_arrow,
+            R.id.tv_general_settings_status,
+            R.id.ll_general_settings_content,
             general
         )
         accordionEntry(
@@ -389,7 +451,8 @@ internal class SettingsAccordionController(
             deviceHealth
         )
 
-        // مجموعة «إعدادات متقدمة»: اختيار الأصوات / قاموس النطق / أدوات التطبيق / مساعدة
+        // مجموعة «إعدادات متقدمة»: اختيار الأصوات / قاموس النطق / أدوات
+        // التطبيق / مساعدة
         accordionEntry(
             view, R.id.ll_engine_header, R.id.tv_engine_arrow,
             R.id.tv_engine_status, R.id.ll_engine_content,
@@ -423,18 +486,37 @@ internal class SettingsAccordionController(
         setSectionStatus(R.id.ll_categories_content, buildCategoriesStatus())
         setSectionStatus(R.id.ll_time_announcement_settings, buildTimeStatus())
         setSectionStatus(R.id.ll_numbers_content, buildNumberStatus())
-        setSectionStatus(R.id.ll_battery_announcement_settings, buildBatteryStatus())
-        setSectionStatus(R.id.ll_notification_reading_settings, buildNotificationStatus())
-        setSectionStatus(R.id.ll_caller_announcement_settings, buildCallerStatus())
+        setSectionStatus(
+            R.id.ll_battery_announcement_settings,
+            buildBatteryStatus()
+        )
+        setSectionStatus(
+            R.id.ll_notification_reading_settings,
+            buildNotificationStatus()
+        )
+        setSectionStatus(
+            R.id.ll_caller_announcement_settings,
+            buildCallerStatus()
+        )
         setSectionStatus(R.id.ll_sms_reading_settings, buildSmsStatus())
-        setSectionStatus(R.id.ll_general_settings_content, buildGeneralStatus())
-        setSectionStatus(R.id.ll_device_health_content, buildDeviceHealthStatus())
+        setSectionStatus(
+            R.id.ll_general_settings_content,
+            buildGeneralStatus()
+        )
+        setSectionStatus(
+            R.id.ll_device_health_content,
+            buildDeviceHealthStatus()
+        )
         setSectionStatus(R.id.ll_emoji_content, buildEmojiStatus())
     }
 
     private fun buildEngineStatus(): String {
-        val auto = runCatching { settings.isAutoConvertEnabled() }.getOrDefault(false)
-        val engine = engines.getOrNull(spinnerEngine.selectedItemPosition)?.label
+        val auto =
+            runCatching { settings.isAutoConvertEnabled() }
+                .getOrDefault(false)
+        val engine = engines.getOrNull(
+            spinnerEngine.selectedItemPosition
+        )?.label
             ?: fragment.getString(R.string.no_voices_available)
         val autoLabel = if (auto) fragment.getString(R.string.toggle_on)
         else fragment.getString(R.string.toggle_off)
@@ -444,12 +526,15 @@ internal class SettingsAccordionController(
 
     private fun buildCategoriesStatus(): String {
         val saved = runCatching {
-            settings.getPreferredVoiceIdForCategory(SettingsRepository.VOICE_CATEGORY_DEFAULT)
+            settings.getPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_DEFAULT
+            )
         }.getOrNull()
         val name = voices.firstOrNull { it.name == saved }?.displayName
             ?: voices.firstOrNull()?.displayName
             ?: fragment.getString(R.string.no_voices_available)
-        return fragment.getString(R.string.voice_category_default) + ": " + name
+        return fragment.getString(R.string.voice_category_default) +
+            ": " + name
     }
 
     private fun buildTimeStatus(): String {
@@ -465,16 +550,21 @@ internal class SettingsAccordionController(
                 else -> R.string.time_interval_60
             }
         )
-        val quietStart = runCatching { settings.getQuietStartForDay(Calendar.DAY_OF_WEEK) }
-            .getOrDefault(23)
-        val quietEnd = runCatching { settings.getQuietEndForDay(Calendar.DAY_OF_WEEK) }
-            .getOrDefault(7)
+        val quietStart =
+            runCatching {
+                settings.getQuietStartForDay(Calendar.DAY_OF_WEEK)
+            }.getOrDefault(23)
+        val quietEnd =
+            runCatching {
+                settings.getQuietEndForDay(Calendar.DAY_OF_WEEK)
+            }.getOrDefault(7)
         return buildString {
             val on = if (enabled) fragment.getString(R.string.toggle_on)
             else fragment.getString(R.string.toggle_off)
             append(on)
             append("، ").append(intervalLabel)
-            append("، ").append(fragment.getString(R.string.time_quiet_schedule_title))
+            append("، ")
+                .append(fragment.getString(R.string.time_quiet_schedule_title))
             append(": ").append(quietStart).append("/").append(quietEnd)
         }
     }
@@ -525,7 +615,8 @@ internal class SettingsAccordionController(
         }
         return buildString {
             append(on)
-            append("، ").append(fragment.getString(R.string.notification_apps_title))
+            append("، ")
+                .append(fragment.getString(R.string.notification_apps_title))
             append(": ").append(apps)
         }
     }
@@ -535,8 +626,10 @@ internal class SettingsAccordionController(
             .getOrDefault(false)
         val repeat = runCatching { settings.getCallerAnnouncementRepeat() }
             .getOrDefault(1).coerceIn(1, 5)
-        val interval = runCatching { settings.getCallerAnnouncementIntervalSeconds() }
-            .getOrDefault(3).coerceIn(1, 10)
+        val interval =
+            runCatching {
+                settings.getCallerAnnouncementIntervalSeconds()
+            }.getOrDefault(3).coerceIn(1, 10)
         val on = if (enabled) fragment.getString(R.string.toggle_on)
         else fragment.getString(R.string.toggle_off)
         val label = fragment.getString(
@@ -563,7 +656,9 @@ internal class SettingsAccordionController(
     }
 
     private fun buildSmsStatus(): String {
-        val mode = runCatching { settings.getSmsReadingMode() }.getOrDefault("off")
+        val mode =
+            runCatching { settings.getSmsReadingMode() }
+                .getOrDefault("off")
         val label = fragment.getString(
             when (mode) {
                 "full" -> R.string.sms_mode_full
@@ -575,8 +670,12 @@ internal class SettingsAccordionController(
     }
 
     private fun buildGeneralStatus(): String {
-        val rate = runCatching { settings.getDefaultSpeechRate() }.getOrDefault(1.0f)
-        val volume = runCatching { settings.getDefaultVolume() }.getOrDefault(1.0f)
+        val rate =
+            runCatching { settings.getDefaultSpeechRate() }
+                .getOrDefault(1.0f)
+        val volume =
+            runCatching { settings.getDefaultVolume() }
+                .getOrDefault(1.0f)
         val rateText = String.format(java.util.Locale.US, "%.1fx", rate)
         val volumeText = (volume * 100).toInt().toString() + "%"
         return fragment.getString(R.string.default_speech_rate_label) + ": " +
@@ -588,13 +687,19 @@ internal class SettingsAccordionController(
             .getOrDefault(SettingsRepository.DEFAULT_DEVICE_HEALTH_ITEMS)
         val labels = mutableListOf<String>()
         if (SettingsRepository.DEVICE_HEALTH_BATTERY in items) {
-            labels.add(fragment.getString(R.string.device_health_battery_label))
+            labels.add(
+                fragment.getString(R.string.device_health_battery_label)
+            )
         }
         if (SettingsRepository.DEVICE_HEALTH_CHARGING in items) {
-            labels.add(fragment.getString(R.string.device_health_charging_label))
+            labels.add(
+                fragment.getString(R.string.device_health_charging_label)
+            )
         }
         if (SettingsRepository.DEVICE_HEALTH_STORAGE in items) {
-            labels.add(fragment.getString(R.string.device_health_storage_label))
+            labels.add(
+                fragment.getString(R.string.device_health_storage_label)
+            )
         }
         if (SettingsRepository.DEVICE_HEALTH_MEMORY in items) {
             labels.add(fragment.getString(R.string.device_health_memory_label))

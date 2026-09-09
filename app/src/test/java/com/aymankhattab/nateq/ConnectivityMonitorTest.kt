@@ -36,7 +36,9 @@ class ConnectivityMonitorTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
-        cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        cm = context.getSystemService(
+            Context.CONNECTIVITY_SERVICE
+        ) as ConnectivityManager
         // بداية نظيفة: لا شبكة ولا `netId→capabilities` باقية.
         shadowOf(cm).clearAllNetworks()
         shadowOf(cm).setActiveNetworkInfo(null)
@@ -48,20 +50,25 @@ class ConnectivityMonitorTest {
      *
      * ملاحظة: [ConnectivityManager.activeNetwork] في محاكاة Robolectric 4.14 لا
      * يعود إلا بشبكة «نشطة افتراضياً» ([setDefaultNetworkActive]) مع معلومات
-     * شبكة معلّقتها ([setActiveNetworkInfo]) لشبكة netId يوازي نوعها — والبناء الوحيد
-     * لصنع NetworkInfo في الظل يعتمد فئات/ثوابت مهملة منذ API 29، لذا يُحتوى كتم
+     * شبكة معلّقتها ([setActiveNetworkInfo]) لشبكة netId يوازي نوعها
+     * — والبناء الوحيد لصنع NetworkInfo في الظل يعتمد فئات/ثوابت مهملة
+     * منذ API 29، لذا يُحتوى كتم
      * التحذير في دالة واحدة موثقة ([activeWifiInfo]) بدل تكراره في كل اختبار.
      */
     private fun setActiveWifi(caps: NetworkCapabilities) {
         val info = activeWifiInfo()
-        val network = ShadowNetwork.newInstance(1) // netId=1 == TYPE_WIFI — مفتاح الشبكة النشطة عند الظل
+        val network = ShadowNetwork.newInstance(1)
+        // netId=1 == TYPE_WIFI — مفتاح الشبكة النشطة عند الظل
         shadowOf(cm).setActiveNetworkInfo(info)
         shadowOf(cm).setDefaultNetworkActive(true)
         shadowOf(cm).addNetwork(network, info)
         shadowOf(cm).setNetworkCapabilities(network, caps)
     }
 
-    /** بنّاء الـ NetworkInfo المهمل — تطلبه محاكاة الظل حصراً لتعريف الشبكة النشطة. */
+    /**
+     * بنّاء الـ NetworkInfo المهمل — تطلبه محاكاة الظل حصراً لتعريف
+     * الشبكة النشطة.
+     */
     @Suppress("DEPRECATION")
     private fun activeWifiInfo(): android.net.NetworkInfo =
         ShadowNetworkInfo.newInstance(
@@ -100,7 +107,8 @@ class ConnectivityMonitorTest {
 
     @Test
     fun offline_whenNetworkNotValidated() {
-        // شبكة تحمل INTERNET لكنها غير محقّقة الوصول (لا VALIDATED): بلا إنترنت حقيقي
+        // شبكة تحمل INTERNET لكنها غير محقّقة الوصول (لا VALIDATED):
+        // بلا إنترنت حقيقي
         setActiveWifi(
             capsWithCapabilities(NetworkCapabilities.NET_CAPABILITY_INTERNET)
         )

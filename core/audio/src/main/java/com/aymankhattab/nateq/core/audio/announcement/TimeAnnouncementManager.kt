@@ -32,7 +32,8 @@ class TimeAnnouncementManager(
 ) {
 
     companion object {
-        // وسم الإنجليزية لعناصر النطق الأساسية عند تبعية لغة التطبيق لفئة إنجليزية
+        // وسم الإنجليزية لعناصر النطق الأساسية عند تبعية
+        // لغة التطبيق لفئة إنجليزية
         const val ENGLISH_LANGUAGE_TAG = "en"
 
         // مثيل مشترك واحد عبر العملية يستخدمه مستقبل المنبه والودجت، حتى لا
@@ -46,26 +47,41 @@ class TimeAnnouncementManager(
          *  نفس المرجع (تجنب كائنات متعددة عبر العملية)؛ وإلا يُبنى محلياً لو
          *  كانت الدعوة من مستقبل المنبه أو الودجت اللذين لا يمرران مرجعاً. */
         @JvmStatic
-        fun shared(context: Context, settings: SettingsRepository? = null): TimeAnnouncementManager {
+        fun shared(
+            context: Context,
+            settings: SettingsRepository? = null
+        ): TimeAnnouncementManager {
             return sharedInstance ?: synchronized(this) {
                 sharedInstance ?: run {
                     val appContext = context.applicationContext
-                    val sharedSettings = settings ?: SettingsRepository(appContext)
-                    val providers = listOf(SystemVoiceProvider(appContext, sharedSettings))
+                    val sharedSettings = settings
+                        ?: SettingsRepository(appContext)
+                    val providers = listOf(
+                        SystemVoiceProvider(appContext, sharedSettings)
+                    )
                     val catalog = VoiceCatalog(providers)
-                    val handler = SynthesisRequestHandler(catalog, sharedSettings)
-                    TimeAnnouncementManager(appContext, sharedSettings, catalog, handler)
+                    val handler = SynthesisRequestHandler(
+                        catalog, sharedSettings
+                    )
+                    TimeAnnouncementManager(
+                        appContext, sharedSettings, catalog, handler
+                    )
                         .also { sharedInstance = it }
                 }
             }
         }
     }
 
-    /** لغة التطبيق الفعلية: المختارة يدوياً دوناً عن الافتراضي، إن لم تُختر فتتبع لغة النظام */
+    /** لغة التطبيق الفعلية: المختارة يدوياً دوناً عن
+     *  الافتراضي، إن لم تُختر فتتبع لغة النظام */
     private fun effectiveAppLanguage(): String {
         val chosen = runCatching { settings.getAppLanguage() }.getOrNull()
         val base = chosen ?: Locale.getDefault().language
-        return if (LanguageCode.isArabic(base)) LanguageCode.AR.tag else LanguageCode.EN.tag
+        return if (LanguageCode.isArabic(base)) {
+            LanguageCode.AR.tag
+        } else {
+            LanguageCode.EN.tag
+        }
     }
 
     private var isRunning = false
@@ -178,7 +194,9 @@ class TimeAnnouncementManager(
      */
     private fun calculateQuietEndMillis(): Long {
         val now = System.currentTimeMillis()
-        val endHour = settings.getQuietEndForDay(Calendar.getInstance().get(Calendar.DAY_OF_WEEK))
+        val endHour = settings.getQuietEndForDay(
+            Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
+        )
         val today = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, endHour)
             set(Calendar.MINUTE, 0)
@@ -194,7 +212,8 @@ class TimeAnnouncementManager(
         return candidate
     }
 
-    /** ضبط المنبه الوحيد عند نهاية ساعات الهدوء (يستقبله [TimeAlarmReceiver] نفسه). */
+    /** ضبط المنبه الوحيد عند نهاية ساعات الهدوء
+     * (يستقبله [TimeAlarmReceiver] نفسه). */
     private fun scheduleQuietEndAlarm() {
         TimeAlarmReceiver.scheduleNext(context, calculateQuietEndMillis())
     }
@@ -225,27 +244,58 @@ class TimeAnnouncementManager(
      * العتبة يُضاعف الفاصل ثلاث مرات (يقلل إهلاك البطارية دون تعطيل الخدمة).
      */
     private fun effectiveIntervalMinutes(): Int {
-        val base = try { settings.getTimeAnnouncementInterval() } catch (t: Throwable) { 30 }
-        val powerSaver = try { settings.isPowerSaverModeEnabled() } catch (t: Throwable) { false }
-        if (powerSaver && isBatteryBelow(try { settings.getPowerSaverBatteryThreshold() } catch (t: Throwable) { 20 })) {
+        val base = try {
+            settings.getTimeAnnouncementInterval()
+        } catch (t: Throwable) {
+            30
+        }
+        val powerSaver = try {
+            settings.isPowerSaverModeEnabled()
+        } catch (t: Throwable) {
+            false
+        }
+        if (powerSaver && isBatteryBelow(
+                try {
+                    settings.getPowerSaverBatteryThreshold()
+                } catch (t: Throwable) {
+                    20
+                }
+            )
+        ) {
             return base * 3
         }
         return base
     }
 
-    /** هل البطارية الحالية تحت العتبة؟ (يقرأ آخر حالة من بث البطارية الدائم). */
+    /** هل البطارية الحالية تحت العتبة؟
+     * (يقرأ آخر حالة من بث البطارية الدائم). */
     private fun isBatteryBelow(threshold: Int): Boolean {
         return try {
-            val filter = android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED)
-            val battery = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                context.registerReceiver(null, filter, Context.RECEIVER_EXPORTED)
+            val filter = android.content.IntentFilter(
+                android.content.Intent.ACTION_BATTERY_CHANGED
+            )
+            val battery = if (
+                android.os.Build.VERSION.SDK_INT >=
+                android.os.Build.VERSION_CODES.TIRAMISU
+            ) {
+                context.registerReceiver(
+                    null, filter, Context.RECEIVER_EXPORTED
+                )
             } else {
                 @Suppress("DEPRECATION")
                 context.registerReceiver(null, filter)
             }
-            val level = battery?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
-            val scale = battery?.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1) ?: -1
-            if (level < 0 || scale <= 0) false else (level * 100 / scale) < threshold
+            val level = battery?.getIntExtra(
+                android.os.BatteryManager.EXTRA_LEVEL, -1
+            ) ?: -1
+            val scale = battery?.getIntExtra(
+                android.os.BatteryManager.EXTRA_SCALE, -1
+            ) ?: -1
+            if (level < 0 || scale <= 0) {
+                false
+            } else {
+                (level * 100 / scale) < threshold
+            }
         } catch (t: Throwable) {
             false
         }
@@ -288,24 +338,42 @@ class TimeAnnouncementManager(
         activeAnnounceJob = announceScope.launch {
             try {
                 // ترتيب تحديد لغة نطق الساعة:
-                // 1) مفتاح النطق EN/AR إن حُدِّد، 2) صوت الفئة المفضَّل، 3) لغة التطبيق الفعلية.
-                val forced = runCatching { settings.getAnnouncementSpeechLanguage() }.getOrNull()
-                val pref = settings.getPreferredVoiceIdForCategory(SettingsRepository.VOICE_CATEGORY_TIME)
+                // 1) مفتاح النطق EN/AR إن حُدِّد، 2) صوت الفئة المفضَّل،
+                // 3) لغة التطبيق الفعلية.
+                val forced = runCatching {
+                    settings.getAnnouncementSpeechLanguage()
+                }.getOrNull()
+                val pref = settings.getPreferredVoiceIdForCategory(
+                    SettingsRepository.VOICE_CATEGORY_TIME
+                )
                 val isEnglish = when {
                     forced != null -> LanguageCode.isEnglish(forced)
-                    // يقبل الصيغ القديمة (nateq-en-…، en-local) والصيغ الموحّدة الحالية (en-US)
-                    pref != null -> pref.startsWith("nateq-en", ignoreCase = true) ||
+                    // يقبل الصيغ القديمة (nateq-en-…، en-local)
+                    // والصيغ الموحّدة الحالية (en-US)
+                    pref != null -> pref.startsWith(
+                        "nateq-en", ignoreCase = true
+                    ) ||
                         pref.startsWith("en-local", ignoreCase = true) ||
                         pref.startsWith("en-US", ignoreCase = true)
                     else -> effectiveAppLanguage() == ENGLISH_LANGUAGE_TAG
                 }
-                val languageTag = if (isEnglish) ENGLISH_LANGUAGE_TAG else LanguageCode.AR.tag
+                val languageTag = if (isEnglish) {
+                    ENGLISH_LANGUAGE_TAG
+                } else {
+                    LanguageCode.AR.tag
+                }
                 val locale = Locale.forLanguageTag(languageTag)
 
                 val timeText = formatCurrentTime(isEnglish)
-                val speechRate = requestHandler.getSpeechRateForCategory(SettingsRepository.VOICE_CATEGORY_TIME)
-                val pitch = requestHandler.getPitchForCategory(SettingsRepository.VOICE_CATEGORY_TIME)
-                val volume = requestHandler.getVolumeForCategory(SettingsRepository.VOICE_CATEGORY_TIME)
+                val speechRate = requestHandler.getSpeechRateForCategory(
+                    SettingsRepository.VOICE_CATEGORY_TIME
+                )
+                val pitch = requestHandler.getPitchForCategory(
+                    SettingsRepository.VOICE_CATEGORY_TIME
+                )
+                val volume = requestHandler.getVolumeForCategory(
+                    SettingsRepository.VOICE_CATEGORY_TIME
+                )
 
                 // AnnouncementSpeaker يختار المحرك تلقائياً عبر EnginePicker
                 val speaker = AnnouncementSpeaker.getInstance(context)
@@ -317,7 +385,10 @@ class TimeAnnouncementManager(
     }
 
     /** الحصول على الصوت المخصص لفئة معينة */
-    private suspend fun getVoiceForCategory(category: String, languageTag: String): VoiceDescriptor? {
+    private suspend fun getVoiceForCategory(
+        category: String,
+        languageTag: String
+    ): VoiceDescriptor? {
         val locale = Locale.forLanguageTag(languageTag)
         val voices = catalog.allAvailableVoices(locale)
 
@@ -329,7 +400,9 @@ class TimeAnnouncementManager(
 
         // تراجع للصوت الافتراضي للغة حتى لا يبقى الإعلان صامتاً
         val defaultName = catalog.defaultVoiceNameForLanguage(locale.language)
-        defaultName?.let { name -> voices.find { it.id == name }?.let { return it } }
+        defaultName?.let { name ->
+            voices.find { it.id == name }?.let { return it }
+        }
 
         return voices.firstOrNull()
     }
@@ -339,7 +412,9 @@ class TimeAnnouncementManager(
         val calendar = Calendar.getInstance()
         val hour = calendar.get(Calendar.HOUR_OF_DAY)
         val minute = calendar.get(Calendar.MINUTE)
-        val format = runCatching { settings.getTimeAnnouncementFormat() }.getOrNull()
+        val format = runCatching {
+            settings.getTimeAnnouncementFormat()
+        }.getOrNull()
             ?: "arabic_natural"
         val use24h = runCatching { settings.isTime24Hour() }.getOrDefault(false)
         return if (format == "digital") {
@@ -355,7 +430,12 @@ class TimeAnnouncementManager(
      * الصيغة الرقمية المنطوقة: تُعلن الساعة ثم الدقائق (بصيغة «ساعة ودقائق»
      * بدون الربع/النصف/إلا)، وتبدّل صريحاً مع 12/24 ساعة حسب اختيار المستخدم.
      */
-    private fun formatDigitalTime(hour: Int, minute: Int, isEnglish: Boolean, use24h: Boolean): String {
+    private fun formatDigitalTime(
+        hour: Int,
+        minute: Int,
+        isEnglish: Boolean,
+        use24h: Boolean
+    ): String {
         val displayedHour = if (use24h) {
             hour
         } else if (hour == 0) {
@@ -369,28 +449,38 @@ class TimeAnnouncementManager(
         val midnightPhrase = use24h && hour == 0
         return if (isEnglish) {
             if (minute == 0) {
-                NumberSpeech.toEnglishWords(displayedHour) + if (use24h || hour < 12) "" else " PM"
+                NumberSpeech.toEnglishWords(displayedHour) +
+                if (use24h || hour < 12) "" else " PM"
             } else {
-                NumberSpeech.toEnglishWords(displayedHour) + " " + NumberSpeech.toEnglishWords(minute) +
-                    if (use24h || hour < 12) "" else " PM"
+                NumberSpeech.toEnglishWords(displayedHour) +
+                " " + NumberSpeech.toEnglishWords(minute) +
+                if (use24h || hour < 12) "" else " PM"
             }
         } else {
             // الساعة تُنطق بالصيغة الترتيبية المؤنثة المعرّفة بأل:
             // «الساعة الآن الثانية» لا «اثنتين».
             if (minute == 0) {
-                if (midnightPhrase) "الساعة الآن منتصف الليل"
-                else "الساعة الآن ${NumberSpeech.toOrdinalHourWord(displayedHour)}"
-            } else {
-                if (midnightPhrase) {
-                    "الساعة الآن منتصف الليل و ${arabicMinutePhrase(minute)}"
+                    if (midnightPhrase) {
+                        "الساعة الآن منتصف الليل"
+                    } else {
+                        "الساعة الآن " +
+                        NumberSpeech.toOrdinalHourWord(displayedHour)
+                    }
                 } else {
-                    "الساعة الآن ${NumberSpeech.toOrdinalHourWord(displayedHour)} و ${arabicMinutePhrase(minute)}"
+                    if (midnightPhrase) {
+                        "الساعة الآن منتصف الليل و " +
+                        arabicMinutePhrase(minute)
+                    } else {
+                        "الساعة الآن " +
+                        NumberSpeech.toOrdinalHourWord(displayedHour) +
+                        " و " + arabicMinutePhrase(minute)
+                    }
                 }
-            }
         }
     }
 
-    /** تنسيق الوقت الإنجليزية الطبيعية: "quarter past ten" ،"half past ten"، "quarter to eleven" */
+    /** تنسيق الوقت الإنجليزية الطبيعية:
+     * "quarter past ten"، "half past ten"، "quarter to eleven" */
     private fun formatEnglishNaturalTime(hour: Int, minute: Int): String {
         val hour12 = if (hour == 0) 12 else if (hour > 12) hour - 12 else hour
         val nextHour = if (hour12 == 12) 1 else hour12 + 1
@@ -401,7 +491,9 @@ class TimeAnnouncementManager(
             15 -> "quarter past $hour12 $period"
             30 -> "half past $hour12 $period"
             45 -> "quarter to $nextHour $period"
-            in 1..14 -> "${minute} minute${if (minute == 1) "" else "s"} past $hour12 $period"
+            in 1..14 -> "${minute} minute" +
+                if (minute == 1) "" else "s" +
+                " past $hour12 $period"
             in 16..29 -> "$minute minutes past $hour12 $period"
             in 31..44 -> "${60 - minute} minutes to $nextHour $period"
             in 46..59 -> "${60 - minute} minutes to $nextHour $period"
@@ -432,7 +524,8 @@ class TimeAnnouncementManager(
         // الساعة تُنطق بالصيغة الترتيبية المؤنثة المعرّفة بأل:
         // «الثانية صباحاً» لا «اثنتين صباحاً».
         val arabicHour = NumberSpeech.toOrdinalHourWord(hour12)
-        // صبيحة/مساء للصيغة الطبيعية على نحو ما أعلنه TextProcessor للصيغة الرقمية.
+        // صبيحة/مساء للصيغة الطبيعية على نحو ما أعلنه
+        // TextProcessor للصيغة الرقمية.
         val period = when (hour) {
             12 -> "ظهراً"
             in 0..11 -> "صباحاً"
@@ -448,14 +541,18 @@ class TimeAnnouncementManager(
                 val nextArabicHour = NumberSpeech.toOrdinalHourWord(nextHour)
                 "الساعة الآن $nextArabicHour إلا ربع $period"
             }
-            in 1..14 -> "الساعة الآن $arabicHour و ${arabicMinutePhrase(minute)} $period"
-            in 16..29 -> "الساعة الآن $arabicHour و ${arabicMinutePhrase(minute)} $period"
-            in 31..44 -> "الساعة الآن $arabicHour و ${arabicMinutePhrase(minute)} $period"
+            in 1..14 -> "الساعة الآن $arabicHour و " +
+                "${arabicMinutePhrase(minute)} $period"
+            in 16..29 -> "الساعة الآن $arabicHour و " +
+                "${arabicMinutePhrase(minute)} $period"
+            in 31..44 -> "الساعة الآن $arabicHour و " +
+                "${arabicMinutePhrase(minute)} $period"
             in 46..59 -> {
                 val remaining = 60 - minute
                 val nextHour = if (hour12 == 12) 1 else hour12 + 1
                 val nextArabicHour = NumberSpeech.toOrdinalHourWord(nextHour)
-                "الساعة الآن $nextArabicHour إلا ${arabicMinuteOmissionPhrase(remaining)} $period"
+                "الساعة الآن $nextArabicHour إلا " +
+                "${arabicMinuteOmissionPhrase(remaining)} $period"
             }
             else -> "الساعة الآن $arabicHour $period"
         }
@@ -464,20 +561,37 @@ class TimeAnnouncementManager(
     /** نطق رقم معين (للأرقام المنفصلة عن الوقت) */
     fun speakNumber(number: Int) {
         announceScope.launch {
-            // تُنطق الأرقام بنمط التجميع المُختار (مفردة/زوجي/ثلاثي..) وبلغة النطق المختارة
+            // تُنطق الأرقام بنمط التجميع المُختار
+            // (مفردة/زوجي/ثلاثي..) وبلغة النطق المختارة
             val isEnglish = effectiveNumberSpeechIsEnglish()
             val text = formatNumberByMode(number)
-            val languageTag = if (isEnglish) ENGLISH_LANGUAGE_TAG else LanguageCode.AR.tag
+            val languageTag = if (isEnglish) {
+                ENGLISH_LANGUAGE_TAG
+            } else {
+                LanguageCode.AR.tag
+            }
 
-            val voice = getVoiceForCategory(SettingsRepository.VOICE_CATEGORY_NUMBERS, languageTag)
+            val voice = getVoiceForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS,
+                languageTag
+            )
             val provider = voice?.let { catalog.findProvider(it.providerId) }
-            val speechRate = requestHandler.getSpeechRateForCategory(SettingsRepository.VOICE_CATEGORY_NUMBERS)
-            val pitch = requestHandler.getPitchForCategory(SettingsRepository.VOICE_CATEGORY_NUMBERS)
-            val volume = requestHandler.getVolumeForCategory(SettingsRepository.VOICE_CATEGORY_NUMBERS)
+            val speechRate = requestHandler.getSpeechRateForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+            val pitch = requestHandler.getPitchForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+            val volume = requestHandler.getVolumeForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
 
             if (voice != null && provider != null) {
                 AnnouncementSpeaker.getInstance(context)
-                    .speak(text, Locale.forLanguageTag(languageTag), speechRate, pitch, volume)
+                    .speak(
+                        text, Locale.forLanguageTag(languageTag),
+                        speechRate, pitch, volume
+                    )
             }
         }
     }
@@ -486,16 +600,32 @@ class TimeAnnouncementManager(
     fun speakNotification(text: String) {
         // الإشعارات تُنطق بصوت الفئة؛ وإن لزم تتوافق مع لغة النطق المختارة
         announceScope.launch {
-            val languageTag = if (effectiveNumberSpeechIsEnglish()) ENGLISH_LANGUAGE_TAG else LanguageCode.AR.tag
-            val voice = getVoiceForCategory(SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS, languageTag)
+            val languageTag = if (effectiveNumberSpeechIsEnglish()) {
+                ENGLISH_LANGUAGE_TAG
+            } else {
+                LanguageCode.AR.tag
+            }
+            val voice = getVoiceForCategory(
+                SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS,
+                languageTag
+            )
             val provider = voice?.let { catalog.findProvider(it.providerId) }
-            val speechRate = requestHandler.getSpeechRateForCategory(SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS)
-            val pitch = requestHandler.getPitchForCategory(SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS)
-            val volume = requestHandler.getVolumeForCategory(SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS)
+            val speechRate = requestHandler.getSpeechRateForCategory(
+                SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+            )
+            val pitch = requestHandler.getPitchForCategory(
+                SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+            )
+            val volume = requestHandler.getVolumeForCategory(
+                SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+            )
 
             if (voice != null && provider != null) {
                 AnnouncementSpeaker.getInstance(context)
-                    .speak(text, Locale.forLanguageTag(languageTag), speechRate, pitch, volume)
+                    .speak(
+                        text, Locale.forLanguageTag(languageTag),
+                        speechRate, pitch, volume
+                    )
             }
         }
     }
@@ -510,9 +640,16 @@ class TimeAnnouncementManager(
         )
     }
 
-    /** لغة نطق الأرقام: مفتاح النطق EN/AR إن حُدِّد، وإلا لغة التطبيق الفعلية */
+    /** لغة نطق الأرقام: مفتاح النطق EN/AR إن حُدِّد،
+     * وإلا لغة التطبيق الفعلية */
     private fun effectiveNumberSpeechIsEnglish(): Boolean {
-        val forced = runCatching { settings.getAnnouncementSpeechLanguage() }.getOrNull()
-        return if (forced != null) LanguageCode.isEnglish(forced) else effectiveAppLanguage() == ENGLISH_LANGUAGE_TAG
+        val forced = runCatching {
+            settings.getAnnouncementSpeechLanguage()
+        }.getOrNull()
+        return if (forced != null) {
+            LanguageCode.isEnglish(forced)
+        } else {
+            effectiveAppLanguage() == ENGLISH_LANGUAGE_TAG
+        }
     }
 }

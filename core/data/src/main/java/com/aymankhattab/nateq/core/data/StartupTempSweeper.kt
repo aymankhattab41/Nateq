@@ -16,7 +16,8 @@ import java.io.File
  * قواعد الحذف الآمنة:
  *  - يمحو كل `*.wav` يتيم في cacheDir (لا يمسّ نسخ الكاش المستخدمة فعلياً —
  *    أسماء WAV المؤقتة في هذا المشروع فريدة بطابع زمني لإشعارات TTS).
- *  - في مجلد التنزيلات لا يمسّ ملف الـ APK الحالي المسمّى [UpdateChecker.APK_NAME]
+ *  - في مجلد التنزيلات لا يمسّ ملف الـ APK الحالي المسمّى
+ *    [UpdateChecker.APK_NAME]
  *    ولا يمسّ أي ملف أثناء تنزيل نشط (ملف حجمه صفر أو ملف بامتداد جزئي
  *    `.tmp`/`.part` يُترك لمدير التنزيلات)، ويمحو فقط ملفات APK قديمة بأسماء
  *    أخرى أو نسخ مضغوطة (`.jpg`/`.zip`) إن وُجدت — لكي لا تُكسر دورة التحديث.
@@ -26,7 +27,8 @@ class StartupTempSweeper(private val context: Context) {
     companion object {
         private const val TAG = "NATEQ_TEMP_SWEEP"
 
-        /** اسم ملف الـ APK الحالي النشط في مجلد التنزيلات (يطابق UpdateChecker).
+        /** اسم ملف الـ APK الحالي النشط في مجلد التنزيلات
+         *  (يطابق UpdateChecker).
          *  لا نمسّه أبداً حتى لا يكسر دورة التحديث/التثبيت. */
         private const val ACTIVE_APK_NAME = "lord_tts.apk"
     }
@@ -49,9 +51,11 @@ class StartupTempSweeper(private val context: Context) {
             val cache = context.cacheDir
             if (!cache.exists() || !cache.isDirectory) return 0
             var deleted = 0
-            cache.listFiles()?.filter { it.isFile && it.name.endsWith(".wav") }?.forEach {
-                if (it.delete()) deleted++
-            }
+            cache.listFiles()
+                ?.filter { it.isFile && it.name.endsWith(".wav") }
+                ?.forEach {
+                    if (it.delete()) deleted++
+                }
             deleted
         }.getOrDefault(0)
     }
@@ -68,11 +72,13 @@ class StartupTempSweeper(private val context: Context) {
             if (!downloads.exists() || !downloads.isDirectory) return 0
             var deleted = 0
             downloads.listFiles()?.filter { file ->
-                file.isFile && !file.name.equals(ACTIVE_APK_NAME, ignoreCase = true)
+                file.isFile &&
+                    !file.name.equals(ACTIVE_APK_NAME, ignoreCase = true)
             }?.forEach { file ->
                 // لا نلمس ملفاً أثناء تنزيل نشط (حجم صفري أو لاحقة جزئية).
                 if (file.length() == 0L) return@forEach
-                if (file.name.endsWith(".tmp") || file.name.endsWith(".part")) return@forEach
+                if (file.name.endsWith(".tmp") ||
+                    file.name.endsWith(".part")) return@forEach
                 if (file.delete()) deleted++
             }
             deleted

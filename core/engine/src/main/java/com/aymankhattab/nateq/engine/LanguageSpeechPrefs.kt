@@ -38,7 +38,8 @@ object ConvertPreferencesCodec {
 
     /** رموز ISO-3 الشائعة المفضّلة لإرجاعها إلى ISO-2 الموحّد للخريطة. */
     private val ISO3_TO_ISO2 = mapOf(
-        "ara" to LanguageCode.AR.tag, "eng" to LanguageCode.EN.tag, "fra" to "fr", "deu" to "de",
+        "ara" to LanguageCode.AR.tag, "eng" to LanguageCode.EN.tag,
+        "fra" to "fr", "deu" to "de",
         "spa" to "es", "ita" to "it", "rus" to "ru", "zho" to "zh",
         "jpn" to "ja", "kor" to "ko", "por" to "pt", "tur" to "tr",
         "nld" to "nl", "ell" to "el", "swe" to "sv", "pol" to "pl",
@@ -62,7 +63,8 @@ object ConvertPreferencesCodec {
      */
     fun normalizeLanguageTag(languageTag: String): String {
         if (languageTag.isBlank()) return "und"
-        val code = languageTag.trim().substringBefore('-').substringBefore('_').lowercase()
+        val code = languageTag.trim()
+            .substringBefore('-').substringBefore('_').lowercase()
         if (code.isEmpty()) return "und"
         return ISO3_TO_ISO2[code] ?: code
     }
@@ -97,8 +99,10 @@ object ConvertPreferencesCodec {
             val e = value.asJsonObject
             val engine = if (e.has("engine") && !e.get("engine").isJsonNull)
                 e.get("engine").asString.takeIf { it.isNotBlank() } else null
-            val voiceName = if (e.has("voiceName") && !e.get("voiceName").isJsonNull)
-                e.get("voiceName").asString.takeIf { it.isNotBlank() } else null
+            val voiceName =
+                if (e.has("voiceName") && !e.get("voiceName").isJsonNull)
+                    e.get("voiceName").asString.takeIf { it.isNotBlank() }
+                else null
             val rate = if (e.has("rate")) e.get("rate").asFloat else 1.0f
             val pitch = if (e.has("pitch")) e.get("pitch").asFloat else 1.0f
             val volume = if (e.has("volume")) e.get("volume").asFloat else 1.0f
@@ -115,7 +119,9 @@ object ConvertPreferencesCodec {
 
     /** تسلسل الخريطة إلى JSON للخزن في SharedPreferences. */
     fun toJson(map: Map<String, LanguageSpeechPrefs>): String =
-        NateqJson.toJson(map, NateqJson.mapStringOf(LanguageSpeechPrefs::class.java))
+        NateqJson.toJson(
+            map, NateqJson.mapStringOf(LanguageSpeechPrefs::class.java)
+        )
 
     /**
      * ترحيل سلوت قديم (1/2) إلى الخريطة الديناميكية بمفتاح لغة موحّد.

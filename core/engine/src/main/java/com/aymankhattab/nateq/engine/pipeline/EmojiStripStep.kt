@@ -7,7 +7,9 @@ import java.text.Normalizer
  * الفصل بين الكلمات). عندما يكون نطق الإيموجي مفعّلاً تكون الإيموجي قد عُرضت
  * أسماؤها خارج الخط (توسيع مسبق في المنسّق)، فتعمل الخطوة بحياد (no-op).
  */
-internal class EmojiStripStep(private val isEmojiEnabled: () -> Boolean) : TextProcessingStep {
+internal class EmojiStripStep(
+    private val isEmojiEnabled: () -> Boolean
+) : TextProcessingStep {
 
     override fun apply(input: String): String =
         if (isEmojiEnabled()) input else stripEmojis(input)
@@ -51,7 +53,8 @@ internal class EmojiStripStep(private val isEmojiEnabled: () -> Boolean) : TextP
         return cp in 0x1F300..0x1FAFF ||
             cp in 0x2600..0x27BF ||
             cp in 0x2B00..0x2BFF ||
-            cp in 0x1F000..0x1F1FF ||  // الكتل المكملة: ماهجونغ/دومينو/لعب/أعلام
+            // الكتل المكملة: ماهجونغ/دومينو/لعب/أعلام
+            cp in 0x1F000..0x1F1FF ||
             cp == 0xFE0F // مؤشر شكل الإيموجي (variation selector)
     }
 }

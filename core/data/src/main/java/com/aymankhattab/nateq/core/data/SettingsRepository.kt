@@ -69,10 +69,12 @@ class SettingsRepository(private val context: Context) :
 
         const val KEY_QUIET_MIGRATED = "_quiet_days_migrated"
 
-        /** مفتاح خريطة تفضيلات التحويل لكل لغة (JSON عبر ConvertPreferencesCodec). */
+        /** مفتاح خريطة تفضيلات التحويل لكل لغة
+         *  (JSON عبر ConvertPreferencesCodec). */
         private const val KEY_CONVERT_PREFS_JSON = "convert_language_prefs"
 
-        /** وسم ترحيل سلوتات اللغة 1/2 القديمة إلى الخريطة الديناميكية (مرة واحدة). */
+        /** وسم ترحيل سلوتات اللغة 1/2 القديمة إلى الخريطة
+         *  الديناميكية (مرة واحدة). */
         private const val KEY_CONVERT_SLOTS_MIGRATED = "_convert_slots_migrated"
     }
 
@@ -103,7 +105,8 @@ class SettingsRepository(private val context: Context) :
     @Volatile
     private var callerSecurePrefs: SharedPreferences? = null
 
-    private val memoryCallerNames = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val memoryCallerNames =
+        java.util.concurrent.ConcurrentHashMap<String, String>()
 
     fun reload() {
         // التطبيق يعمل في عمليتين (main و :tts) وSharedPreferences يحتفظ
@@ -218,9 +221,11 @@ class SettingsRepository(private val context: Context) :
      * يوحّد معرّفات الأصوات القديمة (nateq-ar*, nateq-en*, ar-local, en-local
      * وكذلك البديل الخاطئ الأحدث nateq-<lang>-local) مع الصيغة الحالية
      * (ar-EG/en-US/<lang>-local) حتى تبقى القيم المخزنة قبل إعادة التسمية
-     * تعمل وتعرض بشكل صحيح في شاشات الإعدادات. القاعدة كلها في [VoiceIdContract].
+     * تعمل وتعرض بشكل صحيح في شاشات الإعدادات. القاعدة كلها
+     * في [VoiceIdContract].
      */
-    private fun normalizeVoiceId(id: String?): String? = VoiceIdContract.normalize(id)
+    private fun normalizeVoiceId(id: String?): String? =
+        VoiceIdContract.normalize(id)
 
     /**
      * يرحّل الإعدادات من الملف المشفر القديم إلى الملف الجديد في أول مرة
@@ -239,18 +244,25 @@ class SettingsRepository(private val context: Context) :
         var openedEncrypted = false
         val oldPrefs = try {
             val masterKey = androidx.security.crypto.MasterKey.Builder(context)
-                .setKeyScheme(androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM)
+                .setKeyScheme(
+                    androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM
+                )
                 .build()
             androidx.security.crypto.EncryptedSharedPreferences.create(
                 context, OLD_PREFS, masterKey,
-                androidx.security.crypto.EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                androidx.security.crypto.EncryptedSharedPreferences
+                    .PrefKeyEncryptionScheme.AES256_SIV,
+                androidx.security.crypto.EncryptedSharedPreferences
+                    .PrefValueEncryptionScheme.AES256_GCM
             ).also { openedEncrypted = true }
         } catch (_: Throwable) {
             // عطل Keystore عابر محتمل: نُجرّب البديل النصي القديم إن حُرِّر
             // في عطلٍ سابق؛ وإن غاب يُترك الترحيل معلّقاً (بلا وسم).
             try {
-                context.getSharedPreferences(FALLBACK_PREFS, Context.MODE_PRIVATE)
+                context.getSharedPreferences(
+                    FALLBACK_PREFS,
+                    Context.MODE_PRIVATE
+                )
             } catch (_: Throwable) { null }
         }
 
@@ -274,7 +286,10 @@ class SettingsRepository(private val context: Context) :
                 is Float -> { editor.putFloat(key, value); copied++ }
                 is Boolean -> { editor.putBoolean(key, value); copied++ }
                 is String -> { editor.putString(key, value); copied++ }
-                is Set<*> -> { editor.putStringSet(key, value as Set<String>); copied++ }
+                is Set<*> -> {
+                    editor.putStringSet(key, value as Set<String>)
+                    copied++
+                }
             }
         }
         editor.putBoolean(KEY_MIGRATED, true)
@@ -301,8 +316,10 @@ class SettingsRepository(private val context: Context) :
     fun setAppLanguage(language: String?) =
         prefs.edit().putString("app_language", language).apply()
 
-    /** لغة نطق الإعلانات (الساعة/الأرقام): "ar"/"en"/"" ("" = اتبع لغة التطبيق) */
-    fun getAnnouncementSpeechLanguage(): String? = prefs.getString("announcement_speech_language", null)
+    /** لغة نطق الإعلانات (الساعة/الأرقام): "ar"/"en"/""
+     *  ("" = اتبع لغة التطبيق) */
+    fun getAnnouncementSpeechLanguage(): String? =
+        prefs.getString("announcement_speech_language", null)
     fun setAnnouncementSpeechLanguage(language: String?) =
         prefs.edit().putString("announcement_speech_language", language).apply()
 
@@ -312,24 +329,36 @@ class SettingsRepository(private val context: Context) :
         prefs.edit().putInt("number_reading_mode", mode.coerceIn(1, 8)).apply()
 
     /** الصوت المفضّل لكل لغة (languageTag -> voiceId) */
-    fun getPreferredVoiceId(languageTag: String): String? = normalizeVoiceId(prefs.getString("preferred_voice_$languageTag", null))
+    fun getPreferredVoiceId(languageTag: String): String? =
+        normalizeVoiceId(
+            prefs.getString("preferred_voice_$languageTag", null)
+        )
     fun setPreferredVoiceId(languageTag: String, voiceId: String) =
         prefs.edit().putString("preferred_voice_$languageTag", voiceId).apply()
 
     /** سرعة النطق لكل لغة (languageTag -> speechRate) */
-    fun getSpeechRate(languageTag: String): Float = prefs.getFloat("speech_rate_$languageTag", 1.0f)
+    fun getSpeechRate(languageTag: String): Float =
+        prefs.getFloat("speech_rate_$languageTag", 1.0f)
     fun setSpeechRate(languageTag: String, rate: Float) =
-        prefs.edit().putFloat("speech_rate_$languageTag", rate.coerceIn(0f, 2f)).apply()
+        prefs.edit()
+            .putFloat("speech_rate_$languageTag", rate.coerceIn(0f, 2f))
+            .apply()
 
     /** نبرة الصوت لكل لغة (languageTag -> pitch) */
-    fun getPitch(languageTag: String): Float = prefs.getFloat("pitch_$languageTag", 1.0f)
+    fun getPitch(languageTag: String): Float =
+        prefs.getFloat("pitch_$languageTag", 1.0f)
     fun setPitch(languageTag: String, pitch: Float) =
-        prefs.edit().putFloat("pitch_$languageTag", pitch.coerceIn(0f, 2f)).apply()
+        prefs.edit()
+            .putFloat("pitch_$languageTag", pitch.coerceIn(0f, 2f))
+            .apply()
 
     /** مستوى الصوت لكل لغة (languageTag -> volume) */
-    fun getVolume(languageTag: String): Float = prefs.getFloat("volume_$languageTag", 1.0f)
+    fun getVolume(languageTag: String): Float =
+        prefs.getFloat("volume_$languageTag", 1.0f)
     fun setVolume(languageTag: String, volume: Float) =
-        prefs.edit().putFloat("volume_$languageTag", volume.coerceIn(0f, 1f)).apply()
+        prefs.edit()
+            .putFloat("volume_$languageTag", volume.coerceIn(0f, 1f))
+            .apply()
 
     /** يُرجع مفتاح التفضيل الفعلي للغة: بالوسم الكامل (ar-EG) إن وُجد، ثم
      *  بكود اللغة وحده (ar) إن وُجد — تراجعٌ تدريجي لتعميم تفضيل الأهل على
@@ -348,18 +377,22 @@ class SettingsRepository(private val context: Context) :
     /** سرعة نطق مخزّنة صراحةً للغة (وسم كامل أو كود اللغة) — null إن لم
      *  يُعيّن المستخدم قيمةً لها. «1.0x الصريح» يُحترم ولا يُخلط مع الغياب. */
     fun getSpeechRateOrNull(languageTag: String): Float? =
-        languagePrefKey("speech_rate_", languageTag)?.let { prefs.getFloat(it, 1.0f) }
+        languagePrefKey("speech_rate_", languageTag)
+            ?.let { prefs.getFloat(it, 1.0f) }
 
     /** نبرة مخزّنة صراحةً للغة (وسم كامل أو كود اللغة) — null إن لم تُعيّن. */
     fun getPitchOrNull(languageTag: String): Float? =
         languagePrefKey("pitch_", languageTag)?.let { prefs.getFloat(it, 1.0f) }
 
-    /** مستوى صوت مخزّن صراحةً للغة (وسم كامل أو كود اللغة) — null إن لم يُعيّن. */
+    /** مستوى صوت مخزّن صراحةً للغة (وسم كامل أو كود اللغة) —
+     *  null إن لم يُعيّن. */
     fun getVolumeOrNull(languageTag: String): Float? =
-        languagePrefKey("volume_", languageTag)?.let { prefs.getFloat(it, 1.0f) }
+        languagePrefKey("volume_", languageTag)
+            ?.let { prefs.getFloat(it, 1.0f) }
 
     /** حزمة محرك TTS الذي اختاره المستخدم في شاشة الإعدادات */
-    override fun getSelectedEnginePackage(): String? = prefs.getString("selected_engine_package", null)
+    override fun getSelectedEnginePackage(): String? =
+        prefs.getString("selected_engine_package", null)
     fun setSelectedEnginePackage(pkg: String?) =
         prefs.edit().putString("selected_engine_package", pkg).apply()
 
@@ -375,12 +408,16 @@ class SettingsRepository(private val context: Context) :
         if (caller != null) {
             caller.edit().clear().apply()
         } else {
-            runCatching { context.deleteSharedPreferences("nateq_secure_caller_names") }
+            runCatching {
+                context.deleteSharedPreferences("nateq_secure_caller_names")
+            }
         }
         // مسح ملفات الحالة والقاموس والـ fallback القديم.
         runCatching { context.deleteSharedPreferences(OLD_PREFS) }
         runCatching { context.deleteSharedPreferences(FALLBACK_PREFS) }
-        runCatching { context.deleteSharedPreferences("nateq_pronunciation_dict") }
+        runCatching {
+            context.deleteSharedPreferences("nateq_pronunciation_dict")
+        }
         runCatching { context.deleteSharedPreferences("nateq_battery_state") }
     }
 
@@ -391,7 +428,8 @@ class SettingsRepository(private val context: Context) :
      * دفعة واحدة (الوقت، البطارية، المتصل، الرسائل، الإشعارات) — وتبقى
      * تفعيلاتها الفرعية محفوظة للعودة إليها.
      */
-    fun isAllAnnouncementsEnabled(): Boolean = prefs.getBoolean("all_announcements_enabled", true)
+    fun isAllAnnouncementsEnabled(): Boolean =
+        prefs.getBoolean("all_announcements_enabled", true)
     fun setAllAnnouncementsEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("all_announcements_enabled", enabled).apply()
 
@@ -401,7 +439,8 @@ class SettingsRepository(private val context: Context) :
      * هل تُنطق أسماء الإيموجي ورموز المشاعر في النصوص (بدل حذفها)؟
      * مفعّل افتراضياً: يُنطق «وجه مبتسم» بدل صمت الإيموجي.
      */
-    override fun isEmojiPronunciationEnabled(): Boolean = prefs.getBoolean("emoji_pronunciation_enabled", true)
+    override fun isEmojiPronunciationEnabled(): Boolean =
+        prefs.getBoolean("emoji_pronunciation_enabled", true)
     fun setEmojiPronunciationEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("emoji_pronunciation_enabled", enabled).apply()
 
@@ -412,15 +451,21 @@ class SettingsRepository(private val context: Context) :
      * (المحتوى/العنوان/اسم المتصل) عن النطق فلا يُسمع كود تحقق (OTP) أو
      * رسالة خاصة بصوتٍ عالٍ في مكان عام — ويُكتفى بالمصدر أو المضمون العام.
      */
-    fun isLockScreenPrivacyEnabled(): Boolean = prefs.getBoolean("lock_screen_privacy_enabled", true)
+    fun isLockScreenPrivacyEnabled(): Boolean =
+        prefs.getBoolean("lock_screen_privacy_enabled", true)
     fun setLockScreenPrivacyEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("lock_screen_privacy_enabled", enabled).apply()
 
-    /** هل شاشة الجهاز مقفلة فعلاً أو مطفأة (حالة خصوصية)؟ يعود false عند عدم وجود قفل. */
+    /** هل شاشة الجهاز مقفلة فعلاً أو مطفأة (حالة خصوصية)؟
+     *  يعود false عند عدم وجود قفل. */
     @Suppress("DEPRECATION")
     fun isDeviceScreenLocked(): Boolean {
-        val km = context.getSystemService(android.app.KeyguardManager::class.java)
-        val power = context.getSystemService(android.os.PowerManager::class.java)
+        val km = context.getSystemService(
+            android.app.KeyguardManager::class.java
+        )
+        val power = context.getSystemService(
+            android.os.PowerManager::class.java
+        )
         // الشاشة مطفأة: حالة خصوصية أعلى حتى مع قفل غير آمن (Swipe) — نمنع
         // نطق الحساسيات (OTP) في الجيب أو على الطاولة.
         if (power != null && !power.isInteractive) return true
@@ -429,32 +474,50 @@ class SettingsRepository(private val context: Context) :
         return try {
             km?.isKeyguardLocked ?: false
         } catch (t: Throwable) {
-            // أنظمة تُقيّد قراءة حالة القفل دون الإذن الأمني: نعود للقفل الآمن فقط.
+            // أنظمة تُقيّد قراءة حالة القفل دون الإذن الأمني:
+            // نعود للقفل الآمن فقط.
             km?.isDeviceLocked ?: false
         }
     }
 
     /** وضع توفير الطاقة: يُخفَّف إعلان الوقت عند انخفاض البطارية عن العتبة. */
-    fun isPowerSaverModeEnabled(): Boolean = prefs.getBoolean("power_saver_mode_enabled", false)
+    fun isPowerSaverModeEnabled(): Boolean =
+        prefs.getBoolean("power_saver_mode_enabled", false)
     fun setPowerSaverModeEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("power_saver_mode_enabled", enabled).apply()
 
     /** العتبة (نسبة مئوية) التي يعمل الاحدها وضع توفير الطاقة لإعلان الوقت. */
-    fun getPowerSaverBatteryThreshold(): Int = prefs.getInt("power_saver_battery_threshold", 20)
+    fun getPowerSaverBatteryThreshold(): Int =
+        prefs.getInt("power_saver_battery_threshold", 20)
     fun setPowerSaverBatteryThreshold(threshold: Int) =
-        prefs.edit().putInt("power_saver_battery_threshold", threshold.coerceIn(0, 100)).apply()
+        prefs.edit()
+            .putInt(
+                "power_saver_battery_threshold",
+                threshold.coerceIn(0, 100)
+            )
+            .apply()
 
     /** إعلان اكتمال الشحن (وصول 100% والمتصالة). */
     fun isChargingCompleteAnnouncementEnabled(): Boolean =
         prefs.getBoolean("charging_complete_announcement_enabled", true)
     fun setChargingCompleteAnnouncementEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("charging_complete_announcement_enabled", enabled).apply()
+        prefs.edit()
+            .putBoolean(
+                "charging_complete_announcement_enabled",
+                enabled
+            )
+            .apply()
 
     /** إعلان فصل الشاحن. */
     fun isChargingDisconnectAnnouncementEnabled(): Boolean =
         prefs.getBoolean("charging_disconnect_announcement_enabled", true)
     fun setChargingDisconnectAnnouncementEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("charging_disconnect_announcement_enabled", enabled).apply()
+        prefs.edit()
+            .putBoolean(
+                "charging_disconnect_announcement_enabled",
+                enabled
+            )
+            .apply()
 
     // ============ أسماء المتصلين المخصصة ============
 
@@ -484,14 +547,20 @@ class SettingsRepository(private val context: Context) :
     private fun openSecureCallerPrefs(): SharedPreferences? {
         repeat(2) { attempt ->
             try {
-                val masterKey = androidx.security.crypto.MasterKey.Builder(context)
-                    .setKeyScheme(androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM)
+val masterKey = androidx.security.crypto.MasterKey
+                    .Builder(context)
+                    .setKeyScheme(
+                        androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM
+                    )
                     .build()
-                return androidx.security.crypto.EncryptedSharedPreferences.create(
-                    context, "nateq_secure_caller_names", masterKey,
-                    androidx.security.crypto.EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                    androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-                ).also { callerSecurePrefs = it }
+                return androidx.security.crypto.EncryptedSharedPreferences
+                    .create(
+                        context, "nateq_secure_caller_names", masterKey,
+                        androidx.security.crypto.EncryptedSharedPreferences
+                            .PrefKeyEncryptionScheme.AES256_SIV,
+                        androidx.security.crypto.EncryptedSharedPreferences
+                            .PrefValueEncryptionScheme.AES256_GCM
+                    ).also { callerSecurePrefs = it }
             } catch (e: Throwable) {
                 if (attempt == 0) {
                     // عطل عابر محتمل: مهلة قصيرة ثم إعادة محاولة واحدة.
@@ -504,8 +573,9 @@ class SettingsRepository(private val context: Context) :
                 } else {
                     Log.w(
                         TAG,
-                        "تعذر فتح التخزين المشفر لأسماء المتصلين — تُحفظ الأسماء " +
-                            "في الذاكرة لهذه الجلسة فقط ويُبقى الملف بلا حذف",
+                        "تعذر فتح التخزين المشفر لأسماء المتصلين — " +
+                            "تُحفظ الأسماء في الذاكرة لهذه الجلسة فقط " +
+                            "ويُبقى الملف بلا حذف",
                         e
                     )
                     return null
@@ -515,7 +585,8 @@ class SettingsRepository(private val context: Context) :
         return null
     }
 
-    /** أسماء متصلين مخصصة: خريطة رقم هاتف (بدون ترميز البلد) -> الاسم المعلَن. */
+    /** أسماء متصلين مخصصة: خريطة رقم هاتف (بدون ترميز البلد)
+     *  -> الاسم المعلَن. */
     fun getCustomCallerNames(): Map<String, String> {
         val raw = getCallerPrefs()?.getString("caller_names", null)
             ?: memoryCallerNames.takeIf { it.isNotEmpty() }?.let { m ->
@@ -548,7 +619,9 @@ class SettingsRepository(private val context: Context) :
             .associate { (k, v) -> k.trim() to v.trim() }
         val secure = getCallerPrefs()
         if (secure != null) {
-            secure.edit().putString("caller_names", NateqJson.toJson(cleaned)).apply()
+            secure.edit()
+                .putString("caller_names", NateqJson.toJson(cleaned))
+                .apply()
         } else {
             // عند فشل التخزين المشفّر (Keystore معطوب) لا نكتب أسماء المتصلين
             // (PII) في تفضيلات نصية عادية أبداً — تُحفظ في الذاكرة لهذه الجلسة.
@@ -565,7 +638,8 @@ class SettingsRepository(private val context: Context) :
     fun setCallerAnnouncementTemplate(template: String?) =
         prefs.edit().putString("caller_announcement_template", template).apply()
 
-    /** قالب قراءة الرسائل: يُستبدل {name} و{message} باسم المرسل ومحتوى الرسالة. */
+    /** قالب قراءة الرسائل: يُستبدل {name} و{message} باسم المرسل
+     *  ومحتوى الرسالة. */
     fun getSmsAnnouncementTemplate(): String =
         prefs.getString("sms_announcement_template", "") ?: ""
     fun setSmsAnnouncementTemplate(template: String?) =
@@ -574,34 +648,48 @@ class SettingsRepository(private val context: Context) :
     // ============ إعدادات إعلان الوقت ============
 
     /** الصوت المفضّل لكل فئة (category -> voiceId) */
-    override fun getPreferredVoiceIdForCategory(category: String): String? = normalizeVoiceId(prefs.getString("preferred_voice_$category", null))
+    override fun getPreferredVoiceIdForCategory(category: String): String? =
+        normalizeVoiceId(
+            prefs.getString("preferred_voice_$category", null)
+        )
     fun setPreferredVoiceIdForCategory(category: String, voiceId: String) =
         prefs.edit().putString("preferred_voice_$category", voiceId).apply()
 
     /** سرعة النطق لكل فئة */
-    override fun getSpeechRateForCategory(category: String): Float = prefs.getFloat("speech_rate_$category", 1.0f)
+    override fun getSpeechRateForCategory(category: String): Float =
+        prefs.getFloat("speech_rate_$category", 1.0f)
     fun setSpeechRateForCategory(category: String, rate: Float) =
-        prefs.edit().putFloat("speech_rate_$category", rate.coerceIn(0f, 2f)).apply()
+        prefs.edit()
+            .putFloat("speech_rate_$category", rate.coerceIn(0f, 2f))
+            .apply()
 
     /** نبرة الصوت لكل فئة */
-    override fun getPitchForCategory(category: String): Float = prefs.getFloat("pitch_$category", 1.0f)
+    override fun getPitchForCategory(category: String): Float =
+        prefs.getFloat("pitch_$category", 1.0f)
     fun setPitchForCategory(category: String, pitch: Float) =
         prefs.edit().putFloat("pitch_$category", pitch.coerceIn(0f, 2f)).apply()
 
     /** مستوى الصوت لكل فئة */
-    override fun getVolumeForCategory(category: String): Float = prefs.getFloat("volume_$category", 1.0f)
+    override fun getVolumeForCategory(category: String): Float =
+        prefs.getFloat("volume_$category", 1.0f)
     fun setVolumeForCategory(category: String, volume: Float) =
-        prefs.edit().putFloat("volume_$category", volume.coerceIn(0f, 1f)).apply()
+        prefs.edit()
+            .putFloat("volume_$category", volume.coerceIn(0f, 1f))
+            .apply()
 
     /** تفعيل/إيقاف إعلان الوقت */
-    fun isTimeAnnouncementEnabled(): Boolean = prefs.getBoolean("time_announcement_enabled", true)
+    fun isTimeAnnouncementEnabled(): Boolean =
+        prefs.getBoolean("time_announcement_enabled", true)
     fun setTimeAnnouncementEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("time_announcement_enabled", enabled).apply()
 
     /** فاصل إعلان الوقت (بالدقائق): 15, 30, 45, 60 */
-    fun getTimeAnnouncementInterval(): Int = prefs.getInt("time_announcement_interval", 30)
+    fun getTimeAnnouncementInterval(): Int =
+        prefs.getInt("time_announcement_interval", 30)
     fun setTimeAnnouncementInterval(interval: Int) =
-        prefs.edit().putInt("time_announcement_interval", interval.coerceIn(15, 60)).apply()
+        prefs.edit()
+            .putInt("time_announcement_interval", interval.coerceIn(15, 60))
+            .apply()
 
     // ============ ساعات الهدوء لكل يوم ============
 
@@ -619,7 +707,10 @@ class SettingsRepository(private val context: Context) :
             prefs.edit().putBoolean(KEY_QUIET_MIGRATED, true).apply()
             return
         }
-        val start = prefs.getInt("time_announcement_quiet_start", 23).coerceIn(0, 23)
+        val start = prefs.getInt(
+            "time_announcement_quiet_start",
+            23
+        ).coerceIn(0, 23)
         val end = prefs.getInt("time_announcement_quiet_end", 7).coerceIn(0, 23)
         val edit = prefs.edit()
         for (day in 1..7) {
@@ -645,15 +736,21 @@ class SettingsRepository(private val context: Context) :
     }
 
     fun setQuietStartForDay(day: Int, hour: Int) {
-        prefs.edit().putInt(quietDayKey(day, true), hour.coerceIn(0, 23)).apply()
+        prefs.edit()
+            .putInt(quietDayKey(day, true), hour.coerceIn(0, 23))
+            .apply()
     }
 
     fun setQuietEndForDay(day: Int, hour: Int) {
-        prefs.edit().putInt(quietDayKey(day, false), hour.coerceIn(0, 23)).apply()
+        prefs.edit()
+            .putInt(quietDayKey(day, false), hour.coerceIn(0, 23))
+            .apply()
     }
 
     /** صيغة إعلان الوقت: "arabic_natural" أو "digital" */
-    fun getTimeAnnouncementFormat(): String = prefs.getString("time_announcement_format", "arabic_natural") ?: "arabic_natural"
+    fun getTimeAnnouncementFormat(): String =
+        prefs.getString("time_announcement_format", "arabic_natural")
+            ?: "arabic_natural"
     fun setTimeAnnouncementFormat(format: String) =
         prefs.edit().putString("time_announcement_format", format).apply()
 
@@ -663,16 +760,20 @@ class SettingsRepository(private val context: Context) :
         prefs.edit().putBoolean("time_display_24h", enabled).apply()
 
     /** نطق التواريخ بالتقويم الهجري (أم القرى) بدل الميلادي */
-    override fun isHijriDateEnabled(): Boolean = prefs.getBoolean("hijri_date", false)
+    override fun isHijriDateEnabled(): Boolean =
+        prefs.getBoolean("hijri_date", false)
     fun setHijriDateEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("hijri_date", enabled).apply()
 
     // ============ إعدادات عامة ============
 
     /** السرعة العامة الافتراضية */
-    fun getDefaultSpeechRate(): Float = prefs.getFloat("default_speech_rate", 1.0f)
+    fun getDefaultSpeechRate(): Float =
+        prefs.getFloat("default_speech_rate", 1.0f)
     fun setDefaultSpeechRate(rate: Float) =
-        prefs.edit().putFloat("default_speech_rate", rate.coerceIn(0f, 2f)).apply()
+        prefs.edit()
+            .putFloat("default_speech_rate", rate.coerceIn(0f, 2f))
+            .apply()
 
     /** النبرة العامة الافتراضية */
     fun getDefaultPitch(): Float = prefs.getFloat("default_pitch", 1.0f)
@@ -687,7 +788,8 @@ class SettingsRepository(private val context: Context) :
     /** تفعيل أداة الساعة على الشاشة الرئيسية (افتراضياً مفعّلة — بند [13.4]):
      *  أداة الساعة ناطقة بطبعها ولا ينبغي أن تكون بالافتراضي معطّلة فتخيب
      *  عند أول إضافة للشاشة الرئيسية. */
-    fun isClockWidgetEnabled(): Boolean = prefs.getBoolean("clock_widget_enabled", true)
+    fun isClockWidgetEnabled(): Boolean =
+        prefs.getBoolean("clock_widget_enabled", true)
     fun setClockWidgetEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("clock_widget_enabled", enabled).apply()
 
@@ -701,7 +803,8 @@ class SettingsRepository(private val context: Context) :
 
     fun setDeviceHealthItems(items: Set<String>) =
         prefs.edit().putStringSet(
-            "device_health_items", items.filter { it in validDeviceHealthItems() }.toMutableSet()
+            "device_health_items",
+            items.filter { it in validDeviceHealthItems() }.toMutableSet()
         ).apply()
 
     private fun validDeviceHealthItems(): Set<String> = setOf(
@@ -712,7 +815,8 @@ class SettingsRepository(private val context: Context) :
     )
 
     /** تفعيل/إيقاف إعلان مستوى البطارية */
-    fun isBatteryAnnouncementEnabled(): Boolean = prefs.getBoolean("battery_announcement_enabled", false)
+    fun isBatteryAnnouncementEnabled(): Boolean =
+        prefs.getBoolean("battery_announcement_enabled", false)
     fun setBatteryAnnouncementEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("battery_announcement_enabled", enabled).apply()
 
@@ -721,63 +825,101 @@ class SettingsRepository(private val context: Context) :
      * مثلاً {"20","15"} تُنطق عند وصول البطارية إلى 20% ثم 15%.
      */
     fun getBatteryAnnouncementLevels(): Set<String> =
-        prefs.getStringSet("battery_announcement_levels", mutableSetOf("20", "15"))
+        prefs.getStringSet(
+            "battery_announcement_levels",
+            mutableSetOf("20", "15")
+        )
             ?.toSet() ?: setOf("20", "15")
     fun setBatteryAnnouncementLevels(levels: Set<String>) =
-        prefs.edit().putStringSet("battery_announcement_levels", levels.toMutableSet()).apply()
+        prefs.edit()
+            .putStringSet(
+                "battery_announcement_levels",
+                levels.toMutableSet()
+            )
+            .apply()
 
     /** صوت إعلان البطارية (معرّف صوت موحّد) */
-    fun getBatteryAnnouncementVoiceId(): String? = normalizeVoiceId(prefs.getString("battery_announcement_voice", null))
+    fun getBatteryAnnouncementVoiceId(): String? =
+        normalizeVoiceId(
+            prefs.getString("battery_announcement_voice", null)
+        )
     fun setBatteryAnnouncementVoiceId(voiceId: String?) =
         prefs.edit().putString("battery_announcement_voice", voiceId).apply()
 
     /** سرعة نطق إعلان البطارية */
-    fun getBatteryAnnouncementRate(): Float = prefs.getFloat("battery_announcement_rate", 1.0f)
+    fun getBatteryAnnouncementRate(): Float =
+        prefs.getFloat("battery_announcement_rate", 1.0f)
     fun setBatteryAnnouncementRate(rate: Float) =
-        prefs.edit().putFloat("battery_announcement_rate", rate.coerceIn(0f, 2f)).apply()
+        prefs.edit()
+            .putFloat("battery_announcement_rate", rate.coerceIn(0f, 2f))
+            .apply()
 
     /** مستوى صوت إعلان البطارية */
-    fun getBatteryAnnouncementVolume(): Float = prefs.getFloat("battery_announcement_volume", 1.0f)
+    fun getBatteryAnnouncementVolume(): Float =
+        prefs.getFloat("battery_announcement_volume", 1.0f)
     fun setBatteryAnnouncementVolume(volume: Float) =
-        prefs.edit().putFloat("battery_announcement_volume", volume.coerceIn(0f, 1f)).apply()
+        prefs.edit()
+            .putFloat("battery_announcement_volume", volume.coerceIn(0f, 1f))
+            .apply()
 
     // ============ إعدادات إعلان اسم المتصل ============
 
     /** تفعيل/إيقاف إعلان اسم المتصل */
-    fun isCallerAnnouncementEnabled(): Boolean = prefs.getBoolean("caller_announcement_enabled", false)
+    fun isCallerAnnouncementEnabled(): Boolean =
+        prefs.getBoolean("caller_announcement_enabled", false)
     fun setCallerAnnouncementEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("caller_announcement_enabled", enabled).apply()
 
     /** عدد مرات تكرار اسم المتصل */
-    fun getCallerAnnouncementRepeat(): Int = prefs.getInt("caller_announcement_repeat", 1)
+    fun getCallerAnnouncementRepeat(): Int =
+        prefs.getInt("caller_announcement_repeat", 1)
     fun setCallerAnnouncementRepeat(repeat: Int) =
-        prefs.edit().putInt("caller_announcement_repeat", repeat.coerceIn(1, 5)).apply()
+        prefs.edit()
+            .putInt("caller_announcement_repeat", repeat.coerceIn(1, 5))
+            .apply()
 
     /** الفاصل الزمني (بالثواني) بين كل مرة نطق لاسم المتصل — 1..10 ثوانٍ */
     fun getCallerAnnouncementIntervalSeconds(): Int =
         prefs.getInt("caller_announcement_interval_seconds", 3)
     fun setCallerAnnouncementIntervalSeconds(seconds: Int) =
-        prefs.edit().putInt("caller_announcement_interval_seconds", seconds.coerceIn(1, 10)).apply()
+        prefs.edit()
+            .putInt(
+                "caller_announcement_interval_seconds",
+                seconds.coerceIn(1, 10)
+            )
+            .apply()
 
     /** صوت إعلان المتصل بلغة عربية (معرّف صوت موحّد) */
-    fun getCallerAnnouncementArabicVoiceId(): String? = normalizeVoiceId(prefs.getString("caller_announcement_voice_ar", null))
+    fun getCallerAnnouncementArabicVoiceId(): String? =
+        normalizeVoiceId(
+            prefs.getString("caller_announcement_voice_ar", null)
+        )
     fun setCallerAnnouncementArabicVoiceId(voiceId: String?) =
         prefs.edit().putString("caller_announcement_voice_ar", voiceId).apply()
 
     /** صوت إعلان المتصل بلغة إنجليزية (معرّف صوت موحّد) */
-    fun getCallerAnnouncementEnglishVoiceId(): String? = normalizeVoiceId(prefs.getString("caller_announcement_voice_en", null))
+    fun getCallerAnnouncementEnglishVoiceId(): String? =
+        normalizeVoiceId(
+            prefs.getString("caller_announcement_voice_en", null)
+        )
     fun setCallerAnnouncementEnglishVoiceId(voiceId: String?) =
         prefs.edit().putString("caller_announcement_voice_en", voiceId).apply()
 
     /** سرعة نطق إعلان المتصل */
-    fun getCallerAnnouncementRate(): Float = prefs.getFloat("caller_announcement_rate", 1.0f)
+    fun getCallerAnnouncementRate(): Float =
+        prefs.getFloat("caller_announcement_rate", 1.0f)
     fun setCallerAnnouncementRate(rate: Float) =
-        prefs.edit().putFloat("caller_announcement_rate", rate.coerceIn(0f, 2f)).apply()
+        prefs.edit()
+            .putFloat("caller_announcement_rate", rate.coerceIn(0f, 2f))
+            .apply()
 
     /** مستوى صوت إعلان المتصل */
-    fun getCallerAnnouncementVolume(): Float = prefs.getFloat("caller_announcement_volume", 1.0f)
+    fun getCallerAnnouncementVolume(): Float =
+        prefs.getFloat("caller_announcement_volume", 1.0f)
     fun setCallerAnnouncementVolume(volume: Float) =
-        prefs.edit().putFloat("caller_announcement_volume", volume.coerceIn(0f, 1f)).apply()
+        prefs.edit()
+            .putFloat("caller_announcement_volume", volume.coerceIn(0f, 1f))
+            .apply()
 
     // ============ إعدادات قراءة الرسائل الواردة ============
 
@@ -787,12 +929,16 @@ class SettingsRepository(private val context: Context) :
      * - "full": مفعل (يُقرأ اسم المرسل ومحتوى الرسالة)
      * - "source": قراءة مصدر الرسالة فقط (اسم المرسل دون المحتوى)
      */
-    fun getSmsReadingMode(): String = prefs.getString("sms_reading_mode", "off") ?: "off"
+    fun getSmsReadingMode(): String =
+        prefs.getString("sms_reading_mode", "off") ?: "off"
     fun setSmsReadingMode(mode: String) =
         prefs.edit().putString("sms_reading_mode", mode).apply()
 
     /** صوت قراءة الرسائل (معرّف صوت موحّد) */
-    fun getSmsReadingVoiceId(): String? = normalizeVoiceId(prefs.getString("sms_reading_voice", null))
+    fun getSmsReadingVoiceId(): String? =
+        normalizeVoiceId(
+            prefs.getString("sms_reading_voice", null)
+        )
     fun setSmsReadingVoiceId(voiceId: String?) =
         prefs.edit().putString("sms_reading_voice", voiceId).apply()
 
@@ -802,26 +948,33 @@ class SettingsRepository(private val context: Context) :
         prefs.edit().putFloat("sms_reading_rate", rate.coerceIn(0f, 2f)).apply()
 
     /** مستوى صوت قراءة الرسائل */
-    fun getSmsReadingVolume(): Float = prefs.getFloat("sms_reading_volume", 1.0f)
+    fun getSmsReadingVolume(): Float =
+        prefs.getFloat("sms_reading_volume", 1.0f)
     fun setSmsReadingVolume(volume: Float) =
-        prefs.edit().putFloat("sms_reading_volume", volume.coerceIn(0f, 1f)).apply()
+        prefs.edit()
+            .putFloat("sms_reading_volume", volume.coerceIn(0f, 1f))
+            .apply()
 
     // ===== التحويل التلقائي بين اللغات =====
 
     /** تفعيل التحويل التلقائي بين اللغتين الأولى والثانية */
-    fun isAutoConvertEnabled(): Boolean = prefs.getBoolean("auto_convert_enabled", false)
+    fun isAutoConvertEnabled(): Boolean =
+        prefs.getBoolean("auto_convert_enabled", false)
     fun setAutoConvertEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("auto_convert_enabled", enabled).apply()
 
-    /** إظهار التوضيح الاختياري «بعض اللغات قد لا تظهر…» (نص فقط، غير افتراضي). */
-    fun isLanguageInstallHintEnabled(): Boolean = prefs.getBoolean("show_language_install_hint", false)
+    /** إظهار التوضيح الاختياري «بعض اللغات قد لا تظهر…»
+     *  (نص فقط، غير افتراضي). */
+    fun isLanguageInstallHintEnabled(): Boolean =
+        prefs.getBoolean("show_language_install_hint", false)
     fun setLanguageInstallHintEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("show_language_install_hint", enabled).apply()
 
     // ---- الخريطة الديناميكية للتحويل التلقائي (languageTag -> تفضيلات) ----
     // استبدلنا نظام سلوتات «اللغة 1/اللغة 2» الثابت (ar/en فقط) بتخزين عام
-    // محفوظ كخريطة JSON في SharedPreferences عبر ConvertPreferencesCodec (مظلة NateqJson)،
-    // ليُدعم عدد غير محدود من اللغات. قراءة NateqTtsService.resolveConvertTarget
+    // محفوظ كخريطة JSON في SharedPreferences عبر ConvertPreferencesCodec
+    // (مظلة NateqJson)، ليُدعم عدد غير محدود من اللغات. قراءة
+    // NateqTtsService.resolveConvertTarget
     // تتم مباشرةً من هذه الخريطة، ويُرحَّل أي إعداد قديم من السلوتات تلقائياً
     // عند أول وصول (ensureConvertSlotsMigrated) دون حذفها نفسها.
 
@@ -829,7 +982,9 @@ class SettingsRepository(private val context: Context) :
      * تفضيلات التحويل للغة معينة (محرك/صوت/سرعة/نبرة/صوت). تُطبَّع علامة اللغة
      * إلى كود ISO-2 قبل البحث. اللغة بلا أي إعداد → مدخل افتراضي (لا تحويل).
      */
-    fun getEnginePreferenceForLanguage(languageTag: String): LanguageSpeechPrefs {
+    fun getEnginePreferenceForLanguage(
+        languageTag: String
+    ): LanguageSpeechPrefs {
         ensureConvertSlotsMigrated()
         return readConvertPrefs()[
             ConvertPreferencesCodec.normalizeLanguageTag(languageTag)
@@ -851,7 +1006,13 @@ class SettingsRepository(private val context: Context) :
         ensureConvertSlotsMigrated()
         val map = readConvertPrefs().toMutableMap()
         val key = ConvertPreferencesCodec.normalizeLanguageTag(languageTag)
-        val entry = ConvertPreferencesCodec.entryForSave(engine, voiceName, rate, pitch, volume)
+        val entry = ConvertPreferencesCodec.entryForSave(
+            engine,
+            voiceName,
+            rate,
+            pitch,
+            volume
+        )
         if (entry.hasAdjustment) map[key] = entry else map.remove(key)
         writeConvertPrefs(map)
     }
@@ -864,11 +1025,20 @@ class SettingsRepository(private val context: Context) :
 
     private fun readConvertPrefs(): Map<String, LanguageSpeechPrefs> {
         val json = prefs.getString(KEY_CONVERT_PREFS_JSON, null)
-        return if (json.isNullOrBlank()) emptyMap() else ConvertPreferencesCodec.fromJson(json)
+        return if (json.isNullOrBlank()) {
+            emptyMap()
+        } else {
+            ConvertPreferencesCodec.fromJson(json)
+        }
     }
 
     private fun writeConvertPrefs(map: Map<String, LanguageSpeechPrefs>) {
-        prefs.edit().putString(KEY_CONVERT_PREFS_JSON, ConvertPreferencesCodec.toJson(map)).apply()
+        prefs.edit()
+            .putString(
+                KEY_CONVERT_PREFS_JSON,
+                ConvertPreferencesCodec.toJson(map)
+            )
+            .apply()
     }
 
     /**
@@ -900,70 +1070,95 @@ class SettingsRepository(private val context: Context) :
             LanguageCode.EN.tag
         )
         if (map != readConvertPrefs()) writeConvertPrefs(map)
-        Log.w(TAG, "تم ترحيل سلوتات التحويل القديمة إلى الخريطة الديناميكية (${map.size} عنصر)")
+        Log.w(
+            TAG,
+            "تم ترحيل سلوتات التحويل القديمة إلى الخريطة الديناميكية " +
+                "(${map.size} عنصر)"
+        )
     }
 
-    // --- السلوتات القديمة (تُبقى للتوافقية العكسية؛ تُرحَّل تلقائياً أعلاه) ---
+    // --- السلوتات القديمة (تُبقى للتوافقية العكسية؛
+    // تُرحَّل تلقائياً أعلاه) ---
 
     /** محرك اللغة الأولى (حزمة محرك TTS) */
-    fun getConvertEngine1(): String? = prefs.getString("convert_lang1_engine", null)
+    fun getConvertEngine1(): String? =
+        prefs.getString("convert_lang1_engine", null)
     fun setConvertEngine1(pkg: String?) =
         prefs.edit().putString("convert_lang1_engine", pkg).apply()
 
     /** علامة لغة (languageTag) للغة الأولى */
-    fun getConvertLanguageTag1(): String? = prefs.getString("convert_lang1_lang", null)
+    fun getConvertLanguageTag1(): String? =
+        prefs.getString("convert_lang1_lang", null)
     fun setConvertLanguageTag1(langTag: String?) =
         prefs.edit().putString("convert_lang1_lang", langTag).apply()
 
     /** معرف الصوت المختار للغة الأولى */
-    fun getConvertVoice1(): String? = prefs.getString("convert_lang1_voice", null)
+    fun getConvertVoice1(): String? =
+        prefs.getString("convert_lang1_voice", null)
     fun setConvertVoice1(voiceId: String?) =
         prefs.edit().putString("convert_lang1_voice", voiceId).apply()
 
     /** مستوى صوت اللغة الأولى */
-    fun getConvertVolume1(): Float = prefs.getFloat("convert_lang1_volume", 1.0f)
+    fun getConvertVolume1(): Float =
+        prefs.getFloat("convert_lang1_volume", 1.0f)
     fun setConvertVolume1(volume: Float) =
-        prefs.edit().putFloat("convert_lang1_volume", volume.coerceIn(0f, 1f)).apply()
+        prefs.edit()
+            .putFloat("convert_lang1_volume", volume.coerceIn(0f, 1f))
+            .apply()
 
     /** نبرة اللغة الأولى */
     fun getConvertPitch1(): Float = prefs.getFloat("convert_lang1_pitch", 1.0f)
     fun setConvertPitch1(pitch: Float) =
-        prefs.edit().putFloat("convert_lang1_pitch", pitch.coerceIn(0f, 2f)).apply()
+        prefs.edit()
+            .putFloat("convert_lang1_pitch", pitch.coerceIn(0f, 2f))
+            .apply()
 
     /** سرعة اللغة الأولى */
     fun getConvertRate1(): Float = prefs.getFloat("convert_lang1_rate", 1.0f)
     fun setConvertRate1(rate: Float) =
-        prefs.edit().putFloat("convert_lang1_rate", rate.coerceIn(0f, 2f)).apply()
+        prefs.edit()
+            .putFloat("convert_lang1_rate", rate.coerceIn(0f, 2f))
+            .apply()
 
     /** محرك اللغة الثانية (حزمة محرك TTS) */
-    fun getConvertEngine2(): String? = prefs.getString("convert_lang2_engine", null)
+    fun getConvertEngine2(): String? =
+        prefs.getString("convert_lang2_engine", null)
     fun setConvertEngine2(pkg: String?) =
         prefs.edit().putString("convert_lang2_engine", pkg).apply()
 
     /** علامة لغة (languageTag) للغة الثانية */
-    fun getConvertLanguageTag2(): String? = prefs.getString("convert_lang2_lang", null)
+    fun getConvertLanguageTag2(): String? =
+        prefs.getString("convert_lang2_lang", null)
     fun setConvertLanguageTag2(langTag: String?) =
         prefs.edit().putString("convert_lang2_lang", langTag).apply()
 
     /** معرف الصوت المختار للغة الثانية */
-    fun getConvertVoice2(): String? = prefs.getString("convert_lang2_voice", null)
+    fun getConvertVoice2(): String? =
+        prefs.getString("convert_lang2_voice", null)
     fun setConvertVoice2(voiceId: String?) =
         prefs.edit().putString("convert_lang2_voice", voiceId).apply()
 
     /** مستوى صوت اللغة الثانية */
-    fun getConvertVolume2(): Float = prefs.getFloat("convert_lang2_volume", 1.0f)
+    fun getConvertVolume2(): Float =
+        prefs.getFloat("convert_lang2_volume", 1.0f)
     fun setConvertVolume2(volume: Float) =
-        prefs.edit().putFloat("convert_lang2_volume", volume.coerceIn(0f, 1f)).apply()
+        prefs.edit()
+            .putFloat("convert_lang2_volume", volume.coerceIn(0f, 1f))
+            .apply()
 
     /** نبرة اللغة الثانية */
     fun getConvertPitch2(): Float = prefs.getFloat("convert_lang2_pitch", 1.0f)
     fun setConvertPitch2(pitch: Float) =
-        prefs.edit().putFloat("convert_lang2_pitch", pitch.coerceIn(0f, 2f)).apply()
+        prefs.edit()
+            .putFloat("convert_lang2_pitch", pitch.coerceIn(0f, 2f))
+            .apply()
 
     /** سرعة اللغة الثانية */
     fun getConvertRate2(): Float = prefs.getFloat("convert_lang2_rate", 1.0f)
     fun setConvertRate2(rate: Float) =
-        prefs.edit().putFloat("convert_lang2_rate", rate.coerceIn(0f, 2f)).apply()
+        prefs.edit()
+            .putFloat("convert_lang2_rate", rate.coerceIn(0f, 2f))
+            .apply()
 
     // ═══════════════════════════════════════════════════════
     // قراءة الإشعارات (واتساب، تلجرام، إلخ)
@@ -985,7 +1180,12 @@ class SettingsRepository(private val context: Context) :
             ?.toSet() ?: DEFAULT_NOTIFICATION_APPS
 
     fun setNotificationAppsSelection(pkgs: Set<String>) =
-        prefs.edit().putStringSet("notification_apps_selection", pkgs.toMutableSet()).apply()
+        prefs.edit()
+            .putStringSet(
+                "notification_apps_selection",
+                pkgs.toMutableSet()
+            )
+            .apply()
 
     /** هل يُقرأ إشعار من هذه الحزمة حسب الاختيار الحالي؟ */
     fun shouldReadNotificationApp(pkg: String): Boolean {
@@ -1004,8 +1204,10 @@ class SettingsRepository(private val context: Context) :
 
     /** تعقّل قيمة عددية حسب المفتاح حفاظاً على سلامة النطاقات. */
     private fun sanitizeInt(key: String, value: Int): Int = when {
-        key.startsWith("time_quiet_day") && key.endsWith("_start") -> value.coerceIn(0, 23)
-        key.startsWith("time_quiet_day") && key.endsWith("_end") -> value.coerceIn(0, 23)
+        key.startsWith("time_quiet_day") &&
+            key.endsWith("_start") -> value.coerceIn(0, 23)
+        key.startsWith("time_quiet_day") &&
+            key.endsWith("_end") -> value.coerceIn(0, 23)
         key == "time_announcement_interval" ->
             if (value in intArrayOf(15, 30, 45, 60)) value else 30
         key == "number_reading_mode" -> value.coerceIn(1, 8)
@@ -1017,17 +1219,24 @@ class SettingsRepository(private val context: Context) :
 
     /** تعقّل قيمة عشرية حسب المفتاح (السرعة/النبرة تعبان، المستوى نسبة). */
     private fun sanitizeFloat(key: String, value: Float): Float = when {
-        key.contains("_rate") || key.contains("_pitch") -> value.coerceIn(0f, 2f)
-        key.contains("_volume") || key == "default_volume" -> value.coerceIn(0f, 1f)
+        key.contains("_rate") ||
+            key.contains("_pitch") -> value.coerceIn(0f, 2f)
+        key.contains("_volume") ||
+            key == "default_volume" -> value.coerceIn(0f, 1f)
         else -> value
     }
 
     /** تعقّل مجموعة سلاسل: مستويات البطارية تبقى مضاعفات 5 في المدى 5..100. */
-    private fun sanitizeStringSet(key: String, value: Set<String>): Set<String> = when (key) {
+    private fun sanitizeStringSet(
+        key: String,
+        value: Set<String>
+    ): Set<String> = when (key) {
         "battery_announcement_levels" -> value.filter {
             it.toIntOrNull()?.let { n -> n in 5..100 && n % 5 == 0 } == true
         }.toSet()
-        "device_health_items" -> value.filter { it in validDeviceHealthItems() }.toSet()
+        "device_health_items" -> value.filter {
+            it in validDeviceHealthItems()
+        }.toSet()
         else -> value
     }
 
@@ -1038,7 +1247,10 @@ class SettingsRepository(private val context: Context) :
      */
     fun importSettings(map: Map<String, Any>): Boolean {
         return try {
-            class Op(val apply: (SharedPreferences.Editor) -> SharedPreferences.Editor)
+            class Op(
+                val apply: (SharedPreferences.Editor) ->
+                    SharedPreferences.Editor
+            )
             val ops = mutableListOf<Op>()
             var meaningful = 0
             for ((key, value) in map) {
@@ -1056,8 +1268,14 @@ class SettingsRepository(private val context: Context) :
                         val v = sanitizeFloat(key, value)
                         ops.add(Op { it.putFloat(key, v) }); meaningful++
                     }
-                    is Boolean -> { ops.add(Op { it.putBoolean(key, value) }); meaningful++ }
-                    is String -> { ops.add(Op { it.putString(key, value) }); meaningful++ }
+                    is Boolean -> {
+                        ops.add(Op { it.putBoolean(key, value) })
+                        meaningful++
+                    }
+                    is String -> {
+                        ops.add(Op { it.putString(key, value) })
+                        meaningful++
+                    }
                     is Set<*> -> {
                         @Suppress("UNCHECKED_CAST")
                         val v = sanitizeStringSet(key, value as Set<String>)

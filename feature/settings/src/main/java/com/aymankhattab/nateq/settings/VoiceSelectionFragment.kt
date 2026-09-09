@@ -47,7 +47,8 @@ import com.aymankhattab.nateq.core.data.SettingsRepository
 class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
     companion object {
-        // رابط تواصل المطوّر الرسمي — يُفتح خارجياً في المتصفح فلا يحتاج أي إذن.
+        // رابط تواصل المطوّر الرسمي — يُفتح خارجياً في المتصفح فلا يحتاج
+        // أي إذن.
         // المعرّف الرسمي لبوت الدعم: @LordTTSBot (أنشئ عبر @BotFather).
         const val DEVELOPER_SUPPORT_URL = "https://t.me/LordTTSBot"
     }
@@ -69,7 +70,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private lateinit var engineSection: EngineSectionController
 
     // قسم المحرك والتحويل التلقائي (setupEngineSpinner/setupAutoConvertUI/
-    // قائمة اللغات المكتشفة لكل المحركات...) انتقل بالكامل إلى EngineSectionController.
+    // قائمة اللغات المكتشفة لكل المحركات...) انتقل بالكامل إلى
+    // EngineSectionController.
 
     // ضابطات أقسام الشاشة (نقل منطق الإعدادات إليها — المرحلة ج من التفكيك)
     private lateinit var timeSection: TimeAnnouncementController
@@ -82,31 +84,40 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private lateinit var deviceHealthSection: DeviceHealthController
 
     // مفتاح تبديل لغة التطبيق (أسفل الشاشة)
-    private lateinit var btnToggleLanguage: com.google.android.material.button.MaterialButton
+    private lateinit var btnToggleLanguage:
+        com.google.android.material.button.MaterialButton
 
     // زر التواصل مع المطوّر (يُفتح خارجياً بلا أذونات)
-    private lateinit var btnContactDeveloper: com.google.android.material.button.MaterialButton
+    private lateinit var btnContactDeveloper:
+        com.google.android.material.button.MaterialButton
 
     // زر الإبلاغ عن خطأ (يجمع الأخطاء من سجل التطبيق ويشاركها)
-    private lateinit var btnReportError: com.google.android.material.button.MaterialButton
+    private lateinit var btnReportError:
+        com.google.android.material.button.MaterialButton
 
     // المفتاح الرئيسي لكل الإعلانات
     private lateinit var switchAllAnnouncements: SwitchMaterial
 
     private lateinit var switchLockScreenPrivacy: SwitchMaterial
-    private lateinit var btnSetDefaultEngine: com.google.android.material.button.MaterialButton
+    private lateinit var btnSetDefaultEngine:
+        com.google.android.material.button.MaterialButton
 
     // معاينة نطق رقم
     private lateinit var etNumberPreview: TextView
-    private lateinit var btnPreviewNumber: com.google.android.material.button.MaterialButton
-    private lateinit var btnStopNumberPreview: com.google.android.material.button.MaterialButton
+    private lateinit var btnPreviewNumber:
+        com.google.android.material.button.MaterialButton
+    private lateinit var btnStopNumberPreview:
+        com.google.android.material.button.MaterialButton
 
     // أسماء المتصلين المخصصة
-    private lateinit var btnCallerNames: com.google.android.material.button.MaterialButton
+    private lateinit var btnCallerNames:
+        com.google.android.material.button.MaterialButton
 
     // استيراد/تصدير القاموس عبر شاشة الوثائق (SAF)
-    private lateinit var btnImportDict: com.google.android.material.button.MaterialButton
-    private lateinit var btnExportDict: com.google.android.material.button.MaterialButton
+    private lateinit var btnImportDict:
+        com.google.android.material.button.MaterialButton
+    private lateinit var btnExportDict:
+        com.google.android.material.button.MaterialButton
     // نص ملف القاموس المُختار من SAF لحين اختيار طريقة الاستيراد (دمج/استبدال)
     private var pendingImportJson: String? = null
 
@@ -116,7 +127,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         if (uri != null) {
             // نقرأ الملف أولاً ثم نعرض حوار طريقة الاستيراد (دمج/استبدال)
             runCatching {
-                pendingImportJson = requireContext().contentResolver.openInputStream(uri)
+                pendingImportJson = requireContext().contentResolver
+                    .openInputStream(uri)
                     ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
             }
             showImportModeDialog()
@@ -129,21 +141,28 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         if (uri != null) {
             val ok = runCatching {
                 val json = pronunciationDict.exportToJson()
-                requireContext().contentResolver.openOutputStream(uri)?.use { out ->
-                    out.write(json.toByteArray(Charsets.UTF_8))
-                }
+                requireContext().contentResolver.openOutputStream(uri)
+                    ?.use { out ->
+                        out.write(json.toByteArray(Charsets.UTF_8))
+                    }
             }.isSuccess
             Toast.makeText(
                 requireContext(),
-                if (ok) R.string.dict_exported_ok else R.string.dict_export_failed,
+                if (ok) R.string.dict_exported_ok
+                else R.string.dict_export_failed,
                 Toast.LENGTH_SHORT
             ).show()
-            view?.announceCompat(getString(if (ok) R.string.dict_exported_ok else R.string.dict_export_failed))
+            view?.announceCompat(
+                getString(
+                    if (ok) R.string.dict_exported_ok
+                    else R.string.dict_export_failed
+                )
+            )
         }
     }
 
-    /** حوار طريقة الاستيراد: دمج مع الإدخالات الحالية أو استبدال كامل، ثم تطبيق
-     *  ملف القاموس المُختار من SAF بالطريقة المختارة (يُحفظ نصه في
+    /** حوار طريقة الاستيراد: دمج مع الإدخالات الحالية أو استبدال كامل، ثم
+     *  تطبيق ملف القاموس المُختار من SAF بالطريقة المختارة (يُحفظ نصه في
      *  [pendingImportJson] كي لا يقفز حوار الطريقة خارج سياق النتيجة). */
     private fun showImportModeDialog() {
         val json = pendingImportJson ?: return
@@ -160,36 +179,48 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 }.getOrDefault(false)
                 Toast.makeText(
                     requireContext(),
-                    if (ok) R.string.dict_imported_ok else R.string.dict_import_failed,
+                    if (ok) R.string.dict_imported_ok
+                    else R.string.dict_import_failed,
                     Toast.LENGTH_SHORT
                 ).show()
                 view?.announceCompat(
-                    getString(if (ok) R.string.dict_imported_ok else R.string.dict_import_failed)
+                    getString(
+                        if (ok) R.string.dict_imported_ok
+                        else R.string.dict_import_failed
+                    )
                 )
                 if (ok) refreshDictAdapter()
             }
-            .setNegativeButton(getString(R.string.cancel)) { _, _ -> pendingImportJson = null }
+            .setNegativeButton(getString(R.string.cancel)) { _, _ ->
+                pendingImportJson = null
+            }
             .setOnCancelListener { pendingImportJson = null }
             .show()
     }
 
-    // ===== النسخ الاحتياطي / الاستعادة الكاملان (إعدادات + قاموس + أسماء متصلين) =====
+    // ===== النسخ الاحتياطي / الاستعادة الكاملان
+    // (إعدادات + قاموس + أسماء متصلين) =====
     private val createBackupLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         if (uri != null) {
             val ok = runCatching {
                 val json = vm.buildBackupJson()
-                requireContext().contentResolver.openOutputStream(uri)?.use { out ->
-                    out.write(json.toByteArray(Charsets.UTF_8))
-                }
+                requireContext().contentResolver.openOutputStream(uri)
+                    ?.use { out ->
+                        out.write(json.toByteArray(Charsets.UTF_8))
+                    }
             }.isSuccess
             Toast.makeText(
                 requireContext(),
                 if (ok) R.string.backup_saved else R.string.backup_failed,
                 Toast.LENGTH_SHORT
             ).show()
-            view?.announceCompat(getString(if (ok) R.string.backup_saved else R.string.backup_failed))
+            view?.announceCompat(
+                getString(
+                    if (ok) R.string.backup_saved else R.string.backup_failed
+                )
+            )
         }
     }
 
@@ -203,13 +234,21 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             }.getOrNull()
             if (text != null) {
                 if (vm.applyBackupJson(text)) {
-                    // إعادة عرض الأقسام تتم تلقائياً: applyBackupJson يرفع مراجعة
-                    // settingsRevision (StateFlow) ويجمعها هذا الفصيل بالأسفل.
+                    // إعادة عرض الأقسام تتم تلقائياً: applyBackupJson يرفع
+                    // مراجعة settingsRevision (StateFlow) ويجمعها هذا الفصيل.
                     AnnouncementSchedulerService.requestStart(requireContext())
-                    Toast.makeText(requireContext(), R.string.restore_done, Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        requireContext(),
+                        R.string.restore_done,
+                        Toast.LENGTH_LONG
+                    ).show()
                     view?.announceCompat(getString(R.string.restore_done))
                 } else {
-                    Toast.makeText(requireContext(), R.string.restore_failed, Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        requireContext(),
+                        R.string.restore_failed,
+                        Toast.LENGTH_LONG
+                    ).show()
                     view?.announceCompat(getString(R.string.restore_failed))
                 }
             }
@@ -224,13 +263,16 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
     // طلب إذنَي القراءة عند تفعيل إعلان المتصل (READ_PHONE_STATE لاستقبال
     // بث PHONE_STATE المحمي، وREAD_CALL_LOG للوصول إلى الرقم على أندرويد 12+
-    // والاسم من سجل المكالمات، وREAD_CONTACTS للبحث عن الاسم في دفتر الاتصالات).
-    // يبقى المُطلِق في الفصيل (يحتاج registerForActivityResult) ونتيجتُه تُحمَّل
-    // إلى ضابط قسم المتصل الذي يملك المفتاح والحارس.
+    // والاسم من سجل المكالمات، وREAD_CONTACTS للبحث عن الاسم في دفتر
+    // الاتصالات).
+    // يبقى المُطلِق في الفصيل (يحتاج registerForActivityResult) ونتيجتُه
+    // تُحمَّل إلى ضابط قسم المتصل الذي يملك المفتاح والحارس.
     internal val callerPermLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { granted ->
-        if (::callerSection.isInitialized) callerSection.onPermissionsResult(granted)
+        if (::callerSection.isInitialized) {
+            callerSection.onPermissionsResult(granted)
+        }
     }
 
     // طلب إذن قراءة الرسائل الواردة لحظة تفعيل قراءة الرسائل فقط (لا عند
@@ -239,7 +281,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     internal val smsPermLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (::smsSection.isInitialized) smsSection.onSmsPermissionResult(granted)
+        if (::smsSection.isInitialized) {
+            smsSection.onSmsPermissionResult(granted)
+        }
     }
 
     // ===== ضابط الأكورديون والتنقّل: بطاقات الأقسام وبناء أسطر الحالة =====
@@ -247,13 +291,15 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        // لا إنشاء مباشر للإعدادات/القاموس: كلاهما محقون عبر SettingsViewModel.
+        // لا إنشاء مباشر للإعدادات/القاموس: كلاهما محقون عبر
+        // SettingsViewModel.
 
         // edge-to-edge (إلزامي من targetSdk 35+): نطبّق الوسائد يدوياً عبر
-        // ViewCompat.setOnApplyWindowInsetsListener بدل android:fitsSystemWindows
+        // ViewCompat.setOnApplyWindowInsetsListener
+        // بدل android:fitsSystemWindows
         // (الحل المهمل) حتى لا تُغطى أي عناصر تفاعلية تحت شريط الحالة/التنقل.
-        // تُعاد الوسائد عند كل تغيير (إظهار/إخفاء الأشرطة) فتنزلق العبارة العليا
-        // والملاحة السفلية تحت النظام تلقائياً.
+        // تُعاد الوسائد عند كل تغيير (إظهار/إخفاء الأشرطة) فتنزلق العبارة
+        // العليا والملاحة السفلية تحت النظام تلقائياً.
         ViewCompat.setOnApplyWindowInsetsListener(
             view.findViewById(R.id.sv_settings_scroll)
         ) { v, insets ->
@@ -262,10 +308,21 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             insets
         }
 
-        // تهيئة الأصوات هنا بعد الانضمام للسياق (لا يجوز في مُنشئ/خاصية تستدعي getString())
+        // تهيئة الأصوات هنا بعد الانضمام للسياق (لا يجوز في مُنشئ/خاصية
+        // تستدعي getString())
         nateqVoices = listOf(
-            NateqVoice("ar-EG", LanguageCode.AR.tag, getString(R.string.voice_name_arabic), Locale.forLanguageTag(LanguageCode.AR.tag)),
-            NateqVoice("en-US", LanguageCode.EN.tag, getString(R.string.voice_name_english), Locale.forLanguageTag(LanguageCode.EN.tag))
+            NateqVoice(
+                "ar-EG",
+                LanguageCode.AR.tag,
+                getString(R.string.voice_name_arabic),
+                Locale.forLanguageTag(LanguageCode.AR.tag)
+            ),
+            NateqVoice(
+                "en-US",
+                LanguageCode.EN.tag,
+                getString(R.string.voice_name_english),
+                Locale.forLanguageTag(LanguageCode.EN.tag)
+            )
         )
 
         // صندوق المحركات داخل قسم اللغة الأولى/الثانية (اختيار محرك TTS للنطق)
@@ -279,9 +336,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         ).apply {
             setup(view, viewLifecycleOwner)
         }
-        engineSection = EngineSectionController(this, settings, engines).apply {
-            onStatusChanged = { accordion.updateSectionStatuses() }
-        }
+        engineSection = EngineSectionController(this, settings, engines)
+            .apply {
+                onStatusChanged = { accordion.updateSectionStatuses() }
+            }
         engineSection.setupEngineSpinner(spinnerEngine)
 
         // Categories RecyclerView
@@ -297,20 +355,24 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
         // Pronunciation dictionary RecyclerView
         rvPronunciationDict = view.findViewById(R.id.rv_pronunciation_dict)
-        rvPronunciationDict.layoutManager = LinearLayoutManager(requireContext())
+        rvPronunciationDict.layoutManager = LinearLayoutManager(
+            requireContext()
+        )
         rvPronunciationDict.adapter = buildDictAdapter()
         // التمرير الداخلي مفعّل ليتدحرج القاموس المحدود الارتفاع داخل الصفحة
         rvPronunciationDict.isNestedScrollingEnabled = true
 
         // Add dictionary entry button
-        val btnAddDictEntry = view.findViewById<com.google.android.material.button.MaterialButton>(
+        val btnAddDictEntry = view.findViewById(
             R.id.btn_add_dict_entry
-        )
+        ) as com.google.android.material.button.MaterialButton
         btnAddDictEntry.setOnClickListener { showDictEditDialog() }
 
         btnImportDict = view.findViewById(R.id.btn_import_dict)
         btnImportDict.setOnClickListener {
-            runCatching { openDictLauncher.launch(arrayOf("application/json")) }
+            runCatching {
+                openDictLauncher.launch(arrayOf("application/json"))
+            }
         }
         btnExportDict = view.findViewById(R.id.btn_export_dict)
         btnExportDict.setOnClickListener {
@@ -318,9 +380,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
 
         // المفتاح الرئيسي لكل الإعلانات
-        switchAllAnnouncements = view.findViewById(R.id.switch_all_announcements)
+        switchAllAnnouncements =
+            view.findViewById(R.id.switch_all_announcements)
         switchAllAnnouncements.isChecked =
-            runCatching { settings.isAllAnnouncementsEnabled() }.getOrDefault(true)
+            runCatching { settings.isAllAnnouncementsEnabled() }
+                .getOrDefault(true)
         switchAllAnnouncements.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setAllAnnouncementsEnabled(checked) }
             if (checked) {
@@ -329,56 +393,73 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             } else {
                 runCatching {
                     requireContext().stopService(
-                        Intent(requireContext(), AnnouncementSchedulerService::class.java)
+                        Intent(
+                            requireContext(),
+                            AnnouncementSchedulerService::class.java
+                        )
                     )
                 }
             }
             accordion.updateSectionStatuses()
             view?.announceCompat(
                 getString(
-                    if (checked) R.string.announcement_turned_on else R.string.announcement_turned_off
+                    if (checked) R.string.announcement_turned_on
+                    else R.string.announcement_turned_off
                 )
             )
         }
 
-        // حماية خصوصية قفل الشاشة: حجب تفاصيل الرسائل/الإشعارات/المتصل عند القفل
-        switchLockScreenPrivacy = view.findViewById(R.id.switch_lock_screen_privacy)
+        // حماية خصوصية قفل الشاشة: حجب تفاصيل الرسائل/الإشعارات/المتصل
+        // عند القفل
+        switchLockScreenPrivacy =
+            view.findViewById(R.id.switch_lock_screen_privacy)
         switchLockScreenPrivacy.isChecked =
-            runCatching { settings.isLockScreenPrivacyEnabled() }.getOrDefault(true)
+            runCatching { settings.isLockScreenPrivacyEnabled() }
+                .getOrDefault(true)
         switchLockScreenPrivacy.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setLockScreenPrivacyEnabled(checked) }
             view?.announceCompat(
                 getString(
-                    if (checked) R.string.announcement_turned_on else R.string.announcement_turned_off
+                    if (checked) R.string.announcement_turned_on
+                    else R.string.announcement_turned_off
                 )
             )
         }
 
         // نطق الإيموجي ورموز المشاعر: تُنطق الأسماء بدل حذف الرموز من النطق
-        val switchEmojiReading = view.findViewById<SwitchMaterial>(R.id.switch_emoji_reading)
+        val switchEmojiReading: SwitchMaterial =
+            view.findViewById(R.id.switch_emoji_reading)
         switchEmojiReading.isChecked =
-            runCatching { settings.isEmojiPronunciationEnabled() }.getOrDefault(true)
+            runCatching { settings.isEmojiPronunciationEnabled() }
+                .getOrDefault(true)
         switchEmojiReading.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setEmojiPronunciationEnabled(checked) }
             accordion.updateSectionStatuses()
             view?.announceCompat(
                 getString(
-                    if (checked) R.string.announcement_turned_on else R.string.announcement_turned_off
+                    if (checked) R.string.announcement_turned_on
+                    else R.string.announcement_turned_off
                 )
             )
         }
 
-        // زر جعل Lord المحرك الافتراضي (يفتح شاشة TTS النظامية لاختياره يدوياً)
+        // زر جعل Lord المحرك الافتراضي (يفتح شاشة TTS النظامية لاختياره
+        // يدوياً)
         btnSetDefaultEngine = view.findViewById(R.id.btn_set_default_engine)
         btnSetDefaultEngine.setOnClickListener {
             runCatching {
                 startActivity(
-                    // الثابت الرسمي لنافذة إعدادات TTS غير متاح في كل مستويات SDK،
-                    // لذا نستخدم الإجراء النصي الثابت نفسه.
-                    Intent("com.android.settings.TTS_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    // الثابت الرسمي لنافذة إعدادات TTS غير متاح في كل مستويات
+                    // SDK، لذا نستخدم الإجراء النصي الثابت نفسه.
+                    Intent("com.android.settings.TTS_SETTINGS")
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 )
             }
-            Toast.makeText(requireContext(), R.string.set_default_engine_hint, Toast.LENGTH_LONG).show()
+            Toast.makeText(
+                requireContext(),
+                R.string.set_default_engine_hint,
+                Toast.LENGTH_LONG
+            ).show()
             view?.announceCompat(getString(R.string.set_default_engine_hint))
         }
 
@@ -402,12 +483,14 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         btnContactDeveloper = view.findViewById(R.id.btn_contact_developer)
         btnContactDeveloper.setOnClickListener { openDeveloperSupport() }
 
-        // زر الإبلاغ عن خطأ: يجمع سطور الأخطاء من السجل ويشاركها عبر وسائل المشاركة
+        // زر الإبلاغ عن خطأ: يجمع سطور الأخطاء من السجل ويشاركها عبر
+        // وسائل المشاركة
         btnReportError = view.findViewById(R.id.btn_report_error)
         btnReportError.setOnClickListener { onReportErrorClicked() }
 
         // إنشاء ضابطات الأقسام وربطها (المرحلة ج): كل ضابط يسحب عناصره
-        // ويبني مستمعيه عند setup()، وonStatusChanged تُحدّث أسطر حالة الأكورديون.
+        // ويبني مستمعيه عند setup()، وonStatusChanged تُحدّث أسطر حالة
+        // الأكورديون.
         timeSection = TimeAnnouncementController(
             this, settings, { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
@@ -439,10 +522,13 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         setupBackupRestoreButtons()
         accordion.updateSectionStatuses()
 
-        // التحديث التفاعلي: المراجعة الابتدائية (0) لا تُحدّث شيئاً، وأي مراجعة
-        // لاحقة (استعادة/إعادة ضبط) تُعيد بناء كل أقسام الواجهة تلقائياً.
+        // التحديث التفاعلي: المراجعة الابتدائية (0) لا تُحدّث شيئاً،
+        // وأي مراجعة لاحقة (استعادة/إعادة ضبط) تُعيد بناء كل أقسام
+        // الواجهة تلقائياً.
         viewLifecycleOwner.lifecycleScope.launch {
-            vm.settingsRevision.collect { revision -> if (revision > 0) refreshAllSettingsUi() }
+            vm.settingsRevision.collect { revision ->
+                if (revision > 0) refreshAllSettingsUi()
+            }
         }
 
         // فحص تلقائي عند فتح التطبيق: يُنبه بوجود تحديث (صامت إن لم يوجد)
@@ -458,8 +544,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         super.onDestroyView()
     }
 
-    // ===== اختيار المحرك وحوار التحويل التلقائي: انتقلا إلى EngineSectionController =====
-    /** نسخة حصرية للفصيل من محلّل الـ Spinner الأساسي (المنفَّذ في EngineSectionController). */
+    // ===== اختيار المحرك وحوار التحويل التلقائي: انتقلا إلى
+    // EngineSectionController =====
+    /** نسخة حصرية للفصيل من محلّل الـ Spinner الأساسي (المنفَّذ في
+     *  EngineSectionController). */
     internal fun simpleAdapter(items: List<String>): ArrayAdapter<String> =
         simpleAdapter(requireContext(), items)
 
@@ -469,19 +557,25 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         val inflater = LayoutInflater.from(requireContext())
         val dialogView = inflater.inflate(R.layout.dialog_dict_entry, null)
         val etWord = dialogView.findViewById<EditText>(R.id.et_dict_word)
-        val etPhonetic = dialogView.findViewById<EditText>(R.id.et_dict_phonetic)
+        val etPhonetic =
+            dialogView.findViewById<EditText>(R.id.et_dict_phonetic)
         if (existing != null) {
             etWord.setText(existing.first)
             etPhonetic.setText(existing.second)
         }
         builder.setView(dialogView)
-            .setTitle(if (existing == null) getString(R.string.dict_add_title) else getString(R.string.dict_edit_entry))
+            .setTitle(
+                if (existing == null) getString(R.string.dict_add_title)
+                else getString(R.string.dict_edit_entry)
+            )
             .setPositiveButton(getString(R.string.save)) { _, _ ->
                 val word = etWord.text.toString().trim()
                 val phonetic = etPhonetic.text.toString().trim()
                 if (word.isNotEmpty() && phonetic.isNotEmpty()) {
                     if (existing != null && existing.first != word) {
-                        runCatching { pronunciationDict.removeEntry(existing.first) }
+                        runCatching {
+                            pronunciationDict.removeEntry(existing.first)
+                        }
                     }
                     runCatching { pronunciationDict.addEntry(word, phonetic) }
                     refreshDictAdapter()
@@ -491,19 +585,23 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                         getString(R.string.enter_word_and_pronunciation),
                         Toast.LENGTH_SHORT
                     ).show()
-                    view?.announceCompat(getString(R.string.enter_word_and_pronunciation))
+                    view?.announceCompat(
+                        getString(R.string.enter_word_and_pronunciation)
+                    )
                 }
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
-    /** إعادة رسم قائمة إدخالات القاموس بعد أي تغيير (إضافة/تعديل/حذف/استيراد) */
+    /** إعادة رسم قائمة إدخالات القاموس بعد أي تغيير
+     *  (إضافة/تعديل/حذف/استيراد) */
     private fun refreshDictAdapter() {
         rvPronunciationDict.adapter = buildDictAdapter()
     }
 
-    /** يبني مسند القاموس من الإدخالات الحالية مع نحوّل نقر الصف إلى أدواتها. */
+    /** يبني مسند القاموس من الإدخالات الحالية مع نحوّل نقر الصف إلى
+     *  أدواتها. */
     private fun buildDictAdapter(): PronunciationDictAdapter =
         PronunciationDictAdapter(
             runCatching { pronunciationDict.getAllEntries() }
@@ -520,24 +618,33 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         )
         val number = raw.toIntOrNull()
         if (number == null) {
-            Toast.makeText(requireContext(), R.string.number_preview_invalid, Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                requireContext(),
+                R.string.number_preview_invalid,
+                Toast.LENGTH_SHORT
+            ).show()
             view?.announceCompat(getString(R.string.number_preview_invalid))
             return
         }
-        val forced = runCatching { settings.getAnnouncementSpeechLanguage() }.getOrNull()
+        val forced =
+            runCatching { settings.getAnnouncementSpeechLanguage() }
+                .getOrNull()
         val appLang = runCatching { settings.getAppLanguage() }.getOrNull()
             ?: Locale.getDefault().language
         val isEnglish = if (forced != null) LanguageCode.isEnglish(forced)
             else LanguageCode.isEnglish(appLang)
-        val mode = runCatching { settings.getNumberReadingMode() }.getOrDefault(1).coerceIn(1, 8)
+        val mode = runCatching { settings.getNumberReadingMode() }
+            .getOrDefault(1).coerceIn(1, 8)
         val text = NumberSpeech.formatByMode(mode, number, isEnglish)
-        val langTag = if (isEnglish) LanguageCode.EN.tag else LanguageCode.AR.tag
+        val langTag =
+            if (isEnglish) LanguageCode.EN.tag else LanguageCode.AR.tag
         speakWithVoice(langTag, text)
     }
 
     /** حوار إدارة أسماء المتصلين المخصصة (رقم → اسم يُنطق به) */
     private fun showCallerNamesDialog() {
-        val names = runCatching { settings.getCustomCallerNames() }.getOrDefault(emptyMap()).toMutableMap()
+        val names = runCatching { settings.getCustomCallerNames() }
+            .getOrDefault(emptyMap()).toMutableMap()
         val rows = names.toList().toMutableList()
         val root = android.widget.LinearLayout(requireContext()).apply {
             orientation = android.widget.LinearLayout.VERTICAL
@@ -550,39 +657,60 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 0
             )
         }
-        val listContainer = android.widget.LinearLayout(requireContext()).apply {
+        val listContainer = android.widget.LinearLayout(
+            requireContext()
+        ).apply {
             orientation = android.widget.LinearLayout.VERTICAL
         }
 
         fun addRow(number: String = "", name: String = "") {
-            val numberPicker = com.google.android.material.textfield.TextInputEditText(requireContext()).apply {
+            val numberPicker =
+                com.google.android.material.textfield.TextInputEditText(
+                    requireContext()
+                ).apply {
                 hint = getString(R.string.caller_names_number_hint)
                 inputType = android.text.InputType.TYPE_CLASS_PHONE
                 setText(number)
             }
-            val namePicker = com.google.android.material.textfield.TextInputEditText(requireContext()).apply {
+            val namePicker =
+                com.google.android.material.textfield.TextInputEditText(
+                    requireContext()
+                ).apply {
                 hint = getString(R.string.caller_names_name_hint)
                 setText(name)
             }
             val removeBtn = com.google.android.material.button.MaterialButton(
                 requireContext(),
                 null,
-                com.google.android.material.R.style.Widget_MaterialComponents_Button_TextButton
+                com.google.android.material.R.style
+                    .Widget_MaterialComponents_Button_TextButton
             ).apply {
                 text = getString(R.string.caller_names_delete)
                 textSize = 13f
                 // أهداف لمس لا تقل عن 48dp لقارئ الشاشة
                 minHeight = (48 * resources.displayMetrics.density).toInt()
             }
-            val rowLayout = com.google.android.material.textfield.TextInputLayout(requireContext()).apply {
-                setPadding(0, 0, 0, 0)
-            }
+            val rowLayout =
+                com.google.android.material.textfield.TextInputLayout(
+                    requireContext()
+                ).apply {
+                    setPadding(0, 0, 0, 0)
+                }
             // بسيط: LinearLayout أفقي بعمودين نصيين وزر حذف
             val fields = android.widget.LinearLayout(requireContext()).apply {
                 orientation = android.widget.LinearLayout.HORIZONTAL
-                addView(numberPicker, android.widget.LinearLayout.LayoutParams(0, -2, 2f))
-                addView(namePicker, android.widget.LinearLayout.LayoutParams(0, -2, 2f))
-                addView(removeBtn, android.widget.LinearLayout.LayoutParams(-2, -2))
+                addView(
+                    numberPicker,
+                    android.widget.LinearLayout.LayoutParams(0, -2, 2f)
+                )
+                addView(
+                    namePicker,
+                    android.widget.LinearLayout.LayoutParams(0, -2, 2f)
+                )
+                addView(
+                    removeBtn,
+                    android.widget.LinearLayout.LayoutParams(-2, -2)
+                )
             }
             rowLayout.addView(fields)
             removeBtn.setOnClickListener {
@@ -607,7 +735,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         val addBtn = com.google.android.material.button.MaterialButton(
             requireContext(),
             null,
-            com.google.android.material.R.style.Widget_MaterialComponents_Button_TextButton
+            com.google.android.material.R.style
+                    .Widget_MaterialComponents_Button_TextButton
         ).apply {
             text = getString(R.string.caller_names_add)
             minHeight = (48 * resources.displayMetrics.density).toInt()
@@ -617,7 +746,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         val scroll = android.widget.ScrollView(requireContext()).apply {
             addView(listContainer)
         }
-        root.addView(scroll, android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(
+            scroll,
+            android.widget.LinearLayout.LayoutParams(-1, 0, 1f)
+        )
         root.addView(addBtn)
 
         MaterialAlertDialogBuilder(requireContext())
@@ -627,24 +759,45 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 val newNames = mutableMapOf<String, String>()
                 var duplicate = false
                 for (i in 0 until listContainer.childCount) {
-                    val rowLayout = listContainer.getChildAt(i)
-                        as? com.google.android.material.textfield.TextInputLayout ?: continue
-                    val fields = rowLayout.getChildAt(0) as? android.widget.LinearLayout ?: continue
+                    val rowLayout = listContainer.getChildAt(i) as?
+                    com.google.android.material.textfield
+                        .TextInputLayout ?: continue
+                    val fields = rowLayout.getChildAt(0)
+                        as? android.widget.LinearLayout ?: continue
                     if (fields.childCount < 2) continue
-                    val num = (fields.getChildAt(0) as? android.widget.EditText)?.text?.toString()?.trim().orEmpty()
-                    val nm = (fields.getChildAt(1) as? android.widget.EditText)?.text?.toString()?.trim().orEmpty()
+                    val num = (fields.getChildAt(0)
+                        as? android.widget.EditText)?.text?.toString()
+                        ?.trim().orEmpty()
+                    val nm = (fields.getChildAt(1)
+                        as? android.widget.EditText)?.text?.toString()
+                        ?.trim().orEmpty()
                     if (num.isEmpty() || nm.isEmpty()) continue
-                    if (newNames.containsKey(num)) { duplicate = true; continue }
+                    if (newNames.containsKey(num)) {
+                        duplicate = true
+                        continue
+                    }
                     newNames[num] = nm
                 }
                 if (duplicate) {
-                    Toast.makeText(requireContext(), R.string.caller_names_duplicate, Toast.LENGTH_LONG).show()
-                    view?.announceCompat(getString(R.string.caller_names_duplicate))
+                    Toast.makeText(
+                        requireContext(),
+                        R.string.caller_names_duplicate,
+                        Toast.LENGTH_LONG
+                    ).show()
+                    view?.announceCompat(
+                        getString(R.string.caller_names_duplicate)
+                    )
                 }
                 runCatching { settings.setCustomCallerNames(newNames) }
                 if (!duplicate) {
-                    Toast.makeText(requireContext(), R.string.caller_names_saved, Toast.LENGTH_SHORT).show()
-                    view?.announceCompat(getString(R.string.caller_names_saved))
+                    Toast.makeText(
+                        requireContext(),
+                        R.string.caller_names_saved,
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    view?.announceCompat(
+                        getString(R.string.caller_names_saved)
+                    )
                 }
             }
             .setNegativeButton(getString(R.string.cancel), null)
@@ -653,12 +806,20 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
     /** توسيع/طي قسم قابل للطي، ويُحدّث السهم (▼/▲) ووصف الأب بحالة الطي.
  *  internal لأن ضابط البطارية يستخدمه للعنوان القابل للطي. */
-    internal fun toggleCollapsible(content: View, arrow: TextView, header: View) {
-        val collapsed = content.visibility == View.GONE || content.visibility == View.INVISIBLE
+    internal fun toggleCollapsible(
+        content: View,
+        arrow: TextView,
+        header: View
+    ) {
+        val collapsed =
+            content.visibility == View.GONE ||
+                content.visibility == View.INVISIBLE
         content.visibility = if (collapsed) View.VISIBLE else View.GONE
         arrow.text = if (collapsed) "▲" else "▼"
         // يقرأ قارئ الشاشة نصاً واحداً: العنوان الأساسي + حالة (موسّع/مطوي)
-        val stateLabel = if (collapsed) getString(R.string.expand) else getString(R.string.collapse)
+        val stateLabel =
+            if (collapsed) getString(R.string.expand)
+            else getString(R.string.collapse)
         val base = header.getTag() as? String
         if (base != null) {
             header.contentDescription = base + " — " + stateLabel
@@ -677,8 +838,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 when (which) {
                     0 -> showDictEditDialog(entry)
                     1 -> {
-                        runCatching { pronunciationDict.removeEntry(entry.first) }
-                        // إعلان مسموع بنتيجة الحذف لتوفير تغذية راجعة لقارئ الشاشة
+                        runCatching {
+                            pronunciationDict.removeEntry(entry.first)
+                        }
+                        // إعلان مسموع بنتيجة الحذف لتوفير تغذية راجعة لقارئ
+                        // الشاشة
                         announcementSpeaker?.speak(
                             getString(R.string.dict_removed),
                             if (com.aymankhattab.nateq.util.LocaleUtils
@@ -708,11 +872,13 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         // الذي يربط المحرك المختار فعليا عبر setEngineByPackageName —
         // لا نعتمد على المحرك الافتراضي للنظام حتى لا يكون "نحن" أنفسنا.
         val speaker = announcementSpeaker
-            ?: AnnouncementSpeaker(requireContext()).also { announcementSpeaker = it }
+            ?: AnnouncementSpeaker(requireContext())
+                .also { announcementSpeaker = it }
         speaker.speak(
             text,
             Locale.forLanguageTag(languageTag),
-            runCatching { settings.getSpeechRate(languageTag) }.getOrDefault(1.0f),
+            runCatching { settings.getSpeechRate(languageTag) }
+                .getOrDefault(1.0f),
             1.0f,
             1.0f,
         )
@@ -737,10 +903,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
 
         btnToggleLanguage.setOnClickListener {
-            val newLang = if (isArabic) LanguageCode.EN.tag else LanguageCode.AR.tag
+            val newLang =
+            if (isArabic) LanguageCode.EN.tag else LanguageCode.AR.tag
             runCatching { settings.setAppLanguage(newLang) }
-            // تطبيق اللغة على مستوى التطبيق (AppCompatDelegate) قبل إعادة إنشاء
-            // النشاط حتى تُنشأ موارد النشاط الجديد باللغة الجديدة فعلياً.
+            // تطبيق اللغة على مستوى التطبيق (AppCompatDelegate) قبل إعادة
+            // إنشاء النشاط حتى تُنشأ موارد النشاط الجديد باللغة الجديدة
+            // فعلياً.
             runCatching {
                 AppCompatDelegate.setApplicationLocales(
                     androidx.core.os.LocaleListCompat.forLanguageTags(newLang)
@@ -755,28 +923,47 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private fun openDeveloperSupport() {
         runCatching {
             startActivity(
-                Intent(Intent.ACTION_VIEW, android.net.Uri.parse(DEVELOPER_SUPPORT_URL))
+                Intent(
+                    Intent.ACTION_VIEW,
+                    android.net.Uri.parse(DEVELOPER_SUPPORT_URL)
+                )
             )
         }.onFailure {
             Toast.makeText(
-                requireContext(), R.string.contact_developer_no_handler, Toast.LENGTH_SHORT
+                requireContext(),
+                R.string.contact_developer_no_handler,
+                Toast.LENGTH_SHORT
             ).show()
-            view?.announceCompat(getString(R.string.contact_developer_no_handler))
+            view?.announceCompat(
+                getString(R.string.contact_developer_no_handler)
+            )
         }
     }
 
     // ===== الإبلاغ عن خطأ: جمع الأخطاء من السجل ومشاركتها =====
     private fun onReportErrorClicked() {
         val context = requireContext()
-        Toast.makeText(context, R.string.report_error_collecting, Toast.LENGTH_SHORT).show()
+        Toast.makeText(
+            context,
+            R.string.report_error_collecting,
+            Toast.LENGTH_SHORT
+        ).show()
         lifecycleScope.launch {
             val report = runCatching { buildErrorReport(context) }.getOrNull()
             if (report == null || report.second.isEmpty()) {
-                Toast.makeText(context, R.string.report_error_empty, Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    context,
+                    R.string.report_error_empty,
+                    Toast.LENGTH_SHORT
+                ).show()
                 view?.announceCompat(getString(R.string.report_error_empty))
                 return@launch
             }
-            shareErrorReport(context, report.second.joinToString("\n"), report.first)
+            shareErrorReport(
+                context,
+                report.second.joinToString("\n"),
+                report.first
+            )
         }
     }
 
@@ -803,12 +990,15 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 process.inputStream.bufferedReader().useLines { lines ->
                     for (line in lines) {
                         val lower = line.lowercase()
-                        // تنسيق logcat الافتراضي (brief): الحرف الأول هو مستوى الخطورة
-                        // (V/D/I/W/E/F). نبقي E (Error) وF (Fatal) فقط — أي لا نُخرج كل السجل.
+                        // تنسيق logcat الافتراضي (brief): الحرف الأول هو مستوى
+                        // الخطورة
+                        // (V/D/I/W/E/F). نبقي E (Error) وF (Fatal) —
+                        // أي لا نُخرج كل السجل.
                         val isErrorLevel = line.isNotEmpty() &&
                             (line[0] == 'E' || line[0] == 'F')
                         // نقيّد المصدر بحزمتنا/وسومها دون سجل النظام الآخر
-                        val isOurTag = lower.contains("nateq") || lower.contains("lordt")
+                        val isOurTag =
+                            lower.contains("nateq") || lower.contains("lordt")
                         if (isErrorLevel && isOurTag) filtered.add(line)
                     }
                 }
@@ -816,30 +1006,58 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             } catch (e: Exception) {
                 android.util.Log.e("NATEQ_APP", "logcat collect failed", e)
             }
-            if (filtered.isEmpty()) return@withContext "" to emptyList<String>()
-            val info = context.packageManager.getPackageInfo(context.packageName, 0)
+            if (filtered.isEmpty()) {
+                return@withContext "" to emptyList<String>()
+            }
+            val info = context.packageManager.getPackageInfo(
+                context.packageName, 0
+            )
             val versionName = info.versionName ?: "?"
-            val versionCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P)
-                info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()
+            val versionCode =
+                if (android.os.Build.VERSION.SDK_INT >=
+                    android.os.Build.VERSION_CODES.P
+                ) {
+                    info.longVersionCode
+                } else {
+                    @Suppress("DEPRECATION") info.versionCode.toLong()
+                }
             val header = buildString {
                 appendLine("Lord TTS — Error Report")
                 appendLine("Version: $versionName ($versionCode)")
-                appendLine("Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
-                appendLine("Android: ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})")
-                appendLine("Time: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date())}")
+                appendLine(
+                    "Device: ${android.os.Build.MANUFACTURER} " +
+                        android.os.Build.MODEL
+                )
+                appendLine(
+                    "Android: ${android.os.Build.VERSION.RELEASE} " +
+                        "(API ${android.os.Build.VERSION.SDK_INT})"
+                )
+                appendLine(
+                    "Time: " + java.text.SimpleDateFormat(
+                        "yyyy-MM-dd HH:mm:ss", java.util.Locale.US
+                    ).format(java.util.Date())
+                )
                 appendLine("-----")
             }
             header to filtered
         }
 
     /** يفتح وسائل المشاركة (اقتراح نصوص، بريد…) بالمحتوى المجمّع. */
-    private fun shareErrorReport(context: android.content.Context, body: String, header: String) {
+    private fun shareErrorReport(
+        context: android.content.Context,
+        body: String,
+        header: String
+    ) {
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, getString(R.string.report_error_subject))
+            putExtra(
+                Intent.EXTRA_SUBJECT, getString(R.string.report_error_subject)
+            )
             putExtra(Intent.EXTRA_TEXT, header + body)
         }
-        val chooser = Intent.createChooser(send, getString(R.string.report_error))
+        val chooser = Intent.createChooser(
+            send, getString(R.string.report_error)
+        )
         runCatching {
             startActivity(chooser)
         }.onFailure {
@@ -870,7 +1088,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private fun performUpdateCheck(showFeedback: Boolean) {
         val context = requireContext()
         val currentName = runCatching {
-            val info = context.packageManager.getPackageInfo(context.packageName, 0)
+            val info = context.packageManager.getPackageInfo(
+                context.packageName, 0
+            )
             info.versionName
         }.getOrNull() ?: ""
 
@@ -888,25 +1108,37 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 is UpdateChecker.CheckResult.UpToDate -> {
                     if (showFeedback) {
                         Toast.makeText(
-                            context, getString(R.string.check_updates_up_to_date), Toast.LENGTH_SHORT
+                            context,
+                            getString(R.string.check_updates_up_to_date),
+                            Toast.LENGTH_SHORT
                         ).show()
-                        view?.announceCompat(getString(R.string.check_updates_up_to_date))
+                        view?.announceCompat(
+                            getString(R.string.check_updates_up_to_date)
+                        )
                     }
                 }
                 is UpdateChecker.CheckResult.NetworkError -> {
                     if (showFeedback) {
                         Toast.makeText(
-                            context, getString(R.string.check_updates_network_error), Toast.LENGTH_SHORT
+                            context,
+                            getString(R.string.check_updates_network_error),
+                            Toast.LENGTH_SHORT
                         ).show()
-                        view?.announceCompat(getString(R.string.check_updates_network_error))
+                        view?.announceCompat(
+                            getString(R.string.check_updates_network_error)
+                        )
                     }
                 }
             }
         }
     }
 
-    /** حوار تأكيد قبل التنزيل: يسأل المستخدم إن كان يريد تنزيل التحديث (نعم/لا). */
-    private fun promptDownloadUpdate(context: android.content.Context, apkUrl: String) {
+    /** حوار تأكيد قبل التنزيل: يسأل المستخدم إن كان يريد تنزيل التحديث
+     *  (نعم/لا). */
+    private fun promptDownloadUpdate(
+        context: android.content.Context,
+        apkUrl: String
+    ) {
         MaterialAlertDialogBuilder(context)
             .setTitle(R.string.check_updates_confirm_title)
             .setMessage(R.string.check_updates_confirm_message)
@@ -917,23 +1149,34 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             .show()
     }
 
-    /** ينزّل الـ APK ويعرض إشعاراً بأن التنزيل بدأ — يُستدعى بعد موافقة المستخدم. */
-    private fun startApkDownload(context: android.content.Context, apkUrl: String) {
+    /** ينزّل الـ APK ويعرض إشعاراً بأن التنزيل بدأ — يُستدعى بعد موافقة
+     *  المستخدم. */
+    private fun startApkDownload(
+        context: android.content.Context,
+        apkUrl: String
+    ) {
         Toast.makeText(
-            context, getString(R.string.check_updates_downloading_title), Toast.LENGTH_SHORT
+            context,
+            getString(R.string.check_updates_downloading_title),
+            Toast.LENGTH_SHORT
         ).show()
         val downloadId = UpdateChecker.enqueueDownload(context, apkUrl)
 
         // مستمع مؤقت مشترك يفتح شاشة التثبيت عند اكتمال تنزيل الـ APK.
         val receiver = object : android.content.BroadcastReceiver() {
-            override fun onReceive(ctx: android.content.Context, intent: Intent) {
+            override fun onReceive(
+                ctx: android.content.Context,
+                intent: Intent
+            ) {
                 val id = intent.getLongExtra(
                     android.app.DownloadManager.EXTRA_DOWNLOAD_ID, -1L
                 )
                 if (id != downloadId) return
                 try {
                     ctx.unregisterReceiver(this)
-                } catch (_: IllegalArgumentException) { /* سبق تسجيله أو فُكّ */ }
+                } catch (_: IllegalArgumentException) {
+                    /* سبق تسجيله أو فُكّ */
+                }
                 val apk = UpdateChecker.downloadedApk(ctx)
                 UpdateChecker.promptInstall(ctx, apk)
             }
@@ -941,7 +1184,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         ContextCompat.registerReceiver(
             context,
             receiver,
-            android.content.IntentFilter(android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE),
+            android.content.IntentFilter(
+                android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE
+            ),
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
     }
@@ -954,7 +1199,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         // الحفظ: الإعدادات تُخزَّن فورياً عند كل تغيير عبر setters، لكن نقدم
         // للمستخدم تأكيداً واضحاً بأن إعداداته مأخوذة في مكانها.
         btnSave?.setOnClickListener {
-            Toast.makeText(requireContext(), getString(R.string.saved_successfully), Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                requireContext(),
+                getString(R.string.saved_successfully),
+                Toast.LENGTH_SHORT
+            ).show()
             view?.findViewById<View>(R.id.btn_save_settings)
                 ?.announceCompat(getString(R.string.saved_successfully))
         }
@@ -967,12 +1216,17 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 .setMessage(R.string.reset_confirm_message)
                 .setPositiveButton(R.string.reset_done) { _, _ ->
                     runCatching { settings.resetAllToDefault() }
-                    Toast.makeText(requireContext(), getString(R.string.reset_done), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        requireContext(),
+                        getString(R.string.reset_done),
+                        Toast.LENGTH_SHORT
+                    ).show()
                     view?.findViewById<View>(R.id.btn_reset_settings)
                         ?.announceCompat(getString(R.string.reset_done))
-                    // التحديث الكلي للواجهة يتم تلقائياً عبر StateFlow المراجعة
-                    // (notifySettingsChanged) — يستمع له الفصيل فيعيد بناء كل
-                    // الأقسام من القيم الافتراضية دون تكرار كتلة setup() يدوية.
+                    // التحديث الكلي للواجهة يتم تلقائياً عبر StateFlow
+                    // المراجعة (notifySettingsChanged) — يستمع له الفصيل
+                    // فيعيد بناء كل الأقسام من القيم الافتراضية دون تكرار
+                    // كتلة setup() يدوية.
                     vm.notifySettingsChanged()
                 }
                 .setNegativeButton(R.string.reset_cancel, null)
@@ -982,18 +1236,22 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
     // ===== النسخ الاحتياطي / الاستعادة =====
     private fun setupBackupRestoreButtons() {
-        view?.findViewById<View>(R.id.btn_backup_settings)?.setOnClickListener {
+        view?.findViewById<View>(R.id.btn_backup_settings)
+            ?.setOnClickListener {
             // تحذير صريح قبل التصدير: الملف نص صريح قد يحوي بيانات شخصية
             MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.backup_export_warning_title)
                 .setMessage(R.string.backup_export_warning_message)
                 .setPositiveButton(R.string.backup_settings) { _, _ ->
-                    runCatching { createBackupLauncher.launch("lord_tts_backup.json") }
+                    runCatching {
+                        createBackupLauncher.launch("lord_tts_backup.json")
+                    }
                 }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
         }
-        view?.findViewById<View>(R.id.btn_restore_settings)?.setOnClickListener {
+        view?.findViewById<View>(R.id.btn_restore_settings)
+            ?.setOnClickListener {
             MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.restore_confirm_title)
                 .setMessage(R.string.restore_confirm_message)

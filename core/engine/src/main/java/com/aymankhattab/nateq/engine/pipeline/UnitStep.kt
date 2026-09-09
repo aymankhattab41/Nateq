@@ -31,12 +31,20 @@ internal object UnitStep : TextProcessingStep {
 
         // حرارة
         UnitInfo("°C", "درجة مئوية", "درجات مئوية", "درجتان مئويتان", true),
-        UnitInfo("°F", "درجة فهرنهايت", "درجات فهرنهايت", "درجتان فهرنهايت", true),
+        UnitInfo(
+            "°F", "درجة فهرنهايت", "درجات فهرنهايت", "درجتان فهرنهايت", true
+        ),
         UnitInfo("K", "كلفن", "كلفنات", "كلفنان", false),
 
         // سرعة
-        UnitInfo("كم/س", "كيلومتر في الساعة", "كيلومترات في الساعة", "كيلومتران في الساعة", false),
-        UnitInfo("م/ث", "متر في الثانية", "أمتار في الثانية", "متران في الثانية", false),
+        UnitInfo(
+            "كم/س", "كيلومتر في الساعة", "كيلومترات في الساعة",
+            "كيلومتران في الساعة", false
+        ),
+        UnitInfo(
+            "م/ث", "متر في الثانية", "أمتار في الثانية",
+            "متران في الثانية", false
+        ),
 
         // بيانات
         UnitInfo("KB", "كيلوبايت", "كيلوبايتات", "كيلوبايتان", false),
@@ -65,7 +73,8 @@ internal object UnitStep : TextProcessingStep {
         // بحدود الكلمات العربية كما كان يفعل (?U)\b بالضبط (5 م ثم حرف = لا
         // تطابق؛ ثم مسافة/ترقيم/نهاية = تطابق).
         Pattern.compile(
-            """\b(\d+(?:[.,]\d{3})*(?:[.,]\d+)?)\s*${Pattern.quote(info.symbol)}(?![\p{L}\p{N}_])"""
+            """\b(\d+(?:[.,]\d{3})*(?:[.,]\d+)?)\s*""" +
+                """${Pattern.quote(info.symbol)}(?![\p{L}\p{N}_])"""
         ) to info
     }
 
@@ -85,7 +94,10 @@ internal object UnitStep : TextProcessingStep {
             while (matcher.find()) {
                 val number = AmountParser.parseAmount(matcher.group(1)!!)
                 val replacement = numberWithUnit(number, info)
-                matcher.appendReplacement(buffer, java.util.regex.Matcher.quoteReplacement(replacement))
+                matcher.appendReplacement(
+                    buffer,
+                    java.util.regex.Matcher.quoteReplacement(replacement)
+                )
             }
             matcher.appendTail(buffer)
             result = buffer.toString()
@@ -102,14 +114,17 @@ internal object UnitStep : TextProcessingStep {
      */
     private fun numberWithUnit(value: Double, info: UnitInfo): String {
         if (value % 1.0 != 0.0 || value < 0.0) {
-            return "${NumberWordsConverter.numberToWords(value)} ${info.singular}"
+            return "${NumberWordsConverter.numberToWords(value)} " +
+            info.singular
         }
         val n = value.toInt()
         return when (n) {
             0 -> "${NumberWordsConverter.numberToWords(0.0)} ${info.singular}"
             1 -> "${info.singular} ${if (info.isFeminine) "واحدة" else "واحد"}"
             2 -> info.dual
-            in 3..10 -> "${NumberWordsConverter.unitNumberWord(n, info.isFeminine)} ${info.plural}"
+            in 3..10 ->
+                "${NumberWordsConverter.unitNumberWord(n, info.isFeminine)} " +
+                    info.plural
             else -> {
                 // المعدود المركّب (11–99 فما بين المئات) يلزم آحاده بالمؤنث مع
                 // المعدود المؤنث: «خمس وعشرون سنة» لا «خمسة وعشرون سنة».

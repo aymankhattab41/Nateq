@@ -10,7 +10,10 @@ class LanguageSegmenterTest {
 
     private val segmenter = LanguageSegmenter()
 
-    private fun textsAndTags(text: String, request: String): Pair<List<String>, List<String>> {
+    private fun textsAndTags(
+        text: String,
+        request: String
+    ): Pair<List<String>, List<String>> {
         val segments = segmenter.segment(text, request)
         return Pair(
             segments.map { it.text },
@@ -48,7 +51,11 @@ class LanguageSegmenterTest {
             texts
         )
         assertEquals(listOf("ar", "en", "ar", "en"), tags)
-        assertEquals("التجميع يعيد النص الأصلي حرفياً", input, texts.joinToString(""))
+        assertEquals(
+            "التجميع يعيد النص الأصلي حرفياً",
+            input,
+            texts.joinToString("")
+        )
     }
 
     @Test
@@ -135,9 +142,14 @@ class LanguageSegmenterTest {
         val extendedB = "\u0870\u089F"
         val extendedC = "\uD803\uDEC0\uD803\uDEFF"
         val mathSymbols = "\uD83B\uDE00\uD83B\uDEFF"
-        val combined = "قاعدة " + extendedB + " " + extendedC + " " + mathSymbols + " نهاية"
+        val combined = "قاعدة " + extendedB + " " + extendedC +
+            " " + mathSymbols + " نهاية"
         val (texts, tags) = textsAndTags(combined, "ar")
-        assertEquals("النصوص الموسّعة تُصنَّف كلها عربية", listOf(combined), texts)
+        assertEquals(
+            "النصوص الموسّعة تُصنَّف كلها عربية",
+            listOf(combined),
+            texts
+        )
         assertEquals(listOf("ar"), tags)
         assertEquals(combined, texts.joinToString(""))
     }
@@ -160,7 +172,8 @@ class LanguageSegmenterTest {
     fun mixedCjkAndLatinAndArabic() {
         val input = "مرحبا Hello 世界"
         val (texts, tags) = textsAndTags(input, "ar")
-        // الجولة الأجنبية تشمل اللاتينية والصينية معاً (كلاهما OTHER بنفس السقوط).
+        // الجولة الأجنبية تشمل اللاتينية والصينية معاً
+        // (كلاهما OTHER بنفس السقوط).
         assertEquals(listOf("مرحبا ", "Hello 世界"), texts)
         assertEquals(listOf("ar", "en"), tags)
         assertEquals(input, texts.joinToString(""))
@@ -185,8 +198,15 @@ class LanguageSegmenterTest {
         )
         for ((text, request) in samples) {
             val segments = segmenter.segment(text, request)
-            assertEquals("استعادة النص الأصلي: $text", text, segments.joinToString("") { it.text })
-            assertTrue("مقطع بلا نص خالٍ: $text", segments.all { it.text.isNotEmpty() })
+            assertEquals(
+                "استعادة النص الأصلي: $text",
+                text,
+                segments.joinToString("") { it.text }
+            )
+            assertTrue(
+                "مقطع بلا نص خالٍ: $text",
+                segments.all { it.text.isNotEmpty() }
+            )
         }
     }
 }

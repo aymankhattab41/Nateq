@@ -24,16 +24,21 @@ internal class GeneralSettingsController(
     private lateinit var tvDefaultVolumeValue: TextView
 
     fun setup(view: View) {
-        seekDefaultSpeechRate = view.findViewById(R.id.seek_default_speech_rate)
-        tvDefaultSpeechRateValue = view.findViewById(R.id.tv_default_speech_rate_value)
+        seekDefaultSpeechRate =
+            view.findViewById(R.id.seek_default_speech_rate)
+        tvDefaultSpeechRateValue =
+            view.findViewById(R.id.tv_default_speech_rate_value)
         seekDefaultPitch = view.findViewById(R.id.seek_default_pitch)
         tvDefaultPitchValue = view.findViewById(R.id.tv_default_pitch_value)
         seekDefaultVolume = view.findViewById(R.id.seek_default_volume)
         tvDefaultVolumeValue = view.findViewById(R.id.tv_default_volume_value)
 
-        val rate = runCatching { settings.getDefaultSpeechRate() }.getOrDefault(1.0f)
-        val pitch = runCatching { settings.getDefaultPitch() }.getOrDefault(1.0f)
-        val volume = runCatching { settings.getDefaultVolume() }.getOrDefault(1.0f)
+        val rate = runCatching { settings.getDefaultSpeechRate() }
+            .getOrDefault(1.0f)
+        val pitch = runCatching { settings.getDefaultPitch() }
+            .getOrDefault(1.0f)
+        val volume = runCatching { settings.getDefaultVolume() }
+            .getOrDefault(1.0f)
 
         tvDefaultSpeechRateValue.text = String.format(Locale.US, "%.1fx", rate)
         seekDefaultSpeechRate.progress = (rate * 100).toInt().coerceIn(0, 200)
@@ -42,42 +47,69 @@ internal class GeneralSettingsController(
         tvDefaultVolumeValue.text = "${(volume * 100).toInt()}%"
         seekDefaultVolume.progress = (volume * 100).toInt().coerceIn(0, 100)
 
-        seekDefaultSpeechRate.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+        seekDefaultSpeechRate.setOnSeekBarChangeListener(
+            object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(
+                seekBar: SeekBar,
+                progress: Int,
+                fromUser: Boolean
+            ) {
                 val value = progress / 100f
-                tvDefaultSpeechRateValue.text = String.format(Locale.US, "%.1fx", value)
-                seekBar.setSeekStateDescription(tvDefaultSpeechRateValue.text)
+                tvDefaultSpeechRateValue.text =
+                    String.format(Locale.US, "%.1fx", value)
+                seekBar.setSeekStateDescription(
+                    tvDefaultSpeechRateValue.text
+                )
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {
                 val value = seekBar.progress / 100f
                 runCatching { settings.setDefaultSpeechRate(value) }
-                seekBar.announceCompat(String.format(Locale.US, "%.1fx", value))
+                seekBar.announceCompat(
+                    String.format(Locale.US, "%.1fx", value)
+                )
                 onStatusChanged()
             }
         })
 
-        seekDefaultPitch.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+        seekDefaultPitch.setOnSeekBarChangeListener(
+            object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(
+                seekBar: SeekBar,
+                progress: Int,
+                fromUser: Boolean
+            ) {
                 val value = progress / 100f
-                tvDefaultPitchValue.text = String.format(Locale.US, "%.1fx", value)
-                seekBar.setSeekStateDescription(tvDefaultPitchValue.text)
+                tvDefaultPitchValue.text =
+                    String.format(Locale.US, "%.1fx", value)
+                seekBar.setSeekStateDescription(
+                    tvDefaultPitchValue.text
+                )
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {
                 val value = seekBar.progress / 100f
                 runCatching { settings.setDefaultPitch(value) }
-                seekBar.announceCompat(String.format(Locale.US, "%.1fx", value))
+                seekBar.announceCompat(
+                    String.format(Locale.US, "%.1fx", value)
+                )
                 onStatusChanged()
             }
         })
 
-        seekDefaultVolume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+        seekDefaultVolume.setOnSeekBarChangeListener(
+            object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(
+                seekBar: SeekBar,
+                progress: Int,
+                fromUser: Boolean
+            ) {
                 tvDefaultVolumeValue.text = "$progress%"
-                seekBar.setSeekStateDescription(tvDefaultVolumeValue.text)
+                seekBar.setSeekStateDescription(
+                    tvDefaultVolumeValue.text
+                )
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
