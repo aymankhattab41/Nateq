@@ -12,6 +12,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
+import java.io.File
+
 /**
  * اختبارات قاموس النطق الشخصي (Robolectric).
  * في بيئة الاختبار قد يكون التخزين المشفّر (Keystore) متاحاً
@@ -153,5 +155,36 @@ class PronunciationDictionaryTest {
         ui.addEntry("زبدة", "سمنة")
         // apply() يرصد طابع القرص فيلتقط التعديل دون إعادة تشغيل الخدمة
         assertEquals("سمنة", engine.apply("زبدة"))
+    }
+
+    // ===== خنق فحص القرص (≥1.5 ثانية) والتبديل الذرّي (البند 10-4) =====
+
+    private fun prefsFile(): File {
+        val dir = context.filesDir.parentFile
+        return File(dir, "shared_prefs/nateq_pronunciation_dict.xml")
+    }
+
+    @Test
+    fun reloadIfChanged_diskCheckThrottledWithinWindow() {
+        if (!dict.isPersistent()) return
+        val file = prefsFile()
+        assertTrue(file.exists())
+        // الموضع الحر الأول: فحص القرص فوري (لا تغيير بعد ← false)
+        assertFalse(dict.reloadIfChanged())
+        // تغيّر القرص، لكن ضمن نافذة الخنق (1.5 ثانية): لا يُكتشف الآن
+        file.setLastModified(System.currentTimeMillis() + 100_000L)
+        assertFalse(dict.reloadIfChanged())
+        assertFalse(dict.reloadIfChanged())
+    }
+
+    @Test
+    fun reloadIfChanged_noThrottle_detectsStampChangeImmediately() {
+        if (!dict.isPersistent()) return
+        val noThrottle = PronunciationDictionary(context, 0L)
+        val file = prefsFile()
+        assertTrue(file.exists())
+        noThrottle.reloadIfChanged() // الموضع الحر الأول بلا تغيير
+        file.setLastModified(System.currentTimeMillis() + 100_000L)
+        assertTrue(noThrottle.reloadIfChanged())
     }
 }
