@@ -1,13 +1,16 @@
 package com.aymankhattab.nateq
 
 import com.aymankhattab.nateq.engine.pipeline.AmountParser
+import com.aymankhattab.nateq.engine.pipeline.CleanupStep
 import com.aymankhattab.nateq.engine.pipeline.CurrencyStep
 import com.aymankhattab.nateq.engine.pipeline.DateStep
 import com.aymankhattab.nateq.engine.pipeline.NumberStep
 import com.aymankhattab.nateq.engine.pipeline.NumberWordsConverter
+import com.aymankhattab.nateq.engine.pipeline.PhoneNumberStep
 import com.aymankhattab.nateq.engine.pipeline.RomanNumeralStep
 import com.aymankhattab.nateq.engine.pipeline.SymbolStep
 import com.aymankhattab.nateq.engine.pipeline.UnitStep
+import com.aymankhattab.nateq.engine.pipeline.UrlStep
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -455,5 +458,41 @@ class PipelineStepsTest {
     fun symbol_noSymbols_leftUnchanged() {
         // لا رموز عامة/حسابية ولا @ معزولة: النص يُعاد كما هو بلا ممرّات.
         assertEquals("مرحبا 7", SymbolStep.apply("مرحبا 7"))
+    }
+
+    @Test
+    fun phone_arithmeticExpression_leftForNumberStep() {
+        // الادعاء: «1000 - 2000» (8 خانات بفاصل مسافة وشرطة) كانت تُنطق هاتفاً
+        // رقماً رقماً ويلغى المعنى الحسابي — تُترك لخطوتي الرموز والأرقام.
+        assertEquals("1000 - 2000", PhoneNumberStep.apply("1000 - 2000"))
+        assertEquals("5 * 7", PhoneNumberStep.apply("5 * 7"))
+        assertEquals("10 / 2", PhoneNumberStep.apply("10 / 2"))
+        // الهاتف المألوف بشرطة يبقى هاتفاً يُنطق رقماً رقماً ولا يُفسد
+        assertEquals(
+            "صفر واحد صفر واحد اثنان ثلاثة أربعة خمسة ستة سبعة ثمانية",
+            PhoneNumberStep.apply("010-1234-5678")
+        )
+    }
+
+    @Test
+    fun url_uppercaseSchemeAndWww_stillReadableDomain() {
+        // الادعاء: الروابط بحروف كبيرة كانت تُشوَّه («HTTPS://GOOGLE.COM» ←
+        // «موقع HTTPS») لأن إزالة الشعار حساسة لحالة الأحرف.
+        assertEquals("موقع GOOGLE", UrlStep.apply("HTTPS://GOOGLE.COM"))
+        assertEquals("موقع GOOGLE", UrlStep.apply("WWW.GOOGLE.COM/x"))
+        assertEquals("موقع google", UrlStep.apply("https://www.google.com"))
+        assertEquals("موقع GOOGLE", UrlStep.apply("https://WWW.GOOGLE.ORG"))
+    }
+
+    @Test
+    fun symbol_percentAndComparisons_notGlued() {
+        // الادعاء: استبدال «%» بلا مسافات يلصق الكلمات («خمسونبالمئة») — والجذر
+        // نفسه يصيب بقية الرموز («5>3» ← «5أكبر من3»). المسافات الطرفية
+        // تُنظَّف في CleanupStep في المسار الكامل.
+        val percent = CleanupStep.apply(SymbolStep.apply("خمسون%"))
+        assertEquals("خمسون بالمئة", percent)
+        assertEquals("25 بالمئة", CleanupStep.apply(SymbolStep.apply("25%")))
+        assertEquals("5 أكبر من 3", SymbolStep.apply("5>3"))
+        assertEquals("37 درجة", CleanupStep.apply(SymbolStep.apply("37°")))
     }
 }

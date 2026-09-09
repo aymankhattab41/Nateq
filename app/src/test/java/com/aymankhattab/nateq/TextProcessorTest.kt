@@ -227,6 +227,10 @@ class TextProcessorTest {
         assertEquals("عشرة ناقص أربعة", processor.process("10 - 4", "ar"))
         // الكسر 1/2 يُنطق «واحد على اثنان» (numberToWords يستخدم «اثنان» المرفوعة).
         assertEquals("واحد على اثنان", processor.process("1/2", "ar"))
+        // الادعاء: العملية الطويلة (8 خانات) لا تُنطق هاتفاً رقماً رقماً
+        assertEquals("ألف ناقص ألفان", processor.process("1000 - 2000", "ar"))
+        // الادعاء: «%» يُستبدل مفصولاً بمسافات فلا تلتصق «خمسونبالمئة»
+        assertEquals("خمسون بالمئة", processor.process("خمسون%", "ar"))
     }
 
     @Test

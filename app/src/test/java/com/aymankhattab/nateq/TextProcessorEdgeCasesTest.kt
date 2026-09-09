@@ -72,6 +72,15 @@ class TextProcessorEdgeCasesTest {
         )
     }
 
+    @Test
+    fun url_uppercaseSchemeAndWww_readableDomain() {
+        // الادعاء: روابط بحروف كبيرة كانت تُخرج «موقع HTTPS» مشوَّهاً
+        assertEquals(
+            "تفقد موقع GOOGLE",
+            processor.process("تفقد HTTPS://GOOGLE.COM", "ar")
+        )
+    }
+
     // ═══════════════════════ توافق العدد والمعدود ═══════════════════════
 
     @Test

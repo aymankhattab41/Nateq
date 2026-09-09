@@ -5,7 +5,9 @@ import java.util.regex.Pattern
 /** معالجة الرموز الشائعة (بالمئة، النسبة، العملية الحسابية، @ المعزولة…). */
 internal object SymbolStep : TextProcessingStep {
 
-    // رموز تُستبدل دائماً (معناها ثابت لا يتبدل بسياق):
+    // رموز تُستبدل دائماً (معناها ثابت لا يتبدل بسياق). تُحاط بدائلها في
+    // SYMBOL_PATTERNS بمسافات (« بالمئة ») فلا تلتصق الكلمات («خمسونبالمئة»)،
+    // ويُضبط التباعد النهائي في CleanupStep (ضم المسافات ثم التقليم).
     private val SYMBOL_NAMES_GENERAL = mapOf(
         "%" to "بالمئة",
         "٪" to "بالمئة",
@@ -44,18 +46,22 @@ internal object SymbolStep : TextProcessingStep {
 
     // @: لا تُستبدل داخل بريد إلكتروني (حرف/رقم على طرفيها)، بل فقط
     // حين تكون معزولة (مثل "نلتقي @ 5").
-    private val PATTERN_AT = Pattern.compile("(?<!\\p{L})(?<![0-9])@(?![0-9])(?!\\p{L})")
+    private val PATTERN_AT = Pattern.compile(
+        "(?<!\\p{L})(?<![0-9])@(?![0-9])(?!\\p{L})"
+    )
 
     /** أنماط منتهية تجمع الرموز العامة (الأطول أولاً لضمان °C قبل °) ثم
      *  الحسابية المقيدة بين الرقمين ثم @ المعزولة. */
     private val SYMBOL_PATTERNS: List<Pair<Pattern, String>> = buildList {
         addAll(
             SYMBOL_NAMES_GENERAL.entries.sortedByDescending { it.key.length }
-                .map { Pattern.compile(Pattern.quote(it.key)) to it.value }
+                .map {
+                    Pattern.compile(Pattern.quote(it.key)) to " ${it.value} "
+                }
         )
         addAll(
             SYMBOL_ARITHMETIC.map { (op, word) ->
-                // لاحظ: \Q..\E لإبعاد الرموز الخاصة (بما فيها * و /) عن المعنى النمطي.
+                // \Q..\E لإبعاد الرموز الخاصة (كـ * و /) عن المعنى النمطي
                 Pattern.compile("(?<=\\d)\\s*\\Q$op\\E\\s*(?=\\d)") to word
             }
         )
