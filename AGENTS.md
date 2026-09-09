@@ -15,7 +15,17 @@
 ### سلسلة بناء أندرويد 17 (API 37)
 - AGP **9.2.0+**، Gradle wrapper **9.4.1**، `compileSdk/targetSdk **37**`.
 - Kotlin مدمج عبر AGP 9. إعادة تسمية الـ APK عبر `androidComponents.onVariants`.
-- الحالي: `versionCode=4` و `versionName="0.4.0"` وناتج `lord_tts.apk`.
+- الحالي: `versionCode=10` و `versionName="0.10.0"` وناتج `lord_tts.apk`.
+
+### نشر الإصدارات (scripts/release.ps1)
+**رفع رقم الإصدار يتم حصراً عبر السكربت `.\scripts\release.ps1`** (لا يدوياً):
+- الآلية: يأخذ أعلى وسم `vN` على الـ remote ويرفع `versionCode` و`versionName`
+  (وسم `vN` يعني `0.N.0`، متوافق مع `alignZeroRelease`)، ثم يشغّل
+  `:app:testDebugUnitTest` و`:app:assembleRelease`، يلتزم `app/build.gradle.kts`
+  فقط (رسالة عربية)، يضع الوسم `vN`، يدفع `master` والوسم، وينشئ Release على
+  GitHub بمرفق `lord_tts.apk` (يحتاج `gh` موثّقاً؛ بدونه يدفع ويحذّر).
+- أوامر: `.\scripts\release.ps1` (تنفيذ كامل) أو `.\scripts\release.ps1 -DryRun`
+  (عرض الخطة بلا تغيير). يرفض النشر المتكرر لنفس الوسم (محلياً أو على الـ remote).
 
 ### الاختبارات الآلية (JUnit + Robolectric)
 - **مطلوبة قبل أي commit:** بعد تعديل المنطق شغّل
