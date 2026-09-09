@@ -174,6 +174,7 @@ internal class BatteryAnnouncementController(
         val batteryRate =
             runCatching { settings.getBatteryAnnouncementRate() }
                 .getOrDefault(1.0f)
+                .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
         tvBatteryRateValue.text =
             String.format(Locale.US, "%.1fx", batteryRate)
         seekBatteryRate.progress =
@@ -185,7 +186,7 @@ internal class BatteryAnnouncementController(
                 progress: Int,
                 fromUser: Boolean
             ) {
-                val value = progress / 100f
+                val value = progress.speedFactor()
                 tvBatteryRateValue.text =
                     String.format(Locale.US, "%.1fx", value)
                 seekBar.setSeekStateDescription(
@@ -195,17 +196,13 @@ internal class BatteryAnnouncementController(
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {
+                seekBar.snapSpeedMin()
+                val value = seekBar.progress.speedFactor()
                 runCatching {
-                    settings.setBatteryAnnouncementRate(
-                        seekBar.progress / 100f
-                    )
+                    settings.setBatteryAnnouncementRate(value)
                 }
                 seekBar.announceCompat(
-                    String.format(
-                        Locale.US,
-                        "%.1fx",
-                        seekBar.progress / 100f
-                    )
+                    String.format(Locale.US, "%.1fx", value)
                 )
             }
         })

@@ -34,10 +34,6 @@ const TELEGRAM_MAX_TEXT_LENGTH = 4000;
 const RATE_LIMIT_WINDOW_SECONDS = 60;
 const RATE_LIMIT_MAX_MESSAGES = 20;
 
-// رسالة تُردّ للمستخدم عند تجاوز معدل الإرسال (تُرسل كخصٍص بلا تنسيق).
-const RATE_LIMITED_TEXT =
-  "تم تحديد معدل إرسال رسائلك مؤقتاً — انتظر قليلاً ثم أعد المحاولة.";
-
 // الهروب من أحرف HTML قبل تمرير النص لتجنّب كسر تنسيق sendMessage.
 function escapeHtml(text) {
   return String(text)
@@ -267,10 +263,12 @@ async function forwardMessage(env, update) {
   }
 
   // قيود المعدل تُفحص قبل التوجيه لكل مرسل (نافذة 60 ث / حدّ 20 رسالة).
+  // عند التجاوز نُسقط الطلب بصمت (بلا إرسال أي رد لتليجرام) لئلا يُستغل
+  // الناقل لإغراق البوت بآلاف الرسائل وتعريضه للحظر من تليجرام. يُشار إلى
+  // التجاوز بالرجوع "rate_limited" الذي يُترجم إلى HTTP 429 في النداء.
   if (from.id !== undefined && from.id !== null) {
     const rate = await enforceRateLimit(env, String(from.id));
     if (!rate.allowed) {
-      await sendToTelegram(env, msg.chat.id, RATE_LIMITED_TEXT, null);
       return "rate_limited";
     }
   }
@@ -312,9 +310,10 @@ function secureEqual(a, b) {
 
 export default {
   async fetch(request, env) {
-    // فحص GET فقط (صفحة الفحص)
+    // فحص GET فقط (صفحة الفحص) — استجابة محايدة لا تكشف هوية الخدمة/المشروع
+    // كي لا تستهدفها الماسحات الآلية بتخمين إصدارات أو ثغرات معروفة.
     if (request.method === "GET") {
-      return new Response("Lord TTS support relay is running", { status: 200 });
+      return new Response("OK", { status: 200 });
     }
     if (request.method !== "POST") {
       return new Response("Method not allowed", { status: 405 });
@@ -331,6 +330,14 @@ export default {
     try {
       const update = await request.json();
       const result = await forwardMessage(env, update);
+      // عند تجاوز قيود المعدل نُسقط الطلب بصمت بالكود 429 (Too Many Requests)
+      // دون إرسال أي شيء إلى تليجرام؛ فلا يكرّر المهاجم إلا استجابة الخادم.
+      if (result === "rate_limited") {
+        return new Response(JSON.stringify({ ok: false, result }), {
+          status: 429,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       // نرد 200 دائماً حتى لا يعيد تليجرام إرسال الرسالة مراراً
       return new Response(JSON.stringify({ ok: true, result }), {
         status: 200,
@@ -353,4 +360,5 @@ export {
   enforceRateLimit,
   extractSenderContent,
   buildRelayMessages,
+  forwardMessage,
 };

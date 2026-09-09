@@ -8,11 +8,13 @@ import com.aymankhattab.nateq.core.audio.announcement.TimeAnnouncementManager
 import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
 import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.core.audio.announcement.TimeAlarmReceiver
+import com.aymankhattab.nateq.core.common.TimeProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import java.lang.reflect.Method
 import java.util.Calendar
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -23,13 +25,14 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowAlarmManager.ScheduledAlarm
 
 /**
- * اختبارات مدير إعلان الوقت — نوّعان:
+ * اختبارات مدير إعلان الوقت — نوعان:
  *  1) التنسيق الخالص (عربي/إنجليزي طبيعي ورقمي) عبر Reflection على الدوال
  *     الخاصة — توقعاتٌ حتمية لا تعتمد على ساعة النظام.
  *  2) الجدولة البنيوية عبر ShadowAlarmManager: عدد المنبهات وترتيبها
- *     النسبي (المستقبل) — دون ربط بقيم زمنية مضبوطة للساعة الحقيقية
- *     (System.currentTimeMillis في بيئة الاختبار غير قابل للضبط)، فيبقى
- *     الاختبار مستقراً مهما كانت اللحظة الفعلية للتنفيذ.
+ *     النسبي — بساعة افتراضية ثابتة (FakeClock) فيبقى الاختبار مستقراً
+ *     مهما كانت اللحظة الفعلية للتنفيذ.
+ *  3) ساعات الهدوء (حساب النهاية وفحص الدخول): حتمية عبر FakeClock عند
+ *     لحظات مقصودة (عابرة لمنتصف الليل / نفس اليوم).
  *
  * نتجنّب دوال speak*() التي تولّد TTS فعلياً.
  */
@@ -39,22 +42,29 @@ class TimeAnnouncementManagerTest {
 
     private lateinit var context: Context
     private lateinit var settings: SettingsRepository
+    private lateinit var fixedClock: FakeClock
     private lateinit var manager: TimeAnnouncementManager
 
-    private fun dayOfWeek(): Int =
-        Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
-
-    private fun newManager(): TimeAnnouncementManager {
+    private fun newManager(
+        clock: TimeProvider = fixedClock
+    ): TimeAnnouncementManager {
         val providers = listOf(SystemVoiceProvider(context, settings))
         val catalog = VoiceCatalog(providers)
         val handler = SynthesisRequestHandler(catalog, settings)
-        return TimeAnnouncementManager(context, settings, catalog, handler)
+        return TimeAnnouncementManager(
+            context, settings, catalog, handler, clock
+        )
     }
 
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         settings = SettingsRepository(context)
+        // ساعة افتراضية ثابتة (الأحد 2017-01-01 ظهراً) — لا تبعية على الساعة
+        // الحية: لا يتغيّر عدد المنبهات مهما كانت لحظة التنفيذ الفعلية.
+        fixedClock = FakeClock(
+            millisFor(2017, Calendar.JANUARY, 1, 12, 0)
+        )
         manager = newManager()
     }
 
@@ -234,45 +244,120 @@ class TimeAnnouncementManagerTest {
     // ═══════════════════════ حسابات ساعات الهدوء ═══════════════════════
 
     @Test
-    fun calculateQuietEnd_alwaysInFuture() {
-        settings.setQuietStartForDay(dayOfWeek(), 23)
-        settings.setQuietEndForDay(dayOfWeek(), 7)
+    fun calculateQuietEnd_crossMidnight_returnsTomorrowEnd() {
+        // الأحد 2017-01-01 23:30 — نافذة 23→7 تعبر منتصف الليل، فتُحسب نهاية
+        // الهدوء صباح الاثنين 07:00 (لحظة الغد) وليست نهاية اليوم المنقضي.
+        val clock = FakeClock(
+            millisFor(2017, Calendar.JANUARY, 1, 23, 30)
+        )
+        manager = newManager(clock)
+        val day = clock.now().get(Calendar.DAY_OF_WEEK)
+        settings.setQuietStartForDay(day, 23)
+        settings.setQuietEndForDay(day, 7)
+
         val end = calculateQuietEnd()
-        assertTrue("نهاية الهدوء في المستقبل", end > System.currentTimeMillis())
+        assertEquals(
+            millisFor(2017, Calendar.JANUARY, 2, 7, 0), end
+        )
+        assertTrue(
+            "نهاية الهدوء في المستقبل",
+            end > clock.currentTimeMillis()
+        )
     }
 
     @Test
-    fun calculateQuietEnd_sameDayWindow() {
-        settings.setQuietStartForDay(dayOfWeek(), 7)
-        settings.setQuietEndForDay(dayOfWeek(), 23)
+    fun calculateQuietEnd_sameDayWindow_returnsTodayEnd() {
+        // الأحد 2017-01-01 10:00 — نافذة 7→23 تنتهي اليوم (23:00)
+        // لأنها بعد الآن.
+        val clock = FakeClock(
+            millisFor(2017, Calendar.JANUARY, 1, 10, 0)
+        )
+        manager = newManager(clock)
+        val day = clock.now().get(Calendar.DAY_OF_WEEK)
+        settings.setQuietStartForDay(day, 7)
+        settings.setQuietEndForDay(day, 23)
+
         val end = calculateQuietEnd()
-        assertTrue("نهاية الهدوء في المستقبل", end > System.currentTimeMillis())
+        assertEquals(
+            millisFor(2017, Calendar.JANUARY, 1, 23, 0), end
+        )
+        assertTrue(
+            "نهاية الهدوء في المستقبل",
+            end > clock.currentTimeMillis()
+        )
     }
 
     @Test
-    fun isInQuietHours_reflectsCrossMidnight() {
-        // نافذة 23→7: عند الساعة غير القابلة للضبط قد تكون داخلها أو خارجها،
-        // لكن نتيجتها يجب أن تكون منطقية (منطقية boolean لا استثناء).
-        settings.setQuietStartForDay(dayOfWeek(), 23)
-        settings.setQuietEndForDay(dayOfWeek(), 7)
-        wantBoolean(isInQuietHours())
+    fun isInQuietHours_crossMidnight_insideWindow() {
+        // قبل الفجر (05:00) داخل نافذة 23→7 العابرة لمنتصف الليل.
+        val clock = FakeClock(
+            millisFor(2017, Calendar.JANUARY, 1, 5, 0)
+        )
+        manager = newManager(clock)
+        val day = clock.now().get(Calendar.DAY_OF_WEEK)
+        settings.setQuietStartForDay(day, 23)
+        settings.setQuietEndForDay(day, 7)
+        assertTrue(isInQuietHours())
+    }
+
+    @Test
+    fun isInQuietHours_crossMidnight_outsideWindow() {
+        // ظهر الأحد (12:00) خارج نافذة 23→7.
+        val clock = FakeClock(
+            millisFor(2017, Calendar.JANUARY, 1, 12, 0)
+        )
+        manager = newManager(clock)
+        val day = clock.now().get(Calendar.DAY_OF_WEEK)
+        settings.setQuietStartForDay(day, 23)
+        settings.setQuietEndForDay(day, 7)
+        assertFalse(isInQuietHours())
+    }
+
+    @Test
+    fun isInQuietHours_sameDayWindow_inside() {
+        // ظهر الأحد (12:00) داخل نافذة 7→23.
+        val clock = FakeClock(
+            millisFor(2017, Calendar.JANUARY, 1, 12, 0)
+        )
+        manager = newManager(clock)
+        val day = clock.now().get(Calendar.DAY_OF_WEEK)
+        settings.setQuietStartForDay(day, 7)
+        settings.setQuietEndForDay(day, 23)
+        assertTrue(isInQuietHours())
+    }
+
+    @Test
+    fun isInQuietHours_sameDayWindow_outside() {
+        // قبل الفجر (05:00) خارج نافذة 7→23.
+        val clock = FakeClock(
+            millisFor(2017, Calendar.JANUARY, 1, 5, 0)
+        )
+        manager = newManager(clock)
+        val day = clock.now().get(Calendar.DAY_OF_WEEK)
+        settings.setQuietStartForDay(day, 7)
+        settings.setQuietEndForDay(day, 23)
+        assertFalse(isInQuietHours())
     }
 
     @Test
     fun isInQuietHours_disabledAllDay_false() {
-        // 0→0 لا يمثّل فترة؛ بعض التفسيرات قد تعتبرها داخلة طول اليوم.
-        // نكتفي بأن الدالة لا ترمي أي استثناء.
-        settings.setQuietStartForDay(dayOfWeek(), 0)
-        settings.setQuietEndForDay(dayOfWeek(), 0)
-        wantBoolean(isInQuietHours())
+        // 0→0 لا يمثّل فترة: دائماً خارج ساعات الهدوء مهما كانت الساعة.
+        val clock = FakeClock(
+            millisFor(2017, Calendar.JANUARY, 1, 12, 0)
+        )
+        manager = newManager(clock)
+        val day = clock.now().get(Calendar.DAY_OF_WEEK)
+        settings.setQuietStartForDay(day, 0)
+        settings.setQuietEndForDay(day, 0)
+        assertFalse(isInQuietHours())
     }
 
     // ═══════════════════════ الجدولة البنيوية ═══════════════════════
 
     @Test
     fun start_schedulesExactlyOneAlarm() {
-        // في أي لحظة: منبه واحد في المستقبل (سواء كان فاصلَ التالي أو نهايةَ
-        // الهدوء) — نتحقق من البنية لا من القيمة الدقيقة.
+        // بساعة افتراضية ثابتة خارج الهدوء: منبه واحد في المستقبل — تحقّق من
+        // البنية لا من القيمة الدقيقة (الكمية حتمية مهما كانت لحظة التنفيذ).
         TimeAlarmReceiver.cancel(context)
         manager = newManager()
         manager.start()
@@ -344,10 +429,25 @@ class TimeAnnouncementManagerTest {
 
     // ──────────────── أدوات مساعدة ────────────────
 
-    /** يعرّف بأنه دالة منطقية بلا استثناء — يُستخدم للدوال التي تُرجع boolean
-     *  ولا نريد تأكيد قيمتها (لأنها تعتمد على ساعة حقيقية خارج الضبط). */
-    private fun wantBoolean(value: Boolean) {
-        // أي قيمة منطقية مقبولة؛ الهدف أن الدالة تعمل بلا رمي استثناء
-        assertTrue("منطقي صالح", value || !value)
+    /** لحظة محددة حتمية (سنة/شهر/يوم/ساعة/دقيقة بالمنطقة الافتراضية). */
+    private fun millisFor(
+        year: Int, month: Int, day: Int, hour: Int, minute: Int
+    ): Long =
+        Calendar.getInstance().apply {
+            set(year, month, day, hour, minute, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+}
+
+/** ساعة افتراضية قابلة للضبط — تحكّم كامل بالخط الزمني في الاختبارات. */
+private class FakeClock(private var millis: Long) : TimeProvider {
+
+    override fun currentTimeMillis(): Long = millis
+
+    override fun now(): Calendar =
+        Calendar.getInstance().apply { timeInMillis = millis }
+
+    fun setTo(millis: Long) {
+        this.millis = millis
     }
 }

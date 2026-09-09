@@ -59,7 +59,6 @@
 <string name="caller_permission_grant_again">إعادة منح الأذونات</string>
 <string name="caller_permission_granted_both">تم منح الأذونات؛ سيُنطق اسم المتصل إن وُجد في سجل المكالمات أو دفتر الاتصالات</string>
 <string name="caller_permission_granted_contacts_only">تم منح إذن قراءة جهات الاتصال فقط؛ قد لا يصل الاسم على أندرويد 12+ دون سجل المكالمات</string>
-<string name="caller_permission_granted_phone_only">تم منح إذن حالة الهاتف فقط؛ قد لا يصل الاسم على أندرويد 12+ دون سجل المكالمات</string>
 <string name="caller_permission_needed">لن يُنطق اسم المتصل إلا بعد منح إذن سجل المكالمات وحالة الهاتف</string>
 <string name="caller_permission_revoked_message">يُسحب النظام أذونات الهاتف تلقائياً عند عدم استخدام تطبيق كـ Lord TTS فترة طويلة. إعلان اسم المتصل مفعّل لكنه فاقد إذن حالة الهاتف، فلن يُنطق المتصل فعلياً حتى تُعاد الأذونات</string>
 <string name="caller_permission_revoked_title">سُحبت أذونات المتصل</string>

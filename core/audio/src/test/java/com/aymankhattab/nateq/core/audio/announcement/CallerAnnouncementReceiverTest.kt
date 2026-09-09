@@ -1,12 +1,17 @@
 package com.aymankhattab.nateq.core.audio.announcement
 
 import android.content.Context
+import android.content.pm.PackageManager
 import androidx.test.core.app.ApplicationProvider
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
@@ -14,6 +19,8 @@ import org.robolectric.annotation.Config
  * أي بحث في الخريطة المخصصة أو سجلّ الاتصالات/المكالمات — فلا يُنطق اسم جهة
  * اتصالٍ تتصادف أرقامها (كملحق «1» لرموز أمريكا) لمكالمةٍ مجهولةٍ فعلياً.
  * كما يتأكد أن الأرقام الحقيقية تُنتَج بشكلها الرقمي المجرّد فقط للبحث.
+ * ويغطي أيضاً منطق سحب إذن READ_PHONE_STATE: الشفاء الذاتي الذي يطفئ تفعيل
+ * إعلان المتصل عند سحبه رغم بقاء التفعيل قائماً.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -55,5 +62,45 @@ class CallerAnnouncementReceiverTest {
     @Test
     fun `non numeric junk is rejected`() {
         assertNull(normalize("caller-id"))
+    }
+
+    @Test
+    fun `permission revoked disables enabled and syncs`() {
+        val repo = SettingsRepository(context)
+        repo.setCallerAnnouncementEnabled(true)
+        CallerAnnouncementReceiver()
+            .disableAfterPermissionRevoked(repo, context)
+        assertFalse(
+            "سحب الإذن يطفئ التفعيل القائم",
+            repo.isCallerAnnouncementEnabled()
+        )
+    }
+
+    @Test
+    fun `permission revoked leaves disabled untouched`() {
+        val repo = SettingsRepository(context)
+        repo.setCallerAnnouncementEnabled(false)
+        CallerAnnouncementReceiver()
+            .disableAfterPermissionRevoked(repo, context)
+        assertFalse(repo.isCallerAnnouncementEnabled())
+    }
+
+    @Test
+    fun `hasCallerPermission reflects granted state`() {
+        val receiver = CallerAnnouncementReceiver()
+        shadowOf(
+            ApplicationProvider.getApplicationContext<android.app.Application>()
+        ).denyPermissions(android.Manifest.permission.READ_PHONE_STATE)
+        assertFalse(
+            "بلا READ_PHONE_STATE نعتبر الإذن غائباً",
+            receiver.hasCallerPermission(context)
+        )
+        shadowOf(
+            ApplicationProvider.getApplicationContext<android.app.Application>()
+        ).grantPermissions(android.Manifest.permission.READ_PHONE_STATE)
+        assertTrue(
+            "بمنح READ_PHONE_STATE نعتبر الإذن حاضراً",
+            receiver.hasCallerPermission(context)
+        )
     }
 }

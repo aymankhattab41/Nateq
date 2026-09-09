@@ -58,7 +58,6 @@
 <string name="caller_permission_grant_again">Grant permissions again</string>
 <string name="caller_permission_granted_both">Permissions granted; caller name will be spoken from call log or contacts</string>
 <string name="caller_permission_granted_contacts_only">Contacts granted; name may not arrive on Android 12+ without call log</string>
-<string name="caller_permission_granted_phone_only">Phone state granted; name may not arrive on Android 12+ without call log</string>
 <string name="caller_permission_needed">Caller announcement needs call log and phone state permission</string>
 <string name="caller_permission_revoked_message">The system automatically revokes sensitive permissions when an app like Lord TTS goes unused for a long time. Caller announcement is still enabled but lost the phone state permission, so callers cannot be announced until permissions are granted again</string>
 <string name="caller_permission_revoked_title">Caller permissions revoked</string>

@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.settings
 
+import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.util.Log
@@ -20,6 +21,11 @@ class AnnouncementTileService : TileService() {
 
     companion object {
         private const val TAG = "NATEQ_TILE"
+
+        /** خاصية subtitle أُضيفت في API 29 — استدعاؤها المباشر قبلها يُنهار
+         *  NoSuchMethodError على الأجهزة الأقدم (7.0–9.0). */
+        internal fun subtitleSupported(sdkInt: Int): Boolean =
+            sdkInt >= Build.VERSION_CODES.Q
     }
 
     /** مصدر الإعدادات المحقون — كائن مشترك عبر عمليات التطبيق. */
@@ -72,10 +78,13 @@ class AnnouncementTileService : TileService() {
             if (enabled) R.string.tile_label_on else R.string.tile_label_off
         )
         tile.label = label
-        // الوصف الثابت (مضبوط من السلاسل) يُغني عن الصوتية المتغيرة في flags.
-        tile.subtitle = getString(R.string.tile_label_description)
-        // بدون contentDescription: يقرأ النظام label تلقائياً (تسمية) +
-        // حالة STATE — إضافته تُكرّر القراءة لنفس النص.
+        // الوصف الساكن يُعرض فقط على أندرويد 10+ (خاصية subtitle في API 29)
+        // — بلا هذا الحارس تنهار البلاطة NoSuchMethodError على الإصدارات
+        // الأقدم. بدون contentDescription: يقرأ النظام label تلقائياً
+        // (تسمية) + حالة STATE — إضافته تُكرّر القراءة لنفس النص.
+        if (subtitleSupported(Build.VERSION.SDK_INT)) {
+            tile.subtitle = getString(R.string.tile_label_description)
+        }
         tile.updateTile()
     }
 }

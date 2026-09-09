@@ -12,8 +12,12 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.OutputStream
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestCoroutineScheduler
+import kotlinx.coroutines.test.TestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -30,9 +34,10 @@ import org.robolectric.annotation.Config
 
 /**
  * اختبارات العمليات غير المتزامنة في SettingsViewModel (تصدير/استيراد/
- * نسخ احتياطي) التي تجري على خيط IO في نطاق viewModelScope — بحقن
- * Dispatchers.Main عبر kotlinx-coroutines-test، وبمحتوى SAF مُسجَّل
- * عبر ShadowContentResolver.
+ * نسخ احتياطي) — تجري كلها على جدولة coroutines-test واحدة حتمية
+ * (بلا خيوط IO حقيقية تُعلّق مع Robolectric). لأن العملية والحدث مختلفان،
+ * يُشترك المُجمِّع أولاً عبر async ثم تُشغَّل العملية ثم advanceUntilIdle —
+ * فيُسلم SharedFlow (replay=0) القيمة للمُجمِّع القائم ولا تُفقد.
  */
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -43,15 +48,19 @@ class SettingsViewModelAsyncTest {
     private lateinit var settings: SettingsRepository
     private lateinit var dict: PronunciationDictionary
     private lateinit var vm: SettingsViewModel
+    private lateinit var scheduler: TestCoroutineScheduler
+    private lateinit var mainDispatcher: TestDispatcher
 
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         settings = SettingsRepository(context)
         dict = PronunciationDictionary(context)
-        vm = SettingsViewModel(settings, dict)
-        // حقن Main dispatcher حتى يُنشأ viewModelScope بلا Main حقيقي
-        Dispatchers.setMain(StandardTestDispatcher())
+        // جدولة واحدة للاختبار: حقنها في Main وفي عمليات الـ VM معاً
+        scheduler = TestCoroutineScheduler()
+        mainDispatcher = StandardTestDispatcher(scheduler)
+        Dispatchers.setMain(mainDispatcher)
+        vm = SettingsViewModel(settings, dict, mainDispatcher)
         context.getSharedPreferences("nateq_settings", 0)
             .edit().clear().commit()
     }
@@ -76,76 +85,95 @@ class SettingsViewModelAsyncTest {
         override fun write(b: Int): Unit = throw IOException("write blocked")
     }
 
-    private suspend inline fun <reified T : SettingsOperation>
-        awaitOperation(): T =
-        vm.operationEvents.first { it is T } as T
+    /** الشكل الحتمي: اشتراك أولاً، ثم تشغيل العملية، ثم دفع الجدولة. */
+    private suspend fun TestScope.runOperation(
+        trigger: () -> Unit,
+        predicate: (SettingsOperation) -> Boolean
+    ): SettingsOperation {
+        val event = async<SettingsOperation> {
+            vm.operationEvents.first(predicate)
+        }
+        trigger()
+        scheduler.advanceUntilIdle()
+        return event.await()
+    }
 
     @Test
-    fun exportDict_writesJsonToUri() = runTest {
+    fun exportDict_writesJsonToUri() = runTest(scheduler) {
         dict.addEntry("ص", "صفحة")
         val uri = Uri.parse("content://nateq.test/export.json")
         val out = registerOutput(uri)
 
-        vm.exportDict(uri, context.contentResolver)
-        val event = awaitOperation<SettingsOperation.DictExported>()
+        val event = runOperation(
+            { vm.exportDict(uri, context.contentResolver) },
+            { it is SettingsOperation.DictExported }
+        )
 
-        assertTrue(event.ok)
+        assertTrue((event as SettingsOperation.DictExported).ok)
         assertTrue(
             out.toByteArray().toString(Charsets.UTF_8).contains("صفحة")
         )
     }
 
     @Test
-    fun exportDict_ioFailure_emitsFailure() = runTest {
+    fun exportDict_ioFailure_emitsFailure() = runTest(scheduler) {
         val uri = Uri.parse("content://nateq.test/blocked.json")
         shadowOf(context.contentResolver).registerOutputStream(
             uri, ThrowingOutputStream()
         )
 
-        vm.exportDict(uri, context.contentResolver)
-        val event = awaitOperation<SettingsOperation.DictExported>()
+        val event = runOperation(
+            { vm.exportDict(uri, context.contentResolver) },
+            { it is SettingsOperation.DictExported }
+        )
 
-        assertFalse(event.ok)
+        assertFalse((event as SettingsOperation.DictExported).ok)
     }
 
     @Test
-    fun importDict_merge_keepsExistingAndAddsNew() = runTest {
+    fun importDict_merge_keepsExistingAndAddsNew() = runTest(scheduler) {
         dict.addEntry("قديم", "مقابل")
         val json = """{"ص":"صفحة","د.":"دكتور"}"""
 
-        vm.importDict(json, merge = true)
-        val event = awaitOperation<SettingsOperation.DictImported>()
+        val event = runOperation(
+            { vm.importDict(json, merge = true) },
+            { it is SettingsOperation.DictImported }
+        )
 
-        assertTrue(event.ok)
+        assertTrue((event as SettingsOperation.DictImported).ok)
         assertEquals("صفحة", dict.getAllEntries()["ص"])
         assertEquals("مقابل", dict.getAllEntries()["قديم"])
     }
 
     @Test
-    fun restoreBackup_readsFile_andEmitsRestored() = runTest {
+    fun restoreBackup_readsFile_andEmitsRestored() = runTest(scheduler) {
         settings.setTimeAnnouncementInterval(15)
         val json = vm.buildBackupJson()
         val uri = Uri.parse("content://nateq.test/backup.json")
         registerInput(uri, json)
 
-        vm.restoreBackup(uri, context.contentResolver)
-        val event = awaitOperation<SettingsOperation.Restored>()
+        val event = runOperation(
+            { vm.restoreBackup(uri, context.contentResolver) },
+            { it is SettingsOperation.Restored }
+        )
 
-        assertTrue(event.ok)
+        assertTrue((event as SettingsOperation.Restored).ok)
         assertEquals(15, settings.getTimeAnnouncementInterval())
     }
 
     @Test
-    fun exportBackup_writesJsonToUri() = runTest {
+    fun exportBackup_writesJsonToUri() = runTest(scheduler) {
         settings.setTimeAnnouncementInterval(15)
         dict.addEntry("HTTP", "إتش تي تي بي")
         val uri = Uri.parse("content://nateq.test/backup_export.json")
         val out = registerOutput(uri)
 
-        vm.exportBackup(uri, context.contentResolver)
-        val event = awaitOperation<SettingsOperation.BackedUp>()
+        val event = runOperation(
+            { vm.exportBackup(uri, context.contentResolver) },
+            { it is SettingsOperation.BackedUp }
+        )
 
-        assertTrue(event.ok)
+        assertTrue((event as SettingsOperation.BackedUp).ok)
         val written = out.toByteArray().toString(Charsets.UTF_8)
         assertTrue(written.contains("\"version\":1"))
         assertTrue(written.contains("إتش تي تي بي"))

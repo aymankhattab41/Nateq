@@ -66,15 +66,18 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 // النظام التلقائي للإذن (ابتداءً من أندرويد 11، ويشتد
                 // على أندرويد 17) قد يخطف البث قبل وصوله — إن وصلنا
                 // هنا رغم فقدانه نتوقف بهدوء بدل نطق نص وسط مكالمة
-                // أو رمي SecurityException.
-                if (!hasPermission(
-                        context, Manifest.permission.READ_PHONE_STATE
-                    )
-                ) {
+                // أو رمي SecurityException. المعالجة مجزّأة في
+                // [disableAfterPermissionRevoked] قابلةً للاختبار.
+                if (!hasCallerPermission(context)) {
                     Log.w(
                         TAG,
                         "READ_PHONE_STATE revoked; caller" +
-                        " announcement silent-skip"
+                        " announcement auto-disabled"
+                    )
+                    // شفاء ذاتي: إن كان التفعيل قائماً رغم سحب الإذن نطفئه
+                    // ونُعيد تقييم الخدمة — بدل تركه «مفعّلاً» صامتاً.
+                    disableAfterPermissionRevoked(
+                        settingsRepository, context
                     )
                     return@launch
                 }
@@ -284,6 +287,29 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
     private fun hasPermission(context: Context, permission: String): Boolean {
         val granted = ContextCompat.checkSelfPermission(context, permission)
         return granted == PackageManager.PERMISSION_GRANTED
+    }
+
+    /** هل يحمل [CallerAnnouncementReceiver] إذن قراءة حالة الهاتف اللازم؟
+     *  (READ_PHONE_STATE) — بدونه لا يسلّم النظام بث PHONE_STATE أصلاً، أو
+     *  سُحب بعد تفعيل الميزة فأوقفنا التفعيل ذاتياً. */
+    internal fun hasCallerPermission(context: Context): Boolean =
+        hasPermission(context, Manifest.permission.READ_PHONE_STATE)
+
+    /** شفاء ذاتي عند سحب READ_PHONE_STATE رغم تفعيل إعلان المتصل: يطفئ
+     *  التفعيل ويُعيد تقييم الخدمة — بدل تركه «مفعّلاً» صامتاً (يتكرر
+     *  الوصول الموسوم بلا جدوى منذرةً بإذن مسحوب). مجزّأة [settings] تمريراً
+     *  (لا اعتماداً على الحقل المحقون) لتكون قابلة للاختبار. */
+    internal fun disableAfterPermissionRevoked(
+        settings: SettingsRepository,
+        context: Context
+    ) {
+        if (!settings.isCallerAnnouncementEnabled()) return
+        settings.setCallerAnnouncementEnabled(false)
+        try {
+            AnnouncementSchedulerService.syncIfRunning(context)
+        } catch (t: Throwable) {
+            Log.w(TAG, "syncIfRunning after revoke failed", t)
+        }
     }
 
     /**

@@ -4,6 +4,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.aymankhattab.nateq.core.audio.R
+import com.aymankhattab.nateq.core.common.SystemTimeProvider
+import com.aymankhattab.nateq.core.common.TimeProvider
 import com.aymankhattab.nateq.engine.NumberSpeech
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LocaleUtils
@@ -18,7 +20,9 @@ import kotlinx.coroutines.launch
  * وعند اكتمال الشحن 100%، ويسمع ACTION_POWER_CONNECTED / POWER_DISCONNECTED
  * فيُعلن توصيل الشاحن وفصله. جميع النطق خاضع للمفتاح الرئيسي والإعدادات.
  */
-class BatteryAnnouncementReceiver : BroadcastReceiver() {
+class BatteryAnnouncementReceiver(
+    private val timeProvider: TimeProvider = SystemTimeProvider
+) : BroadcastReceiver() {
 
     companion object {
         // آخر نسبة عولجت من بث البطارية الدائم — يُفلتر بها التكرار في
@@ -240,7 +244,7 @@ class BatteryAnnouncementReceiver : BroadcastReceiver() {
     internal fun announcedRecently(
         context: Context,
         key: String,
-        now: Long = System.currentTimeMillis()
+        now: Long = timeProvider.currentTimeMillis()
     ): Boolean {
         val prefs =
             context.getSharedPreferences(
@@ -255,7 +259,8 @@ class BatteryAnnouncementReceiver : BroadcastReceiver() {
             "nateq_battery_state", Context.MODE_PRIVATE
         )
             .edit().putLong(
-                "battery_last_announced_$key", System.currentTimeMillis()
+                "battery_last_announced_$key",
+                timeProvider.currentTimeMillis()
             )
             .apply()
     }

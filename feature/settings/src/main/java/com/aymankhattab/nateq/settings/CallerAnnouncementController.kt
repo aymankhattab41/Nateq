@@ -32,6 +32,17 @@ internal class CallerAnnouncementController(
     private val onStatusChanged: () -> Unit
 ) {
 
+    companion object {
+        /** لا يُفعَّل نطق اسم المتصل إلا مع إذن حالة الهاتف (بوّابة البث)
+         *  وأحد مصدرَي الاسم على الأقل: سجل المكالمات أو جهات الاتصال —
+         *  وإلا يبقى معطّلاً فلم نعده باسمٍ لا يُسلَّم لنطقه. */
+        internal fun canEnable(
+            phoneGranted: Boolean,
+            callLogGranted: Boolean,
+            contactsGranted: Boolean
+        ): Boolean = phoneGranted && (callLogGranted || contactsGranted)
+    }
+
     private lateinit var switchCallerAnnouncement: SwitchMaterial
     private lateinit var spinnerCallerRepeat: Spinner
     private lateinit var spinnerCallerInterval: Spinner
@@ -157,6 +168,7 @@ internal class CallerAnnouncementController(
         val callerRate =
             runCatching { settings.getCallerAnnouncementRate() }
                 .getOrDefault(1.0f)
+                .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
         tvCallerRateValue.text =
             String.format(Locale.US, "%.1fx", callerRate)
         seekCallerRate.progress = (callerRate * 100).toInt().coerceIn(0, 200)
@@ -167,7 +179,7 @@ internal class CallerAnnouncementController(
                 progress: Int,
                 fromUser: Boolean
             ) {
-                val value = progress / 100f
+                val value = progress.speedFactor()
                 tvCallerRateValue.text =
                     String.format(Locale.US, "%.1fx", value)
                 seekBar.setSeekStateDescription(
@@ -177,7 +189,8 @@ internal class CallerAnnouncementController(
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {
-                val value = seekBar.progress / 100f
+                seekBar.snapSpeedMin()
+                val value = seekBar.progress.speedFactor()
                 runCatching { settings.setCallerAnnouncementRate(value) }
                 seekBar.announceCompat(
                     String.format(Locale.US, "%.1fx", value)
@@ -368,7 +381,7 @@ internal class CallerAnnouncementController(
             granted[Manifest.permission.READ_CALL_LOG] == true
         val contactsGranted =
             granted[Manifest.permission.READ_CONTACTS] == true
-        if (phoneGranted || callLogGranted || contactsGranted) {
+        if (canEnable(phoneGranted, callLogGranted, contactsGranted)) {
             runCatching { settings.setCallerAnnouncementEnabled(true) }
             // حارس يمنع المستمع من إعادة طلب الأذونات عند تعيين قيمة
             // المفتاح هنا
@@ -379,10 +392,12 @@ internal class CallerAnnouncementController(
                 fragment.requireContext()
             )
             onStatusChanged()
-            val msg = when {
-                callLogGranted -> R.string.caller_permission_granted_both
-                phoneGranted -> R.string.caller_permission_granted_phone_only
-                else -> R.string.caller_permission_granted_contacts_only
+            // مع بوّابة canEnable لا تصل رسالة «حالة الهاتف فقط» — من منح
+            // ما عداها معها فله مصدرُ اسمٍ واحدٍ على الأقل.
+            val msg = if (callLogGranted) {
+                R.string.caller_permission_granted_both
+            } else {
+                R.string.caller_permission_granted_contacts_only
             }
             Toast.makeText(
                 fragment.requireContext(), msg, Toast.LENGTH_LONG

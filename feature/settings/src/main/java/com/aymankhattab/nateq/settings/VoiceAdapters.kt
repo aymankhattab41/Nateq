@@ -7,6 +7,8 @@ import android.view.ViewGroup
 import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.TextView
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.util.LanguageCode
@@ -35,7 +37,14 @@ internal class CategoryVoiceAdapter(
         SettingsRepository.VOICE_CATEGORY_EMOJI
     )
 
+    // قائمة أسماء الأصوات واحدة لكل الفئات: تُبنى مرة واحدة بدل إعادة إنشائها
+    // مع كل ربط صف، ومسندها يُسند لسبنّر كل حاملٍ عند إنشائه فقط.
+    private val voiceNameAdapter =
+        simpleAdapter(context, voices.map { it.displayName })
+
     inner class CatVH(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        /** الفئة المرتبطة حالياً بالحامل (تُحدَّث في bind). */
+        var category: String = ""
         val tvCategory: TextView = itemView.findViewById(R.id.tv_category_name)
         val tvCategoryDescription: TextView =
             itemView.findViewById(R.id.tv_category_description)
@@ -59,49 +68,10 @@ internal class CategoryVoiceAdapter(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): CatVH {
         val view = LayoutInflater.from(parent.context)
             .inflate(R.layout.item_category_voice, parent, false)
-        return CatVH(view)
-    }
-
-    override fun onBindViewHolder(holder: CatVH, position: Int) {
-        val category = categoryList[position]
-        val catLabel = when (category) {
-            SettingsRepository.VOICE_CATEGORY_TIME ->
-                context.getString(R.string.voice_category_time)
-            SettingsRepository.VOICE_CATEGORY_NUMBERS ->
-                context.getString(R.string.voice_category_numbers)
-            SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS ->
-                context.getString(R.string.voice_category_notifications)
-            SettingsRepository.VOICE_CATEGORY_EMOJI ->
-                context.getString(R.string.voice_category_emoji)
-            else -> context.getString(R.string.voice_category_default)
-        }
-        holder.tvCategory.text = catLabel
-        holder.tvCategoryDescription.text = when (category) {
-            SettingsRepository.VOICE_CATEGORY_TIME ->
-                context.getString(R.string.voice_category_time_summary)
-            SettingsRepository.VOICE_CATEGORY_NUMBERS ->
-                context.getString(R.string.voice_category_numbers_summary)
-            SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS ->
-                context.getString(
-                    R.string.voice_category_notifications_summary
-                )
-            SettingsRepository.VOICE_CATEGORY_EMOJI ->
-                context.getString(R.string.voice_category_emoji_summary)
-            else -> context.getString(R.string.voice_category_default_summary)
-        }
-
-        // جميع أصوات ناطق (العربية والإنجليزية) في قائمة كل فئة
-        holder.spinnerVoice.adapter =
-            simpleAdapter(context, voices.map { it.displayName })
-
-        val saved =
-            runCatching { settings.getPreferredVoiceIdForCategory(category) }
-                .getOrNull()
-        if (saved != null) {
-            val idx = voices.indexOfFirst { it.name == saved }
-            if (idx >= 0) holder.spinnerVoice.setSelection(idx)
-        }
-
+        val holder = CatVH(view)
+        // المستمعات تُثبَّت مرة واحدة عند إنشاء الحامل وتقرأ الفئة المرتبطة
+        // حالياً، فلا تُنشأ كائنات جديدة مع كل تمرير أو إعادة ربط.
+        holder.spinnerVoice.adapter = voiceNameAdapter
         holder.spinnerVoice.onItemSelectedListener =
             object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
@@ -110,6 +80,8 @@ internal class CategoryVoiceAdapter(
                 pos: Int,
                 id: Long
             ) {
+                val category = holder.category
+                if (category.isEmpty() || pos >= voices.size) return
                 runCatching {
                     settings.setPreferredVoiceIdForCategory(
                         category, voices[pos].name
@@ -121,22 +93,6 @@ internal class CategoryVoiceAdapter(
                 parent: android.widget.AdapterView<*>?
             ) {}
         }
-
-        val rate = runCatching { settings.getSpeechRateForCategory(category) }
-            .getOrDefault(1.0f)
-        holder.tvRateValue.text = String.format(Locale.US, "%.1fx", rate)
-        holder.seekRate.progress = (rate * 100).toInt().coerceIn(0, 200)
-
-        val pitch = runCatching { settings.getPitchForCategory(category) }
-            .getOrDefault(1.0f)
-        holder.tvPitchValue.text = String.format(Locale.US, "%.1fx", pitch)
-        holder.seekPitch.progress = (pitch * 100).toInt().coerceIn(0, 200)
-
-        val volume = runCatching { settings.getVolumeForCategory(category) }
-            .getOrDefault(1.0f)
-        holder.tvVolumeValue.text = "${(volume * 100).toInt()}%"
-        holder.seekVolume.progress = (volume * 100).toInt().coerceIn(0, 100)
-
         holder.seekRate.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
@@ -144,7 +100,7 @@ internal class CategoryVoiceAdapter(
                 progress: Int,
                 fromUser: Boolean
             ) {
-                val value = progress / 100f
+                val value = progress.speedFactor()
                 holder.tvRateValue.text =
                     String.format(Locale.US, "%.1fx", value)
                 holder.seekRate.setSeekStateDescription(
@@ -154,19 +110,17 @@ internal class CategoryVoiceAdapter(
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {
+                if (holder.category.isEmpty()) return
+                seekBar.snapSpeedMin()
+                val value = seekBar.progress.speedFactor()
                 runCatching {
-                    settings.setSpeechRateForCategory(
-                        category, seekBar.progress / 100f
-                    )
+                    settings.setSpeechRateForCategory(holder.category, value)
                 }
                 holder.seekRate.announceCompat(
-                    String.format(
-                        Locale.US, "%.1fx", seekBar.progress / 100f
-                    )
+                    String.format(Locale.US, "%.1fx", value)
                 )
             }
         })
-
         holder.seekPitch.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
@@ -174,7 +128,7 @@ internal class CategoryVoiceAdapter(
                 progress: Int,
                 fromUser: Boolean
             ) {
-                val value = progress / 100f
+                val value = progress.speedFactor()
                 holder.tvPitchValue.text =
                     String.format(Locale.US, "%.1fx", value)
                 holder.seekPitch.setSeekStateDescription(
@@ -184,19 +138,17 @@ internal class CategoryVoiceAdapter(
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {
+                if (holder.category.isEmpty()) return
+                seekBar.snapSpeedMin()
+                val value = seekBar.progress.speedFactor()
                 runCatching {
-                    settings.setPitchForCategory(
-                        category, seekBar.progress / 100f
-                    )
+                    settings.setPitchForCategory(holder.category, value)
                 }
                 holder.seekPitch.announceCompat(
-                    String.format(
-                        Locale.US, "%.1fx", seekBar.progress / 100f
-                    )
+                    String.format(Locale.US, "%.1fx", value)
                 )
             }
         })
-
         holder.seekVolume.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
@@ -212,16 +164,18 @@ internal class CategoryVoiceAdapter(
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {
+                if (holder.category.isEmpty()) return
                 runCatching {
                     settings.setVolumeForCategory(
-                        category, seekBar.progress / 100f
+                        holder.category, seekBar.progress / 100f
                     )
                 }
                 holder.seekVolume.announceCompat("${seekBar.progress}%")
             }
         })
-
         holder.btnTest.setOnClickListener {
+            val category = holder.category
+            if (category.isEmpty()) return@setOnClickListener
             val voice = voices[holder.spinnerVoice.selectedItemPosition]
             val isArabic = !LanguageCode.isEnglish(voice.languageTag)
             val text = when {
@@ -251,23 +205,107 @@ internal class CategoryVoiceAdapter(
             }
             onTestVoice(voice.languageTag, text)
         }
+        return holder
+    }
+
+    override fun onBindViewHolder(holder: CatVH, position: Int) {
+        val category = categoryList[position]
+        holder.category = category
+        val catLabel = when (category) {
+            SettingsRepository.VOICE_CATEGORY_TIME ->
+                context.getString(R.string.voice_category_time)
+            SettingsRepository.VOICE_CATEGORY_NUMBERS ->
+                context.getString(R.string.voice_category_numbers)
+            SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS ->
+                context.getString(R.string.voice_category_notifications)
+            SettingsRepository.VOICE_CATEGORY_EMOJI ->
+                context.getString(R.string.voice_category_emoji)
+            else -> context.getString(R.string.voice_category_default)
+        }
+        holder.tvCategory.text = catLabel
+        holder.tvCategoryDescription.text = when (category) {
+            SettingsRepository.VOICE_CATEGORY_TIME ->
+                context.getString(R.string.voice_category_time_summary)
+            SettingsRepository.VOICE_CATEGORY_NUMBERS ->
+                context.getString(R.string.voice_category_numbers_summary)
+            SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS ->
+                context.getString(
+                    R.string.voice_category_notifications_summary
+                )
+            SettingsRepository.VOICE_CATEGORY_EMOJI ->
+                context.getString(R.string.voice_category_emoji_summary)
+            else -> context.getString(R.string.voice_category_default_summary)
+        }
+
+        val saved =
+            runCatching { settings.getPreferredVoiceIdForCategory(category) }
+                .getOrNull()
+        val idx = voices.indexOfFirst { it.name == saved }
+        holder.spinnerVoice.setSelection(if (idx >= 0) idx else 0)
+
+        val rate = runCatching { settings.getSpeechRateForCategory(category) }
+            .getOrDefault(1.0f)
+            .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
+        holder.tvRateValue.text = String.format(Locale.US, "%.1fx", rate)
+        holder.seekRate.progress = (rate * 100).toInt().coerceIn(0, 200)
+
+        val pitch = runCatching { settings.getPitchForCategory(category) }
+            .getOrDefault(1.0f)
+            .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
+        holder.tvPitchValue.text = String.format(Locale.US, "%.1fx", pitch)
+        holder.seekPitch.progress = (pitch * 100).toInt().coerceIn(0, 200)
+
+        val volume = runCatching { settings.getVolumeForCategory(category) }
+            .getOrDefault(1.0f)
+        holder.tvVolumeValue.text = "${(volume * 100).toInt()}%"
+        holder.seekVolume.progress = (volume * 100).toInt().coerceIn(0, 100)
     }
 
     override fun getItemCount(): Int = categoryList.size
 }
 
+/** معيار DiffUtil لإدخالات القاموس: التماثل بالمفتاح (الكلمة) والمحتوى
+ *  بالمزاوجة كاملة — يتيح للمسند تحديث الإدخالات المتغيّرة فقط. */
+internal val DictEntryDiff = object :
+    DiffUtil.ItemCallback<Pair<String, String>>() {
+    override fun areItemsTheSame(
+        oldItem: Pair<String, String>,
+        newItem: Pair<String, String>
+    ): Boolean = oldItem.first == newItem.first
+
+    override fun areContentsTheSame(
+        oldItem: Pair<String, String>,
+        newItem: Pair<String, String>
+    ): Boolean = oldItem == newItem
+}
+
 /**
- * مسند إدخالات قاموس النطق (كلمة → نُطق). أُخرج من الفصيل إلى مستوى الملف
- * ليكون قابلاً لإعادة الاستخدام مع تمرير القاموس والاستماع لنقر الصف.
+ * مسند إدخالات قاموس النطق (كلمة → نُطق). مسند قائمة (ListAdapter) يحسب
+ * الفرق عبر [DictEntryDiff] فيُحدَّث صفوف التغيير فقط بدل إعادة بناء القائمة
+ * كاملة؛ المستمعان الثابتان يُثبَّتان عند إنشاء الحامل ويقرآن إدخال الربط
+ * الحالي. أُخرج من الفصيل إلى مستوى الملف ليكون قابلًا لإعادة الاستخدام.
  */
 internal class PronunciationDictAdapter(
-    private val entries: List<Pair<String, String>>,
     private val onRowClick: (Pair<String, String>) -> Unit
-) : RecyclerView.Adapter<PronunciationDictAdapter.DictVH>() {
+) : ListAdapter<Pair<String, String>, PronunciationDictAdapter.DictVH>(
+    DictEntryDiff
+) {
 
     inner class DictVH(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val tvWord: TextView = itemView.findViewById(R.id.tv_dict_word)
         val tvPhonetic: TextView = itemView.findViewById(R.id.tv_dict_phonetic)
+        var entry: Pair<String, String>? = null
+
+        init {
+            // النقر (نقرتان من TalkBack) أو الضغطة المطولة: تعديل/حذف
+            // الإدخال — النقر الجهازي مكافئ لقائمة الأدوات، فلا يضيع
+            // الإجراء على مستخدمي القارئ.
+            itemView.setOnClickListener { entry?.let(onRowClick) }
+            itemView.setOnLongClickListener {
+                entry?.let(onRowClick)
+                true
+            }
+        }
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): DictVH {
@@ -277,20 +315,11 @@ internal class PronunciationDictAdapter(
     }
 
     override fun onBindViewHolder(holder: DictVH, position: Int) {
-        val entry = entries[position]
+        val entry = getItem(position)
+        holder.entry = entry
         holder.tvWord.text = entry.first
         holder.tvPhonetic.text = entry.second
         // وصف مدمج لعقدة الصف الواحدة (الأطفال معطَّلون في XML)
         holder.itemView.contentDescription = "${entry.first}. ${entry.second}"
-        // النقر (نقرتان من TalkBack) أو الضغطة المطولة: تعديل/حذف الإدخال —
-        // النقر الجهازي مكافئ لقائمة الأدوات، فلا يضيع الإجراء على
-        // مستخدمي القارئ.
-        holder.itemView.setOnClickListener { onRowClick(entry) }
-        holder.itemView.setOnLongClickListener {
-            onRowClick(entry)
-            true
-        }
     }
-
-    override fun getItemCount(): Int = entries.size
 }

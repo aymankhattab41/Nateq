@@ -8,6 +8,7 @@ import {
   rateLimitDecision,
   buildRelayMessages,
   extractSenderContent,
+  forwardMessage,
 } from "../src/index.js";
 
 // ── escapeHtml / stripHtml ───────────────────────────────────────────────
@@ -180,4 +181,38 @@ test("extractSenderContent: شرح طويل يُقسَّم مع إشعار عد�
   assert.ok(r.bodyParts.length > 1);
   assert.ok(r.bodyLabel.includes(`طويل — ${r.bodyParts.length} أجزاء`));
   for (const p of r.bodyParts) assert.ok(p.length <= 4000);
+});
+
+// ── تضخيم الـ Rate Limit: إسقاط صامت بلا إرسال لتليجرام ────────────────
+
+test("forwardMessage عند التجاوز يُسقط بصمت بلا أي طلب لتليجرام", async () => {
+  // KV مقلَّد: يُعيد سجلاً بلغ العتبة ضمن نافذة حالية (غير منتهية) → مرفوض.
+  const windowStart = Math.floor(Date.now() / 1000) - 10; // قبل 10 ثوانٍ
+  const env = {
+    RATE_LIMITS: {
+      get: async () => ({ windowStart, count: 20 }),
+      put: async () => {},
+    },
+  };
+  // أي استدعاء حقيقي للشبكة (تليجرام) يُفشل الاختبار — الواجب ألا يحدث شيء.
+  const realFetch = globalThis.fetch;
+  let telegramCalled = false;
+  globalThis.fetch = async () => {
+    telegramCalled = true;
+    return new Response("{}", { status: 200 });
+  };
+  try {
+    const result = await forwardMessage(env, {
+      message: {
+        text: "رسالة تتجاوز الحد",
+        from: { id: 42, first_name: "م" },
+        chat: { id: 42 },
+        date: 10,
+      },
+    });
+    assert.equal(result, "rate_limited");
+    assert.equal(telegramCalled, false, "لا يُرسل أي شيء إلى تليجرام عند التجاوز");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });

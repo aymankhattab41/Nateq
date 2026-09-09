@@ -19,6 +19,17 @@ import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LanguageCode
 import java.util.Locale
 
+/** هل البث موجّه لمكوّننا (حزمة + صف)؟ يرفض أي مكوّن غير مطابق تماماً، ومنها
+ *  الحالة عندما يكون المكوّن غائباً (package/className يساويان null) — فيُرجع
+ *  false ويُتجاهل البث بدل نطقٍ صامت. منطقٌ نقي قابل للاختبار. */
+internal fun isComponentOurs(
+    componentPackage: String?,
+    componentClass: String?,
+    selfPackage: String,
+    selfClass: String
+): Boolean =
+    componentPackage == selfPackage && componentClass == selfClass
+
 /**
  * أداة الساعة الناطقة على الشاشة الرئيسية.
  * عند الضغط عليها تُعلن الوقت فوراً بصوت ناطق (عربي/إنجليزي حسب إعدادات
@@ -36,8 +47,9 @@ class SpeakingClockWidget : AppWidgetProvider() {
 
         // مهلة أمان قصوى لبقاء goAsync/WakeLock: حتى لو لم يُستدعَ خطاف اكتمال
         // النطق (فشل تهيئة محرك TTS أو محرك لا يردّ) لا يبقى قفلاً ولا عنصر
-        // معالجة معلّقاً يتجاوز هذه المدة.
-        private const val SPEAK_TIMEOUT_MS = 20_000L
+        // معالجة معلّقاً يتجاوز هذه المدة. جملة الساعة قصيرة (ثوانٍ معدودة)
+        // فتُقيَّد المهلة بثمانٍ لتخفيف استهلاك البطارية.
+        private const val SPEAK_TIMEOUT_MS = 8_000L
     }
 
     override fun onUpdate(
@@ -56,10 +68,16 @@ class SpeakingClockWidget : AppWidgetProvider() {
         if (intent.action != ACTION_SPEAK) return
         // تحقق صارم أن البث موجّه لمكوّننا (حزمة + صف) وليس لحزمة تحمل اسمنا
         // فقط — أي تطبيق خارجي قد يعيّن ComponentName صراحةً بحزمة تطبيقنا
-        // فيتجاوز فحص اسم الحزمة وحده. رفض أي مكوّن غير مطابق تماماً.
+        // فيتجاوز فحص اسم الحزمة وحده. رفض أي مكوّن غير مطابق تماماً (ومنها
+        // غياب المكوّن كلياً بدل تجاهل نقرٍ صامت).
         val cn = intent.component
-        if (cn?.packageName != context.packageName) return
-        if (cn.className != SpeakingClockWidget::class.java.name) return
+        if (!isComponentOurs(
+                cn?.packageName,
+                cn?.className,
+                context.packageName,
+                SpeakingClockWidget::class.java.name
+            )
+        ) return
 
         // Android 14+ يجمد العملية فور عودة onReceive قبل اكتمال تهيئة محرك
         // TTS فيصمت الودجت. goAsync() يُبقي العملية محاسبةً، وWakeLock مؤقت

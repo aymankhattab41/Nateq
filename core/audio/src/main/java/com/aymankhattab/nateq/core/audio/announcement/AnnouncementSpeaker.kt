@@ -49,6 +49,11 @@ class AnnouncementSpeaker(
     companion object {
         private const val TAG = "NATEQ_TTS"
 
+        // أدنى معامل للسرعة/النبرة مقبول لدى محركات TTS؛ دونها تتوقف بعض
+        // المحركات عن الاستجابة (صمت تام). يُطبَّق هنا على كل مسار، حتى مع
+        // قيم قديمة/خاطئة مخزنة من قبل.
+        private const val MIN_RATE_OR_PITCH = 0.25f
+
         // نطاق الإيموجي الشائع (بلوكات Unicode): رموز التباين (2600-27BF)،
         // الأسهم/الرموز الإضافية (2B00-2BFF)، الأعلام الإقليمية (1F1E6-1F1FF)
         // والبلوكات التكميلية كلها تُغطى بزوج الاستبدال العام
@@ -541,8 +546,8 @@ class AnnouncementSpeaker(
         attempt: Int
     ) {
         val tts = tts ?: return
-        tts.setSpeechRate(speechRate)
-        tts.setPitch(pitch)
+        tts.setSpeechRate(speechRate.coerceAtLeast(MIN_RATE_OR_PITCH))
+        tts.setPitch(pitch.coerceAtLeast(MIN_RATE_OR_PITCH))
         // تطبيق الصوت المفضّل بالاسم (مثل "ar-EG") عندما يَعرضه المحرك
         // المربوط فعلاً (محرك LORD نفسه). إذا لم يجده المحرك (محرك خارجي مثل
         // جوجل/MultiTTS لا يملك هذه الأسماء) نرجع لتحديد اللغة فقط، فيبقى

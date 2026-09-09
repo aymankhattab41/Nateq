@@ -289,7 +289,7 @@ internal class TimeAnnouncementController(
             count: Int
         ) {}
         override fun afterTextChanged(s: Editable?) {
-            val hour = s?.toString()?.trim()?.toIntOrNull()
+            val hour = s?.toString()?.trim()?.normalizeDigits()?.toIntOrNull()
             if (hour != null && hour in 0..23) save(hour)
         }
     }

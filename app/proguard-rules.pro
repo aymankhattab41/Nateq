@@ -3,10 +3,14 @@
 #  (ProGuard / R8) — تُستخدم في كل build من نوع release
 # ============================================================
 
-# ضغط أكواد الأصناف وربطها (هل يجب)، إزالة معلومات السطر/الملف
+# ضغط أكواد الأصناف وربطها (هل يجب)، الاحتفاظ بمعلومات السطر/الملف
 -keepattributes Signature
 -keepattributes *Annotation*
--keepattributes !SourceFile, !LineNumberTable
+# بعد: أرقام الأسطر نامية مفيدة لتتبع تقارير الانهيار الواردة من المستخدمين
+# (مع mapping.txt يُفكّك أي خطأ). اسم الملف يُستبدل بثابت قصير حفاظاً على سمة
+# الإبهار دون إضاعة مكانية stack trace.
+-keepattributes SourceFile, LineNumberTable
+-renamesourcefileattribute SourceFile
 
 # لا تُعدد الأصناف المطلوب لمفتاحها أبداً؛ فهذا يزيد صعوبة الفهم
 -allowaccessmodification
@@ -134,5 +138,18 @@
     public static int d(...);
     public static int i(...);
 }
+
+# ============================================================
+#  حماية كوروتينات Kotlin (الحد الأدنى الدفاعي)
+# ============================================================
+# Dispatchers.Main على أندرويد يُحمَّل عبر ServiceLoader بالبحث في
+# META-INF/services عن مزوّد MainDispatcherFactory. لو شفّر R8 أسماء
+# هذه الفئات، عاد Dispatchers.Main null أو فشل التحميل وسقطت كل مهام
+# الخلفية. يُحفظ المزوّدون وأصناف الـ Dispatchers الحرجية بأسمائها
+# (لا يُحفظ كل الكوروتينات — فالقواعد الرسمية المضمّنة تفي بالباقي).
+-keep class kotlinx.coroutines.internal.MainDispatcherFactory { *; }
+-keep class kotlinx.coroutines.android.HandlerContext { *; }
+-keep class * implements kotlinx.coroutines.internal.MainDispatcherFactory { *; }
+-keepnames class kotlinx.coroutines.CoroutineDispatcher { *; }
 
 # يمكنك إضافة -keep لأي مزود صوت جديد تضيفه مستقبلاً هنا

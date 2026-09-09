@@ -25,4 +25,8 @@ dependencies {
     implementation(project(":core:engine"))
     implementation(project(":core:data"))
     implementation(project(":core:audio"))
+
+    // OU,O�O"O3O1OO"O1O0 O1O0O?O`Oc O`O1O"O:O)O4O3 (junit) O"O EO`O/O'OO`O?O`O:O4 "O"OO"O?OO4
+    // SpeakingClockWidget O1O"O? O`O0O?O0O1 O`O0O1O?OO2 (O"O"O:OEO 4O4O1 O`O0O:OEO1O?O`O4 O`O1O"O O?O1O1).
+    testImplementation("junit:junit:4.13.2")
 }

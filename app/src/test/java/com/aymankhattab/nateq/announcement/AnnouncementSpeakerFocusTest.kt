@@ -59,6 +59,9 @@ class AnnouncementSpeakerFocusTest {
     private fun pendingActionIsNull(s: AnnouncementSpeaker): Boolean =
         fieldOf(s, "pendingFocusAction") == null
 
+    private fun boolField(s: AnnouncementSpeaker, name: String): Boolean =
+        fieldOf(s, name) as Boolean
+
     @Test
     fun focusRequestFailed_cancelsSilently_noEngineInit() {
         val s = speaker()
@@ -118,5 +121,46 @@ class AnnouncementSpeakerFocusTest {
             "تمرير المستمع عند الإخلاء",
             shadowAudio.getLastAbandonedAudioFocusListener()
         )
+    }
+
+    @Test
+    fun focusLoss_duringAnnouncement_stopsAndReleasesFocus() {
+        val s = speaker()
+        s.speak("إعلانٌ أثناء مكالمة", arLocale, 1f, 1f, 1f)
+        val listener = shadowAudio.getLastAudioFocusRequest().listener
+        assertNotNull("المستمع مسجّل في طلب التركيز", listener)
+        // بدأت مكالمة (فقد التركيز النهائي) — يُوقف النطق فوراً ويحرر التركيز.
+        listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS)
+        assertFalse(
+            "فقد التركيز يُوقف النطق فوراً",
+            boolField(s, "nowSpeaking")
+        )
+        assertFalse(
+            "فقد التركيز يُحرر تملك التركيز",
+            boolField(s, "hasAudioFocus")
+        )
+        s.shutdown()
+    }
+
+    @Test
+    fun focusLossTransient_duringAnnouncement_stopsAndReleasesFocus() {
+        val s = speaker()
+        s.speak("إعلانٌ عابر", arLocale, 1f, 1f, 1f)
+        val listener = shadowAudio.getLastAudioFocusRequest().listener
+        assertNotNull("المستمع مسجّل في طلب التركيز", listener)
+        // فقدان مؤقت (إشعار/وسائط تتدخل) — نفس سلوك الفقد النهائي:
+        // إيقاف وتحليل.
+        listener.onAudioFocusChange(
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT
+        )
+        assertFalse(
+            "فقدان التركيز المؤقت يُوقف النطق",
+            boolField(s, "nowSpeaking")
+        )
+        assertFalse(
+            "فقدان التركيز المؤقت يُحرر التركيز",
+            boolField(s, "hasAudioFocus")
+        )
+        s.shutdown()
     }
 }

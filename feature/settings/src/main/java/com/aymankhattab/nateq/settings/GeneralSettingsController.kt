@@ -35,8 +35,10 @@ internal class GeneralSettingsController(
 
         val rate = runCatching { settings.getDefaultSpeechRate() }
             .getOrDefault(1.0f)
+            .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
         val pitch = runCatching { settings.getDefaultPitch() }
             .getOrDefault(1.0f)
+            .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
         val volume = runCatching { settings.getDefaultVolume() }
             .getOrDefault(1.0f)
 
@@ -54,7 +56,7 @@ internal class GeneralSettingsController(
                 progress: Int,
                 fromUser: Boolean
             ) {
-                val value = progress / 100f
+                val value = progress.speedFactor()
                 tvDefaultSpeechRateValue.text =
                     String.format(Locale.US, "%.1fx", value)
                 seekBar.setSeekStateDescription(
@@ -64,7 +66,8 @@ internal class GeneralSettingsController(
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {
-                val value = seekBar.progress / 100f
+                seekBar.snapSpeedMin()
+                val value = seekBar.progress.speedFactor()
                 runCatching { settings.setDefaultSpeechRate(value) }
                 seekBar.announceCompat(
                     String.format(Locale.US, "%.1fx", value)
@@ -80,7 +83,7 @@ internal class GeneralSettingsController(
                 progress: Int,
                 fromUser: Boolean
             ) {
-                val value = progress / 100f
+                val value = progress.speedFactor()
                 tvDefaultPitchValue.text =
                     String.format(Locale.US, "%.1fx", value)
                 seekBar.setSeekStateDescription(
@@ -90,7 +93,8 @@ internal class GeneralSettingsController(
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {
-                val value = seekBar.progress / 100f
+                seekBar.snapSpeedMin()
+                val value = seekBar.progress.speedFactor()
                 runCatching { settings.setDefaultPitch(value) }
                 seekBar.announceCompat(
                     String.format(Locale.US, "%.1fx", value)

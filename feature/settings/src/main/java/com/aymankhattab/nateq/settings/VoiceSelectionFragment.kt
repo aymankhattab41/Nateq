@@ -317,9 +317,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         rvPronunciationDict.layoutManager = LinearLayoutManager(
             requireContext()
         )
-        rvPronunciationDict.adapter = buildDictAdapter()
+        rvPronunciationDict.adapter = null
         // التمرير الداخلي مفعّل ليتدحرج القاموس المحدود الارتفاع داخل الصفحة
         rvPronunciationDict.isNestedScrollingEnabled = true
+        refreshDictAdapter()
 
         // Add dictionary entry button
         val btnAddDictEntry = view.findViewById(
@@ -594,21 +595,24 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             .create().also(::trackDialog).show()
     }
 
-    /** إعادة رسم قائمة إدخالات القاموس بعد أي تغيير
-     *  (إضافة/تعديل/حذف/استيراد) */
-    private fun refreshDictAdapter() {
-        rvPronunciationDict.adapter = buildDictAdapter()
-    }
+    /** المثيل الوحيد لمسند القاموس — يُعاد استخدامه عبر submitList بدل
+     *  بناء مسند جديد وإعادة تسنيده بالكامل مع كل تغيير. */
+    private var pronunciationDictAdapter: PronunciationDictAdapter? = null
 
-    /** يبني مسند القاموس من الإدخالات الحالية مع نحوّل نقر الصف إلى
-     *  أدواتها. */
-    private fun buildDictAdapter(): PronunciationDictAdapter =
-        PronunciationDictAdapter(
-            runCatching { pronunciationDict.getAllEntries() }
-                .getOrDefault(emptyMap())
-                .toList(),
-            ::showDictRowOptions
-        )
+    /** إعادة رسم قائمة إدخالات القاموس بعد أي تغيير
+     *  (إضافة/تعديل/حذف/استيراد) — يحسب المسند الفرق فيحدّث الصفوف المتغيّرة
+     *  فقط ويحافظ على موضع التمرير. */
+    private fun refreshDictAdapter() {
+        val entries = runCatching { pronunciationDict.getAllEntries() }
+            .getOrDefault(emptyMap())
+            .toList()
+        val adapter = pronunciationDictAdapter
+            ?: PronunciationDictAdapter(::showDictRowOptions).also {
+                pronunciationDictAdapter = it
+                rvPronunciationDict.adapter = it
+            }
+        adapter.submitList(entries)
+    }
 
     /** نطق الرقم المدخل في حقل المعاينة بنفس منطق النطق الفعلي للإعلانات */
     private fun previewNumber() {

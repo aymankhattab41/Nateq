@@ -2,6 +2,8 @@ package com.aymankhattab.nateq.core.audio.announcement
 
 import android.content.Context
 import com.aymankhattab.nateq.core.common.AppDispatchers
+import com.aymankhattab.nateq.core.common.SystemTimeProvider
+import com.aymankhattab.nateq.core.common.TimeProvider
 import com.aymankhattab.nateq.core.audio.engine.SynthesisRequestHandler
 import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
 import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
@@ -28,7 +30,8 @@ class TimeAnnouncementManager(
     private val context: Context,
     private val settings: SettingsRepository,
     private val catalog: VoiceCatalog,
-    private val requestHandler: SynthesisRequestHandler
+    private val requestHandler: SynthesisRequestHandler,
+    private val timeProvider: TimeProvider = SystemTimeProvider
 ) {
 
     companion object {
@@ -182,7 +185,7 @@ class TimeAnnouncementManager(
     private fun scheduleNextAlarm() {
         TimeAlarmReceiver.scheduleNext(
             context,
-            System.currentTimeMillis() + calculateInitialDelay()
+            timeProvider.currentTimeMillis() + calculateInitialDelay()
         )
     }
 
@@ -193,11 +196,11 @@ class TimeAnnouncementManager(
      * صحوة كل فاصل دون أي نطق (بند [13.2] — استنزاف بطارية ساعات الهدوء).
      */
     private fun calculateQuietEndMillis(): Long {
-        val now = System.currentTimeMillis()
+        val now = timeProvider.currentTimeMillis()
         val endHour = settings.getQuietEndForDay(
-            Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
+            timeProvider.now().get(Calendar.DAY_OF_WEEK)
         )
-        val today = Calendar.getInstance().apply {
+        val today = timeProvider.now().apply {
             set(Calendar.HOUR_OF_DAY, endHour)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
@@ -220,7 +223,7 @@ class TimeAnnouncementManager(
 
     /** حساب التأخير لأول إعلان (للبداية القادمة للفاصل) */
     private fun calculateInitialDelay(): Long {
-        val calendar = Calendar.getInstance()
+        val calendar = timeProvider.now()
         val interval = effectiveIntervalMinutes()
         val currentMinute = calendar.get(Calendar.MINUTE)
 
@@ -235,7 +238,7 @@ class TimeAnnouncementManager(
         calendar.set(Calendar.SECOND, 0)
         calendar.set(Calendar.MILLISECOND, 0)
 
-        val delay = calendar.timeInMillis - System.currentTimeMillis()
+        val delay = calendar.timeInMillis - timeProvider.currentTimeMillis()
         return max(delay, 1000L) // على الأقل ثانية واحدة
     }
 
@@ -303,7 +306,7 @@ class TimeAnnouncementManager(
 
     /** فحص ما إذا كنا في ساعات الهدوء (لكل يوم فترة مستقلة) */
     private fun isInQuietHours(): Boolean {
-        val calendar = Calendar.getInstance()
+        val calendar = timeProvider.now()
         val currentHour = calendar.get(Calendar.HOUR_OF_DAY)
         val day = calendar.get(Calendar.DAY_OF_WEEK) // 1=الأحد … 7=السبت
         val quietStart = settings.getQuietStartForDay(day)
@@ -409,7 +412,7 @@ class TimeAnnouncementManager(
 
     /** تنسيق الوقت حسب الصيغة المختارة (طبيعي/رقمي) ولغة الصوت المحددة */
     fun formatCurrentTime(isEnglish: Boolean): String {
-        val calendar = Calendar.getInstance()
+        val calendar = timeProvider.now()
         val hour = calendar.get(Calendar.HOUR_OF_DAY)
         val minute = calendar.get(Calendar.MINUTE)
         val format = runCatching {

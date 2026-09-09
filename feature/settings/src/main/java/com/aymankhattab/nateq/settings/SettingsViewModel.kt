@@ -17,6 +17,7 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -50,6 +51,19 @@ class SettingsViewModel @Inject constructor(
     val settings: SettingsRepository,
     val pronunciationDict: PronunciationDictionary
 ) : ViewModel() {
+
+    /** مُنشئ اختبار فقط: يبدّل مشغّل العمليات غير المتزامنة بمشغّل محدد
+     *  (StandardTestDispatcher) حتى تجري الاختبارات على خيطٍ واحد حتمي
+     *  بلا تنسيقِ خيوطَ حقيقية متغيّر. */
+    constructor(
+        settings: SettingsRepository,
+        pronunciationDict: PronunciationDictionary,
+        operationsDispatcher: CoroutineDispatcher
+    ) : this(settings, pronunciationDict) {
+        ioDispatcher = operationsDispatcher
+    }
+
+    private var ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 
     companion object {
         /** حدود دفاعية ضد ملفات النسخ الاحتياطي الخبيثة/الضخمة
@@ -91,7 +105,7 @@ class SettingsViewModel @Inject constructor(
 
     /** تصدير النسخة الاحتياطية (إعدادات + قاموس + أسماء متصلين) إلى uri. */
     fun exportBackup(uri: Uri, resolver: ContentResolver) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             val ok = runCatching {
                 val json = buildBackupJson()
                 resolver.openOutputStream(uri)?.use { out ->
@@ -104,7 +118,7 @@ class SettingsViewModel @Inject constructor(
 
     /** استعادة نسخة احتياطية من uri (قراءة + تفكيك + تطبيق) على IO. */
     fun restoreBackup(uri: Uri, resolver: ContentResolver) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             val ok = runCatching {
                 val text = resolver.openInputStream(uri)
                     ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
@@ -116,7 +130,7 @@ class SettingsViewModel @Inject constructor(
 
     /** تصدير القاموس وحده إلى uri. */
     fun exportDict(uri: Uri, resolver: ContentResolver) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             val ok = runCatching {
                 val json = pronunciationDict.exportToJson()
                 resolver.openOutputStream(uri)?.use { out ->
@@ -129,7 +143,7 @@ class SettingsViewModel @Inject constructor(
 
     /** تطبيق نص قاموس مُقرأ سابقاً (مسار حوار دمج/استبدال) على IO. */
     fun importDict(json: String, merge: Boolean) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             val ok = runCatching {
                 pronunciationDict.importFromJson(json, merge)
             }.getOrDefault(false)

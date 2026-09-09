@@ -169,6 +169,7 @@ internal class SmsReadingController(
         val smsRate =
             runCatching { settings.getSmsReadingRate() }
                 .getOrDefault(1.0f)
+                .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
         tvSmsRateValue.text = String.format(Locale.US, "%.1fx", smsRate)
         seekSmsRate.progress = (smsRate * 100).toInt().coerceIn(0, 200)
         seekSmsRate.setOnSeekBarChangeListener(
@@ -178,7 +179,7 @@ internal class SmsReadingController(
                 progress: Int,
                 fromUser: Boolean
             ) {
-                val value = progress / 100f
+                val value = progress.speedFactor()
                 tvSmsRateValue.text =
                     String.format(Locale.US, "%.1fx", value)
                 seekBar.setSeekStateDescription(tvSmsRateValue.text)
@@ -186,13 +187,11 @@ internal class SmsReadingController(
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
             override fun onStopTrackingTouch(seekBar: SeekBar) {
-                runCatching {
-                    settings.setSmsReadingRate(seekBar.progress / 100f)
-                }
+                seekBar.snapSpeedMin()
+                val value = seekBar.progress.speedFactor()
+                runCatching { settings.setSmsReadingRate(value) }
                 seekBar.announceCompat(
-                    String.format(
-                        Locale.US, "%.1fx", seekBar.progress / 100f
-                    )
+                    String.format(Locale.US, "%.1fx", value)
                 )
             }
         })

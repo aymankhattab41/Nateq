@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.os.BatteryManager
 import androidx.test.core.app.ApplicationProvider
+import com.aymankhattab.nateq.core.common.TimeProvider
+import java.util.Calendar
 import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -91,58 +93,67 @@ class BatteryAnnouncementReceiverTest {
         )
     }
 
-    // ===== نافذة منع تكرار الإعلان (5 دقائق) ====
+    // ===== نافذة منع تكرار الإعلان (5 دقائق) =====
+
+    // لحظة أساسية ثابتة خارج كل النوافذ — الحتمية عبر ساعة افتراضية.
+    private val baseNow = 1_700_000_000_000L
 
     @Test
     fun `first announcement is allowed`() {
         // بلا ختم سابق يُعدّ مستوى 50 "منطوقاً مؤخراً": مع الانعكاس المنطقي
-        // القديم كانت هذه الحالة تُسكت الإعلان всегда (لا ينطق أبداً أول مرة).
+        // القديم كانت هذه الحالة تُسكت الإعلان دائماً (لا ينطق أبداً أول مرة).
+        val clock = FakeClock(baseNow)
         assertFalse(
-            BatteryAnnouncementReceiver().announcedRecently(context, "%50")
+            BatteryAnnouncementReceiver(clock).announcedRecently(context, "%50")
         )
     }
 
     @Test
     fun `immediately after mark is suppressed`() {
-        BatteryAnnouncementReceiver().markAnnounced(context, "%50")
-        assertTrue(
-            BatteryAnnouncementReceiver().announcedRecently(context, "%50")
-        )
+        val clock = FakeClock(baseNow)
+        val receiver = BatteryAnnouncementReceiver(clock)
+        receiver.markAnnounced(context, "%50")
+        assertTrue(receiver.announcedRecently(context, "%50"))
     }
 
     @Test
     fun `after five minutes the same level is allowed again`() {
-        // تمرير الآن يدوياً بدلاً من عداد الساعة المحاكى (ShadowSystemClock لا
-        // يتحكّم في currentTimeMillis في هذا الإعداد). القيمة المُمرَّرة تحاكي
-        // مرور 5 دقائق بالضبط + هامش أمان فوق فرق الميلي ثانية المتبقية.
-        val markedAt = System.currentTimeMillis()
-        BatteryAnnouncementReceiver().markAnnounced(context, "%50")
-        // داخل النافذة (بعد دقيقة) ما زال يُمنع.
-        assertTrue(
-            BatteryAnnouncementReceiver().announcedRecently(
-                context, "%50", markedAt + 60_000L
-            )
-        )
-        // عند تجاوز الخمس دقائق يُسمح مجدداً (بهامش أمان +5 ثوانٍ فوق
-        // هامش الميلي ثانية المتبقية من التخزين).
-        assertFalse(
-            BatteryAnnouncementReceiver().announcedRecently(
-                context, "%50", markedAt + (5 * 60 * 1000L) + 5_000L
-            )
-        )
+        // ساعة افتراضية مضبوطة: الختم يُكتب عند baseNow ثم تتحكم الاختبار بلحظة
+        // الاستعلام — بعد دقيقة داخل النافذة، وبعد تجاوز الخمس دقائق خارجها.
+        val clock = FakeClock(baseNow)
+        val receiver = BatteryAnnouncementReceiver(clock)
+        receiver.markAnnounced(context, "%50")
+        clock.setTo(baseNow + 60_000L)
+        assertTrue(receiver.announcedRecently(context, "%50"))
+        clock.setTo(baseNow + 5 * 60 * 1000L + 5_000L)
+        assertFalse(receiver.announcedRecently(context, "%50"))
     }
 
     @Test
     fun `old stamp from a previous boot never suppresses`() {
         // محاكاة ختمٍ كُتب قبل إعادة تشغيل الهاتف (قبل 10 ساعات): الجدار الزمني
         // يعبر إعادة الإقلاع فيُسمح بالنطق الآن بدل التجمد حتى تنقضي المدة.
-        val oldStamp = System.currentTimeMillis() - 10 * 60 * 60 * 1000L
+        val clock = FakeClock(baseNow)
+        val oldStamp = baseNow - 10 * 60 * 60 * 1000L
         context.getSharedPreferences(
             "nateq_battery_state", Context.MODE_PRIVATE
         )
             .edit().putLong("battery_last_announced_%50", oldStamp).commit()
         assertFalse(
-            BatteryAnnouncementReceiver().announcedRecently(context, "%50")
+            BatteryAnnouncementReceiver(clock).announcedRecently(context, "%50")
         )
+    }
+}
+
+/** ساعة افتراضية قابلة للضبط — تحكّم كامل بالخط الزمني في الاختبارات. */
+private class FakeClock(private var millis: Long) : TimeProvider {
+
+    override fun currentTimeMillis(): Long = millis
+
+    override fun now(): Calendar =
+        Calendar.getInstance().apply { timeInMillis = millis }
+
+    fun setTo(millis: Long) {
+        this.millis = millis
     }
 }
