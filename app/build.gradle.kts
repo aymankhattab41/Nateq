@@ -27,8 +27,8 @@ android {
         minSdk = 24
         // أندرويد 17 = API 37: أحدث نسخة مثبّتة محلياً وهدف التوافق الحالي
         targetSdk = 37
-        versionCode = 9
-        versionName = "0.9.0"
+        versionCode = 10
+        versionName = "0.10.0"
     }
 
     signingConfigs {
