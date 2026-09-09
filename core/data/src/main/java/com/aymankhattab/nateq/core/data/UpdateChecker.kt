@@ -32,13 +32,32 @@ object UpdateChecker {
         return if (s.isNotEmpty() && (s.first() == 'v' || s.first() == 'V')) s.drop(1) else s
     }
 
+    /** مكوّنات نسخة كأرقام بعد نزع البادئة (غير الرقمية تتساقط). */
+    private fun components(value: String): List<Int> =
+        stripVersionPrefix(value).split('.').mapNotNull { it.toIntOrNull() }
+
+    /** خلال مرحلة 0.x يُقصَد بالوسم الأحادي «v6» الإصدار «0.6.0» (الرقم هو
+     *  الجزء الأوسط) — بلا هذه التسوية يُحسب «v6» أحدثَ من «0.6.0» خطأً
+     *  رغم تطابقهما في الواقع. خارج مرحلة الصفر تبقى المقارنة SemVer قياسية. */
+    private fun alignZeroRelease(
+        remote: List<Int>, current: List<Int>
+    ): Pair<List<Int>, List<Int>> = when {
+        remote.size == 1 && current.size >= 2 && current[0] == 0 ->
+            listOf(0, remote[0]) to current
+        remote.size >= 2 && current.size == 1 && remote[0] == 0 ->
+            remote to listOf(0, current[0])
+        else -> remote to current
+    }
+
     /** مقارنة SemVer لعنصري إصدار («v0.4.1»/«0.4.1») بلا البادئة: يرجع true
-     *  إذا كان [remote] أحدث فعلاً من [current]. مكوّنٌ مكوّن بالأرقام، والجزء
-     *  غير الرقمي في مكوّن يُتجاهل، والمكوّن المنقوص يُكمَّل بصفر. وسمٌ بلا أي
-     *  رقم (مثل «latest») ليس تحديثاً أبداً. منطق نقي قابل للاختبار بلا أندرويد. */
+     *  إذا كان [remote] أحدث فعلاً من [current]. مكوّنٌ مكوّن بالأرقام مع
+     *  تسوية مرحلة الصفر أعلاه، والجزء غير الرقمي في مكوّن يُتجاهل، والمكوّن
+     *  المنقوص يُكمَّل بصفر. وسمٌ بلا أي رقم (مثل «latest») ليس تحديثاً أبداً.
+     *  منطق نقي قابل للاختبار بلا أندرويد. */
     fun isNewerVersion(remote: String, current: String): Boolean {
-        val rParts = stripVersionPrefix(remote).split('.').mapNotNull { it.toIntOrNull() }
-        val cParts = stripVersionPrefix(current).split('.').mapNotNull { it.toIntOrNull() }
+        val (rParts, cParts) = alignZeroRelease(
+            components(remote), components(current)
+        )
         if (rParts.isEmpty()) return false
         val maxLen = maxOf(rParts.size, cParts.size)
         for (i in 0 until maxLen) {

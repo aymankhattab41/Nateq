@@ -41,4 +41,17 @@ class UpdateCheckerSemVerTest {
         assertFalse(UpdateChecker.isNewerVersion("", "0.4.0"))
         assertFalse(UpdateChecker.isNewerVersion("  ", "0.4.0"))
     }
+
+    @Test
+    fun singleTag_zeroRelease_equivalence() {
+        // خلال مرحلة 0.x: الوسم الأحادي «v6» يعني الإصدار 0.6.0 — ليس تحديثاً.
+        assertFalse(UpdateChecker.isNewerVersion("v6", "0.6.0"))
+        assertFalse(UpdateChecker.isNewerVersion("0.6.0", "v6"))
+        // الوسم الأحادي الأرقى في مرحلة الصفر «v7» أحدث من «0.6.0».
+        assertTrue(UpdateChecker.isNewerVersion("v7", "0.6.0"))
+        assertFalse(UpdateChecker.isNewerVersion("v6", "0.7.0"))
+        // خارج مرحلة الصفر تبقى المقارنة SemVer القياسية بلا أي تسوية.
+        assertFalse(UpdateChecker.isNewerVersion("v6", "6.0.0"))
+        assertTrue(UpdateChecker.isNewerVersion("v7", "6.0.0"))
+    }
 }
