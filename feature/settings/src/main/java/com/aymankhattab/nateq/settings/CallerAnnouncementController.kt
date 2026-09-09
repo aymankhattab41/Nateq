@@ -2,6 +2,7 @@ package com.aymankhattab.nateq.settings
 
 import android.Manifest
 import android.content.Intent
+import android.os.Build
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
@@ -34,14 +35,21 @@ internal class CallerAnnouncementController(
 ) {
 
     companion object {
-        /** لا يُفعَّل نطق اسم المتصل إلا مع إذن حالة الهاتف (بوّابة البث)
-         *  وأحد مصدرَي الاسم على الأقل: سجل المكالمات أو جهات الاتصال —
-         *  وإلا يبقى معطّلاً فلم نعده باسمٍ لا يُسلَّم لنطقه. */
+        /** بوّابة تفعيل نطق اسم المتصل. [requiresCallLog] صحيح على أندرويد 12+
+         *  (API 31+): ثم لا يُسلَّم رقم المتصل في بث PHONE_STATE إلا بإذن
+         *  READ_CALL_LOG صراحةً — حتى مع READ_CONTACTS — فيُشرَط ضرورةً،
+         *  وإلا ينطق التطبيق عبارةً عامة بلا اسم. قبل API 31 يكفي أحد
+         *  مصدرَي الاسم (السجل أو جهات الاتصال). */
         internal fun canEnable(
             phoneGranted: Boolean,
             callLogGranted: Boolean,
-            contactsGranted: Boolean
-        ): Boolean = phoneGranted && (callLogGranted || contactsGranted)
+            contactsGranted: Boolean,
+            requiresCallLog: Boolean
+        ): Boolean = if (requiresCallLog) {
+            phoneGranted && callLogGranted
+        } else {
+            phoneGranted && (callLogGranted || contactsGranted)
+        }
     }
 
     private lateinit var switchCallerAnnouncement: SwitchMaterial
@@ -367,10 +375,11 @@ internal class CallerAnnouncementController(
     }
 
     /**
-     * إذا أُبقيت ميزة المتصّل مفعّلة لكن أذوناتها الأساسية سُحبت تلقائياً
-     * (بلا منح READ_PHONE_STATE لا يُسلَّم بث PHONE_STATE أصلاً فيُصمت
-     * الإعلان تماماً)، نعرض حواراً يشرح السبب ويقدّم إعادة الطلب أو فتح
-     * إعدادات النظام.
+     * إذا أُبقيت ميزة المتصّل مفعّلة لكن أذوناتها اللازمة سُحبت تلقائياً
+     * (بلا READ_PHONE_STATE لا يُسلَّم بث PHONE_STATE أصلاً فيُصمت الإعلان
+     * تماماً؛ وعلى أندرويد 12+ بلا READ_CALL_LOG لا يصل رقم المتصل فيُصمت
+     * أيضاً — وقد يكون لهذا تعليق "الاسم لا يصل" عند منح الأسماء فقط)،
+     * نعرض حواراً يشرح السبب ويقدّم إعادة الطلب أو فتح إعدادات النظام.
      */
     private fun checkRevokedPermissionsAndRecover() {
         val enabled =
@@ -381,7 +390,20 @@ internal class CallerAnnouncementController(
             fragment.requireContext(),
             Manifest.permission.READ_PHONE_STATE
         ) == PackageManager.PERMISSION_GRANTED
-        if (phoneGranted) return
+        val callLogGranted = ContextCompat.checkSelfPermission(
+            fragment.requireContext(),
+            Manifest.permission.READ_CALL_LOG
+        ) == PackageManager.PERMISSION_GRANTED
+        // على أندرويد 12+ يُشرَط READ_CALL_LOG أيضاً (رقم المتصل لا يُسلَّم
+        // بدونه) — فسحبُه من إعدادات النظام يُعتبَر سحب الأذونات اللازمة.
+        val requiredGranted = if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+        ) {
+            phoneGranted && callLogGranted
+        } else {
+            phoneGranted
+        }
+        if (requiredGranted) return
         callerRevokedDialogShown = true
         MaterialAlertDialogBuilder(fragment.requireContext())
             .setTitle(R.string.caller_permission_revoked_title)
@@ -427,7 +449,12 @@ internal class CallerAnnouncementController(
             granted[Manifest.permission.READ_CALL_LOG] == true
         val contactsGranted =
             granted[Manifest.permission.READ_CONTACTS] == true
-        if (canEnable(phoneGranted, callLogGranted, contactsGranted)) {
+        if (canEnable(
+            phoneGranted,
+            callLogGranted,
+            contactsGranted,
+            requiresCallLog = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+        )) {
             runCatching { settings.setCallerAnnouncementEnabled(true) }
             // حارس يمنع المستمع من إعادة طلب الأذونات عند تعيين قيمة
             // المفتاح هنا

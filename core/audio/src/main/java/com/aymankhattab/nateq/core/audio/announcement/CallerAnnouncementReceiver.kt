@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
+import android.os.Build
 import android.provider.ContactsContract
 import android.telephony.TelephonyManager
 import android.util.Log
@@ -88,11 +89,13 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             try {
                 // فحص وقائي: وصول بث PHONE_STATE بحد ذاته يتطلب
                 // منح READ_PHONE_STATE وقت الإرسال (النظام يفلتر
-                // المستقبلين، وليس إعلان الـ Manifest فقط). لكن سحب
-                // النظام التلقائي للإذن (ابتداءً من أندرويد 11، ويشتد
-                // على أندرويد 17) قد يخطف البث قبل وصوله — إن وصلنا
-                // هنا رغم فقدانه نتوقف بهدوء بدل نطق نص وسط مكالمة
-                // أو رمي SecurityException. المعالجة مجزّأة في
+                // المستقبلين، وليس إعلان الـ Manifest فقط). وعلى
+                // أندرويد 12+ يُشرَط READ_CALL_LOG أيضاً— بدونه لا يصل
+                // رقم المتصل فيُصمت الإعلان عاماً بلا اسم. سحب النظام
+                // التلقائي للأذونات (ابتداءً من أندرويد 11، ويشتد على
+                // أندرويد 17) قد يخطف البث قبل وصوله — إن وصلنا هنا
+                // رغم فقدانه نتوقف بهدوء بدل نطق نص وسط مكالمة أو رمي
+                // SecurityException. المعالجة مجزّأة في
                 // [disableAfterPermissionRevoked] قابلةً للاختبار.
                 if (!hasCallerPermission(context)) {
                     Log.w(
@@ -331,16 +334,25 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         return granted == PackageManager.PERMISSION_GRANTED
     }
 
-    /** هل يحمل [CallerAnnouncementReceiver] إذن قراءة حالة الهاتف اللازم؟
-     *  (READ_PHONE_STATE) — بدونه لا يسلّم النظام بث PHONE_STATE أصلاً، أو
-     *  سُحب بعد تفعيل الميزة فأوقفنا التفعيل ذاتياً. */
-    internal fun hasCallerPermission(context: Context): Boolean =
-        hasPermission(context, Manifest.permission.READ_PHONE_STATE)
+    /** هل يحمل المستقبِل الأذونات اللازمة لنطق اسم المتصل؟ READ_PHONE_STATE
+     *  بوابة وصول البث (بدونه لا يُسلَّم أصلاً). وعلى أندرويد 12+ (API 31+)
+     *  يُشرَط READ_CALL_LOG أيضاً: بدونه لا يصل رقم المتصل في البث — حتى مع
+     *  READ_CONTACTS — فيُصمت الإعلان عاماً بلا اسم. */
+    internal fun hasCallerPermission(context: Context): Boolean {
+        if (!hasPermission(context, Manifest.permission.READ_PHONE_STATE)) {
+            return false
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            return hasPermission(context, Manifest.permission.READ_CALL_LOG)
+        }
+        return true
+    }
 
-    /** شفاء ذاتي عند سحب READ_PHONE_STATE رغم تفعيل إعلان المتصل: يطفئ
-     *  التفعيل ويُعيد تقييم الخدمة — بدل تركه «مفعّلاً» صامتاً (يتكرر
-     *  الوصول الموسوم بلا جدوى منذرةً بإذن مسحوب). مجزّأة [settings] تمريراً
-     *  (لا اعتماداً على الحقل المحقون) لتكون قابلة للاختبار. */
+    /** شفاء ذاتي عند سحب أي إذن لازم رغم تفعيل إعلان المتصل (حالة الهاتف؛
+     *  وسجل المكالمات أيضاً على أندرويد 12+): يطفئ التفعيل ويُعيد تقييم
+     *  الخدمة — بدل تركه «مفعّلاً» صامتاً (يتكرر الوصول الموسوم بلا جدوى
+     *  منذرةً بإذن مسحوب). مجزّأة [settings] تمريراً (لا اعتماداً على الحقل
+     *  المحقون) لتكون قابلة للاختبار. */
     internal fun disableAfterPermissionRevoked(
         settings: SettingsRepository,
         context: Context

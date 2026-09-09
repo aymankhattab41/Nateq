@@ -116,18 +116,27 @@ class CallerAnnouncementReceiverTest {
     @Test
     fun `hasCallerPermission reflects granted state`() {
         val receiver = CallerAnnouncementReceiver()
-        shadowOf(
+        val app =
             ApplicationProvider.getApplicationContext<android.app.Application>()
-        ).denyPermissions(android.Manifest.permission.READ_PHONE_STATE)
+        shadowOf(app).denyPermissions(
+            android.Manifest.permission.READ_PHONE_STATE,
+            android.Manifest.permission.READ_CALL_LOG
+        )
         assertFalse(
-            "بلا READ_PHONE_STATE نعتبر الإذن غائباً",
+            "بلا أذونات نعتبر الإذن غائباً",
             receiver.hasCallerPermission(context)
         )
-        shadowOf(
-            ApplicationProvider.getApplicationContext<android.app.Application>()
-        ).grantPermissions(android.Manifest.permission.READ_PHONE_STATE)
+        shadowOf(app)
+            .grantPermissions(android.Manifest.permission.READ_PHONE_STATE)
+        assertFalse(
+            "على أندرويد 12+ لا يكفي READ_PHONE_STATE وحده —" +
+                " فبدون READ_CALL_LOG لا يصل رقم المتصل",
+            receiver.hasCallerPermission(context)
+        )
+        shadowOf(app)
+            .grantPermissions(android.Manifest.permission.READ_CALL_LOG)
         assertTrue(
-            "بمنح READ_PHONE_STATE نعتبر الإذن حاضراً",
+            "بمنح الإذنين معاً يُنطق الاسم فعلياً",
             receiver.hasCallerPermission(context)
         )
     }
