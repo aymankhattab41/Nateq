@@ -150,6 +150,6 @@ internal class NotificationReadingController(
                 onStatusChanged()
             }
             .setNegativeButton(R.string.cancel, null)
-            .show()
+            .create().also { fragment.trackDialog(it) }.show()
     }
 }

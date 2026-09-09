@@ -357,7 +357,7 @@ internal class CallerAnnouncementController(
                 fragment.startActivity(intent)
             }
             .setNeutralButton(android.R.string.cancel, null)
-            .show()
+            .create().also { fragment.trackDialog(it) }.show()
     }
 
     /** نتيجة طلب أذونات المتصل: التفّعيل الفعلي لا يتم إلا بعد منح أي إذن. */

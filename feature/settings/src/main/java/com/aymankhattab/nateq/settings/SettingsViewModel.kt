@@ -1,6 +1,9 @@
 package com.aymankhattab.nateq.settings
 
+import android.content.ContentResolver
+import android.net.Uri
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.aymankhattab.nateq.engine.PronunciationDictionary
 import com.aymankhattab.nateq.util.NateqJson
 import com.aymankhattab.nateq.util.optArray
@@ -14,10 +17,15 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /**
@@ -63,6 +71,70 @@ class SettingsViewModel @Inject constructor(
          *  الواجهة كلها. */
     fun notifySettingsChanged() {
         _settingsRevision.update { it + 1 }
+    }
+
+    // ===== العمليات غير المتزامنة (التصدير/الاستيراد/النسخ الاحتياطي) =====
+    // كل القراءة/الكتابة والتشفير وفك التشفير تجري على خيط IO في نطاق
+    // viewModelScope: لا توجد أي معالجة ثقيلة على Main أثناء القواميس
+    // الكبيرة، والعمليات تنجو من تدوير الشاشة لأنها مرتبطة بحياة الفي إم.
+    sealed interface SettingsOperation {
+        data class DictImported(val ok: Boolean) : SettingsOperation
+        data class DictExported(val ok: Boolean) : SettingsOperation
+        data class BackedUp(val ok: Boolean) : SettingsOperation
+        data class Restored(val ok: Boolean) : SettingsOperation
+    }
+
+    private val _operationEvents =
+        MutableSharedFlow<SettingsOperation>(extraBufferCapacity = 1)
+    val operationEvents: SharedFlow<SettingsOperation> =
+        _operationEvents.asSharedFlow()
+
+    /** تصدير النسخة الاحتياطية (إعدادات + قاموس + أسماء متصلين) إلى uri. */
+    fun exportBackup(uri: Uri, resolver: ContentResolver) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = runCatching {
+                val json = buildBackupJson()
+                resolver.openOutputStream(uri)?.use { out ->
+                    out.write(json.toByteArray(Charsets.UTF_8))
+                } != null
+            }.getOrDefault(false)
+            _operationEvents.emit(SettingsOperation.BackedUp(ok))
+        }
+    }
+
+    /** استعادة نسخة احتياطية من uri (قراءة + تفكيك + تطبيق) على IO. */
+    fun restoreBackup(uri: Uri, resolver: ContentResolver) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = runCatching {
+                val text = resolver.openInputStream(uri)
+                    ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                text != null && applyBackupJson(text)
+            }.getOrDefault(false)
+            _operationEvents.emit(SettingsOperation.Restored(ok))
+        }
+    }
+
+    /** تصدير القاموس وحده إلى uri. */
+    fun exportDict(uri: Uri, resolver: ContentResolver) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = runCatching {
+                val json = pronunciationDict.exportToJson()
+                resolver.openOutputStream(uri)?.use { out ->
+                    out.write(json.toByteArray(Charsets.UTF_8))
+                } != null
+            }.getOrDefault(false)
+            _operationEvents.emit(SettingsOperation.DictExported(ok))
+        }
+    }
+
+    /** تطبيق نص قاموس مُقرأ سابقاً (مسار حوار دمج/استبدال) على IO. */
+    fun importDict(json: String, merge: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = runCatching {
+                pronunciationDict.importFromJson(json, merge)
+            }.getOrDefault(false)
+            _operationEvents.emit(SettingsOperation.DictImported(ok))
+        }
     }
 
     /** بناء ملف JSON كامل: إعدادات مصنفة الأنواع + القاموس

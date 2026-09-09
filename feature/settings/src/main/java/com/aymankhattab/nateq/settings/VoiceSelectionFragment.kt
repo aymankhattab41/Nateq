@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.settings
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import android.app.Dialog
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -19,6 +20,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.switchmaterial.SwitchMaterial
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -35,6 +37,13 @@ import com.aymankhattab.nateq.util.LanguageCode
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.settings.SettingsViewModel.SettingsOperation
+
+/** تُسجّل حواراً من أي ضابط في سجل الفصيل ليُغلق عند تدمير العرض
+ *  (لا تسريب مراجع الواجهة) — تُستخدم من الضابطات التي تملك `fragment`. */
+internal fun Fragment.trackDialog(dialog: Dialog) {
+    (this as? VoiceSelectionFragment)?.trackDialog(dialog)
+}
 
 /**
  * شاشة الإعدادات الرئيسية - تتضمن:
@@ -121,17 +130,35 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     // نص ملف القاموس المُختار من SAF لحين اختيار طريقة الاستيراد (دمج/استبدال)
     private var pendingImportJson: String? = null
 
+    // نوافذ حوارية مفتوحة: تُغلق كلها عند تدمير العرض حتى لا يتسرب
+    // مرجع الواجهة (WindowLeaked) عند تدوير الشاشة.
+    private val activeDialogs =
+        java.util.Collections.synchronizedSet(mutableSetOf<Dialog>())
+
+    /** يسجّل حواراً مفتوحاً ليُغلق تلقائياً مع تدمير عرض الشاشة، ويزيله
+     *  من السجل عند إغلاقه يدوياً. */
+    internal fun trackDialog(dialog: Dialog) {
+        activeDialogs.add(dialog)
+        dialog.setOnDismissListener { activeDialogs.remove(dialog) }
+    }
+
     private val openDictLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            // نقرأ الملف أولاً ثم نعرض حوار طريقة الاستيراد (دمج/استبدال)
-            runCatching {
-                pendingImportJson = requireContext().contentResolver
-                    .openInputStream(uri)
-                    ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+            // نقرأ الملف على خيط IO ثم نعرض حوار طريقة الاستيراد (دمج/استبدال)
+            lifecycleScope.launch(AppDispatchers.io) {
+                val text = runCatching {
+                    requireContext().contentResolver.openInputStream(uri)
+                        ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                }.getOrNull()
+                withContext(AppDispatchers.main) {
+                    if (isAdded && text != null) {
+                        pendingImportJson = text
+                        showImportModeDialog()
+                    }
+                }
             }
-            showImportModeDialog()
         }
     }
 
@@ -139,25 +166,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         if (uri != null) {
-            val ok = runCatching {
-                val json = pronunciationDict.exportToJson()
-                requireContext().contentResolver.openOutputStream(uri)
-                    ?.use { out ->
-                        out.write(json.toByteArray(Charsets.UTF_8))
-                    }
-            }.isSuccess
-            Toast.makeText(
-                requireContext(),
-                if (ok) R.string.dict_exported_ok
-                else R.string.dict_export_failed,
-                Toast.LENGTH_SHORT
-            ).show()
-            view?.announceCompat(
-                getString(
-                    if (ok) R.string.dict_exported_ok
-                    else R.string.dict_export_failed
-                )
-            )
+            // التصدير كاملاً على خيط IO عبر الفي إم (لا تجميد في Main)
+            vm.exportDict(uri, requireContext().contentResolver)
         }
     }
 
@@ -174,28 +184,14 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             .setTitle(R.string.dict_import_mode_title)
             .setItems(options) { _, which ->
                 pendingImportJson = null
-                val ok = runCatching {
-                    pronunciationDict.importFromJson(json, merge = which == 0)
-                }.getOrDefault(false)
-                Toast.makeText(
-                    requireContext(),
-                    if (ok) R.string.dict_imported_ok
-                    else R.string.dict_import_failed,
-                    Toast.LENGTH_SHORT
-                ).show()
-                view?.announceCompat(
-                    getString(
-                        if (ok) R.string.dict_imported_ok
-                        else R.string.dict_import_failed
-                    )
-                )
-                if (ok) refreshDictAdapter()
+                // الاستيراد كاملاً على خيط IO عبر الفي إم
+                vm.importDict(json, merge = which == 0)
             }
             .setNegativeButton(getString(R.string.cancel)) { _, _ ->
                 pendingImportJson = null
             }
             .setOnCancelListener { pendingImportJson = null }
-            .show()
+            .create().also(::trackDialog).show()
     }
 
     // ===== النسخ الاحتياطي / الاستعادة الكاملان
@@ -204,23 +200,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         if (uri != null) {
-            val ok = runCatching {
-                val json = vm.buildBackupJson()
-                requireContext().contentResolver.openOutputStream(uri)
-                    ?.use { out ->
-                        out.write(json.toByteArray(Charsets.UTF_8))
-                    }
-            }.isSuccess
-            Toast.makeText(
-                requireContext(),
-                if (ok) R.string.backup_saved else R.string.backup_failed,
-                Toast.LENGTH_SHORT
-            ).show()
-            view?.announceCompat(
-                getString(
-                    if (ok) R.string.backup_saved else R.string.backup_failed
-                )
-            )
+            // التصدير كاملاً على خيط IO عبر الفي إم
+            vm.exportBackup(uri, requireContext().contentResolver)
         }
     }
 
@@ -228,30 +209,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            val text = runCatching {
-                requireContext().contentResolver.openInputStream(uri)
-                    ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
-            }.getOrNull()
-            if (text != null) {
-                if (vm.applyBackupJson(text)) {
-                    // إعادة عرض الأقسام تتم تلقائياً: applyBackupJson يرفع
-                    // مراجعة settingsRevision (StateFlow) ويجمعها هذا الفصيل.
-                    AnnouncementSchedulerService.requestStart(requireContext())
-                    Toast.makeText(
-                        requireContext(),
-                        R.string.restore_done,
-                        Toast.LENGTH_LONG
-                    ).show()
-                    view?.announceCompat(getString(R.string.restore_done))
-                } else {
-                    Toast.makeText(
-                        requireContext(),
-                        R.string.restore_failed,
-                        Toast.LENGTH_LONG
-                    ).show()
-                    view?.announceCompat(getString(R.string.restore_failed))
-                }
-            }
+            // القراءة والتفكيك والاستعادة كلها على خيط IO عبر الفي إم
+            vm.restoreBackup(uri, requireContext().contentResolver)
         }
     }
 
@@ -531,6 +490,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             }
         }
 
+        // نتائج عمليات الفي إم غير المتزامنة (تصدير/استيراد/نسخ احتياطي)
+        // — تُعرض Toast/إعلان مسموع وتُعاد رسكلة القاموس عند الحاجة.
+        viewLifecycleOwner.lifecycleScope.launch {
+            vm.operationEvents.collect(::handleOperationEvent)
+        }
+
         // فحص تلقائي عند فتح التطبيق: يُنبه بوجود تحديث (صامت إن لم يوجد)
         checkForUpdatesOnStart()
     }
@@ -541,7 +506,42 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         // (getInstance) الذي تُدار حياته في مستقبلات الإعلانات التلقائية.
         announcementSpeaker?.stop()
         announcementSpeaker = null
+        // إغلاق كل النوافذ المفتوحة حتى لا تتسرب مراجع الواجهة (WindowLeaked)
+        // عند تدوير الشاشة أو مغادرتها.
+        val open = activeDialogs.toList()
+        activeDialogs.clear()
+        open.forEach { runCatching { it.dismiss() } }
         super.onDestroyView()
+    }
+
+    /** يعالج أحداث العمليات غير المتزامنة القادمة من الفي إم (تجري كلها على
+     *  خيط IO في الفي إم): يعرض النتيجة ويعيد رسكلة القاموس عند الحاجة. */
+    private fun handleOperationEvent(event: SettingsOperation) {
+        val stats = when (event) {
+            is SettingsOperation.DictImported -> {
+                if (event.ok) refreshDictAdapter()
+                if (event.ok) R.string.dict_imported_ok
+                else R.string.dict_import_failed
+            }
+            is SettingsOperation.DictExported -> if (event.ok)
+                R.string.dict_exported_ok else R.string.dict_export_failed
+            is SettingsOperation.BackedUp -> if (event.ok)
+                R.string.backup_saved else R.string.backup_failed
+            is SettingsOperation.Restored -> {
+                if (event.ok) {
+                    // إعادة عرض الأقسام تتم تلقائياً
+                    // عبر مراجعة settingsRevision
+                    AnnouncementSchedulerService.requestStart(requireContext())
+                    R.string.restore_done
+                } else {
+                    R.string.restore_failed
+                }
+            }
+        }
+        val duration = if (event is SettingsOperation.Restored)
+            Toast.LENGTH_LONG else Toast.LENGTH_SHORT
+        Toast.makeText(requireContext(), stats, duration).show()
+        view?.announceCompat(getString(stats))
     }
 
     // ===== اختيار المحرك وحوار التحويل التلقائي: انتقلا إلى
@@ -591,7 +591,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 }
             }
             .setNegativeButton(getString(R.string.cancel), null)
-            .show()
+            .create().also(::trackDialog).show()
     }
 
     /** إعادة رسم قائمة إدخالات القاموس بعد أي تغيير
@@ -801,7 +801,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 }
             }
             .setNegativeButton(getString(R.string.cancel), null)
-            .show()
+            .create().also(::trackDialog).show()
     }
 
     /** توسيع/طي قسم قابل للطي، ويُحدّث السهم (▼/▲) ووصف الأب بحالة الطي.
@@ -858,7 +858,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     }
                 }
             }
-            .show()
+            .create().also(::trackDialog).show()
     }
 
     /** إيقاف النطق الجاري للمتحدث الخاص بمعاينات الأقسام (يُستخدمه ضابط
@@ -1146,7 +1146,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 startApkDownload(context, apkUrl)
             }
             .setNegativeButton(R.string.check_updates_confirm_no, null)
-            .show()
+            .create().also(::trackDialog).show()
     }
 
     /** ينزّل الـ APK ويعرض إشعاراً بأن التنزيل بدأ — يُستدعى بعد موافقة
@@ -1230,7 +1230,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     vm.notifySettingsChanged()
                 }
                 .setNegativeButton(R.string.reset_cancel, null)
-                .show()
+                .create().also(::trackDialog).show()
         }
     }
 
@@ -1248,7 +1248,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     }
                 }
                 .setNegativeButton(R.string.cancel, null)
-                .show()
+                .create().also(::trackDialog).show()
         }
         view?.findViewById<View>(R.id.btn_restore_settings)
             ?.setOnClickListener {
@@ -1266,7 +1266,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     }
                 }
                 .setNegativeButton(R.string.cancel, null)
-                .show()
+                .create().also(::trackDialog).show()
         }
     }
 

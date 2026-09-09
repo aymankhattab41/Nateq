@@ -263,7 +263,7 @@ internal class EngineSectionController(
             }
         }
 
-        dialog.show()
+        dialog.also { fragment.trackDialog(it) }.show()
     }
 
     /**

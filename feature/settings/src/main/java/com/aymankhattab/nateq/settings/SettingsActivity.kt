@@ -7,6 +7,7 @@ import android.provider.Settings
 import android.view.View
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.commit
@@ -107,7 +108,7 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
     }
 
     private fun showPermissionDeniedDialog(messageRes: Int) {
-        MaterialAlertDialogBuilder(this)
+        permissionDeniedDialog = MaterialAlertDialogBuilder(this)
             .setTitle(R.string.permission_denied_title)
             .setMessage(messageRes)
             .setPositiveButton(R.string.permission_open_settings) { _, _ ->
@@ -120,6 +121,17 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
                 startActivity(intent)
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            .create()
+        permissionDeniedDialog?.show()
+    }
+
+    // حوار إشعار رفض الإذن الحالي: يُغلق عند تدمير النشاط حتى لا يتسرب
+    // مرجع النافذة (WindowLeaked) عند تدوير الشاشة.
+    private var permissionDeniedDialog: AlertDialog? = null
+
+    override fun onDestroy() {
+        permissionDeniedDialog?.let { runCatching { it.dismiss() } }
+        permissionDeniedDialog = null
+        super.onDestroy()
     }
 }
