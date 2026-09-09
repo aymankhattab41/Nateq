@@ -10,40 +10,19 @@ import android.content.pm.ResolveInfo
  * بدل المحركات المدمجة (جوجل/سامسونج).
  * يُستخدم من [SystemVoiceProvider] ومن متحدث الإعلانات المستقلة
  * (البطارية / المتصل) لضمان اتساق اختيار المحرك في كل مكان.
+ *
+ * القرارات النقية (الاختيار المفضَّل/الاحتياط وسلسلة اللغات) تُفوض إلى
+ * [EngineRegistry] ليكون منطق القرار موحَّداً؛ يبقى هنا فقط ما يعتمد
+ * على Context (الاستعلام عن المحركات المثبّتة في النظام ديناميكياً).
  */
 object EnginePicker {
-
-    /** محركات النطق الحقيقية التي نمنحها الأولوية عند اختيار تلقائي، لأنها
-     *  مضمونةً تُنتج صوتاً قياسياً (على عكس قارئات الشاشة). الترتيب يفضّل
-     *  MultiTTS (صوت قياسي مرن) ثم محرك النظام الرسمي
-     *  (جوجل فسامسونج فـ AOSP). */
-    private val preferredEngines = listOf(
-        "org.nobody.multitts",
-        "com.google.android.tts",
-        "com.samsung.SMT",
-        "com.svox.pico"
-    )
-
-    /** قارئات الشاشة التي تُستثنى من الاختيار التلقائي: لا تُنتج صوتاً عبر
-     *  TextToSpeech.synthesize القياسي فتجعل المستخدم بلا صوت. تبقى ظاهرة
-     *  في واجهة المحركات للاختيار اليدوي الصريح (بعض المستخدمين يفضّلها).
-     *  Talkman/Jieshuo (com.nirenr.talkman) قارئ ومحرك معاً: يسجّل نفسه
-     *  TTS عبر eSpeak ويردّ بـ getVoices لغاتٍ نظرية (af/am/…) بلا بيانات
-     *  مثبتة فعلياً على الجهاز — يستثنى من المساهمة باللغات المكتشفة ويبقى
-     *  قابلاً للاختيار اليدوي كأي قارئ آخر. */
-    private val screenReaderPackages = setOf(
-        "com.google.android.marvin.talkback",   // TalkBack جوجل
-        "com.samsung.accessibility",            // TalkBack سامسونج
-        // Jieshuo/Talkman (قارئ + محرك eSpeak)
-        "com.nirenr.talkman"
-    )
 
     /** محرك TTS مثبّت في النظام مع تسميته الظاهرة للمستخدم */
     data class InstalledEngine(val packageName: String, val label: String)
 
     /** هل الحزمة قارئ شاشة (لا تُختار تلقائياً)؟ */
     fun isScreenReader(packageName: String): Boolean {
-        return packageName in screenReaderPackages
+        return EngineRegistry.isScreenReader(packageName)
     }
 
     /** كل محركات TTS المثبتة في النظام (تُستعلم ديناميكياً) مع تسمياتها */
@@ -72,36 +51,25 @@ object EnginePicker {
     }
 
     /**
-     * يختار المحرك المفضّل من قائمة الحزم المثبتة وفق ترتيب [preferredEngines]،
-     * ثم أي محرك مثبّت ليس قارئ شاشة كمسار احتياطي آمن (بدل العودة null).
-     * منطق نقي قابل للاختبار دون Context.
+     * يختار المحرك المفضّل من قائمة الحزم المثبتة وفق ترتيب
+     * الأولوية المفضَّلة، ثم أي محرك مثبّت ليس قارئ شاشة. (من
+     * [EngineRegistry]). منطق نقي قابل للاختبار دون Context.
      */
     fun pickPreferredEngineFrom(installed: Collection<String>): String? {
-        preferredEngines.forEach { pkg ->
-            if (installed.contains(pkg)) return pkg
-        }
-        // المسار الاحتياطي: أي محرك حقيقي (غير قارئ شاشة) بدل null.
-        return installed.firstOrNull { !isScreenReader(it) }
+        return EngineRegistry.pickPreferredEngineFrom(installed)
     }
 
     /**
-     * يختار محرك الاحتياط بعد فشل محرك أو أكثر في النطق: يستبعد **كل** المحركات
-     * الفاشلة سابقاً (سجل [failedEngines]) من القائمة ثم يعتمد على
-     * [pickPreferredEngineFrom] على المتبقّي — فيُفضَّل جوجل (وإن لم يوجد، أي
-     * محرك حقيقي آخر بالترتيب: MultiTTS/سامسونج/…). يدعم الأسواق التي لا تصلها
-     * خدمة جوجل (الصين مثلاً). منطق نقي قابل للاختبار دون Context.
-     *
-     * بالاستبعاد التراكمي يُمنع «تأرجح التراجع» (ping-pong): لو فشل المحركان
-     * A ثم B معاً فلن يُعاد A (المفضّل الأول) لأن الاثنين مستبعدان من القائمة
-     * — فكان الاستبعادُ السابق للمحرك الأخير الفاشل فقط يُعيد الأعلى أولويةً
-     * وتترنّح المحاولة بين المحركين حتى استنفاد الذاكرة.
+     * محرك الاحتياط بعد فشل محرك أو أكثر في النطق، باستبعاد تراكمي
+     * لسد سجلّ الفشل. (من [EngineRegistry]). منطق نقي قابل للاختبار.
      */
     fun pickFallbackEngineFrom(
         installed: Collection<String>,
         failedEngines: Set<String>
     ): String? {
-        return pickPreferredEngineFrom(
-            installed.filter { it !in failedEngines }
+        return EngineRegistry.pickFallbackEngineFrom(
+            installed,
+            failedEngines
         )
     }
 
