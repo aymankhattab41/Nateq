@@ -25,6 +25,8 @@ internal object PhoneNumberStep : TextProcessingStep {
 
     private fun processPhoneNumbers(text: String, isArabicContext: Boolean): String {
         val matcher = PATTERN_PHONE.matcher(text)
+        if (!matcher.find()) return text
+        matcher.reset()
         val buffer = StringBuffer()
         while (matcher.find()) {
             val raw = matcher.group(0)!!

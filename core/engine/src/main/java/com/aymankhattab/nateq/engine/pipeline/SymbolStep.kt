@@ -62,7 +62,16 @@ internal object SymbolStep : TextProcessingStep {
         add(PATTERN_AT to " عند ")
     }
 
+    // بوابة عدم التطابق: دمج OR صريح لجميع أنماط الخطوة. إن لم يطابق شيئاً
+    // أُعيد النص كما هو (نفس المرجع) دون ممرّات فردية؛ بدائل الخطوة عربية
+    // بلا أرقام/رموز فلا يخلق استبدالٌ تطابقاً لاحقاً جديداً، فالسلوك مطابق.
+    private val SYMBOL_ANY_PATTERN = Pattern.compile(
+        SYMBOL_PATTERNS
+            .joinToString("|") { "(" + it.first.pattern() + ")" }
+    )
+
     override fun apply(input: String): String {
+        if (!SYMBOL_ANY_PATTERN.matcher(input).find()) return input
         var result = input
         for ((pattern, replacement) in SYMBOL_PATTERNS) {
             result = pattern.matcher(result).replaceAll(replacement)

@@ -10,6 +10,8 @@ internal object TimeStep : TextProcessingStep {
 
     override fun apply(input: String): String {
         val matcher = PATTERN_TIME.matcher(input)
+        if (!matcher.find()) return input
+        matcher.reset()
         val buffer = StringBuffer()
 
         while (matcher.find()) {

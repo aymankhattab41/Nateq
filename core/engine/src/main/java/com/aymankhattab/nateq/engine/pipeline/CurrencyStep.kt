@@ -61,7 +61,17 @@ internal object CurrencyStep : TextProcessingStep {
         Pattern.compile("""\b(\d+(?:[.,]\d{3})*(?:[.,]\d+)?)\s*${Pattern.quote(symbol)}""") to info
     }
 
+    // بوابة عدم التطابق: دمج OR صريح لكل أنماط العملة (قبل/بعد/كود). إن لم
+    // يطابق شيئاً أُعيد النص كما هو بلا 37 ممراً وتخصيص سلسلة؛ بدائل العملة
+    // عربية بلا أرقام فلا يُنشئ استبدالٌ تطابقاً جديداً، فالسلوك مطابق تماماً.
+    private val CURRENCY_ANY_PATTERN = Pattern.compile(
+        (CURRENCY_PATTERNS_BEFORE + CURRENCY_PATTERNS_AFTER)
+            .joinToString("|") { "(" + it.first.pattern() + ")" } +
+            "|(" + PATTERN_CURRENCY_CODE.pattern() + ")"
+    )
+
     override fun apply(input: String): String {
+        if (!CURRENCY_ANY_PATTERN.matcher(input).find()) return input
         var result = input
 
         // رموز قبل المبلغ: $100

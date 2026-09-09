@@ -16,6 +16,8 @@ internal object UrlStep : TextProcessingStep {
 
     override fun apply(input: String): String {
         val matcher = PATTERN_URL.matcher(input)
+        if (!matcher.find()) return input
+        matcher.reset()
         val buffer = StringBuffer()
         while (matcher.find()) {
             val raw = matcher.group(1)!!

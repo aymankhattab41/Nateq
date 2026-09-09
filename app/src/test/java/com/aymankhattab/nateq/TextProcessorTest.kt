@@ -197,6 +197,17 @@ class TextProcessorTest {
         assertEquals("oh laughing", processor.process("oh :D", "en"))
     }
 
+    @Test
+    fun urlContainingDate_isKeptWhole() {
+        // تاريخ داخل الرابط (2026-03-09) لا يُفسَّر كتاريخ مستقل: UrlStep تعمل
+        // أولاً فتحمي الرابط ومساراته الرقمية من خطوات التاريخ/الوقت/العملة
+        // اللاحقة، فيُنطق اسم النطاق ويختفي باقي المسار بصمت (لا كلمات تاريخ).
+        val out = processor.process("راجع https://site.com/news/2026-03-09/post", "ar")
+        assertEquals("راجع موقع site", out)
+        assertTrue(!out.contains("مارس"))
+        assertTrue(!out.contains("post"))
+    }
+
     // ===== الإصلاحات: معالجة النصوص العربية والحالات الشاذة =====
 
     @Test

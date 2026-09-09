@@ -4,6 +4,7 @@ import com.aymankhattab.nateq.engine.pipeline.AmountParser
 import com.aymankhattab.nateq.engine.pipeline.CurrencyStep
 import com.aymankhattab.nateq.engine.pipeline.NumberWordsConverter
 import com.aymankhattab.nateq.engine.pipeline.RomanNumeralStep
+import com.aymankhattab.nateq.engine.pipeline.SymbolStep
 import com.aymankhattab.nateq.engine.pipeline.UnitStep
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -320,5 +321,27 @@ class PipelineStepsTest {
     @Test
     fun amountParser_plainInteger() {
         assertEquals(42.0, AmountParser.parseAmount("42"), 0.001)
+    }
+
+    // ══════════ بوابات «لا تطابق» (لا ممرّات/تخصيص عند غياب الرمز) ══════════
+
+    @Test
+    fun currency_noCurrencySymbols_leftUnchanged() {
+        // نص عربي بأرقام بلا أي رمز عملة: البوابة تعيده كما هو دون 37 ممراً.
+        val input = "أرسلت 25 رسالة"
+        assertEquals(input, CurrencyStep.apply(input))
+    }
+
+    @Test
+    fun unit_noUnits_leftUnchanged() {
+        // نص بأرقام بلا أي وحدة قياس: البوابة تعيده كما هو دون 38 ممراً.
+        val input = "أرسلت 25 رسالة"
+        assertEquals(input, UnitStep.apply(input))
+    }
+
+    @Test
+    fun symbol_noSymbols_leftUnchanged() {
+        // لا رموز عامة/حسابية ولا @ معزولة: النص يُعاد كما هو بلا ممرّات.
+        assertEquals("مرحبا 7", SymbolStep.apply("مرحبا 7"))
     }
 }

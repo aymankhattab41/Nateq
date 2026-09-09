@@ -28,6 +28,8 @@ internal object RomanNumeralStep : TextProcessingStep {
 
     override fun apply(input: String): String {
         val matcher = PATTERN_ROMAN.matcher(input)
+        if (!matcher.find()) return input
+        matcher.reset()
         val buffer = StringBuffer()
         while (matcher.find()) {
             val rom = matcher.group(0)!!

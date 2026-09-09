@@ -69,7 +69,15 @@ internal object UnitStep : TextProcessingStep {
         ) to info
     }
 
+    // بوابة عدم التطابق: دمج OR صريح لأنماط الوحدات كلها — إن لم يطابق شيئاً
+    // أُعيد النص كما هو بلا 38 ممراً وتخصيص سلسلة؛ بدائل الوحدات عربية بلا
+    // أرقام فلا يخلق استبدالٌ تطابقاً جديداً، فالسلوك مطابق تماماً للناتج.
+    private val UNIT_ANY_PATTERN = Pattern.compile(
+        UNIT_PATTERNS.joinToString("|") { "(" + it.first.pattern() + ")" }
+    )
+
     override fun apply(input: String): String {
+        if (!UNIT_ANY_PATTERN.matcher(input).find()) return input
         var result = input
         for ((pattern, info) in UNIT_PATTERNS) {
             val matcher = pattern.matcher(result)
