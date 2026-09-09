@@ -62,6 +62,15 @@ internal object NumberStep : TextProcessingStep {
         // الفصل بين فواصل الآلاف والفاصلة العشرية يتم عبر sanitizeNumerals
         // الذي لا يُهلك الأعداد العشرية ثلاثية الخانات (3.141 تبقى عشرية).
         val cleaned = AmountParser.sanitizeNumerals(numberStr)
+        // الأعداد الصحيحة تُحول عبر Long (حتى 19 خانة) للحفاظ على الدقة:
+        // Double يتجاوز دقته 2^53 (≈9.007×10^15) فيشوّه البطاقات/الرموز الطويلة
+        // (مثل 9999999999999999 التي كانت تنطق «عشرة كوادريليون» خطأً).
+        if (cleaned.indexOf('.') < 0) {
+            val longValue = cleaned.toLongOrNull()
+            if (longValue != null) {
+                return NumberWordsConverter.numberToWords(longValue)
+            }
+        }
         val number = cleaned.toDoubleOrNull() ?: return numberStr
         return NumberWordsConverter.numberToWords(number)
     }

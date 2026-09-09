@@ -259,6 +259,15 @@ class TextProcessorTest {
     }
 
     @Test
+    fun longDigits_precisionPreserved() {
+        // 16 خانة (بطاقة مصرفية/رمز طويل) تفوق دقة Double (2^53) — تُنطق
+        // عبر Long بدقة كاملة؛ 9999999999999999 لا تُقرَّب إلى خطأ.
+        val out = processor.process("9999999999999999", "ar")
+        assertTrue(out.startsWith("تسعة كوادريليونات"))
+        assertFalse(out.contains("عشرة كوادريليون"))
+    }
+
+    @Test
     fun grammatical_feminineCounted_compound() {
         // آحاد العدد المركّب تلزم بالمؤنث مع المعدود المؤنث:
         assertEquals("خمس وعشرون سنة", processor.process("25 سنة", "ar"))

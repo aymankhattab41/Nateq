@@ -103,6 +103,62 @@ class NumberSpeechTest {
     }
 
     @Test
+    fun arabicWords_feminineTwo_nominative() {
+        // مؤنث العدد 2 في موضع الرفع: «اثنتان» لا «اثنتين» (نصباً/جراً).
+        assertEquals("اثنتان", NumberSpeech.toArabicWords(2, isFeminine = true))
+        assertEquals("اثنتا عشرة", NumberSpeech.toArabicWords(12, isFeminine = true))
+        assertEquals(
+            "مئة واثنتان",
+            NumberSpeech.toArabicWords(102, isFeminine = true)
+        )
+        assertEquals(
+            "اثنتان وعشرون",
+            NumberSpeech.toArabicWords(22, isFeminine = true)
+        )
+    }
+
+    @Test
+    fun arabicWords_thousandsGenitive() {
+        // آحاد 1–2 معطوفة على مائة تجرّ التمييز: «مائة وواحد ألف» لا ألفاً.
+        assertEquals(
+            "مائة وواحد ألف",
+            NumberSpeech.toArabicWords(101000)
+        )
+        assertEquals(
+            "مائة واثنان ألف",
+            NumberSpeech.toArabicWords(102000)
+        )
+    }
+
+    @Test
+    fun arabicWords_thousandsTens_remainAccusative() {
+        // فوق العشرات يبقى منصوباً (محدّد: 111000).
+        assertEquals(
+            "مائة وأحد عشر ألفاً",
+            NumberSpeech.toArabicWords(111000)
+        )
+    }
+
+    @Test
+    fun arabicWords_tenThousand_doesNotCrash() {
+        // 10,000 كانت تنفجر من onesM[10] (خارج حدود المصفوفة).
+        assertEquals("عشرة آلاف", NumberSpeech.toArabicWords(10000))
+    }
+
+    @Test
+    fun arabicWords_tenMillion_doesNotCrash() {
+        // 10,000,000 كانت تنفجر من onesM[10] (خارج حدود المصفوفة).
+        assertEquals("عشرة ملايين", NumberSpeech.toArabicWords(10000000))
+    }
+
+    @Test
+    fun arabicWords_multiplesOfHundredMillion_genitive() {
+        // مئة مضبوطة أو بآحاد 1–2 تبقى مجرورة: «مائة مليون» لا مليوناً.
+        assertEquals("مائة مليون", NumberSpeech.toArabicWords(100000000))
+        assertEquals("مائة وواحد مليون", NumberSpeech.toArabicWords(101000000))
+    }
+
+    @Test
     fun englishWords_basicNumbers() {
         assertEquals("zero", NumberSpeech.toEnglishWords(0))
         assertEquals("one", NumberSpeech.toEnglishWords(1))

@@ -11,42 +11,67 @@ internal object NumberWordsConverter {
 
     // كلمات الأعداد (آحاد/مراهقين/عشرات/مئات) — مرجعية مشتركة بين
     // المسارين الطويل (Long) والعشري (String).
-    private val UNITS_WORDS = arrayOf("", "واحد", "اثنان", "ثلاثة", "أربعة", "خمسة", "ستة", "سبعة", "ثمانية", "تسعة")
-    private val TEENS_WORDS = arrayOf("عشرة", "أحد عشر", "اثنا عشر", "ثلاثة عشر", "أربعة عشر", "خمسة عشر", "ستة عشر", "سبعة عشر", "ثمانية عشر", "تسعة عشر")
-    private val TENS_WORDS = arrayOf("", "", "عشرون", "ثلاثون", "أربعون", "خمسون", "ستون", "سبعون", "ثمانون", "تسعون")
-    private val HUNDREDS_WORDS = arrayOf("", "مائة", "مائتان", "ثلاثمائة", "أربعمائة", "خمسمائة", "ستمائة", "سبعمائة", "ثمانمائة", "تسعمائة")
+    private val UNITS_WORDS = arrayOf(
+        "", "واحد", "اثنان", "ثلاثة", "أربعة", "خمسة", "ستة",
+        "سبعة", "ثمانية", "تسعة"
+    )
+    private val TEENS_WORDS = arrayOf(
+        "عشرة", "أحد عشر", "اثنا عشر", "ثلاثة عشر", "أربعة عشر",
+        "خمسة عشر", "ستة عشر", "سبعة عشر", "ثمانية عشر", "تسعة عشر"
+    )
+    private val TENS_WORDS = arrayOf(
+        "", "", "عشرون", "ثلاثون", "أربعون", "خمسون",
+        "ستون", "سبعون", "ثمانون", "تسعون"
+    )
+    private val HUNDREDS_WORDS = arrayOf(
+        "", "مائة", "مائتان", "ثلاثمائة", "أربعمائة", "خمسمائة",
+        "ستمائة", "سبعمائة", "ثمانمائة", "تسعمائة"
+    )
 
     /** تحويل رقم لكلمات عربية (يدعم حتى التريليونات، والكسور العشرية). */
     fun numberToWords(number: Number): String {
-        // معالجة الكسور العشرية: فصل الجزء الصحيح والعشري ونطق "فاصلة" ثم الأرقام
-        // نعتمد التمثيل العشري المباشر (BigDecimal.valueOf) بدل طرح الجزء الصحيح
-        // من الديبل — الطرح كان يُدخل أخطاء الفاصلة العائمة (0.14000000000000012)
-        // وتفقد الأصفار البادئة/الوسطية للكسر (3.05 تُنطق سابقاً «ثلاثة فاصلة خمسة»).
+        // معالجة الكسور العشرية: فصل الجزء الصحيح والعشري ونطق "فاصلة" ثم
+        // الأرقام — نعتمد التمثيل العشري المباشر (BigDecimal.valueOf) بدل
+        // طرح الجزء الصحيح من الديبل — الطرح كان يُدخل أخطاء الفاصلة
+        // العائمة (0.14000000000000012) وتفقد الأصفار البادئة/الوسطية للكسر
+        // (3.05 تُنطق سابقاً «ثلاثة فاصلة خمسة»).
         if (number is Double || number is Float) {
             val d = number.toDouble()
             // صفر فيصفر/لا نهائي: BigDecimal.valueOf يرفع استثناء نحوله لنطق
             // صريح بدل الانهيار (SignatureSynthesis يتعامل معها بأمان لاحقاً).
             if (d.isNaN()) return "ليس رقماً"
-            if (d.isInfinite()) return if (d > 0) "ما لا نهاية" else "ناقص ما لا نهاية"
+            if (d.isInfinite()) {
+                return if (d > 0) "ما لا نهاية" else "ناقص ما لا نهاية"
+            }
             val negative = d < 0
             val abs = Math.abs(d)
             // تمثيل عشري نظيف بدون أصفار ختامية (مثل 3.05 → "3.05").
-            val plain = BigDecimal.valueOf(abs).stripTrailingZeros().toPlainString()
+            val plain = BigDecimal.valueOf(abs)
+                .stripTrailingZeros()
+                .toPlainString()
             val dot = plain.indexOf('.')
             if (dot < 0) {
                 val integerOnly = plain.toLong()
-                return if (negative) "ناقص ${numberToWords(integerOnly)}" else numberToWords(integerOnly)
+                return if (negative) {
+                    "ناقص ${numberToWords(integerOnly)}"
+                } else {
+                    numberToWords(integerOnly)
+                }
             }
             val integerPart = plain.substring(0, dot).toLong()
-            // خانات الكسر كما وردت (الأصفار البادئة والوسطية محفوظة: "05" ،"009").
+            // خانات الكسر كما وردت (الأصفار البادئة والوسطية محفوظة).
             val decimalDigits = plain.substring(dot + 1)
             val base = if (negative) "ناقص " else ""
             val intWord = numberToWords(integerPart)
-            // نطق طبيعي للكسور الشائعة: «ونصف/وربع/وثلاثة أرباع» بدل «فاصلة ...»
+            // نطق طبيعي للكسور الشائعة: «ونصف/وربع/وثلاثة أرباع» بدل «فاصلة…».
             return when (decimalDigits) {
                 "5" -> if (integerPart == 0L) "${base}نصف" else "$base$intWord ونصف"
                 "25" -> if (integerPart == 0L) "${base}ربع" else "$base$intWord وربع"
-                "75" -> if (integerPart == 0L) "${base}ثلاثة أرباع" else "$base$intWord وثلاثة أرباع"
+                "75" -> if (integerPart == 0L) {
+                    "${base}ثلاثة أرباع"
+                } else {
+                    "$base$intWord وثلاثة أرباع"
+                }
                 // غيرها: نطق الخانات رقماً رقماً مع إبقاء الأصفار («05» → صفر خمسة)
                 else -> "$base$intWord فاصلة " + decimalDigits
                     .map { digit -> numberToWords(digit.toString().toLong()) }
@@ -91,22 +116,36 @@ internal object NumberWordsConverter {
         return result
     }
 
-    /** مقياس مجموعة الأرقام (آلاف/ملايين/مليارات/تريليونات/كوادريليون/كوينتيليون)
-     *  مع تمييزٍ نحوي صحيح:
+    /** مقياس مجموعة الأرقام (آلاف/ملايين/مليارات/تريليونات/كوادريليون/
+     *  كوينتيليون) مع تمييزٍ نحوي صحيح:
      *  - ساكن 1/2 ← مفرد/مثنى («ألف»، «ألفان»)،
      *  - 3–10 ← جمع («خمسة آلاف»)،
      *  - 11–99 ← مفرد منصوب («خمسة عشر ألفاً»)،
      *  - 100 ← إضافة مجرورة («مائة ألف»)، 200 ← «مائتا ألف» (حذف نون المثنى)،
-     *  - مئات مضبوطة ← «ثلاثمائة ألف»، ومئات بآحاد 3–10 ← «مائة وخمسة آلاف». */
-    private fun scaleForGroup(groupIndex: Int, group: Int, groupText: String): String {
+     *  - مئات مضبوطة ← «ثلاثمائة ألف»، ومئات بآحاد 3–10 ← «مائة وخمسة آلاف»،
+     *  - ومئات بآحاد 1–2 معطوفة على مائة ← مفردٌ مجرور («مائة وواحد ألف»). */
+    private fun scaleForGroup(
+        groupIndex: Int,
+        group: Int,
+        groupText: String
+    ): String {
         if (groupIndex == 0) return ""
         val scale = when (groupIndex) {
             1 -> ScaleWords("ألف", "ألفان", "آلاف", "ألفاً", "ألف")
             2 -> ScaleWords("مليون", "مليونان", "ملايين", "مليوناً", "مليون")
             3 -> ScaleWords("مليار", "ملياران", "مليارات", "ملياراً", "مليار")
-            4 -> ScaleWords("تريليون", "تريليونان", "تريليونات", "تريليوناً", "تريليون")
-            5 -> ScaleWords("كوادريليون", "كوادريليونان", "كوادريليونات", "كوادريليوناً", "كوادريليون")
-            6 -> ScaleWords("كوينتيليون", "كوينتيليونان", "كوينتيليونات", "كوينتيليوناً", "كوينتيليون")
+            4 -> ScaleWords(
+                "تريليون", "تريليونان", "تريليونات",
+                "تريليوناً", "تريليون"
+            )
+            5 -> ScaleWords(
+                "كوادريليون", "كوادريليونان", "كوادريليونات",
+                "كوادريليوناً", "كوادريليون"
+            )
+            6 -> ScaleWords(
+                "كوينتيليون", "كوينتيليونان", "كوينتيليونات",
+                "كوينتيليوناً", "كوينتيليون"
+            )
             else -> return ""
         }
         if (group in 1..2) return if (group == 1) scale.one else scale.two
@@ -118,6 +157,7 @@ internal object NumberWordsConverter {
             group == 200 -> "مائتا ${scale.inHundred}"
             remainder == 0 -> "${convertHundreds(group)} ${scale.inHundred}"
             remainder in 3..10 -> "$groupText ${scale.plural}"
+            remainder in 1..2 -> "$groupText ${scale.inHundred}"
             else -> "$groupText ${scale.accusative}"
         }
     }
@@ -138,10 +178,14 @@ internal object NumberWordsConverter {
         }
         val hundred = n / 100
         val remainder = n % 100
-        return if (remainder == 0) HUNDREDS_WORDS[hundred] else "${HUNDREDS_WORDS[hundred]} و${convertHundreds(remainder)}"
+        return if (remainder == 0) {
+            HUNDREDS_WORDS[hundred]
+        } else {
+            "${HUNDREDS_WORDS[hundred]} و${convertHundreds(remainder)}"
+        }
     }
 
-    /** مساعد العدد المركّب (21–99): «أحد وعشرون»، «اثنان وثلاثون»، «خمسة وأربعون». */
+    /** مساعد العدد المركّب (21–99): «أحد وعشرون»، «اثنان وثلاثون»… */
     private fun compoundTwoDigits(unit: Int, ten: Int): String = when (unit) {
         1 -> "أحد و${TENS_WORDS[ten]}"
         2 -> "اثنان و${TENS_WORDS[ten]}"
@@ -156,8 +200,14 @@ internal object NumberWordsConverter {
     fun unitNumberWord(digit: Int, isFeminine: Boolean): String {
         // الفهرس يعادل الرقم بالضبط (لا انزياح): كان المصفوفة تحذف منزلة
         // (خمسة → «ستة أمتار») لغياب العنصر الأول.
-        val forMasculine = arrayOf("", "واحد", "اثنان", "ثلاثة", "أربعة", "خمسة", "ستة", "سبعة", "ثمانية", "تسعة", "عشرة")
-        val forFeminine = arrayOf("", "واحدة", "اثنتان", "ثلاث", "أربع", "خمس", "ست", "سبع", "ثمان", "تسع", "عشر")
+        val forMasculine = arrayOf(
+            "", "واحد", "اثنان", "ثلاثة", "أربعة", "خمسة",
+            "ستة", "سبعة", "ثمانية", "تسعة", "عشرة"
+        )
+        val forFeminine = arrayOf(
+            "", "واحدة", "اثنتان", "ثلاث", "أربع", "خمس",
+            "ست", "سبع", "ثمان", "تسع", "عشر"
+        )
         val table = if (isFeminine) forFeminine else forMasculine
         return if (digit in 3..10) table[digit] else ""
     }

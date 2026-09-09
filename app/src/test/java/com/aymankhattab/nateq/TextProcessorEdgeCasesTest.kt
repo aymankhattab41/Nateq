@@ -81,7 +81,7 @@ class TextProcessorEdgeCasesTest {
 
     @Test
     fun unit_teensFeminine() {
-        assertEquals("اثنتي عشرة ساعة", processor.process("12 س", "ar"))
+        assertEquals("اثنتا عشرة ساعة", processor.process("12 س", "ar"))
     }
 
     @Test

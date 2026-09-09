@@ -69,7 +69,8 @@ object NumberSpeech {
     }
 
     /**
-     * تحويل رقم إلى كلمات عربية. يدعم حتى 9999.
+     * تحويل رقم إلى كلمات عربية. يدعم حتى 99,999,999 (8 خانات) لخدمة
+     * التجميع الخماسي..الثُمَاني (كان الوثيقة تقول 9999).
      *
      * @param isFeminine عندما true تُنطق آحاد العدد بصيغة المعدود المؤنث
      *   («خمس دقائق»، «واحدة وخمسون»)، وعند false بصيغة المعدود المذكر
@@ -78,7 +79,7 @@ object NumberSpeech {
      */
     fun toArabicWords(number: Int, isFeminine: Boolean = true): String {
         val onesF = arrayOf(
-            "", "واحدة", "اثنتين", "ثلاث", "أربع", "خمس", "ست", "سبع",
+            "", "واحدة", "اثنتان", "ثلاث", "أربع", "خمس", "ست", "سبع",
             "ثماني", "تسع"
         )
         val onesM = arrayOf(
@@ -87,7 +88,7 @@ object NumberSpeech {
         )
         val ones = if (isFeminine) onesF else onesM
         val teensF = arrayOf(
-            "عشر", "إحدى عشرة", "اثنتي عشرة", "ثلاث عشرة", "أربع عشرة",
+            "عشر", "إحدى عشرة", "اثنتا عشرة", "ثلاث عشرة", "أربع عشرة",
             "خمس عشرة", "ست عشرة", "سبع عشرة", "ثماني عشرة", "تسع عشرة"
         )
         val teensM = arrayOf(
@@ -153,8 +154,8 @@ object NumberSpeech {
                 val thousand = when (t) {
                     1 -> "ألف"
                     2 -> "ألفان"
-                    in 3..10 -> "${onesM[t]} آلاف"
-                    else -> "${under100(t)} ألفاً"
+                    in 3..10 -> "${toArabicWords(t, isFeminine = false)} آلاف"
+                    else -> "${toArabicWords(t, isFeminine = false)} ألفاً"
                 }
                 if (r == 0) thousand
                 else if (r < 100) "$thousand و${under100(r)}"
@@ -162,17 +163,22 @@ object NumberSpeech {
             }
             number in 10000..999999 -> {
                 // تمييز الآلاف (1..999) بالأشكال النحوية الصحيحة:
-                // «خمسة آلاف»، «خمسة عشر ألفاً»، «خمسمائة ألف»، «مائتا ألف».
-                fun thousandPart(t: Int): String = when {
-                    t == 1 -> "ألف"
-                    t == 2 -> "ألفان"
-                    t in 3..10 -> "${onesM[t]} آلاف"
-                    t in 11..99 -> "${toArabicWords(t, isFeminine = false)} ألفاً"
-                    t == 100 -> "مائة ألف"
-                    t == 200 -> "مائتا ألف"
-                    t % 100 == 0 -> "${toArabicWords(t, isFeminine = false)} ألف"
-                    t % 100 in 3..10 -> "${toArabicWords(t, isFeminine = false)} آلاف"
-                    else -> "${toArabicWords(t, isFeminine = false)} ألفاً"
+                // «خمسة آلاف»، «خمسة عشر ألفاً»، «خمسمائة ألف»، «مائتا ألف»،
+                // ومئة بآحاد 1–2 بالجرّ: «مائة وواحد ألف».
+                fun thousandPart(t: Int): String {
+                    val w = toArabicWords(t, isFeminine = false)
+                    return when {
+                        t == 1 -> "ألف"
+                        t == 2 -> "ألفان"
+                        t in 3..10 -> "$w آلاف"
+                        t in 11..99 -> "$w ألفاً"
+                        t == 100 -> "مائة ألف"
+                        t == 200 -> "مائتا ألف"
+                        t % 100 == 0 -> "$w ألف"
+                        t % 100 in 1..2 -> "$w ألف"
+                        t % 100 in 3..10 -> "$w آلاف"
+                        else -> "$w ألفاً"
+                    }
                 }
                 val t = number / 1000
                 val r = number % 1000
@@ -183,14 +189,23 @@ object NumberSpeech {
             }
             else -> {
                 // الملايين بعد 8 خانات (حتى 99,999,999): تصريف المليون مع
-                // التمييز («مليون»، «مليونان»، «ملايين»، «مليوناً»).
+                // التمييز («مليون»، «مليونان»، «ملايين»، «مليوناً»، وبالجر:
+                // «مائة مليون»، «مائة وواحد مليون»).
                 val m = number / 1000000
                 val r = number % 1000000
                 val million = when (m) {
                     1 -> "مليون"
                     2 -> "مليونان"
-                    in 3..10 -> "${onesM[m]} ملايين"
-                    else -> "${toArabicWords(m, isFeminine = false)} مليوناً"
+                    in 3..10 -> "${toArabicWords(m, isFeminine = false)} ملايين"
+                    else -> {
+                        val w = toArabicWords(m, isFeminine = false)
+                        when {
+                            m % 100 == 0 -> "$w مليون"
+                            m % 100 in 1..2 -> "$w مليون"
+                            m % 100 in 3..10 -> "$w ملايين"
+                            else -> "$w مليوناً"
+                        }
+                    }
                 }
                 if (r == 0) million
                 else if (r < 100) "$million و${under100(r)}"
@@ -245,7 +260,11 @@ object NumberSpeech {
             val digits = n.toString().map { it.digitToInt() }
             val words = digits.joinToString(" ") {
                 // الرقم يُنطق مجرداً (مذكراً): «خمسة» لا «خمس».
-                if (isEnglish) toEnglishWords(it) else toArabicWords(it, isFeminine = false)
+                if (isEnglish) {
+                    toEnglishWords(it)
+                } else {
+                    toArabicWords(it, isFeminine = false)
+                }
             }
             return (sign + words).trim()
         }
@@ -269,11 +288,19 @@ object NumberSpeech {
             if (g.startsWith("0")) {
                 g.map { ch ->
                     val d = ch.digitToInt()
-                    if (isEnglish) toEnglishWords(d) else toArabicWords(d, isFeminine = false)
+                    if (isEnglish) {
+                        toEnglishWords(d)
+                    } else {
+                        toArabicWords(d, isFeminine = false)
+                    }
                 }.joinToString(" ")
             } else {
                 val v = try { g.toInt() } catch (t: Throwable) { 0 }
-                if (isEnglish) toEnglishWords(v) else toArabicWords(v, isFeminine = false)
+                if (isEnglish) {
+                    toEnglishWords(v)
+                } else {
+                    toArabicWords(v, isFeminine = false)
+                }
             }
         }.joinToString(", ")
         return (sign + words).trim()
