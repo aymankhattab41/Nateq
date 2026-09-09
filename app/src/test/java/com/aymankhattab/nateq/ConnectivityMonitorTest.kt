@@ -129,4 +129,15 @@ class ConnectivityMonitorTest {
         shadowOf(cm).setDefaultNetworkActive(false)
         assertFalse(ConnectivityMonitor(context).isOnlineNow())
     }
+
+    @Test
+    fun doubleUnregister_isSafe() {
+        // تكرار إلغاء التسجيل (كمسار try-with-resources/تشغيل متزامن) أمنٌ
+        // بلا استثناء "NetworkCallback was not registered" بفضل حارس الحالة
+        // الذرية — البند الذي كان يُسقط المُتصل عند إعادة الإلغاء.
+        val monitor = ConnectivityMonitor(context)
+        monitor.unregister()
+        monitor.unregister()
+        monitor.close()
+    }
 }

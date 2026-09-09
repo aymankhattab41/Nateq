@@ -58,7 +58,13 @@ class StartupTempSweeper(private val context: Context) {
 
     private fun sweepDownloads(): Int {
         return runCatching {
-            val downloads = File(context.getExternalFilesDir(null), "downloads")
+            // قد يُرجع getExternalFilesDir null (تخزين مشفَّر أو ممتلئ): نتدارك
+            // بمسار داخلي للدليل بدل بناء مسار فارغ/بلا وجهة — يبقى التنظيف
+            // آمناً ولا يُحبط دورة التحديث (بند 19.2).
+            val base = context.getExternalFilesDir(null)
+                ?: context.filesDir
+                ?: return 0
+            val downloads = File(base, "downloads")
             if (!downloads.exists() || !downloads.isDirectory) return 0
             var deleted = 0
             downloads.listFiles()?.filter { file ->

@@ -24,7 +24,7 @@ import android.util.Log
  * الوصول — لا مجرد Wi-Fi بلا إنترنت حقيقي). والـ [NetworkCallback] يُحدّث
  * الحالة استباقياً في الخلفية عند فقدان/وصول أي شبكة دون إبقاء مرجعٍ لنشاط.
  */
-class ConnectivityMonitor(context: Context) {
+class ConnectivityMonitor(context: Context) : AutoCloseable {
 
     private companion object {
         private const val TAG = "NATEQ_TTS"
@@ -33,6 +33,14 @@ class ConnectivityMonitor(context: Context) {
     private val connectivityManager =
         context.applicationContext
             .getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+    /**
+     * حارس الحالة الذرية لـ [callback]: يعصم التسجيل/الإلغاء من التكرار —
+     * لا تسجيل مزدوج (استثناء «already registered») ولا إلغاء مزدوج
+     * (IllegalArgumentException: NetworkCallback was not registered) حتى
+     * مع التزامن من خيوط مختلفة.
+     */
+    private val registered = java.util.concurrent.atomic.AtomicBoolean(false)
 
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
@@ -54,8 +62,11 @@ class ConnectivityMonitor(context: Context) {
         registerIfPossible()
     }
 
-    /** تسجيل الـ callback؛ فشل التسجيل لا يُوقف العمل (الحساب الحيّ يبقى صالحاً). */
+    /** تسجيل الـ callback؛ فشل التسجيل لا يُوقف العمل (الحساب الحيّ باقٍ). */
     private fun registerIfPossible() {
+        // إن كان المعلّم مسجلاً مسبقاً فلا نعيد — المعرّف الذري يمنع الازدواج
+        // حتى مع التزامن من أكثر من خيط.
+        if (!registered.compareAndSet(false, true)) return
         runCatching {
             val request = NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
@@ -63,13 +74,21 @@ class ConnectivityMonitor(context: Context) {
             connectivityManager.registerNetworkCallback(request, callback)
         }.onFailure { e ->
             Log.w(TAG, "[Connectivity] registerNetworkCallback فشل", e)
+            registered.set(false)
         }
     }
 
-    /** تعطيل المراقب عند حاجة المتصل (إطلاق موارد المراقبة). */
+    /** تعطيل المراقب عند حاجة المتصل (إطلاق موارد المراقبة) — أمنٌ عند التكرار. */
     fun unregister() {
+        // unregisterNetworkCallback على مُعلَّمٍ غير مسجّل يرمي استثناءً؛
+        // العلامة الذرية تحسم التحويل true→false مرة واحدة فقط فتتخطى بقية
+        // الاستدعاءات بلا لمس النظام.
+        if (!registered.compareAndSet(true, false)) return
         runCatching { connectivityManager.unregisterNetworkCallback(callback) }
     }
+
+    /** إغلاق الموارد ضمن try-with-resources: [AutoCloseable]. */
+    override fun close() = unregister()
 
     /**
      * هل الإنترنت متاح الآن؟ حساب حيّ من الشبكة النشطة (وليس من ذاكرة قديمة):
