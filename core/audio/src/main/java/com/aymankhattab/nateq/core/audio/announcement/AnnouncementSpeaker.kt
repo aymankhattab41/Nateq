@@ -337,15 +337,20 @@ class AnnouncementSpeaker(
                 pendingFocusTimer = timer
                 mainHandler.postDelayed(timer, 3000)
             }
-            AudioManager.AUDIOFOCUS_REQUEST_FAILED ->
-                // فشل الحصول على التركيز (المكالمة الهاتفية أشهر
-                // الأسباب): إلغاءٌ فوري صامت — لا ننطق الإعلان فوق
-                // صوتٍ ناشطٍ محجوز. لم يكن هذا التصرف سابقاً (كان
-                // يُنطق «أفضل جهد» بعد 400ms) لكنه خارج آداب
-                // النظام ويقطع المحادثة الهاتفية.
+            AudioManager.AUDIOFOCUS_REQUEST_FAILED -> {
+                // فشل الحصول على التركيز (مشغّل آخر حجز الوسائط): نُنطق
+                // الإعلان بحسن نية (Best-Effort) — الإعلان قصير ومصنّف
+                // كصوت مساعدة إتاحة (وليس وسائط) فيتداخل قبولياً مع
+                // الخلفية ولا يقطع المحادثة، وهو أفضل من ضياع إعلان
+                // المتصل/البطارية كلياً.
                 Log.w(TAG,
-                    "[Focus] FAILED — إلغاء الإعلان صامتاً" +
-                    " (صوتٌ ناشط يملك التركيز)")
+                    "[Focus] FAILED — نطق بحسن نية" +
+                    " (فشل حجز التركيز)")
+                startSpeech(
+                    text, locale, speechRate, pitch, volume,
+                    emojiCfg, parts, engineOverride
+                )
+            }
             else ->
                 // AUDIOFOCUS_REQUEST_GRANTED: التركيز مُنح فوراً — ننطق مباشرة.
                 startSpeech(

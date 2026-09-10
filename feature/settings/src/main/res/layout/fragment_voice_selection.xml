@@ -66,8 +66,7 @@
                 android:layout_marginStart="4dp"
                 android:text="@string/all_announcements_summary"
                 android:textSize="12sp"
-                android:textColor="@color/text_secondary"
-                android:importantForAccessibility="no" />
+                android:textColor="@color/text_secondary" />
 
             <com.google.android.material.switchmaterial.SwitchMaterial
                 android:id="@+id/switch_lock_screen_privacy"
@@ -85,8 +84,7 @@
                 android:layout_marginStart="4dp"
                 android:text="@string/lock_screen_privacy_summary"
                 android:textSize="12sp"
-                android:textColor="@color/text_secondary"
-                android:importantForAccessibility="no" />
+                android:textColor="@color/text_secondary" />
         </LinearLayout>
 
         <!-- فاصل -->

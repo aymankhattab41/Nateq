@@ -64,6 +64,7 @@
 <string name="caller_permission_revoked_title">سُحبت أذونات المتصل</string>
 <string name="cancel">إلغاء</string>
 <string name="cd_test_voice_button">تشغيل عيّنة صوتية للاختبار</string>
+<string name="cd_test_voice_button_for">تشغيل عيّنة صوتية للاختبار، فئة %1$s</string>
 <string name="charging_complete_announcement_enabled">الإعلان عند اكتمال الشحن (100%)</string>
 <string name="charging_disconnect_announcement_enabled">الإعلان عند فصل الشاحن</string>
 <string name="check_updates">البحث عن تحديثات</string>

@@ -266,6 +266,9 @@ internal class CategoryVoiceAdapter(
             else -> context.getString(R.string.voice_category_default)
         }
         holder.tvCategory.text = catLabel
+        holder.btnTest.contentDescription = context.getString(
+            R.string.cd_test_voice_button_for, catLabel
+        )
         holder.tvCategoryDescription.text = when (category) {
             SettingsRepository.VOICE_CATEGORY_TIME ->
                 context.getString(R.string.voice_category_time_summary)
