@@ -12,14 +12,24 @@ data class Segment(
 )
 
 /**
- * يقسم نصاً مختلط الكتابات (عربي/إنجليزي/غيرها) إلى مقاطع متجاورة
- * حسب الـ Script:
- * المقاطع العربية تُنطق بالعربية، وسائر حروف الكتابة تُنسب (سقوطاً) إما للغة
- * الطلب نفسها إذا لم تكن عربية وإما للإنجليزية افتراضياً. المحايدات — مسافات/
- * أرقام/ترقيم/رموز — تلتحق بالمقطع المجاور ولا تُكسر عن سياقها، فالتجميع عبر
- * كل المقاطع يعيد النص الأصلي حرفياً بلا فقدان. النصُّ بلا حروفٍ إطلاقاً
- * (أرقام ورموز فقط) يُنسب كلُّه للغة طلبه نفسها — فلا ينتقل نطق «١٢٣» أو
- * «123» ضمن طلبٍ عربي إلى صوتٍ إنجليزي كما كان.
+ * يقسم نصاً مختلط الكتابات إلى مقاطع متجاورة حسب الـ Script، ويميز كل
+ * سكربت غير عربي بلغته المعروفة عبر [Character.UnicodeScript] القياسي:
+ * اللاتينية ⟶ سقوطُ الطلب (إنجليزية افتراضياً)، الروسية/البلغارية ⟶ ru
+ * (سيريلية)،
+ * العبرية ⟶ he، اليونانية ⟶ el، الصينية ⟶ zh (هان)، اليابانية ⟶ ja
+ * (هيراغانا/كاتاكانا)، الكورية ⟶ ko (هانغول)، التايلاندية ⟶ th،
+ * الديفاناغارية ⟶ hi — فلا تُمرَّر حروفٌ سيريلية/عبرية/صينية لمحركٍ
+ * إنجليزي كما كان (كلُّ سكربتٍ محددٍ كان يقع على «سقوط» واحد).
+ * سكربت LATIN لا يُحدِّد لغة من حروفه القصيرة، فتُنسب (سقوطاً) للغة الطلب
+ * إن كانت لاتينية غير العربية، وإلا [EN_FALLBACK] — سلوكٌ محافظ لا كشف
+ * لغةٍ ضوئياً ضمن النص اللاتيني ذاته.
+ *
+ * المقاطع العربية تُنطق بالعربية. المحايدات — مسافات/أرقام/ترقيم/رموز —
+ * تلتحق بالمقطع المجاور ولا تُكسر عن سياقها (يلتحق المحايد بالمقطع المفتوح
+ * السابق، والمحايد القيادي بالمقطع اللاحق)، فالتجميع عبر كل المقاطع يعيد
+ * النص الأصلي حرفياً بلا فقدان. النصُّ بلا حروفٍ إطلاقاً (أرقام ورموز فقط)
+ * يُنسب كلُّه للغة طلبه نفسها — فلا ينتقل نطق «١٢٣» أو «123» ضمن طلبٍ عربي
+ * إلى صوتٍ إنجليزي كما كان.
  *
  * لا يعتمد المقسم على أي كائن Android — منطق نقي قابل للاختبار مباشرة.
  */
@@ -28,6 +38,22 @@ class LanguageSegmenter {
     companion object {
         /** لغة السقوط لسائر الكتابات ضمن الطلب العربي (الإنجليزية). */
         val EN_FALLBACK: String get() = LanguageCode.EN.tag
+
+        /** الكتل السكربتية المعروفة اللغة حتماً ⟶ ISO-639-1 (توسيع
+         *  ك«المدونة»): كل سكربت محددٍ في خريطة لغته قبل سقوط اللاتينية. */
+        private val SCRIPT_LANGUAGE_TAGS: Map<Character.UnicodeScript, String> =
+            mapOf(
+                Character.UnicodeScript.CYRILLIC to "ru",
+                Character.UnicodeScript.HEBREW to "he",
+                Character.UnicodeScript.GREEK to "el",
+                Character.UnicodeScript.HAN to "zh",
+                Character.UnicodeScript.HIRAGANA to "ja",
+                Character.UnicodeScript.KATAKANA to "ja",
+                Character.UnicodeScript.HANGUL to "ko",
+                Character.UnicodeScript.THAI to "th",
+                Character.UnicodeScript.DEVANAGARI to "hi",
+                Character.UnicodeScript.ETHIOPIC to "am"
+            )
 
         private val ARABIC_RANGES = arrayOf(
             0x0600..0x06FF, // العربية الأساسية
@@ -65,9 +91,14 @@ class LanguageSegmenter {
             ).fold(0L) { mask, category -> mask or (1L shl category) }
     }
 
-    private enum class Kind { ARABIC, OTHER, NEUTRAL }
+    private enum class Kind { SCRIPT, NEUTRAL }
 
-    private class Run(val kind: Kind, val start: Int, var endExclusive: Int)
+    private class Run(
+        val kind: Kind,
+        val script: Character.UnicodeScript?,
+        val start: Int,
+        var endExclusive: Int
+    )
 
     /**
      * @param fallbackLanguage لغة السقوط القادمة من الطلب/الإعلان: العربية
@@ -115,10 +146,8 @@ class LanguageSegmenter {
                     }
                     // وإلا فهو بيني\ختامي: نطاق المقطع المفتوح يشمل إحداثياته.
                 }
-                else -> {
-                    val language =
-                        if (run.kind == Kind.ARABIC) LanguageCode.AR.tag
-                        else scriptFallback
+                Kind.SCRIPT -> {
+                    val language = runLanguage(run.script, scriptFallback)
                     if (openLanguage == null) {
                         openStart =
                             if (leadingStart != -1) leadingStart else run.start
@@ -153,33 +182,50 @@ class LanguageSegmenter {
         var index = 0
         while (index < text.length) {
             val codePoint = text.codePointAt(index)
-            val kind = kindOf(codePoint)
+            val (kind, script) = kindOf(codePoint)
             val width = Character.charCount(codePoint)
             val start = index
             index += width
             val last = runs.lastOrNull()
-            if (last != null && last.kind == kind) {
+            if (last != null && last.kind == kind &&
+                last.script == script
+            ) {
                 last.endExclusive = index
             } else {
-                runs.add(Run(kind, start, index))
+                runs.add(Run(kind, script, start, index))
             }
         }
         return runs
     }
 
-    private fun kindOf(codePoint: Int): Kind {
+    /** حل المحايدات أولاً ثم العربي والسكربت من [Character.UnicodeScript]
+     *  القياسي. الكتابات العامة ([COMMON]/[INHERITED]) أُعِدَّت كحروفٍ
+     *  شبيهةٍ بالترقيم
+     *  فلا تنتمي لكِتَابٍ ما ننسبه لسكربتٍ آخر، بل تُعدُّ محايدةً (مسافة رفيعة/
+     *  فاصلة اتجاه / علامات رقم Bidi) يساندها المقطع المجاور. */
+    private fun kindOf(codePoint: Int): Pair<Kind, Character.UnicodeScript?> {
         // المحايدات أولاً: المسافات والأرقام (بكل أنظمة العدّ) والفواصل لا
         // تنتمي لسكريبتٍ معين أياً كانت خانة المقاطع المجاورة.
         if (Character.isWhitespace(codePoint) || Character.isDigit(codePoint)) {
-            return Kind.NEUTRAL
+            return Kind.NEUTRAL to null
         }
         if ((NEUTRAL_CATEGORY_MASK and (1L shl Character.getType(codePoint)))
                 != 0L) {
-            return Kind.NEUTRAL
+            return Kind.NEUTRAL to null
         }
-        if (isArabic(codePoint)) return Kind.ARABIC
-        if (Character.isLetter(codePoint)) return Kind.OTHER
-        return Kind.NEUTRAL
+        if (isArabic(codePoint)) {
+            return Kind.SCRIPT to Character.UnicodeScript.ARABIC
+        }
+        if (Character.isLetter(codePoint)) {
+            val script = Character.UnicodeScript.of(codePoint)
+            if (script == Character.UnicodeScript.COMMON ||
+                script == Character.UnicodeScript.INHERITED
+            ) {
+                return Kind.NEUTRAL to null
+            }
+            return Kind.SCRIPT to script
+        }
+        return Kind.NEUTRAL to null
     }
 
     private fun isArabic(codePoint: Int): Boolean {
@@ -187,6 +233,20 @@ class LanguageSegmenter {
             if (codePoint in range) return true
         }
         return false
+    }
+
+    /** لغة السكربت القاطعة من الخريطة (سيريلية ⟶ ru، صينية ⟶ zh…)؛ أما
+     *  [Character.UnicodeScript.LATIN] وسائرُ السكربتاتِ غيرِ المعيَّنة فتُنسب
+     *  إلى [scriptFallback] (لغة الطلب إن كانت لاتينية وإلا الإنجليزية). */
+    private fun runLanguage(
+        script: Character.UnicodeScript?,
+        scriptFallback: String
+    ): String {
+        if (script == null) return scriptFallback
+        return when (script) {
+            Character.UnicodeScript.ARABIC -> LanguageCode.AR.tag
+            else -> SCRIPT_LANGUAGE_TAGS[script] ?: scriptFallback
+        }
     }
 
     /** لغة سقوط حروف الكتابات غير العربية: طلب عربي/فارغ ← [EN_FALLBACK]؛ وإلا

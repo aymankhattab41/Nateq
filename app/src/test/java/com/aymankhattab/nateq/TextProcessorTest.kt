@@ -68,6 +68,43 @@ class TextProcessorTest {
     }
 
     @Test
+    fun processSemantics_unit_weight_staysArabicBlock() {
+        // «50kg» (الرقم ملتصق بوحدة لاتينية): المعالجة الدلالية قبل
+        // تقسيم اللغة تحوّلها كتلةً عربية واحدة — لا ينفصل «50» عن
+        // «kg» إلى مقطعٍ إنجليزي، ولا يبقى «kg» حروفاً لاتينية.
+        val out = processor.processSemantics("الوزن 50kg", "ar")
+        val segments = LanguageSegmenter().segment(out, "ar")
+        assertEquals(listOf("ar"), segments.map { it.languageTag })
+        assertEquals(
+            "الوزن خمسون كيلوغرام",
+            segments.joinToString("") { it.text }
+        )
+    }
+
+    @Test
+    fun processSemantics_unit_degrees_staysArabicBlock() {
+        // «25°C» درجة حرارة: تُنطق عربيةً كاملةً كتلةً واحدة.
+        assertEquals(
+            "خمس وعشرون درجة مئوية",
+            processor.processSemantics("25°C", "ar")
+        )
+    }
+
+    @Test
+    fun processSemantics_time_withLatinSuffix_arabicNumberBlockStays() {
+        // «10:30 AM»: وقتُه يُنطق العربية ورَقَمه لا ينفصل عن الساعة؛
+        // اللاحقة «AM» اللاتينية تبقى وحدها (مقبولةٌ بالإنجليزية).
+        val out = processor.processSemantics("الاجتماع 10:30 AM", "ar")
+        assertEquals("الاجتماع العاشرة والنصف صباحاً AM", out)
+        val segments = LanguageSegmenter().segment(out, "ar")
+        assertEquals(listOf("ar", "en"), segments.map { it.languageTag })
+        assertEquals(
+            "الاجتماع العاشرة والنصف صباحاً ",
+            segments.first().text
+        )
+    }
+
+    @Test
     fun nonArabicText_isUnchanged() {
         assertEquals(
             "hello world 123",

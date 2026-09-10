@@ -155,10 +155,12 @@ class LanguageSegmenterTest {
     }
 
     @Test
-    fun cyrillic_withArabicRequest_fallsToEnglish() {
+    fun cyrillic_withArabicRequest_usesRussian() {
         val (texts, tags) = textsAndTags("Привет мир", "ar")
+        // السكربت السيريلي يُحدد لغته الروسية حتماً مهما كان طلب النص
+        // (بند التحويل التلقائي): لا يُمرَّر لمحركٍ إنجليزي كما كان.
         assertEquals(listOf("Привет мир"), texts)
-        assertEquals(listOf("en"), tags)
+        assertEquals(listOf("ru"), tags)
     }
 
     @Test
@@ -169,14 +171,58 @@ class LanguageSegmenterTest {
     }
 
     @Test
-    fun mixedCjkAndLatinAndArabic() {
+    fun hebrew_withArabicRequest_usesHebrew() {
+        val (texts, tags) = textsAndTags("שלום עולם", "ar")
+        assertEquals(listOf("שלום עולם"), texts)
+        assertEquals(listOf("he"), tags)
+    }
+
+    @Test
+    fun greek_withArabicRequest_usesGreek() {
+        val (texts, tags) = textsAndTags("Καλημέρα κόσμε", "ar")
+        assertEquals(listOf("Καλημέρα κόσμε"), texts)
+        assertEquals(listOf("el"), tags)
+    }
+
+    @Test
+    fun thai_withArabicRequest_usesThai() {
+        val (texts, tags) = textsAndTags("สวัสดี", "ar")
+        assertEquals(listOf("สวัสดี"), texts)
+        assertEquals(listOf("th"), tags)
+    }
+
+    @Test
+    fun devanagari_withArabicRequest_usesHindi() {
+        val (texts, tags) = textsAndTags("नमस्ते दुनिया", "ar")
+        assertEquals(listOf("नमस्ते दुनिया"), texts)
+        assertEquals(listOf("hi"), tags)
+    }
+
+    @Test
+    fun mixedCjkAndLatinAndArabic_splitsByScript() {
         val input = "مرحبا Hello 世界"
         val (texts, tags) = textsAndTags(input, "ar")
-        // الجولة الأجنبية تشمل اللاتينية والصينية معاً
-        // (كلاهما OTHER بنفس السقوط).
-        assertEquals(listOf("مرحبا ", "Hello 世界"), texts)
-        assertEquals(listOf("ar", "en"), tags)
+        // اللاتينية تُنسب لسقوط الطلب (الإنجليزية)، والهان للصينية:
+        // كل سكربتٍ محددُ اللغةِ الآن يصبح مقطعه الخاص.
+        assertEquals(listOf("مرحبا ", "Hello ", "世界"), texts)
+        assertEquals(listOf("ar", "en", "zh"), tags)
         assertEquals(input, texts.joinToString(""))
+    }
+
+    @Test
+    fun japaneseHiraganaKatakana_bothUseJapanese() {
+        val (texts, tags) = textsAndTags("こんにちはカタカナ", "ar")
+        // الهيراغانا والكاتاكانا سكربتان لكن كلاهما يابانية — يُدمجان
+        // مقطعاً واحداً لأن اللغتين متطابقتان.
+        assertEquals(listOf("こんにちはカタカナ"), texts)
+        assertEquals(listOf("ja"), tags)
+    }
+
+    @Test
+    fun hangul_withArabicRequest_usesKorean() {
+        val (texts, tags) = textsAndTags("안녕하세요", "ar")
+        assertEquals(listOf("안녕하세요"), texts)
+        assertEquals(listOf("ko"), tags)
     }
 
     @Test
@@ -208,5 +254,54 @@ class LanguageSegmenterTest {
                 segments.all { it.text.isNotEmpty() }
             )
         }
+    }
+
+    @Test
+    fun unitWithNumber_neutralAttachesToArabicNotLatin() {
+        // بند المحايد الذكي: «50» أرقام محايدةٌ تسبقُها العربية فتلتحق
+        // بها (لا تُنسب للكتلة اللاتينية اللاحقة «kg»)؛ والوحدة
+        // «50kg» يُحِيلها تحويلُ الوحدات في خطوةٍ لاحقة إلى العربية
+        // (اختبار [TextProcessorTest]) فلا يبقى التقسيم وحده فاصلاً
+        // نهائياً. هنا نتحقق من المقسّم فقط.
+        val (texts, tags) = textsAndTags("الوزن 50kg", "ar")
+        assertEquals(listOf("الوزن 50", "kg"), texts)
+        assertEquals(listOf("ar", "en"), tags)
+        assertEquals("الوزن 50kg", texts.joinToString(""))
+    }
+
+    @Test
+    fun timeWithSuffix_neutralAttachesToArabicNotLatin() {
+        // «10:30» محايدة تسبقها العربية فتلتحق بهَا؛ «AM» لاتينيةٌ
+        // وحدها مقطعة.
+        val (texts, tags) = textsAndTags("الاجتماع 10:30 AM", "ar")
+        assertEquals(listOf("الاجتماع 10:30 ", "AM"), texts)
+        assertEquals(listOf("ar", "en"), tags)
+        assertEquals("الاجتماع 10:30 AM", texts.joinToString(""))
+    }
+
+    @Test
+    fun percentWithSuffix_neutralAttachesToArabicNotLatin() {
+        val (texts, tags) = textsAndTags("خصم 25% off", "ar")
+        // «25%» يُلحق بالعربية السابقة (اللغة التي تسبقها مباشرة)،
+        // و«off» اللاتينية وحدها مقطعة — بلا فرض افتراضية على الرقم.
+        assertEquals(listOf("خصم 25% ", "off"), texts)
+        assertEquals(listOf("ar", "en"), tags)
+        assertEquals("خصم 25% off", texts.joinToString(""))
+    }
+
+    @Test
+    fun latinBlock_withFrenchRequest_usesFrench() {
+        val (texts, tags) = textsAndTags("Bonjour le monde", "fr")
+        assertEquals(listOf("Bonjour le monde"), texts)
+        assertEquals(listOf("fr"), tags)
+    }
+
+    @Test
+    fun latinSuffix_inFrenchRequest_usesFrenchFallback() {
+        // «off» لاتيني ضمن طلب فرنسي يُنسب للغة الطلب (سقوط اللاتينية)
+        // لا الإنجليزية — سلوك السقوط المحافظ للاتينية.
+        val (texts, tags) = textsAndTags("réduction 25% off", "fr")
+        assertEquals(listOf("réduction 25% off"), texts)
+        assertEquals(listOf("fr"), tags)
     }
 }
