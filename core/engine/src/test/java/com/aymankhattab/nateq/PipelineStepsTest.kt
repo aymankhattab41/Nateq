@@ -153,6 +153,32 @@ class PipelineStepsTest {
     }
 
     @Test
+    fun currency_code_afterAmount() {
+        // بند: «1500 USD» (المبلغ قبل الكود) كان يُقسم إلى مقطع عربي وآخر
+        // إنجليزي فيفقد خطُّ العملة مبلغَه المكسور؛ يُستبدل الآن عربياً كاملاً.
+        assertEquals(
+            "ألف وخمسمائة دولار أمريكي",
+            CurrencyStep.apply("1500 USD")
+        )
+        assertEquals(
+            "خمسمائة ريال سعودي",
+            CurrencyStep.apply("500 SAR")
+        )
+        assertEquals(
+            "يوروان",
+            CurrencyStep.apply("2 EUR")
+        )
+    }
+
+    @Test
+    fun currency_code_afterAmount_withinArabicText() {
+        assertEquals(
+            "سعر ألف وخمسمائة دولار أمريكي",
+            CurrencyStep.apply("سعر 1500 USD")
+        )
+    }
+
+    @Test
     fun currency_thousands_withFraction() {
         assertEquals(
             "ألف دولار وخمسة وسبعون سنت",

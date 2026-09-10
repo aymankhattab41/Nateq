@@ -359,12 +359,21 @@ class NateqTtsService : TextToSpeechService() {
                 // 3) غياب صوتٍ للغة يتراجع تلقائياً للصوت الافتراضي للجهاز بدل
                 //    قطع النطق كلياً عبر callback.error().
                 val rawText = request.charSequenceText.toString()
-                val segments = segmenter.segment(rawText, languageTag)
+                // **بند التقسيم:** المعالجة الدلالية تُطبَّق قبل تقسيم اللغة
+                // حتى لا يفصل المقسمُ رمزَ العملة («USD»/«EUR») عن مبلغه
+                // فلينقطع «1500 USD» إلى مقطعٍ عربي وآخر إنجليزي؛ ناتجُها
+                // كلماتٌ عربية فيُقسَّم المبلغُ كله مقطعاً عربياً واحداً.
+                val semanticText = textProcessor.processSemantics(
+                    rawText, languageTag
+                )
+                val segments = segmenter.segment(semanticText, languageTag)
 
                 if (segments.size == 1) {
                     // نص بلغةٍ واحدة: نفس التدفق التفصيلي السابق حرفياً بلا أي
                     // تغيير سلوكي — صفر تكلفة للمسار الأكثر شيوعاً.
-                    synthesizeSingle(rawText, languageTag, callback, request)
+                    synthesizeSingle(
+                        semanticText, languageTag, callback, request
+                    )
                 } else {
                     // نص مختلط الكتابات: نطق كل مقطع بلغته/محركه ثم مزج الصوت
                     // بمعدلٍ موحّد عبر بثٍّ واحد (مونو).

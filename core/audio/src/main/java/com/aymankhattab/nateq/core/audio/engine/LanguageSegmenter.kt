@@ -41,24 +41,28 @@ class LanguageSegmenter {
             0x1EE00..0x1EEFF // رموز الرياضيات العربية
         )
 
-        /** فئات Unicodes المحايدة (فواصل/رموز/فواصل مسطرة) — تُحوَّل من Byte
-         *  Java إلى Int للتوافق مع [Character.getType] برمجياً. */
-        private val NEUTRAL_CATEGORIES = intArrayOf(
-            Character.CONNECTOR_PUNCTUATION.toInt(),
-            Character.DASH_PUNCTUATION.toInt(),
-            Character.START_PUNCTUATION.toInt(),
-            Character.END_PUNCTUATION.toInt(),
-            Character.INITIAL_QUOTE_PUNCTUATION.toInt(),
-            Character.FINAL_QUOTE_PUNCTUATION.toInt(),
-            Character.OTHER_PUNCTUATION.toInt(),
-            Character.MATH_SYMBOL.toInt(),
-            Character.CURRENCY_SYMBOL.toInt(),
-            Character.MODIFIER_SYMBOL.toInt(),
-            Character.OTHER_SYMBOL.toInt(),
-            Character.SPACE_SEPARATOR.toInt(),
-            Character.LINE_SEPARATOR.toInt(),
-            Character.PARAGRAPH_SEPARATOR.toInt()
-        )
+        /** فئات Unicodes المحايدة (فواصل/رموز/فواصل مسطرة) — قناع بتات Long
+         *  يُبنى مرةً واحدة من قائمة الفئات: كل فئة تُفعّل بتها (1L shl type).
+         *  أعلى فئة Character قيمةً هي 30 (FINAL_QUOTE_PUNCTUATION) فقناع
+         *  الـ Long يتسع لها بلا فيض، والاختبار البتي (mask and بٍت) أسرع
+         *  من البحث الخطي في مصفوفة على كل حرفٍ من النص. */
+        private val NEUTRAL_CATEGORY_MASK: Long =
+            listOf(
+                Character.CONNECTOR_PUNCTUATION.toInt(),
+                Character.DASH_PUNCTUATION.toInt(),
+                Character.START_PUNCTUATION.toInt(),
+                Character.END_PUNCTUATION.toInt(),
+                Character.INITIAL_QUOTE_PUNCTUATION.toInt(),
+                Character.FINAL_QUOTE_PUNCTUATION.toInt(),
+                Character.OTHER_PUNCTUATION.toInt(),
+                Character.MATH_SYMBOL.toInt(),
+                Character.CURRENCY_SYMBOL.toInt(),
+                Character.MODIFIER_SYMBOL.toInt(),
+                Character.OTHER_SYMBOL.toInt(),
+                Character.SPACE_SEPARATOR.toInt(),
+                Character.LINE_SEPARATOR.toInt(),
+                Character.PARAGRAPH_SEPARATOR.toInt()
+            ).fold(0L) { mask, category -> mask or (1L shl category) }
     }
 
     private enum class Kind { ARABIC, OTHER, NEUTRAL }
@@ -169,7 +173,8 @@ class LanguageSegmenter {
         if (Character.isWhitespace(codePoint) || Character.isDigit(codePoint)) {
             return Kind.NEUTRAL
         }
-        if (NEUTRAL_CATEGORIES.contains(Character.getType(codePoint))) {
+        if ((NEUTRAL_CATEGORY_MASK and (1L shl Character.getType(codePoint)))
+                != 0L) {
             return Kind.NEUTRAL
         }
         if (isArabic(codePoint)) return Kind.ARABIC

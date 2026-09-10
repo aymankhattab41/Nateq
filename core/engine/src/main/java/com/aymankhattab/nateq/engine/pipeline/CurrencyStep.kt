@@ -349,10 +349,16 @@ internal object CurrencyStep : TextProcessingStep {
 
     // نمط المبلغ الرقمي داخل العملات: فواصل آلاف اختيارية + فاصلة عشرية.
     private val AMOUNT_REGEX = "\\d+(?:[.,]\\d{3})*(?:[.,]\\d+)?"
-    // أنماط كود العملة: كود ثم مسافة ثم المبلغ الرقمي.
+    // نمط كود العملة مسبوقاً بالمبلغ: «USD 100».
     private val PATTERN_CURRENCY_CODE = Pattern.compile(
         """\b(USD|EUR|GBP|SAR|AED|KWD|QAR|OMR|BHD|EGP|TND|""" +
             """DZD|MAD|JPY|CNY|INR|KRW|RUB)\s+(""" + AMOUNT_REGEX + """)\b"""
+    )
+    // نمط الكود المسبوق بمبلغه: «1500 USD» — يمنع انفصال «USD» مقطعاً
+    // إنجليزياً في النص المختلط (تُطبَّق خطوة العملة قبل تقسيم اللغة).
+    private val PATTERN_AMOUNT_CODE = Pattern.compile(
+        """\b(""" + AMOUNT_REGEX + """)\s+(USD|EUR|GBP|SAR|AED|KWD|QAR|""" +
+            """OMR|BHD|EGP|TND|DZD|MAD|JPY|CNY|INR|KRW|RUB)\b"""
     )
 
     // أنماط الرموز قبل المبلغ: «$100» مع مسافة اختيارية بين الرمز والمبلغ.
@@ -368,13 +374,15 @@ internal object CurrencyStep : TextProcessingStep {
             Pattern.compile(source) to info
         }
 
-    // بوابة عدم التطابق: دمج OR صريح لكل أنماط العملة (قبل/بعد/كود). إن لم
-    // يطابق شيئاً أُعيد النص كما هو بلا 37 ممراً وتخصيص سلسلة؛ بدائل العملة
-    // عربية بلا أرقام فلا يُنشئ استبدالٌ تطابقاً جديداً، فالسلوك مطابق تماماً.
+    // بوابة عدم التطابق: دمج OR صريح لكل أنماط العملة (قبل/بعد/كود/المبلغ
+    // قبل الكود). إن لم يطابق شيئاً أُعيد النص كما هو بلا 38 ممراً وتخصيص
+    // سلسلة؛ بدائل العملة عربية بلا أرقام فلا يُنشئ استبدالٌ تطابقاً جديداً،
+    // فالسلوك مطابق تماماً.
     private val CURRENCY_ANY_PATTERN = Pattern.compile(
         (CURRENCY_PATTERNS_BEFORE + CURRENCY_PATTERNS_AFTER)
             .joinToString("|") { "(" + it.first.pattern() + ")" } +
-            "|(" + PATTERN_CURRENCY_CODE.pattern() + ")"
+            "|(" + PATTERN_CURRENCY_CODE.pattern() + ")" +
+            "|(" + PATTERN_AMOUNT_CODE.pattern() + ")"
     )
 
     override fun apply(input: String): String {
@@ -413,32 +421,51 @@ internal object CurrencyStep : TextProcessingStep {
             result = buffer.toString()
         }
 
-        // أكواد العملة: USD 100
-        val codeMatcher = PATTERN_CURRENCY_CODE.matcher(result)
-        val codeBuffer = StringBuffer()
-        while (codeMatcher.find()) {
-            val code = codeMatcher.group(1)!!
-            val amount = AmountParser.parseAmount(codeMatcher.group(2)!!)
+        // أكواد العملة: USD 100 (الكود ثم المبلغ)
+        result = replaceCurrencyCodes(
+            result, PATTERN_CURRENCY_CODE, 1, 2
+        )
+        // أكواد العملة: 1500 USD (المبلغ ثم الكود) — مهم للنصوص المختلطة
+        // التي يُفصل عنها الرمز لو نُسب «USD» إلى مقطعٍ إنجليزي منفصل.
+        result = replaceCurrencyCodes(
+            result, PATTERN_AMOUNT_CODE, 2, 1
+        )
+
+        return result
+    }
+
+    /** استبدال أكواد العملة بـ «codeGroup» (رقم مجموعة الكود) و«amountGroup»
+     *  (رقم مجموعة المبلغ) في نمطٍ محدد — تُوحَّد حلقةُ الاستبدال للنمطين
+     *  (كودٌ قبل مبلغه أو بعده) فلا يتكرر منطقُ التطابق والإخراج. */
+    private fun replaceCurrencyCodes(
+        input: String,
+        pattern: Pattern,
+        codeGroup: Int,
+        amountGroup: Int
+    ): String {
+        val matcher = pattern.matcher(input)
+        val buffer = StringBuffer()
+        while (matcher.find()) {
+            val code = matcher.group(codeGroup)!!
+            val amount = AmountParser.parseAmount(matcher.group(amountGroup)!!)
             val info = CURRENCY_CODE_INFO[code]
             if (info == null) {
                 val amountText = NumberWordsConverter.numberToWords(amount)
                 val fallback = "$amountText $code"
-                codeMatcher.appendReplacement(
-                    codeBuffer,
+                matcher.appendReplacement(
+                    buffer,
                     Matcher.quoteReplacement(fallback)
                 )
             } else {
                 val amountPhrase = currencyAmountPhrase(amount, info)
-                codeMatcher.appendReplacement(
-                    codeBuffer,
+                matcher.appendReplacement(
+                    buffer,
                     Matcher.quoteReplacement(amountPhrase)
                 )
             }
         }
-        codeMatcher.appendTail(codeBuffer)
-        result = codeBuffer.toString()
-
-        return result
+        matcher.appendTail(buffer)
+        return buffer.toString()
     }
 
     /** نطق مبلغ عملة مع التوافق النحوي الكامل (مفرد/مثنى/جمع/كسور):

@@ -59,16 +59,24 @@ class TextProcessor(
         DictionaryStep(pronunciationDict)
     )
 
-    // الخطوات الثقيلة (تنطبق فقط إن فشل المسار السريع) — ترتيبها مُطابق تماماً
-    // لترتيب معالجة النص الأصلي: روابط → تواريخ → أوقات → عملات → وحدات →
-    // رومانية → هواتف → رموز → أرقام. تُعالَج الروابط أولاً حمايةً لها من أي
-    // تشويه تلحقه خطوة لاحقة (تاريخ/وقت/عملة داخل الرابط مثل 2026-03-09).
-    private val heavySteps: List<TextProcessingStep> = listOf(
+    // الخطوات الدلالية المبكرة: تُطبَّق على النص الكامل قبل تقسيم اللغة
+    // (عبر processSemantics) حتى لا ينفصل رمزُ العملة/الوحدة (حروف لاتينية
+    // مثل «USD») إلى مقطعٍ إنجليزي مستقل — فينقطع «1500 USD» إلى مبلغٍ عربي
+    // ورمزٍ إنجليزي. ثم يكررها المسار الثقيل على المقطع العربي (ناتجُها
+    // كلماتٌ عربية بلا أرقام فلا يطابقها نمطٌ مجدداً — سلوك مطابق).
+    private val baseSteps: List<TextProcessingStep> = listOf(
         UrlStep,
         DateStep(injectedSettings),
         TimeStep,
         CurrencyStep,
-        UnitStep,
+        UnitStep
+    )
+
+    // الخطوات الثقيلة (تنطبق فقط إن فشل المسار السريع) — ترتيبها مُطابق تماماً
+    // لترتيب معالجة النص الأصلي: روابط → تواريخ → أوقات → عملات → وحدات →
+    // رومانية → هواتف → رموز → أرقام. تُعالَج الروابط أولاً حمايةً لها من أي
+    // تشويه تلحقه خطوة لاحقة (تاريخ/وقت/عملة داخل الرابط مثل 2026-03-09).
+    private val heavySteps: List<TextProcessingStep> = baseSteps + listOf(
         RomanNumeralStep,
         PhoneNumberStep,
         SymbolStep,
@@ -111,6 +119,29 @@ class TextProcessor(
 
         for (step in heavySteps) result = step.apply(result)
         return CleanupStep.apply(result)
+    }
+
+    /**
+     * معالجة دلالية مبكرة للنص الكامل — تُستدعى قبل تقسيم اللغة
+     * في NateqTtsService حتى لا يقسم مقسّمُ اللغاتِ «1500 USD» إلى
+     * [مبلغ عربي, رمز إنجليزي] فيفقد
+     * [CurrencyStep] مبلغَه المكسورُ أو يُنطق «USD» حروفاً بمحركٍ إنجليزي.
+     * لا تشمل الخطوات الثقيلة الباقية (رومانية/هواتف/رموز/أرقام) لأن
+     * كلَ نصٍ مقطعي يعاد تمريره عبر [process] لاحقاً بكامل الخطوات، فلا
+     * يُكرر تحويل الأرقام هنا ولا يُستخدم الناتج إلا لتهيئة التقسيم.
+     * @param languageTag كود اللغة (مثل "ar"، "en") — المعالجة مخصصة للعربية
+     *                    فقط كـ[process]؛ غير العربية تُعاد كما هي.
+     */
+    fun processSemantics(
+        text: String,
+        languageTag: String = LanguageCode.AR.tag
+    ): String {
+        if (text.isBlank()) return text
+        if (!LanguageCode.isArabic(languageTag)) return text
+        if (!requiresRegexPipeline(text)) return CleanupStep.apply(text)
+        var result = text
+        for (step in baseSteps) result = step.apply(result)
+        return result
     }
 
     /**

@@ -3,6 +3,7 @@ package com.aymankhattab.nateq
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.engine.TextProcessor
+import com.aymankhattab.nateq.core.audio.engine.LanguageSegmenter
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -30,6 +31,40 @@ class TextProcessorTest {
     fun blankText_isReturned() {
         assertEquals("", processor.process("", "ar"))
         assertEquals("   ", processor.process("   ", "ar"))
+    }
+
+    @Test
+    fun processSemantics_currency_keptWholeForSegmentation() {
+        // «1500 USD» (المبلغ ثم الكود) يبقى وحدةً واحدة بعد المعالجة الدلالية
+        // المبكرة — لا ينفصل رمزُ العملة لاتينياً في مقطعٍ إنجليزي مستقل.
+        val out = processor.processSemantics("1500 USD", "ar")
+        assertEquals("ألف وخمسمائة دولار أمريكي", out)
+        // داخل نص عربي: السطر كله يُنطق عربياً.
+        assertEquals(
+            "سعر ألف وخمسمائة دولار أمريكي",
+            processor.processSemantics("سعر 1500 USD", "ar")
+        )
+    }
+
+    @Test
+    fun processSemantics_splitSegments_currencyNoLongerEnglish() {
+        // بند الدمج: تقسيم النص بعد المعالجة الدلالية يعيد مقطعاً عربياً واحداً
+        // لـ«سعر 1500 USD» بدل مقطعين [عربي, USD]. فيبقى العملة بلسان عربي.
+        val out = processor.processSemantics("سعر 1500 USD", "ar")
+        val segments = LanguageSegmenter().segment(out, "ar")
+        assertEquals(listOf("ar"), segments.map { it.languageTag })
+        assertEquals(
+            "سعر ألف وخمسمائة دولار أمريكي",
+            segments.joinToString("") {
+                it.text
+            }
+        )
+    }
+
+    @Test
+    fun processSemantics_nonArabic_unchanged() {
+        // المعالجة الدلالية للعربية فقط؛ النص الإنجليزي يُعاد كما هو
+        assertEquals("1500 USD", processor.processSemantics("1500 USD", "en"))
     }
 
     @Test
