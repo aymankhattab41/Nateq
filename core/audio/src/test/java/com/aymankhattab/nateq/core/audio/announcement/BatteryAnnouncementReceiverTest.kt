@@ -149,6 +149,30 @@ class BatteryAnnouncementReceiverTest {
     }
 
     @Test
+    fun `replug at full percent after unplug passes again`() {
+        // دورة كاملة عند ثبات 100%: توصيل FULL يُعلن الاكتمال، ثم يُفصل
+        // الشحن فيتبدّل مفتاحُ الفلتر (DISCHARGING|0)، ثم إعادة التوصيل
+        // بنفس 100 FULL — يمرّ الفلترَ ثانيةً فيُعلن، فلا يُهدر إعلانُ
+        // الاكتمال بعد كل دورة توصيلٍ كاملة.
+        val plugged = batteryIntentWith(
+            100,
+            BatteryManager.BATTERY_STATUS_FULL,
+            BatteryManager.BATTERY_PLUGGED_AC
+        )
+        val unplugged = batteryIntentWith(
+            100,
+            BatteryManager.BATTERY_STATUS_DISCHARGING,
+            0
+        )
+        assertTrue(BatteryAnnouncementReceiver.isNewLevel(plugged))
+        assertTrue(BatteryAnnouncementReceiver.isNewLevel(unplugged))
+        assertTrue(
+            "إعادة التوصيل بعد فصلٍ تعيد العبور رغم ثبات 100",
+            BatteryAnnouncementReceiver.isNewLevel(plugged)
+        )
+    }
+
+    @Test
     fun `missing status extras still filter duplicate raw broadcasts`() {
         // بث خام بلا حقول حالة/توصيل (كما كان سابقاً): يتكرر بنفس المفتاح
         // فيُفلتر — لا تراجع في الحماية من عشرات البثات المتماثلة.

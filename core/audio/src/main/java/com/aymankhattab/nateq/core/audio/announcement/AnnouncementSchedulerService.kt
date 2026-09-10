@@ -343,9 +343,19 @@ class AnnouncementSchedulerService : Service() {
                     addAction(Intent.ACTION_POWER_CONNECTED)
                     addAction(Intent.ACTION_POWER_DISCONNECTED)
                 }
+                // أعلام الأمان أندرويد 14+ (API 34-37): يُسجَّل المستقبل
+                // مصدَّراً عمداً. أحداث الشحن (POWER_CONNECTED
+                // /POWER_DISCONNECTED) وبثُ البطارية الدائم
+                // ACTION_BATTERY_CHANGED بثات نظام محمية صادرة حصراً من
+                // UID النظام — لا تطبيق خارجي يستطيع إرسالها مهما كان علمُ
+                // التصدير فلا يتوسّع سطحُ الهجوم. وقد تُسقط بعض مزيّلات
+                // OEM (Xiaomi HyperOS / Vivo FuntouchOS) وصولَ أحداث الشحن
+                // إلى مستقبل NOT_EXPORTED، فالتوحيد على EXPORTED يضمن
+                // الوصول (وكذلك الحال قبل API 33 حيث التسجيلُ الافتراضي
+                // مصدَّر أصلاً).
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     registerReceiver(
-                        receiver, filter, Context.RECEIVER_NOT_EXPORTED
+                        receiver, filter, Context.RECEIVER_EXPORTED
                     )
                 } else {
                     registerReceiver(receiver, filter)
