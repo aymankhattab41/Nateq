@@ -25,12 +25,15 @@ class BatteryAnnouncementReceiver(
 ) : BroadcastReceiver() {
 
     companion object {
-        // آخر نسبة عولجت من بث البطارية الدائم — يُفلتر بها التكرار في
+        // آخر حالة عولجت من بث البطارية الدائم — يُفلتر بها التكرار في
         // الذاكرة قبل أي عمل لاتزامني أو قراءة من القرص (بند 16.1).
+        // مفتاح الفلترة يشمل النسبة والحالة ومصدر التوصيل: إغفالُهما كان
+        // يُجمّد شرط اكتمال الشحن بعد أول 100% متصلةٍ (الحالة تتحول من
+        // CHARGING إلى FULL والنسبة ثابتة فكان الفلتر النسبيّ يمنع الفحص).
         @Volatile
-        private var lastLevelPercent = -1
+        private var lastFilterKey: String? = null
 
-        /** هل هذا البث يمثل نسبة لم تُعالج بعد؟ يحسب النسبة مثل معالجة
+        /** هل هذا البث يمثل حالةً لم تُعالج بعد؟ يحسب النسبة مثل معالجة
          *  handler نفسها دون أي I/O؛ وبلا بيانات صالحة يُمرَّر البث فتتجاهله
          *  المعالجة أصلاً. */
         @JvmStatic
@@ -41,15 +44,20 @@ class BatteryAnnouncementReceiver(
                 intent.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1)
             if (level < 0 || scale <= 0) return true
             val percent = (level * 100) / scale
-            if (percent == lastLevelPercent) return false
-            lastLevelPercent = percent
+            val status =
+                intent.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1)
+            val plugged =
+                intent.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0)
+            val key = "$percent|$status|$plugged"
+            if (key == lastFilterKey) return false
+            lastFilterKey = key
             return true
         }
 
         /** تصفير الفلتر بين دورات الاختبار. */
         @JvmStatic
         internal fun resetLevelFilterForTesting() {
-            lastLevelPercent = -1
+            lastFilterKey = null
         }
     }
 
@@ -62,9 +70,10 @@ class BatteryAnnouncementReceiver(
             return
         }
         // فلترة البث الدائم في الذاكرة (بند 16.1): يُعالج بث البطارية فقط عند
-        // تغيّر النسبة، فلا تُطلق كورووتينات ولا تُفتح SharedPreferences لعشرات
-        // البثات المتكررة بنفس المستوى (حرارة/جهد/شحن). أحداث التوصيل والفصل
-        // أفعال منفصلة لا تمرّ بالفلتر وتُعالج دائماً.
+        // تغيّر النسبة أو حالة الشحن أو مصدر التوصيل، فلا تُطلق كورووتينات
+        // ولا تُفتح SharedPreferences لعشرات البثات المتكررة بنفس الحالة
+        // (حرارة/جهد/شحن). أحداث التوصيل والفصل أفعال منفصلة لا تمرّ
+        // بالفلتر وتُعالج دائماً.
         if (action == Intent.ACTION_BATTERY_CHANGED &&
             !isNewLevel(intent!!)
         ) {

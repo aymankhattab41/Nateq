@@ -45,6 +45,14 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
          *  مهما كانت إعدادات التكرار. */
         private const val BROADCAST_ASYNC_WINDOW_MS = 10_000L
 
+        /** كم عدد الخانات الرقمية الواجب تطابقها في المطابقة الذكية الأخيرة
+         *  (المطابقة بآخر 8 خانات). */
+        private const val SMART_SUFFIX_DIGITS = 8
+
+        /** عتبة طول الرقمين (بالخانات) للسماح بمطابقة آخر 8 خانات — تجنباً
+         *  للتصادم على الأرقام القصيرة حيث البادئة جزءٌ من الهوية. */
+        private const val MIN_SMART_MATCH_DIGITS = 8
+
         /** جدول إطلاق تكرارات النطق (بعد النطق الأول): كل [intervalMs]
          *  حتى بلوغ [windowMs] — لا يُجدوَل أي تكرارٍ على حافةِ السقف أو
          *  خارجه حتى لا تبلغ عمليةُ البثِ مهلة النظام. خالصٌ قابلٌ للاختبار. */
@@ -291,22 +299,62 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
     }
 
     /**
-     * الاسم المخصص من خريطة المستخدم (رقم -> اسم). تُطابق الأرقام بحذف كل
-     * ما ليس رقماً (أرقام "063...", "+63...", " 06 3..." كلها متطابقة).
-     * تُستبعد القيم الخاصة غير الحقيقية («-1» للمجهول/الخاص و«UNKNOWN»)
-     * قبل التطبيع حتى لا ينطق التطبيق اسم جهة اتصالٍ تتصادف أرقامها مع «1»
-     * (كملحق رموز الولايات المتحدة) لمكالمةٍ مجهولةٍ فعلياً.
+     * الاسم المخصص من خريطة المستخدم (رقم -> اسم)، بأفضل مطابقة ممكنة:
+     *  1) مطابقة رقمية دقيقة بعد تطبيع الطرفين (السلوك الأصلي المحافظ).
+     *  2) مطابقة عبر PhoneNumberUtils (يتفطن لرمز البلد والترقيم).
+     *  3) مطابقة آخر 8 خانات رقمية عند اختلاف البادئة فقط (رمز بلد
+     *     أُضيف أو حُذف محلياً) — بشرط كفاية كل طرف على 8 خانات على
+     *     الأقل حتى لا تتصادم الأرقام القصيرة. تُستبعد القيم الخاصة
+     *     غير الحقيقية («-1»/«UNKNOWN») قبل التطبيع (انظر
+     *     [normalizeCallerNumber]). مجزّأة إلى [matchCustomName] الخالصة
+     *     القابلة للاختبار بلا SettingsRepository.
      */
-    private fun resolveCustomName(
+    internal fun resolveCustomName(
         settings: SettingsRepository,
+        number: String?
+    ): String? = matchCustomName(settings.getCustomCallerNames(), number)
+
+    /** قلب المطابقة الذكية أعلاه على خريطة أسماء ورقمٍ خام — خالصة
+     *  لتُختبَر بلا SettingsRepository. */
+    internal fun matchCustomName(
+        customNames: Map<String, String>,
         number: String?
     ): String? {
         val normalized = normalizeCallerNumber(number) ?: return null
-        return settings.getCustomCallerNames()
-            .entries.firstOrNull { entry ->
-                entry.key.filter { c -> c.isDigit() } == normalized
-            }
-            ?.value
+        customNames.entries.firstOrNull { entry ->
+            equivalentByDigits(entry.key, normalized)
+        }?.let { return it.value }
+        if (normalized.length < MIN_SMART_MATCH_DIGITS) return null
+        val suffix = normalized.takeLast(SMART_SUFFIX_DIGITS)
+        return customNames.entries.firstOrNull { entry ->
+            val keyDigits = entry.key.filter { c -> c.isDigit() }
+            keyDigits.length >= MIN_SMART_MATCH_DIGITS &&
+                keyDigits.takeLast(SMART_SUFFIX_DIGITS) == suffix
+        }?.value
+    }
+
+    /** مطابقة رقمية تعادل تاريخياً [PhoneNumberUtils.compare] — الذي أُهمل
+     *  في أندرويد (Deprecated) فلا يُستخدم: تتكافأ خانات الطرفين كاملةً،
+     *  أو بعد تجريد بادئة الوصول الدولي («+» أو «00» أو «011») من أيٍّ من
+     *  الطرفين — فكلا «+966501234567» و«966 501234567» و«00966501234567»
+     *  أرقامٌ واحدة، ويتناول البند الثالث بعدها اختلاف باقي البادئة. */
+    private fun equivalentByDigits(a: String, b: String): Boolean {
+        val digitsA = a.filter(Char::isDigit)
+        val digitsB = b.filter(Char::isDigit)
+        if (digitsA == digitsB) return true
+        val accessA = stripInternationalAccess(digitsA)
+        val accessB = stripInternationalAccess(digitsB)
+        return accessA.isNotEmpty() && accessA == accessB
+    }
+
+    private fun stripInternationalAccess(digits: String): String {
+        if (digits.isEmpty()) return digits
+        return when {
+            digits.startsWith("00") -> digits.substring(2)
+            digits.startsWith("011") -> digits.substring(3)
+            digits.startsWith("+") -> digits.substring(1)
+            else -> digits
+        }
     }
 
     /**

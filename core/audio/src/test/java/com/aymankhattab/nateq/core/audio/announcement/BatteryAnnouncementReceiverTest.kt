@@ -93,6 +93,69 @@ class BatteryAnnouncementReceiverTest {
         )
     }
 
+    private fun batteryIntentWith(
+        level: Int,
+        status: Int,
+        plugged: Int
+    ): Intent = batteryIntent(level).apply {
+        putExtra(BatteryManager.EXTRA_STATUS, status)
+        putExtra(BatteryManager.EXTRA_PLUGGED, plugged)
+    }
+
+    @Test
+    fun `full charge passes when status changes at stable percent`() {
+        // بند 2: عند ثبات 100% متصلة، تناول الحالة FULL بعد CHARGING يمرّ
+        // من الفلتر ليتفقد المعالج شرط اكتمال الشحن — بدل تجميده على
+        // أول 100% (كان الفلتر النسبي يمنع الفحص نهائياً).
+        val charging = batteryIntentWith(
+            100,
+            BatteryManager.BATTERY_STATUS_CHARGING,
+            BatteryManager.BATTERY_PLUGGED_AC
+        )
+        val full = batteryIntentWith(
+            100,
+            BatteryManager.BATTERY_STATUS_FULL,
+            BatteryManager.BATTERY_PLUGGED_AC
+        )
+        assertTrue(BatteryAnnouncementReceiver.isNewLevel(charging))
+        assertFalse(
+            "نفس الحالة نفسها مُفلترة",
+            BatteryAnnouncementReceiver.isNewLevel(charging)
+        )
+        assertTrue(
+            "تغيّر حالة الشحن يمرّ رغم ثبات النسبة",
+            BatteryAnnouncementReceiver.isNewLevel(full)
+        )
+    }
+
+    @Test
+    fun `plugged to unplugged at same percent passes`() {
+        val plugged = batteryIntentWith(
+            90,
+            BatteryManager.BATTERY_STATUS_CHARGING,
+            BatteryManager.BATTERY_PLUGGED_AC
+        )
+        val unplugged = batteryIntentWith(
+            90,
+            BatteryManager.BATTERY_STATUS_DISCHARGING,
+            0
+        )
+        assertTrue(BatteryAnnouncementReceiver.isNewLevel(plugged))
+        assertFalse(BatteryAnnouncementReceiver.isNewLevel(plugged))
+        assertTrue(
+            "انفصال الشاحن يمرّ رغم ثبات النسبة",
+            BatteryAnnouncementReceiver.isNewLevel(unplugged)
+        )
+    }
+
+    @Test
+    fun `missing status extras still filter duplicate raw broadcasts`() {
+        // بث خام بلا حقول حالة/توصيل (كما كان سابقاً): يتكرر بنفس المفتاح
+        // فيُفلتر — لا تراجع في الحماية من عشرات البثات المتماثلة.
+        assertTrue(BatteryAnnouncementReceiver.isNewLevel(batteryIntent(50)))
+        assertFalse(BatteryAnnouncementReceiver.isNewLevel(batteryIntent(50)))
+    }
+
     // ===== نافذة منع تكرار الإعلان (5 دقائق) =====
 
     // لحظة أساسية ثابتة خارج كل النوافذ — الحتمية عبر ساعة افتراضية.

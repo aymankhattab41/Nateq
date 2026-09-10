@@ -92,6 +92,52 @@ class CallerAnnouncementReceiverTest {
         )
     }
 
+    private fun match(key: String, to: String?): String? =
+        CallerAnnouncementReceiver().matchCustomName(
+            mapOf(key to "أحمد"), to
+        )
+
+    @Test
+    fun `custom name matches exact digits`() {
+        assertEquals("أحمد", match("0637091234", "0637091234"))
+    }
+
+    @Test
+    fun `custom name ignores incoming formatting`() {
+        assertEquals(
+            "أحمد",
+            match("+966 50 123 4567", " (050) 123-4567 ")
+        )
+    }
+
+    @Test
+    fun `custom name matches formatted variant through PhoneNumberUtils`() {
+        assertEquals(
+            "أحمد",
+            match("+966501234567", "966501234567")
+        )
+    }
+
+    @Test
+    fun `custom name matches last eight digits when prefix differs`() {
+        assertEquals(
+            "أحمد",
+            match("00966501234567", "+966501234567")
+        )
+        assertEquals(
+            "أحمد",
+            match("966501234567", "0501234567")
+        )
+    }
+
+    @Test
+    fun `custom name rejects short or divergent numbers`() {
+        assertNull(match("0501234567", "0511234567"))
+        assertNull(match("5551234", "5559999"))
+        assertNull(match("0501234567", "-1"))
+        assertNull(match("0501234567", "UNKNOWN"))
+    }
+
     @Test
     fun `permission revoked disables enabled and syncs`() {
         val repo = SettingsRepository(context)
