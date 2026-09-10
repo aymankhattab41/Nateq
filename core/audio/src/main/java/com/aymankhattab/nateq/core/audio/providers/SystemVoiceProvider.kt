@@ -17,6 +17,7 @@ import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.VoiceIdContract
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -231,7 +232,16 @@ class SystemVoiceProvider(
 
     private var tts: TextToSpeech? = null
 
-    /** قفل مزامنة دورة حياة [tts]:
+    /** مسبح محركات TTS مربوطة (بند 4): معرّف حزمة المحرك -> مثيلٌ حي يبقى
+     *  دافئاً بين النطقات. يمحو كلفة إعادة تهيئة [TextToSpeech] (150–800ms
+     *  لدى بعض المحركات) عند التبديل المتكرر بين لغات/محركات مختلفة —
+     *  يحوّل التبديل إلى O(1) عبر [ConcurrentHashMap] آمن التزامن. تُغلَق
+     *  كل المثيلات في [shutdown]، ويُسقَط المثيل المعطوب (فشل تهيئة أو
+     *  نطق) عبر [dropBrokenEngine] فلا يُعاد استخدامه. الحقل [tts] هو
+     *  المثيل المختار لكي يكون المستخدم الحالي للنطق والإيقاف. */
+    private val enginePool = ConcurrentHashMap<String, TextToSpeech>()
+
+    /** قفل مزامنة دورة حياة [tts] والمسبح:
      *  حسم الربط/الإعادة في [synthesizeWithEngine]
      *  والإغلاق في [shutdown] يتسابقان فعلياً
      *  عند تدمير الخدمة أثناء نطقٍ جارٍ —
@@ -269,7 +279,8 @@ class SystemVoiceProvider(
         val validLength: Int
     )
 
-    /** حزمة المحرك المرتبط حالياً للتحقق من إعادة الاستخدام عند ثباتها */
+    /** حزمة المحرك المرتبط حالياً في [tts] — للتمييز بين «نفس المحرك جاهز»
+     *  والانتقال لمحركٍ آخر (سحب من المسبح أو إنشاء جديد). */
     private var ttsEngine: String? = null
 
     override fun isConfigured(): Boolean = true // متاح دائمًا
@@ -284,11 +295,14 @@ class SystemVoiceProvider(
         if (shutdownCalled) return
         shutdownCalled = true
         connectivity.unregister()
-        // حسم tts (إيقاف/إغلاق/تفريغ) تحت قفل دورة الحياة كي لا يتقاطع مع
-        // حسم الربط في synthesizeWithEngine؛ بقية التنظيف خارج القفل.
+        // حسم المحركات (إيقاف/إغلاق/تفريغ) تحت قفل دورة الحياة كي لا يتقاطع
+        // مع حسم الربط في synthesizeWithEngine؛ بقية التنظيف خارج القفل.
         synchronized(ttsLock) {
-            runCatching { tts?.stop() }
-            runCatching { tts?.shutdown() }
+            for (engine in enginePool.values) {
+                runCatching { engine.stop() }
+                runCatching { engine.shutdown() }
+            }
+            enginePool.clear()
             tts = null
             ttsEngine = null
         }
@@ -429,7 +443,7 @@ class SystemVoiceProvider(
             // ربط محرك — يلغي تماماً دورة WAV للعبارات المتكررة لدى TalkBack.
             val cacheKey = buildCacheKey(
                 text, effectiveVoice, speechRate,
-                pitch, volume, ttsEngine
+                pitch, volume, ttsEngine, desiredVoiceName
             )
             val cached = if (cacheKey != null) pcmCache.get(cacheKey) else null
             if (cached != null) {
@@ -463,7 +477,8 @@ class SystemVoiceProvider(
 
     /**
      * مفتاح الكاش للعبارة: النص مع كل ما يؤثر في PCM (الصوت المحسوب من المحرك،
-     * المعدل، النبرة، مستوى الصوت، وحزمة المحرك المرتبطة). أي تغير فيها يُولّد
+     * المعدل، النبرة، مستوى الصوت، وحزمة المحرك المرتبطة، واسم الصوت المختار
+     * [desiredVoiceName]). أي تغير فيها يُولّد
      * مفتاحاً مختلفاً فيتخلى الكاش تلقائياً عن القيمة القديمة. النصوص الأطول
      * من [PCM_CACHE_MAX_TEXT_LENGTH] لا تُخزَّن
      * (PCM كبير ونادراً يتكرر حرفياً) — تُرجع null
@@ -475,7 +490,8 @@ class SystemVoiceProvider(
         speechRate: Float,
         pitch: Float,
         volume: Float,
-        engine: String?
+        engine: String?,
+        desiredVoiceName: String?
     ): String? {
         if (text.length > PCM_CACHE_MAX_TEXT_LENGTH) return null
         // تمثيل عائم مضبوط بالبايت حتى لا ينتج
@@ -483,7 +499,11 @@ class SystemVoiceProvider(
         val r = speechRate.toRawBits()
         val p = pitch.toRawBits()
         val v = volume.toRawBits()
-        return "$text|${voice.id}|$r|$p|$v|$engine|${voice.locale}"
+        // desiredVoiceName جزءٌ من صوت النطق: اختيار صوتٍ محدد يفترق PCM عن
+        // صوتِ المحرك الافتراضي وإن اتحد النص واللغة والوسائط — إغفالُه كان
+        // يخلط قيمَ صوتين مختلفين في كاشٍ واحد (بند جدول الحصر).
+        val voiceName = desiredVoiceName ?: ""
+        return "$text|${voice.id}|$r|$p|$v|$engine|$voiceName|${voice.locale}"
     }
 
     /** يخزّن نسخة مستقلة من بيانات PCM في الكاش
@@ -558,12 +578,38 @@ class SystemVoiceProvider(
         failedEngines: MutableSet<String>
     ) {
         val done = AtomicBoolean(false)
+        // ننفّذ النطق عبر مثيلٍ معيّن من المسبح، ويتراجع المتصل عند الفشل.
+        val speakNow = { engineInstance: TextToSpeech, enginePackage: String? ->
+            if (!done.getAndSet(true)) {
+                runSynthesisOnBackground(
+                    beforeSpeak = {
+                        synthesizeInternal(
+                            engineInstance, text, voice, speechRate,
+                            pitch, volume, onFormatInfo, onAudioChunk,
+                            cancelled, desiredVoiceName, cacheKey
+                        )
+                    },
+                    onSuccess = { cont.resume(Unit) },
+                    onFailure = {
+                        // فشل النطق — نُسقط المثيل المعطوب من المسبح
+                        // حتى لا يُعاد استخدامه ثم نتراجع لمحركٍ آخر.
+                        dropBrokenEngine(engineInstance)
+                        retryWithGoogle(enginePackage, voice, text,
+                            speechRate, pitch, volume,
+                            onFormatInfo, onAudioChunk, cont,
+                            cancelled, desiredVoiceName,
+                            cacheKey, speechLanguage,
+                            failedEngines)
+                    }
+                )
+            }
+        }
         val attemptWith = { currentEngine: String? ->
             if (currentEngine == null) {
                 Log.e(TAG, "[Provider] no engine available to bind")
                 if (!done.getAndSet(true)) cont.resume(Unit)
             } else if (!cancelled.get()) {
-                // دورة حياة tts كلها تحت قفل [ttsLock] لتتزامن مع [shutdown]
+                // دورة حياة المحركات كلها تحت قفل [ttsLock] لتتزامن مع [shutdown]
                 // (تدمير الخدمة أثناء نطقٍ جارٍ):
                 // إن بدأ الإغلاق في المنتصف يتوقف
                 // الربط فوراً — لا محرك جديد بعد التدمير — وتُستأنف الكوروتينة
@@ -577,117 +623,103 @@ class SystemVoiceProvider(
                                 " provider shutting down")
                             if (!done.getAndSet(true)) cont.resume(Unit)
                         }
-                        // نغلق أي محرك سابق قبل ربط محرك جديد
-                        // (خاصة بعد فشل محرك).
-                        tts == null || ttsEngine != currentEngine -> {
-                            if (tts != null) {
-                                runCatching { tts?.shutdown() }
-                                tts = null
-                            }
-                            Log.w(TAG, "[Provider] init engine=$currentEngine")
-                            // علاّمة تحسم سباقاً واحداً فقط
-                            // بين ردّ onInit ومهلة التهيئة:
-                            // أياً منهما يسبق يحسم المصير،
-                            // والآخر يُسقط (يمنع مزدوجاً).
-                            val initSettled = AtomicBoolean(false)
-                            tts = TextToSpeech(context, { status ->
-                                if (initSettled.getAndSet(true)) {
-                                    return@TextToSpeech
-                                }
-                                if (done.getAndSet(true)) return@TextToSpeech
-                                if (status == TextToSpeech.SUCCESS
-                                    && !cancelled.get()
-                                ) {
-                                    // onInit صدر من TextToSpeech
-                                    // على Main Looper؛ نقل الاصطناع
-                                    // الحاصر (انتظار كتابة الملف)
-                                    // إلى خيط خلفي كي لا يُحظر
-                                    // Main — فلو بعث المحرك onDone
-                                    // على Main أيضاً حصل Deadlock
-                                    // حتى المهلة.
-                                    runSynthesisOnBackground(
-                                        beforeSpeak = {
-                                            synthesizeInternal(
-                                                text, voice, speechRate,
-                                                pitch, volume, onFormatInfo,
-                                                onAudioChunk, cancelled,
-                                                desiredVoiceName, cacheKey
-                                            )
-                                        },
-                                        onSuccess = { cont.resume(Unit) },
-                                        onFailure = {
-                                    // فشل النطق — جرّب محركاً
-                                    // آخر إن أمكن.
-                                    retryWithGoogle(currentEngine, voice, text,
-                                        speechRate, pitch, volume,
-                                        onFormatInfo, onAudioChunk, cont,
-                                        cancelled, desiredVoiceName,
-                                        cacheKey, speechLanguage,
-                                        failedEngines)
-                                        }
-                                    )
-                                } else {
-                                    Log.e(TAG,
-                                        "[Provider] engine init failed:" +
-                                        " $currentEngine status=$status")
-                                    retryWithGoogle(currentEngine, voice, text,
-                                        speechRate, pitch, volume,
-                                        onFormatInfo, onAudioChunk, cont,
-                                        cancelled, desiredVoiceName,
-                                        cacheKey, speechLanguage,
-                                        failedEngines)
-                                }
-                            }, currentEngine)
-                            ttsEngine = currentEngine
-                            // مهلة تهيئة أقصاها 5 ثوانٍ: إن علق
-                            // المحرك ولم يُرِدّ onInit، نُسقط المحرك
-                            // ونتراجع بدل بقاء الكوروتين معلقاً
-                            // للأبد. غير حاصر (منبّه على Main)
-                            // فلا يُجمّد الخيط ولا يتعارض مع ردّ
-                            // onInit الآجل.
-                            mainHandler.postDelayed({
-                                if (!initSettled.getAndSet(true)
-                                    && done.compareAndSet(false, true)
-                                    && !cancelled.get()
-                                ) {
-                                    Log.w(TAG,
-                                        "[Provider] engine init timed out" +
-                                        " after ${INIT_TIMEOUT_MS}ms:" +
-                                        " $currentEngine")
-                                    runCatching { tts?.shutdown() }
-                                    tts = null
-                                    ttsEngine = null
-                                    retryWithGoogle(currentEngine, voice, text,
-                                        speechRate, pitch, volume, onFormatInfo,
-                                        onAudioChunk, cont, cancelled,
-                                        desiredVoiceName, cacheKey,
-                                        speechLanguage, failedEngines)
-                                }
-                            }, INIT_TIMEOUT_MS)
+                        // نفس المحرك جاهز — ننطق مباشرة بإعادة استخدام المثيل.
+                        tts != null && ttsEngine == currentEngine -> {
+                            speakNow(tts!!, currentEngine)
                         }
-                        // مثيل نفس المحرك جاهز — ننطق مباشرة بإعادة استخدامه.
-                        else -> if (!done.getAndSet(true)) {
-                            // ننفّذ الاصطناع الحاصر على خيط خلفي
-                            // (اختبارياً قد نصل هنا من مسار Main)
-                            // حتى لا يُحظر Main لو بعث المحرك onDone
-                            // على Main أيضاً.
-                            runSynthesisOnBackground(
-                                beforeSpeak = {
-                                    synthesizeInternal(text, voice, speechRate,
-                                        pitch, volume, onFormatInfo,
-                                        onAudioChunk, cancelled,
-                                        desiredVoiceName, cacheKey)
-                                },
-                                onSuccess = { cont.resume(Unit) },
-                                onFailure = {
-                                    retryWithGoogle(currentEngine, voice, text,
-                                        speechRate, pitch, volume,
-                                        onFormatInfo, onAudioChunk, cont,
-                                        cancelled, desiredVoiceName,
-                                        cacheKey, speechLanguage,
-                                        failedEngines)
-                                }
-                            )
+                        // مثيلٌ دافئ في مسبح المحركات (بند 4): الانتقال لهذا
+                        // المحرك O(1) بلا إعادة تهيئة — إنشاء TextToSpeech
+                        // جديد في كل تبديل كان يكلف 150–800ms لكل كلمة أجنبية.
+                        else -> {
+                            val instance = currentEngine?.let {
+                                enginePool[it]
+                            }
+                            if (instance != null) {
+                                Log.d(
+                                    TAG,
+                                    "[Provider] pool hit" +
+                                    " engine=$currentEngine"
+                                )
+                                tts = instance
+                                ttsEngine = currentEngine
+                                speakNow(instance, currentEngine)
+                            } else {
+                                Log.w(
+                                    TAG,
+                                    "[Provider] init engine=$currentEngine"
+                                )
+                                // علاّمة تحسم سباقاً واحداً فقط
+                                // بين ردّ onInit ومهلة التهيئة:
+                                // أياً منهما يسبق يحسم المصير،
+                                // والآخر يُسقط (يمنع مزدوجاً).
+                                val initSettled = AtomicBoolean(false)
+                                // حامل قبل البناء: الإنفاذ يصدر لاحقاً (غير
+                                // متزامن) فيلتقط المثيل عبر الحامل لا عبر متغير
+                                // محلّي متأخر الإعلان.
+                                val hold = arrayOfNulls<TextToSpeech>(1)
+                                hold[0] = TextToSpeech(context, { status ->
+                                    if (initSettled.getAndSet(true)) {
+                                        return@TextToSpeech
+                                    }
+                                    val built = hold[0]
+                                    if (built == null ||
+                                        done.getAndSet(true)
+                                    ) {
+                                        return@TextToSpeech
+                                    }
+                                    if (status == TextToSpeech.SUCCESS
+                                        && !cancelled.get()
+                                    ) {
+                                        // onInit صدر من TextToSpeech
+                                        // على Main Looper؛ نقل الاصطناع
+                                        // الحاصر (انتظار كتابة الملف)
+                                        // إلى خيط خلفي كي لا يُحظر
+                                        // Main — فلو بعث المحرك onDone
+                                        // على Main أيضاً حصل Deadlock
+                                        // حتى المهلة.
+                                        speakNow(built, currentEngine)
+                                    } else {
+                                        Log.e(TAG,
+                                            "[Provider] engine init failed:" +
+                                            " $currentEngine status=$status")
+                                        dropBrokenEngine(built)
+                                        retryWithGoogle(currentEngine, voice,
+                                            text, speechRate, pitch, volume,
+                                            onFormatInfo, onAudioChunk, cont,
+                                            cancelled, desiredVoiceName,
+                                            cacheKey, speechLanguage,
+                                            failedEngines)
+                                    }
+                                }, currentEngine)
+                                val created = hold[0]!!
+                                enginePool[currentEngine] = created
+                                tts = created
+                                ttsEngine = currentEngine
+                                // مهلة تهيئة أقصاها 5 ثوانٍ: إن علق
+                                // المحرك ولم يُرِدّ onInit، نُسقط المحرك
+                                // ونتراجع بدل بقاء الكوروتين معلقاً
+                                // للأبد. غير حاصر (منبّه على Main)
+                                // فلا يُجمّد الخيط ولا يتعارض مع ردّ
+                                // onInit الآجل.
+                                mainHandler.postDelayed({
+                                    if (!initSettled.getAndSet(true)
+                                        && done.compareAndSet(false, true)
+                                        && !cancelled.get()
+                                    ) {
+                                        Log.w(TAG,
+                                            "[Provider] engine init timed out" +
+                                            " after ${INIT_TIMEOUT_MS}ms:" +
+                                            " $currentEngine")
+                                        dropBrokenEngine(created)
+                                        retryWithGoogle(currentEngine, voice,
+                                            text, speechRate, pitch, volume,
+                                            onFormatInfo, onAudioChunk, cont,
+                                            cancelled, desiredVoiceName,
+                                            cacheKey, speechLanguage,
+                                            failedEngines)
+                                    }
+                                }, INIT_TIMEOUT_MS)
+                            }
                         }
                     }
                 }
@@ -790,6 +822,25 @@ class SystemVoiceProvider(
     }
 
     /**
+     * يُسقط مثيل محركٍ معطوباً (فشلت تهيئته أو نطقه) من المسبح ويغلقه —
+     * حتى لا يُعاد استخدامه في طلباتٍ لاحقة. يُستدعى على كل مسارات الفشل
+     * الخاصّة بالمثيل بعينه (لا بمعرّف الحزمة): يُزال من المسبح بمطابقة
+     * الهوية مهما كان مفتاحه الحالي، ويُصفّر الحقل النشط إن كان هو المثيل
+     * النشط. آمن التزامن تحت [ttsLock].
+     */
+    private fun dropBrokenEngine(instance: TextToSpeech) {
+        synchronized(ttsLock) {
+            runCatching { instance.stop() }
+            runCatching { instance.shutdown() }
+            enginePool.entries.removeAll { e -> e.value === instance }
+            if (tts === instance) {
+                tts = null
+                ttsEngine = null
+            }
+        }
+    }
+
+    /**
      * ينفّذ الاصطناع الحاصر على خيط خلفية غير-`Main`
      * ثم يستأنف/يتراجع وفق النتيجة.
      * السبب: عند استدعاء النطق من داخل `onInit`
@@ -821,6 +872,7 @@ class SystemVoiceProvider(
      * عند الفشل (حتى يتراجع المتصل إلى محرك بديل).
      */
     private fun synthesizeInternal(
+        engine: TextToSpeech,
         text: String,
         voice: VoiceDescriptor,
         speechRate: Float,
@@ -832,9 +884,10 @@ class SystemVoiceProvider(
         desiredVoiceName: String?,
         cacheKey: String?
     ): Boolean {
-        // حقل cancelled و مجموعة params — (توقيع internal)
-        val engine = tts
-        if (engine == null) return false
+        // يُمرَّر المثيل من المسبح صراحةً (لا «tts» الحقل): بعد إدخال مسبح
+        // المحركات قد يتغير المثيل النشط أثناء تتابع نطقات لغات مختلفة —
+        // المثيل الملتقط يُضمن أن تُنفَّذ كل جولة على محركها الصحيح وإن
+        // قُطع على مثيلٍ آخر لنطقٍ تالٍ (المسبح يبقيها كلها حية).
         // السرعة والنبرة تُمرَّران مباشرةً للمحرك
         // (engine.setSpeechRate/setPitch)
         // بدل التعديل الخطي الرقمي اليدوي الذي كان يلغي أثرهما بتشويه معدني
