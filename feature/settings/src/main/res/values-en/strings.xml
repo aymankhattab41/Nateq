@@ -56,9 +56,12 @@
 <string name="caller_names_saved">Caller names saved</string>
 <string name="caller_names_title">Custom caller names</string>
 <string name="caller_permission_grant_again">Grant permissions again</string>
+<string name="caller_permission_rationale_title">Call log is required to announce the caller</string>
+<string name="caller_permission_rationale_message">On Android 12 and later, the caller number is only delivered to apps that hold call log permission; without it, only a generic "incoming call" is spoken and the caller name is never announced even if saved in your contacts. This app is made for blind and low-vision users: granting the log lets it announce the caller by voice before answering, so a blind user knows who is calling before lifting the phone. The permission is used for announcing the name only; nothing else is read.</string>
 <string name="caller_permission_granted_both">Permissions granted; caller name will be spoken from call log or contacts</string>
 <string name="caller_permission_granted_contacts_only">Contacts granted; name may not arrive on Android 12+ without call log</string>
 <string name="caller_permission_needed">Caller announcement needs call log and phone state permission</string>
+<string name="caller_permission_rationale_continue">Continue and request permissions</string>
 <string name="caller_permission_revoked_message">The system automatically revokes sensitive permissions when an app like Lord TTS goes unused for a long time. Caller announcement is still enabled but lost a required permission, so callers cannot be announced until permissions are granted again</string>
 <string name="caller_permission_revoked_title">Caller permissions revoked</string>
 <string name="cancel">Cancel</string>

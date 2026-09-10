@@ -9,6 +9,7 @@ import android.database.Cursor
 import android.net.Uri
 import android.os.Build
 import android.provider.ContactsContract
+import android.telephony.PhoneNumberUtils
 import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -18,6 +19,7 @@ import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.LanguageCode
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -49,6 +51,13 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
          *  (المطابقة بآخر 8 خانات). */
         private const val SMART_SUFFIX_DIGITS = 8
 
+        /** عتبةُ كفايةِ الطرفين في المطابقة الذكية قبل احتمالية تقاربٍ في
+         *  ذيلِ الأطول عبر [android.telephony.PhoneNumberUtils.compare]:
+         *  تنسجم مع أرضيةِ المطابقة الداخلية للـ API (7 خانات) فلا نفتح
+         *  نافذةً أعرض بلا داعٍ، مع بقاءِ نافذةِ الذيل الثماني الاسمية
+         *  (SMART_SUFFIX_DIGITS) ساريةً في المطابقة الاسمية. */
+        private const val MIN_SUFFIX_MATCH_DIGITS = 7
+
         /** عتبة طول الرقمين (بالخانات) للسماح بمطابقة آخر 8 خانات — تجنباً
          *  للتصادم على الأرقام القصيرة حيث البادئة جزءٌ من الهوية. */
         private const val MIN_SMART_MATCH_DIGITS = 8
@@ -75,6 +84,15 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             }
             return launches
         }
+
+        /** كم يتبقى من نافذة الـ goAsync الآمنة بعد [lastLaunchMs] — سقفُ
+         *  انتظارنا اكتمالَ النطق الفعلي للجملة الأخيرة: لا تُبقى دورة البث
+         *  حيةً متجاوزةً مهلة النظام فيقع ANR، والتكرارات المجدولة قد استهلكت
+         *  هذا المقدار أصلاً. خالصٌ قابلٌ للاختبار. */
+        internal fun remainingWindowMs(
+            lastLaunchMs: Long,
+            windowMs: Long
+        ): Long = (windowMs - lastLaunchMs).coerceAtLeast(0L)
     }
 
     /** مصدر الإعدادات المحقون — كائن واحد مشترك عبر العمليات
@@ -94,6 +112,16 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         val appScope =
             (context.applicationContext as AnnouncementAppContext).appScope
         appScope.launch {
+            // حارس إنهاء وحيد لدورة البث: أياً كان السابق — اكتمالُ النطق
+            // الفعلي، سقفُ نافذة goAsync، أو finally التعويضي — يُنهى
+            // pendingResult مرةً واحدة (finishٌ مكررٌ يرمي تحذيراً ولا لزوم
+            // له). ذرّيٌ ليتحمل وصولَ الإنهاء من خيطي البث والنطق معاً.
+            val finishedBroadcast = AtomicBoolean(false)
+            fun finishOnce() {
+                if (finishedBroadcast.compareAndSet(false, true)) {
+                    pendingResult.finish()
+                }
+            }
             try {
                 // فحص وقائي: وصول بث PHONE_STATE بحد ذاته يتطلب
                 // منح READ_PHONE_STATE وقت الإرسال (النظام يفلتر
@@ -201,38 +229,58 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                         SettingsRepository.ANNOUNCE_CATEGORY_CALLER
                     )
                 )
-                if (repeat > 1) {
-                    val appCtx = context.applicationContext
-                    val schedule = repeatSchedule(
-                        repeat, intervalMs, BROADCAST_ASYNC_WINDOW_MS
-                    )
-                    var previous = 0L
-                    for (offsetMs in schedule) {
-                        delay(offsetMs - previous)
-                        previous = offsetMs
-                        try {
-                            AnnouncementSpeaker.getInstance(appCtx)
-                                .speak(
-                                    text, locale, speechRate, 1.0f,
-                                    volume,
-                                    engineOverride = settings
-                                        .getEngineForCategory(
-                                            SettingsRepository
-                                                .ANNOUNCE_CATEGORY_CALLER
-                                        )
-                                )
-                        } catch (t: Throwable) {
-                            Log.e(TAG, "repeat speak failed", t)
-                        }
+                val appCtx = context.applicationContext
+                val schedule = repeatSchedule(
+                    repeat, intervalMs, BROADCAST_ASYNC_WINDOW_MS
+                )
+                var lastLaunchMs = 0L
+                for (offsetMs in schedule) {
+                    delay(offsetMs - lastLaunchMs)
+                    lastLaunchMs = offsetMs
+                    try {
+                        AnnouncementSpeaker.getInstance(appCtx).speak(
+                            text, locale, speechRate, 1.0f,
+                            volume,
+                            engineOverride = settings.getEngineForCategory(
+                                SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+                            )
+                        )
+                    } catch (t: Throwable) {
+                        Log.e(TAG, "repeat speak failed", t)
                     }
                 }
+
+                // بعد إطلاق كل التكرارات نُبقي نافذة البث حيّةً حتى يُتمَّ
+                // النطقُ الفعليُّ للجملة الأخيرة — جمدُ العمليةِ بعد
+                // finish() كان يقتطع ذيل الصوت (بند توافق أندرويد 17) —
+                // بسقفِ نافذة الـ goAsync نفسها فلا ANR. والخطافُ لا يُعلَّق
+                // إلا الآن: كل تكرارٍ لاحقٍ كان يفلترُ ما قبله ويُحدّث معرّفَ
+                // الجزء الأخير فيبكر الإنهاء قبل التكرارات اللاحقة فعلياً.
+                val previousHook = speaker.onSpeechComplete
+                var ourHook: (() -> Unit)? = null
+                ourHook = {
+                    // نُمرّر لخطاف أداة الساعة السابق دوره (إن كان ضابطاً)
+                    // قبل إنهائنا البث، ثم نستعيده إن ما يزال ثابتاً — دون
+                    // طمس خطافٍ ضُبط حديثاً من دورةٍ أخرى.
+                    runCatching { previousHook?.invoke() }
+                    finishOnce()
+                    if (speaker.onSpeechComplete === ourHook) {
+                        speaker.onSpeechComplete = previousHook
+                    }
+                }
+                speaker.onSpeechComplete = ourHook
+                delay(
+                    remainingWindowMs(
+                        lastLaunchMs, BROADCAST_ASYNC_WINDOW_MS
+                    )
+                )
+                finishOnce()
             } catch (t: Throwable) {
                 Log.e(TAG, "onReceive failed", t)
             } finally {
-                // finish() بعد آخر تكرارٍ مجدول فعلي (إطلاق كل استدعاءات
-                // النطق) لا بعد الأول مباشرة، فيبقى البث حيّاً ولا يُجمّد
-                // النظامُ العمليةَ قبل اكتمال التكرارات.
-                pendingResult.finish()
+                // تعويضي: إن انحرف المسار قبل أذرعة الإنهاء أعلاه (استثناء)
+                // يُنهى البث هنا — وإن سبق إنهاؤه فلا يُنهى ثانية.
+                finishOnce()
             }
         }
     }
@@ -333,18 +381,30 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         }?.value
     }
 
-    /** مطابقة رقمية تعادل تاريخياً [PhoneNumberUtils.compare] — الذي أُهمل
-     *  في أندرويد (Deprecated) فلا يُستخدم: تتكافأ خانات الطرفين كاملةً،
-     *  أو بعد تجريد بادئة الوصول الدولي («+» أو «00» أو «011») من أيٍّ من
-     *  الطرفين — فكلا «+966501234567» و«966 501234567» و«00966501234567»
-     *  أرقامٌ واحدة، ويتناول البند الثالث بعدها اختلاف باقي البادئة. */
+    /** مطابقة رقمية: تتكافأ خانات الطرفين كاملةً، أو بعد تجريد بادئة الوصول
+     *  الدولي («00» أو «011» — و«+» حرفٌ لا رقمٌ فتُسقطه الترقيم), أو عبر
+     *  [PhoneNumberUtils.compare] لشكلٍ محليٍّ مقابل الدولي حيث الرقم الأقصر
+     *  يساوي ذيل الأطول (رمز بلدٍ مُضاف أو محذوف) — يُستدعى الـ API الرسمي
+     *  فعلاً كما اعتُمد، مع حارسِ كفايةِ الطرفين على عتبة الـ API نفسها
+     *  وحصرِ التقاربِ في «ذيل الأطول» فلا يَقبلَ تبديلَ خانةٍ حاملةٍ محلية
+     *  (فئة 050/051 أو 96650/96655) مطابقةً خاطئة. */
+    // PhoneNumberUtils.compare مُهملٌ رسمياً — مُطلب بند المطابقة الذكية.
+    @Suppress("DEPRECATION")
     private fun equivalentByDigits(a: String, b: String): Boolean {
         val digitsA = a.filter(Char::isDigit)
         val digitsB = b.filter(Char::isDigit)
         if (digitsA == digitsB) return true
         val accessA = stripInternationalAccess(digitsA)
         val accessB = stripInternationalAccess(digitsB)
-        return accessA.isNotEmpty() && accessA == accessB
+        if (accessA.isNotEmpty() && accessA == accessB) return true
+        if (digitsA.length < MIN_SUFFIX_MATCH_DIGITS ||
+            digitsB.length < MIN_SUFFIX_MATCH_DIGITS
+        ) {
+            return false
+        }
+        val suffixMatch = digitsB.endsWith(digitsA) ||
+            digitsA.endsWith(digitsB)
+        return suffixMatch && PhoneNumberUtils.compare(a, b)
     }
 
     private fun stripInternationalAccess(digits: String): String {

@@ -57,9 +57,12 @@
 <string name="caller_names_saved">تم حفظ أسماء المتصلين</string>
 <string name="caller_names_title">أسماء المتصلين المخصصة</string>
 <string name="caller_permission_grant_again">إعادة منح الأذونات</string>
+<string name="caller_permission_rationale_title">سجل المكالمات ضروري لنطق اسم المتصل</string>
+<string name="caller_permission_rationale_message">على أندرويد 12 وما بعده، لا يُسلَّم رقمُ المتصل للتطبيق إلا بمنح إذن سجل المكالمات؛ وبدونه يُنطق «اتصال وارد» فقط ولا يُنطق اسمُ المتصل حتى لو كان محفوظاً في دفتر اتصالاتك. التطبيق مصمَّم للمكفوفين وضعاف البصر: منحُ السجل يجعل التطبيق يعلن اسم المتصل بالصوت قبل الرد، فيكفي أن يسمع المستخدم من المتصل قبل رفع السماعة. يُستخدم الإذن لإعلان الاسم فقط، ولا يُقرأ منه شيءٌ آخر.</string>
 <string name="caller_permission_granted_both">تم منح الأذونات؛ سيُنطق اسم المتصل إن وُجد في سجل المكالمات أو دفتر الاتصالات</string>
 <string name="caller_permission_granted_contacts_only">تم منح إذن قراءة جهات الاتصال فقط؛ قد لا يصل الاسم على أندرويد 12+ دون سجل المكالمات</string>
 <string name="caller_permission_needed">لن يُنطق اسم المتصل إلا بعد منح إذن سجل المكالمات وحالة الهاتف</string>
+<string name="caller_permission_rationale_continue">متابعة وطلب الأذونات</string>
 <string name="caller_permission_revoked_message">يُسحب النظام أذونات الهاتف وسجل المكالمات تلقائياً عند عدم استخدام تطبيق كـ Lord TTS فترة طويلة. إعلان اسم المتصل مفعّل لكنه فاقد أحد الأذونات اللازمة، فلن يُنطق المتصل فعلياً حتى تُعاد الأذونات</string>
 <string name="caller_permission_revoked_title">سُحبت أذونات المتصل</string>
 <string name="cancel">إلغاء</string>

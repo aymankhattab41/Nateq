@@ -137,16 +137,7 @@ internal class CallerAnnouncementController(
         switchCallerAnnouncement.setOnCheckedChangeListener { _, checked ->
             if (callerSwitchGuard) return@setOnCheckedChangeListener
             if (checked) {
-                val needed = mutableListOf(
-                    Manifest.permission.READ_PHONE_STATE,
-                    Manifest.permission.READ_CALL_LOG
-                )
-                val hasContacts = ContextCompat.checkSelfPermission(
-                    fragment.requireContext(),
-                    Manifest.permission.READ_CONTACTS
-                ) == PackageManager.PERMISSION_GRANTED
-                if (!hasContacts) needed.add(Manifest.permission.READ_CONTACTS)
-                fragment.callerPermLauncher.launch(needed.toTypedArray())
+                requestCallerPermissionsWithRationale()
             } else {
                 runCatching { settings.setCallerAnnouncementEnabled(false) }
                 AnnouncementSchedulerService.syncIfRunning(
@@ -411,19 +402,9 @@ internal class CallerAnnouncementController(
             .setPositiveButton(
                 R.string.caller_permission_grant_again
             ) { _, _ ->
-                // إعادة طلب الأذونات المفقودة (نفس مجموعة التفعيل الأولى)
-                val needed = mutableListOf(
-                    Manifest.permission.READ_PHONE_STATE,
-                    Manifest.permission.READ_CALL_LOG
-                )
-                if (ContextCompat.checkSelfPermission(
-                        fragment.requireContext(),
-                        Manifest.permission.READ_CONTACTS
-                    ) != PackageManager.PERMISSION_GRANTED
-                ) {
-                    needed.add(Manifest.permission.READ_CONTACTS)
-                }
-                fragment.callerPermLauncher.launch(needed.toTypedArray())
+                // إعادة طلب الأذونات المفقودة مع شرح أهمية سجل المكالمات — نفس
+                // مسار التفعيل الأول (حوار التبرير قبل حوار النظام).
+                requestCallerPermissionsWithRationale()
             }
             .setNegativeButton(R.string.permission_open_settings) { _, _ ->
                 val intent = Intent(
@@ -438,6 +419,45 @@ internal class CallerAnnouncementController(
                 fragment.startActivity(intent)
             }
             .setNeutralButton(android.R.string.cancel, null)
+            .create().also { fragment.trackDialog(it) }.show()
+    }
+
+    /**
+     * يبني مجموعة أذونات إعلان المتصل (حالة الهاتف + سجل المكالمات + دفتر
+     * الاتصالات إن لم يُمنح) ويرسلها مع شرحٍ مسبق عند الحاجة: إن كان سجل
+     * المكالمات ما يزال مفقوداً نعرض حواراً يوضحُ أهميةَ إذنه للمكفوفين
+     * (بدونه لا يصل رقم المتصل على أندرويد 12+ ولا يُنطق الاسم) ثم نطلق
+     * طلب النظام عند «متابعة»؛ أما إن كان قد مُنح فلا حاجة للشرح.
+     */
+    private fun requestCallerPermissionsWithRationale() {
+        val needed = buildList {
+            add(Manifest.permission.READ_PHONE_STATE)
+            add(Manifest.permission.READ_CALL_LOG)
+            if (ContextCompat.checkSelfPermission(
+                fragment.requireContext(),
+                Manifest.permission.READ_CONTACTS
+            ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                add(Manifest.permission.READ_CONTACTS)
+            }
+        }.toTypedArray()
+        val callLogMissing = ContextCompat.checkSelfPermission(
+            fragment.requireContext(),
+            Manifest.permission.READ_CALL_LOG
+        ) != PackageManager.PERMISSION_GRANTED
+        if (!callLogMissing) {
+            fragment.callerPermLauncher.launch(needed)
+            return
+        }
+        MaterialAlertDialogBuilder(fragment.requireContext())
+            .setTitle(R.string.caller_permission_rationale_title)
+            .setMessage(R.string.caller_permission_rationale_message)
+            .setPositiveButton(
+                R.string.caller_permission_rationale_continue
+            ) { _, _ ->
+                fragment.callerPermLauncher.launch(needed)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
             .create().also { fragment.trackDialog(it) }.show()
     }
 

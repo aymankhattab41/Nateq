@@ -92,6 +92,29 @@ class CallerAnnouncementReceiverTest {
         )
     }
 
+    @Test
+    fun `remainingWindowMs leaves the safe grace after last launch`() {
+        assertEquals(
+            2500L,
+            CallerAnnouncementReceiver.remainingWindowMs(7500L, 10_000L)
+        )
+        // بلا تكرارات مجدولة يبقى السقف كاملاً (لا ما يُستقطع).
+        assertEquals(
+            10_000L,
+            CallerAnnouncementReceiver.remainingWindowMs(0L, 10_000L)
+        )
+        // آخر إطلاقٍ بعد النافذة (لا يقع في الجدولة) — صفر.
+        assertEquals(
+            0L,
+            CallerAnnouncementReceiver.remainingWindowMs(12_000L, 10_000L)
+        )
+        // لا قيمة سالبة مهما تجاوز الإطلاق النافذة.
+        assertEquals(
+            0L,
+            CallerAnnouncementReceiver.remainingWindowMs(20_000L, 10_000L)
+        )
+    }
+
     private fun match(key: String, to: String?): String? =
         CallerAnnouncementReceiver().matchCustomName(
             mapOf(key to "أحمد"), to
@@ -128,6 +151,33 @@ class CallerAnnouncementReceiverTest {
             "أحمد",
             match("966501234567", "0501234567")
         )
+    }
+
+    @Test
+    fun `custom name matches local number whose digits equal intl tail`() {
+        // شكل محليٍّ مقابل الدولي حيث الأقصرُ ذيلُ الأطول: يُقبل عبر
+        // PhoneNumberUtils مع الحارس — كان تُفقد هذه الحالة حين يقل طولُ
+        // المحلي عن عتبة النافذة الثماني (مثل نواة من 7 خانات ورمز بلد).
+        assertEquals(
+            "أحمد",
+            match("+9665012347", "5012347")
+        )
+        assertEquals(
+            "أحمد",
+            match("966501234567", "501234567")
+        )
+        assertEquals(
+            "أحمد",
+            match("+966 50 123-4567", "501234567")
+        )
+    }
+
+    @Test
+    fun `custom name rejects divergent intl tails`() {
+        // الأقصر ليس ذيلَ الأطول — رغم تطابق آخر 7 خاناتٍ معتبَرٍ لدى
+        // PhoneNumberUtils، الحارس يرفضه فلا يتسرب تقاربُ فئة محلية.
+        assertNull(match("966501234567", "501987654"))
+        assertNull(match("+9665055 11 22", "52112233"))
     }
 
     @Test
