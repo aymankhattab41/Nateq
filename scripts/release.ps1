@@ -1,7 +1,8 @@
 ﻿<#
     سكربت الإصدار الواحد لتطبيق Lord TTS — يرفع الترقيم تلقائياً من git
     (بدون لمس يدوي للـ versionCode/versionName)، يبني Release APK، يلتزم
-    الترقيم، يضع الوسم vN، يدفع، وينشئ Release على GitHub بمرفق الـ APK.
+    الترقيم، يضع الوسم vN، يدفع، وينشئ Release على GitHub بمرفق الـ APK
+    وملاحظاتِ المستجدات من changelog_text داخل التطبيق (لا توليد آلي).
 
     الاستخدام (من جذر المستودع):
         .\scripts\release.ps1            # ينفّذ الإصدار كاملاً
@@ -134,6 +135,32 @@ if ($null -ne $remoteHas) {
 
 Write-Host "=> الإصدار المستهدف: $targetVersion  (وسم $targetTag، versionCode $targetCode)"
 
+# ملاحظات الإصدار من بند المستجدات داخل التطبيق (عربي)، لا توليد آلي.
+$changelogXml = Join-Path $repoRoot 'feature\settings\src\main\res\values\strings.xml'
+$installNote =
+    "`r`n`r`n## التثبيت`r`nنزّل ``lord_tts.apk`` من مرفقات هذا الإصدار."
+if (Test-Path -LiteralPath $changelogXml) {
+    $settingsDoc = New-Object System.Xml.XmlDocument
+    $settingsDoc.Load($changelogXml)
+    $changelogNode =
+        $settingsDoc.SelectSingleNode("//string[@name='changelog_text']")
+    $changelogBody =
+        ($changelogNode.InnerText `
+            -replace '\\n', "`r`n" `
+            -replace '%1\$s', $targetVersion).Trim("`r", "`n")
+    # يُذكر الإصدار في عنوان الملاحظات — فتُحذف البادئة «الإصدار vN» من النص.
+    $intro = "الإصدار $targetVersion"
+    if ($changelogBody -like "$intro*") {
+        $changelogBody = $changelogBody.Substring($intro.Length).
+            TrimStart("`r", "`n")
+    }
+    $releaseNotes = "Lord TTS $targetVersion`r`n`r`n" +
+        "$changelogBody$installNote"
+} else {
+    $releaseNotes = "Lord TTS $targetVersion`r`n`r`n" +
+        "لم يُعثر على changelog_text — راجع بند المستجدات داخل التطبيق."
+}
+
 if ($DryRun) {
     Write-Host '=> وضع المحاكاة (DryRun): لا تغيير على أي ملف أو remote.'
     if ($currentCode -ne $targetCode) {
@@ -145,7 +172,8 @@ if ($DryRun) {
     Write-Host '   - تشغيل :app:testDebugUnitTest ثم :app:assembleRelease'
     Write-Host '   - commit: app/build.gradle.kts فقط (رسالة عربية)'
     Write-Host "   - tag $targetTag ثم push origin master --tags"
-    Write-Host "   - gh release create $targetTag (يرفع lord_tts.apk)"
+    Write-Host "   - gh release create $targetTag (يرفع lord_tts.apk" +
+        ' بملاحظات المستجدات من changelog_text)'
     exit 0
 }
 
@@ -199,18 +227,18 @@ Invoke-Git @('push', 'origin', $targetTag)
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
     Write-Warning 'gh غير مثبت/موثّق — الدفع والوسم تمّا.'
     Write-Warning "أنشئ الـ Release يدوياً: gh release create $targetTag $apkFile"
-    Write-Warning "    --title `"Lord TTS $targetVersion`" --generate-notes"
+    Write-Warning "    --title `"Lord TTS $targetVersion`" --notes"
     exit 0
 }
 Write-Host "=> إنشاء Release $targetTag على GitHub..."
 $ghOut = & gh release create $targetTag $apkFile `
     --repo 'aymankhattab41/Nateq' `
     --title "Lord TTS $targetVersion" `
-    --generate-notes 2>&1 | ForEach-Object { "$_" }
+    --notes $releaseNotes 2>&1 | ForEach-Object { "$_" }
 if ($LASTEXITCODE -ne 0) {
     Write-Warning "فشل gh release create: $(($ghOut | Out-String).Trim())"
     Write-Warning "أعده لاحقاً بـ: gh release create $targetTag $apkFile"
-    Write-Warning "    --title `"Lord TTS $targetVersion`" --generate-notes"
+    Write-Warning "    --title `"Lord TTS $targetVersion`" --notes"
 } else {
     Write-Host "=> نُشر الإصدار $targetVersion على GitHub ($targetTag)."
     Write-Host "=> الـ APK: $apkFile"
