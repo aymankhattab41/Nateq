@@ -113,6 +113,26 @@ class TimeAlarmReceiverTest {
         assertEquals(0, shadow.getScheduledAlarms().size)
     }
 
+    @Test
+    fun `wake lock window covers the full async broadcast window`() {
+        // const val في الكيان في Kotlin يُجمَّع كثابت static على
+        // الـ outer class مباشرةً (لا عبر Companion instance).
+        val clazz = TimeAlarmReceiver::class.java
+        val lockField = clazz.getDeclaredField("SHORT_WAKE_LOCK_MS")
+        lockField.isAccessible = true
+        val windowField = clazz.getDeclaredField("ALARM_ASYNC_WINDOW_MS")
+        windowField.isAccessible = true
+
+        // بند [4]: القفل يجب أن يغطي نافذة goAsync كاملةً (لتناسق بين
+        // النطق والصحوة) — كان 5 ثوانٍ فقط دون نافذة البث 10 فينام
+        // المعالج والنطق ناقص قبل اكتمال التهيئة.
+        assertEquals(
+            "WakeLock يغطي نافذة البث كاملة (بند [4])",
+            (lockField.get(null) as Number).toLong(),
+            (windowField.get(null) as Number).toLong()
+        )
+    }
+
     /** يتحقق أن الـ PendingIntent غير قابل للتعديل (FLAG_IMMUTABLE — أمان
      *  بث المنبه على أندرويد 12+) وأن نيته هي tick إعلان الوقت نفسه. */
     private fun assertSingleImmutablePendingIntent(operation: PendingIntent?) {

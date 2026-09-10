@@ -113,13 +113,15 @@ class TimeAlarmReceiver : BroadcastReceiver() {
             )
         }
 
-        /** مدة نافذة WakeLock العابرة: تغطي ربط محرك النطق وتهيئة الصوت في
-         *  الخلفية بعد صحوة المنبه من Doze دون أن ينام المعالج مجدداً أولاً. */
-        private const val SHORT_WAKE_LOCK_MS = 5_000L
+        /** مدة نافذة WakeLock العابرة: تُحافظ على مساواة
+         *  [ALARM_ASYNC_WINDOW_MS] (10 ثوانٍ) — فللقفل أن يغطي نافذة
+         *  goAsync كاملةً (ربط المحرك وتهيئة الصوت والنطق) ولا ينتهي قبلها
+         *  فينام المعالج والنطق ناقص (بند [4]). */
+        private const val SHORT_WAKE_LOCK_MS = 10_000L
 
-        /** نافذة WakeLock جزئية مؤقتة (5 ثوانٍ): تُحرَّر تلقائياً بوتوقيتها
-         *  (acquire(timeout)) فالتسريب المقيّد مقصود — بلا حاجة لـ release
-         *  يدوي، ولا يستنزف البطارية (منبه كل 15-60 دقيقة لثوانٍ معدودة). */
+        /** نافذة WakeLock جزئية مؤقتة (10 ثوانٍ = نافذة البث): تُحرَّر تلقائياً
+         *  بوتوقيتها (acquire(timeout)) فالتسريب المقيّد مقصود — بلا حاجة لـ
+         *  release يدوي، ولا يستنزف البطارية (منبه كل 15-60 دقيقة لثوانٍ). */
         private fun acquireShortWakeLock(
             context: Context
         ): PowerManager.WakeLock? {
@@ -148,7 +150,7 @@ class TimeAlarmReceiver : BroadcastReceiver() {
         if (cn.className != TimeAlarmReceiver::class.java.name) return
 
         // Doze: بثّ المنبه يوقظ المعالج لنافذة قصيرة فقط. goAsync يُبقي شعاع
-        // البثّ حياً لإنهاء جدولة الـ tick، وWakeLock جزئي مؤقت (5 ثوانٍ)
+        // البثّ حياً لإنهاء جدولة الـ tick، وWakeLock جزئي مؤقت (10 ثوانٍ)
         // يغطي نافذة النطق في الخلفية (ربط المحرك وتهيئة الصوت): كان إعلان
         // كامل معرضاً للضياع لو عاد المعالج للنوم قبل اكتمال التهيئة.
         val pendingResult = goAsync()

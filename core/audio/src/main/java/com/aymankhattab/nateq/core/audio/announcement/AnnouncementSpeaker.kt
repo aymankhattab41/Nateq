@@ -16,7 +16,6 @@ import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LanguageCode
 import java.util.Locale
-import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
 
@@ -229,36 +228,35 @@ class AnnouncementSpeaker(
             ?.takeIf {
                 it in EnginePicker.installedEnginePackages(appContext)
             }
-        // حسمُ المصير (جاهز/بادئ/منضمّ) بذرّية تامة تحت قفل واحد مع تصفية
-        // الدفعة لاحقاً تحت نفس القفل (بند [5]): خطافٌ أُضيف قبل التصفية
-        // يُصرف حتماً، ولا يضيع خطافٌ ينضمّ بين التصفية وإتاحة التهيئة.
-        var initNow = false
-        var ready = false
-        synchronized(initLock) {
-            val existing = tts
-            if (existing != null && boundEngine == requested) {
-                ready = true
-            } else {
-                // محرك مختلف للفئة القادمة: أُغلق الربط القديم كاملاً
-                // ثم أُهيّئ الجديد (لا تبقى مثيلات معلقة على محرك آخر).
-                if (existing != null) {
-                    shutdownSafely()
-                }
-                initNow = !initializing.getAndSet(true)
-                pendingInitCallbacks.add(onReady)
-            }
-        }
-        // لا نداءات تحت القفل (يبقى أسلوب الفصل القائم).
-        if (ready) {
+        // مسارٌ جاهز: المثيل الحالي مرتبط فعلاً بنفس المحرك المطلوب —
+        // نداء فوري بلا بوابة (لا تهيئة جديدة ولا انتظار دورة).
+        if (tts != null && boundEngine == requested) {
             onReady(true)
             return
         }
-        if (!initNow) return
+        // خلاف ذلك يُحسم القرار عبر البوابة (بند [5]): إن كانت تهيئةٌ
+        // ما قائمة يُصرف الخطاف عند اكتمال محركٍ مطابق داخل تلك الدورة،
+        // وإن كان المحرك مختلفاً ينتظر إعادة تهيئةٍ تُسلسل بعدها — فلا
+        // يُنطق النص أبداً بمحركٍ حُسم لاحقاً عن التهيئة الجارية.
+        when (initGate.enqueue(requested, onReady)) {
+            InitGate.Decision.JOIN -> return
+            InitGate.Decision.START -> startInit(requested)
+        }
+    }
 
-        // لا يوجد محرك افتراضي عام: يُحسم المحرك عند النطق إما صراحةً
-        // (requested المحرك الخاص بالفئة/الوظيفة)، وإلا اختيار ديناميكي
+    /** يبدأ تهيئة TextToSpeech لمحركٍ محسوم؛ عند الاكتمال تُصفّى البوابة
+     *  خارجها (تخدم النداءات المطابقة وتُسلسل إعادة تهيئةٍ للمحرك
+     *  المتبقي بمحركٍ مختلف). */
+    private fun startInit(finalEngine: String?) {
+        // محرك مختلف للفئة القادمة (أو تهيئة أولى): أُغلق الربط القديم
+        // كاملاً ثم أُهيّئ الجديد (لا تبقى مثيلات معلقة على محرك آخر).
+        if (tts != null) {
+            shutdownSafely()
+        }
+        // لا يوجد محرك افتراضي عام: يُحسم المحرك وقت النطق إما صراحةً
+        // (finalEngine المحرك الخاص بالفئة/الوظيفة)، وإلا اختيار ديناميكي
         // عبر [EngineRegistry] (مفضَّل ← أي محرك مثبّت غير قارئ شاشة).
-        val engine = requested
+        val engine = finalEngine
             ?: EnginePicker.pickEnginePackage(appContext)
         boundEngine = engine
         var newTts: TextToSpeech? = null
@@ -271,21 +269,15 @@ class AnnouncementSpeaker(
             } else {
                 tts = null
             }
-            // تصفية الدفعة + إتاحة التهيئة التالية تحت نفس قفل الحسم: كل
-            // خطافٍ انضمّ قبل الإتاحة يُصرف حتماً. ثم تُستدعى النداءات
-            // خارج القفل (لا استدعاء تحت قفلٍ لتجنب أي deadlock لو دخل
-            // الـ callback دعوةً متزامنة أخرى).
-            val callbacks: List<(Boolean) -> Unit>
-            synchronized(initLock) {
-                callbacks = ArrayList<(Boolean) -> Unit>().apply {
-                    while (true) {
-                        val cb = pendingInitCallbacks.poll() ?: break
-                        add(cb)
-                    }
-                }
-                initializing.set(false)
+            // تصفية البوابة خارجها: تُصرف النداءات المطابقة لمحرك هذه
+            // التهيئة فقط، وما بقي بمحركٍ مختلف يُعاد تهيئته بعدها. لا
+            // استدعاء تحت قفلٍ لتجنب أي deadlock لو دخلت الـ callback
+            // دعوةً متزامنة أخرى.
+            val completion = initGate.complete(success)
+            completion.served.forEach { cb -> cb(success) }
+            if (completion.nextEngine != null) {
+                startInit(completion.nextEngine)
             }
-            callbacks.forEach { cb -> cb(success) }
         }
         newTts.apply {
             setOnUtteranceProgressListener(
@@ -876,18 +868,10 @@ class AnnouncementSpeaker(
         tts = null
     }
 
-    /** ذرّي: يمنع سباق بدء تهيئة المحرك مرتين
-     * (single-flight) عبر خيوط متعددة. */
-    private val initializing = java.util.concurrent.atomic.AtomicBoolean(false)
-
-    /** قفل حسم المصير وتصفية الدفعة في [ensureInit] (بند [5]): كل قرار —
-     *  جاهز/بادئ/منضمّ — وكل تصفية للدعوات المتراكمة يتمان تحت هذا القفل
-     *  فلا يُفقد خطافٌ ينضمّ حين تُصفَّى الدفعة. */
-    private val initLock = Any()
-
-    /** آمنة للتسابق: تُستدعى `ensureInit` بالتوازي من مستقبِلات/مؤقّتات مختلفة
-     *  (Main/IO)، ويرصد `onInit` (على Main) النتائج. طابور متزامن يمنع
-     *  ConcurrentModificationException في القراءة والإضافة المتزامنتين. */
-    private val pendingInitCallbacks =
-        ConcurrentLinkedQueue<(Boolean) -> Unit>()
+    /** بوابة التهيئة (بند [5] المحكم): تحسم بذرّيةٍ تامة بدء التهيئة أو
+     *  الانضمام، وتصفّي النداءات ضدّ محرك التهيئة الجارية — فلا ينضمّ
+     *  طلبُ محركٍ مختلف إلى تهيئةٍ قائمةٍ لمحركٍ آخر (كان يحدث سابقاً
+     *  فيُنطق النص بالمحرك الخطأ) — وتُسلسل إعادة تهيئةٍ للمحركان
+     *  المتبقيان. الاختبار الآلي: [InitGateTest]. */
+    private val initGate = InitGate()
 }
