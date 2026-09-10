@@ -2,15 +2,18 @@ package com.aymankhattab.nateq.engine.pipeline
 
 import java.util.regex.Pattern
 
-/** معالجة الرموز الشائعة (بالمئة، النسبة، العملية الحسابية، @ المعزولة…). */
+/**
+ * معالجة الرموز الشائعة (درجات الحرارة، المقارنات، الحساب بين رقمين…).
+ * @/#/٪/&/@ المعزولة انتقلت إلى [PunctuationStep] لأن نطقها يتبع مستوى
+ * علامات الترقيم المختار («لا شيء» يمنعها)، بينما بقي هنا كل ما هو
+ * دلالي ثابت المعنى دون مستوى قراءة.
+ */
 internal object SymbolStep : TextProcessingStep {
 
     // رموز تُستبدل دائماً (معناها ثابت لا يتبدل بسياق). تُحاط بدائلها في
     // SYMBOL_PATTERNS بمسافات (« بالمئة ») فلا تلتصق الكلمات («خمسونبالمئة»)،
     // ويُضبط التباعد النهائي في CleanupStep (ضم المسافات ثم التقليم).
     private val SYMBOL_NAMES_GENERAL = mapOf(
-        "%" to "بالمئة",
-        "٪" to "بالمئة",
         "°C" to "درجة مئوية",
         "°F" to "درجة فهرنهايت",
         "°" to "درجة",
@@ -23,8 +26,6 @@ internal object SymbolStep : TextProcessingStep {
         "∞" to "ما لا نهاية",
         "√" to "جذر",
         "π" to "باي",
-        "#" to "رقم",
-        "&" to "و",
         "|" to "أو",
         "~" to "تقريباً",
         "_" to "شرطة سفلية",
@@ -33,7 +34,8 @@ internal object SymbolStep : TextProcessingStep {
 
     // رموز حسابية تُستبدل فقط بين رقمين (فلا تتحول "ملاحظة - هام" إلى
     // "ملاحظة ناقص هام"، ولا تعارَض كلمة عادية معها). الكسر 1/2 يُنطق
-    // «واحد على اثنين» كما في العربية السياقية.
+    // «واحد على اثنين» كما في العربية السياقية. (البديل المعزول من هذه
+    // الرموز عند غياب رقم على طرفيه أصبح من مسؤولية PunctuationStep).
     private val SYMBOL_ARITHMETIC = mapOf(
         "+" to " زائد ",
         "-" to " ناقص ",
@@ -44,14 +46,8 @@ internal object SymbolStep : TextProcessingStep {
         "=" to " يساوي "
     )
 
-    // @: لا تُستبدل داخل بريد إلكتروني (حرف/رقم على طرفيها)، بل فقط
-    // حين تكون معزولة (مثل "نلتقي @ 5").
-    private val PATTERN_AT = Pattern.compile(
-        "(?<!\\p{L})(?<![0-9])@(?![0-9])(?!\\p{L})"
-    )
-
     /** أنماط منتهية تجمع الرموز العامة (الأطول أولاً لضمان °C قبل °) ثم
-     *  الحسابية المقيدة بين الرقمين ثم @ المعزولة. */
+     *  الحسابية المقيدة بين الرقمين. */
     private val SYMBOL_PATTERNS: List<Pair<Pattern, String>> = buildList {
         addAll(
             SYMBOL_NAMES_GENERAL.entries.sortedByDescending { it.key.length }
@@ -65,7 +61,6 @@ internal object SymbolStep : TextProcessingStep {
                 Pattern.compile("(?<=\\d)\\s*\\Q$op\\E\\s*(?=\\d)") to word
             }
         )
-        add(PATTERN_AT to " عند ")
     }
 
     // بوابة عدم التطابق: دمج OR صريح لجميع أنماط الخطوة. إن لم يطابق شيئاً

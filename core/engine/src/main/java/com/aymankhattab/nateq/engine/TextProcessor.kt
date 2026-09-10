@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.engine
 
 import android.content.Context
+import com.aymankhattab.nateq.core.engine.PunctuationLevels
 import com.aymankhattab.nateq.core.engine.SynthesisConfig
 import com.aymankhattab.nateq.engine.pipeline.CleanupStep
 import com.aymankhattab.nateq.engine.pipeline.CurrencyStep
@@ -11,6 +12,7 @@ import com.aymankhattab.nateq.engine.pipeline.IndicDigitsStep
 import com.aymankhattab.nateq.engine.pipeline.NumberStep
 import com.aymankhattab.nateq.engine.pipeline.NumberWordsConverter
 import com.aymankhattab.nateq.engine.pipeline.PhoneNumberStep
+import com.aymankhattab.nateq.engine.pipeline.PunctuationStep
 import com.aymankhattab.nateq.engine.pipeline.RomanNumeralStep
 import com.aymankhattab.nateq.engine.pipeline.SymbolStep
 import com.aymankhattab.nateq.engine.pipeline.TashkeelStripStep
@@ -49,6 +51,18 @@ class TextProcessor(
     private val emojiEnabled: Boolean
         get() = injectedSettings?.isEmojiPronunciationEnabled() ?: true
 
+    /**
+     * هل التهجئة الذكية (نطق الحرف المفرد بأسمائه وحركاته) مفعّلة؟
+     * بلا حقنة Settings تُفترض معطّلة.
+     */
+    private val smartSpellingEnabled: Boolean
+        get() = injectedSettings?.isSmartSpellingEnabled() ?: false
+
+    /** خطوة نطق علامات الترقيم — تتبع مستوى «البعض/الكل» قراءةً لحظية. */
+    private val punctuationStep = PunctuationStep {
+        injectedSettings?.getPunctuationLevel() ?: PunctuationLevels.SOME
+    }
+
     // خطوات التمهيد: تُنفَّذ قبل بوابة المسار السريع
     // (تطبيع/تشكيل/إيموجي/قاموس).
     // «إزالة الإيموجي» شرطية: تعمل فقط عند تعطيل نطقها (إلا تُعيد النص كما هو).
@@ -74,12 +88,15 @@ class TextProcessor(
 
     // الخطوات الثقيلة (تنطبق فقط إن فشل المسار السريع) — ترتيبها مُطابق تماماً
     // لترتيب معالجة النص الأصلي: روابط → تواريخ → أوقات → عملات → وحدات →
-    // رومانية → هواتف → رموز → أرقام. تُعالَج الروابط أولاً حمايةً لها من أي
-    // تشويه تلحقه خطوة لاحقة (تاريخ/وقت/عملة داخل الرابط مثل 2026-03-09).
+    // رومانية → هواتف → رموز → ترقيم → أرقام. تُعالَج الروابط أولاً حمايةً لها
+    // من أي تشويه تلحقه خطوة لاحقة (تاريخ/وقت/عملة داخل الرابط مثل
+    // 2026-03-09)، ويأتي نطق الترقيم بعد الحماية فترى الروابط/التواريخ/
+    // الهواتف منقّاةً ولا يمس أجزاءها.
     private val heavySteps: List<TextProcessingStep> = baseSteps + listOf(
         RomanNumeralStep,
         PhoneNumberStep,
         SymbolStep,
+        punctuationStep,
         NumberStep
     )
 
@@ -94,6 +111,13 @@ class TextProcessor(
         languageTag: String = LanguageCode.AR.tag
     ): String {
         if (text.isBlank()) return text
+
+        // التهجئة الذكية: حرف مفرد (عربي بتشكيله أو لاتيني) يُنطق باسمه
+        // كاملاً («بَ» ← «باء مفتوحة»، «A» ← «Capital Alpha») قبل أي
+        // تحويل — يقودها TalkBack عند التنقل الحرفي بأحرفٍ منفردة.
+        if (smartSpellingEnabled) {
+            SmartSpeller.spell(text, languageTag)?.let { return it }
+        }
 
         // نطق أسماء الإيموجي (بدل حذفها) قبل مسار العربية ليغطي الإنجليزية
         // واللغات الأخرى أيضاً — الناتج لا يُمرَّر لأي تحويل لاحق خارج العربية.
@@ -162,6 +186,12 @@ class TextProcessor(
                 code < 0x600 && code != 0x20 -> return true
                 // ٪ (عربي للمئة) — تُستبدل في SYMBOL_NAMES_GENERAL
                 code == 0x66A -> return true
+                // الفاصلة المنقوطة العربية (؛) — تُنطق اسمها بمستوى «الكل»
+                code == 0x61B -> return true
+                // الشرطتان الطويلتان (– و—) وعلامة النقاط (…) — تُنطق
+                // أسماؤها بمستوى «الكل» (كلها فوق نطاق ASCII ولا يلتقطها
+                // الشرط اللاتيني في HEAVY أصلاً)
+                code in 0x2013..0x2014 || code == 0x2026 -> return true
                 // رموز عملة خارج ASCII (€¥₹…)
                 code in 0x20A0..0x20CF -> return true
                 // رموز النظام الرياضية/المنطقية (≥≤≠≈∞√…)

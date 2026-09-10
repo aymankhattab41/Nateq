@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.engine.TextProcessor
 import com.aymankhattab.nateq.core.audio.engine.LanguageSegmenter
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.core.engine.PunctuationLevels
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -293,6 +294,66 @@ class TextProcessorTest {
     fun asciiEmoticon_arabicSpoken() {
         assertEquals("أخبارك حزين", processor.process("أخبارك :(", "ar"))
         assertEquals("أحبك قلب", processor.process("أحبك <3", "ar"))
+    }
+
+    @Test
+    fun punctuationLevel_none_keepsSymbolsAsIs() {
+        val ctx: Context = ApplicationProvider.getApplicationContext()
+        val settings = SettingsRepository(ctx)
+        settings.setPunctuationLevel(PunctuationLevels.NONE)
+        val processorOff = TextProcessor(ctx, settings)
+        assertEquals("خمسون%", processorOff.process("خمسون%", "ar"))
+        assertEquals("نلتقي @ خمسة", processorOff.process("نلتقي @ 5", "ar"))
+    }
+
+    @Test
+    fun punctuationLevel_some_defaultNamesBasicSymbols() {
+        // السطر التالي يثبّت السلوك الافتراضي (SOME) مع الأرقام المكتوبة
+        assertEquals("خمسون بالمئة", processor.process("خمسون%", "ar"))
+        // @ المعزولة تُنطق «عند» ويُحوَّل الرقم اللاحق إلى كلمات
+        assertEquals("نلتقي عند خمسة", processor.process("نلتقي @ 5", "ar"))
+        // البريد الإلكتروني محمي: لا تنطق فيه @
+        assertEquals("رسالتي a@b.com",
+            processor.process("رسالتي a@b.com", "ar"))
+    }
+
+    @Test
+    fun punctuationLevel_all_addsParensSemicolonsAndDashes() {
+        val ctx: Context = ApplicationProvider.getApplicationContext()
+        val settings = SettingsRepository(ctx)
+        settings.setPunctuationLevel(PunctuationLevels.ALL)
+        val processorAll = TextProcessor(ctx, settings)
+        assertEquals(
+            "قوس افتتاح ملاحظة قوس إقفال",
+            processorAll.process("(ملاحظة)", "ar")
+        )
+        assertEquals("فاصلة منقوطة", processorAll.process("؛", "ar"))
+        assertEquals(
+            "جملة شرطة تفصيل",
+            processorAll.process("جملة — تفصيل", "ar")
+        )
+        // «البعض» الأساسية تعمل أيضاً ضمن «الكل»
+        assertEquals("خمسون بالمئة", processorAll.process("خمسون%", "ar"))
+    }
+
+    @Test
+    fun smartSpelling_singleLetterArabicAndLatin() {
+        val ctx: Context = ApplicationProvider.getApplicationContext()
+        val settings = SettingsRepository(ctx)
+        settings.setSmartSpellingEnabled(true)
+        val processorSpelling = TextProcessor(ctx, settings)
+        assertEquals("باء", processorSpelling.process("ب", "ar"))
+        assertEquals("باء مفتوحة", processorSpelling.process("بَ", "ar"))
+        assertEquals("Capital Alpha", processorSpelling.process("A", "en"))
+        assertEquals("Alpha", processorSpelling.process("a", "en"))
+        // الكلمات العادية لا تتأثر بالتهجئة
+        assertEquals("مرحبا", processorSpelling.process("مرحبا", "ar"))
+    }
+
+    @Test
+    fun smartSpelling_disabledByDefault_singleLetterPassesThrough() {
+        // المعطّل الافتراضي: الحرف المفرد يمرّ بلا تهجئة
+        assertEquals("ب", processor.process("ب", "ar"))
     }
 
     @Test

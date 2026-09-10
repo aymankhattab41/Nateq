@@ -181,6 +181,13 @@
 <string name="power_saver_battery_threshold_label">Power saver threshold (%)</string>
 <string name="power_saver_mode_enabled">Power saver: reduce time announcements when the battery is low</string>
 <string name="preview_stop">Stop</string>
+<string name="proximity_silence_enabled">Silence when covering the device</string>
+<string name="proximity_silence_summary">Covering the proximity sensor (hand or pocket) during an announcement stops speech immediately</string>
+<string name="punctuation_level_all">All</string>
+<string name="punctuation_level_none">None</string>
+<string name="punctuation_level_some">Some</string>
+<string name="punctuation_reading_level">Punctuation reading level</string>
+<string name="punctuation_reading_level_summary">When punctuation marks and symbols are spoken in texts</string>
 <string name="repeat_3">3 times</string>
 <string name="repeat_4">4 times</string>
 <string name="repeat_5">5 times</string>
@@ -223,15 +230,21 @@
 <string name="section_device_health">Device health</string>
 <string name="section_emoji_reading">Emoji pronunciation</string>
 <string name="section_general_settings">General Settings</string>
+<string name="section_instant_silence">Instant silence</string>
 <string name="section_notification_reading">Notification reading</string>
 <string name="section_number_reading">Number reading</string>
 <string name="section_opened">Opened section: %1$s</string>
 <string name="section_pronunciation_dict">Pronunciation Dictionary</string>
 <string name="section_sms_reading">Read incoming messages</string>
+<string name="section_text_reading">Text reading</string>
 <string name="section_time_announcement">Time Announcement</string>
 <string name="section_voice_selection">Voice Selection</string>
 <string name="set_default_engine">Make Lord TTS the default speech engine</string>
 <string name="set_default_engine_hint">Choose Lord TTS from the engine list, then tap its settings icon to set its preferred language</string>
+<string name="shake_to_stop_enabled">Shake to stop speech</string>
+<string name="shake_to_stop_summary">Shaking the device during a long announcement stops speech immediately</string>
+<string name="smart_spelling_enabled">Smart spelling and diacritics</string>
+<string name="smart_spelling_summary">Speak single letters with their diacritics (e.g. baa fathah) and NATO names for Latin letters (A - Alpha)</string>
 <string name="sms_announcement_template_hint">Message reading template</string>
 <string name="sms_announcement_template_placeholder" formatted="false">Use {name} for the sender and {message} for the message — leave empty for the default phrase</string>
 <string name="sms_mode_full">Enabled</string>
@@ -253,6 +266,7 @@
 <string name="spinner_caller_interval_content">Time interval between repeats (seconds)</string>
 <string name="spinner_caller_repeat_content">Number of repeats</string>
 <string name="spinner_number_reading_mode_content">Number reading mode</string>
+<string name="spinner_punctuation_level_content">Punctuation reading level</string>
 <string name="spinner_sms_reading_mode_content">Message reading mode</string>
 <string name="spinner_sms_reading_voice_content">Message reading voice</string>
 <string name="spinner_time_format_content">Time announcement format</string>
@@ -316,5 +330,5 @@
 <string name="time_quiet_start_for_day">%1$s, quiet start</string>
 <string name="time_quiet_end_for_day">%1$s, quiet end</string>
 <string name="changelog_title">"What's New"</string>
-<string name="changelog_text">Version %1$s\n• Settings reorganized into four logical groups\n• Caller name and battery/charging announcements\n• Accessibility improvements for screen readers</string>
+<string name="changelog_text">Version %1$s\n• Settings reorganized into four logical groups\n• Caller name and battery/charging announcements\n• Accessibility improvements for screen readers\n• Punctuation reading levels (None / Some / All)\n• Smart spelling with letter names in TalkBack character navigation\n• Diacritics pronunciation (fatha, damma, kasra, shadda, tanween)\n• Instant silence by shaking or covering the proximity sensor while speaking</string>
 </resources>

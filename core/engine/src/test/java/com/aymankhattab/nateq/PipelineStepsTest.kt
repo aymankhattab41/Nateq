@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq
 
+import com.aymankhattab.nateq.core.engine.PunctuationLevels
 import com.aymankhattab.nateq.engine.pipeline.AmountParser
 import com.aymankhattab.nateq.engine.pipeline.CleanupStep
 import com.aymankhattab.nateq.engine.pipeline.CurrencyStep
@@ -8,6 +9,7 @@ import com.aymankhattab.nateq.engine.pipeline.EmojiStripStep
 import com.aymankhattab.nateq.engine.pipeline.NumberStep
 import com.aymankhattab.nateq.engine.pipeline.NumberWordsConverter
 import com.aymankhattab.nateq.engine.pipeline.PhoneNumberStep
+import com.aymankhattab.nateq.engine.pipeline.PunctuationStep
 import com.aymankhattab.nateq.engine.pipeline.RomanNumeralStep
 import com.aymankhattab.nateq.engine.pipeline.SymbolStep
 import com.aymankhattab.nateq.engine.pipeline.UnitStep
@@ -540,10 +542,13 @@ class PipelineStepsTest {
     fun symbol_percentAndComparisons_notGlued() {
         // الادعاء: استبدال «%» بلا مسافات يلصق الكلمات («خمسونبالمئة») — والجذر
         // نفسه يصيب بقية الرموز («5>3» ← «5أكبر من3»). المسافات الطرفية
-        // تُنظَّف في CleanupStep في المسار الكامل.
-        val percent = CleanupStep.apply(SymbolStep.apply("خمسون%"))
+        // تُنظَّف في CleanupStep في المسار الكامل. النطق بالمئة من مسؤولية
+        // PunctuationStep (مستوى «البعض» الافتراضي) لا SymbolStep.
+        val some = PunctuationStep { PunctuationLevels.SOME }
+        val percent = CleanupStep.apply(some.apply("خمسون%"))
         assertEquals("خمسون بالمئة", percent)
-        assertEquals("25 بالمئة", CleanupStep.apply(SymbolStep.apply("25%")))
+        assertEquals("25 بالمئة", CleanupStep.apply(some.apply("25%")))
+        assertEquals("25%", SymbolStep.apply("25%"))
         assertEquals("5 أكبر من 3", SymbolStep.apply("5>3"))
         assertEquals("37 درجة", CleanupStep.apply(SymbolStep.apply("37°")))
     }

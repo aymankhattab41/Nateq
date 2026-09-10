@@ -91,6 +91,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private lateinit var generalSection: GeneralSettingsController
     private lateinit var numberSection: NumberReadingController
     private lateinit var deviceHealthSection: DeviceHealthController
+    private lateinit var textReadingSection: TextReadingController
+    private lateinit var instantSilenceSection: InstantSilenceController
 
     // مفتاح تبديل لغة التطبيق (أسفل الشاشة)
     private lateinit var btnToggleLanguage:
@@ -479,6 +481,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             this, settings, { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
         deviceHealthSection = DeviceHealthController(
+            this, settings, { accordion.updateSectionStatuses() }
+        ).apply { setup(view) }
+        textReadingSection = TextReadingController(
+            this, settings, { accordion.updateSectionStatuses() }
+        ).apply { setup(view) }
+        instantSilenceSection = InstantSilenceController(
             this, settings, { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
         setupLanguageToggle()
@@ -1308,6 +1316,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         generalSection.setup(v)
         numberSection.setup(v)
         deviceHealthSection.setup(v)
+        textReadingSection.setup(v)
+        instantSilenceSection.setup(v)
         rvCategories.adapter?.notifyDataSetChanged()
         refreshDictAdapter()
         accordion.updateSectionStatuses()

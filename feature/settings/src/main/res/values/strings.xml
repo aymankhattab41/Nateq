@@ -185,6 +185,13 @@
 <string name="power_saver_battery_threshold_label">عتبة توفير الطاقة (%)</string>
 <string name="power_saver_mode_enabled">وضع توفير الطاقة: تقليل إعلان الوقت عند انخفاض البطارية</string>
 <string name="preview_stop">إيقاف</string>
+<string name="proximity_silence_enabled">الصمت عند تغطية الجهاز</string>
+<string name="proximity_silence_summary">تغطية مستشعر القرب (يد أو جيب) أثناء الإعلان توقف النطق فوراً</string>
+<string name="punctuation_level_all">الكل</string>
+<string name="punctuation_level_none">لا شيء</string>
+<string name="punctuation_level_some">البعض</string>
+<string name="punctuation_reading_level">مستوى نطق علامات الترقيم</string>
+<string name="punctuation_reading_level_summary">متى تُنطق الرموز وعلامات الترقيم في النصوص</string>
 <string name="repeat_3">3 مرات</string>
 <string name="repeat_4">4 مرات</string>
 <string name="repeat_5">5 مرات</string>
@@ -227,15 +234,21 @@
 <string name="section_device_health">صحة الجهاز</string>
 <string name="section_emoji_reading">نطق الإيموجي</string>
 <string name="section_general_settings">إعدادات عامة</string>
+<string name="section_instant_silence">الإسكات الفوري</string>
 <string name="section_notification_reading">قراءة الإشعارات بالصوت</string>
 <string name="section_number_reading">نطق الأرقام</string>
 <string name="section_opened">فُتح قسم: %1$s</string>
 <string name="section_pronunciation_dict">قاموس النطق</string>
 <string name="section_sms_reading">قراءة الرسائل الواردة</string>
+<string name="section_text_reading">قراءة النصوص</string>
 <string name="section_time_announcement">إعلان الوقت</string>
 <string name="section_voice_selection">اختيار الأصوات</string>
 <string name="set_default_engine">جعل Lord TTS المحرك الافتراضي للنطق</string>
 <string name="set_default_engine_hint">اختر Lord TTS من قائمة المحركات ثم اضغط أيقونة الإعدادات بجانبه لاختيار لغته المفضلة</string>
+<string name="shake_to_stop_enabled">إيقاف النطق بهز الجهاز</string>
+<string name="shake_to_stop_summary">هز الجهاز أثناء الإعلان الطويل يوقف النطق فوراً</string>
+<string name="smart_spelling_enabled">التهجئة الذكية ونطق التشكيل</string>
+<string name="smart_spelling_summary">نطق الحرف المفرد مع حركاته (مثل: باء مفتوحة) ومسميات NATO للحروف اللاتينية (A - Alpha)</string>
 <string name="sms_announcement_template_hint">قالب قراءة الرسائل</string>
 <string name="sms_announcement_template_placeholder" formatted="false">استخدم {name} للمرسل و{message} للرسالة — اتركه فارغاً للنطق الافتراضي</string>
 <string name="sms_mode_full">مفعل</string>
@@ -257,6 +270,7 @@
 <string name="spinner_caller_interval_content">الفاصل الزمني بين التكرارات (بالثواني)</string>
 <string name="spinner_caller_repeat_content">عدد مرات التكرار</string>
 <string name="spinner_number_reading_mode_content">طريقة نطق الأرقام</string>
+<string name="spinner_punctuation_level_content">مستوى نطق علامات الترقيم</string>
 <string name="spinner_sms_reading_mode_content">وضع قراءة الرسائل</string>
 <string name="spinner_sms_reading_voice_content">صوت نطق الرسائل</string>
 <string name="spinner_time_format_content">تنسيق إعلان الوقت</string>
@@ -322,5 +336,5 @@
 <string name="time_quiet_start_for_day">%1$s، بداية الهدوء</string>
 <string name="time_quiet_end_for_day">%1$s، نهاية الهدوء</string>
 <string name="changelog_title">آخر التحديثات</string>
-<string name="changelog_text">الإصدار %1$s\n• إعادة تنظيم الإعدادات إلى أربع مجموعات منطقية\n• نطق اسم المتصل وإعلان البطارية وحالة الشحن\n• تحسينات إمكانية الوصول لقراءة الشاشة</string>
+<string name="changelog_text">الإصدار %1$s\n• إعادة تنظيم الإعدادات إلى أربع مجموعات منطقية\n• نطق اسم المتصل وإعلان البطارية وحالة الشحن\n• تحسينات إمكانية الوصول لقراءة الشاشة\n• مستويات نطق علامات الترقيم (لا شيء / البعض / الكل)\n• تهجئة ذكية بأسماء الحروف عند التنقل الحرفي في TalkBack\n• نطق التشكيل (فتحة، ضمة، كسرة، شدة، تنوين)\n• إسكات فوري بالهز أو بتغطية مستشعر التقارب أثناء النطق</string>
 </resources>

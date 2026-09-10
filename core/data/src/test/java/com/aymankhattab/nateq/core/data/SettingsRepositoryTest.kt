@@ -40,6 +40,45 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun textReading_defaultsAndRoundTrip() {
+        // مستوى الترقيم الافتراضي «البعض» حفاظاً على السلوك القائم،
+        // والتهجئة الذكية معطّلة حتى يفعّلها المستخدم صراحةً.
+        assertEquals(1, repo.getPunctuationLevel())
+        assertFalse(repo.isSmartSpellingEnabled())
+        repo.setPunctuationLevel(0)
+        assertEquals(0, repo.getPunctuationLevel())
+        repo.setPunctuationLevel(2)
+        assertEquals(2, repo.getPunctuationLevel())
+        repo.setSmartSpellingEnabled(true)
+        assertTrue(repo.isSmartSpellingEnabled())
+        repo.setSmartSpellingEnabled(false)
+        assertFalse(repo.isSmartSpellingEnabled())
+    }
+
+    @Test
+    fun punctuationLevel_invalid_clampedAtRepository() {
+        repo.setPunctuationLevel(9)
+        assertEquals(2, repo.getPunctuationLevel())
+        repo.setPunctuationLevel(-3)
+        assertEquals(0, repo.getPunctuationLevel())
+    }
+
+    @Test
+    fun instantSilence_defaultsOffAndRoundTrip() {
+        // مفاتيح الإسكات الفوري (هز/تقارب) معطّلة افتراضياً
+        assertFalse(repo.isShakeToStopEnabled())
+        assertFalse(repo.isProximitySilenceEnabled())
+        repo.setShakeToStopEnabled(true)
+        repo.setProximitySilenceEnabled(true)
+        assertTrue(repo.isShakeToStopEnabled())
+        assertTrue(repo.isProximitySilenceEnabled())
+        repo.setShakeToStopEnabled(false)
+        repo.setProximitySilenceEnabled(false)
+        assertFalse(repo.isShakeToStopEnabled())
+        assertFalse(repo.isProximitySilenceEnabled())
+    }
+
+    @Test
     fun dayQuietEnabled_defaultsTrue_andRoundTrip() {
         // الافتراضي «مفعّل» لكل الأيام حفاظاً على السلوك السابق
         assertTrue(repo.isDayQuietEnabled(Calendar.SUNDAY))
@@ -120,10 +159,16 @@ class SettingsRepositoryTest {
         repo.setNumberReadingMode(5)
         repo.setTime24Hour(true)
         repo.setHijriDateEnabled(true)
+        repo.setPunctuationLevel(0)
+        repo.setSmartSpellingEnabled(true)
+        repo.setShakeToStopEnabled(true)
         repo.resetAllToDefault()
         assertEquals(1, repo.getNumberReadingMode())
         assertFalse(repo.isTime24Hour())
         assertFalse(repo.isHijriDateEnabled())
+        assertEquals(1, repo.getPunctuationLevel())
+        assertFalse(repo.isSmartSpellingEnabled())
+        assertFalse(repo.isShakeToStopEnabled())
     }
 
     @Test

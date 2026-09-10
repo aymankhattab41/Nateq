@@ -143,6 +143,39 @@ class AnnouncementSpeaker(
         shutdownSafely()
     }
 
+    /** رصد الإسكات الفوري (هز/تقارب) أثناء النطق الجاري — معطّل افتراضياً
+     *  حتى يفعّل المستخدم أحد المفتاحين في الإعدادات. */
+    private var interruptionSensors: InterruptionSensors? = null
+
+    /** بدء رصد الهز/التقارب قبل إرسال أول جزء في دورة النطق — يقرأ مفاتيح
+     *  الإسكات الفوري من الإعدادات لحظياً، ولا يسجّل شيئاً إلا إذا فُعّل
+     *  أحدهما وجهاز المستخدم يملك مستشعره (آمن للتكرار/Failed هذا لا شيء). */
+    private fun startInterruptionMonitoring() {
+        if (interruptionSensors != null) return
+        val settings = runCatching {
+            (appContext as? AnnouncementAppContext)?.settingsRepository
+                ?: SettingsRepository(appContext)
+        }.getOrNull() ?: return
+        val shake = runCatching { settings.isShakeToStopEnabled() }
+            .getOrDefault(false)
+        val proximity = runCatching { settings.isProximitySilenceEnabled() }
+            .getOrDefault(false)
+        if (!shake && !proximity) return
+        val sensors = InterruptionSensors(
+            shakeEnabled = { shake },
+            proximityEnabled = { proximity },
+            onInterrupt = { stop() }
+        )
+        interruptionSensors = sensors
+        sensors.start(appContext)
+    }
+
+    /** إيقاف رصد الهز/التقارب — يستدعى عند اكتمال/فشل النطق أو إيقافه. */
+    private fun stopInterruptionMonitoring() {
+        interruptionSensors?.stop()
+        interruptionSensors = null
+    }
+
     /**
      * يهيّئ المحرك مرة واحدة؛ يعيد true عند الجاهزية.
      * يمنع سباق التهيئة المزدوج (Single-flight): الاستدعاءات المتزامنة أثناء
@@ -224,6 +257,7 @@ class AnnouncementSpeaker(
                         if (utteranceId != null
                             && utteranceId == lastQueuedUtteranceId
                         ) {
+                            stopInterruptionMonitoring()
                             releaseAudioFocus()
                             onSpeechComplete?.invoke()
                         }
@@ -235,6 +269,7 @@ class AnnouncementSpeaker(
                         if (utteranceId != null
                             && utteranceId == lastQueuedUtteranceId
                         ) {
+                            stopInterruptionMonitoring()
                             releaseAudioFocus()
                             onSpeechComplete?.invoke()
                         }
@@ -440,6 +475,7 @@ class AnnouncementSpeaker(
         parts: List<SpeechPart>?,
         attempt: Int
     ) {
+        startInterruptionMonitoring()
         val units = buildSpeakUnits(
             text, locale, speechRate, pitch, volume, emojiCfg, parts
         )
@@ -615,6 +651,7 @@ class AnnouncementSpeaker(
             // استنفاد المحاولات: تصريف الموارد حتى لا يبقى التركيز مكتوم الصوت
             // ومحرك مكسور "جاهزاً" للدورات القادمة.
             nowSpeaking = false
+            stopInterruptionMonitoring()
             releaseAudioFocus()
             shutdownSafely()
         }
@@ -622,6 +659,7 @@ class AnnouncementSpeaker(
 
     /** إيقاف أي نطق جارٍ وتحرير الموارد */
     fun stop() {
+        stopInterruptionMonitoring()
         tts?.stop()
         releaseAudioFocus()
         shutdownSafely()
@@ -633,6 +671,7 @@ class AnnouncementSpeaker(
      * التركيز، ويُغلق محرك TTS نهائياً (بند [7] — منع تسريب مؤقتات/محرك).
      */
     fun shutdown() {
+        stopInterruptionMonitoring()
         mainHandler.removeCallbacksAndMessages(null)
         tts?.stop()
         pendingFocusAction = null

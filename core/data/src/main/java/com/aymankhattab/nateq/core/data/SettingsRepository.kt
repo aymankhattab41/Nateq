@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
 import com.aymankhattab.nateq.core.data.VoicePrefsProvider
+import com.aymankhattab.nateq.core.engine.PunctuationLevels
 import com.aymankhattab.nateq.core.engine.SynthesisConfig
 import com.aymankhattab.nateq.engine.ConvertPreferencesCodec
 import com.aymankhattab.nateq.engine.LanguageSpeechPrefs
@@ -784,6 +785,41 @@ val masterKey = androidx.security.crypto.MasterKey
     fun setHijriDateEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("hijri_date", enabled).apply()
 
+    // ============ قراءة النصوص: الترقيم والتهجئة الذكية ============
+
+    /** مستوى نطق علامات الترقيم والرموز (0 لا شيء، 1 البعض، 2 الكل).
+     *  الافتراضي «البعض» حفاظاً على السلوك القائم للنطق بالرموز الشائعة. */
+    override fun getPunctuationLevel(): Int =
+        prefs.getInt("punctuation_level", PunctuationLevels.SOME)
+    fun setPunctuationLevel(level: Int) =
+        prefs.edit()
+            .putInt(
+                "punctuation_level",
+                level.coerceIn(PunctuationLevels.MIN, PunctuationLevels.MAX)
+            )
+            .apply()
+
+    /** التهجئة الذكية ونطق التشكيل عند التنقل الحرفي عبر TalkBack
+     *  (باء مفتوحة، A - Alpha). معطّلة افتراضياً. */
+    override fun isSmartSpellingEnabled(): Boolean =
+        prefs.getBoolean("smart_spelling_enabled", false)
+    fun setSmartSpellingEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("smart_spelling_enabled", enabled).apply()
+
+    // ============ الإسكات الفوري: الهز والتقارب ============
+
+    /** هز الجهاز أثناء النطق يوقفه فوراً. معطّل افتراضياً. */
+    fun isShakeToStopEnabled(): Boolean =
+        prefs.getBoolean("shake_to_stop_enabled", false)
+    fun setShakeToStopEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("shake_to_stop_enabled", enabled).apply()
+
+    /** تغطية الجهاز (يد/جيب) أثناء النطق توقفه فوراً. معطّل افتراضياً. */
+    fun isProximitySilenceEnabled(): Boolean =
+        prefs.getBoolean("proximity_silence_enabled", false)
+    fun setProximitySilenceEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("proximity_silence_enabled", enabled).apply()
+
     // ============ إعدادات عامة ============
 
     /** السرعة العامة الافتراضية */
@@ -1247,6 +1283,8 @@ val masterKey = androidx.security.crypto.MasterKey
         key == "time_announcement_interval" ->
             if (value in intArrayOf(15, 30, 45, 60)) value else 30
         key == "number_reading_mode" -> value.coerceIn(1, 8)
+        key == "punctuation_level" ->
+            value.coerceIn(PunctuationLevels.MIN, PunctuationLevels.MAX)
         key == "caller_announcement_repeat" -> value.coerceIn(1, 5)
         key == "caller_announcement_interval_seconds" -> value.coerceIn(1, 10)
         key == "power_saver_battery_threshold" -> value.coerceIn(0, 100)

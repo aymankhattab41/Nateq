@@ -447,7 +447,102 @@
                     android:importantForAccessibility="no" />
             </LinearLayout>
 
-        </LinearLayout>        <View
+        </LinearLayout>
+
+        <!-- بطاقة «الإسكات الفوري» (المجموعة 1: الإعلانات والتنبيهات) -->
+        <LinearLayout
+            android:id="@+id/ll_instant_silence_header"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:minHeight="48dp"
+            android:padding="4dp"
+            android:background="?attr/selectableItemBackground"
+            android:focusable="true"
+            android:accessibilityHeading="true"
+            android:importantForAccessibility="yes">
+
+            <TextView
+                android:id="@+id/tv_instant_silence_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:importantForAccessibility="no"
+                android:text="@string/section_instant_silence"
+                android:textAppearance="?attr/textAppearanceHeadline6" />
+
+            <TextView
+                android:id="@+id/tv_instant_silence_arrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="▼"
+                android:textSize="14sp"
+                android:paddingStart="8dp"
+                android:importantForAccessibility="no" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tv_instant_silence_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textAppearance="?attr/textAppearanceCaption"
+            android:textColor="@color/text_secondary"
+            android:importantForAccessibility="no" />
+
+        <LinearLayout
+            android:id="@+id/ll_instant_silence_settings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="12dp"
+            android:visibility="gone">
+
+            <!-- مفتاح هز الجهاز -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_shake_to_stop"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/shake_to_stop_enabled"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/shake_to_stop_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:importantForAccessibility="no" />
+
+            <!-- مفتاح الصمت عند التغطية -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_proximity_silence"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/proximity_silence_enabled"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/proximity_silence_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:importantForAccessibility="no" />
+
+        </LinearLayout>
+
+        <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginTop="16dp"
@@ -1103,7 +1198,112 @@
 
         </LinearLayout>
 
-        </LinearLayout>        <View
+        </LinearLayout>
+
+        <!-- بطاقة «قراءة النصوص» (المجموعة 2: النصوص والأرقام) -->
+        <LinearLayout
+            android:id="@+id/ll_text_reading_header"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:minHeight="48dp"
+            android:padding="4dp"
+            android:background="?attr/selectableItemBackground"
+            android:focusable="true"
+            android:accessibilityHeading="true"
+            android:importantForAccessibility="yes">
+
+            <TextView
+                android:id="@+id/tv_text_reading_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:importantForAccessibility="no"
+                android:text="@string/section_text_reading"
+                android:textAppearance="?attr/textAppearanceHeadline6" />
+
+            <TextView
+                android:id="@+id/tv_text_reading_arrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="▼"
+                android:textSize="14sp"
+                android:paddingStart="8dp"
+                android:importantForAccessibility="no" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tv_text_reading_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textAppearance="?attr/textAppearanceCaption"
+            android:textColor="@color/text_secondary"
+            android:importantForAccessibility="no" />
+
+        <LinearLayout
+            android:id="@+id/ll_text_reading_settings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="12dp"
+            android:visibility="gone">
+
+            <!-- مستوى نطق علامات الترقيم -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/punctuation_reading_level"
+                android:textAppearance="?attr/textAppearanceSubtitle1"
+                android:importantForAccessibility="yes" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="@string/punctuation_reading_level_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:importantForAccessibility="no" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:hint="@string/punctuation_reading_level">
+                <androidx.appcompat.widget.AppCompatSpinner
+                    android:id="@+id/spinner_punctuation_level"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/spinner_punctuation_level_content" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- مفتاح التهجئة الذكية ونطق التشكيل -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_smart_spelling"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/smart_spelling_enabled"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/smart_spelling_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:importantForAccessibility="no" />
+
+        </LinearLayout>
+
+        <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginTop="16dp"

@@ -35,6 +35,24 @@
   (ببنود نقاط مختصرة للجديد الحالي) دون حذف التحسينات السابقة؛ رفع رقم الإصدار
   يبقى حصراً عبر `scripts/release.ps1`.
 
+### ميزات نطق النصوص والفوارق المعمارية
+- **مستويات نطق علامات الترقيم** (`punctuation_level`، افتراضياً SOME=1):
+  `PunctuationLevels` (public في `core:engine`) يعرّف NONE/SOME/ALL؛
+  `PunctuationStep` في المسار الثقيل بين `SymbolStep` و`NumberStep` فينطق
+  `@ # % & ٪ / + =` المعزولة (SOME) ويضيف `() ; – — …` (ALL)، وNONE يعيد
+  النص كما هو. التحويل الرقمي (`NumberStep`) يعمل مستقلاً عن المستوى دائماً.
+- **التهجئة الذكية** (`smart_spelling`، افتراضياً false): عند نطق حرف واحد
+  (التنقل الحرفي في TalkBack) ينطق اسم الحرف العربي/اللاتيني (NATO + Capital)،
+  ومع التشكيل: الشدة أولاً ثم الحركة ثم التنوين. تخدم كحروف-مفردة فقط.
+- **الإسكات الفوري** (`shake_to_stop` / `proximity_silence`، افتراضياً false):
+  `InterruptionSensors` في `core:audio` يُسجّل الهزاز/مستشعر التقارب أثناء النطق
+  (يبدأ/يتوقف مع `AnnouncementSpeaker`) فيوقف النطق. بطاقة الإعداد في
+  `feature/settings/.../InstantSilenceController.kt`.
+- **مفاتيح الإعدادات**: `punctuation_level` و`smart_spelling` و`shake_to_stop`
+  و`proximity_silence` تُصدَّر تلقائياً في `exportSettings` وتُصفَّر بـ
+  `resetAllToDefault`؛ التثبيت في `SettingsRepository.sanitize` (التهجئة/المستشعرات
+  توضع false والقيمة غير الصالحة للمستوى تُثبّت على SOME).
+
 ### الاختبارات الآلية (JUnit + Robolectric)
 - **مطلوبة قبل أي commit:** بعد تعديل المنطق شغّل
   `.\gradlew.bat :app:testDebugUnitTest --console=plain`.

@@ -406,6 +406,9 @@ internal class SettingsAccordionController(
         val sms = fragment.getString(R.string.section_sms_reading)
         val general = fragment.getString(R.string.section_general_settings)
         val deviceHealth = fragment.getString(R.string.section_device_health)
+        val textReading = fragment.getString(R.string.section_text_reading)
+        val instantSilence =
+            fragment.getString(R.string.section_instant_silence)
 
         // مجموعة «المحرك والأصوات»: صناديق اختيار المحرك/التحويل التلقائي
         // (إعدادات عامة) / فئات الأصوات
@@ -467,6 +470,14 @@ internal class SettingsAccordionController(
             R.id.ll_notification_reading_settings,
             notif, 1
         )
+        accordionEntry(
+            view,
+            R.id.ll_instant_silence_header,
+            R.id.tv_instant_silence_arrow,
+            R.id.tv_instant_silence_status,
+            R.id.ll_instant_silence_settings,
+            instantSilence, 1
+        )
 
         // مجموعة «النصوص والأرقام»: قراءة الأرقام / القاموس / نطق الإيموجي /
         // صحة الجهاز
@@ -474,6 +485,11 @@ internal class SettingsAccordionController(
             view, R.id.ll_number_reading_header, R.id.tv_number_reading_arrow,
             R.id.tv_number_reading_status, R.id.ll_numbers_content,
             num, 2
+        )
+        accordionEntry(
+            view, R.id.ll_text_reading_header, R.id.tv_text_reading_arrow,
+            R.id.tv_text_reading_status, R.id.ll_text_reading_settings,
+            textReading, 2
         )
         accordionEntry(
             view, R.id.ll_dict_header, R.id.tv_dict_arrow,
@@ -510,6 +526,14 @@ internal class SettingsAccordionController(
         setSectionStatus(R.id.ll_categories_content, buildCategoriesStatus())
         setSectionStatus(R.id.ll_time_announcement_settings, buildTimeStatus())
         setSectionStatus(R.id.ll_numbers_content, buildNumberStatus())
+        setSectionStatus(
+            R.id.ll_text_reading_settings,
+            buildTextReadingStatus()
+        )
+        setSectionStatus(
+            R.id.ll_instant_silence_settings,
+            buildInstantSilenceStatus()
+        )
         setSectionStatus(
             R.id.ll_battery_announcement_settings,
             buildBatteryStatus()
@@ -619,6 +643,57 @@ internal class SettingsAccordionController(
             }
         )
         return fragment.getString(R.string.number_reading_mode) + ": " + label
+    }
+
+    private fun buildTextReadingStatus(): String {
+        val level = runCatching { settings.getPunctuationLevel() }
+            .getOrDefault(1).coerceIn(0, 2)
+        val label = fragment.getString(
+            when (level) {
+                0 -> R.string.punctuation_level_none
+                1 -> R.string.punctuation_level_some
+                else -> R.string.punctuation_level_all
+            }
+        )
+        val spelling = runCatching { settings.isSmartSpellingEnabled() }
+            .getOrDefault(false)
+        val spellingLabel = if (spelling) {
+            fragment.getString(R.string.toggle_on)
+        } else {
+            fragment.getString(R.string.toggle_off)
+        }
+        return buildString {
+            append(fragment.getString(R.string.punctuation_reading_level))
+                .append(": ").append(label)
+            append("، ")
+                .append(fragment.getString(R.string.smart_spelling_enabled))
+            append(": ").append(spellingLabel)
+        }
+    }
+
+    private fun buildInstantSilenceStatus(): String {
+        val shake = runCatching { settings.isShakeToStopEnabled() }
+            .getOrDefault(false)
+        val proximity = runCatching {
+            settings.isProximitySilenceEnabled()
+        }.getOrDefault(false)
+        val shakeLabel = if (shake) {
+            fragment.getString(R.string.toggle_on)
+        } else {
+            fragment.getString(R.string.toggle_off)
+        }
+        val proximityLabel = if (proximity) {
+            fragment.getString(R.string.toggle_on)
+        } else {
+            fragment.getString(R.string.toggle_off)
+        }
+        return buildString {
+            append(fragment.getString(R.string.shake_to_stop_enabled))
+                .append(": ").append(shakeLabel)
+            append("، ")
+                .append(fragment.getString(R.string.proximity_silence_enabled))
+            append(": ").append(proximityLabel)
+        }
     }
 
     private fun buildBatteryStatus(): String {

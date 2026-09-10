@@ -12,4 +12,10 @@ interface SynthesisConfig {
 
     /** تفعيل نطق أسماء الإيموجي قبل إزالتها من النص. */
     fun isEmojiPronunciationEnabled(): Boolean
+
+    /** مستوى نطق علامات الترقيم والرموز: 0 لا شيء، 1 البعض، 2 الكل. */
+    fun getPunctuationLevel(): Int
+
+    /** تفعيل التهجئة الذكية ونطق التشكيل عند التنقل الحرفي في TalkBack. */
+    fun isSmartSpellingEnabled(): Boolean
 }
