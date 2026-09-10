@@ -34,6 +34,11 @@
 <string name="battery_announcement_rate">Battery speech rate</string>
 <string name="battery_announcement_voice">Battery speech voice</string>
 <string name="battery_announcement_volume">Battery speech volume</string>
+<string name="battery_cue_mode">Battery sound cue</string>
+<string name="battery_cue_mode_narration_cue">Speech &amp; cue</string>
+<string name="battery_cue_mode_narration_only">Speech only</string>
+<string name="battery_cue_mode_cue_only">Cue only</string>
+<string name="spinner_battery_cue_mode_content">Choose battery sound cue</string>
 <string name="battery_connected">Charger connected</string>
 <string name="battery_disconnected">Charger disconnected</string>
 <string name="battery_level_contentdesc">Battery level %1$d percent</string>
@@ -78,6 +83,14 @@
 <string name="check_updates_confirm_yes">Yes</string>
 <string name="check_updates_confirm_no">No</string>
 <string name="clock_widget_enabled">Clock widget on the home screen</string>
+<string name="time_chime_enabled">Hourly chime</string>
+<string name="time_chime_sound">Chime sound</string>
+<string name="time_chime_sound_classic_bell">Classic bell</string>
+<string name="time_chime_sound_digital_chime">Digital chime</string>
+<string name="time_chime_sound_soft_ding">Soft ding</string>
+<string name="spinner_time_chime_sound_content">Choose hourly chime sound</string>
+<string name="time_chime_volume">Chime volume</string>
+<string name="time_chime_volume_desc">Hourly chime volume</string>
 <string name="collapse">Collapse</string>
 <string name="contact_developer">Contact the developer</string>
 <string name="contact_developer_desc">Open the official Telegram chat to reach the developer</string>
@@ -330,5 +343,5 @@
 <string name="time_quiet_start_for_day">%1$s, quiet start</string>
 <string name="time_quiet_end_for_day">%1$s, quiet end</string>
 <string name="changelog_title">"What's New"</string>
-<string name="changelog_text">Version %1$s\n• Settings reorganized into four logical groups\n• Caller name and battery/charging announcements\n• Accessibility improvements for screen readers\n• Punctuation reading levels (None / Some / All)\n• Smart spelling with letter names in TalkBack character navigation\n• Diacritics pronunciation (fatha, damma, kasra, shadda, tanween)\n• Instant silence by shaking or covering the proximity sensor while speaking</string>
+<string name="changelog_text">Version %1$s\n• Settings reorganized into four logical groups\n• Caller name and battery/charging announcements\n• Accessibility improvements for screen readers\n• Punctuation reading levels (None / Some / All)\n• Smart spelling with letter names in TalkBack character navigation\n• Diacritics pronunciation (fatha, damma, kasra, shadda, tanween)\n• Instant silence by shaking or covering the proximity sensor while speaking\n• Hourly chime (three tones) and battery sound cues (charging/disconnected/full/low)</string>
 </resources>

@@ -917,6 +917,54 @@ val masterKey = androidx.security.crypto.MasterKey
             .putFloat("battery_announcement_volume", volume.coerceIn(0f, 1f))
             .apply()
 
+    // ============ مؤثرات الصوت (رنة الساعة + نغمات البطارية) ============
+
+    /** نغمات الرنة المتاحة لرنة رأس الساعة. */
+    private fun validTimeChimeSounds(): Set<String> = setOf(
+        "classic_bell", "digital_chime", "soft_ding"
+    )
+
+    /** تفعيل/إيقاف رنة رأس الساعة (تسبق نطق الوقت عند الدقيقة صفر). */
+    fun isTimeChimeEnabled(): Boolean =
+        prefs.getBoolean("time_chime_enabled", true)
+    fun setTimeChimeEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("time_chime_enabled", enabled).apply()
+
+    /** اسم الرنة المختارة: classic_bell | digital_chime | soft_ding. */
+    fun getTimeChimeSound(): String {
+        val value = prefs.getString("time_chime_sound", "classic_bell")
+            ?: "classic_bell"
+        return value.takeIf { it in validTimeChimeSounds() }
+            ?: "classic_bell"
+    }
+    fun setTimeChimeSound(sound: String) =
+        prefs.edit()
+            .putString(
+                "time_chime_sound",
+                sound.takeIf { it in validTimeChimeSounds() }
+                    ?: "classic_bell"
+            )
+            .apply()
+
+    /** مستوى صوت رنة الساعة 0.1..1.0. */
+    fun getTimeChimeVolume(): Float =
+        prefs.getFloat("time_chime_volume", 0.5f)
+            .coerceIn(0.1f, 1f)
+    fun setTimeChimeVolume(volume: Float) =
+        prefs.edit()
+            .putFloat("time_chime_volume", volume.coerceIn(0.1f, 1f))
+            .apply()
+
+    /**
+     * وضع مؤثر البطارية: 0=نطق ومؤثر، 1=نطق فقط، 2=مؤثر فقط.
+     */
+    fun getBatterySoundCueMode(): Int =
+        prefs.getInt("battery_sound_cue_mode", 0).coerceIn(0, 2)
+    fun setBatterySoundCueMode(mode: Int) =
+        prefs.edit()
+            .putInt("battery_sound_cue_mode", mode.coerceIn(0, 2))
+            .apply()
+
     // ============ إعدادات إعلان اسم المتصل ============
 
     /** تفعيل/إيقاف إعلان اسم المتصل */
@@ -1288,6 +1336,18 @@ val masterKey = androidx.security.crypto.MasterKey
         key == "caller_announcement_repeat" -> value.coerceIn(1, 5)
         key == "caller_announcement_interval_seconds" -> value.coerceIn(1, 10)
         key == "power_saver_battery_threshold" -> value.coerceIn(0, 100)
+        key == "battery_sound_cue_mode" -> value.coerceIn(0, 2)
+        else -> value
+    }
+
+    /** تعميل قيمة نصية (رنة الساعة تقبل الأسماء الثلاثة فقط). */
+    private fun sanitizeString(
+        key: String,
+        value: String
+    ): String = when (key) {
+        "time_chime_sound" -> value.takeIf {
+            it in validTimeChimeSounds()
+        } ?: "classic_bell"
         else -> value
     }
 
@@ -1297,6 +1357,7 @@ val masterKey = androidx.security.crypto.MasterKey
             key.contains("_pitch") -> value.coerceIn(0f, 2f)
         key.contains("_volume") ||
             key == "default_volume" -> value.coerceIn(0f, 1f)
+        key == "time_chime_volume" -> value.coerceIn(0.1f, 1f)
         else -> value
     }
 
@@ -1347,7 +1408,8 @@ val masterKey = androidx.security.crypto.MasterKey
                         meaningful++
                     }
                     is String -> {
-                        ops.add(Op { it.putString(key, value) })
+                        val v = sanitizeString(key, value)
+                        ops.add(Op { it.putString(key, v) })
                         meaningful++
                     }
                     is Set<*> -> {

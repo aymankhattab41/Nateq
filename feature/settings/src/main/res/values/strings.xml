@@ -35,6 +35,11 @@
 <string name="battery_announcement_rate">سرعة نطق البطارية</string>
 <string name="battery_announcement_voice">صوت نطق البطارية</string>
 <string name="battery_announcement_volume">مستوى صوت البطارية</string>
+<string name="battery_cue_mode">مؤثر صوت البطارية</string>
+<string name="battery_cue_mode_narration_cue">نطق ومؤثر</string>
+<string name="battery_cue_mode_narration_only">نطق فقط</string>
+<string name="battery_cue_mode_cue_only">مؤثر فقط</string>
+<string name="spinner_battery_cue_mode_content">اختيار مؤثر صوت البطارية</string>
 <string name="battery_connected">تم توصيل الشاحن</string>
 <string name="battery_disconnected">تم فصل الشاحن</string>
 <string name="battery_level_contentdesc">نسبة البطارية %1$d بالمئة</string>
@@ -80,6 +85,14 @@
 <string name="check_updates_confirm_yes">نعم</string>
 <string name="check_updates_confirm_no">لا</string>
 <string name="clock_widget_enabled">أداة الساعة على الشاشة الرئيسية</string>
+<string name="time_chime_enabled">رنة رأس الساعة</string>
+<string name="time_chime_sound">نوع الرنة</string>
+<string name="time_chime_sound_classic_bell">جرس كلاسيكي</string>
+<string name="time_chime_sound_digital_chime">نغمة رقمية</string>
+<string name="time_chime_sound_soft_ding">رنة ناعمة</string>
+<string name="spinner_time_chime_sound_content">اختيار نوع رنة الساعة</string>
+<string name="time_chime_volume">مستوى صوت الرنة</string>
+<string name="time_chime_volume_desc">مستوى صوت رنة رأس الساعة</string>
 <string name="collapse">إخفاء المحتوى</string>
 <string name="contact_developer">راسل المطور</string>
 <string name="contact_developer_desc">فتح محادثة تليجرام الرسمية للتواصل مع المطوّر</string>
@@ -336,5 +349,5 @@
 <string name="time_quiet_start_for_day">%1$s، بداية الهدوء</string>
 <string name="time_quiet_end_for_day">%1$s، نهاية الهدوء</string>
 <string name="changelog_title">آخر التحديثات</string>
-<string name="changelog_text">الإصدار %1$s\n• إعادة تنظيم الإعدادات إلى أربع مجموعات منطقية\n• نطق اسم المتصل وإعلان البطارية وحالة الشحن\n• تحسينات إمكانية الوصول لقراءة الشاشة\n• مستويات نطق علامات الترقيم (لا شيء / البعض / الكل)\n• تهجئة ذكية بأسماء الحروف عند التنقل الحرفي في TalkBack\n• نطق التشكيل (فتحة، ضمة، كسرة، شدة، تنوين)\n• إسكات فوري بالهز أو بتغطية مستشعر التقارب أثناء النطق</string>
+<string name="changelog_text">الإصدار %1$s\n• إعادة تنظيم الإعدادات إلى أربع مجموعات منطقية\n• نطق اسم المتصل وإعلان البطارية وحالة الشحن\n• تحسينات إمكانية الوصول لقراءة الشاشة\n• مستويات نطق علامات الترقيم (لا شيء / البعض / الكل)\n• تهجئة ذكية بأسماء الحروف عند التنقل الحرفي في TalkBack\n• نطق التشكيل (فتحة، ضمة، كسرة، شدة، تنوين)\n• إسكات فوري بالهز أو بتغطية مستشعر التقارب أثناء النطق\n• رنة رأس الساعة (ثلاث نغمات) ومؤثرات صوت البطارية (شحن/فصل/اكتمال/انخفاض)</string>
 </resources>

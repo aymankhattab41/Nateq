@@ -34,6 +34,7 @@ internal class BatteryAnnouncementController(
     private lateinit var tvBatteryRateValue: TextView
     private lateinit var seekBatteryVolume: SeekBar
     private lateinit var tvBatteryVolumeValue: TextView
+    private lateinit var spinnerBatteryCueMode: Spinner
     private lateinit var switchChargingComplete: SwitchMaterial
     private lateinit var switchChargingDisconnect: SwitchMaterial
     private lateinit var switchPowerSaver: SwitchMaterial
@@ -280,6 +281,40 @@ internal class BatteryAnnouncementController(
                 seekBar.announceCompat("${seekBar.progress}%")
             }
         })
+
+        // وضع مؤثر البطارية
+        spinnerBatteryCueMode =
+            view.findViewById(R.id.spinner_battery_cue_mode)
+        val cueModeLabels = listOf(
+            fragment.getString(R.string.battery_cue_mode_narration_cue),
+            fragment.getString(R.string.battery_cue_mode_narration_only),
+            fragment.getString(R.string.battery_cue_mode_cue_only)
+        )
+        spinnerBatteryCueMode.adapter =
+            fragment.simpleAdapter(cueModeLabels)
+        val savedCueMode =
+            runCatching { settings.getBatterySoundCueMode() }
+                .getOrDefault(0)
+        spinnerBatteryCueMode.setSelection(
+            savedCueMode.coerceIn(0, 2)
+        )
+        spinnerBatteryCueMode.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                runCatching {
+                    settings.setBatterySoundCueMode(position)
+                }
+            }
+
+            override fun onNothingSelected(
+                parent: AdapterView<*>?
+            ) {}
+        }
 
         // إعلان اكتمال الشحن (100%)
         switchChargingComplete.isChecked =

@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq.core.audio.announcement
+﻿package com.aymankhattab.nateq.core.audio.announcement
 
 import android.content.Context
 import com.aymankhattab.nateq.core.common.AppDispatchers
@@ -397,7 +397,8 @@ class TimeAnnouncementManager(
                     timeText, locale, speechRate, pitch, volume,
                     engineOverride = settings.getEngineForCategory(
                         SettingsRepository.VOICE_CATEGORY_TIME
-                    )
+                    ),
+                    cue = hourlyChimeCue()
                 )
             } catch (t: Throwable) {
                 android.util.Log.e("NATEQ_TTS", "announce time failed", t)
@@ -426,6 +427,26 @@ class TimeAnnouncementManager(
         }
 
         return voices.firstOrNull()
+    }
+
+    /**
+     * رنة رأس الساعة: تُبنى فقط عند حافة الساعة (الدقيقة صفر) وبتفعيل
+     * المستخدم. رنة رأس الساعة تتبع نطق الوقت نفسه في احترام ساعات الهدوء
+     * (المسار المجدول)، وتتجاوزها — مثل النطق — عند الطلب الصريح "أعلن الآن".
+     */
+    private fun hourlyChimeCue(): AudioCue? {
+        return try {
+            if (!settings.isTimeChimeEnabled()) return null
+            val minute = timeProvider.now().get(Calendar.MINUTE)
+            if (minute != 0) return null
+            AudioCue(
+                type = CueType.TIME_HOURLY,
+                soundName = settings.getTimeChimeSound(),
+                volume = settings.getTimeChimeVolume()
+            )
+        } catch (t: Throwable) {
+            null
+        }
     }
 
     /** تنسيق الوقت حسب الصيغة المختارة (طبيعي/رقمي) ولغة الصوت المحددة */

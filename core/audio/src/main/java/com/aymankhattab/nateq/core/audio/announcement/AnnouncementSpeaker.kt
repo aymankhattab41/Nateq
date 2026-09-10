@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq.core.audio.announcement
+﻿package com.aymankhattab.nateq.core.audio.announcement
 
 import android.content.Context
 import android.media.AudioAttributes
@@ -117,6 +117,10 @@ class AnnouncementSpeaker(
     // إن لم يتحرر التركيز أبداً.
     private var pendingFocusAction: (() -> Unit)? = null
     private var pendingFocusTimer: Runnable? = null
+
+    // عدّاد جيل النطق: يزداد في كل دورة speak وينفي مسارات مؤجلة
+    // من دورات سابقة — يمنع النطق القديم بعد stop()/speak جديد.
+    private val speechGeneration = java.util.concurrent.atomic.AtomicLong(0)
 
     private var tts: TextToSpeech? = null
     private var nowSpeaking = false
@@ -355,7 +359,8 @@ class AnnouncementSpeaker(
         speechRate: Float,
         pitch: Float,
         volume: Float,
-        engineOverride: String? = null
+        engineOverride: String? = null,
+        cue: AudioCue? = null
     ) {
         // إعدادات نطق الإيموجي تُحسم قبل طلب التركيز حتى تكون المقاطع جاهزة
         // للدورة (بلا قراءة متكررة للإعدادات عند كل عودة تركيز).
@@ -383,6 +388,13 @@ class AnnouncementSpeaker(
             Log.w(TAG, "scheduler service start failed", t)
         }
 
+        val gen = speechGeneration.incrementAndGet()
+        val speakAction = {
+            launchWithCue(
+                gen, text, locale, speechRate, pitch, volume,
+                emojiCfg, parts, engineOverride, cue
+            )
+        }
         // نتيجة منح التركيز تُحترم: على أندرويد 17 قد يُنبّه النظام بطلبٍ
         // مؤجل (DELAYED) أو مرفوض (FAILED) بدل المنح الفوري.
         when (requestAudioFocus()) {
@@ -391,12 +403,7 @@ class AnnouncementSpeaker(
                 // AUDIOFOCUS_GAIN ثم ننطق. مؤقّت الأمان يحرّر الإعلان ما دام
                 // التركيز قد تحرّر فعلاً (لا نطق أبداً والتركيز ما يزال محجوزاً
                 // لمشغّلٍ آخر — المكالمة الهاتفية أشهره — فيتداخل معه الصوت).
-                pendingFocusAction = {
-                    startSpeech(
-                        text, locale, speechRate, pitch, volume,
-                        emojiCfg, parts, engineOverride
-                    )
-                }
+                pendingFocusAction = speakAction
                 val timer = Runnable {
                     val action = pendingFocusAction
                     pendingFocusAction = null
@@ -424,17 +431,11 @@ class AnnouncementSpeaker(
                 Log.w(TAG,
                     "[Focus] FAILED — نطق بحسن نية" +
                     " (فشل حجز التركيز)")
-                startSpeech(
-                    text, locale, speechRate, pitch, volume,
-                    emojiCfg, parts, engineOverride
-                )
+                speakAction()
             }
             else ->
                 // AUDIOFOCUS_REQUEST_GRANTED: التركيز مُنح فوراً — ننطق مباشرة.
-                startSpeech(
-                    text, locale, speechRate, pitch, volume,
-                    emojiCfg, parts, engineOverride
-                )
+                speakAction()
         }
     }
 
@@ -474,6 +475,41 @@ class AnnouncementSpeaker(
         } catch (t: Throwable) {
             Log.w(TAG, "emoji config resolve failed", t)
             null
+        }
+    }
+
+    /**
+     * تشغيل المؤثر الصوتي إن وُجد ثم النطق؛ أو النطق مباشرة.
+     * يتحقق من عدم تقادم المسار (speechGeneration) لمنع
+     * النطق القديم بعد stop()/speak جديد.
+     */
+    private fun launchWithCue(
+        gen: Long,
+        text: String,
+        locale: Locale,
+        speechRate: Float,
+        pitch: Float,
+        volume: Float,
+        emojiCfg: EmojiSpeechConfig?,
+        parts: List<SpeechPart>?,
+        engineOverride: String?,
+        cue: AudioCue?
+    ) {
+        if (gen != speechGeneration.get()) return
+        if (cue == null) {
+            startSpeech(
+                text, locale, speechRate, pitch, volume,
+                emojiCfg, parts, engineOverride
+            )
+            return
+        }
+        AudioCuePlayer.getInstance(appContext).play(cue) { _ ->
+            if (gen == speechGeneration.get()) {
+                startSpeech(
+                    text, locale, speechRate, pitch, volume,
+                    emojiCfg, parts, engineOverride
+                )
+            }
         }
     }
 
@@ -702,10 +738,9 @@ class AnnouncementSpeaker(
 
     /** إيقاف أي نطق جارٍ وتحرير الموارد */
     fun stop() {
+        speechGeneration.incrementAndGet()
+        AudioCuePlayer.getInstance(appContext).stop()
         stopInterruptionMonitoring()
-        // إلغاء كل الموقّتات المعلّقة (تأجيل النطق 150ms + إعادة المحاولة
-        // 250ms + مؤقّت التركيز المؤجل) — كان تأخيرٌ معلّقٌ ينفجر منطقاً
-        // بعد الإيقاف فيُنطق نصٌ قديم على محركٍ مُغلق (بند [9]).
         mainHandler.removeCallbacksAndMessages(null)
         pendingFocusAction = null
         pendingFocusTimer?.let { mainHandler.removeCallbacks(it) }
@@ -722,6 +757,8 @@ class AnnouncementSpeaker(
      * التركيز، ويُغلق محرك TTS نهائياً (بند [7] — منع تسريب مؤقتات/محرك).
      */
     fun shutdown() {
+        speechGeneration.incrementAndGet()
+        AudioCuePlayer.getInstance(appContext).stop()
         stopInterruptionMonitoring()
         mainHandler.removeCallbacksAndMessages(null)
         tts?.stop()
@@ -751,6 +788,7 @@ class AnnouncementSpeaker(
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                 // فقد التركيز (مكالمة/وسائط) — أوقف النطق فوراً
                 hasAudioFocus = false
+                AudioCuePlayer.getInstance(appContext).stop()
                 tts?.stop()
                 nowSpeaking = false
                 releaseAudioFocus()

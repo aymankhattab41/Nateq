@@ -9,6 +9,7 @@ import android.provider.Settings
 import android.view.View
 import android.widget.AdapterView
 import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.TextView
 import com.aymankhattab.nateq.feature.settings.R
@@ -33,6 +34,9 @@ internal class TimeAnnouncementController(
     private lateinit var switchTime24h: SwitchMaterial
     private lateinit var switchHijriDate: SwitchMaterial
     private lateinit var switchClockWidget: SwitchMaterial
+    private lateinit var switchTimeChime: SwitchMaterial
+    private lateinit var spinnerTimeChimeSound: Spinner
+    private lateinit var seekTimeChimeVolume: SeekBar
 
     fun setup(view: View) {
         switchTimeAnnouncement =
@@ -123,6 +127,94 @@ internal class TimeAnnouncementController(
                 )
             )
         }
+
+        // ─── رنة رأس الساعة ───
+        switchTimeChime = view.findViewById(R.id.switch_time_chime)
+        spinnerTimeChimeSound =
+            view.findViewById(R.id.spinner_time_chime_sound)
+        seekTimeChimeVolume =
+            view.findViewById(R.id.seekbar_time_chime_volume)
+        val chimeSounds = listOf(
+            fragment.getString(R.string.time_chime_sound_classic_bell),
+            fragment.getString(R.string.time_chime_sound_digital_chime),
+            fragment.getString(R.string.time_chime_sound_soft_ding)
+        )
+        spinnerTimeChimeSound.adapter =
+            fragment.simpleAdapter(chimeSounds)
+        switchTimeChime.isChecked =
+            runCatching { settings.isTimeChimeEnabled() }
+                .getOrDefault(true)
+        val savedChimeSound = runCatching {
+            settings.getTimeChimeSound()
+        }.getOrDefault("classic_bell")
+        val chimeSoundIndex = when (savedChimeSound) {
+            "digital_chime" -> 1
+            "soft_ding" -> 2
+            else -> 0
+        }
+        spinnerTimeChimeSound.setSelection(chimeSoundIndex)
+        val savedChimeVol = runCatching {
+            settings.getTimeChimeVolume()
+        }.getOrDefault(0.5f)
+        val seekProgress = ((savedChimeVol - 0.1f) / 0.9f * 100)
+            .toInt().coerceIn(0, 100)
+        seekTimeChimeVolume.max = 100
+        seekTimeChimeVolume.progress = seekProgress
+
+        switchTimeChime.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setTimeChimeEnabled(checked) }
+            spinnerTimeChimeSound.isEnabled = checked
+            seekTimeChimeVolume.isEnabled = checked
+            fragment.view?.announceCompat(
+                fragment.getString(
+                    if (checked) {
+                        R.string.announcement_turned_on
+                    } else {
+                        R.string.announcement_turned_off
+                    }
+                )
+            )
+        }
+        spinnerTimeChimeSound.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                v: View?,
+                pos: Int,
+                id: Long
+            ) {
+                val sound = when (pos) {
+                    1 -> "digital_chime"
+                    2 -> "soft_ding"
+                    else -> "classic_bell"
+                }
+                runCatching {
+                    settings.setTimeChimeSound(sound)
+                }
+            }
+
+            override fun onNothingSelected(
+                parent: AdapterView<*>?
+            ) {}
+        }
+        seekTimeChimeVolume.setOnSeekBarChangeListener(
+            object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(
+                sb: SeekBar, progress: Int, fromUser: Boolean
+            ) {}
+
+            override fun onStartTrackingTouch(sb: SeekBar) {}
+
+            override fun onStopTrackingTouch(sb: SeekBar) {
+                val vol = 0.1f + sb.progress / 100f * 0.9f
+                runCatching {
+                    settings.setTimeChimeVolume(vol)
+                }
+                val pct = (vol * 100).toInt()
+                sb.announceCompat("$pct%")
+            }
+        })
+
         spinnerTimeInterval.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(

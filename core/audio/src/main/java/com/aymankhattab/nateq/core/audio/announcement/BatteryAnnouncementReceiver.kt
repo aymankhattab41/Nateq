@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq.core.audio.announcement
+﻿package com.aymankhattab.nateq.core.audio.announcement
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -124,7 +124,10 @@ class BatteryAnnouncementReceiver(
                     else LanguageCode.EN.tag,
                     R.string.battery_connected, R.string.battery_connected
                 )
-                speak(context, settings, text, locale, voiceId)
+                speak(
+                    context, settings, text, locale, voiceId,
+                    CueType.BATTERY_CHARGING
+                )
             }
 
             Intent.ACTION_POWER_DISCONNECTED -> {
@@ -134,7 +137,10 @@ class BatteryAnnouncementReceiver(
                     else LanguageCode.EN.tag,
                     R.string.battery_disconnected, R.string.battery_disconnected
                 )
-                speak(context, settings, text, locale, voiceId)
+                speak(
+                    context, settings, text, locale, voiceId,
+                    CueType.BATTERY_DISCONNECTED
+                )
             }
 
             else -> {
@@ -182,7 +188,10 @@ class BatteryAnnouncementReceiver(
                             R.string.battery_full_unplug,
                             R.string.battery_full_unplug
                         )
-                        speak(context, settings, fullText, locale, voiceId)
+                        speak(
+                            context, settings, fullText, locale, voiceId,
+                            CueType.BATTERY_FULL
+                        )
                     }
                 }
 
@@ -191,7 +200,14 @@ class BatteryAnnouncementReceiver(
                 markAnnounced(context, "%$percentage")
 
                 val text = buildLevelText(context, percentage, isArabic)
-                speak(context, settings, text, locale, voiceId)
+                val levelCue = if (percentage <= 10) {
+                    CueType.BATTERY_LOW
+                } else {
+                    null
+                }
+                speak(
+                    context, settings, text, locale, voiceId, levelCue
+                )
             }
         }
     }
@@ -237,20 +253,37 @@ class BatteryAnnouncementReceiver(
         settings: SettingsRepository,
         text: String,
         locale: Locale,
-        voiceId: String?
+        voiceId: String?,
+        cueType: CueType?
     ) {
         val speechRate = settings.getBatteryAnnouncementRate()
         val volume = settings.getBatteryAnnouncementVolume()
+        val mode = runCatching { settings.getBatterySoundCueMode() }
+            .getOrDefault(0)
+        if (mode == 2 && cueType != null) {
+            // «مؤثر فقط»: لا نطق، نغمة فقط (بدون تركيز — طويلة قصيرة
+            // ضمن مسار الإتاحة).
+            AudioCuePlayer.getInstance(context).play(
+                AudioCue(type = cueType, volume = volume)
+            ) {}
+            return
+        }
         val speaker = AnnouncementSpeaker.getInstance(context)
         // إعادة ضبط صوت البطارية قبل كل نطق (بند [1]): صوتُ الإعلان كان
         // يعلق على صوت فئةٍ سابقة (متصل/إشعار/رسالة) فيُقرأ نص البطارية
         // بالصوت الخطأ — نفس نمط المتصل/الرسائل.
         speaker.resetVoice(voiceId)
+        val cue = if (mode == 0 && cueType != null) {
+            AudioCue(type = cueType, volume = volume)
+        } else {
+            null
+        }
         speaker.speak(
             text, locale, speechRate, 1.0f, volume,
             engineOverride = settings.getEngineForCategory(
                 SettingsRepository.DEVICE_HEALTH_BATTERY
-            )
+            ),
+            cue = cue
         )
     }
 

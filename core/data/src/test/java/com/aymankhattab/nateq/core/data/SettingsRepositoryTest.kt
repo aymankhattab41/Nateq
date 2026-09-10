@@ -502,4 +502,41 @@ class SettingsRepositoryTest {
         repo.setEngineForCategory("caller", null)
         assertNull(repo.getEngineForCategory("caller"))
     }
+
+    @Test
+    fun soundCues_defaultsAndRoundTrip() {
+        // افتراضيات الرنة ووضع مؤثر البطارية
+        assertTrue(repo.isTimeChimeEnabled())
+        assertEquals("classic_bell", repo.getTimeChimeSound())
+        assertEquals(0.5f, repo.getTimeChimeVolume(), 0.0f)
+        assertEquals(0, repo.getBatterySoundCueMode())
+
+        repo.setTimeChimeEnabled(false)
+        assertFalse(repo.isTimeChimeEnabled())
+        repo.setTimeChimeEnabled(true)
+        assertTrue(repo.isTimeChimeEnabled())
+
+        repo.setTimeChimeSound("digital_chime")
+        assertEquals("digital_chime", repo.getTimeChimeSound())
+        repo.setTimeChimeSound("soft_ding")
+        assertEquals("soft_ding", repo.getTimeChimeSound())
+
+        // قيمة خارج القائمة البيضاء → classic_bell
+        repo.setTimeChimeSound("alien_blast")
+        assertEquals("classic_bell", repo.getTimeChimeSound())
+
+        repo.setTimeChimeVolume(1.0f)
+        assertEquals(1.0f, repo.getTimeChimeVolume(), 0.0f)
+        // خارج النطاق 0.1..1 يُقيَّد
+        repo.setTimeChimeVolume(0.0f)
+        assertEquals(0.1f, repo.getTimeChimeVolume(), 0.0f)
+
+        repo.setBatterySoundCueMode(1)
+        assertEquals(1, repo.getBatterySoundCueMode())
+        repo.setBatterySoundCueMode(2)
+        assertEquals(2, repo.getBatterySoundCueMode())
+        // خارج النطاق 0..2 يُقيَّد
+        repo.setBatterySoundCueMode(9)
+        assertEquals(2, repo.getBatterySoundCueMode())
+    }
 }

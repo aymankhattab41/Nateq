@@ -193,7 +193,8 @@ class BatteryAnnouncementReceiverTest {
             .getDeclaredMethod(
                 "speak", Context::class.java,
                 SettingsRepository::class.java, String::class.java,
-                Locale::class.java, String::class.java
+                Locale::class.java, String::class.java,
+                CueType::class.java
             )
         method.isAccessible = true
         val batteryVoice = "ar-EG"
@@ -203,7 +204,8 @@ class BatteryAnnouncementReceiverTest {
             SettingsRepository(context),
             "نصُّ الاختبار",
             Locale.ENGLISH,
-            batteryVoice
+            batteryVoice,
+            null
         )
         val shared = AnnouncementSpeaker.getInstance(context)
         val voiceField = AnnouncementSpeaker::class.java
