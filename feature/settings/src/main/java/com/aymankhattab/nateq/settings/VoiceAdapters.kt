@@ -266,6 +266,20 @@ internal class CategoryVoiceAdapter(
             else -> context.getString(R.string.voice_category_default)
         }
         holder.tvCategory.text = catLabel
+        // تُميّز أشرطة السرعة/النبرة/الصوت ومختار الصوت باسم فئتها حتى لا
+        // تتكرر الأوصاف نفسها بلا تمييز لمستخدم قارئ الشاشة
+        holder.seekRate.contentDescription = context.getString(
+            R.string.seek_category_speech_rate, catLabel
+        )
+        holder.seekPitch.contentDescription = context.getString(
+            R.string.seek_category_pitch, catLabel
+        )
+        holder.seekVolume.contentDescription = context.getString(
+            R.string.seek_category_volume, catLabel
+        )
+        holder.spinnerVoice.contentDescription = context.getString(
+            R.string.cd_category_voice_spinner, catLabel
+        )
         holder.btnTest.contentDescription = context.getString(
             R.string.cd_test_voice_button_for, catLabel
         )

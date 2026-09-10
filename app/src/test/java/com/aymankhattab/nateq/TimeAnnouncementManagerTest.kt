@@ -352,6 +352,21 @@ class TimeAnnouncementManagerTest {
         assertFalse(isInQuietHours())
     }
 
+    @Test
+    fun isInQuietHours_disabledDay_falseEvenInsideWindow() {
+        // اليوم المعطَّل (مفتاح الشاشة) يُستثنى كلياً: ظهر الأحد داخل نافذة
+        // 7→23 لكن المفتاح معطّل فلا يكون في ساعات الهدوء البتة.
+        val clock = FakeClock(
+            millisFor(2017, Calendar.JANUARY, 1, 12, 0)
+        )
+        manager = newManager(clock)
+        val day = clock.now().get(Calendar.DAY_OF_WEEK)
+        settings.setQuietStartForDay(day, 7)
+        settings.setQuietEndForDay(day, 23)
+        settings.setDayQuietEnabled(day, false)
+        assertFalse(isInQuietHours())
+    }
+
     // ═══════════════════════ الجدولة البنيوية ═══════════════════════
 
     @Test

@@ -27,6 +27,14 @@
 - أوامر: `.\scripts\release.ps1` (تنفيذ كامل) أو `.\scripts\release.ps1 -DryRun`
   (عرض الخطة بلا تغيير). يرفض النشر المتكرر لنفس الوسم (محلياً أو على الـ remote).
 
+### آخر التحديثات (changelog)
+- شاشة «آخر التحديثات» (زر في منطقة المساعدة في الإعدادات) تعرض
+  `changelog_text` (عربي + إنجليزي) مدمجاً به رقم الإصدار عبر `%1$s`؛ النص
+  في `feature/settings/src/main/res/values/strings.xml` و`values-en/strings.xml`.
+- عند كل إصدار أو ميزة يستحقّها المستخدم: حدّث `changelog_text` في الملفين
+  (ببنود نقاط مختصرة للجديد الحالي) دون حذف التحسينات السابقة؛ رفع رقم الإصدار
+  يبقى حصراً عبر `scripts/release.ps1`.
+
 ### الاختبارات الآلية (JUnit + Robolectric)
 - **مطلوبة قبل أي commit:** بعد تعديل المنطق شغّل
   `.\gradlew.bat :app:testDebugUnitTest --console=plain`.

@@ -752,6 +752,20 @@ val masterKey = androidx.security.crypto.MasterKey
             .apply()
     }
 
+    /** هل ساعات الهدوء مفعّلة ليوم محدد؟ الافتراضي مفعّل لكل الأيام
+     *  حفاظاً على السلوك السابق قبل إدخال مفاتيح اليوم. */
+    fun isDayQuietEnabled(day: Int): Boolean {
+        val d = day.coerceIn(1, 7)
+        return prefs.getBoolean("time_quiet_day${d}_enabled", true)
+    }
+
+    fun setDayQuietEnabled(day: Int, enabled: Boolean) {
+        val d = day.coerceIn(1, 7)
+        prefs.edit()
+            .putBoolean("time_quiet_day${d}_enabled", enabled)
+            .apply()
+    }
+
     /** صيغة إعلان الوقت: "arabic_natural" أو "digital" */
     fun getTimeAnnouncementFormat(): String =
         prefs.getString("time_announcement_format", "arabic_natural")

@@ -6,11 +6,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import android.text.Editable
-import android.text.TextWatcher
 import android.view.View
 import android.widget.AdapterView
-import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
@@ -197,9 +194,9 @@ internal class TimeAnnouncementController(
     }
 
     /**
-     * يبني صفوف ساعات الهدوء السبعة (يوم → بداية/نهاية) بحقول رقمية 0..23
-     * تُحفظ فور التعديل لكل يوم على حدة
- * (Calendar.DAY_OF_WEEK: 1=الأحد…7=السبت).
+     * يبني صفوف ساعات الهدوء السبعة: لكل يوم مفتاح تفعيل (سويتش) + سبنرا
+     * بداية/نهاية 0..23، يُحفظان فور تعديلهما ويُفعَّلان/يُعطَّلان مع المفتاح
+     * (Calendar.DAY_OF_WEEK: 1=الأحد…7=السبت).
      */
     private fun setupQuietScheduleRows(view: View) {
         llQuietSchedule.removeAllViews()
@@ -213,84 +210,159 @@ internal class TimeAnnouncementController(
             R.string.day_saturday to Calendar.SATURDAY
         )
         val density = fragment.resources.displayMetrics.density
+        val hoursLabels = (0..23).map { it.toString().padStart(2, '0') }
+        val fromLabel = fragment.getString(R.string.time_quiet_start_hint)
+        val toLabel = fragment.getString(R.string.time_quiet_end_hint)
 
         for ((labelRes, day) in days) {
             val dayName = fragment.getString(labelRes)
-            val start =
-                runCatching { settings.getQuietStartForDay(day) }
-                    .getOrDefault(23)
-            val end =
-                runCatching { settings.getQuietEndForDay(day) }
-                    .getOrDefault(7)
+            val dayEnabled = runCatching {
+                settings.isDayQuietEnabled(day)
+            }.getOrDefault(true)
+            val start = runCatching {
+                settings.getQuietStartForDay(day)
+            }.getOrDefault(23)
+            val end = runCatching {
+                settings.getQuietEndForDay(day)
+            }.getOrDefault(7)
 
-            val startField = EditText(fragment.requireContext()).apply {
-                // اليومية في الـ hint تمنح قارئ الشاشة سياق اليوم لكل حقل
-                hint = dayName + "، " +
-                    fragment.getString(R.string.time_quiet_start_hint)
-                inputType = android.text.InputType.TYPE_CLASS_NUMBER
-                setText(start.toString().padStart(2, '0'))
-                maxLines = 1
-                minHeight = (48 * density).toInt()
-                addTextChangedListener(quietWatcher {
-                    runCatching { settings.setQuietStartForDay(day, it) }
-                })
+            val startSpinner = Spinner(fragment.requireContext()).apply {
+                adapter = fragment.simpleAdapter(hoursLabels)
+                setSelection(start)
+                isEnabled = dayEnabled
+                minimumHeight = (48 * density).toInt()
+                contentDescription = fragment.getString(
+                    R.string.time_quiet_start_for_day, dayName
+                )
+                onItemSelectedListener =
+                    object : AdapterView.OnItemSelectedListener {
+                    override fun onItemSelected(
+                        parent: AdapterView<*>?,
+                        selected: View?,
+                        position: Int,
+                        id: Long
+                    ) {
+                        if (position in 0..23) {
+                            runCatching {
+                                settings.setQuietStartForDay(day, position)
+                            }
+                            onStatusChanged()
+                        }
+                    }
+
+                    override fun onNothingSelected(
+                        parent: AdapterView<*>?
+                    ) {}
+                }
             }
-            val endField = EditText(fragment.requireContext()).apply {
-                hint = dayName + "، " +
-                    fragment.getString(R.string.time_quiet_end_hint)
-                inputType = android.text.InputType.TYPE_CLASS_NUMBER
-                setText(end.toString().padStart(2, '0'))
-                maxLines = 1
-                minHeight = (48 * density).toInt()
-                addTextChangedListener(quietWatcher {
-                    runCatching { settings.setQuietEndForDay(day, it) }
-                })
+            val endSpinner = Spinner(fragment.requireContext()).apply {
+                adapter = fragment.simpleAdapter(hoursLabels)
+                setSelection(end)
+                isEnabled = dayEnabled
+                minimumHeight = (48 * density).toInt()
+                contentDescription = fragment.getString(
+                    R.string.time_quiet_end_for_day, dayName
+                )
+                onItemSelectedListener =
+                    object : AdapterView.OnItemSelectedListener {
+                    override fun onItemSelected(
+                        parent: AdapterView<*>?,
+                        selected: View?,
+                        position: Int,
+                        id: Long
+                    ) {
+                        if (position in 0..23) {
+                            runCatching {
+                                settings.setQuietEndForDay(day, position)
+                            }
+                            onStatusChanged()
+                        }
+                    }
+
+                    override fun onNothingSelected(
+                        parent: AdapterView<*>?
+                    ) {}
+                }
             }
 
-            val label = TextView(fragment.requireContext()).apply {
-                text = fragment.getString(labelRes)
+            val switch = SwitchMaterial(fragment.requireContext()).apply {
+                isChecked = dayEnabled
+                minHeight = (48 * density).toInt()
+                contentDescription = fragment.getString(
+                    R.string.time_quiet_enabled_for_day, dayName
+                )
+                setOnCheckedChangeListener { _, checked ->
+                    runCatching { settings.setDayQuietEnabled(day, checked) }
+                    startSpinner.isEnabled = checked
+                    endSpinner.isEnabled = checked
+                    onStatusChanged()
+                    fragment.view?.announceCompat(
+                        fragment.getString(
+                            if (checked) {
+                                R.string.announcement_turned_on
+                            } else {
+                                R.string.announcement_turned_off
+                            }
+                        )
+                    )
+                }
+            }
+
+            val dayLabel = TextView(fragment.requireContext()).apply {
+                text = dayName
                 textSize = 16f
                 minHeight = (48 * density).toInt()
                 gravity = android.view.Gravity.CENTER_VERTICAL
+                // اسم اليوم يقرؤه المفتاح نفسه فلا يتكرر عبر عقدتين
+                importantForAccessibility = android.view.View
+                    .IMPORTANT_FOR_ACCESSIBILITY_NO
             }
 
-            val row = LinearLayout(fragment.requireContext()).apply {
+            val dayRow = LinearLayout(fragment.requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = android.view.Gravity.CENTER_VERTICAL
-                setPadding(0, 4, 0, 4)
+                setPadding(0, 4, 0, 0)
                 addView(
-                    label,
+                    dayLabel,
                     LinearLayout.LayoutParams(0, -2, 1f)
                 )
+                addView(switch)
+            }
+
+            val startLabel = TextView(fragment.requireContext()).apply {
+                text = fromLabel
+                minHeight = (48 * density).toInt()
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            val endLabel = TextView(fragment.requireContext()).apply {
+                text = toLabel
+                minHeight = (48 * density).toInt()
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+
+            val hoursRow = LinearLayout(fragment.requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(0, 0, 0, 8)
+                addView(startLabel)
                 addView(
-                    startField,
+                    startSpinner,
                     LinearLayout.LayoutParams(0, -2, 1f).apply {
+                        marginStart = (8 * density).toInt()
                         marginEnd = (8 * density).toInt()
+                    }
+                )
+                addView(endLabel)
+                addView(
+                    endSpinner,
+                    LinearLayout.LayoutParams(0, -2, 1f).apply {
                         marginStart = (8 * density).toInt()
                     }
                 )
-                addView(endField, LinearLayout.LayoutParams(0, -2, 1f))
             }
-            llQuietSchedule.addView(row)
-        }
-    }
 
-    private fun quietWatcher(save: (Int) -> Unit) = object : TextWatcher {
-        override fun beforeTextChanged(
-            s: CharSequence?,
-            start: Int,
-            count: Int,
-            after: Int
-        ) {}
-        override fun onTextChanged(
-            s: CharSequence?,
-            start: Int,
-            before: Int,
-            count: Int
-        ) {}
-        override fun afterTextChanged(s: Editable?) {
-            val hour = s?.toString()?.trim()?.normalizeDigits()?.toIntOrNull()
-            if (hour != null && hour in 0..23) save(hour)
+            llQuietSchedule.addView(dayRow)
+            llQuietSchedule.addView(hoursRow)
         }
     }
 }

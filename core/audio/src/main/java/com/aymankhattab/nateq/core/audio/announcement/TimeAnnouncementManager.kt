@@ -310,11 +310,13 @@ class TimeAnnouncementManager(
         }
     }
 
-    /** فحص ما إذا كنا في ساعات الهدوء (لكل يوم فترة مستقلة) */
+    /** فحص ما إذا كنا في ساعات الهدوء (لكل يوم فترة مستقلة + مفتاح تفعيل) */
     private fun isInQuietHours(): Boolean {
         val calendar = timeProvider.now()
         val currentHour = calendar.get(Calendar.HOUR_OF_DAY)
         val day = calendar.get(Calendar.DAY_OF_WEEK) // 1=الأحد … 7=السبت
+        // اليوم المعطَّل (مفتاح الشاشة) يُستثنى من الهدوء تماماً
+        if (!settings.isDayQuietEnabled(day)) return false
         val quietStart = settings.getQuietStartForDay(day)
         val quietEnd = settings.getQuietEndForDay(day)
 

@@ -130,9 +130,10 @@
 <string name="exact_alarm_permission_summary">Granting permission makes time announcements fire at the exact minute. Without it a flexible alarm fires near the intended time (slightly delayed during battery saver).</string>
 <string name="exact_alarm_permission_title">Time announcements at the exact minute</string>
 <string name="expand">Expand</string>
-<string name="group_advanced_title">Advanced Settings</string>
-<string name="group_general_title">General Settings</string>
-<string name="group_special_title">Special Settings</string>
+<string name="group_announcements_title">Announcements &amp; Alerts</string>
+<string name="group_engine_voices_title">Engine &amp; Voices</string>
+<string name="group_system_title">System &amp; Help</string>
+<string name="group_text_title">Text &amp; Numbers</string>
 <string name="help_section">Help</string>
 <string name="hijri_date_enabled">Speak dates in the Hijri calendar</string>
 <string name="install_engine_from_store">Install Google text-to-speech from the store</string>
@@ -306,4 +307,14 @@
 <string name="engine_for_category_label">Category announcement engine</string>
 <string name="engine_for_caller_label">Caller announcement engine</string>
 <string name="engine_for_battery_label">Battery announcement engine</string>
+<string name="cd_category_voice_spinner">%1$s, voice selection</string>
+<string name="seek_category_speech_rate">%1$s, speech rate</string>
+<string name="seek_category_pitch">%1$s, pitch</string>
+<string name="seek_category_volume">%1$s, volume</string>
+<string name="group_opened">Opened group %1$s</string>
+<string name="time_quiet_enabled_for_day">%1$s: quiet hours</string>
+<string name="time_quiet_start_for_day">%1$s, quiet start</string>
+<string name="time_quiet_end_for_day">%1$s, quiet end</string>
+<string name="changelog_title">"What's New"</string>
+<string name="changelog_text">Version %1$s\n• Settings reorganized into four logical groups\n• Caller name and battery/charging announcements\n• Accessibility improvements for screen readers</string>
 </resources>

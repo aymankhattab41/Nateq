@@ -104,6 +104,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private lateinit var btnReportError:
         com.google.android.material.button.MaterialButton
 
+    // زر آخر التحديثات (يعرض ملخص الإصدار الحالي وتغييراته في حوار)
+    private lateinit var btnChangelog:
+        com.google.android.material.button.MaterialButton
+
     // المفتاح الرئيسي لكل الإعلانات
     private lateinit var switchAllAnnouncements: SwitchMaterial
 
@@ -445,6 +449,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         // وسائل المشاركة
         btnReportError = view.findViewById(R.id.btn_report_error)
         btnReportError.setOnClickListener { onReportErrorClicked() }
+
+        // زر آخر التحديثات: يعرض ملخص أحدث إصدار وتغييراته في حوار
+        btnChangelog = view.findViewById(R.id.btn_changelog)
+        btnChangelog.setOnClickListener { showChangelogDialog() }
 
         // إنشاء ضابطات الأقسام وربطها (المرحلة ج): كل ضابط يسحب عناصره
         // ويبني مستمعيه عند setup()، وonStatusChanged تُحدّث أسطر حالة
@@ -1068,6 +1076,23 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             ).show()
             view?.announceCompat(getString(R.string.report_error_no_handler))
         }
+    }
+
+    // ===== آخر التحديثات =====
+    private fun showChangelogDialog() {
+        val versionName = runCatching {
+            requireContext().packageManager.getPackageInfo(
+                requireContext().packageName, 0
+            ).versionName
+        }.getOrNull() ?: "?"
+        val body = getString(R.string.changelog_text, versionName)
+        val dialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.changelog_title)
+            .setMessage(body)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+        trackDialog(dialog)
+        view?.announceCompat(getString(R.string.changelog_title))
     }
 
     // ===== البحث عن تحديثات =====
