@@ -108,20 +108,32 @@ object PcmResampler {
             System.arraycopy(pcm, offset, out, outOffset, copyLen)
             return copyLen
         }
-        val mono: ByteArray = if (inChannels == 1) {
-            pcm.copyOfRange(offset, end)
+        // معدل واحد: خفض القنوات مباشرةً في مخزن المرسل بلا مونو وسيط
+        // ولا نسخة — تُطوى القنوات في موضع الإخراج ثم يُعاد الطول المكتوب.
+        if (inSampleRate == outSampleRate) {
+            return downmixInto(
+                pcm, offset, end - offset, inChannels, out, outOffset
+            )
+        }
+        // إعادة عينات: الإخراج يُكتب مباشرة في مخزن المرسل بلا مصفوفة
+        // resampled ولا نسخة — مونو وسيط فقط عند القنوات المتعددة (الطيّ
+        // متطلبٌ سابق على الاستيفاء)؛ أما المونو فنقرأ النافذة من [pcm]
+        // مباشرةً بإزاحتها.
+        val useDirectWindow = inChannels == 1
+        val mono: ByteArray = if (useDirectWindow) {
+            pcm
         } else {
             downmixToMono(pcm, offset, end - offset, inChannels)
         }
-        if (inSampleRate == outSampleRate) {
-            val copyLen = mono.size.coerceAtMost(out.size - outOffset)
-            System.arraycopy(mono, 0, out, outOffset, copyLen)
-            return copyLen
-        }
-        val resampled = resample(mono, inSampleRate, outSampleRate)
-        val copyLen = resampled.size.coerceAtMost(out.size - outOffset)
-        System.arraycopy(resampled, 0, out, outOffset, copyLen)
-        return copyLen
+        return resampleInto(
+            mono,
+            if (useDirectWindow) offset else 0,
+            if (useDirectWindow) end - offset else mono.size,
+            inSampleRate,
+            outSampleRate,
+            out,
+            outOffset
+        )
     }
 
     /** خفض القنوات المتعددة إلى مونو بمتوسط العينات المتزامنة
@@ -151,6 +163,35 @@ object PcmResampler {
             writeSample(out, frame, average)
         }
         return out
+    }
+
+    /** مثل [downmixToMono] لكنه يكتب إخراجه مباشرةً في مخزنٍ مقدَّم [out]
+     *  عند [outOffset] — بلا مونو وسيط ولا نسخة ثانية (بند تسريع النطق).
+     *  يكتب فريماتٍ كاملةً بلا تجاوز حدود [out] ويعيد عدد البايتات المكتوبة.
+     *  عند سعةٍ كافية الناتج مطابقٌ حرفياً
+     *  لخفض [downmixToMono] مع نسخٍ لاحق. */
+    private fun downmixInto(
+        pcm: ByteArray,
+        offset: Int,
+        length: Int,
+        channelCount: Int,
+        out: ByteArray,
+        outOffset: Int
+    ): Int {
+        val frames = length / 2 / channelCount
+        if (frames == 0 || outOffset >= out.size) return 0
+        val firstFrame = outOffset / 2
+        val writable = min(frames, (out.size - outOffset) / 2)
+        for (frame in 0 until writable) {
+            var sum = 0L
+            for (channel in 0 until channelCount) {
+                sum += sampleAt(pcm, offset, frame * channelCount + channel)
+            }
+            val magnitude = (abs(sum) + channelCount / 2L) / channelCount
+            val average = (if (sum >= 0L) magnitude else -magnitude).toInt()
+            writeSample(out, firstFrame + frame, average)
+        }
+        return writable * 2
     }
 
     /** إعادة أخذ العينات باستيفاء خطي: إخراج [outFrames] وفق النسبة بين
@@ -184,6 +225,43 @@ object PcmResampler {
             position += step
         }
         return out
+    }
+
+    /** مثل [resample] لكنه يقرأ نافذة [offset, offset+length) ويكتب إخراجه
+     *  مباشرةً في مخزنٍ مقدَّم [out] عند [outOffset] — بلا مصفوفة وسيطة
+     *  resampled ولا نسخةٍ ثانية. يكتب فريماتٍ كاملةً بلا تجاوز حدود [out]
+     *  ويعيد عدد البايتات المكتوبة. عند سعةٍ كافية الناتج مطابقٌ حرفياً
+     *  لناتج [resample] (نفس صيغة الفاصلة 16.16 والاستيفاء فريماً ففريماً). */
+    private fun resampleInto(
+        pcm: ByteArray,
+        offset: Int,
+        length: Int,
+        inRate: Int,
+        outRate: Int,
+        out: ByteArray,
+        outOffset: Int
+    ): Int {
+        val inFrames = length / 2
+        if (inFrames == 0 || outOffset >= out.size) return 0
+        val outFrames = (inFrames.toLong() * outRate / inRate).toInt()
+        val firstFrame = outOffset / 2
+        val written = min(outFrames, (out.size - outOffset) / 2)
+        if (written == 0) return 0
+        val step = (inRate.toLong() shl 16) / outRate
+        var position = 0L
+        for (outFrame in 0 until written) {
+            val i0 = min((position ushr 16).toInt(), inFrames - 1)
+            val i1 = min(i0 + 1, inFrames - 1)
+            val fraction = (position and 0xFFFF).toInt()
+            val s0 = sampleAt(pcm, offset, i0)
+            val s1 = sampleAt(pcm, offset, i1)
+            val delta = (s1 - s0).toLong()
+            val interpolated =
+                (s0 + ((delta * fraction + 0x8000L) shr 16)).toInt()
+            writeSample(out, firstFrame + outFrame, interpolated)
+            position += step
+        }
+        return written * 2
     }
 
     private fun sampleAt(pcm: ByteArray, frame: Int): Int =

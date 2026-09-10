@@ -318,6 +318,38 @@ class PcmResamplerTest {
         )
     }
 
+    @Test
+    fun convertInto_windowedMonoDownsample_matchesConvert() {
+        // إعادة عينات من نافذة إزاحةٍ غير صفريةٍ في مونو — المسار المباشر
+        // الجديد يقرأ [pcm] بإزاحته بلا نسخ نافذة وسيطة، فيجب أن يطابق
+        // convert الحرفَ للفريم.
+        val pcm = encode(0, 0, 100, 200, 300, 400, 0, 0)
+        val expected = PcmResampler.convert(pcm, 4, 4, 22050, 1, 16000)
+        val out = ByteArray(expected.size)
+        val written = PcmResampler.convertInto(
+            pcm, 4, 4, 22050, 1, 16000, out, 0
+        )
+        assertEquals(expected.size, written)
+        assertArrayEquals(expected, out)
+    }
+
+    @Test
+    fun convertInto_equalRateStereo_matchesDownmixAtOffset() {
+        // معدلٌ واحد مع قنوات متعددة: المسار الجديد يخفض القنوات مباشرةً
+        // في مخزن المرسل عند فتحة غير صفرية — مطابقٌ حرفياً لـ downmix ثم نقل.
+        val pcm = encode(1000, 2000, -1000, 2000, 3000, 7000)
+        val expected = PcmResampler.downmixToMono(pcm, 2, 4, 2)
+        val outSlot = 4
+        val out = ByteArray(outSlot + expected.size)
+        val written = PcmResampler.convertInto(
+            pcm, 2, 4, 22050, 2, 22050, out, outSlot
+        )
+        assertEquals(expected.size, written)
+        assertArrayEquals(
+            expected, out.copyOfRange(outSlot, outSlot + expected.size)
+        )
+    }
+
     private fun assertEqualsPcm(expected: ByteArray, actual: ByteArray) {
         assertArrayEquals("مطابقة PCM", expected, actual)
     }
