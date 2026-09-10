@@ -34,23 +34,94 @@ object PcmResampler {
         inChannels: Int,
         outSampleRate: Int
     ): ByteArray {
+        val total = convertedByteCount(
+            pcm, offset, length, inSampleRate, inChannels, outSampleRate
+        )
+        if (total == 0) return ByteArray(0)
+        val out = ByteArray(total)
+        val written = convertInto(
+            pcm, offset, length, inSampleRate, inChannels,
+            outSampleRate, out, 0
+        )
+        return if (written == total) out else out.copyOf(written)
+    }
+
+    /**
+     * الطول بالبايت الذي ستنتجه [convert]/[convertInto] للنافذة الصالحة نفسها
+     * (فريمات مونو × 2 بايت)، قبل أي كتابة — ليحسب المتصل سعة المخزن مسبقاً
+     * من مسبحه دون إهدار ولا تجاوز. يعيد 0 عند النافذة الفارغة أو المعاملات
+     * غير الصالحة.
+     */
+    fun convertedByteCount(
+        pcm: ByteArray,
+        offset: Int,
+        length: Int,
+        inSampleRate: Int,
+        inChannels: Int,
+        outSampleRate: Int
+    ): Int {
         if (length <= 0 || inSampleRate <= 0 || outSampleRate <= 0 ||
             inChannels <= 0
         ) {
-            return ByteArray(0)
+            return 0
         }
         val end = (offset + length).coerceAtMost(pcm.size)
-        if (offset < 0 || end <= offset) return ByteArray(0)
-        val validBytes = end - offset
-        // على خلاف السلوك السابق، لا يُعاد المخزن نفسه: نُخرج نافذة
-        // صالحةً مستقلة عن بقية المخزن (قد يكون مسبحاً مُعاد استخدامه).
-        val mono = if (inChannels == 1) {
+        if (offset < 0 || end <= offset) return 0
+        val frames = (end - offset) / 2 / inChannels
+        if (frames == 0) return 0
+        return if (inSampleRate == outSampleRate) {
+            frames * 2
+        } else {
+            (frames.toLong() * outSampleRate / inSampleRate).toInt() * 2
+        }
+    }
+
+    /**
+     * نسخة [convert] التي تكتب الناتج في مخزنٍ مقدَّم [out] عند [outOffset]
+     * بدل إنشاء مصفوفة جديدة — يستحضر المتصل السعة عبر
+     * [convertedByteCount] من مسبحه فيحوّل مسار البث كاملاً خالياً من
+     * تخصيص المصفوفات (بند تسريع النطق). الكتابة **لا تتجاوز حدود [out]**
+     * أبداً: إن ضاق المخزن تُكتب البيانات التي تتسع ويُعاد الطول المكتوب
+     * فقط (أصغر من المطلوب) — والنقص يظهر كنهاية نطق مبتورة لا كاستثناء.
+     *
+     * الناتج مماثل حرفياً لناتج [convert] عند سعةٍ كافية (يعيد [required]).
+     */
+    fun convertInto(
+        pcm: ByteArray,
+        offset: Int,
+        length: Int,
+        inSampleRate: Int,
+        inChannels: Int,
+        outSampleRate: Int,
+        out: ByteArray,
+        outOffset: Int
+    ): Int {
+        val required = convertedByteCount(
+            pcm, offset, length, inSampleRate, inChannels, outSampleRate
+        )
+        if (required == 0 || outOffset < 0 || outOffset >= out.size) return 0
+        val end = (offset + length).coerceAtMost(pcm.size)
+        // حالة مباشرة (لا إعادة عينات ولا خفض قنوات): نسخ النافذة الصالحة
+        // فوراً دون أي وسيط — أرخص مسار إطلاقاً في مسار البث.
+        if (inSampleRate == outSampleRate && inChannels == 1) {
+            val copyLen = (end - offset).coerceAtMost(out.size - outOffset)
+            System.arraycopy(pcm, offset, out, outOffset, copyLen)
+            return copyLen
+        }
+        val mono: ByteArray = if (inChannels == 1) {
             pcm.copyOfRange(offset, end)
         } else {
-            downmixToMono(pcm, offset, validBytes, inChannels)
+            downmixToMono(pcm, offset, end - offset, inChannels)
         }
-        if (inSampleRate == outSampleRate) return mono
-        return resample(mono, inSampleRate, outSampleRate)
+        if (inSampleRate == outSampleRate) {
+            val copyLen = mono.size.coerceAtMost(out.size - outOffset)
+            System.arraycopy(mono, 0, out, outOffset, copyLen)
+            return copyLen
+        }
+        val resampled = resample(mono, inSampleRate, outSampleRate)
+        val copyLen = resampled.size.coerceAtMost(out.size - outOffset)
+        System.arraycopy(resampled, 0, out, outOffset, copyLen)
+        return copyLen
     }
 
     /** خفض القنوات المتعددة إلى مونو بمتوسط العينات المتزامنة

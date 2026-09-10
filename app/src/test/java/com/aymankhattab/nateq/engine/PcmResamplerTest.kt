@@ -221,6 +221,103 @@ class PcmResamplerTest {
         assertArrayEquals(intArrayOf(1500, -1500), decode(result))
     }
 
+    @Test
+    fun convertInto_sameRateMono_writesWindowAndReturnsLength() {
+        // مخزن مسبح بحجم أكبر وراءه بقايا: يُكتب في out المضبوط مسبقاً
+        // (مسبح المرسل) نافذةُ البيانات الصالحة فقط ويعود طولها.
+        val pcm = encode(100, -200, 300, -400, 9999, 9999)
+        val out = ByteArray(16)
+        val written = PcmResampler.convertInto(
+            pcm, 0, 8, 22050, 1, 22050, out, 0
+        )
+        assertEquals(8, written)
+        assertArrayEquals(
+            intArrayOf(100, -200, 300, -400),
+            decode(out.copyOf(written))
+        )
+    }
+
+    @Test
+    fun convertInto_outTooSmall_truncatesWithoutOverflow() {
+        // مخزن أقصر من المطلوب: لا تجاوز حدود أبداً — تُكتب البيانات التي
+        // تتسع ويُعاد الطول المكتوب (نهاية نطق مبتورة، لا استثناء يقتل البث).
+        val pcm = encode(100, -200, 300, -400)
+        val out = ByteArray(4)
+        val written = PcmResampler.convertInto(
+            pcm, 0, 8, 22050, 1, 22050, out, 0
+        )
+        assertEquals(4, written)
+        assertArrayEquals(intArrayOf(100, -200), decode(out))
+    }
+
+    @Test
+    fun convertInto_offsetWritesAtGivenSlot() {
+        // الكتابة تبدأ من outOffset وتتقدم ضمنه — إطاران كاملان في فتحة
+        // منتصفة من مخزنٍ أوسع (سعة كافية بعد الإزاحة).
+        val pcm = encode(1, 1000, 2000, 3000)
+        val out = ByteArray(6)
+        val written = PcmResampler.convertInto(
+            pcm, 2, 6, 22050, 1, 22050, out, 2
+        )
+        assertEquals(4, written)
+        assertArrayEquals(
+            intArrayOf(1000, 2000),
+            decode(out.copyOfRange(2, 6))
+        )
+    }
+
+    @Test
+    fun convertInto_matchesConvert_forVariedRatiosAndChannels() {
+        // المعيار الحاسم: بلا تغيير ناتج PCM — مقارنة convertInto بمخزن كافٍ
+        // مع convert القديمة على نفس النوافذ لكل النسب (رفع/خفض، استريو/مونو).
+        val inputs = listOf(
+            encode(0, 1000) to longArrayOf(2, 22050, 1, 44100),
+            encode(0, 1000, 2000, 3000) to longArrayOf(4, 44100, 1, 22050),
+            encode(1000, 2000, 4000, -2000) to longArrayOf(4, 22050, 2, 22050),
+            encode(1000, 2000, 4000, -2000, 1, 1) to
+            longArrayOf(6, 22050, 2, 48000),
+            encode(*IntArray(200) { 1200 }) to longArrayOf(200, 44100, 1, 48000)
+        )
+        for ((pcm, spec) in inputs) {
+            val len = spec[0].toInt()
+            val inRate = spec[1].toInt()
+            val channels = spec[2].toInt()
+            val outRate = spec[3].toInt()
+            val expected = PcmResampler.convert(
+                pcm, 0, len, inRate, channels, outRate
+            )
+            val required = PcmResampler.convertedByteCount(
+                pcm, 0, len, inRate, channels, outRate
+            )
+            assertEquals(expected.size, required)
+            val out = ByteArray(required)
+            val written = PcmResampler.convertInto(
+                pcm, 0, len, inRate, channels, outRate, out, 0
+            )
+            assertEquals(required, written)
+            assertArrayEquals(expected, out)
+        }
+    }
+
+    @Test
+    fun convertedByteCount_zeroForEmptyOrInvalid() {
+        val pcm = encode(1, 2)
+        assertEquals(
+            0, PcmResampler.convertedByteCount(pcm, 0, 0, 22050, 1, 44100)
+        )
+        assertEquals(
+            0, PcmResampler.convertedByteCount(pcm, 4, 2, 0, 1, 44100)
+        )
+        assertEquals(
+            0, PcmResampler.convertedByteCount(pcm, 0, 4, 22050, 0, 44100)
+        )
+        assertEquals(
+            0, PcmResampler.convertedByteCount(
+                ByteArray(0), 0, 0, 22050, 1, 44100
+            )
+        )
+    }
+
     private fun assertEqualsPcm(expected: ByteArray, actual: ByteArray) {
         assertArrayEquals("مطابقة PCM", expected, actual)
     }

@@ -88,6 +88,13 @@ class NateqTtsService : TextToSpeechService() {
     /** مقسم النصوص المختلطة الكتابات (منطق نقي مشترك بلا حالة). */
     private val segmenter = LanguageSegmenter()
 
+    /** مسبح مخازن PCM الخاصة بمسار البث الموحّد (بند تسريع النطق): شريحة
+     *  المزوّد تُعاد معاينتها في مخزنٍ من المسبح ويُبث فوراً ثم يُعاد ليسكن
+     *  بثَ المقطع التالي — بلا إنشاء مصفوفة لكل شريحة من كل مقطع. آمن لأن
+     *  [SynthesisCallback.audioAvailable] يستهلك المخزن قبل عودته (عقد
+     *  [SystemVoiceProvider] نفسه مع متلقيه). */
+    private val pcmBufferPool = BytePool()
+
     /** الرحلة اللاتزامنية للتخليق الحالي — تُلغى عند
      *  إيقاف أو استباق طلبٍ جديد. */
     @Volatile private var currentJob: kotlinx.coroutines.Job? = null
@@ -660,11 +667,21 @@ class NateqTtsService : TextToSpeechService() {
                         // الشريحة قادمة من مسبحٍ مُعاد استخدامه: لا تُعالج
                         // إلا البايتات الصالحة حتى validLength وإلا يُبثّ
                         // ضجيجٌ من بقايا نطقٍ سابق (Audio Static).
-                        val mono = PcmResampler.convert(
+                        val required = PcmResampler.convertedByteCount(
                             chunk, 0, validLength, rate,
                             nativeChannels, MIXED_UNIFIED_RATE
                         )
-                        if (mono.isEmpty()) return@synthesize
+                        if (required <= 0) return@synthesize
+                        val mono = pcmBufferPool.acquire(required)
+                        val written = PcmResampler.convertInto(
+                            chunk, 0, validLength, rate,
+                            nativeChannels, MIXED_UNIFIED_RATE,
+                            mono, 0
+                        )
+                        if (written <= 0) {
+                            pcmBufferPool.release(mono)
+                            return@synthesize
+                        }
                         if (!started) {
                             callback.start(
                                 /* sampleRateInHz = */ MIXED_UNIFIED_RATE,
@@ -674,13 +691,16 @@ class NateqTtsService : TextToSpeechService() {
                             started = true
                         }
                         var offset = 0
-                        while (offset < mono.size) {
+                        while (offset < written) {
                             val bytesToWrite = minOf(
-                                maxBytes, mono.size - offset
+                                maxBytes, written - offset
                             )
                             callback.audioAvailable(mono, offset, bytesToWrite)
                             offset += bytesToWrite
                         }
+                        // المتلقي نسخ الشريحة (audioAvailable) ولم يُمسك
+                        // بمرجعها — يُعاد المخزن للمسبح للشريحة التالية.
+                        pcmBufferPool.release(mono)
                     },
                     finalEngine,
                     finalLocale,

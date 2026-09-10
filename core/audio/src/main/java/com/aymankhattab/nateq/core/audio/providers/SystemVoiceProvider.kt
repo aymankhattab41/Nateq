@@ -9,6 +9,7 @@ import android.speech.tts.UtteranceProgressListener
 import android.util.LruCache
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.R
+import com.aymankhattab.nateq.core.audio.engine.BytePool
 import com.aymankhattab.nateq.core.data.VoicePrefsProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.ConnectivityMonitor
@@ -139,82 +140,9 @@ class SystemVoiceProvider(
          *  المحرك `:tts` (المحدودة أصلاً). */
         private const val PCM_CACHE_MAX_BYTES = 1 shl 20 // 1 MiB
 
-        /** أقصى طول نص (حرف) يُخزَّن في الكاش — ما يزيد يُمنح من المسبح مباشرة
-         *  بلا كاش (النصوص الطويلة تعني PCM كبيراً يضغط الذاكرة بلا فائدة
-         *  لأنها نادراً ما تتكرر حرفياً). */
+        /** قصاصة بطول نصوص تُخزَّن في كاش PCM — النصوص الأطول تُمنح من المسبح
+         *  مباشرة بلا كاش (PCM كبير ونادراً ما يتكرر حرفياً). */
         private const val PCM_CACHE_MAX_TEXT_LENGTH = 120
-
-        /**
-         * الحجم الأدنى المخزَّن في المسبح (بايت). الصفائف الصغيرة أرخص في
-         * الإنشاء والنسخ، فلا فائدة من خزنها — نُعيدها للمُجمّع مباشرة.
-         */
-        private const val POOL_MIN_SIZE_BYTES = 4096
-
-        /**
-         * أقصى سعة للعناصر في المسبح. حدٌّ صغير يمنع تسرّب الذاكرة عندما
-         * تُرك النصوص الطويلة صفائفَ ضخمة خاملةً في القائمة؛ الثمانية عناصر
-         * تكفي لتداخل النطق وتتابع الإعلانات الشائعة (ساعة/إشعار+رسائل…).
-         */
-        private const val POOL_MAX_CAPACITY = 8
-    }
-
-    /**
-     * مسبح صفائف PCM قابل لإعادة الاستخدام. بيانات الصوت أسرع مصادر تشكيل
-     * المصفوفات في مسار التخليق (تُقرأ للملف ثم تُكتب وقد تُعاد معالجة مستوى
-     * الصوت)، وإعادة إنشائها في كل إعلان تُرهق المُجمّع وتُؤجج GC. نستعيد
-     * الصفائف المستهلكة (بعد أن ينسخها المُتلقّي عبر [synthesize]) ونعيد
-     * استخدامها للطلب التالي بدل إنشاء جديد.
-     *
-     * ## إعادة استخدام غير حرفية (مهم)
-     * نقبل عند الاسترجاع أي صفيف حجمه **أكبر من أو يساوي** [minSize] (وليس
-     * المطابقة الحرفية فحسب). البيانات الصوتية متغيرة الحجم بين إعلان وآخر،
-     * والمطابقة الحرفية كانت تُفشل إعادة الاستخدام فتُنشأ مصفوفة جديدة في كل
-     * مرة — فيرتفع ضغط الـ GC. الطول الصالح يُمرَّر صراحةً عبر [PcmExtract]
-     * و[VoiceProvider.synthesize] (`validLength`)، فلا تُبثّ القمامة الزاوية:
-     * تُقرأ بيانات البيانات الفعلية فقط ويستهلك المتلقي حتى `validLength`
-     * (أصغر من `array.size` أو مساوٍ له)، وما وراءه لا يُرسل أبداً.
-     */
-    private class BytePool {
-        /** رامي/مستقبل أحادي — FIFO بسيط كافٍ. */
-        private val available: ArrayDeque<ByteArray> = ArrayDeque()
-        private val lock = Any()
-
-        /** يُرجع مخزّناً بحجم [minSize] أو أكبر
-         *  (لا إنشاء إن أمكن) للاستهلاك المتغير. */
-        fun acquire(minSize: Int): ByteArray {
-            if (minSize < POOL_MIN_SIZE_BYTES) return ByteArray(minSize)
-            synchronized(lock) {
-                var best: ByteArray? = null
-                val it = available.iterator()
-                while (it.hasNext()) {
-                    val candidate = it.next()
-                    if (candidate.size >= minSize) {
-                        // نفضّل الأقرب استهلاكاً للحجم لتقليل
-                        // الهدر؛ يغادر أي مرشح.
-                        if (best == null || candidate.size < best.size) {
-                            best = candidate
-                        }
-                    }
-                }
-                if (best != null) {
-                    available.remove(best)
-                    return best
-                }
-            }
-            return ByteArray(minSize)
-        }
-
-        /** يُخزّن صفيفاً لإعادة الاستخدام
-         *  (يحتفظ به كما هو، وتُبثّ "الطول الصالح"
-         *  صراحةً). */
-        fun release(array: ByteArray): Boolean {
-            if (array.size < POOL_MIN_SIZE_BYTES) return false
-            synchronized(lock) {
-                if (available.size >= POOL_MAX_CAPACITY) return false
-                available.addLast(array)
-                return true
-            }
-        }
     }
 
     /** نتيجة استخراج الصوت من ملف WAV: بيانات PCM ومعدل العينات الحقيقي
@@ -254,7 +182,7 @@ class SystemVoiceProvider(
     @Volatile
     private var shutdownCalled = false
 
-    /** مسبح صفائف PCM المُعاد استخدامها عبر طلبات النطق (انظر [BytePool]). */
+    /** مسبح صفائف PCM المُعاد استخدامها عبر طلبات النطق. */
     private val pcmPool = BytePool()
 
     /**
@@ -307,6 +235,8 @@ class SystemVoiceProvider(
             ttsEngine = null
         }
         pcmCache.evictAll()
+        pcmPool.clear()
+        tempWavFile().delete()
         mainHandler.removeCallbacksAndMessages(null)
         runCatching { synthExecutor.shutdownNow() }
     }
@@ -609,7 +539,8 @@ class SystemVoiceProvider(
                 Log.e(TAG, "[Provider] no engine available to bind")
                 if (!done.getAndSet(true)) cont.resume(Unit)
             } else if (!cancelled.get()) {
-                // دورة حياة المحركات كلها تحت قفل [ttsLock] لتتزامن مع [shutdown]
+                // دورة حياة المحركات كلها تحت قفل [ttsLock] لتتزامن مع
+                // [shutdown]
                 // (تدمير الخدمة أثناء نطقٍ جارٍ):
                 // إن بدأ الإغلاق في المنتصف يتوقف
                 // الربط فوراً — لا محرك جديد بعد التدمير — وتُستأنف الكوروتينة
@@ -947,10 +878,7 @@ class SystemVoiceProvider(
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
         }
 
-        val tempFile = java.io.File(
-            context.cacheDir,
-            "nateq_tts_${System.currentTimeMillis()}.wav"
-        )
+        val tempFile = tempWavFile()
 
         // synthesizeToFile يُرجع SUCCESS فوراً قبل اكتمال الكتابة، لذلك ننتظر
         // اكتمال الكتابة عبر UtteranceProgressListener قبل قراءة الملف — وإلا
@@ -1068,8 +996,6 @@ class SystemVoiceProvider(
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "[Provider] read audio failed", e)
-                } finally {
-                    tempFile.delete()
                 }
             } else {
                 val fileSize = if (tempFile.exists()) {
@@ -1083,13 +1009,21 @@ class SystemVoiceProvider(
                         " failed=$failed finished=$finished" +
                         " size=$fileSize"
                 )
-                tempFile.delete()
             }
         } else {
             Log.e(TAG, "[Provider] synthesizeToFile status=$status")
         }
         return success
     }
+
+    /** ملف مؤقت واحد ثابت الاسم يعيد استخدامه كل نطقات المقاطع (بند تسريع
+     *  النطق): إنشاء/حذف ملفٍ جديد في كل نطق كان يدفع نفقات inode/فلاش
+     *  إضافية لكل جملة. التوليف متسلسل عبر [synthExecutor] أحادي الخيط
+     *  ويبدأ [TextToSpeech.synthesizeToFile] كتابةً من الصفر (truncate) فلا
+     *  تنازع ولا بقايا تُفسد نطقاً تالياً، والحذف النهائي في [shutdown] —
+     *  وإن فُقدت العملية فجأة التقطها [StartupTempSweeper] عند الإقلاع. */
+    private fun tempWavFile(): java.io.File =
+        java.io.File(context.cacheDir, "nateq_tts_session.wav")
 
     /**
      * يستخرج بيانات PCM الخام ومعدل العينات الحقيقي من ملف WAV بتخطّي الرأس
