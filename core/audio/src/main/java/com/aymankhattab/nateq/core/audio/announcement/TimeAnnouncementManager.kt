@@ -389,6 +389,10 @@ class TimeAnnouncementManager(
                 // AnnouncementSpeaker يختار المحرك تلقائياً عبر EnginePicker
                 // — أو محرك فئة الساعة الصريح إن حُدِّد للمنوّهات.
                 val speaker = AnnouncementSpeaker.getInstance(context)
+                // إعادة ضبط صوت فئة الوقت قبل النطق (بند [2]): الصوت كان
+                // يعلق على آخر فئةٍ نطقت (متصل/إشعار/رسالة) فيُقرأ الوقت
+                // بالصوت الخطأ — نفس نمط المتصل/الرسائل.
+                speaker.resetVoice(pref)
                 speaker.speak(
                     timeText, locale, speechRate, pitch, volume,
                     engineOverride = settings.getEngineForCategory(

@@ -124,7 +124,7 @@ class BatteryAnnouncementReceiver(
                     else LanguageCode.EN.tag,
                     R.string.battery_connected, R.string.battery_connected
                 )
-                speak(context, settings, text, locale)
+                speak(context, settings, text, locale, voiceId)
             }
 
             Intent.ACTION_POWER_DISCONNECTED -> {
@@ -134,7 +134,7 @@ class BatteryAnnouncementReceiver(
                     else LanguageCode.EN.tag,
                     R.string.battery_disconnected, R.string.battery_disconnected
                 )
-                speak(context, settings, text, locale)
+                speak(context, settings, text, locale, voiceId)
             }
 
             else -> {
@@ -182,7 +182,7 @@ class BatteryAnnouncementReceiver(
                             R.string.battery_full_unplug,
                             R.string.battery_full_unplug
                         )
-                        speak(context, settings, fullText, locale)
+                        speak(context, settings, fullText, locale, voiceId)
                     }
                 }
 
@@ -191,7 +191,7 @@ class BatteryAnnouncementReceiver(
                 markAnnounced(context, "%$percentage")
 
                 val text = buildLevelText(context, percentage, isArabic)
-                speak(context, settings, text, locale)
+                speak(context, settings, text, locale, voiceId)
             }
         }
     }
@@ -236,11 +236,17 @@ class BatteryAnnouncementReceiver(
         context: Context,
         settings: SettingsRepository,
         text: String,
-        locale: Locale
+        locale: Locale,
+        voiceId: String?
     ) {
         val speechRate = settings.getBatteryAnnouncementRate()
         val volume = settings.getBatteryAnnouncementVolume()
-        AnnouncementSpeaker.getInstance(context).speak(
+        val speaker = AnnouncementSpeaker.getInstance(context)
+        // إعادة ضبط صوت البطارية قبل كل نطق (بند [1]): صوتُ الإعلان كان
+        // يعلق على صوت فئةٍ سابقة (متصل/إشعار/رسالة) فيُقرأ نص البطارية
+        // بالصوت الخطأ — نفس نمط المتصل/الرسائل.
+        speaker.resetVoice(voiceId)
+        speaker.speak(
             text, locale, speechRate, 1.0f, volume,
             engineOverride = settings.getEngineForCategory(
                 SettingsRepository.DEVICE_HEALTH_BATTERY

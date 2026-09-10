@@ -15,6 +15,8 @@ import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.LanguageCode
 import dagger.hilt.android.AndroidEntryPoint
+import java.util.Collections
+import java.util.LinkedHashMap
 import java.util.Locale
 import javax.inject.Inject
 import kotlinx.coroutines.launch
@@ -29,6 +31,10 @@ class NateqNotificationListener : NotificationListenerService() {
 
     companion object {
         private const val TAG = "NATEQ_NOTIF"
+
+        // سقفُ عدد الحزم المتتبَّعة في نافذة منع التكرار (بند [10]) — كل إصدار
+        // يتحدث قائمة الحزم الشائعة، والحزم الجديدة تتسرب القديمة (LRU).
+        private const val MAX_TRACKED_NOTIF_PACKAGES = 64
 
         /** التحقق مما إذا كان التطبيق لديه إذن الاستماع للإشعارات. */
         fun isPermissionGranted(context: Context): Boolean {
@@ -57,9 +63,41 @@ class NateqNotificationListener : NotificationListenerService() {
     @Inject
     lateinit var settingsRepository: SettingsRepository
 
-    @Volatile
-    private var lastNotifTime = 0L
-    private val minIntervalMs = 3000L // الحد الأدنى بين إشعارين متتاليين
+    private val minIntervalMs = 3000L // الحد الأدنى لإشعارات نفس التطبيق
+
+    // الحد الزمني يُطبَّق لكل حزمة على حدة (بند [10]): إشعاران من تطبيقين
+    // مختلفين خلال 3 ثوانٍ لا يُسقط أحدهما الآخر (كان حدّاً عاماً واحداً
+    // يُفقد إشعاراً مهماً تصادفَ بعد أي إشعارٍ آخر). متزمِّنة للأمان،
+    // LRU (accessOrder=true) لسقفِ الحزم المتتالية.
+    private val lastNotifTimes = Collections.synchronizedMap(
+        object : LinkedHashMap<String, Long>(32, 0.75f, true) {
+            override fun removeEldestEntry(
+                eldest: MutableMap.MutableEntry<String, Long>
+            ): Boolean = size > MAX_TRACKED_NOTIF_PACKAGES
+        }
+    )
+
+    /** هل الإشعار من هذه الحزمة مسقطُ الشفرة (وصل إشعارٌ سابق خلال
+     *  [minIntervalMs])؟ فحصٌ والتحديث معاً تحت نفس القفل — القابلية
+     *  للاختبار بحقن خريطة (بند [10]). */
+    internal fun isNotificationRateLimited(
+        pkg: String,
+        now: Long,
+        times: MutableMap<String, Long> = lastNotifTimes
+    ): Boolean {
+        return synchronized(times) {
+            val last = times[pkg]
+            if (last == null) {
+                // أول إشعار من هذه الحزمة: مسموح دوماً ويُسجَّل وقتُه.
+                times[pkg] = now
+                false
+            } else {
+                val limited = (now - last) < minIntervalMs
+                if (!limited) times[pkg] = now
+                limited
+            }
+        }
+    }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         sbn ?: return
@@ -111,10 +149,11 @@ class NateqNotificationListener : NotificationListenerService() {
             // قراءة التطبيقات المختارة فقط (للمستخدم حرية اختيار قائمتها).
             if (!settings.shouldReadNotificationApp(pkg)) return
 
-            // تجنب تكرار الإشعارات المتتالية بشكل سريع
-            val now = System.currentTimeMillis()
-            if (now - lastNotifTime < minIntervalMs) return
-            lastNotifTime = now
+            // تجنب إسقاط الإشعارات المتتالية بشكل سريع — لكل حزمة حدُّها
+            // المستقل (بند [10]) فلا يُسقط إشعارُ تطبيقٍ إشعارَ تطبيقٍ آخر.
+            if (isNotificationRateLimited(pkg, System.currentTimeMillis())) {
+                return
+            }
 
             val notification = sbn.notification ?: return
             val extras = notification.extras

@@ -122,6 +122,9 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     pendingResult.finish()
                 }
             }
+            // مستمعُ اكتمالٍ يُسجَّل في try ويُزال في finally (بند [8]) —
+            // لا يبقى مسجلاً بعد نافذة البث فلا يُستدعى في دورةٍ لا تخصنا.
+            var completionListener: (() -> Unit)? = null
             try {
                 // فحص وقائي: وصول بث PHONE_STATE بحد ذاته يتطلب
                 // منح READ_PHONE_STATE وقت الإرسال (النظام يفلتر
@@ -253,22 +256,13 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 // بعد إطلاق كل التكرارات نُبقي نافذة البث حيّةً حتى يُتمَّ
                 // النطقُ الفعليُّ للجملة الأخيرة — جمدُ العمليةِ بعد
                 // finish() كان يقتطع ذيل الصوت (بند توافق أندرويد 17) —
-                // بسقفِ نافذة الـ goAsync نفسها فلا ANR. والخطافُ لا يُعلَّق
-                // إلا الآن: كل تكرارٍ لاحقٍ كان يفلترُ ما قبله ويُحدّث معرّفَ
-                // الجزء الأخير فيبكر الإنهاء قبل التكرارات اللاحقة فعلياً.
-                val previousHook = speaker.onSpeechComplete
-                var ourHook: (() -> Unit)? = null
-                ourHook = {
-                    // نُمرّر لخطاف أداة الساعة السابق دوره (إن كان ضابطاً)
-                    // قبل إنهائنا البث، ثم نستعيده إن ما يزال ثابتاً — دون
-                    // طمس خطافٍ ضُبط حديثاً من دورةٍ أخرى.
-                    runCatching { previousHook?.invoke() }
+                // بسقفِ نافذة الـ goAsync نفسها فلا ANR. نُسجّل في قائمة
+                // مستمعين المتحدث المشترك (بند [8]) فلا نطمس خطافَ أداة
+                // الساعة أو مستقبلٍ آخر، ونُزيله في finally.
+                completionListener = {
                     finishOnce()
-                    if (speaker.onSpeechComplete === ourHook) {
-                        speaker.onSpeechComplete = previousHook
-                    }
                 }
-                speaker.onSpeechComplete = ourHook
+                speaker.addCompletionListener(completionListener!!)
                 delay(
                     remainingWindowMs(
                         lastLaunchMs, BROADCAST_ASYNC_WINDOW_MS
@@ -280,6 +274,13 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             } finally {
                 // تعويضي: إن انحرف المسار قبل أذرعة الإنهاء أعلاه (استثناء)
                 // يُنهى البث هنا — وإن سبق إنهاؤه فلا يُنهى ثانية.
+                completionListener?.let { listener ->
+                    // إزالة مستمعنا حتى لا يُستدعى في دورة نطقٍ لاحقة
+                    runCatching {
+                        AnnouncementSpeaker.getInstance(context)
+                            .removeCompletionListener(listener)
+                    }
+                }
                 finishOnce()
             }
         }

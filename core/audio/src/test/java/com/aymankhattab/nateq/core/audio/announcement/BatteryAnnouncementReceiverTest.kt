@@ -5,8 +5,11 @@ import android.content.Intent
 import android.os.BatteryManager
 import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.core.common.TimeProvider
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import java.util.Calendar
+import java.util.Locale
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -178,6 +181,39 @@ class BatteryAnnouncementReceiverTest {
         // فيُفلتر — لا تراجع في الحماية من عشرات البثات المتماثلة.
         assertTrue(BatteryAnnouncementReceiver.isNewLevel(batteryIntent(50)))
         assertFalse(BatteryAnnouncementReceiver.isNewLevel(batteryIntent(50)))
+    }
+
+    @Test
+    fun `speak applies the battery voice before announcing`() {
+        // بند [1]: صوتُ البطارية كان يُقرأ ولا يُطبَّق فيعلق نطقُ البطارية
+        // على صوت فئةٍ سابقة (متصل/إشعار/رسالة) — الآن speak() يُعيد ضبط
+        // المتحدث المشترك بالصوت المفضَّل أولاً (نفس نمط المتصل/الرسائل).
+        val receiver = BatteryAnnouncementReceiver()
+        val method = BatteryAnnouncementReceiver::class.java
+            .getDeclaredMethod(
+                "speak", Context::class.java,
+                SettingsRepository::class.java, String::class.java,
+                Locale::class.java, String::class.java
+            )
+        method.isAccessible = true
+        val batteryVoice = "ar-EG"
+        method.invoke(
+            receiver,
+            context,
+            SettingsRepository(context),
+            "نصُّ الاختبار",
+            Locale.ENGLISH,
+            batteryVoice
+        )
+        val shared = AnnouncementSpeaker.getInstance(context)
+        val voiceField = AnnouncementSpeaker::class.java
+            .getDeclaredField("voiceId")
+        voiceField.isAccessible = true
+        assertEquals(
+            "يُطبَّق صوت البطارية قبل النطق",
+            batteryVoice, voiceField.get(shared)
+        )
+        shared.shutdown()
     }
 
     // ===== نافذة منع تكرار الإعلان (5 دقائق) =====

@@ -86,4 +86,47 @@ class NateqNotificationListenerTest {
             )
         )
     }
+
+    // ===== الحد الزمني لكل حزمة (بند [10]) =====
+
+    @Test
+    fun `different packages are not rate limited against each other`() {
+        // كان حدّاً عاماً واحداً: إشعارٌ من واتساب خلال 3 ثوانٍ من إشعار
+        // تلجرام كان يُسقط الأخير — الآن لكل حزمة حدُّها المستقل.
+        val listener = NateqNotificationListener()
+        val times = HashMap<String, Long>()
+        assertFalse(
+            listener.isNotificationRateLimited("com.telegram", 1_000L, times)
+        )
+        assertFalse(
+            "حزمتان مختلفتان بنفس اللحظة لا يتداخلان",
+            listener.isNotificationRateLimited("com.whatsapp", 1_000L, times)
+        )
+    }
+
+    @Test
+    fun `same package within interval is rate limited`() {
+        val listener = NateqNotificationListener()
+        val times = HashMap<String, Long>()
+        assertFalse(
+            listener.isNotificationRateLimited("com.whatsapp", 1_000L, times)
+        )
+        assertTrue(
+            "نفس الحزمة قبل مضي 3 ثوانٍ تُسقط",
+            listener.isNotificationRateLimited("com.whatsapp", 2_000L, times)
+        )
+    }
+
+    @Test
+    fun `same package passes again after the interval elapses`() {
+        val listener = NateqNotificationListener()
+        val times = HashMap<String, Long>()
+        assertFalse(
+            listener.isNotificationRateLimited("com.whatsapp", 1_000L, times)
+        )
+        assertFalse(
+            "بعد مضي 3 ثوانٍ تُسمح الحزمة نفسها من جديد",
+            listener.isNotificationRateLimited("com.whatsapp", 4_001L, times)
+        )
+    }
 }

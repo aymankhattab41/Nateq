@@ -93,13 +93,16 @@ class SpeakingClockWidget : AppWidgetProvider() {
         var wakeLock: PowerManager.WakeLock? = null
         var finished = false
         val mainHandler = Handler(Looper.getMainLooper())
+        val speaker = AnnouncementSpeaker.getInstance(appContext)
+        var widgetListener: (() -> Unit)? = null
 
         val finish = {
             if (!finished) {
                 finished = true
                 mainHandler.removeCallbacksAndMessages(null)
-                AnnouncementSpeaker.getInstance(appContext)
-                    .onSpeechComplete = null
+                // نزيل مستمعنا فقط — لا نطمس مستمعين من دورات أخرى
+                // (متصل/رسائل/منبه) بكتابة خانةِ خطافٍ وحيدة (بند [8]).
+                widgetListener?.let(speaker::removeCompletionListener)
                 runCatching {
                     if (wakeLock?.isHeld == true) wakeLock?.release()
                 }
@@ -122,9 +125,10 @@ class SpeakingClockWidget : AppWidgetProvider() {
 
             // تحرير goAsync فور اكتمال آخر جملة (onDone/onError) من المتحدث
             // المشترك — النطق لا يقتصر على «الوقت» فقط بل قد يكون رسالة
-            // التعطيل.
-            val speaker = AnnouncementSpeaker.getInstance(appContext)
-            speaker.onSpeechComplete = { finish() }
+            // التعطيل. نسجّل في قائمة المستمعين (بند [8]) لا في خانةٍ
+            // وحيدة طامسةٍ لمستمعي دوراتٍ أخرى.
+            widgetListener = { finish() }
+            speaker.addCompletionListener(widgetListener!!)
 
             // المفتاح الموضعي للأداة (من شاشة إعلان الوقت) يقرر إن كانت
             // تنطق عند اللمس.

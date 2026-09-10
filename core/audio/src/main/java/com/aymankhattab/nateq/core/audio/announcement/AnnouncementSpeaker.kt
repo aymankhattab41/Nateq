@@ -17,6 +17,8 @@ import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LanguageCode
 import java.util.Locale
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * إعدادات نطق أسماء الإيموجي (فئة «نطق الإيموجي») — تُقرأ من الإعدادات مرة
@@ -88,6 +90,16 @@ class AnnouncementSpeaker(
                     it.startsWith("en-local", ignoreCase = true) ||
                     it.startsWith("en-US", ignoreCase = true)
             } ?: false
+
+        // عدّادٌ ذرّي لمعرّفات النطق — الزمن وحده كان يتكرر بين جزأين في
+        // نفس المللي ثانية فيصدر onDone مبكراً ويفلتر أجزاء (بند [3]).
+        private val utteranceCounter = AtomicLong(0L)
+
+        /** معرّف نطق فريد لكل جزء يُرسَل إلى المحرك — الزمن + عدّادٍ ذرّي
+         *  يضمنان التفرد حتى داخل نفس المللي ثانية. قابلةٌ للاختبار. */
+        internal fun nextUtteranceId(): String =
+            "nateq_announce_${System.currentTimeMillis()}_" +
+                utteranceCounter.incrementAndGet()
     }
 
     private val appContext = context.applicationContext
@@ -117,14 +129,34 @@ class AnnouncementSpeaker(
      * التطبيق (منطق نقي بلا حالة). */
     private val languageSegmenter = LanguageSegmenter()
 
-    /**
-     * خطاف يُستدعى عند اكتمال آخر جملة في دورة النطق الحالية (onDone/onError
-     * للـ lastQueuedUtteranceId فقط). تستخدمه أداة الساعة لتحرير goAsync() و
-     * WakeLock المؤقت عقب اكتمال النطق فعلياً — تأخير التحرير حتى بقاء العملية
-     * حية بينما يُهيّئ محرك TTS وينطق (Android 14+ يجمد العملية بعد onReceive).
-     */
-    @Volatile
-    var onSpeechComplete: (() -> Unit)? = null
+    // قائمة مستمعي اكتمال دورة النطق (آخر جملة تُتم أو تُخطئ). بدل خانة
+    // الخطاف الوحيدة التي كانت تُطمس خطافات أدوات/مستقبلات أخرى (بند [8])
+    // — كل مسجّل (أداة الساعة، مستقبل المتصل، مستقبل المنبه) يُستدعى عند
+    // اكتمال آخر جملة دون أن يمسّ الآخرين. CopyOnWrite لتتحمل الاستدعاء
+    // المتزامن مع الإضافة/الإزالة من خيوط النطق والبث معاً.
+    private val completionListeners = CopyOnWriteArrayList<() -> Unit>()
+
+    /** تسجيل خطاف يُستدعى عند اكتمال آخر جملة في دورة النطق الحالية
+     *  (onDone/onError للـ lastQueuedUtteranceId فقط). تستخدمه أداة الساعة
+     *  ومستقبِلات المتصل/المنبه لتحرير goAsync() وWakeLock المؤقت عقب
+     *  اكتمال النطق فعلياً بدل التحرير المبكر (جمد العملية بعد onReceive
+     *  على Android 14+ يقتطع ذيل الصوت). */
+    fun addCompletionListener(listener: () -> Unit) {
+        completionListeners.add(listener)
+    }
+
+    /** إلغاء تسجيل خطاف (غالباً في finally — فلا يُستدعى في دورة نطقٍ
+     *  لاحقة لا تخص صاحبه). لا يؤثر إلغاء أحدهم على الآخرين. */
+    fun removeCompletionListener(listener: () -> Unit) {
+        completionListeners.remove(listener)
+    }
+
+    /** استدعاء كل مستمعي الاكتمال (كلٌّ بمعزلٍ عن أخطاء غيره). */
+    private fun notifySpeechComplete() {
+        completionListeners.forEach { cb ->
+            runCatching { cb() }
+        }
+    }
 
     /**
      * معرّف آخر جزء أُرسل إلى المحرك في دورات النطق الحالية. يُقارن به عند
@@ -189,28 +221,35 @@ class AnnouncementSpeaker(
         onReady: (Boolean) -> Unit,
         requestedEngine: String? = null
     ) {
-        val existing = tts
         val requested = requestedEngine
             ?.takeIf {
                 it in EnginePicker.installedEnginePackages(appContext)
             }
-        if (existing != null && boundEngine == requested) {
+        // حسمُ المصير (جاهز/بادئ/منضمّ) بذرّية تامة تحت قفل واحد مع تصفية
+        // الدفعة لاحقاً تحت نفس القفل (بند [5]): خطافٌ أُضيف قبل التصفية
+        // يُصرف حتماً، ولا يضيع خطافٌ ينضمّ بين التصفية وإتاحة التهيئة.
+        var initNow = false
+        var ready = false
+        synchronized(initLock) {
+            val existing = tts
+            if (existing != null && boundEngine == requested) {
+                ready = true
+            } else {
+                // محرك مختلف للفئة القادمة: أُغلق الربط القديم كاملاً
+                // ثم أُهيّئ الجديد (لا تبقى مثيلات معلقة على محرك آخر).
+                if (existing != null) {
+                    shutdownSafely()
+                }
+                initNow = !initializing.getAndSet(true)
+                pendingInitCallbacks.add(onReady)
+            }
+        }
+        // لا نداءات تحت القفل (يبقى أسلوب الفصل القائم).
+        if (ready) {
             onReady(true)
             return
         }
-        // محرك مختلف للفئة القادمة: أُغلق الربط القديم كاملاً
-        // ثم أُهيّئ الجديد (لا تبقى مثيلات معلقة على محرك آخر).
-        if (existing != null) {
-            shutdownSafely()
-        }
-        // انضمام ذرّي إلى "في طور التهيئة" أو بدؤها مرة واحدة
-        // (يحجب الاستدعاءات المتزامنة من خيوط مختلفة فلا تحدث
-        // تهيئة مزدوجة ولا ConcurrentModification).
-        if (initializing.getAndSet(true)) {
-            pendingInitCallbacks.add(onReady)
-            return
-        }
-        pendingInitCallbacks.add(onReady)
+        if (!initNow) return
 
         // لا يوجد محرك افتراضي عام: يُحسم المحرك عند النطق إما صراحةً
         // (requested المحرك الخاص بالفئة/الوظيفة)، وإلا اختيار ديناميكي
@@ -228,16 +267,20 @@ class AnnouncementSpeaker(
             } else {
                 tts = null
             }
-            // سحب كل النداءات المتراكمة دفعةً واحدة (ذرّي تجاه
-            // الإضافات اللاحقة)، ثم إتاحة التهيئة التالية قبل
-            // استدعاء النداءات (لا استدعاء تحت قفلٍ لتجنب أي
-            // deadlock لو دخل الـ callback دعوةً متزامنة أخرى).
-            val callbacks = ArrayList<(Boolean) -> Unit>()
-            while (true) {
-                val cb = pendingInitCallbacks.poll() ?: break
-                callbacks.add(cb)
+            // تصفية الدفعة + إتاحة التهيئة التالية تحت نفس قفل الحسم: كل
+            // خطافٍ انضمّ قبل الإتاحة يُصرف حتماً. ثم تُستدعى النداءات
+            // خارج القفل (لا استدعاء تحت قفلٍ لتجنب أي deadlock لو دخل
+            // الـ callback دعوةً متزامنة أخرى).
+            val callbacks: List<(Boolean) -> Unit>
+            synchronized(initLock) {
+                callbacks = ArrayList<(Boolean) -> Unit>().apply {
+                    while (true) {
+                        val cb = pendingInitCallbacks.poll() ?: break
+                        add(cb)
+                    }
+                }
+                initializing.set(false)
             }
-            initializing.set(false)
             callbacks.forEach { cb -> cb(success) }
         }
         newTts.apply {
@@ -259,7 +302,7 @@ class AnnouncementSpeaker(
                         ) {
                             stopInterruptionMonitoring()
                             releaseAudioFocus()
-                            onSpeechComplete?.invoke()
+                            notifySpeechComplete()
                         }
                         nowSpeaking = false
                     }
@@ -271,7 +314,7 @@ class AnnouncementSpeaker(
                         ) {
                             stopInterruptionMonitoring()
                             releaseAudioFocus()
-                            onSpeechComplete?.invoke()
+                            notifySpeechComplete()
                         }
                         nowSpeaking = false
                     }
@@ -635,7 +678,7 @@ class AnnouncementSpeaker(
             EMOJI_REGEX.replace(text, " "),
             java.text.Normalizer.Form.NFC
         )
-        val utteranceId = "nateq_announce_${System.currentTimeMillis()}"
+        val utteranceId = nextUtteranceId()
         // سجّل آخر معرّف يُرسَل قبل speak حتى يقارن به المستمع onDone/onError
         // ليحرر التركيز عند اكتمال آخر جزء فقط (لا بعد أول جزء من الجملة).
         lastQueuedUtteranceId = utteranceId
@@ -660,9 +703,17 @@ class AnnouncementSpeaker(
     /** إيقاف أي نطق جارٍ وتحرير الموارد */
     fun stop() {
         stopInterruptionMonitoring()
+        // إلغاء كل الموقّتات المعلّقة (تأجيل النطق 150ms + إعادة المحاولة
+        // 250ms + مؤقّت التركيز المؤجل) — كان تأخيرٌ معلّقٌ ينفجر منطقاً
+        // بعد الإيقاف فيُنطق نصٌ قديم على محركٍ مُغلق (بند [9]).
+        mainHandler.removeCallbacksAndMessages(null)
+        pendingFocusAction = null
+        pendingFocusTimer?.let { mainHandler.removeCallbacks(it) }
+        pendingFocusTimer = null
         tts?.stop()
         releaseAudioFocus()
         shutdownSafely()
+        nowSpeaking = false
     }
 
     /**
@@ -790,6 +841,11 @@ class AnnouncementSpeaker(
     /** ذرّي: يمنع سباق بدء تهيئة المحرك مرتين
      * (single-flight) عبر خيوط متعددة. */
     private val initializing = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** قفل حسم المصير وتصفية الدفعة في [ensureInit] (بند [5]): كل قرار —
+     *  جاهز/بادئ/منضمّ — وكل تصفية للدعوات المتراكمة يتمان تحت هذا القفل
+     *  فلا يُفقد خطافٌ ينضمّ حين تُصفَّى الدفعة. */
+    private val initLock = Any()
 
     /** آمنة للتسابق: تُستدعى `ensureInit` بالتوازي من مستقبِلات/مؤقّتات مختلفة
      *  (Main/IO)، ويرصد `onInit` (على Main) النتائج. طابور متزامن يمنع
