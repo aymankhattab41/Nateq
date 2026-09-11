@@ -162,6 +162,42 @@ class SettingsViewModelAsyncTest {
     }
 
     @Test
+    fun restoreCallersOnlyBackup_emitsCallersOnlyFlag() = runTest(scheduler) {
+        settings.setCustomCallerNames(mapOf("0555" to "أحمد"))
+        val json = vm.buildBackupJson()
+        val uri = Uri.parse("content://nateq.test/backup_callers.json")
+        registerInput(uri, json)
+
+        val event = runOperation(
+            { vm.restoreBackup(uri, context.contentResolver) },
+            { it is SettingsOperation.Restored }
+        ) as SettingsOperation.Restored
+
+        assertTrue(event.ok)
+        assertTrue(
+            "نسخة أسماء متصلين فقط تُعلَّم callersOnly",
+            event.callersOnly
+        )
+    }
+
+    @Test
+    fun restoreFullBackup_emitsNotCallersOnly() = runTest(scheduler) {
+        settings.setTimeAnnouncementInterval(15)
+        settings.setCustomCallerNames(mapOf("0555" to "أحمد"))
+        val json = vm.buildBackupJson()
+        val uri = Uri.parse("content://nateq.test/backup_full.json")
+        registerInput(uri, json)
+
+        val event = runOperation(
+            { vm.restoreBackup(uri, context.contentResolver) },
+            { it is SettingsOperation.Restored }
+        ) as SettingsOperation.Restored
+
+        assertTrue(event.ok)
+        assertFalse(event.callersOnly)
+    }
+
+    @Test
     fun exportBackup_writesJsonToUri() = runTest(scheduler) {
         settings.setTimeAnnouncementInterval(15)
         dict.addEntry("HTTP", "إتش تي تي بي")

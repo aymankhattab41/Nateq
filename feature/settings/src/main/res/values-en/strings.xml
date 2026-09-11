@@ -228,6 +228,7 @@
 <string name="restore_confirm_message">All current settings, the dictionary, and caller names will be replaced by those in the backup. The file may contain contact names — keep it safe.</string>
 <string name="restore_confirm_title">Restore backup?</string>
 <string name="restore_done">Restore completed successfully</string>
+<string name="restore_done_callers_only">Restored caller names only — the backup contained no settings or dictionary</string>
 <string name="restore_failed">Restore failed — the file is invalid or incomplete</string>
 <string name="restore_settings">Restore backup</string>
 <string name="sample_text_activity_ar">مرحباً، هذا نص تجريبي لـ Lord TTS.</string>

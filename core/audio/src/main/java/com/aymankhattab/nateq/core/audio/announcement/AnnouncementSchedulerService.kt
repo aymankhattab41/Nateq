@@ -15,10 +15,13 @@ import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.util.LanguageCode
 import dagger.hilt.android.AndroidEntryPoint
+import java.util.Locale
 import javax.inject.Inject
 
 /**
@@ -47,6 +50,11 @@ class AnnouncementSchedulerService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val PREFS_NAME = "nateq_announce_svc"
         private const val KEY_USER_STOPPED = "stopped_by_user"
+
+        // بند [29]: تلميح صوتي لمرة واحدة لكل عمر العملية يُنطق فقط إن كانت
+        // الإشعارات معطّلة مع وجود إعلانٍ يستوجب خدمة أمامية — بلا تكرار يومي
+        // ولا إعادة طلب مزعجة.
+        private var notificationsHintSpoken = false
 
         private const val ACTION_START =
             "com.aymankhattab.nateq.action.ANNOUNCE_START"
@@ -250,6 +258,35 @@ class AnnouncementSchedulerService : Service() {
         // غير جاهزة؛ نبني مرجعاً محلياً عندها (نمط NateqTtsService).
         settings = if (::settingsRepository.isInitialized) settingsRepository
         else SettingsRepository(applicationContext)
+
+        // بند [29]: فعّل المستخدم إعلاناً يستوجب خدمة أمامية (بطارية/متصل/
+        // رسائل/إشعارات) وهو محروم من إذن الإشعارات — لن يرى إشعار الخدمة
+        // ولا زرّيها. ننطق تلميحاً مؤدباً لمرة واحدة (لا نستجدي الإذن ولا
+        // نكرر كل يوم) بلغة التطبيق عبر المتحدث المشترك.
+        if (!notificationsHintSpoken
+            && needsForegroundService(settings)
+            && !NotificationManagerCompat.from(applicationContext)
+                .areNotificationsEnabled()
+        ) {
+            notificationsHintSpoken = true
+            Log.w(TAG, "إشعار الخدمة الأمامية غير مرئي — الإشعارات معطّلة")
+            try {
+                val lang = runCatching { settings.getAppLanguage() }
+                    .getOrNull()
+                val tag = if (lang != null && LanguageCode.isArabic(lang)) {
+                    LanguageCode.AR.tag
+                } else {
+                    LanguageCode.EN.tag
+                }
+                AnnouncementSpeaker.getInstance(applicationContext).speak(
+                    getString(R.string.fgs_notifications_disabled_hint),
+                    Locale.forLanguageTag(tag), 1.0f, 1.0f, 1.0f
+                )
+            } catch (t: Throwable) {
+                Log.w(TAG, "تنبيه الإشعارات المعطّلة فشل نطقه", t)
+            }
+        }
+
         // المدير المشترك عبر العملية (نفس كائن الودجت ومستقبل المنبه) — تُبنى
         // مكوناته مرة واحدة ويُستخدم لبدء/إيقاف منبه الوقت و"أعلن الآن".
         timeManager = TimeAnnouncementManager.shared(this, settings)

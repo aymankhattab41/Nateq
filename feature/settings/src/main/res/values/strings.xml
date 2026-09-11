@@ -228,6 +228,7 @@
 <string name="restore_confirm_message">سيتم استبدال كل الإعدادات الحالية والقاموس وأسماء المتصلين بما ورد في النسخة. الملف قد يحوي أسماء جهات اتصال — يُحفظ في مكان آمن.</string>
 <string name="restore_confirm_title">استعادة النسخة الاحتياطية؟</string>
 <string name="restore_done">تمت الاستعادة بنجاح</string>
+<string name="restore_done_callers_only">تمت استعادة أسماء المتصلين فقط (لم تتضمن النسخة إعدادات أو قاموساً)</string>
 <string name="restore_failed">تعذّرت الاستعادة — الملف غير صالح أو ناقص</string>
 <string name="restore_settings">استعادة نسخة احتياطية</string>
 <string name="sample_text_activity_ar">مرحباً، هذا نص تجريبي لـ Lord TTS.</string>

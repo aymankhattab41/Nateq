@@ -548,7 +548,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     // إعادة عرض الأقسام تتم تلقائياً
                     // عبر مراجعة settingsRevision
                     AnnouncementSchedulerService.requestStart(requireContext())
-                    R.string.restore_done
+                    if (event.callersOnly) R.string.restore_done_callers_only
+                    else R.string.restore_done
                 } else {
                     R.string.restore_failed
                 }

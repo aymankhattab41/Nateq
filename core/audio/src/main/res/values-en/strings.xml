@@ -40,4 +40,8 @@
          falls back (once per engine per process lifetime, from the :tts process).
          Unique name so it does not collide with feature:settings on merge -->
     <string name="engine_fallback_alert">The chosen speech engine is unavailable — speech temporarily switched to another engine</string>
+    <!-- Item [29] — one-time spoken hint per process lifetime: notifications
+         are off so the foreground-service notification and its buttons can't be
+         seen (no nagging re-request) -->
+    <string name="fgs_notifications_disabled_hint">Notifications are off — you won\'t see the service notification or its Speak Now / Stop buttons, and announcements keep running in the background</string>
 </resources>

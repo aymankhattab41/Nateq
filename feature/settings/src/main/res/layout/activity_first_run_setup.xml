@@ -36,7 +36,8 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="28dp"
             android:text="@string/first_run_language_label"
-            android:textAppearance="?attr/textAppearanceSubtitle1" />
+            android:textAppearance="?attr/textAppearanceSubtitle1"
+            android:labelFor="@id/spinner_first_run_language" />
 
         <Spinner
             android:id="@+id/spinner_first_run_language"
@@ -53,7 +54,8 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
             android:text="@string/first_run_engine_label"
-            android:textAppearance="?attr/textAppearanceSubtitle1" />
+            android:textAppearance="?attr/textAppearanceSubtitle1"
+            android:labelFor="@id/spinner_first_run_engine" />
 
         <Spinner
             android:id="@+id/spinner_first_run_engine"

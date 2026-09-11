@@ -65,6 +65,11 @@ class SettingsViewModel @Inject constructor(
 
     private var ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 
+    /** هل كانت آخر استعادةٍ محتواها أسماء متصلين فقط (بلا إعدادات/قاموس
+     *  قابلين للتطبيق)؟ يقرؤه [restoreBackup] بعد [applyBackupJson] مباشرةً
+     *  على الخيط نفسه ليُرفق الحالة بالحدث (بند الاستعادة الأوضح). */
+    private var lastCallersOnlyRestore = false
+
     companion object {
         /** حدود دفاعية ضد ملفات النسخ الاحتياطي الخبيثة/الضخمة
          *  (SAF أو مصادر أخرى). */
@@ -95,7 +100,13 @@ class SettingsViewModel @Inject constructor(
         data class DictImported(val ok: Boolean) : SettingsOperation
         data class DictExported(val ok: Boolean) : SettingsOperation
         data class BackedUp(val ok: Boolean) : SettingsOperation
-        data class Restored(val ok: Boolean) : SettingsOperation
+        data class Restored(
+            val ok: Boolean,
+            // نسخةٌ تحوي أسماء المتصلين فقط دون إعدادات/قاموس قابلين
+            // للاستعادة — تُعرض رسالة أدق بدل «تمت الاستعادة» الموحية
+            // بأن كل شيء عاد.
+            val callersOnly: Boolean = false
+        ) : SettingsOperation
     }
 
     private val _operationEvents =
@@ -124,7 +135,12 @@ class SettingsViewModel @Inject constructor(
                     ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
                 text != null && applyBackupJson(text)
             }.getOrDefault(false)
-            _operationEvents.emit(SettingsOperation.Restored(ok))
+            _operationEvents.emit(
+                SettingsOperation.Restored(
+                    ok,
+                    callersOnly = ok && lastCallersOnlyRestore
+                )
+            )
         }
     }
 
@@ -236,6 +252,10 @@ class SettingsViewModel @Inject constructor(
             if (callerCount + settingsCount > MAX_BACKUP_ENTRIES) return false
 
             var applied = false
+            // نتتبّع مصدر كل جزء على حدة لنعرف إن كانت النسخة حملت إعدادات/
+            // قاموساً فعلياً أم أسماء متصلين فقط (بند الاستعادة الأوضح).
+            var dictApplied = false
+            var settingsApplied = false
 
             val dictArr = root.optArray("dictionary")
             if (dictArr != null) {
@@ -253,9 +273,10 @@ class SettingsViewModel @Inject constructor(
                     ) continue
                     map.addProperty(first.asString, second.asString)
                 }
-                applied = pronunciationDict.importFromJson(
+                dictApplied = pronunciationDict.importFromJson(
                     NateqJson.toJson(map)
-                ) || applied
+                )
+                applied = dictApplied || applied
             }
 
             if (callers != null && callers.size() > 0) {
@@ -302,9 +323,15 @@ class SettingsViewModel @Inject constructor(
                     }
                 }
                 if (restored.isNotEmpty()) {
-                    applied = settings.importSettings(restored) || applied
+                    settingsApplied = settings.importSettings(restored)
+                    applied = settingsApplied || applied
                 }
             }
+
+            // نسخةٌ حملت أسماء متصلين فقط (لا إعدادات ولا قاموس قابلين
+            // للتطبيق): تعلّمها لتُعرض رسالة استعادة أدق في الواجهة.
+            lastCallersOnlyRestore =
+                callerCount > 0 && !dictApplied && !settingsApplied
 
             applied
         } catch (t: Throwable) {

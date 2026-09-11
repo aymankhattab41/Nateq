@@ -573,6 +573,21 @@ class PipelineStepsTest {
     }
 
     @Test
+    fun decimalFractions_naturalWords_includingPercent() {
+        // الكسور الشائعة تُنطق طبيعياً («نصف/ربع/ثلاثة أرباع») حتى داخل
+        // النسبة المئوية، والكسور الأخرى تُقرأ «فاصلة» رقماً رقماً
+        // (البنود 14/31 — نطق طبيعي لا عدّي).
+        val some = PunctuationStep { PunctuationLevels.SOME }
+        fun full(text: String) = CleanupStep.apply(
+            NumberStep.apply(some.apply(text))
+        )
+        assertEquals("خمسون ونصف بالمئة", full("50.5%"))
+        assertEquals("ربع بالمئة", full("0.25%"))
+        assertEquals("واحد وثلاثة أرباع بالمئة", full("1.75%"))
+        assertEquals("ثلاثة فاصلة خمسة واحد بالمئة", full("3.51%"))
+    }
+
+    @Test
     fun emojiStrip_fe0f_droppedSilently_notSpace() {
         // ❤️ = U+2764 + U+FE0F: عند تعطيل نطق الإيموجي يُستبدل القلب بمسافة
         // ويُحذف محرف التباين FE0F صامتاً (بلا مسافة منه) فلا تتباعد الحروف.
