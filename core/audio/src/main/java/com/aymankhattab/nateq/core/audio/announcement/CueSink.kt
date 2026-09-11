@@ -39,6 +39,18 @@ internal interface CueSink {
 }
 
 /**
+ * سمات الصوت الموحّدة للمؤثرات (Audio Cues): مُوجّهة لمسار الإتاحة
+ * (أدوات إمكانية الوصول، مثل TalkBack) ونوع نغمة إعلامية — يُستخدم
+ * من مُنفّذي [CueSink] كلَيهما. كائن داخلي ليُفحص في الاختبارات.
+ */
+internal object CueAudioAttributes {
+    val forCues: AudioAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+        .build()
+}
+
+/**
  * مُنفّذ عبر AudioTrack في الوضع الثابت (MODE_STATIC):
  * يكتب PCM كاملاً ثم يُشغّل ويُعلم بالاكتمال.
  *
@@ -70,10 +82,7 @@ internal class AudioTrackCueSink : CueSink {
                 AudioFormat.ENCODING_PCM_16BIT
             )
             val bufSize = maxOf(minBuf, pcm.size * 2)
-            val attrs = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .build()
+            val attrs = CueAudioAttributes.forCues
             val fmt = AudioFormat.Builder()
                 .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                 .setSampleRate(sampleRate)
@@ -154,13 +163,9 @@ internal class SoundPoolCueSink(
     private val loaded = HashSet<String>()
 
     init {
-        val attrs = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .build()
         soundPool = android.media.SoundPool.Builder()
             .setMaxStreams(2)
-            .setAudioAttributes(attrs)
+            .setAudioAttributes(CueAudioAttributes.forCues)
             .build()
         soundPool.setOnLoadCompleteListener { _, sampleId, status ->
             val pending = pendingLoad.remove(sampleId)
@@ -254,7 +259,9 @@ internal class SoundPoolCueSink(
         }
     }
 
-    private fun writeWav(
+    /** يكتب موجّة PCM في ملف WAV مؤقت داخل cacheDir — داخلي لفحصه في
+     *  الاختبارات (بنية الرأس/الحجم تضمن توافق SoundPool). */
+    internal fun writeWav(
         pcm: ShortArray,
         sampleRate: Int,
         tag: String

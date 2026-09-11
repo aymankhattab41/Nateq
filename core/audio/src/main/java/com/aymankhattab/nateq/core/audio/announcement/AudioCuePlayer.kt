@@ -59,6 +59,12 @@ class AudioCuePlayer private constructor(
             synth: CueSynth = CueSynth,
             handler: Handler = Handler(Looper.getMainLooper())
         ): AudioCuePlayer = AudioCuePlayer(sink, synth, handler)
+
+        /** استبدال المثيل المشترك بنسخة اختبار (سلك وهمي) بين دورات
+         *  الاختبار — لا يُستخدم في الإنتاج إطلاقاً. */
+        internal fun replaceSharedForTesting(player: AudioCuePlayer?) {
+            shared = player
+        }
     }
 
     private var timeoutRunnable: Runnable? = null
@@ -128,8 +134,6 @@ class AudioCuePlayer private constructor(
     /** تحرير موارد الـ Sink عند إغلاق العملية. */
     fun release() {
         stopInternal()
-        if (sink is SoundPoolCueSink) {
-            sink.release()
-        }
+        sink?.release()
     }
 }

@@ -11,12 +11,14 @@ import java.util.Locale
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLooper
 
 /** اختبار فلتر بث البطارية الدائم (بند 16.1): يُعالج البث الدم مرة
  *  واحدة لكل نسبة منعطف، ويُفلتر التكرار في الذاكرة قبل أي
@@ -37,6 +39,9 @@ class BatteryAnnouncementReceiverTest {
     @Before
     fun setUp() {
         BatteryAnnouncementReceiver.resetLevelFilterForTesting()
+        // إزالة أي مشترٍ وهمي للمؤثرات تسرّبَ من اختبار سابق (كائن مصاحب
+        // ثابت يعيش ويكون بين الاختبارات في نفس عملية JVM).
+        AudioCuePlayer.replaceSharedForTesting(null)
         // مسح ختوم نافذة منع التكرار بين الاختبارات حتى لا تتسرب.
         context.getSharedPreferences(
             "nateq_battery_state", Context.MODE_PRIVATE
@@ -47,6 +52,7 @@ class BatteryAnnouncementReceiverTest {
     @After
     fun tearDown() {
         BatteryAnnouncementReceiver.resetLevelFilterForTesting()
+        AudioCuePlayer.replaceSharedForTesting(null)
     }
 
     @Test
@@ -218,6 +224,126 @@ class BatteryAnnouncementReceiverTest {
         shared.shutdown()
     }
 
+    // ===== مسار المؤثرات الصوتية (بند 16.2) =====
+
+    /** عينة PCM متوقعة لنوع مؤثر — التخليق حتمي (طول = مدة × معدل العينات). */
+    private fun expectedCueSamples(cueType: CueType): Int =
+        CueSynth.durationMs(AudioCue(cueType)) * CueSynth.SAMPLE_RATE / 1000
+
+    /** استدعاء speak الخاصة بالانعكاس (نفس نمط الاختبار أعلاه). */
+    private fun invokeBatterySpeak(
+        settings: SettingsRepository,
+        cueType: CueType?
+    ) {
+        val receiver = BatteryAnnouncementReceiver()
+        val method = BatteryAnnouncementReceiver::class.java
+            .getDeclaredMethod(
+                "speak", Context::class.java,
+                SettingsRepository::class.java, String::class.java,
+                Locale::class.java, String::class.java,
+                CueType::class.java
+            )
+        method.isAccessible = true
+        method.invoke(
+            receiver,
+            context,
+            settings,
+            "نصُّ الاختبار",
+            Locale.ENGLISH,
+            "ar-EG",
+            cueType
+        )
+    }
+
+    private fun currentVoiceId(): Any? {
+        val voiceField = AnnouncementSpeaker::class.java
+            .getDeclaredField("voiceId")
+        voiceField.isAccessible = true
+        return voiceField.get(AnnouncementSpeaker.getInstance(context))
+    }
+
+    @Test
+    fun `cue only mode plays the custom cue at its volume without speech`() {
+        val settings = SettingsRepository(context)
+        settings.setBatterySoundCueMode(2)
+        settings.setBatteryCueVolume(0.35f)
+        val sink = FakeCueSink()
+        AudioCuePlayer.replaceSharedForTesting(
+            AudioCuePlayer.forTesting(sink, CueSynth)
+        )
+        try {
+            // صوتُ المتحدث المشترك الثابت — الوضع «مؤثر فقط» لا يلمسه.
+            val voiceBefore = currentVoiceId()
+            invokeBatterySpeak(settings, CueType.BATTERY_CHARGING)
+            ShadowLooper.idleMainLooper()
+            assertEquals(
+                "يُشغَّل مؤثر التوصيل بنوعه الصحيح",
+                expectedCueSamples(CueType.BATTERY_CHARGING),
+                sink.played?.size
+            )
+            assertEquals(
+                "بحجم المؤثر المخصص",
+                0.35f, sink.volume, 0.0f
+            )
+            assertEquals(
+                "الوضع «مؤثر فقط» لا يُنطق ولا يُغيّر صوتَ المتحدث",
+                voiceBefore, currentVoiceId()
+            )
+        } finally {
+            AudioCuePlayer.replaceSharedForTesting(null)
+        }
+    }
+
+    @Test
+    fun `cue before speech mode applies the voice and plays the cue first`() {
+        val settings = SettingsRepository(context)
+        settings.setBatterySoundCueMode(0)
+        settings.setBatteryCueVolume(0.6f)
+        val sink = FakeCueSink()
+        AudioCuePlayer.replaceSharedForTesting(
+            AudioCuePlayer.forTesting(sink, CueSynth)
+        )
+        try {
+            invokeBatterySpeak(settings, CueType.BATTERY_DISCONNECTED)
+            ShadowLooper.idleMainLooper()
+            assertEquals(
+                expectedCueSamples(CueType.BATTERY_DISCONNECTED),
+                sink.played?.size
+            )
+            assertEquals(
+                "المؤثر بمستوى صوته المخصص",
+                0.6f, sink.volume, 0.0f
+            )
+            assertEquals(
+                "المؤثر يسبق النطق لكن الصوت يُطبَّق",
+                "ar-EG", currentVoiceId()
+            )
+            AnnouncementSpeaker.getInstance(context).shutdown()
+        } finally {
+            AudioCuePlayer.replaceSharedForTesting(null)
+        }
+    }
+
+    @Test
+    fun `narration only mode skips the cue but applies the voice`() {
+        val settings = SettingsRepository(context)
+        settings.setBatterySoundCueMode(1)
+        settings.setBatteryCueVolume(0.9f)
+        val sink = FakeCueSink()
+        AudioCuePlayer.replaceSharedForTesting(
+            AudioCuePlayer.forTesting(sink, CueSynth)
+        )
+        try {
+            invokeBatterySpeak(settings, CueType.BATTERY_LOW)
+            ShadowLooper.idleMainLooper()
+            assertNull("النطق فقط — لا مؤثر يُشغَّل", sink.played)
+            assertEquals("ar-EG", currentVoiceId())
+            AnnouncementSpeaker.getInstance(context).shutdown()
+        } finally {
+            AudioCuePlayer.replaceSharedForTesting(null)
+        }
+    }
+
     // ===== نافذة منع تكرار الإعلان (5 دقائق) =====
 
     // لحظة أساسية ثابتة خارج كل النوافذ — الحتمية عبر ساعة افتراضية.
@@ -281,4 +407,26 @@ private class FakeClock(private var millis: Long) : TimeProvider {
     fun setTo(millis: Long) {
         this.millis = millis
     }
+}
+
+/** سلك وهمي للمؤثرات يلتقط الموجة والحجم بلا أي صوت حقيقي. */
+private class FakeCueSink : CueSink {
+
+    var played: ShortArray? = null
+    var volume: Float = 0f
+
+    override fun play(
+        pcm: ShortArray,
+        sampleRate: Int,
+        volume: Float,
+        onDone: (Boolean) -> Unit
+    ) {
+        played = pcm
+        this.volume = volume
+        onDone(true)
+    }
+
+    override fun stop() {}
+
+    override fun release() {}
 }

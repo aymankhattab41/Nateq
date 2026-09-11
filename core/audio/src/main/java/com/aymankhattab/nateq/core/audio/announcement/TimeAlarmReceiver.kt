@@ -139,6 +139,41 @@ class TimeAlarmReceiver : BroadcastReceiver() {
                 null
             }
         }
+
+        /**
+         * دورة إبقاء بثّ goAsync حياً بانتظار النطق (مفصولة للاختبار):
+         * - [startContext] تجهيز الخدمة الأمامية العابرة قبل النطق.
+         * - [addCompletionListener]/[removeCompletionListener] ربط خطاف
+         *   اكتمال النطق بالمدار المشترك وإزالته في النهاية.
+         * - [tick] تشغيل مدار إعلان الوقت (يرسّب الفاصل التالي أيضاً).
+         * - [finishPending] يُستدعى مرة واحدة بالضبط: عند اكتمال النطق أو
+         *   انقضاء نافذة [windowMillis] أو أي خروجٍ غير متوقع.
+         */
+        internal suspend fun runTickFlow(
+            startContext: () -> Unit,
+            addCompletionListener: (() -> Unit) -> Unit,
+            removeCompletionListener: (() -> Unit) -> Unit,
+            tick: () -> Unit,
+            finishPending: () -> Unit,
+            windowMillis: Long = ALARM_ASYNC_WINDOW_MS
+        ) {
+            val finished = AtomicBoolean(false)
+            val finishOnce: () -> Unit = {
+                if (finished.compareAndSet(false, true)) {
+                    finishPending()
+                }
+            }
+            runCatching { startContext() }
+            val listener = finishOnce
+            addCompletionListener(listener)
+            try {
+                tick()
+                delay(windowMillis)
+            } finally {
+                runCatching { removeCompletionListener(listener) }
+                finishOnce()
+            }
+        }
     }
 
     override fun onReceive(context: Context, intent: Intent?) {
@@ -158,42 +193,47 @@ class TimeAlarmReceiver : BroadcastReceiver() {
         val appScope = (appContext as AnnouncementAppContext).appScope
         appScope.launch {
             val wakeLock = acquireShortWakeLock(appContext)
-            // حارس إنهاء وحيد: خطافُ الاكتمال أو سقفُ الأمان أو finally
-            // يُنهون البث مرةً واحدة (finishٌ مكررٌ يرمي تحذيراً بلا لزوم).
+            // حارس إنهاء وحيد على مستوى onReceive: فُقدانُ خطافِ الاكتمال أو
+            // فشل ربطه أو انقضاء سقف الأمان يُنهي البث هنا مرة واحدة أيضاً
+            // (تشغيل التكرار ممنوع — finishٌ مكررٌ يرمي تحذيراً بلا لزوم).
             val finishedBroadcast = AtomicBoolean(false)
             fun finishOnce() {
                 if (finishedBroadcast.compareAndSet(false, true)) {
                     pendingResult.finish()
                 }
             }
-            var completionListener: (() -> Unit)? = null
             try {
-                // شبكة أمان بند 16.2: قبل النطق من سياق المنبه الخلفي وإن لم
-                // تكن خدمة الإعلانات قائمة، تُبدأ خدمة أمامية عابرة تغطي نافذة
-                // النطق بأمان صوت الخلفية (أندرويد 15+/سامسونج) ثم توقف نفسها.
-                AnnouncementSchedulerService.startForSpeech(appContext)
-                // المدار المشترك (نفس كائن الودجت/الأداة)
-                // ينطق ويرسب الفاصل التالي.
-                val speaker = AnnouncementSpeaker.getInstance(appContext)
-                // تحصين بند [4]: لا نُنهي البث فور إطلاق النطق اللاتزامني —
-                // بل نُبقي goAsync حياً حتى اكتمال النطق الفعلي لآخر جملة
-                // (أو مهلة الأمان أدناه) فيُكمل المحركُ التهيئةَ والنطقَ رغم
-                // إيقاظ Doze، بدل الاعتماد على الخدمة الأمامية وحدها.
-                completionListener = {
-                    finishOnce()
-                }
-                speaker.addCompletionListener(completionListener!!)
-                TimeAnnouncementManager.shared(appContext).onAlarmTick()
-                delay(ALARM_ASYNC_WINDOW_MS)
+                runTickFlow(
+                    startContext = {
+                        // شبكة أمان بند 16.2: تبدأ خدمة أمامية عابرة قبل
+                        // النطق من سياق المنبه الخلفي وإن لم تكن خدمة
+                        // الإعلانات قائمة، فتغطي نافذة النطق بأمان صوت
+                        // الخلفية (أندرويد 15+/سامسونج) ثم توقف نفسها.
+                        AnnouncementSchedulerService.startForSpeech(appContext)
+                    },
+                    addCompletionListener = { listener ->
+                        // تحصين بند [4]: لا نُنهي البث فور إطلاق النطق
+                        // اللاتزامني — بل نُبقي goAsync حياً حتى اكتمال النطق
+                        // الفعلي لآخر جملة (أو مهلة الأمان في runTickFlow)
+                        // فيُكمل المحركُ التهيئةَ والنطقَ رغم إيقاظ Doze.
+                        AnnouncementSpeaker.getInstance(appContext)
+                            .addCompletionListener(listener)
+                    },
+                    removeCompletionListener = { listener ->
+                        AnnouncementSpeaker.getInstance(appContext)
+                            .removeCompletionListener(listener)
+                    },
+                    tick = {
+                        // المدار المشترك (نفس كائن الودجت/الأداة)
+                        // ينطق ويرسب الفاصل التالي.
+                        TimeAnnouncementManager.shared(appContext).onAlarmTick()
+                    },
+                    finishPending = ::finishOnce,
+                    windowMillis = ALARM_ASYNC_WINDOW_MS
+                )
             } catch (t: Throwable) {
                 Log.e(TAG, "alarm tick failed", t)
             } finally {
-                completionListener?.let { listener ->
-                    runCatching {
-                        AnnouncementSpeaker.getInstance(appContext)
-                            .removeCompletionListener(listener)
-                    }
-                }
                 finishOnce()
             }
         }

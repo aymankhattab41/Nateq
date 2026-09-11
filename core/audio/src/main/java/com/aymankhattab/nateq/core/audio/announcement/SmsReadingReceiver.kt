@@ -1,8 +1,11 @@
 package com.aymankhattab.nateq.core.audio.announcement
 
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.provider.Telephony
 import android.telephony.SmsMessage
 import android.util.Log
@@ -35,14 +38,104 @@ class SmsReadingReceiver : BroadcastReceiver() {
         const val MODE_OFF = "off"
         const val MODE_FULL = "full"
         const val MODE_SOURCE = "source"
+
+        /** هل مَنح التطبيق إذن قراءة الرسائل الواردة؟
+         *  (RECEIVE_SMS أو READ_SMS). على ما قبل أندرويد 6 لا أخطارِ
+         *  إذنٍ وقت التشغيل — يُعدّ ممنوحاً. */
+        @JvmStatic
+        internal fun canReadMessages(context: Context): Boolean {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+            val recvGranted =
+                context.checkSelfPermission(
+                    Manifest.permission.RECEIVE_SMS
+                ) == PackageManager.PERMISSION_GRANTED
+            val readGranted =
+                context.checkSelfPermission(
+                    Manifest.permission.READ_SMS
+                ) == PackageManager.PERMISSION_GRANTED
+            return recvGranted || readGranted
+        }
+
+        /** يجمع أجزاء (مرسل، نص) في (مرسل، نص) واحد للرسالة المقسّمة —
+         *  طبقة نقية تُفحص في الاختبارات؛ المرسل من أول جزء يملكه. */
+        @JvmStatic
+        internal fun combineParts(
+            parts: List<Pair<String?, String>>
+        ): Pair<String?, String> {
+            val body = StringBuilder()
+            var sender: String? = null
+            for ((partSender, partBody) in parts) {
+                if (sender == null && partSender != null) {
+                    sender = partSender
+                }
+                body.append(partBody)
+            }
+            return sender to body.toString()
+        }
+
+        /** يجمع أجزاء الرسالة (SMS مقسّم) في نص واحد مع المرسل من أول جزء. */
+        @JvmStatic
+        internal fun combineMessages(
+            messages: List<SmsMessage>
+        ): Pair<String?, String> = combineParts(
+            messages.map { it.originatingAddress to (it.messageBody ?: "") }
+        )
+
+        /** خصوصية القفل تُزنّ الوضع إلى المصدر مهما كان الوضع المختار. */
+        @JvmStatic
+        internal fun resolveEffectiveMode(
+            mode: String,
+            privacyLocked: Boolean
+        ): String = if (privacyLocked) MODE_SOURCE else mode
+
+        /** افتراض العربية عند غياب الحروف أو وجود حروف عربية في
+         *  (المرسل + المحتوى) — يرث اختيار نطق «من» القالب. */
+        @JvmStatic
+        internal fun resolveUseArabicVoice(
+            displayAddress: String,
+            content: String
+        ): Boolean {
+            val dynamicText = "$displayAddress $content"
+            return !dynamicText.any { it.isLetter() } ||
+                LocaleUtils.containsArabic(dynamicText)
+        }
+
+        /** يبني النص المَنطوق حسب الأولويات: خصوصية القفل، ثم فلتر التحقق
+         *  OTP، ثم القالب المخصص، ثم التراجعات (فارغ/مصدر/كامل). */
+        @JvmStatic
+        internal fun resolveSpeechText(
+            privacyLocked: Boolean,
+            isOtp: Boolean,
+            smsFrom: String,
+            otpSafeText: String,
+            template: String,
+            content: String,
+            displayAddress: String,
+            effectiveMode: String
+        ): String = when {
+            privacyLocked -> smsFrom
+            isOtp -> otpSafeText
+            template.isNotBlank() -> template
+                .replace("{name}", displayAddress)
+                .replace("{message}", content.ifBlank { displayAddress })
+            content.isBlank() -> smsFrom
+            effectiveMode == MODE_SOURCE -> smsFrom
+            else -> "$smsFrom، $content"
+        }
     }
 
     /** مصدر الإعدادات المحقون — كائن مشترك عبر عمليات التطبيق. */
     @Inject
     lateinit var settingsRepository: SettingsRepository
 
-    override fun onReceive(context: Context, intent: Intent?) {
+override fun onReceive(context: Context, intent: Intent?) {
         if (intent?.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
+        // حراسة الإذن: سحب RECEIVE_SMS (أو READ_SMS) يُسكّت القراءة — لا
+        // يُقرأ المحتوى ولا يُفتح أي مورد دون صلاحية.
+        if (!canReadMessages(context)) {
+            Log.w(TAG, "SMS permission missing; skipping announcement")
+            return
+        }
 
 // goAsync() يمنع Android من قتل المستقبل قبل انتهاء العمل اللاتزامني
         val pendingResult = goAsync()
@@ -57,36 +150,28 @@ class SmsReadingReceiver : BroadcastReceiver() {
                 if (!settings.isAllAnnouncementsEnabled()) return@launch
 
                 val messages =
-                Telephony.Sms.Intents.getMessagesFromIntent(intent)
+                    Telephony.Sms.Intents.getMessagesFromIntent(intent)
                 if (messages.isEmpty()) return@launch
-
                 // نجمع نص الرسائل (SMS قد يصل مقسّماً لعدة أجزاء)
-                val body = StringBuilder()
-                var sender: String? = null
-                for (msg in messages) {
-                    if (sender == null && msg.originatingAddress != null) {
-                        sender = msg.originatingAddress
-                    }
-                    body.append(msg.messageBody ?: "")
-                }
+                val (sender, body) = combineMessages(messages.toList())
 
                 val displayAddress =
-                sender ?: context.getString(R.string.sms_unknown_sender)
+                    sender ?: context.getString(R.string.sms_unknown_sender)
                 val voiceId = settings.getSmsReadingVoiceId()
                 val speechRate = settings.getSmsReadingRate()
                 val volume = settings.getSmsReadingVolume()
 
-                val content = body.toString().trim()
+                val content = body.trim()
                 // خصوصية قفل الشاشة: عند القفل لا يُنطق محتوى الرسالة (قد يحوي
                 // كود تحقق OTP أو معلومة خاصة) بل المصدر فقط — مهما كان الوضع.
                 val privacyLocked = settings.isLockScreenPrivacyEnabled()
-                        && settings.isDeviceScreenLocked()
-                val effectiveMode = if (privacyLocked) MODE_SOURCE else mode
+                    && settings.isDeviceScreenLocked()
+                val effectiveMode =
+                    resolveEffectiveMode(mode, privacyLocked)
                 // تحديد لغة النطق من المحتوى والمرسل (افتراضي العربية عند عدم
                 // وجود حروف حاسمة، مثل مرسل رقمي فقط أو رسالة فارغة).
-                val dynamicText = "$displayAddress $content"
-                val useArabicVoice = !dynamicText.any { it.isLetter() } ||
-                    LocaleUtils.containsArabic(dynamicText)
+                val useArabicVoice =
+                    resolveUseArabicVoice(displayAddress, content)
                 // القالب المخصص (إن حُدِّد) يتيح للمستخدم صياغة كلامه:
                 // {name} للمرسل و{message} للرسالة.
                 val template = settings.getSmsAnnouncementTemplate()
@@ -95,42 +180,33 @@ class SmsReadingReceiver : BroadcastReceiver() {
                 // نفسه في الأماكن العامة بل عبارة أمنية عامة —
                 // حتى مع النطق الكامل.
                 val isOtp = LocaleUtils.containsOtp(content)
+                val speechLang = if (useArabicVoice) LanguageCode.AR.tag
+                else LanguageCode.EN.tag
                 val smsFrom = LocaleUtils.stringForSpeech(
-                    context,
-                    if (useArabicVoice) LanguageCode.AR.tag
-                    else LanguageCode.EN.tag,
-                    R.string.sms_from,
-                    R.string.sms_from
+                    context, speechLang,
+                    R.string.sms_from, R.string.sms_from
                 ).replace("{name}", displayAddress)
-                val text = if (privacyLocked) {
-                    // خصوصية القفل: المصدر فقط، ولا حتى عبارة الرمز.
-                    smsFrom
-                } else if (isOtp) {
-                    LocaleUtils.stringForSpeech(
-                        context,
-                        if (useArabicVoice) LanguageCode.AR.tag
-                        else LanguageCode.EN.tag,
-                        R.string.sms_otp_safe,
-                        R.string.sms_otp_safe
-                    ).replace("{name}", displayAddress)
-                } else if (template.isNotBlank()) {
-                    template
-                        .replace("{name}", displayAddress)
-                        .replace(
-                            "{message}", content.ifBlank { displayAddress }
-                        )
-                } else when {
-                    content.isBlank() -> smsFrom
-                    effectiveMode == MODE_SOURCE -> smsFrom
-                    else -> "$smsFrom، $content"
-                }
+                val otpSafeText = LocaleUtils.stringForSpeech(
+                    context, speechLang,
+                    R.string.sms_otp_safe, R.string.sms_otp_safe
+                ).replace("{name}", displayAddress)
+                val text = resolveSpeechText(
+                    privacyLocked = privacyLocked,
+                    isOtp = isOtp,
+                    smsFrom = smsFrom,
+                    otpSafeText = otpSafeText,
+                    template = template,
+                    content = content,
+                    displayAddress = displayAddress,
+                    effectiveMode = effectiveMode
+                )
 
                 // نقرر لغة النطق حسب النص الفعلي المَنطوق
                 // (المحتوى عربي أم إنجليزي)
                 val isArabic = LocaleUtils.containsArabic(text)
                 val locale =
-                if (isArabic) Locale.forLanguageTag(LanguageCode.AR.tag)
-                else Locale.forLanguageTag(LanguageCode.EN.tag)
+                    if (isArabic) Locale.forLanguageTag(LanguageCode.AR.tag)
+                    else Locale.forLanguageTag(LanguageCode.EN.tag)
 
 // متحدث مشترك واحد لكل الإعلانات (يمنع تقاطع أصوات متعددة)
                 val speech = AnnouncementSpeaker.getInstance(context)
