@@ -3,9 +3,9 @@
 // معالج الطلبات، وخدمة المحرك نفسها (NateqTtsService). يعتمد على :core:engine
 // و:core:data و:core:common بلا أي اعتماد على :app.
 plugins {
-    id("com.android.library")
-    id("com.google.devtools.ksp")
-    id("com.google.dagger.hilt.android")
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt.android)
 }
 
 android {
@@ -29,16 +29,16 @@ dependencies {
     implementation(project(":core:data"))
 
     // كوروتينز — الكوروتينات اللاتزامنية لخدمة المحرك ولمزوّدي الأصوات.
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
+    implementation(libs.kotlinx.coroutines.android)
 
     // Hilt — NateqTtsService مُعلَّم بـ @AndroidEntryPoint وتُحقن فيه إعدادات
     // التطبيق وقاموس النطق (نفس إصدار :app).
-    implementation("com.google.dagger:hilt-android:2.59")
-    ksp("com.google.dagger:hilt-compiler:2.59")
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
 
     // اختبارات الوحدة (JVM + Robolectric) — نفس طقم اختبارات :app.
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.robolectric:robolectric:4.14.1")
-    testImplementation("androidx.test:core:1.6.1")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

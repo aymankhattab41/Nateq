@@ -41,6 +41,9 @@ class TimeAlarmReceiverTest {
     }
 
     @Test
+    // الحقل operation مهجّر بلا getter بديل في واجهة ScheduledAlarm، لذا
+    // الوصول المباشر مقصود (انظر assertSingleImmutablePendingIntent).
+    @Suppress("DEPRECATION")
     fun `exact permission granted schedules a precise doze alarm`() {
         val shadow = shadowAlarmManager()
 
@@ -49,7 +52,7 @@ class TimeAlarmReceiverTest {
         val alarms = shadow.getScheduledAlarms()
         assertEquals("منبهٌ واحدٌ مجدول", 1, alarms.size)
         val alarm = alarms[0]
-        assertEquals(AlarmManager.RTC_WAKEUP, alarm.type)
+        assertEquals(AlarmManager.RTC_WAKEUP, alarm.getType())
         assertEquals(triggerAtMillis, alarm.getTriggerAtMs())
         assertEquals(
             "دقيق: بلا نافذة تسامح (WINDOW_EXACT=0)",
@@ -63,6 +66,9 @@ class TimeAlarmReceiverTest {
     }
 
     @Test
+    // الحقل operation مهجّر بلا getter بديل في واجهة ScheduledAlarm، لذا
+    // الوصول المباشر مقصود (انظر assertSingleImmutablePendingIntent).
+    @Suppress("DEPRECATION")
     fun `missing exact permission falls back to a flexible doze alarm`() {
         val shadow = shadowAlarmManager()
         ShadowAlarmManager.setCanScheduleExactAlarms(false)
@@ -74,7 +80,7 @@ class TimeAlarmReceiverTest {
         val alarms = shadow.getScheduledAlarms()
         assertEquals("منبهٌ واحدٌ مجدول", 1, alarms.size)
         val alarm = alarms[0]
-        assertEquals(AlarmManager.RTC_WAKEUP, alarm.type)
+        assertEquals(AlarmManager.RTC_WAKEUP, alarm.getType())
         assertEquals(triggerAtMillis, alarm.getTriggerAtMs())
         assertEquals(
             "مرن: نافذة إرشادية (WINDOW_HEURISTIC=-1)",
@@ -134,7 +140,8 @@ class TimeAlarmReceiverTest {
     }
 
     /** يتحقق أن الـ PendingIntent غير قابل للتعديل (FLAG_IMMUTABLE — أمان
-     *  بث المنبه على أندرويد 12+) وأن نيته هي tick إعلان الوقت نفسه. */
+     *  بث المنبه على أندرويد 12+) وأن نيته هي tick إعلان الوقت نفسه.
+     *  يُمرَّر operation (حقل ScheduledAlarm المهجّر بلا getter بديل). */
     private fun assertSingleImmutablePendingIntent(operation: PendingIntent?) {
         assertTrue(
             "PendingIntent غير قابل للتعديل",

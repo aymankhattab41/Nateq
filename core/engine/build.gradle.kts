@@ -1,7 +1,7 @@
 // البند 4 — :core:engine: معالج النصوص وخط الإنتاج (pipeline) وتفقيط الأرقام
 // وقاموس النطق. يقرأ الإعدادات عبر واجهة SynthesisConfig فقط (لا يعتمد :core:data).
 plugins {
-    id("com.android.library")
+    alias(libs.plugins.android.library)
 }
 
 android {
@@ -24,12 +24,12 @@ dependencies {
 
     // PronunciationDictionary — تخزين مشفّر via EncryptedSharedPreferences/MasterKey
     // (نفس إصدار :app).
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation(libs.androidx.security.crypto)
 
     // اختبارات الوحدة (JVM + Robolectric) — نفس طقم اختبارات :app؛ تُشغَّل عبر
     // :core:engine:testDebugUnitTest (AGP 9 لا يوفر testReleaseUnitTest).
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.robolectric:robolectric:4.14.1")
-    testImplementation("androidx.test:core:1.6.1")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

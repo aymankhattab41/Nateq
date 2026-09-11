@@ -1,7 +1,7 @@
 // البند 4 — :core:common: أدوات وحدود واجهات مشتركة بلا اعتماد على أي وحدة
-// أخرى (nvابتدائية: المفوّضات، JSON، كود اللغة، مقطع النص، مطلق الإعلانات).
+// أخرى (نواة ابتدائية: المفوّضات، JSON، كود اللغة، مقطع النص، مطلقات الإعلانات).
 plugins {
-    id("com.android.library")
+    alias(libs.plugins.android.library)
 }
 
 android {
@@ -22,8 +22,8 @@ android {
 
 dependencies {
     // المفوّضون الموحّدون (AppDispatchers) — Dispatchers.Main يحتاج منصة أندرويد.
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
+    implementation(libs.kotlinx.coroutines.android)
     // Gson — واجهة NateqJson المركزية والـ ParameterizedType (GsonTypes) تعتمدان عليه.
     // api: NateqJson يكشف أنواع gson (JsonElement/JsonObject...) في API العام.
-    api("com.google.code.gson:gson:2.12.1")
+    api(libs.gson)
 }

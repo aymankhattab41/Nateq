@@ -1,7 +1,7 @@
 plugins {
-    id("com.android.application")
-    id("com.google.devtools.ksp")
-    id("com.google.dagger.hilt.android")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt.android)
 }
 
 import java.util.Properties
@@ -95,33 +95,33 @@ dependencies {
     implementation(project(":feature:widget"))
 
     // خفيفة الوزن ومقصودة - لا تستخدم SDKs ضخمة من كل شركة، بل REST مباشر
-    implementation("androidx.core:core-ktx:1.15.0")
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("com.google.android.material:material:1.13.0") // مكونات واجهة متوافقة مع TalkBack افتراضيًا
-    implementation("androidx.preference:preference-ktx:1.2.1")   // شاشة إعدادات جاهزة ومتوافقة إتاحيًا
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.material) // مكونات واجهة متوافقة مع TalkBack افتراضيًا
+    implementation(libs.androidx.preference.ktx)   // شاشة إعدادات جاهزة ومتوافقة إتاحيًا
     // تشفير مفاتيح الـ API (EncryptedSharedPreferences + Android Keystore).
     // نُبقي على alpha06 لأنها آخر نسخة فيها API مشفّر يعمل عبر minSdk 24 دون
     // ComponentFactory/تطبيق DenyList فك جذر؛ الأنساق الأحدث (stable المعلنة
     // كـ 1.1.0 غير نازلة) تعتمد معيّنات مختلفة. التخزين عندنا مؤقت/محلي فقط
     // ولا يجوز ترقية عشوائية تُقلب صيغة التخزين وتكسر مفاتيح المستخدمين.
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation(libs.androidx.security.crypto)
 
     // Gson للـ serialization في PronunciationDictionary (النسخ الاحتياطي للقاموس)
-    implementation("com.google.code.gson:gson:2.12.1")
+    implementation(libs.gson)
 
     // كوروتينز لإدارة الطلبات غير المتزامنة بدون تجميد الخدمة
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
+    implementation(libs.kotlinx.coroutines.android)
 
     // حقن التبعيات (Hilt) + ViewModel لحوكمة الشاشات وتفكيك الفصيل الكبير
-    implementation("com.google.dagger:hilt-android:2.59")
-    ksp("com.google.dagger:hilt-compiler:2.59")
-    implementation("androidx.hilt:hilt-navigation-fragment:1.2.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
-    implementation("androidx.fragment:fragment-ktx:1.8.6")
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.androidx.hilt.navigation.fragment)
+    implementation(libs.androidx.lifecycle.viewmodel.ktx)
+    implementation(libs.androidx.fragment.ktx)
 
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.robolectric:robolectric:4.14.1")
-    testImplementation("androidx.test:core:1.6.1")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation(libs.androidx.test.ext.junit)
 }

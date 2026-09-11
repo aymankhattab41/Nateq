@@ -1,7 +1,7 @@
 // البند 4 — :core:data: مستودع الإعدادات وطبقة التخزين (SharedPreferences حالياً؛
 // DataStore خيار مستقبلي). يكشف واجهة VoicePrefsProvider لطبقة الصوت.
 plugins {
-    id("com.android.library")
+    alias(libs.plugins.android.library)
 }
 
 android {
@@ -25,16 +25,16 @@ dependencies {
 
     // SettingsRepository: التخزين المشفَّر لأسماء المتصلين (MasterKey/
     // EncryptedSharedPreferences) — نفس إصدار :app.
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation(libs.androidx.security.crypto)
     // UpdateChecker: FileProvider + تنزيل الـ APK؛ ConnectivityMonitor:
     // استشعار حالة الشبكة — نفس إصدار :app.
-    implementation("androidx.core:core-ktx:1.15.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.kotlinx.coroutines.android)
     // toJson → Gson عبر :core:common (api) — لا حاجة لتكرار gson هنا.
 
     // اختبارات الوحدة (Robolectric) — اختبار SettingsRepository كما في :app
     // من قبل؛ تُشغَّل عبر :core:data:testDebugUnitTest (AGP 9).
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.robolectric:robolectric:4.14.1")
-    testImplementation("androidx.test:core:1.6.1")
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
 }
