@@ -23,6 +23,9 @@
     <!-- إبقاء معالج الـ CPU نشطاً أثناء إقلاع محرك TTS ونطق الوقت من أداة
          الساعة (goAsync + WakeLock مؤقت) حتى لا يجمد النظام العملية قبل الصوت -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- الاستجابة اللمسية لأداة الساعة الناطقة (Haptic عند الضغط) — إذن عادي
+         يُمنح عند التثبيت تلقائياً -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- لطلب إعفاء من تحسين البطارية (للخدمة الخلفية) -->
 
     <!-- لسماع بث PHONE_STATE ومعرفة حالة المكالمة (إعلان المتصل) —

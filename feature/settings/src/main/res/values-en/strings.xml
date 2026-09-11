@@ -35,6 +35,7 @@
 <string name="battery_announcement_voice">Battery speech voice</string>
 <string name="battery_announcement_volume">Battery speech volume</string>
 <string name="battery_cue_mode">Battery sound cue</string>
+<string name="battery_cue_volume">Sound cue volume</string>
 <string name="battery_cue_mode_narration_cue">Speech &amp; cue</string>
 <string name="battery_cue_mode_narration_only">Speech only</string>
 <string name="battery_cue_mode_cue_only">Cue only</string>
@@ -42,6 +43,8 @@
 <string name="battery_connected">Charger connected</string>
 <string name="battery_disconnected">Charger disconnected</string>
 <string name="battery_level_contentdesc">Battery level %1$d percent</string>
+<string name="battery_level_checked">Level %1$d percent selected</string>
+<string name="battery_level_unchecked">Level %1$d percent cleared</string>
 <string name="caller_announcement_enabled">Enable caller announcement</string>
 <string name="caller_announcement_interval">Interval between repeats (seconds)</string>
 <string name="caller_announcement_rate">Caller speech rate</string>

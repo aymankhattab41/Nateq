@@ -36,6 +36,7 @@
 <string name="battery_announcement_voice">صوت نطق البطارية</string>
 <string name="battery_announcement_volume">مستوى صوت البطارية</string>
 <string name="battery_cue_mode">مؤثر صوت البطارية</string>
+    <string name="battery_cue_volume">مستوى صوت المؤثر</string>
 <string name="battery_cue_mode_narration_cue">نطق ومؤثر</string>
 <string name="battery_cue_mode_narration_only">نطق فقط</string>
 <string name="battery_cue_mode_cue_only">مؤثر فقط</string>
@@ -43,6 +44,8 @@
 <string name="battery_connected">تم توصيل الشاحن</string>
 <string name="battery_disconnected">تم فصل الشاحن</string>
 <string name="battery_level_contentdesc">نسبة البطارية %1$d بالمئة</string>
+    <string name="battery_level_checked">تم تحديد %1$d بالمئة</string>
+    <string name="battery_level_unchecked">أُلغي تحديد %1$d بالمئة</string>
 <string name="caller_announcement_enabled">تفعيل إعلان المتصل</string>
 <string name="caller_announcement_interval">الفاصل بين كل نطق (بالثواني)</string>
 <string name="caller_announcement_rate">سرعة نطق المتصل</string>

@@ -15,6 +15,7 @@ import android.widget.TextView
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
 import com.aymankhattab.nateq.util.announceCompat
+import com.aymankhattab.nateq.util.setSeekStateDescription
 import com.google.android.material.switchmaterial.SwitchMaterial
 import java.util.Calendar
 import com.aymankhattab.nateq.core.data.SettingsRepository
@@ -160,6 +161,11 @@ internal class TimeAnnouncementController(
             .toInt().coerceIn(0, 100)
         seekTimeChimeVolume.max = 100
         seekTimeChimeVolume.progress = seekProgress
+        // وصف الحالة الإتاحي للشريط عند التهيئة: يقرأه TalkBack فور الوصول
+        // إليه (بدل الوصول ثم انتظار حركةٍ بالتوقف).
+        seekTimeChimeVolume.setSeekStateDescription(
+            "${(savedChimeVol * 100).toInt()}%"
+        )
 
         switchTimeChime.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setTimeChimeEnabled(checked) }
@@ -201,7 +207,12 @@ internal class TimeAnnouncementController(
             object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
                 sb: SeekBar, progress: Int, fromUser: Boolean
-            ) {}
+            ) {
+                // وصف الحالة يتحدث أثناء الحركة (بمفاتيح الصوت) لا عند
+                // التوقف فقط — نفس نمط بقية الشرائط في الإعدادات.
+                val pct = ((0.1f + progress / 100f * 0.9f) * 100).toInt()
+                sb.setSeekStateDescription("$pct%")
+            }
 
             override fun onStartTrackingTouch(sb: SeekBar) {}
 

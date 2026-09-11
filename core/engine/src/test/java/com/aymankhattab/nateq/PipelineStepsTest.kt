@@ -529,6 +529,25 @@ class PipelineStepsTest {
     }
 
     @Test
+    fun phone_simpleCases_skippedByLinearScan() {
+        // فصل الحالات البسيطة (بند 2-1): النص بلا أرقام أو بأرقام
+        // قليلة يُعاد كما هو بالمسح الخطي قبل الـ regex نهائياً.
+        assertEquals("مرحبا بك", PhoneNumberStep.apply("مرحبا بك"))
+        assertEquals("الرقم 123", PhoneNumberStep.apply("الرقم 123"))
+        assertEquals(
+            "رقمان: 42 و 7", PhoneNumberStep.apply("رقمان: 42 و 7")
+        )
+        // 7 أرقام مجردة بلا بادئة لا دليلَ على كونها هاتفاً — تُترك كما هي،
+        // والمسح الخطي لا يُغيّر هذا السلوك (المسار الكامل يعالجها).
+        assertEquals("1234567", PhoneNumberStep.apply("1234567"))
+        // مع مفتاح دولي (+) تمر النتائج من الـ regex وتُستبدل رقماً رقماً.
+        assertEquals(
+            "اثنان صفر اثنان ثلاثة أربعة خمسة ستة سبعة",
+            PhoneNumberStep.apply("+20234567")
+        )
+    }
+
+    @Test
     fun url_uppercaseSchemeAndWww_stillReadableDomain() {
         // الادعاء: الروابط بحروف كبيرة كانت تُشوَّه («HTTPS://GOOGLE.COM» ←
         // «موقع HTTPS») لأن إزالة الشعار حساسة لحالة الأحرف.

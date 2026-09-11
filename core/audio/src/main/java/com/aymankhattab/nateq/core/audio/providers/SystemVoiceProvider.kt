@@ -97,7 +97,7 @@ class SystemVoiceProvider(
 
         /** قيمة احتياطية إذا تعذّر قراءة ترويسة WAV
          *  (تطابق القيمة السابقة ثابتة). */
-        private const val FALLBACK_SAMPLE_RATE = 22050
+        const val FALLBACK_SAMPLE_RATE = 22050
 
         /**
          * مهلة أقصى لتهيئة محرك TTS خارجي: إن علق المحرك داخل
@@ -146,9 +146,9 @@ class SystemVoiceProvider(
     }
 
     /** نتيجة استخراج الصوت من ملف WAV: بيانات PCM ومعدل العينات الحقيقي
-     *  والطول الصالح الصريح (قد يكون أصغر من  `pcm.size` لأن المصفوفة قد تكون
+     *  والطول الصالح الصريح (قد يكون أصغر من `pcm.size` لأن المصفوفة قد تكون
      *  مخزناً من المسبح أكبر من بياناته الفعلية). */
-    private data class PcmExtract(
+    internal data class PcmExtract(
         val pcm: ByteArray,
         val sampleRateInHz: Int,
         val validLength: Int
@@ -1038,111 +1038,8 @@ class SystemVoiceProvider(
      * البيانات الفعلية (مسبح مُعاد استخدامه) — فيُستهلك حتى `validLength` فقط.
      * @return [PcmExtract] أو كائناً بمصفوفة/طول صالح صفري عند التعذر.
      */
-    private fun extractPcm(file: java.io.File): PcmExtract {
-        return try {
-            // قراءة تتابعية واحدة بكامل الملف (بدل
-            // RandomAccessFile بجولاته العشوائية أعلاه):
-            // جولة قراءة تسلسلية واحدة أسرع بكثير على
-            // الفلاش من فتح/قفز/إغلاق متعدد، وتفريغ
-            // تحليل الخانات في الذاكرة مباشرة. هذا يحذف
-            // غالبية زمن I/O الملموس لكل نطق دون أن يمس
-            // ضرورة الكتابة إلى القرص التي تفرضها واجهة
-            // TextToSpeech.synthesizeToFile.
-            val bytes = file.readBytes()
-            val fileLen = bytes.size
-            if (fileLen < 12) {
-                return PcmExtract(
-                    ByteArray(0),
-                    FALLBACK_SAMPLE_RATE,
-                    0
-                )
-            }
-
-            if (bytes[0] != 'R'.code.toByte()
-                || bytes[1] != 'I'.code.toByte()
-                || bytes[2] != 'F'.code.toByte()
-                || bytes[3] != 'F'.code.toByte()
-            ) {
-                // ليس ملف WAV صالح — نُبقي البيانات
-                // كاملة من مسبح (أو نسخة جديدة).
-                val all = pcmPool.acquire(fileLen)
-                System.arraycopy(bytes, 0, all, 0, fileLen)
-                return PcmExtract(all, FALLBACK_SAMPLE_RATE, fileLen)
-            }
-
-            var sampleRate = FALLBACK_SAMPLE_RATE
-            var offset = 12L // بعد "RIFF"+الحجم+"WAVE"
-            while (offset + 8 <= fileLen) {
-                if (offset + 8 > bytes.size) break
-                // خانة: مطابقة 4 بايتات هوية + 4 بايتات
-                // حجم (little-endian).
-                val chunkId = String(
-                    bytes, offset.toInt(), 4,
-                    Charsets.US_ASCII
-                )
-                // حجم الخانة كقيمة **غير موقّعة** (اكتشاف
-                // البت 31): قراءته إشارةً كان يجعل المؤشر
-                // ينقص في ملفٍ تالف (مثل 0x80000000 =
-                // -2147483648) وقد يدخل في حلقة لا نهائية
-                // تعيد نفس المواضع — الآن لا ينقص المؤشر
-                // أبداً لأن الحجم Long في 0..2^32-1.
-                val chunkSize = readLeInt(
-                    bytes, offset.toInt() + 4
-                ).toLong() and 0xFFFFFFFFL
-                if (chunkId == "data") {
-                    // خانة البيانات تُحلَّل في الذاكرة بأمان
-                    // (حتى لو تجاوز الصفوف).
-                    val dataStart = offset + 8
-                    val dataLen = minOf(
-                        chunkSize, fileLen - dataStart
-                    ).coerceAtLeast(0L).toInt()
-                    if (dataLen <= 0) {
-                        return PcmExtract(
-                            ByteArray(0), sampleRate, 0
-                        )
-                    }
-                    val out = pcmPool.acquire(dataLen)
-                    System.arraycopy(bytes, dataStart.toInt(), out, 0, dataLen)
-                    return PcmExtract(out, sampleRate, dataLen)
-                }
-                if (chunkId == "fmt "
-                    && chunkSize >= 16
-                    && offset + 8 + 16 <= bytes.size
-                ) {
-                    // تنسيق: معدل العيّنات في الموضع 4 من
-                    // جسم الخانة (وليس 8 الذي يحمل byteRate) —
-                    // عينات سليمة 14.1k–192k وإلا نحافظ على
-                    // الاحتياطية.
-                    val rate = readLeInt(bytes, offset.toInt() + 12)
-                    if (rate in 14100..192000) sampleRate = rate
-                }
-                // تقدمٌ حتميٌ موجَّب (chunkSize ≥ 0 دائماً)
-                // مع كسرٍ إذا تجاوزت الخانة نهاية الملف (رأس
-                // تالف) بدل مواصلة القراءة من مواقع عشوائية.
-                val next = offset + 8 + chunkSize
-                if (next > fileLen) break
-                offset = next
-            }
-            // لم نعثر على خانة data — نعود لافتراض 44 بايت احتياطاً.
-            if (fileLen > 44) {
-                val dataLen = fileLen - 44
-                val out = pcmPool.acquire(dataLen)
-                System.arraycopy(bytes, 44, out, 0, dataLen)
-                return PcmExtract(out, sampleRate, dataLen)
-            }
-            PcmExtract(ByteArray(0), sampleRate, 0)
-        } catch (e: Exception) {
-            // أي خطأ قراءة — نُرجع فارغاً فيتخلى المتصل عن الملف.
-            PcmExtract(ByteArray(0), FALLBACK_SAMPLE_RATE, 0)
-        }
-    }
-
-    /** قراءة عدد صحيح صغير التدرج (little-endian) بطول 4 بايت */
-    private fun readLeInt(bytes: ByteArray, offset: Int): Int =
-        (bytes[offset].toInt() and 0xFF) or
-            ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
-            ((bytes[offset + 2].toInt() and 0xFF) shl 16) or
-            ((bytes[offset + 3].toInt() and 0xFF) shl 24)
+    private fun extractPcm(file: java.io.File): PcmExtract =
+        extractPcmFromFile(file, pcmPool)
 
     /** مستوى الصوت يُطبَّق رقماً (معامل مضاعف محايد
      *  لا يشوّه الصوت): السرعة والنبرة صارتا تمرَّران
@@ -1179,3 +1076,156 @@ class SystemVoiceProvider(
         return result
     }
 }
+
+/**
+ * يستخرج بيانات PCM الخام ومعدل العينات الحقيقي من ملف WAV بتخطّي الرأس
+ * وقائمة الخانات بصيغة آمنة (حتى مع رؤوس أطول من 44 بايتاً لدى بعض
+ * المحركات مثل MultiTTS). يقرأ من القرص مباشرة عبر [java.io.RandomAccessFile]:
+ * قراءة 8 بايت لكل رأس خانة، ثم بيانات خانة `data` في مصفوفة مُسترجَعة من
+ * مسبح [BytePool] — دون تحميل الملف كاملاً في الذاكرة (كان `readBytes`
+ * يرفع ذروة التخصيص إلى 2-3× حجم الملف للنصوص الطويلة فيقل الضغط على GC).
+ *
+ * معدل العينات يُقرأ من خانة `fmt ` (بايتات sampleRate في موضعها القياسي)
+ * حتى يمررها المتصل لـ callback.start() بدل القيمة الثابتة 22050 التي كانت
+ * تجعل Android يشغّل ملفات 24k/44.1k بسرعة ونبرة خاطئتين.
+ * يُعاد [SystemVoiceProvider.PcmExtract] بطول صالح صريح لأن مصفوفة المخزن
+ * قد تكون أكبر من البيانات الفعلية (مسبح مُعاد استخدامه).
+ * @return [SystemVoiceProvider.PcmExtract] أو كائناً بمصفوفة/طول صفريين
+ *         عند التعذر.
+ */
+internal fun extractPcmFromFile(
+    file: java.io.File,
+    pool: BytePool
+): SystemVoiceProvider.PcmExtract {
+    return try {
+        java.io.RandomAccessFile(file, "r").use {
+            parseWavChunks(it, pool)
+        }
+    } catch (e: Exception) {
+        // أي خطأ قراءة — نُرجع فارغاً فيتخلى المتصل عن الملف.
+        SystemVoiceProvider.PcmExtract(
+            ByteArray(0), SystemVoiceProvider.FALLBACK_SAMPLE_RATE, 0
+        )
+    }
+}
+
+/** يمشي خانات WAV من القرص: خانة `data` تُقرأ مباشرة في المسبح، ومعدل
+ *  العينات من خانة `fmt `، مع نهاية 44 بايت احتياطية عند غياب `data`. */
+private fun parseWavChunks(
+    raf: java.io.RandomAccessFile,
+    pool: BytePool
+): SystemVoiceProvider.PcmExtract {
+    val fileLen = raf.length()
+    val emptyExtract = { sampleRate: Int ->
+        SystemVoiceProvider.PcmExtract(
+            ByteArray(0), sampleRate, 0
+        )
+    }
+    if (fileLen < 12) return emptyExtract(
+        SystemVoiceProvider.FALLBACK_SAMPLE_RATE
+    )
+
+    val head = ByteArray(4)
+    if (!readFully(raf, head, 0, 4)) {
+        return emptyExtract(SystemVoiceProvider.FALLBACK_SAMPLE_RATE)
+    }
+    if (head[0] != 'R'.code.toByte()
+        || head[1] != 'I'.code.toByte()
+        || head[2] != 'F'.code.toByte()
+        || head[3] != 'F'.code.toByte()
+    ) {
+        // ليس ملف WAV صالح — نُبقي البيانات كاملة
+        // من المسبح دون نسخة وسيطة.
+        val all = pool.acquire(fileLen.toInt())
+        raf.seek(0)
+        if (!readFully(raf, all, 0, fileLen.toInt())) {
+            return emptyExtract(SystemVoiceProvider.FALLBACK_SAMPLE_RATE)
+        }
+        return SystemVoiceProvider.PcmExtract(
+            all, SystemVoiceProvider.FALLBACK_SAMPLE_RATE, fileLen.toInt()
+        )
+    }
+
+    var sampleRate = SystemVoiceProvider.FALLBACK_SAMPLE_RATE
+    var offset = 12L // بعد "RIFF"+الحجم+"WAVE"
+    val chunkHeader = ByteArray(8)
+    val rateBuf = ByteArray(4)
+    while (offset + 8 <= fileLen) {
+        raf.seek(offset)
+        if (!readFully(raf, chunkHeader, 0, 8)) break
+        val chunkId = String(chunkHeader, 0, 4, Charsets.US_ASCII)
+        // حجم الخانة كقيمة **غير موقّعة** (اكتشاف البت 31):
+        // قراءته إشارةً كان يجعل المؤشر ينقص في ملفٍ تالف
+        // (مثل 0x80000000 = -2147483648) وقد يدخل في حلقة
+        // لا نهائية تعيد نفس المواضع — الآن لا ينقص المؤشر
+        // أبداً لأن الحجم Long في 0..2^32-1.
+        val chunkSize = readLeInt(chunkHeader, 4).toLong() and 0xFFFFFFFFL
+        if (chunkId == "data") {
+            val dataStart = offset + 8
+            val dataLen = minOf(
+                chunkSize, fileLen - dataStart
+            ).coerceAtLeast(0L).toInt()
+            if (dataLen <= 0) return emptyExtract(sampleRate)
+            val out = pool.acquire(dataLen)
+            raf.seek(dataStart)
+            if (!readFully(raf, out, 0, dataLen)) {
+                return emptyExtract(sampleRate)
+            }
+            return SystemVoiceProvider.PcmExtract(out, sampleRate, dataLen)
+        }
+        if (chunkId == "fmt "
+            && chunkSize >= 16
+            && offset + 24 <= fileLen
+        ) {
+            // تنسيق: معدل العيّنات في الموضع 4 من جسم الخانة
+            // (وليس 8 الذي يحمل byteRate) — عينات سليمة
+            // 14.1k–192k وإلا نحافظ على الاحتياطية.
+            raf.seek(offset + 12)
+            if (readFully(raf, rateBuf, 0, 4)) {
+                val rate = readLeInt(rateBuf, 0)
+                if (rate in 14100..192000) sampleRate = rate
+            }
+        }
+        // تقدمٌ حتميٌ موجَّب (chunkSize ≥ 0 دائماً) مع كسرٍ
+        // إذا تجاوزت الخانة نهاية الملف (رأس تالف) بدل مواصلة
+        // القراءة من مواقع عشوائية.
+        val next = offset + 8 + chunkSize
+        if (next > fileLen) break
+        offset = next
+    }
+    // لم نعثر على خانة data — نعود لافتراض 44 بايت احتياطاً.
+    if (fileLen > 44) {
+        val dataLen = (fileLen - 44).toInt()
+        val out = pool.acquire(dataLen)
+        raf.seek(44)
+        if (!readFully(raf, out, 0, dataLen)) {
+            return emptyExtract(sampleRate)
+        }
+        return SystemVoiceProvider.PcmExtract(out, sampleRate, dataLen)
+    }
+    return emptyExtract(sampleRate)
+}
+
+/** يقرأ [len] بايت كاملة من [start] — [java.io.RandomAccessFile.read]
+ *  قد يُرجع أقل من المطلوب، فنجمع حتى الاكتمال. تُرجع false عند نهاية الملف. */
+private fun readFully(
+    raf: java.io.RandomAccessFile,
+    out: ByteArray,
+    start: Int,
+    len: Int
+): Boolean {
+    var read = 0
+    while (read < len) {
+        val n = raf.read(out, start + read, len - read)
+        if (n < 0) return false
+        read += n
+    }
+    return true
+}
+
+/** قراءة عدد صحيح صغير التدرج (little-endian) بطول 4 بايت */
+private fun readLeInt(bytes: ByteArray, offset: Int): Int =
+    (bytes[offset].toInt() and 0xFF) or
+        ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
+        ((bytes[offset + 2].toInt() and 0xFF) shl 16) or
+        ((bytes[offset + 3].toInt() and 0xFF) shl 24)

@@ -35,6 +35,8 @@ internal class BatteryAnnouncementController(
     private lateinit var seekBatteryVolume: SeekBar
     private lateinit var tvBatteryVolumeValue: TextView
     private lateinit var spinnerBatteryCueMode: Spinner
+    private lateinit var seekBatteryCueVolume: SeekBar
+    private lateinit var tvBatteryCueVolumeValue: TextView
     private lateinit var switchChargingComplete: SwitchMaterial
     private lateinit var switchChargingDisconnect: SwitchMaterial
     private lateinit var switchPowerSaver: SwitchMaterial
@@ -55,6 +57,11 @@ internal class BatteryAnnouncementController(
         tvBatteryRateValue = view.findViewById(R.id.tv_battery_rate_value)
         seekBatteryVolume = view.findViewById(R.id.seek_battery_volume)
         tvBatteryVolumeValue = view.findViewById(R.id.tv_battery_volume_value)
+        spinnerBatteryCueMode =
+            view.findViewById(R.id.spinner_battery_cue_mode)
+        seekBatteryCueVolume = view.findViewById(R.id.seek_battery_cue_volume)
+        tvBatteryCueVolumeValue =
+            view.findViewById(R.id.tv_battery_cue_volume_value)
         switchChargingComplete =
             view.findViewById(R.id.switch_charging_complete_announcement)
         switchChargingDisconnect =
@@ -141,6 +148,18 @@ internal class BatteryAnnouncementController(
                         current.remove(levelStr)
                     }
                     settings.setBatteryAnnouncementLevels(current)
+                    // تأكيد الحالة فوراً لقارئ الشاشة (بند 3-2): المربع يحمل
+                    // contentDescription خاصة عبر delegate فيقرأ السِياق.
+                    fragment.view?.announceCompat(
+                        fragment.getString(
+                            if (isChecked) {
+                                R.string.battery_level_checked
+                            } else {
+                                R.string.battery_level_unchecked
+                            },
+                            level
+                        )
+                    )
                 }
             }
             llBatteryLevels.addView(cb)
@@ -315,6 +334,41 @@ internal class BatteryAnnouncementController(
                 parent: AdapterView<*>?
             ) {}
         }
+
+        // مستوى صوت مؤثر البطارية (مستقل عن صوت النطق بند 3-3): يُطبق
+        // 0.1..1.0 على كامل مسار الشريط مثل رنة الساعة.
+        val batteryCueVolume =
+            runCatching { settings.getBatteryCueVolume() }
+                .getOrDefault(0.8f)
+        tvBatteryCueVolumeValue.text =
+            "${(batteryCueVolume * 100).toInt()}%"
+        seekBatteryCueVolume.progress =
+            ((batteryCueVolume - 0.1f) / 0.9f * 100)
+                .toInt().coerceIn(0, 100)
+        seekBatteryCueVolume.setSeekStateDescription(
+            tvBatteryCueVolumeValue.text
+        )
+        seekBatteryCueVolume.setOnSeekBarChangeListener(
+            object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(
+                seekBar: SeekBar,
+                progress: Int,
+                fromUser: Boolean
+            ) {
+                val pct = ((0.1f + progress / 100f * 0.9f) * 100).toInt()
+                tvBatteryCueVolumeValue.text = "$pct%"
+                seekBar.setSeekStateDescription(
+                    tvBatteryCueVolumeValue.text
+                )
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                val vol = 0.1f + seekBar.progress / 100f * 0.9f
+                runCatching { settings.setBatteryCueVolume(vol) }
+                seekBar.announceCompat("${(vol * 100).toInt()}%")
+            }
+        })
 
         // إعلان اكتمال الشحن (100%)
         switchChargingComplete.isChecked =

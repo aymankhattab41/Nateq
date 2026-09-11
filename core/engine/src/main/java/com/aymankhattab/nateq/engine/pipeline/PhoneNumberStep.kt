@@ -29,12 +29,25 @@ internal object PhoneNumberStep : TextProcessingStep {
     private val PATTERN_ARITHMETIC =
         Pattern.compile("""\d+(?:\s*[+\-*/]\s*\d+)+""")
 
+    // فواصل التاريخ في looksLikeDate (شرطة/نقطة/شرطة مائلة) — أنماط
+    // مسبقة التجميع بدل إنشاء Regex في كل استدعاء (بند تحسين Regex).
+    private val PATTERN_DATE_SEPARATOR = Pattern.compile("""[-/.]""")
+
+    // فواصل مجموعات الآلاف في looksLikeThousandsGrouping (مسافة/أقواس/
+    // نقطة/شرطة) — نفس الملاحظة.
+    private val PATTERN_GROUP_SEPARATOR = Pattern.compile("""[\s().\-]+""")
+
     override fun apply(input: String): String =
         processPhoneNumbers(input, isArabicContext = true)
 
     private fun processPhoneNumbers(
         text: String, isArabicContext: Boolean
     ): String {
+        // فصل الحالات البسيطة بمسح خطي واحد O(N): أي تطابق قابل للاستبدال
+        // يحمل 7-15 رقماً (فلاتر الأطوال أدناه)، فغيابُ 7 أرقام يعني أن
+        // الـ regex لا يمكن أن يُسفر عن أي استبدال — تُتخطّى المطابقة كلياً
+        // للنصوص بلا أرقام أو بأرقام قصيرة (الحالة الأكثر شيوعاً).
+        if (!canContainPhoneSequence(text)) return text
         val matcher = PATTERN_PHONE.matcher(text)
         if (!matcher.find()) return text
         matcher.reset()
@@ -81,7 +94,8 @@ internal object PhoneNumberStep : TextProcessingStep {
 
     /** هل التطابق تاريخ (3 مجموعات رقمية بفاصل، آخرها سنة 2-4 أرقام)؟ */
     private fun looksLikeDate(raw: String): Boolean {
-        val parts = raw.split(Regex("""[-/.]""")).filter { it.isNotBlank() }
+        val parts = PATTERN_DATE_SEPARATOR.split(raw)
+            .filter { it.isNotBlank() }
         if (parts.size != 3) return false
         val lens = parts.map { it.length }
         // يوم/شهر (1-2) وسنة (2-4) — الأجزاء الثلاثة كلها أرقام خالصة
@@ -117,8 +131,7 @@ internal object PhoneNumberStep : TextProcessingStep {
 
     /** هل التطابق مجرد تجميع آلاف بفواصل (تنسيق أوروبي) وليس هاتفاً؟ */
     private fun looksLikeThousandsGrouping(raw: String): Boolean {
-        val groups = raw
-            .split(Regex("""[\s().\-]+"""))
+        val groups = PATTERN_GROUP_SEPARATOR.split(raw)
             .filter { it.isNotBlank() }
         if (groups.size < 2) return false
         if (groups.first().length !in 1..3) return false
@@ -129,5 +142,21 @@ internal object PhoneNumberStep : TextProcessingStep {
     private fun looksLikeArithmetic(raw: String): Boolean {
         // المطابقة الكاملة فقط سليمة: التعامل هنا تعبيرٌ حسابي لا هاتف
         return PATTERN_ARITHMETIC.matcher(raw).matches()
+    }
+
+    /** مسح خطي رخيص بلا regex: هل قد يحمل النص متوالية هاتف؟ أي تطابق
+     *  قابل للاستبدال يحمل 7-15 رقماً (فلاتر الأطوال في
+     *  [processPhoneNumbers])، فبلوغ 7 أرقام ASCII هو القاطع الوحيد
+     *  المطلوب هنا — والحالة الأكثر شيوعاً (نص بلا أرقام أو بأرقام قصيرة)
+     *  تتوقف عند أول 7 أرقام أو نهاية السلسلة. */
+    private fun canContainPhoneSequence(text: String): Boolean {
+        var digits = 0
+        for (c in text) {
+            if (c in '0'..'9') {
+                digits++
+                if (digits >= 7) return true
+            }
+        }
+        return false
     }
 }

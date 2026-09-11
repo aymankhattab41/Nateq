@@ -258,13 +258,15 @@ class BatteryAnnouncementReceiver(
     ) {
         val speechRate = settings.getBatteryAnnouncementRate()
         val volume = settings.getBatteryAnnouncementVolume()
+        val cueVolume = runCatching { settings.getBatteryCueVolume() }
+            .getOrDefault(0.8f)
         val mode = runCatching { settings.getBatterySoundCueMode() }
             .getOrDefault(0)
         if (mode == 2 && cueType != null) {
             // «مؤثر فقط»: لا نطق، نغمة فقط (بدون تركيز — طويلة قصيرة
             // ضمن مسار الإتاحة).
             AudioCuePlayer.getInstance(context).play(
-                AudioCue(type = cueType, volume = volume)
+                AudioCue(type = cueType, volume = cueVolume)
             ) {}
             return
         }
@@ -274,7 +276,7 @@ class BatteryAnnouncementReceiver(
         // بالصوت الخطأ — نفس نمط المتصل/الرسائل.
         speaker.resetVoice(voiceId)
         val cue = if (mode == 0 && cueType != null) {
-            AudioCue(type = cueType, volume = volume)
+            AudioCue(type = cueType, volume = cueVolume)
         } else {
             null
         }

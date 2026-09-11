@@ -955,6 +955,15 @@ val masterKey = androidx.security.crypto.MasterKey
             .putFloat("time_chime_volume", volume.coerceIn(0.1f, 1f))
             .apply()
 
+    /** مستوى صوت نغمة البطارية 0.1..1.0 (مستقل عن صوت النطق — بند 3-3). */
+    fun getBatteryCueVolume(): Float =
+        prefs.getFloat("battery_cue_volume", 0.8f)
+            .coerceIn(0.1f, 1f)
+    fun setBatteryCueVolume(volume: Float) =
+        prefs.edit()
+            .putFloat("battery_cue_volume", volume.coerceIn(0.1f, 1f))
+            .apply()
+
     /**
      * وضع مؤثر البطارية: 0=نطق ومؤثر، 1=نطق فقط، 2=مؤثر فقط.
      */
@@ -1353,11 +1362,15 @@ val masterKey = androidx.security.crypto.MasterKey
 
     /** تعقّل قيمة عشرية حسب المفتاح (السرعة/النبرة تعبان، المستوى نسبة). */
     private fun sanitizeFloat(key: String, value: Float): Float = when {
-        key.contains("_rate") ||
-            key.contains("_pitch") -> value.coerceIn(0f, 2f)
+        // مستويا صوت الرنة ونغمة البطارية لا يهبطان تحت 0.1 — يُفحصان قبل
+        // الفرع العام لـ _volume وإلا ابتلعه الفرعُ العامُ بمجرد احتوائهما
+        // على المقطع (0..1) فسقط السقف الأدنى.
+        key == "time_chime_volume" ||
+            key == "battery_cue_volume" -> value.coerceIn(0.1f, 1f)
         key.contains("_volume") ||
             key == "default_volume" -> value.coerceIn(0f, 1f)
-        key == "time_chime_volume" -> value.coerceIn(0.1f, 1f)
+        key.contains("_rate") ||
+            key.contains("_pitch") -> value.coerceIn(0f, 2f)
         else -> value
     }
 

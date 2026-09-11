@@ -539,4 +539,16 @@ class SettingsRepositoryTest {
         repo.setBatterySoundCueMode(9)
         assertEquals(2, repo.getBatterySoundCueMode())
     }
+
+    @Test
+    fun batteryCueVolume_defaultsAndClamps() {
+        // افتراضياً 0.8؛ خارج 0.1..1 يُقيَّد (بند 3-3).
+        assertEquals(0.8f, repo.getBatteryCueVolume(), 0.0f)
+        repo.setBatteryCueVolume(0.5f)
+        assertEquals(0.5f, repo.getBatteryCueVolume(), 0.0f)
+        repo.setBatteryCueVolume(0.0f)
+        assertEquals(0.1f, repo.getBatteryCueVolume(), 0.0f)
+        repo.setBatteryCueVolume(2.0f)
+        assertEquals(1.0f, repo.getBatteryCueVolume(), 0.0f)
+    }
 }

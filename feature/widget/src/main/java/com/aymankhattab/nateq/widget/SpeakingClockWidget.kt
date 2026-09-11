@@ -6,9 +6,12 @@ import android.appwidget.AppWidgetProvider
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.util.Log
 import android.widget.RemoteViews
 import com.aymankhattab.nateq.feature.widget.R
@@ -90,6 +93,9 @@ class SpeakingClockWidget : AppWidgetProvider() {
         pendingResult: BroadcastReceiver.PendingResult?,
     ) {
         val appContext = context.applicationContext
+        // استجابة لمسية فورية عند الضغط على الأداة (قبل بدء النطق):
+        // تأكيدٌ إتاحي للّمس لقارئ الشاشة ومستخدمي اللمس معاً.
+        vibrateTap(appContext)
         var wakeLock: PowerManager.WakeLock? = null
         var finished = false
         val mainHandler = Handler(Looper.getMainLooper())
@@ -165,6 +171,37 @@ class SpeakingClockWidget : AppWidgetProvider() {
         } catch (t: Throwable) {
             Log.e("NATEQ_TTS", "widget speak failed", t)
             finish()
+        }
+    }
+
+    /** اهتزاز نقرٍ قصير متوافق مع كل الإصدارات: تأثير مُعرّف مسبقاً (Q+) أو
+     *  نبضة 30ms (O+) أو النداء المُهجَّر دون 26 — مع الإذن العادي VIBRATE
+     *  في المانيفست. صامت تماماً في غياب الهزّاز أو الإذن. */
+    private fun vibrateTap(context: Context) {
+        // getSystemService(Class) متاح منذ API 23 (minSdk=24) ويرجع
+        // null لو غاب الخداع — بلا الثابت المُهجَّر Context.VIBRATOR_SERVICE.
+        val vibrator = context.getSystemService(Vibrator::class.java)
+            ?: return
+        if (!vibrator.hasVibrator()) return
+        when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> {
+                vibrator.vibrate(
+                    VibrationEffect.createPredefined(
+                        VibrationEffect.EFFECT_CLICK
+                    )
+                )
+            }
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O -> {
+                vibrator.vibrate(
+                    VibrationEffect.createOneShot(
+                        30L, VibrationEffect.DEFAULT_AMPLITUDE
+                    )
+                )
+            }
+            else -> {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(30L)
+            }
         }
     }
 
