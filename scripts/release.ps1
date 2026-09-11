@@ -12,6 +12,9 @@
         - بناء Release فقط (assembleRelease) + الاختبارات قبل أي commit.
         - app_name ثابت "Lord TTS"، والوسم الأحادي vN → 0.N.0
           (متوافق مع alignZeroRelease في UpdateChecker).
+        - كل دفع = إصدار جديد تلقائياً: النسخة دائماً (أعلى وسم منشور + 1)
+          فيعمل التحققُ من التحديثات تلقائياً؛ ولا إصدار بلا التزامات
+          جديدة واصلة من آخر وسم إلى HEAD (منع الإصدار الفارغ).
 #>
 [CmdletBinding()]
 param(
@@ -90,7 +93,7 @@ if ($null -ne $remoteMax) {
     $latestTagN = 0
 }
 
-# versionCode الحالي في build.gradle.kts.
+# versionCode الحالي في build.gradle.kts (عرض/ملف فقط — لا يُرجع).
 $gradleRaw = [System.IO.File]::ReadAllText($gradleFile)
 $codeMatch = [regex]::Match($gradleRaw, 'versionCode = (\d+)')
 if (-not $codeMatch.Success) {
@@ -98,13 +101,25 @@ if (-not $codeMatch.Success) {
 }
 $currentCode = [int]$codeMatch.Groups[1].Value
 
-# الإصدار المستهدف: إن كان الترقيم في الملف سابقاً للوسم الأحدث (أو مطابقاً
-# له) نرفعه بمقدار واحد، وإلا ننشر ما هو معلّق فعلاً في الملف.
-if ($currentCode -le $latestTagN) {
-    $targetCode = $latestTagN + 1
+# منع الإصدار الفارغ: لا إصدار إن لم توجد التزامات جديدة واصلة من آخر
+# وسم منشور إلى HEAD (لا «دفع بلا مبرر» قبل نشرٍ).
+if ($latestTagN -gt 0) {
+    $commitOut = Invoke-Git @('rev-list', '--count', "v$latestTagN..HEAD")
+    $sinceTag = "v$latestTagN"
 } else {
-    $targetCode = $currentCode
+    # أول إصدار في المستودع: كل تاريخ master يُعدّ جديداً.
+    $commitOut = Invoke-Git @('rev-list', '--count', 'HEAD')
+    $sinceTag = '(لا وسوم بعد)'
 }
+$newCommitCount = [int]($commitOut | Out-String).Trim()
+if ($newCommitCount -lt 1) {
+    throw "لا التزامات جديدة منذ $sinceTag — لا حاجة لإصدار."
+}
+
+# الرفع التلقائي الإجباري: نسخة كل دفع = أعلى وسم منشور على الـ remote
+# بمقدار واحد (المرجع الـ remote دائماً، ولا حالة «معلّقة» تُفقد إصدارها) —
+# فيعمل التحققُ من التحديثات تلقائياً مع كل إصدار جديد.
+$targetCode = $latestTagN + 1
 $targetVersion = "0.$targetCode.0"
 $targetTag = "v$targetCode"
 
@@ -134,6 +149,7 @@ if ($null -ne $remoteHas) {
 }
 
 Write-Host "=> الإصدار المستهدف: $targetVersion  (وسم $targetTag، versionCode $targetCode)"
+Write-Host "=> يغطي $newCommitCount التزاماً جديداً منذ $sinceTag"
 
 # ملاحظات الإصدار من بند المستجدات داخل التطبيق (عربي)، لا توليد آلي.
 $changelogXml = Join-Path $repoRoot 'feature\settings\src\main\res\values\strings.xml'
@@ -163,12 +179,9 @@ if (Test-Path -LiteralPath $changelogXml) {
 
 if ($DryRun) {
     Write-Host '=> وضع المحاكاة (DryRun): لا تغيير على أي ملف أو remote.'
-    if ($currentCode -ne $targetCode) {
-        Write-Host "   - تعديل $gradleFile إلى versionCode=$targetCode"
-        Write-Host "     و versionName=$targetVersion"
-    } else {
-        Write-Host "   - $gradleFile لا يحتاج تعديل ترقيم (النسخة معلّقة مسبقاً)."
-    }
+    Write-Host "   - رفع $gradleFile إلى versionCode=$targetCode"
+    Write-Host "     و versionName=$targetVersion (يغطي $newCommitCount " +
+        "commit جديداً منذ $sinceTag)"
     Write-Host '   - تشغيل :app:testDebugUnitTest ثم :app:assembleRelease'
     Write-Host '   - commit: app/build.gradle.kts فقط (رسالة عربية)'
     Write-Host "   - tag $targetTag ثم push origin master --tags"
