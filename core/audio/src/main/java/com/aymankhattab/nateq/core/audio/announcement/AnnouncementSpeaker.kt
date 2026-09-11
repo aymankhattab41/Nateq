@@ -326,28 +326,36 @@ class AnnouncementSpeaker(
                         // الطابور، لا عند أول جزء — الإعلان متعدد
                         // المقاطع (نص + أسماء إيموجي متتابعة) يبقى
                         // محمياً من تشويش التطبيقات الأخرى حتى
-                        // ينتهي كامل النطق.
-                        if (utteranceId != null
+                        // ينتهي كامل النطق. التحرير في [finally]
+                        // يضمن تخلي النظام عن Audio Focus مهما
+                        // أُجهِض التنظيفُ بينه (نصيحة المراجعة 3).
+                        val isFinal = utteranceId != null
                             && utteranceId == lastQueuedUtteranceId
-                        ) {
-                            cancelSpeechWatchdog()
-                            stopInterruptionMonitoring()
-                            releaseAudioFocus()
-                            notifySpeechComplete()
+                        try {
+                            if (isFinal) {
+                                cancelSpeechWatchdog()
+                                stopInterruptionMonitoring()
+                            }
+                        } finally {
+                            if (isFinal) releaseAudioFocus()
                         }
+                        if (isFinal) notifySpeechComplete()
                         nowSpeaking = false
                     }
 
                     @Deprecated("Java Override")
                     override fun onError(utteranceId: String?) {
-                        if (utteranceId != null
+                        val isFinal = utteranceId != null
                             && utteranceId == lastQueuedUtteranceId
-                        ) {
-                            cancelSpeechWatchdog()
-                            stopInterruptionMonitoring()
-                            releaseAudioFocus()
-                            notifySpeechComplete()
+                        try {
+                            if (isFinal) {
+                                cancelSpeechWatchdog()
+                                stopInterruptionMonitoring()
+                            }
+                        } finally {
+                            if (isFinal) releaseAudioFocus()
                         }
+                        if (isFinal) notifySpeechComplete()
                         nowSpeaking = false
                     }
                 })
@@ -583,29 +591,40 @@ class AnnouncementSpeaker(
         attempt: Int
     ) {
         startInterruptionMonitoring()
-        val units = buildSpeakUnits(
-            text, locale, speechRate, pitch, volume, emojiCfg, parts
-        )
-        units.forEachIndexed { index, unit ->
-            val queueMode = if (index == 0) {
-                TextToSpeech.QUEUE_FLUSH
-            } else {
-                TextToSpeech.QUEUE_ADD
-            }
-            doSpeak(
-                unit.text,
-                unit.locale,
-                unit.rate,
-                unit.pitch,
-                unit.volume,
-                partVoice = unit.voiceId,
-                queueMode = queueMode,
-                attempt = attempt
+        try {
+            val units = buildSpeakUnits(
+                text, locale, speechRate, pitch, volume, emojiCfg, parts
             )
+            units.forEachIndexed { index, unit ->
+                val queueMode = if (index == 0) {
+                    TextToSpeech.QUEUE_FLUSH
+                } else {
+                    TextToSpeech.QUEUE_ADD
+                }
+                doSpeak(
+                    unit.text,
+                    unit.locale,
+                    unit.rate,
+                    unit.pitch,
+                    unit.volume,
+                    partVoice = unit.voiceId,
+                    queueMode = queueMode,
+                    attempt = attempt
+                )
+            }
+            // حد ختام للدورة: مهما طال النص يُفتح حارس الانتهاء قبل إرسال
+            // الأجزاء ليلتقط أي محرك يعلّق صامتاً (بلا onDone/onError).
+            armSpeechWatchdog(units)
+        } catch (t: Throwable) {
+            // أي استثناء متزامن أثناء بناء/إرسال الوحدات (محرك مكسور،
+            // خطأ معاملات...) يقع قبل تسليح الحارس — فيُحرَّر التركيز
+            // ويرتفع رصد الإسكات فوراً حتى لا يبقى النظام محجوزاً صامتاً
+            // (الحماية المؤقتة الصارمة للتركيز — نصيحة المراجعة 3).
+            cancelSpeechWatchdog()
+            stopInterruptionMonitoring()
+            releaseAudioFocus()
+            Log.w(TAG, "doSpeakParts failed", t)
         }
-        // حد ختام للدورة: مهما طال النص يُفتح حارس الانتهاء قبل إرسال
-        // الأجزاء ليلتقط أي محرك يعلّق صامتاً (بلا onDone/onError).
-        armSpeechWatchdog(units)
     }
 
     /** وحدة نطق مستقلة بمعاملاتها (لغة/صوت/أشرطة) داخل دورة الإعلان الواحدة. */

@@ -100,25 +100,39 @@ internal class EngineSectionController(
     }
 
     // ===== التحويل التلقائي عبر كل اللغات =====
+    private var autoConvertCheckbox:
+        com.google.android.material.checkbox.MaterialCheckBox? = null
+    private var autoConvertButton:
+        com.google.android.material.button.MaterialButton? = null
+
+    /** يعيد تزامن واجهة التحويل مع الإعداد الحالي. عند تفعيل المستخدم محركاً
+     *  من حوار اللغات يُقلب التفعيلُ مفتاح «التحويل التلقائي» تلقائياً —
+     *  بلا هذه الدالة كان المفتاح الرئيسي يبقى ظاهرياً «غير مفعّل» رغم
+     *  تفعيله الفعلي حتى إعادة فتح الشاشة (حالة «حفظت المحرك ولم يعمل»). */
+    private fun refreshAutoConvertUi() {
+        val enabled = runCatching { settings.isAutoConvertEnabled() }
+            .getOrDefault(false)
+        autoConvertCheckbox?.isChecked = enabled
+        autoConvertButton?.isEnabled = enabled
+    }
+
     fun setupAutoConvertUI(view: View) {
         val chk: com.google.android.material.checkbox.MaterialCheckBox =
             view.findViewById(R.id.checkbox_auto_convert)
         val btn: com.google.android.material.button.MaterialButton =
             view.findViewById(R.id.btn_convert_languages)
-
-        chk.isChecked = runCatching { settings.isAutoConvertEnabled() }
-            .getOrDefault(false)
+        autoConvertCheckbox = chk
+        autoConvertButton = btn
+        refreshAutoConvertUi()
         chk.setOnClickListener { v ->
             val enabled =
                 (v as com.google.android.material.checkbox.MaterialCheckBox)
                     .isChecked
             runCatching { settings.setAutoConvertEnabled(enabled) }
-            btn.isEnabled = enabled
+            refreshAutoConvertUi()
             onStatusChanged()
         }
 
-        btn.isEnabled = runCatching { settings.isAutoConvertEnabled() }
-            .getOrDefault(false)
         btn.setOnClickListener { showConvertLanguagesDialog() }
 
         setupLanguageInstallHint(view)
@@ -204,7 +218,12 @@ internal class EngineSectionController(
                 ) { enginePkg, voiceName, volume, pitch, rate ->
                     playbackPreview(enginePkg, voiceName, volume, pitch, rate)
                 }
-                adapter.onRowSaved = { onStatusChanged() }
+                adapter.onRowSaved = {
+                    // التفعيل التلقائي من الحوار (اختيار محرك/صوت لحفظ) قد
+                    // يقلب المفتاح الرئيسي — تُزامَن الصناديق فوراً.
+                    refreshAutoConvertUi()
+                    onStatusChanged()
+                }
                 rv.layoutManager = LinearLayoutManager(ctx)
                 rv.adapter = adapter
                 tvHint.text =

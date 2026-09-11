@@ -927,6 +927,13 @@ class SystemVoiceProvider(
 
         val tempFile = tempWavFile()
 
+        // توصية المراجعة 4: حذف الملف المؤقت قبل كل كتابة جديدة — لا تُقرأ
+        // بقايا كتابة سابقة مقطوعة/تالفة (محرك أُجهض في منتصف الكتابة ثم
+        // أعلن onDone خاصة) إن لم يبدأ المحرك الجديد كتابتَه من الصفر.
+        // التوليف متسلسل على [synthExecutor] أحادي الخيط فلا تنازع على
+        // هذا الحذف، وتكلفته عمليات نظام خفيفة على مسار لا يمرّ به إلا ما
+        // لا يغطيه كاش PCM.
+
         // synthesizeToFile يُرجع SUCCESS فوراً قبل اكتمال الكتابة، لذلك ننتظر
         // اكتمال الكتابة عبر UtteranceProgressListener قبل قراءة الملف — وإلا
         // نقرأ ملفاً فارغاً/غير مكتمل ولا يُسمع أي صوت نهائياً.
@@ -951,6 +958,14 @@ class SystemVoiceProvider(
         } catch (e: RuntimeException) {
             Log.w(TAG, "[Provider] setOnUtteranceProgressListener threw", e)
         }
+
+        // توصية المراجعة 4: حذف الملف المؤقت قبل كل كتابة جديدة — لا تُقرأ
+        // بقايا كتابة سابقة مقطوعة/تالفة (محرك أُجهض في منتصف الكتابة ثم
+        // أعلن onDone خاصة) إن لم يبدأ المحرك الجديد كتابتَه من الصفر.
+        // التوليف متسلسل على [synthExecutor] أحادي الخيط فلا تنازع على
+        // هذا الحذف، وتكلفته عمليات نظام خفيفة على مسار لا يمرّ به إلا ما
+        // لا يغطيه كاش PCM.
+        runCatching { if (tempFile.exists()) tempFile.delete() }
 
         val status = engine.synthesizeToFile(
             text, params, tempFile, utteranceId
