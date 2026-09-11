@@ -48,7 +48,7 @@ internal class SmsReadingController(
         tvSmsVolumeValue = view.findViewById(R.id.tv_sms_reading_volume_value)
         etSmsTemplate = view.findViewById(R.id.et_sms_template)
 
-        // وضع القراءة: مفعل / قراءة مصدر الرسالة فقط / معطل
+        // وضع القراءة: مفعّل / قراءة مصدر الرسالة فقط / معطّل
         val modes = listOf(
             fragment.getString(R.string.sms_mode_full),
             fragment.getString(R.string.sms_mode_source),

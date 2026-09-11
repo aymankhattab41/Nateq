@@ -82,9 +82,11 @@ https://api.telegram.org/bot<رمزك>/setWebhook?url=https://lord-tts-support-r
 npx wrangler kv namespace create RATE_LIMITS
 ```
 
-انسخ `id` الناتج إلى `wrangler.toml` مكان `REPLACE_WITH_RATE_LIMITS_NAMESPACE_ID`،
-ثم أعد `npx wrangler deploy`. دون ربط namespace يَدرس الكودَ العدادَ ويُسمح
-للجميع (أمان: لا يُوقف الناقل أبداً بخطأ تهيئة).
+انسخ `id` الناتج إلى `wrangler.toml`: فكّ تعليق كتلة `[[kv_namespaces]]`
+(سطرا `binding` و`id`) وضع المعرّف مكان النص النائب، ثم أعد
+`npx wrangler deploy`. دون ربط namespace (الكتلة معلّقة حالياً) يَدرسَ
+الكودُ العدادَ ويُسمح للجميع (أمان: لا يُوقف الناقل أبداً بخطأ تهيئة،
+ووضعُ معرفٍ وهمي غير مُنشأ يُفشل النشر على wrangler فلا تفعل).
 
 > ملاحظة دقة: KV متّسقٌ في النهاية (eventually consistent) فقد يُمرر عدد
 > نزر من الطلبات المتزامنة جداً — حدّ تقريبي لا صارم، وهو كافٍ لحماية إغراق

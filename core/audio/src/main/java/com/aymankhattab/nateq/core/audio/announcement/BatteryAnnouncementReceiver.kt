@@ -173,7 +173,7 @@ class BatteryAnnouncementReceiver(
 
                 // اكتمال الشحن (100% ومتصل): إعلان مستقل يُنطق
                 // مرة واحدة في الجلسة، ولا يُكرَّر إذا كان مستوى 100
-                // مفعلاً أصلاً (يُغطيه إعلان المستوى).
+                // مفعّلاً أصلاً (يُغطيه إعلان المستوى).
                 if (percentage == 100 && plugged &&
                     settings.isChargingCompleteAnnouncementEnabled()
                 ) {

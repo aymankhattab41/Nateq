@@ -89,7 +89,7 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
                 AnnouncementSchedulerService.startIfNeeded(this)
             }.getOrDefault(false)
             // على أندرويد المحرك تُنفَّذ عمليات الخلفية بعد تأخر؛ إن لم تكن
-            // خدمة الإعلانات مطلوبة كان الوقت هو الوحيد المفعل (بند 16.2)
+            // خدمة الإعلانات مطلوبة كان الوقت هو الوحيد المفعّل (بند 16.2)
             // فنعيد جدولة منبه إعلان الوقت مباشرةً دون تشغيل خدمة أمامية.
             if (!started) {
                 runCatching {

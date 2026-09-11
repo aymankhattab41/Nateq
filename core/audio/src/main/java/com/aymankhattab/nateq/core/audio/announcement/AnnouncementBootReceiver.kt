@@ -19,7 +19,7 @@ class AnnouncementBootReceiver : BroadcastReceiver() {
         try {
             val started = AnnouncementSchedulerService.startIfNeeded(context)
             // منبهات النظام لا تصمد بعد الإقلاع: إن لم تُشغَّل الخدمة
-            // (كان إعلان الوقت هو الوحيد المفعل — بند 16.2)
+            // (كان إعلان الوقت هو الوحيد المفعّل — بند 16.2)
             // نعيد جدولة منبه الوقت مباشرةً.
             if (!started) {
                 AnnouncementSchedulerService.ensureTimeAlarm(context)

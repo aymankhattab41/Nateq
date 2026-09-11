@@ -171,7 +171,7 @@ class NateqNotificationListener : NotificationListenerService() {
             val privacyEnabled = settings.isLockScreenPrivacyEnabled()
             val privacyLocked =
                 privacyEnabled && settings.isDeviceScreenLocked()
-            // فلتر OTP الشامل (حماية الخصوصية مفعلة): كلُّ الإشعارات لا مسار
+            // فلتر OTP الشامل (حماية الخصوصية مفعّلة): كلُّ الإشعارات لا مسار
             // تطبيق الرسائل فقط — واتساب/تلجرام/البنوك تُرسل رموز تحقق تُنطق
             // علناً دون حجب. يُنطق بدل الرمز عبارة آمنة عامة (نمط حماية SMS).
             val isOtp = shouldMaskOtp(

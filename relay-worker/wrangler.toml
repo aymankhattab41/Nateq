@@ -13,10 +13,14 @@ compatibility_date = "2026-09-06"
 #   npx wrangler secret put WEBHOOK_SECRET
 #
 # قيود معدل الرسائل (كل مرسل): عداد عبر Cloudflare KV يُعيد [RATE_LIMITS] —
-# نافذة 60 ثانية وحدّ 20 رسالة (ثوابت في src/index.js). أنشئ الـ namespace
-# مرة واحدة ثم ضع الـ id الناتج في السطر التالي:
-#   npx wrangler kv namespace create RATE_LIMITS
-# حتى تُنشئه لا يُفعَّل الحدّ (الكود يتسامح غيابه ولا يوقف الناقل).
-[[kv_namespaces]]
-binding = "RATE_LIMITS"
-id = "REPLACE_WITH_RATE_LIMITS_NAMESPACE_ID"
+# نافذة 60 ثانية وحدّ 20 رسالة (ثوابت في src/index.js). الخدمة تنتشر وتعمل
+# بالكامل بدون هذا الربط (الكود يتسامح غياب env.RATE_LIMITS ويسمح دائمًا)؛
+# ولتفعيل الحد الآن:
+#   1) npx wrangler kv namespace create RATE_LIMITS
+#   2) ضَع الـ id الناتج في السطر الموضح وأزل علامات التعليق أدناه
+#   3) npx wrangler deploy
+# ملاحظة: معرّف وهمي (نص نائب) هنا يُفشل النشر على wrangler — لا تضع قيمة
+# غير مُنشأة فعلاً، لذا بقي الربط معلّقاً صحيحاً لا placeholder يكسره.
+# [[kv_namespaces]]
+# binding = "RATE_LIMITS"
+# id = "ضع_معرف_الـ_namespace_المُنشأ_فعلاً_هنا"

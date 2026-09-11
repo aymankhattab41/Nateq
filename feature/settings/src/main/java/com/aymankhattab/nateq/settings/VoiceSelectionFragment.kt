@@ -1139,7 +1139,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         viewLifecycleOwner.lifecycleScope.launch {
             when (val res = UpdateChecker.check(currentName)) {
                 is UpdateChecker.CheckResult.UpdateAvailable -> {
-                    promptDownloadUpdate(context, res.apkUrl)
+                    promptDownloadUpdate(
+                        context, res.apkUrl, res.expectedSha256Hex
+                    )
                 }
                 is UpdateChecker.CheckResult.UpToDate -> {
                     if (showFeedback) {
@@ -1173,23 +1175,27 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
      *  (نعم/لا). */
     private fun promptDownloadUpdate(
         context: android.content.Context,
-        apkUrl: String
+        apkUrl: String,
+        expectedSha256Hex: String?
     ) {
         MaterialAlertDialogBuilder(context)
             .setTitle(R.string.check_updates_confirm_title)
             .setMessage(R.string.check_updates_confirm_message)
             .setPositiveButton(R.string.check_updates_confirm_yes) { _, _ ->
-                startApkDownload(context, apkUrl)
+                startApkDownload(context, apkUrl, expectedSha256Hex)
             }
             .setNegativeButton(R.string.check_updates_confirm_no, null)
             .create().also(::trackDialog).show()
     }
 
     /** ينزّل الـ APK ويعرض إشعاراً بأن التنزيل بدأ — يُستدعى بعد موافقة
-     *  المستخدم. */
+     *  المستخدم. [expectedSha256Hex] (إن وُجدت) تُفحص قبل فتح شاشة
+     *  التثبيت: بصمة متوقعة محلّياً تساوي بصمة التنزيل = نثبّت؛ غير ذلك
+     *  يُحذف الملف ويُبلغ المستخدم. */
     private fun startApkDownload(
         context: android.content.Context,
-        apkUrl: String
+        apkUrl: String,
+        expectedSha256Hex: String?
     ) {
         Toast.makeText(
             context,
@@ -1214,6 +1220,24 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     /* سبق تسجيله أو فُكّ */
                 }
                 val apk = UpdateChecker.downloadedApk(ctx)
+                if (expectedSha256Hex != null &&
+                    !UpdateChecker.verifyApkSha256(apk, expectedSha256Hex)
+                ) {
+                    // بصمة الـ APK المُنزَّل لا تطابق ما نشره GitHub —
+                    // ملف تالف/مبتور أو عبث: لا تثبيت، نحذف ونُبلغ المستخدم.
+                    apk.delete()
+                    Toast.makeText(
+                        ctx,
+                        getString(R.string.check_updates_checksum_failed),
+                        Toast.LENGTH_LONG
+                    ).show()
+                    view?.announceCompat(
+                        getString(
+                            R.string.check_updates_checksum_failed
+                        )
+                    )
+                    return
+                }
                 UpdateChecker.promptInstall(ctx, apk)
             }
         }

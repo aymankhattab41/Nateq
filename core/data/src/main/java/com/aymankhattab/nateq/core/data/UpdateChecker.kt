@@ -78,7 +78,12 @@ object UpdateChecker {
     sealed class CheckResult {
         data class UpdateAvailable(
             val tag: String,
-            val apkUrl: String
+            val apkUrl: String,
+            /** بصمة SHA-256 سداسية (بلا «sha256:») للـ APK المنشور، إن وردت
+             *  في `assets[].digest` من GitHub — تُفحص قبل التثبيت (بند الأمان
+             *  المتوسط). null عندما لا يوفّر GitHub digest فيُترك التثبيت بلا
+             *  تحقق (تُحمَّل الـ HTTPS من GitHub على كل حال). */
+            val expectedSha256Hex: String? = null
         ) : CheckResult()
         object UpToDate : CheckResult()
         object NetworkError : CheckResult()
@@ -134,7 +139,15 @@ object UpdateChecker {
                     if (urlEl == null) {
                         return@withContext CheckResult.NetworkError
                     }
-                    CheckResult.UpdateAvailable(tag, urlEl.optString())
+                    // بصمة الـ APK من `digest` الخاص بأصل GitHub: تُسجَّل
+                    // ليُتحققَ منها بعد التنزيل وقبل فتح شاشة التثبيت.
+                    val expectedSha = apkAsset.optMember("digest")
+                        ?.optString()
+                        ?.takeIf { it.startsWith("sha256:") }
+                        ?.removePrefix("sha256:")
+                    CheckResult.UpdateAvailable(
+                        tag, urlEl.optString(), expectedSha
+                    )
                 } finally {
                     conn.disconnect()
                 }
@@ -196,5 +209,40 @@ object UpdateChecker {
         } catch (_: Exception) {
             false
         }
+    }
+
+    /** يتحقق أن بصمة SHA-256 للـ APK المُنزَّل تطابق [expectedHex] المتوقعة
+     *  (من `digest` في واجهة Releases). يعود false عند أي ملف مفقود/فارغ/
+     *  غير مقروء أو تطابقٍ غير متحقق — والمقارنة سداسية ثابتة الزمن لمنع
+     *  استنتاج أجزاء البصمة بالقياس. منطق نقي (لا أندرويد) قابل للاختبار. */
+    fun verifyApkSha256(apkFile: File, expectedHex: String): Boolean {
+        val expected = expectedHex.trim().lowercase()
+        if (expected.isEmpty()) return false
+        if (!apkFile.isFile || apkFile.length() == 0L) return false
+        val actual = try {
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            apkFile.inputStream().use { input ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                var read = input.read(buffer)
+                while (read >= 0) {
+                    if (read > 0) digest.update(buffer, 0, read)
+                    read = input.read(buffer)
+                }
+            }
+            digest.digest().joinToString("") { "%02x".format(it) }
+        } catch (_: Exception) {
+            return false
+        }
+        return constantTimeEquals(actual, expected)
+    }
+
+    /** مقارنة سداسية ثابتة الزمن (لا تقطع عند أول اختلاف). */
+    private fun constantTimeEquals(a: String, b: String): Boolean {
+        if (a.length != b.length) return false
+        var diff = 0
+        for (i in a.indices) {
+            diff = diff or (a[i].code xor b[i].code)
+        }
+        return diff == 0
     }
 }

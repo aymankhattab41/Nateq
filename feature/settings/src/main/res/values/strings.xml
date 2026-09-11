@@ -81,6 +81,7 @@
 <string name="check_updates">البحث عن تحديثات</string>
 <string name="check_updates_desc">التحقق من وجود إصدار أحدث من التطبيق</string>
 <string name="check_updates_downloading_title">تنزيل الإصدار الجديد</string>
+<string name="check_updates_checksum_failed">فشل التحقق من سلامة الملف المُنزَّل (SHA-256) — لا تثبيت. أعد المحاولة أو استخدم اتصالاً مستقراً</string>
 <string name="check_updates_network_error">تعذّر الوصول للخادم. تحقق من اتصال الإنترنت</string>
 <string name="check_updates_up_to_date">التطبيق محدّث لأحدث إصدار</string>
 <string name="check_updates_confirm_title">يتوفر تحديث جديد</string>
@@ -267,8 +268,8 @@
 <string name="smart_spelling_summary">نطق الحرف المفرد مع حركاته (مثل: باء مفتوحة) ومسميات NATO للحروف اللاتينية (A - Alpha)</string>
 <string name="sms_announcement_template_hint">قالب قراءة الرسائل</string>
 <string name="sms_announcement_template_placeholder" formatted="false">استخدم {name} للمرسل و{message} للرسالة — اتركه فارغاً للنطق الافتراضي</string>
-<string name="sms_mode_full">مفعل</string>
-<string name="sms_mode_off">معطل</string>
+<string name="sms_mode_full">مفعّل</string>
+<string name="sms_mode_off">معطّل</string>
 <string name="sms_mode_source">قراءة مصدر الرسالة فقط</string>
 <string name="sms_otp_block_hint">تحذير: رسائل OTP تُحجب 3 ساعات أولى بعد التفعيل حسب سياسة أندرويد 17</string>
 <string name="sms_permission_needed">تتطلب قراءة الرسائل منح إذن الوصول إلى الرسائل النصية</string>
@@ -308,8 +309,8 @@
 <string name="time_quiet_schedule_summary">ساعات صمت تُوقف الإعلان التلقائي للوقت. مثال: 23 إلى 7 = هدوء من 11 ليلاً حتى 7 صباحاً</string>
 <string name="time_quiet_schedule_title">ساعات الهدوء لكل يوم</string>
 <string name="time_quiet_start_hint">من</string>
-<string name="toggle_off">معطل</string>
-<string name="toggle_on">مفعل</string>
+<string name="toggle_off">معطّل</string>
+<string name="toggle_on">مفعّل</string>
 <string name="tools_section">أدوات التطبيق</string>
 <string name="section_oem_guidance">إرشادات توافق الجهاز</string>
 <string name="oem_device_label">الجهاز: %1$s</string>

@@ -112,26 +112,33 @@ class TextProcessor(
     ): String {
         if (text.isBlank()) return text
 
+        // توحيد الترميز إلى NFC عند المدخل: نصٌ مفكوك الترميز (حرفٌ منفصل
+        // عن تشكيله/شدّته أو إيموجي مفكك المكونات) يُطوى إلى صورته المركّبة
+        // قبل أي خطوة — فتعمل التشكيل/الأرقام/الإيموجي على صيغة متطابقة
+        // بلا ازدواج بين شكلٍ مركّبٍ وشكلٍ مفكوكٍ يأتي من أي مصدر خارجي.
+        var result = Normalizer.normalize(text, Normalizer.Form.NFC)
+
         // التهجئة الذكية: حرف مفرد (عربي بتشكيله أو لاتيني) يُنطق باسمه
         // كاملاً («بَ» ← «باء مفتوحة»، «A» ← «Capital Alpha») قبل أي
         // تحويل — يقودها TalkBack عند التنقل الحرفي بأحرفٍ منفردة.
         if (smartSpellingEnabled) {
-            SmartSpeller.spell(text, languageTag)?.let { return it }
+            SmartSpeller.spell(result, languageTag)?.let { return it }
         }
 
         // نطق أسماء الإيموجي (بدل حذفها) قبل مسار العربية ليغطي الإنجليزية
         // واللغات الأخرى أيضاً — الناتج لا يُمرَّر لأي تحويل لاحق خارج العربية.
         val expanded =
-            if (emojiEnabled) expandEmojis(text, languageTag) else null
+            if (emojiEnabled) expandEmojis(result, languageTag) else null
 
         // المعالجة مخصصة للعربية فقط؛ الإنجليزية واللغات الأخرى تُعاد كما هي
         // بعد توسيع الإيموجي فقط (لا يجوز تحويل أرقام إنجليزية إلى كلمات عربية)
         if (!LanguageCode.isArabic(languageTag)) {
-            return if (expanded != null) CleanupStep.apply(expanded) else text
+            if (expanded != null) return CleanupStep.apply(expanded)
+            return result
         }
 
         // text قد يحوي إيموجي عُرضت أسماؤها (expanded) أو تُحذف لاحقاً
-        var result = expanded ?: text
+        if (expanded != null) result = expanded
         for (step in preamble) result = step.apply(result)
 
         // المسار السريع (Fast-path): إن لم يحتوِ النص على أي محفِّز لأرقام
@@ -161,9 +168,14 @@ class TextProcessor(
         languageTag: String = LanguageCode.AR.tag
     ): String {
         if (text.isBlank()) return text
-        if (!LanguageCode.isArabic(languageTag)) return text
-        if (!requiresRegexPipeline(text)) return CleanupStep.apply(text)
-        var result = text
+        // توحيد NFC عند المدخل مطابقاً لـ[process] — يبقى الإخراج مطابقاً
+        // لنمط التقسيم المعدَّ مسبقاً على صيغة موحَّدة.
+        val normalized = Normalizer.normalize(text, Normalizer.Form.NFC)
+        if (!LanguageCode.isArabic(languageTag)) return normalized
+        if (!requiresRegexPipeline(normalized)) {
+            return CleanupStep.apply(normalized)
+        }
+        var result = normalized
         for (step in baseSteps) result = step.apply(result)
         return result
     }
