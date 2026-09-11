@@ -39,4 +39,9 @@
     <string name="app_telegram">تلجرام</string>
     <string name="app_messenger">ماسنجر</string>
     <string name="app_instagram">إنستجرام</string>
+
+    <!-- المحور السادس — تنبيه المستخدم عند فشل محركه والتحوّل إلى محرك آخر
+         (طرفة عين واحدة لكل محرك في كل عمر العملية، من عملية المحرك :tts).
+         اسم فريد لا يتعارض مع feature:settings عند الدمج -->
+    <string name="engine_fallback_alert">محرك النطق المختار متعذّر — تحوّل النطق مؤقتاً إلى محرك آخر</string>
 </resources>

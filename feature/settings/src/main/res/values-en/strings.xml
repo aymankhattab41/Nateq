@@ -23,6 +23,7 @@
 <string name="auto_convert_volume">Volume</string>
 <string name="back_label">Back to main list</string>
 <string name="back_to_home">Back to main list</string>
+<string name="back_to_group">Back to %1$s</string>
 <string name="backup_export_warning_message">This file will be written as plain text and may contain settings and personal data (caller names and pronunciation words). Store it in a safe place and share it only with people you trust.</string>
 <string name="backup_export_warning_title">Export the backup?</string>
 <string name="backup_failed">Could not create backup</string>
@@ -74,6 +75,7 @@
 <string name="caller_permission_revoked_title">Caller permissions revoked</string>
 <string name="cancel">Cancel</string>
 <string name="cd_test_voice_button">Play a sample voice for testing</string>
+<string name="cd_test_voice_button_for">Play a sample of the %1$s voice</string>
 <string name="charging_complete_announcement_enabled">Announce when charging completes (100%)</string>
 <string name="charging_disconnect_announcement_enabled">Announce when the charger is unplugged</string>
 <string name="check_updates">Check for updates</string>
@@ -153,6 +155,8 @@
 <string name="help_section">Help</string>
 <string name="hijri_date_enabled">Speak dates in the Hijri calendar</string>
 <string name="install_engine_from_store">Install Google text-to-speech from the store</string>
+<string name="lock_screen_privacy_enabled">Lock screen privacy protection</string>
+<string name="lock_screen_privacy_summary">While the screen is locked, message and notification details and caller names are not spoken (protects OTP verification codes and privacy)</string>
 <string name="language_arabic">Arabic</string>
 <string name="language_change_to_ar">Switch to Arabic</string>
 <string name="language_change_to_en">Switch to English</string>
@@ -307,6 +311,21 @@
 <string name="toggle_off">Off</string>
 <string name="toggle_on">On</string>
 <string name="tools_section">App tools</string>
+<string name="section_oem_guidance">Device compatibility</string>
+<string name="oem_device_label">Device: %1$s</string>
+<string name="oem_vendor_unknown">Unknown</string>
+<string name="oem_guidance_generic">Some manufacturers pause background voice announcements to save battery. Grant Lord TTS an exemption from battery optimization and open the app settings to confirm background announcements keep working.</string>
+<string name="oem_guidance_xiaomi">Xiaomi/Redmi/POCO device: Lord TTS needs a battery optimization exemption and "Autostart" enabled under Mi security management to keep background voice announcements alive.</string>
+<string name="oem_guidance_huawei">Huawei/Honor device: enable the battery exemption and "Auto-launch" under System Manager (Apps > Special) so background voice announcements keep working.</string>
+<string name="oem_guidance_oppo">Oppo/OnePlus/realme device: open the battery exemption and allow Lord TTS under "Startup management" in the security center to keep background announcements alive.</string>
+<string name="oem_guidance_vivo">Vivo device: enable the battery exemption and "Auto start" under the permission manager so background voice announcements keep working.</string>
+<string name="oem_guidance_samsung">Samsung device: enable the battery exemption, open the app settings, and keep Lord TTS out of "Sleeping apps" so background voice announcements keep working.</string>
+<string name="btn_open_battery_settings">Open battery settings</string>
+<string name="btn_open_autostart_settings">Open autostart management</string>
+<string name="oem_screen_open_failed">Could not open the requested screen on this device</string>
+<string name="auto_convert_auto_enabled">Automatic conversion was enabled for the chosen engine — you can turn it off from the engine screen</string>
+<string name="first_run_default_engine">Make Lord TTS the default engine</string>
+<string name="first_run_default_engine_hint">Open the speech settings and choose Lord TTS as the system default engine</string>
 <string name="voice_category_default">Default voice</string>
 <string name="voice_category_default_summary">The voice used for general text</string>
 <string name="voice_category_emoji">Emoji speech</string>
@@ -346,5 +365,5 @@
 <string name="time_quiet_start_for_day">%1$s, quiet start</string>
 <string name="time_quiet_end_for_day">%1$s, quiet end</string>
 <string name="changelog_title">"What's New"</string>
-<string name="changelog_text">Version %1$s\n• Settings reorganized into four logical groups\n• Caller name and battery/charging announcements\n• Accessibility improvements for screen readers\n• Punctuation reading levels (None / Some / All)\n• Smart spelling with letter names in TalkBack character navigation\n• Diacritics pronunciation (fatha, damma, kasra, shadda, tanween)\n• Instant silence by shaking or covering the proximity sensor while speaking\n• Hourly chime (three tones) and battery sound cues (charging/disconnected/full/low)\n• Greater stability for hourly chime, time and message announcements and battery cues through comprehensive automated tests</string>
+<string name="changelog_text">Version %1$s\n• Device compatibility guidance (Axis 3): vendor-aware help for Xiaomi/Huawei/Oppo/Vivo/Samsung with buttons that open the right battery and autostart screens\n• Flexible engine fallback chain: peripheral engines (MultiTTS/eSpeak) first, then native, then alphabetical — Google is the last resort\n• Alert when your chosen engine fails and speech switches to another engine\n• "Make the default engine" button in the first-run setup, with auto-convert enabled automatically when an engine is chosen\n• Speech completion watchdog: audio focus is released automatically if any engine hangs (no stuck focus)\n• Safe import defaults: shake/proximity and smart spelling are reset on restore\n• Temporary voice cache cleanup when the active engine switches\n• Greater stability for hourly chime, time and message announcements and battery cues through comprehensive automated tests</string>
 </resources>

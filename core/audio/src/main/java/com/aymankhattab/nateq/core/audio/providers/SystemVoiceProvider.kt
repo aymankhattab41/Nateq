@@ -8,6 +8,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.LruCache
 import android.util.Log
+import android.widget.Toast
 import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.audio.engine.BytePool
 import com.aymankhattab.nateq.core.data.VoicePrefsProvider
@@ -79,6 +80,11 @@ class SystemVoiceProvider(
     /** معالج نبض Main للجدولة الزمنية
      *  لمهلة التهيئة [INIT_TIMEOUT_MS] (غير حاصر). */
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    /** محرّكات نُبّه المستخدم بفشلها مرة واحدة في عمر العملية الجارية
+     *  (لكي لا ترضّ Notification لكل نطق بعد أول فشل). تخدم نصيحة المحور
+     *  السادس: المستخدم يسمع أن محركه انهار وليست الإعلانات كلها واقعة. */
+    private val engineFallbackNotified = mutableSetOf<String>()
 
     /**
      * مراقب حالة الإنترنت الاستباقي ([ConnectivityMonitor]) — يسجّل
@@ -479,6 +485,24 @@ class SystemVoiceProvider(
         }
     }
 
+    /** (المحور 6) عند انتقال المتحدث النشط إلى محركٍ مختلف تُمسح تحفّظاتُ
+     *  المحرك السابق: أصوات PCM المخزنة (مفاتيحها تحمل المحرك أصلًا لكن
+     *  تُمسح دفعة واحدة فلا تُحتجز قمامةُ محرك قديم)، وملف الـ WAV المؤقت
+     *  ذو الاسم الثابت يُحذف على [synthExecutor] — بعد أي تركيبٍ جارٍ
+     *  (المنفّذ أحادي الخيط) فلا يُحذف ملفٌ يُكتب الآن. سبخة التخزين في
+     *  المحطة المشتركة تعاملها الجولة التالية بالقصّ (truncate) تلقائياً. */
+    private fun onActiveEngineSwitch(engine: String) {
+        val previous = ttsEngine
+        ttsEngine = engine
+        if (previous == null || previous == engine) return
+        pcmCache.evictAll()
+        synthExecutor.execute {
+            runCatching { tempWavFile().delete() }
+        }
+        Log.d(TAG, "[Provider] active engine switch:" +
+            " $previous -> $engine (cache cleared)")
+    }
+
 /**
      * يُنفّذ النطق عبر المحرك المعطى، وعند فشل
      * المحرك الطرفي (مثل SmartVoice الذي يفشل
@@ -572,7 +596,7 @@ class SystemVoiceProvider(
                                     " engine=$currentEngine"
                                 )
                                 tts = instance
-                                ttsEngine = currentEngine
+                                onActiveEngineSwitch(currentEngine)
                                 speakNow(instance, currentEngine)
                             } else {
                                 Log.w(
@@ -625,7 +649,7 @@ class SystemVoiceProvider(
                                 val created = hold[0]!!
                                 enginePool[currentEngine] = created
                                 tts = created
-                                ttsEngine = currentEngine
+                                onActiveEngineSwitch(currentEngine)
                                 // مهلة تهيئة أقصاها 5 ثوانٍ: إن علق
                                 // المحرك ولم يُرِدّ onInit، نُسقط المحرك
                                 // ونتراجع بدل بقاء الكوروتين معلقاً
@@ -669,12 +693,13 @@ class SystemVoiceProvider(
     }
 
     /**
-     * عند فشل المحرك الأصلي، يتراجع إلى أفضل محرك متبقٍ من القائمة الكاملة
-     * (جوجل أولاً إن وُجد، وإلا MultiTTS/سامسونج/أي محرك حقيقي) — ليغطي
-     * أجهزة الأسواق التي لا تصلها خدمة جوجل (الصين مثلاً). المحرك الفاشل يُضاف
-     * إلى [failedEngines] ويُستبعد مع كل ما فشل قبله من كل اختيار لاحق، فلا
-     * يحدث تأرجح لانهائي بين محركين (A يختار B، وB يُعيد A) يستنزف الذاكرة —
-     * وبسقف [MAX_RETRIES] تتوقف المحاولات عند بلوغه بلا N محاولة.
+     * عند فشل المحرك الأصلي، يتراجع إلى أفضل محرك متبقٍ من سلسلة التراجع
+     * المرنة [EngineRegistry.capableEnginesForLanguage] (الطرفي/النظامي أولاً،
+     * وجوجل ملاذٌ أخير — ليغطي أيضاً أجهزة الأسواق التي لا تصلها خدمة جوجل،
+     * الصين مثلاً). المحرك الفاشل يُضاف إلى [failedEngines] ويُستبعد مع كل ما
+     * فشل قبله من كل اختيار لاحق، فلا يحدث تأرجح لانهائي بين محركين (A يختار
+     * B، وB يُعيد A) يستنزف الذاكرة — وبسقف [MAX_RETRIES] تتوقف المحاولات عند
+     * بلوغه بلا N محاولة.
      */
     private fun retryWithGoogle(
         failedEngine: String?,
@@ -711,6 +736,9 @@ class SystemVoiceProvider(
                 "[Provider] falling back to engine:" +
                 " $fallback (lang=$speechLanguage," +
                 " failed so far: $failedEngines)")
+            // تنبيه لمرة واحدة لكل محرك فاشل في عمر العملية: يوضح للمستخدم
+            // أن محركه تعذّر وأن النطق تحوّل مؤقتاً — «طرفة عين»، لا نوافذ.
+            notifyEngineFallbackOnce(failedEngine)
             synthesizeWithEngine(
                 fallback, text, voice, speechRate,
                 pitch, volume, onFormatInfo, onAudioChunk,
@@ -719,6 +747,25 @@ class SystemVoiceProvider(
             )
         } else {
             cont.resume(Unit)
+        }
+    }
+
+    /** طرفة عين (Toast) لمرة واحدة لكل محرك فاشل في عمر العملية. تُنشر على
+     *  خيط Main من أي خيط تركيب؛ لا صوت مسموع هنا لأن شاشة/عملية الإعلان
+     *  عمليةٌ أخرى ولا يجوز النطق فوق صوت النطق الجاري. */
+    private fun notifyEngineFallbackOnce(failedEngine: String?) {
+        if (failedEngine == null) return
+        synchronized(engineFallbackNotified) {
+            if (!engineFallbackNotified.add(failedEngine)) return
+        }
+        mainHandler.post {
+            runCatching {
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.engine_fallback_alert),
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
 

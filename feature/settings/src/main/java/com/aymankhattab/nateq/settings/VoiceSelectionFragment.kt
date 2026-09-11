@@ -489,6 +489,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         instantSilenceSection = InstantSilenceController(
             this, settings, { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
+        OemGuidanceController(this).apply { setup(view) }
         setupLanguageToggle()
         setupCheckUpdates()
         engineSection.setupAutoConvertUI(view)

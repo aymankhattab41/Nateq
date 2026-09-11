@@ -26,7 +26,11 @@
     <!-- الاستجابة اللمسية لأداة الساعة الناطقة (Haptic عند الضغط) — إذن عادي
          يُمنح عند التثبيت تلقائياً -->
     <uses-permission android:name="android.permission.VIBRATE" />
-    <!-- لطلب إعفاء من تحسين البطارية (للخدمة الخلفية) -->
+    <!-- لطلب إعفاء من تحسين البطارية (للخدمة الخلفية): يتيح فتح نافذة نية
+         ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS مباشرة لنطاق الحزمة المطلوب،
+         ويُرتبط بقسم «إرشادات توافق الجهاز» (المحور الثالث). يستحسن طلبه
+         حصرياً من زر الإرشاد داخل القسم — لا يُطلب عند الإقلاع أبداً -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- لسماع بث PHONE_STATE ومعرفة حالة المكالمة (إعلان المتصل) —
          يُطلب وقت التشغيل عند تفعيل الميزة -->
@@ -70,6 +74,15 @@
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
+        <!-- رؤية حزم أجهزة المكوّنات (package visibility) لقسم «إرشادات توافق
+             الجهاز»: تُفتح شاشات إدارة التشغيل التلقائي عبر Activity ComponentName
+             صريح، وبدون هذه البُنود يرمي النظام SecurityException على أندرويد 11+
+             فيفشل الزر صامتاً حتى لو كانت مستهدفات النية صحيحة -->
+        <package android:name="com.miui.securitycenter" />
+        <package android:name="com.huawei.systemmanager" />
+        <package android:name="com.coloros.safecenter" />
+        <package android:name="com.oppo.safe" />
+        <package android:name="com.vivo.permissionmanager" />
     </queries>
 
     <!-- إذن مخصص موقَّع (signature): لا يملكه إلا التطبيقات الموقّعة بمفتاح التوقيع

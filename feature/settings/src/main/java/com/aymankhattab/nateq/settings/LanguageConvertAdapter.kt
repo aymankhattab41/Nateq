@@ -198,7 +198,7 @@ internal class LanguageConvertAdapter(
         }
 
         /** فهرس المحرك المفضّل (نفس نكهة EnginePicker:
-     *  الطرفي أولاً ثم جوجل). */
+     *  الطرفي/النظامي أولاً، وجوجل أخير الملاذات). */
         private fun preferredEngineIndex(): Int {
             val preferred = EnginePicker.pickPreferredEngineFrom(
                 rowEngines.map { it.enginePackage }
@@ -287,6 +287,12 @@ internal class LanguageConvertAdapter(
                 pitch,
                 volume
             )
+            // اختيار محرك صريح يفعّل «التحويل التلقائي» تلقائياً بحيث تُنطق
+            // الإعلانات بالمحرك المختار فوراً (كما في معالج الإعداد الأولي).
+            // «لا شيء»/مسح المحرك لا يغيّر الحالة الحالية.
+            if (engine != null && !settings.isAutoConvertEnabled()) {
+                settings.setAutoConvertEnabled(true)
+            }
             tvSaved.text = context.getString(R.string.auto_convert_saved)
             tvSaved.announceCompat(
             context.getString(R.string.auto_convert_saved)

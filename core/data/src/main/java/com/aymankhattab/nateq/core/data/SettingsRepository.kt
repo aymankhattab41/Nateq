@@ -61,6 +61,17 @@ class SettingsRepository(private val context: Context) :
         /** أقصى عدد يُقبل من أسماء المتصلين المخصصة (حماية من استيراد فائض). */
         private const val MAX_CALLER_ENTRIES = 2000
 
+        /** مفاتيح ميزات حساسة (استشعارات/صوتيات) تُصفَّر دائماً عند الاستيراد:
+         *  الهز/التقارب يفعّلان مستشعرات فعلية، والتهجئة الذكية صوتُ حروفٍ
+         *  متتابع — كلها تُثبَّت false عند الترميم حتى لا تصدم جهاز المستخدم
+         *  الجديد بإعداداتٍ ينطق بها الشاشة أو يستهلك مستشعراً بلا علمه
+         *  (المحور 6 — «إعداد آمن عند الاستيراد»). */
+        private val SAFE_DEFAULT_FALSE_KEYS = setOf(
+            "smart_spelling_enabled",
+            "shake_to_stop_enabled",
+            "proximity_silence_enabled"
+        )
+
         /** التطبيقات الافتراضية التي تُقرأ إشعاراتها قبل أي اختيار صريح. */
         val DEFAULT_NOTIFICATION_APPS = setOf(
             "com.whatsapp",
@@ -1417,7 +1428,14 @@ val masterKey = androidx.security.crypto.MasterKey
                         ops.add(Op { it.putFloat(key, v) }); meaningful++
                     }
                     is Boolean -> {
-                        ops.add(Op { it.putBoolean(key, value) })
+                        // المفاتيح الحساسة تُثبَّت false على الاستيراد مهما
+                        // وردت في النسخة (انظر SAFE_DEFAULT_FALSE_KEYS).
+                        val safe = if (key in SAFE_DEFAULT_FALSE_KEYS) {
+                            false
+                        } else {
+                            value
+                        }
+                        ops.add(Op { it.putBoolean(key, safe) })
                         meaningful++
                     }
                     is String -> {

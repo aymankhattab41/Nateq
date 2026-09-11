@@ -84,7 +84,8 @@ object EnginePicker {
         return pickPreferredEngineFrom(installedEnginePackages(context))
     }
 
-    /** حزمة محرك جوجل (الملاذ الأخير المضمون) إن كانت مثبّتة. */
+    /** حزمة محرك جوجل (الملاذ الأخير المضمون في سلسلة التراجع المرنة) إن كانت
+     *  مثبّتة — تُستدعى فقط عند استنفاد المحركات الأفضل. */
     fun googleEnginePackage(context: Context): String? {
         return "com.google.android.tts"
             .takeIf { installedEnginePackages(context).contains(it) }

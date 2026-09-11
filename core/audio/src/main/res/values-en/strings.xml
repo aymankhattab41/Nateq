@@ -36,4 +36,8 @@
     <string name="app_telegram">Telegram</string>
     <string name="app_messenger">Messenger</string>
     <string name="app_instagram">Instagram</string>
+    <!-- Axis 6 — alert the user when their chosen engine fails and speech
+         falls back (once per engine per process lifetime, from the :tts process).
+         Unique name so it does not collide with feature:settings on merge -->
+    <string name="engine_fallback_alert">The chosen speech engine is unavailable — speech temporarily switched to another engine</string>
 </resources>

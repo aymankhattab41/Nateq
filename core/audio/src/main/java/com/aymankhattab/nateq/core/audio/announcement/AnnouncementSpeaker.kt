@@ -124,6 +124,11 @@ class AnnouncementSpeaker(
     private var tts: TextToSpeech? = null
     private var nowSpeaking = false
 
+    // مؤقّت أمان على Main (المحور السادس): إن علّق المحرك بلا onDone/onError
+    // يُحرَّر التركيز الصوتي ويُرفع رصد الإسكات — فلا يبقى النظام محجوزاً
+    // صامتاً إلى إشعارٍ لن يأتي. يُعاد فتحه/إلغاؤه مع كل دورة نطق.
+    private var speechWatchdog: Runnable? = null
+
     /** المحرك المرتبط حالياً بالمتحدث — يُقارن قبل النطق بأي محركٍ صريح
      *  لفئةٍ معيّنة فيُعاد الربط عند الاختلاف (تبديل حي بين فئات الوظائف). */
     private var boundEngine: String? = null
@@ -211,6 +216,35 @@ class AnnouncementSpeaker(
         interruptionSensors = null
     }
 
+    /** إلغاء مؤقّت حارس النطق (اكتمال/فشل/إيقاف أو دورة جديدة تستبدله). */
+    private fun cancelSpeechWatchdog() {
+        speechWatchdog?.let { mainHandler.removeCallbacks(it) }
+        speechWatchdog = null
+    }
+
+    /** فتح حارس انتهاء النطق بميزانية تتدرج من طول النص (أدنى 5 ثوانٍ
+     *  حتى أقصى 60): إن لم يصل onDone/onError لدورة النطق الجارية خلالها —
+     *  محركٌ علّق صامتاً — يُحرَّر التركيز ويُرفع رصد الإسكات (المحور
+     *  السادس: لا «تركيز مكتوم» بلا مخرج أبداً). عند الاطلاق المتأخر للحدث
+     *  النهائي يبقى المسار الطبيعي سالماً: [releaseAudioFocus] معفاةُ التكرار
+     *  ومستمعو الاكتمال يُستدعون من onDone فقط. */
+    private fun armSpeechWatchdog(units: List<SpeakUnit>) {
+        cancelSpeechWatchdog()
+        val totalChars = units.sumOf { it.text.length }
+        val seconds = (totalChars / 20.0 + 5.0).coerceIn(5.0, 60.0)
+        val timer = Runnable {
+            speechWatchdog = null
+            Log.w(TAG,
+                "[Watchdog] انقضت $seconds ث بلا onDone/onError" +
+                " — تحرير التركيز وإيقاف رصد الإسكات" +
+                " (محرك معلّق)")
+            stopInterruptionMonitoring()
+            releaseAudioFocus()
+        }
+        speechWatchdog = timer
+        mainHandler.postDelayed(timer, (seconds * 1000).toLong())
+    }
+
     /**
      * يهيّئ المحرك مرة واحدة؛ يعيد true عند الجاهزية.
      * يمنع سباق التهيئة المزدوج (Single-flight): الاستدعاءات المتزامنة أثناء
@@ -296,6 +330,7 @@ class AnnouncementSpeaker(
                         if (utteranceId != null
                             && utteranceId == lastQueuedUtteranceId
                         ) {
+                            cancelSpeechWatchdog()
                             stopInterruptionMonitoring()
                             releaseAudioFocus()
                             notifySpeechComplete()
@@ -308,6 +343,7 @@ class AnnouncementSpeaker(
                         if (utteranceId != null
                             && utteranceId == lastQueuedUtteranceId
                         ) {
+                            cancelSpeechWatchdog()
                             stopInterruptionMonitoring()
                             releaseAudioFocus()
                             notifySpeechComplete()
@@ -567,6 +603,9 @@ class AnnouncementSpeaker(
                 attempt = attempt
             )
         }
+        // حد ختام للدورة: مهما طال النص يُفتح حارس الانتهاء قبل إرسال
+        // الأجزاء ليلتقط أي محرك يعلّق صامتاً (بلا onDone/onError).
+        armSpeechWatchdog(units)
     }
 
     /** وحدة نطق مستقلة بمعاملاتها (لغة/صوت/أشرطة) داخل دورة الإعلان الواحدة. */
@@ -722,6 +761,7 @@ class AnnouncementSpeaker(
             // استنفاد المحاولات: تصريف الموارد حتى لا يبقى التركيز مكتوم الصوت
             // ومحرك مكسور "جاهزاً" للدورات القادمة.
             nowSpeaking = false
+            cancelSpeechWatchdog()
             stopInterruptionMonitoring()
             releaseAudioFocus()
             shutdownSafely()
@@ -734,6 +774,7 @@ class AnnouncementSpeaker(
         AudioCuePlayer.getInstance(appContext).stop()
         stopInterruptionMonitoring()
         mainHandler.removeCallbacksAndMessages(null)
+        speechWatchdog = null
         pendingFocusAction = null
         pendingFocusTimer?.let { mainHandler.removeCallbacks(it) }
         pendingFocusTimer = null
@@ -753,6 +794,7 @@ class AnnouncementSpeaker(
         AudioCuePlayer.getInstance(appContext).stop()
         stopInterruptionMonitoring()
         mainHandler.removeCallbacksAndMessages(null)
+        speechWatchdog = null
         tts?.stop()
         pendingFocusAction = null
         pendingFocusTimer?.let { mainHandler.removeCallbacks(it) }

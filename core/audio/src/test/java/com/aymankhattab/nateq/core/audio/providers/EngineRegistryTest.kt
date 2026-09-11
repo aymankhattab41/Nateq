@@ -31,14 +31,63 @@ class EngineRegistryTest {
             capable = listOf(
                 "com.samsung.SMT",
                 "com.svox.pico",
-                "com.google.android.tts"
+                "com.google.android.tts",
+                "org.nobody.multitts"
             )
         )
         assertEquals(
             listOf(
+                "org.nobody.multitts",
+                "com.svox.pico",
+                "com.samsung.SMT",
+                "com.google.android.tts"
+            ),
+            chain
+        )
+    }
+
+    @Test
+    fun chain_prefersPeripheralEnginesBeforeNativeAndGoogle() {
+        // السلسلة المرنة (المحور الثالث): الطرفية (MultiTTS/eSpeak) تسبق
+        // النظامية (AOSP/Huawei Celia) فمصنّع سامسونج، وجوجل آخر الملاذات.
+        val chain = EngineRegistry.capableEnginesForLanguage(
+            capable = listOf(
+                "com.google.android.tts",
+                "com.svox.pico",
+                "com.huawei.tts",
+                "com.reecenetworks.espeak",
+                "com.samsung.SMT",
+                "org.nobody.multitts"
+            )
+        )
+        assertEquals(
+            listOf(
+                "org.nobody.multitts",
+                "com.reecenetworks.espeak",
+                "com.svox.pico",
+                "com.huawei.tts",
+                "com.samsung.SMT",
+                "com.google.android.tts"
+            ),
+            chain
+        )
+    }
+
+    @Test
+    fun chain_googleIsLastResort_WhenPeripheralMissing() {
+        // غياب الطرفية: النظامية (pico) تسبق سامسونج، وجوجل يبقى الأخير.
+        val chain = EngineRegistry.capableEnginesForLanguage(
+            capable = listOf(
                 "com.google.android.tts",
                 "com.samsung.SMT",
                 "com.svox.pico"
+            )
+        )
+        assertEquals(
+            listOf(
+                "com.svox.pico",
+                "com.samsung.SMT",
+                "com.google.android.tts"
             ),
             chain
         )

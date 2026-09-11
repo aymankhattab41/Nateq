@@ -1,11 +1,15 @@
 package com.aymankhattab.nateq.settings
 
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Spinner
+import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.feature.settings.R
@@ -89,6 +93,27 @@ class FirstRunSetupActivity :
             }
         findViewById<android.view.View>(R.id.btn_first_run_skip)
             .setOnClickListener { finishSkipped() }
+        findViewById<android.view.View>(R.id.btn_first_run_default_engine)
+            .setOnClickListener {
+                // فتح شاشة TTS النظامية لاختيار Lord كالمحرك الافتراضي
+                runCatching {
+                    startActivity(
+                        Intent("com.android.settings.TTS_SETTINGS")
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+            }
+        // شريط الحالة عملياً (edge-to-edge): إزاحة المحتوى للأسفل حتى لا
+        // يتداخل زر الحفظ مع النافذة النظامية
+        ViewCompat.setOnApplyWindowInsetsListener(
+            findViewById(android.R.id.content)
+        ) { v, insets ->
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars()
+            )
+            v.setPadding(0, bars.top, 0, bars.bottom)
+            WindowInsetsCompat.CONSUMED
+        }
         registerBackAsSkip()
     }
 
@@ -109,9 +134,22 @@ class FirstRunSetupActivity :
             settingsRepository.setEnginePreferenceForLanguage(
                 language, enginePkg, null, 1f, 1f, 1f
             )
+            // اختيار محرك صريح يفعّل «التحويل التلقائي» تلقائياً: من دون ذلك
+            // كان المستخدم يختار محركاً ثم يكتشف أن الإعلانات ما تزال بالمحرك
+            // الافتراضي. «تلقائي» أعلاه لا يفعّله (لا محرك محدداً).
+            if (enginePkg != null) {
+                settingsRepository.setAutoConvertEnabled(true)
+            }
             settingsRepository.setFirstRunSetupCompleted(true)
         }
         setResult(RESULT_OK)
+        if (enginePkg != null) {
+            Toast.makeText(
+                this,
+                R.string.auto_convert_auto_enabled,
+                Toast.LENGTH_LONG
+            ).show()
+        }
         if (language != previousLanguage) {
             AppCompatDelegate.setApplicationLocales(
                 LocaleListCompat.forLanguageTags(language)

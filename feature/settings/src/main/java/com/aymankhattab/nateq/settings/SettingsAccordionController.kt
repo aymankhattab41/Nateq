@@ -409,6 +409,7 @@ internal class SettingsAccordionController(
         val textReading = fragment.getString(R.string.section_text_reading)
         val instantSilence =
             fragment.getString(R.string.section_instant_silence)
+        val oem = fragment.getString(R.string.section_oem_guidance)
 
         // مجموعة «المحرك والأصوات»: صناديق اختيار المحرك/التحويل التلقائي
         // (إعدادات عامة) / فئات الأصوات
@@ -517,6 +518,13 @@ internal class SettingsAccordionController(
             view, R.id.ll_help_header, R.id.tv_help_arrow,
             0, R.id.ll_help_content,
             help, 3
+        )
+        accordionEntry(
+            view,
+            R.id.ll_oem_guidance_header,
+            R.id.tv_oem_guidance_arrow,
+            0, R.id.ll_oem_guidance_content,
+            oem, 3
         )
     }
 

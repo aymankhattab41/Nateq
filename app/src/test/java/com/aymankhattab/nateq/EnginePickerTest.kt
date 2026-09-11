@@ -72,10 +72,10 @@ class EnginePickerTest {
     }
 
     @Test
-    fun pick_prefersInstalledSystemEngine_WhenNoMultiTts() {
+    fun pick_prefersVendorEngine_OverGoogle_WhenNoPeripheralOrNative() {
         val installed = listOf("com.samsung.SMT", "com.google.android.tts")
         assertEquals(
-            "com.google.android.tts",
+            "com.samsung.SMT",
             EnginePicker.pickPreferredEngineFrom(installed)
         )
     }
@@ -110,12 +110,12 @@ class EnginePickerTest {
     // ===== pickFallbackEngineFrom: احتياطي بعد فشل المحرك الأصلي =====
 
     @Test
-    fun fallback_prefersGoogle_WhenInstalledAndNotFailed() {
+    fun fallback_prefersNativeEngine_OverVendorAndGoogle() {
         val installed = listOf(
             "com.samsung.SMT", "com.google.android.tts", "com.svox.pico"
         )
         assertEquals(
-            "com.google.android.tts",
+            "com.svox.pico",
             EnginePicker.pickFallbackEngineFrom(
                 installed, setOf("org.nobody.multitts")
             )
@@ -123,13 +123,14 @@ class EnginePickerTest {
     }
 
     @Test
-    fun fallback_thirdEngine_WhenGoogleMissing() {
-        // سوق بلا خدمة جوجل (الصين مثلاً): يقع على أفضل محرك متبقٍ (سامسونج)
+    fun fallback_nativeEngine_WhenGoogleMissingAndPeripheralFailed() {
+        // سوق بلا خدمة جوجل (الصين مثلاً) ومحركٍ طرفي فاشل:
+        // يقع على النظامي (AOSP pico) قبل المصنّع.
         val installed = listOf(
             "com.samsung.SMT", "com.svox.pico", "com.thirdparty.tts"
         )
         assertEquals(
-            "com.samsung.SMT",
+            "com.svox.pico",
             EnginePicker.pickFallbackEngineFrom(
                 installed, setOf("org.nobody.multitts")
             )

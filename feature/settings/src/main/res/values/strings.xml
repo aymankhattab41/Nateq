@@ -311,6 +311,21 @@
 <string name="toggle_off">معطل</string>
 <string name="toggle_on">مفعل</string>
 <string name="tools_section">أدوات التطبيق</string>
+<string name="section_oem_guidance">إرشادات توافق الجهاز</string>
+<string name="oem_device_label">الجهاز: %1$s</string>
+<string name="oem_vendor_unknown">غير معروف</string>
+<string name="oem_guidance_generic">بعض الشركات المصنعة توقف الإعلانات الصوتية في الخلفية لتوفير البطارية. امنح Lord TTS استثناءً من تحسين البطارية وافتح إعدادات التطبيق لتأكيد عمل الإعلانات في الخلفية.</string>
+<string name="oem_guidance_xiaomi">جهاز Xiaomi/Redmi/POCO: يحتاج التطبيق استثناءً من تحسين البطارية وتفعيل «التشغيل التلقائي» من إدارة أمان Mi للحفاظ على الإعلانات الصوتية في الخلفية.</string>
+<string name="oem_guidance_huawei">جهاز Huawei/Honor: فعّل استثناء البطارية و«الإدارة التلقائية» في مدير النظام (التطبيقات → خاصة) لاستمرار الإعلانات الصوتية في الخلفية.</string>
+<string name="oem_guidance_oppo">جهاز Oppo/OnePlus/realme: افتح استثناء البطارية وسجّل Lord TTS في «الإدارة الذاتية للتشغيل» من مركز الأمان لبقاء الإعلانات في الخلفية.</string>
+<string name="oem_guidance_vivo">جهاز Vivo: فعّل استثناء البطارية و«البدء الذاتي» من مدير الأذونات لتستمر الإعلانات الصوتية في الخلفية.</string>
+<string name="oem_guidance_samsung">جهاز Samsung: فعّل استثناء البطارية وافتح إعدادات التطبيق وأبعد LORD عن «تطبيقات النوم» لتستمر الإعلانات الصوتية في الخلفية.</string>
+<string name="btn_open_battery_settings">فتح إعدادات البطارية</string>
+<string name="btn_open_autostart_settings">فتح إعدادات التشغيل التلقائي</string>
+<string name="oem_screen_open_failed">تعذّر فتح الشاشة المطلوبة على هذا الجهاز</string>
+<string name="auto_convert_auto_enabled">فُعّل التحويل التلقائي لاختيار المحرك — يمكنك تعطيله من شاشة المحرك</string>
+<string name="first_run_default_engine">تعيين كمحرك افتراضي</string>
+<string name="first_run_default_engine_hint">افتح إعدادات النطق واختر Lord TTS كمحرك النظام الافتراضي</string>
 <string name="voice_category_default">الصوت الافتراضي</string>
 <string name="voice_category_default_summary">الصوت المستخدم للنصوص العامة</string>
 <string name="voice_category_emoji">نطق الإيموجي</string>
@@ -352,5 +367,5 @@
 <string name="time_quiet_start_for_day">%1$s، بداية الهدوء</string>
 <string name="time_quiet_end_for_day">%1$s، نهاية الهدوء</string>
 <string name="changelog_title">آخر التحديثات</string>
-<string name="changelog_text">الإصدار %1$s\n• إعادة تنظيم الإعدادات إلى أربع مجموعات منطقية\n• نطق اسم المتصل وإعلان البطارية وحالة الشحن\n• تحسينات إمكانية الوصول لقراءة الشاشة\n• مستويات نطق علامات الترقيم (لا شيء / البعض / الكل)\n• تهجئة ذكية بأسماء الحروف عند التنقل الحرفي في TalkBack\n• نطق التشكيل (فتحة، ضمة، كسرة، شدة، تنوين)\n• إسكات فوري بالهز أو بتغطية مستشعر التقارب أثناء النطق\n• رنة رأس الساعة (ثلاث نغمات) ومؤثرات صوت البطارية (شحن/فصل/اكتمال/انخفاض)\n• استقرار أعلى لرنة الساعة وإعلانات الوقت والرسائل ونغمات البطارية عبر اختبارات آلية شاملة</string>
+<string name="changelog_text">الإصدار %1$s\n• إرشادات توافق الجهاز (المحور الثالث): دليل محسوب حسب الشركة المصنعة (Xiaomi/Huawei/Oppo/Vivo/Samsung) بأزرار تفتح شاشات البطارية والتشغيل التلقائي المناسبة\n• سلسلة تراجع مرنة للمحركات: الطرفية (MultiTTS/eSpeak) أولاً ثم النظامية ثم الأبجدية — وجوجل ملاذ أخير\n• تنبيه بفشل محركك عند التحوّل التلقائي لمحرك آخر\n• زر «تعيين كمحرك افتراضي» في معالج الإعداد الأولي مع تفعيل التحويل التلقائي تلقائياً عند اختيار محرك\n• حارس انتهاء النطق: تحرير تلقائي للتركيز الصوتي عند تعليق أي محرك (لا تركيز مكتوم)\n• إعدادات آمنة عند الاستيراد: الهز/التقارب والتهجئة الذكية تُصفَّر\n• تنظيف ذاكرة الأصوات المؤقتة عند تبديل المحرك النشط\n• استقرار أعلى لرنة الساعة وإعلانات الوقت والرسائل ونغمات البطارية عبر اختبارات آلية شاملة</string>
 </resources>
