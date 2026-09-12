@@ -126,7 +126,7 @@
                 android:id="@+id/tv_group_special_arrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="‹"
+                android:drawableEnd="@drawable/ic_chevron_right"
                 android:textSize="14sp"
                 android:paddingStart="8dp"
                 android:importantForAccessibility="no" />
@@ -162,7 +162,7 @@
                 android:id="@+id/tv_time_announcement_arrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="▼"
+                android:drawableEnd="@drawable/ic_expand_more"
                 android:textSize="14sp"
                 android:paddingStart="8dp"
                 android:importantForAccessibility="no" />
@@ -402,7 +402,7 @@
                 android:id="@+id/tv_notification_reading_arrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="▼"
+                android:drawableEnd="@drawable/ic_expand_more"
                 android:textSize="14sp"
                 android:paddingStart="8dp"
                 android:importantForAccessibility="no" />
@@ -524,7 +524,7 @@
                 android:id="@+id/tv_instant_silence_arrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="▼"
+                android:drawableEnd="@drawable/ic_expand_more"
                 android:textSize="14sp"
                 android:paddingStart="8dp"
                 android:importantForAccessibility="no" />
@@ -622,7 +622,7 @@
                 android:id="@+id/tv_sms_reading_arrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="▼"
+                android:drawableEnd="@drawable/ic_expand_more"
                 android:textSize="14sp"
                 android:paddingStart="8dp"
                 android:importantForAccessibility="no" />
@@ -784,7 +784,7 @@
                 android:id="@+id/tv_caller_announcement_arrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="▼"
+                android:drawableEnd="@drawable/ic_expand_more"
                 android:textSize="14sp"
                 android:paddingStart="8dp"
                 android:importantForAccessibility="no" />
@@ -1015,7 +1015,7 @@
                 android:id="@+id/tv_group_general_arrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="‹"
+                android:drawableEnd="@drawable/ic_chevron_right"
                 android:textSize="14sp"
                 android:paddingStart="8dp"
                 android:importantForAccessibility="no" />
@@ -1051,7 +1051,7 @@
                 android:id="@+id/tv_categories_arrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="▼"
+                android:drawableEnd="@drawable/ic_expand_more"
                 android:textSize="14sp"
                 android:paddingStart="8dp"
                 android:importantForAccessibility="no" />
@@ -1113,7 +1113,7 @@
                 android:id="@+id/tv_number_reading_arrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="▼"
+                android:drawableEnd="@drawable/ic_expand_more"
                 android:textSize="14sp"
                 android:paddingStart="8dp"
                 android:importantForAccessibility="no" />
@@ -1275,7 +1275,7 @@
                 android:id="@+id/tv_text_reading_arrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="▼"
+                android:drawableEnd="@drawable/ic_expand_more"
                 android:textSize="14sp"
                 android:paddingStart="8dp"
                 android:importantForAccessibility="no" />
@@ -1383,7 +1383,7 @@
                 android:id="@+id/tv_battery_announcement_arrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="▼"
+                android:drawableEnd="@drawable/ic_expand_more"
                 android:textSize="14sp"
                 android:paddingStart="8dp"
                 android:importantForAccessibility="no" />
@@ -1507,7 +1507,7 @@
                     android:id="@+id/tv_battery_levels_arrow"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="▼"
+                    android:drawableEnd="@drawable/ic_expand_more"
                     android:textSize="14sp"
                     android:paddingStart="8dp"
                     android:importantForAccessibility="no" />
@@ -1693,7 +1693,7 @@
                 android:id="@+id/tv_general_settings_arrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="▼"
+                android:drawableEnd="@drawable/ic_expand_more"
                 android:textSize="14sp"
                 android:paddingStart="8dp"
                 android:importantForAccessibility="no" />
@@ -1867,7 +1867,7 @@
                 android:id="@+id/tv_device_health_arrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="▼"
+                android:drawableEnd="@drawable/ic_expand_more"
                 android:textSize="14sp"
                 android:paddingStart="8dp"
                 android:importantForAccessibility="no" />
@@ -1997,7 +1997,7 @@
                 android:id="@+id/tv_group_advanced_arrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="‹"
+                android:drawableEnd="@drawable/ic_chevron_right"
                 android:textSize="14sp"
                 android:paddingStart="8dp"
                 android:importantForAccessibility="no" />
@@ -2033,7 +2033,7 @@
                 android:id="@+id/tv_engine_arrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="▲"
+                android:drawableEnd="@drawable/ic_expand_less"
                 android:textSize="14sp"
                 android:paddingStart="8dp"
                 android:importantForAccessibility="no" />
@@ -2170,7 +2170,7 @@
                 android:id="@+id/tv_dict_arrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="▼"
+                android:drawableEnd="@drawable/ic_expand_more"
                 android:textSize="14sp"
                 android:paddingStart="8dp"
                 android:importantForAccessibility="no" />
@@ -2261,7 +2261,7 @@
                 android:id="@+id/tv_tools_arrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="▼"
+                android:drawableEnd="@drawable/ic_expand_more"
                 android:textSize="14sp"
                 android:paddingStart="8dp"
                 android:importantForAccessibility="no" />
@@ -2347,7 +2347,7 @@
                 android:id="@+id/tv_help_arrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="▼"
+                android:drawableEnd="@drawable/ic_expand_more"
                 android:textSize="14sp"
                 android:paddingStart="8dp"
                 android:importantForAccessibility="no" />
@@ -2457,7 +2457,7 @@
                 android:id="@+id/tv_oem_guidance_arrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="▼"
+                android:drawableEnd="@drawable/ic_expand_more"
                 android:textSize="14sp"
                 android:paddingStart="8dp"
                 android:importantForAccessibility="no" />
@@ -2534,7 +2534,7 @@
                 android:id="@+id/tv_emoji_arrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="▼"
+                android:drawableEnd="@drawable/ic_expand_more"
                 android:textSize="14sp"
                 android:paddingStart="8dp"
                 android:importantForAccessibility="no" />
@@ -2603,7 +2603,7 @@
                 android:id="@+id/tv_group_system_arrow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="‹"
+                android:drawableEnd="@drawable/ic_chevron_right"
                 android:textSize="14sp"
                 android:paddingStart="8dp"
                 android:importantForAccessibility="no" />

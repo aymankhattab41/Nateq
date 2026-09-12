@@ -1,6 +1,8 @@
 package com.aymankhattab.nateq
 
 import com.aymankhattab.nateq.core.engine.PunctuationLevels
+import com.aymankhattab.nateq.engine.EmojiSpeech
+import com.aymankhattab.nateq.engine.SpeechPart
 import com.aymankhattab.nateq.engine.pipeline.AmountParser
 import com.aymankhattab.nateq.engine.pipeline.CleanupStep
 import com.aymankhattab.nateq.engine.pipeline.CurrencyStep
@@ -592,6 +594,21 @@ class PipelineStepsTest {
     }
 
     @Test
+    fun emojiSpeech_keycapAndTagFlags_notSpokenAsGarbage() {
+        // 1️⃣: مُقسِّم النطق يُسقط FE0F ومنفّذ keycap (U+20E3) فيبقى مقطع
+        // نصّي واحد «1» بلا محارف عائمة (بند 2 اختياري).
+        val keycap = EmojiSpeech.split("رمزه 1\uFE0F\u20E3", true)
+        assertEquals(listOf(SpeechPart("رمزه 1", false)), keycap)
+        // العَلَم ذو الوسوم 🏴󠁧󠁢󠁳󠁣󠁴󠁿: العَلَم يُنطق اسمه (نطق عام للعلم)
+        // ويُسقط الوسوم E0020–E007F صامتاً.
+        val tagFlag = "\uD83C\uDFF4\uDB40\uDC67\uDB40\uDC62\uDB40\uDC73" +
+            "\uDB40\uDC63\uDB40\uDC74\uDB40\uDC7F"
+        val parts = EmojiSpeech.split(tagFlag, true)
+        assertEquals(1, parts.size)
+        assertTrue(parts.single().isEmojiName)
+    }
+
+    @Test
     fun emojiStrip_fe0f_droppedSilently_notSpace() {
         // ❤️ = U+2764 + U+FE0F: عند تعطيل نطق الإيموجي يُستبدل القلب بمسافة
         // ويُحذف محرف التباين FE0F صامتاً (بلا مسافة منه) فلا تتباعد الحروف.
@@ -599,6 +616,23 @@ class PipelineStepsTest {
         val input = "أنا\u2764\uFE0Fأحبك"
         assertEquals("أنا أحبك", step.apply(input))
         assertTrue(!step.apply(input).contains("\uFE0F"))
+    }
+
+    @Test
+    fun emojiStrip_keycapAndTagFlags_droppedSilently() {
+        // 1️⃣ = U+0031 + U+FE0F + U+20E3: يحذف FE0F وkeycap بصمت فيبقى
+        // الرقم نصاً عادياً بلا محارف عائمة (بند 2 اختياري).
+        val step = EmojiStripStep { false }
+        assertEquals(
+            "رمز 1 متاح",
+            step.apply("رمز 1\uFE0F\u20E3 متاح")
+        )
+        // العَلَم ذو الوسوم 🏴󠁧󠁢󠁳󠁣󠁴󠁿: وسوم U+E0020–E007F تُسقط بصمت
+        // (لم تكن تُجرَّد سابقاً فتصل المحرك مشوّشةً).
+        val tagFlag = "\uD83C\uDFF4\uDB40\uDC67\uDB40\uDC62\uDB40\uDC73" +
+            "\uDB40\uDC63\uDB40\uDC74\uDB40\uDC7F"
+        assertEquals("علم", step.apply("علم $tagFlag"))
+        assertTrue(!step.apply("علم $tagFlag").contains("\uDB40\uDC67"))
     }
 
     @Test

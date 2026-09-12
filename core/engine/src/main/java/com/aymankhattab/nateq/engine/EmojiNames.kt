@@ -776,9 +776,12 @@ object EmojiNames {
     /** تمييز مؤشرات المناطق (🇦️..🇿️): تُقرن مثنىً لتكوين أعلام. */
     fun isRegionalIndicator(cp: Int): Boolean = cp in 0x1F1E6..0x1F1FF
 
-    /** تعديلات إيموجي تُسقط بصمت: ZWJ، ألوان البشرة، مؤشرات شكل النص. */
+    /** تعديلات إيموجي تُسقط بصمت: ZWJ، ألوان البشرة، مؤشرات شكل النص،
+     *  ومحرف keycap الملتفّ (U+20E3 مثل 1️⃣) ووسوم الأعلام (U+E0020–E007F)
+     *  التي تُكمل العَلَم ذي الوسوم (بند 2 اختياري). */
     fun isEmojiModifier(cp: Int): Boolean =
-        cp == 0x200D || cp in 0xFE0E..0xFE0F || cp in 0x1F3FB..0x1F3FF
+        cp == 0x200D || cp in 0xFE0E..0xFE0F || cp in 0x1F3FB..0x1F3FF ||
+            cp == 0x20E3 || cp in 0xE0020..0xE007F
 
     /** كتل الإيموجي الصوريّة (بدون مؤشر الشكل FE0F الذي يُعالج كتعديل). */
     fun isEmojiBlockCp(cp: Int): Boolean =

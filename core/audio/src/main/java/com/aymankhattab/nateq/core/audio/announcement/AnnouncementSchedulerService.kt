@@ -556,6 +556,10 @@ private fun startSafely(context: Context, action: String) {
             )
             .setSmallIcon(R.drawable.ic_number_reading)
             .setContentIntent(openSettings)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            // إشعار عام خالٍ من بيانات المتصلين (لا شيء حساس) — يظهر على
+            // شاشة القفل دون تحجيم، ويُحسن ترتيبه في الإعدادات (بند 1).
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true)
             .setForegroundServiceBehavior(
                 NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE

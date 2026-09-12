@@ -29,9 +29,11 @@ internal class EmojiStripStep(
             // نطاقات الإيموجي الأساسي (ما عدا العربية والعامة)
             val isEmoji = isEmojiCodePoint(cp)
 
-            // تعديلات variation selectors و ZWJ (ألوان البشرة تَشمَلها
-            // نطاقات الإيموجي 1F300-1FAFF فتُستبدل بمسافة تلقائياً).
-            val isModifier = cp in 0xFE00..0xFE0F || cp == 0x200D
+            // تعديلات variation selectors و ZWJ وkeycap (1️⃣) ووسوم الأعلام
+            // (U+E0020–E007F): ألوان البشرة تَشمَلها نطاقات الإيموجي
+            // 1F300-1FAFF فتُستبدل بمسافة تلقائياً.
+            val isModifier = cp in 0xFE00..0xFE0F || cp == 0x200D ||
+                cp == 0x20E3 || cp in 0xE0020..0xE007F
 
             if (isEmoji) {
                 // استبدال الإيموجي بمسافة
