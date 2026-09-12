@@ -14,7 +14,6 @@ import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
-import java.util.Locale
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /** صف لغةٍ في قائمة إعداد التحويل التلقائي
@@ -157,14 +156,14 @@ internal class LanguageConvertAdapter(
             tvVol.text = "${seekVol.progress}%"
             seekPitch.progress = (saved.pitch * 100).toInt().coerceIn(0, 200)
                 .coerceAtLeast(MIN_SPEED_PITCH_PERCENT)
-            tvPitch.text = String.format(
-                Locale.US, "%.1fx",
+            tvPitch.text = RateLabel.of(
+                context,
                 saved.pitch.coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
             )
             seekRate.progress = (saved.rate * 100).toInt().coerceIn(0, 200)
                 .coerceAtLeast(MIN_SPEED_PITCH_PERCENT)
-            tvRate.text = String.format(
-                Locale.US, "%.1fx",
+            tvRate.text = RateLabel.of(
+                context,
                 saved.rate.coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
             )
 
@@ -321,7 +320,7 @@ internal class LanguageConvertAdapter(
                 fromUser: Boolean
             ) {
                 val v = progress.speedFactor()
-                label.text = String.format(Locale.US, "%.1fx", v)
+                label.text = RateLabel.of(context, v)
                 seekBar.setSeekStateDescription(label.text)
             }
 
@@ -330,7 +329,7 @@ internal class LanguageConvertAdapter(
             override fun onStopTrackingTouch(seekBar: SeekBar) {
                 seekBar.snapSpeedMin()
                 val v = seekBar.progress.speedFactor()
-                seekBar.announceCompat(String.format(Locale.US, "%.1fx", v))
+                seekBar.announceCompat(RateLabel.of(context, v))
             }
         }
     }

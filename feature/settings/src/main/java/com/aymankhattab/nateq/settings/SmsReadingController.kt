@@ -14,7 +14,6 @@ import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
 import com.aymankhattab.nateq.core.audio.announcement.NateqNotificationListener
 import com.aymankhattab.nateq.util.announceCompat
-import java.util.Locale
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /** ضابط قسم «قراءة الرسائل الواردة»: وضع القراءة بالأذونات، الأصوات،
@@ -175,7 +174,9 @@ internal class SmsReadingController(
             runCatching { settings.getSmsReadingRate() }
                 .getOrDefault(1.0f)
                 .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
-        tvSmsRateValue.text = String.format(Locale.US, "%.1fx", smsRate)
+        tvSmsRateValue.text = RateLabel.of(
+            fragment.requireContext(), smsRate
+        )
         bindingSlider = true
         try {
             seekSmsRate.progress = (smsRate * 100).toInt().coerceIn(0, 200)
@@ -192,8 +193,10 @@ internal class SmsReadingController(
                 // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
                 if (bindingSlider) return
                 val value = progress.speedFactor()
-                tvSmsRateValue.text =
-                    String.format(Locale.US, "%.1fx", value)
+                tvSmsRateValue.text = RateLabel.of(
+                    fragment.requireContext(),
+                    value
+                )
                 seekBar.setSeekStateDescription(tvSmsRateValue.text)
                 // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
                 // نهايته إلى onStopTrackingTouch أبداً.
@@ -206,7 +209,7 @@ internal class SmsReadingController(
                 val value = seekBar.progress.speedFactor()
                 runCatching { settings.setSmsReadingRate(value) }
                 seekBar.announceCompat(
-                    String.format(Locale.US, "%.1fx", value)
+                    RateLabel.of(fragment.requireContext(), value)
                 )
             }
         })

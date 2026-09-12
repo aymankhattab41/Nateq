@@ -22,7 +22,6 @@ import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.switchmaterial.SwitchMaterial
-import java.util.Locale
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /** ضابط قسم «إعلان اسم المتصل»: التفعيل بالأذونات، التكرار، السرعة،
@@ -220,8 +219,9 @@ internal class CallerAnnouncementController(
             runCatching { settings.getCallerAnnouncementRate() }
                 .getOrDefault(1.0f)
                 .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
-        tvCallerRateValue.text =
-            String.format(Locale.US, "%.1fx", callerRate)
+        tvCallerRateValue.text = RateLabel.of(
+            fragment.requireContext(), callerRate
+        )
         bindingSlider = true
         try {
             seekCallerRate.progress =
@@ -239,8 +239,10 @@ internal class CallerAnnouncementController(
                 // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
                 if (bindingSlider) return
                 val value = progress.speedFactor()
-                tvCallerRateValue.text =
-                    String.format(Locale.US, "%.1fx", value)
+                tvCallerRateValue.text = RateLabel.of(
+                    fragment.requireContext(),
+                    value
+                )
                 seekBar.setSeekStateDescription(
                     tvCallerRateValue.text
                 )
@@ -256,7 +258,7 @@ internal class CallerAnnouncementController(
                 val value = seekBar.progress.speedFactor()
                 runCatching { settings.setCallerAnnouncementRate(value) }
                 seekBar.announceCompat(
-                    String.format(Locale.US, "%.1fx", value)
+                    RateLabel.of(fragment.requireContext(), value)
                 )
                 onStatusChanged()
             }

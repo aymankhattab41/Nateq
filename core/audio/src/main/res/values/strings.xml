@@ -12,8 +12,8 @@
     <string name="announce_service_channel_description">تبقي Lord TTS عاملاً في الخلفية ليعلن الوقت ومستوى البطارية</string>
     <string name="announce_service_notification_title">إعلانات Lord TTS مستمرة</string>
     <string name="announce_service_notification_text">يعمل Lord TTS في الخلفية لإعلان الوقت والبطارية</string>
-    <string name="announce_action_speak_now">أعلن الوقت الآن</string>
-    <string name="announce_action_stop">إيقاف الإعلانات</string>
+    <string name="announce_action_speak_now">أعلن الآن</string>
+    <string name="announce_action_stop">إيقاف</string>
     <string name="battery_connected">تم توصيل الشاحن</string>
     <string name="battery_disconnected">تم فصل الشاحن</string>
     <string name="battery_full_unplug">البطارية ممتلئة، يمكنك فصل الشاحن</string>

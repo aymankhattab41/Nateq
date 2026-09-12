@@ -22,7 +22,7 @@
 <string name="auto_convert_voice">Voice</string>
 <string name="auto_convert_volume">Volume</string>
 <string name="back_label">Back to main list</string>
-<string name="back_to_home">Back on the main list</string>
+<string name="back_to_home">You\'re back on the main list</string>
 <string name="back_to_group">Back to %1$s</string>
 <string name="backup_export_warning_message">This file will be written as plain text and may contain settings and personal data (caller names and pronunciation words). Store it in a safe place and share it only with people you trust.</string>
 <string name="backup_export_warning_title">Export the backup?</string>
@@ -349,6 +349,7 @@
 <string name="voice_name_english">English</string>
 <string name="volume_label">Volume</string>
 <string name="volume_summary">Adjust the volume level</string>
+<string name="rate_value_format">%1$.1fx</string>
 <plurals name="caller_announcement_interval_seconds">
         <item quantity="one">%d second</item>
         <item quantity="other">%d seconds</item>
@@ -374,5 +375,5 @@
 <string name="time_quiet_start_for_day">%1$s, quiet start</string>
 <string name="time_quiet_end_for_day">%1$s, quiet end</string>
 <string name="changelog_title">What\'s New</string>
-<string name="changelog_text">Version %1$s\n• Device compatibility guidance (Axis 3): vendor-aware help for Xiaomi/Huawei/Oppo/Vivo/Samsung with buttons that open the right battery and autostart screens\n• Flexible engine fallback chain: peripheral engines (MultiTTS/eSpeak) first, then native, then alphabetical — Google is the last resort\n• Alert when your chosen engine fails and speech switches to another engine\n• "Make the default engine" button in the first-run setup, with auto-convert enabled automatically when an engine is chosen\n• Speech completion watchdog: audio focus is released automatically if any engine hangs (no stuck focus)\n• Safe import defaults: shake/proximity and smart spelling are reset on restore\n• Temporary voice cache cleanup when the active engine switches\n• Greater stability for hourly chime, time and message announcements and battery cues through comprehensive automated tests\n• Correct "quarter to" phrasing: 11:45 is said as midday (ظهراً), not morning\n• Time announcements survive app updates (alarms are re-scheduled automatically)\n• Security: the APK checksum is verified from the release notes before installing\n• "Reset to defaults" now clears the pronunciation dictionary from memory and disk\n• Fixed hundreds and thousands pronunciation (مائة، ألف، ثمانون…) after the number engine rework\n• Audio slider changes stay saved while using the TalkBack screen reader</string>
+<string name="changelog_text">Version %1$s\n• Device compatibility guidance (Axis 3): vendor-aware help for Xiaomi/Huawei/Oppo/Vivo/Samsung with buttons that open the right battery and autostart screens\n• Flexible engine fallback chain: peripheral engines (MultiTTS/eSpeak) first, then native, then alphabetical — Google is the last resort\n• Alert when your chosen engine fails and speech switches to another engine\n• "Make the default engine" button in the first-run setup, with auto-convert enabled automatically when an engine is chosen\n• Speech completion watchdog: audio focus is released automatically if any engine hangs (no stuck focus)\n• Safe import defaults: shake/proximity and smart spelling are reset on restore\n• Temporary voice cache cleanup when the active engine switches\n• Greater stability for hourly chime, time and message announcements and battery cues through comprehensive automated tests\n• Correct "quarter to" phrasing: 11:45 is said as midday (ظهراً), not morning\n• Time announcements survive app updates (alarms are re-scheduled automatically)\n• Security: the APK checksum is verified from the release notes before installing\n• "Reset to defaults" now clears the pronunciation dictionary from memory and disk\n• Fixed hundreds and thousands pronunciation (مائة، ألف، ثمانون…) after the number engine rework\n• Audio slider changes stay saved while using the TalkBack screen reader\n• Slider rate and pitch values are read with proper localized digits (١٫٥×) instead of a literal TalkBack reading\n• Unified notification buttons: "Announce now" and "Stop"\n• A natural spoken phrase when returning to the main list</string>
 </resources>

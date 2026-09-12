@@ -9,8 +9,8 @@
     <string name="announce_service_channel_description">Keeps Lord TTS running in the background to announce time and battery level</string>
     <string name="announce_service_notification_title">Lord TTS announcements running</string>
     <string name="announce_service_notification_text">Lord TTS is running in the background to announce time and battery</string>
-    <string name="announce_action_speak_now">Announce time now</string>
-    <string name="announce_action_stop">Stop announcements</string>
+    <string name="announce_action_speak_now">Announce now</string>
+    <string name="announce_action_stop">Stop</string>
     <string name="battery_connected">Charger connected</string>
     <string name="battery_disconnected">Charger disconnected</string>
     <string name="battery_full_unplug">Battery full, you can unplug the charger</string>

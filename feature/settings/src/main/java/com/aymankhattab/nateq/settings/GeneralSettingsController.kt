@@ -6,7 +6,6 @@ import android.widget.TextView
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
-import java.util.Locale
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /** ضابط قسم «الإعدادات العامة»: السرعة/النبرة/مستوى الصوت الافتراضية. */
@@ -48,7 +47,9 @@ internal class GeneralSettingsController(
         val volume = runCatching { settings.getDefaultVolume() }
             .getOrDefault(1.0f)
 
-        tvDefaultSpeechRateValue.text = String.format(Locale.US, "%.1fx", rate)
+        tvDefaultSpeechRateValue.text = RateLabel.of(
+            fragment.requireContext(), rate
+        )
         bindingSlider = true
         try {
             seekDefaultSpeechRate.progress =
@@ -56,7 +57,9 @@ internal class GeneralSettingsController(
         } finally {
             bindingSlider = false
         }
-        tvDefaultPitchValue.text = String.format(Locale.US, "%.1fx", pitch)
+        tvDefaultPitchValue.text = RateLabel.of(
+            fragment.requireContext(), pitch
+        )
         bindingSlider = true
         try {
             seekDefaultPitch.progress = (pitch * 100).toInt().coerceIn(0, 200)
@@ -82,8 +85,10 @@ internal class GeneralSettingsController(
                 // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
                 if (bindingSlider) return
                 val value = progress.speedFactor()
-                tvDefaultSpeechRateValue.text =
-                    String.format(Locale.US, "%.1fx", value)
+                tvDefaultSpeechRateValue.text = RateLabel.of(
+                    fragment.requireContext(),
+                    value
+                )
                 seekBar.setSeekStateDescription(
                     tvDefaultSpeechRateValue.text
                 )
@@ -99,7 +104,7 @@ internal class GeneralSettingsController(
                 val value = seekBar.progress.speedFactor()
                 runCatching { settings.setDefaultSpeechRate(value) }
                 seekBar.announceCompat(
-                    String.format(Locale.US, "%.1fx", value)
+                    RateLabel.of(fragment.requireContext(), value)
                 )
                 onStatusChanged()
             }
@@ -115,8 +120,10 @@ internal class GeneralSettingsController(
                 // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
                 if (bindingSlider) return
                 val value = progress.speedFactor()
-                tvDefaultPitchValue.text =
-                    String.format(Locale.US, "%.1fx", value)
+                tvDefaultPitchValue.text = RateLabel.of(
+                    fragment.requireContext(),
+                    value
+                )
                 seekBar.setSeekStateDescription(
                     tvDefaultPitchValue.text
                 )
@@ -132,7 +139,7 @@ internal class GeneralSettingsController(
                 val value = seekBar.progress.speedFactor()
                 runCatching { settings.setDefaultPitch(value) }
                 seekBar.announceCompat(
-                    String.format(Locale.US, "%.1fx", value)
+                    RateLabel.of(fragment.requireContext(), value)
                 )
                 onStatusChanged()
             }

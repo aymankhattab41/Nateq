@@ -805,7 +805,7 @@ internal class SettingsAccordionController(
         val volume =
             runCatching { settings.getDefaultVolume() }
                 .getOrDefault(1.0f)
-        val rateText = String.format(java.util.Locale.US, "%.1fx", rate)
+        val rateText = RateLabel.of(fragment.requireContext(), rate)
         val volumeText = (volume * 100).toInt().toString() + "%"
         return fragment.getString(R.string.default_speech_rate_label) + ": " +
             rateText + "، " + volumeText

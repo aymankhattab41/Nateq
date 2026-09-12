@@ -14,7 +14,6 @@ import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
-import java.util.Locale
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 
@@ -158,8 +157,10 @@ internal class CategoryVoiceAdapter(
                 // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
                 if (bindingAdapterInputs) return
                 val value = progress.speedFactor()
-                holder.tvRateValue.text =
-                    String.format(Locale.US, "%.1fx", value)
+                holder.tvRateValue.text = RateLabel.of(
+                    holder.itemView.context,
+                    value
+                )
                 holder.seekRate.setSeekStateDescription(
                     holder.tvRateValue.text
                 )
@@ -179,7 +180,7 @@ internal class CategoryVoiceAdapter(
                     settings.setSpeechRateForCategory(holder.category, value)
                 }
                 holder.seekRate.announceCompat(
-                    String.format(Locale.US, "%.1fx", value)
+                    RateLabel.of(holder.itemView.context, value)
                 )
             }
         })
@@ -193,8 +194,10 @@ internal class CategoryVoiceAdapter(
                 // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
                 if (bindingAdapterInputs) return
                 val value = progress.speedFactor()
-                holder.tvPitchValue.text =
-                    String.format(Locale.US, "%.1fx", value)
+                holder.tvPitchValue.text = RateLabel.of(
+                    holder.itemView.context,
+                    value
+                )
                 holder.seekPitch.setSeekStateDescription(
                     holder.tvPitchValue.text
                 )
@@ -214,7 +217,7 @@ internal class CategoryVoiceAdapter(
                     settings.setPitchForCategory(holder.category, value)
                 }
                 holder.seekPitch.announceCompat(
-                    String.format(Locale.US, "%.1fx", value)
+                    RateLabel.of(holder.itemView.context, value)
                 )
             }
         })
@@ -370,7 +373,9 @@ internal class CategoryVoiceAdapter(
         val rate = runCatching { settings.getSpeechRateForCategory(category) }
             .getOrDefault(1.0f)
             .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
-        holder.tvRateValue.text = String.format(Locale.US, "%.1fx", rate)
+        holder.tvRateValue.text = RateLabel.of(
+            holder.itemView.context, rate
+        )
         bindingAdapterInputs = true
         try {
             holder.seekRate.progress = (rate * 100).toInt().coerceIn(0, 200)
@@ -381,7 +386,9 @@ internal class CategoryVoiceAdapter(
         val pitch = runCatching { settings.getPitchForCategory(category) }
             .getOrDefault(1.0f)
             .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
-        holder.tvPitchValue.text = String.format(Locale.US, "%.1fx", pitch)
+        holder.tvPitchValue.text = RateLabel.of(
+            holder.itemView.context, pitch
+        )
         bindingAdapterInputs = true
         try {
             holder.seekPitch.progress = (pitch * 100).toInt().coerceIn(0, 200)

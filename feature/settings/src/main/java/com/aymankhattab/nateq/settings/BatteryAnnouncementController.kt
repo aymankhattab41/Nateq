@@ -13,7 +13,6 @@ import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerServi
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.util.announceCompat
 import com.google.android.material.switchmaterial.SwitchMaterial
-import java.util.Locale
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /** ضابط قسم «إعلان مستوى البطارية»: المستويات/الصوت/السرعة/مستوى صوت الشحن. */
@@ -244,8 +243,9 @@ internal class BatteryAnnouncementController(
             runCatching { settings.getBatteryAnnouncementRate() }
                 .getOrDefault(1.0f)
                 .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
-        tvBatteryRateValue.text =
-            String.format(Locale.US, "%.1fx", batteryRate)
+        tvBatteryRateValue.text = RateLabel.of(
+            fragment.requireContext(), batteryRate
+        )
         bindingSlider = true
         try {
             seekBatteryRate.progress =
@@ -263,8 +263,10 @@ internal class BatteryAnnouncementController(
                 // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
                 if (bindingSlider) return
                 val value = progress.speedFactor()
-                tvBatteryRateValue.text =
-                    String.format(Locale.US, "%.1fx", value)
+                tvBatteryRateValue.text = RateLabel.of(
+                    fragment.requireContext(),
+                    value
+                )
                 seekBar.setSeekStateDescription(
                     tvBatteryRateValue.text
                 )
@@ -281,7 +283,7 @@ internal class BatteryAnnouncementController(
                     settings.setBatteryAnnouncementRate(value)
                 }
                 seekBar.announceCompat(
-                    String.format(Locale.US, "%.1fx", value)
+                    RateLabel.of(fragment.requireContext(), value)
                 )
             }
         })
