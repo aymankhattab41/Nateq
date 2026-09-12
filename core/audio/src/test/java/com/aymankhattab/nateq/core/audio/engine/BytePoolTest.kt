@@ -95,8 +95,11 @@ class BytePoolTest {
                             "مصفوفة محجوزة صُدرت مرة ثانية"
                         }
                         Thread.yield()
-                        pool.release(array)
+                        // إزالة الحجز قبل الإيداع مباشرةً يُغلق نافذة
+                        // خاطئة: إن سحب خيطٌ آخرٌ الصفيفَ بعد إيداعنا الحقيقي
+                        // فقد انتهت ملكيتنا له فلا يعد «محجوزاً» عندنا.
                         held.remove(array)
+                        pool.release(array)
                     }
                 } catch (t: Throwable) {
                     errors.add(t)

@@ -22,7 +22,7 @@
 <string name="auto_convert_voice">Voice</string>
 <string name="auto_convert_volume">Volume</string>
 <string name="back_label">Back to main list</string>
-<string name="back_to_home">Back to main list</string>
+<string name="back_to_home">Back on the main list</string>
 <string name="back_to_group">Back to %1$s</string>
 <string name="backup_export_warning_message">This file will be written as plain text and may contain settings and personal data (caller names and pronunciation words). Store it in a safe place and share it only with people you trust.</string>
 <string name="backup_export_warning_title">Export the backup?</string>
@@ -88,6 +88,8 @@
 <string name="check_updates_confirm_message">A newer version of the app is available. Do you want to download it now?</string>
 <string name="check_updates_confirm_yes">Yes</string>
 <string name="check_updates_confirm_no">No</string>
+<string name="check_updates_no_digest_warning">The file checksum (SHA-256) cannot be verified — the publisher did not provide it. The file will be installed as-is without an integrity check. Continue?</string>
+    <string name="check_updates_metered_warning">You are on a mobile data (metered) connection. Downloading will use your data.</string>
 <string name="clock_widget_enabled">Clock widget on the home screen</string>
 <string name="time_chime_enabled">Hourly chime</string>
 <string name="time_chime_sound">Chime sound</string>
@@ -220,6 +222,11 @@
 <string name="report_error_empty">No errors are currently recorded in the app log</string>
 <string name="report_error_no_handler">No app can share text right now</string>
 <string name="report_error_subject">Error report — Lord TTS</string>
+<string name="error_report_header_title">Error Report — Lord TTS</string>
+<string name="error_report_version">Version: %1$s (%2$d)</string>
+<string name="error_report_device">Device: %1$s %2$s</string>
+<string name="error_report_android_os">Android: %1$s (API %2$d)</string>
+<string name="error_report_time">Time: %1$s</string>
 <string name="reset_cancel">Cancel</string>
 <string name="reset_confirm_message">All settings will be returned to their default values. Do you want to continue?</string>
 <string name="reset_confirm_title">Restore defaults?</string>
@@ -366,6 +373,6 @@
 <string name="time_quiet_enabled_for_day">%1$s: quiet hours</string>
 <string name="time_quiet_start_for_day">%1$s, quiet start</string>
 <string name="time_quiet_end_for_day">%1$s, quiet end</string>
-<string name="changelog_title">"What's New"</string>
+<string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s\n• Device compatibility guidance (Axis 3): vendor-aware help for Xiaomi/Huawei/Oppo/Vivo/Samsung with buttons that open the right battery and autostart screens\n• Flexible engine fallback chain: peripheral engines (MultiTTS/eSpeak) first, then native, then alphabetical — Google is the last resort\n• Alert when your chosen engine fails and speech switches to another engine\n• "Make the default engine" button in the first-run setup, with auto-convert enabled automatically when an engine is chosen\n• Speech completion watchdog: audio focus is released automatically if any engine hangs (no stuck focus)\n• Safe import defaults: shake/proximity and smart spelling are reset on restore\n• Temporary voice cache cleanup when the active engine switches\n• Greater stability for hourly chime, time and message announcements and battery cues through comprehensive automated tests</string>
 </resources>

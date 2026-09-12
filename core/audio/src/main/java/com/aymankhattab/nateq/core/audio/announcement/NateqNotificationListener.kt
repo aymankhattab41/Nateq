@@ -57,6 +57,23 @@ class NateqNotificationListener : NotificationListenerService() {
         ): Boolean = privacyEnabled && LocaleUtils.containsOtp(
             "${title.orEmpty()} ${text.orEmpty()}".trim()
         )
+
+        /** استخراج نص الإشعار بترتيب سقوط: EXTRA_TEXT ثم نصّ الموسّع
+         *  EXTRA_BIG_TEXT (إشعارات واتساب/أميل متعددة الأسطر) ثم أسطر
+         *  EXTRA_TEXT_LINES مربوطة — حتى لا تُفقد رسالة طويلة النص
+         *  (تحسين [بند 26]). */
+        fun notificationBodyText(extras: android.os.Bundle): String? {
+            val bigText = extras.getCharSequence(
+                Notification.EXTRA_BIG_TEXT
+            )?.toString()?.trim()
+            val textLines = extras.getCharSequenceArray(
+                Notification.EXTRA_TEXT_LINES
+            )?.filterNotNull()?.joinToString("\n")
+            return extras.getCharSequence(Notification.EXTRA_TEXT)
+                ?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                ?: bigText?.takeIf { it.isNotEmpty() }
+                ?: textLines?.takeIf { it.isNotEmpty() }
+        }
     }
 
     /** مصدر الإعدادات المحقون — نفس كائن عملية المحرك المُدار من Hilt. */
@@ -158,10 +175,9 @@ class NateqNotificationListener : NotificationListenerService() {
             val notification = sbn.notification ?: return
             val extras = notification.extras
 
-            val title = extras.getCharSequence(Notification.EXTRA_TITLE)
-                ?.toString()?.trim()
-            val text = extras.getCharSequence(Notification.EXTRA_TEXT)
-                ?.toString()?.trim()
+val title = extras.getCharSequence(Notification.EXTRA_TITLE)
+            ?.toString()?.trim()
+        val text = notificationBodyText(extras)
 
             if (title.isNullOrBlank() && text.isNullOrBlank()) return
 

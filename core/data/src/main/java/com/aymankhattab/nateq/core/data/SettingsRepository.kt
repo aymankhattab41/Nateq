@@ -93,14 +93,17 @@ class SettingsRepository(private val context: Context) :
         private const val KEY_CONVERT_SLOTS_MIGRATED = "_convert_slots_migrated"
     }
 
-    @Volatile
-    private var prefs: SharedPreferences = openSharedPrefs().also {
-        migrateIfNeeded(it)
-    }
+    /** جسر القراءة عبر العمليتين لملف الإعدادات المشترك. */
+    private val prefsBridge = MultiProcessPrefsBridge(context)
 
     /** توقيت آخر تعديل لملف الإعدادات — حارس كشف الكتابة من العملية الأخرى. */
     @Volatile
     private var prefsLastModified: Long = prefsFileLastModified()
+
+    @Volatile
+    private var prefs: SharedPreferences = openSharedPrefs().also {
+        migrateIfNeeded(it)
+    }
 
     /**
      * يفتح تفضيلات [NEW_PREFS] العادية.
@@ -133,7 +136,9 @@ class SettingsRepository(private val context: Context) :
         // القراءة على المخزن في الذاكرة (مسح ثم نسخ) — حتمية تعمل على الجهاز
         // وعبر Robolectric على حد سواء، دون الاعتماد على سلوك داخلي للوسم
         // المكروه MODE_MULTI_PROCESS.
-        val fresh = runCatching { parsePrefsFile(prefsFile()) }.getOrNull()
+        val fresh = runCatching {
+            prefsBridge.parse(NEW_PREFS)
+        }.getOrNull()
             ?: return
         val editor = prefs.edit().clear()
         editor.copyFrom(fresh)
@@ -143,79 +148,13 @@ class SettingsRepository(private val context: Context) :
     }
 
     /** مسار ملف الإعدادات المشترك بين العمليات. */
-    private fun prefsFile(): java.io.File = prefsFileFor(NEW_PREFS)
-
-    /** مسار ملف تفضيلات مسجَّل بالاسم (تحت المجلد shared_prefs). */
-    private fun prefsFileFor(name: String): java.io.File =
-        java.io.File(context.applicationInfo.dataDir, "shared_prefs/$name.xml")
+    private fun prefsFile(): java.io.File = prefsBridge.fileFor(NEW_PREFS)
 
     private fun prefsFileLastModified(): Long =
-        runCatching { prefsFile().lastModified() }.getOrDefault(0L)
+        prefsBridge.lastModified(NEW_PREFS)
 
     private fun prefsFileChanged(): Boolean =
-        prefsFileLastModified() != prefsLastModified
-
-    /**
-     * يقرأ ملف تفضيلات XML بتنسيق SharedPreferences ويعيد خريطته القيمية.
-     * صيغة الملف موثقة داخل AOSP (SharedPreferencesImpl.fromXml) وثابتة
-     * لسنوات — المخزن الوحيد لهذا المشروع: map من int/boolean/float/string
-     * و string-set/string.
-     */
-    private fun parsePrefsFile(file: java.io.File): Map<String, Any?> {
-        val parser = android.util.Xml.newPullParser()
-        parser.setInput(java.io.FileInputStream(file), "utf-8")
-        var type = parser.eventType
-        val map = LinkedHashMap<String, Any?>()
-        // حالة عنصر <set> النشط (مجموعة نصوص): الاسم وجمع القيم حتى وسَم
-        // الإغلاق المقابل.
-        var setKey: String? = null
-        var setValues: java.util.HashSet<String>? = null
-        while (type != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
-            if (type == org.xmlpull.v1.XmlPullParser.START_TAG) {
-                val tag = parser.name
-                val key = parser.getAttributeValue(null, "name")
-                when (tag) {
-                    // الجذر فقط: بلا قيم مباشرة.
-                    "map", "string-set" -> {}
-                    "set" -> {
-                        setKey = key
-                        setValues = java.util.HashSet()
-                    }
-                    "string" -> if (setValues != null && key != null) {
-                        setValues.add(parser.nextText())
-                    } else if (key != null) {
-                        map[key] = parser.nextText()
-                    }
-                    else -> if (key != null) {
-                        val raw = parser.getAttributeValue(null, "value")
-                        map[key] = parseScalar(tag, raw)
-                    }
-                }
-            } else if (type == org.xmlpull.v1.XmlPullParser.END_TAG &&
-                parser.name == "set" && setKey != null && setValues != null
-            ) {
-                map[setKey] = setValues
-                setKey = null
-                setValues = null
-            }
-            type = parser.next()
-        }
-        return map
-    }
-
-    /** يحوّل قيمة نصية لوسم عددي/منطقي؛ أي فشل يُترك نصاً خاماً. */
-    private fun parseScalar(tag: String, value: String?): Any? = try {
-        when (tag) {
-            "int" -> value?.toInt()
-            "long" -> value?.toLong()
-            "float" -> value?.toFloat()
-            "boolean" -> value?.toBoolean()
-            "string" -> value
-            else -> value
-        }
-    } catch (_: Throwable) {
-        value
-    }
+        prefsBridge.isChanged(NEW_PREFS, prefsLastModified)
 
     /** ينسخ خريطة قراءة من القرص إلى محرر التفضيلات حسب نوع كل قيمة. */
     private fun SharedPreferences.Editor.copyFrom(values: Map<String, Any?>) {
@@ -254,7 +193,8 @@ class SettingsRepository(private val context: Context) :
         // يُرحَّل» — لا نتيجة الفتح التي قد تفشل عابراً (Keystore مباشرة بعد
         // الإقلاع أو قفل الشاشة) فيبدو المخزن «فارغاً» فتُعلَن الهجرة خطأً
         // وتُهمل إعدادات المستخدم بلا رجعة.
-        val secureFileExists = prefsFileFor(OLD_PREFS).exists()
+        val secureFileExists =
+            prefsBridge.fileFor(OLD_PREFS).exists()
 
         var openedEncrypted = false
         val oldPrefs = try {

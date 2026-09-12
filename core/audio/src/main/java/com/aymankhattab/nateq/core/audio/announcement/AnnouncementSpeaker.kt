@@ -14,6 +14,7 @@ import com.aymankhattab.nateq.core.audio.engine.Segment
 import com.aymankhattab.nateq.engine.SpeechPart
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.util.AccessibilityUtils
 import com.aymankhattab.nateq.util.LanguageCode
 import java.util.Locale
 import java.util.concurrent.CopyOnWriteArrayList
@@ -110,6 +111,10 @@ class AnnouncementSpeaker(
     )
     private var audioFocusRequest: AudioFocusRequest? = null
     private var hasAudioFocus = false
+
+    // آخر حالةٍ لقراء الشاشة طُبّقت عليها سمات النطق: نتغير فقط عند الانتقال
+    // الحقيقي (قارئ مفعّل ↔ معطّل) فلا نعيد setAudioAttributes بلا داعٍ.
+    private var lastSpeechAttributesReaderOn: Boolean? = null
 
     // النطق المنتظر لحين وصول Audio Focus المؤجل (DELAYED): يُخزَّن الإجراء
     // ويُطلق فور استلام AUDIOFOCUS_GAIN، مع مؤقّت أمان يمنع ضياع الإعلان
@@ -360,13 +365,10 @@ class AnnouncementSpeaker(
                     }
                 })
 
-            // نطق الإعلانات يصنّف كـ مساعد إتاحة صوتي (لا مسار موسيقى)
-            setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-            )
+            // سمات نطق الإعلانات: مسار الإتاحة عادة (لا مسار موسيقى)،
+            // ويُعاد حسمها دينامياً مع حالة قارئ الشاشة عند كل دورة نطق.
+            lastSpeechAttributesReaderOn = null
+            applySpeechAudioAttributesIfReaderStateChanged()
 
             if (engine != null) {
                 @Suppress("DEPRECATION")
@@ -515,6 +517,37 @@ class AnnouncementSpeaker(
     }
 
     /**
+     * سمات نطق الإعلانات: مسار الإتاحة عادةً (لا يزاحم وسائط المستخدم).
+     * أثناء تشغيل قارئ الشاشة (TalkBack) يتحول النطق إلى مسار الوسائط حتى
+     * لا يلتقي صوتا الإعلان والقراءة في القناة نفسها؛ تمييل أندرويد يخفض
+     * إعلان الوسائط تلقائياً لصالح كلام القارئ فتفوز القراءة ولا يضيع
+     * الإعلان كلياً.
+     */
+    private fun speechAudioAttributes(): AudioAttributes =
+        AudioAttributes.Builder()
+            .setUsage(
+                if (AccessibilityUtils.isScreenReaderEnabled(appContext)) {
+                    AudioAttributes.USAGE_MEDIA
+                } else {
+                    AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY
+                }
+            )
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+            .build()
+
+    /** إعادة تطبيق سمات النطق فقط عند تغيّر حالة قارئ الشاشة فعلاً. */
+    private fun applySpeechAudioAttributesIfReaderStateChanged() {
+        val readerOn = AccessibilityUtils.isScreenReaderEnabled(appContext)
+        if (readerOn == lastSpeechAttributesReaderOn) return
+        lastSpeechAttributesReaderOn = readerOn
+        try {
+            tts?.setAudioAttributes(speechAudioAttributes())
+        } catch (t: Throwable) {
+            Log.w(TAG, "setAudioAttributes failed", t)
+        }
+    }
+
+    /**
      * تشغيل المؤثر الصوتي إن وُجد ثم النطق؛ أو النطق مباشرة.
      * يتحقق من عدم تقادم المسار (speechGeneration) لمنع
      * النطق القديم بعد stop()/speak جديد.
@@ -591,6 +624,8 @@ class AnnouncementSpeaker(
         attempt: Int
     ) {
         startInterruptionMonitoring()
+        // السمات تتبع حالة قارئ الشاشة لحظة النطق (وليس لحظة التهيئة).
+        applySpeechAudioAttributesIfReaderStateChanged()
         try {
             val units = buildSpeakUnits(
                 text, locale, speechRate, pitch, volume, emojiCfg, parts
@@ -862,12 +897,7 @@ class AnnouncementSpeaker(
                     AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
                 )
                     .setAudioAttributes(
-                        AudioAttributes.Builder()
-.setUsage(
-                            AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY
-                        )
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                            .build()
+                        speechAudioAttributes()
                     )
                     // نحتاج قبول التأجيل: على أندرويد 17 قد يُنبّه النظام بطلبٍ
                     // مؤجل (DELAYED) عند ارتفاع ضغط الصوت في الخلفية.

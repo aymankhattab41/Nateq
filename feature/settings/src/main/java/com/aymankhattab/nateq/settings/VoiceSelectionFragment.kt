@@ -34,6 +34,7 @@ import com.aymankhattab.nateq.engine.PronunciationDictionary
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.LanguageCode
+import com.aymankhattab.nateq.util.NetworkMetering
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
 import com.aymankhattab.nateq.core.data.SettingsRepository
@@ -835,7 +836,16 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             content.visibility == View.GONE ||
                 content.visibility == View.INVISIBLE
         content.visibility = if (collapsed) View.VISIBLE else View.GONE
-        arrow.text = if (collapsed) "▲" else "▼"
+        // سهم متجهي يلون بلون النص (مطوّي → للأسفل، موسّع → للأعلى)
+        arrow.text = ""
+        val res = if (collapsed) R.drawable.ic_expand_more
+        else R.drawable.ic_expand_less
+        val icon = androidx.core.content.ContextCompat.getDrawable(
+            requireContext(), res
+        )?.apply { setTint(arrow.currentTextColor) }
+        arrow.setCompoundDrawablesRelativeWithIntrinsicBounds(
+            null, null, icon, null
+        )
         // يقرأ قارئ الشاشة نصاً واحداً: العنوان الأساسي + حالة (موسّع/مطوي)
         val stateLabel =
             if (collapsed) getString(R.string.expand)
@@ -1042,20 +1052,36 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     @Suppress("DEPRECATION") info.versionCode.toLong()
                 }
             val header = buildString {
-                appendLine("Lord TTS — Error Report")
-                appendLine("Version: $versionName ($versionCode)")
                 appendLine(
-                    "Device: ${android.os.Build.MANUFACTURER} " +
+                    context.getString(R.string.error_report_header_title)
+                )
+                appendLine(
+                    context.getString(
+                        R.string.error_report_version,
+                        versionName, versionCode
+                    )
+                )
+                appendLine(
+                    context.getString(
+                        R.string.error_report_device,
+                        android.os.Build.MANUFACTURER,
                         android.os.Build.MODEL
+                    )
                 )
                 appendLine(
-                    "Android: ${android.os.Build.VERSION.RELEASE} " +
-                        "(API ${android.os.Build.VERSION.SDK_INT})"
+                    context.getString(
+                        R.string.error_report_android_os,
+                        android.os.Build.VERSION.RELEASE,
+                        android.os.Build.VERSION.SDK_INT
+                    )
                 )
                 appendLine(
-                    "Time: " + java.text.SimpleDateFormat(
-                        "yyyy-MM-dd HH:mm:ss", java.util.Locale.US
-                    ).format(java.util.Date())
+                    context.getString(
+                        R.string.error_report_time,
+                        java.text.SimpleDateFormat(
+                            "yyyy-MM-dd HH:mm:ss", java.util.Locale.US
+                        ).format(java.util.Date())
+                    )
                 )
                 appendLine("-----")
             }
@@ -1138,7 +1164,13 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
 
         viewLifecycleOwner.lifecycleScope.launch {
-            when (val res = UpdateChecker.check(currentName)) {
+            // الفحص التلقائي يفضّل الكاش (لا يضغط GitHub عند كل فتح شاشة)؛
+            // الفحص اليدوي يلتفّ عليه دائماً ليُجيب فوراً عن «هل من جديد؟».
+            when (
+                val res = UpdateChecker.check(
+                    currentName, preferCache = !showFeedback
+                )
+            ) {
                 is UpdateChecker.CheckResult.UpdateAvailable -> {
                     promptDownloadUpdate(
                         context, res.apkUrl, res.expectedSha256Hex
@@ -1173,17 +1205,36 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     }
 
     /** حوار تأكيد قبل التنزيل: يسأل المستخدم إن كان يريد تنزيل التحديث
-     *  (نعم/لا). */
+     *  (نعم/لا). على الشبكات المدفوعة يُحذَّر أن التنزيل سيستهلك بياناته،
+     *  وموافقته عليه صراحةً تسمح بالتنزيل فوقها. */
     private fun promptDownloadUpdate(
         context: android.content.Context,
         apkUrl: String,
         expectedSha256Hex: String?
     ) {
+        val base = getString(R.string.check_updates_confirm_message)
+        // إن لم يوفّر الناشر بصمة SHA-256 (غياب digest) يُحذَّر المستخدم
+        // بصراحة قبل التثبيت بلا تحقق (القرار يبقى له).
+        val warnings = buildList {
+            if (expectedSha256Hex == null) {
+                add(getString(R.string.check_updates_no_digest_warning))
+            }
+            if (NetworkMetering.isMetered(requireContext())) {
+                add(getString(R.string.check_updates_metered_warning))
+            }
+        }
+        val message = if (warnings.isEmpty()) base
+        else base + "\n" + warnings.joinToString("\n")
         MaterialAlertDialogBuilder(context)
             .setTitle(R.string.check_updates_confirm_title)
-            .setMessage(R.string.check_updates_confirm_message)
+            .setMessage(message)
             .setPositiveButton(R.string.check_updates_confirm_yes) { _, _ ->
-                startApkDownload(context, apkUrl, expectedSha256Hex)
+                startApkDownload(
+                    context,
+                    apkUrl,
+                    expectedSha256Hex,
+                    allowMetered = NetworkMetering.isMetered(context)
+                )
             }
             .setNegativeButton(R.string.check_updates_confirm_no, null)
             .create().also(::trackDialog).show()
@@ -1196,14 +1247,17 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private fun startApkDownload(
         context: android.content.Context,
         apkUrl: String,
-        expectedSha256Hex: String?
+        expectedSha256Hex: String?,
+        allowMetered: Boolean
     ) {
         Toast.makeText(
             context,
             getString(R.string.check_updates_downloading_title),
             Toast.LENGTH_SHORT
         ).show()
-        val downloadId = UpdateChecker.enqueueDownload(context, apkUrl)
+        val downloadId = UpdateChecker.enqueueDownload(
+            context, apkUrl, allowMetered
+        )
 
         // مستمع مؤقت مشترك يفتح شاشة التثبيت عند اكتمال تنزيل الـ APK.
         val receiver = object : android.content.BroadcastReceiver() {

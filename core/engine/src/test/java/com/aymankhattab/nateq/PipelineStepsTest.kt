@@ -596,4 +596,18 @@ class PipelineStepsTest {
         assertEquals("أنا أحبك", step.apply(input))
         assertTrue(!step.apply(input).contains("\uFE0F"))
     }
+
+    @Test
+    fun cleanup_dropsBidiControlMarks_beforeSpeechEngine() {
+        // علامات التحكم الاتجاهي قد تصل مجتزأةً من إشعارات/نصوص خارجية
+        // (LRM RLM LRE RLE LRI…) — تُجرَّد في CleanupStep فلا يصِل المحرك
+        // محارف صامتة تُعطّل اتجاه النطق (بند 8).
+        val lrm = '\u200E'
+        val rle = '\u202B'
+        val lri = '\u2066'
+        assertEquals(
+            "رسالة نصية سليمة",
+            CleanupStep.apply("رسالة${lrm}نصية$rle سليمة$lri")
+        )
+    }
 }

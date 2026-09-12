@@ -469,6 +469,19 @@ class TimeAnnouncementManager(
     }
 
     /**
+     * لاحقة الفترة الإنجليزية (AM/PM) للصيغة الرقمية بنظام 12 ساعة —
+     * بلا لاحقة إطلاقاً بنظام 24 ساعة.
+     */
+    private fun meridiemSuffix(use24h: Boolean, hour: Int): String =
+        if (use24h) {
+            ""
+        } else if (hour < 12) {
+            " AM"
+        } else {
+            " PM"
+        }
+
+    /**
      * الصيغة الرقمية المنطوقة: تُعلن الساعة ثم الدقائق (بصيغة «ساعة ودقائق»
      * بدون الربع/النصف/إلا)، وتبدّل صريحاً مع 12/24 ساعة حسب اختيار المستخدم.
      */
@@ -491,12 +504,14 @@ class TimeAnnouncementManager(
         val midnightPhrase = use24h && hour == 0
         return if (isEnglish) {
             if (minute == 0) {
+                // رأس الساعة يُنطق بـ«o'clock» مع لاحقة الفترة الصحيحة
+                // (AM لساعات 0..11 وPM لـ 12..23) — كان ينقصه التمييز.
                 NumberSpeech.toEnglishWords(displayedHour) +
-                if (use24h || hour < 12) "" else " PM"
+                if (use24h) "" else " o'clock" + meridiemSuffix(use24h, hour)
             } else {
                 NumberSpeech.toEnglishWords(displayedHour) +
                 " " + NumberSpeech.toEnglishWords(minute) +
-                if (use24h || hour < 12) "" else " PM"
+                meridiemSuffix(use24h, hour)
             }
         } else {
             // الساعة تُنطق بالصيغة الترتيبية المؤنثة المعرّفة بأل:

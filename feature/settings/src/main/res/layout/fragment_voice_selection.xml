@@ -1079,7 +1079,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
                 android:nestedScrollingEnabled="false"
-                android:minHeight="400dp" />
+                android:minHeight="@dimen/categories_list_min_height" />
 
         </LinearLayout>        <View
             android:layout_width="match_parent"
@@ -2227,8 +2227,8 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:nestedScrollingEnabled="true"
-            android:minHeight="200dp"
-            android:maxHeight="300dp" />
+            android:minHeight="@dimen/dict_list_min_height"
+            android:maxHeight="@dimen/dict_list_max_height" />
         </LinearLayout>        <View
             android:layout_width="match_parent"
             android:layout_height="1dp"

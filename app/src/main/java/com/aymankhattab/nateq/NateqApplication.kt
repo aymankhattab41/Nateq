@@ -1,13 +1,21 @@
 package com.aymankhattab.nateq
 
 import android.app.Application
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.util.Log
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementAppContext
+import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.StartupTempSweeper
+import com.aymankhattab.nateq.nav.SettingsOpenRegistry
+import com.aymankhattab.nateq.settings.SettingsActivity
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -48,6 +56,33 @@ class NateqApplication : Application(), AnnouncementAppContext {
 
     override fun onCreate() {
         super.onCreate()
+
+        // وجهة إشعار خدمة الإعلانات: تُسجَّل من هنا (المطبق الذي يعرف
+        // شاشة الإعدادات) بدل تسميتها نصياً في core:audio.
+        SettingsOpenRegistry.register { ctx ->
+            Intent(ctx, SettingsActivity::class.java)
+        }
+
+        // كاش محركات TTS يُلغى عند تثبيت/إزالة/استبدال أي حزمة حتى يلتقط
+        // المسحُ التالي محركاً جديداً فورياً (بلا انتظار انتهاء الخمس دقائق).
+        ContextCompat.registerReceiver(
+            this,
+            object : BroadcastReceiver() {
+                override fun onReceive(
+                    context: Context?,
+                    intent: Intent?
+                ) {
+                    EnginePicker.invalidateCache()
+                }
+            },
+            IntentFilter().apply {
+                addAction(Intent.ACTION_PACKAGE_ADDED)
+                addAction(Intent.ACTION_PACKAGE_REMOVED)
+                addAction(Intent.ACTION_PACKAGE_REPLACED)
+                addDataScheme("package")
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
 
         // تنظيف الملفات المؤقتة اليتيمة عند الإقلاع (بند 19.2) — غير حاصر،
         // على النطاق العام خلفي فلا يؤخر بدء التطبيق ولا يعطّل إقلاع الخدمات.

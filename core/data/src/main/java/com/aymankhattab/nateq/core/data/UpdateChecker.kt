@@ -14,6 +14,7 @@ import com.aymankhattab.nateq.util.optString
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /**
@@ -26,6 +27,55 @@ object UpdateChecker {
     private const val RELEASES_API =
         "https://api.github.com/repos/$REPO/releases/latest"
     private const val APK_NAME = "lord_tts.apk"
+
+    /** مدة بقاء نتيجة الفحص المخزَّنة قبل إعادة الاتصال (6 ساعات). */
+    internal const val CACHE_TTL_MS = 6L * 60 * 60 * 1000
+
+    /** عدد محاولات الفحص (أوليّ + إعادة على خطأ شبكة عابر). */
+    private const val RETRY_ATTEMPTS = 2
+
+    /** مهلة الانتظار قبل إعادة المحاولة بعد خطأ شبكة. */
+    private const val RETRY_DELAY_MS = 1500L
+
+    /** نتيجة فحص محفوظة — لا يُضغط واجهة GitHub إلا عند انقضاء المهلة. */
+    private class CheckedAt(
+        val timeMs: Long,
+        val versionChecked: String,
+        val result: CheckResult
+    )
+
+    @Volatile
+    private var checkCache: CheckedAt? = null
+
+    /** مصدر الزمن — حقنة اختبار لتقادم الكاش. */
+    internal var nowProvider: () -> Long = { System.currentTimeMillis() }
+
+    /** حفظ نتيجة للحصاد لاحقاً — خطأ الشبكة لا يُخزَّن (عرضي). */
+    internal fun rememberCheck(
+        result: CheckResult,
+        versionChecked: String,
+        now: Long
+    ) {
+        if (result is CheckResult.NetworkError) return
+        checkCache = CheckedAt(now, versionChecked, result)
+    }
+
+    /** استرجاع نتيجة الفحص المخزَّنة ضمن [CACHE_TTL_MS] ولنفس النسخة، فقط
+     *  للفحوص التلقائية ([preferCache]) — الفحص اليدوي يلتفّ عليه دائماً. */
+    internal fun cachedCheck(
+        versionChecked: String,
+        now: Long,
+        preferCache: Boolean
+    ): CheckResult? = checkCache?.let { cached ->
+        if (preferCache &&
+            cached.versionChecked == versionChecked &&
+            now - cached.timeMs < CACHE_TTL_MS
+        ) {
+            cached.result
+        } else {
+            null
+        }
+    }
 
     /** يجرد بادئة إصدار واحدة (v/V) إن وُجدت — لا حاجة إلا لها. */
     private fun stripVersionPrefix(value: String): String {
@@ -89,7 +139,29 @@ object UpdateChecker {
         object NetworkError : CheckResult()
     }
 
-    suspend fun check(currentVersionName: String): CheckResult =
+    suspend fun check(
+        currentVersionName: String,
+        preferCache: Boolean = false
+    ): CheckResult {
+        val now = nowProvider()
+        cachedCheck(currentVersionName, now, preferCache)?.let {
+            return it
+        }
+        var result: CheckResult = CheckResult.NetworkError
+        var attempt = 0
+        while (attempt < RETRY_ATTEMPTS) {
+            result = checkOnce(currentVersionName)
+            if (result !is CheckResult.NetworkError) break
+            attempt++
+            if (attempt < RETRY_ATTEMPTS) delay(RETRY_DELAY_MS)
+        }
+        rememberCheck(result, currentVersionName, nowProvider())
+        return result
+    }
+
+    private suspend fun checkOnce(
+        currentVersionName: String
+    ): CheckResult =
         withContext(AppDispatchers.io) {
             try {
                 val conn = URL(RELEASES_API)
@@ -171,8 +243,16 @@ object UpdateChecker {
     /**
      * يبدأ تنزيل الـ APK عبر DownloadManager ويُعيد معرّف التنزيل.
      * المستدعي يسجّل مستمع ACTION_DOWNLOAD_COMPLETE ويتفقّد الملف عند اكتماله.
+     *
+     * التفضيل الافتراضي Wi-Fi حصراً ([allowMetered]=false) يحفظ بيانات
+     * المستخدم — يمر عبر [allowMetered]=true فقط حين يقر المستخدم صراحةً
+     * وهو على شبكة هاتف مدفوعة؛ ولا يُسمح بالتجوال أبداً.
      */
-    fun enqueueDownload(context: Context, apkUrl: String): Long {
+    fun enqueueDownload(
+        context: Context,
+        apkUrl: String,
+        allowMetered: Boolean = false
+    ): Long {
         val destination = File(downloadsDir(context), APK_NAME)
         val manager = context.getSystemService(
             Context.DOWNLOAD_SERVICE
@@ -183,12 +263,8 @@ object UpdateChecker {
                 DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
             )
             .setDestinationUri(Uri.fromFile(destination))
-            .setAllowedOverMetered(true)
-            .setAllowedOverRoaming(true)
-            .setAllowedNetworkTypes(
-                DownloadManager.Request.NETWORK_MOBILE or
-                    DownloadManager.Request.NETWORK_WIFI
-            )
+            .setAllowedOverMetered(allowMetered)
+            .setAllowedOverRoaming(false)
         return manager.enqueue(request)
     }
 

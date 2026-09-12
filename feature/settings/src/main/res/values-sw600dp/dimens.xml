@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ارتفاع قائمة الفئات في قسم المحرك والإصوات (لوح ≥ 600dp عرض) -->
+    <dimen name="categories_list_min_height">520dp</dimen>
+
+    <!-- حدود قائمة قاموس النطق (لوح ≥ 600dp عرض) -->
+    <dimen name="dict_list_min_height">260dp</dimen>
+    <dimen name="dict_list_max_height">400dp</dimen>
+
+    <!-- حد أقصى لقائمة لغات التحويل داخل الحوار (لوح ≥ 600dp عرض) -->
+    <dimen name="convert_languages_max_height">520dp</dimen>
+</resources>

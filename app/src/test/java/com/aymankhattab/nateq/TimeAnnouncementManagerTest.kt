@@ -222,11 +222,23 @@ class TimeAnnouncementManagerTest {
     }
 
     @Test
-    fun formatDigital_english12h() {
-        // 13:00 في نظام 12 ساعة → one o'clock? نعم English words: one + ""
-        // (لا PM بلا 24h)
-        val noon = formatDigital(12, 0, true, false)
-        assertTrue(noon.startsWith("twelve"))
+    fun formatDigital_english12h_meridiemAndOclock() {
+        assertEquals(
+            "twelve o'clock PM", formatDigital(12, 0, true, false)
+        )
+        assertEquals(
+            "nine o'clock AM", formatDigital(9, 0, true, false)
+        )
+        assertEquals(
+            "twelve o'clock AM", formatDigital(0, 0, true, false)
+        )
+        // الدقائق: لاحقة الفترة تُلحق أيضاً
+        assertEquals(
+            "two fifteen PM", formatDigital(14, 15, true, false)
+        )
+        assertEquals(
+            "nine fifteen AM", formatDigital(9, 15, true, false)
+        )
     }
 
     @Test

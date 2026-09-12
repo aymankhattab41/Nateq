@@ -30,41 +30,37 @@
             android:text="@string/first_run_welcome_description"
             android:textAppearance="?attr/textAppearanceBodyMedium" />
 
-        <TextView
-            android:id="@+id/tv_first_run_language_label"
+        <com.google.android.material.textfield.TextInputLayout
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="28dp"
-            android:text="@string/first_run_language_label"
-            android:textAppearance="?attr/textAppearanceSubtitle1"
-            android:labelFor="@id/spinner_first_run_language" />
+            android:hint="@string/first_run_language_label">
 
-        <Spinner
-            android:id="@+id/spinner_first_run_language"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:layout_marginTop="4dp"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            tools:ignore="SpeakableTextPresent" />
+            <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                android:id="@+id/spinner_first_run_language"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="none"
+                android:imeOptions="actionDone"
+                android:importantForAutofill="no" />
+        </com.google.android.material.textfield.TextInputLayout>
 
-        <TextView
-            android:id="@+id/tv_first_run_engine_label"
+        <com.google.android.material.textfield.TextInputLayout
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
-            android:text="@string/first_run_engine_label"
-            android:textAppearance="?attr/textAppearanceSubtitle1"
-            android:labelFor="@id/spinner_first_run_engine" />
+            android:hint="@string/first_run_engine_label">
 
-        <Spinner
-            android:id="@+id/spinner_first_run_engine"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:layout_marginTop="4dp"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            tools:ignore="SpeakableTextPresent" />
+            <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                android:id="@+id/spinner_first_run_engine"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="none"
+                android:imeOptions="actionDone"
+                android:importantForAutofill="no" />
+        </com.google.android.material.textfield.TextInputLayout>
 
         <TextView
             android:id="@+id/tv_first_run_default_engine_hint"
@@ -90,6 +86,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="32dp"
+            android:minHeight="48dp"
             android:text="@string/first_run_save" />
 
         <com.google.android.material.button.MaterialButton
@@ -98,6 +95,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
+            android:minHeight="48dp"
             android:text="@string/first_run_skip" />
 
     </LinearLayout>

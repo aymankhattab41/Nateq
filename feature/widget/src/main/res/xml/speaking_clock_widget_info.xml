@@ -3,6 +3,7 @@
     android:initialLayout="@layout/widget_speaking_clock"
     android:minWidth="40dp"
     android:minHeight="40dp"
+    android:previewLayout="@layout/widget_speaking_clock"
     android:resizeMode="none"
     android:updatePeriodMillis="0"
     android:widgetCategory="home_screen"

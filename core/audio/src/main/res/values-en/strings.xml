@@ -43,5 +43,5 @@
     <!-- Item [29] — one-time spoken hint per process lifetime: notifications
          are off so the foreground-service notification and its buttons can't be
          seen (no nagging re-request) -->
-    <string name="fgs_notifications_disabled_hint">Notifications are off — you won\'t see the service notification or its Speak Now / Stop buttons, and announcements keep running in the background</string>
+    <string name="fgs_notifications_disabled_hint">Notifications are off — you won\'t see the service notification or its Announce Now / Stop buttons, and announcements keep running in the background</string>
 </resources>

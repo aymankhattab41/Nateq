@@ -131,9 +131,30 @@ class SettingsViewModel @Inject constructor(
     fun restoreBackup(uri: Uri, resolver: ContentResolver) {
         viewModelScope.launch(ioDispatcher) {
             val ok = runCatching {
-                val text = resolver.openInputStream(uri)
-                    ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
-                text != null && applyBackupJson(text)
+                val stream = resolver.openInputStream(uri)
+                if (stream == null) {
+                    false
+                } else {
+                    stream.use {
+                        // قراءة محدودة بالحد الأقصى + بايت واحد لكشف تجاوز
+                        // الحجم دون استهلاك ملف ضخم كاملاً في الذاكرة
+                        // (تحسين أمان).
+                        val head = ByteArray(MAX_BACKUP_BYTES + 1)
+                        var total = 0
+                        while (total < head.size) {
+                            val read = it.read(
+                                head, total, head.size - total
+                            )
+                            if (read < 0) break
+                            total += read
+                        }
+                        if (total > MAX_BACKUP_BYTES) false else {
+                            String(
+                                head, 0, total, Charsets.UTF_8
+                            ).let { json -> applyBackupJson(json) }
+                        }
+                    }
+                }
             }.getOrDefault(false)
             _operationEvents.emit(
                 SettingsOperation.Restored(

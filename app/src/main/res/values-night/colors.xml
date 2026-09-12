@@ -11,6 +11,10 @@
     <color name="colorOnSecondary">#003F13</color>
     <color name="colorSurface">#121212</color>
     <color name="colorOnSurface">#FFFFFF</color>
+
+    <!-- أسطح متدرجة (Material 3) — وضع ليلي -->
+    <color name="colorSurfaceVariant">#2D3238</color>
+    <color name="colorOnSurfaceVariant">#BCC6CF</color>
     <color name="colorError">#CF6679</color>
     <color name="colorOnError">#000000</color>
     <color name="colorBackground">#121212</color>

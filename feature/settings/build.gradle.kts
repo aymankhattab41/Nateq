@@ -33,7 +33,6 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.material)
-    implementation(libs.androidx.preference.ktx)
     implementation(libs.gson)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.hilt.android)

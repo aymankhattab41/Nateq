@@ -2,7 +2,8 @@ package com.aymankhattab.nateq.settings
 
 import android.content.Intent
 import android.os.Bundle
-import android.widget.Spinner
+import android.view.View
+import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
@@ -13,6 +14,7 @@ import androidx.core.view.WindowInsetsCompat
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.feature.settings.R
+import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -36,35 +38,48 @@ class FirstRunSetupActivity :
     /** المحركات المثبتة (مع «تلقائي» في الموضع 0). */
     private val engines = mutableListOf<EnginePicker.InstalledEngine>()
 
+    private var selectedLanguageIndex = 0
+    private var selectedEngineIndex = 0
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         val spinnerLanguage =
-            findViewById<Spinner>(R.id.spinner_first_run_language)
+            findViewById<MaterialAutoCompleteTextView>(
+                R.id.spinner_first_run_language
+            )
         val spinnerEngine =
-            findViewById<Spinner>(R.id.spinner_first_run_engine)
+            findViewById<MaterialAutoCompleteTextView>(
+                R.id.spinner_first_run_engine
+            )
 
         val languageOptions = arrayOf(
             getString(R.string.first_run_lang_arabic),
             getString(R.string.first_run_lang_english)
         )
-        spinnerLanguage.adapter = android.widget.ArrayAdapter(
-            this,
-            android.R.layout.simple_spinner_item,
-            languageOptions
-        ).apply {
-            setDropDownViewResource(
-                android.R.layout.simple_spinner_dropdown_item
+        spinnerLanguage.setAdapter(
+            ArrayAdapter(
+                this,
+                android.R.layout.simple_list_item_1,
+                languageOptions
             )
-        }
+        )
         // اختيار لغة الواجهة الحالية إن كانت عربية/إنجليزية (وإلا العربية)
         val currentLang = runCatching { settingsRepository.getAppLanguage() }
             .getOrNull()
-        val currentIndex = languageCodes.indexOf(
+        selectedLanguageIndex = languageCodes.indexOf(
             currentLang?.takeIf { it in languageCodes }
         ).coerceAtLeast(0)
-        spinnerLanguage.setSelection(currentIndex)
+        spinnerLanguage.setText(
+            languageOptions[selectedLanguageIndex], false
+        )
+        // لمسُ الحقل يفتح القائمة (لا متفرق لوحة المفاتيح)
+        spinnerLanguage.setKeyListener(null)
+        spinnerLanguage.setOnClickListener { spinnerLanguage.showDropDown() }
+        spinnerLanguage.setOnItemClickListener { _, _, position, _ ->
+            selectedLanguageIndex = position
+        }
 
         engines.clear()
         engines.addAll(
@@ -75,25 +90,26 @@ class FirstRunSetupActivity :
             add(getString(R.string.first_run_engine_auto))
             addAll(engines.map { it.label })
         }
-        spinnerEngine.adapter = android.widget.ArrayAdapter(
-            this,
-            android.R.layout.simple_spinner_item,
-            engineOptions
-        ).apply {
-            setDropDownViewResource(
-                android.R.layout.simple_spinner_dropdown_item
-            )
-        }
+        spinnerEngine.setAdapter(
+            ArrayAdapter(this, android.R.layout.simple_list_item_1,
+                engineOptions)
+        )
         // المحرك يبدأ «تلقائي» دائماً (لا محرك افتراضي عام): ربط المحرك
         // بلغة الواجهة يتم فقط عند الحفظ.
+        spinnerEngine.setText(engineOptions[0], false)
+        spinnerEngine.setKeyListener(null)
+        spinnerEngine.setOnClickListener { spinnerEngine.showDropDown() }
+        spinnerEngine.setOnItemClickListener { _, _, position, _ ->
+            selectedEngineIndex = position
+        }
 
-        findViewById<android.view.View>(R.id.btn_first_run_save)
+        findViewById<View>(R.id.btn_first_run_save)
             .setOnClickListener {
-                onSaveClicked(spinnerLanguage, spinnerEngine)
+                onSaveClicked(selectedLanguageIndex, selectedEngineIndex)
             }
-        findViewById<android.view.View>(R.id.btn_first_run_skip)
+        findViewById<View>(R.id.btn_first_run_skip)
             .setOnClickListener { finishSkipped() }
-        findViewById<android.view.View>(R.id.btn_first_run_default_engine)
+        findViewById<View>(R.id.btn_first_run_default_engine)
             .setOnClickListener {
                 // فتح شاشة TTS النظامية لاختيار Lord كالمحرك الافتراضي
                 runCatching {
@@ -118,12 +134,12 @@ class FirstRunSetupActivity :
     }
 
     private fun onSaveClicked(
-        spinnerLanguage: Spinner,
-        spinnerEngine: Spinner
+        languageIndex: Int,
+        engineIndex: Int
     ) {
-        val language = languageCodes[spinnerLanguage.selectedItemPosition]
+        val language = languageCodes[languageIndex]
         val enginePkg = engines
-        .getOrNull(spinnerEngine.selectedItemPosition - 1)?.packageName
+            .getOrNull(engineIndex - 1)?.packageName
         val previousLanguage = runCatching {
             settingsRepository.getAppLanguage()
         }.getOrNull()

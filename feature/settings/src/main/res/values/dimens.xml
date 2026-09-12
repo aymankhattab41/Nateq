@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ارتفاع قائمة الفئات في قسم المحرك والإصوات (هاتف) -->
+    <dimen name="categories_list_min_height">400dp</dimen>
+
+    <!-- حدود قائمة قاموس النطق (هاتف) -->
+    <dimen name="dict_list_min_height">200dp</dimen>
+    <dimen name="dict_list_max_height">300dp</dimen>
+
+    <!-- حد أقصى لقائمة لغات التحويل داخل الحوار (هاتف) -->
+    <dimen name="convert_languages_max_height">420dp</dimen>
+</resources>

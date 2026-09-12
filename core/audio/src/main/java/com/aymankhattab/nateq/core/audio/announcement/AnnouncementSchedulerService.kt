@@ -19,6 +19,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.nav.SettingsOpenRegistry
 import com.aymankhattab.nateq.util.LanguageCode
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
@@ -505,18 +506,14 @@ class AnnouncementSchedulerService : Service() {
     }
 
     private fun buildNotification(): Notification {
-        // إشعار الخدمة يفتح شاشة إعدادات :app. لا نعتمد على
-        // مرجع الطبقة compile-time (core:audio لا يرى :app)
-        // فنستدعيها باسمها القياسي للصف؛ أداء مطابق تماماً
-        // لِـ Intent(this, SettingsActivity::class.java)
-        // ويحافظ على المكوّن المُصدَّر.
+        // إشعار الخدمة يفتح شاشة إعدادات :app عبر الواجهة
+        // [SettingsOpenRegistry] المسجَّلة من :app وقت الإقلاع — بلا تسمية
+        // صفٍّ نصية في core:audio، وبديل محايد (شاشة الإقلاع) إن لم تُسجَّل
+        // الوجهة بعد.
         val openSettings = PendingIntent.getActivity(
             this,
             0,
-            Intent().setClassName(
-                this,
-                "com.aymankhattab.nateq.settings.SettingsActivity"
-            ),
+            SettingsOpenRegistry.resolve(this),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val announceNow = PendingIntent.getService(

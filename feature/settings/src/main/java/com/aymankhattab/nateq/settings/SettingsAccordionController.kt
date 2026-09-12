@@ -155,15 +155,22 @@ internal class SettingsAccordionController(
         // داخل شاشة المجموعة: فتح شاشة القسم عند الضغط على البطاقة
         header.setOnClickListener { openSection(content) }
         content.visibility = View.GONE
-        arrow.text = sectionArrowGlyph()
+        renderSectionArrow(arrow)
         refreshCardDesc(content)
     }
 
-    /** سهم بطاقة القسم: يشير لليسار في RTL (اتجاه التقدّم) ولليمين في LTR */
-    private fun sectionArrowGlyph(): String {
-        val rtl = fragment.resources.configuration.layoutDirection ==
-            View.LAYOUT_DIRECTION_RTL
-        return if (rtl) "‹" else "›"
+    /** سهم بطاقة القسم: سهم متجهي يشير لاتجاه التقدّم (يسار في RTL) —
+     *  يُلوَّن بلون النص الحالي ويثبّت كعلامة نهاية مرتكزة النسبية
+     *  (متوافقة RTL تلقائياً). */
+    private fun renderSectionArrow(arrow: TextView) {
+        arrow.text = ""
+        val icon = androidx.core.content.ContextCompat.getDrawable(
+            fragment.requireContext(),
+            R.drawable.ic_chevron_right
+        )?.apply { setTint(arrow.currentTextColor) }
+        arrow.setCompoundDrawablesRelativeWithIntrinsicBounds(
+            null, null, icon, null
+        )
     }
 
     /** وصف وصول موحّد لبطاقة القسم: الأساس + الحالة */
@@ -247,7 +254,7 @@ internal class SettingsAccordionController(
             e.header.visibility = if (inGroup) View.VISIBLE else View.GONE
             e.status?.visibility = if (inGroup) View.VISIBLE else View.GONE
             e.arrow.visibility = if (inGroup) View.VISIBLE else View.GONE
-            e.arrow.text = sectionArrowGlyph()
+            renderSectionArrow(e.arrow)
             e.content.visibility = View.GONE
         }
         val groupTitle = groupTitle(group)
@@ -831,7 +838,7 @@ internal class SettingsAccordionController(
             val header = view.findViewById<View>(g.headerId) ?: return@forEach
             val arrow = view.findViewById<TextView>(g.arrowId)
             header.contentDescription = groupTitle(g)
-            arrow?.text = sectionArrowGlyph()
+            arrow?.let { renderSectionArrow(it) }
             header.setOnClickListener { openGroup(g) }
         }
     }

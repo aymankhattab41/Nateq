@@ -75,22 +75,29 @@ internal class PunctuationStep(
     }
 
     /** بوابة عدم التطابق للمستوى الحالي:
-     * إن لم يطابق شيئاً أُعيد النص كما هو. */
-    private fun anyPattern(level: Int): Pattern {
-        val entries = if (level >= PunctuationLevels.ALL) {
-            someEntries + allEntries
-        } else {
-            someEntries
-        }
-        return Pattern.compile(
-            entries.joinToString("|") { "(" + it.first.pattern() + ")" }
-        )
+     * إن لم يطابق شيئاً أُعيد النص كما هو.
+     * الأنماط المركّبة تُجمَّع مرة واحدة (lazy) ولا في كل تطبيق — كانت
+     * تكلفة compile تُدفع لكل فقرة في المسار الثقيل (تحسين أداء). */
+    private val someUnion: Pattern by lazy {
+        compileUnion(someEntries)
     }
+    private val allUnion: Pattern by lazy {
+        compileUnion(someEntries + allEntries)
+    }
+
+    private fun compileUnion(
+        entries: List<Pair<Pattern, String>>
+    ): Pattern = Pattern.compile(
+        entries.joinToString("|") { "(" + it.first.pattern() + ")" }
+    )
+
+    private fun unionFor(level: Int): Pattern =
+        if (level >= PunctuationLevels.ALL) allUnion else someUnion
 
     override fun apply(input: String): String {
         val level = levelProvider()
         if (level <= PunctuationLevels.NONE) return input
-        if (!anyPattern(level).matcher(input).find()) return input
+        if (!unionFor(level).matcher(input).find()) return input
         var result = input
         val entries = if (level >= PunctuationLevels.ALL) {
             someEntries + allEntries

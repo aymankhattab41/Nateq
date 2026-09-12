@@ -16,6 +16,10 @@ internal object NumberStep : TextProcessingStep {
     // شبكة لا مبلغ يُلفظ، فتُترك كما هي كاملةً من دون قراءتها عدّاً.
     private val PATTERN_IPV4 = Pattern.compile("""\d{1,3}(?:\.\d{1,3}){3}""")
 
+    // رموز العملات التي تحمي الأرقام المحيطة بها من النطق الرقمي،
+    // مُعرّفة مرة واحدة لا داخل حلقة المطابقات لكل رقم.
+    private val CURRENCY_SYMBOLS = setOf('$', '€', '£', '¥', '₹', '₽', '₩', '﷼')
+
     override fun apply(input: String): String {
         val matcher = PATTERN_NUMBER.matcher(input)
         val sb = StringBuilder(input.length + 32)
@@ -30,8 +34,7 @@ internal object NumberStep : TextProcessingStep {
             val after = if (end < input.length) input[end] else ' '
 
             // إذا محاط برموز عملة أو وقت، تخطيه
-            val currencySymbols = setOf('$', '€', '£', '¥', '₹', '₽', '₩', '﷼')
-            if (before in currencySymbols || after in currencySymbols) {
+            if (before in CURRENCY_SYMBOLS || after in CURRENCY_SYMBOLS) {
                 sb.append(input, cursor, end)
                 cursor = end
                 continue

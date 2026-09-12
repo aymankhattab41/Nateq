@@ -11,7 +11,12 @@ class SmartSpellerTest {
     @Test
     fun arabicPlainLetter_spelledByName() {
         assertEquals("باء", SmartSpeller.spell("ب", "ar"))
-        assertEquals("ألف", SmartSpeller.spell("أ", "ar"))
+        assertEquals("ألف بهمزة", SmartSpeller.spell("أ", "ar"))
+        assertEquals("ألف بهمزة", SmartSpeller.spell("إ", "ar"))
+        assertEquals("ألف ممدودة", SmartSpeller.spell("آ", "ar"))
+        assertEquals("ألف وصل", SmartSpeller.spell("ٱ", "ar"))
+        assertEquals("واو مهموزة", SmartSpeller.spell("ؤ", "ar"))
+        assertEquals("ياء مهموزة", SmartSpeller.spell("ئ", "ar"))
         assertEquals("همزة", SmartSpeller.spell("ء", "ar"))
         assertEquals("تاء مربوطة", SmartSpeller.spell("ة", "ar"))
     }
