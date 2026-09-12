@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq.core.audio.announcement
+package com.aymankhattab.nateq.core.audio.announcement
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -147,7 +147,7 @@ class BatteryAnnouncementReceiver(
         val appContext = context.applicationContext
         val settings =
             (appContext as? AnnouncementAppContext)?.settingsRepository
-            ?: SettingsRepository(context)
+            ?: SettingsRepository.create(context)
         // المفتاح الرئيسي يُوقف كل الإعلانات دفعة واحدة.
         if (!settings.isAllAnnouncementsEnabled()) return false
 

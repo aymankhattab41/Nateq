@@ -89,7 +89,7 @@ class AnnouncementSchedulerService : Service() {
         fun requestStart(context: Context) {
             clearUserStopped(context)
             val settings = try {
-                SettingsRepository(context)
+                SettingsRepository.create(context)
             } catch (t: Throwable) {
                 null
             }
@@ -116,7 +116,7 @@ class AnnouncementSchedulerService : Service() {
             // مهيأ بعد الإقلاع):
             // تُبنى مرجع خفيف للتحقق فقط ولا يُحفظ إلا داخل المدير عند حاجة.
             val settings = try {
-                SettingsRepository(context)
+                SettingsRepository.create(context)
             } catch (t: Throwable) {
                 null
             } ?: return false
@@ -145,7 +145,7 @@ class AnnouncementSchedulerService : Service() {
         fun syncIfRunning(context: Context) {
             if (!isRunning) return
             val settings = try {
-                SettingsRepository(context)
+                SettingsRepository.create(context)
             } catch (t: Throwable) {
                 null
             } ?: return
@@ -194,7 +194,7 @@ class AnnouncementSchedulerService : Service() {
             if (isRunning) return
             if (wasUserStopped(context)) return
             val settings = try {
-                SettingsRepository(context)
+                SettingsRepository.create(context)
             } catch (t: Throwable) {
                 null
             }
@@ -272,7 +272,7 @@ private fun startSafely(context: Context, action: String) {
         // دفاعية: عند بدء النظام للخدمة مباشرة (STICKY) قد تكون الحقول المحقونة
         // غير جاهزة؛ نبني مرجعاً محلياً عندها (نمط NateqTtsService).
         settings = if (::settingsRepository.isInitialized) settingsRepository
-        else SettingsRepository(applicationContext)
+        else SettingsRepository.create(applicationContext)
 
         // بند [29]: فعّل المستخدم إعلاناً يستوجب خدمة أمامية (بطارية/متصل/
         // رسائل/إشعارات) وهو محروم من إذن الإشعارات — لن يرى إشعار الخدمة

@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq.core.audio.announcement
+package com.aymankhattab.nateq.core.audio.announcement
 
 import android.content.Context
 import com.aymankhattab.nateq.core.common.AppDispatchers
@@ -58,7 +58,7 @@ class TimeAnnouncementManager(
                 sharedInstance ?: run {
                     val appContext = context.applicationContext
                     val sharedSettings = settings
-                        ?: SettingsRepository(appContext)
+                        ?: SettingsRepository.create(appContext)
                     val providers = listOf(
                         SystemVoiceProvider(appContext, sharedSettings)
                     )

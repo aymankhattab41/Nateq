@@ -154,7 +154,7 @@ class SpeakingClockWidget : AppWidgetProvider() {
             // التطبيق من :app.
             val settings =
                 (appContext as? AnnouncementAppContext)?.settingsRepository
-                    ?: SettingsRepository(appContext)
+                    ?: SettingsRepository.create(appContext)
             if (!settings.isClockWidgetEnabled()) {
                 val language = runCatching { settings.getAppLanguage() }
                     .getOrNull()

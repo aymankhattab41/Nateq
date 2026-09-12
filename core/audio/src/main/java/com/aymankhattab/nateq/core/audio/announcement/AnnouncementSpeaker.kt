@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq.core.audio.announcement
+package com.aymankhattab.nateq.core.audio.announcement
 
 import android.content.Context
 import android.media.AudioAttributes
@@ -211,7 +211,7 @@ class AnnouncementSpeaker(
         if (interruptionSensors != null) return
         val settings = runCatching {
             (appContext as? AnnouncementAppContext)?.settingsRepository
-                ?: SettingsRepository(appContext)
+                ?: SettingsRepository.create(appContext)
         }.getOrNull() ?: return
         val shake = runCatching { settings.isShakeToStopEnabled() }
             .getOrDefault(false)
@@ -505,7 +505,7 @@ class AnnouncementSpeaker(
             val settings =
                 (appContext as? AnnouncementAppContext)
                     ?.settingsRepository
-                ?: SettingsRepository(appContext)
+                ?: SettingsRepository.create(appContext)
             if (!settings.isEmojiPronunciationEnabled()) return null
             val voiceId = settings.getPreferredVoiceIdForCategory(
                 SettingsRepository.VOICE_CATEGORY_EMOJI
@@ -772,7 +772,7 @@ class AnnouncementSpeaker(
         // إن كان إنجليزياً؛ وإلا null ← المحرك يعلّق Locale("en") بنفسه.
         return runCatching {
             (appContext as? AnnouncementAppContext)?.settingsRepository
-                ?: SettingsRepository(appContext)
+                ?: SettingsRepository.create(appContext)
         }.getOrNull()?.getPreferredVoiceId(LanguageCode.EN.tag)
             ?: if (isEnglishVoiceName(voiceId)) voiceId else null
     }

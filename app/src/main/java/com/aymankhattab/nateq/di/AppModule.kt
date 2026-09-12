@@ -28,7 +28,7 @@ object AppModule {
     fun provideSettingsRepository(
         @ApplicationContext context: Context
     ): SettingsRepository =
-        SettingsRepository(context)
+        SettingsRepository.create(context)
 
     @Provides
     @Singleton

@@ -137,7 +137,7 @@ class NateqTtsService : TextToSpeechService() {
         // محلي حتى لا تنهار الخدمة قبل super.onCreate()
         // في حلقة (طبّاق لتوقيت TextToSpeechService).
         settings = if (::settingsRepository.isInitialized) settingsRepository
-        else SettingsRepository(applicationContext)
+        else SettingsRepository.create(applicationContext)
 
         val dict = if (::pronunciationDictionary.isInitialized) {
             pronunciationDictionary

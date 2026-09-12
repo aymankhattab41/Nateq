@@ -257,7 +257,7 @@ class SystemVoiceProvider(
     private fun pickEnginePackage(languageTag: String? = null): String? {
         val installed = EnginePicker.installedEnginePackages(context)
         val settings = injectedSettings
-            ?: SettingsRepository(context)
+            ?: SettingsRepository.create(context)
         // تفضيل اللغة الصريح أولاً (أعلى أولوية: اللغة تقرر محركها).
         if (languageTag != null) {
             try {
@@ -789,7 +789,7 @@ class SystemVoiceProvider(
         val capable = discovery?.takeIf { it.isNotEmpty() } ?: installed
         val perLanguagePref = runCatching {
             (injectedSettings
-                ?: SettingsRepository(context))
+                ?: SettingsRepository.create(context))
                 .getEngineForLanguage(speechLanguage)
         }.getOrNull()
         return EngineRegistry.capableEnginesForLanguage(

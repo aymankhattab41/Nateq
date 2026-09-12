@@ -30,6 +30,18 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun implementsDomainContracts() {
+        assertTrue(repo is LanguagePrefs)
+        assertTrue(repo is SynthesisPrefs)
+        assertTrue(repo is CategoryVoicePrefs)
+        assertTrue(repo is ReadingPrefs)
+        assertTrue(repo is AnnouncementPrefs)
+        assertTrue(repo is DevicePrefs)
+        assertTrue(repo is ConvertPrefs)
+        assertTrue(repo is CallerNamesStore)
+    }
+
+    @Test
     fun defaults_correctValues() {
         assertEquals(1, repo.getNumberReadingMode())
         assertTrue(repo.isTimeAnnouncementEnabled())

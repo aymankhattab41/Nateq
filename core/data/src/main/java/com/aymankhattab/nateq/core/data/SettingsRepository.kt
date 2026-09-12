@@ -23,7 +23,16 @@ import com.aymankhattab.nateq.util.VoiceIdContract
  * إلى الملف الجديد إذا كان الملف الجديد فارغاً.
  */
 class SettingsRepository(private val context: Context) :
-    SynthesisConfig, VoicePrefsProvider {
+    SynthesisConfig,
+    VoicePrefsProvider,
+    LanguagePrefs,
+    SynthesisPrefs,
+    CategoryVoicePrefs,
+    ReadingPrefs,
+    AnnouncementPrefs,
+    DevicePrefs,
+    ConvertPrefs,
+    CallerNamesStore {
 
     companion object {
         private const val TAG = "NATEQ_TTS"
@@ -91,6 +100,14 @@ class SettingsRepository(private val context: Context) :
         /** وسم ترحيل سلوتات اللغة 1/2 القديمة إلى الخريطة
          *  الديناميكية (مرة واحدة). */
         private const val KEY_CONVERT_SLOTS_MIGRATED = "_convert_slots_migrated"
+
+        /**
+         * المصنّع الموحّد الوحيد لمثيل SettingsRepository — يُستعمل في كل
+         * المواقع التي لا يتوفر فيها [AnnouncementAppContext] المعرّف من :app
+         * (البند 4 — توحيد الحقن بنقطة بناء واحدة بدل بناءات متفرقة).
+         */
+        fun create(context: Context): SettingsRepository =
+            SettingsRepository(context)
     }
 
     /** جسر القراءة عبر العمليتين لملف الإعدادات المشترك. */
@@ -267,50 +284,52 @@ class SettingsRepository(private val context: Context) :
         prefs.getBoolean(KEY_MIGRATED, false)
 
     /** لغة التطبيق المختارة يدوياً: "ar"/"en"/null (null = تتبع لغة النظام) */
-    fun getAppLanguage(): String? = prefs.getString("app_language", null)
-    fun setAppLanguage(language: String?) =
+    override fun getAppLanguage(): String? =
+        prefs.getString("app_language", null)
+    override fun setAppLanguage(language: String?) =
         prefs.edit().putString("app_language", language).apply()
 
     /** لغة نطق الإعلانات (الساعة/الأرقام): "ar"/"en"/""
      *  ("" = اتبع لغة التطبيق) */
-    fun getAnnouncementSpeechLanguage(): String? =
+    override fun getAnnouncementSpeechLanguage(): String? =
         prefs.getString("announcement_speech_language", null)
-    fun setAnnouncementSpeechLanguage(language: String?) =
+    override fun setAnnouncementSpeechLanguage(language: String?) =
         prefs.edit().putString("announcement_speech_language", language).apply()
 
     /** طريقة نطق الأرقام: 1=مفردة، 2=زوجي، 3=ثلاثي، ... 8=ثماني */
-    fun getNumberReadingMode(): Int = prefs.getInt("number_reading_mode", 1)
-    fun setNumberReadingMode(mode: Int) =
+    override fun getNumberReadingMode(): Int =
+        prefs.getInt("number_reading_mode", 1)
+    override fun setNumberReadingMode(mode: Int) =
         prefs.edit().putInt("number_reading_mode", mode.coerceIn(1, 8)).apply()
 
     /** الصوت المفضّل لكل لغة (languageTag -> voiceId) */
-    fun getPreferredVoiceId(languageTag: String): String? =
+    override fun getPreferredVoiceId(languageTag: String): String? =
         normalizeVoiceId(
             prefs.getString("preferred_voice_$languageTag", null)
         )
-    fun setPreferredVoiceId(languageTag: String, voiceId: String) =
+    override fun setPreferredVoiceId(languageTag: String, voiceId: String) =
         prefs.edit().putString("preferred_voice_$languageTag", voiceId).apply()
 
     /** سرعة النطق لكل لغة (languageTag -> speechRate) */
-    fun getSpeechRate(languageTag: String): Float =
+    override fun getSpeechRate(languageTag: String): Float =
         prefs.getFloat("speech_rate_$languageTag", 1.0f)
-    fun setSpeechRate(languageTag: String, rate: Float) =
+    override fun setSpeechRate(languageTag: String, rate: Float) =
         prefs.edit()
             .putFloat("speech_rate_$languageTag", rate.coerceIn(0f, 2f))
             .apply()
 
     /** نبرة الصوت لكل لغة (languageTag -> pitch) */
-    fun getPitch(languageTag: String): Float =
+    override fun getPitch(languageTag: String): Float =
         prefs.getFloat("pitch_$languageTag", 1.0f)
-    fun setPitch(languageTag: String, pitch: Float) =
+    override fun setPitch(languageTag: String, pitch: Float) =
         prefs.edit()
             .putFloat("pitch_$languageTag", pitch.coerceIn(0f, 2f))
             .apply()
 
     /** مستوى الصوت لكل لغة (languageTag -> volume) */
-    fun getVolume(languageTag: String): Float =
+    override fun getVolume(languageTag: String): Float =
         prefs.getFloat("volume_$languageTag", 1.0f)
-    fun setVolume(languageTag: String, volume: Float) =
+    override fun setVolume(languageTag: String, volume: Float) =
         prefs.edit()
             .putFloat("volume_$languageTag", volume.coerceIn(0f, 1f))
             .apply()
@@ -331,17 +350,17 @@ class SettingsRepository(private val context: Context) :
 
     /** سرعة نطق مخزّنة صراحةً للغة (وسم كامل أو كود اللغة) — null إن لم
      *  يُعيّن المستخدم قيمةً لها. «1.0x الصريح» يُحترم ولا يُخلط مع الغياب. */
-    fun getSpeechRateOrNull(languageTag: String): Float? =
+    override fun getSpeechRateOrNull(languageTag: String): Float? =
         languagePrefKey("speech_rate_", languageTag)
             ?.let { prefs.getFloat(it, 1.0f) }
 
     /** نبرة مخزّنة صراحةً للغة (وسم كامل أو كود اللغة) — null إن لم تُعيّن. */
-    fun getPitchOrNull(languageTag: String): Float? =
+    override fun getPitchOrNull(languageTag: String): Float? =
         languagePrefKey("pitch_", languageTag)?.let { prefs.getFloat(it, 1.0f) }
 
     /** مستوى صوت مخزّن صراحةً للغة (وسم كامل أو كود اللغة) —
      *  null إن لم يُعيّن. */
-    fun getVolumeOrNull(languageTag: String): Float? =
+    override fun getVolumeOrNull(languageTag: String): Float? =
         languagePrefKey("volume_", languageTag)
             ?.let { prefs.getFloat(it, 1.0f) }
 
@@ -377,9 +396,9 @@ class SettingsRepository(private val context: Context) :
      * دفعة واحدة (الوقت، البطارية، المتصل، الرسائل، الإشعارات) — وتبقى
      * تفعيلاتها الفرعية محفوظة للعودة إليها.
      */
-    fun isAllAnnouncementsEnabled(): Boolean =
+    override fun isAllAnnouncementsEnabled(): Boolean =
         prefs.getBoolean("all_announcements_enabled", true)
-    fun setAllAnnouncementsEnabled(enabled: Boolean) =
+    override fun setAllAnnouncementsEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("all_announcements_enabled", enabled).apply()
 
     // ============ نطق الإيموجي ورموز المشاعر ============
@@ -390,7 +409,7 @@ class SettingsRepository(private val context: Context) :
      */
     override fun isEmojiPronunciationEnabled(): Boolean =
         prefs.getBoolean("emoji_pronunciation_enabled", true)
-    fun setEmojiPronunciationEnabled(enabled: Boolean) =
+    override fun setEmojiPronunciationEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("emoji_pronunciation_enabled", enabled).apply()
 
     // ============ خصوصية قفل الشاشة ============
@@ -400,15 +419,15 @@ class SettingsRepository(private val context: Context) :
      * (المحتوى/العنوان/اسم المتصل) عن النطق فلا يُسمع كود تحقق (OTP) أو
      * رسالة خاصة بصوتٍ عالٍ في مكان عام — ويُكتفى بالمصدر أو المضمون العام.
      */
-    fun isLockScreenPrivacyEnabled(): Boolean =
+    override fun isLockScreenPrivacyEnabled(): Boolean =
         prefs.getBoolean("lock_screen_privacy_enabled", true)
-    fun setLockScreenPrivacyEnabled(enabled: Boolean) =
+    override fun setLockScreenPrivacyEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("lock_screen_privacy_enabled", enabled).apply()
 
     /** هل شاشة الجهاز مقفلة فعلاً أو مطفأة (حالة خصوصية)؟
      *  يعود false عند عدم وجود قفل. */
     @Suppress("DEPRECATION")
-    fun isDeviceScreenLocked(): Boolean {
+    override fun isDeviceScreenLocked(): Boolean {
         val km = context.getSystemService(
             android.app.KeyguardManager::class.java
         )
@@ -430,15 +449,15 @@ class SettingsRepository(private val context: Context) :
     }
 
     /** وضع توفير الطاقة: يُخفَّف إعلان الوقت عند انخفاض البطارية عن العتبة. */
-    fun isPowerSaverModeEnabled(): Boolean =
+    override fun isPowerSaverModeEnabled(): Boolean =
         prefs.getBoolean("power_saver_mode_enabled", false)
-    fun setPowerSaverModeEnabled(enabled: Boolean) =
+    override fun setPowerSaverModeEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("power_saver_mode_enabled", enabled).apply()
 
     /** العتبة (نسبة مئوية) التي يعمل الاحدها وضع توفير الطاقة لإعلان الوقت. */
-    fun getPowerSaverBatteryThreshold(): Int =
+    override fun getPowerSaverBatteryThreshold(): Int =
         prefs.getInt("power_saver_battery_threshold", 20)
-    fun setPowerSaverBatteryThreshold(threshold: Int) =
+    override fun setPowerSaverBatteryThreshold(threshold: Int) =
         prefs.edit()
             .putInt(
                 "power_saver_battery_threshold",
@@ -447,9 +466,9 @@ class SettingsRepository(private val context: Context) :
             .apply()
 
     /** إعلان اكتمال الشحن (وصول 100% والمتصالة). */
-    fun isChargingCompleteAnnouncementEnabled(): Boolean =
+    override fun isChargingCompleteAnnouncementEnabled(): Boolean =
         prefs.getBoolean("charging_complete_announcement_enabled", true)
-    fun setChargingCompleteAnnouncementEnabled(enabled: Boolean) =
+    override fun setChargingCompleteAnnouncementEnabled(enabled: Boolean) =
         prefs.edit()
             .putBoolean(
                 "charging_complete_announcement_enabled",
@@ -458,9 +477,9 @@ class SettingsRepository(private val context: Context) :
             .apply()
 
     /** إعلان فصل الشاحن. */
-    fun isChargingDisconnectAnnouncementEnabled(): Boolean =
+    override fun isChargingDisconnectAnnouncementEnabled(): Boolean =
         prefs.getBoolean("charging_disconnect_announcement_enabled", true)
-    fun setChargingDisconnectAnnouncementEnabled(enabled: Boolean) =
+    override fun setChargingDisconnectAnnouncementEnabled(enabled: Boolean) =
         prefs.edit()
             .putBoolean(
                 "charging_disconnect_announcement_enabled",
@@ -536,7 +555,7 @@ val masterKey = androidx.security.crypto.MasterKey
 
     /** أسماء متصلين مخصصة: خريطة رقم هاتف (بدون ترميز البلد)
      *  -> الاسم المعلَن. */
-    fun getCustomCallerNames(): Map<String, String> {
+    override fun getCustomCallerNames(): Map<String, String> {
         val raw = getCallerPrefs()?.getString("caller_names", null)
             ?: memoryCallerNames.takeIf { it.isNotEmpty() }?.let { m ->
                 m.entries.joinToString("\n") { "${it.key}\t${it.value}" }
@@ -555,7 +574,7 @@ val masterKey = androidx.security.crypto.MasterKey
             }.toMap()
     }
 
-    fun setCustomCallerNames(names: Map<String, String>) {
+    override fun setCustomCallerNames(names: Map<String, String>) {
         // تعقيم أثناء الاستيراد (من النسخ الاحتياطي أو واجهة الإدخال): نتصفّى
         // المفاتيح لتكون أرقاماً فقط (مع رمز + اختياري)، وحد أقصى لطول الرقم
         // والاسم، وحد أقصى لعدد الإدخالات، حتى لا يدخل ملف JSON خبيث/فاسد
@@ -582,16 +601,16 @@ val masterKey = androidx.security.crypto.MasterKey
     // ============ قوالب الإعلانات ============
 
     /** قالب إعلان المتصل: يُستبدل {name} باسم المتصل. فارغ = الافتراضي. */
-    fun getCallerAnnouncementTemplate(): String =
+    override fun getCallerAnnouncementTemplate(): String =
         prefs.getString("caller_announcement_template", "") ?: ""
-    fun setCallerAnnouncementTemplate(template: String?) =
+    override fun setCallerAnnouncementTemplate(template: String?) =
         prefs.edit().putString("caller_announcement_template", template).apply()
 
     /** قالب قراءة الرسائل: يُستبدل {name} و{message} باسم المرسل
      *  ومحتوى الرسالة. */
-    fun getSmsAnnouncementTemplate(): String =
+    override fun getSmsAnnouncementTemplate(): String =
         prefs.getString("sms_announcement_template", "") ?: ""
-    fun setSmsAnnouncementTemplate(template: String?) =
+    override fun setSmsAnnouncementTemplate(template: String?) =
         prefs.edit().putString("sms_announcement_template", template).apply()
 
     // ============ إعدادات إعلان الوقت ============
@@ -601,21 +620,24 @@ val masterKey = androidx.security.crypto.MasterKey
         normalizeVoiceId(
             prefs.getString("preferred_voice_$category", null)
         )
-    fun setPreferredVoiceIdForCategory(category: String, voiceId: String) =
+    override fun setPreferredVoiceIdForCategory(
+        category: String,
+        voiceId: String
+    ) =
         prefs.edit().putString("preferred_voice_$category", voiceId).apply()
 
     /** محرك النطق الخاص بفئةٍ معيّنة (متصل/بطارية/وقت…)، null = تلقائي
      *  (يتبع محرك اللغة ثم المحرك المختار العام). يُخزَّن تحت
      *  `engine_for_<category>` ليستقل كل إعلانٍ بمحركه. */
-    fun getEngineForCategory(category: String): String? =
+    override fun getEngineForCategory(category: String): String? =
         prefs.getString("engine_for_$category", null)
-    fun setEngineForCategory(category: String, engine: String?) =
+    override fun setEngineForCategory(category: String, engine: String?) =
         prefs.edit().putString("engine_for_$category", engine).apply()
 
     /** سرعة النطق لكل فئة */
     override fun getSpeechRateForCategory(category: String): Float =
         prefs.getFloat("speech_rate_$category", 1.0f)
-    fun setSpeechRateForCategory(category: String, rate: Float) =
+    override fun setSpeechRateForCategory(category: String, rate: Float) =
         prefs.edit()
             .putFloat("speech_rate_$category", rate.coerceIn(0f, 2f))
             .apply()
@@ -623,27 +645,27 @@ val masterKey = androidx.security.crypto.MasterKey
     /** نبرة الصوت لكل فئة */
     override fun getPitchForCategory(category: String): Float =
         prefs.getFloat("pitch_$category", 1.0f)
-    fun setPitchForCategory(category: String, pitch: Float) =
+    override fun setPitchForCategory(category: String, pitch: Float) =
         prefs.edit().putFloat("pitch_$category", pitch.coerceIn(0f, 2f)).apply()
 
     /** مستوى الصوت لكل فئة */
     override fun getVolumeForCategory(category: String): Float =
         prefs.getFloat("volume_$category", 1.0f)
-    fun setVolumeForCategory(category: String, volume: Float) =
+    override fun setVolumeForCategory(category: String, volume: Float) =
         prefs.edit()
             .putFloat("volume_$category", volume.coerceIn(0f, 1f))
             .apply()
 
     /** تفعيل/إيقاف إعلان الوقت */
-    fun isTimeAnnouncementEnabled(): Boolean =
+    override fun isTimeAnnouncementEnabled(): Boolean =
         prefs.getBoolean("time_announcement_enabled", true)
-    fun setTimeAnnouncementEnabled(enabled: Boolean) =
+    override fun setTimeAnnouncementEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("time_announcement_enabled", enabled).apply()
 
     /** فاصل إعلان الوقت (بالدقائق): 15, 30, 45, 60 */
-    fun getTimeAnnouncementInterval(): Int =
+    override fun getTimeAnnouncementInterval(): Int =
         prefs.getInt("time_announcement_interval", 30)
-    fun setTimeAnnouncementInterval(interval: Int) =
+    override fun setTimeAnnouncementInterval(interval: Int) =
         prefs.edit()
             .putInt("time_announcement_interval", interval.coerceIn(15, 60))
             .apply()
@@ -681,24 +703,24 @@ val masterKey = androidx.security.crypto.MasterKey
     }
 
     /** بداية فترة الهدوء ليوم محدد (Calendar.DAY_OF_WEEK: 1=الأحد…7=السبت). */
-    fun getQuietStartForDay(day: Int): Int {
+    override fun getQuietStartForDay(day: Int): Int {
         migrateQuietScheduleIfNeeded()
         return prefs.getInt(quietDayKey(day, true), 23)
     }
 
     /** نهاية فترة الهدوء ليوم محدد (Calendar.DAY_OF_WEEK: 1=الأحد…7=السبت). */
-    fun getQuietEndForDay(day: Int): Int {
+    override fun getQuietEndForDay(day: Int): Int {
         migrateQuietScheduleIfNeeded()
         return prefs.getInt(quietDayKey(day, false), 7)
     }
 
-    fun setQuietStartForDay(day: Int, hour: Int) {
+    override fun setQuietStartForDay(day: Int, hour: Int) {
         prefs.edit()
             .putInt(quietDayKey(day, true), hour.coerceIn(0, 23))
             .apply()
     }
 
-    fun setQuietEndForDay(day: Int, hour: Int) {
+    override fun setQuietEndForDay(day: Int, hour: Int) {
         prefs.edit()
             .putInt(quietDayKey(day, false), hour.coerceIn(0, 23))
             .apply()
@@ -706,12 +728,12 @@ val masterKey = androidx.security.crypto.MasterKey
 
     /** هل ساعات الهدوء مفعّلة ليوم محدد؟ الافتراضي مفعّل لكل الأيام
      *  حفاظاً على السلوك السابق قبل إدخال مفاتيح اليوم. */
-    fun isDayQuietEnabled(day: Int): Boolean {
+    override fun isDayQuietEnabled(day: Int): Boolean {
         val d = day.coerceIn(1, 7)
         return prefs.getBoolean("time_quiet_day${d}_enabled", true)
     }
 
-    fun setDayQuietEnabled(day: Int, enabled: Boolean) {
+    override fun setDayQuietEnabled(day: Int, enabled: Boolean) {
         val d = day.coerceIn(1, 7)
         prefs.edit()
             .putBoolean("time_quiet_day${d}_enabled", enabled)
@@ -719,21 +741,22 @@ val masterKey = androidx.security.crypto.MasterKey
     }
 
     /** صيغة إعلان الوقت: "arabic_natural" أو "digital" */
-    fun getTimeAnnouncementFormat(): String =
+    override fun getTimeAnnouncementFormat(): String =
         prefs.getString("time_announcement_format", "arabic_natural")
             ?: "arabic_natural"
-    fun setTimeAnnouncementFormat(format: String) =
+    override fun setTimeAnnouncementFormat(format: String) =
         prefs.edit().putString("time_announcement_format", format).apply()
 
     /** عرض الوقت بنظام 24 ساعة في الصيغة الرقمية (بدل 12 ساعة الافتراضية) */
-    fun isTime24Hour(): Boolean = prefs.getBoolean("time_display_24h", false)
-    fun setTime24Hour(enabled: Boolean) =
+    override fun isTime24Hour(): Boolean =
+        prefs.getBoolean("time_display_24h", false)
+    override fun setTime24Hour(enabled: Boolean) =
         prefs.edit().putBoolean("time_display_24h", enabled).apply()
 
     /** نطق التواريخ بالتقويم الهجري (أم القرى) بدل الميلادي */
     override fun isHijriDateEnabled(): Boolean =
         prefs.getBoolean("hijri_date", false)
-    fun setHijriDateEnabled(enabled: Boolean) =
+    override fun setHijriDateEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("hijri_date", enabled).apply()
 
     // ============ قراءة النصوص: الترقيم والتهجئة الذكية ============
@@ -742,7 +765,7 @@ val masterKey = androidx.security.crypto.MasterKey
      *  الافتراضي «البعض» حفاظاً على السلوك القائم للنطق بالرموز الشائعة. */
     override fun getPunctuationLevel(): Int =
         prefs.getInt("punctuation_level", PunctuationLevels.SOME)
-    fun setPunctuationLevel(level: Int) =
+    override fun setPunctuationLevel(level: Int) =
         prefs.edit()
             .putInt(
                 "punctuation_level",
@@ -754,60 +777,62 @@ val masterKey = androidx.security.crypto.MasterKey
      *  (باء مفتوحة، A - Alpha). معطّلة افتراضياً. */
     override fun isSmartSpellingEnabled(): Boolean =
         prefs.getBoolean("smart_spelling_enabled", false)
-    fun setSmartSpellingEnabled(enabled: Boolean) =
+    override fun setSmartSpellingEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("smart_spelling_enabled", enabled).apply()
 
     // ============ الإسكات الفوري: الهز والتقارب ============
 
     /** هز الجهاز أثناء النطق يوقفه فوراً. معطّل افتراضياً. */
-    fun isShakeToStopEnabled(): Boolean =
+    override fun isShakeToStopEnabled(): Boolean =
         prefs.getBoolean("shake_to_stop_enabled", false)
-    fun setShakeToStopEnabled(enabled: Boolean) =
+    override fun setShakeToStopEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("shake_to_stop_enabled", enabled).apply()
 
     /** تغطية الجهاز (يد/جيب) أثناء النطق توقفه فوراً. معطّل افتراضياً. */
-    fun isProximitySilenceEnabled(): Boolean =
+    override fun isProximitySilenceEnabled(): Boolean =
         prefs.getBoolean("proximity_silence_enabled", false)
-    fun setProximitySilenceEnabled(enabled: Boolean) =
+    override fun setProximitySilenceEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("proximity_silence_enabled", enabled).apply()
 
     // ============ إعدادات عامة ============
 
     /** السرعة العامة الافتراضية */
-    fun getDefaultSpeechRate(): Float =
+    override fun getDefaultSpeechRate(): Float =
         prefs.getFloat("default_speech_rate", 1.0f)
-    fun setDefaultSpeechRate(rate: Float) =
+    override fun setDefaultSpeechRate(rate: Float) =
         prefs.edit()
             .putFloat("default_speech_rate", rate.coerceIn(0f, 2f))
             .apply()
 
     /** النبرة العامة الافتراضية */
-    fun getDefaultPitch(): Float = prefs.getFloat("default_pitch", 1.0f)
-    fun setDefaultPitch(pitch: Float) =
+    override fun getDefaultPitch(): Float =
+        prefs.getFloat("default_pitch", 1.0f)
+    override fun setDefaultPitch(pitch: Float) =
         prefs.edit().putFloat("default_pitch", pitch.coerceIn(0f, 2f)).apply()
 
     /** مستوى الصوت العام الافتراضي */
-    fun getDefaultVolume(): Float = prefs.getFloat("default_volume", 1.0f)
-    fun setDefaultVolume(volume: Float) =
+    override fun getDefaultVolume(): Float =
+        prefs.getFloat("default_volume", 1.0f)
+    override fun setDefaultVolume(volume: Float) =
         prefs.edit().putFloat("default_volume", volume.coerceIn(0f, 1f)).apply()
 
     /** تفعيل أداة الساعة على الشاشة الرئيسية (افتراضياً مفعّلة — بند [13.4]):
      *  أداة الساعة ناطقة بطبعها ولا ينبغي أن تكون بالافتراضي معطّلة فتخيب
      *  عند أول إضافة للشاشة الرئيسية. */
-    fun isClockWidgetEnabled(): Boolean =
+    override fun isClockWidgetEnabled(): Boolean =
         prefs.getBoolean("clock_widget_enabled", true)
-    fun setClockWidgetEnabled(enabled: Boolean) =
+    override fun setClockWidgetEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("clock_widget_enabled", enabled).apply()
 
     // ============ إعدادات إعلان مستوى البطارية ============
 
     /** العناصر المختارة في قسم «صحة الجهاز» للنطق عند الطلب. */
-    fun getDeviceHealthItems(): Set<String> =
+    override fun getDeviceHealthItems(): Set<String> =
         prefs.getStringSet("device_health_items", null)
             ?.filter { it in validDeviceHealthItems() }
             ?.toSet() ?: DEFAULT_DEVICE_HEALTH_ITEMS
 
-    fun setDeviceHealthItems(items: Set<String>) =
+    override fun setDeviceHealthItems(items: Set<String>) =
         prefs.edit().putStringSet(
             "device_health_items",
             items.filter { it in validDeviceHealthItems() }.toMutableSet()
@@ -821,22 +846,22 @@ val masterKey = androidx.security.crypto.MasterKey
     )
 
     /** تفعيل/إيقاف إعلان مستوى البطارية */
-    fun isBatteryAnnouncementEnabled(): Boolean =
+    override fun isBatteryAnnouncementEnabled(): Boolean =
         prefs.getBoolean("battery_announcement_enabled", false)
-    fun setBatteryAnnouncementEnabled(enabled: Boolean) =
+    override fun setBatteryAnnouncementEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("battery_announcement_enabled", enabled).apply()
 
     /**
      * مستويات البطارية المفعّلة (كنسب مئوية مضاعفات 5) التي يُعلن عنها.
      * مثلاً {"20","15"} تُنطق عند وصول البطارية إلى 20% ثم 15%.
      */
-    fun getBatteryAnnouncementLevels(): Set<String> =
+    override fun getBatteryAnnouncementLevels(): Set<String> =
         prefs.getStringSet(
             "battery_announcement_levels",
             mutableSetOf("20", "15")
         )
             ?.toSet() ?: setOf("20", "15")
-    fun setBatteryAnnouncementLevels(levels: Set<String>) =
+    override fun setBatteryAnnouncementLevels(levels: Set<String>) =
         prefs.edit()
             .putStringSet(
                 "battery_announcement_levels",
@@ -845,25 +870,25 @@ val masterKey = androidx.security.crypto.MasterKey
             .apply()
 
     /** صوت إعلان البطارية (معرّف صوت موحّد) */
-    fun getBatteryAnnouncementVoiceId(): String? =
+    override fun getBatteryAnnouncementVoiceId(): String? =
         normalizeVoiceId(
             prefs.getString("battery_announcement_voice", null)
         )
-    fun setBatteryAnnouncementVoiceId(voiceId: String?) =
+    override fun setBatteryAnnouncementVoiceId(voiceId: String?) =
         prefs.edit().putString("battery_announcement_voice", voiceId).apply()
 
     /** سرعة نطق إعلان البطارية */
-    fun getBatteryAnnouncementRate(): Float =
+    override fun getBatteryAnnouncementRate(): Float =
         prefs.getFloat("battery_announcement_rate", 1.0f)
-    fun setBatteryAnnouncementRate(rate: Float) =
+    override fun setBatteryAnnouncementRate(rate: Float) =
         prefs.edit()
             .putFloat("battery_announcement_rate", rate.coerceIn(0f, 2f))
             .apply()
 
     /** مستوى صوت إعلان البطارية */
-    fun getBatteryAnnouncementVolume(): Float =
+    override fun getBatteryAnnouncementVolume(): Float =
         prefs.getFloat("battery_announcement_volume", 1.0f)
-    fun setBatteryAnnouncementVolume(volume: Float) =
+    override fun setBatteryAnnouncementVolume(volume: Float) =
         prefs.edit()
             .putFloat("battery_announcement_volume", volume.coerceIn(0f, 1f))
             .apply()
@@ -876,19 +901,19 @@ val masterKey = androidx.security.crypto.MasterKey
     )
 
     /** تفعيل/إيقاف رنة رأس الساعة (تسبق نطق الوقت عند الدقيقة صفر). */
-    fun isTimeChimeEnabled(): Boolean =
+    override fun isTimeChimeEnabled(): Boolean =
         prefs.getBoolean("time_chime_enabled", true)
-    fun setTimeChimeEnabled(enabled: Boolean) =
+    override fun setTimeChimeEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("time_chime_enabled", enabled).apply()
 
     /** اسم الرنة المختارة: classic_bell | digital_chime | soft_ding. */
-    fun getTimeChimeSound(): String {
+    override fun getTimeChimeSound(): String {
         val value = prefs.getString("time_chime_sound", "classic_bell")
             ?: "classic_bell"
         return value.takeIf { it in validTimeChimeSounds() }
             ?: "classic_bell"
     }
-    fun setTimeChimeSound(sound: String) =
+    override fun setTimeChimeSound(sound: String) =
         prefs.edit()
             .putString(
                 "time_chime_sound",
@@ -898,19 +923,19 @@ val masterKey = androidx.security.crypto.MasterKey
             .apply()
 
     /** مستوى صوت رنة الساعة 0.1..1.0. */
-    fun getTimeChimeVolume(): Float =
+    override fun getTimeChimeVolume(): Float =
         prefs.getFloat("time_chime_volume", 0.5f)
             .coerceIn(0.1f, 1f)
-    fun setTimeChimeVolume(volume: Float) =
+    override fun setTimeChimeVolume(volume: Float) =
         prefs.edit()
             .putFloat("time_chime_volume", volume.coerceIn(0.1f, 1f))
             .apply()
 
     /** مستوى صوت نغمة البطارية 0.1..1.0 (مستقل عن صوت النطق — بند 3-3). */
-    fun getBatteryCueVolume(): Float =
+    override fun getBatteryCueVolume(): Float =
         prefs.getFloat("battery_cue_volume", 0.8f)
             .coerceIn(0.1f, 1f)
-    fun setBatteryCueVolume(volume: Float) =
+    override fun setBatteryCueVolume(volume: Float) =
         prefs.edit()
             .putFloat("battery_cue_volume", volume.coerceIn(0.1f, 1f))
             .apply()
@@ -918,9 +943,9 @@ val masterKey = androidx.security.crypto.MasterKey
     /**
      * وضع مؤثر البطارية: 0=نطق ومؤثر، 1=نطق فقط، 2=مؤثر فقط.
      */
-    fun getBatterySoundCueMode(): Int =
+    override fun getBatterySoundCueMode(): Int =
         prefs.getInt("battery_sound_cue_mode", 0).coerceIn(0, 2)
-    fun setBatterySoundCueMode(mode: Int) =
+    override fun setBatterySoundCueMode(mode: Int) =
         prefs.edit()
             .putInt("battery_sound_cue_mode", mode.coerceIn(0, 2))
             .apply()
@@ -928,23 +953,23 @@ val masterKey = androidx.security.crypto.MasterKey
     // ============ إعدادات إعلان اسم المتصل ============
 
     /** تفعيل/إيقاف إعلان اسم المتصل */
-    fun isCallerAnnouncementEnabled(): Boolean =
+    override fun isCallerAnnouncementEnabled(): Boolean =
         prefs.getBoolean("caller_announcement_enabled", false)
-    fun setCallerAnnouncementEnabled(enabled: Boolean) =
+    override fun setCallerAnnouncementEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("caller_announcement_enabled", enabled).apply()
 
     /** عدد مرات تكرار اسم المتصل */
-    fun getCallerAnnouncementRepeat(): Int =
+    override fun getCallerAnnouncementRepeat(): Int =
         prefs.getInt("caller_announcement_repeat", 1)
-    fun setCallerAnnouncementRepeat(repeat: Int) =
+    override fun setCallerAnnouncementRepeat(repeat: Int) =
         prefs.edit()
             .putInt("caller_announcement_repeat", repeat.coerceIn(1, 5))
             .apply()
 
     /** الفاصل الزمني (بالثواني) بين كل مرة نطق لاسم المتصل — 1..10 ثوانٍ */
-    fun getCallerAnnouncementIntervalSeconds(): Int =
+    override fun getCallerAnnouncementIntervalSeconds(): Int =
         prefs.getInt("caller_announcement_interval_seconds", 3)
-    fun setCallerAnnouncementIntervalSeconds(seconds: Int) =
+    override fun setCallerAnnouncementIntervalSeconds(seconds: Int) =
         prefs.edit()
             .putInt(
                 "caller_announcement_interval_seconds",
@@ -953,33 +978,33 @@ val masterKey = androidx.security.crypto.MasterKey
             .apply()
 
     /** صوت إعلان المتصل بلغة عربية (معرّف صوت موحّد) */
-    fun getCallerAnnouncementArabicVoiceId(): String? =
+    override fun getCallerAnnouncementArabicVoiceId(): String? =
         normalizeVoiceId(
             prefs.getString("caller_announcement_voice_ar", null)
         )
-    fun setCallerAnnouncementArabicVoiceId(voiceId: String?) =
+    override fun setCallerAnnouncementArabicVoiceId(voiceId: String?) =
         prefs.edit().putString("caller_announcement_voice_ar", voiceId).apply()
 
     /** صوت إعلان المتصل بلغة إنجليزية (معرّف صوت موحّد) */
-    fun getCallerAnnouncementEnglishVoiceId(): String? =
+    override fun getCallerAnnouncementEnglishVoiceId(): String? =
         normalizeVoiceId(
             prefs.getString("caller_announcement_voice_en", null)
         )
-    fun setCallerAnnouncementEnglishVoiceId(voiceId: String?) =
+    override fun setCallerAnnouncementEnglishVoiceId(voiceId: String?) =
         prefs.edit().putString("caller_announcement_voice_en", voiceId).apply()
 
     /** سرعة نطق إعلان المتصل */
-    fun getCallerAnnouncementRate(): Float =
+    override fun getCallerAnnouncementRate(): Float =
         prefs.getFloat("caller_announcement_rate", 1.0f)
-    fun setCallerAnnouncementRate(rate: Float) =
+    override fun setCallerAnnouncementRate(rate: Float) =
         prefs.edit()
             .putFloat("caller_announcement_rate", rate.coerceIn(0f, 2f))
             .apply()
 
     /** مستوى صوت إعلان المتصل */
-    fun getCallerAnnouncementVolume(): Float =
+    override fun getCallerAnnouncementVolume(): Float =
         prefs.getFloat("caller_announcement_volume", 1.0f)
-    fun setCallerAnnouncementVolume(volume: Float) =
+    override fun setCallerAnnouncementVolume(volume: Float) =
         prefs.edit()
             .putFloat("caller_announcement_volume", volume.coerceIn(0f, 1f))
             .apply()
@@ -992,28 +1017,29 @@ val masterKey = androidx.security.crypto.MasterKey
      * - "full": مفعّل (يُقرأ اسم المرسل ومحتوى الرسالة)
      * - "source": قراءة مصدر الرسالة فقط (اسم المرسل دون المحتوى)
      */
-    fun getSmsReadingMode(): String =
+    override fun getSmsReadingMode(): String =
         prefs.getString("sms_reading_mode", "off") ?: "off"
-    fun setSmsReadingMode(mode: String) =
+    override fun setSmsReadingMode(mode: String) =
         prefs.edit().putString("sms_reading_mode", mode).apply()
 
     /** صوت قراءة الرسائل (معرّف صوت موحّد) */
-    fun getSmsReadingVoiceId(): String? =
+    override fun getSmsReadingVoiceId(): String? =
         normalizeVoiceId(
             prefs.getString("sms_reading_voice", null)
         )
-    fun setSmsReadingVoiceId(voiceId: String?) =
+    override fun setSmsReadingVoiceId(voiceId: String?) =
         prefs.edit().putString("sms_reading_voice", voiceId).apply()
 
     /** سرعة نطق قراءة الرسائل */
-    fun getSmsReadingRate(): Float = prefs.getFloat("sms_reading_rate", 1.0f)
-    fun setSmsReadingRate(rate: Float) =
+    override fun getSmsReadingRate(): Float =
+        prefs.getFloat("sms_reading_rate", 1.0f)
+    override fun setSmsReadingRate(rate: Float) =
         prefs.edit().putFloat("sms_reading_rate", rate.coerceIn(0f, 2f)).apply()
 
     /** مستوى صوت قراءة الرسائل */
-    fun getSmsReadingVolume(): Float =
+    override fun getSmsReadingVolume(): Float =
         prefs.getFloat("sms_reading_volume", 1.0f)
-    fun setSmsReadingVolume(volume: Float) =
+    override fun setSmsReadingVolume(volume: Float) =
         prefs.edit()
             .putFloat("sms_reading_volume", volume.coerceIn(0f, 1f))
             .apply()
@@ -1021,24 +1047,24 @@ val masterKey = androidx.security.crypto.MasterKey
     // ===== التحويل التلقائي بين اللغات =====
 
     /** تفعيل التحويل التلقائي بين اللغتين الأولى والثانية */
-    fun isAutoConvertEnabled(): Boolean =
+    override fun isAutoConvertEnabled(): Boolean =
         prefs.getBoolean("auto_convert_enabled", false)
-    fun setAutoConvertEnabled(enabled: Boolean) =
+    override fun setAutoConvertEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("auto_convert_enabled", enabled).apply()
 
     /** إظهار التوضيح الاختياري «بعض اللغات قد لا تظهر…»
      *  (نص فقط، غير افتراضي). */
-    fun isLanguageInstallHintEnabled(): Boolean =
+    override fun isLanguageInstallHintEnabled(): Boolean =
         prefs.getBoolean("show_language_install_hint", false)
-    fun setLanguageInstallHintEnabled(enabled: Boolean) =
+    override fun setLanguageInstallHintEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("show_language_install_hint", enabled).apply()
 
     /** هل اكتمل «معالج الإعداد الأولي» القابل للتخطي؟ يُعرض مرة واحدة عند
      *  أول تشغيل (اختيار لغة الواجهة ومحرك النطق) ثم يُعلَّم منجزاً
      *  عند التخطي أو الحفظ فلا يُزعج في التشغيلات التالية. */
-    fun isFirstRunSetupCompleted(): Boolean =
+    override fun isFirstRunSetupCompleted(): Boolean =
         prefs.getBoolean("first_run_setup_completed", false)
-    fun setFirstRunSetupCompleted(completed: Boolean) =
+    override fun setFirstRunSetupCompleted(completed: Boolean) =
         prefs.edit().putBoolean("first_run_setup_completed", completed).apply()
 
     // ---- الخريطة الديناميكية للتحويل التلقائي (languageTag -> تفضيلات) ----
@@ -1053,7 +1079,7 @@ val masterKey = androidx.security.crypto.MasterKey
      * تفضيلات التحويل للغة معينة (محرك/صوت/سرعة/نبرة/صوت). تُطبَّع علامة اللغة
      * إلى كود ISO-2 قبل البحث. اللغة بلا أي إعداد → مدخل افتراضي (لا تحويل).
      */
-    fun getEnginePreferenceForLanguage(
+    override fun getEnginePreferenceForLanguage(
         languageTag: String
     ): LanguageSpeechPrefs {
         ensureConvertSlotsMigrated()
@@ -1066,7 +1092,7 @@ val masterKey = androidx.security.crypto.MasterKey
      * يعين تفضيل محرك/صوت/أشرطة للغة معينة في الخريطة الديناميكية.
      * مدخل بلا أي تعديلات (كل القيم الافتراضية) يُحذف من الخريطة (لا تحويل).
      */
-    fun setEnginePreferenceForLanguage(
+    override fun setEnginePreferenceForLanguage(
         languageTag: String,
         engine: String?,
         voiceName: String?,
@@ -1098,7 +1124,8 @@ val masterKey = androidx.security.crypto.MasterKey
         getEnginePreferenceForLanguage(languageTag).voiceName
 
     /** كل تفضيلات التحويل الحالية (لغة -> مدخل) للعرض في قائمة الإعدادات. */
-    fun allConvertLanguagePreferences(): Map<String, LanguageSpeechPrefs> {
+    override fun allConvertLanguagePreferences():
+        Map<String, LanguageSpeechPrefs> {
         ensureConvertSlotsMigrated()
         return readConvertPrefs()
     }
@@ -1161,81 +1188,85 @@ val masterKey = androidx.security.crypto.MasterKey
     // تُرحَّل تلقائياً أعلاه) ---
 
     /** محرك اللغة الأولى (حزمة محرك TTS) */
-    fun getConvertEngine1(): String? =
+    override fun getConvertEngine1(): String? =
         prefs.getString("convert_lang1_engine", null)
-    fun setConvertEngine1(pkg: String?) =
+    override fun setConvertEngine1(pkg: String?) =
         prefs.edit().putString("convert_lang1_engine", pkg).apply()
 
     /** علامة لغة (languageTag) للغة الأولى */
-    fun getConvertLanguageTag1(): String? =
+    override fun getConvertLanguageTag1(): String? =
         prefs.getString("convert_lang1_lang", null)
-    fun setConvertLanguageTag1(langTag: String?) =
+    override fun setConvertLanguageTag1(langTag: String?) =
         prefs.edit().putString("convert_lang1_lang", langTag).apply()
 
     /** معرف الصوت المختار للغة الأولى */
-    fun getConvertVoice1(): String? =
+    override fun getConvertVoice1(): String? =
         prefs.getString("convert_lang1_voice", null)
-    fun setConvertVoice1(voiceId: String?) =
+    override fun setConvertVoice1(voiceId: String?) =
         prefs.edit().putString("convert_lang1_voice", voiceId).apply()
 
     /** مستوى صوت اللغة الأولى */
-    fun getConvertVolume1(): Float =
+    override fun getConvertVolume1(): Float =
         prefs.getFloat("convert_lang1_volume", 1.0f)
-    fun setConvertVolume1(volume: Float) =
+    override fun setConvertVolume1(volume: Float) =
         prefs.edit()
             .putFloat("convert_lang1_volume", volume.coerceIn(0f, 1f))
             .apply()
 
     /** نبرة اللغة الأولى */
-    fun getConvertPitch1(): Float = prefs.getFloat("convert_lang1_pitch", 1.0f)
-    fun setConvertPitch1(pitch: Float) =
+    override fun getConvertPitch1(): Float =
+        prefs.getFloat("convert_lang1_pitch", 1.0f)
+    override fun setConvertPitch1(pitch: Float) =
         prefs.edit()
             .putFloat("convert_lang1_pitch", pitch.coerceIn(0f, 2f))
             .apply()
 
     /** سرعة اللغة الأولى */
-    fun getConvertRate1(): Float = prefs.getFloat("convert_lang1_rate", 1.0f)
-    fun setConvertRate1(rate: Float) =
+    override fun getConvertRate1(): Float =
+        prefs.getFloat("convert_lang1_rate", 1.0f)
+    override fun setConvertRate1(rate: Float) =
         prefs.edit()
             .putFloat("convert_lang1_rate", rate.coerceIn(0f, 2f))
             .apply()
 
     /** محرك اللغة الثانية (حزمة محرك TTS) */
-    fun getConvertEngine2(): String? =
+    override fun getConvertEngine2(): String? =
         prefs.getString("convert_lang2_engine", null)
-    fun setConvertEngine2(pkg: String?) =
+    override fun setConvertEngine2(pkg: String?) =
         prefs.edit().putString("convert_lang2_engine", pkg).apply()
 
     /** علامة لغة (languageTag) للغة الثانية */
-    fun getConvertLanguageTag2(): String? =
+    override fun getConvertLanguageTag2(): String? =
         prefs.getString("convert_lang2_lang", null)
-    fun setConvertLanguageTag2(langTag: String?) =
+    override fun setConvertLanguageTag2(langTag: String?) =
         prefs.edit().putString("convert_lang2_lang", langTag).apply()
 
     /** معرف الصوت المختار للغة الثانية */
-    fun getConvertVoice2(): String? =
+    override fun getConvertVoice2(): String? =
         prefs.getString("convert_lang2_voice", null)
-    fun setConvertVoice2(voiceId: String?) =
+    override fun setConvertVoice2(voiceId: String?) =
         prefs.edit().putString("convert_lang2_voice", voiceId).apply()
 
     /** مستوى صوت اللغة الثانية */
-    fun getConvertVolume2(): Float =
+    override fun getConvertVolume2(): Float =
         prefs.getFloat("convert_lang2_volume", 1.0f)
-    fun setConvertVolume2(volume: Float) =
+    override fun setConvertVolume2(volume: Float) =
         prefs.edit()
             .putFloat("convert_lang2_volume", volume.coerceIn(0f, 1f))
             .apply()
 
     /** نبرة اللغة الثانية */
-    fun getConvertPitch2(): Float = prefs.getFloat("convert_lang2_pitch", 1.0f)
-    fun setConvertPitch2(pitch: Float) =
+    override fun getConvertPitch2(): Float =
+        prefs.getFloat("convert_lang2_pitch", 1.0f)
+    override fun setConvertPitch2(pitch: Float) =
         prefs.edit()
             .putFloat("convert_lang2_pitch", pitch.coerceIn(0f, 2f))
             .apply()
 
     /** سرعة اللغة الثانية */
-    fun getConvertRate2(): Float = prefs.getFloat("convert_lang2_rate", 1.0f)
-    fun setConvertRate2(rate: Float) =
+    override fun getConvertRate2(): Float =
+        prefs.getFloat("convert_lang2_rate", 1.0f)
+    override fun setConvertRate2(rate: Float) =
         prefs.edit()
             .putFloat("convert_lang2_rate", rate.coerceIn(0f, 2f))
             .apply()
@@ -1245,21 +1276,21 @@ val masterKey = androidx.security.crypto.MasterKey
     // ═══════════════════════════════════════════════════════
 
     /** هل قراءة الإشعارات مفعّلة؟ */
-    fun isNotificationReadingEnabled(): Boolean =
+    override fun isNotificationReadingEnabled(): Boolean =
         prefs.getBoolean("notification_reading_enabled", false)
 
-    fun setNotificationReadingEnabled(enabled: Boolean) =
+    override fun setNotificationReadingEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("notification_reading_enabled", enabled).apply()
 
     // ============ اختيار تطبيقات قراءة الإشعارات ============
 
     /** الحزمة "كل التطبيقات" تعني قراءة كل الإشعارات، وإلا حزم مختارة.
      *  عند غياب أي اختيار صريح تُستخدم القائمة الافتراضية المحدودة. */
-    fun getNotificationAppsSelection(): Set<String> =
+    override fun getNotificationAppsSelection(): Set<String> =
         prefs.getStringSet("notification_apps_selection", null)
             ?.toSet() ?: DEFAULT_NOTIFICATION_APPS
 
-    fun setNotificationAppsSelection(pkgs: Set<String>) =
+    override fun setNotificationAppsSelection(pkgs: Set<String>) =
         prefs.edit()
             .putStringSet(
                 "notification_apps_selection",
@@ -1268,7 +1299,7 @@ val masterKey = androidx.security.crypto.MasterKey
             .apply()
 
     /** هل يُقرأ إشعار من هذه الحزمة حسب الاختيار الحالي؟ */
-    fun shouldReadNotificationApp(pkg: String): Boolean {
+    override fun shouldReadNotificationApp(pkg: String): Boolean {
         val selection = getNotificationAppsSelection()
         return NOTIF_READ_ALL in selection || pkg in selection
     }
