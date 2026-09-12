@@ -8,6 +8,8 @@ import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.ContactsContract
 import android.telephony.PhoneNumberUtils
 import android.telephony.TelephonyManager
@@ -52,9 +54,18 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         @Volatile
         private var activeCallCycle: Job? = null
 
-        /** سقف نافذة goAsync حتى لا تبلغ مهلة نظام البث (~10 ثوانٍ) —
-         *  مهما كانت إعدادات التكرار. */
+        /** نافذة جدولة تكرارات نطق المتصل (بعد النطق الأول) — لا يرتبط بها
+         *  عمرُ البث إطلاقاً (التكرارات تُجدول في النطاق العام appScope وتستمر
+         *  بعد إنهاء الـ goAsync): سقفٌ داخلي لعدد التكرارات المنطقية فقط. */
         private const val BROADCAST_ASYNC_WINDOW_MS = 10_000L
+
+        /** سقف أمان إنهاء بثّ goAsync — أقل من مهلة نظام البث (~10 ثوانٍ)
+         *  بهامش واضح: يُنهى البث حتماً قبل حافة المهلة حتى لو علّق المحركُ
+         *  صامتاً بلا onDone (السيناريو الذي كان يوصّل دورة النطق للحافة
+         *  فيقع ANR «إيقاف مستمر» على الأجهزة الفعلية — كما رُصد على Galaxy
+         *  A23 مع محرك TTS معطوب). لا يمسّ التكرارات (النطاق العام)، ولا
+         *  النطق السليم (يكتمل قبلها عبر مستمع الاكتمال). */
+        private const val BROADCAST_SAFE_CAP_MS = 6_000L
 
         /** كم عدد الخانات الرقمية الواجب تطابقها في المطابقة الذكية الأخيرة
          *  (المطابقة بآخر 8 خانات). */
@@ -93,15 +104,6 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             }
             return launches
         }
-
-        /** كم يتبقى من نافذة الـ goAsync الآمنة بعد [lastLaunchMs] — سقفُ
-         *  انتظارنا اكتمالَ النطق الفعلي للجملة الأخيرة: لا تُبقى دورة البث
-         *  حيةً متجاوزةً مهلة النظام فيقع ANR، والتكرارات المجدولة قد استهلكت
-         *  هذا المقدار أصلاً. خالصٌ قابلٌ للاختبار. */
-        internal fun remainingWindowMs(
-            lastLaunchMs: Long,
-            windowMs: Long
-        ): Long = (windowMs - lastLaunchMs).coerceAtLeast(0L)
     }
 
     /** مصدر الإعدادات المحقون — كائن واحد مشترك عبر العمليات
@@ -118,28 +120,43 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
 
         // goAsync() يمنع Android من قتل المستقبل قبل انتهاء العمل اللاتزامني
         val pendingResult = goAsync()
+        // حارس إنهاء وحيد لدورة البث على مستوى onReceive: أيُّ سابقٍ —
+        // اكتمالُ النطق الفعلي (مستمع الاكتمال)، سقفُ الأمان، أو finally
+        // التعويضي — يُنهي pendingResult مرةً واحدة (finishٌ مكررٌ يرمي
+        // تحذيراً ولا لزوم له). ذرّيٌ ليتحمل وصولَ الإنهاء من خيطي البث
+        // والنطق والحارس معاً.
+        val finishedBroadcast = AtomicBoolean(false)
+        fun finishOnce() {
+            if (finishedBroadcast.compareAndSet(false, true)) {
+                pendingResult.finish()
+            }
+        }
+        // حارس أمان على الخيط الرئيسي: يُنهي البث حتماً قبل حافة مهلة
+        // النظام (~10 ثوانٍ) ببُعد [BROADCAST_SAFE_CAP_MS] واضح — مفصولٌ
+        // عن كوروتين النطق (الذي قد يعلق على محركٍ صامت بلا onDone) فلا
+        // يبلغ الـ goAsync حافتَه قط فيقع ANR. يُزال في finally عند تمام
+        // العمل، وإن سبق إنهاؤه فلا يُنهى ثانية (ذرّي).
+        val mainHandler = Handler(Looper.getMainLooper())
+        val finishFailsafe = Runnable { finishOnce() }
+        mainHandler.postDelayed(finishFailsafe, BROADCAST_SAFE_CAP_MS)
         val appScope =
             (context.applicationContext as AnnouncementAppContext).appScope
         appScope.launch {
-            // حارس إنهاء وحيد لدورة البث: أياً كان السابق — اكتمالُ النطق
-            // الفعلي، سقفُ نافذة goAsync، أو finally التعويضي — يُنهى
-            // pendingResult مرةً واحدة (finishٌ مكررٌ يرمي تحذيراً ولا لزوم
-            // له). ذرّيٌ ليتحمل وصولَ الإنهاء من خيطي البث والنطق معاً.
-            val finishedBroadcast = AtomicBoolean(false)
-            fun finishOnce() {
-                if (finishedBroadcast.compareAndSet(false, true)) {
-                    pendingResult.finish()
-                }
-            }
             val state =
                 intent.getStringExtra(TelephonyManager.EXTRA_STATE)
-                    ?: return@launch
+            if (state == null) {
+                // بلا حالة في البث — لا عمل: يُنهى البث فوراً (بدل تركه
+                // معلقاً حتى حارس الأمان) ونخرج بهدوء.
+                finishOnce()
+                return@launch
+            }
             if (state != TelephonyManager.EXTRA_STATE_RINGING) {
                 // **بند 5.2:** كل انتقالٍ للحالة — الرد على المكالمة
                 // (OFFHOOK) أو إنهاؤها (IDLE) — يُوقف النطق فوراً ويُلغي
                 // حلقة التكرار النشطة. قبل هذا كان المستقبل يهملُ غير
                 // الرنين: فيبقى كوروتينُ التكرار حياً يعيد نطقَ اسم
-                // المتصل فوق المكالمة النشطة/بعد انتهائها.
+                // المتصل فوق المكالمة النشطة/بعد انتهائها. ويُنهى البث
+                // فوراً — كان يُترك معلقاً حتى مهلة النظام فيقع ANR.
                 if (state == TelephonyManager.EXTRA_STATE_OFFHOOK ||
                     state == TelephonyManager.EXTRA_STATE_IDLE
                 ) {
@@ -150,6 +167,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                         AnnouncementSpeaker.getInstance(context).stop()
                     }
                 }
+                finishOnce()
                 return@launch
             }
             // أي رنين جديد يحلّ replace لدورة التكرار السابقة إن بقيت
@@ -181,18 +199,31 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     disableAfterPermissionRevoked(
                         settingsRepository, context
                     )
+                    finishOnce()
                     return@launch
                 }
 
                 val state =
                     intent.getStringExtra(TelephonyManager.EXTRA_STATE)
-                        ?: return@launch
-                if (state != TelephonyManager.EXTRA_STATE_RINGING) return@launch
+                if (state == null) {
+                    finishOnce()
+                    return@launch
+                }
+                if (state != TelephonyManager.EXTRA_STATE_RINGING) {
+                    finishOnce()
+                    return@launch
+                }
 
                 val settings = settingsRepository
-                if (!settings.isCallerAnnouncementEnabled()) return@launch
+                if (!settings.isCallerAnnouncementEnabled()) {
+                    finishOnce()
+                    return@launch
+                }
                 // المفتاح الرئيسي يُوقف كل الإعلانات دفعة واحدة.
-                if (!settings.isAllAnnouncementsEnabled()) return@launch
+                if (!settings.isAllAnnouncementsEnabled()) {
+                    finishOnce()
+                    return@launch
+                }
 
                 @Suppress("DEPRECATION")
                 val incomingNumber = intent.getStringExtra(
@@ -248,14 +279,12 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 }
                 speaker.resetVoice(callerVoice)
 
-                // تكرار النطق «repeat» مرات بفاصل «intervalMs»؛ الأول
-                // يقع فوراً. تُبقى دورة goAsync حيّةً حتى إطلاق آخر نطقٍ
-                // مجدول: التكرارات ننتظرها داخل الـ coroutine نفسه (لا
-                // Handler مستقل عن حياة البث) — وإلا يُجمّد النظامُ
-                // العمليةَ وقت قفل الشاشة (cgroup freezer على أندرويد
-                // 14+) بعد finish() الفوري فتضيع التكرارات المتبقية.
-                // وسقفُ الانتظار نافذةُ الـ goAsync الآمنة (~10 ثوانٍ)
-                // فلا يقع ANR لبلوغ مهلة البث مهما كبرت الإعدادات.
+                // تكرار النطق «repeat» مرات بفاصل «intervalMs»؛ الأول يقع
+                // فوراً. التكرارات تُجدول داخل النطاق العام appScope نفسه (لا
+                // تُربط بحياة البث): إنهاءُ الـ goAsync مبكراً (اكتمالُ أول
+                // جملة فعلياً أو حارسُ الأمان) لا يقطعها — فتبقى تُنطق حتى
+                // لو جُمّدت العملية لاحقاً (الخدمة الأمامية التي يضمنها
+                // النطق تُبقي العملية أماميةً غالباً).
                 val repeat = settings
                     .getCallerAnnouncementRepeat().coerceIn(1, 5)
                 val intervalMs = settings.getCallerAnnouncementIntervalSeconds()
@@ -266,6 +295,14 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                         SettingsRepository.ANNOUNCE_CATEGORY_CALLER
                     )
                 )
+                // **بند 5.5:** إنهاءٌ مبكر بمستمع الاكتمال: محركٌ سليم يُنهي
+                // البث فور اكتمال (onDone) الجملة الأولى فعلياً — بلا حجزٍ
+                // أطول من اللازم ولا ذيلِ صوتٍ مبتور (جمدُ العملية بعد
+                // finish() كان يقتطع آخر الصوت على أندرويد 14+). يُسجَّل في
+                // قائمة مستمعي المتحدث المشترك (بند [8]) فلا يطمس خطاف أداة
+                // الساعة أو مستقبلٍ آخر، ويُزال في finally.
+                completionListener = { finishOnce() }
+                speaker.addCompletionListener(completionListener!!)
                 val appCtx = context.applicationContext
                 val schedule = repeatSchedule(
                     repeat, intervalMs, BROADCAST_ASYNC_WINDOW_MS
@@ -286,23 +323,6 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                         Log.e(TAG, "repeat speak failed", t)
                     }
                 }
-
-                // بعد إطلاق كل التكرارات نُبقي نافذة البث حيّةً حتى يُتمَّ
-                // النطقُ الفعليُّ للجملة الأخيرة — جمدُ العمليةِ بعد
-                // finish() كان يقتطع ذيل الصوت (بند توافق أندرويد 17) —
-                // بسقفِ نافذة الـ goAsync نفسها فلا ANR. نُسجّل في قائمة
-                // مستمعين المتحدث المشترك (بند [8]) فلا نطمس خطافَ أداة
-                // الساعة أو مستقبلٍ آخر، ونُزيله في finally.
-                completionListener = {
-                    finishOnce()
-                }
-                speaker.addCompletionListener(completionListener!!)
-                delay(
-                    remainingWindowMs(
-                        lastLaunchMs, BROADCAST_ASYNC_WINDOW_MS
-                    )
-                )
-                finishOnce()
             } catch (t: Throwable) {
                 // الإلغاء (بند 5.2: الرد/الإنهاء) ليس عطلاً — يُنهيه
                 // finally أدناه ويُنظّف، وانتظارُ الجدولة يُحرَّر بلا صخب.
@@ -312,7 +332,9 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 Log.e(TAG, "onReceive failed", t)
             } finally {
                 // تعويضي: إن انحرف المسار قبل أذرعة الإنهاء أعلاه (استثناء)
-                // يُنهى البث هنا — وإن سبق إنهاؤه فلا يُنهى ثانية.
+                // يُنهى البث هنا — وإن سبق إنهاؤه فلا يُنهى ثانية. ويُزال
+                // حارس الأمان — لا يبقى مسجلاً بعد اكتمال الدورة.
+                mainHandler.removeCallbacks(finishFailsafe)
                 completionListener?.let { listener ->
                     // إزالة مستمعنا حتى لا يُستدعى في دورة نطقٍ لاحقة
                     runCatching {

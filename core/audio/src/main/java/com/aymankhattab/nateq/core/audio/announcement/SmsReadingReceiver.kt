@@ -41,9 +41,12 @@ class SmsReadingReceiver : BroadcastReceiver() {
         const val MODE_FULL = "full"
         const val MODE_SOURCE = "source"
 
-        // **بند 5.5:** سقف احتجاز نافذة goAsync حتى تمام النطق — لا أطول
-        // من نافذة البث الآمنة (~10 ثوانٍ) فلا ANR إن طال التوليف.
-        private const val BROADCAST_HOLD_MS = 10_000L
+        // **بند 5.5:** سقف احتياطي لإنهاء البث أقصاه ما قبل مهلة نظام البث
+        // (~10 ثوانٍ) بهامش واضح (~6 ثوانٍ) — كان السقف يبلغ 10 ثوانٍ فيصل
+        // goAsync حافة المهلة فيقع ANR عند تعلّق المحرك بلا onDone (كما
+        // رُصد على أجهزة فعلية). النطق السليم يُنهي البث مبكراً عبر مستمع
+        // الاكتمال؛ هذا السقف للعلّال فقط.
+        private const val BROADCAST_HOLD_MS = 6_000L
 
         /** هل مَنح التطبيق إذن قراءة الرسائل الواردة؟
          *  (RECEIVE_SMS أو READ_SMS). على ما قبل أندرويد 6 لا أخطارِ
@@ -231,8 +234,9 @@ override fun onReceive(context: Context, intent: Intent?) {
                 // **بند 5.5:** finish() الفوري قبل تمام التوليف كان يترك
                 // أندرويد 14+ يجمد العملية عبر Process Cgroup Freezer
                 // فيُبتر صوت الرسالة في منتصف الجملة. نُبقي النافذة حيّةً
-                // حتى يُتمَّ النطق الفعلي (بسقف ~10 ثوانٍ فلا ANR) —
-                // نمط قارئ المتصل/البطارية نفسه، بسجل ومستمعين فريدين.
+                // حتى يُتمَّ النطق الفعلي (بسقفٍ آمن ~6 ثوانٍ فلا ANR رغم
+                // تعليق المحرك) — نمط قارئ المتصل/البطارية نفسه، بسجل
+                // ومستمعين فريدين، والأصلُ إنهاءٌ مبكر عبر مستمع الاكتمال.
                 completionListener = { finishOnce() }
                 AnnouncementSpeaker.getInstance(context)
                     .addCompletionListener(completionListener!!)

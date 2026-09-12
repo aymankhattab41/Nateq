@@ -33,9 +33,12 @@ class TimeAlarmReceiver : BroadcastReceiver() {
         const val ACTION_TICK =
             "com.aymankhattab.nateq.action.TIME_ANNOUNCE_TICK"
 
-        /** سقفُ إبقاء بثّ goAsync حياً بانتظار اكتمال النطق (بند [4]) — تحت
-         *  سقف نظام البث (~10 ثوانٍ) فلا ANR. */
-        private const val ALARM_ASYNC_WINDOW_MS = 10_000L
+        /** سقفُ إبقاء بثّ goAsync حياً بانتظار اكتمال النطق (بند [4]) — أقل
+         *  من مهلة نظام البث (~10 ثوانٍ) بهامش واضح (~6 ثوانٍ) فلا يصل
+         *  goAsync حافتَها فيقع ANR عند تعلّق المحرك بلا onDone (كما رُصد
+         *  على أجهزة فعلية). النطق السليم يُنهي البث مبكراً عبر مستمع
+         *  الاكتمال؛ هذا السقف للعلّال فقط. */
+        private const val ALARM_ASYNC_WINDOW_MS = 6_000L
 
         /** requestCode ثابت ليكون PendingIntent واحداً
          * (أي استدعاء لاحق يستبدله). */
@@ -114,12 +117,12 @@ class TimeAlarmReceiver : BroadcastReceiver() {
         }
 
         /** مدة نافذة WakeLock العابرة: تُحافظ على مساواة
-         *  [ALARM_ASYNC_WINDOW_MS] (10 ثوانٍ) — فللقفل أن يغطي نافذة
+         *  [ALARM_ASYNC_WINDOW_MS] (6 ثوانٍ) — فللقفل أن يغطي نافذة
          *  goAsync كاملةً (ربط المحرك وتهيئة الصوت والنطق) ولا ينتهي قبلها
          *  فينام المعالج والنطق ناقص (بند [4]). */
-        private const val SHORT_WAKE_LOCK_MS = 10_000L
+        private const val SHORT_WAKE_LOCK_MS = 6_000L
 
-        /** نافذة WakeLock جزئية مؤقتة (10 ثوانٍ = نافذة البث): تُحرَّر تلقائياً
+        /** نافذة WakeLock جزئية مؤقتة (6 ثوانٍ = نافذة البث): تُحرَّر تلقائياً
          *  بوتوقيتها (acquire(timeout)) فالتسريب المقيّد مقصود — بلا حاجة لـ
          *  release يدوي، ولا يستنزف البطارية (منبه كل 15-60 دقيقة لثوانٍ). */
         private fun acquireShortWakeLock(
@@ -185,7 +188,7 @@ class TimeAlarmReceiver : BroadcastReceiver() {
         if (cn.className != TimeAlarmReceiver::class.java.name) return
 
         // Doze: بثّ المنبه يوقظ المعالج لنافذة قصيرة فقط. goAsync يُبقي شعاع
-        // البثّ حياً لإنهاء جدولة الـ tick، وWakeLock جزئي مؤقت (10 ثوانٍ)
+        // البثّ حياً لإنهاء جدولة الـ tick، وWakeLock جزئي مؤقت (6 ثوانٍ)
         // يغطي نافذة النطق في الخلفية (ربط المحرك وتهيئة الصوت): كان إعلان
         // كامل معرضاً للضياع لو عاد المعالج للنوم قبل اكتمال التهيئة.
         val pendingResult = goAsync()

@@ -92,29 +92,6 @@ class CallerAnnouncementReceiverTest {
         )
     }
 
-    @Test
-    fun `remainingWindowMs leaves the safe grace after last launch`() {
-        assertEquals(
-            2500L,
-            CallerAnnouncementReceiver.remainingWindowMs(7500L, 10_000L)
-        )
-        // بلا تكرارات مجدولة يبقى السقف كاملاً (لا ما يُستقطع).
-        assertEquals(
-            10_000L,
-            CallerAnnouncementReceiver.remainingWindowMs(0L, 10_000L)
-        )
-        // آخر إطلاقٍ بعد النافذة (لا يقع في الجدولة) — صفر.
-        assertEquals(
-            0L,
-            CallerAnnouncementReceiver.remainingWindowMs(12_000L, 10_000L)
-        )
-        // لا قيمة سالبة مهما تجاوز الإطلاق النافذة.
-        assertEquals(
-            0L,
-            CallerAnnouncementReceiver.remainingWindowMs(20_000L, 10_000L)
-        )
-    }
-
     private fun match(key: String, to: String?): String? =
         CallerAnnouncementReceiver().matchCustomName(
             mapOf(key to "أحمد"), to
