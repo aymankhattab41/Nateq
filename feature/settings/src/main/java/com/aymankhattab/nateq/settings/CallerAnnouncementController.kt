@@ -72,6 +72,12 @@ internal class CallerAnnouncementController(
     /** يمنع مناداة المستمع من رد الطلب (تفادي إعادة طلب الأذونات دورياً) */
     private var callerSwitchGuard = false
 
+    // **بند 6.3:** علمُ الربط البرمجي — يُسنَّع حول setProgress في setup حتى
+    // لا يُفسَّر الإسنادُ البرمجي تعديلَ مستخدم. دون الحفظ في
+    // onProgressChanged كان تعديل TalkBack (عبر أداء الوصول، لا يمر عبر
+    // onStopTrackingTouch إطلاقاً) يفقد أي تعديل على أشرطة التمرير.
+    private var bindingSlider = false
+
     /** يمنع تكرار حوار «أُلغيت أذونات المتصل» أكثر من مرة
      *  لكل دورة فتح إعدادات */
     private var callerRevokedDialogShown = false
@@ -216,7 +222,13 @@ internal class CallerAnnouncementController(
                 .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
         tvCallerRateValue.text =
             String.format(Locale.US, "%.1fx", callerRate)
-        seekCallerRate.progress = (callerRate * 100).toInt().coerceIn(0, 200)
+        bindingSlider = true
+        try {
+            seekCallerRate.progress =
+                (callerRate * 100).toInt().coerceIn(0, 200)
+        } finally {
+            bindingSlider = false
+        }
         seekCallerRate.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
@@ -224,12 +236,18 @@ internal class CallerAnnouncementController(
                 progress: Int,
                 fromUser: Boolean
             ) {
+                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
+                if (bindingSlider) return
                 val value = progress.speedFactor()
                 tvCallerRateValue.text =
                     String.format(Locale.US, "%.1fx", value)
                 seekBar.setSeekStateDescription(
                     tvCallerRateValue.text
                 )
+                // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
+                // نهايته إلى onStopTrackingTouch أبداً.
+                runCatching { settings.setCallerAnnouncementRate(value) }
+                onStatusChanged()
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -249,8 +267,13 @@ internal class CallerAnnouncementController(
             runCatching { settings.getCallerAnnouncementVolume() }
                 .getOrDefault(1.0f)
         tvCallerVolumeValue.text = "${(callerVolume * 100).toInt()}%"
-        seekCallerVolume.progress =
-            (callerVolume * 100).toInt().coerceIn(0, 100)
+        bindingSlider = true
+        try {
+            seekCallerVolume.progress =
+                (callerVolume * 100).toInt().coerceIn(0, 100)
+        } finally {
+            bindingSlider = false
+        }
         seekCallerVolume.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
@@ -258,10 +281,18 @@ internal class CallerAnnouncementController(
                 progress: Int,
                 fromUser: Boolean
             ) {
+                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
+                if (bindingSlider) return
                 tvCallerVolumeValue.text = "$progress%"
                 seekBar.setSeekStateDescription(
                     tvCallerVolumeValue.text
                 )
+                // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
+                // نهايته إلى onStopTrackingTouch أبداً.
+                runCatching {
+                    settings.setCallerAnnouncementVolume(progress / 100f)
+                }
+                onStatusChanged()
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -457,7 +488,17 @@ internal class CallerAnnouncementController(
             ) { _, _ ->
                 fragment.callerPermLauncher.launch(needed)
             }
-            .setNegativeButton(android.R.string.cancel, null)
+            .setNegativeButton(
+                android.R.string.cancel
+            ) { _, _ ->
+                // **بند 6.5:** إلغاء التبرير يُعيد المفتاح إلى «متوقف»
+                // — لم يُمنح الإذن فلن تُفعَّل الميزة، وكان المفتاح يعلق
+                // مفعّلاً بصرياً بينما الميزة معطلة فعلياً (تضليل).
+                callerSwitchGuard = true
+                switchCallerAnnouncement.isChecked = false
+                callerSwitchGuard = false
+                onStatusChanged()
+            }
             .create().also { fragment.trackDialog(it) }.show()
     }
 

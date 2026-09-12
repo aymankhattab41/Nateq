@@ -37,10 +37,12 @@ class AudioCuePlayerTest {
         var playCalls = 0
         var stopCalls = 0
 
+        @Suppress("UNUSED_PARAMETER")
         override fun play(
             pcm: ShortArray,
             sampleRate: Int,
             volume: Float,
+            cueKey: String,
             onDone: (Boolean) -> Unit
         ) {
             playCalls++
@@ -229,7 +231,9 @@ class AudioCuePlayerTest {
         val sink = SoundPoolCueSink(context, Handler(Looper.getMainLooper()))
         var result: Boolean? = null
 
-        sink.play(shortArrayOf(0, 1, 2, 0, 1), 44_100, 0.4f) { result = it }
+        sink.play(
+            shortArrayOf(0, 1, 2, 0, 1), 44_100, 0.4f, "unit_test"
+        ) { result = it }
         // تحميل SoundPool لا يكتمل تلقائياً في الظل — الإيقاف يغلق الدورة
         assertEquals(null, result)
         sink.stop()

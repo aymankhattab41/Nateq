@@ -1,6 +1,8 @@
 package com.aymankhattab.nateq.core.data
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -53,5 +55,29 @@ class UpdateCheckerSemVerTest {
         // خارج مرحلة الصفر تبقى المقارنة SemVer القياسية بلا أي تسوية.
         assertFalse(UpdateChecker.isNewerVersion("v6", "6.0.0"))
         assertTrue(UpdateChecker.isNewerVersion("v7", "6.0.0"))
+    }
+
+    /** بند 7.3: بصمة النشر من ملاحظات الإصدار (سطر SHA-256 أو SHA256SUMS). */
+    @Test
+    fun sha256_extractedFromReleaseNoteLine() {
+        val hex =
+            "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+        assertEquals(
+            hex,
+            UpdateChecker.extractSha256FromReleaseNote(
+                "الإصدار 0.7.0\n$hex  lord_tts.apk"
+            )
+        )
+        assertEquals(
+            hex,
+            UpdateChecker.extractSha256FromReleaseNote(
+                "بعض الملاحظات\nSHA-256: $hex\nبعدها"
+            )
+        )
+        // إصدار كبير من أحرف البصمة؟ لا تُقبَل.
+        // مقطع سداسي أقصر من 64 حرفاً أو نص بلا بصمة: لا تُقبَل.
+        assertNull(UpdateChecker.extractSha256FromReleaseNote("SHA-256: 0123"))
+        assertNull(UpdateChecker.extractSha256FromReleaseNote(null))
+        assertNull(UpdateChecker.extractSha256FromReleaseNote("بلا بصمة هنا"))
     }
 }

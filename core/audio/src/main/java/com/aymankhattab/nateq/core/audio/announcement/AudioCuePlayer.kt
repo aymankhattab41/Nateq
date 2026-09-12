@@ -34,8 +34,10 @@ class AudioCuePlayer private constructor(
 
         @JvmStatic
         fun getInstance(context: Context): AudioCuePlayer {
-            return shared ?: synchronized(this) {
-                shared ?: runCatching {
+            shared?.let { return it }
+            return synchronized(this) {
+                shared?.let { return it }
+                runCatching {
                     AudioCuePlayer(
                         sink = SoundPoolCueSink(
                             context.applicationContext,
@@ -44,12 +46,18 @@ class AudioCuePlayer private constructor(
                         synth = CueSynth,
                         handler = Handler(Looper.getMainLooper())
                     )
-                }.getOrNull()
-                    ?: AudioCuePlayer(
+                }.getOrElse { t ->
+                    // فشل بناء سمع الخام (SoundPool) — صوتٌ صامت يحفظ الدورة:
+                    // كل استدعاءٍ كان يبني مثيلاً جديداً بلا تعيين `shared`
+                    // (كسر Singleton) فتُستنزف مسارات الصوت حتى
+                    // `AudioTrack::createTrack() failed`.
+                    Log.w(TAG, "SoundPool cue player failed", t)
+                    AudioCuePlayer(
                         null,
                         CueSynth,
                         Handler(Looper.getMainLooper())
-                    ).also { shared = it }
+                    )
+                }.also { shared = it }
             }
         }
 
@@ -107,10 +115,12 @@ class AudioCuePlayer private constructor(
             durationMs.toLong() + CUE_SAFETY_MARGIN_MS
         )
 
+        val cueKey = "${cue.type}|${cue.soundName ?: ""}"
         sink.play(
             pcm,
             CueSynth.SAMPLE_RATE,
-            cue.volume.coerceIn(0f, 1f)
+            cue.volume.coerceIn(0f, 1f),
+            cueKey
         ) { success ->
             handler.post {
                 timeoutRunnable?.let { handler.removeCallbacks(it) }

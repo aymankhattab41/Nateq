@@ -86,6 +86,11 @@ internal object NumberStep : TextProcessingStep {
             if (longValue != null) {
                 return NumberWordsConverter.numberToWords(longValue)
             }
+            // **بند 3.6:** سلسلة رقمية أعرض من Long (رقم وطني/حساب بنكي/
+            // تسلسل 20+ خانة): toLongOrNull تعيد null فكانت تنتقل إلى
+            // Double فتتشوه القيمة (دقته 2^53 فقط) — نقرأ الخانات رقماً
+            // رقماً بأمان عبر المحوِّل.
+            return NumberWordsConverter.spokenDigits(cleaned)
         }
         val number = cleaned.toDoubleOrNull() ?: return numberStr
         return NumberWordsConverter.numberToWords(number)

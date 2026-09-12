@@ -44,6 +44,12 @@ internal class BatteryAnnouncementController(
     private lateinit var tvPowerSaverThresholdValue: TextView
     private lateinit var seekPowerSaverThreshold: SeekBar
 
+    // **بند 6.3:** علمُ الربط البرمجي — يُسنَّع حول setProgress في setup حتى
+    // لا يُفسَّر الإسنادُ البرمجي تعديلَ مستخدم. دون الحفظ في
+    // onProgressChanged كان تعديل TalkBack (عبر أداء الوصول، لا يمر عبر
+    // onStopTrackingTouch إطلاقاً) يفقد أي تعديل على أشرطة التمرير.
+    private var bindingSlider = false
+
     fun setup(view: View) {
         switchBatteryAnnouncement =
             view.findViewById(R.id.switch_battery_announcement)
@@ -240,8 +246,13 @@ internal class BatteryAnnouncementController(
                 .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
         tvBatteryRateValue.text =
             String.format(Locale.US, "%.1fx", batteryRate)
-        seekBatteryRate.progress =
-            (batteryRate * 100).toInt().coerceIn(0, 200)
+        bindingSlider = true
+        try {
+            seekBatteryRate.progress =
+                (batteryRate * 100).toInt().coerceIn(0, 200)
+        } finally {
+            bindingSlider = false
+        }
         seekBatteryRate.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
@@ -249,12 +260,17 @@ internal class BatteryAnnouncementController(
                 progress: Int,
                 fromUser: Boolean
             ) {
+                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
+                if (bindingSlider) return
                 val value = progress.speedFactor()
                 tvBatteryRateValue.text =
                     String.format(Locale.US, "%.1fx", value)
                 seekBar.setSeekStateDescription(
                     tvBatteryRateValue.text
                 )
+                // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
+                // نهايته إلى onStopTrackingTouch أبداً.
+                runCatching { settings.setBatteryAnnouncementRate(value) }
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -275,8 +291,13 @@ internal class BatteryAnnouncementController(
             runCatching { settings.getBatteryAnnouncementVolume() }
                 .getOrDefault(1.0f)
         tvBatteryVolumeValue.text = "${(batteryVolume * 100).toInt()}%"
-        seekBatteryVolume.progress =
-            (batteryVolume * 100).toInt().coerceIn(0, 100)
+        bindingSlider = true
+        try {
+            seekBatteryVolume.progress =
+                (batteryVolume * 100).toInt().coerceIn(0, 100)
+        } finally {
+            bindingSlider = false
+        }
         seekBatteryVolume.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
@@ -284,10 +305,17 @@ internal class BatteryAnnouncementController(
                 progress: Int,
                 fromUser: Boolean
             ) {
+                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
+                if (bindingSlider) return
                 tvBatteryVolumeValue.text = "$progress%"
                 seekBar.setSeekStateDescription(
                     tvBatteryVolumeValue.text
                 )
+                // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
+                // نهايته إلى onStopTrackingTouch أبداً.
+                runCatching {
+                    settings.setBatteryAnnouncementVolume(progress / 100f)
+                }
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -342,9 +370,14 @@ internal class BatteryAnnouncementController(
                 .getOrDefault(0.8f)
         tvBatteryCueVolumeValue.text =
             "${(batteryCueVolume * 100).toInt()}%"
-        seekBatteryCueVolume.progress =
-            ((batteryCueVolume - 0.1f) / 0.9f * 100)
-                .toInt().coerceIn(0, 100)
+        bindingSlider = true
+        try {
+            seekBatteryCueVolume.progress =
+                ((batteryCueVolume - 0.1f) / 0.9f * 100)
+                    .toInt().coerceIn(0, 100)
+        } finally {
+            bindingSlider = false
+        }
         seekBatteryCueVolume.setSeekStateDescription(
             tvBatteryCueVolumeValue.text
         )
@@ -355,11 +388,18 @@ internal class BatteryAnnouncementController(
                 progress: Int,
                 fromUser: Boolean
             ) {
+                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
+                if (bindingSlider) return
                 val pct = ((0.1f + progress / 100f * 0.9f) * 100).toInt()
                 tvBatteryCueVolumeValue.text = "$pct%"
                 seekBar.setSeekStateDescription(
                     tvBatteryCueVolumeValue.text
                 )
+                // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
+                // نهايته إلى onStopTrackingTouch أبداً.
+                runCatching {
+                    settings.setBatteryCueVolume(0.1f + progress / 100f * 0.9f)
+                }
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -410,7 +450,12 @@ internal class BatteryAnnouncementController(
             runCatching { settings.getPowerSaverBatteryThreshold() }
                 .getOrDefault(20)
         tvPowerSaverThresholdValue.text = "$powerThreshold%"
-        seekPowerSaverThreshold.progress = powerThreshold.coerceIn(0, 100)
+        bindingSlider = true
+        try {
+            seekPowerSaverThreshold.progress = powerThreshold.coerceIn(0, 100)
+        } finally {
+            bindingSlider = false
+        }
         llPowerSaverThreshold.visibility =
             if (switchPowerSaver.isChecked) View.VISIBLE else View.GONE
         seekPowerSaverThreshold.visibility =
@@ -435,10 +480,17 @@ internal class BatteryAnnouncementController(
                 progress: Int,
                 fromUser: Boolean
             ) {
+                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
+                if (bindingSlider) return
                 tvPowerSaverThresholdValue.text = "$progress%"
                 seekBar.setSeekStateDescription(
                     tvPowerSaverThresholdValue.text
                 )
+                // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
+                // نهايته إلى onStopTrackingTouch أبداً.
+                runCatching {
+                    settings.setPowerSaverBatteryThreshold(progress)
+                }
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}

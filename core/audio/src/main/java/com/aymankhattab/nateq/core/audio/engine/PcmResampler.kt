@@ -104,7 +104,12 @@ object PcmResampler {
         // حالة مباشرة (لا إعادة عينات ولا خفض قنوات): نسخ النافذة الصالحة
         // فوراً دون أي وسيط — أرخص مسار إطلاقاً في مسار البث.
         if (inSampleRate == outSampleRate && inChannels == 1) {
-            val copyLen = (end - offset).coerceAtMost(out.size - outOffset)
+            // **بند 2.6 (محاذاة زوجية):** كان الطول المنسوخ قد يأتي فردياً
+            // (نافذة بفريمٍ ناقص) فيُعطى الناتجُ عددَ بايتاتٍ فردياً يخالف
+            // تقدير convertedByteCount (> اللازم) ويبعث فريماً مشوهاً يعتمده
+            // المتلقي صوتاً — تُقصّ النافذة إلى فريماتٍ كاملة (زوجية) دائماً.
+            val avail = min(end - offset, out.size - outOffset)
+            val copyLen = avail - (avail and 1)
             System.arraycopy(pcm, offset, out, outOffset, copyLen)
             return copyLen
         }

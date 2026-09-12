@@ -415,10 +415,12 @@ private class FakeCueSink : CueSink {
     var played: ShortArray? = null
     var volume: Float = 0f
 
+    @Suppress("UNUSED_PARAMETER")
     override fun play(
         pcm: ShortArray,
         sampleRate: Int,
         volume: Float,
+        cueKey: String,
         onDone: (Boolean) -> Unit
     ) {
         played = pcm

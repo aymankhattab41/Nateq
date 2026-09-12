@@ -216,3 +216,45 @@ test("forwardMessage عند التجاوز يُسقط بصمت بلا أي طل�
     globalThis.fetch = realFetch;
   }
 });
+
+// ── معالج الاستيراد (HTTP fetch) — التسليم 200 عند تجاوز المعدل ─────────
+
+test("fetch: تجاوز المعدل يُسلَّم 200 OK بصمت (بند 8.1) — لا إعادة إرسال DDoS", async () => {
+  const mod = await import("../src/index.js");
+  const handler = mod.default.fetch;
+  const env = {
+    WEBHOOK_SECRET: "s3cr3t",
+    // سجل يتجاوز العتبة (20 في نافذة 60 ث) — يدفع forwardMessage لفكِّ
+    // "rate_limited" دون أي اتصال شبكة بتليجرام.
+    RATE_LIMITS: {
+      get: async () => ({
+        windowStart: Math.floor(Date.now() / 1000) - 10,
+        count: 21,
+      }),
+      put: async () => {},
+    },
+  };
+  // أي استدعاء حقيقي لتليجرام يُفشل الاختبار — الواجب ألا يحدث.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new Error("يجب ألا يصل شيء إلى تليجرام عند التجاوز");
+  };
+  try {
+    const request = new Request("https://relay.example/webhook", {
+      method: "POST",
+      headers: { "X-Telegram-Bot-Api-Secret-Token": "s3cr3t" },
+      body: JSON.stringify({
+        message: {
+          text: "رسالة تتجاوز الحد",
+          from: { id: 42, first_name: "م" },
+          chat: { id: 42 },
+          date: 10,
+        },
+      }),
+    });
+    const response = await handler(request, env);
+    assert.equal(response.status, 200, "الرد 200 دائماً حتى عند التجاوز");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

@@ -31,6 +31,11 @@ dependencies {
     // كوروتينز — الكوروتينات اللاتزامنية لخدمة المحرك ولمزوّدي الأصوات.
     implementation(libs.kotlinx.coroutines.android)
 
+    // **بند 9.4:** المواصفات الصريحة لتوابع androidx.core (NotificationCompat/
+    // ContextCompat...) بدل الاعتماد الضمني المتسرب من :core:data — إغلاق
+    // هشاشة البناء حين تُعدَّل تبعيات أي وحدة أخرى.
+    implementation(libs.androidx.core.ktx)
+
     // Hilt — NateqTtsService مُعلَّم بـ @AndroidEntryPoint وتُحقن فيه إعدادات
     // التطبيق وقاموس النطق (نفس إصدار :app).
     implementation(libs.hilt.android)

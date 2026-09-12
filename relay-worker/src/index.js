@@ -265,7 +265,8 @@ async function forwardMessage(env, update) {
   // قيود المعدل تُفحص قبل التوجيه لكل مرسل (نافذة 60 ث / حدّ 20 رسالة).
   // عند التجاوز نُسقط الطلب بصمت (بلا إرسال أي رد لتليجرام) لئلا يُستغل
   // الناقل لإغراق البوت بآلاف الرسائل وتعريضه للحظر من تليجرام. يُشار إلى
-  // التجاوز بالرجوع "rate_limited" الذي يُترجم إلى HTTP 429 في النداء.
+  // التجاوز بالرجوع "rate_limited" وهو يُسلَّم إلى تليجرام بـ 200 OK (بند 8.1)
+  // حتى لا يعيد إرسال الرسالة مراراً فيغرق الخادم بدورات حجب ذاتي.
   if (from.id !== undefined && from.id !== null) {
     const rate = await enforceRateLimit(env, String(from.id));
     if (!rate.allowed) {
@@ -330,13 +331,15 @@ export default {
     try {
       const update = await request.json();
       const result = await forwardMessage(env, update);
-      // عند تجاوز قيود المعدل نُسقط الطلب بصمت بالكود 429 (Too Many Requests)
-      // دون إرسال أي شيء إلى تليجرام؛ فلا يكرّر المهاجم إلا استجابة الخادم.
+      // **بند 8.1:** عند تجاوز قيود المعدل نُسقط الطلب داخلياً بصمت لكن
+      // نرد 200 OK — خوادم تليجرام تعيد إرسال أي Webhook لا يعود 200
+      // بشكل متكرر ومكثف فتُغرق الخادم بهجوم حجب ذاتي (Self-DDoS)
+      // وتستنزف حصة Cloudflare؛ الرجوع 429 يجعل المرة التالية أسوأ.
       if (result === "rate_limited") {
-        return new Response(JSON.stringify({ ok: false, result }), {
-          status: 429,
-          headers: { "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({ ok: true, result: "dropped" }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
       }
       // نرد 200 دائماً حتى لا يعيد تليجرام إرسال الرسالة مراراً
       return new Response(JSON.stringify({ ok: true, result }), {
@@ -345,6 +348,7 @@ export default {
       });
     } catch (err) {
       console.error("update failed:", err);
+      // 200 حتى لا يفتح المسارُ خطّاً للدورات المتكررة (إعادة الإرسال)
       return new Response(JSON.stringify({ ok: false }), { status: 200 });
     }
   },

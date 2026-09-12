@@ -39,6 +39,11 @@ internal class SmsReadingController(
      *  مفعّلاً زوراً عند رفض المستخدم الإذن (بند [9]). */
     private var pendingSmsMode: String? = null
 
+    // **بند 6.3:** علمُ الربط البرمجي لشرائط السرعة/الصوت — إسنادُ
+    // setProgress في setup ليس تعديلَ مستخدم، والحفظ في onProgressChanged
+    // ضروري لأن تعديل TalkBack لا يمر بـ onStopTrackingTouch إطلاقاً.
+    private var bindingSlider = false
+
     fun setup(view: View) {
         spinnerSmsMode = view.findViewById(R.id.spinner_sms_reading_mode)
         spinnerSmsVoice = view.findViewById(R.id.spinner_sms_reading_voice)
@@ -171,7 +176,12 @@ internal class SmsReadingController(
                 .getOrDefault(1.0f)
                 .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
         tvSmsRateValue.text = String.format(Locale.US, "%.1fx", smsRate)
-        seekSmsRate.progress = (smsRate * 100).toInt().coerceIn(0, 200)
+        bindingSlider = true
+        try {
+            seekSmsRate.progress = (smsRate * 100).toInt().coerceIn(0, 200)
+        } finally {
+            bindingSlider = false
+        }
         seekSmsRate.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
@@ -179,10 +189,15 @@ internal class SmsReadingController(
                 progress: Int,
                 fromUser: Boolean
             ) {
+                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
+                if (bindingSlider) return
                 val value = progress.speedFactor()
                 tvSmsRateValue.text =
                     String.format(Locale.US, "%.1fx", value)
                 seekBar.setSeekStateDescription(tvSmsRateValue.text)
+                // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
+                // نهايته إلى onStopTrackingTouch أبداً.
+                runCatching { settings.setSmsReadingRate(value) }
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -201,7 +216,13 @@ internal class SmsReadingController(
             runCatching { settings.getSmsReadingVolume() }
                 .getOrDefault(1.0f)
         tvSmsVolumeValue.text = "${(smsVolume * 100).toInt()}%"
-        seekSmsVolume.progress = (smsVolume * 100).toInt().coerceIn(0, 100)
+        bindingSlider = true
+        try {
+            seekSmsVolume.progress =
+                (smsVolume * 100).toInt().coerceIn(0, 100)
+        } finally {
+            bindingSlider = false
+        }
         seekSmsVolume.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
@@ -209,8 +230,15 @@ internal class SmsReadingController(
                 progress: Int,
                 fromUser: Boolean
             ) {
+                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
+                if (bindingSlider) return
                 tvSmsVolumeValue.text = "$progress%"
                 seekBar.setSeekStateDescription(tvSmsVolumeValue.text)
+                // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
+                // نهايته إلى onStopTrackingTouch أبداً.
+                runCatching {
+                    settings.setSmsReadingVolume(progress / 100f)
+                }
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}

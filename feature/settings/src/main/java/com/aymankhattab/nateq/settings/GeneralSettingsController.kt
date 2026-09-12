@@ -23,6 +23,12 @@ internal class GeneralSettingsController(
     private lateinit var seekDefaultVolume: SeekBar
     private lateinit var tvDefaultVolumeValue: TextView
 
+    // **بند 6.3:** علمُ الربط البرمجي — يُسنَّع حول setProgress في attach
+    // حتى لا يُفسَّر الإسنادُ البرمجي تعديلَ مستخدم (يُخزَّن تفريغاً). دون
+    // الحفظ في onProgressChanged كان TalkBack (تعديلٌ عبر أداء الوصول لا
+    // يمر بـ onStopTrackingTouch إطلاقاً) يفقد أي تعديل على أشرطة التمرير.
+    private var bindingSlider = false
+
     fun setup(view: View) {
         seekDefaultSpeechRate =
             view.findViewById(R.id.seek_default_speech_rate)
@@ -43,11 +49,28 @@ internal class GeneralSettingsController(
             .getOrDefault(1.0f)
 
         tvDefaultSpeechRateValue.text = String.format(Locale.US, "%.1fx", rate)
-        seekDefaultSpeechRate.progress = (rate * 100).toInt().coerceIn(0, 200)
+        bindingSlider = true
+        try {
+            seekDefaultSpeechRate.progress =
+                (rate * 100).toInt().coerceIn(0, 200)
+        } finally {
+            bindingSlider = false
+        }
         tvDefaultPitchValue.text = String.format(Locale.US, "%.1fx", pitch)
-        seekDefaultPitch.progress = (pitch * 100).toInt().coerceIn(0, 200)
+        bindingSlider = true
+        try {
+            seekDefaultPitch.progress = (pitch * 100).toInt().coerceIn(0, 200)
+        } finally {
+            bindingSlider = false
+        }
         tvDefaultVolumeValue.text = "${(volume * 100).toInt()}%"
-        seekDefaultVolume.progress = (volume * 100).toInt().coerceIn(0, 100)
+        bindingSlider = true
+        try {
+            seekDefaultVolume.progress =
+                (volume * 100).toInt().coerceIn(0, 100)
+        } finally {
+            bindingSlider = false
+        }
 
         seekDefaultSpeechRate.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
@@ -56,12 +79,18 @@ internal class GeneralSettingsController(
                 progress: Int,
                 fromUser: Boolean
             ) {
+                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
+                if (bindingSlider) return
                 val value = progress.speedFactor()
                 tvDefaultSpeechRateValue.text =
                     String.format(Locale.US, "%.1fx", value)
                 seekBar.setSeekStateDescription(
                     tvDefaultSpeechRateValue.text
                 )
+                // **بند 6.3:** الحفظ عند كل تغيير (لا عند رفع الإصبع فقط) —
+                // تعديل TalkBack لا يصل إلى onStopTrackingTouch أبداً.
+                runCatching { settings.setDefaultSpeechRate(value) }
+                onStatusChanged()
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -83,12 +112,18 @@ internal class GeneralSettingsController(
                 progress: Int,
                 fromUser: Boolean
             ) {
+                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
+                if (bindingSlider) return
                 val value = progress.speedFactor()
                 tvDefaultPitchValue.text =
                     String.format(Locale.US, "%.1fx", value)
                 seekBar.setSeekStateDescription(
                     tvDefaultPitchValue.text
                 )
+                // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
+                // نهايته إلى onStopTrackingTouch أبداً.
+                runCatching { settings.setDefaultPitch(value) }
+                onStatusChanged()
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -110,10 +145,16 @@ internal class GeneralSettingsController(
                 progress: Int,
                 fromUser: Boolean
             ) {
+                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
+                if (bindingSlider) return
                 tvDefaultVolumeValue.text = "$progress%"
                 seekBar.setSeekStateDescription(
                     tvDefaultVolumeValue.text
                 )
+                // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
+                // نهايته إلى onStopTrackingTouch أبداً.
+                runCatching { settings.setDefaultVolume(progress / 100f) }
+                onStatusChanged()
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}

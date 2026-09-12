@@ -14,12 +14,44 @@ object NumberSpeech {
      * يدعم حتى 99,999,999 (8 خانات) لخدمة التجميع الخماسي..الثُماني.
      * معامل isFeminine غير مؤثر في الإنجليزية لكنه يبقى للتوافق مع
      * الاستدعاءات الموحّدة (لا جنس في الإنجليزية).
+     *
+     * **السالبة:** تُنطق «minus» فتُبعَد عن الاستدعاء التكراري اللانهائي
+     * الذي كانت تغوص فيه (لا يطابق أيّ نطاق في `when` فيقع في فرع الملايين
+     * ويتكرر بلا سقف مهيلاً المكدس). `Int.MIN_VALUE` تُعالَج عبر مسار
+     * Long آمن (نفيها يتجاوز Int فيبقى سالباً).
      */
     fun toEnglishWords(number: Int, isFeminine: Boolean = false): String {
+        if (number == Int.MIN_VALUE) {
+            return "minus ${
+                englishFromDigits(Int.MIN_VALUE.toLongSize().toString())
+            }"
+        }
+        if (number < 0) return "minus ${toEnglishWords(-number)}"
+        return toEnglishWordsPositive(number)
+    }
+
+    /** نسخة Long عامة (لخدمة الأعداد الـ 19 خانة في NumberStep): تقولب
+     *  أي قيمة حتى Long.MAX_VALUE بنمط تجميع ثلاثي (thousand/million/…)
+     *  مع معالجة الإشارة وLong.MIN_VALUE. */
+    fun toEnglishWords(number: Long, isFeminine: Boolean = false): String {
+        if (number == Long.MIN_VALUE) {
+            return "minus ${
+                englishFromDigits((Long.MAX_VALUE + 1L).toString())
+            }"
+        }
+        if (number < 0) return "minus ${toEnglishWords(-number)}"
+        if (number <= Int.MAX_VALUE) return toEnglishWords(number.toInt())
+        return englishFromDigits(number.toString())
+    }
+
+    /** قيمة Int.MIN_VALUE بلا إشارة مخزنة باعتبارها غير سالبة (2147483648). */
+    private fun Int.toLongSize(): Long = (this.toLong() and 0xFFFFFFFFL)
+
+    private fun toEnglishWordsPositive(number: Int): String {
         return when (number) {
             in 0..12 -> listOf(
-                "zero", "one", "two", "three", "four", "five", "six", "seven",
-                "eight", "nine", "ten", "eleven", "twelve"
+                "zero", "one", "two", "three", "four", "five", "six",
+                "seven", "eight", "nine", "ten", "eleven", "twelve"
             )[number]
             in 13..19 -> listOf(
                 "thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
@@ -68,6 +100,38 @@ object NumberSpeech {
         }
     }
 
+    /** تحويل سلسلة أرقام (بلا إشارة) إلى كلمات إنجليزية بطريقة تجميع
+     *  ثلاثي: تُقسَّم إلى خانات ثلاثة من اليمين وتُوسم كل خانة بـ scale
+     *  (thousand/million/billion/…). يُستخدم لأبعاد أكبر من Int، ولا يقبل
+     *  إلا أرقاماً طولها ضمن مقدرة [toLong] من المتصل. */
+    private fun englishFromDigits(digits: String): String {
+        val scales = arrayOf(
+            "", "thousand", "million", "billion", "trillion",
+            "quadrillion", "quintillion", "sextillion", "septillion",
+            "octillion", "nonillion"
+        )
+        val trimmed = digits.trimStart('0').ifEmpty { "0" }
+        val padded = "000".repeat((3 - trimmed.length % 3) % 3) + trimmed
+        val chunks = padded.chunked(3)
+        val parts = chunks.mapIndexedNotNull { idx, chunk ->
+            val value = chunk.toInt()
+            if (value == 0) return@mapIndexedNotNull null
+            val words = when {
+                value < 100 -> toEnglishWordsPositive(value)
+                else -> {
+                    val hundred = value / 100
+                    val remainder = value % 100
+                    val head = "${toEnglishWordsPositive(hundred)} hundred"
+                    if (remainder == 0) head
+                    else "$head ${toEnglishWordsPositive(remainder)}"
+                }
+            }
+            val scale = scales[chunks.size - 1 - idx]
+            if (scale.isEmpty()) words else "$words $scale"
+        }
+        return parts.joinToString(" ").ifEmpty { "zero" }
+    }
+
     /**
      * تحويل رقم إلى كلمات عربية. يدعم حتى 99,999,999 (8 خانات) لخدمة
      * التجميع الخماسي..الثُمَاني (كان الوثيقة تقول 9999).
@@ -78,6 +142,25 @@ object NumberSpeech {
      *   وتزيل التناقض الذي كان ينتج «خمس» عند نطق الرقم 5 منفرداً.
      */
     fun toArabicWords(number: Int, isFeminine: Boolean = true): String {
+        // **السالبة:** «سالب » + القيمة المطلقة — كانت القيمة السالبة تفلت
+        // من كل نطاقات `when` وتسقط في فرع الملايين فتتكرر بلا سقف حتى
+        // StackOverflow (وتُفهرَس مصفوفة الآحاد بفهرس سالب في نسخ سابقة).
+        // `Int.MIN_VALUE` مستثناة لأن نفيها يفيض فيبقى سالباً — تُركَّب
+        // يدوياً: ملياران + 147,483,648.
+        if (number == Int.MIN_VALUE) {
+            val leftover = 147_483_648
+            return "سالب ملياران و${toArabicWordsPositive(
+                leftover, isFeminine
+            )}"
+        }
+        if (number < 0) return "سالب ${toArabicWords(-number, isFeminine)}"
+        return toArabicWordsPositive(number, isFeminine)
+    }
+
+    private fun toArabicWordsPositive(
+        number: Int,
+        isFeminine: Boolean
+    ): String {
         val onesF = arrayOf(
             "", "واحدة", "اثنتان", "ثلاث", "أربع", "خمس", "ست", "سبع",
             "ثماني", "تسع"
@@ -200,7 +283,13 @@ object NumberSpeech {
                     else -> {
                         val w = toArabicWords(m, isFeminine = false)
                         when {
-                            m % 100 == 0 -> "$w مليون"
+                            // **حذف نون المثنى عند الإضافة:** «مائتان» فوق
+                            // تمييزٍ مثل المليون تحذف نونها فتصبح «مائتا» —
+                            // «مائتا مليون» لا «مائتان مليون» (وقاعدتها
+                            // العامة تتسع لـ«مئتان»→«مئتا»).
+                            m % 100 == 0 -> "${
+                                terminalHundreds(w)
+                            } مليون"
                             m % 100 in 1..2 -> "$w مليون"
                             m % 100 in 3..10 -> "$w ملايين"
                             else -> "$w مليوناً"
@@ -244,6 +333,14 @@ object NumberSpeech {
         else -> n.toString()
     }
 
+    /** حذف نون المثنى من «مائتان/مئتان» عند إضافتها فوق الاسم (التمييز):
+     *  تُصبح «مائتا/مئتا» لتصحّ «مائتا مليون» و«مئتا ألف». */
+    private fun terminalHundreds(word: String): String = when (word) {
+        "مائتان" -> "مائتا"
+        "مئتان" -> "مئتا"
+        else -> word
+    }
+
     /**
      * تنسيق رقم في مجموعات أرقام حسب طريقة النطق (1..8).
      * 1=مفردة (رقم رقم)، 2=زوجي (رقمين كرقم واحد)، 3..8=ثلاثي..ثماني.
@@ -251,7 +348,9 @@ object NumberSpeech {
     fun formatByMode(mode: Int, number: Int, isEnglish: Boolean): String {
         val safeMode = mode.coerceIn(1, 8)
         var sign = ""
-        var n = number
+        // نفيٌّ عبر Long: `-Int.MIN_VALUE` كان يفيض فيبقى سالباً فيقلب
+        // `'-'.digitToInt()` بـ IllegalArgumentException وتنقضّ السلسلة.
+        var n = number.toLong()
         if (n < 0) {
             sign = if (isEnglish) "negative " else "سالب "
             n = -n

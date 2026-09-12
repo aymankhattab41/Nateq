@@ -208,17 +208,31 @@ class AnnouncementSchedulerService : Service() {
             )
         }
 
-        private fun startSafely(context: Context, action: String) {
+private fun startSafely(context: Context, action: String) {
+        val intent = Intent(
+            context, AnnouncementSchedulerService::class.java
+        ).setAction(action)
+        try {
+            ContextCompat.startForegroundService(context, intent)
+        } catch (t: Throwable) {
+            // **بند 4.2 (تراجع لعابر):** قيود أندرويد 12+ تمنع FGS من الخلفية
+            // (ForegroundServiceStartNotAllowedException). الخدمة العادية غير
+            // مشروطةً بـ startForeground خلال مهلة النظام، فبدء تشغيلها عابراً
+            // لا يطلق RemoteServiceException؛ وإن مُنعت الترقية تقف ذاتياً
+            // ويكون النطق قد جرى في العملية عبر المتحدث بتركيز صوتي —
+            // الشبكة الآمنة لفظية لا هيكلية.
+            Log.w(TAG,
+                "startForegroundService denied — falling back" +
+                " to background start")
             try {
-                val intent = Intent(
-                    context, AnnouncementSchedulerService::class.java
-                )
-                    .setAction(action)
-                ContextCompat.startForegroundService(context, intent)
-            } catch (t: Throwable) {
-                Log.w(TAG, "startForegroundService failed", t)
+                context.startService(intent)
+            } catch (t2: Throwable) {
+                Log.w(TAG,
+                    "background startService failed too" +
+                    " (context transient)", t2)
             }
         }
+    }
 
         private fun wasUserStopped(context: Context): Boolean =
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -571,7 +585,24 @@ class AnnouncementSchedulerService : Service() {
                 startForeground(NOTIFICATION_ID, notification)
             }
         } catch (t: Throwable) {
-            Log.e(TAG, "startForeground failed", t)
+            // **بند 4.2:** إن مُنعت ترقية الخدمة إلى أمامية (قيود الخلفية
+            // أندرويد 12+، أو نوعٍ مرفوض خاص بطرازات OEM)، كان الابتلاعُ
+            // السابق يُبقي الخدمة بدون startForeground فيُطلق النظام
+            // RemoteServiceException بعد ≈5 ثوانٍ فيقتل العملية كاملةً
+            // (تحطّم «foreground did not start»). النطق نفسه لا يحتاج
+            // مانيفست: مناطق الإعلان (مستقبِل المنبه/الوقت/البطارية) تنطق
+            // مباشرةً عبر AnnouncementSpeaker بتركيز صوتي — فالإيقاف الذاتي
+            // الفوري يلغي رسوم الوقت ويعمل الإعلان عابراً في العملية دون
+            // خدمة أمامية قسرية.
+            Log.e(
+                TAG,
+                "startForeground failed — stop FGS to avoid ASO kill",
+                t
+            )
+            runCatching {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
         }
     }
 }

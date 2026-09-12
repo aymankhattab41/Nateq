@@ -21,11 +21,15 @@ import com.aymankhattab.nateq.util.LocaleUtils
 import dagger.hilt.android.AndroidEntryPoint
 
 import java.util.Locale
+import java.util.concurrent.Executors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 
 /**
@@ -78,6 +82,16 @@ class NateqTtsService : TextToSpeechService() {
 
     private val serviceScope = CoroutineScope(
         SupervisorJob() + AppDispatchers.io
+    )
+
+    /** منفّذ تخليق أحادي الخيط + نطاق تابع: كل طلب
+     *  [onSynthesizeText] يُشغَّل عليه بكوروتينٍ ينتظره [join]
+     *  المتزامن في الدالة — فتتسلسل الطلبات ولا يستبقها بعضها كما
+     *  كان يحدث (إلغاء الرحلة السابقة قبل بدئها كان يقطع نطق الجمل
+     *  الطويلة وتصفح TalkBack للقوائم). */
+    private val synthesisExecutor = Executors.newSingleThreadExecutor()
+    private val synthesisScope = CoroutineScope(
+        SupervisorJob() + synthesisExecutor.asCoroutineDispatcher()
     )
 
     private lateinit var settings: SettingsRepository
@@ -165,11 +179,13 @@ class NateqTtsService : TextToSpeechService() {
         }
     }
 
-    override fun onDestroy() {
+override fun onDestroy() {
         // إلغاء كل العمليات اللاتزامنية المعلّقة للخدمة حتى لا تتسرب مع عمر
         // عملية المحرك، ثم إغلاق النطق الجاري إن وُجد.
         currentJob?.cancel()
         serviceScope.cancel()
+        synthesisScope.cancel()
+        synthesisExecutor.shutdown()
         // إغلاق موارد المزوّدين (TextToSpeech المربوط بالمحرك الخارجي + مراقب
         // الإنترنت + منفّذ الخلفية) كي لا تبقى روابط Binder IPC معلقة بعد
         // تدمير الخدمة — حارس isInitialized لمسارات التدمير
@@ -297,9 +313,10 @@ class NateqTtsService : TextToSpeechService() {
     }
 
     override fun onStop() {
-        // إيقاف صريح (لكن هذا الخيط فرعيٌّ عبر كل الخدمات
-        // الأساسية): نرفع العلم ثم نلغي التخليق الجاري —
-        // الطلبات اللاحقة تُلغى كاستباق لا كإيقاف.
+        // إيقاف صريح (يأتي على خيطٍ آخر غير خيط التخليق): نرفع العلم ثم
+        // نلغي التخليق الجاري. إلغاءٌ كهذا يُلتقط داخل الكوروتين فيُغلق
+        // الـ callback بأمان (بند 2.3) فلا يبقى PlaybackSynthesisCallback
+        // وAudioTrack معلقين يطبقون صمت TalkBack حتى إعادة تشغيل الخدمة.
         stopping = true
         currentJob?.cancel()
     }
@@ -328,29 +345,19 @@ class NateqTtsService : TextToSpeechService() {
             }
         ).toLanguageTag()
 
-        // التخليق يُنفَّذ على Coroutine داخل serviceScope (IO)
-        // وهو غير حاجز بالكامل: onSynthesizeText ترجع فوراً
-        // ويستلم النظام الصوت لاحقاً عبر callbacks من خيط
-        // المزوّد — السلوك القياسي لمحركات TTS غير
-        // المتزامنة (MultiTTS/espeak). لو علِق المحرك
-        // الطرفي تُنهي مهله الداخلية المتكيّفة
-        // (1.5–8 ث داخل SystemVoiceProvider) الطلبَ بدل
-        // تعليق الخيط بلا سقف.
-        // **معالجة السباق:** عند وصول طلبٍ جديد تُلغى
-        // الرحلة السابقة النشطة قبل إطلاق الجديدة حتى لا
-        // تتكدس الكوروتينات ولا تتزامن طلبات الصوت عبر
-        // البث الصوتي (يستبِق الأحدثُ الأقدم — سلوك قارئ
-        // الشاشة عند التمرير السريع). إلغاءٌ من onStop()
-        // يُبطل currentJob فتتوقف استجابة الصوت فوراً؛
-        // وإلغاءٌ بالاستباق يُنهي callback الطلب القديم
-        // بـ error() فينتقل طابور النظام للطلب الجديد
-        // (دونها يعلق الـ queue فلا يُنطق شيء).
-        // (يبدأ callback.start() لاحقاً بمعدل العينات
-        // الفعلي من المزوّد، لتعامل ملفات 24k/44.1k
-        // بسرعةٍ ونبرةٍ صحيحة.)
+        // **الامتثال لمعيار AOSP TextToSpeechService (بند 2.1):**
+        // الوثائق الرسمية تفرض أن تنتظر onSynthesizeText اكتمال التوليف قبل
+        // العودة (Blocking على خيط التخليق). كان الإطلاق اللاتزامني يعود
+        // فوراً فيسحب النظامُ الطلبَ التالي من الطابور (عناصر TalkBack
+        // المتتابعة) فتُلغى الرحلة السابقة قبل أن تبدأ — فيتقطع نطق الجمل
+        // الطويلة ويسقط نطق العناصر. الآن يُشغَّل التخليق على منفّذٍ أحادي
+        // الخيط [synthesisScope] وتنتظره الدالة بـ join متزامن: يبقى النظام
+        // محجوزاً حتى اكتمال الطلب فيتسلسل الطابور بلا استباقٍ بمُبكّر،
+        // والإيقاف (onStop) وحده يُلغي الرحلة الجارية بأمان. لو علِق المحرك
+        // الطرفي تُنهي مهله الداخلية المتكيّفة (1.5–8 ث داخل
+        // SystemVoiceProvider) الطلبَ بدل تعليق الخيط بلا سقف.
         stopping = false
-        currentJob?.cancel()
-        currentJob = serviceScope.launch {
+        val job = synthesisScope.launch {
             try {
                 // إعادة تحميل الإعدادات من القرص لأن `:tts`
                 // process منفصل عن عملية الإعدادات
@@ -365,7 +372,10 @@ class NateqTtsService : TextToSpeechService() {
                 //    السفلية جاهزة فعلاً للغات غير محدودة)؛
                 // 3) غياب صوتٍ للغة يتراجع تلقائياً للصوت الافتراضي للجهاز بدل
                 //    قطع النطق كلياً عبر callback.error().
-                val rawText = request.charSequenceText.toString()
+                // **بند 2.2:** charSequenceText قد يكون null (طلبات قديمة/
+                // فارغة) فكان toString() المباشر يرمي NPE ويسقط التخليق —
+                // الاستدعاء الآمن يرد النص الفارغ بدل الانهيار.
+                val rawText = request.charSequenceText?.toString().orEmpty()
                 // **بند التقسيم:** المعالجة الدلالية تُطبَّق قبل تقسيم اللغة
                 // حتى لا يفصل المقسمُ رمزَ العملة («USD»/«EUR») عن مبلغه
                 // فلينقطع «1500 USD» إلى مقطعٍ عربي وآخر إنجليزي؛ ناتجُها
@@ -376,10 +386,14 @@ class NateqTtsService : TextToSpeechService() {
                 val segments = segmenter.segment(semanticText, languageTag)
 
                 if (segments.size == 1) {
-                    // نص بلغةٍ واحدة: نفس التدفق التفصيلي السابق حرفياً بلا أي
-                    // تغيير سلوكي — صفر تكلفة للمسار الأكثر شيوعاً.
+                    // **بند 2.5:** حتى النص المفرد تُستعمل لغةُ المقطع
+                    // المكتشفة للتوجيه لا لغةُ الطلب الأصلية — كلمةٌ إنجليزية
+                    // وحيدة («Settings»، «Cancel») داخل واجهة عربية لم تعد
+                    // تُنطق بصوت/محرك العربية أو تتعثّر: تُوجَّه لمحركها
+                    // المناسب فوراً.
                     synthesizeSingle(
-                        semanticText, languageTag, callback, request
+                        semanticText, segments[0].languageTag,
+                        callback, request
                     )
                 } else {
                     // نص مختلط الكتابات: نطق كل مقطع بلغته/محركه ثم مزج الصوت
@@ -388,25 +402,33 @@ class NateqTtsService : TextToSpeechService() {
                 }
             } catch (e: CancellationException) {
                 // إبطال صريح: الإيقاف (onStop) معروف للنظام فلا نُطلق خطأً
-                // زائفاً، أما الاستباق بطلبٍ جديد فنُنهي الـ callback حتى لا
-                // يعلق طابور النظام بطلبٍ ميت فيُحرر الصوت للطلب الأحدث.
+                // زائفاً، أما الاستباقُ فلم يعد وارداً مع النمط الحاجز (يُبقي
+                // النظامُ خيطَ التخليق حتى العودة) ويبقى التحوط للسلامة.
                 if (stopping) {
                     Log.d(TAG, "onSynthesizeText cancelled (stop)")
                 } else {
                     Log.d(TAG, "onSynthesizeText cancelled (preempt)")
-                    try {
-                        callback.error()
-                    } catch (_: Exception) {
-                        // الخدمة قد تكون في طريقها للإيقاف — لا شيء نفعله.
-                    }
                 }
+                // **بند 2.3:** إيقاف/استباق يُغلق الـ callback دائماً (تحوّط
+                // من رمي النظام InterruptedException/عدم تحلّه عند الإيقاف)
+                // حتى لا يعلق طابور النظام بطلبٍ ميت أو يبقى AudioTrack
+                // مفتوحاً — الحراسة ترضي الحالتين معاً.
+                runCatching { callback.error() }
             } catch (e: Exception) {
-                callback.error()
+                runCatching { callback.error() }
             }
         }
-        // لا ننتظر انتهاء التخليق (لا runBlocking): الإرجاع
-        // فوري والـ callbacks تُستلم لاحقاً من خيط المزوّد
-        // — النطق غير حاجز بالكامل كما هو موثّق أعلاه.
+        currentJob = job
+        try {
+            // انتظار متزامن على خيط التخليق حتى اكتمال التوليف (معيار AOSP)؛
+            // التقاط Throwable يُبقي الخدمة حية حتى لو قذف التخليق خطأً
+            // غير متوقع — لا انهيار لخيط النظام إطلاقاً.
+            runBlocking { job.join() }
+        } catch (t: Throwable) {
+            Log.w(TAG, "onSynthesizeText join interrupted", t)
+        } finally {
+            currentJob = null
+        }
     }
 
     /** حل الصوت للغةٍ معيّنة مع التراجع التلقائي (بند 17.3): صوت الكتالوج
@@ -673,34 +695,40 @@ class NateqTtsService : TextToSpeechService() {
                         )
                         if (required <= 0) return@synthesize
                         val mono = pcmBufferPool.acquire(required)
-                        val written = PcmResampler.convertInto(
-                            chunk, 0, validLength, rate,
-                            nativeChannels, MIXED_UNIFIED_RATE,
-                            mono, 0
-                        )
-                        if (written <= 0) {
+                        try {
+                            val written = PcmResampler.convertInto(
+                                chunk, 0, validLength, rate,
+                                nativeChannels, MIXED_UNIFIED_RATE,
+                                mono, 0
+                            )
+                            if (written <= 0) return@synthesize
+                            if (!started) {
+                                callback.start(
+                                    /* sampleRateInHz = */ MIXED_UNIFIED_RATE,
+                                    /* audioFormat = */ PCM_16BIT,
+                                    /* channelCount = */ 1
+                                )
+                                started = true
+                            }
+                            var offset = 0
+                            while (offset < written) {
+                                val bytesToWrite = minOf(
+                                    maxBytes, written - offset
+                                )
+                                callback.audioAvailable(
+                                    mono, offset, bytesToWrite
+                                )
+                                offset += bytesToWrite
+                            }
+                        } finally {
+                            // **بند 2.4:** يُعاد المخزن للمسبح حتماً — كان
+                            // الفشل المبكر (write<=0/استثناء) يمنع release
+                            // فيتسرب مخزنٌ مع كل شريحةٍ فاشلة حتى يجف المسبح
+                            // فيتباطأ التخليق ويقف؛ finally يضمن الإرجاع في
+                            // كل المسارات الممكنة (المتلقي نسخ الشريحة عبر
+                            // audioAvailable ولم يُمسك بمرجعها).
                             pcmBufferPool.release(mono)
-                            return@synthesize
                         }
-                        if (!started) {
-                            callback.start(
-                                /* sampleRateInHz = */ MIXED_UNIFIED_RATE,
-                                /* audioFormat = */ PCM_16BIT,
-                                /* channelCount = */ 1
-                            )
-                            started = true
-                        }
-                        var offset = 0
-                        while (offset < written) {
-                            val bytesToWrite = minOf(
-                                maxBytes, written - offset
-                            )
-                            callback.audioAvailable(mono, offset, bytesToWrite)
-                            offset += bytesToWrite
-                        }
-                        // المتلقي نسخ الشريحة (audioAvailable) ولم يُمسك
-                        // بمرجعها — يُعاد المخزن للمسبح للشريحة التالية.
-                        pcmBufferPool.release(mono)
                     },
                     finalEngine,
                     finalLocale,
@@ -764,8 +792,9 @@ class NateqTtsService : TextToSpeechService() {
      * (أو بلا تحويل فعلي) تُرجع null ولا يُتلاعب بنصها.
      */
     private fun resolveConvertTarget(requestLang: String?): ConvertTarget? {
+        val normLang = normalizeLanguageCode(requestLang)
         val prefs = settings.getEnginePreferenceForLanguage(
-            requestLang ?: "und"
+            normLang ?: "und"
         )
 
         val rate = prefs.rate
@@ -783,9 +812,20 @@ class NateqTtsService : TextToSpeechService() {
             && engine == null
         ) return null
 
+        // **بند 2.7:** كانت الوجهة (locale) مضبوطة على null دائماً فتُترك
+        // لغةُ صوت التحويل لمحركِه الافتراضية لا للغة النص الطالبة، وتفشل
+        // حراسة matchesRequest في التعرف على التطابق (ترجع true دائماً).
+        // يبني الآن Localeً فعلياً من لغة الطلب المطبَّعة (ISO-2) عبر المسار
+        // الطبيعي: يُركَّز صوتُ التحويل على لغة النص نفسها وتعمل الحراسة.
+        val locale = if (normLang.isNullOrEmpty()) {
+            null
+        } else {
+            Locale.forLanguageTag(normLang)
+        }
+
         return ConvertTarget(
             convertEngine = engine,
-            convertLocale = null,
+            convertLocale = locale,
             convertRate = rate,
             convertPitch = pitch,
             convertVolume = volume,
@@ -796,9 +836,10 @@ class NateqTtsService : TextToSpeechService() {
     /** بيانات هدف التحويل التلقائي المرفوعة إلى [SystemVoiceProvider]. */
     data class ConvertTarget(
         // المحرك/الصوت null عند عدم تفعيل التبديل (يتزامن مع المحدد يدوياً).
-        // الوجهة (locale) لم تعد تُخزَّن صراحةً: المحرك + اسم الصوت داخل
-        // [getEnginePreferenceForLanguage] يحددان لغة النطق الفعلية وتُقرأ
-        // الخريطة بمفتاح لغة النص الطالب نفسها.
+        // الوجهة (locale) هي لغة النص الطالبة نفسها (بند 2.7) — تُمرَّر
+        // للمزوّد ليُركّز صوت التحويل عليها، وتُستعمل في حراسة matchesRequest
+        // بشرط أن تطابق لغة النص الفعلية (منع إعادة توجيه النص الإنجليزي
+        // إلى محرك/لغة عربية وبالعكس).
         val convertEngine: String?,
         val convertLocale: Locale?,
         val convertRate: Float,

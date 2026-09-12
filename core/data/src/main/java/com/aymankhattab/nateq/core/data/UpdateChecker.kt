@@ -213,10 +213,19 @@ object UpdateChecker {
                     }
                     // بصمة الـ APK من `digest` الخاص بأصل GitHub: تُسجَّل
                     // ليُتحققَ منها بعد التنزيل وقبل فتح شاشة التثبيت.
-                    val expectedSha = apkAsset.optMember("digest")
+                    // **بند 7.3:** GitHub لا يزوّد `assets[].digest` للـ APK
+                    // (ميزة محجوزة لحاويات Docker) فكانت القيمة null دائماً
+                    // ويتجاوز الفحص؛ نُكمل من سطر «SHA-256: …» في ملاحظات
+                    // الإصدار الذي يدرجه سكربت النشر، أو بصمة من ملف
+                    // SHA256SUMS مرفقٍ بالإصدار إن وُجد في نص الملاحظات.
+                    val digestFromAsset = apkAsset.optMember("digest")
                         ?.optString()
                         ?.takeIf { it.startsWith("sha256:") }
                         ?.removePrefix("sha256:")
+                    val expectedSha = digestFromAsset
+                        ?: extractSha256FromReleaseNote(
+                            root.optString("body")
+                        )
                     CheckResult.UpdateAvailable(
                         tag, urlEl.optString(), expectedSha
                     )
@@ -310,6 +319,22 @@ object UpdateChecker {
             return false
         }
         return constantTimeEquals(actual, expected)
+    }
+
+    /** استخراج بصمة SHA-256 سداسية (64 حرفاً) من نص ملاحظات الإصدار —
+     *  GitHub لا يوفر `assets[].digest` للـ APK (خاص بحاويات Docker)؛
+     *  سكربت النشر يُدرج إما سطر «SHA-256: …» أو محتوى ملف SHA256SUMS
+     *  (سطر يبدأ بالبصمة ثم اسم الملف): يُقبل النمطان معاً. تُعاد null
+     *  عند غياب بصمة صالحة. منطق نقي. */
+    internal fun extractSha256FromReleaseNote(text: String?): String? {
+        if (text.isNullOrBlank()) return null
+        // بادئة «SHA-256:» اختيارية؛ البصمة 64 خانة سداسية تامة، والنظرة
+        // اللاحقة تمنع التقاط جزءٍ من سلسلة سداسية أطول.
+        val match = Regex(
+            "(?im)^[ \\t]*(?:SHA-?256[ \\t]*[:=][ \\t]*)?" +
+                "([0-9a-f]{64})(?![0-9a-f])"
+        ).find(text)
+        return match?.groupValues?.get(1)?.lowercase()
     }
 
     /** مقارنة سداسية ثابتة الزمن (لا تقطع عند أول اختلاف). */

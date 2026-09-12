@@ -14,7 +14,10 @@
 
 # لا تُعدد الأصناف المطلوب لمفتاحها أبداً؛ فهذا يزيد صعوبة الفهم
 -allowaccessmodification
--mergeinterfacesaggressively
+# ملحوظة: أُزيلت «-mergeinterfacesaggressively» لأنها بند متقادم في R8 يدمج
+# الواجهات ذات التنفيذ الواحد (مثل AnnouncementAppContext في NateqApplication)
+# فيكسّر التحويل الصريح (as) المستخدم في المستقبلات بـ ClassCastException
+# في نسخة release — بقاعدة النشر القائلة: لا قواعد R8 جائرة على حقن Hilt.
 -optimizationpasses 5
 
 # إعادة العناصر إلى حزمة مسطحة فلتردد أسماء أقصر وأقل دلالة (تحسين إعاقه الفهم)

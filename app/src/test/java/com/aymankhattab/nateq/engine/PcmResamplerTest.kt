@@ -350,6 +350,29 @@ class PcmResamplerTest {
         )
     }
 
+    @Test
+    fun convertInto_directCopy_alignsToEvenFrameCount() {
+        // بند 2.6 المحاذاة الزوجية: المسار المباشر (معدل واحد + مونو) بنافذة
+        // طولها فردي (فريم ناقص) كان ينسخ البايت الفردي زائماً فيخالف تقدير
+        // convertedByteCount ويعبث بالفريمات — الآن يُقصّ إلى الفريمات الكاملة
+        // ويتطابق المكتوب مع المعَدَّد.
+        val pcm = encode(1000, 2000, 3000, 0xFF)
+        val offset = 2
+        val oddLength = 3 // يغطي فريماً كاملاً (2000) ونصفاً من 3000
+        val required = PcmResampler.convertedByteCount(
+            pcm, offset, oddLength, 22050, 1, 22050
+        )
+        val out = ByteArray(required)
+        val written = PcmResampler.convertInto(
+            pcm, offset, oddLength, 22050, 1, 22050, out, 0
+        )
+        assertEquals(required, written)
+        assertEquals(2, written) // بايتان فقط = فريم واحد كامل
+        assertArrayEquals(
+            encode(2000), out.copyOf(written)
+        )
+    }
+
     private fun assertEqualsPcm(expected: ByteArray, actual: ByteArray) {
         assertArrayEquals("مطابقة PCM", expected, actual)
     }

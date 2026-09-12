@@ -50,19 +50,27 @@ internal object NumberWordsConverter {
                 .stripTrailingZeros()
                 .toPlainString()
             val dot = plain.indexOf('.')
+            val base = if (negative) "ناقص " else ""
             if (dot < 0) {
-                val integerOnly = plain.toLong()
-                return if (negative) {
-                    "ناقص ${numberToWords(integerOnly)}"
-                } else {
-                    numberToWords(integerOnly)
-                }
+                // **بند 3.6:** كان plain.toLong() يرمي NumberFormatException
+                // على طويلٍ أعرض من Long (20+ خانة) فينهار النطق — التحويل
+                // الاستشعاري ثم النطق الرقمي-رقمي يمنعان الانهيار والتشويه.
+                // **إصلاح بانحدار:** — وسيط Long سليم يواصل التكرار إلى
+                // الكلمات («100» → مائة لا «100» خاماً)؛ والفوق-طويل فقط
+                // يُنطق رقماً-رقماً.
+                val integerText = plain.toLongOrNull()
+                    ?.let { numberToWords(it) }
+                    ?: spokenDigits(plain)
+                return "$base$integerText"
             }
-            val integerPart = plain.substring(0, dot).toLong()
+            val integerPartStr = plain.substring(0, dot)
+            val integerPart = integerPartStr.toLongOrNull()
+            // **بند 3.6:** جزءٌ صحيحٌ أعرض من Long — ننطقه رقماً رقماً بدل
+            // الانفجار بـ NumberFormatException والتشويه عبر Double.
+            val intWord = integerPart?.let { numberToWords(it) }
+                ?: spokenDigits(integerPartStr)
             // خانات الكسر كما وردت (الأصفار البادئة والوسطية محفوظة).
             val decimalDigits = plain.substring(dot + 1)
-            val base = if (negative) "ناقص " else ""
-            val intWord = numberToWords(integerPart)
             // نطق طبيعي للكسور الشائعة: «ونصف/وربع/وثلاثة أرباع» بدل «فاصلة…».
             return when (decimalDigits) {
                 "5" -> if (integerPart == 0L) "${base}نصف"
@@ -214,4 +222,14 @@ internal object NumberWordsConverter {
         val table = if (isFeminine) forFeminine else forMasculine
         return if (digit in 3..10) table[digit] else ""
     }
+
+    /**
+     * **بند 3.6:** نطق سلسلة رقمية رقماً رقماً بأمان — الأرقام الوطنية/
+     * الحسابات/التسلسلات التي تجاوزت مدى Long (20+ خانة) لا تُحوَّل إطلاقاً
+     * (Long خارج المدى ينفجر، وDouble يتجاوز دقته 2^53 فيشوّه القيمة):
+     * تُقرأ كل خانة وحدها فلا يُقطع النطق ولا يُسمى الخطأ.
+     */
+    internal fun spokenDigits(digits: String): String = digits
+        .map { character -> numberToWords(character.toString().toLong()) }
+        .joinToString(" ")
 }

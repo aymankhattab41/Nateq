@@ -11,6 +11,8 @@ import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.LanguageCode
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -32,6 +34,10 @@ class BatteryAnnouncementReceiver(
         // CHARGING إلى FULL والنسبة ثابتة فكان الفلتر النسبيّ يمنع الفحص).
         @Volatile
         private var lastFilterKey: String? = null
+
+        // **بند 5.5:** سقف احتجاز نافذة goAsync حتى تمام النطق — لا أطول
+        // من نافذة البث الآمنة (~10 ثوانٍ) فلا ANR إن طال التوليف.
+        private const val BROADCAST_HOLD_MS = 10_000L
 
         /** هل هذا البث يمثل حالةً لم تُعالج بعد؟ يحسب النسبة مثل معالجة
          *  handler نفسها دون أي I/O؛ وبلا بيانات صالحة يُمرَّر البث فتتجاهله
@@ -84,25 +90,62 @@ class BatteryAnnouncementReceiver(
         val appScope =
             (context.applicationContext as AnnouncementAppContext).appScope
         appScope.launch {
+            // حارس إنهاء وحيد لدورة البث — ذرّيٌ ليتحمل وصولَ الإنهاء من
+            // خيطي البث واكتمال النطق معاً (finishٌ مكررٌ تحذير بلا لزوم).
+            val finishedBroadcast = AtomicBoolean(false)
+            fun finishOnce() {
+                if (finishedBroadcast.compareAndSet(false, true)) {
+                    pendingResult.finish()
+                }
+            }
+            var completionListener: (() -> Unit)? = null
             try {
-                handle(context, intent, action)
+                // **بند 5.5:** finish() الفوري قبل تمام التوليف كان يترك
+                // أندرويد 14+ يجمد العملية عبر Process Cgroup Freezer
+                // فيُبتر صوت البطارية في منتصف الجملة. إن نطق معالجٌ فعلاً
+                // نُبقي النافذة حيّةً حتى يُتمَّ النطق (بسقف ~10 ثوانٍ)،
+                // وإلا نُنهي فوراً.
+                if (handle(context, intent, action)) {
+                    val speaker = AnnouncementSpeaker.getInstance(context)
+                    completionListener = { finishOnce() }
+                    speaker.addCompletionListener(completionListener!!)
+                    delay(BROADCAST_HOLD_MS)
+                    finishOnce()
+                } else {
+                    finishOnce()
+                }
             } catch (t: Throwable) {
+                if (t is kotlinx.coroutines.CancellationException) {
+                    throw t
+                }
                 android.util.Log.e("NATEQ_TTS", "battery announce failed", t)
             } finally {
-                pendingResult.finish()
+                completionListener?.let { listener ->
+                    runCatching {
+                        AnnouncementSpeaker.getInstance(context)
+                            .removeCompletionListener(listener)
+                    }
+                }
+                finishOnce()
             }
         }
     }
 
-    private fun handle(context: Context, intent: Intent, action: String?) {
-        // يُسجَّل هذا المستقبل يدوياً من AnnouncementSchedulerService (لا عبر
-        // Hilt)، فيُفضَّل الحقل المحقون من التطبيق وإلا يُبنى محلياً.
+    /** يُنطق الإعلان إن لم يُمنع حرج؛ يُرجع true إذا صدر نطقٌ فعلي
+     *  (أو مؤثرٌ صامت) يقتضي الإبقاء على نافذة goAsync حتى تمامه.
+     *  يُسجَّل هذا المستقبل يدوياً من AnnouncementSchedulerService (لا عبر
+     *  Hilt)، فيُفضَّل الحقل المحقون من التطبيق وإلا يُبنى محلياً. */
+    private fun handle(
+        context: Context,
+        intent: Intent,
+        action: String?
+    ): Boolean {
         val appContext = context.applicationContext
         val settings =
             (appContext as? AnnouncementAppContext)?.settingsRepository
             ?: SettingsRepository(context)
         // المفتاح الرئيسي يُوقف كل الإعلانات دفعة واحدة.
-        if (!settings.isAllAnnouncementsEnabled()) return
+        if (!settings.isAllAnnouncementsEnabled()) return false
 
         val voiceId = settings.getBatteryAnnouncementVoiceId()
         // يقبل الصيغ القديمة (nateq-ar-…، ar-local) والصيغ
@@ -116,28 +159,33 @@ class BatteryAnnouncementReceiver(
             if (isArabic) Locale.forLanguageTag(LanguageCode.AR.tag)
             else Locale.forLanguageTag(LanguageCode.EN.tag)
 
+        var spoke = false
         when (action) {
             Intent.ACTION_POWER_CONNECTED -> {
-                if (!settings.isChargingCompleteAnnouncementEnabled()) return
+                if (!settings.isChargingCompleteAnnouncementEnabled()) {
+                    return false
+                }
                 val text = LocaleUtils.stringForSpeech(
                     context, if (isArabic) LanguageCode.AR.tag
                     else LanguageCode.EN.tag,
                     R.string.battery_connected, R.string.battery_connected
                 )
-                speak(
+                spoke = speak(
                     context, settings, text, locale, voiceId,
                     CueType.BATTERY_CHARGING
                 )
             }
 
             Intent.ACTION_POWER_DISCONNECTED -> {
-                if (!settings.isChargingDisconnectAnnouncementEnabled()) return
+                if (!settings.isChargingDisconnectAnnouncementEnabled()) {
+                    return false
+                }
                 val text = LocaleUtils.stringForSpeech(
                     context, if (isArabic) LanguageCode.AR.tag
                     else LanguageCode.EN.tag,
                     R.string.battery_disconnected, R.string.battery_disconnected
                 )
-                speak(
+                spoke = speak(
                     context, settings, text, locale, voiceId,
                     CueType.BATTERY_DISCONNECTED
                 )
@@ -149,7 +197,7 @@ class BatteryAnnouncementReceiver(
                 if (!settings.isBatteryAnnouncementEnabled() &&
                     enabledLevels.isEmpty()
                 ) {
-                    return
+                    return false
                 }
 
                 val level =
@@ -160,7 +208,7 @@ class BatteryAnnouncementReceiver(
                     intent.getIntExtra(
                         android.os.BatteryManager.EXTRA_SCALE, -1
                     )
-                if (level < 0 || scale <= 0) return
+                if (level < 0 || scale <= 0) return false
                 val percentage = (level * 100) / scale
                 val status =
                     intent.getIntExtra(
@@ -188,15 +236,20 @@ class BatteryAnnouncementReceiver(
                             R.string.battery_full_unplug,
                             R.string.battery_full_unplug
                         )
-                        speak(
+                        spoke = speak(
                             context, settings, fullText, locale, voiceId,
                             CueType.BATTERY_FULL
                         )
                     }
+                } else {
+                    // توضيح متعمد: اكتمالُ الشحن ممكَّنٌ ولم يُعلن (إما أن
+                    // المستوى 100 مفعّل أصلاً فيُغطيه إعلان المستوى، أو
+                    // أُعلن حديثاً خلال نافذة المنع) — نستمر إلى فحص مستوى
+                    // البطارية التالي أدناه، وأي نطقٍ منه يرفع `spoke`.
                 }
 
-                if (percentage !in enabledLevels) return
-                if (announcedRecently(context, "%$percentage")) return
+                if (percentage !in enabledLevels) return spoke
+                if (announcedRecently(context, "%$percentage")) return spoke
                 markAnnounced(context, "%$percentage")
 
                 val text = buildLevelText(context, percentage, isArabic)
@@ -205,11 +258,12 @@ class BatteryAnnouncementReceiver(
                 } else {
                     null
                 }
-                speak(
+                spoke = spoke || speak(
                     context, settings, text, locale, voiceId, levelCue
                 )
             }
         }
+        return spoke
     }
 
     private fun buildLevelText(
@@ -255,7 +309,7 @@ class BatteryAnnouncementReceiver(
         locale: Locale,
         voiceId: String?,
         cueType: CueType?
-    ) {
+    ): Boolean {
         val speechRate = settings.getBatteryAnnouncementRate()
         val volume = settings.getBatteryAnnouncementVolume()
         val cueVolume = runCatching { settings.getBatteryCueVolume() }
@@ -268,7 +322,7 @@ class BatteryAnnouncementReceiver(
             AudioCuePlayer.getInstance(context).play(
                 AudioCue(type = cueType, volume = cueVolume)
             ) {}
-            return
+            return false
         }
         val speaker = AnnouncementSpeaker.getInstance(context)
         // إعادة ضبط صوت البطارية قبل كل نطق (بند [1]): صوتُ الإعلان كان
@@ -287,6 +341,7 @@ class BatteryAnnouncementReceiver(
             ),
             cue = cue
         )
+        return true
     }
 
     /** منع تكرار نفس الإعلان خلال 5 دقائق (دورة شحن كاملة يمر الزمن كافياً).

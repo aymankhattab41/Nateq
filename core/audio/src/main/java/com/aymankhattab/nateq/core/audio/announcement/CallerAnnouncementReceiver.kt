@@ -21,7 +21,9 @@ import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 
 /**
@@ -42,6 +44,13 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "NATEQ_CALLER"
+
+        // **بند 5.2:** مقبضٌ مشترك لحلقة نطق المتصل النشطة عبر بثوث
+        // PHONE_STATE المتعاقبة (كل حالة مصدرُها onReceive مستقل) — به
+        // تُلغى حلقة التكرار عند الرد أو الإنهاء فوراً، بدل تركها تعيد
+        // نطق الاسم فوق مكالمةٍ نشطة أو بعد انقضائها.
+        @Volatile
+        private var activeCallCycle: Job? = null
 
         /** سقف نافذة goAsync حتى لا تبلغ مهلة نظام البث (~10 ثوانٍ) —
          *  مهما كانت إعدادات التكرار. */
@@ -122,6 +131,31 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     pendingResult.finish()
                 }
             }
+            val state =
+                intent.getStringExtra(TelephonyManager.EXTRA_STATE)
+                    ?: return@launch
+            if (state != TelephonyManager.EXTRA_STATE_RINGING) {
+                // **بند 5.2:** كل انتقالٍ للحالة — الرد على المكالمة
+                // (OFFHOOK) أو إنهاؤها (IDLE) — يُوقف النطق فوراً ويُلغي
+                // حلقة التكرار النشطة. قبل هذا كان المستقبل يهملُ غير
+                // الرنين: فيبقى كوروتينُ التكرار حياً يعيد نطقَ اسم
+                // المتصل فوق المكالمة النشطة/بعد انتهائها.
+                if (state == TelephonyManager.EXTRA_STATE_OFFHOOK ||
+                    state == TelephonyManager.EXTRA_STATE_IDLE
+                ) {
+                    val cycle = activeCallCycle
+                    activeCallCycle = null
+                    cycle?.cancel()
+                    runCatching {
+                        AnnouncementSpeaker.getInstance(context).stop()
+                    }
+                }
+                return@launch
+            }
+            // أي رنين جديد يحلّ replace لدورة التكرار السابقة إن بقيت
+            // (رنينٌ متكرر لمكالمةٍ نفسها) — لا حلقاتِ نطقٍ متوازية.
+            activeCallCycle?.cancel()
+            activeCallCycle = coroutineContext.job
             // مستمعُ اكتمالٍ يُسجَّل في try ويُزال في finally (بند [8]) —
             // لا يبقى مسجلاً بعد نافذة البث فلا يُستدعى في دورةٍ لا تخصنا.
             var completionListener: (() -> Unit)? = null
@@ -270,6 +304,11 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 )
                 finishOnce()
             } catch (t: Throwable) {
+                // الإلغاء (بند 5.2: الرد/الإنهاء) ليس عطلاً — يُنهيه
+                // finally أدناه ويُنظّف، وانتظارُ الجدولة يُحرَّر بلا صخب.
+                if (t is kotlinx.coroutines.CancellationException) {
+                    throw t
+                }
                 Log.e(TAG, "onReceive failed", t)
             } finally {
                 // تعويضي: إن انحرف المسار قبل أذرعة الإنهاء أعلاه (استثناء)

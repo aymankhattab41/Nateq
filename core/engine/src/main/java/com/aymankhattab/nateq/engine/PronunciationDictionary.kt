@@ -293,6 +293,14 @@ class PronunciationDictionary(
         return save()
     }
 
+    /** تفريغ القاموس بالكامل (الذاكرة والقرص معاً) — يُستدعى عند «استعادة
+     *  الافتراضيات»: إن نُظّف الملف وحده بقي المخزون في الذاكرة، فيظل
+     *  يُقرأ من الخريطة وُيعاد كتابته للملف بمجرد إضافة أي كلمة جديدة. */
+    fun clear() {
+        swapEntries(emptyMap())
+        save()
+    }
+
     /** الحصول على جميع الإدخالات */
     fun getAllEntries(): Map<String, String> = entries.toMap()
 

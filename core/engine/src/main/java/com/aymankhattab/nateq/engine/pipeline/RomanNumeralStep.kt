@@ -51,12 +51,17 @@ internal object RomanNumeralStep : TextProcessingStep {
                 )
                 continue
             }
-            // دون مؤشر صريح لا نُحوّل إلا الأرقام التسلسلية 1–12 (ساعات/قوائم)؛
-            // ما عداها تُرك — لا نجعل «الفصل MCMXCV» تفقّد سياقها ولا نجعل كلمة
-            // إنجليزية عابرة رقمَ ساعة.
-            if (!hasRomanIndicatorBefore(input, matcher.start()) &&
-                value !in 1..12
-            ) {
+            // دون مؤشر صريح لا نُحوّل إلا متواليات 1–12 غير المفردة
+            // (ساعات/قوائم)؛ ما عداها تُرك — لا نجعل «الفصل MCMXCV» تفقّد
+            // سياقها ولا نجعل كلمة إنجليزية عابرة رقمَ ساعة. **بند 3.9:** الحرف
+            // اللاتيني المنفرد
+            // (X في «منصة X» و«iPhone X»، أو V/C/D/M في الاختصارات) لا يُحوَّل
+            // إلى رقمٍ إطلاقاً دون مؤشرٍ صريح — كانت «X» تتحول «عشرة» فتدمِّر
+            // أسماء المنتجات والمنصات الشائعة؛ ويبقى مؤشر «الفصل/الجزء/
+            // chapter/part…» كافياً لتحويله ترتيباً (الجزء X = الجزء عشرة).
+            val hasIndicator = hasRomanIndicatorBefore(input, matcher.start())
+            val singleLetter = rom.length == 1
+            if (!hasIndicator && (singleLetter || value !in 1..12)) {
                 matcher.appendReplacement(
                     buffer, java.util.regex.Matcher.quoteReplacement(rom)
                 )

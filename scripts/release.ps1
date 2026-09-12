@@ -103,6 +103,17 @@ $currentCode = [int]$codeMatch.Groups[1].Value
 
 # منع الإصدار الفارغ: لا إصدار إن لم توجد التزامات جديدة واصلة من آخر
 # وسم منشور إلى HEAD (لا «دفع بلا مبرر» قبل نشرٍ).
+# **بند 9.1:** جلب الأوسمة من الخادم قبل حساب الالتزامات — git rev-list
+# يفشل (fatal: ambiguous argument) حين يُشحن المستودع من جهاز آخر أو
+# استُنسخ حديثاً والأوسمة غير موجودة محلياً. الفشل هنا لا يُوقف الإصدار:
+# يتابع التقدير بالأوسمة المحلية المتاحة.
+$previousEf = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+    & git fetch --tags origin 2>&1 | ForEach-Object { "$_" }
+} finally {
+    $ErrorActionPreference = $previousEf
+}
 if ($latestTagN -gt 0) {
     $commitOut = Invoke-Git @('rev-list', '--count', "v$latestTagN..HEAD")
     $sinceTag = "v$latestTagN"
@@ -182,7 +193,8 @@ if ($DryRun) {
     Write-Host "   - رفع $gradleFile إلى versionCode=$targetCode"
     Write-Host "     و versionName=$targetVersion (يغطي $newCommitCount " +
         "commit جديداً منذ $sinceTag)"
-    Write-Host '   - تشغيل :app:testDebugUnitTest ثم :app:assembleRelease'
+    Write-Host '   - تشغيل testDebugUnitTest لكل الوحدات ثم' +
+        ' :app:assembleRelease'
     Write-Host '   - commit: app/build.gradle.kts فقط (رسالة عربية)'
     Write-Host "   - tag $targetTag ثم push origin master --tags"
     Write-Host "   - gh release create $targetTag (يرفع lord_tts.apk" +
@@ -205,9 +217,19 @@ if ($newRaw -cne $gradleRaw) {
 }
 
 # 2) الاختبارات ثم البناء — أي فشل يلغي الإصدار.
+# **بند 9.2:** تشغيل اختبارات الوحدة لكافة وحدات المشروع (وليس :app فقط)
+# — حتى لا يُنشر إصدار بمحرّك نطق معطوب دون أن تكتشفه الاختبارات.
 Push-Location $repoRoot
 try {
-    & .\gradlew.bat :app:testDebugUnitTest --console=plain
+    & .\gradlew.bat `
+        :core:common:testDebugUnitTest `
+        :core:engine:testDebugUnitTest `
+        :core:audio:testDebugUnitTest `
+        :core:data:testDebugUnitTest `
+        :feature:settings:testDebugUnitTest `
+        :feature:widget:testDebugUnitTest `
+        :app:testDebugUnitTest `
+        --console=plain
     if ($LASTEXITCODE -ne 0) {
         throw 'فشلت الاختبارات — أُلغيت عملية الإصدار.'
     }

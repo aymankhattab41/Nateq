@@ -14,9 +14,11 @@ import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.LanguageCode
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.launch
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * مستقبل قراءة الرسائل النصية الواردة (SMS) بالصوت.
@@ -38,6 +40,10 @@ class SmsReadingReceiver : BroadcastReceiver() {
         const val MODE_OFF = "off"
         const val MODE_FULL = "full"
         const val MODE_SOURCE = "source"
+
+        // **بند 5.5:** سقف احتجاز نافذة goAsync حتى تمام النطق — لا أطول
+        // من نافذة البث الآمنة (~10 ثوانٍ) فلا ANR إن طال التوليف.
+        private const val BROADCAST_HOLD_MS = 10_000L
 
         /** هل مَنح التطبيق إذن قراءة الرسائل الواردة؟
          *  (RECEIVE_SMS أو READ_SMS). على ما قبل أندرويد 6 لا أخطارِ
@@ -142,6 +148,16 @@ override fun onReceive(context: Context, intent: Intent?) {
         val appScope =
             (context.applicationContext as AnnouncementAppContext).appScope
         appScope.launch {
+            // حارس إنهاء وحيد لدورة البث — ذرّيٌ ليتحمل وصولَ الإنهاء من
+            // خيطي اللا-تكرار واكتمال النطق معاً (finishٌ مكررٌ تحذير بلا
+            // لزوم).
+            val finishedBroadcast = AtomicBoolean(false)
+            fun finishOnce() {
+                if (finishedBroadcast.compareAndSet(false, true)) {
+                    pendingResult.finish()
+                }
+            }
+            var completionListener: (() -> Unit)? = null
             try {
                 val settings = settingsRepository
                 val mode = settings.getSmsReadingMode()
@@ -212,11 +228,33 @@ override fun onReceive(context: Context, intent: Intent?) {
                 val speech = AnnouncementSpeaker.getInstance(context)
                 speech.resetVoice(voiceId)
                 speech.speak(text, locale, speechRate, 1.0f, volume)
+                // **بند 5.5:** finish() الفوري قبل تمام التوليف كان يترك
+                // أندرويد 14+ يجمد العملية عبر Process Cgroup Freezer
+                // فيُبتر صوت الرسالة في منتصف الجملة. نُبقي النافذة حيّةً
+                // حتى يُتمَّ النطق الفعلي (بسقف ~10 ثوانٍ فلا ANR) —
+                // نمط قارئ المتصل/البطارية نفسه، بسجل ومستمعين فريدين.
+                completionListener = { finishOnce() }
+                AnnouncementSpeaker.getInstance(context)
+                    .addCompletionListener(completionListener!!)
+                delay(BROADCAST_HOLD_MS)
+                finishOnce()
             } catch (t: Throwable) {
                 // أي استثناء (قراءة PDU/حزمة/نطق) يُسجَّل دون إسقاط العملية
+                // والإلغاء (نهاية نافذة البث من النظام) يُمرَّر صامتاً.
+                if (t is kotlinx.coroutines.CancellationException) {
+                    throw t
+                }
                 Log.e(TAG, "فشل قراءة الرسالة النصية", t)
             } finally {
-                pendingResult.finish()
+                // تنظيفٌ تعويضي: يُزال مستمعُنا (لا يُستدعى في دورةٍ لاحقة
+                // لا تخصنا) ويُنهى البث — وإن سبق إنهاؤه فلا يُنهى ثانية.
+                completionListener?.let { listener ->
+                    runCatching {
+                        AnnouncementSpeaker.getInstance(context)
+                            .removeCompletionListener(listener)
+                    }
+                }
+                finishOnce()
             }
         }
     }

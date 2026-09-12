@@ -79,6 +79,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private val engines = mutableListOf<EngineInfo>()
     private lateinit var engineSection: EngineSectionController
 
+    /** مستقبل اكتمال تنزيل التحديث — يُحتفظ بمرجعه ليُلغى تسجيله في
+     *  [onDestroyView] (بند 6.6) حتى لا يتسرب الفصيل عند تدوير الشاشة
+     *  أو مغادرتها أثناء التنزيل. */
+    private var updateReceiver: android.content.BroadcastReceiver? = null
+
     // قسم المحرك والتحويل التلقائي (الاكتشاف/setupAutoConvertUI/
     // قائمة اللغات المكتشفة لكل المحركات...) انتقل بالكامل إلى
     // EngineSectionController.
@@ -518,6 +523,16 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     }
 
     override fun onDestroyView() {
+        // إلغاء تسجيل مستقبل التنزيل (بند 6.6): لو اكتمل التنزيل بعد تدوير
+        // الشاشة أو مغادرتها وبقي المستقبل مسجلاً، يبقى مرجع الفصيل حياً
+        // (تسريب) وقد يُستدعى على واجهة مدمّرة.
+        val pendingReceiver = updateReceiver
+        if (pendingReceiver != null) {
+            runCatching {
+                requireContext().unregisterReceiver(pendingReceiver)
+            }
+            updateReceiver = null
+        }
         // إغلاق المتحدث المستقل الخاص بالمعاينة (إن أُنشئ) حتى لا يبقى محرك
         // TTS مفتوحاً بعد مغادرة الشاشة. المثيل هنا خاص بالشاشة وليس المشترك
         // (getInstance) الذي تُدار حياته في مستقبلات الإعلانات التلقائية.
@@ -1271,6 +1286,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 if (id != downloadId) return
                 try {
                     ctx.unregisterReceiver(this)
+                    updateReceiver = null
                 } catch (_: IllegalArgumentException) {
                     /* سبق تسجيله أو فُكّ */
                 }
@@ -1304,6 +1320,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             ),
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
+        updateReceiver = receiver
     }
 
     // ===== زر الحفظ + زر استعادة الافتراضيات =====
@@ -1331,6 +1348,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 .setMessage(R.string.reset_confirm_message)
                 .setPositiveButton(R.string.reset_done) { _, _ ->
                     runCatching { settings.resetAllToDefault() }
+                    // **بند 7.1:** حذف ملف القاموس وحده لا يُفرّغ خريطة
+                    // الذاكرة في SettingsViewModel — فتبقى الكلمات القديمة
+                    // تُقرأ من الخريطة وتُعاد كتابتها للملف عند أول إضافة.
+                    runCatching { pronunciationDict.clear() }
                     Toast.makeText(
                         requireContext(),
                         getString(R.string.reset_done),
@@ -1388,6 +1409,18 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     /** إعادة تحميل كل قيم الواجهة بعد الاستعادة (دون إعادة إنشاء النشاط). */
     private fun refreshAllSettingsUi() {
         val v = requireView()
+        // **بند 6.4:** المفاتيح الرئيسية التي تُبنى في setup() خارج أقسام
+        // الأكورديون لم تكن تُحدَّث عند الاستعادة — فيقع تناقض كلي بين
+        // ما يُعرض والمخزّن. نُعيد تعبئتها من الإعدادات هنا.
+        switchAllAnnouncements.isChecked =
+            runCatching { settings.isAllAnnouncementsEnabled() }
+                .getOrDefault(true)
+        switchLockScreenPrivacy.isChecked =
+            runCatching { settings.isLockScreenPrivacyEnabled() }
+                .getOrDefault(true)
+        v.findViewById<SwitchMaterial>(R.id.switch_emoji_reading)?.isChecked =
+            runCatching { settings.isEmojiPronunciationEnabled() }
+                .getOrDefault(true)
         timeSection.setup(v)
         batterySection.setup(v)
         notificationSection.setup(v)
@@ -1400,6 +1433,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         instantSilenceSection.setup(v)
         rvCategories.adapter?.notifyDataSetChanged()
         refreshDictAdapter()
+        engineSection.setupAutoConvertUI(v)
         accordion.updateSectionStatuses()
     }
 

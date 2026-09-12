@@ -296,10 +296,14 @@ class PipelineStepsTest {
     }
 
     @Test
-    fun roman_singleWithoutIndicator_1to12_converted() {
-        // أرقام 1–12 بدون مؤشر تُحوَّل تلقائياً (ساعات/قوائم)
-        assertEquals("خمسة", RomanNumeralStep.apply("V"))
-        assertEquals("عشرة", RomanNumeralStep.apply("X"))
+    fun roman_singleWithoutIndicator_keptAsIs() {
+        // **بند 3.9:** الحرف الروماني المنفرد بلا مؤشر صريح لا يُحوَّل —
+        // كانت «X» تتحول «عشرة» فيدمّر «منصة X» و«iPhone X»، و«V» يفسد
+        // الاختصارات. المؤشر (الفصل/الجزء/chapter/…) وحده يسمح بالتحويل.
+        assertEquals("V", RomanNumeralStep.apply("V"))
+        assertEquals("X", RomanNumeralStep.apply("X"))
+        // مع المؤشر يتحول ترتيباً:
+        assertEquals("الجزء عشرة", RomanNumeralStep.apply("الجزء X"))
     }
 
     @Test

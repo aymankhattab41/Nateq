@@ -53,6 +53,8 @@ internal class InterruptionSensors(
     private var proximityRegistered = false
     private var sensorManager: SensorManager? = null
     private var mainHandler: Handler? = null
+    // حالة التقارب السابقة — يبدأ null (لا قراءة بعد) وتُدار وفق انتقالات.
+    private var lastProximityNear: Boolean? = null
 
     private val sensorListener = object : SensorEventListener {
         override fun onSensorChanged(event: SensorEvent) {
@@ -67,12 +69,17 @@ internal class InterruptionSensors(
                     }
                 }
                 Sensor.TYPE_PROXIMITY -> {
-                    if (isProximityNear(
-                            values[0], event.sensor.maximumRange
-                        )
-                    ) {
-                        onInterrupt()
-                    }
+                    val near = isProximityNear(
+                        values[0], event.sensor.maximumRange
+                    )
+                    val previous = lastProximityNear
+                    lastProximityNear = near
+                    // **بند 4.6:** أول قراءة من المستشعر تُرسل القيمة الحالية
+                    // فور التسجيل — الهاتف في الجيب أو مقلوباً وقت وصول الإعلان
+                    // تجعله "قريباً" وكانت توقف النطق قبل أول حرف. يُستجاب
+                    // للإيقاف فقط عند **انتقال** الحالة من بعيدٍ إلى قريب
+                    // (تغطية لاحقة فعلية باليد/الوجه).
+                    if (previous == false && near) onInterrupt()
                 }
             }
         }
@@ -124,6 +131,9 @@ internal class InterruptionSensors(
         }
         shakeRegistered = false
         proximityRegistered = false
+        // يُصفَّر عند كل دورة رصد: القراءةُ الأولى بعد `start` لا تُعتبر
+        // انتقالاً مهما بلغت قيمتها (يُلغي مفعول سجلّ الحالة السابقة).
+        lastProximityNear = null
     }
 }
 

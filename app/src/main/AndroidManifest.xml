@@ -177,7 +177,8 @@
             </intent-filter>
         </receiver>
 
-        <!-- إعادة تشغيل جدولة الإعلانات (الساعة/البطارية) بعد إقلاع الجهاز -->
+        <!-- إعادة تشغيل جدولة الإعلانات (الساعة/البطارية) بعد إقلاع الجهاز،
+         وبعد تحديث التطبيق (كلاهما يمسح منبهات النظام) -->
         <receiver
             android:name="com.aymankhattab.nateq.core.audio.announcement.AnnouncementBootReceiver"
             android:enabled="true"
@@ -185,6 +186,7 @@
             android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 

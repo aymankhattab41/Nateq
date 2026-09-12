@@ -22,12 +22,17 @@ internal interface CueSink {
      * @param pcm موجة 16-bit جاهزة
      * @param sampleRate معدّل العيّنات
      * @param volume معامل الصوت 0.0..1.0
+     * @param cueKey هوية النغمة الدلالية (نوعها واسم صوتها) — يُضمن تفرّد
+     *   كاش التخزين حتى لا تتصادم موجتان متماثلتا الطول لنغمتين مختلفتين
+     *   (كانت «digital_chime» و«BATTERY_FULL» تتشاركان مفتاح
+     *   «44100|28665» فتُشغَّل نغمة الساعة عند اكتمال الشحن!)
      * @param onDone نداء عند انتهاء التشغيل أو فشله
      */
     fun play(
         pcm: ShortArray,
         sampleRate: Int,
         volume: Float,
+        cueKey: String,
         onDone: (Boolean) -> Unit
     )
 
@@ -71,6 +76,7 @@ internal class AudioTrackCueSink : CueSink {
         pcm: ShortArray,
         sampleRate: Int,
         volume: Float,
+        cueKey: String,
         onDone: (Boolean) -> Unit
     ) {
         stop()
@@ -181,10 +187,11 @@ internal class SoundPoolCueSink(
         pcm: ShortArray,
         sampleRate: Int,
         volume: Float,
+        cueKey: String,
         onDone: (Boolean) -> Unit
     ) {
         stop()
-        val key = "$sampleRate|${pcm.size}"
+        val key = "$cueKey|$sampleRate|${pcm.size}"
         val durationMs = (pcm.size * 1000L / sampleRate).toInt()
             .coerceAtLeast(1)
         activeGuard.set(true)

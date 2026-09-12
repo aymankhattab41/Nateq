@@ -126,6 +126,12 @@ class AnnouncementSpeaker(
     // من دورات سابقة — يمنع النطق القديم بعد stop()/speak جديد.
     private val speechGeneration = java.util.concurrent.atomic.AtomicLong(0)
 
+    // عدّاد دورات النطق الفعلية: يزداد عند إرسال أول جزءٍ من دورةٍ جديدة
+    // فعلياً (لا عند طلبها — التهيئة/التركيز قد يؤجلانها). يخدم
+    // [currentSpeechCycle] ليُميّز صاحبُ الخطاف (ويدجت الساعة) اكتمالَ
+    // دورته عن اكتمالِ دورةٍ سابقة (بند 5.1).
+    private val speechCycle = AtomicLong(0L)
+
     private var tts: TextToSpeech? = null
     private var nowSpeaking = false
 
@@ -163,6 +169,12 @@ class AnnouncementSpeaker(
     fun removeCompletionListener(listener: () -> Unit) {
         completionListeners.remove(listener)
     }
+
+    /** رقم دورة النطق الجارية (يزداد عند إرسال أول جزءٍ من دورةٍ جديدة
+     *  فعلياً). يُلتقط قبل طلب النطق ثم يُقارن في خطاف الاكتمال: اكتمالٌ
+     *  رقمُه ≤ الرقم الملتقط يخص دورةً سابقة ولا يُحسب لطلبنا — يمنع
+     *  تحرير goAsync/WakeLock المبكر في ويدجت الساعة (بند 5.1). */
+    fun currentSpeechCycle(): Long = speechCycle.get()
 
     /** استدعاء كل مستمعي الاكتمال (كلٌّ بمعزلٍ عن أخطاء غيره). */
     private fun notifySpeechComplete() {
@@ -299,7 +311,13 @@ class AnnouncementSpeaker(
             ?: EnginePicker.pickEnginePackage(appContext)
         boundEngine = engine
         var newTts: TextToSpeech? = null
-        newTts = TextToSpeech(appContext) { status ->
+        // **المنشئ الثلاثي الصريح** TextToSpeech(context, listener, engine):
+        // المنشئ الثنائي كان يربط بالمحرك الافتراضي للنظام، فحين يكون LORD
+        // هو المحرك الافتراضي (كما كثيراً ما يضبطه مستخدموه) يدخل التطبيق
+        // في حلقة ربط ذاتي TextToSpeech→خدمة LORD→Nateq ويعتّم صوت كل
+        // الإعلانات في الخلفية. الربط المباشر بحزمة المحرك المحسومة
+        // ([EnginePicker] يستبعد حزمة التطبيق ذاته) يمنع الحلقة من منبعها.
+        newTts = TextToSpeech(appContext, { status ->
             val success = status == TextToSpeech.SUCCESS
             if (success) {
                 // لا تُخزَّن إلا المثيلات الناجحة؛ المثيل الفاشل يُهمَل ولا
@@ -317,7 +335,7 @@ class AnnouncementSpeaker(
             if (completion.nextEngine != null) {
                 startInit(completion.nextEngine)
             }
-        }
+        }, engine)
         newTts.apply {
             setOnUtteranceProgressListener(
                 object : UtteranceProgressListener() {
@@ -369,13 +387,8 @@ class AnnouncementSpeaker(
             // ويُعاد حسمها دينامياً مع حالة قارئ الشاشة عند كل دورة نطق.
             lastSpeechAttributesReaderOn = null
             applySpeechAudioAttributesIfReaderStateChanged()
-
-            if (engine != null) {
-                @Suppress("DEPRECATION")
-                // setEngineByPackageName مُهمل لكنه الطريقة
-                // الوحيدة لتحديد المحرك
-                setEngineByPackageName(engine)
-            }
+            // يُربط المحرك مباشرةً عبر المنشئ الثلاثي أعلاه — لا داعٍ
+            // لـ setEngineByPackageName (مُهملٍ ويُعاد ربطه بالكائن قسراً).
         }
     }
 
@@ -455,6 +468,12 @@ class AnnouncementSpeaker(
                         Log.w(TAG,
                         "[Focus] DELAYED أُلغيت الصامتة:" +
                         " التركيز لم يُسلَّم")
+                        // **تحرير التركيز عند المهلة:** طلبُنا المؤجل ما زال
+                        // مسجلاً بالنظام؛ حين يحرر المشغّل الآخرُ الصوتَ لاحقاً
+                        // سيُسلَّم drift إلينا فنحتجزه للأبد ونخفض موسيقاه
+                        // (Ducking دائم). الإلغاء هنا يُخلّي الطلب ويمنع
+                        // تسريب التركيز.
+                        releaseAudioFocus()
                     }
                 }
                 pendingFocusTimer = timer
@@ -623,6 +642,9 @@ class AnnouncementSpeaker(
         parts: List<SpeechPart>?,
         attempt: Int
     ) {
+        // **بند 5.1:** أول جزءٍ يُرسل فعلياً يرفع عداد الدورة — سجّلته هنا
+        // الأداةُ قبل طلب النطق، فيرفض خطافُها اكتمالَ أي دورةٍ سبقته.
+        speechCycle.incrementAndGet()
         startInterruptionMonitoring()
         // السمات تتبع حالة قارئ الشاشة لحظة النطق (وليس لحظة التهيئة).
         applySpeechAudioAttributesIfReaderStateChanged()

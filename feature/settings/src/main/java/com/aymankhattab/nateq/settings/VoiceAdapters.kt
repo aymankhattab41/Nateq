@@ -47,6 +47,12 @@ internal class CategoryVoiceAdapter(
     private val categoryEngines =
         runCatching { EnginePicker.installedEngines(context) }
             .getOrDefault(emptyList())
+
+    // **بند 6.2:** عَلَمُ الربط البرمجي — يُسنَّع حول setSelection في
+    // onBindViewHolder لأن إسنادَ موضعٍ للسبنر يطلق onItemSelected فيسجّل
+    // الصوت/المحرك السعد برمجياً (مثلاً صوت 0 لفئةٍ بلا صوتٍ مخصص) في
+    // الذاكرة الدائمة ويهدم وراثة الصوت الافتراضي عند تصفح القائمة.
+    private var bindingAdapterInputs = false
     private val engineOptionsAdapter = simpleAdapter(
         context,
         buildList {
@@ -124,7 +130,13 @@ internal class CategoryVoiceAdapter(
                 id: Long
             ) {
                 val category = holder.category
-                if (category.isEmpty() || pos >= voices.size) return
+                // **بند 6.2:** إسنادُ الربط البرمجي ليس اختيارَ مستخدم —
+                // لا يُكتب بعده شيء (وإلا حُفظ صوت 0 لكل فئةٍ بلا مخصص).
+                if (category.isEmpty() || pos >= voices.size ||
+                    bindingAdapterInputs
+                ) {
+                    return
+                }
                 runCatching {
                     settings.setPreferredVoiceIdForCategory(
                         category, voices[pos].name
@@ -143,12 +155,19 @@ internal class CategoryVoiceAdapter(
                 progress: Int,
                 fromUser: Boolean
             ) {
+                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
+                if (bindingAdapterInputs) return
                 val value = progress.speedFactor()
                 holder.tvRateValue.text =
                     String.format(Locale.US, "%.1fx", value)
                 holder.seekRate.setSeekStateDescription(
                     holder.tvRateValue.text
                 )
+                // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
+                // نهايته إلى onStopTrackingTouch أبداً.
+                runCatching {
+                    settings.setSpeechRateForCategory(holder.category, value)
+                }
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -171,12 +190,19 @@ internal class CategoryVoiceAdapter(
                 progress: Int,
                 fromUser: Boolean
             ) {
+                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
+                if (bindingAdapterInputs) return
                 val value = progress.speedFactor()
                 holder.tvPitchValue.text =
                     String.format(Locale.US, "%.1fx", value)
                 holder.seekPitch.setSeekStateDescription(
                     holder.tvPitchValue.text
                 )
+                // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
+                // نهايته إلى onStopTrackingTouch أبداً.
+                runCatching {
+                    settings.setPitchForCategory(holder.category, value)
+                }
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -199,10 +225,19 @@ internal class CategoryVoiceAdapter(
                 progress: Int,
                 fromUser: Boolean
             ) {
+                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
+                if (bindingAdapterInputs) return
                 holder.tvVolumeValue.text = "$progress%"
                 holder.seekVolume.setSeekStateDescription(
                     holder.tvVolumeValue.text
                 )
+                // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
+                // نهايته إلى onStopTrackingTouch أبداً.
+                runCatching {
+                    settings.setVolumeForCategory(
+                        holder.category, progress / 100f
+                    )
+                }
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -323,24 +358,47 @@ internal class CategoryVoiceAdapter(
             runCatching { settings.getPreferredVoiceIdForCategory(category) }
                 .getOrNull()
         val idx = voices.indexOfFirst { it.name == saved }
-        holder.spinnerVoice.setSelection(if (idx >= 0) idx else 0)
+        // **بند 6.2:** اختيارُ الموضع أثناء الربط (0 لفئةٍ بلا صوتٍ مخصص)
+        // لا يجوز أن يكون اختياراً مسجَّلاً — يُكبَح عليه عَلَمُ الربط.
+        bindingAdapterInputs = true
+        try {
+            holder.spinnerVoice.setSelection(if (idx >= 0) idx else 0)
+        } finally {
+            bindingAdapterInputs = false
+        }
 
         val rate = runCatching { settings.getSpeechRateForCategory(category) }
             .getOrDefault(1.0f)
             .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
         holder.tvRateValue.text = String.format(Locale.US, "%.1fx", rate)
-        holder.seekRate.progress = (rate * 100).toInt().coerceIn(0, 200)
+        bindingAdapterInputs = true
+        try {
+            holder.seekRate.progress = (rate * 100).toInt().coerceIn(0, 200)
+        } finally {
+            bindingAdapterInputs = false
+        }
 
         val pitch = runCatching { settings.getPitchForCategory(category) }
             .getOrDefault(1.0f)
             .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
         holder.tvPitchValue.text = String.format(Locale.US, "%.1fx", pitch)
-        holder.seekPitch.progress = (pitch * 100).toInt().coerceIn(0, 200)
+        bindingAdapterInputs = true
+        try {
+            holder.seekPitch.progress = (pitch * 100).toInt().coerceIn(0, 200)
+        } finally {
+            bindingAdapterInputs = false
+        }
 
         val volume = runCatching { settings.getVolumeForCategory(category) }
             .getOrDefault(1.0f)
         holder.tvVolumeValue.text = "${(volume * 100).toInt()}%"
-        holder.seekVolume.progress = (volume * 100).toInt().coerceIn(0, 100)
+        bindingAdapterInputs = true
+        try {
+            holder.seekVolume.progress =
+                (volume * 100).toInt().coerceIn(0, 100)
+        } finally {
+            bindingAdapterInputs = false
+        }
     }
 
     override fun getItemCount(): Int = categoryList.size

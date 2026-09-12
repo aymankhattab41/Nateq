@@ -609,16 +609,21 @@ internal class SettingsAccordionController(
                 else -> R.string.time_interval_60
             }
         )
+        // **بند 6.1:** اليومُ الحالي الفعلي — كان الثابت Calendar.DAY_OF_WEEK
+        // (7 = السبت) يُمرَّر بدل اليوم الجاري، فكان الملخص يعرض ساعات هدوء
+        // يوم السبت طوال أيام الأسبوع.
+        val todayDayOfWeek = Calendar.getInstance()
+            .get(Calendar.DAY_OF_WEEK)
         val quietEnabled = runCatching {
-            settings.isDayQuietEnabled(Calendar.DAY_OF_WEEK)
+            settings.isDayQuietEnabled(todayDayOfWeek)
         }.getOrDefault(true)
         val quietStart =
             runCatching {
-                settings.getQuietStartForDay(Calendar.DAY_OF_WEEK)
+                settings.getQuietStartForDay(todayDayOfWeek)
             }.getOrDefault(23)
         val quietEnd =
             runCatching {
-                settings.getQuietEndForDay(Calendar.DAY_OF_WEEK)
+                settings.getQuietEndForDay(todayDayOfWeek)
             }.getOrDefault(7)
         return buildString {
             val on = if (enabled) fragment.getString(R.string.toggle_on)

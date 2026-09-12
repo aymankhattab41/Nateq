@@ -39,6 +39,11 @@ internal class TimeAnnouncementController(
     private lateinit var spinnerTimeChimeSound: Spinner
     private lateinit var seekTimeChimeVolume: SeekBar
 
+    // **بند 6.3:** علمُ الربط البرمجي لشريط رنة الوقت — إسنادُ setProgress
+    // في setup ليس تعديلَ مستخدم، والحفظ في onProgressChanged ضروري لأن
+    // تعديل TalkBack لا يمر بـ onStopTrackingTouch إطلاقاً.
+    private var bindingSlider = false
+
     fun setup(view: View) {
         switchTimeAnnouncement =
             view.findViewById(R.id.switch_time_announcement)
@@ -160,7 +165,12 @@ internal class TimeAnnouncementController(
         val seekProgress = ((savedChimeVol - 0.1f) / 0.9f * 100)
             .toInt().coerceIn(0, 100)
         seekTimeChimeVolume.max = 100
-        seekTimeChimeVolume.progress = seekProgress
+        bindingSlider = true
+        try {
+            seekTimeChimeVolume.progress = seekProgress
+        } finally {
+            bindingSlider = false
+        }
         // وصف الحالة الإتاحي للشريط عند التهيئة: يقرأه TalkBack فور الوصول
         // إليه (بدل الوصول ثم انتظار حركةٍ بالتوقف).
         seekTimeChimeVolume.setSeekStateDescription(
@@ -208,10 +218,17 @@ internal class TimeAnnouncementController(
             override fun onProgressChanged(
                 sb: SeekBar, progress: Int, fromUser: Boolean
             ) {
+                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
+                if (bindingSlider) return
                 // وصف الحالة يتحدث أثناء الحركة (بمفاتيح الصوت) لا عند
                 // التوقف فقط — نفس نمط بقية الشرائط في الإعدادات.
                 val pct = ((0.1f + progress / 100f * 0.9f) * 100).toInt()
                 sb.setSeekStateDescription("$pct%")
+                // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
+                // نهايته إلى onStopTrackingTouch أبداً.
+                runCatching {
+                    settings.setTimeChimeVolume(0.1f + progress / 100f * 0.9f)
+                }
             }
 
             override fun onStartTrackingTouch(sb: SeekBar) {}

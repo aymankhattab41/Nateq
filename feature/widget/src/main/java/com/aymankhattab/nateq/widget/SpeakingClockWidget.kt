@@ -101,6 +101,11 @@ class SpeakingClockWidget : AppWidgetProvider() {
         val mainHandler = Handler(Looper.getMainLooper())
         val speaker = AnnouncementSpeaker.getInstance(appContext)
         var widgetListener: (() -> Unit)? = null
+        // **بند 5.1:** رقماً دورة النطق لحظة اللمس — اكتمالٌ يخص دورةً سابقة
+        // (كانت جارية عند تسجيل الخطاف) كان يُطلق finish() مبكراً فيُحرَّر
+        // WakeLock وgoAsync() قبل بدء نطق الضغطة (تجميد أندرويد 14+ وصمت
+        // الودجت). الخطاف أدناه يرفض أي اكتمالٍ ليس من دورةٍ أحدث.
+        val cycleBeforeTap = speaker.currentSpeechCycle()
 
         val finish = {
             if (!finished) {
@@ -133,7 +138,12 @@ class SpeakingClockWidget : AppWidgetProvider() {
             // المشترك — النطق لا يقتصر على «الوقت» فقط بل قد يكون رسالة
             // التعطيل. نسجّل في قائمة المستمعين (بند [8]) لا في خانةٍ
             // وحيدة طامسةٍ لمستمعي دوراتٍ أخرى.
-            widgetListener = { finish() }
+            widgetListener = {
+                // يكتمل النطق القديم (الذي كان جارياً قبل هذه الضغطة) قبل
+                // بدء نطقنا: رقم دورته لا يتجاوز رقم لحظة اللمس فَيُرفَض —
+                // لا نُنهي إلا دورتنا (التي يرفع عدادها أول جزءٍ يُرسل منها).
+                if (speaker.currentSpeechCycle() > cycleBeforeTap) finish()
+            }
             speaker.addCompletionListener(widgetListener!!)
 
             // المفتاح الموضعي للأداة (من شاشة إعلان الوقت) يقرر إن كانت
