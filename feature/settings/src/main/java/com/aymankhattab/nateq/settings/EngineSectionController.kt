@@ -105,6 +105,11 @@ internal class EngineSectionController(
     private var autoConvertButton:
         com.google.android.material.button.MaterialButton? = null
 
+    /** مثيل محرك المعاينة الجاري — بند 4.2: يُتتبَّع كعضو حتى يُغلق
+     *  (shutdown) عند إغلاق الحوار أو مغادرة الشاشة، فلا يبقى
+     *  ServiceConnection معلقاً في النظام بعد المعاينة. */
+    private var currentPreviewTts: TextToSpeech? = null
+
     /** يعيد تزامن واجهة التحويل مع الإعداد الحالي. عند تفعيل المستخدم محركاً
      *  من حوار اللغات يُقلب التفعيلُ مفتاح «التحويل التلقائي» تلقائياً —
      *  بلا هذه الدالة كان المفتاح الرئيسي يبقى ظاهرياً «غير مفعّل» رغم
@@ -245,7 +250,10 @@ internal class EngineSectionController(
         discovered: Map<String, List<EngineWithVoices>>
     ): List<LanguageRow> = buildAllLanguageRows(discovered)
 
-    /** يُشغّل تكليفاً تجريبياً عبر محرك مؤقت بأية القيم المختارة دون حفظ */
+    /** يُشغّل تكليفاً تجريبياً عبر محرك مؤقت بأية القيم المختارة دون حفظ.
+     *  بند 4.2: يُهدم أي معاينة جارية أولاً ويُقيَّد النموذج الجديد بمرجع
+     *  [currentPreviewTts] ليُغلق تلقائياً عند مغادرة الشاشة
+     *  أو إغلاق الحوار. */
     @Suppress("DEPRECATION")
     private fun playbackPreview(
         enginePkg: String,
@@ -254,6 +262,13 @@ internal class EngineSectionController(
         pitch: Float,
         rate: Float
     ) {
+        // إغلاق أي معاينة جارية أولاً (بند 4.2) — لو كان المستخدم يضغط
+        // زر الاستماع بسرعة متكررة لا تراكم محركات معلقة.
+        currentPreviewTts?.let { tts ->
+            runCatching { tts.shutdown() }
+        }
+        currentPreviewTts = null
+
         var previewTts: TextToSpeech? = null
         // ربط مباشر بالمحرك المعيّن (منشئ ثلاثي المعاملات) بدل الافتراضي ثم
         // setEngineByPackageName: معاينة العينة يجب أن تعمل حتى لو كان محرك
@@ -267,8 +282,10 @@ internal class EngineSectionController(
                     // فشل تهيئة محرك المعاينة: نغلق فوراً
                     // حتى لا تبقى نسخة TTS معلقة
                     runCatching { previewTts?.shutdown() }
+                    currentPreviewTts = null
                     return@TextToSpeech
                 }
+                currentPreviewTts = previewTts
                 try {
                     val avail =
                         runCatching { previewTts?.getVoices().orEmpty() }
@@ -318,6 +335,7 @@ internal class EngineSectionController(
                     // فشل النطق (مثلاً المحرك دون لغة محمّلة):
                     // نغلق فوراً عوضاً عن تعليقه
                     runCatching { previewTts?.shutdown() }
+                    currentPreviewTts = null
                     return@TextToSpeech
                 }
                 previewTts?.setOnUtteranceProgressListener(
@@ -327,11 +345,13 @@ internal class EngineSectionController(
                     @Deprecated("Java Deprecated")
                     override fun onDone(utteranceId: String?) {
                         previewTts?.shutdown()
+                        currentPreviewTts = null
                     }
 
                     @Deprecated("Java Deprecated")
                     override fun onError(utteranceId: String?) {
                         previewTts?.shutdown()
+                        currentPreviewTts = null
                     }
                 })
             },
@@ -342,8 +362,20 @@ internal class EngineSectionController(
             // تعذّر ربط محرك المعاينة بذاته (حزمة غير صالحة):
             // لا نترك نسخة معلقة.
             runCatching { previewTts?.shutdown() }
+            currentPreviewTts = null
             return
         }
+    }
+
+    /** يصفّر كل المراجع (بند 4.1 + 4.2): إغلاق محرك المعاينة المعلّق
+     *  وتحرير واجهات التحويل التلقائي — يُستدعى من onDestroyView. */
+    fun cleanup() {
+        currentPreviewTts?.let { tts ->
+            runCatching { tts.shutdown() }
+        }
+        currentPreviewTts = null
+        autoConvertCheckbox = null
+        autoConvertButton = null
     }
 }
 

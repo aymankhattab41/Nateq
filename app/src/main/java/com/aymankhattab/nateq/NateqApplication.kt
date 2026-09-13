@@ -86,8 +86,16 @@ class NateqApplication : Application(), AnnouncementAppContext {
 
         // تنظيف الملفات المؤقتة اليتيمة عند الإقلاع (بند 19.2) — غير حاصر،
         // على النطاق العام خلفي فلا يؤخر بدء التطبيق ولا يعطّل إقلاع الخدمات.
-        appScope.launch {
-            runCatching { StartupTempSweeper(applicationContext).sweep() }
+        // يُنفَّذ **في العملية الرئيسية حصراً** لتفادي حذف ملف
+        // nateq_tts_session.wav أثناء توليده في خدمة :tts العاملة في عملية
+        // منفصلة — تغيير ذلك يسبب توقف الصوت.
+        val isMainProcess = applicationInfo.processName == packageName
+        if (isMainProcess) {
+            appScope.launch {
+                runCatching {
+                    StartupTempSweeper(applicationContext).sweep()
+                }
+            }
         }
 
         // تطبيق لغة الواجهة المختارة يدوياً؛ في حال لم تُحدَّد تتبع
@@ -98,7 +106,16 @@ class NateqApplication : Application(), AnnouncementAppContext {
         val appLang = runCatching {
             settingsRepository.getAppLanguage()
         }.getOrNull()
-        if (appLang != null) {
+        // AppCompatDelegate يحتفظ بآخر لغة محددة يدوياً حتى لو أُزيل الاختيار؛
+        // القائمة الفارغة تُعيد الواجهة إلى لغة النظام صراحةً (كان غياب
+        // الاستدعاء يُبقي التطبيق على آخر لغة يدوية ولو اختار المستخدم «حسب
+        // النظام»). لا يُستدعى إلا عند اختيار يدوي بلا قيمة (فلا إعادة بناء
+        // نشاط بلا حاجة في كل إقلاع).
+        if (appLang.isNullOrBlank()) {
+            AppCompatDelegate.setApplicationLocales(
+                LocaleListCompat.getEmptyLocaleList()
+            )
+        } else {
             AppCompatDelegate.setApplicationLocales(
                 LocaleListCompat.forLanguageTags(appLang)
             )

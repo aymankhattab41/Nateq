@@ -241,9 +241,15 @@ object UpdateChecker {
      *  يستخدم التخزين الخارجي المُخصَّص للتطبيق (getExternalFilesDir) لأن
      *  DownloadManager على أندرويد 10+ يرفض الوجهات داخل app_internal
      *  (SecurityException: Unsupported path) ويقبل فقط مسارات
-     *  التخزين الخارجي. */
-    private fun downloadsDir(context: Context): File =
-        File(context.getExternalFilesDir(null), "downloads").apply { mkdirs() }
+     *  التخزين الخارجي. قد يُعيد getExternalFilesDir null (تخزين مشفَّر
+     *  أو ممتلئ) — نتداركه بمسار داخلي بدل انهيار File(null, …). */
+    private fun downloadsDir(context: Context): File {
+        val base = context.getExternalFilesDir(null)
+            ?: context.filesDir
+        return File(base, "downloads").apply {
+            mkdirs()
+        }
+    }
 
     /** مسار ملف الـ APK المُنزَل. */
     fun downloadedApk(context: Context): File =
@@ -263,6 +269,11 @@ object UpdateChecker {
         allowMetered: Boolean = false
     ): Long {
         val destination = File(downloadsDir(context), APK_NAME)
+        // كان DownloadManager يُنشئ «lord_tts-1.apk» إذا وُجد ملفٌ سابق
+        // بنفس الوجهة، ثم لا يجد المُستمعُ downloadedApk الملفَ المتوقَّع
+        // (اسمه مختلف) فيفشل التحقق/التثبيت. نمسح النسخةَ المتقادمة قبل
+        // الإرسال حتى يستقر التنزيل على الوجهة المتوقعة.
+        if (destination.exists()) destination.delete()
         val manager = context.getSystemService(
             Context.DOWNLOAD_SERVICE
         ) as DownloadManager
@@ -328,13 +339,20 @@ object UpdateChecker {
      *  عند غياب بصمة صالحة. منطق نقي. */
     internal fun extractSha256FromReleaseNote(text: String?): String? {
         if (text.isNullOrBlank()) return null
-        // بادئة «SHA-256:» اختيارية؛ البصمة 64 خانة سداسية تامة، والنظرة
-        // اللاحقة تمنع التقاط جزءٍ من سلسلة سداسية أطول.
-        val match = Regex(
-            "(?im)^[ \\t]*(?:SHA-?256[ \\t]*[:=][ \\t]*)?" +
+        // تُقبل البصمة فقط حين ترتبط صراحةً بالهدف (بند 3.9): إما سطر
+        // «SHA-256: …» (أو «SHA-256=»)، وإما تنسيق SHA256SUMS
+        // («البصمة  lord_tts.apk»). هكذا لا تُلتقط بصمةٌ عشوائية من
+        // الملاحظات — كملف المصدر أو mapping — فتثبيت فاشل.
+        val prefixed = Regex(
+            "(?im)^[ \\t]*SHA-?256[ \\t]*[:=][ \\t]*" +
                 "([0-9a-f]{64})(?![0-9a-f])"
         ).find(text)
-        return match?.groupValues?.get(1)?.lowercase()
+        prefixed?.let { return it.groupValues[1].lowercase() }
+        val sums = Regex(
+            "(?im)^[ \\t]*([0-9a-f]{64})(?![0-9a-f])" +
+                "[ \\t]+lord_tts\\.apk"
+        ).find(text)
+        return sums?.groupValues?.get(1)?.lowercase()
     }
 
     /** مقارنة سداسية ثابتة الزمن (لا تقطع عند أول اختلاف). */

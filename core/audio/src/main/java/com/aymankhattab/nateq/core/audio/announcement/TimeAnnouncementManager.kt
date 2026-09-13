@@ -231,16 +231,19 @@ class TimeAnnouncementManager(
     private fun calculateInitialDelay(): Long {
         val calendar = timeProvider.now()
         val interval = effectiveIntervalMinutes()
-        val currentMinute = calendar.get(Calendar.MINUTE)
+        // شبكة دقائق اليوم الكامل (0..1439) بدل دقائق الساعة المنفصلة:
+        // فاصل 90/180 (توفير الطاقة يضاعف الثلاثين) كان يُنسب إلى الساعة
+        // فيقفز الإعلان التالي إلى الساعة القادمة (60 دقيقة) بدل دوره
+        // الفعلي — فيتفاوت الإيقاع ويستهلك إعلاناً كل ساعة مهما زاد الفاصل.
+        val gridStep = interval.coerceAtLeast(2)
+        val minuteOfDay = calendar.get(Calendar.HOUR_OF_DAY) * 60 +
+            calendar.get(Calendar.MINUTE)
+        // الشريحة التالية دائماً في المستقبل (مضاعف > minuteOfDay): عند نهاية
+        // اليوم (مثل 23:59) تنساب إلى منتصف ليل الغد — «الربق %1440» السابق
+        // كان يعيدها إلى بداية اليوم نفسه (الماضي) فينقلب التأخير سالباً.
+        val nextSlot = ((minuteOfDay / gridStep) + 1) * gridStep
 
-        // إيجاد الدقيقة القادمة التي تقسم على الفاصل
-        var nextMinute = ((currentMinute / interval) + 1) * interval
-        if (nextMinute >= 60) {
-            nextMinute = 0
-            calendar.add(Calendar.HOUR_OF_DAY, 1)
-        }
-
-        calendar.set(Calendar.MINUTE, nextMinute)
+        calendar.add(Calendar.MINUTE, nextSlot - minuteOfDay)
         calendar.set(Calendar.SECOND, 0)
         calendar.set(Calendar.MILLISECOND, 0)
 
@@ -316,17 +319,36 @@ class TimeAnnouncementManager(
         val currentHour = calendar.get(Calendar.HOUR_OF_DAY)
         val day = calendar.get(Calendar.DAY_OF_WEEK) // 1=الأحد … 7=السبت
         // اليوم المعطَّل (مفتاح الشاشة) يُستثنى من الهدوء تماماً
-        if (!settings.isDayQuietEnabled(day)) return false
-        val quietStart = settings.getQuietStartForDay(day)
-        val quietEnd = settings.getQuietEndForDay(day)
-
-        if (quietStart <= quietEnd) {
-            // مثال: 7 إلى 23 (نفس اليوم)
-            return currentHour >= quietStart && currentHour < quietEnd
-        } else {
-            // مثال: 23 إلى 7 (يعبر منتصف الليل)
-            return currentHour >= quietStart || currentHour < quietEnd
+        val disabledToday = !settings.isDayQuietEnabled(day)
+        if (!disabledToday) {
+            val quietStart = settings.getQuietStartForDay(day)
+            val quietEnd = settings.getQuietEndForDay(day)
+            if (quietStart <= quietEnd) {
+                // مثال: 7 إلى 23 (نفس اليوم)
+                if (currentHour >= quietStart && currentHour < quietEnd) {
+                    return true
+                }
+            } else {
+                // مثال: 23 إلى 7 (يعبر منتصف الليل)
+                if (currentHour >= quietStart || currentHour < quietEnd) {
+                    return true
+                }
+            }
         }
+        // فترة «أمس» العابرة لمنتصف الليل (مثل جمعة 23:00 → سبت 07:00) تظل
+        // سارية في الساعات الأولى من اليوم الجديد؛ بلا هذا الفحص كان يُقرع
+        // الإعلانُ في 00:00..07:00 من اليوم المغصوب رغم وجوب الصمت.
+        val yesterday = if (day == Calendar.SUNDAY) {
+            Calendar.SATURDAY
+        } else {
+            day - 1
+        }
+        if (settings.isDayQuietEnabled(yesterday)) {
+            val start = settings.getQuietStartForDay(yesterday)
+            val end = settings.getQuietEndForDay(yesterday)
+            if (start > end && currentHour < end) return true
+        }
+        return false
     }
 
     /** نطق الوقت الحالي */
@@ -549,7 +571,7 @@ class TimeAnnouncementManager(
             30 -> "half past $hour12 $period"
             45 -> "quarter to $nextHour $period"
             in 1..14 -> "${minute} minute" +
-                if (minute == 1) "" else "s" +
+                (if (minute == 1) "" else "s") +
                 " past $hour12 $period"
             in 16..29 -> "$minute minutes past $hour12 $period"
             in 31..44 -> "${60 - minute} minutes to $nextHour $period"
@@ -653,14 +675,20 @@ class TimeAnnouncementManager(
             )
 
             if (voice != null && provider != null) {
-                AnnouncementSpeaker.getInstance(context)
-                    .speak(
-                        text, Locale.forLanguageTag(languageTag),
-                        speechRate, pitch, volume,
-                        engineOverride = settings.getEngineForCategory(
-                            SettingsRepository.VOICE_CATEGORY_NUMBERS
-                        )
+                // إعادة ضبط صوت فئة الأرقام قبل النطق (نفس نمط فئة الوقت بند
+                // [2]): الصوت كان يعلق على آخر فئة نطقت فيُقرأ الرقم بصوتها.
+                val numPref = settings.getPreferredVoiceIdForCategory(
+                    SettingsRepository.VOICE_CATEGORY_NUMBERS
+                )
+                val speaker = AnnouncementSpeaker.getInstance(context)
+                speaker.resetVoice(numPref)
+                speaker.speak(
+                    text, Locale.forLanguageTag(languageTag),
+                    speechRate, pitch, volume,
+                    engineOverride = settings.getEngineForCategory(
+                        SettingsRepository.VOICE_CATEGORY_NUMBERS
                     )
+                )
             }
         }
     }
@@ -690,14 +718,21 @@ class TimeAnnouncementManager(
             )
 
             if (voice != null && provider != null) {
-                AnnouncementSpeaker.getInstance(context)
-                    .speak(
-                        text, Locale.forLanguageTag(languageTag),
-                        speechRate, pitch, volume,
-                        engineOverride = settings.getEngineForCategory(
-                            SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
-                        )
+                // إعادة ضبط صوت فئة الإشعارات قبل النطق (نفس نمط فئة الوقت
+                // بند [2]): الصوت كان يعلق على آخر فئة نطقت فيُقرأ الإشعار
+                // بصوتها.
+                val notifPref = settings.getPreferredVoiceIdForCategory(
+                    SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+                )
+                val speaker = AnnouncementSpeaker.getInstance(context)
+                speaker.resetVoice(notifPref)
+                speaker.speak(
+                    text, Locale.forLanguageTag(languageTag),
+                    speechRate, pitch, volume,
+                    engineOverride = settings.getEngineForCategory(
+                        SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
                     )
+                )
             }
         }
     }

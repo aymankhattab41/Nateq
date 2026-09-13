@@ -130,8 +130,13 @@ object SmartSpeller {
     private fun spellArabic(base: Char, text: String): String {
         val marks = text.substring(1)
         val shadda = marks.contains('\u0651')
+        // كانت «الحركة» هي أول علامةٍ غير الحرف مهما كانت؛ إن سبقت علامةٌ
+        // مجرَّدة صامتة (ألف خنجرية U+0670 ومذيداتها) الحركةَ الحقيقية
+        // (فتحة/ضمة…) صارت الأولى فيسقط نطقُ الحركة (null وغير منطوق).
+        // نفلتر إلى علامات النطق الفعلية فتُطابق الحركةُ المنطوقةُ أولاً
+        // بأي ترتيب جمعه المحرر.
         val vowel = marks.replace("\u0651", "")
-            .firstOrNull { it != base }?.let { TASHKEEL_WORDS[it] }
+            .firstOrNull { it in TASHKEEL_WORDS }?.let { TASHKEEL_WORDS[it] }
         val adjectives = buildList {
             if (shadda) add("مشددة")
             if (vowel != null) add(vowel)

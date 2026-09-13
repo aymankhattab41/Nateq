@@ -17,9 +17,11 @@ internal class NumberReadingController(
     private val onStatusChanged: () -> Unit
 ) {
 
-    private lateinit var spinnerNumberReadingMode: Spinner
-    private lateinit var btnSpeechLanguage:
-            com.google.android.material.button.MaterialButton
+    // مراجع العرض قابلة للتصفير في cleanup() عند تدمير عرض الفصيل
+    // (بند 4.1) حتى لا تبقى شجرة العرض القديمة محتجزة في الخلفية.
+    private var spinnerNumberReadingMode: Spinner? = null
+    private var btnSpeechLanguage:
+            com.google.android.material.button.MaterialButton? = null
 
     fun setup(view: View) {
         spinnerNumberReadingMode =
@@ -39,13 +41,13 @@ internal class NumberReadingController(
         )
         val savedMode = runCatching { settings.getNumberReadingMode() }
             .getOrDefault(1).coerceIn(1, 8)
-        spinnerNumberReadingMode.adapter = ArrayAdapter(
+        spinnerNumberReadingMode?.adapter = ArrayAdapter(
             fragment.requireContext(),
             android.R.layout.simple_spinner_dropdown_item,
             modeLabels
         )
-        spinnerNumberReadingMode.setSelection(savedMode - 1)
-        spinnerNumberReadingMode.onItemSelectedListener =
+        spinnerNumberReadingMode?.setSelection(savedMode - 1)
+        spinnerNumberReadingMode?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: AdapterView<*>?,
@@ -54,6 +56,9 @@ internal class NumberReadingController(
                 id: Long
             ) {
                 runCatching { settings.setNumberReadingMode(position + 1) }
+                // تحديث سطر حالة القسم في الأكورديون فور تغيير الوضع
+                // (بند 4.11) — كان الجدول يبقى قديماً حتى فتح الشاشة مجدداً.
+                onStatusChanged()
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}
@@ -68,12 +73,12 @@ internal class NumberReadingController(
         } else {
             LanguageCode.isArabic(current)
         }
-        btnSpeechLanguage.text = if (isArabic) {
+        btnSpeechLanguage?.text = if (isArabic) {
             fragment.getString(R.string.speech_language_to_en)
         } else {
             fragment.getString(R.string.speech_language_to_ar)
         }
-        btnSpeechLanguage.setOnClickListener {
+        btnSpeechLanguage?.setOnClickListener {
             // يُقرأ الوضع الحالي في كل ضغطة (لا قيمة مأسورة)
             // ثم يُقلب نحو المعاكس
             val lang = runCatching { settings.getAnnouncementSpeechLanguage() }
@@ -87,18 +92,24 @@ internal class NumberReadingController(
                 if (isArabicNow) LanguageCode.EN.tag else LanguageCode.AR.tag
             runCatching { settings.setAnnouncementSpeechLanguage(next) }
             // النص يعرض الإجراء نحو المعاكس للحالة الجديدة
-            btnSpeechLanguage.text = if (next == LanguageCode.AR.tag) {
+            btnSpeechLanguage?.text = if (next == LanguageCode.AR.tag) {
                 fragment.getString(R.string.speech_language_to_en)
             } else {
                 fragment.getString(R.string.speech_language_to_ar)
             }
             // إعلان مسموع للبدّل حتى يعرف المستمع أن اللغة تبدّلت
             // (TalkBack/قراءة الشاشة)
-            btnSpeechLanguage.announceCompat(
+            btnSpeechLanguage?.announceCompat(
                 fragment.getString(R.string.speech_language_switch) +
-                    " — " + btnSpeechLanguage.text
+                    " — " + btnSpeechLanguage?.text
             )
             onStatusChanged()
         }
+    }
+
+    /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */
+    fun cleanup() {
+        spinnerNumberReadingMode = null
+        btnSpeechLanguage = null
     }
 }

@@ -146,6 +146,14 @@ internal class LanguageConvertAdapter(
             tvTitle.text = row.displayName
             tvSaved.text = ""
             rowEngines = row.engines
+            // وصولية (بند 4.4): توصيفا الزرين باسم اللغة حتى يعرف قارئ
+            // الشاشة أي لغة تخص «تشغيل عيّنة» و«حفظ» بين عشرات الصفوف.
+            btnPlay.contentDescription = context.getString(
+                R.string.cd_convert_play_for_language, row.displayName
+            )
+            btnSave.contentDescription = context.getString(
+                R.string.cd_convert_save_for_language, row.displayName
+            )
             val saved = settings.getEnginePreferenceForLanguage(
                 row.languageTag
             )

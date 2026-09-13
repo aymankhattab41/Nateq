@@ -42,8 +42,17 @@ class MultiProcessPrefsBridge(private val appDataDir: File) {
      * و string-set/string.
      */
     fun parse(name: String): Map<String, Any?> {
+        return FileInputStream(fileFor(name)).use { input ->
+            parseFrom(input)
+        }
+    }
+
+    /** يقرأ خريطة التفضيلات من تدفق XML مفتوح — داخل [use] ليُغلق التدفق
+     *  حتماً عند الخروج (نجاحاً أو فشلاً) فلا تتسرب واصفات الملفات مع كل
+     *  `reload()` في خدمة :tts (تراكمها كان يبلغ «Too many open files»). */
+    private fun parseFrom(input: FileInputStream): Map<String, Any?> {
         val parser = Xml.newPullParser()
-        parser.setInput(FileInputStream(fileFor(name)), "utf-8")
+        parser.setInput(input, "utf-8")
         var type = parser.eventType
         val map = LinkedHashMap<String, Any?>()
         // حالة عنصر <set> النشط (مجموعة نصوص): الاسم وجمع القيم حتى وسم

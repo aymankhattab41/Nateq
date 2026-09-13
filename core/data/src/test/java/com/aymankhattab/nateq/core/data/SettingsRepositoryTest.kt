@@ -563,4 +563,64 @@ class SettingsRepositoryTest {
         repo.setBatteryCueVolume(2.0f)
         assertEquals(1.0f, repo.getBatteryCueVolume(), 0.0f)
     }
+
+    // ===== اختبارات الاستيراد (importSettings) =====
+
+    @Test
+    fun importSettings_longValue_copiedAsInt() {
+        // كانت القيم الطويلة (Long) تُرمى بصمت لأن when لم يكن يتضمن
+        // فرعاً للـ Long فتُهمل في الاستيراد.
+        assertTrue(
+            repo.importSettings(
+                mapOf("time_chime_volume" to 0.6f, "test_long_key" to 123L)
+            )
+        )
+        assertEquals(0.6f, repo.getTimeChimeVolume(), 0.0f)
+        val prefs = context.getSharedPreferences(
+            "nateq_settings", Context.MODE_PRIVATE
+        )
+        assertEquals(123, prefs.getInt("test_long_key", -1))
+    }
+
+    @Test
+    fun importSettings_preservesMigrationFlags() {
+        // وسوم الترحيل الثلاثة تبدأ بـ _ وتُستثنى من الاستيراد، لكن لا
+        // يجوز أن يمحوها clear() وإلا يتحرك الترحيل من جديد فوق نسخةٍ
+        // مكتملة — تُحفظ وتُعاد بعد المسح.
+        val prefs = context.getSharedPreferences(
+            "nateq_settings", Context.MODE_PRIVATE
+        )
+        // بذر الوسوم كأن هجرةً ثلاثيةً أكملت فعلها فعلاً.
+        prefs.edit()
+            .putBoolean("_migrated_to_plain", true)
+            .putBoolean("_quiet_days_migrated", true)
+            .putBoolean("_convert_slots_migrated", true)
+            .commit()
+        val imported = mapOf(
+            "number_reading_mode" to 6,
+            "time_chime_sound" to "soft_ding"
+        )
+        assertTrue(repo.importSettings(imported))
+        assertEquals(6, repo.getNumberReadingMode())
+        assertEquals("soft_ding", repo.getTimeChimeSound())
+        assertTrue(prefs.getBoolean("_migrated_to_plain", false))
+        assertTrue(prefs.getBoolean("_quiet_days_migrated", false))
+        assertTrue(prefs.getBoolean("_convert_slots_migrated", false))
+    }
+
+    @Test
+    fun importSettings_safeDefaultFalseKeys_resetEvenIfTrue() {
+        // مفاتيح المستشعرات الحساسة (الهز/التقارب) تُثبَّت false على
+        // الاستيراد مهما وردت في النسخة — لا يجوز إكمالهما عند ترميناً
+        // الانتقال من جهازٍ آخر مفعَّلاً عليه
+        repo.setShakeToStopEnabled(true)
+        repo.setProximitySilenceEnabled(true)
+        val imported = mapOf(
+            "shake_to_stop_enabled" to true,
+            "proximity_silence_enabled" to true
+        )
+        assertTrue(repo.importSettings(imported))
+        assertFalse(repo.isShakeToStopEnabled())
+        assertFalse(repo.isProximitySilenceEnabled())
+    }
 }

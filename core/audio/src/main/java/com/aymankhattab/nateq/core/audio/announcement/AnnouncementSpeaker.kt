@@ -844,7 +844,10 @@ class AnnouncementSpeaker(
         }
     }
 
-    /** إيقاف أي نطق جارٍ وتحرير الموارد */
+    /** إيقاف أي نطق جارٍ وتحرير الموارد — يُسكت الصوت فوراً ويحرر التركيز
+     *  لكنه **يُبقي اتصال محرك TTS قائماً** (الإسكات الفوري بالهز/التقارب
+     *  يجب ألا يُجبر الإعلانَ التالي على إعادة بناء المحرك بثانية كاملة —
+     *  التدمير الكامل يخصّ [shutdown] عند خروج الخدمة نهائياً). */
     fun stop() {
         speechGeneration.incrementAndGet()
         AudioCuePlayer.getInstance(appContext).stop()
@@ -856,7 +859,6 @@ class AnnouncementSpeaker(
         pendingFocusTimer = null
         tts?.stop()
         releaseAudioFocus()
-        shutdownSafely()
         nowSpeaking = false
     }
 

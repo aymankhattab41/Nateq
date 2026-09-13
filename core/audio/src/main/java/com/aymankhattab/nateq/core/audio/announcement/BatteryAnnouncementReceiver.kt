@@ -12,8 +12,9 @@ import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.LanguageCode
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * مستقبل إعلانات البطارية والشحن.
@@ -101,6 +102,9 @@ class BatteryAnnouncementReceiver(
                     pendingResult.finish()
                 }
             }
+            // إشارة انتهاء النطق — تُكملها خطاف الاكتمال فتُطلق الكوروتين
+            // فوراً (بند 2.14: كان delay(6s) يظل معلقاً حتى بعد انتهاء النطق).
+            val speechDone = CompletableDeferred<Unit>()
             var completionListener: (() -> Unit)? = null
             try {
                 // **بند 5.5:** finish() الفوري قبل تمام التوليف كان يترك
@@ -111,9 +115,11 @@ class BatteryAnnouncementReceiver(
                 // وإلا نُنهي فوراً.
                 if (handle(context, intent, action)) {
                     val speaker = AnnouncementSpeaker.getInstance(context)
-                    completionListener = { finishOnce() }
+                    completionListener = { speechDone.complete(Unit) }
                     speaker.addCompletionListener(completionListener!!)
-                    delay(BROADCAST_HOLD_MS)
+                    withTimeoutOrNull(BROADCAST_HOLD_MS) {
+                        speechDone.await()
+                    }
                     finishOnce()
                 } else {
                     finishOnce()

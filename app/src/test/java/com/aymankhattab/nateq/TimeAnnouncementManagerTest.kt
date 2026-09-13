@@ -100,6 +100,9 @@ class TimeAnnouncementManagerTest {
         reflect("formatEnglishNaturalTime", INT_TYPE, INT_TYPE)
             .invoke(manager, hour, minute) as String
 
+    private fun calculateInitialDelay(): Long =
+        reflect("calculateInitialDelay").invoke(manager) as Long
+
     private fun formatDigital(
         hour: Int, minute: Int, isEnglish: Boolean, use24h: Boolean
     ): String =
@@ -209,6 +212,14 @@ class TimeAnnouncementManagerTest {
         assertEquals("5 minutes past 10 AM", formatEnglish(10, 5))
         assertEquals("25 minutes past 10 AM", formatEnglish(10, 25))
         assertEquals("20 minutes to 11 PM", formatEnglish(22, 40))
+    }
+
+    @Test
+    fun formatEnglish_minuteOne_keepsPastSuffix() {
+        // الدقيقة 1 كانت تُنطق «1 minute» مقطوعةً بلا «past hour period»
+        // بسبب ربط «+»: الفرع الشرطي للجمع كان يبتلع بقية السلسلة.
+        assertEquals("1 minute past 10 AM", formatEnglish(10, 1))
+        assertEquals("2 minutes past 10 AM", formatEnglish(10, 2))
     }
 
     // ═══════════════════════ التنسيق الرقمي ═══════════════════════
@@ -340,14 +351,23 @@ class TimeAnnouncementManagerTest {
 
     @Test
     fun isInQuietHours_sameDayWindow_outside() {
-        // قبل الفجر (05:00) خارج نافذة 7→23.
+        // قبل الفجر (05:00) خارج نافذة 7→23 لكلٍّ من اليوم وأمس —
+        // نافذة أمس الافتراضية (23→7) كانت تجعل الصباح في هدوءٍ ما لم
+        // يُضبط أمسُ نفسَه نافذةً غير عابرة (بعد إصلاح البند 2.4).
         val clock = FakeClock(
             millisFor(2017, Calendar.JANUARY, 1, 5, 0)
         )
         manager = newManager(clock)
-        val day = clock.now().get(Calendar.DAY_OF_WEEK)
+        val day = clock.now().get(Calendar.DAY_OF_WEEK) // الأحد 1
+        val yesterday = if (day == Calendar.SUNDAY) {
+            Calendar.SATURDAY
+        } else {
+            day - 1
+        }
         settings.setQuietStartForDay(day, 7)
         settings.setQuietEndForDay(day, 23)
+        settings.setQuietStartForDay(yesterday, 7)
+        settings.setQuietEndForDay(yesterday, 23)
         assertFalse(isInQuietHours())
     }
 
@@ -377,6 +397,68 @@ class TimeAnnouncementManagerTest {
         settings.setQuietEndForDay(day, 23)
         settings.setDayQuietEnabled(day, false)
         assertFalse(isInQuietHours())
+    }
+
+    @Test
+    fun isInQuietHours_yesterdaySpanningWindow_intoMorning() {
+        // نافذة «أمس» العابرة لمنتصف الليل (جمعة 23→سبت 07) تظل سارية في
+        // ساعات الصباح الأولى: سبت 05:00 — نافذة السبت نفسه 10→15 لا تشملها
+        // لكن نافذة الجمعة الممتدة تغطيها (كان يُقرع الإعلان فجر السبت رغم
+        // صمت الجمعة الليلي).
+        val clock = FakeClock(
+            millisFor(2016, Calendar.DECEMBER, 31, 5, 0)
+        )
+        manager = newManager(clock)
+        val saturday = clock.now().get(Calendar.DAY_OF_WEEK) // 7
+        val friday = Calendar.FRIDAY // 6
+        settings.setQuietStartForDay(saturday, 10)
+        settings.setQuietEndForDay(saturday, 15)
+        settings.setQuietStartForDay(friday, 23)
+        settings.setQuietEndForDay(friday, 7)
+        assertTrue(isInQuietHours())
+    }
+
+    @Test
+    fun isInQuietHours_yesterdayWindow_endsByMorning() {
+        // نفس الإعدادات لكن بعد نهاية نافذة أمس (08:00): لم يعد الصمت —
+        // لا إعلانٌ صامت زائداً ولا قرعٌ ناقصاً.
+        val clock = FakeClock(
+            millisFor(2016, Calendar.DECEMBER, 31, 8, 0)
+        )
+        manager = newManager(clock)
+        val saturday = clock.now().get(Calendar.DAY_OF_WEEK) // 7
+        val friday = Calendar.FRIDAY // 6
+        settings.setQuietStartForDay(saturday, 10)
+        settings.setQuietEndForDay(saturday, 15)
+        settings.setQuietStartForDay(friday, 23)
+        settings.setQuietEndForDay(friday, 7)
+        assertFalse(isInQuietHours())
+    }
+
+    @Test
+    fun calculateInitialDelay_justBeforeMidnight_rollsToMidnight() {
+        // شبكة دقائق اليوم الكامل (0..1439) تُثبت الفاصل عند 23:59 → 00:00
+        // (دقيقة واحدة لطفل 30): كانت «دقائق الساعة المنفصلة» تضيف ساعةً من
+        // رأس اليوم فيقع أول إعلانٍ للغد 00:59 متأخراً ساعة كاملة. (الشبكة
+        // نفسها هي ما يصحّح فاصل توفير الطاقة 90/135/180 الذي كان يقفز كل
+        // ساعة بدل دوره الفعلي — البند 2.5.)
+        val clock = FakeClock(
+            millisFor(2017, Calendar.JANUARY, 1, 23, 59)
+        )
+        manager = newManager(clock)
+        settings.setTimeAnnouncementInterval(30)
+        assertEquals(1 * 60 * 1000L, calculateInitialDelay())
+    }
+
+    @Test
+    fun calculateInitialDelay_interval30_changesNothing() {
+        // السلوك القديم مطابق لفاصل 30: 10:47 → 11:00 (13 دقيقة).
+        val clock = FakeClock(
+            millisFor(2017, Calendar.JANUARY, 1, 10, 47)
+        )
+        manager = newManager(clock)
+        settings.setTimeAnnouncementInterval(30)
+        assertEquals(13 * 60 * 1000L, calculateInitialDelay())
     }
 
     // ═══════════════════════ الجدولة البنيوية ═══════════════════════

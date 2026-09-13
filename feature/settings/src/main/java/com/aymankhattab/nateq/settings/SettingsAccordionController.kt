@@ -2,6 +2,7 @@ package com.aymankhattab.nateq.settings
 
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Bundle
 import android.view.View
 import android.widget.TextView
 import android.widget.Toast
@@ -27,6 +28,11 @@ internal data class AccordionEntry(
     val content: View,
     val group: Int
 )
+
+/** مفاتيح حفظ حالة التنقّل في savedInstanceState (بند 4.6). */
+private const val STATE_LEVEL = "accordion_level"
+private const val STATE_GROUP = "accordion_group"
+private const val STATE_SECTION_TAG = "accordion_section_tag"
 
 /**
  * ضابط التنقّل على ثلاثة مستويات (الرئيسية ← المجموعة ← القسم):
@@ -227,15 +233,16 @@ internal class SettingsAccordionController(
         // (وليس القائمة الرئيسية)
         tvBackToList?.text =
             fragment.getString(R.string.back_to_group, groupTitle(group))
-        // إعلان مسموع لفتح القسم + نقل تركيز الوصول إلى أول عنصر
-        // تفاعلي في المحتوى
-        val focusTarget = findFirstFocusableView(content)
-            ?: tvBackToList
-        focusTarget?.let {
-            it.announceCompat(
-                fragment.getString(R.string.section_opened, sectionName)
-            )
-            focusForAccessibility(it)
+        // بند 4.9: نعتمد على قراءة عنوان القسم كرأس Heading عند انتقال
+        // قارئ الشاشة إليه — بلا announceCompat مسبق (كان يُبث إعلاناً
+        // يوليه نقلُ التركيز اللحظي فيسكُته فلا يسمعه الكفيف).
+        tvSectionTitle?.let { title ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                // بند 4.9: يتصفّح عنوان القسم كرأس Heading يُعلنه قارئ
+                // الشاشة عند انتقال التركيز إليه.
+                title.setAccessibilityHeading(true)
+            }
+            focusForAccessibility(title)
         }
     }
 
@@ -299,19 +306,6 @@ internal class SettingsAccordionController(
                 // في الرئيسية: يعالج مفتاح الرجوع النظامي الخروج من الشاشة
             }
         }
-    }
-
-    /** إيجاد أول عرض قابل للتركيز في الشجرة (أول عنصر تفاعلي لفتح القسم) */
-    private fun findFirstFocusableView(root: View): View? {
-        var found: View? = null
-        forEachView(root) { v ->
-            if (found == null && v.isFocusable &&
-                v.visibility == View.VISIBLE
-            ) {
-                found = v
-            }
-        }
-        return found
     }
 
     /** تحذير لمرة واحدة في الجلسة إذا كان إذن الإشعارات مرفوضاً
@@ -851,4 +845,74 @@ internal class SettingsAccordionController(
     /** عنوان المجموعة المقروء (المحرك والإصوات/الإعلانات/النصوص/النظام) */
     private fun groupTitle(group: GroupState): String =
         fragment.getString(group.titleRes)
+
+    /** بند 4.6: حفظ حالة التنقّل (المستوى والمجموعة والقسم المفتوح) لاستعادتها
+     *  بعد تدوير الشاشة — يُستدعى من onSaveInstanceState في الفصيل. */
+    fun saveState(): Bundle {
+        val bundle = Bundle()
+        bundle.putInt(STATE_LEVEL, level.ordinal)
+        currentGroup?.let { bundle.putInt(STATE_GROUP, it.group) }
+        if (level == Level.SECTION) {
+            val openTag = accordionEntries.firstOrNull {
+                it.content.visibility == View.VISIBLE
+            }?.header?.tag as? String
+            if (openTag != null) bundle.putString(STATE_SECTION_TAG, openTag)
+        }
+        return bundle
+    }
+
+    /** بند 4.6: استعادة التنقّل المحفوظ بعد إنشاء الأقسام.
+     *  يجب استدعاؤها فوراً بعد [setup]. */
+    fun restoreState(savedInstanceState: Bundle) {
+        val groupInt = runCatching {
+            savedInstanceState.getInt(STATE_GROUP)
+        }.getOrDefault(-1)
+        val savedGroup = groupStates.firstOrNull {
+            it.group == groupInt
+        }
+        val levelOrdinal = runCatching {
+            savedInstanceState.getInt(STATE_LEVEL)
+        }.getOrDefault(Level.HOME.ordinal)
+        val restoredLevel = try {
+            Level.entries[levelOrdinal]
+        } catch (_: Exception) {
+            Level.HOME
+        }
+        when (restoredLevel) {
+            Level.HOME -> {}
+            Level.GROUP -> if (savedGroup != null) {
+                openGroup(savedGroup)
+            }
+            Level.SECTION -> {
+                val tag = runCatching {
+                    savedInstanceState.getString(STATE_SECTION_TAG, null)
+                }.getOrNull()
+                val entry = if (savedGroup != null && tag != null) {
+                    accordionEntries.firstOrNull {
+                        it.group == savedGroup.group &&
+                            (it.header.tag as? String) == tag
+                    }
+                } else null
+                if (entry != null) {
+                    openSection(entry.content)
+                } else if (savedGroup != null) {
+                    openGroup(savedGroup)
+                }
+            }
+        }
+    }
+
+    /** يصفّر كل مراجع العرض (بند 4.1) — يُستدعى من onDestroyView حتى لا
+     *  تبقى شجرة العرض القديمة محتجزة عند بقاء الفصيل في الخلفية. */
+    fun cleanup() {
+        llDetailBack = null
+        llMasterSwitch = null
+        svSettingsScroll = null
+        tvSectionTitle = null
+        tvBackToList = null
+        switchHome = null
+        accordionEntries.clear()
+        level = Level.HOME
+        currentGroup = null
+    }
 }

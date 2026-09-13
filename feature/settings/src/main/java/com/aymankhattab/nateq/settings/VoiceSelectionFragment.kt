@@ -2,9 +2,14 @@ package com.aymankhattab.nateq.settings
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.app.Dialog
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.ArrayAdapter
@@ -44,6 +49,24 @@ import com.aymankhattab.nateq.settings.SettingsViewModel.SettingsOperation
  *  (لا تسريب مراجع الواجهة) — تُستخدم من الضابطات التي تملك `fragment`. */
 internal fun Fragment.trackDialog(dialog: Dialog) {
     (this as? VoiceSelectionFragment)?.trackDialog(dialog)
+}
+
+/** بثّ تحديث لأداة الساعة الناطقة (بند 4.12): الودجت updatePeriodMillis="0"
+ *  فلا يُعاد بناؤه لوحده — عند تبديل لغة التطبيق نطلب من النظام إعادة
+ *  بنائه بلغة الواجهة الجديدة عبر ACTION_APPWIDGET_UPDATE إلى موفّره. */
+internal fun notifyClockWidgetRefresh(context: Context) {
+    val manager = AppWidgetManager.getInstance(context)
+    val provider = ComponentName(
+        context,
+        "com.aymankhattab.nateq.widget.SpeakingClockWidget"
+    )
+    val ids = manager.getAppWidgetIds(provider)
+    if (ids.isEmpty()) return
+    val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_UPDATE).apply {
+        component = provider
+        putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
+    }
+    runCatching { context.sendBroadcast(intent) }
 }
 
 /**
@@ -502,6 +525,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         setupSaveAndResetButtons()
         setupBackupRestoreButtons()
         accordion.updateSectionStatuses()
+        // بند 4.6: إعادة فتح الشاشة (مجموعة/قسم) التي كان يعدّلها المستخدم
+        // قبل تدوير الجهاز بدل طردِه إلى الصفحة الرئيسية.
+        if (savedInstanceState != null) {
+            accordion.restoreState(savedInstanceState)
+        }
 
         // التحديث التفاعلي: المراجعة الابتدائية (0) لا تُحدّث شيئاً،
         // وأي مراجعة لاحقة (استعادة/إعادة ضبط) تُعيد بناء كل أقسام
@@ -520,6 +548,23 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
         // فحص تلقائي عند فتح التطبيق: يُنبه بوجود تحديث (صامت إن لم يوجد)
         checkForUpdatesOnStart()
+    }
+
+    /** بند 4.7: عند العودة من شاشات النظام (منح إذن المنبهات الدقيقة /
+     *  إشعارات) تُعاد حالة صفوف طلب الإذن ومُلخّصات الأقسام فوراً بدل
+     *  الانتظار حتى يعود الفصيل من الخلفية. */
+    override fun onResume() {
+        super.onResume()
+        if (::timeSection.isInitialized) timeSection.refreshExactAlarmRow()
+        if (::accordion.isInitialized) accordion.updateSectionStatuses()
+    }
+
+    /** بند 4.6: حفظ موضع التنقّل في الأكورديون لاستعادته بعد التدوير. */
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        if (::accordion.isInitialized) {
+            outState.putAll(accordion.saveState())
+        }
     }
 
     override fun onDestroyView() {
@@ -543,6 +588,22 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         val open = activeDialogs.toList()
         activeDialogs.clear()
         open.forEach { runCatching { it.dismiss() } }
+        // تصفير مراجع العرض في كل الضوابط (بند 4.1) وحتى لا تبقى شجرة العرض
+        // القديمة محتجزة عبر أي ضابط بعد تدوير الشاشة أو مغادرتها.
+        if (::engineSection.isInitialized) engineSection.cleanup()
+        if (::timeSection.isInitialized) timeSection.cleanup()
+        if (::batterySection.isInitialized) batterySection.cleanup()
+        if (::notificationSection.isInitialized) notificationSection.cleanup()
+        if (::callerSection.isInitialized) callerSection.cleanup()
+        if (::smsSection.isInitialized) smsSection.cleanup()
+        if (::generalSection.isInitialized) generalSection.cleanup()
+        if (::numberSection.isInitialized) numberSection.cleanup()
+        if (::deviceHealthSection.isInitialized) deviceHealthSection.cleanup()
+        if (::textReadingSection.isInitialized) textReadingSection.cleanup()
+        if (::instantSilenceSection.isInitialized) {
+            instantSilenceSection.cleanup()
+        }
+        if (::accordion.isInitialized) accordion.cleanup()
         super.onDestroyView()
     }
 
@@ -723,6 +784,18 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             ).apply {
                 text = getString(R.string.caller_names_delete)
                 textSize = 13f
+                // وصولية (بند 4.5): زرُ الحذف يعرّف نفسه باسم أو رقم
+                // الجهة المستهدفة حتى لا تُقرأ «حذف، زر» متكررة مجهولة
+                // لقارئ الشاشة عند وجود عدة أرقام.
+                contentDescription = when {
+                    name.isNotBlank() -> getString(
+                        R.string.caller_names_delete_for, name
+                    )
+                    number.isNotBlank() -> getString(
+                        R.string.caller_names_delete_for, number
+                    )
+                    else -> getString(R.string.caller_names_delete)
+                }
                 // أهداف لمس لا تقل عن 48dp لقارئ الشاشة
                 minHeight = (48 * resources.displayMetrics.density).toInt()
             }
@@ -959,6 +1032,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     androidx.core.os.LocaleListCompat.forLanguageTags(newLang)
                 )
             }
+            // بند 4.12: تحديث أداة الساعة بلغة الواجهة الجديدة فوراً —
+            // الودجت updatePeriodMillis="0" ولا يُحدَّث لوحده.
+            notifyClockWidgetRefresh(requireContext())
             // إعادة إنشاء النشاط لتطبيق اللغة فورياً (UI + افتراضيات)
             requireActivity().recreate()
         }
@@ -1291,25 +1367,37 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     /* سبق تسجيله أو فُكّ */
                 }
                 val apk = UpdateChecker.downloadedApk(ctx)
-                if (expectedSha256Hex != null &&
-                    !UpdateChecker.verifyApkSha256(apk, expectedSha256Hex)
-                ) {
-                    // بصمة الـ APK المُنزَّل لا تطابق ما نشره GitHub —
-                    // ملف تالف/مبتور أو عبث: لا تثبيت، نحذف ونُبلغ المستخدم.
-                    apk.delete()
-                    Toast.makeText(
-                        ctx,
-                        getString(R.string.check_updates_checksum_failed),
-                        Toast.LENGTH_LONG
-                    ).show()
-                    view?.announceCompat(
-                        getString(
-                            R.string.check_updates_checksum_failed
+                // بصمة SHA-256 لملف متعدد الـ MB تُقرأ على الخيط الرئيسي
+                // (onReceive) فكانت تُجمّد الواجهة لحظةَ اكتمال كل تنزيل —
+                // نُنفذ الفحص على خيط خلفي ونعود للخيط الرئيسي للتفاعلات فقط.
+                Thread {
+                    val matches = expectedSha256Hex == null ||
+                        UpdateChecker.verifyApkSha256(
+                            apk, expectedSha256Hex
                         )
-                    )
-                    return
-                }
-                UpdateChecker.promptInstall(ctx, apk)
+                    Handler(Looper.getMainLooper()).post {
+                        if (!matches) {
+                            // بصمة الـ APK المُنزَّل لا تطابق ما نشره
+                            // GitHub — ملف تالف/مبتور أو عبث: لا تثبيت،
+                            // نحذف ونُبلغ المستخدم.
+                            apk.delete()
+                            Toast.makeText(
+                                ctx,
+                                getString(
+                                    R.string.check_updates_checksum_failed
+                                ),
+                                Toast.LENGTH_LONG
+                            ).show()
+                            view?.announceCompat(
+                                getString(
+                                    R.string.check_updates_checksum_failed
+                                )
+                            )
+                        } else {
+                            UpdateChecker.promptInstall(ctx, apk)
+                        }
+                    }
+                }.start()
             }
         }
         ContextCompat.registerReceiver(

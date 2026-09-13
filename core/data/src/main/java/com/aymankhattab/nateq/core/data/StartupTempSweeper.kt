@@ -16,16 +16,25 @@ import java.io.File
  * قواعد الحذف الآمنة:
  *  - يمحو كل `*.wav` يتيم في cacheDir (لا يمسّ نسخ الكاش المستخدمة فعلياً —
  *    أسماء WAV المؤقتة في هذا المشروع فريدة بطابع زمني لإشعارات TTS).
+ *    **حدّ العمر**: الملفات الأحدث من [MIN_AGE_MS] تبقى — قد تكون ملف
+ *    `nateq_tts_session.wav` نشطاً تتولّده الآن خدمة :tts في عملية منفصلة،
+ *    وحذفه أثناء الاستخدام يوقف الصوت (كانت المسابقة بإقلاع الخدمة تحذف
+ *    الملف لحظياً فترميه لإعادة التوليد أو ترمي «صوتاً ناقصاً»).
  *  - في مجلد التنزيلات لا يمسّ ملف الـ APK الحالي المسمّى
  *    [UpdateChecker.APK_NAME]
  *    ولا يمسّ أي ملف أثناء تنزيل نشط (ملف حجمه صفر أو ملف بامتداد جزئي
- *    `.tmp`/`.part` يُترك لمدير التنزيلات)، ويمحو فقط ملفات APK قديمة بأسماء
+ *    `.tmp`/`.part` يُترك لمدير التنزيلات — وكذلك أي ملف حديث، قد يكون APK
+ *    نزل للتو ولا تزال المعالجة تنقل نسخته)، ويمحو فقط ملفات APK قديمة بأسماء
  *    أخرى أو نسخ مضغوطة (`.jpg`/`.zip`) إن وُجدت — لكي لا تُكسر دورة التحديث.
  */
 class StartupTempSweeper(private val context: Context) {
 
     companion object {
         private const val TAG = "NATEQ_TEMP_SWEEP"
+
+        /** أقل عمر للملف لاعتباره يتيماً: ملفات أحدث من هذا تُترك — قد
+         *  يكون يكتبها الآن التطبيقُ/الخدمة (جلسة TTS أو تنزيل مُعنْقَل). */
+        private const val MIN_AGE_MS = 30 * 60 * 1000L
 
         /** اسم ملف الـ APK الحالي النشط في مجلد التنزيلات
          *  (يطابق UpdateChecker).
@@ -51,8 +60,13 @@ class StartupTempSweeper(private val context: Context) {
             val cache = context.cacheDir
             if (!cache.exists() || !cache.isDirectory) return 0
             var deleted = 0
+            val cutoff = System.currentTimeMillis() - MIN_AGE_MS
             cache.listFiles()
-                ?.filter { it.isFile && it.name.endsWith(".wav") }
+                ?.filter {
+                    it.isFile &&
+                        it.name.endsWith(".wav") &&
+                        it.lastModified() < cutoff
+                }
                 ?.forEach {
                     if (it.delete()) deleted++
                 }
@@ -71,14 +85,17 @@ class StartupTempSweeper(private val context: Context) {
             val downloads = File(base, "downloads")
             if (!downloads.exists() || !downloads.isDirectory) return 0
             var deleted = 0
+            val cutoff = System.currentTimeMillis() - MIN_AGE_MS
             downloads.listFiles()?.filter { file ->
                 file.isFile &&
                     !file.name.equals(ACTIVE_APK_NAME, ignoreCase = true)
             }?.forEach { file ->
-                // لا نلمس ملفاً أثناء تنزيل نشط (حجم صفري أو لاحقة جزئية).
+                // لا نلمس ملفاً أثناء تنزيل نشط (حجم صفري أو لاحقة جزئية) أو
+                // ملفاً حديثاً (قد يكتبه الآن مديرُ التنزيلات أو تُعالج نسخته).
                 if (file.length() == 0L) return@forEach
                 if (file.name.endsWith(".tmp") ||
                     file.name.endsWith(".part")) return@forEach
+                if (file.lastModified() >= cutoff) return@forEach
                 if (file.delete()) deleted++
             }
             deleted

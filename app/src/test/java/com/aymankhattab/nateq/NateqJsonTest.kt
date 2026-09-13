@@ -57,7 +57,16 @@ class NateqJsonTest {
             NateqJson.parseStringMap("""{"1":"أحمد"}""")
         )
         assertEquals(emptyMap<String, String>(), NateqJson.parseStringMap("{}"))
-        assertNull(NateqJson.parseStringMap("""{"1":5}"""))
+        // القيمة الرقمية تُلتقط نصاً صرفاً (الخريطة كلها كانت تُرفض فتُفقد
+        // قائمة المتصلين عند أي قيمة غير نصية — الآن تُحوَّل بلطف).
+        assertEquals(
+            mapOf("1" to "5"),
+            NateqJson.parseStringMap("""{"1":5}""")
+        )
+        assertEquals(
+            mapOf("1" to "1.75", "2" to "true"),
+            NateqJson.parseStringMap("""{"1":1.75,"2":true}""")
+        )
         assertNull(NateqJson.parseStringMap("+2012\tأنس"))
         assertNull(NateqJson.parseStringMap("garbage"))
         assertNull(NateqJson.parseStringMap("[]"))
@@ -90,6 +99,20 @@ class NateqJsonTest {
         assertTrue(root.optArray("list") != null)
         assertEquals("v", root.optObject("nested")?.optString("k"))
         assertEquals("", root.optString("nullish"))
+    }
+
+    @Test
+    fun optBoolean_caseInsensitiveAndTrimmed() {
+        // «TRUE»/«True»/« FALSE » كانت تُرمى إلى الافتراضي رغم قبول org.json
+        // لها عبر Boolean.valueOf — المحاكاة لم تكن مطابقة للدلالات.
+        val root = NateqJson.parseObject(
+            """{"up":"TRUE","mixed":"True","padded":" FALSE ","digit":1}"""
+        )!!
+        assertTrue(root.optBoolean("up"))
+        assertTrue(root.optBoolean("mixed"))
+        assertFalse(root.optBoolean("padded"))
+        assertTrue(root.optBoolean("digit"))
+        assertFalse(root.optBoolean("no-member"))
     }
 
     @Test

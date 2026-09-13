@@ -1198,11 +1198,8 @@ private fun parseWavChunks(
     ) {
         // ليس ملف WAV صالح — نُبقي البيانات كاملة
         // من المسبح دون نسخة وسيطة.
-        val all = pool.acquire(fileLen.toInt())
-        raf.seek(0)
-        if (!readFully(raf, all, 0, fileLen.toInt())) {
-            return emptyExtract(SystemVoiceProvider.FALLBACK_SAMPLE_RATE)
-        }
+        val all = readFromPoolOrNull(raf, 0, fileLen.toInt(), pool)
+            ?: return emptyExtract(SystemVoiceProvider.FALLBACK_SAMPLE_RATE)
         return SystemVoiceProvider.PcmExtract(
             all, SystemVoiceProvider.FALLBACK_SAMPLE_RATE, fileLen.toInt()
         )
@@ -1228,11 +1225,8 @@ private fun parseWavChunks(
                 chunkSize, fileLen - dataStart
             ).coerceAtLeast(0L).toInt()
             if (dataLen <= 0) return emptyExtract(sampleRate)
-            val out = pool.acquire(dataLen)
-            raf.seek(dataStart)
-            if (!readFully(raf, out, 0, dataLen)) {
-                return emptyExtract(sampleRate)
-            }
+            val out = readFromPoolOrNull(raf, dataStart, dataLen, pool)
+                ?: return emptyExtract(sampleRate)
             return SystemVoiceProvider.PcmExtract(out, sampleRate, dataLen)
         }
         if (chunkId == "fmt "
@@ -1258,14 +1252,30 @@ private fun parseWavChunks(
     // لم نعثر على خانة data — نعود لافتراض 44 بايت احتياطاً.
     if (fileLen > 44) {
         val dataLen = (fileLen - 44).toInt()
-        val out = pool.acquire(dataLen)
-        raf.seek(44)
-        if (!readFully(raf, out, 0, dataLen)) {
-            return emptyExtract(sampleRate)
-        }
+        val out = readFromPoolOrNull(raf, 44, dataLen, pool)
+            ?: return emptyExtract(sampleRate)
         return SystemVoiceProvider.PcmExtract(out, sampleRate, dataLen)
     }
     return emptyExtract(sampleRate)
+}
+
+/** يقرأ [len] بايت من [start] في مصفوفة من [pool] ويعيدها؛ على فشل القراءة
+ *  يعيد المصفوفة إلى المسبح ويعيد null — كانت المواضع الثلاثة تُسقط
+ *  المصفوفة عند فشل readFully فيتسرب حملٌ من المسبح الثابت المعمّر مع كل
+ *  ملفٍ منكور (تراكم ذاكرة بلا حد). */
+private fun readFromPoolOrNull(
+    raf: java.io.RandomAccessFile,
+    start: Long,
+    len: Int,
+    pool: BytePool
+): ByteArray? {
+    val out = pool.acquire(len)
+    raf.seek(start)
+    if (!readFully(raf, out, 0, len)) {
+        pool.release(out)
+        return null
+    }
+    return out
 }
 
 /** يقرأ [len] بايت كاملة من [start] — [java.io.RandomAccessFile.read]

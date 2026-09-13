@@ -15,12 +15,14 @@ internal class GeneralSettingsController(
     private val onStatusChanged: () -> Unit
 ) {
 
-    private lateinit var seekDefaultSpeechRate: SeekBar
-    private lateinit var tvDefaultSpeechRateValue: TextView
-    private lateinit var seekDefaultPitch: SeekBar
-    private lateinit var tvDefaultPitchValue: TextView
-    private lateinit var seekDefaultVolume: SeekBar
-    private lateinit var tvDefaultVolumeValue: TextView
+    // مراجع العرض قابلة للتصفير في cleanup() عند تدمير عرض الفصيل
+    // (بند 4.1) حتى لا تبقى شجرة العرض القديمة محتجزة في الخلفية.
+    private var seekDefaultSpeechRate: SeekBar? = null
+    private var tvDefaultSpeechRateValue: TextView? = null
+    private var seekDefaultPitch: SeekBar? = null
+    private var tvDefaultPitchValue: TextView? = null
+    private var seekDefaultVolume: SeekBar? = null
+    private var tvDefaultVolumeValue: TextView? = null
 
     // **بند 6.3:** علمُ الربط البرمجي — يُسنَّع حول setProgress في attach
     // حتى لا يُفسَّر الإسنادُ البرمجي تعديلَ مستخدم (يُخزَّن تفريغاً). دون
@@ -47,35 +49,36 @@ internal class GeneralSettingsController(
         val volume = runCatching { settings.getDefaultVolume() }
             .getOrDefault(1.0f)
 
-        tvDefaultSpeechRateValue.text = RateLabel.of(
+        tvDefaultSpeechRateValue?.text = RateLabel.of(
             fragment.requireContext(), rate
         )
         bindingSlider = true
         try {
-            seekDefaultSpeechRate.progress =
+            seekDefaultSpeechRate?.progress =
                 (rate * 100).toInt().coerceIn(0, 200)
         } finally {
             bindingSlider = false
         }
-        tvDefaultPitchValue.text = RateLabel.of(
+        tvDefaultPitchValue?.text = RateLabel.of(
             fragment.requireContext(), pitch
         )
         bindingSlider = true
         try {
-            seekDefaultPitch.progress = (pitch * 100).toInt().coerceIn(0, 200)
+            seekDefaultPitch?.progress =
+                (pitch * 100).toInt().coerceIn(0, 200)
         } finally {
             bindingSlider = false
         }
-        tvDefaultVolumeValue.text = "${(volume * 100).toInt()}%"
+        tvDefaultVolumeValue?.text = "${(volume * 100).toInt()}%"
         bindingSlider = true
         try {
-            seekDefaultVolume.progress =
+            seekDefaultVolume?.progress =
                 (volume * 100).toInt().coerceIn(0, 100)
         } finally {
             bindingSlider = false
         }
 
-        seekDefaultSpeechRate.setOnSeekBarChangeListener(
+        seekDefaultSpeechRate?.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
                 seekBar: SeekBar,
@@ -85,12 +88,12 @@ internal class GeneralSettingsController(
                 // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
                 if (bindingSlider) return
                 val value = progress.speedFactor()
-                tvDefaultSpeechRateValue.text = RateLabel.of(
+                tvDefaultSpeechRateValue?.text = RateLabel.of(
                     fragment.requireContext(),
                     value
                 )
                 seekBar.setSeekStateDescription(
-                    tvDefaultSpeechRateValue.text
+                    tvDefaultSpeechRateValue?.text ?: ""
                 )
                 // **بند 6.3:** الحفظ عند كل تغيير (لا عند رفع الإصبع فقط) —
                 // تعديل TalkBack لا يصل إلى onStopTrackingTouch أبداً.
@@ -110,7 +113,7 @@ internal class GeneralSettingsController(
             }
         })
 
-        seekDefaultPitch.setOnSeekBarChangeListener(
+        seekDefaultPitch?.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
                 seekBar: SeekBar,
@@ -120,12 +123,12 @@ internal class GeneralSettingsController(
                 // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
                 if (bindingSlider) return
                 val value = progress.speedFactor()
-                tvDefaultPitchValue.text = RateLabel.of(
+                tvDefaultPitchValue?.text = RateLabel.of(
                     fragment.requireContext(),
                     value
                 )
                 seekBar.setSeekStateDescription(
-                    tvDefaultPitchValue.text
+                    tvDefaultPitchValue?.text ?: ""
                 )
                 // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
                 // نهايته إلى onStopTrackingTouch أبداً.
@@ -145,7 +148,7 @@ internal class GeneralSettingsController(
             }
         })
 
-        seekDefaultVolume.setOnSeekBarChangeListener(
+        seekDefaultVolume?.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
                 seekBar: SeekBar,
@@ -154,9 +157,9 @@ internal class GeneralSettingsController(
             ) {
                 // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
                 if (bindingSlider) return
-                tvDefaultVolumeValue.text = "$progress%"
+                tvDefaultVolumeValue?.text = "$progress%"
                 seekBar.setSeekStateDescription(
-                    tvDefaultVolumeValue.text
+                    tvDefaultVolumeValue?.text ?: ""
                 )
                 // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
                 // نهايته إلى onStopTrackingTouch أبداً.
@@ -172,5 +175,15 @@ internal class GeneralSettingsController(
                 onStatusChanged()
             }
         })
+    }
+
+    /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */
+    fun cleanup() {
+        seekDefaultSpeechRate = null
+        tvDefaultSpeechRateValue = null
+        seekDefaultPitch = null
+        tvDefaultPitchValue = null
+        seekDefaultVolume = null
+        tvDefaultVolumeValue = null
     }
 }
