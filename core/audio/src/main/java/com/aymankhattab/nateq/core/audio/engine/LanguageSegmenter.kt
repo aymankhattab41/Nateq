@@ -20,9 +20,11 @@ data class Segment(
  * (هيراغانا/كاتاكانا)، الكورية ⟶ ko (هانغول)، التايلاندية ⟶ th،
  * الديفاناغارية ⟶ hi — فلا تُمرَّر حروفٌ سيريلية/عبرية/صينية لمحركٍ
  * إنجليزي كما كان (كلُّ سكربتٍ محددٍ كان يقع على «سقوط» واحد).
- * سكربت LATIN لا يُحدِّد لغة من حروفه القصيرة، فتُنسب (سقوطاً) للغة الطلب
- * إن كانت لاتينية غير العربية، وإلا [EN_FALLBACK] — سلوكٌ محافظ لا كشف
- * لغةٍ ضوئياً ضمن النص اللاتيني ذاته.
+ * سكربت LATIN لا يُحدِّد لغةً من حروفه القصيرة وحدها، فتُجمَّع جولاته
+ * المتجاورة في مقطعٍ واحد ثم يُكشف لسانه عبر [LatinLanguageDetector]
+ * (بند ب.txt 3.6-2: 3 كلمات فأكثر من fr/de/es/en بثقةٍ واضحة)، وإلا
+ * تُنسب (سقوطاً) للغة الطلب إن كانت لاتينية غير العربية، وإلا
+ * [EN_FALLBACK] — كشفٌ محافظ يتراجع لسقوطٍ معروف عند اللبس.
  *
  * المقاطع العربية تُنطق بالعربية. المحايدات — مسافات/أرقام/ترقيم/رموز —
  * تلتحق بالمقطع المجاور ولا تُكسر عن سياقها (يلتحق المحايد بالمقطع المفتوح
@@ -38,6 +40,11 @@ class LanguageSegmenter {
     companion object {
         /** لغة السقوط لسائر الكتابات ضمن الطلب العربي (الإنجليزية). */
         val EN_FALLBACK: String get() = LanguageCode.EN.tag
+
+        /** علاّمة داخلية لتجميع جولات السكربت اللاتيني المتجاورة في مقطعٍ
+         *  واحد قبل كشف لغته (بند ب.txt 3.6-2) — ليست لغةً نطقية، تُستبدل
+         *  بنتيجة الكاشف أو بسقوطه في [buildSegment] عند إغلاق المقطع. */
+        private const val LATIN_PLACEHOLDER = "\u0000latin"
 
         /** الكتل السكربتية المعروفة اللغة حتماً ⟶ ISO-639-1 (توسيع
          *  ك«المدونة»): كل سكربت محددٍ في خريطة لغته قبل سقوط اللاتينية. */
@@ -155,9 +162,9 @@ class LanguageSegmenter {
                         openLanguage = language
                     } else if (openLanguage != language) {
                         segments.add(
-                            Segment(
-                                text.substring(openStart, run.start),
-                                openLanguage
+                            buildSegment(
+                                text, openStart, run.start,
+                                openLanguage, scriptFallback
                             )
                         )
                         openStart = run.start
@@ -170,11 +177,36 @@ class LanguageSegmenter {
         }
         if (openLanguage != null) {
             segments.add(
-                Segment(text.substring(openStart, text.length), openLanguage)
+                buildSegment(
+                    text, openStart, text.length,
+                    openLanguage, scriptFallback
+                )
             )
         }
         if (segments.isEmpty()) return listOf(Segment(text, neutralFallback))
         return segments
+    }
+
+    /** يبني مقطعاً نهائياً: المقطعُ اللاتيني المتراكم يُكشف لسانه عبر
+     *  [LatinLanguageDetector] (بند ب.txt 3.6-2)، وإن لم يحسم يُترك لسقوطه
+     *  المحافظ ([scriptFallback] كما قبل الكشف). سائرُ المقاطع بلغتها
+     *  الثابتة. */
+    private fun buildSegment(
+        text: String,
+        start: Int,
+        end: Int,
+        language: String,
+        scriptFallback: String
+    ): Segment {
+        val tag = if (language == LATIN_PLACEHOLDER) {
+            val candidate = LatinLanguageDetector.detect(
+                text.substring(start, end)
+            )
+            candidate ?: scriptFallback
+        } else {
+            language
+        }
+        return Segment(text.substring(start, end), tag)
     }
 
     private fun buildRuns(text: String): List<Run> {
@@ -235,9 +267,10 @@ class LanguageSegmenter {
         return false
     }
 
-    /** لغة السكربت القاطعة من الخريطة (سيريلية ⟶ ru، صينية ⟶ zh…)؛ أما
-     *  [Character.UnicodeScript.LATIN] وسائرُ السكربتاتِ غيرِ المعيَّنة فتُنسب
-     *  إلى [scriptFallback] (لغة الطلب إن كانت لاتينية وإلا الإنجليزية). */
+    /** لغة السكربت القاطعة من الخريطة (سيريلية ⟶ ru، صينية ⟶ zh…).
+     *  اللاتينية تُجمَّع كعلاّمةٍ داخلية يُكشف لسانُها عند إغلاق المقطع؛
+     *  وسائرُ السكربتات غير المعيّنة تُنسب إلى [scriptFallback] (لغة الطلب
+     *  إن كانت لاتينية وإلا الإنجليزية). */
     private fun runLanguage(
         script: Character.UnicodeScript?,
         scriptFallback: String
@@ -245,6 +278,7 @@ class LanguageSegmenter {
         if (script == null) return scriptFallback
         return when (script) {
             Character.UnicodeScript.ARABIC -> LanguageCode.AR.tag
+            Character.UnicodeScript.LATIN -> LATIN_PLACEHOLDER
             else -> SCRIPT_LANGUAGE_TAGS[script] ?: scriptFallback
         }
     }

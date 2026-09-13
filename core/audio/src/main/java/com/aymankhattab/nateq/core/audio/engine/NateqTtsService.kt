@@ -9,6 +9,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
 import android.util.Log
+import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
@@ -27,7 +28,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
@@ -66,6 +69,12 @@ class NateqTtsService : TextToSpeechService() {
          *  المختلطة (22050 = معيار LORD) — يظهر فقط إن
          *  تخلف المزوّد عن إبلاغ معدله قبل الشريحة. */
         private const val MIN_UNIFIED_RATE = 22_050
+
+        /** سقف إجمالي أحرف النص المختلط للمسار المتوازي (بند ب.txt 3.3):
+         *  فوقه يبقى التخليق متسلسلاً متدفقاً فلا تجتمع مقاطعُ نصٍّ طويل
+         *  صفوفاً في الذاكرة؛ وتحت السقف تُخلَّق المقاطعُ معاً على خيوط
+         *  مستقلة ثم تُعرض مرتبةً فيختصر الزمنُ إلى أبطأِ مقطع. */
+        private const val PARALLEL_MAX_CHARS = 500
     }
 
     /** مصدر الإعدادات الفريد لعملية:tts — يحقنه Hilt عبر NateqApplication
@@ -108,6 +117,17 @@ class NateqTtsService : TextToSpeechService() {
      *  [SynthesisCallback.audioAvailable] يستهلك المخزن قبل عودته (عقد
      *  [SystemVoiceProvider] نفسه مع متلقيه). */
     private val pcmBufferPool = BytePool()
+
+    /** كلماتُ التنقل الشائعة التي يكرّر قارئ الشاشة نطقها عبر الواجهة
+     *  (بند ب.txt 3.5-1) — تُخلَّق وتُخزَّن في كاش PCM عند الإقلاع فعلى
+     *  بثّها الأول تُخرج من الذاكرة مباشرةً بلا قرص. مجموعتان صغيرتان
+     *  (عربية/إنجليزية) فلا يستهلكان الكاش المحدود. */
+    private val navigationWordsAr = listOf(
+        "نعم", "لا", "فتح", "إلغاء", "التالي", "سابق"
+    )
+    private val navigationWordsEn = listOf(
+        "yes", "no", "open", "cancel", "next", "back"
+    )
 
     /** الرحلة اللاتزامنية للتخليق الحالي — تُلغى عند
      *  إيقاف أو استباق طلبٍ جديد. */
@@ -159,6 +179,21 @@ class NateqTtsService : TextToSpeechService() {
             }
         }
 
+        // تدفئة محركات TTS المثبتة على الخلفية (بند ب.txt 3.4-2): أول ربط
+        // TextToSpeech يكلف 150–800ms لدى بعض المحركات — نربطها قبل طلب
+        // النطق الأول فيأتي النطقُ على مثيلٍ دافئ من المسبح مباشرةً.
+        providers.filterIsInstance<SystemVoiceProvider>()
+            .firstOrNull()
+            ?.let { system ->
+                runCatching {
+                    system.prewarmEngines(
+                        EnginePicker.installedEnginePackages(
+                            applicationContext
+                        )
+                    )
+                }
+            }
+
         // اكتشاف اللغات المتاحة عبر كل محركات TTS المثبتة كخلفية: يملأ ذاكرة
         // الكتالوج دون أن يُعقّل إنشاء الخدمة أبداً؛ وحتى لو تعذّر يبقى حد
         // ar/en المضمون قائماً فتبقى الخدمة تُنطق دائماً.
@@ -167,6 +202,18 @@ class NateqTtsService : TextToSpeechService() {
                 maybeRefreshDiscovery()
             } catch (t: Throwable) {
                 Log.w(TAG, "الاكتشاف الخلفي الأولي للغات فشل", t)
+            }
+        }
+        // تدفئة كاش PCM بكلمات التنقل الشائعة (بند ب.txt 3.5-1): بعد أن يمتلئ
+        // كتالوجُ اللغات بالأصوات تُخلَّق كلماتُ التنقل عبر المسار الكامل
+        // فيُخزَّن نطقُها مسبقاً ويُبثّ من الذاكرة عند أول مطالبة — تعثرٌ في
+        // جملةٍ يتركها بلا كاش ولا يمسّ النطق.
+        serviceScope.launch {
+            try {
+                maybeRefreshDiscovery()
+                warmNavigationCache()
+            } catch (t: Throwable) {
+                Log.w(TAG, "تدفئة كاش كلمات التنقل فشلت", t)
             }
         }
 
@@ -606,6 +653,253 @@ override fun onDestroy() {
         }
     }
 
+    /** وصفُ مقطعٍ محلول جاهز للتخليق (بعد تجهيز النص وحل الصوت والتحويل
+     *  والتوجيه) — مشترك بين المسارين المتسلسل والمتوازي لتُبنى أشرطةُ
+     *  الصوت ومفاتيحُ الكاش نفسها. */
+    private class SegmentParams(
+        val text: String,
+        val voice: VoiceDescriptor,
+        val provider: VoiceProvider,
+        val speechRate: Float,
+        val pitch: Float,
+        val volume: Float,
+        val engine: String?,
+        val locale: Locale?,
+        val voiceName: String?
+    )
+
+    /** صوتُ مقطعٍ واحد مخلَّق (شريحاته PCM الخام بلا معاينة) — حصيلة
+     *  [synthesizeSegmentRaw] للمسار المتوازي. */
+    private class SegmentAudio(
+        val nativeRate: Int,
+        val nativeChannels: Int,
+        val chunks: List<ByteArray>
+    )
+
+    /** يحلّ مقطعاً لغوياً كاملاً: تجهيز النص بدليل لغته، حل الصوت مع سقوط
+     *  الجهاز الافتراضي، خلاصة أشرطة التحويل (السرعة/النبرة/الصوت)، ثم توجيه
+     *  المحرك/اللغة عبر [LanguageSpeechRouter] — خريطةٌ واحدة يعتمدها المساران
+     *  المتسلسل والمتوازي فتتطابق أصواتُ النطق ومفاتيحُ الكاش بينهما.
+     *  يرجع null عند غياب مزودٍ للمقطع (يُسقَط وحده كدأب المسار المختلط). */
+    private suspend fun resolveSegmentParams(
+        segment: Segment
+    ): SegmentParams? {
+        val segTag = segment.languageTag
+        val processed = textProcessor.process(segment.text, segTag)
+        val (voice, foundProvider) = resolveVoiceWithFallback(segTag)
+        val provider = foundProvider
+        if (provider == null) {
+            Log.w(TAG,
+            "synthesizeMixed: لا مزود لمقطع $segTag —" +
+            " يُسقط وحده: ${segment.text}")
+            return null
+        }
+        val segRate = requestHandler.getSpeechRate(segTag)
+        val segPitch = requestHandler.getPitch(segTag)
+        val segVolume = requestHandler.getVolume(segTag)
+        val convert = resolveConvertTarget(segTag)
+        val segLang = segTag.takeWhile { it.isLetter() }
+        val convertLang = convert?.convertLocale?.language
+        val matches = convertLang == null || segLang == convertLang
+        val finalRate = convert?.convertRate ?: segRate
+        val finalPitch = convert?.convertPitch ?: segPitch
+        val finalVolume = convert?.convertVolume ?: segVolume
+        val routed = LanguageSpeechRouter.route(
+            matchesRequest = matches,
+            convertEngine = convert?.convertEngine,
+            convertVoiceName = convert?.convertVoiceName,
+            perLanguageEngine = settings.getEngineForLanguage(segTag),
+            perLanguageVoiceName = settings.getVoiceForLanguage(segTag)
+        )
+        return SegmentParams(
+            processed, voice, provider, finalRate, finalPitch,
+            finalVolume, routed.engine,
+            if (matches) convert?.convertLocale else null,
+            routed.voiceName
+        )
+    }
+
+    /** يخلّق مقطعاً واحداً ويجمع شريحاته الخام (نسخٌ مستقلة لأن المزوّد يعيد
+     *  كل شريحةٍ لمسبحه بعد ندائها) — خطوةُ العمل الموازي في
+     *  [synthesizeParallel]. مقطعٌ يعجز محركُه يُسقط وحده (null). */
+    private suspend fun synthesizeSegmentRaw(
+        segment: Segment
+    ): SegmentAudio? {
+        val params = resolveSegmentParams(segment) ?: return null
+        val chunks = ArrayList<ByteArray>()
+        var nativeRate = 0
+        var nativeChannels = 1
+        try {
+            params.provider.synthesize(
+                params.text,
+                params.voice,
+                params.speechRate,
+                params.pitch,
+                params.volume,
+                { sampleRateInHz, channelCount ->
+                    nativeRate = sampleRateInHz
+                    nativeChannels = channelCount
+                },
+                { chunk, validLength ->
+                    if (validLength > 0) {
+                        chunks.add(chunk.copyOf(validLength))
+                    }
+                },
+                params.engine,
+                params.locale,
+                params.voiceName
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            Log.w(TAG,
+            "synthesizeMixed: مقطع ${segment.languageTag}" +
+            " فشل تخليقه — يُسقط وحده", t)
+            return null
+        }
+        return SegmentAudio(nativeRate, nativeChannels, chunks)
+    }
+
+    /** يعيد معاينة شريحةِ مقطعٍ محلي إلى المعيار الموحّد ويبثّها بالترتيب —
+     *  الشيفرة المشتركة بين المسارين المتسلسل والمتوازي. المخزنُ من المسبح
+     *  يُردّ في finally على كل المصائر (المتلقي ينسخ الشريحة عبر
+     *  audioAvailable). */
+    private fun emitMixedChunk(
+        chunk: ByteArray,
+        validLength: Int,
+        nativeRate: Int,
+        nativeChannels: Int,
+        maxBytes: Int,
+        started: () -> Boolean,
+        markStarted: () -> Unit,
+        callback: SynthesisCallback
+    ) {
+        val rate = if (nativeRate > 0) nativeRate else MIN_UNIFIED_RATE
+        val required = PcmResampler.convertedByteCount(
+            chunk, 0, validLength, rate,
+            nativeChannels, MIXED_UNIFIED_RATE
+        )
+        if (required <= 0) return
+        val mono = pcmBufferPool.acquire(required)
+        try {
+            val written = PcmResampler.convertInto(
+                chunk, 0, validLength, rate,
+                nativeChannels, MIXED_UNIFIED_RATE, mono, 0
+            )
+            if (written <= 0) return
+            if (!started()) {
+                callback.start(
+                    /* sampleRateInHz = */ MIXED_UNIFIED_RATE,
+                    /* audioFormat = */ PCM_16BIT,
+                    /* channelCount = */ 1
+                )
+                markStarted()
+            }
+            var offset = 0
+            while (offset < written) {
+                val bytesToWrite = minOf(
+                    maxBytes, written - offset
+                )
+                callback.audioAvailable(mono, offset, bytesToWrite)
+                offset += bytesToWrite
+            }
+        } finally {
+            pcmBufferPool.release(mono)
+        }
+    }
+
+    /**
+     * المسار المتسلسل المتدفق (النص الطويل أو المقطع المفرد): يُخلَّق كل
+     * مقطعٍ وتُبثّ شريحتُه بالترتيب فور إنتاجها — الذروة = أكبر مقطعٍ وحده
+     * لا مجموع النص — مع إبقاء التعامل مع المخازن كما كان حرفياً (بند 2.4:
+     * إرجاع المخزن حتمياً). مقطعٌ يعجز محركُه يُسقط وحده ويُكمل البقية.
+     */
+    private suspend fun synthesizeMixedSequential(
+        segments: List<Segment>,
+        callback: SynthesisCallback
+    ) {
+        var started = false
+        val maxBytes = callback.maxBufferSize
+        for (segment in segments) {
+            val params = resolveSegmentParams(segment) ?: continue
+            var nativeRate = 0
+            var nativeChannels = 1
+            try {
+                params.provider.synthesize(
+                    params.text,
+                    params.voice,
+                    params.speechRate,
+                    params.pitch,
+                    params.volume,
+                    { sampleRateInHz, channelCount ->
+                        nativeRate = sampleRateInHz
+                        nativeChannels = channelCount
+                    },
+                    { chunk, validLength ->
+                        emitMixedChunk(
+                            chunk, validLength, nativeRate,
+                            nativeChannels, maxBytes,
+                            { started }, { started = true }, callback
+                        )
+                    },
+                    params.engine,
+                    params.locale,
+                    params.voiceName
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                Log.w(TAG,
+                "synthesizeMixed: مقطع ${segment.languageTag}" +
+                " فشل تخليقه — يُسقط وحده", t)
+            }
+        }
+        if (!started) {
+            callback.error()
+            return
+        }
+        callback.done()
+    }
+
+    /**
+     * المسار المتوازي للنص المختلط القصير (بند ب.txt 3.3): تُخلَّق مقاطعُ
+     * النص في آنٍ واحد على خيوط مستقلة (المزوّدُ بقادرٍ على أكثر من لغة
+     * يخلّق كلَّ لغةٍ ضمن محركها ومثيلها — وجلساتُ المثيل الواحد تبقى
+     * متتاليةً بقفله فيأمن ناطقٌ واحد) ثم تُعرض النتائجُ مرتبةً بالترتيب
+     * بمعدلٍ موحّد فيختصر الزمنُ الكلي إلى أبطأِ مقطع بدل المجموع. الحارسُ
+     * في [synthesizeMixed] يُبقي النصوصَ الطويلة على المتسلسل فلا تتجمع
+     * مقاطعُها في الذاكرة على دفعة.
+     */
+    private suspend fun synthesizeParallel(
+        segments: List<Segment>,
+        callback: SynthesisCallback
+    ) {
+        val audios = coroutineScope {
+            segments.map { segment ->
+                async(AppDispatchers.io) {
+                    synthesizeSegmentRaw(segment)
+                }
+            }.map { it.await() }
+        }
+        var started = false
+        val maxBytes = callback.maxBufferSize
+        for (audio in audios) {
+            if (audio == null) continue
+            for (chunk in audio.chunks) {
+                emitMixedChunk(
+                    chunk, chunk.size,
+                    audio.nativeRate, audio.nativeChannels,
+                    maxBytes, { started }, { started = true }, callback
+                )
+            }
+        }
+        if (!started) {
+            callback.error()
+            return
+        }
+        callback.done()
+    }
+
     /** النص المختلط الكتابات: لكل مقطعٍ لغوي يُعالَج النص بدليل لغته (العربية
      *  بقنواتها الكاملة وسواها بالتنظيف فقط)، ويُحل صوت المقطع من كتالوجه أو من
      *  تراجع الجهاز الافتراضي، ويُخلَّق بلغته ومحركِه — ثم تُعاد عينات كل مقطع
@@ -621,132 +915,66 @@ override fun onDestroy() {
      * الذروة = أكبر مقطعٍ وحده لا مجمل النص (و44100 أعلى من المعيار التاريخي
      * 22050 فلا يُخسر صوت — الخفض إلى أقل مستوى كان افتراضَ الدفع الأصلي).
      *
+     * ## متوازٍ أم متسلسل؟
+     * النصُّ المختلط القصير (تحت [PARALLEL_MAX_CHARS]) يُخلَّق مقاطعه معاً
+     * على خيوط مستقلة ثم تُعرض مرتبةً (تسريع الزمن الكلي)، والطويل يبقى
+     * متسلسلاً متدفقاً فلا تتجمع مقاطعه في الذاكرة.
+     *
      * مقطعٌ يعجز محركُه عن التخليق يُسقط وحده (يُسجَّل ويُكمل البقية) بدل قطع
      * النطق كلياً؛ وإن فشل الكل تُرك callback.error() كملاذٍ أخير. */
     private suspend fun synthesizeMixed(
         segments: List<Segment>,
         callback: SynthesisCallback
     ) {
-        var started = false
-        val maxBytes = callback.maxBufferSize
-        for (segment in segments) {
-            val segTag = segment.languageTag
-            val processed = textProcessor.process(segment.text, segTag)
-            val (voice, foundProvider) = resolveVoiceWithFallback(segTag)
-            val provider = foundProvider
-            if (provider == null) {
-                Log.w(TAG,
-                "synthesizeMixed: لا مزود لمقطع $segTag —" +
-                " يُسقط وحده: ${segment.text}")
-                continue
-            }
-            val segRate = requestHandler.getSpeechRate(segTag)
-            val segPitch = requestHandler.getPitch(segTag)
-            val segVolume = requestHandler.getVolume(segTag)
-            val convert = resolveConvertTarget(segTag)
-            val segLang = segTag.takeWhile { it.isLetter() }
-            val convertLang = convert?.convertLocale?.language
-            val matches = convertLang == null || segLang == convertLang
-            val finalRate = convert?.convertRate ?: segRate
-            val finalPitch = convert?.convertPitch ?: segPitch
-            val finalVolume = convert?.convertVolume ?: segVolume
-            val routed = LanguageSpeechRouter.route(
-                matchesRequest = matches,
-                convertEngine = convert?.convertEngine,
-                convertVoiceName = convert?.convertVoiceName,
-                perLanguageEngine = settings.getEngineForLanguage(segTag),
-                perLanguageVoiceName = settings.getVoiceForLanguage(segTag)
-            )
-            val finalEngine = routed.engine
-            val finalLocale = if (matches) convert?.convertLocale else null
-            val finalVoiceName = routed.voiceName
+        val totalChars = segments.sumOf { it.text.length }
+        if (segments.size > 1 && totalChars <= PARALLEL_MAX_CHARS) {
+            synthesizeParallel(segments, callback)
+        } else {
+            synthesizeMixedSequential(segments, callback)
+        }
+    }
 
-            // بث المقطع فور إنتاجه: شريحة المزوّد تُعاد معاينتها إلى المعيار
-            // الموحّد وتُدفع للـ callback مباشرةً — لا تُجمَع مع مقاطع أخرى ولا
-            // يبقى مرجعها بعد عودة المعالج (المزوّد يعيد شريحته للمسبح بعدها).
-            var nativeRate = 0
-            var nativeChannels = 1
-            try {
-                provider.synthesize(
-                    processed,
-                    voice,
-                    finalRate,
-                    finalPitch,
-                    finalVolume,
-                    { sampleRateInHz, channelCount ->
-                        nativeRate = sampleRateInHz
-                        nativeChannels = channelCount
-                    },
-                    { chunk, validLength ->
-                        // إن لم يُبلِّغ المزوّد بالمعدل قبل الشريحة
-                        // (مسارات طارئة) نعتبره معيار LORD الأساسي
-                        // لئلا يُبثّ معدلٌ غير معلوم.
-                        val rate = if (nativeRate > 0) {
-                            nativeRate
-                        } else {
-                            MIN_UNIFIED_RATE
-                        }
-                        // الشريحة قادمة من مسبحٍ مُعاد استخدامه: لا تُعالج
-                        // إلا البايتات الصالحة حتى validLength وإلا يُبثّ
-                        // ضجيجٌ من بقايا نطقٍ سابق (Audio Static).
-                        val required = PcmResampler.convertedByteCount(
-                            chunk, 0, validLength, rate,
-                            nativeChannels, MIXED_UNIFIED_RATE
-                        )
-                        if (required <= 0) return@synthesize
-                        val mono = pcmBufferPool.acquire(required)
-                        try {
-                            val written = PcmResampler.convertInto(
-                                chunk, 0, validLength, rate,
-                                nativeChannels, MIXED_UNIFIED_RATE,
-                                mono, 0
-                            )
-                            if (written <= 0) return@synthesize
-                            if (!started) {
-                                callback.start(
-                                    /* sampleRateInHz = */ MIXED_UNIFIED_RATE,
-                                    /* audioFormat = */ PCM_16BIT,
-                                    /* channelCount = */ 1
-                                )
-                                started = true
-                            }
-                            var offset = 0
-                            while (offset < written) {
-                                val bytesToWrite = minOf(
-                                    maxBytes, written - offset
-                                )
-                                callback.audioAvailable(
-                                    mono, offset, bytesToWrite
-                                )
-                                offset += bytesToWrite
-                            }
-                        } finally {
-                            // **بند 2.4:** يُعاد المخزن للمسبح حتماً — كان
-                            // الفشل المبكر (write<=0/استثناء) يمنع release
-                            // فيتسرب مخزنٌ مع كل شريحةٍ فاشلة حتى يجف المسبح
-                            // فيتباطأ التخليق ويقف؛ finally يضمن الإرجاع في
-                            // كل المسارات الممكنة (المتلقي نسخ الشريحة عبر
-                            // audioAvailable ولم يُمسك بمرجعها).
-                            pcmBufferPool.release(mono)
-                        }
-                    },
-                    finalEngine,
-                    finalLocale,
-                    finalVoiceName
-                )
-            } catch (e: CancellationException) {
-                throw e
-            } catch (t: Throwable) {
-                Log.w(TAG,
-                "synthesizeMixed: مقطع $segTag فشل تخليقه —" +
-                " يُسقط وحده", t)
+    /** تدفئة كاش PCM بكلمات التنقل الشائعة لكل لغة مدعومة (بند ب.txt 3.5-1):
+     *  تشغيلُها عبر الوجهة الكاملة (محرك/أشرطة/صوت) يمنح الكاشَ ذات المفاتيح
+     *  التي سيبحثها النطقُ اللاحق فيُبثّ منها مباشرةً بلا قرص. لا يُؤخّر نطقاً
+     *  أبداً (خيط خلفية بلا حاجز)، وأي فشلٍ في كلمة يُسقطها وحدها، واللغةُ
+     *  بلا صوتٍ تُتجاوز صامتةً — والمجموعتان قصيرتان فلا يكدّسان الكاش
+     *  المحدود. */
+    private suspend fun warmNavigationCache() {
+        val languages = listOf(LanguageCode.AR.tag, LanguageCode.EN.tag)
+        for (lang in languages) {
+            if (stopping) break
+            val words = if (lang == LanguageCode.AR.tag) {
+                navigationWordsAr
+            } else {
+                navigationWordsEn
+            }
+            val probe = Segment(words.firstOrNull() ?: "نعم", lang)
+            val params = resolveSegmentParams(probe) ?: continue
+            for (word in words) {
+                if (stopping) break
+                try {
+                    params.provider.synthesize(
+                        word,
+                        params.voice,
+                        params.speechRate,
+                        params.pitch,
+                        params.volume,
+                        { _, _ -> },
+                        { _, _ -> },
+                        params.engine,
+                        params.locale,
+                        params.voiceName
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    Log.d(TAG,
+                        "warmNavigationCache: كلمة $word فشلت" +
+                        " — تُترك بلا كاش", t)
+                }
             }
         }
-        if (!started) {
-            callback.error()
-            return
-        }
-        callback.done()
     }
 
     /**

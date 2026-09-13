@@ -591,6 +591,12 @@ class AnnouncementSpeaker(
             )
             return
         }
+        // **تراكب تهيئة المحرك مع النغمة (بند ب.txt 3.7):** ربط TTS يكلف
+        // 150–800ms؛ نبدأه أثناء عزف المؤثر فيُحجب معظمُها تحت النغمة ويأتي
+        // الكلامُ فور انتهائها على محركٍ دافئ بدل «نغمة ← ربط ← كلام».
+        // [ensureInit] بوابةُ طيرانٍ مفرد آمنة التزامن — يعاود استدعاءُ
+        // startSpeech اللاحق الانضمام إليها بلا سباقٍ ولا تكرار تهيئة.
+        ensureInit({ _ -> }, engineOverride)
         AudioCuePlayer.getInstance(appContext).play(cue) { _ ->
             if (gen == speechGeneration.get()) {
                 startSpeech(

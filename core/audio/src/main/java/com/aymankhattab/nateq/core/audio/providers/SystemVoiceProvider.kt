@@ -24,6 +24,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 
@@ -63,8 +64,8 @@ class SystemVoiceProvider(
     @Volatile
     var capableEnginesFor: ((languageTag: String) -> List<String>?)? = null
 
-    /**
-     * مُنفّذ خلفية أحادي الخيط لنقل التنفيذ الحاصر
+/**
+     * مُنفّذ خلفية لنقل التنفيذ الحاصر
      * ([synthesizeInternal] الذي ينتظر اكتمال كتابة المحرك
      * عبر `await`) خارج Main Looper. سبب الحاجة:
      * استدعاء التهيئة `onInit` يصدر من `TextToSpeech` عبر
@@ -73,9 +74,14 @@ class SystemVoiceProvider(
      * `onInit` يسبب Deadlock ويجمّد الواجهة حتى المهلة
      * (قصيرة للنصوص القصيرة). نقل الاصطناع إلى خيط خلفي
      * يحرّر Main فوراً.
-     */
+     *
+     * **بند ب.txt 3.3 — خطوط ذاكرة موازية:** منفّذٌ ذو عتبتين يسمح بتخليق
+     * جلسَتَين في آنٍ واحد على مثيلَي محركين مختلفين (نصٌ مختلط اللغات)
+     * فيتوازى عقباهما الزمنيان، مع بقاء الجلسات على المثيل الواحد متتالية
+     * عبر القفل لكل مثيل في [speakNow] — عددٌ أكبر من العتبتين يرفع
+     * استهلاك الجهاز للجهود اللاتزامنية بلا كسبٍ ملموس. */
     private val synthExecutor: ExecutorService =
-        Executors.newSingleThreadExecutor()
+        Executors.newFixedThreadPool(MAX_SYNTH_SESSIONS)
 
     /** معالج نبض Main للجدولة الزمنية
      *  لمهلة التهيئة [INIT_TIMEOUT_MS] (غير حاصر). */
@@ -141,6 +147,21 @@ class SystemVoiceProvider(
          */
         private const val MAX_RETRIES = 2
 
+        /** أقصى جلسات تخليق متزامنة على [synthExecutor] (بند ب.txt 3.3):
+         *  عتبتان تكفيان لتوازي نصٍّ مختلط على محركين دون استنزاف، والجلسات
+         *  على محركٍ واحد تبقى متتالية بقفلٍ لكل مثيل. */
+        private const val MAX_SYNTH_SESSIONS = 2
+
+        /** حجم الدفعة الدنيا لقراءة صوت التخليق أثناء كتابته (بند ب.txt
+         *  3.2): لا يُقرأ الملف النامي إلا حين يتراكم ما يعادل هذا الحجم
+         *  الجديد على القرص — بلا قراءات رقاقة خلف رقاقة على ملفٍ ينمو. */
+        private const val STREAM_CHUNK_BYTES = 64 * 1024
+
+        /** طول رأس WAV المقروء لفحص خاناته أثناء البثّ — يكفي لرؤوس
+         *  المحركات المعهودة (44 بايتاً + قوائم خانات نحيفة) دون قراءة
+         *  الملف كاملاً. */
+        private const val WAV_HEAD_READ_BYTES = 4 * 1024
+
         /** سقف أقصى حجم تراكمي (بالبايت) لكاش LRU لنطقات الواجهة المتكررة —
          *  4 MiB على الأجهزة ذات حد ربطات ≥256MiB (أندرويد 12+ عملياً) فيتسع
          *  الكاش لمئات العبارات الشائعة (بند ب.txt 3.5-2)، و1 MiB على المنخفضة
@@ -180,6 +201,11 @@ class SystemVoiceProvider(
      *  نطق) عبر [dropBrokenEngine] فلا يُعاد استخدامه. الحقل [tts] هو
      *  المثيل المختار لكي يكون المستخدم الحالي للنطق والإيقاف. */
     private val enginePool = ConcurrentHashMap<String, TextToSpeech>()
+
+    /** محركاتٌ قيد التدفئة (بند ب.txt 3.4-2) تحت [ttsLock]: تبقى خارج
+     *  [enginePool] حتى يكتمل ربط onInit الناجح فلا تُرَى في اختيارات
+     *  النطق قبل نضجها؛ أي فشل تسقطه التدفئة وسكت (لا يكسر طلباً). */
+    private val prewarmingEngines = LinkedHashSet<String>()
 
     /** قفل مزامنة دورة حياة [tts] والمسبح:
      *  حسم الربط/الإعادة في [synthesizeWithEngine]
@@ -362,6 +388,13 @@ class SystemVoiceProvider(
             val cancelled = AtomicBoolean(false)
             cont.invokeOnCancellation {
                 cancelled.set(true)
+                // بند ب.txt 3.3: مع جلساتٍ متوازية على مثيلاتٍ مختلفة يجب
+                // إيقافها كلِّها عند الإلغاء — لا المثيل النشط [tts] وحده —
+                // وإلا استمرّ محركٌ موزٍّ للكتابة على جلسةٍ أُلغيت من
+                // المسارين معاً.
+                for (instance in enginePool.values) {
+                    runCatching { instance.stop() }
+                }
                 runCatching { tts?.stop() }
             }
             val ttsEngine = resolveEngine(enginePackage, voiceLocale)
@@ -543,11 +576,17 @@ class SystemVoiceProvider(
             if (!done.getAndSet(true)) {
                 runSynthesisOnBackground(
                     beforeSpeak = {
-                        synthesizeInternal(
-                            engineInstance, text, voice, speechRate,
-                            pitch, volume, onFormatInfo, onAudioChunk,
-                            cancelled, desiredVoiceName, cacheKey
-                        )
+                        // بند ب.txt 3.3: الجلسات المتوازية على مثيلات
+                        // مختلفة تعمل في آنٍ واحد، لكن الجلسات على المثيل
+                        // نفسه (نفس اللغة/النوع) يجب ألا تتنازع على
+                        // synthesizer واحد — قفلٌ لكل مثيل يُبقيها متتالية.
+                        synchronized(engineInstance) {
+                            synthesizeInternal(
+                                engineInstance, text, voice, speechRate,
+                                pitch, volume, onFormatInfo, onAudioChunk,
+                                cancelled, desiredVoiceName, cacheKey
+                            )
+                        }
                     },
                     onSuccess = { cont.resume(Unit) },
                     onFailure = {
@@ -931,7 +970,7 @@ class SystemVoiceProvider(
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
         }
 
-        val tempFile = tempWavFile()
+        val tempFile = sessionWavFile()
 
         // توصية المراجعة 4: حذف الملف المؤقت قبل كل كتابة جديدة — لا تُقرأ
         // بقايا كتابة سابقة مقطوعة/تالفة (محرك أُجهض في منتصف الكتابة ثم
@@ -990,6 +1029,21 @@ class SystemVoiceProvider(
             val waitMs = synthesisTimeoutMs(text.length)
             val deadline = SystemClock.elapsedRealtime() + waitMs
             var finished = false
+            // **بثّ مجزّأ أثناء الكتابة (بند ب.txt 3.2):** بدل انتظار اكتمال
+            // ملف WAV كاملاً ثم قراءته في دفعةٍ واحدة، تُقرأ الدفعاتُ
+            // المتراكمة حديثاً كل [CANCELLATION_POLL_MS] وتُدفع للمتلقي
+            // فوراً — يتسلم أول بايتات الصوت قبل نهاية كتابة المحرك فيختصر
+            // زمنَ أول صوتٍ لقارئ الشاشة. لا يجوز التفاعل مع ملفٍ لم تتضح
+            // خاناته بعد: [readWavStreamMeta] يرجع null حتى تظهر خانة data
+            // فيُحسم البث. أي تعثرٍ قبل بثّ شريحةٍ واحدة يُسقط البث هادئاً
+            // إلى المسار الكامل التقليدي (قراءة نهائية موحّدة) بالأسفل.
+            var streamMeta: WavStreamMeta? = null
+            var dataStart = -1L
+            var readSoFar = 0L
+            var emittedAny = false
+            var streamReadFailed = false
+            val cachedParts = ArrayList<ByteArray>()
+            val totalCacheBytes = IntArray(1)
             try {
                 while (true) {
                     if (done.await(
@@ -1006,20 +1060,113 @@ class SystemVoiceProvider(
                     ) {
                         break
                     }
+                    if (!streamReadFailed && streamMeta == null &&
+                        tempFile.exists() && tempFile.length() >= 44L
+                    ) {
+                        val head = ByteArray(WAV_HEAD_READ_BYTES)
+                        val got = java.io.RandomAccessFile(
+                            tempFile, "r"
+                        ).use { raf ->
+                            var i = 0
+                            while (i < head.size) {
+                                val n = raf.read(head, i, head.size - i)
+                                if (n < 0) break
+                                i += n
+                            }
+                            i
+                        }
+                        if (got > 0) {
+                            streamMeta = readWavStreamMeta(head, got)
+                        }
+                    }
+                    if (!streamReadFailed && streamMeta != null) {
+                        val start = if (dataStart < 0) {
+                            streamMeta.dataStart.also { dataStart = it }
+                        } else {
+                            dataStart
+                        }
+                        val available = tempFile.length() - start
+                        val toRead = available - readSoFar
+                        if (toRead >= STREAM_CHUNK_BYTES) {
+                            try {
+                                emitStreamChunk(
+                                    tempFile, start + readSoFar,
+                                    toRead.toInt(), volume, streamMeta,
+                                    onFormatInfo, onAudioChunk,
+                                    cacheKey, cachedParts,
+                                    totalCacheBytes
+                                )
+                                readSoFar = toRead
+                                emittedAny = true
+                            } catch (e: Exception) {
+                                if (emittedAny) {
+                                    // قُرئ صوتٌ فعلاً: لا نُعيد بثّه كاملاً —
+                                    // يكفي أن يُكمل المتبقي في النهاية.
+                                    streamReadFailed = true
+                                } else {
+                                    // لم يتبدّأ البث أصلاً: التراجع للمسار
+                                    // الكامل التقليدي بالأسفل بلا ازدواج.
+                                    streamReadFailed = true
+                                }
+                                Log.w(TAG,
+                                    "[Provider] streaming read failed —" +
+                                    " " +
+                                    if (emittedAny) {
+                                        "إتمام المتبقي"
+                                    } else {
+                                        "المسار الكامل"
+                                    }, e)
+                            }
+                        }
+                    }
                 }
             } catch (e: InterruptedException) {
                 Thread.currentThread().interrupt()
             }
 
-            if (finished && !failed && tempFile.exists()
+            if (finished && !failed && streamMeta != null &&
+                emittedAny
+            ) {
+                // إتمام البث: يُقرأ ما تبقى بعد آخر دفعة ثم يُعلَّم النجاح —
+                // لا مسار القراءة الكاملة (تجنّب بثٍّ مكرر).
+                val start = if (dataStart < 0) 0L else dataStart
+                val remaining = tempFile.length() - start - readSoFar
+                if (remaining > 0) {
+                    try {
+                        emitStreamChunk(
+                            tempFile, start + readSoFar,
+                            remaining.toInt(), volume, streamMeta,
+                            onFormatInfo, onAudioChunk,
+                            cacheKey, cachedParts, totalCacheBytes
+                        )
+                    } catch (e: Exception) {
+                        Log.w(TAG,
+                            "[Provider] stream remainder flush failed", e)
+                    }
+                }
+                if (cacheKey != null && cachedParts.isNotEmpty() &&
+                    totalCacheBytes[0] <= PCM_CACHE_MAX_BYTES
+                ) {
+                    val all = ByteArray(totalCacheBytes[0])
+                    var pos = 0
+                    for (part in cachedParts) {
+                        System.arraycopy(part, 0, all, pos, part.size)
+                        pos += part.size
+                    }
+                    storeInCache(
+                        cacheKey, all,
+                        streamMeta.sampleRateInHz, totalCacheBytes[0]
+                    )
+                }
+                success = true
+            } else if (finished && !failed && tempFile.exists()
                 && tempFile.length() > 44
             ) {
                 try {
-                    // قراءة بيانات الصوت مباشرة من ملف
-                    // التخليق (تخطّي رأس WAV وقائمة الخانات)
-                    // دون قراءة الملف كاملاً ثم نسخه — كان
-                    // ذلك يرفع ذروة الذاكرة 2-3× حجم الملف
-                    // للنصوص الطويلة.
+                    // المسار الكامل التقليدي: قراءة الصوت من ملف التخليق
+                    // (تخطّي رأس WAV وقائمة الخانات) دون تحميل الملف
+                    // كاملاً ثم نسخه — كان ذلك يرفع ذروة الذاكرة 2-3× حجم
+                    // الملف للنصوص الطويلة.
                     val extracted = extractPcm(tempFile)
                     if (extracted.pcm.isEmpty() || extracted.validLength == 0) {
                         Log.e(TAG, "[Provider] extractPcm returned empty")
@@ -1081,17 +1228,135 @@ class SystemVoiceProvider(
         } else {
             Log.e(TAG, "[Provider] synthesizeToFile status=$status")
         }
+        // ملفُ الجلسة خاص بها فيُحذف في كل المصائر — لا بقايا تتراكم في
+        // الكاش بعد النطق، ولا يُمسّ ملفُ جلسةٍ أخرى (الأسماءُ فريدة).
+        runCatching { tempFile.delete() }
         return success
     }
 
-    /** ملف مؤقت واحد ثابت الاسم يعيد استخدامه كل نطقات المقاطع (بند تسريع
-     *  النطق): إنشاء/حذف ملفٍ جديد في كل نطق كان يدفع نفقات inode/فلاش
-     *  إضافية لكل جملة. التوليف متسلسل عبر [synthExecutor] أحادي الخيط
-     *  ويبدأ [TextToSpeech.synthesizeToFile] كتابةً من الصفر (truncate) فلا
-     *  تنازع ولا بقايا تُفسد نطقاً تالياً، والحذف النهائي في [shutdown] —
-     *  وإن فُقدت العملية فجأة التقطها [StartupTempSweeper] عند الإقلاع. */
+    /** عدّاد تزايدي لأسماء ملفات WAV المؤقتة الفريدة لكل جلسة تخليق (بند
+     *  ب.txt 3.2/3.3): مع جلساتٍ متوازية على منفّذي [synthExecutor] لم يعد
+     *  ملفٌ واحد ثابت الاسم آمناً — كل جلسة تكتب/تقرأ ملفها الخاص فلا يفسد
+     *  بثٌّ على آخر. */
+    private val sessionFileCounter = AtomicLong(0)
+
+    /** ملف مؤقت فريد لحملة التخليق الحالية؛ يُحذف في نهايتها مهما كان
+     *  المصير ([synthesizeInternal] في finally قبل العودة)، وبقاياه عاجزةٌ
+     *  عن النطق يلتقطها [StartupTempSweeper] عند الإقلاع — لا يتعارض اسمٌ
+     *  فريدٌ مع نشاطٍ لجلسةٍ أخرى. */
+    private fun sessionWavFile(): java.io.File {
+        val id = sessionFileCounter.incrementAndGet()
+        return java.io.File(context.cacheDir, "nateq_tts_$id.wav")
+    }
+
+    /** ملفُ الاسم الثابت التاريخي — يُحذف دفاعياً في [shutdown]
+     *  و[onActiveEngineSwitch] لأي بقايا عتيقة؛ التخليق الجديد لا يعود
+     *  إليه (اسمٌ فريد لكل جلسة). */
     private fun tempWavFile(): java.io.File =
         java.io.File(context.cacheDir, "nateq_tts_session.wav")
+
+    /**
+     * تدفئة محركات TTS قبل أول نطقٍ فعلي (بند ب.txt 3.4-2): يربط مثيلاً لكل
+     * محركٍ مطلوب على الخلفية دون أن ينتظر المتصلُ اكتمالَ الربط ولا أن يكسر
+     * النطق لو تعثر. أول ربط [TextToSpeech] يكلف غالباً 150–800ms لدى بعض
+     * المحركات — فإذا أقبل TalkBack وأولُ طلبٍ على محركٍ بارد، علِق أول نطق
+     * على هذه الكلفة؛ التدفئة تجعل المثيل جاهزاً في [enginePool] قبل السؤال.
+     * المثيلاتُ لا تُعرض للاختيار قبل نجاح onInit (تُجمع في [prewarmingEngines]
+     * ثم تُنقل)، والمحركات المربوطة أصلاً تُتجاوز — فاستدعاءٌ متكرر آمن.
+     */
+    fun prewarmEngines(engines: List<String>) {
+        if (shutdownCalled || engines.isEmpty()) return
+        val installed = EnginePicker.installedEnginePackages(context)
+        val targets = engines.filter { it in installed }
+        if (targets.isEmpty()) return
+        synthExecutor.execute {
+            for (engine in targets) {
+                if (shutdownCalled) return@execute
+                var skip = false
+                synchronized(ttsLock) {
+                    if (shutdownCalled) return@execute
+                    if (enginePool.containsKey(engine) ||
+                        engine in prewarmingEngines
+                    ) {
+                        skip = true
+                    } else {
+                        prewarmingEngines.add(engine)
+                    }
+                }
+                if (skip) continue
+                Log.d(TAG, "[Provider] prewarm engine=$engine")
+                val hold = arrayOfNulls<TextToSpeech>(1)
+                val instance = try {
+                    TextToSpeech(context, { status ->
+                        val built = hold[0] ?: return@TextToSpeech
+                        synchronized(ttsLock) {
+                            when {
+                                shutdownCalled -> {
+                                    runCatching { built.shutdown() }
+                                }
+                                status == TextToSpeech.SUCCESS ->
+                                    // ناضج: يُنقل للمسبح فيراه النطق اللاحق.
+                                    enginePool[engine] = built
+                                else -> runCatching { built.shutdown() }
+                            }
+                            prewarmingEngines.remove(engine)
+                        }
+                    }, engine)
+                } catch (t: Throwable) {
+                    Log.e(TAG, "[Provider] prewarm bind failed: $engine", t)
+                    synchronized(ttsLock) { prewarmingEngines.remove(engine) }
+                    continue
+                }
+                hold[0] = instance
+            }
+        }
+    }
+
+    /** يقرأ [len] بايتاً من موضع [start] في ملف التخليق النامي، يطبّق مستوى
+     *  الصوت ثم يدفع البيانات للمتلقي ([onAudioChunk])، ويُجمِّع نسخةً
+     *  مستقلة للكاش (بند 19.1) ضمن سقف [PCM_CACHE_MAX_BYTES] عند مرور
+     *  [cacheKey]. يُبلَّغ التنسيق مرةً واحدة عبر [onFormatInfo] قبل أول
+     *  شريحة. المتلقي ينسخ الشريحة قبل العودة فالمخزنُ يُردّ للمسبح. يرمي
+     *  عند فشل القراءة فيتولى المتصلُ المصير (إتمام المتبقي أو التراجع). */
+    private fun emitStreamChunk(
+        file: java.io.File,
+        start: Long,
+        len: Int,
+        volume: Float,
+        meta: WavStreamMeta,
+        onFormatInfo: (Int, Int) -> Unit,
+        onAudioChunk: (ByteArray, Int) -> Unit,
+        cacheKey: String?,
+        cachedParts: ArrayList<ByteArray>,
+        totalCacheBytes: IntArray
+    ) {
+        val raw = ByteArray(len)
+        java.io.RandomAccessFile(file, "r").use { raf ->
+            raf.seek(start)
+            var i = 0
+            while (i < len) {
+                val n = raf.read(raw, i, len - i)
+                if (n < 0) break
+                i += n
+            }
+        }
+        onFormatInfo(meta.sampleRateInHz, 1)
+        val scaledData = if (volume != 1.0f) {
+            applyVolume(raw, volume, len)
+        } else {
+            raw
+        }
+        if (cacheKey != null &&
+            totalCacheBytes[0] + len <= PCM_CACHE_MAX_BYTES
+        ) {
+            cachedParts.add(scaledData.copyOf(len))
+            totalCacheBytes[0] += len
+        }
+        onAudioChunk(scaledData, len)
+        // المتلقي نسخ الشريحة (audioAvailable) فنعيد المخزن للمسبح — ولو
+        // كان الصوت بلا مستوى (raw غير مُسبَّح) يأوي السباحة بأمانٍ أيضاً.
+        pcmPool.release(scaledData)
+    }
 
     /**
      * يستخرج بيانات PCM الخام ومعدل العينات الحقيقي من ملف WAV بتخطّي الرأس
@@ -1264,6 +1529,75 @@ private fun parseWavChunks(
     }
     return emptyExtract(sampleRate)
 }
+
+/** وصف رأس WAV للبثّ المجزّأ (بند ب.txt 3.2): موضع بداية بيانات الصوت
+ *  ([dataStart]) ومعدل العينات من خانة `fmt ` حين تُعرف. */
+internal class WavStreamMeta(
+    val dataStart: Long,
+    val sampleRateInHz: Int
+) {
+    companion object {
+        /** حدّ أعلى/أدنى لمعدل عينات مقبول (يطابق [parseWavChunks]). */
+        private const val MIN_RATE = 14_100
+        private const val MAX_RATE = 192_000
+    }
+}
+
+/** يفحص [length] بايتاً من بداية ملف WAV (على نموّه أثناء كتابة المحرك)
+ *  ويستخلص موضع خانة `data` ومعدل العينات. يرجع null إذا لم تتضح خانة
+ *  الصوت بعد (المحرك ما زال يكتب الرأس) — سيعاد الفحص على الطول المحدَّث،
+ *  وإذا لم يتضح أبداً تُترك القراءة للمسار الكامل التقليدي. منطقٌ نقيٌّ
+ *  عن Android: قابل للاختبار مباشرة. */
+internal fun readWavStreamMeta(
+    bytes: ByteArray,
+    length: Int
+): WavStreamMeta? {
+    if (length < 12) return null
+    if (bytes[0] != 'R'.code.toByte()
+        || bytes[1] != 'I'.code.toByte()
+        || bytes[2] != 'F'.code.toByte()
+        || bytes[3] != 'F'.code.toByte()
+    ) {
+        // ليس ملف WAV صالحاً: يتولاه المسار الكامل لاحقاً (لا بثّ مجزّأ).
+        return null
+    }
+    var sampleRate = SystemVoiceProvider.FALLBACK_SAMPLE_RATE
+    var offset = 12L
+    while (offset + 8 <= length) {
+        val chunkId = String(
+            bytes, offset.toInt(), 4, Charsets.US_ASCII
+        )
+        val chunkSize = readLeLong(bytes, offset.toInt() + 4)
+        if (chunkId == "data") {
+            return WavStreamMeta(offset + 8, sampleRate)
+        }
+        if (chunkId == "fmt " && chunkSize >= 16 &&
+            offset + 24 <= length
+        ) {
+            val rate = readLeIntFrom(bytes, offset.toInt() + 16)
+            if (rate in 14_100..192_000) sampleRate = rate
+        }
+        val next = offset + 8 + chunkSize
+        if (next > length || next <= offset) break
+        offset = next
+    }
+    // خانة data لم تتضح بعد — يُعاد الفحص على النمو اللاحق.
+    return null
+}
+
+/** قراءة عدد صحيح غير موقّع بطول 4 بايت (0..2^32-1) من مصفوفة. */
+private fun readLeLong(bytes: ByteArray, offset: Int): Long =
+    (bytes[offset].toLong() and 0xFF) or
+        ((bytes[offset + 1].toLong() and 0xFF) shl 8) or
+        ((bytes[offset + 2].toLong() and 0xFF) shl 16) or
+        ((bytes[offset + 3].toLong() and 0xFF) shl 24)
+
+/** قراءة عدد صحيح موقّع بطول 4 بايت من مصفوفة (little-endian). */
+private fun readLeIntFrom(bytes: ByteArray, offset: Int): Int =
+    (bytes[offset].toInt() and 0xFF) or
+        ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
+        ((bytes[offset + 2].toInt() and 0xFF) shl 16) or
+        ((bytes[offset + 3].toInt() and 0xFF) shl 24)
 
 /** يقرأ [len] بايت من [start] في مصفوفة من [pool] ويعيدها؛ على فشل القراءة
  *  يعيد المصفوفة إلى المسبح ويعيد null — كانت المواضع الثلاثة تُسقط
