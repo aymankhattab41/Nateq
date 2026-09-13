@@ -3,6 +3,7 @@ package com.aymankhattab.nateq.engine
 import android.content.Context
 import com.aymankhattab.nateq.core.engine.PunctuationLevels
 import com.aymankhattab.nateq.core.engine.SynthesisConfig
+import com.aymankhattab.nateq.engine.pipeline.AcronymStep
 import com.aymankhattab.nateq.engine.pipeline.CleanupStep
 import com.aymankhattab.nateq.engine.pipeline.CurrencyStep
 import com.aymankhattab.nateq.engine.pipeline.DateStep
@@ -88,7 +89,8 @@ class TextProcessor(
         DateStep(injectedSettings),
         TimeStep,
         CurrencyStep,
-        UnitStep
+        UnitStep,
+        AcronymStep
     )
 
     // الخطوات الثقيلة (تنطبق فقط إن فشل المسار السريع) — ترتيبها مُطابق تماماً

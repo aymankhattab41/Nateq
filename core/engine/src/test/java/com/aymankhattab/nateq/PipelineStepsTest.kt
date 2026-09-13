@@ -3,6 +3,7 @@ package com.aymankhattab.nateq
 import com.aymankhattab.nateq.core.engine.PunctuationLevels
 import com.aymankhattab.nateq.engine.EmojiSpeech
 import com.aymankhattab.nateq.engine.SpeechPart
+import com.aymankhattab.nateq.engine.pipeline.AcronymStep
 import com.aymankhattab.nateq.engine.pipeline.AmountParser
 import com.aymankhattab.nateq.engine.pipeline.CleanupStep
 import com.aymankhattab.nateq.engine.pipeline.CurrencyStep
@@ -647,5 +648,58 @@ class PipelineStepsTest {
             "رسالة نصية سليمة",
             CleanupStep.apply("رسالة${lrm}نصية$rle سليمة$lri")
         )
+    }
+
+    // ═══════════════════════ AcronymStep ═══════════════════════
+    // بند ب.txt 2.6-2: الاختصارات التقنية تُنطق عربياً قبل تقسيم اللغة.
+
+    @Test
+    fun acronym_sms_in_arabic() {
+        assertEquals("أرسلت إس إم إس", AcronymStep.apply("أرسلت SMS"))
+    }
+
+    @Test
+    fun acronym_pdf_in_arabic() {
+        assertEquals("افتح بي دي إف", AcronymStep.apply("افتح PDF"))
+    }
+
+    @Test
+    fun acronym_ok_in_arabic() {
+        assertEquals("موافق أو كي", AcronymStep.apply("موافق OK"))
+    }
+
+    @Test
+    fun acronym_wifi_hyphen() {
+        assertEquals(
+            "اتصل واي فاي بجهاز",
+            AcronymStep.apply("اتصل Wi-Fi بجهاز")
+        )
+    }
+
+    @Test
+    fun acronym_wifi_nospace() {
+        assertEquals("الشبكة واي فاي", AcronymStep.apply("الشبكة WiFi"))
+    }
+
+    @Test
+    fun acronym_usb_in_arabic() {
+        assertEquals("منفذ يو إس بي", AcronymStep.apply("منفذ USB"))
+    }
+
+    @Test
+    fun acronym_gps_in_arabic() {
+        assertEquals("إحداثيات جي بي إس", AcronymStep.apply("إحداثيات GPS"))
+    }
+
+    @Test
+    fun acronym_lowercase_untouched() {
+        // الصيغة الصغيرة تُترك (قد تكون كلمة مقصودة لا اختصاراً).
+        assertEquals("هذا pdf سحابة", AcronymStep.apply("هذا pdf سحابة"))
+    }
+
+    @Test
+    fun acronym_embedded_plural_untouched() {
+        // الملصقات المركّبة تُترك (PDFs جمع يعبّر محركُه عنها بالإنجليزية).
+        assertEquals("الملفات PDFs", AcronymStep.apply("الملفات PDFs"))
     }
 }
