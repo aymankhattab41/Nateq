@@ -36,7 +36,13 @@ class PronunciationDictionary(
     // في onCreate()، وأي استثناء هنا (Keystore معطوب، Tink مقطوع، وضع محاكي…)
     // يُسقط الخدمة فيرفض نظام سامسونج المحرك برسالة "يستمر التطبيق في التوقف".
     // عند الفشل يعمل القاموس بالذاكرة فقط (بلا حفظ دائم) ولا ينهار النطق.
-    private val prefs: android.content.SharedPreferences? = try {
+    private val prefs: android.content.SharedPreferences? = openPrefs()
+
+    /** يفتح مثيلاً جديداً من تخزين التفضيلات المشفّر. كل مكالمة تنشئ كائناً
+     *  جديداً بلا كاش داخلي سابق — تُستخدم للقراءة في [loadFromPrefs] لأن
+     *  الكائن العضو [prefs] يخزّن نواتج فك التشفير في ذاكرته فلا يرى
+     *  تعديل عملية الواجهة الأجنبية حتى لو تغيّر طابع الملف. */
+    private fun openPrefs(): android.content.SharedPreferences? = try {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
@@ -279,17 +285,24 @@ class PronunciationDictionary(
         if (key.length > MAX_KEY_LENGTH ||
             value.length > MAX_VALUE_LENGTH
         ) return false
-        val updated = LinkedHashMap(entries)
-        updated[key] = value
-        swapEntries(updated)
+        // بند 3.13: تثبيت القراءة-التعديل-الكتابة داخل قفل حتى لا تضيع
+        // إدخالات من استدعاءات متزامنة من خيطين (كانا يقرآن نفس اللقطة
+        // فيستبدل كلٌّ منهما عملَ الآخر).
+        synchronized(this) {
+            val updated = LinkedHashMap(entries)
+            updated[key] = value
+            swapEntries(updated)
+        }
         return save()
     }
 
     /** حذف إدخال */
     fun removeEntry(abbreviation: String): Boolean {
-        val updated = LinkedHashMap(entries)
-        updated.remove(abbreviation.trim())
-        swapEntries(updated)
+        synchronized(this) {
+            val updated = LinkedHashMap(entries)
+            updated.remove(abbreviation.trim())
+            swapEntries(updated)
+        }
         return save()
     }
 
@@ -297,7 +310,9 @@ class PronunciationDictionary(
      *  الافتراضيات»: إن نُظّف الملف وحده بقي المخزون في الذاكرة، فيظل
      *  يُقرأ من الخريطة وُيعاد كتابته للملف بمجرد إضافة أي كلمة جديدة. */
     fun clear() {
-        swapEntries(emptyMap())
+        synchronized(this) {
+            swapEntries(emptyMap())
+        }
         save()
     }
 
@@ -329,17 +344,21 @@ class PronunciationDictionary(
         if (valid.isEmpty()) return false
 
         // السقف التراكمي: الحالي أولاً ثم الجديد بترتيبه حتى MAX_IMPORT_ENTRIES
-        val updated = if (merge) LinkedHashMap(entries)
-            else LinkedHashMap<String, String>()
-        var imported = 0
-        for ((key, value) in valid) {
-            if (updated.size >= MAX_IMPORT_ENTRIES) break
-            updated[key] = value
-            imported++
+        // (القفل يثبّت قراءة الحالي مع البناء والاستبدال — بند 3.13).
+        val imported = synchronized(this) {
+            val updated = if (merge) LinkedHashMap(entries)
+                else LinkedHashMap<String, String>()
+            var count = 0
+            for ((key, value) in valid) {
+                if (updated.size >= MAX_IMPORT_ENTRIES) break
+                updated[key] = value
+                count++
+            }
+            if (count > 0) swapEntries(updated)
+            count
         }
         if (imported == 0) return false
 
-        swapEntries(updated)
         val sp = prefs ?: return true
         return save()
     }
@@ -348,8 +367,16 @@ class PronunciationDictionary(
     fun exportToJson(): String = NateqJson.toJson(entries)
 
     private fun loadFromPrefs(): Map<String, String> {
-        val sp = prefs ?: return emptyMap()
-        val json = sp.getString("dictionary", "{}")
+        // تُقرأ القيم من «مثيل طازج» (انظر [openPrefs]) لا من الكائن العضو
+        // المخبئ — تصطاد تعديلات عملية الواجهة عبر الطابع. على فشل الفتح أو
+        // الفك نقف عند آخر ما رصدناه بدل مسح القاموس الحي (تفضيلُ مستخدمٍ
+        // حقيقي لا يجوز أن يُمحى بسبب خللٍ عابر).
+        val sp = openPrefs() ?: return entries
+        val json = try {
+            sp.getString("dictionary", "{}")
+        } catch (t: Throwable) {
+            return entries
+        }
         // تجزئة بلا رمي: فاسد ← null ← خريطة فارغة
         // (كما كان تنظيف catch سابقاً).
         val raw = NateqJson.fromJson<Map<*, *>>(json, typeToken)
@@ -433,6 +460,25 @@ private class AhoCorasick(entries: Map<String, String>) {
         }
     }
 
+    /** علامات التشكيل العربية والتركيبية — تُعدّ داخل الكلمة ولا تكسر حدودها
+     *  (كانت isLetterOrDigit=false فتنقلب فواصلَ كلماتٍ خاطئة فيُستبدل مفتاح
+     *  في منتصف كلمة مشكولة — بند 3.5). */
+    private fun isDiacritic(ch: Char): Boolean =
+        ch in '\u064B'..'\u065F' ||
+            ch in '\u0670'..'\u0674' ||
+            ch == '\u06D6' || ch == '\u06D7' ||
+            ch == '\u06DF' || ch == '\u06E0' ||
+            ch == '\u06E8' || ch == '\u06EA' || ch == '\u06EB'
+
+    /** هل المحرف جزءٌ من كلمة (حرف/رقم/علامة تشكيل)؟ */
+    private fun isWordChar(ch: Char): Boolean =
+        ch.isLetterOrDigit() || isDiacritic(ch)
+
+    /** رمزٌ غير حرفي (لا حرف/رقم/مسافة/تشكيل) مثل # $ % — لا يُحسب كلمةً
+     *  فلا يمنع إلحاق المفتاح الرمزي بها (بند 3.5: «#عاجل» و«$50»). */
+    private fun isSymbol(ch: Char): Boolean =
+        !ch.isLetterOrDigit() && !ch.isWhitespace() && !isDiacritic(ch)
+
     /** يطبّق استبدالات القاموس على النص في تمريرة واحدة */
     fun apply(text: String): String {
         if (text.isEmpty()) return text
@@ -456,12 +502,53 @@ private class AhoCorasick(entries: Map<String, String>) {
             // ولا بعدها — الرقم جزءٌ
             // من الكلمة فيمنع إفساد "50م" قبل مرحلة الوحدات،
             // ويُعفى شرط "ما بعد"
-            // للمفاتيح المنتهية بنقطة ليُسمح باختصارات مثل "د.أحمد".
+            // للمفاتيح المنتهية بنقطة ليُسمح باختصارات مثل "د.أحمد"،
+            // ورمزٌ طرفي في المفتاح (مثل # $ ٪) يفتح حدّه حتى تلتصق
+            // الرموز المركّبة بكلماتٍ وأرقام ("#عاجل" و"$50" — بند 3.5).
             val endsWithDot = key.endsWith('.')
-            if (start > 0 && text[start - 1].isLetterOrDigit()) continue
-            if (!endsWithDot && i + 1 < n &&
-                text[i + 1].isLetterOrDigit()
-            ) continue
+            val startsWithSymbol = key.isNotEmpty() &&
+                isSymbol(key.first())
+            val endsWithSymbol = key.isNotEmpty() && isSymbol(key.last())
+            val leftOk = startsWithSymbol || start == 0 ||
+                !isWordChar(text[start - 1])
+            val rightOk = endsWithDot || endsWithSymbol ||
+                i + 1 >= n || !isWordChar(text[i + 1])
+
+            if (!leftOk || !rightOk) {
+                // الأطول فشل بحدود الكلمة — ننزل عبر «روابط الفشل» بحثاً عن
+                // مفتاحٍ أقصر ينتهي عند نفس الموضع ويمرّ بحدوده. المثال:
+                // «x dye» (يخفق اليسار في «ayx dye» لأن قبلها حرف) بينما
+                // لاحقته «dye» تبدأ بعد مسافة فتمرّ — كانت تُفقد والكلمة
+                // تُترك بلا نطق رغم وجود مفتاحٍ صالح. حدُّ اليمين لا يتبدل
+                // (نفسُ الموضع) لكن نفحصه اتساقاً.
+                var fallback: Node? = node.fail
+                while (fallback != null) {
+                    val k = fallback.key
+                    val v = fallback.value
+                    if (k == null || v == null) {
+                        fallback = fallback.fail
+                        continue
+                    }
+                    val fs = i - k.length + 1
+                    if (fs >= 0) {
+                        val fDot = k.endsWith('.')
+                        val fLeftSym = k.isNotEmpty() &&
+                            isSymbol(k.first())
+                        val fRightSym = k.isNotEmpty() &&
+                            isSymbol(k.last())
+                        val fLeftOk = fLeftSym || fs == 0 ||
+                            !isWordChar(text[fs - 1])
+                        val fRightOk = fDot || fRightSym ||
+                            i + 1 >= n || !isWordChar(text[i + 1])
+                        if (fLeftOk && fRightOk) {
+                            matches.add(Match(fs, i + 1, v))
+                            break
+                        }
+                    }
+                    fallback = fallback.fail
+                }
+                continue
+            }
             matches.add(Match(start, i + 1, value))
         }
 

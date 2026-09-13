@@ -70,6 +70,12 @@ class SettingsRepository(private val context: Context) :
         /** أقصى عدد يُقبل من أسماء المتصلين المخصصة (حماية من استيراد فائض). */
         private const val MAX_CALLER_ENTRIES = 2000
 
+        /** قالب رقم هاتف مقبول في أسماء المتصلين (رمز + اختياري ثم 3..32
+         *  من الأرقام/المسافات/الأقواس/الشرطات) — نمط واحد مشترك معرّف
+         *  مرة واحدة لا يُبنى لكل مفتاح عند كل استيراد. */
+        private val CALLER_PHONE_REGEX =
+            Regex("^[+]?[0-9\\s()\\-]{3,32}$")
+
         /** مفاتيح ميزات حساسة (استشعارات/صوتيات) تُصفَّر دائماً عند الاستيراد:
          *  الهز/التقارب يفعّلان مستشعرات فعلية، والتهجئة الذكية صوتُ حروفٍ
          *  متتابع — كلها تُثبَّت false عند الترميم حتى لا تصدم جهاز المستخدم
@@ -100,6 +106,16 @@ class SettingsRepository(private val context: Context) :
         /** وسم ترحيل سلوتات اللغة 1/2 القديمة إلى الخريطة
          *  الديناميكية (مرة واحدة). */
         private const val KEY_CONVERT_SLOTS_MIGRATED = "_convert_slots_migrated"
+
+        /** وسوم الترحيل الداخلية الثلاثة: تُستثنى من النسخ الاحتياطي/الاستيراد
+         *  (تبدأ بـ «_») لكن لا يجوز أن يمسحها clear() في importSettings وإلا
+         *  يتحرك الترحيل من جديد فوق نسخةٍ مكتملة.
+         *  تُحفظ وتُعاد عند الاستيراد. */
+        private val MIGRATION_KEYS = listOf(
+            KEY_MIGRATED,
+            KEY_QUIET_MIGRATED,
+            KEY_CONVERT_SLOTS_MIGRATED
+        )
 
         /**
          * المصنّع الموحّد الوحيد لمثيل SettingsRepository — يُستعمل في كل
@@ -254,7 +270,12 @@ class SettingsRepository(private val context: Context) :
         for ((key, value) in oldPrefs.all) {
             if (key == KEY_MIGRATED) continue
             when (value) {
+                // كانت قيم Long تُسقط صامتة (لا فرع لها):
+                // مخزن SharedPreferences يدعم النوع
+                // الطويل ويُخزّنه وسم <long>، فتُفقَد
+                // مع كل ترحيل.
                 is Int -> { editor.putInt(key, value); copied++ }
+                is Long -> { editor.putLong(key, value); copied++ }
                 is Float -> { editor.putFloat(key, value); copied++ }
                 is Boolean -> { editor.putBoolean(key, value); copied++ }
                 is String -> { editor.putString(key, value); copied++ }
@@ -515,7 +536,7 @@ class SettingsRepository(private val context: Context) :
     private fun openSecureCallerPrefs(): SharedPreferences? {
         repeat(2) { attempt ->
             try {
-val masterKey = androidx.security.crypto.MasterKey
+                val masterKey = androidx.security.crypto.MasterKey
                     .Builder(context)
                     .setKeyScheme(
                         androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM
@@ -531,13 +552,11 @@ val masterKey = androidx.security.crypto.MasterKey
                     ).also { callerSecurePrefs = it }
             } catch (e: Throwable) {
                 if (attempt == 0) {
-                    // عطل عابر محتمل: مهلة قصيرة ثم إعادة محاولة واحدة.
-                    try {
-                        Thread.sleep(150L)
-                    } catch (_: InterruptedException) {
-                        Thread.currentThread().interrupt()
-                        return null
-                    }
+                    // عطل عابر محتمل: محاولة ثانية فورية. كانت تُحقن هنا
+                    // مهلة Thread.sleep(150L): تُجمّد الخيط المستدعي (وقد
+                    // يكون الخيط الرئيسي عند فتح شاشة أسماء المتصلين فتهبط
+                    // إطاراتُ الواجهة) والخروجُ بالذاكرة يحدث أسرع وأبسط —
+                    // الفشلُ العابر يُجتَاز بإعادة الفتح نفسها لا بالنوم.
                 } else {
                     Log.w(
                         TAG,
@@ -556,10 +575,15 @@ val masterKey = androidx.security.crypto.MasterKey
     /** أسماء متصلين مخصصة: خريطة رقم هاتف (بدون ترميز البلد)
      *  -> الاسم المعلَن. */
     override fun getCustomCallerNames(): Map<String, String> {
-        val raw = getCallerPrefs()?.getString("caller_names", null)
-            ?: memoryCallerNames.takeIf { it.isNotEmpty() }?.let { m ->
-                m.entries.joinToString("\n") { "${it.key}\t${it.value}" }
-            } ?: return emptyMap()
+        val secure = getCallerPrefs()
+        if (secure == null) {
+            // عند تعطل التخزين المشفر نعيد ما في الذاكرة كما هو — كان
+            // يُسلسل ثم يُحلل سطرياً (بتبويب/سطر) فيفسد أي اسمٍ يحوي
+            // تبويباً أو سطراً جديداً؛ الخريطة المرجعية تُنسخ مباشرة.
+            return memoryCallerNames.toMap()
+        }
+        val raw = secure.getString("caller_names", null)
+            ?: return emptyMap()
         // الصيغة الحالية: خريطة JSON عبر مظلة NateqJson (البند 3). الصيغة
         // السطرية القديمة «key\tvalue» تُقرأ احتياطاً للتوافقية مع بيانات
         // الأجهزة المخزّنة قبل هذا الترحيل.
@@ -580,7 +604,9 @@ val masterKey = androidx.security.crypto.MasterKey
         // والاسم، وحد أقصى لعدد الإدخالات، حتى لا يدخل ملف JSON خبيث/فاسد
         // من SAF كمية مهولة بلا حدود إلى المخزن المشفر.
         val cleaned = names
-            .filterKeys { it.matches(Regex("^[+]?[0-9\\s()\\-]{3,32}$")) }
+            // النمط يبقى ثابتاً بين العناصر — كان يُنشأ Regex داخل
+            // المرشّح لكل مفتاح في كل استيراد (هدر إنشاء/تجميع متكرر).
+            .filterKeys { it.matches(CALLER_PHONE_REGEX) }
             .filterValues { it.isNotBlank() && it.trim().length <= 100 }
             .entries
             .take(MAX_CALLER_ENTRIES)
@@ -1423,8 +1449,20 @@ val masterKey = androidx.security.crypto.MasterKey
                 }
             }
             if (meaningful == 0) return false
+            // كانت وسوم الترحيل الداخلية (التي تبدأ بـ «_» وتُستثنى من
+            // الاستيراد) تُمسح مع clear() فيتحرّك الترحيل الثلاثي من جديد
+            // على النسخة المستوردة وربما أعاد تحويل قيمٍ نُقّيت بعد ترحيلها.
+            // نحفظها ونعيدها بعد المسح — الإعدادات وحيدةٌ فعلياً بلا إعادة
+            // ترحيل، والوسوم نفسها لا تُصدَّر عند النسخ الاحتياطي.
+            val migrationFlags = MIGRATION_KEYS.mapNotNull { key ->
+                if (prefs.contains(key)) key to prefs.getBoolean(key, false)
+                else null
+            }.toMap()
             val editor = prefs.edit().clear()
             for (op in ops) editor.let(op.apply)
+            for ((key, flag) in migrationFlags) {
+                editor.putBoolean(key, flag)
+            }
             editor.commit()
         } catch (t: Throwable) {
             Log.e(TAG, "import settings failed", t)

@@ -209,9 +209,14 @@ internal class SoundPoolCueSink(
                 finish(false); return
             }
             soundIds[key] = sid
+            // إن صدر stop() (أو play() أحدث ألغاه) قبل اكتمال تحميل
+            // الدفعة نتخلى عن التشغيل: البوابة تُسقط الرجلَ المتأخر
+            // (سباق بين خيط التحميل وخيط الإيقاف) فلا نغمةٌ بعد الصمت.
             pendingLoad[sid] = {
-                loaded.add(key)
-                startStream(sid, volume, durationMs)
+                if (activeGuard.get()) {
+                    loaded.add(key)
+                    startStream(sid, volume, durationMs)
+                }
             }
         } catch (t: Throwable) {
             Log.w(TAG, "load failed", t)
@@ -226,6 +231,12 @@ internal class SoundPoolCueSink(
             try { soundPool.stop(activeStreamId) } catch (_: Throwable) {}
             activeStreamId = 0
         }
+        // نداءات التحميل المعلَّقة كانت تُنفَّذ مهما حدث بعد stop/play أحدث:
+        // فتُشغَّل نغمةً قديمة ميتة فوق الإيقاف (بند 2.10) أو تصطدم بقيمة
+        // غيرها في soundPool.play أو تنتظر id من دفقٍ مُطلَق. نسكبها كلها
+        // فلا تنطلق نغمةً لن تُسمع؛ النداء الذي انفصل لحظة الإلغاء تحرسه
+        // بوابة [activeGuard] في [play] فلا يشغّل بعد الإيقاف.
+        pendingLoad.clear()
         if (activeGuard.compareAndSet(true, false)) {
             val callback = activeOnDone
             activeOnDone = null

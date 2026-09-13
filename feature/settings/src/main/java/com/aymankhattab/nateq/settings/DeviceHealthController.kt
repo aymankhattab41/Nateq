@@ -31,14 +31,16 @@ internal class DeviceHealthController(
     private val onStatusChanged: () -> Unit
 ) {
 
-    private lateinit var cbBattery:
-        com.google.android.material.checkbox.MaterialCheckBox
-    private lateinit var cbCharging:
-        com.google.android.material.checkbox.MaterialCheckBox
-    private lateinit var cbStorage:
-        com.google.android.material.checkbox.MaterialCheckBox
-    private lateinit var cbMemory:
-        com.google.android.material.checkbox.MaterialCheckBox
+    // مراجع العرض قابلة للتصفير في cleanup() عند تدمير عرض الفصيل
+    // (بند 4.1) حتى لا تبقى شجرة العرض القديمة محتجزة في الخلفية.
+    private var cbBattery:
+        com.google.android.material.checkbox.MaterialCheckBox? = null
+    private var cbCharging:
+        com.google.android.material.checkbox.MaterialCheckBox? = null
+    private var cbStorage:
+        com.google.android.material.checkbox.MaterialCheckBox? = null
+    private var cbMemory:
+        com.google.android.material.checkbox.MaterialCheckBox? = null
 
     /** كلفة إعادة الأرقام وحيدة إلى حروفها (على النطق). */
     private fun words(n: Int, isEnglish: Boolean): String =
@@ -53,23 +55,23 @@ internal class DeviceHealthController(
 
         val section = runCatching { settings.getDeviceHealthItems() }
             .getOrDefault(SettingsRepository.DEFAULT_DEVICE_HEALTH_ITEMS)
-        cbBattery.isChecked =
+        cbBattery?.isChecked =
             SettingsRepository.DEVICE_HEALTH_BATTERY in section
-        cbCharging.isChecked =
+        cbCharging?.isChecked =
             SettingsRepository.DEVICE_HEALTH_CHARGING in section
-        cbStorage.isChecked =
+        cbStorage?.isChecked =
             SettingsRepository.DEVICE_HEALTH_STORAGE in section
-        cbMemory.isChecked =
+        cbMemory?.isChecked =
             SettingsRepository.DEVICE_HEALTH_MEMORY in section
 
         val listener =
             android.widget.CompoundButton.OnCheckedChangeListener { _, _ ->
                 saveSelection()
             }
-        cbBattery.setOnCheckedChangeListener(listener)
-        cbCharging.setOnCheckedChangeListener(listener)
-        cbStorage.setOnCheckedChangeListener(listener)
-        cbMemory.setOnCheckedChangeListener(listener)
+        cbBattery?.setOnCheckedChangeListener(listener)
+        cbCharging?.setOnCheckedChangeListener(listener)
+        cbStorage?.setOnCheckedChangeListener(listener)
+        cbMemory?.setOnCheckedChangeListener(listener)
 
         view
             .findViewById<View>(R.id.btn_speak_device_health)
@@ -86,16 +88,16 @@ internal class DeviceHealthController(
     /** حفظ اختيار العناصر في الإعدادات وتحديث خط حالة القسم. */
     private fun saveSelection() {
         val items = mutableSetOf<String>()
-        if (cbBattery.isChecked) {
+        if (cbBattery?.isChecked == true) {
             items.add(SettingsRepository.DEVICE_HEALTH_BATTERY)
         }
-        if (cbCharging.isChecked) {
+        if (cbCharging?.isChecked == true) {
             items.add(SettingsRepository.DEVICE_HEALTH_CHARGING)
         }
-        if (cbStorage.isChecked) {
+        if (cbStorage?.isChecked == true) {
             items.add(SettingsRepository.DEVICE_HEALTH_STORAGE)
         }
-        if (cbMemory.isChecked) {
+        if (cbMemory?.isChecked == true) {
             items.add(SettingsRepository.DEVICE_HEALTH_MEMORY)
         }
         runCatching { settings.setDeviceHealthItems(items) }
@@ -105,16 +107,16 @@ internal class DeviceHealthController(
     /** نطق حالة الجهاز بالعناصر المختارة وبلسان صوت النطق المحدد. */
     private fun speakDeviceHealth() {
         val selected = mutableListOf<String>()
-        if (cbBattery.isChecked) {
+        if (cbBattery?.isChecked == true) {
             selected.add(SettingsRepository.DEVICE_HEALTH_BATTERY)
         }
-        if (cbCharging.isChecked) {
+        if (cbCharging?.isChecked == true) {
             selected.add(SettingsRepository.DEVICE_HEALTH_CHARGING)
         }
-        if (cbStorage.isChecked) {
+        if (cbStorage?.isChecked == true) {
             selected.add(SettingsRepository.DEVICE_HEALTH_STORAGE)
         }
-        if (cbMemory.isChecked) {
+        if (cbMemory?.isChecked == true) {
             selected.add(SettingsRepository.DEVICE_HEALTH_MEMORY)
         }
         if (selected.isEmpty()) {
@@ -276,6 +278,14 @@ internal class DeviceHealthController(
             R.string.device_health_memory_speech,
             R.string.device_health_memory_speech
         ).replace("{free}", availWords).replace("{total}", totalWords)
+    }
+
+    /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */
+    fun cleanup() {
+        cbBattery = null
+        cbCharging = null
+        cbStorage = null
+        cbMemory = null
     }
 
     private companion object {

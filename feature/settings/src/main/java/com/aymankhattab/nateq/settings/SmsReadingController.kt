@@ -25,14 +25,16 @@ internal class SmsReadingController(
     private val onStatusChanged: () -> Unit
 ) {
 
-    private lateinit var spinnerSmsMode: Spinner
-    private lateinit var spinnerSmsVoice: Spinner
-    private lateinit var seekSmsRate: SeekBar
-    private lateinit var tvSmsRateValue: TextView
-    private lateinit var seekSmsVolume: SeekBar
-    private lateinit var tvSmsVolumeValue: TextView
-    private lateinit var etSmsTemplate:
-        com.google.android.material.textfield.TextInputEditText
+    // مراجع العرض قابلة للتصفير في cleanup() عند تدمير عرض الفصيل
+    // (بند 4.1) حتى لا تبقى شجرة العرض القديمة محتجزة في الخلفية.
+    private var spinnerSmsMode: Spinner? = null
+    private var spinnerSmsVoice: Spinner? = null
+    private var seekSmsRate: SeekBar? = null
+    private var tvSmsRateValue: TextView? = null
+    private var seekSmsVolume: SeekBar? = null
+    private var tvSmsVolumeValue: TextView? = null
+    private var etSmsTemplate:
+        com.google.android.material.textfield.TextInputEditText? = null
 
     /** الوضع المختار (full/source) لا يُحفظ إلا بعد المنح الفعلي حتى لا يبقى
      *  مفعّلاً زوراً عند رفض المستخدم الإذن (بند [9]). */
@@ -58,7 +60,7 @@ internal class SmsReadingController(
             fragment.getString(R.string.sms_mode_source),
             fragment.getString(R.string.sms_mode_off)
         )
-        spinnerSmsMode.adapter = fragment.simpleAdapter(modes)
+        spinnerSmsMode?.adapter = fragment.simpleAdapter(modes)
         val savedMode =
             runCatching { settings.getSmsReadingMode() }
                 .getOrDefault("off")
@@ -67,8 +69,8 @@ internal class SmsReadingController(
             "source" -> 1
             else -> 2 // "off"
         }
-        spinnerSmsMode.setSelection(modeIndex)
-        spinnerSmsMode.onItemSelectedListener =
+        spinnerSmsMode?.setSelection(modeIndex)
+        spinnerSmsMode?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: AdapterView<*>?,
@@ -143,7 +145,7 @@ internal class SmsReadingController(
         }
 
         // اختيار الصوت (العربية / الإنجليزية)
-        spinnerSmsVoice.adapter = fragment.simpleAdapter(
+        spinnerSmsVoice?.adapter = fragment.simpleAdapter(
             voices.map { it.displayName }
         )
         val savedSmsVoice =
@@ -151,9 +153,9 @@ internal class SmsReadingController(
                 .getOrNull()
         if (savedSmsVoice != null) {
             val idx = voices.indexOfFirst { it.name == savedSmsVoice }
-            if (idx >= 0) spinnerSmsVoice.setSelection(idx)
+            if (idx >= 0) spinnerSmsVoice?.setSelection(idx)
         }
-        spinnerSmsVoice.onItemSelectedListener =
+        spinnerSmsVoice?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: AdapterView<*>?,
@@ -174,16 +176,17 @@ internal class SmsReadingController(
             runCatching { settings.getSmsReadingRate() }
                 .getOrDefault(1.0f)
                 .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
-        tvSmsRateValue.text = RateLabel.of(
+        tvSmsRateValue?.text = RateLabel.of(
             fragment.requireContext(), smsRate
         )
         bindingSlider = true
         try {
-            seekSmsRate.progress = (smsRate * 100).toInt().coerceIn(0, 200)
+            seekSmsRate?.progress =
+                (smsRate * 100).toInt().coerceIn(0, 200)
         } finally {
             bindingSlider = false
         }
-        seekSmsRate.setOnSeekBarChangeListener(
+        seekSmsRate?.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
                 seekBar: SeekBar,
@@ -193,11 +196,11 @@ internal class SmsReadingController(
                 // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
                 if (bindingSlider) return
                 val value = progress.speedFactor()
-                tvSmsRateValue.text = RateLabel.of(
+                tvSmsRateValue?.text = RateLabel.of(
                     fragment.requireContext(),
                     value
                 )
-                seekBar.setSeekStateDescription(tvSmsRateValue.text)
+                seekBar.setSeekStateDescription(tvSmsRateValue?.text ?: "")
                 // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
                 // نهايته إلى onStopTrackingTouch أبداً.
                 runCatching { settings.setSmsReadingRate(value) }
@@ -218,15 +221,15 @@ internal class SmsReadingController(
         val smsVolume =
             runCatching { settings.getSmsReadingVolume() }
                 .getOrDefault(1.0f)
-        tvSmsVolumeValue.text = "${(smsVolume * 100).toInt()}%"
+        tvSmsVolumeValue?.text = "${(smsVolume * 100).toInt()}%"
         bindingSlider = true
         try {
-            seekSmsVolume.progress =
+            seekSmsVolume?.progress =
                 (smsVolume * 100).toInt().coerceIn(0, 100)
         } finally {
             bindingSlider = false
         }
-        seekSmsVolume.setOnSeekBarChangeListener(
+        seekSmsVolume?.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
                 seekBar: SeekBar,
@@ -235,8 +238,8 @@ internal class SmsReadingController(
             ) {
                 // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
                 if (bindingSlider) return
-                tvSmsVolumeValue.text = "$progress%"
-                seekBar.setSeekStateDescription(tvSmsVolumeValue.text)
+                tvSmsVolumeValue?.text = "$progress%"
+                seekBar.setSeekStateDescription(tvSmsVolumeValue?.text ?: "")
                 // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
                 // نهايته إلى onStopTrackingTouch أبداً.
                 runCatching {
@@ -254,11 +257,11 @@ internal class SmsReadingController(
         })
 
         // قالب قراءة الرسائل: {name} للمرسل و{message} للرسالة
-        etSmsTemplate.setText(
+        etSmsTemplate?.setText(
             runCatching { settings.getSmsAnnouncementTemplate() }
                 .getOrNull()
         )
-        etSmsTemplate.addTextChangedListener(object : TextWatcher {
+        etSmsTemplate?.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(
                 s: CharSequence?,
                 start: Int,
@@ -304,13 +307,25 @@ internal class SmsReadingController(
                 AnnouncementSchedulerService.syncIfRunning(
                     fragment.requireContext()
                 )
-                if (::spinnerSmsMode.isInitialized) {
-                    spinnerSmsMode.setSelection(2)
-                }
+                spinnerSmsMode?.setSelection(2)
             }
             fragment.view?.announceCompat(
                 fragment.getString(R.string.sms_permission_needed)
             )
         }
+        // بند 4.11: تحديث ملخص بطاقة القسم بعد المنح أو الرفض (كان يبقى
+        // يعرض الحالة القديمة حتى تدوير الشاشة).
+        onStatusChanged()
+    }
+
+    /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */
+    fun cleanup() {
+        spinnerSmsMode = null
+        spinnerSmsVoice = null
+        seekSmsRate = null
+        tvSmsRateValue = null
+        seekSmsVolume = null
+        tvSmsVolumeValue = null
+        etSmsTemplate = null
     }
 }

@@ -164,9 +164,23 @@ class SpeakingClockWidget : AppWidgetProvider() {
                 } else {
                     LanguageCode.EN.tag
                 }
+                val speechLocale = Locale.forLanguageTag(tag)
+                // بند 4.3: يلزم نطق نص التعطيل بلغة الصوت المختارة (عربي
+                // حين تكون لغة النطق عربية) لا بلغة واجهة الجهاز — فالـ
+                // getString العادي يجلب نص الواجهة فيُمرَّر نص إنجليزي
+                // لمحرك عربي فيفشل أو ينطق خربشة. ننشئ سياقاً مهيّأً
+                // بذات Locale النطق ونقرأ منه النص.
+                val text = runCatching {
+                    appContext.createConfigurationContext(
+                        android.content.res.Configuration(
+                            appContext.resources.configuration
+                        ).apply { setLocale(speechLocale) }
+                    ).getString(R.string.widget_clock_disabled)
+                }.getOrDefault(
+                    appContext.getString(R.string.widget_clock_disabled)
+                )
                 speaker.speak(
-                    appContext.getString(R.string.widget_clock_disabled),
-                    Locale.forLanguageTag(tag), 1.0f, 1.0f, 1.0f
+                    text, speechLocale, 1.0f, 1.0f, 1.0f
                 )
                 return
             }

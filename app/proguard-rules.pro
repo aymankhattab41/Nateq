@@ -35,6 +35,7 @@
 -keep public class com.aymankhattab.nateq.settings.SettingsActivity
 -keep public class com.aymankhattab.nateq.settings.CheckTtsDataActivity
 -keep public class com.aymankhattab.nateq.settings.GetSampleTextActivity
+-keep public class com.aymankhattab.nateq.settings.FirstRunSetupActivity
 # مكونات الإعلانات (انتقلت من receivers إلى :core:audio.announcement في 5ب)
 -keep public class com.aymankhattab.nateq.core.audio.announcement.AnnouncementBootReceiver
 -keep public class com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService

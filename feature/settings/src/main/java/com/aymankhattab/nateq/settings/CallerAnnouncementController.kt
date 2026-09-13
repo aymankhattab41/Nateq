@@ -51,18 +51,20 @@ internal class CallerAnnouncementController(
         }
     }
 
-    private lateinit var switchCallerAnnouncement: SwitchMaterial
-    private lateinit var spinnerCallerRepeat: Spinner
-    private lateinit var spinnerCallerInterval: Spinner
-    private lateinit var seekCallerRate: SeekBar
-    private lateinit var tvCallerRateValue: TextView
-    private lateinit var seekCallerVolume: SeekBar
-    private lateinit var tvCallerVolumeValue: TextView
-    private lateinit var etCallerTemplate:
-        com.google.android.material.textfield.TextInputEditText
-    private lateinit var spinnerCallerVoiceAr: Spinner
-    private lateinit var spinnerCallerVoiceEn: Spinner
-    private lateinit var spinnerCallerEngine: Spinner
+    // مراجع العرض قابلة للتصفير في cleanup() عند تدمير عرض الفصيل
+    // (بند 4.1) حتى لا تبقى شجرة العرض القديمة محتجزة في الخلفية.
+    private var switchCallerAnnouncement: SwitchMaterial? = null
+    private var spinnerCallerRepeat: Spinner? = null
+    private var spinnerCallerInterval: Spinner? = null
+    private var seekCallerRate: SeekBar? = null
+    private var tvCallerRateValue: TextView? = null
+    private var seekCallerVolume: SeekBar? = null
+    private var tvCallerVolumeValue: TextView? = null
+    private var etCallerTemplate:
+        com.google.android.material.textfield.TextInputEditText? = null
+    private var spinnerCallerVoiceAr: Spinner? = null
+    private var spinnerCallerVoiceEn: Spinner? = null
+    private var spinnerCallerEngine: Spinner? = null
 
     /** خيارات محرك نطق المتصل: «تلقائي» ثم المحركات المثبتة */
     private var callerEngineOptions: List<EnginePicker.InstalledEngine> =
@@ -103,7 +105,7 @@ internal class CallerAnnouncementController(
             add(fragment.getString(R.string.first_run_engine_auto))
             addAll(callerEngineOptions.map { it.label })
         }
-        spinnerCallerEngine.adapter = fragment.simpleAdapter(engineLabels)
+        spinnerCallerEngine?.adapter = fragment.simpleAdapter(engineLabels)
         val savedCallerEngine = runCatching {
             settings.getEngineForCategory(
                 SettingsRepository.ANNOUNCE_CATEGORY_CALLER
@@ -111,10 +113,10 @@ internal class CallerAnnouncementController(
         }.getOrNull()
         val callerEngineIdx = callerEngineOptions
             .indexOfFirst { it.packageName == savedCallerEngine }
-        spinnerCallerEngine.setSelection(
+        spinnerCallerEngine?.setSelection(
             if (callerEngineIdx >= 0) callerEngineIdx + 1 else 0
         )
-        spinnerCallerEngine.onItemSelectedListener =
+        spinnerCallerEngine?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: AdapterView<*>?, v: View?,
@@ -136,10 +138,10 @@ internal class CallerAnnouncementController(
 
         // المفتاح الرئيسي: عند التفعيل نطلب الأذونات أولاً
         // (لا نفعّل إلا بمنحها)
-        switchCallerAnnouncement.isChecked =
+        switchCallerAnnouncement?.isChecked =
             runCatching { settings.isCallerAnnouncementEnabled() }
                 .getOrDefault(false)
-        switchCallerAnnouncement.setOnCheckedChangeListener { _, checked ->
+        switchCallerAnnouncement?.setOnCheckedChangeListener { _, checked ->
             if (callerSwitchGuard) return@setOnCheckedChangeListener
             if (checked) {
                 requestCallerPermissionsWithRationale()
@@ -163,14 +165,14 @@ internal class CallerAnnouncementController(
             fragment.getString(R.string.repeat_4),
             fragment.getString(R.string.repeat_5)
         )
-        spinnerCallerRepeat.adapter = fragment.simpleAdapter(repeats)
+        spinnerCallerRepeat?.adapter = fragment.simpleAdapter(repeats)
         val savedRepeat =
             runCatching { settings.getCallerAnnouncementRepeat() }
                 .getOrDefault(1)
-        spinnerCallerRepeat.setSelection(
+        spinnerCallerRepeat?.setSelection(
             (savedRepeat - 1).coerceIn(0, repeats.size - 1)
         )
-        spinnerCallerRepeat.onItemSelectedListener =
+        spinnerCallerRepeat?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: AdapterView<*>?,
@@ -193,14 +195,14 @@ internal class CallerAnnouncementController(
                 R.plurals.caller_announcement_interval_seconds, s, s
             )
         }
-        spinnerCallerInterval.adapter = fragment.simpleAdapter(intervals)
+        spinnerCallerInterval?.adapter = fragment.simpleAdapter(intervals)
         val savedInterval =
             runCatching { settings.getCallerAnnouncementIntervalSeconds() }
                 .getOrDefault(3)
-        spinnerCallerInterval.setSelection(
+        spinnerCallerInterval?.setSelection(
             (savedInterval - 1).coerceIn(0, intervals.size - 1)
         )
-        spinnerCallerInterval.onItemSelectedListener =
+        spinnerCallerInterval?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: AdapterView<*>?,
@@ -219,17 +221,17 @@ internal class CallerAnnouncementController(
             runCatching { settings.getCallerAnnouncementRate() }
                 .getOrDefault(1.0f)
                 .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
-        tvCallerRateValue.text = RateLabel.of(
+        tvCallerRateValue?.text = RateLabel.of(
             fragment.requireContext(), callerRate
         )
         bindingSlider = true
         try {
-            seekCallerRate.progress =
+            seekCallerRate?.progress =
                 (callerRate * 100).toInt().coerceIn(0, 200)
         } finally {
             bindingSlider = false
         }
-        seekCallerRate.setOnSeekBarChangeListener(
+        seekCallerRate?.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
                 seekBar: SeekBar,
@@ -239,12 +241,12 @@ internal class CallerAnnouncementController(
                 // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
                 if (bindingSlider) return
                 val value = progress.speedFactor()
-                tvCallerRateValue.text = RateLabel.of(
+                tvCallerRateValue?.text = RateLabel.of(
                     fragment.requireContext(),
                     value
                 )
                 seekBar.setSeekStateDescription(
-                    tvCallerRateValue.text
+                    tvCallerRateValue?.text ?: ""
                 )
                 // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
                 // نهايته إلى onStopTrackingTouch أبداً.
@@ -268,15 +270,15 @@ internal class CallerAnnouncementController(
         val callerVolume =
             runCatching { settings.getCallerAnnouncementVolume() }
                 .getOrDefault(1.0f)
-        tvCallerVolumeValue.text = "${(callerVolume * 100).toInt()}%"
+        tvCallerVolumeValue?.text = "${(callerVolume * 100).toInt()}%"
         bindingSlider = true
         try {
-            seekCallerVolume.progress =
+            seekCallerVolume?.progress =
                 (callerVolume * 100).toInt().coerceIn(0, 100)
         } finally {
             bindingSlider = false
         }
-        seekCallerVolume.setOnSeekBarChangeListener(
+        seekCallerVolume?.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
                 seekBar: SeekBar,
@@ -285,9 +287,9 @@ internal class CallerAnnouncementController(
             ) {
                 // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
                 if (bindingSlider) return
-                tvCallerVolumeValue.text = "$progress%"
+                tvCallerVolumeValue?.text = "$progress%"
                 seekBar.setSeekStateDescription(
-                    tvCallerVolumeValue.text
+                    tvCallerVolumeValue?.text ?: ""
                 )
                 // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
                 // نهايته إلى onStopTrackingTouch أبداً.
@@ -309,11 +311,11 @@ internal class CallerAnnouncementController(
         })
 
         // قالب إعلان المتصل: {name} لاسم المتصل
-        etCallerTemplate.setText(
+        etCallerTemplate?.setText(
             runCatching { settings.getCallerAnnouncementTemplate() }
                 .getOrNull()
         )
-        etCallerTemplate.addTextChangedListener(object : TextWatcher {
+        etCallerTemplate?.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(
                 s: CharSequence?,
                 start: Int,
@@ -337,16 +339,16 @@ internal class CallerAnnouncementController(
         })
 
         // صوت نطق الأسماء العربية في إعلان المتصل
-        spinnerCallerVoiceAr.adapter =
+        spinnerCallerVoiceAr?.adapter =
             fragment.simpleAdapter(voices.map { it.displayName })
         val savedCallerVoiceAr =
             runCatching { settings.getCallerAnnouncementArabicVoiceId() }
                 .getOrNull()
         if (savedCallerVoiceAr != null) {
             val idx = voices.indexOfFirst { it.name == savedCallerVoiceAr }
-            if (idx >= 0) spinnerCallerVoiceAr.setSelection(idx)
+            if (idx >= 0) spinnerCallerVoiceAr?.setSelection(idx)
         }
-        spinnerCallerVoiceAr.onItemSelectedListener =
+        spinnerCallerVoiceAr?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: AdapterView<*>?,
@@ -365,16 +367,16 @@ internal class CallerAnnouncementController(
         }
 
         // صوت نطق الأسماء الإنجليزية في إعلان المتصل
-        spinnerCallerVoiceEn.adapter =
+        spinnerCallerVoiceEn?.adapter =
             fragment.simpleAdapter(voices.map { it.displayName })
         val savedCallerVoiceEn =
             runCatching { settings.getCallerAnnouncementEnglishVoiceId() }
                 .getOrNull()
         if (savedCallerVoiceEn != null) {
             val idx = voices.indexOfFirst { it.name == savedCallerVoiceEn }
-            if (idx >= 0) spinnerCallerVoiceEn.setSelection(idx)
+            if (idx >= 0) spinnerCallerVoiceEn?.setSelection(idx)
         }
-        spinnerCallerVoiceEn.onItemSelectedListener =
+        spinnerCallerVoiceEn?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: AdapterView<*>?,
@@ -497,7 +499,7 @@ internal class CallerAnnouncementController(
                 // — لم يُمنح الإذن فلن تُفعَّل الميزة، وكان المفتاح يعلق
                 // مفعّلاً بصرياً بينما الميزة معطلة فعلياً (تضليل).
                 callerSwitchGuard = true
-                switchCallerAnnouncement.isChecked = false
+                switchCallerAnnouncement?.isChecked = false
                 callerSwitchGuard = false
                 onStatusChanged()
             }
@@ -522,7 +524,7 @@ internal class CallerAnnouncementController(
             // حارس يمنع المستمع من إعادة طلب الأذونات عند تعيين قيمة
             // المفتاح هنا
             callerSwitchGuard = true
-            switchCallerAnnouncement.isChecked = true
+            switchCallerAnnouncement?.isChecked = true
             callerSwitchGuard = false
             AnnouncementSchedulerService.requestStart(
                 fragment.requireContext()
@@ -540,7 +542,12 @@ internal class CallerAnnouncementController(
             ).show()
             fragment.view?.announceCompat(fragment.getString(msg))
         } else {
-            switchCallerAnnouncement.isChecked = false
+            // بند 4.10: كان تغيير المفتاح هنا بلا حارس فيطلق المستمع فينفّذ
+            // مسار «التعطيل» مرتين (إعلانان صوتيان وتحديثان للملخص). الحارس
+            // يجعله تغييراً برمجياً صامتاً — المعالجة تجري هنا مرة واحدة.
+            callerSwitchGuard = true
+            switchCallerAnnouncement?.isChecked = false
+            callerSwitchGuard = false
             runCatching { settings.setCallerAnnouncementEnabled(false) }
             AnnouncementSchedulerService.syncIfRunning(
                 fragment.requireContext()
@@ -555,5 +562,20 @@ internal class CallerAnnouncementController(
                 fragment.getString(R.string.caller_permission_needed)
             )
         }
+    }
+
+    /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */
+    fun cleanup() {
+        switchCallerAnnouncement = null
+        spinnerCallerRepeat = null
+        spinnerCallerInterval = null
+        seekCallerRate = null
+        tvCallerRateValue = null
+        seekCallerVolume = null
+        tvCallerVolumeValue = null
+        etCallerTemplate = null
+        spinnerCallerVoiceAr = null
+        spinnerCallerVoiceEn = null
+        spinnerCallerEngine = null
     }
 }

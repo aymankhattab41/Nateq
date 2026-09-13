@@ -23,25 +23,27 @@ internal class BatteryAnnouncementController(
     private val onStatusChanged: () -> Unit
 ) {
 
-    private lateinit var switchBatteryAnnouncement: SwitchMaterial
-    private lateinit var llBatteryLevelsHeader: LinearLayout
-    private lateinit var tvBatteryLevelsArrow: TextView
-    private lateinit var llBatteryLevels: LinearLayout
-    private lateinit var spinnerBatteryVoice: Spinner
-    private lateinit var spinnerBatteryEngine: Spinner
-    private lateinit var seekBatteryRate: SeekBar
-    private lateinit var tvBatteryRateValue: TextView
-    private lateinit var seekBatteryVolume: SeekBar
-    private lateinit var tvBatteryVolumeValue: TextView
-    private lateinit var spinnerBatteryCueMode: Spinner
-    private lateinit var seekBatteryCueVolume: SeekBar
-    private lateinit var tvBatteryCueVolumeValue: TextView
-    private lateinit var switchChargingComplete: SwitchMaterial
-    private lateinit var switchChargingDisconnect: SwitchMaterial
-    private lateinit var switchPowerSaver: SwitchMaterial
-    private lateinit var llPowerSaverThreshold: LinearLayout
-    private lateinit var tvPowerSaverThresholdValue: TextView
-    private lateinit var seekPowerSaverThreshold: SeekBar
+    // مراجع العرض قابلة للتصفير في cleanup() عند تدمير عرض الفصيل
+    // (بند 4.1) حتى لا تبقى شجرة العرض القديمة محتجزة في الخلفية.
+    private var switchBatteryAnnouncement: SwitchMaterial? = null
+    private var llBatteryLevelsHeader: LinearLayout? = null
+    private var tvBatteryLevelsArrow: TextView? = null
+    private var llBatteryLevels: LinearLayout? = null
+    private var spinnerBatteryVoice: Spinner? = null
+    private var spinnerBatteryEngine: Spinner? = null
+    private var seekBatteryRate: SeekBar? = null
+    private var tvBatteryRateValue: TextView? = null
+    private var seekBatteryVolume: SeekBar? = null
+    private var tvBatteryVolumeValue: TextView? = null
+    private var spinnerBatteryCueMode: Spinner? = null
+    private var seekBatteryCueVolume: SeekBar? = null
+    private var tvBatteryCueVolumeValue: TextView? = null
+    private var switchChargingComplete: SwitchMaterial? = null
+    private var switchChargingDisconnect: SwitchMaterial? = null
+    private var switchPowerSaver: SwitchMaterial? = null
+    private var llPowerSaverThreshold: LinearLayout? = null
+    private var tvPowerSaverThresholdValue: TextView? = null
+    private var seekPowerSaverThreshold: SeekBar? = null
 
     // **بند 6.3:** علمُ الربط البرمجي — يُسنَّع حول setProgress في setup حتى
     // لا يُفسَّر الإسنادُ البرمجي تعديلَ مستخدم. دون الحفظ في
@@ -80,10 +82,10 @@ internal class BatteryAnnouncementController(
             view.findViewById(R.id.seek_power_saver_threshold)
 
         // المفتاح الرئيسي
-        switchBatteryAnnouncement.isChecked =
+        switchBatteryAnnouncement?.isChecked =
             runCatching { settings.isBatteryAnnouncementEnabled() }
                 .getOrDefault(false)
-        switchBatteryAnnouncement.setOnCheckedChangeListener { _, checked ->
+        switchBatteryAnnouncement?.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setBatteryAnnouncementEnabled(checked) }
             if (checked) {
                 AnnouncementSchedulerService.requestStart(
@@ -104,21 +106,23 @@ internal class BatteryAnnouncementController(
         }
 
         // عنوان المستويات قابل للتوسيع/الطي
-        llBatteryLevelsHeader.tag =
+        llBatteryLevelsHeader?.tag =
             fragment.getString(R.string.battery_announcement_levels_summary)
-        llBatteryLevelsHeader.setOnClickListener {
-            fragment.toggleCollapsible(
-                llBatteryLevels,
-                tvBatteryLevelsArrow,
-                llBatteryLevelsHeader
-            )
+        llBatteryLevelsHeader?.setOnClickListener {
+            val content = llBatteryLevels
+                ?: return@setOnClickListener
+            val arrow = tvBatteryLevelsArrow
+                ?: return@setOnClickListener
+            val header = llBatteryLevelsHeader
+                ?: return@setOnClickListener
+            fragment.toggleCollapsible(content, arrow, header)
         }
 
         // مستويات البطارية: مسقط لكل مستوى (5%، 10%، ... 100%)
         val enabledLevels =
             runCatching { settings.getBatteryAnnouncementLevels() }
                 .getOrDefault(setOf("20", "15"))
-        llBatteryLevels.removeAllViews()
+        llBatteryLevels?.removeAllViews()
         val allLevels = (1..20).map { it * 5 } // 5, 10, ... 100
         for (level in allLevels) {
             val levelStr = level.toString()
@@ -167,20 +171,20 @@ internal class BatteryAnnouncementController(
                     )
                 }
             }
-            llBatteryLevels.addView(cb)
+            llBatteryLevels?.addView(cb)
         }
 
         // صوت نطق البطارية
-        spinnerBatteryVoice.adapter =
+        spinnerBatteryVoice?.adapter =
             fragment.simpleAdapter(voices.map { it.displayName })
         val savedBatteryVoice =
             runCatching { settings.getBatteryAnnouncementVoiceId() }
                 .getOrNull()
         if (savedBatteryVoice != null) {
             val idx = voices.indexOfFirst { it.name == savedBatteryVoice }
-            if (idx >= 0) spinnerBatteryVoice.setSelection(idx)
+            if (idx >= 0) spinnerBatteryVoice?.setSelection(idx)
         }
-        spinnerBatteryVoice.onItemSelectedListener =
+        spinnerBatteryVoice?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: AdapterView<*>?,
@@ -206,7 +210,7 @@ internal class BatteryAnnouncementController(
             add(fragment.getString(R.string.first_run_engine_auto))
             addAll(batteryEngineOptions.map { it.label })
         }
-        spinnerBatteryEngine.adapter =
+        spinnerBatteryEngine?.adapter =
             fragment.simpleAdapter(batteryEngineLabels)
         val savedBatteryEngine = runCatching {
             settings.getEngineForCategory(
@@ -215,10 +219,10 @@ internal class BatteryAnnouncementController(
         }.getOrNull()
         val batteryEngineIdx = batteryEngineOptions
             .indexOfFirst { it.packageName == savedBatteryEngine }
-        spinnerBatteryEngine.setSelection(
+        spinnerBatteryEngine?.setSelection(
             if (batteryEngineIdx >= 0) batteryEngineIdx + 1 else 0
         )
-        spinnerBatteryEngine.onItemSelectedListener =
+        spinnerBatteryEngine?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: AdapterView<*>?, v: View?,
@@ -243,17 +247,17 @@ internal class BatteryAnnouncementController(
             runCatching { settings.getBatteryAnnouncementRate() }
                 .getOrDefault(1.0f)
                 .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
-        tvBatteryRateValue.text = RateLabel.of(
+        tvBatteryRateValue?.text = RateLabel.of(
             fragment.requireContext(), batteryRate
         )
         bindingSlider = true
         try {
-            seekBatteryRate.progress =
+            seekBatteryRate?.progress =
                 (batteryRate * 100).toInt().coerceIn(0, 200)
         } finally {
             bindingSlider = false
         }
-        seekBatteryRate.setOnSeekBarChangeListener(
+        seekBatteryRate?.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
                 seekBar: SeekBar,
@@ -263,12 +267,12 @@ internal class BatteryAnnouncementController(
                 // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
                 if (bindingSlider) return
                 val value = progress.speedFactor()
-                tvBatteryRateValue.text = RateLabel.of(
+                tvBatteryRateValue?.text = RateLabel.of(
                     fragment.requireContext(),
                     value
                 )
                 seekBar.setSeekStateDescription(
-                    tvBatteryRateValue.text
+                    tvBatteryRateValue?.text ?: ""
                 )
                 // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
                 // نهايته إلى onStopTrackingTouch أبداً.
@@ -292,15 +296,15 @@ internal class BatteryAnnouncementController(
         val batteryVolume =
             runCatching { settings.getBatteryAnnouncementVolume() }
                 .getOrDefault(1.0f)
-        tvBatteryVolumeValue.text = "${(batteryVolume * 100).toInt()}%"
+        tvBatteryVolumeValue?.text = "${(batteryVolume * 100).toInt()}%"
         bindingSlider = true
         try {
-            seekBatteryVolume.progress =
+            seekBatteryVolume?.progress =
                 (batteryVolume * 100).toInt().coerceIn(0, 100)
         } finally {
             bindingSlider = false
         }
-        seekBatteryVolume.setOnSeekBarChangeListener(
+        seekBatteryVolume?.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
                 seekBar: SeekBar,
@@ -309,9 +313,9 @@ internal class BatteryAnnouncementController(
             ) {
                 // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
                 if (bindingSlider) return
-                tvBatteryVolumeValue.text = "$progress%"
+                tvBatteryVolumeValue?.text = "$progress%"
                 seekBar.setSeekStateDescription(
-                    tvBatteryVolumeValue.text
+                    tvBatteryVolumeValue?.text ?: ""
                 )
                 // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
                 // نهايته إلى onStopTrackingTouch أبداً.
@@ -339,15 +343,15 @@ internal class BatteryAnnouncementController(
             fragment.getString(R.string.battery_cue_mode_narration_only),
             fragment.getString(R.string.battery_cue_mode_cue_only)
         )
-        spinnerBatteryCueMode.adapter =
+        spinnerBatteryCueMode?.adapter =
             fragment.simpleAdapter(cueModeLabels)
         val savedCueMode =
             runCatching { settings.getBatterySoundCueMode() }
                 .getOrDefault(0)
-        spinnerBatteryCueMode.setSelection(
+        spinnerBatteryCueMode?.setSelection(
             savedCueMode.coerceIn(0, 2)
         )
-        spinnerBatteryCueMode.onItemSelectedListener =
+        spinnerBatteryCueMode?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: AdapterView<*>?,
@@ -370,20 +374,20 @@ internal class BatteryAnnouncementController(
         val batteryCueVolume =
             runCatching { settings.getBatteryCueVolume() }
                 .getOrDefault(0.8f)
-        tvBatteryCueVolumeValue.text =
+        tvBatteryCueVolumeValue?.text =
             "${(batteryCueVolume * 100).toInt()}%"
         bindingSlider = true
         try {
-            seekBatteryCueVolume.progress =
+            seekBatteryCueVolume?.progress =
                 ((batteryCueVolume - 0.1f) / 0.9f * 100)
                     .toInt().coerceIn(0, 100)
         } finally {
             bindingSlider = false
         }
-        seekBatteryCueVolume.setSeekStateDescription(
-            tvBatteryCueVolumeValue.text
+        seekBatteryCueVolume?.setSeekStateDescription(
+            tvBatteryCueVolumeValue?.text ?: ""
         )
-        seekBatteryCueVolume.setOnSeekBarChangeListener(
+        seekBatteryCueVolume?.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
                 seekBar: SeekBar,
@@ -393,9 +397,9 @@ internal class BatteryAnnouncementController(
                 // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
                 if (bindingSlider) return
                 val pct = ((0.1f + progress / 100f * 0.9f) * 100).toInt()
-                tvBatteryCueVolumeValue.text = "$pct%"
+                tvBatteryCueVolumeValue?.text = "$pct%"
                 seekBar.setSeekStateDescription(
-                    tvBatteryCueVolumeValue.text
+                    tvBatteryCueVolumeValue?.text ?: ""
                 )
                 // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
                 // نهايته إلى onStopTrackingTouch أبداً.
@@ -413,10 +417,10 @@ internal class BatteryAnnouncementController(
         })
 
         // إعلان اكتمال الشحن (100%)
-        switchChargingComplete.isChecked =
+        switchChargingComplete?.isChecked =
             runCatching { settings.isChargingCompleteAnnouncementEnabled() }
                 .getOrDefault(true)
-        switchChargingComplete.setOnCheckedChangeListener { _, checked ->
+        switchChargingComplete?.setOnCheckedChangeListener { _, checked ->
             runCatching {
                 settings.setChargingCompleteAnnouncementEnabled(checked)
             }
@@ -429,10 +433,10 @@ internal class BatteryAnnouncementController(
         }
 
         // إعلان فصل الشاحن
-        switchChargingDisconnect.isChecked =
+        switchChargingDisconnect?.isChecked =
             runCatching { settings.isChargingDisconnectAnnouncementEnabled() }
                 .getOrDefault(true)
-        switchChargingDisconnect.setOnCheckedChangeListener { _, checked ->
+        switchChargingDisconnect?.setOnCheckedChangeListener { _, checked ->
             runCatching {
                 settings.setChargingDisconnectAnnouncementEnabled(checked)
             }
@@ -445,28 +449,37 @@ internal class BatteryAnnouncementController(
         }
 
         // وضع توفير الطاقة + عتبته
-        switchPowerSaver.isChecked =
+        switchPowerSaver?.isChecked =
             runCatching { settings.isPowerSaverModeEnabled() }
                 .getOrDefault(false)
         val powerThreshold =
             runCatching { settings.getPowerSaverBatteryThreshold() }
                 .getOrDefault(20)
-        tvPowerSaverThresholdValue.text = "$powerThreshold%"
+        tvPowerSaverThresholdValue?.text = "$powerThreshold%"
         bindingSlider = true
         try {
-            seekPowerSaverThreshold.progress = powerThreshold.coerceIn(0, 100)
+            seekPowerSaverThreshold?.progress =
+                powerThreshold.coerceIn(0, 100)
         } finally {
             bindingSlider = false
         }
-        llPowerSaverThreshold.visibility =
-            if (switchPowerSaver.isChecked) View.VISIBLE else View.GONE
-        seekPowerSaverThreshold.visibility =
-            if (switchPowerSaver.isChecked) View.VISIBLE else View.GONE
-        switchPowerSaver.setOnCheckedChangeListener { _, checked ->
+        llPowerSaverThreshold?.visibility =
+            if (switchPowerSaver?.isChecked == true) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            }
+        seekPowerSaverThreshold?.visibility =
+            if (switchPowerSaver?.isChecked == true) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            }
+        switchPowerSaver?.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setPowerSaverModeEnabled(checked) }
-            llPowerSaverThreshold.visibility =
+            llPowerSaverThreshold?.visibility =
                 if (checked) View.VISIBLE else View.GONE
-            seekPowerSaverThreshold.visibility =
+            seekPowerSaverThreshold?.visibility =
                 if (checked) View.VISIBLE else View.GONE
             fragment.view?.announceCompat(
                 fragment.getString(
@@ -475,7 +488,7 @@ internal class BatteryAnnouncementController(
                 )
             )
         }
-        seekPowerSaverThreshold.setOnSeekBarChangeListener(
+        seekPowerSaverThreshold?.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
                 seekBar: SeekBar,
@@ -484,9 +497,9 @@ internal class BatteryAnnouncementController(
             ) {
                 // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
                 if (bindingSlider) return
-                tvPowerSaverThresholdValue.text = "$progress%"
+                tvPowerSaverThresholdValue?.text = "$progress%"
                 seekBar.setSeekStateDescription(
-                    tvPowerSaverThresholdValue.text
+                    tvPowerSaverThresholdValue?.text ?: ""
                 )
                 // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
                 // نهايته إلى onStopTrackingTouch أبداً.
@@ -503,5 +516,28 @@ internal class BatteryAnnouncementController(
                 seekBar.announceCompat("${seekBar.progress}%")
             }
         })
+    }
+
+    /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */
+    fun cleanup() {
+        switchBatteryAnnouncement = null
+        llBatteryLevelsHeader = null
+        tvBatteryLevelsArrow = null
+        llBatteryLevels = null
+        spinnerBatteryVoice = null
+        spinnerBatteryEngine = null
+        seekBatteryRate = null
+        tvBatteryRateValue = null
+        seekBatteryVolume = null
+        tvBatteryVolumeValue = null
+        spinnerBatteryCueMode = null
+        seekBatteryCueVolume = null
+        tvBatteryCueVolumeValue = null
+        switchChargingComplete = null
+        switchChargingDisconnect = null
+        switchPowerSaver = null
+        llPowerSaverThreshold = null
+        tvPowerSaverThresholdValue = null
+        seekPowerSaverThreshold = null
     }
 }

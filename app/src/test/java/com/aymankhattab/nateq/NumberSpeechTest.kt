@@ -238,6 +238,31 @@ class NumberSpeechTest {
     }
 
     @Test
+    fun englishWords_longMinValue_doesNotCrash() {
+        // Long.MAX_VALUE + 1L كان يفيض حسابياً فيصير -9223372036854775808
+        // نصاً يحوي إشارة سالبة تخرّب تجزئة الثلاثيات (انهيار) — يُركَّب
+        // الآن بنصٍّ صريح بلا إشارة فتُنطق القيمة كاملة.
+        assertEquals(
+            "minus nine quintillion two hundred twenty three quadrillion " +
+                "three hundred seventy two trillion thirty six billion " +
+                "eight hundred fifty four million seven hundred seventy " +
+                "five thousand eight hundred eight",
+            NumberSpeech.toEnglishWords(Long.MIN_VALUE)
+        )
+    }
+
+    @Test
+    fun englishWords_intMinValue_doesNotCrash() {
+        // نفي Int.MIN_VALUE يفيض فيبقى سالباً — تُركَّب يدوياً (ملياران +
+        // الباقي) فتنجو من الحلقة اللانهائية.
+        assertEquals(
+            "minus two billion one hundred forty seven million " +
+                "four hundred eighty three thousand six hundred forty eight",
+            NumberSpeech.toEnglishWords(Int.MIN_VALUE)
+        )
+    }
+
+    @Test
     fun formatByMode_largeGrouping() {
         assertEquals(
             "مائة وثلاثة وعشرون, مائة وثلاثة وعشرون",

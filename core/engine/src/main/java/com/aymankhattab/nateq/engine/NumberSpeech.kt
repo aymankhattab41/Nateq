@@ -35,9 +35,10 @@ object NumberSpeech {
      *  مع معالجة الإشارة وLong.MIN_VALUE. */
     fun toEnglishWords(number: Long, isFeminine: Boolean = false): String {
         if (number == Long.MIN_VALUE) {
-            return "minus ${
-                englishFromDigits((Long.MAX_VALUE + 1L).toString())
-            }"
+            // `Long.MAX_VALUE + 1L` كان يفيض حسابياً فيصبح -9223372036854775808
+            // نصاً يحوي إشارة سالبة تخرّب تجزئة
+            // الثلاثيات ورمزية toInt (انهيار).
+            return "minus ${englishFromDigits("9223372036854775808")}"
         }
         if (number < 0) return "minus ${toEnglishWords(-number)}"
         if (number <= Int.MAX_VALUE) return toEnglishWords(number.toInt())
@@ -111,7 +112,11 @@ object NumberSpeech {
             "octillion", "nonillion"
         )
         val trimmed = digits.trimStart('0').ifEmpty { "0" }
-        val padded = "000".repeat((3 - trimmed.length % 3) % 3) + trimmed
+        // «0».repeat فقط — كان «000».repeat(n) يحشو 3n أصفاراً فينزاح
+        // السُلَّم: أول خانتين صفريتين تُتخطيان وكل خانة تُوسم بسُلّمٍ أكبر
+        // بواحدة…ثم اثنتين (مثل 9223372036854775808 → «nine hundred twenty two
+        // quintillion» بدل «nine quintillion»).
+        val padded = "0".repeat((3 - trimmed.length % 3) % 3) + trimmed
         val chunks = padded.chunked(3)
         val parts = chunks.mapIndexedNotNull { idx, chunk ->
             val value = chunk.toInt()

@@ -7,6 +7,7 @@ import android.util.Log
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
+import com.aymankhattab.nateq.core.audio.announcement.TimeAnnouncementManager
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import com.aymankhattab.nateq.core.data.SettingsRepository
@@ -48,8 +49,20 @@ class AnnouncementTileService : TileService() {
             val enabled = settings.isAllAnnouncementsEnabled()
             settings.setAllAnnouncementsEnabled(!enabled)
             if (enabled) {
-                // كان مفعّلاً وأصبح معطّلاً: أوقف أي نطق جارٍ وصفّر الخدمة.
+                // كان مفعّلاً وأصبح معطّلاً: أوقف أي نطق جارٍ، وصارِ الإيقاف
+                // الصريح للمستخدم (بند 4.8: stopInternal لا يلغي منبه الوقت
+                // عمداً لأنه مسار «قتل خدمة» لا «إيقاف مستخدم») — فالمنبه
+                // المستقل كان يظل يصحو دورياً ويستهلك البطارية بعد تعطيل
+                // الإعلانات من البلاطة.
                 AnnouncementSpeaker.getInstance(this).stop()
+                AnnouncementSchedulerService.markUserStopped(this)
+                try {
+                    TimeAnnouncementManager.shared(
+                        this.applicationContext, settingsRepository
+                    ).stop()
+                } catch (t: Throwable) {
+                    Log.w(TAG, "time alarm cancel failed", t)
+                }
                 try {
                     stopService(
                         android.content.Intent(

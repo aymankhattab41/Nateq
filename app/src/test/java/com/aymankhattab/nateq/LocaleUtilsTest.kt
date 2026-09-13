@@ -163,6 +163,16 @@ class LocaleUtilsTest {
     }
 
     @Test
+    fun normalizeIndicDigits_arabicDecimalComma() {
+        // العلامة العشرية العربية (U+066B «٫») كانت تُخطف بالمسح العام
+        // فتُحوَّل إلى 0؛ والآلاف العربية (U+066C «٬») تُحوَّل إلى فاصلة.
+        assertEquals(
+            "1.5,3",
+            LocaleUtils.normalizeIndicDigits("\u0661\u066B\u0665\u066C\u0663")
+        )
+    }
+
+    @Test
     fun normalizeIndicDigits_empty() {
         assertEquals("", LocaleUtils.normalizeIndicDigits(""))
     }

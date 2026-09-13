@@ -28,16 +28,21 @@ internal class TimeAnnouncementController(
     private val onStatusChanged: () -> Unit
 ) {
 
-    private lateinit var switchTimeAnnouncement: SwitchMaterial
-    private lateinit var spinnerTimeInterval: Spinner
-    private lateinit var llQuietSchedule: LinearLayout
-    private lateinit var spinnerTimeFormat: Spinner
-    private lateinit var switchTime24h: SwitchMaterial
-    private lateinit var switchHijriDate: SwitchMaterial
-    private lateinit var switchClockWidget: SwitchMaterial
-    private lateinit var switchTimeChime: SwitchMaterial
-    private lateinit var spinnerTimeChimeSound: Spinner
-    private lateinit var seekTimeChimeVolume: SeekBar
+    // مراجع العرض قابلة للتصفير في cleanup() عند تدمير عرض الفصيل
+    // (بند 4.1) حتى لا تبقى شجرة العرض القديمة محتجزة في الخلفية.
+    private var switchTimeAnnouncement: SwitchMaterial? = null
+    private var spinnerTimeInterval: Spinner? = null
+    private var llQuietSchedule: LinearLayout? = null
+    private var spinnerTimeFormat: Spinner? = null
+    private var switchTime24h: SwitchMaterial? = null
+    private var switchHijriDate: SwitchMaterial? = null
+    private var switchClockWidget: SwitchMaterial? = null
+    private var switchTimeChime: SwitchMaterial? = null
+    private var spinnerTimeChimeSound: Spinner? = null
+    private var seekTimeChimeVolume: SeekBar? = null
+
+    /** صف منح إذن المنبهات الدقيقة — تُحدَّث رؤيته في onResume (بند 4.7). */
+    private var llExactAlarmPermission: View? = null
 
     // **بند 6.3:** علمُ الربط البرمجي لشريط رنة الوقت — إسنادُ setProgress
     // في setup ليس تعديلَ مستخدم، والحفظ في onProgressChanged ضروري لأن
@@ -60,32 +65,34 @@ internal class TimeAnnouncementController(
             fragment.getString(R.string.time_interval_45),
             fragment.getString(R.string.time_interval_60)
         )
-        spinnerTimeInterval.adapter = fragment.simpleAdapter(intervals)
+        spinnerTimeInterval?.adapter = fragment.simpleAdapter(intervals)
 
         val formats = listOf(
             fragment.getString(R.string.time_format_natural),
             fragment.getString(R.string.time_format_digital)
         )
-        spinnerTimeFormat.adapter = fragment.simpleAdapter(formats)
+        spinnerTimeFormat?.adapter = fragment.simpleAdapter(formats)
 
         val intervalPref =
             runCatching { settings.getTimeAnnouncementInterval() }
                 .getOrDefault(30)
-        spinnerTimeInterval.setSelection(intervalIndex(intervalPref))
+        spinnerTimeInterval?.setSelection(intervalIndex(intervalPref))
         val formatPref =
             runCatching { settings.getTimeAnnouncementFormat() }
                 .getOrDefault("arabic_natural")
-        spinnerTimeFormat.setSelection(if (formatPref == "digital") 1 else 0)
-        switchTimeAnnouncement.isChecked =
+        spinnerTimeFormat?.setSelection(
+            if (formatPref == "digital") 1 else 0
+        )
+        switchTimeAnnouncement?.isChecked =
             runCatching { settings.isTimeAnnouncementEnabled() }
                 .getOrDefault(true)
         setupQuietScheduleRows(view)
 
-        switchClockWidget.isChecked =
+        switchClockWidget?.isChecked =
             runCatching { settings.isClockWidgetEnabled() }.getOrDefault(true)
         setupExactAlarmPermissionRow(view)
 
-        switchTimeAnnouncement.setOnCheckedChangeListener { _, checked ->
+        switchTimeAnnouncement?.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setTimeAnnouncementEnabled(checked) }
             if (checked) {
                 AnnouncementSchedulerService.requestStart(
@@ -103,10 +110,10 @@ internal class TimeAnnouncementController(
                     )
             )
         }
-        switchTime24h.isChecked =
+        switchTime24h?.isChecked =
             runCatching { settings.isTime24Hour() }
                 .getOrDefault(false)
-        switchTime24h.setOnCheckedChangeListener { _, checked ->
+        switchTime24h?.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setTime24Hour(checked) }
             fragment.view?.announceCompat(
                 fragment.getString(
@@ -114,10 +121,10 @@ internal class TimeAnnouncementController(
                 )
             )
         }
-        switchHijriDate.isChecked =
+        switchHijriDate?.isChecked =
             runCatching { settings.isHijriDateEnabled() }
                 .getOrDefault(false)
-        switchHijriDate.setOnCheckedChangeListener { _, checked ->
+        switchHijriDate?.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setHijriDateEnabled(checked) }
             fragment.view?.announceCompat(
                 fragment.getString(
@@ -125,7 +132,7 @@ internal class TimeAnnouncementController(
                 )
             )
         }
-        switchClockWidget.setOnCheckedChangeListener { _, checked ->
+        switchClockWidget?.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setClockWidgetEnabled(checked) }
             fragment.view?.announceCompat(
                 fragment.getString(
@@ -145,9 +152,9 @@ internal class TimeAnnouncementController(
             fragment.getString(R.string.time_chime_sound_digital_chime),
             fragment.getString(R.string.time_chime_sound_soft_ding)
         )
-        spinnerTimeChimeSound.adapter =
+        spinnerTimeChimeSound?.adapter =
             fragment.simpleAdapter(chimeSounds)
-        switchTimeChime.isChecked =
+        switchTimeChime?.isChecked =
             runCatching { settings.isTimeChimeEnabled() }
                 .getOrDefault(true)
         val savedChimeSound = runCatching {
@@ -158,29 +165,29 @@ internal class TimeAnnouncementController(
             "soft_ding" -> 2
             else -> 0
         }
-        spinnerTimeChimeSound.setSelection(chimeSoundIndex)
+        spinnerTimeChimeSound?.setSelection(chimeSoundIndex)
         val savedChimeVol = runCatching {
             settings.getTimeChimeVolume()
         }.getOrDefault(0.5f)
         val seekProgress = ((savedChimeVol - 0.1f) / 0.9f * 100)
             .toInt().coerceIn(0, 100)
-        seekTimeChimeVolume.max = 100
+        seekTimeChimeVolume?.max = 100
         bindingSlider = true
         try {
-            seekTimeChimeVolume.progress = seekProgress
+            seekTimeChimeVolume?.progress = seekProgress
         } finally {
             bindingSlider = false
         }
         // وصف الحالة الإتاحي للشريط عند التهيئة: يقرأه TalkBack فور الوصول
         // إليه (بدل الوصول ثم انتظار حركةٍ بالتوقف).
-        seekTimeChimeVolume.setSeekStateDescription(
+        seekTimeChimeVolume?.setSeekStateDescription(
             "${(savedChimeVol * 100).toInt()}%"
         )
 
-        switchTimeChime.setOnCheckedChangeListener { _, checked ->
+        switchTimeChime?.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setTimeChimeEnabled(checked) }
-            spinnerTimeChimeSound.isEnabled = checked
-            seekTimeChimeVolume.isEnabled = checked
+            spinnerTimeChimeSound?.isEnabled = checked
+            seekTimeChimeVolume?.isEnabled = checked
             fragment.view?.announceCompat(
                 fragment.getString(
                     if (checked) {
@@ -191,7 +198,7 @@ internal class TimeAnnouncementController(
                 )
             )
         }
-        spinnerTimeChimeSound.onItemSelectedListener =
+        spinnerTimeChimeSound?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: AdapterView<*>?,
@@ -213,7 +220,7 @@ internal class TimeAnnouncementController(
                 parent: AdapterView<*>?
             ) {}
         }
-        seekTimeChimeVolume.setOnSeekBarChangeListener(
+        seekTimeChimeVolume?.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
                 sb: SeekBar, progress: Int, fromUser: Boolean
@@ -243,7 +250,7 @@ internal class TimeAnnouncementController(
             }
         })
 
-        spinnerTimeInterval.onItemSelectedListener =
+        spinnerTimeInterval?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: AdapterView<*>?,
@@ -283,12 +290,7 @@ internal class TimeAnnouncementController(
         val row = view.findViewById<View>(
             R.id.ll_exact_alarm_permission
         ) ?: return
-        val alarmManager = fragment.requireContext().getSystemService(
-            Context.ALARM_SERVICE
-        ) as? AlarmManager
-        val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            (alarmManager == null || !alarmManager.canScheduleExactAlarms())
-        row.visibility = if (needsPermission) View.VISIBLE else View.GONE
+        llExactAlarmPermission = row
         val onClick = View.OnClickListener {
             runCatching {
                 val intent = Intent(
@@ -311,6 +313,20 @@ internal class TimeAnnouncementController(
         view.findViewById<View>(
             R.id.btn_exact_alarm_permission
         )?.setOnClickListener(onClick)
+        refreshExactAlarmRow()
+    }
+
+    /** بند 4.7: يُعاد فحص إذن المنبهات الدقيقة عند العودة من إعدادات النظام
+     *  (onResume) — بعد منحه يختفي صف الطلب فوراً بدل بقائه
+     *  كما لو لم يُمنح. */
+    fun refreshExactAlarmRow() {
+        val row = llExactAlarmPermission ?: return
+        val alarmManager = fragment.requireContext().getSystemService(
+            Context.ALARM_SERVICE
+        ) as? AlarmManager
+        val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            (alarmManager == null || !alarmManager.canScheduleExactAlarms())
+        row.visibility = if (needsPermission) View.VISIBLE else View.GONE
     }
 
     /**
@@ -319,7 +335,7 @@ internal class TimeAnnouncementController(
      * (Calendar.DAY_OF_WEEK: 1=الأحد…7=السبت).
      */
     private fun setupQuietScheduleRows(view: View) {
-        llQuietSchedule.removeAllViews()
+        llQuietSchedule?.removeAllViews()
         val days = listOf(
             R.string.day_sunday to Calendar.SUNDAY,
             R.string.day_monday to Calendar.MONDAY,
@@ -481,8 +497,23 @@ internal class TimeAnnouncementController(
                 )
             }
 
-            llQuietSchedule.addView(dayRow)
-            llQuietSchedule.addView(hoursRow)
+            llQuietSchedule?.addView(dayRow)
+            llQuietSchedule?.addView(hoursRow)
         }
+    }
+
+    /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */
+    fun cleanup() {
+        switchTimeAnnouncement = null
+        spinnerTimeInterval = null
+        llQuietSchedule = null
+        spinnerTimeFormat = null
+        switchTime24h = null
+        switchHijriDate = null
+        switchClockWidget = null
+        switchTimeChime = null
+        spinnerTimeChimeSound = null
+        seekTimeChimeVolume = null
+        llExactAlarmPermission = null
     }
 }

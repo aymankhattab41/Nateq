@@ -17,8 +17,10 @@ internal class TextReadingController(
     private val onStatusChanged: () -> Unit
 ) {
 
-    private lateinit var spinnerPunctuationLevel: Spinner
-    private lateinit var switchSmartSpelling: SwitchMaterial
+    // مراجع العرض قابلة للتصفير في cleanup() عند تدمير عرض الفصيل
+    // (بند 4.1) حتى لا تبقى شجرة العرض القديمة محتجزة في الخلفية.
+    private var spinnerPunctuationLevel: Spinner? = null
+    private var switchSmartSpelling: SwitchMaterial? = null
 
     fun setup(view: View) {
         spinnerPunctuationLevel =
@@ -34,13 +36,13 @@ internal class TextReadingController(
         val savedLevel = runCatching { settings.getPunctuationLevel() }
             .getOrDefault(PunctuationLevels.SOME)
             .coerceIn(PunctuationLevels.MIN, PunctuationLevels.MAX)
-        spinnerPunctuationLevel.adapter = ArrayAdapter(
+        spinnerPunctuationLevel?.adapter = ArrayAdapter(
             fragment.requireContext(),
             android.R.layout.simple_spinner_dropdown_item,
             levelLabels
         )
-        spinnerPunctuationLevel.setSelection(savedLevel)
-        spinnerPunctuationLevel.onItemSelectedListener =
+        spinnerPunctuationLevel?.setSelection(savedLevel)
+        spinnerPunctuationLevel?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: AdapterView<*>?,
@@ -57,10 +59,10 @@ internal class TextReadingController(
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
-        switchSmartSpelling.isChecked =
+        switchSmartSpelling?.isChecked =
             runCatching { settings.isSmartSpellingEnabled() }
                 .getOrDefault(false)
-        switchSmartSpelling.setOnCheckedChangeListener { _, checked ->
+        switchSmartSpelling?.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setSmartSpellingEnabled(checked) }
             onStatusChanged()
             fragment.view?.announceCompat(
@@ -70,5 +72,11 @@ internal class TextReadingController(
                 )
             )
         }
+    }
+
+    /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */
+    fun cleanup() {
+        spinnerPunctuationLevel = null
+        switchSmartSpelling = null
     }
 }

@@ -26,10 +26,17 @@ class StartupTempSweeperTest {
     @Test
     fun orphanWavFilesInCache_areDeleted() {
         val cache = context.cacheDir
+        val cutoff = System.currentTimeMillis() - 60 * 60 * 1000L
         val wavA = File(cache, "nateq_tts_1.wav")
-            .apply { writeBytes(ByteArray(64)) }
+            .apply {
+                writeBytes(ByteArray(64))
+                setLastModified(cutoff - 60 * 60 * 1000L)
+            }
         val wavB = File(cache, "nateq_tts_2.wav")
-            .apply { writeBytes(ByteArray(64)) }
+            .apply {
+                writeBytes(ByteArray(64))
+                setLastModified(cutoff - 3 * 60 * 60 * 1000L)
+            }
         val kept = File(cache, "settings.dat")
             .apply { writeBytes(ByteArray(16)) }
 
@@ -39,6 +46,22 @@ class StartupTempSweeperTest {
         assertFalse("الملف اليتيم A حُذف", wavA.exists())
         assertFalse("الملف اليتيم B حُذف", wavB.exists())
         assertTrue("الملف غير الـ wav بقي", kept.exists())
+    }
+
+    @Test
+    fun freshWavInCache_isKept() {
+        // ملف واف أحدث من حدّ العمر (30 دقيقة) قد يكون جلسة TTS تولّدها
+        // الآن خدمة :tts في عملية منفصلة — كان يُحذف لحظياً فتنقطع بداية
+        // الصوت (بند الصمت عند الإقلاع).
+        val cache = context.cacheDir
+        val fresh = File(cache, "nateq_tts_now.wav")
+            .apply { writeBytes(ByteArray(64)) }
+        assertTrue("المقدمة تجعل الملف حديثاً", fresh.lastModified() > 0)
+
+        val deleted = StartupTempSweeper(context).sweep()
+
+        assertEquals(0, deleted)
+        assertTrue("الملف الحديث بقي", fresh.exists())
     }
 
     @Test

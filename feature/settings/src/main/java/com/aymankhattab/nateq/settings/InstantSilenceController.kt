@@ -13,18 +13,20 @@ internal class InstantSilenceController(
     private val onStatusChanged: () -> Unit
 ) {
 
-    private lateinit var switchShakeToStop: SwitchMaterial
-    private lateinit var switchProximitySilence: SwitchMaterial
+    // مراجع العرض قابلة للتصفير في cleanup() عند تدمير عرض الفصيل
+    // (بند 4.1) حتى لا تبقى شجرة العرض القديمة محتجزة في الخلفية.
+    private var switchShakeToStop: SwitchMaterial? = null
+    private var switchProximitySilence: SwitchMaterial? = null
 
     fun setup(view: View) {
         switchShakeToStop = view.findViewById(R.id.switch_shake_to_stop)
         switchProximitySilence =
             view.findViewById(R.id.switch_proximity_silence)
 
-        switchShakeToStop.isChecked =
+        switchShakeToStop?.isChecked =
             runCatching { settings.isShakeToStopEnabled() }
                 .getOrDefault(false)
-        switchShakeToStop.setOnCheckedChangeListener { _, checked ->
+        switchShakeToStop?.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setShakeToStopEnabled(checked) }
             onStatusChanged()
             fragment.view?.announceCompat(
@@ -35,10 +37,10 @@ internal class InstantSilenceController(
             )
         }
 
-        switchProximitySilence.isChecked =
+        switchProximitySilence?.isChecked =
             runCatching { settings.isProximitySilenceEnabled() }
                 .getOrDefault(false)
-        switchProximitySilence.setOnCheckedChangeListener { _, checked ->
+        switchProximitySilence?.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setProximitySilenceEnabled(checked) }
             onStatusChanged()
             fragment.view?.announceCompat(
@@ -48,5 +50,11 @@ internal class InstantSilenceController(
                 )
             )
         }
+    }
+
+    /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */
+    fun cleanup() {
+        switchShakeToStop = null
+        switchProximitySilence = null
     }
 }

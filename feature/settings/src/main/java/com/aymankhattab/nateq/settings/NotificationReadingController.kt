@@ -20,8 +20,10 @@ internal class NotificationReadingController(
     private val onStatusChanged: () -> Unit
 ) {
 
-    private lateinit var switchNotificationReading: SwitchMaterial
-    private lateinit var llNotificationListenerSettings: View
+    // مراجع العرض قابلة للتصفير في cleanup() عند تدمير عرض الفصيل
+    // (بند 4.1) حتى لا تبقى شجرة العرض القديمة محتجزة في الخلفية.
+    private var switchNotificationReading: SwitchMaterial? = null
+    private var llNotificationListenerSettings: View? = null
 
     fun setup(view: View) {
         switchNotificationReading =
@@ -30,10 +32,10 @@ internal class NotificationReadingController(
             view.findViewById(R.id.ll_notification_listener_settings)
 
         // المفتاح الرئيسي
-        switchNotificationReading.isChecked =
+        switchNotificationReading?.isChecked =
             runCatching { settings.isNotificationReadingEnabled() }
                 .getOrDefault(false)
-        switchNotificationReading.setOnCheckedChangeListener { _, checked ->
+        switchNotificationReading?.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setNotificationReadingEnabled(checked) }
             if (checked) {
                 AnnouncementSchedulerService.requestStart(
@@ -54,7 +56,7 @@ internal class NotificationReadingController(
         }
 
         // فتح إعدادات إذن الوصول للإشعارات من النظام
-        llNotificationListenerSettings.setOnClickListener {
+        llNotificationListenerSettings?.setOnClickListener {
             val granted = runCatching {
                 NateqNotificationListener.isPermissionGranted(
                     fragment.requireContext()
@@ -151,5 +153,11 @@ internal class NotificationReadingController(
             }
             .setNegativeButton(R.string.cancel, null)
             .create().also { fragment.trackDialog(it) }.show()
+    }
+
+    /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */
+    fun cleanup() {
+        switchNotificationReading = null
+        llNotificationListenerSettings = null
     }
 }

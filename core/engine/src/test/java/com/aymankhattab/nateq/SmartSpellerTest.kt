@@ -38,6 +38,15 @@ class SmartSpellerTest {
     }
 
     @Test
+    fun silentMarkBeforeVowel_vowelStillSpelled() {
+        // علامة مجرَّدة صامتة (ألف خنجرية U+0670 ثم مذيداتها) تسبق الحركة
+        // الفعلية: الحركةُ هي أول علامة نطقية لا أول علامةٍ إطلاقاً — كانت
+        // ألف الخنجرية تخطف الموضع («بَؙٰ»/أي ترتيب) فتسقط «مفتوحة».
+        assertEquals("باء مفتوحة", SmartSpeller.spell("\u0628\u0670\u064E", "ar"))
+        assertEquals("دال مكسورة", SmartSpeller.spell("\u062F\u0653\u0650", "ar"))
+    }
+
+    @Test
     fun tanween_namedCorrectly() {
         assertEquals("باء منصوبة", SmartSpeller.spell("بً", "ar"))
         assertEquals("باء مرفوعة", SmartSpeller.spell("بٌ", "ar"))

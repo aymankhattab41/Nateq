@@ -17,8 +17,9 @@ import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * مستقبل قراءة الرسائل النصية الواردة (SMS) بالصوت.
@@ -161,6 +162,9 @@ override fun onReceive(context: Context, intent: Intent?) {
                 }
             }
             var completionListener: (() -> Unit)? = null
+            // إشارة انتهاء النطق — تُكملها خطاف الاكتمال فتُطلق الكوروتين
+            // فوراً (بند 2.14: كان delay(6s) يظل معلقاً حتى بعد انتهاء النطق).
+            val speechDone = CompletableDeferred<Unit>()
             try {
                 val settings = settingsRepository
                 val mode = settings.getSmsReadingMode()
@@ -237,10 +241,12 @@ override fun onReceive(context: Context, intent: Intent?) {
                 // حتى يُتمَّ النطق الفعلي (بسقفٍ آمن ~6 ثوانٍ فلا ANR رغم
                 // تعليق المحرك) — نمط قارئ المتصل/البطارية نفسه، بسجل
                 // ومستمعين فريدين، والأصلُ إنهاءٌ مبكر عبر مستمع الاكتمال.
-                completionListener = { finishOnce() }
+                completionListener = { speechDone.complete(Unit) }
                 AnnouncementSpeaker.getInstance(context)
                     .addCompletionListener(completionListener!!)
-                delay(BROADCAST_HOLD_MS)
+                withTimeoutOrNull(BROADCAST_HOLD_MS) {
+                    speechDone.await()
+                }
                 finishOnce()
             } catch (t: Throwable) {
                 // أي استثناء (قراءة PDU/حزمة/نطق) يُسجَّل دون إسقاط العملية

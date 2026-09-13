@@ -64,15 +64,15 @@ object NateqJson {
     fun parseObject(json: String?): JsonObject? =
         parseElement(json)?.takeIf { it.isJsonObject }?.asJsonObject
 
-    /** تجزئة خريطة نصية (كل القيم نصوص فقط). نص ليس
-     *  كائناً/قيمة غير نصية ← null. */
+    /** تجزئة خريطة نصية (القيم النصية والأرقام/المنطق تُحوَّل نصوصاً؛ كائن أو
+     *  مصفوفة أو null يُبطل الخريطة كلها). كانت أيُّ قيمةٍ رقمية واحدة تُسقط
+     *  الخريطة بأكملها رغم سلامة بقية الإدخالات. */
     fun parseStringMap(json: String?): Map<String, String>? {
         val root = parseObject(json) ?: return null
         val out = LinkedHashMap<String, String>()
         for ((key, value) in root.entrySet()) {
-            if (!value.isJsonPrimitive ||
-                !value.asJsonPrimitive.isString) return null
-            out[key] = value.asString
+            if (!value.isJsonPrimitive) return null
+            out[key] = value.asJsonPrimitive.asString
         }
         return out
     }
@@ -136,7 +136,10 @@ fun JsonElement.optBoolean(default: Boolean = false): Boolean {
     return when {
         p.isBoolean -> p.asBoolean
         p.isNumber -> p.asLong != 0L
-        p.isString -> p.asString.toBooleanStrictOrNull() ?: default
+        // بدون الحالة كان «TRUE»/«True» يرميان بهدوء إلى الافتراضي
+        // بينما org.json (Boolean.valueOf) يقبل الحالتين جميعاً.
+        p.isString -> p.asString.trim().lowercase()
+            .toBooleanStrictOrNull() ?: default
         else -> default
     }
 }
