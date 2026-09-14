@@ -63,4 +63,29 @@ class SpeakingClockWidgetLogicTest {
             isComponentOurs("", selfClass, selfPackage, selfClass)
         )
     }
+
+    // ═══ بند 4.1: حراسة بث النقر (توكن سري) ═══
+
+    @Test
+    fun acceptsExactSpeakToken() {
+        // التوكنَ السري وحده هو ما يضعه تطبيقنا عند بناء نية النقر.
+        assertEquals(true, hasSpeakToken(WIDGET_TOKEN_VALUE))
+    }
+
+    @Test
+    fun rejectsNullToken() {
+        // بثٌّ مصنوعٌ بلا التوكن (تطبيق خارجي صنع Intent ساذجاً) يُرفض.
+        assertEquals(false, hasSpeakToken(null))
+    }
+
+    @Test
+    fun rejectsBlankToken() {
+        assertEquals(false, hasSpeakToken(""))
+    }
+
+    @Test
+    fun rejectsForgedToken() {
+        // لا قيمةَ تعسفيةٍ تجتاز — التوكن قيمة ثابتة خاصة غير مُوثَّقة.
+        assertEquals(false, hasSpeakToken("random-forgery"))
+    }
 }

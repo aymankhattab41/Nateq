@@ -33,6 +33,8 @@ internal class SmsReadingController(
     private var tvSmsRateValue: TextView? = null
     private var seekSmsVolume: SeekBar? = null
     private var tvSmsVolumeValue: TextView? = null
+    private var seekSmsPitch: SeekBar? = null
+    private var tvSmsPitchValue: TextView? = null
     private var etSmsTemplate:
         com.google.android.material.textfield.TextInputEditText? = null
 
@@ -52,6 +54,8 @@ internal class SmsReadingController(
         tvSmsRateValue = view.findViewById(R.id.tv_sms_reading_rate_value)
         seekSmsVolume = view.findViewById(R.id.seek_sms_reading_volume)
         tvSmsVolumeValue = view.findViewById(R.id.tv_sms_reading_volume_value)
+        seekSmsPitch = view.findViewById(R.id.seek_sms_reading_pitch)
+        tvSmsPitchValue = view.findViewById(R.id.tv_sms_reading_pitch_value)
         etSmsTemplate = view.findViewById(R.id.et_sms_template)
 
         // وضع القراءة: مفعّل / قراءة مصدر الرسالة فقط / معطّل
@@ -256,6 +260,61 @@ internal class SmsReadingController(
             }
         })
 
+        // نبرة نطق الرسائل (بند 2.2) — مستقلة عن نبرة نطق اللغة؛
+        // إن لم تُضبط تُعرض نبرةُ لغة التطبيق (ما سيُستعمل فعلاً).
+        val smsAppLang = runCatching { settings.getAppLanguage() }
+            .getOrNull() ?: "ar"
+        val smsPitch =
+            runCatching {
+                settings.getSmsReadingPitchOrDefault(smsAppLang)
+            }
+                .getOrDefault(1.0f)
+                .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
+        tvSmsPitchValue?.text = RateLabel.of(
+            fragment.requireContext(), smsPitch
+        )
+        bindingSlider = true
+        try {
+            seekSmsPitch?.progress =
+                (smsPitch * 100).toInt().coerceIn(0, 200)
+        } finally {
+            bindingSlider = false
+        }
+        seekSmsPitch?.setOnSeekBarChangeListener(
+            object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(
+                seekBar: SeekBar,
+                progress: Int,
+                fromUser: Boolean
+            ) {
+                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
+                if (bindingSlider) return
+                val value = progress.speedFactor()
+                tvSmsPitchValue?.text = RateLabel.of(
+                    fragment.requireContext(),
+                    value
+                )
+                seekBar.setSeekStateDescription(
+                    tvSmsPitchValue?.text ?: ""
+                )
+                // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
+                // نهايته إلى onStopTrackingTouch أبداً.
+                runCatching { settings.setSmsReadingPitch(value) }
+                onStatusChanged()
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                seekBar.snapSpeedMin()
+                val value = seekBar.progress.speedFactor()
+                runCatching { settings.setSmsReadingPitch(value) }
+                seekBar.announceCompat(
+                    RateLabel.of(fragment.requireContext(), value)
+                )
+                onStatusChanged()
+            }
+        })
+
         // قالب قراءة الرسائل: {name} للمرسل و{message} للرسالة
         etSmsTemplate?.setText(
             runCatching { settings.getSmsAnnouncementTemplate() }
@@ -326,6 +385,8 @@ internal class SmsReadingController(
         tvSmsRateValue = null
         seekSmsVolume = null
         tvSmsVolumeValue = null
+        seekSmsPitch = null
+        tvSmsPitchValue = null
         etSmsTemplate = null
     }
 }

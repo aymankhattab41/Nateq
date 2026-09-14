@@ -734,6 +734,37 @@
                 android:progress="100"
                 android:contentDescription="@string/sms_reading_volume" />
 
+            <!-- نبرة نطق الرسائل (بند 2.2) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/sms_reading_pitch"
+                    android:textAppearance="?attr/textAppearanceBody2"
+                    android:layout_marginEnd="16dp" />
+
+                <TextView
+                    android:id="@+id/tv_sms_reading_pitch_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="1.0x"
+                    android:textAppearance="?attr/textAppearanceBody2" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seek_sms_reading_pitch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:max="200"
+                android:progress="100"
+                android:contentDescription="@string/sms_reading_pitch" />
+
             <!-- قالب قراءة الرسائل -->
             <com.google.android.material.textfield.TextInputLayout
                 android:id="@+id/ll_sms_template_input"
@@ -980,6 +1011,37 @@
                 android:max="100"
                 android:progress="100"
                 android:contentDescription="@string/caller_announcement_volume" />
+
+            <!-- نبرة إعلان المتصل (بند 2.2) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/caller_announcement_pitch"
+                    android:textAppearance="?attr/textAppearanceBody2"
+                    android:layout_marginEnd="16dp" />
+
+                <TextView
+                    android:id="@+id/tv_caller_pitch_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="1.0x"
+                    android:textAppearance="?attr/textAppearanceBody2" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seek_caller_pitch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:max="200"
+                android:progress="100"
+                android:contentDescription="@string/caller_announcement_pitch" />
 
         </LinearLayout>
         </LinearLayout>
@@ -1349,6 +1411,27 @@
                 android:textColor="@color/text_secondary"
                 android:importantForAccessibility="no" />
 
+            <!-- مفتاح مسار الوسائط الدائم للإعلانات (بند 1.4) -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_media_stream_always"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/media_stream_always"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/media_stream_always_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:importantForAccessibility="no" />
+
         </LinearLayout>
 
         <View
@@ -1614,6 +1697,37 @@
                 android:max="100"
                 android:progress="100"
                 android:contentDescription="@string/battery_announcement_volume" />
+
+            <!-- نبرة إعلان البطارية (بند 2.2) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/battery_announcement_pitch"
+                    android:textAppearance="?attr/textAppearanceBody2"
+                    android:layout_marginEnd="16dp" />
+
+                <TextView
+                    android:id="@+id/tv_battery_pitch_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="1.0x"
+                    android:textAppearance="?attr/textAppearanceBody2" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seek_battery_pitch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:max="200"
+                android:progress="100"
+                android:contentDescription="@string/battery_announcement_pitch" />
 
             <!-- وضع مؤثر صوت البطارية -->
             <com.google.android.material.textfield.TextInputLayout

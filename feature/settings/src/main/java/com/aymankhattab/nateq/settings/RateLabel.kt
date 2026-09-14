@@ -12,9 +12,19 @@ import java.util.Locale
 internal object RateLabel {
 
     /** يبني «1.5x» (إنجليزية) أو «١٫٥×» (عربية) وفق [context]. */
-    fun of(context: Context, value: Float): String = String.format(
-        Locale.getDefault(),
-        context.getString(R.string.rate_value_format),
-        value
-    )
+    fun of(context: Context, value: Float): String {
+        // **بند 2.3:** لغة الواجهة من إعدادات التطبيق (configuration.locales)
+        // لا من Locale.getDefault() — كان الأخير يجلب لغة النظام لا لغة
+        // التطبيق، فتبقى التسمية بالعربية على جهازٍ إنجليزي (أو العكس)
+        // حتى بعد تغيير لغة الإعدادات. يقضي كسر "تحبس نفسها" في كلا
+        // الاتجاهين.
+        val appLocale = context.resources.configuration.locales.let {
+            if (it.isEmpty) Locale.getDefault() else it.get(0)
+        }
+        return String.format(
+            appLocale,
+            context.getString(R.string.rate_value_format),
+            value
+        )
+    }
 }

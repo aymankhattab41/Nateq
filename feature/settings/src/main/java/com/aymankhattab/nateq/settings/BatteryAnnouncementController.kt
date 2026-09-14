@@ -35,6 +35,8 @@ internal class BatteryAnnouncementController(
     private var tvBatteryRateValue: TextView? = null
     private var seekBatteryVolume: SeekBar? = null
     private var tvBatteryVolumeValue: TextView? = null
+    private var seekBatteryPitch: SeekBar? = null
+    private var tvBatteryPitchValue: TextView? = null
     private var spinnerBatteryCueMode: Spinner? = null
     private var seekBatteryCueVolume: SeekBar? = null
     private var tvBatteryCueVolumeValue: TextView? = null
@@ -64,6 +66,8 @@ internal class BatteryAnnouncementController(
         tvBatteryRateValue = view.findViewById(R.id.tv_battery_rate_value)
         seekBatteryVolume = view.findViewById(R.id.seek_battery_volume)
         tvBatteryVolumeValue = view.findViewById(R.id.tv_battery_volume_value)
+        seekBatteryPitch = view.findViewById(R.id.seek_battery_pitch)
+        tvBatteryPitchValue = view.findViewById(R.id.tv_battery_pitch_value)
         spinnerBatteryCueMode =
             view.findViewById(R.id.spinner_battery_cue_mode)
         seekBatteryCueVolume = view.findViewById(R.id.seek_battery_cue_volume)
@@ -335,6 +339,67 @@ internal class BatteryAnnouncementController(
             }
         })
 
+        // نبرة إعلان البطارية (بند 2.2) — مستقلة عن نبرة نطق اللغة؛
+        // إن لم تُضبط تُعرض نبرةُ لغة التطبيق (ما سيُستعمل فعلاً).
+        val batteryAppLang = runCatching { settings.getAppLanguage() }
+            .getOrNull() ?: "ar"
+        val batteryPitch =
+            runCatching {
+                settings.getBatteryAnnouncementPitchOrDefault(
+                    batteryAppLang
+                )
+            }
+                .getOrDefault(1.0f)
+                .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
+        tvBatteryPitchValue?.text = RateLabel.of(
+            fragment.requireContext(), batteryPitch
+        )
+        bindingSlider = true
+        try {
+            seekBatteryPitch?.progress =
+                (batteryPitch * 100).toInt().coerceIn(0, 200)
+        } finally {
+            bindingSlider = false
+        }
+        seekBatteryPitch?.setOnSeekBarChangeListener(
+            object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(
+                seekBar: SeekBar,
+                progress: Int,
+                fromUser: Boolean
+            ) {
+                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
+                if (bindingSlider) return
+                val value = progress.speedFactor()
+                tvBatteryPitchValue?.text = RateLabel.of(
+                    fragment.requireContext(),
+                    value
+                )
+                seekBar.setSeekStateDescription(
+                    tvBatteryPitchValue?.text ?: ""
+                )
+                // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
+                // نهايته إلى onStopTrackingTouch أبداً.
+                runCatching {
+                    settings.setBatteryAnnouncementPitch(value)
+                }
+                onStatusChanged()
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                seekBar.snapSpeedMin()
+                val value = seekBar.progress.speedFactor()
+                runCatching {
+                    settings.setBatteryAnnouncementPitch(value)
+                }
+                seekBar.announceCompat(
+                    RateLabel.of(fragment.requireContext(), value)
+                )
+                onStatusChanged()
+            }
+        })
+
         // وضع مؤثر البطارية
         spinnerBatteryCueMode =
             view.findViewById(R.id.spinner_battery_cue_mode)
@@ -530,6 +595,8 @@ internal class BatteryAnnouncementController(
         tvBatteryRateValue = null
         seekBatteryVolume = null
         tvBatteryVolumeValue = null
+        seekBatteryPitch = null
+        tvBatteryPitchValue = null
         spinnerBatteryCueMode = null
         seekBatteryCueVolume = null
         tvBatteryCueVolumeValue = null

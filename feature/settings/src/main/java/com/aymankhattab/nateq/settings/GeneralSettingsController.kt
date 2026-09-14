@@ -7,8 +7,10 @@ import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.google.android.material.switchmaterial.SwitchMaterial
 
-/** ضابط قسم «الإعدادات العامة»: السرعة/النبرة/مستوى الصوت الافتراضية. */
+/** ضابط قسم «الإعدادات العامة»: السرعة/النبرة/مستوى الصوت الافتراضية
+ *  ومفتاح مسار الوسائط الدائم للإعلانات (بند 1.4). */
 internal class GeneralSettingsController(
     private val fragment: VoiceSelectionFragment,
     private val settings: SettingsRepository,
@@ -23,6 +25,7 @@ internal class GeneralSettingsController(
     private var tvDefaultPitchValue: TextView? = null
     private var seekDefaultVolume: SeekBar? = null
     private var tvDefaultVolumeValue: TextView? = null
+    private var switchMediaStreamAlways: SwitchMaterial? = null
 
     // **بند 6.3:** علمُ الربط البرمجي — يُسنَّع حول setProgress في attach
     // حتى لا يُفسَّر الإسنادُ البرمجي تعديلَ مستخدم (يُخزَّن تفريغاً). دون
@@ -39,6 +42,18 @@ internal class GeneralSettingsController(
         tvDefaultPitchValue = view.findViewById(R.id.tv_default_pitch_value)
         seekDefaultVolume = view.findViewById(R.id.seek_default_volume)
         tvDefaultVolumeValue = view.findViewById(R.id.tv_default_volume_value)
+        switchMediaStreamAlways =
+            view.findViewById(R.id.switch_media_stream_always)
+        switchMediaStreamAlways?.isChecked =
+            runCatching { settings.isAnnouncementMediaStreamAlways() }
+                .getOrDefault(false)
+        switchMediaStreamAlways?.setOnCheckedChangeListener { _, checked ->
+            // بند 1.4: «دائماً على مسار الوسائط» — يُمكّن المستخدم من
+            // تجاوز كتم مسار الإتاحة على الأجهزة التي يخفت فيها صوته
+            // دون قارئ شاشة.
+            runCatching { settings.setAnnouncementMediaStreamAlways(checked) }
+            onStatusChanged()
+        }
 
         val rate = runCatching { settings.getDefaultSpeechRate() }
             .getOrDefault(1.0f)
@@ -185,5 +200,6 @@ internal class GeneralSettingsController(
         tvDefaultPitchValue = null
         seekDefaultVolume = null
         tvDefaultVolumeValue = null
+        switchMediaStreamAlways = null
     }
 }

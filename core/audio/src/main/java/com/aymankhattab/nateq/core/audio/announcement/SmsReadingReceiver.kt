@@ -111,7 +111,9 @@ class SmsReadingReceiver : BroadcastReceiver() {
         }
 
         /** يبني النص المَنطوق حسب الأولويات: خصوصية القفل، ثم فلتر التحقق
-         *  OTP، ثم القالب المخصص، ثم التراجعات (فارغ/مصدر/كامل). */
+         *  OTP، ثم وضع «المصدر فقط»، ثم القالب المخصص، ثم التراجعات
+         *  (فارغ/كامل). **بند 5.3:** وضع المصدر كان يسبق فحص القالب،
+         *  فينطق المحتوى في وضع المصدر إذا حُدِّد قالبٌ له {message}. */
         @JvmStatic
         internal fun resolveSpeechText(
             privacyLocked: Boolean,
@@ -125,11 +127,11 @@ class SmsReadingReceiver : BroadcastReceiver() {
         ): String = when {
             privacyLocked -> smsFrom
             isOtp -> otpSafeText
+            effectiveMode == MODE_SOURCE -> smsFrom
             template.isNotBlank() -> template
                 .replace("{name}", displayAddress)
                 .replace("{message}", content.ifBlank { displayAddress })
             content.isBlank() -> smsFrom
-            effectiveMode == MODE_SOURCE -> smsFrom
             else -> "$smsFrom، $content"
         }
     }
@@ -138,7 +140,7 @@ class SmsReadingReceiver : BroadcastReceiver() {
     @Inject
     lateinit var settingsRepository: SettingsRepository
 
-override fun onReceive(context: Context, intent: Intent?) {
+    override fun onReceive(context: Context, intent: Intent?) {
         if (intent?.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
         // حراسة الإذن: سحب RECEIVE_SMS (أو READ_SMS) يُسكّت القراءة — لا
         // يُقرأ المحتوى ولا يُفتح أي مورد دون صلاحية.
@@ -147,7 +149,7 @@ override fun onReceive(context: Context, intent: Intent?) {
             return
         }
 
-// goAsync() يمنع Android من قتل المستقبل قبل انتهاء العمل اللاتزامني
+        // goAsync() يمنع Android من قتل المستقبل قبل انتهاء العمل اللاتزامني
         val pendingResult = goAsync()
         val appScope =
             (context.applicationContext as AnnouncementAppContext).appScope
@@ -231,12 +233,15 @@ override fun onReceive(context: Context, intent: Intent?) {
                     if (isArabic) Locale.forLanguageTag(LanguageCode.AR.tag)
                     else Locale.forLanguageTag(LanguageCode.EN.tag)
 
-// متحدث مشترك واحد لكل الإعلانات (يمنع تقاطع أصوات متعددة)
+                // متحدث مشترك واحد لكل الإعلانات (يمنع تقاطع أصوات متعددة)
                 val speech = AnnouncementSpeaker.getInstance(context)
                 speech.resetVoice(voiceId)
-                // بند 2.1/1.5: نبرةُ نطق اللغة + محرك فئة الرسائل (إن ضُبطا)
+                // بند 2.1/1.5/2.2: نبرةُ «نطق الرسائل» المستقلة إن ضُبطت، أو
+                // نبرةُ نطق اللغة بديلاً + محرك فئة الرسائل (إن ضُبطا)
                 // بدل الثابت 1.0 والتلاؤم مع المحرك العام.
-                val pitch = settings.getPitch(locale.language)
+                val pitch = settings.getSmsReadingPitchOrDefault(
+                    locale.language
+                )
                 speech.speak(
                     text, locale, speechRate, pitch, volume,
                     engineOverride = settings.getEngineForCategory(

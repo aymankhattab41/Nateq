@@ -29,7 +29,10 @@ class SettingsRepositoryTest {
         repo = SettingsRepository(context)
     }
 
-    @Test
+    // وفاءُ الصفَّ بالعقود موثقٌ في إعلان الصنف نفسه، فالفحوصات أدناه تُثبّت
+// القصد دون قيمة تشغيلية (الثنائي يثبت الصدفان أعلاه).
+@Suppress("USELESS_IS_CHECK")
+@Test
     fun implementsDomainContracts() {
         assertTrue(repo is LanguagePrefs)
         assertTrue(repo is SynthesisPrefs)
@@ -567,19 +570,21 @@ class SettingsRepositoryTest {
     // ===== اختبارات الاستيراد (importSettings) =====
 
     @Test
-    fun importSettings_longValue_copiedAsInt() {
-        // كانت القيم الطويلة (Long) تُرمى بصمت لأن when لم يكن يتضمن
-        // فرعاً للـ Long فتُهمل في الاستيراد.
+    fun importSettings_longValue_copiedAsLong() {
+        // بند 5.1: القيم الطويلة (Long) تُستعاد putLong كما هي — كانت
+        // تُسقط صامتة في `when` (لا فرعَ لـ Long) أو تتحول int فتُقتطع
+        // خارج مدى Int (3_000_000_000L تتحول -1294967296!).
+        val huge = 3_000_000_000L
         assertTrue(
             repo.importSettings(
-                mapOf("time_chime_volume" to 0.6f, "test_long_key" to 123L)
+                mapOf("time_chime_volume" to 0.6f, "test_long_key" to huge)
             )
         )
         assertEquals(0.6f, repo.getTimeChimeVolume(), 0.0f)
         val prefs = context.getSharedPreferences(
             "nateq_settings", Context.MODE_PRIVATE
         )
-        assertEquals(123, prefs.getInt("test_long_key", -1))
+        assertEquals(huge, prefs.getLong("test_long_key", 0L))
     }
 
     @Test

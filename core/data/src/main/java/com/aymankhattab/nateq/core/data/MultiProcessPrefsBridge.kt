@@ -59,8 +59,10 @@ class MultiProcessPrefsBridge(private val appDataDir: File) {
         parser.setInput(input, "utf-8")
         var type = parser.eventType
         val map = LinkedHashMap<String, Any?>()
-        // حالة عنصر <set> النشط (مجموعة نصوص): الاسم وجمع القيم حتى وسم
-        // الإغلاق المقابل.
+        // حالة عنصر <set>/<string-set> النشط (مجموعة نصوص): الاسم وجمع القيم
+        // حتى وسم الإغلاق المقابل. AOSP يكتب مجموعات النصوص بوسم
+        // <string-set> لا <set> — كان الجسر يُسقطها صامتاً فتُفقد قوائم
+        // البطارية وفحوصات الجهاز في عملية :tts (بند 5.2).
         var setKey: String? = null
         var setValues: java.util.HashSet<String>? = null
         while (type != XmlPullParser.END_DOCUMENT) {
@@ -71,7 +73,7 @@ class MultiProcessPrefsBridge(private val appDataDir: File) {
                     // الجذر فقط: بلا قيم مباشرة.
                     "map" -> {}
                     // عنصر مجموعة نصوص: قيمُه وسم <string> متتالٍ بلا name.
-                    "set" -> {
+                    "set", "string-set" -> {
                         setKey = key
                         setValues = java.util.HashSet()
                     }
@@ -87,7 +89,8 @@ class MultiProcessPrefsBridge(private val appDataDir: File) {
                     }
                 }
             } else if (type == XmlPullParser.END_TAG &&
-                parser.name == "set" && setKey != null && setValues != null
+                (parser.name == "set" || parser.name == "string-set") &&
+                setKey != null && setValues != null
             ) {
                 map[setKey] = setValues
                 setKey = null

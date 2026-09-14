@@ -51,6 +51,48 @@ class MultiProcessPrefsBridgeTest {
         assertFalse(bridge.isChanged("bridge_touch_test", seen))
     }
 
+    @Test
+    fun parse_readsRawStringSetTag() {
+        // **بند 5.2:** AOSP يكتب مجموعات النصوص بوسم <string-set> لا <set>
+        // (إزاحةً من SharedPreferences الفعلية على الجهاز) — كان الجسر
+        // يهضم <set> فقط ويُسقط <string-set> صامتاً فتُفقد قوائم البطارية
+        // وفحوصات الجهاز في عملية :tts. نكتب الملف يدوياً بالوسم الفعلي
+        // الذي ينتجه النظام ونتأكد من قراءته.
+        val name = "bridge_stringset_test"
+        val file = java.io.File(
+            context.applicationInfo.dataDir,
+            "shared_prefs/$name.xml"
+        )
+        file.parentFile?.mkdirs()
+        file.writeText(
+            "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n" +
+                "<map>\n" +
+                "    <string-set name=\"battery_announcement_levels\">\n" +
+                "        <string>20</string>\n" +
+                "        <string>50</string>\n" +
+                "    </string-set>\n" +
+                "    <string-set name=\"device_health_items\">\n" +
+                "        <string>battery</string>\n" +
+                "        <string>storage</string>\n" +
+                "    </string-set>\n" +
+                "    <int name=\"an_int\" value=\"42\" />\n" +
+                "</map>"
+        )
+        try {
+            val bridge = MultiProcessPrefsBridge(context)
+            val parsed = bridge.parse(name)
+            @Suppress("UNCHECKED_CAST")
+            val levels = parsed["battery_announcement_levels"] as? Set<String>
+            assertEquals(setOf("20", "50"), levels)
+            @Suppress("UNCHECKED_CAST")
+            val items = parsed["device_health_items"] as? Set<String>
+            assertEquals(setOf("battery", "storage"), items)
+            assertEquals(42, parsed["an_int"])
+        } finally {
+            file.delete()
+        }
+    }
+
     private fun writeSamplePrefs() {
         context.getSharedPreferences("bridge_test_settings", 0).edit()
             .putBoolean("a_bool", true)

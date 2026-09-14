@@ -85,14 +85,6 @@
         <package android:name="com.vivo.permissionmanager" />
     </queries>
 
-    <!-- إذن مخصص موقَّع (signature): لا يملكه إلا التطبيقات الموقّعة بمفتاح التوقيع
-         نفسه، والنظام. يُطبَّق على مستقبِل أداة الساعة الناطقة كطبقة دفاع ثانية
-         (بعد فحص المكوّن في الكود) ضد استدعاء أي تطبيق خارجي لنطق الصوت رغماً
-         عن المستخدم؛ النظام يملكه فيبقى بثّ التحديث APPWIDGET_UPDATE يعمل. -->
-    <permission
-        android:name="com.aymankhattab.nateq.permission.PROTECTED_SPEAK"
-        android:protectionLevel="signature" />
-
     <application
         android:name=".NateqApplication"
         android:allowBackup="false"
@@ -250,12 +242,16 @@
         </service>
 
         <!-- أداة الساعة الناطقة على الشاشة الرئيسية (تنطق الوقت عند اللمس).
-             الإذن الموقَّع PROTECTED يمنع أي تطبيق خارجي من بث ACTION_WIDGET_SPEAK
-             لإجبار التطبيق على النطق؛ النظام يملكه فيبقى تحديث الأداة يعمل. -->
+             **بند 4.1:** لا إذنَ مخصصاً عليها ولا منفذَ خارجياً — المستقبِل
+             مغلقٌ (exported=false) كما يوصي التوثيق الرسمي للأدوات: نظامُ
+             الأداة وحده يُسلِّم APPWIDGET_UPDATE بإذنه الخاص، وتطبيقُنا
+             يُسلِّم بثَّ النقر نيةً صريحةً تحمل توكنَ النقر السري الذي يتحقق
+             منه الكود (hasSpeakToken). الإذن الموقَّع السابق كان يُسقط
+             تحديثَ الأداة APPWIDGET_UPDATE عند الثياسة أن النظام لا يملكه
+             رغم ملكيته لصلاحيات النظام. -->
         <receiver
             android:name=".widget.SpeakingClockWidget"
-            android:exported="true"
-            android:permission="com.aymankhattab.nateq.permission.PROTECTED_SPEAK">
+            android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>

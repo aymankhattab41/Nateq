@@ -2,6 +2,7 @@ package com.aymankhattab.nateq.engine.pipeline
 
 import java.util.regex.Matcher
 import java.util.regex.Pattern
+import kotlin.math.abs
 
 /** معالجة العملات: $100 → «مائة دولار»، $1 → «دولار واحد»،
  *  $3 → «ثلاثة دولارات»، $1.50 → «دولار واحد وخمسون سنتاً»،
@@ -348,7 +349,10 @@ internal object CurrencyStep : TextProcessingStep {
     )
 
     // نمط المبلغ الرقمي داخل العملات: فواصل آلاف اختيارية + فاصلة عشرية.
-    private val AMOUNT_REGEX = "\\d+(?:[.,]\\d{3})*(?:[.,]\\d+)?"
+    // نمط المبلغ مع إشارة سالبة اختيارية (بند 3.1): «-2$» / «$-2» تُنطق
+    // «ناقص دولاران» — كانت السالبة خارج النمط فتسقط الإشارة وتُتلف
+    // الترتيب النحوي.
+    private val AMOUNT_REGEX = "-?\\d+(?:[.,]\\d{3})*(?:[.,]\\d+)?"
     // نمط كود العملة مسبوقاً بالمبلغ: «USD 100».
     private val PATTERN_CURRENCY_CODE = Pattern.compile(
         """\b(USD|EUR|GBP|SAR|AED|KWD|QAR|OMR|BHD|EGP|TND|""" +
@@ -368,9 +372,12 @@ internal object CurrencyStep : TextProcessingStep {
             Pattern.compile(source) to info
         }
     // أنماط الرموز بعد المبلغ: «100$» مع مسافة اختيارية بين المبلغ والرمز.
+    // الحارس السالب للعدد يشمل الإشارة نفسها: لا تُلتقط «-2$» كجزء من
+    // رقم أطول/رقمٍ سالبٍ سابق («12-2$» تُترك كما هي).
     private val CURRENCY_PATTERNS_AFTER =
         CURRENCY_SYMBOLS.map { (symbol, info) ->
-            val source = "\\b(" + AMOUNT_REGEX + ")\\s*" + Pattern.quote(symbol)
+            val source = "(?<![-\\d])(" + AMOUNT_REGEX + ")\\s*" +
+                Pattern.quote(symbol)
             Pattern.compile(source) to info
         }
 
@@ -471,7 +478,7 @@ internal object CurrencyStep : TextProcessingStep {
     /** نطق مبلغ عملة مع التوافق النحوي الكامل (مفرد/مثنى/جمع/كسور):
      *  1 ← «دولار واحد»، 2 ← «دولاران»، 3–10 ← «ثلاثة دولارات»،
      *  ما فوق ← «خمسة وعشرون دولاراً»، والكسور ← «وخمسون سنتاً». */
-    private fun currencyAmountPhrase(
+    internal fun currencyAmountPhrase(
         amount: Double,
         info: CurrencyInfo
     ): String {
@@ -491,30 +498,39 @@ internal object CurrencyStep : TextProcessingStep {
             return if (amount < 0.0) "سالب $fracPhrase" else fracPhrase
         }
 
+        // **السالب الصحيح (بند 3.1):** العدد الذهني يُحسم على القيمة المطلقة
+        // («-2$» ← «دولاران»)، وإلا عاجت السالبةُ عن فروع when إلى صيغة
+        // المفرد الخاطئة («ناقص اثنان دولار»). وكما يسبق المحوّلُ الرقمي
+        // الأعدادَ السالبة بكلمة «ناقص » يُسبق المبلغُ بها أيضاً.
+        val negativeWhole = whole < 0
+        val absWhole = abs(whole)
         val wholePhrase = when {
-            whole == 0L -> "صفر ${info.name}"
-            whole == 1L -> {
+            absWhole == 0L -> "صفر ${info.name}"
+            absWhole == 1L -> {
                 val unit = if (info.isFeminine) "واحدة" else "واحد"
                 "${info.name} $unit"
             }
-            whole == 2L -> info.dual
-            whole in 3..10 -> {
+            absWhole == 2L -> info.dual
+            absWhole in 3..10 -> {
                 val units = NumberWordsConverter.unitNumberWord(
-                    whole.toInt(),
+                    absWhole.toInt(),
                     info.isFeminine
                 )
                 "$units ${info.plural}"
             }
             else -> {
                 val name = info.name
-                val words = NumberWordsConverter.numberToWords(whole.toDouble())
+                val words = NumberWordsConverter.numberToWords(
+                    absWhole.toDouble()
+                )
                 "$words $name"
             }
         }
+        val base = if (negativeWhole) "ناقص $wholePhrase" else wholePhrase
         return if (fracPhrase.isEmpty()) {
-            wholePhrase
+            base
         } else {
-            "$wholePhrase و$fracPhrase"
+            "$base و$fracPhrase"
         }
     }
 

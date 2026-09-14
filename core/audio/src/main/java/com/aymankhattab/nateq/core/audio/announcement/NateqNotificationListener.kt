@@ -175,9 +175,9 @@ class NateqNotificationListener : NotificationListenerService() {
             val notification = sbn.notification ?: return
             val extras = notification.extras
 
-val title = extras.getCharSequence(Notification.EXTRA_TITLE)
-            ?.toString()?.trim()
-        val text = notificationBodyText(extras)
+            val title = extras.getCharSequence(Notification.EXTRA_TITLE)
+                ?.toString()?.trim()
+            val text = notificationBodyText(extras)
 
             if (title.isNullOrBlank() && text.isNullOrBlank()) return
 
@@ -229,14 +229,21 @@ val title = extras.getCharSequence(Notification.EXTRA_TITLE)
                 SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
             )
             // بند 1.5: محرك فئة الإشعارات (إن ضُبط) بدل التلاؤم الصامت
-            // مع المحرك العام.
-            AnnouncementSpeaker.getInstance(applicationContext)
-                .speak(
-                    speechText, locale, speechRate, pitch, volume,
-                    engineOverride = settings.getEngineForCategory(
-                        SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
-                    )
+            // مع المحرك العام. **بند 2.2:** يُعاد ضبط صوتِ الفئة قبل
+            // النطق (مثل بقية الإعلانات) — كان النطق يعلق على صوت
+            // فئةٍ سابقة (متصل/رسائل) فيُقرأ الإشعار بالصوت الخطأ.
+            val speaker = AnnouncementSpeaker.getInstance(applicationContext)
+            speaker.resetVoice(
+                settings.getPreferredVoiceIdForCategory(
+                    SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
                 )
+            )
+            speaker.speak(
+                speechText, locale, speechRate, pitch, volume,
+                engineOverride = settings.getEngineForCategory(
+                    SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+                )
+            )
 
         } catch (t: Throwable) {
             Log.e(TAG, "onNotificationPosted failed", t)
@@ -311,7 +318,7 @@ val title = extras.getCharSequence(Notification.EXTRA_TITLE)
             privacyLocked -> smsFrom
             isOtp -> LocaleUtils.stringForSpeech(
                 applicationContext,
-if (useArabicVoice) LanguageCode.AR.tag
+                if (useArabicVoice) LanguageCode.AR.tag
                 else LanguageCode.EN.tag,
                 R.string.sms_otp_safe,
                 R.string.sms_otp_safe
@@ -333,7 +340,15 @@ if (useArabicVoice) LanguageCode.AR.tag
 
         val speech = AnnouncementSpeaker.getInstance(applicationContext)
         speech.resetVoice(voiceId)
-        speech.speak(text, locale, speechRate, 1.0f, volume)
+        // **بند 2.2:** نبرةُ «نطق الرسائل» المستقلة إن ضُبطت، أو نبرةُ
+        // نطق اللغة بديلاً + محرك فئة الرسائل — لا الثابت 1.0.
+        val pitch = settings.getSmsReadingPitchOrDefault(locale.language)
+        speech.speak(
+            text, locale, speechRate, pitch, volume,
+            engineOverride = settings.getEngineForCategory(
+                SettingsRepository.ANNOUNCE_CATEGORY_SMS
+            )
+        )
     }
 
     private fun buildSpeechText(

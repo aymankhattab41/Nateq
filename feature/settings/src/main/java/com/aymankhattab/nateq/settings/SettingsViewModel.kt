@@ -209,7 +209,7 @@ class SettingsViewModel @Inject constructor(
                         entry.addProperty("value", value)
                     }
                     is Long -> {
-                        entry.addProperty("type", "int")
+                        entry.addProperty("type", "long")
                         entry.addProperty("value", value)
                     }
                     is Boolean -> {
@@ -318,6 +318,10 @@ class SettingsViewModel @Inject constructor(
                         // قبل التحويل حتى لا يُقلب Long خارج المدى إشارته
                         // (بند 17)
                         // ويصبح إعداداً معطوباً بلا إنذار بدل رفضه.
+                        // "int": نتحقق أن القيمة الطويلة ضمن حدود Int الصحيحة
+                        // قبل التحويل حتى لا يُقلب Long خارج المدى إشارته
+                        // (بند 17)
+                        // ويصبح إعداداً معطوباً بلا إنذار بدل رفضه.
                         "int" -> {
                             val longValue = entry.optLong(
                                 "value",
@@ -328,6 +332,10 @@ class SettingsViewModel @Inject constructor(
                             ) continue
                             restored[key] = longValue.toInt()
                         }
+                        // "long": قيمة طولية صريحة تُستعاد كما هي (بند 5.1) —
+                        // كانت تُصنَّف «int» في الإنشاء فتُقتطع عند إعادة
+                        // الاستيراد أو تُسقط إن تجاوزت نطاق Int.
+                        "long" -> restored[key] = entry.optLong("value")
                         "float" -> restored[key] =
                             entry.optDouble("value", 0.0).toFloat()
                         "bool" -> restored[key] = entry.optBoolean("value")

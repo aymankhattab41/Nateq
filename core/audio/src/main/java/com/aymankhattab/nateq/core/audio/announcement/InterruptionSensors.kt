@@ -87,7 +87,11 @@ internal class InterruptionSensors(
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
     }
 
-    /** بدء الرصد (يُستدعى عند بدء النطق). آمن للتكرار. */
+    /** بدء الرصد (يُستدعى عند بدء النطق). آمن للتكرار.
+     *  **بند 6.1:** مُزامَن عبر [@Synchronized] — بدءُ دورة نطقٍ على خيط
+     *  (ThreadUsage) مع انتهاء سابقتها على خيط النطق (TTS callback)
+     *  كان قد يسخّران [sensorManager] و[sensorListener] في وقت واحد. */
+    @Synchronized
     fun start(context: Context) {
         if (shakeRegistered || proximityRegistered) return
         val sm = context.getSystemService(Context.SENSOR_SERVICE)
@@ -112,7 +116,9 @@ internal class InterruptionSensors(
                 }.getOrDefault(false)
     }
 
-    /** إيقاف الرصد (يُستدعى عند انتهاء النطق). آمن للتكرار. */
+    /** إيقاف الرصد (يُستدعى عند انتهاء النطق). آمن للتكرار.
+     *  مُزامَن مقابل [start] (بند 6.1). */
+    @Synchronized
     fun stop() {
         val sm = sensorManager ?: return
         runCatching {

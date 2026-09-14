@@ -286,12 +286,15 @@ class TimeAnnouncementManager(
             val filter = android.content.IntentFilter(
                 android.content.Intent.ACTION_BATTERY_CHANGED
             )
+            // بند 4.2: تسجيلٍ عابر (receiver = null) لقراءة حالة مضمّنة
+            // في الـ intent — لا يُستقبل منها شيء قبله، فيكون
+            // RECEIVER_NOT_EXPORTED أصح وأقل تعريضاً من EXPORTED.
             val battery = if (
                 android.os.Build.VERSION.SDK_INT >=
                 android.os.Build.VERSION_CODES.TIRAMISU
             ) {
                 context.registerReceiver(
-                    null, filter, Context.RECEIVER_EXPORTED
+                    null, filter, Context.RECEIVER_NOT_EXPORTED
                 )
             } else {
                 @Suppress("DEPRECATION")

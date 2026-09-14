@@ -79,7 +79,7 @@ internal object UnitStep : TextProcessingStep {
         // والتاريخ؛ Lookbehind ثابتة الطول (متطلب Java) لكل لفظٍ على حدة.
         val pattern = if (info.symbol == "م") {
             Pattern.compile(
-                """(?<!ساعة\s)(?<!عام\s)(?<!سنة\s)\b""" +
+                """(?<!ساعة\s)(?<!الساعة\s)(?<!عام\s)(?<!سنة\s)\b""" +
                     """(\d+(?:[.,]\d{3})*(?:[.,]\d+)?)\s*""" +
                     """${Pattern.quote(info.symbol)}(?![\p{L}\p{N}_])"""
             )

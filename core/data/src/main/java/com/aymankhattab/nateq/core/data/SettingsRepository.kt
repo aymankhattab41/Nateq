@@ -362,6 +362,65 @@ class SettingsRepository(private val context: Context) :
             .putFloat("volume_$languageTag", volume.coerceIn(0f, 1f))
             .apply()
 
+    // ============ نبرة الإعلانات المستقلة (بند 2.2) ============
+    // شريط نبرة لكل فئة إعلان (متصل/بطارية/رسائل): إن لم يُضبط للمستخدم
+    // قيمتها الخاصة تُرجع الدالة نبرةَ نطق اللغة بديلاً — فيظل إعلانُ فئةٍ
+    // بلا شريطٍ مخصّصٍ يتبع نبرةَ اللغة المختارة (السلوك القديم نفسه).
+    private fun getCategoryPitchOrFallback(
+        key: String, languageTag: String
+    ): Float =
+        if (prefs.contains(key)) {
+            prefs.getFloat(key, 1.0f).coerceIn(0f, 2f)
+        } else {
+            getPitch(languageTag)
+        }
+
+    private fun setCategoryPitch(key: String, pitch: Float) {
+        prefs.edit()
+            .putFloat(key, pitch.coerceIn(0f, 2f))
+            .apply()
+    }
+
+    fun getCallerAnnouncementPitchOrDefault(
+        languageTag: String
+    ): Float = getCategoryPitchOrFallback(
+        "caller_announcement_pitch", languageTag
+    )
+
+    fun setCallerAnnouncementPitch(pitch: Float) =
+        setCategoryPitch("caller_announcement_pitch", pitch)
+
+    fun getBatteryAnnouncementPitchOrDefault(
+        languageTag: String
+    ): Float = getCategoryPitchOrFallback(
+        "battery_announcement_pitch", languageTag
+    )
+
+    fun setBatteryAnnouncementPitch(pitch: Float) =
+        setCategoryPitch("battery_announcement_pitch", pitch)
+
+    fun getSmsReadingPitchOrDefault(
+        languageTag: String
+    ): Float = getCategoryPitchOrFallback(
+        "sms_reading_pitch", languageTag
+    )
+
+    fun setSmsReadingPitch(pitch: Float) =
+        setCategoryPitch("sms_reading_pitch", pitch)
+
+    // ============ مسار الصوت للإعلانات (بند 1.4) ============
+    // إجبار النطق على مسار الموسيقى (USAGE_MEDIA) حتى دون قارئ شاشة:
+    // مسار USAGE_ASSISTANCE_ACCESSIBILITY يُكتم صوتُه أو يُخفى على بعض
+    // أجهزة OEM حين لا يكون قارئ الشاشة متفاعلاً — يُقرأ في
+    // AnnouncementSpeaker.speechAudioAttributes.
+    fun isAnnouncementMediaStreamAlways(): Boolean =
+        prefs.getBoolean("announcement_media_stream_always", false)
+
+    fun setAnnouncementMediaStreamAlways(enabled: Boolean) =
+        prefs.edit()
+            .putBoolean("announcement_media_stream_always", enabled)
+            .apply()
+
     /** يُرجع مفتاح التفضيل الفعلي للغة: بالوسم الكامل (ar-EG) إن وُجد، ثم
      *  بكود اللغة وحده (ar) إن وُجد — تراجعٌ تدريجي لتعميم تفضيل الأهل على
      *  كل لهجاتها. null إن لم يُحفظ أي تفضيل لها. */
@@ -1424,8 +1483,10 @@ class SettingsRepository(private val context: Context) :
                         ops.add(Op { it.putInt(key, v) }); meaningful++
                     }
                     is Long -> {
-                        val v = sanitizeInt(key, value.toInt())
-                        ops.add(Op { it.putInt(key, v) }); meaningful++
+                        // بند 5.1: القيم الطولية تُستعاد كما هي (putLong) —
+                        // كانت تتحول sanitizeInt/putInt فتقتطع خارج مدى Int
+                        // أو تُرمى في النسخ الاحتياطي عند تصدير JSON.
+                        ops.add(Op { it.putLong(key, value) }); meaningful++
                     }
                     is Float -> {
                         val v = sanitizeFloat(key, value)

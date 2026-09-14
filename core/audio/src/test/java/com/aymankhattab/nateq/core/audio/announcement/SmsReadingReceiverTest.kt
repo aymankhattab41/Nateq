@@ -193,6 +193,36 @@ class SmsReadingReceiverTest {
         assertEquals("من أحمد، رسالة كاملة", text)
     }
 
+    // ===== بند 5.3: أولوية وضع المصدر فوق القالب =====
+
+    @Test
+    fun `resolveSpeechText source mode wins over a custom template`() {
+        // في وضع «المصدر فقط» يُنطق المصدر لا القالب — كان فحصُ القالب
+        // يسبق وضعَ المصدر فينطق المحتوى عبر {message} رغم اختيار المصدر.
+        val text = SmsReadingReceiver.resolveSpeechText(
+            privacyLocked = false, isOtp = false,
+            smsFrom = "من أحمد", otpSafeText = "رمزٌ آمن",
+            template = "قال {name}: {message}",
+            content = "كلمة سر خاصة", displayAddress = "أحمد",
+            effectiveMode = SmsReadingReceiver.MODE_SOURCE
+        )
+        assertEquals("من أحمد", text)
+    }
+
+    @Test
+    fun `resolveSpeechText otp masks over a template in source mode`() {
+        // خصوصية رمز التحقق تبقى فوق كل شيء: في وضع المصدر أيضاً يُنطق
+        // العبارة الآمنة لا القالب ولا المصدر.
+        val text = SmsReadingReceiver.resolveSpeechText(
+            privacyLocked = false, isOtp = true,
+            smsFrom = "من البنك", otpSafeText = "رمزٌ آمن",
+            template = "{name}: {message}",
+            content = "كود 1234", displayAddress = "البنك",
+            effectiveMode = SmsReadingReceiver.MODE_SOURCE
+        )
+        assertEquals("رمزٌ آمن", text)
+    }
+
     // ===== حراسة الإذن =====
 
     @Test

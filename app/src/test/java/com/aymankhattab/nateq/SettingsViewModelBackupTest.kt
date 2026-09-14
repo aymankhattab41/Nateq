@@ -282,6 +282,34 @@ class SettingsViewModelBackupTest {
         // لا استثناء ولا فقدان.
     }
 
+    // ===== بند 5.1: القيم الطويلة (Long) =====
+
+    @Test
+    fun roundTrip_longValue_survives() {
+        // Long في التفضيلات كان لا فرعَ له في بناء JSON (يُسقط قيمته)
+        // أو يستعيده putInt فيقتطع خارج مدى Int — بفرع "long" الآن يُصدَّر
+        // ويُستعاد putLong كما هو.
+        val huge = 3_000_000_000L
+        context.getSharedPreferences("nateq_settings", 0)
+            .edit().putLong("test_long_value", huge).commit()
+
+        val json = vm.buildBackupJson()
+        assertTrue(json.contains("\"type\":\"long\""))
+        assertTrue(json.contains("3000000000"))
+
+        context.getSharedPreferences("nateq_settings", 0)
+            .edit().clear().commit()
+        val freshVm = SettingsViewModel(
+            SettingsRepository(context), PronunciationDictionary(context)
+        )
+        assertTrue(freshVm.applyBackupJson(json))
+        assertEquals(
+            huge,
+            context.getSharedPreferences("nateq_settings", 0)
+                .getLong("test_long_value", 0L)
+        )
+    }
+
     // ===== نسخة فارغة (بدون أي بيانات) =====
 
     @Test

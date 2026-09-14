@@ -10,10 +10,10 @@ import java.util.regex.Pattern
 internal object RomanNumeralStep : TextProcessingStep {
 
     // الأرقام الرومانية (ساعات كبند/فصول/قوائم): تُنطق ككلمات أو أرقام عادية.
-    // يعترف فقط بالملييئة وإن كانت كبيرة (IVXLCDM) بحدود كلمات حقيقية؛
-    // والسياق (مؤشر صريح أو نطاق 1–12) يُقرَّر في المعالجة.
+    // **بند 3.5:** يعترف بالحروف الصغيرة والكبيرة (الفصل iii / III) بشرط
+    // حدود كلمات حقيقية؛ والسياق (مؤشر صريح أو نطاق 1–12) يُقرَّر في المعالجة.
     private val PATTERN_ROMAN = Pattern.compile(
-        """(?<![\p{Alpha}])[IVXLCDM]{1,8}(?![\p{Alpha}])"""
+        """(?<![\p{Alpha}])[IVXLCDMivxlcdm]{1,8}(?![\p{Alpha}])"""
     )
 
     // مؤشرات صريحة قبل رقم روماني («الفصل III»، «الجزء II») تُرجّح أنه رقم
@@ -25,7 +25,8 @@ internal object RomanNumeralStep : TextProcessingStep {
     )
 
     // كلمات إنجليزية شائعة مكوّنة من حروف رومانية ظاهرياً (I، DID، MIX، MID،
-    // CD…) تُستبعد دائماً من تحويل الأرقام الرومانية.
+    // CD…) تُستبعد دائماً من تحويل الأرقام الرومانية — بالحرف الكبير مهما
+    // وردت صيغته («mix» تُنطق كلمة لا «تسعمائة وتسعة») (بند 3.5).
     private val ENGLISH_ROMAN_WORDS =
         setOf("I", "ID", "DID", "MIX", "MID", "CD")
 
@@ -44,8 +45,8 @@ internal object RomanNumeralStep : TextProcessingStep {
                 continue
             }
             // كلمات إنجليزية شائعة من حروف رومانية (DID/MIX/MID/CD/I) تُستبعد
-            // دائماً مهما كان السياق.
-            if (rom in ENGLISH_ROMAN_WORDS) {
+            // دائماً مهما كان السياق — بالمقارنة على الصيغة الكبيرة.
+            if (rom.uppercase() in ENGLISH_ROMAN_WORDS) {
                 matcher.appendReplacement(
                     buffer, java.util.regex.Matcher.quoteReplacement(rom)
                 )
@@ -92,24 +93,26 @@ internal object RomanNumeralStep : TextProcessingStep {
         }
     }
 
-    /** تحويل رقم روماني إلى Int، أو null عند تركيبة غير صالحة. */
+    /** تحويل رقم روماني إلى Int، أو null عند تركيبة غير صالحة.
+     *  يقبل الحروف الصغيرة ويثبتها على الصيغة الكبيرة للتحويل. */
     private fun romanToInt(s: String): Int? {
+        val upper = s.uppercase()
         val map = mapOf(
             'I' to 1, 'V' to 5, 'X' to 10, 'L' to 50,
             'C' to 100, 'D' to 500, 'M' to 1000
         )
         var total = 0
         var prev = 0
-        for (c in s.reversed()) {
+        for (c in upper.reversed()) {
             val v = map[c] ?: return null
             if (v < prev) total -= v else total += v
             prev = v
         }
         // تحقق من الصحة: لا تكرار لأكثر من 3 لـ I/X/C، ولا 4 لـ V/L/D.
         val repeats = listOf('I', 'X', 'C', 'M').any { ch ->
-            s.filter { it == ch }.length > 3
+            upper.filter { it == ch }.length > 3
         } || listOf('V', 'L', 'D').any { ch ->
-            s.filter { it == ch }.length > 1
+            upper.filter { it == ch }.length > 1
         }
         // قيمة معقولة كرقم ترتيبي (تجنب تحويل CC/DD/MM التواريخ إلى أرقام)
         if (repeats || total > 3999) return null

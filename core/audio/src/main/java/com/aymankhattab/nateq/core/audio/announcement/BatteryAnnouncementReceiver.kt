@@ -162,12 +162,13 @@ class BatteryAnnouncementReceiver(
         // على مستخدمٍ عربيٍّ بعد اليوم.
         val voiceId = settings.getBatteryAnnouncementVoiceId()
             ?: batteryFallbackVoice(settings)
-        // يقبل الصيغ القديمة (nateq-ar-…، ar-local) والصيغ
-        // الموحّدة الحالية (ar-EG)
+        // بند 4.3: أي تسمية عربية (ar، ar-XX، arabic…) تُعد عربيةً — كان
+        // القصرُ على قائمة صيغ محددة (ar-local/ar-EG/nateq-ar) يسقط
+        // لهجةً/صيغةً صوتية أخرى (ar-SA/ar-AE…) فيقرأ إعلان البطارية
+        // بالإنجليزية خطأً على مستخدم عربي.
         val isArabic = voiceId?.let {
-            it.contains("nateq-ar") ||
-                it.startsWith("ar-local", ignoreCase = true) ||
-                it.startsWith("ar-EG", ignoreCase = true)
+            it.startsWith("ar", ignoreCase = true) ||
+                it.contains("arabic", ignoreCase = true)
         } == true
         val locale =
             if (isArabic) Locale.forLanguageTag(LanguageCode.AR.tag)
@@ -348,7 +349,11 @@ class BatteryAnnouncementReceiver(
         } else {
             null
         }
-        val pitch = settings.getPitch(locale.language)
+        // بند 2.2: نبرةُ «نطق البطارية» المستقلة إن ضُبطت، أو نبرةُ نطق
+        // اللغة بديلاً.
+        val pitch = settings.getBatteryAnnouncementPitchOrDefault(
+            locale.language
+        )
         speaker.speak(
             text, locale, speechRate, pitch, volume,
             engineOverride = settings.getEngineForCategory(

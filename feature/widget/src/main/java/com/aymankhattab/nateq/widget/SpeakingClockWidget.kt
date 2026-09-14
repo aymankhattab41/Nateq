@@ -22,6 +22,14 @@ import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LanguageCode
 import java.util.Locale
 
+// **بند 4.1:** توكنُ النقر السري — قيمتان ثابتتان على مستوى الملف ليراهما
+// منطقُ الفحص العام (hasSpeakToken) وكائن الأداة معاً. لا يضعهما في البث إلا
+// تطبيقُنا عند بناء نية النقر، فأيُّ بثٍّ خارجيٍّ مصنوعٍ بدونهما يُرفض قبل
+// النطق (لا تتوفر دالة حزمة المرسل عامةً في المنصة).
+private const val EXTRA_WIDGET_TOKEN = "nateq_widget_speak_token"
+internal const val WIDGET_TOKEN_VALUE =
+    "com.aymankhattab.nateq.widget.speak.v1"
+
 /** هل البث موجّه لمكوّننا (حزمة + صف)؟ يرفض أي مكوّن غير مطابق تماماً، ومنها
  *  الحالة عندما يكون المكوّن غائباً (package/className يساويان null) — فيُرجع
  *  false ويُتجاهل البث بدل نطقٍ صامت. منطقٌ نقي قابل للاختبار. */
@@ -32,6 +40,15 @@ internal fun isComponentOurs(
     selfClass: String
 ): Boolean =
     componentPackage == selfPackage && componentClass == selfClass
+
+/** **بند 4.1:** هل يحمل البث التوكنَ السري الذي يضعُه تطبيقنا وحده في نية
+ *  النقر؟ المنصة لا تُتيح دالةً عامة لكشف حزمة المرسل (getSenderPackage
+ *  خارج الـ SDK العام)، فالتوكن هو بديلُ الإذن الموقَّع PROTECTED_SPEAK
+ *  الذي أُزيل من المانيفست (كان يمنع وصول النظام نفسه لبثّ
+ *  APPWIDGET_UPDATE الموجَّه لمستقبِلاتنا غير المرصودة، على عكس صلاحيات
+ *  النظام). منطقٌ نقي قابل للاختبار. */
+internal fun hasSpeakToken(token: String?): Boolean =
+    token == WIDGET_TOKEN_VALUE
 
 /**
  * أداة الساعة الناطقة على الشاشة الرئيسية.
@@ -79,6 +96,16 @@ class SpeakingClockWidget : AppWidgetProvider() {
                 cn?.className,
                 context.packageName,
                 SpeakingClockWidget::class.java.name
+            )
+        ) return
+
+        // **بند 4.1:** بعد إلغاء إذن PROTECTED_SPEAK من المانيفست، يُتوَّق
+        // النطق برمجياً: التوكن السري لا يضعه إلا تطبيقنا عند بناء نية
+        // النقر، فأي بثٍّ خارجيٍّ مصنوعٍ دون به يُرفض قبل النطق؛ ويُشدَّد
+        // التنفيذ بإغلاق المستقبِل بالمانيفست (exported=false) فلا يصل
+        // خارجيٌّ أساساً.
+        if (!hasSpeakToken(
+                intent.getStringExtra(EXTRA_WIDGET_TOKEN)
             )
         ) return
 
@@ -247,6 +274,7 @@ class SpeakingClockWidget : AppWidgetProvider() {
         )
         val speakIntent = Intent(context, SpeakingClockWidget::class.java)
             .setAction(ACTION_SPEAK)
+            .putExtra(EXTRA_WIDGET_TOKEN, WIDGET_TOKEN_VALUE)
         val pending = PendingIntent.getBroadcast(
             context,
             0,

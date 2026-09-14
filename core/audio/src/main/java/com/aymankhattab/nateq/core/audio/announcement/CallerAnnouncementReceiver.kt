@@ -290,8 +290,11 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     .getCallerAnnouncementRepeat().coerceIn(1, 5)
                 val intervalMs = settings.getCallerAnnouncementIntervalSeconds()
                     .coerceIn(1, 10) * 1000L
-                // بند 2.1: النبرة من إعدادات نطق اللغة لا ثابت 1.0.
-                val pitch = settings.getPitch(locale.language)
+                // بند 2.1/2.2: نبرة «نطق المتصل» المستقلة (بديل: نبرةُ نطق
+                // اللغة) — نبرةُ الحلقةِ كاملةً.
+                val pitch = settings.getCallerAnnouncementPitchOrDefault(
+                    locale.language
+                )
                 speaker.speak(
                     text, locale, speechRate, pitch, volume,
                     engineOverride = settings.getEngineForCategory(
@@ -315,8 +318,11 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     delay(offsetMs - lastLaunchMs)
                     lastLaunchMs = offsetMs
                     try {
+                        // بند 2.1: التكرار يستخدم نفس نبرة الجملة الأولى —
+                        // كان يثبّت 1.0f فيُكرَّر الإعلان بنبرةٍ مختلفة
+                        // عن الأولى عند رفع «نبرة نطق اللغة/المتصل».
                         AnnouncementSpeaker.getInstance(appCtx).speak(
-                            text, locale, speechRate, 1.0f,
+                            text, locale, speechRate, pitch,
                             volume,
                             engineOverride = settings.getEngineForCategory(
                                 SettingsRepository.ANNOUNCE_CATEGORY_CALLER

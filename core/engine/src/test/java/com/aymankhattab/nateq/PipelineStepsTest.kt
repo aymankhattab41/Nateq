@@ -543,6 +543,119 @@ class PipelineStepsTest {
         assertEquals(42.0, AmountParser.parseAmount("42"), 0.001)
     }
 
+    @Test
+    fun amountParser_leadingZeroFraction() {
+        // **بند 3.2:** «0,125» فاصلةُ كسورٍ لا آلاف — قاعدة الفاصلة المنفردة
+        // ذات الطرف الثلاثي كانت تظنّها آلافاً فتقرأ «مائة وخمسة وعشرون».
+        assertEquals(0.125, AmountParser.parseAmount("0,125"), 0.001)
+        assertEquals(0.250, AmountParser.parseAmount("0,250"), 0.001)
+    }
+
+    @Test
+    fun amountParser_thousands_and_decimal_kept() {
+        // الاستثناء الجديد لا يمسّ الحالتين الشرعيتين:
+        assertEquals(1234.0, AmountParser.parseAmount("1,234"), 0.001)
+        assertEquals(3.141, AmountParser.parseAmount("3.141"), 0.001)
+    }
+
+    @Test
+    fun amountParser_negative() {
+        // الإشارة السالبة تمر عبر التنظيف إلى المحلل (بند 3.1).
+        assertEquals(-2.0, AmountParser.parseAmount("-2"), 0.001)
+        assertEquals(-2.5, AmountParser.parseAmount("-2.5"), 0.001)
+        assertEquals(-1234.0, AmountParser.parseAmount("-1,234"), 0.001)
+    }
+
+    // ═════════==== بند 3.1: المبالغ السالبة ═════════
+
+    @Test
+    fun currency_negative_dollar_after() {
+        // كانت «-2$» تُترك «-دولاران» — الحسم النحوي يعجز عن السالب فيسقط
+        // لفرع «الأخرى» بصيغة المفرد الخاطئة.
+        assertEquals("ناقص دولاران", CurrencyStep.apply("-2$"))
+        assertEquals("ناقص دولار واحد", CurrencyStep.apply("-1$"))
+    }
+
+    @Test
+    fun currency_negative_dollar_before() {
+        assertEquals("ناقص دولاران", CurrencyStep.apply("$-2"))
+    }
+
+    @Test
+    fun currency_negative_fraction_only() {
+        // بند 3.6: الكسر النقي السالب يحافظ على «سالب » (كان يُسقط إشارته).
+        assertEquals("سالب خمسون سنت", CurrencyStep.apply("-0.50$"))
+    }
+
+    @Test
+    fun currency_negative_with_fraction() {
+        assertEquals(
+            "ناقص دولاران وخمسون سنت",
+            CurrencyStep.apply("-2.50$")
+        )
+    }
+
+    @Test
+    fun currency_negative_dual_arabicSymbols() {
+        assertEquals(
+            "ناقص ديناران كويتيان",
+            CurrencyStep.apply("-2 د.ك")
+        )
+        assertEquals(
+            "ناقص ريالان سعوديان",
+            CurrencyStep.apply("-2 ر.س")
+        )
+    }
+
+    // ═════════==== بند 3.3: « الساعة 5 م » ═════════
+
+    @Test
+    fun unit_announcedTime_withoutColon_stays() {
+        // «الساعة 5 م» — النمط اللطيف الذي كان يبتلعه «م» (نمط الاستثناء لم
+        // يُدرج «الساعة») فينطق «خمسة أمتار» بدل أن يبقى للزمن.
+        assertEquals("الساعة 5 م", UnitStep.apply("الساعة 5 م"))
+    }
+
+    @Test
+    fun unit_minute_afterHourWord_stillConverts() {
+        // الاستثناء الجديد لا يمنع «م» الصحيحة بعد رقم: «5 م» = خمسة أمتار.
+        assertEquals("خمسة أمتار", UnitStep.apply("5 م"))
+    }
+
+    // ═════════==== بند 3.5: الأرقام الرومانية الصغيرة ═════════
+
+    @Test
+    fun roman_lowercase_withIndicator() {
+        // «الفصل iii» = ثلاثة (الحروف الصغيرة لم تكن في فئة النمط).
+        assertEquals("الفصل ثلاثة", RomanNumeralStep.apply("الفصل iii"))
+        assertEquals("الجزء عشرة", RomanNumeralStep.apply("الجزء x"))
+    }
+
+    @Test
+    fun roman_lowercase_withEnglishIndicator() {
+        assertEquals("chapter اثنان", RomanNumeralStep.apply("chapter ii"))
+    }
+
+    @Test
+    fun roman_lowercase_standalone_12() {
+        assertEquals("اثنا عشر", RomanNumeralStep.apply("xii"))
+    }
+
+    @Test
+    fun roman_lowercase_englishWords_keptAsIs() {
+        // «mix» و«did» كلمتان إنجليزيتان لا رقمان رومانيان — المقارنة مع
+        // القائمة الكلمات تُثبَّت على الصيغة الكبيرة (بند 3.5).
+        assertEquals("mix", RomanNumeralStep.apply("mix"))
+        assertEquals("did", RomanNumeralStep.apply("did"))
+    }
+
+    @Test
+    fun roman_lowercase_singleWithoutIndicator_keptAsIs() {
+        // قاعدة بند 3.9 تمتد للصغيرة: «x» و«v» منفردتان تُتركان.
+        assertEquals("x", RomanNumeralStep.apply("x"))
+        assertEquals("v", RomanNumeralStep.apply("v"))
+    }
+
     // ══════════ بوابات «لا تطابق» (لا ممرّات/تخصيص عند غياب الرمز) ══════════
 
     @Test

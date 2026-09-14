@@ -82,7 +82,8 @@ class UpdateCheckerSemVerTest {
         // بند 3.9: بصمةٌ غير مقترنة بصريح الـ lord_tts.apk ولا سطر SHA-256
         // (كملف مصدر أو mapping أو سطر عارٍ) لا تُقبَل — كانت البادئة
         // الاختيارية تلتقط أي 64 خانة سداسية فتُفشل التحقق.
-        val bare = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+        val bare = "9f86d081884c7d659a2feaa0c55ad015a" +
+            "3bf4f1b2b0b822cd15d6c15b0f00a08"
         assertNull(UpdateChecker.extractSha256FromReleaseNote(bare))
         assertNull(
             UpdateChecker.extractSha256FromReleaseNote(

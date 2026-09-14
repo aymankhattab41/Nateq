@@ -362,8 +362,14 @@ class AnnouncementSpeaker(
                         } finally {
                             if (isFinal) releaseAudioFocus()
                         }
-                        if (isFinal) notifySpeechComplete()
-                        nowSpeaking = false
+                        if (isFinal) {
+                            // **بند 1.2:** «يجرى النطق الآن» يُصفَّر فقط عند
+                            // نهاية آخر جزء؛ كان يُصفَّر عند انتصاف النطق
+                            // فيسقُط إعلان وسيط وقد تُفتح الباب أمام
+                            // استدعاءات متشابكة فوق بعضها.
+                            notifySpeechComplete()
+                            nowSpeaking = false
+                        }
                     }
 
                     @Deprecated("Java Override")
@@ -378,8 +384,10 @@ class AnnouncementSpeaker(
                         } finally {
                             if (isFinal) releaseAudioFocus()
                         }
-                        if (isFinal) notifySpeechComplete()
-                        nowSpeaking = false
+                        if (isFinal) {
+                            notifySpeechComplete()
+                            nowSpeaking = false
+                        }
                     }
                 })
 
@@ -542,10 +550,25 @@ class AnnouncementSpeaker(
      * إعلان الوسائط تلقائياً لصالح كلام القارئ فتفوز القراءة ولا يضيع
      * الإعلان كلياً.
      */
-    private fun speechAudioAttributes(): AudioAttributes =
-        AudioAttributes.Builder()
+    private fun speechAudioAttributes(): AudioAttributes {
+        // **بند 1.4:** مفتاح «دائماً على مسار الوسائط» يتجاوز كل قاعدة —
+        // يُعالَج الإعلانُ كما يُعالَج السيناريو المتاح: صوتُه لا يكتم ولا
+        // يُخفى على بعض أجهزة OEM عندما يكون قارئ الشاشة غير متفاعل مع النص.
+        val mediaStreamAlways = runCatching {
+            (appContext as? AnnouncementAppContext)?.settingsRepository
+                ?: SettingsRepository.create(appContext)
+        }.getOrNull()?.let { settings ->
+            runCatching {
+                settings.isAnnouncementMediaStreamAlways()
+            }.getOrDefault(false)
+        } ?: false
+        return AudioAttributes.Builder()
             .setUsage(
-                if (AccessibilityUtils.isScreenReaderEnabled(appContext)) {
+                if (mediaStreamAlways) {
+                    AudioAttributes.USAGE_MEDIA
+                } else if (
+                    AccessibilityUtils.isScreenReaderEnabled(appContext)
+                ) {
                     AudioAttributes.USAGE_MEDIA
                 } else {
                     AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY
@@ -553,6 +576,7 @@ class AnnouncementSpeaker(
             )
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
             .build()
+    }
 
     /** إعادة تطبيق سمات النطق فقط عند تغيّر حالة قارئ الشاشة فعلاً. */
     private fun applySpeechAudioAttributesIfReaderStateChanged() {

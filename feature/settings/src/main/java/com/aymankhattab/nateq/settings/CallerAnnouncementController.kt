@@ -60,6 +60,8 @@ internal class CallerAnnouncementController(
     private var tvCallerRateValue: TextView? = null
     private var seekCallerVolume: SeekBar? = null
     private var tvCallerVolumeValue: TextView? = null
+    private var seekCallerPitch: SeekBar? = null
+    private var tvCallerPitchValue: TextView? = null
     private var etCallerTemplate:
         com.google.android.material.textfield.TextInputEditText? = null
     private var spinnerCallerVoiceAr: Spinner? = null
@@ -92,6 +94,8 @@ internal class CallerAnnouncementController(
         tvCallerRateValue = view.findViewById(R.id.tv_caller_rate_value)
         seekCallerVolume = view.findViewById(R.id.seek_caller_volume)
         tvCallerVolumeValue = view.findViewById(R.id.tv_caller_volume_value)
+        seekCallerPitch = view.findViewById(R.id.seek_caller_pitch)
+        tvCallerPitchValue = view.findViewById(R.id.tv_caller_pitch_value)
         etCallerTemplate = view.findViewById(R.id.et_caller_template)
         spinnerCallerVoiceAr = view.findViewById(R.id.spinner_caller_voice_ar)
         spinnerCallerVoiceEn = view.findViewById(R.id.spinner_caller_voice_en)
@@ -307,6 +311,63 @@ internal class CallerAnnouncementController(
                     )
                 }
                 seekBar.announceCompat("${seekBar.progress}%")
+            }
+        })
+
+        // نبرة إعلان المتصل (بند 2.2) — مستقلة عن نبرة نطق اللغة؛
+        // إن لم تُضبط تُعرض نبرةُ لغة التطبيق (ما سيُستعمل فعلاً).
+        val callerAppLang = runCatching { settings.getAppLanguage() }
+            .getOrNull() ?: "ar"
+        val callerPitch =
+            runCatching {
+                settings.getCallerAnnouncementPitchOrDefault(callerAppLang)
+            }
+                .getOrDefault(1.0f)
+                .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
+        tvCallerPitchValue?.text = RateLabel.of(
+            fragment.requireContext(), callerPitch
+        )
+        bindingSlider = true
+        try {
+            seekCallerPitch?.progress =
+                (callerPitch * 100).toInt().coerceIn(0, 200)
+        } finally {
+            bindingSlider = false
+        }
+        seekCallerPitch?.setOnSeekBarChangeListener(
+            object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(
+                seekBar: SeekBar,
+                progress: Int,
+                fromUser: Boolean
+            ) {
+                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
+                if (bindingSlider) return
+                val value = progress.speedFactor()
+                tvCallerPitchValue?.text = RateLabel.of(
+                    fragment.requireContext(),
+                    value
+                )
+                seekBar.setSeekStateDescription(
+                    tvCallerPitchValue?.text ?: ""
+                )
+                // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
+                // نهايته إلى onStopTrackingTouch أبداً.
+                runCatching { settings.setCallerAnnouncementPitch(value) }
+                onStatusChanged()
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                seekBar.snapSpeedMin()
+                val value = seekBar.progress.speedFactor()
+                runCatching {
+                    settings.setCallerAnnouncementPitch(value)
+                }
+                seekBar.announceCompat(
+                    RateLabel.of(fragment.requireContext(), value)
+                )
+                onStatusChanged()
             }
         })
 
@@ -573,6 +634,8 @@ internal class CallerAnnouncementController(
         tvCallerRateValue = null
         seekCallerVolume = null
         tvCallerVolumeValue = null
+        seekCallerPitch = null
+        tvCallerPitchValue = null
         etCallerTemplate = null
         spinnerCallerVoiceAr = null
         spinnerCallerVoiceEn = null

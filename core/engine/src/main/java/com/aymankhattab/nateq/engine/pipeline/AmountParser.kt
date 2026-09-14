@@ -27,8 +27,15 @@ internal object AmountParser {
         val lastIdx = seps.last()
         val lastCh = raw[lastIdx]
         val tailLen = raw.length - lastIdx - 1
+        // فاصلة واحدة + طرف ثلاثي + جزء صحيح صفري خالص («0,125»): فاصلة كسور
+        // بالتأكيد (وزن/كسر في تدوين غربي) — أمَّا «1,234» ففاصلُ آلاف كما هو.
+        // بلا هذا الاستثناء كانت «0,125 كجم» تُقرأ «مائة وخمسة وعشرون» خطأً.
+        val leadingZeroFraction = seps.size == 1 &&
+            lastCh == ',' && tailLen == 3 &&
+            raw.substring(0, lastIdx).all { it == '0' }
 
         val lastIsDecimal = when {
+            leadingZeroFraction -> true
             tailLen != 3 -> true
             seps.size == 1 -> lastCh == '.'
                 // فاصلة وحيدة + طرف ثلاثي: (,) آلاف أمريكية، (.) عشرية
