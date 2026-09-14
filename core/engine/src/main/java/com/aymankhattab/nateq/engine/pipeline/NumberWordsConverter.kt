@@ -205,9 +205,11 @@ internal object NumberWordsConverter {
         }
     }
 
-    /** مساعد العدد المركّب (21–99): «أحد وعشرون»، «اثنان وثلاثون»… */
+    /** مساعد العدد المركّب (21–99): «واحد وعشرون»، «اثنان وثلاثون»…
+     *  (بند 3.1: كان المذكّر «أحد وعشرون» — والصواب «واحد». وصيغةُ
+     *  المؤنث «إحدى» حصرٌّ في مسار التأنيث عبر [NumberSpeech].) */
     private fun compoundTwoDigits(unit: Int, ten: Int): String = when (unit) {
-        1 -> "أحد و${TENS_WORDS[ten]}"
+        1 -> "واحد و${TENS_WORDS[ten]}"
         2 -> "اثنان و${TENS_WORDS[ten]}"
         else -> "${UNITS_WORDS[unit]} و${TENS_WORDS[ten]}"
     }

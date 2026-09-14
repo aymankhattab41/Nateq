@@ -465,10 +465,11 @@ class TextProcessorTest {
         assertEquals("دولاران", processor.process("""$2""", "ar"))
         assertEquals("ثلاثة دولارات", processor.process("""$3""", "ar"))
         assertEquals(
-            "دولار واحد وخمسون سنت",
+            // بند 3.2: 11–99 منصوب («سنتاً» لا «سنت»)
+            "دولار واحد وخمسون سنتاً",
             processor.process("""$1.50""", "ar")
         )
-        assertEquals("خمسون سنت", processor.process("""0.50$""", "ar"))
+        assertEquals("خمسون سنتاً", processor.process("""0.50$""", "ar"))
         assertEquals(
             "عشرة ملايين دولار",
             processor.process("""$10,000,000""", "ar")

@@ -208,6 +208,25 @@ class TimeAnnouncementManagerTest {
     }
 
     @Test
+    fun formatEnglish_nextPeriodAtDayBoundaries() {
+        // **بند 3.6:** الدقائق 31–59 تُشير للساعة التالية فتُبدِّل الفترة
+        // تلقائياً: 11:45 تشير للظهر (PM) لا الصباح؛ 23:45 لمنتصف الليل
+        // (AM)؛ و0:45 لساعة الصباح الأولى.
+        assertEquals("quarter to 12 PM", formatEnglish(11, 45))
+        assertEquals("quarter to 12 AM", formatEnglish(23, 45))
+        assertEquals("quarter to 1 AM", formatEnglish(0, 45))
+    }
+
+    @Test
+    fun formatEnglish_nextPeriod_minutes31to59() {
+        // فروع الدقائق المائلة للساعة التالية تلتزم نفس قلب الفترة.
+        assertEquals("20 minutes to 1 PM", formatEnglish(12, 40))
+        // 45 فئة خاصة «quarter to» (لا «15 minutes to»).
+        assertEquals("quarter to 1 PM", formatEnglish(12, 45))
+        assertEquals("5 minutes to 1 AM", formatEnglish(0, 55))
+    }
+
+    @Test
     fun formatEnglish_minutes() {
         assertEquals("5 minutes past 10 AM", formatEnglish(10, 5))
         assertEquals("25 minutes past 10 AM", formatEnglish(10, 25))

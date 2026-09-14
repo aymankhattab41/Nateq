@@ -95,6 +95,37 @@ object PcmResampler {
         outSampleRate: Int,
         out: ByteArray,
         outOffset: Int
+    ): Int = convertInto(
+        pcm, offset, length, inSampleRate, inChannels,
+        outSampleRate, out, outOffset, LongArray(2)
+    )
+
+    /**
+     * نسخة [convertInto] تحمل الطور الكسري لإعادة العينات عبر نداءات
+     * متعاقبة على دفعاتِ القطعة نفسها (بند 2.7): الموضعُ الكسري 16.16
+     * الذي توقّف عنده النداءُ السابق يُستأنف منه النداءُ التالي فلا تتقبّط
+     * الانتقالاتُ عند حدود الدفعات (نطقٌ متقطّع مسموع)، ولا يُعاد البدء من
+     * الصفر في كل دفعة كما كانت تستأنف.
+     *
+     * @param phase مخزن طور ثنائي الخانة (يُعدّله المسبّ الأوّل ويمرّره
+     *  نفسه عبر الدفعات):
+     *  - [0]: موضع القراءة الكسري 16.16 المتراكم عبر الدفعة،
+     *  - [1]: عدد فريمات المدخل المستهلكة قبل الدفعة الحالية.
+     *  يجب تصفيره (`LongArray(2)`) عند تبدّل معدل أو قنوات الإدخال بين
+     *  الدفعات (اقتطاع القطعة/المقطع مثلاً) — الاتساق مسؤولية المتصل.
+     *  أما نسخة [convertInto] الأبسط فتحمّل طوراً طازجاً في كل نداءٍ فتبقى
+     *  مطابقةً للسلوك السابق حرفياً لنداءٍ مفرد.
+     */
+    fun convertInto(
+        pcm: ByteArray,
+        offset: Int,
+        length: Int,
+        inSampleRate: Int,
+        inChannels: Int,
+        outSampleRate: Int,
+        out: ByteArray,
+        outOffset: Int,
+        phase: LongArray
     ): Int {
         val required = convertedByteCount(
             pcm, offset, length, inSampleRate, inChannels, outSampleRate
@@ -137,7 +168,8 @@ object PcmResampler {
             inSampleRate,
             outSampleRate,
             out,
-            outOffset
+            outOffset,
+            phase
         )
     }
 
@@ -236,7 +268,14 @@ object PcmResampler {
      *  مباشرةً في مخزنٍ مقدَّم [out] عند [outOffset] — بلا مصفوفة وسيطة
      *  resampled ولا نسخةٍ ثانية. يكتب فريماتٍ كاملةً بلا تجاوز حدود [out]
      *  ويعيد عدد البايتات المكتوبة. عند سعةٍ كافية الناتج مطابقٌ حرفياً
-     *  لناتج [resample] (نفس صيغة الفاصلة 16.16 والاستيفاء فريماً ففريماً). */
+     *  لناتج [resample] (نفس صيغة الفاصلة 16.16 والاستيفاء فريماً ففريماً).
+     *
+     *  الطور الكسري مستمر عبر النداءات المتعاقبة على دفعات القطعة (بند 2.7):
+     *  [phase] يخزّن موضعَ القراءة المتراكم 16.16 ([0]) وعددَ فريماتِ المدخل
+     *  المستهلكة قبل هذه النافذة ([1])، فيستأنف كلُّ نداءٍ من حيث توقف سلفُه
+     *  (لا إعادةَ بدءٍ من الصفر كما كانت) فلا تتقبّط الانتقالات عند حدود
+     *  الدفعات. عددُ المخرجات في كل نداء يظل محصوراً بالحدّ [capacity]
+     *  (≈ convertedByteCount) فلا يفيض مخزنُ المرسل أبداً. */
     private fun resampleInto(
         pcm: ByteArray,
         offset: Int,
@@ -244,28 +283,44 @@ object PcmResampler {
         inRate: Int,
         outRate: Int,
         out: ByteArray,
-        outOffset: Int
+        outOffset: Int,
+        phase: LongArray
     ): Int {
         val inFrames = length / 2
-        if (inFrames == 0 || outOffset >= out.size) return 0
-        val outFrames = (inFrames.toLong() * outRate / inRate).toInt()
+        if (inFrames == 0 || outOffset >= out.size) {
+            phase[1] += inFrames.toLong()
+            return 0
+        }
         val firstFrame = outOffset / 2
-        val written = min(outFrames, (out.size - outOffset) / 2)
-        if (written == 0) return 0
+        val capacity = (out.size - outOffset) / 2
+        if (capacity == 0) {
+            phase[1] += inFrames.toLong()
+            return 0
+        }
         val step = (inRate.toLong() shl 16) / outRate
-        var position = 0L
-        for (outFrame in 0 until written) {
-            val i0 = min((position ushr 16).toInt(), inFrames - 1)
+        // نافذة المدخل الحالية في إحداثيات القطعة المتراكمة: الفريمات
+        // [phase[1], phase[1]+inFrames) والمخرج الذي يبلغ حدودها ينتقل
+        // إلى النداء التالي — هكذا يبقى الطور متصلاً بين الدفعات.
+        val windowStart = phase[1] shl 16
+        val windowEnd = (phase[1] + inFrames) shl 16
+        var position = phase[0]
+        var written = 0
+        while (written < capacity && position < windowEnd) {
+            val localPos = (position - windowStart).coerceAtLeast(0)
+            val i0 = min((localPos ushr 16).toInt(), inFrames - 1)
             val i1 = min(i0 + 1, inFrames - 1)
-            val fraction = (position and 0xFFFF).toInt()
+            val fraction = (localPos and 0xFFFF).toInt()
             val s0 = sampleAt(pcm, offset, i0)
             val s1 = sampleAt(pcm, offset, i1)
             val delta = (s1 - s0).toLong()
             val interpolated =
                 (s0 + ((delta * fraction + 0x8000L) shr 16)).toInt()
-            writeSample(out, firstFrame + outFrame, interpolated)
+            writeSample(out, firstFrame + written, interpolated)
             position += step
+            written++
         }
+        phase[0] = position
+        phase[1] += inFrames.toLong()
         return written * 2
     }
 

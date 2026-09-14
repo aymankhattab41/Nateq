@@ -452,15 +452,18 @@ override fun onDestroy() {
                 // زائفاً، أما الاستباقُ فلم يعد وارداً مع النمط الحاجز (يُبقي
                 // النظامُ خيطَ التخليق حتى العودة) ويبقى التحوط للسلامة.
                 if (stopping) {
+                    // بند 2.4: خروج صامت عند الإيقاف الحقيقي — استدعاء
+                    // error() هنا خطأٌ زائف يخرق عقد AOSP (النظام ألغى
+                    // الطلب بنفسه عبر onStop فلا ينتظر إخطاراً آخر).
                     Log.d(TAG, "onSynthesizeText cancelled (stop)")
                 } else {
                     Log.d(TAG, "onSynthesizeText cancelled (preempt)")
+                    // بند 2.3: الاستباق وحده يُغلق الـ callback دائماً
+                    // (تحوّط من رمي النظام InterruptedException/عدم تحلّه
+                    // عند الإيقاف) حتى لا يعلق طابور النظام بطلبٍ ميت أو
+                    // يبقى AudioTrack مفتوحاً.
+                    runCatching { callback.error() }
                 }
-                // **بند 2.3:** إيقاف/استباق يُغلق الـ callback دائماً (تحوّط
-                // من رمي النظام InterruptedException/عدم تحلّه عند الإيقاف)
-                // حتى لا يعلق طابور النظام بطلبٍ ميت أو يبقى AudioTrack
-                // مفتوحاً — الحراسة ترضي الحالتين معاً.
-                runCatching { callback.error() }
             } catch (e: Exception) {
                 runCatching { callback.error() }
             }
@@ -763,12 +766,19 @@ override fun onDestroy() {
     /** يعيد معاينة شريحةِ مقطعٍ محلي إلى المعيار الموحّد ويبثّها بالترتيب —
      *  الشيفرة المشتركة بين المسارين المتسلسل والمتوازي. المخزنُ من المسبح
      *  يُردّ في finally على كل المصائر (المتلقي ينسخ الشريحة عبر
-     *  audioAvailable). */
+     *  audioAvailable).
+     *
+     *  [phase] يحمل الطورَ الكسري لإعادة العينات عبر دفعاتِ المقطع نفسه
+     *  (بند 2.7): نسخة [PcmResampler.convertInto] الحاملة للطور تكون
+     *  مستمرةً فلا تتقبّط عند حدود الدفعة، ويُمرّر المتصل [phase] نفسَه
+     *  لكلَّ دفعاتِ مقطعٍ واحدٍ (LongArray(2) طازج لكل مقطعٍ بعد ضبط
+     *  معدله وقنواته) فيبقى الاتساقُ موكولاً إليه. */
     private fun emitMixedChunk(
         chunk: ByteArray,
         validLength: Int,
         nativeRate: Int,
         nativeChannels: Int,
+        phase: LongArray,
         maxBytes: Int,
         started: () -> Boolean,
         markStarted: () -> Unit,
@@ -780,11 +790,14 @@ override fun onDestroy() {
             nativeChannels, MIXED_UNIFIED_RATE
         )
         if (required <= 0) return
-        val mono = pcmBufferPool.acquire(required)
+        // +2 بايت: النافذةُ المستمرة قد تُخرج فريماً زائداً عن التقدير
+        // الطازج (نصفَ فريمٍ متبقياً عبر حدود الدفعة) فلا يُقصّ صوتٌ
+        // عند كل فتحة بين دفعتين.
+        val mono = pcmBufferPool.acquire(required + 2)
         try {
             val written = PcmResampler.convertInto(
                 chunk, 0, validLength, rate,
-                nativeChannels, MIXED_UNIFIED_RATE, mono, 0
+                nativeChannels, MIXED_UNIFIED_RATE, mono, 0, phase
             )
             if (written <= 0) return
             if (!started()) {
@@ -824,6 +837,7 @@ override fun onDestroy() {
             val params = resolveSegmentParams(segment) ?: continue
             var nativeRate = 0
             var nativeChannels = 1
+            val phase = LongArray(2)
             try {
                 params.provider.synthesize(
                     params.text,
@@ -838,7 +852,7 @@ override fun onDestroy() {
                     { chunk, validLength ->
                         emitMixedChunk(
                             chunk, validLength, nativeRate,
-                            nativeChannels, maxBytes,
+                            nativeChannels, phase, maxBytes,
                             { started }, { started = true }, callback
                         )
                     },
@@ -885,11 +899,13 @@ override fun onDestroy() {
         val maxBytes = callback.maxBufferSize
         for (audio in audios) {
             if (audio == null) continue
+            val phase = LongArray(2)
             for (chunk in audio.chunks) {
                 emitMixedChunk(
                     chunk, chunk.size,
                     audio.nativeRate, audio.nativeChannels,
-                    maxBytes, { started }, { started = true }, callback
+                    phase, maxBytes, { started }, { started = true },
+                    callback
                 )
             }
         }

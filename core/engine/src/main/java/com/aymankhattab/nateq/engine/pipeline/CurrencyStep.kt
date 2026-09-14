@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.engine.pipeline
 
+import com.aymankhattab.nateq.engine.NumberSpeech
 import java.util.regex.Matcher
 import java.util.regex.Pattern
 import kotlin.math.abs
@@ -477,33 +478,42 @@ internal object CurrencyStep : TextProcessingStep {
 
     /** نطق مبلغ عملة مع التوافق النحوي الكامل (مفرد/مثنى/جمع/كسور):
      *  1 ← «دولار واحد»، 2 ← «دولاران»، 3–10 ← «ثلاثة دولارات»،
-     *  ما فوق ← «خمسة وعشرون دولاراً»، والكسور ← «وخمسون سنتاً». */
+     *  ما فوق ← «خمسة وعشرون دولاراً»، والكسور ← «وخمسون سنتاً».
+     *
+     *  **بند 3.2:** ترحيل الكسور المتراكمة (1.999 → دولاران)،
+     *  تمييز النصب لـ 11–99، والجنس المؤنث عبر [NumberSpeech]. */
     internal fun currencyAmountPhrase(
         amount: Double,
         info: CurrencyInfo
     ): String {
         val whole = amount.toLong()
+        val isNeg = whole < 0L || (whole == 0L && amount < 0.0)
         // العملات ثلاثية الخانات (د.ك/د.ب/ر.ع/د.ت) وحدتها الفرعية 1000
         // (فلس/بيسة/مليم) والبقية 100. كان الضرب الثابت في 100.0 ينطق
         // «1.500 د.ك» خطأً «وخمسون فلس» بدل «وخمسمائة فلس»، ويُفقد كسوراً
         // صغيرة («2.005 د.ت» كانت تُنطق «ديناران تونسيان» بلا جزء كسري).
-        val fracSubunits =
-            Math.round(Math.abs(amount - whole) * info.subunitsPerUnit)
-                .toInt()
+        val fracSubunitsRaw = Math.round(
+            Math.abs(amount - whole) * info.subunitsPerUnit
+        ).toInt()
+        // **بند 3.2 (ترحيل):** كسر >= الوحدة يؤدي ترحيله للوحدة الأكبر
+        // (1.999$ → «دولاران»، -1.999$ → «ناقص دولاران») — كانت الكسور
+        // تتجاوز الوحدة دون ترحيل فينطق «واحد دولار وتسعمائة وتسعة وتسعون
+        // سنت» بدل «دولاران».
+        val carry = fracSubunitsRaw / info.subunitsPerUnit
+        val absWhole = abs(whole) + carry
+        val fracSubunits = fracSubunitsRaw % info.subunitsPerUnit
         val fracPhrase = currencyFractionPhrase(fracSubunits, info)
         // مبلغ كسري صرف (0.50$) → «خمسون سنت» بلا «و» افتتاحية.
-        if (whole == 0L && fracPhrase.isNotEmpty()) {
+        if (absWhole == 0L && fracPhrase.isNotEmpty()) {
             // بند 3.6: المبلغ الكسري السلبي يحافظ على إشارته
             // («سالب خمسون سنتاً») — كانت تُسقَط دون هذه البقعة.
-            return if (amount < 0.0) "سالب $fracPhrase" else fracPhrase
+            return if (isNeg) "سالب $fracPhrase" else fracPhrase
         }
 
         // **السالب الصحيح (بند 3.1):** العدد الذهني يُحسم على القيمة المطلقة
         // («-2$» ← «دولاران»)، وإلا عاجت السالبةُ عن فروع when إلى صيغة
         // المفرد الخاطئة («ناقص اثنان دولار»). وكما يسبق المحوّلُ الرقمي
         // الأعدادَ السالبة بكلمة «ناقص » يُسبق المبلغُ بها أيضاً.
-        val negativeWhole = whole < 0
-        val absWhole = abs(whole)
         val wholePhrase = when {
             absWhole == 0L -> "صفر ${info.name}"
             absWhole == 1L -> {
@@ -519,14 +529,22 @@ internal object CurrencyStep : TextProcessingStep {
                 "$units ${info.plural}"
             }
             else -> {
-                val name = info.name
-                val words = NumberWordsConverter.numberToWords(
-                    absWhole.toDouble()
+                val words = numberToWordsForGender(
+                    absWhole, info.isFeminine
                 )
-                "$words $name"
+                val rem100 = (absWhole % 100).toInt()
+                // **بند 3.2 (تنوين نصب):** العدد المركّب 11–99 يلزم
+                // المعدود بالتنوين المنصوب («دولاراً» لا «دولار»).
+                // وال McMaster 3–10 بالجمع («ثلاثة دولارات»).
+                when {
+                    rem100 in 3..10 -> "$words ${info.plural}"
+                    rem100 in 11..99 ->
+                        "$words ${accusativeForm(info.name)}"
+                    else -> "$words ${info.name}"
+                }
             }
         }
-        val base = if (negativeWhole) "ناقص $wholePhrase" else wholePhrase
+        val base = if (isNeg) "ناقص $wholePhrase" else wholePhrase
         return if (fracPhrase.isEmpty()) {
             base
         } else {
@@ -565,8 +583,35 @@ internal object CurrencyStep : TextProcessingStep {
                 val words = NumberWordsConverter.numberToWords(
                     subunits.toDouble()
                 )
-                "$words ${info.subunit}"
+                // **بند 3.2:** الوحدة الفرعية مثل الرئيسية: 11–99 منصوبة
+                // («تسعة وعشرون سنتاً» لا «تسعة وعشرون سنت»).
+                val rem100 = subunits % 100
+                when {
+                    rem100 in 3..10 -> "$words ${info.subunitPlural}"
+                    rem100 in 11..99 ->
+                        "$words ${accusativeForm(info.subunit)}"
+                    else -> "$words ${info.subunit}"
+                }
             }
         }
+    }
+
+    /** صيغة النصب للكلمة (تنوين نصب): ة→ةً، سواها→اً. */
+    private fun accusativeForm(word: String): String {
+        if (word.endsWith("ة")) return "${word}ً"
+        return "${word}اً"
+    }
+
+    /** تحويل عدد لكلمات مع مراعاة الجنس: المؤنث يذهب إلى [NumberSpeech]
+     *  (يدعم حتى 99,999,999 مع صيغة المذكر/المؤنث)، والمذكر والأعداد
+     *  الكبيرة تذهب إلى [NumberWordsConverter]. */
+    private fun numberToWordsForGender(
+        n: Long,
+        isFeminine: Boolean
+    ): String {
+        if (isFeminine && n <= Int.MAX_VALUE) {
+            return NumberSpeech.toArabicWords(n.toInt(), isFeminine)
+        }
+        return NumberWordsConverter.numberToWords(n.toDouble())
     }
 }

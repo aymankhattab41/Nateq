@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -88,6 +89,40 @@ class MultiProcessPrefsBridgeTest {
             val items = parsed["device_health_items"] as? Set<String>
             assertEquals(setOf("battery", "storage"), items)
             assertEquals(42, parsed["an_int"])
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun parse_corruptScalarValues_parsedAsNull() {
+        // **بند 5.2:** قيمةٌ عدديّة فاسدة (تالفة/غير numeric) في ملف XML
+        // كانت تُمرَّر كنصٍّ خام فيُكسر نوع المفتاح في SharedPreferences؛
+        // الآن parseScalar يُرجع null فيُتخطّاها copyFrom ولا تُحفظ.
+        val name = "bridge_corrupt_test"
+        val file = java.io.File(
+            context.applicationInfo.dataDir,
+            "shared_prefs/$name.xml"
+        )
+        file.parentFile?.mkdirs()
+        file.writeText(
+            "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n" +
+                "<map>\n" +
+                "    <int name=\"bad_int\" value=\"not-a-number\" />\n" +
+                "    <long name=\"bad_long\" value=\"12e9x\" />\n" +
+                "    <float name=\"bad_float\" value=\"1..5\" />\n" +
+                "    <boolean name=\"bad_bool\" />\n" +
+                "    <int name=\"good_int\" value=\"42\" />\n" +
+                "</map>"
+        )
+        try {
+            val bridge = MultiProcessPrefsBridge(context)
+            val parsed = bridge.parse(name)
+            assertNull("int فاسد لا يُحفظ", parsed["bad_int"])
+            assertNull("long فاسد لا يُحفظ", parsed["bad_long"])
+            assertNull("float فاسد لا يُحفظ", parsed["bad_float"])
+            assertNull("boolean فاسد لا يُحفظ", parsed["bad_bool"])
+            assertEquals(42, parsed["good_int"])
         } finally {
             file.delete()
         }

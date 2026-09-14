@@ -16,6 +16,14 @@ import java.util.ArrayDeque
  */
 internal class InitGate {
 
+    companion object {
+        /** علاّمة صريحة تمثّل المحرك الافتراضي (null) داخل العداد الجاري —
+         *  تمييز «خامل» عن «الافتراضي قيد التهيئة» (بند 2.5): بدونه كان
+         *  null يمثّل الحالتين فلا ينضمّ طلبُ الافتراضي الثاني إلى
+         *  تهيئةٍ قائمةٍ للافتراضي بل يبدأ تهيئةً موازية. */
+        private const val ENGINE_DEFAULT = "__default__"
+    }
+
     /** قرار طلب [enqueue].
      *  - [START]: المتصل يبدأ تهيئةً جديدة بهذا المحرك.
      *  - [JOIN]: الطلب ضمن الطابور — يُصرف عند اكتمال تهيئةٍ مطابقة أو
@@ -35,7 +43,12 @@ internal class InitGate {
     )
 
     private val queue = ArrayDeque<Entry>()
+    /** null = خامل، وإلا مفتاح المحرك الجاري (اسم حزمة أو [ENGINE_DEFAULT]). */
     private var runningEngine: String? = null
+
+    /** المفتاح الموحّد للمحرك في العداد: الافتراضي (null) يُسجَّل
+     *  بعلاّمة صريحة فلا يلتبس مع حالة الخمول. */
+    private fun keyOf(engine: String?): String = engine ?: ENGINE_DEFAULT
 
     /**
      * طلب نطقٍ عبر محرك [engine]. يعيد START للمتصل إن كان هو من يبدأ
@@ -46,7 +59,7 @@ internal class InitGate {
     fun enqueue(engine: String?, callback: (Boolean) -> Unit): Decision {
         queue.addLast(Entry(engine, callback))
         if (runningEngine == null) {
-            runningEngine = engine
+            runningEngine = keyOf(engine)
             return Decision.START
         }
         return Decision.JOIN
@@ -76,7 +89,7 @@ internal class InitGate {
         val pending = ArrayList<Entry>()
         while (queue.isNotEmpty()) {
             val entry = queue.removeFirst()
-            if (entry.engine == completed) {
+            if (keyOf(entry.engine) == completed) {
                 served.add(entry.callback)
             } else {
                 pending.add(entry)
@@ -86,7 +99,7 @@ internal class InitGate {
             queue.addLast(entry)
         }
         val next = queue.peekFirst()
-        runningEngine = next?.engine
+        runningEngine = next?.let { keyOf(it.engine) }
         return Completion(served, next?.engine)
     }
 }

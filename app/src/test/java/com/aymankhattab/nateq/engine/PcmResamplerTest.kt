@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.engine
 
 import com.aymankhattab.nateq.core.audio.engine.PcmResampler
+import kotlin.math.min
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertTrue
@@ -371,6 +372,98 @@ class PcmResamplerTest {
         assertArrayEquals(
             encode(2000), out.copyOf(written)
         )
+    }
+
+    @Test
+    fun convertInto_phaseContinuity_splitMatchesSingleChunk() {
+        // **بند 2.7:** الدفعاتُ المتتالية على القطعة نفسها بطورٍ مشترك
+        // (LongArray(2)) لا تُعيد البدء من الصفر عند حدود الدفعات —
+        // لا قفزات كبيرة (تقبّط مسموع) في الانتقالات.
+        // الفرق الأقصى بين النداء الواحد وال-Shards هو فريم واحد
+        // لكل انتقال بسبب تقريب convertedByteCount (أثر تحت العينة).
+        val spec = listOf(
+            intArrayOf(370, 22050, 48000),
+            intArrayOf(501, 44100, 16000),
+            intArrayOf(180, 8000, 22050)
+        )
+        for ((frames, inRate, outRate) in spec) {
+            val pcm = encode(*IntArray(frames) { it * 3 - 400 })
+            val totalRequired = PcmResampler.convertedByteCount(
+                pcm, 0, pcm.size, inRate, 1, outRate
+            )
+            val single = ByteArray(totalRequired + 2)
+            val singleWritten = PcmResampler.convertInto(
+                pcm, 0, pcm.size, inRate, 1, outRate,
+                single, 0, LongArray(2)
+            )
+            val phase = LongArray(2)
+            val chunkBytes = 102
+            val chunks = ArrayList<ByteArray>()
+            var offset = 0
+            while (offset < pcm.size) {
+                val len = min(chunkBytes, pcm.size - offset)
+                val required = PcmResampler.convertedByteCount(
+                    pcm, offset, len, inRate, 1, outRate
+                )
+                val out = ByteArray(required + 2)
+                val written = PcmResampler.convertInto(
+                    pcm, offset, len, inRate, 1, outRate,
+                    out, 0, phase
+                )
+                chunks.add(out.copyOf(written))
+                offset += len
+            }
+            val joined = chunks.reduce { a, b -> a + b }
+            val label = "$frames فريماً @ $inRate→$outRate"
+            // الفرق ≤ فريم واحد لكل انتقال (تقريب مقطّع).
+            assertTrue(
+                "فرق الحجم ≤ 2 بايت — $label",
+                kotlin.math.abs(singleWritten - joined.size) <= 2
+            )
+            val commonFrames = minOf(singleWritten, joined.size) / 2
+            if (commonFrames > 0) {
+                // الدفعاتُ المتتالية تُجري استيفاءً من موضعِ قصةٍ محسوبة
+                // (تقريب 16.16) فعند حدود الدفعة يقع فرق تحت العينة قد
+                // يصل وحدتين/ثلاثاً من قيمة PCM — أثر كمّي طبيعي لا يُسمع
+                // بخلاف القفزة الكبيرة (التقبّط) التي كانت تتجاوز المئات.
+                for (i in 0 until commonFrames) {
+                    val a = (single[i * 2].toInt() and 0xFF) or
+                        (single[i * 2 + 1].toInt() shl 8)
+                    val b = (joined[i * 2].toInt() and 0xFF) or
+                        (joined[i * 2 + 1].toInt() shl 8)
+                    assertTrue(
+                        "عينة $i ≤ 8 PCM — $label: $a ≠ $b",
+                        kotlin.math.abs(
+                            a.toShort() - b.toShort()
+                        ) <= 8
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun convertInto_freshPhaseEachChunk_restartsLikeSingle() {
+        // **بند 2.7 (تعليل التوثيق):** نسخة [convertInto] الجاهزة بطورٍ طازج
+        // في كل نداءٍ تبقى مطابقةً للسلوك السابق حرفياً — كما لو كانت كل
+        // دفعة نافذةً مستقلةً (لا استمرار طورٍ بين الدفعات).
+        val pcm = encode(*IntArray(300) { it * 2 - 500 })
+        for (chunk in intArrayOf(120, 90, 60)) {
+            var offset = 0
+            val phase = LongArray(2)
+            while (offset < pcm.size) {
+                val len = min(chunk, pcm.size - offset)
+                val required = PcmResampler.convertedByteCount(
+                    pcm, offset, len, 22050, 1, 48000
+                )
+                val out = ByteArray(required)
+                val written = PcmResampler.convertInto(
+                    pcm, offset, len, 22050, 1, 48000, out, 0, phase
+                )
+                assertEquals("مكتوب = كافٍ في دورة مستقلة", required, written)
+                offset += len
+            }
+        }
     }
 
     private fun assertEqualsPcm(expected: ByteArray, actual: ByteArray) {

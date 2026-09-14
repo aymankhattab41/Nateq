@@ -35,6 +35,26 @@ class LanguageCodeTest {
     }
 
     @Test
+    fun isArabic_pureOneWordRejected() {
+        // **بند 6.1:** القبول الصارم لـ ar|ara وامتداديهما؛ أي كلمة تبدأ
+        // بـ ar* دون عربية تُرفض (كانت تُقبل سابقاً عبر startsWith).
+        assertFalse(LanguageCode.isArabic("arise"))
+        assertFalse(LanguageCode.isArabic("aroma"))
+        assertFalse(LanguageCode.isArabic("around"))
+        assertFalse(LanguageCode.isArabic("aro"))
+        assertFalse(LanguageCode.isArabic("ary"))
+        assertFalse(LanguageCode.isArabic("arz"))
+    }
+
+    @Test
+    fun isArabic_acceptsAraEtymology() {
+        // «ara» وبادئتها مقبولة (الصيغة الثنائية التاريخية للعربية).
+        assertTrue(LanguageCode.isArabic("ara"))
+        assertTrue(LanguageCode.isArabic("ara-EG"))
+        assertTrue(LanguageCode.isArabic("ara_EG"))
+    }
+
+    @Test
     fun isEnglish_acceptsMappedAndRegionalTags() {
         assertTrue(LanguageCode.isEnglish("en"))
         assertTrue(LanguageCode.isEnglish("en-US"))
@@ -45,6 +65,23 @@ class LanguageCodeTest {
     fun isEnglish_rejectsNonEnglish() {
         assertFalse(LanguageCode.isEnglish("ar"))
         assertFalse(LanguageCode.isEnglish("de"))
+    }
+
+    @Test
+    fun isEnglish_pureOneWordRejected() {
+        // **بند 6.1:** نظيرُ العربية بالإنجليزية — الرفض الصارم للبادئ
+        // en* التي لا تمثل إنجليزية (england، ent…).
+        assertFalse(LanguageCode.isEnglish("england"))
+        assertFalse(LanguageCode.isEnglish("entity"))
+        assertFalse(LanguageCode.isEnglish("enroute"))
+        assertFalse(LanguageCode.isEnglish("engk"))
+    }
+
+    @Test
+    fun isEnglish_acceptsEngEtymology() {
+        assertTrue(LanguageCode.isEnglish("eng"))
+        assertTrue(LanguageCode.isEnglish("eng-US"))
+        assertTrue(LanguageCode.isEnglish("eng_GB"))
     }
 
     @Test

@@ -101,7 +101,9 @@ class MultiProcessPrefsBridge(private val appDataDir: File) {
         return map
     }
 
-    /** يحوّل قيمة نصية لوسم عددي/منطقي؛ أي فشل يُترك نصاً خاماً. */
+    /** يحوّل قيمة نصية لوسم عددي/منطقي؛ أي فشل يُرجع null ليُتخطّى
+     *  الدخلُ غير الصالح في [SharedPreferences.Editor.copyFrom] ولا يُحفظ
+     *  كنصٍّ خامٍ مكسّر النوع (بند 5.2). */
     private fun parseScalar(tag: String, value: String?): Any? = try {
         when (tag) {
             "int" -> value?.toInt()
@@ -112,6 +114,6 @@ class MultiProcessPrefsBridge(private val appDataDir: File) {
             else -> value
         }
     } catch (_: Throwable) {
-        value
+        null
     }
 }

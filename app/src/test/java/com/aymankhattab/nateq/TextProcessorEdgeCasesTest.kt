@@ -128,7 +128,8 @@ class TextProcessorEdgeCasesTest {
     @Test
     fun currency_thousandsWithFraction() {
         assertEquals(
-            "ألف دولار وخمسة وسبعون سنت",
+            // بند 3.2: 75 (11–99) منصوبٌ بواو الكسر الختامي
+            "ألف دولار وخمسة وسبعون سنتاً",
             processor.process("$1,000.75", "ar")
         )
     }

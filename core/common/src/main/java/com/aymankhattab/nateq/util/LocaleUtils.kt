@@ -12,7 +12,11 @@ object LocaleUtils {
      * موسّعة، ولا نريد أن يضيع التعرف عليها في النطق التلقائي.
      * @return رمز ISO-2 مثل "ar" أو null عند عدم معرفة الرمز.
      */
-    fun normalizeLanguageCode(code: String?): String = code?.lowercase()?.let {
+    fun normalizeLanguageCode(code: String?): String =
+        // **بند 6.2:** Locale.ROOT صراحةً في التحويل الأحرفي — رموز ISO
+        // أسماءٌ ثابتة لا تخضع لقواعد المحلي الحالي (مثل التركية التي
+        // تحوّل I بلا نقطة فتكسر "IND"→"ınd" ولا تُطابق أي مدخل).
+        code?.lowercase(Locale.ROOT)?.let {
         when (it) {
             "ara" -> LanguageCode.AR.tag
             "eng" -> LanguageCode.EN.tag
@@ -81,7 +85,9 @@ object LocaleUtils {
     } ?: LanguageCode.AR.tag
 
     /** توحيد رمز البلد من الشكل ISO-3 (EGY, USA) إلى ISO-2 (EG, US). */
-    fun normalizeCountryCode(code: String?): String? = code?.uppercase()?.let {
+    fun normalizeCountryCode(code: String?): String? =
+        // بند 6.2: Locale.ROOT — كرموزَ اللغة أعلاه لا تخضع لِقواعد المحلي.
+        code?.uppercase(Locale.ROOT)?.let {
         when (it) {
             "EGY" -> "EG"
             "USA" -> "US"

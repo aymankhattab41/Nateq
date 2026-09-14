@@ -662,12 +662,17 @@ class AnnouncementSpeaker(
         // [ensureInit] بوابةُ طيرانٍ مفرد آمنة التزامن — يعاود استدعاءُ
         // startSpeech اللاحق الانضمام إليها بلا سباقٍ ولا تكرار تهيئة.
         ensureInit({ _ -> }, engineOverride)
-        AudioCuePlayer.getInstance(appContext).play(cue) { _ ->
-            if (gen == speechGeneration.get()) {
+        AudioCuePlayer.getInstance(appContext).play(cue) { ok ->
+            if (gen == speechGeneration.get() && ok) {
                 startSpeech(
                     text, locale, speechRate, pitch, volume,
                     emojiCfg, parts, engineOverride
                 )
+            } else {
+                // بند 2.3: فشل عزف النغمة أو تَقادم دورة النطق أثناءها
+                // (stop()/نطقٌ أحدث) — لا نطق يلي، فيُحرَّر التركيز هنا
+                // حصراً بدل بقائه محجوزاً صامتاً حتى النطق التالي.
+                releaseAudioFocus()
             }
         }
     }

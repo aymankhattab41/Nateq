@@ -549,23 +549,29 @@ class TimeAnnouncementManager(
     }
 
     /** تنسيق الوقت الإنجليزية الطبيعية:
-     * "quarter past ten"، "half past ten"، "quarter to eleven" */
+     * "quarter past ten"، "half past ten"، "quarter to eleven".
+     *  **بند 3.6:** الدقائق 31–59 تُشير للساعة التالية فتُبدِّل الفترةَ
+     *  (11:45 → "quarter to 12 PM" لا AM؛ و23:45 → "quarter to 12 AM").
+     *  والفرع الصفري و15/30 يبقيان على فترة الساعة الحالية. */
     private fun formatEnglishNaturalTime(hour: Int, minute: Int): String {
         val hour12 = if (hour == 0) 12 else if (hour > 12) hour - 12 else hour
         val nextHour = if (hour12 == 12) 1 else hour12 + 1
         val period = if (hour < 12) "AM" else "PM"
+        // فترة الساعة التالية (التي تُشير إليها الدقائق 31–59): تُحسب من
+        // الساعة المطلقة — تجاوزُ منتصف النهار/الليل يقلب AM↔PM.
+        val nextPeriod = if ((hour + 1) % 24 < 12) "AM" else "PM"
 
         return when (minute) {
             0 -> "$hour12 o'clock $period"
             15 -> "quarter past $hour12 $period"
             30 -> "half past $hour12 $period"
-            45 -> "quarter to $nextHour $period"
+            45 -> "quarter to $nextHour $nextPeriod"
             in 1..14 -> "${minute} minute" +
                 (if (minute == 1) "" else "s") +
                 " past $hour12 $period"
             in 16..29 -> "$minute minutes past $hour12 $period"
-            in 31..44 -> "${60 - minute} minutes to $nextHour $period"
-            in 46..59 -> "${60 - minute} minutes to $nextHour $period"
+            in 31..44 -> "${60 - minute} minutes to $nextHour $nextPeriod"
+            in 46..59 -> "${60 - minute} minutes to $nextHour $nextPeriod"
             else -> "$hour12 o'clock $period"
         }
     }

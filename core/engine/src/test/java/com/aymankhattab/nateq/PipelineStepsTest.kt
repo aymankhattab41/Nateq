@@ -15,6 +15,7 @@ import com.aymankhattab.nateq.engine.pipeline.PhoneNumberStep
 import com.aymankhattab.nateq.engine.pipeline.PunctuationStep
 import com.aymankhattab.nateq.engine.pipeline.RomanNumeralStep
 import com.aymankhattab.nateq.engine.pipeline.SymbolStep
+import com.aymankhattab.nateq.engine.pipeline.TashkeelStripStep
 import com.aymankhattab.nateq.engine.pipeline.TimeStep
 import com.aymankhattab.nateq.engine.pipeline.UnitStep
 import com.aymankhattab.nateq.engine.pipeline.UrlStep
@@ -130,7 +131,8 @@ class PipelineStepsTest {
 
     @Test
     fun currency_dollar_fraction() {
-        assertEquals("دولار واحد وخمسون سنت", CurrencyStep.apply("$1.50"))
+        // بند 3.2: 50 (11–99) منصوبٌ «سنتاً»
+        assertEquals("دولار واحد وخمسون سنتاً", CurrencyStep.apply("$1.50"))
     }
 
     @Test
@@ -140,7 +142,8 @@ class PipelineStepsTest {
 
     @Test
     fun currency_euro_afterNumber() {
-        assertEquals("خمسون يورو", CurrencyStep.apply("50€"))
+        // بند 3.2: 50 (11–99) منصوبٌ «يورواً»
+        assertEquals("خمسون يورواً", CurrencyStep.apply("50€"))
     }
 
     @Test
@@ -187,7 +190,8 @@ class PipelineStepsTest {
     @Test
     fun currency_thousands_withFraction() {
         assertEquals(
-            "ألف دولار وخمسة وسبعون سنت",
+            // بند 3.2: 75 (11–99) منصوب بواو الكسر الختامي
+            "ألف دولار وخمسة وسبعون سنتاً",
             CurrencyStep.apply("$1,000.75")
         )
     }
@@ -204,7 +208,8 @@ class PipelineStepsTest {
         assertEquals("هللتان", CurrencyStep.apply("0.02 ر.س"))
         // الريال العماني = 1000 بيسة، فـ«0.002 ر.ع» = بيستان ← «بيستان».
         assertEquals("بيستان", CurrencyStep.apply("0.002 ر.ع"))
-        assertEquals("عشرون بيسة", CurrencyStep.apply("0.02 ر.ع"))
+        // بند 3.2: 20 (11–99) منصوبٌ «بيسةً»
+        assertEquals("عشرون بيسةً", CurrencyStep.apply("0.02 ر.ع"))
         // غير المنتهية بتاء مربوطة تبقى على مثناها القديم («سنت» → «سنتان»).
         assertEquals("سنتان", CurrencyStep.apply("0.02$"))
     }
@@ -218,17 +223,18 @@ class PipelineStepsTest {
             "دينار كويتي واحد وخمسمائة فلس",
             CurrencyStep.apply("1.500 د.ك")
         )
+        // بند 3.2: 250 (rem100=50 → 11–99) منصوبٌ «فلساً»
         assertEquals(
-            "دينار بحريني واحد ومائتان وخمسون فلس",
+            "دينار بحريني واحد ومائتان وخمسون فلساً",
             CurrencyStep.apply("1.250 د.ب")
         )
-        assertEquals("سبعمائة وخمسون بيسة", CurrencyStep.apply("0.750 ر.ع"))
+        assertEquals("سبعمائة وخمسون بيسةً", CurrencyStep.apply("0.750 ر.ع"))
         assertEquals(
             "ديناران تونسيان وخمسة مليمات",
             CurrencyStep.apply("2.005 د.ت")
         )
-        // العملات ثنائية الخانات لا تتأثر بالتغيير:
-        assertEquals("دولار واحد وخمسون سنت", CurrencyStep.apply("1.50$"))
+        // بند 3.2: 50 (11–99) منصوب «سنتاً»
+        assertEquals("دولار واحد وخمسون سنتاً", CurrencyStep.apply("1.50$"))
     }
 
     @Test
@@ -237,7 +243,8 @@ class PipelineStepsTest {
             "دينار كويتي واحد وخمسمائة فلس",
             CurrencyStep.apply("KWD 1.500")
         )
-        assertEquals("سبعمائة وخمسون بيسة", CurrencyStep.apply("OMR 0.750"))
+        // بند 3.2: 750 (rem100=50 → 11–99) منصوبٌ «بيسةً»
+        assertEquals("سبعمائة وخمسون بيسةً", CurrencyStep.apply("OMR 0.750"))
     }
 
     @Test
@@ -598,14 +605,16 @@ class PipelineStepsTest {
 
     @Test
     fun currency_negative_fraction_only() {
-        // بند 3.6: الكسر النقي السالب يحافظ على «سالب » (كان يُسقط إشارته).
-        assertEquals("سالب خمسون سنت", CurrencyStep.apply("-0.50$"))
+        // بند 3.6 + 3.2: الكسر النقي السالب يحافظ على
+        // «سالب »، و50 (11–99) منصوب «سنتاً»
+        assertEquals("سالب خمسون سنتاً", CurrencyStep.apply("-0.50$"))
     }
 
     @Test
     fun currency_negative_with_fraction() {
         assertEquals(
-            "ناقص دولاران وخمسون سنت",
+            // بند 3.2: 50 (11–99) منصوب «سنتاً»
+            "ناقص دولاران وخمسون سنتاً",
             CurrencyStep.apply("-2.50$")
         )
     }
@@ -619,6 +628,74 @@ class PipelineStepsTest {
         assertEquals(
             "ناقص ريالان سعوديان",
             CurrencyStep.apply("-2 ر.س")
+        )
+    }
+
+    @Test
+    fun currency_tens_withOne_masculine() {
+        // بند 3.1: «العشرون» بآحاد «واحد» لا «أحد» («واحد وعشرون»).
+        assertEquals(
+            "واحد وعشرون",
+            NumberWordsConverter.numberToWords(21.0)
+        )
+        // بند 3.2: المركّب 11–99 يلزم المعدود بالتنوين المنصوب.
+        assertEquals(
+            "واحد وعشرون دولاراً",
+            CurrencyStep.apply("$21")
+        )
+    }
+
+    @Test
+    fun currency_carry_fraction_overflowsUnit() {
+        // بند 3.2: الكسر المتراكم (> الوحدة) يُرحَّل إلى الوحدة الكبرى.
+        assertEquals("دولاران", CurrencyStep.apply("$1.999"))
+        assertEquals("ناقص دولاران", CurrencyStep.apply("$-1.999"))
+        assertEquals("مائتان دولار", CurrencyStep.apply("$199.999"))
+    }
+
+    @Test
+    fun currency_fraction_accusative_11to99() {
+        // بند 3.2: 11–99 منصوبة («سنتاً»)، وآحاد العشرين «واحد»:
+        assertEquals("تسعة وثلاثون سنتاً", CurrencyStep.apply("$0.39"))
+        assertEquals(
+            "واحد وعشرون سنتاً",
+            CurrencyStep.apply("$0.21")
+        )
+    }
+
+    @Test
+    fun unit_largeNumber_feminineCompatible() {
+        // بند 3.3: رفع الحد 9999→99,999,999 عبر NumberSpeech بصيغة المعدود
+        // المؤنث («خمس» لا «خمسة») مع بقاء الوحدة مفردة.
+        assertEquals(
+            "مليونان وخمسمائة ألف وخمس ساعة",
+            UnitStep.apply("2500005 س")
+        )
+    }
+
+    @Test
+    fun tashkeel_preservesQuranicMarks() {
+        // بند 3.4: حروف المصحف المعجمة فوقُ الألف (U+0670) والواو/الياء
+        // المصحفيّتان (U+06E5/U+06E6) تُبقى بينما تُجرَّد الحركات العادية.
+        assertEquals(
+            "\u0643\u0670\u062A\u0627\u0628",
+            TashkeelStripStep.apply("\u0643\u0670\u062A\u064E\u0627\u0628")
+        )
+        assertEquals(
+            "\u0628\u06E5\u06E6",
+            TashkeelStripStep.apply("\u0628\u064E\u06E5\u06E6\u064E")
+        )
+    }
+
+    @Test
+    fun url_trailingPunctuation_preserved() {
+        // بند 3.5: النقطة/القوس الختامي الملاصقان للرابط يُنطقان مع البديل
+        // («موقع example.») بدل اقتصاصهما من النُّطق.
+        assertEquals("موقع example.", UrlStep.apply("https://example.com."))
+        assertEquals("موقع example)", UrlStep.apply("https://example.com)"))
+        assertEquals(
+            "موقع example).",
+            UrlStep.apply("www.example.org).")
         )
     }
 

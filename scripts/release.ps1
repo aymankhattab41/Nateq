@@ -245,6 +245,15 @@ if (-not (Test-Path -LiteralPath $apkFile)) {
     throw "الـ APK غير موجود بعد البناء: $apkFile"
 }
 
+# **بند 5.3:** سطر SHA-256 للـ APK يُلحق بملاحظات الإصدار — يُحسب من
+# القرص مباشرةً بمجرد وجود الملف (بلا نسخ مؤقتة) ويتيح التحققَ من سلامة
+# المرفق قبل التثبيت.
+$sha256Line = (
+    Get-FileHash -LiteralPath $apkFile -Algorithm SHA256
+).Hash.ToLowerInvariant()
+$releaseNotes = $releaseNotes + "`r`n`r`n### المجموع الاختباري SHA-256`r`n" +
+    "``$sha256Line``  lord_tts.apk"
+
 # 3) التصريح بملف الترقيم ثم الالتزام به فقط — حتى لا تنجرف أي تغييرات أخرى
 # مرحّلة أو غير مرحّلة في commit الإصدار.
 Invoke-Git @('add', 'app/build.gradle.kts')

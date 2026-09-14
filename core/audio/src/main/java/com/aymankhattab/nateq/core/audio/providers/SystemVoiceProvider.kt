@@ -662,9 +662,14 @@ class SystemVoiceProvider(
                                         return@TextToSpeech
                                     }
                                     val built = hold[0]
-                                    if (built == null ||
-                                        done.getAndSet(true)
-                                    ) {
+                                    // لا يُستهلك علمُ completion هنا على
+                                    // الإطلاق: [initSettled] يكفي لمنع
+                                    // الازدواج مع مهلة التهيئة، ولو شُغّل
+                                    // حارسُ done في هذا الموضع لسُبِق
+                                    // التنفيذُ الفعلي للاصطناع في speakNow
+                                    // (المسار ~680 يفحص done فتخطّى
+                                    // التخليق في أول إقلاع بارد) — بند 2.1.
+                                    if (built == null) {
                                         return@TextToSpeech
                                     }
                                     if (status == TextToSpeech.SUCCESS
@@ -1343,21 +1348,28 @@ class SystemVoiceProvider(
                 i += n
             }
         }
-        onFormatInfo(meta.sampleRateInHz, 1)
-        val scaledData = if (volume != 1.0f) {
-            applyVolume(raw, volume, len)
+        // بند 2.2: استيريو → مونو قبل البث (المتلقي أحادي القناة).
+        val samples = if (meta.channelCount > 1) {
+            downmixStereoToMono(raw, len)
         } else {
             raw
         }
-        if (cacheKey != null &&
-            totalCacheBytes[0] + len <= PCM_CACHE_MAX_BYTES
-        ) {
-            cachedParts.add(scaledData.copyOf(len))
-            totalCacheBytes[0] += len
+        val samplesLen = samples.size
+        onFormatInfo(meta.sampleRateInHz, 1)
+        val scaledData = if (volume != 1.0f) {
+            applyVolume(samples, volume, samplesLen)
+        } else {
+            samples
         }
-        onAudioChunk(scaledData, len)
+        if (cacheKey != null &&
+            totalCacheBytes[0] + samplesLen <= PCM_CACHE_MAX_BYTES
+        ) {
+            cachedParts.add(scaledData.copyOf(samplesLen))
+            totalCacheBytes[0] += samplesLen
+        }
+        onAudioChunk(scaledData, samplesLen)
         // المتلقي نسخ الشريحة (audioAvailable) فنعيد المخزن للمسبح — ولو
-        // كان الصوت بلا مستوى (raw غير مُسبَّح) يأوي السباحة بأمانٍ أيضاً.
+        // كان الصوت بلا مستوى (أصلي غير مسبَّح) يأوي السباحة بأمانٍ أيضاً.
         pcmPool.release(scaledData)
     }
 
@@ -1445,6 +1457,31 @@ internal fun extractPcmFromFile(
     }
 }
 
+/** يخفض عيّنات استيريو (16-بت، قناتان متداخلتان LR) إلى مونو وسطياً —
+ *  (L+R)/2 — فلا تُبثّ القناتان تباعاً كما لو كانتا أحاديتين فيتشوّه
+ *  الإيقاع ويَضطرب الزمن. بند 2.2. */
+private fun downmixStereoToMono(
+    stereo: ByteArray,
+    length: Int
+): ByteArray {
+    val frames = length / 4
+    val mono = ByteArray(frames * 2)
+    var s = 0
+    var m = 0
+    while (s + 3 < length) {
+        val left = (stereo[s + 1].toInt() shl 8) or
+            (stereo[s].toInt() and 0xFF)
+        val right = (stereo[s + 3].toInt() shl 8) or
+            (stereo[s + 2].toInt() and 0xFF)
+        val sample = (left + right) / 2
+        mono[m] = (sample and 0xFF).toByte()
+        mono[m + 1] = (sample ushr 8).toByte()
+        s += 4
+        m += 2
+    }
+    return mono
+}
+
 /** يمشي خانات WAV من القرص: خانة `data` تُقرأ مباشرة في المسبح، ومعدل
  *  العينات من خانة `fmt `، مع نهاية 44 بايت احتياطية عند غياب `data`. */
 private fun parseWavChunks(
@@ -1480,9 +1517,11 @@ private fun parseWavChunks(
     }
 
     var sampleRate = SystemVoiceProvider.FALLBACK_SAMPLE_RATE
+    var numChannels = 1
     var offset = 12L // بعد "RIFF"+الحجم+"WAVE"
     val chunkHeader = ByteArray(8)
     val rateBuf = ByteArray(4)
+    val chanBuf = ByteArray(2)
     while (offset + 8 <= fileLen) {
         raf.seek(offset)
         if (!readFully(raf, chunkHeader, 0, 8)) break
@@ -1501,6 +1540,16 @@ private fun parseWavChunks(
             if (dataLen <= 0) return emptyExtract(sampleRate)
             val out = readFromPoolOrNull(raf, dataStart, dataLen, pool)
                 ?: return emptyExtract(sampleRate)
+            // بند 2.2: محركٌ قد يكتب استيريو رغم أحادية النطق — بثُّ
+            // القناتين تباعاً كان يضاعف المدة ويشوّه الإيقاع؛ نُخفض
+            // الملفات الاستيريو إلى مونو (مسار النطق أحادي القناة).
+            if (numChannels > 1) {
+                val mono = downmixStereoToMono(out, dataLen)
+                pool.release(out)
+                return SystemVoiceProvider.PcmExtract(
+                    mono, sampleRate, mono.size
+                )
+            }
             return SystemVoiceProvider.PcmExtract(out, sampleRate, dataLen)
         }
         if (chunkId == "fmt "
@@ -1514,6 +1563,14 @@ private fun parseWavChunks(
             if (readFully(raf, rateBuf, 0, 4)) {
                 val rate = readLeInt(rateBuf, 0)
                 if (rate in 14100..192000) sampleRate = rate
+            }
+            // بند 2.2: عدد القنوات في الموضع 2 من جسم الخانة
+            // (بعد audioFormat بايتين) — نقرأه لنخفض الاستيريو.
+            raf.seek(offset + 10)
+            if (readFully(raf, chanBuf, 0, 2)) {
+                val channels = (chanBuf[1].toInt() shl 8) or
+                    (chanBuf[0].toInt() and 0xFF)
+                if (channels in 1..2) numChannels = channels
             }
         }
         // تقدمٌ حتميٌ موجَّب (chunkSize ≥ 0 دائماً) مع كسرٍ
@@ -1534,10 +1591,12 @@ private fun parseWavChunks(
 }
 
 /** وصف رأس WAV للبثّ المجزّأ (بند ب.txt 3.2): موضع بداية بيانات الصوت
- *  ([dataStart]) ومعدل العينات من خانة `fmt ` حين تُعرف. */
+ *  ([dataStart]) ومعدل العينات من خانة `fmt ` حين تُعرف، وعددُ القنوات
+ *  (بند 2.2) ليُخفض الاستيريو إلى مونو قبل البث. */
 internal class WavStreamMeta(
     val dataStart: Long,
-    val sampleRateInHz: Int
+    val sampleRateInHz: Int,
+    val channelCount: Int = 1
 ) {
     companion object {
         /** حدّ أعلى/أدنى لمعدل عينات مقبول (يطابق [parseWavChunks]). */
@@ -1565,6 +1624,7 @@ internal fun readWavStreamMeta(
         return null
     }
     var sampleRate = SystemVoiceProvider.FALLBACK_SAMPLE_RATE
+    var channelCount = 1
     var offset = 12L
     while (offset + 8 <= length) {
         val chunkId = String(
@@ -1572,7 +1632,9 @@ internal fun readWavStreamMeta(
         )
         val chunkSize = readLeLong(bytes, offset.toInt() + 4)
         if (chunkId == "data") {
-            return WavStreamMeta(offset + 8, sampleRate)
+            return WavStreamMeta(
+                offset + 8, sampleRate, channelCount
+            )
         }
         if (chunkId == "fmt " && chunkSize >= 16 &&
             offset + 24 <= length
@@ -1581,6 +1643,10 @@ internal fun readWavStreamMeta(
             // بايتان لكلٍّ) لا +16 الذي هو byteRate (2× للـ mono 16bit).
             val rate = readLeIntFrom(bytes, offset.toInt() + 12)
             if (rate in 14_100..192_000) sampleRate = rate
+            // بند 2.2: عدد القنوات في +10 (بعد audioFormat بايتين).
+            val channels = (bytes[offset.toInt() + 11].toInt() shl 8) or
+                (bytes[offset.toInt() + 10].toInt() and 0xFF)
+            if (channels in 1..2) channelCount = channels
         }
         val next = offset + 8 + chunkSize
         if (next > length || next <= offset) break

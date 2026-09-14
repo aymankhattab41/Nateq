@@ -168,6 +168,10 @@ class SettingsRepository(private val context: Context) :
         // عبء I/O لا نعيد القراءة إلا عندما يتغيّر توقيت الملف الفعلي (أي
         // كتابة من العملية الأخرى) بدل قراءة قرص دائمة مع كل نطق.
         if (!prefsFileChanged()) return
+        // **بند 5.1:** نثبّت زمن الدخول لنكتشف لاحقاً أي كتابةٍ متزامنةٍ من
+        // العملية الأخرى حدثت أثناء قراءتنا للملف — إن تغيّر التوقيت قبل
+        // التطبيق نتخلى عن هذه الجولة كي لا نكتب بيانات أقدم فوق أحدث.
+        val stampAtEntry = prefsFileLastModified()
         // قراءة صريحة لملف القرص بتنسيق SharedPreferences التوثيقي ثم تطبيق
         // القراءة على المخزن في الذاكرة (مسح ثم نسخ) — حتمية تعمل على الجهاز
         // وعبر Robolectric على حد سواء، دون الاعتماد على سلوك داخلي للوسم
@@ -180,6 +184,10 @@ class SettingsRepository(private val context: Context) :
         // (قراءةُ عمليةٍ أخرى لملفٍ لم يتبدّل مضمونه) لا نُعيد
         // كتابة الملف — كان كل reloadٍ يعيد flash/apply كاملاً.
         if (prefs.all.minus(KEY_MIGRATED) == fresh) return
+        // **بند 5.1:** إعادة الفحص قبل التطبيق — إن تغيّر الملف أثناء
+        // القراءة (كتابة متزامنة من العملية الأخرى) نتخلى عن الكتابة
+        // هذه الجولة وتُعالَج الأحدثُ في نداء reload() تالٍ.
+        if (prefsFileLastModified() != stampAtEntry) return
         val editor = prefs.edit().clear()
         editor.copyFrom(fresh)
         editor.putBoolean(KEY_MIGRATED, prefs.getBoolean(KEY_MIGRATED, true))
@@ -196,7 +204,9 @@ class SettingsRepository(private val context: Context) :
     private fun prefsFileChanged(): Boolean =
         prefsBridge.isChanged(NEW_PREFS, prefsLastModified)
 
-    /** ينسخ خريطة قراءة من القرص إلى محرر التفضيلات حسب نوع كل قيمة. */
+    /** ينسخ خريطة قراءة من القرص إلى محرر التفضيلات حسب نوع كل قيمة.
+     *  **بند 5.2:** القيم null (وسوم فاشلة التحويل) تُتخطّى فلا يُحفظ
+     *  نصٌّ خامٌ مكسّرُ النوع مكان int/long/float. */
     private fun SharedPreferences.Editor.copyFrom(values: Map<String, Any?>) {
         @Suppress("UNCHECKED_CAST")
         for ((key, value) in values) {
@@ -207,6 +217,7 @@ class SettingsRepository(private val context: Context) :
                 is Boolean -> putBoolean(key, value)
                 is String -> putString(key, value)
                 is Set<*> -> putStringSet(key, value as Set<String>)
+                null -> {} // وسوم فاشلة التحويل — تُتخطّى بلا كتابة
             }
         }
     }

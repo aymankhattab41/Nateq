@@ -341,7 +341,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             requireContext(),
             settings,
             nateqVoices,
-            ::speakWithVoice
+            // بند 4.3: معاينةُ الزر تُمرَّر بفئتها فتسمع صوتَ الفئة الفعلي.
+            { category, langTag, text ->
+                speakWithCategory(category, langTag, text)
+            }
         )
         rvCategories.isNestedScrollingEnabled = false
 
@@ -581,7 +584,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         // إغلاق المتحدث المستقل الخاص بالمعاينة (إن أُنشئ) حتى لا يبقى محرك
         // TTS مفتوحاً بعد مغادرة الشاشة. المثيل هنا خاص بالشاشة وليس المشترك
         // (getInstance) الذي تُدار حياته في مستقبلات الإعلانات التلقائية.
-        announcementSpeaker?.stop()
+        // **بند 4.4:** shutdown() لا stop() — المعاينة الخاصة تُغلَق تاماً
+        // (محرك TTS نفسه) عند مغادرة الشاشة بدل بقائها قيد الحياة حتى
+        // تحرر المحرك وتتوقف تسريبات مؤقتات الاسترداد.
+        announcementSpeaker?.shutdown()
         announcementSpeaker = null
         // إغلاق كل النوافذ المفتوحة حتى لا تتسرب مراجع الواجهة (WindowLeaked)
         // عند تدوير الشاشة أو مغادرتها.
@@ -999,6 +1005,32 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 .getOrDefault(1.0f),
             1.0f,
             1.0f,
+        )
+    }
+
+    /** معاينة صوت زر فئة (بند 4.3): تحسم محرك الفئة المخصص وسرعتها
+     *  فيُسمع الصوت كما سيُعلن فعلاً في تلك الفئة (لا الصوت العام). */
+    internal fun speakWithCategory(
+        category: String,
+        languageTag: String,
+        text: String
+    ) {
+        val speaker = announcementSpeaker
+            ?: AnnouncementSpeaker(requireContext())
+                .also { announcementSpeaker = it }
+        val engine = runCatching {
+            settings.getEngineForCategory(category)
+        }.getOrNull()
+        val rate = runCatching {
+            settings.getSpeechRateForCategory(category)
+        }.getOrDefault(1.0f)
+        speaker.speak(
+            text,
+            Locale.forLanguageTag(languageTag),
+            rate,
+            1.0f,
+            1.0f,
+            engineOverride = engine
         )
     }
 

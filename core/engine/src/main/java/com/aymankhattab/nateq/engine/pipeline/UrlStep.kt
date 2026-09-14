@@ -37,7 +37,14 @@ internal object UrlStep : TextProcessingStep {
             if (slash >= 0) host = host.substring(0, slash)
             // إزالة المنفذ إن وجد (example.com:8080) وعلامات الترقيم الختامية
             host = host.substringBefore(":")
-                .trimEnd('.', ',', '،', ')', ';', '!', '؟')
+            // **بند 3.5:** نحتفظ باللاحقة المقصوصة (نقطة/رهوت/فاصلة ختامية)
+            // لإلحاقها بالبديل: «example.com.)» → «موقع example» + «.»
+            // حتى لا تنقص النقطة أو الرهوت الختامي من النطق.
+            val beforeTrim = host
+            host = host.trimEnd(
+                '.', ',', '،', ')', ';', '!', '؟'
+            )
+            val trailingPunct = beforeTrim.substring(host.length)
             if (host.isBlank()) {
                 val quoted = java.util.regex.Matcher
                     .quoteReplacement(raw)
@@ -53,7 +60,7 @@ internal object UrlStep : TextProcessingStep {
                     host.substringBeforeLast('.')
                 else -> host
             }
-            val spoken = "موقع $name"
+            val spoken = "موقع $name$trailingPunct"
             val quoted = java.util.regex.Matcher
                 .quoteReplacement(spoken)
             matcher.appendReplacement(buffer, quoted)

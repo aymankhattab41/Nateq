@@ -26,7 +26,13 @@ internal class CategoryVoiceAdapter(
     private val context: Context,
     private val settings: SettingsRepository,
     private val voices: List<NateqVoice>,
-    private val onTestVoice: (languageTag: String, text: String) -> Unit
+    // **بند 4.3:** العامل الفئة (?category) يُمرَّر مع القراءة — من دونه
+    // تسمع المعاينةُ صوتَ الفئة الافتراضية لا صوت الصف المختار تماماً.
+    private val onTestVoice: (
+        category: String,
+        languageTag: String,
+        text: String
+    ) -> Unit
 ) : RecyclerView.Adapter<CategoryVoiceAdapter.CatVH>() {
 
     private val categoryList = listOf(
@@ -257,7 +263,14 @@ internal class CategoryVoiceAdapter(
         holder.btnTest.setOnClickListener {
             val category = holder.category
             if (category.isEmpty()) return@setOnClickListener
-            val voice = voices[holder.spinnerVoice.selectedItemPosition]
+            // **بند 4.2:** كتالوج الأصوات المعروض قد يصل فارغاً من محركٍ
+            // بلا أصوات — الفهرس المُختار يتجاوز حدود القائمة فلا يُسقط
+            // النقرُ أو التمريرُ التطبيق بمؤشرٍ خارج الحدود.
+            val voiceIndex = holder.spinnerVoice.selectedItemPosition
+            if (voiceIndex !in voices.indices) {
+                return@setOnClickListener
+            }
+            val voice = voices[voiceIndex]
             val isArabic = !LanguageCode.isEnglish(voice.languageTag)
             val text = when {
                 !isArabic && category ==
@@ -284,7 +297,7 @@ internal class CategoryVoiceAdapter(
                     context.getString(R.string.sample_text_emoji_ar)
                 else -> context.getString(R.string.sample_text_default_ar)
             }
-            onTestVoice(voice.languageTag, text)
+            onTestVoice(category, voice.languageTag, text)
         }
         return holder
     }

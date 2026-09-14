@@ -16,15 +16,24 @@ enum class LanguageCode(val tag: String) {
     EN("en");
 
     companion object {
-        /** هل السلسلة/طابع اللغة يمثل العربية؟ (مطابقة بادئة
-         *  متسامحة مع الحالة). */
-        fun isArabic(languageTag: String): Boolean =
-            languageTag.startsWith(AR.tag, ignoreCase = true)
+        // **بند 6.1:** البادئة الصارمة بدل `startsWith("ar")` المتسامح الذي
+        // كان يقبل "arise"/"aroma"… فأُقرئَ نصّي لأشياء ليست عربية. القبول
+        // حصراً للطابع العربي "ar"/"ara" (أو امتدادهما ar-EG/ar_EG)، لا أي
+        // "ar*" أخرى (aro، ary، arz…). المثلُ للإنجليزية "en"/"eng".
+        private val ARABIC_PATTERN =
+            Regex("""(?i)^(ar|ara)([-_][a-z0-9]*)?$""")
+        private val ENGLISH_PATTERN =
+            Regex("""(?i)^(en|eng)([-_][a-z0-9]*)?$""")
 
-        /** هل السلسلة/طابع اللغة يمثل الإنجليزية؟ (مطابقة بادئة
-         *  متسامحة مع الحالة). */
+        /** هل السلسلة/طابع اللغة يمثل العربية؟ (مطابقة صارمة
+         *  لـ ar|ara وامتداداتهما مع تجاهل حالة الأحرف). */
+        fun isArabic(languageTag: String): Boolean =
+            ARABIC_PATTERN.matches(languageTag)
+
+        /** هل السلسلة/طابع اللغة يمثل الإنجليزية؟ (مطابقة صارمة
+         *  لـ en|eng وامتداداتهما مع تجاهل حالة الأحرف). */
         fun isEnglish(languageTag: String): Boolean =
-            languageTag.startsWith(EN.tag, ignoreCase = true)
+            ENGLISH_PATTERN.matches(languageTag)
 
         /** يحلّ سلسلةً إلى ثابت معروف إن طابق أحدها، وإلا null
          *  (للغات المكتشفة). */

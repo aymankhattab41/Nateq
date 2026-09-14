@@ -206,6 +206,7 @@ internal class SoundPoolCueSink(
             @Suppress("DEPRECATION")
             val sid = soundPool.load(wavFile.absolutePath, 1)
             if (sid == 0) {
+                runCatching { wavFile.delete() }
                 finish(false); return
             }
             soundIds[key] = sid
@@ -213,6 +214,9 @@ internal class SoundPoolCueSink(
             // الدفعة نتخلى عن التشغيل: البوابة تُسقط الرجلَ المتأخر
             // (سباق بين خيط التحميل وخيط الإيقاف) فلا نغمةٌ بعد الصمت.
             pendingLoad[sid] = {
+                // بند 2.6: الملف بات مخزّناً في ذاكرة SoundPool —
+                // نحذفه فوراً حتى لا تتراكم ملفات مؤقتة في cacheDir.
+                runCatching { wavFile.delete() }
                 if (activeGuard.get()) {
                     loaded.add(key)
                     startStream(sid, volume, durationMs)

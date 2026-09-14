@@ -16,6 +16,7 @@ import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.StartupTempSweeper
 import com.aymankhattab.nateq.nav.SettingsOpenRegistry
 import com.aymankhattab.nateq.settings.SettingsActivity
+import com.aymankhattab.nateq.util.ProcessUtils
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -89,8 +90,9 @@ class NateqApplication : Application(), AnnouncementAppContext {
         // يُنفَّذ **في العملية الرئيسية حصراً** لتفادي حذف ملف
         // nateq_tts_session.wav أثناء توليده في خدمة :tts العاملة في عملية
         // منفصلة — تغيير ذلك يسبب توقف الصوت.
-        val isMainProcess = applicationInfo.processName == packageName
-        if (isMainProcess) {
+        // **بند 7.1:** تُميَّز العملية عبر [ProcessUtils] الموحَّد —
+        // المقارنة في main حصراً لتفادي حذف صوت جلسة :tts الجاري توليده.
+        if (ProcessUtils.isMainProcess(this)) {
             appScope.launch {
                 runCatching {
                     StartupTempSweeper(applicationContext).sweep()

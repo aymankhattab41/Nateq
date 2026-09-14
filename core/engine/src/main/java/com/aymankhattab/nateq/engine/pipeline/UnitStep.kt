@@ -142,7 +142,8 @@ internal object UnitStep : TextProcessingStep {
             else -> {
                 // المعدود المركّب (11–99 فما بين المئات) يلزم آحاده بالمؤنث مع
                 // المعدود المؤنث: «خمس وعشرون سنة» لا «خمسة وعشرون سنة».
-                val numberText = if (info.isFeminine && n in 11..9999) {
+                // بند 3.3: رفع الحد 9999→99,999,999 (NumberSpeech يدعم).
+                val numberText = if (info.isFeminine && n in 11..99_999_999) {
                     NumberSpeech.toArabicWords(n, isFeminine = true)
                 } else {
                     NumberWordsConverter.numberToWords(n.toDouble())

@@ -11,8 +11,9 @@ class SmartSpellerTest {
     @Test
     fun arabicPlainLetter_spelledByName() {
         assertEquals("باء", SmartSpeller.spell("ب", "ar"))
-        assertEquals("ألف بهمزة", SmartSpeller.spell("أ", "ar"))
-        assertEquals("ألف بهمزة", SmartSpeller.spell("إ", "ar"))
+        // بند 3.7: كل همزة تُنطق بموضعها المميّز (فوق/تحت/ممدودة/وصل)
+        assertEquals("ألف بهمزة فوق", SmartSpeller.spell("أ", "ar"))
+        assertEquals("ألف بهمزة تحت", SmartSpeller.spell("إ", "ar"))
         assertEquals("ألف ممدودة", SmartSpeller.spell("آ", "ar"))
         assertEquals("ألف وصل", SmartSpeller.spell("ٱ", "ar"))
         assertEquals("واو مهموزة", SmartSpeller.spell("ؤ", "ar"))
