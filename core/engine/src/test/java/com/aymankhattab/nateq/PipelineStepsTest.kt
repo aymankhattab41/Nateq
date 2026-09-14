@@ -471,26 +471,41 @@ class PipelineStepsTest {
     }
 
     @Test
-    fun numberToWords_alafCompoundHundreds_genitive() {
-        // آحاد 1–2 معطوفة على مائة تُجرّ التمييز: «مائة وواحد ألف» لا ألفاً.
+    fun numberToWords_101_102_thousandOwnUnit() {
+        // **بند 3.4:** آحاد 1–2 معطوفة على مائة مع المقياس تُنطق مفرداً/
+        // مثنّى بعد المقياس: «مائة ألف وألف» لا «مائة وواحد ألف».
         assertEquals(
-            "مائة وواحد ألف",
+            "مائة ألف وألف",
             NumberWordsConverter.numberToWords(101000)
         )
         assertEquals(
-            "مائة واثنان ألف",
+            "مائة ألف وألفان",
             NumberWordsConverter.numberToWords(102000)
         )
     }
 
     @Test
-    fun numberToWords_millionCompoundHundreds_genitive() {
+    fun numberToWords_201_302_thousandOwnUnit() {
+        // «مائتا ألف وألف» بحذف نون المثنى مع المضاف، و«ثلاثمائة ألف
+        // وألفان» كما هي بلا تغيير.
         assertEquals(
-            "مائة وواحد مليون",
+            "مائتا ألف وألف",
+            NumberWordsConverter.numberToWords(201000)
+        )
+        assertEquals(
+            "ثلاثمائة ألف وألفان",
+            NumberWordsConverter.numberToWords(302000)
+        )
+    }
+
+    @Test
+    fun numberToWords_millionCompoundHundreds_ownUnit() {
+        assertEquals(
+            "مائة مليون ومليون",
             NumberWordsConverter.numberToWords(101000000)
         )
         assertEquals(
-            "مائة واثنان مليون",
+            "مائة مليون ومليونان",
             NumberWordsConverter.numberToWords(102000000)
         )
         assertEquals(
@@ -500,10 +515,10 @@ class PipelineStepsTest {
     }
 
     @Test
-    fun numberToWords_billionCompoundHundreds_genitive() {
+    fun numberToWords_billionCompoundHundreds_ownUnit() {
         // المقاييس الأعلى (مليار/تريليون…) تتبع نفس القاعدة.
         assertEquals(
-            "مائة وواحد مليار",
+            "مائة مليار ومليار",
             NumberWordsConverter.numberToWords(101000000000)
         )
     }

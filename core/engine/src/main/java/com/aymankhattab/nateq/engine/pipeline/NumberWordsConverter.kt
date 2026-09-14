@@ -133,8 +133,9 @@ internal object NumberWordsConverter {
      *  - 3–10 ← جمع («خمسة آلاف»)،
      *  - 11–99 ← مفرد منصوب («خمسة عشر ألفاً»)،
      *  - 100 ← إضافة مجرورة («مائة ألف»)، 200 ← «مائتا ألف» (حذف نون المثنى)،
-     *  - مئات مضبوطة ← «ثلاثمائة ألف»، ومئات بآحاد 3–10 ← «مائة وخمسة آلاف»،
-     *  - ومئات بآحاد 1–2 معطوفة على مائة ← مفردٌ مجرور («مائة وواحد ألف»). */
+*  - مئات مضبوطة ← «ثلاثمائة ألف»، ومئات بآحاد 3–10 ← «مائة وخمسة آلاف»،
+ *  - ومئات بآحاد 1–2 ← المقياس مركبٌ ثم الواحد/المثنى معطوف عليه
+ *    («مائة ألف وألف»، «مائتا ألف وألفان»). */
     private fun scaleForGroup(
         groupIndex: Int,
         group: Int,
@@ -168,7 +169,15 @@ internal object NumberWordsConverter {
             group == 200 -> "مائتا ${scale.inHundred}"
             remainder == 0 -> "${convertHundreds(group)} ${scale.inHundred}"
             remainder in 3..10 -> "$groupText ${scale.plural}"
-            remainder in 1..2 -> "$groupText ${scale.inHundred}"
+            remainder in 1..2 -> {
+                val base = convertHundreds(group - remainder)
+                // «مائتا ألف وألف»: نون المثنى تحذف مع «مائتان» حين تُضاف
+                // (بينما «مائة» و«ثلاثمائة» باقيتان كما هما بلا تغيير).
+                val baseWord =
+                    if (group - remainder == 200) "مائتا" else base
+                "$baseWord ${scale.inHundred} و" +
+                    if (remainder == 1) scale.one else scale.two
+            }
             else -> "$groupText ${scale.accusative}"
         }
     }
