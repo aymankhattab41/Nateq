@@ -693,50 +693,6 @@ class TimeAnnouncementManager(
         }
     }
 
-    /** نطق نص إشعار */
-    fun speakNotification(text: String) {
-        // الإشعارات تُنطق بصوت الفئة؛ وإن لزم تتوافق مع لغة النطق المختارة
-        announceScope.launch {
-            val languageTag = if (effectiveNumberSpeechIsEnglish()) {
-                ENGLISH_LANGUAGE_TAG
-            } else {
-                LanguageCode.AR.tag
-            }
-            val voice = getVoiceForCategory(
-                SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS,
-                languageTag
-            )
-            val provider = voice?.let { catalog.findProvider(it.providerId) }
-            val speechRate = requestHandler.getSpeechRateForCategory(
-                SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
-            )
-            val pitch = requestHandler.getPitchForCategory(
-                SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
-            )
-            val volume = requestHandler.getVolumeForCategory(
-                SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
-            )
-
-            if (voice != null && provider != null) {
-                // إعادة ضبط صوت فئة الإشعارات قبل النطق (نفس نمط فئة الوقت
-                // بند [2]): الصوت كان يعلق على آخر فئة نطقت فيُقرأ الإشعار
-                // بصوتها.
-                val notifPref = settings.getPreferredVoiceIdForCategory(
-                    SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
-                )
-                val speaker = AnnouncementSpeaker.getInstance(context)
-                speaker.resetVoice(notifPref)
-                speaker.speak(
-                    text, Locale.forLanguageTag(languageTag),
-                    speechRate, pitch, volume,
-                    engineOverride = settings.getEngineForCategory(
-                        SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
-                    )
-                )
-            }
-        }
-    }
-
     /** تنسيق رقم في مجموعات أرقام حسب طريقة النطق المختارة (1..8).
      *  1=مفردة (رقم رقم)، 2=زوجي (رقمين كرقم واحد)، 3..8=ثلاثي..ثماني. */
     fun formatNumberByMode(number: Int): String {

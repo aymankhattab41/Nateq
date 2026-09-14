@@ -15,6 +15,7 @@ import com.aymankhattab.nateq.engine.pipeline.PhoneNumberStep
 import com.aymankhattab.nateq.engine.pipeline.PunctuationStep
 import com.aymankhattab.nateq.engine.pipeline.RomanNumeralStep
 import com.aymankhattab.nateq.engine.pipeline.SymbolStep
+import com.aymankhattab.nateq.engine.pipeline.TimeStep
 import com.aymankhattab.nateq.engine.pipeline.UnitStep
 import com.aymankhattab.nateq.engine.pipeline.UrlStep
 import org.junit.Assert.assertEquals
@@ -256,6 +257,49 @@ class PipelineStepsTest {
         // إلى «مائة واثنان وتسعون ألفاً …»).
         assertEquals("192.168.1.1", NumberStep.apply("192.168.1.1"))
         assertEquals("10.20.30.40", NumberStep.apply("10.20.30.40"))
+    }
+
+    // ═══════════════════════ TimeStep ═══════════════════════
+
+    @Test
+    fun time_afternoon_evening() {
+        assertEquals("الثانية والنصف مساءً", TimeStep.apply("14:30"))
+    }
+
+    @Test
+    fun time_quarterTo_noon_properly() {
+        // بند 3.3: 11:45 «إلا ربع ظهراً» — كانت تُحسب من الساعة الخام
+        // 11 فتُنطق «صباحاً».
+        assertEquals(
+            "الثانية عشرة إلا ربع ظهراً", TimeStep.apply("11:45")
+        )
+    }
+
+    @Test
+    fun time_quarterTo_lateNight_evening() {
+        assertEquals(
+            "الثانية عشرة إلا ربع مساءً", TimeStep.apply("23:45")
+        )
+    }
+
+    @Test
+    fun time_afterMidnight() {
+        // بند 3.3: 00:xx «بعد منتصف الليل» لا «صباحاً».
+        assertEquals(
+            "الثانية عشرة والنصف بعد منتصف الليل", TimeStep.apply("00:30")
+        )
+    }
+
+    @Test
+    fun time_noon_quarterAfter() {
+        assertEquals(
+            "الواحدة إلا ربع مساءً", TimeStep.apply("12:45")
+        )
+    }
+
+    @Test
+    fun time_morning_minutes() {
+        assertEquals("العاشرة و خمس دقائق صباحاً", TimeStep.apply("10:05"))
     }
 
     // ═══════════════════════ RomanNumeralStep ═══════════════════════

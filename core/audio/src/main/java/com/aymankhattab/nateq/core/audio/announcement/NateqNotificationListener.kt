@@ -228,8 +228,15 @@ val title = extras.getCharSequence(Notification.EXTRA_TITLE)
             val volume = settings.getVolumeForCategory(
                 SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
             )
+            // بند 1.5: محرك فئة الإشعارات (إن ضُبط) بدل التلاؤم الصامت
+            // مع المحرك العام.
             AnnouncementSpeaker.getInstance(applicationContext)
-                .speak(speechText, locale, speechRate, pitch, volume)
+                .speak(
+                    speechText, locale, speechRate, pitch, volume,
+                    engineOverride = settings.getEngineForCategory(
+                        SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+                    )
+                )
 
         } catch (t: Throwable) {
             Log.e(TAG, "onNotificationPosted failed", t)

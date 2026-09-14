@@ -179,8 +179,19 @@ class SpeakingClockWidget : AppWidgetProvider() {
                 }.getOrDefault(
                     appContext.getString(R.string.widget_clock_disabled)
                 )
+                // بند 2.1: نص التعطيل يُنطق بإعدادات فئة الوقت نفسها
+                // (سرعة/نبرة/مستوى) لا ثوابت 1.0.
+                val timeRate = settings.getSpeechRateForCategory(
+                    SettingsRepository.VOICE_CATEGORY_TIME
+                )
+                val timePitch = settings.getPitchForCategory(
+                    SettingsRepository.VOICE_CATEGORY_TIME
+                )
+                val timeVolume = settings.getVolumeForCategory(
+                    SettingsRepository.VOICE_CATEGORY_TIME
+                )
                 speaker.speak(
-                    text, speechLocale, 1.0f, 1.0f, 1.0f
+                    text, speechLocale, timeRate, timePitch, timeVolume
                 )
                 return
             }

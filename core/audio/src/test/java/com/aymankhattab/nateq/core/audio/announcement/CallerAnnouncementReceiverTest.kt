@@ -98,6 +98,21 @@ class CallerAnnouncementReceiverTest {
         )
 
     @Test
+    fun `formatCallerNumberForSpeech speaks digits one by one`() {
+        // بند 3.2/3.1: رقم المتصل المجهول يُنطق رقماً رقماً (عربياً أو
+        // بالإنجليزية) ويُعاد فارغاً عند غياب الأرقام.
+        assertEquals(
+            " صفر ستة ثلاثة سبعة صفر تسعة واحد اثنان",
+            formatCallerNumberForSpeech("06370912", isArabic = true)
+        )
+        assertEquals(
+            " six three nine",
+            formatCallerNumberForSpeech("+639", isArabic = false)
+        )
+        assertEquals("", formatCallerNumberForSpeech("غير محدد", true))
+    }
+
+    @Test
     fun `custom name matches exact digits`() {
         assertEquals("أحمد", match("0637091234", "0637091234"))
     }

@@ -234,7 +234,15 @@ override fun onReceive(context: Context, intent: Intent?) {
 // متحدث مشترك واحد لكل الإعلانات (يمنع تقاطع أصوات متعددة)
                 val speech = AnnouncementSpeaker.getInstance(context)
                 speech.resetVoice(voiceId)
-                speech.speak(text, locale, speechRate, 1.0f, volume)
+                // بند 2.1/1.5: نبرةُ نطق اللغة + محرك فئة الرسائل (إن ضُبطا)
+                // بدل الثابت 1.0 والتلاؤم مع المحرك العام.
+                val pitch = settings.getPitch(locale.language)
+                speech.speak(
+                    text, locale, speechRate, pitch, volume,
+                    engineOverride = settings.getEngineForCategory(
+                        SettingsRepository.ANNOUNCE_CATEGORY_SMS
+                    )
+                )
                 // **بند 5.5:** finish() الفوري قبل تمام التوليف كان يترك
                 // أندرويد 14+ يجمد العملية عبر Process Cgroup Freezer
                 // فيُبتر صوت الرسالة في منتصف الجملة. نُبقي النافذة حيّةً

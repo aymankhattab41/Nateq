@@ -480,14 +480,16 @@ internal object CurrencyStep : TextProcessingStep {
         // (فلس/بيسة/مليم) والبقية 100. كان الضرب الثابت في 100.0 ينطق
         // «1.500 د.ك» خطأً «وخمسون فلس» بدل «وخمسمائة فلس»، ويُفقد كسوراً
         // صغيرة («2.005 د.ت» كانت تُنطق «ديناران تونسيان» بلا جزء كسري).
-        val fracSubunits = if (amount >= 0.0) {
-            Math.round((amount - whole) * info.subunitsPerUnit).toInt()
-        } else {
-            0
-        }
+        val fracSubunits =
+            Math.round(Math.abs(amount - whole) * info.subunitsPerUnit)
+                .toInt()
         val fracPhrase = currencyFractionPhrase(fracSubunits, info)
         // مبلغ كسري صرف (0.50$) → «خمسون سنت» بلا «و» افتتاحية.
-        if (whole == 0L && fracPhrase.isNotEmpty()) return fracPhrase
+        if (whole == 0L && fracPhrase.isNotEmpty()) {
+            // بند 3.6: المبلغ الكسري السلبي يحافظ على إشارته
+            // («سالب خمسون سنتاً») — كانت تُسقَط دون هذه البقعة.
+            return if (amount < 0.0) "سالب $fracPhrase" else fracPhrase
+        }
 
         val wholePhrase = when {
             whole == 0L -> "صفر ${info.name}"

@@ -157,7 +157,11 @@ class BatteryAnnouncementReceiver(
         // المفتاح الرئيسي يُوقف كل الإعلانات دفعة واحدة.
         if (!settings.isAllAnnouncementsEnabled()) return false
 
+        // بند 4.1: صوت البطارية المخصص إن وُجد؛ وإلا صوتُ اللغة المختارة
+        // للنطق — فصوتٌ غير محفوظٍ لم يُسقط الإعلانَ بالإنجليزية
+        // على مستخدمٍ عربيٍّ بعد اليوم.
         val voiceId = settings.getBatteryAnnouncementVoiceId()
+            ?: batteryFallbackVoice(settings)
         // يقبل الصيغ القديمة (nateq-ar-…، ar-local) والصيغ
         // الموحّدة الحالية (ar-EG)
         val isArabic = voiceId?.let {
@@ -344,8 +348,9 @@ class BatteryAnnouncementReceiver(
         } else {
             null
         }
+        val pitch = settings.getPitch(locale.language)
         speaker.speak(
-            text, locale, speechRate, 1.0f, volume,
+            text, locale, speechRate, pitch, volume,
             engineOverride = settings.getEngineForCategory(
                 SettingsRepository.DEVICE_HEALTH_BATTERY
             ),
@@ -353,6 +358,15 @@ class BatteryAnnouncementReceiver(
         )
         return true
     }
+
+    /** بند 4.1: صوتُ اللغة المختارة للنطق حين لا صوت بطارية مخصص. */
+    private fun batteryFallbackVoice(
+        settings: SettingsRepository
+    ): String? = runCatching {
+        val lang = settings.getAppLanguage()
+        if (lang.isNullOrBlank()) return@runCatching null
+        settings.getPreferredVoiceId(lang)
+    }.getOrNull()
 
     /** منع تكرار نفس الإعلان خلال 5 دقائق (دورة شحن كاملة يمر الزمن كافياً).
      *  تُرجع true إذا نطق هذا المفتاح فعلاً خلال 5 دقائق مضت. التوقيت بالجدار

@@ -1096,7 +1096,10 @@ class SystemVoiceProvider(
                                     cacheKey, cachedParts,
                                     totalCacheBytes
                                 )
-                                readSoFar = toRead
+                                // بند 1.1: readSoFar تراكمي؛ كان يُسند
+                                // إليه toRead (دلتا) فتتكرر الشريحةُ
+                                // ويتقطّع الصوت في البث.
+                                readSoFar = available
                                 emittedAny = true
                             } catch (e: Exception) {
                                 if (emittedAny) {
@@ -1574,7 +1577,9 @@ internal fun readWavStreamMeta(
         if (chunkId == "fmt " && chunkSize >= 16 &&
             offset + 24 <= length
         ) {
-            val rate = readLeIntFrom(bytes, offset.toInt() + 16)
+            // بند 1.2: sampleRate في +12 (بعد audioFormat/channels
+            // بايتان لكلٍّ) لا +16 الذي هو byteRate (2× للـ mono 16bit).
+            val rate = readLeIntFrom(bytes, offset.toInt() + 12)
             if (rate in 14_100..192_000) sampleRate = rate
         }
         val next = offset + 8 + chunkSize

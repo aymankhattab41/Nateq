@@ -50,6 +50,9 @@ class SettingsRepository(private val context: Context) :
         /** فئة إعلان المتصل (محرك/صوت مستقل للإعلان عن المكالمات). */
         const val ANNOUNCE_CATEGORY_CALLER = "caller"
 
+        /** فئة إعلان الرسائل النصية (محرك/نبرة مستقلان إن ضُبطا). */
+        const val ANNOUNCE_CATEGORY_SMS = "sms"
+
         /** تطبيقات الإشعارات الافتراضية قبل أي اختيار صريح. */
         const val NOTIF_READ_ALL = "all_apps"
 
@@ -173,6 +176,10 @@ class SettingsRepository(private val context: Context) :
             prefsBridge.parse(NEW_PREFS)
         }.getOrNull()
             ?: return
+        // بند 5.2: عند تطابق القراءة الجديدة مع الحالة الحالية
+        // (قراءةُ عمليةٍ أخرى لملفٍ لم يتبدّل مضمونه) لا نُعيد
+        // كتابة الملف — كان كل reloadٍ يعيد flash/apply كاملاً.
+        if (prefs.all.minus(KEY_MIGRATED) == fresh) return
         val editor = prefs.edit().clear()
         editor.copyFrom(fresh)
         editor.putBoolean(KEY_MIGRATED, prefs.getBoolean(KEY_MIGRATED, true))

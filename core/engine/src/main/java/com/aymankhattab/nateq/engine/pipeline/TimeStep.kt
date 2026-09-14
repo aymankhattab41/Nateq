@@ -31,9 +31,14 @@ internal object TimeStep : TextProcessingStep {
     /** تنسيق الوقت بالعربية */
     private fun formatTime(hour: Int, minute: Int): String {
         val hour12 = if (hour == 0) 12 else if (hour > 12) hour - 12 else hour
+        // بند 3.3: الفترة تُحسب من الساعة المعروضة في العبارة (تُقرَّب
+        // للأعلى عند الدقائق 45+ بنمط «إلا ربع»): 11:45 «الثانية عشرة
+        // إلا ربع ظهراً» لا صباحاً، و00:xx «بعد منتصف الليل».
+        val roundedHour = if (minute >= 45) hour + 1 else hour
         val period = when {
-            hour == 12 -> "ظهراً"
-            hour < 12 -> "صباحاً"
+            roundedHour == 0 -> "بعد منتصف الليل"
+            roundedHour == 12 -> "ظهراً"
+            roundedHour <= 11 -> "صباحاً"
             else -> "مساءً"
         }
         // الساعة تُنطق بالصيغة الترتيبية المؤنثة المعرّفة بأل:

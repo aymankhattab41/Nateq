@@ -42,7 +42,11 @@ class MultiProcessPrefsBridge(private val appDataDir: File) {
      * و string-set/string.
      */
     fun parse(name: String): Map<String, Any?> {
-        return FileInputStream(fileFor(name)).use { input ->
+        // بند 5.1: ملفٌ غائب (أول تشغيل) يُعيد خريطة فارغة بدل
+        // FileNotFoundException تُسقط عملية :tts عند كل reload().
+        val file = fileFor(name)
+        if (!file.exists() || !file.isFile) return emptyMap()
+        return FileInputStream(file).use { input ->
             parseFrom(input)
         }
     }

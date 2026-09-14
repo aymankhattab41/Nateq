@@ -17,6 +17,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.engine.NumberSpeech
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.LanguageCode
 import dagger.hilt.android.AndroidEntryPoint
@@ -289,8 +290,10 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     .getCallerAnnouncementRepeat().coerceIn(1, 5)
                 val intervalMs = settings.getCallerAnnouncementIntervalSeconds()
                     .coerceIn(1, 10) * 1000L
+                // بند 2.1: النبرة من إعدادات نطق اللغة لا ثابت 1.0.
+                val pitch = settings.getPitch(locale.language)
                 speaker.speak(
-                    text, locale, speechRate, 1.0f, volume,
+                    text, locale, speechRate, pitch, volume,
                     engineOverride = settings.getEngineForCategory(
                         SettingsRepository.ANNOUNCE_CATEGORY_CALLER
                     )
@@ -401,7 +404,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 lang,
                 R.string.caller_from_number,
                 R.string.caller_from_number
-            )
+            ) + formatCallerNumberForSpeech(number, isArabic)
             else -> LocaleUtils.stringForSpeech(
                 context, lang, R.string.caller_only, R.string.caller_only
             )
@@ -636,4 +639,24 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             cursor?.close()
         }
     }
+}
+
+/** بند 3.2/3.1: نطق رقم المتصل المجهول رقماً رقماً (نمط أرقام الهواتف
+ *  في [PhoneNumberStep]) — كان الرقم لا يُنطق أصلاً في العبارة
+ *  الافتراضية («اتصال وارد من رقم غير محفوظ» دون الرقم). */
+internal fun formatCallerNumberForSpeech(
+    number: String,
+    isArabic: Boolean
+): String {
+    val digits = number.filter { it.isDigit() }
+    if (digits.isEmpty()) return ""
+    val words = digits.map { ch ->
+        val digit = ch.digitToInt()
+        if (isArabic) {
+            NumberSpeech.toArabicWords(digit, isFeminine = false)
+        } else {
+            NumberSpeech.toEnglishWords(digit)
+        }
+    }
+    return " ${words.joinToString(" ")}"
 }

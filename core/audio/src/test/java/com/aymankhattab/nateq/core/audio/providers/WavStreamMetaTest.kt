@@ -27,15 +27,19 @@ class WavStreamMetaTest {
         buf: ByteBuffer,
         sampleRate: Int
     ) {
-        val fmt = ByteBuffer.allocate(20).order(ByteOrder.LITTLE_ENDIAN)
-        fmt.putInt(1)                       // PCM
-        fmt.putInt(1)                       // mono
-        fmt.putInt(sampleRate)
-        fmt.putInt(sampleRate * 2)          // byte rate
-        fmt.putShort(2)                     // block align
-        fmt.putShort(16)                    // bits per sample
-        // الحمولة الرسمية لـ fmt هي 16 بايتاً (4 ints + shortان).
-        chunk(buf, "fmt ", fmt.array().copyOf(16))
+        // حمولة fmt حسب المواصفة (16 بايت): audioFormat(2) + channels(2)
+        // + sampleRate(4) + byteRate(4) + blockAlign(2) + bitsPerSample(2).
+        // بند 1.2: كان البنّاء يكتب ints (عرضٌ زائد) فيتموضع sampleRate
+        // عند حقل byteRate مطابقاً لقراءة الكود الخاطئة +16 — عكسي الجهل
+        // المترافق: الكود صار يقرأ +12 فصُحّح البنّاء بنفس الجلسة.
+        val fmt = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN)
+        fmt.putShort(1)               // audioFormat = PCM
+        fmt.putShort(1)               // channels = mono
+        fmt.putInt(sampleRate)        // sampleRate
+        fmt.putInt(sampleRate * 2)    // byteRate (mono 16-bit = 2×)
+        fmt.putShort(2)               // blockAlign
+        fmt.putShort(16)              // bitsPerSample
+        chunk(buf, "fmt ", fmt.array())
     }
 
     /** كتلة قبل data (لا fmt) من 4 بايتات int — كحشوٍ تجاري محاكى. */
@@ -74,6 +78,15 @@ class WavStreamMetaTest {
         val meta = readWavStreamMeta(bytes, bytes.size)
         assertEquals(25_050, meta?.sampleRateInHz)
         assertEquals(44L, meta?.dataStart)
+    }
+
+    @Test
+    fun `rate is read from sampleRate not byteRate`() {
+        // بند 1.2: مع mono 16-bit يساوي byteRate ضعفَ sampleRate؛ القراءة
+        // من +16 كانت تعيد 2× (22050 → 44100) وتُسقط الإيقاع الصحيح.
+        val bytes = wavBytes(sampleRate = 22_050, dataLength = 32)
+        val meta = readWavStreamMeta(bytes, bytes.size)
+        assertEquals(22_050, meta?.sampleRateInHz)
     }
 
     @Test
