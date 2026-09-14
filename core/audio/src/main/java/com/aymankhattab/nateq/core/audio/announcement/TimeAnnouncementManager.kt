@@ -4,6 +4,7 @@ import android.content.Context
 import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.core.common.SystemTimeProvider
 import com.aymankhattab.nateq.core.common.TimeProvider
+import com.aymankhattab.nateq.core.common.readStickyBattery
 import com.aymankhattab.nateq.core.audio.engine.SynthesisRequestHandler
 import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
 import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
@@ -283,23 +284,9 @@ class TimeAnnouncementManager(
      * (يقرأ آخر حالة من بث البطارية الدائم). */
     private fun isBatteryBelow(threshold: Int): Boolean {
         return try {
-            val filter = android.content.IntentFilter(
-                android.content.Intent.ACTION_BATTERY_CHANGED
-            )
-            // بند 4.2: تسجيلٍ عابر (receiver = null) لقراءة حالة مضمّنة
-            // في الـ intent — لا يُستقبل منها شيء قبله، فيكون
-            // RECEIVER_NOT_EXPORTED أصح وأقل تعريضاً من EXPORTED.
-            val battery = if (
-                android.os.Build.VERSION.SDK_INT >=
-                android.os.Build.VERSION_CODES.TIRAMISU
-            ) {
-                context.registerReceiver(
-                    null, filter, Context.RECEIVER_NOT_EXPORTED
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                context.registerReceiver(null, filter)
-            }
+            // بند 4.2: بث البطارية اللاصق عبر التسجيل الموحّد في
+            // core:common — عتبة أعلامٍ واحدة وسلوك واحد مع شاشة صحة الجهاز.
+            val battery = readStickyBattery(context)
             val level = battery?.getIntExtra(
                 android.os.BatteryManager.EXTRA_LEVEL, -1
             ) ?: -1

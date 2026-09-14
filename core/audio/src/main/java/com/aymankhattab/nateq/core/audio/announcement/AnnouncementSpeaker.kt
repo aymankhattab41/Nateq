@@ -56,6 +56,16 @@ class AnnouncementSpeaker(
         // قيم قديمة/خاطئة مخزنة من قبل.
         private const val MIN_RATE_OR_PITCH = 0.25f
 
+        // سقف آمن أعلى لسرعة النطق: بعض محركات سامسونج/Vocalizer فوق 2.5
+        // تصمت بلا onDone ولا onError (بند 2.4). الواجهة تقتصِر أصلاً على
+        // 2.0، ويبقى السقف هنا وقائياً على حدود المحرك مهما كان مصدر القيمة.
+        private const val MAX_SPEECH_RATE = 2.5f
+
+        /** تثبيت سرعة النطق ضمن المدى الآمن للمحرك وقائياً (بند 2.4):
+         *  حدٌّ أدنى فلا يتعطل المحرك، وحدٌّ أعلى فلا يعلّق صامتاً. */
+        internal fun clampedSpeechRate(rate: Float): Float =
+            rate.coerceIn(MIN_RATE_OR_PITCH, MAX_SPEECH_RATE)
+
         // نطاق الإيموجي الشائع (بلوكات Unicode): رموز التباين (2600-27BF)،
         // الأسهم/الرموز الإضافية (2B00-2BFF)، الأعلام الإقليمية (1F1E6-1F1FF)
         // والبلوكات التكميلية كلها تُغطى بزوج الاستبدال العام
@@ -192,6 +202,29 @@ class AnnouncementSpeaker(
      */
     @Volatile
     private var lastQueuedUtteranceId: String? = null
+
+    // بند 1.1: السجلّ الصريح لمعرّفات الأجزاء المرسلة فعلياً إلى المحرك
+    // وغيرِ معادٍ إشعارُها. غايةُ التتبع أن تُبطَل دفعةً واحدة في كل دورة
+    // نطقٍ جديدة (FLUSH) وعند الإيقاف، فمستمعٌ قادمٌ متأخراً لمعرّفٍ قديم
+    // يجد نفسه خارج السجل لا «معلّقاً» بلا هدف. لا يمسُّ مقارنةَ isFinal
+    // (تبقى على lastQueuedUtteranceId كما هي إطلاقاً).
+    private val activeUtteranceIds = mutableSetOf<String>()
+
+    /** تسجيل معرّفٍ وُضع فعلياً في طابور المحرك (بند 1.1). */
+    internal fun trackUtterance(utteranceId: String) {
+        activeUtteranceIds.add(utteranceId)
+    }
+
+    /** ما يزال المعرّف نشطاً (يُنتظَر إشعارُه)؟ تعرضها الاختبارات لإثبات أن
+     *  FLUSHَ والإيقافَ يُبطلان الصراحةَ كل المعرّفات القديمة. */
+    internal fun isActiveUtterance(utteranceId: String?): Boolean {
+        return utteranceId != null && activeUtteranceIds.contains(utteranceId)
+    }
+
+    /** إبطال صريح لكل المعرّفات النشطة (دورة FLUSH جديدة أو إيقاف/إغلاق). */
+    internal fun invalidateActiveUtterances() {
+        activeUtteranceIds.clear()
+    }
 
     /** تغيير الصوت المفضّل لدورات النطق القادمة (يُعيد الربط إن لزم) */
     fun resetVoice(newVoiceId: String?) {
@@ -345,6 +378,10 @@ class AnnouncementSpeaker(
 
                     @Deprecated("Java Override")
                     override fun onDone(utteranceId: String?) {
+                        // بند 1.1: انتهى إشعارُ المعرّف — أخرجه من السجل.
+                        if (utteranceId != null) {
+                            activeUtteranceIds.remove(utteranceId)
+                        }
                         // نحرر التركيز فقط عند اكتمال آخر جزء في
                         // الطابور، لا عند أول جزء — الإعلان متعدد
                         // المقاطع (نص + أسماء إيموجي متتابعة) يبقى
@@ -374,6 +411,10 @@ class AnnouncementSpeaker(
 
                     @Deprecated("Java Override")
                     override fun onError(utteranceId: String?) {
+                        // بند 1.1: عادَ إشعارُ الخطأ — أخرج المعرّف من السجل.
+                        if (utteranceId != null) {
+                            activeUtteranceIds.remove(utteranceId)
+                        }
                         val isFinal = utteranceId != null
                             && utteranceId == lastQueuedUtteranceId
                         try {
@@ -684,6 +725,9 @@ class AnnouncementSpeaker(
             )
             units.forEachIndexed { index, unit ->
                 val queueMode = if (index == 0) {
+                    // بند 1.1: أولُ جزءٍ يصل بـ FLUSH يُبطل كل معرّفات الدورات
+                    // السابقة (محركٌ يُسقط منتصفَها بلا إشعارٍ أحياناً).
+                    invalidateActiveUtterances()
                     TextToSpeech.QUEUE_FLUSH
                 } else {
                     TextToSpeech.QUEUE_ADD
@@ -818,7 +862,7 @@ class AnnouncementSpeaker(
         attempt: Int
     ) {
         val tts = tts ?: return
-        tts.setSpeechRate(speechRate.coerceAtLeast(MIN_RATE_OR_PITCH))
+        tts.setSpeechRate(clampedSpeechRate(speechRate))
         tts.setPitch(pitch.coerceAtLeast(MIN_RATE_OR_PITCH))
         // تطبيق الصوت المفضّل بالاسم (مثل "ar-EG") عندما يَعرضه المحرك
         // المربوط فعلاً (محرك LORD نفسه). إذا لم يجده المحرك (محرك خارجي مثل
@@ -852,10 +896,17 @@ class AnnouncementSpeaker(
             java.text.Normalizer.Form.NFC
         )
         val utteranceId = nextUtteranceId()
+        // بند 1.1: سُجِّل المعرّف كي يُبطَل مع أسلافه في دورة FLUSH/الإيقاف؛
+        // المستمع النشط يبقى منتظراً إشعارَ العودة (onDone/onError) فقط.
+        trackUtterance(utteranceId)
         // سجّل آخر معرّف يُرسَل قبل speak حتى يقارن به المستمع onDone/onError
         // ليحرر التركيز عند اكتمال آخر جزء فقط (لا بعد أول جزء من الجملة).
         lastQueuedUtteranceId = utteranceId
         val status = tts.speak(cleanText, queueMode, params, utteranceId)
+        // المحركُ رفض المعرّفَ فلن يُشعِر بعودته لاحقاً، فأخرجه من السجل
+        if (status == TextToSpeech.ERROR) {
+            activeUtteranceIds.remove(utteranceId)
+        }
         if (status == TextToSpeech.ERROR && attempt < 3) {
             mainHandler.postDelayed({
                 doSpeak(
@@ -888,6 +939,8 @@ class AnnouncementSpeaker(
         pendingFocusTimer?.let { mainHandler.removeCallbacks(it) }
         pendingFocusTimer = null
         tts?.stop()
+        // بند 1.1: الإيقاف يبطل كل المعرّفات المعلقة — لا «مستمع معلّق».
+        invalidateActiveUtterances()
         releaseAudioFocus()
         nowSpeaking = false
     }
@@ -904,6 +957,8 @@ class AnnouncementSpeaker(
         mainHandler.removeCallbacksAndMessages(null)
         speechWatchdog = null
         tts?.stop()
+        // بند 1.1: الإغلاق يُبطل صراحةً كل المعرّفات المعلقة.
+        invalidateActiveUtterances()
         pendingFocusAction = null
         pendingFocusTimer?.let { mainHandler.removeCallbacks(it) }
         pendingFocusTimer = null

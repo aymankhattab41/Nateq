@@ -3,6 +3,8 @@ package com.aymankhattab.nateq.core.audio.announcement
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -60,6 +62,35 @@ class AnnouncementSpeakerTest {
         notifyCompletion(speaker)
         assertEquals(1, calls)
         speaker.shutdown()
+    }
+
+    @Test
+    fun `a flush invalidates every previously active utterance id`() {
+        val speaker = AnnouncementSpeaker(context)
+        speaker.trackUtterance("nateq_old_1")
+        speaker.trackUtterance("nateq_old_2")
+        assertTrue(speaker.isActiveUtterance("nateq_old_1"))
+        speaker.invalidateActiveUtterances()
+        assertFalse(speaker.isActiveUtterance("nateq_old_1"))
+        assertFalse(speaker.isActiveUtterance("nateq_old_2"))
+        assertFalse(speaker.isActiveUtterance("nateq_never_queued"))
+        speaker.shutdown()
+    }
+
+    @Test
+    fun `stopping invalidates the in-flight utterance id`() {
+        val speaker = AnnouncementSpeaker(context)
+        speaker.trackUtterance("nateq_inflight")
+        speaker.stop()
+        assertFalse(speaker.isActiveUtterance("nateq_inflight"))
+        speaker.shutdown()
+    }
+
+    @Test
+    fun `speech rate is clamped to the safe engine range`() {
+        assertEquals(0.25f, AnnouncementSpeaker.clampedSpeechRate(0.05f))
+        assertEquals(1.0f, AnnouncementSpeaker.clampedSpeechRate(1.0f))
+        assertEquals(2.5f, AnnouncementSpeaker.clampedSpeechRate(4f))
     }
 
     /** استدعاء الاستدعاء الخاص للاكتمال (لا محرك TTS حقيقي في الاختبار). */

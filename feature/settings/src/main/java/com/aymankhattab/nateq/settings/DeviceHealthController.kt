@@ -2,14 +2,12 @@ package com.aymankhattab.nateq.settings
 
 import android.app.ActivityManager
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import android.os.BatteryManager
-import android.os.Build
 import android.os.Environment
 import android.os.StatFs
 import android.view.View
 import android.widget.Toast
+import com.aymankhattab.nateq.core.common.readStickyBattery
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.engine.NumberSpeech
 import com.aymankhattab.nateq.util.LocaleUtils
@@ -179,23 +177,6 @@ internal class DeviceHealthController(
         val charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
             status == BatteryManager.BATTERY_STATUS_FULL
         return percent to charging
-    }
-
-    /** جلب البث اللاصق للبطارية مع تجاهل علم RECEIVER_NOT_EXPORTED
-     *  على أندرويد 14+. */
-    private fun readStickyBattery(context: Context): Intent? {
-        val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-        return if (Build.VERSION.SDK_INT >=
-            Build.VERSION_CODES.UPSIDE_DOWN_CAKE
-        ) {
-            context.registerReceiver(
-                null, filter, Context.RECEIVER_NOT_EXPORTED
-            )
-        } else {
-            @Suppress("UnspecifiedRegisterReceiverFlag")
-            // تعطيل عمد لإصدارات ما قبل 14
-            context.registerReceiver(null, filter)
-        }
     }
 
     /** مساحة التخزين الداخلية الرئيسية: (المتاح، الإجمالي) بالغيغابايت. */
