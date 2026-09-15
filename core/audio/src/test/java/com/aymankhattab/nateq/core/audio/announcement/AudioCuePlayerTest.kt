@@ -190,11 +190,11 @@ class AudioCuePlayerTest {
         // نفس البناء من المشغّلَين (AudioTrack وSoundPool).
         assertEquals(
             AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY,
-            CueAudioAttributes.forCues.usage
+            CueAudioAttributes.forCue.usage
         )
         assertEquals(
             AudioAttributes.CONTENT_TYPE_SONIFICATION,
-            CueAudioAttributes.forCues.contentType
+            CueAudioAttributes.forCue.contentType
         )
     }
 
