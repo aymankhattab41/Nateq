@@ -143,6 +143,12 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         val appScope =
             (context.applicationContext as AnnouncementAppContext).appScope
         appScope.launch {
+            // **بند 3.9 (إبقاء المعالج مستيقظاً أثناء النطق):** نمطُ
+            // TimeAlarmReceiver الموحَّد — WakeLockٌ جزئيٌّ عابرٌ (6 ثوانٍ =
+            // نافذة البث، تحريرٌ ذاتيٌّ بمهلة الاقتناء بلا إفراجٍ يدويٍّ)
+            // فلا ينامُ الجهازُ فيُقتطعَ نطقُ رقمِ المتصلِ في منتصفه، ولا
+            // تعارضَ مسارٍ (نفسُ المعرّفِ والطريقةِ وليس نسخةً مكررةً).
+            val wakeLock = TimeAlarmReceiver.acquireShortWakeLock(context)
             val state =
                 intent.getStringExtra(TelephonyManager.EXTRA_STATE)
             if (state == null) {

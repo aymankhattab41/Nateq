@@ -154,6 +154,12 @@ class SmsReadingReceiver : BroadcastReceiver() {
         val appScope =
             (context.applicationContext as AnnouncementAppContext).appScope
         appScope.launch {
+            // **بند 3.9 (إبقاء المعالج مستيقظاً أثناء النطق):** نمطُ
+            // TimeAlarmReceiver الموحَّد — WakeLockٌ جزئيٌّ عابرٌ (6 ثوانٍ =
+            // نافذة البث، تحريرٌ ذاتيٌّ بمهلةِ الاقتناء بلا إفراجٍ يدويٍّ)
+            // فلا ينامُ الجهازُ فيُقتطعَ نطقُ الرسائلِ في منتصفه، ولا تعارضَ
+            // مسارٍ (نفسُ المعرّفِ والطريقةِ وليس نسخةً مكررةً).
+            val wakeLock = TimeAlarmReceiver.acquireShortWakeLock(context)
             // حارس إنهاء وحيد لدورة البث — ذرّيٌ ليتحمل وصولَ الإنهاء من
             // خيطي اللا-تكرار واكتمال النطق معاً (finishٌ مكررٌ تحذير بلا
             // لزوم).

@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq
 
+import android.app.AlarmManager
 import android.app.Application
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -10,6 +11,7 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementAppContext
+import com.aymankhattab.nateq.core.audio.announcement.TimeAnnouncementManager
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.core.data.SettingsRepository
@@ -82,6 +84,35 @@ class NateqApplication : Application(), AnnouncementAppContext {
                 addAction(Intent.ACTION_PACKAGE_REPLACED)
                 addDataScheme("package")
             },
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+
+        // **بند 2.19 (تغيّر إذن المنبهات الدقيقة):** مستقبلُ بثٍّ ديناميكيٌّ
+        // (في التطبيق — صاحبُ سياقِ العمليةِ الرئيسيةِ) يستمعُ إلى بثِّ
+        // النظامِ ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED (إذنٌ
+        // محميٌّ بامتيازاتِ النظامِ) فيعيدُ [TimeAnnouncementManager] بناءَ
+        // منبهِ الوقتِ التالي فوراً عبرَ onExactAlarmPermissionChanged ليلتقطَ
+        // الصيغةَ الدقيقةَ الجديدةَ في منحِ الإذنِ أو سحبِه دونَ انتظارِ دورةِ
+        // الجدولةِ الطبيعيةِ. مسجَّلٌ بـ RECEIVER_NOT_EXPORTED (لا واجهةَ
+        // مُصدَّرةً لتطبيقاتٍ خارجيةٍ).
+        ContextCompat.registerReceiver(
+            this,
+            object : BroadcastReceiver() {
+                override fun onReceive(context: Context?, intent: Intent?) {
+                    if (
+                        intent?.action ==
+                        AlarmManager
+                            .ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED
+                    ) {
+                        TimeAnnouncementManager.shared(applicationContext)
+                            .onExactAlarmPermissionChanged()
+                    }
+                }
+            },
+            IntentFilter(
+                AlarmManager
+                    .ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED
+            ),
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
 

@@ -1438,7 +1438,15 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             android.content.IntentFilter(
                 android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE
             ),
-            ContextCompat.RECEIVER_NOT_EXPORTED
+            // **بند 2.20 (اكتمال تنزيلات الصوت على Android 14+ — P0):**
+            // بثُّ DownloadManager.ACTION_DOWNLOAD_COMPLETE بثٌّ نظاميٌّ من
+            // «مديرِ التنزيلاتِ» (تطبيقُ نظامٍ بامتيازاتٍ رفيعةٍ) غيرُ محميٍّ؛
+            // والمستقبِلُ غيرُ المُصدَّرِ (RECEIVER_NOT_EXPORTED) لا يستقبلُه
+            // على Android 14+ فيفشلُ تحديثُ حالةِ التنزيلِ عندَ اكتمالِ صوتٍ؛
+            // يُصدَّرُ المستقبِلُ هنا (RECEIVER_EXPORTED) فيتلقّى البثَّ
+            // الوحيدَ الذي يهمُّه (محمياً بحراسةِ اتساقِ الحالةِ والوصولِ
+            // الآمنِ) بلا مخاطرةِ واجهةٍ خارجيةٍ.
+            ContextCompat.RECEIVER_EXPORTED
         )
         updateReceiver = receiver
     }

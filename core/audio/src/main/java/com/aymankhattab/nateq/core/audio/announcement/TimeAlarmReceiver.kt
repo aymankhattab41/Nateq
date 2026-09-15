@@ -120,12 +120,14 @@ class TimeAlarmReceiver : BroadcastReceiver() {
          *  [ALARM_ASYNC_WINDOW_MS] (6 ثوانٍ) — فللقفل أن يغطي نافذة
          *  goAsync كاملةً (ربط المحرك وتهيئة الصوت والنطق) ولا ينتهي قبلها
          *  فينام المعالج والنطق ناقص (بند [4]). */
-        private const val SHORT_WAKE_LOCK_MS = 6_000L
+        // (internal لا private): يُستعارُ من مستقبلاتِ الرسائل/المتصل/البطارية
+        // (بند 3.9) فيبقى النطقُ محمياً بالمسارِ الأوحدِ نفسه.
+        internal const val SHORT_WAKE_LOCK_MS = 6_000L
 
         /** نافذة WakeLock جزئية مؤقتة (6 ثوانٍ = نافذة البث): تُحرَّر تلقائياً
          *  بوتوقيتها (acquire(timeout)) فالتسريب المقيّد مقصود — بلا حاجة لـ
          *  release يدوي، ولا يستنزف البطارية (منبه كل 15-60 دقيقة لثوانٍ). */
-        private fun acquireShortWakeLock(
+        internal fun acquireShortWakeLock(
             context: Context
         ): PowerManager.WakeLock? {
             return try {

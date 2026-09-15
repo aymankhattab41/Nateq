@@ -94,6 +94,12 @@ class BatteryAnnouncementReceiver(
         val appScope =
             (context.applicationContext as AnnouncementAppContext).appScope
         appScope.launch {
+            // **بند 3.9 (إبقاء المعالج مستيقظاً أثناء النطق):** نمطُ
+            // TimeAlarmReceiver الموحَّد — WakeLockٌ جزئيٌّ عابرٌ (6 ثوانٍ =
+            // نافذة البث، تحريرٌ ذاتيٌّ بمهلة الاقتناء بلا إفراجٍ يدويٍّ)
+            // فلا ينامُ الجهازُ فيُقتطعَ إعلانُ البطاريةِ في منتصفه، ولا
+            // تعارضَ مسارٍ (نفسُ المعرّفِ والطريقةِ وليس نسخةً مكررةً).
+            val wakeLock = TimeAlarmReceiver.acquireShortWakeLock(context)
             // حارس إنهاء وحيد لدورة البث — ذرّيٌ ليتحمل وصولَ الإنهاء من
             // خيطي البث واكتمال النطق معاً (finishٌ مكررٌ تحذير بلا لزوم).
             val finishedBroadcast = AtomicBoolean(false)

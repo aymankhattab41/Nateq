@@ -603,7 +603,13 @@ class AnnouncementSpeaker(
                 settings.isAnnouncementMediaStreamAlways()
             }.getOrDefault(false)
         } ?: false
-        return AudioAttributes.Builder()
+        // **بند 2.16 (لا تحويل مكانيٌّ لنطق الإعلانات):** على أندرويد 13+
+        // (TIRAMISU فصاعداً) يستطيعُ النظامُ تحويلَ المساراتِ الصوتيةِ
+        // مكانياً (Spatial Audio / توجيهَ قنواتٍ) فتُبثُّ من اتجاهاتٍ
+        // متفرقةٍ عبرَ السماعاتِ اللاسلكية؛ بتثبيتِ SPATIALIZATION_BEHAVIOR_
+        // NEVER يبقى مسارُ النطقِ أمامياً ثابتَ المصدرِ بلا تمييزٍ مكانيٍّ
+        // فيحافظَ الإعلانُ على وضوحِه وتقدُّمِه بلا تشتيتِ اتجاهاتٍ.
+        val builder = AudioAttributes.Builder()
             .setUsage(
                 if (mediaStreamAlways) {
                     AudioAttributes.USAGE_MEDIA
@@ -616,7 +622,16 @@ class AnnouncementSpeaker(
                 }
             )
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-            .build()
+        // **الحد الأدنى (توافقية):** الثابتانِ SPATIALIZATION_BEHAVIOR_NEVER
+        // ودالةُ setSpatializationBehavior من واجهةِ Android 13 (API 33) —
+        // نحرسُها بحارسِ الإصدارِ فلا يمرُّ إلا على الأنظمةِ التي تعرفه؛
+        // والتطبيقُ compileSdk 37 ≥ 33 فيترجمُ الثابتَ دائماً بأمانٍ.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            builder.setSpatializationBehavior(
+                AudioAttributes.SPATIALIZATION_BEHAVIOR_NEVER
+            )
+        }
+        return builder.build()
     }
 
     /** إعادة تطبيق سمات النطق فقط عند تغيّر حالة قارئ الشاشة فعلاً. */

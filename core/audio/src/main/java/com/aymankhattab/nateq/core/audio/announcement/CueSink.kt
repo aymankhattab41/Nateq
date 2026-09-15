@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.os.Build
 import android.os.Handler
 import android.util.Log
 import java.io.File
@@ -49,9 +50,20 @@ internal interface CueSink {
  * من مُنفّذي [CueSink] كلَيهما. كائن داخلي ليُفحص في الاختبارات.
  */
 internal object CueAudioAttributes {
-    val forCues: AudioAttributes = AudioAttributes.Builder()
+    // **بند 2.16 (لا تحويل مكانيٌّ للإشارات):** مثلُ مسارِ النطقِ تماماً —
+    // تُثبَّتُ إشاراتُ الإعلاناتِ (نغماتُ الوقتِ والمؤقتِ) على
+    // SPATIALIZATION_BEHAVIOR_NEVER في Android 13+ فتبقى أماميةً ثابتةً
+    // بلا توجيهِ قنواتٍ مكانيٍّ يعكّرُ موضعَ مصدرِ الصوتِ في السماعات.
+    val forCue: AudioAttributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+        .apply {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                setSpatializationBehavior(
+                    AudioAttributes.SPATIALIZATION_BEHAVIOR_NEVER
+                )
+            }
+        }
         .build()
 }
 
@@ -88,7 +100,7 @@ internal class AudioTrackCueSink : CueSink {
                 AudioFormat.ENCODING_PCM_16BIT
             )
             val bufSize = maxOf(minBuf, pcm.size * 2)
-            val attrs = CueAudioAttributes.forCues
+            val attrs = CueAudioAttributes.forCue
             val fmt = AudioFormat.Builder()
                 .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                 .setSampleRate(sampleRate)
@@ -171,7 +183,7 @@ internal class SoundPoolCueSink(
     init {
         soundPool = android.media.SoundPool.Builder()
             .setMaxStreams(2)
-            .setAudioAttributes(CueAudioAttributes.forCues)
+            .setAudioAttributes(CueAudioAttributes.forCue)
             .build()
         soundPool.setOnLoadCompleteListener { _, sampleId, status ->
             val pending = pendingLoad.remove(sampleId)
