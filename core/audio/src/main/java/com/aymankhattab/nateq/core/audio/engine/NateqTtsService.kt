@@ -9,6 +9,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
 import android.util.Log
+import com.aymankhattab.nateq.core.audio.announcement.InterruptionSensors
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
@@ -138,6 +139,14 @@ class NateqTtsService : TextToSpeechService() {
      *  الاستباق نُنهي callback الطلب القديم حتى لا يعلق طابور النظام فينتقل
      *  للطلب الجديد. */
     @Volatile private var stopping = false
+
+    /** **بند 8:** رصد الإسكات الفوري (هز/تقارب) أثناء دورة التخليق في مسار
+     *  قارئ الشاشة (TalkBack عبر هذه الخدمة). كان الربط محصوراً في دورة
+     *  إعلانات التطبيق (AnnouncementSpeaker) فلا يتوقف نطقُ TalkBack على
+     *  الهزّ/التقارب — الآن نفسُ الصف [InterruptionSensors] المفعل بالإعدادات
+     *  يرصد الرحلةَ الجارية ويلغيها بأمان. معطّل افتراضياً حتى يُفعِّل
+     *  المستخدم أحد المفتاحين في الإعدادات (لا يسجّل شيئاً عند التعطيل). */
+    @Volatile private var interruptionSensors: InterruptionSensors? = null
 
     @Volatile private var currentLanguage = arrayOf(LanguageCode.AR.tag, "", "")
 
@@ -368,6 +377,46 @@ override fun onDestroy() {
         currentJob?.cancel()
     }
 
+    /** **بند 8 — رصد الهز/التقارب في دورة تخليق قارئ الشاشة (TalkBack):**
+     *  كان ربطُ المستشعرات محصوراً في مسار إعلانات التطبيق (AnnouncementSpeaker)
+     *  فلا يتوقف نطقُ قارئ الشاشة على الهزّ/التقارب مهما فُعّل المفتاحان في
+     *  الإعدادات. الآن تُفعل المستشعرات نفسها هنا عند بدء كل طلب تخليق —
+     *  تقرأ الإعدادات المحقونة ([settings])؛ وإن فُعّل أحدهما صدِّق الرصد
+     *  واستدعِ [interruptSynthesis] عند الهزة/التقارب ليُوقف الرحلة الجارية
+     *  بأمان عبر نفس عقد الإلغاء (بند 2.3) فينتقل طابور TalkBack بسلاسة. */
+    private fun startInterruptionMonitoring() {
+        if (interruptionSensors != null) return
+        val shake = runCatching { settings.isShakeToStopEnabled() }
+            .getOrDefault(false)
+        val proximity = runCatching { settings.isProximitySilenceEnabled() }
+            .getOrDefault(false)
+        if (!shake && !proximity) return
+        val sensors = InterruptionSensors(
+            shakeEnabled = { shake },
+            proximityEnabled = { proximity },
+            onInterrupt = { interruptSynthesis() }
+        )
+        interruptionSensors = sensors
+        sensors.start(applicationContext)
+    }
+
+    /** إيقاف رصد الهز/التقارب — يُستدعى عند اكتمال الرحلة أو إلغائها أو
+     *  إيقاف الخدمة حتى لا يبقى الرصد حياً بعد انتهاء الحاجة إليه. */
+    private fun stopInterruptionMonitoring() {
+        interruptionSensors?.stop()
+        interruptionSensors = null
+    }
+
+    /** **بند 8 — المعالجة الفورية لتنبيه المستشعر (هزة/تقارب) أثناء نطق
+     *  قارئ الشاشة:** نفس عقد الإيقاف الصريح ([onStop]) — نرفع [stopping]
+     *  ثم نلغي الرحلة الجارية؛ الكوروتين يلتقط الإلغاء فيُغلق callback بأمان
+     *  (بند 2.3) دون خطأٍ زائف لأن النظام يعرف أنه أُوقف عمداً، ويبقى طابور
+     *  TalkBack سليماً ليكمل الطلب التالي. */
+    private fun interruptSynthesis() {
+        stopping = true
+        currentJob?.cancel()
+    }
+
     override fun onSynthesizeText(
         request: SynthesisRequest?,
         callback: SynthesisCallback?
@@ -404,6 +453,14 @@ override fun onDestroy() {
         // الطرفي تُنهي مهله الداخلية المتكيّفة (1.5–8 ث داخل
         // SystemVoiceProvider) الطلبَ بدل تعليق الخيط بلا سقف.
         stopping = false
+
+        // **بند 8 — رصد الإيقاف الفوري (هز/تقارب) في دورة تخليق قارئ
+        //  الشاشة (TalkBack):** كان ربطُ المستشعرات محصوراً في
+        //  AnnouncementSpeaker (مسار إعلانات التطبيق) فلا يتوقف نظرُ
+        //  TalkBack على هزٍّ/تقاربٍ مهما فُعّل المفتاحان في الإعدادات —
+        //  المستشعراتُ تُفعل هنا مع كل طلبٍ تخليقٍ وتُوقَف في finally
+        //  فيُسكَت قارئُ الشاشة فوراً بنفس عقدِ الإيقاف الصريح.
+        startInterruptionMonitoring()
         val job = synthesisScope.launch {
             try {
                 // إعادة تحميل الإعدادات من القرص لأن `:tts`
@@ -478,6 +535,10 @@ override fun onDestroy() {
             Log.w(TAG, "onSynthesizeText join interrupted", t)
         } finally {
             currentJob = null
+            // **بند 8:** ختام الرحلة — نوقف رصدَ الهز/التقارب فور انتهاء
+            // (أو إلغاء/خطأ) التخليق حتى لا يبقى الرصدُ حياً بعد انتهاء
+            // الحاجة إليه (لا تسريب طاقةٍ ولا مستشعرٍ عالق).
+            stopInterruptionMonitoring()
         }
     }
 
