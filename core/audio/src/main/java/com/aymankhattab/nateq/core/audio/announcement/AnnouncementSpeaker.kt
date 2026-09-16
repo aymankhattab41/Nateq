@@ -858,7 +858,6 @@ class AnnouncementSpeaker(
             // كلمةٌ إنجليزيةٌ مفردةٌ تلي مقطعاً عربياً = مستقلة (بند 18).
             val loneEnAfterAr = sameVoice &&
                 !unit.text.contains(' ') &&
-                last != null &&
                 last.locale.language == LanguageCode.AR.tag &&
                 unit.locale.language != LanguageCode.AR.tag
             if (sameVoice && !loneEnAfterAr) {
