@@ -124,7 +124,7 @@ class AnnouncementSpeakerTest {
             1, merged.size
         )
         // النص المدمج يجمع الجملة بمسافة واحدة - نطق متصل بلا فراغ ثانية
-        val mergedText = merged[0].javaClass
+        val mergedText = requireNotNull(merged[0]).javaClass
             .getDeclaredField("text").also { it.isAccessible = true }
             .get(merged[0])
         assertEquals("السلام عليكم John", mergedText)
