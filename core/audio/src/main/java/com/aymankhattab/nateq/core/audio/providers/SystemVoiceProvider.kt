@@ -119,6 +119,12 @@ class SystemVoiceProvider(
          */
         private const val INIT_TIMEOUT_MS = 5_000L
 
+        /** دورية إعادة المحاولة (افتراع مؤجل) لمقطعٍ وجد محركاً محجوزاً
+         *  قيد التهيئة في [prewarmingEngines] (سباق 2.1): لا يُنشئ مثيلاً
+         *  ثانياً ولا ينتزع محركاً غيرَ مكتمل — ينتظر اكتمالَ onInit،
+         *  وسقفُ الانتظار الكلي هو [INIT_TIMEOUT_MS]. */
+        private const val ENGINE_MATURITY_POLL_MS = 100L
+
         /** دورية فحص الإلغاء أثناء انتظار اكتمال الكتابة. */
         private const val CANCELLATION_POLL_MS = 100L
 
@@ -191,6 +197,10 @@ class SystemVoiceProvider(
     override val displayName: String
         get() = context.getString(R.string.voice_provider_system)
 
+    /** المثيل النشط الحالي للنطق والإيقاف — يُنشر فقط بعد نجاح onInit
+     *  (بند السباقات): محجوزٌ ضمن حجز prewarmingEngines حتى يكتمل الربط،
+     *  و[Volatile] حتى ترى كلُّ الخيوط أحدثَ إحالة عبر حدوثٍ قبلٍ/بعد. */
+    @Volatile
     private var tts: TextToSpeech? = null
 
     /** مسبح محركات TTS مربوطة (بند 4): معرّف حزمة المحرك -> مثيلٌ حي يبقى
@@ -246,7 +256,9 @@ class SystemVoiceProvider(
     )
 
     /** حزمة المحرك المرتبط حالياً في [tts] — للتمييز بين «نفس المحرك جاهز»
-     *  والانتقال لمحركٍ آخر (سحب من المسبح أو إنشاء جديد). */
+     *  والانتقال لمحركٍ آخر (سحب من المسبح أو إنشاء جديد). [Volatile]
+     *  لرؤيةٍ متسقة عبر الخيوط المتوازية على المسبح. */
+    @Volatile
     private var ttsEngine: String? = null
 
     override fun isConfigured(): Boolean = true // متاح دائمًا
@@ -269,6 +281,7 @@ class SystemVoiceProvider(
                 runCatching { engine.shutdown() }
             }
             enginePool.clear()
+            prewarmingEngines.clear()
             tts = null
             ttsEngine = null
         }
@@ -524,22 +537,22 @@ class SystemVoiceProvider(
         }
     }
 
-    /** (المحور 6) عند انتقال المتحدث النشط إلى محركٍ مختلف تُمسح تحفّظاتُ
-     *  المحرك السابق: أصوات PCM المخزنة (مفاتيحها تحمل المحرك أصلًا لكن
-     *  تُمسح دفعة واحدة فلا تُحتجز قمامةُ محرك قديم)، وملف الـ WAV المؤقت
-     *  ذو الاسم الثابت يُحذف على [synthExecutor] — بعد أي تركيبٍ جارٍ
-     *  (المنفّذ أحادي الخيط) فلا يُحذف ملفٌ يُكتب الآن. سبخة التخزين في
-     *  المحطة المشتركة تعاملها الجولة التالية بالقصّ (truncate) تلقائياً. */
+    /** (المحور 6) عند انتقال المتحدث النشط إلى محركٍ مختلف يُحذف ملف
+     *  الـ WAV المؤقت ذو الاسم الثابت على [synthExecutor] — بعد أي
+     *  تركيبٍ جارٍ (المنفّذ أحادي الخيط) فلا يُحذف ملفٌ يُكتب الآن.
+     *  كاشُ PCM لا يُمسح عند التبديل: مفاتيحُ الكاش تجمع النص مع
+     *  حزمة المحرك (انظر [buildCacheKey]) فتبقى إدخالاتُ كل محرك
+     *  معزولةً تحت مفتاحها وتُعاد فائدتها عند العودة لنفس المحرك —
+     *  مسحُها كان يهدر كاش 4MiB مع كل تبديل للغات ثنائية. */
     private fun onActiveEngineSwitch(engine: String) {
         val previous = ttsEngine
         ttsEngine = engine
         if (previous == null || previous == engine) return
-        pcmCache.evictAll()
         synthExecutor.execute {
             runCatching { tempWavFile().delete() }
         }
         Log.d(TAG, "[Provider] active engine switch:" +
-            " $previous -> $engine (cache cleared)")
+            " $previous -> $engine")
     }
 
 /**
@@ -603,7 +616,12 @@ class SystemVoiceProvider(
                 )
             }
         }
-        val attemptWith = { currentEngine: String? ->
+        // (سباق 2.1) متغيّرٌ ذاتيُّ الالتقاط: فرعُ الانتظار لنضج محركٍ
+        // يهيّئه مقطعٌ متوازٍ يجدّد تقييم الموقف بافتراعٍ مؤجل عبر
+        // استدعاء [attemptWith] نفسها — لذا هو lateinit يُسند بعد
+        // التعريف (لا يجوز لـ val التقاطُ نفسها داخل مُغيِّره).
+        lateinit var attemptWith: (String?) -> Unit
+        attemptWith = { currentEngine: String? ->
             if (currentEngine == null) {
                 Log.e(TAG, "[Provider] no engine available to bind")
                 if (!done.getAndSet(true)) cont.resume(Unit)
@@ -643,85 +661,172 @@ class SystemVoiceProvider(
                                 tts = instance
                                 onActiveEngineSwitch(currentEngine)
                                 speakNow(instance, currentEngine)
+                            } else if (currentEngine in prewarmingEngines) {
+                                // (سباق 2.1) محركٌ يهيّئه مقطعٌ متوازٍ
+                                // الآن: لا ننشئ مثيلاً ثانياً ولا نلتقطه
+                                // قبل نضجه — نعيد التقييم بعد افتراعٍ
+                                // قصير؛ وإذا سقط الحجز (فشل/مهلة صاحبه)
+                                // يُنشئ هذا المقطعُ نسخَته النظامية.
+                                Log.d(TAG,
+                                    "[Provider] await maturity:" +
+                                    " $currentEngine")
+                                mainHandler.postDelayed({
+                                    if (!shutdownCalled
+                                        && !cancelled.get()
+                                    ) {
+                                        attemptWith(currentEngine)
+                                    }
+                                }, ENGINE_MATURITY_POLL_MS)
                             } else {
-                                Log.w(
-                                    TAG,
-                                    "[Provider] init engine=$currentEngine"
+                                Log.w(TAG,
+                                    "[Provider] init engine=" +
+                                    "$currentEngine")
+                                // علاّمة تحسم سباقاً واحداً فقط بين
+                                // ردّ onInit ومهلة التهيئة: أياً منهما
+                                // يسبق يحسم المصير، والآخر يُسقط
+                                // (يمنع مزدوجاً).
+                                val initSettled =
+                                    AtomicBoolean(false)
+                                // حامل قبل البناء: الإنفاذ يصدر
+                                // لاحقاً (غير متزامن) فيلتقط المثيل
+                                // عبر الحامل لا عبر متغير محلّي متأخر
+                                // الإعلان.
+                                val hold =
+                                    arrayOfNulls<TextToSpeech>(1)
+                                // (سباق 2.1) حجز المحرك ضمن
+                                // [prewarmingEngines] قبل البناء: لا
+                                // يراه مقطعٌ متوازٍ قيدَ التهيئة فينشئ
+                                // مثيلاً ثانياً أو يلتقطه مبكراً.
+                                prewarmingEngines.add(
+                                    currentEngine
                                 )
-                                // علاّمة تحسم سباقاً واحداً فقط
-                                // بين ردّ onInit ومهلة التهيئة:
-                                // أياً منهما يسبق يحسم المصير،
-                                // والآخر يُسقط (يمنع مزدوجاً).
-                                val initSettled = AtomicBoolean(false)
-                                // حامل قبل البناء: الإنفاذ يصدر لاحقاً (غير
-                                // متزامن) فيلتقط المثيل عبر الحامل لا عبر متغير
-                                // محلّي متأخر الإعلان.
-                                val hold = arrayOfNulls<TextToSpeech>(1)
-                                hold[0] = TextToSpeech(context, { status ->
+                                hold[0] = TextToSpeech(
+                                    context, { status ->
                                     if (initSettled.getAndSet(true)) {
                                         return@TextToSpeech
                                     }
                                     val built = hold[0]
-                                    // لا يُستهلك علمُ completion هنا على
-                                    // الإطلاق: [initSettled] يكفي لمنع
-                                    // الازدواج مع مهلة التهيئة، ولو شُغّل
-                                    // حارسُ done في هذا الموضع لسُبِق
-                                    // التنفيذُ الفعلي للاصطناع في speakNow
-                                    // (المسار ~680 يفحص done فتخطّى
-                                    // التخليق في أول إقلاع بارد) — بند 2.1.
+                                    // لا يُستهلك علمُ completion هنا
+                                    // على الإطلاق: [initSettled] يكفي
+                                    // لمنع الازدواج مع مهلة التهيئة،
+                                    // ولو شُغّل حارسُ done في هذا
+                                    // الموضع لسُبِق التنفيذُ الفعلي
+                                    // للاصطناع في speakNow (المسار ~680
+                                    // يفحص done فتخطّى التخليق في أول
+                                    // إقلاع بارد) — بند 2.1.
                                     if (built == null) {
                                         return@TextToSpeech
                                     }
+                                    val engine = currentEngine
+                                        ?: return@TextToSpeech
+                                    // (سباق 2.1) النشرُ للمسبح وربطُ
+                                    // النشط حصراً بعد نجاح onInit — لا
+                                    // قبلَ النضج كما كان (البثّ المتعجل
+                                    // جعل مقطعاً متوازياً يلتقط مثيلاً
+                                    // غير مكتمل فينطق بصوتٍ مغاير).
                                     if (status == TextToSpeech.SUCCESS
                                         && !cancelled.get()
                                     ) {
-                                        // onInit صدر من TextToSpeech
-                                        // على Main Looper؛ نقل الاصطناع
-                                        // الحاصر (انتظار كتابة الملف)
-                                        // إلى خيط خلفي كي لا يُحظر
-                                        // Main — فلو بعث المحرك onDone
-                                        // على Main أيضاً حصل Deadlock
-                                        // حتى المهلة.
-                                        speakNow(built, currentEngine)
+                                        synchronized(ttsLock) {
+                                            if (shutdownCalled) {
+                                                runCatching {
+                                                    built.shutdown()
+                                                }
+                                            } else {
+                                                enginePool[engine] =
+                                                    built
+                                                prewarmingEngines
+                                                    .remove(engine)
+                                                tts = built
+                                                onActiveEngineSwitch(
+                                                    engine
+                                                )
+                                            }
+                                        }
+                                        if (shutdownCalled) {
+                                            if (!done.getAndSet(
+                                                true
+                                            )) {
+                                                cont.resume(Unit)
+                                            }
+                                        } else {
+                                            // onInit صدر من TextToSpeech
+                                            // على Main Looper؛ نقل
+                                            // الاصطناع الحاصر (انتظار
+                                            // كتابة الملف) إلى خيط خلفي
+                                            // كي لا يُحظر Main — فلو
+                                            // بعث المحرك onDone على Main
+                                            // أيضاً حصل Deadlock حتى
+                                            // المهلة.
+                                            speakNow(
+                                                built, engine
+                                            )
+                                        }
                                     } else {
                                         Log.e(TAG,
-                                            "[Provider] engine init failed:" +
-                                            " $currentEngine status=$status")
+                                            "[Provider] init" +
+                                            " failed: $engine" +
+                                            " status=$status")
+                                        synchronized(ttsLock) {
+                                            prewarmingEngines
+                                                .remove(engine)
+                                        }
                                         dropBrokenEngine(built)
-                                        retryWithGoogle(currentEngine, voice,
-                                            text, speechRate, pitch, volume,
-                                            onFormatInfo, onAudioChunk, cont,
-                                            cancelled, desiredVoiceName,
-                                            cacheKey, speechLanguage,
-                                            failedEngines)
+                                        retryWithGoogle(
+                                            engine, voice,
+                                            text, speechRate,
+                                            pitch, volume,
+                                            onFormatInfo,
+                                            onAudioChunk, cont,
+                                            cancelled,
+                                            desiredVoiceName,
+                                            cacheKey,
+                                            speechLanguage,
+                                            failedEngines
+                                        )
                                     }
                                 }, currentEngine)
                                 val created = hold[0]!!
-                                enginePool[currentEngine] = created
-                                tts = created
-                                onActiveEngineSwitch(currentEngine)
                                 // مهلة تهيئة أقصاها 5 ثوانٍ: إن علق
-                                // المحرك ولم يُرِدّ onInit، نُسقط المحرك
-                                // ونتراجع بدل بقاء الكوروتين معلقاً
-                                // للأبد. غير حاصر (منبّه على Main)
-                                // فلا يُجمّد الخيط ولا يتعارض مع ردّ
-                                // onInit الآجل.
+                                // المحرك ولم يُرِدّ onInit، نُسقط
+                                // المحرك ونتراجع بدل بقاء الكوروتين
+                                // معلقاً للأبد. غير حاصر (منبّه على
+                                // Main) فلا يُجمّد الخيط ولا يتعارض
+                                // مع ردّ onInit الآجل.
                                 mainHandler.postDelayed({
-                                    if (!initSettled.getAndSet(true)
-                                        && done.compareAndSet(false, true)
+                                    if (!initSettled.getAndSet(
+                                        true
+                                    )
+                                        && done.compareAndSet(
+                                            false, true
+                                        )
                                         && !cancelled.get()
                                     ) {
                                         Log.w(TAG,
-                                            "[Provider] engine init timed out" +
-                                            " after ${INIT_TIMEOUT_MS}ms:" +
-                                            " $currentEngine")
+                                            "[Provider] init" +
+                                            " timeout:" +
+                                            " ${INIT_TIMEOUT_MS}" +
+                                            "ms: $currentEngine")
+                                        synchronized(ttsLock) {
+                                            prewarmingEngines
+                                                .remove(
+                                                    currentEngine
+                                                )
+                                        }
                                         dropBrokenEngine(created)
-                                        retryWithGoogle(currentEngine, voice,
-                                            text, speechRate, pitch, volume,
-                                            onFormatInfo, onAudioChunk, cont,
-                                            cancelled, desiredVoiceName,
-                                            cacheKey, speechLanguage,
-                                            failedEngines)
+                                        retryWithGoogle(
+                                            currentEngine,
+                                            voice, text,
+                                            speechRate, pitch,
+                                            volume,
+                                            onFormatInfo,
+                                            onAudioChunk, cont,
+                                            cancelled,
+                                            desiredVoiceName,
+                                            cacheKey,
+                                            speechLanguage,
+                                            failedEngines
+                                        )
                                     }
                                 }, INIT_TIMEOUT_MS)
                             }

@@ -31,9 +31,21 @@ class MultiProcessPrefsBridge(private val appDataDir: File) {
     fun lastModified(name: String): Long =
         runCatching { fileFor(name).lastModified() }.getOrDefault(0L)
 
-    /** هل تغيّر توقيت الملف عن زمنٍ محفوظ سابقاً؟ */
-    fun isChanged(name: String, previous: Long): Boolean =
-        lastModified(name) != previous
+    /** حجم ملفٍ مسجَّل بالبايت — حارسٌ مكمّل لكشف التغيير: الزمنُ وحده
+     *  (بدقة ثانيةٍ على بعض الأنظمة) لا يلتقط كتابتين متتاليتين في نفس
+     *  الثانية، والطول يلتقط التغيّر حتى لو تطابق التوقيتان. */
+    fun length(name: String): Long =
+        runCatching { fileFor(name).length() }.getOrDefault(0L)
+
+    /** هل تغيّر الملف عن حالةٍ محفوظةٍ سابقة؟ يُقارن الزمنَ والطولَ معاً:
+     *  أيُّ تغيُّرٍ في أحدهما يعني كتابةً من العملية الأخرى — حتى لو وقعت
+     *  كتابتان في نفس الثانية وبقي الزمن مطابقاً. */
+    fun isChanged(
+        name: String,
+        previous: Long,
+        previousLength: Long
+    ): Boolean =
+        lastModified(name) != previous || length(name) != previousLength
 
     /**
      * يقرأ ملف تفضيلات XML بتنسيق SharedPreferences ويعيد خريطته القيمية.

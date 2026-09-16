@@ -48,8 +48,33 @@ class MultiProcessPrefsBridgeTest {
         // الكتابة الفعلية ترفع زمن التعديل فوق الصفر (ملفٌ جديد).
         assertTrue(bridge.lastModified("bridge_touch_test") > before)
         // بعد القراءة لا يتغير التوقيت ما لم يُكتب الملف من جديد.
-        val seen = bridge.lastModified("bridge_touch_test")
-        assertFalse(bridge.isChanged("bridge_touch_test", seen))
+        val seenStamp = bridge.lastModified("bridge_touch_test") to
+            bridge.length("bridge_touch_test")
+        assertFalse(
+            bridge.isChanged(
+                "bridge_touch_test",
+                seenStamp.first, seenStamp.second
+            )
+        )
+    }
+
+    @Test
+    fun isChanged_detectsSizeChangeWithinSameSecond() {
+        val name = "bridge_length_test"
+        val file = java.io.File(
+            context.applicationInfo.dataDir,
+            "shared_prefs/$name.xml"
+        )
+        file.parentFile?.mkdirs()
+        file.writeText("short")
+        val bridge = MultiProcessPrefsBridge(context)
+        val beforeLast = bridge.lastModified(name)
+        val beforeLen = bridge.length(name)
+        file.writeText("longer content")
+        assertTrue(
+            "الطول المتغير يكشف التغيير حتى مع mtime متطابق",
+            bridge.isChanged(name, beforeLast, beforeLen)
+        )
     }
 
     @Test

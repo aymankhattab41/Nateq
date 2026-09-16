@@ -245,11 +245,17 @@ class AnnouncementSpeakerTest {
         )
         assertEquals(
             "en-gb",
-            AnnouncementSpeaker.voiceFor(voices, "en-gb", Locale.forLanguageTag("en"))?.name
+            AnnouncementSpeaker.voiceFor(
+                voices, "en-gb",
+                Locale.forLanguageTag("en")
+            )?.name
         )
         assertEquals(
             "ar-eg",
-            AnnouncementSpeaker.voiceFor(voices, "ar-eg", Locale.forLanguageTag("en"))?.name
+            AnnouncementSpeaker.voiceFor(
+                voices, "ar-eg",
+                Locale.forLanguageTag("en")
+            )?.name
         )
     }
 
@@ -265,7 +271,10 @@ class AnnouncementSpeakerTest {
         )
         assertEquals(
             "en-us",
-            AnnouncementSpeaker.voiceFor(voices, null, Locale.forLanguageTag("en"))?.name
+            AnnouncementSpeaker.voiceFor(
+                voices, null,
+                Locale.forLanguageTag("en")
+            )?.name
         )
     }
 
@@ -277,7 +286,10 @@ class AnnouncementSpeakerTest {
         val voices = listOf(voice("ar-eg", "ar"))
         assertEquals(
             null,
-            AnnouncementSpeaker.voiceFor(voices, null, Locale.forLanguageTag("en"))
+            AnnouncementSpeaker.voiceFor(
+                voices, null,
+                Locale.forLanguageTag("en")
+            )
         )
     }
 
@@ -285,11 +297,17 @@ class AnnouncementSpeakerTest {
     fun `empty or null voices list returns null`() {
         assertEquals(
             null,
-            AnnouncementSpeaker.voiceFor(null, null, Locale.forLanguageTag("en"))
+            AnnouncementSpeaker.voiceFor(
+                null, null,
+                Locale.forLanguageTag("en")
+            )
         )
         assertEquals(
             null,
-            AnnouncementSpeaker.voiceFor(emptyList(), null, Locale.forLanguageTag("en"))
+            AnnouncementSpeaker.voiceFor(
+                emptyList(), null,
+                Locale.forLanguageTag("en")
+            )
         )
     }
 

@@ -378,7 +378,8 @@ override fun onDestroy() {
     }
 
     /** **بند 8 — رصد الهز/التقارب في دورة تخليق قارئ الشاشة (TalkBack):**
-     *  كان ربطُ المستشعرات محصوراً في مسار إعلانات التطبيق (AnnouncementSpeaker)
+     *  كان ربطُ المستشعرات محصوراً في مسار إعلانات التطبيق
+     *  (AnnouncementSpeaker)
      *  فلا يتوقف نطقُ قارئ الشاشة على الهزّ/التقارب مهما فُعّل المفتاحان في
      *  الإعدادات. الآن تُفعل المستشعرات نفسها هنا عند بدء كل طلب تخليق —
      *  تقرأ الإعدادات المحقونة ([settings])؛ وإن فُعّل أحدهما صدِّق الرصد
@@ -587,7 +588,7 @@ override fun onDestroy() {
             return
         }
         val autoConvert = requestHandler.isAutoConvertEnabled()
-        val convertTarget = resolveConvertTarget(request.language)
+        val convertTarget = resolveConvertTarget(languageTag)
         // السرعة: نجمع بين قناة قارئ الشاشة وقناة إعداد LORD نفسه.
         // - تفضيل LORD الصريح لهذه اللغة أولاً — يحتسب ولو كان 1.0x (قد يريده
         //   المستخدم «طبيعياً» بينما السرعة العامة 1.5x).
@@ -628,11 +629,13 @@ override fun onDestroy() {
         val processedText = textProcessor.process(rawText, languageTag)
 
         // **توجيه locale حسب لغة النص:** engine/locale من التحويل لا يُمرَّران
-        // إلا إذا كانت لغة الهدف تطابق لغة النص الطالبة. هذا يمنع إعادة توجيه
-        // النص الإنجليزي إلى محرك/لغة عربية (locale=ar) وبالعكس، مع بقاء
-        // أشرطة السرعة/النبرة/الصوت تُطبّق دائماً على النص نفسه.
+        // إلا إذا كانت لغة الهدف تطابق لغة النص الفعلية (المقطع) لا لغة
+        // الطلب العامة (غالباً لغة النظام). هذا يمنع إعادة توجيه الكلمة
+        // الإنجليزية المفردة في واجهة عربية إلى محرك/لغة عربية (locale=ar)
+        // وبالعكس، مع بقاء أشرطة السرعة/النبرة/الصوت تُطبّق دائماً على
+        // النص نفسه.
         val convertLang = convertTarget?.convertLocale?.language
-        val normLanguage = normalizeLanguageCode(request.language)
+        val normLanguage = normalizeLanguageCode(languageTag)
         val matchesRequest = convertLang == null || normLanguage == convertLang
                 || (normLanguage == LanguageCode.AR.tag && convertLang == "ara")
                 || (normLanguage == LanguageCode.EN.tag && convertLang == "eng")

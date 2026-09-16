@@ -95,24 +95,22 @@ class NateqApplication : Application(), AnnouncementAppContext {
         // الصيغةَ الدقيقةَ الجديدةَ في منحِ الإذنِ أو سحبِه دونَ انتظارِ دورةِ
         // الجدولةِ الطبيعيةِ. مسجَّلٌ بـ RECEIVER_NOT_EXPORTED (لا واجهةَ
         // مُصدَّرةً لتطبيقاتٍ خارجيةٍ).
+        val exactAlarmPermissionChanged =
+            AlarmManager
+                .ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED
         ContextCompat.registerReceiver(
             this,
             object : BroadcastReceiver() {
                 override fun onReceive(context: Context?, intent: Intent?) {
                     if (
-                        intent?.action ==
-                        AlarmManager
-                            .ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED
+                        intent?.action == exactAlarmPermissionChanged
                     ) {
                         TimeAnnouncementManager.shared(applicationContext)
                             .onExactAlarmPermissionChanged()
                     }
                 }
             },
-            IntentFilter(
-                AlarmManager
-                    .ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED
-            ),
+            IntentFilter(exactAlarmPermissionChanged),
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
 

@@ -136,6 +136,12 @@ class SettingsRepository(private val context: Context) :
     @Volatile
     private var prefsLastModified: Long = prefsFileLastModified()
 
+    /** حجم آخر قراءةٍ لملف الإعدادات بالبايت — حارسٌ مكمّل للتوقيت: زمن
+     *  المغيّر (دقة ثانيةٍ على بعض الأنظمة) وحده يفوّت كتابتين متتاليتين
+     *  في نفس الثانية، فيلتقطها الطول حتى مع تطابق الزمن (بند السباقات). */
+    @Volatile
+    private var prefsFileLength: Long = prefsFileLength()
+
     @Volatile
     private var prefs: SharedPreferences = openSharedPrefs().also {
         migrateIfNeeded(it)
@@ -168,10 +174,11 @@ class SettingsRepository(private val context: Context) :
         // عبء I/O لا نعيد القراءة إلا عندما يتغيّر توقيت الملف الفعلي (أي
         // كتابة من العملية الأخرى) بدل قراءة قرص دائمة مع كل نطق.
         if (!prefsFileChanged()) return
-        // **بند 5.1:** نثبّت زمن الدخول لنكتشف لاحقاً أي كتابةٍ متزامنةٍ من
-        // العملية الأخرى حدثت أثناء قراءتنا للملف — إن تغيّر التوقيت قبل
-        // التطبيق نتخلى عن هذه الجولة كي لا نكتب بيانات أقدم فوق أحدث.
-        val stampAtEntry = prefsFileLastModified()
+        // **بند 5.1:** نثبّت زمن الدخول (التوقيت والطول معاً — زمنٌ واحد
+        // قد يتطابق لكتابةٍ ثانيةٍ في نفس الثانية) لنكتشف لاحقاً أيَّ كتابةٍ
+        // متزامنةٍ من العملية الأخرى حدثت أثناء قراءتنا للملف — إن تغيّرت
+        // العلامة قبل التطبيق نتخلى عن هذه الجولة كي لا نكتب أقدم فوق أحدث.
+        val stampAtEntry = prefsFileStamp()
         // قراءة صريحة لملف القرص بتنسيق SharedPreferences التوثيقي ثم تطبيق
         // القراءة على المخزن في الذاكرة (مسح ثم نسخ) — حتمية تعمل على الجهاز
         // وعبر Robolectric على حد سواء، دون الاعتماد على سلوك داخلي للوسم
@@ -187,12 +194,12 @@ class SettingsRepository(private val context: Context) :
         // **بند 5.1:** إعادة الفحص قبل التطبيق — إن تغيّر الملف أثناء
         // القراءة (كتابة متزامنة من العملية الأخرى) نتخلى عن الكتابة
         // هذه الجولة وتُعالَج الأحدثُ في نداء reload() تالٍ.
-        if (prefsFileLastModified() != stampAtEntry) return
+        if (prefsFileStamp() != stampAtEntry) return
         val editor = prefs.edit().clear()
         editor.copyFrom(fresh)
         editor.putBoolean(KEY_MIGRATED, prefs.getBoolean(KEY_MIGRATED, true))
         editor.apply()
-        prefsLastModified = prefsFileLastModified()
+        refreshPrefsStamp()
     }
 
     /** مسار ملف الإعدادات المشترك بين العمليات. */
@@ -201,8 +208,24 @@ class SettingsRepository(private val context: Context) :
     private fun prefsFileLastModified(): Long =
         prefsBridge.lastModified(NEW_PREFS)
 
+    private fun prefsFileLength(): Long =
+        prefsBridge.length(NEW_PREFS)
+
+    /** لقطةٌ مزدوجة لحالة الملف (توقيت + طول): تُستعمل علاّمةً ثابتةً عند
+     *  دخول [reload] — فالتوقيت وحده قد يتطابق لكتابةٍ ثانيةٍ في نفس
+     *  الثانية، والطول يفرّقها. */
+    private fun prefsFileStamp(): Pair<Long, Long> =
+        prefsFileLastModified() to prefsFileLength()
+
     private fun prefsFileChanged(): Boolean =
-        prefsBridge.isChanged(NEW_PREFS, prefsLastModified)
+        prefsBridge.isChanged(
+            NEW_PREFS, prefsLastModified, prefsFileLength
+        )
+
+    private fun refreshPrefsStamp() {
+        prefsLastModified = prefsFileLastModified()
+        prefsFileLength = prefsFileLength()
+    }
 
     /** ينسخ خريطة قراءة من القرص إلى محرر التفضيلات حسب نوع كل قيمة.
      *  **بند 5.2:** القيم null (وسوم فاشلة التحويل) تُتخطّى فلا يُحفظ
