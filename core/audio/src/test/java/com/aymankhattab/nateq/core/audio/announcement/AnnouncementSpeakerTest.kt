@@ -93,6 +93,73 @@ class AnnouncementSpeakerTest {
         assertEquals(2.5f, AnnouncementSpeaker.clampedSpeechRate(4f))
     }
 
+    @Test
+    fun `mixed Arabic English segments on the same voice are merged into one`() {
+        val speaker = AnnouncementSpeaker(context)
+        val speakUnitClass = AnnouncementSpeaker::class.java
+            .declaredClasses.single { it.simpleName == "SpeakUnit" }
+        val ctor = speakUnitClass.declaredConstructors.single()
+        ctor.isAccessible = true
+        // el locale ici diffère (ar puis en) mais le voiceId est identique
+        // (null = voix système unique) => le d⏳lement doit les fusionner en
+        // un seul N: un seul speak() continu, sans coupure audible (بند ب 10.3).
+        val arabic = ctor.newInstance(
+            "السلام عليكم", Locale.forLanguageTag("ar"), 1.0f,
+            1.0f, 1.0f, null
+        )
+        val english = ctor.newInstance(
+            "John", Locale.forLanguageTag("en"), 1.0f,
+            1.0f, 1.0f, null
+        )
+        val units = mutableListOf(arabic, english)
+        val merge = AnnouncementSpeaker::class.java
+            .getDeclaredMethod("mergeAdjacentSameVoice", List::class.java)
+        merge.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val merged = merge.invoke(speaker, units) as List<*>
+
+        assertEquals(
+            "مقطعان مختلفا اللغة على الصوت الواحد يدمجان في وحدة واحدة",
+            1, merged.size
+        )
+        // النص المدمج يجمع الجملة بمسافة واحدة - نطق متصل بلا فراغ ثانية
+        assertEquals("السلام عليكم John", (merged[0] as SpeakUnitText).text)
+        speaker.shutdown()
+    }
+
+    @Test
+    fun `distinct custom voices for each language remain separate`() {
+        // بند 17: صوت عربي مخصص + صوت إنجليزي مخصص = مقاطع منفصلة دائماً
+        // لأن الدمج يشترط تساوي voiceId. الحفاظ على هذا يضمن أن لكل لغة
+        // صوتها حتى في النص المختلط.
+        val speaker = AnnouncementSpeaker(context)
+        val speakUnitClass = AnnouncementSpeaker::class.java
+            .declaredClasses.single { it.simpleName == "SpeakUnit" }
+        val ctor = speakUnitClass.declaredConstructors.single()
+        ctor.isAccessible = true
+        val arabic = ctor.newInstance(
+            "السلام عليكم", Locale.forLanguageTag("ar"), 1.0f,
+            1.0f, 1.0f, "ar-voice"
+        )
+        val english = ctor.newInstance(
+            "John", Locale.forLanguageTag("en"), 1.0f,
+            1.0f, 1.0f, "en-voice"
+        )
+        val units = mutableListOf(arabic, english)
+        val merge = AnnouncementSpeaker::class.java
+            .getDeclaredMethod("mergeAdjacentSameVoice", List::class.java)
+        merge.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val merged = merge.invoke(speaker, units) as List<*>
+
+        // صوتان مختلفان مخصصان للغتين = لا دمج: كل مقطع يبقى منفصلاً
+        assertEquals(
+            "صوتان مخصصان مختلفان لا يُدمجان أبداً (بند 17)",
+            2, merged.size
+        )
+        speaker.shutdown()
+    }
+
     /** استدعاء الاستدعاء الخاص للاكتمال (لا محرك TTS حقيقي في الاختبار). */
     private fun notifyCompletion(speaker: AnnouncementSpeaker) {
         val method = AnnouncementSpeaker::class.java
