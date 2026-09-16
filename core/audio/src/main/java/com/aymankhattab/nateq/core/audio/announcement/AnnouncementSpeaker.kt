@@ -716,7 +716,7 @@ class AnnouncementSpeaker(
                     text, locale, speechRate, pitch, volume,
                     emojiCfg, parts, attempt = 1
                 )
-            }, 150)
+            }, 80)
         }, engineOverride)
     }
 
@@ -740,8 +740,10 @@ class AnnouncementSpeaker(
         // السمات تتبع حالة قارئ الشاشة لحظة النطق (وليس لحظة التهيئة).
         applySpeechAudioAttributesIfReaderStateChanged()
         try {
-            val units = buildSpeakUnits(
-                text, locale, speechRate, pitch, volume, emojiCfg, parts
+            val units = mergeAdjacentIdentical(
+                buildSpeakUnits(
+                    text, locale, speechRate, pitch, volume, emojiCfg, parts
+                )
             )
             units.forEachIndexed { index, unit ->
                 val queueMode = if (index == 0) {
@@ -822,6 +824,52 @@ class AnnouncementSpeaker(
         }
         return units
     }
+
+    /** **دمجُ المقاطعِ المتعاقبةِ المتطابقةِ** (بندُّ إزالةِ السكتاتِ بينَ
+     *  الكلماتِ): عندَ نطقِ نصٍّ مختلطِ الكتاباتِ يُقسِّمُه
+     *  [LanguageSegmenter] إلى مقاطعَ صغيرةٍ (كلمةً كلمةً أحياناً إن
+     *  تباينتِ السكربتاتُ فيها) فيصلُ المحرّكُ كلَّ مقطعٍّ بنداءِ
+     *  speak منفصلٍّ فيُدخِلُ محرّكُ TTS فجوةَ استحواذٍّ ظاهرةً بينَ
+     *  كلمتَيِ الجملةِ الواحدةِ. الدمجُ: مقطعانِ متتاليانِ متطابقانِ في
+     *  (اللغة/المعدل/النبرة/الصوت/محرّكِ النطق) يُدمَجانِ نصَّاً واحداً
+     *  يُنطقُ بنداءِ speak واحدٍّ متصلٍّ — فيختفي الصمتُ بينَ كلماتِ
+     *  الجملةِ اللغويةِ الواحدةِ. المقاطعُ المختلفةُ السكربت/اللغة/الصوتِ
+     *  تبقى منفصلةً كما كانتْ (يحافظُ كلُّ مقطعٍّ على صوتهِ ولغتِه — بندُّ
+     *  17)، ولا يُدمجُ عبرَ جملةٍّ لغويةٍّ أكثرَ منَ الالتصاقِ النصيِّ
+     *  السليمِ بمسافةٍّ واحدةٍّ بينَ مقطعينِ.
+     *
+     * يشترطُ التطابُقُ بدقَّةٍّ: locale متساوٍّ، rate/pitch/volume متساويةٌّ
+     *  (ضمنَ دقَّةٍّ معقولةٍّ للفاصلةِ العائمةِ بتقريبِ 0.02)، وvoiceId
+     *  متساوٍّ. لا ندمجُ بينَ صوتينِ مختلفينِ أبداً (فكلُّ مقطعٍّ بلغةٍّ
+     *  عربيةٍّ يُنطقُ بصوتِها وصوتُ الإنجليزيةِ بصوتِها — بندُّ 17). */
+    private fun mergeAdjacentIdentical(units: List<SpeakUnit>): List<SpeakUnit> {
+        if (units.size < 2) return units
+        val merged = ArrayList<SpeakUnit>(units.size)
+        for (unit in units) {
+            val last = merged.lastOrNull()
+            if (last != null &&
+                last.locale == unit.locale &&
+                last.voiceId == unit.voiceId &&
+                areClose(last.rate, unit.rate) &&
+                areClose(last.pitch, unit.pitch) &&
+                areClose(last.volume, unit.volume)
+            ) {
+                // نلتصقُ بالمقطعِ السابقِ بمسافةٍّ واحدةٍّ — فتصبحُ كلماتُ
+                // الجملةِ عربيةًّ متتاليةًّ مقطعاً واحداً متصلاً بلا فجوةٍّ.
+                merged[merged.size - 1] = last.copy(
+                    text = last.text + " " + unit.text
+                )
+            } else {
+                merged.add(unit)
+            }
+        }
+        return merged
+    }
+
+    /** هل قيمتا فاصلةٍّ عائمةٍّ متساويتانِ عملياً (دقَّةُ 0.02 كافيةٌّ
+     *  لأنَّ المعاملاتِ تُقيَّدُ بفواصلَ محدودةٍّ منَ المصدرِ)؟ */
+    private fun areClose(a: Float, b: Float): Boolean =
+        kotlin.math.abs(a - b) <= 0.02f
 
     /** يضمّ نصاً (قد يكون مختلط الكتابات) للوحدات كلٍّ بلغةٍ مناسبة: عربي ← صوت
      *  الإعلان الحالي ولغته، إنجليزية/غيرها ← الصوت الإنجليزي المفضّل (إن حُفظ)
@@ -933,7 +981,7 @@ class AnnouncementSpeaker(
                     text, locale, speechRate, pitch, volume,
                     partVoice, queueMode, attempt + 1
                 )
-            }, 250)
+            }, 120)
         } else if (status == TextToSpeech.ERROR) {
             // استنفاد المحاولات: تصريف الموارد حتى لا يبقى التركيز مكتوم الصوت
             // ومحرك مكسور "جاهزاً" للدورات القادمة.
