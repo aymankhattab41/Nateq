@@ -26,6 +26,7 @@ import java.util.Locale
 import java.util.concurrent.Executors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -34,6 +35,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 /**
@@ -134,7 +137,18 @@ class NateqTtsService : TextToSpeechService() {
      *  إيقاف أو استباق طلبٍ جديد. */
     @Volatile private var currentJob: kotlinx.coroutines.Job? = null
 
-    /** يُميّز سبب إلغاء [currentJob]: إيقاف صريح (onStop) أم استباق بطلبٍ جديد.
+    /** عملية الإقلاع الخلفية (اكتشاف اللغات + تدفئة الكاش، بند ب.txt 3.5-1)
+     *  — تُلغى فور ورود أول onSynthesizeText حتى لا تزاحم التخليقَ الحقيقي
+     *  على منفّذ الكوروتين وموارد المحركات. */
+    @Volatile private var warmupJob: kotlinx.coroutines.Job? = null
+
+    /** حارس تشغيل–واحد لاكتشاف اللغات الخلفي: يمنع تداخل [maybeRefreshDiscovery]
+     *  من الإقلاع واستدعاءات القراءة المتزامنة أن تُنفّذ الاكتشافَ مرتين
+     *  وتكتبا ذاكرة الكتالوج في وقتٍ واحد. */
+    private val discoveryMutex = Mutex()
+
+    /** يُميّز سبب إلغاء [currentJob]: إيقاف صريح (onStop) أم استباق
+     *  بطلبٍ جديد.
      *  عند الإيقاف لا نُنشئ خطأً زائفاً (النظام يعرف أنه أُوقف عمداً)، وعند
      *  الاستباق نُنهي callback الطلب القديم حتى لا يعلق طابور النظام فينتقل
      *  للطلب الجديد. */
@@ -148,7 +162,8 @@ class NateqTtsService : TextToSpeechService() {
      *  المستخدم أحد المفتاحين في الإعدادات (لا يسجّل شيئاً عند التعطيل). */
     @Volatile private var interruptionSensors: InterruptionSensors? = null
 
-    @Volatile private var currentLanguage = arrayOf(LanguageCode.AR.tag, "", "")
+    @Volatile
+    private var currentLanguage = arrayOf(LanguageCode.AR.tag, "", "")
 
     override fun onCreate() {
         // مهم: TextToSpeechService.onCreate() يستدعي
@@ -203,26 +218,17 @@ class NateqTtsService : TextToSpeechService() {
                 }
             }
 
-        // اكتشاف اللغات المتاحة عبر كل محركات TTS المثبتة كخلفية: يملأ ذاكرة
-        // الكتالوج دون أن يُعقّل إنشاء الخدمة أبداً؛ وحتى لو تعذّر يبقى حد
-        // ar/en المضمون قائماً فتبقى الخدمة تُنطق دائماً.
-        serviceScope.launch {
-            try {
-                maybeRefreshDiscovery()
-            } catch (t: Throwable) {
-                Log.w(TAG, "الاكتشاف الخلفي الأولي للغات فشل", t)
-            }
-        }
-        // تدفئة كاش PCM بكلمات التنقل الشائعة (بند ب.txt 3.5-1): بعد أن يمتلئ
-        // كتالوجُ اللغات بالأصوات تُخلَّق كلماتُ التنقل عبر المسار الكامل
-        // فيُخزَّن نطقُها مسبقاً ويُبثّ من الذاكرة عند أول مطالبة — تعثرٌ في
-        // جملةٍ يتركها بلا كاش ولا يمسّ النطق.
-        serviceScope.launch {
+        // اكتشاف اللغات وتدفئة كاش كلمات التنقل على الخلفية (بند ب.txt
+        // 3.5-1): استدعاءٌ واحدٌ مؤمَّن يحفظ حد ar/en المضمون عند أي تعذّر،
+        // ثم تُخلَّق كلماتُ التنقل عبر المسار الكامل فيُخزَّن نطقُها مسبقاً
+        // ويُبثّ من الذاكرة عند أول مطالبة. يُسند الرابط إلى [warmupJob]
+        // ليُلغى فور ورود طلب تخليق حقيقي فلا يُزاحم النطق على المحركات.
+        warmupJob = serviceScope.launch {
             try {
                 maybeRefreshDiscovery()
                 warmNavigationCache()
             } catch (t: Throwable) {
-                Log.w(TAG, "تدفئة كاش كلمات التنقل فشلت", t)
+                Log.w(TAG, "اكتشاف اللغات وتدفئة الكاش الخلفي فشلا", t)
             }
         }
 
@@ -233,6 +239,10 @@ class NateqTtsService : TextToSpeechService() {
         } catch (t: Throwable) {
             Log.e(TAG, "super.onCreate() threw", t)
         }
+        // رصد المستشعرات مرة واحدة لعمر الخدمة — لا يبدأ نشطاً إن
+        // تعطّل المستخدم المفتاحان، لكنه لا يتوقف بين الرحلات ويعيد
+        // تقييم الإعدادات فور بدء أول رحلة.
+        startInterruptionMonitoring()
     }
 
 override fun onDestroy() {
@@ -381,10 +391,12 @@ override fun onDestroy() {
      *  كان ربطُ المستشعرات محصوراً في مسار إعلانات التطبيق
      *  (AnnouncementSpeaker)
      *  فلا يتوقف نطقُ قارئ الشاشة على الهزّ/التقارب مهما فُعّل المفتاحان في
-     *  الإعدادات. الآن تُفعل المستشعرات نفسها هنا عند بدء كل طلب تخليق —
-     *  تقرأ الإعدادات المحقونة ([settings])؛ وإن فُعّل أحدهما صدِّق الرصد
-     *  واستدعِ [interruptSynthesis] عند الهزة/التقارب ليُوقف الرحلة الجارية
-     *  بأمان عبر نفس عقد الإلغاء (بند 2.3) فينتقل طابور TalkBack بسلاسة. */
+     *  الإعدادات. الآن تُفعَّل المستشعرات نفسها **مرة واحدة لعمر الخدمة**
+     *  (عند [onCreate] لا مع كل رحلة — رياضةُ تسجيل/إلغاء لكل طلب كان
+     *  تهدر عمر البطارية وتترك نافذة تزاحم). تقرأ الإعدادات المحقونة
+     *  ([settings])؛ وإن فُعّل أحدهما صدِّق الرصد واستدعِ [interruptSynthesis]
+     *  عند الهزة/التقارب ليُوقف الرحلة الجارية بأمان عبر نفس عقد الإلغاء
+     *  (بند 2.3) فينتقل طابور TalkBack بسلاسة. */
     private fun startInterruptionMonitoring() {
         if (interruptionSensors != null) return
         val shake = runCatching { settings.isShakeToStopEnabled() }
@@ -423,6 +435,10 @@ override fun onDestroy() {
         callback: SynthesisCallback?
     ) {
         if (request == null || callback == null) return
+        // طلبُ تخليقٍ حقيقيّ وصل — ألغِ التدفئة الخلفية الجارية (اكتشاف
+        // اللغات/كاش كلمات التنقل) حتى تتفرغ منافذُها وأعمدتُها لهذا
+        // النطق ولا تزاحمه على المحركات/المسبح (بند ب.txt 3.5-1).
+        warmupJob?.cancel()
         // سجلّ مجرّد: طول النص واللغة فقط
         // (النص قد يحوي OTP/حساسيات يقرؤها TalkBack).
         val reqText = request.charSequenceText?.toString()
@@ -431,7 +447,8 @@ override fun onDestroy() {
             " lang=${request.language}")
 
         // تطبيع لغة الطلب من ISO-3 (eng, ara) إلى ISO-2 (en, ar) حتى يبقى
-        // حل الصوت والكتالوج متسقين مع اللغتين المدعومتين (العربية/الإنجليزية).
+        // حل الصوت والكتالوج متسقين مع اللغتين المدعومتين
+        // (العربية/الإنجليزية).
         val normLanguage = normalizeLanguageCode(request.language)
         val normCountry = normalizeCountryCode(request.country)
         val languageTag = Locale.forLanguageTag(
@@ -471,7 +488,8 @@ override fun onDestroy() {
                 // القيم القديمة محشوة في الذاكرة.
                 settings.reload()
                 // **بند 17 — النصوص المختلطة واللغات:**
-                // 1) تقسيم النص المختلط الكتابات (عربي/إنجليزي/غيرها) إلى مقاطع
+                // 1) تقسيم النص المختلط الكتابات (عربي/إنجليزي/غيرها)
+        //    إلى مقاطع
                 //    لغوية يُنطق كلٌّ منها بمحركه وصوته المخصصين وصفوفِ لغته؛
                 // 2) حوار اللغات يعرض كل اللغات المكتشفة لا ar/en فقط (البنية
                 //    السفلية جاهزة فعلاً للغات غير محدودة)؛
@@ -625,7 +643,8 @@ override fun onDestroy() {
             " provider=${provider.providerId}" +
             " autoConvert=$autoConvert")
 
-        // Process text through TextProcessor (numbers, dates, currencies, etc.)
+        // Process text through TextProcessor
+        // (numbers, dates, currencies, etc.)
         val processedText = textProcessor.process(rawText, languageTag)
 
         // **توجيه locale حسب لغة النص:** engine/locale من التحويل لا يُمرَّران
@@ -636,9 +655,12 @@ override fun onDestroy() {
         // النص نفسه.
         val convertLang = convertTarget?.convertLocale?.language
         val normLanguage = normalizeLanguageCode(languageTag)
-        val matchesRequest = convertLang == null || normLanguage == convertLang
-                || (normLanguage == LanguageCode.AR.tag && convertLang == "ara")
-                || (normLanguage == LanguageCode.EN.tag && convertLang == "eng")
+        val matchesRequest = convertLang == null
+            || normLanguage == convertLang
+            || (normLanguage == LanguageCode.AR.tag
+            && convertLang == "ara")
+            || (normLanguage == LanguageCode.EN.tag
+            && convertLang == "eng")
 
         val finalRate = convertTarget?.let { it.convertRate } ?: speechRate
         val finalPitch = convertTarget?.let { it.convertPitch } ?: pitch
@@ -981,7 +1003,8 @@ override fun onDestroy() {
     }
 
     /** النص المختلط الكتابات: لكل مقطعٍ لغوي يُعالَج النص بدليل لغته (العربية
-     *  بقنواتها الكاملة وسواها بالتنظيف فقط)، ويُحل صوت المقطع من كتالوجه أو من
+     *  بقنواتها الكاملة وسواها بالتنظيف فقط)، ويُحل صوت المقطع من
+     *  كتالوجه أو من
      *  تراجع الجهاز الافتراضي، ويُخلَّق بلغته ومحركِه — ثم تُعاد عينات كل مقطع
      *  فور إنتاجه إلى معيارٍ صوتي موحّد ثابت
      *  ([MIXED_UNIFIED_RATE]، مونو) وتُدفع
@@ -1023,7 +1046,6 @@ override fun onDestroy() {
     private suspend fun warmNavigationCache() {
         val languages = listOf(LanguageCode.AR.tag, LanguageCode.EN.tag)
         for (lang in languages) {
-            if (stopping) break
             val words = if (lang == LanguageCode.AR.tag) {
                 navigationWordsAr
             } else {
@@ -1032,7 +1054,6 @@ override fun onDestroy() {
             val probe = Segment(words.firstOrNull() ?: "نعم", lang)
             val params = resolveSegmentParams(probe) ?: continue
             for (word in words) {
-                if (stopping) break
                 try {
                     params.provider.synthesize(
                         word,
@@ -1064,14 +1085,18 @@ override fun onDestroy() {
      * ar/en مضموناً في القوائم.
      */
     private suspend fun maybeRefreshDiscovery() {
-        if (!catalog.needsRefresh(DISCOVERY_TTL_MS)) return
-        val discovered = runCatching {
-            VoiceCatalog.discoverAllLanguagesAcrossEngines(applicationContext)
-        }.getOrDefault(emptyMap())
-        catalog.applyDiscovery(discovered)
-        Log.d(TAG,
-            "maybeRefreshDiscovery: ${discovered.size} لغة" +
-            " عبر كل المحركات المثبتة")
+        discoveryMutex.withLock {
+            if (!catalog.needsRefresh(DISCOVERY_TTL_MS)) return
+            val discovered = runCatching {
+                VoiceCatalog.discoverAllLanguagesAcrossEngines(
+                    applicationContext
+                )
+            }.getOrDefault(emptyMap())
+            catalog.applyDiscovery(discovered)
+            Log.d(TAG,
+                "maybeRefreshDiscovery: ${discovered.size} لغة" +
+                " عبر كل المحركات المثبتة")
+        }
     }
 
     /** إطلاق تحديث الاكتشاف دون انتظار
@@ -1099,7 +1124,7 @@ override fun onDestroy() {
      * بلا أي افتراض ضمني: كل لغة تُقرأ بمفتاحها الموحّد، واللغة بلا إعداد
      * (أو بلا تحويل فعلي) تُرجع null ولا يُتلاعب بنصها.
      */
-    private fun resolveConvertTarget(requestLang: String?): ConvertTarget? {
+    internal fun resolveConvertTarget(requestLang: String?): ConvertTarget? {
         val normLang = normalizeLanguageCode(requestLang)
         val prefs = settings.getEnginePreferenceForLanguage(
             normLang ?: "und"
@@ -1116,8 +1141,8 @@ override fun onDestroy() {
 
         // إن لم يُعدّل المستخدم أي شريط ولا يوجد محرك
         // مختار → نعتمد الإعدادات العامة.
-        if (rate == 1.0f && pitch == 1.0f && volume == 1.0f
-            && engine == null
+if (rate == 1.0f && pitch == 1.0f && volume == 1.0f
+            && engine == null && voiceName == null
         ) return null
 
         // **بند 2.7:** كانت الوجهة (locale) مضبوطة على null دائماً فتُترك
@@ -1157,3 +1182,4 @@ override fun onDestroy() {
         val convertVoiceName: String?
     )
 }
+

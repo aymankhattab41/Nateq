@@ -197,19 +197,17 @@ class SystemVoiceProvider(
     override val displayName: String
         get() = context.getString(R.string.voice_provider_system)
 
-    /** المثيل النشط الحالي للنطق والإيقاف — يُنشر فقط بعد نجاح onInit
-     *  (بند السباقات): محجوزٌ ضمن حجز prewarmingEngines حتى يكتمل الربط،
-     *  و[Volatile] حتى ترى كلُّ الخيوط أحدثَ إحالة عبر حدوثٍ قبلٍ/بعد. */
-    @Volatile
-    private var tts: TextToSpeech? = null
-
     /** مسبح محركات TTS مربوطة (بند 4): معرّف حزمة المحرك -> مثيلٌ حي يبقى
      *  دافئاً بين النطقات. يمحو كلفة إعادة تهيئة [TextToSpeech] (150–800ms
      *  لدى بعض المحركات) عند التبديل المتكرر بين لغات/محركات مختلفة —
      *  يحوّل التبديل إلى O(1) عبر [ConcurrentHashMap] آمن التزامن. تُغلَق
      *  كل المثيلات في [shutdown]، ويُسقَط المثيل المعطوب (فشل تهيئة أو
-     *  نطق) عبر [dropBrokenEngine] فلا يُعاد استخدامه. الحقل [tts] هو
-     *  المثيل المختار لكي يكون المستخدم الحالي للنطق والإيقاف. */
+     *  نطق) عبر [dropBrokenEngine] فلا يُعاد استخدامه.
+     *
+     *  المصدر الأوحد للحقيقة في مسار النطق: كل مقطع يحلّ مثيله منه
+     *  (`enginePool[currentEngine]`) ويمرّره وسيطاً كاملاً للاصطناع
+     *  (كالذي يقوم به [synthesizeInternal]) — لا حقلٌ عامّ «نشط» تتسابق
+     *  عليه المقاطع المتوازية فيفسد التوجيه (بند السباقات). */
     private val enginePool = ConcurrentHashMap<String, TextToSpeech>()
 
     /** محركاتٌ قيد التدفئة (بند ب.txt 3.4-2) تحت [ttsLock]: تبقى خارج
@@ -217,7 +215,7 @@ class SystemVoiceProvider(
      *  النطق قبل نضجها؛ أي فشل تسقطه التدفئة وسكت (لا يكسر طلباً). */
     private val prewarmingEngines = LinkedHashSet<String>()
 
-    /** قفل مزامنة دورة حياة [tts] والمسبح:
+    /** قفل مزامنة دورة حياة المسبح والمثيلات:
      *  حسم الربط/الإعادة في [synthesizeWithEngine]
      *  والإغلاق في [shutdown] يتسابقان فعلياً
      *  عند تدمير الخدمة أثناء نطقٍ جارٍ —
@@ -255,11 +253,14 @@ class SystemVoiceProvider(
         val validLength: Int
     )
 
-    /** حزمة المحرك المرتبط حالياً في [tts] — للتمييز بين «نفس المحرك جاهز»
-     *  والانتقال لمحركٍ آخر (سحب من المسبح أو إنشاء جديد). [Volatile]
-     *  لرؤيةٍ متسقة عبر الخيوط المتوازية على المسبح. */
+    /** حزمة المحرك الذي أصبح «نشطاً» مؤخراً — علاّمة انتقال فقط لتنظيف ملف
+     *  WAV المؤقت ذي الاسم الثابت عند التبديل بين محركين
+     *  ([onActiveEngineSwitch]).
+     *  ليست جزءاً من مسار النطق: اختيار المثيل للطلب يكون حصراً من
+     *  [enginePool] ([ConcurrentHashMap]) لكل حزمة — بلا حقلٍ عام مشترك
+     *  بين المقاطع المتوازية (بند السباقات). */
     @Volatile
-    private var ttsEngine: String? = null
+    private var lastEnginePackage: String? = null
 
     override fun isConfigured(): Boolean = true // متاح دائمًا
 
@@ -282,8 +283,7 @@ class SystemVoiceProvider(
             }
             enginePool.clear()
             prewarmingEngines.clear()
-            tts = null
-            ttsEngine = null
+            lastEnginePackage = null
         }
         pcmCache.evictAll()
         pcmPool.clear()
@@ -402,15 +402,14 @@ class SystemVoiceProvider(
             cont.invokeOnCancellation {
                 cancelled.set(true)
                 // بند ب.txt 3.3: مع جلساتٍ متوازية على مثيلاتٍ مختلفة يجب
-                // إيقافها كلِّها عند الإلغاء — لا المثيل النشط [tts] وحده —
+                // إيقافها كلِّها عند الإلغاء — لا مثيلٌ محددّ —
                 // وإلا استمرّ محركٌ موزٍّ للكتابة على جلسةٍ أُلغيت من
                 // المسارين معاً.
                 for (instance in enginePool.values) {
                     runCatching { instance.stop() }
                 }
-                runCatching { tts?.stop() }
             }
-            val ttsEngine = resolveEngine(enginePackage, voiceLocale)
+            val resolvedEngine = resolveEngine(enginePackage, voiceLocale)
 
             // إذا تُحدَّد لغة عبر التحويل التلقائي،
             // نستخدم صوتاً بلغتها النهائية.
@@ -431,7 +430,7 @@ class SystemVoiceProvider(
             // ربط محرك — يلغي تماماً دورة WAV للعبارات المتكررة لدى TalkBack.
             val cacheKey = buildCacheKey(
                 text, effectiveVoice, speechRate,
-                pitch, volume, ttsEngine, desiredVoiceName
+                pitch, volume, resolvedEngine, desiredVoiceName
             )
             val cached = if (cacheKey != null) pcmCache.get(cacheKey) else null
             if (cached != null) {
@@ -442,7 +441,7 @@ class SystemVoiceProvider(
             }
 
             synthesizeWithEngine(
-                ttsEngine,
+                resolvedEngine,
                 text,
                 effectiveVoice,
                 speechRate,
@@ -545,8 +544,8 @@ class SystemVoiceProvider(
      *  معزولةً تحت مفتاحها وتُعاد فائدتها عند العودة لنفس المحرك —
      *  مسحُها كان يهدر كاش 4MiB مع كل تبديل للغات ثنائية. */
     private fun onActiveEngineSwitch(engine: String) {
-        val previous = ttsEngine
-        ttsEngine = engine
+        val previous = lastEnginePackage
+        lastEnginePackage = engine
         if (previous == null || previous == engine) return
         synthExecutor.execute {
             runCatching { tempWavFile().delete() }
@@ -641,13 +640,12 @@ class SystemVoiceProvider(
                                 " provider shutting down")
                             if (!done.getAndSet(true)) cont.resume(Unit)
                         }
-                        // نفس المحرك جاهز — ننطق مباشرة بإعادة استخدام المثيل.
-                        tts != null && ttsEngine == currentEngine -> {
-                            speakNow(tts!!, currentEngine)
-                        }
                         // مثيلٌ دافئ في مسبح المحركات (بند 4): الانتقال لهذا
                         // المحرك O(1) بلا إعادة تهيئة — إنشاء TextToSpeech
                         // جديد في كل تبديل كان يكلف 150–800ms لكل كلمة أجنبية.
+                        // المسبح هو المصدر الأوحد للمثيل: لا فرع «نشط عام»
+                        // منفصلاً — كل مقطع يحلّ مثيلَ محركه ويتكلم بمثيله
+                        // (لا حقلٌ مشترك تتسابق عليه المقاطع المتوازية).
                         else -> {
                             val instance = currentEngine?.let {
                                 enginePool[it]
@@ -658,7 +656,6 @@ class SystemVoiceProvider(
                                     "[Provider] pool hit" +
                                     " engine=$currentEngine"
                                 )
-                                tts = instance
                                 onActiveEngineSwitch(currentEngine)
                                 speakNow(instance, currentEngine)
                             } else if (currentEngine in prewarmingEngines) {
@@ -737,7 +734,6 @@ class SystemVoiceProvider(
                                                     built
                                                 prewarmingEngines
                                                     .remove(engine)
-                                                tts = built
                                                 onActiveEngineSwitch(
                                                     engine
                                                 )
@@ -958,18 +954,14 @@ class SystemVoiceProvider(
      * يُسقط مثيل محركٍ معطوباً (فشلت تهيئته أو نطقه) من المسبح ويغلقه —
      * حتى لا يُعاد استخدامه في طلباتٍ لاحقة. يُستدعى على كل مسارات الفشل
      * الخاصّة بالمثيل بعينه (لا بمعرّف الحزمة): يُزال من المسبح بمطابقة
-     * الهوية مهما كان مفتاحه الحالي، ويُصفّر الحقل النشط إن كان هو المثيل
-     * النشط. آمن التزامن تحت [ttsLock].
+     * الهوية مهما كان مفتاحه الحالي. آمن التزامن تحت [ttsLock]. لا
+     * حقلٌ عامٌّ يُصفَّر هنا: لا «نشط» مشترك بين المقاطع.
      */
     private fun dropBrokenEngine(instance: TextToSpeech) {
         synchronized(ttsLock) {
             runCatching { instance.stop() }
             runCatching { instance.shutdown() }
             enginePool.entries.removeAll { e -> e.value === instance }
-            if (tts === instance) {
-                tts = null
-                ttsEngine = null
-            }
         }
     }
 
@@ -1017,10 +1009,11 @@ class SystemVoiceProvider(
         desiredVoiceName: String?,
         cacheKey: String?
     ): Boolean {
-        // يُمرَّر المثيل من المسبح صراحةً (لا «tts» الحقل): بعد إدخال مسبح
-        // المحركات قد يتغير المثيل النشط أثناء تتابع نطقات لغات مختلفة —
-        // المثيل الملتقط يُضمن أن تُنفَّذ كل جولة على محركها الصحيح وإن
-        // قُطع على مثيلٍ آخر لنطقٍ تالٍ (المسبح يبقيها كلها حية).
+        // يُمرَّر المثيل من المسبح صراحةً (لا حقلٍ عام): بعد إدخال مسبح
+        // المحركات قد يتغير المحرك المُنطَق به أثناء تتابع نطقات لغات
+        // مختلفة — المثيل الملتقط يُضمن أن تُنفَّذ كل جولة على محركها
+        // الصحيح وإن قُطع على مثيلٍ آخر لنطقٍ تالٍ (المسبح يبقيها كلها
+        // حية).
         // السرعة والنبرة تُمرَّران مباشرةً للمحرك
         // (engine.setSpeechRate/setPitch)
         // بدل التعديل الخطي الرقمي اليدوي الذي كان يلغي أثرهما بتشويه معدني
@@ -1093,7 +1086,11 @@ class SystemVoiceProvider(
         // اكتمال الكتابة عبر UtteranceProgressListener قبل قراءة الملف — وإلا
         // نقرأ ملفاً فارغاً/غير مكتمل ولا يُسمع أي صوت نهائياً.
         val done = CountDownLatch(1)
-        var failed = false
+        // عمل غير ذرّي (var boolean) يتسابق بين خيط الاصطناع (على
+        // [synthExecutor]) وخيط الفحص هنا — سنجعله ذرياً عبر
+        // AtomicBoolean ليقرأ الخيطُ الحاصر قيمةً سليمة دائماً عند
+        // فحص الشرطي التالي.
+        val failed = AtomicBoolean(false)
         try {
             engine.setOnUtteranceProgressListener(
                 object : UtteranceProgressListener() {
@@ -1106,7 +1103,7 @@ class SystemVoiceProvider(
 
                 @Deprecated("Java Deprecated")
                 override fun onError(utteranceId: String?) {
-                    failed = true
+                    failed.set(true)
                     done.countDown()
                 }
             })
@@ -1237,7 +1234,7 @@ class SystemVoiceProvider(
                 Thread.currentThread().interrupt()
             }
 
-            if (finished && !failed && streamMeta != null &&
+            if (finished && !failed.get() && streamMeta != null &&
                 emittedAny
             ) {
                 // إتمام البث: يُقرأ ما تبقى بعد آخر دفعة ثم يُعلَّم النجاح —
@@ -1272,7 +1269,7 @@ class SystemVoiceProvider(
                     )
                 }
                 success = true
-            } else if (finished && !failed && tempFile.exists()
+            } else if (finished && !failed.get() && tempFile.exists()
                 && tempFile.length() > 44
             ) {
                 try {
@@ -1318,9 +1315,15 @@ class SystemVoiceProvider(
                         onAudioChunk(scaledData, validLength)
                         success = true
                         // المستهلك نسخ الشريحة (audioAvailable)
-                        // ولم يُمسك بمرجعها — فنُرجع المخزن للمسبح
-                        // لإعادة استخدامه في الطلب التالي.
-                        pcmPool.release(scaledData)
+                        // ولم يُمسك بمرجعها — فنعيد كل مسبَّحٍ صاحبَ
+                        // حقّ الردّ: `extracted.pcm` مسبَّح دائماً،
+                        // والناتجُ الجديد من applyVolume مسبَّح أيضاً
+                        // (يعيده إن اختلف عن المصدر) — وما لم يأتِ من
+                        // المسبح لا يُعاد إليه (بند السباقات).
+                        if (scaledData !== extracted.pcm) {
+                            pcmPool.release(scaledData)
+                        }
+                        pcmPool.release(extracted.pcm)
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "[Provider] read audio failed", e)
@@ -1334,7 +1337,7 @@ class SystemVoiceProvider(
                 Log.e(
                     TAG,
                     "[Provider] synthesis not completed:" +
-                        " failed=$failed finished=$finished" +
+                        " failed=${failed.get()} finished=$finished" +
                         " size=$fileSize"
                 )
             }
@@ -1473,9 +1476,13 @@ class SystemVoiceProvider(
             totalCacheBytes[0] += samplesLen
         }
         onAudioChunk(scaledData, samplesLen)
-        // المتلقي نسخ الشريحة (audioAvailable) فنعيد المخزن للمسبح — ولو
-        // كان الصوت بلا مستوى (أصلي غير مسبَّح) يأوي السباحة بأمانٍ أيضاً.
-        pcmPool.release(scaledData)
+        // لا يُعاد إلى المسبح إلا ما صدر عن المسبح فعلاً: عند مستوى الصوت
+        // الكامل (volume == 1.0f) تُبث الشريحةُ الأصلية المدروسة مباشرةً —
+        // وهي إما raw محلي أو ناتج downmixStereoToMono محلي — وأي محاولة
+        // لإعادتها للمسبح تُدخله صفيفاً أجنبياً يُحوّله بعد ذلك لحاملِه
+        // (استخدامٌ مزدوج لنفس الصفيف من مالكَين). الناتجُ المسبَّح وحده
+        // (من applyVolume) صاحبُ حقّ الردّ.
+        if (volume != 1.0f) pcmPool.release(scaledData)
     }
 
     /**
@@ -1494,7 +1501,8 @@ class SystemVoiceProvider(
     private fun extractPcm(file: java.io.File): PcmExtract =
         extractPcmFromFile(file, pcmPool)
 
-    /** مستوى الصوت يُطبَّق رقماً (معامل مضاعف محايد
+    /**
+     * مستوى الصوت يُطبَّق رقماً (معامل مضاعف محايد
      *  لا يشوّه الصوت): السرعة والنبرة صارتا تمرَّران
      *  مباشرةً للمحرك في [synthesizeInternal] عبر
      *  setSpeechRate/setPitch (مسار المحرك الأصلي بجودة
@@ -1505,8 +1513,14 @@ class SystemVoiceProvider(
      *  `pcmData.size`): مع إعادة الاستخدام غير الحرفية
      *  من المسبح قد تكون المصفوفة أكبر من بياناتها
      *  الفعلية، ولا يُمرَّر القمامة. الناتج من المسبح
-     *  (ويُرجَّع المصدر إليه عند اختلافه) فلا نُنشئ
-     *  صفيفاً جديداً في كل إعلان أثناء معالجة المستوى. */
+     *  (تجنّباً لإنشاء صفيفٍ جديد في كل إعلان).
+     *
+     *  **عقد الملكية:** الدالة لا تُعيد المصدر إلى المسبح
+     *  أبداً — مصدرٌ قد يكون مخزناً مسبّحاً وقد يكون
+     *  محلياً (raw/downmix)؛ «سكين» المصدر شأنُ المتصل
+     *  الذي يعرف أصله (بند السباقات: إعادة مصفوفةٍ لم
+     *  تأتِ من المسبح تفسده وتمزق استخدامَه المزدوج).
+     */
     private fun applyVolume(
         pcmData: ByteArray,
         volume: Float,
@@ -1525,7 +1539,6 @@ class SystemVoiceProvider(
             result[i + 1] = (scaled ushr 8).toByte()
             i += 2
         }
-        if (result !== pcmData) pcmPool.release(pcmData)
         return result
     }
 }
