@@ -2,6 +2,7 @@ package com.aymankhattab.nateq.core.audio.announcement
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -123,7 +124,10 @@ class AnnouncementSpeakerTest {
             1, merged.size
         )
         // النص المدمج يجمع الجملة بمسافة واحدة - نطق متصل بلا فراغ ثانية
-        assertEquals("السلام عليكم John", (merged[0] as SpeakUnitText).text)
+        val mergedText = merged[0].javaClass
+            .getDeclaredField("text").also { it.isAccessible = true }
+            .get(merged[0])
+        assertEquals("السلام عليكم John", mergedText)
         speaker.shutdown()
     }
 
