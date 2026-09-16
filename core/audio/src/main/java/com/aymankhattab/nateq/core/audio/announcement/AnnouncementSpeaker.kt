@@ -7,6 +7,7 @@ import android.media.AudioManager
 import android.os.Build
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.speech.tts.Voice
 import android.util.Log
 import com.aymankhattab.nateq.engine.EmojiSpeech
 import com.aymankhattab.nateq.core.audio.engine.LanguageSegmenter
@@ -65,6 +66,25 @@ class AnnouncementSpeaker(
          *  حدٌّ أدنى فلا يتعطل المحرك، وحدٌّ أعلى فلا يعلّق صامتاً. */
         internal fun clampedSpeechRate(rate: Float): Float =
             rate.coerceIn(MIN_RATE_OR_PITCH, MAX_SPEECH_RATE)
+
+        /** حلّ صوت وحدةٍ لغوية من صوت المحرك: يفضّل المعرّف الصريح
+         *  ([partVoice] كاسم صوت مخصص في إعدادات اللغة)؛ وإلا أول صوتٍ
+         *  لسانُه لسانُ الوحدة (مثل "en" لكلمة إنجليزية مفردة) بدل الاعتماد
+         *  على `setLanguage` وحده الذي قد لا يبدّل لغة نطق المحرك فعلياً
+         *  (بند 18). null إن لم يوجد صوت ملائم — يبقى `setLanguage` سقوطاً. */
+        internal fun voiceFor(
+            voices: Collection<Voice>?,
+            partVoice: String?,
+            locale: Locale
+        ): Voice? {
+            if (voices.isNullOrEmpty()) return null
+            partVoice?.let { vid ->
+                voices.firstOrNull { it.name == vid }?.let { return it }
+            }
+            return voices.firstOrNull {
+                it.locale.language == locale.language
+            }
+        }
 
         // نطاق الإيموجي الشائع (بلوكات Unicode): رموز التباين (2600-27BF)،
         // الأسهم/الرموز الإضافية (2B00-2BFF)، الأعلام الإقليمية (1F1E6-1F1FF)
@@ -935,19 +955,20 @@ class AnnouncementSpeaker(
         val tts = tts ?: return
         tts.setSpeechRate(clampedSpeechRate(speechRate))
         tts.setPitch(pitch.coerceAtLeast(MIN_RATE_OR_PITCH))
-        // تطبيق الصوت المفضّل بالاسم (مثل "ar-EG") عندما يَعرضه المحرك
-        // المربوط فعلاً (محرك LORD نفسه). إذا لم يجده المحرك (محرك خارجي مثل
-        // جوجل/MultiTTS لا يملك هذه الأسماء) نرجع لتحديد اللغة فقط، فيبقى
-        // اختيار الصوت محدوداً بلسان المحرك كما هو متوقَّع.
+        // حلّ صوت الوحدة: المعرّف الصريح المخصص (مثل "ar-EG") إن أعرضه
+        // المحرك المربوط؛ وإلا أول صوتٍ لسانه لسانُ الوحدة فيضمن تبديل
+        // لغة النطق فعلياً للوحدة الإنجليزية المفردة (بند 18) بدل الاعتماد
+        // على setLanguage وحده الذي قد يُبقي بعض المحركات لغته السابقة.
+        // إن لم يوجد صوتٌ ملائم (محرك خارجي بلا صوتٍ لتلك اللغة) نرجع
+        // لتحديد اللغة فقط، فيبقى اختيار الصوت محدوداً بلسان المحرك.
         val vid = partVoice
-        if (vid != null) {
-            val voice = runCatching { tts.voices }.getOrNull()
-                ?.firstOrNull { it.name == vid }
-            if (voice != null) {
-                tts.voice = voice
-            } else {
-                tts.setLanguage(locale)
-            }
+        val chosen = voiceFor(
+            runCatching { tts.voices }.getOrNull(),
+            vid,
+            locale
+        )
+        if (chosen != null) {
+            tts.voice = chosen
         } else {
             tts.setLanguage(locale)
         }

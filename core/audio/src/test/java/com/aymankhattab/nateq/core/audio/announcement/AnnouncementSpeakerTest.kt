@@ -1,6 +1,7 @@
-package com.aymankhattab.nateq.core.audio.announcement
+﻿package com.aymankhattab.nateq.core.audio.announcement
 
 import android.content.Context
+import android.speech.tts.Voice
 import androidx.test.core.app.ApplicationProvider
 import java.util.Locale
 import org.junit.Assert.assertEquals
@@ -233,6 +234,65 @@ class AnnouncementSpeakerTest {
         speaker.shutdown()
     }
 
+    @Test
+    fun `explicit voice id wins over the unit language voice`() {
+        // بند 18 (تكملة): المعرّف الصريح (صوت المستخدم المخصص للغة)
+        // يُفضَّل دوماً عند طلبه بالاسم مهما كانت لغة الوحدة.
+        val voices = listOf(
+            voice("en-us", "en"),
+            voice("ar-eg", "ar"),
+            voice("en-gb", "en")
+        )
+        assertEquals(
+            "en-gb",
+            AnnouncementSpeaker.voiceFor(voices, "en-gb", Locale.forLanguageTag("en"))?.name
+        )
+        assertEquals(
+            "ar-eg",
+            AnnouncementSpeaker.voiceFor(voices, "ar-eg", Locale.forLanguageTag("en"))?.name
+        )
+    }
+
+    @Test
+    fun `unit language picks a matching voice when no explicit id`() {
+        // بند 18 (تكملة): بلا معرّف صريح تختار الوحدة الإنجليزية أول صوتٍ
+        // لسانُه "en" فيضمن تبديل لغة نطق المحرك فعلياً — لا يعتمد على
+        // setLanguage وحده الذي قد يُبقي بعض المحركات صوتَه العربي.
+        val voices = listOf(
+            voice("ar-eg", "ar"),
+            voice("en-us", "en"),
+            voice("en-gb", "en")
+        )
+        assertEquals(
+            "en-us",
+            AnnouncementSpeaker.voiceFor(voices, null, Locale.forLanguageTag("en"))?.name
+        )
+    }
+
+    @Test
+    fun `no matching voice falls back to null for setLanguage`() {
+        // بند 18 (تكملة): إن لم يقدّم المحرك صوتاً للسان الوحدة (محرك خارجي
+        // بلا صوت لتلك اللغة) يرجع null ويبقى setLanguage(locale) سقوطاً
+        // آمناً — كما كان السلوك سابقاً على محركاتٍ لا تملك صوتاً إنجليزياً.
+        val voices = listOf(voice("ar-eg", "ar"))
+        assertEquals(
+            null,
+            AnnouncementSpeaker.voiceFor(voices, null, Locale.forLanguageTag("en"))
+        )
+    }
+
+    @Test
+    fun `empty or null voices list returns null`() {
+        assertEquals(
+            null,
+            AnnouncementSpeaker.voiceFor(null, null, Locale.forLanguageTag("en"))
+        )
+        assertEquals(
+            null,
+            AnnouncementSpeaker.voiceFor(emptyList(), null, Locale.forLanguageTag("en"))
+        )
+    }
+
     /** استدعاء الاستدعاء الخاص للاكتمال (لا محرك TTS حقيقي في الاختبار). */
     private fun notifyCompletion(speaker: AnnouncementSpeaker) {
         val method = AnnouncementSpeaker::class.java
@@ -240,4 +300,15 @@ class AnnouncementSpeakerTest {
         method.isAccessible = true
         method.invoke(speaker)
     }
+
+    /** بناء صوت اختباري بلسانٍ معيّن (مثيل حقيقي سائر داخل Robolectric). */
+    private fun voice(name: String, language: String): Voice =
+        Voice(
+            name,
+            Locale.forLanguageTag(language),
+            Voice.QUALITY_HIGH,
+            0,
+            false,
+            emptySet()
+        )
 }
