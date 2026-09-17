@@ -2,6 +2,7 @@ package com.aymankhattab.nateq.core.audio.engine
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -63,5 +64,30 @@ class VoiceCatalogAccessTest {
     fun discoveredEnginePackagesFor_emptyDiscovery_isNull() {
         val catalog = VoiceCatalog(emptyList())
         assertNull(catalog.discoveredEnginePackagesFor("ar"))
+    }
+
+    // ============ بند 8.2: اللغة المضمونة تُبنى بالبلد ============
+
+    /** اللغتان المضمونتان دائماً تُعلَنان بصمتين حقيقيين بالبلد (ar-EG/
+     *  en-US) لا بصمتين بلا بلد — فيُبلّغ onIsLanguageAvailable عودةً
+     *  LANG_COUNTRY_AVAILABLE حقيقيّةً فتَلتقطُ محركاتُ سامسونج وغيرها
+     *  اللغةَ بالبلدِ بدل الرفضِ الجزئي. */
+    @Test
+    fun supportedLocales_guaranteedLanguages_carryACountry() {
+        val catalog = catalogWithDiscovery()
+        val locales = catalog.supportedLocales()
+        val ar = locales.first { it.language == "ar" }
+        val en = locales.first { it.language == "en" }
+        assertEquals("EG", ar.country)
+        assertEquals("US", en.country)
+    }
+
+    /** لا نفقدُ أيَّ لغةٍ مكتشفةٍ ديناميكياً عند إضافة البلدِ للغتينِ
+     *  الأساسيتين. */
+    @Test
+    fun supportedLocales_preservesDiscoveredLanguages() {
+        val catalog = catalogWithDiscovery()
+        val languages = catalog.supportedLocales().map { it.language }
+        assertTrue(languages.containsAll(setOf("ar", "en")))
     }
 }

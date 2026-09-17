@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- لغات الواجهة المدعومة للتطبيق (Android 13+ / per-app language).
+     العربية الافتراضية (values) والإنجليزية (values-en) فقط — لا لغة أخرى
+     في الموارد؛ أي إضافة هنا تستلزم مجلد قيمات حقيقي أولاً. -->
+<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+    <locale android:name="ar" />
+    <locale android:name="en" />
+</locale-config>

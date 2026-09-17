@@ -324,12 +324,27 @@ val lang = LocaleUtils.normalizeLanguageCode(
     fun supportedLocales(): List<Locale> {
         val languages = LinkedHashSet<String>()
         discoveredByLanguage?.keys?.forEach { languages.add(it) }
-        languages.add(LanguageCode.AR.tag) // الحد الأدنى المضمون دائماً
+        languages.add(LanguageCode.AR.tag)
         languages.add(LanguageCode.EN.tag)
         return languages
-            .map { Locale.forLanguageTag(it) }
+            .map { localeWithCountryFor(it) }
             .sortedBy { it.language }
     }
+
+    /**
+     * يبني رمزَ اللغةِ بالبلدِ للغتينِ المضمونتين (ar → ar-EG و en → en-US)
+     * ليطابقا الأصواتَ المعلنةَ في tts_engine.xml (ar-EG/en-US) قبلَ اكتشافِ
+     * المحركات؛ فيُجيبُ التحققُ من اللغةِ بـ LANG_COUNTRY_AVAILABLE
+     * بدلَ LANG_AVAILABLE فتَعرفُ المحركاتُ (سامسونج خاصةً) صوتَ البلدِ
+     * الصحيحَ. اللغاتُ المكتشفةُ ديناميكياً (fr/de/…) تُبنى بحرفِها كما هي —
+     * أصواتُها من طراز "<lang>-local" بلا ضمانِ بلدٍ محدد.
+     */
+    private fun localeWithCountryFor(language: String): Locale =
+        when (language) {
+            LanguageCode.AR.tag -> Locale.forLanguageTag("ar-EG")
+            LanguageCode.EN.tag -> Locale.forLanguageTag("en-US")
+            else -> Locale.forLanguageTag(language)
+        }
 
     /**
      * قائمة الأصوات (android.speech.tts.Voice) المُعلنة للنظام.
