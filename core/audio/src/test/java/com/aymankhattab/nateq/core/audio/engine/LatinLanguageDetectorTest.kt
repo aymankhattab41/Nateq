@@ -69,4 +69,21 @@ class LatinLanguageDetectorTest {
             )
         )
     }
+
+    /** بند 1.4: النص القصير (< [MIN_WORDS]) بحرف قاطع حصري يُكشف مبكراً
+     *  بدل اللّبس المحافظ — «München»/«Señor»/«Café» مصطلحٌ واحد يحسم
+     *  لسانه بلا تدرج. tiny 1 الكلمة-only German/French/Spanish. */
+    @Test
+    fun `short snippet with decisive diacritic is detected early`() {
+        assertEquals("de", LatinLanguageDetector.detect("München"))
+        assertEquals("es", LatinLanguageDetector.detect("¿Qué?"))
+        assertEquals("fr", LatinLanguageDetector.detect("Garçon"))
+    }
+
+    @Test
+    fun `short snippet without decisive diacritic stays unresolved`() {
+        // لا حرفَ قاطعٌ حصري هنا — تبقى الثقة الساخنة لمنطق العتبة القديم.
+        assertNull(LatinLanguageDetector.detect("hello"))
+        assertNull(LatinLanguageDetector.detect("bonne"))
+    }
 }

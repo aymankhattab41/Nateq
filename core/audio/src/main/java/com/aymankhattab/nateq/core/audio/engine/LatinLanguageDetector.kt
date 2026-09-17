@@ -31,6 +31,16 @@ object LatinLanguageDetector {
      *  اللّبس فيه فوق متحمل الحكم القاطع. */
     internal const val MIN_WORDS = 3
 
+    /** أحرف قاطعة حصرية لا توجد في الإنجليزية وتنتمي لكلغةٍ واحدةٍ ضمن
+     *  اللغات المدعومة — تُسمح بالكشف المبكر (دون بلوغ [MIN_WORDS])
+     *  لأنها تحسم اللسان بلا لبس: نصٌ قصيرٌ يحملها «نطقٌ صحيح أغلى من
+     *  حكمٍ طموح» — لا تُحسب بالتدرج بل تُسمّى لغتها فوراً. */
+    private val DECISIVE_LETTERS = mapOf(
+        "de" to "äöüß",
+        "es" to "ñ¿¡",
+        "fr" to "œæç"
+    )
+
     /** وزن كل كلمة وظيفية تخص اللغة (the/le/der/el…) — إشارة تركيبية
      *  بعيدة عن بضع ثنائيات قصيرة. */
     private const val FUNCTION_WORD_WEIGHT = 0.60f
@@ -130,6 +140,11 @@ object LatinLanguageDetector {
      */
     fun detect(text: String): String? {
         val words = wordsIn(text)
+        // نصٌّ قصير (< [MIN_WORDS]) بحرفٍ قاطع حصري يُكشف فوراً —
+        // «Café»/«München»/«¿Qué?» مصطلحٌ واحد يحسم لسانه بلا تدرج.
+        if (words.size < MIN_WORDS) {
+            decisiveLanguage(text)?.let { return it }
+        }
         if (words.size < MIN_WORDS) return null
         val bigrams = lettersOf(text).windowed(2).toSet()
         if (bigrams.isEmpty()) return null
@@ -142,6 +157,15 @@ object LatinLanguageDetector {
             best.second - second >= MARGIN
         ) {
             return best.first
+        }
+        return null
+    }
+
+    /** يبحث في النص عن أول حرفٍ قاطع حصري؛ يرجع لغته أو null. حرفٌ مثل
+     *  ß/ñ/œ لا تَلبَّس بين اللغات الأربع المدعومة فيكفي للكشف المبكر. */
+    private fun decisiveLanguage(text: String): String? {
+        for ((language, letters) in DECISIVE_LETTERS) {
+            if (text.any { it.lowercaseChar() in letters }) return language
         }
         return null
     }
