@@ -17,7 +17,7 @@ import org.robolectric.annotation.Config
 
 /** اختبارات معالج النصوص الذكي (TextProcessor). */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [24, 30, 35])
 class TextProcessorTest {
 
     private lateinit var processor: TextProcessor

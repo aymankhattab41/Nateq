@@ -75,9 +75,15 @@
 ### الاختبارات الآلية (JUnit + Robolectric)
 - **مطلوبة قبل أي commit:** بعد تعديل المنطق شغّل
   `.\gradlew.bat :app:testDebugUnitTest --console=plain`.
-- الاعتماديات: `junit:4.13.2`، `robolectric:4.14.1`، `androidx.test:core:1.6.1` (`testImplementation`).
+- الاعتماديات: `junit:4.13.2`، `robolectric:4.17`، `androidx.test:core:1.6.1` (`testImplementation`).
 - الاختبارات: `NumberSpeechTest` (نقي)، `TextProcessorTest` و `SettingsRepositoryTest`
-  (Robolectric مع `@Config(sdk=[35])`).
+  و`VoiceCatalogAccessTest` و`NateqTtsServiceConvertTest` (Robolectric مع
+  `@Config(sdk=[24,30,35])` — أوسع تغطية عبر النطاق المدعوم)، وتبقى بقية فئات
+  Robolectric على `sdk=[35]` (تفاعلات SDK خاصة لا تُشغَّل تدريجياً).
+- **SDK 36/37 في اختبارات Robolectric يتطلب Java 21+ في JVM الاختبارات** (توثيق
+  Robolectric الرسمي) — حتى توفُّر JDK 21 محلياً لا ندرج 36/37 في `@Config` ولا
+  نمرر أداة اختبارات Java أحدث: التجربة أثبتت أن Java 25 تغيّر سلوك نطق النصوص
+  العربية (تباينات Unicode) وتكسر `TextProcessorTest` حتى على `sdk=35`.
 - أي اختبار يكتشف خطأً حقيقياً = أصلح الخطأ مع إبقاء الاختبار (لا تجمّده ولا تحذفه).
 
 ### لا «لاحقاً» في المهام المحلية أيضاً

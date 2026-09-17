@@ -15,7 +15,7 @@ import java.util.Calendar
 
 /** اختبارات مخزن الإعدادات عبر Robolectric (SharedPreferences حقيقي). */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [24, 30, 35])
 class SettingsRepositoryTest {
 
     private lateinit var repo: SettingsRepository

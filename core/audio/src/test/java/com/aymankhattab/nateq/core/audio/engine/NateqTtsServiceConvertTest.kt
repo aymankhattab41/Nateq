@@ -20,7 +20,7 @@ import org.robolectric.annotation.Config
  * عربي مضبوط ⇒ finalLocale يساوي en لا ar، والسرعة من تفضيل en.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [24, 30, 35])
 class NateqTtsServiceConvertTest {
 
     private fun createService(
