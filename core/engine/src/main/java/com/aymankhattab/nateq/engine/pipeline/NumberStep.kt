@@ -1,8 +1,10 @@
 package com.aymankhattab.nateq.engine.pipeline
 
+import com.aymankhattab.nateq.engine.NumberSpeech
 import java.util.regex.Pattern
 
-/** معالجة الأرقام العادية: 1234 → «ألف ومائتان وأربعة وثلاثون». */
+/** معالجة الأرقام العادية: 1234 → «ألف ومائتان وأربعة وثلاثون» (عربية)
+ *  أو «one thousand two hundred thirty four» (إنجليزية). */
 internal object NumberStep : TextProcessingStep {
 
     // أنماط الأرقام: «\b» المحيط يضمن التقاط المتوالية الرقمية كاملة (المبالغ
@@ -20,7 +22,15 @@ internal object NumberStep : TextProcessingStep {
     // مُعرّفة مرة واحدة لا داخل حلقة المطابقات لكل رقم.
     private val CURRENCY_SYMBOLS = setOf('$', '€', '£', '¥', '₹', '₽', '₩', '﷼')
 
-    override fun apply(input: String): String {
+    override fun apply(input: String): String = process(input, english = false)
+
+    /** النسخة الإنجليزية (اللغة الثانية): تُنطق الأعداد كلماتٍ إنجليزية
+     *  («one hundred twenty three»)، والكسر العشري «point» رقماً رقماً
+     *  («three point one four one») بدل «فاصلة». */
+    override fun applyEnglish(input: String): String =
+        process(input, english = true)
+
+    private fun process(input: String, english: Boolean): String {
         val matcher = PATTERN_NUMBER.matcher(input)
         val sb = StringBuilder(input.length + 32)
         var cursor = 0
@@ -60,13 +70,17 @@ internal object NumberStep : TextProcessingStep {
             val minus = start > 0 && input[start - 1] == '-' &&
                 (start == 1 || !input[start - 2].isLetterOrDigit())
             sb.append(input, cursor, if (minus) start - 1 else start)
-            sb.append(if (minus) "ناقص " else "")
-            sb.append(parseNumberText(numberStr))
+            sb.append(if (minus) minusWord(english) else "")
+            sb.append(parseNumberText(numberStr, english))
             cursor = end
         }
         sb.append(input, cursor, input.length)
         return sb.toString()
     }
+
+    /** كلمة السالب حسب اللغة («ناقص»/«minus»). */
+    private fun minusWord(english: Boolean): String =
+        if (english) "minus " else "ناقص "
 
     /**
      * يفصل بين فواصل الآلاف والفاصلة العشرية:
@@ -74,7 +88,7 @@ internal object NumberStep : TextProcessingStep {
      *  - 1,234.56 → 1234.56 (فاصلة آلاف + فاصلة عشرية)
      *  - 3.14 → 3.14 (عشري)
      */
-    private fun parseNumberText(numberStr: String): String {
+    private fun parseNumberText(numberStr: String, english: Boolean): String {
         // الفصل بين فواصل الآلاف والفاصلة العشرية يتم عبر sanitizeNumerals
         // الذي لا يُهلك الأعداد العشرية ثلاثية الخانات (3.141 تبقى عشرية).
         val cleaned = AmountParser.sanitizeNumerals(numberStr)
@@ -84,15 +98,35 @@ internal object NumberStep : TextProcessingStep {
         if (cleaned.indexOf('.') < 0) {
             val longValue = cleaned.toLongOrNull()
             if (longValue != null) {
-                return NumberWordsConverter.numberToWords(longValue)
+                return if (english) NumberSpeech.toEnglishWords(longValue)
+                else NumberWordsConverter.numberToWords(longValue)
             }
             // **بند 3.6:** سلسلة رقمية أعرض من Long (رقم وطني/حساب بنكي/
             // تسلسل 20+ خانة): toLongOrNull تعيد null فكانت تنتقل إلى
             // Double فتتشوه القيمة (دقته 2^53 فقط) — نقرأ الخانات رقماً
             // رقماً بأمان عبر المحوِّل.
-            return NumberWordsConverter.spokenDigits(cleaned)
+            return if (english) englishSpokenDigits(cleaned)
+            else NumberWordsConverter.spokenDigits(cleaned)
         }
+        if (english) return englishDecimalWords(cleaned)
         val number = cleaned.toDoubleOrNull() ?: return numberStr
         return NumberWordsConverter.numberToWords(number)
     }
+
+    /** كسر عشري إنجليزي: «3.141» → «three point one four one»،
+     *  و«0.05» → «zero point zero five» (بلا «فاصلة» العربية). */
+    private fun englishDecimalWords(cleaned: String): String {
+        val dot = cleaned.indexOf('.')
+        val intPart = cleaned.substring(0, dot)
+        val fracPart = cleaned.substring(dot + 1)
+        val intWords = intPart.toLongOrNull()
+            ?.let { NumberSpeech.toEnglishWords(it) }
+            ?: englishSpokenDigits(intPart)
+        return "$intWords point ${englishSpokenDigits(fracPart)}"
+    }
+
+    /** خانات رقمية إنجليزية متتالية («05» → «zero five»). */
+    private fun englishSpokenDigits(digits: String): String = digits
+        .map { NumberSpeech.toEnglishWords(it.digitToInt()) }
+        .joinToString(" ")
 }

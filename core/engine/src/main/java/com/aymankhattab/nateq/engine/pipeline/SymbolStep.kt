@@ -7,6 +7,9 @@ import java.util.regex.Pattern
  * @/#/٪/&/@ المعزولة انتقلت إلى [PunctuationStep] لأن نطقها يتبع مستوى
  * علامات الترقيم المختار («لا شيء» يمنعها)، بينما بقي هنا كل ما هو
  * دلالي ثابت المعنى دون مستوى قراءة.
+ *
+ * الأسماء تُترجم حسب اللغة: [apply] للعربية و[applyEnglish] للإنجليزية
+ * (Celsius/greater than/divided by…).
  */
 internal object SymbolStep : TextProcessingStep {
 
@@ -46,35 +49,87 @@ internal object SymbolStep : TextProcessingStep {
         "=" to " يساوي "
     )
 
-    /** أنماط منتهية تجمع الرموز العامة (الأطول أولاً لضمان °C قبل °) ثم
-     *  الحسابية المقيدة بين الرقمين. */
-    private val SYMBOL_PATTERNS: List<Pair<Pattern, String>> = buildList {
-        addAll(
-            SYMBOL_NAMES_GENERAL.entries.sortedByDescending { it.key.length }
-                .map {
-                    Pattern.compile(Pattern.quote(it.key)) to " ${it.value} "
-                }
-        )
-        addAll(
-            SYMBOL_ARITHMETIC.map { (op, word) ->
-                // \Q..\E لإبعاد الرموز الخاصة (كـ * و /) عن المعنى النمطي
-                Pattern.compile("(?<=\\d)\\s*\\Q$op\\E\\s*(?=\\d)") to word
-            }
-        )
-    }
-
-    // بوابة عدم التطابق: دمج OR صريح لجميع أنماط الخطوة. إن لم يطابق شيئاً
-    // أُعيد النص كما هو (نفس المرجع) دون ممرّات فردية؛ بدائل الخطوة عربية
-    // بلا أرقام/رموز فلا يخلق استبدالٌ تطابقاً لاحقاً جديداً، فالسلوك مطابق.
-    private val SYMBOL_ANY_PATTERN = Pattern.compile(
-        SYMBOL_PATTERNS
-            .joinToString("|") { "(" + it.first.pattern() + ")" }
+    /** الأسماء الإنجليزية المقابلة — نفس الرموز بمعانٍ إنجليزية. */
+    private val SYMBOL_NAMES_GENERAL_EN = mapOf(
+        "°C" to "degrees Celsius",
+        "°F" to "degrees Fahrenheit",
+        "°" to "degrees",
+        ">" to "greater than",
+        "<" to "less than",
+        "≥" to "greater than or equal to",
+        "≤" to "less than or equal to",
+        "≠" to "not equal to",
+        "≈" to "approximately",
+        "∞" to "infinity",
+        "√" to "square root",
+        "π" to "pi",
+        "|" to "or",
+        "~" to "approximately",
+        "_" to "underscore",
+        "\\" to "backslash"
     )
 
-    override fun apply(input: String): String {
-        if (!SYMBOL_ANY_PATTERN.matcher(input).find()) return input
+    private val SYMBOL_ARITHMETIC_EN = mapOf(
+        "+" to " plus ",
+        "-" to " minus ",
+        "×" to " times ",
+        "÷" to " divided by ",
+        "/" to " divided by ",
+        "*" to " times ",
+        "=" to " equals "
+    )
+
+    /** أنماط لغةٍ ومجموعة مطابقة (بوابة «لا تطابق»). */
+    private class Compiled(
+        val patterns: List<Pair<Pattern, String>>,
+        val any: Pattern
+    )
+
+    /** أنماط منتهية تجمع الرموز العامة (الأطول أولاً لضمان °C قبل °) ثم
+     *  الحسابية المقيدة بين الرقمين. */
+    private fun compile(
+        names: Map<String, String>,
+        arithmetic: Map<String, String>
+    ): Compiled {
+        val patterns = buildList {
+            addAll(
+                names.entries.sortedByDescending { it.key.length }
+                    .map {
+                        Pattern.compile(Pattern.quote(it.key)) to
+                            " ${it.value} "
+                    }
+            )
+            addAll(
+                arithmetic.map { (op, word) ->
+                    // \Q..\E لإبعاد الرموز الخاصة (كـ * و /) عن المعنى النمطي
+                    Pattern.compile(
+                        "(?<=\\d)\\s*\\Q$op\\E\\s*(?=\\d)"
+                    ) to word
+                }
+            )
+        }
+        val any = Pattern.compile(
+            patterns.joinToString("|") { "(" + it.first.pattern() + ")" }
+        )
+        return Compiled(patterns, any)
+    }
+
+    private val arabic = compile(
+        SYMBOL_NAMES_GENERAL, SYMBOL_ARITHMETIC
+    )
+    private val english = compile(
+        SYMBOL_NAMES_GENERAL_EN, SYMBOL_ARITHMETIC_EN
+    )
+
+    override fun apply(input: String): String = process(input, arabic)
+
+    /** النسخة الإنجليزية: أسماء الرموز إنجليزية (greater than/plus…). */
+    override fun applyEnglish(input: String): String = process(input, english)
+
+    private fun process(input: String, compiled: Compiled): String {
+        if (!compiled.any.matcher(input).find()) return input
         var result = input
-        for ((pattern, replacement) in SYMBOL_PATTERNS) {
+        for ((pattern, replacement) in compiled.patterns) {
             result = pattern.matcher(result).replaceAll(replacement)
         }
         return result

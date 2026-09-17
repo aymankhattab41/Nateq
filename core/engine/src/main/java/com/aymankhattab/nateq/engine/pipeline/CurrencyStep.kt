@@ -349,6 +349,75 @@ internal object CurrencyStep : TextProcessingStep {
         )
     )
 
+    // جداول العملات الإنجليزية (اللغة الثانية) — نفس مفاتيح الرموز/الأكواد
+    // العربية بأسماء إنجليزية. لو غاب رمزٌ عن إحداهما لسقط من المسار
+    // المقابل، فتبقى المفاتيح متطابقة دائماً.
+    private val CURRENCY_SYMBOLS_EN = mapOf<String, CurrencyInfoEn>(
+        "$" to CurrencyInfoEn("dollar", "dollars", "cent", "cents"),
+        "€" to CurrencyInfoEn("euro", "euros", "cent", "cents"),
+        "£" to CurrencyInfoEn("pound", "pounds", "penny", "pence"),
+        "¥" to CurrencyInfoEn("yen", "yen", "sen", "sen"),
+        "₹" to CurrencyInfoEn("rupee", "rupees", "paise", "paise"),
+        "₽" to CurrencyInfoEn("ruble", "rubles", "kopeck", "kopecks"),
+        "₩" to CurrencyInfoEn("won", "won", "jeon", "jeon"),
+        "﷼" to CurrencyInfoEn("riyal", "riyals", "halala", "halalas"),
+        "د.إ" to CurrencyInfoEn("dirham", "dirhams", "fils", "fils"),
+        "ر.س" to CurrencyInfoEn("riyal", "riyals", "halala", "halalas"),
+        "د.ك" to CurrencyInfoEn("dinar", "dinars", "fils", "fils", 1000),
+        "ر.ق" to CurrencyInfoEn("riyal", "riyals", "dirham", "dirhams"),
+        "ر.ع" to CurrencyInfoEn("riyal", "riyals", "baisa", "baisa", 1000),
+        "د.ب" to CurrencyInfoEn("dinar", "dinars", "fils", "fils", 1000),
+        "ج.م" to CurrencyInfoEn("pound", "pounds", "piastre", "piastres"),
+        "د.ت" to CurrencyInfoEn(
+            "dinar", "dinars", "millime", "millimes", 1000
+        ),
+        "د.ج" to CurrencyInfoEn("dinar", "dinars", "centime", "centimes"),
+        "ر.م" to CurrencyInfoEn("dirham", "dirhams", "centime", "centimes")
+    )
+
+    private val CURRENCY_CODE_INFO_EN = mapOf<String, CurrencyInfoEn>(
+        "USD" to CurrencyInfoEn(
+            "US dollar", "US dollars", "cent", "cents"
+        ),
+        "EUR" to CurrencyInfoEn("euro", "euros", "cent", "cents"),
+        "GBP" to CurrencyInfoEn(
+            "pound sterling", "pounds sterling", "penny", "pence"
+        ),
+        "SAR" to CurrencyInfoEn(
+            "Saudi riyal", "Saudi riyals", "halala", "halalas"
+        ),
+        "AED" to CurrencyInfoEn("dirham", "dirhams", "fils", "fils"),
+        "KWD" to CurrencyInfoEn(
+            "Kuwaiti dinar", "Kuwaiti dinars", "fils", "fils", 1000
+        ),
+        "QAR" to CurrencyInfoEn(
+            "Qatari riyal", "Qatari riyals", "dirham", "dirhams"
+        ),
+        "OMR" to CurrencyInfoEn(
+            "Omani riyal", "Omani riyals", "baisa", "baisa", 1000
+        ),
+        "BHD" to CurrencyInfoEn(
+            "Bahraini dinar", "Bahraini dinars", "fils", "fils", 1000
+        ),
+        "EGP" to CurrencyInfoEn(
+            "Egyptian pound", "Egyptian pounds", "piastre", "piastres"
+        ),
+        "TND" to CurrencyInfoEn(
+            "Tunisian dinar", "Tunisian dinars", "millime", "millimes", 1000
+        ),
+        "DZD" to CurrencyInfoEn(
+            "Algerian dinar", "Algerian dinars", "centime", "centimes"
+        ),
+        "MAD" to CurrencyInfoEn(
+            "Moroccan dirham", "Moroccan dirhams", "centime", "centimes"
+        ),
+        "JPY" to CurrencyInfoEn("yen", "yen", "sen", "sen"),
+        "CNY" to CurrencyInfoEn("yuan", "yuan", "fen", "fen"),
+        "INR" to CurrencyInfoEn("rupee", "rupees", "paise", "paise"),
+        "KRW" to CurrencyInfoEn("won", "won", "jeon", "jeon"),
+        "RUB" to CurrencyInfoEn("ruble", "rubles", "kopeck", "kopecks")
+    )
+
     // نمط المبلغ الرقمي داخل العملات: فواصل آلاف اختيارية + فاصلة عشرية.
     // نمط المبلغ مع إشارة سالبة اختيارية (بند 3.1): «-2$» / «$-2» تُنطق
     // «ناقص دولاران» — كانت السالبة خارج النمط فتسقط الإشارة وتُتلف
@@ -366,111 +435,140 @@ internal object CurrencyStep : TextProcessingStep {
             """OMR|BHD|EGP|TND|DZD|MAD|JPY|CNY|INR|KRW|RUB)\b"""
     )
 
-    // أنماط الرموز قبل المبلغ: «$100» مع مسافة اختيارية بين الرمز والمبلغ.
-    private val CURRENCY_PATTERNS_BEFORE =
-        CURRENCY_SYMBOLS.map { (symbol, info) ->
-            val source = Pattern.quote(symbol) + "\\s*(" + AMOUNT_REGEX + ")\\b"
+    /** أنماط لغةِ عملة: استبدالات «الرمز قبل المبلغ» و«الرمز بعده» + بوابة
+     *  عدم التطابق (تتخطى الـ38 ممراً عند غياب أي عملة). */
+    private class Patterns<T>(
+        val before: List<Pair<Pattern, T>>,
+        val after: List<Pair<Pattern, T>>,
+        val any: Pattern
+    )
+
+    /** يبني أنماط لغةٍ من جدول رموزها — البنية نفسها (نمط المبلغ/الأكواد)
+     *  للغتين، والمختلف مفرداتُ الاستبدال فقط. */
+    private fun <T> compilePatterns(infos: Map<String, T>): Patterns<T> {
+        // أنماط الرموز قبل المبلغ: «$100» مع مسافة اختيارية بين الرمز والمبلغ.
+        val before = infos.map { (symbol, info) ->
+            val source = Pattern.quote(symbol) + "\\s*(" +
+                AMOUNT_REGEX + ")\\b"
             Pattern.compile(source) to info
         }
-    // أنماط الرموز بعد المبلغ: «100$» مع مسافة اختيارية بين المبلغ والرمز.
-    // الحارس السالب للعدد يشمل الإشارة نفسها: لا تُلتقط «-2$» كجزء من
-    // رقم أطول/رقمٍ سالبٍ سابق («12-2$» تُترك كما هي).
-    private val CURRENCY_PATTERNS_AFTER =
-        CURRENCY_SYMBOLS.map { (symbol, info) ->
+        // أنماط الرموز بعد المبلغ: «100$» مع مسافة اختيارية بين المبلغ
+        // والرمز. الحارس السالب للعدد يشمل الإشارة نفسها: لا تُلتقط «-2$»
+        // كجزء من رقم أطول/رقمٍ سالبٍ سابق («12-2$» تُترك كما هي).
+        val after = infos.map { (symbol, info) ->
             val source = "(?<![-\\d])(" + AMOUNT_REGEX + ")\\s*" +
                 Pattern.quote(symbol)
             Pattern.compile(source) to info
         }
+        // بوابة عدم التطابق: دمج OR صريح لكل أنماط العملة (قبل/بعد/كود/
+        // المبلغ قبل الكود). إن لم يطابق شيئاً أُعيد النص كما هو بلا 38 ممراً
+        // وتخصيص سلسلة؛ بدائل العملة بلا أرقام فلا يُنشئ استبدالٌ تطابقاً.
+        val any = Pattern.compile(
+            (before + after)
+                .joinToString("|") { "(" + it.first.pattern() + ")" } +
+                "|(" + PATTERN_CURRENCY_CODE.pattern() + ")" +
+                "|(" + PATTERN_AMOUNT_CODE.pattern() + ")"
+        )
+        return Patterns(before, after, any)
+    }
 
-    // بوابة عدم التطابق: دمج OR صريح لكل أنماط العملة (قبل/بعد/كود/المبلغ
-    // قبل الكود). إن لم يطابق شيئاً أُعيد النص كما هو بلا 38 ممراً وتخصيص
-    // سلسلة؛ بدائل العملة عربية بلا أرقام فلا يُنشئ استبدالٌ تطابقاً جديداً،
-    // فالسلوك مطابق تماماً.
-    private val CURRENCY_ANY_PATTERN = Pattern.compile(
-        (CURRENCY_PATTERNS_BEFORE + CURRENCY_PATTERNS_AFTER)
-            .joinToString("|") { "(" + it.first.pattern() + ")" } +
-            "|(" + PATTERN_CURRENCY_CODE.pattern() + ")" +
-            "|(" + PATTERN_AMOUNT_CODE.pattern() + ")"
+    private val arabicPatterns = compilePatterns(CURRENCY_SYMBOLS)
+    private val englishPatterns = compilePatterns(CURRENCY_SYMBOLS_EN)
+
+    override fun apply(input: String): String = process(
+        input,
+        arabicPatterns,
+        CURRENCY_CODE_INFO,
+        phrase = { amount, info -> currencyAmountPhrase(amount, info) },
+        fallback = { amount -> NumberWordsConverter.numberToWords(amount) }
     )
 
-    override fun apply(input: String): String {
-        if (!CURRENCY_ANY_PATTERN.matcher(input).find()) return input
+    /** النسخة الإنجليزية: أسماء العملات والكسور إنجليزية
+     *  («one dollar and fifty cents»). */
+    override fun applyEnglish(input: String): String = process(
+        input,
+        englishPatterns,
+        CURRENCY_CODE_INFO_EN,
+        phrase = { amount, info ->
+            englishCurrencyAmountPhrase(amount, info)
+        },
+        fallback = { amount -> NumberSpeech.toEnglishWords(amount.toLong()) }
+    )
+
+    /** التطبيق الموحّد للغتين: بوابة → رموز قبل/بعد → أكواد قبل/بعد. */
+    private fun <T> process(
+        input: String,
+        patterns: Patterns<T>,
+        codeInfo: Map<String, T>,
+        phrase: (Double, T) -> String,
+        fallback: (Double) -> String
+    ): String {
+        if (!patterns.any.matcher(input).find()) return input
         var result = input
-
-        // رموز قبل المبلغ: $100
-        for ((pattern, info) in CURRENCY_PATTERNS_BEFORE) {
-            val matcher = pattern.matcher(result)
-            val buffer = StringBuffer()
-            while (matcher.find()) {
-                val amount = AmountParser.parseAmount(matcher.group(1)!!)
-                val amountText = currencyAmountPhrase(amount, info)
-                matcher.appendReplacement(
-                    buffer,
-                    Matcher.quoteReplacement(amountText)
-                )
-            }
-            matcher.appendTail(buffer)
-            result = buffer.toString()
+        for ((pattern, info) in patterns.before) {
+            result = replaceAmounts(result, pattern, info, phrase)
         }
-
-        // رموز بعد المبلغ: 100$
-        for ((pattern, info) in CURRENCY_PATTERNS_AFTER) {
-            val matcher = pattern.matcher(result)
-            val buffer = StringBuffer()
-            while (matcher.find()) {
-                val amount = AmountParser.parseAmount(matcher.group(1)!!)
-                val amountText = currencyAmountPhrase(amount, info)
-                matcher.appendReplacement(
-                    buffer,
-                    Matcher.quoteReplacement(amountText)
-                )
-            }
-            matcher.appendTail(buffer)
-            result = buffer.toString()
+        for ((pattern, info) in patterns.after) {
+            result = replaceAmounts(result, pattern, info, phrase)
         }
-
         // أكواد العملة: USD 100 (الكود ثم المبلغ)
-        result = replaceCurrencyCodes(
-            result, PATTERN_CURRENCY_CODE, 1, 2
+        result = replaceCodes(
+            result, PATTERN_CURRENCY_CODE, 1, 2, codeInfo, phrase, fallback
         )
-        // أكواد العملة: 1500 USD (المبلغ ثم الكود) — مهم للنصوص المختلطة
-        // التي يُفصل عنها الرمز لو نُسب «USD» إلى مقطعٍ إنجليزي منفصل.
-        result = replaceCurrencyCodes(
-            result, PATTERN_AMOUNT_CODE, 2, 1
+        // أكواد العملة: 1500 USD — مهم للنصوص المختلطة التي يُفصل عنها
+        // الرمز لو نُسب «USD» إلى مقطعٍ إنجليزي منفصل.
+        result = replaceCodes(
+            result, PATTERN_AMOUNT_CODE, 2, 1, codeInfo, phrase, fallback
         )
-
         return result
+    }
+
+    /** استبدال «الرمز قبل/بعد المبلغ» بعبارة العملة في لغةٍ ما. */
+    private fun <T> replaceAmounts(
+        input: String,
+        pattern: Pattern,
+        info: T,
+        phrase: (Double, T) -> String
+    ): String {
+        val matcher = pattern.matcher(input)
+        val buffer = StringBuffer()
+        while (matcher.find()) {
+            val amount = AmountParser.parseAmount(matcher.group(1)!!)
+            matcher.appendReplacement(
+                buffer,
+                Matcher.quoteReplacement(phrase(amount, info))
+            )
+        }
+        matcher.appendTail(buffer)
+        return buffer.toString()
     }
 
     /** استبدال أكواد العملة بـ «codeGroup» (رقم مجموعة الكود) و«amountGroup»
      *  (رقم مجموعة المبلغ) في نمطٍ محدد — تُوحَّد حلقةُ الاستبدال للنمطين
      *  (كودٌ قبل مبلغه أو بعده) فلا يتكرر منطقُ التطابق والإخراج. */
-    private fun replaceCurrencyCodes(
+    private fun <T> replaceCodes(
         input: String,
         pattern: Pattern,
         codeGroup: Int,
-        amountGroup: Int
+        amountGroup: Int,
+        codeInfo: Map<String, T>,
+        phrase: (Double, T) -> String,
+        fallback: (Double) -> String
     ): String {
         val matcher = pattern.matcher(input)
         val buffer = StringBuffer()
         while (matcher.find()) {
             val code = matcher.group(codeGroup)!!
             val amount = AmountParser.parseAmount(matcher.group(amountGroup)!!)
-            val info = CURRENCY_CODE_INFO[code]
-            if (info == null) {
-                val amountText = NumberWordsConverter.numberToWords(amount)
-                val fallback = "$amountText $code"
-                matcher.appendReplacement(
-                    buffer,
-                    Matcher.quoteReplacement(fallback)
-                )
+            val info = codeInfo[code]
+            val replacement = if (info == null) {
+                "${fallback(amount)} $code"
             } else {
-                val amountPhrase = currencyAmountPhrase(amount, info)
-                matcher.appendReplacement(
-                    buffer,
-                    Matcher.quoteReplacement(amountPhrase)
-                )
+                phrase(amount, info)
             }
+            matcher.appendReplacement(
+                buffer, Matcher.quoteReplacement(replacement)
+            )
         }
         matcher.appendTail(buffer)
         return buffer.toString()
@@ -593,6 +691,55 @@ internal object CurrencyStep : TextProcessingStep {
                     else -> "$words ${info.subunit}"
                 }
             }
+        }
+    }
+
+    /** نطق مبلغ عملة بالإنجليزية: 1 ← «one dollar»، 2 ← «two dollars»،
+     *  1.50 ← «one dollar and fifty cents»، 0.50 ← «fifty cents»،
+     *  والسالب ← «minus …». لا جنس ولا مثنى في الإنجليزية. */
+    internal fun englishCurrencyAmountPhrase(
+        amount: Double,
+        info: CurrencyInfoEn
+    ): String {
+        val whole = amount.toLong()
+        val isNeg = whole < 0L || (whole == 0L && amount < 0.0)
+        // ترحيل الكسور المتراكمة (1.999 → دولاران) كما في المسار العربي.
+        val fracSubunitsRaw = Math.round(
+            Math.abs(amount - whole) * info.subunitsPerUnit
+        ).toInt()
+        val carry = fracSubunitsRaw / info.subunitsPerUnit
+        val absWhole = abs(whole) + carry
+        val fracSubunits = fracSubunitsRaw % info.subunitsPerUnit
+        val fracPhrase = englishFractionPhrase(fracSubunits, info)
+        if (absWhole == 0L && fracPhrase.isNotEmpty()) {
+            return if (isNeg) "minus $fracPhrase" else fracPhrase
+        }
+        val wholePhrase = when (absWhole) {
+            0L -> "zero ${info.plural}"
+            1L -> "one ${info.name}"
+            else -> "${
+                NumberSpeech.toEnglishWords(absWhole)
+            } ${info.plural}"
+        }
+        val base = if (isNeg) "minus $wholePhrase" else wholePhrase
+        return if (fracPhrase.isEmpty()) {
+            base
+        } else {
+            "$base and $fracPhrase"
+        }
+    }
+
+    /** نطق كسور المبلغ بالإنجليزية باسم الوحدة الفرعية: 1 ← «one cent»،
+     *  .50 ← «fifty cents». */
+    private fun englishFractionPhrase(
+        subunits: Int,
+        info: CurrencyInfoEn
+    ): String {
+        if (subunits <= 0) return ""
+        return if (subunits == 1) {
+            "one ${info.subunit}"
+        } else {
+            "${NumberSpeech.toEnglishWords(subunits)} ${info.subunitPlural}"
         }
     }
 

@@ -951,4 +951,142 @@ class PipelineStepsTest {
         // الملصقات المركّبة تُترك (PDFs جمع يعبّر محركُه عنها بالإنجليزية).
         assertEquals("الملفات PDFs", AcronymStep.apply("الملفات PDFs"))
     }
+
+    // ═══════════════ المسار الإنجليزي (اللغة الثانية) ═══════════════
+
+    @Test
+    fun englishNumber_integerAndDecimal() {
+        assertEquals(
+            "one thousand two hundred thirty four",
+            NumberStep.applyEnglish("1234")
+        )
+        assertEquals(
+            "three point one four one",
+            NumberStep.applyEnglish("3.141")
+        )
+        assertEquals("zero point zero five", NumberStep.applyEnglish("0.05"))
+    }
+
+    @Test
+    fun englishNumber_negative_spokenMinus() {
+        assertEquals("minus five", NumberStep.applyEnglish("-5"))
+    }
+
+    @Test
+    fun englishPunctuation_someLevel_namesSymbols() {
+        val some = PunctuationStep { PunctuationLevels.SOME }
+        fun full(text: String) = CleanupStep.apply(some.applyEnglish(text))
+        assertEquals("50 percent done", full("50% done"))
+        assertEquals("meet at 5", full("meet @ 5"))
+        assertEquals("a and b", full("a & b"))
+        assertEquals("and slash or", full("and / or"))
+        assertEquals("2 plus 2", full("2 + 2"))
+    }
+
+    @Test
+    fun englishPunctuation_allLevel_addsParensAndDashes() {
+        val all = PunctuationStep { PunctuationLevels.ALL }
+        fun full(text: String) = CleanupStep.apply(all.applyEnglish(text))
+        assertEquals(
+            "note open parenthesis x close parenthesis",
+            full("note (x)")
+        )
+        assertEquals("a semicolon b", full("a ; b"))
+        assertEquals("a dash b", full("a - b"))
+        assertEquals("a ellipsis b", full("a … b"))
+    }
+
+    @Test
+    fun englishSymbol_generalAndArithmetic() {
+        assertEquals(
+            "5 plus 3",
+            CleanupStep.apply(SymbolStep.applyEnglish("5+3"))
+        )
+        assertEquals(
+            "5 greater than 3",
+            CleanupStep.apply(SymbolStep.applyEnglish("5>3"))
+        )
+        assertEquals(
+            "greater than or equal to",
+            CleanupStep.apply(SymbolStep.applyEnglish("≥"))
+        )
+        assertEquals(
+            "10 divided by 2",
+            CleanupStep.apply(SymbolStep.applyEnglish("10/2"))
+        )
+        assertEquals(
+            "backslash",
+            CleanupStep.apply(SymbolStep.applyEnglish("\\"))
+        )
+    }
+
+    @Test
+    fun englishPhone_spokenDigitByDigit() {
+        assertEquals(
+            "zero one zero one two three four five six seven eight",
+            PhoneNumberStep.applyEnglish("010-1234-5678")
+        )
+        assertEquals(
+            "two zero two three four five six seven",
+            PhoneNumberStep.applyEnglish("+20234567")
+        )
+    }
+
+    @Test
+    fun englishDate_monthOrdinalYear() {
+        assertEquals(
+            "March fifteenth two thousand twenty four",
+            DateStep().applyEnglish("2024-03-15")
+        )
+        assertEquals(
+            "March twenty first two thousand twenty four",
+            DateStep().applyEnglish("21/03/2024")
+        )
+    }
+
+    @Test
+    fun englishCurrency_symbolAndCode() {
+        assertEquals("one dollar", CurrencyStep.applyEnglish("$1"))
+        assertEquals("two dollars", CurrencyStep.applyEnglish("$2"))
+        assertEquals("three dollars", CurrencyStep.applyEnglish("$3"))
+        assertEquals("one hundred dollars", CurrencyStep.applyEnglish("$100"))
+        assertEquals(
+            "one dollar and fifty cents",
+            CurrencyStep.applyEnglish("$1.50")
+        )
+        assertEquals("fifty cents", CurrencyStep.applyEnglish("$0.50"))
+        assertEquals(
+            "one thousand five hundred US dollars",
+            CurrencyStep.applyEnglish("1500 USD")
+        )
+    }
+
+    @Test
+    fun englishCurrency_threeDecimalSubunits() {
+        // الدينار الكويتي = 1000 فلس: «1.500» ← دينار واحد وخمسمائة فلس.
+        assertEquals(
+            "one Kuwaiti dinar and five hundred fils",
+            CurrencyStep.applyEnglish("KWD 1.500")
+        )
+    }
+
+    @Test
+    fun englishCurrency_symbolsWithoutArabicOutput() {
+        // لا يسقط رمزٌ من جدول الإنجليزية فيبقى رمزاً خاماً أو مخرَجاً
+        // عربياً — تغطيةٌ لكل مفاتيح جدول الرموز.
+        val samples = listOf(
+            "$1", "2€", "3£", "4¥", "5₹", "6₽", "7₩",
+            "ر.س 8", "د.إ 9", "د.ك 10", "ر.ع 11", "د.ب 12",
+            "ج.م 13", "د.ت 14", "د.ج 15", "ر.م 16", "ر.ق 17",
+            "﷼ 18"
+        )
+        val arabic = Regex("[\\u0600-\\u06FF]")
+        for (sample in samples) {
+            val out = CurrencyStep.applyEnglish(sample)
+            assertTrue(
+                "عربية متبقية: $sample",
+                !arabic.containsMatchIn(out)
+            )
+        }
+    }
 }

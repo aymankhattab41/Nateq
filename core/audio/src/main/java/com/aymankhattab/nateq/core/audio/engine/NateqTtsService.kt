@@ -142,9 +142,9 @@ class NateqTtsService : TextToSpeechService() {
      *  على منفّذ الكوروتين وموارد المحركات. */
     @Volatile private var warmupJob: kotlinx.coroutines.Job? = null
 
-    /** حارس تشغيل–واحد لاكتشاف اللغات الخلفي: يمنع تداخل [maybeRefreshDiscovery]
-     *  من الإقلاع واستدعاءات القراءة المتزامنة أن تُنفّذ الاكتشافَ مرتين
-     *  وتكتبا ذاكرة الكتالوج في وقتٍ واحد. */
+    /** حارس تشغيل–واحد لاكتشاف اللغات الخلفي: يمنع تداخل
+     *  [maybeRefreshDiscovery] من الإقلاع واستدعاءات القراءة المتزامنة
+     *  أن تُنفّذ الاكتشافَ مرتين وتكتبا ذاكرة الكتالوج في وقتٍ واحد. */
     private val discoveryMutex = Mutex()
 
     /** يُميّز سبب إلغاء [currentJob]: إيقاف صريح (onStop) أم استباق
@@ -249,9 +249,13 @@ override fun onDestroy() {
         // إلغاء كل العمليات اللاتزامنية المعلّقة للخدمة حتى لا تتسرب مع عمر
         // عملية المحرك، ثم إغلاق النطق الجاري إن وُجد.
         currentJob?.cancel()
+        warmupJob?.cancel()
         serviceScope.cancel()
         synthesisScope.cancel()
         synthesisExecutor.shutdown()
+        // إلغاء تسجيل مستشعرات الهز/التقارب كي لا تبقى مرصودةً بعد تدمير
+        // الخدمة (كانت تُسجَّل في onCreate ولا تُلغى هنا فتتسرب).
+        stopInterruptionMonitoring()
         // إغلاق موارد المزوّدين (TextToSpeech المربوط بالمحرك الخارجي + مراقب
         // الإنترنت + منفّذ الخلفية) كي لا تبقى روابط Binder IPC معلقة بعد
         // تدمير الخدمة — حارس isInitialized لمسارات التدمير
@@ -479,7 +483,11 @@ override fun onDestroy() {
         //  المستشعراتُ تُفعل هنا مع كل طلبٍ تخليقٍ وتُوقَف في finally
         //  فيُسكَت قارئُ الشاشة فوراً بنفس عقدِ الإيقاف الصريح.
         startInterruptionMonitoring()
-        val job = synthesisScope.launch {
+        // **بند 8 — إغلاق نافذة الاستباق:** تُبنى الرحلة LAZY فلا تبدأ
+        //  جدولتُها على خيط التخليق قبل إسنادها إلى [currentJob] (كانت تبدأ
+        //  فوراً فيسبق إلغاءٌ من مستشعر/onStop إسنادَها فيُفلت الرحلة)؛
+        //  نُشغّلها صريحاً بعد الإسناد مباشرةً فتنغلق النافذة تماماً.
+        val job = synthesisScope.launch(start = CoroutineStart.LAZY) {
             try {
                 // إعادة تحميل الإعدادات من القرص لأن `:tts`
                 // process منفصل عن عملية الإعدادات
@@ -545,6 +553,7 @@ override fun onDestroy() {
             }
         }
         currentJob = job
+        job.start()
         try {
             // انتظار متزامن على خيط التخليق حتى اكتمال التوليف (معيار AOSP)؛
             // التقاط Throwable يُبقي الخدمة حية حتى لو قذف التخليق خطأً

@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.engine.pipeline
 
 import com.aymankhattab.nateq.core.engine.SynthesisConfig
+import com.aymankhattab.nateq.engine.NumberSpeech
 import java.util.Calendar
 import java.util.Locale
 import java.util.regex.Matcher
@@ -34,9 +35,22 @@ internal class DateStep(
             "جمادى الآخرة", "رجب", "شعبان", "رمضان", "شوال",
             "ذو القعدة", "ذو الحجة"
         )
+
+        // الأشهر الميلادية بالإنجليزية (النسخة الإنجليزية).
+        val MONTHS_EN = arrayOf(
+            "", "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"
+        )
     }
 
-    override fun apply(input: String): String {
+    override fun apply(input: String): String = process(input, english = false)
+
+    /** النسخة الإنجليزية: «2024-03-15» → «March fifteenth two thousand
+     *  twenty four» (بلا تقويم هجري — لا معنى له في الإنجليزية). */
+    override fun applyEnglish(input: String): String =
+        process(input, english = true)
+
+    private fun process(input: String, english: Boolean): String {
         // isYMD=true → group1=year,group2=month,group3=day. العكس للـ DMY/DOTY.
         val patterns = listOf(
             PATTERN_DATE_YMD to true,   // YYYY-MM-DD أو YYYY/MM/DD
@@ -71,7 +85,11 @@ internal class DateStep(
                     )
                     continue
                 }
-                val dateText = formatDate(dayNum, monthNum, year.toInt())
+                val dateText = if (english) {
+                    formatDateEnglish(dayNum, monthNum, year.toInt())
+                } else {
+                    formatDate(dayNum, monthNum, year.toInt())
+                }
                 matcher.appendReplacement(
                     buffer,
                     Matcher.quoteReplacement(dateText)
@@ -116,6 +134,42 @@ internal class DateStep(
         val dayText = NumberWordsConverter.numberToWords(day.toLong())
         val yearText = NumberWordsConverter.numberToWords(year.toLong())
         return "$dayText ${months[month]} $yearText"
+    }
+
+    /** تنسيق التاريخ بالإنجليزية: شهر أولاً ثم اليوم الترتيبي ثم السنة
+     *  («March fifteenth two thousand twenty four»). */
+    private fun formatDateEnglish(day: Int, month: Int, year: Int): String {
+        if (month !in 1..12 || day !in 1..31) return "invalid date"
+        val dayText = englishOrdinal(day)
+        val yearText = NumberSpeech.toEnglishWords(year)
+        return "${MONTHS_EN[month]} $dayText $yearText"
+    }
+
+    /** اليوم بالصيغة الترتيبية («fifteenth»، «twenty first») — يُحوَّل آخر
+     *  مكوّن من كلمات العدد الإنجليزية لا تُلحق به اللاحقة عشوائياً
+     *  (كان «twenty one» + «st» ينتج «twenty onest»). */
+    private fun englishOrdinal(day: Int): String {
+        val parts = NumberSpeech.toEnglishWords(day).split(" ")
+        val last = parts.last()
+        val ordinalLast = when (last) {
+            "one" -> "first"
+            "two" -> "second"
+            "three" -> "third"
+            "five" -> "fifth"
+            "eight" -> "eighth"
+            "nine" -> "ninth"
+            "twelve" -> "twelfth"
+            "twenty" -> "twentieth"
+            "thirty" -> "thirtieth"
+            "forty" -> "fortieth"
+            "fifty" -> "fiftieth"
+            "sixty" -> "sixtieth"
+            "seventy" -> "seventieth"
+            "eighty" -> "eightieth"
+            "ninety" -> "ninetieth"
+            else -> "${last}th"
+        }
+        return (parts.dropLast(1) + ordinalLast).joinToString(" ")
     }
 
     /** تحويل تاريخ ميلادي إلى هجري (تقويم أم القرى المدعوم على أندرويد) */

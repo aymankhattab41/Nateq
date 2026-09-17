@@ -63,9 +63,13 @@ class TextProcessorTest {
     }
 
     @Test
-    fun processSemantics_nonArabic_unchanged() {
-        // المعالجة الدلالية للعربية فقط؛ النص الإنجليزي يُعاد كما هو
-        assertEquals("1500 USD", processor.processSemantics("1500 USD", "en"))
+    fun processSemantics_english_convertsCurrencyEarly() {
+        // المعالجة الدلالية الإنجليزية تحوّل العملة مبكراً فلا ينفصل
+        // رمزها اللاتيني «USD» عن مبلغه عند تقسيم اللغة.
+        assertEquals(
+            "one thousand five hundred US dollars",
+            processor.processSemantics("1500 USD", "en")
+        )
     }
 
     @Test
@@ -106,14 +110,24 @@ class TextProcessorTest {
     }
 
     @Test
-    fun nonArabicText_isUnchanged() {
+    fun englishText_convertsNumbers() {
+        // المسار الإنجليزي ينطق الأرقام كلماتٍ إنجليزية لا عربية.
         assertEquals(
-            "hello world 123",
+            "hello world one hundred twenty three",
             processor.process("hello world 123", "en")
         )
         assertEquals(
-            "the number 42",
+            "the number forty two",
             processor.process("the number 42", "en-US")
+        )
+    }
+
+    @Test
+    fun nonEnglishNonArabicText_isUnchanged() {
+        // الفرنسية/غيرها تبقى كما هي (بلا تحويل أرقام إلى كلمات عربية).
+        assertEquals(
+            "bonjour 123",
+            processor.process("bonjour 123", "fr")
         )
     }
 
@@ -174,10 +188,13 @@ class TextProcessorTest {
     }
 
     @Test
-    fun phoneNumber_englishContext_leftForSpeechEngine() {
-        // النص الإنجليزي يُعاد كما هو من process() دون تحويل أو نطق عربي
+    fun phoneNumber_englishContext_spokenDigitByDigit() {
+        // السياق إنجليزي فتُنطق خانات الهاتف كلماتٍ إنجليزية رقمًا رقمًا.
         val out = processor.process("Call 01001234567 now", "en-US")
-        assertEquals("Call 01001234567 now", out)
+        assertEquals(
+            "Call zero one zero zero one two three four five six seven now",
+            out
+        )
     }
 
     @Test
@@ -279,15 +296,15 @@ class TextProcessorTest {
     }
 
     @Test
-    fun emoji_disabled_removedFromArabicText() {
-        // عند إيقاف «نطق الإيموجي»: يُحذف الإيموجي من العربية (السلوك السابق)
-        // واللغة الإنجليزية تُعاد كما هي بلا حذف ولا نطق.
+    fun emoji_disabled_removedFromBothLanguages() {
+        // عند إيقاف «نطق الإيموجي» يُحذف الإيموجي من العربية والإنجليزية
+        // (المسار الإنجليزي يستخدم خطوة الإزالة نفسها).
         val ctx: Context = ApplicationProvider.getApplicationContext()
         val settings = SettingsRepository(ctx)
         settings.setEmojiPronunciationEnabled(false)
         val processorOff = TextProcessor(ctx, settings)
         assertEquals("مرحبا", processorOff.process("مرحبا 😊", "ar"))
-        assertEquals("Great 😀 job", processorOff.process("Great 😀 job", "en"))
+        assertEquals("Great job", processorOff.process("Great 😀 job", "en"))
     }
 
     @Test
@@ -360,6 +377,47 @@ class TextProcessorTest {
     fun asciiEmoticon_englishSpoken() {
         assertEquals("hello smile", processor.process("hello :)", "en"))
         assertEquals("oh laughing", processor.process("oh :D", "en"))
+    }
+
+    @Test
+    fun englishDate_speaksMonthOrdinalYear() {
+        assertEquals(
+            "March fifteenth two thousand twenty four",
+            processor.process("2024-03-15", "en")
+        )
+    }
+
+    @Test
+    fun englishCurrency_symbolAndCode() {
+        assertEquals(
+            "price one thousand five hundred US dollars",
+            processor.process("price 1500 USD", "en")
+        )
+        assertEquals(
+            "cost one dollar and fifty cents",
+            processor.process("cost $1.50", "en")
+        )
+    }
+
+    @Test
+    fun englishPunctuationAndNumbers_combined() {
+        assertEquals(
+            "Done fifty percent",
+            processor.process("Done 50%", "en")
+        )
+        assertEquals(
+            "two plus two equals four",
+            processor.process("2+2=4", "en")
+        )
+    }
+
+    @Test
+    fun englishUrl_keptWhole_notMangledByPunctuation() {
+        // الرابط محجوب أثناء خطوات الترقيم فلا يصير «https: slash slash…».
+        assertEquals(
+            "check https://example.com/path now",
+            processor.process("check https://example.com/path now", "en")
+        )
     }
 
     @Test

@@ -25,6 +25,22 @@ internal data class CurrencyInfo(
     val subunitsPerUnit: Int = 100
 )
 
+/** بيانات عملة بالإنجليزية (اللغة الثانية): المفرد والجمع للوحدة الرئيسية
+ *  والوحدة الفرعية، مع عدد أجزاء الوحدة — النطق الإنجليزي لا جنس فيه
+ *  ولا مثنى («one dollar»، «two dollars»، «fifty cents»). */
+internal data class CurrencyInfoEn(
+    /** المفرد: "dollar"، "euro"، "pound"… */
+    val name: String,
+    /** الجمع: "dollars"، "euros"، "pence"… */
+    val plural: String,
+    /** الوحدة الفرعية المفردة: "cent"، "penny"… */
+    val subunit: String,
+    /** الوحدة الفرعية الجمع: "cents"، "pence"… */
+    val subunitPlural: String,
+    /** عدد الوحدات الفرعية في الوحدة الرئيسية (100 أو 1000). */
+    val subunitsPerUnit: Int = 100
+)
+
 /** مفردات مقياس عدد (ألف/مليون/مليار/…) بأشكال العدد المختلفة لاختيار
  *  التمييز الصحيح: مفرد، مثنى، جمع، منصوب (11–99)، وصيغة الإضافة بعد مئة. */
 internal data class ScaleWords(

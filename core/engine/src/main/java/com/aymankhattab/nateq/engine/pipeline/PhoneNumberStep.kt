@@ -40,6 +40,11 @@ internal object PhoneNumberStep : TextProcessingStep {
     override fun apply(input: String): String =
         processPhoneNumbers(input, isArabicContext = true)
 
+    /** النسخة الإنجليزية: تُنطق خانات الهاتف كلماتٍ إنجليزية
+     *  («Call zero one zero…»). */
+    override fun applyEnglish(input: String): String =
+        processPhoneNumbers(input, isArabicContext = false)
+
     private fun processPhoneNumbers(
         text: String, isArabicContext: Boolean
     ): String {

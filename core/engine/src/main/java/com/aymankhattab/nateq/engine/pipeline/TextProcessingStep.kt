@@ -11,4 +11,11 @@ package com.aymankhattab.nateq.engine.pipeline
 internal interface TextProcessingStep {
     /** يُطبّق الخطوة على النص ويرجع ناتجها الجاهز للخطوة التالية. */
     fun apply(input: String): String
+
+    /**
+     * النسخة الإنجليزية (اللغة الثانية) للخطوة — تُنتج كلمات/صيغاً إنجليزية
+     * للخطوات الحساسة للغة (أرقام، ترقيم، رموز، هواتف، تواريخ، عملات)،
+     * وتُعيد [apply] نفسها للخطوات المحايدة لغوياً (تطبيع/تنظيف/روابط…).
+     */
+    fun applyEnglish(input: String): String = apply(input)
 }

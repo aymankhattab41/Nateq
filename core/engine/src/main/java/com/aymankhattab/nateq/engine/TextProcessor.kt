@@ -23,6 +23,8 @@ import com.aymankhattab.nateq.engine.pipeline.UnitStep
 import com.aymankhattab.nateq.engine.pipeline.UrlStep
 import com.aymankhattab.nateq.util.LanguageCode
 import java.text.Normalizer
+import java.util.regex.Matcher
+import java.util.regex.Pattern
 
 /**
  * معالج النصوص الذكي — يحول النصوص الخام إلى نصوص قابلة للنطق طبيعياً.
@@ -107,11 +109,38 @@ class TextProcessor(
         NumberStep
     )
 
+    // المسار الإنجليزي (اللغة الثانية): نفس بنية الخطوات بمفردات إنجليزية.
+    // يُستثنى القاموس العربي والتشكيل (خاصّان بالعربية)، والوحدات/الأوقات/
+    // المختصرات/الرومانية (تُنتج كلمات عربية محضة). الروابط تُحجب مؤقتاً
+    // كي لا تشوّهها خطوة الترقيم.
+    private val englishPreamble: List<TextProcessingStep> = listOf(
+        IndicDigitsStep,
+        EmojiStripStep { emojiEnabled }
+    )
+
+    // الدلالات المبكرة للإنجليزية: تطبيع الأرقام ثم التواريخ/العملات، فلا
+    // ينفصل رمزُ العملة («USD») عن مبلغه عند تقسيم اللغة.
+    private val englishBaseSteps: List<TextProcessingStep> = listOf(
+        IndicDigitsStep,
+        DateStep(injectedSettings),
+        CurrencyStep
+    )
+
+    // ثقيل الإنجليزي: يواصل بعد الدلالات المبكرة بالهاتف فالرموز فالترقيم
+    // ثم الأرقام.
+    private val englishHeavySteps: List<TextProcessingStep> =
+        englishBaseSteps + listOf(
+            PhoneNumberStep,
+            SymbolStep,
+            punctuationStep,
+            NumberStep
+        )
+
     /**
      * معالجة نص كامل وتحويله لصيغة نطق طبيعية.
      * @param languageTag كود اللغة (مثلاً "ar"، "en"، "ar-EG")
-     *                    — المعالجة مخصصة للغة العربية فقط؛
-     *                      اللغات الأخرى تُعاد كما هي.
+     *                    — العربية لها مسارها، والإنجليزية مسارٌ موازٍ
+     *                      بمفرداتها، وبقية اللغات تُعاد كما هي.
      */
     fun process(
         text: String,
@@ -137,8 +166,22 @@ class TextProcessor(
         val expanded =
             if (emojiEnabled) expandEmojis(result, languageTag) else null
 
-        // المعالجة مخصصة للعربية فقط؛ الإنجليزية واللغات الأخرى تُعاد كما هي
-        // بعد توسيع الإيموجي فقط (لا يجوز تحويل أرقام إنجليزية إلى كلمات عربية)
+        // الإنجليزية: مسار موازٍ بمفرداتها (لا تحويل أرقامٍ إنجليزية إلى
+        // كلماتٍ عربية) — الأرقام/التواريخ/العملات/الهواتف/الرموز/الترقيم
+        // تُنطق إنجليزية، مع حجب الروابط كي لا تشوّهها خطوةُ الترقيم.
+        if (LanguageCode.isEnglish(languageTag)) {
+            var out = expanded ?: result
+            for (step in englishPreamble) out = step.applyEnglish(out)
+            val urls = ArrayList<String>()
+            out = maskUrls(out, urls)
+            if (requiresEnglishPipeline(out)) {
+                for (step in englishHeavySteps) out = step.applyEnglish(out)
+            }
+            out = unmaskUrls(out, urls)
+            return CleanupStep.apply(out)
+        }
+
+        // اللغات الأخرى (fr/de/es…) تُعاد كما هي بعد توسيع الإيموجي فقط.
         if (!LanguageCode.isArabic(languageTag)) {
             if (expanded != null) return CleanupStep.apply(expanded)
             return result
@@ -178,6 +221,16 @@ class TextProcessor(
         // توحيد NFC عند المدخل مطابقاً لـ[process] — يبقى الإخراج مطابقاً
         // لنمط التقسيم المعدَّ مسبقاً على صيغة موحَّدة.
         val normalized = Normalizer.normalize(text, Normalizer.Form.NFC)
+        if (LanguageCode.isEnglish(languageTag)) {
+            if (!requiresEnglishPipeline(normalized)) {
+                return CleanupStep.apply(normalized)
+            }
+            var english = normalized
+            for (step in englishBaseSteps) {
+                english = step.applyEnglish(english)
+            }
+            return english
+        }
         if (!LanguageCode.isArabic(languageTag)) return normalized
         if (!requiresRegexPipeline(normalized)) {
             return CleanupStep.apply(normalized)
@@ -222,6 +275,51 @@ class TextProcessor(
             }
         }
         return false
+    }
+
+    /**
+     * بوابة الإنجليزي السريعة: خطواتُ المسار الإنجليزي كلها لا تعمل إلا
+     * بحضور رقمٍ أو رمز — فإذا كان النص حروفاً/فراغات/فاصلةً عليا فقط
+     * (وهو الشائع في مقاطع الإنجليزية) تخطّينا الممرات الثقيلة.
+     */
+    private fun requiresEnglishPipeline(text: String): Boolean {
+        for (c in text) {
+            if (c.isLetter() || c == ' ' || c == '\'' || c == '’') {
+                continue
+            }
+            return true
+        }
+        return false
+    }
+
+    /**
+     * حجب الروابط مؤقتاً أثناء خطوات الإنجليزية: خطوة الترقيم تعتبر «/»
+     * المعزولة كلمةً فتشوّه «https://…». تُستبدل الروابط بمحارف حجزٍ في
+     * منطقة الاستخدام الخاص (U+E000+) — بلا أرقام فلا تلمسها خطوةُ الأرقام،
+     * وبلا حروفٍ لا يمسّها نطقُ الترقيم — ثم تُستعاد كما كانت.
+     */
+    private fun maskUrls(text: String, store: MutableList<String>): String {
+        val matcher = PATTERN_URL_EN.matcher(text)
+        if (!matcher.find()) return text
+        matcher.reset()
+        val buffer = StringBuffer()
+        while (matcher.find()) {
+            store += matcher.group()
+            val token = (URL_MASK_BASE + store.size - 1).toString()
+            matcher.appendReplacement(buffer, Matcher.quoteReplacement(token))
+        }
+        matcher.appendTail(buffer)
+        return buffer.toString()
+    }
+
+    /** استرجاع الروابط التي حجبتها [maskUrls] إلى مواضع محارف الحجز. */
+    private fun unmaskUrls(text: String, store: List<String>): String {
+        if (store.isEmpty()) return text
+        var out = text
+        for (i in store.indices) {
+            out = out.replace((URL_MASK_BASE + i).toString(), store[i])
+        }
+        return out
     }
 
     /**
@@ -303,4 +401,14 @@ class TextProcessor(
      *  يفوّض لمحرك الأعداد المشترك في خط المعالجة. */
     fun numberToWords(number: Number): String =
         NumberWordsConverter.numberToWords(number)
+
+    private companion object {
+        /** نمط الروابط المحجوبة في المسار الإنجليزي (نفس نمط [UrlStep]). */
+        private val PATTERN_URL_EN = Pattern.compile(
+            """(?i)\b(?:https?://|www\.)[^\s<>"']+"""
+        )
+
+        /** أول محرف في منطقة الاستخدام الخاص يُستخدم لحجز الروابط. */
+        private const val URL_MASK_BASE = '\uE000'
+    }
 }
