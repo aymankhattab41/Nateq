@@ -354,7 +354,8 @@ class TextProcessor(
                         val next = base.codePointAt(nextIdx)
                         if (EmojiNames.isRegionalIndicator(next)) {
                             val code = EmojiNames.buildCountryCode(cp, next)
-                            sb.append(' ').append(
+                            appendEmojiName(
+                                sb,
                                 EmojiNames.flagReadingName(code, arabic)
                             )
                             i = nextIdx + Character.charCount(next)
@@ -362,13 +363,13 @@ class TextProcessor(
                         }
                     }
                     // علم غير مكتمل (رمز واحد بلا قرين): نطق عام
-                    sb.append(' ').append(fallback)
+                    appendEmojiName(sb, fallback)
                     i += chars
                 }
                 EmojiNames.isEmojiBlockCp(cp) -> {
                     val name = if (arabic) EmojiNames.arName(cp)
                         else EmojiNames.enName(cp)
-                    sb.append(' ').append(name ?: fallback)
+                    appendEmojiName(sb, name ?: fallback)
                     i += chars
                     // تجاوز بقية المجموعة: ألوان بشرة، مؤشرات أشكال، وعناصر
                     // ما بعد ZWJ (عائلة/مهنة) حتى لا تُنطق مقاطع متناثرة
@@ -396,6 +397,15 @@ class TextProcessor(
             }
         }
         return Normalizer.normalize(sb.toString().trim(), Normalizer.Form.NFC)
+    }
+
+    /** يلحق اسم إيموجي يفصله عن جاره بمسافة من الجهتين: إن لصِق اسمُ
+     *  الإيموجي بكلمةٍ تالية بلا مسافة («مرحباً😀مرحبا») كانت الكلمةُ
+     *  تلتصق بالاسم — الناتج النهائي يمر عبر [CleanupStep] فيُضمّ
+     *  المسافات المتكررة وتُزال الطرفية (مع [trim]). */
+    private fun appendEmojiName(sb: StringBuilder, name: String) {
+        if (sb.isNotEmpty() && sb[sb.length - 1] != ' ') sb.append(' ')
+        sb.append(name).append(' ')
     }
 
     /** تحويل رقم لكلمات عربية (يدعم حتى التريليونات، والكسور العشرية) —

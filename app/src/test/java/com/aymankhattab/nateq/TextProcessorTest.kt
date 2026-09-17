@@ -650,4 +650,52 @@ class TextProcessorTest {
             processor.process(mixed, "ar")
         )
     }
+
+    /** الإيموجي الملتصق بكلمة (بلا مسافة) يفصل اسمَه عن جاره بمسافة —
+     *  لم تكن الكلمة التالية تُفصل فتَلتصق باسم الإيموجي. */
+    @Test
+    fun emojiStuckToWord_separatesNameFromNeighbours() {
+        // U+1F600 😀 اسمه في العرب AR: «وجه مبتسم».
+        assertEquals(
+            "مرحبا وجه مبتسم مرحبا",
+            processor.process("مرحبا\uD83D\uDE00مرحبا", "ar")
+        )
+        assertEquals(
+            "وجه مبتسم مرحبا",
+            processor.process("\uD83D\uDE00مرحبا", "ar").trim()
+        )
+    }
+
+    /** idempotence للمسار الثقيل: تطبيق المعالجة الثانية لا يغيّر الأولى —
+     *  أوتكات التحويل (الأرقام/العملات/التواريخ/الرموز/الهواتف) تُحوَّل
+     *  مرة واحدة ولا تصير النتيجة حساسةً للتمرير المتكرر عبر خطوات regex
+     *  الثقيلة (إعادةُ تمريرٍ تحدث عملياً في عملية التقسيم الدلالي). */
+    @Test
+    fun heavyPath_isIdempotent() {
+        val probes = listOf(
+            "ar" to "المبلغ 1500 دولار",
+            "ar" to "السعر 45.75",
+            "ar" to "الاجتماع 10:30 صباحا",
+            "ar" to "رقم 0791234567",
+            "ar" to "نسبة 25%",
+            "ar" to "الربح 1200 - خسارة 300",
+            "en" to "this is 50 percent of 30",
+            "en" to "call 0791234567 now"
+        )
+        for ((language, probe) in probes) {
+            val once = processor.process(probe, language)
+            val twice = processor.process(once, language)
+            assertEquals(
+                "التمرير الثقيل يجب أن يكون إبدامياً لـ: $probe",
+                stripDiacritics(once), stripDiacritics(twice)
+            )
+        }
+    }
+
+    /** يُسقط تشكيلات هذه المقالة قبل المقارنة: نطقٌ مثل «صباحاً» يولّد
+     *  المسارُ الثقيلُ تنوينَه في أول مرة، وعند إعادة التمرير يزيله
+     *  [preamble] (إزالةُ تشكيلٍ قبل التحويل) — فالحروف وناتجُ التحويل
+     *  ثابتان والوشمُ الزخرفي يزول؛ المقارنة على الحروف لا الشكل. */
+    private fun stripDiacritics(text: String): String =
+        text.replace(Regex("[\u064B-\u0652\u0670\u0640]"), "")
 }
