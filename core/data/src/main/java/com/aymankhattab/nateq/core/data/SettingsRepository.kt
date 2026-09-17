@@ -942,6 +942,16 @@ class SettingsRepository(private val context: Context) :
     override fun setSmartSpellingEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("smart_spelling_enabled", enabled).apply()
 
+    /** الحفاظ على تشكيل النصوص العربية المُرسلة للمحرك (بند 1.7):
+     *  تُعاد الكلمات الأصلية غير المتحوّلة بتشكيلها الأصلي بدل إرسالها
+     *  مجرّدةً — تفيد المحركات العربية التي تنطق التشكيل بوضوح. معطّل
+     *  افتراضياً حفاظاً على السلوك القائم (المحركات التي لا تفهم التشكيل
+     *  قد تُعلِق على الحركات إن سُلّمت). */
+    override fun isTashkeelPreserved(): Boolean =
+        prefs.getBoolean("tashkeel_preserved", false)
+    override fun setTashkeelPreserved(enabled: Boolean) =
+        prefs.edit().putBoolean("tashkeel_preserved", enabled).apply()
+
     // ============ الإسكات الفوري: الهز والتقارب ============
 
     /** هز الجهاز أثناء النطق يوقفه فوراً. معطّل افتراضياً. */
@@ -1593,8 +1603,9 @@ class SettingsRepository(private val context: Context) :
             // نحفظها ونعيدها بعد المسح — الإعدادات وحيدةٌ فعلياً بلا إعادة
             // ترحيل، والوسوم نفسها لا تُصدَّر عند النسخ الاحتياطي.
             val migrationFlags = MIGRATION_KEYS.mapNotNull { key ->
-                if (rawPrefs.contains(key)) key to rawPrefs.getBoolean(key, false)
-                else null
+                if (rawPrefs.contains(key)) {
+                    key to rawPrefs.getBoolean(key, false)
+                } else null
             }.toMap()
             val editor = prefs.edit().clear()
             for (op in ops) editor.let(op.apply)

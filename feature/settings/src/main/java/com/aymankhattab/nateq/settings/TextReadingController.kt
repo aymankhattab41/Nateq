@@ -21,11 +21,14 @@ internal class TextReadingController(
     // (بند 4.1) حتى لا تبقى شجرة العرض القديمة محتجزة في الخلفية.
     private var spinnerPunctuationLevel: Spinner? = null
     private var switchSmartSpelling: SwitchMaterial? = null
+    private var switchTashkeelPreserved: SwitchMaterial? = null
 
     fun setup(view: View) {
         spinnerPunctuationLevel =
             view.findViewById(R.id.spinner_punctuation_level)
         switchSmartSpelling = view.findViewById(R.id.switch_smart_spelling)
+        switchTashkeelPreserved =
+            view.findViewById(R.id.switch_tashkeel_preserved)
 
         // خيارات مستوى نطق الترقيم (0..2) ثنائية اللغة
         val levelLabels = arrayOf(
@@ -72,11 +75,26 @@ internal class TextReadingController(
                 )
             )
         }
+
+        switchTashkeelPreserved?.isChecked =
+            runCatching { settings.isTashkeelPreserved() }
+                .getOrDefault(false)
+        switchTashkeelPreserved?.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setTashkeelPreserved(checked) }
+            onStatusChanged()
+            fragment.view?.announceCompat(
+                fragment.getString(
+                    if (checked) R.string.announcement_turned_on
+                    else R.string.announcement_turned_off
+                )
+            )
+        }
     }
 
     /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */
     fun cleanup() {
         spinnerPunctuationLevel = null
         switchSmartSpelling = null
+        switchTashkeelPreserved = null
     }
 }

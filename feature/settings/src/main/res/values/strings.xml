@@ -279,6 +279,8 @@
 <string name="shake_to_stop_summary">هز الجهاز أثناء الإعلان الطويل يوقف النطق فوراً</string>
 <string name="smart_spelling_enabled">التهجئة الذكية ونطق التشكيل</string>
 <string name="smart_spelling_summary">نطق الحرف المفرد مع حركاته (مثل: باء مفتوحة) ومسميات NATO للحروف اللاتينية (A - Alpha)</string>
+<string name="tashkeel_preserved_enabled">إبقاء تشكيل النصوص العربية</string>
+<string name="tashkeel_preserved_summary">تُسلَّم الكلماتُ العربية غير المتحوّلة إلى المحرك بتشكيلها الأصلي، فينطق المحركُ الفاهمُ للتشكيل الحركاتَ بوضوح. تُفعل مع المحركات العربية المتقدمة؛ معطّل افتراضياً</string>
 <string name="media_stream_always">الإعلانات على مسار الوسائط دائماً</string>
 <string name="media_stream_always_summary">ينطق الإعلان عبر مسار الموسيقى حتى دون قارئ الشاشة، ليتجاوز كتم مسار الإتاحة على بعض الأجهزة</string>
 <string name="sms_announcement_template_hint">قالب قراءة الرسائل</string>

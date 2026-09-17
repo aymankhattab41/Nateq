@@ -61,6 +61,15 @@ class TextProcessor(
     private val smartSpellingEnabled: Boolean
         get() = injectedSettings?.isSmartSpellingEnabled() ?: false
 
+    /**
+     * حفظ تشكيل الكلمات العربية المُرسلة للمحرك (بند 1.7): التجريد
+     * الداخلي للمطابقة يبقى كما هو، لكن الكلمات الأصلية غير المتحوّلة
+     * تُعاد بكلماتها المشكولة — فينطق المحركُ العربيُّ الفاهم للتشكيل
+     * الحركاتَ بوضوح. بلا حقنة Settings يُفترض معطّل (السلوك القائم).
+     */
+    private val tashkeelPreserved: Boolean
+        get() = injectedSettings?.isTashkeelPreserved() ?: false
+
     /** خطوة نطق علامات الترقيم — تتبع مستوى «البعض/الكل» قراءةً لحظية. */
     private val punctuationStep = PunctuationStep {
         injectedSettings?.getPunctuationLevel() ?: PunctuationLevels.SOME
@@ -189,6 +198,11 @@ class TextProcessor(
 
         // text قد يحوي إيموجي عُرضت أسماؤها (expanded) أو تُحذف لاحقاً
         if (expanded != null) result = expanded
+        // بند 1.7: نسخة مشكولة من النص (بعد توسيع الإيموجي وقبل الجرد)
+        // تُحفظ لاستعادة تشكيل الكلمات الأصلية غير المتحوّلة حين يفعّل
+        // المستخدم الحفظ — وإلا تبقى null فتسلك المعالجةُ السلوكَ الحالي
+        // نفسه (تجريد التشكيل وتسليم النص مجرداً للمحرك).
+        val voweledSource = if (tashkeelPreserved) result else null
         for (step in preamble) result = step.apply(result)
 
         // المسار السريع (Fast-path): إن لم يحتوِ النص على أي محفِّز لأرقام
@@ -196,10 +210,67 @@ class TextProcessor(
         // عربي صافٍ بلا أرقام — نتخطى كل مراحل regex الثقيلة (التواريخ/
         // الأوقات/العملات/الروابط/الرومانية/الهواتف/الأرقام/الرموز) ونذهب
         // مباشرةً لتنظيف المسافات. يوفّر تريليونات المطابقات على كل إعلان.
-        if (!requiresRegexPipeline(result)) return CleanupStep.apply(result)
+        if (!requiresRegexPipeline(result)) {
+            return finalizeArabic(voweledSource, CleanupStep.apply(result))
+        }
 
         for (step in heavySteps) result = step.apply(result)
-        return CleanupStep.apply(result)
+        return finalizeArabic(voweledSource, CleanupStep.apply(result))
+    }
+
+    /**
+     * تُكمل الناتج العربي النهائي (بعد معالجته وتنظيفه) بأحد مسارين:
+     * عند تعطيل حفظ التشكيل تُسلَّم مُنظّفة كما هي، وعند تفعيله تُمرَّر
+     * عبر [restoreTashkeel] ليعود لكل كلمةٍ لم تحوّلها خطوةٌ تشكيلُها
+     * الأصلي — بلا أي أثر على منطق التحويل نفسه (بند 1.7).
+     */
+    private fun finalizeArabic(
+        voweledSource: String?,
+        cleaned: String
+    ): String =
+        if (voweledSource != null) restoreTashkeel(voweledSource, cleaned)
+        else cleaned
+
+/**
+     * يعيد تطعيم تشكيل الكلمات الأصلية غير المتحوّلة إلى الناتج النهائي
+     * (بند 1.7): يقارن كل كلمةٍ في النتيجة بنظيرها في المصدر (المطابقة
+     * على الصيغة المجردة — كلمةٌ بقيت كما هي تُستبدل بصيغتها المشكولة،
+     * وكلمةٌ محوّلة (رقم→لفظ، تاريخ، عملة...) تعجز عن ملاقاةِ من
+     * نظيرها فتبقى بصيغة التحويل). بلا أي أثر على منطق التحويل نفسه.
+     */
+    private fun restoreTashkeel(
+        voweledSource: String,
+        processed: String
+    ): String {
+        if (processed.isEmpty()) return processed
+        // معجم المصدر: كل كلمة مشكولة مقابل مجردها — تتم المحاكاة بعد
+        // تقسيمٍ متوازٍ، والمشكولةُ الأصلي تُؤخذ من المصدر مباشرة.
+        val stripped = TashkeelStripStep.apply(voweledSource)
+        val sourceStripped = stripped.split(' ')
+        val sourceVoweled = voweledSource.split(' ')
+        if (sourceStripped.size != sourceVoweled.size) return processed
+        if (sourceStripped.isEmpty()) return processed
+        // مطابقة كلمة-بكلمة بترتيب «أقرب متاح غير مستهلك»: الكلمات
+        // المتحوّلة لا تُستهلك نظيرها، فيبقى متاحاً للكلمة الصحيحة
+        // التالية — مطابقة لطيفة لا تصطدم بالمتكررات.
+        val consumed = BooleanArray(sourceStripped.size)
+        val rebuilt = StringBuilder(processed.length)
+        var added = false
+        for (word in processed.split(' ')) {
+            if (word.isEmpty()) continue
+            if (added) rebuilt.append(' ')
+            var matched = false
+            for (i in sourceStripped.indices) {
+                if (consumed[i] || sourceStripped[i] != word) continue
+                rebuilt.append(sourceVoweled[i])
+                consumed[i] = true
+                matched = true
+                break
+            }
+            if (!matched) rebuilt.append(word)
+            added = true
+        }
+        return rebuilt.toString()
     }
 
     /**

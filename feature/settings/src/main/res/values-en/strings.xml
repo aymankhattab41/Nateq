@@ -279,6 +279,8 @@
 <string name="shake_to_stop_summary">Shaking the device during a long announcement stops speech immediately</string>
 <string name="smart_spelling_enabled">Smart spelling and diacritics</string>
 <string name="smart_spelling_summary">Speak single letters with their diacritics (e.g. baa fathah) and NATO names for Latin letters (A - Alpha)</string>
+<string name="tashkeel_preserved_enabled">Keep Arabic text diacritics</string>
+<string name="tashkeel_preserved_summary">Send unchanged Arabic words to the engine with their original diacritics, so diacritics-aware engines pronounce the vowels clearly. Enable with advanced Arabic engines; off by default</string>
 <string name="media_stream_always">Always announce on the media stream</string>
 <string name="media_stream_always_summary">Speak through the music stream even when the screen reader is off, to bypass the muted accessibility stream on some devices</string>
 <string name="sms_announcement_template_hint">Message reading template</string>

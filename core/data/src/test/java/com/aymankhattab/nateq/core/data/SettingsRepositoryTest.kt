@@ -179,6 +179,7 @@ class SettingsRepositoryTest {
         repo.setHijriDateEnabled(true)
         repo.setPunctuationLevel(0)
         repo.setSmartSpellingEnabled(true)
+        repo.setTashkeelPreserved(true)
         repo.setShakeToStopEnabled(true)
         repo.resetAllToDefault()
         assertEquals(1, repo.getNumberReadingMode())
@@ -186,7 +187,19 @@ class SettingsRepositoryTest {
         assertFalse(repo.isHijriDateEnabled())
         assertEquals(1, repo.getPunctuationLevel())
         assertFalse(repo.isSmartSpellingEnabled())
+        assertFalse(repo.isTashkeelPreserved())
         assertFalse(repo.isShakeToStopEnabled())
+    }
+
+    @Test
+    fun tashkeelPreserved_defaultOffAndRoundTrip() {
+        // حفظ التشكيل معطّل افتراضياً على السلوك القائم للمحركات التي
+        // لا تفهم الحركات، ويُرجع بشكل صريح ثم يُعاد تعطيله.
+        assertFalse(repo.isTashkeelPreserved())
+        repo.setTashkeelPreserved(true)
+        assertTrue(repo.isTashkeelPreserved())
+        repo.setTashkeelPreserved(false)
+        assertFalse(repo.isTashkeelPreserved())
     }
 
     @Test

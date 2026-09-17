@@ -162,6 +162,12 @@ interface ReadingPrefs {
     /** يعيّن تفعيل التهجئة الذكية. */
     fun setSmartSpellingEnabled(enabled: Boolean)
 
+    /** إبقاء تشكيل النصوص العربية المُرسلة للمحرك (بند 1.7). */
+    fun isTashkeelPreserved(): Boolean
+
+    /** يعيّن إبقاء تشكيل النصوص العربية. */
+    fun setTashkeelPreserved(enabled: Boolean)
+
     /** تفعيل نطق أسماء الإيموجي قبل إزالتها من النص. */
     fun isEmojiPronunciationEnabled(): Boolean
 

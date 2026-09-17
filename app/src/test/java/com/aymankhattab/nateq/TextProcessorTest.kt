@@ -698,4 +698,79 @@ class TextProcessorTest {
      *  ثابتان والوشمُ الزخرفي يزول؛ المقارنة على الحروف لا الشكل. */
     private fun stripDiacritics(text: String): String =
         text.replace(Regex("[\u064B-\u0652\u0670\u0640]"), "")
+
+    // ============ بند 1.7: إبقاء تشكيل النصوص العربية ============
+
+    @Test
+    fun tashkeelPreserved_disabledByDefault_diacriticsStripped() {
+        // السلوك القائم: معطّل افتراضياً — التشكيل يُجرّد قبل المحرك
+        // (فلا تُرسَل الحركات لمحركاتٍ لا تفهمها).
+        val plain = processor.process("السَّلَامُ عَلَيْكُمْ", "ar")
+        assertEquals("السلام عليكم", plain)
+    }
+
+    @Test
+    fun tashkeelPreserved_enabled_unchangedWordsKeepDiacritics() {
+        val ctx: Context = ApplicationProvider.getApplicationContext()
+        val settings = SettingsRepository(ctx)
+        settings.setTashkeelPreserved(true)
+        val preserved = TextProcessor(ctx, settings)
+
+        // النص العربي الصافي بلا أرقام يمر عبر fast-path: تُعاد كلماته
+        // بتشكيلها الأصلي كاملةً (لا تحويل فيها).
+        assertEquals(
+            "السَّلَامُ عَلَيْكُمْ",
+            preserved.process("السَّلَامُ عَلَيْكُمْ", "ar")
+        )
+        // كلمات مشكولة مع علامة لا تغيّر الحرف: التشكيل محفوظ.
+        assertEquals(
+            "أَهْلًا بِكَ",
+            preserved.process("أَهْلًا بِكَ", "ar")
+        )
+    }
+
+    @Test
+    fun tashkeelPreserved_enabled_transformedNumbersStayWords() {
+        val ctx: Context = ApplicationProvider.getApplicationContext()
+        val settings = SettingsRepository(ctx)
+        settings.setTashkeelPreserved(true)
+        val preserved = TextProcessor(ctx, settings)
+
+        // الرقم يبقى مطابقاً للمسار العادي (لا تنكسر التحويلات عند إبقاء
+        // التشكيل) — نطق الأرقام لا يخضع لحفظ الحركات.
+        assertEquals(
+            "السلام عليكم والعدد خمسة",
+            preserved.process("السلام عليكم والعدد 5", "ar")
+        )
+    }
+
+    @Test
+    fun tashkeelPreserved_enabled_arabicDigitsAlsoConvert() {
+        val ctx: Context = ApplicationProvider.getApplicationContext()
+        val settings = SettingsRepository(ctx)
+        settings.setTashkeelPreserved(true)
+        val preserved = TextProcessor(ctx, settings)
+
+        // الأرقام الشرقية (٥) تُحوَّل للكلمات كما في المسار العادي رغم
+        // إبقاء التشكيل — خطوة الأرقام تميّزها مستقلةً عن التجريد.
+        assertEquals(
+            "أهلا خمسة",
+            preserved.process("أهلا ٥", "ar")
+        )
+    }
+
+    @Test
+    fun tashkeelPreserved_enabled_emojiExpansionStillWorks() {
+        val ctx: Context = ApplicationProvider.getApplicationContext()
+        val settings = SettingsRepository(ctx)
+        settings.setTashkeelPreserved(true)
+        val preserved = TextProcessor(ctx, settings)
+
+        // توسيع الإيموجي يُحدَّث قبل حفظ النسخة المشكولة (voweledSource
+        // يؤخذ بعد expansion) فلا تنكسر أسماء الإيموجي مع الحفظ.
+        assertEquals(
+            "أَهْلًا وجه مبتسم",
+            preserved.process("أَهْلًا \uD83D\uDE00", "ar").trim()
+        )
+    }
 }
