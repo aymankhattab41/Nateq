@@ -226,26 +226,24 @@ class SmsReadingReceiverTest {
     // ===== حراسة الإذن =====
 
     @Test
-    fun `canReadMessages requires receive or read sms permission`() {
+    fun `canReadMessages requires receive sms permission`() {
         val app =
             ApplicationProvider.getApplicationContext<android.app.Application>()
-        shadowOf(app).denyPermissions(
-            Manifest.permission.RECEIVE_SMS,
-            Manifest.permission.READ_SMS
-        )
+        shadowOf(app).denyPermissions(Manifest.permission.RECEIVE_SMS)
         assertFalse(
-            "بلا أذونات لا تُقرأ الرسائل",
+            "بلا إذن RECEIVE_SMS لا تُقرأ الرسائل",
+            SmsReadingReceiver.canReadMessages(context)
+        )
+        // READ_SMS ليس مصرّحاً في المانيفست ولا يُنظر إليه أبداً:
+        // منحه وحده لا يكفي دون RECEIVE_SMS.
+        shadowOf(app).grantPermissions(Manifest.permission.READ_SMS)
+        assertFalse(
+            "READ_SMS وحده لا يكفي دون RECEIVE_SMS",
             SmsReadingReceiver.canReadMessages(context)
         )
         shadowOf(app).grantPermissions(Manifest.permission.RECEIVE_SMS)
         assertTrue(
             "قبول الوارد يكفي للنطق",
-            SmsReadingReceiver.canReadMessages(context)
-        )
-        shadowOf(app).denyPermissions(Manifest.permission.RECEIVE_SMS)
-        shadowOf(app).grantPermissions(Manifest.permission.READ_SMS)
-        assertTrue(
-            "قبول القراءة كافٍ أيضاً",
             SmsReadingReceiver.canReadMessages(context)
         )
     }

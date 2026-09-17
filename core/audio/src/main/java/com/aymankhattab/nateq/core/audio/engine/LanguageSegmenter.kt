@@ -103,8 +103,7 @@ class LanguageSegmenter {
     private class Run(
         val kind: Kind,
         val script: Character.UnicodeScript?,
-        val start: Int,
-        var endExclusive: Int
+        val start: Int
     )
 
     /**
@@ -219,12 +218,12 @@ class LanguageSegmenter {
             val start = index
             index += width
             val last = runs.lastOrNull()
-            if (last != null && last.kind == kind &&
-                last.script == script
+            if (last == null ||
+                last.kind != kind || last.script != script
             ) {
-                last.endExclusive = index
-            } else {
-                runs.add(Run(kind, script, start, index))
+                // ركض جديد (لا نُخزّن نهايته: يستدلّ منها الدمج
+                // عبر إحداثيات الركض التالي أو نهاية النص).
+                runs.add(Run(kind, script, start))
             }
         }
         return runs

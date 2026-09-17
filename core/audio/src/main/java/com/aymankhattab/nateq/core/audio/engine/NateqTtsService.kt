@@ -1,6 +1,9 @@
 package com.aymankhattab.nateq.core.audio.engine
 
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.media.AudioFormat
 import android.os.Build
 import android.speech.tts.SynthesisCallback
@@ -9,6 +12,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.core.audio.announcement.InterruptionSensors
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
@@ -153,6 +157,38 @@ class NateqTtsService : TextToSpeechService() {
      *  أن تُنفّذ الاكتشافَ مرتين وتكتبا ذاكرة الكتالوج في وقتٍ واحد. */
     private val discoveryMutex = Mutex()
 
+    /**
+     * **بند 6.5:** مستقبل تثبيت/إزالة/تحديث الحزم — عندما يتغير
+     * محرك TTS طرفٌ ثالث (تثبيت/إزالة/ترقية محرك نطق) يُبطَل
+     * اكتشافُ اللغات الحالي فيُعاد بناؤه عند المطالبة التالية فوراً
+     * بدل انتظار انقضاء فترة صلاحية الذاكرة الممتدة (ساعة) — كان
+     * المحركُ المثبَّت حديثاً لا يظهر لمدة ساعة كاملة.
+     * يُسجَّل ديناميكياً ليشمل الحزم قاطبةً (بث حزم النظام) ولا حاجةَ
+     * لإعلانه في المانيفست (بثّ حزم غير مسموح إعلانُه منه على API 26+).
+     */
+    private val packageEventsReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val action = intent.action ?: return
+            if (action == Intent.ACTION_PACKAGE_ADDED ||
+                action == Intent.ACTION_PACKAGE_REMOVED ||
+                action == Intent.ACTION_PACKAGE_CHANGED
+            ) {
+                if (::catalog.isInitialized) {
+                    catalog.invalidateDiscovery()
+                    // إعادة اكتشافٍ خلفية فور تغيّر مكوِّن صناعي: اللغات
+                    // الجديدة تصير متاحةً في الاستعلام التالي بلا انتظار.
+                    if (action != Intent.ACTION_PACKAGE_CHANGED ||
+                        EnginePicker.installedEnginePackages(
+                            context
+                        ).isNotEmpty()
+                    ) {
+                        refreshDiscoveryIfNeeded()
+                    }
+                }
+            }
+        }
+    }
+
     /** يُميّز سبب إلغاء [currentJob]: إيقاف صريح (onStop) أم استباق
      *  بطلبٍ جديد.
      *  عند الإيقاف لا نُنشئ خطأً زائفاً (النظام يعرف أنه أُوقف عمداً)، وعند
@@ -249,6 +285,21 @@ class NateqTtsService : TextToSpeechService() {
         // تعطّل المستخدم المفتاحان، لكنه لا يتوقف بين الرحلات ويعيد
         // تقييم الإعدادات فور بدء أول رحلة.
         startInterruptionMonitoring()
+
+        // **بند 6.5:** تسجيل مستقبل الحزم بعد اكتمال شبكة الخدمة —
+        // يستقبل بثّ تثبيت/إزالة/تحديث أي حزمة (محركات TTS أساساً)
+        // فيُبطل اكتشافَ اللغات ويعيد بناؤه فور المطالبة التالية.
+        // عَلَم RECEIVER_EXPORTED مطلوب (بثّ حزم النظام) على API 33+.
+        val packageFilter = IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_ADDED)
+            addAction(Intent.ACTION_PACKAGE_REMOVED)
+            addAction(Intent.ACTION_PACKAGE_CHANGED)
+            addDataScheme("package")
+        }
+        ContextCompat.registerReceiver(
+            this, packageEventsReceiver, packageFilter,
+            ContextCompat.RECEIVER_EXPORTED
+        )
     }
 
 override fun onDestroy() {
@@ -262,6 +313,9 @@ override fun onDestroy() {
         // إلغاء تسجيل مستشعرات الهز/التقارب كي لا تبقى مرصودةً بعد تدمير
         // الخدمة (كانت تُسجَّل في onCreate ولا تُلغى هنا فتتسرب).
         stopInterruptionMonitoring()
+        // إلغاء مستقبل الحزم (بند 6.5) — لا يبقى مستمعاً بعد تدمير
+        // الخدمة فيتجمع بثّاتُ تثبيت/إزالة الحزم على كائن مردود.
+        runCatching { unregisterReceiver(packageEventsReceiver) }
         // إغلاق موارد المزوّدين (TextToSpeech المربوط بالمحرك الخارجي + مراقب
         // الإنترنت + منفّذ الخلفية) كي لا تبقى روابط Binder IPC معلقة بعد
         // تدمير الخدمة — حارس isInitialized لمسارات التدمير

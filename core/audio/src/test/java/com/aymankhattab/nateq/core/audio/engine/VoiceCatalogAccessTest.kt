@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.core.audio.engine
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -89,5 +90,29 @@ class VoiceCatalogAccessTest {
         val catalog = catalogWithDiscovery()
         val languages = catalog.supportedLocales().map { it.language }
         assertTrue(languages.containsAll(setOf("ar", "en")))
+    }
+
+    // ============ بند 6.5: إبطال الاكتشاف عند تغير الحزم ============
+
+    /** بعد [applyDiscovery] تكون الذاكرة طازجة (لا حاجة لتحديث)؛
+     *  [invalidateDiscovery] تجعلها قابلة للتحديث فوراً حتى لو مُرَّت
+     *  ثانيةٌ واحدة — بدل انتظار انقضاء فترة الصلاحية. */
+    @Test
+    fun invalidateDiscovery_forcesRefreshImmediately() {
+        val catalog = catalogWithDiscovery()
+        assertFalse(
+            "اكتشافٌ طازجٌ لا يحتاج تحديثاً",
+            catalog.needsRefresh(LONG_TTL_MS)
+        )
+        catalog.invalidateDiscovery()
+        assertTrue(
+            "الإبطال يجعل الاكتشاف بحاجة تحديثٍ فوراً",
+            catalog.needsRefresh(LONG_TTL_MS)
+        )
+    }
+
+    private companion object {
+        /** فترة صلاحية طويلة تُبقي الاختبار بعيداً عن كرونومتر النظام. */
+        const val LONG_TTL_MS = 60 * 60 * 1000L
     }
 }

@@ -50,20 +50,15 @@ class SmsReadingReceiver : BroadcastReceiver() {
         private const val BROADCAST_HOLD_MS = 6_000L
 
         /** هل مَنح التطبيق إذن قراءة الرسائل الواردة؟
-         *  (RECEIVE_SMS أو READ_SMS). على ما قبل أندرويد 6 لا أخطارِ
-         *  إذنٍ وقت التشغيل — يُعدّ ممنوحاً. */
+         *  (RECEIVE_SMS — الإذن الوحيد المصرَّح به في المانيفست؛ إذن
+         *  READ_SMS غير مطلوب: المستقبل يستقبل البث ولا يقرأ المحتوى).
+         *  على ما قبل أندرويد 6 لا أخطارِ إذنٍ وقت التشغيل — يُعدّ ممنوحاً. */
         @JvmStatic
         internal fun canReadMessages(context: Context): Boolean {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
-            val recvGranted =
-                context.checkSelfPermission(
-                    Manifest.permission.RECEIVE_SMS
-                ) == PackageManager.PERMISSION_GRANTED
-            val readGranted =
-                context.checkSelfPermission(
-                    Manifest.permission.READ_SMS
-                ) == PackageManager.PERMISSION_GRANTED
-            return recvGranted || readGranted
+            return context.checkSelfPermission(
+                Manifest.permission.RECEIVE_SMS
+            ) == PackageManager.PERMISSION_GRANTED
         }
 
         /** يجمع أجزاء (مرسل، نص) في (مرسل، نص) واحد للرسالة المقسّمة —
