@@ -123,7 +123,8 @@ class MultiProcessPrefsBridgeTest {
     fun parse_corruptScalarValues_parsedAsNull() {
         // **بند 5.2:** قيمةٌ عدديّة فاسدة (تالفة/غير numeric) في ملف XML
         // كانت تُمرَّر كنصٍّ خام فيُكسر نوع المفتاح في SharedPreferences؛
-        // الآن parseScalar يُرجع null فيُتخطّاها copyFrom ولا تُحفظ.
+        // الآن parseScalar يُرجع null فيُتخطّاها استيراد الإعدادات ولا
+        // تُحفظ.
         val name = "bridge_corrupt_test"
         val file = java.io.File(
             context.applicationInfo.dataDir,

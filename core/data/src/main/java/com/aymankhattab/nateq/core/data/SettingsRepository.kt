@@ -2,6 +2,9 @@ package com.aymankhattab.nateq.core.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.database.ContentObserver
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import com.aymankhattab.nateq.core.data.VoicePrefsProvider
 import com.aymankhattab.nateq.core.engine.PunctuationLevels
@@ -142,9 +145,44 @@ class SettingsRepository(private val context: Context) :
     @Volatile
     private var prefsFileLength: Long = prefsFileLength()
 
-    @Volatile
-    private var prefs: SharedPreferences = openSharedPrefs().also {
+    /** المخزن الحقيقي على القرص (مصدر اللقطة): تُقرأ منه وسوم الترحيل عبر
+     *  [rawPrefs] لا من [prefs] لأن الرصدَ الخارجي قد يكتب المخزن مباشرةً
+     *  (اختبار/مكوّن قديم) فيبقى قرصه محدّثاً ولقطةُ الغلاف غيرَ ملتقطة. */
+    private val rawPrefs: SharedPreferences = openSharedPrefs().also {
         migrateIfNeeded(it)
+    }
+
+    /**
+     * غلاف [SharedPreferences] القابل لاستبدال اللقطة — تُقرأ منه كل قيم
+     * الإعدادات، وتُكتب عبره إلى المخزن الحقيقي ثم يبلّغ
+     *  [notifySettingsChanged]
+     * ليستيقظ مراقبُ العملية الأخرى عبر [SettingsChangeProvider] فوراً.
+     *
+     * في أول تشغيل يمرّ المخزن الحقيقي أولاً بترحيل الملف المشفر القديم
+     * ([migrateIfNeeded])، ثم تُبني اللقطة من مضمونه فيحسب النطق والمستخدم
+     * الجديد ما ترحّل مباشرةً بلا دورة إضافية.
+     */
+    private val prefs: SnapshotPrefs = SnapshotPrefs(
+        delegate = rawPrefs,
+        onChanged = ::notifySettingsChanged
+    )
+
+    /** مراقب التغييرات بين العمليتين: يستيقظ عند إشعار [SettingsChangeProvider]
+     *  (كتابةٌ في العملية الأخرى) فيستدعي [reload] لتبديل اللقطة محلياً. */
+    private val settingsObserver = object : ContentObserver(
+        Handler(Looper.getMainLooper())
+    ) {
+        override fun onChange(selfChange: Boolean) {
+            reload()
+        }
+    }
+
+    init {
+        runCatching {
+            context.contentResolver.registerContentObserver(
+                SettingsChangeProvider.uri(), false, settingsObserver
+            )
+        }
     }
 
     /**
@@ -179,27 +217,43 @@ class SettingsRepository(private val context: Context) :
         // متزامنةٍ من العملية الأخرى حدثت أثناء قراءتنا للملف — إن تغيّرت
         // العلامة قبل التطبيق نتخلى عن هذه الجولة كي لا نكتب أقدم فوق أحدث.
         val stampAtEntry = prefsFileStamp()
-        // قراءة صريحة لملف القرص بتنسيق SharedPreferences التوثيقي ثم تطبيق
-        // القراءة على المخزن في الذاكرة (مسح ثم نسخ) — حتمية تعمل على الجهاز
-        // وعبر Robolectric على حد سواء، دون الاعتماد على سلوك داخلي للوسم
-        // المكروه MODE_MULTI_PROCESS.
+        // قراءة صريحة لملف القرص بتنسيق SharedPreferences التوثيقي ثم تبديل
+        // اللقطة المقروءة منها القيم — بلا أي كتابةٍ إلى الملف. لذلك لم يعد
+        // `reload` في حد ذاته يغيّر القرص فيطرد إشعاراً متكرراً بين العمليتين
+        // (بند 6: التحديث من العملية الأخرى يُلتقط بالقراءة لا بإعادة الكتابة).
         val fresh = runCatching {
             prefsBridge.parse(NEW_PREFS)
         }.getOrNull()
             ?: return
         // بند 5.2: عند تطابق القراءة الجديدة مع الحالة الحالية
-        // (قراءةُ عمليةٍ أخرى لملفٍ لم يتبدّل مضمونه) لا نُعيد
-        // كتابة الملف — كان كل reloadٍ يعيد flash/apply كاملاً.
-        if (prefs.all.minus(KEY_MIGRATED) == fresh) return
+        // (قراءةُ عمليةٍ أخرى لملفٍ لم يتبدّل مضمونه) لا نُحدّث شيئاً —
+        // المفتاح الداخلي KEY_MIGRATED يُستثنى من الطرفين معاً حتى لا
+        // يفشل التطابقُ لاختلافه الضمني (كان كل reloadٍ يعيد flash/apply).
+        if (prefs.all.minus(KEY_MIGRATED) ==
+            fresh.minus(KEY_MIGRATED)
+        ) {
+            return
+        }
         // **بند 5.1:** إعادة الفحص قبل التطبيق — إن تغيّر الملف أثناء
-        // القراءة (كتابة متزامنة من العملية الأخرى) نتخلى عن الكتابة
+        // القراءة (كتابة متزامنة من العملية الأخرى) نتخلى عن التحديث
         // هذه الجولة وتُعالَج الأحدثُ في نداء reload() تالٍ.
         if (prefsFileStamp() != stampAtEntry) return
-        val editor = prefs.edit().clear()
-        editor.copyFrom(fresh)
-        editor.putBoolean(KEY_MIGRATED, prefs.getBoolean(KEY_MIGRATED, true))
-        editor.apply()
+        // تطبيق اللقطة في الذاكرة (مفتاح الترحيل محفوظ من القراءة الجديدة —
+        // الملف يُكتب عليه دائماً عند الترحيل فيبقى موجوداً في fresh).
+        prefs.replaceSnapshot(fresh)
         refreshPrefsStamp()
+    }
+
+    /** يُبلغ بطاقةَ الـ ContentObserver المعلنة في Manifest الوحدة بعد كل
+     *  كتابةٍ ناجحة عبر [SnapshotPrefs]، فيستيقظ مراقبُ العملية الأخرى
+     *  (ContentObserver) ويسترجع اللقطة فوراً بدل انتظار دورة
+     *  reload التالية. */
+    private fun notifySettingsChanged() {
+        runCatching {
+            context.contentResolver.notifyChange(
+                SettingsChangeProvider.uri(), null
+            )
+        }
     }
 
     /** مسار ملف الإعدادات المشترك بين العمليات. */
@@ -225,24 +279,6 @@ class SettingsRepository(private val context: Context) :
     private fun refreshPrefsStamp() {
         prefsLastModified = prefsFileLastModified()
         prefsFileLength = prefsFileLength()
-    }
-
-    /** ينسخ خريطة قراءة من القرص إلى محرر التفضيلات حسب نوع كل قيمة.
-     *  **بند 5.2:** القيم null (وسوم فاشلة التحويل) تُتخطّى فلا يُحفظ
-     *  نصٌّ خامٌ مكسّرُ النوع مكان int/long/float. */
-    private fun SharedPreferences.Editor.copyFrom(values: Map<String, Any?>) {
-        @Suppress("UNCHECKED_CAST")
-        for ((key, value) in values) {
-            when (value) {
-                is Int -> putInt(key, value)
-                is Long -> putLong(key, value)
-                is Float -> putFloat(key, value)
-                is Boolean -> putBoolean(key, value)
-                is String -> putString(key, value)
-                is Set<*> -> putStringSet(key, value as Set<String>)
-                null -> {} // وسوم فاشلة التحويل — تُتخطّى بلا كتابة
-            }
-        }
     }
 
     /**
@@ -1557,7 +1593,7 @@ class SettingsRepository(private val context: Context) :
             // نحفظها ونعيدها بعد المسح — الإعدادات وحيدةٌ فعلياً بلا إعادة
             // ترحيل، والوسوم نفسها لا تُصدَّر عند النسخ الاحتياطي.
             val migrationFlags = MIGRATION_KEYS.mapNotNull { key ->
-                if (prefs.contains(key)) key to prefs.getBoolean(key, false)
+                if (rawPrefs.contains(key)) key to rawPrefs.getBoolean(key, false)
                 else null
             }.toMap()
             val editor = prefs.edit().clear()

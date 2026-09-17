@@ -292,6 +292,9 @@ class SettingsViewModelBackupTest {
         val huge = 3_000_000_000L
         context.getSharedPreferences("nateq_settings", 0)
             .edit().putLong("test_long_value", huge).commit()
+        // الكتابةُ المباشرةُ (كعملية خارجية) تُحدَّث لقطةَ التفضيلات عبر
+        // reload() — مسار وصول إشعار التغيير في المعمارية الحالية.
+        settings.reload()
 
         val json = vm.buildBackupJson()
         assertTrue(json.contains("\"type\":\"long\""))

@@ -75,13 +75,19 @@ class SystemVoiceProvider(
      * (قصيرة للنصوص القصيرة). نقل الاصطناع إلى خيط خلفي
      * يحرّر Main فوراً.
      *
-     * **بند ب.txt 3.3 — خطوط ذاكرة موازية:** منفّذٌ ذو عتبتين يسمح بتخليق
-     * جلسَتَين في آنٍ واحد على مثيلَي محركين مختلفين (نصٌ مختلط اللغات)
-     * فيتوازى عقباهما الزمنيان، مع بقاء الجلسات على المثيل الواحد متتالية
-     * عبر القفل لكل مثيل في [speakNow] — عددٌ أكبر من العتبتين يرفع
-     * استهلاك الجهاز للجهود اللاتزامنية بلا كسبٍ ملموس. */
+     * **بند ب.txt 3.3 — خطوط ذاكرة موازية (مرحلة 7):** يُقاس حجم المنفّذ
+     * أصلعاً من عدد محركات TTS المثبّتة فعلياً في النظام ([resolvedPoolSize])
+     * لا عتبةٍ جامدة — نصٌّ مختلط عبر N محركات يتوازى حتى N جلسة (مثيلُ
+     * كل محركٍ بقفله الخاص يبقي جلساتِه متتالية)، مع سقف [MAX_SYNTH_POOL]
+     * يمنع استنزاف الموارد على الأجهزة المنخفضة والمحركات المزدحمة. */
     private val synthExecutor: ExecutorService =
-        Executors.newFixedThreadPool(MAX_SYNTH_SESSIONS)
+        Executors.newFixedThreadPool(
+            resolvedPoolSize(installedEngineCount(context))
+        )
+
+    /** مترادف استعلامي لعدد المحركات المثبّتة (يغذّي [resolvedPoolSize]). */
+    private fun installedEngineCount(context: Context): Int =
+        EnginePicker.installedEnginePackages(context).size
 
     /** معالج نبض Main للجدولة الزمنية
      *  لمهلة التهيئة [INIT_TIMEOUT_MS] (غير حاصر). */
@@ -152,11 +158,6 @@ class SystemVoiceProvider(
          * لو فشل ثم فشل خلفه محرك آخر، يوقف التراجع قبل استنفاد القائمة.
          */
         private const val MAX_RETRIES = 2
-
-        /** أقصى جلسات تخليق متزامنة على [synthExecutor] (بند ب.txt 3.3):
-         *  عتبتان تكفيان لتوازي نصٍّ مختلط على محركين دون استنزاف، والجلسات
-         *  على محركٍ واحد تبقى متتالية بقفلٍ لكل مثيل. */
-        private const val MAX_SYNTH_SESSIONS = 2
 
         /** حجم الدفعة الدنيا لقراءة صوت التخليق أثناء كتابته (بند ب.txt
          *  3.2): لا يُقرأ الملف النامي إلا حين يتراكم ما يعادل هذا الحجم
@@ -1134,7 +1135,7 @@ class SystemVoiceProvider(
             // الشاشة 30 ثانية انتظار) وللطويلة أوسع
             // ليكتمل كتابة الملف.
             val waitMs = synthesisTimeoutMs(text.length)
-            val deadline = SystemClock.elapsedRealtime() + waitMs
+            var deadline = SystemClock.elapsedRealtime() + waitMs
             var finished = false
             // **بثّ مجزّأ أثناء الكتابة (بند ب.txt 3.2):** بدل انتظار اكتمال
             // ملف WAV كاملاً ثم قراءته في دفعةٍ واحدة، تُقرأ الدفعاتُ
@@ -1208,6 +1209,14 @@ class SystemVoiceProvider(
                                 // ويتقطّع الصوت في البث.
                                 readSoFar = available
                                 emittedAny = true
+                                // مرحلة 7: كتابةٌ متقدمة تُرجئ الـ deadline
+                                // فلا تُقطع التخليقُ الطويل البطيءُ الذي ما
+                                // زال يُنتج صوتاً (كان يُقتَطع عند المهلة
+                                // الثابتة رغم التقدم).
+                                deadline = extendStreamDeadline(
+                                    deadline, emittedAny,
+                                    SystemClock.elapsedRealtime()
+                                )
                             } catch (e: Exception) {
                                 if (emittedAny) {
                                     // قُرئ صوتٌ فعلاً: لا نُعيد بثّه كاملاً —
@@ -1502,12 +1511,11 @@ class SystemVoiceProvider(
         extractPcmFromFile(file, pcmPool)
 
     /**
-     * مستوى الصوت يُطبَّق رقماً (معامل مضاعف محايد
-     *  لا يشوّه الصوت): السرعة والنبرة صارتا تمرَّران
-     *  مباشرةً للمحرك في [synthesizeInternal] عبر
-     *  setSpeechRate/setPitch (مسار المحرك الأصلي بجودة
-     *  أعلى)، فلا داعي لإعادة أخذ العينات اليدوية التي
-     *  كانت تشوّه النطق.
+     * مستوى الصوت يُطبَّق رقماً (كسبٌ مضاعف مجمَّع): التطبيع الأولي عبر
+     *  [normalizedRmsGain] يجذب جهارةَ المحرك إلى هدفٍ موحّد (فمحركُ
+     *  eSpeak يهمس ومحركٌ آخر يصرخ — المستخدم لا يضبط الجهارة لكل محرك)
+     *  ثم يُضرب فوقه كسبُ المستخدم [volume]. السرعة والنبرة تخصان المحرك
+     *  عبر setSpeechRate/setPitch — لا إعادة أخذ عينات يدوية كانت تشوّه.
      *
      *  يعالج فقط حتى [validLength] الصالح (لا
      *  `pcmData.size`): مع إعادة الاستخدام غير الحرفية
@@ -1527,13 +1535,14 @@ class SystemVoiceProvider(
         validLength: Int
     ): ByteArray {
         val result = pcmPool.acquire(validLength)
+        val gain = normalizedRmsGain(pcmData, validLength, volume)
         var i = 0
         while (i + 1 < validLength) {
             // Read 16-bit sample (little endian)
             val sample = (pcmData[i + 1].toInt() shl 8) or
                 (pcmData[i].toInt() and 0xFF)
-            // Apply volume
-            val scaled = (sample * volume).toInt().coerceIn(-32768, 32767)
+            // Apply combined RMS gain
+            val scaled = (sample * gain).toInt().coerceIn(-32768, 32767)
             // Write back as little endian
             result[i] = (scaled and 0xFF).toByte()
             result[i + 1] = (scaled ushr 8).toByte()
@@ -1541,6 +1550,31 @@ class SystemVoiceProvider(
         }
         return result
     }
+}
+
+/**
+ * نافذة تمديد مهلة البثّ بعد كل شريحة تُبثّ بنجاح (مرحلة 7): في السابق
+ * كان [deadline] الأصلي (من [SystemVoiceProvider.synthesisTimeoutMs])
+ * مطلقاً فالكتابةُ البطيئة المتقدمة تُقتَطع قبل اكتمالها رغم أن المحرك ما
+ * زال يكتب — الآن كل شريحة تُبثّ بنجاح تُرجئ الـ deadline هذا المقدار،
+ * فيبقى البثّ حياً ما تقدمت الكتابة فعلاً، ولا يُقطع إلا بجمود. 5 ثوانٍ
+ * (لنصوصٍ أوسع) تعادل تقريباً مهلة أطول نص وتكفي لدورات جوجل المتعثرة
+ * أن تُخطّ دون الجمود.
+ */
+internal const val STREAM_DEADLINE_EXTEND_MS = 5_000L
+
+/**
+ * يُرجئ مهلة البثّ [deadline] إن أُبثّت شريحةٌ فعلاً ([chunkEmitted]) —
+ *  كتابةُ المحرك المتقدمةُ علامةُ حياةٍ فلا تُقطع قبل اكتمالها، بينما
+ *  الجمودُ (لا شريحة جديدة) يُبقي الـ deadline الأصلي فيتحرر المدير.
+ *  منطقٌ نقي (التواقيت من [android.os.SystemClock]) قابل للاختبار الآلي.
+ */
+internal fun extendStreamDeadline(
+    deadline: Long,
+    chunkEmitted: Boolean,
+    now: Long
+): Long {
+    return if (chunkEmitted) now + STREAM_DEADLINE_EXTEND_MS else deadline
 }
 
 /**

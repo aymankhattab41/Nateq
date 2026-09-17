@@ -79,6 +79,12 @@ class NateqTtsService : TextToSpeechService() {
          *  صفوفاً في الذاكرة؛ وتحت السقف تُخلَّق المقاطعُ معاً على خيوط
          *  مستقلة ثم تُعرض مرتبةً فيختصر الزمنُ إلى أبطأِ مقطع. */
         private const val PARALLEL_MAX_CHARS = 500
+
+        /** نافذة الدمج السلس بين شريحتَي بثّ (مرحلة 7 — crossfade):
+         *  512 عيّنة ≈ 11.6ms عند [MIXED_UNIFIED_RATE] — قصيرةٌ لا تُسمع
+         *  كمزجٍ بين صوتين طويلاً، وطويلةٌ بما يكفي لقتل «الكليك» عند
+         *  الحَدّ بدل القفزة الحادّة. */
+        private const val CROSSFADE_FRAMES = 512
     }
 
     /** مصدر الإعدادات الفريد لعملية:tts — يحقنه Hilt عبر NateqApplication
@@ -858,7 +864,8 @@ override fun onDestroy() {
         return SegmentAudio(nativeRate, nativeChannels, chunks)
     }
 
-    /** يعيد معاينة شريحةِ مقطعٍ محلي إلى المعيار الموحّد ويبثّها بالترتيب —
+    /**
+     * يعيد معاينة شريحةِ مقطعٍ محلي إلى المعيار الموحّد ويبثّها بالترتيب —
      *  الشيفرة المشتركة بين المسارين المتسلسل والمتوازي. المخزنُ من المسبح
      *  يُردّ في finally على كل المصائر (المتلقي ينسخ الشريحة عبر
      *  audioAvailable).
@@ -867,24 +874,33 @@ override fun onDestroy() {
      *  (بند 2.7): نسخة [PcmResampler.convertInto] الحاملة للطور تكون
      *  مستمرةً فلا تتقبّط عند حدود الدفعة، ويُمرّر المتصل [phase] نفسَه
      *  لكلَّ دفعاتِ مقطعٍ واحدٍ (LongArray(2) طازج لكل مقطعٍ بعد ضبط
-     *  معدله وقنواته) فيبقى الاتساقُ موكولاً إليه. */
+     *  معدله وقنواته) فيبقى الاتساقُ موكولاً إليه.
+     *
+     *  [crossfader] يدمج رأسَ كل شريحة مع ذيل سابقتها بانحدارٍ خطي (مرحلة 7):
+     *  بلا قفزاتٍ حادّة يُسمع لها «كليك» عند حدود دفعاتِ البثّ — كلُّ مقاطعِ
+     *  النطق الواحد تشترك في كائنٍ واحد (ترانزيتيون سلس لا انقطاعٌ مجزَّأ)
+     *  ويبثّ ذيلُه المتبقي عند النهاية عبر [emitCrossfadeTail].
+     *
+     *  @return عدد البايتات المدمجة (قبل بثّ الذيل النهائي) — للفحص الآلي.
+     */
     private fun emitMixedChunk(
         chunk: ByteArray,
         validLength: Int,
         nativeRate: Int,
         nativeChannels: Int,
         phase: LongArray,
+        crossfader: ChunkCrossfader,
         maxBytes: Int,
         started: () -> Boolean,
         markStarted: () -> Unit,
         callback: SynthesisCallback
-    ) {
+    ): Int {
         val rate = if (nativeRate > 0) nativeRate else MIN_UNIFIED_RATE
         val required = PcmResampler.convertedByteCount(
             chunk, 0, validLength, rate,
             nativeChannels, MIXED_UNIFIED_RATE
         )
-        if (required <= 0) return
+        if (required <= 0) return 0
         // +2 بايت: النافذةُ المستمرة قد تُخرج فريماً زائداً عن التقدير
         // الطازج (نصفَ فريمٍ متبقياً عبر حدود الدفعة) فلا يُقصّ صوتٌ
         // عند كل فتحة بين دفعتين.
@@ -894,7 +910,9 @@ override fun onDestroy() {
                 chunk, 0, validLength, rate,
                 nativeChannels, MIXED_UNIFIED_RATE, mono, 0, phase
             )
-            if (written <= 0) return
+            if (written <= 0) return 0
+            val emitLen = crossfader.process(mono, written)
+            if (emitLen <= 0) return 0
             if (!started()) {
                 callback.start(
                     /* sampleRateInHz = */ MIXED_UNIFIED_RATE,
@@ -904,15 +922,47 @@ override fun onDestroy() {
                 markStarted()
             }
             var offset = 0
-            while (offset < written) {
-                val bytesToWrite = minOf(
-                    maxBytes, written - offset
-                )
+            while (offset < emitLen) {
+                val bytesToWrite = minOf(maxBytes, emitLen - offset)
                 callback.audioAvailable(mono, offset, bytesToWrite)
                 offset += bytesToWrite
             }
+            return emitLen
         } finally {
             pcmBufferPool.release(mono)
+        }
+    }
+
+    /** يبثّ الذيلَ المحجوز من [crossfader] (عيّنات الشريحة الأخيرة التي
+     *  احتجزها الدمج) عند نهاية النطق فيصل الصوتُ تماماً بلا اقتطاع. */
+    private fun emitCrossfadeTail(
+        crossfader: ChunkCrossfader,
+        maxBytes: Int,
+        started: () -> Boolean,
+        markStarted: () -> Unit,
+        callback: SynthesisCallback
+    ) {
+        val frames = crossfader.pendingFrames
+        if (frames <= 0) return
+        val out = pcmBufferPool.acquire(frames * 2)
+        try {
+            crossfader.copyPending(out, 0)
+            if (!started()) {
+                callback.start(
+                    /* sampleRateInHz = */ MIXED_UNIFIED_RATE,
+                    /* audioFormat = */ PCM_16BIT,
+                    /* channelCount = */ 1
+                )
+                markStarted()
+            }
+            var offset = 0
+            while (offset < frames * 2) {
+                val bytesToWrite = minOf(maxBytes, frames * 2 - offset)
+                callback.audioAvailable(out, offset, bytesToWrite)
+                offset += bytesToWrite
+            }
+        } finally {
+            pcmBufferPool.release(out)
         }
     }
 
@@ -928,6 +978,7 @@ override fun onDestroy() {
     ) {
         var started = false
         val maxBytes = callback.maxBufferSize
+        val crossfader = ChunkCrossfader(CROSSFADE_FRAMES)
         for (segment in segments) {
             val params = resolveSegmentParams(segment) ?: continue
             var nativeRate = 0
@@ -947,7 +998,7 @@ override fun onDestroy() {
                     { chunk, validLength ->
                         emitMixedChunk(
                             chunk, validLength, nativeRate,
-                            nativeChannels, phase, maxBytes,
+                            nativeChannels, phase, crossfader, maxBytes,
                             { started }, { started = true }, callback
                         )
                     },
@@ -963,6 +1014,10 @@ override fun onDestroy() {
                 " فشل تخليقه — يُسقط وحده", t)
             }
         }
+        emitCrossfadeTail(
+            crossfader, maxBytes, { started },
+            { started = true }, callback
+        )
         if (!started) {
             callback.error()
             return
@@ -992,6 +1047,7 @@ override fun onDestroy() {
         }
         var started = false
         val maxBytes = callback.maxBufferSize
+        val crossfader = ChunkCrossfader(CROSSFADE_FRAMES)
         for (audio in audios) {
             if (audio == null) continue
             val phase = LongArray(2)
@@ -999,11 +1055,15 @@ override fun onDestroy() {
                 emitMixedChunk(
                     chunk, chunk.size,
                     audio.nativeRate, audio.nativeChannels,
-                    phase, maxBytes, { started }, { started = true },
-                    callback
+                    phase, crossfader, maxBytes,
+                    { started }, { started = true }, callback
                 )
             }
         }
+        emitCrossfadeTail(
+            crossfader, maxBytes, { started },
+            { started = true }, callback
+        )
         if (!started) {
             callback.error()
             return

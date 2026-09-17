@@ -1,6 +1,9 @@
 package com.aymankhattab.nateq.core.data
 
 import android.content.Context
+import android.database.ContentObserver
+import android.os.Handler
+import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -444,6 +447,110 @@ class SettingsRepositoryTest {
             )
         } finally {
             // استعادة حالة نظيفة حتى لا تتسرب القيمة 7 لبقية الاختبارات.
+            context.getSharedPreferences("nateq_settings", Context.MODE_PRIVATE)
+                .edit().clear().commit()
+        }
+    }
+
+    @Test
+    fun reload_doesNotWriteToDiskFile() {
+        // بند المرحلة 6: في الماضي كان reload() يعيد كتابة المخزن كاملاً
+        // (flash/apply) فيغيّر مفتاحَ الملف/طوله ويرسل sap كتغيير متكرر —
+        // الآن يبدّل لقطة الذاكرة فقط بلا أي مساس بالقرص.
+        repo.setNumberReadingMode(3)
+        context.getSharedPreferences("nateq_settings", Context.MODE_PRIVATE)
+            .edit().putInt("probe_flush", 1).commit()
+        try {
+            val xmlFile = java.io.File(
+                context.applicationInfo.dataDir,
+                "shared_prefs/nateq_settings.xml"
+            )
+            assertTrue("ملف الإعدادات كُتب على القرص", xmlFile.exists())
+            val updated = xmlFile.readText().replace(
+                "name=\"number_reading_mode\" value=\"3\"",
+                "name=\"number_reading_mode\" value=\"7\""
+            )
+            xmlFile.writeText(updated)
+            val stampBefore = xmlFile.lastModified() to xmlFile.length()
+            repo.reload()
+            // القراءة انعكست على اللقطة…
+            assertEquals(7, repo.getNumberReadingMode())
+            // …لكن الملف لم يُلمس إطلاقاً (لا flash/apply ولا sap متكرر).
+            assertEquals(
+                "reload لا يعيد كتابة الملف على القرص",
+                stampBefore.first, xmlFile.lastModified()
+            )
+            assertEquals(
+                "طول الملف لم يتغير بعد reload",
+                stampBefore.second, xmlFile.length()
+            )
+        } finally {
+            context.getSharedPreferences("nateq_settings", Context.MODE_PRIVATE)
+                .edit().clear().commit()
+        }
+    }
+
+    @Test
+    fun write_publishesChangeToSettingsObserver() {
+        // بند المرحلة 6: كل كتابة عبر SnapshotPrefs تُطلق notifyChange على
+        // سلطان SettingsChangeProvider فيستيقظ ContentObserver العملية
+        // الأخرى. نعلن مستقلباً خاصاً بنا للتأكد أن الإشعار يصله فعلاً.
+        val notified = java.util.concurrent.atomic.AtomicInteger(0)
+        val observer = object : ContentObserver(
+            Handler(Looper.getMainLooper())
+        ) {
+            override fun onChange(selfChange: Boolean) {
+                notified.incrementAndGet()
+            }
+        }
+        context.contentResolver.registerContentObserver(
+            SettingsChangeProvider.uri(), false, observer
+        )
+        try {
+            repo.setNumberReadingMode(4)
+            org.robolectric.Shadows.shadowOf(
+                android.os.Looper.getMainLooper()
+            ).idle()
+            assertTrue(
+                "الكتابة عبر SnapshotPrefs تُطلق إشعاراً للمراقبين",
+                notified.get() > 0
+            )
+        } finally {
+            context.contentResolver.unregisterContentObserver(observer)
+        }
+    }
+
+    @Test
+    fun observerTriggeredReload_swapsSnapshotForOtherProcessWrite() {
+        // بند المرحلة 6: كتابةٌ من العملية الأخرى (تعديل الملف مباشرة على
+        // القرص) ثم إشعار الواجهة — المراقبُ فيستدعي reload تلقائياً دون
+        // نداءٍ صريح من المتصل، فتتبدّل اللقطة وتُعرَف القيمة الجديدة.
+        repo.setNumberReadingMode(3)
+        context.getSharedPreferences("nateq_settings", Context.MODE_PRIVATE)
+            .edit().putInt("probe_flush", 1).commit()
+        try {
+            val xmlFile = java.io.File(
+                context.applicationInfo.dataDir,
+                "shared_prefs/nateq_settings.xml"
+            )
+            assertTrue(xmlFile.exists())
+            val updated = xmlFile.readText().replace(
+                "name=\"number_reading_mode\" value=\"3\"",
+                "name=\"number_reading_mode\" value=\"7\""
+            )
+            xmlFile.writeText(updated)
+            // يحاكي ما تفعله العملية الأخرى: notifyChange على السلطان المشترك.
+            context.contentResolver.notifyChange(
+                SettingsChangeProvider.uri(), null
+            )
+            org.robolectric.Shadows.shadowOf(
+                android.os.Looper.getMainLooper()
+            ).idle()
+            assertEquals(
+                "المراقب يُعاود التحميل تلقائياً عند إشعار العملية الأخرى",
+                7, repo.getNumberReadingMode()
+            )
+        } finally {
             context.getSharedPreferences("nateq_settings", Context.MODE_PRIVATE)
                 .edit().clear().commit()
         }
