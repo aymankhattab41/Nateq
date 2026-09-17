@@ -2,8 +2,10 @@ package com.aymankhattab.nateq
 
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.VoiceIdContract
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -12,6 +14,32 @@ import org.junit.Test
  * الجهات إلى صيغة nateq-* مرة أخرى — الخطأ الذي أسقط صوت اللغات غير ar/en.
  */
 class VoiceIdContractTest {
+
+    /** أسماء الأصوات المعلنة في res/xml/tts_engine.xml — الإعلان الثابت
+     *  للنظام قبل onGetVoices الديناميكي. يُقرأ من نظام الملفات (لا
+     *  Robolectric) لأن موارد res/xml المعيارية لا تُحمَّل كأغلفة XML. */
+    private fun declaredVoiceNames(): Set<String> {
+        val xml = File("src/main/res/xml/tts_engine.xml").readText()
+        return Regex("""<voice\s+android:name="([^"]+)"\s*/>""")
+            .findAll(xml)
+            .map { it.groupValues[1] }
+            .toSet()
+    }
+
+    @Test
+    fun ttsEngineXml_declaredNames_followContract() {
+        val declared = declaredVoiceNames()
+        assertTrue("الإعلان لا يحتوي صوته العربي", "ar-EG" in declared)
+        assertTrue("الإعلان لا يحتوي صوته الإنجليزي", "en-US" in declared)
+        // كل اسم معلن يجب أن يطابق صيغة العقد الموحّد
+        // (ar-EG/en-US/<lang>-local)
+        for (name in declared) {
+            assertEquals(
+                "اسم الإعلان $name لا يطابق عقد المعرفات",
+                name, VoiceIdContract.createIdForDeclared(name)
+            )
+        }
+    }
 
     @Test
     fun createId_arAndEn_fixedFormats() {

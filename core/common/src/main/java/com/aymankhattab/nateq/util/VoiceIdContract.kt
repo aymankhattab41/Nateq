@@ -54,4 +54,18 @@ object VoiceIdContract {
             else -> trimmed
         }
     }
+
+    /**
+     * يكشف لغة اسم صوتٍ مُعلَن ثابت (tts_engine.xml) ثم يصدر العقد لها —
+     * التحقق أن أي اسم إعلان يُعاد توليده عبر [createId] بنفسه، فلا تنحرف
+     * أسماء الملفات الثابتة عن صيغة العقد نحو صيغةٍ أجنبية مجدداً.
+     */
+    fun createIdForDeclared(declared: String): String {
+        val norm = normalize(declared) ?: return declared
+        return if (norm.endsWith("-local")) {
+            createId(norm.removeSuffix("-local"))
+        } else {
+            norm
+        }
+    }
 }

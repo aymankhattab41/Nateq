@@ -3,4 +3,12 @@
     android:settingsActivity="com.aymankhattab.nateq.settings.SettingsActivity">
     <voice android:name="ar-EG" />
     <voice android:name="en-US" />
+    <!-- اللغات القارية المدعومة بكشف اللاتينية (fr/de/es): تُعلن هنا
+         بنفس صيغة VoiceIdContract ("<lang>-local") حتى تظهر في قوائم
+         النظام الثابتة/بعض مشغّلات سامسونج دون انتظار onGetVoises
+         الديناميكي؛ النطق الفعلي يذهب للمحرك الطرفي إن وُجد وإلا
+         يسقط أماناً للغة الطلب. -->
+    <voice android:name="fr-local" />
+    <voice android:name="de-local" />
+    <voice android:name="es-local" />
 </tts-engine>
