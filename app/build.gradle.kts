@@ -29,6 +29,8 @@ android {
         targetSdk = 37
         versionCode = 35
         versionName = "0.35.0"
+        // مشغّل الاختبارات المدمجة على الأجهزة (بند 6#7).
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -125,5 +127,9 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.kotlinx.coroutines.test)
+    // اختبارات الأجهزة المدمجة (بند 6#7): Espresso + runner + rules.
     androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.rules)
+    androidTestImplementation(libs.androidx.espresso.core)
 }
