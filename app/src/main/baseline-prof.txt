@@ -1,0 +1,57 @@
+# Baseline profile for Lord TTS (item 6#6) — manual rules for critical
+# startup paths (no Macrobenchmark: release-only workflow, no test devices).
+#
+# Syntax:
+#   L<class>;                                     -> class rule
+#   HSPL<class>;-><method>(<params>)<return>;      -> method rule
+#
+# Paths: settings activities, voice selection fragment, TTS engine service,
+# scheduler/announcement service, settings repository.
+
+# ---- main settings activity (launcher) ----
+Lcom/aymankhattab/nateq/settings/SettingsActivity;
+HSPLcom/aymankhattab/nateq/settings/SettingsActivity;-><init>()V
+HSPLcom/aymankhattab/nateq/settings/SettingsActivity;->onCreate(Landroid/os/Bundle;)V
+HSPLcom/aymankhattab/nateq/settings/SettingsActivity;->onResume()V
+
+# ---- voice selection fragment (heaviest fragment) ----
+Lcom/aymankhattab/nateq/settings/VoiceSelectionFragment;
+HSPLcom/aymankhattab/nateq/settings/VoiceSelectionFragment;-><init>()V
+HSPLcom/aymankhattab/nateq/settings/VoiceSelectionFragment;->onViewCreated(Landroid/view/View;Landroid/os/Bundle;)V
+HSPLcom/aymankhattab/nateq/settings/VoiceSelectionFragment;->onResume()V
+
+# ---- first run setup activity ----
+Lcom/aymankhattab/nateq/settings/FirstRunSetupActivity;
+HSPLcom/aymankhattab/nateq/settings/FirstRunSetupActivity;-><init>()V
+HSPLcom/aymankhattab/nateq/settings/FirstRunSetupActivity;->onCreate(Landroid/os/Bundle;)V
+
+# ---- TTS data check activity (system invokes the engine) ----
+Lcom/aymankhattab/nateq/settings/CheckTtsDataActivity;
+HSPLcom/aymankhattab/nateq/settings/CheckTtsDataActivity;-><init>()V
+HSPLcom/aymankhattab/nateq/settings/CheckTtsDataActivity;->onCreate(Landroid/os/Bundle;)V
+
+# ---- TTS engine service (:tts process) ----
+Lcom/aymankhattab/nateq/core/audio/engine/NateqTtsService;
+HSPLcom/aymankhattab/nateq/core/audio/engine/NateqTtsService;-><init>()V
+HSPLcom/aymankhattab/nateq/core/audio/engine/NateqTtsService;->onCreate()V
+HSPLcom/aymankhattab/nateq/core/audio/engine/NateqTtsService;->onSynthesizeText(Landroid/speech/tts/TextToSpeechService$SynthesisRequest;Landroid/speech/tts/SynthesisCallback;)I
+
+# ---- scheduler / announcement service ----
+Lcom/aymankhattab/nateq/core/audio/announcement/AnnouncementSchedulerService;
+HSPLcom/aymankhattab/nateq/core/audio/announcement/AnnouncementSchedulerService;-><init>()V
+HSPLcom/aymankhattab/nateq/core/audio/announcement/AnnouncementSchedulerService;->onCreate()V
+HSPLcom/aymankhattab/nateq/core/audio/announcement/AnnouncementSchedulerService;->onStartCommand(Landroid/content/Intent;II)I
+
+# ---- unified announcement speaker ----
+Lcom/aymankhattab/nateq/core/audio/announcement/AnnouncementSpeaker;
+HSPLcom/aymankhattab/nateq/core/audio/announcement/AnnouncementSpeaker;-><init>(Landroid/content/Context;Ljava/lang/String;)V
+HSPLcom/aymankhattab/nateq/core/audio/announcement/AnnouncementSpeaker;->getInstance(Landroid/content/Context;)Lcom/aymankhattab/nateq/core/audio/announcement/AnnouncementSpeaker;
+
+# ---- notification listener (notification reading) ----
+Lcom/aymankhattab/nateq/core/audio/announcement/NateqNotificationListener;
+HSPLcom/aymankhattab/nateq/core/audio/announcement/NateqNotificationListener;-><init>()V
+HSPLcom/aymankhattab/nateq/core/audio/announcement/NateqNotificationListener;->onNotificationPosted(Landroid/service/notification/StatusBarNotification;)V
+
+# ---- settings repository (SharedPreferences on every announcement) ----
+Lcom/aymankhattab/nateq/core/data/SettingsRepository;
+HSPLcom/aymankhattab/nateq/core/data/SettingsRepository;-><init>(Landroid/content/Context;)V

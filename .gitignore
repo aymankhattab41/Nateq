@@ -24,5 +24,8 @@ local.properties
 *.txt
 *.log
 
+# استثناء: ملف الأداء الأساسي (بند 6#6) مصدرُه أساسي ويُلتزم رغم قاعدة *.txt
+!**/baseline-prof.txt
+
 # كاش وأسرار wrangler (Cloudflare) — لا تُرفع أبداً (قد تحوي بيانات حساب)
 relay-worker/.wrangler/

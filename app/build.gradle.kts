@@ -98,6 +98,9 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.material) // مكونات واجهة متوافقة مع TalkBack افتراضيًا
+    // مثبت ملف الأداء (بند 6#6): يطبّق BaseProfile عند التثبيت
+    // ليستفيد ART من الترجمة قبل التشغيل لأسرع إقلاع وواجهة.
+    implementation(libs.androidx.profileinstaller)
     // تشفير مفاتيح الـ API (EncryptedSharedPreferences + Android Keystore).
     // نُبقي على alpha06 لأنها آخر نسخة فيها API مشفّر يعمل عبر minSdk 24 دون
     // ComponentFactory/تطبيق DenyList فك جذر؛ الأنساق الأحدث (stable المعلنة
