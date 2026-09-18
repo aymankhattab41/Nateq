@@ -63,16 +63,29 @@ class AnnouncementSpeakerFocusTest {
         fieldOf(s, name) as Boolean
 
     @Test
-    fun focusRequestFailed_cancelsSilently_noEngineInit() {
+    fun focusRequestFailed_defersAndRetries_thenDropsSilently() {
         val s = speaker()
         shadowAudio.setNextFocusRequestResponse(
             AudioManager.AUDIOFOCUS_REQUEST_FAILED
         )
         s.speak("اختبار المكالمة", arLocale, 1f, 1f, 1f)
-        // لا أي تباطؤ زمني ولا تهيئة محرك: الإعلان أُلغي صامتاً (كانت الحلقة
-        // السابقة تجدول نطقاً بعد 400ms فوق صوتٍ ناشطٍ محجوز — المكالمة).
-        assertTrue("لا محرك يتهيأ بعد رفض التركيز", ttsIsNull(s))
-        assertTrue("لا إجراء نطق معلّق", pendingActionIsNull(s))
+        // لا تهيئة فورية بعد الرفض: يُعيد جدولة طلب التركيز لاحقاً (لا نطق
+        // فوق مشغّلٍ محجوز — المكالمة) بدل النطق فوقه بحسن نية.
+        assertTrue("لا محرك يتهيأ قبل إعادة الجدولة", ttsIsNull(s))
+        assertTrue("لا إجراء نطق معلّق فورياً", pendingActionIsNull(s))
+        // المحاولة المعادة لا تزال مرفوضة (بقي محجوزاً) — تتابع حتى النفاد.
+        shadowAudio.setNextFocusRequestResponse(
+            AudioManager.AUDIOFOCUS_REQUEST_FAILED
+        )
+        ShadowLooper.idleMainLooper(500, TimeUnit.MILLISECONDS)
+        shadowAudio.setNextFocusRequestResponse(
+            AudioManager.AUDIOFOCUS_REQUEST_FAILED
+        )
+        ShadowLooper.idleMainLooper(500, TimeUnit.MILLISECONDS)
+        // نفاد محاولات إعادة الجدولة: إسقاطٌ صامت — لا محركٍ ولا إجراءٍ
+        // معلّق (بدل حلقة لا نهائية فوق الأغنية/المكالمة).
+        assertTrue("لا محرك يتهيأ بعد نفاد المحاولات", ttsIsNull(s))
+        assertTrue("الإجراء أُلغي بعد النفاد", pendingActionIsNull(s))
         s.shutdown()
     }
 

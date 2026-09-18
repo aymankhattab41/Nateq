@@ -1,6 +1,7 @@
 ﻿package com.aymankhattab.nateq.core.audio.announcement
 
 import android.content.Context
+import android.database.ContentObserver
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
@@ -14,10 +15,12 @@ import com.aymankhattab.nateq.core.audio.engine.LanguageSegmenter
 import com.aymankhattab.nateq.core.audio.engine.Segment
 import com.aymankhattab.nateq.engine.SpeechPart
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
+import com.aymankhattab.nateq.core.data.SettingsChangeProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
-import com.aymankhattab.nateq.util.AccessibilityUtils
+import com.aymankhattab.nateq.core.data.SpeechLock
 import com.aymankhattab.nateq.util.LanguageCode
 import java.util.Locale
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
 
@@ -66,6 +69,17 @@ class AnnouncementSpeaker(
          *  حدٌّ أدنى فلا يتعطل المحرك، وحدٌّ أعلى فلا يعلّق صامتاً. */
         internal fun clampedSpeechRate(rate: Float): Float =
             rate.coerceIn(MIN_RATE_OR_PITCH, MAX_SPEECH_RATE)
+
+        // **قفل النطق العابر:** مهلة قصوى لانتظار هدوء تخليق قارئ الشاشة
+        // (رفعَهُ محركُ :tts عبر content://…/speaking) قبل نطق الإعلانات
+        // المؤجلة — بعدها يُنطق الإعلان على أي حال (لا ضياع).
+        private const val SPEAKING_WAIT_TIMEOUT_MS = 5000L
+
+        // إعادة جدولة طلب التركيز المرفوض (AUDIOFOCUS_REQUEST_FAILED):
+        // محاولتان بفاصل فعلي، ثم إسقاطٌ صامت صريح (لا حلقة لا نهائية فوق
+        // مشغّلٍ محجوز للمكالمة/الوسائط).
+        private const val FOCUS_RETRY_DELAY_MS = 400L
+        private const val MAX_FOCUS_RETRIES = 2
 
         /** حلّ صوت وحدةٍ لغوية من صوت المحرك: يفضّل المعرّف الصريح
          *  ([partVoice] كاسم صوت مخصص في إعدادات اللغة)؛ وإلا أول صوتٍ
@@ -142,15 +156,25 @@ class AnnouncementSpeaker(
     private var audioFocusRequest: AudioFocusRequest? = null
     private var hasAudioFocus = false
 
-    // آخر حالةٍ لقراء الشاشة طُبّقت عليها سمات النطق: نتغير فقط عند الانتقال
-    // الحقيقي (قارئ مفعّل ↔ معطّل) فلا نعيد setAudioAttributes بلا داعٍ.
-    private var lastSpeechAttributesReaderOn: Boolean? = null
+    // آخر سمات طُبّقت على المحرك: نتغير فقط عند الاختلاف الفعلي فلا نُعيد
+    // setAudioAttributes بلا داعٍ (تبقى أغلى قليلاً من الفحص البسيط).
+    private var lastAppliedAudioAttributes: AudioAttributes? = null
 
     // النطق المنتظر لحين وصول Audio Focus المؤجل (DELAYED): يُخزَّن الإجراء
     // ويُطلق فور استلام AUDIOFOCUS_GAIN، مع مؤقّت أمان يمنع ضياع الإعلان
     // إن لم يتحرر التركيز أبداً.
     private var pendingFocusAction: (() -> Unit)? = null
     private var pendingFocusTimer: Runnable? = null
+
+    // **قفل النطق العابر (بند التنسيق مع قارئ الشاشة):** طابور الإعلانات
+    // المؤجلة خلف قراءة نشطة لمحرك :tts (TalkBack وغيرها). تُسجَّل هنا
+    // متى كان علم «نطق جارٍ» مرفوعاً (content://…/speaking)، وتُحرَّر كلها
+    // عند هبوط العلم فوراً (ContentObserver) أو انقضاء مهلة الأمان القصوى
+    // [SPEAKING_WAIT_TIMEOUT_MS] — فتتسلسل الإعلانات بعد القراءة بدل
+    // تراكبها فوقها.
+    private val deferredWhileSpeaking = ConcurrentLinkedQueue<() -> Unit>()
+    private var speakingLockObserver: ContentObserver? = null
+    private var speakingLockTimeout: Runnable? = null
 
     // عدّاد جيل النطق: يزداد في كل دورة speak وينفي مسارات مؤجلة
     // من دورات سابقة — يمنع النطق القديم بعد stop()/speak جديد.
@@ -453,10 +477,11 @@ class AnnouncementSpeaker(
                     }
                 })
 
-            // سمات نطق الإعلانات: مسار الإتاحة عادة (لا مسار موسيقى)،
-            // ويُعاد حسمها دينامياً مع حالة قارئ الشاشة عند كل دورة نطق.
-            lastSpeechAttributesReaderOn = null
-            applySpeechAudioAttributesIfReaderStateChanged()
+            // سمات نطق الإعلانات: مسار الإتاحة ثابتاً (لا مسار موسيقى ولا
+            // تبعية لحالة قارئ الشاشة بعد قفل النطق العابر) — تُطبَّق عند
+            // الربط وتُعاد كل دورة فقط إذا اختلفت فعلياً.
+            lastAppliedAudioAttributes = null
+            applySpeechAudioAttributes()
             // يُربط المحرك مباشرةً عبر المنشئ الثلاثي أعلاه — لا داعٍ
             // لـ setEngineByPackageName (مُهملٍ ويُعاد ربطه بالكائن قسراً).
         }
@@ -517,6 +542,26 @@ class AnnouncementSpeaker(
                 emojiCfg, parts, engineOverride, cue
             )
         }
+        // **قفل النطق العابر:** إن كان محرك التخليق (:tts) ينطق حالياً
+        // (قراءة قارئ الشاشة فوق content://…/speaking) فلا ننطق فوقه —
+        // نؤجل الإعلان حتى يهدأ القفل أو تنقضي مهلة الأمان. طلبُ التركيز
+        // وحده لا يقي من TalkBack (لا يطلب قارئ الشاشة تركيزاً ولا
+        // يستجيب لفقدانه) فيبقى القفلُ وسيلةَ التنسيق الوحيدة معه.
+        if (SpeechLock.isSpeaking(appContext)) {
+            enqueueWhileSpeaking(gen, speakAction)
+            return
+        }
+        speakWithFocus(gen, speakAction)
+    }
+
+    /** يطلب Audio Focus ويتصرف حسب النتيجة (Delayed/Failed/Granted).
+     *  [focusRetries] ما تبقى من محاولات إعادة الجدولة بعد رفضٍ للتركيز
+     *  (لا ننطق فوق مشغّلٍ محجوز — المكالمة/الوسائط)؛ نفادُها إسقاطٌ صامت. */
+    private fun speakWithFocus(
+        gen: Long,
+        speakAction: () -> Unit,
+        focusRetries: Int = MAX_FOCUS_RETRIES
+    ) {
         // نتيجة منح التركيز تُحترم: على أندرويد 17 قد يُنبّه النظام بطلبٍ
         // مؤجل (DELAYED) أو مرفوض (FAILED) بدل المنح الفوري.
         when (requestAudioFocus()) {
@@ -553,21 +598,80 @@ class AnnouncementSpeaker(
                 mainHandler.postDelayed(timer, 3000)
             }
             AudioManager.AUDIOFOCUS_REQUEST_FAILED -> {
-                // فشل الحصول على التركيز (مشغّل آخر حجز الوسائط): نُنطق
-                // الإعلان بحسن نية (Best-Effort) — الإعلان قصير ومصنّف
-                // كصوت مساعدة إتاحة (وليس وسائط) فيتداخل قبولياً مع
-                // الخلفية ولا يقطع المحادثة، وهو أفضل من ضياع إعلان
-                // المتصل/البطارية كلياً.
-                Log.w(TAG,
-                    "[Focus] FAILED — نطق بحسن نية" +
-                    " (فشل حجز التركيز)")
-                speakAction()
+                // رفض التركيز (مشغّل آخر حجز الوسائط) — لا نطق فوقه؛ نعيد
+                // الجدولة بفاصل وجيز مع التحقق من عدم تقادم دورة النطق،
+                // حتى منحٍ أو نفاد المحاولات (ثم إسقاطٌ صامت صريح بدل حلقة
+                // لا نهائية فوق الأغنية/المكالمة).
+                if (focusRetries > 0) {
+                    Log.w(TAG,
+                        "[Focus] FAILED — إعادة جدولة" +
+                        " (تبقّى $focusRetries)")
+                    mainHandler.postDelayed({
+                        if (gen == speechGeneration.get()) {
+                            speakWithFocus(gen, speakAction, focusRetries - 1)
+                        }
+                    }, FOCUS_RETRY_DELAY_MS)
+                } else {
+                    Log.w(TAG,
+                        "[Focus] FAILED — إسقاط صامت" +
+                        " بعد نفاد إعادة الجدولة")
+                    releaseAudioFocus()
+                }
             }
             else ->
                 // AUDIOFOCUS_REQUEST_GRANTED:
                 // التركيز مُنح فوراً — ننطق مباشرة.
                 speakAction()
         }
+    }
+
+    /** إلحاق إعلانٍ بانتظار انتهاء قراءة قارئ الشاشة: يُحرَّر كلُّ الطابور
+     *  عند هبوط علم «نطق جارٍ» (ContentObserver على content://…/speaking)
+     *  أو عند انقضاء مهلة الأمان القصوى — مع التحقق من سلامة دورة النطق. */
+    private fun enqueueWhileSpeaking(gen: Long, speakAction: () -> Unit) {
+        deferredWhileSpeaking.add {
+            if (gen == speechGeneration.get()) {
+                speakWithFocus(gen, speakAction)
+            }
+        }
+        registerSpeakingLockObserverIfNeeded()
+        if (speakingLockTimeout == null) {
+            val timer = Runnable {
+                speakingLockTimeout = null
+                // المهلة القصوى انتهت — ننطق ما ينتظر على أي حال (لا ضياع
+                // إعلان) حتى لو هَبَطَ القفل قبل انقضائها.
+                flushDeferredWhileSpeaking(force = true)
+            }
+            speakingLockTimeout = timer
+            mainHandler.postDelayed(timer, SPEAKING_WAIT_TIMEOUT_MS)
+        }
+    }
+
+    private fun registerSpeakingLockObserverIfNeeded() {
+        if (speakingLockObserver != null) return
+        val observer = object : ContentObserver(mainHandler) {
+            override fun onChange(selfChange: Boolean) {
+                flushDeferredWhileSpeaking(force = false)
+            }
+        }
+        speakingLockObserver = observer
+        runCatching {
+            appContext.contentResolver.registerContentObserver(
+                SettingsChangeProvider.speakingUri(), false, observer
+            )
+        }
+    }
+
+    /** تحرير إعلانات الانتظار بالترتيب؛ [force] يظل طوعيَّ المهلة: يُنطق
+     *  حتى لو كان القفل ما يزال مرفوعاً (لم يعد الانتظار مجدياً). */
+    private fun flushDeferredWhileSpeaking(force: Boolean) {
+        if (deferredWhileSpeaking.isEmpty()) return
+        if (!force && SpeechLock.isSpeaking(appContext)) return
+        speakingLockTimeout?.let { mainHandler.removeCallbacks(it) }
+        speakingLockTimeout = null
+        val pending = ArrayList<() -> Unit>(deferredWhileSpeaking)
+        deferredWhileSpeaking.clear()
+        pending.forEach { runCatching { it() } }
     }
 
     /**
@@ -610,11 +714,14 @@ class AnnouncementSpeaker(
     }
 
     /**
-     * سمات نطق الإعلانات: مسار الإتاحة عادةً (لا يزاحم وسائط المستخدم).
-     * أثناء تشغيل قارئ الشاشة (TalkBack) يتحول النطق إلى مسار الوسائط حتى
-     * لا يلتقي صوتا الإعلان والقراءة في القناة نفسها؛ تمييل أندرويد يخفض
-     * إعلان الوسائط تلقائياً لصالح كلام القارئ فتفوز القراءة ولا يضيع
-     * الإعلان كلياً.
+     * سمات نطق الإعلانات: مسار الإتاحة دائماً (USAGE_ASSISTANCE_ACCESSIBILITY)
+     * ما عدا مفتاح «دائماً على مسار الوسائط». كان الإعلان يتحول إلى المسار
+     * الإعلامي (USAGE_MEDIA) أثناء تشغيل قارئ الشاشة ظنّاً أن تمييل أندرويد
+     * سيفصل الصوتين — لكنه بين قارئٍ شغّالٍ وإعلانٍ على قناة الوسائط
+     * يستمر التراكب: القارئ يقرأ والإعلان يصدر فوقه. قفل النطق العابر
+     * (:tts/content…/speaking) هو من يتسلسل مع القراءة الآن؛ سمات الإتاحة
+     * الثابتة تجعل الإعلان يشارك قناة TalkBack فينتظر الصفوف بدل الإصدار
+     * الصاخب المقطوع.
      */
     private fun speechAudioAttributes(): AudioAttributes {
         // **بند 1.4:** مفتاح «دائماً على مسار الوسائط» يتجاوز كل قاعدة —
@@ -638,10 +745,6 @@ class AnnouncementSpeaker(
             .setUsage(
                 if (mediaStreamAlways) {
                     AudioAttributes.USAGE_MEDIA
-                } else if (
-                    AccessibilityUtils.isScreenReaderEnabled(appContext)
-                ) {
-                    AudioAttributes.USAGE_MEDIA
                 } else {
                     AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY
                 }
@@ -659,13 +762,14 @@ class AnnouncementSpeaker(
         return builder.build()
     }
 
-    /** إعادة تطبيق سمات النطق فقط عند تغيّر حالة قارئ الشاشة فعلاً. */
-    private fun applySpeechAudioAttributesIfReaderStateChanged() {
-        val readerOn = AccessibilityUtils.isScreenReaderEnabled(appContext)
-        if (readerOn == lastSpeechAttributesReaderOn) return
-        lastSpeechAttributesReaderOn = readerOn
+    /** إعادة تطبيق سمات النطق فقط إذا اختلفت فعلياً عن المطبَّقة (بلا
+     *  اعتماد على حالة قارئ الشاشة — انظر [speechAudioAttributes]). */
+    private fun applySpeechAudioAttributes() {
+        val attributes = speechAudioAttributes()
+        if (attributes == lastAppliedAudioAttributes) return
+        lastAppliedAudioAttributes = attributes
         try {
-            tts?.setAudioAttributes(speechAudioAttributes())
+            tts?.setAudioAttributes(attributes)
         } catch (t: Throwable) {
             Log.w(TAG, "setAudioAttributes failed", t)
         }
@@ -762,8 +866,8 @@ class AnnouncementSpeaker(
         // الأداةُ قبل طلب النطق، فيرفض خطافُها اكتمالَ أي دورةٍ سبقته.
         speechCycle.incrementAndGet()
         startInterruptionMonitoring()
-        // السمات تتبع حالة قارئ الشاشة لحظة النطق (وليس لحظة التهيئة).
-        applySpeechAudioAttributesIfReaderStateChanged()
+        // السمات تُطبق عند كل دورة إن اختلفت فعلياً (لا تتبع القارئ).
+        applySpeechAudioAttributes()
         try {
             val units = mergeAdjacentSameVoice(
                 buildSpeakUnits(
@@ -1054,6 +1158,18 @@ class AnnouncementSpeaker(
         pendingFocusAction = null
         pendingFocusTimer?.let { mainHandler.removeCallbacks(it) }
         pendingFocusTimer = null
+        // **قفل النطق العابر:** إلغاء مراقبة «نطق جارٍ» ومهلة الانتظار
+        // وتفريغ الطابور المؤجَّل — لا بقايا مراقبٍ ولا نطق متأخر بعد
+        // إغلاق الخدمة.
+        speakingLockObserver?.let {
+            runCatching {
+                appContext.contentResolver.unregisterContentObserver(it)
+            }
+            speakingLockObserver = null
+        }
+        speakingLockTimeout?.let { mainHandler.removeCallbacks(it) }
+        speakingLockTimeout = null
+        deferredWhileSpeaking.clear()
         releaseAudioFocus()
         shutdownSafely()
         nowSpeaking = false

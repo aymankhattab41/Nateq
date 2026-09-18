@@ -20,6 +20,7 @@ import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
 import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.core.data.SpeechLock
 import com.aymankhattab.nateq.engine.PronunciationDictionary
 import com.aymankhattab.nateq.engine.TextProcessor
 import com.aymankhattab.nateq.util.LanguageCode
@@ -556,6 +557,12 @@ override fun onDestroy() {
         // SystemVoiceProvider) الطلبَ بدل تعليق الخيط بلا سقف.
         stopping = false
 
+        // **بند قفل النطق العابر:** نرفع علم «نطق جارٍ» عبر content://…
+        // /speaking فيبدأ متحدث الإعلانات (AnnouncementSpeaker) بتأجيل
+        // إعلاناته حتى يكتمل هذا التخليق — فيتسلسل صوت الإعلان بعد قراءة
+        // قارئ الشاشة بدل تراكبه فوقها. يُخفض في finally أدناه.
+        SpeechLock.setSpeaking(applicationContext, true)
+
         // **بند 8 — رصد الإيقاف الفوري (هز/تقارب) في دورة تخليق قارئ
         //  الشاشة (TalkBack):** كان ربطُ المستشعرات محصوراً في
         //  AnnouncementSpeaker (مسار إعلانات التطبيق) فلا يتوقف نظرُ
@@ -655,6 +662,10 @@ override fun onDestroy() {
             // (أو إلغاء/خطأ) التخليق حتى لا يبقى الرصدُ حياً بعد انتهاء
             // الحاجة إليه (لا تسريب طاقةٍ ولا مستشعرٍ عالق).
             stopInterruptionMonitoring()
+            // **بند قفل النطق العابر:** نهاية التخليق (نجاح/خطأ/إلغاء) تخفض
+            // علم «نطق جارٍ» — يُنبَّه المراقبون (متحدث الإعلانات) فوراً
+            // فينطلق الإعلانُ المؤجَّل خلف القراءة.
+            SpeechLock.setSpeaking(applicationContext, false)
         }
     }
 
