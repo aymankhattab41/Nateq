@@ -1,8 +1,10 @@
 package com.aymankhattab.nateq
 
 import com.aymankhattab.nateq.core.engine.PunctuationLevels
+import com.aymankhattab.nateq.engine.ARABIC_TASHKEEL_AWARE_ENGINES
 import com.aymankhattab.nateq.engine.EmojiSpeech
 import com.aymankhattab.nateq.engine.SpeechPart
+import com.aymankhattab.nateq.engine.stripTashkeelFor
 import com.aymankhattab.nateq.engine.pipeline.AcronymStep
 import com.aymankhattab.nateq.engine.pipeline.AmountParser
 import com.aymankhattab.nateq.engine.pipeline.CleanupStep
@@ -20,6 +22,7 @@ import com.aymankhattab.nateq.engine.pipeline.TimeStep
 import com.aymankhattab.nateq.engine.pipeline.UnitStep
 import com.aymankhattab.nateq.engine.pipeline.UrlStep
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -1088,5 +1091,26 @@ class PipelineStepsTest {
                 !arabic.containsMatchIn(out)
             )
         }
+    }
+
+    // ═══════════════════ بند التشكيل الشرطي ═══════════════════
+
+    @Test
+    fun tashkeelStrip_preservesForGoogleTts() {
+        // Google TTS يفهم التشكيل العربي → لا نجرد له.
+        assertFalse(stripTashkeelFor("com.google.android.tts"))
+    }
+
+    @Test
+    fun tashkeelStrip_defaultsToStripForUnknownOrNull() {
+        // الافتراضي/غير المعروف/null → تجريد (السلوك القائم).
+        assertTrue(stripTashkeelFor(null))
+        assertTrue(stripTashkeelFor("com.samsung.android.tts"))
+        assertTrue(stripTashkeelFor(""))
+    }
+
+    @Test
+    fun tashkeelStrip_aweareEnginesSetIsNonEmpty() {
+        assertTrue(ARABIC_TASHKEEL_AWARE_ENGINES.isNotEmpty())
     }
 }

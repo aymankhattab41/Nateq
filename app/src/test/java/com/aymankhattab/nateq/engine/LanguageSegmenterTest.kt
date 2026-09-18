@@ -21,6 +21,18 @@ class LanguageSegmenterTest {
         )
     }
 
+    private fun segmentWithSecondary(
+        text: String,
+        request: String,
+        secondary: String
+    ): Pair<List<String>, List<String>> {
+        val segments = segmenter.segment(text, request, secondary)
+        return Pair(
+            segments.map { it.text },
+            segments.map { it.languageTag }
+        )
+    }
+
     @Test
     fun pureArabic_singleSegment() {
         val (texts, tags) = textsAndTags("مرحبا بالعالم", "ar")
@@ -302,6 +314,44 @@ class LanguageSegmenterTest {
         // لا الإنجليزية — سلوك السقوط المحافظ للاتينية.
         val (texts, tags) = textsAndTags("réduction 25% off", "fr")
         assertEquals(listOf("réduction 25% off"), texts)
+        assertEquals(listOf("fr"), tags)
+    }
+
+    // ===== بند اللغة الثانية =====
+
+    @Test
+    fun arabicRequest_singleFrenchWord_usesSecondaryLanguage() {
+        // «Bonjour» المفردة لا يحسمها الكاشف (دون بلوغ عتبة الكلمتين) فتُنطق
+        // بلغة النطق الاحتياطية التي يختارها المستخدم — الفرنسية هاهنا
+        // بدل الإنجليزية الافتراضية.
+        val (texts, tags) = segmentWithSecondary("مرحبا Bonjour", "ar", "fr")
+        assertEquals(listOf("مرحبا ", "Bonjour"), texts)
+        assertEquals(listOf("ar", "fr"), tags)
+    }
+
+    @Test
+    fun arabicRequest_singleFrenchWord_usesEnglishWhenSecondaryIsEnglish() {
+        // نفس المقطع مع لغة ثانية إنجليزية: ينطق إنجليزياً (سلوك ما قبل
+        // الميزة) — اللغتان مطابقتان للغة المرسلة.
+        val (texts, tags) = segmentWithSecondary("مرحبا Bonjour", "ar", "en")
+        assertEquals(listOf("مرحبا ", "Bonjour"), texts)
+        assertEquals(listOf("ar", "en"), tags)
+    }
+
+    @Test
+    fun arabicRequest_blankSecondary_fallsBackToEnglish() {
+        // لغة ثانية فارغة/غير معروفة: سقوطٌ أخيرٌ ثابت على الإنجليزية.
+        val (texts, tags) = segmentWithSecondary("مرحبا Bonjour", "ar", "")
+        assertEquals(listOf("مرحبا ", "Bonjour"), texts)
+        assertEquals(listOf("ar", "en"), tags)
+    }
+
+    @Test
+    fun nonArabicRequest_ignoresSecondaryLanguage() {
+        // الطلب الفرنسي نفسُه تُنسب إليه الحروف اللاتينية حتماً — اللغة
+        // الثانية لا أثر لها خارج الطلب العربي.
+        val (texts, tags) = segmentWithSecondary("Bonjour le monde", "fr", "es")
+        assertEquals(listOf("Bonjour le monde"), texts)
         assertEquals(listOf("fr"), tags)
     }
 }

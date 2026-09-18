@@ -33,6 +33,25 @@ object VoiceIdContract {
         }
     }
 
+    /** لغات الأصوات المُعلَنة الثابتة في tts_engine.xml — المصدر الوحيد
+     *  للفهرس المضمون في الإعلان (ar/en أساسيتان + القارّات fr/de/es).
+     *  أي لغة إضافية تُكتشف ديناميكياً عبر المحركات ولا تُضمَّن هنا. */
+    fun declaredLanguages(): List<String> =
+        listOf(
+            LanguageCode.AR.tag,
+            LanguageCode.EN.tag,
+            "fr",
+            "de",
+            "es"
+        )
+
+    /** أسماء الأصوات المُعلَنة الثابتة في tts_engine.xml بنفس الترتيب —
+     *  يلتزمها الوجهان معاً (CHECK_TTS_DATA عبر declaredVoices و onGetVoices
+     *  عبر supportedLocales في VoiceCatalog) فيتطابقان مع الملف حرفاً
+     *  بحرف. كلُّ اسمٍ مولَّد من [createId] بالعقد نفسه فلا ينفرد عنه. */
+    fun declaredVoiceNames(): List<String> =
+        declaredLanguages().map { createId(it) }
+
     /**
      * يطبّع معرّفاً وارداً/مخزّناً إلى الصيغة الموحّدة:
      * - القديمان من نسخ ما قبل التسمية: "nateq-ar*"/"nateq-en*" و

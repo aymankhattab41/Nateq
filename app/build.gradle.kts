@@ -1,11 +1,10 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt.android)
 }
-
-import java.util.Properties
-import com.android.build.api.variant.VariantOutput
 
 // بيانات مفتاح التوقيع تُقرأ من key.properties (مُستثنى من git، لا يُرفع).
 // إن لم يجد الملف أو كان ناقصاً يفشل بناء release بخطأ واضح («لم تُضبط كلمة
@@ -35,7 +34,7 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = rootProject.file(keyProperties.getProperty("storeFile") ?: "key/lord-tts.jks")
+            storeFile = rootProject.file(keyProperties.getProperty("storeFile") ?: "key/nateq.jks")
             storePassword = keyProperties.getProperty("storePassword")
             keyAlias = keyProperties.getProperty("keyAlias")
             keyPassword = keyProperties.getProperty("keyPassword")
@@ -74,13 +73,15 @@ android {
     }
 }
 
-// إعادة تسمية مخرجات APK بمسمى ثابت lord_tts.apk بدل app-release.apk
+// إعادة تسمية مخرجات APK بمسمى ثابت nateq.apk بدل app-release.apk
 // (androidComponents هي واجهة AGP الحديثة، تبقى صالحة في AGP 9+ بدل
-//  applicationVariants/outputs القديمة التي أُزيلت).
+//  applicationVariants/outputs القديمة التي أُزيلت). تُقيَّد بالنسخة
+// release فقط — نحوّل اسم مخرجها (بنية MultiOutput) ليدوم ثابتاً.
 androidComponents {
-    onVariants(androidComponents.selector().all()) { variant ->
+    onVariants(androidComponents.selector().withBuildType("release")) {
+        variant ->
         variant.outputs.forEach { output ->
-            output.outputFileName.set("lord_tts.apk")
+            output.outputFileName.set("nateq.apk")
         }
     }
 }

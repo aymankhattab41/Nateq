@@ -73,6 +73,15 @@ class SettingsRepository(private val context: Context) :
             DEVICE_HEALTH_MEMORY
         )
 
+        /** اللغات الصالحة للغة النطق الاحتياطية غير المتحسَّم (بند اللغة
+         *  الثانية) — تطابق اللغات الأربع المكتشفة في
+         *  LatinLanguageDetector (core:audio)؛ تُثبَّت "en" عند استيراد
+         *  قيمة خارجة عنها حتى لا تُطلب اللغةُ الاحتياطيةُ بلسانٍ غير
+         *  مدعوم. */
+        val VALID_SECONDARY_LANGUAGES = setOf(
+            "en", "fr", "de", "es"
+        )
+
         /** أقصى عدد يُقبل من أسماء المتصلين المخصصة (حماية من استيراد فائض). */
         private const val MAX_CALLER_ENTRIES = 2000
 
@@ -393,6 +402,16 @@ class SettingsRepository(private val context: Context) :
         prefs.getString("announcement_speech_language", null)
     override fun setAnnouncementSpeechLanguage(language: String?) =
         prefs.edit().putString("announcement_speech_language", language).apply()
+
+    /** لغة النطق الاحتياطية للنص اللاتيني القصير غير المتحسَّم (بند اللغة
+     *  الثانية): تُمرَّر إلى [com.aymankhattab.nateq.core.audio.engine
+     *  .LanguageSegmenter] فتُنطق بها الكلمة الأجنبية بدل الإنجليزية
+     *  الافتراضية. الافتراضي "en". */
+    override fun getSecondaryLanguage(): String =
+        prefs.getString("secondary_language", LanguageCode.EN.tag)
+            ?: LanguageCode.EN.tag
+    override fun setSecondaryLanguage(language: String) =
+        prefs.edit().putString("secondary_language", language).apply()
 
     /** طريقة نطق الأرقام: 1=مفردة، 2=زوجي، 3=ثلاثي، ... 8=ثماني */
     override fun getNumberReadingMode(): Int =
@@ -1511,7 +1530,8 @@ class SettingsRepository(private val context: Context) :
         else -> value
     }
 
-    /** تعميل قيمة نصية (رنة الساعة تقبل الأسماء الثلاثة فقط). */
+    /** تعقّل قيمة نصية (رنة الساعة تقبل الأسماء الثلاثة فقط، واللغة
+     *  الاحتياطية اللغات المدعومة فقط). */
     private fun sanitizeString(
         key: String,
         value: String
@@ -1519,6 +1539,9 @@ class SettingsRepository(private val context: Context) :
         "time_chime_sound" -> value.takeIf {
             it in validTimeChimeSounds()
         } ?: "classic_bell"
+        "secondary_language" -> value.takeIf {
+            it in VALID_SECONDARY_LANGUAGES
+        } ?: LanguageCode.EN.tag
         else -> value
     }
 

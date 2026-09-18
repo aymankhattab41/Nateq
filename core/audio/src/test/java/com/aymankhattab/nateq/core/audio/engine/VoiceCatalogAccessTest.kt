@@ -92,6 +92,21 @@ class VoiceCatalogAccessTest {
         assertTrue(languages.containsAll(setOf("ar", "en")))
     }
 
+    /** أصواتُ onGetVoices بلا أي محرك مكتشف (كتالوج فارغ) تساوي أصواتَ
+     *  الإعلان الثابتة في tts_engine.xml تامةً — اتساق CHECK_TTS_DATA
+     *  مع onGetVoices (لا تختفي الأصوات في قوائم النظام). */
+    @Test
+    fun supportedVoices_emptyCatalog_coversDeclaredVoices() {
+        val catalog = VoiceCatalog(emptyList())
+        val names = catalog.supportedVoices().map { it.name }
+        assertEquals(
+            com.aymankhattab.nateq.util.VoiceIdContract
+                .declaredVoiceNames()
+                .toSet(),
+            names.toSet()
+        )
+    }
+
     // ============ بند 6.5: إبطال الاكتشاف عند تغير الحزم ============
 
     /** بعد [applyDiscovery] تكون الذاكرة طازجة (لا حاجة لتحديث)؛

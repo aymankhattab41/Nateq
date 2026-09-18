@@ -26,7 +26,7 @@ object UpdateChecker {
     private const val REPO = "aymankhattab41/Nateq"
     private const val RELEASES_API =
         "https://api.github.com/repos/$REPO/releases/latest"
-    private const val APK_NAME = "lord_tts.apk"
+    private const val APK_NAME = "nateq.apk"
 
     /** مدة بقاء نتيجة الفحص المخزَّنة قبل إعادة الاتصال (6 ساعات). */
     internal const val CACHE_TTL_MS = 6L * 60 * 60 * 1000
@@ -269,7 +269,7 @@ object UpdateChecker {
         allowMetered: Boolean = false
     ): Long {
         val destination = File(downloadsDir(context), APK_NAME)
-        // كان DownloadManager يُنشئ «lord_tts-1.apk» إذا وُجد ملفٌ سابق
+        // كان DownloadManager يُنشئ «nateq-1.apk» إذا وُجد ملفٌ سابق
         // بنفس الوجهة، ثم لا يجد المُستمعُ downloadedApk الملفَ المتوقَّع
         // (اسمه مختلف) فيفشل التحقق/التثبيت. نمسح النسخةَ المتقادمة قبل
         // الإرسال حتى يستقر التنزيل على الوجهة المتوقعة.
@@ -341,7 +341,7 @@ object UpdateChecker {
         if (text.isNullOrBlank()) return null
         // تُقبل البصمة فقط حين ترتبط صراحةً بالهدف (بند 3.9): إما سطر
         // «SHA-256: …» (أو «SHA-256=»)، وإما تنسيق SHA256SUMS
-        // («البصمة  lord_tts.apk»). هكذا لا تُلتقط بصمةٌ عشوائية من
+        // («البصمة  nateq.apk»). هكذا لا تُلتقط بصمةٌ عشوائية من
         // الملاحظات — كملف المصدر أو mapping — فتثبيت فاشل.
         val prefixed = Regex(
             "(?im)^[ \\t]*SHA-?256[ \\t]*[:=][ \\t]*" +
@@ -350,7 +350,7 @@ object UpdateChecker {
         prefixed?.let { return it.groupValues[1].lowercase() }
         val sums = Regex(
             "(?im)^[ \\t]*([0-9a-f]{64})(?![0-9a-f])" +
-                "[ \\t]+lord_tts\\.apk"
+                "[ \\t]+nateq\\.apk"
         ).find(text)
         return sums?.groupValues?.get(1)?.lowercase()
     }

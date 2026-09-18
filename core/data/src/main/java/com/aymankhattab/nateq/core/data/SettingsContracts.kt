@@ -20,6 +20,14 @@ interface LanguagePrefs {
 
     /** يعيّن لغة نطق الإعلانات (null = لغة التطبيق). */
     fun setAnnouncementSpeechLanguage(language: String?)
+
+    /** لغة النطق الاحتياطية للنص اللاتيني القصير غير المتحسَّم ضمن طلبٍ عربي
+     *  (بند اللغة الثانية): كلمة مثل «Bonjour» لا يحسمها الكاشف فتُنطق
+     *  بهذه اللغة عوض الإنجليزية الافتراضية. الافتراضي "en". */
+    fun getSecondaryLanguage(): String
+
+    /** يعيّن لغة النطق الاحتياطية للنص اللاتيني غير المتحسَّم. */
+    fun setSecondaryLanguage(language: String)
 }
 
 /**

@@ -153,11 +153,12 @@ class SystemVoiceProvider(
         }
 
         /**
-         * سقف أقصى للمحاولات الفاشلة قبل التوقف (بعد فشل محركين نتوقف بدل
-         * التأرجح اللانهائي بينهما). المحرك المختار يدوياً يُحسب ضمن السقف:
-         * لو فشل ثم فشل خلفه محرك آخر، يوقف التراجع قبل استنفاد القائمة.
+         * سقف أقصى للمحاولات الفاشلة قبل التوقف (بعد فشل ثلاثة محركات نوقف
+         * التراجع بدل التأرجح اللانهائي بينها). المحرك المختار يدوياً يُحسب
+         * ضمن السقف: لو فشل ثم فشل خلفه محركان، يوقف التراجع قبل استنفاد
+         * القائمة.
          */
-        private const val MAX_RETRIES = 2
+        private const val MAX_RETRIES = 3
 
         /** حجم الدفعة الدنيا لقراءة صوت التخليق أثناء كتابته (بند ب.txt
          *  3.2): لا يُقرأ الملف النامي إلا حين يتراكم ما يعادل هذا الحجم
@@ -1021,9 +1022,30 @@ class SystemVoiceProvider(
         // (وفق توصية التقرير: إعادة أخذ العينات بنسبة p ثم عكسها ترك الصوت
         //  بنفس النبرة والمدة مع تنعيم مضاعف مشوّه). مستوى الصوت (volume)
         // يبقى رقمياً لأنه تطبيق معامل مضاعف محايد لا يشوّه.
-        engine.setSpeechRate(speechRate)
-        engine.setPitch(pitch)
-        engine.setLanguage(voice.locale)
+        // فشل ضبط السرعة/النبرة يجب ألا يُبتلع صامتاً: يُسجَّل ERROR
+        // (لا يُفشل النطق — عطلهما لا يمنع التخليق لكنه يشوّه الإخراج).
+        if (engine.setSpeechRate(speechRate) == TextToSpeech.ERROR) {
+            Log.e(TAG,
+                "[Provider] engine.setSpeechRate failed" +
+                " (rate=$speechRate)")
+        }
+        if (engine.setPitch(pitch) == TextToSpeech.ERROR) {
+            Log.e(TAG,
+                "[Provider] engine.setPitch failed" +
+                " (pitch=$pitch)")
+        }
+        // إن لم يدعم المحرك لغةَ النطق يبقى على لغته السابقة (العربية) فيقرأ
+        // الحروف اللاتينية بصوتٍ عربي — نعود فوراً (false) ليتولى المتصل
+        // التراجع على [speechLanguage] الفعلية (en) لمحركٍ يدعم اللغة.
+        val langResult = engine.setLanguage(voice.locale)
+        if (langResult == TextToSpeech.LANG_NOT_SUPPORTED
+            || langResult == TextToSpeech.LANG_MISSING_DATA
+        ) {
+            Log.w(TAG,
+                "[Provider] engine lacks ${voice.locale}" +
+                " (result=$langResult) — fallback")
+            return false
+        }
         // إن اختار المستخدم صوتاً محدداً من حوار التحويل (اسم صوت في محرك
         // خارجي مثل MultiTTS) نطبّقه هنا عبر `voice`، مع التراجع الصامت إلى
         // اللغة إذا لم يجده المحرك (تجنّباً لكسر النطق لمجرد اسم غير مطابق).

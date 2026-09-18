@@ -773,4 +773,45 @@ class TextProcessorTest {
             preserved.process("أَهْلًا \uD83D\uDE00", "ar").trim()
         )
     }
+
+    // ===== بند التشكيل الشرطي حسب محرك TTS =====
+
+    @Test
+    fun engineAware_tashkeelPreservedForGoogle() {
+        // Google TTS يفهم التشكيل → تُبقي معالج النص الحركات في الناتج
+        // بلا اشتراط تفضيل «حفظ التشكيل».
+        val ctx: Context = ApplicationProvider.getApplicationContext()
+        val settings = SettingsRepository(ctx)
+        settings.setTashkeelPreserved(false)
+        val engineAware = TextProcessor(ctx, settings)
+
+        assertEquals(
+            "السَّلَامُ عَلَيْكُمْ",
+            engineAware.process(
+                "السَّلَامُ عَلَيْكُمْ", "ar",
+                "com.google.android.tts"
+            )
+        )
+    }
+
+    @Test
+    fun engineAware_unknownEngineStripsTashkeel() {
+        // محرك غير معروف أو null → السلوك القائم: التجريد قبل المحرك.
+        val ctx: Context = ApplicationProvider.getApplicationContext()
+        val settings = SettingsRepository(ctx)
+        settings.setTashkeelPreserved(false)
+        val engineAware = TextProcessor(ctx, settings)
+
+        assertEquals(
+            "السلام عليكم",
+            engineAware.process("السَّلَامُ عَلَيْكُمْ", "ar")
+        )
+        assertEquals(
+            "السلام عليكم",
+            engineAware.process(
+                "السَّلَامُ عَلَيْكُمْ", "ar",
+                "com.samsung.android.tts"
+            )
+        )
+    }
 }

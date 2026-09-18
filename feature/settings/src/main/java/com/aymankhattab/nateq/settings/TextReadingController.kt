@@ -4,11 +4,15 @@ import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Spinner
+import com.aymankhattab.nateq.core.audio.engine.LatinLanguageDetector
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.engine.PunctuationLevels
 import com.aymankhattab.nateq.feature.settings.R
+import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.announceCompat
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.switchmaterial.SwitchMaterial
-import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /** ضابط قسم «قراءة النصوص»: مستوى نطق علامات الترقيم + مفتاح التهجئة الذكية. */
 internal class TextReadingController(
@@ -23,6 +27,7 @@ internal class TextReadingController(
     private var switchSmartSpelling: SwitchMaterial? = null
     private var switchTashkeelPreserved: SwitchMaterial? = null
     private var switchFollowReaderRate: SwitchMaterial? = null
+    private var btnSecondaryLanguage: MaterialButton? = null
 
     fun setup(view: View) {
         spinnerPunctuationLevel =
@@ -106,7 +111,58 @@ internal class TextReadingController(
                 )
             )
         }
+
+        // لغة النطق الاحتياطية (بند اللغة الثانية): الكلمات الأجنبية القصيرة
+        // غير المتحسَّمة الحُكم ضمن النص العربي تُنطق باللغة المختارة هاهنا
+        // عوضاً عن الإنجليزية الافتراضية — حوارُ اختيارٍ من اللغات التي
+        // يكشفها الكاشف اللاتيني.
+        btnSecondaryLanguage = view.findViewById(R.id.btn_secondary_language)
+        val supportedLanguages = LatinLanguageDetector.SUPPORTED_LANGUAGES
+        updateSecondaryLanguageLabel(supportedLanguages)
+        btnSecondaryLanguage?.setOnClickListener {
+            val current = runCatching { settings.getSecondaryLanguage() }
+                .getOrDefault(LanguageCode.EN.tag)
+            val currentIndex = supportedLanguages.indexOf(current)
+                .coerceAtLeast(0)
+            val labels = supportedLanguages.map { languageDisplayName(it) }
+            MaterialAlertDialogBuilder(fragment.requireContext())
+                .setTitle(R.string.secondary_language_dialog_title)
+                .setSingleChoiceItems(labels.toTypedArray(), currentIndex) {
+                    dialog, which ->
+                    val chosen = supportedLanguages[which]
+                    runCatching { settings.setSecondaryLanguage(chosen) }
+                    updateSecondaryLanguageLabel(supportedLanguages)
+                    onStatusChanged()
+                    dialog.dismiss()
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
     }
+
+    /** يعرض اسم اللغة الحالية الفعلية على زر اللغة الاحتياطية (بند اللغة
+     *  الثانية) — خلفيةٌ آمنة على قيمةٍ غير مدعومة من حدثٍ قديم. */
+    private fun updateSecondaryLanguageLabel(
+        supportedLanguages: List<String>
+    ) {
+        val stored = runCatching { settings.getSecondaryLanguage() }
+            .getOrDefault(LanguageCode.EN.tag)
+        val language = supportedLanguages.firstOrNull { it == stored }
+            ?: LanguageCode.EN.tag
+        btnSecondaryLanguage?.text =
+            fragment.getString(R.string.secondary_language_title) +
+                "، " + languageDisplayName(language)
+    }
+
+    /** الاسم المقروء للغة من الموارد — سقوطٌ على الوسام إن لم يُعرَف. */
+    private fun languageDisplayName(language: String): String =
+        when (language) {
+            "en" -> fragment.getString(R.string.language_english)
+            "fr" -> fragment.getString(R.string.language_french)
+            "de" -> fragment.getString(R.string.language_german)
+            "es" -> fragment.getString(R.string.language_spanish)
+            else -> language
+        }
 
     /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */
     fun cleanup() {
@@ -114,5 +170,6 @@ internal class TextReadingController(
         switchSmartSpelling = null
         switchTashkeelPreserved = null
         switchFollowReaderRate = null
+        btnSecondaryLanguage = null
     }
 }

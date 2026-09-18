@@ -192,6 +192,35 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun secondaryLanguage_defaultEnglishAndRoundTrips() {
+        // لغة النطق الاحتياطية (بند اللغة الثانية): إنجليزية افتراضياً
+        // وتُعيَّن فرنسية وتعود إنجليزية.
+        assertEquals("en", repo.getSecondaryLanguage())
+        repo.setSecondaryLanguage("fr")
+        assertEquals("fr", repo.getSecondaryLanguage())
+        repo.setSecondaryLanguage("en")
+        assertEquals("en", repo.getSecondaryLanguage())
+    }
+
+    @Test
+    fun importSettings_invalidSecondaryLanguage_pinnedToEnglish() {
+        // الوسم خارج اللغات المدعومة يُثبَّت على الإنجليزية عند الاستيراد
+        // حتى لا تُطلب اللغة الاحتياطية بلسانٍ غير مدعوم (سقوطٌ على وسامة
+        // «it» الإيطالية مثلاً).
+        val imported = mapOf("secondary_language" to "it")
+        assertTrue(repo.importSettings(imported))
+        assertEquals("en", repo.getSecondaryLanguage())
+    }
+
+    @Test
+    fun importSettings_validSecondaryLanguage_kept() {
+        // اللغة الثانية الصالحة (الألمانية) تمرّ كما هي.
+        val imported = mapOf("secondary_language" to "de")
+        assertTrue(repo.importSettings(imported))
+        assertEquals("de", repo.getSecondaryLanguage())
+    }
+
+    @Test
     fun tashkeelPreserved_defaultOffAndRoundTrip() {
         // حفظ التشكيل معطّل افتراضياً على السلوك القائم للمحركات التي
         // لا تفهم الحركات، ويُرجع بشكل صريح ثم يُعاد تعطيله.

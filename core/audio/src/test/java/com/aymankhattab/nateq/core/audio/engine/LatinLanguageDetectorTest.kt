@@ -49,9 +49,20 @@ class LatinLanguageDetectorTest {
     }
 
     @Test
-    fun `short snippet below minimum words stays unresolved`() {
-        // «Merci beaucoup» حرفان فقط: اللّبس فوق طاقة الحكم القاطع.
+    fun twoWordSnippet_withoutDecisiveCue_staysUnresolved() {
+        // «Merci beaucoup» كلمتان فرنسيتان (بلغتا حدّ الكلمتين الجديد)
+        // لكن بلا كلمة وظيفية ولا حرف قاطع حصري: لا يتجاوز الفائز عتبة
+        // الثقة المرفوعة (1.10) — يبقى الحكمُ محافظاً وتُسلَّم الكلمتان
+        // لسقوطهما العلوي (اللغة الثانية التي يختارها المستخدم).
         assertNull(LatinLanguageDetector.detect("Merci beaucoup"))
+    }
+
+    @Test
+    fun twoWordSnippet_withTwoEnglishFunctionWords_isDetected() {
+        // «the the» كلمتان وظيفيتان إنجليزيتان (2×0.6 = 1.2): تبلغ عتبة
+        // الثقة المرفوعة إلى 1.10 فتُحسم إنجليزية دون انتظار الكلمة
+        // الثالثة — ثمرة خفض حدّ الكلمات (بند اللغة الثانية).
+        assertEquals("en", LatinLanguageDetector.detect("the the"))
     }
 
     @Test

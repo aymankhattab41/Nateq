@@ -39,7 +39,7 @@ class StartupTempSweeper(private val context: Context) {
         /** اسم ملف الـ APK الحالي النشط في مجلد التنزيلات
          *  (يطابق UpdateChecker).
          *  لا نمسّه أبداً حتى لا يكسر دورة التحديث/التثبيت. */
-        private const val ACTIVE_APK_NAME = "lord_tts.apk"
+        private const val ACTIVE_APK_NAME = "nateq.apk"
     }
 
     /** ينفّذ التنظيف ويعيد عدد الملفات المحذوفة. */

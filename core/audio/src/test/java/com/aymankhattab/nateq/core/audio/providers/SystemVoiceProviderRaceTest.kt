@@ -15,6 +15,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowTextToSpeech
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
@@ -65,6 +66,16 @@ class SystemVoiceProviderRaceTest {
     }
 
     private fun registerEngineAndInvalidateCache() {
+        // بند فحص اللغة (setLanguage): shadow TTS لا يصرّح بأي لغة متاحة
+        // افتراضياً فيُفشل المسار الجديدُ [synthesizeInternal] بأكمله — نصرّح
+        // هنا باللغةين اللتين يستخدمهما الاختبار (العربية والإنجليزية) فتكتمل
+        // الحالتان المتسابقتان كما في بيئة حقيقية يدعم فيها المحركان اللغةَ.
+        ShadowTextToSpeech.addLanguageAvailability(
+            Locale.forLanguageTag("ar")
+        )
+        ShadowTextToSpeech.addLanguageAvailability(
+            Locale.forLanguageTag("en-US")
+        )
         EnginePicker.invalidateCache()
         registerEngine(ENGINE_A)
         registerEngine(ENGINE_B)

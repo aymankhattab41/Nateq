@@ -22,9 +22,10 @@ data class Segment(
  * إنجليزي كما كان (كلُّ سكربتٍ محددٍ كان يقع على «سقوط» واحد).
  * سكربت LATIN لا يُحدِّد لغةً من حروفه القصيرة وحدها، فتُجمَّع جولاته
  * المتجاورة في مقطعٍ واحد ثم يُكشف لسانه عبر [LatinLanguageDetector]
- * (بند ب.txt 3.6-2: 3 كلمات فأكثر من fr/de/es/en بثقةٍ واضحة)، وإلا
+ * (بند ب.txt 3.6-2: كلمتان فأكثر من fr/de/es/en بثقةٍ واضحة)، وإلا
  * تُنسب (سقوطاً) للغة الطلب إن كانت لاتينية غير العربية، وإلا
- * [EN_FALLBACK] — كشفٌ محافظ يتراجع لسقوطٍ معروف عند اللبس.
+ * [secondaryLanguage] التي يختارها المستخدم (بند اللغة الثانية) ثم
+ * [EN_FALLBACK] عند غيابها — كشفٌ محافظ يتراجع لسقوطٍ معلوم عند اللبس.
  *
  * المقاطع العربية تُنطق بالعربية. المحايدات — مسافات/أرقام/ترقيم/رموز —
  * تلتحق بالمقطع المجاور ولا تُكسر عن سياقها (يلتحق المحايد بالمقطع المفتوح
@@ -113,16 +114,23 @@ class LanguageSegmenter {
      *  العربية مباشرة ليُنطق النص الأجنبي
      *  بصوت لغته. والنصُّ المَحايد وحده (أرقام/رموز بلا حروف) يُنسب كلُّه للغة
      *  السقوط نفسها — فلا تُنطق «١٢٣» أو «123» ضمن طلبٍ عربي بصوتٍ إنجليزي.
+     * @param secondaryLanguage لغة النطق الاحتياطية للمقطع اللاتيني القصير
+     *  غير المتحسَّم ضمن الطلب العربي (بند اللغة الثانية): كلمة «Bonjour»
+     *  الوحيدة لا يحسمها [LatinLanguageDetector] فتُنطق بهذه اللغة (إن
+     *  سُلّمت صحيحة) عوض [EN_FALLBACK]؛ القيمة الفارغة/غير المعروفة تعود
+     *  لـ [EN_FALLBACK] سقوطاً أخيراً. لا أثر لها على الطلب غير العربي
+     *  (تُنسب الحروف للغة الطلب نفسها حتماً).
      * @return مقاطع النص المتجاورة بلغاتها؛ النص الخالي يُرجع مقطعاً واحداً
      *  بلغة السقوط حتى لا يُعالَج النص الفارغ بشكلٍ خاص في المسارات العليا.
      */
     fun segment(
         text: String,
-        fallbackLanguage: String = LanguageCode.AR.tag
+        fallbackLanguage: String = LanguageCode.AR.tag,
+        secondaryLanguage: String = EN_FALLBACK
     ): List<Segment> {
         return merge(
             text,
-            scriptFallback(fallbackLanguage),
+            scriptFallback(fallbackLanguage, secondaryLanguage),
             neutralFallback(fallbackLanguage)
         )
     }
@@ -282,15 +290,28 @@ class LanguageSegmenter {
         }
     }
 
-    /** لغة سقوط حروف الكتابات غير العربية: طلب عربي/فارغ ← [EN_FALLBACK]؛ وإلا
-     *  بِلغة الطلب نفسها حتى يُنطق النص الأجنبي بصوت لغته عند طلبٍ غير عربي. */
-    private fun scriptFallback(requestLanguage: String): String {
+    /** لغة سقوط حروف الكتابات غير العربية: طلب عربي/فارغ ← اللغة الثانية التي
+     *  يختارها المستخدم (بند اللغة الثانية) وإن كانت فارغة/غير معروفة ←
+     *  [EN_FALLBACK]؛ وإلا بِلغة الطلب نفسها حتى يُنطق النص الأجنبي بصوت
+     *  لغته عند طلبٍ غير عربي. */
+    private fun scriptFallback(
+        requestLanguage: String,
+        secondaryLanguage: String
+    ): String {
         val language = requestLanguage.takeWhile { it.isLetter() }
-        return if (language.isBlank() || LanguageCode.isArabic(language)) {
-            EN_FALLBACK
-        } else {
-            language
+        return when {
+            language.isBlank() -> EN_FALLBACK
+            LanguageCode.isArabic(language) -> secondaryOrEn(secondaryLanguage)
+            else -> language
         }
+    }
+
+    /** لغة سقوط اللاتينية غير المتحسَّمة ضمن الطلب العربي: [secondaryLanguage]
+     *  إن سُلّمت بلغةٍ صالحة وإلا [EN_FALLBACK] (يُبقى سقوطاً
+     *  أخيراً وحيداً). */
+    private fun secondaryOrEn(secondaryLanguage: String): String {
+        val language = secondaryLanguage.takeWhile { it.isLetter() }
+        return if (language.isBlank()) EN_FALLBACK else language
     }
 
     /** لغة ما لا يحوي حروفاً إطلاقاً (أرقام/رموز/مسافات فقط): لغة الطلب نفسها

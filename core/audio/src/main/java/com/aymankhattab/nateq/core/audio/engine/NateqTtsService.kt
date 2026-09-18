@@ -601,7 +601,12 @@ override fun onDestroy() {
                 val semanticText = textProcessor.processSemantics(
                     rawText, languageTag
                 )
-                val segments = segmenter.segment(semanticText, languageTag)
+                val secondaryLanguage = runCatching {
+                    settings.getSecondaryLanguage()
+                }.getOrDefault(LanguageCode.EN.tag)
+                val segments = segmenter.segment(
+                    semanticText, languageTag, secondaryLanguage
+                )
                 // **سرعة القارئ (معامل مُوحّد للمسارين):** نسبةُ
                 // request.getSpeechRate() المئوية (100 = طبيعي) تتحول هنا مرة
                 // واحدة إلى معامل (readerRate) يُمرَّر للمسار الأحادي
@@ -756,10 +761,6 @@ override fun onDestroy() {
             " provider=${provider.providerId}" +
             " autoConvert=$autoConvert")
 
-        // Process text through TextProcessor
-        // (numbers, dates, currencies, etc.)
-        val processedText = textProcessor.process(rawText, languageTag)
-
         // **توجيه locale حسب لغة النص:** engine/locale من التحويل لا يُمرَّران
         // إلا إذا كانت لغة الهدف تطابق لغة النص الفعلية (المقطع) لا لغة
         // الطلب العامة (غالباً لغة النظام). هذا يمنع إعادة توجيه الكلمة
@@ -779,7 +780,9 @@ override fun onDestroy() {
         val finalPitch = convertTarget?.let { it.convertPitch } ?: pitch
         val finalVolume = convertTarget?.let { it.convertVolume } ?: volume
         // توجيه المحرك/الصوت: يفضّل هدف التحويل المطابق، وإلا تفضيل لغة النص
-        // نفسه (سارٍ دائماً بلا ربط بحالة «التحويل التلقائي»).
+        // نفسه (سارٍ دائماً بلا ربط بحالة «التحويل التلقائي»). **يُجرى قبل
+        // المعالجة** ليُمرَّر المحركُ المحسوم إلى [TextProcessor.process] —
+        // فالمحركات التي تفهم التشكيل العربي تحتفظ به في الناتج (بند التشكيل).
         val routed = LanguageSpeechRouter.route(
             matchesRequest = matchesRequest,
             convertEngine = convertTarget?.convertEngine,
@@ -794,6 +797,12 @@ override fun onDestroy() {
             null
         }
         val finalVoiceName = routed.voiceName
+
+        // Process text through TextProcessor
+        // (numbers, dates, currencies, etc.)
+        val processedText = textProcessor.process(
+            rawText, languageTag, finalEngine
+        )
 
         // تخليق الصوت الفعلي عبر المزوّد. يُبلّغنا التنسيق
         // (معدل عينات/قنوات) قبل أول شريحة، فنبدأ
@@ -888,15 +897,6 @@ override fun onDestroy() {
         readerRate: Float
     ): SegmentParams? {
         val segTag = segment.languageTag
-        val processed = textProcessor.process(segment.text, segTag)
-        val (voice, foundProvider) = resolveVoiceWithFallback(segTag)
-        val provider = foundProvider
-        if (provider == null) {
-            Log.w(TAG,
-            "synthesizeMixed: لا مزود لمقطع $segTag —" +
-            " يُسقط وحده: ${segment.text}")
-            return null
-        }
         val segRate = requestHandler.getSpeechRate(segTag)
         val segPitch = requestHandler.getPitch(segTag)
         val segVolume = requestHandler.getVolume(segTag)
@@ -925,6 +925,20 @@ override fun onDestroy() {
             perLanguageEngine = settings.getEngineForLanguage(segTag),
             perLanguageVoiceName = settings.getVoiceForLanguage(segTag)
         )
+        // **بند التشكيل الشرطي:** تُمرَّر حزمةُ المحرك المحسومة إلى
+        // [TextProcessor.process] — المحركات التي تفهم التشكيل العربي
+        // تحتفظ به في الناتج (مسار الاستعادة) بدل تجريده دائماً.
+        val processed = textProcessor.process(
+            segment.text, segTag, routed.engine
+        )
+        val (voice, foundProvider) = resolveVoiceWithFallback(segTag)
+        val provider = foundProvider
+        if (provider == null) {
+            Log.w(TAG,
+            "synthesizeMixed: لا مزود لمقطع $segTag —" +
+            " يُسقط وحده: ${segment.text}")
+            return null
+        }
         return SegmentParams(
             processed, voice, provider, finalRate, finalPitch,
             finalVolume, routed.engine,

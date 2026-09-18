@@ -63,5 +63,5 @@ app/src/main/java/com/aymankhattab/nateq/
 - لا يوجد `App Check` في المشروع (ممنوع حسب قواعد العمل) ولا خطوط مضمّنة.
 - شاشة الإعدادات من مستويين داخل الـ Fragment نفسه (`openSection`/`showHome`)
   مع إعادة توجيه تركيز الوصول عند فتح/إغلاق أي قسم.
-- البناء: `.\gradlew.bat :app:assembleRelease` → `app/build/outputs/apk/release/lord_tts.apk`
+- البناء: `.\gradlew.bat :app:assembleRelease` → `app/build/outputs/apk/release/nateq.apk`
   (R8 + تصغير الموارد مفعّلان في الـ release).

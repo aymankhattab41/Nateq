@@ -18,12 +18,23 @@ class VoiceIdContractTest {
     /** أسماء الأصوات المعلنة في res/xml/tts_engine.xml — الإعلان الثابت
      *  للنظام قبل onGetVoices الديناميكي. يُقرأ من نظام الملفات (لا
      *  Robolectric) لأن موارد res/xml المعيارية لا تُحمَّل كأغلفة XML. */
-    private fun declaredVoiceNames(): Set<String> {
+    private fun declaredVoiceNames(): List<String> {
         val xml = File("src/main/res/xml/tts_engine.xml").readText()
         return Regex("""<voice\s+android:name="([^"]+)"\s*/>""")
             .findAll(xml)
             .map { it.groupValues[1] }
-            .toSet()
+            .toList()
+    }
+
+    /** [VoiceIdContract.declaredVoiceNames] يجب أن يطابق أسماء الملف
+     *  حرفاً بحرف وبنفس الترتيب — فهو المصدر المشترك الذي يلتزم به
+     *  CHECK_TTS_DATA وonGetVoices معاً فلا ينحرف أحدهما عن الآخر. */
+    @Test
+    fun declaredVoiceNames_exactMatch_ttsEngineXml() {
+        assertEquals(
+            VoiceIdContract.declaredVoiceNames(),
+            declaredVoiceNames()
+        )
     }
 
     @Test

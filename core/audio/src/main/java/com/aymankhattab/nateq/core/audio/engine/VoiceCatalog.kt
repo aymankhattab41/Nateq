@@ -262,6 +262,53 @@ val lang = LocaleUtils.normalizeLanguageCode(
                 availability ?: TextToSpeech.LANG_NOT_SUPPORTED
             }
         }
+
+        /**
+         * أصواتُ اللغاتِ المُعلَنة الثابتة (tts_engine.xml) ككائناتِ Voice
+         * جاهزةً — بنفس خصائص [supportedVoices] (جودة عالية/تأخير منخفض/
+         * محلية بالكامل بلا شبكة) ليفحصها فحصُ النظام CHECK_TTS_DATA عبر
+         * [filterVoicesWithInstalledData] دون مدخلاتٍ من سياقِ النشاط.
+         */
+        @Suppress("DEPRECATION")
+        fun declaredVoices(): List<Voice> =
+            VoiceIdContract.declaredVoiceNames().map { name ->
+                val language = name.substringBefore('-')
+                Voice(
+                    name,
+                    localeWithCountryFor(language),
+                    Voice.QUALITY_HIGH,
+                    Voice.LATENCY_LOW,
+                    false, // requiresNetworkConnection = false (محلي بالكامل)
+                    offlineFeature
+                )
+            }
+
+        /**
+         * ميزة التخليق المدمج (offline): تُعلن للأصوات في القائمتين
+         * المضمونة والمكتشفة — الثابت مُهمَل في المنصة الحديثة لكن
+         * إزالته تفاقم تصفية سامسونج لقائمة الأصوات، فيُبقى مع كتم
+         * تحذير الإهمال. موجودة هنا (companion) لتتقاسمها supportedVoices
+         * وdeclaredVoices من غير تكرار.
+         */
+        @Suppress("DEPRECATION")
+        private val offlineFeature = setOf(
+            TextToSpeech.Engine.KEY_FEATURE_EMBEDDED_SYNTHESIS
+        )
+
+        /**
+         * يبني رمزَ اللغةِ بالبلدِ للغتينِ المضمونتين (ar → ar-EG و en →
+         * en-US) ليطابقا الأصواتَ المعلنةَ في tts_engine.xml؛ فيُجيبُ
+         * التحققُ من اللغةِ بـ LANG_COUNTRY_AVAILABLE بدلَ LANG_AVAILABLE
+         * فتعرفُ المحركاتُ (سامسونج خاصةً) صوتَ البلدِ الصحيحَ. اللغاتُ
+         * المكتشفةُ ديناميكياً (fr/de/…) تُبنى بحرفِها كما هي — أصواتُها من
+         * طراز "<lang>-local" بلا ضمانِ بلدٍ محدد.
+         */
+        private fun localeWithCountryFor(language: String): Locale =
+            when (language) {
+                LanguageCode.AR.tag -> Locale.forLanguageTag("ar-EG")
+                LanguageCode.EN.tag -> Locale.forLanguageTag("en-US")
+                else -> Locale.forLanguageTag(language)
+            }
     }
 
     /**
@@ -328,33 +375,22 @@ val lang = LocaleUtils.normalizeLanguageCode(
 
     /**
      * اللغات المدعومة إجمالاً (تُستخدم في onIsLanguageAvailable).
-     * تُبنى ديناميكياً من نتيجة الاكتشاف عبر كل المحركات، مع بقاء العربية
-     * والإنجليزية كحد أدنى مضمون دائماً حتى لو لم يُكتشف أي محرك إضافي.
+     * تُبنى ديناميكياً من نتيجة الاكتشاف عبر كل المحركات، مع بقاء لغات
+     * الإعلان الثابت في tts_engine.xml (ar/en/fr/de/es من
+     * [VoiceIdContract.declaredVoiceNames]) حداً أدنى مضموناً دائماً
+     * حتى لو لم يُكتشف أي محرك إضافي — فيتطابق onGetVoices مع أسماء
+     * الملف حرفاً بحرف (اتساق CHECK_TTS_DATA).
      */
     fun supportedLocales(): List<Locale> {
         val languages = LinkedHashSet<String>()
         discoveredByLanguage?.keys?.forEach { languages.add(it) }
-        languages.add(LanguageCode.AR.tag)
-        languages.add(LanguageCode.EN.tag)
+        VoiceIdContract.declaredVoiceNames().forEach { name ->
+            languages.add(name.substringBefore('-'))
+        }
         return languages
             .map { localeWithCountryFor(it) }
             .sortedBy { it.language }
     }
-
-    /**
-     * يبني رمزَ اللغةِ بالبلدِ للغتينِ المضمونتين (ar → ar-EG و en → en-US)
-     * ليطابقا الأصواتَ المعلنةَ في tts_engine.xml (ar-EG/en-US) قبلَ اكتشافِ
-     * المحركات؛ فيُجيبُ التحققُ من اللغةِ بـ LANG_COUNTRY_AVAILABLE
-     * بدلَ LANG_AVAILABLE فتَعرفُ المحركاتُ (سامسونج خاصةً) صوتَ البلدِ
-     * الصحيحَ. اللغاتُ المكتشفةُ ديناميكياً (fr/de/…) تُبنى بحرفِها كما هي —
-     * أصواتُها من طراز "<lang>-local" بلا ضمانِ بلدٍ محدد.
-     */
-    private fun localeWithCountryFor(language: String): Locale =
-        when (language) {
-            LanguageCode.AR.tag -> Locale.forLanguageTag("ar-EG")
-            LanguageCode.EN.tag -> Locale.forLanguageTag("en-US")
-            else -> Locale.forLanguageTag(language)
-        }
 
     /**
      * قائمة الأصوات (android.speech.tts.Voice) المُعلنة للنظام.
@@ -364,17 +400,9 @@ val lang = LocaleUtils.normalizeLanguageCode(
      *
      * ملاحظة مهمة (سامسونج/بعض المَشغلين): الأصوات يجب أن تُعلن صراحةً
      * بـ KEY_FEATURE_EMBEDDED_SYNTHESIS (offline) وإلا تُصفَّى وتُهمَل من
-     * قائمة اللغات. ولا يُضاف KEY_FEATURE_NOT_INSTALLED أبداً.
-     *
-     * الثابت معيَّن deprecated في المنصة الحديثة (لأن التخليق المدمج صار
-     * افتراضياً)، لكن إزالته تفاقم تصفية سامسونج لقائمة الأصوات، لذا نحتفظ
-     * به مع كتم تحذير الإهمال المحدَّد.
+     * قائمة اللغات. ولا يُضاف KEY_FEATURE_NOT_INSTALLED أبداً. (الثابت
+     * offlineFeature في الـ companion ليشاركه declaredVoices أيضاً.)
      */
-    @Suppress("DEPRECATION")
-    private val offlineFeature = setOf(
-        TextToSpeech.Engine.KEY_FEATURE_EMBEDDED_SYNTHESIS
-    )
-
     private fun voiceNameFor(locale: Locale): String {
         // أسماء الأصوات المعلنة في tts_engine.xml هي "ar-EG"/"en-US" للغتين
         // الأساسيتين، وهي نفسها المعرّفات التي يخزنها تطبيقنا في الإعدادات

@@ -27,6 +27,25 @@ import java.util.regex.Matcher
 import java.util.regex.Pattern
 
 /**
+ * محركات الـ TTS المعروفة بفهمها النطقي للتشكيل العربي (الحركات/الشدة/
+ * التنوين): تُحتفظ لهذه الفئة بالتشكيل في الناتج النهائي (عبر مسار الاستعادة —
+ * [TextProcessor.process]]) فلا تُنطق الحركاتُ حروفاً غريبة ولا يُجرد نصٌّ
+ * يجيد المحركُ قراءته. الباقية (غير المعروفة) تُسلك السلوكَ القائم: تجريد.
+ */
+internal val ARABIC_TASHKEEL_AWARE_ENGINES: Set<String> = setOf(
+    "com.google.android.tts"
+)
+
+/**
+ * هل نجرد التشكيل العربي من النص قبل تسليمه للمحرك [enginePackage]؟
+ * الإفتراض: نعم (تجريد — أغلب المحركات لا تنطق الحركات بوضوح). محركٌ معروف
+ * بفهمه التشكيل (انظر [ARABIC_TASHKEEL_AWARE_ENGINES]) وnull (غير معروف)
+ * يُعالَجان بحذر: المعروف يُبقي التشكيل، وغير المعروف يُجرد (سلوك سابق).
+ */
+internal fun stripTashkeelFor(enginePackage: String?): Boolean =
+    enginePackage !in ARABIC_TASHKEEL_AWARE_ENGINES
+
+/**
  * معالج النصوص الذكي — يحول النصوص الخام إلى نصوص قابلة للنطق طبيعياً.
  *
  * منسّق لخط معالجة نمطي [TextProcessingStep]: يمثل الترقيم/الترتيب الأصلي
@@ -150,10 +169,16 @@ class TextProcessor(
      * @param languageTag كود اللغة (مثلاً "ar"، "en"، "ar-EG")
      *                    — العربية لها مسارها، والإنجليزية مسارٌ موازٍ
      *                      بمفرداتها، وبقية اللغات تُعاد كما هي.
+     * @param enginePackage حزمة المحرك الـ TTS المستخدم (بند التشكيل الشرطي):
+     *                      بعض المحركات (مثل Google TTS) تفهم التشكيل العربي
+     *                      فتُنطق الحركات بوضوح — يحتفظ بنص المشكولة في
+     *                      الإخراج عبر [restoreTashkeel]. القيمة null تعني
+     *                      السلوك القائم.
      */
     fun process(
         text: String,
-        languageTag: String = LanguageCode.AR.tag
+        languageTag: String = LanguageCode.AR.tag,
+        enginePackage: String? = null
     ): String {
         if (text.isBlank()) return text
 
@@ -202,7 +227,16 @@ class TextProcessor(
         // تُحفظ لاستعادة تشكيل الكلمات الأصلية غير المتحوّلة حين يفعّل
         // المستخدم الحفظ — وإلا تبقى null فتسلك المعالجةُ السلوكَ الحالي
         // نفسه (تجريد التشكيل وتسليم النص مجرداً للمحرك).
-        val voweledSource = if (tashkeelPreserved) result else null
+        // **بند التشكيل الشرطي:** المحركات التي تفهم التشكيل العربي
+        // (مثل Google TTS) تحتفظ بالتشكيل في الإخراج تلقائياً — نفعّل لها
+        // نفس مسار الاستعادة [restoreTashkeel] بلا اشتراط تفضيل المستخدم.
+        val voweledSource = if (tashkeelPreserved ||
+            !stripTashkeelFor(enginePackage)
+        ) {
+            result
+        } else {
+            null
+        }
         for (step in preamble) result = step.apply(result)
 
         // المسار السريع (Fast-path): إن لم يحتوِ النص على أي محفِّز لأرقام

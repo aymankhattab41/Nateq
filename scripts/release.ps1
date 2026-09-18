@@ -26,7 +26,7 @@ $ErrorActionPreference = 'Stop'
 # جذر المستودع = أعلى مجلد السكربت.
 $repoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $gradleFile = Join-Path $repoRoot 'app\build.gradle.kts'
-$apkFile = Join-Path $repoRoot 'app\build\outputs\apk\release\lord_tts.apk'
+$apkFile = Join-Path $repoRoot 'app\build\outputs\apk\release\nateq.apk'
 
 function Invoke-Git {
     param([Parameter(Mandatory = $true)][string[]]$GitArgs)
@@ -165,7 +165,7 @@ Write-Host "=> يغطي $newCommitCount التزاماً جديداً منذ $si
 # ملاحظات الإصدار من بند المستجدات داخل التطبيق (عربي)، لا توليد آلي.
 $changelogXml = Join-Path $repoRoot 'feature\settings\src\main\res\values\strings.xml'
 $installNote =
-    "`r`n`r`n## التثبيت`r`nنزّل ``lord_tts.apk`` من مرفقات هذا الإصدار."
+    "`r`n`r`n## التثبيت`r`nنزّل ``nateq.apk`` من مرفقات هذا الإصدار."
 if (Test-Path -LiteralPath $changelogXml) {
     $settingsDoc = New-Object System.Xml.XmlDocument
     $settingsDoc.Load($changelogXml)
@@ -197,7 +197,7 @@ if ($DryRun) {
         ' :app:assembleRelease'
     Write-Host '   - commit: app/build.gradle.kts فقط (رسالة عربية)'
     Write-Host "   - tag $targetTag ثم push origin master --tags"
-    Write-Host "   - gh release create $targetTag (يرفع lord_tts.apk" +
+    Write-Host "   - gh release create $targetTag (يرفع nateq.apk" +
         ' بملاحظات المستجدات من changelog_text)'
     exit 0
 }
@@ -252,7 +252,7 @@ $sha256Line = (
     Get-FileHash -LiteralPath $apkFile -Algorithm SHA256
 ).Hash.ToLowerInvariant()
 $releaseNotes = $releaseNotes + "`r`n`r`n### المجموع الاختباري SHA-256`r`n" +
-    "``$sha256Line``  lord_tts.apk"
+    "``$sha256Line``  nateq.apk"
 
 # 3) التصريح بملف الترقيم ثم الالتزام به فقط — حتى لا تنجرف أي تغييرات أخرى
 # مرحّلة أو غير مرحّلة في commit الإصدار.

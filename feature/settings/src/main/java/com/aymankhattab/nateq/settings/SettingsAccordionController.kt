@@ -12,10 +12,12 @@ import androidx.core.widget.NestedScrollView
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.LifecycleOwner
 import com.aymankhattab.nateq.feature.settings.R
+import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.announceCompat
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.switchmaterial.SwitchMaterial
 import java.util.Calendar
+import com.aymankhattab.nateq.core.audio.engine.LatinLanguageDetector
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /** بطاقة قسم في القائمة الرئيسية: رأس + سهم + حالة + محتوى
@@ -682,8 +684,31 @@ internal class SettingsAccordionController(
             append("، ")
                 .append(fragment.getString(R.string.smart_spelling_enabled))
             append(": ").append(spellingLabel)
+            append("، ")
+                .append(fragment.getString(R.string.secondary_language_title))
+            append(": ").append(secondaryLanguageLabel())
         }
     }
+
+    /** لغة النطق الاحتياطية الحالية بملصقها المقروء (بند اللغة الثانية) —
+     *  سقوطٌ على الاسم الإنجليزي عند قيمةٍ غير مدعومة من حدثٍ قديم. */
+    private fun secondaryLanguageLabel(): String {
+        val stored = runCatching { settings.getSecondaryLanguage() }
+            .getOrDefault(LanguageCode.EN.tag)
+        val language = LatinLanguageDetector.SUPPORTED_LANGUAGES
+            .firstOrNull { it == stored } ?: LanguageCode.EN.tag
+        return languageDisplayName(language)
+    }
+
+    /** الاسم المقروء للغة من الموارد — سقوطٌ على الوسام إن لم يُعرَف. */
+    private fun languageDisplayName(language: String): String =
+        when (language) {
+            "en" -> fragment.getString(R.string.language_english)
+            "fr" -> fragment.getString(R.string.language_french)
+            "de" -> fragment.getString(R.string.language_german)
+            "es" -> fragment.getString(R.string.language_spanish)
+            else -> language
+        }
 
     private fun buildInstantSilenceStatus(): String {
         val shake = runCatching { settings.isShakeToStopEnabled() }

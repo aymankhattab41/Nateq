@@ -34,7 +34,7 @@ class UpdateCheckerSha256Test {
 
     @Test
     fun matchingDigest_verifies() {
-        val file = tmp.newFile("lord_tts.apk")
+        val file = tmp.newFile("nateq.apk")
         file.writeBytes(ByteArray(4096) { it.toByte() })
         val expected = sha256Hex(file)
         assertTrue(UpdateChecker.verifyApkSha256(file, expected))
@@ -42,7 +42,7 @@ class UpdateCheckerSha256Test {
 
     @Test
     fun wrongDigest_orTamperedFile_fails() {
-        val file = tmp.newFile("lord_tts.apk")
+        val file = tmp.newFile("nateq.apk")
         file.writeBytes(ByteArray(4096) { 0x11 })
         val expected = sha256Hex(file)
         // تلاعُب بايت واحد بعد حساب البصمة المتوقعة → فشل.
@@ -72,7 +72,7 @@ class UpdateCheckerSha256Test {
 
     @Test
     fun hexComparison_isCaseInsensitive() {
-        val file = tmp.newFile("lord_tts.apk")
+        val file = tmp.newFile("nateq.apk")
         file.writeBytes(ByteArray(2048) { 0x2A })
         val expected = sha256Hex(file)
         assertTrue(UpdateChecker.verifyApkSha256(file, expected.uppercase()))
