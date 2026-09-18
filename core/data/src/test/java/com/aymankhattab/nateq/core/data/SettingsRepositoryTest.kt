@@ -203,6 +203,17 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun followReaderRate_defaultOnAndRoundTrip() {
+        // اتباع سرعة قارئ الشاشة مفعّل افتراضياً (السلوك الطبيعي الجديد:
+        // لا مضاعفة تفضيلات التطبيق فوق القارئ ما لم يطلب المستخدم عكس ذلك).
+        assertTrue(repo.isFollowReaderRateEnabled())
+        repo.setFollowReaderRateEnabled(false)
+        assertFalse(repo.isFollowReaderRateEnabled())
+        repo.setFollowReaderRateEnabled(true)
+        assertTrue(repo.isFollowReaderRateEnabled())
+    }
+
+    @Test
     fun languageInstallHint_defaultOffAndRoundTrip() {
         // توضيح «اللغات غير المثبتة» غير افتراضي (مخفي) حتى يفعّله المستخدم
         assertFalse(repo.isLanguageInstallHintEnabled())

@@ -44,6 +44,26 @@ import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 /**
+ * يحوّل نسبةَ سرعةِ قارئ الشاشة (100 = طبيعي) إلى معامل (1.0 = طبيعي) —
+ * TextToSpeech.setSpeechRate يتوقع 1.0 عند الطبيعي لا النسبةَ المئوية نفسها.
+ * أي نسبة غير موجبة (0/سلبية) تُعتبر 100 (طبيعي محايد).
+ */
+internal fun readerRateFromPercent(reqRate: Float): Float {
+    val safe = if (reqRate > 0f) reqRate else 100f
+    return safe / 100f
+}
+
+/**
+ * السرعة النهائية للنطق — نموذج الضرب: سرعةُ القارئ معاملٌ أَساسٌ يُضرب
+ * في معامل LORD (تفضيل التطبيق)، ثم يُقصّ على نطاقٍ آمن (0.1..6.0).
+ * عند اتباع سرعة القارئ يكون المعامل = 1.0 فيُبقى الخرج = سرعة القارئ.
+ */
+internal fun computeFinalSpeechRate(
+    readerRate: Float,
+    nateqMultiplier: Float
+): Float = (readerRate * nateqMultiplier).coerceIn(0.1f, 6.0f)
+
+/**
  * ==========================================================
  *  المكوّن الأهم في كل المشروع.
  * ==========================================================
@@ -575,6 +595,14 @@ override fun onDestroy() {
                     rawText, languageTag
                 )
                 val segments = segmenter.segment(semanticText, languageTag)
+                // **سرعة القارئ (معامل مُوحّد للمسارين):** نسبةُ
+                // request.getSpeechRate() المئوية (100 = طبيعي) تتحول هنا مرة
+                // واحدة إلى معامل (readerRate) يُمرَّر للمسار الأحادي
+                // (synthesizeSingle) والمسارات المختلطة (synthesizeMixed) —
+                // فلا يختلف صوتُ النص المختلط عن الأحادي، ولا يرى المسار
+                // المختلط request إطلاقاً.
+                val reqRate = request.getSpeechRate().toFloat()
+                val readerRate = readerRateFromPercent(reqRate)
 
                 if (segments.size == 1) {
                     // **بند 2.5:** حتى النص المفرد تُستعمل لغةُ المقطع
@@ -584,12 +612,12 @@ override fun onDestroy() {
                     // المناسب فوراً.
                     synthesizeSingle(
                         semanticText, segments[0].languageTag,
-                        callback, request
+                        callback, readerRate
                     )
                 } else {
                     // نص مختلط الكتابات: نطق كل مقطع بلغته/محركه ثم مزج الصوت
                     // بمعدلٍ موحّد عبر بثٍّ واحد (مونو).
-                    synthesizeMixed(segments, callback)
+                    synthesizeMixed(segments, readerRate, callback)
                 }
             } catch (e: CancellationException) {
                 // إبطال صريح: الإيقاف (onStop) معروف للنظام فلا نُطلق خطأً
@@ -664,7 +692,7 @@ override fun onDestroy() {
         rawText: String,
         languageTag: String,
         callback: SynthesisCallback,
-        request: SynthesisRequest
+        readerRate: Float
     ) {
         val (voice, foundProvider) = resolveVoiceWithFallback(languageTag)
         val provider = foundProvider ?: run {
@@ -676,23 +704,28 @@ override fun onDestroy() {
         }
         val autoConvert = requestHandler.isAutoConvertEnabled()
         val convertTarget = resolveConvertTarget(languageTag)
-        // السرعة: نجمع بين قناة قارئ الشاشة وقناة إعداد LORD نفسه.
-        // - تفضيل LORD الصريح لهذه اللغة أولاً — يحتسب ولو كان 1.0x (قد يريده
-        //   المستخدم «طبيعياً» بينما السرعة العامة 1.5x).
-        // - ثم السرعة العامة المخزّنة (≠1.0) حتى يؤثر إعداد «ناطق» فعلاً.
-        // - وإلا (لم يعرّف LORD شيئاً) نستعمل سرعة القارئ
-        //   (request.getSpeechRate())
-        //   فيُتبع النظامُ/القارئ ولا يُعطَّل قارئ شاشة النظام بلا تفضيل LORD.
+        // **سرعة النطق — نموذج الضرب (readerRate أساس، وLORD معامل):**
+        // كان النموذج القديم استبدالاً (إما سرعة LORD أو نسبة القارئ)، وكان
+        // float القارئ يُمرَّر حرفياً إلى TextToSpeech.setSpeechRate الذي
+        // يتوقع 1.0 = طبيعي فتُنطق القيمة المئوية (150 → 150×) سخيفة.
+        // الآن: سرعة القارئ النسبةُ المئوية (100 = طبيعي) تتحول إلى معامل
+        // (readerRate)، وتُضرب في معامل LORD —
+        //   finalRate = (readerRate * nateqMultiplier).coerceIn(0.1f, 6.0f)
+        // - عند تفعيل «اتبع سرعة القارئ» (افتراضياً) مضاعف LORD = 1.0
+        //   مهما كانت التفضيلات المحفوظة، فيُنطق كما ضبطه النظام حرفياً.
+        // - عند تعطيله يُضرب تفضيل التحويل الصريح لهذه اللغة أولاً، ثم
+        //   التفضيل الصريح، ثم السرعة العامة فعلاً فوق سرعة القارئ.
         val explicitLordRate =
             requestHandler.getExplicitLanguageRate(languageTag)
         val lordRate = requestHandler.getSpeechRate(languageTag)
-        val reqRate = request.getSpeechRate().toFloat()
-        val speechRate: Float = when {
-            explicitLordRate != null -> explicitLordRate
-            lordRate != 1.0f -> lordRate
-            reqRate > 0f -> reqRate
-            else -> lordRate
-        }
+        val nateqMultiplier: Float =
+            if (settings.isFollowReaderRateEnabled()) {
+                1.0f
+            } else {
+                convertTarget?.convertRate
+                    ?: explicitLordRate ?: lordRate ?: 1.0f
+            }
+        val speechRate = computeFinalSpeechRate(readerRate, nateqMultiplier)
         val pitch = requestHandler.getPitch(languageTag)
         val volume = requestHandler.getVolume(languageTag)
 
@@ -707,7 +740,7 @@ override fun onDestroy() {
         }
         Log.d(TAG,
             "synthesizeSingle lang=$languageTag" +
-            " lordRate=$lordRate reqRate=$reqRate" +
+            " lordRate=$lordRate readerRate=$readerRate" +
             " usedRate=$speechRate voice=${voice.id}" +
             " provider=${provider.providerId}" +
             " autoConvert=$autoConvert")
@@ -731,7 +764,7 @@ override fun onDestroy() {
             || (normLanguage == LanguageCode.EN.tag
             && convertLang == "eng")
 
-        val finalRate = convertTarget?.let { it.convertRate } ?: speechRate
+        val finalRate = speechRate
         val finalPitch = convertTarget?.let { it.convertPitch } ?: pitch
         val finalVolume = convertTarget?.let { it.convertVolume } ?: volume
         // توجيه المحرك/الصوت: يفضّل هدف التحويل المطابق، وإلا تفضيل لغة النص
@@ -840,7 +873,8 @@ override fun onDestroy() {
      *  المتسلسل والمتوازي فتتطابق أصواتُ النطق ومفاتيحُ الكاش بينهما.
      *  يرجع null عند غياب مزودٍ للمقطع (يُسقَط وحده كدأب المسار المختلط). */
     private suspend fun resolveSegmentParams(
-        segment: Segment
+        segment: Segment,
+        readerRate: Float
     ): SegmentParams? {
         val segTag = segment.languageTag
         val processed = textProcessor.process(segment.text, segTag)
@@ -859,7 +893,18 @@ override fun onDestroy() {
         val segLang = segTag.takeWhile { it.isLetter() }
         val convertLang = convert?.convertLocale?.language
         val matches = convertLang == null || segLang == convertLang
-        val finalRate = convert?.convertRate ?: segRate
+        // **سرعة النطق في المسار المختلط — نموذج الضرب مطابق للمسار الأحادي:**
+        // readerRate (معامل القارئ المنقول كوسيط من onSynthesizeText) أساسٌ
+        // يُضرب في معامل LORD؛ وعند تفعيل «اتبع سرعة القارئ» المعامل = 1.0.
+        // (لم يكن المسار المختلط يرى request إطلاقاً فتُنطق مقاطعه دائماً
+        //  بسرعة LORD المطلقة ويُخالف المسار الأحادي — كان عيباً متوارثاً.)
+        val nateqMultiplier: Float =
+            if (settings.isFollowReaderRateEnabled()) {
+                1.0f
+            } else {
+                convert?.convertRate ?: segRate ?: 1.0f
+            }
+        val finalRate = computeFinalSpeechRate(readerRate, nateqMultiplier)
         val finalPitch = convert?.convertPitch ?: segPitch
         val finalVolume = convert?.convertVolume ?: segVolume
         val routed = LanguageSpeechRouter.route(
@@ -881,9 +926,11 @@ override fun onDestroy() {
      *  كل شريحةٍ لمسبحه بعد ندائها) — خطوةُ العمل الموازي في
      *  [synthesizeParallel]. مقطعٌ يعجز محركُه يُسقط وحده (null). */
     private suspend fun synthesizeSegmentRaw(
-        segment: Segment
+        segment: Segment,
+        readerRate: Float
     ): SegmentAudio? {
-        val params = resolveSegmentParams(segment) ?: return null
+        val params = resolveSegmentParams(segment, readerRate)
+            ?: return null
         val chunks = ArrayList<ByteArray>()
         var nativeRate = 0
         var nativeChannels = 1
@@ -1028,13 +1075,15 @@ override fun onDestroy() {
      */
     private suspend fun synthesizeMixedSequential(
         segments: List<Segment>,
+        readerRate: Float,
         callback: SynthesisCallback
     ) {
         var started = false
         val maxBytes = callback.maxBufferSize
         val crossfader = ChunkCrossfader(CROSSFADE_FRAMES)
         for (segment in segments) {
-            val params = resolveSegmentParams(segment) ?: continue
+            val params = resolveSegmentParams(segment, readerRate)
+                ?: continue
             var nativeRate = 0
             var nativeChannels = 1
             val phase = LongArray(2)
@@ -1090,12 +1139,13 @@ override fun onDestroy() {
      */
     private suspend fun synthesizeParallel(
         segments: List<Segment>,
+        readerRate: Float,
         callback: SynthesisCallback
     ) {
         val audios = coroutineScope {
             segments.map { segment ->
                 async(AppDispatchers.io) {
-                    synthesizeSegmentRaw(segment)
+                    synthesizeSegmentRaw(segment, readerRate)
                 }
             }.map { it.await() }
         }
@@ -1150,13 +1200,14 @@ override fun onDestroy() {
      * النطق كلياً؛ وإن فشل الكل تُرك callback.error() كملاذٍ أخير. */
     private suspend fun synthesizeMixed(
         segments: List<Segment>,
+        readerRate: Float,
         callback: SynthesisCallback
     ) {
         val totalChars = segments.sumOf { it.text.length }
         if (segments.size > 1 && totalChars <= PARALLEL_MAX_CHARS) {
-            synthesizeParallel(segments, callback)
+            synthesizeParallel(segments, readerRate, callback)
         } else {
-            synthesizeMixedSequential(segments, callback)
+            synthesizeMixedSequential(segments, readerRate, callback)
         }
     }
 
@@ -1175,7 +1226,10 @@ override fun onDestroy() {
                 navigationWordsEn
             }
             val probe = Segment(words.firstOrNull() ?: "نعم", lang)
-            val params = resolveSegmentParams(probe) ?: continue
+            // تدفئة الكاش بسرعة القارئ الاعتيادية (1.0 = طبيعي): مفاتيح
+            // الكاش تتبع السرعة، والكلمات الدفاعية تُنطق غالباً بالسرعة
+            // الافتراضية للنظام — والباقي يتولد عن الطلب نفسه.
+            val params = resolveSegmentParams(probe, 1.0f) ?: continue
             for (word in words) {
                 try {
                     params.provider.synthesize(

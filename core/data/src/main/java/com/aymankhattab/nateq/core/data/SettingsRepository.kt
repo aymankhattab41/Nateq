@@ -952,6 +952,14 @@ class SettingsRepository(private val context: Context) :
     override fun setTashkeelPreserved(enabled: Boolean) =
         prefs.edit().putBoolean("tashkeel_preserved", enabled).apply()
 
+    /** اتباع سرعة قارئ الشاشة (النسبة المئوية 100 = طبيعي) في نطق نصه:
+     *  عند التفعيل (افتراضياً) تُهمل أشرطة سرعة LORD فتكون سرعة النطق
+     *  سرعة القارئ الفعلية بلا مضاعفة. */
+    override fun isFollowReaderRateEnabled(): Boolean =
+        prefs.getBoolean("follow_reader_rate_enabled", true)
+    override fun setFollowReaderRateEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("follow_reader_rate_enabled", enabled).apply()
+
     // ============ الإسكات الفوري: الهز والتقارب ============
 
     /** هز الجهاز أثناء النطق يوقفه فوراً. معطّل افتراضياً. */

@@ -281,6 +281,8 @@
 <string name="smart_spelling_summary">Speak single letters with their diacritics (e.g. baa fathah) and NATO names for Latin letters (A - Alpha)</string>
 <string name="tashkeel_preserved_enabled">Keep Arabic text diacritics</string>
 <string name="tashkeel_preserved_summary">Send unchanged Arabic words to the engine with their original diacritics, so diacritics-aware engines pronounce the vowels clearly. Enable with advanced Arabic engines; off by default</string>
+<string name="follow_reader_rate_enabled">Follow the screen-reader speed</string>
+<string name="follow_reader_rate_summary">Speak at the reader\'s actual speed (100 = normal) with no multiplication by the app\'s saved speed. When off, the reader speed is multiplied by your saved app speed</string>
 <string name="media_stream_always">Always announce on the media stream</string>
 <string name="media_stream_always_summary">Speak through the music stream even when the screen reader is off, to bypass the muted accessibility stream on some devices</string>
 <string name="sms_announcement_template_hint">Message reading template</string>

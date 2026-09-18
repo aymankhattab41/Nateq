@@ -168,6 +168,14 @@ interface ReadingPrefs {
     /** يعيّن إبقاء تشكيل النصوص العربية. */
     fun setTashkeelPreserved(enabled: Boolean)
 
+    /** اتباع سرعة قارئ الشاشة في نطق نصه (النسبة المئوية = 100 طبيعي):
+     *  عند التفعيل تُهمل أشرطة سرعة LORD (مضروب 1.0) فيُنطق كما ضبطه
+     *  المستخدم في النظام حرفياً. */
+    fun isFollowReaderRateEnabled(): Boolean
+
+    /** يعيّن اتباع سرعة قارئ الشاشة. */
+    fun setFollowReaderRateEnabled(enabled: Boolean)
+
     /** تفعيل نطق أسماء الإيموجي قبل إزالتها من النص. */
     fun isEmojiPronunciationEnabled(): Boolean
 
