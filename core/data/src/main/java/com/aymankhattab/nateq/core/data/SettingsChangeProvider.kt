@@ -25,9 +25,10 @@ import android.net.Uri
  * أرجاع الدوال الموروثة كلها «خاملة» ما عدا [update] و[query] على المسار
  * الفرعي `speaking` — الغرض هو الاشتراك والإبلاغ لا تخزين بيانات دائمة.
  *
- * فئة عامة (public) وليست internal ليتسنّى للاختبارات في الوحدات الأخرى
- * تثبيتها عبر Robolectric.setupContentProvider — أمنياً يبقى غير مُصدَّر
- * في الـ Manifest (exported=false) داخل التطبيق.
+ * فئة عامة (public) وليست internal: [AnnouncementSpeaker] (وحدة core:audio
+ * المنفصلة) يستورد [speakingUri] في الإنتاج، وفئة internal لا تُرَى عبر
+ * الوحدات — إبقاؤها خاصةً يتعارض مع بنية الوحدات. أمنياً يبقى المزوّد غير
+ * مُصدَّر (exported=false) داخل التطبيق.
  */
 class SettingsChangeProvider : ContentProvider() {
 
