@@ -88,6 +88,6 @@ class CheckTtsDataActivityTest {
             )
             ?.toList()
             .orEmpty()
-        assertEquals(listOf("ar-EG", "fr-local"), available)
+        assertEquals(listOf("ar-EG", "fr"), available)
     }
 }

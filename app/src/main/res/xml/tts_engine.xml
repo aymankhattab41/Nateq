@@ -4,11 +4,13 @@
     <voice android:name="ar-EG" />
     <voice android:name="en-US" />
     <!-- اللغات القارية المدعومة بكشف اللاتينية (fr/de/es): تُعلن هنا
-         بنفس صيغة VoiceIdContract ("<lang>-local") حتى تظهر في قوائم
-         النظام الثابتة/بعض مشغّلات سامسونج دون انتظار onGetVoises
-         الديناميكي؛ النطق الفعلي يذهب للمحرك الطرفي إن وُجد وإلا
-         يسقط أماناً للغة الطلب. -->
-    <voice android:name="fr-local" />
-    <voice android:name="de-local" />
-    <voice android:name="es-local" />
+         بنفس صيغة VoiceIdContract (اسم اللغة نفسه كـ Locale صالح —
+         "fr"/"de"/"es") حتى تظهر في قوائم النظام الثابتة/بعض مشغّلات
+         سامسونج دون انتظار onGetVoices الديناميكي؛ النطق الفعلي يذهب
+         للمحرك الطرفي إن وُجد وإلا يسقط أماناً للغة الطلب. الصيغة القديمة
+         "<lang>-local" كانت تكسر شاشة TTS في سامسونج لأنها ليست Locale
+         صالحاً (Locale.forLanguageTag تفشل عليها) فتنهار إعدادات النظام. -->
+    <voice android:name="fr" />
+    <voice android:name="de" />
+    <voice android:name="es" />
 </tts-engine>

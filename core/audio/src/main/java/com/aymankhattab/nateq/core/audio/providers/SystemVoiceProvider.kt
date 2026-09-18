@@ -327,7 +327,7 @@ class SystemVoiceProvider(
         // نطبّع كود اللغة من ISO-3 (eng, ara) إلى ISO-2 (en, ar).
         val normLanguage = normalizeLanguage(locale.language)
         // معرفات الأصوات يجب أن تطابق أسماء onGetVoices/tts_engine.xml
-        // ("ar-EG"/"en-US"/"<lang>-local") — عبر عقد موحّد يشارك الكتالوج
+        // ("ar-EG"/"en-US"/"fr"/"de"/…) — عبر عقد موحّد يشارك الكتالوج
         // في استخدامه، حتى تعمل مطابقة id في الفئات والإعلانات لكل اللغات
         // (كانت اللغات غير ar/en تخرج "nateq-<lang>-local" وتساقط اختيارها).
         val voiceId = VoiceIdContract.createId(normLanguage)

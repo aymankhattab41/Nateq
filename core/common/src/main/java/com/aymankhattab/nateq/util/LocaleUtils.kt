@@ -104,11 +104,12 @@ object LocaleUtils {
         }
     }
 
-    /** الجذر اللغوي لرمزِ لغةٍ/اسمِ صوتٍ ("ar-EG"/"ara"/"fr-local" → ar/fr):
+    /** الجذر اللغوي لرمزِ لغةٍ/اسمِ صوتٍ ("ar-EG"/"ara"/"fr" → ar/fr):
      *  يفصل علامة البلد/اللاحقة أولاً ('-' أو '_') ثم يوحّد ISO-3→ISO-2
      *  عبر [normalizeLanguageCode] — تُستخدم في فحص الأصوات (CHECK_TTS_DATA)
      *  ومفاتيح النصوص التجريبية ليطابق طلبُ النظام أسماءَ الأصوات المعلنة
-     *  مهما كان الشكل الوارد (ara/eng/fra أو ar-EG أو es-ES). */
+     *  مهما كان الشكل الوارد (ara/eng/fra أو ar-EG أو es-ES أو fr-local
+     *  القديمة من نسخ سابقة لصيغة الأسماء). */
     fun languageRoot(tag: String): String =
         normalizeLanguageCode(
             tag.trim().substringBefore('-').substringBefore('_')

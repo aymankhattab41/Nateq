@@ -292,10 +292,10 @@ class SettingsRepository(private val context: Context) :
 
     /**
      * يوحّد معرّفات الأصوات القديمة (nateq-ar*, nateq-en*, ar-local, en-local
-     * وكذلك البديل الخاطئ الأحدث nateq-<lang>-local) مع الصيغة الحالية
-     * (ar-EG/en-US/<lang>-local) حتى تبقى القيم المخزنة قبل إعادة التسمية
-     * تعمل وتعرض بشكل صحيح في شاشات الإعدادات. القاعدة كلها
-     * في [VoiceIdContract].
+     * وكذلك البديل الخاطئ الأحدث nateq-<lang>-local والصيغة القديمة
+     * "<lang>-local") مع الصيغة الحالية (ar-EG/en-US/<lang>) حتى تبقى القيم
+     * المخزنة قبل إعادة التسمية تعمل وتعرض بشكل صحيح في شاشات الإعدادات.
+     * القاعدة كلها في [VoiceIdContract].
      */
     private fun normalizeVoiceId(id: String?): String? =
         VoiceIdContract.normalize(id)

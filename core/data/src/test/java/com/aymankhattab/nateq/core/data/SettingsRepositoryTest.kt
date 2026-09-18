@@ -164,12 +164,15 @@ class SettingsRepositoryTest {
         repo.setPreferredVoiceId("ar", "ar-local")
         assertEquals("ar-EG", repo.getPreferredVoiceId("ar"))
         // البديل الخاطئ الأحدث من المزوّد: nateq-<lang>-local
-        // يُطبع للصيغة الموحّدة
+        // يُطبع للصيغة الموحّدة (اسم اللغة كـ Locale صالح)
         repo.setPreferredVoiceId("fr", "nateq-fr-local")
-        assertEquals("fr-local", repo.getPreferredVoiceId("fr"))
-        // الصيغة الموحّدة الحالية تمرّ كما هي
+        assertEquals("fr", repo.getPreferredVoiceId("fr"))
+        // الصيغة القديمة "<lang>-local" المعطوبة على سامسونج تُرقّى
         repo.setPreferredVoiceId("fr", "fr-local")
-        assertEquals("fr-local", repo.getPreferredVoiceId("fr"))
+        assertEquals("fr", repo.getPreferredVoiceId("fr"))
+        // الصيغة الموحّدة الحالية تمرّ كما هي
+        repo.setPreferredVoiceId("fr", "fr")
+        assertEquals("fr", repo.getPreferredVoiceId("fr"))
     }
 
     @Test
