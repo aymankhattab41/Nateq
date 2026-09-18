@@ -125,6 +125,22 @@ object UpdateChecker {
         return false
     }
 
+    /** اختيار مرفق الـ APK من أصول الإصدار: يفضّل الاسم المتوقع
+     *  ([APK_NAME]) ثم أي مرفق ينتهي بـ `.apk` — فنسخة قديمة مثبّتة تبحث
+     *  عن `lord_tts.apk` لا ترى مرفقاً باسم `nateq.apk` فتعلن «محدّثاً»
+     *  وهمياً. تُعيد null إن لم يوجد أي مرفق APK. منطق نقي قابل للاختبار. */
+    internal fun <T> pickApkAsset(
+        assets: List<T>,
+        nameOf: (T) -> String
+    ): T? {
+        val apkAssets = assets.filter {
+            nameOf(it).endsWith(".apk", ignoreCase = true)
+        }
+        return apkAssets.minWithOrNull(
+            compareBy { nameOf(it) != APK_NAME }
+        )
+    }
+
     sealed class CheckResult {
         data class UpdateAvailable(
             val tag: String,
@@ -199,10 +215,15 @@ object UpdateChecker {
                         return@withContext CheckResult.UpToDate
                     }
                     val assets = root.optArray("assets")
-                    val apkAsset = (0 until (assets?.size() ?: 0))
+                    val apkAssets = (0 until (assets?.size() ?: 0))
                         .mapNotNull { assets?.get(it)?.optObject() }
-                        .firstOrNull { it.optString("name") == APK_NAME }
-                    // إصدار أحدث لكن منشوره بلا مرفق الـ APK المتوقع
+                    // الاسم المتوقع أولاً ثم أي مرفق APK — حتى لا يضيع التحديث
+                    // لو غُيّر اسم المرفق (النسخة القديمة `lord_tts.apk`
+                    // لا ترى `nateq.apk` فكانت تُعلن تحديثاً وهمياً).
+                    val apkAsset = pickApkAsset(apkAssets) {
+                        it.optString("name")
+                    }
+                    // إصدار أحدث لكن منشوره بلا أي مرفق APK على الإطلاق
                     // → لا شيء ننزله.
                     if (apkAsset == null) {
                         return@withContext CheckResult.UpToDate
