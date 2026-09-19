@@ -80,4 +80,22 @@ class PcmRmsTest {
         val gain = normalizedRmsGain(pcm, 256, 1.0f)
         assertEquals(1.0f, gain, 0.0f)
     }
+
+    @Test
+    fun measureRms_ofConstantSignal_equalsSampleValue() {
+        assertEquals(5000.0, measureRms(constantPcm(5000, 64), 128), 1.0)
+        assertEquals(0.0, measureRms(ByteArray(128), 128), 0.0)
+        assertEquals(0.0, measureRms(ByteArray(128), 1), 0.0)
+    }
+
+    @Test
+    fun scale_isNullForSilence_valueForSignal() {
+        assertEquals(null, rmsNormalizationScale(ByteArray(256), 256))
+        assertEquals(null, rmsNormalizationScale(ByteArray(256), 1))
+        val scale = rmsNormalizationScale(constantPcm(2000, 128), 256)
+        assertTrue("مقياس موجب حي", scale != null && scale > 1f)
+        // يطابق قسمة الكسب الكلي على كسب المستخدم.
+        val gain = normalizedRmsGain(constantPcm(2000, 128), 256, 0.5f)
+        assertEquals(scale!! * 0.5f, gain, 0.001f)
+    }
 }

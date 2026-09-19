@@ -837,6 +837,36 @@ class SettingsRepository(private val context: Context) :
             .putFloat("volume_$category", volume.coerceIn(0f, 1f))
             .apply()
 
+    /** معايرة RMS الدائمة لكل محرك (بند الأوامر د.3.3): كسب التطبيع
+     *  المستقر تحت `rms_calibration_<engine>` — تُصدَّر/تُستورَد تلقائياً
+     *  (لا تبدأ بشرطة سفلية)، وتُمسح مع «استعادة الافتراضيات». القارئ
+     *  يرفض غير المحدود؛ التحجيم لحدود المحرك شأنُ المزوّد المالك لها. */
+    override fun getEngineRmsCalibration(enginePackage: String): Float? {
+        val stored = prefs.getFloat(
+            rmsCalibrationKey(enginePackage), Float.NaN
+        )
+        return stored.takeIf { it.isFinite() }
+    }
+    override fun saveEngineRmsCalibration(
+        enginePackage: String,
+        gain: Float
+    ) {
+        if (!gain.isFinite()) return
+        prefs.edit()
+            .putFloat(rmsCalibrationKey(enginePackage), gain)
+            .apply()
+    }
+    override fun clearEngineRmsCalibration(enginePackage: String) {
+        prefs.edit().remove(rmsCalibrationKey(enginePackage)).apply()
+    }
+
+    /** مفتاح المعايرة — فارغٌ/بلانك يُثبَّت على مفتاحٍ ثابتٍ لا يصطاد
+     *  غيرَه حتى لا تُكتب معايرةُ محركٍ مجهولٍ فوق أخرى. */
+    private fun rmsCalibrationKey(enginePackage: String): String {
+        val engine = enginePackage.trim().ifEmpty { "unknown" }
+        return "rms_calibration_$engine"
+    }
+
     /** تفعيل/إيقاف إعلان الوقت */
     override fun isTimeAnnouncementEnabled(): Boolean =
         prefs.getBoolean("time_announcement_enabled", true)

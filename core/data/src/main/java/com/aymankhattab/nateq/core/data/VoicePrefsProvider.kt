@@ -25,4 +25,14 @@ interface VoicePrefsProvider {
 
     /** مستوى الصوت لمجموعة صوتية معيّنة (0..1). */
     fun getVolumeForCategory(category: String): Float
+
+    /** معايرة RMS المحفوظة لمحرك (كسب التطبيع المستقر) — null إن لم توجد
+     *  (بند الأوامر د.3.3). الافتراضي بلا ثبات لموفّرٍ لا يدعم الحفظ. */
+    fun getEngineRmsCalibration(enginePackage: String): Float? = null
+
+    /** حفظ معايرة RMS لمحرك — الافتراضي بلا أثر. */
+    fun saveEngineRmsCalibration(enginePackage: String, gain: Float) {}
+
+    /** مسح معايرة RMS لمحرك (إعادة معايرة) — الافتراضي بلا أثر. */
+    fun clearEngineRmsCalibration(enginePackage: String) {}
 }

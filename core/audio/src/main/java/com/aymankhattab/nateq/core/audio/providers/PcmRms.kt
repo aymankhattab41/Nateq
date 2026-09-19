@@ -24,7 +24,13 @@ internal fun normalizedRmsGain(
     validLength: Int,
     volume: Float
 ): Float {
-    if (validLength < 2) return volume
+    val scale = rmsNormalizationScale(pcmData, validLength) ?: return volume
+    return scale * volume
+}
+
+/** يقيس RMS للعيّنات الصالحة (16-بت little endian) — 0.0 للقصير/الفارغ. */
+internal fun measureRms(pcmData: ByteArray, validLength: Int): Double {
+    if (validLength < 2) return 0.0
     var sumSquares = 0.0
     var i = 0
     while (i + 1 < validLength) {
@@ -34,12 +40,20 @@ internal fun normalizedRmsGain(
         sumSquares += sample.toDouble() * sample
         i += 2
     }
-    val rms = Math.sqrt(sumSquares / (validLength / 2))
-    if (rms <= SILENCE_RMS) return volume
-    val scale = (RMS_TARGET / rms).coerceIn(
+    return Math.sqrt(sumSquares / (validLength / 2))
+}
+
+/** مقياس التطبيع وحده (بلا كسب المستخدم) — null للصمت [SILENCE_RMS]
+ *  أو القصير: تُستخدم صلاحيتُها كبوابة عيّنات المعايرة (بند د.3.3). */
+internal fun rmsNormalizationScale(
+    pcmData: ByteArray,
+    validLength: Int
+): Float? {
+    val rms = measureRms(pcmData, validLength)
+    if (rms <= SILENCE_RMS) return null
+    return (RMS_TARGET / rms).coerceIn(
         MIN_RMS_GAIN.toDouble(), MAX_RMS_GAIN.toDouble()
     ).toFloat()
-    return scale * volume
 }
 
 /** مستوى RMS الهدف (نسبةً من السعة الكلية 32767) — نحو -16 dBFS. */

@@ -74,12 +74,31 @@ class StartupTempSweeperTest {
     fun activeApkInDownloads_isNeverDeleted() {
         val downloads = File(context.getExternalFilesDir(null), "downloads")
             .apply { mkdirs() }
-        val apk = File(downloads, "lord_tts.apk")
+        val apk = File(downloads, "nateq.apk")
             .apply { writeBytes(ByteArray(10_000)) }
 
         StartupTempSweeper(context).sweep()
 
         assertTrue("ملف الـ APK الحالي بقي", apk.exists())
+    }
+
+    @Test
+    fun staleOldNamedApkInDownloads_isSwept() {
+        // بند د.3.9: بقايا الاسم القديم (lord_tts.apk) ملف APK قديم باسمٍ
+        // آخر فيُكنس عند القدم — لا يُعامل معاملة النشط (nateq.apk).
+        val downloads = File(context.getExternalFilesDir(null), "downloads")
+            .apply { mkdirs() }
+        val cutoff = System.currentTimeMillis() - 60 * 60 * 1000L
+        val stale = File(downloads, "lord_tts.apk")
+            .apply {
+                writeBytes(ByteArray(10_000))
+                setLastModified(cutoff - 60 * 60 * 1000L)
+            }
+
+        val deleted = StartupTempSweeper(context).sweep()
+
+        assertTrue(deleted >= 1)
+        assertFalse("الاسم القديم اليتيم كُنس", stale.exists())
     }
 
     @Test

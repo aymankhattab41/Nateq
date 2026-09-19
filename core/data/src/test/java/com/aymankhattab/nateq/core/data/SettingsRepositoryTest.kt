@@ -819,4 +819,49 @@ class SettingsRepositoryTest {
         assertFalse(repo.isShakeToStopEnabled())
         assertFalse(repo.isProximitySilenceEnabled())
     }
+
+    @Test
+    fun rmsCalibration_exportImportClear_roundTrip() {
+        // بندا د.3.3/د.3.8: معايرة RMS لكل محرك تُحفظ وتُصدَّر (المفتاح
+        // لا يبدأ بشرطة سفلية فيُشمل بالنسخ الاحتياطي) وتُستورَد وتُمسح.
+        assertNull(repo.getEngineRmsCalibration("com.example.tts"))
+        repo.saveEngineRmsCalibration("com.example.tts", 2.5f)
+        assertEquals(
+            2.5f, repo.getEngineRmsCalibration("com.example.tts")!!, 0.0f
+        )
+        val exported = repo.exportSettings()
+        assertEquals(
+            2.5f,
+            exported["rms_calibration_com.example.tts"] as Float,
+            0.0f
+        )
+        // استيراد نسخةٍ بقيمةٍ جديدةٍ يستعيدها كما هي (بلا تعقيلٍ خاص).
+        assertTrue(
+            repo.importSettings(
+                mapOf("rms_calibration_com.example.tts" to 3.0f)
+            )
+        )
+        assertEquals(
+            3.0f, repo.getEngineRmsCalibration("com.example.tts")!!, 0.0f
+        )
+        // المسح يزيل المفتاح (إعادة معايرة) ولا يمسّ المحركات الأخرى.
+        repo.saveEngineRmsCalibration("com.other.tts", 1.5f)
+        repo.clearEngineRmsCalibration("com.example.tts")
+        assertNull(repo.getEngineRmsCalibration("com.example.tts"))
+        assertEquals(
+            1.5f, repo.getEngineRmsCalibration("com.other.tts")!!, 0.0f
+        )
+        // قيمة غير محدودة مرفوضة حفظاً فتبقى القراءة غائبة.
+        repo.saveEngineRmsCalibration("com.example.tts", Float.NaN)
+        assertNull(repo.getEngineRmsCalibration("com.example.tts"))
+    }
+
+    @Test
+    fun rmsCalibration_blankEngine_usesStableFallbackKey() {
+        repo.saveEngineRmsCalibration("   ", 1.25f)
+        assertEquals(1.25f, repo.getEngineRmsCalibration("")!!, 0.0f)
+        assertTrue(
+            repo.exportSettings().containsKey("rms_calibration_unknown")
+        )
+    }
 }

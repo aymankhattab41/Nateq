@@ -234,6 +234,13 @@ class SystemVoiceProvider(
     private val pcmPool = BytePool()
 
     /**
+     * مجمّعات معايرة RMS لكل محرك (بند الأوامر د.3.3): تُبذَر بالمحفوظ
+     * أولَ استخدامٍ ثم تتجمد بعد [RMS_CALIBRATION_SAMPLES] شرائح صالحة
+     * فيُحفَظ الكسبُ المستقر — خريطةٌ متزامنة لجلسات التخليق المتوازية.
+     */
+    private val rmsCalibrators = ConcurrentHashMap<String, RmsCalibrator>()
+
+    /**
      * كاش LRU في الذاكرة لإعلانات النطق القصيرة الشائعة (بند 19.1): عندما
      * يكرّر TalkBack قراءة نفس عنصر الواجهة (عناوين/أزرار/تسميات ثابتة) نعيد
      * بثّ PCM الجاهز من الذاكرة بلا أي كتابة/قراءة على القرص — يحذف عنق زجاجة
@@ -598,7 +605,8 @@ class SystemVoiceProvider(
                             synthesizeInternal(
                                 engineInstance, text, voice, speechRate,
                                 pitch, volume, onFormatInfo, onAudioChunk,
-                                cancelled, desiredVoiceName, cacheKey
+                                cancelled, desiredVoiceName, cacheKey,
+                                enginePackage
                             )
                         }
                     },
@@ -1009,7 +1017,8 @@ class SystemVoiceProvider(
         onAudioChunk: (ByteArray, Int) -> Unit,
         cancelled: AtomicBoolean,
         desiredVoiceName: String?,
-        cacheKey: String?
+        cacheKey: String?,
+        enginePackage: String? = null
     ): Boolean {
         // يُمرَّر المثيل من المسبح صراحةً (لا حقلٍ عام): بعد إدخال مسبح
         // المحركات قد يتغير المحرك المُنطَق به أثناء تتابع نطقات لغات
@@ -1324,7 +1333,8 @@ class SystemVoiceProvider(
                         val validLength = extracted.validLength
                         val scaledData = if (volume != 1.0f) {
                             applyVolume(
-                                extracted.pcm, volume, validLength
+                                extracted.pcm, volume, validLength,
+                                enginePackage
                             )
                         } else {
                             extracted.pcm
@@ -1554,10 +1564,11 @@ class SystemVoiceProvider(
     private fun applyVolume(
         pcmData: ByteArray,
         volume: Float,
-        validLength: Int
+        validLength: Int,
+        enginePackage: String? = null
     ): ByteArray {
         val result = pcmPool.acquire(validLength)
-        val gain = normalizedRmsGain(pcmData, validLength, volume)
+        val gain = rmsGainFor(pcmData, volume, validLength, enginePackage)
         var i = 0
         while (i + 1 < validLength) {
             // Read 16-bit sample (little endian)
@@ -1571,6 +1582,61 @@ class SystemVoiceProvider(
             i += 2
         }
         return result
+    }
+
+    /**
+     * كسب الشريحة مع المعايرة الدائمة لكل محرك (بند الأوامر د.3.3): بلا
+     * محركٍ (قراءة ملف WAV) يُستخدم التطبيعُ اللحظي كما كان؛ ومع محركٍ
+     * تُغذَّى المقاييسُ الصالحة لمجمّعِه حتى التجميد ثم يُثبَّت الكسبُ
+     * ويُحفَظ — فلا يضخّم الصوتُ بين شرائح النطق الواحد. الصمتُ يبقى
+     * بكسب المستخدم وحده دائماً (لا تضخيم للهمهمة).
+     */
+    private fun rmsGainFor(
+        pcmData: ByteArray,
+        volume: Float,
+        validLength: Int,
+        enginePackage: String?
+    ): Float {
+        if (enginePackage == null) {
+            return normalizedRmsGain(pcmData, validLength, volume)
+        }
+        val live = rmsNormalizationScale(pcmData, validLength) ?: return volume
+        val calibrator = calibratorFor(enginePackage)
+        val wasSettled = calibrator.isSettled()
+        calibrator.observe(live)
+        val effective = if (calibrator.isSettled()) {
+            calibrator.current() ?: live
+        } else {
+            live
+        }
+        if (!wasSettled && calibrator.isSettled()) {
+            injectedSettings?.saveEngineRmsCalibration(
+                enginePackage, effective
+            )
+        }
+        return effective * volume
+    }
+
+    /** مجمّع المحرك (يُبذَر بالمحفوظ أول مرة) — مسار التخليق وحده يملكه. */
+    private fun calibratorFor(enginePackage: String): RmsCalibrator =
+        rmsCalibrators.getOrPut(enginePackage) {
+            RmsCalibrator().also { calibrator ->
+                rmsCalibrationOf(enginePackage)?.let { saved ->
+                    calibrator.seed(saved)
+                }
+            }
+        }
+
+    /** المحفوظ مُحجَّماً لحدود المحرك — تالفٌ/غائب = بلا بذر (null). */
+    private fun rmsCalibrationOf(enginePackage: String): Float? =
+        injectedSettings?.getEngineRmsCalibration(enginePackage)
+            ?.takeIf { it.isFinite() }
+            ?.coerceIn(MIN_RMS_GAIN, MAX_RMS_GAIN)
+
+    /** مسح معايرة محرك لإعادة معايرتها من الصفر (ذاكرةً وقرصاً). */
+    fun clearEngineCalibration(enginePackage: String) {
+        rmsCalibrators.remove(enginePackage)
+        injectedSettings?.clearEngineRmsCalibration(enginePackage)
     }
 }
 
