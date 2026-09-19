@@ -480,6 +480,22 @@ class TimeAnnouncementManagerTest {
         assertEquals(13 * 60 * 1000L, calculateInitialDelay())
     }
 
+    @Test
+    fun calculateInitialDelay_interval5_staysOnFiveMinuteGrid() {
+        // بند الأوامر 3: الفاصل الأدنى 5 دقائق — الإعلان التالي من أي لحظة
+        // لا يتجاوز 5 دقائق: 10:47 → 10:50 (3 دقائق) على شبكة اليوم الكامل.
+        val clock = FakeClock(
+            millisFor(2017, Calendar.JANUARY, 1, 10, 47)
+        )
+        manager = newManager(clock)
+        settings.setTimeAnnouncementInterval(5)
+        assertEquals(3 * 60 * 1000L, calculateInitialDelay())
+
+        // 10:50:00 بالضبط → الشريحة التالية 10:55 (5 دقائق، دائماً مستقبل).
+        clock.setTo(millisFor(2017, Calendar.JANUARY, 1, 10, 50))
+        assertEquals(5 * 60 * 1000L, calculateInitialDelay())
+    }
+
     // ═══════════════════════ الجدولة البنيوية ═══════════════════════
 
     @Test

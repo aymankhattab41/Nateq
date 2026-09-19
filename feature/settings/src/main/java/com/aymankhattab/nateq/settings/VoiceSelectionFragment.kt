@@ -102,6 +102,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private val engines = mutableListOf<EngineInfo>()
     private lateinit var engineSection: EngineSectionController
 
+    /** معاينة النطق المشتركة لكل أقسام الشاشة (بند الأوامر 4) — تُغلق
+     *  في [onDestroyView] عبر [VoicePreviewHelper.release]. */
+    private lateinit var voicePreview: VoicePreviewHelper
+
     /** مستقبل اكتمال تنزيل التحديث — يُحتفظ بمرجعه ليُلغى تسجيله في
      *  [onDestroyView] (بند 6.6) حتى لا يتسرب الفصيل عند تدوير الشاشة
      *  أو مغادرتها أثناء التنزيل. */
@@ -321,6 +325,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
         // قسم المحركات: اكتشاف المحركات المثبتة فقط (لا صندوق اختيار عام —
         // لا محرك افتراضي؛ محرك كل لغة/فئة يُحسم وقت النطق)
+        voicePreview = VoicePreviewHelper(requireContext().applicationContext)
         accordion = SettingsAccordionController(
             this,
             settings,
@@ -328,8 +333,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         ).apply {
             setup(view, viewLifecycleOwner)
         }
-        engineSection = EngineSectionController(this, settings, engines)
-            .apply {
+        engineSection = EngineSectionController(
+            this, settings, engines, voicePreview
+        ).apply {
                 onStatusChanged = { accordion.updateSectionStatuses() }
             }
         engineSection.setupEngineDiscovery()
@@ -492,13 +498,15 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         // ويبني مستمعيه عند setup()، وonStatusChanged تُحدّث أسطر حالة
         // الأكورديون.
         timeSection = TimeAnnouncementController(
-            this, settings, { accordion.updateSectionStatuses() }
+            this, settings, nateqVoices,
+            { accordion.navigateToSection(R.id.ll_oem_guidance_content) },
+            { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
         batterySection = BatteryAnnouncementController(
             this, settings, nateqVoices, { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
         notificationSection = NotificationReadingController(
-            this, settings, { accordion.updateSectionStatuses() }
+            this, settings, nateqVoices, { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
         callerSection = CallerAnnouncementController(
             this, settings, nateqVoices, { accordion.updateSectionStatuses() }
@@ -589,6 +597,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         // تحرر المحرك وتتوقف تسريبات مؤقتات الاسترداد.
         announcementSpeaker?.shutdown()
         announcementSpeaker = null
+        // إغلاق معاينة النطق المشتركة (بند 4.2) — أي محرك TTS مؤقت فُتح
+        // للمعاينة يُغلق تماماً عند مغادرة الشاشة.
+        if (::voicePreview.isInitialized) voicePreview.release()
         // إغلاق كل النوافذ المفتوحة حتى لا تتسرب مراجع الواجهة (WindowLeaked)
         // عند تدوير الشاشة أو مغادرتها.
         val open = activeDialogs.toList()
@@ -1032,6 +1043,24 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             1.0f,
             engineOverride = engine
         )
+    }
+
+    /**
+     * يعرض معاينة نطق عبر المساعد المشترك ويُعلن بدايتها ونهايتها لقارئ
+     * الشاشة (بند الأوامر 4) — يُستدعى من أزرار المعاينة في الأقسام.
+     */
+    internal fun previewSpeech(params: PreviewParams) {
+        val startMsg = getString(R.string.sample_preview_starting)
+        view?.announceCompat(startMsg)
+        voicePreview.play(params) {
+            runCatching {
+                if (isAdded) {
+                    view?.announceCompat(
+                        getString(R.string.sample_preview_done)
+                    )
+                }
+            }
+        }
     }
 
     // ===== تبديل لغة التطبيق (أسفل الشاشة) =====

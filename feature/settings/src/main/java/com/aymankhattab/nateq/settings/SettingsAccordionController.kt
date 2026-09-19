@@ -248,6 +248,14 @@ internal class SettingsAccordionController(
         }
     }
 
+    /** بند الأوامر 5: توجيه مباشر إلى قسمٍ ما (من رابط «إرشادات المصنّع»
+     *  في صف إذن المنبهات الدقيقة) — يفتح قسمه كأن المستخدم فتح بطاقته. */
+    fun navigateToSection(contentId: Int) {
+        val content = fragment.view?.findViewById<View>(contentId) ?: return
+        if (accordionEntries.none { it.content === content }) return
+        openSection(content)
+    }
+
     /** فتح شاشة مجموعة (المحرك والإصوات/الإعلانات/النصوص/النظام): بطاقات
  *  المجموعة فقط + شريط العودة */
     private fun openGroup(group: GroupState) {
@@ -598,12 +606,8 @@ internal class SettingsAccordionController(
         val interval = runCatching { settings.getTimeAnnouncementInterval() }
             .getOrDefault(30)
         val intervalLabel = fragment.getString(
-            when (interval) {
-                15 -> R.string.time_interval_15
-                30 -> R.string.time_interval_30
-                45 -> R.string.time_interval_45
-                else -> R.string.time_interval_60
-            }
+            R.string.time_interval_format,
+            interval.coerceIn(5, 60)
         )
         // **بند 6.1:** اليومُ الحالي الفعلي — كان الثابت Calendar.DAY_OF_WEEK
         // (7 = السبت) يُمرَّر بدل اليوم الجاري، فكان الملخص يعرض ساعات هدوء

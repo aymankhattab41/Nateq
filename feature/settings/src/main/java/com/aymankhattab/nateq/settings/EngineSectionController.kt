@@ -3,13 +3,11 @@ package com.aymankhattab.nateq.settings
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.speech.tts.TextToSpeech
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.TextView
-import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -38,9 +36,10 @@ internal data class EngineInfo(val packageName: String, val label: String)
  * ومعاينة النطق. بدل نظام «اللغتين» الثابت (1/2) صار الدعم لكل لغة مُكتشفة.
  */
 internal class EngineSectionController(
-    private val fragment: Fragment,
+    private val fragment: VoiceSelectionFragment,
     private val settings: SettingsRepository,
-    private val engines: MutableList<EngineInfo>
+    private val engines: MutableList<EngineInfo>,
+    private val preview: VoicePreviewHelper
 ) {
 
     /** يربطه المضيف بعد إنشائه ليُعيد بناء أسطر حالة الأقسام عند أي تغيير. */
@@ -104,11 +103,6 @@ internal class EngineSectionController(
         com.google.android.material.checkbox.MaterialCheckBox? = null
     private var autoConvertButton:
         com.google.android.material.button.MaterialButton? = null
-
-    /** مثيل محرك المعاينة الجاري — بند 4.2: يُتتبَّع كعضو حتى يُغلق
-     *  (shutdown) عند إغلاق الحوار أو مغادرة الشاشة، فلا يبقى
-     *  ServiceConnection معلقاً في النظام بعد المعاينة. */
-    private var currentPreviewTts: TextToSpeech? = null
 
     /** يعيد تزامن واجهة التحويل مع الإعداد الحالي. عند تفعيل المستخدم محركاً
      *  من حوار اللغات يُقلب التفعيلُ مفتاح «التحويل التلقائي» تلقائياً —
@@ -250,11 +244,9 @@ internal class EngineSectionController(
         discovered: Map<String, List<EngineWithVoices>>
     ): List<LanguageRow> = buildAllLanguageRows(discovered)
 
-    /** يُشغّل تكليفاً تجريبياً عبر محرك مؤقت بأية القيم المختارة دون حفظ.
-     *  بند 4.2: يُهدم أي معاينة جارية أولاً ويُقيَّد النموذج الجديد بمرجع
-     *  [currentPreviewTts] ليُغلق تلقائياً عند مغادرة الشاشة
-     *  أو إغلاق الحوار. */
-    @Suppress("DEPRECATION")
+    /** يُشغّل تكليفاً تجريبياً عبر [VoicePreviewHelper] المشترك بأية القيم
+     *  المختارة دون حفظ. بند 4.2 (إغلاق أي معاينة جارية والإغلاق عند
+     *  مغادرة الشاشة) محفوظ داخل المساعد — لا يُفقد عند الاستخراج. */
     private fun playbackPreview(
         enginePkg: String,
         voiceName: String,
@@ -262,118 +254,40 @@ internal class EngineSectionController(
         pitch: Float,
         rate: Float
     ) {
-        // إغلاق أي معاينة جارية أولاً (بند 4.2) — لو كان المستخدم يضغط
-        // زر الاستماع بسرعة متكررة لا تراكم محركات معلقة.
-        currentPreviewTts?.let { tts ->
-            runCatching { tts.shutdown() }
+        // نعرض عينة بنفس لغة الصوت: عربي إن كان الصوت
+        // عربياً وإلا إنجليزي.
+        // (سبق: كان النص التجريبي إنجليزياً دائماً فبدا
+        // للمستخدم أن الصوت إنجليزي.)
+        val isArabic = voiceName.lowercase().contains("ar") ||
+            voiceName.lowercase().contains("arab")
+        val sampleText = if (isArabic) {
+            fragment.getString(R.string.sample_text_preview_ar)
+        } else {
+            fragment.getString(R.string.sample_text_default_en)
         }
-        currentPreviewTts = null
-
-        var previewTts: TextToSpeech? = null
-        // ربط مباشر بالمحرك المعيّن (منشئ ثلاثي المعاملات) بدل الافتراضي ثم
-        // setEngineByPackageName: معاينة العينة يجب أن تعمل حتى لو كان محرك
-        // النطق الافتراضي للنظام هو حزمة LORD نفسها (التطبيق محرك TTS أصلياً).
-        val created = runCatching {
-            @Suppress("DEPRECATION")
-            previewTts = TextToSpeech(
-                fragment.requireContext(),
-                { status ->
-                if (status != TextToSpeech.SUCCESS) {
-                    // فشل تهيئة محرك المعاينة: نغلق فوراً
-                    // حتى لا تبقى نسخة TTS معلقة
-                    runCatching { previewTts?.shutdown() }
-                    currentPreviewTts = null
-                    return@TextToSpeech
-                }
-                currentPreviewTts = previewTts
-                try {
-                    val avail =
-                        runCatching { previewTts?.getVoices().orEmpty() }
-                            .getOrDefault(emptySet())
-                    val voice = avail.firstOrNull { it.name == voiceName }
-                    if (voice != null) {
-                        // نضبط المحرك على لسان الصوت المختار حتى لا يقرأ النص
-                        // بلغة المحرك الافتراضية (مثلاً الإنجليزية
-                        // رغم اختيار العربي).
-                        runCatching { previewTts?.setVoice(voice) }
-                        runCatching {
-                            previewTts?.let { it.language = voice.locale }
-                        }
-                    }
-                } catch (_: Exception) {}
-                previewTts?.setSpeechRate(rate)
-                runCatching { previewTts?.setPitch(pitch) }
-                // نمرر مستوى الصوت للمحرك عبر المعاملات
-                // (كان بلا مستوى صوت إطلاقاً)
-                // ليقترب ناتج المعاينة من النطق الفعلي الذي يطبق نفس القيم.
-                // السرعة والنبرة تمران عبر setSpeechRate/setPitch
-                // (لا توجد ثوابت عامة لهما في Bundle الكلامة).
-                val params = android.os.Bundle().apply {
-                    putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume)
-                }
-                // نعرض عينة بنفس لغة الصوت: عربي إن كان الصوت
-                // عربياً وإلا إنجليزي.
-                // (سبق: كان النص تجريبياً إنجليزياً دائماً فبدا
-                // للمستخدم أن الصوت إنجليزي.)
-                val sampleText =
-                    if (voiceName.lowercase().contains("ar") ||
-                        voiceName.lowercase().contains("arab")
-                    ) {
-                        fragment.getString(R.string.sample_text_preview_ar)
-                    } else {
-                        fragment.getString(R.string.sample_text_default_en)
-                    }
-                val speakResult = runCatching {
-                    previewTts?.speak(
-                        sampleText,
-                        TextToSpeech.QUEUE_FLUSH,
-                        params,
-                        "preview"
-                    )
-                }.getOrDefault(TextToSpeech.ERROR)
-                if (speakResult == TextToSpeech.ERROR) {
-                    // فشل النطق (مثلاً المحرك دون لغة محمّلة):
-                    // نغلق فوراً عوضاً عن تعليقه
-                    runCatching { previewTts?.shutdown() }
-                    currentPreviewTts = null
-                    return@TextToSpeech
-                }
-                previewTts?.setOnUtteranceProgressListener(
-                    object : android.speech.tts.UtteranceProgressListener() {
-                    override fun onStart(utteranceId: String?) {}
-
-                    @Deprecated("Java Deprecated")
-                    override fun onDone(utteranceId: String?) {
-                        previewTts?.shutdown()
-                        currentPreviewTts = null
-                    }
-
-                    @Deprecated("Java Deprecated")
-                    override fun onError(utteranceId: String?) {
-                        previewTts?.shutdown()
-                        currentPreviewTts = null
-                    }
-                })
-            },
-            enginePkg
+        // نُعلن بداية ونهاية المعاينة لقارئ الشاشة (بند الأوامر 4) عبر
+        // previewSpeech، وهو يشغّلها على المساعد المشترك نفسه.
+        fragment.previewSpeech(
+            PreviewParams(
+                enginePkg = enginePkg,
+                voiceName = voiceName,
+                languageTag = if (isArabic) {
+                    LanguageCode.AR.tag
+                } else {
+                    LanguageCode.EN.tag
+                },
+                speechRate = rate,
+                pitch = pitch,
+                volume = volume,
+                sampleText = sampleText
+            )
         )
-        }
-        if (created.isFailure) {
-            // تعذّر ربط محرك المعاينة بذاته (حزمة غير صالحة):
-            // لا نترك نسخة معلقة.
-            runCatching { previewTts?.shutdown() }
-            currentPreviewTts = null
-            return
-        }
     }
 
-    /** يصفّر كل المراجع (بند 4.1 + 4.2): إغلاق محرك المعاينة المعلّق
-     *  وتحرير واجهات التحويل التلقائي — يُستدعى من onDestroyView. */
+    /** يصفّر كل المراجع (بند 4.1 + 4.2): تحرير واجهات التحويل التلقائي —
+     *  يُستدعى من onDestroyView. المعاينة الجارية يغلقها مضيف الفصيل عبر
+     *  [VoicePreviewHelper.release]. */
     fun cleanup() {
-        currentPreviewTts?.let { tts ->
-            runCatching { tts.shutdown() }
-        }
-        currentPreviewTts = null
         autoConvertCheckbox = null
         autoConvertButton = null
     }

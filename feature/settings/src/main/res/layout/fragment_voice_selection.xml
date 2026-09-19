@@ -332,6 +332,28 @@
                     android:contentDescription="@string/time_chime_volume_desc" />
             </LinearLayout>
 
+            <!-- بند الأوامر 4: معاينة إعلان الوقت ورنة الساعة (قيم العرض
+                 الحالية لا المحفوظة القديمة) -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnPreviewTime"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:minHeight="48dp"
+                android:text="@string/preview_time_button"
+                android:importantForAccessibility="yes" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnPreviewChime"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/preview_chime_button"
+                android:importantForAccessibility="yes" />
+
             <!-- طلب إذن المنبهات الدقيقة (يظهر فقط عند غياب الإذن على أندرويد 12+) -->
             <LinearLayout
                 android:id="@+id/ll_exact_alarm_permission"
@@ -368,7 +390,48 @@
                     android:layout_marginTop="4dp"
                     android:minHeight="48dp"
                     android:text="@string/exact_alarm_permission_grant" />
+
+                <!-- بند الأوامر 5: تلميحٌ بأن التأخير المتكرر من إعدادات
+                     البطارية/التشغيل التلقائي، مع رابط لإرشادات المصنّع -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/exact_alarm_oem_hint"
+                    android:textAppearance="?attr/textAppearanceCaption"
+                    android:textColor="@color/text_secondary"
+                    android:importantForAccessibility="no" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnOpenOemGuidance"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:minHeight="48dp"
+                    android:text="@string/exact_alarm_open_oem_guidance" />
             </LinearLayout>
+
+            <!-- خيار متقدم: منبّه دقيق بإيقونة ثابتة (بند الأوامر 5) -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_time_alarm_max_precision"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/time_alarm_max_precision_title"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/time_alarm_max_precision_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:importantForAccessibility="no" />
 
         </LinearLayout>        <View
             android:layout_width="match_parent"
@@ -494,6 +557,17 @@
                     android:textColor="@color/text_secondary"
                     android:importantForAccessibility="no" />
             </LinearLayout>
+
+            <!-- بند الأوامر 4: معاينة قراءة إشعار بالقيم المعروضة -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnPreviewNotification"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:minHeight="48dp"
+                android:text="@string/preview_notification_button"
+                android:importantForAccessibility="yes" />
 
         </LinearLayout>
 
@@ -783,6 +857,17 @@
                     android:importantForAccessibility="yes" />
             </com.google.android.material.textfield.TextInputLayout>
 
+            <!-- بند الأوامر 4: معاينة قراءة رسالة بالقيم المعروضة -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnPreviewSms"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:minHeight="48dp"
+                android:text="@string/preview_sms_button"
+                android:importantForAccessibility="yes" />
+
         </LinearLayout>        <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
@@ -1042,6 +1127,17 @@
                 android:max="200"
                 android:progress="100"
                 android:contentDescription="@string/caller_announcement_pitch" />
+
+            <!-- بند الأوامر 4: معاينة إعلان المتصل بالقيم المعروضة -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnPreviewCaller"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:minHeight="48dp"
+                android:text="@string/preview_caller_button"
+                android:importantForAccessibility="yes" />
 
         </LinearLayout>
         </LinearLayout>
@@ -1836,6 +1932,17 @@
                 android:max="100"
                 android:progress="80"
                 android:contentDescription="@string/battery_cue_volume" />
+
+            <!-- بند الأوامر 4: معاينة إعلان البطارية بالقيم المعروضة -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnPreviewBattery"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:minHeight="48dp"
+                android:text="@string/preview_battery_button"
+                android:importantForAccessibility="yes" />
 
         </LinearLayout>        <View
             android:layout_width="match_parent"

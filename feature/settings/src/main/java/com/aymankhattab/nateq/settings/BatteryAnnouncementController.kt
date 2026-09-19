@@ -47,6 +47,10 @@ internal class BatteryAnnouncementController(
     private var tvPowerSaverThresholdValue: TextView? = null
     private var seekPowerSaverThreshold: SeekBar? = null
 
+    /** خيارات محرك نطق البطارية: «تلقائي» ثم المحركات المثبتة. */
+    private var batteryEngineOptions: List<EnginePicker.InstalledEngine> =
+        emptyList()
+
     // **بند 6.3:** علمُ الربط البرمجي — يُسنَّع حول setProgress في setup حتى
     // لا يُفسَّر الإسنادُ البرمجي تعديلَ مستخدم. دون الحفظ في
     // onProgressChanged كان تعديل TalkBack (عبر أداء الوصول، لا يمر عبر
@@ -207,7 +211,7 @@ internal class BatteryAnnouncementController(
         }
 
         // محرك نطق البطارية
-        val batteryEngineOptions = runCatching {
+        batteryEngineOptions = runCatching {
             EnginePicker.installedEngines(fragment.requireContext())
         }.getOrDefault(emptyList())
         val batteryEngineLabels = buildList {
@@ -581,6 +585,30 @@ internal class BatteryAnnouncementController(
                 seekBar.announceCompat("${seekBar.progress}%")
             }
         })
+
+        // بند الأوامر 4: معاينة إعلان البطارية بالقيم المعروضة حالياً.
+        view.findViewById<View>(R.id.btnPreviewBattery)
+            ?.setOnClickListener { previewBattery() }
+    }
+
+    /** معاينة «البطارية 20%» بموضع صوت السبنرا وتقدم الشرائط الحالية. */
+    private fun previewBattery() {
+        val enginePkg = batteryEngineOptions
+            .getOrNull((spinnerBatteryEngine?.selectedItemPosition ?: 0) - 1)
+            ?.packageName
+        val sample = fragment.getString(R.string.sample_text_battery_preview)
+        fragment.previewSpeech(
+            buildPreviewParams(
+                voices = voices,
+                voiceSelection =
+                    spinnerBatteryVoice?.selectedItemPosition ?: 0,
+                enginePkg = enginePkg,
+                rateProgress = seekBatteryRate?.progress ?: 100,
+                pitchProgress = seekBatteryPitch?.progress ?: 100,
+                volumePercent = seekBatteryVolume?.progress ?: 100,
+                sampleText = sample
+            )
+        )
     }
 
     /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */

@@ -458,7 +458,31 @@ internal class CallerAnnouncementController(
         // استرداد ذكي: إذا كانت ميزة المتصّل مفعّلة لكن أذوناتها سُحبت (سحب
         // النظام التلقائي للأذونات غير المستخدمة، خصوصاً على أندرويد 11+)
         // نكتشف ذلك فور فتح الإعدادات ونعرض إعادة المنح بدل تركه صامتاً.
+        // بند الأوامر 4: معاينة إعلان المتصل بالقيم المعروضة حالياً.
+        view.findViewById<View>(R.id.btnPreviewCaller)
+            ?.setOnClickListener { previewCaller() }
         checkRevokedPermissionsAndRecover()
+    }
+
+    /** معاينة «متصل من أحمد» بصوت المتصل العربي/محركه وتقدم الشرائط
+     *  الحالية (لا القيم المحفوظة القديمة). */
+    private fun previewCaller() {
+        val enginePkg = callerEngineOptions
+            .getOrNull((spinnerCallerEngine?.selectedItemPosition ?: 0) - 1)
+            ?.packageName
+        val sample = fragment.getString(R.string.sample_text_caller_preview)
+        fragment.previewSpeech(
+            buildPreviewParams(
+                voices = voices,
+                voiceSelection =
+                    spinnerCallerVoiceAr?.selectedItemPosition ?: 0,
+                enginePkg = enginePkg,
+                rateProgress = seekCallerRate?.progress ?: 100,
+                pitchProgress = seekCallerPitch?.progress ?: 100,
+                volumePercent = seekCallerVolume?.progress ?: 100,
+                sampleText = sample
+            )
+        )
     }
 
     /**

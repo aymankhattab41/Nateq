@@ -341,6 +341,32 @@ internal class SmsReadingController(
                 }
             }
         })
+
+        // بند الأوامر 4: معاينة قراءة رسالة بالقيم المعروضة حالياً.
+        view.findViewById<View>(R.id.btnPreviewSms)
+            ?.setOnClickListener { previewSms() }
+    }
+
+    /** معاينة رسالة تجريبية بموضع صوت السبنرا وتقدم شرائط العرض الحالية
+     *  (لا القيم المحفوظة القديمة). */
+    private fun previewSms() {
+        val engine = runCatching {
+            settings.getEngineForCategory(
+                SettingsRepository.ANNOUNCE_CATEGORY_SMS
+            )
+        }.getOrNull()
+        val sample = fragment.getString(R.string.sample_text_sms_preview)
+        fragment.previewSpeech(
+            buildPreviewParams(
+                voices = voices,
+                voiceSelection = spinnerSmsVoice?.selectedItemPosition ?: 0,
+                enginePkg = engine,
+                rateProgress = seekSmsRate?.progress ?: 100,
+                pitchProgress = seekSmsPitch?.progress ?: 100,
+                volumePercent = seekSmsVolume?.progress ?: 100,
+                sampleText = sample
+            )
+        )
     }
 
     /** نتيجة طلب إذن قراءة الرسائل: الوضع المعلّق يُثبَّت فقط عند

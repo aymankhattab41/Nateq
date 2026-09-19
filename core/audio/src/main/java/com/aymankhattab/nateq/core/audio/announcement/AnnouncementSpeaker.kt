@@ -14,6 +14,7 @@ import com.aymankhattab.nateq.engine.EmojiSpeech
 import com.aymankhattab.nateq.core.audio.engine.LanguageSegmenter
 import com.aymankhattab.nateq.core.audio.engine.Segment
 import com.aymankhattab.nateq.engine.SpeechPart
+import com.aymankhattab.nateq.engine.TextProcessor
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.data.SettingsChangeProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
@@ -201,6 +202,20 @@ class AnnouncementSpeaker(
     /** مقسم النصوص المختلطة الكتابات داخل إعلانات
      * التطبيق (منطق نقي بلا حالة). */
     private val languageSegmenter = LanguageSegmenter()
+
+    // **توحيد مسار الإعلانات مع مسار القراءة (بند الأوامر 1):** تمرُّ نصوص
+    // الإعلانات (الإشعارات/الرسائل/البطارية/المتصل) عبر TextProcessor نفسه
+    // الذي يُعالج نص القارئ — أرقام/أوقات/عملات/روابط/رموز تُحول لصيغة
+    // نطق طبيعية قبل إرسالها للمحرك. الإعدادات تُحقَن عبر
+    // AnnouncementAppContext إن وُجدت (Hilt) وإلا تُبنى محلياً —
+    // قراءة لحظية للتشكيل/التهجئة/الإيموجي.
+    private val textProcessor: TextProcessor by lazy {
+        val settings = runCatching {
+            (appContext as? AnnouncementAppContext)?.settingsRepository
+                ?: SettingsRepository.create(appContext)
+        }.getOrNull()
+        TextProcessor(appContext, settings)
+    }
 
     // قائمة مستمعي اكتمال دورة النطق (آخر جملة تُتم أو تُخطئ). بدل خانة
     // الخطاف الوحيدة التي كانت تُطمس خطافات أدوات/مستقبلات أخرى (بند [8])
@@ -1026,9 +1041,17 @@ class AnnouncementSpeaker(
                 Locale.forLanguageTag(LanguageCode.EN.tag)
             }
             val segmentVoice = if (arabic) voiceId else enVoice
+            // بند الأوامر 1: معالجة نص المقطع عبر TextProcessor بلغته (أرقام،
+            // أوقات، عملات، روابط...) قبل إرساله للمحرك — موحّداً مع القارئ.
+            // أي خطأ في المعالجة (قاموس مفقود...) يُسقط النص الخام لا الصمت.
+            val readyText = runCatching {
+                textProcessor.process(
+                    segment.text, segment.languageTag, boundEngine
+                )
+            }.getOrDefault(segment.text)
             out.add(
                 SpeakUnit(
-                    segment.text, segmentLocale, baseRate,
+                    readyText, segmentLocale, baseRate,
                     basePitch, baseVolume, segmentVoice
                 )
             )
@@ -1074,7 +1097,22 @@ class AnnouncementSpeaker(
         if (chosen != null) {
             tts.voice = chosen
         } else {
-            tts.setLanguage(locale)
+            // بند الأوامر 2: عائد setLanguage كان مُهملاً — إن رجع
+            // LANG_NOT_SUPPORTED/LANG_MISSING_DATA يبقى المحرك على آخر لغة
+            // ضبطها (غالباً عربية من المقطع السابق) فيقرأ الحروف اللاتينية
+            // بصوتٍ عربي — يُسجَّل تحذير (لا افتراض نجاح صامت) مثل
+            // SystemVoiceProvider (الجولة الخامسة، الأمر 4) لأن هذا مثيل
+            // TextToSpeech منفصل تماماً.
+            val langResult = tts.setLanguage(locale)
+            if (langResult == TextToSpeech.LANG_NOT_SUPPORTED
+                || langResult == TextToSpeech.LANG_MISSING_DATA
+            ) {
+                Log.w(
+                    TAG,
+                    "[Speaker] engine lacks $locale" +
+                    " (result=$langResult)"
+                )
+            }
         }
         val params = android.os.Bundle().apply {
             if (volume in 0f..1f) {

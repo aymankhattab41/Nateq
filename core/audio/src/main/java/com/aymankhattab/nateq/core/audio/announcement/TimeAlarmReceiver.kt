@@ -8,6 +8,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.PowerManager
 import android.util.Log
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -56,6 +57,27 @@ class TimeAlarmReceiver : BroadcastReceiver() {
                     context.getSystemService(Context.ALARM_SERVICE)
                     as? AlarmManager ?: return
                 val pendingIntent = buildPendingIntent(context)
+                // الدقة القصوى (بند الأوامر 5): منبّه ساعة يظهر أيقونة المنبّه
+                // في شريط الحالة (setAlarmClock) — على أندرويد 12+ بلا إذن
+                // المنبهات الدقيقة يُرمى SecurityException فننزل للمنبه المرن
+                // المضمون (وقبل Android 12 يعمل بلا إذن مباشرة).
+                val maxPrecision = runCatching {
+                    SettingsRepository.create(context)
+                        .isTimeAlarmMaxPrecisionEnabled()
+                }.getOrDefault(false)
+                if (maxPrecision) {
+                    try {
+                        alarmManager.setAlarmClock(
+                            AlarmManager.AlarmClockInfo(
+                                triggerAtMillis, null
+                            ),
+                            pendingIntent
+                        )
+                        return
+                    } catch (t: SecurityException) {
+                        Log.w(TAG, "setAlarmClock denied", t)
+                    }
+                }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
                     alarmManager.canScheduleExactAlarms()
                 ) {

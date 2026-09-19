@@ -383,13 +383,41 @@ class SettingsRepositoryTest {
     }
 
     @Test
-    fun timeInterval_clamped15to60() {
+    fun timeInterval_clamped5to60() {
+        // بند الأوامر 3: الفاصل 5–60 بخطوة 5 — 5 دقائق قبلها تُقيّد إلى 5
+        // (كان الحد الأدنى 15 فيُقيَّد 5 إلى 15).
         repo.setTimeAnnouncementInterval(5)
-        assertEquals(15, repo.getTimeAnnouncementInterval())
+        assertEquals(5, repo.getTimeAnnouncementInterval())
         repo.setTimeAnnouncementInterval(120)
         assertEquals(60, repo.getTimeAnnouncementInterval())
         repo.setTimeAnnouncementInterval(45)
         assertEquals(45, repo.getTimeAnnouncementInterval())
+        repo.setTimeAnnouncementInterval(0)
+        assertEquals(5, repo.getTimeAnnouncementInterval())
+        repo.setTimeAnnouncementInterval(3)
+        assertEquals(5, repo.getTimeAnnouncementInterval())
+        // بند الأوامر 3: الاستيراد يقبل قيم كل خطوة 5 (10/55) ويعيد غير
+        // الخطوة إلى 30 — كان يقبل 15/30/45/60 فقط فتُقصّ 55 إلى 30.
+        repo.importSettings(mapOf("time_announcement_interval" to 10))
+        assertEquals(10, repo.getTimeAnnouncementInterval())
+        repo.importSettings(mapOf("time_announcement_interval" to 55))
+        assertEquals(55, repo.getTimeAnnouncementInterval())
+        repo.importSettings(mapOf("time_announcement_interval" to 53))
+        assertEquals(30, repo.getTimeAnnouncementInterval())
+    }
+
+    @Test
+    fun timeAlarmMaxPrecision_defaultOffPersistsAndImports() {
+        // بند الأوامر 5: مفتاح «الدقة القصوى» — افتراضياً معطّل ويُصدَّر
+        // مع النسخ الاحتياطي ويُستعاد.
+        assertFalse(repo.isTimeAlarmMaxPrecisionEnabled())
+        repo.setTimeAlarmMaxPrecisionEnabled(true)
+        assertTrue(repo.isTimeAlarmMaxPrecisionEnabled())
+        assertTrue(
+            repo.exportSettings().containsKey("time_alarm_max_precision")
+        )
+        repo.importSettings(mapOf("time_alarm_max_precision" to false))
+        assertFalse(repo.isTimeAlarmMaxPrecisionEnabled())
     }
 
     @Test

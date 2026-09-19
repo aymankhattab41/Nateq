@@ -17,6 +17,7 @@ import com.aymankhattab.nateq.core.data.SettingsRepository
 internal class NotificationReadingController(
     private val fragment: VoiceSelectionFragment,
     private val settings: SettingsRepository,
+    private val voices: List<NateqVoice>,
     private val onStatusChanged: () -> Unit
 ) {
 
@@ -96,6 +97,45 @@ internal class NotificationReadingController(
         // اختيار التطبيقات التي تُقرأ إشعاراتها
         view.findViewById<View>(R.id.ll_notification_apps_settings)
             ?.setOnClickListener { showNotificationAppsDialog() }
+
+        // بند الأوامر 4: معاينة قراءة الإشعار بصوت/محرك/سرعة/نبرة مستوى
+        // فئة الإشعارات المعروضة في الكتالوج.
+        view.findViewById<View>(R.id.btnPreviewNotification)
+            ?.setOnClickListener { previewNotification() }
+    }
+
+    /** معاينة نطق إشعار حقيقي (صوت فئة الإشعارات لا صوتًا عاماً). */
+    private fun previewNotification() {
+        val category = SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+        val voiceId = runCatching {
+            settings.getPreferredVoiceIdForCategory(category)
+        }.getOrNull()
+        val engine = runCatching {
+            settings.getEngineForCategory(category)
+        }.getOrNull()
+        val rate = runCatching {
+            settings.getSpeechRateForCategory(category)
+        }.getOrDefault(1.0f)
+        val pitch = runCatching {
+            settings.getPitchForCategory(category)
+        }.getOrDefault(1.0f)
+        val volume = runCatching {
+            settings.getVolumeForCategory(category)
+        }.getOrDefault(1.0f)
+        val sample = fragment.getString(
+            R.string.sample_text_notification_preview
+        )
+        fragment.previewSpeech(
+            buildCategoryPreviewParams(
+                voices = voices,
+                voiceId = voiceId,
+                enginePkg = engine,
+                rate = rate,
+                pitch = pitch,
+                volume = volume,
+                sampleText = sample
+            )
+        )
     }
 
     /** حوار اختيار التطبيقات التي تُقرأ إشعاراتها (بعلامة "كل التطبيقات"). */

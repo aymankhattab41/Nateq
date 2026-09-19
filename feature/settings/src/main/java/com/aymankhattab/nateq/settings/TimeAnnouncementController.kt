@@ -14,6 +14,9 @@ import android.widget.Spinner
 import android.widget.TextView
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
+import com.aymankhattab.nateq.core.audio.announcement.AudioCue
+import com.aymankhattab.nateq.core.audio.announcement.AudioCuePlayer
+import com.aymankhattab.nateq.core.audio.announcement.CueType
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
 import com.google.android.material.switchmaterial.SwitchMaterial
@@ -25,6 +28,8 @@ import com.aymankhattab.nateq.core.data.SettingsRepository
 internal class TimeAnnouncementController(
     private val fragment: VoiceSelectionFragment,
     private val settings: SettingsRepository,
+    private val voices: List<NateqVoice>,
+    private val onOpenOemGuidance: () -> Unit,
     private val onStatusChanged: () -> Unit
 ) {
 
@@ -44,6 +49,13 @@ internal class TimeAnnouncementController(
     /** صف منح إذن المنبهات الدقيقة — تُحدَّث رؤيته في onResume (بند 4.7). */
     private var llExactAlarmPermission: View? = null
 
+    /** بند الأوامر 4: أزرار معاينة إعلان الوقت ورنة الساعة. */
+    private var btnPreviewTime: View? = null
+    private var btnPreviewChime: View? = null
+
+    /** بند الأوامر 5: مفتاح «دقة قصوى للمنبه» (setAlarmClock). */
+    private var switchTimeAlarmMaxPrecision: SwitchMaterial? = null
+
     // **بند 6.3:** علمُ الربط البرمجي لشريط رنة الوقت — إسنادُ setProgress
     // في setup ليس تعديلَ مستخدم، والحفظ في onProgressChanged ضروري لأن
     // تعديل TalkBack لا يمر بـ onStopTrackingTouch إطلاقاً.
@@ -59,12 +71,12 @@ internal class TimeAnnouncementController(
         switchHijriDate = view.findViewById(R.id.switch_hijri_date)
         switchClockWidget = view.findViewById(R.id.switch_clock_widget)
 
-        val intervals = listOf(
-            fragment.getString(R.string.time_interval_15),
-            fragment.getString(R.string.time_interval_30),
-            fragment.getString(R.string.time_interval_45),
-            fragment.getString(R.string.time_interval_60)
-        )
+        // بند الأوامر 3: فاصل الإعلان 5–60 بخطوة 5 (12 قيمة) بدل أربع قيم
+        // ثابتة — تُبنى القائمة برمجياً ويدور الحفظُ/القراءة على القيمة
+        // حسابياً ((value / 5) - 1) لا بالتطابق مع قائمة حرفية.
+        val intervals = (5..60 step 5).map { minutes ->
+            "$minutes ${fragment.getString(R.string.minutes_unit)}"
+        }
         spinnerTimeInterval?.adapter = fragment.simpleAdapter(intervals)
 
         val formats = listOf(
@@ -258,26 +270,24 @@ internal class TimeAnnouncementController(
                 position: Int,
                 id: Long
             ) {
-                val value = when (position) {
-                    1 -> 30
-                    2 -> 45
-                    3 -> 60
-                    else -> 15
-                }
+                val value = (position + 1) * 5
                 runCatching { settings.setTimeAnnouncementInterval(value) }
                 onStatusChanged()
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
+
+        // بند الأوامر 4: أزرار المعاينة (إعلان الوقت ورنة الساعة).
+        setupPreviewButtons(view)
+        // بند الأوامر 5: خيار الدقة القصوى للمنبه.
+        setupMaxPrecisionSwitch(view)
     }
 
-    private fun intervalIndex(interval: Int): Int = when (interval) {
-        30 -> 1
-        45 -> 2
-        60 -> 3
-        else -> 0
-    }
+    /** فهرس القائمة الحسابي لقيمة الفاصل المحفوظة (5..60 بخطوة 5):
+     *  index = (value / 5) - 1 — لا قائمة حرفية نفسها. */
+    private fun intervalIndex(interval: Int): Int =
+        ((interval.coerceIn(5, 60) / 5) - 1).coerceIn(0, 11)
 
     /**
      * بند [13.3]: صف «منح إذن المنبهات الدقيقة» — يظهر فقط على أندرويد 12+
@@ -313,6 +323,11 @@ internal class TimeAnnouncementController(
         view.findViewById<View>(
             R.id.btn_exact_alarm_permission
         )?.setOnClickListener(onClick)
+        // بند الأوامر 5: رابط «فتح إرشادات المصنّع» يعيد التوجيه إلى قسم
+        // إرشادات توافق الجهاز (لا يُفتح شاشة المنبهات).
+        view.findViewById<View>(R.id.btnOpenOemGuidance)?.setOnClickListener {
+            onOpenOemGuidance()
+        }
         refreshExactAlarmRow()
     }
 
@@ -327,6 +342,99 @@ internal class TimeAnnouncementController(
         val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
             (alarmManager == null || !alarmManager.canScheduleExactAlarms())
         row.visibility = if (needsPermission) View.VISIBLE else View.GONE
+    }
+
+    /** بند الأوامر 4: يربط زرّي المعاينة (إعلان الوقت ورنة الساعة) —
+     *  القيم تُقرأ من العرض الحالي وقت الضغط لا من القيم القديمة. */
+    private fun setupPreviewButtons(view: View) {
+        btnPreviewTime = view.findViewById(R.id.btnPreviewTime)
+        btnPreviewTime?.setOnClickListener { previewTimeSpeech() }
+        btnPreviewChime = view.findViewById(R.id.btnPreviewChime)
+        btnPreviewChime?.setOnClickListener { previewChime() }
+    }
+
+    /** معاينة إعلان الوقت: تسمع صوت/محرك/سرعة/نبرة/مستوى فئة الوقت كما
+     *  تعرضها صفوف الكتالوج (CategoryVoiceAdapter). */
+    private fun previewTimeSpeech() {
+        val category = SettingsRepository.VOICE_CATEGORY_TIME
+        val voiceId = runCatching {
+            settings.getPreferredVoiceIdForCategory(category)
+        }.getOrNull()
+        val engine = runCatching {
+            settings.getEngineForCategory(category)
+        }.getOrNull()
+        val rate = runCatching {
+            settings.getSpeechRateForCategory(category)
+        }.getOrDefault(1.0f)
+        val pitch = runCatching {
+            settings.getPitchForCategory(category)
+        }.getOrDefault(1.0f)
+        val volume = runCatching {
+            settings.getVolumeForCategory(category)
+        }.getOrDefault(1.0f)
+        val sample = fragment.getString(R.string.sample_text_time_preview)
+        fragment.previewSpeech(
+            buildCategoryPreviewParams(
+                voices = voices,
+                voiceId = voiceId,
+                enginePkg = engine,
+                rate = rate,
+                pitch = pitch,
+                volume = volume,
+                sampleText = sample
+            )
+        )
+    }
+
+    /** معاينة رنة رأس الساعة: تعزف النغمة المختارة بمستوى الشريط الحالي
+     *  (رنات مُؤلَّفة عبر CueSynth — لا تلمس أي ملف صوتي). */
+    private fun previewChime() {
+        val sound = chimeSoundNameAt(
+            spinnerTimeChimeSound?.selectedItemPosition ?: 0
+        )
+        val seek = seekTimeChimeVolume
+        val volume = seek?.let { chimeVolumeFromProgress(it.progress) }
+            ?: runCatching {
+                settings.getTimeChimeVolume()
+            }.getOrDefault(0.5f)
+        fragment.view?.announceCompat(
+            fragment.getString(R.string.sample_preview_starting)
+        )
+        AudioCuePlayer.getInstance(
+            fragment.requireContext().applicationContext
+        ).play(AudioCue(CueType.TIME_HOURLY, sound, volume)) { _ ->
+            // إعلان النهاية يُنشر على الخيط الرئيسي (قد يُستدعى من خيط
+            // SoundPool) ولا يُعلن بعد تدمير العرض.
+            fragment.view?.post {
+                if (fragment.isAdded) {
+                    fragment.view?.announceCompat(
+                        fragment.getString(R.string.sample_preview_done)
+                    )
+                }
+            }
+        }
+    }
+
+    /** بند الأوامر 5: مفتاح «الدقة القصوى» — تُعاد جدولة المنبه فوراً
+     *  بالصيغة الجديدة (setAlarmClock) من TimeAlarmReceiver. */
+    private fun setupMaxPrecisionSwitch(view: View) {
+        switchTimeAlarmMaxPrecision =
+            view.findViewById(R.id.switch_time_alarm_max_precision)
+        switchTimeAlarmMaxPrecision?.isChecked = runCatching {
+            settings.isTimeAlarmMaxPrecisionEnabled()
+        }.getOrDefault(false)
+        switchTimeAlarmMaxPrecision?.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setTimeAlarmMaxPrecisionEnabled(checked) }
+            AnnouncementSchedulerService.requestStart(
+                fragment.requireContext()
+            )
+            fragment.view?.announceCompat(
+                fragment.getString(
+                    if (checked) R.string.announcement_turned_on
+                    else R.string.announcement_turned_off
+                )
+            )
+        }
     }
 
     /**
@@ -515,5 +623,8 @@ internal class TimeAnnouncementController(
         spinnerTimeChimeSound = null
         seekTimeChimeVolume = null
         llExactAlarmPermission = null
+        btnPreviewTime = null
+        btnPreviewChime = null
+        switchTimeAlarmMaxPrecision = null
     }
 }

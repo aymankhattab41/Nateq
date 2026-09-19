@@ -222,7 +222,7 @@ interface AnnouncementPrefs {
     /** يعيّن تفعيل إعلان الزمن. */
     fun setTimeAnnouncementEnabled(enabled: Boolean)
 
-    /** الفاصل الزمني لإعلان الزمن (بالدقائق). */
+    /** الفاصل الزمني لإعلان الزمن (بالدقائق): 5–60 بخطوة 5. */
     fun getTimeAnnouncementInterval(): Int
 
     /** يعيّن الفاصل الزمني لإعلان الزمن. */
@@ -287,6 +287,13 @@ interface AnnouncementPrefs {
 
     /** يعيّن مستوى صوت الرنة. */
     fun setTimeChimeVolume(volume: Float)
+
+    /** تفعيل الدقة القصوى لإعلان الوقت (setAlarmClock بدل
+     *  setExactAndAllowWhileIdle). */
+    fun isTimeAlarmMaxPrecisionEnabled(): Boolean
+
+    /** يعيّن تفعيل الدقة القصوى لإعلان الوقت. */
+    fun setTimeAlarmMaxPrecisionEnabled(enabled: Boolean)
 
     /** تفعيل إعلان البطارية. */
     fun isBatteryAnnouncementEnabled(): Boolean

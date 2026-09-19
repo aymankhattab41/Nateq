@@ -843,12 +843,12 @@ class SettingsRepository(private val context: Context) :
     override fun setTimeAnnouncementEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("time_announcement_enabled", enabled).apply()
 
-    /** فاصل إعلان الوقت (بالدقائق): 15, 30, 45, 60 */
+    /** فاصل إعلان الوقت (بالدقائق): 5–60 بخطوة 5 */
     override fun getTimeAnnouncementInterval(): Int =
         prefs.getInt("time_announcement_interval", 30)
     override fun setTimeAnnouncementInterval(interval: Int) =
         prefs.edit()
-            .putInt("time_announcement_interval", interval.coerceIn(15, 60))
+            .putInt("time_announcement_interval", interval.coerceIn(5, 60))
             .apply()
 
     // ============ ساعات الهدوء لكل يوم ============
@@ -1126,9 +1126,13 @@ class SettingsRepository(private val context: Context) :
         prefs.getFloat("time_chime_volume", 0.5f)
             .coerceIn(0.1f, 1f)
     override fun setTimeChimeVolume(volume: Float) =
-        prefs.edit()
-            .putFloat("time_chime_volume", volume.coerceIn(0.1f, 1f))
-            .apply()
+        prefs.edit().putFloat(
+            "time_chime_volume", volume.coerceIn(0.1f, 1f)
+        ).apply()
+    override fun isTimeAlarmMaxPrecisionEnabled(): Boolean =
+        prefs.getBoolean("time_alarm_max_precision", false)
+    override fun setTimeAlarmMaxPrecisionEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("time_alarm_max_precision", enabled).apply()
 
     /** مستوى صوت نغمة البطارية 0.1..1.0 (مستقل عن صوت النطق — بند 3-3). */
     override fun getBatteryCueVolume(): Float =
@@ -1519,7 +1523,7 @@ class SettingsRepository(private val context: Context) :
         key.startsWith("time_quiet_day") &&
             key.endsWith("_end") -> value.coerceIn(0, 23)
         key == "time_announcement_interval" ->
-            if (value in intArrayOf(15, 30, 45, 60)) value else 30
+            if (value in 5..60 && value % 5 == 0) value else 30
         key == "number_reading_mode" -> value.coerceIn(1, 8)
         key == "punctuation_level" ->
             value.coerceIn(PunctuationLevels.MIN, PunctuationLevels.MAX)

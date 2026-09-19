@@ -1,6 +1,9 @@
 ﻿package com.aymankhattab.nateq.core.audio.announcement
 
+import android.content.ComponentName
 import android.content.Context
+import android.content.IntentFilter
+import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
 import androidx.test.core.app.ApplicationProvider
 import java.util.Locale
@@ -10,7 +13,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLog
 
 /**
  * يغطي إصلاحات المتحدث المشترك:
@@ -311,6 +317,94 @@ class AnnouncementSpeakerTest {
         )
     }
 
+    @Test
+    fun `announcement text is converted through TextProcessor like the reader`(
+    ) {
+        // بند الأوامر 1: نصوص الإعلانات تمر عبر TextProcessor (أرقام/أوقات/
+        // عملات) قبل إرسالها للمحرك — فتُنطق «ألف وخمسمائة» لا «1500»
+        // و«الواحدة وعشر دقائق» لا «1:10».
+        val speaker = AnnouncementSpeaker(context)
+        val build = AnnouncementSpeaker::class.java
+            .getDeclaredMethod(
+                "buildSpeakUnits",
+                String::class.java, Locale::class.java,
+                Float::class.javaPrimitiveType,
+                Float::class.javaPrimitiveType,
+                Float::class.javaPrimitiveType,
+                EmojiSpeechConfig::class.java,
+                List::class.java
+            )
+        build.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val built = build.invoke(
+            speaker,
+            "وصلك 1500 دولار الساعة 1:10 PM",
+            Locale.forLanguageTag("ar"),
+            1.0f, 1.0f, 1.0f,
+            null, null
+        ) as List<*>
+        val spoken = buildString {
+            built.forEach { unit ->
+                val textField = requireNotNull(unit).javaClass
+                    .getDeclaredField("text").also { it.isAccessible = true }
+                append(textField.get(unit) as String).append(' ')
+            }
+        }
+        assertTrue("المبلغ يُنطق بالكلمات", spoken.contains("ألف وخمسمائة"))
+        assertTrue("الوقت يُنطق بالصيغة العربية", spoken.contains("الواحدة"))
+        assertTrue("دقائق الوقت مذكورة", spoken.contains("عشر دقائق"))
+        assertFalse("لا يبقى رقم خام في الإعلان", spoken.contains("1500"))
+        assertFalse(
+            "لا يُرسل توقيت رقمي خام للمحرك", spoken.contains("1:10")
+        )
+        speaker.shutdown()
+    }
+
+    @Test
+    fun `unsupported setLanguage logs a warning and is not silently assumed`() {
+        // بند الأوامر 2: عائد setLanguage كان مُهملاً — محركٌ بلا صوتٍ
+        // إنجليزي يُرجع LANG_NOT_SUPPORTED فيُسجَّل تحذير بدل افتراض نجاح
+        // صامت يُبقي المحرك على لغته السابقة (نفس نمط SystemVoiceProvider).
+        registerFakeEngine("com.fake.announcementEngine")
+        val speaker = AnnouncementSpeaker(context)
+        val fake = UnsupportedEnAnnouncementEngine(
+            context, { }, "com.fake.announcementEngine"
+        )
+        val ttsField = AnnouncementSpeaker::class.java
+            .getDeclaredField("tts")
+        ttsField.isAccessible = true
+        ttsField.set(speaker, fake)
+
+        ShadowLog.clear()
+        val doSpeak = AnnouncementSpeaker::class.java
+            .getDeclaredMethod(
+                "doSpeak",
+                String::class.java, Locale::class.java,
+                Float::class.javaPrimitiveType,
+                Float::class.javaPrimitiveType,
+                Float::class.javaPrimitiveType,
+                String::class.java,
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType
+            )
+        doSpeak.isAccessible = true
+        doSpeak.invoke(
+            speaker, "Hello", Locale.forLanguageTag("en"),
+            1.0f, 1.0f, 1.0f,
+            null, TextToSpeech.QUEUE_FLUSH, 1
+        )
+
+        val logs = ShadowLog.getLogs()
+        assertTrue(
+            "تُسجَّل اللغة غير المدعومة كتحذير لا نجاح صامت",
+            logs.any { log ->
+                "NATEQ_TTS" == log.tag &&
+                    log.msg?.contains("result=") == true
+            }
+        )
+        speaker.shutdown()
+    }
+
     /** استدعاء الاستدعاء الخاص للاكتمال (لا محرك TTS حقيقي في الاختبار). */
     private fun notifyCompletion(speaker: AnnouncementSpeaker) {
         val method = AnnouncementSpeaker::class.java
@@ -329,4 +423,34 @@ class AnnouncementSpeakerTest {
             false,
             emptySet()
         )
+
+    /** محرك وهمي لا يدعم اللغة الإنجليزية (نمط SystemVoiceProvider). */
+    private class UnsupportedEnAnnouncementEngine(
+        context: Context,
+        listener: TextToSpeech.OnInitListener,
+        engine: String
+    ) : TextToSpeech(context, listener, engine) {
+        override fun setLanguage(locale: Locale?): Int {
+            // بلا أصوات، فلا يجد المحركُ صوتاً للوحدة الإنجليزية — التمييز
+            // الوحيد هو setLanguage؛ نعلن عدم الدعم لإثبات تحليل العائد.
+            return if (locale != null &&
+                locale.language.equals("en", ignoreCase = true)
+            ) {
+                TextToSpeech.LANG_NOT_SUPPORTED
+            } else {
+                TextToSpeech.LANG_AVAILABLE
+            }
+        }
+    }
+
+    private fun registerFakeEngine(pkg: String) {
+        val app = RuntimeEnvironment.getApplication()
+        val component = ComponentName(pkg, "com.fake.TtsService")
+        val shadowPm = shadowOf(app.packageManager)
+        shadowPm.addServiceIfNotPresent(component)
+        shadowPm.addIntentFilterForService(
+            component,
+            IntentFilter("android.intent.action.TTS_SERVICE")
+        )
+    }
 }

@@ -4,7 +4,10 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.aymankhattab.nateq.core.data.SettingsRepository
+import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -38,6 +41,53 @@ class TimeAlarmReceiverTest {
         // تسجيل المنبهات فقط دون إطلاقٍ تلقائي على المحاكي الزمني.
         ShadowAlarmManager.setAutoSchedule(false)
         return shadow
+    }
+
+    @After
+    fun resetMaxPrecision() {
+        runCatching {
+            SettingsRepository.create(context)
+                .setTimeAlarmMaxPrecisionEnabled(false)
+        }
+    }
+
+    @Test
+    fun `max precision schedules an alarm clock even without exact grant`() {
+        val shadow = shadowAlarmManager()
+        ShadowAlarmManager.setCanScheduleExactAlarms(false)
+        SettingsRepository.create(context)
+            .setTimeAlarmMaxPrecisionEnabled(true)
+
+        TimeAlarmReceiver.scheduleNext(context, triggerAtMillis)
+
+        // الدقة القصوى (بند الأوامر 5): setAlarmClock تعمل بلا إذن
+        // المنبهات الدقيقة وهي أثبت طريقٍ متاح + أيقونة المنبه للمستخدم.
+        val alarms = shadow.getScheduledAlarms()
+        assertEquals("منبهٌ واحدٌ مجدول", 1, alarms.size)
+        val alarm = alarms[0]
+        assertEquals(triggerAtMillis, alarm.getTriggerAtMs())
+        assertNotNull(
+            "منبه ساعة (setAlarmClock)",
+            alarm.getAlarmClockInfo()
+        )
+    }
+
+    @Test
+    fun `max precision off keeps the precise doze alarm when granted`() {
+        val shadow = shadowAlarmManager()
+        SettingsRepository.create(context)
+            .setTimeAlarmMaxPrecisionEnabled(false)
+
+        TimeAlarmReceiver.scheduleNext(context, triggerAtMillis)
+
+        val alarms = shadow.getScheduledAlarms()
+        assertEquals("منبهٌ واحدٌ مجدول", 1, alarms.size)
+        assertEquals(
+            "بدون الدقة القصوى يبقى الدقيق (setExactAndAllowWhileIdle)",
+            AlarmManager.RTC_WAKEUP, alarms[0].getType()
+        )
+        assertEquals(0L, alarms[0].getWindowLengthMs())
+        assertTrue(alarms[0].isAllowWhileIdle())
     }
 
     @Test
