@@ -18,4 +18,10 @@ internal interface TextProcessingStep {
      * وتُعيد [apply] نفسها للخطوات المحايدة لغوياً (تطبيع/تنظيف/روابط…).
      */
     fun applyEnglish(input: String): String = apply(input)
+
+    /**
+     * نسخة النطاق اللغوي — تعيد نفس [apply] للخطوات المحايدة، وتفرّد بها
+     * الخطوةُ الحساسةُ للغة (مثل القاموس الشخصي بند د.3.5) طلبَ وسمِ اللغة.
+     */
+    fun apply(input: String, languageTag: String?): String = apply(input)
 }

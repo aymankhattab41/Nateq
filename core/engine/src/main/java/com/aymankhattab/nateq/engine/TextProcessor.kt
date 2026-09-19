@@ -9,6 +9,7 @@ import com.aymankhattab.nateq.engine.pipeline.CurrencyStep
 import com.aymankhattab.nateq.engine.pipeline.DateStep
 import com.aymankhattab.nateq.engine.pipeline.DictionaryStep
 import com.aymankhattab.nateq.engine.pipeline.EmojiStripStep
+import com.aymankhattab.nateq.engine.pipeline.FrancoArabicStep
 import com.aymankhattab.nateq.engine.pipeline.IndicDigitsStep
 import com.aymankhattab.nateq.engine.pipeline.NumberStep
 import com.aymankhattab.nateq.engine.pipeline.NumberWordsConverter
@@ -99,6 +100,7 @@ class TextProcessor(
     // «إزالة الإيموجي» شرطية: تعمل فقط عند تعطيل نطقها (إلا تُعيد النص كما هو).
     private val preamble: List<TextProcessingStep> = listOf(
         IndicDigitsStep,
+        FrancoArabicStep(),
         TashkeelStripStep,
         EmojiStripStep { emojiEnabled },
         DictionaryStep(pronunciationDict)
@@ -188,6 +190,11 @@ class TextProcessor(
         // بلا ازدواج بين شكلٍ مركّبٍ وشكلٍ مفكوكٍ يأتي من أي مصدر خارجي.
         var result = Normalizer.normalize(text, Normalizer.Form.NFC)
 
+        // تفسير SSML المحدود (بند الأوامر د.3.7): يترجم <break> و<say-as>
+        // والكيانات قبل كل الفروع (العربية والإنجليزية واللغات الأخرى) —
+        // هويةٌ تامة على النص العادي فلا تكلف أثراً على المسارات السريعة.
+        result = SsmlStep.apply(result)
+
         // التهجئة الذكية: حرف مفرد (عربي بتشكيله أو لاتيني) يُنطق باسمه
         // كاملاً («بَ» ← «باء مفتوحة»، «A» ← «Capital Alpha») قبل أي
         // تحويل — يقودها TalkBack عند التنقل الحرفي بأحرفٍ منفردة.
@@ -237,7 +244,7 @@ class TextProcessor(
         } else {
             null
         }
-        for (step in preamble) result = step.apply(result)
+        for (step in preamble) result = step.apply(result, languageTag)
 
         // المسار السريع (Fast-path): إن لم يحتوِ النص على أي محفِّز لأرقام
         // الرموز/الصيغ (أرقام، فواصل، رموز عملة، حروف رومانية...) — أي نص

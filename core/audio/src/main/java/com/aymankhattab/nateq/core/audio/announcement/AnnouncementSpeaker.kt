@@ -10,6 +10,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import com.aymankhattab.nateq.engine.EmojiSpeech
 import com.aymankhattab.nateq.core.audio.engine.LanguageSegmenter
 import com.aymankhattab.nateq.core.audio.engine.Segment
@@ -21,6 +22,9 @@ import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.SpeechLock
 import com.aymankhattab.nateq.util.LanguageCode
 import java.util.Locale
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
@@ -118,12 +122,15 @@ class AnnouncementSpeaker(
         @Volatile
         private var shared: AnnouncementSpeaker? = null
 
-        /** الحصول على المتحدث المشترك الوحيد (محمي بالإنشاء المزدوج). */
+        /** الحصول على المتحدث المشترك الوحيد (محمي بالإنشاء المزدوج).
+         *  يُحمَّل مسار المعالجة مسبقاً وقت الإنشاء على خيط خلفية
+         *  [prewarm] (بند الأوامر د.1) — فعّالٌ مرةً واحدة لكل عملية. */
         @JvmStatic
         fun getInstance(context: Context): AnnouncementSpeaker {
             return shared ?: synchronized(this) {
                 shared ?: AnnouncementSpeaker(context.applicationContext)
-                .also { shared = it }
+                    .also { shared = it }
+                    .also { it.prewarm() }
             }
         }
 
@@ -216,6 +223,37 @@ class AnnouncementSpeaker(
         }.getOrNull()
         TextProcessor(appContext, settings)
     }
+
+    // **التحميل المسبق لمسار المعالجة (بند الأوامر د.1):** أول استخدامٍ فعلي
+    // لـ [textProcessor] الكسول يبني PronunciationDictionary (قراءة قرص +
+    // تفكيك JSON) وقد يقع عند استدعاء نطقٍ على الخيط الرئيسي (النطق التجريبي
+    // من شاشة الإعدادات) فيجمّد الواجهة لحظياً. يُحمَّل مسبقاً على خيط خلفية
+    // وقت إنشاء المتحدث ([getInstance]) ويبقى `by lazy` حارسَ أمانٍ لمن يسبق
+    // التحميل (نادر) — فلا تُجمَّد الواجهة مطلقاً.
+    private val prewarmScope = CoroutineScope(Dispatchers.IO)
+    @Volatile
+    private var prewarmLaunched = false
+
+    /** يبني [textProcessor] (يلمس الخاصية الكسولة) على خيط خلفية —
+     *  يُستدعى مرة واحدة من [getInstance] عند إنشاء المتحدث. */
+    fun prewarm() {
+        if (prewarmLaunched) return
+        prewarmLaunched = true
+        prewarmScope.launch {
+            runCatching { warmTextProcessor() }
+        }
+    }
+
+    /** يلمس [textProcessor] ليفرض التهيئة الفعلية لمسار المعالجة ويجيب عن
+     *  جاهزيته — يُستخدم من [prewarm] ومن اختبارات التحميل المسبق. */
+    @VisibleForTesting
+    internal fun warmTextProcessor(): Boolean = runCatching {
+        textProcessor
+    }.isSuccess
+
+    /** هل بُدئ التحميل المسبق فعلاً (بند الأوامر د.1)؟ تعرضها الاختبارات. */
+    @VisibleForTesting
+    internal fun isPrewarmStarted(): Boolean = prewarmLaunched
 
     // قائمة مستمعي اكتمال دورة النطق (آخر جملة تُتم أو تُخطئ). بدل خانة
     // الخطاف الوحيدة التي كانت تُطمس خطافات أدوات/مستقبلات أخرى (بند [8])

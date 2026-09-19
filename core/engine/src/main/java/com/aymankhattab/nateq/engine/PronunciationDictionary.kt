@@ -4,11 +4,19 @@ import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.aymankhattab.nateq.util.NateqJson
+import com.aymankhattab.nateq.util.optObject
 import java.lang.reflect.Type
 
 /**
  * قاموس النطق الشخصي - يسمح للمستخدم بتعريف نطق مخصص للكلمات/الاختصارات
  * أمثلة: "د." → "دكتور"، "ص" → "صفحة"، "HTTP" → "إتش تي تي بي"
+ *
+ * منذ بند الأوامر د.3.5 يدعم القاموس كلا النطاقَيْن: عام ([languageTag] =
+ * null: يُخزَّن تحت المفتاح "dictionary" — السلوك القائم) وخاصٌّ بلغةٍ
+ * ([languageTag] = "ar-EG" مثلًا: يُخزَّن مع بقية الطبقات تحت المفتاح
+ * "dictionary_scopes"). عند النطق
+ * بلغةٍ يُدمج العامُّ ثم الخاصُّ (الخاص يعلو العام) بآلةِ مطابقةٍ منفصلة
+ * لكل وسم، والاستدعاءاتُ القائمة بلا وسمٍ تبقى سليمةً تماماً.
  */
 class PronunciationDictionary(
     private val context: Context,
@@ -30,6 +38,10 @@ class PronunciationDictionary(
             1_500_000_000L // 1.5 ثانية
         // مفتاح تتبّع هجرة حذف الإدخالات الافتراضية القديمة (تُنفَّذ مرة واحدة)
         private const val KEY_DEFAULTS_MIGRATED = "defaults_migrated_to_empty"
+        // مفتاح تخزين الطبقات اللغوية: كائن JSON واحد {وسم: {مفتاح: قيمة}}
+        // — لا نعدّ مفاتيح التفضيلات كلها ([SharedPreferences.all] غير مدعوم
+        // في EncryptedSharedPreferences على بعض البيئات) فلا مخاطرة ولا أطلال.
+        private const val KEY_SCOPES = "dictionary_scopes"
     }
 
     // لا يجوز أبداً أن يرمي إنشاء التخزين المشفّر: خدمة :tts تُنشئ هذا الكائن
@@ -63,9 +75,22 @@ class PronunciationDictionary(
     @Volatile
     private var entries: Map<String, String> = emptyMap()
 
-    // مخبأ آلة Aho-Corasick مقيّد بهوية خريطة اللقطة: يُبنى من لقطة كاملة،
-    // ويُعاد بناؤه عند تبديل المرجع (لا تُبنى آلة من قاموسٍ في منتصف القراءة).
+    // الطبقة الخاصة باللغات: وسم اللغة ← خرائطها الخاصة (Copy-on-Write مثل
+    // [entries]). تُخزَّن كل الطبقات معاً تحت المفتاح [KEY_SCOPES]، وخريطةُ
+    // النطق لأي لغة = العام [entries] فوقه الخاص (الخاص يعلو العام).
+    @Volatile
+    private var langEntries: Map<String, Map<String, String>> = emptyMap()
+
+    // عداد تغيير: يزداد مع كل تبديلِ مرجعٍ ذري — يُقيَّد به مخبأُ آلة
+    // Aho-Corasick مع وسم اللغة فلا تُبنى آلةٌ من قاموسٍ يتبدل أثناء البناء.
+    @Volatile
+    private var version = 0L
+
+    // مخبأ آلة Aho-Corasick مقيّد بهوية لقطة المكتتبة: يُبنى من لقطة كاملة
+    // (العام أو المدمج لكل وسم) ويُعاد بناؤه عند تبديل [version] أو الوسم.
     private data class MachineCache(
+        val langTag: String?,
+        val version: Long,
         val snapshot: Map<String, String>,
         val machine: AhoCorasick
     )
@@ -92,9 +117,25 @@ class PronunciationDictionary(
     private var lastDiskCheckNanos = 0L
 
     init {
-        entries = loadFromPrefs()
+        val (global, langs) = loadFromPrefs()
+        entries = global
+        langEntries = langs
         removeLegacyDefaultsOnce()
         if (prefs != null) lastStamp = currentStamp()
+    }
+
+    /** تطبيع وسم اللغة: يُجرد من الفراغات؛ فارغٌ/بلا وسم = النطاق العام. */
+    private fun normalizeLangTag(raw: String?): String? {
+        val trimmed = raw?.trim().orEmpty()
+        return trimmed.ifEmpty { null }
+    }
+
+    /** خريطة الدمج للوسم: العام أولاً ثم الخاص يعلوه (بلا تعديل [entries]). */
+    private fun mergedFor(lang: String?): Map<String, String> {
+        if (lang == null) return entries
+        val overlay = langEntries[lang] ?: return entries
+        if (overlay.isEmpty()) return entries
+        return LinkedHashMap(entries).apply { putAll(overlay) }
     }
 
     /** الإدخالات الافتراضية القديمة التي كانت تُزرَع تلقائياً في نسخ سابقة؛
@@ -227,7 +268,13 @@ class PronunciationDictionary(
      *  إلى خريطة كاملة جديدة ثم تبديل المرجع ذرياً (بلا clear في المنتصف). */
     fun reload() {
         if (prefs == null) return
-        swapEntries(loadFromPrefs())
+        val (global, langs) = loadFromPrefs()
+        synchronized(this) {
+            entries = global
+            langEntries = langs
+            cache = null
+            version++
+        }
         lastStamp = currentStamp()
     }
 
@@ -245,7 +292,13 @@ class PronunciationDictionary(
         lastDiskCheckNanos = now
         val stamp = currentStamp()
         if (lastStamp == stamp) return false
-        swapEntries(loadFromPrefs())
+        val (global, langs) = loadFromPrefs()
+        synchronized(this) {
+            entries = global
+            langEntries = langs
+            cache = null
+            version++
+        }
         lastStamp = stamp
         return true
     }
@@ -254,56 +307,97 @@ class PronunciationDictionary(
     private fun swapEntries(updated: Map<String, String>) {
         entries = updated
         cache = null
+        version++
+    }
+
+    /** استبدال مرجع طبقة اللغة ذرياً — تُحذف الطبقة إذا أُفرغت كلياً. */
+    private fun swapLangEntries(lang: String, updated: Map<String, String>) {
+        val copy = LinkedHashMap(langEntries)
+        if (updated.isEmpty()) copy.remove(lang) else copy[lang] = updated
+        langEntries = copy
+        cache = null
+        version++
     }
 
     private fun currentStamp(): Long =
         prefsFile?.let { if (it.exists()) it.lastModified() else 0L } ?: 0L
 
-    /** تطبيق القاموس على نص */
-    fun apply(text: String): String {
+    /** تطبيق القاموس على نص — بالدمج العام+الخاص إن حُدد [languageTag]. */
+    fun apply(text: String, languageTag: String? = null): String {
         // اكتشاف تعديلات عملية الواجهة على القرص قبل كل تطبيق
         reloadIfChanged()
+        val lang = normalizeLangTag(languageTag)
         var held = cache
-        if (held == null || held.snapshot !== entries) {
+        if (held == null || held.langTag != lang || held.version != version) {
             held = synchronized(this) {
-                val current = entries
+                val currentVersion = version
                 val cached = cache
-                if (cached != null && cached.snapshot === current) cached
-                else MachineCache(current, AhoCorasick(current)).also {
-                    cache = it
+                if (cached != null && cached.langTag == lang &&
+                    cached.version == currentVersion
+                ) {
+                    cached
+                } else {
+                    val merged = mergedFor(lang)
+                    MachineCache(
+                        lang, currentVersion, merged, AhoCorasick(merged)
+                    ).also { cache = it }
                 }
             }
         }
         return held.machine.apply(text)
     }
 
-    /** إضافة إدخال جديد */
-    fun addEntry(abbreviation: String, pronunciation: String): Boolean {
+    /** إضافة إدخال جديد — في النطاق العام أو طبقةِ [languageTag] الخاصة. */
+    fun addEntry(
+        abbreviation: String,
+        pronunciation: String,
+        languageTag: String? = null
+    ): Boolean {
         if (abbreviation.isBlank() || pronunciation.isBlank()) return false
         val key = abbreviation.trim()
         val value = pronunciation.trim()
         if (key.length > MAX_KEY_LENGTH ||
             value.length > MAX_VALUE_LENGTH
         ) return false
+        val lang = normalizeLangTag(languageTag)
         // بند 3.13: تثبيت القراءة-التعديل-الكتابة داخل قفل حتى لا تضيع
         // إدخالات من استدعاءات متزامنة من خيطين (كانا يقرآن نفس اللقطة
         // فيستبدل كلٌّ منهما عملَ الآخر).
         synchronized(this) {
-            val updated = LinkedHashMap(entries)
-            updated[key] = value
-            swapEntries(updated)
+            if (lang == null) {
+                val updated = LinkedHashMap(entries)
+                updated[key] = value
+                swapEntries(updated)
+            } else {
+                val overlay = LinkedHashMap(langEntries[lang] ?: emptyMap())
+                overlay[key] = value
+                swapLangEntries(lang, overlay)
+            }
         }
         return save()
     }
 
-    /** حذف إدخال */
-    fun removeEntry(abbreviation: String): Boolean {
+    /** حذف إدخال — من النطاق العام أو طبقةِ [languageTag] الخاصة. */
+    fun removeEntry(
+        abbreviation: String,
+        languageTag: String? = null
+    ): Boolean {
+        val lang = normalizeLangTag(languageTag)
+        var changed = false
         synchronized(this) {
-            val updated = LinkedHashMap(entries)
-            updated.remove(abbreviation.trim())
-            swapEntries(updated)
+            if (lang == null) {
+                val updated = LinkedHashMap(entries)
+                changed = updated.remove(abbreviation.trim()) != null
+                if (changed) swapEntries(updated)
+            } else {
+                val overlay = LinkedHashMap(
+                    langEntries[lang] ?: emptyMap()
+                )
+                changed = overlay.remove(abbreviation.trim()) != null
+                if (changed) swapLangEntries(lang, overlay)
+            }
         }
-        return save()
+        return if (changed) save() else false
     }
 
     /** تفريغ القاموس بالكامل (الذاكرة والقرص معاً) — يُستدعى عند «استعادة
@@ -312,20 +406,32 @@ class PronunciationDictionary(
     fun clear() {
         synchronized(this) {
             swapEntries(emptyMap())
+            langEntries = emptyMap()
+            cache = null
+            version++
         }
         save()
     }
 
-    /** الحصول على جميع الإدخالات */
-    fun getAllEntries(): Map<String, String> = entries.toMap()
+    /** الحصول على إدخالات نطاقٍ — العام أو طبقةِ [languageTag] وحدها. */
+    fun getAllEntries(languageTag: String? = null): Map<String, String> {
+        val lang = normalizeLangTag(languageTag)
+        return if (lang == null) entries.toMap()
+        else (langEntries[lang] ?: emptyMap()).toMap()
+    }
 
     /** استيراد قاموس من JSON — يتخطى الصفوف غير الصالحة بدل إفشال الاستيراد
-     *  كاملاً، ويدعم الدمج مع الإدخالات الحالية أو الاستبدال الكامل.
+     *  كاملاً، ويدعم الدمج مع الإدخالات الحالية أو الاستبدال الكامل، وكلٌّ
+     *  في نطاقه ([languageTag] null عام وإلا خاصة بلغة).
      *  @param merge true: يُدمج مع الحالي (تتغلب الإدخالات الجديدة على المفاتيح
      *               المكررة مع بقاء بقية الحالي)؛ false: يحل محله بالكامل.
      *  @return true إن طُبِّق صف صالح واحد على الأقل (الذاكرة تتحدّث دائماً؛
      *          لا يُعدّ فشل التخزين المشفّر نجاحاً). */
-    fun importFromJson(json: String, merge: Boolean = false): Boolean {
+    fun importFromJson(
+        json: String,
+        merge: Boolean = false,
+        languageTag: String? = null
+    ): Boolean {
         if (json.length > MAX_IMPORT_BYTES) return false
         // تجزئة بلا رمي عبر المظلة: فاسد/غير مطابق ← null ← نرفض الاستيراد.
         val map = NateqJson.fromJson<Map<*, *>>(json, typeToken)
@@ -345,8 +451,11 @@ class PronunciationDictionary(
 
         // السقف التراكمي: الحالي أولاً ثم الجديد بترتيبه حتى MAX_IMPORT_ENTRIES
         // (القفل يثبّت قراءة الحالي مع البناء والاستبدال — بند 3.13).
+        val lang = normalizeLangTag(languageTag)
         val imported = synchronized(this) {
-            val updated = if (merge) LinkedHashMap(entries)
+            val base = if (lang == null) entries
+            else (langEntries[lang] ?: emptyMap())
+            val updated = if (merge) LinkedHashMap(base)
                 else LinkedHashMap<String, String>()
             var count = 0
             for ((key, value) in valid) {
@@ -354,7 +463,10 @@ class PronunciationDictionary(
                 updated[key] = value
                 count++
             }
-            if (count > 0) swapEntries(updated)
+            if (count > 0) {
+                if (lang == null) swapEntries(updated)
+                else swapLangEntries(lang, updated)
+            }
             count
         }
         if (imported == 0) return false
@@ -363,24 +475,41 @@ class PronunciationDictionary(
         return save()
     }
 
-    /** تصدير القاموس إلى JSON */
-    fun exportToJson(): String = NateqJson.toJson(entries)
+    /** تصدير نطاقٍ إلى JSON — العام أو طبقةِ [languageTag] وحدها. */
+    fun exportToJson(languageTag: String? = null): String {
+        val lang = normalizeLangTag(languageTag)
+        val source = if (lang == null) entries
+        else (langEntries[lang] ?: emptyMap())
+        return NateqJson.toJson(source)
+    }
 
-    private fun loadFromPrefs(): Map<String, String> {
+    private fun loadFromPrefs():
+        Pair<Map<String, String>, Map<String, Map<String, String>>> {
         // تُقرأ القيم من «مثيل طازج» (انظر [openPrefs]) لا من الكائن العضو
         // المخبئ — تصطاد تعديلات عملية الواجهة عبر الطابع. على فشل الفتح أو
         // الفك نقف عند آخر ما رصدناه بدل مسح القاموس الحي (تفضيلُ مستخدمٍ
-        // حقيقي لا يجوز أن يُمحى بسبب خللٍ عابر).
-        val sp = openPrefs() ?: return entries
-        val json = try {
+        // حقيقي لا يجوز أن يُمحى بسبب خللٍ عابر). القراءة بمفتاحين معلومين
+        // فقط — بلا عدّ [SharedPreferences.all] غير المدعوم في التخزين
+        // المشفّر على بعض البيئات فيُسقط الحفظ كاملاً.
+        val sp = openPrefs() ?: return entries to langEntries
+        val globalJson = try {
             sp.getString("dictionary", "{}")
         } catch (t: Throwable) {
-            return entries
+            return entries to langEntries
         }
-        // تجزئة بلا رمي: فاسد ← null ← خريطة فارغة
-        // (كما كان تنظيف catch سابقاً).
-        val raw = NateqJson.fromJson<Map<*, *>>(json, typeToken)
-            as? Map<*, *> ?: emptyMap<Any, Any>()
+        val scopesJson = try {
+            sp.getString(KEY_SCOPES, "{}")
+        } catch (t: Throwable) {
+            return parseEntries(globalJson) to langEntries
+        }
+        return parseEntries(globalJson) to parseScopes(scopesJson)
+    }
+
+    /** تجزئة دفاعية بلا رمي: مفتاح/قيمة نصيان غير فارغين ضمن الحدود فقط. */
+    private fun parseEntries(json: String?): Map<String, String> {
+        val raw = if (json == null) emptyMap<Any, Any>()
+        else (NateqJson.fromJson<Map<*, *>>(json, typeToken)
+            as? Map<*, *> ?: emptyMap<Any, Any>())
         val fresh = LinkedHashMap<String, String>()
         for ((k, v) in raw) {
             if (k !is String || v !is String) continue
@@ -393,11 +522,38 @@ class PronunciationDictionary(
         return fresh
     }
 
+    /** تجزئة طبقات اللغات دفاعياً بلا رمي: {وسم: {مفتاح: قيمة}} — يُتخطى
+     *  كل وسمٍ غير كائنٍ وكل صفٍّ غير نصيٍّ بدل إسقاط الطبقات كلها. */
+    private fun parseScopes(json: String?): Map<String, Map<String, String>> {
+        val root = NateqJson.parseObject(json) ?: return emptyMap()
+        val out = LinkedHashMap<String, Map<String, String>>()
+        for ((rawTag, element) in root.entrySet()) {
+            val tag = rawTag.trim()
+            if (tag.isEmpty()) continue
+            val layer = element.optObject() ?: continue
+            val parsed = LinkedHashMap<String, String>()
+            for ((rawKey, rawValue) in layer.entrySet()) {
+                if (!rawValue.isJsonPrimitive) continue
+                val key = rawKey.trim()
+                val value = rawValue.asString.trim()
+                if (key.isEmpty() || key.length > MAX_KEY_LENGTH) continue
+                if (value.isEmpty() || value.length > MAX_VALUE_LENGTH) {
+                    continue
+                }
+                parsed[key] = value
+            }
+            if (parsed.isNotEmpty()) out[tag] = parsed
+        }
+        return out
+    }
+
     private fun save(): Boolean {
         val sp = prefs ?: return false
         return try {
-            val json = NateqJson.toJson(entries)
-            sp.edit().putString("dictionary", json).apply()
+            sp.edit()
+                .putString("dictionary", NateqJson.toJson(entries))
+                .putString(KEY_SCOPES, NateqJson.toJson(langEntries))
+                .apply()
             lastStamp = currentStamp()
             true
         } catch (e: Exception) {

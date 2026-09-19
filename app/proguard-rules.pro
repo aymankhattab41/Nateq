@@ -18,7 +18,6 @@
 # الواجهات ذات التنفيذ الواحد (مثل AnnouncementAppContext في NateqApplication)
 # فيكسّر التحويل الصريح (as) المستخدم في المستقبلات بـ ClassCastException
 # في نسخة release — بقاعدة النشر القائلة: لا قواعد R8 جائرة على حقن Hilt.
--optimizationpasses 5
 
 # إعادة العناصر إلى حزمة مسطحة فلتردد أسماء أقصر وأقل دلالة (تحسين إعاقه الفهم)
 -repackageclasses ''
@@ -49,13 +48,11 @@
 -keep public class com.aymankhattab.nateq.widget.SpeakingClockWidget
 
 # خدمة المحرك TTS (مذكورة في Manifest) + الأنواع التي يطلبها النظام عبر TTS Service
+# (قواعد الأصناف المذكورة في الـ Manifest يضيفها AGP تلقائياً؛ هذه صراحة وقايةً مستقبلية)
 -keep class com.aymankhattab.nateq.core.audio.engine.NateqTtsService { *; }
--keep class * extends android.speech.tts.TextToSpeechService { *; }
--keep class * extends android.speech.tts.TextToSpeech$UtteranceProgressListener { *; }
-# أصناف android.speech.tts التي يستدعيها نظام TTS نفسه عبر انعكاس (SynthesisCallback,
-# SynthesisRequest, Voice, TextToSpeech, UtteranceProgressListener …) — تُستخدم
-# في توقيعات NateqTtsService وتنفيذات مخصّصة من الكود، فتبقى بأسمائها كاملة
--keep class android.speech.tts.* { *; }
+# ملاحظة (بند الأوامر د.2): أُزيلت القواعد السابقة الخاصة بأصناف إطار
+# android.speech.tts.* (TextToSpeechService/UtteranceProgressListener) لأنها
+# ليست في الـ dex قيد التشفير أصلاً — قواعد ·*` كانت بلا أثر في كل البناءات.
 
 # المستقبلات (receiver) التي تسجّلها بأسمائها في Manifest — الآن في :core:audio.
 # طبقة الإعلانات كاملة تُحفظ (المتحدث/الجدولة/المستقبلات) كما حُفظت receiver سابقاً
@@ -106,8 +103,14 @@
 # ثبّتها كما هي: الحقول (engine/voiceName/rate/pitch/volume) هي مفاتيح JSON ذاتها.
 -keep class com.aymankhattab.nateq.engine.LanguageSpeechPrefs { *; }
 
-# رموز XML/RTL ومعلومات ضرورية للانعكاس
--keepattributes XmlAttribute
+# بند الأوامر د.2: قاموس النطق يسلسل كل بياناته عبر مظلة JSON الموحدة (NateqJson)
+# كخريطة Map<String,String> بلا أصناف نماذج بذاتها (مفاتيح القاموس نصوص مستخدمين)
+# — تُثبَّت المظلة وبنّايات الأنواع المركّبة لئلا يفقدهما R8 فتُصدر/تُستورد
+# القاموس مشوهاً في release: (الأنواع المركّبة تُحفظ أعلاه — GsonTypes/ParameterizedTypes)
+-keep class com.aymankhattab.nateq.util.NateqJson { *; }
+
+# بند الأوامر د.2: أُزيلت «-keepattributes XmlAttribute» (سمة غير قياسية
+# عديمة الأثر لدى R8) — بقيت XmlAttribute قياسية في `XmlPullParser` وحدها.
 
 # مكتبة security-crypto (مفاتيح) قد تستخدم انعكاساً لا يدعمه R8
 -keep class com.google.android.gms.security.** { *; }

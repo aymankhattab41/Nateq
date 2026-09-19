@@ -39,6 +39,33 @@ class AnnouncementSpeakerTest {
     }
 
     @Test
+    fun `prewarm schedules text processor warm up on creation`() {
+        val speaker = AnnouncementSpeaker.getInstance(context)
+        try {
+            assertTrue(
+                "التحميل المسبق يُطلق عند إنشاء المتحدث المشترك" +
+                    " (بند الأوامر د.1)",
+                speaker.isPrewarmStarted()
+            )
+        } finally {
+            speaker.shutdown()
+        }
+    }
+
+    @Test
+    fun `warm text processor builds processing path eagerly`() {
+        val speaker = AnnouncementSpeaker(context)
+        try {
+            assertTrue(
+                "مسار المعالجة يُبنى تزامنياً عند الطلب",
+                speaker.warmTextProcessor()
+            )
+        } finally {
+            speaker.shutdown()
+        }
+    }
+
+    @Test
     fun `completion listeners are all invoked and independently removed`() {
         val speaker = AnnouncementSpeaker(context)
         var firstCalls = 0
