@@ -2698,10 +2698,25 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:layout_marginBottom="16dp"
                 android:minHeight="48dp"
                 android:text="@string/report_error"
                 android:contentDescription="@string/report_error_desc"
+                android:importantForAccessibility="yes"
+                app:icon="@drawable/ic_report_bug"
+                app:iconGravity="textStart" />
+
+            <!-- زر التشخيص: يعرض معلومات شاملة عن حالة التطبيق والمحركات والأذونات
+                 مع إمكانية النسخ إلى الحافظة — يسهّل استقصاء الأخطاء من المستخدمين -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_diagnostics"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="16dp"
+                android:minHeight="48dp"
+                android:text="@string/diagnostics_title"
+                android:contentDescription="@string/diagnostics_desc"
                 android:importantForAccessibility="yes"
                 app:icon="@drawable/ic_report_bug"
                 app:iconGravity="textStart" />

@@ -867,6 +867,19 @@ class SettingsRepository(private val context: Context) :
         return "rms_calibration_$engine"
     }
 
+    /** آخر فشل تراجع مُسجَّل (للشاشة التشخيصية — بند د.6.2)؛ null إن لم
+     *  يُسجَّل أي فشل بعد. المفتاح يُكتب من SystemVoiceProvider عند حدوث
+     *  تراجع فعلي (يحمل المحرك/الصوت/الوقت) فتعرضه الشاشة التشخيصية
+     *  للمستخدم لإرساله في تقارير الأعطال. */
+    fun getLastFallbackFailureInfo(): String? =
+        prefs.getString("last_fallback_failure_info", null)
+
+    /** يُخزّن نص آخر فشل تراجع للعرض لاحقاً في الشاشة التشخيصية. */
+    fun setLastFallbackFailureInfo(info: String) =
+        prefs.edit().putString(
+            "last_fallback_failure_info", info.take(512)
+        ).apply()
+
     /** تفعيل/إيقاف إعلان الوقت */
     override fun isTimeAnnouncementEnabled(): Boolean =
         prefs.getBoolean("time_announcement_enabled", true)

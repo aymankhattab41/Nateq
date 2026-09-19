@@ -181,7 +181,7 @@ internal class OemGuidanceController(
 /** مصنّعو الأجهزة المعروفون بتشديدهم على قتل تطبيقات الخلفية، وهم من يحتاج
  *  أبناءهم الإرشادات والأزرار الخاصة. غيرهم مُصنّف [OemVendor.GENERIC] تظهر
  *  له الإرشادات العامة وزرا البطارية/صفحة التطبيق. */
-internal enum class OemVendor {
+enum class OemVendor {
     GENERIC, XIAOMI, HUAWEI, OPPO, VIVO, SAMSUNG;
 
     companion object {

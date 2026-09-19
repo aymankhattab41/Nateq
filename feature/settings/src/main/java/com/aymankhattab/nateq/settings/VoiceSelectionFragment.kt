@@ -42,7 +42,10 @@ import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.NetworkMetering
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
+import com.aymankhattab.nateq.core.audio.providers.EnginePicker
+import com.aymankhattab.nateq.core.audio.providers.EnginePicker.InstalledEngine
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.settings.OemVendor
 import com.aymankhattab.nateq.settings.SettingsViewModel.SettingsOperation
 
 /** تُسجّل حواراً من أي ضابط في سجل الفصيل ليُغلق عند تدمير العرض
@@ -493,6 +496,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         // زر آخر التحديثات: يعرض ملخص أحدث إصدار وتغييراته في حوار
         btnChangelog = view.findViewById(R.id.btn_changelog)
         btnChangelog.setOnClickListener { showChangelogDialog() }
+
+        // زر التشخيص: يعرض معلومات شاملة عن حالة التطبيق والمحركات والأذونات
+        // مع إمكانية النسخ إلى الحافظة
+        val btnDiagnostics = view.findViewById<View>(R.id.btn_diagnostics)
+        btnDiagnostics.setOnClickListener { showDiagnosticsDialog() }
 
         // إنشاء ضابطات الأقسام وربطها (المرحلة ج): كل ضابط يسحب عناصره
         // ويبني مستمعيه عند setup()، وonStatusChanged تُحدّث أسطر حالة
@@ -1281,6 +1289,267 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             .show()
         trackDialog(dialog)
         view?.announceCompat(getString(R.string.changelog_title))
+    }
+
+    // ===== التشخيص =====
+    private fun showDiagnosticsDialog() {
+        val context = requireContext()
+        lifecycleScope.launch {
+            val info = buildDiagnosticsInfo(context)
+            val dialog = MaterialAlertDialogBuilder(context)
+                .setTitle(R.string.diagnostics_title)
+                .setMessage(info)
+                .setPositiveButton(R.string.diagnostics_copy) { _, _ ->
+                    copyToClipboard(info)
+                    Toast.makeText(context, R.string.diagnostics_copied, Toast.LENGTH_SHORT).show()
+                    view?.announceCompat(getString(R.string.diagnostics_copied))
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+            trackDialog(dialog)
+            view?.announceCompat(getString(R.string.diagnostics_title))
+        }
+    }
+
+    /**
+     * يبني نص التشخيص الشامل — يعمل على خيط IO لأنه يستدعي بعض
+     * واجهات النظام (مثل getInstalledEngines) ويمكن أن يبطئ الواجهة.
+     *
+     * الأقسام المُغطاة (بحسب بند د.6.2 + بند د.1 + بند د.2):
+     * - إصدار التطبيق والجهاز
+     * - محركات TTS المثبَّتة
+     * - المحرك/الصوت المختار لكل فئة (مع سرعة/نبرة/مستوى)
+     * - آخر فشل تراجع (يُعرض إن أمكن)
+     * - حالة الأذونات الحرجة
+     * - تصنيف OEM
+     * - سجل تركيز الصوت (إرشاد جمع Logcat — بند د.1)
+     * - حالة إعلان المتصل (إرشاد اختبار — بند د.2)
+     */
+    private suspend fun buildDiagnosticsInfo(
+        context: android.content.Context
+    ): String =
+        kotlinx.coroutines.withContext(AppDispatchers.io) {
+            val sb = StringBuilder()
+            val info = context.packageManager.getPackageInfo(
+                context.packageName, 0
+            )
+            val versionName = info.versionName ?: "?"
+            val versionCode = if (
+                android.os.Build.VERSION.SDK_INT >=
+                android.os.Build.VERSION_CODES.P
+            ) {
+                info.longVersionCode
+            } else {
+                @Suppress("DEPRECATION") info.versionCode.toLong()
+            }
+
+            sb.appendLine("=== ناطق (Lord TTS) — التشخيص ===")
+            sb.appendLine("الإصدار: $versionName ($versionCode)")
+            sb.appendLine(
+                "الجهاز: " +
+                    "${android.os.Build.MANUFACTURER} " +
+                    android.os.Build.MODEL
+            )
+            sb.appendLine(
+                "أندرويد: ${android.os.Build.VERSION.RELEASE}" +
+                    " (API ${android.os.Build.VERSION.SDK_INT})"
+            )
+            sb.appendLine("")
+
+            // ── محركات TTS المثبَّتة ──────────────────────────────────
+            sb.appendLine("--- محركات TTS المثبَّتة ---")
+            val engines = EnginePicker.installedEngines(context)
+            if (engines.isEmpty()) {
+                sb.appendLine("• لم يُعثر على محركات TTS")
+            } else {
+                engines.forEach { engine: InstalledEngine ->
+                    val rms = runCatching {
+                        settings.getEngineRmsCalibration(
+                            engine.packageName
+                        )
+                    }.getOrNull()
+                    val rmsText = when {
+                        rms != null -> "RMS=${"%.3f".format(rms)}"
+                        else -> "RMS=غير معايَر"
+                    }
+                    sb.appendLine(
+                        "• ${engine.label} " +
+                            "(${engine.packageName})  $rmsText"
+                    )
+                }
+            }
+            sb.appendLine("")
+
+            // ── المحرك/الصوت المختار لكل فئة ─────────────────────────
+            sb.appendLine("--- الاختيار النشط لكل فئة ---")
+            val categories = listOf(
+                "time" to "إعلان الوقت",
+                "battery" to "إعلان البطارية",
+                "notifications" to "قراءة الإشعارات",
+                "caller" to "إعلان المتصل",
+                "sms" to "قراءة الرسائل",
+                "numbers" to "الأرقام",
+                "default" to "الافتراضي",
+                "emoji" to "الإيموجي"
+            )
+            categories.forEach { (key, label) ->
+                val engine = runCatching {
+                    settings.getEngineForCategory(key)
+                }.getOrNull()
+                val voice = runCatching {
+                    settings.getPreferredVoiceIdForCategory(key)
+                }.getOrNull()
+                val rate = runCatching {
+                    settings.getSpeechRateForCategory(key)
+                }.getOrNull()
+                val pitch = runCatching {
+                    settings.getPitchForCategory(key)
+                }.getOrNull()
+                sb.appendLine(
+                    "$label: " +
+                        "محرك=${engine ?: "افتراضي"}  " +
+                        "صوت=${voice ?: "افتراضي"}  " +
+                        "سرعة=${"%.1f".format(rate ?: 1f)}  " +
+                        "نبرة=${"%.1f".format(pitch ?: 1f)}"
+                )
+            }
+            // فاصل إعلان الوقت واللغة الثانية
+            val interval = runCatching {
+                settings.getTimeAnnouncementInterval()
+            }.getOrNull()
+            val secondLang = runCatching {
+                settings.getSecondaryLanguage()
+            }.getOrNull()
+            if (interval != null) {
+                sb.appendLine("فاصل إعلان الوقت: $interval دقيقة")
+            }
+            if (secondLang != null) {
+                sb.appendLine("اللغة الثانية: $secondLang")
+            }
+            sb.appendLine("")
+
+            // ── آخر فشل تراجع ────────────────────────────────────────
+            sb.appendLine("--- آخر فشل تراجع ---")
+            // قيمة مُقرأة من SharedPreferences إن سُجّل سابقاً
+            val lastFallback = runCatching {
+                settings.getLastFallbackFailureInfo()
+            }.getOrNull()
+            if (lastFallback.isNullOrBlank()) {
+                sb.appendLine("لا يوجد فشل تراجع مُسجَّل")
+            } else {
+                sb.appendLine(lastFallback)
+            }
+            sb.appendLine("")
+
+            // ── حالة الأذونات ─────────────────────────────────────────
+            sb.appendLine("--- حالة الأذونات ---")
+            val am =
+                context.getSystemService(
+                    android.app.AlarmManager::class.java
+                )
+            val exactAlarm = if (
+                android.os.Build.VERSION.SDK_INT >=
+                android.os.Build.VERSION_CODES.S
+            ) {
+                am.canScheduleExactAlarms()
+            } else {
+                true
+            }
+            sb.appendLine(
+                "التنبيهات الدقيقة: " +
+                    if (exactAlarm) "مُمنوح ✓" else "محجوب ✗"
+            )
+
+            val nm =
+                context.getSystemService(
+                    android.app.NotificationManager::class.java
+                )
+            val notificationListener = try {
+                val enabled =
+                    android.provider.Settings
+                        .Secure.getString(
+                            context.contentResolver,
+                            "enabled_notification_listeners"
+                        ) ?: ""
+                enabled.contains(context.packageName)
+            } catch (e: Exception) {
+                false
+            }
+            sb.appendLine(
+                "الوصول للإشعارات: " +
+                    if (notificationListener) "مُمنوح ✓" else "محجوب ✗"
+            )
+
+            val powerManager =
+                context.getSystemService(
+                    android.os.PowerManager::class.java
+                )
+            val isIgnoring = if (
+                android.os.Build.VERSION.SDK_INT >=
+                android.os.Build.VERSION_CODES.M
+            ) {
+                powerManager.isIgnoringBatteryOptimizations(
+                    context.packageName
+                )
+            } else {
+                true
+            }
+            sb.appendLine(
+                "الإعفاء من تحسين البطارية: " +
+                    if (isIgnoring) "مُمنوح ✓" else "محجوب ✗"
+            )
+
+            // فحص READ_PHONE_STATE (لإعلان المتصل)
+            val phoneState = context.checkSelfPermission(
+                android.Manifest.permission.READ_PHONE_STATE
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            sb.appendLine(
+                "READ_PHONE_STATE (المتصل): " +
+                    if (phoneState) "مُمنوح ✓" else "محجوب ✗"
+            )
+
+            val oemVendor =
+                OemVendor.detect(android.os.Build.MANUFACTURER)
+            sb.appendLine("تصنيف OEM: $oemVendor")
+            sb.appendLine("")
+
+            // ── سجل تركيز الصوت (بند د.1) ────────────────────────────
+            sb.appendLine("--- سجل تركيز الصوت (بند د.1) ---")
+            sb.appendLine(
+                "عند حدوث انخفاض مفاجئ في الصوت، أرسل Logcat بتصفية:"
+            )
+            sb.appendLine("  adb logcat -s NATEQ_TTS:V *:S")
+            sb.appendLine(
+                "أو استخدم زر «إعادة ضبط تركيز الصوت» في هذه الشاشة"
+            )
+            sb.appendLine("")
+
+            // ── حالة اختبار إعلان المتصل (بند د.2) ───────────────────
+            sb.appendLine("--- إعلان المتصل (بند د.2) ---")
+            sb.appendLine(
+                "READ_PHONE_STATE: " +
+                    if (phoneState) "مُمنوح ✓" else "محجوب ✗"
+            )
+            sb.appendLine(
+                "تصنيف OEM: $oemVendor " +
+                    if (oemVendor.name != "GENERIC") {
+                        "← قد يحتاج «التشغيل التلقائي» مفعَّلاً"
+                    } else {
+                        ""
+                    }
+            )
+            sb.appendLine(
+                "لاختبار مسار النطق مباشرةً: " +
+                    "استخدم «اختبر إعلان المتصل» في قسم إعلان المتصل"
+            )
+
+            sb.toString()
+        }
+
+    private fun copyToClipboard(text: String) {
+        val clipboard = requireContext().getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        val clip = android.content.ClipData.newPlainText("Lord TTS Diagnostics", text)
+        clipboard.setPrimaryClip(clip)
     }
 
     // ===== البحث عن تحديثات =====

@@ -30,6 +30,9 @@ espresso = "3.6.1"
 # مثبت ملف الأداء (Baseline Profile) — يقرأ baseline-prof.txt عند التثبيت
 # ويرسل قواعده في المعاملات من إصدار واحد (بند 6#6).
 profileinstaller = "1.4.1"
+# Macrobenchmark لإنشاء Baseline Profile (بند د.6.1) — تُشغَّل على جهاز.
+macrobenchmark = "1.4.0-alpha06"
+uiautomator = "2.3.0"
 
 # --- مكتبات خارجية ---------------------------------------------------------
 gson = "2.12.1"
@@ -70,10 +73,15 @@ androidx-test-core = { group = "androidx.test", name = "core", version.ref = "an
 androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestExtJunit" }
 androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
 androidx-test-rules = { group = "androidx.test", name = "rules", version.ref = "androidxTestRules" }
-androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espresso" }
+androidx-test-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espresso" }
+# Macrobenchmark (بند د.6.1)
+androidx-benchmark-macro-junit4 = { group = "androidx.benchmark", name = "benchmark-macro-junit4", version.ref = "macrobenchmark" }
+androidx-test-uiautomator = { group = "androidx.test.uiautomator", name = "uiautomator", version.ref = "uiautomator" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
+android-test = { id = "com.android.test", version.ref = "agp" }
+baselineprofile = { id = "androidx.baselineprofile", version.ref = "macrobenchmark" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt-android = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }

@@ -15,4 +15,8 @@ plugins {
 
     // Hilt 2.59+ يوثّق التوافق مع AGP 9 (الحد الأدنى في جدول التوافقية).
     alias(libs.plugins.hilt.android) apply false
+
+    // com.android.test + androidx.baselineprofile للـ Macrobenchmark (بند د.6.1)
+    alias(libs.plugins.android.test) apply false
+    alias(libs.plugins.baselineprofile) apply false
 }
