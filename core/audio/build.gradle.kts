@@ -24,6 +24,7 @@ android {
 }
 
 dependencies {
+    implementation("androidx.appcompat:appcompat:1.7.0")
     implementation(project(":core:common"))
     implementation(project(":core:engine"))
     implementation(project(":core:data"))

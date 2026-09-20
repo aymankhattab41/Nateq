@@ -1,4 +1,4 @@
-﻿<resources>
+<resources>
 <string name="settings_title">إعدادات Lord TTS</string>
 <string name="all_announcements_enabled">كل الإعلانات مفعّلة</string>
 <string name="all_announcements_summary">إيقافه يُوقف الإعلانات التلقائية (الوقت، البطارية، الرسائل، الإشعارات، المتصل) بصمت</string>
@@ -96,7 +96,6 @@
 <string name="check_updates_confirm_no">لا</string>
 <string name="check_updates_no_digest_warning">لا يمكن التحقق من بصمة الملف (SHA-256) — الناشر لم يُوفرها. سيُثبَّت الملف كما هو دون تحقق سلامة. هل تريد المتابعة؟</string>
     <string name="check_updates_metered_warning">أنت متصل بشبكة بيانات الهاتف (مدفوعة). التنزيل سيستهلك بياناتك.</string>
-<string name="clock_widget_enabled">أداة الساعة على الشاشة الرئيسية</string>
 <string name="time_chime_enabled">رنة رأس الساعة</string>
 <string name="time_chime_sound">نوع الرنة</string>
 <string name="time_chime_sound_classic_bell">جرس كلاسيكي</string>
@@ -162,7 +161,6 @@
 <string name="group_system_title">النظام والمساعدة</string>
 <string name="group_text_title">النصوص والأرقام</string>
 <string name="help_section">مساعدة</string>
-<string name="hijri_date_enabled">نطق التواريخ بالتقويم الهجري</string>
 <string name="install_engine_from_store">تثبيت محرك Google الناطق من المتجر</string>
 <string name="language_arabic">العربية</string>
 <string name="language_change_to_ar">التغيير إلى العربية</string>

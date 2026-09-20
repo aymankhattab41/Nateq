@@ -24,6 +24,5 @@ include(":core:engine")
 include(":core:audio")
 include(":core:data")
 include(":feature:settings")
-include(":feature:widget")
 // وحدة Baseline Profile (Macrobenchmark) — بند د.6.1
 include(":baselineprofile")

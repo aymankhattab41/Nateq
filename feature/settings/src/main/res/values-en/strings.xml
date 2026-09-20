@@ -1,4 +1,4 @@
-﻿<resources>
+<resources>
 <string name="settings_title">Lord TTS Settings</string>
 <string name="all_announcements_enabled">All announcements enabled</string>
 <string name="all_announcements_summary">Turning it off silently stops automatic announcements (time, battery, messages, notifications, caller)</string>
@@ -96,7 +96,6 @@
 <string name="check_updates_confirm_no">No</string>
 <string name="check_updates_no_digest_warning">The file checksum (SHA-256) cannot be verified — the publisher did not provide it. The file will be installed as-is without an integrity check. Continue?</string>
     <string name="check_updates_metered_warning">You are on a mobile data (metered) connection. Downloading will use your data.</string>
-<string name="clock_widget_enabled">Clock widget on the home screen</string>
 <string name="time_chime_enabled">Hourly chime</string>
 <string name="time_chime_sound">Chime sound</string>
 <string name="time_chime_sound_classic_bell">Classic bell</string>
@@ -162,7 +161,6 @@
 <string name="group_system_title">System &amp; Help</string>
 <string name="group_text_title">Text &amp; Numbers</string>
 <string name="help_section">Help</string>
-<string name="hijri_date_enabled">Speak dates in the Hijri calendar</string>
 <string name="install_engine_from_store">Install Google text-to-speech from the store</string>
 <string name="lock_screen_privacy_enabled">Lock screen privacy protection</string>
 <string name="lock_screen_privacy_summary">While the screen is locked, message and notification details and caller names are not spoken (protects OTP verification codes and privacy)</string>

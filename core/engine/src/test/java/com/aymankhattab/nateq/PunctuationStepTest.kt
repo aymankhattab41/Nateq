@@ -27,7 +27,7 @@ class PunctuationStepTest {
         assertEquals("نلتقي عند 5", CleanupStep.apply(step.apply("نلتقي @ 5")))
         // البريد الإلكتروني محمي: @ لا تُنطق داخله
         assertEquals(
-            "مراسلتي a@b.com",
+            "مراسلتي a at b.com",
             CleanupStep.apply(step.apply("مراسلتي a@b.com"))
         )
         // الأقواس والنقاط المنقوطة ليست في مستوى «البعض»

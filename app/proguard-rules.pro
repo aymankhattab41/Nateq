@@ -45,7 +45,6 @@
 
 # المكونات المنشأة خارج حزمة receivers — مذكورة في Manifest (أداة/بلاطة/خدمة جدولة/إقلاع)
 -keep public class com.aymankhattab.nateq.settings.AnnouncementTileService
--keep public class com.aymankhattab.nateq.widget.SpeakingClockWidget
 
 # خدمة المحرك TTS (مذكورة في Manifest) + الأنواع التي يطلبها النظام عبر TTS Service
 # (قواعد الأصناف المذكورة في الـ Manifest يضيفها AGP تلقائياً؛ هذه صراحة وقايةً مستقبلية)

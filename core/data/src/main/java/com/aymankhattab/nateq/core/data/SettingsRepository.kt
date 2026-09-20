@@ -978,10 +978,6 @@ class SettingsRepository(private val context: Context) :
         prefs.edit().putBoolean("time_display_24h", enabled).apply()
 
     /** نطق التواريخ بالتقويم الهجري (أم القرى) بدل الميلادي */
-    override fun isHijriDateEnabled(): Boolean =
-        prefs.getBoolean("hijri_date", false)
-    override fun setHijriDateEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("hijri_date", enabled).apply()
 
     // ============ قراءة النصوص: الترقيم والتهجئة الذكية ============
 
@@ -1058,13 +1054,6 @@ class SettingsRepository(private val context: Context) :
     override fun setDefaultVolume(volume: Float) =
         prefs.edit().putFloat("default_volume", volume.coerceIn(0f, 1f)).apply()
 
-    /** تفعيل أداة الساعة على الشاشة الرئيسية (افتراضياً مفعّلة — بند [13.4]):
-     *  أداة الساعة ناطقة بطبعها ولا ينبغي أن تكون بالافتراضي معطّلة فتخيب
-     *  عند أول إضافة للشاشة الرئيسية. */
-    override fun isClockWidgetEnabled(): Boolean =
-        prefs.getBoolean("clock_widget_enabled", true)
-    override fun setClockWidgetEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("clock_widget_enabled", enabled).apply()
 
     // ============ إعدادات إعلان مستوى البطارية ============
 
@@ -1651,6 +1640,7 @@ class SettingsRepository(private val context: Context) :
                         ops.add(Op { it.putFloat(key, v) }); meaningful++
                     }
                     is Boolean -> {
+                        if (key == "hijri_date" || key == "hijri_date_enabled") continue
                         // المفاتيح الحساسة تُثبَّت false على الاستيراد مهما
                         // وردت في النسخة (انظر SAFE_DEFAULT_FALSE_KEYS).
                         val safe = if (key in SAFE_DEFAULT_FALSE_KEYS) {

@@ -118,7 +118,7 @@ class TextProcessor(
     private val baseSteps: List<TextProcessingStep> = listOf(
         IndicDigitsStep,
         UrlStep,
-        DateStep(injectedSettings),
+        DateStep(),
         TimeStep,
         CurrencyStep,
         UnitStep,
@@ -152,7 +152,7 @@ class TextProcessor(
     // ينفصل رمزُ العملة («USD») عن مبلغه عند تقسيم اللغة.
     private val englishBaseSteps: List<TextProcessingStep> = listOf(
         IndicDigitsStep,
-        DateStep(injectedSettings),
+        DateStep(),
         CurrencyStep
     )
 

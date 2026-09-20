@@ -259,16 +259,12 @@ interface AnnouncementPrefs {
     fun setTime24Hour(enabled: Boolean)
 
     /** تفعيل التحويل إلى التقويم الهجري في التواريخ. */
-    fun isHijriDateEnabled(): Boolean
 
     /** يعيّن تفعيل التقويم الهجري. */
-    fun setHijriDateEnabled(enabled: Boolean)
 
     /** تفعيل ودجت الساعة الناطقة. */
-    fun isClockWidgetEnabled(): Boolean
 
     /** يعيّن تفعيل ودجت الساعة الناطقة. */
-    fun setClockWidgetEnabled(enabled: Boolean)
 
     /** تفعيل رنة الزمن. */
     fun isTimeChimeEnabled(): Boolean

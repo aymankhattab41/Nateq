@@ -48,30 +48,6 @@ import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.settings.OemVendor
 import com.aymankhattab.nateq.settings.SettingsViewModel.SettingsOperation
 
-/** تُسجّل حواراً من أي ضابط في سجل الفصيل ليُغلق عند تدمير العرض
- *  (لا تسريب مراجع الواجهة) — تُستخدم من الضابطات التي تملك `fragment`. */
-internal fun Fragment.trackDialog(dialog: Dialog) {
-    (this as? VoiceSelectionFragment)?.trackDialog(dialog)
-}
-
-/** بثّ تحديث لأداة الساعة الناطقة (بند 4.12): الودجت updatePeriodMillis="0"
- *  فلا يُعاد بناؤه لوحده — عند تبديل لغة التطبيق نطلب من النظام إعادة
- *  بنائه بلغة الواجهة الجديدة عبر ACTION_APPWIDGET_UPDATE إلى موفّره. */
-internal fun notifyClockWidgetRefresh(context: Context) {
-    val manager = AppWidgetManager.getInstance(context)
-    val provider = ComponentName(
-        context,
-        "com.aymankhattab.nateq.widget.SpeakingClockWidget"
-    )
-    val ids = manager.getAppWidgetIds(provider)
-    if (ids.isEmpty()) return
-    val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_UPDATE).apply {
-        component = provider
-        putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
-    }
-    runCatching { context.sendBroadcast(intent) }
-}
-
 /**
  * شاشة الإعدادات الرئيسية - تتضمن:
  * 1. اختيار المحرك ثم اللغة ثم الصوت (هرمية)
@@ -1105,7 +1081,6 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             }
             // بند 4.12: تحديث أداة الساعة بلغة الواجهة الجديدة فوراً —
             // الودجت updatePeriodMillis="0" ولا يُحدَّث لوحده.
-            notifyClockWidgetRefresh(requireContext())
             // إعادة إنشاء النشاط لتطبيق اللغة فورياً (UI + افتراضيات)
             requireActivity().recreate()
         }

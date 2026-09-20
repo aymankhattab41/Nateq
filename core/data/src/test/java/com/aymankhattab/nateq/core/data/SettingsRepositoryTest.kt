@@ -53,7 +53,6 @@ class SettingsRepositoryTest {
         assertTrue(repo.isTimeAnnouncementEnabled())
         assertEquals(30, repo.getTimeAnnouncementInterval())
         assertFalse(repo.isTime24Hour())
-        assertFalse(repo.isHijriDateEnabled())
         assertEquals("arabic_natural", repo.getTimeAnnouncementFormat())
     }
 
@@ -125,13 +124,6 @@ class SettingsRepositoryTest {
     }
 
     @Test
-    fun hijriDateEnabled_roundTrip() {
-        assertFalse(repo.isHijriDateEnabled())
-        repo.setHijriDateEnabled(true)
-        assertTrue(repo.isHijriDateEnabled())
-    }
-
-    @Test
     fun timeAnnouncementConfig_roundTrip() {
         repo.setTimeAnnouncementInterval(15)
         assertEquals(15, repo.getTimeAnnouncementInterval())
@@ -179,7 +171,6 @@ class SettingsRepositoryTest {
     fun resetAllToDefault_restoresDefaults() {
         repo.setNumberReadingMode(5)
         repo.setTime24Hour(true)
-        repo.setHijriDateEnabled(true)
         repo.setPunctuationLevel(0)
         repo.setSmartSpellingEnabled(true)
         repo.setTashkeelPreserved(true)
@@ -187,7 +178,6 @@ class SettingsRepositoryTest {
         repo.resetAllToDefault()
         assertEquals(1, repo.getNumberReadingMode())
         assertFalse(repo.isTime24Hour())
-        assertFalse(repo.isHijriDateEnabled())
         assertEquals(1, repo.getPunctuationLevel())
         assertFalse(repo.isSmartSpellingEnabled())
         assertFalse(repo.isTashkeelPreserved())

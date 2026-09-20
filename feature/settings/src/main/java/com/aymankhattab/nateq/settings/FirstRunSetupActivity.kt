@@ -172,7 +172,6 @@ class FirstRunSetupActivity :
             )
             // بند 4.12: تحديث أداة الساعة بلغة الواجهة الجديدة (لا أثر إن
             // لم تكن الأداة موضوعة بعد في أول تشغيل).
-            notifyClockWidgetRefresh(this)
         }
         finish()
     }

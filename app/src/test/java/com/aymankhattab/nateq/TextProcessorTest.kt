@@ -132,11 +132,11 @@ class TextProcessorTest {
         assertEquals("مرحبا بالعالم", processor.process("مرحبا بالعالم", "ar"))
     }
 
+    
     @Test
-    fun hijriDateConversion_disabled_usesGregorian() {
-        // عند تعطيل الهجري: تاريخ ميلادي عادي
-        val out = processor.process("15/06/2024", "ar")
-        assertEquals("خمسة عشر يونيو ألفان وأربعة وعشرون", out)
+    fun date_readAsGregorianOnly() {
+        val out = processor.process("15/03/2026", "ar")
+        assertEquals("خمسة عشر مارس ألفان وستة وعشرون", out)
     }
 
     @Test

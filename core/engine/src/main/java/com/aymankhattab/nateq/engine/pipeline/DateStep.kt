@@ -13,7 +13,7 @@ import java.util.regex.Pattern
  * حسب تفضيل المستخدم إن وُجدت حقنة الإعدادات (قراءة لحظية لا أكثر).
  */
 internal class DateStep(
-    private val injectedSettings: SynthesisConfig? = null
+    
 ) : TextProcessingStep {
 
     private companion object {
@@ -27,13 +27,6 @@ internal class DateStep(
         )
         val PATTERN_DATE_DOTY = Pattern.compile(
             """\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b"""
-        )
-
-        // أشهر السنة الهجرية (بها 12 شهراً كالميلادية)
-        val HIJRI_MONTHS = arrayOf(
-            "", "محرم", "صفر", "ربيع الأول", "ربيع الآخر", "جمادى الأولى",
-            "جمادى الآخرة", "رجب", "شعبان", "رمضان", "شوال",
-            "ذو القعدة", "ذو الحجة"
         )
 
         // الأشهر الميلادية بالإنجليزية (النسخة الإنجليزية).
@@ -106,27 +99,6 @@ internal class DateStep(
         if (month !in 1..12) return "التاريخ غير صالح"
         if (day !in 1..31) return "التاريخ غير صالح"
         // مسار الهجري: إن فشل التحويل (نادر) نتراجع للصيغة الميلادية الصحيحة
-            // ولا نُمرر قيماً ميلادية عبر أسماء الشهور الهجرية (كانت تنتج
-            // نطقاً مختلطاً مثل «خمسة عشر محرم 2024»).
-            if (runCatching {
-                    injectedSettings?.isHijriDateEnabled() == true
-                }.getOrDefault(false)
-            ) {
-                val hijri = runCatching {
-                    toHijri(day, month, year)
-                }.getOrNull()
-                val hijriValid = hijri != null &&
-                    hijri.second in 1..12 && hijri.first in 1..30
-                if (hijriValid) {
-                    val dayHijri = NumberWordsConverter.numberToWords(
-                        hijri.first.toLong()
-                    )
-                    val yearHijri = NumberWordsConverter.numberToWords(
-                        hijri.third.toLong()
-                    )
-                    return "$dayHijri ${HIJRI_MONTHS[hijri.second]} $yearHijri"
-                }
-            }
         val months = arrayOf(
             "", "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
             "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"
@@ -172,27 +144,4 @@ internal class DateStep(
         return (parts.dropLast(1) + ordinalLast).joinToString(" ")
     }
 
-    /** تحويل تاريخ ميلادي إلى هجري (تقويم أم القرى المدعوم على أندرويد) */
-    private fun toHijri(
-        day: Int,
-        month: Int,
-        year: Int
-    ): Triple<Int, Int, Int> {
-        val gregorian = Calendar.getInstance(Locale.US).apply {
-            clear()
-            set(year, month - 1, day, 12, 0, 0)
-        }
-        val hijri = android.icu.util.IslamicCalendar.getInstance(
-            android.icu.util.TimeZone.getDefault(),
-            // وسم تقويم أم القرى: العلامة تحدد نمط الحساب تلقائياً داخل ICU
-            android.icu.util.ULocale("en_US@calendar=islamic-umalqura")
-        ).apply {
-            time = gregorian.time
-        }
-        return Triple(
-            hijri.get(android.icu.util.Calendar.DAY_OF_MONTH),
-            hijri.get(android.icu.util.Calendar.MONTH) + 1,
-            hijri.get(android.icu.util.Calendar.YEAR)
-        )
-    }
 }

@@ -263,26 +263,7 @@
                 android:textOn="@string/toggle_on" />
 
             <!-- التاريخ الهجري بدل الميلادي -->
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switch_hijri_date"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="48dp"
-                android:layout_marginTop="16dp"
-                android:text="@string/hijri_date_enabled"
-                android:textOff="@string/toggle_off"
-                android:textOn="@string/toggle_on" />
 
-            <!-- أداة الساعة على الشاشة الرئيسية -->
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switch_clock_widget"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="48dp"
-                android:layout_marginTop="16dp"
-                android:text="@string/clock_widget_enabled"
-                android:textOff="@string/toggle_off"
-                android:textOn="@string/toggle_on" />
 
             <!-- رنة رأس الساعة -->
             <com.google.android.material.switchmaterial.SwitchMaterial
@@ -2934,3 +2915,4 @@
 
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>
+

@@ -40,8 +40,6 @@ internal class TimeAnnouncementController(
     private var llQuietSchedule: LinearLayout? = null
     private var spinnerTimeFormat: Spinner? = null
     private var switchTime24h: SwitchMaterial? = null
-    private var switchHijriDate: SwitchMaterial? = null
-    private var switchClockWidget: SwitchMaterial? = null
     private var switchTimeChime: SwitchMaterial? = null
     private var spinnerTimeChimeSound: Spinner? = null
     private var seekTimeChimeVolume: SeekBar? = null
@@ -68,8 +66,6 @@ internal class TimeAnnouncementController(
         llQuietSchedule = view.findViewById(R.id.ll_quiet_schedule)
         spinnerTimeFormat = view.findViewById(R.id.spinner_time_format)
         switchTime24h = view.findViewById(R.id.switch_time_display_24h)
-        switchHijriDate = view.findViewById(R.id.switch_hijri_date)
-        switchClockWidget = view.findViewById(R.id.switch_clock_widget)
 
         // بند الأوامر 3: فاصل الإعلان 5–60 بخطوة 5 (12 قيمة) بدل أربع قيم
         // ثابتة — تُبنى القائمة برمجياً ويدور الحفظُ/القراءة على القيمة
@@ -99,9 +95,6 @@ internal class TimeAnnouncementController(
             runCatching { settings.isTimeAnnouncementEnabled() }
                 .getOrDefault(true)
         setupQuietScheduleRows(view)
-
-        switchClockWidget?.isChecked =
-            runCatching { settings.isClockWidgetEnabled() }.getOrDefault(true)
         setupExactAlarmPermissionRow(view)
 
         switchTimeAnnouncement?.setOnCheckedChangeListener { _, checked ->
@@ -133,25 +126,7 @@ internal class TimeAnnouncementController(
                 )
             )
         }
-        switchHijriDate?.isChecked =
-            runCatching { settings.isHijriDateEnabled() }
                 .getOrDefault(false)
-        switchHijriDate?.setOnCheckedChangeListener { _, checked ->
-            runCatching { settings.setHijriDateEnabled(checked) }
-            fragment.view?.announceCompat(
-                fragment.getString(
-                    if (checked) R.string.toggle_on else R.string.toggle_off
-                )
-            )
-        }
-        switchClockWidget?.setOnCheckedChangeListener { _, checked ->
-            runCatching { settings.setClockWidgetEnabled(checked) }
-            fragment.view?.announceCompat(
-                fragment.getString(
-                    if (checked) R.string.toggle_on else R.string.toggle_off
-                )
-            )
-        }
 
         // ─── رنة رأس الساعة ───
         switchTimeChime = view.findViewById(R.id.switch_time_chime)
@@ -617,8 +592,6 @@ internal class TimeAnnouncementController(
         llQuietSchedule = null
         spinnerTimeFormat = null
         switchTime24h = null
-        switchHijriDate = null
-        switchClockWidget = null
         switchTimeChime = null
         spinnerTimeChimeSound = null
         seekTimeChimeVolume = null
