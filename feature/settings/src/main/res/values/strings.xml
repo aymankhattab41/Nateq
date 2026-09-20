@@ -1,4 +1,4 @@
-<resources>
+﻿<resources>
 <string name="settings_title">إعدادات Lord TTS</string>
 <string name="all_announcements_enabled">كل الإعلانات مفعّلة</string>
 <string name="all_announcements_summary">إيقافه يُوقف الإعلانات التلقائية (الوقت، البطارية، الرسائل، الإشعارات، المتصل) بصمت</string>
@@ -56,6 +56,7 @@
 <string name="caller_announcement_template_placeholder" formatted="false">استخدم {name} لاسم المتصل — اتركه فارغاً للنطق الافتراضي</string>
 <string name="caller_announcement_voice_ar">صوت نطق الأسماء العربية</string>
 <string name="caller_announcement_voice_en">صوت نطق الأسماء الإنجليزية</string>
+    <string name="caller_announcement_oem_hint">التأخير أو الفشل في نطق اسم المتصل يرجع غالباً لإعدادات البطارية أو منع التشغيل التلقائي على هذا الجهاز، وليس خللاً في التطبيق.</string>
 <string name="caller_announcement_volume">مستوى صوت المتصل</string>
 <string name="caller_custom_names">أسماء متصلين مخصصة</string>
 <string name="caller_names_add">إضافة</string>
@@ -424,3 +425,4 @@
     <string name="diagnostics_copy">نسخ</string>
     <string name="diagnostics_copied">تم نسخ معلومات التشخيص</string>
 </resources>
+

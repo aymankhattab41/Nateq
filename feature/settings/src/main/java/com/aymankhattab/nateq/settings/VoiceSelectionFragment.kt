@@ -517,7 +517,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             this, settings, nateqVoices, { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
         callerSection = CallerAnnouncementController(
-            this, settings, nateqVoices, { accordion.updateSectionStatuses() }
+            this, settings, nateqVoices,
+            onStatusChanged = { accordion.updateSectionStatuses() },
+            onOpenOemGuidance = { accordion.navigateToSection(R.id.ll_oem_guidance_content) }
         ).apply { setup(view) }
         smsSection = SmsReadingController(
             this, settings, nateqVoices, { accordion.updateSectionStatuses() }
