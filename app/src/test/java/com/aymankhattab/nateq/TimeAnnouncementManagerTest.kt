@@ -339,6 +339,7 @@ class TimeAnnouncementManagerTest {
         val day = clock.now().get(Calendar.DAY_OF_WEEK)
         settings.setQuietStartForDay(day, 23)
         settings.setQuietEndForDay(day, 7)
+        settings.setDayQuietEnabled(day, true)
         assertTrue(isInQuietHours())
     }
 
@@ -365,6 +366,7 @@ class TimeAnnouncementManagerTest {
         val day = clock.now().get(Calendar.DAY_OF_WEEK)
         settings.setQuietStartForDay(day, 7)
         settings.setQuietEndForDay(day, 23)
+        settings.setDayQuietEnabled(day, true)
         assertTrue(isInQuietHours())
     }
 
@@ -434,6 +436,8 @@ class TimeAnnouncementManagerTest {
         settings.setQuietEndForDay(saturday, 15)
         settings.setQuietStartForDay(friday, 23)
         settings.setQuietEndForDay(friday, 7)
+        settings.setDayQuietEnabled(friday, true)
+        settings.setDayQuietEnabled(saturday, true)
         assertTrue(isInQuietHours())
     }
 
