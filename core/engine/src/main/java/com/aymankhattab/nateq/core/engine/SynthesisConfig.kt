@@ -23,4 +23,7 @@ interface SynthesisConfig {
      * بوضوح لدى المحركات العربية التي تفهم التشكيل (بند 1.7).
      */
     fun isTashkeelPreserved(): Boolean
+
+    /** لغة نطق الأرقام: "ar" أو "en". */
+    fun getNumberReadingLanguage(): String = "ar"
 }

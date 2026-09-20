@@ -158,6 +158,12 @@ interface ReadingPrefs {
     /** يعيّن وضع قراءة الأرقام. */
     fun setNumberReadingMode(mode: Int)
 
+    /** لغة نطق الأرقام ("ar" أو "en" فقط). */
+    fun getNumberReadingLanguage(): String
+
+    /** يعيّن لغة نطق الأرقام ("ar" أو "en" فقط). */
+    fun setNumberReadingLanguage(lang: String)
+
     /** مستوى نطق علامات الترقيم: 0 لا شيء، 1 البعض، 2 الكل. */
     fun getPunctuationLevel(): Int
 

@@ -23,6 +23,7 @@ plugins {
 
 allprojects {
     tasks.withType<Test>().configureEach {
+        maxHeapSize = "2048m"
         jvmArgs(
             "--add-opens=java.base/java.lang=ALL-UNNAMED",
             "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",

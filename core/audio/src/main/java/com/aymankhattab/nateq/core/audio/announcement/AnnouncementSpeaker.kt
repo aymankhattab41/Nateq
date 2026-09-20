@@ -210,6 +210,12 @@ class AnnouncementSpeaker(
      * التطبيق (منطق نقي بلا حالة). */
     private val languageSegmenter = LanguageSegmenter()
 
+    private val settings: SettingsRepository?
+        get() = runCatching {
+            (appContext as? AnnouncementAppContext)?.settingsRepository
+                ?: SettingsRepository.create(appContext)
+        }.getOrNull()
+
     // **توحيد مسار الإعلانات مع مسار القراءة (بند الأوامر 1):** تمرُّ نصوص
     // الإعلانات (الإشعارات/الرسائل/البطارية/المتصل) عبر TextProcessor نفسه
     // الذي يُعالج نص القارئ — أرقام/أوقات/عملات/روابط/رموز تُحول لصيغة
@@ -217,10 +223,6 @@ class AnnouncementSpeaker(
     // AnnouncementAppContext إن وُجدت (Hilt) وإلا تُبنى محلياً —
     // قراءة لحظية للتشكيل/التهجئة/الإيموجي.
     private val textProcessor: TextProcessor by lazy {
-        val settings = runCatching {
-            (appContext as? AnnouncementAppContext)?.settingsRepository
-                ?: SettingsRepository.create(appContext)
-        }.getOrNull()
         TextProcessor(appContext, settings)
     }
 
@@ -1054,8 +1056,19 @@ class AnnouncementSpeaker(
         basePitch: Float,
         baseVolume: Float
     ) {
+        val numberLanguage = runCatching {
+            settings?.getNumberReadingLanguage()
+        }.getOrNull() ?: LanguageCode.AR.tag
+        val secondaryLanguage = runCatching {
+            settings?.getSecondaryLanguage()
+        }.getOrNull() ?: LanguageCode.EN.tag
         val languageSegments = runCatching {
-            languageSegmenter.segment(text, LanguageCode.AR.tag)
+            languageSegmenter.segment(
+                text,
+                fallbackLanguage = baseLocale.language,
+                secondaryLanguage = secondaryLanguage,
+                numberLanguage = numberLanguage
+            )
         }.getOrDefault(emptyList())
         val effective = if (languageSegments.isEmpty()) {
             listOf(Segment(text, LanguageCode.AR.tag))

@@ -28,6 +28,7 @@ internal class TextReadingController(
     private var switchTashkeelPreserved: SwitchMaterial? = null
     private var switchFollowReaderRate: SwitchMaterial? = null
     private var btnSecondaryLanguage: MaterialButton? = null
+    private var btnNumberReadingLanguage: MaterialButton? = null
 
     fun setup(view: View) {
         spinnerPunctuationLevel =
@@ -138,6 +139,49 @@ internal class TextReadingController(
                 .setNegativeButton(R.string.cancel, null)
                 .show()
         }
+
+        // لغة نطق الأرقام: عربي / إنجليزي فقط
+        btnNumberReadingLanguage =
+            view.findViewById(R.id.btn_number_reading_language)
+        updateNumberReadingLanguageLabel()
+        btnNumberReadingLanguage?.setOnClickListener {
+            val current = runCatching { settings.getNumberReadingLanguage() }
+                .getOrDefault("ar")
+            val currentIndex = if (current == "en") 1 else 0
+            val options = arrayOf(
+                fragment.getString(R.string.number_reading_language_arabic),
+                fragment.getString(R.string.number_reading_language_english)
+            )
+            MaterialAlertDialogBuilder(fragment.requireContext())
+                .setTitle(R.string.number_reading_language_title)
+                .setSingleChoiceItems(options, currentIndex) { dialog, which ->
+                    val chosen = if (which == 1) "en" else "ar"
+                    runCatching { settings.setNumberReadingLanguage(chosen) }
+                    updateNumberReadingLanguageLabel()
+                    onStatusChanged()
+                    val announcement = fragment.getString(
+                        R.string.number_reading_language_btn,
+                        options[which]
+                    )
+                    fragment.view?.announceCompat(announcement)
+                    dialog.dismiss()
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
+    }
+
+    /** تحديث تسمية زر لغة نطق الأرقام. */
+    private fun updateNumberReadingLanguageLabel() {
+        val current = runCatching { settings.getNumberReadingLanguage() }
+            .getOrDefault("ar")
+        val label = if (current == "en") {
+            fragment.getString(R.string.number_reading_language_english)
+        } else {
+            fragment.getString(R.string.number_reading_language_arabic)
+        }
+        btnNumberReadingLanguage?.text =
+            fragment.getString(R.string.number_reading_language_btn, label)
     }
 
     /** يعرض اسم اللغة الحالية الفعلية على زر اللغة الاحتياطية (بند اللغة
@@ -171,5 +215,6 @@ internal class TextReadingController(
         switchTashkeelPreserved = null
         switchFollowReaderRate = null
         btnSecondaryLanguage = null
+        btnNumberReadingLanguage = null
     }
 }

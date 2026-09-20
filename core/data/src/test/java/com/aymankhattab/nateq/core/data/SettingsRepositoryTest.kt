@@ -81,6 +81,19 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun numberReadingLanguage_defaultAndRoundTrip() {
+        // لغة نطق الأرقام الافتراضية "ar"
+        assertEquals("ar", repo.getNumberReadingLanguage())
+        repo.setNumberReadingLanguage("en")
+        assertEquals("en", repo.getNumberReadingLanguage())
+        // فقط "ar" أو "en" — أي قيمة أخرى تُثبّت كـ "ar"
+        repo.setNumberReadingLanguage("fr")
+        assertEquals("ar", repo.getNumberReadingLanguage())
+        repo.setNumberReadingLanguage("auto")
+        assertEquals("ar", repo.getNumberReadingLanguage())
+    }
+
+    @Test
     fun instantSilence_defaultsOffAndRoundTrip() {
         // مفاتيح الإسكات الفوري (هز/تقارب) معطّلة افتراضياً
         assertFalse(repo.isShakeToStopEnabled())

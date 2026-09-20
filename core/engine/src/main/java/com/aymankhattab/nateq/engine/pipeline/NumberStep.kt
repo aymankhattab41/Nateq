@@ -5,7 +5,17 @@ import java.util.regex.Pattern
 
 /** معالجة الأرقام العادية: 1234 → «ألف ومائتان وأربعة وثلاثون» (عربية)
  *  أو «one thousand two hundred thirty four» (إنجليزية). */
-internal object NumberStep : TextProcessingStep {
+internal class NumberStep(
+    private val languageProvider: () -> String? = { null }
+) : TextProcessingStep {
+
+    companion object : TextProcessingStep {
+        private val defaultInstance = NumberStep()
+        override fun apply(input: String): String =
+            defaultInstance.apply(input)
+        override fun applyEnglish(input: String): String =
+            defaultInstance.applyEnglish(input)
+    }
 
     // أنماط الأرقام: «\b» المحيط يضمن التقاط المتوالية الرقمية كاملة (المبالغ
     // الطويلة بلا فواصل مثل 10000000 تُنطق «عشرة ملايين») ويمنع شطرها
@@ -22,13 +32,23 @@ internal object NumberStep : TextProcessingStep {
     // مُعرّفة مرة واحدة لا داخل حلقة المطابقات لكل رقم.
     private val CURRENCY_SYMBOLS = setOf('$', '€', '£', '¥', '₹', '₽', '₩', '﷼')
 
-    override fun apply(input: String): String = process(input, english = false)
+    override fun apply(input: String): String =
+        process(input, isEnglish(defaultForPipeline = false))
 
     /** النسخة الإنجليزية (اللغة الثانية): تُنطق الأعداد كلماتٍ إنجليزية
      *  («one hundred twenty three»)، والكسر العشري «point» رقماً رقماً
      *  («three point one four one») بدل «فاصلة». */
     override fun applyEnglish(input: String): String =
-        process(input, english = true)
+        process(input, isEnglish(defaultForPipeline = true))
+
+    private fun isEnglish(defaultForPipeline: Boolean): Boolean {
+        val configured = languageProvider()
+        return if (configured != null) {
+            configured == "en"
+        } else {
+            defaultForPipeline
+        }
+    }
 
     private fun process(input: String, english: Boolean): String {
         val matcher = PATTERN_NUMBER.matcher(input)

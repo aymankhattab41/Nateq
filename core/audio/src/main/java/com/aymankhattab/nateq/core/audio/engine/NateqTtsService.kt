@@ -602,8 +602,14 @@ override fun onDestroy() {
                 val secondaryLanguage = runCatching {
                     settings.getSecondaryLanguage()
                 }.getOrDefault(LanguageCode.EN.tag)
+                val numberLanguage = runCatching {
+                    settings.getNumberReadingLanguage()
+                }.getOrDefault(LanguageCode.AR.tag)
                 val segments = segmenter.segment(
-                    semanticText, languageTag, secondaryLanguage
+                    semanticText,
+                    fallbackLanguage = languageTag,
+                    secondaryLanguage = secondaryLanguage,
+                    numberLanguage = numberLanguage
                 )
                 // **سرعة القارئ (معامل مُوحّد للمسارين):** نسبةُ
                 // request.getSpeechRate() المئوية (100 = طبيعي) تتحول هنا مرة

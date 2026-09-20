@@ -818,4 +818,28 @@ class TextProcessorTest {
         )
     }
 
+    @Test
+    fun numberReadingLanguage_decisiveTests() {
+        val ctx: Context = ApplicationProvider.getApplicationContext()
+        val settings = SettingsRepository(ctx)
+
+        // الإعداد على en: "عندي 5 كتب"
+        // ينتج: "عندي five كتب"
+        settings.setNumberReadingLanguage("en")
+        val procEn = TextProcessor(ctx, settings)
+        assertEquals(
+            "عندي five كتب",
+            procEn.process("عندي 5 كتب", "ar")
+        )
+
+        // الإعداد على ar: "I have 5 books"
+        // ينتج: "I have خمسة books"
+        settings.setNumberReadingLanguage("ar")
+        val procAr = TextProcessor(ctx, settings)
+        assertEquals(
+            "I have خمسة books",
+            procAr.process("I have 5 books", "en")
+        )
+    }
+
 }

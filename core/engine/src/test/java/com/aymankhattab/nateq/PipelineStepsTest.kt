@@ -998,6 +998,20 @@ class PipelineStepsTest {
     }
 
     @Test
+    fun numberStep_respectsConfiguredLanguageRegardlessOfPipeline() {
+        val stepEn = NumberStep { "en" }
+        // جملة عربية بالكامل مع الإعداد على en:
+        // الرقم يُنطق إنجليزياً
+        assertEquals("عندي five كتب", stepEn.apply("عندي 5 كتب"))
+
+        val stepAr = NumberStep { "ar" }
+        // جملة إنجليزية بالكامل مع الإعداد على ar:
+        // الرقم يُنطق عربياً
+        val arOut = stepAr.applyEnglish("I have 5 books")
+        assertEquals("I have خمسة books", arOut)
+    }
+
+    @Test
     fun englishPunctuation_someLevel_namesSymbols() {
         val some = PunctuationStep { PunctuationLevels.SOME }
         fun full(text: String) = CleanupStep.apply(some.applyEnglish(text))

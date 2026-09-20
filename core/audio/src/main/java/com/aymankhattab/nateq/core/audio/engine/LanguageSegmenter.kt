@@ -26,17 +26,17 @@ data class Segment(
  * تُنسب (سقوطاً) للغة الطلب إن كانت لاتينية غير العربية، وإلا
  * [secondaryLanguage] التي يختارها المستخدم (بند اللغة الثانية) ثم
  * [EN_FALLBACK] عند غيابها — كشفٌ محافظ يتراجع لسقوطٍ معلوم عند اللبس.
- *
- * المقاطع العربية تُنطق بالعربية. المحايدات — مسافات/أرقام/ترقيم/رموز —
+ * المقاطع العربية تُنطق بالعربية. المحايدات — مسافات/ترقيم/رموز —
  * تلتحق بالمقطع المجاور ولا تُكسر عن سياقها (يلتحق المحايد بالمقطع المفتوح
  * السابق، والمحايد القيادي بالمقطع اللاحق)، فالتجميع عبر كل المقاطع يعيد
- * النص الأصلي حرفياً بلا فقدان. النصُّ بلا حروفٍ إطلاقاً (أرقام ورموز فقط)
- * يُنسب كلُّه للغة طلبه نفسها — فلا ينتقل نطق «١٢٣» أو «123» ضمن طلبٍ عربي
- * إلى صوتٍ إنجليزي كما كان.
+ * النص الأصلي حرفياً بلا فقدان. الأرقام تُنسب فوراً وحصرياً إلى لغة
+ * نطق الأرقام المحددة في الإعدادات (ar أو en) بلا استثناء لأي سياق.
  *
  * لا يعتمد المقسم على أي كائن Android — منطق نقي قابل للاختبار مباشرة.
  */
-class LanguageSegmenter {
+class LanguageSegmenter(
+    private val numberLanguageProvider: (() -> String)? = null
+) {
 
     companion object {
         /** لغة السقوط لسائر الكتابات ضمن الطلب العربي (الإنجليزية). */
@@ -99,7 +99,7 @@ class LanguageSegmenter {
             ).fold(0L) { mask, category -> mask or (1L shl category) }
     }
 
-    private enum class Kind { SCRIPT, NEUTRAL }
+    private enum class Kind { SCRIPT, NUMBER, NEUTRAL }
 
     private class Run(
         val kind: Kind,
@@ -112,38 +112,41 @@ class LanguageSegmenter {
      *  «وغير المعروفة/الفارغة» سقوطُها لحروف الكتابات سائرٍ هي
      *  [EN_FALLBACK]؛ أي طلبٍ آخر (fr/de/…) تُنسب له الحروف غير
      *  العربية مباشرة ليُنطق النص الأجنبي
-     *  بصوت لغته. والنصُّ المَحايد وحده (أرقام/رموز بلا حروف) يُنسب كلُّه للغة
-     *  السقوط نفسها — فلا تُنطق «١٢٣» أو «123» ضمن طلبٍ عربي بصوتٍ إنجليزي.
+     *  بصوت لغته. والنصُّ المَحايد وحده (رموز بلا حروف وأرقام) يُنسب كلُّه للغة
+     *  السقوط نفسها.
      * @param secondaryLanguage لغة النطق الاحتياطية للمقطع اللاتيني القصير
      *  غير المتحسَّم ضمن الطلب العربي (بند اللغة الثانية): كلمة «Bonjour»
      *  الوحيدة لا يحسمها [LatinLanguageDetector] فتُنطق بهذه اللغة (إن
      *  سُلّمت صحيحة) عوض [EN_FALLBACK]؛ القيمة الفارغة/غير المعروفة تعود
      *  لـ [EN_FALLBACK] سقوطاً أخيراً. لا أثر لها على الطلب غير العربي
      *  (تُنسب الحروف للغة الطلب نفسها حتماً).
+     * @param numberLanguage لغة نطق الأرقام الحصرية المستقلة عن السياق.
      * @return مقاطع النص المتجاورة بلغاتها؛ النص الخالي يُرجع مقطعاً واحداً
      *  بلغة السقوط حتى لا يُعالَج النص الفارغ بشكلٍ خاص في المسارات العليا.
      */
     fun segment(
         text: String,
         fallbackLanguage: String = LanguageCode.AR.tag,
-        secondaryLanguage: String = EN_FALLBACK
+        secondaryLanguage: String = EN_FALLBACK,
+        numberLanguage: String = numberLanguageProvider?.invoke()
+            ?: LanguageCode.AR.tag
     ): List<Segment> {
         return merge(
             text,
             scriptFallback(fallbackLanguage, secondaryLanguage),
-            neutralFallback(fallbackLanguage)
+            neutralFallback(fallbackLanguage),
+            numberLanguage
         )
     }
 
-    /** يبني المقاطع من الجولات عبر «مقطعٍ مفتوح» يمتد على إحداثيات النص الأصلي:
- *  المحايد بعدُ يلتحق بالمقطع المفتوح (رأسيٌّ يدخل في فتحته الأولى)، والمحايد
- *  بين ركضتين من لغةٍ واحدة يضمّهما معاً دون تفتيت، والمحايد الختامي يشمله
- *  نطاقُ المقطع الأخير حتى نهاية النص. النص بلا جولاتِ حروفٍ إطلاقاً (أو فارغ)
- *  يُرجع مقطعاً واحداً بلغة [neutralFallback] كي تبقى الأرقام بلسان طلبها. */
+    /** يبني المقاطع من الجولات عبر «مقطعٍ مفتوح» يمتد على إحداثيات النص:
+     *  الأرقام تُنسب فوراً لـ [numberLanguage]، والمحايد يلتحق بالمقطع المفتوح،
+     *  والمقاطع المتجاورة بنفس اللغة تُدمج تلقائياً دون تفتيت. */
     private fun merge(
         text: String,
         scriptFallback: String,
-        neutralFallback: String
+        neutralFallback: String,
+        numberLanguage: String
     ): List<Segment> {
         val runs = buildRuns(text)
         if (runs.isEmpty()) return listOf(Segment(text, neutralFallback))
@@ -160,8 +163,12 @@ class LanguageSegmenter {
                     }
                     // وإلا فهو بيني\ختامي: نطاق المقطع المفتوح يشمل إحداثياته.
                 }
-                Kind.SCRIPT -> {
-                    val language = runLanguage(run.script, scriptFallback)
+                Kind.SCRIPT, Kind.NUMBER -> {
+                    val language = if (run.kind == Kind.NUMBER) {
+                        numberLanguage
+                    } else {
+                        runLanguage(run.script, scriptFallback)
+                    }
                     if (openLanguage == null) {
                         openStart =
                             if (leadingStart != -1) leadingStart else run.start
@@ -175,7 +182,8 @@ class LanguageSegmenter {
                                 cutPoint -= 1
                             }
                         }
-                        segments.add(
+                        addSegment(
+                            segments,
                             buildSegment(
                                 text, openStart, cutPoint,
                                 openLanguage, scriptFallback
@@ -190,7 +198,8 @@ class LanguageSegmenter {
             }
         }
         if (openLanguage != null) {
-            segments.add(
+            addSegment(
+                segments,
                 buildSegment(
                     text, openStart, text.length,
                     openLanguage, scriptFallback
@@ -199,6 +208,23 @@ class LanguageSegmenter {
         }
         if (segments.isEmpty()) return listOf(Segment(text, neutralFallback))
         return segments
+    }
+
+    /** يضيف مقطعاً جديداً ويدمجه مع السابق إن تطابقت لغتهما المحسومة. */
+    private fun addSegment(
+        segments: ArrayList<Segment>,
+        newSegment: Segment
+    ) {
+        if (newSegment.text.isEmpty()) return
+        val last = segments.lastOrNull()
+        if (last != null && last.languageTag == newSegment.languageTag) {
+            segments[segments.size - 1] = Segment(
+                last.text + newSegment.text,
+                last.languageTag
+            )
+        } else {
+            segments.add(newSegment)
+        }
     }
 
     /** يبني مقطعاً نهائياً: المقطعُ اللاتيني المتراكم يُكشف لسانه عبر
@@ -213,9 +239,10 @@ class LanguageSegmenter {
         scriptFallback: String
     ): Segment {
         val tag = if (language == LATIN_PLACEHOLDER) {
-            // استثناء المعرفات والهاشتاج (أو إذا كان المقطع يبدأ بها)
-            val isHashtagOrHandle = (start > 0 && (text[start - 1] == '@' || text[start - 1] == '#')) || 
-                                    (end > start && (text[start] == '@' || text[start] == '#'))
+            val isHashtagOrHandle = (start > 0 &&
+                (text[start - 1] == '@' || text[start - 1] == '#')) ||
+                (end > start &&
+                (text[start] == '@' || text[start] == '#'))
             if (isHashtagOrHandle) {
                 scriptFallback
             } else {
@@ -257,9 +284,11 @@ class LanguageSegmenter {
      *  فلا تنتمي لكِتَابٍ ما ننسبه لسكربتٍ آخر، بل تُعدُّ محايدةً (مسافة رفيعة/
      *  فاصلة اتجاه / علامات رقم Bidi) يساندها المقطع المجاور. */
     private fun kindOf(codePoint: Int): Pair<Kind, Character.UnicodeScript?> {
-        // المحايدات أولاً: المسافات والأرقام (بكل أنظمة العدّ) والفواصل لا
-        // تنتمي لسكريبتٍ معين أياً كانت خانة المقاطع المجاورة.
-        if (Character.isWhitespace(codePoint) || Character.isDigit(codePoint)) {
+        // الأرقام أولاً (بكل أنظمة العدّ): تُنسب فوراً وحصرياً للغة الأرقام.
+        if (Character.isDigit(codePoint)) {
+            return Kind.NUMBER to null
+        }
+        if (Character.isWhitespace(codePoint)) {
             return Kind.NEUTRAL to null
         }
         if ((NEUTRAL_CATEGORY_MASK and (1L shl Character.getType(codePoint)))

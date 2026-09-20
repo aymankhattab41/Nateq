@@ -419,6 +419,16 @@ class SettingsRepository(private val context: Context) :
     override fun setNumberReadingMode(mode: Int) =
         prefs.edit().putInt("number_reading_mode", mode.coerceIn(1, 8)).apply()
 
+    /** لغة نطق الأرقام: "ar" أو "en" فقط (لا تلقائي). */
+    override fun getNumberReadingLanguage(): String {
+        val lang = prefs.getString("number_reading_language", "ar") ?: "ar"
+        return if (lang == "en") "en" else "ar"
+    }
+    override fun setNumberReadingLanguage(lang: String) {
+        val safe = if (lang == "en") "en" else "ar"
+        prefs.edit().putString("number_reading_language", safe).apply()
+    }
+
     /** الصوت المفضّل لكل لغة (languageTag -> voiceId) */
     override fun getPreferredVoiceId(languageTag: String): String? =
         normalizeVoiceId(
@@ -1576,6 +1586,7 @@ class SettingsRepository(private val context: Context) :
         "secondary_language" -> value.takeIf {
             it in VALID_SECONDARY_LANGUAGES
         } ?: LanguageCode.EN.tag
+        "number_reading_language" -> if (value == "en") "en" else "ar"
         else -> value
     }
 

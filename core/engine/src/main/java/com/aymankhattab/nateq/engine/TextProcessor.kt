@@ -95,6 +95,11 @@ class TextProcessor(
         injectedSettings?.getPunctuationLevel() ?: PunctuationLevels.SOME
     }
 
+    /** خطوة نطق الأرقام — تتبع إعداد لغة نطق الأرقام لحظياً. */
+    private val numberStep = NumberStep {
+        injectedSettings?.getNumberReadingLanguage()
+    }
+
     // خطوات التمهيد: تُنفَّذ قبل بوابة المسار السريع
     // (تطبيع/تشكيل/إيموجي/قاموس).
     // «إزالة الإيموجي» شرطية: تعمل فقط عند تعطيل نطقها (إلا تُعيد النص كما هو).
@@ -136,7 +141,7 @@ class TextProcessor(
         PhoneNumberStep,
         SymbolStep,
         punctuationStep,
-        NumberStep
+        numberStep
     )
 
     // المسار الإنجليزي (اللغة الثانية): نفس بنية الخطوات بمفردات إنجليزية.
@@ -163,7 +168,7 @@ class TextProcessor(
             PhoneNumberStep,
             SymbolStep,
             punctuationStep,
-            NumberStep
+            numberStep
         )
 
     /**

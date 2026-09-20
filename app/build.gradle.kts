@@ -71,6 +71,12 @@ android {
     buildFeatures {
         viewBinding = true
     }
+
+    testOptions {
+        unitTests.all {
+            it.maxHeapSize = "2048m"
+        }
+    }
 }
 
 // إعادة تسمية مخرجات APK بمسمى ثابت nateq.apk بدل app-release.apk

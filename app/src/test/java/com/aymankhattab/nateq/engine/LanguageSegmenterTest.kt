@@ -33,6 +33,22 @@ class LanguageSegmenterTest {
         )
     }
 
+    private fun textsAndTagsWithNumber(
+        text: String,
+        request: String,
+        numberLang: String
+    ): Pair<List<String>, List<String>> {
+        val segments = segmenter.segment(
+            text = text,
+            fallbackLanguage = request,
+            numberLanguage = numberLang
+        )
+        return Pair(
+            segments.map { it.text },
+            segments.map { it.languageTag }
+        )
+    }
+
     @Test
     fun pureArabic_singleSegment() {
         val (texts, tags) = textsAndTags("مرحبا بالعالم", "ar")
@@ -111,24 +127,57 @@ class LanguageSegmenterTest {
     }
 
     @Test
-    fun neutralOnlyText_withNonArabicRequest_usesRequestLanguage() {
-        val (texts, tags) = textsAndTags("123 456 !", "fr")
-        assertEquals(listOf("123 456 !"), texts)
-        assertEquals(listOf("fr"), tags)
+    fun digitsOnly_attributedExclusivelyToNumberReadingLanguage() {
+        // الأرقام تُنسب فوراً وحصرياً إلى لغة نطق الأرقام
+        // (لا إلى لغة الطلب).
+        val (textsAr, tagsAr) = textsAndTags("123 456 !", "fr")
+        assertEquals(listOf("123 456 !"), textsAr)
+        assertEquals(listOf("ar"), tagsAr)
+
+        val (textsEn, tagsEn) = textsAndTagsWithNumber(
+            "123 456 !", "fr", "en"
+        )
+        assertEquals(listOf("123 456 !"), textsEn)
+        assertEquals(listOf("en"), tagsEn)
     }
 
     @Test
-    fun neutralOnlyText_withBlankRequest_usesEnglishFallback() {
-        val (texts, tags) = textsAndTags("123", "")
-        assertEquals(listOf("123"), texts)
-        assertEquals(listOf("en"), tags)
+    fun numbersDoNotAttachToStrongestNeighbor() {
+        // الرقم لا يلتحق بالجار الأقوى اللاتيني:
+        // يُنسب للغة نطق الأرقام حصراً.
+        val (textsAr, tagsAr) = textsAndTags("Status 123", "ar")
+        assertEquals(listOf("Status ", "123"), textsAr)
+        assertEquals(listOf("en", "ar"), tagsAr)
+
+        val (textsEn, tagsEn) = textsAndTagsWithNumber(
+            "Status 123", "ar", "en"
+        )
+        assertEquals(listOf("Status 123"), textsEn)
+        assertEquals(listOf("en"), tagsEn)
     }
 
     @Test
-    fun arabicRequest_digitsOnlyArabic_butLatinWordsStillEnglish() {
-        val (texts, tags) = textsAndTags("Status 123", "ar")
-        assertEquals(listOf("Status 123"), texts)
-        assertEquals(listOf("en"), tags)
+    fun numberReadingLanguage_arabicInEnglish_splitsNumber() {
+        // "I have 5 books" مع لغة الأرقام ar:
+        // يُفصل الرقم إلى مقطع عربي.
+        val (texts, tags) = textsAndTagsWithNumber(
+            "I have 5 books", "en", "ar"
+        )
+        assertEquals(listOf("I have ", "5 ", "books"), texts)
+        assertEquals(listOf("en", "ar", "en"), tags)
+        assertEquals("I have 5 books", texts.joinToString(""))
+    }
+
+    @Test
+    fun numberReadingLanguage_englishInArabic_splitsNumber() {
+        // "عندي 5 كتب" مع لغة الأرقام en:
+        // يُفصل الرقم إلى مقطع إنجليزي.
+        val (texts, tags) = textsAndTagsWithNumber(
+            "عندي 5 كتب", "ar", "en"
+        )
+        assertEquals(listOf("عندي ", "5 ", "كتب"), texts)
+        assertEquals(listOf("ar", "en", "ar"), tags)
+        assertEquals("عندي 5 كتب", texts.joinToString(""))
     }
 
     @Test
@@ -312,8 +361,8 @@ class LanguageSegmenterTest {
     fun latinSuffix_inFrenchRequest_usesFrenchFallback() {
         // «off» لاتيني ضمن طلب فرنسي يُنسب للغة الطلب (سقوط اللاتينية)
         // لا الإنجليزية — سلوك السقوط المحافظ للاتينية.
-        val (texts, tags) = textsAndTags("réduction 25% off", "fr")
-        assertEquals(listOf("réduction 25% off"), texts)
+        val (texts, tags) = textsAndTags("réduction spéciale off", "fr")
+        assertEquals(listOf("réduction spéciale off"), texts)
         assertEquals(listOf("fr"), tags)
     }
 
