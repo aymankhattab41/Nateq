@@ -21,7 +21,7 @@ import org.robolectric.annotation.Config
  * (5000)، سلامة التزامن عبر kotlinx-coroutines، وحالات حدود جديدة.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [24, 30, 35])
 class PronunciationDictionaryRoundTripTest {
 
     private lateinit var context: Context

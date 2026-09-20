@@ -21,7 +21,7 @@ import java.io.File
  * سليمة في الحالتين، وتُجرَّب نضارة القرص المشفّر بشرط توفر التخزين فعلاً.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [24, 30, 35])
 class PronunciationDictionaryTest {
 
     private lateinit var context: Context

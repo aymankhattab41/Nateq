@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq
+﻿package com.aymankhattab.nateq
 
 import android.content.Intent
 import android.speech.tts.TextToSpeech
@@ -20,7 +20,7 @@ import org.robolectric.annotation.Config
  * الأصوات في قوائم النظام ولا يضيع voiceId المختار (آلية سامسونج).
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [24, 30, 35])
 class CheckTtsDataActivityTest {
 
     private fun xmlDeclaredNames(): List<String> {

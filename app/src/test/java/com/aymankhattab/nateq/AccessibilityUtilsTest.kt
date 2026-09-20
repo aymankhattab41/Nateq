@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq
+﻿package com.aymankhattab.nateq
 
 import android.content.Context
 import android.provider.Settings
@@ -16,7 +16,7 @@ import org.robolectric.annotation.Config
  * تعايش النطق المستقل مع القراءة (بند TalkBack).
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [24, 30, 35])
 class AccessibilityUtilsTest {
 
     @Test

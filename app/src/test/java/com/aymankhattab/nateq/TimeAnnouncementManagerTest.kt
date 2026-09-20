@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq
+﻿package com.aymankhattab.nateq
 
 import android.app.AlarmManager
 import android.content.Context
@@ -37,7 +37,7 @@ import org.robolectric.shadows.ShadowAlarmManager.ScheduledAlarm
  * نتجنّب دوال speak*() التي تولّد TTS فعلياً.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [24, 30, 35])
 class TimeAnnouncementManagerTest {
 
     private lateinit var context: Context

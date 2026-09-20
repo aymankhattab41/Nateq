@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq
+﻿package com.aymankhattab.nateq
 
 import android.content.Context
 import android.net.Uri
@@ -41,7 +41,7 @@ import org.robolectric.annotation.Config
  */
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [24, 30, 35])
 class SettingsViewModelAsyncTest {
 
     private lateinit var context: Context

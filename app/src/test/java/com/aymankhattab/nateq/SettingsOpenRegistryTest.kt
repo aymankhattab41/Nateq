@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq
+﻿package com.aymankhattab.nateq
 
 import android.content.Context
 import android.content.Intent
@@ -18,7 +18,7 @@ import org.robolectric.annotation.Config
  * تُسجَّل الوجهة، والعودة للوجهة المسجَّلة حين توجد — بلا تسمية صف نصية.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [24, 30, 35])
 class SettingsOpenRegistryTest {
 
     private val context: Context =
