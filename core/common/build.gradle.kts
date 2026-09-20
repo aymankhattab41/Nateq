@@ -1,4 +1,4 @@
-// البند 4 — :core:common: أدوات وحدود واجهات مشتركة بلا اعتماد على أي وحدة
+﻿// البند 4 — :core:common: أدوات وحدود واجهات مشتركة بلا اعتماد على أي وحدة
 // أخرى (نواة ابتدائية: المفوّضات، JSON، كود اللغة، مقطع النص، مطلقات الإعلانات).
 plugins {
     alias(libs.plugins.android.library)
@@ -11,12 +11,12 @@ android {
         minSdk = 24
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
     // AGP 9 دمج Kotlin: جذر الأداة (JDK 17) وأسماء الأهداف معاً.
     kotlin {
-        jvmToolchain(17)
+        jvmToolchain(21)
     }
 }
 

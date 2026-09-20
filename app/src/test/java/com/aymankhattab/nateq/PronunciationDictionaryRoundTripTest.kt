@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq
+﻿package com.aymankhattab.nateq
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider

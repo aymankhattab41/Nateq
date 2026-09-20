@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq.announcement
+﻿package com.aymankhattab.nateq.announcement
 
 import android.content.Context
 import android.media.AudioManager

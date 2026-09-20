@@ -1,4 +1,4 @@
-package com.aymankhattab.nateq
+﻿package com.aymankhattab.nateq
 
 import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider

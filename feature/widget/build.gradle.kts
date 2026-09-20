@@ -1,4 +1,4 @@
-// البند 4 — :feature:widget: أداة الساعة الناطقة على الشاشة الرئيسية.
+﻿// البند 4 — :feature:widget: أداة الساعة الناطقة على الشاشة الرئيسية.
 // AppWidgetProvider يعلن الوقت عبر :core:audio ويدير إعداداته عبر :core:data
 // بلا اعتماد على :app (يستمد SettingsRepository من AnnouncementAppContext).
 plugins {
@@ -12,11 +12,11 @@ android {
         minSdk = 24
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
     kotlin {
-        jvmToolchain(17)
+        jvmToolchain(21)
     }
 }
 

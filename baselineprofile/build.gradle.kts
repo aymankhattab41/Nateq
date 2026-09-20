@@ -1,4 +1,4 @@
-// وحدة Baseline Profile (Macrobenchmark) — بند د.6.1
+﻿// وحدة Baseline Profile (Macrobenchmark) — بند د.6.1
 // تُنشئ ملف baseline-prof.txt أثناء CI أو بالأمر generateBaselineProfile
 // لتستفيد ART من الترجمة قبل التشغيل وتسرّع الإقلاع الأول + نطق TTS.
 // لا تُشغَّل مع الاختبارات العادية (:app:testDebugUnitTest) ولا تنتج APK.
@@ -11,12 +11,12 @@ android {
     compileSdk = 37
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
 
     kotlin {
-        jvmToolchain(17)
+        jvmToolchain(21)
     }
 
     defaultConfig {

@@ -1,4 +1,4 @@
-// البند 4 — :feature:settings: شاشات الإعدادات والـ ViewModels. يقرأ البيانات
+﻿// البند 4 — :feature:settings: شاشات الإعدادات والـ ViewModels. يقرأ البيانات
 // عبر :core:data ويدير النطق عبر :core:audio بلا اعتماد على :app.
 plugins {
     alias(libs.plugins.android.library)
@@ -13,11 +13,11 @@ android {
         minSdk = 24
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
     kotlin {
-        jvmToolchain(17)
+        jvmToolchain(21)
     }
     buildFeatures {
         viewBinding = true

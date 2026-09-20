@@ -1,4 +1,4 @@
-// ملف Gradle الجذري - لا تضع هنا أي dependencies خاصة بالتطبيق
+﻿// ملف Gradle الجذري - لا تضع هنا أي dependencies خاصة بالتطبيق
 plugins {
     // أندرويد 17 (API 37) يتطلب AGP 9.1+؛ وAGP 9 يدمج Kotlin
     // (Built-in Kotlin) فيستغني عن إضافة org.jetbrains.kotlin.android
@@ -20,3 +20,25 @@ plugins {
     alias(libs.plugins.android.test) apply false
     alias(libs.plugins.baselineprofile) apply false
 }
+
+allprojects {
+    tasks.withType<Test>().configureEach {
+        jvmArgs(
+            "--add-opens=java.base/java.lang=ALL-UNNAMED",
+            "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
+            "--add-opens=java.base/java.lang.invoke=ALL-UNNAMED",
+            "--add-opens=java.base/java.util=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "--add-opens=java.base/java.net=ALL-UNNAMED",
+            "--add-opens=java.base/java.nio=ALL-UNNAMED",
+            "--add-opens=java.base/java.text=ALL-UNNAMED",
+            "--add-opens=java.base/java.util.concurrent=ALL-UNNAMED",
+            "--add-opens=java.base/sun.nio.fs=ALL-UNNAMED",
+            "--add-opens=java.desktop/java.awt.font=ALL-UNNAMED",
+            "--add-opens=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+            "--add-opens=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED"
+        )
+    }
+}
+
+
