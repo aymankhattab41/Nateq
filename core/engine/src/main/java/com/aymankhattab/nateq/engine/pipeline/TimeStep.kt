@@ -9,7 +9,7 @@ internal object TimeStep : TextProcessingStep {
     private val PATTERN_TIME = Pattern.compile(
         """(\d{1,2}):(\d{2})(?::(\d{2}))?\s*""" +
             """([AaPp]\.?[Mm]\.?|صباح(?:اً|ا)?|""" +
-            """مساء(?:ً|ا)?|ظهر(?:اً|ا)?|[صم](?!\p{L}))?"""
+            """مساء(?:ً|اً|ا)?|ظهر(?:اً|ا)?|[صم](?!\p{L}))?"""
     )
 
     override fun apply(input: String): String {
@@ -65,7 +65,7 @@ internal object TimeStep : TextProcessingStep {
         val period = when {
             isPm == false -> "صباحاً"
             isPm == true -> {
-                if (suffix?.contains("ظهر") == true) "ظهراً" else "مساءً"
+                if (suffix?.contains("ظهر") == true) "ظهراً" else "مساءاً"
             }
             else -> {
                 val roundedHour = if (minute >= 45) rawHour + 1 else rawHour
@@ -73,13 +73,13 @@ internal object TimeStep : TextProcessingStep {
                     roundedHour == 0 -> "بعد منتصف الليل"
                     roundedHour == 12 -> "ظهراً"
                     roundedHour <= 11 -> "صباحاً"
-                    else -> "مساءً"
+                    else -> "مساءاً"
                 }
             }
         }
 
         // الساعة تُنطق بالصيغة الترتيبية المؤنثة المعرّفة بأل:
-        // «الثانية والنصف مساءً» لا «اثنان والنصف مساءً».
+        // «الثانية والنصف مساءاً» لا «اثنان والنصف مساءاً».
         val hourText = NumberSpeech.toOrdinalHourWord(hour12)
 
         fun minutesPart(count: Int): String = when (count) {

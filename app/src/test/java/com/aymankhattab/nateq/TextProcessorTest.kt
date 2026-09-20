@@ -101,7 +101,7 @@ class TextProcessorTest {
         assertEquals("الاجتماع العاشرة والنصف صباحاً", out)
         
         val outPm = processor.processSemantics("الاجتماع 4:50 PM", "ar")
-        assertEquals("الاجتماع الخامسة إلا عشر دقائق مساءً", outPm)
+        assertEquals("الاجتماع الخامسة إلا عشر دقائق مساءاً", outPm)
     }
 
     @Test
@@ -148,13 +148,13 @@ class TextProcessorTest {
     @Test
     fun time_arabicNatural() {
         // الساعة تُنطق بالصيغة الترتيبية المؤنثة المعرّفة بأل:
-        // 14:30 → «الثانية والنصف مساءً» لا «اثنان والنصف مساءً»
-        assertEquals("الثانية والنصف مساءً", processor.process("14:30", "ar"))
+        // 14:30 → «الثانية والنصف مساءاً» لا «اثنان والنصف مساءاً»
+        assertEquals("الثانية والنصف مساءاً", processor.process("14:30", "ar"))
         // 01:00 → «الواحدة صباحاً» لا «واحد صباحاً»
         assertEquals("الواحدة صباحاً", processor.process("01:00", "ar"))
         // 02:15 → «الثانية والربع صباحاً»
         assertEquals("الثانية والربع صباحاً", processor.process("02:15", "ar"))
-        // 12:00 → «الثانية عشرة ظهراً» لا «مساءً»
+        // 12:00 → «الثانية عشرة ظهراً» لا «مساءاً»
         assertEquals("الثانية عشرة ظهراً", processor.process("12:00", "ar"))
         // 10:45 → «الحادية عشرة إلا ربع صباحاً»
         assertEquals(

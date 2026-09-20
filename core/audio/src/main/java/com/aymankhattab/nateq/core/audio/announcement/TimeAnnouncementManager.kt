@@ -605,7 +605,7 @@ class TimeAnnouncementManager(
     private fun periodFor(hour24: Int): String = when (hour24) {
         12 -> "ظهراً"
         in 0..11 -> "صباحاً"
-        else -> "مساءً"
+        else -> "مساءاً"
     }
 
     /** تنسيق الوقت بالعربية الطبيعية: "الساعة الآن العاشرة والربع" */
