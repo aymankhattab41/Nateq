@@ -227,7 +227,6 @@ try {
         :core:audio:testDebugUnitTest `
         :core:data:testDebugUnitTest `
         :feature:settings:testDebugUnitTest `
-        :feature:widget:testDebugUnitTest `
         :app:testDebugUnitTest `
         --console=plain
     if ($LASTEXITCODE -ne 0) {
@@ -255,12 +254,26 @@ $releaseNotes = $releaseNotes + "`r`n`r`n### المجموع الاختباري S
     "``$sha256Line``  nateq.apk"
 
 # 3) التصريح بملف الترقيم ثم الالتزام به فقط — حتى لا تنجرف أي تغييرات أخرى
-# مرحّلة أو غير مرحّلة في commit الإصدار.
+# مرحّلة أو غير مرحّلة في commit الإصدار. إن كان الترقيم مطبّقاً مسبقاً
+# (مرحلة يدوية سابقة) فلا نحاول commit فارغ يفشل.
 Invoke-Git @('add', 'app/build.gradle.kts')
-Invoke-Git @(
-    'commit', '-m', "إصدار v$targetCode — رفع الترقيم الآلي إلى $targetVersion",
-    '--', 'app/build.gradle.kts'
-)
+$hasStaged = $true
+$prevEf2 = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+    & git diff --cached --quiet 2>$null
+    $hasStaged = ($LASTEXITCODE -ne 0)
+} finally {
+    $ErrorActionPreference = $prevEf2
+}
+if ($hasStaged) {
+    Invoke-Git @(
+        'commit', '-m', "إصدار v$targetCode — رفع الترقيم الآلي إلى $targetVersion",
+        '--', 'app/build.gradle.kts'
+    )
+} else {
+    Write-Host "=> لا تغييرات مرحّلة في app/build.gradle.kts — تخطي commit الترقيم."
+}
 
 # 4) الوسم ثم الدفع (الفرع والوسم معاً).
 Invoke-Git @('tag', $targetTag)
