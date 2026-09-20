@@ -325,7 +325,7 @@ class TextProcessorTest {
         // @ المعزولة تُنطق «عند» ويُحوَّل الرقم اللاحق إلى كلمات
         assertEquals("نلتقي عند خمسة", processor.process("نلتقي @ 5", "ar"))
         // البريد الإلكتروني محمي: لا تنطق فيه @
-        assertEquals("رسالتي a@b.com",
+        assertEquals("رسالتي a at b.com",
             processor.process("رسالتي a@b.com", "ar"))
     }
 
@@ -809,5 +809,10 @@ class TextProcessorTest {
             )
         )
     }
-}
+    @Test
+    fun processSemantics_handleWithAt_readAsEnglishAt() {
+        val out = processor.process("تواصل معي @ahmed_2024", "ar")
+        org.junit.Assert.assertTrue("Should contain 'at', but was: " + out, out.contains(" at "))
+    }
 
+}

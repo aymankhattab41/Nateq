@@ -168,13 +168,20 @@ class LanguageSegmenter {
                         leadingStart = -1
                         openLanguage = language
                     } else if (openLanguage != language) {
+                        var cutPoint = run.start
+                        if (cutPoint > 0 && cutPoint > openStart) {
+                            val prevChar = text[cutPoint - 1]
+                            if (prevChar == '@' || prevChar == '#') {
+                                cutPoint -= 1
+                            }
+                        }
                         segments.add(
                             buildSegment(
-                                text, openStart, run.start,
+                                text, openStart, cutPoint,
                                 openLanguage, scriptFallback
                             )
                         )
-                        openStart = run.start
+                        openStart = cutPoint
                         openLanguage = language
                     }
                     // نفس اللغة: يمدّ النهاية إلى نهاية الجولة
@@ -206,10 +213,17 @@ class LanguageSegmenter {
         scriptFallback: String
     ): Segment {
         val tag = if (language == LATIN_PLACEHOLDER) {
-            val candidate = LatinLanguageDetector.detect(
-                text.substring(start, end)
-            )
-            candidate ?: scriptFallback
+            // استثناء المعرفات والهاشتاج (أو إذا كان المقطع يبدأ بها)
+            val isHashtagOrHandle = (start > 0 && (text[start - 1] == '@' || text[start - 1] == '#')) || 
+                                    (end > start && (text[start] == '@' || text[start] == '#'))
+            if (isHashtagOrHandle) {
+                scriptFallback
+            } else {
+                val candidate = LatinLanguageDetector.detect(
+                    text.substring(start, end)
+                )
+                candidate ?: scriptFallback
+            }
         } else {
             language
         }
