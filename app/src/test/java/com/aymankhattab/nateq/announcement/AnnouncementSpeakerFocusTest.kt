@@ -176,4 +176,59 @@ class AnnouncementSpeakerFocusTest {
         )
         s.shutdown()
     }
+    // ── اختبارات إعادة الضبط غير المشروطة ──────────────────────────────
+
+    /**
+     * [resetAudioFocusUnconditionally] يستدعي abandon حتى عندما
+     * hasAudioFocus=false — أي بدون أي شرط داخلي.
+     */
+    @Test
+    @Config(sdk = [24])
+    fun resetUnconditional_whenFocusIsFalse_preO_stillCallsAbandon() {
+        val s = speaker()
+        // تأكد أن hasAudioFocus = false (الحالة الافتراضية بلا طلب سابق)
+        assertFalse(
+            "hasAudioFocus افتراضياً false",
+            boolField(s, "hasAudioFocus")
+        )
+        // نستدعي إعادة الضبط اليدوية — يجب أن يُستدعى abandonAudioFocus
+        // بصرف النظر عن hasAudioFocus الداخلية.
+        s.resetAudioFocusUnconditionally()
+        assertNotNull(
+            "abandon استُدعي رغم hasAudioFocus=false",
+            shadowAudio.getLastAbandonedAudioFocusListener()
+        )
+        s.shutdown()
+    }
+
+    /**
+     * [resetAudioFocusUnconditionally] يستدعي abandon أيضاً حين
+     * hasAudioFocus=true — يؤكد اللاشرطية في الاتجاهين.
+     */
+    @Test
+    fun resetUnconditional_whenFocusIsGranted_stillCallsAbandon() {
+        val s = speaker()
+        // اطلب التركيز أولاً ليُمنح (GRANTED) فيُعيَّن hasAudioFocus=true.
+        shadowAudio.setNextFocusRequestResponse(
+            AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        )
+        s.speak("طلب التركيز أولاً", arLocale, 1f, 1f, 1f)
+        assertTrue(
+            "hasAudioFocus=true بعد المنح",
+            boolField(s, "hasAudioFocus")
+        )
+        val requestBefore = shadowAudio.getLastAudioFocusRequest()
+        assertNotNull("طلب تركيز مسجّل", requestBefore)
+        // إعادة الضبط اليدوية — abandon مباشرة.
+        s.resetAudioFocusUnconditionally()
+        assertFalse(
+            "hasAudioFocus=false بعد إعادة الضبط",
+            boolField(s, "hasAudioFocus")
+        )
+        assertTrue(
+            "pendingFocusAction أُلغي",
+            pendingActionIsNull(s)
+        )
+        s.shutdown()
+    }
 }

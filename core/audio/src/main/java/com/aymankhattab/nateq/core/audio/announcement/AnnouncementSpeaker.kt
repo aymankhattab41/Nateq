@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq.core.audio.announcement
+package com.aymankhattab.nateq.core.audio.announcement
 
 import android.content.Context
 import android.database.ContentObserver
@@ -1317,6 +1317,33 @@ class AnnouncementSpeaker(
             // SecurityException هنا — نلتقطه ونُعد النطق بلا تركيز (أفضل جهد).
             Log.w(TAG, "requestAudioFocus failed", t)
             AudioManager.AUDIOFOCUS_REQUEST_FAILED
+        }
+    }
+
+    /**
+     * إعادة ضبط تركيز الصوت يدوياً — يستدعي abandon **بلا شرط** بصرف
+     * النظر عن قيمة [hasAudioFocus] الداخلية؛ مخصّص للاستدعاء الصريح من
+     * زر إعادة الضبط أو عند اكتشاف حالة تركيز غير متزامنة.
+     * يُلغي أيضاً أي نطق معلّق.
+     */
+    fun resetAudioFocusUnconditionally() {
+        Log.i(TAG, "[Focus] إعادة ضبط يدوية — abandon بلا شرط")
+        hasAudioFocus = false
+        pendingFocusAction = null
+        pendingFocusTimer?.let { mainHandler.removeCallbacks(it) }
+        pendingFocusTimer = null
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                audioFocusRequest?.let {
+                    audioManager.abandonAudioFocusRequest(it)
+                }
+                audioFocusRequest = null
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.abandonAudioFocus(onAudioFocusChange)
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "resetAudioFocusUnconditionally failed", t)
         }
     }
 
