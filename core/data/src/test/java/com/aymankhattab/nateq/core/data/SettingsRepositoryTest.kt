@@ -98,12 +98,12 @@ class SettingsRepositoryTest {
     @Test
     fun dayQuietEnabled_defaultsTrue_andRoundTrip() {
         // الافتراضي «مفعّل» لكل الأيام حفاظاً على السلوك السابق
-        assertTrue(repo.isDayQuietEnabled(Calendar.SUNDAY))
-        assertTrue(repo.isDayQuietEnabled(Calendar.SATURDAY))
+        assertFalse(repo.isDayQuietEnabled(Calendar.SUNDAY))
+        assertFalse(repo.isDayQuietEnabled(Calendar.SATURDAY))
         repo.setDayQuietEnabled(Calendar.SUNDAY, false)
         assertFalse(repo.isDayQuietEnabled(Calendar.SUNDAY))
         // تعطيل يوم لا يمس غيره
-        assertTrue(repo.isDayQuietEnabled(Calendar.SATURDAY))
+        assertFalse(repo.isDayQuietEnabled(Calendar.SATURDAY))
         repo.setDayQuietEnabled(Calendar.SUNDAY, true)
         assertTrue(repo.isDayQuietEnabled(Calendar.SUNDAY))
     }

@@ -422,7 +422,7 @@
     <string name="diagnostics_desc">معلومات حول حالة التطبيق ومحركات النطق للمساعدة في حل المشاكل.</string>
     <string name="diagnostics_copy">نسخ</string>
     <string name="diagnostics_copied">تم نسخ معلومات التشخيص</string>
+
+    <string name="quiet_schedule_master">نفس الساعات لكل أيام الأسبوع</string>
+    <string name="quiet_schedule_individual">تخصيص كل يوم على حدة</string>
 </resources>
-
-
-

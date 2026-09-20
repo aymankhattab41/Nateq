@@ -415,7 +415,7 @@
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
     <string name="diagnostics_copy">Copy</string>
     <string name="diagnostics_copied">Diagnostics info copied to clipboard</string>
+
+    <string name="quiet_schedule_master">Same hours for all days of the week</string>
+    <string name="quiet_schedule_individual">Customize each day individually</string>
 </resources>
-
-
-
