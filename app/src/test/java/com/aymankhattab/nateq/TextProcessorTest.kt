@@ -97,16 +97,11 @@ class TextProcessorTest {
 
     @Test
     fun processSemantics_time_withLatinSuffix_arabicNumberBlockStays() {
-        // «10:30 AM»: وقتُه يُنطق العربية ورَقَمه لا ينفصل عن الساعة؛
-        // اللاحقة «AM» اللاتينية تبقى وحدها (مقبولةٌ بالإنجليزية).
         val out = processor.processSemantics("الاجتماع 10:30 AM", "ar")
-        assertEquals("الاجتماع العاشرة والنصف صباحاً AM", out)
-        val segments = LanguageSegmenter().segment(out, "ar")
-        assertEquals(listOf("ar", "en"), segments.map { it.languageTag })
-        assertEquals(
-            "الاجتماع العاشرة والنصف صباحاً ",
-            segments.first().text
-        )
+        assertEquals("الاجتماع العاشرة والنصف صباحاً", out)
+        
+        val outPm = processor.processSemantics("الاجتماع 4:50 PM", "ar")
+        assertEquals("الاجتماع الخامسة إلا عشر دقائق مساءً", outPm)
     }
 
     @Test
@@ -815,3 +810,4 @@ class TextProcessorTest {
         )
     }
 }
+

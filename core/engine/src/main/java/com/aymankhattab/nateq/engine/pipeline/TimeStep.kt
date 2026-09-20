@@ -7,7 +7,7 @@ import java.util.regex.Pattern
 internal object TimeStep : TextProcessingStep {
 
     private val PATTERN_TIME = Pattern.compile(
-        """(\d{1,2}):(\d{2})(?::(\d{2}))?"""
+        """(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp]\.?[Mm]\.?|صباحاً?|مساءً?)?"""
     )
 
     override fun apply(input: String): String {
@@ -17,8 +17,18 @@ internal object TimeStep : TextProcessingStep {
         val buffer = StringBuffer()
 
         while (matcher.find()) {
-            val hour = matcher.group(1)!!.toInt()
+            var hour = matcher.group(1)!!.toInt()
             val minute = matcher.group(2)!!.toInt()
+            val suffix = matcher.group(4)
+            if (!suffix.isNullOrBlank()) {
+                val lower = suffix.lowercase(java.util.Locale.ROOT)
+                val isPm = lower.contains("p") || lower.contains("م")
+                if (isPm) {
+                    if (hour < 12) hour += 12
+                } else {
+                    if (hour == 12) hour = 0
+                }
+            }
             val timeText = formatTime(hour, minute)
             matcher.appendReplacement(
                 buffer, java.util.regex.Matcher.quoteReplacement(timeText)
