@@ -312,6 +312,28 @@ class PipelineStepsTest {
         assertEquals("العاشرة و خمس دقائق صباحاً", TimeStep.apply("10:05"))
     }
 
+    @Test
+    fun time_fullMatrix_amPmAndArabicSuffixes() {
+        // مصفوفة كاملة: التحقق من فصل القيمة الرقمية عن كلمة الفترة
+        // واشتقاق الفترة حصراً من اللاحقة (AM/PM وصباحاً/مساءً).
+        // حالات الحد (12 AM منتصف الليل = صباحاً، 12 PM = مساءً)
+        // وحالات 1 و11.
+        assertEquals("الثانية عشرة صباحاً", TimeStep.apply("12:00 AM"))
+        assertEquals("الثانية عشرة مساءً", TimeStep.apply("12:00 PM"))
+        assertEquals("الواحدة صباحاً", TimeStep.apply("1:00 AM"))
+        assertEquals("الواحدة مساءً", TimeStep.apply("1:00 PM"))
+        assertEquals("الحادية عشرة صباحاً", TimeStep.apply("11:00 AM"))
+        assertEquals("الحادية عشرة مساءً", TimeStep.apply("11:00 PM"))
+
+        // نفس المصفوفة الستّ بلاحقات عربية
+        assertEquals("الثانية عشرة صباحاً", TimeStep.apply("12:00 صباحاً"))
+        assertEquals("الثانية عشرة مساءً", TimeStep.apply("12:00 مساءً"))
+        assertEquals("الواحدة صباحاً", TimeStep.apply("1:00 صباحاً"))
+        assertEquals("الواحدة مساءً", TimeStep.apply("1:00 مساءً"))
+        assertEquals("الحادية عشرة صباحاً", TimeStep.apply("11:00 صباحاً"))
+        assertEquals("الحادية عشرة مساءً", TimeStep.apply("11:00 مساءً"))
+    }
+
     // ═══════════════════════ RomanNumeralStep ═══════════════════════
 
     @Test
