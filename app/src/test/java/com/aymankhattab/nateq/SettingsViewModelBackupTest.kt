@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq
+package com.aymankhattab.nateq
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
@@ -20,7 +20,7 @@ import org.robolectric.annotation.Config
  * والحدود الدفاعية (حجم/عدد/إصدار/بنية).
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [24, 30, 35])
+@Config(sdk = [24, 30, 35, 37])
 class SettingsViewModelBackupTest {
 
     private lateinit var context: Context

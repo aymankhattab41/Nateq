@@ -1,20 +1,15 @@
 package com.aymankhattab.nateq.engine.pipeline
 
-import com.aymankhattab.nateq.core.engine.SynthesisConfig
 import com.aymankhattab.nateq.engine.NumberSpeech
-import java.util.Calendar
-import java.util.Locale
 import java.util.regex.Matcher
 import java.util.regex.Pattern
 
 /**
  * معالجة التواريخ الرقمية: 2024-03-15 → «خمسة عشر مارس ألفان وأربعة وعشرون»،
- * مع دعم صيغ YYYY-MM-DD / DD-MM-YYYY / DD.MM.YYYY والتحويل للهجري (أم القرى)
- * حسب تفضيل المستخدم إن وُجدت حقنة الإعدادات (قراءة لحظية لا أكثر).
+ * مع دعم صيغ YYYY-MM-DD / DD-MM-YYYY / DD.MM.YYYY بالتقويم الميلادي فقط
+ * كمسار وحيد بلا تفرّع.
  */
-internal class DateStep(
-    
-) : TextProcessingStep {
+internal class DateStep : TextProcessingStep {
 
     private companion object {
         // أنماط التواريخ: حدود الكلمات (\\b) في الطرفين تمنع التقاط تاريخ
@@ -39,7 +34,7 @@ internal class DateStep(
     override fun apply(input: String): String = process(input, english = false)
 
     /** النسخة الإنجليزية: «2024-03-15» → «March fifteenth two thousand
-     *  twenty four» (بلا تقويم هجري — لا معنى له في الإنجليزية). */
+     *  twenty four» بالتقويم الميلادي فقط. */
     override fun applyEnglish(input: String): String =
         process(input, english = true)
 
@@ -94,11 +89,10 @@ internal class DateStep(
         return result
     }
 
-    /** تنسيق التاريخ بالعربية (ميلادي أو هجري حسب إعداد المستخدم) */
+    /** تنسيق التاريخ بالعربية بالتقويم الميلادي فقط. */
     private fun formatDate(day: Int, month: Int, year: Int): String {
         if (month !in 1..12) return "التاريخ غير صالح"
         if (day !in 1..31) return "التاريخ غير صالح"
-        // مسار الهجري: إن فشل التحويل (نادر) نتراجع للصيغة الميلادية الصحيحة
         val months = arrayOf(
             "", "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
             "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"

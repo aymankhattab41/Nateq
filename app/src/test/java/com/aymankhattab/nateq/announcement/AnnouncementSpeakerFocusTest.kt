@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq.announcement
+package com.aymankhattab.nateq.announcement
 
 import android.content.Context
 import android.media.AudioManager
@@ -28,7 +28,7 @@ import org.robolectric.shadows.ShadowLooper
  * منفّذة داخلياً.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [37])
 class AnnouncementSpeakerFocusTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()

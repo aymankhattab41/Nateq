@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq
+package com.aymankhattab.nateq
 
 import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.core.data.StartupTempSweeper
@@ -16,7 +16,7 @@ import java.io.File
  * Robolectric.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [24, 30, 35])
+@Config(sdk = [24, 30, 35, 37])
 class StartupTempSweeperTest {
 
     private val context

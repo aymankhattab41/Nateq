@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq
+package com.aymankhattab.nateq
 
 import android.content.Context
 import android.net.ConnectivityManager
@@ -27,7 +27,7 @@ import org.robolectric.shadows.ShadowNetworkInfo
  * شبكة علّقتها ([setActiveNetworkInfo]) بشبكة netId يوازي نوعها.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [24, 30, 35])
+@Config(sdk = [24, 30, 35, 37])
 class ConnectivityMonitorTest {
 
     private lateinit var context: Context

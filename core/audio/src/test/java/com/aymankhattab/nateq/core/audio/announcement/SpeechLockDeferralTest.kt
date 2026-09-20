@@ -30,7 +30,7 @@ import org.robolectric.shadows.ShadowLooper
  * USAGE_MEDIA) فتتسلسل أصوات الإعلان والقراءة على المسار ذاته.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [37])
 class SpeechLockDeferralTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()

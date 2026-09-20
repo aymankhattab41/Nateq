@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq
+package com.aymankhattab.nateq
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
@@ -17,7 +17,7 @@ import org.robolectric.annotation.Config
  * الروابط (URLs)، توافق العدد والمعدود للوحدات والعملات، والكسور العشرية.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [24, 30, 35])
+@Config(sdk = [24, 30, 35, 37])
 class TextProcessorEdgeCasesTest {
 
     private lateinit var processor: TextProcessor

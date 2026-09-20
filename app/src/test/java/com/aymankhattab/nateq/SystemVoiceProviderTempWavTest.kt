@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq
+package com.aymankhattab.nateq
 
 import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
@@ -16,7 +16,7 @@ import org.robolectric.annotation.Config
  * استخدامه والحذف النهائي يقع في [SystemVoiceProvider.shutdown].
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [37])
 class SystemVoiceProviderTempWavTest {
 
     @Test

@@ -19,7 +19,7 @@ import org.robolectric.annotation.Config
  * المسح بعد الإبطال (إزالة/تثبيت حزمة) أو بعد انقضاء المهلة.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [37])
 class EnginePickerCacheTest {
 
     private val context: Context =

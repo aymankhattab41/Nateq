@@ -16,7 +16,7 @@ import org.robolectric.annotation.Config
  *  تُجيب null بلا بثٍّ لاصق، وتعيد آخرَ بثٍّ لاصق للبطارية انشُر في
  *  ShadowInstrumentation (نفس سلوك النظام على أندرويد 35). */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [37])
 class StickyBatteryReaderTest {
 
     private val context: Context =

@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq
+package com.aymankhattab.nateq
 
 import android.app.Notification
 import android.os.Bundle
@@ -16,7 +16,7 @@ import org.robolectric.annotation.Config
  * EXTRA_TEXT_LINES — حتى لا تُفقد رسالة طويلة النص (بند 26).
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [24, 30, 35])
+@Config(sdk = [24, 30, 35, 37])
 class NateqNotificationListenerTest {
 
     private fun extras(

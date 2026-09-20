@@ -20,7 +20,7 @@ import org.robolectric.shadows.ShadowLooper
 
 /** اختبارات مشغّل المؤثرات بسلك وهمي — لا صوت فعلي في الاختبار. */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [37])
 @LooperMode(LooperMode.Mode.PAUSED)
 class AudioCuePlayerTest {
 

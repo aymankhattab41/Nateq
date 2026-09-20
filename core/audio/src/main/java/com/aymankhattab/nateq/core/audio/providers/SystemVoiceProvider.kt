@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.core.audio.providers
 
+import android.app.ActivityManager
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -55,14 +56,6 @@ class SystemVoiceProvider(
     private val injectedSettings: VoicePrefsProvider? = null
 ) : VoiceProvider {
 
-    /**
-     * مصدر «المحركات القادرة على لغةٍ ما» (غالباً [VoiceCatalog]
-     * بذاكرة الاكتشاف)، لبناء سلسلة التراجع لكل لغة بدل القائمة
-     * العالمية. يُحقن بعد البناء (الكتالوج يُنشأ بعد المزوّد)؛
-     * null = لا اكتشاف → التراجع بالقائمة المثبّتة كلها.
-     */
-    @Volatile
-    var capableEnginesFor: ((languageTag: String) -> List<String>?)? = null
 
 /**
      * مُنفّذ خلفية لنقل التنفيذ الحاصر
@@ -82,21 +75,112 @@ class SystemVoiceProvider(
      * يمنع استنزاف الموارد على الأجهزة المنخفضة والمحركات المزدحمة. */
     private val synthExecutor: ExecutorService =
         Executors.newFixedThreadPool(
-            resolvedPoolSize(installedEngineCount(context))
+            resolvedPoolSize(
+                installedEngineCount(context),
+                totalDeviceMemory(context)
+            )
         )
 
     /** مترادف استعلامي لعدد المحركات المثبّتة (يغذّي [resolvedPoolSize]). */
     private fun installedEngineCount(context: Context): Int =
         EnginePicker.installedEnginePackages(context).size
 
+    /** الذاكرة الكلية للجهاز — عند التعذّر تُرجع اللانهاية فيُبقي السلوك
+     *  القائم (السقف بالمحركات فقط) بدل التضييق الأعمى. */
+    private fun totalDeviceMemory(context: Context): Long = runCatching {
+        val am = context.getSystemService(
+            Context.ACTIVITY_SERVICE
+        ) as? ActivityManager
+        val info = ActivityManager.MemoryInfo()
+        am?.getMemoryInfo(info)
+        info.totalMem
+    }.getOrDefault(Long.MAX_VALUE)
+
     /** معالج نبض Main للجدولة الزمنية
      *  لمهلة التهيئة [INIT_TIMEOUT_MS] (غير حاصر). */
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    /** محرّكات نُبّه المستخدم بفشلها مرة واحدة في عمر العملية الجارية
-     *  (لكي لا ترضّ Notification لكل نطق بعد أول فشل). تخدم نصيحة المحور
-     *  السادس: المستخدم يسمع أن محركه انهار وليست الإعلانات كلها واقعة. */
-    private val engineFallbackNotified = mutableSetOf<String>()
+    /** مفسح الإعلانات الصوتية للأخطاء — قابل للحقن في الاختبارات */
+    internal var errorAnnouncer: (String) -> Unit = { message ->
+        announceAudibly(message)
+    }
+
+    private val unconfiguredLanguageNotified = mutableSetOf<String>()
+    private val engineFailureNotified = mutableSetOf<String>()
+
+    private fun announceAudibly(message: String) {
+        mainHandler.post {
+            runCatching {
+                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            }
+            runCatching {
+                val am = context.getSystemService(
+                    Context.ACCESSIBILITY_SERVICE
+                ) as? android.view.accessibility.AccessibilityManager
+                if (am?.isEnabled == true) {
+                    val event = android.view.accessibility.AccessibilityEvent
+                        .obtain(
+                            android.view.accessibility.AccessibilityEvent
+                                .TYPE_ANNOUNCEMENT
+                        )
+                    event.text.add(message)
+                    event.className = javaClass.name
+                    event.packageName = context.packageName
+                    am.sendAccessibilityEvent(event)
+                }
+            }
+            runCatching {
+                com.aymankhattab.nateq.core.audio.announcement
+                    .AudioCuePlayer.getInstance(context)
+                    .play(
+                        com.aymankhattab.nateq.core.audio.announcement
+                            .AudioCue(
+                                com.aymankhattab.nateq.core.audio
+                                    .announcement.CueType.BATTERY_LOW
+                            )
+                    ) { }
+            }
+        }
+    }
+
+    private fun notifyNoEngineForLanguageOnce(languageTag: String) {
+        val shouldNotify = synchronized(unconfiguredLanguageNotified) {
+            unconfiguredLanguageNotified.add(languageTag)
+        }
+        if (shouldNotify) {
+            val msg = try {
+                context.getString(R.string.engine_not_selected_for_language)
+            } catch (_: Throwable) {
+                "لم يُحدَّد محرك نطق لهذه اللغة، افتح الإعدادات لاختياره"
+            }
+            Log.w(TAG, "[Provider] $msg (lang=$languageTag)")
+            try {
+                errorAnnouncer(msg)
+            } catch (t: Throwable) {
+                Log.w(TAG, "errorAnnouncer failed", t)
+            }
+        }
+    }
+
+    private fun notifyEngineFailedOnce(engine: String?) {
+        val key = engine ?: "unknown"
+        val shouldNotify = synchronized(engineFailureNotified) {
+            engineFailureNotified.add(key)
+        }
+        if (shouldNotify) {
+            val msg = try {
+                context.getString(R.string.engine_failed_for_selected)
+            } catch (_: Throwable) {
+                "تعذّر النطق بالمحرك المحدَّد"
+            }
+            Log.e(TAG, "[Provider] $msg (engine=$engine)")
+            try {
+                errorAnnouncer(msg)
+            } catch (t: Throwable) {
+                Log.w(TAG, "errorAnnouncer failed", t)
+            }
+        }
+    }
 
     /**
      * مراقب حالة الإنترنت الاستباقي ([ConnectivityMonitor]) — يسجّل
@@ -152,13 +236,6 @@ class SystemVoiceProvider(
             else -> 8000L
         }
 
-        /**
-         * سقف أقصى للمحاولات الفاشلة قبل التوقف (بعد فشل ثلاثة محركات نوقف
-         * التراجع بدل التأرجح اللانهائي بينها). المحرك المختار يدوياً يُحسب
-         * ضمن السقف: لو فشل ثم فشل خلفه محركان، يوقف التراجع قبل استنفاد
-         * القائمة.
-         */
-        private const val MAX_RETRIES = 3
 
         /** حجم الدفعة الدنيا لقراءة صوت التخليق أثناء كتابته (بند ب.txt
          *  3.2): لا يُقرأ الملف النامي إلا حين يتراكم ما يعادل هذا الحجم
@@ -302,30 +379,25 @@ class SystemVoiceProvider(
     }
 
     /**
-     * يختار المحرك الذي ينطق به التطبيق:
-     * 1) يفضّل محرك اللغة الصريح (إن حُدِّدت لغة [languageTag] وكان مثبّتاً).
-     * 2) ثم المحرك الذي اختاره المستخدم في شاشة الإعدادات (إن وُجد ومثبَّت).
-     * 3) وإلا اختار محركاً طرفياً نصبّه المستخدم (لا جوجل ولا سامسونج)،
-     *    ويتم عمل fallback إلى جوجل كملاذ أخير.
+     * يستعلم عن المحرك المحدد صراحةً للغة [languageTag]،
+     * بشرط أن يكون مثبّتاً فعلاً في النظام. لا اختيار تلقائياً ولا احتياطياً
+     * ذكياً على الإطلاق — إن لم يحدد المستخدم محركاً يُعاد null.
      */
     private fun pickEnginePackage(languageTag: String? = null): String? {
+        if (languageTag == null) return null
         val installed = EnginePicker.installedEnginePackages(context)
         val settings = injectedSettings
             ?: SettingsRepository.create(context)
-        // تفضيل اللغة الصريح أولاً (أعلى أولوية: اللغة تقرر محركها).
-        if (languageTag != null) {
-            try {
-                val perLang = settings.getEngineForLanguage(languageTag)
-                if (perLang != null && installed.contains(perLang)) {
-                    return perLang
-                }
-            } catch (e: Exception) {
-                // لا نكسر النطق بخطأ قراءة إعدادات.
+        return try {
+            val perLang = settings.getEngineForLanguage(languageTag)
+            if (perLang != null && installed.contains(perLang)) {
+                perLang
+            } else {
+                null
             }
+        } catch (e: Exception) {
+            null
         }
-        // لا يوجد محرك افتراضي عام: القرار النهائي ديناميكي وقت النطق
-        // عبر [EngineRegistry] (مفضَّل ← أي محرك مثبّت غير قارئ شاشة).
-        return EnginePicker.pickEnginePackage(context)
     }
 
     override suspend fun listVoices(locale: Locale): List<VoiceDescriptor> {
@@ -419,6 +491,32 @@ class SystemVoiceProvider(
                 }
             }
             val resolvedEngine = resolveEngine(enginePackage, voiceLocale)
+            if (resolvedEngine == null) {
+                val installed = EnginePicker.installedEnginePackages(context)
+                if (enginePackage != null
+                    && !installed.contains(enginePackage)
+                ) {
+                    notifyEngineFailedOnce(enginePackage)
+                } else {
+                    val langTag = voiceLocale?.language?.takeIf {
+                        it.isNotEmpty()
+                    } ?: voice.locale.language.takeIf { it.isNotEmpty() }
+                    val configured = langTag?.let { tag ->
+                        runCatching {
+                            (injectedSettings
+                                ?: SettingsRepository.create(context))
+                                .getEngineForLanguage(tag)
+                        }.getOrNull()
+                    }
+                    if (configured == null) {
+                        notifyNoEngineForLanguageOnce(langTag ?: "")
+                    } else if (!installed.contains(configured)) {
+                        notifyEngineFailedOnce(configured)
+                    }
+                }
+                cont.resume(Unit)
+                return@suspendCancellableCoroutine
+            }
 
             // إذا تُحدَّد لغة عبر التحويل التلقائي،
             // نستخدم صوتاً بلغتها النهائية.
@@ -429,10 +527,6 @@ class SystemVoiceProvider(
             } else {
                 voice
             }
-
-            // لغة النطق الفعلية (بعد التحويل): تُوجّه سلسلة التراجع
-            // للمحركات القادرة على هذه اللغة نفسها لا غيرها.
-            val speechLanguage = effectiveVoice.locale.language
 
             // كاش الذاكرة (بند 19.1): إن وُجدت نسخة جاهزة لنفس النص بذات
             // وسائط الصوت، نُبثّها فوراً من الذاكرة بلا أي تلامس مع القرص أو
@@ -461,12 +555,7 @@ class SystemVoiceProvider(
                 cont,
                 cancelled,
                 desiredVoiceName,
-                cacheKey,
-                speechLanguage,
-                // سجل بكل المحركات التي فشلت خلال هذه الجولة
-                // للتراجع التراكمي (يمنع إعادة اختيار محركٍ
-                // فشل سابقاً — منعاً لتأرجح ping-pong).
-                failedEngines = mutableSetOf()
+                cacheKey
             )
         }
     }
@@ -524,25 +613,26 @@ class SystemVoiceProvider(
         }
     }
 
-    /** يحدّد محرك TTS الذي سيُستخدَم، مع التحقق من أنه مثبَّت فعلاً.
-     *  المحرك الصريح [enginePackage] يفوز، وإلا يُختار لمحركٍ بلسان
-     *  [voiceLocale] (سلسلة لغة الطلب) ثم المحرك العام المتاح. */
+    /**
+     * يحدّد محرك TTS الذي سيُستخدَم، مع التحقق من أنه مثبَّت فعلاً.
+     * المحرك الصريح [enginePackage] يفوز إن كان مثبّتاً،
+     * وإلا يُستعلم عن محرك لغة [voiceLocale] المحفوظ إن كان مثبّتاً.
+     * إن لم يحدّد المستخدم محركاً أو كان المحرك غير مثبّت، يُعاد null.
+     */
     private fun resolveEngine(
         enginePackage: String?,
         voiceLocale: Locale?
     ): String? {
-        val engine = enginePackage ?: pickEnginePackage(
-            voiceLocale?.language?.takeIf { it.isNotEmpty() }
-        )
-        return if (engine != null
-            && EnginePicker.installedEnginePackages(
-                context
-            ).contains(engine)
-        ) {
-            engine
-        } else {
-            pickEnginePackage()
+        val installed = EnginePicker.installedEnginePackages(context)
+        if (enginePackage != null) {
+            return if (installed.contains(enginePackage)) {
+                enginePackage
+            } else {
+                null
+            }
         }
+        val lang = voiceLocale?.language?.takeIf { it.isNotEmpty() }
+        return pickEnginePackage(lang)
     }
 
     /** (المحور 6) عند انتقال المتحدث النشط إلى محركٍ مختلف يُحذف ملف
@@ -563,20 +653,13 @@ class SystemVoiceProvider(
             " $previous -> $engine")
     }
 
-/**
-     * يُنفّذ النطق عبر المحرك المعطى، وعند فشل
-     * المحرك الطرفي (مثل SmartVoice الذي يفشل
-     * synthesizeToFile) يتراجع تلقائياً إلى أفضل
-     * محرك متبقٍ (جوجل أولاً إن وُجد) كملاذ أخير
-     * حتى لا يبقى التطبيق صامتاً على أي جهاز.
-     * كل محرك يفشل يُضاف إلى [failedEngines]
-     * ويُستبعد من كل اختيار لاحق — فلا يُعاد محركٌ
-     * فشل سابقاً ولا يحدث تأرجح بين محركين،
-     * وبسقف [MAX_RETRIES] نتوقف عند استنفاد
-     * المحاولات بدل الحلقة اللانهائية.
+    /**
+     * يُنفّذ النطق عبر المحرك المعطى حصراً، وعند فشله
+     * (تهيئة أو مهلة أو نطق) يُسقط المثيل من المسبح
+     * ويُعلن الفشل صوتياً دون أي استبدال بمحرك آخر.
      */
     private fun synthesizeWithEngine(
-        engine: String?,
+        engine: String,
         text: String,
         voice: VoiceDescriptor,
         speechRate: Float,
@@ -587,20 +670,13 @@ class SystemVoiceProvider(
         cont: kotlin.coroutines.Continuation<Unit>,
         cancelled: AtomicBoolean,
         desiredVoiceName: String?,
-        cacheKey: String?,
-        speechLanguage: String,
-        failedEngines: MutableSet<String>
+        cacheKey: String?
     ) {
         val done = AtomicBoolean(false)
-        // ننفّذ النطق عبر مثيلٍ معيّن من المسبح، ويتراجع المتصل عند الفشل.
-        val speakNow = { engineInstance: TextToSpeech, enginePackage: String? ->
+        val speakNow = { engineInstance: TextToSpeech, enginePackage: String ->
             if (!done.getAndSet(true)) {
                 runSynthesisOnBackground(
                     beforeSpeak = {
-                        // بند ب.txt 3.3: الجلسات المتوازية على مثيلات
-                        // مختلفة تعمل في آنٍ واحد، لكن الجلسات على المثيل
-                        // نفسه (نفس اللغة/النوع) يجب ألا تتنازع على
-                        // synthesizer واحد — قفلٌ لكل مثيل يُبقيها متتالية.
                         synchronized(engineInstance) {
                             synthesizeInternal(
                                 engineInstance, text, voice, speechRate,
@@ -612,36 +688,21 @@ class SystemVoiceProvider(
                     },
                     onSuccess = { cont.resume(Unit) },
                     onFailure = {
-                        // فشل النطق — نُسقط المثيل المعطوب من المسبح
-                        // حتى لا يُعاد استخدامه ثم نتراجع لمحركٍ آخر.
-                        dropBrokenEngine(engineInstance)
-                        retryWithGoogle(enginePackage, voice, text,
-                            speechRate, pitch, volume,
-                            onFormatInfo, onAudioChunk, cont,
-                            cancelled, desiredVoiceName,
-                            cacheKey, speechLanguage,
-                            failedEngines)
+                        try {
+                            dropBrokenEngine(engineInstance)
+                            notifyEngineFailedOnce(enginePackage)
+                        } catch (t: Throwable) {
+                            Log.e(TAG, "onFailure handling failed", t)
+                        } finally {
+                            cont.resume(Unit)
+                        }
                     }
                 )
             }
         }
-        // (سباق 2.1) متغيّرٌ ذاتيُّ الالتقاط: فرعُ الانتظار لنضج محركٍ
-        // يهيّئه مقطعٌ متوازٍ يجدّد تقييم الموقف بافتراعٍ مؤجل عبر
-        // استدعاء [attemptWith] نفسها — لذا هو lateinit يُسند بعد
-        // التعريف (لا يجوز لـ val التقاطُ نفسها داخل مُغيِّره).
-        lateinit var attemptWith: (String?) -> Unit
-        attemptWith = { currentEngine: String? ->
-            if (currentEngine == null) {
-                Log.e(TAG, "[Provider] no engine available to bind")
-                if (!done.getAndSet(true)) cont.resume(Unit)
-            } else if (!cancelled.get()) {
-                // دورة حياة المحركات كلها تحت قفل [ttsLock] لتتزامن مع
-                // [shutdown]
-                // (تدمير الخدمة أثناء نطقٍ جارٍ):
-                // إن بدأ الإغلاق في المنتصف يتوقف
-                // الربط فوراً — لا محرك جديد بعد التدمير — وتُستأنف الكوروتينة
-                // فارغةً فيتحرر المعتقل. القفل قابل لإعادة الدخول فمسار التراجع
-                // (retryWithGoogle → attemptWith على نفس الخيط) آمن.
+        lateinit var attemptWith: (String) -> Unit
+        attemptWith = { currentEngine: String ->
+            if (!cancelled.get()) {
                 synchronized(ttsLock) {
                     when {
                         shutdownCalled -> {
@@ -650,16 +711,8 @@ class SystemVoiceProvider(
                                 " provider shutting down")
                             if (!done.getAndSet(true)) cont.resume(Unit)
                         }
-                        // مثيلٌ دافئ في مسبح المحركات (بند 4): الانتقال لهذا
-                        // المحرك O(1) بلا إعادة تهيئة — إنشاء TextToSpeech
-                        // جديد في كل تبديل كان يكلف 150–800ms لكل كلمة أجنبية.
-                        // المسبح هو المصدر الأوحد للمثيل: لا فرع «نشط عام»
-                        // منفصلاً — كل مقطع يحلّ مثيلَ محركه ويتكلم بمثيله
-                        // (لا حقلٌ مشترك تتسابق عليه المقاطع المتوازية).
                         else -> {
-                            val instance = currentEngine?.let {
-                                enginePool[it]
-                            }
+                            val instance = enginePool[currentEngine]
                             if (instance != null) {
                                 Log.d(
                                     TAG,
@@ -669,11 +722,6 @@ class SystemVoiceProvider(
                                 onActiveEngineSwitch(currentEngine)
                                 speakNow(instance, currentEngine)
                             } else if (currentEngine in prewarmingEngines) {
-                                // (سباق 2.1) محركٌ يهيّئه مقطعٌ متوازٍ
-                                // الآن: لا ننشئ مثيلاً ثانياً ولا نلتقطه
-                                // قبل نضجه — نعيد التقييم بعد افتراعٍ
-                                // قصير؛ وإذا سقط الحجز (فشل/مهلة صاحبه)
-                                // يُنشئ هذا المقطعُ نسخَته النظامية.
                                 Log.d(TAG,
                                     "[Provider] await maturity:" +
                                     " $currentEngine")
@@ -688,22 +736,10 @@ class SystemVoiceProvider(
                                 Log.w(TAG,
                                     "[Provider] init engine=" +
                                     "$currentEngine")
-                                // علاّمة تحسم سباقاً واحداً فقط بين
-                                // ردّ onInit ومهلة التهيئة: أياً منهما
-                                // يسبق يحسم المصير، والآخر يُسقط
-                                // (يمنع مزدوجاً).
                                 val initSettled =
                                     AtomicBoolean(false)
-                                // حامل قبل البناء: الإنفاذ يصدر
-                                // لاحقاً (غير متزامن) فيلتقط المثيل
-                                // عبر الحامل لا عبر متغير محلّي متأخر
-                                // الإعلان.
                                 val hold =
                                     arrayOfNulls<TextToSpeech>(1)
-                                // (سباق 2.1) حجز المحرك ضمن
-                                // [prewarmingEngines] قبل البناء: لا
-                                // يراه مقطعٌ متوازٍ قيدَ التهيئة فينشئ
-                                // مثيلاً ثانياً أو يلتقطه مبكراً.
                                 prewarmingEngines.add(
                                     currentEngine
                                 )
@@ -713,24 +749,10 @@ class SystemVoiceProvider(
                                         return@TextToSpeech
                                     }
                                     val built = hold[0]
-                                    // لا يُستهلك علمُ completion هنا
-                                    // على الإطلاق: [initSettled] يكفي
-                                    // لمنع الازدواج مع مهلة التهيئة،
-                                    // ولو شُغّل حارسُ done في هذا
-                                    // الموضع لسُبِق التنفيذُ الفعلي
-                                    // للاصطناع في speakNow (المسار ~680
-                                    // يفحص done فتخطّى التخليق في أول
-                                    // إقلاع بارد) — بند 2.1.
                                     if (built == null) {
                                         return@TextToSpeech
                                     }
-                                    val engine = currentEngine
-                                        ?: return@TextToSpeech
-                                    // (سباق 2.1) النشرُ للمسبح وربطُ
-                                    // النشط حصراً بعد نجاح onInit — لا
-                                    // قبلَ النضج كما كان (البثّ المتعجل
-                                    // جعل مقطعاً متوازياً يلتقط مثيلاً
-                                    // غير مكتمل فينطق بصوتٍ مغاير).
+                                    val eng = currentEngine
                                     if (status == TextToSpeech.SUCCESS
                                         && !cancelled.get()
                                     ) {
@@ -740,72 +762,37 @@ class SystemVoiceProvider(
                                                     built.shutdown()
                                                 }
                                             } else {
-                                                enginePool[engine] =
-                                                    built
-                                                prewarmingEngines
-                                                    .remove(engine)
-                                                onActiveEngineSwitch(
-                                                    engine
-                                                )
+                                                enginePool[eng] = built
+                                                prewarmingEngines.remove(eng)
+                                                onActiveEngineSwitch(eng)
                                             }
                                         }
                                         if (shutdownCalled) {
-                                            if (!done.getAndSet(
-                                                true
-                                            )) {
+                                            if (!done.getAndSet(true)) {
                                                 cont.resume(Unit)
                                             }
                                         } else {
-                                            // onInit صدر من TextToSpeech
-                                            // على Main Looper؛ نقل
-                                            // الاصطناع الحاصر (انتظار
-                                            // كتابة الملف) إلى خيط خلفي
-                                            // كي لا يُحظر Main — فلو
-                                            // بعث المحرك onDone على Main
-                                            // أيضاً حصل Deadlock حتى
-                                            // المهلة.
-                                            speakNow(
-                                                built, engine
-                                            )
+                                            speakNow(built, eng)
                                         }
                                     } else {
                                         Log.e(TAG,
                                             "[Provider] init" +
-                                            " failed: $engine" +
+                                            " failed: $eng" +
                                             " status=$status")
                                         synchronized(ttsLock) {
-                                            prewarmingEngines
-                                                .remove(engine)
+                                            prewarmingEngines.remove(eng)
                                         }
                                         dropBrokenEngine(built)
-                                        retryWithGoogle(
-                                            engine, voice,
-                                            text, speechRate,
-                                            pitch, volume,
-                                            onFormatInfo,
-                                            onAudioChunk, cont,
-                                            cancelled,
-                                            desiredVoiceName,
-                                            cacheKey,
-                                            speechLanguage,
-                                            failedEngines
-                                        )
+                                        notifyEngineFailedOnce(eng)
+                                        if (!done.getAndSet(true)) {
+                                            cont.resume(Unit)
+                                        }
                                     }
                                 }, currentEngine)
                                 val created = hold[0]!!
-                                // مهلة تهيئة أقصاها 5 ثوانٍ: إن علق
-                                // المحرك ولم يُرِدّ onInit، نُسقط
-                                // المحرك ونتراجع بدل بقاء الكوروتين
-                                // معلقاً للأبد. غير حاصر (منبّه على
-                                // Main) فلا يُجمّد الخيط ولا يتعارض
-                                // مع ردّ onInit الآجل.
                                 mainHandler.postDelayed({
-                                    if (!initSettled.getAndSet(
-                                        true
-                                    )
-                                        && done.compareAndSet(
-                                            false, true
-                                        )
+                                    if (!initSettled.getAndSet(true)
+                                        && done.compareAndSet(false, true)
                                         && !cancelled.get()
                                     ) {
                                         Log.w(TAG,
@@ -814,25 +801,13 @@ class SystemVoiceProvider(
                                             " ${INIT_TIMEOUT_MS}" +
                                             "ms: $currentEngine")
                                         synchronized(ttsLock) {
-                                            prewarmingEngines
-                                                .remove(
-                                                    currentEngine
-                                                )
+                                            prewarmingEngines.remove(
+                                                currentEngine
+                                            )
                                         }
                                         dropBrokenEngine(created)
-                                        retryWithGoogle(
-                                            currentEngine,
-                                            voice, text,
-                                            speechRate, pitch,
-                                            volume,
-                                            onFormatInfo,
-                                            onAudioChunk, cont,
-                                            cancelled,
-                                            desiredVoiceName,
-                                            cacheKey,
-                                            speechLanguage,
-                                            failedEngines
-                                        )
+                                        notifyEngineFailedOnce(currentEngine)
+                                        cont.resume(Unit)
                                     }
                                 }, INIT_TIMEOUT_MS)
                             }
@@ -842,122 +817,7 @@ class SystemVoiceProvider(
             }
         }
 
-        if (engine != null
-            && EnginePicker.installedEnginePackages(
-                context
-            ).contains(engine)
-        ) {
-            attemptWith(engine)
-        } else {
-            attemptWith(EnginePicker.pickEnginePackage(context))
-        }
-    }
-
-    /**
-     * عند فشل المحرك الأصلي، يتراجع إلى أفضل محرك متبقٍ من سلسلة التراجع
-     * المرنة [EngineRegistry.capableEnginesForLanguage] (الطرفي/النظامي أولاً،
-     * وجوجل ملاذٌ أخير — ليغطي أيضاً أجهزة الأسواق التي لا تصلها خدمة جوجل،
-     * الصين مثلاً). المحرك الفاشل يُضاف إلى [failedEngines] ويُستبعد مع كل ما
-     * فشل قبله من كل اختيار لاحق، فلا يحدث تأرجح لانهائي بين محركين (A يختار
-     * B، وB يُعيد A) يستنزف الذاكرة — وبسقف [MAX_RETRIES] تتوقف المحاولات عند
-     * بلوغه بلا N محاولة.
-     */
-    private fun retryWithGoogle(
-        failedEngine: String?,
-        voice: VoiceDescriptor,
-        text: String,
-        speechRate: Float,
-        pitch: Float,
-        volume: Float,
-        onFormatInfo: (sampleRateInHz: Int, channelCount: Int) -> Unit,
-        onAudioChunk: (ByteArray, Int) -> Unit,
-        cont: kotlin.coroutines.Continuation<Unit>,
-        cancelled: AtomicBoolean,
-        desiredVoiceName: String?,
-        cacheKey: String?,
-        speechLanguage: String,
-        failedEngines: MutableSet<String>
-    ) {
-        if (cancelled.get()) return
-        if (failedEngine != null) failedEngines.add(failedEngine)
-        // سقف أقصى للمحاولات: عند بلوغه نتوقف بدل المحاولات اللامتناهية.
-        if (failedEngines.size >= MAX_RETRIES) {
-            Log.w(TAG,
-                "[Provider] max retries reached" +
-                " ($MAX_RETRIES): $failedEngines")
-            cont.resume(Unit)
-            return
-        }
-        // سلسلة التراجع لغةً بلغة: المحركات القادرة على لغة النطق الفعلية
-        // (من اكتشاف الكتالوج إن وُجد) بترتيب: تفضيل اللغة ← المفضَّل ←
-        // الأبجدي، مع استبعاد كل المحركات الفاشلة تراكمياً.
-        val fallback = buildFallbackChain(speechLanguage, failedEngines)
-        if (fallback != null) {
-            Log.w(TAG,
-                "[Provider] falling back to engine:" +
-                " $fallback (lang=$speechLanguage," +
-                " failed so far: $failedEngines)")
-            // تنبيه لمرة واحدة لكل محرك فاشل في عمر العملية: يوضح للمستخدم
-            // أن محركه تعذّر وأن النطق تحوّل مؤقتاً — «طرفة عين»، لا نوافذ.
-            notifyEngineFallbackOnce(failedEngine)
-            synthesizeWithEngine(
-                fallback, text, voice, speechRate,
-                pitch, volume, onFormatInfo, onAudioChunk,
-                cont, cancelled, desiredVoiceName,
-                cacheKey, speechLanguage, failedEngines
-            )
-        } else {
-            cont.resume(Unit)
-        }
-    }
-
-    /** طرفة عين (Toast) لمرة واحدة لكل محرك فاشل في عمر العملية. تُنشر على
-     *  خيط Main من أي خيط تركيب؛ لا صوت مسموع هنا لأن شاشة/عملية الإعلان
-     *  عمليةٌ أخرى ولا يجوز النطق فوق صوت النطق الجاري. */
-    private fun notifyEngineFallbackOnce(failedEngine: String?) {
-        if (failedEngine == null) return
-        synchronized(engineFallbackNotified) {
-            if (!engineFallbackNotified.add(failedEngine)) return
-        }
-        mainHandler.post {
-            runCatching {
-                Toast.makeText(
-                    context,
-                    context.getString(R.string.engine_fallback_alert),
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-        }
-    }
-
-    /**
-     * يبني أول محركٍ لاحق لسلسلة تراجع لغةٍ معيّنة:
-     * يقرأ تفضيل اللغة الصريح + المحركات القادرة على اللغة (من اكتشاف
-     * الكتالوج إن توفّر، وإلا كل المثبّتة)، ويستثني كل ما فشل سابقاً،
-     * ويرتّبه [EngineRegistry.capableEnginesForLanguage] (تفضيل اللغة ←
-     * المفضَّل ← الأبجدي) — فيُعاد أول عنصرٍ قابل للاختيار، أو null
-     * عند استنفاد كل المسارات (صفر محاولات لاحقة).
-     */
-    private fun buildFallbackChain(
-        speechLanguage: String,
-        failedEngines: MutableSet<String>
-    ): String? {
-        val installed = EnginePicker.installedEnginePackages(context)
-        val discovery = runCatching {
-            capableEnginesFor?.invoke(speechLanguage)
-                ?.filter { it in installed }
-        }.getOrNull()
-        val capable = discovery?.takeIf { it.isNotEmpty() } ?: installed
-        val perLanguagePref = runCatching {
-            (injectedSettings
-                ?: SettingsRepository.create(context))
-                .getEngineForLanguage(speechLanguage)
-        }.getOrNull()
-        return EngineRegistry.capableEnginesForLanguage(
-            capable = capable,
-            preferredForLanguage = perLanguagePref,
-            excludeFailed = failedEngines
-        ).firstOrNull()
+        attemptWith(engine)
     }
 
     /**
@@ -997,7 +857,11 @@ class SystemVoiceProvider(
                 Log.e(TAG, "[Provider] synthesis on background threw", t)
                 false
             }
-            if (ok) onSuccess() else onFailure()
+            try {
+                if (ok) onSuccess() else onFailure()
+            } catch (t: Throwable) {
+                Log.e(TAG, "[Provider] synthesis completion handler threw", t)
+            }
         }
     }
 
@@ -1426,8 +1290,13 @@ class SystemVoiceProvider(
         val installed = EnginePicker.installedEnginePackages(context)
         val targets = engines.filter { it in installed }
         if (targets.isEmpty()) return
+        // سقف التدفئة بالذاكرة أيضاً: لا تُربط مثيلات فوق طاقة الجهاز.
+        val capped = targets.take(
+            resolvedPoolSize(targets.size, totalDeviceMemory(context))
+        )
+        if (capped.isEmpty()) return
         synthExecutor.execute {
-            for (engine in targets) {
+            for (engine in capped) {
                 if (shutdownCalled) return@execute
                 var skip = false
                 synchronized(ttsLock) {

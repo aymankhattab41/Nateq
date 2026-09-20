@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq
+package com.aymankhattab.nateq
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
@@ -21,7 +21,7 @@ import org.robolectric.annotation.Config
  * (5000)، سلامة التزامن عبر kotlinx-coroutines، وحالات حدود جديدة.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [24, 30, 35])
+@Config(sdk = [24, 30, 35, 37])
 class PronunciationDictionaryRoundTripTest {
 
     private lateinit var context: Context

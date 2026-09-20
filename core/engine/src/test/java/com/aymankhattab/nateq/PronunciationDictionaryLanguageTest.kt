@@ -23,7 +23,7 @@ import org.robolectric.annotation.Config
  * الراجعة للحفظ، ولا يُختبر الثبات عبر المثيلات هنا.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [37])
 class PronunciationDictionaryLanguageTest {
 
     private lateinit var context: Context

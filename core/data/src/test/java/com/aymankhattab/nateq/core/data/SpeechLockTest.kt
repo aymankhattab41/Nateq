@@ -26,7 +26,7 @@ import org.robolectric.annotation.Config
  *   معلّقو متحدث الإعلانات فور انخفاضه).
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [37])
 class SpeechLockTest {
 
     private val context: Context =

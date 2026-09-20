@@ -10,7 +10,6 @@ import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.audio.engine.EngineWithVoices
-import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
@@ -190,28 +189,51 @@ internal class LanguageConvertAdapter(
             } else {
                 actvEngine.isEnabled = true
                 val engineLabels = rowEngines.map { it.engineLabel }
-                val savedEngineIdx = rowEngines.indexOfFirst {
-                    it.enginePackage == saved.engine
+                val status = EngineStatusResolver.resolveStatus(
+                    saved.engine,
+                    rowEngines.map { it.enginePackage }
+                )
+                when (status) {
+                    EngineStatus.NOT_SELECTED -> {
+                        val msg = context.getString(
+                            R.string.engine_not_selected_short
+                        )
+                        bindDropdown(actvEngine, engineLabels, null)
+                        actvEngine.setText(msg, false)
+                        tvSaved.text = msg
+                        bindDropdown(actvVoice, emptyList(), null)
+                        actvVoice.isEnabled = false
+                        btnPlay.isEnabled = false
+                    }
+                    EngineStatus.DISABLED_OR_MISSING -> {
+                        val msg = context.getString(
+                            R.string.engine_disabled_or_missing
+                        )
+                        bindDropdown(actvEngine, engineLabels, null)
+                        actvEngine.setText(msg, false)
+                        tvSaved.text = msg
+                        bindDropdown(actvVoice, emptyList(), null)
+                        actvVoice.isEnabled = false
+                        btnPlay.isEnabled = false
+                    }
+                    EngineStatus.CONFIGURED -> {
+                        val idx = rowEngines.indexOfFirst {
+                            it.enginePackage == saved.engine
+                        }
+                        bindDropdown(
+                            actvEngine,
+                            engineLabels,
+                            engineLabels[idx]
+                        )
+                        actvVoice.isEnabled = true
+                        populateVoices(
+                            rowEngines[idx],
+                            savedVoiceName
+                        )
+                        btnPlay.isEnabled = true
+                    }
                 }
-                val target = if (savedEngineIdx >= 0) {
-                    savedEngineIdx
-                } else {
-                    preferredEngineIndex()
-                }
-                bindDropdown(actvEngine, engineLabels, engineLabels[target])
-                populateVoices(rowEngines[target], savedVoiceName)
-                btnPlay.isEnabled = true
             }
-        }
-
-        /** فهرس المحرك المفضّل (نفس نكهة EnginePicker:
-     *  الطرفي/النظامي أولاً، وجوجل أخير الملاذات). */
-        private fun preferredEngineIndex(): Int {
-            val preferred = EnginePicker.pickPreferredEngineFrom(
-                rowEngines.map { it.enginePackage }
-            )
-            val idx = rowEngines.indexOfFirst { it.enginePackage == preferred }
-            return if (idx >= 0) idx else 0
         }
 
         /** يملأ قائمة الصوت بأصوات المحرك الحالي لهذه اللغة (بلا تكرار). */
@@ -263,6 +285,8 @@ internal class LanguageConvertAdapter(
         private fun onEngineSelected(position: Int) {
             if (position < 0 || position >= rowEngines.size) return
             actvEngine.setText(rowEngines[position].engineLabel, false)
+            tvSaved.text = ""
+            actvVoice.isEnabled = true
             populateVoices(rowEngines[position], savedVoiceName)
         }
 
@@ -340,5 +364,25 @@ internal class LanguageConvertAdapter(
                 seekBar.announceCompat(RateLabel.of(context, v))
             }
         }
+    }
+}
+
+/** حالة المحرك في إعدادات اللغة. */
+internal enum class EngineStatus {
+    NOT_SELECTED,
+    DISABLED_OR_MISSING,
+    CONFIGURED
+}
+
+/** محلل حالة المحرك لإظهارها بوضوح للمستخدم في الإعدادات. */
+internal object EngineStatusResolver {
+    fun resolveStatus(
+        savedEngine: String?,
+        installedPackages: Collection<String>
+    ): EngineStatus = when {
+        savedEngine == null -> EngineStatus.NOT_SELECTED
+        !installedPackages.contains(savedEngine) ->
+            EngineStatus.DISABLED_OR_MISSING
+        else -> EngineStatus.CONFIGURED
     }
 }

@@ -23,7 +23,7 @@ import org.robolectric.annotation.Config
  * إعلان المتصل عند سحبه رغم بقاء التفعيل قائماً.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [37])
 class CallerAnnouncementReceiverTest {
 
     private val context: Context

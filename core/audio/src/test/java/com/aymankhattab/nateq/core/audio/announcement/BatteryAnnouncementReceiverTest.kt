@@ -24,7 +24,7 @@ import org.robolectric.shadows.ShadowLooper
  *  واحدة لكل نسبة منعطف، ويُفلتر التكرار في الذاكرة قبل أي
  *  عملية لاتزامنية أو قراءة قرص. */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [37])
 class BatteryAnnouncementReceiverTest {
 
     private val context: Context

@@ -18,6 +18,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.switchmaterial.SwitchMaterial
 import java.util.Calendar
 import com.aymankhattab.nateq.core.audio.engine.LatinLanguageDetector
+import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /** بطاقة قسم في القائمة الرئيسية: رأس + سهم + حالة + محتوى
@@ -578,13 +579,35 @@ internal class SettingsAccordionController(
     }
 
     private fun buildEngineStatus(): String {
-        val auto =
-            runCatching { settings.isAutoConvertEnabled() }
-                .getOrDefault(false)
-        val autoLabel = if (auto) fragment.getString(R.string.toggle_on)
-        else fragment.getString(R.string.toggle_off)
-        return fragment.getString(R.string.auto_convert_enabled) + ": " +
-            autoLabel
+        val auto = runCatching { settings.isAutoConvertEnabled() }
+            .getOrDefault(false)
+        if (!auto) {
+            return fragment.getString(R.string.auto_convert_enabled) + ": " +
+                fragment.getString(R.string.toggle_off)
+        }
+        val ctx = fragment.context ?: return fragment.getString(
+            R.string.auto_convert_enabled
+        ) + ": " + fragment.getString(R.string.toggle_on)
+        val installed = EnginePicker.installedEnginePackages(ctx)
+        val arEngine = runCatching {
+            settings.getEngineForLanguage(LanguageCode.AR.tag)
+        }.getOrNull()
+        val enEngine = runCatching {
+            settings.getEngineForLanguage(LanguageCode.EN.tag)
+        }.getOrNull()
+        val arStatus = EngineStatusResolver.resolveStatus(arEngine, installed)
+        val enStatus = EngineStatusResolver.resolveStatus(enEngine, installed)
+        val detail = when {
+            arStatus == EngineStatus.DISABLED_OR_MISSING ||
+                enStatus == EngineStatus.DISABLED_OR_MISSING ->
+                fragment.getString(R.string.engine_disabled_or_missing)
+            arStatus == EngineStatus.NOT_SELECTED ||
+                enStatus == EngineStatus.NOT_SELECTED ->
+                fragment.getString(R.string.engine_not_selected_short)
+            else -> fragment.getString(R.string.toggle_on)
+        }
+        val prefix = fragment.getString(R.string.auto_convert_enabled)
+        return "$prefix: $detail"
     }
 
     private fun buildCategoriesStatus(): String {

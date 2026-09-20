@@ -11,7 +11,7 @@ import org.robolectric.annotation.Config
 
 /** اختبارات الوصول لاكتشاف «محركات كل لغة» (خريطة الاكتشاف). */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [24, 30, 35])
+@Config(sdk = [24, 30, 35, 37])
 class VoiceCatalogAccessTest {
 
     private fun catalogWithDiscovery(): VoiceCatalog {

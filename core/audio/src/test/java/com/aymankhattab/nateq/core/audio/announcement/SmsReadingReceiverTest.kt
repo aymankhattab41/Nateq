@@ -17,7 +17,7 @@ import org.robolectric.annotation.Config
  *  الوضع والخصوصية والتحقق OTP والقالب، اكتشاف لغة النطق، وحراسة الإذن —
  *  كلها طبقات نقيّة من كائن SmsReadingReceiver. */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [37])
 class SmsReadingReceiverTest {
 
     private val context: Context

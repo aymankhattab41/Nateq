@@ -262,9 +262,6 @@
                 android:textOff="@string/toggle_off"
                 android:textOn="@string/toggle_on" />
 
-            <!-- التاريخ الهجري بدل الميلادي -->
-
-
             <!-- رنة رأس الساعة -->
             <com.google.android.material.switchmaterial.SwitchMaterial
                 android:id="@+id/switch_time_chime"

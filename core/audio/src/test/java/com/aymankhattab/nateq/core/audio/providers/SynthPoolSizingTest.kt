@@ -31,4 +31,27 @@ class SynthPoolSizingTest {
         assertEquals(MAX_SYNTH_POOL, resolvedPoolSize(50))
         assertEquals(MAX_SYNTH_POOL, resolvedPoolSize(MAX_SYNTH_POOL + 3))
     }
+
+    @Test
+    fun lowMemoryDevice_capsAtTwo() {
+        val twoGb = 2L * 1024 * 1024 * 1024
+        assertEquals(2, resolvedPoolSize(4, twoGb))
+        assertEquals(2, resolvedPoolSize(50, twoGb))
+        assertEquals(1, resolvedPoolSize(1, twoGb))
+    }
+
+    @Test
+    fun midMemoryDevice_capsAtThree() {
+        val threeAndHalfGb = (3.5 * 1024 * 1024 * 1024).toLong()
+        assertEquals(3, resolvedPoolSize(4, threeAndHalfGb))
+        assertEquals(1, resolvedPoolSize(1, threeAndHalfGb))
+    }
+
+    @Test
+    fun ampleMemoryDevice_keepsEngineCountCap() {
+        val eightGb = 8L * 1024 * 1024 * 1024
+        assertEquals(4, resolvedPoolSize(4, eightGb))
+        assertEquals(MAX_SYNTH_POOL, resolvedPoolSize(50, eightGb))
+        assertEquals(2, resolvedPoolSize(2, eightGb))
+    }
 }

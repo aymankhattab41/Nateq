@@ -32,7 +32,7 @@ import java.util.concurrent.ConcurrentHashMap
  * المسار الكامل في [synthesizeInternal]).
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [37])
 class SystemVoiceProviderRaceTest {
 
     companion object {

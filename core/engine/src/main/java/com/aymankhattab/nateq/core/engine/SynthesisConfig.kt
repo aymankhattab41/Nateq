@@ -7,8 +7,6 @@ package com.aymankhattab.nateq.core.engine
  */
 interface SynthesisConfig {
 
-    /** تفعيل التحويل إلى التقويم الهجري في التواريخ. */
-
     /** تفعيل نطق أسماء الإيموجي قبل إزالتها من النص. */
     fun isEmojiPronunciationEnabled(): Boolean
 

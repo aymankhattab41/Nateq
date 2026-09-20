@@ -57,7 +57,7 @@ internal fun stripTashkeelFor(enginePackage: String?): Boolean =
 class TextProcessor(
     private val context: Context,
     /** المرجع المحقون عبر Hilt إن وُجد (يمرره NateqTtsService)، وإلا يُبنى
-     *  محلياً — قراءة لحظية لتفضيل التاريخ الهجري لا أكثر. */
+     *  محلياً لإعدادات النطق. */
     private val injectedSettings: SynthesisConfig? = null,
     /** القاموس المحقون عبر Hilt إن وُجد (يمرره NateqTtsService) — وإلا يُبنى
      *  محلياً للاختبارات؛ مثيل موحَّد مع نسخة الواجهة ورصد لحظي لقرصه. */

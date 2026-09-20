@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq.core.audio.announcement
+package com.aymankhattab.nateq.core.audio.announcement
 
 import android.content.ComponentName
 import android.content.Context
@@ -26,7 +26,7 @@ import org.robolectric.shadows.ShadowLog
  *   لا تمسّ غيرها، وخطأ أحد المستمعين لا يُسقط البقية.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [37])
 class AnnouncementSpeakerTest {
 
     private val context: Context =

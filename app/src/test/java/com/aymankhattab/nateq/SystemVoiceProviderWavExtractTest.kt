@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq
+package com.aymankhattab.nateq
 
 import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
@@ -18,7 +18,7 @@ import org.robolectric.annotation.Config
  * مضبوطاً) — يجب أن ينهي الاستخراج فوراً وبلا تعليق وعائداً لجسم PCM فارغ.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [37])
 class SystemVoiceProviderWavExtractTest {
 
     private val tempFiles = mutableListOf<File>()

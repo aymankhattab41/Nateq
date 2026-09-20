@@ -2,13 +2,15 @@ package com.aymankhattab.nateq.core.audio.providers
 
 import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
 import android.content.IntentFilter
 import android.os.Looper
 import android.speech.tts.TextToSpeech
+import com.aymankhattab.nateq.core.audio.R
+import com.aymankhattab.nateq.core.data.VoicePrefsProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -17,30 +19,17 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import org.robolectric.shadows.ShadowTextToSpeech
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * محركٌ لا يدعم لغةَ النطق (إعادة [TextToSpeech.setLanguage]
- * = LANG_NOT_SUPPORTED لـ en) يجب أن يُفشل
- * [SystemVoiceProvider.synthesizeInternal]
- * فوراً وبلا بثّ أي بايتات، وأن يتولى المتصل تراجعاً على [speechLanguage]
- * الفعلية (en) لمحركٍ آخر يدعمها — بدل أن يحتفظ المحركُ بلغته السابقة
- * (العربية) فيقرأ الحروف اللاتينية بصوتٍ عربي.
- *
- * «المحرك غير الداعم» فئة فرعية واضحة من [TextToSpeech] تعيد
- * LANG_NOT_SUPPORTED لـ الإنجليزية (محرك وهمي)، لأن إعلان ShadowTextToSpeech
- * .addLanguageAvailability مجموعةٌ ثابتة مشتركة بين المحركين كليهما فلا
- * يعزل محركاً دون آخر. والمحرك الاحتياطي عادي (لغة el وحدة إعلانه).
- * إكمال الوحدة اللفظية يُقاد يدوياً عبر
- * [org.robolectric.shadows.ShadowTextToSpeech.getUtteranceProgressListener]
- * لأن شادو Robolectric لا يستدعي onDone تلقائياً وجدار المحاكاة يجمد
- * ساعة [android.os.SystemClock] فلا تنقضي مهلة الانتظار وحدها — نفس نمط
- * [SystemVoiceProviderRaceTest].
+ * اختبارات منع التراجع التلقائي عند فشل المحرك:
+ * إن فشل المحرك المختار أو لم يدعم اللغة أو كان معطلاً،
+ * يُسقط المثيل المعطوب وتُطلق رسالة الخطأ المحددة
+ * ولا يتم التبديل التلقائي لأي محرك آخر إطلاقاً.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [37])
 class SystemVoiceProviderLanguageFallbackTest {
 
     companion object {
@@ -89,44 +78,20 @@ class SystemVoiceProviderLanguageFallbackTest {
         return field.get(provider) as ConcurrentHashMap<String, TextToSpeech>
     }
 
-    private fun awaitSynthesizedFile(
-        tts: TextToSpeech,
-        deadlineMs: Long
-    ) {
-        while (System.currentTimeMillis() < deadlineMs) {
-            val file = runCatching {
-                shadowOf(tts).getLastSynthesizeToFile()
-            }.getOrNull()
-            if (file != null && file.exists() && file.length() > 44L) {
-                return
-            }
-            Thread.sleep(25)
-        }
-        throw AssertionError(
-            "لم يكتمل تشغيل المحرك خلال المهلة: $tts"
-        )
-    }
-
     @Test
-    fun `unsupportedLanguage_failsFast_noBytesAndFallsBackToCapableEngine`() {
+    fun unsupportedLanguage_failsFast_noBytesAndNoFallbackToOtherEngine() {
         registerEngine(ENGINE_A)
         registerEngine(ENGINE_B)
         EnginePicker.invalidateCache()
 
-        // الإعلان عن توفر الإنكليزية للاحتياطي العادي B (المجموعة مشتركة،
-        // لكن A يتجاوز الشادو بمحركه الوهمي فيفشل لغةً حتمياً).
-        ShadowTextToSpeech.addLanguageAvailability(
-            Locale.forLanguageTag("en-US")
-        )
-
         val context = RuntimeEnvironment.getApplication()
-        val provider = SystemVoiceProvider(context)
-        provider.capableEnginesFor = { listOf(ENGINE_A, ENGINE_B) }
+        val announcedMessages = mutableListOf<String>()
+        val provider = SystemVoiceProvider(context).apply {
+            errorAnnouncer = { announcedMessages.add(it) }
+        }
 
         val ttsA = UnsupportedEnEngine(context, { }, ENGINE_A)
-        val ttsB = TextToSpeech(
-            context, { }, ENGINE_B
-        )
+        val ttsB = TextToSpeech(context, { }, ENGINE_B)
         enginePoolOf(provider)[ENGINE_A] = ttsA
         enginePoolOf(provider)[ENGINE_B] = ttsB
 
@@ -153,46 +118,126 @@ class SystemVoiceProviderLanguageFallbackTest {
                     enginePackage = ENGINE_A
                 )
             }
-            val deadline = System.currentTimeMillis() + 10_000L
-            // A لا يُكتب منه شيء (فشل اللغة يستبق synthesizeToFile)؛
-            // ننتظر كتابة الاحتياطي B ثم نكمل وحدته اللفظية يدوياً.
-            awaitSynthesizedFile(ttsB, deadline)
-            shadowOf(ttsB).getUtteranceProgressListener().onDone("b")
             job.await()
         }
-        // تصريف رقيقات Main المعلّقة (تنبيه التراجع المنشور عبر Toast) —
-        // لا يؤثر على الحالة لكنه يطهر السجل.
         shadowOf(Looper.getMainLooper()).idle()
 
-        // (1) محرك فاشل اللغة لم يُبثّ منه أي بايت: لا synthesizeToFile
-        // ولا المستمع أصلاً (التراجع مبكرٌ جداً ومضمون).
-        assertNull(
-            "المحرك غير الداعم للغة كتب ملفاً",
-            shadowOf(ttsA).getLastSynthesizeToFile()
-        )
-        assertNull(
-            "المحرك غير الداعم للغة سُجّل له مستمع أصوات",
-            shadowOf(ttsA).getUtteranceProgressListener()
-        )
-        // (2) التراجع أُنجز فعلاً على محركٍ يدعم اللغة: صوتٌ من B.
-        assertTrue(
-            "التراجع على المحرك الداعم للغة لم يُنتج صوتاً",
-            chunks.isNotEmpty()
-        )
-        assertTrue(
-            "مثيل المحرك الاحتياطي لم يبقَ في المسبح",
-            enginePoolOf(provider).get(ENGINE_B) === ttsB
+        // 1. لا بايتات من المحرك الفاشل
+        assertTrue(chunks.isEmpty())
+
+        // 2. المحرك الفاشل أُسقط من المسبح وأُغلق
+        val pool = enginePoolOf(provider)
+        assertNull(pool[ENGINE_A])
+        assertTrue(shadowOf(ttsA).isShutdown)
+
+        // 3. لم يتم التبديل التلقائي إلى المحرك B
+        assertNull(shadowOf(ttsB).getLastSynthesizeToFile())
+
+        // 4. إطلاق رسالة الخطأ الصريحة
+        val expectedMsg = "تعذّر النطق بالمحرك المحدَّد"
+        assertEquals(listOf(expectedMsg), announcedMessages)
+    }
+
+    @Test
+    fun uninstalledOrDisabledEngine_announcesFailureAndDoesNotSynthesize() {
+        // ENGINE_B مثبت فقط؛ ENGINE_A معطل/غير مثبت
+        registerEngine(ENGINE_B)
+        EnginePicker.invalidateCache()
+
+        val context = RuntimeEnvironment.getApplication()
+        val announcedMessages = mutableListOf<String>()
+        val provider = SystemVoiceProvider(context).apply {
+            errorAnnouncer = { announcedMessages.add(it) }
+        }
+
+        val voiceEn = VoiceDescriptor(
+            id = "nateq-en-US",
+            providerId = SystemVoiceProvider.SYSTEM_PROVIDER_ID,
+            displayName = "English",
+            locale = Locale.forLanguageTag("en-US")
         )
 
-        // (3) المحرك الفاشل أُسقط من المسبح وأُغلق (فشلٌ مؤكد).
-        val pool = enginePoolOf(provider)
-        assertTrue(
-            "مثيل المحرك الفاشل لم يُسقط من المسبح",
-            pool.get(ENGINE_A) == null
+        val chunks = ArrayList<ByteArray>()
+        runBlocking {
+            provider.synthesize(
+                text = textEn,
+                voice = voiceEn,
+                speechRate = 1.0f,
+                pitch = 1.0f,
+                volume = 1.0f,
+                onFormatInfo = { _, _ -> },
+                onAudioChunk = { data, len ->
+                    chunks.add(data.copyOf(len))
+                },
+                enginePackage = ENGINE_A
+            )
+        }
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertTrue(chunks.isEmpty())
+        val expectedMsg = "تعذّر النطق بالمحرك المحدَّد"
+        assertEquals(listOf(expectedMsg), announcedMessages)
+    }
+
+    @Test
+    fun unconfiguredLanguage_announcesNoEngineSelectedOnce() {
+        val context = RuntimeEnvironment.getApplication()
+        val announcedMessages = mutableListOf<String>()
+        val fakePrefs = object : VoicePrefsProvider {
+            override fun getEngineForLanguage(languageTag: String): String? =
+                null
+
+            override fun getVoiceForLanguage(languageTag: String): String? =
+                null
+
+            override fun getPreferredVoiceIdForCategory(
+                category: String
+            ): String? = null
+
+            override fun getSpeechRateForCategory(category: String): Float =
+                1.0f
+
+            override fun getPitchForCategory(category: String): Float = 1.0f
+
+            override fun getVolumeForCategory(category: String): Float = 1.0f
+        }
+        val provider = SystemVoiceProvider(context, fakePrefs).apply {
+            errorAnnouncer = { announcedMessages.add(it) }
+        }
+
+        val voiceFr = VoiceDescriptor(
+            id = "nateq-fr-FR",
+            providerId = SystemVoiceProvider.SYSTEM_PROVIDER_ID,
+            displayName = "French",
+            locale = Locale.FRENCH
         )
-        assertTrue(
-            "مثيل المحرك الفاشل لم يُغلق",
-            shadowOf(ttsA).isShutdown
-        )
+
+        val chunks = ArrayList<ByteArray>()
+        runBlocking {
+            provider.synthesize(
+                text = "Bonjour",
+                voice = voiceFr,
+                speechRate = 1.0f,
+                pitch = 1.0f,
+                volume = 1.0f,
+                onFormatInfo = { _, _ -> },
+                onAudioChunk = { data, len -> chunks.add(data.copyOf(len)) }
+            )
+            provider.synthesize(
+                text = "Merci",
+                voice = voiceFr,
+                speechRate = 1.0f,
+                pitch = 1.0f,
+                volume = 1.0f,
+                onFormatInfo = { _, _ -> },
+                onAudioChunk = { data, len -> chunks.add(data.copyOf(len)) }
+            )
+        }
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertTrue(chunks.isEmpty())
+        val expectedMsg =
+            "لم يُحدَّد محرك نطق لهذه اللغة، افتح الإعدادات لاختياره"
+        assertEquals(listOf(expectedMsg), announcedMessages)
     }
 }

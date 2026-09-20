@@ -23,8 +23,7 @@ import com.google.android.material.switchmaterial.SwitchMaterial
 import java.util.Calendar
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
-/** ضابط قسم «إعلان الوقت»: الفاصل الزمني/الصيغة/
- *  ساعات الهدوء/التاريخ الهجري. */
+/** ضابط قسم «إعلان الوقت»: الفاصل الزمني/الصيغة/ساعات الهدوء. */
 internal class TimeAnnouncementController(
     private val fragment: VoiceSelectionFragment,
     private val settings: SettingsRepository,
@@ -439,7 +438,11 @@ internal class TimeAnnouncementController(
         val masterLabel = TextView(fragment.requireContext()).apply {
             text = fragment.getString(R.string.quiet_schedule_master)
             textSize = 16f
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            )
         }
         val masterStartSpinner = Spinner(fragment.requireContext()).apply {
             adapter = fragment.simpleAdapter(hoursLabels)
@@ -452,9 +455,15 @@ internal class TimeAnnouncementController(
         val masterTimes = LinearLayout(fragment.requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
-            addView(TextView(fragment.requireContext()).apply { text = fromLabel; setPadding(8, 0, 8, 0) })
+            addView(TextView(fragment.requireContext()).apply {
+                text = fromLabel
+                setPadding(8, 0, 8, 0)
+            })
             addView(masterStartSpinner)
-            addView(TextView(fragment.requireContext()).apply { text = toLabel; setPadding(8, 0, 8, 0) })
+            addView(TextView(fragment.requireContext()).apply {
+                text = toLabel
+                setPadding(8, 0, 8, 0)
+            })
             addView(masterEndSpinner)
         }
         val masterRow = LinearLayout(fragment.requireContext()).apply {
@@ -465,24 +474,30 @@ internal class TimeAnnouncementController(
             addView(masterSwitch)
         }
         llQuietSchedule?.addView(masterRow)
-        
+
         // Individual rows container
-        val individualContainer = LinearLayout(fragment.requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-        }
-        
+        val individualContainer =
+            LinearLayout(fragment.requireContext()).apply {
+                orientation = LinearLayout.VERTICAL
+                visibility = View.GONE
+            }
+
         val expandButton = TextView(fragment.requireContext()).apply {
-            text = "▼ " + fragment.getString(R.string.quiet_schedule_individual)
+            text = "▼ " +
+                fragment.getString(R.string.quiet_schedule_individual)
             textSize = 14f
             setPadding(0, (16 * density).toInt(), 0, (8 * density).toInt())
             setOnClickListener {
                 if (individualContainer.visibility == View.GONE) {
                     individualContainer.visibility = View.VISIBLE
-                    text = "▲ " + fragment.getString(R.string.quiet_schedule_individual)
+                    text = "▲ " + fragment.getString(
+                        R.string.quiet_schedule_individual
+                    )
                 } else {
                     individualContainer.visibility = View.GONE
-                    text = "▼ " + fragment.getString(R.string.quiet_schedule_individual)
+                    text = "▼ " + fragment.getString(
+                        R.string.quiet_schedule_individual
+                    )
                 }
             }
         }
@@ -510,50 +525,83 @@ internal class TimeAnnouncementController(
                 adapter = fragment.simpleAdapter(hoursLabels)
                 setSelection(start)
                 minimumHeight = (48 * density).toInt()
-                contentDescription = fragment.getString(R.string.time_quiet_start_for_day, dayName)
-                onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                    override fun onItemSelected(p0: AdapterView<*>?, p1: View?, position: Int, id: Long) {
-                        if (position in 0..23) {
-                            runCatching { settings.setQuietStartForDay(day, position) }
-                            onStatusChanged()
+                contentDescription = fragment.getString(
+                    R.string.time_quiet_start_for_day,
+                    dayName
+                )
+                onItemSelectedListener =
+                    object : AdapterView.OnItemSelectedListener {
+                        override fun onItemSelected(
+                            p0: AdapterView<*>?,
+                            p1: View?,
+                            position: Int,
+                            id: Long
+                        ) {
+                            if (position in 0..23) {
+                                runCatching {
+                                    settings.setQuietStartForDay(day, position)
+                                }
+                                onStatusChanged()
+                            }
                         }
+                        override fun onNothingSelected(p0: AdapterView<*>?) {}
                     }
-                    override fun onNothingSelected(p0: AdapterView<*>?) {}
-                }
             }
             val endSpinner = Spinner(fragment.requireContext()).apply {
                 adapter = fragment.simpleAdapter(hoursLabels)
                 setSelection(end)
                 minimumHeight = (48 * density).toInt()
-                contentDescription = fragment.getString(R.string.time_quiet_end_for_day, dayName)
-                onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                    override fun onItemSelected(p0: AdapterView<*>?, p1: View?, position: Int, id: Long) {
-                        if (position in 0..23) {
-                            runCatching { settings.setQuietEndForDay(day, position) }
-                            onStatusChanged()
+                contentDescription = fragment.getString(
+                    R.string.time_quiet_end_for_day,
+                    dayName
+                )
+                onItemSelectedListener =
+                    object : AdapterView.OnItemSelectedListener {
+                        override fun onItemSelected(
+                            p0: AdapterView<*>?,
+                            p1: View?,
+                            position: Int,
+                            id: Long
+                        ) {
+                            if (position in 0..23) {
+                                runCatching {
+                                    settings.setQuietEndForDay(day, position)
+                                }
+                                onStatusChanged()
+                            }
                         }
+                        override fun onNothingSelected(p0: AdapterView<*>?) {}
                     }
-                    override fun onNothingSelected(p0: AdapterView<*>?) {}
-                }
             }
 
-            val timesContainer = LinearLayout(fragment.requireContext()).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
-                visibility = if (dayEnabled) View.VISIBLE else View.GONE
-                addView(TextView(fragment.requireContext()).apply { text = fromLabel; setPadding(8, 0, 8, 0) })
-                addView(startSpinner)
-                addView(TextView(fragment.requireContext()).apply { text = toLabel; setPadding(8, 0, 8, 0) })
-                addView(endSpinner)
-            }
+            val timesContainer =
+                LinearLayout(fragment.requireContext()).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    visibility = if (dayEnabled) View.VISIBLE else View.GONE
+                    addView(TextView(fragment.requireContext()).apply {
+                        text = fromLabel
+                        setPadding(8, 0, 8, 0)
+                    })
+                    addView(startSpinner)
+                    addView(TextView(fragment.requireContext()).apply {
+                        text = toLabel
+                        setPadding(8, 0, 8, 0)
+                    })
+                    addView(endSpinner)
+                }
 
             val switch = SwitchMaterial(fragment.requireContext()).apply {
                 isChecked = dayEnabled
                 minHeight = (48 * density).toInt()
-                contentDescription = fragment.getString(R.string.time_quiet_enabled_for_day, dayName)
+                contentDescription = fragment.getString(
+                    R.string.time_quiet_enabled_for_day,
+                    dayName
+                )
                 setOnCheckedChangeListener { _, checked ->
                     runCatching { settings.setDayQuietEnabled(day, checked) }
-                    timesContainer.visibility = if (checked) View.VISIBLE else View.GONE
+                    timesContainer.visibility =
+                        if (checked) View.VISIBLE else View.GONE
                     onStatusChanged()
                 }
             }
@@ -563,7 +611,11 @@ internal class TimeAnnouncementController(
                 textSize = 16f
                 minHeight = (48 * density).toInt()
                 gravity = android.view.Gravity.CENTER_VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                layoutParams = LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1f
+                )
             }
 
             val row = LinearLayout(fragment.requireContext()).apply {
@@ -582,10 +634,18 @@ internal class TimeAnnouncementController(
         }
 
         // Initialize master row state based on all days
-        val allEnabled = (1..7).all { runCatching { settings.isDayQuietEnabled(it) }.getOrDefault(false) }
-        val commonStart = runCatching { settings.getQuietStartForDay(Calendar.SUNDAY) }.getOrDefault(23)
-        val commonEnd = runCatching { settings.getQuietEndForDay(Calendar.SUNDAY) }.getOrDefault(7)
-        
+        val allEnabled = (1..7).all {
+            runCatching {
+                settings.isDayQuietEnabled(it)
+            }.getOrDefault(false)
+        }
+        val commonStart = runCatching {
+            settings.getQuietStartForDay(Calendar.SUNDAY)
+        }.getOrDefault(23)
+        val commonEnd = runCatching {
+            settings.getQuietEndForDay(Calendar.SUNDAY)
+        }.getOrDefault(7)
+
         masterSwitch.isChecked = allEnabled
         masterTimes.visibility = if (allEnabled) View.VISIBLE else View.GONE
         masterStartSpinner.setSelection(commonStart)
@@ -594,10 +654,10 @@ internal class TimeAnnouncementController(
         // Master switch listener
         masterSwitch.setOnCheckedChangeListener { _, checked ->
             masterTimes.visibility = if (checked) View.VISIBLE else View.GONE
-            
+
             val s = masterStartSpinner.selectedItemPosition
             val e = masterEndSpinner.selectedItemPosition
-            
+
             for (i in days.indices) {
                 val day = days[i].second
                 runCatching { settings.setDayQuietEnabled(day, checked) }
@@ -605,10 +665,11 @@ internal class TimeAnnouncementController(
                     runCatching { settings.setQuietStartForDay(day, s) }
                     runCatching { settings.setQuietEndForDay(day, e) }
                 }
-                
-                // Update individual UI silently without triggering their listeners
+
+                // Update individual UI silently without triggering listeners
                 individualSwitches[i].isChecked = checked
-                individualTimes[i].visibility = if (checked) View.VISIBLE else View.GONE
+                individualTimes[i].visibility =
+                    if (checked) View.VISIBLE else View.GONE
                 if (checked) {
                     individualStarts[i].setSelection(s)
                     individualEnds[i].setSelection(e)
@@ -616,29 +677,45 @@ internal class TimeAnnouncementController(
             }
             onStatusChanged()
         }
-        
-        masterStartSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p0: AdapterView<*>?, p1: View?, pos: Int, id: Long) {
-                if (!masterSwitch.isChecked) return
-                for (i in days.indices) {
-                    runCatching { settings.setQuietStartForDay(days[i].second, pos) }
-                    individualStarts[i].setSelection(pos)
+
+        masterStartSpinner.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(
+                    p0: AdapterView<*>?,
+                    p1: View?,
+                    pos: Int,
+                    id: Long
+                ) {
+                    if (!masterSwitch.isChecked) return
+                    for (i in days.indices) {
+                        runCatching {
+                            settings.setQuietStartForDay(days[i].second, pos)
+                        }
+                        individualStarts[i].setSelection(pos)
+                    }
+                    onStatusChanged()
                 }
-                onStatusChanged()
+                override fun onNothingSelected(p0: AdapterView<*>?) {}
             }
-            override fun onNothingSelected(p0: AdapterView<*>?) {}
-        }
-        masterEndSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p0: AdapterView<*>?, p1: View?, pos: Int, id: Long) {
-                if (!masterSwitch.isChecked) return
-                for (i in days.indices) {
-                    runCatching { settings.setQuietEndForDay(days[i].second, pos) }
-                    individualEnds[i].setSelection(pos)
+        masterEndSpinner.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(
+                    p0: AdapterView<*>?,
+                    p1: View?,
+                    pos: Int,
+                    id: Long
+                ) {
+                    if (!masterSwitch.isChecked) return
+                    for (i in days.indices) {
+                        runCatching {
+                            settings.setQuietEndForDay(days[i].second, pos)
+                        }
+                        individualEnds[i].setSelection(pos)
+                    }
+                    onStatusChanged()
                 }
-                onStatusChanged()
+                override fun onNothingSelected(p0: AdapterView<*>?) {}
             }
-            override fun onNothingSelected(p0: AdapterView<*>?) {}
-        }
     }
 
     /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */

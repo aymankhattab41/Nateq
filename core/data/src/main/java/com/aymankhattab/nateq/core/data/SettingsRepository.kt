@@ -977,8 +977,6 @@ class SettingsRepository(private val context: Context) :
     override fun setTime24Hour(enabled: Boolean) =
         prefs.edit().putBoolean("time_display_24h", enabled).apply()
 
-    /** نطق التواريخ بالتقويم الهجري (أم القرى) بدل الميلادي */
-
     // ============ قراءة النصوص: الترقيم والتهجئة الذكية ============
 
     /** مستوى نطق علامات الترقيم والرموز (0 لا شيء، 1 البعض، 2 الكل).
@@ -1640,7 +1638,8 @@ class SettingsRepository(private val context: Context) :
                         ops.add(Op { it.putFloat(key, v) }); meaningful++
                     }
                     is Boolean -> {
-                        if (key == "hijri_date" || key == "hijri_date_enabled") continue
+                        if (key == "hijri_date" ||
+                            key == "hijri_date_enabled") continue
                         // المفاتيح الحساسة تُثبَّت false على الاستيراد مهما
                         // وردت في النسخة (انظر SAFE_DEFAULT_FALSE_KEYS).
                         val safe = if (key in SAFE_DEFAULT_FALSE_KEYS) {

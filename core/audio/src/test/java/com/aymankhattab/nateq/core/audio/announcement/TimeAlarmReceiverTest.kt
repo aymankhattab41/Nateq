@@ -23,7 +23,7 @@ import org.robolectric.shadows.ShadowAlarmManager
  *  17 حتى إذن رُفض افتراضياً؛ وعلى ما قبل 12 يعمل الدقيق بلا إذن. كل المسارات
  *  بنفس الزمن المستهدف ونفس الـ PendingIntent الواحد غير القابل للتعديل. */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [37])
 class TimeAlarmReceiverTest {
 
     private val context: Context

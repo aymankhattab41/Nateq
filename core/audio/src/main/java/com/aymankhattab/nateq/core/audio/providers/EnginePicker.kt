@@ -84,44 +84,4 @@ object EnginePicker {
         return installedEngines(context).map { it.packageName }
     }
 
-    /**
-     * يختار المحرك المفضّل من قائمة الحزم المثبتة وفق ترتيب
-     * الأولوية المفضَّلة، ثم أي محرك مثبّت ليس قارئ شاشة. (من
-     * [EngineRegistry]). منطق نقي قابل للاختبار دون Context.
-     */
-    fun pickPreferredEngineFrom(installed: Collection<String>): String? {
-        return EngineRegistry.pickPreferredEngineFrom(installed)
-    }
-
-    /**
-     * محرك الاحتياط بعد فشل محرك أو أكثر في النطق، باستبعاد تراكمي
-     * لسد سجلّ الفشل. (من [EngineRegistry]). منطق نقي قابل للاختبار.
-     */
-    fun pickFallbackEngineFrom(
-        installed: Collection<String>,
-        failedEngines: Set<String>
-    ): String? {
-        return EngineRegistry.pickFallbackEngineFrom(
-            installed,
-            failedEngines
-        )
-    }
-
-    /**
-     * يختار المحرك الذي ينطق به التطبيق عند عدم تحديد المستخدم لمحرك يدوياً:
-     * 1) محرك مفضَّل معروف بنطقٍ حقيقي (MultiTTS/جوجل/سامسونج…) إن وُجد.
-     * 2) وإلا أي محرك مثبّت ليس قارئ شاشة (ملاذ أخير).
-     * يُتجنَّب في الاختيار التلقائي قارئات الشاشة (TalkBack/…)
-     * لأنها لا تُنتج صوتاً عبر synthesize القياسي فتجعل «لا صوت يُسمع».
-     */
-    fun pickEnginePackage(context: Context): String? {
-        return pickPreferredEngineFrom(installedEnginePackages(context))
-    }
-
-    /** حزمة محرك جوجل (الملاذ الأخير المضمون في سلسلة التراجع المرنة) إن كانت
-     *  مثبّتة — تُستدعى فقط عند استنفاد المحركات الأفضل. */
-    fun googleEnginePackage(context: Context): String? {
-        return "com.google.android.tts"
-            .takeIf { installedEnginePackages(context).contains(it) }
-    }
 }

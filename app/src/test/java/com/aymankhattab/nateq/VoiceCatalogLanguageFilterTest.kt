@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq
+package com.aymankhattab.nateq
 
 import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
@@ -19,7 +19,7 @@ import org.robolectric.annotation.Config
  * أعلن المحرك دعمها نظرياً. منطق نقي عبر Robolectric (لا محرك حقيقي).
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [24, 30, 35])
+@Config(sdk = [24, 30, 35, 37])
 class VoiceCatalogLanguageFilterTest {
 
     private fun voice(locale: Locale): Voice =

@@ -14,7 +14,7 @@ import org.robolectric.annotation.Config
  * فلتر OTP الخاص بالرسائل النصية.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [37])
 class NateqNotificationListenerTest {
 
     @Test

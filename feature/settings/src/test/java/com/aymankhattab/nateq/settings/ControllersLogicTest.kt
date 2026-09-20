@@ -85,4 +85,34 @@ class ControllersLogicTest {
         contactsGranted = contacts,
         requiresCallLog = requiresCallLog
     )
+
+    @Test
+    fun engineStatus_unselectedWhenNull() {
+        val status = EngineStatusResolver.resolveStatus(
+            savedEngine = null,
+            installedPackages = listOf("com.google.android.tts")
+        )
+        assertEquals(EngineStatus.NOT_SELECTED, status)
+    }
+
+    @Test
+    fun engineStatus_disabledOrMissingWhenNotInstalled() {
+        val status = EngineStatusResolver.resolveStatus(
+            savedEngine = "com.disabled.vendor.tts",
+            installedPackages = listOf("com.google.android.tts")
+        )
+        assertEquals(EngineStatus.DISABLED_OR_MISSING, status)
+    }
+
+    @Test
+    fun engineStatus_configuredWhenInstalled() {
+        val status = EngineStatusResolver.resolveStatus(
+            savedEngine = "com.google.android.tts",
+            installedPackages = listOf(
+                "com.google.android.tts",
+                "org.nobody.multitts"
+            )
+        )
+        assertEquals(EngineStatus.CONFIGURED, status)
+    }
 }

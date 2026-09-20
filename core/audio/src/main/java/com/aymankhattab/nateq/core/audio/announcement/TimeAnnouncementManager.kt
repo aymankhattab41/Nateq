@@ -64,12 +64,6 @@ class TimeAnnouncementManager(
                         SystemVoiceProvider(appContext, sharedSettings)
                     )
                     val catalog = VoiceCatalog(providers)
-                    // سلسلة تراجع لغة الإعلان تستند لذكرة اكتشاف الكتالوج.
-                    providers.forEach { provider ->
-                        provider.capableEnginesFor = { tag ->
-                            catalog.discoveredEnginePackagesFor(tag)
-                        }
-                    }
                     val handler = SynthesisRequestHandler(
                         catalog, sharedSettings
                     )

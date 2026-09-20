@@ -141,7 +141,16 @@ class NateqTtsService : TextToSpeechService() {
     private lateinit var settings: SettingsRepository
     private lateinit var catalog: VoiceCatalog
     private lateinit var requestHandler: SynthesisRequestHandler
-    private lateinit var textProcessor: TextProcessor
+    // معالج النصوص (والقاموس بداخله: Keystore I/O + JSON) كسول: لا يُبنى
+    // في onCreate على الرئيسي، بل عند أول نطق فعلي أو في التدفئة الخلفية.
+    private val textProcessor: TextProcessor by lazy {
+        val dict = if (::pronunciationDictionary.isInitialized) {
+            pronunciationDictionary
+        } else {
+            PronunciationDictionary(applicationContext)
+        }
+        TextProcessor(applicationContext, settings, dict)
+    }
 
     /** مقسم النصوص المختلطة الكتابات (منطق نقي مشترك بلا حالة). */
     private val segmenter = LanguageSegmenter()
@@ -246,25 +255,11 @@ class NateqTtsService : TextToSpeechService() {
         settings = if (::settingsRepository.isInitialized) settingsRepository
         else SettingsRepository.create(applicationContext)
 
-        val dict = if (::pronunciationDictionary.isInitialized) {
-            pronunciationDictionary
-        } else {
-            PronunciationDictionary(applicationContext)
-        }
-
         val providers = listOf(
             SystemVoiceProvider(applicationContext, settings)
         )
         catalog = VoiceCatalog(providers)
         requestHandler = SynthesisRequestHandler(catalog, settings)
-        textProcessor = TextProcessor(applicationContext, settings, dict)
-        // سلسلة التراجع لكل لغة تستند إلى ذاكرة اكتشاف الكتالوج
-        // (المحركات القادرة على اللغة فعلياً) بدل القائمة العالمية.
-        providers.forEach { provider ->
-            provider.capableEnginesFor = { tag ->
-                catalog.discoveredEnginePackagesFor(tag)
-            }
-        }
 
         // تدفئة محركات TTS المثبتة على الخلفية (بند ب.txt 3.4-2): أول ربط
         // TextToSpeech يكلف 150–800ms لدى بعض المحركات — نربطها قبل طلب
@@ -288,6 +283,9 @@ class NateqTtsService : TextToSpeechService() {
         // ليُلغى فور ورود طلب تخليق حقيقي فلا يُزاحم النطق على المحركات.
         warmupJob = serviceScope.launch {
             try {
+                // بناء القاموس/المعالج الكسول هنا على IO: فإن وصل طلب
+                // حقيقي أثناء البناء أُلغيت التدفئة وبناه الطلب بنفسه.
+                runCatching { textProcessor }
                 maybeRefreshDiscovery()
                 warmNavigationCache()
             } catch (t: Throwable) {

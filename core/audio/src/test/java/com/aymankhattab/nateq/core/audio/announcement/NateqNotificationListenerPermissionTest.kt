@@ -20,7 +20,7 @@ import org.robolectric.annotation.Config
  * وخدمة أخرى فقط — فتُعتمد الخدمة الفعلية عبر Robolectric (sdk 35).
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [37])
 class NateqNotificationListenerPermissionTest {
 
     private val context: Context

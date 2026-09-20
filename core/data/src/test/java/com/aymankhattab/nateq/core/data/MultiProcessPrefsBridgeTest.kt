@@ -17,7 +17,7 @@ import org.robolectric.annotation.Config
  * مجموعات النصوص string-set) ويغطي حارس تغيّر التوقيت.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [37])
 class MultiProcessPrefsBridgeTest {
 
     private val context: Context =

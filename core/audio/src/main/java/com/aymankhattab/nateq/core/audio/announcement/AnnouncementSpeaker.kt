@@ -435,19 +435,11 @@ class AnnouncementSpeaker(
         if (tts != null) {
             shutdownSafely()
         }
-        // لا يوجد محرك افتراضي عام: يُحسم المحرك وقت النطق إما صراحةً
-        // (finalEngine المحرك الخاص بالفئة/الوظيفة)، وإلا اختيار ديناميكي
-        // عبر [EngineRegistry] (مفضَّل ← أي محرك مثبّت غير قارئ شاشة).
         val engine = finalEngine
-            ?: EnginePicker.pickEnginePackage(appContext)
         boundEngine = engine
         var newTts: TextToSpeech? = null
         // **المنشئ الثلاثي الصريح** TextToSpeech(context, listener, engine):
-        // المنشئ الثنائي كان يربط بالمحرك الافتراضي للنظام، فحين يكون LORD
-        // هو المحرك الافتراضي (كما كثيراً ما يضبطه مستخدموه) يدخل التطبيق
-        // في حلقة ربط ذاتي TextToSpeech→خدمة LORD→Nateq ويعتّم صوت كل
-        // الإعلانات في الخلفية. الربط المباشر بحزمة المحرك المحسومة
-        // ([EnginePicker] يستبعد حزمة التطبيق ذاته) يمنع الحلقة من منبعها.
+        // الربط المباشر بحزمة المحرك المحسومة صراحة يمنع الحلقات الذاتية.
         newTts = TextToSpeech(appContext, { status ->
             val success = status == TextToSpeech.SUCCESS
             if (success) {

@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq
+package com.aymankhattab.nateq
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
@@ -17,7 +17,7 @@ import org.robolectric.annotation.Config
 
 /** اختبارات معالج النصوص الذكي (TextProcessor). */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [24, 30, 35])
+@Config(sdk = [24, 30, 35, 37])
 class TextProcessorTest {
 
     private lateinit var processor: TextProcessor
@@ -812,7 +812,10 @@ class TextProcessorTest {
     @Test
     fun processSemantics_handleWithAt_readAsEnglishAt() {
         val out = processor.process("تواصل معي @ahmed_2024", "ar")
-        org.junit.Assert.assertTrue("Should contain 'at', but was: " + out, out.contains(" at "))
+        org.junit.Assert.assertTrue(
+            "Should contain 'at', but was: " + out,
+            out.contains(" at ")
+        )
     }
 
 }
