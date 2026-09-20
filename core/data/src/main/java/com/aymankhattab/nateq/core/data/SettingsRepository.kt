@@ -954,7 +954,7 @@ class SettingsRepository(private val context: Context) :
      *  حفاظاً على السلوك السابق قبل إدخال مفاتيح اليوم. */
     override fun isDayQuietEnabled(day: Int): Boolean {
         val d = day.coerceIn(1, 7)
-        return prefs.getBoolean("time_quiet_day_enabled", false)
+        return prefs.getBoolean("time_quiet_day${d}_enabled", false)
     }
 
     override fun setDayQuietEnabled(day: Int, enabled: Boolean) {
