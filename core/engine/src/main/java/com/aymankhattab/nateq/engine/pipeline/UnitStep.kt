@@ -65,6 +65,12 @@ internal object UnitStep : TextProcessingStep {
         UnitInfo("سنة", "سنة", "سنوات", "سنتان", true)
     )
 
+    // وحدات تخزين البيانات: غير حساسة لحالة الأحرف (MB, Mb, mb, mB...)
+    // دون غيرها من الوحدات العالمية لتجنّب تصادم الحالات (مثل K كلفن).
+    private val DATA_STORAGE_UNITS = setOf(
+        "KB", "MB", "GB", "TB", "كبت", "مبت", "جببت"
+    )
+
     private val UNIT_PATTERNS = UNIT_NAMES.map { info ->
         // حدود الكلمات مُعرَّفة يدوياً بلا وسم (?U): هو وسم Java لا تدعمه ICU4C
         // (محرك java.util.regex في أندرويد) فيُسقط تحليل النمط خطأً في ART.
@@ -77,6 +83,13 @@ internal object UnitStep : TextProcessingStep {
         // نظرة خلفية سالبة تستبعد السابقة «ساعة»/«الساعة» (توقيت: «الساعة
         // 5 م») و«عام م»/«سنة م» (ميلادي: «عام 2024 م») فتُترك لخطوات الزمن
         // والتاريخ؛ Lookbehind ثابتة الطول (متطلب Java) لكل لفظٍ على حدة.
+        val isDataUnit = info.symbol in DATA_STORAGE_UNITS
+        val flags = if (isDataUnit) Pattern.CASE_INSENSITIVE else 0
+        val symbolPart = if (isDataUnit) {
+            "(?i:${Pattern.quote(info.symbol)})"
+        } else {
+            Pattern.quote(info.symbol)
+        }
         val pattern = if (info.symbol == "م") {
             Pattern.compile(
                 """(?<!ساعة\s)(?<!الساعة\s)(?<!عام\s)(?<!سنة\s)\b""" +
@@ -86,7 +99,8 @@ internal object UnitStep : TextProcessingStep {
         } else {
             Pattern.compile(
                 """\b(\d+(?:[.,]\d{3})*(?:[.,]\d+)?)\s*""" +
-                    """${Pattern.quote(info.symbol)}(?![\p{L}\p{N}_])"""
+                    """$symbolPart(?![\p{L}\p{N}_])""",
+                flags
             )
         }
         pattern to info

@@ -105,6 +105,34 @@ class PipelineStepsTest {
         assertEquals("ثمانون كيلومتر في الساعة", UnitStep.apply("80 كم/س"))
     }
 
+    @Test
+    fun unit_data_storage_case_insensitive_mb() {
+        assertEquals("حمّل خمسون ميجابايت", UnitStep.apply("حمّل 50mb"))
+        assertEquals("حمّل خمسون ميجابايت", UnitStep.apply("حمّل 50Mb"))
+        assertEquals("حمّل خمسون ميجابايت", UnitStep.apply("حمّل 50MB"))
+        assertEquals("حمّل خمسون ميجابايت", UnitStep.apply("حمّل 50mB"))
+    }
+
+    @Test
+    fun unit_data_storage_case_insensitive_other_bytes() {
+        assertEquals("عشرة كيلوبايتات", UnitStep.apply("10kb"))
+        assertEquals("عشرة كيلوبايتات", UnitStep.apply("10Kb"))
+        assertEquals("عشرة كيلوبايتات", UnitStep.apply("10KB"))
+        assertEquals("خمسة جيجابايتات", UnitStep.apply("5gb"))
+        assertEquals("خمسة جيجابايتات", UnitStep.apply("5Gb"))
+        assertEquals("خمسة جيجابايتات", UnitStep.apply("5GB"))
+        assertEquals("تيرابايت واحد", UnitStep.apply("1tb"))
+        assertEquals("تيرابايت واحد", UnitStep.apply("1Tb"))
+        assertEquals("تيرابايت واحد", UnitStep.apply("1TB"))
+    }
+
+    @Test
+    fun unit_non_data_units_remain_case_sensitive() {
+        // كلفن K كبير فقط لا k صغير
+        assertEquals("خمسة كلفنات", UnitStep.apply("5 K"))
+        assertEquals("5 k", UnitStep.apply("5 k"))
+    }
+
     // ═══════════════════════ CurrencyStep ═══════════════════════
 
     @Test

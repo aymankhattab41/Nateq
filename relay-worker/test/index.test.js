@@ -258,3 +258,124 @@ test("fetch: تجاوز المعدل يُسلَّم 200 OK بصمت (بند 8.1)
     globalThis.fetch = realFetch;
   }
 });
+
+// ── فحص المستندات والملفات: الحدود والتوجيه ────────────────────────────
+
+test("forwardMessage: يرفض الملفات التي تتجاوز 10 ميجابايت وينبه المستخدم", async () => {
+  const env = {
+    TELEGRAM_BOT_TOKEN: "dummy_token",
+    SUPPORT_CHAT_ID: "999",
+  };
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    const result = await forwardMessage(env, {
+      message: {
+        document: {
+          file_name: "huge_log.txt",
+          file_id: "HUGE_FILE_ID",
+          file_size: 15 * 1024 * 1024, // 15MB > 10MB
+        },
+        from: { id: 101, first_name: "علي" },
+        chat: { id: 101 },
+        date: 100,
+      },
+    });
+    assert.equal(result, "file_too_large");
+    assert.equal(calls.length, 1, "يُرسل رسالة رفض واحدة للمستخدم فقط");
+    const bodyText = calls[0].options.body.toString();
+    assert.ok(bodyText.includes("chat_id=101"), "الرد يذهب إلى دردشة المستخدم");
+    assert.ok(bodyText.includes("10"), "يذكر حد 10 ميجابايت");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("forwardMessage: يقبل ملف السجل (أقل من 10 ميجابايت) ويوجهه للمطور مع تأكيد", async () => {
+  const env = {
+    TELEGRAM_BOT_TOKEN: "dummy_token",
+    SUPPORT_CHAT_ID: "999",
+  };
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    const result = await forwardMessage(env, {
+      message: {
+        document: {
+          file_name: "nateq_log.txt",
+          file_id: "VALID_LOG_FILE_ID",
+          file_size: 500 * 1024, // 500KB
+        },
+        from: { id: 102, first_name: "سارة" },
+        chat: { id: 102 },
+        date: 200,
+      },
+    });
+    assert.equal(result, "forwarded");
+    // يجب أن تشمل الاستدعاءات:
+    // 1) إشعار/رأس للمطور (sendMessage)
+    // 2) توجيه الملف الفعلي للمطور (sendDocument)
+    // 3) رسالة تأكيد للمستخدم (sendMessage)
+    assert.ok(calls.length >= 3, `توقع 3 استدعاءات على الأقل، ورد: ${calls.length}`);
+    const hasSendDoc = calls.some(
+      (c) =>
+        c.url.includes("/sendDocument") &&
+        c.options.body.toString().includes("document=VALID_LOG_FILE_ID") &&
+        c.options.body.toString().includes("chat_id=999")
+    );
+    assert.ok(hasSendDoc, "يجب استدعاء sendDocument بمعرف الملف ومحادثة الدعم");
+    const hasConfirm = calls.some(
+      (c) =>
+        c.url.includes("/sendMessage") &&
+        c.options.body.toString().includes("chat_id=102")
+    );
+    assert.ok(hasConfirm, "يجب إرسال تأكيد الاستلام لدردشة المستخدم");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("forwardMessage: يستقبل الرسائل الصوتية (msg.voice) ويوجهها للمطور عبر sendVoice", async () => {
+  const env = {
+    TELEGRAM_BOT_TOKEN: "dummy_token",
+    SUPPORT_CHAT_ID: "999",
+  };
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  try {
+    const result = await forwardMessage(env, {
+      message: {
+        voice: {
+          file_id: "VOICE_SAMPLE_ID",
+          duration: 12,
+        },
+        caption: "اسمع هذا التقطع في النطق",
+        from: { id: 103, first_name: "خالد" },
+        chat: { id: 103 },
+        date: 300,
+      },
+    });
+    assert.equal(result, "forwarded");
+    const hasSendVoice = calls.some(
+      (c) =>
+        c.url.includes("/sendVoice") &&
+        c.options.body.toString().includes("voice=VOICE_SAMPLE_ID") &&
+        c.options.body.toString().includes("chat_id=999")
+    );
+    assert.ok(hasSendVoice, "يجب استدعاء sendVoice وإعادة إرسال الصوت للمطور");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

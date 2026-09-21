@@ -127,7 +127,7 @@ object UpdateChecker {
 
     /** اختيار مرفق الـ APK من أصول الإصدار: يفضّل الاسم المتوقع
      *  ([APK_NAME]) ثم أي مرفق ينتهي بـ `.apk` — فنسخة قديمة مثبّتة تبحث
-     *  عن `lord_tts.apk` لا ترى مرفقاً باسم `nateq.apk` فتعلن «محدّثاً»
+     *  عن اسمٍ قديم لا ترى مرفقاً باسم `nateq.apk` فتعلن «محدّثاً»
      *  وهمياً. تُعيد null إن لم يوجد أي مرفق APK. منطق نقي قابل للاختبار. */
     internal fun <T> pickApkAsset(
         assets: List<T>,
@@ -190,7 +190,7 @@ object UpdateChecker {
                     // الحالية من واجهة Releases.
                     conn.setRequestProperty(
                         "User-Agent",
-                        "Lord-TTS/UpdateChecker (Nateq)"
+                        "Nateq/UpdateChecker"
                     )
                     conn.setRequestProperty(
                         "Accept",
@@ -218,7 +218,7 @@ object UpdateChecker {
                     val apkAssets = (0 until (assets?.size() ?: 0))
                         .mapNotNull { assets?.get(it)?.optObject() }
                     // الاسم المتوقع أولاً ثم أي مرفق APK — حتى لا يضيع التحديث
-                    // لو غُيّر اسم المرفق (النسخة القديمة `lord_tts.apk`
+                    // لو غُيّر اسم المرفق (نسخة سابقة باسمٍ قديم
                     // لا ترى `nateq.apk` فكانت تُعلن تحديثاً وهمياً).
                     val apkAsset = pickApkAsset(apkAssets) {
                         it.optString("name")
@@ -299,7 +299,7 @@ object UpdateChecker {
             Context.DOWNLOAD_SERVICE
         ) as DownloadManager
         val request = DownloadManager.Request(Uri.parse(apkUrl))
-            .setTitle("Lord TTS update")
+            .setTitle("Nateq update")
             .setNotificationVisibility(
                 DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
             )

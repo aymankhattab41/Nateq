@@ -20,9 +20,11 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
+import java.io.File
 import com.google.android.material.switchmaterial.SwitchMaterial
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -424,7 +426,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             )
         }
 
-        // زر جعل Lord المحرك الافتراضي (يفتح شاشة TTS النظامية لاختياره
+        // زر جعل ناطق المحرك الافتراضي (يفتح شاشة TTS النظامية لاختياره
         // يدوياً)
         btnSetDefaultEngine = view.findViewById(R.id.btn_set_default_engine)
         btnSetDefaultEngine.setOnClickListener {
@@ -495,7 +497,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         callerSection = CallerAnnouncementController(
             this, settings, nateqVoices,
             onStatusChanged = { accordion.updateSectionStatuses() },
-            onOpenOemGuidance = { accordion.navigateToSection(R.id.ll_oem_guidance_content) }
+            onOpenOemGuidance = {
+                accordion.navigateToSection(R.id.ll_oem_guidance_content)
+            }
         ).apply { setup(view) }
         smsSection = SmsReadingController(
             this, settings, nateqVoices, { accordion.updateSectionStatuses() }
@@ -1107,7 +1111,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
     }
 
-    // ===== الإبلاغ عن خطأ: جمع الأخطاء من السجل ومشاركتها =====
+    // ===== جمع سطور الأخطاء من سجل التطبيق ومشاركتها مع المطور =====
     private fun onReportErrorClicked() {
         val context = requireContext()
         Toast.makeText(
@@ -1116,8 +1120,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             Toast.LENGTH_SHORT
         ).show()
         lifecycleScope.launch {
-            val report = runCatching { buildErrorReport(context) }.getOrNull()
-            if (report == null || report.second.isEmpty()) {
+            val report = runCatching {
+                buildErrorReport(context)
+            }.getOrNull()
+            if (report.isNullOrBlank()) {
                 Toast.makeText(
                     context,
                     R.string.report_error_empty,
@@ -1126,91 +1132,42 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 view?.announceCompat(getString(R.string.report_error_empty))
                 return@launch
             }
-            shareErrorReport(
-                context,
-                report.second.joinToString("\n"),
-                report.first
-            )
+            val logFile = writeLogToCacheFile(context, report)
+            showErrorReportDialog(context, report, logFile)
         }
     }
 
     /**
-     * يجمع سطور الأخطاء من سجل التقنية عبر logcat (عملية التطبيق الحالية فقط)،
-     * ويُبقي مستوى الخطورة E/F ضمن وسومنا فقط — أي لا يُخرج السجل كله.
-     * يعيد نصاً مسبوقاً بترويسة تعريف (جهاز/إصدار/وقت) إن وُجدت أسطر،
-     * وإلا نصاً فارغاً.
+     * يبني تقريراً شاملاً يجمع بين معلومات التشخيص وحالة المحركات والأجهزة
+     * وأحدث سطور logcat لعملية التطبيق (أخطاء وتحذيرات ونشاط حديث).
      */
-    private suspend fun buildErrorReport(context: android.content.Context) =
+    private suspend fun buildErrorReport(
+        context: android.content.Context
+    ): String =
         kotlinx.coroutines.withContext(AppDispatchers.io) {
-            // نجمع سطور الأخطاء/الاستثناءات للتطبيق نفسه فقط — لا السجل كله:
-            // نقرأ آخر 1500 سطر لعملية التطبيق الحالية (تحديداً بالـ PID)،
-            // ونُبقي ما يحمل مستوى ERROR (E) أو Fatal (F) ضمن وسوم ناتك.
-            val filtered = mutableListOf<String>()
+            val diagnostics = buildDiagnosticsInfo(context)
+            val logLines = mutableListOf<String>()
             try {
                 val process = Runtime.getRuntime().exec(
                     arrayOf(
                         "logcat", "-d",
-                        "-t", "1500",
+                        "-t", "600",
                         "--pid", android.os.Process.myPid().toString()
                     )
                 )
                 process.inputStream.bufferedReader().useLines { lines ->
                     for (line in lines) {
-                        val lower = line.lowercase()
-                        // تنسيق logcat الافتراضي (brief): الحرف الأول هو مستوى
-                        // الخطورة
-                        // (V/D/I/W/E/F). نبقي E (Error) وF (Fatal) —
-                        // أي لا نُخرج كل السجل.
-                        val isErrorLevel = line.isNotEmpty() &&
-                            (line[0] == 'E' || line[0] == 'F')
-                        // نقيّد المصدر بحزمتنا/وسومها دون سجل النظام الآخر
-                        val isOurTag =
-                            lower.contains("nateq") || lower.contains("lordt")
-                        if (isErrorLevel && isOurTag) filtered.add(line)
+                        logLines.add(line)
                     }
                 }
                 process.waitFor()
             } catch (e: Exception) {
                 android.util.Log.e("NATEQ_APP", "logcat collect failed", e)
             }
-            if (filtered.isEmpty()) {
-                return@withContext "" to emptyList<String>()
-            }
-            val info = context.packageManager.getPackageInfo(
-                context.packageName, 0
-            )
-            val versionName = info.versionName ?: "?"
-            val versionCode =
-                if (android.os.Build.VERSION.SDK_INT >=
-                    android.os.Build.VERSION_CODES.P
-                ) {
-                    info.longVersionCode
-                } else {
-                    @Suppress("DEPRECATION") info.versionCode.toLong()
-                }
-            val header = buildString {
+
+            buildString {
                 appendLine(
                     context.getString(R.string.error_report_header_title)
-                )
-                appendLine(
-                    context.getString(
-                        R.string.error_report_version,
-                        versionName, versionCode
-                    )
-                )
-                appendLine(
-                    context.getString(
-                        R.string.error_report_device,
-                        android.os.Build.MANUFACTURER,
-                        android.os.Build.MODEL
-                    )
-                )
-                appendLine(
-                    context.getString(
-                        R.string.error_report_android_os,
-                        android.os.Build.VERSION.RELEASE,
-                        android.os.Build.VERSION.SDK_INT
-                    )
                 )
                 appendLine(
                     context.getString(
@@ -1220,23 +1177,113 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                         ).format(java.util.Date())
                     )
                 )
-                appendLine("-----")
+                appendLine("==========================================")
+                appendLine("")
+                appendLine(diagnostics)
+                appendLine("")
+                appendLine("==========================================")
+                appendLine("=== أحدث أسطر السجل التقني (Logcat) ===")
+                if (logLines.isEmpty()) {
+                    appendLine("(لم يُسجَّل نشاط في logcat للعملية الحالية)")
+                } else {
+                    val errors = logLines.filter {
+                        it.isNotEmpty() && (it[0] == 'E' || it[0] == 'F')
+                    }
+                    val warnings = logLines.filter {
+                        it.isNotEmpty() && it[0] == 'W'
+                    }
+                    if (errors.isNotEmpty()) {
+                        appendLine(
+                            "--- أسطر الأخطاء الحرجة (${errors.size}) ---"
+                        )
+                        errors.forEach { appendLine(it) }
+                        appendLine("")
+                    }
+                    if (warnings.isNotEmpty()) {
+                        appendLine(
+                            "--- أسطر التحذيرات (${warnings.size}) ---"
+                        )
+                        warnings.takeLast(100).forEach { appendLine(it) }
+                        appendLine("")
+                    }
+                    appendLine("--- آخر سطور نشاط التطبيق ---")
+                    logLines.takeLast(150).forEach { appendLine(it) }
+                }
             }
-            header to filtered
         }
+
+    private fun writeLogToCacheFile(
+        context: android.content.Context,
+        content: String
+    ): File? =
+        runCatching {
+            val logsDir = File(context.cacheDir, "logs").apply { mkdirs() }
+            val logFile = File(logsDir, "nateq_diagnostic_log.txt")
+            logFile.writeText(content, Charsets.UTF_8)
+            logFile
+        }.getOrNull()
+
+    private fun showErrorReportDialog(
+        context: android.content.Context,
+        reportText: String,
+        logFile: File?
+    ) {
+        val dialog = MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.error_report_dialog_title)
+            .setMessage(R.string.error_report_dialog_message)
+            .setPositiveButton(R.string.error_report_send_telegram) { _, _ ->
+                sendReportToTelegram(context, reportText)
+            }
+            .setNeutralButton(R.string.error_report_share_file) { _, _ ->
+                shareErrorReport(context, reportText, logFile)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+        trackDialog(dialog)
+        view?.announceCompat(getString(R.string.error_report_dialog_title))
+    }
+
+    private fun sendReportToTelegram(
+        context: android.content.Context,
+        reportText: String
+    ) {
+        copyToClipboard(reportText)
+        Toast.makeText(
+            context,
+            R.string.error_report_copied_telegram_hint,
+            Toast.LENGTH_LONG
+        ).show()
+        view?.announceCompat(
+            getString(R.string.error_report_copied_telegram_hint)
+        )
+        openDeveloperSupport()
+    }
 
     /** يفتح وسائل المشاركة (اقتراح نصوص، بريد…) بالمحتوى المجمّع. */
     private fun shareErrorReport(
         context: android.content.Context,
         body: String,
-        header: String
+        logFile: File?
     ) {
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(
                 Intent.EXTRA_SUBJECT, getString(R.string.report_error_subject)
             )
-            putExtra(Intent.EXTRA_TEXT, header + body)
+            putExtra(Intent.EXTRA_TEXT, body)
+            if (logFile != null && logFile.exists()) {
+                val uri = runCatching {
+                    FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        logFile
+                    )
+                }.getOrNull()
+                if (uri != null) {
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            }
         }
         val chooser = Intent.createChooser(
             send, getString(R.string.report_error)
@@ -1278,8 +1325,13 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 .setMessage(info)
                 .setPositiveButton(R.string.diagnostics_copy) { _, _ ->
                     copyToClipboard(info)
-                    Toast.makeText(context, R.string.diagnostics_copied, Toast.LENGTH_SHORT).show()
-                    view?.announceCompat(getString(R.string.diagnostics_copied))
+                    Toast.makeText(
+                        context, R.string.diagnostics_copied,
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    view?.announceCompat(
+                        getString(R.string.diagnostics_copied)
+                    )
                 }
                 .setNegativeButton(android.R.string.cancel, null)
                 .show()
@@ -1320,7 +1372,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 @Suppress("DEPRECATION") info.versionCode.toLong()
             }
 
-            sb.appendLine("=== ناطق (Lord TTS) — التشخيص ===")
+            sb.appendLine("=== ناطق — التشخيص ===")
             sb.appendLine("الإصدار: $versionName ($versionCode)")
             sb.appendLine(
                 "الجهاز: " +
@@ -1524,8 +1576,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
 
     private fun copyToClipboard(text: String) {
-        val clipboard = requireContext().getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-        val clip = android.content.ClipData.newPlainText("Lord TTS Diagnostics", text)
+        val clipboard = requireContext().getSystemService(
+            android.content.Context.CLIPBOARD_SERVICE
+        ) as android.content.ClipboardManager
+        val clip = android.content.ClipData.newPlainText(
+            "Nateq Diagnostics", text
+        )
         clipboard.setPrimaryClip(clip)
     }
 

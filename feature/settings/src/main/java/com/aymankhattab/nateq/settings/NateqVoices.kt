@@ -3,7 +3,7 @@ package com.aymankhattab.nateq.settings
 import java.util.Locale
 
 /**
- * صوت ناطق (نطق Lord TTS) معروض في قوائم الشاشة.
+ * صوت ناطق معروض في قوائم الشاشة.
  *
  * مبسّطة إلى لغتين فقط: "العربية" و"الإنجليزية". تُبنى قائمة الأصوات في
  * [VoiceSelectionFragment] بعد الانضمام للسياق (لا يجوز في مُنشئ/خاصية

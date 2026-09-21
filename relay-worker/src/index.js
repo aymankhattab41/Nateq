@@ -107,10 +107,54 @@ const WELCOME_HTML =
   "مرحباً 👋 أنا بوت الدعم الرسمي لتطبيق <b>Lord TTS</b>.\n\n" +
   "اكتب رسالتك وسيصلني نصها مباشرةً. شكراً لتواصلك!";
 
+// الحد الأقصى لحجم ملفات المستندات والسجلات المقبولة (10 ميجابايت) — كافٍ جداً
+// لملفات السجلات النصية والتشخيص مع حماية البوت من الملفات الضخمة.
+const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024;
+
 async function sendToTelegram(env, chatId, text, parseMode) {
   const body = new URLSearchParams({ chat_id: chatId, text });
   if (parseMode) body.set("parse_mode", parseMode);
   return fetch(`${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+}
+
+async function sendDocumentToTelegram(env, chatId, fileId, caption) {
+  const body = new URLSearchParams({ chat_id: chatId, document: fileId });
+  if (caption) body.set("caption", String(caption).slice(0, 1000));
+  return fetch(`${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/sendDocument`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+}
+
+async function sendPhotoToTelegram(env, chatId, fileId, caption) {
+  const body = new URLSearchParams({ chat_id: chatId, photo: fileId });
+  if (caption) body.set("caption", String(caption).slice(0, 1000));
+  return fetch(`${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+}
+
+async function sendVoiceToTelegram(env, chatId, fileId, caption) {
+  const body = new URLSearchParams({ chat_id: chatId, voice: fileId });
+  if (caption) body.set("caption", String(caption).slice(0, 1000));
+  return fetch(`${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/sendVoice`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+}
+
+async function sendAudioToTelegram(env, chatId, fileId, caption) {
+  const body = new URLSearchParams({ chat_id: chatId, audio: fileId });
+  if (caption) body.set("caption", String(caption).slice(0, 1000));
+  return fetch(`${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/sendAudio`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
@@ -205,6 +249,8 @@ function extractSenderContent(msg) {
     attachment = `📄 ملف: ${escapeHtml(msg.document.file_name || "بدون اسم")} (File ID: ${msg.document.file_id})`;
   } else if (msg.voice) {
     attachment = `🎙️ رسالة صوتية (File ID: ${msg.voice.file_id})`;
+  } else if (msg.audio) {
+    attachment = `🎵 ملف صوتي: ${escapeHtml(msg.audio.file_name || msg.audio.title || "صوت")} (File ID: ${msg.audio.file_id})`;
   } else if (msg.video_note) {
     attachment = `⏺️ رسالة فيديو (File ID: ${msg.video_note.file_id})`;
   }
@@ -274,6 +320,19 @@ async function forwardMessage(env, update) {
     }
   }
 
+  // فحص حجم الملفات المرفقة: منع تجاوز الحد الأقصى (10 ميجابايت) — كافٍ للسجلات
+  if (
+    msg.document &&
+    typeof msg.document.file_size === "number" &&
+    msg.document.file_size > MAX_DOCUMENT_SIZE
+  ) {
+    const rejectMsg =
+      "⚠️ عذراً، حجم الملف يتجاوز الحد الأقصى المسموح به (10 ميجابايت).\n\n" +
+      "يُرجى إرسال ملف السجل النصي فقط لضمان سهولة الفحص والتشخيص.";
+    await sendWithParseFallback(env, msg.chat.id, rejectMsg);
+    return "file_too_large";
+  }
+
   const { attachment, bodyLabel, bodyParts } = extractSenderContent(msg);
 
   const header = [];
@@ -296,6 +355,56 @@ async function forwardMessage(env, update) {
       return "forward_failed";
     }
   }
+
+  // توجيه الملفات والوسائط الفعلية إلى محادثة الدعم حتى يتمكن المطور من
+  // تنزيل السجل وفحصه مباشرة
+  if (msg.document && msg.document.file_id) {
+    const docCaption = msg.caption
+      ? `${msg.caption} (من: ${senderName})`
+      : `📄 ${msg.document.file_name || "ملف سجل"} — من ${senderName}`;
+    const docRes = await sendDocumentToTelegram(
+      env,
+      env.SUPPORT_CHAT_ID,
+      msg.document.file_id,
+      docCaption
+    );
+    if (!docRes.ok) {
+      console.error("sendDocument failed:", docRes.status, await docRes.text());
+    }
+    // إشعار تأكيد للمستخدم عند استلام ملف السجل
+    await sendWithParseFallback(
+      env,
+      msg.chat.id,
+      "تم استلام ملف السجل وإرساله للمطور بنجاح ✅ شكراً لتعاونك ومساعدتنا في تحسين التطبيق!"
+    );
+  } else if (msg.photo && msg.photo.length) {
+    const photoId = msg.photo[msg.photo.length - 1].file_id;
+    const photoCaption = msg.caption
+      ? `${msg.caption} (من: ${senderName})`
+      : `🖼️ صورة من ${senderName}`;
+    await sendPhotoToTelegram(env, env.SUPPORT_CHAT_ID, photoId, photoCaption);
+  } else if (msg.voice && msg.voice.file_id) {
+    const voiceCaption = msg.caption
+      ? `${msg.caption} (من: ${senderName})`
+      : `🎙️ رسالة صوتية من ${senderName}`;
+    await sendVoiceToTelegram(
+      env,
+      env.SUPPORT_CHAT_ID,
+      msg.voice.file_id,
+      voiceCaption
+    );
+  } else if (msg.audio && msg.audio.file_id) {
+    const audioCaption = msg.caption
+      ? `${msg.caption} (من: ${senderName})`
+      : `🎵 ملف صوتي من ${senderName}`;
+    await sendAudioToTelegram(
+      env,
+      env.SUPPORT_CHAT_ID,
+      msg.audio.file_id,
+      audioCaption
+    );
+  }
+
   return "forwarded";
 }
 
@@ -356,6 +465,7 @@ export default {
 
 // دوال نقية مستخرَجة لاختبارات Node (node:test) — بلا أي تأثير على النشر.
 export {
+  MAX_DOCUMENT_SIZE,
   escapeHtml,
   unescapeHtml,
   stripHtml,
@@ -364,5 +474,9 @@ export {
   enforceRateLimit,
   extractSenderContent,
   buildRelayMessages,
+  sendDocumentToTelegram,
+  sendPhotoToTelegram,
+  sendVoiceToTelegram,
+  sendAudioToTelegram,
   forwardMessage,
 };

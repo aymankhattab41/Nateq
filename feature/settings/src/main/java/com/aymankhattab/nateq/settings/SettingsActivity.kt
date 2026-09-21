@@ -30,7 +30,7 @@ import javax.inject.Inject
  *
  * تطلب الأذونات عند أول استخدام: إشعارات فقط (وقراءة الرسائل عند تفعيلها).
  * لا تُفتح شاشات مقيّدة بالإذن المهمل REQUEST_IGNORE_BATTERY_OPTIMIZATIONS.
- * لا يطلب إمكانية الوصول أبداً (Lord TTS محرك TTS عادي وليس خدمة وصول).
+ * لا يطلب إمكانية الوصول أبداً (ناطق محرك TTS عادي وليس خدمة وصول).
  */
 @AndroidEntryPoint
 class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
@@ -115,7 +115,7 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
         }
 
         // انتهت سلسلة الأذونات — لا يوجد طلب إمكانية وصول.
-        // (Lord TTS محرك TTS عادي، وليس خدمة وصول، فلا يطلبها.)
+        // (ناطق محرك TTS عادي، وليس خدمة وصول، فلا يطلبها.)
         // إذن RECEIVE_SMS لا يُطلب هنا على الإطلاق: يُطلب فقط عندما يفعّل
         // المستخدم قراءة الرسائل فعلياً من شاشة الإعدادات (مجدداً وعلى حاجة).
         // لا يُطلب إعفاء البطارية تلقائياً: شاشته الخاصة تتطلب إذناً مقيّداً

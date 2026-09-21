@@ -49,8 +49,9 @@ class TextProcessorTest {
 
     @Test
     fun processSemantics_splitSegments_currencyNoLongerEnglish() {
-        // بند الدمج: تقسيم النص بعد المعالجة الدلالية يعيد مقطعاً عربياً واحداً
-        // لـ«سعر 1500 USD» بدل مقطعين [عربي, USD]. فيبقى العملة بلسان عربي.
+        // بند الدمج: تقسيم النص بعد المعالجة الدلالية يعيد مقطعاً عربياً
+        // واحداً لـ«سعر 1500 USD» بدل مقطعين [عربي, USD]. فيبقى العملة
+        // بلسان عربي.
         val out = processor.processSemantics("سعر 1500 USD", "ar")
         val segments = LanguageSegmenter().segment(out, "ar")
         assertEquals(listOf("ar"), segments.map { it.languageTag })
@@ -209,8 +210,8 @@ class TextProcessorTest {
 
     @Test
     fun urduText_withoutExtendedMarks_unchanged() {
-        // نص أوردو عادي (لا يحمل رموز النطاق الممتد) — لا يتأثر بالتوسيع الجديد
-        // پاکستانی
+        // نص أوردو عادي (لا يحمل رموز النطاق الممتد) — لا يتأثر
+        // بالتوسيع الجديد: پاکستانی
         val input =
             "\u067E\u0627\u06A9\u0633\u062A\u0627\u0646\u06CC " +
             "\u0645\u06CC\u0631\u06D2 " + // میرے
@@ -228,7 +229,8 @@ class TextProcessorTest {
         val marked =
             "\u067E\u0627\u06A9\u08EE\u0633\u062A\u0627\u0646\u06CC " +
             "\u0645\u06CC\u0631\u06D2 " + // میرے
-            "\u062F\u0648\u0633\u062A\u08F0 " + // دوست (فتحتان مفتوحتان U+08F0)
+            // دوست (فتحتان مفتوحتان U+08F0)
+            "\u062F\u0648\u0633\u062A\u08F0 " +
             "\u06C1\u06CC\u06BA" // ہیں
         val expected = "پاکستانی میرے دوست ہیں"
         assertEquals(expected, processor.process(marked, "ar"))
@@ -842,4 +844,28 @@ class TextProcessorTest {
         )
     }
 
+    @Test
+    fun data_units_case_insensitive_full_pipeline() {
+        assertEquals(
+            "حمّل خمسون ميجابايت",
+            processor.process("حمّل 50mb", "ar", "com.google.android.tts")
+        )
+        assertEquals(
+            "حمّل خمسون ميجابايت",
+            processor.process("حمّل 50Mb", "ar", "com.google.android.tts")
+        )
+        assertEquals(
+            "حمّل خمسون ميجابايت",
+            processor.process("حمّل 50MB", "ar", "com.google.android.tts")
+        )
+        assertEquals(
+            "حمّل خمسون ميجابايت",
+            processor.process("حمّل 50mB", "ar", "com.google.android.tts")
+        )
+        // بالمسار الافتراضي (تجريد التشكيل بدون حزمة محرك تحتفظ به):
+        assertEquals(
+            "حمل خمسون ميجابايت",
+            processor.process("حمّل 50mb", "ar")
+        )
+    }
 }

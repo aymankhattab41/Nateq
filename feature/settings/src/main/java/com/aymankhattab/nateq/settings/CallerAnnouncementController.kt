@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq.settings
+package com.aymankhattab.nateq.settings
 
 import android.Manifest
 import android.content.Intent
