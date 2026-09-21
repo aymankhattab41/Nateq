@@ -720,8 +720,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         val raw = com.aymankhattab.nateq.util.LocaleUtils.normalizeIndicDigits(
             etNumberPreview.text.toString().trim()
         )
-        val number = raw.toIntOrNull()
-        if (number == null) {
+        // نقبل الأرقام الصحيحة والعشرية والسالبة
+        val isValid = raw.isNotEmpty() && raw.matches(
+            Regex("""^-?\d+(\.\d+)?$""")
+        )
+        if (!isValid) {
             Toast.makeText(
                 requireContext(),
                 R.string.number_preview_invalid,
@@ -739,7 +742,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             else LanguageCode.isEnglish(appLang)
         val mode = runCatching { settings.getNumberReadingMode() }
             .getOrDefault(1).coerceIn(1, 8)
-        val text = NumberSpeech.formatByMode(mode, number, isEnglish)
+        val text = NumberSpeech.formatByMode(mode, raw, isEnglish)
         val langTag =
             if (isEnglish) LanguageCode.EN.tag else LanguageCode.AR.tag
         speakWithVoice(langTag, text)

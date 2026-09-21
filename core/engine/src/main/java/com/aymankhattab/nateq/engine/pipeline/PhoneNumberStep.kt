@@ -61,8 +61,10 @@ internal object PhoneNumberStep : TextProcessingStep {
             val raw = matcher.group(0)!!
             val digits = raw.filter { it.isDigit() }
             // تحقق إضافي ضد التطابقات الكاذبة: تواريخ (12.12.2024) وعناوين IP
-            // (192.168.1.100) ليست هواتف رغم وقوع أرقامها ضمن المدى 7..15.
-            if (looksLikeDate(raw) || looksLikeIpAddress(raw)) {
+            // (192.168.1.100) وأعداد عشرية (30496.00) ليست هواتف.
+            if (looksLikeDate(raw) || looksLikeIpAddress(raw) ||
+                looksLikeDecimal(raw)
+            ) {
                 val quoted = java.util.regex.Matcher.quoteReplacement(raw)
                 matcher.appendReplacement(buffer, quoted)
                 continue
@@ -118,6 +120,26 @@ internal object PhoneNumberStep : TextProcessingStep {
         }
     }
 
+    /** هل التطابق عدداً أو مبلغاً عشرياً (30496.00 أو 30,496.00)؟ */
+    private fun looksLikeDecimal(raw: String): Boolean {
+        // نقطة واحدة فقط تفصل بين أرقام: كسر عشري قطعاً
+        val firstDot = raw.indexOf('.')
+        if (firstDot >= 0 && raw.lastIndexOf('.') == firstDot) {
+            val before = raw.substring(0, firstDot)
+            val after = raw.substring(firstDot + 1)
+            if (before.any(Char::isDigit) && after.any(Char::isDigit)) {
+                return true
+            }
+        }
+        // نهاية بكسر عشري بعد فاصلة (مثل 30,496.00 أو 1,234.5)
+        val lastSep = raw.lastIndexOfAny(charArrayOf('.', ','))
+        if (lastSep >= 0) {
+            val tail = raw.substring(lastSep + 1)
+            if (tail.length in 1..2 && tail.all(Char::isDigit)) return true
+        }
+        return false
+    }
+
     /** ترجيح كون المتوالية رقم هاتف فعلياً (لا مبلغاً أو عدداً مجرداً). */
     private fun isLikelyPhone(raw: String, digits: String): Boolean {
         // مفتاح اتصال دولي صريح (+20 …)
@@ -128,6 +150,8 @@ internal object PhoneNumberStep : TextProcessingStep {
         if (looksLikeThousandsGrouping(raw)) return false
         // عمليات حسابية («1000 - 2000»، «5 * 7») ليست هواتف رغم الفواصل
         if (looksLikeArithmetic(raw)) return false
+        // أعداد عشرية («30496.00»، «12345.67») ليست هواتف إطلاقاً
+        if (looksLikeDecimal(raw)) return false
         // فواصل هاتفية قياسية (مسافة/شرطة/أقواس/نقطة)
         return raw.any {
             it == ' ' || it == '-' || it == '(' || it == ')' || it == '.'

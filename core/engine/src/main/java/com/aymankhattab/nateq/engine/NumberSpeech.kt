@@ -352,33 +352,95 @@ object NumberSpeech {
         }
 
     /**
+     * تنسيق رقم نصي (صحيح أو عشري أو طويل) في مجموعات أرقام (1..8).
+     * 1=مفردة (رقم رقم)، 2=زوجي (رقمين كرقم واحد)، 3..8=ثلاثي..ثماني.
+     * يدعم الكسور العشرية (مثل 30496.00) ويحافظ على الأصفار البادئة
+     * والكسرية.
+     */
+    fun formatByMode(
+        mode: Int,
+        numberStr: String,
+        isEnglish: Boolean
+    ): String {
+        val safeMode = mode.coerceIn(1, 8)
+        val trimmed = numberStr.trim()
+        if (trimmed.isEmpty()) return ""
+
+        var sign = ""
+        var s = trimmed
+        if (s.startsWith("-")) {
+            sign = if (isEnglish) "negative " else "سالب "
+            s = s.substring(1).trim()
+        }
+
+        val dot = s.indexOf('.')
+        val intDigits: String
+        val fracDigits: String?
+        if (dot >= 0) {
+            intDigits = s.substring(0, dot).filter { it.isDigit() }
+                .ifEmpty { "0" }
+            fracDigits = s.substring(dot + 1).filter { it.isDigit() }
+        } else {
+            intDigits = s.filter { it.isDigit() }.ifEmpty { "0" }
+            fracDigits = null
+        }
+
+        val intWords = formatDigitsByMode(safeMode, intDigits, isEnglish)
+        val result = if (!fracDigits.isNullOrEmpty()) {
+            val fracSep = if (isEnglish) " point " else " فاصلة "
+            val fracWords = fracDigits.map { ch ->
+                val d = ch.digitToInt()
+                if (isEnglish) toEnglishWords(d)
+                else toArabicWords(d, isFeminine = false)
+            }.joinToString(" ")
+            "$intWords$fracSep$fracWords"
+        } else {
+            intWords
+        }
+        return (sign + result).trim()
+    }
+
+    /** نسخة Long عامة تحافظ على الأعداد الكبيرة السالبة وإشارتها. */
+    fun formatByMode(mode: Int, number: Long, isEnglish: Boolean): String {
+        if (number == Long.MIN_VALUE) {
+            val sign = if (isEnglish) "negative " else "سالب "
+            val body = formatByMode(
+                mode, "9223372036854775808", isEnglish
+            )
+            return sign + body
+        }
+        val sign = if (number < 0) {
+            if (isEnglish) "negative " else "سالب "
+        } else ""
+        val absStr = if (number < 0) (-number).toString()
+            else number.toString()
+        val body = formatByMode(mode, absStr, isEnglish)
+        return sign + body
+    }
+
+    /**
      * تنسيق رقم في مجموعات أرقام حسب طريقة النطق (1..8).
      * 1=مفردة (رقم رقم)، 2=زوجي (رقمين كرقم واحد)، 3..8=ثلاثي..ثماني.
      */
-    fun formatByMode(mode: Int, number: Int, isEnglish: Boolean): String {
-        val safeMode = mode.coerceIn(1, 8)
-        var sign = ""
-        // نفيٌّ عبر Long: `-Int.MIN_VALUE` كان يفيض فيبقى سالباً فيقلب
-        // `'-'.digitToInt()` بـ IllegalArgumentException وتنقضّ السلسلة.
-        var n = number.toLong()
-        if (n < 0) {
-            sign = if (isEnglish) "negative " else "سالب "
-            n = -n
-        }
+    fun formatByMode(mode: Int, number: Int, isEnglish: Boolean): String =
+        formatByMode(mode, number.toLong(), isEnglish)
+
+    private fun formatDigitsByMode(
+        safeMode: Int,
+        digits: String,
+        isEnglish: Boolean
+    ): String {
         if (safeMode == 1) {
-            val digits = n.toString().map { it.digitToInt() }
-            val words = digits.joinToString(" ") {
-                // الرقم يُنطق مجرداً (مذكراً): «خمسة» لا «خمس».
+            return digits.map { ch ->
+                val d = ch.digitToInt()
                 if (isEnglish) {
-                    toEnglishWords(it)
+                    toEnglishWords(d)
                 } else {
-                    toArabicWords(it, isFeminine = false)
+                    toArabicWords(d, isFeminine = false)
                 }
-            }
-            return (sign + words).trim()
+            }.joinToString(" ")
         }
 
-        val digits = n.toString()
         val groupSize = safeMode
         val groups = mutableListOf<String>()
         val firstSize = digits.length % groupSize
@@ -391,9 +453,7 @@ object NumberSpeech {
             groups.add(digits.substring(index, index + groupSize))
             index += groupSize
         }
-        val words = groups.map { g ->
-            // مجموعة تبدأ بصفر تُنطق رقماً رقماً للحفاظ على الأصفار البادئة:
-            // «02» → «صفر اثنان» لا «اثنان» (يُفسد رموز التحقق OTP مثل 102).
+        return groups.map { g ->
             if (g.startsWith("0")) {
                 g.map { ch ->
                     val d = ch.digitToInt()
@@ -412,6 +472,5 @@ object NumberSpeech {
                 }
             }
         }.joinToString(", ")
-        return (sign + words).trim()
     }
 }

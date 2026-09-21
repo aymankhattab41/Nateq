@@ -857,6 +857,23 @@ class PipelineStepsTest {
     }
 
     @Test
+    fun phone_decimalAmounts_notTreatedAsPhoneNumbers() {
+        // مبالغ أو أرقام عشرية (مثل 30496.00) لا تُعامل كهواتف
+        assertEquals(
+            "المبلغ 30496.00",
+            PhoneNumberStep.apply("المبلغ 30496.00")
+        )
+        assertEquals(
+            "المبلغ 30,496.00",
+            PhoneNumberStep.apply("المبلغ 30,496.00")
+        )
+        assertEquals(
+            "المبلغ ثلاثون ألفاً وأربعمائة وستة وتسعون",
+            NumberStep.apply(PhoneNumberStep.apply("المبلغ 30496.00"))
+        )
+    }
+
+    @Test
     fun url_uppercaseSchemeAndWww_stillReadableDomain() {
         // الادعاء: الروابط بحروف كبيرة كانت تُشوَّه («HTTPS://GOOGLE.COM» ←
         // «موقع HTTPS») لأن إزالة الشعار حساسة لحالة الأحرف.

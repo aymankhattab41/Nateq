@@ -318,4 +318,25 @@ class NumberSpeechTest {
             NumberSpeech.formatByMode(8, 12345678, true)
         )
     }
+
+    @Test
+    fun formatByMode_decimalNumbers_mode1_mode5() {
+        // اختبار الرقم العشري مثل 30496.00 بالمفرد والزوجي والخماسي
+        assertEquals(
+            "ثلاثة صفر أربعة تسعة ستة فاصلة صفر صفر",
+            NumberSpeech.formatByMode(1, "30496.00", false)
+        )
+        assertEquals(
+            "ثلاثون ألفاً وأربعمائة وستة وتسعون فاصلة صفر صفر",
+            NumberSpeech.formatByMode(5, "30496.00", false)
+        )
+        assertEquals(
+            "ثلاثة, صفر أربعة, ستة وتسعون فاصلة صفر صفر",
+            NumberSpeech.formatByMode(2, "30496.00", false)
+        )
+        assertEquals(
+            "thirty thousand four hundred ninety six point zero zero",
+            NumberSpeech.formatByMode(5, "30496.00", true)
+        )
+    }
 }
