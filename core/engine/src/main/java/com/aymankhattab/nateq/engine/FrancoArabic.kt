@@ -68,12 +68,14 @@ object FrancoArabic {
     /** أقصى طول كلمة يُحوَّل إبداعياً حتى لا يمتد على جُملة. */
     private const val MAX_CREATIVE_LENGTH = 12
 
+    /** نمط عزل رموز الفرانكو مجمّع مسبقاً لمنع إعادة تصريفه. */
+    private val TOKEN_REGEX = Regex("[A-Za-z0-9]+")
+
     /** يبدّل كلمات الفرانكو في [text] مع بقاء كل ما عداه كما هو. */
     fun convert(text: String): String {
         val sb = StringBuilder(text.length)
-        val token = Regex("[A-Za-z0-9]+")
         var cursor = 0
-        for (match in token.findAll(text)) {
+        for (match in TOKEN_REGEX.findAll(text)) {
             sb.append(text, cursor, match.range.first)
             val word = match.value
             sb.append(convertWord(word) ?: word)

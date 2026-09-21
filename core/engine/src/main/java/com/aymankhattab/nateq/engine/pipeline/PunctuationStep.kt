@@ -153,14 +153,16 @@ internal class PunctuationStep(
         entries.joinToString("|") { "(" + it.first.pattern() + ")" }
     )
 
+    private val PATTERN_AT_ASCII = Regex("@(?=[A-Za-z])")
+
     override fun apply(input: String): String {
-        val replacedAt = input.replace(Regex("@(?=[A-Za-z])"), " at ")
+        val replacedAt = input.replace(PATTERN_AT_ASCII, " at ")
         return process(replacedAt, arabic)
     }
 
     /** النسخة الإنجليزية: أسماء الرموز إنجليزية (at/number/percent/…). */
     override fun applyEnglish(input: String): String {
-        val replacedAt = input.replace(Regex("@(?=[A-Za-z])"), " at ")
+        val replacedAt = input.replace(PATTERN_AT_ASCII, " at ")
         return process(replacedAt, english)
     }
 

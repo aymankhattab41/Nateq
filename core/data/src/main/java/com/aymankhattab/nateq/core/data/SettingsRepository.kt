@@ -25,7 +25,7 @@ import com.aymankhattab.nateq.util.VoiceIdContract
  * في أول تشغيل: يرحّل الإعدادات من الملف المشفر القديم (nateq_secure_settings)
  * إلى الملف الجديد إذا كان الملف الجديد فارغاً.
  */
-class SettingsRepository(private val context: Context) :
+class SettingsRepository(context: Context) :
     SynthesisConfig,
     VoicePrefsProvider,
     LanguagePrefs,
@@ -138,11 +138,14 @@ class SettingsRepository(private val context: Context) :
          * (البند 4 — توحيد الحقن بنقطة بناء واحدة بدل بناءات متفرقة).
          */
         fun create(context: Context): SettingsRepository =
-            SettingsRepository(context)
+            SettingsRepository(context.applicationContext)
     }
 
+    /** سياق التطبيق العام لضمان عدم احتجاز سياق النشاط في المراقبين. */
+    private val appContext: Context = context.applicationContext
+
     /** جسر القراءة عبر العمليتين لملف الإعدادات المشترك. */
-    private val prefsBridge = MultiProcessPrefsBridge(context)
+    private val prefsBridge = MultiProcessPrefsBridge(appContext)
 
     /** توقيت آخر تعديل لملف الإعدادات — حارس كشف الكتابة من العملية الأخرى. */
     @Volatile
@@ -188,8 +191,19 @@ class SettingsRepository(private val context: Context) :
 
     init {
         runCatching {
-            context.contentResolver.registerContentObserver(
+            appContext.contentResolver.registerContentObserver(
                 SettingsChangeProvider.uri(), false, settingsObserver
+            )
+        }
+    }
+
+    /**
+     * يلغي تسجيل مراقب التغييرات عند الحاجة (إغلاق يدوي أو في بيئة الاختبار).
+     */
+    fun unregister() {
+        runCatching {
+            appContext.contentResolver.unregisterContentObserver(
+                settingsObserver
             )
         }
     }
@@ -204,7 +218,7 @@ class SettingsRepository(private val context: Context) :
      * (API 23+) الذي يجعل الإطار يعيد قراءة المخزن داخلياً فيتعذّر اختباره.
      */
     private fun openSharedPrefs(): SharedPreferences =
-        context.getSharedPreferences(NEW_PREFS, Context.MODE_PRIVATE)
+        appContext.getSharedPreferences(NEW_PREFS, Context.MODE_PRIVATE)
 
     // أسماء المتصلين = بيانات شخصية (PII) تُخزَّن في ملف مشفَّر منفصل؛
     // عند تعذر التشفير (Keystore معطوب…) تُحتفظ في الذاكرة لهذه الجلسة فقط
@@ -259,7 +273,7 @@ class SettingsRepository(private val context: Context) :
      *  reload التالية. */
     private fun notifySettingsChanged() {
         runCatching {
-            context.contentResolver.notifyChange(
+            appContext.contentResolver.notifyChange(
                 SettingsChangeProvider.uri(), null
             )
         }
@@ -317,13 +331,14 @@ class SettingsRepository(private val context: Context) :
 
         var openedEncrypted = false
         val oldPrefs = try {
-            val masterKey = androidx.security.crypto.MasterKey.Builder(context)
+            val masterKey = androidx.security.crypto.MasterKey
+                .Builder(appContext)
                 .setKeyScheme(
                     androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM
                 )
                 .build()
             androidx.security.crypto.EncryptedSharedPreferences.create(
-                context, OLD_PREFS, masterKey,
+                appContext, OLD_PREFS, masterKey,
                 androidx.security.crypto.EncryptedSharedPreferences
                     .PrefKeyEncryptionScheme.AES256_SIV,
                 androidx.security.crypto.EncryptedSharedPreferences
@@ -333,7 +348,7 @@ class SettingsRepository(private val context: Context) :
             // عطل Keystore عابر محتمل: نُجرّب البديل النصي القديم إن حُرِّر
             // في عطلٍ سابق؛ وإن غاب يُترك الترحيل معلّقاً (بلا وسم).
             try {
-                context.getSharedPreferences(
+                appContext.getSharedPreferences(
                     FALLBACK_PREFS,
                     Context.MODE_PRIVATE
                 )
@@ -379,7 +394,7 @@ class SettingsRepository(private val context: Context) :
             // من البديل النصي (المشفر غير مقروء عابراً) فيبقى الملف على القرص
             // بلا حذف — نفس سياسة أسماء المتصلين: لا حذف عند الشك.
             if (openedEncrypted) {
-                context.deleteSharedPreferences(OLD_PREFS)
+                appContext.deleteSharedPreferences(OLD_PREFS)
             }
         }
         Log.w(TAG, "تم ترحيل $copied إعداد من الملف القديم إلى الملف الجديد")
@@ -563,16 +578,18 @@ class SettingsRepository(private val context: Context) :
             caller.edit().clear().apply()
         } else {
             runCatching {
-                context.deleteSharedPreferences("nateq_secure_caller_names")
+                appContext.deleteSharedPreferences("nateq_secure_caller_names")
             }
         }
         // مسح ملفات الحالة والقاموس والـ fallback القديم.
-        runCatching { context.deleteSharedPreferences(OLD_PREFS) }
-        runCatching { context.deleteSharedPreferences(FALLBACK_PREFS) }
+        runCatching { appContext.deleteSharedPreferences(OLD_PREFS) }
+        runCatching { appContext.deleteSharedPreferences(FALLBACK_PREFS) }
         runCatching {
-            context.deleteSharedPreferences("nateq_pronunciation_dict")
+            appContext.deleteSharedPreferences("nateq_pronunciation_dict")
         }
-        runCatching { context.deleteSharedPreferences("nateq_battery_state") }
+        runCatching {
+            appContext.deleteSharedPreferences("nateq_battery_state")
+        }
     }
 
     // ============ المفتاح الرئيسي ووضع توفير الطاقة ============
@@ -614,10 +631,10 @@ class SettingsRepository(private val context: Context) :
      *  يعود false عند عدم وجود قفل. */
     @Suppress("DEPRECATION")
     override fun isDeviceScreenLocked(): Boolean {
-        val km = context.getSystemService(
+        val km = appContext.getSystemService(
             android.app.KeyguardManager::class.java
         )
-        val power = context.getSystemService(
+        val power = appContext.getSystemService(
             android.os.PowerManager::class.java
         )
         // الشاشة مطفأة: حالة خصوصية أعلى حتى مع قفل غير آمن (Swipe) — نمنع
@@ -702,14 +719,14 @@ class SettingsRepository(private val context: Context) :
         repeat(2) { attempt ->
             try {
                 val masterKey = androidx.security.crypto.MasterKey
-                    .Builder(context)
+                    .Builder(appContext)
                     .setKeyScheme(
                         androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM
                     )
                     .build()
                 return androidx.security.crypto.EncryptedSharedPreferences
                     .create(
-                        context, "nateq_secure_caller_names", masterKey,
+                        appContext, "nateq_secure_caller_names", masterKey,
                         androidx.security.crypto.EncryptedSharedPreferences
                             .PrefKeyEncryptionScheme.AES256_SIV,
                         androidx.security.crypto.EncryptedSharedPreferences

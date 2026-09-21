@@ -433,11 +433,16 @@ class TextProcessor(
     /** استرجاع الروابط التي حجبتها [maskUrls] إلى مواضع محارف الحجز. */
     private fun unmaskUrls(text: String, store: List<String>): String {
         if (store.isEmpty()) return text
-        var out = text
-        for (i in store.indices) {
-            out = out.replace((URL_MASK_BASE + i).toString(), store[i])
+        val sb = StringBuilder(text.length + store.sumOf { it.length })
+        for (ch in text) {
+            val idx = ch - URL_MASK_BASE
+            if (idx in store.indices) {
+                sb.append(store[idx])
+            } else {
+                sb.append(ch)
+            }
         }
-        return out
+        return sb.toString()
     }
 
     /**
