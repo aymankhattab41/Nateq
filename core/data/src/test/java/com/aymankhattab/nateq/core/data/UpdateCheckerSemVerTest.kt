@@ -105,6 +105,13 @@ class UpdateCheckerSemVerTest {
                 "بعض الملاحظات\nSHA-256: $hex\nبعدها"
             )
         )
+        // دعم صياغة Markdown بعلامات اقتباس كود سفلية (backticks)
+        assertEquals(
+            hex,
+            UpdateChecker.extractSha256FromReleaseNote(
+                "### المجموع الاختباري SHA-256\n`$hex`  nateq.apk"
+            )
+        )
         // إصدار كبير من أحرف البصمة؟ لا تُقبَل.
         // مقطع سداسي أقصر من 64 حرفاً أو نص بلا بصمة: لا تُقبَل.
         assertNull(UpdateChecker.extractSha256FromReleaseNote("SHA-256: 0123"))

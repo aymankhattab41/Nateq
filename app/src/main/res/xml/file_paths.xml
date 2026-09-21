@@ -6,7 +6,13 @@
     <external-files-path
         name="downloads"
         path="downloads/" />
+    <files-path
+        name="internal_downloads"
+        path="downloads/" />
     <cache-path
         name="logs"
         path="logs/" />
+    <cache-path
+        name="cache"
+        path="." />
 </paths>

@@ -276,6 +276,12 @@ object UpdateChecker {
     fun downloadedApk(context: Context): File =
         File(downloadsDir(context), APK_NAME)
 
+    sealed class DownloadResult {
+        data class Success(val apkFile: File) : DownloadResult()
+        object ChecksumMismatch : DownloadResult()
+        data class Failed(val status: Int, val reason: Int) : DownloadResult()
+    }
+
     /**
      * يبدأ تنزيل الـ APK عبر DownloadManager ويُعيد معرّف التنزيل.
      * المستدعي يسجّل مستمع ACTION_DOWNLOAD_COMPLETE ويتفقّد الملف عند اكتماله.
@@ -289,24 +295,147 @@ object UpdateChecker {
         apkUrl: String,
         allowMetered: Boolean = false
     ): Long {
-        val destination = File(downloadsDir(context), APK_NAME)
-        // كان DownloadManager يُنشئ «nateq-1.apk» إذا وُجد ملفٌ سابق
-        // بنفس الوجهة، ثم لا يجد المُستمعُ downloadedApk الملفَ المتوقَّع
-        // (اسمه مختلف) فيفشل التحقق/التثبيت. نمسح النسخةَ المتقادمة قبل
-        // الإرسال حتى يستقر التنزيل على الوجهة المتوقعة.
-        if (destination.exists()) destination.delete()
         val manager = context.getSystemService(
             Context.DOWNLOAD_SERVICE
         ) as DownloadManager
         val request = DownloadManager.Request(Uri.parse(apkUrl))
-            .setTitle("Nateq update")
+            .setTitle("Lord TTS update")
             .setNotificationVisibility(
                 DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
             )
-            .setDestinationUri(Uri.fromFile(destination))
             .setAllowedOverMetered(allowMetered)
             .setAllowedOverRoaming(false)
+
+        val publicOk = runCatching {
+            request.setDestinationInExternalPublicDir(
+                android.os.Environment.DIRECTORY_DOWNLOADS,
+                APK_NAME
+            )
+        }.isSuccess
+
+        if (!publicOk) {
+            val destination = File(downloadsDir(context), APK_NAME)
+            if (destination.exists()) destination.delete()
+            request.setDestinationUri(Uri.fromFile(destination))
+        }
+
         return manager.enqueue(request)
+    }
+
+    /**
+     * معالجة التنزيل المكتمل: الاستعلام من DownloadManager والتأكد من
+     * نجاح الحالة ونسخ المحتوى والتحقق من SHA-256.
+     */
+    fun processCompletedDownload(
+        context: Context,
+        downloadId: Long,
+        expectedSha256Hex: String?
+    ): DownloadResult {
+        val dm = context.getSystemService(
+            Context.DOWNLOAD_SERVICE
+        ) as? DownloadManager ?: return DownloadResult.Failed(-1, -1)
+
+        val cursor = dm.query(
+            DownloadManager.Query().setFilterById(downloadId)
+        ) ?: return DownloadResult.Failed(-1, -1)
+
+        var status = -1
+        var reason = -1
+        var localUriStr: String? = null
+        cursor.use { c ->
+            if (c.moveToFirst()) {
+                val sIdx = c.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                if (sIdx >= 0) status = c.getInt(sIdx)
+                val rIdx = c.getColumnIndex(DownloadManager.COLUMN_REASON)
+                if (rIdx >= 0) reason = c.getInt(rIdx)
+                val uIdx = c.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+                if (uIdx >= 0) localUriStr = c.getString(uIdx)
+            }
+        }
+
+        if (status != DownloadManager.STATUS_SUCCESSFUL) {
+            return DownloadResult.Failed(status, reason)
+        }
+
+        val targetApk = downloadedApk(context)
+        if (targetApk.exists()) targetApk.delete()
+
+        val copied = copyDownloadToFile(
+            context, dm, downloadId, localUriStr, targetApk
+        )
+        if (!copied || !targetApk.isFile || targetApk.length() == 0L) {
+            return DownloadResult.Failed(status, reason)
+        }
+
+        val matches = expectedSha256Hex == null ||
+            verifyApkSha256(targetApk, expectedSha256Hex)
+
+        if (!matches) {
+            targetApk.delete()
+            return DownloadResult.ChecksumMismatch
+        }
+
+        runCatching { dm.remove(downloadId) }
+        return DownloadResult.Success(targetApk)
+    }
+
+    private fun copyDownloadToFile(
+        context: Context,
+        dm: DownloadManager,
+        downloadId: Long,
+        localUriStr: String?,
+        targetFile: File
+    ): Boolean {
+        // المحاولة 1: عبر openDownloadedFile المعتمدة رسمياً
+        val pfdSuccess = runCatching {
+            dm.openDownloadedFile(downloadId)?.use { pfd ->
+                java.io.FileInputStream(pfd.fileDescriptor).use { input ->
+                    targetFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                true
+            }
+        }.getOrNull() ?: false
+
+        if (pfdSuccess && targetFile.length() > 0L) return true
+
+        // المحاولة 2: عبر مسار ملف محلي من COLUMN_LOCAL_URI
+        if (!localUriStr.isNullOrBlank()) {
+            val fileSuccess = runCatching {
+                val uri = Uri.parse(localUriStr)
+                val srcFile = if (uri.scheme == "file") {
+                    uri.path?.let { File(it) }
+                } else null
+                if (srcFile != null && srcFile.isFile &&
+                    srcFile.length() > 0L
+                ) {
+                    srcFile.inputStream().use { input ->
+                        targetFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    true
+                } else false
+            }.getOrNull() ?: false
+            if (fileSuccess && targetFile.length() > 0L) return true
+        }
+
+        // المحاولة 3: عبر ContentResolver إن كان المسار content://
+        if (!localUriStr.isNullOrBlank()) {
+            val contentSuccess = runCatching {
+                val uri = Uri.parse(localUriStr)
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    targetFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                    true
+                } ?: false
+            }.getOrNull() ?: false
+            if (contentSuccess && targetFile.length() > 0L) return true
+        }
+
+        return false
     }
 
     /** فتح شاشة تثبيت النظام لملف APK محلي عبر FileProvider. */
@@ -365,13 +494,12 @@ object UpdateChecker {
         // («البصمة  nateq.apk»). هكذا لا تُلتقط بصمةٌ عشوائية من
         // الملاحظات — كملف المصدر أو mapping — فتثبيت فاشل.
         val prefixed = Regex(
-            "(?im)^[ \\t]*SHA-?256[ \\t]*[:=][ \\t]*" +
+            "(?im)^[ \\t`]*SHA-?256[ \\t`]*[:=][ \\t`]*" +
                 "([0-9a-f]{64})(?![0-9a-f])"
         ).find(text)
         prefixed?.let { return it.groupValues[1].lowercase() }
         val sums = Regex(
-            "(?im)^[ \\t]*([0-9a-f]{64})(?![0-9a-f])" +
-                "[ \\t]+nateq\\.apk"
+            "(?im)^[ \\t`]*([0-9a-f]{64})[` \\t]+nateq\\.apk"
         ).find(text)
         return sums?.groupValues?.get(1)?.lowercase()
     }

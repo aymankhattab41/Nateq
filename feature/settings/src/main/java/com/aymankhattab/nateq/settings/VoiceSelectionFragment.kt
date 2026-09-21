@@ -1765,34 +1765,46 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 } catch (_: IllegalArgumentException) {
                     /* سبق تسجيله أو فُكّ */
                 }
-                val apk = UpdateChecker.downloadedApk(ctx)
-                // بصمة SHA-256 لملف متعدد الـ MB تُقرأ على الخيط الرئيسي
-                // (onReceive) فكانت تُجمّد الواجهة لحظةَ اكتمال كل تنزيل —
-                // نُنفذ الفحص على خيط خلفي ونعود للخيط الرئيسي للتفاعلات فقط.
+                // معالجة التنزيل والتحقق من سلامة البصمة على خيط خلفي
+                // لمنع تجميد واجهة المستخدم (onReceive) أثناء قراءة الملف.
                 Thread {
-                    val matches = expectedSha256Hex == null ||
-                        UpdateChecker.verifyApkSha256(
-                            apk, expectedSha256Hex
-                        )
+                    val result = UpdateChecker.processCompletedDownload(
+                        ctx, id, expectedSha256Hex
+                    )
                     Handler(Looper.getMainLooper()).post {
-                        if (!matches) {
-                            // بصمة الـ APK المُنزَّل لا تطابق ما نشره
-                            // GitHub — ملف تالف/مبتور أو عبث: لا تثبيت،
-                            // نحذف ونُبلغ المستخدم.
-                            apk.delete()
-                            val msg = ctx.getString(
-                                R.string.check_updates_checksum_failed
-                            )
-                            Toast.makeText(
-                                ctx,
-                                msg,
-                                Toast.LENGTH_LONG
-                            ).show()
-                            if (isAdded) {
-                                view?.announceCompat(msg)
+                        when (result) {
+                            is UpdateChecker.DownloadResult.Success -> {
+                                UpdateChecker.promptInstall(
+                                    ctx, result.apkFile
+                                )
                             }
-                        } else {
-                            UpdateChecker.promptInstall(ctx, apk)
+                            is UpdateChecker.DownloadResult
+                                .ChecksumMismatch -> {
+                                val msg = ctx.getString(
+                                    R.string.check_updates_checksum_failed
+                                )
+                                Toast.makeText(
+                                    ctx,
+                                    msg,
+                                    Toast.LENGTH_LONG
+                                ).show()
+                                if (isAdded) {
+                                    view?.announceCompat(msg)
+                                }
+                            }
+                            is UpdateChecker.DownloadResult.Failed -> {
+                                val msg = ctx.getString(
+                                    R.string.check_updates_download_failed
+                                )
+                                Toast.makeText(
+                                    ctx,
+                                    msg,
+                                    Toast.LENGTH_LONG
+                                ).show()
+                                if (isAdded) {
+                                    view?.announceCompat(msg)
+                                }
+                            }
                         }
                     }
                 }.start()
