@@ -23,7 +23,9 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import java.io.File
 import com.google.android.material.switchmaterial.SwitchMaterial
 import kotlinx.coroutines.launch
@@ -166,10 +168,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
+            val resolver =
+                context?.contentResolver ?: return@registerForActivityResult
             // نقرأ الملف على خيط IO ثم نعرض حوار طريقة الاستيراد (دمج/استبدال)
             lifecycleScope.launch(AppDispatchers.io) {
                 val text = runCatching {
-                    requireContext().contentResolver.openInputStream(uri)
+                    resolver.openInputStream(uri)
                         ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
                 }.getOrNull()
                 withContext(AppDispatchers.main) {
@@ -186,8 +190,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         if (uri != null) {
+            val resolver =
+                context?.contentResolver ?: return@registerForActivityResult
             // التصدير كاملاً على خيط IO عبر الفي إم (لا تجميد في Main)
-            vm.exportDict(uri, requireContext().contentResolver)
+            vm.exportDict(uri, resolver)
         }
     }
 
@@ -196,11 +202,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
      *  [pendingImportJson] كي لا يقفز حوار الطريقة خارج سياق النتيجة). */
     private fun showImportModeDialog() {
         val json = pendingImportJson ?: return
+        val currentContext = context ?: return
         val options = arrayOf(
             getString(R.string.dict_import_merge),
             getString(R.string.dict_import_replace)
         )
-        MaterialAlertDialogBuilder(requireContext())
+        MaterialAlertDialogBuilder(currentContext)
             .setTitle(R.string.dict_import_mode_title)
             .setItems(options) { _, which ->
                 pendingImportJson = null
@@ -220,8 +227,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         if (uri != null) {
+            val resolver =
+                context?.contentResolver ?: return@registerForActivityResult
             // التصدير كاملاً على خيط IO عبر الفي إم
-            vm.exportBackup(uri, requireContext().contentResolver)
+            vm.exportBackup(uri, resolver)
         }
     }
 
@@ -229,8 +238,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
+            val resolver =
+                context?.contentResolver ?: return@registerForActivityResult
             // القراءة والتفكيك والاستعادة كلها على خيط IO عبر الفي إم
-            vm.restoreBackup(uri, requireContext().contentResolver)
+            vm.restoreBackup(uri, resolver)
         }
     }
 
@@ -536,15 +547,16 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         // وأي مراجعة لاحقة (استعادة/إعادة ضبط) تُعيد بناء كل أقسام
         // الواجهة تلقائياً.
         viewLifecycleOwner.lifecycleScope.launch {
-            vm.settingsRevision.collect { revision ->
-                if (revision > 0) refreshAllSettingsUi()
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    vm.settingsRevision.collect { revision ->
+                        if (revision > 0) refreshAllSettingsUi()
+                    }
+                }
+                launch {
+                    vm.operationEvents.collect(::handleOperationEvent)
+                }
             }
-        }
-
-        // نتائج عمليات الفي إم غير المتزامنة (تصدير/استيراد/نسخ احتياطي)
-        // — تُعرض Toast/إعلان مسموع وتُعاد رسكلة القاموس عند الحاجة.
-        viewLifecycleOwner.lifecycleScope.launch {
-            vm.operationEvents.collect(::handleOperationEvent)
         }
 
         // فحص تلقائي عند فتح التطبيق: يُنبه بوجود تحديث (صامت إن لم يوجد)
@@ -569,13 +581,22 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     }
 
     override fun onDestroyView() {
+        // تفريغ مساند القوائم لمنع تسريب المراجع والواجهات
+        if (::rvCategories.isInitialized) {
+            rvCategories.adapter = null
+        }
+        if (::rvPronunciationDict.isInitialized) {
+            rvPronunciationDict.adapter = null
+        }
+        pronunciationDictAdapter = null
+
         // إلغاء تسجيل مستقبل التنزيل (بند 6.6): لو اكتمل التنزيل بعد تدوير
         // الشاشة أو مغادرتها وبقي المستقبل مسجلاً، يبقى مرجع الفصيل حياً
         // (تسريب) وقد يُستدعى على واجهة مدمّرة.
         val pendingReceiver = updateReceiver
         if (pendingReceiver != null) {
             runCatching {
-                requireContext().unregisterReceiver(pendingReceiver)
+                context?.applicationContext?.unregisterReceiver(pendingReceiver)
             }
             updateReceiver = null
         }
@@ -1116,27 +1137,31 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
     // ===== جمع سطور الأخطاء من سجل التطبيق ومشاركتها مع المطور =====
     private fun onReportErrorClicked() {
-        val context = requireContext()
+        val currentContext = context ?: return
         Toast.makeText(
-            context,
+            currentContext,
             R.string.report_error_collecting,
             Toast.LENGTH_SHORT
         ).show()
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             val report = runCatching {
-                buildErrorReport(context)
+                buildErrorReport(currentContext)
             }.getOrNull()
+            if (!isAdded || activity == null || activity?.isFinishing == true) {
+                return@launch
+            }
+            val ctx = context ?: return@launch
             if (report.isNullOrBlank()) {
                 Toast.makeText(
-                    context,
+                    ctx,
                     R.string.report_error_empty,
                     Toast.LENGTH_SHORT
                 ).show()
                 view?.announceCompat(getString(R.string.report_error_empty))
                 return@launch
             }
-            val logFile = writeLogToCacheFile(context, report)
-            showErrorReportDialog(context, report, logFile)
+            val logFile = writeLogToCacheFile(ctx, report)
+            showErrorReportDialog(ctx, report, logFile)
         }
     }
 
@@ -1241,8 +1266,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 shareErrorReport(context, reportText, logFile)
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .show()
-        trackDialog(dialog)
+            .create()
+            .also(::trackDialog)
+        dialog.show()
         view?.announceCompat(getString(R.string.error_report_dialog_title))
     }
 
@@ -1313,23 +1339,28 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             .setTitle(R.string.changelog_title)
             .setMessage(body)
             .setPositiveButton(android.R.string.ok, null)
-            .show()
-        trackDialog(dialog)
+            .create()
+            .also(::trackDialog)
+        dialog.show()
         view?.announceCompat(getString(R.string.changelog_title))
     }
 
     // ===== التشخيص =====
     private fun showDiagnosticsDialog() {
-        val context = requireContext()
-        lifecycleScope.launch {
-            val info = buildDiagnosticsInfo(context)
-            val dialog = MaterialAlertDialogBuilder(context)
+        val currentContext = context ?: return
+        viewLifecycleOwner.lifecycleScope.launch {
+            val info = buildDiagnosticsInfo(currentContext)
+            if (!isAdded || activity == null || activity?.isFinishing == true) {
+                return@launch
+            }
+            val ctx = context ?: return@launch
+            val dialog = MaterialAlertDialogBuilder(ctx)
                 .setTitle(R.string.diagnostics_title)
                 .setMessage(info)
                 .setPositiveButton(R.string.diagnostics_copy) { _, _ ->
                     copyToClipboard(info)
                     Toast.makeText(
-                        context, R.string.diagnostics_copied,
+                        ctx, R.string.diagnostics_copied,
                         Toast.LENGTH_SHORT
                     ).show()
                     view?.announceCompat(
@@ -1337,8 +1368,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     )
                 }
                 .setNegativeButton(android.R.string.cancel, null)
-                .show()
-            trackDialog(dialog)
+                .create()
+                .also(::trackDialog)
+            dialog.show()
             view?.announceCompat(getString(R.string.diagnostics_title))
         }
     }
@@ -1716,6 +1748,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             context, apkUrl, allowMetered
         )
 
+        val appContext = context.applicationContext
         // مستمع مؤقت مشترك يفتح شاشة التثبيت عند اكتمال تنزيل الـ APK.
         val receiver = object : android.content.BroadcastReceiver() {
             override fun onReceive(
@@ -1727,7 +1760,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 )
                 if (id != downloadId) return
                 try {
-                    ctx.unregisterReceiver(this)
+                    ctx.applicationContext.unregisterReceiver(this)
                     updateReceiver = null
                 } catch (_: IllegalArgumentException) {
                     /* سبق تسجيله أو فُكّ */
@@ -1747,18 +1780,17 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                             // GitHub — ملف تالف/مبتور أو عبث: لا تثبيت،
                             // نحذف ونُبلغ المستخدم.
                             apk.delete()
+                            val msg = ctx.getString(
+                                R.string.check_updates_checksum_failed
+                            )
                             Toast.makeText(
                                 ctx,
-                                getString(
-                                    R.string.check_updates_checksum_failed
-                                ),
+                                msg,
                                 Toast.LENGTH_LONG
                             ).show()
-                            view?.announceCompat(
-                                getString(
-                                    R.string.check_updates_checksum_failed
-                                )
-                            )
+                            if (isAdded) {
+                                view?.announceCompat(msg)
+                            }
                         } else {
                             UpdateChecker.promptInstall(ctx, apk)
                         }
@@ -1767,7 +1799,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             }
         }
         ContextCompat.registerReceiver(
-            context,
+            appContext,
             receiver,
             android.content.IntentFilter(
                 android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE

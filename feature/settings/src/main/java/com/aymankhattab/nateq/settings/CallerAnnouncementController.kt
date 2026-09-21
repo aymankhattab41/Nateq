@@ -597,6 +597,7 @@ internal class CallerAnnouncementController(
 
     /** نتيجة طلب أذونات المتصل: التفّعيل الفعلي لا يتم إلا بعد منح أي إذن. */
     fun onPermissionsResult(granted: Map<String, Boolean>) {
+        val ctx = fragment.context ?: return
         val phoneGranted =
             granted[Manifest.permission.READ_PHONE_STATE] == true
         val callLogGranted =
@@ -615,9 +616,7 @@ internal class CallerAnnouncementController(
             callerSwitchGuard = true
             switchCallerAnnouncement?.isChecked = true
             callerSwitchGuard = false
-            AnnouncementSchedulerService.requestStart(
-                fragment.requireContext()
-            )
+            AnnouncementSchedulerService.requestStart(ctx)
             onStatusChanged()
             // مع بوّابة canEnable لا تصل رسالة «حالة الهاتف فقط» — من منح
             // ما عداها معها فله مصدرُ اسمٍ واحدٍ على الأقل.
@@ -626,10 +625,10 @@ internal class CallerAnnouncementController(
             } else {
                 R.string.caller_permission_granted_contacts_only
             }
-            Toast.makeText(
-                fragment.requireContext(), msg, Toast.LENGTH_LONG
-            ).show()
-            fragment.view?.announceCompat(fragment.getString(msg))
+            Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+            if (fragment.isAdded) {
+                fragment.view?.announceCompat(fragment.getString(msg))
+            }
         } else {
             // بند 4.10: كان تغيير المفتاح هنا بلا حارس فيطلق المستمع فينفّذ
             // مسار «التعطيل» مرتين (إعلانان صوتيان وتحديثان للملخص). الحارس
@@ -638,18 +637,18 @@ internal class CallerAnnouncementController(
             switchCallerAnnouncement?.isChecked = false
             callerSwitchGuard = false
             runCatching { settings.setCallerAnnouncementEnabled(false) }
-            AnnouncementSchedulerService.syncIfRunning(
-                fragment.requireContext()
-            )
+            AnnouncementSchedulerService.syncIfRunning(ctx)
             onStatusChanged()
             Toast.makeText(
-                fragment.requireContext(),
+                ctx,
                 R.string.caller_permission_needed,
                 Toast.LENGTH_LONG
             ).show()
-            fragment.view?.announceCompat(
-                fragment.getString(R.string.caller_permission_needed)
-            )
+            if (fragment.isAdded) {
+                fragment.view?.announceCompat(
+                    fragment.getString(R.string.caller_permission_needed)
+                )
+            }
         }
     }
 

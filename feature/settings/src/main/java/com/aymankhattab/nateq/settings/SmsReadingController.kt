@@ -372,6 +372,7 @@ internal class SmsReadingController(
     /** نتيجة طلب إذن قراءة الرسائل: الوضع المعلّق يُثبَّت فقط عند
      *  المنح الفعلي. */
     fun onSmsPermissionResult(granted: Boolean) {
+        val ctx = fragment.context ?: return
         val pending = pendingSmsMode
         pendingSmsMode = null
         if (granted) {
@@ -379,24 +380,24 @@ internal class SmsReadingController(
             if (pending != null) {
                 runCatching { settings.setSmsReadingMode(pending) }
             }
-            fragment.view?.announceCompat(
-                fragment.getString(R.string.permission_sms_granted)
-            )
-            AnnouncementSchedulerService.requestStart(
-                fragment.requireContext()
-            )
+            if (fragment.isAdded) {
+                fragment.view?.announceCompat(
+                    fragment.getString(R.string.permission_sms_granted)
+                )
+            }
+            AnnouncementSchedulerService.requestStart(ctx)
         } else {
             // رُفض: نعيد المفتاح إلى "off" (لم يكن قد حُفظ) ونعلن السبب.
             if (pending != null) {
                 runCatching { settings.setSmsReadingMode("off") }
-                AnnouncementSchedulerService.syncIfRunning(
-                    fragment.requireContext()
-                )
+                AnnouncementSchedulerService.syncIfRunning(ctx)
                 spinnerSmsMode?.setSelection(2)
             }
-            fragment.view?.announceCompat(
-                fragment.getString(R.string.sms_permission_needed)
-            )
+            if (fragment.isAdded) {
+                fragment.view?.announceCompat(
+                    fragment.getString(R.string.sms_permission_needed)
+                )
+            }
         }
         // بند 4.11: تحديث ملخص بطاقة القسم بعد المنح أو الرفض (كان يبقى
         // يعرض الحالة القديمة حتى تدوير الشاشة).

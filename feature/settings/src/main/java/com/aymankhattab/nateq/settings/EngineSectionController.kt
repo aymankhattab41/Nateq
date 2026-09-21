@@ -209,6 +209,7 @@ internal class EngineSectionController(
                 )
             }.getOrDefault(emptyMap())
             withContext(AppDispatchers.main) {
+                if (!fragment.isAdded || !dialog.isShowing) return@withContext
                 val rows = buildLanguageRows(discovered)
                 val adapter = LanguageConvertAdapter(
                     ctx,

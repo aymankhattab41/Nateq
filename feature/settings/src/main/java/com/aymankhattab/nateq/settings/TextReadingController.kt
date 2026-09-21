@@ -137,6 +137,8 @@ internal class TextReadingController(
                     dialog.dismiss()
                 }
                 .setNegativeButton(R.string.cancel, null)
+                .create()
+                .also(fragment::trackDialog)
                 .show()
         }
 
@@ -167,6 +169,8 @@ internal class TextReadingController(
                     dialog.dismiss()
                 }
                 .setNegativeButton(R.string.cancel, null)
+                .create()
+                .also(fragment::trackDialog)
                 .show()
         }
     }
