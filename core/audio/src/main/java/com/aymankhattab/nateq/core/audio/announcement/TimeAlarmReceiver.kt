@@ -261,6 +261,9 @@ class TimeAlarmReceiver : BroadcastReceiver() {
             } catch (t: Throwable) {
                 Log.e(TAG, "alarm tick failed", t)
             } finally {
+                runCatching {
+                    if (wakeLock?.isHeld == true) wakeLock.release()
+                }
                 finishOnce()
             }
         }

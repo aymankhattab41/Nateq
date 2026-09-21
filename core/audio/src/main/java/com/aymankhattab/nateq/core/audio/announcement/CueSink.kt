@@ -120,6 +120,11 @@ internal class AudioTrackCueSink : CueSink {
                 object : AudioTrack.OnPlaybackPositionUpdateListener {
                     override fun onMarkerReached(at: AudioTrack?) {
                         if (completed.compareAndSet(false, true)) {
+                            runCatching {
+                                at?.stop()
+                                at?.release()
+                            }
+                            if (track === at) track = null
                             handler?.post { onDone(true) }
                         }
                     }
@@ -129,6 +134,11 @@ internal class AudioTrackCueSink : CueSink {
             t.play()
         } catch (t: Throwable) {
             Log.w(TAG, "AudioTrack play failed", t)
+            runCatching {
+                track?.stop()
+                track?.release()
+            }
+            track = null
             if (completed.compareAndSet(false, true)) {
                 onDone(false)
             }

@@ -709,15 +709,27 @@ class AnnouncementSpeaker(
         }
     }
 
+    private fun unregisterSpeakingLockObserver() {
+        val observer = speakingLockObserver ?: return
+        speakingLockObserver = null
+        runCatching {
+            appContext.contentResolver.unregisterContentObserver(observer)
+        }
+    }
+
     /** تحرير إعلانات الانتظار بالترتيب؛ [force] يظل طوعيَّ المهلة: يُنطق
      *  حتى لو كان القفل ما يزال مرفوعاً (لم يعد الانتظار مجدياً). */
     private fun flushDeferredWhileSpeaking(force: Boolean) {
-        if (deferredWhileSpeaking.isEmpty()) return
+        if (deferredWhileSpeaking.isEmpty()) {
+            unregisterSpeakingLockObserver()
+            return
+        }
         if (!force && SpeechLock.isSpeaking(appContext)) return
         speakingLockTimeout?.let { mainHandler.removeCallbacks(it) }
         speakingLockTimeout = null
         val pending = ArrayList<() -> Unit>(deferredWhileSpeaking)
         deferredWhileSpeaking.clear()
+        unregisterSpeakingLockObserver()
         pending.forEach { runCatching { it() } }
     }
 
@@ -1242,12 +1254,7 @@ class AnnouncementSpeaker(
         // **قفل النطق العابر:** إلغاء مراقبة «نطق جارٍ» ومهلة الانتظار
         // وتفريغ الطابور المؤجَّل — لا بقايا مراقبٍ ولا نطق متأخر بعد
         // إغلاق الخدمة.
-        speakingLockObserver?.let {
-            runCatching {
-                appContext.contentResolver.unregisterContentObserver(it)
-            }
-            speakingLockObserver = null
-        }
+        unregisterSpeakingLockObserver()
         speakingLockTimeout?.let { mainHandler.removeCallbacks(it) }
         speakingLockTimeout = null
         deferredWhileSpeaking.clear()

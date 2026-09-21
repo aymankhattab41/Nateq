@@ -127,28 +127,21 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         // تحذيراً ولا لزوم له). ذرّيٌ ليتحمل وصولَ الإنهاء من خيطي البث
         // والنطق والحارس معاً.
         val finishedBroadcast = AtomicBoolean(false)
+        val mainHandler = Handler(Looper.getMainLooper())
+        var finishFailsafe: Runnable? = null
         fun finishOnce() {
             if (finishedBroadcast.compareAndSet(false, true)) {
+                finishFailsafe?.let { mainHandler.removeCallbacks(it) }
                 pendingResult.finish()
             }
         }
-        // حارس أمان على الخيط الرئيسي: يُنهي البث حتماً قبل حافة مهلة
-        // النظام (~10 ثوانٍ) ببُعد [BROADCAST_SAFE_CAP_MS] واضح — مفصولٌ
-        // عن كوروتين النطق (الذي قد يعلق على محركٍ صامت بلا onDone) فلا
-        // يبلغ الـ goAsync حافتَه قط فيقع ANR. يُزال في finally عند تمام
-        // العمل، وإن سبق إنهاؤه فلا يُنهى ثانية (ذرّي).
-        val mainHandler = Handler(Looper.getMainLooper())
-        val finishFailsafe = Runnable { finishOnce() }
-        mainHandler.postDelayed(finishFailsafe, BROADCAST_SAFE_CAP_MS)
+        val failsafe = Runnable { finishOnce() }
+        finishFailsafe = failsafe
+        mainHandler.postDelayed(failsafe, BROADCAST_SAFE_CAP_MS)
         val appScope =
             (context.applicationContext as AnnouncementAppContext).appScope
         appScope.launch {
-            // **بند 3.9 (إبقاء المعالج مستيقظاً أثناء النطق):** نمطُ
-            // TimeAlarmReceiver الموحَّد — WakeLockٌ جزئيٌّ عابرٌ (6 ثوانٍ =
-            // نافذة البث، تحريرٌ ذاتيٌّ بمهلة الاقتناء بلا إفراجٍ يدويٍّ)
-            // فلا ينامُ الجهازُ فيُقتطعَ نطقُ رقمِ المتصلِ في منتصفه، ولا
-            // تعارضَ مسارٍ (نفسُ المعرّفِ والطريقةِ وليس نسخةً مكررةً).
-            val wakeLock = TimeAlarmReceiver.acquireShortWakeLock(context)
+            var wakeLock: android.os.PowerManager.WakeLock? = null
             val state =
                 intent.getStringExtra(TelephonyManager.EXTRA_STATE)
             if (state == null) {
@@ -301,6 +294,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 val pitch = settings.getCallerAnnouncementPitchOrDefault(
                     locale.language
                 )
+                wakeLock = TimeAlarmReceiver.acquireShortWakeLock(context)
                 speaker.speak(
                     text, locale, speechRate, pitch, volume,
                     engineOverride = settings.getEngineForCategory(
@@ -346,10 +340,13 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 }
                 Log.e(TAG, "onReceive failed", t)
             } finally {
+                runCatching {
+                    if (wakeLock?.isHeld == true) wakeLock.release()
+                }
                 // تعويضي: إن انحرف المسار قبل أذرعة الإنهاء أعلاه (استثناء)
                 // يُنهى البث هنا — وإن سبق إنهاؤه فلا يُنهى ثانية. ويُزال
                 // حارس الأمان — لا يبقى مسجلاً بعد اكتمال الدورة.
-                mainHandler.removeCallbacks(finishFailsafe)
+                finishFailsafe?.let { mainHandler.removeCallbacks(it) }
                 completionListener?.let { listener ->
                     // إزالة مستمعنا حتى لا يُستدعى في دورة نطقٍ لاحقة
                     runCatching {

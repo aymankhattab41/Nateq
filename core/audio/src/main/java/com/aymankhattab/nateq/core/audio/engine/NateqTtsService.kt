@@ -225,6 +225,7 @@ class NateqTtsService : TextToSpeechService() {
      *  الاستباق نُنهي callback الطلب القديم حتى لا يعلق طابور النظام فينتقل
      *  للطلب الجديد. */
     @Volatile private var stopping = false
+    @Volatile private var interruptedBySensor = false
 
     /** **بند 8:** رصد الإسكات الفوري (هز/تقارب) أثناء دورة التخليق في مسار
      *  قارئ الشاشة (TalkBack عبر هذه الخدمة). كان الربط محصوراً في دورة
@@ -467,6 +468,7 @@ override fun onDestroy() {
         // الـ callback بأمان (بند 2.3) فلا يبقى PlaybackSynthesisCallback
         // وAudioTrack معلقين يطبقون صمت TalkBack حتى إعادة تشغيل الخدمة.
         stopping = true
+        interruptedBySensor = false
         currentJob?.cancel()
     }
 
@@ -509,7 +511,8 @@ override fun onDestroy() {
      *  (بند 2.3) دون خطأٍ زائف لأن النظام يعرف أنه أُوقف عمداً، ويبقى طابور
      *  TalkBack سليماً ليكمل الطلب التالي. */
     private fun interruptSynthesis() {
-        stopping = true
+        stopping = false
+        interruptedBySensor = true
         currentJob?.cancel()
     }
 
@@ -554,6 +557,7 @@ override fun onDestroy() {
         // الطرفي تُنهي مهله الداخلية المتكيّفة (1.5–8 ث داخل
         // SystemVoiceProvider) الطلبَ بدل تعليق الخيط بلا سقف.
         stopping = false
+        interruptedBySensor = false
 
         // **بند قفل النطق العابر:** نرفع علم «نطق جارٍ» عبر content://…
         // /speaking فيبدأ متحدث الإعلانات (AnnouncementSpeaker) بتأجيل
@@ -639,7 +643,10 @@ override fun onDestroy() {
                 // إبطال صريح: الإيقاف (onStop) معروف للنظام فلا نُطلق خطأً
                 // زائفاً، أما الاستباقُ فلم يعد وارداً مع النمط الحاجز (يُبقي
                 // النظامُ خيطَ التخليق حتى العودة) ويبقى التحوط للسلامة.
-                if (stopping) {
+                if (interruptedBySensor) {
+                    Log.d(TAG, "onSynthesizeText interrupted by sensor")
+                    runCatching { callback.done() }
+                } else if (stopping) {
                     // بند 2.4: خروج صامت عند الإيقاف الحقيقي — استدعاء
                     // error() هنا خطأٌ زائف يخرق عقد AOSP (النظام ألغى
                     // الطلب بنفسه عبر onStop فلا ينتظر إخطاراً آخر).

@@ -153,8 +153,7 @@ class SmsReadingReceiver : BroadcastReceiver() {
             // TimeAlarmReceiver الموحَّد — WakeLockٌ جزئيٌّ عابرٌ (6 ثوانٍ =
             // نافذة البث، تحريرٌ ذاتيٌّ بمهلةِ الاقتناء بلا إفراجٍ يدويٍّ)
             // فلا ينامُ الجهازُ فيُقتطعَ نطقُ الرسائلِ في منتصفه، ولا تعارضَ
-            // مسارٍ (نفسُ المعرّفِ والطريقةِ وليس نسخةً مكررةً).
-            val wakeLock = TimeAlarmReceiver.acquireShortWakeLock(context)
+            var wakeLock: android.os.PowerManager.WakeLock? = null
             // حارس إنهاء وحيد لدورة البث — ذرّيٌ ليتحمل وصولَ الإنهاء من
             // خيطي اللا-تكرار واكتمال النطق معاً (finishٌ مكررٌ تحذير بلا
             // لزوم).
@@ -243,6 +242,7 @@ class SmsReadingReceiver : BroadcastReceiver() {
                 val pitch = settings.getSmsReadingPitchOrDefault(
                     locale.language
                 )
+                wakeLock = TimeAlarmReceiver.acquireShortWakeLock(context)
                 speech.speak(
                     text, locale, speechRate, pitch, volume,
                     engineOverride = settings.getEngineForCategory(
@@ -270,6 +270,9 @@ class SmsReadingReceiver : BroadcastReceiver() {
                 }
                 Log.e(TAG, "فشل قراءة الرسالة النصية", t)
             } finally {
+                runCatching {
+                    if (wakeLock?.isHeld == true) wakeLock.release()
+                }
                 // تنظيفٌ تعويضي: يُزال مستمعُنا (لا يُستدعى في دورةٍ لاحقة
                 // لا تخصنا) ويُنهى البث — وإن سبق إنهاؤه فلا يُنهى ثانية.
                 completionListener?.let { listener ->

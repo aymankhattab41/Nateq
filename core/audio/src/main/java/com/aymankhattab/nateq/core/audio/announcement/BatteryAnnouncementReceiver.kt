@@ -99,7 +99,7 @@ class BatteryAnnouncementReceiver(
             // نافذة البث، تحريرٌ ذاتيٌّ بمهلة الاقتناء بلا إفراجٍ يدويٍّ)
             // فلا ينامُ الجهازُ فيُقتطعَ إعلانُ البطاريةِ في منتصفه، ولا
             // تعارضَ مسارٍ (نفسُ المعرّفِ والطريقةِ وليس نسخةً مكررةً).
-            val wakeLock = TimeAlarmReceiver.acquireShortWakeLock(context)
+            var wakeLock: android.os.PowerManager.WakeLock? = null
             // حارس إنهاء وحيد لدورة البث — ذرّيٌ ليتحمل وصولَ الإنهاء من
             // خيطي البث واكتمال النطق معاً (finishٌ مكررٌ تحذير بلا لزوم).
             val finishedBroadcast = AtomicBoolean(false)
@@ -120,6 +120,7 @@ class BatteryAnnouncementReceiver(
                 // فلا ANR رغم تعليق المحرك)،
                 // وإلا نُنهي فوراً.
                 if (handle(context, intent, action)) {
+                    wakeLock = TimeAlarmReceiver.acquireShortWakeLock(context)
                     val speaker = AnnouncementSpeaker.getInstance(context)
                     completionListener = { speechDone.complete(Unit) }
                     speaker.addCompletionListener(completionListener!!)
@@ -136,6 +137,9 @@ class BatteryAnnouncementReceiver(
                 }
                 android.util.Log.e("NATEQ_TTS", "battery announce failed", t)
             } finally {
+                runCatching {
+                    if (wakeLock?.isHeld == true) wakeLock.release()
+                }
                 completionListener?.let { listener ->
                     runCatching {
                         AnnouncementSpeaker.getInstance(context)
