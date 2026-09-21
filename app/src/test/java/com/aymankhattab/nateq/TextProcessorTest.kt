@@ -862,10 +862,25 @@ class TextProcessorTest {
             "حمّل خمسون ميجابايت",
             processor.process("حمّل 50mB", "ar", "com.google.android.tts")
         )
-        // بالمسار الافتراضي (تجريد التشكيل بدون حزمة محرك تحتفظ به):
+    }
+
+    @Test
+    fun data_units_arabic_megabyte_full_pipeline() {
         assertEquals(
-            "حمل خمسون ميجابايت",
-            processor.process("حمّل 50mb", "ar")
+            "الملف خمسون ميجابايت",
+            processor.process("الملف 50 م ب", "ar")
+        )
+        assertEquals(
+            "الملف خمسون ميجابايت",
+            processor.process("الملف 50 م.ب", "ar")
+        )
+        assertEquals(
+            "الملف خمسون ميجابايت",
+            processor.process("الملف 50 م.ب.", "ar")
+        )
+        assertEquals(
+            "الملف خمسون ميجابايت",
+            processor.process("الملف 50 مب", "ar")
         )
     }
 }

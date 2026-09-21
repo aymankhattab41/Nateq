@@ -114,6 +114,37 @@ class PipelineStepsTest {
     }
 
     @Test
+    fun unit_data_storage_arabic_megabyte_abbreviations() {
+        // اختصارات ميجابايت العربية لا تُنطق «متر ب» بل ميجابايت
+        assertEquals("خمسون ميجابايت", UnitStep.apply("50 م ب"))
+        assertEquals("خمسون ميجابايت", UnitStep.apply("50 م.ب"))
+        assertEquals("خمسون ميجابايت", UnitStep.apply("50 م.ب."))
+        assertEquals("خمسون ميجابايت", UnitStep.apply("50 م. ب"))
+        assertEquals("خمسون ميجابايت", UnitStep.apply("50 مب"))
+        assertEquals("خمسون ميجابايت", UnitStep.apply("50مب"))
+        assertEquals("خمسون ميجابايت", UnitStep.apply("50م ب"))
+        assertEquals("خمسون ميجابايت", UnitStep.apply("50م.ب"))
+        assertEquals("خمسون ميجابايت", UnitStep.apply("50 م بايت"))
+        assertEquals("خمسون ميجابايت", UnitStep.apply("50 ميجابايت"))
+        assertEquals("خمسون ميجابايت", UnitStep.apply("50 ميجا بايت"))
+        assertEquals("ميجابايت واحد", UnitStep.apply("1 م.ب"))
+        assertEquals("ميجابايتان", UnitStep.apply("2 م.ب"))
+        assertEquals("خمسة ميجابايتات", UnitStep.apply("5 م.ب"))
+    }
+
+    @Test
+    fun unit_data_storage_arabic_other_units_and_speed() {
+        assertEquals("عشرة كيلوبايتات", UnitStep.apply("10 ك.ب"))
+        assertEquals("عشرة كيلوبايتات", UnitStep.apply("10 ك ب"))
+        assertEquals("خمسة جيجابايتات", UnitStep.apply("5 ج.ب"))
+        assertEquals("تيرابايت واحد", UnitStep.apply("1 ت.ب"))
+        assertEquals("خمسمائة بايت", UnitStep.apply("500 بايت"))
+        assertEquals("خمسون متر في الثانية", UnitStep.apply("50 م/ث"))
+        assertEquals("خمسون ميجابايت في الثانية", UnitStep.apply("50 م.ب/ث"))
+        assertEquals("خمسون ميجابايت في الثانية", UnitStep.apply("50 MB/s"))
+    }
+
+    @Test
     fun unit_data_storage_case_insensitive_other_bytes() {
         assertEquals("عشرة كيلوبايتات", UnitStep.apply("10kb"))
         assertEquals("عشرة كيلوبايتات", UnitStep.apply("10Kb"))
@@ -1020,6 +1051,14 @@ class PipelineStepsTest {
     fun acronym_embedded_plural_untouched() {
         // الملصقات المركّبة تُترك (PDFs جمع يعبّر محركُه عنها بالإنجليزية).
         assertEquals("الملفات PDFs", AcronymStep.apply("الملفات PDFs"))
+    }
+
+    @Test
+    fun acronym_arabic_data_units_without_number() {
+        assertEquals("الحجم ميجابايت", AcronymStep.apply("الحجم م.ب"))
+        assertEquals("الحجم ميجابايت", AcronymStep.apply("الحجم م.ب."))
+        assertEquals("الملف ميجابايت", AcronymStep.apply("الملف MB"))
+        assertEquals("الباقة كيلوبايت", AcronymStep.apply("الباقة ك.ب"))
     }
 
     // ═══════════════ المسار الإنجليزي (اللغة الثانية) ═══════════════

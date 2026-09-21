@@ -22,14 +22,27 @@ internal object AcronymStep : TextProcessingStep {
         "USB" to "يو إس بي",
         "GPS" to "جي بي إس",
         "Wi-Fi" to "واي فاي",
-        "WiFi" to "واي فاي"
+        "WiFi" to "واي فاي",
+        "م.ب." to "ميجابايت",
+        "م.ب" to "ميجابايت",
+        "ك.ب." to "كيلوبايت",
+        "ك.ب" to "كيلوبايت",
+        "ج.ب." to "جيجابايت",
+        "ج.ب" to "جيجابايت",
+        "ت.ب." to "تيرابايت",
+        "ت.ب" to "تيرابايت",
+        "MB" to "ميجابايت",
+        "GB" to "جيجابايت",
+        "KB" to "كيلوبايت",
+        "TB" to "تيرابايت"
     )
 
     private val ACRONYM_PATTERNS = ACRONYMS.map { (acronym, _) ->
-        // حدود كلمات تامة: لا تُستبدل الصيغ الأطول (PDFs) ولا يُنطق الحرف
-        // داخل كلمةٍ أكبر؛ لا يعاود التطابقُ التقاطَ بديلٍ لاحقاً (البدائل
-        // عربية بلا حروف لاتينية).
-        Pattern.compile("\\b" + Pattern.quote(acronym) + "\\b") to acronym
+        // حدود كلمات تامة: تدعم الحروف اللاتينية والعربية والنقاط الختامية
+        Pattern.compile(
+            """(?<![\p{L}\p{N}_])""" + Pattern.quote(acronym) +
+                """(?![\p{L}\p{N}_])"""
+        ) to acronym
     }
 
     private val ACRONYM_ANY_PATTERN = Pattern.compile(
