@@ -435,13 +435,52 @@ class TextProcessorTest {
         // كلمات أولاً فيفشل نمط (?<=\d)…(?=\d)).
         assertEquals("خمسة زائد ثلاثة", processor.process("5 + 3", "ar"))
         assertEquals("عشرة ناقص أربعة", processor.process("10 - 4", "ar"))
-        // الكسر 1/2 يُنطق «واحد على اثنان»
-        // (numberToWords يستخدم «اثنان» المرفوعة).
-        assertEquals("واحد على اثنان", processor.process("1/2", "ar"))
+        // القسمة «÷» تُنطق «على»
+        assertEquals("عشرة على اثنان", processor.process("10 ÷ 2", "ar"))
         // الادعاء: العملية الطويلة (8 خانات) لا تُنطق هاتفاً رقماً رقماً
         assertEquals("ألف ناقص ألفان", processor.process("1000 - 2000", "ar"))
         // الادعاء: «%» يُستبدل مفصولاً بمسافات فلا تلتصق «خمسونبالمئة»
         assertEquals("خمسون بالمئة", processor.process("خمسون%", "ar"))
+    }
+
+    @Test
+    fun slash_inArabicSentence_notSpoken_andUrlsPreserved() {
+        // مثال المستخدم: نتيجة مباراة 1/0 لا تُنطق «1 على 0» بل «واحد صفر»
+        val userExample = "للاسف الاسماعيلي خرج من كأس مصر الدور التمهيدي " +
+            "عليي يد الرباط والانوار خسر 1/0"
+        val expectedUser = "للاسف الاسماعيلي خرج من كأس مصر الدور التمهيدي " +
+            "عليي يد الرباط والانوار خسر واحد صفر"
+        assertEquals(expectedUser, processor.process(userExample, "ar"))
+
+        // نتائج المباريات والنسب
+        assertEquals("خسر واحد صفر", processor.process("خسر 1/0", "ar"))
+        assertEquals("خسر واحد صفر", processor.process("خسر 1 / 0", "ar"))
+        assertEquals("اثنان واحد", processor.process("2/1", "ar"))
+
+        // الكلمات والخيارات المفصولة بشرطة مائلة
+        assertEquals("نعم لا", processor.process("نعم/لا", "ar"))
+        assertEquals("و أو", processor.process("و/أو", "ar"))
+        assertEquals("أ ب", processor.process("أ / ب", "ar"))
+
+        // الروابط تحتفظ بالشرطة المائلة وتُقرأ عادياً
+        val textWithUrl = "زوروا https://example.com/match/1/0 للمزيد"
+        assertEquals(
+            "زوروا https://example.com/match/1/0 للمزيد",
+            processor.process(textWithUrl, "ar")
+        )
+
+        // الروابط بدون بروتوكول مع مسار
+        val textWithBareUrl = "راجع example.com/news/sports اليوم"
+        assertEquals(
+            "راجع example.com/news/sports اليوم",
+            processor.process(textWithBareUrl, "ar")
+        )
+
+        // اللغة الإنجليزية تُبقي على نطق الشرطة المائلة
+        assertEquals(
+            "ten divided by two",
+            processor.process("10/2", "en")
+        )
     }
 
     @Test

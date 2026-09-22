@@ -61,7 +61,7 @@ internal class PunctuationStep(
             hash = " رقم ",
             percent = " بالمئة ",
             and = " و ",
-            slash = " شرطة مائلة ",
+            slash = "",
             plus = " زائد ",
             equals = " يساوي ",
             openParen = " قوس افتتاح ",
@@ -111,12 +111,13 @@ internal class PunctuationStep(
             "٪" to w.percent
         ).map { (symbol, word) ->
             Pattern.compile(Pattern.quote(symbol)) to word
-        } + listOf(
-            "/" to w.slash,
+        } + (if (w.slash.isNotBlank()) listOf(
+            Pattern.compile("(?<!\\d)\\s*/\\s*(?!\\d)") to w.slash
+        ) else emptyList()) + listOf(
             "+" to w.plus,
             "=" to w.equals
         ).map { (symbol, word) ->
-            // المعزولة فقط: الحساب بين رقمين («5/2») من مسؤولية SymbolStep،
+            // المعزولة فقط: الحساب بين رقمين («5+2») من مسؤولية SymbolStep،
             // والروابط تحميها UrlStep سابقاً فلا تصل «//» هنا.
             Pattern.compile("(?<!\\d)\\s*\\Q$symbol\\E\\s*(?!\\d)") to word
         }

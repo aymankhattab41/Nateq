@@ -4,6 +4,7 @@ import android.content.Context
 import com.aymankhattab.nateq.core.engine.PunctuationLevels
 import com.aymankhattab.nateq.core.engine.SynthesisConfig
 import com.aymankhattab.nateq.engine.pipeline.AcronymStep
+import com.aymankhattab.nateq.engine.pipeline.ArabicSlashStep
 import com.aymankhattab.nateq.engine.pipeline.CleanupStep
 import com.aymankhattab.nateq.engine.pipeline.CurrencyStep
 import com.aymankhattab.nateq.engine.pipeline.DateStep
@@ -128,7 +129,8 @@ class TextProcessor(
         TimeStep,
         CurrencyStep,
         UnitStep,
-        AcronymStep
+        AcronymStep,
+        ArabicSlashStep
     )
 
     // الخطوات الثقيلة (تنطبق فقط إن فشل المسار السريع) — ترتيبها مُطابق تماماً
@@ -539,9 +541,10 @@ class TextProcessor(
         NumberWordsConverter.numberToWords(number)
 
     private companion object {
-        /** نمط الروابط المحجوبة في المسار الإنجليزي (نفس نمط [UrlStep]). */
+        /** نمط الروابط المحجوبة (نفس نمط [UrlStep]). */
         private val PATTERN_URL_EN = Pattern.compile(
-            """(?i)\b(?:https?://|www\.)[^\s<>"']+"""
+            """(?i)\b(?:https?://|www\.)[^\s<>"']+|""" +
+                """\b[a-zA-Z0-9_.-]+\.[a-zA-Z]{2,}(?::\d+)?/[^\s<>"']*"""
         )
 
         /** أول محرف في منطقة الاستخدام الخاص يُستخدم لحجز الروابط. */
