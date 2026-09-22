@@ -698,19 +698,9 @@ internal class SettingsAccordionController(
                 else -> R.string.punctuation_level_all
             }
         )
-        val spelling = runCatching { settings.isSmartSpellingEnabled() }
-            .getOrDefault(false)
-        val spellingLabel = if (spelling) {
-            fragment.getString(R.string.toggle_on)
-        } else {
-            fragment.getString(R.string.toggle_off)
-        }
         return buildString {
             append(fragment.getString(R.string.punctuation_reading_level))
                 .append(": ").append(label)
-            append("، ")
-                .append(fragment.getString(R.string.smart_spelling_enabled))
-            append(": ").append(spellingLabel)
             append("، ")
                 .append(fragment.getString(R.string.secondary_language_title))
             append(": ").append(secondaryLanguageLabel())

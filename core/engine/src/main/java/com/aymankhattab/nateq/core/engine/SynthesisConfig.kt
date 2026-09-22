@@ -13,8 +13,6 @@ interface SynthesisConfig {
     /** مستوى نطق علامات الترقيم والرموز: 0 لا شيء، 1 البعض، 2 الكل. */
     fun getPunctuationLevel(): Int
 
-    /** تفعيل التهجئة الذكية ونطق التشكيل عند التنقل الحرفي في TalkBack. */
-    fun isSmartSpellingEnabled(): Boolean
 
     /**
      * الحفاظ على تشكيل النصوص العربية المُرسلة للمحرك: التجريد الداخلي

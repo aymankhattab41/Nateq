@@ -91,13 +91,11 @@ class SettingsRepository(context: Context) :
         private val CALLER_PHONE_REGEX =
             Regex("^[+]?[0-9\\s()\\-]{3,32}$")
 
-        /** مفاتيح ميزات حساسة (استشعارات/صوتيات) تُصفَّر دائماً عند الاستيراد:
-         *  الهز/التقارب يفعّلان مستشعرات فعلية، والتهجئة الذكية صوتُ حروفٍ
-         *  متتابع — كلها تُثبَّت false عند الترميم حتى لا تصدم جهاز المستخدم
-         *  الجديد بإعداداتٍ ينطق بها الشاشة أو يستهلك مستشعراً بلا علمه
+        /** مفاتيح ميزات حساسة (استشعارات) تُصفَّر دائماً عند الاستيراد:
+         *  الهز/التقارب يفعّلان مستشعرات فعلية تُثبَّت false عند الترميم
+         *  حتى لا تستهلك مستشعراً بلا علم المستخدم
          *  (المحور 6 — «إعداد آمن عند الاستيراد»). */
         private val SAFE_DEFAULT_FALSE_KEYS = setOf(
-            "smart_spelling_enabled",
             "shake_to_stop_enabled",
             "proximity_silence_enabled"
         )
@@ -1018,12 +1016,6 @@ class SettingsRepository(context: Context) :
             )
             .apply()
 
-    /** التهجئة الذكية ونطق التشكيل عند التنقل الحرفي عبر TalkBack
-     *  (باء مفتوحة، A - Alpha). معطّلة افتراضياً. */
-    override fun isSmartSpellingEnabled(): Boolean =
-        prefs.getBoolean("smart_spelling_enabled", false)
-    override fun setSmartSpellingEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("smart_spelling_enabled", enabled).apply()
 
     /** الحفاظ على تشكيل النصوص العربية المُرسلة للمحرك (بند 1.7):
      *  تُعاد الكلمات الأصلية غير المتحوّلة بتشكيلها الأصلي بدل إرسالها

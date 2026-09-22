@@ -58,18 +58,12 @@ class SettingsRepositoryTest {
 
     @Test
     fun textReading_defaultsAndRoundTrip() {
-        // مستوى الترقيم الافتراضي «البعض» حفاظاً على السلوك القائم،
-        // والتهجئة الذكية معطّلة حتى يفعّلها المستخدم صراحةً.
+        // مستوى الترقيم الافتراضي «البعض» حفاظاً على السلوك القائم.
         assertEquals(1, repo.getPunctuationLevel())
-        assertFalse(repo.isSmartSpellingEnabled())
         repo.setPunctuationLevel(0)
         assertEquals(0, repo.getPunctuationLevel())
         repo.setPunctuationLevel(2)
         assertEquals(2, repo.getPunctuationLevel())
-        repo.setSmartSpellingEnabled(true)
-        assertTrue(repo.isSmartSpellingEnabled())
-        repo.setSmartSpellingEnabled(false)
-        assertFalse(repo.isSmartSpellingEnabled())
     }
 
     @Test
@@ -185,14 +179,12 @@ class SettingsRepositoryTest {
         repo.setNumberReadingMode(5)
         repo.setTime24Hour(true)
         repo.setPunctuationLevel(0)
-        repo.setSmartSpellingEnabled(true)
         repo.setTashkeelPreserved(true)
         repo.setShakeToStopEnabled(true)
         repo.resetAllToDefault()
         assertEquals(1, repo.getNumberReadingMode())
         assertFalse(repo.isTime24Hour())
         assertEquals(1, repo.getPunctuationLevel())
-        assertFalse(repo.isSmartSpellingEnabled())
         assertFalse(repo.isTashkeelPreserved())
         assertFalse(repo.isShakeToStopEnabled())
     }

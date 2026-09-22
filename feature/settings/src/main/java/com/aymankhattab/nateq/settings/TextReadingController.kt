@@ -14,7 +14,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.switchmaterial.SwitchMaterial
 
-/** ضابط قسم «قراءة النصوص»: مستوى نطق علامات الترقيم + مفتاح التهجئة الذكية. */
+/** ضابط قسم «قراءة النصوص»: مستوى نطق علامات الترقيم + إبقاء التشكيل. */
 internal class TextReadingController(
     private val fragment: VoiceSelectionFragment,
     private val settings: SettingsRepository,
@@ -24,7 +24,6 @@ internal class TextReadingController(
     // مراجع العرض قابلة للتصفير في cleanup() عند تدمير عرض الفصيل
     // (بند 4.1) حتى لا تبقى شجرة العرض القديمة محتجزة في الخلفية.
     private var spinnerPunctuationLevel: Spinner? = null
-    private var switchSmartSpelling: SwitchMaterial? = null
     private var switchTashkeelPreserved: SwitchMaterial? = null
     private var switchFollowReaderRate: SwitchMaterial? = null
     private var btnSecondaryLanguage: MaterialButton? = null
@@ -33,7 +32,6 @@ internal class TextReadingController(
     fun setup(view: View) {
         spinnerPunctuationLevel =
             view.findViewById(R.id.spinner_punctuation_level)
-        switchSmartSpelling = view.findViewById(R.id.switch_smart_spelling)
         switchTashkeelPreserved =
             view.findViewById(R.id.switch_tashkeel_preserved)
         switchFollowReaderRate =
@@ -69,20 +67,6 @@ internal class TextReadingController(
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}
-        }
-
-        switchSmartSpelling?.isChecked =
-            runCatching { settings.isSmartSpellingEnabled() }
-                .getOrDefault(false)
-        switchSmartSpelling?.setOnCheckedChangeListener { _, checked ->
-            runCatching { settings.setSmartSpellingEnabled(checked) }
-            onStatusChanged()
-            fragment.view?.announceCompat(
-                fragment.getString(
-                    if (checked) R.string.announcement_turned_on
-                    else R.string.announcement_turned_off
-                )
-            )
         }
 
         switchTashkeelPreserved?.isChecked =
@@ -215,7 +199,6 @@ internal class TextReadingController(
     /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */
     fun cleanup() {
         spinnerPunctuationLevel = null
-        switchSmartSpelling = null
         switchTashkeelPreserved = null
         switchFollowReaderRate = null
         btnSecondaryLanguage = null

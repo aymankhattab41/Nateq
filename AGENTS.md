@@ -68,17 +68,13 @@
   `PunctuationStep` في المسار الثقيل بين `SymbolStep` و`NumberStep` فينطق
   `@ # % & ٪ / + =` المعزولة (SOME) ويضيف `() ; – — …` (ALL)، وNONE يعيد
   النص كما هو. التحويل الرقمي (`NumberStep`) يعمل مستقلاً عن المستوى دائماً.
-- **التهجئة الذكية** (`smart_spelling`، افتراضياً false): عند نطق حرف واحد
-  (التنقل الحرفي في TalkBack) ينطق اسم الحرف العربي مع التشكيل: الشدة أولاً
-  ثم الحركة ثم التنوين؛ والحروف اللاتينية تمر كأحرف طبيعية بلا NATO لمنع
-  الالتباس أثناء الكتابة. تخدم كحروف-مفردة فقط.
 - **الإسكات الفوري** (`shake_to_stop` / `proximity_silence`، افتراضياً false):
   `InterruptionSensors` في `core:audio` يُسجّل الهزاز/مستشعر التقارب أثناء النطق
   (يبدأ/يتوقف مع `AnnouncementSpeaker`) فيوقف النطق. بطاقة الإعداد في
   `feature/settings/.../InstantSilenceController.kt`.
-- **مفاتيح الإعدادات**: `punctuation_level` و`smart_spelling` و`shake_to_stop`
+- **مفاتيح الإعدادات**: `punctuation_level` و`shake_to_stop`
   و`proximity_silence` تُصدَّر تلقائياً في `exportSettings` وتُصفَّر بـ
-  `resetAllToDefault`؛ التثبيت في `SettingsRepository.sanitize` (التهجئة/المستشعرات
+  `resetAllToDefault`؛ التثبيت في `SettingsRepository.sanitize` (المستشعرات
   توضع false والقيمة غير الصالحة للمستوى تُثبّت على SOME).
 
 ### الاختبارات الآلية (JUnit + Robolectric)

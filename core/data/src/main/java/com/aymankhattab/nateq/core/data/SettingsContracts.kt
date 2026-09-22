@@ -170,11 +170,6 @@ interface ReadingPrefs {
     /** يعيّن مستوى نطق علامات الترقيم. */
     fun setPunctuationLevel(level: Int)
 
-    /** تفعيل التهجئة الذكية ونطق التشكيل عند التنقل الحرفي. */
-    fun isSmartSpellingEnabled(): Boolean
-
-    /** يعيّن تفعيل التهجئة الذكية. */
-    fun setSmartSpellingEnabled(enabled: Boolean)
 
     /** إبقاء تشكيل النصوص العربية المُرسلة للمحرك (بند 1.7). */
     fun isTashkeelPreserved(): Boolean

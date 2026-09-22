@@ -74,12 +74,6 @@ class TextProcessor(
     private val emojiEnabled: Boolean
         get() = injectedSettings?.isEmojiPronunciationEnabled() ?: true
 
-    /**
-     * هل التهجئة الذكية (نطق الحرف المفرد بأسمائه وحركاته) مفعّلة؟
-     * بلا حقنة Settings تُفترض معطّلة.
-     */
-    private val smartSpellingEnabled: Boolean
-        get() = injectedSettings?.isSmartSpellingEnabled() ?: false
 
     /**
      * حفظ تشكيل الكلمات العربية المُرسلة للمحرك (بند 1.7): التجريد
@@ -200,12 +194,6 @@ class TextProcessor(
         // هويةٌ تامة على النص العادي فلا تكلف أثراً على المسارات السريعة.
         result = SsmlStep.apply(result)
 
-        // التهجئة الذكية: حرف مفرد (عربي بتشكيله أو لاتيني) يُنطق باسمه
-        // كاملاً («بَ» ← «باء مفتوحة»، «A» ← «Capital Alpha») قبل أي
-        // تحويل — يقودها TalkBack عند التنقل الحرفي بأحرفٍ منفردة.
-        if (smartSpellingEnabled) {
-            SmartSpeller.spell(result, languageTag)?.let { return it }
-        }
 
         // نطق أسماء الإيموجي (بدل حذفها) قبل مسار العربية ليغطي الإنجليزية
         // واللغات الأخرى أيضاً — الناتج لا يُمرَّر لأي تحويل لاحق خارج العربية.
