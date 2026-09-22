@@ -253,7 +253,8 @@ object UpdateChecker {
                 } finally {
                     conn.disconnect()
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 CheckResult.NetworkError
             }
         }
@@ -322,9 +323,14 @@ object UpdateChecker {
         }.isSuccess
 
         if (!publicOk) {
-            val destination = File(downloadsDir(context), APK_NAME)
-            if (destination.exists()) destination.delete()
-            request.setDestinationUri(Uri.fromFile(destination))
+            val extFiles = context.getExternalFilesDir(null)
+            if (extFiles != null) {
+                val destination = File(downloadsDir(context), APK_NAME)
+                if (destination.exists()) destination.delete()
+                runCatching {
+                    request.setDestinationUri(Uri.fromFile(destination))
+                }
+            }
         }
 
         return manager.enqueue(request)
@@ -366,13 +372,28 @@ object UpdateChecker {
         }
 
         val targetApk = downloadedApk(context)
-        if (targetApk.exists()) targetApk.delete()
+        val srcFile = localUriStr?.let { Uri.parse(it) }?.let { uri ->
+            if (uri.scheme == "file") uri.path?.let { File(it) } else null
+        }
+        val isSameFile = srcFile != null &&
+            runCatching {
+                srcFile.canonicalPath == targetApk.canonicalPath
+            }.getOrDefault(false)
 
-        val copied = copyDownloadToFile(
-            context, dm, downloadId, localUriStr, targetApk
-        )
-        if (!copied || !targetApk.isFile || targetApk.length() == 0L) {
-            return DownloadResult.Failed(status, reason)
+        if (!isSameFile) {
+            if (targetApk.exists()) targetApk.delete()
+            val copied = copyDownloadToFile(
+                context, dm, downloadId, localUriStr, targetApk
+            )
+            if (!copied || !targetApk.isFile || targetApk.length() == 0L) {
+                runCatching { dm.remove(downloadId) }
+                return DownloadResult.Failed(status, reason)
+            }
+        } else {
+            if (!targetApk.isFile || targetApk.length() == 0L) {
+                runCatching { dm.remove(downloadId) }
+                return DownloadResult.Failed(status, reason)
+            }
         }
 
         val matches = expectedSha256Hex == null ||
@@ -380,6 +401,7 @@ object UpdateChecker {
 
         if (!matches) {
             targetApk.delete()
+            runCatching { dm.remove(downloadId) }
             return DownloadResult.ChecksumMismatch
         }
 

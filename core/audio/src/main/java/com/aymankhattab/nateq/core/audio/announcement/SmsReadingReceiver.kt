@@ -18,6 +18,8 @@ import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -147,7 +149,8 @@ class SmsReadingReceiver : BroadcastReceiver() {
         // goAsync() يمنع Android من قتل المستقبل قبل انتهاء العمل اللاتزامني
         val pendingResult = goAsync()
         val appScope =
-            (context.applicationContext as AnnouncementAppContext).appScope
+            (context.applicationContext as? AnnouncementAppContext)?.appScope
+                ?: CoroutineScope(Dispatchers.Default)
         appScope.launch {
             // **بند 3.9 (إبقاء المعالج مستيقظاً أثناء النطق):** نمطُ
             // TimeAlarmReceiver الموحَّد — WakeLockٌ جزئيٌّ عابرٌ (6 ثوانٍ =

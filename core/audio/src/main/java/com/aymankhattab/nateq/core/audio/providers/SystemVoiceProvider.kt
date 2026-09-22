@@ -1097,7 +1097,7 @@ class SystemVoiceProvider(
                                     toRead.toInt(), volume, streamMeta,
                                     onFormatInfo, onAudioChunk,
                                     cacheKey, cachedParts,
-                                    totalCacheBytes
+                                    totalCacheBytes, enginePackage
                                 )
                                 // بند 1.1: readSoFar تراكمي؛ كان يُسند
                                 // إليه toRead (دلتا) فتتكرر الشريحةُ
@@ -1151,7 +1151,8 @@ class SystemVoiceProvider(
                             tempFile, start + readSoFar,
                             remaining.toInt(), volume, streamMeta,
                             onFormatInfo, onAudioChunk,
-                            cacheKey, cachedParts, totalCacheBytes
+                            cacheKey, cachedParts, totalCacheBytes,
+                            enginePackage
                         )
                     } catch (e: Exception) {
                         Log.w(TAG,
@@ -1311,21 +1312,28 @@ class SystemVoiceProvider(
                 }
                 if (skip) continue
                 Log.d(TAG, "[Provider] prewarm engine=$engine")
+                val mainHandler = Handler(Looper.getMainLooper())
                 val hold = arrayOfNulls<TextToSpeech>(1)
                 val instance = try {
                     TextToSpeech(context, { status ->
-                        val built = hold[0] ?: return@TextToSpeech
-                        synchronized(ttsLock) {
-                            when {
-                                shutdownCalled -> {
-                                    runCatching { built.shutdown() }
+                        mainHandler.post {
+                            val built = hold[0]
+                            synchronized(ttsLock) {
+                                if (built == null) {
+                                    prewarmingEngines.remove(engine)
+                                    return@synchronized
                                 }
-                                status == TextToSpeech.SUCCESS ->
-                                    // ناضج: يُنقل للمسبح فيراه النطق اللاحق.
-                                    enginePool[engine] = built
-                                else -> runCatching { built.shutdown() }
+                                when {
+                                    shutdownCalled -> {
+                                        runCatching { built.shutdown() }
+                                    }
+                                    status == TextToSpeech.SUCCESS -> {
+                                        enginePool[engine] = built
+                                    }
+                                    else -> runCatching { built.shutdown() }
+                                }
+                                prewarmingEngines.remove(engine)
                             }
-                            prewarmingEngines.remove(engine)
                         }
                     }, engine)
                 } catch (t: Throwable) {
@@ -1354,7 +1362,8 @@ class SystemVoiceProvider(
         onAudioChunk: (ByteArray, Int) -> Unit,
         cacheKey: String?,
         cachedParts: ArrayList<ByteArray>,
-        totalCacheBytes: IntArray
+        totalCacheBytes: IntArray,
+        enginePackage: String? = null
     ) {
         val raw = ByteArray(len)
         java.io.RandomAccessFile(file, "r").use { raf ->
@@ -1375,7 +1384,7 @@ class SystemVoiceProvider(
         val samplesLen = samples.size
         onFormatInfo(meta.sampleRateInHz, 1)
         val scaledData = if (volume != 1.0f) {
-            applyVolume(samples, volume, samplesLen)
+            applyVolume(samples, volume, samplesLen, enginePackage)
         } else {
             samples
         }
@@ -1571,10 +1580,11 @@ internal fun extractPcmFromFile(
  *  الإيقاع ويَضطرب الزمن. بند 2.2. */
 private fun downmixStereoToMono(
     stereo: ByteArray,
-    length: Int
+    length: Int,
+    pool: BytePool? = null
 ): ByteArray {
     val frames = length / 4
-    val mono = ByteArray(frames * 2)
+    val mono = pool?.acquire(frames * 2) ?: ByteArray(frames * 2)
     var s = 0
     var m = 0
     while (s + 3 < length) {
@@ -1653,10 +1663,10 @@ private fun parseWavChunks(
             // القناتين تباعاً كان يضاعف المدة ويشوّه الإيقاع؛ نُخفض
             // الملفات الاستيريو إلى مونو (مسار النطق أحادي القناة).
             if (numChannels > 1) {
-                val mono = downmixStereoToMono(out, dataLen)
+                val mono = downmixStereoToMono(out, dataLen, pool)
                 pool.release(out)
                 return SystemVoiceProvider.PcmExtract(
-                    mono, sampleRate, mono.size
+                    mono, sampleRate, dataLen / 2
                 )
             }
             return SystemVoiceProvider.PcmExtract(out, sampleRate, dataLen)

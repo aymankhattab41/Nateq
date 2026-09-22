@@ -830,29 +830,34 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 // أهداف لمس لا تقل عن 48dp لقارئ الشاشة
                 minHeight = (48 * resources.displayMetrics.density).toInt()
             }
-            val rowLayout =
+            val numberInputLayout =
                 com.google.android.material.textfield.TextInputLayout(
                     requireContext()
                 ).apply {
-                    setPadding(0, 0, 0, 0)
+                    addView(numberPicker)
                 }
-            // بسيط: LinearLayout أفقي بعمودين نصيين وزر حذف
-            val fields = android.widget.LinearLayout(requireContext()).apply {
-                orientation = android.widget.LinearLayout.HORIZONTAL
-                addView(
-                    numberPicker,
-                    android.widget.LinearLayout.LayoutParams(0, -2, 2f)
-                )
-                addView(
-                    namePicker,
-                    android.widget.LinearLayout.LayoutParams(0, -2, 2f)
-                )
-                addView(
-                    removeBtn,
-                    android.widget.LinearLayout.LayoutParams(-2, -2)
-                )
-            }
-            rowLayout.addView(fields)
+            val nameInputLayout =
+                com.google.android.material.textfield.TextInputLayout(
+                    requireContext()
+                ).apply {
+                    addView(namePicker)
+                }
+            val rowLayout =
+                android.widget.LinearLayout(requireContext()).apply {
+                    orientation = android.widget.LinearLayout.HORIZONTAL
+                    addView(
+                        numberInputLayout,
+                        android.widget.LinearLayout.LayoutParams(0, -2, 2f)
+                    )
+                    addView(
+                        nameInputLayout,
+                        android.widget.LinearLayout.LayoutParams(0, -2, 2f)
+                    )
+                    addView(
+                        removeBtn,
+                        android.widget.LinearLayout.LayoutParams(-2, -2)
+                    )
+                }
             removeBtn.setOnClickListener {
                 listContainer.removeView(rowLayout)
                 val key = numberPicker.text.toString().trim()
@@ -954,11 +959,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         val collapsed =
             content.visibility == View.GONE ||
                 content.visibility == View.INVISIBLE
-        content.visibility = if (collapsed) View.VISIBLE else View.GONE
+        val willExpand = collapsed
+        content.visibility = if (willExpand) View.VISIBLE else View.GONE
         // سهم متجهي يلون بلون النص (مطوّي → للأسفل، موسّع → للأعلى)
         arrow.text = ""
-        val res = if (collapsed) R.drawable.ic_expand_more
-        else R.drawable.ic_expand_less
+        val res = if (willExpand) R.drawable.ic_expand_less
+        else R.drawable.ic_expand_more
         val icon = androidx.core.content.ContextCompat.getDrawable(
             requireContext(), res
         )?.apply { setTint(arrow.currentTextColor) }
@@ -967,8 +973,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         )
         // يقرأ قارئ الشاشة نصاً واحداً: العنوان الأساسي + حالة (موسّع/مطوي)
         val stateLabel =
-            if (collapsed) getString(R.string.expand)
-            else getString(R.string.collapse)
+            if (willExpand) getString(R.string.collapse)
+            else getString(R.string.expand)
         val base = header.getTag() as? String
         if (base != null) {
             header.contentDescription = base + " — " + stateLabel

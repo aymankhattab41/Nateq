@@ -24,7 +24,9 @@ object SsmlStep {
     private val breakTag = Regex(
         """(?is)<break\b([^>]*)/?>"""
     )
-    private val genericTag = Regex("""<[^>]+>""")
+    private val genericTag = Regex(
+        """(?i)</?[a-zA-Z][a-zA-Z0-9-]*(\s+[^>]*)?>"""
+    )
     private val breakTime = Regex(
         """time\s*=\s*["']?\s*(\d+)\s*(ms|s)?["']?"""
     )
@@ -36,8 +38,15 @@ object SsmlStep {
         var out = text
         // 1) say-as characters أولاً (يتضمن محتوى داخلاً قد يحوي مسافات).
         out = out.replace(sayAsCharacters) { match ->
-            match.groupValues[1].toCharArray()
-                .joinToString(" ") { it.toString() }
+            val inner = match.groupValues[1]
+            val codePoints = mutableListOf<String>()
+            var offset = 0
+            while (offset < inner.length) {
+                val codePoint = inner.codePointAt(offset)
+                codePoints.add(String(Character.toChars(codePoint)))
+                offset += Character.charCount(codePoint)
+            }
+            codePoints.joinToString(" ")
         }
         // 2) break: وقفة تقريبية حسب المدة.
         out = out.replace(breakTag) { match ->

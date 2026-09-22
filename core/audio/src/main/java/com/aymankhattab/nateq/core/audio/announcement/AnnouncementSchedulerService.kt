@@ -174,10 +174,8 @@ class AnnouncementSchedulerService : Service() {
             if (isRunning) return
             if (wasUserStopped(context)) return
             try {
-                // شبكة أمان بند 16.2 أولاً (إقلاع/إعادة فتح = سياق خلفي): بدء
-                // عابر للخدمة الأمامية يغطي نطق الإعلانات القادمة بأمان صوت
-                // الخلفية، ثم يُجدول منبه الوقت بلا نطق فوري.
-                startForSpeech(context)
+                // جدولة منبه الوقت بلا نطق فوري
+                // ودون بدء خدمة أمامية مؤقتة
                 TimeAnnouncementManager.shared(context.applicationContext)
                     .start(announceImmediately = false)
             } catch (t: Throwable) {
@@ -487,9 +485,9 @@ private fun startSafely(context: Context, action: String) {
         // حتى لا تبقى موقتات/Hوandler معلّقة تشغّل النطق بعد أكبر عمراً
         // (بند [7]) — المتحدث المشترك يُعاد بناؤه عند الحاجة لاحقاً.
         try {
-            AnnouncementSpeaker.getInstance(this).shutdown()
+            AnnouncementSpeaker.getInstance(this).stop()
         } catch (t: Throwable) {
-            Log.w(TAG, "announcement speaker shutdown failed", t)
+            Log.w(TAG, "announcement speaker stop failed", t)
         }
     }
 

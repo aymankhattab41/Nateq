@@ -197,22 +197,31 @@ internal object UnitStep : TextProcessingStep {
             return "${NumberWordsConverter.numberToWords(value)} " +
             info.singular
         }
-        val n = value.toInt()
-        return when (n) {
-            0 -> "${NumberWordsConverter.numberToWords(0.0)} ${info.singular}"
-            1 -> "${info.singular} ${if (info.isFeminine) "واحدة" else "واحد"}"
-            2 -> info.dual
-            in 3..10 ->
-                "${NumberWordsConverter.unitNumberWord(n, info.isFeminine)} " +
-                    info.plural
+        val n = value.toLong()
+        return when {
+            n == 0L ->
+                "${NumberWordsConverter.numberToWords(0.0)} ${info.singular}"
+            n == 1L ->
+                "${info.singular} ${if (info.isFeminine) "واحدة" else "واحد"}"
+            n == 2L -> info.dual
+            n in 3L..10L -> {
+                val word =
+                    NumberWordsConverter.unitNumberWord(
+                        n.toInt(),
+                        info.isFeminine
+                    )
+                "$word ${info.plural}"
+            }
             else -> {
                 // المعدود المركّب (11–99 فما بين المئات) يلزم آحاده بالمؤنث مع
                 // المعدود المؤنث: «خمس وعشرون سنة» لا «خمسة وعشرون سنة».
                 // بند 3.3: رفع الحد 9999→99,999,999 (NumberSpeech يدعم).
-                val numberText = if (info.isFeminine && n in 11..99_999_999) {
-                    NumberSpeech.toArabicWords(n, isFeminine = true)
+                val numberText = if (info.isFeminine &&
+                    n in 11L..99_999_999L
+                ) {
+                    NumberSpeech.toArabicWords(n.toInt(), isFeminine = true)
                 } else {
-                    NumberWordsConverter.numberToWords(n.toDouble())
+                    NumberWordsConverter.numberToWords(value)
                 }
                 "$numberText ${info.singular}"
             }

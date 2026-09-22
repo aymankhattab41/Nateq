@@ -109,6 +109,7 @@ internal class CategoryVoiceAdapter(
                 pos: Int,
                 id: Long
             ) {
+                if (bindingAdapterInputs) return
                 val category = holder.category
                 if (category.isEmpty()) return
                 // الفئة الافتراضية بلا محرك خاص (مخفاة) — لا تُكتب قيمة لها
@@ -366,9 +367,6 @@ internal class CategoryVoiceAdapter(
                 .getOrNull()
         val engineIdx = categoryEngines
             .indexOfFirst { it.packageName == savedEngine }
-        holder.spinnerEngine.setSelection(
-            if (engineIdx >= 0) engineIdx + 1 else 0
-        )
 
         val saved =
             runCatching { settings.getPreferredVoiceIdForCategory(category) }
@@ -378,6 +376,9 @@ internal class CategoryVoiceAdapter(
         // لا يجوز أن يكون اختياراً مسجَّلاً — يُكبَح عليه عَلَمُ الربط.
         bindingAdapterInputs = true
         try {
+            holder.spinnerEngine.setSelection(
+                if (engineIdx >= 0) engineIdx + 1 else 0
+            )
             holder.spinnerVoice.setSelection(if (idx >= 0) idx else 0)
         } finally {
             bindingAdapterInputs = false

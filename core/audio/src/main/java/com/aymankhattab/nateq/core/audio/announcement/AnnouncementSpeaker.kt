@@ -287,7 +287,8 @@ class AnnouncementSpeaker(
 
     /** استدعاء كل مستمعي الاكتمال (كلٌّ بمعزلٍ عن أخطاء غيره). */
     private fun notifySpeechComplete() {
-        completionListeners.forEach { cb ->
+        val listeners = ArrayList(completionListeners)
+        listeners.forEach { cb ->
             runCatching { cb() }
         }
     }
@@ -308,7 +309,8 @@ class AnnouncementSpeaker(
     // نطقٍ جديدة (FLUSH) وعند الإيقاف، فمستمعٌ قادمٌ متأخراً لمعرّفٍ قديم
     // يجد نفسه خارج السجل لا «معلّقاً» بلا هدف. لا يمسُّ مقارنةَ isFinal
     // (تبقى على lastQueuedUtteranceId كما هي إطلاقاً).
-    private val activeUtteranceIds = mutableSetOf<String>()
+    private val activeUtteranceIds =
+        java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     /** تسجيل معرّفٍ وُضع فعلياً في طابور المحرك (بند 1.1). */
     internal fun trackUtterance(utteranceId: String) {
@@ -457,7 +459,7 @@ class AnnouncementSpeaker(
             // دعوةً متزامنة أخرى.
             val completion = initGate.complete(success)
             completion.served.forEach { cb -> cb(success) }
-            if (completion.nextEngine != null) {
+            if (completion.hasNext) {
                 startInit(completion.nextEngine)
             }
         }, engine)
@@ -1083,16 +1085,19 @@ class AnnouncementSpeaker(
         val secondaryLanguage = runCatching {
             settings?.getSecondaryLanguage()
         }.getOrNull() ?: LanguageCode.EN.tag
+        val semanticText = runCatching {
+            textProcessor.processSemantics(text, LanguageCode.AR.tag)
+        }.getOrDefault(text)
         val languageSegments = runCatching {
             languageSegmenter.segment(
-                text,
+                semanticText,
                 fallbackLanguage = baseLocale.language,
                 secondaryLanguage = secondaryLanguage,
                 numberLanguage = numberLanguage
             )
         }.getOrDefault(emptyList())
         val effective = if (languageSegments.isEmpty()) {
-            listOf(Segment(text, LanguageCode.AR.tag))
+            listOf(Segment(semanticText, LanguageCode.AR.tag))
         } else {
             languageSegments
         }
@@ -1268,6 +1273,7 @@ class AnnouncementSpeaker(
         speakingLockTimeout = null
         deferredWhileSpeaking.clear()
         releaseAudioFocus()
+        initGate.reset()
         shutdownSafely()
         nowSpeaking = false
     }

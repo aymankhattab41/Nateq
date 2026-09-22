@@ -2,6 +2,8 @@ package com.aymankhattab.nateq.settings
 
 import android.content.Context
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
@@ -122,38 +124,43 @@ internal class VoicePreviewHelper(private val context: Context) {
         // بند 4.2: إغلاق أي معاينة جارية أولاً — الضغط السريع المتكرر لا
         // يتراكم محركات معلقة.
         currentPreviewTts?.let { tts ->
+            runCatching { tts.stop() }
             runCatching { tts.shutdown() }
         }
         currentPreviewTts = null
 
         val appContext = context.applicationContext
-        var previewTts: TextToSpeech? = null
+        val hold = arrayOfNulls<TextToSpeech>(1)
+        val mainHandler = Handler(Looper.getMainLooper())
         val listener: (Int) -> Unit = { status ->
-            if (status != TextToSpeech.SUCCESS) {
-                // فشل تهيئة محرك المعاينة: نغلق فوراً حتى لا تبقى نسخة
-                // TTS معلقة.
-                runCatching { previewTts?.shutdown() }
-                currentPreviewTts = null
-                onFinished()
-            } else {
-                currentPreviewTts = previewTts
-                speakSample(previewTts, params, onFinished)
+            mainHandler.post {
+                val tts = hold[0]
+                if (tts == null || tts !== currentPreviewTts) {
+                    runCatching { tts?.shutdown() }
+                    return@post
+                }
+                if (status != TextToSpeech.SUCCESS) {
+                    runCatching { tts.shutdown() }
+                    if (currentPreviewTts === tts) currentPreviewTts = null
+                    onFinished()
+                } else {
+                    speakSample(tts, params, onFinished)
+                }
             }
         }
         val created = runCatching {
             @Suppress("DEPRECATION")
-            previewTts = if (params.enginePkg.isNullOrBlank()) {
+            val instance = if (params.enginePkg.isNullOrBlank()) {
                 TextToSpeech(appContext, listener)
             } else {
-                // ربط مباشر بالمحرك المعيّن بدل الافتراضي: معاينة العينة
-                // يجب أن تعمل حتى لو كان محرك النطق الافتراضي للنظام هو
-                // حزمة LORD نفسها (التطبيق محرك TTS أصلياً).
-                @Suppress("DEPRECATION")
                 TextToSpeech(appContext, listener, params.enginePkg)
             }
+            hold[0] = instance
+            currentPreviewTts = instance
+            instance
         }
         if (created.isFailure) {
-            runCatching { previewTts?.shutdown() }
+            runCatching { hold[0]?.shutdown() }
             currentPreviewTts = null
             onFinished()
         }
@@ -186,11 +193,31 @@ internal class VoicePreviewHelper(private val context: Context) {
             }
             previewTts.setSpeechRate(params.speechRate)
             runCatching { previewTts.setPitch(params.pitch) }
-            // نمرر مستوى الصوت للمحرك عبر المعاملات فيقترب ناتج المعاينة
-            // من النطق الفعلي الذي يطبق نفس القيم.
             val bundle = Bundle().apply {
                 putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, params.volume)
             }
+            previewTts.setOnUtteranceProgressListener(
+                object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) {}
+
+                @Deprecated("Java Deprecated")
+                override fun onDone(utteranceId: String?) {
+                    runCatching { previewTts.shutdown() }
+                    if (currentPreviewTts === previewTts) {
+                        currentPreviewTts = null
+                    }
+                    onFinished()
+                }
+
+                @Deprecated("Java Deprecated")
+                override fun onError(utteranceId: String?) {
+                    runCatching { previewTts.shutdown() }
+                    if (currentPreviewTts === previewTts) {
+                        currentPreviewTts = null
+                    }
+                    onFinished()
+                }
+            })
             val result = runCatching {
                 previewTts.speak(
                     params.sampleText,
@@ -200,34 +227,17 @@ internal class VoicePreviewHelper(private val context: Context) {
                 )
             }.getOrDefault(TextToSpeech.ERROR)
             if (result == TextToSpeech.ERROR) {
-                // فشل النطق (مثلاً المحرك دون لغة محمّلة): نغلق فوراً.
                 runCatching { previewTts.shutdown() }
-                currentPreviewTts = null
+                if (currentPreviewTts === previewTts) {
+                    currentPreviewTts = null
+                }
                 onFinished()
                 return
             }
-            previewTts.setOnUtteranceProgressListener(
-                object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) {}
-
-                @Deprecated("Java Deprecated")
-                override fun onDone(utteranceId: String?) {
-                    runCatching { previewTts.shutdown() }
-                    currentPreviewTts = null
-                    onFinished()
-                }
-
-                @Deprecated("Java Deprecated")
-                override fun onError(utteranceId: String?) {
-                    runCatching { previewTts.shutdown() }
-                    currentPreviewTts = null
-                    onFinished()
-                }
-            })
         } catch (t: Throwable) {
             Log.w("NATEQ_TTS", "preview failed", t)
             runCatching { previewTts.shutdown() }
-            currentPreviewTts = null
+            if (currentPreviewTts === previewTts) currentPreviewTts = null
             onFinished()
         }
     }

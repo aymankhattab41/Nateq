@@ -1,6 +1,8 @@
 package com.aymankhattab.nateq.core.audio.engine
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
@@ -202,24 +204,31 @@ val lang = LocaleUtils.normalizeLanguageCode(
                     @Suppress("DEPRECATION")
                     var probe: TextToSpeech? = null
                     val finished = AtomicBoolean(false)
+                    val mainHandler = Handler(Looper.getMainLooper())
                     val created = runCatching {
                         probe = TextToSpeech(context, { status ->
-                            // حارس: النسخة تغلق مرة واحدة فقط مهما
-                            // تكرر استدعاء المستمع.
-                            if (finished.getAndSet(true)) {
-                                runCatching { probe?.shutdown() }
-                                return@TextToSpeech
-                            }
-                            try {
-                                if (status != TextToSpeech.SUCCESS) {
-                                    cont.resume(emptyList())
-                                } else {
-                                    cont.resume(probeInstalledVoices(probe))
+                            mainHandler.post {
+                                if (finished.getAndSet(true)) {
+                                    runCatching { probe?.shutdown() }
+                                    return@post
                                 }
-                            } catch (_: Throwable) {
-                                cont.resume(emptyList())
-                            } finally {
-                                runCatching { probe?.shutdown() }
+                                try {
+                                    if (status != TextToSpeech.SUCCESS) {
+                                        if (cont.isActive) {
+                                            cont.resume(emptyList())
+                                        }
+                                    } else {
+                                        if (cont.isActive) {
+                                            cont.resume(
+                                                probeInstalledVoices(probe)
+                                            )
+                                        }
+                                    }
+                                } catch (_: Throwable) {
+                                    if (cont.isActive) cont.resume(emptyList())
+                                } finally {
+                                    runCatching { probe?.shutdown() }
+                                }
                             }
                         }, enginePackage)
                     }

@@ -65,6 +65,7 @@ internal class CallerAnnouncementController(
     private var tvCallerPitchValue: TextView? = null
     private var etCallerTemplate:
         com.google.android.material.textfield.TextInputEditText? = null
+    private var templateWatcher: android.text.TextWatcher? = null
     private var spinnerCallerVoiceAr: Spinner? = null
     private var spinnerCallerVoiceEn: Spinner? = null
     private var spinnerCallerEngine: Spinner? = null
@@ -87,9 +88,10 @@ internal class CallerAnnouncementController(
     private var callerRevokedDialogShown = false
 
     fun setup(view: View) {
-        view.findViewById<View>(R.id.btnOpenOemGuidanceCaller)?.setOnClickListener {
-            onOpenOemGuidance()
-        }
+        view.findViewById<View>(R.id.btnOpenOemGuidanceCaller)
+            ?.setOnClickListener {
+                onOpenOemGuidance()
+            }
         switchCallerAnnouncement =
             view.findViewById(R.id.switch_caller_announcement)
         spinnerCallerRepeat = view.findViewById(R.id.spinner_caller_repeat)
@@ -380,7 +382,8 @@ internal class CallerAnnouncementController(
             runCatching { settings.getCallerAnnouncementTemplate() }
                 .getOrNull()
         )
-        etCallerTemplate?.addTextChangedListener(object : TextWatcher {
+        templateWatcher?.let { etCallerTemplate?.removeTextChangedListener(it) }
+        val callerWatcher = object : TextWatcher {
             override fun beforeTextChanged(
                 s: CharSequence?,
                 start: Int,
@@ -401,7 +404,9 @@ internal class CallerAnnouncementController(
                     )
                 }
             }
-        })
+        }
+        templateWatcher = callerWatcher
+        etCallerTemplate?.addTextChangedListener(callerWatcher)
 
         // صوت نطق الأسماء العربية في إعلان المتصل
         spinnerCallerVoiceAr?.adapter =
@@ -663,6 +668,10 @@ internal class CallerAnnouncementController(
         tvCallerVolumeValue = null
         seekCallerPitch = null
         tvCallerPitchValue = null
+        templateWatcher?.let {
+            etCallerTemplate?.removeTextChangedListener(it)
+        }
+        templateWatcher = null
         etCallerTemplate = null
         spinnerCallerVoiceAr = null
         spinnerCallerVoiceEn = null

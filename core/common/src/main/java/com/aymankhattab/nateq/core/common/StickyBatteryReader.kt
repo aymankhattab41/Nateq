@@ -15,13 +15,15 @@ import android.os.Build
 // الرومات المعدّلة.
 fun readStickyBattery(context: Context): Intent? {
     val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        context.registerReceiver(
-            null, filter, Context.RECEIVER_NOT_EXPORTED
-        )
-    } else {
-        @Suppress("DEPRECATION", "UnspecifiedRegisterReceiverFlag")
-        // قبل 33 لا إلزام بعلَم — النسخة الثنائية فحسب وبلا تعريض.
-        context.registerReceiver(null, filter)
-    }
+    return runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(
+                null, filter, Context.RECEIVER_NOT_EXPORTED
+            )
+        } else {
+            @Suppress("DEPRECATION", "UnspecifiedRegisterReceiverFlag")
+            // قبل 33 لا إلزام بعلَم — النسخة الثنائية فحسب وبلا تعريض.
+            context.registerReceiver(null, filter)
+        }
+    }.getOrNull()
 }

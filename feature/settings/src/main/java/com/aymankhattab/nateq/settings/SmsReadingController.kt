@@ -37,6 +37,7 @@ internal class SmsReadingController(
     private var tvSmsPitchValue: TextView? = null
     private var etSmsTemplate:
         com.google.android.material.textfield.TextInputEditText? = null
+    private var templateWatcher: android.text.TextWatcher? = null
 
     /** الوضع المختار (full/source) لا يُحفظ إلا بعد المنح الفعلي حتى لا يبقى
      *  مفعّلاً زوراً عند رفض المستخدم الإذن (بند [9]). */
@@ -320,13 +321,15 @@ internal class SmsReadingController(
             runCatching { settings.getSmsAnnouncementTemplate() }
                 .getOrNull()
         )
-        etSmsTemplate?.addTextChangedListener(object : TextWatcher {
+        templateWatcher?.let { etSmsTemplate?.removeTextChangedListener(it) }
+        val smsWatcher = object : TextWatcher {
             override fun beforeTextChanged(
                 s: CharSequence?,
                 start: Int,
                 count: Int,
                 after: Int
             ) {}
+
             override fun onTextChanged(
                 s: CharSequence?,
                 start: Int,
@@ -340,7 +343,9 @@ internal class SmsReadingController(
                     )
                 }
             }
-        })
+        }
+        templateWatcher = smsWatcher
+        etSmsTemplate?.addTextChangedListener(smsWatcher)
 
         // بند الأوامر 4: معاينة قراءة رسالة بالقيم المعروضة حالياً.
         view.findViewById<View>(R.id.btnPreviewSms)
@@ -414,6 +419,8 @@ internal class SmsReadingController(
         tvSmsVolumeValue = null
         seekSmsPitch = null
         tvSmsPitchValue = null
+        templateWatcher?.let { etSmsTemplate?.removeTextChangedListener(it) }
+        templateWatcher = null
         etSmsTemplate = null
     }
 }

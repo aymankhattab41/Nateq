@@ -16,7 +16,8 @@ object LocaleUtils {
         // **بند 6.2:** Locale.ROOT صراحةً في التحويل الأحرفي — رموز ISO
         // أسماءٌ ثابتة لا تخضع لقواعد المحلي الحالي (مثل التركية التي
         // تحوّل I بلا نقطة فتكسر "IND"→"ınd" ولا تُطابق أي مدخل).
-        code?.lowercase(Locale.ROOT)?.let {
+        code?.takeIf { it.isNotBlank() }
+            ?.lowercase(Locale.ROOT)?.let {
         when (it) {
             "ara" -> LanguageCode.AR.tag
             "eng" -> LanguageCode.EN.tag

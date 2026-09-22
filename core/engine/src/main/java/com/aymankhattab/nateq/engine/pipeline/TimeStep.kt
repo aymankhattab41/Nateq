@@ -21,6 +21,7 @@ internal object TimeStep : TextProcessingStep {
         while (matcher.find()) {
             val rawHour = matcher.group(1)!!.toInt()
             val minute = matcher.group(2)!!.toInt()
+            if (rawHour !in 0..23 || minute !in 0..59) continue
             val suffix = matcher.group(4)
             val isPm: Boolean? = if (!suffix.isNullOrBlank()) {
                 val lower = suffix.lowercase(java.util.Locale.ROOT)

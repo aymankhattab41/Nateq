@@ -16,6 +16,7 @@ class PunctuationStepTest {
         assertEquals("نلتقي @ 5", step.apply("نلتقي @ 5"))
         assertEquals("بين قوسين (أمر)", step.apply("بين قوسين (أمر)"))
         assertEquals("دلالة ؛ فاصلة", step.apply("دلالة ؛ فاصلة"))
+        assertEquals("a@b.com", step.apply("a@b.com"))
     }
 
     @Test

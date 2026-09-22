@@ -48,7 +48,7 @@ internal class SnapshotPrefs(
         val value = snapshot[key] ?: return defValues
         if (value !is Set<*>) return defValues
         @Suppress("UNCHECKED_CAST")
-        return value as MutableSet<String>
+        return (value as Set<String>).toMutableSet()
     }
 
     override fun getInt(key: String, defValue: Int): Int {
@@ -123,7 +123,7 @@ internal class SnapshotPrefs(
         }
 
         override fun apply() {
-            delegate.edit().also { applyOps(it) }.apply()
+            delegate.edit().also { applyOps(it) }.commit()
             snapshot = delegate.all
             onChanged()
         }

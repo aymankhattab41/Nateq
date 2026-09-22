@@ -165,6 +165,7 @@ internal class BatteryAnnouncementController(
                         current.remove(levelStr)
                     }
                     settings.setBatteryAnnouncementLevels(current)
+                    onStatusChanged()
                     // تأكيد الحالة فوراً لقارئ الشاشة (بند 3-2): المربع يحمل
                     // contentDescription خاصة عبر delegate فيقرأ السِياق.
                     fragment.view?.announceCompat(

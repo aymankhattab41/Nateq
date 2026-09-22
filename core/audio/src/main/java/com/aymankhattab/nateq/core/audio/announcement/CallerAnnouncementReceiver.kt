@@ -24,6 +24,8 @@ import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.job
@@ -139,7 +141,8 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         finishFailsafe = failsafe
         mainHandler.postDelayed(failsafe, BROADCAST_SAFE_CAP_MS)
         val appScope =
-            (context.applicationContext as AnnouncementAppContext).appScope
+            (context.applicationContext as? AnnouncementAppContext)?.appScope
+                ?: CoroutineScope(Dispatchers.Default)
         appScope.launch {
             var wakeLock: android.os.PowerManager.WakeLock? = null
             val state =
@@ -308,30 +311,32 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 // finish() كان يقتطع آخر الصوت على أندرويد 14+). يُسجَّل في
                 // قائمة مستمعي المتحدث المشترك (بند [8]) فلا يطمس خطاف أداة
                 // الساعة أو مستقبلٍ آخر، ويُزال في finally.
-                completionListener = { finishOnce() }
-                speaker.addCompletionListener(completionListener!!)
                 val appCtx = context.applicationContext
                 val schedule = repeatSchedule(
                     repeat, intervalMs, BROADCAST_ASYNC_WINDOW_MS
                 )
-                var lastLaunchMs = 0L
-                for (offsetMs in schedule) {
-                    delay(offsetMs - lastLaunchMs)
-                    lastLaunchMs = offsetMs
-                    try {
-                        // بند 2.1: التكرار يستخدم نفس نبرة الجملة الأولى —
-                        // كان يثبّت 1.0f فيُكرَّر الإعلان بنبرةٍ مختلفة
-                        // عن الأولى عند رفع «نبرة نطق اللغة/المتصل».
-                        AnnouncementSpeaker.getInstance(appCtx).speak(
-                            text, locale, speechRate, pitch,
-                            volume,
-                            engineOverride = settings.getEngineForCategory(
-                                SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+                if (schedule.isEmpty()) {
+                    completionListener = { finishOnce() }
+                    speaker.addCompletionListener(completionListener!!)
+                } else {
+                    var lastLaunchMs = 0L
+                    for (offsetMs in schedule) {
+                        delay(offsetMs - lastLaunchMs)
+                        lastLaunchMs = offsetMs
+                        try {
+                            AnnouncementSpeaker.getInstance(appCtx).speak(
+                                text, locale, speechRate, pitch,
+                                volume,
+                                engineOverride = settings.getEngineForCategory(
+                                    SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+                                )
                             )
-                        )
-                    } catch (t: Throwable) {
-                        Log.e(TAG, "repeat speak failed", t)
+                        } catch (t: Throwable) {
+                            Log.e(TAG, "repeat speak failed", t)
+                        }
                     }
+                    completionListener = { finishOnce() }
+                    speaker.addCompletionListener(completionListener!!)
                 }
             } catch (t: Throwable) {
                 // الإلغاء (بند 5.2: الرد/الإنهاء) ليس عطلاً — يُنهيه

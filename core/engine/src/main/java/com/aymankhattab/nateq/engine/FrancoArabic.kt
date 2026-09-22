@@ -56,7 +56,7 @@ object FrancoArabic {
         "gh" to "غ", "ch" to "تش",
         "b" to "ب", "t" to "ت", "j" to "ج", "h" to "ه",
         "d" to "د", "r" to "ر", "z" to "ز", "s" to "س",
-        "e" to "ع", "g" to "غ", "k" to "ك", "l" to "ل",
+        "e" to "ي", "g" to "غ", "k" to "ك", "l" to "ل",
         "m" to "م", "n" to "ن", "w" to "و", "y" to "ي",
         "a" to "ا", "i" to "ي", "o" to "و", "u" to "و",
         "f" to "ف", "c" to "س"
@@ -85,9 +85,16 @@ object FrancoArabic {
         return sb.toString()
     }
 
+    private val TECHNICAL_TERMS = setOf(
+        "A4", "A3", "A5", "H2O", "CO2", "S3", "MP3", "MP4",
+        "4K", "3D", "2D", "F1", "M4A", "B5", "C4", "HTML5",
+        "CSS3", "IPV4", "IPV6"
+    )
+
     /** يحوّل كلمةً واحدة؛ null = تُبقى كما هي (غير واثق من كونها فرانكو). */
     private fun convertWord(word: String): String? {
         if (word.length > MAX_CREATIVE_LENGTH) return null
+        if (word.uppercase() in TECHNICAL_TERMS) return null
         val lower = word.lowercase()
         commonWords[lower]?.let { return it }
         // الإبداع المتحفظ: لا يُلمس إلا إن كانت شاركتٌ فيها الأرقام الفعلاً

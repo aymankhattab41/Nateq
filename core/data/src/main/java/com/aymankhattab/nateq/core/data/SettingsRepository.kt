@@ -253,6 +253,7 @@ class SettingsRepository(context: Context) :
         if (prefs.all.minus(KEY_MIGRATED) ==
             fresh.minus(KEY_MIGRATED)
         ) {
+            refreshPrefsStamp()
             return
         }
         // **بند 5.1:** إعادة الفحص قبل التطبيق — إن تغيّر الملف أثناء
@@ -1703,6 +1704,40 @@ class SettingsRepository(context: Context) :
                         @Suppress("UNCHECKED_CAST")
                         val v = sanitizeStringSet(key, value as Set<String>)
                         ops.add(Op { it.putStringSet(key, v) }); meaningful++
+                    }
+                    is Double -> {
+                        val isFloatKey = key.contains("_volume") ||
+                            key.contains("_rate") ||
+                            key.contains("_pitch") ||
+                            key == "default_volume" ||
+                            key == "time_chime_volume" ||
+                            key == "battery_cue_volume"
+                        if (isFloatKey) {
+                            val v = sanitizeFloat(key, value.toFloat())
+                            ops.add(Op { it.putFloat(key, v) })
+                            meaningful++
+                        } else {
+                            val v = sanitizeInt(key, value.toInt())
+                            ops.add(Op { it.putInt(key, v) })
+                            meaningful++
+                        }
+                    }
+                    is Number -> {
+                        val isFloatKey = key.contains("_volume") ||
+                            key.contains("_rate") ||
+                            key.contains("_pitch") ||
+                            key == "default_volume" ||
+                            key == "time_chime_volume" ||
+                            key == "battery_cue_volume"
+                        if (isFloatKey) {
+                            val v = sanitizeFloat(key, value.toFloat())
+                            ops.add(Op { it.putFloat(key, v) })
+                            meaningful++
+                        } else {
+                            val v = sanitizeInt(key, value.toInt())
+                            ops.add(Op { it.putInt(key, v) })
+                            meaningful++
+                        }
                     }
                     else -> {}
                 }

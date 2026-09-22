@@ -822,10 +822,6 @@ object EmojiNames {
             "بكاء", "crying"
         ),
         Triple(
-            Pattern.compile("(?<![\\p{L}\\d]):'(?![\\p{L}\\d])"),
-            "بكاء", "crying"
-        ),
-        Triple(
             Pattern.compile("(?<![\\p{L}\\d]):-\\)(?![\\p{L}\\d])"),
             "ابتسامة", "smile"
         ),

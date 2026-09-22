@@ -137,6 +137,7 @@ internal class InterruptionSensors(
         }
         shakeRegistered = false
         proximityRegistered = false
+        mainHandler?.removeCallbacksAndMessages(null)
         // يُصفَّر عند كل دورة رصد: القراءةُ الأولى بعد `start` لا تُعتبر
         // انتقالاً مهما بلغت قيمتها (يُلغي مفعول سجلّ الحالة السابقة).
         lastProximityNear = null

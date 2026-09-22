@@ -6,6 +6,7 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.Build
 import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
@@ -81,7 +82,7 @@ internal class AudioTrackCueSink : CueSink {
     }
 
     private var track: AudioTrack? = null
-    private var handler: Handler? = null
+    private var handler = Handler(Looper.getMainLooper())
     private val completed = AtomicBoolean(false)
 
     override fun play(
@@ -182,13 +183,16 @@ internal class SoundPoolCueSink(
 
     private val soundPool: android.media.SoundPool
     private val cacheDir: File = context.cacheDir
-    private val soundIds = HashMap<String, Int>()
-    private val pendingLoad = HashMap<Int, () -> Unit>()
+    private val soundIds =
+        java.util.concurrent.ConcurrentHashMap<String, Int>()
+    private val pendingLoad =
+        java.util.concurrent.ConcurrentHashMap<Int, () -> Unit>()
     private var activeStreamId = 0
     private var activeOnDone: ((Boolean) -> Unit)? = null
     private var completionRunnable: Runnable? = null
     private val activeGuard = AtomicBoolean(false)
-    private val loaded = HashSet<String>()
+    private val loaded =
+        java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     init {
         soundPool = android.media.SoundPool.Builder()

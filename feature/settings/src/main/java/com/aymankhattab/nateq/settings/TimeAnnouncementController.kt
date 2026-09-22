@@ -577,6 +577,7 @@ internal class TimeAnnouncementController(
         llQuietSchedule?.addView(expandButton)
         llQuietSchedule?.addView(individualContainer)
 
+        var isUpdatingFromMaster = false
         val individualSwitches = mutableListOf<SwitchMaterial>()
         val individualStarts = mutableListOf<Spinner>()
         val individualEnds = mutableListOf<Spinner>()
@@ -610,6 +611,7 @@ internal class TimeAnnouncementController(
                             position: Int,
                             id: Long
                         ) {
+                            if (isUpdatingFromMaster) return
                             if (position in 0..23) {
                                 runCatching {
                                     settings.setQuietStartForDay(day, position)
@@ -636,6 +638,7 @@ internal class TimeAnnouncementController(
                             position: Int,
                             id: Long
                         ) {
+                            if (isUpdatingFromMaster) return
                             if (position in 0..23) {
                                 runCatching {
                                     settings.setQuietEndForDay(day, position)
@@ -672,6 +675,7 @@ internal class TimeAnnouncementController(
                     dayName
                 )
                 setOnCheckedChangeListener { _, checked ->
+                    if (isUpdatingFromMaster) return@setOnCheckedChangeListener
                     runCatching { settings.setDayQuietEnabled(day, checked) }
                     timesContainer.visibility =
                         if (checked) View.VISIBLE else View.GONE
@@ -731,22 +735,28 @@ internal class TimeAnnouncementController(
             val s = masterStartSpinner.selectedItemPosition
             val e = masterEndSpinner.selectedItemPosition
 
-            for (i in days.indices) {
-                val day = days[i].second
-                runCatching { settings.setDayQuietEnabled(day, checked) }
-                if (checked) {
-                    runCatching { settings.setQuietStartForDay(day, s) }
-                    runCatching { settings.setQuietEndForDay(day, e) }
-                }
+            isUpdatingFromMaster = true
+            try {
+                for (i in days.indices) {
+                    val day = days[i].second
+                    runCatching { settings.setDayQuietEnabled(day, checked) }
+                    if (checked) {
+                        runCatching { settings.setQuietStartForDay(day, s) }
+                        runCatching { settings.setQuietEndForDay(day, e) }
+                    }
 
-                // Update individual UI silently without triggering listeners
-                individualSwitches[i].isChecked = checked
-                individualTimes[i].visibility =
-                    if (checked) View.VISIBLE else View.GONE
-                if (checked) {
-                    individualStarts[i].setSelection(s)
-                    individualEnds[i].setSelection(e)
+                    // Update individual UI silently without triggering
+                    // listeners
+                    individualSwitches[i].isChecked = checked
+                    individualTimes[i].visibility =
+                        if (checked) View.VISIBLE else View.GONE
+                    if (checked) {
+                        individualStarts[i].setSelection(s)
+                        individualEnds[i].setSelection(e)
+                    }
                 }
+            } finally {
+                isUpdatingFromMaster = false
             }
             onStatusChanged()
         }
@@ -760,11 +770,19 @@ internal class TimeAnnouncementController(
                     id: Long
                 ) {
                     if (!masterSwitch.isChecked) return
-                    for (i in days.indices) {
-                        runCatching {
-                            settings.setQuietStartForDay(days[i].second, pos)
+                    isUpdatingFromMaster = true
+                    try {
+                        for (i in days.indices) {
+                            runCatching {
+                                settings.setQuietStartForDay(
+                                    days[i].second,
+                                    pos
+                                )
+                            }
+                            individualStarts[i].setSelection(pos)
                         }
-                        individualStarts[i].setSelection(pos)
+                    } finally {
+                        isUpdatingFromMaster = false
                     }
                     onStatusChanged()
                 }
@@ -779,11 +797,16 @@ internal class TimeAnnouncementController(
                     id: Long
                 ) {
                     if (!masterSwitch.isChecked) return
-                    for (i in days.indices) {
-                        runCatching {
-                            settings.setQuietEndForDay(days[i].second, pos)
+                    isUpdatingFromMaster = true
+                    try {
+                        for (i in days.indices) {
+                            runCatching {
+                                settings.setQuietEndForDay(days[i].second, pos)
+                            }
+                            individualEnds[i].setSelection(pos)
                         }
-                        individualEnds[i].setSelection(pos)
+                    } finally {
+                        isUpdatingFromMaster = false
                     }
                     onStatusChanged()
                 }

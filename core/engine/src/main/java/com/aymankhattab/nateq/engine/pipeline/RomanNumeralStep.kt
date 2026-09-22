@@ -62,7 +62,11 @@ internal object RomanNumeralStep : TextProcessingStep {
             // chapter/part…» كافياً لتحويله ترتيباً (الجزء X = الجزء عشرة).
             val hasIndicator = hasRomanIndicatorBefore(input, matcher.start())
             val singleLetter = rom.length == 1
-            if (!hasIndicator && (singleLetter || value !in 1..12)) {
+            val ambiguousTwoLetter = rom.length == 2 &&
+                rom.uppercase() in setOf("XI", "VI", "IV", "DI", "MI")
+            if (!hasIndicator &&
+                (singleLetter || ambiguousTwoLetter || value !in 1..12)
+            ) {
                 matcher.appendReplacement(
                     buffer, java.util.regex.Matcher.quoteReplacement(rom)
                 )

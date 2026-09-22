@@ -239,22 +239,7 @@ class NateqTtsService : TextToSpeechService() {
     private var currentLanguage = arrayOf(LanguageCode.AR.tag, "", "")
 
     override fun onCreate() {
-        // مهم: TextToSpeechService.onCreate() يستدعي
-        // onLoadLanguage()/onIsLanguageAvailable() قبل انتهاء
-        // استدعاء super.onCreate()، لذلك يجب تهيئة كل
-        // الـ lateinit كأول شيء هنا (قبل super.onCreate())
-        // وإلا تنهار الخدمة في حلقة على الإنشاء.
-        // applicationContext متاح فور إنشاء كائن الخدمة،
-        // وإنشاء هذه الكائنات النقية (غير المرتبطة بدورة
-        // حياة Android) آمن تماماً في هذا الموضع.
-        // عند الاستدعاء من TalkBack/النظام بُني الكائن
-        // عبر Hilt (Hilt_...) فيكون settingsRepository
-        // محقوناً؛ ونبني بقية الشبكة بعناية قبل super.
-        // حماية ثانية: إن فشل الحقن لأي سبب نتراجع لكائن
-        // محلي حتى لا تنهار الخدمة قبل super.onCreate()
-        // في حلقة (طبّاق لتوقيت TextToSpeechService).
-        settings = if (::settingsRepository.isInitialized) settingsRepository
-        else SettingsRepository.create(applicationContext)
+        settings = SettingsRepository.create(applicationContext)
 
         val providers = listOf(
             SystemVoiceProvider(applicationContext, settings)
@@ -301,10 +286,8 @@ class NateqTtsService : TextToSpeechService() {
         } catch (t: Throwable) {
             Log.e(TAG, "super.onCreate() threw", t)
         }
-        // رصد المستشعرات مرة واحدة لعمر الخدمة — لا يبدأ نشطاً إن
-        // تعطّل المستخدم المفتاحان، لكنه لا يتوقف بين الرحلات ويعيد
-        // تقييم الإعدادات فور بدء أول رحلة.
-        startInterruptionMonitoring()
+        // رصد المستشعرات يعمل أثناء التخليق فقط (في onSynthesizeText)
+        // لتوفير البطارية ومنع التنبيهات الزائفة.
 
         // **بند 6.5:** تسجيل مستقبل الحزم بعد اكتمال شبكة الخدمة —
         // يستقبل بثّ تثبيت/إزالة/تحديث أي حزمة (محركات TTS أساساً)

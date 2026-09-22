@@ -3,6 +3,7 @@ package com.aymankhattab.nateq.engine
 import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.aymankhattab.nateq.engine.pipeline.TashkeelStripStep
 import com.aymankhattab.nateq.util.NateqJson
 import com.aymankhattab.nateq.util.optObject
 import java.lang.reflect.Type
@@ -583,8 +584,9 @@ private class AhoCorasick(entries: Map<String, String>) {
     init {
         // إدخال المفاتيح الأطول أولاً حتى تُسجَّل المطابقة الأطول
         // في العقد المشتركة
-        for ((key, value) in
+        for ((rawKey, value) in
             entries.entries.sortedByDescending { it.key.length }) {
+            val key = TashkeelStripStep.apply(rawKey)
             var node = root
             for (ch in key) {
                 node = node.children.getOrPut(ch) { Node() }

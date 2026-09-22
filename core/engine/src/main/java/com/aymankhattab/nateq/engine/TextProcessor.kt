@@ -292,9 +292,11 @@ class TextProcessor(
         if (processed.isEmpty()) return processed
         // معجم المصدر: كل كلمة مشكولة مقابل مجردها — تتم المحاكاة بعد
         // تقسيمٍ متوازٍ، والمشكولةُ الأصلي تُؤخذ من المصدر مباشرة.
-        val stripped = TashkeelStripStep.apply(voweledSource)
+        val normalizedSource = voweledSource
+            .replace(Regex("""\s+"""), " ").trim()
+        val stripped = TashkeelStripStep.apply(normalizedSource)
         val sourceStripped = stripped.split(' ')
-        val sourceVoweled = voweledSource.split(' ')
+        val sourceVoweled = normalizedSource.split(' ')
         if (sourceStripped.size != sourceVoweled.size) return processed
         if (sourceStripped.isEmpty()) return processed
         // مطابقة كلمة-بكلمة بترتيب «أقرب متاح غير مستهلك»: الكلمات

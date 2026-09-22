@@ -35,7 +35,7 @@ internal data class AccordionEntry(
 /** مفاتيح حفظ حالة التنقّل في savedInstanceState (بند 4.6). */
 private const val STATE_LEVEL = "accordion_level"
 private const val STATE_GROUP = "accordion_group"
-private const val STATE_SECTION_TAG = "accordion_section_tag"
+private const val STATE_SECTION_ID = "accordion_section_id"
 
 /**
  * ضابط التنقّل على ثلاثة مستويات (الرئيسية ← المجموعة ← القسم):
@@ -279,15 +279,11 @@ internal class SettingsAccordionController(
         tvSectionTitle?.text = groupTitle
         // زر العودة في مستوى المجموعة يعود للقائمة الرئيسية
         tvBackToList?.text = fragment.getString(R.string.back_label)
-        val focusTarget = accordionEntries.firstOrNull {
-            it.group == group.group &&
-                it.header.visibility == View.VISIBLE
-        }?.header ?: tvBackToList
-        focusTarget?.let {
-            it.announceCompat(
-                fragment.getString(R.string.group_opened, groupTitle)
-            )
-            focusForAccessibility(it)
+        tvSectionTitle?.let { title ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                title.setAccessibilityHeading(true)
+            }
+            focusForAccessibility(title)
         }
     }
 
@@ -909,10 +905,12 @@ internal class SettingsAccordionController(
         bundle.putInt(STATE_LEVEL, level.ordinal)
         currentGroup?.let { bundle.putInt(STATE_GROUP, it.group) }
         if (level == Level.SECTION) {
-            val openTag = accordionEntries.firstOrNull {
+            val openId = accordionEntries.firstOrNull {
                 it.content.visibility == View.VISIBLE
-            }?.header?.tag as? String
-            if (openTag != null) bundle.putString(STATE_SECTION_TAG, openTag)
+            }?.content?.id ?: View.NO_ID
+            if (openId != View.NO_ID) {
+                bundle.putInt(STATE_SECTION_ID, openId)
+            }
         }
         return bundle
     }
@@ -940,13 +938,13 @@ internal class SettingsAccordionController(
                 openGroup(savedGroup)
             }
             Level.SECTION -> {
-                val tag = runCatching {
-                    savedInstanceState.getString(STATE_SECTION_TAG, null)
-                }.getOrNull()
-                val entry = if (savedGroup != null && tag != null) {
+                val sectionId = runCatching {
+                    savedInstanceState.getInt(STATE_SECTION_ID, View.NO_ID)
+                }.getOrDefault(View.NO_ID)
+                val entry = if (savedGroup != null && sectionId != View.NO_ID) {
                     accordionEntries.firstOrNull {
                         it.group == savedGroup.group &&
-                            (it.header.tag as? String) == tag
+                            it.content.id == sectionId
                     }
                 } else null
                 if (entry != null) {

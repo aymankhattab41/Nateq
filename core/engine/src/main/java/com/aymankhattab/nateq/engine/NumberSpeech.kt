@@ -41,7 +41,7 @@ object NumberSpeech {
             return "minus ${englishFromDigits("9223372036854775808")}"
         }
         if (number < 0) return "minus ${toEnglishWords(-number)}"
-        if (number <= Int.MAX_VALUE) return toEnglishWords(number.toInt())
+        if (number < 1_000_000_000L) return toEnglishWords(number.toInt())
         return englishFromDigits(number.toString())
     }
 
@@ -211,9 +211,9 @@ object NumberSpeech {
                         else -> "${ones[one]} و${tensNames[ten]}"
                     }
                 } else {
-                    // مذكر: «أحد وخمسون»، «اثنان وخمسون»، «خمسة وخمسون»
+                    // مذكر: «واحد وخمسون»، «اثنان وخمسون»، «خمسة وخمسون»
                     when (one) {
-                        1 -> "أحد و${tensNames[ten]}"
+                        1 -> "واحد و${tensNames[ten]}"
                         2 -> "اثنان و${tensNames[ten]}"
                         else -> "${ones[one]} و${tensNames[ten]}"
                     }

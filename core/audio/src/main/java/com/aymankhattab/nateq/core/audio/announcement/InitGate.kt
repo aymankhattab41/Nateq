@@ -39,6 +39,7 @@ internal class InitGate {
      *  الذي يجب أن يبدأ المتصل إعادة تهيئته (رأس الطابور غير المطابق). */
     class Completion(
         val served: List<(Boolean) -> Unit>,
+        val hasNext: Boolean = false,
         val nextEngine: String? = null
     )
 
@@ -83,7 +84,7 @@ internal class InitGate {
                 served.add(queue.removeFirst().callback)
             }
             runningEngine = null
-            return Completion(served)
+            return Completion(served, hasNext = false, nextEngine = null)
         }
         val completed = runningEngine
         val pending = ArrayList<Entry>()
@@ -100,6 +101,17 @@ internal class InitGate {
         }
         val next = queue.peekFirst()
         runningEngine = next?.let { keyOf(it.engine) }
-        return Completion(served, next?.engine)
+        return Completion(
+            served = served,
+            hasNext = next != null,
+            nextEngine = next?.engine
+        )
+    }
+
+    /** تصفير البوابة تماماً عند الإغلاق (shutdown). */
+    @Synchronized
+    fun reset() {
+        queue.clear()
+        runningEngine = null
     }
 }

@@ -157,12 +157,14 @@ internal class PunctuationStep(
     private val PATTERN_AT_ASCII = Regex("@(?=[A-Za-z])")
 
     override fun apply(input: String): String {
+        if (levelProvider() <= PunctuationLevels.NONE) return input
         val replacedAt = input.replace(PATTERN_AT_ASCII, " at ")
         return process(replacedAt, arabic)
     }
 
     /** النسخة الإنجليزية: أسماء الرموز إنجليزية (at/number/percent/…). */
     override fun applyEnglish(input: String): String {
+        if (levelProvider() <= PunctuationLevels.NONE) return input
         val replacedAt = input.replace(PATTERN_AT_ASCII, " at ")
         return process(replacedAt, english)
     }

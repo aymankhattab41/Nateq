@@ -13,6 +13,8 @@ import com.aymankhattab.nateq.util.LanguageCode
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -92,7 +94,8 @@ class BatteryAnnouncementReceiver(
         // goAsync() يمنع Android من قتل المستقبل قبل انتهاء العمل اللاتزامني
         val pendingResult = goAsync()
         val appScope =
-            (context.applicationContext as AnnouncementAppContext).appScope
+            (context.applicationContext as? AnnouncementAppContext)?.appScope
+                ?: CoroutineScope(Dispatchers.Default)
         appScope.launch {
             // **بند 3.9 (إبقاء المعالج مستيقظاً أثناء النطق):** نمطُ
             // TimeAlarmReceiver الموحَّد — WakeLockٌ جزئيٌّ عابرٌ (6 ثوانٍ =
@@ -119,7 +122,11 @@ class BatteryAnnouncementReceiver(
                 // نُبقي النافذة حيّةً حتى يُتمَّ النطق (بسقفٍ آمن ~6 ثوانٍ
                 // فلا ANR رغم تعليق المحرك)،
                 // وإلا نُنهي فوراً.
-                if (handle(context, intent, action)) {
+                if (handle(
+                        context, intent, action,
+                        onCueDone = { speechDone.complete(Unit) }
+                    )
+                ) {
                     wakeLock = TimeAlarmReceiver.acquireShortWakeLock(context)
                     val speaker = AnnouncementSpeaker.getInstance(context)
                     completionListener = { speechDone.complete(Unit) }
@@ -158,7 +165,8 @@ class BatteryAnnouncementReceiver(
     private fun handle(
         context: Context,
         intent: Intent,
-        action: String?
+        action: String?,
+        onCueDone: (() -> Unit)? = null
     ): Boolean {
         val appContext = context.applicationContext
         val settings =
@@ -197,7 +205,7 @@ class BatteryAnnouncementReceiver(
                 )
                 spoke = speak(
                     context, settings, text, locale, voiceId,
-                    CueType.BATTERY_CHARGING
+                    CueType.BATTERY_CHARGING, onCueDone
                 )
             }
 
@@ -212,7 +220,7 @@ class BatteryAnnouncementReceiver(
                 )
                 spoke = speak(
                     context, settings, text, locale, voiceId,
-                    CueType.BATTERY_DISCONNECTED
+                    CueType.BATTERY_DISCONNECTED, onCueDone
                 )
             }
 
@@ -263,7 +271,7 @@ class BatteryAnnouncementReceiver(
                         )
                         spoke = speak(
                             context, settings, fullText, locale, voiceId,
-                            CueType.BATTERY_FULL
+                            CueType.BATTERY_FULL, onCueDone
                         )
                     }
                 } else {
@@ -284,7 +292,8 @@ class BatteryAnnouncementReceiver(
                     null
                 }
                 spoke = spoke || speak(
-                    context, settings, text, locale, voiceId, levelCue
+                    context, settings, text, locale, voiceId, levelCue,
+                    onCueDone
                 )
             }
         }
@@ -334,6 +343,16 @@ class BatteryAnnouncementReceiver(
         locale: Locale,
         voiceId: String?,
         cueType: CueType?
+    ): Boolean = speak(context, settings, text, locale, voiceId, cueType, null)
+
+    private fun speak(
+        context: Context,
+        settings: SettingsRepository,
+        text: String,
+        locale: Locale,
+        voiceId: String?,
+        cueType: CueType?,
+        onCueDone: (() -> Unit)?
     ): Boolean {
         val speechRate = settings.getBatteryAnnouncementRate()
         val volume = settings.getBatteryAnnouncementVolume()
@@ -346,8 +365,10 @@ class BatteryAnnouncementReceiver(
             // ضمن مسار الإتاحة).
             AudioCuePlayer.getInstance(context).play(
                 AudioCue(type = cueType, volume = cueVolume)
-            ) {}
-            return false
+            ) {
+                onCueDone?.invoke()
+            }
+            return true
         }
         val speaker = AnnouncementSpeaker.getInstance(context)
         // إعادة ضبط صوت البطارية قبل كل نطق (بند [1]): صوتُ الإعلان كان

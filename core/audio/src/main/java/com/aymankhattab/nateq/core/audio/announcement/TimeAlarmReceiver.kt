@@ -10,8 +10,12 @@ import android.os.PowerManager
 import android.util.Log
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * مستقبل إعلان الوقت التلقائي المستقل — يُوقَظ عبر [AlarmManager] عند رأس
@@ -184,9 +188,11 @@ class TimeAlarmReceiver : BroadcastReceiver() {
             finishPending: () -> Unit,
             windowMillis: Long = ALARM_ASYNC_WINDOW_MS
         ) {
+            val completionDeferred = CompletableDeferred<Unit>()
             val finished = AtomicBoolean(false)
             val finishOnce: () -> Unit = {
                 if (finished.compareAndSet(false, true)) {
+                    completionDeferred.complete(Unit)
                     finishPending()
                 }
             }
@@ -195,7 +201,9 @@ class TimeAlarmReceiver : BroadcastReceiver() {
             addCompletionListener(listener)
             try {
                 tick()
-                delay(windowMillis)
+                withTimeoutOrNull(windowMillis) {
+                    completionDeferred.await()
+                }
             } finally {
                 runCatching { removeCompletionListener(listener) }
                 finishOnce()
@@ -217,7 +225,8 @@ class TimeAlarmReceiver : BroadcastReceiver() {
         // كامل معرضاً للضياع لو عاد المعالج للنوم قبل اكتمال التهيئة.
         val pendingResult = goAsync()
         val appContext = context.applicationContext
-        val appScope = (appContext as AnnouncementAppContext).appScope
+        val appScope = (appContext as? AnnouncementAppContext)?.appScope
+            ?: CoroutineScope(Dispatchers.Default)
         appScope.launch {
             val wakeLock = acquireShortWakeLock(appContext)
             // حارس إنهاء وحيد على مستوى onReceive: فُقدانُ خطافِ الاكتمال أو

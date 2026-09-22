@@ -100,7 +100,7 @@ class NumberSpeechTest {
         assertEquals("اثنان", NumberSpeech.toArabicWords(2, isFeminine = false))
         assertEquals("خمسة", NumberSpeech.toArabicWords(5, isFeminine = false))
         assertEquals(
-            "أحد وخمسون",
+            "واحد وخمسون",
             NumberSpeech.toArabicWords(51, isFeminine = false)
         )
         assertEquals(

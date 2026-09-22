@@ -3,6 +3,9 @@ package com.aymankhattab.nateq.core.audio.announcement
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * يعيد تشغيل [AnnouncementSchedulerService] بعد إقلاع الجهاز، وبعد تحديث
@@ -26,16 +29,22 @@ class AnnouncementBootReceiver : BroadcastReceiver() {
         ) {
             return
         }
-        try {
-            val started = AnnouncementSchedulerService.startIfNeeded(context)
-            // منبهات النظام لا تصمد بعد الإقلاع: إن لم تُشغَّل الخدمة
-            // (كان إعلان الوقت هو الوحيد المفعّل — بند 16.2)
-            // نعيد جدولة منبه الوقت مباشرةً.
-            if (!started) {
-                AnnouncementSchedulerService.ensureTimeAlarm(context)
+        val pendingResult = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val started =
+                    AnnouncementSchedulerService.startIfNeeded(context)
+                // منبهات النظام لا تصمد بعد الإقلاع: إن لم تُشغَّل
+                // الخدمة (كان إعلان الوقت هو الوحيد المفعّل — بند
+                // 16.2) نعيد جدولة منبه الوقت مباشرةً.
+                if (!started) {
+                    AnnouncementSchedulerService.ensureTimeAlarm(context)
+                }
+            } catch (t: Throwable) {
+                android.util.Log.e("NATEQ_ANNOUNCE", "restart failed", t)
+            } finally {
+                pendingResult.finish()
             }
-        } catch (t: Throwable) {
-            android.util.Log.e("NATEQ_ANNOUNCE", "restart failed", t)
         }
     }
 }

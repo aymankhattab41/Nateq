@@ -19,6 +19,8 @@ import java.util.Collections
 import java.util.LinkedHashMap
 import java.util.Locale
 import javax.inject.Inject
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /**
@@ -122,7 +124,9 @@ class NateqNotificationListener : NotificationListenerService() {
         // إطارات الواجهة Keyguard، فحص الاستثناءات، النطق) تُنفَّذ على
         // appScope (Io) — استدعاء NLS يأتي على خيط الخدمة الرئيسي وكانت
         // عمليات قرص و IPC متزامنة عليه تسبب إسقاط إطارات مع وصول كثيف.
-        (applicationContext as AnnouncementAppContext).appScope.launch {
+        val scope = (applicationContext as? AnnouncementAppContext)?.appScope
+            ?: CoroutineScope(Dispatchers.Default)
+        scope.launch {
             try {
                 onNotificationPostedWorker(sbn)
             } catch (t: Throwable) {

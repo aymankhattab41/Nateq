@@ -84,7 +84,7 @@ class NateqApplication : Application(), AnnouncementAppContext {
                 addAction(Intent.ACTION_PACKAGE_REPLACED)
                 addDataScheme("package")
             },
-            ContextCompat.RECEIVER_NOT_EXPORTED
+            ContextCompat.RECEIVER_EXPORTED
         )
 
         // **بند 2.19 (تغيّر إذن المنبهات الدقيقة):** مستقبلُ بثٍّ ديناميكيٌّ
@@ -95,24 +95,29 @@ class NateqApplication : Application(), AnnouncementAppContext {
         // الصيغةَ الدقيقةَ الجديدةَ في منحِ الإذنِ أو سحبِه دونَ انتظارِ دورةِ
         // الجدولةِ الطبيعيةِ. مسجَّلٌ بـ RECEIVER_NOT_EXPORTED (لا واجهةَ
         // مُصدَّرةً لتطبيقاتٍ خارجيةٍ).
-        val exactAlarmPermissionChanged =
-            AlarmManager
-                .ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED
-        ContextCompat.registerReceiver(
-            this,
-            object : BroadcastReceiver() {
-                override fun onReceive(context: Context?, intent: Intent?) {
-                    if (
-                        intent?.action == exactAlarmPermissionChanged
+        if (ProcessUtils.isMainProcess(this)) {
+            val exactAlarmPermissionChanged =
+                AlarmManager
+                    .ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED
+            ContextCompat.registerReceiver(
+                this,
+                object : BroadcastReceiver() {
+                    override fun onReceive(
+                        context: Context?,
+                        intent: Intent?
                     ) {
-                        TimeAnnouncementManager.shared(applicationContext)
-                            .onExactAlarmPermissionChanged()
+                        if (
+                            intent?.action == exactAlarmPermissionChanged
+                        ) {
+                            TimeAnnouncementManager.shared(applicationContext)
+                                .onExactAlarmPermissionChanged()
+                        }
                     }
-                }
-            },
-            IntentFilter(exactAlarmPermissionChanged),
-            ContextCompat.RECEIVER_NOT_EXPORTED
-        )
+                },
+                IntentFilter(exactAlarmPermissionChanged),
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+        }
 
         // تنظيف الملفات المؤقتة اليتيمة عند الإقلاع (بند 19.2) — غير حاصر،
         // على النطاق العام خلفي فلا يؤخر بدء التطبيق ولا يعطّل إقلاع الخدمات.

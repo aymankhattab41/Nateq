@@ -680,11 +680,6 @@ class TimeAnnouncementManager(
                 LanguageCode.AR.tag
             }
 
-            val voice = getVoiceForCategory(
-                SettingsRepository.VOICE_CATEGORY_NUMBERS,
-                languageTag
-            )
-            val provider = voice?.let { catalog.findProvider(it.providerId) }
             val speechRate = requestHandler.getSpeechRateForCategory(
                 SettingsRepository.VOICE_CATEGORY_NUMBERS
             )
@@ -695,22 +690,20 @@ class TimeAnnouncementManager(
                 SettingsRepository.VOICE_CATEGORY_NUMBERS
             )
 
-            if (voice != null && provider != null) {
-                // إعادة ضبط صوت فئة الأرقام قبل النطق (نفس نمط فئة الوقت بند
-                // [2]): الصوت كان يعلق على آخر فئة نطقت فيُقرأ الرقم بصوتها.
-                val numPref = settings.getPreferredVoiceIdForCategory(
+            // إعادة ضبط صوت فئة الأرقام قبل النطق (نفس نمط فئة الوقت بند
+            // [2]): الصوت كان يعلق على آخر فئة نطقت فيُقرأ الرقم بصوتها.
+            val numPref = settings.getPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+            val speaker = AnnouncementSpeaker.getInstance(context)
+            speaker.resetVoice(numPref)
+            speaker.speak(
+                text, Locale.forLanguageTag(languageTag),
+                speechRate, pitch, volume,
+                engineOverride = settings.getEngineForCategory(
                     SettingsRepository.VOICE_CATEGORY_NUMBERS
                 )
-                val speaker = AnnouncementSpeaker.getInstance(context)
-                speaker.resetVoice(numPref)
-                speaker.speak(
-                    text, Locale.forLanguageTag(languageTag),
-                    speechRate, pitch, volume,
-                    engineOverride = settings.getEngineForCategory(
-                        SettingsRepository.VOICE_CATEGORY_NUMBERS
-                    )
-                )
-            }
+            )
         }
     }
 

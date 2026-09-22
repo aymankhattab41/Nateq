@@ -190,7 +190,7 @@ internal object CueSynth {
             val s = when {
                 t < noteDur -> {
                     val env = (t / atk).coerceAtMost(1.0) *
-                        exp(-(t - noteDur) / 0.06).coerceAtMost(1.0)
+                        exp(-t / 0.06).coerceAtMost(1.0)
                     sin(2.0 * PI * notes[0] * t) * env
                 }
                 t < note2Start -> 0.0

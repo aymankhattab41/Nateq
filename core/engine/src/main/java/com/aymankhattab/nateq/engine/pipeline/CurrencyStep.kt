@@ -744,9 +744,10 @@ internal object CurrencyStep : TextProcessingStep {
     }
 
     /** صيغة النصب للكلمة (تنوين نصب): ة→ةً، سواها→اً. */
-    private fun accusativeForm(word: String): String {
-        if (word.endsWith("ة")) return "${word}ً"
-        return "${word}اً"
+    private fun accusativeForm(phrase: String): String {
+        return phrase.split(' ').joinToString(" ") { word ->
+            if (word.endsWith("ة")) "${word}ً" else "${word}اً"
+        }
     }
 
     /** تحويل عدد لكلمات مع مراعاة الجنس: المؤنث يذهب إلى [NumberSpeech]
