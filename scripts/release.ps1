@@ -171,16 +171,17 @@ if (Test-Path -LiteralPath $changelogXml) {
     $settingsDoc.Load($changelogXml)
     $changelogNode =
         $settingsDoc.SelectSingleNode("//string[@name='changelog_text']")
-    $changelogBody =
-        ($changelogNode.InnerText `
-            -replace '\\n', "`r`n" `
-            -replace '%1\$s', $targetVersion).Trim("`r", "`n")
-    # يُذكر الإصدار في عنوان الملاحظات — فتُحذف البادئة «الإصدار vN» من النص.
-    $intro = "الإصدار $targetVersion"
-    if ($changelogBody -like "$intro*") {
-        $changelogBody = $changelogBody.Substring($intro.Length).
-            TrimStart("`r", "`n")
+    $rawText = ($changelogNode.InnerText `
+        -replace '\\n', "`r`n" `
+        -replace '%1\$s', $targetVersion).Trim("`r", "`n")
+    # استخراج بنود التحديثات الفردية واقتصارها على أحدث 5 بنود فقط بدلاً من السجل التاريخي الكامل
+    $bullets = [regex]::Split($rawText, '(?m)^\s*\u2022\s*|\u2022\s*') |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and $_ -notmatch '^\s*الإصدار' }
+    $maxItems = [Math]::Min(5, $bullets.Count)
+    $recentBullets = for ($i = 0; $i -lt $maxItems; $i++) {
+        "• " + $bullets[$i].Trim()
     }
+    $changelogBody = $recentBullets -join "`r`n"
     $releaseNotes = "Lord TTS $targetVersion`r`n`r`n" +
         "$changelogBody$installNote"
 } else {
