@@ -849,6 +849,32 @@ class PipelineStepsTest {
     }
 
     @Test
+    fun unit_callDuration_vowelledPreposition_notTreatedAsMeters() {
+        // «8مِنَ الدقائق و17مِنَ الثواني»: وجود التشكيل على «مِنَ» كان
+        // يجعل «م» تطابق وحدة الأمتار (غياب \p{M} من حارس الحدود) فتُنطق
+        // «8 أمتار من الدقائق»؛ تُحمى لتبقى للأرقام.
+        val inputAttached = "مدة المكالمة: 8مِنَ الدقائق و17مِنَ الثواني"
+        assertEquals(inputAttached, UnitStep.apply(inputAttached))
+
+        val inputSpaced = "مدة المكالمة: 8 مِنَ الدقائق و17 مِنَ الثواني"
+        assertEquals(inputSpaced, UnitStep.apply(inputSpaced))
+
+        val outNumber = NumberStep.apply(inputAttached)
+        assertEquals(
+            "مدة المكالمة: ثمانية مِنَ الدقائق وسبعة عشر مِنَ الثواني",
+            outNumber
+        )
+    }
+
+    @Test
+    fun number_attachedArabicWord_separatedWithSpace() {
+        // الرقم الملتصق بكلمة عربية بعدها ينفصل بمسافة تلقائياً عند تحويله
+        // إلى كلمات حتى لا تتلاصق كلمة العدد مع الاسم المعدود.
+        assertEquals("ثمانية دقائق", NumberStep.apply("8دقائق"))
+        assertEquals("سبعة عشر ثانية", NumberStep.apply("17ثانية"))
+    }
+
+    @Test
     fun symbol_noSymbols_leftUnchanged() {
         // لا رموز عامة/حسابية ولا @ معزولة: النص يُعاد كما هو بلا ممرّات.
         assertEquals("مرحبا 7", SymbolStep.apply("مرحبا 7"))

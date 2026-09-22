@@ -92,11 +92,18 @@ internal class NumberStep(
             sb.append(input, cursor, if (minus) start - 1 else start)
             sb.append(if (minus) minusWord(english) else "")
             sb.append(parseNumberText(numberStr, english))
+            if (end < input.length && isLetterOrMark(input[end])) {
+                sb.append(' ')
+            }
             cursor = end
         }
         sb.append(input, cursor, input.length)
         return sb.toString()
     }
+
+    private fun isLetterOrMark(c: Char): Boolean =
+        c.isLetter() ||
+            Character.getType(c) == Character.NON_SPACING_MARK.toInt()
 
     /** كلمة السالب حسب اللغة («ناقص»/«minus»). */
     private fun minusWord(english: Boolean): String =
