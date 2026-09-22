@@ -7,13 +7,23 @@ import java.util.regex.Pattern
  *  («خمسمائة وواحد مليون…»). يعترف بأرقام من 7 إلى 15 خانة مع فواصل اختيارية
  *  (مسافة/شرطة/نقطة/أقواس) وبداية + اختيارية. الخط يعمل للعربية فقط، فلغة
  *  النطق ثابتة (عربية) داخل هذه الخطوة. */
-internal object PhoneNumberStep : TextProcessingStep {
+internal class PhoneNumberStep(
+    private val languageProvider: () -> String? = { null }
+) : TextProcessingStep {
+
+    companion object : TextProcessingStep {
+        private val defaultInstance = PhoneNumberStep()
+        override fun apply(input: String): String =
+            defaultInstance.apply(input)
+        override fun applyEnglish(input: String): String =
+            defaultInstance.applyEnglish(input)
+    }
 
     // أنماط أرقام الهواتف: بداية اختيارية + ثم 7-15 رقماً مع فواصل
     // (مسافة/شرطة/نقطة). تُحسب الأرقام الفعلية في المعالجة؛ النمط
     // يلتقط المتواليات الطويلة فقط.
     private val PATTERN_PHONE = Pattern.compile(
-        """(?<!\d)\+?\d[\d\s()\-.]{6,}\d(?!\d)"""
+        """(?<!\d)(?:\+\s*)?\d[\d\s()\-.]{6,}\d(?!\d)"""
     )
 
     // بادئات اتصال محلية معروفة تُرجّح أن المتوالية الرقمية هاتف وليست مبلغاً:
@@ -38,12 +48,27 @@ internal object PhoneNumberStep : TextProcessingStep {
     private val PATTERN_GROUP_SEPARATOR = Pattern.compile("""[\s().\-]+""")
 
     override fun apply(input: String): String =
-        processPhoneNumbers(input, isArabicContext = true)
+        processPhoneNumbers(
+            input,
+            isArabicContext = isArabic(defaultForPipeline = true)
+        )
 
     /** النسخة الإنجليزية: تُنطق خانات الهاتف كلماتٍ إنجليزية
      *  («Call zero one zero…»). */
     override fun applyEnglish(input: String): String =
-        processPhoneNumbers(input, isArabicContext = false)
+        processPhoneNumbers(
+            input,
+            isArabicContext = isArabic(defaultForPipeline = false)
+        )
+
+    private fun isArabic(defaultForPipeline: Boolean): Boolean {
+        val configured = languageProvider()
+        return if (configured != null) {
+            configured != "en"
+        } else {
+            defaultForPipeline
+        }
+    }
 
     private fun processPhoneNumbers(
         text: String, isArabicContext: Boolean
@@ -84,6 +109,8 @@ internal object PhoneNumberStep : TextProcessingStep {
                 continue
             }
             val isArabic = isArabicContext
+            val hasPlus = raw.trimStart().startsWith("+")
+            val plusWord = if (isArabic) "زائد" else "plus"
             val spokenDigits = digits.map { it.digitToInt() }
                 .joinToString(" ") {
                     // الأرقام تُنطق كأرقام مجردة (مذكرة): «خمسة» لا «خمس».
@@ -91,8 +118,10 @@ internal object PhoneNumberStep : TextProcessingStep {
                         .toArabicWords(it, isFeminine = false)
                     else NumberSpeech.toEnglishWords(it)
                 }
+            val spoken =
+                if (hasPlus) "$plusWord $spokenDigits" else spokenDigits
             val quoted = java.util.regex.Matcher
-                .quoteReplacement(spokenDigits)
+                .quoteReplacement(spoken)
             matcher.appendReplacement(buffer, quoted)
         }
         matcher.appendTail(buffer)
@@ -101,6 +130,7 @@ internal object PhoneNumberStep : TextProcessingStep {
 
     /** هل التطابق تاريخ (3 مجموعات رقمية بفاصل، آخرها سنة 2-4 أرقام)؟ */
     private fun looksLikeDate(raw: String): Boolean {
+        if (raw.trimStart().startsWith("+")) return false
         val parts = PATTERN_DATE_SEPARATOR.split(raw)
             .filter { it.isNotBlank() }
         if (parts.size != 3) return false
@@ -112,7 +142,7 @@ internal object PhoneNumberStep : TextProcessingStep {
 
     /** هل التطابق عنوان IP (4 مجموعات رقمية من 1-3 أرقام بنقاط)؟ */
     private fun looksLikeIpAddress(raw: String): Boolean {
-        if (raw.startsWith("+")) return false
+        if (raw.trimStart().startsWith("+")) return false
         val parts = raw.split('.')
         if (parts.size != 4) return false
         return parts.all {
@@ -122,6 +152,7 @@ internal object PhoneNumberStep : TextProcessingStep {
 
     /** هل التطابق عدداً أو مبلغاً عشرياً (30496.00 أو 30,496.00)؟ */
     private fun looksLikeDecimal(raw: String): Boolean {
+        if (raw.trimStart().startsWith("+")) return false
         // نقطة واحدة فقط تفصل بين أرقام: كسر عشري قطعاً
         val firstDot = raw.indexOf('.')
         if (firstDot >= 0 && raw.lastIndexOf('.') == firstDot) {
@@ -143,7 +174,7 @@ internal object PhoneNumberStep : TextProcessingStep {
     /** ترجيح كون المتوالية رقم هاتف فعلياً (لا مبلغاً أو عدداً مجرداً). */
     private fun isLikelyPhone(raw: String, digits: String): Boolean {
         // مفتاح اتصال دولي صريح (+20 …)
-        if (raw.startsWith("+")) return true
+        if (raw.trimStart().startsWith("+")) return true
         // بادئة اتصال محلية معروفة (010 مصر، 05 السعودية…)
         if (LOCAL_PHONE_PREFIXES.any { digits.startsWith(it) }) return true
         // مجموعات آلاف أوروبية/فرنسية (1 000 000، 12.345.678) ليست هواتف

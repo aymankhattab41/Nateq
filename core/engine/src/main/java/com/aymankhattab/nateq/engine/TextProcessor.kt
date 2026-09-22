@@ -94,6 +94,11 @@ class TextProcessor(
         injectedSettings?.getNumberReadingLanguage()
     }
 
+    /** خطوة نطق أرقام الهواتف — تتبع إعداد لغة نطق الأرقام لحظياً. */
+    private val phoneNumberStep = PhoneNumberStep {
+        injectedSettings?.getNumberReadingLanguage()
+    }
+
     // خطوات التمهيد: تُنفَّذ قبل بوابة المسار السريع
     // (تطبيع/تشكيل/إيموجي/قاموس).
     // «إزالة الإيموجي» شرطية: تعمل فقط عند تعطيل نطقها (إلا تُعيد النص كما هو).
@@ -132,7 +137,7 @@ class TextProcessor(
     // الهواتف منقّاةً ولا يمس أجزاءها.
     private val heavySteps: List<TextProcessingStep> = baseSteps + listOf(
         RomanNumeralStep,
-        PhoneNumberStep,
+        phoneNumberStep,
         SymbolStep,
         punctuationStep,
         numberStep
@@ -159,7 +164,7 @@ class TextProcessor(
     // ثم الأرقام.
     private val englishHeavySteps: List<TextProcessingStep> =
         englishBaseSteps + listOf(
-            PhoneNumberStep,
+            phoneNumberStep,
             SymbolStep,
             punctuationStep,
             numberStep

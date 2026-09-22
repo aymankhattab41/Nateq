@@ -906,10 +906,14 @@ class PipelineStepsTest {
         // 7 أرقام مجردة بلا بادئة لا دليلَ على كونها هاتفاً — تُترك كما هي،
         // والمسح الخطي لا يُغيّر هذا السلوك (المسار الكامل يعالجها).
         assertEquals("1234567", PhoneNumberStep.apply("1234567"))
-        // مع مفتاح دولي (+) تمر النتائج من الـ regex وتُستبدل رقماً رقماً.
+        // مع مفتاح دولي (+) تمر النتائج وتُنطق رقماً رقماً مع كلمة «زائد».
         assertEquals(
-            "اثنان صفر اثنان ثلاثة أربعة خمسة ستة سبعة",
+            "زائد اثنان صفر اثنان ثلاثة أربعة خمسة ستة سبعة",
             PhoneNumberStep.apply("+20234567")
+        )
+        assertEquals(
+            "زائد اثنان صفر واحد واحد خمسة خمسة خمسة اثنان أربعة أربعة اثنان",
+            PhoneNumberStep.apply("+20 11 5552442")
         )
     }
 
@@ -1173,8 +1177,12 @@ class PipelineStepsTest {
             PhoneNumberStep.applyEnglish("010-1234-5678")
         )
         assertEquals(
-            "two zero two three four five six seven",
+            "plus two zero two three four five six seven",
             PhoneNumberStep.applyEnglish("+20234567")
+        )
+        assertEquals(
+            "plus two zero one one five five five two four four two",
+            PhoneNumberStep.applyEnglish("+20 11 5552442")
         )
     }
 
@@ -1255,5 +1263,19 @@ class PipelineStepsTest {
     @Test
     fun tashkeelStrip_aweareEnginesSetIsNonEmpty() {
         assertTrue(ARABIC_TASHKEEL_AWARE_ENGINES.isNotEmpty())
+    }
+
+    @Test
+    fun phone_withLanguageProvider_respectsConfiguredLanguage() {
+        val stepEn = PhoneNumberStep { "en" }
+        assertEquals(
+            "plus two zero one one five five five two four four two",
+            stepEn.apply("+20 11 5552442")
+        )
+        val stepAr = PhoneNumberStep { "ar" }
+        assertEquals(
+            "زائد اثنان صفر واحد واحد خمسة خمسة خمسة اثنان أربعة أربعة اثنان",
+            stepAr.applyEnglish("+20 11 5552442")
+        )
     }
 }
