@@ -25,7 +25,6 @@ internal class TextReadingController(
     // (بند 4.1) حتى لا تبقى شجرة العرض القديمة محتجزة في الخلفية.
     private var spinnerPunctuationLevel: Spinner? = null
     private var switchTashkeelPreserved: SwitchMaterial? = null
-    private var switchFollowReaderRate: SwitchMaterial? = null
     private var btnSecondaryLanguage: MaterialButton? = null
     private var btnNumberReadingLanguage: MaterialButton? = null
 
@@ -34,8 +33,6 @@ internal class TextReadingController(
             view.findViewById(R.id.spinner_punctuation_level)
         switchTashkeelPreserved =
             view.findViewById(R.id.switch_tashkeel_preserved)
-        switchFollowReaderRate =
-            view.findViewById(R.id.switch_follow_reader_rate)
 
         // خيارات مستوى نطق الترقيم (0..2) ثنائية اللغة
         val levelLabels = arrayOf(
@@ -74,20 +71,6 @@ internal class TextReadingController(
                 .getOrDefault(false)
         switchTashkeelPreserved?.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setTashkeelPreserved(checked) }
-            onStatusChanged()
-            fragment.view?.announceCompat(
-                fragment.getString(
-                    if (checked) R.string.announcement_turned_on
-                    else R.string.announcement_turned_off
-                )
-            )
-        }
-
-        switchFollowReaderRate?.isChecked =
-            runCatching { settings.isFollowReaderRateEnabled() }
-                .getOrDefault(true)
-        switchFollowReaderRate?.setOnCheckedChangeListener { _, checked ->
-            runCatching { settings.setFollowReaderRateEnabled(checked) }
             onStatusChanged()
             fragment.view?.announceCompat(
                 fragment.getString(
@@ -200,7 +183,6 @@ internal class TextReadingController(
     fun cleanup() {
         spinnerPunctuationLevel = null
         switchTashkeelPreserved = null
-        switchFollowReaderRate = null
         btnSecondaryLanguage = null
         btnNumberReadingLanguage = null
     }

@@ -1505,26 +1505,6 @@
                 android:textColor="@color/text_secondary"
                 android:importantForAccessibility="no" />
 
-            <!-- مفتاح اتباع سرعة قارئ الشاشة (نموذج الضرب: القارئ أساس) -->
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switch_follow_reader_rate"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:minHeight="48dp"
-                android:text="@string/follow_reader_rate_enabled"
-                android:textOff="@string/toggle_off"
-                android:textOn="@string/toggle_on" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="16dp"
-                android:layout_marginEnd="16dp"
-                android:text="@string/follow_reader_rate_summary"
-                android:textSize="12sp"
-                android:textColor="@color/text_secondary"
-                android:importantForAccessibility="no" />
 
             <!-- لغة النطق الاحتياطية للنص الأجنبي القصير (بند اللغة الثانية) -->
             <com.google.android.material.button.MaterialButton
@@ -2034,6 +2014,27 @@
                     android:contentDescription="@string/speech_rate_summary" />
 
             </LinearLayout>
+
+            <!-- مفتاح اتباع سرعة قارئ الشاشة (نموذج الضرب: القارئ أساس) -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_follow_reader_rate"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/follow_reader_rate_enabled"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/follow_reader_rate_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:importantForAccessibility="no" />
 
             <!-- النبرة الافتراضية -->
             <LinearLayout

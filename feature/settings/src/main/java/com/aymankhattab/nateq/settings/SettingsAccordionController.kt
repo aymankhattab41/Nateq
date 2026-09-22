@@ -841,10 +841,24 @@ internal class SettingsAccordionController(
         val volume =
             runCatching { settings.getDefaultVolume() }
                 .getOrDefault(1.0f)
+        val followReader =
+            runCatching { settings.isFollowReaderRateEnabled() }
+                .getOrDefault(true)
         val rateText = RateLabel.of(fragment.requireContext(), rate)
         val volumeText = (volume * 100).toInt().toString() + "%"
-        return fragment.getString(R.string.default_speech_rate_label) + ": " +
-            rateText + "، " + volumeText
+        val followText = fragment.getString(
+            if (followReader) R.string.toggle_on else R.string.toggle_off
+        )
+        return buildString {
+            append(fragment.getString(R.string.default_speech_rate_label))
+                .append(": ").append(rateText)
+            append("، ").append(volumeText)
+            append("، ")
+                .append(
+                    fragment.getString(R.string.follow_reader_rate_enabled)
+                )
+                .append(": ").append(followText)
+        }
     }
 
     private fun buildDeviceHealthStatus(): String {

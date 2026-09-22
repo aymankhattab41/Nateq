@@ -26,6 +26,7 @@ internal class GeneralSettingsController(
     private var seekDefaultVolume: SeekBar? = null
     private var tvDefaultVolumeValue: TextView? = null
     private var switchMediaStreamAlways: SwitchMaterial? = null
+    private var switchFollowReaderRate: SwitchMaterial? = null
 
     // **بند 6.3:** علمُ الربط البرمجي — يُسنَّع حول setProgress في attach
     // حتى لا يُفسَّر الإسنادُ البرمجي تعديلَ مستخدم (يُخزَّن تفريغاً). دون
@@ -53,6 +54,22 @@ internal class GeneralSettingsController(
             // دون قارئ شاشة.
             runCatching { settings.setAnnouncementMediaStreamAlways(checked) }
             onStatusChanged()
+        }
+
+        switchFollowReaderRate =
+            view.findViewById(R.id.switch_follow_reader_rate)
+        switchFollowReaderRate?.isChecked =
+            runCatching { settings.isFollowReaderRateEnabled() }
+                .getOrDefault(true)
+        switchFollowReaderRate?.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setFollowReaderRateEnabled(checked) }
+            onStatusChanged()
+            fragment.view?.announceCompat(
+                fragment.getString(
+                    if (checked) R.string.announcement_turned_on
+                    else R.string.announcement_turned_off
+                )
+            )
         }
 
         val rate = runCatching { settings.getDefaultSpeechRate() }
@@ -201,5 +218,6 @@ internal class GeneralSettingsController(
         seekDefaultVolume = null
         tvDefaultVolumeValue = null
         switchMediaStreamAlways = null
+        switchFollowReaderRate = null
     }
 }
