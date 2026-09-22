@@ -269,6 +269,22 @@ interface AnnouncementPrefs {
     /** يعيّن تفعيل رنة الزمن. */
     fun setTimeChimeEnabled(enabled: Boolean)
 
+    /** تفعيل رنة رأس الساعة (:00). */
+    fun isTimeChimeAt0Enabled(): Boolean
+    fun setTimeChimeAt0Enabled(enabled: Boolean)
+
+    /** تفعيل رنة الربع (:15). */
+    fun isTimeChimeAt15Enabled(): Boolean
+    fun setTimeChimeAt15Enabled(enabled: Boolean)
+
+    /** تفعيل رنة النصف (:30). */
+    fun isTimeChimeAt30Enabled(): Boolean
+    fun setTimeChimeAt30Enabled(enabled: Boolean)
+
+    /** تفعيل رنة الـ 45 دقيقة (:45). */
+    fun isTimeChimeAt45Enabled(): Boolean
+    fun setTimeChimeAt45Enabled(enabled: Boolean)
+
     /** صوت رنة الزمن (اسم أصل الصوت). */
     fun getTimeChimeSound(): String
 

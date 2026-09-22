@@ -1154,6 +1154,30 @@ class SettingsRepository(context: Context) :
     override fun setTimeChimeEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("time_chime_enabled", enabled).apply()
 
+    /** تفعيل رنة رأس الساعة (:00). */
+    override fun isTimeChimeAt0Enabled(): Boolean =
+        prefs.getBoolean("time_chime_at_0", true)
+    override fun setTimeChimeAt0Enabled(enabled: Boolean) =
+        prefs.edit().putBoolean("time_chime_at_0", enabled).apply()
+
+    /** تفعيل رنة الربع (:15). */
+    override fun isTimeChimeAt15Enabled(): Boolean =
+        prefs.getBoolean("time_chime_at_15", false)
+    override fun setTimeChimeAt15Enabled(enabled: Boolean) =
+        prefs.edit().putBoolean("time_chime_at_15", enabled).apply()
+
+    /** تفعيل رنة النصف (:30). */
+    override fun isTimeChimeAt30Enabled(): Boolean =
+        prefs.getBoolean("time_chime_at_30", false)
+    override fun setTimeChimeAt30Enabled(enabled: Boolean) =
+        prefs.edit().putBoolean("time_chime_at_30", enabled).apply()
+
+    /** تفعيل رنة الـ 45 دقيقة (:45). */
+    override fun isTimeChimeAt45Enabled(): Boolean =
+        prefs.getBoolean("time_chime_at_45", false)
+    override fun setTimeChimeAt45Enabled(enabled: Boolean) =
+        prefs.edit().putBoolean("time_chime_at_45", enabled).apply()
+
     /** اسم الرنة المختارة: classic_bell | digital_chime | soft_ding. */
     override fun getTimeChimeSound(): String {
         val value = prefs.getString("time_chime_sound", "classic_bell")

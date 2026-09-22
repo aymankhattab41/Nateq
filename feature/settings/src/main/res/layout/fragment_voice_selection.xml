@@ -272,6 +272,48 @@
                 android:textOff="@string/toggle_off"
                 android:textOn="@string/toggle_on" />
 
+            <!-- أوقات تشغيل رنة الساعة -->
+            <TextView
+                android:id="@+id/tv_time_chime_quarters_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/time_chime_quarters_title"
+                android:textAppearance="?attr/textAppearanceBody2"
+                android:textColor="@color/text_secondary" />
+
+            <com.google.android.material.checkbox.MaterialCheckBox
+                android:id="@+id/cb_time_chime_at_0"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/time_chime_at_0"
+                android:importantForAccessibility="yes" />
+
+            <com.google.android.material.checkbox.MaterialCheckBox
+                android:id="@+id/cb_time_chime_at_15"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/time_chime_at_15"
+                android:importantForAccessibility="yes" />
+
+            <com.google.android.material.checkbox.MaterialCheckBox
+                android:id="@+id/cb_time_chime_at_30"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/time_chime_at_30"
+                android:importantForAccessibility="yes" />
+
+            <com.google.android.material.checkbox.MaterialCheckBox
+                android:id="@+id/cb_time_chime_at_45"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/time_chime_at_45"
+                android:importantForAccessibility="yes" />
+
             <!-- اسم رنة رأس الساعة -->
             <com.google.android.material.textfield.TextInputLayout
                 android:id="@+id/til_time_chime_sound"

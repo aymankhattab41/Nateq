@@ -109,6 +109,19 @@
 <string name="spinner_time_chime_sound_content">Choose hourly chime sound</string>
 <string name="time_chime_volume">Chime volume</string>
 <string name="time_chime_volume_desc">Hourly chime volume</string>
+<string name="time_chime_quarters_title">Chime schedule</string>
+<string name="time_chime_at_0">Top of the hour (:00)</string>
+<string name="time_chime_at_15">Quarter past (:15)</string>
+<string name="time_chime_at_30">Half past (:30)</string>
+<string name="time_chime_at_45">Quarter to (:45)</string>
+<string name="time_chime_at_0_checked">Hourly chime enabled for top of the hour</string>
+<string name="time_chime_at_0_unchecked">Hourly chime disabled for top of the hour</string>
+<string name="time_chime_at_15_checked">Hourly chime enabled for quarter past</string>
+<string name="time_chime_at_15_unchecked">Hourly chime disabled for quarter past</string>
+<string name="time_chime_at_30_checked">Hourly chime enabled for half past</string>
+<string name="time_chime_at_30_unchecked">Hourly chime disabled for half past</string>
+<string name="time_chime_at_45_checked">Hourly chime enabled for quarter to</string>
+<string name="time_chime_at_45_unchecked">Hourly chime disabled for quarter to</string>
 <string name="collapse">Collapse</string>
 <string name="contact_developer">Contact the developer</string>
 <string name="contact_developer_desc">Open the official Telegram chat to reach the developer</string>
@@ -424,6 +437,7 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+• Customizable quarter-hour chime times: choose whether the hourly chime plays at the top of the hour (:00), quarter past (:15), half past (:30), and quarter to (:45) independently via individual checkboxes with full accessibility announcements
 • Phone numbers follow user-selected grouping mode &amp; intact URL reading: enabled phone numbers to follow the user\'s configured number reading mode (single, pairs, triples, quads, quintuples...) while preserving leading (+), and removed URL shortening or intervention so web links are read completely intact as written
 • Phone numbers always spoken digit-by-digit and instant battery announcement: enforced digit-by-digit pronunciation for all phone numbers regardless of the selected number grouping mode (pairs, triples, quintuples...), and trimmed battery charger tones to start spoken announcements immediately after the cue without any audible gap
 • Pronounce leading (+) in phone numbers and update service notification title: pronounce (+) as "زائد" or "plus" per configured number language for international phone numbers (e.g. +20 11 5552442) instead of skipping it, and brand the persistent background service notification with LORD TTS

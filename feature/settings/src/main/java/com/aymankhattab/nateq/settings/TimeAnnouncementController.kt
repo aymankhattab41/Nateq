@@ -19,6 +19,7 @@ import com.aymankhattab.nateq.core.audio.announcement.AudioCuePlayer
 import com.aymankhattab.nateq.core.audio.announcement.CueType
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
+import com.google.android.material.checkbox.MaterialCheckBox
 import com.google.android.material.switchmaterial.SwitchMaterial
 import java.util.Calendar
 import com.aymankhattab.nateq.core.data.SettingsRepository
@@ -40,6 +41,10 @@ internal class TimeAnnouncementController(
     private var spinnerTimeFormat: Spinner? = null
     private var switchTime24h: SwitchMaterial? = null
     private var switchTimeChime: SwitchMaterial? = null
+    private var cbTimeChimeAt0: MaterialCheckBox? = null
+    private var cbTimeChimeAt15: MaterialCheckBox? = null
+    private var cbTimeChimeAt30: MaterialCheckBox? = null
+    private var cbTimeChimeAt45: MaterialCheckBox? = null
     private var spinnerTimeChimeSound: Spinner? = null
     private var seekTimeChimeVolume: SeekBar? = null
 
@@ -128,6 +133,10 @@ internal class TimeAnnouncementController(
 
         // ─── رنة رأس الساعة ───
         switchTimeChime = view.findViewById(R.id.switch_time_chime)
+        cbTimeChimeAt0 = view.findViewById(R.id.cb_time_chime_at_0)
+        cbTimeChimeAt15 = view.findViewById(R.id.cb_time_chime_at_15)
+        cbTimeChimeAt30 = view.findViewById(R.id.cb_time_chime_at_30)
+        cbTimeChimeAt45 = view.findViewById(R.id.cb_time_chime_at_45)
         spinnerTimeChimeSound =
             view.findViewById(R.id.spinner_time_chime_sound)
         seekTimeChimeVolume =
@@ -139,9 +148,74 @@ internal class TimeAnnouncementController(
         )
         spinnerTimeChimeSound?.adapter =
             fragment.simpleAdapter(chimeSounds)
-        switchTimeChime?.isChecked =
-            runCatching { settings.isTimeChimeEnabled() }
-                .getOrDefault(true)
+        val chimeEnabled = runCatching {
+            settings.isTimeChimeEnabled()
+        }.getOrDefault(true)
+        switchTimeChime?.isChecked = chimeEnabled
+
+        cbTimeChimeAt0?.isChecked = runCatching {
+            settings.isTimeChimeAt0Enabled()
+        }.getOrDefault(true)
+        cbTimeChimeAt15?.isChecked = runCatching {
+            settings.isTimeChimeAt15Enabled()
+        }.getOrDefault(false)
+        cbTimeChimeAt30?.isChecked = runCatching {
+            settings.isTimeChimeAt30Enabled()
+        }.getOrDefault(false)
+        cbTimeChimeAt45?.isChecked = runCatching {
+            settings.isTimeChimeAt45Enabled()
+        }.getOrDefault(false)
+
+        cbTimeChimeAt0?.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setTimeChimeAt0Enabled(checked) }
+            fragment.view?.announceCompat(
+                fragment.getString(
+                    if (checked) {
+                        R.string.time_chime_at_0_checked
+                    } else {
+                        R.string.time_chime_at_0_unchecked
+                    }
+                )
+            )
+        }
+        cbTimeChimeAt15?.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setTimeChimeAt15Enabled(checked) }
+            fragment.view?.announceCompat(
+                fragment.getString(
+                    if (checked) {
+                        R.string.time_chime_at_15_checked
+                    } else {
+                        R.string.time_chime_at_15_unchecked
+                    }
+                )
+            )
+        }
+        cbTimeChimeAt30?.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setTimeChimeAt30Enabled(checked) }
+            fragment.view?.announceCompat(
+                fragment.getString(
+                    if (checked) {
+                        R.string.time_chime_at_30_checked
+                    } else {
+                        R.string.time_chime_at_30_unchecked
+                    }
+                )
+            )
+        }
+        cbTimeChimeAt45?.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setTimeChimeAt45Enabled(checked) }
+            fragment.view?.announceCompat(
+                fragment.getString(
+                    if (checked) {
+                        R.string.time_chime_at_45_checked
+                    } else {
+                        R.string.time_chime_at_45_unchecked
+                    }
+                )
+            )
+        }
+        updateChimeSubControlsEnabled(chimeEnabled)
+
         val savedChimeSound = runCatching {
             settings.getTimeChimeSound()
         }.getOrDefault("classic_bell")
@@ -171,8 +245,7 @@ internal class TimeAnnouncementController(
 
         switchTimeChime?.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setTimeChimeEnabled(checked) }
-            spinnerTimeChimeSound?.isEnabled = checked
-            seekTimeChimeVolume?.isEnabled = checked
+            updateChimeSubControlsEnabled(checked)
             fragment.view?.announceCompat(
                 fragment.getString(
                     if (checked) {
@@ -718,6 +791,15 @@ internal class TimeAnnouncementController(
             }
     }
 
+    private fun updateChimeSubControlsEnabled(enabled: Boolean) {
+        cbTimeChimeAt0?.isEnabled = enabled
+        cbTimeChimeAt15?.isEnabled = enabled
+        cbTimeChimeAt30?.isEnabled = enabled
+        cbTimeChimeAt45?.isEnabled = enabled
+        spinnerTimeChimeSound?.isEnabled = enabled
+        seekTimeChimeVolume?.isEnabled = enabled
+    }
+
     /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */
     fun cleanup() {
         switchTimeAnnouncement = null
@@ -726,6 +808,10 @@ internal class TimeAnnouncementController(
         spinnerTimeFormat = null
         switchTime24h = null
         switchTimeChime = null
+        cbTimeChimeAt0 = null
+        cbTimeChimeAt15 = null
+        cbTimeChimeAt30 = null
+        cbTimeChimeAt45 = null
         spinnerTimeChimeSound = null
         seekTimeChimeVolume = null
         llExactAlarmPermission = null

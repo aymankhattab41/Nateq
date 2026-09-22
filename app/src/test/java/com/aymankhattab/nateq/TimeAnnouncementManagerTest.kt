@@ -15,7 +15,10 @@ import java.util.Calendar
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import com.aymankhattab.nateq.core.audio.announcement.AudioCue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -117,6 +120,9 @@ class TimeAnnouncementManagerTest {
 
     private fun isInQuietHours(): Boolean =
         reflect("isInQuietHours").invoke(manager) as Boolean
+
+    private fun hourlyChimeCue(): AudioCue? =
+        reflect("hourlyChimeCue").invoke(manager) as? AudioCue
 
     // ═══════════════════════ التنسيق العربي الطبيعي ═══════════════════════
 
@@ -498,6 +504,53 @@ class TimeAnnouncementManagerTest {
         // 10:50:00 بالضبط → الشريحة التالية 10:55 (5 دقائق، دائماً مستقبل).
         clock.setTo(millisFor(2017, Calendar.JANUARY, 1, 10, 50))
         assertEquals(5 * 60 * 1000L, calculateInitialDelay())
+    }
+
+    @Test
+    fun hourlyChimeCue_quarterChimes() {
+        settings.setTimeChimeEnabled(true)
+        // Default: at 0 is true, 15/30/45 are false
+        fixedClock.setTo(millisFor(2017, Calendar.JANUARY, 1, 12, 0))
+        assertNotNull(hourlyChimeCue())
+        fixedClock.setTo(millisFor(2017, Calendar.JANUARY, 1, 12, 15))
+        assertNull(hourlyChimeCue())
+        fixedClock.setTo(millisFor(2017, Calendar.JANUARY, 1, 12, 30))
+        assertNull(hourlyChimeCue())
+        fixedClock.setTo(millisFor(2017, Calendar.JANUARY, 1, 12, 45))
+        assertNull(hourlyChimeCue())
+
+        // Enable 15 and 30, disable 0
+        settings.setTimeChimeAt0Enabled(false)
+        settings.setTimeChimeAt15Enabled(true)
+        settings.setTimeChimeAt30Enabled(true)
+        fixedClock.setTo(millisFor(2017, Calendar.JANUARY, 1, 12, 0))
+        assertNull(hourlyChimeCue())
+        fixedClock.setTo(millisFor(2017, Calendar.JANUARY, 1, 12, 15))
+        assertNotNull(hourlyChimeCue())
+        fixedClock.setTo(millisFor(2017, Calendar.JANUARY, 1, 12, 30))
+        assertNotNull(hourlyChimeCue())
+        fixedClock.setTo(millisFor(2017, Calendar.JANUARY, 1, 12, 45))
+        assertNull(hourlyChimeCue())
+
+        // Master switch disabled
+        settings.setTimeChimeEnabled(false)
+        fixedClock.setTo(millisFor(2017, Calendar.JANUARY, 1, 12, 15))
+        assertNull(hourlyChimeCue())
+    }
+
+    @Test
+    fun calculateInitialDelay_withQuarterChimesEnabled() {
+        // If interval is 60 but chime is enabled at 15
+        val clock = FakeClock(
+            millisFor(2017, Calendar.JANUARY, 1, 10, 5)
+        )
+        manager = newManager(clock)
+        settings.setTimeAnnouncementInterval(60)
+        settings.setTimeChimeEnabled(true)
+        settings.setTimeChimeAt15Enabled(true)
+
+        // Delay to 10:15 = 10 minutes
+        assertEquals(10 * 60 * 1000L, calculateInitialDelay())
     }
 
     // ═══════════════════════ الجدولة البنيوية ═══════════════════════

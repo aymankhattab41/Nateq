@@ -859,4 +859,28 @@ class SettingsRepositoryTest {
             repo.exportSettings().containsKey("rms_calibration_unknown")
         )
     }
+
+    @Test
+    fun timeChimeQuarters_defaultsAndRoundTrip() {
+        assertTrue(repo.isTimeChimeAt0Enabled())
+        assertFalse(repo.isTimeChimeAt15Enabled())
+        assertFalse(repo.isTimeChimeAt30Enabled())
+        assertFalse(repo.isTimeChimeAt45Enabled())
+
+        repo.setTimeChimeAt0Enabled(false)
+        repo.setTimeChimeAt15Enabled(true)
+        repo.setTimeChimeAt30Enabled(true)
+        repo.setTimeChimeAt45Enabled(true)
+
+        assertFalse(repo.isTimeChimeAt0Enabled())
+        assertTrue(repo.isTimeChimeAt15Enabled())
+        assertTrue(repo.isTimeChimeAt30Enabled())
+        assertTrue(repo.isTimeChimeAt45Enabled())
+
+        repo.resetAllToDefault()
+        assertTrue(repo.isTimeChimeAt0Enabled())
+        assertFalse(repo.isTimeChimeAt15Enabled())
+        assertFalse(repo.isTimeChimeAt30Enabled())
+        assertFalse(repo.isTimeChimeAt45Enabled())
+    }
 }

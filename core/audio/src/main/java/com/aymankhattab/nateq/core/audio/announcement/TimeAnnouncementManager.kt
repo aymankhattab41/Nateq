@@ -235,21 +235,33 @@ class TimeAnnouncementManager(
         TimeAlarmReceiver.scheduleNext(context, calculateQuietEndMillis())
     }
 
-    /** حساب التأخير لأول إعلان (للبداية القادمة للفاصل) */
+    /** الدقائق المفعَّلة لرنة الساعة (:00، :15، :30، :45). */
+    private fun enabledChimeMinutes(): Set<Int> {
+        if (!settings.isTimeChimeEnabled()) return emptySet()
+        val set = mutableSetOf<Int>()
+        if (settings.isTimeChimeAt0Enabled()) set.add(0)
+        if (settings.isTimeChimeAt15Enabled()) set.add(15)
+        if (settings.isTimeChimeAt30Enabled()) set.add(30)
+        if (settings.isTimeChimeAt45Enabled()) set.add(45)
+        return set
+    }
+
+    /** حساب التأخير لأول إعلان (للبداية القادمة للفاصل أو الرنة) */
     private fun calculateInitialDelay(): Long {
         val calendar = timeProvider.now()
         val interval = effectiveIntervalMinutes()
-        // شبكة دقائق اليوم الكامل (0..1439) بدل دقائق الساعة المنفصلة:
-        // فاصل 90/180 (توفير الطاقة يضاعف الثلاثين) كان يُنسب إلى الساعة
-        // فيقفز الإعلان التالي إلى الساعة القادمة (60 دقيقة) بدل دوره
-        // الفعلي — فيتفاوت الإيقاع ويستهلك إعلاناً كل ساعة مهما زاد الفاصل.
         val gridStep = interval.coerceAtLeast(2)
         val minuteOfDay = calendar.get(Calendar.HOUR_OF_DAY) * 60 +
             calendar.get(Calendar.MINUTE)
-        // الشريحة التالية دائماً في المستقبل (مضاعف > minuteOfDay): عند نهاية
-        // اليوم (مثل 23:59) تنساب إلى منتصف ليل الغد — «الربق %1440» السابق
-        // كان يعيدها إلى بداية اليوم نفسه (الماضي) فينقلب التأخير سالباً.
-        val nextSlot = ((minuteOfDay / gridStep) + 1) * gridStep
+        val chimes = enabledChimeMinutes()
+        var candidate = minuteOfDay + 1
+        while (true) {
+            if (candidate % gridStep == 0 || (candidate % 60) in chimes) {
+                break
+            }
+            candidate++
+        }
+        val nextSlot = candidate
 
         calendar.add(Calendar.MINUTE, nextSlot - minuteOfDay)
         calendar.set(Calendar.SECOND, 0)
@@ -449,15 +461,21 @@ class TimeAnnouncementManager(
     }
 
     /**
-     * رنة رأس الساعة: تُبنى فقط عند حافة الساعة (الدقيقة صفر) وبتفعيل
-     * المستخدم. رنة رأس الساعة تتبع نطق الوقت نفسه في احترام ساعات الهدوء
-     * (المسار المجدول)، وتتجاوزها — مثل النطق — عند الطلب الصريح "أعلن الآن".
+     * رنة الساعة: تُبنى عند أوقات أرباع الساعة المختارة من قِبل المستخدم
+     * (رأس الساعة :00، الربع :15، النصف :30، والـ 45 دقيقة :45) بتفعيل الرنة.
      */
     private fun hourlyChimeCue(): AudioCue? {
         return try {
             if (!settings.isTimeChimeEnabled()) return null
             val minute = timeProvider.now().get(Calendar.MINUTE)
-            if (minute != 0) return null
+            val shouldPlay = when (minute) {
+                0 -> settings.isTimeChimeAt0Enabled()
+                15 -> settings.isTimeChimeAt15Enabled()
+                30 -> settings.isTimeChimeAt30Enabled()
+                45 -> settings.isTimeChimeAt45Enabled()
+                else -> false
+            }
+            if (!shouldPlay) return null
             AudioCue(
                 type = CueType.TIME_HOURLY,
                 soundName = settings.getTimeChimeSound(),
