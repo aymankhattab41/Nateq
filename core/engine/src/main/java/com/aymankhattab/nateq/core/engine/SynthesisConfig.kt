@@ -24,4 +24,7 @@ interface SynthesisConfig {
 
     /** لغة نطق الأرقام: "ar" أو "en". */
     fun getNumberReadingLanguage(): String = "ar"
+
+    /** طريقة نطق الأرقام (1..8): 1 مفردة، 2 زوجي، 3..8 ثلاثي..ثماني. */
+    fun getNumberReadingMode(): Int = 1
 }

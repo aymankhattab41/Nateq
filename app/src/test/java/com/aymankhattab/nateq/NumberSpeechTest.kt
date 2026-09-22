@@ -341,23 +341,34 @@ class NumberSpeechTest {
     }
 
     @Test
-    fun formatByMode_phoneNumbersAlwaysSingleDigits() {
-        // أرقام الهواتف دائماً تُنطق مفردة حتى لو كان الوضع ثلاثياً أو خماسياً
+    fun formatByMode_phoneNumbersFollowSelectedMode() {
+        // أرقام الهواتف تتبع نمط القراءة المختار (مفردة/ثلاثية/رباعية..)
         assertEquals(
             "صفر واحد صفر واحد اثنان ثلاثة أربعة خمسة ستة سبعة ثمانية",
+            NumberSpeech.formatByMode(1, "01012345678", false)
+        )
+        // ثلاثي: 01, 012, 345, 678
+        assertEquals(
+            "صفر واحد, صفر واحد اثنان, ثلاثمائة وخمسة وأربعون, " +
+                "ستمائة وثمانية وسبعون",
             NumberSpeech.formatByMode(3, "01012345678", false)
         )
+        // ثلاثي مع زائد: +20 11 5552442 -> 20, 115, 552, 442
         assertEquals(
-            "صفر واحد صفر واحد اثنان ثلاثة أربعة خمسة ستة سبعة ثمانية",
-            NumberSpeech.formatByMode(5, "01012345678", false)
-        )
-        assertEquals(
-            "زائد اثنان صفر واحد واحد خمسة خمسة خمسة اثنان أربعة أربعة اثنان",
+            "زائد عشرون, مائة وخمسة عشر, خمسمائة واثنان وخمسون, " +
+                "أربعمائة واثنان وأربعون",
             NumberSpeech.formatByMode(3, "+20 11 5552442", false)
         )
+        // رباعي إنجليزي مع زائد: +20 11 5552442 -> 201, 1555, 2442
+        assertEquals(
+            "plus two hundred one, one thousand five hundred fifty five, " +
+                "two thousand four hundred forty two",
+            NumberSpeech.formatByMode(4, "+20 11 5552442", true)
+        )
+        // مفرد إنجليزي مع زائد
         assertEquals(
             "plus two zero one one five five five two four four two",
-            NumberSpeech.formatByMode(4, "+20 11 5552442", true)
+            NumberSpeech.formatByMode(1, "+20 11 5552442", true)
         )
     }
 }

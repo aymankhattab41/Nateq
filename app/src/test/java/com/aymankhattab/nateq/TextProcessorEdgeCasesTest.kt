@@ -31,32 +31,32 @@ class TextProcessorEdgeCasesTest {
     // ═══════════════════════ الروابط (URLs) ═══════════════════════
 
     @Test
-    fun url_https_simplifiedToDomain() {
+    fun url_https_keptWhole() {
         assertEquals(
-            "تفضل بزيارة موقع example",
+            "تفضل بزيارة https://example.com",
             processor.process("تفضل بزيارة https://example.com", "ar")
         )
     }
 
     @Test
-    fun url_www_removesPath() {
+    fun url_www_keptWholeWithPath() {
         assertEquals(
-            "تفقد موقع google",
+            "تفقد www.google.com/path?q=1",
             processor.process("تفقد www.google.com/path?q=1", "ar")
         )
     }
 
     @Test
-    fun url_http_removesPort() {
+    fun url_http_keptWholeWithPort() {
         assertEquals(
-            "رابط موقع site",
+            "رابط http://site.net:8080/x",
             processor.process("رابط http://site.net:8080/x", "ar")
         )
     }
 
     @Test
     fun url_nonArabicContext_notProcessed() {
-        // السياق الإنجليزي لا يمر عبر خط المعالجة الثقيلة
+        // السياق الإنجليزي يُبقي الرابط كاملاً
         assertEquals(
             "Check https://example.com now",
             processor.process("Check https://example.com now", "en")
@@ -65,7 +65,7 @@ class TextProcessorEdgeCasesTest {
 
     @Test
     fun url_noSchemeNoWww_notMatched() {
-        // يمين بدون http:// أو www. لا يُعتبر رابطاً
+        // نص بدون http:// أو www. يُعامل كنص عادي
         assertEquals(
             "visit example.com",
             processor.process("visit example.com", "ar")
@@ -73,10 +73,10 @@ class TextProcessorEdgeCasesTest {
     }
 
     @Test
-    fun url_uppercaseSchemeAndWww_readableDomain() {
-        // الادعاء: روابط بحروف كبيرة كانت تُخرج «موقع HTTPS» مشوَّهاً
+    fun url_uppercaseSchemeAndWww_keptWhole() {
+        // روابط بحروف كبيرة تُقرأ كما هي كاملة دون تشويه
         assertEquals(
-            "تفقد موقع GOOGLE",
+            "تفقد HTTPS://GOOGLE.COM",
             processor.process("تفقد HTTPS://GOOGLE.COM", "ar")
         )
     }

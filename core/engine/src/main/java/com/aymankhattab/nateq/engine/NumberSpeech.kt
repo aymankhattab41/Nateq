@@ -387,10 +387,7 @@ object NumberSpeech {
             fracDigits = null
         }
 
-        // أرقام الهواتف دائماً تُنطق مفردة (خانة خانة) مهما كانت طريقة
-        // نطق الأرقام المختارة (ثلاثي/خماسي..)
-        val isPhone = isPhoneNumber(trimmed, intDigits)
-        val safeMode = if (isPhone) 1 else mode.coerceIn(1, 8)
+        val safeMode = mode.coerceIn(1, 8)
 
         val intWords = formatDigitsByMode(safeMode, intDigits, isEnglish)
         val result = if (!fracDigits.isNullOrEmpty()) {

@@ -773,12 +773,17 @@ class PipelineStepsTest {
 
     @Test
     fun url_trailingPunctuation_preserved() {
-        // بند 3.5: النقطة/القوس الختامي الملاصقان للرابط يُنطقان مع البديل
-        // («موقع example.») بدل اقتصاصهما من النُّطق.
-        assertEquals("موقع example.", UrlStep.apply("https://example.com."))
-        assertEquals("موقع example)", UrlStep.apply("https://example.com)"))
+        // الروابط تُعاد كما هي كاملة دون أي تعديل أو اقتصاص
         assertEquals(
-            "موقع example).",
+            "https://example.com.",
+            UrlStep.apply("https://example.com.")
+        )
+        assertEquals(
+            "https://example.com)",
+            UrlStep.apply("https://example.com)")
+        )
+        assertEquals(
+            "www.example.org).",
             UrlStep.apply("www.example.org).")
         )
     }
@@ -949,12 +954,23 @@ class PipelineStepsTest {
 
     @Test
     fun url_uppercaseSchemeAndWww_stillReadableDomain() {
-        // الادعاء: الروابط بحروف كبيرة كانت تُشوَّه («HTTPS://GOOGLE.COM» ←
-        // «موقع HTTPS») لأن إزالة الشعار حساسة لحالة الأحرف.
-        assertEquals("موقع GOOGLE", UrlStep.apply("HTTPS://GOOGLE.COM"))
-        assertEquals("موقع GOOGLE", UrlStep.apply("WWW.GOOGLE.COM/x"))
-        assertEquals("موقع google", UrlStep.apply("https://www.google.com"))
-        assertEquals("موقع GOOGLE", UrlStep.apply("https://WWW.GOOGLE.ORG"))
+        // الروابط بحروف كبيرة تُقرأ كما هي كاملة دون أي تعديل أو تشويه
+        assertEquals(
+            "HTTPS://GOOGLE.COM",
+            UrlStep.apply("HTTPS://GOOGLE.COM")
+        )
+        assertEquals(
+            "WWW.GOOGLE.COM/x",
+            UrlStep.apply("WWW.GOOGLE.COM/x")
+        )
+        assertEquals(
+            "https://www.google.com",
+            UrlStep.apply("https://www.google.com")
+        )
+        assertEquals(
+            "https://WWW.GOOGLE.ORG",
+            UrlStep.apply("https://WWW.GOOGLE.ORG")
+        )
     }
 
     @Test

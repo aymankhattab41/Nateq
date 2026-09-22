@@ -255,7 +255,8 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     number = incomingNumber,
                     contactName = contactName,
                     template = settings.getCallerAnnouncementTemplate(),
-                    privacyLocked = privacyLocked
+                    privacyLocked = privacyLocked,
+                    numberReadingMode = settings.getNumberReadingMode()
                 )
 
                 val speechRate = settings.getCallerAnnouncementRate()
@@ -365,7 +366,8 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         number: String?,
         contactName: String?,
         template: String?,
-        privacyLocked: Boolean
+        privacyLocked: Boolean,
+        numberReadingMode: Int = 1
     ): String {
         // عند القفل ننطق العبارة العامة فقط حتى لو ضبط
         // المستخدم قالباً أو اسم من.
@@ -382,12 +384,16 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 .replace("{number}", number.orEmpty())
                 .trim()
             if (filled.isBlank()) {
-                buildDefaultCallerPhrase(context, number, contactName)
+                buildDefaultCallerPhrase(
+                    context, number, contactName, numberReadingMode
+                )
             } else {
                 filled
             }
         } else {
-            buildDefaultCallerPhrase(context, number, contactName)
+            buildDefaultCallerPhrase(
+                context, number, contactName, numberReadingMode
+            )
         }
     }
 
@@ -398,7 +404,8 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
     private fun buildDefaultCallerPhrase(
         context: Context,
         number: String?,
-        contactName: String?
+        contactName: String?,
+        numberReadingMode: Int = 1
     ): String {
         val dynamicText = (contactName ?: number).orEmpty()
         val isArabic = !dynamicText.any { it.isLetter() } ||
@@ -413,7 +420,9 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 lang,
                 R.string.caller_from_number,
                 R.string.caller_from_number
-            ) + formatCallerNumberForSpeech(number, isArabic)
+            ) + formatCallerNumberForSpeech(
+                number, isArabic, numberReadingMode
+            )
             else -> LocaleUtils.stringForSpeech(
                 context, lang, R.string.caller_only, R.string.caller_only
             )
@@ -650,25 +659,21 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
     }
 }
 
-/** بند 3.2/3.1: نطق رقم المتصل المجهول رقماً رقماً (نمط أرقام الهواتف
- *  في [PhoneNumberStep]) — كان الرقم لا يُنطق أصلاً في العبارة
- *  الافتراضية («اتصال وارد من رقم غير محفوظ» دون الرقم). */
+/** بند 3.2/3.1: نطق رقم المتصل المجهول وفق طريقة نطق الأرقام
+ *  المختارة (مفردة/زوجية/ثلاثية..) — مع الحفاظ على بادئة زائد إن وُجدت. */
 internal fun formatCallerNumberForSpeech(
     number: String,
-    isArabic: Boolean
+    isArabic: Boolean,
+    mode: Int = 1
 ): String {
     val digits = number.filter { it.isDigit() }
     if (digits.isEmpty()) return ""
     val hasPlus = number.trimStart().startsWith("+")
-    val plusWord = if (isArabic) "زائد" else "plus"
-    val words = digits.map { ch ->
-        val digit = ch.digitToInt()
-        if (isArabic) {
-            NumberSpeech.toArabicWords(digit, isFeminine = false)
-        } else {
-            NumberSpeech.toEnglishWords(digit)
-        }
-    }
-    val spokenDigits = words.joinToString(" ")
-    return if (hasPlus) " $plusWord $spokenDigits" else " $spokenDigits"
+    val inputStr = if (hasPlus) "+$digits" else digits
+    val spoken = NumberSpeech.formatByMode(
+        mode = mode.coerceIn(1, 8),
+        numberStr = inputStr,
+        isEnglish = !isArabic
+    )
+    return " $spoken"
 }

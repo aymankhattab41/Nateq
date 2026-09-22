@@ -89,15 +89,17 @@ class TextProcessor(
         injectedSettings?.getPunctuationLevel() ?: PunctuationLevels.SOME
     }
 
-    /** خطوة نطق الأرقام — تتبع إعداد لغة نطق الأرقام لحظياً. */
-    private val numberStep = NumberStep {
-        injectedSettings?.getNumberReadingLanguage()
-    }
+    /** خطوة نطق الأرقام — تتبع إعداد لغة ونمط نطق الأرقام لحظياً. */
+    private val numberStep = NumberStep(
+        languageProvider = { injectedSettings?.getNumberReadingLanguage() },
+        modeProvider = { injectedSettings?.getNumberReadingMode() ?: 1 }
+    )
 
-    /** خطوة نطق أرقام الهواتف — تتبع إعداد لغة نطق الأرقام لحظياً. */
-    private val phoneNumberStep = PhoneNumberStep {
-        injectedSettings?.getNumberReadingLanguage()
-    }
+    /** خطوة نطق أرقام الهواتف — تتبع إعداد لغة ونمط نطق الأرقام لحظياً. */
+    private val phoneNumberStep = PhoneNumberStep(
+        languageProvider = { injectedSettings?.getNumberReadingLanguage() },
+        modeProvider = { injectedSettings?.getNumberReadingMode() ?: 1 }
+    )
 
     // خطوات التمهيد: تُنفَّذ قبل بوابة المسار السريع
     // (تطبيع/تشكيل/إيموجي/قاموس).
@@ -242,19 +244,23 @@ class TextProcessor(
         } else {
             null
         }
-        for (step in preamble) result = step.apply(result, languageTag)
+        val urls = ArrayList<String>()
+        var out = maskUrls(result, urls)
+        for (step in preamble) out = step.apply(out, languageTag)
 
         // المسار السريع (Fast-path): إن لم يحتوِ النص على أي محفِّز لأرقام
         // الرموز/الصيغ (أرقام، فواصل، رموز عملة، حروف رومانية...) — أي نص
         // عربي صافٍ بلا أرقام — نتخطى كل مراحل regex الثقيلة (التواريخ/
         // الأوقات/العملات/الروابط/الرومانية/الهواتف/الأرقام/الرموز) ونذهب
         // مباشرةً لتنظيف المسافات. يوفّر تريليونات المطابقات على كل إعلان.
-        if (!requiresRegexPipeline(result)) {
-            return finalizeArabic(voweledSource, CleanupStep.apply(result))
+        if (!requiresRegexPipeline(out)) {
+            out = unmaskUrls(out, urls)
+            return finalizeArabic(voweledSource, CleanupStep.apply(out))
         }
 
-        for (step in heavySteps) result = step.apply(result)
-        return finalizeArabic(voweledSource, CleanupStep.apply(result))
+        for (step in heavySteps) out = step.apply(out)
+        out = unmaskUrls(out, urls)
+        return finalizeArabic(voweledSource, CleanupStep.apply(out))
     }
 
     /**
@@ -332,21 +338,25 @@ class TextProcessor(
         // لنمط التقسيم المعدَّ مسبقاً على صيغة موحَّدة.
         val normalized = Normalizer.normalize(text, Normalizer.Form.NFC)
         if (LanguageCode.isEnglish(languageTag)) {
-            if (!requiresEnglishPipeline(normalized)) {
-                return CleanupStep.apply(normalized)
+            val urls = ArrayList<String>()
+            var english = maskUrls(normalized, urls)
+            if (requiresEnglishPipeline(english)) {
+                for (step in englishBaseSteps) {
+                    english = step.applyEnglish(english)
+                }
             }
-            var english = normalized
-            for (step in englishBaseSteps) {
-                english = step.applyEnglish(english)
-            }
-            return english
+            english = unmaskUrls(english, urls)
+            return CleanupStep.apply(english)
         }
         if (!LanguageCode.isArabic(languageTag)) return normalized
-        if (!requiresRegexPipeline(normalized)) {
-            return CleanupStep.apply(normalized)
+        val urls = ArrayList<String>()
+        var result = maskUrls(normalized, urls)
+        if (!requiresRegexPipeline(result)) {
+            result = unmaskUrls(result, urls)
+            return CleanupStep.apply(result)
         }
-        var result = normalized
         for (step in baseSteps) result = step.apply(result)
+        result = unmaskUrls(result, urls)
         return result
     }
 

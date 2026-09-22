@@ -117,6 +117,20 @@ class CallerAnnouncementReceiverTest {
     }
 
     @Test
+    fun `formatCallerNumberForSpeech respects reading mode`() {
+        // نطق رقم المتصل في أزواج (mode 2)
+        assertEquals(
+            " زائد عشرون, أحد عشر",
+            formatCallerNumberForSpeech("+2011", isArabic = true, mode = 2)
+        )
+        // نطق رقم المتصل في مجموعات ثلاثية (mode 3)
+        assertEquals(
+            " plus two, zero one one",
+            formatCallerNumberForSpeech("+2011", isArabic = false, mode = 3)
+        )
+    }
+
+    @Test
     fun `custom name matches exact digits`() {
         assertEquals("أحمد", match("0637091234", "0637091234"))
     }

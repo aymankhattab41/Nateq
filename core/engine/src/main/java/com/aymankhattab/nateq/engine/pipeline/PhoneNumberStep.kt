@@ -8,6 +8,7 @@ import java.util.regex.Pattern
  *  (مسافة/شرطة/نقطة/أقواس) وبداية + اختيارية. الخط يعمل للعربية فقط، فلغة
  *  النطق ثابتة (عربية) داخل هذه الخطوة. */
 internal class PhoneNumberStep(
+    private val modeProvider: () -> Int = { 1 },
     private val languageProvider: () -> String? = { null }
 ) : TextProcessingStep {
 
@@ -108,16 +109,13 @@ internal class PhoneNumberStep(
             }
             val isArabic = isArabicContext
             val hasPlus = raw.trimStart().startsWith("+")
-            val plusWord = if (isArabic) "زائد" else "plus"
-            val spokenDigits = digits.map { it.digitToInt() }
-                .joinToString(" ") {
-                    // الأرقام تُنطق كأرقام مجردة (مذكرة): «خمسة» لا «خمس».
-                    if (isArabic) NumberSpeech
-                        .toArabicWords(it, isFeminine = false)
-                    else NumberSpeech.toEnglishWords(it)
-                }
-            val spoken =
-                if (hasPlus) "$plusWord $spokenDigits" else spokenDigits
+            val plusPrefix = if (hasPlus) "+" else ""
+            val mode = modeProvider().coerceIn(1, 8)
+            val spoken = NumberSpeech.formatByMode(
+                mode = mode,
+                numberStr = "$plusPrefix$digits",
+                isEnglish = !isArabic
+            )
             val quoted = java.util.regex.Matcher
                 .quoteReplacement(spoken)
             matcher.appendReplacement(buffer, quoted)

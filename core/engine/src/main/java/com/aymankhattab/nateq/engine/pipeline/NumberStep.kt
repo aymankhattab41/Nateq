@@ -6,6 +6,7 @@ import java.util.regex.Pattern
 /** معالجة الأرقام العادية: 1234 → «ألف ومائتان وأربعة وثلاثون» (عربية)
  *  أو «one thousand two hundred thirty four» (إنجليزية). */
 internal class NumberStep(
+    private val modeProvider: () -> Int = { 1 },
     private val languageProvider: () -> String? = { null }
 ) : TextProcessingStep {
 
@@ -123,11 +124,10 @@ internal class NumberStep(
         // Double يتجاوز دقته 2^53 (≈9.007×10^15) فيشوّه البطاقات/الرموز الطويلة
         // (مثل 9999999999999999 التي كانت تنطق «عشرة كوادريليون» خطأً).
         if (cleaned.indexOf('.') < 0) {
-            // أرقام الهواتف (التي تبدأ بـ 0 ولها 7 إلى 15 خانة)
-            // تُنطق مفردة دائماً
+            // أرقام تبدأ بـ 0 ولها 7 إلى 15 خانة تُعامل حسب نمط قراءة الأرقام
             if (cleaned.startsWith("0") && cleaned.length in 7..15) {
-                return if (english) englishSpokenDigits(cleaned)
-                else NumberWordsConverter.spokenDigits(cleaned)
+                val mode = modeProvider().coerceIn(1, 8)
+                return NumberSpeech.formatByMode(mode, cleaned, english)
             }
             val longValue = cleaned.toLongOrNull()
             if (longValue != null) {
@@ -136,10 +136,9 @@ internal class NumberStep(
             }
             // **بند 3.6:** سلسلة رقمية أعرض من Long (رقم وطني/حساب بنكي/
             // تسلسل 20+ خانة): toLongOrNull تعيد null فكانت تنتقل إلى
-            // Double فتتشوه القيمة (دقته 2^53 فقط) — نقرأ الخانات رقماً
-            // رقماً بأمان عبر المحوِّل.
-            return if (english) englishSpokenDigits(cleaned)
-            else NumberWordsConverter.spokenDigits(cleaned)
+            // Double فتتشوه القيمة (دقته 2^53 فقط) — نقرأ الخانات حسب النمط.
+            val mode = modeProvider().coerceIn(1, 8)
+            return NumberSpeech.formatByMode(mode, cleaned, english)
         }
         if (english) return englishDecimalWords(cleaned)
         val number = cleaned.toDoubleOrNull() ?: return numberStr
