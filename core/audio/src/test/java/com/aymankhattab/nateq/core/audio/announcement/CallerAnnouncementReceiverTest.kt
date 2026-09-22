@@ -106,8 +106,12 @@ class CallerAnnouncementReceiverTest {
             formatCallerNumberForSpeech("06370912", isArabic = true)
         )
         assertEquals(
-            " six three nine",
+            " plus six three nine",
             formatCallerNumberForSpeech("+639", isArabic = false)
+        )
+        assertEquals(
+            " زائد اثنان صفر واحد واحد",
+            formatCallerNumberForSpeech("+2011", isArabic = true)
         )
         assertEquals("", formatCallerNumberForSpeech("غير محدد", true))
     }

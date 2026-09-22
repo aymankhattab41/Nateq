@@ -424,6 +424,7 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+• Phone numbers always spoken digit-by-digit and instant battery announcement: enforced digit-by-digit pronunciation for all phone numbers regardless of the selected number grouping mode (pairs, triples, quintuples...), and trimmed battery charger tones to start spoken announcements immediately after the cue without any audible gap
 • Pronounce leading (+) in phone numbers and update service notification title: pronounce (+) as "زائد" or "plus" per configured number language for international phone numbers (e.g. +20 11 5552442) instead of skipping it, and brand the persistent background service notification with LORD TTS
 • Suppress update notifications in notification shade: prevented download completion notifications from appearing in the system notification shade after APK download or installation to avoid confusion and redundant install prompts
 • Highlight "Follow screen-reader speed" switch: moved the reader speed sync switch to General Settings directly beneath the default speech rate slider, and clearly displayed its active state in the section summary

@@ -935,6 +935,19 @@ class PipelineStepsTest {
     }
 
     @Test
+    fun phone_numbersStartingWithZero_alwaysSingleDigits() {
+        // أي رقم يبدأ بـ 0 وله 7-15 خانة يُعامل كهاتف ويُنطق مفردة دائماً
+        assertEquals(
+            "صفر اثنان اثنان ثلاثة أربعة خمسة ستة سبعة ثمانية تسعة",
+            PhoneNumberStep.apply("0223456789")
+        )
+        assertEquals(
+            "صفر اثنان اثنان ثلاثة أربعة خمسة ستة سبعة ثمانية تسعة",
+            NumberStep.apply("0223456789")
+        )
+    }
+
+    @Test
     fun url_uppercaseSchemeAndWww_stillReadableDomain() {
         // الادعاء: الروابط بحروف كبيرة كانت تُشوَّه («HTTPS://GOOGLE.COM» ←
         // «موقع HTTPS») لأن إزالة الشعار حساسة لحالة الأحرف.

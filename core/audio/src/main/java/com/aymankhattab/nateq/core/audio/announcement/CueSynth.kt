@@ -33,8 +33,8 @@ internal object CueSynth {
             "soft_ding" -> 950
             else -> 1250
         }
-        CueType.BATTERY_CHARGING -> 500
-        CueType.BATTERY_DISCONNECTED -> 550
+        CueType.BATTERY_CHARGING -> 260
+        CueType.BATTERY_DISCONNECTED -> 260
         CueType.BATTERY_FULL -> 650
         CueType.BATTERY_LOW -> 620
     }
@@ -114,23 +114,20 @@ internal object CueSynth {
     }
 
     private fun batteryCharging(): FloatArray {
-        val dur = 0.5
+        val dur = 0.26
         val n = (dur * SAMPLE_RATE).toInt()
         val floats = FloatArray(n)
         val fStart = 440.0
         val fEnd = 880.0
-        val riseDur = 0.4
         val peak = 0.68
         val atk = 0.01
+        val rel = 0.02
         for (i in 0 until n) {
             val t = i.toDouble() / SAMPLE_RATE
-            val env = if (t <= riseDur) {
-                (t / atk).coerceAtMost(1.0) *
-                    exp(-(t - riseDur) / 0.08).coerceAtMost(1.0)
-            } else {
-                0.0
-            }
-            val frac = (t / riseDur).coerceIn(0.0, 1.0)
+            val attackEnv = (t / atk).coerceAtMost(1.0)
+            val releaseEnv = ((dur - t) / rel).coerceIn(0.0, 1.0)
+            val env = attackEnv * releaseEnv
+            val frac = (t / dur).coerceIn(0.0, 1.0)
             val freq = fStart + (fEnd - fStart) * frac
             floats[i] = (sin(2.0 * PI * freq * t) * env * peak).toFloat()
         }
@@ -138,23 +135,20 @@ internal object CueSynth {
     }
 
     private fun batteryDisconnected(): FloatArray {
-        val dur = 0.55
+        val dur = 0.26
         val n = (dur * SAMPLE_RATE).toInt()
         val floats = FloatArray(n)
         val fStart = 880.0
         val fEnd = 330.0
-        val fallDur = 0.45
         val peak = 0.68
         val atk = 0.01
+        val rel = 0.02
         for (i in 0 until n) {
             val t = i.toDouble() / SAMPLE_RATE
-            val env = if (t <= fallDur) {
-                (t / atk).coerceAtMost(1.0) *
-                    exp(-(t - fallDur) / 0.1).coerceAtMost(1.0)
-            } else {
-                0.0
-            }
-            val frac = (t / fallDur).coerceIn(0.0, 1.0)
+            val attackEnv = (t / atk).coerceAtMost(1.0)
+            val releaseEnv = ((dur - t) / rel).coerceIn(0.0, 1.0)
+            val env = attackEnv * releaseEnv
+            val frac = (t / dur).coerceIn(0.0, 1.0)
             val freq = fStart + (fEnd - fStart) * frac
             floats[i] = (sin(2.0 * PI * freq * t) * env * peak).toFloat()
         }

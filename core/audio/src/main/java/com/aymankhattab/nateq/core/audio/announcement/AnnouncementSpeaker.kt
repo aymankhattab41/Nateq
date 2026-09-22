@@ -869,7 +869,8 @@ class AnnouncementSpeaker(
             if (gen == speechGeneration.get() && ok) {
                 startSpeech(
                     text, locale, speechRate, pitch, volume,
-                    emojiCfg, parts, engineOverride
+                    emojiCfg, parts, engineOverride,
+                    immediate = true
                 )
             } else {
                 // بند 2.3: فشل عزف النغمة أو تَقادم دورة النطق أثناءها
@@ -889,22 +890,30 @@ class AnnouncementSpeaker(
         volume: Float,
         emojiCfg: EmojiSpeechConfig?,
         parts: List<SpeechPart>?,
-        engineOverride: String? = null
+        engineOverride: String? = null,
+        immediate: Boolean = false
     ) {
         ensureInit({ ready ->
             if (!ready) {
                 releaseAudioFocus()
                 return@ensureInit
             }
-            // تأجيل قصير يسمح لاتصال محرك TTS بالاستقرار بعد
-            // onInit (حتى لو أعلن Success مبكراً، قد يبقى ربط
-            // النظام معلقاً لحظياً ويُسقط speak فورياً).
-            mainHandler.postDelayed({
+            if (immediate) {
                 doSpeakParts(
                     text, locale, speechRate, pitch, volume,
                     emojiCfg, parts, attempt = 1
                 )
-            }, 80)
+            } else {
+                // تأجيل قصير يسمح لاتصال محرك TTS بالاستقرار بعد
+                // onInit (حتى لو أعلن Success مبكراً، قد يبقى ربط
+                // النظام معلقاً لحظياً ويُسقط speak فورياً).
+                mainHandler.postDelayed({
+                    doSpeakParts(
+                        text, locale, speechRate, pitch, volume,
+                        emojiCfg, parts, attempt = 1
+                    )
+                }, 80)
+            }
         }, engineOverride)
     }
 

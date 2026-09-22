@@ -339,4 +339,25 @@ class NumberSpeechTest {
             NumberSpeech.formatByMode(5, "30496.00", true)
         )
     }
+
+    @Test
+    fun formatByMode_phoneNumbersAlwaysSingleDigits() {
+        // أرقام الهواتف دائماً تُنطق مفردة حتى لو كان الوضع ثلاثياً أو خماسياً
+        assertEquals(
+            "صفر واحد صفر واحد اثنان ثلاثة أربعة خمسة ستة سبعة ثمانية",
+            NumberSpeech.formatByMode(3, "01012345678", false)
+        )
+        assertEquals(
+            "صفر واحد صفر واحد اثنان ثلاثة أربعة خمسة ستة سبعة ثمانية",
+            NumberSpeech.formatByMode(5, "01012345678", false)
+        )
+        assertEquals(
+            "زائد اثنان صفر واحد واحد خمسة خمسة خمسة اثنان أربعة أربعة اثنان",
+            NumberSpeech.formatByMode(3, "+20 11 5552442", false)
+        )
+        assertEquals(
+            "plus two zero one one five five five two four four two",
+            NumberSpeech.formatByMode(4, "+20 11 5552442", true)
+        )
+    }
 }

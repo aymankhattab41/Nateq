@@ -659,6 +659,8 @@ internal fun formatCallerNumberForSpeech(
 ): String {
     val digits = number.filter { it.isDigit() }
     if (digits.isEmpty()) return ""
+    val hasPlus = number.trimStart().startsWith("+")
+    val plusWord = if (isArabic) "زائد" else "plus"
     val words = digits.map { ch ->
         val digit = ch.digitToInt()
         if (isArabic) {
@@ -667,5 +669,6 @@ internal fun formatCallerNumberForSpeech(
             NumberSpeech.toEnglishWords(digit)
         }
     }
-    return " ${words.joinToString(" ")}"
+    val spokenDigits = words.joinToString(" ")
+    return if (hasPlus) " $plusWord $spokenDigits" else " $spokenDigits"
 }

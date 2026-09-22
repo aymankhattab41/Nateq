@@ -177,7 +177,7 @@ internal class SoundPoolCueSink(
 
     companion object {
         private const val TAG = "NATEQ_CUE_SP"
-        private const val DONE_MARGIN_MS = 50L
+        private const val DONE_MARGIN_MS = 0L
     }
 
     private val soundPool: android.media.SoundPool

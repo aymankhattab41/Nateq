@@ -123,6 +123,12 @@ internal class NumberStep(
         // Double يتجاوز دقته 2^53 (≈9.007×10^15) فيشوّه البطاقات/الرموز الطويلة
         // (مثل 9999999999999999 التي كانت تنطق «عشرة كوادريليون» خطأً).
         if (cleaned.indexOf('.') < 0) {
+            // أرقام الهواتف (التي تبدأ بـ 0 ولها 7 إلى 15 خانة)
+            // تُنطق مفردة دائماً
+            if (cleaned.startsWith("0") && cleaned.length in 7..15) {
+                return if (english) englishSpokenDigits(cleaned)
+                else NumberWordsConverter.spokenDigits(cleaned)
+            }
             val longValue = cleaned.toLongOrNull()
             if (longValue != null) {
                 return if (english) NumberSpeech.toEnglishWords(longValue)

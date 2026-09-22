@@ -362,7 +362,6 @@ object NumberSpeech {
         numberStr: String,
         isEnglish: Boolean
     ): String {
-        val safeMode = mode.coerceIn(1, 8)
         val trimmed = numberStr.trim()
         if (trimmed.isEmpty()) return ""
 
@@ -370,6 +369,9 @@ object NumberSpeech {
         var s = trimmed
         if (s.startsWith("-")) {
             sign = if (isEnglish) "negative " else "سالب "
+            s = s.substring(1).trim()
+        } else if (s.startsWith("+")) {
+            sign = if (isEnglish) "plus " else "زائد "
             s = s.substring(1).trim()
         }
 
@@ -385,6 +387,11 @@ object NumberSpeech {
             fracDigits = null
         }
 
+        // أرقام الهواتف دائماً تُنطق مفردة (خانة خانة) مهما كانت طريقة
+        // نطق الأرقام المختارة (ثلاثي/خماسي..)
+        val isPhone = isPhoneNumber(trimmed, intDigits)
+        val safeMode = if (isPhone) 1 else mode.coerceIn(1, 8)
+
         val intWords = formatDigitsByMode(safeMode, intDigits, isEnglish)
         val result = if (!fracDigits.isNullOrEmpty()) {
             val fracSep = if (isEnglish) " point " else " فاصلة "
@@ -398,6 +405,17 @@ object NumberSpeech {
             intWords
         }
         return (sign + result).trim()
+    }
+
+    /** التحقق هل المتوالية رقم هاتف يُلزم النطق المفرد (7..15 خانة). */
+    fun isPhoneNumber(raw: String, digits: String): Boolean {
+        if (digits.length !in 7..15) return false
+        val clean = raw.trimStart()
+        if (clean.startsWith("+")) return true
+        if (digits.startsWith("0")) return true
+        return raw.any {
+            it == '-' || it == '(' || it == ')' || it == '/'
+        }
     }
 
     /** نسخة Long عامة تحافظ على الأعداد الكبيرة السالبة وإشارتها. */
