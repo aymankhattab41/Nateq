@@ -403,4 +403,13 @@ class LanguageSegmenterTest {
         assertEquals(listOf("Bonjour le monde"), texts)
         assertEquals(listOf("fr"), tags)
     }
+
+    @Test
+    fun mixed_wifi_status_splitsCorrectly() {
+        val input = "Wi-Fi,قيد التشغيل"
+        val (texts, tags) = textsAndTags(input, "ar")
+        assertEquals(listOf("Wi-Fi,", "قيد التشغيل"), texts)
+        assertEquals(listOf("en", "ar"), tags)
+        assertEquals(input, texts.joinToString(""))
+    }
 }

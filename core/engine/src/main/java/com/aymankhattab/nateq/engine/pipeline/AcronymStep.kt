@@ -21,8 +21,6 @@ internal object AcronymStep : TextProcessingStep {
         "OK" to "أو كي",
         "USB" to "يو إس بي",
         "GPS" to "جي بي إس",
-        "Wi-Fi" to "واي فاي",
-        "WiFi" to "واي فاي",
         "م.ب." to "ميجابايت",
         "م.ب" to "ميجابايت",
         "ك.ب." to "كيلوبايت",

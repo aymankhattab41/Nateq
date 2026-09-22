@@ -1045,16 +1045,13 @@ class PipelineStepsTest {
     }
 
     @Test
-    fun acronym_wifi_hyphen() {
+    fun acronym_wifi_kept_as_latin() {
+        // يبقى ككتابة لاتينية ليُوجّه لمحرك الصوت الأجنبي
         assertEquals(
-            "اتصل واي فاي بجهاز",
+            "اتصل Wi-Fi بجهاز",
             AcronymStep.apply("اتصل Wi-Fi بجهاز")
         )
-    }
-
-    @Test
-    fun acronym_wifi_nospace() {
-        assertEquals("الشبكة واي فاي", AcronymStep.apply("الشبكة WiFi"))
+        assertEquals("الشبكة WiFi", AcronymStep.apply("الشبكة WiFi"))
     }
 
     @Test
