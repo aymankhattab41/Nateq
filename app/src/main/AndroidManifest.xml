@@ -59,6 +59,8 @@
     <!-- الوصول للإنترنت لفحص وجود تحديث جديد من GitHub Releases وتنزيل الـ APK.
          يُستخدم للفحص/التحميل فقط؛ لا تُرفع أي بيانات أو إعدادات للمستخدم. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- تنزيل تحديثات التطبيق دون إظهار إشعارات تنزيل زائدة في شريط الإشعارات -->
+    <uses-permission android:name="android.permission.DOWNLOAD_WITHOUT_NOTIFICATION" />
     <!-- استشعار حالة الاتصال بالإنترنت لتسجيل ConnectivityManager.NetworkCallback
          والتراجع الفوري للأصوات المحلية عند انقطاع الإنترنت بدل انتظار مهلة
          التوليد كاملة (صوت جوجل السحابي يعجز بدون اتصال). إذن عادي يُمنح تلقائياً. -->

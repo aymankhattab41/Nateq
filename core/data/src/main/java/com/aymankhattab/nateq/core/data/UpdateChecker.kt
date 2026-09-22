@@ -300,11 +300,19 @@ object UpdateChecker {
         ) as DownloadManager
         val request = DownloadManager.Request(Uri.parse(apkUrl))
             .setTitle("Lord TTS update")
-            .setNotificationVisibility(
-                DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
-            )
             .setAllowedOverMetered(allowMetered)
             .setAllowedOverRoaming(false)
+
+        val hiddenSet = runCatching {
+            request.setNotificationVisibility(
+                DownloadManager.Request.VISIBILITY_HIDDEN
+            )
+        }.isSuccess
+        if (!hiddenSet) {
+            request.setNotificationVisibility(
+                DownloadManager.Request.VISIBILITY_VISIBLE
+            )
+        }
 
         val publicOk = runCatching {
             request.setDestinationInExternalPublicDir(
