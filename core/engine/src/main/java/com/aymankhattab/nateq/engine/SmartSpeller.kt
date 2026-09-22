@@ -3,12 +3,12 @@ package com.aymankhattab.nateq.engine
 /**
  * التهجئة الذكية ونطق التشكيل عند التنقل الحرفي عبر TalkBack: يُرسل قارئ
  * الشاشة حرفاً واحداً (مع التشكيل صراحةً) إلى المحرك فيُنطق اسم الحرف مع
- * حركته («بَ» ← «باء مفتوحة»)، وللإنجليزية يُستعمل الأبجدية الصوتية
- * الدولية (NATO) مع تمييز الحروف الكبيرة («A» ← «Capital Alpha»).
+ * حركته («بَ» ← «باء مفتوحة»). الحروف اللاتينية تمر كما هي لمحرك النطق
+ * الأجنبي دون تحويلها لتمثيل صوتي (NATO) لضمان النطق الطبيعي أثناء الكتابة.
  *
- * لا تُهجّأ إلا المدخلات المكوّنة من حرف هجائي واحد (عربي أو لاتيني)
- * وما يلحقه من علامات تشكيل عربية؛ أي مدخل آخر يُعاد كما هو (null)
- * ليبقى النص في مسار المعالجة المعتاد.
+ * لا تُهجّأ إلا المدخلات المكوّنة من حرف هجائي عربي واحد وما يلحقه من
+ * علامات تشكيل عربية؛ أي مدخل آخر يُعاد كما هو (null) ليبقى النص في
+ * مسار المعالجة المعتاد.
  */
 object SmartSpeller {
 
@@ -59,36 +59,6 @@ object SmartSpeller {
         'ة' to "تاء مربوطة"
     )
 
-    /** ألفبائية NATO الصوتية للحروف اللاتينية (تُنطق بحروفها الكبيرة). */
-    private val NATO_LETTERS = mapOf(
-        'a' to "Alpha",
-        'b' to "Bravo",
-        'c' to "Charlie",
-        'd' to "Delta",
-        'e' to "Echo",
-        'f' to "Foxtrot",
-        'g' to "Golf",
-        'h' to "Hotel",
-        'i' to "India",
-        'j' to "Juliett",
-        'k' to "Kilo",
-        'l' to "Lima",
-        'm' to "Mike",
-        'n' to "November",
-        'o' to "Oscar",
-        'p' to "Papa",
-        'q' to "Quebec",
-        'r' to "Romeo",
-        's' to "Sierra",
-        't' to "Tango",
-        'u' to "Uniform",
-        'v' to "Victor",
-        'w' to "Whiskey",
-        'x' to "Xray",
-        'y' to "Yankee",
-        'z' to "Zulu"
-    )
-
     /** علامات التشكيل العربية وألفاظها في نطق الحرف المفرد. */
     private val TASHKEEL_WORDS = mapOf(
         '\u064B' to "منصوبة", // تنوين فتح
@@ -109,8 +79,8 @@ object SmartSpeller {
         '\u065E' + '\u065F' + '\u0671'
 
     /**
-     * يهجّئ المدخل إن كان حرفاً هجائياً واحداً (عربي أو لاتيني) وقد
-     * تلحقه علامات تشكيل عربية؛ وإلا يعيد null ليصار المعالجة العادية.
+     * يهجّئ المدخل إن كان حرفاً عربياً واحداً وقد تلحقه علامات تشكيل عربية؛
+     * وإلا يعيد null ليصار إلى المعالجة العادية.
      */
     fun spell(input: String, languageTag: String): String? {
         val text = input.trim()
@@ -120,11 +90,10 @@ object SmartSpeller {
         for (i in 1 until text.length) {
             if (text[i] !in ALLOWED_MARKS) return null
         }
-        return when {
-            base in ARABIC_LETTERS -> spellArabic(base, text)
-            base in NATO_LETTERS || base.lowercaseChar() in NATO_LETTERS ->
-                spellEnglish(base)
-            else -> null
+        return if (base in ARABIC_LETTERS) {
+            spellArabic(base, text)
+        } else {
+            null
         }
     }
 
@@ -149,11 +118,5 @@ object SmartSpeller {
         } else {
             baseName + " " + adjectives.joinToString(" ")
         }
-    }
-
-    /** النطق اللاتيني: NATO مع «Capital» للحروف الكبيرة. */
-    private fun spellEnglish(base: Char): String {
-        val word = NATO_LETTERS.getValue(base.lowercaseChar())
-        return if (base.isUpperCase()) "Capital $word" else word
     }
 }

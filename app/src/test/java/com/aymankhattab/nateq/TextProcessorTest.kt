@@ -351,15 +351,16 @@ class TextProcessorTest {
     }
 
     @Test
-    fun smartSpelling_singleLetterArabicAndLatin() {
+    fun smartSpelling_singleLetterArabicSpelled_latinPassesThrough() {
         val ctx: Context = ApplicationProvider.getApplicationContext()
         val settings = SettingsRepository(ctx)
         settings.setSmartSpellingEnabled(true)
         val processorSpelling = TextProcessor(ctx, settings)
         assertEquals("باء", processorSpelling.process("ب", "ar"))
         assertEquals("باء مفتوحة", processorSpelling.process("بَ", "ar"))
-        assertEquals("Capital Alpha", processorSpelling.process("A", "en"))
-        assertEquals("Alpha", processorSpelling.process("a", "en"))
+        // الحروف اللاتينية تمر كأحرف طبيعية بلا NATO
+        assertEquals("A", processorSpelling.process("A", "en"))
+        assertEquals("a", processorSpelling.process("a", "en"))
         // الكلمات العادية لا تتأثر بالتهجئة
         assertEquals("مرحبا", processorSpelling.process("مرحبا", "ar"))
     }

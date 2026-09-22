@@ -5,7 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/** اختبارات التهجئة الذكية (نطق الحرف المفرد مع الحركات وأسماء NATO). */
+/** اختبارات التهجئة الذكية (نطق الحرف العربي المفرد مع الحركات). */
 class SmartSpellerTest {
 
     @Test
@@ -61,12 +61,13 @@ class SmartSpellerTest {
     }
 
     @Test
-    fun englishLowerAndUpper_natoWithCapitalPrefix() {
-        assertEquals("Alpha", SmartSpeller.spell("a", "en"))
-        assertEquals("Capital Alpha", SmartSpeller.spell("A", "en"))
-        assertEquals("Zulu", SmartSpeller.spell("z", "en"))
-        assertEquals("Capital Zulu", SmartSpeller.spell("Z", "en"))
-        assertEquals("Whiskey", SmartSpeller.spell("w", "en"))
+    fun englishLetters_notSpelled_passThroughCleanly() {
+        // الحروف اللاتينية لا تُهجّأ بـ NATO لضمان النطق الطبيعي أثناء الكتابة
+        assertNull(SmartSpeller.spell("a", "en"))
+        assertNull(SmartSpeller.spell("A", "en"))
+        assertNull(SmartSpeller.spell("z", "en"))
+        assertNull(SmartSpeller.spell("Z", "en"))
+        assertNull(SmartSpeller.spell("w", "en"))
     }
 
     @Test
