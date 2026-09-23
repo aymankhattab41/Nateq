@@ -539,6 +539,32 @@ class TimeAnnouncementManagerTest {
     }
 
     @Test
+    fun hourlyChimeCue_perQuarterCustomUri() {
+        settings.setTimeChimeEnabled(true)
+        settings.setTimeChimeAt0Enabled(false)
+        settings.setTimeChimeAt15Enabled(true)
+        settings.setTimeChimeAt30Enabled(true)
+        settings.setTimeChimeAt45Enabled(true)
+        settings.setCustomChimeUri15("content://chime/15")
+        settings.setCustomChimeUri30("content://chime/30")
+        settings.setCustomChimeUri45("content://chime/45")
+
+        // كل ربع يحمل ملفه المخصص المستقل.
+        fixedClock.setTo(millisFor(2017, Calendar.JANUARY, 1, 12, 15))
+        assertEquals("content://chime/15", hourlyChimeCue()?.customUri)
+        fixedClock.setTo(millisFor(2017, Calendar.JANUARY, 1, 12, 30))
+        assertEquals("content://chime/30", hourlyChimeCue()?.customUri)
+        fixedClock.setTo(millisFor(2017, Calendar.JANUARY, 1, 12, 45))
+        assertEquals("content://chime/45", hourlyChimeCue()?.customUri)
+
+        // رأس الساعة :00 تبقي مسارها الأصلي المستقل (custom_chime_uri).
+        settings.setTimeChimeAt0Enabled(true)
+        settings.setCustomChimeUri("content://chime/00")
+        fixedClock.setTo(millisFor(2017, Calendar.JANUARY, 1, 12, 0))
+        assertEquals("content://chime/00", hourlyChimeCue()?.customUri)
+    }
+
+    @Test
     fun calculateInitialDelay_withQuarterChimesEnabled() {
         // If interval is 60 but chime is enabled at 15
         val clock = FakeClock(

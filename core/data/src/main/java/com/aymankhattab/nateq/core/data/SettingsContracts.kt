@@ -309,6 +309,24 @@ interface AnnouncementPrefs {
     /** يعيّن مسار URI لملف رنة الساعة المخصص. */
     fun setCustomChimeUri(uri: String)
 
+    /** مسار URI للملف المخصص لرنة الربع (:15) — فارغ إن لم يُحدد. */
+    fun getCustomChimeUri15(): String
+
+    /** يعيّن مسار URI للملف المخصص لرنة الربع (:15). */
+    fun setCustomChimeUri15(uri: String)
+
+    /** مسار URI للملف المخصص لرنة النصف (:30) — فارغ إن لم يُحدد. */
+    fun getCustomChimeUri30(): String
+
+    /** يعيّن مسار URI للملف المخصص لرنة النصف (:30). */
+    fun setCustomChimeUri30(uri: String)
+
+    /** مسار URI للملف المخصص لرنة الـ 45 دقيقة (:45) — فارغ إن لم يُحدد. */
+    fun getCustomChimeUri45(): String
+
+    /** يعيّن مسار URI للملف المخصص لرنة الـ 45 دقيقة (:45). */
+    fun setCustomChimeUri45(uri: String)
+
     /** تفعيل الدقة القصوى لإعلان الوقت (setAlarmClock بدل
      *  setExactAndAllowWhileIdle). */
     fun isTimeAlarmMaxPrecisionEnabled(): Boolean

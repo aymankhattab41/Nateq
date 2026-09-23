@@ -1315,6 +1315,24 @@ class SettingsRepository(context: Context) :
     override fun setCustomChimeUri(uri: String) =
         prefs.edit().putString("custom_chime_uri", uri).apply()
 
+    override fun getCustomChimeUri15(): String =
+        prefs.getString("custom_chime_uri_15", "").orEmpty()
+
+    override fun setCustomChimeUri15(uri: String) =
+        prefs.edit().putString("custom_chime_uri_15", uri).apply()
+
+    override fun getCustomChimeUri30(): String =
+        prefs.getString("custom_chime_uri_30", "").orEmpty()
+
+    override fun setCustomChimeUri30(uri: String) =
+        prefs.edit().putString("custom_chime_uri_30", uri).apply()
+
+    override fun getCustomChimeUri45(): String =
+        prefs.getString("custom_chime_uri_45", "").orEmpty()
+
+    override fun setCustomChimeUri45(uri: String) =
+        prefs.edit().putString("custom_chime_uri_45", uri).apply()
+
     override fun isTimeAlarmMaxPrecisionEnabled(): Boolean =
         prefs.getBoolean("time_alarm_max_precision", false)
     override fun setTimeAlarmMaxPrecisionEnabled(enabled: Boolean) =

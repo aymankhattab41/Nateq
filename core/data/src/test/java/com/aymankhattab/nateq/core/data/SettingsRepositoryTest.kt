@@ -998,4 +998,41 @@ class SettingsRepositoryTest {
         repo.resetAllToDefault()
         assertEquals("", repo.getCustomChimeUri())
     }
+
+    @Test
+    fun quarterCustomChimeUris_saveRetrieveExportAndReset() {
+        // لكل ربع مسار مستقل لا يمس مسار رأس الساعة :00.
+        assertEquals("", repo.getCustomChimeUri15())
+        assertEquals("", repo.getCustomChimeUri30())
+        assertEquals("", repo.getCustomChimeUri45())
+
+        val uri15 = "content://media/external/audio/media/115"
+        val uri30 = "content://media/external/audio/media/130"
+        val uri45 = "content://media/external/audio/media/145"
+        repo.setCustomChimeUri15(uri15)
+        repo.setCustomChimeUri30(uri30)
+        repo.setCustomChimeUri45(uri45)
+
+        assertEquals(uri15, repo.getCustomChimeUri15())
+        assertEquals(uri30, repo.getCustomChimeUri30())
+        assertEquals(uri45, repo.getCustomChimeUri45())
+        assertEquals("", repo.getCustomChimeUri())
+
+        // محاكاة إعادة تشغيل العملية عبر بناء مثيل جديد.
+        val restarted = SettingsRepository.create(context)
+        assertEquals(uri15, restarted.getCustomChimeUri15())
+        assertEquals(uri30, restarted.getCustomChimeUri30())
+        assertEquals(uri45, restarted.getCustomChimeUri45())
+
+        // التصدير يشمل المفاتيح الثلاثة بلا بادئة _.
+        val exported = repo.exportSettings()
+        assertEquals(uri15, exported["custom_chime_uri_15"])
+        assertEquals(uri30, exported["custom_chime_uri_30"])
+        assertEquals(uri45, exported["custom_chime_uri_45"])
+
+        repo.resetAllToDefault()
+        assertEquals("", repo.getCustomChimeUri15())
+        assertEquals("", repo.getCustomChimeUri30())
+        assertEquals("", repo.getCustomChimeUri45())
+    }
 }

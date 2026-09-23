@@ -31,6 +31,10 @@
     <string name="time_chime_custom_choose">Choose chime file</string>
     <string name="time_chime_custom_preview">Preview</string>
     <string name="time_chime_custom_clear">Remove custom chime</string>
+    <string name="time_chime_custom_quarters_title">Custom chime per quarter</string>
+    <string name="time_chime_custom_quarter_15">Quarter (:15) chime</string>
+    <string name="time_chime_custom_quarter_30">Half (:30) chime</string>
+    <string name="time_chime_custom_quarter_45">Quarter-to (:45) chime</string>
     <string name="time_chime_custom_status_default">Current chime: Default synthetic chimes</string>
     <string name="time_chime_custom_status_file">Custom chime: %1$s</string>
     <string name="time_chime_custom_hint">The audio file stays in its original location (it is not copied into the app) and is read via persistable permission. If moved or deleted, Lord TTS automatically reverts to default chimes.</string>

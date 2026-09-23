@@ -493,6 +493,8 @@ class TimeAnnouncementManager(
     /**
      * رنة الساعة: تُبنى عند أوقات أرباع الساعة المختارة من قِبل المستخدم
      * (رأس الساعة :00، الربع :15، النصف :30، والـ 45 دقيقة :45) بتفعيل الرنة.
+     * وتُحمل نغمة مخصصة مستقلة لكل قيمة وقت إن اختارها المستخدم من ملف
+     * خارجي (مسارها الخاص لكل رباع ورأس الساعة).
      */
     private fun hourlyChimeCue(): AudioCue? {
         return try {
@@ -506,8 +508,15 @@ class TimeAnnouncementManager(
                 else -> false
             }
             if (!shouldPlay) return null
+            // لكل قيمة وقت نغمة مخصصة مستقلة: رأس الساعة :00 تحتفظ بمسارها
+            // الأصلي (custom_chime_uri) والأرباع :15/:30/:45 بمساراتها الخاصة.
             val customUri = runCatching {
-                settings.getCustomChimeUri().takeIf { it.isNotBlank() }
+                when (minute) {
+                    15 -> settings.getCustomChimeUri15()
+                    30 -> settings.getCustomChimeUri30()
+                    45 -> settings.getCustomChimeUri45()
+                    else -> settings.getCustomChimeUri()
+                }.takeIf { it.isNotBlank() }
             }.getOrNull()
             AudioCue(
                 type = CueType.TIME_HOURLY,

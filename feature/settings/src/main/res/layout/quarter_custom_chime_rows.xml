@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- النغمة المخصصة لكل ربع (:15 / :30 / :45) — ملف صوتي مستقل لكل قيمة وقت
+     يختاره المستخدم من هاتفه. استُخرج في ملف منفصل يُضمّن عبر <include> بلا id
+     لتفادي تجاوز حد معاملات منشئ ViewBinding في fragment_voice_selection.xml. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/time_chime_custom_quarters_title"
+        android:textAppearance="?attr/textAppearanceBody2"
+        android:textColor="@color/text_secondary" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/time_chime_custom_quarter_15"
+        android:textAppearance="?attr/textAppearanceBody2"
+        android:importantForAccessibility="yes" />
+
+    <TextView
+        android:id="@+id/tv_custom_chime_15_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="@string/time_chime_custom_status_default"
+        android:textAppearance="?attr/textAppearanceCaption"
+        android:textColor="?attr/colorOnSurface" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_choose_custom_chime_15"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minHeight="48dp"
+            android:text="@string/time_chime_custom_choose"
+            android:importantForAccessibility="yes" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_preview_custom_chime_15"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:minHeight="48dp"
+            android:text="@string/time_chime_custom_preview"
+            android:importantForAccessibility="yes" />
+    </LinearLayout>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_clear_custom_chime_15"
+        style="@style/Widget.MaterialComponents.Button.TextButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:minHeight="48dp"
+        android:text="@string/time_chime_custom_clear"
+        android:visibility="gone"
+        android:importantForAccessibility="yes" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/time_chime_custom_quarter_30"
+        android:textAppearance="?attr/textAppearanceBody2"
+        android:importantForAccessibility="yes" />
+
+    <TextView
+        android:id="@+id/tv_custom_chime_30_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="@string/time_chime_custom_status_default"
+        android:textAppearance="?attr/textAppearanceCaption"
+        android:textColor="?attr/colorOnSurface" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_choose_custom_chime_30"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minHeight="48dp"
+            android:text="@string/time_chime_custom_choose"
+            android:importantForAccessibility="yes" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_preview_custom_chime_30"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:minHeight="48dp"
+            android:text="@string/time_chime_custom_preview"
+            android:importantForAccessibility="yes" />
+    </LinearLayout>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_clear_custom_chime_30"
+        style="@style/Widget.MaterialComponents.Button.TextButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:minHeight="48dp"
+        android:text="@string/time_chime_custom_clear"
+        android:visibility="gone"
+        android:importantForAccessibility="yes" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/time_chime_custom_quarter_45"
+        android:textAppearance="?attr/textAppearanceBody2"
+        android:importantForAccessibility="yes" />
+
+    <TextView
+        android:id="@+id/tv_custom_chime_45_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="@string/time_chime_custom_status_default"
+        android:textAppearance="?attr/textAppearanceCaption"
+        android:textColor="?attr/colorOnSurface" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_choose_custom_chime_45"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minHeight="48dp"
+            android:text="@string/time_chime_custom_choose"
+            android:importantForAccessibility="yes" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_preview_custom_chime_45"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:minHeight="48dp"
+            android:text="@string/time_chime_custom_preview"
+            android:importantForAccessibility="yes" />
+    </LinearLayout>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_clear_custom_chime_45"
+        style="@style/Widget.MaterialComponents.Button.TextButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:minHeight="48dp"
+        android:text="@string/time_chime_custom_clear"
+        android:visibility="gone"
+        android:importantForAccessibility="yes" />
+
+</LinearLayout>

@@ -463,7 +463,6 @@
                 android:textColor="?attr/colorOnSurface" />
 
             <TextView
-                android:id="@+id/tv_custom_chime_hint"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
@@ -509,6 +508,11 @@
                 android:text="@string/time_chime_custom_clear"
                 android:visibility="gone"
                 android:importantForAccessibility="yes" />
+
+            <!-- النغمة المخصصة لكل ربع (:15 / :30 / :45) — ملف صوتي مستقل لكل
+                 قيمة وقت (مُستخرج في quarter_custom_chime_rows.xml بلا id لتفادي
+                 حد معاملات منشئ ViewBinding) -->
+            <include layout="@layout/quarter_custom_chime_rows" />
 
             <!-- طلب إذن المنبهات الدقيقة (يظهر فقط عند غياب الإذن على أندرويد 12+) -->
             <LinearLayout

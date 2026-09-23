@@ -31,6 +31,10 @@
     <string name="time_chime_custom_choose">اختر ملف نغمة</string>
     <string name="time_chime_custom_preview">معاينة</string>
     <string name="time_chime_custom_clear">حذف النغمة المخصصة</string>
+    <string name="time_chime_custom_quarters_title">نغمة مخصصة لكل ربع</string>
+    <string name="time_chime_custom_quarter_15">نغمة الربع (:15)</string>
+    <string name="time_chime_custom_quarter_30">نغمة النصف (:30)</string>
+    <string name="time_chime_custom_quarter_45">نغمة الـ 45 دقيقة (:45)</string>
     <string name="time_chime_custom_status_default">الرنة الحالية: الرنات المولّدة الافتراضية</string>
     <string name="time_chime_custom_status_file">الملف المخصص: %1$s</string>
     <string name="time_chime_custom_hint">الملف يبقى في مكانه الأصلي (لا يُنسخ داخل التطبيق) ويُقرَأ عبر صلاحية دائمة — إن نقلت الملف أو حذفته ستتوقف الرنة المخصصة ويعود التطبيق للرنة الافتراضية.</string>
