@@ -17,20 +17,23 @@ enum class CueType {
 }
 
 /**
- * مؤثر صوتي محدد: نوع + اسم الرنة المفضّلة (للساعة فقط) + مستوى الصوت.
+ * مؤثر صوتي محدد: نوع + اسم الرنة المفضّلة (للساعة فقط) + مستوى الصوت
+ * + مسار ملف نغمة مخصص اختياري (للساعة فقط).
  *
  * @property type نوع المؤثر
  * @property soundName اسم الرنة داخل النوع (يُستخدم فقط مع TIME_HOURLY):
- *   "classic_bell" | "digital_chime" | "soft_ding"؛ أي قيمة أخرى أو null تُعامل
- *   كـ "classic_bell".
+ *   "classic_bell" | "digital_chime" | "soft_ding"؛ أي قيمة أخرى أو null
+ *   تُعامل كـ "classic_bell".
  * @property volume مستوى الصوت 0.0..1.0
+ * @property customUri مسار URI لملف نغمة مخصص اختياري.
  */
 data class AudioCue(
     val type: CueType,
     val soundName: String? = null,
-    val volume: Float = 0.5f
+    val volume: Float = 0.5f,
+    val customUri: String? = null
 ) {
     /** مفتاح تخزين مؤقت فريد (لمساواة Cache). */
     val key: String
-        get() = "${type.name}|${soundName ?: ""}"
+        get() = "${type.name}|${soundName ?: ""}|${customUri ?: ""}"
 }

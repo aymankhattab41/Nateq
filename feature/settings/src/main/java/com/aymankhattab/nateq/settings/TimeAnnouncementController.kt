@@ -1,9 +1,13 @@
 package com.aymankhattab.nateq.settings
 
+import android.app.Activity
 import android.app.AlarmManager
+import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.activity.result.ActivityResult
 import android.os.Build
 import android.provider.Settings
 import android.view.View
@@ -57,6 +61,14 @@ internal class TimeAnnouncementController(
 
     /** بند الأوامر 5: مفتاح «دقة قصوى للمنبه» (setAlarmClock). */
     private var switchTimeAlarmMaxPrecision: SwitchMaterial? = null
+
+    /** عناصر النغمة المخصصة للساعة (ACTION_OPEN_DOCUMENT). */
+    private var tvCustomChimeTitle: TextView? = null
+    private var tvCustomChimeStatus: TextView? = null
+    private var tvCustomChimeHint: TextView? = null
+    private var btnChooseCustomChime: View? = null
+    private var btnPreviewCustomChime: View? = null
+    private var btnClearCustomChime: View? = null
 
     // **بند 6.3:** علمُ الربط البرمجي لشريط رنة الوقت — إسنادُ setProgress
     // في setup ليس تعديلَ مستخدم، والحفظ في onProgressChanged ضروري لأن
@@ -326,6 +338,8 @@ internal class TimeAnnouncementController(
 
         // بند الأوامر 4: أزرار المعاينة (إعلان الوقت ورنة الساعة).
         setupPreviewButtons(view)
+        // إعداد عناصر النغمة المخصصة للساعة (ACTION_OPEN_DOCUMENT).
+        setupCustomChimeViews(view)
         // بند الأوامر 5: خيار الدقة القصوى للمنبه.
         setupMaxPrecisionSwitch(view)
     }
@@ -432,8 +446,7 @@ internal class TimeAnnouncementController(
         )
     }
 
-    /** معاينة رنة رأس الساعة: تعزف النغمة المختارة بمستوى الشريط الحالي
-     *  (رنات مُؤلَّفة عبر CueSynth — لا تلمس أي ملف صوتي). */
+    /** معاينة رنة رأس الساعة: تعزف النغمة المختارة بمستوى الشريط الحالي. */
     private fun previewChime() {
         val sound = chimeSoundNameAt(
             spinnerTimeChimeSound?.selectedItemPosition ?: 0
@@ -443,14 +456,23 @@ internal class TimeAnnouncementController(
             ?: runCatching {
                 settings.getTimeChimeVolume()
             }.getOrDefault(0.5f)
+        val customUri = runCatching {
+            settings.getCustomChimeUri().takeIf { it.isNotBlank() }
+        }.getOrNull()
         fragment.view?.announceCompat(
             fragment.getString(R.string.sample_preview_starting)
         )
         AudioCuePlayer.getInstance(
             fragment.requireContext().applicationContext
-        ).play(AudioCue(CueType.TIME_HOURLY, sound, volume)) { _ ->
-            // إعلان النهاية يُنشر على الخيط الرئيسي (قد يُستدعى من خيط
-            // SoundPool) ولا يُعلن بعد تدمير العرض.
+        ).play(
+            AudioCue(
+                type = CueType.TIME_HOURLY,
+                soundName = sound,
+                volume = volume,
+                customUri = customUri
+            )
+        ) { _ ->
+            // إعلان النهاية يُنشر على الخيط الرئيسي ولا يُعلن بعد تدمير العرض
             fragment.view?.post {
                 if (fragment.isAdded) {
                     fragment.view?.announceCompat(
@@ -459,6 +481,195 @@ internal class TimeAnnouncementController(
                 }
             }
         }
+    }
+
+    private fun setupCustomChimeViews(view: View) {
+        tvCustomChimeTitle = view.findViewById(R.id.tv_custom_chime_title)
+        tvCustomChimeStatus = view.findViewById(R.id.tv_custom_chime_status)
+        tvCustomChimeHint = view.findViewById(R.id.tv_custom_chime_hint)
+        btnChooseCustomChime = view.findViewById(R.id.btn_choose_custom_chime)
+        btnPreviewCustomChime =
+            view.findViewById(R.id.btn_preview_custom_chime)
+        btnClearCustomChime = view.findViewById(R.id.btn_clear_custom_chime)
+
+        btnChooseCustomChime?.setOnClickListener {
+            openCustomChimePicker()
+        }
+        btnPreviewCustomChime?.setOnClickListener {
+            previewCustomChime()
+        }
+        btnClearCustomChime?.setOnClickListener {
+            clearCustomChime()
+        }
+        refreshCustomChimeViews()
+    }
+
+    private fun openCustomChimePicker() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "audio/*"
+            flags = flags or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+        }
+        runCatching {
+            fragment.customChimeLauncher.launch(intent)
+        }.onFailure { t ->
+            android.util.Log.w("NATEQ_SETTINGS", "open chime picker failed", t)
+        }
+    }
+
+    internal fun onCustomChimeResult(result: ActivityResult) {
+        if (result.resultCode != Activity.RESULT_OK) return
+        val uri = result.data?.data ?: return
+        val context = fragment.context ?: return
+
+        runCatching {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+            context.contentResolver.takePersistableUriPermission(uri, flags)
+        }
+
+        val fileName = queryDisplayName(context, uri) ?: uri.lastPathSegment
+            ?: uri.toString()
+
+        showCustomChimeConfirmDialog(uri, fileName)
+    }
+
+    private fun showCustomChimeConfirmDialog(uri: Uri, fileName: String) {
+        val context = fragment.context ?: return
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(context)
+            .setTitle(R.string.custom_chime_confirm_title)
+            .setMessage(
+                fragment.getString(R.string.custom_chime_confirm_msg, fileName)
+            )
+            .setPositiveButton(R.string.auto_convert_save) { _, _ ->
+                saveCustomChimeUri(uri, fileName)
+            }
+            .setNeutralButton(R.string.time_chime_custom_preview) { _, _ ->
+                previewSpecificUri(uri)
+                showCustomChimeConfirmDialog(uri, fileName)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .create()
+
+        fragment.trackDialog(dialog)
+        dialog.show()
+    }
+
+    private fun saveCustomChimeUri(uri: Uri, fileName: String) {
+        runCatching {
+            settings.setCustomChimeUri(uri.toString())
+        }
+        refreshCustomChimeViews()
+        fragment.view?.announceCompat(
+            fragment.getString(R.string.custom_chime_saved, fileName)
+        )
+    }
+
+    private fun previewCustomChime() {
+        val uriStr = runCatching { settings.getCustomChimeUri() }
+            .getOrDefault("")
+        if (uriStr.isBlank()) {
+            previewChime()
+            return
+        }
+        previewSpecificUri(Uri.parse(uriStr))
+    }
+
+    private fun previewSpecificUri(uri: Uri) {
+        val seek = seekTimeChimeVolume
+        val volume = seek?.let { chimeVolumeFromProgress(it.progress) }
+            ?: runCatching {
+                settings.getTimeChimeVolume()
+            }.getOrDefault(0.5f)
+
+        fragment.view?.announceCompat(
+            fragment.getString(R.string.sample_preview_starting)
+        )
+        val cue = AudioCue(
+            type = CueType.TIME_HOURLY,
+            soundName = chimeSoundNameAt(
+                spinnerTimeChimeSound?.selectedItemPosition ?: 0
+            ),
+            volume = volume,
+            customUri = uri.toString()
+        )
+        AudioCuePlayer.getInstance(
+            fragment.requireContext().applicationContext
+        ).play(cue) { _ ->
+            fragment.view?.post {
+                if (fragment.isAdded) {
+                    fragment.view?.announceCompat(
+                        fragment.getString(R.string.sample_preview_done)
+                    )
+                }
+            }
+        }
+    }
+
+    private fun clearCustomChime() {
+        val oldUri = runCatching { settings.getCustomChimeUri() }
+            .getOrDefault("")
+        if (oldUri.isNotBlank()) {
+            val context = fragment.context
+            if (context != null) {
+                runCatching {
+                    context.contentResolver.releasePersistableUriPermission(
+                        Uri.parse(oldUri),
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }
+            }
+        }
+        runCatching { settings.setCustomChimeUri("") }
+        refreshCustomChimeViews()
+        fragment.view?.announceCompat(
+            fragment.getString(R.string.custom_chime_cleared)
+        )
+    }
+
+    private fun refreshCustomChimeViews() {
+        val uriStr = runCatching { settings.getCustomChimeUri() }
+            .getOrDefault("")
+        val hasCustom = uriStr.isNotBlank()
+        val context = fragment.context
+
+        if (hasCustom && context != null) {
+            val fileName = queryDisplayName(context, Uri.parse(uriStr))
+                ?: Uri.parse(uriStr).lastPathSegment ?: uriStr
+            tvCustomChimeStatus?.text = fragment.getString(
+                R.string.time_chime_custom_status_file,
+                fileName
+            )
+            btnClearCustomChime?.visibility = View.VISIBLE
+            btnPreviewCustomChime?.isEnabled = true
+        } else {
+            tvCustomChimeStatus?.setText(
+                R.string.time_chime_custom_status_default
+            )
+            btnClearCustomChime?.visibility = View.GONE
+            btnPreviewCustomChime?.isEnabled = false
+        }
+    }
+
+    private fun queryDisplayName(context: Context, uri: Uri): String? {
+        return runCatching {
+            if (uri.scheme == ContentResolver.SCHEME_CONTENT) {
+                context.contentResolver.query(
+                    uri,
+                    arrayOf(OpenableColumns.DISPLAY_NAME),
+                    null, null, null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val idx = cursor.getColumnIndex(
+                            OpenableColumns.DISPLAY_NAME
+                        )
+                        if (idx >= 0) cursor.getString(idx) else null
+                    } else null
+                }
+            } else {
+                uri.lastPathSegment
+            }
+        }.getOrNull()
     }
 
     /** بند الأوامر 5: مفتاح «الدقة القصوى» — تُعاد جدولة المنبه فوراً
@@ -821,6 +1032,12 @@ internal class TimeAnnouncementController(
         cbTimeChimeAt45?.isEnabled = enabled
         spinnerTimeChimeSound?.isEnabled = enabled
         seekTimeChimeVolume?.isEnabled = enabled
+        btnPreviewChime?.isEnabled = enabled
+        btnChooseCustomChime?.isEnabled = enabled
+        val hasCustom = runCatching { settings.getCustomChimeUri() }
+            .getOrDefault("").isNotBlank()
+        btnPreviewCustomChime?.isEnabled = enabled && hasCustom
+        btnClearCustomChime?.isEnabled = enabled && hasCustom
     }
 
     /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */
@@ -841,5 +1058,11 @@ internal class TimeAnnouncementController(
         btnPreviewTime = null
         btnPreviewChime = null
         switchTimeAlarmMaxPrecision = null
+        tvCustomChimeTitle = null
+        tvCustomChimeStatus = null
+        tvCustomChimeHint = null
+        btnChooseCustomChime = null
+        btnPreviewCustomChime = null
+        btnClearCustomChime = null
     }
 }

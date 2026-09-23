@@ -913,4 +913,19 @@ class SettingsRepositoryTest {
         assertFalse(repo.isTimeChimeAt30Enabled())
         assertFalse(repo.isTimeChimeAt45Enabled())
     }
+
+    @Test
+    fun customChimeUri_saveRetrieveAndProcessRestart() {
+        assertEquals("", repo.getCustomChimeUri())
+        val sampleUri = "content://media/external/audio/media/42"
+        repo.setCustomChimeUri(sampleUri)
+        assertEquals(sampleUri, repo.getCustomChimeUri())
+
+        // محاكاة إعادة تشغيل العملية عبر بناء مثيل جديد
+        val restartedRepo = SettingsRepository.create(context)
+        assertEquals(sampleUri, restartedRepo.getCustomChimeUri())
+
+        repo.resetAllToDefault()
+        assertEquals("", repo.getCustomChimeUri())
+    }
 }

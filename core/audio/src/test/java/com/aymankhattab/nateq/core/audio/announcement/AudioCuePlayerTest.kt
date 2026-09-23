@@ -243,6 +243,31 @@ class AudioCuePlayerTest {
         assertTrue(true)
     }
 
+    @Test
+    fun `custom chime fallback when uri inaccessible`() {
+        val sink = FakeSink()
+        val player = AudioCuePlayer.forTesting(
+            sink = sink,
+            synth = CueSynth,
+            context = context
+        )
+
+        var doneCalls = 0
+        val cue = AudioCue(
+            type = CueType.TIME_HOURLY,
+            soundName = "classic_bell",
+            volume = 0.5f,
+            customUri = "content://com.example.nonexistent/audio.mp3"
+        )
+        player.play(cue) { doneCalls++ }
+
+        assertNotNull(sink.played)
+        assertEquals(1, sink.playCalls)
+        sink.notifyDone(true)
+        ShadowLooper.idleMainLooper()
+        assertEquals(1, doneCalls)
+    }
+
     private fun leInt(bytes: ByteArray, offset: Int): Int {
         return (bytes[offset].toInt() and 0xff) or
             ((bytes[offset + 1].toInt() and 0xff) shl 8) or

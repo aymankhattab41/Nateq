@@ -476,10 +476,14 @@ class TimeAnnouncementManager(
                 else -> false
             }
             if (!shouldPlay) return null
+            val customUri = runCatching {
+                settings.getCustomChimeUri().takeIf { it.isNotBlank() }
+            }.getOrNull()
             AudioCue(
                 type = CueType.TIME_HOURLY,
                 soundName = settings.getTimeChimeSound(),
-                volume = settings.getTimeChimeVolume()
+                volume = settings.getTimeChimeVolume(),
+                customUri = customUri
             )
         } catch (t: Throwable) {
             null

@@ -1250,6 +1250,14 @@ class SettingsRepository(context: Context) :
         prefs.edit().putFloat(
             "time_chime_volume", volume.coerceIn(0.1f, 1f)
         ).apply()
+
+    /** مسار URI لملف رنة الساعة المخصص. */
+    override fun getCustomChimeUri(): String =
+        prefs.getString("custom_chime_uri", "").orEmpty()
+
+    override fun setCustomChimeUri(uri: String) =
+        prefs.edit().putString("custom_chime_uri", uri).apply()
+
     override fun isTimeAlarmMaxPrecisionEnabled(): Boolean =
         prefs.getBoolean("time_alarm_max_precision", false)
     override fun setTimeAlarmMaxPrecisionEnabled(enabled: Boolean) =

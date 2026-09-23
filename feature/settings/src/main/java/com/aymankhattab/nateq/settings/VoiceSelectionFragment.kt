@@ -265,6 +265,15 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
     }
 
+    /** منتقي ملف نغمة الساعة المخصصة (ACTION_OPEN_DOCUMENT). */
+    internal val customChimeLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (::timeSection.isInitialized) {
+            timeSection.onCustomChimeResult(result)
+        }
+    }
+
     // طلب إذن قراءة الرسائل الواردة لحظة تفعيل قراءة الرسائل فقط (لا عند
     // أول تشغيل). الوضع المختار (full/source) لا يُحفظ إلا بعد المنح الفعلي —
     // مسؤولية الضابط (بند [9]).

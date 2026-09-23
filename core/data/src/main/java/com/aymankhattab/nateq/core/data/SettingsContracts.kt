@@ -303,6 +303,12 @@ interface AnnouncementPrefs {
     /** يعيّن مستوى صوت الرنة. */
     fun setTimeChimeVolume(volume: Float)
 
+    /** مسار URI لملف رنة الساعة المخصص (أو فارغ إن لم يُحدد). */
+    fun getCustomChimeUri(): String
+
+    /** يعيّن مسار URI لملف رنة الساعة المخصص. */
+    fun setCustomChimeUri(uri: String)
+
     /** تفعيل الدقة القصوى لإعلان الوقت (setAlarmClock بدل
      *  setExactAndAllowWhileIdle). */
     fun isTimeAlarmMaxPrecisionEnabled(): Boolean
