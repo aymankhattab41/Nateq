@@ -290,8 +290,11 @@ class NateqTtsService : TextToSpeechService() {
         } catch (t: Throwable) {
             Log.e(TAG, "super.onCreate() threw", t)
         }
-        // رصد المستشعرات يعمل أثناء التخليق فقط (في onSynthesizeText)
-        // لتوفير البطارية ومنع التنبيهات الزائفة.
+        // رصد الإسكات الفوري (هز/تقارب) مرة واحدة لعمر الخدمة (بند 8):
+        // تُقرأ مفاتيح الإعدادات حيّةً عند كل حدث استشعار (داخل
+        // InterruptionSensors) فيستجيب تغيير الإعدادات فوراً دون إعادة
+        // تشغيل الخدمة، ولا رياضةَ تسجيل/إلغاء مع كل دورة تخليق.
+        startInterruptionMonitoring()
 
         // **بند 6.5:** تسجيل مستقبل الحزم بعد اكتمال شبكة الخدمة —
         // يستقبل بثّ تثبيت/إزالة/تحديث أي حزمة (محركات TTS أساساً)
@@ -319,7 +322,7 @@ override fun onDestroy() {
         synthesisExecutor.shutdown()
         audioEffectManager.releaseAll()
         // إلغاء تسجيل مستشعرات الهز/التقارب كي لا تبقى مرصودةً بعد تدمير
-        // الخدمة (كانت تُسجَّل في onCreate ولا تُلغى هنا فتتسرب).
+        // الخدمة (تسجيلها في onCreate يليه إلغاؤه هنا — بند 8).
         stopInterruptionMonitoring()
         // إلغاء مستقبل الحزم (بند 6.5) — لا يبقى مستمعاً بعد تدمير
         // الخدمة فيتجمع بثّاتُ تثبيت/إزالة الحزم على كائن مردود.
@@ -460,34 +463,37 @@ override fun onDestroy() {
         currentJob?.cancel()
     }
 
-    /** **بند 8 — رصد الهز/التقارب في دورة تخليق قارئ الشاشة (TalkBack):**
-     *  كان ربطُ المستشعرات محصوراً في مسار إعلانات التطبيق
-     *  (AnnouncementSpeaker)
-     *  فلا يتوقف نطقُ قارئ الشاشة على الهزّ/التقارب مهما فُعّل المفتاحان في
-     *  الإعدادات. الآن تُفعَّل المستشعرات نفسها **مرة واحدة لعمر الخدمة**
-     *  (عند [onCreate] لا مع كل رحلة — رياضةُ تسجيل/إلغاء لكل طلب كان
-     *  تهدر عمر البطارية وتترك نافذة تزاحم). تقرأ الإعدادات المحقونة
-     *  ([settings])؛ وإن فُعّل أحدهما صدِّق الرصد واستدعِ [interruptSynthesis]
-     *  عند الهزة/التقارب ليُوقف الرحلة الجارية بأمان عبر نفس عقد الإلغاء
-     *  (بند 2.3) فينتقل طابور TalkBack بسلاسة. */
+    /** **بند 8 — رصد الهز/التقارب لعمر الخدمة (يُسجَّل مرة واحدة في
+     *  [onCreate] لا مع كل رحلة تخليق):** كان ربطُ المستشعرات محصوراً في
+     *  مسار إعلانات التطبيق (AnnouncementSpeaker) فلا يتوقف نطقُ قارئ
+     *  الشاشة على الهزّ/التقارب مهما فُعّل المفتاحان في الإعدادات، ثم
+     *  عُدّل ليُفعَّل مع كل رحلة — رياضةُ تسجيل/إلغاء لكل طلب تهدر عمر
+     *  البطارية. الآن يُسجَّل **مرة واحدة لعمر الخدمة** عند [onCreate]،
+     *  وتقرأ المستشعراتُ مفاتيحَ الإعدادات (عبر [settings]) **حيّاً عند كل
+     *  حدث** (داخل [InterruptionSensors]) فيستجيب التغيير فوراً دون إعادة
+     *  تشغيل الخدمة؛ عند الهزة/التقارب يُستدعى [interruptSynthesis] ليوقف
+     *  الرحلة الجارية بأمان عبر نفس عقد الإلغاء (بند 2.3) فينتقل طابور
+     *  TalkBack بسلاسة. */
     private fun startInterruptionMonitoring() {
         if (interruptionSensors != null) return
-        val shake = runCatching { settings.isShakeToStopEnabled() }
-            .getOrDefault(false)
-        val proximity = runCatching { settings.isProximitySilenceEnabled() }
-            .getOrDefault(false)
-        if (!shake && !proximity) return
         val sensors = InterruptionSensors(
-            shakeEnabled = { shake },
-            proximityEnabled = { proximity },
+            shakeEnabled = {
+                runCatching { settings.isShakeToStopEnabled() }
+                    .getOrDefault(false)
+            },
+            proximityEnabled = {
+                runCatching { settings.isProximitySilenceEnabled() }
+                    .getOrDefault(false)
+            },
             onInterrupt = { interruptSynthesis() }
         )
         interruptionSensors = sensors
         sensors.start(applicationContext)
     }
 
-    /** إيقاف رصد الهز/التقارب — يُستدعى عند اكتمال الرحلة أو إلغائها أو
-     *  إيقاف الخدمة حتى لا يبقى الرصد حياً بعد انتهاء الحاجة إليه. */
+    /** إيقاف رصد الهز/التقارب — يُستدعى في [onDestroy] وحده (لا مع نهاية
+     *  كل رحلة): المستشعرَاتُ مسجَّلةٌ طوال عمر الخدمة؛ لا يوجد رياضةُ
+     *  تسجيل/إلغاء تترك نافذة تزاحم (بند 8). */
     private fun stopInterruptionMonitoring() {
         interruptionSensors?.stop()
         interruptionSensors = null
@@ -553,13 +559,6 @@ override fun onDestroy() {
         // قارئ الشاشة بدل تراكبه فوقها. يُخفض في finally أدناه.
         SpeechLock.setSpeaking(applicationContext, true)
 
-        // **بند 8 — رصد الإيقاف الفوري (هز/تقارب) في دورة تخليق قارئ
-        //  الشاشة (TalkBack):** كان ربطُ المستشعرات محصوراً في
-        //  AnnouncementSpeaker (مسار إعلانات التطبيق) فلا يتوقف نظرُ
-        //  TalkBack على هزٍّ/تقاربٍ مهما فُعّل المفتاحان في الإعدادات —
-        //  المستشعراتُ تُفعل هنا مع كل طلبٍ تخليقٍ وتُوقَف في finally
-        //  فيُسكَت قارئُ الشاشة فوراً بنفس عقدِ الإيقاف الصريح.
-        startInterruptionMonitoring()
         // **بند 8 — إغلاق نافذة الاستباق:** تُبنى الرحلة LAZY فلا تبدأ
         //  جدولتُها على خيط التخليق قبل إسنادها إلى [currentJob] (كانت تبدأ
         //  فوراً فيسبق إلغاءٌ من مستشعر/onStop إسنادَها فيُفلت الرحلة)؛
@@ -678,10 +677,6 @@ override fun onDestroy() {
             if (audioSessionId > 0) {
                 audioEffectManager.detach(audioSessionId)
             }
-            // **بند 8:** ختام الرحلة — نوقف رصدَ الهز/التقارب فور انتهاء
-            // (أو إلغاء/خطأ) التخليق حتى لا يبقى الرصدُ حياً بعد انتهاء
-            // الحاجة إليه (لا تسريب طاقةٍ ولا مستشعرٍ عالق).
-            stopInterruptionMonitoring()
             // **بند قفل النطق العابر:** نهاية التخليق (نجاح/خطأ/إلغاء) تخفض
             // علم «نطق جارٍ» — يُنبَّه المراقبون (متحدث الإعلانات) فوراً
             // فينطلق الإعلانُ المؤجَّل خلف القراءة.

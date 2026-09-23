@@ -7,6 +7,7 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Handler
 import android.os.Looper
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import kotlin.math.abs
 import kotlin.math.sqrt
 
@@ -39,9 +40,11 @@ internal fun isProximityNear(value: Float, maxRange: Float): Boolean =
 
 /**
  * رصد إسكات النطق الفوري أثناء الإعلان: يسجّل مستشعري التسارع (الهز) والتقارب
- * (تغطية الجهاز) فقط ما دام النطق جارياً، ويستدعي [onInterrupt] عند تلقي
- * تنبيه صالح. الدوال [onAcceleration]/[onProximity] مدرجة لاختبار منطق الكشف
- * نقيًّا دون تنصيب مستشعرات (Robolectric لا ينصبها فعلياً).
+ * (تغطية الجهاز) ما دامت الخدمة/الدورة حية، ويستدعي [onInterrupt] عند تلقي
+ * تنبيه صالح. [shakeEnabled]/[proximityEnabled] يُقرآن **حيّاً عند كل حدث
+ * استشعار** فلا تُجمَّد مفاتيح الإعدادات وقت الإنشاء: تغيير الإعداد يستجيب
+ * فوراً دون إعادة تسجيل (بند 8). التسجيل يعتمد على وجود المستشعر في الجهاز
+ * فقط لا على قيم المفاتيح؛ الفلتران يُطبَّقان عند الحدث.
  */
 internal class InterruptionSensors(
     private val shakeEnabled: () -> Boolean,
@@ -60,31 +63,42 @@ internal class InterruptionSensors(
         override fun onSensorChanged(event: SensorEvent) {
             val values = event.values
             when (event.sensor.type) {
-                Sensor.TYPE_ACCELEROMETER -> {
-                    if (shakeDetector.onAcceleration(
-                            values[0], values[1], values[2]
-                        )
-                    ) {
-                        onInterrupt()
-                    }
-                }
-                Sensor.TYPE_PROXIMITY -> {
-                    val near = isProximityNear(
-                        values[0], event.sensor.maximumRange
-                    )
-                    val previous = lastProximityNear
-                    lastProximityNear = near
-                    // **بند 4.6:** أول قراءة من المستشعر تُرسل القيمة الحالية
-                    // فور التسجيل — الهاتف في الجيب أو مقلوباً وقت وصول الإعلان
-                    // تجعله "قريباً" وكانت توقف النطق قبل أول حرف. يُستجاب
-                    // للإيقاف فقط عند **انتقال** الحالة من بعيدٍ إلى قريب
-                    // (تغطية لاحقة فعلية باليد/الوجه).
-                    if (previous == false && near) onInterrupt()
-                }
+                Sensor.TYPE_ACCELEROMETER ->
+                    onAcceleration(values[0], values[1], values[2])
+                Sensor.TYPE_PROXIMITY ->
+                    onProximity(values[0], event.sensor.maximumRange)
             }
         }
 
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+    }
+
+    /** معالجة قراءة تسارع (يستدعيها المستمع؛ مكشوفة لاختبار المنطق
+     *  نقيًّا دون تنصيب مستشعرات). يقرأ مفتاح الإسكات بالهز **حيّاً**
+     *  عند كل قراءة (بند 8): تعطيلٌ لاحقٌ بلا مستخدم يوقفه فوراً،
+     *  وتفعيلٌ لاحقٌ يستجيب بلا إعادة تسجيل. */
+    internal fun onAcceleration(x: Float, y: Float, z: Float) {
+        if (shakeEnabled() &&
+            shakeDetector.onAcceleration(x, y, z)
+        ) {
+            onInterrupt()
+        }
+    }
+
+    /** معالجة قراءة تقارب (يستدعيها المستمع؛ مكشوفة للاختبار النقي).
+     *  يقرأ مفتاح الإسكات بالتقارب حيّاً؛ ويستجيب للإيقاف عند انتقال
+     *  الحالة من بعيدٍ إلى قريب فقط. */
+    internal fun onProximity(value: Float, maxRange: Float) {
+        if (!proximityEnabled()) return
+        val near = isProximityNear(value, maxRange)
+        val previous = lastProximityNear
+        lastProximityNear = near
+        // **بند 4.6:** أول قراءة من المستشعر تُرسل القيمة الحالية
+        // فور التسجيل — الهاتف في الجيب أو مقلوباً وقت وصول الإعلان
+        // تجعله "قريباً" وكانت توقف النطق قبل أول حرف. يُستجاب
+        // للإيقاف فقط عند **انتقال** الحالة من بعيدٍ إلى قريب
+        // (تغطية لاحقة فعلية باليد/الوجه).
+        if (previous == false && near) onInterrupt()
     }
 
     /** بدء الرصد (يُستدعى عند بدء النطق). آمن للتكرار.
@@ -100,14 +114,17 @@ internal class InterruptionSensors(
         mainHandler = Handler(Looper.getMainLooper())
         val accel = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         val prox = sm.getDefaultSensor(Sensor.TYPE_PROXIMITY)
-        shakeRegistered = accel != null && shakeEnabled() && runCatching {
+        // التسجيل يعتمد على وجود المستشعر فقط؛ قيمتا [shakeEnabled] و
+        // [proximityEnabled] تُقرآن حيّاً عند كل حدَث (بند 8) فلا تُجمَّد
+        // الإعدادات وقت الإنشاء — التغيير يستجيب دون إعادة تسجيل.
+        shakeRegistered = accel != null && runCatching {
             sm.registerListener(
                 sensorListener, accel,
                 SensorManager.SENSOR_DELAY_UI, mainHandler
             )
         }.getOrDefault(false)
         proximityRegistered =
-            prox != null && proximityEnabled() &&
+            prox != null &&
                 runCatching {
                     sm.registerListener(
                         sensorListener, prox,
