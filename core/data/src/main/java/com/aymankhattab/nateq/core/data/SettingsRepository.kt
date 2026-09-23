@@ -535,6 +535,46 @@ class SettingsRepository(context: Context) :
             .putBoolean("announcement_media_stream_always", enabled)
             .apply()
 
+    // ============ خفض صوت الوسائط أثناء النطق (بند الصوتيات) ============
+    // يُطلب التركيز بنوع MAY_DUCK افتراضياً (تخفض التطبيقات الأخرى
+    // وسائطها مؤقتاً ثم تعود). عند التعطيل يُطلب GAIN_TRANSIENT فتتوقف
+    // الوسائط مؤقتاً بلا أي خفضٍ لمستوى الصوت (شكوى «انخفاض صوت
+    // الوسائط») — يُقرأ في AnnouncementSpeaker.requestAudioFocus.
+    fun isDuckMediaDuringAnnouncements(): Boolean =
+        prefs.getBoolean("duck_media_during_announcements", true)
+
+    fun setDuckMediaDuringAnnouncements(enabled: Boolean) =
+        prefs.edit()
+            .putBoolean("duck_media_during_announcements", enabled)
+            .apply()
+
+    // ============ نطق الساعة في السيناريوهات الصوتية ============
+    // مفاتيح إيقاف/تفعيل الإعلان التلقائي للوقت أثناء: المكالمة
+    // الهاتفية، تشغيل الوسائط، ووضع الصامت — تُقرأ في
+    // TimeAnnouncementManager. أثناء المكالمة الافتراضي false محافظةً
+    // على السلوك الحالي (المكالمة تحجز التركيز فيُسقط الإعلان)،
+    // وبقية السيناريوهات true (يُنطق كما اليوم).
+    fun isAnnounceTimeDuringCalls(): Boolean =
+        prefs.getBoolean("announce_time_during_calls", false)
+
+    fun setAnnounceTimeDuringCalls(enabled: Boolean) =
+        prefs.edit().putBoolean("announce_time_during_calls", enabled)
+            .apply()
+
+    fun isAnnounceTimeDuringMedia(): Boolean =
+        prefs.getBoolean("announce_time_during_media", true)
+
+    fun setAnnounceTimeDuringMedia(enabled: Boolean) =
+        prefs.edit().putBoolean("announce_time_during_media", enabled)
+            .apply()
+
+    fun isAnnounceTimeDuringSilent(): Boolean =
+        prefs.getBoolean("announce_time_during_silent", true)
+
+    fun setAnnounceTimeDuringSilent(enabled: Boolean) =
+        prefs.edit().putBoolean("announce_time_during_silent", enabled)
+            .apply()
+
     /** يُرجع مفتاح التفضيل الفعلي للغة: بالوسم الكامل (ar-EG) إن وُجد، ثم
      *  بكود اللغة وحده (ar) إن وُجد — تراجعٌ تدريجي لتعميم تفضيل الأهل على
      *  كل لهجاتها. null إن لم يُحفظ أي تفضيل لها. */
@@ -833,6 +873,13 @@ class SettingsRepository(context: Context) :
         voiceId: String
     ) =
         prefs.edit().putString("preferred_voice_$category", voiceId).apply()
+
+    /** لغة الصوت المختارة لكل فئة (category -> رمز ISO) — تقيّد قائمة
+     *  الأصوات وتُحسم لغة النطق الفعلية لها. */
+    fun getLanguageForCategory(category: String): String? =
+        prefs.getString("language_for_$category", null)
+    fun setLanguageForCategory(category: String, language: String?) =
+        prefs.edit().putString("language_for_$category", language).apply()
 
     /** محرك النطق الخاص بفئةٍ معيّنة (متصل/بطارية/وقت…)، null = تلقائي
      *  (يتبع محرك اللغة ثم المحرك المختار العام). يُخزَّن تحت
@@ -1173,6 +1220,16 @@ class SettingsRepository(context: Context) :
     override fun setBatteryAnnouncementVoiceId(voiceId: String?) =
         prefs.edit().putString("battery_announcement_voice", voiceId).apply()
 
+    /** لغة الصوت المختارة لإعلان البطارية (رمز ISO) — تقيّد قائمة
+     *  الأصوات وتُحسم لغة النطق الفعلية للإعلان إن لم تُحدَّد من
+     *  الصوت نفسه. */
+    fun getBatteryAnnouncementLanguage(): String? =
+        prefs.getString("battery_announcement_language", null)
+    fun setBatteryAnnouncementLanguage(language: String?) =
+        prefs.edit()
+            .putString("battery_announcement_language", language)
+            .apply()
+
     /** سرعة نطق إعلان البطارية */
     override fun getBatteryAnnouncementRate(): Float =
         prefs.getFloat("battery_announcement_rate", 1.0f)
@@ -1361,6 +1418,13 @@ class SettingsRepository(context: Context) :
         )
     override fun setSmsReadingVoiceId(voiceId: String?) =
         prefs.edit().putString("sms_reading_voice", voiceId).apply()
+
+    /** لغة الصوت المختارة لقراءة الرسائل (رمز ISO) — تقيّد قائمة
+     *  الأصوات وتُحسم لغة نطق صياغة الإعلان. */
+    fun getSmsReadingLanguage(): String? =
+        prefs.getString("sms_reading_language", null)
+    fun setSmsReadingLanguage(language: String?) =
+        prefs.edit().putString("sms_reading_language", language).apply()
 
     /** سرعة نطق قراءة الرسائل */
     override fun getSmsReadingRate(): Float =

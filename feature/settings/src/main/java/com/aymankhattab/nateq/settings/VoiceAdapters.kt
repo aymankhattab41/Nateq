@@ -25,7 +25,7 @@ import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 internal class CategoryVoiceAdapter(
     private val context: Context,
     private val settings: SettingsRepository,
-    private val voices: List<NateqVoice>,
+    private val catalog: EngineVoicesCatalog,
     // **بند 4.3:** العامل الفئة (?category) يُمرَّر مع القراءة — من دونه
     // تسمع المعاينةُ صوتَ الفئة الافتراضية لا صوت الصف المختار تماماً.
     private val onTestVoice: (
@@ -43,10 +43,13 @@ internal class CategoryVoiceAdapter(
         SettingsRepository.VOICE_CATEGORY_EMOJI
     )
 
-    // قائمة أسماء الأصوات واحدة لكل الفئات: تُبنى مرة واحدة بدل إعادة إنشائها
-    // مع كل ربط صف، ومسندها يُسند لسبنّر كل حاملٍ عند إنشائه فقط.
-    private val voiceNameAdapter =
-        simpleAdapter(context, voices.map { it.displayName })
+    // لغات الفئات المعروضة (عربية/إنجليزية ثم المكتشفة): يُعاد
+    // مسندها بعد اكتشاف المحركات ثم تُعاد ربط الصفوف.
+    private var languages: List<String> = catalog.languages()
+    private var languageAdapter = simpleAdapter(
+        context,
+        languages.map { catalog.languageDisplayName(it) }
+    )
 
     // محركات الفئات المثبتة (خيار «تلقائي» أولاً): نفس القائمة لجميع الصفوف
     private val categoryEngines =
@@ -66,12 +69,74 @@ internal class CategoryVoiceAdapter(
         }
     )
 
+    /** إعادة بناء قوائم اللغات بعد اكتمال الاكتشاف الخلفي ثم إعادة
+     *  ربط الصفوف كاملة (مسند اللغة ومراجع الأصوات المرئية). */
+    internal fun refreshLanguages() {
+        languages = catalog.languages()
+        languageAdapter = simpleAdapter(
+            context,
+            languages.map { catalog.languageDisplayName(it) }
+        )
+        notifyDataSetChanged()
+    }
+
+    /** لغة الصف إن لم تُحفظ صراحة: تُستنتج من صوت الفئة المحفوظ
+     *  (en-…/en-US → إنجليزية، وإلا فالعربية الافتراضية). */
+    private fun defaultLanguageFor(category: String): String {
+        val saved = runCatching {
+            settings.getPreferredVoiceIdForCategory(category)
+        }.getOrNull().orEmpty()
+        val isEn = saved.startsWith("nateq-en", ignoreCase = true) ||
+            saved.startsWith("en-local", ignoreCase = true) ||
+            saved.equals("en-US", ignoreCase = true)
+        return if (isEn) "en" else "ar"
+    }
+
+    /** إعادة بناء سبنر الأصوات للصف: أصوات (اللغة، محرك الفئة) من
+     *  الكتالوج مع سقوطٍ للأصوات المنطقية ثم اختيار الصوت المحفوظ —
+     *  كل الإسناد تحت عَلَم الربط حتى لا يُسجَّل اختيار برمجي. */
+    private fun refreshVoiceSpinner(holder: CatVH) {
+        val engine = if (
+            holder.category == SettingsRepository.VOICE_CATEGORY_DEFAULT
+        ) {
+            null
+        } else {
+            runCatching {
+                settings.getEngineForCategory(holder.category)
+            }.getOrNull()
+        }
+        holder.voiceOptions = catalog.voicesFor(
+            holder.currentLanguage, engine
+        )
+        val saved = runCatching {
+            settings.getPreferredVoiceIdForCategory(holder.category)
+        }.getOrNull()
+        bindingAdapterInputs = true
+        try {
+            holder.spinnerVoice.adapter = simpleAdapter(
+                context, holder.voiceOptions.map { it.label }
+            )
+            val idx = holder.voiceOptions.indexOfFirst { it.name == saved }
+            holder.spinnerVoice.setSelection(if (idx >= 0) idx else 0)
+        } finally {
+            bindingAdapterInputs = false
+        }
+    }
+
     inner class CatVH(itemView: View) : RecyclerView.ViewHolder(itemView) {
         /** الفئة المرتبطة حالياً بالحامل (تُحدَّث في bind). */
         var category: String = ""
+        /** اللغة المختارة حالياً لهذا الصف (تُحدَّث من سبنر اللغة). */
+        var currentLanguage: String = "ar"
+        /** خيارات الأصوات المعروضة (تُعاد عند تبديل اللغة أو المحرك). */
+        var voiceOptions: List<VoiceOption> = emptyList()
         val tvCategory: TextView = itemView.findViewById(R.id.tv_category_name)
         val tvCategoryDescription: TextView =
             itemView.findViewById(R.id.tv_category_description)
+        val spinnerLanguage: Spinner =
+            itemView.findViewById(R.id.spinner_category_language)
+        val tvLanguageLabel: TextView =
+            itemView.findViewById(R.id.tv_category_language_label)
         val spinnerEngine: Spinner =
             itemView.findViewById(R.id.spinner_category_engine)
         val tvEngineLabel: TextView =
@@ -99,7 +164,33 @@ internal class CategoryVoiceAdapter(
         val holder = CatVH(view)
         // المستمعات تُثبَّت مرة واحدة عند إنشاء الحامل وتقرأ الفئة المرتبطة
         // حالياً، فلا تُنشأ كائنات جديدة مع كل تمرير أو إعادة ربط.
-        holder.spinnerVoice.adapter = voiceNameAdapter
+        holder.spinnerLanguage.adapter = languageAdapter
+        holder.spinnerLanguage.onItemSelectedListener =
+            object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: android.widget.AdapterView<*>?,
+                view: View?,
+                pos: Int,
+                id: Long
+            ) {
+                if (bindingAdapterInputs) return
+                val category = holder.category
+                if (category.isEmpty() || pos !in languages.indices) {
+                    return
+                }
+                val language = languages[pos]
+                if (language == holder.currentLanguage) return
+                holder.currentLanguage = language
+                runCatching {
+                    settings.setLanguageForCategory(category, language)
+                }
+                refreshVoiceSpinner(holder)
+            }
+
+            override fun onNothingSelected(
+                parent: android.widget.AdapterView<*>?
+            ) {}
+        }
         holder.spinnerEngine.adapter = engineOptionsAdapter
         holder.spinnerEngine.onItemSelectedListener =
             object : android.widget.AdapterView.OnItemSelectedListener {
@@ -121,6 +212,8 @@ internal class CategoryVoiceAdapter(
                 runCatching {
                     settings.setEngineForCategory(category, engine)
                 }
+                // تبديل المحرك يُجدد أصوات اللغة الحالية.
+                refreshVoiceSpinner(holder)
             }
 
             override fun onNothingSelected(
@@ -138,14 +231,15 @@ internal class CategoryVoiceAdapter(
                 val category = holder.category
                 // **بند 6.2:** إسنادُ الربط البرمجي ليس اختيارَ مستخدم —
                 // لا يُكتب بعده شيء (وإلا حُفظ صوت 0 لكل فئةٍ بلا مخصص).
-                if (category.isEmpty() || pos >= voices.size ||
+                if (category.isEmpty() ||
+                    pos !in holder.voiceOptions.indices ||
                     bindingAdapterInputs
                 ) {
                     return
                 }
                 runCatching {
                     settings.setPreferredVoiceIdForCategory(
-                        category, voices[pos].name
+                        category, holder.voiceOptions[pos].name
                     )
                 }
             }
@@ -268,11 +362,10 @@ internal class CategoryVoiceAdapter(
             // بلا أصوات — الفهرس المُختار يتجاوز حدود القائمة فلا يُسقط
             // النقرُ أو التمريرُ التطبيق بمؤشرٍ خارج الحدود.
             val voiceIndex = holder.spinnerVoice.selectedItemPosition
-            if (voiceIndex !in voices.indices) {
+            if (voiceIndex !in holder.voiceOptions.indices) {
                 return@setOnClickListener
             }
-            val voice = voices[voiceIndex]
-            val isArabic = !LanguageCode.isEnglish(voice.languageTag)
+            val isArabic = LanguageCode.isArabic(holder.currentLanguage)
             val text = when {
                 !isArabic && category ==
                     SettingsRepository.VOICE_CATEGORY_TIME ->
@@ -298,7 +391,7 @@ internal class CategoryVoiceAdapter(
                     context.getString(R.string.sample_text_emoji_ar)
                 else -> context.getString(R.string.sample_text_default_ar)
             }
-            onTestVoice(category, voice.languageTag, text)
+            onTestVoice(category, holder.currentLanguage, text)
         }
         return holder
     }
@@ -331,6 +424,9 @@ internal class CategoryVoiceAdapter(
         )
         holder.spinnerVoice.contentDescription = context.getString(
             R.string.cd_category_voice_spinner, catLabel
+        )
+        holder.spinnerLanguage.contentDescription = context.getString(
+            R.string.cd_category_language_spinner_for, catLabel
         )
         holder.btnTest.contentDescription = context.getString(
             R.string.cd_test_voice_button_for, catLabel
@@ -368,10 +464,21 @@ internal class CategoryVoiceAdapter(
         val engineIdx = categoryEngines
             .indexOfFirst { it.packageName == savedEngine }
 
-        val saved =
-            runCatching { settings.getPreferredVoiceIdForCategory(category) }
-                .getOrNull()
-        val idx = voices.indexOfFirst { it.name == saved }
+        // اللغة المختارة للفئة (محفوظة أو مستنتجة من صوتها) ثم موضعها
+        // تحت عَلَم الربط — الأصوات تُبنى عبر refreshVoiceSpinner.
+        holder.currentLanguage = runCatching {
+            settings.getLanguageForCategory(category)
+        }.getOrNull() ?: defaultLanguageFor(category)
+        bindingAdapterInputs = true
+        try {
+            holder.spinnerLanguage.adapter = languageAdapter
+            val langIdx = languages.indexOf(holder.currentLanguage)
+            holder.spinnerLanguage.setSelection(
+                if (langIdx >= 0) langIdx else 0
+            )
+        } finally {
+            bindingAdapterInputs = false
+        }
         // **بند 6.2:** اختيارُ الموضع أثناء الربط (0 لفئةٍ بلا صوتٍ مخصص)
         // لا يجوز أن يكون اختياراً مسجَّلاً — يُكبَح عليه عَلَمُ الربط.
         bindingAdapterInputs = true
@@ -379,10 +486,10 @@ internal class CategoryVoiceAdapter(
             holder.spinnerEngine.setSelection(
                 if (engineIdx >= 0) engineIdx + 1 else 0
             )
-            holder.spinnerVoice.setSelection(if (idx >= 0) idx else 0)
         } finally {
             bindingAdapterInputs = false
         }
+        refreshVoiceSpinner(holder)
 
         val rate = runCatching { settings.getSpeechRateForCategory(category) }
             .getOrDefault(1.0f)

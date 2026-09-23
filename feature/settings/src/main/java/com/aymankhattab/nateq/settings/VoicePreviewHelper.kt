@@ -40,16 +40,34 @@ internal fun buildPreviewParams(
     sampleText: String
 ): PreviewParams {
     val voice = voices.getOrNull(voiceSelection) ?: voices.firstOrNull()
-    return PreviewParams(
-        enginePkg = enginePkg,
+    return buildPreviewParamsFrom(
         voiceName = voice?.name.orEmpty(),
         languageTag = voice?.languageTag.orEmpty(),
-        speechRate = rateProgress.speedFactor(),
-        pitch = pitchProgress.speedFactor(),
-        volume = (volumePercent / 100f).coerceIn(0f, 1f),
+        enginePkg = enginePkg,
+        rateProgress = rateProgress,
+        pitchProgress = pitchProgress,
+        volumePercent = volumePercent,
         sampleText = sampleText
     )
 }
+
+internal fun buildPreviewParamsFrom(
+    voiceName: String,
+    languageTag: String,
+    enginePkg: String?,
+    rateProgress: Int,
+    pitchProgress: Int,
+    volumePercent: Int,
+    sampleText: String
+): PreviewParams = PreviewParams(
+    enginePkg = enginePkg,
+    voiceName = voiceName,
+    languageTag = languageTag,
+    speechRate = rateProgress.speedFactor(),
+    pitch = pitchProgress.speedFactor(),
+    volume = (volumePercent / 100f).coerceIn(0f, 1f),
+    sampleText = sampleText
+)
 
 /**
  * يبني طلب معاينة لفئةٍ بلا أدوات صوت داخلها (الوقت/الإشعارات) من قيم

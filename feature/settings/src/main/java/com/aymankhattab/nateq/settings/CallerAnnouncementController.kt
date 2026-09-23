@@ -29,7 +29,7 @@ import com.aymankhattab.nateq.core.data.SettingsRepository
 internal class CallerAnnouncementController(
     private val fragment: VoiceSelectionFragment,
     private val settings: SettingsRepository,
-    private val voices: List<NateqVoice>,
+    private val catalog: EngineVoicesCatalog,
     private val onStatusChanged: () -> Unit,
     private val onOpenOemGuidance: () -> Unit
 ) {
@@ -82,6 +82,11 @@ internal class CallerAnnouncementController(
     // onProgressChanged كان تعديل TalkBack (عبر أداء الوصول، لا يمر عبر
     // onStopTrackingTouch إطلاقاً) يفقد أي تعديل على أشرطة التمرير.
     private var bindingSlider = false
+
+    // أصوات مسارات المتصل (عربي/إنجليزي) وأعلام الربط.
+    private var callerVoiceOptionsAr: List<VoiceOption> = emptyList()
+    private var callerVoiceOptionsEn: List<VoiceOption> = emptyList()
+    private var bindingVoices = false
 
     /** يمنع تكرار حوار «أُلغيت أذونات المتصل» أكثر من مرة
      *  لكل دورة فتح إعدادات */
@@ -140,6 +145,7 @@ internal class CallerAnnouncementController(
                         pkg
                     )
                 }
+                refreshCallerVoices()
                 onStatusChanged()
             }
 
@@ -408,16 +414,7 @@ internal class CallerAnnouncementController(
         templateWatcher = callerWatcher
         etCallerTemplate?.addTextChangedListener(callerWatcher)
 
-        // صوت نطق الأسماء العربية في إعلان المتصل
-        spinnerCallerVoiceAr?.adapter =
-            fragment.simpleAdapter(voices.map { it.displayName })
-        val savedCallerVoiceAr =
-            runCatching { settings.getCallerAnnouncementArabicVoiceId() }
-                .getOrNull()
-        if (savedCallerVoiceAr != null) {
-            val idx = voices.indexOfFirst { it.name == savedCallerVoiceAr }
-            if (idx >= 0) spinnerCallerVoiceAr?.setSelection(idx)
-        }
+        // صوت نطق الأسماء العربية في إعلان المتصل (من الكتالوج).
         spinnerCallerVoiceAr?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
@@ -426,26 +423,18 @@ internal class CallerAnnouncementController(
                 position: Int,
                 id: Long
             ) {
+                if (bindingVoices) return
+                val name = callerVoiceOptionsAr.getOrNull(position)?.name
+                    ?: return
                 runCatching {
-                    settings.setCallerAnnouncementArabicVoiceId(
-                        voices[position].name
-                    )
+                    settings.setCallerAnnouncementArabicVoiceId(name)
                 }
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
-        // صوت نطق الأسماء الإنجليزية في إعلان المتصل
-        spinnerCallerVoiceEn?.adapter =
-            fragment.simpleAdapter(voices.map { it.displayName })
-        val savedCallerVoiceEn =
-            runCatching { settings.getCallerAnnouncementEnglishVoiceId() }
-                .getOrNull()
-        if (savedCallerVoiceEn != null) {
-            val idx = voices.indexOfFirst { it.name == savedCallerVoiceEn }
-            if (idx >= 0) spinnerCallerVoiceEn?.setSelection(idx)
-        }
+        // صوت نطق الأسماء الإنجليزية في إعلان المتصل (من الكتالوج).
         spinnerCallerVoiceEn?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
@@ -454,15 +443,17 @@ internal class CallerAnnouncementController(
                 position: Int,
                 id: Long
             ) {
+                if (bindingVoices) return
+                val name = callerVoiceOptionsEn.getOrNull(position)?.name
+                    ?: return
                 runCatching {
-                    settings.setCallerAnnouncementEnglishVoiceId(
-                        voices[position].name
-                    )
+                    settings.setCallerAnnouncementEnglishVoiceId(name)
                 }
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
+        refreshCallerVoices()
 
         // استرداد ذكي: إذا كانت ميزة المتصّل مفعّلة لكن أذوناتها سُحبت (سحب
         // النظام التلقائي للأذونات غير المستخدمة، خصوصاً على أندرويد 11+)
@@ -481,10 +472,13 @@ internal class CallerAnnouncementController(
             ?.packageName
         val sample = fragment.getString(R.string.sample_text_caller_preview)
         fragment.previewSpeech(
-            buildPreviewParams(
-                voices = voices,
-                voiceSelection =
-                    spinnerCallerVoiceAr?.selectedItemPosition ?: 0,
+            buildPreviewParamsFrom(
+                voiceName = callerVoiceOptionsAr
+                    .getOrNull(
+                        spinnerCallerVoiceAr?.selectedItemPosition ?: 0
+                    )
+                    ?.name.orEmpty(),
+                languageTag = "ar",
                 enginePkg = enginePkg,
                 rateProgress = seekCallerRate?.progress ?: 100,
                 pitchProgress = seekCallerPitch?.progress ?: 100,
@@ -492,6 +486,48 @@ internal class CallerAnnouncementController(
                 sampleText = sample
             )
         )
+    }
+
+    /** إعادة بناء سبنري أصوات المتصل (عربي/إنجليزي) لمحرك المتصل
+     *  برمجياً تحت عَلَم الربط — عند بدء الإعداد وعند اكتمال
+     *  اكتشاف المحركات خلفياً ([VoiceSelectionFragment]). */
+    fun refreshCallerVoices() {
+        val engine = runCatching {
+            settings.getEngineForCategory(
+                SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+            )
+        }.getOrNull()
+        callerVoiceOptionsAr = catalog.voicesFor("ar", engine)
+        callerVoiceOptionsEn = catalog.voicesFor("en", engine)
+        bindCallerVoices(
+            spinnerCallerVoiceAr,
+            callerVoiceOptionsAr,
+            runCatching {
+                settings.getCallerAnnouncementArabicVoiceId()
+            }.getOrNull()
+        )
+        bindCallerVoices(
+            spinnerCallerVoiceEn,
+            callerVoiceOptionsEn,
+            runCatching {
+                settings.getCallerAnnouncementEnglishVoiceId()
+            }.getOrNull()
+        )
+    }
+
+    private fun bindCallerVoices(
+        spinner: Spinner?,
+        options: List<VoiceOption>,
+        saved: String?
+    ) {
+        bindingVoices = true
+        try {
+            spinner?.adapter = fragment.simpleAdapter(options.map { it.label })
+            val idx = options.indexOfFirst { it.name == saved }
+            spinner?.setSelection(if (idx >= 0) idx else 0)
+        } finally {
+            bindingVoices = false
+        }
     }
 
     /**

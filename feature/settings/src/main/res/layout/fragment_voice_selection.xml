@@ -195,6 +195,75 @@
                 android:textOff="@string/toggle_off"
                 android:textOn="@string/toggle_on" />
 
+            <!-- نطق الساعة في السيناريوهات الصوتية الخاصة -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/time_announcement_scenarios_title"
+                android:textAppearance="?attr/textAppearanceBody2"
+                android:importantForAccessibility="yes" />
+
+            <!-- نطق الساعة أثناء المكالمات الهاتفية -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_time_during_calls"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/time_announcement_during_calls"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/time_announcement_during_calls_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:importantForAccessibility="no" />
+
+            <!-- نطق الساعة أثناء تشغيل الوسائط -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_time_during_media"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/time_announcement_during_media"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/time_announcement_during_media_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:importantForAccessibility="no" />
+
+            <!-- نطق الساعة أثناء وضع الصامت -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_time_during_silent"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/time_announcement_during_silent"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/time_announcement_during_silent_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:importantForAccessibility="no" />
+
             <!-- فاصل إعلان الوقت -->
             <com.google.android.material.textfield.TextInputLayout
                 android:id="@+id/til_time_interval"
@@ -817,6 +886,20 @@
                     android:layout_height="wrap_content"
                     android:minHeight="48dp"
                     android:contentDescription="@string/spinner_sms_reading_mode_content" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- لغة صوت الرسائل -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:hint="@string/voice_language_label">
+                <androidx.appcompat.widget.AppCompatSpinner
+                    android:id="@+id/spinner_sms_reading_language"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/cd_voice_language_spinner" />
             </com.google.android.material.textfield.TextInputLayout>
 
             <!-- اختيار الصوت -->
@@ -1676,6 +1759,27 @@
                 android:textColor="@color/text_secondary"
                 android:importantForAccessibility="no" />
 
+            <!-- خفض صوت الوسائط أثناء النطق (بند الصوتيات) -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_duck_media"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/duck_media_during_announcements"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/duck_media_during_announcements_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:importantForAccessibility="no" />
+
         </LinearLayout>
 
         <View
@@ -1848,6 +1952,20 @@
                 android:orientation="vertical"
                 android:layout_marginTop="4dp"
                 android:visibility="gone" />
+
+            <!-- لغة صوت البطارية -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:hint="@string/voice_language_label">
+                <androidx.appcompat.widget.AppCompatSpinner
+                    android:id="@+id/spinner_battery_language"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/cd_voice_language_spinner" />
+            </com.google.android.material.textfield.TextInputLayout>
 
             <!-- صوت نطق البطارية -->
             <com.google.android.material.textfield.TextInputLayout

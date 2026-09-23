@@ -48,6 +48,8 @@ import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker.InstalledEngine
+import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
+import com.aymankhattab.nateq.core.audio.engine.EngineWithVoices
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.settings.OemVendor
 import com.aymankhattab.nateq.settings.SettingsViewModel.SettingsOperation
@@ -256,6 +258,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     // مبسّطة إلى لغتين فقط: "العربية" و"الإنجليزية"
     private lateinit var nateqVoices: List<NateqVoice>
 
+    // كتالوج متدرج (لغة ← محرك ← أصوات) لصفوف الفئات والرسائل
+    // والمتصل والبطارية — يُملأ من اكتشاف المحركات الخلفي.
+    private lateinit var engineCatalog: EngineVoicesCatalog
+
     // طلب إذنَي القراءة عند تفعيل إعلان المتصل (READ_PHONE_STATE لاستقبال
     // بث PHONE_STATE المحمي، وREAD_CALL_LOG للوصول إلى الرقم على أندرويد 12+
     // والاسم من سجل المكالمات، وREAD_CONTACTS للبحث عن الاسم في دفتر
@@ -329,6 +335,14 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             )
         )
 
+        // كتالوج متدرج — يبدأ فارغاً فيعتمد على الأصوات الاحتياطية
+        // (العربية/الإنجليزية) ثم يُملأ من الاكتشاف الخلفي.
+        engineCatalog = EngineVoicesCatalog(
+            emptyMap(),
+            getString(R.string.voice_name_arabic),
+            getString(R.string.voice_name_english)
+        )
+
         // قسم المحركات: اكتشاف المحركات المثبتة فقط (لا صندوق اختيار عام —
         // لا محرك افتراضي؛ محرك كل لغة/فئة يُحسم وقت النطق)
         voicePreview = VoicePreviewHelper(requireContext().applicationContext)
@@ -352,7 +366,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         rvCategories.adapter = CategoryVoiceAdapter(
             requireContext(),
             settings,
-            nateqVoices,
+            engineCatalog,
             // بند 4.3: معاينةُ الزر تُمرَّر بفئتها فتسمع صوتَ الفئة الفعلي.
             { category, langTag, text ->
                 speakWithCategory(category, langTag, text)
@@ -491,10 +505,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         btnContactDeveloper = view.findViewById(R.id.btn_contact_developer)
         btnContactDeveloper.setOnClickListener { openDeveloperSupport() }
 
-        // زر الإبلاغ عن خطأ: يجمع سطور الأخطاء من السجل ويشاركها عبر
-        // وسائل المشاركة
+        // زر الإبلاغ عن خطأ: الضغطة الأولى تبدأ مراقبة السجل التقني ثم
+        // «تم» تجمع التقرير من نافذة الالتقاط الحية وتشاركه (مراجعة
+        // تقرير «أبو أحمد»: التقاط لحظة الضغط فقط كان يُفرغ التقرير).
         btnReportError = view.findViewById(R.id.btn_report_error)
         btnReportError.setOnClickListener { onReportErrorClicked() }
+        syncReportErrorButtonText()
 
         // زر آخر التحديثات: يعرض ملخص أحدث إصدار وتغييراته في حوار
         btnChangelog = view.findViewById(R.id.btn_changelog)
@@ -514,20 +530,22 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
         batterySection = BatteryAnnouncementController(
-            this, settings, nateqVoices, { accordion.updateSectionStatuses() }
+            this, settings, engineCatalog,
+            { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
         notificationSection = NotificationReadingController(
             this, settings, nateqVoices, { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
         callerSection = CallerAnnouncementController(
-            this, settings, nateqVoices,
+            this, settings, engineCatalog,
             onStatusChanged = { accordion.updateSectionStatuses() },
             onOpenOemGuidance = {
                 accordion.navigateToSection(R.id.ll_oem_guidance_content)
             }
         ).apply { setup(view) }
         smsSection = SmsReadingController(
-            this, settings, nateqVoices, { accordion.updateSectionStatuses() }
+            this, settings, engineCatalog,
+            { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
         generalSection = GeneralSettingsController(
             this, settings, { accordion.updateSectionStatuses() }
@@ -551,6 +569,39 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         setupSaveAndResetButtons()
         setupBackupRestoreButtons()
         accordion.updateSectionStatuses()
+        // اكتشاف متدرج (لغة ← محرك ← أصوات): يُملأ الكتالوج خلفياً ثم تُنعش
+        // قوائم الفئات والرسائل/المتصل/البطارية. كتالوج فارغ = الأصوات
+        // الاحتياطية (العربية/الإنجليزية).
+        viewLifecycleOwner.lifecycleScope.launch {
+            val discovery = withContext(AppDispatchers.io) {
+                try {
+                    VoiceCatalog.discoverAllLanguagesAcrossEngines(
+                        requireContext()
+                    )
+                } catch (_: Throwable) {
+                    emptyMap<String, List<EngineWithVoices>>()
+                }
+            }
+            engineCatalog.update(
+                discovery.mapValues { (_, engines) ->
+                    engines.map { row ->
+                        EngineVoicesRow(
+                            row.enginePackage,
+                            row.engineLabel,
+                            row.voices.map { voice ->
+                                VoiceOption(voice.name, voice.name)
+                            }
+                        )
+                    }
+                }
+            )
+            if (!isAdded) return@launch
+            (rvCategories.adapter as? CategoryVoiceAdapter)
+                ?.refreshLanguages()
+            smsSection.refreshSmsVoices()
+            batterySection.refreshBatteryVoices()
+            callerSection.refreshCallerVoices()
+        }
         // بند 4.6: إعادة فتح الشاشة (مجموعة/قسم) التي كان يعدّلها المستخدم
         // قبل تدوير الجهاز بدل طردِه إلى الصفحة الرئيسية.
         if (savedInstanceState != null) {
@@ -1069,6 +1120,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         val rate = runCatching {
             settings.getSpeechRateForCategory(category)
         }.getOrDefault(1.0f)
+        // يُحترم صوت الفئة المحفوظ (قد يكون من محرك خارجي) فيُمرَّر
+        // name المطابق إلى voiceId — resetVoice قصير الدارة بلا
+        // إعادة تهيئة غير ضرورية.
+        runCatching {
+            settings.getPreferredVoiceIdForCategory(category)
+        }.getOrNull()?.let { speaker.resetVoice(it) }
         speaker.speak(
             text,
             Locale.forLanguageTag(languageTag),
@@ -1157,9 +1214,41 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
     // ===== جمع سطور الأخطاء من سجل التطبيق ومشاركتها مع المطور =====
     private fun onReportErrorClicked() {
+        if (DiagnosticLogRecorder.isRecording()) {
+            finishErrorReportCollection()
+        } else {
+            startErrorReportCollection()
+        }
+    }
+
+    private fun syncReportErrorButtonText() {
+        btnReportError?.text = getString(
+            if (DiagnosticLogRecorder.isRecording()) {
+                R.string.report_error_finish
+            } else {
+                R.string.report_error
+            }
+        )
+    }
+
+    /** الضغطة الأولى: إطلاق مراقبة السجل (يستمر عبر كل الشاشات حتى
+     *  يضغط المستخدم «تم» بعد إعادة إنتاج المشكلة). */
+    private fun startErrorReportCollection() {
+        if (!DiagnosticLogRecorder.start()) return
+        syncReportErrorButtonText()
+        val msg = getString(R.string.report_error_started)
+        Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
+        view?.announceCompat(msg)
+    }
+
+    /** الضغطة الثانية: إيقاف المراقبة وحصاد لقطة السجل الحية وبناء
+     *  التقرير الكامل منها (يصرّف عبر الحارس لئلا يكتب كوروتينان
+     *  نفس ملف الكاش). */
+    private fun finishErrorReportCollection() {
+        val captured = DiagnosticLogRecorder.stop()
         val currentContext = context ?: return
-        // حارس منع التكرار: الضغط المتتالي أثناء جمعٍ جارٍ يُرفض حتى لا
-        // يتوازى كوروتينان على نفس ملف الكاش (ملاحظة مراجعة السجل).
+        // حارس منع التكرار: ضغطة «تم» المتتالية أثناء جمعٍ جارٍ تُرفض
+        // حتى لا يتوازى كوروتينان على نفس ملف الكاش.
         if (!errorReportGate.tryBegin()) return
         Toast.makeText(
             currentContext,
@@ -1169,7 +1258,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val report = runCatching {
-                    buildErrorReport(currentContext)
+                    buildErrorReport(currentContext, captured)
                 }.getOrNull()
                 if (!isAdded ||
                     activity == null ||
@@ -1195,6 +1284,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 // يُفتح الباب مجدداً بعد اكتمال/فشل/إلغاء رحلة الجمع (ينفذ
                 // هذا الحظر حتى عند إلغاء النطاق أو الإرجاع المبكر أعلاه).
                 errorReportGate.finish()
+                if (isAdded) {
+                    syncReportErrorButtonText()
+                }
             }
         }
     }
@@ -1204,27 +1296,34 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
      * وأحدث سطور logcat لعملية التطبيق (أخطاء وتحذيرات ونشاط حديث).
      */
     private suspend fun buildErrorReport(
-        context: android.content.Context
+        context: android.content.Context,
+        capturedLines: List<String>
     ): String =
         kotlinx.coroutines.withContext(AppDispatchers.io) {
             val diagnostics = buildDiagnosticsInfo(context)
-            val logLines = mutableListOf<String>()
-            try {
-                val process = Runtime.getRuntime().exec(
-                    arrayOf(
-                        "logcat", "-d",
-                        "-t", "600",
-                        "--pid", android.os.Process.myPid().toString()
+            val logLines = capturedLines.toMutableList()
+            if (logLines.isEmpty()) {
+                // احتياط: لم تطلق المراقبة الحية أسطراً — سحب لحظة
+                // مباشر لأحدث 600 سطر (السلوك السابق).
+                try {
+                    val process = Runtime.getRuntime().exec(
+                        arrayOf(
+                            "logcat", "-d",
+                            "-t", "600",
+                            "--pid", android.os.Process.myPid().toString()
+                        )
                     )
-                )
-                process.inputStream.bufferedReader().useLines { lines ->
-                    for (line in lines) {
-                        logLines.add(line)
+                    process.inputStream.bufferedReader().useLines { lines ->
+                        for (line in lines) {
+                            logLines.add(line)
+                        }
                     }
+                    process.waitFor()
+                } catch (e: Exception) {
+                    android.util.Log.e(
+                        "NATEQ_APP", "logcat collect failed", e
+                    )
                 }
-                process.waitFor()
-            } catch (e: Exception) {
-                android.util.Log.e("NATEQ_APP", "logcat collect failed", e)
             }
 
             buildString {

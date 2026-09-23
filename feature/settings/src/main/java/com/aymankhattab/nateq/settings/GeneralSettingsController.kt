@@ -30,6 +30,7 @@ internal class GeneralSettingsController(
     private var seekDefaultVolume: SeekBar? = null
     private var tvDefaultVolumeValue: TextView? = null
     private var switchMediaStreamAlways: SwitchMaterial? = null
+    private var switchDuckMedia: SwitchMaterial? = null
     private var switchFollowReaderRate: SwitchMaterial? = null
     private var spinnerAudioExpansion: AppCompatSpinner? = null
 
@@ -59,6 +60,20 @@ internal class GeneralSettingsController(
             // تجاوز كتم مسار الإتاحة على الأجهزة التي يخفت فيها صوته
             // دون قارئ شاشة.
             runCatching { settings.setAnnouncementMediaStreamAlways(checked) }
+            onStatusChanged()
+        }
+
+        switchDuckMedia = view.findViewById(R.id.switch_duck_media)
+        switchDuckMedia?.isChecked = runCatching {
+            settings.isDuckMediaDuringAnnouncements()
+        }.getOrDefault(true)
+        switchDuckMedia?.setOnCheckedChangeListener { _, checked ->
+            // بند الصوتيات: «خفض صوت الوسائط أثناء النطق» — يُترجم إلى
+            // نوع الطلب MAY_DUCK (خفض) مقابل GAIN_TRANSIENT (توقف مؤقت)
+            // في AnnouncementSpeaker.requestAudioFocus.
+            runCatching {
+                settings.setDuckMediaDuringAnnouncements(checked)
+            }
             onStatusChanged()
         }
 
@@ -267,6 +282,7 @@ internal class GeneralSettingsController(
         seekDefaultVolume = null
         tvDefaultVolumeValue = null
         switchMediaStreamAlways = null
+        switchDuckMedia = null
         switchFollowReaderRate = null
         spinnerAudioExpansion = null
     }

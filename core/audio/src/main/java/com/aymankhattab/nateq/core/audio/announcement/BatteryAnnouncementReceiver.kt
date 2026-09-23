@@ -180,14 +180,27 @@ class BatteryAnnouncementReceiver(
         // على مستخدمٍ عربيٍّ بعد اليوم.
         val voiceId = settings.getBatteryAnnouncementVoiceId()
             ?: batteryFallbackVoice(settings)
+        // لغة الصوت المحددة في الشاشة التدريجية تتصدر حسم
+        // العربية/الإنجليزية — ثم يُستنتج من تسمية الصوت كسند
+        // تاريخي للقيم القديمة.
+        val savedLanguage = runCatching {
+            settings.getBatteryAnnouncementLanguage()
+        }.getOrNull()
         // بند 4.3: أي تسمية عربية (ar، ar-XX، arabic…) تُعد عربيةً — كان
         // القصرُ على قائمة صيغ محددة (ar-local/ar-EG/nateq-ar) يسقط
         // لهجةً/صيغةً صوتية أخرى (ar-SA/ar-AE…) فيقرأ إعلان البطارية
         // بالإنجليزية خطأً على مستخدم عربي.
-        val isArabic = voiceId?.let {
-            it.startsWith("ar", ignoreCase = true) ||
-                it.contains("arabic", ignoreCase = true)
-        } == true
+        val isArabic = when (savedLanguage) {
+            LanguageCode.EN.tag -> false
+            LanguageCode.AR.tag -> true
+            // لغة محفوظة غير عربية/إنجليزية (مكتشفة خارج النطاق
+            // الداعم لنصوص البطارية): يُرجع الحسم لتسمية الصوت
+            // كالسلوك السابق تماماً.
+            else -> voiceId?.let {
+                it.startsWith("ar", ignoreCase = true) ||
+                    it.contains("arabic", ignoreCase = true)
+            } == true
+        }
         val locale =
             if (isArabic) Locale.forLanguageTag(LanguageCode.AR.tag)
             else Locale.forLanguageTag(LanguageCode.EN.tag)

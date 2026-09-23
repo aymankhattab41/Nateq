@@ -3,6 +3,7 @@ package com.aymankhattab.nateq.core.audio.announcement
 import android.content.ComponentName
 import android.content.Context
 import android.content.IntentFilter
+import android.media.AudioManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
 import androidx.test.core.app.ApplicationProvider
@@ -36,6 +37,22 @@ class AnnouncementSpeakerTest {
     fun `utterance ids stay unique within the same millisecond`() {
         val ids = (1..1000).map { AnnouncementSpeaker.nextUtteranceId() }
         assertEquals("معرّفات النطق فريدة دوماً", 1000, ids.toSet().size)
+    }
+
+    @Test
+    fun `audioFocusTypeFor duck on requests may duck`() {
+        assertEquals(
+            AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,
+            AnnouncementSpeaker.audioFocusTypeFor(duckMedia = true)
+        )
+    }
+
+    @Test
+    fun `audioFocusTypeFor duck off requests transient without duck`() {
+        assertEquals(
+            AudioManager.AUDIOFOCUS_GAIN_TRANSIENT,
+            AnnouncementSpeaker.audioFocusTypeFor(duckMedia = false)
+        )
     }
 
     @Test

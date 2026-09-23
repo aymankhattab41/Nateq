@@ -101,14 +101,14 @@ class PcmEqualizerTest {
     @Test
     fun testDefaultEngineProfiles() {
         val espeak = PcmEqualizer.defaultGainsFor("com.reecedunn.espeak")
-        assertEquals(2.5f, espeak[0], 0.01f)
-        assertEquals(1.0f, espeak[1], 0.01f)
-        assertEquals(-3.5f, espeak[2], 0.01f)
+        assertEquals(1.5f, espeak[0], 0.01f)
+        assertEquals(0.0f, espeak[1], 0.01f)
+        assertEquals(-1.5f, espeak[2], 0.01f)
 
         val rhvoice = PcmEqualizer.defaultGainsFor(
             "com.github.olga_yakovleva.rhvoice"
         )
-        assertEquals(2.5f, rhvoice[0], 0.01f)
+        assertEquals(1.5f, rhvoice[0], 0.01f)
 
         val google = PcmEqualizer.defaultGainsFor("com.google.android.tts")
         assertEquals(0.0f, google[0], 0.01f)
@@ -121,7 +121,7 @@ class PcmEqualizerTest {
         val eq = PcmEqualizer()
         // 1 full second of 44.1 kHz 16-bit audio = 88,200 bytes
         val pcm = generateSinePcm(1000.0, 44100, 1.0)
-        val gains = floatArrayOf(2.5f, 1.0f, -3.5f)
+        val gains = PcmEqualizer.ESPEAK_GAINS
 
         // Warm up
         eq.process(pcm.copyOf(), 0, pcm.size, 44100, gains)

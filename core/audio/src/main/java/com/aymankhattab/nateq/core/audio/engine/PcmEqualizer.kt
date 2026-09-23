@@ -32,8 +32,10 @@ class PcmEqualizer {
         /** عتبة تخطي النطاق غير المعدَّل (0 dB). */
         private const val BYPASS_EPSILON = 0.15f
 
-        /** بصمة eSpeak القياسية: تعزيز الجهير وخفض الحدة. */
-        val ESPEAK_GAINS = floatArrayOf(2.5f, 1.0f, -3.5f)
+        /** بصمة eSpeak المعتدلة (بند الصوتيات): تعزيز جهير خفيف وخفض
+         *  حدة خفيف — دون قَطع يُفقد النطقَ حلاوته (شكوى «صوت النطق
+         *  ينخفض» كانت بقَطع −3.5dB كامل للنطاق الحاد). */
+        val ESPEAK_GAINS = floatArrayOf(1.5f, 0.0f, -1.5f)
 
         /** بصمة افتراضية محايدة (Flat). */
         val FLAT_GAINS = floatArrayOf(0.0f, 0.0f, 0.0f)

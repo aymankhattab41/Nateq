@@ -44,6 +44,9 @@ internal class TimeAnnouncementController(
     private var llQuietSchedule: LinearLayout? = null
     private var spinnerTimeFormat: Spinner? = null
     private var switchTime24h: SwitchMaterial? = null
+    private var switchTimeDuringCalls: SwitchMaterial? = null
+    private var switchTimeDuringMedia: SwitchMaterial? = null
+    private var switchTimeDuringSilent: SwitchMaterial? = null
     private var switchTimeChime: SwitchMaterial? = null
     private var cbTimeChimeAt0: MaterialCheckBox? = null
     private var cbTimeChimeAt15: MaterialCheckBox? = null
@@ -136,6 +139,47 @@ internal class TimeAnnouncementController(
                 .getOrDefault(false)
         switchTime24h?.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setTime24Hour(checked) }
+            fragment.view?.announceCompat(
+                fragment.getString(
+                    if (checked) R.string.toggle_on else R.string.toggle_off
+                )
+            )
+        }
+
+        // بند الصوتيات: مفاتيح «نطق الساعة في حالات خاصة» — المكالمة/
+        // الوسائط/الصامت؛ تُحترم في TimeAnnouncementManager عند الإعلان
+        // التلقائي (ويستثنى طلب «أعلن الآن» الصريح).
+        switchTimeDuringCalls = view.findViewById(R.id.switch_time_during_calls)
+        switchTimeDuringCalls?.isChecked = runCatching {
+            settings.isAnnounceTimeDuringCalls()
+        }.getOrDefault(false)
+        switchTimeDuringCalls?.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setAnnounceTimeDuringCalls(checked) }
+            fragment.view?.announceCompat(
+                fragment.getString(
+                    if (checked) R.string.toggle_on else R.string.toggle_off
+                )
+            )
+        }
+        switchTimeDuringMedia = view.findViewById(R.id.switch_time_during_media)
+        switchTimeDuringMedia?.isChecked = runCatching {
+            settings.isAnnounceTimeDuringMedia()
+        }.getOrDefault(true)
+        switchTimeDuringMedia?.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setAnnounceTimeDuringMedia(checked) }
+            fragment.view?.announceCompat(
+                fragment.getString(
+                    if (checked) R.string.toggle_on else R.string.toggle_off
+                )
+            )
+        }
+        switchTimeDuringSilent =
+            view.findViewById(R.id.switch_time_during_silent)
+        switchTimeDuringSilent?.isChecked = runCatching {
+            settings.isAnnounceTimeDuringSilent()
+        }.getOrDefault(true)
+        switchTimeDuringSilent?.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setAnnounceTimeDuringSilent(checked) }
             fragment.view?.announceCompat(
                 fragment.getString(
                     if (checked) R.string.toggle_on else R.string.toggle_off
@@ -1047,6 +1091,9 @@ internal class TimeAnnouncementController(
         llQuietSchedule = null
         spinnerTimeFormat = null
         switchTime24h = null
+        switchTimeDuringCalls = null
+        switchTimeDuringMedia = null
+        switchTimeDuringSilent = null
         switchTimeChime = null
         cbTimeChimeAt0 = null
         cbTimeChimeAt15 = null

@@ -19,7 +19,7 @@ import com.aymankhattab.nateq.core.data.SettingsRepository
 internal class BatteryAnnouncementController(
     private val fragment: VoiceSelectionFragment,
     private val settings: SettingsRepository,
-    private val voices: List<NateqVoice>,
+    private val catalog: EngineVoicesCatalog,
     private val onStatusChanged: () -> Unit
 ) {
 
@@ -29,6 +29,7 @@ internal class BatteryAnnouncementController(
     private var llBatteryLevelsHeader: LinearLayout? = null
     private var tvBatteryLevelsArrow: TextView? = null
     private var llBatteryLevels: LinearLayout? = null
+    private var spinnerBatteryLanguage: Spinner? = null
     private var spinnerBatteryVoice: Spinner? = null
     private var spinnerBatteryEngine: Spinner? = null
     private var seekBatteryRate: SeekBar? = null
@@ -57,6 +58,11 @@ internal class BatteryAnnouncementController(
     // onStopTrackingTouch إطلاقاً) يفقد أي تعديل على أشرطة التمرير.
     private var bindingSlider = false
 
+    // لغة الصوت الحالية وخيارات سبنر البطارية.
+    private var batteryLanguage: String = "ar"
+    private var batteryVoiceOptions: List<VoiceOption> = emptyList()
+    private var bindingVoices = false
+
     fun setup(view: View) {
         switchBatteryAnnouncement =
             view.findViewById(R.id.switch_battery_announcement)
@@ -65,6 +71,8 @@ internal class BatteryAnnouncementController(
         tvBatteryLevelsArrow = view.findViewById(R.id.tv_battery_levels_arrow)
         llBatteryLevels = view.findViewById(R.id.ll_battery_levels)
         spinnerBatteryVoice = view.findViewById(R.id.spinner_battery_voice)
+        spinnerBatteryLanguage =
+            view.findViewById(R.id.spinner_battery_language)
         spinnerBatteryEngine = view.findViewById(R.id.spinner_battery_engine)
         seekBatteryRate = view.findViewById(R.id.seek_battery_rate)
         tvBatteryRateValue = view.findViewById(R.id.tv_battery_rate_value)
@@ -183,15 +191,43 @@ internal class BatteryAnnouncementController(
             llBatteryLevels?.addView(cb)
         }
 
-        // صوت نطق البطارية
-        spinnerBatteryVoice?.adapter =
-            fragment.simpleAdapter(voices.map { it.displayName })
-        val savedBatteryVoice =
-            runCatching { settings.getBatteryAnnouncementVoiceId() }
-                .getOrNull()
-        if (savedBatteryVoice != null) {
-            val idx = voices.indexOfFirst { it.name == savedBatteryVoice }
-            if (idx >= 0) spinnerBatteryVoice?.setSelection(idx)
+        // لغة صوت البطارية: خياراتها من الكتالوج، وتبديلها هنا يُجدد
+        // الأصوات المعروضة لمحركها.
+        val batteryLanguages = catalog.languages()
+        spinnerBatteryLanguage?.adapter = fragment.simpleAdapter(
+            batteryLanguages.map { catalog.languageDisplayName(it) }
+        )
+        batteryLanguage =
+            runCatching { settings.getBatteryAnnouncementLanguage() }
+                .getOrNull() ?: "ar"
+        bindingVoices = true
+        try {
+            val langIdx = batteryLanguages.indexOf(batteryLanguage)
+            spinnerBatteryLanguage?.setSelection(
+                if (langIdx >= 0) langIdx else 0
+            )
+        } finally {
+            bindingVoices = false
+        }
+        spinnerBatteryLanguage?.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                if (bindingVoices) return
+                val lang = batteryLanguages.getOrNull(position) ?: return
+                if (lang == batteryLanguage) return
+                batteryLanguage = lang
+                runCatching {
+                    settings.setBatteryAnnouncementLanguage(lang)
+                }
+                refreshBatteryVoices()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
         spinnerBatteryVoice?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
@@ -201,15 +237,17 @@ internal class BatteryAnnouncementController(
                 position: Int,
                 id: Long
             ) {
+                if (bindingVoices) return
+                val name = batteryVoiceOptions.getOrNull(position)?.name
+                    ?: return
                 runCatching {
-                    settings.setBatteryAnnouncementVoiceId(
-                        voices[position].name
-                    )
+                    settings.setBatteryAnnouncementVoiceId(name)
                 }
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
+        refreshBatteryVoices()
 
         // محرك نطق البطارية
         batteryEngineOptions = runCatching {
@@ -245,6 +283,8 @@ internal class BatteryAnnouncementController(
                         pkg
                     )
                 }
+                // تبديل المحرك يُجدد قائمة أصوات اللغة.
+                refreshBatteryVoices()
                 onStatusChanged()
             }
 
@@ -592,6 +632,31 @@ internal class BatteryAnnouncementController(
             ?.setOnClickListener { previewBattery() }
     }
 
+    /** إعادة بناء سبنر أصوات البطارية (لغة ← محرك ← أصوات) واختيار
+     *  الصوت المحفوظ برمجياً تحت عَلَم الربط — عند بدء الإعداد
+     *  وعند اكتمال اكتشاف المحركات خلفياً ([VoiceSelectionFragment]). */
+    fun refreshBatteryVoices() {
+        val engine = runCatching {
+            settings.getEngineForCategory(
+                SettingsRepository.DEVICE_HEALTH_BATTERY
+            )
+        }.getOrNull()
+        batteryVoiceOptions = catalog.voicesFor(batteryLanguage, engine)
+        val saved = runCatching {
+            settings.getBatteryAnnouncementVoiceId()
+        }.getOrNull()
+        bindingVoices = true
+        try {
+            spinnerBatteryVoice?.adapter = fragment.simpleAdapter(
+                batteryVoiceOptions.map { it.label }
+            )
+            val idx = batteryVoiceOptions.indexOfFirst { it.name == saved }
+            spinnerBatteryVoice?.setSelection(if (idx >= 0) idx else 0)
+        } finally {
+            bindingVoices = false
+        }
+    }
+
     /** معاينة «البطارية 20%» بموضع صوت السبنرا وتقدم الشرائط الحالية. */
     private fun previewBattery() {
         val enginePkg = batteryEngineOptions
@@ -599,10 +664,13 @@ internal class BatteryAnnouncementController(
             ?.packageName
         val sample = fragment.getString(R.string.sample_text_battery_preview)
         fragment.previewSpeech(
-            buildPreviewParams(
-                voices = voices,
-                voiceSelection =
-                    spinnerBatteryVoice?.selectedItemPosition ?: 0,
+            buildPreviewParamsFrom(
+                voiceName = batteryVoiceOptions
+                    .getOrNull(
+                        spinnerBatteryVoice?.selectedItemPosition ?: 0
+                    )
+                    ?.name.orEmpty(),
+                languageTag = batteryLanguage,
                 enginePkg = enginePkg,
                 rateProgress = seekBatteryRate?.progress ?: 100,
                 pitchProgress = seekBatteryPitch?.progress ?: 100,
@@ -619,6 +687,7 @@ internal class BatteryAnnouncementController(
         tvBatteryLevelsArrow = null
         llBatteryLevels = null
         spinnerBatteryVoice = null
+        spinnerBatteryLanguage = null
         spinnerBatteryEngine = null
         seekBatteryRate = null
         tvBatteryRateValue = null

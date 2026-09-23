@@ -23,6 +23,23 @@
         android:layout_marginTop="4dp"
         android:textColor="@color/text_secondary" />
 
+    <!-- لغة الصوت للفئة (تربط الأصوات المتاحة للمحركات المثبتة) -->
+    <TextView
+        android:id="@+id/tv_category_language_label"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:labelFor="@id/spinner_category_language"
+        android:text="@string/voice_language_label"
+        android:textAppearance="?attr/textAppearanceBody2" />
+
+    <androidx.appcompat.widget.AppCompatSpinner
+        android:id="@+id/spinner_category_language"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="48dp"
+        android:contentDescription="@string/cd_category_language_spinner" />
+
     <!-- محرك النطق للفئة (يُخفى للفئة الافتراضية في الشفرة) -->
     <TextView
         android:id="@+id/tv_category_engine_label"

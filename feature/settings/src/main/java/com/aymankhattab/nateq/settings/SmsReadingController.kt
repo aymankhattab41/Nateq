@@ -21,13 +21,14 @@ import com.aymankhattab.nateq.core.data.SettingsRepository
 internal class SmsReadingController(
     private val fragment: VoiceSelectionFragment,
     private val settings: SettingsRepository,
-    private val voices: List<NateqVoice>,
+    private val catalog: EngineVoicesCatalog,
     private val onStatusChanged: () -> Unit
 ) {
 
     // مراجع العرض قابلة للتصفير في cleanup() عند تدمير عرض الفصيل
     // (بند 4.1) حتى لا تبقى شجرة العرض القديمة محتجزة في الخلفية.
     private var spinnerSmsMode: Spinner? = null
+    private var spinnerSmsLanguage: Spinner? = null
     private var spinnerSmsVoice: Spinner? = null
     private var seekSmsRate: SeekBar? = null
     private var tvSmsRateValue: TextView? = null
@@ -48,8 +49,15 @@ internal class SmsReadingController(
     // ضروري لأن تعديل TalkBack لا يمر بـ onStopTrackingTouch إطلاقاً.
     private var bindingSlider = false
 
+    // لغة الصوت الحالية وخيارات سبنر الرسائل.
+    private var smsLanguage: String = "ar"
+    private var smsVoiceOptions: List<VoiceOption> = emptyList()
+    private var bindingVoices = false
+
     fun setup(view: View) {
         spinnerSmsMode = view.findViewById(R.id.spinner_sms_reading_mode)
+        spinnerSmsLanguage =
+            view.findViewById(R.id.spinner_sms_reading_language)
         spinnerSmsVoice = view.findViewById(R.id.spinner_sms_reading_voice)
         seekSmsRate = view.findViewById(R.id.seek_sms_reading_rate)
         tvSmsRateValue = view.findViewById(R.id.tv_sms_reading_rate_value)
@@ -149,16 +157,40 @@ internal class SmsReadingController(
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
-        // اختيار الصوت (العربية / الإنجليزية)
-        spinnerSmsVoice?.adapter = fragment.simpleAdapter(
-            voices.map { it.displayName }
+        // لغة الصوت المقروءة: خياراتها من الكتالوج (عربية/إنجليزية
+        // ثم المكتشفة)، وتبديلها يُجدد أصوات محرك الرسائل.
+        val smsLanguages = catalog.languages()
+        spinnerSmsLanguage?.adapter = fragment.simpleAdapter(
+            smsLanguages.map { catalog.languageDisplayName(it) }
         )
-        val savedSmsVoice =
-            runCatching { settings.getSmsReadingVoiceId() }
-                .getOrNull()
-        if (savedSmsVoice != null) {
-            val idx = voices.indexOfFirst { it.name == savedSmsVoice }
-            if (idx >= 0) spinnerSmsVoice?.setSelection(idx)
+        smsLanguage = runCatching { settings.getSmsReadingLanguage() }
+            .getOrNull() ?: "ar"
+        bindingVoices = true
+        try {
+            val langIdx = smsLanguages.indexOf(smsLanguage)
+            spinnerSmsLanguage?.setSelection(
+                if (langIdx >= 0) langIdx else 0
+            )
+        } finally {
+            bindingVoices = false
+        }
+        spinnerSmsLanguage?.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                if (bindingVoices) return
+                val lang = smsLanguages.getOrNull(position) ?: return
+                if (lang == smsLanguage) return
+                smsLanguage = lang
+                runCatching { settings.setSmsReadingLanguage(lang) }
+                refreshSmsVoices()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
         spinnerSmsVoice?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
@@ -168,13 +200,15 @@ internal class SmsReadingController(
                 position: Int,
                 id: Long
             ) {
-                runCatching {
-                    settings.setSmsReadingVoiceId(voices[position].name)
-                }
+                if (bindingVoices) return
+                val name = smsVoiceOptions.getOrNull(position)?.name
+                    ?: return
+                runCatching { settings.setSmsReadingVoiceId(name) }
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
+        refreshSmsVoices()
 
         // سرعة النطق
         val smsRate =
@@ -352,6 +386,30 @@ internal class SmsReadingController(
             ?.setOnClickListener { previewSms() }
     }
 
+    /** إعادة بناء سبنر أصوات الرسائل واختيار الصوت المحفوظ
+     *  برمجياً تحت عَلَم الربط — عند بدء الإعداد وعند اكتمال
+     *  اكتشاف المحركات خلفياً ([VoiceSelectionFragment]). */
+    fun refreshSmsVoices() {
+        val engine = runCatching {
+            settings.getEngineForCategory(
+                SettingsRepository.ANNOUNCE_CATEGORY_SMS
+            )
+        }.getOrNull()
+        smsVoiceOptions = catalog.voicesFor(smsLanguage, engine)
+        val saved = runCatching { settings.getSmsReadingVoiceId() }
+            .getOrNull()
+        bindingVoices = true
+        try {
+            spinnerSmsVoice?.adapter = fragment.simpleAdapter(
+                smsVoiceOptions.map { it.label }
+            )
+            val idx = smsVoiceOptions.indexOfFirst { it.name == saved }
+            spinnerSmsVoice?.setSelection(if (idx >= 0) idx else 0)
+        } finally {
+            bindingVoices = false
+        }
+    }
+
     /** معاينة رسالة تجريبية بموضع صوت السبنرا وتقدم شرائط العرض الحالية
      *  (لا القيم المحفوظة القديمة). */
     private fun previewSms() {
@@ -362,9 +420,11 @@ internal class SmsReadingController(
         }.getOrNull()
         val sample = fragment.getString(R.string.sample_text_sms_preview)
         fragment.previewSpeech(
-            buildPreviewParams(
-                voices = voices,
-                voiceSelection = spinnerSmsVoice?.selectedItemPosition ?: 0,
+            buildPreviewParamsFrom(
+                voiceName = smsVoiceOptions
+                    .getOrNull(spinnerSmsVoice?.selectedItemPosition ?: 0)
+                    ?.name.orEmpty(),
+                languageTag = smsLanguage,
                 enginePkg = engine,
                 rateProgress = seekSmsRate?.progress ?: 100,
                 pitchProgress = seekSmsPitch?.progress ?: 100,
@@ -412,6 +472,7 @@ internal class SmsReadingController(
     /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */
     fun cleanup() {
         spinnerSmsMode = null
+        spinnerSmsLanguage = null
         spinnerSmsVoice = null
         seekSmsRate = null
         tvSmsRateValue = null

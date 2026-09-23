@@ -360,8 +360,29 @@ class TimeAnnouncementManager(
         return false
     }
 
-    /** نطق الوقت الحالي */
+    /**
+     * نطق الوقت الحالي على المسار التلقائي (منبه الوقت) — يُعلَّق عند
+     * السيناريو الصوتي الممنوع بمفاتيح «نطق الساعة أثناء…» (المكالمة/
+     * الوسائط/الصامت). أما announceNow (طلب المستخدم الصريح) فيتجاوز
+     * التعليق عمداً كتجاوزه لساعات الهدوء.
+     */
     private fun announceCurrentTime() {
+        val scene = detectAudioScene(context)
+        if (shouldSuppressTimeAnnouncement(
+                scene,
+                allowDuringCalls = runCatching {
+                    settings.isAnnounceTimeDuringCalls()
+                }.getOrDefault(false),
+                allowDuringMedia = runCatching {
+                    settings.isAnnounceTimeDuringMedia()
+                }.getOrDefault(true),
+                allowDuringSilent = runCatching {
+                    settings.isAnnounceTimeDuringSilent()
+                }.getOrDefault(true)
+            )
+        ) {
+            return
+        }
         speakCurrentTime()
     }
 
@@ -380,16 +401,25 @@ class TimeAnnouncementManager(
         activeAnnounceJob = announceScope.launch {
             try {
                 // ترتيب تحديد لغة نطق الساعة:
-                // 1) مفتاح النطق EN/AR إن حُدِّد، 2) صوت الفئة المفضَّل،
-                // 3) لغة التطبيق الفعلية.
+                // 1) مفتاح النطق EN/AR إن حُدِّد،
+                // 2) لغة صوت الفئة من الشاشة التدريجية،
+                // 3) صوت الفئة المفضَّل، 4) لغة التطبيق.
                 val forced = runCatching {
                     settings.getAnnouncementSpeechLanguage()
+                }.getOrNull()
+                val categoryLang = runCatching {
+                    settings.getLanguageForCategory(
+                        SettingsRepository.VOICE_CATEGORY_TIME
+                    )
                 }.getOrNull()
                 val pref = settings.getPreferredVoiceIdForCategory(
                     SettingsRepository.VOICE_CATEGORY_TIME
                 )
                 val isEnglish = when {
                     forced != null -> LanguageCode.isEnglish(forced)
+                    categoryLang != null -> LanguageCode.isEnglish(
+                        categoryLang
+                    )
                     // يقبل الصيغ القديمة (nateq-en-…، en-local)
                     // والصيغ الموحّدة الحالية (en-US)
                     pref != null -> pref.startsWith(

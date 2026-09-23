@@ -220,6 +220,35 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun duckAndTimeScenarioFlags_defaultsRoundTripExportReset() {
+        assertTrue(repo.isDuckMediaDuringAnnouncements())
+        assertFalse(repo.isAnnounceTimeDuringCalls())
+        assertTrue(repo.isAnnounceTimeDuringMedia())
+        assertTrue(repo.isAnnounceTimeDuringSilent())
+
+        repo.setDuckMediaDuringAnnouncements(false)
+        repo.setAnnounceTimeDuringCalls(true)
+        repo.setAnnounceTimeDuringMedia(false)
+        repo.setAnnounceTimeDuringSilent(false)
+        assertFalse(repo.isDuckMediaDuringAnnouncements())
+        assertTrue(repo.isAnnounceTimeDuringCalls())
+        assertFalse(repo.isAnnounceTimeDuringMedia())
+        assertFalse(repo.isAnnounceTimeDuringSilent())
+
+        val exported = repo.exportSettings()
+        assertTrue(exported.containsKey("duck_media_during_announcements"))
+        assertTrue(exported.containsKey("announce_time_during_calls"))
+        assertTrue(exported.containsKey("announce_time_during_media"))
+        assertTrue(exported.containsKey("announce_time_during_silent"))
+
+        repo.resetAllToDefault()
+        assertTrue(repo.isDuckMediaDuringAnnouncements())
+        assertFalse(repo.isAnnounceTimeDuringCalls())
+        assertTrue(repo.isAnnounceTimeDuringMedia())
+        assertTrue(repo.isAnnounceTimeDuringSilent())
+    }
+
+    @Test
     fun secondaryLanguage_defaultEnglishAndRoundTrips() {
         // لغة النطق الاحتياطية (بند اللغة الثانية): إنجليزية افتراضياً
         // وتُعيَّن فرنسية وتعود إنجليزية.
@@ -732,6 +761,47 @@ class SettingsRepositoryTest {
         )
         repo.setEngineForCategory("caller", null)
         assertNull(repo.getEngineForCategory("caller"))
+    }
+
+    @Test
+    fun languageForCategory_defaultsNullRoundTripNoLeak() {
+        assertNull(repo.getLanguageForCategory("time"))
+        assertNull(repo.getLanguageForCategory("numbers"))
+        repo.setLanguageForCategory("time", "en")
+        assertEquals("en", repo.getLanguageForCategory("time"))
+        // لا تسرّب بين الفئات
+        assertNull(repo.getLanguageForCategory("numbers"))
+        repo.setLanguageForCategory("time", "ar")
+        assertEquals("ar", repo.getLanguageForCategory("time"))
+    }
+
+    @Test
+    fun batteryAndSmsLanguage_defaultsNullAndRoundTrip() {
+        assertNull(repo.getBatteryAnnouncementLanguage())
+        assertNull(repo.getSmsReadingLanguage())
+        repo.setBatteryAnnouncementLanguage("en")
+        repo.setSmsReadingLanguage("en")
+        assertEquals("en", repo.getBatteryAnnouncementLanguage())
+        assertEquals("en", repo.getSmsReadingLanguage())
+        repo.setBatteryAnnouncementLanguage("ar")
+        repo.setSmsReadingLanguage("ar")
+        assertEquals("ar", repo.getBatteryAnnouncementLanguage())
+        assertEquals("ar", repo.getSmsReadingLanguage())
+    }
+
+    @Test
+    fun languageKeys_exportAndReset() {
+        repo.setLanguageForCategory("time", "en")
+        repo.setBatteryAnnouncementLanguage("en")
+        repo.setSmsReadingLanguage("en")
+        val exported = repo.exportSettings()
+        assertTrue(exported.containsKey("language_for_time"))
+        assertTrue(exported.containsKey("battery_announcement_language"))
+        assertTrue(exported.containsKey("sms_reading_language"))
+        repo.resetAllToDefault()
+        assertNull(repo.getLanguageForCategory("time"))
+        assertNull(repo.getBatteryAnnouncementLanguage())
+        assertNull(repo.getSmsReadingLanguage())
     }
 
     @Test

@@ -86,6 +86,16 @@ class AnnouncementSpeaker(
         private const val FOCUS_RETRY_DELAY_MS = 400L
         private const val MAX_FOCUS_RETRIES = 2
 
+        /** نوع التركيز الصوتي حسب مفتاح «خفض صوت الوسائط أثناء النطق»:
+         *  مفعّل = MAY_DUCK (تُخفض وسائط الآخرين مؤقتاً)؛ معطّل =
+         *  GAIN_TRANSIENT (تتوقف وسائط الآخرين مؤقتاً بلا خفض للمستوى). */
+        internal fun audioFocusTypeFor(duckMedia: Boolean): Int =
+            if (duckMedia) {
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+            } else {
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+            }
+
         /** حلّ صوت وحدةٍ لغوية من صوت المحرك: يفضّل المعرّف الصريح
          *  ([partVoice] كاسم صوت مخصص في إعدادات اللغة)؛ وإلا أول صوتٍ
          *  لسانُه لسانُ الوحدة (مثل "en" لكلمة إنجليزية مفردة) بدل الاعتماد
@@ -1312,10 +1322,16 @@ class AnnouncementSpeaker(
      */
     private fun requestAudioFocus(): Int {
         return try {
+            val settings =
+                (appContext as? AnnouncementAppContext)
+                    ?.settingsRepository
+                ?: SettingsRepository.create(appContext)
+            val duckMedia = runCatching {
+                settings.isDuckMediaDuringAnnouncements()
+            }.getOrDefault(true)
+            val focusGain = audioFocusTypeFor(duckMedia)
             val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val focusReq = AudioFocusRequest.Builder(
-                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
-                )
+                val focusReq = AudioFocusRequest.Builder(focusGain)
                     .setAudioAttributes(
                         speechAudioAttributes()
                     )
@@ -1332,7 +1348,7 @@ class AnnouncementSpeaker(
                 audioManager.requestAudioFocus(
                     onAudioFocusChange,
                     AudioManager.STREAM_MUSIC,
-                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+                    focusGain
                 )
             }
             if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
