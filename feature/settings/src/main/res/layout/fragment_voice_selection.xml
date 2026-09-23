@@ -2158,6 +2158,32 @@
 
             </LinearLayout>
 
+            <!-- اتساع الصوت (إيقاف/خفيف/متوسط) -->
+            <TextView
+                android:id="@+id/tv_audio_expansion_label"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/audio_expansion_label"
+                android:textAppearance="?attr/textAppearanceBody2"
+                android:labelFor="@id/spinner_audio_expansion" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/audio_expansion_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:importantForAccessibility="no" />
+
+            <androidx.appcompat.widget.AppCompatSpinner
+                android:id="@+id/spinner_audio_expansion"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:minHeight="48dp"
+                android:contentDescription="@string/spinner_audio_expansion_content" />
+
         </LinearLayout>        <View
             android:layout_width="match_parent"
             android:layout_height="1dp"

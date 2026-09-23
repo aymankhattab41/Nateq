@@ -21,6 +21,7 @@ import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
 import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.SpeechLock
+import com.aymankhattab.nateq.core.engine.AudioExpansionLevels
 import com.aymankhattab.nateq.engine.PronunciationDictionary
 import com.aymankhattab.nateq.engine.TextProcessor
 import com.aymankhattab.nateq.util.LanguageCode
@@ -161,6 +162,9 @@ class NateqTtsService : TextToSpeechService() {
      *  [SynthesisCallback.audioAvailable] يستهلك المخزن قبل عودته (عقد
      *  [SystemVoiceProvider] نفسه مع متلقيه). */
     private val pcmBufferPool = BytePool()
+
+    /** مدير مؤثرات اتساع الصوت المدمجة لنطق القارئ (بنود 2-3). */
+    private val audioEffectManager = AudioEffectManager()
 
     /** كلماتُ التنقل الشائعة التي يكرّر قارئ الشاشة نطقها عبر الواجهة
      *  (بند ب.txt 3.5-1) — تُخلَّق وتُخزَّن في كاش PCM عند الإقلاع فعلى
@@ -313,6 +317,7 @@ override fun onDestroy() {
         serviceScope.cancel()
         synthesisScope.cancel()
         synthesisExecutor.shutdown()
+        audioEffectManager.releaseAll()
         // إلغاء تسجيل مستشعرات الهز/التقارب كي لا تبقى مرصودةً بعد تدمير
         // الخدمة (كانت تُسجَّل في onCreate ولا تُلغى هنا فتتسرب).
         stopInterruptionMonitoring()
@@ -559,6 +564,11 @@ override fun onDestroy() {
         //  جدولتُها على خيط التخليق قبل إسنادها إلى [currentJob] (كانت تبدأ
         //  فوراً فيسبق إلغاءٌ من مستشعر/onStop إسنادَها فيُفلت الرحلة)؛
         //  نُشغّلها صريحاً بعد الإسناد مباشرةً فتنغلق النافذة تماماً.
+        val audioSessionId = request.params?.getInt(
+            TextToSpeech.Engine.KEY_PARAM_SESSION_ID,
+            0
+        ) ?: 0
+
         val job = synthesisScope.launch(start = CoroutineStart.LAZY) {
             try {
                 // إعادة تحميل الإعدادات من القرص لأن `:tts`
@@ -567,6 +577,14 @@ override fun onDestroy() {
                 // يتشارك عبر العمليات. بدون reload() تبقى
                 // القيم القديمة محشوة في الذاكرة.
                 settings.reload()
+                val expansionLevel = runCatching {
+                    settings.getAudioExpansionLevel()
+                }.getOrDefault(AudioExpansionLevels.DEFAULT)
+                if (audioSessionId > 0 &&
+                    expansionLevel > AudioExpansionLevels.OFF
+                ) {
+                    audioEffectManager.attach(audioSessionId, expansionLevel)
+                }
                 // **بند 17 — النصوص المختلطة واللغات:**
                 // 1) تقسيم النص المختلط الكتابات (عربي/إنجليزي/غيرها)
         //    إلى مقاطع
@@ -657,6 +675,9 @@ override fun onDestroy() {
             Log.w(TAG, "onSynthesizeText join interrupted", t)
         } finally {
             currentJob = null
+            if (audioSessionId > 0) {
+                audioEffectManager.detach(audioSessionId)
+            }
             // **بند 8:** ختام الرحلة — نوقف رصدَ الهز/التقارب فور انتهاء
             // (أو إلغاء/خطأ) التخليق حتى لا يبقى الرصدُ حياً بعد انتهاء
             // الحاجة إليه (لا تسريب طاقةٍ ولا مستشعرٍ عالق).

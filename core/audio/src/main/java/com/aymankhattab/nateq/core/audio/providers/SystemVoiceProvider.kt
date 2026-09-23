@@ -12,6 +12,7 @@ import android.util.Log
 import android.widget.Toast
 import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.audio.engine.BytePool
+import com.aymankhattab.nateq.core.audio.engine.PcmEqualizer
 import com.aymankhattab.nateq.core.data.VoicePrefsProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.ConnectivityMonitor
@@ -1204,6 +1205,12 @@ class SystemVoiceProvider(
                         } else {
                             extracted.pcm
                         }
+                        applyEqualizer(
+                            scaledData,
+                            validLength,
+                            extracted.sampleRateInHz,
+                            enginePackage
+                        )
                         // منح البثّ إلى الكاش نسخةً مستقلة
                         // من البيانات (بند 19.1): المتلقي
                         // والمسبح قد يعيدان استخدام المخزن،
@@ -1388,6 +1395,10 @@ class SystemVoiceProvider(
         } else {
             samples
         }
+        applyEqualizer(
+            scaledData, samplesLen, meta.sampleRateInHz,
+            enginePackage
+        )
         if (cacheKey != null &&
             totalCacheBytes[0] + samplesLen <= PCM_CACHE_MAX_BYTES
         ) {
@@ -1515,6 +1526,25 @@ class SystemVoiceProvider(
     fun clearEngineCalibration(enginePackage: String) {
         rmsCalibrators.remove(enginePackage)
         injectedSettings?.clearEngineRmsCalibration(enginePackage)
+    }
+
+    private val pcmEqualizer = PcmEqualizer()
+
+    /**
+     * تطبيق معادِل الصوت الخاص بالمحرك (بند 1) لمعالجة اختلاف بصمة الصوت.
+     */
+    private fun applyEqualizer(
+        pcmData: ByteArray,
+        validLength: Int,
+        sampleRate: Int,
+        enginePackage: String?
+    ) {
+        if (enginePackage == null || validLength < 2 || sampleRate <= 0) {
+            return
+        }
+        val gains = injectedSettings?.getEngineEqualizerGains(enginePackage)
+            ?: PcmEqualizer.defaultGainsFor(enginePackage)
+        pcmEqualizer.process(pcmData, 0, validLength, sampleRate, gains)
     }
 }
 

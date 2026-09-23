@@ -1,8 +1,12 @@
 package com.aymankhattab.nateq.settings
 
 import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.SeekBar
 import android.widget.TextView
+import androidx.appcompat.widget.AppCompatSpinner
+import com.aymankhattab.nateq.core.engine.AudioExpansionLevels
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
@@ -27,12 +31,14 @@ internal class GeneralSettingsController(
     private var tvDefaultVolumeValue: TextView? = null
     private var switchMediaStreamAlways: SwitchMaterial? = null
     private var switchFollowReaderRate: SwitchMaterial? = null
+    private var spinnerAudioExpansion: AppCompatSpinner? = null
 
     // **بند 6.3:** علمُ الربط البرمجي — يُسنَّع حول setProgress في attach
     // حتى لا يُفسَّر الإسنادُ البرمجي تعديلَ مستخدم (يُخزَّن تفريغاً). دون
     // الحفظ في onProgressChanged كان TalkBack (تعديلٌ عبر أداء الوصول لا
     // يمر بـ onStopTrackingTouch إطلاقاً) يفقد أي تعديل على أشرطة التمرير.
     private var bindingSlider = false
+    private var bindingAudioExpansion = false
 
     fun setup(view: View) {
         seekDefaultSpeechRate =
@@ -207,6 +213,49 @@ internal class GeneralSettingsController(
                 onStatusChanged()
             }
         })
+
+        spinnerAudioExpansion =
+            view.findViewById(R.id.spinner_audio_expansion)
+        val expansionLabels = arrayOf(
+            fragment.getString(R.string.audio_expansion_off),
+            fragment.getString(R.string.audio_expansion_light),
+            fragment.getString(R.string.audio_expansion_medium)
+        )
+        val savedExpansion = runCatching { settings.getAudioExpansionLevel() }
+            .getOrDefault(AudioExpansionLevels.DEFAULT)
+            .coerceIn(AudioExpansionLevels.MIN, AudioExpansionLevels.MAX)
+        spinnerAudioExpansion?.adapter = ArrayAdapter(
+            fragment.requireContext(),
+            android.R.layout.simple_spinner_dropdown_item,
+            expansionLabels
+        )
+        bindingAudioExpansion = true
+        try {
+            spinnerAudioExpansion?.setSelection(savedExpansion)
+        } finally {
+            bindingAudioExpansion = false
+        }
+        spinnerAudioExpansion?.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                if (bindingAudioExpansion) return
+                val level = position.coerceIn(
+                    AudioExpansionLevels.MIN,
+                    AudioExpansionLevels.MAX
+                )
+                runCatching {
+                    settings.setAudioExpansionLevel(level)
+                }
+                onStatusChanged()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
     }
 
     /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */
@@ -219,5 +268,6 @@ internal class GeneralSettingsController(
         tvDefaultVolumeValue = null
         switchMediaStreamAlways = null
         switchFollowReaderRate = null
+        spinnerAudioExpansion = null
     }
 }

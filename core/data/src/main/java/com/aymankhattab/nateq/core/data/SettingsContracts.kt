@@ -89,6 +89,12 @@ interface SynthesisPrefs : SynthesisConfig, VoicePrefsProvider {
     /** يعيّن مستوى الصوت الافتراضي. */
     fun setDefaultVolume(volume: Float)
 
+    /** مستوى اتساع الصوت (0 إيقاف، 1 خفيف، 2 متوسط). */
+    fun getAudioExpansionLevel(): Int
+
+    /** يعيّن مستوى اتساع الصوت. */
+    fun setAudioExpansionLevel(level: Int)
+
     /** تفضيل محركك/صوتك/أشرطتك للغة في خارطة التحويل الديناميكية. */
     fun getEnginePreferenceForLanguage(languageTag: String): LanguageSpeechPrefs
 

@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.aymankhattab.nateq.core.data.VoicePrefsProvider
+import com.aymankhattab.nateq.core.engine.AudioExpansionLevels
 import com.aymankhattab.nateq.core.engine.PunctuationLevels
 import com.aymankhattab.nateq.core.engine.SynthesisConfig
 import com.aymankhattab.nateq.engine.ConvertPreferencesCodec
@@ -893,6 +894,40 @@ class SettingsRepository(context: Context) :
         return "rms_calibration_$engine"
     }
 
+    /** كسب معادِل الصوت المخصص لمحركٍ معيّن (بالديسيبل). */
+    override fun getEngineEqualizerGains(
+        enginePackage: String
+    ): FloatArray? {
+        val raw = prefs.getString(engineEqKey(enginePackage), null)
+            ?: return null
+        val parts = raw.split(",").mapNotNull { it.trim().toFloatOrNull() }
+        if (parts.isEmpty()) return null
+        return parts.map { it.coerceIn(-12f, 12f) }.toFloatArray()
+    }
+
+    /** حفظ كسب معادِل الصوت لمحرك. */
+    override fun saveEngineEqualizerGains(
+        enginePackage: String,
+        gains: FloatArray
+    ) {
+        val formatted = gains.joinToString(",") {
+            it.coerceIn(-12f, 12f).toString()
+        }
+        prefs.edit()
+            .putString(engineEqKey(enginePackage), formatted)
+            .apply()
+    }
+
+    /** مسح كسب معادِل الصوت لمحرك. */
+    override fun clearEngineEqualizerGains(enginePackage: String) {
+        prefs.edit().remove(engineEqKey(enginePackage)).apply()
+    }
+
+    private fun engineEqKey(enginePackage: String): String {
+        val engine = enginePackage.trim().ifEmpty { "unknown" }
+        return "engine_eq_$engine"
+    }
+
     /** آخر فشل تراجع مُسجَّل (للشاشة التشخيصية — بند د.6.2)؛ null إن لم
      *  يُسجَّل أي فشل بعد. المفتاح يُكتب من SystemVoiceProvider عند حدوث
      *  تراجع فعلي (يحمل المحرك/الصوت/الوقت) فتعرضه الشاشة التشخيصية
@@ -1071,6 +1106,18 @@ class SettingsRepository(context: Context) :
         prefs.getFloat("default_volume", 1.0f)
     override fun setDefaultVolume(volume: Float) =
         prefs.edit().putFloat("default_volume", volume.coerceIn(0f, 1f)).apply()
+
+    /** مستوى اتساع الصوت (0 إيقاف، 1 خفيف، 2 متوسط) */
+    override fun getAudioExpansionLevel(): Int =
+        prefs.getInt("audio_expansion_level", AudioExpansionLevels.DEFAULT)
+
+    override fun setAudioExpansionLevel(level: Int) {
+        val safe = level.coerceIn(
+            AudioExpansionLevels.MIN,
+            AudioExpansionLevels.MAX
+        )
+        prefs.edit().putInt("audio_expansion_level", safe).apply()
+    }
 
 
     // ============ إعدادات إعلان مستوى البطارية ============
@@ -1601,6 +1648,11 @@ class SettingsRepository(context: Context) :
         key == "number_reading_mode" -> value.coerceIn(1, 8)
         key == "punctuation_level" ->
             value.coerceIn(PunctuationLevels.MIN, PunctuationLevels.MAX)
+        key == "audio_expansion_level" ->
+            value.coerceIn(
+                AudioExpansionLevels.MIN,
+                AudioExpansionLevels.MAX
+            )
         key == "caller_announcement_repeat" -> value.coerceIn(1, 5)
         key == "caller_announcement_interval_seconds" -> value.coerceIn(1, 10)
         key == "power_saver_battery_threshold" -> value.coerceIn(0, 100)

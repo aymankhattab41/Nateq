@@ -8,6 +8,8 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import com.aymankhattab.nateq.core.audio.engine.AudioEffectManager
+import com.aymankhattab.nateq.core.engine.AudioExpansionLevels
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
@@ -75,7 +77,10 @@ internal object CueAudioAttributes {
  * selectedItem(s) وهمية: يُنشئ AudioTrack واحداً ويعيد استخدامه
  * (نغمة واحدة في أي وقت). يلبي تصميم AudioCuePlayer.
  */
-internal class AudioTrackCueSink : CueSink {
+internal class AudioTrackCueSink(
+    private val audioEffectManager: AudioEffectManager? = null,
+    private val expansionLevel: () -> Int = { 0 }
+) : CueSink {
 
     companion object {
         private const val TAG = "NATEQ_CUE"
@@ -114,6 +119,11 @@ internal class AudioTrackCueSink : CueSink {
                 .setTransferMode(AudioTrack.MODE_STATIC)
                 .build()
             track = t
+            val sessionId = t.audioSessionId
+            val level = expansionLevel()
+            if (sessionId > 0 && level > AudioExpansionLevels.OFF) {
+                audioEffectManager?.attach(sessionId, level)
+            }
             t.setVolume(volume)
             t.write(pcm, 0, pcm.size)
             t.setNotificationMarkerPosition(pcm.size)
@@ -121,6 +131,9 @@ internal class AudioTrackCueSink : CueSink {
                 object : AudioTrack.OnPlaybackPositionUpdateListener {
                     override fun onMarkerReached(at: AudioTrack?) {
                         if (completed.compareAndSet(false, true)) {
+                            if (sessionId > 0) {
+                                audioEffectManager?.detach(sessionId)
+                            }
                             runCatching {
                                 at?.stop()
                                 at?.release()
@@ -135,6 +148,9 @@ internal class AudioTrackCueSink : CueSink {
             t.play()
         } catch (t: Throwable) {
             Log.w(TAG, "AudioTrack play failed", t)
+            track?.audioSessionId?.takeIf { it > 0 }?.let {
+                audioEffectManager?.detach(it)
+            }
             runCatching {
                 track?.stop()
                 track?.release()
@@ -147,6 +163,9 @@ internal class AudioTrackCueSink : CueSink {
     }
 
     override fun stop() {
+        track?.audioSessionId?.takeIf { it > 0 }?.let {
+            audioEffectManager?.detach(it)
+        }
         try {
             track?.stop()
         } catch (_: IllegalStateException) {

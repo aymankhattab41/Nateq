@@ -21,6 +21,12 @@
 <string name="auto_convert_summary">Choose an engine, voice, and sliders for each language so spoken text is converted automatically — for any number of languages</string>
 <string name="auto_convert_voice">Voice</string>
 <string name="auto_convert_volume">Volume</string>
+    <string name="audio_expansion_label">Audio expansion</string>
+    <string name="audio_expansion_summary">Provides a subtle, comfortable spatial width sensation in headphones</string>
+    <string name="audio_expansion_off">Off</string>
+    <string name="audio_expansion_light">Light</string>
+    <string name="audio_expansion_medium">Medium</string>
+    <string name="spinner_audio_expansion_content">Audio expansion</string>
 <string name="engine_not_selected_short">No engine selected for this language</string>
 <string name="engine_disabled_or_missing">Selected engine is disabled or uninstalled</string>
 <string name="engine_not_selected_for_language">No speech engine selected for this language, open settings to choose one</string>
@@ -437,6 +443,7 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+• Audio expansion and per-engine equalizer: lightweight 3-band PCM Equalizer (EQ) to soften harsh engine timbres and balance voice tone differences, paired with an "Audio expansion" setting (Off/Light/Medium) in General Settings for comfortable spatial width and subtle room ambience using built-in Android audio effects without external dependencies
 • Comprehensive stability and performance fixes: audit optimizations across text engine and audio pipelines, improved large number phrasing over a billion, accurate gender agreement for unit expressions, battery preservation by stopping interruption sensors when idle, thread-safe settings synchronization and safe update downloads, and instant WakeLock release upon speech completion
 • Suppress slash (/) pronunciation in Arabic sentences: eliminated slash reading across Arabic text to prevent confusion in sports scores and ratios (e.g. speaking "خسر 1/0" as "واحد صفر" instead of "واحد على صفر") and word alternatives (such as "نعم/لا"), while fully preserving natural slash pronunciation in web URLs and link paths
 • Customizable quarter-hour chime times: choose whether the hourly chime plays at the top of the hour (:00), quarter past (:15), half past (:30), and quarter to (:45) independently via individual checkboxes with full accessibility announcements

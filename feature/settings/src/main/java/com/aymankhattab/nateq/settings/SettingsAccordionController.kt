@@ -20,6 +20,7 @@ import java.util.Calendar
 import com.aymankhattab.nateq.core.audio.engine.LatinLanguageDetector
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.core.engine.AudioExpansionLevels
 
 /** بطاقة قسم في القائمة الرئيسية: رأس + سهم + حالة + محتوى
  *  (يُفتح كشاشة فرعية). [group] هو فهرس المجموعة المنطقية للبطاقة —
@@ -845,6 +846,15 @@ internal class SettingsAccordionController(
         val followText = fragment.getString(
             if (followReader) R.string.toggle_on else R.string.toggle_off
         )
+        val expansion = runCatching { settings.getAudioExpansionLevel() }
+            .getOrDefault(AudioExpansionLevels.DEFAULT)
+        val expansionText = fragment.getString(
+            when (expansion) {
+                AudioExpansionLevels.LIGHT -> R.string.audio_expansion_light
+                AudioExpansionLevels.MEDIUM -> R.string.audio_expansion_medium
+                else -> R.string.audio_expansion_off
+            }
+        )
         return buildString {
             append(fragment.getString(R.string.default_speech_rate_label))
                 .append(": ").append(rateText)
@@ -854,6 +864,9 @@ internal class SettingsAccordionController(
                     fragment.getString(R.string.follow_reader_rate_enabled)
                 )
                 .append(": ").append(followText)
+            append("، ")
+                .append(fragment.getString(R.string.audio_expansion_label))
+                .append(": ").append(expansionText)
         }
     }
 

@@ -35,4 +35,16 @@ interface VoicePrefsProvider {
 
     /** مسح معايرة RMS لمحرك (إعادة معايرة) — الافتراضي بلا أثر. */
     fun clearEngineRmsCalibration(enginePackage: String) {}
+
+    /** كسب معادِل الصوت (EQ) المخصص لمحركٍ معيّن (بالديسيبل لكل نطاق). */
+    fun getEngineEqualizerGains(enginePackage: String): FloatArray? = null
+
+    /** حفظ كسب معادِل الصوت لمحرك. */
+    fun saveEngineEqualizerGains(
+        enginePackage: String,
+        gains: FloatArray
+    ) {}
+
+    /** مسح كسب معادِل الصوت لمحرك. */
+    fun clearEngineEqualizerGains(enginePackage: String) {}
 }

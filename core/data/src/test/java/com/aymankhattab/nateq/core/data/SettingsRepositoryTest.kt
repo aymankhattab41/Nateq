@@ -7,6 +7,7 @@ import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -72,6 +73,35 @@ class SettingsRepositoryTest {
         assertEquals(2, repo.getPunctuationLevel())
         repo.setPunctuationLevel(-3)
         assertEquals(0, repo.getPunctuationLevel())
+    }
+
+    @Test
+    fun audioExpansionLevel_defaultsAndClamping() {
+        assertEquals(0, repo.getAudioExpansionLevel())
+        repo.setAudioExpansionLevel(1)
+        assertEquals(1, repo.getAudioExpansionLevel())
+        repo.setAudioExpansionLevel(2)
+        assertEquals(2, repo.getAudioExpansionLevel())
+        repo.setAudioExpansionLevel(99)
+        assertEquals(2, repo.getAudioExpansionLevel())
+        repo.setAudioExpansionLevel(-5)
+        assertEquals(0, repo.getAudioExpansionLevel())
+    }
+
+    @Test
+    fun engineEqualizer_saveAndRetrieve() {
+        assertNull(repo.getEngineEqualizerGains("com.test.engine"))
+        val gains = floatArrayOf(2.0f, 1.0f, -3.0f)
+        repo.saveEngineEqualizerGains("com.test.engine", gains)
+        val retrieved = repo.getEngineEqualizerGains("com.test.engine")
+        assertNotNull(retrieved)
+        assertEquals(3, retrieved?.size)
+        assertEquals(2.0f, retrieved!![0], 0.01f)
+        assertEquals(1.0f, retrieved[1], 0.01f)
+        assertEquals(-3.0f, retrieved[2], 0.01f)
+
+        repo.clearEngineEqualizerGains("com.test.engine")
+        assertNull(repo.getEngineEqualizerGains("com.test.engine"))
     }
 
     @Test
