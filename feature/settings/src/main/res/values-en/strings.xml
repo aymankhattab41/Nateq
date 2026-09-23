@@ -474,6 +474,7 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+• Independent custom chime per quarter hour (:15 / :30 / :45) from a file on your device, exactly like the top of the hour: choose, preview and clear for each time
 • Tiered voice picker (Language → Engine → Voice) for every major category and for SMS reading, caller name and battery announcements: automatic background discovery of TTS engines and their languages with external-engine voices honored when speaking and the saved voice respected
 • Optional media ducking while announcing: audio focus MAY_DUCK (temporary lowering) instead of GAIN_TRANSIENT (temporary interruption without changing level) to fix the "media volume drops" complaint
 • Time announcement by audio scenario: switches to allow/deny automatic announcements during calls, media playback or silent mode, with the explicit "announce now" request exempt
