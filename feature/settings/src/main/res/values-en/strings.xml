@@ -455,6 +455,8 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+• Instant-silence sensors now live for the whole service lifetime: shake and proximity sensors are registered once at service start instead of register/unregister churn on every utterance (battery savings), with settings switches read live at each event so changes take effect immediately without restarting the app
+• Error-report collection guarded against double taps: the "Report an error" button rejects repeated presses while a report is building, preventing two concurrent log collections from racing on the same diagnostics file
 • Unified application name to "Lord TTS" across all user-facing interfaces: adopted "Lord TTS" exclusively across all user-visible strings, app launcher/drawer, system TTS engine list, diagnostics screen, and first-run setup wizard
 • Custom hourly chime from external audio file: select your own chime file via system file picker with persistable permissions, instant preview button before saving, easy removal to restore default chimes, and automatic fallback with spoken alert if the file is moved or unavailable
 • Audio expansion and per-engine equalizer: lightweight 3-band PCM Equalizer (EQ) to soften harsh engine timbres and balance voice tone differences, paired with an "Audio expansion" setting (Off/Light/Medium) in General Settings for comfortable spatial width and subtle room ambience using built-in Android audio effects without external dependencies

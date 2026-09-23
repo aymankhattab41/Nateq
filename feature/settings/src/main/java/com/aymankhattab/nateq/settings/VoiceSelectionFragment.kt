@@ -122,6 +122,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private lateinit var btnReportError:
         com.google.android.material.button.MaterialButton
 
+    /** باب منع تكرار جمع تقرير الأخطاء (ملاحظة مراجعة السجل): ضغطتان
+     *  سريعتان كانتا تشغّلان كوروتينين متوازيين يبنيان التقرير ويكتبان
+     *  نفس ملف الكاش — الضغط الثاني يُرفض حتى تكتمل الرحلة الأولى. */
+    private val errorReportGate = ErrorReportGate()
+
     // زر آخر التحديثات (يعرض ملخص الإصدار الحالي وتغييراته في حوار)
     private lateinit var btnChangelog:
         com.google.android.material.button.MaterialButton
@@ -1153,30 +1158,44 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     // ===== جمع سطور الأخطاء من سجل التطبيق ومشاركتها مع المطور =====
     private fun onReportErrorClicked() {
         val currentContext = context ?: return
+        // حارس منع التكرار: الضغط المتتالي أثناء جمعٍ جارٍ يُرفض حتى لا
+        // يتوازى كوروتينان على نفس ملف الكاش (ملاحظة مراجعة السجل).
+        if (!errorReportGate.tryBegin()) return
         Toast.makeText(
             currentContext,
             R.string.report_error_collecting,
             Toast.LENGTH_SHORT
         ).show()
         viewLifecycleOwner.lifecycleScope.launch {
-            val report = runCatching {
-                buildErrorReport(currentContext)
-            }.getOrNull()
-            if (!isAdded || activity == null || activity?.isFinishing == true) {
-                return@launch
+            try {
+                val report = runCatching {
+                    buildErrorReport(currentContext)
+                }.getOrNull()
+                if (!isAdded ||
+                    activity == null ||
+                    activity?.isFinishing == true
+                ) {
+                    return@launch
+                }
+                val ctx = context ?: return@launch
+                if (report.isNullOrBlank()) {
+                    Toast.makeText(
+                        ctx,
+                        R.string.report_error_empty,
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    view?.announceCompat(
+                        getString(R.string.report_error_empty)
+                    )
+                    return@launch
+                }
+                val logFile = writeLogToCacheFile(ctx, report)
+                showErrorReportDialog(ctx, report, logFile)
+            } finally {
+                // يُفتح الباب مجدداً بعد اكتمال/فشل/إلغاء رحلة الجمع (ينفذ
+                // هذا الحظر حتى عند إلغاء النطاق أو الإرجاع المبكر أعلاه).
+                errorReportGate.finish()
             }
-            val ctx = context ?: return@launch
-            if (report.isNullOrBlank()) {
-                Toast.makeText(
-                    ctx,
-                    R.string.report_error_empty,
-                    Toast.LENGTH_SHORT
-                ).show()
-                view?.announceCompat(getString(R.string.report_error_empty))
-                return@launch
-            }
-            val logFile = writeLogToCacheFile(ctx, report)
-            showErrorReportDialog(ctx, report, logFile)
         }
     }
 
