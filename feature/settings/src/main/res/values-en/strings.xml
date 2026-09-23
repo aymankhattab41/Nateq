@@ -33,7 +33,7 @@
     <string name="time_chime_custom_clear">Remove custom chime</string>
     <string name="time_chime_custom_status_default">Current chime: Default synthetic chimes</string>
     <string name="time_chime_custom_status_file">Custom chime: %1$s</string>
-    <string name="time_chime_custom_hint">The audio file stays in its original location (it is not copied into the app) and is read via persistable permission. If moved or deleted, Nateq automatically reverts to default chimes.</string>
+    <string name="time_chime_custom_hint">The audio file stays in its original location (it is not copied into the app) and is read via persistable permission. If moved or deleted, Lord TTS automatically reverts to default chimes.</string>
     <string name="custom_chime_unavailable_fallback">Custom chime file is unavailable, switched to default chime</string>
     <string name="custom_chime_saved">Custom chime file set: %1$s</string>
     <string name="custom_chime_cleared">Custom chime removed, returned to default chime</string>
@@ -97,7 +97,7 @@
 <string name="caller_permission_granted_contacts_only">Contacts granted; name may not arrive on Android 12+ without call log</string>
 <string name="caller_permission_needed">Caller announcement needs call log and phone state permission</string>
 <string name="caller_permission_rationale_continue">Continue and request permissions</string>
-<string name="caller_permission_revoked_message">The system automatically revokes sensitive permissions when an app like Nateq goes unused for a long time. Caller announcement is still enabled but lost a required permission, so callers cannot be announced until permissions are granted again</string>
+<string name="caller_permission_revoked_message">The system automatically revokes sensitive permissions when an app like Lord TTS goes unused for a long time. Caller announcement is still enabled but lost a required permission, so callers cannot be announced until permissions are granted again</string>
 <string name="caller_permission_revoked_title">Caller permissions revoked</string>
 <string name="cancel">Cancel</string>
 <string name="cd_test_voice_button">Play a sample voice for testing</string>
@@ -261,13 +261,13 @@
 <string name="report_error_desc">Collect error lines from the app log and share them with the developer via Telegram or other apps</string>
 <string name="report_error_empty">No errors are currently recorded in the app log</string>
 <string name="report_error_no_handler">Could not open share apps or Telegram</string>
-<string name="report_error_subject">Error and diagnostic log — Nateq</string>
+<string name="report_error_subject">Error and diagnostic log — Lord TTS</string>
 <string name="error_report_dialog_title">Error and Diagnostic Log</string>
 <string name="error_report_dialog_message">Diagnostic report and app logs have been collected successfully.\nYou can send the log directly to the Telegram support bot or share it as a file.</string>
 <string name="error_report_send_telegram">Send to Telegram Bot</string>
 <string name="error_report_share_file">Share as file or text</string>
 <string name="error_report_copied_telegram_hint">Log copied to clipboard, opening Telegram bot to attach or paste</string>
-<string name="error_report_header_title">Error and Diagnostic Log — Nateq</string>
+<string name="error_report_header_title">Error and Diagnostic Log — Lord TTS</string>
 <string name="error_report_version">Version: %1$s (%2$d)</string>
 <string name="error_report_device">Device: %1$s %2$s</string>
 <string name="error_report_android_os">Android: %1$s (API %2$d)</string>
@@ -283,13 +283,13 @@
 <string name="restore_done_callers_only">Restored caller names only — the backup contained no settings or dictionary</string>
 <string name="restore_failed">Restore failed — the file is invalid or incomplete</string>
 <string name="restore_settings">Restore backup</string>
-<string name="sample_text_activity_ar">مرحباً، هذا نص تجريبي لـ ناطق.</string>
-<string name="sample_text_activity_en">Hello, this is a sample text for Nateq.</string>
-    <string name="sample_text_activity_fr">Bonjour, ceci est un texte d\'essai pour Nateq.</string>
-    <string name="sample_text_activity_de">Hallo, dies ist ein Beispieltext für Nateq.</string>
-    <string name="sample_text_activity_es">Hola, este es un texto de ejemplo para Nateq.</string>
-<string name="sample_text_default_ar">مرحباً، هذه عينة من صوت ناطق</string>
-<string name="sample_text_default_en">Hello, this is a sample of Nateq voice</string>
+<string name="sample_text_activity_ar">مرحباً، هذا نص تجريبي لـ Lord TTS.</string>
+<string name="sample_text_activity_en">Hello, this is a sample text for Lord TTS.</string>
+    <string name="sample_text_activity_fr">Bonjour, ceci est un texte d\'essai pour Lord TTS.</string>
+    <string name="sample_text_activity_de">Hallo, dies ist ein Beispieltext für Lord TTS.</string>
+    <string name="sample_text_activity_es">Hola, este es un texto de ejemplo para Lord TTS.</string>
+<string name="sample_text_default_ar">مرحباً، هذه عينة من صوت Lord TTS</string>
+<string name="sample_text_default_en">Hello, this is a sample of Lord TTS voice</string>
 <string name="sample_text_emoji_ar">رحلة سعيدة ودّيًّا، ابتسامة وقلب 😊❤️</string>
 <string name="sample_text_emoji_en">Have a happy trip, a smile and a heart 😊❤️</string>
 <string name="sample_text_notifications_ar">لديك إشعار جديد</string>
@@ -316,8 +316,8 @@
 <string name="section_text_reading">Text reading</string>
 <string name="section_time_announcement">Time Announcement</string>
 <string name="section_voice_selection">Voice Selection</string>
-<string name="set_default_engine">Make Nateq the default speech engine</string>
-<string name="set_default_engine_hint">Choose Nateq from the engine list, then tap its settings icon to set its preferred language</string>
+<string name="set_default_engine">Make Lord TTS the default speech engine</string>
+<string name="set_default_engine_hint">Choose Lord TTS from the engine list, then tap its settings icon to set its preferred language</string>
 <string name="shake_to_stop_enabled">Shake to stop speech</string>
 <string name="shake_to_stop_summary">Shaking the device during a long announcement stops speech immediately</string>
 <string name="tashkeel_preserved_enabled">Keep Arabic text diacritics</string>
@@ -364,9 +364,9 @@
 <string name="spinner_sms_reading_voice_content">Message reading voice</string>
 <string name="spinner_time_format_content">Time announcement format</string>
 <string name="spinner_time_interval_content">Time announcement interval (minutes)</string>
-<string name="tile_label_description">Toggle all Nateq announcements (time, battery, messages, notifications, caller)</string>
-<string name="tile_label_off">Nateq: announcements off</string>
-<string name="tile_label_on">Nateq: announcements on</string>
+<string name="tile_label_description">Toggle all Lord TTS announcements (time, battery, messages, notifications, caller)</string>
+<string name="tile_label_off">Lord TTS: announcements off</string>
+<string name="tile_label_on">Lord TTS: announcements on</string>
 <string name="time_announcement_enabled">Enable time announcement</string>
 <string name="time_announcement_format">Time announcement format</string>
 <string name="time_announcement_interval">Time announcement interval</string>
@@ -385,18 +385,18 @@
 <string name="section_oem_guidance">Device compatibility</string>
 <string name="oem_device_label">Device: %1$s</string>
 <string name="oem_vendor_unknown">Unknown</string>
-<string name="oem_guidance_generic">Some manufacturers pause background voice announcements to save battery. Grant Nateq an exemption from battery optimization and open the app settings to confirm background announcements keep working.</string>
-<string name="oem_guidance_xiaomi">Xiaomi/Redmi/POCO device: Nateq needs a battery optimization exemption and "Autostart" enabled under Mi security management to keep background voice announcements alive.</string>
+<string name="oem_guidance_generic">Some manufacturers pause background voice announcements to save battery. Grant Lord TTS an exemption from battery optimization and open the app settings to confirm background announcements keep working.</string>
+<string name="oem_guidance_xiaomi">Xiaomi/Redmi/POCO device: Lord TTS needs a battery optimization exemption and "Autostart" enabled under Mi security management to keep background voice announcements alive.</string>
 <string name="oem_guidance_huawei">Huawei/Honor device: enable the battery exemption and "Auto-launch" under System Manager (Apps > Special) so background voice announcements keep working.</string>
-<string name="oem_guidance_oppo">Oppo/OnePlus/realme device: open the battery exemption and allow Nateq under "Startup management" in the security center to keep background announcements alive.</string>
+<string name="oem_guidance_oppo">Oppo/OnePlus/realme device: open the battery exemption and allow Lord TTS under "Startup management" in the security center to keep background announcements alive.</string>
 <string name="oem_guidance_vivo">Vivo device: enable the battery exemption and "Auto start" under the permission manager so background voice announcements keep working.</string>
-<string name="oem_guidance_samsung">Samsung device: enable the battery exemption, open the app settings, and keep Nateq out of "Sleeping apps" so background voice announcements keep working.</string>
+<string name="oem_guidance_samsung">Samsung device: enable the battery exemption, open the app settings, and keep Lord TTS out of "Sleeping apps" so background voice announcements keep working.</string>
 <string name="btn_open_battery_settings">Open battery settings</string>
 <string name="btn_open_autostart_settings">Open autostart management</string>
 <string name="oem_screen_open_failed">Could not open the requested screen on this device</string>
 <string name="auto_convert_auto_enabled">Automatic conversion was enabled for the chosen engine — you can turn it off from the engine screen</string>
-<string name="first_run_default_engine">Make Nateq the default engine</string>
-<string name="first_run_default_engine_hint">Open the speech settings and choose Nateq as the system default engine</string>
+<string name="first_run_default_engine">Make Lord TTS the default engine</string>
+<string name="first_run_default_engine_hint">Open the speech settings and choose Lord TTS as the system default engine</string>
 <string name="voice_category_default">Default voice</string>
 <string name="voice_category_default_summary">The voice used for general text</string>
 <string name="voice_category_emoji">Emoji speech</string>
@@ -416,7 +416,7 @@
         <item quantity="one">%d second</item>
         <item quantity="other">%d seconds</item>
     </plurals>
-<string name="first_run_welcome_title">Welcome to Nateq</string>
+<string name="first_run_welcome_title">Welcome to Lord TTS</string>
 <string name="first_run_welcome_description">Choose the interface language and the text-to-speech engine to get started — you can change everything later from Settings.</string>
 <string name="first_run_language_label">Interface language</string>
 <string name="first_run_engine_label">Text-to-speech engine</string>
@@ -455,6 +455,7 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+• Unified application name to "Lord TTS" across all user-facing interfaces: adopted "Lord TTS" exclusively across all user-visible strings, app launcher/drawer, system TTS engine list, diagnostics screen, and first-run setup wizard
 • Custom hourly chime from external audio file: select your own chime file via system file picker with persistable permissions, instant preview button before saving, easy removal to restore default chimes, and automatic fallback with spoken alert if the file is moved or unavailable
 • Audio expansion and per-engine equalizer: lightweight 3-band PCM Equalizer (EQ) to soften harsh engine timbres and balance voice tone differences, paired with an "Audio expansion" setting (Off/Light/Medium) in General Settings for comfortable spatial width and subtle room ambience using built-in Android audio effects without external dependencies
 • Comprehensive stability and performance fixes: audit optimizations across text engine and audio pipelines, improved large number phrasing over a billion, accurate gender agreement for unit expressions, battery preservation by stopping interruption sensors when idle, thread-safe settings synchronization and safe update downloads, and instant WakeLock release upon speech completion

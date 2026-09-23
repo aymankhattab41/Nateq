@@ -1422,7 +1422,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 @Suppress("DEPRECATION") info.versionCode.toLong()
             }
 
-            sb.appendLine("=== ناطق — التشخيص ===")
+            sb.appendLine("=== Lord TTS — التشخيص ===")
             sb.appendLine("الإصدار: $versionName ($versionCode)")
             sb.appendLine(
                 "الجهاز: " +
@@ -1630,7 +1630,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             android.content.Context.CLIPBOARD_SERVICE
         ) as android.content.ClipboardManager
         val clip = android.content.ClipData.newPlainText(
-            "Nateq Diagnostics", text
+            "Lord TTS Diagnostics", text
         )
         clipboard.setPrimaryClip(clip)
     }
