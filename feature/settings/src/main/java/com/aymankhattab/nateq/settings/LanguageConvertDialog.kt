@@ -415,8 +415,13 @@ internal class LanguageConvertDialogController(
             }
         }
 
-    private val pitchListener = rateLikeListenerFor(tvPitch)
-    private val rateListener = rateLikeListenerFor(tvRate)
+    // **كسولة (lazy):** تُقرأ tvPitch/tvRate (lateinit) عند أول استخدام في
+    // bindTo — بعد تهيئتهما — لا عند إنشاء الكائن. كان التقييمُ الفوري
+    // يرمي «lateinit property … has not been initialized» في خيط
+    // DefaultDispatcher-worker عند دخول «إعداد جميع اللغات» (يُنشأ
+    // الحوارُ داخل lifecycleScope.launch(AppDispatchers.io)).
+    private val pitchListener by lazy { rateLikeListenerFor(tvPitch) }
+    private val rateListener by lazy { rateLikeListenerFor(tvRate) }
 
     /** يعرض حقل قائمة (كمبو بوكس) بعناصر جاهزة وفهرس اختيار أولي. */
     private fun bindDropdown(
