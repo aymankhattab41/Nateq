@@ -25,8 +25,10 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * اختبارات منع التراجع التلقائي عند فشل المحرك:
  * إن فشل المحرك المختار أو لم يدعم اللغة أو كان معطلاً،
- * يُسقط المثيل المعطوب وتُطلق رسالة الخطأ المحددة
- * ولا يتم التبديل التلقائي لأي محرك آخر إطلاقاً.
+ * يُسقط المثيل المعطوب ولا يتم التبديل التلقائي لأي محرك
+ * آخر إطلاقاً. لا تُطلق أي رسالة نطق مزعجة للمستخدم عند
+ * فشل المحرك (تُسجَّل في اللوج فقط) — الرسالة الصوتية
+ * الوحيدة تبقى لغياب محرك مُحدَّد للغة.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [37])
@@ -133,9 +135,8 @@ class SystemVoiceProviderLanguageFallbackTest {
         // 3. لم يتم التبديل التلقائي إلى المحرك B
         assertNull(shadowOf(ttsB).getLastSynthesizeToFile())
 
-        // 4. إطلاق رسالة الخطأ الصريحة
-        val expectedMsg = "تعذّر النطق بالمحرك المحدَّد"
-        assertEquals(listOf(expectedMsg), announcedMessages)
+        // 4. لا رسالة نطق مزعجة عند فشل المحرك (تُسجَّل في اللوج فقط)
+        assertTrue(announcedMessages.isEmpty())
     }
 
     @Test
@@ -175,8 +176,7 @@ class SystemVoiceProviderLanguageFallbackTest {
         shadowOf(Looper.getMainLooper()).idle()
 
         assertTrue(chunks.isEmpty())
-        val expectedMsg = "تعذّر النطق بالمحرك المحدَّد"
-        assertEquals(listOf(expectedMsg), announcedMessages)
+        assertTrue(announcedMessages.isEmpty())
     }
 
     @Test

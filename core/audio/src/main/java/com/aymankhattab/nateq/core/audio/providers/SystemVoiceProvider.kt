@@ -164,23 +164,18 @@ class SystemVoiceProvider(
         }
     }
 
+    /**
+     * يكتفي بتسجيل فشل المحرك في اللوج للتصحيح دون أي إعلان
+     * صوتي أو Toast — رسالة "فشل النطق بالمحرك المحدَّد" كانت
+     * مزعجة للمستخدم كلما تعثر النطق بالمحرك المختار.
+     */
     private fun notifyEngineFailedOnce(engine: String?) {
         val key = engine ?: "unknown"
         val shouldNotify = synchronized(engineFailureNotified) {
             engineFailureNotified.add(key)
         }
         if (shouldNotify) {
-            val msg = try {
-                context.getString(R.string.engine_failed_for_selected)
-            } catch (_: Throwable) {
-                "تعذّر النطق بالمحرك المحدَّد"
-            }
-            Log.e(TAG, "[Provider] $msg (engine=$engine)")
-            try {
-                errorAnnouncer(msg)
-            } catch (t: Throwable) {
-                Log.w(TAG, "errorAnnouncer failed", t)
-            }
+            Log.e(TAG, "[Provider] engine failed for selected (engine=$engine)")
         }
     }
 

@@ -41,7 +41,6 @@
          Unique name so it does not collide with feature:settings on merge -->
     <string name="engine_fallback_alert">Speech failed with the selected engine</string>
     <string name="engine_not_selected_for_language">No speech engine selected for this language, open settings to choose one</string>
-    <string name="engine_failed_for_selected">Speech failed with the selected engine</string>
     <string name="engine_not_selected_short">No engine selected for this language</string>
     <string name="engine_disabled_or_missing">Selected engine is disabled or uninstalled</string>
     <!-- Item [29] — one-time spoken hint per process lifetime: notifications

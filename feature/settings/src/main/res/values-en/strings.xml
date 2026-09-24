@@ -47,7 +47,6 @@
 <string name="engine_not_selected_short">No engine selected for this language</string>
 <string name="engine_disabled_or_missing">Selected engine is disabled or uninstalled</string>
 <string name="engine_not_selected_for_language">No speech engine selected for this language, open settings to choose one</string>
-<string name="engine_failed_for_selected">Speech failed with the selected engine</string>
 <string name="back_label">Back to main list</string>
 <string name="back_to_home">You\'re back on the main list</string>
 <string name="back_to_group">Back to %1$s</string>

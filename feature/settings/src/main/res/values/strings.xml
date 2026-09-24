@@ -47,7 +47,6 @@
 <string name="engine_not_selected_short">لم يُحدَّد محرك لهذه اللغة</string>
 <string name="engine_disabled_or_missing">المحرك المحدّد معطّل أو غير مثبّت</string>
 <string name="engine_not_selected_for_language">لم يُحدَّد محرك نطق لهذه اللغة، افتح الإعدادات لاختياره</string>
-<string name="engine_failed_for_selected">تعذّر النطق بالمحرك المحدَّد</string>
 <string name="back_label">الرجوع إلى القائمة الرئيسية</string>
 <string name="back_to_group">الرجوع إلى %1$s</string>
 <string name="back_to_home">عادت القائمة الرئيسية</string>

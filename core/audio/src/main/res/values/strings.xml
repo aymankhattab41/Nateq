@@ -45,7 +45,6 @@
          اسم فريد لا يتعارض مع feature:settings عند الدمج -->
     <string name="engine_fallback_alert">تعذّر النطق بالمحرك المحدَّد</string>
     <string name="engine_not_selected_for_language">لم يُحدَّد محرك نطق لهذه اللغة، افتح الإعدادات لاختياره</string>
-    <string name="engine_failed_for_selected">تعذّر النطق بالمحرك المحدَّد</string>
     <string name="engine_not_selected_short">لم يُحدَّد محرك لهذه اللغة</string>
     <string name="engine_disabled_or_missing">المحرك المحدّد معطّل أو غير مثبّت</string>
     <!-- بند [29] — تنبيه الصوت لمرة واحدة لكل عمر العملية: الإشعارات معطّلة
