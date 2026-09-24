@@ -67,7 +67,8 @@ internal class CallerAnnouncementController(
     private var templateWatcher: android.text.TextWatcher? = null
     private var spinnerCallerVoiceAr: Spinner? = null
     private var spinnerCallerVoiceEn: Spinner? = null
-    private var spinnerCallerEngine: Spinner? = null
+    private var spinnerCallerEngineAr: Spinner? = null
+    private var spinnerCallerEngineEn: Spinner? = null
 
     /** خيارات محرك نطق المتصل: «تلقائي» ثم المحركات المثبتة */
     private var callerEngineOptions: List<EnginePicker.InstalledEngine> =
@@ -105,47 +106,25 @@ internal class CallerAnnouncementController(
         etCallerTemplate = view.findViewById(R.id.et_caller_template)
         spinnerCallerVoiceAr = view.findViewById(R.id.spinner_caller_voice_ar)
         spinnerCallerVoiceEn = view.findViewById(R.id.spinner_caller_voice_en)
-        spinnerCallerEngine = view.findViewById(R.id.spinner_caller_engine)
+        spinnerCallerEngineAr =
+            view.findViewById(R.id.spinner_caller_engine_ar)
+        spinnerCallerEngineEn =
+            view.findViewById(R.id.spinner_caller_engine_en)
 
-        // محركات TTS المثبتة + خيار تلقائي
+        // محركات TTS المثبتة + خيار تلقائي (قائمة واحدة مشتركة للسبنرين).
         callerEngineOptions = runCatching {
             EnginePicker.installedEngines(fragment.requireContext())
         }.getOrDefault(emptyList())
-        val engineLabels = buildList {
-            add(fragment.getString(R.string.first_run_engine_auto))
-            addAll(callerEngineOptions.map { it.label })
-        }
-        spinnerCallerEngine?.adapter = fragment.simpleAdapter(engineLabels)
-        val savedCallerEngine = runCatching {
-            settings.getEngineForCategory(
-                SettingsRepository.ANNOUNCE_CATEGORY_CALLER
-            )
-        }.getOrNull()
-        val callerEngineIdx = callerEngineOptions
-            .indexOfFirst { it.packageName == savedCallerEngine }
-        spinnerCallerEngine?.setSelection(
-            if (callerEngineIdx >= 0) callerEngineIdx + 1 else 0
+        setupCallerEngineSpinner(
+            spinnerCallerEngineAr,
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR,
+            refreshArabic = true
         )
-        spinnerCallerEngine?.onItemSelectedListener =
-            object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(
-                parent: AdapterView<*>?, v: View?,
-                pos: Int, id: Long
-            ) {
-                val pkg = callerEngineOptions
-                    .getOrNull(pos - 1)?.packageName
-                runCatching {
-                    settings.setEngineForCategory(
-                        SettingsRepository.ANNOUNCE_CATEGORY_CALLER,
-                        pkg
-                    )
-                }
-                refreshCallerVoices()
-                onStatusChanged()
-            }
-
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
-        }
+        setupCallerEngineSpinner(
+            spinnerCallerEngineEn,
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN,
+            refreshEnglish = true
+        )
 
         // المفتاح الرئيسي: عند التفعيل نطلب الأذونات أولاً
         // (لا نفعّل إلا بمنحها)
@@ -459,11 +438,53 @@ internal class CallerAnnouncementController(
         checkRevokedPermissionsAndRecover()
     }
 
+    /** يضبط سبنر محرك إحدى اللغتين: يُبنى بـ«تلقائي» ثم المحركات المثبتة،
+     *  يحدد القيمة المحفوظة لفئته، ويحفظ اختيار المستخدم لفئته فقط ثم
+     *  يُحدّث أصوات تلك اللغة. */
+    private fun setupCallerEngineSpinner(
+        spinner: Spinner?,
+        category: String,
+        refreshArabic: Boolean = false,
+        refreshEnglish: Boolean = false
+    ) {
+        val labels = buildList {
+            add(fragment.getString(R.string.first_run_engine_auto))
+            addAll(callerEngineOptions.map { it.label })
+        }
+        spinner?.adapter = fragment.simpleAdapter(labels)
+        val saved = runCatching {
+            settings.getEngineForCategory(category)
+        }.getOrNull()
+        val idx = callerEngineOptions
+            .indexOfFirst { it.packageName == saved }
+        spinner?.setSelection(if (idx >= 0) idx + 1 else 0)
+        spinner?.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?, v: View?,
+                pos: Int, id: Long
+            ) {
+                val pkg = callerEngineOptions
+                    .getOrNull(pos - 1)?.packageName
+                runCatching {
+                    settings.setEngineForCategory(category, pkg)
+                }
+                if (refreshArabic) refreshCallerArabicVoices()
+                if (refreshEnglish) refreshCallerEnglishVoices()
+                onStatusChanged()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+    }
+
     /** معاينة «متصل من أحمد» بصوت المتصل العربي/محركه وتقدم الشرائط
      *  الحالية (لا القيم المحفوظة القديمة). */
     private fun previewCaller() {
         val enginePkg = callerEngineOptions
-            .getOrNull((spinnerCallerEngine?.selectedItemPosition ?: 0) - 1)
+            .getOrNull(
+                (spinnerCallerEngineAr?.selectedItemPosition ?: 0) - 1
+            )
             ?.packageName
         val sample = fragment.getString(R.string.sample_text_caller_preview)
         fragment.previewSpeech(
@@ -483,17 +504,23 @@ internal class CallerAnnouncementController(
         )
     }
 
-    /** إعادة بناء سبنري أصوات المتصل (عربي/إنجليزي) لمحرك المتصل
-     *  برمجياً تحت عَلَم الربط — عند بدء الإعداد وعند اكتمال
-     *  اكتشاف المحركات خلفياً ([VoiceSelectionFragment]). */
+    /** إعادة بناء سبنري أصوات المتصل: كل لغة بمحركها الخاص (عربي ← محرك
+     *  الأسماء العربية، إنجليزي ← محرك الأسماء الإنجليزية) — عند بدء
+     *  الإعداد وعند اكتمال اكتشاف المحركات خلفياً
+     *  ([VoiceSelectionFragment]). */
     fun refreshCallerVoices() {
+        refreshCallerArabicVoices()
+        refreshCallerEnglishVoices()
+    }
+
+    /** يبني أصوات العربية المتاحة لمحرك الأسماء العربية. */
+    private fun refreshCallerArabicVoices() {
         val engine = runCatching {
             settings.getEngineForCategory(
-                SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+                SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR
             )
         }.getOrNull()
         callerVoiceOptionsAr = catalog.voicesFor("ar", engine)
-        callerVoiceOptionsEn = catalog.voicesFor("en", engine)
         bindCallerVoices(
             spinnerCallerVoiceAr,
             callerVoiceOptionsAr,
@@ -501,6 +528,16 @@ internal class CallerAnnouncementController(
                 settings.getCallerAnnouncementArabicVoiceId()
             }.getOrNull()
         )
+    }
+
+    /** يبني أصوات الإنجليزية المتاحة لمحرك الأسماء الإنجليزية. */
+    private fun refreshCallerEnglishVoices() {
+        val engine = runCatching {
+            settings.getEngineForCategory(
+                SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
+            )
+        }.getOrNull()
+        callerVoiceOptionsEn = catalog.voicesFor("en", engine)
         bindCallerVoices(
             spinnerCallerVoiceEn,
             callerVoiceOptionsEn,
@@ -706,7 +743,8 @@ internal class CallerAnnouncementController(
         etCallerTemplate = null
         spinnerCallerVoiceAr = null
         spinnerCallerVoiceEn = null
-        spinnerCallerEngine = null
+        spinnerCallerEngineAr = null
+        spinnerCallerEngineEn = null
     }
 }
 

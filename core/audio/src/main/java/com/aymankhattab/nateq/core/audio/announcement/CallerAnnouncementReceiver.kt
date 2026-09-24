@@ -264,7 +264,9 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
 
                 val speechRate = settings.getCallerAnnouncementRate()
                 val volume = settings.getCallerAnnouncementVolume()
-                val hasArabic = LocaleUtils.containsArabic(text)
+                val hasArabic = callerSpeechLanguage(
+                    contactName, incomingNumber
+                ) == LanguageCode.AR.tag
                 val locale = if (hasArabic) {
                     Locale.forLanguageTag(LanguageCode.AR.tag)
                 } else {
@@ -301,8 +303,8 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 wakeLock = TimeAlarmReceiver.acquireShortWakeLock(context)
                 speaker.speak(
                     text, locale, speechRate, pitch, volume,
-                    engineOverride = settings.getEngineForCategory(
-                        SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+                    engineOverride = callerSpeechEngine(
+                        settings, locale.language
                     )
                 )
                 // **بند 5.5:** إنهاءٌ مبكر بمستمع الاكتمال: محركٌ سليم يُنهي
@@ -327,8 +329,8 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                             AnnouncementSpeaker.getInstance(appCtx).speak(
                                 text, locale, speechRate, pitch,
                                 volume,
-                                engineOverride = settings.getEngineForCategory(
-                                    SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+                                engineOverride = callerSpeechEngine(
+                                    settings, locale.language
                                 )
                             )
                         } catch (t: Throwable) {
@@ -412,10 +414,9 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         contactName: String?,
         numberReadingMode: Int = 1
     ): String {
-        val dynamicText = (contactName ?: number).orEmpty()
-        val isArabic = !dynamicText.any { it.isLetter() } ||
-            LocaleUtils.containsArabic(dynamicText)
-        val lang = if (isArabic) LanguageCode.AR.tag else LanguageCode.EN.tag
+        val language = callerSpeechLanguage(contactName, number)
+        val isArabic = language == LanguageCode.AR.tag
+        val lang = language
         return when {
             contactName != null -> LocaleUtils.stringForSpeech(
                 context, lang, R.string.caller_from, R.string.caller_from
@@ -682,3 +683,41 @@ internal fun formatCallerNumberForSpeech(
     )
     return " $spoken"
 }
+
+/**
+ * قرار لغة نطق اسم المتصل من الاسم/الرقم لا من النص الكامل (فالقالب قد
+ * يحوي لغةً ثابتة فتطمس المنطقةَ معه كل القرار): اسمٌ فيه حروف عربية
+ * (أو رقم بلا حروف) → عربي، والاسم اللاتيني → إنجليزي. هذا ما يجعل
+ * نطق الأسماء الإنجليزية فعلاً بمحركها وصوتها.
+ */
+internal fun callerSpeechLanguage(
+    contactName: String?,
+    number: String?
+): String {
+    val dynamic = (contactName ?: number).orEmpty()
+    return if (
+        !dynamic.any { it.isLetter() } ||
+        LocaleUtils.containsArabic(dynamic)
+    ) {
+        LanguageCode.AR.tag
+    } else {
+        LanguageCode.EN.tag
+    }
+}
+
+/**
+ * محرك نطق اسم المتصل حسب لغته من فئتي المحركين المستقلتين (عربي/إنجليزي)
+ * — null = محرك تلقائي. بعد ضبط مستخدمٍ محركَ الأسماء الإنجليزية يبدأ
+ * النطق الإنجليزي فعلاً عليه (المحرك المشترك الواحد كان يفرض محركاً
+ * واحداً للغتين ويظهر أنه لا يعمل أو يعمل على العربية فقط).
+ */
+internal fun callerSpeechEngine(
+    settings: SettingsRepository,
+    languageTag: String
+): String? = settings.getEngineForCategory(
+    if (languageTag == LanguageCode.AR.tag) {
+        SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR
+    } else {
+        SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
+    }
+)

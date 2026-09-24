@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.util.LanguageCode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -244,6 +245,57 @@ class CallerAnnouncementReceiverTest {
         assertTrue(
             "بمنح الإذنين معاً يُنطق الاسم فعلياً",
             receiver.hasCallerPermission(context)
+        )
+    }
+
+    @Test
+    fun `callerSpeechLanguage follows the name not the template`() {
+        // اسم عربي → عربي
+        assertEquals(
+            LanguageCode.AR.tag,
+            callerSpeechLanguage("أحمد", "0501234567")
+        )
+        // اسم لاتيني → إنجليزي (كان مَسْتَنَداً للنص الكامل عربياً)
+        assertEquals(
+            LanguageCode.EN.tag,
+            callerSpeechLanguage("Ahmed Smith", "0501234567")
+        )
+        // رقم بلا اسم (أو بلا حروف أصلاً) → عربي كعبارة عامة
+        assertEquals(
+            LanguageCode.AR.tag,
+            callerSpeechLanguage(null, "0501234567")
+        )
+        assertEquals(
+            LanguageCode.AR.tag,
+            callerSpeechLanguage("", "0501234567")
+        )
+        assertEquals(
+            LanguageCode.AR.tag,
+            callerSpeechLanguage("٠٥٠١٢٣٤٥٦٧", null)
+        )
+    }
+
+    @Test
+    fun `callerSpeechEngine picks the per-language engine`() {
+        val repo = SettingsRepository(context)
+        assertNull(callerSpeechEngine(repo, LanguageCode.AR.tag))
+        assertNull(callerSpeechEngine(repo, LanguageCode.EN.tag))
+
+        repo.setEngineForCategory(
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR,
+            "org.arabic.speech"
+        )
+        repo.setEngineForCategory(
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN,
+            "org.english.speech"
+        )
+        assertEquals(
+            "org.arabic.speech",
+            callerSpeechEngine(repo, LanguageCode.AR.tag)
+        )
+        assertEquals(
+            "org.english.speech",
+            callerSpeechEngine(repo, LanguageCode.EN.tag)
         )
     }
 }

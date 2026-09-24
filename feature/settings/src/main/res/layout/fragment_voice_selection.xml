@@ -1178,6 +1178,22 @@
                     android:contentDescription="@string/caller_announcement_voice_ar" />
             </com.google.android.material.textfield.TextInputLayout>
 
+            <!-- محرك نطق الأسماء العربية (يحدد أصواتها المتاحة) -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:labelFor="@id/spinner_caller_engine_ar"
+                android:text="@string/caller_engine_ar_label"
+                android:textAppearance="?attr/textAppearanceBody2" />
+
+            <androidx.appcompat.widget.AppCompatSpinner
+                android:id="@+id/spinner_caller_engine_ar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:contentDescription="@string/caller_engine_ar_label" />
+
             <!-- صوت نطق الأسماء الإنجليزية -->
             <com.google.android.material.textfield.TextInputLayout
                 android:layout_width="match_parent"
@@ -1192,22 +1208,21 @@
                     android:contentDescription="@string/caller_announcement_voice_en" />
             </com.google.android.material.textfield.TextInputLayout>
 
-            <!-- محرك نطق المتصل -->
+            <!-- محرك نطق الأسماء الإنجليزية (يحدد أصواتها المتاحة) -->
             <TextView
-                android:id="@+id/tv_caller_engine_label"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:labelFor="@id/spinner_caller_engine"
-                android:text="@string/engine_for_caller_label"
+                android:labelFor="@id/spinner_caller_engine_en"
+                android:text="@string/caller_engine_en_label"
                 android:textAppearance="?attr/textAppearanceBody2" />
 
             <androidx.appcompat.widget.AppCompatSpinner
-                android:id="@+id/spinner_caller_engine"
+                android:id="@+id/spinner_caller_engine_en"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:minHeight="48dp"
-                android:contentDescription="@string/engine_for_caller_label" />
+                android:contentDescription="@string/caller_engine_en_label" />
 
             <!-- سرعة النطق -->
             <LinearLayout

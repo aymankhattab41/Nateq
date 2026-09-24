@@ -440,7 +440,8 @@
 <string name="first_run_lang_arabic">العربية</string>
 <string name="first_run_lang_english">English</string>
 <string name="engine_for_category_label">Category announcement engine</string>
-<string name="engine_for_caller_label">Caller announcement engine</string>
+<string name="caller_engine_ar_label">Arabic names engine</string>
+<string name="caller_engine_en_label">English names engine</string>
 <string name="engine_for_battery_label">Battery announcement engine</string>
 <string name="voice_language_label">Voice language</string>
 <string name="cd_category_language_spinner">Choose category voice language</string>

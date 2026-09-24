@@ -764,6 +764,36 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun callerEnginesPerLanguage_independentRoundTripNoLeak() {
+        val ar = SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR
+        val en = SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
+        // بلا إعداد → null للغتين (تلقائي وقت النطق)
+        assertNull(repo.getEngineForCategory(ar))
+        assertNull(repo.getEngineForCategory(en))
+
+        repo.setEngineForCategory(ar, "org.arabic.speech")
+        assertEquals(
+            "org.arabic.speech", repo.getEngineForCategory(ar)
+        )
+        // لا تسرّب إلى الإنجليزية
+        assertNull(repo.getEngineForCategory(en))
+
+        repo.setEngineForCategory(en, "org.english.speech")
+        assertEquals(
+            "org.arabic.speech", repo.getEngineForCategory(ar)
+        )
+        assertEquals(
+            "org.english.speech", repo.getEngineForCategory(en)
+        )
+
+        repo.setEngineForCategory(ar, null)
+        assertNull(repo.getEngineForCategory(ar))
+        assertEquals(
+            "org.english.speech", repo.getEngineForCategory(en)
+        )
+    }
+
+    @Test
     fun languageForCategory_defaultsNullRoundTripNoLeak() {
         assertNull(repo.getLanguageForCategory("time"))
         assertNull(repo.getLanguageForCategory("numbers"))

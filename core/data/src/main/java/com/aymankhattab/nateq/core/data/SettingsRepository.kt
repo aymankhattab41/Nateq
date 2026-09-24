@@ -51,8 +51,15 @@ class SettingsRepository(context: Context) :
         const val VOICE_CATEGORY_DEFAULT = "default"
         const val VOICE_CATEGORY_EMOJI = "emoji"
 
-        /** فئة إعلان المتصل (محرك/صوت مستقل للإعلان عن المكالمات). */
+        /** فئة إعلان المتصل (محرك/صوت مستقل للإعلان عن المكالمات)
+         *  — أُبقيها للمتوافقية مع مفاتيح قديمة مخزنة. */
         const val ANNOUNCE_CATEGORY_CALLER = "caller"
+
+        /** محرّك نطق الأسماء العربية في إعلان المتصل. */
+        const val ANNOUNCE_CATEGORY_CALLER_AR = "caller_ar"
+
+        /** محرّك نطق الأسماء الإنجليزية في إعلان المتصل. */
+        const val ANNOUNCE_CATEGORY_CALLER_EN = "caller_en"
 
         /** فئة إعلان الرسائل النصية (محرك/نبرة مستقلان إن ضُبطا). */
         const val ANNOUNCE_CATEGORY_SMS = "sms"
