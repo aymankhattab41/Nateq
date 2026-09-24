@@ -475,8 +475,8 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-• Compact "Set up all languages" dialog: a Language combo, then Engine, then Voice, with the same sliders, instant auto-save on any pick or slider change, and a "No engine" option that keeps the sliders only
-• Fixed English time phrasing: "1 minute to" instead of the plural bug at :59, and "midnight" instead of "zero o'clock" in 24-hour mode
+• Compact \"Set up all languages\" dialog: a Language combo, then Engine, then Voice, with the same sliders, instant auto-save on any pick or slider change, and a \"No engine\" option that keeps the sliders only
+• Fixed English time phrasing: \"1 minute to\" instead of the plural bug at :59, and \"midnight\" instead of \"zero o\'clock\" in 24-hour mode
 • Guaranteed the chosen engine and voice apply to every announcement: country-matched voice preferred by the announcement language, and the reading cycle bound to a configured language engine when the category engine is absent
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
