@@ -475,11 +475,9 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-• Independent custom chime per quarter hour (:15 / :30 / :45) from a file on your device, exactly like the top of the hour: choose, preview and clear for each time
-• Tiered voice picker (Language → Engine → Voice) for every major category and for SMS reading, caller name and battery announcements: automatic background discovery of TTS engines and their languages with external-engine voices honored when speaking and the saved voice respected
-• Optional media ducking while announcing: audio focus MAY_DUCK (temporary lowering) instead of GAIN_TRANSIENT (temporary interruption without changing level) to fix the "media volume drops" complaint
-• Time announcement by audio scenario: switches to allow/deny automatic announcements during calls, media playback or silent mode, with the explicit "announce now" request exempt
-• Reworked "Report an error" button: captures the live diagnostics log from the press moment until "Done" so an accurate report is shared after reproducing the issue
+• Compact "Set up all languages" dialog: a Language combo, then Engine, then Voice, with the same sliders, instant auto-save on any pick or slider change, and a "No engine" option that keeps the sliders only
+• Fixed English time phrasing: "1 minute to" instead of the plural bug at :59, and "midnight" instead of "zero o'clock" in 24-hour mode
+• Guaranteed the chosen engine and voice apply to every announcement: country-matched voice preferred by the announcement language, and the reading cycle bound to a configured language engine when the category engine is absent
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
