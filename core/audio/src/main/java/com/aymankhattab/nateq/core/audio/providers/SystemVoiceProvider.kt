@@ -241,8 +241,11 @@ class SystemVoiceProvider(
 
         /** حجم الدفعة الدنيا لقراءة صوت التخليق أثناء كتابته (بند ب.txt
          *  3.2): لا يُقرأ الملف النامي إلا حين يتراكم ما يعادل هذا الحجم
-         *  الجديد على القرص — بلا قراءات رقاقة خلف رقاقة على ملفٍ ينمو. */
-        private const val STREAM_CHUNK_BYTES = 64 * 1024
+         *  الجديد على القرص — بلا قراءات رقاقة خلف رقاقة على ملفٍ ينمو.
+         *  16KB (≈0.2–0.4 ثانية صوت) بدل 64KB السابقة: أول صوتٍ لقارئ
+         *  الشاشة كان ينتظر عتبةً بعيدة (~1.4 ث عند 24k) فبدا النطقُ
+         *  متأخراً ("بطء الاستجابة") خصوصاً مع النصوص الإنجليزية الطويلة. */
+        private const val STREAM_CHUNK_BYTES = 16 * 1024
 
         /** طول رأس WAV المقروء لفحص خاناته أثناء البثّ — يكفي لرؤوس
          *  المحركات المعهودة (44 بايتاً + قوائم خانات نحيفة) دون قراءة
@@ -1107,6 +1110,15 @@ class SystemVoiceProvider(
             var readSoFar = 0L
             var emittedAny = false
             var streamReadFailed = false
+            // **تصريف الذيل عند جمود الكتابة (بند الجديد):** سامسونج يُعلِم
+            // onDone متأخراً عن نهاية كتابة المحرك للملف، فبعد بثّ آخر
+            // شريحةٍ يبقى الصوتُ معلقاً بانتظار onDone حتى المهلة ويبدو
+            // النطق "توقف لحظياً ثم عاد" بين رسائل التمرير. نتتبع استقرار
+            // حجم الملف (بلا نمو) جولاتٍ متوالية فيُصرف المتبقي الصغير
+            // فوراً ونسير في النجاح — يُرى [shouldFlushTailAfterStall].
+            var lastLen = -1L
+            var stallPolls = 0
+            var tailCompleted = false
             val cachedParts = ArrayList<ByteArray>()
             val totalCacheBytes = IntArray(1)
             try {
@@ -1193,6 +1205,33 @@ class SystemVoiceProvider(
                                         "المسار الكامل"
                                     }, e)
                             }
+                            // تصريف ذيلٍ اكتملت كتابته دون onDone: استقر حجم
+                            // الملف بلا نمو جولاتٍ والمتبقي دون شريحةٍ وصدر
+                            // صوتٌ فعلاً => نُعلِّم الذيل منجزاً ونخرج إلى
+                            // مسار النجاح فلا يتوقف النطق بانتظار إعلامٍ
+                            // متأخر (سامسونج) أو غائب.
+                            if (!finished && tempFile.exists()) {
+                                val nowLen = tempFile.length()
+                                if (nowLen == lastLen) {
+                                    stallPolls++
+                                } else {
+                                    lastLen = nowLen
+                                    stallPolls = 0
+                                }
+                                val remaining = nowLen - start - readSoFar
+                                if (shouldFlushTailAfterStall(
+                                        emittedAny, finished, stallPolls,
+                                        remaining, STALL_GRACE_POLLS,
+                                        STALL_TAIL_MAX_BYTES
+                                    )
+                                ) {
+                                    tailCompleted = true
+                                    Log.d(TAG,
+                                        "[Provider] stream tail flushed on" +
+                                        " stall (finished delayed)")
+                                    break
+                                }
+                            }
                         }
                     }
                 }
@@ -1200,11 +1239,12 @@ class SystemVoiceProvider(
                 Thread.currentThread().interrupt()
             }
 
-            if (finished && !failed.get() && streamMeta != null &&
-                emittedAny
+            if ((finished || tailCompleted) && !failed.get() &&
+                streamMeta != null && emittedAny
             ) {
                 // إتمام البث: يُقرأ ما تبقى بعد آخر دفعة ثم يُعلَّم النجاح —
-                // لا مسار القراءة الكاملة (تجنّب بثٍّ مكرر).
+                // لا مسار القراءة الكاملة (تجنّب بثٍّ مكرر). الذيلُ منجزٌ
+                // بالجمود (tailCompleted) يسلك نفس المسار فلا يُبثّ مكرراً.
                 val start = if (dataStart < 0) 0L else dataStart
                 val remaining = tempFile.length() - start - readSoFar
                 if (remaining > 0) {
@@ -1632,6 +1672,41 @@ internal fun extendStreamDeadline(
     now: Long
 ): Long {
     return if (chunkEmitted) now + STREAM_DEADLINE_EXTEND_MS else deadline
+}
+
+/** جولاتُ استقرار حجم الملف بلا نمو قبل تصريف ذيلٍ اكتملت كتابتُه
+ *  (5 جولات × 100ms = 500ms): نافذة كافية لتمييز الاكتمال الفعلي عن
+ *  توقُّف كتابةٍ عابرٍ في منتصف النطق، وقصيرةٌ بما لا يُسمع الانتظار. */
+internal const val STALL_GRACE_POLLS = 5
+
+/** أكبر ذيلٍ يُصرف فور الاستقرار: بحد عتبة الشريحة (16KB) فيُصرف
+ *  المتبقي الصغير الأخيرُ (أو الصفر) دون انتظار onDone — والذيلُ الأكبر
+ *  (كتابةٌ متوقفةٌ فعلاً في منتصف النطق) يبقى للـ deadline فلا يُقتطع. */
+internal const val STALL_TAIL_MAX_BYTES = 16 * 1024L
+
+/**
+ * يُقرر تصريف ذيل البثّ عند جمود الكتابة بعد إتمامها دون إعلام onDone
+ *  (إعلامٌ متأخر لدى سامسونج أو غائب لدى محركات أخرى): يُصرف فقط إذا
+ *  صدر صوتٌ فعلاً ([emittedAny]) ولم يُعلِم المحرك بالاكتمال ([finished])
+ *  واستقر حجمُ الملف [stallPolls] جولةً بلا نمو وكان المتبقي دون
+ *  [maxTailBytes] (بحدٍّ صغير أو صفرٍ متبقٍّ — الكُلّ صُدر فعلاً).
+ *  الاستقرارُ قبل أول بثّ = تخليقٌ ما زال يهيّئ فلا
+ *  يُلمس؛ والذيلُ الأكبر = كتابةٌ متوقفةٌ في النطق فيعتمد على deadline.
+ *  منطقٌ نقي قابل للاختبار الآلي (نفس نمط [extendStreamDeadline]).
+ */
+internal fun shouldFlushTailAfterStall(
+    emittedAny: Boolean,
+    finished: Boolean,
+    stallPolls: Int,
+    remainingBytes: Long,
+    gracePolls: Int,
+    maxTailBytes: Long
+): Boolean {
+    if (finished || !emittedAny) return false
+    if (stallPolls < gracePolls) return false
+    // remaining == 0 صحيحة أيضاً: صدر كل ما كُتب ومُعلِّم onDone متأخر —
+    // نُعلِّم الذيل منجزاً لينجح المسار دون انتظاره.
+    return remainingBytes in 0 until maxTailBytes
 }
 
 /**
