@@ -538,10 +538,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         ).apply { setup(view) }
         callerSection = CallerAnnouncementController(
             this, settings, engineCatalog,
-            onStatusChanged = { accordion.updateSectionStatuses() },
-            onOpenOemGuidance = {
-                accordion.navigateToSection(R.id.ll_oem_guidance_content)
-            }
+            onStatusChanged = { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
         smsSection = SmsReadingController(
             this, settings, engineCatalog,

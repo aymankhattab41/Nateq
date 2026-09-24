@@ -30,8 +30,7 @@ internal class CallerAnnouncementController(
     private val fragment: VoiceSelectionFragment,
     private val settings: SettingsRepository,
     private val catalog: EngineVoicesCatalog,
-    private val onStatusChanged: () -> Unit,
-    private val onOpenOemGuidance: () -> Unit
+    private val onStatusChanged: () -> Unit
 ) {
 
     companion object {
@@ -93,10 +92,6 @@ internal class CallerAnnouncementController(
     private var callerRevokedDialogShown = false
 
     fun setup(view: View) {
-        view.findViewById<View>(R.id.btnOpenOemGuidanceCaller)
-            ?.setOnClickListener {
-                onOpenOemGuidance()
-            }
         switchCallerAnnouncement =
             view.findViewById(R.id.switch_caller_announcement)
         spinnerCallerRepeat = view.findViewById(R.id.spinner_caller_repeat)

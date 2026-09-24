@@ -1313,25 +1313,6 @@
                 android:text="@string/preview_caller_button"
                 android:importantForAccessibility="yes" />
 
-            <!-- OEM Guidance for Caller Announcement -->
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="@string/caller_announcement_oem_hint"
-                android:textAppearance="?attr/textAppearanceCaption"
-                android:textColor="@color/text_secondary"
-                android:importantForAccessibility="no" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnOpenOemGuidanceCaller"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:minHeight="48dp"
-                android:text="@string/exact_alarm_open_oem_guidance" />
-
         </LinearLayout>
         </LinearLayout>
         <View

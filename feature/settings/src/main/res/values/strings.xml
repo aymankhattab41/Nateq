@@ -82,7 +82,6 @@
 <string name="caller_announcement_template_placeholder" formatted="false">استخدم {name} لاسم المتصل — اتركه فارغاً للنطق الافتراضي</string>
 <string name="caller_announcement_voice_ar">صوت نطق الأسماء العربية</string>
 <string name="caller_announcement_voice_en">صوت نطق الأسماء الإنجليزية</string>
-    <string name="caller_announcement_oem_hint">التأخير أو الفشل في نطق اسم المتصل يرجع غالباً لإعدادات البطارية أو منع التشغيل التلقائي على هذا الجهاز، وليس خللاً في التطبيق.</string>
 <string name="caller_announcement_volume">مستوى صوت المتصل</string>
 <string name="caller_custom_names">أسماء متصلين مخصصة</string>
 <string name="caller_names_add">إضافة</string>
