@@ -10,6 +10,7 @@ import androidx.test.core.app.ApplicationProvider
 import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -329,6 +330,53 @@ class AnnouncementSpeakerTest {
     }
 
     @Test
+    fun `country voice wins over the first voice when locale has region`() {
+        // ترجيح مطابقة رمز البلد: لِـ"en-GB" يُختار "en-gb" وليس
+        // أولَ صوتٍ "en-US" — كان «أول صوت» يَجعل تبديل اللغة/المنطقة
+        // بلا أثرٍ على الصوت الفعلي.
+        val voices = listOf(
+            voiceWith("en-us", "en", "US"),
+            voiceWith("en-gb", "en", "GB"),
+            voiceWith("en-au", "en", "AU")
+        )
+        assertEquals(
+            "en-gb",
+            AnnouncementSpeaker.voiceFor(
+                voices, null,
+                Locale.forLanguageTag("en-GB")
+            )?.name
+        )
+    }
+
+    @Test
+    fun `unknown explicit id falls back to the language voice`() {
+        // معرّف صريح لا يطابق اسم أي صوت (صوتٌ من محركٍ سابق) لا يُسقط
+        // النطق: يتنزل لأفضل صوتٍ لسانُه لسانُ الوحدة — بترجيح البلد —
+        // بدل الإبقاء الثابت على صوتٍ محدَّد لا يتغير.
+        val voices = listOf(
+            voiceWith("en-us", "en", "US"),
+            voiceWith("en-gb", "en", "GB")
+        )
+        assertEquals(
+            "en-gb",
+            AnnouncementSpeaker.voiceFor(
+                voices, "xx-old-engine-voice",
+                Locale.forLanguageTag("en-GB")
+            )?.name
+        )
+    }
+
+    @Test
+    fun `no language voice yields null to keep setLanguage fallback`() {
+        assertNull(
+            AnnouncementSpeaker.voiceFor(
+                listOf(voice("ar-eg", "ar")), null,
+                Locale.forLanguageTag("fr-FR")
+            )
+        )
+    }
+
+    @Test
     fun `no matching voice falls back to null for setLanguage`() {
         // بند 18 (تكملة): إن لم يقدّم المحرك صوتاً للسان الوحدة (محرك خارجي
         // بلا صوت لتلك اللغة) يرجع null ويبقى setLanguage(locale) سقوطاً
@@ -468,6 +516,15 @@ class AnnouncementSpeakerTest {
             emptySet()
         )
 
+    /** صوت اختباري بلغة وبلد (لمحاكاة أسمائها الفعلية في getVoices). */
+    private fun voiceWith(
+        name: String, language: String, country: String
+    ): Voice = Voice(
+        name,
+        Locale.forLanguageTag("$language-$country"),
+        Voice.QUALITY_HIGH, 0, false, emptySet()
+    )
+
     /** محرك وهمي لا يدعم اللغة الإنجليزية (نمط SystemVoiceProvider). */
     private class UnsupportedEnAnnouncementEngine(
         context: Context,
@@ -495,6 +552,30 @@ class AnnouncementSpeakerTest {
         shadowPm.addIntentFilterForService(
             component,
             IntentFilter("android.intent.action.TTS_SERVICE")
+        )
+    }
+
+@Test
+    fun `announcement engine falls back to the configured language engine`() {
+        // غياب المحرك الصريح للفئة لا يترك المتحدث على محرك النظام:
+        // يُقرأ محركُ اللغة المضبوط في الإعدادات (محرك النطق) فيُربط
+        // الإعلان به فعلياً — تقديم شكوى «أصوات محددة لا تتغير».
+        // (دالة نقية: المعامل الثاني هو قيمة محرك اللغة المقروءة.)
+        assertNull(resolveAnnouncementEngine(null, null))
+        assertEquals(
+            "org.arabic.speech",
+            resolveAnnouncementEngine(null, "org.arabic.speech")
+        )
+        assertEquals(
+            "org.arabic.speech",
+            resolveAnnouncementEngine("", "org.arabic.speech")
+        )
+        // الصريح (فئة خاصة) يتقدَّم على محرك اللغة المضبوط.
+        assertEquals(
+            "org.engine.specific",
+            resolveAnnouncementEngine(
+                "org.engine.specific", "org.alternate.speech"
+            )
         )
     }
 }

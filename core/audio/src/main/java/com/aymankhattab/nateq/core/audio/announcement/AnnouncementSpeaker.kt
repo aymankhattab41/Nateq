@@ -97,10 +97,13 @@ class AnnouncementSpeaker(
             }
 
         /** حلّ صوت وحدةٍ لغوية من صوت المحرك: يفضّل المعرّف الصريح
-         *  ([partVoice] كاسم صوت مخصص في إعدادات اللغة)؛ وإلا أول صوتٍ
-         *  لسانُه لسانُ الوحدة (مثل "en" لكلمة إنجليزية مفردة) بدل الاعتماد
-         *  على `setLanguage` وحده الذي قد لا يبدّل لغة نطق المحرك فعلياً
-         *  (بند 18). null إن لم يوجد صوت ملائم — يبقى `setLanguage` سقوطاً. */
+         *  ([partVoice] كاسم صوت مخصص في إعدادات اللغة)؛ وإلا أفضلَ صوتٍ
+         *  لسانُه لسانُ الوحدة — تُرجَّح مطابقةُ رمز البلد، ثم أيُّ صوتٍ
+         *  باللغة — بدل الاعتماد على `setLanguage` وحده الذي قد لا يبدّل
+         *  لغةَ نطق المحرك فعلياً (بند 18). ترجيحُ البلد يمنح تغييرَ
+         *  اللغة/المحرك أثراً حقيقياً بدل «أول صوتٍ» ثابت بلغة النظام
+         *  (كان تبديل لغة النطق لا يغيّر الصوتَ على بعض المحركات).
+         *  null إن لم يوجد صوت ملائم — يبقى `setLanguage` سقوطاً. */
         internal fun voiceFor(
             voices: Collection<Voice>?,
             partVoice: String?,
@@ -110,9 +113,21 @@ class AnnouncementSpeaker(
             partVoice?.let { vid ->
                 voices.firstOrNull { it.name == vid }?.let { return it }
             }
-            return voices.firstOrNull {
-                it.locale.language == locale.language
+            val sameLanguage = voices.filter {
+                it.locale?.language == locale.language
             }
+            if (sameLanguage.isEmpty()) return null
+            val country = locale.country
+            if (!country.isNullOrEmpty()) {
+                sameLanguage
+                    .firstOrNull {
+                        it.locale?.country?.equals(
+                            country, ignoreCase = true
+                        ) == true
+                    }
+                    ?.let { return it }
+            }
+            return sameLanguage.first()
         }
 
         // نطاق الإيموجي الشائع (بلوكات Unicode): رموز التباين (2600-27BF)،
@@ -575,6 +590,14 @@ class AnnouncementSpeaker(
         } else {
             null
         }
+        // محركُ الدورة المحسوم: الفئة الصريحة أو محركُ اللغة المضبوط —
+        // يُربط المتحدثُ به في كل الفئات (تغطية شكوى «أصوات محددة لا تتغير»).
+        val resolvedEngine = resolveAnnouncementEngine(
+            engineOverride,
+            runCatching {
+                settings?.getEngineForLanguage(locale.language)
+            }.getOrNull()
+        )
 
         // نُفوض النطق دائماً لمحركٍ مثبّت (منهج MultiTTS):
         // يستبعد اختيار المحرك
@@ -598,7 +621,7 @@ class AnnouncementSpeaker(
         val speakAction = {
             launchWithCue(
                 gen, text, locale, speechRate, pitch, volume,
-                emojiCfg, parts, engineOverride, cue
+                emojiCfg, parts, resolvedEngine, cue
             )
         }
         // **قفل النطق العابر:** إن كان محرك التخليق (:tts) ينطق حالياً
@@ -1430,4 +1453,21 @@ class AnnouncementSpeaker(
      *  فيُنطق النص بالمحرك الخطأ) — وتُسلسل إعادة تهيئةٍ للمحركان
      *  المتبقيان. الاختبار الآلي: [InitGateTest]. */
     private val initGate = InitGate()
+}
+
+/**
+ * محرك دورة الإعلان: صريحُ الفئة إن وُجد (محرك متصلٍ عربي/إنجليزي…)؛
+ * وإلا المحرك المفضّل للغة النص من الإعدادات — كان غيابُ الصريح يربط
+ * المتحدثَ بمحرك النظام الافتراضي فيبقى نطقُ الوقت/البطارية/الإشعارات
+ * على أصواتٍ افتراضية ثابتة لا تتغير بعد اختيار محركٍ غيره في الإعدادات.
+ * null في النهاية ← محرك تلقائي.
+ * دالة نقية مستقلة (بلا حالة) لسهولة الاختبار الآلي.
+ */
+internal fun resolveAnnouncementEngine(
+    requested: String?,
+    configuredEngine: String?
+): String? = if (!requested.isNullOrBlank()) {
+    requested
+} else {
+    configuredEngine
 }
