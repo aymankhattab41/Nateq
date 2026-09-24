@@ -32,6 +32,7 @@ internal class BatteryAnnouncementController(
     private var spinnerBatteryLanguage: Spinner? = null
     private var spinnerBatteryVoice: Spinner? = null
     private var spinnerBatteryEngine: Spinner? = null
+    private var tvBatteryEngineLabel: TextView? = null
     private var seekBatteryRate: SeekBar? = null
     private var tvBatteryRateValue: TextView? = null
     private var seekBatteryVolume: SeekBar? = null
@@ -48,7 +49,7 @@ internal class BatteryAnnouncementController(
     private var tvPowerSaverThresholdValue: TextView? = null
     private var seekPowerSaverThreshold: SeekBar? = null
 
-    /** خيارات محرك نطق البطارية: «تلقائي» ثم المحركات المثبتة. */
+    /** خيارات محرك نطق البطارية: المحركات المثبتة. */
     private var batteryEngineOptions: List<EnginePicker.InstalledEngine> =
         emptyList()
 
@@ -74,6 +75,7 @@ internal class BatteryAnnouncementController(
         spinnerBatteryLanguage =
             view.findViewById(R.id.spinner_battery_language)
         spinnerBatteryEngine = view.findViewById(R.id.spinner_battery_engine)
+        tvBatteryEngineLabel = view.findViewById(R.id.tv_battery_engine_label)
         seekBatteryRate = view.findViewById(R.id.seek_battery_rate)
         tvBatteryRateValue = view.findViewById(R.id.tv_battery_rate_value)
         seekBatteryVolume = view.findViewById(R.id.seek_battery_volume)
@@ -253,10 +255,17 @@ internal class BatteryAnnouncementController(
         batteryEngineOptions = runCatching {
             EnginePicker.installedEngines(fragment.requireContext())
         }.getOrDefault(emptyList())
-        val batteryEngineLabels = buildList {
-            add(fragment.getString(R.string.first_run_engine_auto))
-            addAll(batteryEngineOptions.map { it.label })
+        val batteryEngineLabels = batteryEngineOptions.map { it.label }
+        // لا محركات مثبتة: إخفاء سبنر المحرك (لا خيار «تلقائي» ليعرضه).
+        spinnerBatteryEngine?.visibility = if (
+            batteryEngineOptions.isEmpty()
+        ) {
+            android.view.View.GONE
+        } else {
+            android.view.View.VISIBLE
         }
+        tvBatteryEngineLabel?.visibility =
+            spinnerBatteryEngine?.visibility ?: android.view.View.GONE
         spinnerBatteryEngine?.adapter =
             fragment.simpleAdapter(batteryEngineLabels)
         val savedBatteryEngine = runCatching {
@@ -264,10 +273,8 @@ internal class BatteryAnnouncementController(
                 SettingsRepository.DEVICE_HEALTH_BATTERY
             )
         }.getOrNull()
-        val batteryEngineIdx = batteryEngineOptions
-            .indexOfFirst { it.packageName == savedBatteryEngine }
         spinnerBatteryEngine?.setSelection(
-            if (batteryEngineIdx >= 0) batteryEngineIdx + 1 else 0
+            engineIndexFor(batteryEngineOptions, savedBatteryEngine)
         )
         spinnerBatteryEngine?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
@@ -276,7 +283,7 @@ internal class BatteryAnnouncementController(
                 pos: Int, id: Long
             ) {
                 val pkg = batteryEngineOptions
-                    .getOrNull(pos - 1)?.packageName
+                    .getOrNull(pos)?.packageName
                 runCatching {
                     settings.setEngineForCategory(
                         SettingsRepository.DEVICE_HEALTH_BATTERY,
@@ -660,7 +667,7 @@ internal class BatteryAnnouncementController(
     /** معاينة «البطارية 20%» بموضع صوت السبنرا وتقدم الشرائط الحالية. */
     private fun previewBattery() {
         val enginePkg = batteryEngineOptions
-            .getOrNull((spinnerBatteryEngine?.selectedItemPosition ?: 0) - 1)
+            .getOrNull(spinnerBatteryEngine?.selectedItemPosition ?: 0)
             ?.packageName
         val sample = fragment.getString(R.string.sample_text_battery_preview)
         fragment.previewSpeech(
@@ -689,6 +696,7 @@ internal class BatteryAnnouncementController(
         spinnerBatteryVoice = null
         spinnerBatteryLanguage = null
         spinnerBatteryEngine = null
+        tvBatteryEngineLabel = null
         seekBatteryRate = null
         tvBatteryRateValue = null
         seekBatteryVolume = null

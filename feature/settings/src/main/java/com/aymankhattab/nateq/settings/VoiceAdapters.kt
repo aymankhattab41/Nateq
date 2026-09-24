@@ -17,6 +17,16 @@ import com.aymankhattab.nateq.util.setSeekStateDescription
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 
+/** موضع المحرك المحفوظ داخل قائمة المحركات؛ غياب الحفظ (أو حزمة غير
+ *  معروفة) → أول محرك (لا خيار «تلقائي» سابق ليُحفظ). */
+internal fun engineIndexFor(
+    engines: List<EnginePicker.InstalledEngine>,
+    savedEngine: String?
+): Int {
+    val idx = engines.indexOfFirst { it.packageName == savedEngine }
+    return if (idx >= 0) idx else 0
+}
+
 /**
  * مسند فئات الأصوات: لكل فئة (الافتراضية/الوقت/الأرقام/الإشعارات) محرك وصوت
  * وسرعة ونبرة ومستوى صوت باسم زر اختبار نُطقه. أُخرج من الفصيل إلى مستوى
@@ -51,7 +61,7 @@ internal class CategoryVoiceAdapter(
         languages.map { catalog.languageDisplayName(it) }
     )
 
-    // محركات الفئات المثبتة (خيار «تلقائي» أولاً): نفس القائمة لجميع الصفوف
+    // محركات الفئات المثبتة: نفس القائمة لجميع الصفوف
     private val categoryEngines =
         runCatching { EnginePicker.installedEngines(context) }
             .getOrDefault(emptyList())
@@ -63,10 +73,7 @@ internal class CategoryVoiceAdapter(
     private var bindingAdapterInputs = false
     private val engineOptionsAdapter = simpleAdapter(
         context,
-        buildList {
-            add(context.getString(R.string.first_run_engine_auto))
-            addAll(categoryEngines.map { it.label })
-        }
+        categoryEngines.map { it.label }
     )
 
     /** إعادة بناء قوائم اللغات بعد اكتمال الاكتشاف الخلفي ثم إعادة
@@ -208,7 +215,7 @@ internal class CategoryVoiceAdapter(
                     return
                 }
                 val engine = categoryEngines
-                    .getOrNull(pos - 1)?.packageName
+                    .getOrNull(pos)?.packageName
                 runCatching {
                     settings.setEngineForCategory(category, engine)
                 }
@@ -445,9 +452,11 @@ internal class CategoryVoiceAdapter(
             else -> context.getString(R.string.voice_category_default_summary)
         }
 
-        // الفئة الافتراضية بلا محرك خاص: محركها هو العام المختار في الأعلى
+        // الفئة الافتراضية بلا محرك خاص: محركها هو العام المختار في الأعلى.
+        // القائمة الفارغة (لا محركات مثبتة) تخفي السبنر كالفئة الافتراضية.
         val isEnginePerCategory = category !=
-            SettingsRepository.VOICE_CATEGORY_DEFAULT
+            SettingsRepository.VOICE_CATEGORY_DEFAULT &&
+            categoryEngines.isNotEmpty()
         holder.tvEngineLabel.visibility = if (isEnginePerCategory) {
             View.VISIBLE
         } else {
@@ -461,8 +470,7 @@ internal class CategoryVoiceAdapter(
         val savedEngine =
             runCatching { settings.getEngineForCategory(category) }
                 .getOrNull()
-        val engineIdx = categoryEngines
-            .indexOfFirst { it.packageName == savedEngine }
+        val engineIdx = engineIndexFor(categoryEngines, savedEngine)
 
         // اللغة المختارة للفئة (محفوظة أو مستنتجة من صوتها) ثم موضعها
         // تحت عَلَم الربط — الأصوات تُبنى عبر refreshVoiceSpinner.
@@ -479,13 +487,11 @@ internal class CategoryVoiceAdapter(
         } finally {
             bindingAdapterInputs = false
         }
-        // **بند 6.2:** اختيارُ الموضع أثناء الربط (0 لفئةٍ بلا صوتٍ مخصص)
+        // **بند 6.2:** اختيارُ الموضع أثناء الربط (0 لفئةٍ بلا محرك محفوظ)
         // لا يجوز أن يكون اختياراً مسجَّلاً — يُكبَح عليه عَلَمُ الربط.
         bindingAdapterInputs = true
         try {
-            holder.spinnerEngine.setSelection(
-                if (engineIdx >= 0) engineIdx + 1 else 0
-            )
+            holder.spinnerEngine.setSelection(engineIdx)
         } finally {
             bindingAdapterInputs = false
         }

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- مفتاح مضاعف السرعة العام (قيم 1.0x..2.5x تُضرب بكل نطق) -->
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/switch_speech_boost"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:minHeight="48dp"
+        android:text="@string/speech_boost_enabled"
+        android:textOff="@string/toggle_off"
+        android:textOn="@string/toggle_on" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:text="@string/speech_boost_summary"
+        android:textSize="12sp"
+        android:textColor="@color/text_secondary"
+        android:importantForAccessibility="no" />
+
+    <LinearLayout
+        android:id="@+id/ll_speech_boost_value"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:labelFor="@id/spinner_speech_boost"
+            android:text="@string/speech_boost_value_label"
+            android:textAppearance="?attr/textAppearanceBody2" />
+
+        <androidx.appcompat.widget.AppCompatSpinner
+            android:id="@+id/spinner_speech_boost"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="96dp"
+            android:minHeight="48dp"
+            android:contentDescription="@string/speech_boost_value_label" />
+    </LinearLayout>
+</LinearLayout>

@@ -32,6 +32,12 @@ internal class GeneralSettingsController(
     private var switchMediaStreamAlways: SwitchMaterial? = null
     private var switchDuckMedia: SwitchMaterial? = null
     private var switchFollowReaderRate: SwitchMaterial? = null
+    private var switchSpeechBoost: SwitchMaterial? = null
+    private var llSpeechBoostValue: android.view.View? = null
+    private var spinnerSpeechBoost: AppCompatSpinner? = null
+    private var switchVolumeBoost: SwitchMaterial? = null
+    private var llVolumeBoostValue: android.view.View? = null
+    private var spinnerVolumeBoost: AppCompatSpinner? = null
     private var spinnerAudioExpansion: AppCompatSpinner? = null
 
     // **بند 6.3:** علمُ الربط البرمجي — يُسنَّع حول setProgress في attach
@@ -271,6 +277,117 @@ internal class GeneralSettingsController(
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
+
+        // مضاعف السرعة العام: مربع تفعيل + قائمة قيم (1.0x..2.5x خطوة 0.1)
+        // تُطبق على السرعة النهائية لكل نطق عبر المسارات كلها.
+        switchSpeechBoost =
+            view.findViewById(R.id.switch_speech_boost)
+        llSpeechBoostValue =
+            view.findViewById(R.id.ll_speech_boost_value)
+        spinnerSpeechBoost =
+            view.findViewById(R.id.spinner_speech_boost)
+        val boostLabels = arrayOf(
+            "1.0x", "1.1x", "1.2x", "1.3x", "1.4x", "1.5x",
+            "1.6x", "1.7x", "1.8x", "1.9x", "2.0x", "2.1x",
+            "2.2x", "2.3x", "2.4x", "2.5x"
+        )
+        spinnerSpeechBoost?.adapter = ArrayAdapter(
+            fragment.requireContext(),
+            android.R.layout.simple_spinner_dropdown_item,
+            boostLabels
+        )
+        switchSpeechBoost?.isChecked =
+            runCatching { settings.isSpeechBoostEnabled() }
+                .getOrDefault(false)
+        llSpeechBoostValue?.visibility = if (
+            switchSpeechBoost?.isChecked == true
+        ) {
+            android.view.View.VISIBLE
+        } else {
+            android.view.View.GONE
+        }
+        val savedBoost = runCatching { settings.getSpeechBoostValue() }
+            .getOrDefault(1.0f).coerceIn(1f, 2.5f)
+        val boostIndex = (savedBoost * 10).toInt().coerceIn(10, 25) - 10
+        spinnerSpeechBoost?.setSelection(boostIndex)
+        switchSpeechBoost?.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setSpeechBoostEnabled(checked) }
+            llSpeechBoostValue?.visibility = if (checked) {
+                android.view.View.VISIBLE
+            } else {
+                android.view.View.GONE
+            }
+            onStatusChanged()
+        }
+        spinnerSpeechBoost?.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                val value = 1.0f + position * 0.1f
+                runCatching { settings.setSpeechBoostValue(value) }
+                onStatusChanged()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        // مضاعف الصوت العام: مربع تفعيل + قائمة قيم (1.0x..2.5x خطوة 0.1)
+        // تُضرب بمستوى الصوت النهائي لكل نطق ثم تُقصّ على الكامل.
+        switchVolumeBoost =
+            view.findViewById(R.id.switch_volume_boost)
+        llVolumeBoostValue =
+            view.findViewById(R.id.ll_volume_boost_value)
+        spinnerVolumeBoost =
+            view.findViewById(R.id.spinner_volume_boost)
+        spinnerVolumeBoost?.adapter = ArrayAdapter(
+            fragment.requireContext(),
+            android.R.layout.simple_spinner_dropdown_item,
+            boostLabels
+        )
+        switchVolumeBoost?.isChecked =
+            runCatching { settings.isVolumeBoostEnabled() }
+                .getOrDefault(false)
+        llVolumeBoostValue?.visibility = if (
+            switchVolumeBoost?.isChecked == true
+        ) {
+            android.view.View.VISIBLE
+        } else {
+            android.view.View.GONE
+        }
+        val savedVolumeBoost = runCatching {
+            settings.getVolumeBoostValue()
+        }.getOrDefault(1.0f).coerceIn(1f, 2.5f)
+        val volumeBoostIndex =
+            (savedVolumeBoost * 10).toInt().coerceIn(10, 25) - 10
+        spinnerVolumeBoost?.setSelection(volumeBoostIndex)
+        switchVolumeBoost?.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setVolumeBoostEnabled(checked) }
+            llVolumeBoostValue?.visibility = if (checked) {
+                android.view.View.VISIBLE
+            } else {
+                android.view.View.GONE
+            }
+            onStatusChanged()
+        }
+        spinnerVolumeBoost?.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                val value = 1.0f + position * 0.1f
+                runCatching { settings.setVolumeBoostValue(value) }
+                onStatusChanged()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
     }
 
     /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */
@@ -284,6 +401,12 @@ internal class GeneralSettingsController(
         switchMediaStreamAlways = null
         switchDuckMedia = null
         switchFollowReaderRate = null
+        switchSpeechBoost = null
+        llSpeechBoostValue = null
+        spinnerSpeechBoost = null
+        switchVolumeBoost = null
+        llVolumeBoostValue = null
+        spinnerVolumeBoost = null
         spinnerAudioExpansion = null
     }
 }

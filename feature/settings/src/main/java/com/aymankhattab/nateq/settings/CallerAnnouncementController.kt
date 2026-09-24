@@ -69,8 +69,10 @@ internal class CallerAnnouncementController(
     private var spinnerCallerVoiceEn: Spinner? = null
     private var spinnerCallerEngineAr: Spinner? = null
     private var spinnerCallerEngineEn: Spinner? = null
+    private var tvCallerEngineArLabel: TextView? = null
+    private var tvCallerEngineEnLabel: TextView? = null
 
-    /** خيارات محرك نطق المتصل: «تلقائي» ثم المحركات المثبتة */
+    /** خيارات محرك نطق المتصل: المحركات المثبتة */
     private var callerEngineOptions: List<EnginePicker.InstalledEngine> =
         emptyList()
 
@@ -110,18 +112,24 @@ internal class CallerAnnouncementController(
             view.findViewById(R.id.spinner_caller_engine_ar)
         spinnerCallerEngineEn =
             view.findViewById(R.id.spinner_caller_engine_en)
+        tvCallerEngineArLabel =
+            view.findViewById(R.id.tv_caller_engine_ar_label)
+        tvCallerEngineEnLabel =
+            view.findViewById(R.id.tv_caller_engine_en_label)
 
-        // محركات TTS المثبتة + خيار تلقائي (قائمة واحدة مشتركة للسبنرين).
+        // محركات TTS المثبتة (قائمة واحدة مشتركة للسبنرين).
         callerEngineOptions = runCatching {
             EnginePicker.installedEngines(fragment.requireContext())
         }.getOrDefault(emptyList())
         setupCallerEngineSpinner(
             spinnerCallerEngineAr,
+            tvCallerEngineArLabel,
             SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR,
             refreshArabic = true
         )
         setupCallerEngineSpinner(
             spinnerCallerEngineEn,
+            tvCallerEngineEnLabel,
             SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN,
             refreshEnglish = true
         )
@@ -443,21 +451,28 @@ internal class CallerAnnouncementController(
      *  يُحدّث أصوات تلك اللغة. */
     private fun setupCallerEngineSpinner(
         spinner: Spinner?,
+        label: TextView?,
         category: String,
         refreshArabic: Boolean = false,
         refreshEnglish: Boolean = false
     ) {
-        val labels = buildList {
-            add(fragment.getString(R.string.first_run_engine_auto))
-            addAll(callerEngineOptions.map { it.label })
+        val labels = callerEngineOptions.map { it.label }
+        // لا محركات مثبتة: إخفاء سبنر المحرك وتسميته (لا خيار «تلقائي»
+        // ليعرضه).
+        val visibility = if (callerEngineOptions.isEmpty()) {
+            android.view.View.GONE
+        } else {
+            android.view.View.VISIBLE
         }
+        spinner?.visibility = visibility
+        label?.visibility = visibility
         spinner?.adapter = fragment.simpleAdapter(labels)
         val saved = runCatching {
             settings.getEngineForCategory(category)
         }.getOrNull()
-        val idx = callerEngineOptions
-            .indexOfFirst { it.packageName == saved }
-        spinner?.setSelection(if (idx >= 0) idx + 1 else 0)
+        spinner?.setSelection(
+            engineIndexFor(callerEngineOptions, saved)
+        )
         spinner?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
@@ -465,7 +480,7 @@ internal class CallerAnnouncementController(
                 pos: Int, id: Long
             ) {
                 val pkg = callerEngineOptions
-                    .getOrNull(pos - 1)?.packageName
+                    .getOrNull(pos)?.packageName
                 runCatching {
                     settings.setEngineForCategory(category, pkg)
                 }
@@ -483,7 +498,7 @@ internal class CallerAnnouncementController(
     private fun previewCaller() {
         val enginePkg = callerEngineOptions
             .getOrNull(
-                (spinnerCallerEngineAr?.selectedItemPosition ?: 0) - 1
+                spinnerCallerEngineAr?.selectedItemPosition ?: 0
             )
             ?.packageName
         val sample = fragment.getString(R.string.sample_text_caller_preview)
@@ -745,6 +760,8 @@ internal class CallerAnnouncementController(
         spinnerCallerVoiceEn = null
         spinnerCallerEngineAr = null
         spinnerCallerEngineEn = null
+        tvCallerEngineArLabel = null
+        tvCallerEngineEnLabel = null
     }
 }
 

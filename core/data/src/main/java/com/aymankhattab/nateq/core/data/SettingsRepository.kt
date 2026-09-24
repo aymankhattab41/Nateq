@@ -1173,6 +1173,32 @@ class SettingsRepository(context: Context) :
         prefs.edit().putInt("audio_expansion_level", safe).apply()
     }
 
+    /** مضاعف السرعة العام (مربع تفعيل + قيمة 1.0..2.5) — يُضرب بالسرعة
+     *  النهائية في كل مسارات النطق قبل قصّها على الحد الآمن. */
+    override fun isSpeechBoostEnabled(): Boolean =
+        prefs.getBoolean("speech_boost_enabled", false)
+    override fun setSpeechBoostEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("speech_boost_enabled", enabled).apply()
+    override fun getSpeechBoostValue(): Float =
+        prefs.getFloat("speech_boost_value", 1.0f)
+    override fun setSpeechBoostValue(value: Float) =
+        prefs.edit()
+            .putFloat("speech_boost_value", value.coerceIn(1f, 2.5f))
+            .apply()
+
+    /** مضاعف الصوت العام (مربع تفعيل + قيمة 1.0..2.5) — يُضرب بمستوى
+     *  الصوت النهائي في كل مسارات النطق ثم يُقصّ على الكامل (1.0). */
+    override fun isVolumeBoostEnabled(): Boolean =
+        prefs.getBoolean("volume_boost_enabled", false)
+    override fun setVolumeBoostEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("volume_boost_enabled", enabled).apply()
+    override fun getVolumeBoostValue(): Float =
+        prefs.getFloat("volume_boost_value", 1.0f)
+    override fun setVolumeBoostValue(value: Float) =
+        prefs.edit()
+            .putFloat("volume_boost_value", value.coerceIn(1f, 2.5f))
+            .apply()
+
 
     // ============ إعدادات إعلان مستوى البطارية ============
 
@@ -1775,6 +1801,11 @@ class SettingsRepository(context: Context) :
 
     /** تعقّل قيمة عشرية حسب المفتاح (السرعة/النبرة تعبان، المستوى نسبة). */
     private fun sanitizeFloat(key: String, value: Float): Float = when {
+        // مضاعفا السرعة والصوت نطاقهما آمنٌ خاص (1.0..2.5) — لا يقعان تحت
+        // فرعَي _rate/_volume (اسماهما لا يحويان المقطعين) فبدون هذا
+        // الفرع تمرّ قيمتهما الجامحة من sanitizeFloat بلا قصّ أصلاً.
+        key == "speech_boost_value" ||
+            key == "volume_boost_value" -> value.coerceIn(1f, 2.5f)
         // مستويا صوت الرنة ونغمة البطارية لا يهبطان تحت 0.1 — يُفحصان قبل
         // الفرع العام لـ _volume وإلا ابتلعه الفرعُ العامُ بمجرد احتوائهما
         // على المقطع (0..1) فسقط السقف الأدنى.
@@ -1860,7 +1891,9 @@ class SettingsRepository(context: Context) :
                             key.contains("_pitch") ||
                             key == "default_volume" ||
                             key == "time_chime_volume" ||
-                            key == "battery_cue_volume"
+                            key == "battery_cue_volume" ||
+                            key == "speech_boost_value" ||
+                            key == "volume_boost_value"
                         if (isFloatKey) {
                             val v = sanitizeFloat(key, value.toFloat())
                             ops.add(Op { it.putFloat(key, v) })
@@ -1877,7 +1910,9 @@ class SettingsRepository(context: Context) :
                             key.contains("_pitch") ||
                             key == "default_volume" ||
                             key == "time_chime_volume" ||
-                            key == "battery_cue_volume"
+                            key == "battery_cue_volume" ||
+                            key == "speech_boost_value" ||
+                            key == "volume_boost_value"
                         if (isFloatKey) {
                             val v = sanitizeFloat(key, value.toFloat())
                             ops.add(Op { it.putFloat(key, v) })

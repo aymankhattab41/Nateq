@@ -44,9 +44,10 @@ internal data class EmojiSpeechConfig(
 /**
  * متحدث مستقل يستخدمه التطبيق للإعلانات الصوتية التلقائية
  * (مستوى البطارية، اسم المتصل، الرسائل الواردة) دون المرور عبر خدمة النظام.
- * يربط مباشرةً بمحرك TTS الذي اختاره [EnginePicker] أو المحرك المحفوظ في
- * الإعدادات، وينطق عبر `speak()` ليعمل في الخلفية حتى لو لم يُظهر النظام
- * شاشة تخليق (على عكس TextToSpeechService الذي يقود النظام).
+ * يربط مباشرةً بمحرك TTS المحدد (محرك اللغة المضبوط أو المحفوظ في
+ * الإعدادات، وإلا محرك النظام الافتراضي)، وينطق عبر `speak()` ليعمل في
+ * الخلفية حتى لو لم يُظهر النظام شاشة تخليق (على عكس
+ * TextToSpeechService الذي يقود النظام).
  *
  * ليتفادى حلقة ربط النظام TextToSpeech → خدمة LORD نفسها (التي قد تُسقط
  * الصوت)، يستبعد دائماً حزمة التطبيق نفسه عند اختيار المحرك فيفوض النطق
@@ -429,7 +430,7 @@ class AnnouncementSpeaker(
      *
      * [requestedEngine] محرك صريح لفئةٍ معيّنة (متصل/بطارية/وقت): يُفضَّل إن
      * كان مثبّتاً، ويُعاد ربط المتحدث إن كان مربوطاً بمحركٍ مختلف (تبديل
-     * حي بين الفئات)؛ null → المحرك المختار عام أو التلقائي.
+     * حي بين الفئات)؛ null → محرك اللغة المضبوط أو محرك النظام الافتراضي.
      */
     private fun ensureInit(
         onReady: (Boolean) -> Unit,
@@ -1182,7 +1183,31 @@ class AnnouncementSpeaker(
         attempt: Int
     ) {
         val tts = tts ?: return
-        tts.setSpeechRate(clampedSpeechRate(speechRate))
+        // مضاعف السرعة العام (إن فعّله المستخدم): يُضرب بالسرعة النهائية
+        // قبل قصّها على الحد الآمن — كل الإعلانات (وقت/أرقام/بطارية/متصل/
+        // رسائل/إشعارات) تمر من هنا فيُطبَّق تناسقياً على النطق كله.
+        val boost = settings?.let { s ->
+            if (runCatching { s.isSpeechBoostEnabled() }
+                    .getOrDefault(false)
+            ) {
+                runCatching { s.getSpeechBoostValue() }.getOrDefault(1.0f)
+            } else {
+                1.0f
+            }
+        } ?: 1.0f
+        tts.setSpeechRate(clampedSpeechRate(speechRate * boost))
+        // مضاعف الصوت العام (إن فعّله المستخدم): يُضرب بمستوى الصوت
+        // النهائي (يأتي من تفضيل الفئة أو الإعداد العام) قبل قصّه على
+        // النطاق الكامل (0..1) — أعلى مستوى متاح للنظام بلا تشويه.
+        val volumeBoost = settings?.let { s ->
+            if (runCatching { s.isVolumeBoostEnabled() }
+                    .getOrDefault(false)
+            ) {
+                runCatching { s.getVolumeBoostValue() }.getOrDefault(1.0f)
+            } else {
+                1.0f
+            }
+        } ?: 1.0f
         tts.setPitch(pitch.coerceAtLeast(MIN_RATE_OR_PITCH))
         // حلّ صوت الوحدة: المعرّف الصريح المخصص (مثل "ar-EG") إن أعرضه
         // المحرك المربوط؛ وإلا أول صوتٍ لسانه لسانُ الوحدة فيضمن تبديل
@@ -1217,8 +1242,12 @@ class AnnouncementSpeaker(
             }
         }
         val params = android.os.Bundle().apply {
+            val boostedVolume = (volume * volumeBoost).coerceIn(0f, 1f)
             if (volume in 0f..1f) {
-                putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume)
+                putFloat(
+                    TextToSpeech.Engine.KEY_PARAM_VOLUME,
+                    boostedVolume
+                )
             }
         }
         // تنظيف النص من الإيموجي قبل النطق (نصوص خارجية قد

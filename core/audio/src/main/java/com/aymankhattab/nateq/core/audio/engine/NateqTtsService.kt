@@ -57,13 +57,25 @@ internal fun readerRateFromPercent(reqRate: Float): Float {
 
 /**
  * السرعة النهائية للنطق — نموذج الضرب: سرعةُ القارئ معاملٌ أَساسٌ يُضرب
- * في معامل LORD (تفضيل التطبيق)، ثم يُقصّ على نطاقٍ آمن (0.1..6.0).
- * عند اتباع سرعة القارئ يكون المعامل = 1.0 فيُبقى الخرج = سرعة القارئ.
+ * في معامل LORD (تفضيل التطبيق) ثم مضاعف السرعة العام (إن فعّله المستخدم)،
+ * ثم يُقصّ على نطاقٍ آمن (0.1..6.0). عند اتباع سرعة القارئ يكون
+ * المعامل = 1.0 فيُبقى الخرج = سرعة القارئ × المضاعف.
  */
 internal fun computeFinalSpeechRate(
     readerRate: Float,
-    nateqMultiplier: Float
-): Float = (readerRate * nateqMultiplier).coerceIn(0.1f, 6.0f)
+    nateqMultiplier: Float,
+    boost: Float = 1.0f
+): Float = (readerRate * nateqMultiplier * boost).coerceIn(0.1f, 6.0f)
+
+/**
+ * مستوى الصوت النهائي لمقطع القراءة: مستوى الصوت الأساسي (تفضيل التطبيق)
+ * مضروباً في مضاعف الصوت العام (إن فعّله المستخدم)، ثم يُقصّ على النطاق
+ * الكامل (0.0..1.0) — أعلى مستوى متاح للنظام بلا تشويه (كسب >1 يُقصف).
+ */
+internal fun computeFinalVolume(
+    volume: Float,
+    boost: Float = 1.0f
+): Float = (volume * boost).coerceIn(0f, 1f)
 
 /**
  * ==========================================================
@@ -711,6 +723,32 @@ override fun onDestroy() {
         )
     }
 
+    /** قيمة مضاعف السرعة الحالية (1.0 عند التعطيل) — مضاعف عام يضرب
+     *  السرعة النهائية في مساري القارئ (الأحادي والمختلط) فوق معامل LORD. */
+    private fun currentSpeechBoost(): Float {
+        val enabled = runCatching { settings.isSpeechBoostEnabled() }
+            .getOrDefault(false)
+        return if (enabled) {
+            runCatching { settings.getSpeechBoostValue() }
+                .getOrDefault(1.0f)
+        } else {
+            1.0f
+        }
+    }
+
+    /** قيمة مضاعف الصوت الحالية (1.0 عند التعطيل) — مضاعف عام يضرب
+     *  مستوى الصوت النهائي في مساري القارئ ثم يُقصّ على الكامل. */
+    private fun currentVolumeBoost(): Float {
+        val enabled = runCatching { settings.isVolumeBoostEnabled() }
+            .getOrDefault(false)
+        return if (enabled) {
+            runCatching { settings.getVolumeBoostValue() }
+                .getOrDefault(1.0f)
+        } else {
+            1.0f
+        }
+    }
+
     /** المسار الأحادي (نص بلغةٍ واحدة) — نفس التدفق التفصيلي السابق حرفياً:
      *  حل الصوت (مع تراجع الجهاز الافتراضي)، التحويل التلقائي، أشرطة اللغة، ثم
      *  تخليق وبث مباشر عبر المزوّد بتقسيم المخزن المؤقت المُثبَت. */
@@ -751,7 +789,9 @@ override fun onDestroy() {
                 convertTarget?.convertRate
                     ?: explicitLordRate ?: lordRate ?: 1.0f
             }
-        val speechRate = computeFinalSpeechRate(readerRate, nateqMultiplier)
+        val speechRate = computeFinalSpeechRate(
+            readerRate, nateqMultiplier, currentSpeechBoost()
+        )
         val pitch = requestHandler.getPitch(languageTag)
         val volume = requestHandler.getVolume(languageTag)
 
@@ -788,7 +828,10 @@ override fun onDestroy() {
 
         val finalRate = speechRate
         val finalPitch = convertTarget?.let { it.convertPitch } ?: pitch
-        val finalVolume = convertTarget?.let { it.convertVolume } ?: volume
+        val finalVolume = computeFinalVolume(
+            convertTarget?.let { it.convertVolume } ?: volume,
+            currentVolumeBoost()
+        )
         // توجيه المحرك/الصوت: يفضّل هدف التحويل المطابق، وإلا تفضيل لغة النص
         // نفسه (سارٍ دائماً بلا ربط بحالة «التحويل التلقائي»). **يُجرى قبل
         // المعالجة** ليُمرَّر المحركُ المحسوم إلى [TextProcessor.process] —
@@ -925,9 +968,14 @@ override fun onDestroy() {
             } else {
                 convert?.convertRate ?: segRate ?: 1.0f
             }
-        val finalRate = computeFinalSpeechRate(readerRate, nateqMultiplier)
+        val finalRate = computeFinalSpeechRate(
+            readerRate, nateqMultiplier, currentSpeechBoost()
+        )
         val finalPitch = convert?.convertPitch ?: segPitch
-        val finalVolume = convert?.convertVolume ?: segVolume
+        val finalVolume = computeFinalVolume(
+            convert?.convertVolume ?: segVolume,
+            currentVolumeBoost()
+        )
         val routed = LanguageSpeechRouter.route(
             matchesRequest = matches,
             convertEngine = convert?.convertEngine,

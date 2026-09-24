@@ -47,7 +47,7 @@ internal class EngineSectionController(
     /**
      * يكتشف محركات TTS المثبتة لإظهار حالة القسم ورسالة/زر التثبيت عند غياب
      * أي محرك. لا يوجد «محرك افتراضي» عام: محرك كل لغة وكل فئة يُحسم
-     * في [EngineRegistry] وقت النطق فقط.
+     * وقت النطق فقط في [AnnouncementSpeaker] و [SystemVoiceProvider].
      */
     fun setupEngineDiscovery() {
         engines.clear()

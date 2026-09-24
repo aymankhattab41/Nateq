@@ -330,6 +330,12 @@
 <string name="tashkeel_preserved_summary">Send unchanged Arabic words to the engine with their original diacritics, so diacritics-aware engines pronounce the vowels clearly. Enable with advanced Arabic engines; off by default</string>
 <string name="follow_reader_rate_enabled">Follow the screen-reader speed</string>
 <string name="follow_reader_rate_summary">Speak at the reader\'s actual speed (100 = normal) with no multiplication by the app\'s saved speed. When off, the reader speed is multiplied by your saved app speed</string>
+<string name="speech_boost_enabled">Speed boost</string>
+<string name="speech_boost_summary">Multiplies the final speech rate of every utterance (announcements and the screen reader) by the chosen factor up to the engine\'s safe limit (2.5x)</string>
+<string name="speech_boost_value_label">Speed boost</string>
+<string name="volume_boost_enabled">Volume boost</string>
+<string name="volume_boost_summary">Multiplies the final volume of every utterance (announcements and the screen reader) by the chosen factor, then clamps to full volume (the highest level available on the system)</string>
+<string name="volume_boost_value_label">Volume boost</string>
 <string name="secondary_language_title">Secondary speech language</string>
 <string name="secondary_language_summary">Short undetected foreign words within Arabic text (e.g. \"Bonjour\") are spoken in this language instead of the default English</string>
 <string name="secondary_language_dialog_title">Choose the secondary speech language</string>
@@ -435,7 +441,6 @@
 <string name="first_run_welcome_description">Choose the interface language and the text-to-speech engine to get started — you can change everything later from Settings.</string>
 <string name="first_run_language_label">Interface language</string>
 <string name="first_run_engine_label">Text-to-speech engine</string>
-<string name="first_run_engine_auto">Auto (smart selection)</string>
 <string name="first_run_save">Save and continue</string>
 <string name="first_run_skip">Skip</string>
 <string name="first_run_lang_arabic">العربية</string>

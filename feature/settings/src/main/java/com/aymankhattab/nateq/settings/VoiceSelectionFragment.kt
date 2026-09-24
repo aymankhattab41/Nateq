@@ -828,7 +828,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         val text = NumberSpeech.formatByMode(mode, raw, isEnglish)
         val langTag =
             if (isEnglish) LanguageCode.EN.tag else LanguageCode.AR.tag
-        speakWithVoice(langTag, text)
+        // يمر عبر مسار فئة الأرقام (speakWithCategory) لا speakWithVoice:
+        // تحترم المعاينة محركَ/سرعةَ/صوتَ فئة الأرقام المحفوظة — كانت تُنطق
+        // دائماً بمحرك اللغة/النظام (جوجل غالباً) وتتجاهل اختيار فئة الأرقام.
+        speakWithCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS, langTag, text
+        )
     }
 
     /** حوار إدارة أسماء المتصلين المخصصة (رقم → اسم يُنطق به) */

@@ -95,6 +95,34 @@ interface SynthesisPrefs : SynthesisConfig, VoicePrefsProvider {
     /** يعيّن مستوى اتساع الصوت. */
     fun setAudioExpansionLevel(level: Int)
 
+    /** هل مضاعف السرعة مفعّل؟ (مربع «مضاعفة السرعة») — يُضرب بالسرعة
+     *  النهائية لكل نطق عبر المسارات كلها قبل قصّها على الحد الآمن. */
+    fun isSpeechBoostEnabled(): Boolean
+
+    /** يعيّن تفعيل مضاعف السرعة. */
+    fun setSpeechBoostEnabled(enabled: Boolean)
+
+    /** قيمة مضاعف السرعة (1.0× طبيعي حتى 2.5×) — تُطبق على السرعة
+     *  النهائية عند التفعيل. الافتراضي 1.0 (لا تضخيم). */
+    fun getSpeechBoostValue(): Float
+
+    /** يعيّن قيمة مضاعف السرعة في النطاق الآمن (1.0..2.5). */
+    fun setSpeechBoostValue(value: Float)
+
+    /** هل مضاعف مستوى الصوت مفعّل؟ (مربع «مضاعفة الصوت») — يُضرب بمستوى
+     *  الصوت النهائي لكل نطق عبر المسارات كلها ثم يُقصّ على الكامل (1.0). */
+    fun isVolumeBoostEnabled(): Boolean
+
+    /** يعيّن تفعيل مضاعف مستوى الصوت. */
+    fun setVolumeBoostEnabled(enabled: Boolean)
+
+    /** قيمة مضاعف الصوت (1.0× طبيعي حتى 2.5×) — تُطبق على مستوى
+     *  الصوت النهائي عند التفعيل. الافتراضي 1.0 (لا تضخيم). */
+    fun getVolumeBoostValue(): Float
+
+    /** يعيّن قيمة مضاعف الصوت في النطاق الآمن (1.0..2.5). */
+    fun setVolumeBoostValue(value: Float)
+
     /** تفضيل محركك/صوتك/أشرطتك للغة في خارطة التحويل الديناميكية. */
     fun getEnginePreferenceForLanguage(languageTag: String): LanguageSpeechPrefs
 

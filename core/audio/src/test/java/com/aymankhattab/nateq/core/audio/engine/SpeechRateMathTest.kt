@@ -66,4 +66,61 @@ class SpeechRateMathTest {
         val inRange = computeFinalSpeechRate(1.5f, 1.5f)
         assertTrue("في نطاق آمن", inRange in 0.1f..6.0f)
     }
+
+    @Test
+    fun boost_multipliesFinalRate_whenEnabled() {
+        // مضاعف السرعة العام (2.0) فوق معامل LORD 1.5 وقارئ طبيعي ⇒ 3.0×.
+        val rate = computeFinalSpeechRate(
+            readerRateFromPercent(100f), 1.5f, boost = 2.0f
+        )
+        assertEquals(3.0f, rate)
+    }
+
+    @Test
+    fun boost_defaultOnePointZero_changesNothing() {
+        // عند التعطيل boost = 1.0 فلا يتغير الناتج عن الدالة القديمة.
+        val boosted = computeFinalSpeechRate(1.2f, 1.5f, boost = 1.0f)
+        val plain = computeFinalSpeechRate(1.2f, 1.5f)
+        assertEquals(plain, boosted)
+    }
+
+    @Test
+    fun boost_isClampedToSafeRange() {
+        // مضاعف جامح تُقصّ نتيجته على السقف الآمن 6.0 (المحرك لا يطبّقه).
+        assertEquals(
+            6.0f,
+            computeFinalSpeechRate(2.0f, 2.0f, boost = 5.0f)
+        )
+        // boost=1.0 مع قارئ بطيء جداً يبقى داخل الحد الأدنى الآمن.
+        assertEquals(
+            0.1f,
+            computeFinalSpeechRate(0.01f, 1.0f, boost = 1.0f)
+        )
+    }
+
+    @Test
+    fun volumeBoost_multipliesFinalVolume_whenEnabled() {
+        // مضاعف الصوت (1.5) فوق مستوى أساسي 0.8 ⇒ 1.2 يُقصّ على الكامل.
+        assertEquals(1.0f, computeFinalVolume(0.8f, boost = 1.5f))
+        // 0.4 مبدئياً × 2.0 ⇒ 0.8 (بداخل، غير مقصوص).
+        assertEquals(0.8f, computeFinalVolume(0.4f, boost = 2.0f))
+    }
+
+    @Test
+    fun volumeBoost_defaultOnePointZero_changesNothing() {
+        val boosted = computeFinalVolume(0.9f, boost = 1.0f)
+        val plain = computeFinalVolume(0.9f)
+        assertEquals(plain, boosted)
+        assertEquals(0.9f, boosted)
+    }
+
+    @Test
+    fun volumeBoost_neverRisesAboveFullOrBelowSilence() {
+        // القصّ على النطاق الكامل (0..1): لا تشويه بالكسب >1 ولا سقوط تحت
+        // الصمت.
+        assertEquals(1.0f, computeFinalVolume(1.0f, boost = 2.5f))
+        assertEquals(0f, computeFinalVolume(-0.5f, boost = 1.0f))
+        val inRange = computeFinalVolume(0.2f, boost = 4.0f)
+        assertTrue("داخل النطاق الكامل", inRange in 0f..1f)
+    }
 }

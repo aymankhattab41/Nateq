@@ -249,6 +249,111 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun speechBoost_defaultDisabledAtNormalSpeed() {
+        assertFalse(repo.isSpeechBoostEnabled())
+        assertEquals(1.0f, repo.getSpeechBoostValue())
+    }
+
+    @Test
+    fun speechBoost_setValue_isClampedAndReadBack() {
+        repo.setSpeechBoostEnabled(true)
+        assertTrue(repo.isSpeechBoostEnabled())
+
+        repo.setSpeechBoostValue(2.0f)
+        assertEquals(2.0f, repo.getSpeechBoostValue())
+
+        // القيم خارج النطاق الآمن (1.0..2.5) تُثبَّت عند الحفظ.
+        repo.setSpeechBoostValue(0.5f)
+        assertEquals(1.0f, repo.getSpeechBoostValue())
+        repo.setSpeechBoostValue(9.0f)
+        assertEquals(2.5f, repo.getSpeechBoostValue())
+    }
+
+    @Test
+    fun speechBoost_roundTripExportAndReset() {
+        repo.setSpeechBoostEnabled(true)
+        repo.setSpeechBoostValue(1.7f)
+
+        val exported = repo.exportSettings()
+        assertTrue(exported.containsKey("speech_boost_enabled"))
+        assertTrue(exported.containsKey("speech_boost_value"))
+        assertEquals(true, exported["speech_boost_enabled"])
+        assertEquals(1.7f, exported["speech_boost_value"])
+
+        repo.resetAllToDefault()
+        assertFalse(repo.isSpeechBoostEnabled())
+        assertEquals(1.0f, repo.getSpeechBoostValue())
+    }
+
+    @Test
+    fun speechBoost_import_sanitizesValueRange() {
+        // قيمة مضاعف جامحة في نسخة احتياطية خارجية تُقصّ على 2.5 لا على 2.
+        repo.importSettings(mapOf("speech_boost_value" to 4.2))
+        assertEquals(2.5f, repo.getSpeechBoostValue())
+
+        // فأقل من 1.0 يُردّ إلى 1.0 (لا يُسقط تحت الطبيعة).
+        repo.importSettings(mapOf("speech_boost_value" to 0.3))
+        assertEquals(1.0f, repo.getSpeechBoostValue())
+
+        // تحوّل Double من JSON/نسخة تُعالَج كـ Float وليس Int مقطوعاً.
+        repo.importSettings(mapOf("speech_boost_value" to 1.9))
+        assertEquals(1.9f, repo.getSpeechBoostValue())
+    }
+
+    @Test
+    fun volumeBoost_defaultDisabledAtNormalLevel() {
+        assertFalse(repo.isVolumeBoostEnabled())
+        assertEquals(1.0f, repo.getVolumeBoostValue())
+    }
+
+    @Test
+    fun volumeBoost_setValue_isClampedAndReadBack() {
+        repo.setVolumeBoostEnabled(true)
+        assertTrue(repo.isVolumeBoostEnabled())
+
+        repo.setVolumeBoostValue(2.0f)
+        assertEquals(2.0f, repo.getVolumeBoostValue())
+
+        // القيم خارج النطاق الآمن (1.0..2.5) تُثبَّت عند الحفظ.
+        repo.setVolumeBoostValue(0.5f)
+        assertEquals(1.0f, repo.getVolumeBoostValue())
+        repo.setVolumeBoostValue(9.0f)
+        assertEquals(2.5f, repo.getVolumeBoostValue())
+    }
+
+    @Test
+    fun volumeBoost_roundTripExportAndReset() {
+        repo.setVolumeBoostEnabled(true)
+        repo.setVolumeBoostValue(1.7f)
+
+        val exported = repo.exportSettings()
+        assertTrue(exported.containsKey("volume_boost_enabled"))
+        assertTrue(exported.containsKey("volume_boost_value"))
+        assertEquals(true, exported["volume_boost_enabled"])
+        assertEquals(1.7f, exported["volume_boost_value"])
+
+        repo.resetAllToDefault()
+        assertFalse(repo.isVolumeBoostEnabled())
+        assertEquals(1.0f, repo.getVolumeBoostValue())
+    }
+
+    @Test
+    fun volumeBoost_import_sanitizesValueRange() {
+        // قيمة مضاعف جامحة تُقصّ على 2.5 — اسمه لا يحتوي مقطع _volume
+        // (الشرط العام المقطوع لمساحات الصوت) فيحتاج فرعه الخاص إلزاماً.
+        repo.importSettings(mapOf("volume_boost_value" to 4.2))
+        assertEquals(2.5f, repo.getVolumeBoostValue())
+
+        // فأقل من 1.0 يُردّ إلى 1.0.
+        repo.importSettings(mapOf("volume_boost_value" to 0.3))
+        assertEquals(1.0f, repo.getVolumeBoostValue())
+
+        // تحوّل Double يُعالَج كـ Float وليس Int مقطوعاً.
+        repo.importSettings(mapOf("volume_boost_value" to 1.9))
+        assertEquals(1.9f, repo.getVolumeBoostValue())
+    }
+
+    @Test
     fun secondaryLanguage_defaultEnglishAndRoundTrips() {
         // لغة النطق الاحتياطية (بند اللغة الثانية): إنجليزية افتراضياً
         // وتُعيَّن فرنسية وتعود إنجليزية.

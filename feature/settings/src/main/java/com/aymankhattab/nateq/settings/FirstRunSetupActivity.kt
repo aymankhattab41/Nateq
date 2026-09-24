@@ -35,7 +35,7 @@ class FirstRunSetupActivity :
     /** مواضع فهرسها: 0 = العربية، 1 = الإنجليزية (متطابقة في كل الضبط). */
     private val languageCodes = listOf("ar", "en")
 
-    /** المحركات المثبتة (مع «تلقائي» في الموضع 0). */
+    /** المحركات المثبتة (يُعرض أولها افتراضياً). */
     private val engines = mutableListOf<EnginePicker.InstalledEngine>()
 
     private var selectedLanguageIndex = 0
@@ -86,17 +86,14 @@ class FirstRunSetupActivity :
             runCatching { EnginePicker.installedEngines(this) }
                 .getOrDefault(emptyList())
         )
-        val engineOptions = buildList {
-            add(getString(R.string.first_run_engine_auto))
-            addAll(engines.map { it.label })
-        }
+        val engineOptions = engines.map { it.label }
         spinnerEngine.setAdapter(
             ArrayAdapter(this, android.R.layout.simple_list_item_1,
                 engineOptions)
         )
-        // المحرك يبدأ «تلقائي» دائماً (لا محرك افتراضي عام): ربط المحرك
-        // بلغة الواجهة يتم فقط عند الحفظ.
-        spinnerEngine.setText(engineOptions[0], false)
+        // المحرك يُعرض أول محرك مثبت افتراضياً: ربط المحرك بلغة الواجهة
+        // يتم فقط عند الحفظ.
+        spinnerEngine.setText(engineOptions.firstOrNull().orEmpty(), false)
         spinnerEngine.setKeyListener(null)
         spinnerEngine.setOnClickListener { spinnerEngine.showDropDown() }
         spinnerEngine.setOnItemClickListener { _, _, position, _ ->
@@ -139,7 +136,7 @@ class FirstRunSetupActivity :
     ) {
         val language = languageCodes[languageIndex]
         val enginePkg = engines
-            .getOrNull(engineIndex - 1)?.packageName
+            .getOrNull(engineIndex)?.packageName
         val previousLanguage = runCatching {
             settingsRepository.getAppLanguage()
         }.getOrNull()
@@ -152,7 +149,7 @@ class FirstRunSetupActivity :
             )
             // اختيار محرك صريح يفعّل «التحويل التلقائي» تلقائياً: من دون ذلك
             // كان المستخدم يختار محركاً ثم يكتشف أن الإعلانات ما تزال بالمحرك
-            // الافتراضي. «تلقائي» أعلاه لا يفعّله (لا محرك محدداً).
+            // الافتراضي. (لا محرك مثبّتاً عند الحفظ يبقي التحويل معطلاً).
             if (enginePkg != null) {
                 settingsRepository.setAutoConvertEnabled(true)
             }

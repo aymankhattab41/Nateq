@@ -147,6 +147,16 @@ class AnnouncementSpeakerTest {
     }
 
     @Test
+    fun `boosted rate is clamped above the engine ceiling`() {
+        // المضاعف العام يُضرب قبل clamping: 1.4× سرعة 1.6 ⇒ 2.24 (داخل)،
+        // و1.5× سرعة 2.0 ⇒ 3.0 يُقصّ على السقف الآمن 2.5.
+        assertEquals(2.24f, AnnouncementSpeaker.clampedSpeechRate(1.6f * 1.4f))
+        assertEquals(2.5f, AnnouncementSpeaker.clampedSpeechRate(2.0f * 1.5f))
+        // والأدنى لا ينزل تحت 0.25 مهما صغر.
+        assertEquals(0.25f, AnnouncementSpeaker.clampedSpeechRate(0.2f * 1.0f))
+    }
+
+    @Test
     fun `lone English word stays separate from Arabic to keep English voice`() {
         // بند 18: كلمة إنجليزية مفردة (اسم تطبيق/اسم خاص) تلي مقطعاً عربياً
         // تبقى وحدة مستقلة بصوت الإنجليزية ولا تُدمج في العربية (بند 18).

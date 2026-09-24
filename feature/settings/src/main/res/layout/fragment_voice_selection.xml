@@ -1180,6 +1180,7 @@
 
             <!-- محرك نطق الأسماء العربية (يحدد أصواتها المتاحة) -->
             <TextView
+                android:id="@+id/tv_caller_engine_ar_label"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
@@ -1210,6 +1211,7 @@
 
             <!-- محرك نطق الأسماء الإنجليزية (يحدد أصواتها المتاحة) -->
             <TextView
+                android:id="@+id/tv_caller_engine_en_label"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
@@ -2262,6 +2264,19 @@
                 android:textSize="12sp"
                 android:textColor="@color/text_secondary"
                 android:importantForAccessibility="no" />
+
+            <!-- مفتاح مضاعف السرعة العام (قيم 1.0x..2.5x تُضرب بكل نطق).
+                 معزول في layout فرعي (segment_speech_boost) كي لا يتجاوز
+                 مُنشئُ DataBinding حدَّ معاملات Java (خفض معرّفات الرئيسي). -->
+            <include
+                android:id="@+id/segment_speech_boost"
+                layout="@layout/segment_speech_boost" />
+
+            <!-- مفتاح مضاعف الصوت العام (قيم 1.0x..2.5x تُضرب بكل نطق
+                 وتُقصّ على الكامل). معزول في layout فرعي مثل نظيره أعلاه. -->
+            <include
+                android:id="@+id/segment_volume_boost"
+                layout="@layout/segment_volume_boost" />
 
             <!-- النبرة الافتراضية -->
             <LinearLayout

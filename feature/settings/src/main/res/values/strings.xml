@@ -330,6 +330,12 @@
 <string name="tashkeel_preserved_summary">تُسلَّم الكلماتُ العربية غير المتحوّلة إلى المحرك بتشكيلها الأصلي، فينطق المحركُ الفاهمُ للتشكيل الحركاتَ بوضوح. تُفعل مع المحركات العربية المتقدمة؛ معطّل افتراضياً</string>
 <string name="follow_reader_rate_enabled">اتبع سرعة قارئ الشاشة</string>
 <string name="follow_reader_rate_summary">يُنتقى النطق بسرعة القارئ الفعلية (100 = طبيعي) بلا مضاعفة تفضيلات سرعة التطبيق. عند التعطيل تُضرب سرعة القارئ في السرعة المحفوظة لديك للتطبيق</string>
+<string name="speech_boost_enabled">مضاعفة السرعة</string>
+<string name="speech_boost_summary">تُضرب السرعة النهائية لكل نطق (إعلانات وقارئ الشاشة) في المضاعف المختار حتى الحد الآمن للمحرك (2.5×)</string>
+<string name="speech_boost_value_label">مضاعف السرعة</string>
+<string name="volume_boost_enabled">مضاعفة مستوى الصوت</string>
+<string name="volume_boost_summary">يُضرب مستوى الصوت النهائي لكل نطق (إعلانات وقارئ الشاشة) في المضاعف المختار ثم يُقصّ على الكامل (أعلى مستوى متاح للنظام)</string>
+<string name="volume_boost_value_label">مضاعف الصوت</string>
 <string name="secondary_language_title">لغة النطق الاحتياطية</string>
 <string name="secondary_language_summary">تُنطق بها الكلمات الأجنبية القصيرة غير المتحسَّمة الحُكم (مثل «Bonjour») ضمن النص العربي عوضاً عن الإنجليزية الافتراضية</string>
 <string name="secondary_language_dialog_title">اختَر لغة النطق الاحتياطية</string>
@@ -439,7 +445,6 @@
 <string name="first_run_welcome_description">اختر لغة الواجهة ومحرك النطق لتبدأ فوراً — يمكنك تغيير كل شيء لاحقاً من الإعدادات.</string>
 <string name="first_run_language_label">لغة الواجهة</string>
 <string name="first_run_engine_label">محرك النطق</string>
-<string name="first_run_engine_auto">تلقائي (الاختيار الذكي)</string>
 <string name="first_run_save">حفظ ومتابعة</string>
 <string name="first_run_skip">تخطّي</string>
 <string name="first_run_lang_arabic">العربية</string>
