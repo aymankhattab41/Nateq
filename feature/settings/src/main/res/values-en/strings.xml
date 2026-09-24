@@ -14,6 +14,7 @@
 <string name="auto_convert_engine">Engine</string>
 <string name="auto_convert_language">Language</string>
 <string name="auto_convert_none">No options available</string>
+<string name="auto_convert_no_engine">No engine (sliders only)</string>
 <string name="auto_convert_pitch">Pitch</string>
 <string name="auto_convert_rate">Rate</string>
 <string name="auto_convert_save">Save</string>
@@ -149,7 +150,7 @@
 <string name="contact_developer_no_handler">No app available to open the link right now</string>
 <string name="convert_languages_button">Set up all languages…</string>
 <string name="convert_languages_dialog_title">Auto-convert language settings</string>
-<string name="convert_languages_hint">Pick an engine, voice, and sliders for each language, then save. A language saved without an engine applies its sliders only.</string>
+<string name="convert_languages_hint">Pick a language, engine, and voice, then adjust the sliders. Every choice is saved automatically. Choosing no engine keeps the sliders only.</string>
 <string name="convert_languages_loading">Discovering languages across all installed engines…</string>
 <string name="day_friday">Friday</string>
 <string name="day_monday">Monday</string>

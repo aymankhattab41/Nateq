@@ -13,13 +13,161 @@
         android:textAppearance="?attr/textAppearanceBody2"
         android:importantForAccessibility="yes" />
 
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/rv_convert_languages"
+    <!-- كمبو اللغة -->
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/til_convert_dialog_lang"
+        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
-        android:maxHeight="@dimen/convert_languages_max_height"
-        android:clipToPadding="false"
+        android:hint="@string/auto_convert_language">
+        <com.google.android.material.textfield.MaterialAutoCompleteTextView
+            android:id="@+id/actv_convert_dialog_lang"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="none"
+            android:minHeight="48dp"
+            android:importantForAccessibility="yes" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <!-- كمبو المحرك -->
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/til_convert_dialog_engine"
+        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:hint="@string/auto_convert_engine">
+        <com.google.android.material.textfield.MaterialAutoCompleteTextView
+            android:id="@+id/actv_convert_dialog_engine"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="none"
+            android:minHeight="48dp"
+            android:importantForAccessibility="yes" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <!-- كمبو الصوت -->
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/til_convert_dialog_voice"
+        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:hint="@string/auto_convert_voice">
+        <com.google.android.material.textfield.MaterialAutoCompleteTextView
+            android:id="@+id/actv_convert_dialog_voice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="none"
+            android:minHeight="48dp"
+            android:importantForAccessibility="yes" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <!-- مستوى الصوت -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/auto_convert_volume"
+            android:textAppearance="?attr/textAppearanceBody2"
+            android:contentDescription="@string/auto_convert_volume" />
+        <TextView
+            android:id="@+id/tv_convert_dialog_volume_value"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="100%"
+            android:textAppearance="?attr/textAppearanceBody2" />
+    </LinearLayout>
+    <SeekBar
+        android:id="@+id/seek_convert_dialog_volume"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:max="100"
+        android:progress="100"
+        android:contentDescription="@string/auto_convert_volume" />
+
+    <!-- النبرة -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/auto_convert_pitch"
+            android:textAppearance="?attr/textAppearanceBody2"
+            android:contentDescription="@string/auto_convert_pitch" />
+        <TextView
+            android:id="@+id/tv_convert_dialog_pitch_value"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="1.0x"
+            android:textAppearance="?attr/textAppearanceBody2" />
+    </LinearLayout>
+    <SeekBar
+        android:id="@+id/seek_convert_dialog_pitch"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:max="200"
+        android:progress="100"
+        android:contentDescription="@string/auto_convert_pitch" />
+
+    <!-- السرعة -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/auto_convert_rate"
+            android:textAppearance="?attr/textAppearanceBody2"
+            android:contentDescription="@string/auto_convert_rate" />
+        <TextView
+            android:id="@+id/tv_convert_dialog_rate_value"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="1.0x"
+            android:textAppearance="?attr/textAppearanceBody2" />
+    </LinearLayout>
+    <SeekBar
+        android:id="@+id/seek_convert_dialog_rate"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:max="200"
+        android:progress="100"
+        android:contentDescription="@string/auto_convert_rate" />
+
+    <!-- رسالة الحفظ التلقائي (تُقرأ لقارئ الشاشة) -->
+    <TextView
+        android:id="@+id/tv_convert_dialog_saved"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:textAppearance="?attr/textAppearanceBody2"
         android:importantForAccessibility="yes" />
+
+    <!-- تشغيل عيّنة للغة المختارة -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_convert_dialog_play"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:minHeight="48dp"
+        android:text="@string/cd_test_voice_button" />
 
 </LinearLayout>

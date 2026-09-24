@@ -9,8 +9,6 @@ import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.TextView
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.core.audio.engine.EngineWithVoices
@@ -31,8 +29,8 @@ internal data class EngineInfo(val packageName: String, val label: String)
  *
  * عُزل من [VoiceSelectionFragment] ليقلّص حجم الأخير: يبقى هنا اختيار
  * محرك النطق في صندوقه (مع المحركات النظامية وغير المُصدَّرة عبر
- * TTS_SERVICE intent وMATCH_ALL)، وفتح قائمة اللغات المكتشفة فعلياً عبر
- * كل محركات TTS المثبتة — صف لكل لغة (محرك ← صوت + نبرة/سرعة/سعة) —
+ * TTS_SERVICE intent وMATCH_ALL)، وفتح حوار اللغات المكتشفة فعلياً عبر
+ * كل محركات TTS المثبتة — كمبو لغة + كمبو محرك + كمبو صوت + أشرطة —
  * ومعاينة النطق. بدل نظام «اللغتين» الثابت (1/2) صار الدعم لكل لغة مُكتشفة.
  */
 internal class EngineSectionController(
@@ -190,8 +188,6 @@ internal class EngineSectionController(
         )
         val tvHint =
             dialogView.findViewById<TextView>(R.id.tv_convert_languages_hint)
-        val rv =
-            dialogView.findViewById<RecyclerView>(R.id.rv_convert_languages)
 
         tvHint.text = fragment.getString(R.string.convert_languages_loading)
         val dialog = MaterialAlertDialogBuilder(ctx)
@@ -211,21 +207,18 @@ internal class EngineSectionController(
             withContext(AppDispatchers.main) {
                 if (!fragment.isAdded || !dialog.isShowing) return@withContext
                 val rows = buildLanguageRows(discovered)
-                val adapter = LanguageConvertAdapter(
+                LanguageConvertDialogController(
                     ctx,
                     settings,
                     rows
                 ) { enginePkg, voiceName, volume, pitch, rate ->
                     playbackPreview(enginePkg, voiceName, volume, pitch, rate)
-                }
-                adapter.onRowSaved = {
-                    // التفعيل التلقائي من الحوار (اختيار محرك/صوت لحفظ) قد
-                    // يقلب المفتاح الرئيسي — تُزامَن الصناديق فوراً.
+                }.bindTo(dialogView) {
+                    // التفعيل التلقائي من الحوار (اختيار محرك للغة) قد يقلب
+                    // المفتاح الرئيسي — تُزامَن الصناديق فوراً.
                     refreshAutoConvertUi()
                     onStatusChanged()
                 }
-                rv.layoutManager = LinearLayoutManager(ctx)
-                rv.adapter = adapter
                 tvHint.text =
                     fragment.getString(R.string.convert_languages_hint)
             }
