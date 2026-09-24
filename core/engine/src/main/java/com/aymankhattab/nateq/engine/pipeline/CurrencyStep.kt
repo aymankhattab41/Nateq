@@ -613,7 +613,7 @@ internal object CurrencyStep : TextProcessingStep {
         // المفرد الخاطئة («ناقص اثنان دولار»). وكما يسبق المحوّلُ الرقمي
         // الأعدادَ السالبة بكلمة «ناقص » يُسبق المبلغُ بها أيضاً.
         val wholePhrase = when {
-            absWhole == 0L -> "صفر ${info.name}"
+            absWhole == 0L -> "صِفْرْ ${info.name}"
             absWhole == 1L -> {
                 val unit = if (info.isFeminine) "واحدة" else "واحد"
                 "${info.name} $unit"

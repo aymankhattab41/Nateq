@@ -92,7 +92,7 @@ class PipelineStepsTest {
 
     @Test
     fun unit_zero() {
-        assertEquals("صفر متر", UnitStep.apply("0 م"))
+        assertEquals("صِفْرْ متر", UnitStep.apply("0 م"))
     }
 
     @Test
@@ -260,7 +260,7 @@ class PipelineStepsTest {
 
     @Test
     fun currency_zero() {
-        assertEquals("صفر دولار", CurrencyStep.apply("$0"))
+        assertEquals("صِفْرْ دولار", CurrencyStep.apply("$0"))
     }
 
     @Test
@@ -486,7 +486,7 @@ class PipelineStepsTest {
     @Test
     fun numberToWords_fractionWithLeadingZeros() {
         assertEquals(
-            "ثلاثة فاصلة صفر خمسة",
+            "ثلاثة فاصلة صِفْرْ خمسة",
             NumberWordsConverter.numberToWords(3.05)
         )
     }
@@ -502,7 +502,7 @@ class PipelineStepsTest {
     @Test
     fun numberToWords_fractionFiveZeroFive() {
         assertEquals(
-            "ثلاثة فاصلة خمسة صفر خمسة",
+            "ثلاثة فاصلة خمسة صِفْرْ خمسة",
             NumberWordsConverter.numberToWords(3.505)
         )
     }
@@ -514,7 +514,7 @@ class PipelineStepsTest {
 
     @Test
     fun numberToWords_zero_integer() {
-        assertEquals("صفر", NumberWordsConverter.numberToWords(0))
+        assertEquals("صِفْرْ", NumberWordsConverter.numberToWords(0))
     }
 
     @Test
@@ -894,7 +894,7 @@ class PipelineStepsTest {
         assertEquals("10 / 2", PhoneNumberStep.apply("10 / 2"))
         // الهاتف المألوف بشرطة يبقى هاتفاً يُنطق رقماً رقماً ولا يُفسد
         assertEquals(
-            "صفر واحد صفر واحد اثنان ثلاثة أربعة خمسة ستة سبعة ثمانية",
+            "صِفْرْ واحد صِفْرْ واحد اثنان ثلاثة أربعة خمسة ستة سبعة ثمانية",
             PhoneNumberStep.apply("010-1234-5678")
         )
     }
@@ -913,11 +913,12 @@ class PipelineStepsTest {
         assertEquals("1234567", PhoneNumberStep.apply("1234567"))
         // مع مفتاح دولي (+) تمر النتائج وتُنطق رقماً رقماً مع كلمة «زائد».
         assertEquals(
-            "زائد اثنان صفر اثنان ثلاثة أربعة خمسة ستة سبعة",
+            "زائد اثنان صِفْرْ اثنان ثلاثة أربعة خمسة ستة سبعة",
             PhoneNumberStep.apply("+20234567")
         )
         assertEquals(
-            "زائد اثنان صفر واحد واحد خمسة خمسة خمسة اثنان أربعة أربعة اثنان",
+            "زائد اثنان صِفْرْ واحد واحد " +
+                "خمسة خمسة خمسة اثنان أربعة أربعة اثنان",
             PhoneNumberStep.apply("+20 11 5552442")
         )
     }
@@ -943,11 +944,11 @@ class PipelineStepsTest {
     fun phone_numbersStartingWithZero_alwaysSingleDigits() {
         // أي رقم يبدأ بـ 0 وله 7-15 خانة يُعامل كهاتف ويُنطق مفردة دائماً
         assertEquals(
-            "صفر اثنان اثنان ثلاثة أربعة خمسة ستة سبعة ثمانية تسعة",
+            "صِفْرْ اثنان اثنان ثلاثة أربعة خمسة ستة سبعة ثمانية تسعة",
             PhoneNumberStep.apply("0223456789")
         )
         assertEquals(
-            "صفر اثنان اثنان ثلاثة أربعة خمسة ستة سبعة ثمانية تسعة",
+            "صِفْرْ اثنان اثنان ثلاثة أربعة خمسة ستة سبعة ثمانية تسعة",
             NumberStep.apply("0223456789")
         )
     }
@@ -1303,7 +1304,8 @@ class PipelineStepsTest {
         )
         val stepAr = PhoneNumberStep { "ar" }
         assertEquals(
-            "زائد اثنان صفر واحد واحد خمسة خمسة خمسة اثنان أربعة أربعة اثنان",
+            "زائد اثنان صِفْرْ واحد واحد " +
+                "خمسة خمسة خمسة اثنان أربعة أربعة اثنان",
             stepAr.applyEnglish("+20 11 5552442")
         )
     }

@@ -91,7 +91,7 @@ internal object NumberWordsConverter {
         }
 
         val num = number.toLong()
-        if (num == 0L) return "صفر"
+        if (num == 0L) return "صِفْرْ"
         if (num < 0L) {
             // -Long.MIN_VALUE يفيض (قيمته 2^63 خارج المدى الطويل الموجب)؛ ننطقه
             // عبر تمثيله العشري الصريح بدل نفيٍّ يفيض فلا يتجمّد ولا يغرق.
@@ -105,7 +105,7 @@ internal object NumberWordsConverter {
 
     /** تحويل تمثيل عشري موجب (أرقام فقط) إلى كلمات عربية حتى الكوينتيليون. */
     private fun positiveWordsFromDecimal(s: String): String {
-        if (s.all { it == '0' }) return "صفر"
+        if (s.all { it == '0' }) return "صِفْرْ"
         val groups = mutableListOf<Int>()
         var i = s.length
         while (i > 0) {

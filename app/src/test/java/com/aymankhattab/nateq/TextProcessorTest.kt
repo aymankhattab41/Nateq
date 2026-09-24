@@ -170,7 +170,7 @@ class TextProcessorTest {
         // حتى لو كان النص أرقاماً فقط
         val out = processor.process("01001234567", "ar")
         assertEquals(
-            "صفر واحد صفر صفر واحد اثنان ثلاثة أربعة خمسة ستة سبعة",
+            "صِفْرْ واحد صِفْرْ صِفْرْ واحد اثنان ثلاثة أربعة خمسة ستة سبعة",
             out
         )
     }
@@ -179,7 +179,8 @@ class TextProcessorTest {
     fun phoneNumber_mixedArabicText_spokenDigitByDigit() {
         // حتى بوجود نص عربي حول الرقم
         val out = processor.process("اتصل بـ 01001234567", "ar")
-        val expected = "صفر واحد صفر صفر واحد اثنان ثلاثة أربعة خمسة ستة سبعة"
+        val expected = "صِفْرْ واحد صِفْرْ صِفْرْ واحد " +
+            "اثنان ثلاثة أربعة خمسة ستة سبعة"
         assertTrue(out.contains(expected))
     }
 
@@ -445,16 +446,16 @@ class TextProcessorTest {
 
     @Test
     fun slash_inArabicSentence_notSpoken_andUrlsPreserved() {
-        // مثال المستخدم: نتيجة مباراة 1/0 لا تُنطق «1 على 0» بل «واحد صفر»
+        // مثال المستخدم: نتيجة مباراة 1/0 لا تُنطق «1 على 0» بل «واحد صِفْرْ»
         val userExample = "للاسف الاسماعيلي خرج من كأس مصر الدور التمهيدي " +
             "عليي يد الرباط والانوار خسر 1/0"
         val expectedUser = "للاسف الاسماعيلي خرج من كأس مصر الدور التمهيدي " +
-            "عليي يد الرباط والانوار خسر واحد صفر"
+            "عليي يد الرباط والانوار خسر واحد صِفْرْ"
         assertEquals(expectedUser, processor.process(userExample, "ar"))
 
         // نتائج المباريات والنسب
-        assertEquals("خسر واحد صفر", processor.process("خسر 1/0", "ar"))
-        assertEquals("خسر واحد صفر", processor.process("خسر 1 / 0", "ar"))
+        assertEquals("خسر واحد صِفْرْ", processor.process("خسر 1/0", "ar"))
+        assertEquals("خسر واحد صِفْرْ", processor.process("خسر 1 / 0", "ar"))
         assertEquals("اثنان واحد", processor.process("2/1", "ar"))
 
         // الكلمات والخيارات المفصولة بشرطة مائلة
@@ -634,7 +635,7 @@ class TextProcessorTest {
 
     @Test
     fun numberToWords_largePositiveLong_supported() {
-        // حتى الكوينتيليون (10^18) — أقصى مدى Long سليم دون صفر يعيد
+        // حتى الكوينتيليون (10^18) — أقصى مدى Long سليم دون صِفْرْ يعيد
         // كلمات ناقصة.
         assertTrue(processor.numberToWords(Long.MAX_VALUE).isNotBlank())
     }

@@ -478,10 +478,10 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-• Removed the annoying “No engine selected for this language” message: the state is now logged internally only, with no speech or notification to the user
-• Removed the annoying “Speech failed with the selected engine” message: engine failures are now logged internally only, with no speech or notification to the user
-• General speed and volume boosts for every utterance: two new toggles in Speech settings with a multiplier list from 1.0 to 2.5; the speed booster multiplies the final speed of every utterance (announcements and reader) and clamps to the engine safe limit, while the volume booster raises the final volume up to full without distortion
-</string>
+• Fixed zero (0) pronunciation: now spoken as «sifr» (صِفْرْ) instead of «sifir» by adding correct Arabic diacritics for clear pronunciation across all TTS engines
+• Removed the annoying "No engine selected for this language" message: the state is now logged internally only, with no speech or notification to the user
+• Removed the annoying "Speech failed with the selected engine" message: engine failures are now logged internally only, with no speech or notification to the user
+ </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
     <string name="diagnostics_copy">Copy</string>

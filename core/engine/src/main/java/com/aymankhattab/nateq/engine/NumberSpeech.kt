@@ -196,7 +196,7 @@ object NumberSpeech {
         )
 
         fun under100(n: Int): String = when (n) {
-            0 -> "صفر"
+            0 -> "صِفْرْ"
             in 1..9 -> ones[n]
             in 10..19 -> teens[n - 10]
             else -> {

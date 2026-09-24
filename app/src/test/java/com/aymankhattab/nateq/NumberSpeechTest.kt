@@ -9,7 +9,7 @@ class NumberSpeechTest {
 
     @Test
     fun arabicWords_basicUnits() {
-        assertEquals("صفر", NumberSpeech.toArabicWords(0))
+        assertEquals("صِفْرْ", NumberSpeech.toArabicWords(0))
         assertEquals("واحدة", NumberSpeech.toArabicWords(1))
         assertEquals("عشرون", NumberSpeech.toArabicWords(20))
         assertEquals("خمس وثلاثون", NumberSpeech.toArabicWords(35))
@@ -284,13 +284,13 @@ class NumberSpeechTest {
 
     @Test
     fun formatByMode_leadingZerosPreserved() {
-        // الرمز 102 في التجميع الزوجي: «02» صفر بادئ لا يُفقد
-        val expectedTwo = "واحد, صفر اثنان"
+        // الرمز 102 في التجميع الزوجي: «02» صِفْرْ بادئ لا يُفقد
+        val expectedTwo = "واحد, صِفْرْ اثنان"
         assertEquals(expectedTwo, NumberSpeech.formatByMode(2, 102, false))
         assertEquals("one, zero two", NumberSpeech.formatByMode(2, 102, true))
         // تجميع ثلاثي لـ 1002: «002» ثلاثة أصفار بادئة
         assertEquals(
-            "واحد, صفر صفر اثنان",
+            "واحد, صِفْرْ صِفْرْ اثنان",
             NumberSpeech.formatByMode(3, 1002, false)
         )
         assertEquals(
@@ -323,15 +323,15 @@ class NumberSpeechTest {
     fun formatByMode_decimalNumbers_mode1_mode5() {
         // اختبار الرقم العشري مثل 30496.00 بالمفرد والزوجي والخماسي
         assertEquals(
-            "ثلاثة صفر أربعة تسعة ستة فاصلة صفر صفر",
+            "ثلاثة صِفْرْ أربعة تسعة ستة فاصلة صِفْرْ صِفْرْ",
             NumberSpeech.formatByMode(1, "30496.00", false)
         )
         assertEquals(
-            "ثلاثون ألفاً وأربعمائة وستة وتسعون فاصلة صفر صفر",
+            "ثلاثون ألفاً وأربعمائة وستة وتسعون فاصلة صِفْرْ صِفْرْ",
             NumberSpeech.formatByMode(5, "30496.00", false)
         )
         assertEquals(
-            "ثلاثة, صفر أربعة, ستة وتسعون فاصلة صفر صفر",
+            "ثلاثة, صِفْرْ أربعة, ستة وتسعون فاصلة صِفْرْ صِفْرْ",
             NumberSpeech.formatByMode(2, "30496.00", false)
         )
         assertEquals(
@@ -344,12 +344,12 @@ class NumberSpeechTest {
     fun formatByMode_phoneNumbersFollowSelectedMode() {
         // أرقام الهواتف تتبع نمط القراءة المختار (مفردة/ثلاثية/رباعية..)
         assertEquals(
-            "صفر واحد صفر واحد اثنان ثلاثة أربعة خمسة ستة سبعة ثمانية",
+            "صِفْرْ واحد صِفْرْ واحد اثنان ثلاثة أربعة خمسة ستة سبعة ثمانية",
             NumberSpeech.formatByMode(1, "01012345678", false)
         )
         // ثلاثي: 01, 012, 345, 678
         assertEquals(
-            "صفر واحد, صفر واحد اثنان, ثلاثمائة وخمسة وأربعون, " +
+            "صِفْرْ واحد, صِفْرْ واحد اثنان, ثلاثمائة وخمسة وأربعون, " +
                 "ستمائة وثمانية وسبعون",
             NumberSpeech.formatByMode(3, "01012345678", false)
         )

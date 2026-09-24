@@ -103,7 +103,7 @@ class CallerAnnouncementReceiverTest {
         // بند 3.2/3.1: رقم المتصل المجهول يُنطق رقماً رقماً (عربياً أو
         // بالإنجليزية) ويُعاد فارغاً عند غياب الأرقام.
         assertEquals(
-            " صفر ستة ثلاثة سبعة صفر تسعة واحد اثنان",
+            " صِفْرْ ستة ثلاثة سبعة صِفْرْ تسعة واحد اثنان",
             formatCallerNumberForSpeech("06370912", isArabic = true)
         )
         assertEquals(
@@ -111,7 +111,7 @@ class CallerAnnouncementReceiverTest {
             formatCallerNumberForSpeech("+639", isArabic = false)
         )
         assertEquals(
-            " زائد اثنان صفر واحد واحد",
+            " زائد اثنان صِفْرْ واحد واحد",
             formatCallerNumberForSpeech("+2011", isArabic = true)
         )
         assertEquals("", formatCallerNumberForSpeech("غير محدد", true))

@@ -148,7 +148,7 @@ class TextProcessorEdgeCasesTest {
 
     @Test
     fun decimal_fractionWithLeadingZero() {
-        assertEquals("ثلاثة فاصلة صفر خمسة", processor.process("3.05", "ar"))
+        assertEquals("ثلاثة فاصلة صِفْرْ خمسة", processor.process("3.05", "ar"))
     }
 
     @Test
