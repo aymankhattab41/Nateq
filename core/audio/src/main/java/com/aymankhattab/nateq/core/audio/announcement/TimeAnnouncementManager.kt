@@ -583,7 +583,11 @@ class TimeAnnouncementManager(
         // منتصف الليل بالصيغة الرقمية 24h لا يُنطق «صفر» بل «منتصف الليل»
         val midnightPhrase = use24h && hour == 0
         return if (isEnglish) {
-            if (minute == 0) {
+            if (midnightPhrase && minute == 0) {
+                // منتصف الليل بصلاحية 24 ساعة: «midnight» لا «zero o'clock»
+                // (الساعة 0 كانت تُنطق «zero» — إبهام ليس من كلام الساعة).
+                "midnight"
+            } else if (minute == 0) {
                 // رأس الساعة يُنطق بـ«o'clock» مع لاحقة الفترة الصحيحة
                 // (AM لساعات 0..11 وPM لـ 12..23) — كان ينقصه التمييز.
                 NumberSpeech.toEnglishWords(displayedHour) +
@@ -634,15 +638,22 @@ class TimeAnnouncementManager(
             15 -> "quarter past $hour12 $period"
             30 -> "half past $hour12 $period"
             45 -> "quarter to $nextHour $nextPeriod"
-            in 1..14 -> "${minute} minute" +
-                (if (minute == 1) "" else "s") +
+            in 1..14 -> englishMinutesWord(minute) +
                 " past $hour12 $period"
             in 16..29 -> "$minute minutes past $hour12 $period"
             in 31..44 -> "${60 - minute} minutes to $nextHour $nextPeriod"
-            in 46..59 -> "${60 - minute} minutes to $nextHour $nextPeriod"
+            // الدقائق 46..59 تُشير للساعة التالية؛ والمفرد محفوظ: 10:59
+            // تُنطق «1 minute to 11 AM» لا «1 minutes» (العدد 60-59=1).
+            in 46..59 -> englishMinutesWord(60 - minute) +
+                " to $nextHour $nextPeriod"
             else -> "$hour12 o'clock $period"
         }
     }
+
+    /** «دقيقة»/«دقيقتان+» بإنجليزية سليمة: 1 → "1 minute"،
+     *  غيرها → "n minutes". */
+    private fun englishMinutesWord(count: Int): String =
+        "$count minute" + if (count == 1) "" else "s"
 
     /** صيغة «عدد + دقيقة» كاملة مطابقة نحويّاً: «دقيقة واحدة»، «دقيقتان»،
      * «ثلاث دقائق»، «أربع عشرة دقيقة». */

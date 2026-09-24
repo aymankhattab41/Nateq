@@ -247,6 +247,18 @@ class TimeAnnouncementManagerTest {
         assertEquals("2 minutes past 10 AM", formatEnglish(10, 2))
     }
 
+    @Test
+    fun formatEnglish_minuteOne_toNextHour() {
+        // التصويب (ملاحظة): 10:59 تشير للساعة التالية بدقيقة واحدة —
+        // «1 minute to 11 AM» وليس «1 minutes» (كان 60-59=1 يُنطق جمعاً).
+        assertEquals("1 minute to 11 AM", formatEnglish(10, 59))
+        assertEquals("2 minutes to 11 AM", formatEnglish(10, 58))
+        // عبور منتصف الليل: 0:59 → أولى ساعات الصباح.
+        assertEquals("1 minute to 1 AM", formatEnglish(0, 59))
+        // المفرد محفوظ أيضاً في فرع الماضي القريب (1..14).
+        assertEquals("1 minute past 10 AM", formatEnglish(10, 1))
+    }
+
     // ═══════════════════════ التنسيق الرقمي ═══════════════════════
 
     @Test
@@ -281,6 +293,23 @@ class TimeAnnouncementManagerTest {
     fun formatDigital_english24h_noMeridiem() {
         val result = formatDigital(13, 0, true, true)
         assertTrue(result.startsWith("thirteen"))
+    }
+
+    @Test
+    fun formatDigital_english24h_midnight() {
+        // التصويب (ملاحظة): 00:00 بصلاحية 24 ساعة تُنطق «midnight»
+        // لا «zero o'clock» (الساعة 0 كانت تُنطق «zero»).
+        assertEquals("midnight", formatDigital(0, 0, true, true))
+        // ساعات أخرى غير الصفر تبقى سليمة بصيغة رأس الساعة — بلا "o'clock"
+        // في صيغة 24 ساعة (منتصف الليل فقط يُستبدل بـ «midnight»).
+        assertEquals(
+            "thirteen", formatDigital(13, 0, true, true)
+        )
+        // العربية لم تتأثر: منتصف الليل 24h يبقى «الساعة الآن منتصف الليل».
+        assertEquals(
+            "الساعة الآن منتصف الليل",
+            formatDigital(0, 0, false, true)
+        )
     }
 
     @Test
