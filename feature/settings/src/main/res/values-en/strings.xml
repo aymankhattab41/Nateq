@@ -479,6 +479,7 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+• Removed the annoying “Speech failed with the selected engine” message: engine failures are now logged internally only, with no speech or notification to the user
 • General speed and volume boosts for every utterance: two new toggles in Speech settings with a multiplier list from 1.0 to 2.5; the speed booster multiplies the final speed of every utterance (announcements and reader) and clamps to the engine safe limit, while the volume booster raises the final volume up to full without distortion
 • Removed the smart engine picker from caller and battery settings and pinned the chosen engine index across all dialogs, and fixed the number preview to respect the numbers category engine instead of the Google engine
 • Fixed the crash of the Set up all languages screen: pitch and rate listeners are now evaluated lazily after the text fields are fully initialized
