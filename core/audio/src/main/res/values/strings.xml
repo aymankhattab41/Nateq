@@ -40,13 +40,6 @@
     <string name="app_messenger">ماسنجر</string>
     <string name="app_instagram">إنستجرام</string>
 
-    <!-- المحور السادس — تنبيه المستخدم عند فشل محركه والتحوّل إلى محرك آخر
-         (طرفة عين واحدة لكل محرك في كل عمر العملية، من عملية المحرك :tts).
-         اسم فريد لا يتعارض مع feature:settings عند الدمج -->
-    <string name="engine_fallback_alert">تعذّر النطق بالمحرك المحدَّد</string>
-    <string name="engine_not_selected_for_language">لم يُحدَّد محرك نطق لهذه اللغة، افتح الإعدادات لاختياره</string>
-    <string name="engine_not_selected_short">لم يُحدَّد محرك لهذه اللغة</string>
-    <string name="engine_disabled_or_missing">المحرك المحدّد معطّل أو غير مثبّت</string>
     <!-- بند [29] — تنبيه الصوت لمرة واحدة لكل عمر العملية: الإشعارات معطّلة
          فلن يرى المستخدم إشعار الخدمة الأمامية وزرّيها (بلا إعادة طلب مزعجة) -->
     <string name="fgs_notifications_disabled_hint">الإشعارات معطّلة — لن ترى إشعار الخدمة وزرّيها «أعلن الآن» و«إيقاف»، والإعلانات تعمل في الخلفية</string>

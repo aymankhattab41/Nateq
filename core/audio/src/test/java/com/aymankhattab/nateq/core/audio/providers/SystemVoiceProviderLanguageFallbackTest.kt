@@ -5,12 +5,10 @@ import android.content.Context
 import android.content.IntentFilter
 import android.os.Looper
 import android.speech.tts.TextToSpeech
-import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.data.VoicePrefsProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -27,8 +25,7 @@ import java.util.concurrent.ConcurrentHashMap
  * إن فشل المحرك المختار أو لم يدعم اللغة أو كان معطلاً،
  * يُسقط المثيل المعطوب ولا يتم التبديل التلقائي لأي محرك
  * آخر إطلاقاً. لا تُطلق أي رسالة نطق مزعجة للمستخدم عند
- * فشل المحرك (تُسجَّل في اللوج فقط) — الرسالة الصوتية
- * الوحيدة تبقى لغياب محرك مُحدَّد للغة.
+ * فشل المحرك أو غياب محرك للغة (تُسجَّل في اللوج فقط).
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [37])
@@ -87,10 +84,7 @@ class SystemVoiceProviderLanguageFallbackTest {
         EnginePicker.invalidateCache()
 
         val context = RuntimeEnvironment.getApplication()
-        val announcedMessages = mutableListOf<String>()
-        val provider = SystemVoiceProvider(context).apply {
-            errorAnnouncer = { announcedMessages.add(it) }
-        }
+        val provider = SystemVoiceProvider(context)
 
         val ttsA = UnsupportedEnEngine(context, { }, ENGINE_A)
         val ttsB = TextToSpeech(context, { }, ENGINE_B)
@@ -134,22 +128,16 @@ class SystemVoiceProviderLanguageFallbackTest {
 
         // 3. لم يتم التبديل التلقائي إلى المحرك B
         assertNull(shadowOf(ttsB).getLastSynthesizeToFile())
-
-        // 4. لا رسالة نطق مزعجة عند فشل المحرك (تُسجَّل في اللوج فقط)
-        assertTrue(announcedMessages.isEmpty())
     }
 
     @Test
-    fun uninstalledOrDisabledEngine_announcesFailureAndDoesNotSynthesize() {
+    fun uninstalledOrDisabledEngine_doesNotSynthesize() {
         // ENGINE_B مثبت فقط؛ ENGINE_A معطل/غير مثبت
         registerEngine(ENGINE_B)
         EnginePicker.invalidateCache()
 
         val context = RuntimeEnvironment.getApplication()
-        val announcedMessages = mutableListOf<String>()
-        val provider = SystemVoiceProvider(context).apply {
-            errorAnnouncer = { announcedMessages.add(it) }
-        }
+        val provider = SystemVoiceProvider(context)
 
         val voiceEn = VoiceDescriptor(
             id = "nateq-en-US",
@@ -176,13 +164,11 @@ class SystemVoiceProviderLanguageFallbackTest {
         shadowOf(Looper.getMainLooper()).idle()
 
         assertTrue(chunks.isEmpty())
-        assertTrue(announcedMessages.isEmpty())
     }
 
     @Test
-    fun unconfiguredLanguage_announcesNoEngineSelectedOnce() {
+    fun unconfiguredLanguage_doesNotSynthesize() {
         val context = RuntimeEnvironment.getApplication()
-        val announcedMessages = mutableListOf<String>()
         val fakePrefs = object : VoicePrefsProvider {
             override fun getEngineForLanguage(languageTag: String): String? =
                 null
@@ -201,9 +187,7 @@ class SystemVoiceProviderLanguageFallbackTest {
 
             override fun getVolumeForCategory(category: String): Float = 1.0f
         }
-        val provider = SystemVoiceProvider(context, fakePrefs).apply {
-            errorAnnouncer = { announcedMessages.add(it) }
-        }
+        val provider = SystemVoiceProvider(context, fakePrefs)
 
         val voiceFr = VoiceDescriptor(
             id = "nateq-fr-FR",
@@ -236,8 +220,5 @@ class SystemVoiceProviderLanguageFallbackTest {
         shadowOf(Looper.getMainLooper()).idle()
 
         assertTrue(chunks.isEmpty())
-        val expectedMsg =
-            "لم يُحدَّد محرك نطق لهذه اللغة، افتح الإعدادات لاختياره"
-        assertEquals(listOf(expectedMsg), announcedMessages)
     }
 }

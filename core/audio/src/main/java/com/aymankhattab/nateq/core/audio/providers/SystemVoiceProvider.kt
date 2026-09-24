@@ -101,66 +101,21 @@ class SystemVoiceProvider(
      *  لمهلة التهيئة [INIT_TIMEOUT_MS] (غير حاصر). */
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    /** مفسح الإعلانات الصوتية للأخطاء — قابل للحقن في الاختبارات */
-    internal var errorAnnouncer: (String) -> Unit = { message ->
-        announceAudibly(message)
-    }
-
     private val unconfiguredLanguageNotified = mutableSetOf<String>()
     private val engineFailureNotified = mutableSetOf<String>()
 
-    @Suppress("DEPRECATION")
-    private fun announceAudibly(message: String) {
-        mainHandler.post {
-            runCatching {
-                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-            }
-            runCatching {
-                val am = context.getSystemService(
-                    Context.ACCESSIBILITY_SERVICE
-                ) as? android.view.accessibility.AccessibilityManager
-                if (am?.isEnabled == true) {
-                    val event = android.view.accessibility.AccessibilityEvent
-                        .obtain(
-                            android.view.accessibility.AccessibilityEvent
-                                .TYPE_ANNOUNCEMENT
-                        )
-                    event.text.add(message)
-                    event.className = javaClass.name
-                    event.packageName = context.packageName
-                    am.sendAccessibilityEvent(event)
-                }
-            }
-            runCatching {
-                com.aymankhattab.nateq.core.audio.announcement
-                    .AudioCuePlayer.getInstance(context)
-                    .play(
-                        com.aymankhattab.nateq.core.audio.announcement
-                            .AudioCue(
-                                com.aymankhattab.nateq.core.audio
-                                    .announcement.CueType.BATTERY_LOW
-                            )
-                    ) { }
-            }
-        }
-    }
-
+    /**
+     * يكتفي بتسجيل غياب محرك محدَّد للغة في اللوج للتصحيح دون
+     * أي إعلان صوتي أو Toast — رسالة "لم يُحدَّد محرك نطق لهذه
+     * اللغة" كانت مزعجة للمستخدم كلما تعذر نطق لغة بلا تخصيص.
+     */
     private fun notifyNoEngineForLanguageOnce(languageTag: String) {
         val shouldNotify = synchronized(unconfiguredLanguageNotified) {
             unconfiguredLanguageNotified.add(languageTag)
         }
         if (shouldNotify) {
-            val msg = try {
-                context.getString(R.string.engine_not_selected_for_language)
-            } catch (_: Throwable) {
-                "لم يُحدَّد محرك نطق لهذه اللغة، افتح الإعدادات لاختياره"
-            }
-            Log.w(TAG, "[Provider] $msg (lang=$languageTag)")
-            try {
-                errorAnnouncer(msg)
-            } catch (t: Throwable) {
-                Log.w(TAG, "errorAnnouncer failed", t)
-            }
+            Log.w(TAG, "[Provider] no engine selected for language " +
+                "(lang=$languageTag)")
         }
     }
 
