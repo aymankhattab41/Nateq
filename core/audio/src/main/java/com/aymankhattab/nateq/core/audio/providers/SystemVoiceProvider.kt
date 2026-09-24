@@ -109,6 +109,7 @@ class SystemVoiceProvider(
     private val unconfiguredLanguageNotified = mutableSetOf<String>()
     private val engineFailureNotified = mutableSetOf<String>()
 
+    @Suppress("DEPRECATION")
     private fun announceAudibly(message: String) {
         mainHandler.post {
             runCatching {
@@ -701,8 +702,8 @@ class SystemVoiceProvider(
                 )
             }
         }
-        lateinit var attemptWith: (String) -> Unit
-        attemptWith = { currentEngine: String ->
+        lateinit var attemptWith: (String, Int) -> Unit
+        attemptWith = { currentEngine: String, rebindAttempts: Int ->
             if (!cancelled.get()) {
                 synchronized(ttsLock) {
                     when {
@@ -730,7 +731,9 @@ class SystemVoiceProvider(
                                     if (!shutdownCalled
                                         && !cancelled.get()
                                     ) {
-                                        attemptWith(currentEngine)
+                                        attemptWith(
+                                            currentEngine, rebindAttempts
+                                        )
                                     }
                                 }, ENGINE_MATURITY_POLL_MS)
                             } else {
@@ -757,23 +760,66 @@ class SystemVoiceProvider(
                                     if (status == TextToSpeech.SUCCESS
                                         && !cancelled.get()
                                     ) {
-                                        synchronized(ttsLock) {
+                                        val voiceNames = runCatching {
+                                            built.voices.orEmpty()
+                                                .map { it.name }
+                                        }.getOrDefault(emptyList())
+                                        logBindEvidence(eng, voiceNames)
+                                        if (!EngineBindVerifier
+                                            .isWronglyBoundToGoogle(
+                                                eng, voiceNames
+                                            )
+                                        ) {
+                                            synchronized(ttsLock) {
+                                                if (shutdownCalled) {
+                                                    runCatching {
+                                                        built.shutdown()
+                                                    }
+                                                } else {
+                                                    enginePool[eng] = built
+                                                    prewarmingEngines.remove(
+                                                        eng
+                                                    )
+                                                    onActiveEngineSwitch(eng)
+                                                }
+                                            }
                                             if (shutdownCalled) {
-                                                runCatching {
-                                                    built.shutdown()
+                                                if (!done.getAndSet(true)) {
+                                                    cont.resume(Unit)
                                                 }
                                             } else {
-                                                enginePool[eng] = built
-                                                prewarmingEngines.remove(eng)
-                                                onActiveEngineSwitch(eng)
-                                            }
-                                        }
-                                        if (shutdownCalled) {
-                                            if (!done.getAndSet(true)) {
-                                                cont.resume(Unit)
+                                                speakNow(built, eng)
                                             }
                                         } else {
-                                            speakNow(built, eng)
+                                            // سامسونج أو مشخّص آخر ربط محركاً
+                                            // غير الحزمة المطلوبة (جوجل بدل
+                                            // المختار): لا نقبل المثيل ولا
+                                            // نُخرج صوت محركٍ دخيل — إعادة
+                                            // ربط واحدة ثم إعلان فشل صريح.
+                                            Log.w(TAG,
+                                                "[Provider] bind mismatch:" +
+                                                " requested=$eng" +
+                                                " voices=$voiceNames" +
+                                                " attempt=$rebindAttempts")
+                                            synchronized(ttsLock) {
+                                                prewarmingEngines.remove(eng)
+                                            }
+                                            dropBrokenEngine(built)
+                                            if (!cancelled.get()
+                                                && EngineBindVerifier
+                                                .shouldRetryRebind(
+                                                    rebindAttempts
+                                                )
+                                            ) {
+                                                attemptWith(
+                                                    eng, rebindAttempts + 1
+                                                )
+                                            } else {
+                                                notifyEngineFailedOnce(eng)
+                                                if (!done.getAndSet(true)) {
+                                                    cont.resume(Unit)
+                                                }
+                                            }
                                         }
                                     } else {
                                         Log.e(TAG,
@@ -818,7 +864,7 @@ class SystemVoiceProvider(
             }
         }
 
-        attemptWith(engine)
+        attemptWith(engine, 0)
     }
 
     /**
@@ -834,6 +880,21 @@ class SystemVoiceProvider(
             runCatching { instance.shutdown() }
             enginePool.entries.removeAll { e -> e.value === instance }
         }
+    }
+
+    /** سجل أدلة الربط الفعلي: الحزمة المطلوبة وأسماء أصوات المحرك المرتبط.
+     *  أسماء الأصوات تكشف هوية المحرك الفعلي (جوجل: "ar-x-…" / eSpeak:
+     *  "en-us" / سامسونج: "SMT …") — فتُحسم شكوى «محرك جوجل بدل المختار»
+     *  اعتماداً على الأدلة لا التخمين. */
+    private fun logBindEvidence(
+        requested: String,
+        voiceNames: List<String>
+    ) {
+        val sample = voiceNames.take(3).joinToString("|")
+        Log.d(TAG,
+            "[Provider] engine bound:" +
+            " requested=$requested voices=[$sample]" +
+            " count=${voiceNames.size}")
     }
 
     /**
