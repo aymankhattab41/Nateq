@@ -480,9 +480,9 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-• Faster first audio and stream-tail flush when writing stalls without onDone: the chunk threshold dropped to 16KB (≈0.2–0.4s) so speech starts immediately instead of ~1.4s — fixes “slow response” with long English texts, and the small remainder is flushed after the file stops growing for 500ms without waiting for a delayed or missing onDone — fixes the momentary pause when scrolling between messages
-• Detect an intruder engine bound instead of the chosen one (e.g. Google engine on Samsung): verify the actually-bound engine after every init via the engine voice fingerprint, with one rebind attempt then an explicit fallback to prevent speaking through the wrong engine
-• Compact “Set up all languages” dialog: a Language combo, then Engine, then Voice, with the same sliders, instant auto-save on any pick or slider change, and a “No engine” option that keeps the sliders only
+• General speed and volume boosts for every utterance: two new toggles in Speech settings with a multiplier list from 1.0 to 2.5; the speed booster multiplies the final speed of every utterance (announcements and reader) and clamps to the engine safe limit, while the volume booster raises the final volume up to full without distortion
+• Removed the smart engine picker from caller and battery settings and pinned the chosen engine index across all dialogs, and fixed the number preview to respect the numbers category engine instead of the Google engine
+• Fixed the crash of the Set up all languages screen: pitch and rate listeners are now evaluated lazily after the text fields are fully initialized
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
