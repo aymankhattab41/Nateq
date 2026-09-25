@@ -48,7 +48,8 @@ private const val STATE_SECTION_ID = "accordion_section_id"
 internal class SettingsAccordionController(
     private val fragment: Fragment,
     private val settings: SettingsRepository,
-    private val voices: List<NateqVoice>
+    private val voices: List<NateqVoice>,
+    private val engineCatalog: EngineVoicesCatalog
 ) {
 
     private val accordionEntries = mutableListOf<AccordionEntry>()
@@ -607,17 +608,35 @@ internal class SettingsAccordionController(
         return "$prefix: $detail"
     }
 
+    /** حالة قسم الفئات: اسم الصوت الفعلي المحفوظ للفئة الافتراضية — صوتُ
+     *  لورد من قائمة الأصوات، أو صوتُ محركٍ مكتشفٍ بتسميته الكاملة
+     *  (المحرك: الصوت)، أو السقوط الواضح عند غياب الحفظ. */
     private fun buildCategoriesStatus(): String {
         val saved = runCatching {
             settings.getPreferredVoiceIdForCategory(
                 SettingsRepository.VOICE_CATEGORY_DEFAULT
             )
-        }.getOrNull()
-        val name = voices.firstOrNull { it.name == saved }?.displayName
-            ?: voices.firstOrNull()?.displayName
-            ?: fragment.getString(R.string.no_voices_available)
+        }.getOrNull().orEmpty()
+        val label = when {
+            voices.any { it.name == saved } ->
+                voices.first { it.name == saved }.displayName
+            saved.isEmpty() -> voices.firstOrNull()?.displayName
+                ?: fragment.getString(R.string.no_voices_available)
+            else -> engineVoiceLabel(saved)
+        }
         return fragment.getString(R.string.voice_category_default) +
-            ": " + name
+            ": " + label
+    }
+
+    /** تسمية صوتٍ محفوظٍ من محركٍ مكتشف (المحرك: الصوت) عبر لغته في
+     *  الكتالوج، أو الاسم الفعلي الخام كسقوط أخير لما يستعصي بعد (اكتشافٌ
+     *  خلفي لم يكتمل لحظة البناء) — فلا يُعرض اسمٌ عربيٌ منحولٌ أبداً. */
+    private fun engineVoiceLabel(saved: String): String {
+        val language = engineCatalog.languageOfVoice(saved) ?: return saved
+        return engineCatalog.voicesFor(language, null)
+            .firstOrNull { it.name == saved }
+            ?.label
+            ?: saved
     }
 
     private fun buildTimeStatus(): String {

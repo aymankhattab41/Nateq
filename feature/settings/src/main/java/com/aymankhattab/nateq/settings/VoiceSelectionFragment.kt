@@ -349,7 +349,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         accordion = SettingsAccordionController(
             this,
             settings,
-            nateqVoices
+            nateqVoices,
+            engineCatalog
         ).apply {
             setup(view, viewLifecycleOwner)
         }
