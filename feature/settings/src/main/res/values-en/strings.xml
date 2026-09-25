@@ -488,10 +488,8 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-• Redesigned the default-voice screen: a single category spinner shows the selected category controls only (General, Clock, Numbers, Notifications, Emoji speech, Caller announcement) instead of the old five-row list
-• The Save voice changes button at the bottom saves only the currently shown category, and a Keep editing / Discard dialog confirms before leaving a category with unsaved changes
-• The caller announcement panel got an Arabic/English language selector toggling its two voice and engine groups, plus a preview button that uses the chosen language and current values
-• Pure numeric segments are now read with the saved Numbers-category voice in both the reader and announcements instead of the global voice
+• The Clock announcement language is now fully independent from the global numbers speech-language setting: it is resolved from the clock category language, then its voice, then the app language, and the numbers language key stays exclusive to the Numbers category
+• "Incoming call" appends, when needed (Android 12+), a hint that guides granting the call-log permission from Settings to hear the caller number
  </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
