@@ -467,7 +467,7 @@ internal class TimeAnnouncementController(
     }
 
     /** معاينة إعلان الوقت: تسمع صوت/محرك/سرعة/نبرة/مستوى فئة الوقت كما
-     *  تعرضها صفوف الكتالوج (CategoryVoiceAdapter). */
+     *  تعرضها لوحة فئة الوقت في شاشة الصوت الافتراضي. */
     private fun previewTimeSpeech() {
         val category = SettingsRepository.VOICE_CATEGORY_TIME
         val voiceId = runCatching {

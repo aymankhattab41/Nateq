@@ -422,6 +422,11 @@
 <string name="first_run_default_engine">Make Lord TTS the default engine</string>
 <string name="first_run_default_engine_hint">Open the speech settings and choose Lord TTS as the system default engine</string>
 <string name="voice_category_default">Default voice</string>
+<string name="categories_selector_label">Choose a category</string>
+<string name="categories_unsaved_dialog_title">Unsaved changes</string>
+<string name="categories_unsaved_dialog_message">You have unsaved changes to this category. Discard them?</string>
+<string name="categories_unsaved_keep">Keep editing</string>
+<string name="categories_unsaved_discard">Discard</string>
 <string name="voice_category_default_summary">The voice used for general text</string>
 <string name="voice_category_emoji">Emoji speech</string>
 <string name="voice_category_emoji_summary">The voice, speed, pitch and volume for reading emoji names</string>

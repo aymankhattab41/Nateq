@@ -422,6 +422,11 @@
 <string name="first_run_default_engine">تعيين كمحرك افتراضي</string>
 <string name="first_run_default_engine_hint">افتح إعدادات النطق واختر Lord TTS كمحرك النظام الافتراضي</string>
 <string name="voice_category_default">الصوت الافتراضي</string>
+<string name="categories_selector_label">اختر الفئة</string>
+<string name="categories_unsaved_dialog_title">تعديلات غير محفوظة</string>
+<string name="categories_unsaved_dialog_message">تعديلات هذه الفئة لم تُحفظ، هل تريد تجاهلها؟</string>
+<string name="categories_unsaved_keep">إبقاء التعديلات</string>
+<string name="categories_unsaved_discard">تجاهل</string>
 <string name="voice_category_default_summary">الصوت المستخدم للنصوص العامة</string>
 <string name="voice_category_emoji">نطق الإيموجي</string>
 <string name="voice_category_emoji_summary">الصوت والسرعة والنبرة ومستوى الصوت لنطق أسماء الإيموجي</string>

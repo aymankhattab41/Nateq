@@ -80,7 +80,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private val pronunciationDict: PronunciationDictionary
         get() = vm.pronunciationDict
 
-    private lateinit var rvCategories: RecyclerView
+    private lateinit var categoryVoicePanel: CategoryVoicePanelController
     private lateinit var rvPronunciationDict: RecyclerView
 
     /** محركات TTS المثبتة (اكتشاف فقط بلا اختيار عام — لا محرك افتراضي). */
@@ -361,28 +361,30 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             }
         engineSection.setupEngineDiscovery()
 
-        // Categories RecyclerView
-        rvCategories = view.findViewById(R.id.rv_categories)
-        rvCategories.layoutManager = LinearLayoutManager(requireContext())
-        rvCategories.adapter = CategoryVoiceAdapter(
-            requireContext(),
+        // لوحة فئات الأصوات بعد إعادة التصميم: فئة واحدة معروضة في كل
+        // مرة (لغة/محرك/صوت/أشرطة) تختارها من سبnner علوي واحد، أو لوحة
+        // إعلان المتصل — والتعديلات لا تُحفظ إلا بضغط زر الحفظ أسفل
+        // الشاشة (مع تأكيدٍ عند مغادرة فئة بتعديلات غير محفوظة).
+        categoryVoicePanel = CategoryVoicePanelController(
+            this,
             settings,
             engineCatalog,
-            // بند 4.3: معاينةُ الزر تُمرَّر بفئتها فتسمع صوتَ الفئة الفعلي.
-            { category, langTag, text ->
-                speakWithCategory(category, langTag, text)
+            // معاينة المتصل باللغة المختارة (عربي/إنجليزي). الضابط يُنشأ
+            // قبل callerSection فيُحال النداء إليه متى جُهّز.
+            onPreviewCaller = { langTag ->
+                if (::callerSection.isInitialized) {
+                    callerSection.previewCaller(langTag)
+                }
             }
-        )
-        rvCategories.isNestedScrollingEnabled = false
+        ).apply { setup(view) }
 
-        // زر الحفظ الصريح لقائمة فئات الأصوات: يكتب اللغة والمحرك والصوت
-        // والأشرطة لكل صف مرتبط دفعةً واحدة (يثبّت الصوت الافتراضي بلا
-        // اعتمادٍ على الاستدلال اللغوي عند إعادة فتح الشاشة).
+        // زر الحفظ الصريح: يكتب الفئة المعروضة فقط (لا كل الفئات دفعة),
+        // فيستقر الصوت المحفوظ بلا اعتماد على الاستدلال اللغوي.
         val btnSaveCategories:
             com.google.android.material.button.MaterialButton =
             view.findViewById(R.id.btn_save_categories)
         btnSaveCategories.setOnClickListener {
-            (rvCategories.adapter as? CategoryVoiceAdapter)?.saveAll()
+            categoryVoicePanel.saveCurrent()
             view.announceCompat(getString(R.string.categories_saved))
             accordion.updateSectionStatuses()
         }
@@ -606,8 +608,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 }
             )
             if (!isAdded) return@launch
-            (rvCategories.adapter as? CategoryVoiceAdapter)
-                ?.refreshLanguages()
+            categoryVoicePanel.refreshLanguages()
             smsSection.refreshSmsVoices()
             batterySection.refreshBatteryVoices()
             callerSection.refreshCallerVoices()
@@ -657,9 +658,6 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
     override fun onDestroyView() {
         // تفريغ مساند القوائم لمنع تسريب المراجع والواجهات
-        if (::rvCategories.isInitialized) {
-            rvCategories.adapter = null
-        }
         if (::rvPronunciationDict.isInitialized) {
             rvPronunciationDict.adapter = null
         }
@@ -693,6 +691,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         open.forEach { runCatching { it.dismiss() } }
         // تصفير مراجع العرض في كل الضوابط (بند 4.1) وحتى لا تبقى شجرة العرض
         // القديمة محتجزة عبر أي ضابط بعد تدوير الشاشة أو مغادرتها.
+        if (::categoryVoicePanel.isInitialized) categoryVoicePanel.cleanup()
         if (::engineSection.isInitialized) engineSection.cleanup()
         if (::timeSection.isInitialized) timeSection.cleanup()
         if (::batterySection.isInitialized) batterySection.cleanup()
@@ -2085,7 +2084,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         deviceHealthSection.setup(v)
         textReadingSection.setup(v)
         instantSilenceSection.setup(v)
-        rvCategories.adapter?.notifyDataSetChanged()
+        categoryVoicePanel.reloadCurrent()
         refreshDictAdapter()
         engineSection.setupAutoConvertUI(v)
         accordion.updateSectionStatuses()

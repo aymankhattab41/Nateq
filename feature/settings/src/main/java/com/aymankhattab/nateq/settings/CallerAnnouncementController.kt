@@ -23,6 +23,7 @@ import com.aymankhattab.nateq.util.setSeekStateDescription
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.util.LanguageCode
 
 /** ضابط قسم «إعلان اسم المتصل»: التفعيل بالأذونات، التكرار، السرعة،
  *  القالب والأصوات. */
@@ -468,9 +469,6 @@ internal class CallerAnnouncementController(
         // استرداد ذكي: إذا كانت ميزة المتصّل مفعّلة لكن أذوناتها سُحبت (سحب
         // النظام التلقائي للأذونات غير المستخدمة، خصوصاً على أندرويد 11+)
         // نكتشف ذلك فور فتح الإعدادات ونعرض إعادة المنح بدل تركه صامتاً.
-        // بند الأوامر 4: معاينة إعلان المتصل بالقيم المعروضة حالياً.
-        view.findViewById<View>(R.id.btnPreviewCaller)
-            ?.setOnClickListener { previewCaller() }
         checkRevokedPermissionsAndRecover()
     }
 
@@ -521,23 +519,35 @@ internal class CallerAnnouncementController(
         }
     }
 
-    /** معاينة «متصل من أحمد» بصوت المتصل العربي/محركه وتقدم الشرائط
-     *  الحالية (لا القيم المحفوظة القديمة). */
-    private fun previewCaller() {
+    /** معاينة «متصل من أحمد» باللغة المختارة (عربي/إنجليزي) بصوت ومحرك
+     *  تلك اللغة وتقدم الشرائط الحالية (لا القيم المحفوظة القديمة) —
+     *  تُنادَى من لوحة «إعلان المتصل» في شاشة الصوت الافتراضي. */
+    fun previewCaller(languageTag: String) {
+        val isArabic = !LanguageCode.isEnglish(languageTag)
+        val engineIdx = if (isArabic) {
+            spinnerCallerEngineAr?.selectedItemPosition
+        } else {
+            spinnerCallerEngineEn?.selectedItemPosition
+        } ?: 0
         val enginePkg = callerEngineOptions
-            .getOrNull(
-                spinnerCallerEngineAr?.selectedItemPosition ?: 0
-            )
-            ?.packageName
+            .getOrNull(engineIdx)?.packageName
+        val voices = if (isArabic) {
+            callerVoiceOptionsAr
+        } else {
+            callerVoiceOptionsEn
+        }
+        val voiceSpinner = if (isArabic) {
+            spinnerCallerVoiceAr
+        } else {
+            spinnerCallerVoiceEn
+        }
         val sample = fragment.getString(R.string.sample_text_caller_preview)
         fragment.previewSpeech(
             buildPreviewParamsFrom(
-                voiceName = callerVoiceOptionsAr
-                    .getOrNull(
-                        spinnerCallerVoiceAr?.selectedItemPosition ?: 0
-                    )
-                    ?.name.orEmpty(),
-                languageTag = "ar",
+                voiceName = voices.getOrNull(
+                    voiceSpinner?.selectedItemPosition ?: 0
+                )?.name.orEmpty(),
+                languageTag = if (isArabic) "ar" else "en",
                 enginePkg = enginePkg,
                 rateProgress = seekCallerRate?.progress ?: 100,
                 pitchProgress = seekCallerPitch?.progress ?: 100,

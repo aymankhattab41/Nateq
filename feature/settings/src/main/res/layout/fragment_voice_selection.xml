@@ -1360,106 +1360,171 @@
             android:orientation="vertical"
             android:visibility="gone">
 
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/rv_categories"
+            <!-- بند إعادة التصميم: سبnner فئة علوي واحد يعرض تحكّمات الفئة
+                 المختارة فقط (النصوص العامة/الساعة/الأرقام/الإشعارات/
+                 الإيموجي/إعلان المتصل) -->
+            <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:nestedScrollingEnabled="false"
-                android:minHeight="@dimen/categories_list_min_height" />
+                android:text="@string/categories_selector_label"
+                android:textAppearance="?attr/textAppearanceBody2" />
 
+            <!-- بلا android:id (منشئ الـ binding في حدود 255 معاملاً) —
+                 يُسترجَع عبر android:tag بدل findViewById -->
+            <androidx.appcompat.widget.AppCompatSpinner
+                android:tag="spinner_category_selector"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:contentDescription="@string/categories_selector_label" />
+
+            <!-- لوحة التحكّم للفئة الواحدة: تُضخ فيها (item_category_voice)
+                 برمجياً لإعادة استخدام أدواتها دون تكرار في التخطيط -->
+            <LinearLayout
+                android:tag="ll_category_panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginTop="8dp" />
+
+            <!-- لوحة إعلان المتصل: تظهر عند اختيار «إعلان المتصل» من السبnner -->
+            <LinearLayout
+                android:tag="ll_caller_default_voice_panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:importantForAccessibility="yes"
+                    android:text="@string/caller_voice_section_title"
+                    android:textAppearance="?attr/textAppearanceHeadline6" />
+
+                <!-- لغة نطق أسماء المتصلين: العربية أو الإنجليزية -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/voice_language_label"
+                    android:textAppearance="?attr/textAppearanceBody2" />
+
+                <!-- بلا android:id (حد الـ binding 255 معاملاً) — android:tag -->
+                <androidx.appcompat.widget.AppCompatSpinner
+                    android:tag="spinner_caller_default_lang"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:contentDescription="@string/voice_language_label" />
+
+                <!-- مجموعة صوت نطق الأسماء العربية -->
+                <LinearLayout
+                    android:tag="ll_caller_voice_ar_group"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <!-- صوت نطق الأسماء العربية -->
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:hint="@string/caller_announcement_voice_ar">
+                        <androidx.appcompat.widget.AppCompatSpinner
+                            android:id="@+id/spinner_caller_voice_ar"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:contentDescription="@string/caller_announcement_voice_ar"
+                            android:minHeight="48dp" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <!-- محرك نطق الأسماء العربية (يحدد أصواتها المتاحة) -->
+                    <TextView
+                        android:id="@+id/tv_caller_engine_ar_label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:labelFor="@id/spinner_caller_engine_ar"
+                        android:text="@string/caller_engine_ar_label"
+                        android:textAppearance="?attr/textAppearanceBody2" />
+
+                    <androidx.appcompat.widget.AppCompatSpinner
+                        android:id="@+id/spinner_caller_engine_ar"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:contentDescription="@string/caller_engine_ar_label"
+                        android:minHeight="48dp" />
+                </LinearLayout>
+
+                <!-- مجموعة صوت نطق الأسماء الإنجليزية -->
+                <LinearLayout
+                    android:tag="ll_caller_voice_en_group"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <!-- صوت نطق الأسماء الإنجليزية -->
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:hint="@string/caller_announcement_voice_en">
+                        <androidx.appcompat.widget.AppCompatSpinner
+                            android:id="@+id/spinner_caller_voice_en"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:contentDescription="@string/caller_announcement_voice_en"
+                            android:minHeight="48dp" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <!-- محرك نطق الأسماء الإنجليزية (يحدد أصواتها المتاحة) -->
+                    <TextView
+                        android:id="@+id/tv_caller_engine_en_label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:labelFor="@id/spinner_caller_engine_en"
+                        android:text="@string/caller_engine_en_label"
+                        android:textAppearance="?attr/textAppearanceBody2" />
+
+                    <androidx.appcompat.widget.AppCompatSpinner
+                        android:id="@+id/spinner_caller_engine_en"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:contentDescription="@string/caller_engine_en_label"
+                        android:minHeight="48dp" />
+                </LinearLayout>
+
+                <!-- معاينة إعلان المتصل باللغة المختارة والقيم المعروضة -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnPreviewCaller"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:minHeight="48dp"
+                    android:importantForAccessibility="yes"
+                    android:text="@string/preview_caller_button" />
+            </LinearLayout>
+
+            <!-- زر الحفظ الصريح الثابت أسفل الشاشة: يكتب الفئة المعروضة
+                 حالياً فقط -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_save_categories"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="16dp"
                 android:minHeight="48dp"
                 android:text="@string/categories_save_button"
                 android:importantForAccessibility="yes" />
 
-            <!-- صوت إعلان المتصل: نطق أسماء المتصلين العربي/الإنجليزي -->
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:importantForAccessibility="yes"
-                android:text="@string/caller_voice_section_title"
-                android:textAppearance="?attr/textAppearanceHeadline6" />
+        </LinearLayout>
 
-            <!-- صوت نطق الأسماء العربية -->
-            <com.google.android.material.textfield.TextInputLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:hint="@string/caller_announcement_voice_ar">
-                <androidx.appcompat.widget.AppCompatSpinner
-                    android:id="@+id/spinner_caller_voice_ar"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:contentDescription="@string/caller_announcement_voice_ar"
-                    android:minHeight="48dp" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <!-- محرك نطق الأسماء العربية (يحدد أصواتها المتاحة) -->
-            <TextView
-                android:id="@+id/tv_caller_engine_ar_label"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:labelFor="@id/spinner_caller_engine_ar"
-                android:text="@string/caller_engine_ar_label"
-                android:textAppearance="?attr/textAppearanceBody2" />
-
-            <androidx.appcompat.widget.AppCompatSpinner
-                android:id="@+id/spinner_caller_engine_ar"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:contentDescription="@string/caller_engine_ar_label"
-                android:minHeight="48dp" />
-
-            <!-- صوت نطق الأسماء الإنجليزية -->
-            <com.google.android.material.textfield.TextInputLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:hint="@string/caller_announcement_voice_en">
-                <androidx.appcompat.widget.AppCompatSpinner
-                    android:id="@+id/spinner_caller_voice_en"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:contentDescription="@string/caller_announcement_voice_en"
-                    android:minHeight="48dp" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <!-- محرك نطق الأسماء الإنجليزية (يحدد أصواتها المتاحة) -->
-            <TextView
-                android:id="@+id/tv_caller_engine_en_label"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:labelFor="@id/spinner_caller_engine_en"
-                android:text="@string/caller_engine_en_label"
-                android:textAppearance="?attr/textAppearanceBody2" />
-
-            <androidx.appcompat.widget.AppCompatSpinner
-                android:id="@+id/spinner_caller_engine_en"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:contentDescription="@string/caller_engine_en_label"
-                android:minHeight="48dp" />
-
-            <!-- بند الأوامر 4: معاينة إعلان المتصل بالقيم المعروضة -->
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnPreviewCaller"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:minHeight="48dp"
-                android:importantForAccessibility="yes"
-                android:text="@string/preview_caller_button" />
-
-        </LinearLayout>        <View
+        <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginTop="16dp"
