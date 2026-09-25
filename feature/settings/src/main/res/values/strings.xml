@@ -82,6 +82,7 @@
 <string name="caller_announcement_template_placeholder" formatted="false">استخدم {name} لاسم المتصل — اتركه فارغاً للنطق الافتراضي</string>
 <string name="caller_announcement_voice_ar">صوت نطق الأسماء العربية</string>
 <string name="caller_announcement_voice_en">صوت نطق الأسماء الإنجليزية</string>
+<string name="caller_voice_section_title">صوت إعلان المتصل</string>
 <string name="caller_announcement_volume">مستوى صوت المتصل</string>
 <string name="caller_custom_names">أسماء متصلين مخصصة</string>
 <string name="caller_names_add">إضافة</string>

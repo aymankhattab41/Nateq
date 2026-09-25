@@ -82,6 +82,7 @@
 <string name="caller_announcement_template_placeholder" formatted="false">Use {name} for the caller\'s name — leave empty for the default phrase</string>
 <string name="caller_announcement_voice_ar">Arabic names speech voice</string>
 <string name="caller_announcement_voice_en">English names speech voice</string>
+<string name="caller_voice_section_title">Caller announcement voice</string>
 <string name="caller_announcement_volume">Caller speech volume</string>
 <string name="caller_custom_names">Custom caller names</string>
 <string name="caller_names_add">Add</string>
