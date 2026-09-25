@@ -488,25 +488,10 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-• WhatsApp &quot;~&quot; markers attached to an unsaved-contact number are now spoken as &quot;may be&quot; followed by the number digit by digit — no translation and no silent drop
-• A literal &quot;may be&quot; phrase in any text passes through the whole pipeline unchanged, never translated or removed
-• New &quot;Announce caller name during a call&quot; checkbox: a waiting call arriving during an active call is announced once when enabled; it is off by default and never routes to the loudspeaker
-• Caller-announcement voice/engine chooser (Arabic/English) and its preview button moved into the default-voice card inside &quot;Engines &amp; Voices&quot;, keeping saved settings intact
-• Clock and number announcements now honor the language and voice saved for their own category, including discovered engine voices (Google, Samsung...), instead of falling back to the global key
-• Collapsed repeated adjacent emoji into a single speech prefixed with the count (&quot;three faces with tears of joy&quot;) instead of repeating the name 5-6 times
-• The category status line in &quot;Engines &amp; Voices&quot; now shows the actual saved voice name (Lord or &quot;engine: voice&quot;) instead of falling back to an Arabic one
-• Removed the annoying &quot;speech failed with selected engine&quot; and &quot;no speech engine for this language&quot; messages — they are now logged silently with no spoken text or toast
-• Global speed and pitch multipliers for all speech (1.0x-2.5x) plus fixed number preview
-• Fixed the &quot;Set all languages&quot; crash when configuring many languages at once (lazy, safe listener evaluation)
-• Faster first utterance and full tail draining even when typing freezes
-• Detect an intrusive engine binding on Samsung devices working instead of the chosen one
-• Simplified &quot;Set all languages&quot; into a single combined dialog: language, engine and voice with instant auto-save, plus a &quot;no engine&quot; option
-• Fixed English clock speech: &quot;1 minute to&quot; (no wrong plural at :59) and &quot;midnight&quot; instead of &quot;zero o'clock&quot; in 24-hour mode
-• Ensured the engine and voice are applied to every announcement by favoring the country voice and handling a missing category engine
-• Dedicated engines for announcing caller names in Arabic and English, deciding the language from the name itself
-• Fixed the pronunciation of zero as &quot;صِفْرْ&quot; with correct diacritics across all converter paths
-• Explicit save buttons in &quot;Engines &amp; Voices&quot; with a fix for the selected voice bouncing back to Arabic
-• Removed the &quot;OEM guidance&quot; shortcut from the caller announcement section
+• Redesigned the default-voice screen: a single category spinner shows the selected category controls only (General, Clock, Numbers, Notifications, Emoji speech, Caller announcement) instead of the old five-row list
+• The Save voice changes button at the bottom saves only the currently shown category, and a Keep editing / Discard dialog confirms before leaving a category with unsaved changes
+• The caller announcement panel got an Arabic/English language selector toggling its two voice and engine groups, plus a preview button that uses the chosen language and current values
+• Pure numeric segments are now read with the saved Numbers-category voice in both the reader and announcements instead of the global voice
  </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
