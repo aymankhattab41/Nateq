@@ -400,27 +400,17 @@ class TimeAnnouncementManager(
         activeAnnounceJob?.cancel()
         activeAnnounceJob = announceScope.launch {
             try {
-                // ترتيب تحديد لغة نطق الساعة: مفتاح النطق EN/AR ثم
-                // لغة فئة الساعة المحفوظة ثم لغة الصوت المحفوظ (يشمل
-                // أصوات المحركات المكتشفة مثل com.google.android.tts:
-                // eng-usa) ثم لغة التطبيق — عبر القارئ الموحّد.
-                val forced = runCatching {
-                    settings.getAnnouncementSpeechLanguage()
-                }.getOrNull()
-                val categoryLang = runCatching {
-                    settings.getLanguageForCategory(
-                        SettingsRepository.VOICE_CATEGORY_TIME
-                    )
-                }.getOrNull()
-                val pref = settings.getPreferredVoiceIdForCategory(
+                // ترتيب تحديد لغة نطق الساعة: لغة فئة الساعة المحفوظة ثم
+                // لغة الصوت المحفوظ (يشمل أصوات المحركات المكتشفة مثل
+                // com.google.android.tts: eng-usa) ثم لغة التطبيق — عبر
+                // القارئ الموحّد. **بلا مفتاح اللغة النطق العام إطلاقاً
+                // (forced=null)**: ذلك المفتاح ملك فئة الأرقام حصراً (بُني
+                // لها في الجولة 11) ولا يصح أن يفرض لغةً على فئة الساعة
+                // فتفسد استقلاليتها عن إعدادات نطق الأرقام.
+                val timePref = settings.getPreferredVoiceIdForCategory(
                     SettingsRepository.VOICE_CATEGORY_TIME
                 )
-                val languageTag = AnnouncementLanguageResolver.resolve(
-                    forced = forced,
-                    categoryLang = categoryLang,
-                    savedVoiceId = pref,
-                    appLanguage = effectiveAppLanguage()
-                )
+                val languageTag = resolveTimeSpeechLanguage()
                 val isEnglish = languageTag == ENGLISH_LANGUAGE_TAG
                 val locale = Locale.forLanguageTag(languageTag)
 
@@ -441,7 +431,7 @@ class TimeAnnouncementManager(
                 // إعادة ضبط صوت فئة الوقت قبل النطق (بند [2]): الصوت كان
                 // يعلق على آخر فئةٍ نطقت (متصل/إشعار/رسالة) فيُقرأ الوقت
                 // بالصوت الخطأ — نفس نمط المتصل/الرسائل.
-                speaker.resetVoice(pref)
+                speaker.resetVoice(timePref)
                 speaker.speak(
                     timeText, locale, speechRate, pitch, volume,
                     engineOverride = settings.getEngineForCategory(
@@ -759,10 +749,39 @@ class TimeAnnouncementManager(
         )
     }
 
-    /** لغة نطق الأرقام: مفتاح النطق EN/AR إن حُدِّد، وإلا لغة فئة
-     *  «الأرقام» المحفوظة وإلا لغة الصوت المحفوظ (يشمل أصوات المحركات
-     *  المكتشفة) وإلا لغة التطبيق الفعلية — عبر القارئ الموحّد. */
-    private fun effectiveNumberSpeechIsEnglish(): Boolean {
+    /** لغة نطق الوقت: لغة فئة الساعة المحفوظة ثم لغة الصوت المحفوظ ثم لغة
+     *  التطبيق الفعلية — عبر القارئ الموحّد. **لا يمرّر مفتاح اللغة العام
+     *  (announcement_speech_language) إطلاقاً** لأن ذلك المفتاح ملك فئة
+     *  الأرقام حصراً؛ إلزاماً باستقلال فئة الساعة عن إعدادات نطق الأرقام
+     *  (انتهاك التصميم — الجولة 11 — الذي كان يجعل لغة الأرقام تحكم الساعة). */
+    internal fun resolveTimeSpeechLanguage(): String {
+        val categoryLang = runCatching {
+            settings.getLanguageForCategory(
+                SettingsRepository.VOICE_CATEGORY_TIME
+            )
+        }.getOrNull()
+        val timePref = settings.getPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_TIME
+        )
+        return AnnouncementLanguageResolver.resolve(
+            forced = null,
+            categoryLang = categoryLang,
+            savedVoiceId = timePref,
+            appLanguage = effectiveAppLanguage()
+        )
+    }
+
+    /** لغة نطق الأرقام: مفتاح النطق EN/AR إن حُدِّد (هو المصدر الشرعي
+     *  الوحيد لتمرير [AnnouncementLanguageResolver.resolve] لهذا المفتاح)،
+     *  وإلا لغة فئة «الأرقام» المحفوظة وإلا لغة الصوت المحفوظ (يشمل أصوات
+     *  المحركات المكتشفة) وإلا لغة التطبيق الفعلية — عبر القارئ الموحّد. */
+    private fun effectiveNumberSpeechIsEnglish(): Boolean =
+        resolveNumberSpeechLanguage() == ENGLISH_LANGUAGE_TAG
+
+    /** لغة فئة الأرقام — يمرّر مفتاح النطق العام [forced] لأنه المصدر
+     *  الشرعي الوحيد لهذا المفتاح (بُني للفئة في الجولة 11)، بخلاف
+     *  [resolveTimeSpeechLanguage] الذي يمرّره null إلزاماً. */
+    internal fun resolveNumberSpeechLanguage(): String {
         val forced = runCatching {
             settings.getAnnouncementSpeechLanguage()
         }.getOrNull()
@@ -779,6 +798,6 @@ class TimeAnnouncementManager(
             categoryLang = categoryLang,
             savedVoiceId = numPref,
             appLanguage = effectiveAppLanguage()
-        ) == ENGLISH_LANGUAGE_TAG
+        )
     }
 }
