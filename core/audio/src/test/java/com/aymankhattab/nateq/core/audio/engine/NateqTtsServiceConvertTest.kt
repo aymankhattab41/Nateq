@@ -101,4 +101,97 @@ class NateqTtsServiceConvertTest {
         assertNull(target.convertVoiceName)
         assertEquals(1.3f, target.convertRate, 0.01f)
     }
+
+    @Test
+    fun numbersSegment_withSavedCategoryVoice_forcesNumbersVoice() {
+        val service = createService { repo ->
+            repo.setPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS,
+                "male-numbers"
+            )
+            repo.setEngineForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS,
+                "com.numbers.eng"
+            )
+            repo.setSpeechRateForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS, 1.4f
+            )
+            repo.setPitchForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS, 0.8f
+            )
+            repo.setVolumeForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS, 0.7f
+            )
+            repo.setAutoConvertEnabled(false)
+        }
+        val target = service.numbersCategoryTarget(Segment("1500", "en"))
+        assertNotNull(target)
+        assertEquals("male-numbers", target!!.convertVoiceName)
+        assertEquals("com.numbers.eng", target.convertEngine)
+        assertEquals("en", target.convertLocale?.language)
+        assertEquals(1.4f, target.convertRate, 0.01f)
+        assertEquals(0.8f, target.convertPitch, 0.01f)
+        assertEquals(0.7f, target.convertVolume, 0.01f)
+    }
+
+    @Test
+    fun numbersCategoryVoice_beatsGeneralLanguageVoice() {
+        val service = createService { repo ->
+            repo.setPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS,
+                "male-numbers"
+            )
+            repo.setEnginePreferenceForLanguage(
+                "en", "com.en.eng", "female-general",
+                1.2f, 1.0f, 1.0f
+            )
+            repo.setAutoConvertEnabled(false)
+        }
+        val target = service.numbersCategoryTarget(
+            Segment("1500", "en")
+        )
+        assertNotNull("صوت فئة الأرقام يغلب الصوت العام للغة", target)
+        assertEquals("male-numbers", target!!.convertVoiceName)
+    }
+
+    @Test
+    fun numbersSegment_withoutCategoryVoice_returnsNull() {
+        val service = createService { repo ->
+            repo.setAutoConvertEnabled(true)
+        }
+        assertNull(service.numbersCategoryTarget(Segment("1500", "en")))
+    }
+
+    @Test
+    fun nonNumericSegment_neverForcesNumbersVoice() {
+        val service = createService { repo ->
+            repo.setPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS,
+                "male-numbers"
+            )
+        }
+        assertNull(service.numbersCategoryTarget(
+            Segment("الرصيد 1500", "ar")
+        ))
+        assertNull(service.numbersCategoryTarget(
+            Segment("balance 1500", "en")
+        ))
+    }
+
+    @Test
+    fun numericSegment_toleratesNeutralsButNotLetters() {
+        val service = createService { repo ->
+            repo.setPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS,
+                "male-numbers"
+            )
+        }
+        assertNotNull(service.numbersCategoryTarget(Segment("1500", "en")))
+        assertNotNull(service.numbersCategoryTarget(Segment(" 1500 ", "en")))
+        assertNotNull(service.numbersCategoryTarget(Segment("(1500)", "en")))
+        assertNotNull(service.numbersCategoryTarget(Segment("1500.", "en")))
+        assertNull(service.numbersCategoryTarget(Segment("abc", "en")))
+        assertNull(service.numbersCategoryTarget(Segment("1a2", "en")))
+        assertNull(service.numbersCategoryTarget(Segment("", "en")))
+    }
 }

@@ -7,9 +7,11 @@ import android.media.AudioManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
 import androidx.test.core.app.ApplicationProvider
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -461,6 +463,89 @@ class AnnouncementSpeakerTest {
         )
         speaker.shutdown()
     }
+
+    @Test
+    fun `numbers category voice and bars apply to pure numeric unit only`() {
+        // فئة الأرقام: صوتٌ مخصص (ذكوري) مختلف عن الصوت العام — يُلزم الرقم
+        // البحت في النص المختلط لا يُلامس المقطع العربي المجاور (المسار
+        // الموازي المطلوب للإعلانات بنفس استعلامات TimeAnnouncementManager).
+        val repo = SettingsRepository.create(context)
+        repo.setNumberReadingLanguage("en")
+        repo.setPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS, "male-numbers"
+        )
+        repo.setSpeechRateForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS, 1.4f
+        )
+        repo.setPitchForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS, 0.8f
+        )
+        repo.setVolumeForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS, 0.7f
+        )
+        val speaker = AnnouncementSpeaker(context)
+        val built = buildUnitsFor(speaker, "الرصيد 1500")
+        assertEquals("مقطع عربي + مقطع رقمي إنجليزي", 2, built.size)
+        val arabicUnit = built[0]
+        assertNotEquals(
+            "المقطع العربي يبقى على الصوت العام",
+            "male-numbers", unitField(arabicUnit, "voiceId")
+        )
+        assertEquals(1.0f, unitField(arabicUnit, "rate") as Float, 0.01f)
+        val numberUnit = built[1]
+        assertEquals("male-numbers", unitField(numberUnit, "voiceId"))
+        assertEquals(1.4f, unitField(numberUnit, "rate") as Float, 0.01f)
+        assertEquals(0.8f, unitField(numberUnit, "pitch") as Float, 0.01f)
+        assertEquals(0.7f, unitField(numberUnit, "volume") as Float, 0.01f)
+        speaker.shutdown()
+    }
+
+    @Test
+    fun `numeric unit falls back to general rates when category unset`() {
+        // بلا صوتٍ محفوظ لفئة الأرقام: يبقى سلوك الوحدة الرقمية كما كان
+        // (صوت اللغة العام وأشرطة الإعلان 1.0) — لا كسر للتجربة الافتراضية.
+        val repo = SettingsRepository.create(context)
+        repo.setNumberReadingLanguage("en")
+        val speaker = AnnouncementSpeaker(context)
+        val built = buildUnitsFor(speaker, "الرصيد 1500")
+        val numberUnit = built[1]
+        assertNull(
+            "بلا صوت فئة لا يُلزم الرقم صوتاً خاصاً",
+            unitField(numberUnit, "voiceId")
+        )
+        assertEquals(1.0f, unitField(numberUnit, "rate") as Float, 0.01f)
+        assertEquals(1.0f, unitField(numberUnit, "volume") as Float, 0.01f)
+        speaker.shutdown()
+    }
+
+    /** يبني وحدات النطق لنصٍ ما عبر [buildSpeakUnits] (بلا محرك TTS حقيقي). */
+    private fun buildUnitsFor(
+        speaker: AnnouncementSpeaker, text: String
+    ): List<*> {
+        val build = AnnouncementSpeaker::class.java
+            .getDeclaredMethod(
+                "buildSpeakUnits",
+                String::class.java, Locale::class.java,
+                Float::class.javaPrimitiveType,
+                Float::class.javaPrimitiveType,
+                Float::class.javaPrimitiveType,
+                EmojiSpeechConfig::class.java,
+                List::class.java
+            )
+        build.isAccessible = true
+        return build.invoke(
+            speaker,
+            text, Locale.forLanguageTag("ar"),
+            1.0f, 1.0f, 1.0f,
+            null, null
+        ) as List<*>
+    }
+
+    /** قراءة حقل من وحدة نطق عبر الانعكاس (بلا محرك في الاختبار). */
+    private fun unitField(unit: Any?, name: String): Any? =
+        requireNotNull(unit).javaClass.getDeclaredField(name)
+            .also { it.isAccessible = true }
+            .get(unit)
 
     @Test
     fun `unsupported setLanguage logs a warning and is not silently assumed`() {

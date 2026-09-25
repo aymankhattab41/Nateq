@@ -767,7 +767,11 @@ override fun onDestroy() {
             return
         }
         val autoConvert = requestHandler.isAutoConvertEnabled()
-        val convertTarget = resolveConvertTarget(languageTag)
+        // الرقم البحت (نصُّ الطلب كامله مقطعٌ واحد) مع صوتٍ محفوظ لفئة
+        // الأرقام يُحسم به لا بالصوت العام للغة (المسار الموازي المطلوب).
+        val convertTarget =
+            numbersCategoryTarget(Segment(rawText, languageTag))
+                ?: resolveConvertTarget(languageTag)
         // **سرعة النطق — نموذج الضرب (readerRate أساس، وLORD معامل):**
         // كان النموذج القديم استبدالاً (إما سرعة LORD أو نسبة القارئ)، وكان
         // float القارئ يُمرَّر حرفياً إلى TextToSpeech.setSpeechRate الذي
@@ -953,7 +957,10 @@ override fun onDestroy() {
         val segRate = requestHandler.getSpeechRate(segTag)
         val segPitch = requestHandler.getPitch(segTag)
         val segVolume = requestHandler.getVolume(segTag)
-        val convert = resolveConvertTarget(segTag)
+        // الرقم البحت مع صوتٍ محفوظ لفئة الأرقام يُحسم به لا بالصوت العام
+        // للغة (المسار الموازي المطلوب) وإلا يبقى سلوك التحويل المعتاد.
+        val convert = numbersCategoryTarget(segment)
+            ?: resolveConvertTarget(segTag)
         val segLang = segTag.takeWhile { it.isLetter() }
         val convertLang = convert?.convertLocale?.language
         val matches = convertLang == null || segLang == convertLang
@@ -1370,6 +1377,58 @@ override fun onDestroy() {
                 Log.w(TAG, "تحديث اللغات الخلفي فشل", t)
             }
         }
+    }
+
+    /** هدف التحويل لفئة الأرقام للمقطع الرقمي البحت — المسار الموازي
+     *  المطلوب أن يُستدعى بدل [resolveConvertTarget] حصراً للمقاطع الرقمية
+     *  البحتة: إن حفظ المستخدم صوتاً مخصصاً لفئة الأرقام
+     *  ([SettingsRepository.VOICE_CATEGORY_NUMBERS]) يُلزَم الرقمُ البحت
+     *  بصوتِ الفئة ومحركِها وأشرطتها — متجاوزاً الصوت العام للغة — بنفس
+     *  منطق الاستعلامات في [TimeAnnouncementManager] (سرعة/نبرة/مستوى ثم
+     *  الصوت ثم المحرك). بلا صوتٍ محفوظ للفئة → null فتبقى
+     *  حلول [resolveConvertTarget] للغة كما كانت (لا كسر للتجربة
+     *  الافتراضية). لا يتقيد بـ checkbox التحويل التلقائي لأن فئة الأرقام
+     *  صوتٌ صريحٌ يُنطق به في الإعلانات على أي حال. */
+    internal fun numbersCategoryTarget(segment: Segment): ConvertTarget? {
+        if (!segment.isNumericOnly()) return null
+        val voiceId = runCatching {
+            settings.getPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+        }.getOrNull() ?: return null
+        val engine = runCatching {
+            settings.getEngineForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+        }.getOrNull()
+        val rate = runCatching {
+            settings.getSpeechRateForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+        }.getOrDefault(1.0f)
+        val pitch = runCatching {
+            settings.getPitchForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+        }.getOrDefault(1.0f)
+        val volume = runCatching {
+            settings.getVolumeForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+        }.getOrDefault(1.0f)
+        val locale = if (segment.languageTag.isNullOrEmpty()) {
+            null
+        } else {
+            Locale.forLanguageTag(segment.languageTag)
+        }
+        return ConvertTarget(
+            convertEngine = engine,
+            convertLocale = locale,
+            convertRate = rate,
+            convertPitch = pitch,
+            convertVolume = volume,
+            convertVoiceName = voiceId
+        )
     }
 
     /**

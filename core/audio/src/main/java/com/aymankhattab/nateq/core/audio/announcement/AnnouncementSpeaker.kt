@@ -14,6 +14,7 @@ import androidx.annotation.VisibleForTesting
 import com.aymankhattab.nateq.engine.EmojiSpeech
 import com.aymankhattab.nateq.core.audio.engine.LanguageSegmenter
 import com.aymankhattab.nateq.core.audio.engine.Segment
+import com.aymankhattab.nateq.core.audio.engine.isNumericOnly
 import com.aymankhattab.nateq.engine.SpeechPart
 import com.aymankhattab.nateq.engine.TextProcessor
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
@@ -36,6 +37,16 @@ import java.util.concurrent.atomic.AtomicLong
 internal data class EmojiSpeechConfig(
     val voiceId: String?,
     val arabic: Boolean,
+    val rate: Float,
+    val pitch: Float,
+    val volume: Float
+)
+
+/** إعدادات نطق فئة الأرقام للمقاطع الرقمية البحتة داخل الإعلانات —
+ *  تُقرأ من الإعدادات مرة واحدة وتُطبق على الرقم فقط (نفس استعلامات فئة
+ *  الأرقام في [TimeAnnouncementManager]). */
+internal data class NumbersCategorySpeech(
+    val voiceId: String,
     val rate: Float,
     val pitch: Float,
     val volume: Float
@@ -1142,7 +1153,12 @@ class AnnouncementSpeaker(
             } else {
                 Locale.forLanguageTag(LanguageCode.EN.tag)
             }
-            val segmentVoice = if (arabic) voiceId else enVoice
+            // الرقم البحت (بلا حروف) يُنطق بصوتِ فئة الأرقام المحفوظ
+            // وأشرطتها لا بالصوت العام — بلا تخصيصٍ للفئة يبقى السلوك
+            // الحالي (المسار الموازي المطلوب لنطق الأرقام بالإعلانات).
+            val numbersSpeech = numbersCategoryFor(segment)
+            val segmentVoice = numbersSpeech?.voiceId
+                ?: if (arabic) voiceId else enVoice
             // بند الأوامر 1: معالجة نص المقطع عبر TextProcessor بلغته (أرقام،
             // أوقات، عملات، روابط...) قبل إرساله للمحرك — موحّداً مع القارئ.
             // أي خطأ في المعالجة (قاموس مفقود...) يُسقط النص الخام لا الصمت.
@@ -1153,11 +1169,44 @@ class AnnouncementSpeaker(
             }.getOrDefault(segment.text)
             out.add(
                 SpeakUnit(
-                    readyText, segmentLocale, baseRate,
-                    basePitch, baseVolume, segmentVoice
+                    readyText, segmentLocale,
+                    numbersSpeech?.rate ?: baseRate,
+                    numbersSpeech?.pitch ?: basePitch,
+                    numbersSpeech?.volume ?: baseVolume,
+                    segmentVoice
                 )
             )
         }
+    }
+
+    /** إعداد نطق فئة الأرقام للمقطع الرقمي البحت — صوتُ الفئة المحفوظ
+     *  وأشرطتها (يُطبَّق الصوت عبر [doSpeak]/voiceFor عند البث)؛ أو null
+     *  ليُسلك صوت اللغة العام للوحدة. استعلامات مطابقة لفئة الأرقام في
+     *  [TimeAnnouncementManager]. */
+    private fun numbersCategoryFor(segment: Segment): NumbersCategorySpeech? {
+        if (!segment.isNumericOnly()) return null
+        val repo = settings ?: return null
+        val voiceId = runCatching {
+            repo.getPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+        }.getOrNull() ?: return null
+        val rate = runCatching {
+            repo.getSpeechRateForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+        }.getOrDefault(1.0f)
+        val pitch = runCatching {
+            repo.getPitchForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+        }.getOrDefault(1.0f)
+        val volume = runCatching {
+            repo.getVolumeForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+        }.getOrDefault(1.0f)
+        return NumbersCategorySpeech(voiceId, rate, pitch, volume)
     }
 
     /** صوتُ الإنجليزية المفضّل لسقوط مقاطع «en» في الإعلانات المختلطة. */

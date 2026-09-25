@@ -11,6 +11,24 @@ data class Segment(
     val languageTag: String
 )
 
+/** هل المقطع «رقمي بحت»؟ أرقامٌ (لاتينية أو غيرها) مع محايدات مسموحةٍ
+ *  (مسافات/ترقيم/رموز) بلا أي حرف — لا يُلزم صوتُ فئة الأرقام في
+ *  [NateqTtsService] و[AnnouncementSpeaker] إلا هذه الصيغ. */
+internal fun Segment.isNumericOnly(): Boolean {
+    var digitCount = 0
+    var i = 0
+    while (i < text.length) {
+        val cp = text.codePointAt(i)
+        i += Character.charCount(cp)
+        if (Character.isDigit(cp)) {
+            digitCount++
+            continue
+        }
+        if (Character.isLetter(cp)) return false
+    }
+    return digitCount > 0
+}
+
 /**
  * يقسم نصاً مختلط الكتابات إلى مقاطع متجاورة حسب الـ Script، ويميز كل
  * سكربت غير عربي بلغته المعروفة عبر [Character.UnicodeScript] القياسي:
