@@ -48,7 +48,11 @@ internal fun Segment.isNumericOnly(): Boolean {
  * تلتحق بالمقطع المجاور ولا تُكسر عن سياقها (يلتحق المحايد بالمقطع المفتوح
  * السابق، والمحايد القيادي بالمقطع اللاحق)، فالتجميع عبر كل المقاطع يعيد
  * النص الأصلي حرفياً بلا فقدان. الأرقام تُنسب فوراً وحصرياً إلى لغة
- * نطق الأرقام المحددة في الإعدادات (ar أو en) بلا استثناء لأي سياق.
+ * نطق الأرقام المحددة في الإعدادات (ar أو en) بلا استثناء لأي سياق،
+ *  وتُعزل دائماً مقطعاً رقماً بحتاً مستقلاً حتى مع تطابق لغتها مع الجار
+ *  (حرف ↦ رقم ورقم ↦ حرف مقطوعان دائماً) — ليلزمها صوتُ فئة الأرقام
+ *  في [NateqTtsService] و[AnnouncementSpeaker]؛ والرقم الفردي المتصل
+ *  (مثل «30496.00») يبقى كتلةً واحدة بلا تفتيت (رقم ↦ رقم غير مقطوع).
  *
  * لا يعتمد المقسم على أي كائن Android — منطق نقي قابل للاختبار مباشرة.
  */
@@ -158,8 +162,11 @@ class LanguageSegmenter(
     }
 
     /** يبني المقاطع من الجولات عبر «مقطعٍ مفتوح» يمتد على إحداثيات النص:
-     *  الأرقام تُنسب فوراً لـ [numberLanguage]، والمحايد يلتحق بالمقطع المفتوح،
-     *  والمقاطع المتجاورة بنفس اللغة تُدمج تلقائياً دون تفتيت. */
+     *  الأرقام تُنسب فوراً لـ [numberLanguage] وتُعزل مقطعاً بحتاً مستقلاً
+     *  (يُقطع عند بدايتها وعند نهايتها حتى مع تطابق لغتها مع الجار) ليرى
+     *  صوتُ فئة الأرقام isNumericOnly صحيحاً، والرقمُ المتصل الواحد يبقى
+     *  كتلةً واحدة بلا تفتيت، والمحايد يلتحق بالمقطع المفتوح، والمقاطع
+     *  المتجاورة بنفس اللغة والنوع تُدمج تلقائياً دون تفتيت. */
     private fun merge(
         text: String,
         scriptFallback: String,
@@ -172,6 +179,7 @@ class LanguageSegmenter(
         val segments = ArrayList<Segment>()
         var openStart = -1
         var openLanguage: String? = null
+        var openKind: Kind? = null
         var leadingStart = -1
         for (run in runs) {
             when (run.kind) {
@@ -192,7 +200,13 @@ class LanguageSegmenter(
                             if (leadingStart != -1) leadingStart else run.start
                         leadingStart = -1
                         openLanguage = language
-                    } else if (openLanguage != language) {
+                        openKind = run.kind
+                    } else if (
+                        openKind != run.kind || openLanguage != language
+                    ) {
+                        // تغيّر النوع (حرف ↦ رقم والعكس) يقطع دائماً حتى مع
+                        // تطابق اللغة — يبقى الرقم مقطعاً بحتاً معزولاً؛ وتغيّر
+                        // اللغة دون النوع يقطع كالسابق.
                         var cutPoint = run.start
                         if (cutPoint > 0 && cutPoint > openStart) {
                             val prevChar = text[cutPoint - 1]
@@ -209,9 +223,10 @@ class LanguageSegmenter(
                         )
                         openStart = cutPoint
                         openLanguage = language
+                        openKind = run.kind
                     }
-                    // نفس اللغة: يمدّ النهاية إلى نهاية الجولة
-                    // (المحايد بينهما داخلٌ).
+                    // نفس النوع واللغة: يمدّ النهاية إلى نهاية الجولة
+                    // (المحايد بينهما داخلٌ) — رقْمٌ متصل واحد بلا تفتيت.
                 }
             }
         }
@@ -228,14 +243,20 @@ class LanguageSegmenter(
         return segments
     }
 
-    /** يضيف مقطعاً جديداً ويدمجه مع السابق إن تطابقت لغتهما المحسومة. */
+    /** يضيف مقطعاً جديداً ويدمجه مع السابق إن تطابقت لغتهما المحسومة،
+     *  إلا أن الرقمَ البحت ([isNumericOnly]) لا يُدمج مع جاره مهما
+     *  تطابقت لغته — يبقى معزولاً مقطعاً وحده ليلزمه صوت فئة الأرقام. */
     private fun addSegment(
         segments: ArrayList<Segment>,
         newSegment: Segment
     ) {
         if (newSegment.text.isEmpty()) return
         val last = segments.lastOrNull()
-        if (last != null && last.languageTag == newSegment.languageTag) {
+        val numericIsolation = last != null &&
+            (last.isNumericOnly() || newSegment.isNumericOnly())
+        if (last != null && !numericIsolation &&
+            last.languageTag == newSegment.languageTag
+        ) {
             segments[segments.size - 1] = Segment(
                 last.text + newSegment.text,
                 last.languageTag

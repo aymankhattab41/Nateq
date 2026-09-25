@@ -94,21 +94,22 @@ class LanguageSegmenterTest {
     }
 
     @Test
-    fun digitsBetweenArabicWords_areNeutral() {
+    fun digitsBetweenArabicWords_areIsolatedNumbers() {
         val input = "العمر 30 عاما"
         val (texts, tags) = textsAndTags(input, "ar")
-        // الأرقام والمسافات محايدات: تبقى داخل المقطع العربي الواحد بلا تفتيت.
-        assertEquals(listOf("العمر 30 عاما"), texts)
-        assertEquals(listOf("ar"), tags)
+        // الرقمُ يُعزل دائماً مقطعاً رقماً بحتاً حتى مع تطابق لغته العربية
+        // مع الجار — ليلزمَه صوتُ فئة الأرقام عند الحفظ.
+        assertEquals(listOf("العمر ", "30 ", "عاما"), texts)
+        assertEquals(listOf("ar", "ar", "ar"), tags)
         assertEquals(input, texts.joinToString(""))
     }
 
     @Test
-    fun arabicIndicDigits_areNeutral() {
+    fun arabicIndicDigits_areIsolatedNumbers() {
         val input = "عندي ٣ كتب"
         val (texts, tags) = textsAndTags(input, "ar")
-        assertEquals(listOf("عندي ٣ كتب"), texts)
-        assertEquals(listOf("ar"), tags)
+        assertEquals(listOf("عندي ", "٣ ", "كتب"), texts)
+        assertEquals(listOf("ar", "ar", "ar"), tags)
         assertEquals(input, texts.joinToString(""))
     }
 
@@ -144,7 +145,8 @@ class LanguageSegmenterTest {
     @Test
     fun numbersDoNotAttachToStrongestNeighbor() {
         // الرقم لا يلتحق بالجار الأقوى اللاتيني:
-        // يُنسب للغة نطق الأرقام حصراً.
+        // يُنسب للغة نطق الأرقام حصراً ويُعزل مقطعاً رقماً بحتاً حتى لو
+        // تطابق لغته مع الجار (العزل الإلزامي لفئة الأرقام).
         val (textsAr, tagsAr) = textsAndTags("Status 123", "ar")
         assertEquals(listOf("Status ", "123"), textsAr)
         assertEquals(listOf("en", "ar"), tagsAr)
@@ -152,8 +154,8 @@ class LanguageSegmenterTest {
         val (textsEn, tagsEn) = textsAndTagsWithNumber(
             "Status 123", "ar", "en"
         )
-        assertEquals(listOf("Status 123"), textsEn)
-        assertEquals(listOf("en"), tagsEn)
+        assertEquals(listOf("Status ", "123"), textsEn)
+        assertEquals(listOf("en", "en"), tagsEn)
     }
 
     @Test
@@ -178,6 +180,43 @@ class LanguageSegmenterTest {
         assertEquals(listOf("عندي ", "5 ", "كتب"), texts)
         assertEquals(listOf("ar", "en", "ar"), tags)
         assertEquals("عندي 5 كتب", texts.joinToString(""))
+    }
+
+    @Test
+    fun digitedArabicSentence_numberIsolatedAtStart() {
+        // «5» في بداية جملة عربية: يُعزل مقطعاً رقماً بحتاً حتى مع تطابق
+        // لغته العربية مع الجار — يفعّل صوت فئة الأرقام عند الحفظ.
+        val (texts, tags) = textsAndTagsWithNumber("5 فقط", "ar", "ar")
+        assertEquals(listOf("5 ", "فقط"), texts)
+        assertEquals(listOf("ar", "ar"), tags)
+        assertEquals("5 فقط", texts.joinToString(""))
+    }
+
+    @Test
+    fun digitedArabicSentence_numberIsolatedAtEnd() {
+        val (texts, tags) = textsAndTagsWithNumber("الكمية 5", "ar", "ar")
+        assertEquals(listOf("الكمية ", "5"), texts)
+        assertEquals(listOf("ar", "ar"), tags)
+        assertEquals("الكمية 5", texts.joinToString(""))
+    }
+
+    @Test
+    fun digitedArabicSentence_numberIsolatedInMiddle() {
+        // الوسط: «الكمية 5 فقط» بثلاثة مقاطع عربية — الرقمُ وحده يُعزل
+        // (رقم ↦ حرف مقطوع دائماً بلا استثناء لتطابق اللغة).
+        val (texts, tags) = textsAndTagsWithNumber("الكمية 5 فقط", "ar", "ar")
+        assertEquals(listOf("الكمية ", "5 ", "فقط"), texts)
+        assertEquals(listOf("ar", "ar", "ar"), tags)
+        assertEquals("الكمية 5 فقط", texts.joinToString(""))
+    }
+
+    @Test
+    fun connectedDecimalNumber_keepsSingleBlock() {
+        // الرقمُ المتصل الواحد «30496.00» كتلةٌ واحدة رغم مرور محايد
+        // (الفاصلة) بين جولتيه الرقميتين — لا تُفتَّت إلى مقاطع.
+        val (texts, tags) = textsAndTagsWithNumber("30496.00", "ar", "ar")
+        assertEquals(listOf("30496.00"), texts)
+        assertEquals(listOf("ar"), tags)
     }
 
     @Test
@@ -318,35 +357,35 @@ class LanguageSegmenterTest {
     }
 
     @Test
-    fun unitWithNumber_neutralAttachesToArabicNotLatin() {
-        // بند المحايد الذكي: «50» أرقام محايدةٌ تسبقُها العربية فتلتحق
-        // بها (لا تُنسب للكتلة اللاتينية اللاحقة «kg»)؛ والوحدة
-        // «50kg» يُحِيلها تحويلُ الوحدات في خطوةٍ لاحقة إلى العربية
+    fun unitWithNumber_isolatedFromArabicAndLatin() {
+        // «50» يُعزل مقطعاً رقماً بحتاً (العزل الإلزامي لفئة الأرقام) لا
+        // يلتحق بالعربية السابقة ولا بالوحدة اللاتينية اللاحقة «kg»؛
+        // والوحدة «50kg» يُحِيلها تحويلُ الوحدات في خطوةٍ لاحقة إلى العربية
         // (اختبار [TextProcessorTest]) فلا يبقى التقسيم وحده فاصلاً
         // نهائياً. هنا نتحقق من المقسّم فقط.
         val (texts, tags) = textsAndTags("الوزن 50kg", "ar")
-        assertEquals(listOf("الوزن 50", "kg"), texts)
-        assertEquals(listOf("ar", "en"), tags)
+        assertEquals(listOf("الوزن ", "50", "kg"), texts)
+        assertEquals(listOf("ar", "ar", "en"), tags)
         assertEquals("الوزن 50kg", texts.joinToString(""))
     }
 
     @Test
-    fun timeWithSuffix_neutralAttachesToArabicNotLatin() {
-        // «10:30» محايدة تسبقها العربية فتلتحق بهَا؛ «AM» لاتينيةٌ
-        // وحدها مقطعة.
+    fun timeWithSuffix_numberIsolatedFromArabicAndLatin() {
+        // «10:30 » مقطعٌ رقمي بحتٌ معزولٌ (رقم ↦ حرف مقطوع دائماً)
+        // والمرجّع اللاتيني «AM» مقطعُه وحده.
         val (texts, tags) = textsAndTags("الاجتماع 10:30 AM", "ar")
-        assertEquals(listOf("الاجتماع 10:30 ", "AM"), texts)
-        assertEquals(listOf("ar", "en"), tags)
+        assertEquals(listOf("الاجتماع ", "10:30 ", "AM"), texts)
+        assertEquals(listOf("ar", "ar", "en"), tags)
         assertEquals("الاجتماع 10:30 AM", texts.joinToString(""))
     }
 
     @Test
-    fun percentWithSuffix_neutralAttachesToArabicNotLatin() {
+    fun percentWithSuffix_numberIsolatedFromArabicAndLatin() {
         val (texts, tags) = textsAndTags("خصم 25% off", "ar")
-        // «25%» يُلحق بالعربية السابقة (اللغة التي تسبقها مباشرة)،
-        // و«off» اللاتينية وحدها مقطعة — بلا فرض افتراضية على الرقم.
-        assertEquals(listOf("خصم 25% ", "off"), texts)
-        assertEquals(listOf("ar", "en"), tags)
+        // «25% » رقمٌ بحتٌ معزولٌ عن العربية السابقة واللاتينية اللاحقة
+        // — بلا فرض افتراضية على الرقم إلا العزلَ الدائم للفئة.
+        assertEquals(listOf("خصم ", "25% ", "off"), texts)
+        assertEquals(listOf("ar", "ar", "en"), tags)
         assertEquals("خصم 25% off", texts.joinToString(""))
     }
 
