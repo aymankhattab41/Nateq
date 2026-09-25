@@ -491,8 +491,8 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-• The Clock announcement language is now fully independent from the global numbers speech-language setting: it is resolved from the clock category language, then its voice, then the app language, and the numbers language key stays exclusive to the Numbers category
-• "Incoming call" appends, when needed (Android 12+), a hint that guides granting the call-log permission from Settings to hear the caller number
+• New toggle "Don't interrupt ongoing reading" (in time announcement settings): when the speaker is reading a long text (message/notification/caller), the time tone waits until the reading finishes — if it exceeds ~30 seconds the time is announced anyway (off by default)
+• Purely-numeric segments are now isolated in language segmentation, so the number voice category applies in both the reader and announcement paths regardless of surrounding language; a single contiguous number stays one block
  </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
