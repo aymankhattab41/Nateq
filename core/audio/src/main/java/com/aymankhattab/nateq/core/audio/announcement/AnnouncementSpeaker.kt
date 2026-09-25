@@ -160,14 +160,13 @@ class AnnouncementSpeaker(
             }
         }
 
-        /** هل معرّف الصوت إنجليزي؟ يقبل الصيغ القديمة
-         * (nateq-en…/en-local) والموحّدة (en-US). */
+/** هل معرّف الصوت إنجليزي؟ يقبل الصيغ القديمة
+         *  (nateq-en…/en-local/ar-local) والموحّدة (en-US) و
+         *  صوتَ محركٍ مكتشف (com.google.android.tts:eng-usa) عبر
+         *  القارئ الموحّد [AnnouncementLanguageResolver]. */
         private fun isEnglishVoiceName(voiceId: String?): Boolean =
-            voiceId?.let {
-                it.startsWith("nateq-en", ignoreCase = true) ||
-                    it.startsWith("en-local", ignoreCase = true) ||
-                    it.startsWith("en-US", ignoreCase = true)
-            } ?: false
+            AnnouncementLanguageResolver.languageOfVoiceId(voiceId) ==
+                AnnouncementLanguageResolver.ENGLISH
 
         // عدّادٌ ذرّي لمعرّفات النطق — الزمن وحده كان يتكرر بين جزأين في
         // نفس المللي ثانية فيصدر onDone مبكراً ويفلتر أجزاء (بند [3]).

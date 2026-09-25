@@ -400,10 +400,10 @@ class TimeAnnouncementManager(
         activeAnnounceJob?.cancel()
         activeAnnounceJob = announceScope.launch {
             try {
-                // ترتيب تحديد لغة نطق الساعة:
-                // 1) مفتاح النطق EN/AR إن حُدِّد،
-                // 2) لغة صوت الفئة من الشاشة التدريجية،
-                // 3) صوت الفئة المفضَّل، 4) لغة التطبيق.
+                // ترتيب تحديد لغة نطق الساعة: مفتاح النطق EN/AR ثم
+                // لغة فئة الساعة المحفوظة ثم لغة الصوت المحفوظ (يشمل
+                // أصوات المحركات المكتشفة مثل com.google.android.tts:
+                // eng-usa) ثم لغة التطبيق — عبر القارئ الموحّد.
                 val forced = runCatching {
                     settings.getAnnouncementSpeechLanguage()
                 }.getOrNull()
@@ -415,25 +415,13 @@ class TimeAnnouncementManager(
                 val pref = settings.getPreferredVoiceIdForCategory(
                     SettingsRepository.VOICE_CATEGORY_TIME
                 )
-                val isEnglish = when {
-                    forced != null -> LanguageCode.isEnglish(forced)
-                    categoryLang != null -> LanguageCode.isEnglish(
-                        categoryLang
-                    )
-                    // يقبل الصيغ القديمة (nateq-en-…، en-local)
-                    // والصيغ الموحّدة الحالية (en-US)
-                    pref != null -> pref.startsWith(
-                        "nateq-en", ignoreCase = true
-                    ) ||
-                        pref.startsWith("en-local", ignoreCase = true) ||
-                        pref.startsWith("en-US", ignoreCase = true)
-                    else -> effectiveAppLanguage() == ENGLISH_LANGUAGE_TAG
-                }
-                val languageTag = if (isEnglish) {
-                    ENGLISH_LANGUAGE_TAG
-                } else {
-                    LanguageCode.AR.tag
-                }
+                val languageTag = AnnouncementLanguageResolver.resolve(
+                    forced = forced,
+                    categoryLang = categoryLang,
+                    savedVoiceId = pref,
+                    appLanguage = effectiveAppLanguage()
+                )
+                val isEnglish = languageTag == ENGLISH_LANGUAGE_TAG
                 val locale = Locale.forLanguageTag(languageTag)
 
                 val timeText = formatCurrentTime(isEnglish)
@@ -771,16 +759,26 @@ class TimeAnnouncementManager(
         )
     }
 
-    /** لغة نطق الأرقام: مفتاح النطق EN/AR إن حُدِّد،
-     * وإلا لغة التطبيق الفعلية */
+    /** لغة نطق الأرقام: مفتاح النطق EN/AR إن حُدِّد، وإلا لغة فئة
+     *  «الأرقام» المحفوظة وإلا لغة الصوت المحفوظ (يشمل أصوات المحركات
+     *  المكتشفة) وإلا لغة التطبيق الفعلية — عبر القارئ الموحّد. */
     private fun effectiveNumberSpeechIsEnglish(): Boolean {
         val forced = runCatching {
             settings.getAnnouncementSpeechLanguage()
         }.getOrNull()
-        return if (forced != null) {
-            LanguageCode.isEnglish(forced)
-        } else {
-            effectiveAppLanguage() == ENGLISH_LANGUAGE_TAG
-        }
+        val categoryLang = runCatching {
+            settings.getLanguageForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+        }.getOrNull()
+        val numPref = settings.getPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS
+        )
+        return AnnouncementLanguageResolver.resolve(
+            forced = forced,
+            categoryLang = categoryLang,
+            savedVoiceId = numPref,
+            appLanguage = effectiveAppLanguage()
+        ) == ENGLISH_LANGUAGE_TAG
     }
 }

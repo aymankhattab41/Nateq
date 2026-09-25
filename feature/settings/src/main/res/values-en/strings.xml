@@ -481,9 +481,9 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-• Explicit save buttons in "Engines &amp; Voices": a Save button per language in "Set up all languages" and a "Save voice changes" button under the category list, and fixed the default voice reverting to Arabic when picking an English voice from any engine
-• Fixed zero (0) pronunciation: now spoken as «sifr» (صِفْرْ) instead of «sifir» by adding correct Arabic diacritics for clear pronunciation across all TTS engines
-• Removed the annoying "No engine selected for this language" message: the state is now logged internally only, with no speech or notification to the user
+• Time and number announcements now honor the voice and language saved for their own category, including discovered engine voices (e.g. Google/Samsung): the language was falling back to the global speech key or app language and ignoring the saved category language/voice, so a unified resolver now decides by category language, then saved voice language, then app language
+• Collapsed repeated adjacent emoji into a single speech prefixed with the count (e.g. &quot;three faces with tears of joy&quot;) instead of repeating the name 5-6 times, in both the TextProcessor and EmojiSpeech paths
+• Improved the category status line in &quot;Engines &amp;amp; Voices&quot;: it now shows the actual saved voice name for the category (Lord or a discovered engine as &quot;engine: voice&quot;) instead of falling back to an Arabic one
  </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
