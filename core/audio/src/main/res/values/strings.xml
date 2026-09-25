@@ -27,6 +27,7 @@
     <string name="sms_from">رسالة من {name}</string>
     <string name="sms_otp_safe">رسالة من {name} تحتوي على رمز تحقق سري</string>
     <string name="caller_only">اتصال وارد</string>
+    <string name="caller_call_log_hint">، امنح إذن سجل المكالمات من الإعدادات لسماع رقم المتصل</string>
     <string name="caller_from">اتصال وارد من {name}</string>
     <string name="caller_from_number">اتصال وارد من رقم غير محفوظ</string>
     <string name="notif_new">إشعار جديد من {app}</string>

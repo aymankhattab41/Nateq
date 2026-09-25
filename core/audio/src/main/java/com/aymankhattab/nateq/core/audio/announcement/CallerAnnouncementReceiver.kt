@@ -472,9 +472,35 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             ) + formatCallerNumberForSpeech(
                 number, isArabic, numberReadingMode
             )
-            else -> LocaleUtils.stringForSpeech(
-                context, lang, R.string.caller_only, R.string.caller_only
+            else -> genericOnlyPhrase(context, lang)
+        }
+    }
+
+    /** عبارة «اتصال وارد» العام مع لاحقةٍ توجيهية اختيارية: على أندرويد
+     *  12+ الرقمُ فارغٌ لأن READ_CALL_LOG غير ممنوح (بدونه لا يصل رقم
+     *  المتصل إلى البث أصلاً) فنُرشد المستخدم إلى منحه من الإعدادات؛
+     *  والإذنُ ممنوحٌ مع رقمٍ فارغٍ (حجبٌ حقيقي) يبقي العبارةَ عامة. */
+    private fun genericOnlyPhrase(
+        context: Context,
+        lang: String
+    ): String {
+        val phrase = LocaleUtils.stringForSpeech(
+            context, lang, R.string.caller_only, R.string.caller_only
+        )
+        return if (
+            callerCallLogHintNeeded(
+                hasCallLog = hasPermission(
+                    context, Manifest.permission.READ_CALL_LOG
+                ),
+                sdkInt = Build.VERSION.SDK_INT
             )
+        ) {
+            phrase + LocaleUtils.stringForSpeech(
+                context, lang,
+                R.string.caller_call_log_hint, R.string.caller_call_log_hint
+            )
+        } else {
+            phrase
         }
     }
 
@@ -726,6 +752,15 @@ internal fun formatCallerNumberForSpeech(
     )
     return " $spoken"
 }
+
+/** هل يُلحَق تلميح منح إذن سجل المكالمات بعد «اتصال وارد»؟ تحديداً عند
+ *  رقمٍ فارغٍ بلا اسمٍ وإذنِ سجلٍ غيرِ ممنوحٍ على أندرويد 12+ (API 31+)
+ *  — حيث لا يصل رقم المتصل إلى البث أصلاً دون READ_CALL_LOG. إن كان
+ *  الإذن ممنوحاً والرقم ما زال فارغاً (حجبٌ حقيقي) فلا تلميح. */
+internal fun callerCallLogHintNeeded(
+    hasCallLog: Boolean,
+    sdkInt: Int
+): Boolean = !hasCallLog && sdkInt >= Build.VERSION_CODES.S
 
 /**
  * قرار لغة نطق اسم المتصل من الاسم/الرقم لا من النص الكامل (فالقالب قد

@@ -94,6 +94,67 @@ class CallerAnnouncementReceiverTest {
         )
     }
 
+    @Test
+    fun `call log hint is needed only when denied on sdk 31 plus`() {
+        // على أندرويد 12+ (API 31+) الرقم فارغ لأن READ_CALL_LOG غير
+        // ممنوح — فيُرشد المستخدم إلى منحه من الإعدادات.
+        assertTrue(callerCallLogHintNeeded(hasCallLog = false, sdkInt = 31))
+        assertTrue(callerCallLogHintNeeded(hasCallLog = false, sdkInt = 37))
+        // الإذن ممنوح أو النظام أقدم من 12: لا تلميح.
+        assertFalse(callerCallLogHintNeeded(hasCallLog = true, sdkInt = 31))
+        assertFalse(callerCallLogHintNeeded(hasCallLog = false, sdkInt = 30))
+    }
+
+    private fun buildPhrase(
+        number: String?,
+        contactName: String?,
+        readingMode: Int = 1
+    ): String {
+        val method = CallerAnnouncementReceiver::class.java
+            .getDeclaredMethod(
+                "buildDefaultCallerPhrase",
+                Context::class.java,
+                String::class.java,
+                String::class.java,
+                Int::class.javaPrimitiveType
+            )
+        method.isAccessible = true
+        return method.invoke(
+            CallerAnnouncementReceiver(),
+            context, number, contactName, readingMode
+        ) as String
+    }
+
+    @Test
+    fun `blank number without call log permission appends the grant hint`() {
+        val app =
+            ApplicationProvider.getApplicationContext<android.app.Application>()
+        shadowOf(app).denyPermissions(
+            android.Manifest.permission.READ_CALL_LOG
+        )
+        // رقم فارغ بلا اسم وإذنُ سجلٍ غير ممنوح على API 31+: اللاحقة ظاهرة.
+        val text = buildPhrase(number = null, contactName = null)
+        assertTrue(
+            "التلميح يُلحق بعد «اتصال وارد» عند سحب إذن السجل",
+            text.contains("سجل المكالمات")
+        )
+        assertTrue(text.startsWith("اتصال وارد"))
+    }
+
+    @Test
+    fun `blank number with call log granted stays generic`() {
+        val app =
+            ApplicationProvider.getApplicationContext<android.app.Application>()
+        shadowOf(app).grantPermissions(
+            android.Manifest.permission.READ_CALL_LOG
+        )
+        // الإذن ممنوح والرقم ما زال فارغاً: حجب حقيقي — لا تلميح.
+        assertEquals(
+            "اتصال وارد",
+            buildPhrase(number = null, contactName = null)
+        )
+    }
+
     private fun match(key: String, to: String?): String? =
         CallerAnnouncementReceiver().matchCustomName(
             mapOf(key to "أحمد"), to

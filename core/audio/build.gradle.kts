@@ -21,6 +21,15 @@ android {
     kotlin {
         jvmToolchain(21)
     }
+
+    // اختبارات Robolectric تُحمّل موارد الوحدة (نصوص النطق) من أقراصها
+    // الذكية/الافتراضية — بدونه تُفشل أي findResource عبر R.string في
+    // اختبارات الوحدة (NotFound) وتُبنى التطبيقات تحت حزمة الافتراضي.
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 dependencies {
