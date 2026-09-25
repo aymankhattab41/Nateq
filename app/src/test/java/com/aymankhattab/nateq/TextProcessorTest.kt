@@ -287,6 +287,40 @@ class TextProcessorTest {
     }
 
     @Test
+    fun emoji_repeated_collapsedToCount_arabic() {
+        // 😂😂😂 → «ثلاثة وجه يضحك بدموع» بدل تكرار الاسم ثلاث مرات
+        val laugh = String(Character.toChars(0x1F602)).repeat(3)
+        assertEquals("ثلاثة وجه يضحك بدموع", processor.process(laugh, "ar"))
+        // المفصول بمسافة لا يُدمج (كلُّها مستقلة)
+        val spaced = String(Character.toChars(0x1F602)) + " " +
+            String(Character.toChars(0x1F602))
+        assertEquals(
+            "وجه يضحك بدموع وجه يضحك بدموع",
+            processor.process(spaced, "ar")
+        )
+    }
+
+    @Test
+    fun emoji_repeated_collapsedToCount_english() {
+        // 😂😂😂 بالإنجليزية → «three face with tears of joy»
+        val laugh = String(Character.toChars(0x1F602)).repeat(3)
+        assertEquals(
+            "three face with tears of joy",
+            processor.process(laugh, "en")
+        )
+    }
+
+    @Test
+    fun emoji_repeatedWithText_countsOnce() {
+        // 6 مرات متلاصقة → «ستة وجه يضحك بدموع»، لا ستة أسماء متتالية مزعجة
+        val laugh = String(Character.toChars(0x1F602)).repeat(6)
+        assertEquals(
+            "رائع ستة وجه يضحك بدموع",
+            processor.process("رائع $laugh", "ar")
+        )
+    }
+
+    @Test
     fun quranicStopMarks_stripped() {
         // علامة ضبط مصحفي ملتصقة (شمس + U+06D8) ومنتهى آية (U+06DD) تُجرَّد
         assertEquals("شمس", processor.process("شمس\u06D8", "ar"))

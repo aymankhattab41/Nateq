@@ -136,4 +136,62 @@ class EmojiSpeechSplitterTest {
             names(EmojiSpeech.split("مرحبا :)", true))
         )
     }
+
+    @Test
+    fun repeatedArabicEmoji_collapsesToOnePartWithCount() {
+        // 😂😂😂 → «ثلاثة وجه يضحك بدموع» بدل تكرار الاسم ثلاث مرات
+        assertEquals(
+            listOf(
+                "رائع " to false,
+                "ثلاثة وجه يضحك بدموع" to true
+            ),
+            names(EmojiSpeech.split("رائع 😂😂😂", true))
+        )
+    }
+
+    @Test
+    fun repeatedEnglishEmoji_collapsesToOnePartWithCount() {
+        // 😂😂😂 × 3 بالإنجليزية → «three face with tears of joy»
+        assertEquals(
+            listOf(
+                "cool " to false,
+                "three face with tears of joy" to true
+            ),
+            names(EmojiSpeech.split("cool 😂😂😂", false))
+        )
+    }
+
+    @Test
+    fun spacedRepeatedEmojis_doNotCollapse() {
+        // التكرار المفصول بمسافة لا يُدمج (تكرارٌ غير متلاصق)
+        assertEquals(
+            listOf(
+                "وجه يضحك بدموع" to true,
+                " " to false,
+                "وجه يضحك بدموع" to true,
+                " " to false,
+                "وجه يضحك بدموع" to true
+            ),
+            names(EmojiSpeech.split("😂 😂 😂", true))
+        )
+    }
+
+    @Test
+    fun differentAdjacentEmojis_remainSeparate() {
+        assertEquals(
+            listOf(
+                "نص " to false,
+                "وجه يضحك بدموع" to true,
+                "قلب أحمر" to true,
+                " " to false,
+                "وجه مبتسم بعينين مبتسمتين" to true,
+                " تعال" to false
+            ),
+            names(
+                EmojiSpeech.split(
+                    "نص 😂❤ 😊 تعال".replace('❤', '\u2764'), true
+                )
+            )
+        )
+    }
 }

@@ -469,9 +469,47 @@ class TextProcessor(
         val sb = StringBuilder(base.length)
         var i = 0
         val len = base.length
+        // تجميع الإيموجي المتكرر المتطابق المتلاصق (مثل 😂😂😂) في اسمٍ واحدٍ
+        // مسبوقٍ بالعدد («ثلاثة وجه يضحك بدموع») بدل تكرار الاسم نفسه مرات —
+        // فلا يُنطق 5-6 مرات متتالية مزعجة للمستمع. يُدمج المتجاور المتطابق
+        // فقط، وأي حرفِ نصٍّ يفصلها.
+        var groupIdent: String? = null
+        var groupName = ""
+        var groupCount = 0
+
+        fun flushGroup() {
+            if (groupIdent != null) {
+                appendEmojiName(
+                    sb,
+                    if (groupCount > 1) {
+                        emojiCountWord(groupCount, arabic) + " " + groupName
+                    } else {
+                        groupName
+                    }
+                )
+                groupIdent = null
+                groupName = ""
+                groupCount = 0
+            }
+        }
+
+        /** يضمّ إيموجيًّا (باسمه وهويته الكاملة) لمجموعة التكرار،
+         *  أو يفتتح مجموعةً جديدة. */
+        fun absorb(name: String, ident: String) {
+            if (groupIdent == ident) {
+                groupCount++
+            } else {
+                flushGroup()
+                groupIdent = ident
+                groupName = name
+                groupCount = 1
+            }
+        }
+
         while (i < len) {
             val cp = base.codePointAt(i)
             val chars = Character.charCount(cp)
+            val startOfUnit = i
             when {
                 EmojiNames.isEmojiModifier(cp) -> {
                     // تعديلات منفصلة (ZWJ/ألوان بشرة/مؤشر أشكال) تُسقط بصمت
@@ -482,23 +520,30 @@ class TextProcessor(
                     if (nextIdx < len) {
                         val next = base.codePointAt(nextIdx)
                         if (EmojiNames.isRegionalIndicator(next)) {
-                            val code = EmojiNames.buildCountryCode(cp, next)
-                            appendEmojiName(
-                                sb,
-                                EmojiNames.flagReadingName(code, arabic)
+                            val ident = base.substring(
+                                startOfUnit, nextIdx + Character.charCount(next)
+                            )
+                            absorb(
+                                EmojiNames.flagReadingName(
+                                    EmojiNames.buildCountryCode(cp, next),
+                                    arabic
+                                ),
+                                ident
                             )
                             i = nextIdx + Character.charCount(next)
                             continue
                         }
                     }
                     // علم غير مكتمل (رمز واحد بلا قرين): نطق عام
-                    appendEmojiName(sb, fallback)
+                    absorb(
+                        fallback,
+                        base.substring(startOfUnit, startOfUnit + chars)
+                    )
                     i += chars
                 }
                 EmojiNames.isEmojiBlockCp(cp) -> {
                     val name = if (arabic) EmojiNames.arName(cp)
                         else EmojiNames.enName(cp)
-                    appendEmojiName(sb, name ?: fallback)
                     i += chars
                     // تجاوز بقية المجموعة: ألوان بشرة، مؤشرات أشكال، وعناصر
                     // ما بعد ZWJ (عائلة/مهنة) حتى لا تُنطق مقاطع متناثرة
@@ -518,15 +563,23 @@ class TextProcessor(
                             else -> break
                         }
                     }
+                    absorb(name ?: fallback, base.substring(startOfUnit, i))
                 }
                 else -> {
+                    flushGroup()
                     sb.append(base, i, i + chars)
                     i += chars
                 }
             }
         }
+        flushGroup()
         return Normalizer.normalize(sb.toString().trim(), Normalizer.Form.NFC)
     }
+
+    /** عدد التكرار ككلمةٍ منطوقة بلغة تسمية الأسماء (ثلاثة/three). */
+    private fun emojiCountWord(count: Int, arabic: Boolean): String =
+        if (arabic) NumberWordsConverter.numberToWords(count)
+        else NumberSpeech.toEnglishWords(count)
 
     /** يلحق اسم إيموجي يفصله عن جاره بمسافة من الجهتين: إن لصِق اسمُ
      *  الإيموجي بكلمةٍ تالية بلا مسافة («مرحباً😀مرحبا») كانت الكلمةُ

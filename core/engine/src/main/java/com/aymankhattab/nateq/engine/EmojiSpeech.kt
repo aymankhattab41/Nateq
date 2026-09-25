@@ -1,5 +1,7 @@
 package com.aymankhattab.nateq.engine
 
+import com.aymankhattab.nateq.engine.pipeline.NumberWordsConverter
+
 /**
  * مقطع نطق واحد: نص عادي يُنطق بإعدادات الإعلان نفسه، أو اسم إيموجي يُنطق
  * بإعدادات فئة «نطق الإيموجي» (صوت/سرعة/نبرة/مستوى صوت) المستقلة.
@@ -23,6 +25,26 @@ object EmojiSpeech {
         val pending = StringBuilder()
         var i = 0
         val len = base.length
+        // تجميع الإيموجي المتكرر المتطابق المتلاصق (مثل 😂😂😂) في اسمٍ واحدٍ
+        // مسبوقٍ بالعدد («ثلاثة وجه يضحك بدموع») بدل تكرار الاسم نفسه خمس وسِت
+        // مرات متتالية مزعجة. يُدمج التكرار المتجاور فقط، وأي حرفٍ نصٍّ يفصلها.
+        var groupIdent: String? = null
+        var groupName = ""
+        var groupCount = 0
+
+        fun flushGroup() {
+            if (groupIdent != null) {
+                val text = if (groupCount > 1) {
+                    countWord(groupCount, arabic) + " " + groupName
+                } else {
+                    groupName
+                }
+                parts.add(SpeechPart(text, true))
+                groupIdent = null
+                groupName = ""
+                groupCount = 0
+            }
+        }
 
         fun flushText() {
             if (pending.isNotEmpty()) {
@@ -31,9 +53,24 @@ object EmojiSpeech {
             }
         }
 
+        /** يضمّ إيموجيًّا (باسمه وهويته الكاملة) لمجموعة التكرار،
+         *  أو يفتتح مجموعةً جديدة. */
+        fun absorb(name: String, ident: String) {
+            if (groupIdent == ident) {
+                groupCount++
+            } else {
+                flushGroup()
+                flushText()
+                groupIdent = ident
+                groupName = name
+                groupCount = 1
+            }
+        }
+
         while (i < len) {
             val cp = base.codePointAt(i)
             val chars = Character.charCount(cp)
+            val startOfUnit = i
             when {
                 EmojiNames.isEmojiModifier(cp) -> {
                     // تعديلات منفصلة (ZWJ/ألوان بشرة/مؤشر أشكال) تُسقط بصمت
@@ -44,25 +81,30 @@ object EmojiSpeech {
                     if (nextIdx < len) {
                         val next = base.codePointAt(nextIdx)
                         if (EmojiNames.isRegionalIndicator(next)) {
-                            val code = EmojiNames.buildCountryCode(cp, next)
-                            flushText()
-                            parts.add(SpeechPart(
-                                EmojiNames.flagReadingName(code, arabic), true
-                            ))
+                            val ident = base.substring(
+                                startOfUnit, nextIdx + Character.charCount(next)
+                            )
+                            absorb(
+                                EmojiNames.flagReadingName(
+                                    EmojiNames.buildCountryCode(cp, next),
+                                    arabic
+                                ),
+                                ident
+                            )
                             i = nextIdx + Character.charCount(next)
                             continue
                         }
                     }
                     // علم غير مكتمل (رمز واحد بلا قرين): نطق عام
-                    flushText()
-                    parts.add(SpeechPart(fallback, true))
+                    absorb(
+                        fallback,
+                        base.substring(startOfUnit, startOfUnit + chars)
+                    )
                     i += chars
                 }
                 EmojiNames.isEmojiBlockCp(cp) -> {
                     val name = if (arabic) EmojiNames.arName(cp)
                     else EmojiNames.enName(cp)
-                    flushText()
-                    parts.add(SpeechPart(name ?: fallback, true))
                     i += chars
                     // تجاوز بقية المجموعة: ألوان بشرة، مؤشرات أشكال، وعناصر
                     // ما بعد ZWJ (عائلة/مهنة) حتى لا تُنطق مقاطع متناثرة
@@ -82,14 +124,22 @@ object EmojiSpeech {
                             else -> break
                         }
                     }
+                    absorb(name ?: fallback, base.substring(startOfUnit, i))
                 }
                 else -> {
+                    flushGroup()
                     pending.append(base, i, i + chars)
                     i += chars
                 }
             }
         }
+        flushGroup()
         flushText()
         return parts
     }
+
+    /** عدد التكرار ككلمةٍ منطوقة بلغة تسمية الأسماء (ثلاثة/three). */
+    private fun countWord(count: Int, arabic: Boolean): String =
+        if (arabic) NumberWordsConverter.numberToWords(count)
+        else NumberSpeech.toEnglishWords(count)
 }
