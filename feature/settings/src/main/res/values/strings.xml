@@ -361,6 +361,9 @@
 <string name="time_announcement_during_media_summary">يعلن الوقت تلقائياً أثناء تشغيل الموسيقى أو الفيديو (مفعّل افتراضياً)</string>
 <string name="time_announcement_during_silent">نطق الساعة أثناء وضع الصامت</string>
 <string name="time_announcement_during_silent_summary">يعلن الوقت تلقائياً عندما يكون الجهاز في وضع الصامت أو الاهتزاز (مفعّل افتراضياً)</string>
+<string name="time_no_interrupt_title">القارئ الجاري</string>
+<string name="time_no_interrupt_reading">لا تُقاطع النغمة القراءة الجارية</string>
+<string name="time_no_interrupt_reading_summary">عند انشغال المتحدث بقراءة طويلة (رسالة/إشعار/متصل)، تُؤجَّل نغمة الساعة حتى تكتمل القراءة — فإن طالت أكثر من ~30 ثانية نُطقت على أي حال</string>
 <string name="sms_announcement_template_hint">قالب قراءة الرسائل</string>
 <string name="sms_announcement_template_placeholder" formatted="false">استخدم {name} للمرسل و{message} للرسالة — اتركه فارغاً للنطق الافتراضي</string>
 <string name="sms_mode_full">مفعّل</string>

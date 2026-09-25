@@ -361,6 +361,9 @@
 <string name="time_announcement_during_media_summary">Announce the time automatically while music or video plays (on by default)</string>
 <string name="time_announcement_during_silent">Announce the time in silent mode</string>
 <string name="time_announcement_during_silent_summary">Announce the time automatically when the device is in silent or vibrate mode (on by default)</string>
+<string name="time_no_interrupt_title">Ongoing reading</string>
+<string name="time_no_interrupt_reading">Don\'t interrupt ongoing reading</string>
+<string name="time_no_interrupt_reading_summary">When the speaker is busy reading a long text (message/notification/caller), the time tone waits until the reading finishes — if it exceeds ~30 seconds the time is announced anyway</string>
 <string name="sms_announcement_template_hint">Message reading template</string>
 <string name="sms_announcement_template_placeholder" formatted="false">Use {name} for the sender and {message} for the message — leave empty for the default phrase</string>
 <string name="sms_mode_full">Enabled</string>

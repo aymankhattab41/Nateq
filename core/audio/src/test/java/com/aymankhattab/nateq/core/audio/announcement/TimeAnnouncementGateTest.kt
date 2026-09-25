@@ -96,4 +96,47 @@ class TimeAnnouncementGateTest {
             )
         )
     }
+
+    /** بوابة «لا تُقاطع النغمة القراءة الجارية» (منطق نقي). */
+    @Test
+    fun deferDecision_respectsToggleSpeakingAndCap() {
+        // المفتاح معطّل: لا تأجيل مهما كان المتحدث مشغولاً (دقة الوقت
+        // الصارمة تبقى كما كانت — نطق فوري).
+        assertFalse(
+            TimeAnnouncementManager.shouldDeferTimeSpeech(
+                0, currentlySpeaking = true, deferEnabled = false
+            )
+        )
+        // مفعّل + متحدث مشغول: تأجيل حتى آخر محاولة مسموحة.
+        assertTrue(
+            TimeAnnouncementManager.shouldDeferTimeSpeech(
+                0, currentlySpeaking = true, deferEnabled = true
+            )
+        )
+        assertTrue(
+            TimeAnnouncementManager.shouldDeferTimeSpeech(
+                TimeAnnouncementManager.TIME_DEFER_MAX_RETRIES - 1,
+                currentlySpeaking = true, deferEnabled = true
+            )
+        )
+        // استنفاد المحاولات: لا تأجيل — نطق قسري مهما بقي المتحدث مشغولاً.
+        assertFalse(
+            TimeAnnouncementManager.shouldDeferTimeSpeech(
+                TimeAnnouncementManager.TIME_DEFER_MAX_RETRIES,
+                currentlySpeaking = true, deferEnabled = true
+            )
+        )
+        assertFalse(
+            TimeAnnouncementManager.shouldDeferTimeSpeech(
+                TimeAnnouncementManager.TIME_DEFER_MAX_RETRIES + 1,
+                currentlySpeaking = true, deferEnabled = true
+            )
+        )
+        // مفعّل + متحدث متفرغ: لا تأجيل (ينطق فوراً كالمعتاد).
+        assertFalse(
+            TimeAnnouncementManager.shouldDeferTimeSpeech(
+                0, currentlySpeaking = false, deferEnabled = true
+            )
+        )
+    }
 }

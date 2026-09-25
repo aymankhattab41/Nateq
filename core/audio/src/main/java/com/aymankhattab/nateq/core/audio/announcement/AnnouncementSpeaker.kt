@@ -231,6 +231,10 @@ class AnnouncementSpeaker(
     private val speechCycle = AtomicLong(0L)
 
     private var tts: TextToSpeech? = null
+    // «ينطق الآن»: يُرفع عند onStart ويهبط عند onDone/onError الختامي
+    // والإيقاف. Volatile لأن الكتابة من خيط محرك TTS والقراءة (مثل قرار
+    // تأجيل نغمة الساعة) تأتي من خيطٍ آخر.
+    @Volatile
     private var nowSpeaking = false
 
     // مؤقّت أمان على Main (المحور السادس): إن علّق المحرك بلا onDone/onError
@@ -320,6 +324,10 @@ class AnnouncementSpeaker(
      *  رقمُه ≤ الرقم الملتقط يخص دورةً سابقة ولا يُحسب لطلبنا — يمنع
      *  تحرير goAsync/WakeLock المبكر في ويدجت الساعة (بند 5.1). */
     fun currentSpeechCycle(): Long = speechCycle.get()
+
+    /** هل المتحدث ينطق فعلاً الآن؟ يُستخدم لقرار تأجيل نغمة الساعة خلف
+     *  القراءة الجارية (مفتاح «لا تُقاطع النغمة القراءة الجارية»). */
+    fun isCurrentlySpeaking(): Boolean = nowSpeaking
 
     /** استدعاء كل مستمعي الاكتمال (كلٌّ بمعزلٍ عن أخطاء غيره). */
     private fun notifySpeechComplete() {

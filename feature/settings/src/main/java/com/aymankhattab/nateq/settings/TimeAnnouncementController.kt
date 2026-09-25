@@ -47,6 +47,7 @@ internal class TimeAnnouncementController(
     private var switchTimeDuringCalls: SwitchMaterial? = null
     private var switchTimeDuringMedia: SwitchMaterial? = null
     private var switchTimeDuringSilent: SwitchMaterial? = null
+    private var switchTimeNoInterrupt: SwitchMaterial? = null
     private var switchTimeChime: SwitchMaterial? = null
     private var cbTimeChimeAt0: MaterialCheckBox? = null
     private var cbTimeChimeAt15: MaterialCheckBox? = null
@@ -189,6 +190,23 @@ internal class TimeAnnouncementController(
         }.getOrDefault(true)
         switchTimeDuringSilent?.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setAnnounceTimeDuringSilent(checked) }
+            fragment.view?.announceCompat(
+                fragment.getString(
+                    if (checked) R.string.toggle_on else R.string.toggle_off
+                )
+            )
+        }
+
+        // «لا تُقاطع النغمة القراءة الجارية»: يُؤجَّل نطق الوقت الدوري
+        // عندما يكون المتحدث ينطق قراءةً طويلة (حتى ~30 ثانية ثم قسري).
+        switchTimeNoInterrupt = view.findViewById(
+            R.id.switch_time_no_interrupt_reading
+        )
+        switchTimeNoInterrupt?.isChecked = runCatching {
+            settings.isTimeNoInterruptReadingEnabled()
+        }.getOrDefault(false)
+        switchTimeNoInterrupt?.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setTimeNoInterruptReadingEnabled(checked) }
             fragment.view?.announceCompat(
                 fragment.getString(
                     if (checked) R.string.toggle_on else R.string.toggle_off
@@ -1209,6 +1227,7 @@ internal class TimeAnnouncementController(
         switchTimeDuringCalls = null
         switchTimeDuringMedia = null
         switchTimeDuringSilent = null
+        switchTimeNoInterrupt = null
         switchTimeChime = null
         cbTimeChimeAt0 = null
         cbTimeChimeAt15 = null

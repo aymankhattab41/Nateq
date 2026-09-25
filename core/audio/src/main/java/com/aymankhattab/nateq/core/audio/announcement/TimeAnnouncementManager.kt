@@ -18,6 +18,7 @@ import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -32,13 +33,38 @@ class TimeAnnouncementManager(
     private val settings: SettingsRepository,
     private val catalog: VoiceCatalog,
     private val requestHandler: SynthesisRequestHandler,
-    private val timeProvider: TimeProvider = SystemTimeProvider
+    private val timeProvider: TimeProvider = SystemTimeProvider,
+    /**
+     * المتحدث الذي ينطق الوقت — يُحقَن في الاختبارات بمثيلٍ مستقل تحكُّماً
+     * فيه بالكامل (رفع/خفض علم النطق عبر
+     * [AnnouncementSpeaker.isCurrentlySpeaking])
+     * دون اشتراك الحالة الساكنة للمتحدث المشترك بين حاضنات Robolectric؛
+     * في التطبيق يبقى null = المتحدث المشترك الوحيد نفسه.
+     */
+    private val speakerOverride: AnnouncementSpeaker? = null
 ) {
 
     companion object {
         // وسم الإنجليزية لعناصر النطق الأساسية عند تبعية
         // لغة التطبيق لفئة إنجليزية
         const val ENGLISH_LANGUAGE_TAG = "en"
+
+        // تأجيل نغمة الساعة خلف القراءة الجارية (مفتاح «لا تُقاطع النغمة
+        // القراءة الجارية»): الفاصل بين المحاولات وسقفها الأقصى قبل النطق
+        // القسري (~30 ثانية = 15 × 2ث) — لا يضيع إعلانُ الوقت وراء قراءةٍ
+        // لا تنتهي. يُقرآن في [speakTimeWithDefer].
+        const val TIME_DEFER_RETRY_MS = 2000L
+        const val TIME_DEFER_MAX_RETRIES = 15
+
+        /** قرار تأجيل نطق الوقت (منطق نقي): مفعّلٌ مع انشغال المتحدث وعدم
+         *  استنفاد المحاولات. تعرضها الاختبارات. */
+        internal fun shouldDeferTimeSpeech(
+            attempt: Int,
+            currentlySpeaking: Boolean,
+            deferEnabled: Boolean
+        ): Boolean =
+            deferEnabled && currentlySpeaking &&
+                attempt < TIME_DEFER_MAX_RETRIES
 
         // مثيل مشترك واحد عبر العملية يستخدمه مستقبل المنبه والودجت، حتى لا
         // يتضاعف المحرك/المرشح ولا تتعارض حالا نطق متزامنة (كان الودجت يبني
@@ -400,49 +426,72 @@ class TimeAnnouncementManager(
         activeAnnounceJob?.cancel()
         activeAnnounceJob = announceScope.launch {
             try {
-                // ترتيب تحديد لغة نطق الساعة: لغة فئة الساعة المحفوظة ثم
-                // لغة الصوت المحفوظ (يشمل أصوات المحركات المكتشفة مثل
-                // com.google.android.tts: eng-usa) ثم لغة التطبيق — عبر
-                // القارئ الموحّد. **بلا مفتاح اللغة النطق العام إطلاقاً
-                // (forced=null)**: ذلك المفتاح ملك فئة الأرقام حصراً (بُني
-                // لها في الجولة 11) ولا يصح أن يفرض لغةً على فئة الساعة
-                // فتفسد استقلاليتها عن إعدادات نطق الأرقام.
-                val timePref = settings.getPreferredVoiceIdForCategory(
-                    SettingsRepository.VOICE_CATEGORY_TIME
-                )
-                val languageTag = resolveTimeSpeechLanguage()
-                val isEnglish = languageTag == ENGLISH_LANGUAGE_TAG
-                val locale = Locale.forLanguageTag(languageTag)
-
-                val timeText = formatCurrentTime(isEnglish)
-                val speechRate = requestHandler.getSpeechRateForCategory(
-                    SettingsRepository.VOICE_CATEGORY_TIME
-                )
-                val pitch = requestHandler.getPitchForCategory(
-                    SettingsRepository.VOICE_CATEGORY_TIME
-                )
-                val volume = requestHandler.getVolumeForCategory(
-                    SettingsRepository.VOICE_CATEGORY_TIME
-                )
-
-                // محرك النطق يحسمه AnnouncementSpeaker: فئة الساعة الصريح ثم
-                // محرك اللغة المضبوط ثم محرك النظام الافتراضي.
-                val speaker = AnnouncementSpeaker.getInstance(context)
-                // إعادة ضبط صوت فئة الوقت قبل النطق (بند [2]): الصوت كان
-                // يعلق على آخر فئةٍ نطقت (متصل/إشعار/رسالة) فيُقرأ الوقت
-                // بالصوت الخطأ — نفس نمط المتصل/الرسائل.
-                speaker.resetVoice(timePref)
-                speaker.speak(
-                    timeText, locale, speechRate, pitch, volume,
-                    engineOverride = settings.getEngineForCategory(
-                        SettingsRepository.VOICE_CATEGORY_TIME
-                    ),
-                    cue = hourlyChimeCue()
-                )
+                speakTimeWithDefer(attempt = 0)
             } catch (t: Throwable) {
                 android.util.Log.e("NATEQ_TTS", "announce time failed", t)
             }
         }
+    }
+
+    /**
+     * نطق الوقت مع احترام مفتاح «لا تُقاطع النغمة القراءة الجارية»: ما دام
+     * المتحدث ينطق قراءةً طويلة (رسالة/إشعار/متصل) نعيد المحاولة بفاصل
+     * قصير حتى يتحرر — بدل قصّ القراءة بـ FLUSH — وبسقفٍ أقصى يُنطق الوقت
+     * قسراً على أي حال (لا إعلانٌ ضائع وراء قراءةٍ لا تنتهي). [attempt]
+     * عدد المحاولات المنقضية من [TIME_DEFER_MAX_RETRIES].
+     */
+    private suspend fun speakTimeWithDefer(attempt: Int) {
+        val speaker = speakerOverride
+            ?: AnnouncementSpeaker.getInstance(context)
+        val deferEnabled = runCatching {
+            settings.isTimeNoInterruptReadingEnabled()
+        }.getOrDefault(false)
+        if (shouldDeferTimeSpeech(
+                attempt, speaker.isCurrentlySpeaking(), deferEnabled
+            )
+        ) {
+            delay(TIME_DEFER_RETRY_MS)
+            speakTimeWithDefer(attempt + 1)
+            return
+        }
+        // ترتيب تحديد لغة نطق الساعة: لغة فئة الساعة المحفوظة ثم
+        // لغة الصوت المحفوظ (يشمل أصوات المحركات المكتشفة مثل
+        // com.google.android.tts: eng-usa) ثم لغة التطبيق — عبر
+        // القارئ الموحّد. **بلا مفتاح اللغة النطق العام إطلاقاً
+        // (forced=null)**: ذلك المفتاح ملك فئة الأرقام حصراً (بُني
+        // لها في الجولة 11) ولا يصح أن يفرض لغةً على فئة الساعة
+        // فتفسد استقلاليتها عن إعدادات نطق الأرقام.
+        val timePref = settings.getPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_TIME
+        )
+        val languageTag = resolveTimeSpeechLanguage()
+        val isEnglish = languageTag == ENGLISH_LANGUAGE_TAG
+        val locale = Locale.forLanguageTag(languageTag)
+
+        val timeText = formatCurrentTime(isEnglish)
+        val speechRate = requestHandler.getSpeechRateForCategory(
+            SettingsRepository.VOICE_CATEGORY_TIME
+        )
+        val pitch = requestHandler.getPitchForCategory(
+            SettingsRepository.VOICE_CATEGORY_TIME
+        )
+        val volume = requestHandler.getVolumeForCategory(
+            SettingsRepository.VOICE_CATEGORY_TIME
+        )
+
+        // محرك النطق يحسمه AnnouncementSpeaker: فئة الساعة الصريح ثم
+        // محرك اللغة المضبوط ثم محرك النظام الافتراضي.
+        // إعادة ضبط صوت فئة الوقت قبل النطق (بند [2]): الصوت كان
+        // يعلق على آخر فئةٍ نطقت (متصل/إشعار/رسالة) فيُقرأ الوقت
+        // بالصوت الخطأ — نفس نمط المتصل/الرسائل.
+        speaker.resetVoice(timePref)
+        speaker.speak(
+            timeText, locale, speechRate, pitch, volume,
+            engineOverride = settings.getEngineForCategory(
+                SettingsRepository.VOICE_CATEGORY_TIME
+            ),
+            cue = hourlyChimeCue()
+        )
     }
 
     /** الحصول على الصوت المخصص لفئة معينة */

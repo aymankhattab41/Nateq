@@ -582,6 +582,18 @@ class SettingsRepository(context: Context) :
         prefs.edit().putBoolean("announce_time_during_silent", enabled)
             .apply()
 
+    // ============ عدم مقاطعة النغمة للقراءة الجارية ============
+    // مفتاح «لا تُقاطع النغمة القراءة الجارية» (افتراضي false): عندما ينطق
+    // المتحدث قراءةً طويلة (رسالة/إشعار/متصل) تُؤجَّل نغمة/نطق الساعة
+    // الدورية حتى تكتمل بدل قطعها بـ FLUSH، والسقف ~30 ثانية ثم نطق قسري.
+    // يُقرأ في TimeAnnouncementManager.speakTimeWithDefer. لمن يفضّل دقة
+    // الوقت الصارمة يبقى معطلاً فيُنطق الوقت فوراً كالسابق.
+    fun isTimeNoInterruptReadingEnabled(): Boolean =
+        prefs.getBoolean("time_no_interrupt_reading", false)
+
+    fun setTimeNoInterruptReadingEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("time_no_interrupt_reading", enabled).apply()
+
     /** يُرجع مفتاح التفضيل الفعلي للغة: بالوسم الكامل (ar-EG) إن وُجد، ثم
      *  بكود اللغة وحده (ar) إن وُجد — تراجعٌ تدريجي لتعميم تفضيل الأهل على
      *  كل لهجاتها. null إن لم يُحفظ أي تفضيل لها. */

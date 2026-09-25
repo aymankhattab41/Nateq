@@ -501,6 +501,102 @@ class AnnouncementSpeakerTest {
     }
 
     @Test
+    fun `arabic number inside arabic text takes numbers voice (middle)`() {
+        // التبويب الحرج: الأرقام العربية بلسان «ar» داخل نصٍّ عربي —
+        // «الكمية 5 فقط». كانت «5» تلتحق بالمقطع العربي (تطابق اللغة) فلا
+        // يلزمها صوتُ فئة الأرقام؛ الآن يُعزل الرقمُ مقطعاً بحتاً فيُنطق
+        // بصوت الفئة لا بالصوت العربي العام.
+        val repo = SettingsRepository.create(context)
+        repo.setNumberReadingLanguage("ar")
+        repo.setPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS, "male-numbers"
+        )
+        val speaker = AnnouncementSpeaker(context)
+        val built = buildUnitsFor(speaker, "الكمية 5 فقط")
+        assertEquals("مقطع عربي + رقم + مقطع عربي", 3, built.size)
+        assertEquals(
+            "الرقم الأوسط يُنطق بصوت فئة الأرقام",
+            "male-numbers", unitField(built[1], "voiceId")
+        )
+        assertNotEquals(
+            "المقطع العربي السابق يبقى على الصوت العام",
+            "male-numbers", unitField(built[0], "voiceId")
+        )
+        assertNotEquals(
+            "المقطع العربي اللاحق يبقى على الصوت العام",
+            "male-numbers", unitField(built[2], "voiceId")
+        )
+        speaker.shutdown()
+    }
+
+    @Test
+    fun `arabic number at start of arabic text takes numbers voice`() {
+        val repo = SettingsRepository.create(context)
+        repo.setNumberReadingLanguage("ar")
+        repo.setPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS, "male-numbers"
+        )
+        val speaker = AnnouncementSpeaker(context)
+        val built = buildUnitsFor(speaker, "5 فقط")
+        assertEquals("رقم + مقطع عربي", 2, built.size)
+        assertEquals(
+            "الرقم الافتتاحي يُنطق بصوت فئة الأرقام",
+            "male-numbers", unitField(built[0], "voiceId")
+        )
+        assertNotEquals(
+            "المقطع العربي يبقى على الصوت العام",
+            "male-numbers", unitField(built[1], "voiceId")
+        )
+        speaker.shutdown()
+    }
+
+    @Test
+    fun `arabic number at end of arabic text takes numbers voice`() {
+        val repo = SettingsRepository.create(context)
+        repo.setNumberReadingLanguage("ar")
+        repo.setPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS, "male-numbers"
+        )
+        val speaker = AnnouncementSpeaker(context)
+        val built = buildUnitsFor(speaker, "الكمية 5")
+        assertEquals("مقطع عربي + رقم", 2, built.size)
+        assertEquals(
+            "الرقم الختامي يُنطق بصوت فئة الأرقام",
+            "male-numbers", unitField(built[1], "voiceId")
+        )
+        assertNotEquals(
+            "المقطع العربي يبقى على الصوت العام",
+            "male-numbers", unitField(built[0], "voiceId")
+        )
+        speaker.shutdown()
+    }
+
+    @Test
+    fun `isCurrentlySpeaking reflects the speaking flag`() {
+        // بوابة «لا تُقاطع النغمة القراءة الجارية» تقرأ هذا الفحص قبل النطق
+        // لتؤجل النغمة خلف القراءة الجارية — يُختبر انعكاسا رفعنا/هبوطِه.
+        val speaker = AnnouncementSpeaker(context)
+        try {
+            assertFalse(
+                "المتحدث متفرغ افتراضياً", speaker.isCurrentlySpeaking()
+            )
+            val field = AnnouncementSpeaker::class.java
+                .getDeclaredField("nowSpeaking")
+            field.isAccessible = true
+            field.set(speaker, true)
+            assertTrue(
+                "رفعُ علم النطق ينعكس في الفحص", speaker.isCurrentlySpeaking()
+            )
+            field.set(speaker, false)
+            assertFalse(
+                "هبوطُ العلم يعيد الفحص false", speaker.isCurrentlySpeaking()
+            )
+        } finally {
+            speaker.shutdown()
+        }
+    }
+
+    @Test
     fun `numeric unit falls back to general rates when category unset`() {
         // بلا صوتٍ محفوظ لفئة الأرقام: يبقى سلوك الوحدة الرقمية كما كان
         // (صوت اللغة العام وأشرطة الإعلان 1.0) — لا كسر للتجربة الافتراضية.
