@@ -954,6 +954,57 @@ class PipelineStepsTest {
     }
 
     @Test
+    fun phone_whatsappTildeMarker_pronouncedAsMayBe() {
+        // ماركة واتساب «~» قبل رقم غير المسجّل تُنطق «may be» كما هي
+        // (لا «تقريباً» ولا حذفاً صامتاً) ثم يُنطق الرقم كما هو — بفاصل
+        // وبلا خلال الفحص (LRM/RLM من إشعارات واتساب لا تُفسد المطابقة).
+        val compact = PhoneNumberStep.apply("~+15551209053")
+        assertEquals(
+            "may be زائد واحد خمسة خمسة خمسة واحد " +
+                "اثنان صِفْرْ تسعة صِفْرْ خمسة ثلاثة",
+            compact
+        )
+        assertTrue("may be" in compact)
+        assertFalse("تقريبا" in compact)
+        assertEquals(
+            "may be زائد واحد خمسة خمسة خمسة واحد " +
+                "اثنان صِفْرْ تسعة صِفْرْ خمسة ثلاثة",
+            PhoneNumberStep.apply("~+1555 120 9053")
+        )
+        assertEquals(
+            "may be زائد واحد خمسة خمسة خمسة واحد " +
+                "اثنان صِفْرْ تسعة صِفْرْ خمسة ثلاثة",
+            PhoneNumberStep.apply("~ ‎+1555 120 9053")
+        )
+    }
+
+    @Test
+    fun phone_tildeNotPhoneContext_leftForSymbolStep() {
+        // «~» في غير سياق الهاتف (تقريباً 5 دقائق، عدد مجرد) تبقى كما هي
+        // لخطوة الرموز — لا يُمسّ معناها «تقريباً» هنا.
+        assertEquals("~ 5 دقائق", PhoneNumberStep.apply("~ 5 دقائق"))
+        assertEquals("~1000000", PhoneNumberStep.apply("~1000000"))
+        assertEquals("~ 5 دقائق", PhoneNumberStep.applyEnglish("~ 5 دقائق"))
+        assertEquals("~1000000", PhoneNumberStep.applyEnglish("~1000000"))
+    }
+
+    @Test
+    fun englishPhone_whatsappTildeMarker_pronouncedAsMayBe() {
+        val compact =
+            PhoneNumberStep.applyEnglish("~+15551209053")
+        assertEquals(
+            "may be plus one five five five one two zero nine zero five three",
+            compact
+        )
+        assertTrue("may be" in compact)
+        assertFalse("approximately" in compact)
+        assertEquals(
+            "may be plus one five five five one two zero nine zero five three",
+            PhoneNumberStep.applyEnglish("~+ 1555 120 9053")
+        )
+    }
+
+    @Test
     fun url_uppercaseSchemeAndWww_stillReadableDomain() {
         // الروابط بحروف كبيرة تُقرأ كما هي كاملة دون أي تعديل أو تشويه
         assertEquals(

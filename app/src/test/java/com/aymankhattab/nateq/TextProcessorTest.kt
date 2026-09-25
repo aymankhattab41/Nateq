@@ -195,6 +195,37 @@ class TextProcessorTest {
     }
 
     @Test
+    fun whatsappTildeBeforeUnknownNumber_survivesFullPipelineAsMayBe() {
+        // الماركة المُرسَلة من واتساب قبل رقم غير المسجّل تُنطق «may be»
+        // كما هي في المسار الكامل (لا «تقريباً» ولا حذفاً) ثم يُنطق
+        // الرقم رقماً رقماً — والمدخل المنطوق «may be» الحرفي يبقى كما هو.
+        assertEquals(
+            "may be زائد واحد خمسة خمسة خمسة واحد اثنان صِفْرْ تسعة " +
+                "صِفْرْ خمسة ثلاثة",
+            processor.process("~+15551209053", "ar")
+        )
+        assertEquals(
+            "may be زائد واحد خمسة خمسة خمسة واحد اثنان صِفْرْ تسعة " +
+                "صِفْرْ خمسة ثلاثة",
+            processor.process("may be +15551209053", "ar")
+        )
+        assertEquals(
+            "may be plus one five five five one two zero nine zero five three",
+            processor.process("~+15551209053", "en")
+        )
+    }
+
+    @Test
+    fun years_2024and2026_readWithSameDualRule() {
+        // سنوات 2xxx تقرأ جميعها بالمثنّى الصحيح «ألفان …» (لا «ألفا»):
+        // كلٌّ من 2024 و2026 يسلكون طريقياً واحداً — تتبّعٌ ممسكٌ لأي مسار
+        // يُسقط نون المثنى قيماً ما (شكوى «ألفا وستة وعشرون» كانت بلا
+        // مصدرٍ قابلٍ لإعادة الإنتاج في كل المحوّلات/الأنماط).
+        assertEquals("ألفان وأربعة وعشرون", processor.process("2024", "ar"))
+        assertEquals("ألفان وستة وعشرون", processor.process("2026", "ar"))
+    }
+
+    @Test
     fun currencyAndNumber_arabic() {
         // القاموس الشخصي افتراضياً فارغ (يبنيه المستخدم بالإضافة/الاستيراد)،
         // فكلمة «جنيه» لا تُتوسَّع تلقائياً، والأرقام تُنطق طبيعياً.

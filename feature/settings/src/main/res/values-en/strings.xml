@@ -74,6 +74,7 @@
 <string name="battery_level_checked">Level %1$d percent selected</string>
 <string name="battery_level_unchecked">Level %1$d percent cleared</string>
 <string name="caller_announcement_enabled">Enable caller announcement</string>
+<string name="caller_announcement_during_call">Announce caller name during a call</string>
 <string name="caller_announcement_interval">Interval between repeats (seconds)</string>
 <string name="caller_announcement_rate">Caller speech rate</string>
 <string name="caller_announcement_pitch">Caller announcement pitch</string>

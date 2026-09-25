@@ -22,9 +22,15 @@ internal class PhoneNumberStep(
 
     // أنماط أرقام الهواتف: بداية اختيارية + ثم 7-15 رقماً مع فواصل
     // (مسافة/شرطة/نقطة). تُحسب الأرقام الفعلية في المعالجة؛ النمط
-    // يلتقط المتواليات الطويلة فقط.
+    // يلتقط المتواليات الطويلة فقط. «~» الملاصقة اختيارية: علامةُ
+    // واتساب قبل رقم غير المسجّل (بند المعالجة) — تُنطق «may be»
+    // كما هي قبل الهاتف المؤكَّد (لا «تقريباً» ولا حذفاً صامتاً)،
+    // وغيره يبقى لخطوة الرموز (نطق «تقريباً» لسياقات التقريب).
+    // \p{Cf} يمتص العلامات غير المرئية (LRM/RLM…) التي تضعها واتساب
+    // حول «~» وداخل فواصل الرقم، فلا تُفسد المطابقة ولا تُنطق.
     private val PATTERN_PHONE = Pattern.compile(
-        """(?<!\d)(?:\+\s*)?\d[\d\s()\-.]{6,}\d(?!\d)"""
+        """(?<!\d)(?:~[\s\p{Cf}]*)?(?:\+\s*)?""" +
+            """\d[\d\s\p{Cf}()\-.]{6,}\d(?!\d)"""
     )
 
     // بادئات اتصال محلية ودولية (00، 01 إلى 09): كل متوالية هاتفية 7-15
@@ -107,8 +113,13 @@ internal class PhoneNumberStep(
                 matcher.appendReplacement(buffer, quoted)
                 continue
             }
+            // ماركة واتساب «~» الملاصقة (إن وُجدت): تُنطق «may be» كما
+            // هي بلا ترجمة ولا حذف — الاسم المعنون بـ«~» غير المسجَّل
+            // يُقرأ على حقيقته («may be») ثم يُنطق الرقم كما هو.
+            val marker = if (raw.startsWith("~")) "may be " else ""
+            val body = phoneBody(raw)
             val isArabic = isArabicContext
-            val hasPlus = raw.trimStart().startsWith("+")
+            val hasPlus = body.startsWith("+")
             val plusPrefix = if (hasPlus) "+" else ""
             val mode = modeProvider().coerceIn(1, 8)
             val spoken = NumberSpeech.formatByMode(
@@ -117,11 +128,28 @@ internal class PhoneNumberStep(
                 isEnglish = !isArabic
             )
             val quoted = java.util.regex.Matcher
-                .quoteReplacement(spoken)
+                .quoteReplacement(marker + spoken)
             matcher.appendReplacement(buffer, quoted)
         }
         matcher.appendTail(buffer)
         return buffer.toString()
+    }
+
+    /** جسدُ التطابق بلا البادئات الخارجية: ماركة واتساب «~» والمسافات
+     *  وعلامات التنسيق غير المرئية (LRM/RLM — \p{Cf}) المحيطة به. تُجرد
+     *  للفحص اللاحق (مفتاح دولي بعدها يظل مفتاحاً دولياً) مع بقاء «~»
+     *  نفسها مكتشفةً عند بداية التطابق لنطقِها «may be». التحويل للأمام
+     *  بلا Regex: يتوقف عند أول رقم أو «+». */
+    private fun phoneBody(raw: String): String {
+        val lead = { s: String -> s.dropWhile { c ->
+            c.isWhitespace() ||
+                Character.getType(c) == Character.FORMAT.toInt()
+        } }
+        var body = lead(raw)
+        if (body.startsWith("~")) {
+            body = lead(body.substringAfter('~'))
+        }
+        return body
     }
 
     /** هل التطابق تاريخ (3 مجموعات رقمية بفاصل، آخرها سنة 2-4 أرقام)؟ */
@@ -169,18 +197,21 @@ internal class PhoneNumberStep(
 
     /** ترجيح كون المتوالية رقم هاتف فعلياً (لا مبلغاً أو عدداً مجرداً). */
     private fun isLikelyPhone(raw: String, digits: String): Boolean {
+        // ماركة واتساب «~» الملاصقة لا تُغيّر الترجيح — تُحذف من الجسد
+        // قبل الفحص (مفتاح دولي بعدها يظل مفتاحاً دولياً).
+        val body = phoneBody(raw)
         // مفتاح اتصال دولي صريح (+20 …)
-        if (raw.trimStart().startsWith("+")) return true
+        if (body.startsWith("+")) return true
         // بادئة اتصال محلية/دولية معروفة تبدأ بـ 0 (00، 01 إلى 09)
         if (LOCAL_PHONE_PREFIXES.any { digits.startsWith(it) }) return true
         // مجموعات آلاف أوروبية/فرنسية (1 000 000، 12.345.678) ليست هواتف
-        if (looksLikeThousandsGrouping(raw)) return false
+        if (looksLikeThousandsGrouping(body)) return false
         // عمليات حسابية («1000 - 2000»، «5 * 7») ليست هواتف رغم الفواصل
-        if (looksLikeArithmetic(raw)) return false
+        if (looksLikeArithmetic(body)) return false
         // أعداد عشرية («30496.00»، «12345.67») ليست هواتف إطلاقاً
-        if (looksLikeDecimal(raw)) return false
+        if (looksLikeDecimal(body)) return false
         // فواصل هاتفية قياسية (مسافة/شرطة/أقواس/نقطة)
-        return raw.any {
+        return body.any {
             it == ' ' || it == '-' || it == '(' || it == ')' || it == '.'
         }
     }

@@ -2,6 +2,7 @@ package com.aymankhattab.nateq.core.audio.announcement
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.telephony.TelephonyManager
 import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LanguageCode
@@ -276,26 +277,42 @@ class CallerAnnouncementReceiverTest {
     }
 
     @Test
-    fun `callerSpeechEngine picks the per-language engine`() {
+    fun `during call announcement defaults off and round trips`() {
         val repo = SettingsRepository(context)
-        assertNull(callerSpeechEngine(repo, LanguageCode.AR.tag))
-        assertNull(callerSpeechEngine(repo, LanguageCode.EN.tag))
+        assertFalse(repo.isCallerAnnouncementDuringCallEnabled())
+        repo.setCallerAnnouncementDuringCallEnabled(true)
+        assertTrue(repo.isCallerAnnouncementDuringCallEnabled())
+        repo.setCallerAnnouncementDuringCallEnabled(false)
+        assertFalse(repo.isCallerAnnouncementDuringCallEnabled())
+    }
 
-        repo.setEngineForCategory(
-            SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR,
-            "org.arabic.speech"
+    @Test
+    fun `waiting call ring is detected over an active call`() {
+        // مكالمة انتظار: رنين بعد OFFHOOK مباشرة، أو رنّات متكررة للرنين
+        // نفسه مع استمرار علم المكالمة النشطة.
+        assertTrue(
+            CallerAnnouncementReceiver.isWaitingCall(
+                TelephonyManager.EXTRA_STATE_OFFHOOK, true
+            )
         )
-        repo.setEngineForCategory(
-            SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN,
-            "org.english.speech"
+        assertTrue(
+            CallerAnnouncementReceiver.isWaitingCall(
+                TelephonyManager.EXTRA_STATE_RINGING, true
+            )
         )
-        assertEquals(
-            "org.arabic.speech",
-            callerSpeechEngine(repo, LanguageCode.AR.tag)
+    }
+
+    @Test
+    fun `plain idle ring is not a waiting call`() {
+        assertFalse(
+            CallerAnnouncementReceiver.isWaitingCall(
+                TelephonyManager.EXTRA_STATE_IDLE, false
+            )
         )
-        assertEquals(
-            "org.english.speech",
-            callerSpeechEngine(repo, LanguageCode.EN.tag)
+        assertFalse(
+            CallerAnnouncementReceiver.isWaitingCall(
+                TelephonyManager.EXTRA_STATE_RINGING, false
+            )
         )
     }
 }

@@ -57,6 +57,25 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         @Volatile
         private var activeCallCycle: Job? = null
 
+        /** آخر حالة هاتف وردت (بثوث PHONE_STATE المتعاقبة عبر مستقبلات
+         *  جديدة) — لتمييز رنين مكالمةٍ ثانية أثناء مكالمة نشطة. */
+        @Volatile
+        private var lastPhoneState: String? = null
+
+        /** هل المكالمة نشطة حالياً؟ يُسنَّع عند OFFHOOK ويُصفَّر عند IDLE —
+         *  دليلٌ ثابتٌ يدوم عبر رنّات الانتظار المتكررة للرنين ذاته. */
+        @Volatile
+        private var callActive = false
+
+        /** هل رنينُ الحالة الحالية رنينُ مكالمةٍ واردة أثناء مكالمة نشطة
+         *  (مكالمة انتظار)؟ نعم إن كانت الحالة RINGING والمكالمة نشطة —
+         *  بالعلم الثابت أو بانتقالٍ مباشر من OFFHOOK. خالصٌ قابل للاختبار. */
+        internal fun isWaitingCall(
+            previous: String?,
+            inCall: Boolean
+        ): Boolean =
+            inCall || previous == TelephonyManager.EXTRA_STATE_OFFHOOK
+
         /** نافذة جدولة تكرارات نطق المتصل (بعد النطق الأول) — لا يرتبط بها
          *  عمرُ البث إطلاقاً (التكرارات تُجدول في النطاق العام appScope وتستمر
          *  بعد إنهاء الـ goAsync): سقفٌ داخلي لعدد التكرارات المنطقية فقط. */
@@ -153,6 +172,15 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 finishOnce()
                 return@launch
             }
+            // سجلّ الحالة قبل أي فرع: القراءة السابقة تخدم تمييز رنين
+            // الانتظار، وتحديثُ وسم المكالمة النشطة يبقى متسقاً عبر البثوث.
+            val previousState = lastPhoneState
+            lastPhoneState = state
+            if (state == TelephonyManager.EXTRA_STATE_OFFHOOK) {
+                callActive = true
+            } else if (state == TelephonyManager.EXTRA_STATE_IDLE) {
+                callActive = false
+            }
             if (state != TelephonyManager.EXTRA_STATE_RINGING) {
                 // **بند 5.2:** كل انتقالٍ للحالة — الرد على المكالمة
                 // (OFFHOOK) أو إنهاؤها (IDLE) — يُوقف النطق فوراً ويُلغي
@@ -224,6 +252,19 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 }
                 // المفتاح الرئيسي يُوقف كل الإعلانات دفعة واحدة.
                 if (!settings.isAllAnnouncementsEnabled()) {
+                    finishOnce()
+                    return@launch
+                }
+                // رنينُ مكالمةٍ ثانية أثناء مكالمة نشطة (مكالمة انتظار):
+                // لا يُنطق اسمها إلا إن فعّل المستخدم مربع «نطق اسم المتصل
+                // أثناء المكالمة» (غير محدد افتراضياً) — وخارجه يُصمت هنا.
+                val waitingCall = isWaitingCall(
+                    previousState,
+                    callActive
+                )
+                if (waitingCall &&
+                    !settings.isCallerAnnouncementDuringCallEnabled()
+                ) {
                     finishOnce()
                     return@launch
                 }
@@ -317,7 +358,9 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 val schedule = repeatSchedule(
                     repeat, intervalMs, BROADCAST_ASYNC_WINDOW_MS
                 )
-                if (schedule.isEmpty()) {
+                // رنينُ الانتظار أثناء مكالمة: نطقٌ واحد فقط بلا تكرار
+                // (لا يُزعج الحوارَ المتواصلَ بتكراراتٍ فوقه).
+                if (waitingCall || schedule.isEmpty()) {
                     completionListener = { finishOnce() }
                     speaker.addCompletionListener(completionListener!!)
                 } else {

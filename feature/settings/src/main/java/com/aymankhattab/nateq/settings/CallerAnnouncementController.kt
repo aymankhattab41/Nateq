@@ -54,6 +54,8 @@ internal class CallerAnnouncementController(
     // مراجع العرض قابلة للتصفير في cleanup() عند تدمير عرض الفصيل
     // (بند 4.1) حتى لا تبقى شجرة العرض القديمة محتجزة في الخلفية.
     private var switchCallerAnnouncement: SwitchMaterial? = null
+    private var cbCallerAnnounceDuringCall:
+        androidx.appcompat.widget.AppCompatCheckBox? = null
     private var spinnerCallerRepeat: Spinner? = null
     private var spinnerCallerInterval: Spinner? = null
     private var seekCallerRate: SeekBar? = null
@@ -97,6 +99,12 @@ internal class CallerAnnouncementController(
     fun setup(view: View) {
         switchCallerAnnouncement =
             view.findViewById(R.id.switch_caller_announcement)
+        // المربع بلا android:id (منشئ الـ binding في حدود 255 معاملاً) —
+        // يُسترجَع عبر android:tag بدل findViewById.
+        cbCallerAnnounceDuringCall =
+            view.findViewWithTag<
+                androidx.appcompat.widget.AppCompatCheckBox
+                >("cb_caller_announce_during_call")
         spinnerCallerRepeat = view.findViewById(R.id.spinner_caller_repeat)
         spinnerCallerInterval = view.findViewById(R.id.spinner_caller_interval)
         seekCallerRate = view.findViewById(R.id.seek_caller_rate)
@@ -153,6 +161,26 @@ internal class CallerAnnouncementController(
                     fragment.getString(R.string.announcement_turned_off)
                 )
             }
+        }
+
+        // مربع نطق اسم المتصل الوارد أثناء مكالمة نشطة (مكالمة انتظار) —
+        // غير محدد افتراضياً، مستقل عن مفتاح التفعيل.
+        cbCallerAnnounceDuringCall?.isChecked =
+            runCatching {
+                settings.isCallerAnnouncementDuringCallEnabled()
+            }.getOrDefault(false)
+        cbCallerAnnounceDuringCall?.setOnCheckedChangeListener { _, checked ->
+            runCatching {
+                settings.setCallerAnnouncementDuringCallEnabled(checked)
+            }
+            onStatusChanged()
+            fragment.view?.announceCompat(
+                if (checked) {
+                    fragment.getString(R.string.announcement_turned_on)
+                } else {
+                    fragment.getString(R.string.announcement_turned_off)
+                }
+            )
         }
 
         // عدد مرات التكرار
@@ -743,6 +771,7 @@ internal class CallerAnnouncementController(
     /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */
     fun cleanup() {
         switchCallerAnnouncement = null
+        cbCallerAnnounceDuringCall = null
         spinnerCallerRepeat = null
         spinnerCallerInterval = null
         seekCallerRate = null

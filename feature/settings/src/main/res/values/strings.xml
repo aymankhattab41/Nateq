@@ -74,6 +74,7 @@
     <string name="battery_level_checked">تم تحديد %1$d بالمئة</string>
     <string name="battery_level_unchecked">أُلغي تحديد %1$d بالمئة</string>
 <string name="caller_announcement_enabled">تفعيل إعلان المتصل</string>
+<string name="caller_announcement_during_call">نطق اسم المتصل أثناء المكالمة</string>
 <string name="caller_announcement_interval">الفاصل بين كل نطق (بالثواني)</string>
 <string name="caller_announcement_rate">سرعة نطق المتصل</string>
 <string name="caller_announcement_pitch">نبرة إعلان المتصل</string>

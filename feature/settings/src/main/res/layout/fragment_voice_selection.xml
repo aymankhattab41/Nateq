@@ -1107,6 +1107,17 @@
                 android:textOff="@string/toggle_off"
                 android:textOn="@string/toggle_on" />
 
+            <!-- نطق اسم المتصل الثاني الوارد أثناء مكالمة نشطة: بلا android:id —
+            منشئ الـ binding في حدود 255 معاملاً فلا يتحمّل idً جديداً
+            («too many parameters»)، والضابط يبلغ المربع عبر android:tag. -->
+            <androidx.appcompat.widget.AppCompatCheckBox
+                android:tag="cb_caller_announce_during_call"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/caller_announcement_during_call"
+                android:importantForAccessibility="yes" />
+
             <!-- عدد مرات التكرار -->
             <com.google.android.material.textfield.TextInputLayout
                 android:layout_width="match_parent"

@@ -1398,6 +1398,14 @@ class SettingsRepository(context: Context) :
     override fun setCallerAnnouncementEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("caller_announcement_enabled", enabled).apply()
 
+    /** نطق اسم المتصل الثاني الوارد أثناء مكالمة نشطة (مكالمة انتظار) */
+    override fun isCallerAnnouncementDuringCallEnabled(): Boolean =
+        prefs.getBoolean("caller_announcement_during_call_enabled", false)
+    override fun setCallerAnnouncementDuringCallEnabled(enabled: Boolean) =
+        prefs.edit()
+            .putBoolean("caller_announcement_during_call_enabled", enabled)
+            .apply()
+
     /** عدد مرات تكرار اسم المتصل */
     override fun getCallerAnnouncementRepeat(): Int =
         prefs.getInt("caller_announcement_repeat", 1)
