@@ -1430,6 +1430,15 @@
                 android:nestedScrollingEnabled="false"
                 android:minHeight="@dimen/categories_list_min_height" />
 
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_save_categories"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/categories_save_button"
+                android:importantForAccessibility="yes" />
+
         </LinearLayout>        <View
             android:layout_width="match_parent"
             android:layout_height="1dp"

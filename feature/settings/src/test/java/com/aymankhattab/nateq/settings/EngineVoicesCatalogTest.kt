@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.settings
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -26,9 +27,20 @@ class EngineVoicesCatalogTest {
         )
     )
 
+    /** صوت محركٍ مكتشفٍ فعلي (مثل Google TTS) — معرّفه لا يطابق
+     *  صيغ اللورد المنطقية، ويمثل جذر «ارتداد الصوت إلى العربية». */
+    private val googleEn = EngineVoicesRow(
+        enginePackage = "com.google.android.tts",
+        engineLabel = "Google",
+        voices = listOf(
+            VoiceOption("com.google.android.tts:eng-usa", "English US")
+        )
+    )
+
     private val catalog = EngineVoicesCatalog(
         initial = mapOf(
             "ar" to listOf(acapella, google),
+            "en" to listOf(googleEn),
             "fr" to listOf(
                 EngineVoicesRow(
                     "com.vocalizer",
@@ -114,5 +126,38 @@ class EngineVoicesCatalogTest {
             listOf("ar-EG-Wavenet-A", "ar-EG-Wavenet-B"),
             mutable.voicesFor("ar", "com.acapella").map { it.name }
         )
+    }
+
+    @Test
+    fun `languageOfVoice resolves discovered voice to its language`() {
+        assertEquals("ar", catalog.languageOfVoice("ar-XA-Wavenet-C"))
+        assertEquals("en", catalog.languageOfVoice(
+            "com.google.android.tts:eng-usa"
+        ))
+        assertEquals("fr", catalog.languageOfVoice("fr-FR-Sylvia"))
+        assertNull(catalog.languageOfVoice("unknown-voice-id"))
+        assertNull(catalog.languageOfVoice(""))
+    }
+
+    @Test
+    fun `languageForSavedVoice resolves logical identifiers directly`() {
+        assertEquals("ar", catalog.languageForSavedVoice("ar-EG"))
+        assertEquals("en", catalog.languageForSavedVoice("en-US"))
+        assertEquals("ar", catalog.languageForSavedVoice("ar-local"))
+        assertEquals("en", catalog.languageForSavedVoice("en-local"))
+        assertEquals("ar", catalog.languageForSavedVoice("nateq-arabic-1"))
+    }
+
+    @Test
+    fun `languageForSavedVoice finds discovered engine voices`() {
+        // جذر الخلل المُصلَح: صوت إنجليزي من محركٍ مكتشف كان يُستنتج
+        // «عربية» فيرتد الصوت الافتراضي إلى العربية — الآن يُكشف إنجليزياً.
+        assertEquals(
+            "en", catalog.languageForSavedVoice(
+                "com.google.android.tts:eng-usa"
+            )
+        )
+        assertEquals("fr", catalog.languageForSavedVoice("fr-FR-Sylvia"))
+        assertNull(catalog.languageForSavedVoice("com.unknown:pitch"))
     }
 }

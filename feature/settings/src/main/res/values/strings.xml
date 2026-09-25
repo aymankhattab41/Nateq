@@ -19,6 +19,7 @@
 <string name="auto_convert_rate">السرعة</string>
 <string name="auto_convert_save">حفظ</string>
 <string name="auto_convert_saved">تم حفظ إعدادات اللغة</string>
+<string name="auto_convert_pending">تغييرات غير محفوظة — اضغط «حفظ» لتطبيقها</string>
 <string name="auto_convert_summary">اختر لكل لغةٍ محركها وصوتها وأشرطتها ليُنطق بها النص المنطوق تلقائياً — لعدد غير محدود من اللغات</string>
 <string name="auto_convert_voice">الصوت</string>
 <string name="auto_convert_volume">مستوى الصوت</string>
@@ -102,6 +103,8 @@
 <string name="caller_permission_revoked_message">يُسحب النظام أذونات الهاتف وسجل المكالمات تلقائياً عند عدم استخدام تطبيق كـ Lord TTS فترة طويلة. إعلان اسم المتصل مفعّل لكنه فاقد أحد الأذونات اللازمة، فلن يُنطق المتصل فعلياً حتى تُعاد الأذونات</string>
 <string name="caller_permission_revoked_title">سُحبت أذونات المتصل</string>
 <string name="cancel">إلغاء</string>
+<string name="categories_saved">تم حفظ إعدادات الأصوات</string>
+<string name="categories_save_button">حفظ تغييرات الأصوات</string>
 <string name="cd_test_voice_button">تشغيل عيّنة صوتية للاختبار</string>
 <string name="cd_test_voice_button_for">تشغيل عيّنة صوتية للاختبار، فئة %1$s</string>
 <string name="cd_convert_play_for_language">تشغيل عيّنة صوتية للاختبار، لغة %1$s</string>
@@ -148,7 +151,7 @@
 <string name="contact_developer_no_handler">لا يوجد تطبيق يدعم فتح الرابط حالياً</string>
 <string name="convert_languages_button">إعداد جميع اللغات…</string>
 <string name="convert_languages_dialog_title">إعداد لغات التحويل التلقائي</string>
-<string name="convert_languages_hint">اختر اللغة ثم محركها وصوتها وعدّل الأشرطة — كل اختيار يُحفظ تلقائياً فوراً. اختيار «بدون محرك» يُبقي الأشرطة فقط.</string>
+<string name="convert_languages_hint">اختر اللغة ثم محركها وصوتها وعدّل الأشرطة، ثم اضغط «حفظ» لتطبيق الإعدادات على اللغة المختارة. اختيار «بدون محرك» يُبقي الأشرطة فقط.</string>
 <string name="convert_languages_loading">جارٍ اكتشاف اللغات عبر كل المحركات المثبتة…</string>
 <string name="day_friday">الجمعة</string>
 <string name="day_monday">الاثنين</string>
@@ -195,7 +198,7 @@
 <string name="exact_alarm_permission_title">دقة إعلان الوقت باللحظة</string>
 <string name="expand">عرض المحتوى</string>
 <string name="group_announcements_title">الإعلانات والتنبيهات</string>
-<string name="group_engine_voices_title">المحرك والأصوات</string>
+<string name="group_engine_voices_title">المحركات والأصوات</string>
 <string name="group_system_title">النظام والمساعدة</string>
 <string name="group_text_title">النصوص والأرقام</string>
 <string name="help_section">مساعدة</string>
@@ -482,9 +485,9 @@
 <string name="time_alarm_max_precision_summary">تستخدم منبّه النظام الدقيق (setAlarmClock) متجاوزةً كل قيود Doze والبطارية فيعمل إعلان الوقت في اللحظة المضبوطة؛ أثرُها الجانبي أن أيقونة منبّه ثابتة تظهر في شريط الحالة.</string>
 <string name="changelog_title">آخر التحديثات</string>
 <string name="changelog_text">الإصدار %1$s
+• أزرار حفظ صريحة في «المحركات والأصوات»: زر «حفظ» لكل لغة في «إعداد جميع اللغات» وزر «حفظ تغييرات الأصوات» أسفل قائمة الفئات، وإصلاح ارتداد الصوت الافتراضي إلى العربية عند اختيار صوتٍ إنجليزي من أي محرك
 • تصحيح نطق رقم الصفر: أصبح يُنطق «صِفْرْ» بدل «صِفِر» بإضافة الحركات العربية الصحيحة لضمان نطق سليم عند جميع المحركات
 • إزالة رسالة «لم يُحدَّد محرك نطق لهذه اللغة» المزعجة: تُسجَّل الحالة في السجلات الداخلية فقط دون أي نطق أو إشعار للمستخدم
-• إزالة رسالة «فشل النطق بالمحرك المحدد» المزعجة: يُسجَّل تعثر المحرك في السجلات الداخلية فقط دون أي نطق أو إشعار للمستخدم
  </string>
     <string name="diagnostics_title">معلومات التشخيص</string>
     <string name="diagnostics_desc">معلومات حول حالة التطبيق ومحركات النطق للمساعدة في حل المشاكل.</string>

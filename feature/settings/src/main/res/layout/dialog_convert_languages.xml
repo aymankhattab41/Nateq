@@ -170,4 +170,13 @@
         android:minHeight="48dp"
         android:text="@string/cd_test_voice_button" />
 
+    <!-- حفظ إعدادات اللغة المختارة (حفظ صريح بدل الحفظ التلقائي) -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_convert_dialog_save"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:minHeight="48dp"
+        android:text="@string/auto_convert_save" />
+
 </LinearLayout>

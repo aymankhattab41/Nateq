@@ -99,6 +99,31 @@ internal class EngineVoicesCatalog(
             else -> emptyList()
         }
 
+    /** لغة صوتٍ مكتشفٍ محفوظ عبر البحث في خريطة الاكتشاف (أو null إن لم
+     *  يُعرَف) — يُعتمد للاستدلال اللغوي عند غياب لغةٍ محفوظة صراحة. */
+    internal fun languageOfVoice(voiceName: String): String? {
+        if (voiceName.isBlank()) return null
+        for ((language, rows) in byLanguage) {
+            if (rows.any { row -> row.voices.any { it.name == voiceName } }) {
+                return language
+            }
+        }
+        return null
+    }
+
+    /** يستدل لغة صوتٍ محفوظ: الصيغ المنطقية (ar-EG/en-US/-local القديمة)
+     *  تُحسم مباشرة، والأسماء المكتشفة تُبحث في الخريطة؛ null = مجهول. */
+    internal fun languageForSavedVoice(savedVoice: String): String? =
+        when {
+            savedVoice.contains("nateq-ar", ignoreCase = true) ||
+                savedVoice.equals("ar-local", ignoreCase = true) ||
+                savedVoice.equals("ar-EG", ignoreCase = true) -> "ar"
+            savedVoice.contains("nateq-en", ignoreCase = true) ||
+                savedVoice.equals("en-local", ignoreCase = true) ||
+                savedVoice.equals("en-US", ignoreCase = true) -> "en"
+            else -> languageOfVoice(savedVoice)
+        }
+
     private companion object {
         const val LANGUAGE_AR = "ar"
         const val LANGUAGE_EN = "en"

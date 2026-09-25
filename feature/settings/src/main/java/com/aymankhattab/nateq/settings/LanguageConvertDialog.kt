@@ -163,10 +163,11 @@ internal fun convertSaveValues(
 // ── ضابط الحوار المدمج: كمبو لغة/محرك/صوت + أشرطة ──
 
 /**
- * ضابط حوار «إعداد جميع اللغات» المبسّط: كمبو واحد للغة، وكمبو للمحرك،
- * وكمبو للصوت، والأشرطة الثلاثة، وعيّنة النطق. أي اختيار من الكمبوهات أو
- * الأشرطة يُحفظ تلقائياً فوراً للغة المختارة (لا زر حفظ) — وفق طلب المستخدم.
- * القراءة/الكتابة عبر الخريطة الديناميكية
+ *  ضابط حوار «إعداد جميع اللغات» المبسّط: كمبو واحد للغة، وكمبو للمحرك،
+ *  وكمبو للصوت، والأشرطة الثلاثة، وعيّنة النطق، وزر حفظ صريح. أي اختيار من
+ *  الكمبوهات أو الأشرطة يُعلَّم «تغييرات غير محفوظة» ولا يُكتب إلا عند الضغط
+ *  على «حفظ» (بدل الحفظ التلقائي الفوري) — وفق طلب المستخدم.
+ *  القراءة/الكتابة عبر الخريطة الديناميكية
  * (SettingsRepository.getEnginePreferenceForLanguage/
  *  setEnginePreferenceForLanguage).
  */
@@ -195,10 +196,13 @@ internal class LanguageConvertDialogController(
     private lateinit var tvRate: TextView
     private lateinit var tvSaved: TextView
     private lateinit var btnPlay: MaterialButton
+    private lateinit var btnSave: MaterialButton
 
     private var currentRow: LanguageRow =
         LanguageRow("", "", emptyList())
     private var savedVoice: String? = null
+    /** هل توجد تغييرات غير محفوظة منذ آخر ضغط «حفظ» أو تبديل لغة؟ */
+    private var pending = false
     private var noEngineLabel: String = ""
     private var noOptionsLabel: String = ""
     private var onChanged: () -> Unit = {}
@@ -217,6 +221,9 @@ internal class LanguageConvertDialogController(
         tvSaved = view.findViewById(R.id.tv_convert_dialog_saved)
         btnPlay = view.findViewById(
             R.id.btn_convert_dialog_play
+        ) as MaterialButton
+        btnSave = view.findViewById(
+            R.id.btn_convert_dialog_save
         ) as MaterialButton
 
         noEngineLabel = context.getString(R.string.auto_convert_no_engine)
@@ -239,6 +246,7 @@ internal class LanguageConvertDialogController(
         seekPitch.setOnSeekBarChangeListener(pitchListener)
         seekRate.setOnSeekBarChangeListener(rateListener)
         btnPlay.setOnClickListener { playPreview() }
+        btnSave.setOnClickListener { saveCurrent() }
 
         bindLanguageList()
     }
@@ -257,6 +265,9 @@ internal class LanguageConvertDialogController(
         currentRow = row
         btnPlay.contentDescription = context.getString(
             R.string.cd_convert_play_for_language, row.displayName
+        )
+        btnSave.contentDescription = context.getString(
+            R.string.cd_convert_save_for_language, row.displayName
         )
         val saved = settings.getEnginePreferenceForLanguage(row.languageTag)
         savedVoice = saved.voiceName
@@ -284,7 +295,9 @@ internal class LanguageConvertDialogController(
             row, actvEngine.text?.toString(), noEngineLabel, noOptionsLabel
         )
         bindVoiceFor(enginePkg)
+        pending = false
         tvSaved.text = ""
+        btnSave.isEnabled = false
     }
 
     private fun onLanguageSelected(position: Int) {
@@ -300,14 +313,14 @@ internal class LanguageConvertDialogController(
             currentRow, label, noEngineLabel, noOptionsLabel
         )
         bindVoiceFor(enginePkg)
-        saveCurrent()
+        markPending()
     }
 
     private fun onVoiceSelected(position: Int) {
         val label = itemAt(actvVoice, position) ?: return
         actvVoice.setText(label, false)
         btnPlay.isEnabled = true
-        saveCurrent()
+        markPending()
     }
 
     /** يملأ قائمة الصوت للمحرك الحالي ويضبط تفعيلها وزر العيّنة. */
@@ -329,7 +342,16 @@ internal class LanguageConvertDialogController(
         position: Int
     ): String? = adapters[actv.id]?.getItem(position)
 
-    /** حفظ تلقائي فوري: يكتب إعدادات اللغة المختارة حالياً. */
+    /** يعلّم «تغييرات غير محفوظة» ويفعّل زر الحفظ — بدل الحفظ الفوري. */
+    private fun markPending() {
+        if (pending || !::btnSave.isInitialized) return
+        pending = true
+        btnSave.isEnabled = true
+        tvSaved.text = context.getString(R.string.auto_convert_pending)
+        tvSaved.announceCompat(tvSaved.text.toString())
+    }
+
+    /** حفظ صريح: يكتب إعدادات اللغة المختارة حالياً. */
     private fun saveCurrent() {
         val params = convertSaveValues(
             currentRow,
@@ -354,6 +376,8 @@ internal class LanguageConvertDialogController(
         if (params.engine != null && !settings.isAutoConvertEnabled()) {
             settings.setAutoConvertEnabled(true)
         }
+        pending = false
+        btnSave.isEnabled = false
         savedVoice = params.voice
         tvSaved.text = context.getString(R.string.auto_convert_saved)
         tvSaved.announceCompat(tvSaved.text.toString())
@@ -388,7 +412,7 @@ internal class LanguageConvertDialogController(
 
         override fun onStopTrackingTouch(seekBar: SeekBar) {
             seekBar.announceCompat("${seekBar.progress}%")
-            saveCurrent()
+            markPending()
         }
     }
 
@@ -411,7 +435,7 @@ internal class LanguageConvertDialogController(
                 seekBar.snapSpeedMin()
                 val v = seekBar.progress.speedFactor()
                 seekBar.announceCompat(RateLabel.of(context, v))
-                saveCurrent()
+                markPending()
             }
         }
 

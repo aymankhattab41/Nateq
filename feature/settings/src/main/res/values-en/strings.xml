@@ -19,6 +19,7 @@
 <string name="auto_convert_rate">Rate</string>
 <string name="auto_convert_save">Save</string>
 <string name="auto_convert_saved">Language settings saved</string>
+<string name="auto_convert_pending">Unsaved changes — tap Save to apply</string>
 <string name="auto_convert_summary">Choose an engine, voice, and sliders for each language so spoken text is converted automatically — for any number of languages</string>
 <string name="auto_convert_voice">Voice</string>
 <string name="auto_convert_volume">Volume</string>
@@ -102,6 +103,8 @@
 <string name="caller_permission_revoked_message">The system automatically revokes sensitive permissions when an app like Lord TTS goes unused for a long time. Caller announcement is still enabled but lost a required permission, so callers cannot be announced until permissions are granted again</string>
 <string name="caller_permission_revoked_title">Caller permissions revoked</string>
 <string name="cancel">Cancel</string>
+<string name="categories_saved">Voice settings saved</string>
+<string name="categories_save_button">Save voice changes</string>
 <string name="cd_test_voice_button">Play a sample voice for testing</string>
 <string name="cd_test_voice_button_for">Play a sample of the %1$s voice</string>
 <string name="cd_convert_play_for_language">Play a sample voice for testing, %1$s language</string>
@@ -148,7 +151,7 @@
 <string name="contact_developer_no_handler">No app available to open the link right now</string>
 <string name="convert_languages_button">Set up all languages…</string>
 <string name="convert_languages_dialog_title">Auto-convert language settings</string>
-<string name="convert_languages_hint">Pick a language, engine, and voice, then adjust the sliders. Every choice is saved automatically. Choosing no engine keeps the sliders only.</string>
+<string name="convert_languages_hint">Pick a language, engine, and voice, adjust the sliders, then tap Save to apply them to the selected language. Choosing no engine keeps the sliders only.</string>
 <string name="convert_languages_loading">Discovering languages across all installed engines…</string>
 <string name="day_friday">Friday</string>
 <string name="day_monday">Monday</string>
@@ -195,7 +198,7 @@
 <string name="exact_alarm_permission_title">Time announcements at the exact minute</string>
 <string name="expand">Expand</string>
 <string name="group_announcements_title">Announcements &amp; Alerts</string>
-<string name="group_engine_voices_title">Engine &amp; Voices</string>
+<string name="group_engine_voices_title">Engines &amp; Voices</string>
 <string name="group_system_title">System &amp; Help</string>
 <string name="group_text_title">Text &amp; Numbers</string>
 <string name="help_section">Help</string>
@@ -478,9 +481,9 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+• Explicit save buttons in "Engines &amp; Voices": a Save button per language in "Set up all languages" and a "Save voice changes" button under the category list, and fixed the default voice reverting to Arabic when picking an English voice from any engine
 • Fixed zero (0) pronunciation: now spoken as «sifr» (صِفْرْ) instead of «sifir» by adding correct Arabic diacritics for clear pronunciation across all TTS engines
 • Removed the annoying "No engine selected for this language" message: the state is now logged internally only, with no speech or notification to the user
-• Removed the annoying "Speech failed with the selected engine" message: engine failures are now logged internally only, with no speech or notification to the user
  </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>

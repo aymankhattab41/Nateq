@@ -374,6 +374,18 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         )
         rvCategories.isNestedScrollingEnabled = false
 
+        // زر الحفظ الصريح لقائمة فئات الأصوات: يكتب اللغة والمحرك والصوت
+        // والأشرطة لكل صف مرتبط دفعةً واحدة (يثبّت الصوت الافتراضي بلا
+        // اعتمادٍ على الاستدلال اللغوي عند إعادة فتح الشاشة).
+        val btnSaveCategories:
+            com.google.android.material.button.MaterialButton =
+            view.findViewById(R.id.btn_save_categories)
+        btnSaveCategories.setOnClickListener {
+            (rvCategories.adapter as? CategoryVoiceAdapter)?.saveAll()
+            view.announceCompat(getString(R.string.categories_saved))
+            accordion.updateSectionStatuses()
+        }
+
         // Pronunciation dictionary RecyclerView
         rvPronunciationDict = view.findViewById(R.id.rv_pronunciation_dict)
         rvPronunciationDict.layoutManager = LinearLayoutManager(

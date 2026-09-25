@@ -76,6 +76,10 @@ internal class CategoryVoiceAdapter(
         categoryEngines.map { it.label }
     )
 
+    // الصفوف المرتبطة حالياً (فئة ← حامل) لحفظها صراحةً عبر saveAll
+    // من زر الحفظ أسفل القائمة.
+    private val holdersByCategory = HashMap<String, CatVH>()
+
     /** إعادة بناء قوائم اللغات بعد اكتمال الاكتشاف الخلفي ثم إعادة
      *  ربط الصفوف كاملة (مسند اللغة ومراجع الأصوات المرئية). */
     internal fun refreshLanguages() {
@@ -87,16 +91,16 @@ internal class CategoryVoiceAdapter(
         notifyDataSetChanged()
     }
 
-    /** لغة الصف إن لم تُحفظ صراحة: تُستنتج من صوت الفئة المحفوظ
-     *  (en-…/en-US → إنجليزية، وإلا فالعربية الافتراضية). */
+    /** لغة الصف إن لم تُحفظ صراحة: تُستنتج من صوت الفئة المحفوظ عبر الكتالوج
+     *  (صيغ اللورد المنطقية أو الأسماء المكتشفة فعلياً من المحركات)، وإلا
+     *  فالعربية الافتراضية. يصلح ارتداد صوتٍ إنجليزي محفوظ من محركٍ مكتشف
+     *  (مثل Google) إلى العربية عند إعادة فتح الشاشة. */
     private fun defaultLanguageFor(category: String): String {
         val saved = runCatching {
             settings.getPreferredVoiceIdForCategory(category)
         }.getOrNull().orEmpty()
-        val isEn = saved.startsWith("nateq-en", ignoreCase = true) ||
-            saved.startsWith("en-local", ignoreCase = true) ||
-            saved.equals("en-US", ignoreCase = true)
-        return if (isEn) "en" else "ar"
+        if (saved.isBlank()) return "ar"
+        return catalog.languageForSavedVoice(saved) ?: "ar"
     }
 
     /** إعادة بناء سبنر الأصوات للصف: أصوات (اللغة، محرك الفئة) من
@@ -127,6 +131,57 @@ internal class CategoryVoiceAdapter(
             holder.spinnerVoice.setSelection(if (idx >= 0) idx else 0)
         } finally {
             bindingAdapterInputs = false
+        }
+    }
+
+    /** حفظٌ صريح من زر «حفظ تغييرات الأصوات» أسفل القائمة: يكتب لكل صفٍّ
+     *  مربوطٍ اللغةَ الفعلية الحالية (حتى لو لم تُغيَّر) مع المحرك والصوت
+     *  والأشرطة — فيستقر الإعداد بلا اعتمادٍ على الاستدلال اللغوي عند
+     *  إعادة الربط (يصلح ارتداد صوت الإنجليزية إلى العربية). */
+    internal fun saveAll() {
+        for ((category, holder) in holdersByCategory) {
+            val langIdx = holder.spinnerLanguage.selectedItemPosition
+            if (langIdx in languages.indices) {
+                runCatching {
+                    settings.setLanguageForCategory(
+                        category, languages[langIdx]
+                    )
+                }
+            }
+            if (category != SettingsRepository.VOICE_CATEGORY_DEFAULT) {
+                val engineIdx = holder.spinnerEngine.selectedItemPosition
+                if (engineIdx in categoryEngines.indices) {
+                    runCatching {
+                        settings.setEngineForCategory(
+                            category,
+                            categoryEngines[engineIdx].packageName
+                        )
+                    }
+                }
+            }
+            val voiceIdx = holder.spinnerVoice.selectedItemPosition
+            if (voiceIdx in holder.voiceOptions.indices) {
+                runCatching {
+                    settings.setPreferredVoiceIdForCategory(
+                        category, holder.voiceOptions[voiceIdx].name
+                    )
+                }
+            }
+            runCatching {
+                settings.setSpeechRateForCategory(
+                    category, holder.seekRate.progress.speedFactor()
+                )
+            }
+            runCatching {
+                settings.setPitchForCategory(
+                    category, holder.seekPitch.progress.speedFactor()
+                )
+            }
+            runCatching {
+                settings.setVolumeForCategory(
+                    category, holder.seekVolume.progress / 100f
+                )
+            }
         }
     }
 
@@ -406,6 +461,7 @@ internal class CategoryVoiceAdapter(
     override fun onBindViewHolder(holder: CatVH, position: Int) {
         val category = categoryList[position]
         holder.category = category
+        holdersByCategory[category] = holder
         val catLabel = when (category) {
             SettingsRepository.VOICE_CATEGORY_TIME ->
                 context.getString(R.string.voice_category_time)
@@ -536,6 +592,11 @@ internal class CategoryVoiceAdapter(
     }
 
     override fun getItemCount(): Int = categoryList.size
+
+    override fun onViewRecycled(holder: CatVH) {
+        super.onViewRecycled(holder)
+        holdersByCategory.values.remove(holder)
+    }
 }
 
 /** معيار DiffUtil لإدخالات القاموس: التماثل بالمفتاح (الكلمة) والمحتوى
