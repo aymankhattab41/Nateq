@@ -487,9 +487,9 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-• "Configure all languages" dialog: adjusting the rate, pitch, or volume sliders with a screen-reader gesture (TalkBack) used to leave the Save button disabled, because such adjustments fire only onProgressChanged and never onStopTrackingTouch; the button now enables with any user change, by touch or by screen reader
-• Fixed delayed caller-name speech when a call rings: the caller TTS engine is warmed when the service starts and as the ring begins (overlapping name lookup), resetting a voice no longer shuts down the binding, and the re-stabilization delay is skipped when the binding is already ready — speech starts immediately instead of after a cold init that can exceed half a second
-• "Configure all languages" dialog: the Arabic and English rows now always show the app\'s built-in voices (ar-EG/en-US), even when no external engine reports voices — instead of an empty row with nothing to choose
+• Removed the "Show explanation about uninstalled languages" option from the voice selection screen: the checkbox, its accompanying text, and the related setting are all gone
+• Fixed caller-name speech being fully silent after the acceleration update: the pre-warm engine binding at ring time was removed (it closed the healthy binding and opened a new one that stays silent on device), and TTS calls in the warm path now run on the main thread instead of the broadcast thread
+• Silent smart engine selection: when no engine is configured for a language, an installed one is chosen automatically with no user action — with a safe silent fallback if the chosen engine fails, and the "No engine" option removed from language and caller engine lists
  </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
