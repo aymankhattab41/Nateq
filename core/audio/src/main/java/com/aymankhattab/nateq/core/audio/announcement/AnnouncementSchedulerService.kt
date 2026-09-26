@@ -21,7 +21,7 @@ import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.nav.SettingsOpenRegistry
 import com.aymankhattab.nateq.util.LanguageCode
-import com.aymankhattab.nateq.util.LocaleUtils
+
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
 import javax.inject.Inject
@@ -273,13 +273,6 @@ private fun startSafely(context: Context, action: String) {
         settings = if (::settingsRepository.isInitialized) settingsRepository
         else SettingsRepository.create(applicationContext)
 
-        // **تسريع نطق اسم المتصل:** ربطٌ دافئ خلفي لمحرك نطق المتصل عند
-        // قيام الخدمة — تصل الرنة على محركٍ جاهز بدل التهيئة الباردة
-        // (150–800ms) التي كانت تسبق أول نطقٍ لاسم المتصل داخل دورة الرن.
-        Thread {
-            runCatching { warmCallerEngine() }
-        }.start()
-
         // بند [29]: فعّل المستخدم إعلاناً يستوجب خدمة أمامية (بطارية/متصل/
         // رسائل/إشعارات) وهو محروم من إذن الإشعارات — لن يرى إشعار الخدمة
         // ولا زرّيها. ننطق تلميحاً مؤدباً لمرة واحدة (لا نستجدي الإذن ولا
@@ -313,29 +306,6 @@ private fun startSafely(context: Context, action: String) {
         timeManager = TimeAnnouncementManager.shared(this, settings)
         // المزامنة الفعلية (الوقت/مستقبل البطارية) تتم في onStartCommand وفق
         // نوع الطلب: «START» وSTICKY يزامنوان، و«العابر» لا يزامن (بند 16.2).
-    }
-
-    /** ربطٌ دافئٌ لمحرك نطق اسم المتصل (بلا نطقٍ ولا صوت): بلا محركٍ مخصصٍ
-     *  له نُدفّئ محركَ لغة النص المضبوط إن وُجد — بنفس حسم
-     *  [resolveAnnouncementEngine] الفعلي عند النطق. يُستدعى على خيطٍ خلفي
-     *  من [onCreate] ليؤدي التهيئة الباردة قبل الحاجة لا عند الرنة. */
-    private fun warmCallerEngine() {
-        val enabled = runCatching {
-            settings.isCallerAnnouncementEnabled()
-        }.getOrDefault(false)
-        if (!enabled) return
-        val lang = runCatching { settings.getAppLanguage() }
-            .getOrNull()
-            ?.let { LocaleUtils.normalizeLanguageCode(it) }
-            ?: LanguageCode.AR.tag
-        val speaker = AnnouncementSpeaker.getInstance(applicationContext)
-        val engine = resolveAnnouncementEngine(
-            callerSpeechEngine(settings, lang),
-            runCatching { settings.getEngineForLanguage(lang) }.getOrNull()
-        )
-        if (engine != null) {
-            speaker.warmEngine(engine)
-        }
     }
 
     override fun onStartCommand(

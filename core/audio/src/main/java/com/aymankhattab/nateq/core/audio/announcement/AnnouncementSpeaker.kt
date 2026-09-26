@@ -995,11 +995,18 @@ class AnnouncementSpeaker(
                 releaseAudioFocus()
                 return@ensureInit
             }
+            // **تسريع المسار الدافئ** (ربطٌ قائمٌ للمحرك المطلوب): ننطق فوراً
+            // بلا تأجيلِ الاستقرارِ (80ms) — لكن دائماً عبر Main Handler:
+            // نداءات TTS (setSpeechRate/speak/voice) على خيطٍ غيرِ Main قد
+            // تُسقطها بعضُ المحركات صامتةً — وكان المسار الدافئ يُوجّهها
+            // من خيط البث/النطاق (غيرِ Main) عند الرنة فيُصمتُ نطقَ المتصل.
             if (immediate || warm) {
-                doSpeakParts(
-                    text, locale, speechRate, pitch, volume,
-                    emojiCfg, parts, attempt = 1
-                )
+                mainHandler.post {
+                    doSpeakParts(
+                        text, locale, speechRate, pitch, volume,
+                        emojiCfg, parts, attempt = 1
+                    )
+                }
             } else {
                 // تأجيل قصير يسمح لاتصال محرك TTS بالاستقرار بعد
                 // onInit (حتى لو أعلن Success مبكراً، قد يبقى ربط
