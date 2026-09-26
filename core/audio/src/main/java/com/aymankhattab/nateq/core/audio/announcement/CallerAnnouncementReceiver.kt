@@ -255,6 +255,13 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     finishOnce()
                     return@launch
                 }
+                // **بند التسريع:** ربطٌ دافئ فوري لمحرك المتصل لحظة الرنة —
+                // يتراكبُ مع البحث عن الاسم وبناء النص فيُستبعـد من مسار أول
+                // نطقٍ لاسم المتصل التهيئةُ الباردة (150–800ms) فيدخل الصوت
+                // محركاً جاهزاً.
+                AnnouncementSpeaker.getInstance(context).warmEngine(
+                    callerSpeechEngine(settings, LanguageCode.AR.tag)
+                )
                 // رنينُ مكالمةٍ ثانية أثناء مكالمة نشطة (مكالمة انتظار):
                 // لا يُنطق اسمها إلا إن فعّل المستخدم مربع «نطق اسم المتصل
                 // أثناء المكالمة» (غير محدد افتراضياً) — وخارجه يُصمت هنا.

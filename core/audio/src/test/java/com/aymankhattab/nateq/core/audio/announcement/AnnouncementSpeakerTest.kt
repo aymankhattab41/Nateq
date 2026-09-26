@@ -769,4 +769,42 @@ class AnnouncementSpeakerTest {
             )
         )
     }
+
+    @Test
+    fun `warm binding requires the requested engine to be the bound one`() {
+        // مصفوفة حسم تخطّي تأجيل الاستقرار: لا يُسقط التأجيل إلا حين
+        // يكون الربط قائماً تحديداً على المحرك المطلوب (بند تسريع المتصل).
+        val speaker = AnnouncementSpeaker(context)
+        try {
+            assertFalse(speaker.isBindingWarm(false, null, "engine.a"))
+            assertFalse(speaker.isBindingWarm(true, null, "engine.a"))
+            assertFalse(speaker.isBindingWarm(true, "engine.b", "engine.a"))
+            assertTrue(speaker.isBindingWarm(true, "engine.a", "engine.a"))
+            assertFalse(speaker.isBindingWarm(true, "engine.a", null))
+            assertFalse(speaker.isBindingWarm(true, "engine.a", ""))
+        } finally {
+            speaker.shutdown()
+        }
+    }
+
+    @Test
+    fun `warm engine is a no-op for a non installed engine`() {
+        // الربط الدافئ لا يبني محرك TTS لمحركٍ غير مثبّت ولا ينهار
+        // (الحارس في warmEngine) — stay بالحالة الفارغة.
+        val speaker = AnnouncementSpeaker(context)
+        try {
+            speaker.warmEngine("com.nonexistent.warmEngine")
+            speaker.warmEngine(null)
+            speaker.warmEngine("")
+            val ttsField = AnnouncementSpeaker::class.java
+                .getDeclaredField("tts")
+            ttsField.isAccessible = true
+            assertNull(
+                "محرك غير مثبّت لا يُنشئ ربطاً",
+                ttsField.get(speaker)
+            )
+        } finally {
+            speaker.shutdown()
+        }
+    }
 }

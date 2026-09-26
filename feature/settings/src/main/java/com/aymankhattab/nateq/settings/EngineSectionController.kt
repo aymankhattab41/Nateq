@@ -3,6 +3,7 @@ package com.aymankhattab.nateq.settings
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.speech.tts.Voice
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
@@ -16,6 +17,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.util.LanguageCode
+import com.aymankhattab.nateq.util.VoiceIdContract
 import java.util.Locale
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -204,9 +206,21 @@ internal class EngineSectionController(
                     ctx.applicationContext
                 )
             }.getOrDefault(emptyMap())
+            // **بند الضمان:** أصواتُ المحركِ المدمجِ المنطقيةُ للّغتين
+            // المحوريتين (ar-EG/en-US) — أيُّ لغةٍ لم يصبْها اكتشافُ المحركات
+            // تُسندُ إلى صفٍّ بمزودٍ وصوتٍ حقيقيين بدل صفٍّ فارغٍ بلا خياراتٍ
+            // (شكوى «لا تظهر أصواتٌ في إعداد جميع اللغات»).
+            val guaranteed = buildLordsGuaranteedRows(
+                enginePackage = ctx.packageName,
+                engineLabel = runCatching {
+                    ctx.applicationInfo.loadLabel(ctx.packageManager).toString()
+                }.getOrDefault(ctx.packageName),
+                voicesByName = VoiceCatalog.declaredVoices()
+                    .associateBy { it.name }
+            )
             withContext(AppDispatchers.main) {
                 if (!fragment.isAdded || !dialog.isShowing) return@withContext
-                val rows = buildLanguageRows(discovered)
+                val rows = buildLanguageRows(discovered, guaranteed)
                 LanguageConvertDialogController(
                     ctx,
                     settings,
@@ -232,11 +246,13 @@ internal class EngineSectionController(
      * مضمونتان دائماً في المقدمة (حتى إن لم تُكتشفا من أي محرك)،
      * ثم بقية اللغات
      * المكتشفة فعلياً عبر كل المحركات المثبتة مرتّبة أبجدياً — لا حصر ثنائياً
-     * بأي لغة. المحركات والأصوات تبقى مستقراة من الجهاز وليست نظرية.
+     * بأي لغة. المحركات والأصوات تبقى مستقراة من الجهاز وليست نظرية؛ لغةٌ لم
+     * يُصِبْها اكتشافٌ تُسندُ إلى [guaranteed].
      */
     private fun buildLanguageRows(
-        discovered: Map<String, List<EngineWithVoices>>
-    ): List<LanguageRow> = buildAllLanguageRows(discovered)
+        discovered: Map<String, List<EngineWithVoices>>,
+        guaranteed: Map<String, List<EngineWithVoices>> = emptyMap()
+    ): List<LanguageRow> = buildAllLanguageRows(discovered, guaranteed)
 
     /** يُشغّل تكليفاً تجريبياً عبر [VoicePreviewHelper] المشترك بأية القيم
      *  المختارة دون حفظ. بند 4.2 (إغلاق أي معاينة جارية والإغلاق عند
@@ -289,10 +305,12 @@ internal class EngineSectionController(
 
 /** بناء صفوف لغات التحويل من الناتج الاكتشافي الكامل: «ar» و«en» مضمونتان في
  *  المقدمة دائماً (حتى لو لم تظهرا في الاكتشاف)، ثم بقية اللغات المرتّبة
- *  أبجدياً — بلا أي حصر ثنائيّ في اللغتين
- *  (بند 17.2: إتاحة كل اللغات المكتشفة). */
+ *  أبجدياً — بلا حصرٍ ثنائيٍ (بند 17.2: إتاحة كل اللغات المكتشفة). لغةٌ لم
+ *  يُصِبْها اكتشافُ أيِ محركٍ تُسندُ إلى صفوفها المضمونة عبر [guaranteed]
+ *  (أصواتُ المحركِ المدمج) بدل صفٍّ فارغٍ بلا خيارات. */
 internal fun buildAllLanguageRows(
-    discovered: Map<String, List<EngineWithVoices>>
+    discovered: Map<String, List<EngineWithVoices>>,
+    guaranteed: Map<String, List<EngineWithVoices>> = emptyMap()
 ): List<LanguageRow> {
     val tags = LinkedHashSet<String>()
     tags.add(LanguageCode.AR.tag)
@@ -302,8 +320,35 @@ internal fun buildAllLanguageRows(
         LanguageRow(
             languageTag = tag,
             displayName = Locale.forLanguageTag(tag).displayName,
-            engines = discovered[tag].orEmpty()
+            engines = discovered[tag]
+                ?.takeIf { it.isNotEmpty() }
+                ?: guaranteed[tag].orEmpty()
         )
+    }
+}
+
+/** صفوفٌ مضمونةٌ للمحركِ المدمج (التطبيق نفسه) للّغتين المحوريتين ar/en
+ *  بأصواتهما المُعلَنة (ar-EG/en-US) — تُسندُ إليها أيُّ لغةٍ لم يكتشفْ لها
+ *  اكتشافُ المحركات مزوّداً. لغةٌ بلا صوتٍ معلنٍ تُهمل. لا تتوسَّع خارج
+ *  اللغتين المضمونتين لتبقى سقوطاً محسوباً لا وعداً نظرياً. الخريطة مدخلٌ
+ *  بحزمةٍ وصوتٍ حقيقيين. الخريطة مدخلٌ بأسماء الأصوات (associateBy) لئلّا
+ *  تُقرأ خصائصُ كائن Voice على JVM الخالص أثناء الاختبار. */
+internal fun buildLordsGuaranteedRows(
+    enginePackage: String,
+    engineLabel: String,
+    voicesByName: Map<String, Voice>
+): Map<String, List<EngineWithVoices>> {
+    return buildMap {
+        listOf(LanguageCode.AR.tag, LanguageCode.EN.tag).forEach { tag ->
+            val voice =
+                voicesByName[VoiceIdContract.createId(tag)] ?: return@forEach
+            put(
+                tag,
+                listOf(
+                    EngineWithVoices(enginePackage, engineLabel, listOf(voice))
+                )
+            )
+        }
     }
 }
 
