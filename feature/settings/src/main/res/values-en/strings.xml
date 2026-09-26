@@ -491,10 +491,9 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+• "Configure all languages" dialog: adjusting the rate, pitch, or volume sliders with a screen-reader gesture (TalkBack) used to leave the Save button disabled, because such adjustments fire only onProgressChanged and never onStopTrackingTouch; the button now enables with any user change, by touch or by screen reader
 • Fixed delayed caller-name speech when a call rings: the caller TTS engine is warmed when the service starts and as the ring begins (overlapping name lookup), resetting a voice no longer shuts down the binding, and the re-stabilization delay is skipped when the binding is already ready — speech starts immediately instead of after a cold init that can exceed half a second
 • "Configure all languages" dialog: the Arabic and English rows now always show the app\'s built-in voices (ar-EG/en-US), even when no external engine reports voices — instead of an empty row with nothing to choose
-• New toggle "Don't interrupt ongoing reading" (in time announcement settings): when the speaker is reading a long text (message/notification/caller), the time tone waits until the reading finishes — if it exceeds ~30 seconds the time is announced anyway (off by default)
-• Purely-numeric segments are now isolated in language segmentation, so the number voice category applies in both the reader and announcement paths regardless of surrounding language; a single contiguous number stays one block
  </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>

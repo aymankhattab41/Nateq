@@ -398,7 +398,7 @@ internal class LanguageConvertDialogController(
         previewCallback?.invoke(engine, voice, volume, pitch, rate)
     }
 
-    private val volumeListener = object : SeekBar.OnSeekBarChangeListener {
+    internal val volumeListener = object : SeekBar.OnSeekBarChangeListener {
         override fun onProgressChanged(
             seekBar: SeekBar,
             progress: Int,
@@ -406,6 +406,9 @@ internal class LanguageConvertDialogController(
         ) {
             tvVol.text = "$progress%"
             seekBar.setSeekStateDescription(tvVol.text)
+            // **إتاحة TalkBack:** تعديل قارئ الشاشة يمر هنا حصراً (أداء
+            // الوصول لا يُطلق onStopTrackingTouch) — فيُفعَّل «حفظ» فوراً.
+            if (fromUser) markPending()
         }
 
         override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -416,7 +419,7 @@ internal class LanguageConvertDialogController(
         }
     }
 
-    /** مستمع سرعة/نبرة مشترك (يُحفظ عند تحرير المؤشر). */
+    /** مستمع سرعة/نبرة مشترك (تفعيل «حفظ» عند تغيّر المستخدم). */
     private fun rateLikeListenerFor(label: TextView) =
         object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
@@ -427,6 +430,9 @@ internal class LanguageConvertDialogController(
                 val v = progress.speedFactor()
                 label.text = RateLabel.of(context, v)
                 seekBar.setSeekStateDescription(label.text)
+                // **إتاحة TalkBack:** تعديل قارئ الشاشة يمر هنا حصراً (أداء
+                // الوصول لا يُطلق onStopTrackingTouch) — فيُفعَّل «حفظ» فوراً.
+                if (fromUser) markPending()
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -444,8 +450,8 @@ internal class LanguageConvertDialogController(
     // يرمي «lateinit property … has not been initialized» في خيط
     // DefaultDispatcher-worker عند دخول «إعداد جميع اللغات» (يُنشأ
     // الحوارُ داخل lifecycleScope.launch(AppDispatchers.io)).
-    private val pitchListener by lazy { rateLikeListenerFor(tvPitch) }
-    private val rateListener by lazy { rateLikeListenerFor(tvRate) }
+    internal val pitchListener by lazy { rateLikeListenerFor(tvPitch) }
+    internal val rateListener by lazy { rateLikeListenerFor(tvRate) }
 
     /** يعرض حقل قائمة (كمبو بوكس) بعناصر جاهزة وفهرس اختيار أولي. */
     private fun bindDropdown(

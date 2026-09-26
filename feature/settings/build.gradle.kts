@@ -22,6 +22,13 @@ android {
     buildFeatures {
         viewBinding = true
     }
+    testOptions {
+        unitTests {
+            // Robolectric: تضمين موارد الوحدة (layouts/strings) لاختبارات
+            // نفخ العروض مثل حوار إعداد جميع اللغات.
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 dependencies {
@@ -42,4 +49,6 @@ dependencies {
     implementation(libs.androidx.fragment.ktx)
 
     testImplementation(libs.junit)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.robolectric)
 }
