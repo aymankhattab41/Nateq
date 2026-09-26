@@ -596,12 +596,13 @@ internal class SettingsAccordionController(
         val arStatus = EngineStatusResolver.resolveStatus(arEngine, installed)
         val enStatus = EngineStatusResolver.resolveStatus(enEngine, installed)
         val detail = when {
+            // محركٌ محفوظ صراحةً لكنه معطّل/غير مثبّت: وضع خطأ حقيقي يُعرَض.
+            // غيابُ الاختيار (NOT_SELECTED) لا يُعرَض بوصفه نقصاً — الاختيارُ
+            // الذكي الصامت يغطّيه داخلياً وكأنّ المستخدم اختار المحرك، فلا
+            // مؤشرَ للاختيار التلقائي إطلاقاً.
             arStatus == EngineStatus.DISABLED_OR_MISSING ||
                 enStatus == EngineStatus.DISABLED_OR_MISSING ->
                 fragment.getString(R.string.engine_disabled_or_missing)
-            arStatus == EngineStatus.NOT_SELECTED ||
-                enStatus == EngineStatus.NOT_SELECTED ->
-                fragment.getString(R.string.engine_not_selected_short)
             else -> fragment.getString(R.string.toggle_on)
         }
         val prefix = fragment.getString(R.string.auto_convert_enabled)

@@ -7,7 +7,9 @@ import org.junit.Test
 
 /** اختبارات المنطق النقي لحوار «إعداد جميع اللغات» المدمج (كمبو لغة/
  *  محرك/صوت + حفظ تلقائي) — نقي JVM دون Robolectric: لا تُمسّ هنا أي
- *  واجهة من android.speech.tts.Voice (أسماء الأصوات تُمرَّر كسلاسل). */
+ *  واجهة من android.speech.tts.Voice (أسماء الأصوات تُمرَّر كسلاسل).
+ *  لا خيار «بدون محرك» في القائمة: الغيابُ يُفسَّر اختياراً تلقائياً
+ *  صامتاً خارج الحوار (انظر قواعد المشروع). */
 class LanguageConvertDialogLogicTest {
 
     private fun engine(
@@ -25,30 +27,30 @@ class LanguageConvertDialogLogicTest {
 
     @Test
     fun engineChoice_emptyEngines_returnsSingleDisabledNoOptions() {
-        val choice = engineChoice(row(), "بدون", "لا خيارات", null)
+        val choice = engineChoice(row(), "لا خيارات", null)
         assertEquals(listOf("لا خيارات"), choice.labels)
         assertNull(choice.resolvedIndex)
     }
 
     @Test
-    fun engineChoice_noSavedEngine_selectsNoEngineFirst() {
+    fun engineChoice_noSavedEngine_selectsFirstEngine() {
         val r = row(engines = listOf(engine("a"), engine("b")))
-        val choice = engineChoice(r, "بدون", "لا", null)
-        assertEquals(listOf("بدون", "a", "b"), choice.labels)
+        val choice = engineChoice(r, "لا", null)
+        assertEquals(listOf("a", "b"), choice.labels)
         assertEquals(0, choice.resolvedIndex)
     }
 
     @Test
-    fun engineChoice_savedEngine_selectsItsIndexPlusOne() {
+    fun engineChoice_savedEngine_selectsItsIndex() {
         val r = row(engines = listOf(engine("a"), engine("b")))
-        val choice = engineChoice(r, "بدون", "لا", "b")
-        assertEquals(2, choice.resolvedIndex)
+        val choice = engineChoice(r, "لا", "b")
+        assertEquals(1, choice.resolvedIndex)
     }
 
     @Test
-    fun engineChoice_unknownSavedEngine_fallsBackToNoEngine() {
+    fun engineChoice_unknownSavedEngine_fallsBackToFirstEngine() {
         val r = row(engines = listOf(engine("a")))
-        val choice = engineChoice(r, "بدون", "لا", "zzz")
+        val choice = engineChoice(r, "لا", "zzz")
         assertEquals(0, choice.resolvedIndex)
     }
 
@@ -56,27 +58,28 @@ class LanguageConvertDialogLogicTest {
 
     @Test
     fun enginePackageForLabel_blankOrNull_isNull() {
-        assertNull(enginePackageForLabel(row(), null, "بدون", "لا"))
-        assertNull(enginePackageForLabel(row(), "   ", "بدون", "لا"))
+        assertNull(enginePackageForLabel(row(), null, "لا"))
+        assertNull(enginePackageForLabel(row(), "   ", "لا"))
     }
 
     @Test
-    fun enginePackageForLabel_noEngineOrNoOptions_isNull() {
+    fun enginePackageForLabel_unmatchedOrNoOptions_isNull() {
         val r = row(engines = listOf(engine("a")))
-        assertNull(enginePackageForLabel(r, "بدون", "بدون", "لا"))
-        assertNull(enginePackageForLabel(r, "لا", "بدون", "لا"))
+        // «بدون محرك» لم يعد خياراً محدداً: عنوان لا يطابق أي محرك → null
+        assertNull(enginePackageForLabel(r, "بدون", "لا"))
+        assertNull(enginePackageForLabel(r, "لا", "لا"))
     }
 
     @Test
     fun enginePackageForLabel_knownLabel_returnsPackage() {
         val r = row(engines = listOf(engine("a", "محرك أ"), engine("b")))
-        assertEquals("a", enginePackageForLabel(r, "محرك أ", "بدون", "لا"))
+        assertEquals("a", enginePackageForLabel(r, "محرك أ", "لا"))
     }
 
     @Test
     fun enginePackageForLabel_unknownLabel_isNull() {
         val r = row(engines = listOf(engine("a", "محرك أ")))
-        assertNull(enginePackageForLabel(r, "غريب", "بدون", "لا"))
+        assertNull(enginePackageForLabel(r, "غريب", "لا"))
     }
 
     // ===== قائمة الصوت =====
@@ -135,7 +138,7 @@ class LanguageConvertDialogLogicTest {
     fun convertSaveValues_withEngineAndVoice_resolvesAll() {
         val r = row(engines = listOf(engine("pk", "محرك")))
         val v = convertSaveValues(
-            r, "محرك", "صوتي", 70, 100, 200, "بدون", "لا"
+            r, "محرك", "صوتي", 70, 100, 200, "لا"
         )
         assertEquals("pk", v.engine)
         assertEquals("صوتي", v.voice)
@@ -145,11 +148,9 @@ class LanguageConvertDialogLogicTest {
     }
 
     @Test
-    fun convertSaveValues_noEngine_clearsVoiceKeepsSliders() {
+    fun convertSaveValues_unmatchedEngine_clearsVoiceKeepsSliders() {
         val r = row(engines = listOf(engine("pk", "محرك")))
-        val v = convertSaveValues(
-            r, "بدون", "صوتي", 50, 50, 50, "بدون", "لا"
-        )
+        val v = convertSaveValues(r, "غير معروف", "صوتي", 50, 50, 50, "لا")
         assertNull(v.engine)
         assertNull(v.voice)
         assertEquals(0.5f, v.volume, 0f)
@@ -159,7 +160,7 @@ class LanguageConvertDialogLogicTest {
     @Test
     fun convertSaveValues_noOptionsLanguage_keepsSlidersOnly() {
         val r = row(engines = emptyList())
-        val v = convertSaveValues(r, "لا", "لا", 100, 100, 100, "بدون", "لا")
+        val v = convertSaveValues(r, "لا", "لا", 100, 100, 100, "لا")
         assertNull(v.engine)
         assertNull(v.voice)
         assertEquals(1.0f, v.volume, 0f)
@@ -167,7 +168,7 @@ class LanguageConvertDialogLogicTest {
 
     @Test
     fun convertSaveValues_clampsSlidersBelowMinimum() {
-        val v = convertSaveValues(row(), null, null, 100, 10, 10, "بدون", "لا")
+        val v = convertSaveValues(row(), null, null, 100, 10, 10, "لا")
         assertEquals(0.25f, v.pitch, 0f)
         assertEquals(0.25f, v.rate, 0f)
     }

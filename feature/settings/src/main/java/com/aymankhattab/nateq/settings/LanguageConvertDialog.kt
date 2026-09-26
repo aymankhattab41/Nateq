@@ -49,39 +49,33 @@ internal data class ConvertChoice(
     val resolvedIndex: Int?
 )
 
-/** عناصر قائمة المحرك + فهرس المحرّك المحفوظ: خيار «بدون محرك» في المقدمة
- *  ثم محركات اللغة؛ ولغة بلا محرك تُعرض بعنصر وحيد «لا توجد خيارات». */
+/** عناصر قائمة المحرك + فهرس المحرّك المحفوظ: محركات اللغة فقط (لا خيار
+ *  «بدون محرك» — غيابُ التخصيص معناه إسنادٌ تلقائيٌ صامت خارج الحوار)؛
+ *  ولغة بلا محرك تُعرض بعنصرٍ وحيد «لا توجد خيارات». */
 internal fun engineChoice(
     row: LanguageRow,
-    noEngineLabel: String,
     noOptionsLabel: String,
     savedEngine: String?
 ): ConvertChoice {
     if (row.engines.isEmpty()) {
         return ConvertChoice(listOf(noOptionsLabel), null)
     }
-    val items = mutableListOf(noEngineLabel)
-    items += row.engines.map { it.engineLabel }
-    val resolved = if (savedEngine == null) {
-        0
-    } else {
-        row.engines.indexOfFirst { it.enginePackage == savedEngine }
-            .takeIf { it >= 0 }?.plus(1) ?: 0
-    }
+    val items = row.engines.map { it.engineLabel }
+    val resolved = row.engines.indexOfFirst { it.enginePackage == savedEngine }
+        .takeIf { it >= 0 } ?: 0
     return ConvertChoice(items, resolved)
 }
 
-/** معرّف المحرك من عنوانٍ مختار في القائمة
- *  (null لـ«بدون محرك»/«لا توجد خيارات»/عنوان غير معروف). */
+/** معرّف المحرك من عنوانٍ مختار في القائمة (null لـ«لا توجد خيارات»/فارغ
+ *  /عنوان غير معروف). */
 internal fun enginePackageForLabel(
     row: LanguageRow,
     selectedLabel: String?,
-    noEngineLabel: String,
     noOptionsLabel: String
 ): String? {
     if (selectedLabel.isNullOrBlank()) return null
     val trimmed = selectedLabel.trim()
-    if (trimmed == noEngineLabel || trimmed == noOptionsLabel) return null
+    if (trimmed == noOptionsLabel) return null
     return row.engines.firstOrNull { it.engineLabel == trimmed }
         ?.enginePackage
 }
@@ -131,8 +125,8 @@ internal data class ConvertSaveValues(
     val volume: Float
 )
 
-/** يحسم قيم الحفظ من حالة الشاشة الحالية: بلا محرك → null المحرك والصوت،
- *  وتُطبّق الأشرطة وحدها (سلوك الحفظ القديم محفوظ). */
+/** يحسم قيم الحفظ من حالة الشاشة الحالية: لغةٌ بلا محركات → null المحرك
+ *  والصوت (إسنادٌ تلقائيٌ صامت خارج الحوار)، وتُطبّق الأشرطة وحدها. */
 internal fun convertSaveValues(
     row: LanguageRow,
     engineLabel: String?,
@@ -140,12 +134,9 @@ internal fun convertSaveValues(
     volumeProgress: Int,
     pitchProgress: Int,
     rateProgress: Int,
-    noEngineLabel: String,
     noOptionsLabel: String
 ): ConvertSaveValues {
-    val engine = enginePackageForLabel(
-        row, engineLabel, noEngineLabel, noOptionsLabel
-    )
+    val engine = enginePackageForLabel(row, engineLabel, noOptionsLabel)
     val voice = if (engine == null) {
         null
     } else {
@@ -203,7 +194,6 @@ internal class LanguageConvertDialogController(
     private var savedVoice: String? = null
     /** هل توجد تغييرات غير محفوظة منذ آخر ضغط «حفظ» أو تبديل لغة؟ */
     private var pending = false
-    private var noEngineLabel: String = ""
     private var noOptionsLabel: String = ""
     private var onChanged: () -> Unit = {}
 
@@ -226,7 +216,6 @@ internal class LanguageConvertDialogController(
             R.id.btn_convert_dialog_save
         ) as MaterialButton
 
-        noEngineLabel = context.getString(R.string.auto_convert_no_engine)
         noOptionsLabel = context.getString(R.string.auto_convert_none)
 
         actvLang.setOnClickListener { actvLang.showDropDown() }
@@ -285,14 +274,12 @@ internal class LanguageConvertDialogController(
             context, saved.rate.coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
         )
 
-        val engine = engineChoice(
-            row, noEngineLabel, noOptionsLabel, saved.engine
-        )
+        val engine = engineChoice(row, noOptionsLabel, saved.engine)
         bindDropdown(actvEngine, engine.labels, engine.resolvedIndex)
         actvEngine.isEnabled = row.engines.isNotEmpty()
 
         val enginePkg = enginePackageForLabel(
-            row, actvEngine.text?.toString(), noEngineLabel, noOptionsLabel
+            row, actvEngine.text?.toString(), noOptionsLabel
         )
         bindVoiceFor(enginePkg)
         pending = false
@@ -310,7 +297,7 @@ internal class LanguageConvertDialogController(
         val label = itemAt(actvEngine, position) ?: return
         actvEngine.setText(label, false)
         val enginePkg = enginePackageForLabel(
-            currentRow, label, noEngineLabel, noOptionsLabel
+            currentRow, label, noOptionsLabel
         )
         bindVoiceFor(enginePkg)
         markPending()
@@ -360,7 +347,6 @@ internal class LanguageConvertDialogController(
             seekVol.progress,
             seekPitch.progress,
             seekRate.progress,
-            noEngineLabel,
             noOptionsLabel
         )
         settings.setEnginePreferenceForLanguage(
@@ -371,8 +357,8 @@ internal class LanguageConvertDialogController(
             params.pitch,
             params.volume
         )
-        // اختيار محرك صريح يفعّل «التحويل التلقائي» فوراً؛ «بدون محرك» لا
-        // يغيّر حالة المفتاح (كما كان في حفظ الصف السابق).
+        // اختيار محرك صريح يفعّل «التحويل التلقائي» فوراً؛ لغةٌ بلا محركات
+        // (engine الصفر) لا تغيّر حالة المفتاح.
         if (params.engine != null && !settings.isAutoConvertEnabled()) {
             settings.setAutoConvertEnabled(true)
         }
@@ -386,8 +372,7 @@ internal class LanguageConvertDialogController(
 
     private fun playPreview() {
         val engine = enginePackageForLabel(
-            currentRow, actvEngine.text?.toString(),
-            noEngineLabel, noOptionsLabel
+            currentRow, actvEngine.text?.toString(), noOptionsLabel
         ) ?: return
         val voice = voiceNameFromLabel(
             actvVoice.text?.toString(), noOptionsLabel

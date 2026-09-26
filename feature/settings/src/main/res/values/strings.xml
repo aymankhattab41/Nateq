@@ -14,7 +14,6 @@
 <string name="auto_convert_engine">المحرك</string>
 <string name="auto_convert_language">اللغة</string>
 <string name="auto_convert_none">لا توجد خيارات متاحة</string>
-<string name="auto_convert_no_engine">بدون محرك (الأشرطة فقط)</string>
 <string name="auto_convert_pitch">النبرة</string>
 <string name="auto_convert_rate">السرعة</string>
 <string name="auto_convert_save">حفظ</string>
@@ -45,7 +44,6 @@
     <string name="custom_chime_cleared">تمت إزالة النغمة المخصصة والعودة للرنة الافتراضية</string>
     <string name="custom_chime_confirm_title">تأكيد اختيار ملف النغمة</string>
     <string name="custom_chime_confirm_msg">هل تريد استخدام هذا الملف كرنة للساعة؟\n\nالملف: %1$s\n\nتنبيه: يبقى الملف في مكانه الأصلي دون نسخه.</string>
-<string name="engine_not_selected_short">لم يُحدَّد محرك لهذه اللغة</string>
 <string name="engine_disabled_or_missing">المحرك المحدّد معطّل أو غير مثبّت</string>
 <string name="back_label">الرجوع إلى القائمة الرئيسية</string>
 <string name="back_to_group">الرجوع إلى %1$s</string>

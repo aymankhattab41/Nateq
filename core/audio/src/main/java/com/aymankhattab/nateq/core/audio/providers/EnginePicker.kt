@@ -84,4 +84,22 @@ object EnginePicker {
         return installedEngines(context).map { it.packageName }
     }
 
+    /**
+     * المحرك المفضّل من قائمة الحزم المثبتة وفق ترتيب [EngineRegistry]،
+     * ثم أي محرك مثبّت ليس قارئ شاشة. منطق نقي قابل للاختبار.
+     */
+    fun pickPreferredEngineFrom(installed: Collection<String>): String? {
+        return EngineRegistry.pickPreferredEngineFrom(installed)
+    }
+
+    /**
+     * المحرك الذي ينطق به التطبيق عند عدم تحديد المستخدم محركاً يدوياً —
+     * اختيارٌ تلقائيٌ صامت: يتصرّف داخلياً كأن المستخدم اختار المحرك،
+     * بلا أي رسالة أو مؤشر. يُتجنَّب قارئات الشاشة (لا صوت عبر synthesize
+     * القياسي). يعتمد على المحركات المثبّتة في النظام الآن.
+     */
+    fun pickEnginePackage(context: Context): String? {
+        return pickPreferredEngineFrom(installedEnginePackages(context))
+    }
+
 }

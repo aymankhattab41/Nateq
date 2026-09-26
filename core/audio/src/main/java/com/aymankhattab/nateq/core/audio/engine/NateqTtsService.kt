@@ -260,6 +260,18 @@ class NateqTtsService : TextToSpeechService() {
         val providers = listOf(
             SystemVoiceProvider(applicationContext, settings)
         )
+        // سلسلة تراجع صامتة بلغة النطق الفعلية: يزود نظام الصوت بالمحركات
+        // القادرة على كل لغة من اكتشاف الكتالوج، فيتراجع عند فشل المحرك
+        // إلى أفضل بديلٍ حقيقي ينطق لغته — بلا أي إعلان أو رسالة.
+        providers.filterIsInstance<SystemVoiceProvider>()
+            .firstOrNull()
+            ?.capableEnginesFor = { tag ->
+                if (::catalog.isInitialized) {
+                    catalog.discoveredEnginePackagesFor(tag)
+                } else {
+                    null
+                }
+            }
         catalog = VoiceCatalog(providers)
         requestHandler = SynthesisRequestHandler(catalog, settings)
 

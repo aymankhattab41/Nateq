@@ -472,7 +472,8 @@ internal class CallerAnnouncementController(
         checkRevokedPermissionsAndRecover()
     }
 
-    /** يضبط سبنر محرك إحدى اللغتين: يُبنى بـ«تلقائي» ثم المحركات المثبتة،
+    /** يضبط سبنر محرك إحدى اللغتين: يُبنى من المحركات المثبتة فقط (اختيار
+     *  المستخدم الصريح؛ الاختيار التلقائي الصامت لا يعرض عنصراً هنا)،
      *  يحدد القيمة المحفوظة لفئته، ويحفظ اختيار المستخدم لفئته فقط ثم
      *  يُحدّث أصوات تلك اللغة. */
     private fun setupCallerEngineSpinner(
@@ -483,8 +484,7 @@ internal class CallerAnnouncementController(
         refreshEnglish: Boolean = false
     ) {
         val labels = callerEngineOptions.map { it.label }
-        // لا محركات مثبتة: إخفاء سبنر المحرك وتسميته (لا خيار «تلقائي»
-        // ليعرضه).
+        // لا محركات مثبتة: إخفاء سبنر المحرك وتسميته (لا عنصر يُعرض).
         val visibility = if (callerEngineOptions.isEmpty()) {
             android.view.View.GONE
         } else {

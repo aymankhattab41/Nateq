@@ -14,7 +14,6 @@
 <string name="auto_convert_engine">Engine</string>
 <string name="auto_convert_language">Language</string>
 <string name="auto_convert_none">No options available</string>
-<string name="auto_convert_no_engine">No engine (sliders only)</string>
 <string name="auto_convert_pitch">Pitch</string>
 <string name="auto_convert_rate">Rate</string>
 <string name="auto_convert_save">Save</string>
@@ -45,7 +44,6 @@
     <string name="custom_chime_cleared">Custom chime removed, returned to default chime</string>
     <string name="custom_chime_confirm_title">Confirm Chime File</string>
     <string name="custom_chime_confirm_msg">Do you want to use this file as your hourly chime?\n\nFile: %1$s\n\nNote: The file stays in its original location without being copied.</string>
-<string name="engine_not_selected_short">No engine selected for this language</string>
 <string name="engine_disabled_or_missing">Selected engine is disabled or uninstalled</string>
 <string name="back_label">Back to main list</string>
 <string name="back_to_home">You\'re back on the main list</string>
