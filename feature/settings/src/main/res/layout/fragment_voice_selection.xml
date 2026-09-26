@@ -2787,28 +2787,8 @@
             android:text="@string/convert_languages_button"
             android:importantForAccessibility="yes" />
 
-        <!-- توضيح اختياري (نص فقط، غير افتراضي): سبب غياب بعض اللغات -->
-        <com.google.android.material.checkbox.MaterialCheckBox
-            android:id="@+id/checkbox_language_install_hint"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:minHeight="48dp"
-            android:text="@string/language_install_hint_toggle"
-            android:importantForAccessibility="yes" />
-
-        <TextView
-            android:id="@+id/tv_language_install_hint"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:padding="8dp"
-            android:visibility="gone"
-            android:text="@string/language_install_hint"
-            android:textAppearance="?attr/textAppearanceBody2"
-            android:importantForAccessibility="yes" />
-
-        </LinearLayout>        <View
+        </LinearLayout>
+        <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginTop="16dp"

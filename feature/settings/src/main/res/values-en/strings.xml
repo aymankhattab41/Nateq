@@ -211,8 +211,6 @@
 <string name="language_current_label">Language:</string>
 <string name="language_default">Language: follow device</string>
 <string name="language_english">English</string>
-<string name="language_install_hint">Some languages may not appear because their speech data isn\'t installed on your device yet — you can install it from Android Settings &gt; Languages &gt; Text-to-speech.</string>
-<string name="language_install_hint_toggle">Show explanation about uninstalled languages</string>
 <string name="no_tts_engines_message">No text-to-speech engine was found on this device. Install a TTS engine from the app store so voice announcements can work.</string>
 <string name="no_voices_available">No voices available</string>
 <string name="notification_apps_all">All apps</string>

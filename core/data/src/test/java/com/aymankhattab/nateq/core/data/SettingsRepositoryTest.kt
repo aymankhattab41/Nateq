@@ -405,16 +405,6 @@ class SettingsRepositoryTest {
     }
 
     @Test
-    fun languageInstallHint_defaultOffAndRoundTrip() {
-        // توضيح «اللغات غير المثبتة» غير افتراضي (مخفي) حتى يفعّله المستخدم
-        assertFalse(repo.isLanguageInstallHintEnabled())
-        repo.setLanguageInstallHintEnabled(true)
-        assertTrue(repo.isLanguageInstallHintEnabled())
-        repo.setLanguageInstallHintEnabled(false)
-        assertFalse(repo.isLanguageInstallHintEnabled())
-    }
-
-    @Test
     fun firstRunSetup_defaultNotCompleted_roundTrip() {
         // أول تشغيل: المعالج غير منجز فيُعرض مرة واحدة
         assertFalse(repo.isFirstRunSetupCompleted())

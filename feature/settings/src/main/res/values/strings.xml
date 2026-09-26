@@ -209,8 +209,6 @@
 <string name="language_current_label">اللغة:</string>
 <string name="language_default">اللغة: حسب لغة الهاتف</string>
 <string name="language_english">الإنجليزية</string>
-<string name="language_install_hint">بعض اللغات قد لا تظهر لأن بياناتها الصوتية غير مثبتة على جهازك بعد — يمكنك تثبيتها من إعدادات Android > اللغات > تحويل النص إلى كلام.</string>
-<string name="language_install_hint_toggle">إظهار توضيح اللغات غير المثبتة</string>
 <string name="lock_screen_privacy_enabled">حماية خصوصية قفل الشاشة</string>
 <string name="lock_screen_privacy_summary">عند قفل الشاشة، لا تُنطق تفاصيل الرسائل والإشعارات وأسماء المتصلين (حماية لكلمات التحقق OTP والخصوصية)</string>
 <string name="no_tts_engines_message">لم يُعثر على أي محرك نطق (TTS) على هذا الجهاز. ثبّت محرك نطق من متجر التطبيقات حتى يعمل النطق الصوتي.</string>

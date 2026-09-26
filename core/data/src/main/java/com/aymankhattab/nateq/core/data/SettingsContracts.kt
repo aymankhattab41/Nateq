@@ -555,12 +555,6 @@ interface DevicePrefs {
 
     /** يعيّن اكتمال تشغيل الإعداد الأول. */
     fun setFirstRunSetupCompleted(completed: Boolean)
-
-    /** هل تلميح تثبيت اللغة (المُساعد) مفعّل؟ */
-    fun isLanguageInstallHintEnabled(): Boolean
-
-    /** يعيّن تلميح تثبيت اللغة. */
-    fun setLanguageInstallHintEnabled(enabled: Boolean)
 }
 
 /**

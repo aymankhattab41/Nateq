@@ -1519,13 +1519,6 @@ class SettingsRepository(context: Context) :
     override fun setAutoConvertEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("auto_convert_enabled", enabled).apply()
 
-    /** إظهار التوضيح الاختياري «بعض اللغات قد لا تظهر…»
-     *  (نص فقط، غير افتراضي). */
-    override fun isLanguageInstallHintEnabled(): Boolean =
-        prefs.getBoolean("show_language_install_hint", false)
-    override fun setLanguageInstallHintEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("show_language_install_hint", enabled).apply()
-
     /** هل اكتمل «معالج الإعداد الأولي» القابل للتخطي؟ يُعرض مرة واحدة عند
      *  أول تشغيل (اختيار لغة الواجهة ومحرك النطق) ثم يُعلَّم منجزاً
      *  عند التخطي أو الحفظ فلا يُزعج في التشغيلات التالية. */

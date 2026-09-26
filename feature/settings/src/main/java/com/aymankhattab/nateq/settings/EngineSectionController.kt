@@ -133,30 +133,6 @@ internal class EngineSectionController(
         }
 
         btn.setOnClickListener { showConvertLanguagesDialog() }
-
-        setupLanguageInstallHint(view)
-    }
-
-    /**
-     * يربط التوضيح الاختياري (نص فقط، غير افتراضي) عن سبب غياب بعض اللغات:
-     * بياناتها الصوتية غير مثبتة على الجهاز. مخفي افتراضياً حتى يفعّله
-     * المستخدم صراحةً عبر شريط الاختيار.
-     */
-    private fun setupLanguageInstallHint(view: View) {
-        val chk: com.google.android.material.checkbox.MaterialCheckBox =
-            view.findViewById(R.id.checkbox_language_install_hint)
-        val tv = view.findViewById<TextView>(R.id.tv_language_install_hint)
-
-        chk.isChecked = runCatching { settings.isLanguageInstallHintEnabled() }
-            .getOrDefault(false)
-        tv.visibility = if (chk.isChecked) View.VISIBLE else View.GONE
-        chk.setOnClickListener { v ->
-            val enabled =
-                (v as com.google.android.material.checkbox.MaterialCheckBox)
-                    .isChecked
-            runCatching { settings.setLanguageInstallHintEnabled(enabled) }
-            tv.visibility = if (enabled) View.VISIBLE else View.GONE
-        }
     }
 
     /** قائمة كل المحركات المتاحة عبر INTENT_ACTION_TTS_SERVICE (MATCH_ALL) */
