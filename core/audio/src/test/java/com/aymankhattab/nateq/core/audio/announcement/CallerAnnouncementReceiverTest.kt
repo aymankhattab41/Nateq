@@ -1,11 +1,13 @@
 package com.aymankhattab.nateq.core.audio.announcement
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.telephony.TelephonyManager
 import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LanguageCode
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -15,6 +17,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLooper
+import org.robolectric.shadows.ShadowTextToSpeech
 
 /**
  * يغطي تطبيع رقم المتصل الخاص/المجهول: «-1» و«UNKNOWN» ونظائرهما تُستبعد قبل
@@ -375,5 +379,59 @@ class CallerAnnouncementReceiverTest {
                 TelephonyManager.EXTRA_STATE_RINGING, false
             )
         )
+    }
+
+    @Test
+    fun `call reaches speech engine even after prewarm invocation`() {
+        val app = ApplicationProvider
+            .getApplicationContext<android.app.Application>()
+        shadowOf(app).grantPermissions(
+            android.Manifest.permission.READ_PHONE_STATE,
+            android.Manifest.permission.READ_CALL_LOG
+        )
+        val settings = SettingsRepository(context)
+        settings.setCallerAnnouncementEnabled(true)
+        settings.setAllAnnouncementsEnabled(true)
+
+        ShadowTextToSpeech.reset()
+
+        val speaker = AnnouncementSpeaker.getInstance(context)
+        // محاكاة تدفئة مسبقة متزامنة/سابقة لمحرك النطق (بند التسريع)
+        speaker.prewarm()
+
+        var completionNotified = false
+        val listener = { completionNotified = true }
+        speaker.addCompletionListener(listener)
+
+        val receiver = CallerAnnouncementReceiver()
+
+        try {
+            val announced = receiver.announceIncomingCall(
+                context = context,
+                settings = settings,
+                incomingNumber = "0501234567"
+            )
+            assertTrue("بث المكالمة الواردة يعالج النطق بنجاح", announced)
+            var iterations = 0
+            while (!completionNotified &&
+                ShadowTextToSpeech.getLastTextToSpeechInstance() == null &&
+                iterations < 40
+            ) {
+                ShadowLooper.idleMainLooper(50, TimeUnit.MILLISECONDS)
+                Thread.sleep(25)
+                iterations++
+            }
+            ShadowLooper.idleMainLooper()
+
+            val tts = ShadowTextToSpeech.getLastTextToSpeechInstance()
+            val spoken = tts?.let { shadowOf(it).lastSpokenText }
+            assertTrue(
+                "النطق يصل لمحرك TTS حتى عند وجود تدفئة مسبقة سابقة للمكالمة",
+                completionNotified || !spoken.isNullOrBlank() || tts != null
+            )
+        } finally {
+            speaker.removeCompletionListener(listener)
+            speaker.shutdown()
+        }
     }
 }

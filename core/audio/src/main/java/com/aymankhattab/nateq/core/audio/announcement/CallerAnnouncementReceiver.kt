@@ -255,6 +255,16 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     finishOnce()
                     return@launch
                 }
+
+                // ⚠️ تحذير معماري: لا تُضِف أي تدفئة مسبقة (warmEngine) لمحرك
+                // إعلان المتصل عند الرنّة. جُرِّب هذا سابقاً بنيّة تسريع أول
+                // نطق (كمون التهيئة الباردة 150-800ms)، لكنه تسابق مع مسار
+                // النطق الفعلي على نفس مثيل المحرك فعطّل الميزة بالكامل (صمتٌ
+                // تام عند بعض/كل المكالمات). إن أردت تسريع أول نطق مستقبلاً،
+                // استهدف مساراً مختلفاً لا يشارك نفس مثيل TextToSpeech
+                // المستخدَم في مسار النطق الحقيقي — أو أضِف قفلاً صريحاً يمنع
+                // تشغيل التدفئة والنطق الفعلي في آنٍ واحد.
+
                 // رنينُ مكالمةٍ ثانية أثناء مكالمة نشطة (مكالمة انتظار):
                 // لا يُنطق اسمها إلا إن فعّل المستخدم مربع «نطق اسم المتصل
                 // أثناء المكالمة» (غير محدد افتراضياً) — وخارجه يُصمت هنا.
@@ -408,6 +418,83 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 finishOnce()
             }
         }
+    }
+
+    /**
+     * معالجة بث المكالمة الواردة ونطق اسم المتصل: مُستخرجة لتيسير
+     * الاختبار الآلي المباشر بلا حاجة لتطبيق Hilt كامل، ولاختبار
+     * تزامن التدفئة المسبقة والنطق الفعلي.
+     */
+    internal fun announceIncomingCall(
+        context: Context,
+        settings: SettingsRepository,
+        incomingNumber: String?,
+        previousState: String? = null,
+        callActive: Boolean = false
+    ): Boolean {
+        if (!settings.isCallerAnnouncementEnabled()) return false
+        if (!settings.isAllAnnouncementsEnabled()) return false
+
+        val waitingCall = isWaitingCall(previousState, callActive)
+        if (waitingCall &&
+            !settings.isCallerAnnouncementDuringCallEnabled()
+        ) {
+            return false
+        }
+
+        val customName = resolveCustomName(settings, incomingNumber)
+        val contactName = customName ?: resolveContactName(
+            context,
+            number = incomingNumber,
+            hasReadContacts = hasPermission(
+                context, Manifest.permission.READ_CONTACTS
+            ),
+            hasReadCallLog = hasPermission(
+                context, Manifest.permission.READ_CALL_LOG
+            )
+        )
+
+        val privacyLocked = settings.isLockScreenPrivacyEnabled() &&
+            settings.isDeviceScreenLocked()
+
+        val text = buildAnnouncementText(
+            context,
+            number = incomingNumber,
+            contactName = contactName,
+            template = settings.getCallerAnnouncementTemplate(),
+            privacyLocked = privacyLocked,
+            numberReadingMode = settings.getNumberReadingMode()
+        )
+
+        val speechRate = settings.getCallerAnnouncementRate()
+        val volume = settings.getCallerAnnouncementVolume()
+        val hasArabic = callerSpeechLanguage(
+            contactName, incomingNumber
+        ) == LanguageCode.AR.tag
+        val locale = if (hasArabic) {
+            Locale.forLanguageTag(LanguageCode.AR.tag)
+        } else {
+            Locale.forLanguageTag(LanguageCode.EN.tag)
+        }
+
+        val speaker = AnnouncementSpeaker.getInstance(context)
+        val callerVoice = if (hasArabic) {
+            settings.getCallerAnnouncementArabicVoiceId()
+        } else {
+            settings.getCallerAnnouncementEnglishVoiceId()
+        }
+        speaker.resetVoice(callerVoice)
+
+        val pitch = settings.getCallerAnnouncementPitchOrDefault(
+            locale.language
+        )
+        speaker.speak(
+            text, locale, speechRate, pitch, volume,
+            engineOverride = callerSpeechEngine(
+                settings, locale.language
+            )
+        )
+        return true
     }
 
     /** النص الصادق حسب ما هو متاح فعلاً (لا يدّعي "غير محفوظ" جزافاً). */
