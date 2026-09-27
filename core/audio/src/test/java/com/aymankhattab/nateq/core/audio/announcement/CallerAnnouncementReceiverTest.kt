@@ -198,6 +198,80 @@ class CallerAnnouncementReceiverTest {
     }
 
     @Test
+    fun `formatCallerNumberForSpeech with diverse formats`() {
+        val expectedLocalAr = " صِفْرْ واحد صِفْرْ واحد اثنان ثلاثة " +
+            "أربعة خمسة ستة سبعة ثمانية"
+        val expectedIntlAr = " زائد اثنان صِفْرْ واحد صِفْرْ واحد " +
+            "اثنان ثلاثة أربعة خمسة ستة سبعة ثمانية"
+
+        // أرقام محلية بصيغ متنوعة تنتج نفس النص المنطوق دائماً
+        val localVariants = listOf(
+            "01012345678",
+            "010-1234-5678",
+            "010 1234 5678",
+            "(010) 1234-5678",
+            "010,1234,5678",
+            "010.1234.5678",
+            "٠١٠١٢٣٤٥٦٧٨"
+        )
+        for (num in localVariants) {
+            assertEquals(
+                "نطق متطابق للرقم المحلي: $num",
+                expectedLocalAr,
+                formatCallerNumberForSpeech(num, isArabic = true)
+            )
+        }
+
+        // أرقام دولية بـ +20 بصيغ متنوعة تنتج نفس النص المنطوق ببادئة زائد
+        val intlVariants = listOf(
+            "+201012345678",
+            "+20 10 1234 5678",
+            "+20-10-1234-5678",
+            "+20 (10) 1234-5678",
+            "+20,10,1234,5678",
+            "+20.10.1234.5678",
+            "+٢٠١٠١٢٣٤٥٦٧٨"
+        )
+        for (num in intlVariants) {
+            assertEquals(
+                "نطق متطابق للرقم الدولي: $num",
+                expectedIntlAr,
+                formatCallerNumberForSpeech(num, isArabic = true)
+            )
+        }
+
+        // نمط التجميع الثنائي (mode 2) للأرقام الدولية
+        val expectedPairsAr = " زائد عشرون, عشرة, اثنا عشر, " +
+            "أربعة وثلاثون, ستة وخمسون, ثمانية وسبعون"
+        assertEquals(
+            expectedPairsAr,
+            formatCallerNumberForSpeech(
+                "+201012345678", isArabic = true, mode = 2
+            )
+        )
+        assertEquals(
+            " plus twenty, ten, twelve, thirty four, fifty six, seventy eight",
+            formatCallerNumberForSpeech(
+                "+201012345678", isArabic = false, mode = 2
+            )
+        )
+
+        // التحقق من أن كل الأنماط 1..4 تنتج نصوصاً غير فارغة
+        for (num in localVariants + intlVariants) {
+            for (m in 1..4) {
+                val ar = formatCallerNumberForSpeech(
+                    num, isArabic = true, mode = m
+                )
+                assertTrue("AR mode $m non-empty for $num", ar.isNotBlank())
+                val en = formatCallerNumberForSpeech(
+                    num, isArabic = false, mode = m
+                )
+                assertTrue("EN mode $m non-empty for $num", en.isNotBlank())
+            }
+        }
+    }
+
+    @Test
     fun `custom name matches exact digits`() {
         assertEquals("أحمد", match("0637091234", "0637091234"))
     }
