@@ -21,7 +21,6 @@ import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.nav.SettingsOpenRegistry
 import com.aymankhattab.nateq.util.LanguageCode
-
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
 import javax.inject.Inject

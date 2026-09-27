@@ -49,33 +49,39 @@ internal data class ConvertChoice(
     val resolvedIndex: Int?
 )
 
-/** عناصر قائمة المحرك + فهرس المحرّك المحفوظ: محركات اللغة فقط (لا خيار
- *  «بدون محرك» — غيابُ التخصيص معناه إسنادٌ تلقائيٌ صامت خارج الحوار)؛
- *  ولغة بلا محرك تُعرض بعنصرٍ وحيد «لا توجد خيارات». */
+/** عناصر قائمة المحرك + فهرس المحرّك المحفوظ: خيار «بدون محرك» في المقدمة
+ *  ثم محركات اللغة؛ ولغة بلا محرك تُعرض بعنصر وحيد «لا توجد خيارات». */
 internal fun engineChoice(
     row: LanguageRow,
+    noEngineLabel: String,
     noOptionsLabel: String,
     savedEngine: String?
 ): ConvertChoice {
     if (row.engines.isEmpty()) {
         return ConvertChoice(listOf(noOptionsLabel), null)
     }
-    val items = row.engines.map { it.engineLabel }
-    val resolved = row.engines.indexOfFirst { it.enginePackage == savedEngine }
-        .takeIf { it >= 0 } ?: 0
+    val items = mutableListOf(noEngineLabel)
+    items += row.engines.map { it.engineLabel }
+    val resolved = if (savedEngine == null) {
+        0
+    } else {
+        row.engines.indexOfFirst { it.enginePackage == savedEngine }
+            .takeIf { it >= 0 }?.plus(1) ?: 0
+    }
     return ConvertChoice(items, resolved)
 }
 
-/** معرّف المحرك من عنوانٍ مختار في القائمة (null لـ«لا توجد خيارات»/فارغ
- *  /عنوان غير معروف). */
+/** معرّف المحرك من عنوانٍ مختار في القائمة
+ *  (null لـ«بدون محرك»/«لا توجد خيارات»/عنوان غير معروف). */
 internal fun enginePackageForLabel(
     row: LanguageRow,
     selectedLabel: String?,
+    noEngineLabel: String,
     noOptionsLabel: String
 ): String? {
     if (selectedLabel.isNullOrBlank()) return null
     val trimmed = selectedLabel.trim()
-    if (trimmed == noOptionsLabel) return null
+    if (trimmed == noEngineLabel || trimmed == noOptionsLabel) return null
     return row.engines.firstOrNull { it.engineLabel == trimmed }
         ?.enginePackage
 }
@@ -125,8 +131,8 @@ internal data class ConvertSaveValues(
     val volume: Float
 )
 
-/** يحسم قيم الحفظ من حالة الشاشة الحالية: لغةٌ بلا محركات → null المحرك
- *  والصوت (إسنادٌ تلقائيٌ صامت خارج الحوار)، وتُطبّق الأشرطة وحدها. */
+/** يحسم قيم الحفظ من حالة الشاشة الحالية: بلا محرك → null المحرك والصوت،
+ *  وتُطبّق الأشرطة وحدها (سلوك الحفظ القديم محفوظ). */
 internal fun convertSaveValues(
     row: LanguageRow,
     engineLabel: String?,
@@ -134,9 +140,12 @@ internal fun convertSaveValues(
     volumeProgress: Int,
     pitchProgress: Int,
     rateProgress: Int,
+    noEngineLabel: String,
     noOptionsLabel: String
 ): ConvertSaveValues {
-    val engine = enginePackageForLabel(row, engineLabel, noOptionsLabel)
+    val engine = enginePackageForLabel(
+        row, engineLabel, noEngineLabel, noOptionsLabel
+    )
     val voice = if (engine == null) {
         null
     } else {
@@ -194,6 +203,7 @@ internal class LanguageConvertDialogController(
     private var savedVoice: String? = null
     /** هل توجد تغييرات غير محفوظة منذ آخر ضغط «حفظ» أو تبديل لغة؟ */
     private var pending = false
+    private var noEngineLabel: String = ""
     private var noOptionsLabel: String = ""
     private var onChanged: () -> Unit = {}
 
@@ -216,6 +226,7 @@ internal class LanguageConvertDialogController(
             R.id.btn_convert_dialog_save
         ) as MaterialButton
 
+        noEngineLabel = context.getString(R.string.auto_convert_no_engine)
         noOptionsLabel = context.getString(R.string.auto_convert_none)
 
         actvLang.setOnClickListener { actvLang.showDropDown() }
@@ -274,12 +285,14 @@ internal class LanguageConvertDialogController(
             context, saved.rate.coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
         )
 
-        val engine = engineChoice(row, noOptionsLabel, saved.engine)
+        val engine = engineChoice(
+            row, noEngineLabel, noOptionsLabel, saved.engine
+        )
         bindDropdown(actvEngine, engine.labels, engine.resolvedIndex)
         actvEngine.isEnabled = row.engines.isNotEmpty()
 
         val enginePkg = enginePackageForLabel(
-            row, actvEngine.text?.toString(), noOptionsLabel
+            row, actvEngine.text?.toString(), noEngineLabel, noOptionsLabel
         )
         bindVoiceFor(enginePkg)
         pending = false
@@ -297,7 +310,7 @@ internal class LanguageConvertDialogController(
         val label = itemAt(actvEngine, position) ?: return
         actvEngine.setText(label, false)
         val enginePkg = enginePackageForLabel(
-            currentRow, label, noOptionsLabel
+            currentRow, label, noEngineLabel, noOptionsLabel
         )
         bindVoiceFor(enginePkg)
         markPending()
@@ -347,6 +360,7 @@ internal class LanguageConvertDialogController(
             seekVol.progress,
             seekPitch.progress,
             seekRate.progress,
+            noEngineLabel,
             noOptionsLabel
         )
         settings.setEnginePreferenceForLanguage(
@@ -357,8 +371,8 @@ internal class LanguageConvertDialogController(
             params.pitch,
             params.volume
         )
-        // اختيار محرك صريح يفعّل «التحويل التلقائي» فوراً؛ لغةٌ بلا محركات
-        // (engine الصفر) لا تغيّر حالة المفتاح.
+        // اختيار محرك صريح يفعّل «التحويل التلقائي» فوراً؛ «بدون محرك» لا
+        // يغيّر حالة المفتاح (كما كان في حفظ الصف السابق).
         if (params.engine != null && !settings.isAutoConvertEnabled()) {
             settings.setAutoConvertEnabled(true)
         }
@@ -372,7 +386,8 @@ internal class LanguageConvertDialogController(
 
     private fun playPreview() {
         val engine = enginePackageForLabel(
-            currentRow, actvEngine.text?.toString(), noOptionsLabel
+            currentRow, actvEngine.text?.toString(),
+            noEngineLabel, noOptionsLabel
         ) ?: return
         val voice = voiceNameFromLabel(
             actvVoice.text?.toString(), noOptionsLabel
@@ -383,7 +398,7 @@ internal class LanguageConvertDialogController(
         previewCallback?.invoke(engine, voice, volume, pitch, rate)
     }
 
-    internal val volumeListener = object : SeekBar.OnSeekBarChangeListener {
+    private val volumeListener = object : SeekBar.OnSeekBarChangeListener {
         override fun onProgressChanged(
             seekBar: SeekBar,
             progress: Int,
@@ -391,9 +406,6 @@ internal class LanguageConvertDialogController(
         ) {
             tvVol.text = "$progress%"
             seekBar.setSeekStateDescription(tvVol.text)
-            // **إتاحة TalkBack:** تعديل قارئ الشاشة يمر هنا حصراً (أداء
-            // الوصول لا يُطلق onStopTrackingTouch) — فيُفعَّل «حفظ» فوراً.
-            if (fromUser) markPending()
         }
 
         override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -404,7 +416,7 @@ internal class LanguageConvertDialogController(
         }
     }
 
-    /** مستمع سرعة/نبرة مشترك (تفعيل «حفظ» عند تغيّر المستخدم). */
+    /** مستمع سرعة/نبرة مشترك (يُحفظ عند تحرير المؤشر). */
     private fun rateLikeListenerFor(label: TextView) =
         object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(
@@ -415,9 +427,6 @@ internal class LanguageConvertDialogController(
                 val v = progress.speedFactor()
                 label.text = RateLabel.of(context, v)
                 seekBar.setSeekStateDescription(label.text)
-                // **إتاحة TalkBack:** تعديل قارئ الشاشة يمر هنا حصراً (أداء
-                // الوصول لا يُطلق onStopTrackingTouch) — فيُفعَّل «حفظ» فوراً.
-                if (fromUser) markPending()
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar) {}
@@ -435,8 +444,8 @@ internal class LanguageConvertDialogController(
     // يرمي «lateinit property … has not been initialized» في خيط
     // DefaultDispatcher-worker عند دخول «إعداد جميع اللغات» (يُنشأ
     // الحوارُ داخل lifecycleScope.launch(AppDispatchers.io)).
-    internal val pitchListener by lazy { rateLikeListenerFor(tvPitch) }
-    internal val rateListener by lazy { rateLikeListenerFor(tvRate) }
+    private val pitchListener by lazy { rateLikeListenerFor(tvPitch) }
+    private val rateListener by lazy { rateLikeListenerFor(tvRate) }
 
     /** يعرض حقل قائمة (كمبو بوكس) بعناصر جاهزة وفهرس اختيار أولي. */
     private fun bindDropdown(

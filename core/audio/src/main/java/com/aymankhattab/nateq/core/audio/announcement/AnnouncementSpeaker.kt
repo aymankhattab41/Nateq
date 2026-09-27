@@ -231,10 +231,6 @@ class AnnouncementSpeaker(
     private val speechCycle = AtomicLong(0L)
 
     private var tts: TextToSpeech? = null
-    // «ينطق الآن»: يُرفع عند onStart ويهبط عند onDone/onError الختامي
-    // والإيقاف. Volatile لأن الكتابة من خيط محرك TTS والقراءة (مثل قرار
-    // تأجيل نغمة الساعة) تأتي من خيطٍ آخر.
-    @Volatile
     private var nowSpeaking = false
 
     // مؤقّت أمان على Main (المحور السادس): إن علّق المحرك بلا onDone/onError
@@ -297,35 +293,6 @@ class AnnouncementSpeaker(
     @VisibleForTesting
     internal fun isPrewarmStarted(): Boolean = prewarmLaunched
 
-    /**
-     * ربطٌ دافئ لمحركٍ مُحدد بلا نطقٍ ولا صوت — يهيّئ [TextToSpeech] خلفياً
-     * حتى تكون تهيئته الباردة (150–800ms) قد اكتملت قبل لحظة الحاجة. يُستدعى
-     * من قيام الخدمة الأمامية ومن مستقبل المتصل عند الرنة (فيتتراكب الربطُ مع
-     * البحث عن الاسم وبناء النص). محركٌ غيرِ مثبَّتٍ أو ربطٌ دافئٌ قائمٌ =
-     * لا فعل.
-     */
-    fun warmEngine(requestedEngine: String?) {
-        if (requestedEngine.isNullOrBlank()) return
-        val installed = runCatching {
-            EnginePicker.installedEnginePackages(appContext)
-        }.getOrDefault(emptyList())
-        if (requestedEngine !in installed) return
-        if (isBindingWarm(tts != null, boundEngine, requestedEngine)) return
-        try {
-            ensureInit({ _ -> }, requestedEngine)
-        } catch (t: Throwable) {
-            Log.w(TAG, "warmEngine failed", t)
-        }
-    }
-
-    /** هل الربط الحالي دافئٌ للمحرك المطلوب؟ (مساوقٌ لمسار ensureInit الجاهز
-     *  ولسقوط تأجيل الاستقرار في [startSpeech]) — خالصةٌ قابلة للاختبار. */
-    internal fun isBindingWarm(
-        ttsBound: Boolean,
-        boundEngine: String?,
-        requestedEngine: String?
-    ): Boolean = ttsBound && boundEngine == requestedEngine
-
     // قائمة مستمعي اكتمال دورة النطق (آخر جملة تُتم أو تُخطئ). بدل خانة
     // الخطاف الوحيدة التي كانت تُطمس خطافات أدوات/مستقبلات أخرى (بند [8])
     // — كل مسجّل (أداة الساعة، مستقبل المتصل، مستقبل المنبه) يُستدعى عند
@@ -353,10 +320,6 @@ class AnnouncementSpeaker(
      *  رقمُه ≤ الرقم الملتقط يخص دورةً سابقة ولا يُحسب لطلبنا — يمنع
      *  تحرير goAsync/WakeLock المبكر في ويدجت الساعة (بند 5.1). */
     fun currentSpeechCycle(): Long = speechCycle.get()
-
-    /** هل المتحدث ينطق فعلاً الآن؟ يُستخدم لقرار تأجيل نغمة الساعة خلف
-     *  القراءة الجارية (مفتاح «لا تُقاطع النغمة القراءة الجارية»). */
-    fun isCurrentlySpeaking(): Boolean = nowSpeaking
 
     /** استدعاء كل مستمعي الاكتمال (كلٌّ بمعزلٍ عن أخطاء غيره). */
     private fun notifySpeechComplete() {
@@ -401,16 +364,11 @@ class AnnouncementSpeaker(
         activeUtteranceIds.clear()
     }
 
-    /** تغيير الصوت المفضّل لدورات النطق القادمة. **لا يُغلق الربط** (كان
-     *  يقتل اتصالَ TTS الدافيء فيُجبر الدورةَ التالية على إعادةِ تهيئةٍ
-     *  باردة 150–800ms — علهُ مؤخراً نطقَ اسمِ المتصل فور الرنة). تبديل
-     *  الصوت الفعلي يُطبَّق في [doSpeak] عبر `tts.voice = chosen` لكل وحدة،
-     *  وتبديل المحرك يُديرُه [ensureInit] ببوابته وبمقارنة boundEngine —
-     *  فلا حاجةَ للإغلاق هنا إطلاقاً.
-     */
+    /** تغيير الصوت المفضّل لدورات النطق القادمة (يُعيد الربط إن لزم) */
     fun resetVoice(newVoiceId: String?) {
         if (newVoiceId == voiceId) return
         voiceId = newVoiceId
+        shutdownSafely()
     }
 
     /** رصد الإسكات الفوري (هز/تقارب) أثناء النطق الجاري — معطّل افتراضياً
@@ -484,19 +442,14 @@ class AnnouncementSpeaker(
      * كان مثبّتاً، ويُعاد ربط المتحدث إن كان مربوطاً بمحركٍ مختلف (تبديل
      * حي بين الفئات)؛ null → محرك اللغة المضبوط أو محرك النظام الافتراضي.
      */
-    /** المحركُ المطلوبِ بعد التحقق من إثباته — تحويلٌ مشتركٌ بين
-     *  [ensureInit] و[isBindingWarm] و[startSpeech] حتى لا تتباين المعايير. */
-    private fun installedRequestedEngine(
-        requestedEngine: String?
-    ): String? = requestedEngine?.takeIf {
-        it in EnginePicker.installedEnginePackages(appContext)
-    }
-
     private fun ensureInit(
         onReady: (Boolean) -> Unit,
         requestedEngine: String? = null
     ) {
-        val requested = installedRequestedEngine(requestedEngine)
+        val requested = requestedEngine
+            ?.takeIf {
+                it in EnginePicker.installedEnginePackages(appContext)
+            }
         // مسارٌ جاهز: المثيل الحالي مرتبط فعلاً بنفس المحرك المطلوب —
         // نداء فوري بلا بوابة (لا تهيئة جديدة ولا انتظار دورة).
         if (tts != null && boundEngine == requested) {
@@ -974,9 +927,7 @@ class AnnouncementSpeaker(
         }
     }
 
-    /** تهيئة المحرك ثم نطق المقاطع بتأجيل قصير يسمح لاتصال TTS بالاستقرار —
-     *  يُتخطّى التأجيل عندما يكون المحرك دافئاً أصلاً (ربطٌ قائمٌ للمحرك
-     *  المطلوب) فلا حاجةَ لانتظارِ استقرارٍ بعد init (تسريع نطق المتصل). */
+    /** تهيئة المحرك ثم نطق المقاطع بتأجيل قصير يسمح لاتصال TTS بالاستقرار. */
     private fun startSpeech(
         text: String,
         locale: Locale,
@@ -988,25 +939,16 @@ class AnnouncementSpeaker(
         engineOverride: String? = null,
         immediate: Boolean = false
     ) {
-        val requested = installedRequestedEngine(engineOverride)
-        val warm = isBindingWarm(tts != null, boundEngine, requested)
         ensureInit({ ready ->
             if (!ready) {
                 releaseAudioFocus()
                 return@ensureInit
             }
-            // **تسريع المسار الدافئ** (ربطٌ قائمٌ للمحرك المطلوب): ننطق فوراً
-            // بلا تأجيلِ الاستقرارِ (80ms) — لكن دائماً عبر Main Handler:
-            // نداءات TTS (setSpeechRate/speak/voice) على خيطٍ غيرِ Main قد
-            // تُسقطها بعضُ المحركات صامتةً — وكان المسار الدافئ يُوجّهها
-            // من خيط البث/النطاق (غيرِ Main) عند الرنة فيُصمتُ نطقَ المتصل.
-            if (immediate || warm) {
-                mainHandler.post {
-                    doSpeakParts(
-                        text, locale, speechRate, pitch, volume,
-                        emojiCfg, parts, attempt = 1
-                    )
-                }
+            if (immediate) {
+                doSpeakParts(
+                    text, locale, speechRate, pitch, volume,
+                    emojiCfg, parts, attempt = 1
+                )
             } else {
                 // تأجيل قصير يسمح لاتصال محرك TTS بالاستقرار بعد
                 // onInit (حتى لو أعلن Success مبكراً، قد يبقى ربط

@@ -101,10 +101,38 @@ class SystemVoiceProvider(
      *  لمهلة التهيئة [INIT_TIMEOUT_MS] (غير حاصر). */
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    /** حقنة اختيارية من المضيفين (NateqTtsService): سلسلة المحركات القادرة
-     *  على نطق لغةٍ معيّنة من اكتشاف الكتالوج، ليبني هذا المزوّد مسارَ
-     *  تراجعٍ بلغة النطق الفعلية (تفضيل اللغة ← المفضَّل ← أي بديل). */
-    var capableEnginesFor: ((languageTag: String) -> List<String>?)? = null
+    private val unconfiguredLanguageNotified = mutableSetOf<String>()
+    private val engineFailureNotified = mutableSetOf<String>()
+
+    /**
+     * يكتفي بتسجيل غياب محرك محدَّد للغة في اللوج للتصحيح دون
+     * أي إعلان صوتي أو Toast — رسالة "لم يُحدَّد محرك نطق لهذه
+     * اللغة" كانت مزعجة للمستخدم كلما تعذر نطق لغة بلا تخصيص.
+     */
+    private fun notifyNoEngineForLanguageOnce(languageTag: String) {
+        val shouldNotify = synchronized(unconfiguredLanguageNotified) {
+            unconfiguredLanguageNotified.add(languageTag)
+        }
+        if (shouldNotify) {
+            Log.w(TAG, "[Provider] no engine selected for language " +
+                "(lang=$languageTag)")
+        }
+    }
+
+    /**
+     * يكتفي بتسجيل فشل المحرك في اللوج للتصحيح دون أي إعلان
+     * صوتي أو Toast — رسالة "فشل النطق بالمحرك المحدَّد" كانت
+     * مزعجة للمستخدم كلما تعثر النطق بالمحرك المختار.
+     */
+    private fun notifyEngineFailedOnce(engine: String?) {
+        val key = engine ?: "unknown"
+        val shouldNotify = synchronized(engineFailureNotified) {
+            engineFailureNotified.add(key)
+        }
+        if (shouldNotify) {
+            Log.e(TAG, "[Provider] engine failed for selected (engine=$engine)")
+        }
+    }
 
     /**
      * مراقب حالة الإنترنت الاستباقي ([ConnectivityMonitor]) — يسجّل
@@ -141,10 +169,6 @@ class SystemVoiceProvider(
 
         /** دورية فحص الإلغاء أثناء انتظار اكتمال الكتابة. */
         private const val CANCELLATION_POLL_MS = 100L
-
-        /** سقف محاولات سلسلة التراجع الصامت بعد فشل محرك أو أكثر في جلسة
-         *  تخليقٍ واحدة — بدل الحلقة اللانهائية بين المحركات الفاشلة. */
-        private const val MAX_RETRIES = 3
 
         /**
          * مهلة انتظار اكتمال كتابة المحرك لملف الصوت
@@ -310,31 +334,25 @@ class SystemVoiceProvider(
     }
 
     /**
-     * يستعلم عن المحرك الذي سيُستخدَم للغة [languageTag]:
-     * 1) المحرك الصريح للغة (إن حُدِّد في شاشة اللغة وكان مثبّتاً فعلاً).
-     * 2) وإلا محركٌ مختارٌ تلقائياً **بصمت** (الاختيار الذكي): أفضل محرك
-     *    مثبّتٍ من [EngineRegistry] غيرِ قارئِ شاشة — يتصرّف التطبيق
-     *    داخلياً وكأنّ المستخدم اختاره، بلا أي رسالة أو مؤشر.
-     * لن يُعاد null إلا حين لا يوجد أي محرك TTS مثبّت في النظام أصلاً.
+     * يستعلم عن المحرك المحدد صراحةً للغة [languageTag]،
+     * بشرط أن يكون مثبّتاً فعلاً في النظام. لا اختيار تلقائياً ولا احتياطياً
+     * ذكياً على الإطلاق — إن لم يحدد المستخدم محركاً يُعاد null.
      */
     private fun pickEnginePackage(languageTag: String? = null): String? {
+        if (languageTag == null) return null
         val installed = EnginePicker.installedEnginePackages(context)
         val settings = injectedSettings
             ?: SettingsRepository.create(context)
-        // تفضيل اللغة الصريح أولاً (أعلى أولوية: اللغة تقرر محركها).
-        if (languageTag != null) {
-            try {
-                val perLang = settings.getEngineForLanguage(languageTag)
-                if (perLang != null && installed.contains(perLang)) {
-                    return perLang
-                }
-            } catch (e: Exception) {
-                // لا نكسر النطق بخطأ قراءة إعدادات.
+        return try {
+            val perLang = settings.getEngineForLanguage(languageTag)
+            if (perLang != null && installed.contains(perLang)) {
+                perLang
+            } else {
+                null
             }
+        } catch (e: Exception) {
+            null
         }
-        // لا محرك افتراضي عام: القرار النهائي ديناميكياً وقت النطق عبر
-        // [EngineRegistry] (المفضَّل ← أي محرك مثبّت غير قارئ شاشة).
-        return EnginePicker.pickEnginePackage(context)
     }
 
     override suspend fun listVoices(locale: Locale): List<VoiceDescriptor> {
@@ -429,10 +447,28 @@ class SystemVoiceProvider(
             }
             val resolvedEngine = resolveEngine(enginePackage, voiceLocale)
             if (resolvedEngine == null) {
-                // لا يوجد أي محرك TTS مثبّت في النظام أصلاً — لا اختيار ذكي
-                // يغني عنه حينها: صمت تام (لا إعلان ولا Toast) وتسجيل
-                // تشخيصي للتصحيح وحسب.
-                Log.w(TAG, "[Provider] no TTS engine installed at all")
+                val installed = EnginePicker.installedEnginePackages(context)
+                if (enginePackage != null
+                    && !installed.contains(enginePackage)
+                ) {
+                    notifyEngineFailedOnce(enginePackage)
+                } else {
+                    val langTag = voiceLocale?.language?.takeIf {
+                        it.isNotEmpty()
+                    } ?: voice.locale.language.takeIf { it.isNotEmpty() }
+                    val configured = langTag?.let { tag ->
+                        runCatching {
+                            (injectedSettings
+                                ?: SettingsRepository.create(context))
+                                .getEngineForLanguage(tag)
+                        }.getOrNull()
+                    }
+                    if (configured == null) {
+                        notifyNoEngineForLanguageOnce(langTag ?: "")
+                    } else if (!installed.contains(configured)) {
+                        notifyEngineFailedOnce(configured)
+                    }
+                }
                 cont.resume(Unit)
                 return@suspendCancellableCoroutine
             }
@@ -446,13 +482,6 @@ class SystemVoiceProvider(
             } else {
                 voice
             }
-
-            // لغة النطق الفعلية — تُغذّي سلسلة التراجع الصامت
-            // ([buildFallbackChain]) عند فشل المحرك أثناء التخليق.
-            val speechLanguage = voiceLocale?.language?.takeIf {
-                it.isNotEmpty()
-            } ?: voice.locale.language.takeIf { it.isNotEmpty() }
-                ?: ""
 
             // كاش الذاكرة (بند 19.1): إن وُجدت نسخة جاهزة لنفس النص بذات
             // وسائط الصوت، نُبثّها فوراً من الذاكرة بلا أي تلامس مع القرص أو
@@ -481,9 +510,7 @@ class SystemVoiceProvider(
                 cont,
                 cancelled,
                 desiredVoiceName,
-                cacheKey,
-                speechLanguage,
-                mutableSetOf()
+                cacheKey
             )
         }
     }
@@ -543,26 +570,24 @@ class SystemVoiceProvider(
 
     /**
      * يحدّد محرك TTS الذي سيُستخدَم، مع التحقق من أنه مثبَّت فعلاً.
-     * المحرك الصريح [enginePackage] يفوز إن كان مثبّتاً، وإلا يُستعلم عن
-     * محرك لغة [voiceLocale] المحفوظ (سلسلة لغة الطلب) ثم محرك عام.
-     * عدمُ وجود تخصيص لا يُسقط النطق: يسقط الاختيارُ الذكي الصامت على
-     * أفضل محرك مثبّت ([pickEnginePackage]) — لا صمت إلا بانعدام أي
-     * محرك TTS في النظام.
+     * المحرك الصريح [enginePackage] يفوز إن كان مثبّتاً،
+     * وإلا يُستعلم عن محرك لغة [voiceLocale] المحفوظ إن كان مثبّتاً.
+     * إن لم يحدّد المستخدم محركاً أو كان المحرك غير مثبّت، يُعاد null.
      */
     private fun resolveEngine(
         enginePackage: String?,
         voiceLocale: Locale?
     ): String? {
-        val engine = enginePackage ?: pickEnginePackage(
-            voiceLocale?.language?.takeIf { it.isNotEmpty() }
-        )
-        return if (engine != null
-            && EnginePicker.installedEnginePackages(context).contains(engine)
-        ) {
-            engine
-        } else {
-            pickEnginePackage()
+        val installed = EnginePicker.installedEnginePackages(context)
+        if (enginePackage != null) {
+            return if (installed.contains(enginePackage)) {
+                enginePackage
+            } else {
+                null
+            }
         }
+        val lang = voiceLocale?.language?.takeIf { it.isNotEmpty() }
+        return pickEnginePackage(lang)
     }
 
     /** (المحور 6) عند انتقال المتحدث النشط إلى محركٍ مختلف يُحذف ملف
@@ -584,12 +609,9 @@ class SystemVoiceProvider(
     }
 
     /**
-     * يُنفّذ النطق عبر المحرك المعطى، وعند فشله (تهيئة أو مهلة أو نطق)
-     * يُسقط المثيل من المسبح ثم يتراجع **بصمت** إلى أفضل محرك بديل في
-     * سلسلة تراجع لغة النطق ([buildFallbackChain]) — بلا أي إعلان صوتي
-     * أو Toast؛ التسجيل في اللوج للتصحيح وحسب، مع سقف [MAX_RETRIES]
-     * ينهي المحاولات بدل الحلقة اللانهائية ([failedEngines] يمنع أيضاً
-     * «تأرجح التراجع» بين محركين فاشلين).
+     * يُنفّذ النطق عبر المحرك المعطى حصراً، وعند فشله
+     * (تهيئة أو مهلة أو نطق) يُسقط المثيل من المسبح
+     * ويُعلن الفشل صوتياً دون أي استبدال بمحرك آخر.
      */
     private fun synthesizeWithEngine(
         engine: String,
@@ -603,25 +625,11 @@ class SystemVoiceProvider(
         cont: kotlin.coroutines.Continuation<Unit>,
         cancelled: AtomicBoolean,
         desiredVoiceName: String?,
-        cacheKey: String?,
-        speechLanguage: String,
-        failedEngines: MutableSet<String>
+        cacheKey: String?
     ) {
         val done = AtomicBoolean(false)
-        // إكمالٌ واحدٌ فقط على مستوى التخليق الكلي، مهما تعددت دورات
-        // التهيئة ومسارات التراجع (resume ثانٍ على Continuation يرمي):
-        // أولُ من يصل يُكمل والباقي يُتجاهل بصمت.
-        fun completeOnce() {
-            if (!done.getAndSet(true)) cont.resume(Unit)
-        }
-        // معلَّن قبل [speakNow] لأن إغلاقه يستدعيه على مسار الفشل (التراجع
-        // الصامت) وتُخصَّص قيمته فعلياً أدنى هذا (أول تنفيذٍ يتخلف عنه).
-        lateinit var attemptWith: (String, Int) -> Unit
-        val speakNow = {
-            engineInstance: TextToSpeech,
-            enginePackage: String,
-            attemptDone: AtomicBoolean ->
-            if (!attemptDone.getAndSet(true)) {
+        val speakNow = { engineInstance: TextToSpeech, enginePackage: String ->
+            if (!done.getAndSet(true)) {
                 runSynthesisOnBackground(
                     beforeSpeak = {
                         synchronized(engineInstance) {
@@ -633,37 +641,21 @@ class SystemVoiceProvider(
                             )
                         }
                     },
-                    onSuccess = { completeOnce() },
+                    onSuccess = { cont.resume(Unit) },
                     onFailure = {
                         try {
                             dropBrokenEngine(engineInstance)
+                            notifyEngineFailedOnce(enginePackage)
                         } catch (t: Throwable) {
                             Log.e(TAG, "onFailure handling failed", t)
-                        }
-                        // تراجع صامت: يُستبعد المحرك الفاشل ثم يُربَط أفضل
-                        // محركٍ بديلٍ في سلسلة لغة النطق — بلا أي إعلان.
-                        failedEngines.add(enginePackage)
-                        val fallback = buildFallbackChain(
-                            speechLanguage, failedEngines
-                        )
-                        if (failedEngines.size < MAX_RETRIES
-                            && fallback != null && !cancelled.get()
-                        ) {
-                            Log.w(TAG,
-                                "[Provider] falling back to engine:" +
-                                " $fallback (lang=$speechLanguage," +
-                                " failed so far: $failedEngines)")
-                            attemptWith(fallback, 0)
-                        } else {
-                            Log.w(TAG,
-                                "[Provider] synthesis exhausted:" +
-                                " failed=$failedEngines")
-                            completeOnce()
+                        } finally {
+                            cont.resume(Unit)
                         }
                     }
                 )
             }
         }
+        lateinit var attemptWith: (String, Int) -> Unit
         attemptWith = { currentEngine: String, rebindAttempts: Int ->
             if (!cancelled.get()) {
                 synchronized(ttsLock) {
@@ -672,7 +664,7 @@ class SystemVoiceProvider(
                             Log.w(TAG,
                                 "[Provider] engine bind skipped:" +
                                 " provider shutting down")
-                            completeOnce()
+                            if (!done.getAndSet(true)) cont.resume(Unit)
                         }
                         else -> {
                             val instance = enginePool[currentEngine]
@@ -683,9 +675,7 @@ class SystemVoiceProvider(
                                     " engine=$currentEngine"
                                 )
                                 onActiveEngineSwitch(currentEngine)
-                                speakNow(
-                                    instance, currentEngine, AtomicBoolean()
-                                )
+                                speakNow(instance, currentEngine)
                             } else if (currentEngine in prewarmingEngines) {
                                 Log.d(TAG,
                                     "[Provider] await maturity:" +
@@ -747,19 +737,18 @@ class SystemVoiceProvider(
                                                 }
                                             }
                                             if (shutdownCalled) {
-                                                completeOnce()
+                                                if (!done.getAndSet(true)) {
+                                                    cont.resume(Unit)
+                                                }
                                             } else {
-                                                speakNow(
-                                                    built, eng,
-                                                    AtomicBoolean()
-                                                )
+                                                speakNow(built, eng)
                                             }
                                         } else {
                                             // سامسونج أو مشخّص آخر ربط محركاً
                                             // غير الحزمة المطلوبة (جوجل بدل
                                             // المختار): لا نقبل المثيل ولا
                                             // نُخرج صوت محركٍ دخيل — إعادة
-                                            // ربط واحدة متبوعاً بإكمالٍ صامت.
+                                            // ربط واحدة ثم إعلان فشل صريح.
                                             Log.w(TAG,
                                                 "[Provider] bind mismatch:" +
                                                 " requested=$eng" +
@@ -779,7 +768,10 @@ class SystemVoiceProvider(
                                                     eng, rebindAttempts + 1
                                                 )
                                             } else {
-                                                completeOnce()
+                                                notifyEngineFailedOnce(eng)
+                                                if (!done.getAndSet(true)) {
+                                                    cont.resume(Unit)
+                                                }
                                             }
                                         }
                                     } else {
@@ -791,12 +783,16 @@ class SystemVoiceProvider(
                                             prewarmingEngines.remove(eng)
                                         }
                                         dropBrokenEngine(built)
-                                        completeOnce()
+                                        notifyEngineFailedOnce(eng)
+                                        if (!done.getAndSet(true)) {
+                                            cont.resume(Unit)
+                                        }
                                     }
                                 }, currentEngine)
                                 val created = hold[0]!!
                                 mainHandler.postDelayed({
                                     if (!initSettled.getAndSet(true)
+                                        && done.compareAndSet(false, true)
                                         && !cancelled.get()
                                     ) {
                                         Log.w(TAG,
@@ -810,7 +806,8 @@ class SystemVoiceProvider(
                                             )
                                         }
                                         dropBrokenEngine(created)
-                                        completeOnce()
+                                        notifyEngineFailedOnce(currentEngine)
+                                        cont.resume(Unit)
                                     }
                                 }, INIT_TIMEOUT_MS)
                             }
@@ -881,38 +878,6 @@ class SystemVoiceProvider(
                 Log.e(TAG, "[Provider] synthesis completion handler threw", t)
             }
         }
-    }
-
-    /**
-     * يبني أول محركٍ لاحق لسلسلة تراجع لغةٍ معيّنة بعد فشل محرك أو أكثر:
-     * يقرأ تفضيل اللغة الصريح + المحركات القادرة على اللغة (من اكتشاف
-     * الكتالوج عبر [capableEnginesFor] إن توفّر، وإلا كل المثبّتة)، ويستثني
-     * تراكمياً كل ما فشل سابقاً، ثم يرتّبها
-     * [EngineRegistry.capableEnginesForLanguage]
-     * (تفضيل اللغة ← المفضَّل ← الأبجدي) — يُعاد أول عنصرٍ قابلٍ للاختيار،
-     * أو null عند استنفاد كل المسارات (صفر محاولات لاحقة). قرار بلا أي
-     * إعلان للمستخدم: التراجع صامتٌ تماماً.
-     */
-    private fun buildFallbackChain(
-        speechLanguage: String,
-        failedEngines: Set<String>
-    ): String? {
-        val installed = EnginePicker.installedEnginePackages(context)
-        val discovery = runCatching {
-            capableEnginesFor?.invoke(speechLanguage)
-                ?.filter { it in installed }
-        }.getOrNull()
-        val capable = discovery?.takeIf { it.isNotEmpty() } ?: installed
-        val perLanguagePref = runCatching {
-            (injectedSettings
-                ?: SettingsRepository.create(context))
-                .getEngineForLanguage(speechLanguage)
-        }.getOrNull()
-        return EngineRegistry.capableEnginesForLanguage(
-            capable = capable,
-            preferredForLanguage = perLanguagePref,
-            excludeFailed = failedEngines
-        ).firstOrNull()
     }
 
     /**

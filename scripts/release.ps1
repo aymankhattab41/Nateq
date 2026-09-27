@@ -175,8 +175,8 @@ if (Test-Path -LiteralPath $changelogXml) {
         -replace '\\n', "`r`n" `
         -replace '%1\$s', $targetVersion).Trim("`r", "`n")
     # استخراج بنود التحديثات الفردية واقتصارها على أحدث 5 بنود فقط بدلاً من السجل التاريخي الكامل
-    $bullets = [regex]::Split($rawText, '(?m)^\s*\u2022\s*|\u2022\s*') |
-        Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and $_ -notmatch '^\s*الإصدار' }
+    $bullets = @([regex]::Split($rawText, '(?m)^\s*\u2022\s*|\u2022\s*') |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and $_ -notmatch '^\s*الإصدار' })
     $maxItems = [Math]::Min(5, $bullets.Count)
     $recentBullets = for ($i = 0; $i -lt $maxItems; $i++) {
         "• " + $bullets[$i].Trim()

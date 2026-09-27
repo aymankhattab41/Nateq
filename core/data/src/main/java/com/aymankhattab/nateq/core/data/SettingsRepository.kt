@@ -582,18 +582,6 @@ class SettingsRepository(context: Context) :
         prefs.edit().putBoolean("announce_time_during_silent", enabled)
             .apply()
 
-    // ============ عدم مقاطعة النغمة للقراءة الجارية ============
-    // مفتاح «لا تُقاطع النغمة القراءة الجارية» (افتراضي false): عندما ينطق
-    // المتحدث قراءةً طويلة (رسالة/إشعار/متصل) تُؤجَّل نغمة/نطق الساعة
-    // الدورية حتى تكتمل بدل قطعها بـ FLUSH، والسقف ~30 ثانية ثم نطق قسري.
-    // يُقرأ في TimeAnnouncementManager.speakTimeWithDefer. لمن يفضّل دقة
-    // الوقت الصارمة يبقى معطلاً فيُنطق الوقت فوراً كالسابق.
-    fun isTimeNoInterruptReadingEnabled(): Boolean =
-        prefs.getBoolean("time_no_interrupt_reading", false)
-
-    fun setTimeNoInterruptReadingEnabled(enabled: Boolean) =
-        prefs.edit().putBoolean("time_no_interrupt_reading", enabled).apply()
-
     /** يُرجع مفتاح التفضيل الفعلي للغة: بالوسم الكامل (ar-EG) إن وُجد، ثم
      *  بكود اللغة وحده (ar) إن وُجد — تراجعٌ تدريجي لتعميم تفضيل الأهل على
      *  كل لهجاتها. null إن لم يُحفظ أي تفضيل لها. */
@@ -1518,6 +1506,13 @@ class SettingsRepository(context: Context) :
         prefs.getBoolean("auto_convert_enabled", false)
     override fun setAutoConvertEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("auto_convert_enabled", enabled).apply()
+
+    /** إظهار التوضيح الاختياري «بعض اللغات قد لا تظهر…»
+     *  (نص فقط، غير افتراضي). */
+    override fun isLanguageInstallHintEnabled(): Boolean =
+        prefs.getBoolean("show_language_install_hint", false)
+    override fun setLanguageInstallHintEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("show_language_install_hint", enabled).apply()
 
     /** هل اكتمل «معالج الإعداد الأولي» القابل للتخطي؟ يُعرض مرة واحدة عند
      *  أول تشغيل (اختيار لغة الواجهة ومحرك النطق) ثم يُعلَّم منجزاً

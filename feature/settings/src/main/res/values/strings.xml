@@ -14,6 +14,7 @@
 <string name="auto_convert_engine">المحرك</string>
 <string name="auto_convert_language">اللغة</string>
 <string name="auto_convert_none">لا توجد خيارات متاحة</string>
+<string name="auto_convert_no_engine">بدون محرك (الأشرطة فقط)</string>
 <string name="auto_convert_pitch">النبرة</string>
 <string name="auto_convert_rate">السرعة</string>
 <string name="auto_convert_save">حفظ</string>
@@ -44,6 +45,7 @@
     <string name="custom_chime_cleared">تمت إزالة النغمة المخصصة والعودة للرنة الافتراضية</string>
     <string name="custom_chime_confirm_title">تأكيد اختيار ملف النغمة</string>
     <string name="custom_chime_confirm_msg">هل تريد استخدام هذا الملف كرنة للساعة؟\n\nالملف: %1$s\n\nتنبيه: يبقى الملف في مكانه الأصلي دون نسخه.</string>
+<string name="engine_not_selected_short">لم يُحدَّد محرك لهذه اللغة</string>
 <string name="engine_disabled_or_missing">المحرك المحدّد معطّل أو غير مثبّت</string>
 <string name="back_label">الرجوع إلى القائمة الرئيسية</string>
 <string name="back_to_group">الرجوع إلى %1$s</string>
@@ -209,6 +211,8 @@
 <string name="language_current_label">اللغة:</string>
 <string name="language_default">اللغة: حسب لغة الهاتف</string>
 <string name="language_english">الإنجليزية</string>
+<string name="language_install_hint">بعض اللغات قد لا تظهر لأن بياناتها الصوتية غير مثبتة على جهازك بعد — يمكنك تثبيتها من إعدادات Android > اللغات > تحويل النص إلى كلام.</string>
+<string name="language_install_hint_toggle">إظهار توضيح اللغات غير المثبتة</string>
 <string name="lock_screen_privacy_enabled">حماية خصوصية قفل الشاشة</string>
 <string name="lock_screen_privacy_summary">عند قفل الشاشة، لا تُنطق تفاصيل الرسائل والإشعارات وأسماء المتصلين (حماية لكلمات التحقق OTP والخصوصية)</string>
 <string name="no_tts_engines_message">لم يُعثر على أي محرك نطق (TTS) على هذا الجهاز. ثبّت محرك نطق من متجر التطبيقات حتى يعمل النطق الصوتي.</string>
@@ -357,9 +361,6 @@
 <string name="time_announcement_during_media_summary">يعلن الوقت تلقائياً أثناء تشغيل الموسيقى أو الفيديو (مفعّل افتراضياً)</string>
 <string name="time_announcement_during_silent">نطق الساعة أثناء وضع الصامت</string>
 <string name="time_announcement_during_silent_summary">يعلن الوقت تلقائياً عندما يكون الجهاز في وضع الصامت أو الاهتزاز (مفعّل افتراضياً)</string>
-<string name="time_no_interrupt_title">القارئ الجاري</string>
-<string name="time_no_interrupt_reading">لا تُقاطع النغمة القراءة الجارية</string>
-<string name="time_no_interrupt_reading_summary">عند انشغال المتحدث بقراءة طويلة (رسالة/إشعار/متصل)، تُؤجَّل نغمة الساعة حتى تكتمل القراءة — فإن طالت أكثر من ~30 ثانية نُطقت على أي حال</string>
 <string name="sms_announcement_template_hint">قالب قراءة الرسائل</string>
 <string name="sms_announcement_template_placeholder" formatted="false">استخدم {name} للمرسل و{message} للرسالة — اتركه فارغاً للنطق الافتراضي</string>
 <string name="sms_mode_full">مفعّل</string>
@@ -491,9 +492,7 @@
 <string name="time_alarm_max_precision_summary">تستخدم منبّه النظام الدقيق (setAlarmClock) متجاوزةً كل قيود Doze والبطارية فيعمل إعلان الوقت في اللحظة المضبوطة؛ أثرُها الجانبي أن أيقونة منبّه ثابتة تظهر في شريط الحالة.</string>
 <string name="changelog_title">آخر التحديثات</string>
 <string name="changelog_text">الإصدار %1$s
-• حذف عنصر «إظهار توضيح اللغات غير المثبتة» من شاشة اختيار الصوت: أُزيل مربعُ الاختيار ونصُّ الإيضاح المصاحب من الواجهة، مع الإعداد المرتبط بهما
-• إصلاح توقف نطق اسم المتصل بعد تحديث التسريع: أُزيل الربطُ الدافئ المسبق عند الرنين (كان يغلق الرابطَ السليمَ القائم ويفتح ربطاً جديداً يصمتُ على الجهاز) ورُدّت نداءاتُ التخليق إلى الخيط الرئيسي في المسار الدافئ بدل خيط البث
-• الاختيار الذكي الصامت لمحرك النطق: عند غياب محركٍ مضبوطٍ للغة تُختار تلقائياً من المحركات المثبتة بلا تدخلٍ من المستخدم، مع تراجعٍ صامتٍ آمنٍ إذا فشل المحرك المختار، وإزالة عنصر «بدون محرك» من خيارات اللغات ولنطق المتصل
+• إلغاء التغييرات والعودة للإصدار 70
  </string>
     <string name="diagnostics_title">معلومات التشخيص</string>
     <string name="diagnostics_desc">معلومات حول حالة التطبيق ومحركات النطق للمساعدة في حل المشاكل.</string>

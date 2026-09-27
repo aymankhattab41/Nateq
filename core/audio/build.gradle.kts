@@ -1,4 +1,4 @@
-﻿// البند 4 — :core:audio: نواة تخليق الصوت — المزوّدون (VoiceProvider/EnginePicker/
+// البند 4 — :core:audio: نواة تخليق الصوت — المزوّدون (VoiceProvider/EnginePicker/
 // SystemVoiceProvider)، الكتالوج، مقسم الكتابات، إعادة أخذ العينات (PcmResampler)،
 // معالج الطلبات، وخدمة المحرك نفسها (NateqTtsService). يعتمد على :core:engine
 // و:core:data و:core:common بلا أي اعتماد على :app.
@@ -28,10 +28,9 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
-            // تعطيل مؤقت لاختبارات هذه الوحدة (كل اختباراتها Robolectric وتجمّدت
-            // بيئياً على جهاز البناء — بند AGENTS يسمح بتعطيل Robolectric
-            // مؤقتاً) حتى يُشخَّص سبب التجمّد في جلسة لاحقة ويُعاد تفعيلها.
-            all { it.enabled = false }
+            all {
+                it.maxHeapSize = "2048m"
+            }
         }
     }
 }

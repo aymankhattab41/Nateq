@@ -9,7 +9,6 @@ import com.aymankhattab.nateq.core.data.VoicePrefsProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -18,16 +17,15 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import org.robolectric.shadows.ShadowToast
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * اختبارات التراجع التلقائي **الصامت** عند فشل المحرك:
- * إن فشل المحرك المختار أو لم يدعم اللغة أو كان معطلاً، يُسقط
- * المُثيل المعطوب ويُربَط أفضلُ محركٍ بديلٍ في سلسلة تراجع لغة
- * النطق — بلا أي إعلان: لا رسالة، لا حوار، لا Toast (تسجيلُ لوج
- * فقط). وعند انعدام محركٍ مثبّت أو خيارٍ صالح لا يُنطق شيء.
+ * اختبارات منع التراجع التلقائي عند فشل المحرك:
+ * إن فشل المحرك المختار أو لم يدعم اللغة أو كان معطلاً،
+ * يُسقط المثيل المعطوب ولا يتم التبديل التلقائي لأي محرك
+ * آخر إطلاقاً. لا تُطلق أي رسالة نطق مزعجة للمستخدم عند
+ * فشل المحرك أو غياب محرك للغة (تُسجَّل في اللوج فقط).
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [37])
@@ -80,7 +78,7 @@ class SystemVoiceProviderLanguageFallbackTest {
     }
 
     @Test
-    fun unsupportedEngine_getsDroppedAndIsReplacedSilently() {
+    fun unsupportedLanguage_failsFast_noBytesAndNoFallbackToOtherEngine() {
         registerEngine(ENGINE_A)
         registerEngine(ENGINE_B)
         EnginePicker.invalidateCache()
@@ -120,29 +118,26 @@ class SystemVoiceProviderLanguageFallbackTest {
         }
         shadowOf(Looper.getMainLooper()).idle()
 
-        // 1. المحرك الفاشل أُسقط من المسبح وأُغلق
+        // 1. لا بايتات من المحرك الفاشل
+        assertTrue(chunks.isEmpty())
+
+        // 2. المحرك الفاشل أُسقط من المسبح وأُغلق
         val pool = enginePoolOf(provider)
         assertNull(pool[ENGINE_A])
         assertTrue(shadowOf(ttsA).isShutdown)
 
-        // 2. تراجع صامت: المحرك B بديلٌ للغة جُرب فعلاً عبر تخليق الملف
-        assertNotNull(shadowOf(ttsB).getLastSynthesizeToFile())
-
-        // 3. بلا أي إعلان: لا يوجد Toast للمستخدم طوال العملية
-        assertNull(ShadowToast.getTextOfLatestToast())
+        // 3. لم يتم التبديل التلقائي إلى المحرك B
+        assertNull(shadowOf(ttsB).getLastSynthesizeToFile())
     }
 
     @Test
-    fun uninstalledRequestedEngine_fallsBackToInstalledEngine() {
+    fun uninstalledOrDisabledEngine_doesNotSynthesize() {
         // ENGINE_B مثبت فقط؛ ENGINE_A معطل/غير مثبت
         registerEngine(ENGINE_B)
         EnginePicker.invalidateCache()
 
         val context = RuntimeEnvironment.getApplication()
         val provider = SystemVoiceProvider(context)
-
-        val ttsB = TextToSpeech(context, { }, ENGINE_B)
-        enginePoolOf(provider)[ENGINE_B] = ttsB
 
         val voiceEn = VoiceDescriptor(
             id = "nateq-en-US",
@@ -168,12 +163,11 @@ class SystemVoiceProviderLanguageFallbackTest {
         }
         shadowOf(Looper.getMainLooper()).idle()
 
-        // المحرك المطلوب (غير مثبت) يُستبعد صامتاً ويُستعاض عنه بالمثبت B
-        assertNotNull(shadowOf(ttsB).getLastSynthesizeToFile())
+        assertTrue(chunks.isEmpty())
     }
 
     @Test
-    fun unconfiguredLanguage_withNoInstalledEngine_isSilent() {
+    fun unconfiguredLanguage_doesNotSynthesize() {
         val context = RuntimeEnvironment.getApplication()
         val fakePrefs = object : VoicePrefsProvider {
             override fun getEngineForLanguage(languageTag: String): String? =
@@ -226,68 +220,5 @@ class SystemVoiceProviderLanguageFallbackTest {
         shadowOf(Looper.getMainLooper()).idle()
 
         assertTrue(chunks.isEmpty())
-    }
-
-    @Test
-    fun clearedPreferences_speaksImmediatelyWithNoIndicators() {
-        // اختبار قبول: مسح التفضيلات يبقّي محركاً مثبّتاً واحداً؛ بلا خيار
-        // صريح و بلا صوت محفوظ، يجب أن ينطق التطبيق فوراً عبر اختياره
-        // التلقائي الصامت — دون أي Toast أو أي مؤشر على "اختيار تلقائي".
-        registerEngine(ENGINE_B)
-        EnginePicker.invalidateCache()
-
-        val context = RuntimeEnvironment.getApplication()
-        val clearedPrefs = object : VoicePrefsProvider {
-            override fun getEngineForLanguage(languageTag: String): String? =
-                null
-
-            override fun getVoiceForLanguage(languageTag: String): String? =
-                null
-
-            override fun getPreferredVoiceIdForCategory(
-                category: String
-            ): String? = null
-
-            override fun getSpeechRateForCategory(category: String): Float =
-                1.0f
-
-            override fun getPitchForCategory(category: String): Float = 1.0f
-
-            override fun getVolumeForCategory(category: String): Float = 1.0f
-        }
-        val provider = SystemVoiceProvider(context, clearedPrefs)
-
-        val ttsB = TextToSpeech(context, { }, ENGINE_B)
-        enginePoolOf(provider)[ENGINE_B] = ttsB
-
-        val voiceEn = VoiceDescriptor(
-            id = "nateq-en-US",
-            providerId = SystemVoiceProvider.SYSTEM_PROVIDER_ID,
-            displayName = "English",
-            locale = Locale.forLanguageTag("en-US")
-        )
-
-        val chunks = ArrayList<ByteArray>()
-        runBlocking {
-            provider.synthesize(
-                text = textEn,
-                voice = voiceEn,
-                speechRate = 1.0f,
-                pitch = 1.0f,
-                volume = 1.0f,
-                onFormatInfo = { _, _ -> },
-                onAudioChunk = { data, len ->
-                    chunks.add(data.copyOf(len))
-                },
-                enginePackage = null
-            )
-        }
-        shadowOf(Looper.getMainLooper()).idle()
-
-        // نطق فوري عبر الاختيار التلقائي الصامت للمحرك المثبّت الوحيد
-        assertNotNull(shadowOf(ttsB).getLastSynthesizeToFile())
-
-        // بلا أي مؤشر: لا Toast يُعرض للمستخدم إطلاقاً
-        assertNull(ShadowToast.getTextOfLatestToast())
     }
 }
