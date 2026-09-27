@@ -921,7 +921,7 @@ class SettingsRepositoryTest {
         repo.setSmsReadingLanguage("en")
         val exported = repo.exportSettings()
         assertTrue(exported.containsKey("language_for_time"))
-        assertTrue(exported.containsKey("battery_announcement_language"))
+        assertTrue(exported.containsKey("language_for_battery"))
         assertTrue(exported.containsKey("sms_reading_language"))
         repo.resetAllToDefault()
         assertNull(repo.getLanguageForCategory("time"))
