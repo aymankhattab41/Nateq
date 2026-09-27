@@ -607,10 +607,17 @@ spinnerSelector =
         }
         val voiceIdx = spinnerVoice?.selectedItemPosition ?: -1
         if (voiceIdx in voiceOptions.indices) {
+            val chosenVoice = voiceOptions[voiceIdx]
             runCatching {
                 settings.setPreferredVoiceIdForCategory(
-                    key, voiceOptions[voiceIdx].name
+                    key, chosenVoice.name
                 )
+            }
+            val voiceLang = catalog.languageForSavedVoice(chosenVoice.name)
+                ?: catalog.languageOfVoice(chosenVoice.name)
+                ?: currentPanelLanguage
+            runCatching {
+                settings.setLanguageForCategory(key, voiceLang)
             }
         }
         runCatching {

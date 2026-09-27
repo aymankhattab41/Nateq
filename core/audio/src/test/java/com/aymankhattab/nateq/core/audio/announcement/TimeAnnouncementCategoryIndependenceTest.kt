@@ -110,4 +110,44 @@ class TimeAnnouncementCategoryIndependenceTest {
             manager.resolveNumberSpeechLanguage()
         )
     }
+
+    @Test
+    fun `time speaks english via explicit language with opaque voice`() {
+        val settings = SettingsRepository.create(context)
+        clearTimeSettings(settings)
+
+        // معرّف صوت إنجليزي لا يمكن استنتاج لغته من اسمه إطلاقاً
+        val opaqueVoiceId = "custom_tts_engine:opaque_voice_001"
+        assertEquals(
+            null,
+            AnnouncementLanguageResolver.languageOfVoiceId(opaqueVoiceId)
+        )
+
+        // كتابة صريحة للغة بجوار معرّف الصوت كما عند حفظ فئة الساعة
+        settings.setPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_TIME,
+            opaqueVoiceId
+        )
+        settings.setLanguageForCategory(
+            SettingsRepository.VOICE_CATEGORY_TIME,
+            "en"
+        )
+
+        // التحقق أن getLanguageForCategory == "en" مباشرة لا null
+        assertEquals(
+            "en",
+            settings.getLanguageForCategory(
+                SettingsRepository.VOICE_CATEGORY_TIME
+            )
+        )
+
+        // resolveTimeSpeechLanguage() يعيد الإنجليزية بفضل الأولوية 2
+        val manager = managerFor(settings)
+        assertEquals(
+            "الأولوية 2 تضمن نطق الساعة بالإنجليزية حتى مع تعذر تخمين " +
+                "لغة الصوت",
+            AnnouncementLanguageResolver.ENGLISH,
+            manager.resolveTimeSpeechLanguage()
+        )
+    }
 }

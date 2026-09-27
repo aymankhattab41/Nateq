@@ -499,6 +499,30 @@ internal class TimeAnnouncementController(
         )
     }
 
+    /**
+     * حفظ صوت ولغة فئة الساعة صراحةً بجوار [setPreferredVoiceIdForCategory]:
+     * يستخرج [languageTag] من الصوت المختار فعلياً أو من المعامل الصريح،
+     * ويحفظه في إعدادات فئة الساعة لتفعيل الأولوية 2 في القارئ الموحّد
+     * ويزيل الاعتماد الكلي على تخمين معرّف الصوت.
+     */
+    internal fun saveTimeVoice(voiceId: String, languageTag: String? = null) {
+        val resolvedLang = languageTag
+            ?: voices.firstOrNull { it.name == voiceId }?.languageTag
+            ?: if (voiceId.contains("en", ignoreCase = true)) "en" else "ar"
+        runCatching {
+            settings.setPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_TIME,
+                voiceId
+            )
+        }
+        runCatching {
+            settings.setLanguageForCategory(
+                SettingsRepository.VOICE_CATEGORY_TIME,
+                resolvedLang
+            )
+        }
+    }
+
     /** معاينة رنة رأس الساعة: تعزف النغمة المختارة بمستوى الشريط الحالي. */
     private fun previewChime() {
         val sound = chimeSoundNameAt(
