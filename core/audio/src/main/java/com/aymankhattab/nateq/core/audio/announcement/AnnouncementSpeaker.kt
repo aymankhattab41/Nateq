@@ -819,19 +819,13 @@ class AnnouncementSpeaker(
     }
 
     /**
-     * سمات نطق الإعلانات: مسار الإتاحة دائماً (USAGE_ASSISTANCE_ACCESSIBILITY)
-     * ما عدا مفتاح «دائماً على مسار الوسائط». كان الإعلان يتحول إلى المسار
-     * الإعلامي (USAGE_MEDIA) أثناء تشغيل قارئ الشاشة ظنّاً أن تمييل أندرويد
-     * سيفصل الصوتين — لكنه بين قارئٍ شغّالٍ وإعلانٍ على قناة الوسائط
-     * يستمر التراكب: القارئ يقرأ والإعلان يصدر فوقه. قفل النطق العابر
-     * (:tts/content…/speaking) هو من يتسلسل مع القراءة الآن؛ سمات الإتاحة
-     * الثابتة تجعل الإعلان يشارك قناة TalkBack فينتظر الصفوف بدل الإصدار
-     * الصاخب المقطوع.
+     * سمات نطق الأحداث والإعلانات: مسار المنبه دائماً (USAGE_ALARM)
+     * ليعمل كمسار أحداث مستقل تزامني لا يقطع رسائل الواتساب أو وسائط
+     * التطبيقات الأخرى؛ ما عدا مفتاح «دائماً على مسار الوسائط» (USAGE_MEDIA).
+     * أما مسار النطق العام لإمكانية الوصول فيبقى مستقلاً على خدمة المحرك
+     * (NateqTtsService) على مسار الإتاحة (USAGE_ASSISTANCE_ACCESSIBILITY).
      */
     private fun speechAudioAttributes(): AudioAttributes {
-        // **بند 1.4:** مفتاح «دائماً على مسار الوسائط» يتجاوز كل قاعدة —
-        // يُعالَج الإعلانُ كما يُعالَج السيناريو المتاح: صوتُه لا يكتم ولا
-        // يُخفى على بعض أجهزة OEM عندما يكون قارئ الشاشة غير متفاعل مع النص.
         val mediaStreamAlways = runCatching {
             (appContext as? AnnouncementAppContext)?.settingsRepository
                 ?: SettingsRepository.create(appContext)
@@ -840,18 +834,13 @@ class AnnouncementSpeaker(
                 settings.isAnnouncementMediaStreamAlways()
             }.getOrDefault(false)
         } ?: false
-        // **بند 2.16 (لا تحويل مكانيٌّ لنطق الإعلانات):** على أندرويد 13+
-        // (TIRAMISU فصاعداً) يستطيعُ النظامُ تحويلَ المساراتِ الصوتيةِ
-        // مكانياً (Spatial Audio / توجيهَ قنواتٍ) فتُبثُّ من اتجاهاتٍ
-        // متفرقةٍ عبرَ السماعاتِ اللاسلكية؛ بتثبيتِ SPATIALIZATION_BEHAVIOR_
-        // NEVER يبقى مسارُ النطقِ أمامياً ثابتَ المصدرِ بلا تمييزٍ مكانيٍّ
-        // فيحافظَ الإعلانُ على وضوحِه وتقدُّمِه بلا تشتيتِ اتجاهاتٍ.
+
         val builder = AudioAttributes.Builder()
             .setUsage(
                 if (mediaStreamAlways) {
                     AudioAttributes.USAGE_MEDIA
                 } else {
-                    AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY
+                    AudioAttributes.USAGE_ALARM
                 }
             )
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
@@ -1297,6 +1286,16 @@ class AnnouncementSpeaker(
                     boostedVolume
                 )
             }
+            val mediaStreamAlways = settings?.let { s ->
+                runCatching {
+                    s.isAnnouncementMediaStreamAlways()
+                }.getOrDefault(false)
+            } ?: false
+            putInt(
+                TextToSpeech.Engine.KEY_PARAM_STREAM,
+                if (mediaStreamAlways) AudioManager.STREAM_MUSIC
+                else AudioManager.STREAM_ALARM
+            )
         }
         // تنظيف النص من الإيموجي قبل النطق (نصوص خارجية قد
         // تحوي رموزاً يُقرؤها المحرك الخارجي أسماءها الإنجليزية).
@@ -1417,7 +1416,10 @@ class AnnouncementSpeaker(
     }
 
     /**
-     * يطلب Audio Focus متقطع قابل للخفض (MAY_DUCK).
+     * يطلب Audio Focus متقطع قابل للخفض (MAY_DUCK) عند تفعيل مسار الوسائط
+     * فقط. أما في مسار المنبه الافتراضي للأحداث فلا يُطلب تركيز يسلب صوت
+     * مشغلات الوسائط أو يوقف رسائل الواتساب، بل يمر النطق فوراً ليمزجه
+     * نظام الصوت (AudioFlinger) بالتزامن دون أي توقف للمشغلات.
      * @return نتيجة النظام: GRANTED / DELAYED / FAILED (يُحترم الجميع).
      */
     private fun requestAudioFocus(): Int {
@@ -1426,6 +1428,16 @@ class AnnouncementSpeaker(
                 (appContext as? AnnouncementAppContext)
                     ?.settingsRepository
                 ?: SettingsRepository.create(appContext)
+            val mediaStreamAlways = runCatching {
+                settings.isAnnouncementMediaStreamAlways()
+            }.getOrDefault(false)
+            if (!mediaStreamAlways) {
+                // مسار الأحداث التزامني (المنبه): نطق متزامن بلا مقاطعة لوسائط
+                // التطبيقات الأخرى (مثل رسائل الواتساب الصوتية) — لا يُطلب
+                // تركيز يسلب صوت المشغلات، بل يمر النطق فوراً ليمزجه نظام
+                // الصوت (AudioFlinger) بالتزامن دون أي توقف للمشغلات.
+                return AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            }
             val duckMedia = runCatching {
                 settings.isDuckMediaDuringAnnouncements()
             }.getOrDefault(true)

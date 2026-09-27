@@ -60,6 +60,8 @@ class SpeechLockDeferralTest {
 
     @Before
     fun installProvider() {
+        com.aymankhattab.nateq.core.data.SettingsRepository(appContext)
+            .setAnnouncementMediaStreamAlways(true)
         // نثبّت مزوّد الإشعارات الحقيقي على سلطانه المعلن حتى يعمل
         // SpeechLock عبر content://…/speaking داخل بيئة الاختبار فعلياً.
         // لا بد من تمرير السلطان صريحاً (الصيغة بلا سلطان لا تسجّل المزوّد

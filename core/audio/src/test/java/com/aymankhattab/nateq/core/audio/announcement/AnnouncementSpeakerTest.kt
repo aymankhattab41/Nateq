@@ -673,4 +673,38 @@ class AnnouncementSpeakerTest {
             )
         )
     }
+
+    @Test
+    fun `events track uses alarm stream without audio focus request`() {
+        val audioManager = context.getSystemService(
+            Context.AUDIO_SERVICE
+        ) as AudioManager
+        val shadowAudio = shadowOf(audioManager)
+        val repo = SettingsRepository(context)
+        repo.setAnnouncementMediaStreamAlways(false)
+
+        val speaker = AnnouncementSpeaker(context)
+        try {
+            val method = AnnouncementSpeaker::class.java
+                .getDeclaredMethod("speechAudioAttributes")
+            method.isAccessible = true
+            val attrs = method.invoke(speaker)
+                as android.media.AudioAttributes
+            assertEquals(
+                "مسار الأحداث يستهدف المنبه USAGE_ALARM",
+                android.media.AudioAttributes.USAGE_ALARM,
+                attrs.usage
+            )
+
+            speaker.speak(
+                "حدث تزامني", Locale.forLanguageTag("ar"), 1f, 1f, 1f
+            )
+            assertNull(
+                "مسار الأحداث لا يطلب تركيزاً صوتياً يوقف الوسائط",
+                shadowAudio.getLastAudioFocusRequest()
+            )
+        } finally {
+            speaker.shutdown()
+        }
+    }
 }

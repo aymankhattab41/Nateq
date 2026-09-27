@@ -48,8 +48,8 @@ internal interface CueSink {
 }
 
 /**
- * سمات الصوت الموحّدة للمؤثرات (Audio Cues): مُوجّهة لمسار الإتاحة
- * (أدوات إمكانية الوصول، مثل TalkBack) ونوع نغمة إعلامية — يُستخدم
+ * سمات الصوت الموحّدة للمؤثرات (Audio Cues): مُوجّهة لمسار المنبه (USAGE_ALARM)
+ * ليتوافق مع مسار نطق الأحداث التزامني ونوع نغمة إعلامية — يُستخدم
  * من مُنفّذي [CueSink] كلَيهما. كائن داخلي ليُفحص في الاختبارات.
  */
 internal object CueAudioAttributes {
@@ -58,7 +58,7 @@ internal object CueAudioAttributes {
     // SPATIALIZATION_BEHAVIOR_NEVER في Android 13+ فتبقى أماميةً ثابتةً
     // بلا توجيهِ قنواتٍ مكانيٍّ يعكّرُ موضعَ مصدرِ الصوتِ في السماعات.
     val forCue: AudioAttributes = AudioAttributes.Builder()
-        .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+        .setUsage(AudioAttributes.USAGE_ALARM)
         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
         .apply {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

@@ -185,11 +185,11 @@ class AudioCuePlayerTest {
     }
 
     @Test
-    fun `cue audio attributes target accessibility sonification`() {
-        // سمات المؤثر تُوجّه لمسار الإتاحة (يتلاءم مع نغمة TalkBack) —
+    fun `cue audio attributes target alarm sonification`() {
+        // سمات المؤثر تُوجّه لمسار المنبه التزامني —
         // نفس البناء من المشغّلَين (AudioTrack وSoundPool).
         assertEquals(
-            AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY,
+            AudioAttributes.USAGE_ALARM,
             CueAudioAttributes.forCue.usage
         )
         assertEquals(

@@ -45,6 +45,12 @@ class AnnouncementSpeakerFocusTest {
 
     private val arLocale = Locale.forLanguageTag("ar")
 
+    @org.junit.Before
+    fun setUp() {
+        com.aymankhattab.nateq.core.data.SettingsRepository(context)
+            .setAnnouncementMediaStreamAlways(true)
+    }
+
     private fun speaker(): AnnouncementSpeaker = AnnouncementSpeaker(context)
 
     private fun fieldOf(instance: Any, name: String): Any? {
