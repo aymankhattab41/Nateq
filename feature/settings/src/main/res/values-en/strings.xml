@@ -434,6 +434,8 @@
 <string name="voice_category_numbers_summary">The dedicated voice for numbers</string>
 <string name="voice_category_time">Clock voice</string>
 <string name="voice_category_time_summary">The dedicated voice for the clock</string>
+<string name="voice_category_battery">Battery voice</string>
+<string name="voice_category_battery_summary">The dedicated voice for battery announcements</string>
 <string name="voice_name_arabic">Arabic</string>
 <string name="voice_name_english">English</string>
 <string name="volume_label">Volume</string>

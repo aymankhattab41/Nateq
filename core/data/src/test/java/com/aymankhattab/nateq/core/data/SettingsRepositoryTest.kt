@@ -1160,4 +1160,87 @@ class SettingsRepositoryTest {
         assertEquals("", repo.getCustomChimeUri30())
         assertEquals("", repo.getCustomChimeUri45())
     }
+
+    @Test
+    fun batteryVoiceLegacyPrefs_migratedToUnifiedCategory() {
+        val prefs = context.getSharedPreferences(
+            "nateq_settings", Context.MODE_PRIVATE
+        )
+        prefs.edit()
+            .remove("_battery_voice_migrated")
+            .putString("battery_announcement_voice", "ar-xa-x-test")
+            .putString("battery_announcement_language", "ar")
+            .putFloat("battery_announcement_rate", 1.5f)
+            .putFloat("battery_announcement_pitch", 1.2f)
+            .putFloat("battery_announcement_volume", 0.8f)
+            .remove("preferred_voice_battery")
+            .remove("language_for_battery")
+            .remove("speech_rate_battery")
+            .remove("pitch_battery")
+            .remove("volume_battery")
+            .commit()
+
+        val freshRepo = SettingsRepository.create(context)
+        val cat = SettingsRepository.VOICE_CATEGORY_BATTERY
+
+        assertEquals(
+            "ar-xa-x-test",
+            freshRepo.getPreferredVoiceIdForCategory(cat)
+        )
+        assertEquals(
+            "ar",
+            freshRepo.getLanguageForCategory(cat)
+        )
+        assertEquals(
+            1.5f,
+            freshRepo.getSpeechRateForCategory(cat),
+            0.01f
+        )
+        assertEquals(
+            1.2f,
+            freshRepo.getPitchForCategory(cat),
+            0.01f
+        )
+        assertEquals(
+            0.8f,
+            freshRepo.getVolumeForCategory(cat),
+            0.01f
+        )
+
+        assertFalse(prefs.contains("battery_announcement_voice"))
+        assertFalse(prefs.contains("battery_announcement_language"))
+        assertFalse(prefs.contains("battery_announcement_rate"))
+        assertFalse(prefs.contains("battery_announcement_pitch"))
+        assertFalse(prefs.contains("battery_announcement_volume"))
+        assertTrue(prefs.getBoolean("_battery_voice_migrated", false))
+    }
+
+    @Test
+    fun batteryVoiceUnifiedCategory_doesNotOverwriteExisting() {
+        val prefs = context.getSharedPreferences(
+            "nateq_settings", Context.MODE_PRIVATE
+        )
+        prefs.edit()
+            .remove("_battery_voice_migrated")
+            .putString("battery_announcement_voice", "legacy-voice")
+            .putString("preferred_voice_battery", "unified-voice")
+            .putFloat("battery_announcement_rate", 0.5f)
+            .putFloat("speech_rate_battery", 1.8f)
+            .commit()
+
+        val freshRepo = SettingsRepository.create(context)
+        val cat = SettingsRepository.VOICE_CATEGORY_BATTERY
+
+        assertEquals(
+            "unified-voice",
+            freshRepo.getPreferredVoiceIdForCategory(cat)
+        )
+        assertEquals(
+            1.8f,
+            freshRepo.getSpeechRateForCategory(cat),
+            0.01f
+        )
+        assertFalse(prefs.contains("battery_announcement_voice"))
+        assertFalse(prefs.contains("battery_announcement_rate"))
+    }
 }

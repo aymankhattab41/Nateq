@@ -50,6 +50,10 @@ class SettingsRepository(context: Context) :
         const val VOICE_CATEGORY_NOTIFICATIONS = "notifications"
         const val VOICE_CATEGORY_DEFAULT = "default"
         const val VOICE_CATEGORY_EMOJI = "emoji"
+        const val VOICE_CATEGORY_BATTERY = "battery"
+
+        private const val KEY_BATTERY_VOICE_MIGRATED =
+            "_battery_voice_migrated"
 
         /** فئة إعلان المتصل (محرك/صوت مستقل للإعلان عن المكالمات)
          *  — أُبقيها للمتوافقية مع مفاتيح قديمة مخزنة. */
@@ -135,7 +139,8 @@ class SettingsRepository(context: Context) :
         private val MIGRATION_KEYS = listOf(
             KEY_MIGRATED,
             KEY_QUIET_MIGRATED,
-            KEY_CONVERT_SLOTS_MIGRATED
+            KEY_CONVERT_SLOTS_MIGRATED,
+            KEY_BATTERY_VOICE_MIGRATED
         )
 
         /**
@@ -168,6 +173,7 @@ class SettingsRepository(context: Context) :
      *  (اختبار/مكوّن قديم) فيبقى قرصه محدّثاً ولقطةُ الغلاف غيرَ ملتقطة. */
     private val rawPrefs: SharedPreferences = openSharedPrefs().also {
         migrateIfNeeded(it)
+        migrateBatteryVoicePrefsIfNeeded(it)
     }
 
     /**
@@ -412,6 +418,78 @@ class SettingsRepository(context: Context) :
     internal fun isMigrationCompleted(): Boolean =
         prefs.getBoolean(KEY_MIGRATED, false)
 
+    /**
+     * ترحيل إعدادات صوت/سرعة/نبرة/مستوى البطارية القديمة إلى بنية الفئات
+     * الموحّدة (preferred_voice_battery, speech_rate_battery, ...) مرة
+     * واحدة بعد التحديث، مع إزالة المفاتيح المنفصلة القديمة.
+     */
+    internal fun migrateBatteryVoicePrefsIfNeeded(
+        targetPrefs: SharedPreferences
+    ) {
+        if (targetPrefs.getBoolean(KEY_BATTERY_VOICE_MIGRATED, false)) return
+        val edit = targetPrefs.edit()
+
+        if (targetPrefs.contains("battery_announcement_voice")) {
+            val v = targetPrefs.getString(
+                "battery_announcement_voice", null
+            )
+            if (!v.isNullOrBlank() &&
+                !targetPrefs.contains("preferred_voice_$VOICE_CATEGORY_BATTERY")
+            ) {
+                edit.putString(
+                    "preferred_voice_$VOICE_CATEGORY_BATTERY", v
+                )
+            }
+            edit.remove("battery_announcement_voice")
+        }
+
+        if (targetPrefs.contains("battery_announcement_language")) {
+            val l = targetPrefs.getString(
+                "battery_announcement_language", null
+            )
+            if (!l.isNullOrBlank() &&
+                !targetPrefs.contains("language_for_$VOICE_CATEGORY_BATTERY")
+            ) {
+                edit.putString(
+                    "language_for_$VOICE_CATEGORY_BATTERY", l
+                )
+            }
+            edit.remove("battery_announcement_language")
+        }
+
+        if (targetPrefs.contains("battery_announcement_rate")) {
+            val r = targetPrefs.getFloat("battery_announcement_rate", 1.0f)
+            if (!targetPrefs.contains("speech_rate_$VOICE_CATEGORY_BATTERY")) {
+                edit.putFloat("speech_rate_$VOICE_CATEGORY_BATTERY", r)
+            }
+            edit.remove("battery_announcement_rate")
+        }
+
+        if (targetPrefs.contains("battery_announcement_pitch")) {
+            val p = targetPrefs.getFloat("battery_announcement_pitch", 1.0f)
+            if (!targetPrefs.contains("pitch_$VOICE_CATEGORY_BATTERY")) {
+                edit.putFloat("pitch_$VOICE_CATEGORY_BATTERY", p)
+            }
+            edit.remove("battery_announcement_pitch")
+        }
+
+        if (targetPrefs.contains("battery_announcement_volume")) {
+            val vol = targetPrefs.getFloat(
+                "battery_announcement_volume", 1.0f
+            )
+            if (!targetPrefs.contains("volume_$VOICE_CATEGORY_BATTERY")) {
+                edit.putFloat("volume_$VOICE_CATEGORY_BATTERY", vol)
+            }
+            edit.remove("battery_announcement_volume")
+        }
+
+        edit.putBoolean(KEY_BATTERY_VOICE_MIGRATED, true).apply()
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun isBatteryVoiceMigrationCompleted(): Boolean =
+        prefs.getBoolean(KEY_BATTERY_VOICE_MIGRATED, false)
+
     /** لغة التطبيق المختارة يدوياً: "ar"/"en"/null (null = تتبع لغة النظام) */
     override fun getAppLanguage(): String? =
         prefs.getString("app_language", null)
@@ -513,12 +591,10 @@ class SettingsRepository(context: Context) :
 
     fun getBatteryAnnouncementPitchOrDefault(
         languageTag: String
-    ): Float = getCategoryPitchOrFallback(
-        "battery_announcement_pitch", languageTag
-    )
+    ): Float = getPitchForCategory(VOICE_CATEGORY_BATTERY)
 
     fun setBatteryAnnouncementPitch(pitch: Float) =
-        setCategoryPitch("battery_announcement_pitch", pitch)
+        setPitchForCategory(VOICE_CATEGORY_BATTERY, pitch)
 
     fun getSmsReadingPitchOrDefault(
         languageTag: String
@@ -1247,37 +1323,30 @@ class SettingsRepository(context: Context) :
 
     /** صوت إعلان البطارية (معرّف صوت موحّد) */
     override fun getBatteryAnnouncementVoiceId(): String? =
-        normalizeVoiceId(
-            prefs.getString("battery_announcement_voice", null)
-        )
-    override fun setBatteryAnnouncementVoiceId(voiceId: String?) =
-        prefs.edit().putString("battery_announcement_voice", voiceId).apply()
+        getPreferredVoiceIdForCategory(VOICE_CATEGORY_BATTERY)
+    override fun setBatteryAnnouncementVoiceId(voiceId: String?) {
+        if (voiceId != null) {
+            setPreferredVoiceIdForCategory(VOICE_CATEGORY_BATTERY, voiceId)
+        }
+    }
 
-    /** لغة الصوت المختارة لإعلان البطارية (رمز ISO) — تقيّد قائمة
-     *  الأصوات وتُحسم لغة النطق الفعلية للإعلان إن لم تُحدَّد من
-     *  الصوت نفسه. */
+    /** لغة الصوت المختارة لإعلان البطارية */
     fun getBatteryAnnouncementLanguage(): String? =
-        prefs.getString("battery_announcement_language", null)
+        getLanguageForCategory(VOICE_CATEGORY_BATTERY)
     fun setBatteryAnnouncementLanguage(language: String?) =
-        prefs.edit()
-            .putString("battery_announcement_language", language)
-            .apply()
+        setLanguageForCategory(VOICE_CATEGORY_BATTERY, language)
 
     /** سرعة نطق إعلان البطارية */
     override fun getBatteryAnnouncementRate(): Float =
-        prefs.getFloat("battery_announcement_rate", 1.0f)
+        getSpeechRateForCategory(VOICE_CATEGORY_BATTERY)
     override fun setBatteryAnnouncementRate(rate: Float) =
-        prefs.edit()
-            .putFloat("battery_announcement_rate", rate.coerceIn(0f, 2f))
-            .apply()
+        setSpeechRateForCategory(VOICE_CATEGORY_BATTERY, rate)
 
     /** مستوى صوت إعلان البطارية */
     override fun getBatteryAnnouncementVolume(): Float =
-        prefs.getFloat("battery_announcement_volume", 1.0f)
+        getVolumeForCategory(VOICE_CATEGORY_BATTERY)
     override fun setBatteryAnnouncementVolume(volume: Float) =
-        prefs.edit()
-            .putFloat("battery_announcement_volume", volume.coerceIn(0f, 1f))
-            .apply()
+        setVolumeForCategory(VOICE_CATEGORY_BATTERY, volume)
 
     // ============ مؤثرات الصوت (رنة الساعة + نغمات البطارية) ============
 

@@ -434,6 +434,8 @@
 <string name="voice_category_numbers_summary">الصوت المخصص لنطق الأرقام</string>
 <string name="voice_category_time">صوت الساعة</string>
 <string name="voice_category_time_summary">الصوت المخصص لنطق الساعة</string>
+<string name="voice_category_battery">صوت البطارية</string>
+<string name="voice_category_battery_summary">الصوت المخصص لإعلان مستوى البطارية</string>
 <string name="voice_name_arabic">العربية</string>
 <string name="voice_name_english">الإنجليزية</string>
 <string name="volume_label">مستوى الصوت</string>

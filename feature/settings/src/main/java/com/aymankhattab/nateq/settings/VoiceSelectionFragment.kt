@@ -545,7 +545,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
         batterySection = BatteryAnnouncementController(
-            this, settings, engineCatalog,
+            this, settings,
             { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
         notificationSection = NotificationReadingController(
@@ -610,7 +610,6 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             if (!isAdded) return@launch
             categoryVoicePanel.refreshLanguages()
             smsSection.refreshSmsVoices()
-            batterySection.refreshBatteryVoices()
             callerSection.refreshCallerVoices()
         }
         // بند 4.6: إعادة فتح الشاشة (مجموعة/قسم) التي كان يعدّلها المستخدم

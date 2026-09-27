@@ -356,7 +356,8 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     text, locale, speechRate, pitch, volume,
                     engineOverride = callerSpeechEngine(
                         settings, locale.language
-                    )
+                    ),
+                    category = SettingsRepository.ANNOUNCE_CATEGORY_CALLER
                 )
                 // **بند 5.5:** إنهاءٌ مبكر بمستمع الاكتمال: محركٌ سليم يُنهي
                 // البث فور اكتمال (onDone) الجملة الأولى فعلياً — بلا حجزٍ
@@ -384,7 +385,9 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                                 volume,
                                 engineOverride = callerSpeechEngine(
                                     settings, locale.language
-                                )
+                                ),
+                                category =
+                                    SettingsRepository.ANNOUNCE_CATEGORY_CALLER
                             )
                         } catch (t: Throwable) {
                             Log.e(TAG, "repeat speak failed", t)
@@ -492,7 +495,8 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             text, locale, speechRate, pitch, volume,
             engineOverride = callerSpeechEngine(
                 settings, locale.language
-            )
+            ),
+            category = SettingsRepository.ANNOUNCE_CATEGORY_CALLER
         )
         return true
     }

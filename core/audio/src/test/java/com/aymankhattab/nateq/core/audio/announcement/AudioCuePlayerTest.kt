@@ -185,11 +185,12 @@ class AudioCuePlayerTest {
     }
 
     @Test
-    fun `cue audio attributes target alarm sonification`() {
-        // سمات المؤثر تُوجّه لمسار المنبه التزامني —
-        // نفس البناء من المشغّلَين (AudioTrack وSoundPool).
+    fun `cue audio attributes target accessibility sonification`() {
+        // سمات المؤثر تُوجّه لمسار الإتاحة —
+        // نفس البناء من المشغّلَين
+        // (AudioTrack وSoundPool).
         assertEquals(
-            AudioAttributes.USAGE_ALARM,
+            AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY,
             CueAudioAttributes.forCue.usage
         )
         assertEquals(

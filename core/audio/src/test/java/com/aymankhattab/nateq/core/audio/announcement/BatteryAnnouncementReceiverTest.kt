@@ -224,6 +224,48 @@ class BatteryAnnouncementReceiverTest {
         shared.shutdown()
     }
 
+    @Test
+    fun `battery announcement uses unified category voice and settings`() {
+        val settings = SettingsRepository(context)
+        val cat = SettingsRepository.VOICE_CATEGORY_BATTERY
+        val targetVoice = "ar-unified-battery"
+        settings.setPreferredVoiceIdForCategory(cat, targetVoice)
+        settings.setSpeechRateForCategory(cat, 1.4f)
+        settings.setPitchForCategory(cat, 1.3f)
+        settings.setVolumeForCategory(cat, 0.9f)
+        settings.setEngineForCategory(cat, "com.test.tts")
+
+        val receiver = BatteryAnnouncementReceiver()
+        val method = BatteryAnnouncementReceiver::class.java
+            .getDeclaredMethod(
+                "speak", Context::class.java,
+                SettingsRepository::class.java, String::class.java,
+                Locale::class.java, String::class.java,
+                CueType::class.java
+            )
+        method.isAccessible = true
+        val voiceId = settings.getPreferredVoiceIdForCategory(cat)
+        method.invoke(
+            receiver,
+            context,
+            settings,
+            "البطارية 20 بالمئة",
+            Locale.ENGLISH,
+            voiceId,
+            null
+        )
+        val shared = AnnouncementSpeaker.getInstance(context)
+        val voiceField = AnnouncementSpeaker::class.java
+            .getDeclaredField("voiceId")
+        voiceField.isAccessible = true
+        assertEquals(
+            "صوت البطارية من الفئة الموحّدة يُطبَّق",
+            targetVoice, voiceField.get(shared)
+        )
+        shared.shutdown()
+    }
+
+
     // ===== مسار المؤثرات الصوتية (بند 16.2) =====
 
     /** عينة PCM متوقعة لنوع مؤثر — التخليق حتمي (طول = مدة × معدل العينات). */

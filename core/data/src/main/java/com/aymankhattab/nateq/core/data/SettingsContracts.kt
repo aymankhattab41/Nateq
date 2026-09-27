@@ -148,6 +148,10 @@ interface SynthesisPrefs : SynthesisConfig, VoicePrefsProvider {
  */
 interface CategoryVoicePrefs {
 
+    companion object {
+        const val VOICE_CATEGORY_BATTERY = "battery"
+    }
+
     /** الصوت المفضّل لمجموعة صوتية معيّنة. */
     fun getPreferredVoiceIdForCategory(category: String): String?
 

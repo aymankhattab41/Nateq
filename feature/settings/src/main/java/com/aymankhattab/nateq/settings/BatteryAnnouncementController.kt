@@ -10,16 +10,14 @@ import android.widget.Spinner
 import android.widget.TextView
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
-import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.util.announceCompat
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
-/** ضابط قسم «إعلان مستوى البطارية»: المستويات/الصوت/السرعة/مستوى صوت الشحن. */
+/** ضابط قسم «إعلان مستوى البطارية»: المستويات/المؤثرات/وضع توفير الطاقة. */
 internal class BatteryAnnouncementController(
     private val fragment: VoiceSelectionFragment,
     private val settings: SettingsRepository,
-    private val catalog: EngineVoicesCatalog,
     private val onStatusChanged: () -> Unit
 ) {
 
@@ -29,16 +27,6 @@ internal class BatteryAnnouncementController(
     private var llBatteryLevelsHeader: LinearLayout? = null
     private var tvBatteryLevelsArrow: TextView? = null
     private var llBatteryLevels: LinearLayout? = null
-    private var spinnerBatteryLanguage: Spinner? = null
-    private var spinnerBatteryVoice: Spinner? = null
-    private var spinnerBatteryEngine: Spinner? = null
-    private var tvBatteryEngineLabel: TextView? = null
-    private var seekBatteryRate: SeekBar? = null
-    private var tvBatteryRateValue: TextView? = null
-    private var seekBatteryVolume: SeekBar? = null
-    private var tvBatteryVolumeValue: TextView? = null
-    private var seekBatteryPitch: SeekBar? = null
-    private var tvBatteryPitchValue: TextView? = null
     private var spinnerBatteryCueMode: Spinner? = null
     private var seekBatteryCueVolume: SeekBar? = null
     private var tvBatteryCueVolumeValue: TextView? = null
@@ -49,20 +37,9 @@ internal class BatteryAnnouncementController(
     private var tvPowerSaverThresholdValue: TextView? = null
     private var seekPowerSaverThreshold: SeekBar? = null
 
-    /** خيارات محرك نطق البطارية: المحركات المثبتة. */
-    private var batteryEngineOptions: List<EnginePicker.InstalledEngine> =
-        emptyList()
-
-    // **بند 6.3:** علمُ الربط البرمجي — يُسنَّع حول setProgress في setup حتى
-    // لا يُفسَّر الإسنادُ البرمجي تعديلَ مستخدم. دون الحفظ في
-    // onProgressChanged كان تعديل TalkBack (عبر أداء الوصول، لا يمر عبر
-    // onStopTrackingTouch إطلاقاً) يفقد أي تعديل على أشرطة التمرير.
+    // علمُ الربط البرمجي — يُسنَّع حول setProgress في setup حتى
+    // لا يُفسَّر الإسنادُ البرمجي تعديلَ مستخدم.
     private var bindingSlider = false
-
-    // لغة الصوت الحالية وخيارات سبنر البطارية.
-    private var batteryLanguage: String = "ar"
-    private var batteryVoiceOptions: List<VoiceOption> = emptyList()
-    private var bindingVoices = false
 
     fun setup(view: View) {
         switchBatteryAnnouncement =
@@ -71,17 +48,6 @@ internal class BatteryAnnouncementController(
             view.findViewById(R.id.ll_battery_levels_header)
         tvBatteryLevelsArrow = view.findViewById(R.id.tv_battery_levels_arrow)
         llBatteryLevels = view.findViewById(R.id.ll_battery_levels)
-        spinnerBatteryVoice = view.findViewById(R.id.spinner_battery_voice)
-        spinnerBatteryLanguage =
-            view.findViewById(R.id.spinner_battery_language)
-        spinnerBatteryEngine = view.findViewById(R.id.spinner_battery_engine)
-        tvBatteryEngineLabel = view.findViewById(R.id.tv_battery_engine_label)
-        seekBatteryRate = view.findViewById(R.id.seek_battery_rate)
-        tvBatteryRateValue = view.findViewById(R.id.tv_battery_rate_value)
-        seekBatteryVolume = view.findViewById(R.id.seek_battery_volume)
-        tvBatteryVolumeValue = view.findViewById(R.id.tv_battery_volume_value)
-        seekBatteryPitch = view.findViewById(R.id.seek_battery_pitch)
-        tvBatteryPitchValue = view.findViewById(R.id.tv_battery_pitch_value)
         spinnerBatteryCueMode =
             view.findViewById(R.id.spinner_battery_cue_mode)
         seekBatteryCueVolume = view.findViewById(R.id.seek_battery_cue_volume)
@@ -149,7 +115,6 @@ internal class BatteryAnnouncementController(
                 isChecked = levelStr in enabledLevels
                 textSize = 16f
                 setPadding(0, 4, 0, 4)
-                // هدف لمس لا يقل عن 48dp
                 minHeight =
                     (48 * fragment.resources.displayMetrics.density).toInt()
                 accessibilityDelegate =
@@ -176,8 +141,6 @@ internal class BatteryAnnouncementController(
                     }
                     settings.setBatteryAnnouncementLevels(current)
                     onStatusChanged()
-                    // تأكيد الحالة فوراً لقارئ الشاشة (بند 3-2): المربع يحمل
-                    // contentDescription خاصة عبر delegate فيقرأ السِياق.
                     fragment.view?.announceCompat(
                         fragment.getString(
                             if (isChecked) {
@@ -193,268 +156,7 @@ internal class BatteryAnnouncementController(
             llBatteryLevels?.addView(cb)
         }
 
-        // لغة صوت البطارية: خياراتها من الكتالوج، وتبديلها هنا يُجدد
-        // الأصوات المعروضة لمحركها.
-        val batteryLanguages = catalog.languages()
-        spinnerBatteryLanguage?.adapter = fragment.simpleAdapter(
-            batteryLanguages.map { catalog.languageDisplayName(it) }
-        )
-        batteryLanguage =
-            runCatching { settings.getBatteryAnnouncementLanguage() }
-                .getOrNull() ?: "ar"
-        bindingVoices = true
-        try {
-            val langIdx = batteryLanguages.indexOf(batteryLanguage)
-            spinnerBatteryLanguage?.setSelection(
-                if (langIdx >= 0) langIdx else 0
-            )
-        } finally {
-            bindingVoices = false
-        }
-        spinnerBatteryLanguage?.onItemSelectedListener =
-            object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(
-                parent: AdapterView<*>?,
-                view: View?,
-                position: Int,
-                id: Long
-            ) {
-                if (bindingVoices) return
-                val lang = batteryLanguages.getOrNull(position) ?: return
-                if (lang == batteryLanguage) return
-                batteryLanguage = lang
-                runCatching {
-                    settings.setBatteryAnnouncementLanguage(lang)
-                }
-                refreshBatteryVoices()
-            }
-
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
-        }
-        spinnerBatteryVoice?.onItemSelectedListener =
-            object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(
-                parent: AdapterView<*>?,
-                view: View?,
-                position: Int,
-                id: Long
-            ) {
-                if (bindingVoices) return
-                val name = batteryVoiceOptions.getOrNull(position)?.name
-                    ?: return
-                runCatching {
-                    settings.setBatteryAnnouncementVoiceId(name)
-                }
-            }
-
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
-        }
-        refreshBatteryVoices()
-
-        // محرك نطق البطارية
-        batteryEngineOptions = runCatching {
-            EnginePicker.installedEngines(fragment.requireContext())
-        }.getOrDefault(emptyList())
-        val batteryEngineLabels = batteryEngineOptions.map { it.label }
-        // لا محركات مثبتة: إخفاء سبنر المحرك (لا خيار «تلقائي» ليعرضه).
-        spinnerBatteryEngine?.visibility = if (
-            batteryEngineOptions.isEmpty()
-        ) {
-            android.view.View.GONE
-        } else {
-            android.view.View.VISIBLE
-        }
-        tvBatteryEngineLabel?.visibility =
-            spinnerBatteryEngine?.visibility ?: android.view.View.GONE
-        spinnerBatteryEngine?.adapter =
-            fragment.simpleAdapter(batteryEngineLabels)
-        val savedBatteryEngine = runCatching {
-            settings.getEngineForCategory(
-                SettingsRepository.DEVICE_HEALTH_BATTERY
-            )
-        }.getOrNull()
-        spinnerBatteryEngine?.setSelection(
-            engineIndexFor(batteryEngineOptions, savedBatteryEngine)
-        )
-        spinnerBatteryEngine?.onItemSelectedListener =
-            object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(
-                parent: AdapterView<*>?, v: View?,
-                pos: Int, id: Long
-            ) {
-                val pkg = batteryEngineOptions
-                    .getOrNull(pos)?.packageName
-                runCatching {
-                    settings.setEngineForCategory(
-                        SettingsRepository.DEVICE_HEALTH_BATTERY,
-                        pkg
-                    )
-                }
-                // تبديل المحرك يُجدد قائمة أصوات اللغة.
-                refreshBatteryVoices()
-                onStatusChanged()
-            }
-
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
-        }
-
-        // سرعة النطق
-        val batteryRate =
-            runCatching { settings.getBatteryAnnouncementRate() }
-                .getOrDefault(1.0f)
-                .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
-        tvBatteryRateValue?.text = RateLabel.of(
-            fragment.requireContext(), batteryRate
-        )
-        bindingSlider = true
-        try {
-            seekBatteryRate?.progress =
-                (batteryRate * 100).toInt().coerceIn(0, 200)
-        } finally {
-            bindingSlider = false
-        }
-        seekBatteryRate?.setOnSeekBarChangeListener(
-            object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(
-                seekBar: SeekBar,
-                progress: Int,
-                fromUser: Boolean
-            ) {
-                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
-                if (bindingSlider) return
-                val value = progress.speedFactor()
-                tvBatteryRateValue?.text = RateLabel.of(
-                    fragment.requireContext(),
-                    value
-                )
-                seekBar.setSeekStateDescription(
-                    tvBatteryRateValue?.text ?: ""
-                )
-                // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
-                // نهايته إلى onStopTrackingTouch أبداً.
-                runCatching { settings.setBatteryAnnouncementRate(value) }
-            }
-
-            override fun onStartTrackingTouch(seekBar: SeekBar) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar) {
-                seekBar.snapSpeedMin()
-                val value = seekBar.progress.speedFactor()
-                runCatching {
-                    settings.setBatteryAnnouncementRate(value)
-                }
-                seekBar.announceCompat(
-                    RateLabel.of(fragment.requireContext(), value)
-                )
-            }
-        })
-
-        // مستوى الصوت
-        val batteryVolume =
-            runCatching { settings.getBatteryAnnouncementVolume() }
-                .getOrDefault(1.0f)
-        tvBatteryVolumeValue?.text = "${(batteryVolume * 100).toInt()}%"
-        bindingSlider = true
-        try {
-            seekBatteryVolume?.progress =
-                (batteryVolume * 100).toInt().coerceIn(0, 100)
-        } finally {
-            bindingSlider = false
-        }
-        seekBatteryVolume?.setOnSeekBarChangeListener(
-            object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(
-                seekBar: SeekBar,
-                progress: Int,
-                fromUser: Boolean
-            ) {
-                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
-                if (bindingSlider) return
-                tvBatteryVolumeValue?.text = "$progress%"
-                seekBar.setSeekStateDescription(
-                    tvBatteryVolumeValue?.text ?: ""
-                )
-                // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
-                // نهايته إلى onStopTrackingTouch أبداً.
-                runCatching {
-                    settings.setBatteryAnnouncementVolume(progress / 100f)
-                }
-            }
-
-            override fun onStartTrackingTouch(seekBar: SeekBar) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar) {
-                runCatching {
-                    settings.setBatteryAnnouncementVolume(
-                        seekBar.progress / 100f
-                    )
-                }
-                seekBar.announceCompat("${seekBar.progress}%")
-            }
-        })
-
-        // نبرة إعلان البطارية (بند 2.2) — مستقلة عن نبرة نطق اللغة؛
-        // إن لم تُضبط تُعرض نبرةُ لغة التطبيق (ما سيُستعمل فعلاً).
-        val batteryAppLang = runCatching { settings.getAppLanguage() }
-            .getOrNull() ?: "ar"
-        val batteryPitch =
-            runCatching {
-                settings.getBatteryAnnouncementPitchOrDefault(
-                    batteryAppLang
-                )
-            }
-                .getOrDefault(1.0f)
-                .coerceAtLeast(MIN_SPEED_PITCH_FACTOR)
-        tvBatteryPitchValue?.text = RateLabel.of(
-            fragment.requireContext(), batteryPitch
-        )
-        bindingSlider = true
-        try {
-            seekBatteryPitch?.progress =
-                (batteryPitch * 100).toInt().coerceIn(0, 200)
-        } finally {
-            bindingSlider = false
-        }
-        seekBatteryPitch?.setOnSeekBarChangeListener(
-            object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(
-                seekBar: SeekBar,
-                progress: Int,
-                fromUser: Boolean
-            ) {
-                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
-                if (bindingSlider) return
-                val value = progress.speedFactor()
-                tvBatteryPitchValue?.text = RateLabel.of(
-                    fragment.requireContext(),
-                    value
-                )
-                seekBar.setSeekStateDescription(
-                    tvBatteryPitchValue?.text ?: ""
-                )
-                // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
-                // نهايته إلى onStopTrackingTouch أبداً.
-                runCatching {
-                    settings.setBatteryAnnouncementPitch(value)
-                }
-                onStatusChanged()
-            }
-
-            override fun onStartTrackingTouch(seekBar: SeekBar) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar) {
-                seekBar.snapSpeedMin()
-                val value = seekBar.progress.speedFactor()
-                runCatching {
-                    settings.setBatteryAnnouncementPitch(value)
-                }
-                seekBar.announceCompat(
-                    RateLabel.of(fragment.requireContext(), value)
-                )
-                onStatusChanged()
-            }
-        })
-
         // وضع مؤثر البطارية
-        spinnerBatteryCueMode =
-            view.findViewById(R.id.spinner_battery_cue_mode)
         val cueModeLabels = listOf(
             fragment.getString(R.string.battery_cue_mode_narration_cue),
             fragment.getString(R.string.battery_cue_mode_narration_only),
@@ -486,8 +188,7 @@ internal class BatteryAnnouncementController(
             ) {}
         }
 
-        // مستوى صوت مؤثر البطارية (مستقل عن صوت النطق بند 3-3): يُطبق
-        // 0.1..1.0 على كامل مسار الشريط مثل رنة الساعة.
+        // مستوى صوت مؤثر البطارية (مستقل عن صوت النطق بند 3-3)
         val batteryCueVolume =
             runCatching { settings.getBatteryCueVolume() }
                 .getOrDefault(0.8f)
@@ -511,15 +212,12 @@ internal class BatteryAnnouncementController(
                 progress: Int,
                 fromUser: Boolean
             ) {
-                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
                 if (bindingSlider) return
                 val pct = ((0.1f + progress / 100f * 0.9f) * 100).toInt()
                 tvBatteryCueVolumeValue?.text = "$pct%"
                 seekBar.setSeekStateDescription(
                     tvBatteryCueVolumeValue?.text ?: ""
                 )
-                // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
-                // نهايته إلى onStopTrackingTouch أبداً.
                 runCatching {
                     settings.setBatteryCueVolume(0.1f + progress / 100f * 0.9f)
                 }
@@ -612,14 +310,11 @@ internal class BatteryAnnouncementController(
                 progress: Int,
                 fromUser: Boolean
             ) {
-                // الربط البرمجي ليس تعديلَ مستخدم — يُهمل بلا حفظ.
                 if (bindingSlider) return
                 tvPowerSaverThresholdValue?.text = "$progress%"
                 seekBar.setSeekStateDescription(
                     tvPowerSaverThresholdValue?.text ?: ""
                 )
-                // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
-                // نهايته إلى onStopTrackingTouch أبداً.
                 runCatching {
                     settings.setPowerSaverBatteryThreshold(progress)
                 }
@@ -634,54 +329,41 @@ internal class BatteryAnnouncementController(
             }
         })
 
-        // بند الأوامر 4: معاينة إعلان البطارية بالقيم المعروضة حالياً.
+        // معاينة إعلان البطارية بالقيم المحفوظة في فئة البطارية الموحَّدة
         view.findViewById<View>(R.id.btnPreviewBattery)
             ?.setOnClickListener { previewBattery() }
     }
 
-    /** إعادة بناء سبنر أصوات البطارية (لغة ← محرك ← أصوات) واختيار
-     *  الصوت المحفوظ برمجياً تحت عَلَم الربط — عند بدء الإعداد
-     *  وعند اكتمال اكتشاف المحركات خلفياً ([VoiceSelectionFragment]). */
-    fun refreshBatteryVoices() {
-        val engine = runCatching {
-            settings.getEngineForCategory(
-                SettingsRepository.DEVICE_HEALTH_BATTERY
-            )
-        }.getOrNull()
-        batteryVoiceOptions = catalog.voicesFor(batteryLanguage, engine)
-        val saved = runCatching {
-            settings.getBatteryAnnouncementVoiceId()
-        }.getOrNull()
-        bindingVoices = true
-        try {
-            spinnerBatteryVoice?.adapter = fragment.simpleAdapter(
-                batteryVoiceOptions.map { it.label }
-            )
-            val idx = batteryVoiceOptions.indexOfFirst { it.name == saved }
-            spinnerBatteryVoice?.setSelection(if (idx >= 0) idx else 0)
-        } finally {
-            bindingVoices = false
-        }
-    }
-
-    /** معاينة «البطارية 20%» بموضع صوت السبنرا وتقدم الشرائط الحالية. */
+    /** معاينة «البطارية عشرون بالمئة» بالصوت والأشرطة الموحّدة للبطارية. */
     private fun previewBattery() {
-        val enginePkg = batteryEngineOptions
-            .getOrNull(spinnerBatteryEngine?.selectedItemPosition ?: 0)
-            ?.packageName
+        val category = SettingsRepository.VOICE_CATEGORY_BATTERY
+        val voiceId = runCatching {
+            settings.getPreferredVoiceIdForCategory(category)
+        }.getOrNull()
+        val engine = runCatching {
+            settings.getEngineForCategory(category)
+        }.getOrNull()
+        val rate = runCatching {
+            settings.getSpeechRateForCategory(category)
+        }.getOrDefault(1.0f)
+        val pitch = runCatching {
+            settings.getPitchForCategory(category)
+        }.getOrDefault(1.0f)
+        val volume = runCatching {
+            settings.getVolumeForCategory(category)
+        }.getOrDefault(1.0f)
         val sample = fragment.getString(R.string.sample_text_battery_preview)
+        val lang = runCatching {
+            settings.getLanguageForCategory(category)
+        }.getOrNull() ?: "ar"
         fragment.previewSpeech(
             buildPreviewParamsFrom(
-                voiceName = batteryVoiceOptions
-                    .getOrNull(
-                        spinnerBatteryVoice?.selectedItemPosition ?: 0
-                    )
-                    ?.name.orEmpty(),
-                languageTag = batteryLanguage,
-                enginePkg = enginePkg,
-                rateProgress = seekBatteryRate?.progress ?: 100,
-                pitchProgress = seekBatteryPitch?.progress ?: 100,
-                volumePercent = seekBatteryVolume?.progress ?: 100,
+                voiceName = voiceId.orEmpty(),
+                languageTag = lang,
+                enginePkg = engine,
+                rateProgress = (rate * 100).toInt().coerceIn(0, 200),
+                pitchProgress = (pitch * 100).toInt().coerceIn(0, 200),
+                volumePercent = (volume * 100).toInt().coerceIn(0, 100),
                 sampleText = sample
             )
         )
@@ -693,16 +375,6 @@ internal class BatteryAnnouncementController(
         llBatteryLevelsHeader = null
         tvBatteryLevelsArrow = null
         llBatteryLevels = null
-        spinnerBatteryVoice = null
-        spinnerBatteryLanguage = null
-        spinnerBatteryEngine = null
-        tvBatteryEngineLabel = null
-        seekBatteryRate = null
-        tvBatteryRateValue = null
-        seekBatteryVolume = null
-        tvBatteryVolumeValue = null
-        seekBatteryPitch = null
-        tvBatteryPitchValue = null
         spinnerBatteryCueMode = null
         seekBatteryCueVolume = null
         tvBatteryCueVolumeValue = null

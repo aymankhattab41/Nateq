@@ -12,6 +12,7 @@ import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -675,7 +676,7 @@ class AnnouncementSpeakerTest {
     }
 
     @Test
-    fun `events track uses alarm stream without audio focus request`() {
+    fun `events track uses accessibility stream with audio focus request`() {
         val audioManager = context.getSystemService(
             Context.AUDIO_SERVICE
         ) as AudioManager
@@ -691,16 +692,17 @@ class AnnouncementSpeakerTest {
             val attrs = method.invoke(speaker)
                 as android.media.AudioAttributes
             assertEquals(
-                "مسار الأحداث يستهدف المنبه USAGE_ALARM",
-                android.media.AudioAttributes.USAGE_ALARM,
+                "مسار الأحداث يستهدف الإتاحة USAGE_ASSISTANCE_ACCESSIBILITY",
+                android.media.AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY,
                 attrs.usage
             )
 
             speaker.speak(
-                "حدث تزامني", Locale.forLanguageTag("ar"), 1f, 1f, 1f
+                "حدث تزامني", Locale.forLanguageTag("ar"), 1f, 1f, 1f,
+                category = SettingsRepository.VOICE_CATEGORY_TIME
             )
-            assertNull(
-                "مسار الأحداث لا يطلب تركيزاً صوتياً يوقف الوسائط",
+            assertNotNull(
+                "مسار الأحداث يطلب تركيزاً صوتياً خفيفاً",
                 shadowAudio.getLastAudioFocusRequest()
             )
         } finally {

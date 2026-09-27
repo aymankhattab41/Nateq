@@ -250,7 +250,8 @@ class SmsReadingReceiver : BroadcastReceiver() {
                     text, locale, speechRate, pitch, volume,
                     engineOverride = settings.getEngineForCategory(
                         SettingsRepository.ANNOUNCE_CATEGORY_SMS
-                    )
+                    ),
+                    category = SettingsRepository.ANNOUNCE_CATEGORY_SMS
                 )
                 // **بند 5.5:** finish() الفوري قبل تمام التوليف كان يترك
                 // أندرويد 14+ يجمد العملية عبر Process Cgroup Freezer

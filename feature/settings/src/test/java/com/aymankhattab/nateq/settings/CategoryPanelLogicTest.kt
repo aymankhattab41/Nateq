@@ -20,6 +20,7 @@ class CategoryPanelLogicTest {
                 SettingsRepository.VOICE_CATEGORY_NUMBERS,
                 SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS,
                 SettingsRepository.VOICE_CATEGORY_EMOJI,
+                SettingsRepository.VOICE_CATEGORY_BATTERY,
                 SettingsRepository.ANNOUNCE_CATEGORY_CALLER
             ),
             CategoryPanelEntry.entries.map { it.categoryKey }
@@ -83,6 +84,11 @@ class CategoryPanelLogicTest {
         assertTrue(
             categoryHasDedicatedEngine(
                 SettingsRepository.VOICE_CATEGORY_EMOJI
+            )
+        )
+        assertTrue(
+            categoryHasDedicatedEngine(
+                SettingsRepository.VOICE_CATEGORY_BATTERY
             )
         )
         // فئات المتصل الفرعية (عربي/إنجليزي) ليست «الفئة الافتراضية»

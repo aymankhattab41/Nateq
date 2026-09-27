@@ -97,6 +97,16 @@ class AnnouncementSpeaker(
         // مشغّلٍ محجوز للمكالمة/الوسائط).
         private const val FOCUS_RETRY_DELAY_MS = 400L
         private const val MAX_FOCUS_RETRIES = 2
+        val EVENT_CATEGORIES: Set<String> = setOf(
+            SettingsRepository.VOICE_CATEGORY_TIME,
+            SettingsRepository.VOICE_CATEGORY_BATTERY,
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER,
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR,
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
+        )
+
+        fun isEventCategory(category: String?): Boolean =
+            category != null && category in EVENT_CATEGORIES
 
         /** نوع التركيز الصوتي حسب مفتاح «خفض صوت الوسائط أثناء النطق»:
          *  مفعّل = MAY_DUCK (تُخفض وسائط الآخرين مؤقتاً)؛ معطّل =
@@ -168,6 +178,14 @@ class AnnouncementSpeaker(
                 shared ?: AnnouncementSpeaker(context.applicationContext)
                     .also { shared = it }
                     .also { it.prewarm() }
+            }
+        }
+
+        @VisibleForTesting
+        internal fun resetSharedForTesting() {
+            synchronized(this) {
+                shared?.shutdown()
+                shared = null
             }
         }
 
@@ -591,7 +609,8 @@ class AnnouncementSpeaker(
         pitch: Float,
         volume: Float,
         engineOverride: String? = null,
-        cue: AudioCue? = null
+        cue: AudioCue? = null,
+        category: String? = null
     ) {
         // إعدادات نطق الإيموجي تُحسم قبل طلب التركيز حتى تكون المقاطع جاهزة
         // للدورة (بلا قراءة متكررة للإعدادات عند كل عودة تركيز).
@@ -629,11 +648,22 @@ class AnnouncementSpeaker(
         }
 
         val gen = speechGeneration.incrementAndGet()
+        val isEvent = isEventCategory(category)
         val speakAction = {
             launchWithCue(
                 gen, text, locale, speechRate, pitch, volume,
-                emojiCfg, parts, resolvedEngine, cue
+                emojiCfg, parts, resolvedEngine, cue,
+                immediate = isEvent
             )
+        }
+        if (isEvent) {
+            // فئات الأحداث (الساعة، البطارية، المتصل):
+            // تجاوز قفل النطق العابر (SpeechLock) بالكامل بلا انتظار،
+            // وإطلاق طلب التركيز والنطق معاً بلا انتظار رد AUDIOFOCUS_GAIN
+            // ليقطع QUEUE_FLUSH القراءة الجارية فوراً وبصوت طبيعي.
+            requestAudioFocus()
+            speakAction()
+            return
         }
         // **قفل النطق العابر:** إن كان محرك التخليق (:tts) ينطق حالياً
         // (قراءة قارئ الشاشة فوق content://…/speaking) فلا ننطق فوقه —
@@ -819,11 +849,9 @@ class AnnouncementSpeaker(
     }
 
     /**
-     * سمات نطق الأحداث والإعلانات: مسار المنبه دائماً (USAGE_ALARM)
-     * ليعمل كمسار أحداث مستقل تزامني لا يقطع رسائل الواتساب أو وسائط
-     * التطبيقات الأخرى؛ ما عدا مفتاح «دائماً على مسار الوسائط» (USAGE_MEDIA).
-     * أما مسار النطق العام لإمكانية الوصول فيبقى مستقلاً على خدمة المحرك
-     * (NateqTtsService) على مسار الإتاحة (USAGE_ASSISTANCE_ACCESSIBILITY).
+     * سمات نطق الأحداث والإعلانات: مسار الإتاحة دائماً
+     * (USAGE_ASSISTANCE_ACCESSIBILITY) ليتوافق مع قارئ الشاشة وإمكانية الوصول؛
+     * ما عدا مفتاح «دائماً على مسار الوسائط» (USAGE_MEDIA).
      */
     private fun speechAudioAttributes(): AudioAttributes {
         val mediaStreamAlways = runCatching {
@@ -840,7 +868,7 @@ class AnnouncementSpeaker(
                 if (mediaStreamAlways) {
                     AudioAttributes.USAGE_MEDIA
                 } else {
-                    AudioAttributes.USAGE_ALARM
+                    AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY
                 }
             )
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
@@ -884,13 +912,15 @@ class AnnouncementSpeaker(
         emojiCfg: EmojiSpeechConfig?,
         parts: List<SpeechPart>?,
         engineOverride: String?,
-        cue: AudioCue?
+        cue: AudioCue?,
+        immediate: Boolean = false
     ) {
         if (gen != speechGeneration.get()) return
         if (cue == null) {
             startSpeech(
                 text, locale, speechRate, pitch, volume,
-                emojiCfg, parts, engineOverride
+                emojiCfg, parts, engineOverride,
+                immediate = immediate
             )
             return
         }
@@ -1293,8 +1323,13 @@ class AnnouncementSpeaker(
             } ?: false
             putInt(
                 TextToSpeech.Engine.KEY_PARAM_STREAM,
-                if (mediaStreamAlways) AudioManager.STREAM_MUSIC
-                else AudioManager.STREAM_ALARM
+                if (mediaStreamAlways) {
+                    AudioManager.STREAM_MUSIC
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    AudioManager.STREAM_ACCESSIBILITY
+                } else {
+                    AudioManager.STREAM_MUSIC
+                }
             )
         }
         // تنظيف النص من الإيموجي قبل النطق (نصوص خارجية قد
@@ -1416,10 +1451,7 @@ class AnnouncementSpeaker(
     }
 
     /**
-     * يطلب Audio Focus متقطع قابل للخفض (MAY_DUCK) عند تفعيل مسار الوسائط
-     * فقط. أما في مسار المنبه الافتراضي للأحداث فلا يُطلب تركيز يسلب صوت
-     * مشغلات الوسائط أو يوقف رسائل الواتساب، بل يمر النطق فوراً ليمزجه
-     * نظام الصوت (AudioFlinger) بالتزامن دون أي توقف للمشغلات.
+     * يطلب Audio Focus متقطع قابل للخفض (AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK).
      * @return نتيجة النظام: GRANTED / DELAYED / FAILED (يُحترم الجميع).
      */
     private fun requestAudioFocus(): Int {
@@ -1428,16 +1460,6 @@ class AnnouncementSpeaker(
                 (appContext as? AnnouncementAppContext)
                     ?.settingsRepository
                 ?: SettingsRepository.create(appContext)
-            val mediaStreamAlways = runCatching {
-                settings.isAnnouncementMediaStreamAlways()
-            }.getOrDefault(false)
-            if (!mediaStreamAlways) {
-                // مسار الأحداث التزامني (المنبه): نطق متزامن بلا مقاطعة لوسائط
-                // التطبيقات الأخرى (مثل رسائل الواتساب الصوتية) — لا يُطلب
-                // تركيز يسلب صوت المشغلات، بل يمر النطق فوراً ليمزجه نظام
-                // الصوت (AudioFlinger) بالتزامن دون أي توقف للمشغلات.
-                return AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-            }
             val duckMedia = runCatching {
                 settings.isDuckMediaDuringAnnouncements()
             }.getOrDefault(true)

@@ -48,9 +48,10 @@ internal interface CueSink {
 }
 
 /**
- * سمات الصوت الموحّدة للمؤثرات (Audio Cues): مُوجّهة لمسار المنبه (USAGE_ALARM)
- * ليتوافق مع مسار نطق الأحداث التزامني ونوع نغمة إعلامية — يُستخدم
- * من مُنفّذي [CueSink] كلَيهما. كائن داخلي ليُفحص في الاختبارات.
+ * سمات الصوت الموحّدة للمؤثرات (Audio Cues): مُوجّهة لمسار الإتاحة
+ * (USAGE_ASSISTANCE_ACCESSIBILITY) ليتوافق مع مسار نطق الأحداث والإعلانات
+ * ونوع نغمة إعلامية — يُستخدم من مُنفّذي [CueSink] كلَيهما. كائن داخلي ليُفحص
+ * في الاختبارات.
  */
 internal object CueAudioAttributes {
     // **بند 2.16 (لا تحويل مكانيٌّ للإشارات):** مثلُ مسارِ النطقِ تماماً —
@@ -58,7 +59,7 @@ internal object CueAudioAttributes {
     // SPATIALIZATION_BEHAVIOR_NEVER في Android 13+ فتبقى أماميةً ثابتةً
     // بلا توجيهِ قنواتٍ مكانيٍّ يعكّرُ موضعَ مصدرِ الصوتِ في السماعات.
     val forCue: AudioAttributes = AudioAttributes.Builder()
-        .setUsage(AudioAttributes.USAGE_ALARM)
+        .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
         .apply {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

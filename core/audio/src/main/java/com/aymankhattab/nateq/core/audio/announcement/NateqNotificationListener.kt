@@ -246,7 +246,8 @@ class NateqNotificationListener : NotificationListenerService() {
                 speechText, locale, speechRate, pitch, volume,
                 engineOverride = settings.getEngineForCategory(
                     SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
-                )
+                ),
+                category = SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
             )
 
         } catch (t: Throwable) {
@@ -351,7 +352,8 @@ class NateqNotificationListener : NotificationListenerService() {
             text, locale, speechRate, pitch, volume,
             engineOverride = settings.getEngineForCategory(
                 SettingsRepository.ANNOUNCE_CATEGORY_SMS
-            )
+            ),
+            category = SettingsRepository.ANNOUNCE_CATEGORY_SMS
         )
     }
 

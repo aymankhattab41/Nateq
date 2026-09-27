@@ -178,13 +178,16 @@ class BatteryAnnouncementReceiver(
         // بند 4.1: صوت البطارية المخصص إن وُجد؛ وإلا صوتُ اللغة المختارة
         // للنطق — فصوتٌ غير محفوظٍ لم يُسقط الإعلانَ بالإنجليزية
         // على مستخدمٍ عربيٍّ بعد اليوم.
-        val voiceId = settings.getBatteryAnnouncementVoiceId()
-            ?: batteryFallbackVoice(settings)
+        val voiceId = settings.getPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_BATTERY
+        ) ?: batteryFallbackVoice(settings)
         // لغة الصوت المحددة في الشاشة التدريجية تتصدر حسم
         // العربية/الإنجليزية — ثم يُستنتج من تسمية الصوت كسند
         // تاريخي للقيم القديمة.
         val savedLanguage = runCatching {
-            settings.getBatteryAnnouncementLanguage()
+            settings.getLanguageForCategory(
+                SettingsRepository.VOICE_CATEGORY_BATTERY
+            )
         }.getOrNull()
         // بند 4.3: أي تسمية عربية (ar، ar-XX، arabic…) تُعد عربيةً — كان
         // القصرُ على قائمة صيغ محددة (ar-local/ar-EG/nateq-ar) يسقط
@@ -367,8 +370,12 @@ class BatteryAnnouncementReceiver(
         cueType: CueType?,
         onCueDone: (() -> Unit)?
     ): Boolean {
-        val speechRate = settings.getBatteryAnnouncementRate()
-        val volume = settings.getBatteryAnnouncementVolume()
+        val speechRate = settings.getSpeechRateForCategory(
+            SettingsRepository.VOICE_CATEGORY_BATTERY
+        )
+        val volume = settings.getVolumeForCategory(
+            SettingsRepository.VOICE_CATEGORY_BATTERY
+        )
         val cueVolume = runCatching { settings.getBatteryCueVolume() }
             .getOrDefault(0.8f)
         val mode = runCatching { settings.getBatterySoundCueMode() }
@@ -395,15 +402,16 @@ class BatteryAnnouncementReceiver(
         }
         // بند 2.2: نبرةُ «نطق البطارية» المستقلة إن ضُبطت، أو نبرةُ نطق
         // اللغة بديلاً.
-        val pitch = settings.getBatteryAnnouncementPitchOrDefault(
-            locale.language
+        val pitch = settings.getPitchForCategory(
+            SettingsRepository.VOICE_CATEGORY_BATTERY
         )
         speaker.speak(
             text, locale, speechRate, pitch, volume,
             engineOverride = settings.getEngineForCategory(
-                SettingsRepository.DEVICE_HEALTH_BATTERY
+                SettingsRepository.VOICE_CATEGORY_BATTERY
             ),
-            cue = cue
+            cue = cue,
+            category = SettingsRepository.VOICE_CATEGORY_BATTERY
         )
         return true
     }

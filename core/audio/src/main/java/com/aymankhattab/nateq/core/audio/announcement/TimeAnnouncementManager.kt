@@ -437,7 +437,8 @@ class TimeAnnouncementManager(
                     engineOverride = settings.getEngineForCategory(
                         SettingsRepository.VOICE_CATEGORY_TIME
                     ),
-                    cue = hourlyChimeCue()
+                    cue = hourlyChimeCue(),
+                    category = SettingsRepository.VOICE_CATEGORY_TIME
                 )
             } catch (t: Throwable) {
                 android.util.Log.e("NATEQ_TTS", "announce time failed", t)

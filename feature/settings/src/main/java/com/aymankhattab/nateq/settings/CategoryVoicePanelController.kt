@@ -45,6 +45,10 @@ internal enum class CategoryPanelEntry(
         SettingsRepository.VOICE_CATEGORY_EMOJI,
         R.string.voice_category_emoji
     ),
+    BATTERY(
+        SettingsRepository.VOICE_CATEGORY_BATTERY,
+        R.string.voice_category_battery
+    ),
     CALLER(
         SettingsRepository.ANNOUNCE_CATEGORY_CALLER,
         R.string.section_caller_announcement
@@ -513,6 +517,8 @@ spinnerSelector =
                 context.getString(R.string.voice_category_notifications_summary)
             SettingsRepository.VOICE_CATEGORY_EMOJI ->
                 context.getString(R.string.voice_category_emoji_summary)
+            SettingsRepository.VOICE_CATEGORY_BATTERY ->
+                context.getString(R.string.voice_category_battery_summary)
             else -> context.getString(R.string.voice_category_default_summary)
         }
 
@@ -753,6 +759,9 @@ spinnerSelector =
             !isArabic &&
                 categoryKey == SettingsRepository.VOICE_CATEGORY_EMOJI ->
                 res.getString(R.string.sample_text_emoji_en)
+            !isArabic &&
+                categoryKey == SettingsRepository.VOICE_CATEGORY_BATTERY ->
+                res.getString(R.string.sample_text_battery_preview)
             !isArabic ->
                 res.getString(R.string.sample_text_default_en)
             categoryKey == SettingsRepository.VOICE_CATEGORY_TIME ->
@@ -764,6 +773,8 @@ spinnerSelector =
                 res.getString(R.string.sample_text_notifications_ar)
             categoryKey == SettingsRepository.VOICE_CATEGORY_EMOJI ->
                 res.getString(R.string.sample_text_emoji_ar)
+            categoryKey == SettingsRepository.VOICE_CATEGORY_BATTERY ->
+                res.getString(R.string.sample_text_battery_preview)
             else -> res.getString(R.string.sample_text_default_ar)
         }
     }
