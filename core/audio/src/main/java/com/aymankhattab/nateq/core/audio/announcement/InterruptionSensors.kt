@@ -104,33 +104,38 @@ internal class InterruptionSensors(
     /** بدء الرصد (يُستدعى عند بدء النطق). آمن للتكرار.
      *  **بند 6.1:** مُزامَن عبر [@Synchronized] — بدءُ دورة نطقٍ على خيط
      *  (ThreadUsage) مع انتهاء سابقتها على خيط النطق (TTS callback)
-     *  كان قد يسخّران [sensorManager] و[sensorListener] في وقت واحد. */
+     *  كان قد يسخّران [sensorManager] و[sensorListener] في وقت واحد.
+     *  لا يُسجَّل أي مستشعر إذا كان المفتاحان معطلين حفظاً للبطارية. */
     @Synchronized
     fun start(context: Context) {
+        val shake = shakeEnabled()
+        val proximity = proximityEnabled()
+        if (!shake && !proximity) return
         if (shakeRegistered || proximityRegistered) return
         val sm = context.getSystemService(Context.SENSOR_SERVICE)
         if (sm !is SensorManager) return
         sensorManager = sm
         mainHandler = Handler(Looper.getMainLooper())
-        val accel = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        val prox = sm.getDefaultSensor(Sensor.TYPE_PROXIMITY)
-        // التسجيل يعتمد على وجود المستشعر فقط؛ قيمتا [shakeEnabled] و
-        // [proximityEnabled] تُقرآن حيّاً عند كل حدَث (بند 8) فلا تُجمَّد
-        // الإعدادات وقت الإنشاء — التغيير يستجيب دون إعادة تسجيل.
-        shakeRegistered = accel != null && runCatching {
-            sm.registerListener(
-                sensorListener, accel,
-                SensorManager.SENSOR_DELAY_UI, mainHandler
-            )
-        }.getOrDefault(false)
-        proximityRegistered =
-            prox != null &&
-                runCatching {
-                    sm.registerListener(
-                        sensorListener, prox,
-                        SensorManager.SENSOR_DELAY_NORMAL, mainHandler
-                    )
-                }.getOrDefault(false)
+        if (shake && !shakeRegistered) {
+            val accel = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+            shakeRegistered = accel != null && runCatching {
+                sm.registerListener(
+                    sensorListener, accel,
+                    SensorManager.SENSOR_DELAY_UI, mainHandler
+                )
+            }.getOrDefault(false)
+        }
+        if (proximity && !proximityRegistered) {
+            val prox = sm.getDefaultSensor(Sensor.TYPE_PROXIMITY)
+            proximityRegistered =
+                prox != null &&
+                    runCatching {
+                        sm.registerListener(
+                            sensorListener, prox,
+                            SensorManager.SENSOR_DELAY_NORMAL, mainHandler
+                        )
+                    }.getOrDefault(false)
+        }
     }
 
     /** إيقاف الرصد (يُستدعى عند انتهاء النطق). آمن للتكرار.

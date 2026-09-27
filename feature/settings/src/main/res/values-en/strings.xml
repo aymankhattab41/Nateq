@@ -486,9 +486,9 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+• Battery &amp; crash fix: only register silence sensors during active speech and fix scheduler foreground service start
 • Voice selection: removed uninstalled languages explanation toggle and cleaned up related code
 • Events audio track: routed event announcements to alarm stream for concurrent playback without pausing WhatsApp or media audio
-• Caller announcement: comprehensive tests verifying speech generation for local, international, and formatted phone numbers
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>

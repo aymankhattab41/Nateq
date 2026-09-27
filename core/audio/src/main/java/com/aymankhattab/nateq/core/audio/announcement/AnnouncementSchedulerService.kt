@@ -111,6 +111,7 @@ class AnnouncementSchedulerService : Service() {
          *  @return true إذا شُغّلت الخدمة */
         @JvmStatic
         fun startIfNeeded(context: Context): Boolean {
+            if (isRunning) return true
             if (wasUserStopped(context)) return false
             // قراءة لحظية (في اقلاع/فتح واجهة قد لا يكون Hilt
             // مهيأ بعد الإقلاع):
@@ -314,6 +315,7 @@ private fun startSafely(context: Context, action: String) {
     ): Int {
         // أي أمر جديد يُبطل مؤقت إيقاف النافذة العابرة (قد يصبح فترة دائمة).
         mainHandler.removeCallbacksAndMessages(null)
+        startAsForeground(buildNotification())
         when (intent?.action) {
             ACTION_ANNOUNCE_NOW -> announceNow()
             ACTION_STOP -> {
@@ -587,24 +589,11 @@ private fun startSafely(context: Context, action: String) {
                 startForeground(NOTIFICATION_ID, notification)
             }
         } catch (t: Throwable) {
-            // **بند 4.2:** إن مُنعت ترقية الخدمة إلى أمامية (قيود الخلفية
-            // أندرويد 12+، أو نوعٍ مرفوض خاص بطرازات OEM)، كان الابتلاعُ
-            // السابق يُبقي الخدمة بدون startForeground فيُطلق النظام
-            // RemoteServiceException بعد ≈5 ثوانٍ فيقتل العملية كاملةً
-            // (تحطّم «foreground did not start»). النطق نفسه لا يحتاج
-            // مانيفست: مناطق الإعلان (مستقبِل المنبه/الوقت/البطارية) تنطق
-            // مباشرةً عبر AnnouncementSpeaker بتركيز صوتي — فالإيقاف الذاتي
-            // الفوري يلغي رسوم الوقت ويعمل الإعلان عابراً في العملية دون
-            // خدمة أمامية قسرية.
             Log.e(
                 TAG,
-                "startForeground failed — stop FGS to avoid ASO kill",
+                "startForeground failed",
                 t
             )
-            runCatching {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-            }
         }
     }
 }

@@ -19,7 +19,8 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowSensor
 import org.robolectric.shadows.ShadowSensorManager
 
-/** اختبارات منطق كشف الهزة ومدى التقارب (منطق نقي بلا مستشعرات فعلية). */
+/** اختبارات منطق كشف الهزة ومدى التقارب
+ *  (منطق نقي بلا مستشعرات فعلية). */
 class InterruptionSensorsTest {
 
     @Test
@@ -33,7 +34,8 @@ class InterruptionSensorsTest {
     fun shakeDetector_strongAcceleration_triggers() {
         var clock = 1_000_000L
         val detector = ShakeDetector(nowMs = { clock })
-        // x بقوة 25 م/ث²: انحراف 15.2 عن الجاذبية > العتبة 12
+        // x بقوة 25 م/ث²: انحراف 15.2 عن الجاذبية
+        // أكبر من العتبة 12
         assertTrue(detector.onAcceleration(25f, 0f, 0f))
         assertFalse(detector.onAcceleration(30f, 0f, 0f))
         // بعد فترة الهدوء تُحتسب هزة جديدة
@@ -59,18 +61,17 @@ class InterruptionSensorsTest {
     fun isProximityNear_unknownRange_alwaysNear() {
         assertTrue(isProximityNear(0f, 0f))
         assertTrue(isProximityNear(20f, 0f))
-        // مدى سالب (قيمة غير متوقعة) يعامل كأنه غير معروف: دائماً قريب
+        // مدى سالب (قيمة غير متوقعة) يعامل
+        // كأنه غير معروف: دائماً قريب
         assertTrue(isProximityNear(20f, -1f))
     }
 }
 
 /**
- * اختبارات بند 8 (Robolectric): «تسجيل واحد فقط» وتفعيل الإعداد الحيّ.
- * 1) عشرات الاستدعاءات المتتالية لبدء الرصد (كانت تتكرر مع كل دورة
- *    onSynthesizeText) تسجّل مستمعَي المستشعرات مرة واحدة فقط؛
- * 2) مفاتيح الإعدادات ([shakeEnabled]/[proximityEnabled]) تُقرأ حيّاً
- *    عند كل حدَث استشعار لا قيمةً مجمَّدة وقت الإنشاء — تغيير الإعداد
- *    يستجيب فوراً بلا إعادة تشغيل الخدمة/إعادة تسجيل.
+ * اختبارات بند 8 (Robolectric):
+ * 1) بدء الرصد يسجل المستمع مرة واحدة فقط؛
+ * 2) مفاتيح الإعدادات تُقرأ حيّاً؛
+ * 3) عند التعطيل لا يُسجَّل أي مستشعر حفظاً للبطارية.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [24, 30, 35, 37])
@@ -84,7 +85,7 @@ class InterruptionSensorsRegistrationTest {
 
     private val shadowSm: ShadowSensorManager = shadowOf(sensorManager)
 
-    /** توفير مستشعري التسارع والتقارب الظليين حتى يكتمل التسجيل. */
+    /** توفير مستشعري التسارع والتقارب الظليين. */
     private fun installFakeSensors() {
         shadowSm.addSensor(
             ShadowSensor.newInstance(Sensor.TYPE_ACCELEROMETER)
@@ -104,7 +105,8 @@ class InterruptionSensorsRegistrationTest {
             onInterrupt = { interrupts++ }
         )
         repeat(50) { sensors.start(app) }
-        // مستمعٌ واحد مهما تكرر بدء الرصد — لا تراكم تسجيلات.
+        // مستمعٌ واحد مهما تكرر بدء الرصد
+        // لا تراكم تسجيلات.
         assertEquals(1, shadowSm.getListeners().size)
         assertEquals(0, interrupts)
     }
@@ -114,7 +116,8 @@ class InterruptionSensorsRegistrationTest {
         installFakeSensors()
         val service = NateqTtsService::class.java
             .getDeclaredConstructor().newInstance()
-        // إرفاق سياق التطبيق كي يعمل applicationContext (بدل onCreate).
+        // إرفاق سياق التطبيق كي يعمل
+        // applicationContext (بدل onCreate).
         val mBase = ContextWrapper::class.java
             .getDeclaredField("mBase")
         mBase.isAccessible = true
@@ -122,22 +125,50 @@ class InterruptionSensorsRegistrationTest {
         val settingsField = NateqTtsService::class.java
             .getDeclaredField("settings")
         settingsField.isAccessible = true
-        settingsField.set(service, SettingsRepository.create(app))
+        val repo = SettingsRepository.create(app)
+        repo.setShakeToStopEnabled(true)
+        settingsField.set(service, repo)
         val start = NateqTtsService::class.java
             .getDeclaredMethod("startInterruptionMonitoring")
         start.isAccessible = true
         val sensorsField = NateqTtsService::class.java
             .getDeclaredField("interruptionSensors")
         sensorsField.isAccessible = true
-        // «عشرات الاستدعاءات المتتالية» كما كانت تحدث مع كل onSynthesizeText:
-        // كائنُ الاستشعار واحدٌ ثابت والمستمعان مُسجَّلان مرة واحدة.
+        // كائنُ الاستشعار واحدٌ ثابت
+        // والمستمعان مُسجَّلان مرة واحدة.
         val seen = mutableListOf<Any>()
         repeat(50) {
             start.invoke(service)
-            seen += sensorsField.get(service)
+            sensorsField.get(service)?.let { seen.add(it) }
         }
         assertEquals(1, seen.distinct().size)
         assertEquals(1, shadowSm.getListeners().size)
+    }
+
+    @Test
+    fun sensors_disabled_doNotRegisterListeners() {
+        installFakeSensors()
+        val sensors = InterruptionSensors(
+            shakeEnabled = { false },
+            proximityEnabled = { false },
+            onInterrupt = {}
+        )
+        sensors.start(app)
+        assertEquals(0, shadowSm.getListeners().size)
+    }
+
+    @Test
+    fun sensors_stop_unregistersListeners() {
+        installFakeSensors()
+        val sensors = InterruptionSensors(
+            shakeEnabled = { true },
+            proximityEnabled = { true },
+            onInterrupt = {}
+        )
+        sensors.start(app)
+        assertEquals(1, shadowSm.getListeners().size)
+        sensors.stop()
+        assertEquals(0, shadowSm.getListeners().size)
     }
 
     @Test
@@ -149,10 +180,12 @@ class InterruptionSensorsRegistrationTest {
             proximityEnabled = { false },
             onInterrupt = { interrupts++ }
         )
-        // x بقوة 30 م/ث²: فوق العتبة، لكنها مقروءة بحاجز الحيّة.
+        // x بقوة 30 م/ث²: فوق العتبة،
+        // لكنها مقروءة بحاجز الحيّة.
         sensors.onAcceleration(30f, 0f, 0f)
         assertEquals(0, interrupts)
-        // التفعيل الفوري يستجيب بنفس التسجيل (لا إعادة تسجيل).
+        // التفعيل الفوري يستجيب بنفس
+        // التسجيل (لا إعادة تسجيل).
         shakeOn = true
         sensors.onAcceleration(30f, 0f, 0f)
         assertEquals(1, interrupts)
@@ -171,10 +204,12 @@ class InterruptionSensorsRegistrationTest {
             proximityEnabled = { proxOn },
             onInterrupt = { interrupts++ }
         )
-        // معطّل: القراءات لا تُحدَّث الحالة ولا تقطع.
+        // معطّل: القراءات لا تُحدَّث الحالة
+        // ولا تقطع النطق.
         sensors.onProximity(0f, 5f)
         assertEquals(0, interrupts)
-        // تفعيل: أول قراءة قريبة بداية جديدة — لا تمثّل انتقالاً.
+        // تفعيل: أول قراءة قريبة بداية جديدة
+        // لا تمثّل انتقالاً.
         proxOn = true
         sensors.onProximity(0f, 5f)
         assertEquals(0, interrupts)
@@ -182,11 +217,13 @@ class InterruptionSensorsRegistrationTest {
         sensors.onProximity(5f, 5f)
         sensors.onProximity(0f, 5f)
         assertEquals(1, interrupts)
-        // تعطيل فوري: القريب لا يقطع بينما المفتاح مغلق.
+        // تعطيل فوري: القريب لا يقطع بينما
+        // المفتاح مغلق.
         proxOn = false
         sensors.onProximity(0f, 5f)
         assertEquals(1, interrupts)
-        // إعادة التفعيل تُكمل الرصد الحيّ من آخر حالة (بعيد).
+        // إعادة التفعيل تُكمل الرصد الحيّ
+        // من آخر حالة (بعيد).
         proxOn = true
         sensors.onProximity(5f, 5f)
         assertEquals(1, interrupts)

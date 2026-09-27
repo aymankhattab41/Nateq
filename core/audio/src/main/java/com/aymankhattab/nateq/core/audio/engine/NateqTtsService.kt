@@ -302,11 +302,8 @@ class NateqTtsService : TextToSpeechService() {
         } catch (t: Throwable) {
             Log.e(TAG, "super.onCreate() threw", t)
         }
-        // رصد الإسكات الفوري (هز/تقارب) مرة واحدة لعمر الخدمة (بند 8):
-        // تُقرأ مفاتيح الإعدادات حيّةً عند كل حدث استشعار (داخل
-        // InterruptionSensors) فيستجيب تغيير الإعدادات فوراً دون إعادة
-        // تشغيل الخدمة، ولا رياضةَ تسجيل/إلغاء مع كل دورة تخليق.
-        startInterruptionMonitoring()
+        // رصد الإسكات الفوري (هز/تقارب): يُسجَّل أثناء دورة النطق النشط
+        // فقط في onSynthesizeText حفظاً للبطارية ويُلغى فور انتهائها.
 
         // **بند 6.5:** تسجيل مستقبل الحزم بعد اكتمال شبكة الخدمة —
         // يستقبل بثّ تثبيت/إزالة/تحديث أي حزمة (محركات TTS أساساً)
@@ -475,37 +472,26 @@ override fun onDestroy() {
         currentJob?.cancel()
     }
 
-    /** **بند 8 — رصد الهز/التقارب لعمر الخدمة (يُسجَّل مرة واحدة في
-     *  [onCreate] لا مع كل رحلة تخليق):** كان ربطُ المستشعرات محصوراً في
-     *  مسار إعلانات التطبيق (AnnouncementSpeaker) فلا يتوقف نطقُ قارئ
-     *  الشاشة على الهزّ/التقارب مهما فُعّل المفتاحان في الإعدادات، ثم
-     *  عُدّل ليُفعَّل مع كل رحلة — رياضةُ تسجيل/إلغاء لكل طلب تهدر عمر
-     *  البطارية. الآن يُسجَّل **مرة واحدة لعمر الخدمة** عند [onCreate]،
-     *  وتقرأ المستشعراتُ مفاتيحَ الإعدادات (عبر [settings]) **حيّاً عند كل
-     *  حدث** (داخل [InterruptionSensors]) فيستجيب التغيير فوراً دون إعادة
-     *  تشغيل الخدمة؛ عند الهزة/التقارب يُستدعى [interruptSynthesis] ليوقف
-     *  الرحلة الجارية بأمان عبر نفس عقد الإلغاء (بند 2.3) فينتقل طابور
-     *  TalkBack بسلاسة. */
+    /** رصد الهز/التقارب أثناء رحلة التخليق: يُسجَّل أثناء النطق النشط فقط
+     *  لتوفير البطارية، ويُلغى فور انتهاء الرحلة. */
     private fun startInterruptionMonitoring() {
-        if (interruptionSensors != null) return
-        val sensors = InterruptionSensors(
-            shakeEnabled = {
-                runCatching { settings.isShakeToStopEnabled() }
-                    .getOrDefault(false)
-            },
-            proximityEnabled = {
-                runCatching { settings.isProximitySilenceEnabled() }
-                    .getOrDefault(false)
-            },
-            onInterrupt = { interruptSynthesis() }
-        )
-        interruptionSensors = sensors
-        sensors.start(applicationContext)
+        if (interruptionSensors == null) {
+            interruptionSensors = InterruptionSensors(
+                shakeEnabled = {
+                    runCatching { settings.isShakeToStopEnabled() }
+                        .getOrDefault(false)
+                },
+                proximityEnabled = {
+                    runCatching { settings.isProximitySilenceEnabled() }
+                        .getOrDefault(false)
+                },
+                onInterrupt = { interruptSynthesis() }
+            )
+        }
+        interruptionSensors?.start(applicationContext)
     }
 
-    /** إيقاف رصد الهز/التقارب — يُستدعى في [onDestroy] وحده (لا مع نهاية
-     *  كل رحلة): المستشعرَاتُ مسجَّلةٌ طوال عمر الخدمة؛ لا يوجد رياضةُ
-     *  تسجيل/إلغاء تترك نافذة تزاحم (بند 8). */
+    /** إيقاف رصد الهز/التقارب فور انتهاء رحلة التخليق أو عند onDestroy. */
     private fun stopInterruptionMonitoring() {
         interruptionSensors?.stop()
         interruptionSensors = null
@@ -570,6 +556,15 @@ override fun onDestroy() {
         // إعلاناته حتى يكتمل هذا التخليق — فيتسلسل صوت الإعلان بعد قراءة
         // قارئ الشاشة بدل تراكبه فوقها. يُخفض في finally أدناه.
         SpeechLock.setSpeaking(applicationContext, true)
+
+        // رصد الإسكات الفوري أثناء التخليق فقط حفظاً للبطارية
+        val shake = runCatching { settings.isShakeToStopEnabled() }
+            .getOrDefault(false)
+        val proximity = runCatching { settings.isProximitySilenceEnabled() }
+            .getOrDefault(false)
+        if (shake || proximity) {
+            startInterruptionMonitoring()
+        }
 
         // **بند 8 — إغلاق نافذة الاستباق:** تُبنى الرحلة LAZY فلا تبدأ
         //  جدولتُها على خيط التخليق قبل إسنادها إلى [currentJob] (كانت تبدأ
@@ -685,6 +680,7 @@ override fun onDestroy() {
         } catch (t: Throwable) {
             Log.w(TAG, "onSynthesizeText join interrupted", t)
         } finally {
+            stopInterruptionMonitoring()
             currentJob = null
             if (audioSessionId > 0) {
                 audioEffectManager.detach(audioSessionId)
