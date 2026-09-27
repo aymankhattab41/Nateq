@@ -492,6 +492,7 @@
 <string name="time_alarm_max_precision_summary">تستخدم منبّه النظام الدقيق (setAlarmClock) متجاوزةً كل قيود Doze والبطارية فيعمل إعلان الوقت في اللحظة المضبوطة؛ أثرُها الجانبي أن أيقونة منبّه ثابتة تظهر في شريط الحالة.</string>
 <string name="changelog_title">آخر التحديثات</string>
 <string name="changelog_text">الإصدار %1$s
+• حوار «إعداد جميع اللغات»: تفعيل زر «حفظ» فور تعديل أشرطة السرعة والنبرة ومستوى الصوت بإيماءة قارئ الشاشة (TalkBack)
 • إلغاء التغييرات والعودة للإصدار 70
  </string>
     <string name="diagnostics_title">معلومات التشخيص</string>

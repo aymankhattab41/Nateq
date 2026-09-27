@@ -1,4 +1,4 @@
-﻿// البند 4 — :feature:settings: شاشات الإعدادات والـ ViewModels. يقرأ البيانات
+// البند 4 — :feature:settings: شاشات الإعدادات والـ ViewModels. يقرأ البيانات
 // عبر :core:data ويدير النطق عبر :core:audio بلا اعتماد على :app.
 plugins {
     alias(libs.plugins.android.library)
@@ -22,6 +22,13 @@ android {
     buildFeatures {
         viewBinding = true
     }
+    testOptions {
+        unitTests {
+            // Robolectric: تضمين موارد الوحدة (layouts/strings) لاختبارات
+            // نفخ العروض مثل حوار إعداد جميع اللغات.
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 dependencies {
@@ -42,4 +49,6 @@ dependencies {
     implementation(libs.androidx.fragment.ktx)
 
     testImplementation(libs.junit)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.robolectric)
 }

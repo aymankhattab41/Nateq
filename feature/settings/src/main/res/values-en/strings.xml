@@ -488,6 +488,7 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+• "Configure all languages" dialog: enable the Save button immediately upon adjusting rate, pitch, and volume sliders via screen reader (TalkBack) gestures
 • Revert changes and roll back to version 70
  </string>
     <string name="diagnostics_title">Diagnostics Info</string>

@@ -282,13 +282,14 @@ spinnerSelector =
                     val text = format(progress)
                     valueView?.text = text
                     valueView?.setSeekStateDescription(text)
-                    markDirty()
+                    if (fromUser) markDirty()
                 }
 
                 override fun onStartTrackingTouch(seekBar: SeekBar) {}
 
                 override fun onStopTrackingTouch(seekBar: SeekBar) {
                     if (bindingInputs) return
+                    markDirty()
                     bindSeekBarSnap(seekBar, descriptionRes, format)
                 }
             }
