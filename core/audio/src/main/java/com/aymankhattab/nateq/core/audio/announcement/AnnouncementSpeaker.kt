@@ -914,27 +914,24 @@ class AnnouncementSpeaker(
         }.getOrNull()?.let { settings ->
             runCatching {
                 settings.isAnnouncementMediaStreamAlways()
-            }.getOrDefault(false)
-        } ?: false
+            }.getOrDefault(true)
+        } ?: true
+
+        val isMusicActive = runCatching {
+            audioManager.isMusicActive
+        }.getOrDefault(false)
+
+        val useMedia = mediaStreamAlways || isMusicActive
 
         val builder = AudioAttributes.Builder()
             .setUsage(
-                if (mediaStreamAlways) {
+                if (useMedia) {
                     AudioAttributes.USAGE_MEDIA
                 } else {
                     AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY
                 }
             )
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-        // **الحد الأدنى (توافقية):** الثابتانِ SPATIALIZATION_BEHAVIOR_NEVER
-        // ودالةُ setSpatializationBehavior من واجهةِ Android 13 (API 33) —
-        // نحرسُها بحارسِ الإصدارِ فلا يمرُّ إلا على الأنظمةِ التي تعرفه؛
-        // والتطبيقُ compileSdk 37 ≥ 33 فيترجمُ الثابتَ دائماً بأمانٍ.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            builder.setSpatializationBehavior(
-                AudioAttributes.SPATIALIZATION_BEHAVIOR_NEVER
-            )
-        }
         return builder.build()
     }
 
@@ -1476,11 +1473,15 @@ class AnnouncementSpeaker(
             val mediaStreamAlways = settings?.let { s ->
                 runCatching {
                     s.isAnnouncementMediaStreamAlways()
-                }.getOrDefault(false)
-            } ?: false
+                }.getOrDefault(true)
+            } ?: true
+            val isMusicActive = runCatching {
+                audioManager.isMusicActive
+            }.getOrDefault(false)
+            val useMedia = mediaStreamAlways || isMusicActive
             putInt(
                 TextToSpeech.Engine.KEY_PARAM_STREAM,
-                if (mediaStreamAlways) {
+                if (useMedia) {
                     AudioManager.STREAM_MUSIC
                 } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     AudioManager.STREAM_ACCESSIBILITY

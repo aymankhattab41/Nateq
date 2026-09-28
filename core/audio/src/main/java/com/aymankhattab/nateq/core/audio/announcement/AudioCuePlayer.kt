@@ -209,7 +209,9 @@ class AudioCuePlayer private constructor(
             val ctx = context ?: return false
             val mp = MediaPlayer()
             activeMediaPlayer = mp
-            mp.setAudioAttributes(CueAudioAttributes.forCue)
+            mp.setAudioAttributes(
+                CueAudioAttributes.attributesFor(ctx)
+            )
             mp.setDataSource(ctx, uri)
             val clampedVol = volume.coerceIn(0f, 1f)
             mp.setVolume(clampedVol, clampedVol)

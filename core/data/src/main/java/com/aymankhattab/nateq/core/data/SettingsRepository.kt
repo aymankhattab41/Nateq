@@ -637,7 +637,7 @@ class SettingsRepository(context: Context) :
     // أجهزة OEM حين لا يكون قارئ الشاشة متفاعلاً — يُقرأ في
     // AnnouncementSpeaker.speechAudioAttributes.
     fun isAnnouncementMediaStreamAlways(): Boolean =
-        prefs.getBoolean("announcement_media_stream_always", false)
+        prefs.getBoolean("announcement_media_stream_always", true)
 
     fun setAnnouncementMediaStreamAlways(enabled: Boolean) =
         prefs.edit()
