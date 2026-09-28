@@ -274,6 +274,9 @@ class SettingsRepository(context: Context) :
             prefsBridge.parse(NEW_PREFS)
         }.getOrNull()
             ?: return
+        if (fresh.isEmpty() && prefs.all.isNotEmpty()) {
+            return
+        }
         // بند 5.2: عند تطابق القراءة الجديدة مع الحالة الحالية
         // (قراءةُ عمليةٍ أخرى لملفٍ لم يتبدّل مضمونه) لا نُحدّث شيئاً —
         // المفتاح الداخلي KEY_MIGRATED يُستثنى من الطرفين معاً حتى لا
@@ -714,7 +717,11 @@ class SettingsRepository(context: Context) :
     /** مسح كل إعدادات التطبيق وإعادتها إلى القيم الافتراضية، بما فيها
      *  أسماء المتصلين المخصصة (PII) المخزنة في الملف المشفر وملفات الحالة. */
     fun resetAllToDefault() {
-        prefs.edit().clear().apply()
+        val editor = prefs.edit().clear()
+        for (key in MIGRATION_KEYS) {
+            editor.putBoolean(key, true)
+        }
+        editor.apply()
         memoryCallerNames.clear()
         // مسح ملف أسماء المتصلين المشفر. إن تعذّر الوصول إليه (Keystore معطوب)
         // نحذف الملف نفسه مباشرةً (الحذف لا يحتاج المفتاح) حتى لا يبقى PII
@@ -1863,7 +1870,11 @@ class SettingsRepository(context: Context) :
             if (value in 5..60 && value % 5 == 0) value else 30
         key == "number_reading_mode" -> value.coerceIn(1, 8)
         key == "punctuation_level" ->
-            value.coerceIn(PunctuationLevels.MIN, PunctuationLevels.MAX)
+            if (value in PunctuationLevels.MIN..PunctuationLevels.MAX) {
+                value
+            } else {
+                PunctuationLevels.SOME
+            }
         key == "audio_expansion_level" ->
             value.coerceIn(
                 AudioExpansionLevels.MIN,

@@ -122,15 +122,15 @@ class BatteryAnnouncementReceiver(
                 // نُبقي النافذة حيّةً حتى يُتمَّ النطق (بسقفٍ آمن ~6 ثوانٍ
                 // فلا ANR رغم تعليق المحرك)،
                 // وإلا نُنهي فوراً.
+                val speaker = AnnouncementSpeaker.getInstance(context)
+                completionListener = { speechDone.complete(Unit) }
+                speaker.addCompletionListener(completionListener!!)
                 if (handle(
                         context, intent, action,
                         onCueDone = { speechDone.complete(Unit) }
                     )
                 ) {
                     wakeLock = TimeAlarmReceiver.acquireShortWakeLock(context)
-                    val speaker = AnnouncementSpeaker.getInstance(context)
-                    completionListener = { speechDone.complete(Unit) }
-                    speaker.addCompletionListener(completionListener!!)
                     withTimeoutOrNull(BROADCAST_HOLD_MS) {
                         speechDone.await()
                     }

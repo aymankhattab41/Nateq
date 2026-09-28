@@ -1,5 +1,4 @@
 <resources>
-<string name="settings_title">Lord TTS</string>
 <string name="all_announcements_enabled">All announcements enabled</string>
 <string name="all_announcements_summary">Turning it off silently stops automatic announcements (time, battery, messages, notifications, caller)</string>
 <string name="announcement_turned_off">Off</string>
@@ -57,11 +56,7 @@
 <string name="backup_settings">Backup settings</string>
 <string name="battery_announcement_enabled">Enable battery announcement</string>
 <string name="battery_announcement_levels">Enabled levels</string>
-<string name="battery_announcement_levels_summary">Choose which percentages are announced (multiples of 5%)</string>
-<string name="battery_announcement_rate">Battery speech rate</string>
-<string name="battery_announcement_pitch">Battery announcement pitch</string>
-<string name="battery_announcement_voice">Battery speech voice</string>
-<string name="battery_announcement_volume">Battery speech volume</string>
+<string name="battery_announcement_levels_summary" formatted="false">Choose which percentages are announced (multiples of 5%)</string>
 <string name="battery_cue_mode">Battery sound cue</string>
 <string name="battery_cue_volume">Sound cue volume</string>
 <string name="battery_cue_mode_narration_cue">Speech &amp; cue</string>
@@ -108,10 +103,9 @@
 <string name="categories_saved">Voice settings saved</string>
 <string name="categories_save_button">Save voice changes</string>
 <string name="cd_test_voice_button">Play a sample voice for testing</string>
-<string name="cd_test_voice_button_for">Play a sample of the %1$s voice</string>
 <string name="cd_convert_play_for_language">Play a sample voice for testing, %1$s language</string>
 <string name="cd_convert_save_for_language">Save settings for the %1$s language</string>
-<string name="charging_complete_announcement_enabled">Announce when charging completes (100%)</string>
+<string name="charging_complete_announcement_enabled" formatted="false">Announce when charging completes (100%)</string>
 <string name="charging_disconnect_announcement_enabled">Announce when the charger is unplugged</string>
 <string name="check_updates">Check for updates</string>
 <string name="check_updates_desc">Check if a newer version is available</string>
@@ -246,7 +240,7 @@
 <string name="permission_sms_granted">SMS reading permission granted</string>
 <string name="pitch_label">Pitch</string>
 <string name="pitch_summary">Adjust the pitch (low/high)</string>
-<string name="power_saver_battery_threshold_label">Power saver threshold (%)</string>
+<string name="power_saver_battery_threshold_label" formatted="false">Power saver threshold (%)</string>
 <string name="power_saver_mode_enabled">Power saver: reduce time announcements when the battery is low</string>
 <string name="preview_stop">Stop</string>
 <string name="proximity_silence_enabled">Silence when covering the device</string>
@@ -317,7 +311,6 @@
 <string name="section_instant_silence">Instant silence</string>
 <string name="section_notification_reading">Notification reading</string>
 <string name="section_number_reading">Number reading</string>
-<string name="section_opened">Opened section: %1$s</string>
 <string name="section_pronunciation_dict">Pronunciation Dictionary</string>
 <string name="section_sms_reading">Read incoming messages</string>
 <string name="section_text_reading">Text reading</string>
@@ -377,7 +370,6 @@
 <string name="speech_language_to_en">Switch to English</string>
 <string name="speech_rate_label">Speech rate</string>
 <string name="speech_rate_summary">Adjust the speaking rate</string>
-<string name="spinner_battery_voice_content">Battery speech voice</string>
 <string name="spinner_caller_interval_content">Time interval between repeats (seconds)</string>
 <string name="spinner_caller_repeat_content">Number of repeats</string>
 <string name="spinner_number_reading_mode_content">Number reading mode</string>
@@ -456,16 +448,12 @@
 <string name="engine_for_category_label">Category announcement engine</string>
 <string name="caller_engine_ar_label">Arabic names engine</string>
 <string name="caller_engine_en_label">English names engine</string>
-<string name="engine_for_battery_label">Battery announcement engine</string>
 <string name="voice_language_label">Voice language</string>
 <string name="cd_category_language_spinner">Choose category voice language</string>
-<string name="cd_category_language_spinner_for">%1$s, choose voice language</string>
 <string name="cd_voice_language_spinner">Choose voice language</string>
-<string name="cd_category_voice_spinner">%1$s, voice selection</string>
 <string name="seek_category_speech_rate">%1$s, speech rate</string>
 <string name="seek_category_pitch">%1$s, pitch</string>
 <string name="seek_category_volume">%1$s, volume</string>
-<string name="group_opened">Opened group %1$s</string>
 <string name="time_quiet_enabled_for_day">%1$s: quiet hours</string>
 <string name="time_quiet_start_for_day">%1$s, quiet start</string>
 <string name="time_quiet_end_for_day">%1$s, quiet end</string>
@@ -488,9 +476,9 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+• Comprehensive fixes: Arabic billion scale pronunciation, currency &amp; Franco precision, audio service stability, silence sensors, and backup reliability
 • User Interface: 12/24h quiet hours formatting, localized list separators, dp-scaled padding, and eliminated default Latin text flicker
 • Emoji semantics: context-based language semantics, script-based Indic numbering, and extended Eastern digit normalization
-• Emoji cleaning: constrained cleaning instead of broad regex, preserved non-sequence ZWJ, and named 0x2300 technical symbols
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>

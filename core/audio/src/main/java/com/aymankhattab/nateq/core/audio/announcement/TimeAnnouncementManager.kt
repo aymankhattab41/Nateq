@@ -211,20 +211,40 @@ class TimeAnnouncementManager(
      */
     private fun calculateQuietEndMillis(): Long {
         val now = timeProvider.currentTimeMillis()
-        val endHour = settings.getQuietEndForDay(
-            timeProvider.now().get(Calendar.DAY_OF_WEEK)
-        )
-        val today = timeProvider.now().apply {
+        val calendar = timeProvider.now()
+        val currentHour = calendar.get(Calendar.HOUR_OF_DAY)
+        val day = calendar.get(Calendar.DAY_OF_WEEK)
+
+        val yesterday = if (day == Calendar.SUNDAY) {
+            Calendar.SATURDAY
+        } else {
+            day - 1
+        }
+        if (settings.isDayQuietEnabled(yesterday)) {
+            val start = settings.getQuietStartForDay(yesterday)
+            val end = settings.getQuietEndForDay(yesterday)
+            if (start > end && currentHour < end) {
+                val endCal = timeProvider.now().apply {
+                    set(Calendar.HOUR_OF_DAY, end)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                return endCal.timeInMillis
+            }
+        }
+
+        val endHour = settings.getQuietEndForDay(day)
+        val endCal = timeProvider.now().apply {
             set(Calendar.HOUR_OF_DAY, endHour)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
         }
-        var candidate = today.timeInMillis
+        var candidate = endCal.timeInMillis
         if (candidate <= now) {
-            val tomorrow = today.clone() as Calendar
-            tomorrow.add(Calendar.DAY_OF_YEAR, 1)
-            candidate = tomorrow.timeInMillis
+            endCal.add(Calendar.DAY_OF_YEAR, 1)
+            candidate = endCal.timeInMillis
         }
         return candidate
     }
@@ -656,7 +676,7 @@ class TimeAnnouncementManager(
     private fun periodFor(hour24: Int): String = when (hour24) {
         12 -> "ظهراً"
         in 0..11 -> "صباحاً"
-        else -> "مساءاً"
+        else -> "مساءً"
     }
 
     /** تنسيق الوقت بالعربية الطبيعية: "الساعة الآن العاشرة والربع" */

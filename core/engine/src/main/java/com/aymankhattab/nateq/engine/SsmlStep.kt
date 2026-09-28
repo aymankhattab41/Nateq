@@ -25,7 +25,8 @@ object SsmlStep {
         """(?is)<break\b([^>]*)/?>"""
     )
     private val genericTag = Regex(
-        """(?i)</?[a-zA-Z][a-zA-Z0-9-]*(\s+[^>]*)?>"""
+        """(?i)</?(?:speak|prosody|emphasis|sub|voice|phoneme|audio|mark|""" +
+            """lexicon|desc|p|s|par|seq)(\s+[^>]*)?/?>"""
     )
     private val breakTime = Regex(
         """time\s*=\s*["']?\s*(\d+)\s*(ms|s)?["']?"""

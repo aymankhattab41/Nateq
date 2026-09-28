@@ -88,18 +88,24 @@ object FrancoArabic {
     private val TECHNICAL_TERMS = setOf(
         "A4", "A3", "A5", "H2O", "CO2", "S3", "MP3", "MP4",
         "4K", "3D", "2D", "F1", "M4A", "B5", "C4", "HTML5",
-        "CSS3", "IPV4", "IPV6"
+        "CSS3", "IPV4", "IPV6", "H264", "H265", "X86", "X64"
+    )
+
+    private val MODEL_PATTERN = Regex(
+        """^(?i)(note|galaxy|pixel|redmi|realme|honor|iphone)\d+$"""
     )
 
     /** يحوّل كلمةً واحدة؛ null = تُبقى كما هي (غير واثق من كونها فرانكو). */
     private fun convertWord(word: String): String? {
         if (word.length > MAX_CREATIVE_LENGTH) return null
+        if (word.length <= 2) return null
         if (word.uppercase() in TECHNICAL_TERMS) return null
+        if (MODEL_PATTERN.matches(word)) return null
         val lower = word.lowercase()
         commonWords[lower]?.let { return it }
-        // الإبداع المتحفظ: لا يُلمس إلا إن كانت شاركتٌ فيها الأرقام الفعلاً
-        // مع حروفٍ لاتينية وكلُّ محارفها داخل مساحتي الخرائط.
-        if (word.none { it.isLetter() }) return null
+        // الإبداع المتحفظ: لا يُلمس إلا إن كان فيها رقماً فعلياً
+        // مع حرفين لاتينيين على الأقل واستثناء الطرازات والمصطلحات.
+        if (word.count { it.isLetter() } < 2) return null
         if (word.none { isFrancoDigit(it) }) return null
         return creativeFrom(lower)
     }

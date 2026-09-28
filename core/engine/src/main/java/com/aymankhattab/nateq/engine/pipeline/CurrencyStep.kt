@@ -431,8 +431,8 @@ internal object CurrencyStep : TextProcessingStep {
     // نمط الكود المسبوق بمبلغه: «1500 USD» — يمنع انفصال «USD» مقطعاً
     // إنجليزياً في النص المختلط (تُطبَّق خطوة العملة قبل تقسيم اللغة).
     private val PATTERN_AMOUNT_CODE = Pattern.compile(
-        """\b(""" + AMOUNT_REGEX + """)\s+(USD|EUR|GBP|SAR|AED|KWD|QAR|""" +
-            """OMR|BHD|EGP|TND|DZD|MAD|JPY|CNY|INR|KRW|RUB)\b"""
+        """(?<![-\d])(""" + AMOUNT_REGEX + """)\s+(USD|EUR|GBP|SAR|AED|""" +
+            """KWD|QAR|OMR|BHD|EGP|TND|DZD|MAD|JPY|CNY|INR|KRW|RUB)\b"""
     )
 
     /** أنماط لغةِ عملة: استبدالات «الرمز قبل المبلغ» و«الرمز بعده» + بوابة
@@ -760,6 +760,6 @@ internal object CurrencyStep : TextProcessingStep {
         if (isFeminine && n <= Int.MAX_VALUE) {
             return NumberSpeech.toArabicWords(n.toInt(), isFeminine)
         }
-        return NumberWordsConverter.numberToWords(n.toDouble())
+        return NumberWordsConverter.numberToWords(n)
     }
 }

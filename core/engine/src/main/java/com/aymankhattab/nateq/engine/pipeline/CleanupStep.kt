@@ -10,7 +10,7 @@ import java.util.regex.Pattern
 internal object CleanupStep : TextProcessingStep {
 
     private val PATTERN_MULTI_SPACE = Pattern.compile("""\s+""")
-    private val PATTERN_SPACE_BEFORE = Pattern.compile("""\s+([،؛.!?])""")
+    private val PATTERN_SPACE_BEFORE = Pattern.compile("""\s+([،؛.!?؟])""")
     // علامات التحكم الاتجاهي (LRM/RLM/LRE/RLE/LRI…) قد تصل مجتزأةً من
     // إشعارات/نصوص خارجية — تُستبدل بمسافة (لجاماً بين الكلمات لا يلصقها)
     // ثم تضغطها خطوة المسافات المتتالية فيغدو النص سليماً للمحرك.

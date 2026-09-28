@@ -282,10 +282,9 @@ object NumberSpeech {
                 else if (r < 100) "$thousand و${under100(r)}"
                 else "$thousand و${toArabicWords(r, isFeminine)}"
             }
-            else -> {
-                // الملايين بعد 8 خانات (حتى 99,999,999): تصريف المليون مع
-                // التمييز («مليون»، «مليونان»، «ملايين»، «مليوناً»، وبالجر:
-                // «مائة مليون»، «مائة وواحد مليون»).
+            number in 1_000_000..999_999_999 -> {
+                // الملايين بعد 8 خانات (حتى 999,999,999): تصريف المليون مع
+                // التمييز («مليون»، «مليونان»، «ملايين»، «مليوناً»).
                 val m = number / 1000000
                 val r = number % 1000000
                 val million = when (m) {
@@ -295,10 +294,6 @@ object NumberSpeech {
                     else -> {
                         val w = toArabicWords(m, isFeminine = false)
                         when {
-                            // **حذف نون المثنى عند الإضافة:** «مائتان» فوق
-                            // تمييزٍ مثل المليون تحذف نونها فتصبح «مائتا» —
-                            // «مائتا مليون» لا «مائتان مليون» (وقاعدتها
-                            // العامة تتسع لـ«مئتان»→«مئتا»).
                             m % 100 == 0 -> "${
                                 terminalHundreds(w)
                             } مليون"
@@ -311,6 +306,24 @@ object NumberSpeech {
                 if (r == 0) million
                 else if (r < 100) "$million و${under100(r)}"
                 else "$million و${toArabicWords(r, isFeminine)}"
+            }
+            else -> {
+                // المليار (1_000_000_000 حتى سعة Int القصوى)
+                val b = number / 1000000000
+                val r = number % 1000000000
+                val billion = when (b) {
+                    1 -> "مليار"
+                    2 -> "ملياران"
+                    in 3..10 -> {
+                        "${toArabicWords(b, isFeminine = false)} مليارات"
+                    }
+                    else -> {
+                        "${toArabicWords(b, isFeminine = false)} ملياراً"
+                    }
+                }
+                if (r == 0) billion
+                else if (r < 100) "$billion و${under100(r)}"
+                else "$billion و${toArabicWords(r, isFeminine)}"
             }
         }
     }
@@ -478,18 +491,25 @@ object NumberSpeech {
                     }
                 }.joinToString(" ")
             } else {
-                val v = try { g.toInt() } catch (t: Throwable) {
-                    // لا يقع عملياً (المجاميع ≤ 8 خانات داخل Int) لكن لا يصمت
-                    // عن خطأ مستقبلي: يُسجَّل مع النص المُبهَم ويُتجاوز بأمان.
+                val v = g.toIntOrNull()
+                if (v != null) {
+                    if (isEnglish) {
+                        toEnglishWords(v)
+                    } else {
+                        toArabicWords(v, isFeminine = false)
+                    }
+                } else {
                     logger.warning(
                         "مجموعة أرقام غير قابلة للتحويل (mode=$safeMode): '$g'"
                     )
-                    0
-                }
-                if (isEnglish) {
-                    toEnglishWords(v)
-                } else {
-                    toArabicWords(v, isFeminine = false)
+                    g.map { ch ->
+                        val d = ch.digitToIntOrNull() ?: 0
+                        if (isEnglish) {
+                            toEnglishWords(d)
+                        } else {
+                            toArabicWords(d, isFeminine = false)
+                        }
+                    }.joinToString(" ")
                 }
             }
         }.joinToString(", ")

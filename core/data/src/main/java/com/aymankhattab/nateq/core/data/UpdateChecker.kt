@@ -405,7 +405,9 @@ object UpdateChecker {
             return DownloadResult.ChecksumMismatch
         }
 
-        runCatching { dm.remove(downloadId) }
+        if (!isSameFile) {
+            runCatching { dm.remove(downloadId) }
+        }
         return DownloadResult.Success(targetApk)
     }
 

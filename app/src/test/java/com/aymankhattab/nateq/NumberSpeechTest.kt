@@ -188,10 +188,10 @@ class NumberSpeechTest {
     @Test
     fun arabicWords_billionTerminalHundreds_genitive() {
         // بند 3.4: «مائتان» النهائية في مركّب (ملايين/آلاف) تُجرّ النون:
-        // 1_200_000_000 = «ألف ومائتا مليون» لا «ألف ومائتان مليون»،
+        // 1_200_000_000 = «مليار ومائتا مليون»،
         // و200_000 = «مائتا ألف» لا «مائتان ألف».
         assertEquals(
-            "ألف ومائتا مليون",
+            "مليار ومائتا مليون",
             NumberSpeech.toArabicWords(1_200_000_000)
         )
         assertEquals("مائتا ألف", NumberSpeech.toArabicWords(200_000))

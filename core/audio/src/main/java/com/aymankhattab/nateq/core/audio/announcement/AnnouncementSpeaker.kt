@@ -759,6 +759,7 @@ class AnnouncementSpeaker(
                         // (Ducking دائم). الإلغاء هنا يُخلّي الطلب ويمنع
                         // تسريب التركيز.
                         releaseAudioFocus()
+                        notifySpeechComplete()
                     }
                 }
                 pendingFocusTimer = timer
@@ -783,6 +784,7 @@ class AnnouncementSpeaker(
                         "[Focus] FAILED — إسقاط صامت" +
                         " بعد نفاد إعادة الجدولة")
                     releaseAudioFocus()
+                    notifySpeechComplete()
                 }
             }
             else ->

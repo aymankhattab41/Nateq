@@ -56,6 +56,8 @@
          استخدام يوضح قراءة الرسائل اللفظية. ممنوع حذفها (الميزة تعمل بها فعلاً)
          لكن يجب تجهيز نص التبرير في PLAY_STORE_PERMISSIONS_JUSTIFICATION.md. -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <!-- لا يُشترط وجود عتاد مهاتفة خلوي لتمكين التثبيت على الحواسيب والأجهزة اللوحية (ChromeOS) -->
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <!-- الوصول للإنترنت لفحص وجود تحديث جديد من GitHub Releases وتنزيل الـ APK.
          يُستخدم للفحص/التحميل فقط؛ لا تُرفع أي بيانات أو إعدادات للمستخدم. -->
     <uses-permission android:name="android.permission.INTERNET" />

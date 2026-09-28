@@ -37,6 +37,11 @@ class FrancoSsmlStepsTest {
         assertEquals("version 2", FrancoArabic.convert("version 2"))
         assertEquals("C3PO", FrancoArabic.convert("C3PO"))
         assertEquals("hello world", FrancoArabic.convert("hello world"))
+        assertEquals("i7", FrancoArabic.convert("i7"))
+        assertEquals("A7", FrancoArabic.convert("A7"))
+        assertEquals("M3", FrancoArabic.convert("M3"))
+        assertEquals("Note7", FrancoArabic.convert("Note7"))
+        assertEquals("H264", FrancoArabic.convert("H264"))
     }
 
     @Test
@@ -94,5 +99,13 @@ assertEquals(
             "لا تُضاف أي تغييرات على النص العادي",
             plain != SsmlStep.apply(plain)
         )
+    }
+
+    @Test
+    fun `code generics and math comparisons are preserved`() {
+        val code = "val list: List<String> = emptyList()"
+        assertEquals(code, SsmlStep.apply(code))
+        val math = "x < y && y > z"
+        assertEquals(math, SsmlStep.apply(math))
     }
 }

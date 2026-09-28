@@ -207,7 +207,10 @@ class AnnouncementSchedulerService : Service() {
             )
         }
 
-private fun startSafely(context: Context, action: String) {
+        private const val EXTRA_FALLBACK_BACKGROUND =
+            "com.aymankhattab.nateq.EXTRA_FALLBACK_BG"
+
+        private fun startSafely(context: Context, action: String) {
             val intent = Intent(
                 context, AnnouncementSchedulerService::class.java
             ).setAction(action)
@@ -224,6 +227,7 @@ private fun startSafely(context: Context, action: String) {
                     "startForegroundService denied — falling back" +
                     " to background start")
                 try {
+                    intent.putExtra(EXTRA_FALLBACK_BACKGROUND, true)
                     context.startService(intent)
                 } catch (t2: Throwable) {
                     Log.w(TAG,
@@ -254,6 +258,7 @@ private fun startSafely(context: Context, action: String) {
     lateinit var settingsRepository: SettingsRepository
 
     private lateinit var settings: SettingsRepository
+    private var isFallbackBackground = false
     private var timeManager: TimeAnnouncementManager? = null
     private var batteryReceiver: BatteryAnnouncementReceiver? = null
 
@@ -266,7 +271,9 @@ private fun startSafely(context: Context, action: String) {
         super.onCreate()
         isRunning = true
         createNotificationChannel()
-        startAsForeground(buildNotification())
+        if (!isFallbackBackground) {
+            startAsForeground(buildNotification())
+        }
 
         // دفاعية: عند بدء النظام للخدمة مباشرة (STICKY) قد تكون الحقول المحقونة
         // غير جاهزة؛ نبني مرجعاً محلياً عندها (نمط NateqTtsService).
@@ -313,9 +320,17 @@ private fun startSafely(context: Context, action: String) {
         flags: Int,
         startId: Int
     ): Int {
+        val isFallback = intent?.getBooleanExtra(
+            EXTRA_FALLBACK_BACKGROUND, false
+        ) == true
+        if (isFallback) {
+            isFallbackBackground = true
+        }
         // أي أمر جديد يُبطل مؤقت إيقاف النافذة العابرة (قد يصبح فترة دائمة).
         mainHandler.removeCallbacksAndMessages(null)
-        startAsForeground(buildNotification())
+        if (!isFallbackBackground) {
+            startAsForeground(buildNotification())
+        }
         when (intent?.action) {
             ACTION_ANNOUNCE_NOW -> announceNow()
             ACTION_STOP -> {
@@ -574,6 +589,7 @@ private fun startSafely(context: Context, action: String) {
     }
 
     private fun startAsForeground(notification: Notification) {
+        if (isFallbackBackground) return
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 // الطريقة الأصلية (API 34+) — النوع معرف
@@ -594,6 +610,11 @@ private fun startSafely(context: Context, action: String) {
                 "startForeground failed",
                 t
             )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                t is android.app.ForegroundServiceStartNotAllowedException
+            ) {
+                stopSelf()
+            }
         }
     }
 }

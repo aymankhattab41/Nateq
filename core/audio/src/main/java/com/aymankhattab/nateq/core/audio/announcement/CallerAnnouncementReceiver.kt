@@ -351,7 +351,23 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 val pitch = settings.getCallerAnnouncementPitchOrDefault(
                     locale.language
                 )
-                wakeLock = TimeAlarmReceiver.acquireShortWakeLock(context)
+                val schedule = repeatSchedule(
+                    repeat, intervalMs, BROADCAST_ASYNC_WINDOW_MS
+                )
+                val totalWakeMs = if (waitingCall || schedule.isEmpty()) {
+                    TimeAlarmReceiver.SHORT_WAKE_LOCK_MS
+                } else {
+                    val maxOffset = schedule.lastOrNull() ?: 0L
+                    (maxOffset + TimeAlarmReceiver.SHORT_WAKE_LOCK_MS)
+                        .coerceAtMost(BROADCAST_ASYNC_WINDOW_MS)
+                }
+                wakeLock = TimeAlarmReceiver.acquireShortWakeLock(
+                    context, totalWakeMs
+                )
+                if (waitingCall || schedule.isEmpty()) {
+                    completionListener = { finishOnce() }
+                    speaker.addCompletionListener(completionListener!!)
+                }
                 speaker.speak(
                     text, locale, speechRate, pitch, volume,
                     engineOverride = callerSpeechEngine(
@@ -366,19 +382,17 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 // قائمة مستمعي المتحدث المشترك (بند [8]) فلا يطمس خطاف أداة
                 // الساعة أو مستقبلٍ آخر، ويُزال في finally.
                 val appCtx = context.applicationContext
-                val schedule = repeatSchedule(
-                    repeat, intervalMs, BROADCAST_ASYNC_WINDOW_MS
-                )
                 // رنينُ الانتظار أثناء مكالمة: نطقٌ واحد فقط بلا تكرار
                 // (لا يُزعج الحوارَ المتواصلَ بتكراراتٍ فوقه).
-                if (waitingCall || schedule.isEmpty()) {
-                    completionListener = { finishOnce() }
-                    speaker.addCompletionListener(completionListener!!)
-                } else {
+                if (!waitingCall && schedule.isNotEmpty()) {
                     var lastLaunchMs = 0L
-                    for (offsetMs in schedule) {
+                    for ((index, offsetMs) in schedule.withIndex()) {
                         delay(offsetMs - lastLaunchMs)
                         lastLaunchMs = offsetMs
+                        if (index == schedule.lastIndex) {
+                            completionListener = { finishOnce() }
+                            speaker.addCompletionListener(completionListener!!)
+                        }
                         try {
                             AnnouncementSpeaker.getInstance(appCtx).speak(
                                 text, locale, speechRate, pitch,
@@ -393,8 +407,6 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                             Log.e(TAG, "repeat speak failed", t)
                         }
                     }
-                    completionListener = { finishOnce() }
-                    speaker.addCompletionListener(completionListener!!)
                 }
             } catch (t: Throwable) {
                 // الإلغاء (بند 5.2: الرد/الإنهاء) ليس عطلاً — يُنهيه

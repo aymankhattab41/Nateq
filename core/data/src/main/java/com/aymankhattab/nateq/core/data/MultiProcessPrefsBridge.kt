@@ -57,10 +57,18 @@ class MultiProcessPrefsBridge(private val appDataDir: File) {
         // بند 5.1: ملفٌ غائب (أول تشغيل) يُعيد خريطة فارغة بدل
         // FileNotFoundException تُسقط عملية :tts عند كل reload().
         val file = fileFor(name)
-        if (!file.exists() || !file.isFile) return emptyMap()
-        return FileInputStream(file).use { input ->
-            parseFrom(input)
+        val targetFile = if (file.exists() && file.isFile) {
+            file
+        } else {
+            val bak = File(file.parentFile, "${file.name}.bak")
+            if (bak.exists() && bak.isFile) bak else null
         }
+        if (targetFile == null) return emptyMap()
+        return runCatching {
+            FileInputStream(targetFile).use { input ->
+                parseFrom(input)
+            }
+        }.getOrDefault(emptyMap())
     }
 
     /** يقرأ خريطة التفضيلات من تدفق XML مفتوح — داخل [use] ليُغلق التدفق

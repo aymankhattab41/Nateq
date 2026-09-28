@@ -64,10 +64,11 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
 
         // معالج الإعداد الأولي: يُعرض مرة واحدة قبل استكشاف الواجهة.
         // «تخطّي» يُعلِّم الاكتمال في المخزن؛ لا يُفرض شيء على المستخدم.
-        if (savedInstanceState == null &&
-            runCatching { !settingsRepository.isFirstRunSetupCompleted() }
-                .getOrDefault(false)
-        ) {
+        val isFirstRun = runCatching {
+            !settingsRepository.isFirstRunSetupCompleted()
+        }.getOrDefault(false)
+
+        if (savedInstanceState == null && isFirstRun) {
             startActivity(Intent(this, FirstRunSetupActivity::class.java))
         }
 
@@ -77,8 +78,11 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
             }
         }
 
-        // طلب الأذونات عند أول تشغيل
-        checkAndRequestPermissions()
+        // طلب الأذونات عند أول تشغيل بعد اكتمال الإعداد الأولي
+        if (!isFirstRun) {
+            permissionsChecked = true
+            checkAndRequestPermissions()
+        }
 
         // إعادة تشغيل خدمة إعلانات الوقت/البطارية إن كان أي منها مفعّلاً
         // بعد إنجاز
@@ -141,9 +145,21 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
         permissionDeniedDialog?.show()
     }
 
-    // حوار إشعار رفض الإذن الحالي: يُغلق عند تدمير النشاط حتى لا يتسرب
-    // مرجع النافذة (WindowLeaked) عند تدوير الشاشة.
     private var permissionDeniedDialog: AlertDialog? = null
+    private var permissionsChecked = false
+
+    override fun onResume() {
+        super.onResume()
+        if (!permissionsChecked) {
+            val isFirstRun = runCatching {
+                !settingsRepository.isFirstRunSetupCompleted()
+            }.getOrDefault(false)
+            if (!isFirstRun) {
+                permissionsChecked = true
+                checkAndRequestPermissions()
+            }
+        }
+    }
 
     override fun onDestroy() {
         permissionDeniedDialog?.let { runCatching { it.dismiss() } }

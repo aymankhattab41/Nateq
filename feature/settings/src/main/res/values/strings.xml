@@ -1,5 +1,4 @@
 <resources>
-<string name="settings_title">Lord TTS</string>
 <string name="all_announcements_enabled">كل الإعلانات مفعّلة</string>
 <string name="all_announcements_summary">إيقافه يُوقف الإعلانات التلقائية (الوقت، البطارية، الرسائل، الإشعارات، المتصل) بصمت</string>
 <string name="announcement_turned_off">معطّل</string>
@@ -57,11 +56,7 @@
 <string name="backup_settings">نسخ احتياطي للإعدادات</string>
 <string name="battery_announcement_enabled">تفعيل إعلان البطارية</string>
 <string name="battery_announcement_levels">المستويات المفعّلة</string>
-<string name="battery_announcement_levels_summary">اختر النسب التي يُعلن عنها (مضاعفات 5%)</string>
-<string name="battery_announcement_rate">سرعة نطق البطارية</string>
-<string name="battery_announcement_pitch">نبرة إعلان البطارية</string>
-<string name="battery_announcement_voice">صوت نطق البطارية</string>
-<string name="battery_announcement_volume">مستوى صوت البطارية</string>
+<string name="battery_announcement_levels_summary" formatted="false">اختر النسب التي يُعلن عنها (مضاعفات 5%)</string>
 <string name="battery_cue_mode">مؤثر صوت البطارية</string>
     <string name="battery_cue_volume">مستوى صوت المؤثر</string>
 <string name="battery_cue_mode_narration_cue">نطق ومؤثر</string>
@@ -108,10 +103,9 @@
 <string name="categories_saved">تم حفظ إعدادات الأصوات</string>
 <string name="categories_save_button">حفظ تغييرات الأصوات</string>
 <string name="cd_test_voice_button">تشغيل عيّنة صوتية للاختبار</string>
-<string name="cd_test_voice_button_for">تشغيل عيّنة صوتية للاختبار، فئة %1$s</string>
 <string name="cd_convert_play_for_language">تشغيل عيّنة صوتية للاختبار، لغة %1$s</string>
 <string name="cd_convert_save_for_language">حفظ إعدادات لغة %1$s</string>
-<string name="charging_complete_announcement_enabled">الإعلان عند اكتمال الشحن (100%)</string>
+<string name="charging_complete_announcement_enabled" formatted="false">الإعلان عند اكتمال الشحن (100%)</string>
 <string name="charging_disconnect_announcement_enabled">الإعلان عند فصل الشاحن</string>
 <string name="check_updates">البحث عن تحديثات</string>
 <string name="check_updates_desc">التحقق من وجود إصدار أحدث من التطبيق</string>
@@ -246,7 +240,7 @@
 <string name="permission_sms_granted">تم منح إذن قراءة الرسائل</string>
 <string name="pitch_label">نبرة الصوت</string>
 <string name="pitch_summary">ضبط نبرة الصوت (منخفضة/عالية)</string>
-<string name="power_saver_battery_threshold_label">عتبة توفير الطاقة (%)</string>
+<string name="power_saver_battery_threshold_label" formatted="false">عتبة توفير الطاقة (%)</string>
 <string name="power_saver_mode_enabled">وضع توفير الطاقة: تقليل إعلان الوقت عند انخفاض البطارية</string>
 <string name="preview_stop">إيقاف</string>
 <string name="proximity_silence_enabled">الصمت عند تغطية الجهاز</string>
@@ -317,7 +311,6 @@
 <string name="section_instant_silence">الإسكات الفوري</string>
 <string name="section_notification_reading">قراءة الإشعارات بالصوت</string>
 <string name="section_number_reading">نطق الأرقام</string>
-<string name="section_opened">فُتح قسم: %1$s</string>
 <string name="section_pronunciation_dict">قاموس النطق</string>
 <string name="section_sms_reading">قراءة الرسائل الواردة</string>
 <string name="section_text_reading">قراءة النصوص</string>
@@ -377,7 +370,6 @@
 <string name="speech_language_to_en">التحويل إلى الإنجليزية</string>
 <string name="speech_rate_label">سرعة النطق</string>
 <string name="speech_rate_summary">ضبط سرعة النطق</string>
-<string name="spinner_battery_voice_content">صوت نطق البطارية</string>
 <string name="spinner_caller_interval_content">الفاصل الزمني بين التكرارات (بالثواني)</string>
 <string name="spinner_caller_repeat_content">عدد مرات التكرار</string>
 <string name="spinner_number_reading_mode_content">طريقة نطق الأرقام</string>
@@ -460,16 +452,12 @@
 <string name="engine_for_category_label">محرك نطق الفئة</string>
 <string name="caller_engine_ar_label">محرك الأسماء العربية</string>
 <string name="caller_engine_en_label">محرك الأسماء الإنجليزية</string>
-<string name="engine_for_battery_label">محرك نطق البطارية</string>
 <string name="voice_language_label">لغة الصوت</string>
 <string name="cd_category_language_spinner">اختيار لغة صوت الفئة</string>
-<string name="cd_category_language_spinner_for">%1$s، اختيار لغة الصوت</string>
 <string name="cd_voice_language_spinner">اختيار لغة الصوت</string>
-<string name="cd_category_voice_spinner">%1$s، اختيار الصوت</string>
 <string name="seek_category_speech_rate">%1$s، سرعة النطق</string>
 <string name="seek_category_pitch">%1$s، نبرة الصوت</string>
 <string name="seek_category_volume">%1$s، مستوى الصوت</string>
-<string name="group_opened">فُتحت مجموعة %1$s</string>
 <string name="time_quiet_enabled_for_day">%1$s: ساعات الهدوء</string>
 <string name="time_quiet_start_for_day">%1$s، بداية الهدوء</string>
 <string name="time_quiet_end_for_day">%1$s، نهاية الهدوء</string>
@@ -492,9 +480,9 @@
 <string name="time_alarm_max_precision_summary">تستخدم منبّه النظام الدقيق (setAlarmClock) متجاوزةً كل قيود Doze والبطارية فيعمل إعلان الوقت في اللحظة المضبوطة؛ أثرُها الجانبي أن أيقونة منبّه ثابتة تظهر في شريط الحالة.</string>
 <string name="changelog_title">آخر التحديثات</string>
 <string name="changelog_text">الإصدار %1$s
+• إصلاحات شاملة: معالجة نطق المليارات، تحسين دقة العملات والفرانكو، واستقرار خدمات الصوت ومستشعرات الإسكات والنسخ الاحتياطي
 • واجهة المستخدم: ضبط ساعات الهدوء بنمط 12/24، وفواصل لغوية متسقة، وتوحيد حشوات dp، وإزالة الوميض اللاتيني الافتراضي
 • معالجة الإيموجي: تفسير المعاني بلغة السياق، وإسناد الأرقام الهندية لسكربتها، وتوسيع تطبيع الأرقام الشرقية
-• تنقية الإيموجي: تنظيف مقيد بدلاً من Regex الواسع، وحفظ ZWJ، وتسمية الرموز التقنية 0x2300، وتمييز الوجوه اللاتينية
 </string>
     <string name="diagnostics_title">معلومات التشخيص</string>
     <string name="diagnostics_desc">معلومات حول حالة التطبيق ومحركات النطق للمساعدة في حل المشاكل.</string>

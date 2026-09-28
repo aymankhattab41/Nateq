@@ -242,15 +242,21 @@ class AudioCuePlayer private constructor(
                 }
                 true
             }
-            mp.prepare()
-            val dur = mp.duration
-            val maxTimeoutMs = if (dur > 0) {
-                dur.toLong() + CUE_SAFETY_MARGIN_MS
-            } else {
-                CUSTOM_CHIME_MAX_TIMEOUT_MS
+            mp.setOnPreparedListener { player ->
+                handler.post {
+                    if (epoch != playEpoch.get()) return@post
+                    val dur = runCatching { player.duration }
+                        .getOrDefault(0)
+                    val maxTimeoutMs = if (dur > 0) {
+                        dur.toLong() + CUE_SAFETY_MARGIN_MS
+                    } else {
+                        CUSTOM_CHIME_MAX_TIMEOUT_MS
+                    }
+                    handler.postDelayed(timeout, maxTimeoutMs)
+                    runCatching { player.start() }
+                }
             }
-            handler.postDelayed(timeout, maxTimeoutMs)
-            mp.start()
+            mp.prepareAsync()
             true
         } catch (t: Throwable) {
             Log.w(TAG, "playCustomMediaUri failed", t)

@@ -154,7 +154,8 @@ class TimeAlarmReceiver : BroadcastReceiver() {
          *  بوتوقيتها (acquire(timeout)) فالتسريب المقيّد مقصود — بلا حاجة لـ
          *  release يدوي، ولا يستنزف البطارية (منبه كل 15-60 دقيقة لثوانٍ). */
         internal fun acquireShortWakeLock(
-            context: Context
+            context: Context,
+            timeoutMs: Long = SHORT_WAKE_LOCK_MS
         ): PowerManager.WakeLock? {
             return try {
                 val pm = context.getSystemService(PowerManager::class.java)
@@ -163,7 +164,7 @@ class TimeAlarmReceiver : BroadcastReceiver() {
                     PowerManager.PARTIAL_WAKE_LOCK, "$TAG:speech"
                 ).apply {
                     setReferenceCounted(false)
-                    acquire(SHORT_WAKE_LOCK_MS)
+                    acquire(timeoutMs)
                 }
             } catch (t: Throwable) {
                 Log.w(TAG, "wake lock acquire failed", t)

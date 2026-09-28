@@ -332,7 +332,7 @@ class PipelineStepsTest {
 
     @Test
     fun time_afternoon_evening() {
-        assertEquals("الثانية والنصف مساءاً", TimeStep.apply("14:30"))
+        assertEquals("الثانية والنصف مساءً", TimeStep.apply("14:30"))
     }
 
     @Test
@@ -347,7 +347,7 @@ class PipelineStepsTest {
     @Test
     fun time_quarterTo_lateNight_evening() {
         assertEquals(
-            "الثانية عشرة إلا ربع مساءاً", TimeStep.apply("23:45")
+            "الثانية عشرة إلا ربع مساءً", TimeStep.apply("23:45")
         )
     }
 
@@ -362,7 +362,7 @@ class PipelineStepsTest {
     @Test
     fun time_noon_quarterAfter() {
         assertEquals(
-            "الواحدة إلا ربع مساءاً", TimeStep.apply("12:45")
+            "الواحدة إلا ربع مساءً", TimeStep.apply("12:45")
         )
     }
 
@@ -374,29 +374,29 @@ class PipelineStepsTest {
     @Test
     fun time_fullMatrix_amPmAndArabicSuffixes() {
         // مصفوفة كاملة: التحقق من فصل القيمة الرقمية عن كلمة الفترة
-        // واشتقاق الفترة حصراً من اللاحقة (AM/PM وصباحاً/مساءاً).
-        // حالات الحد (12 AM منتصف الليل = صباحاً، 12 PM = مساءاً)
+        // واشتقاق الفترة حصراً من اللاحقة (AM/PM وصباحاً/مساءً).
+        // حالات الحد (12 AM منتصف الليل = صباحاً، 12 PM = مساءً)
         // وحالات 1 و11.
         assertEquals("الثانية عشرة صباحاً", TimeStep.apply("12:00 AM"))
-        assertEquals("الثانية عشرة مساءاً", TimeStep.apply("12:00 PM"))
+        assertEquals("الثانية عشرة مساءً", TimeStep.apply("12:00 PM"))
         assertEquals("الواحدة صباحاً", TimeStep.apply("1:00 AM"))
-        assertEquals("الواحدة مساءاً", TimeStep.apply("1:00 PM"))
+        assertEquals("الواحدة مساءً", TimeStep.apply("1:00 PM"))
         assertEquals("الحادية عشرة صباحاً", TimeStep.apply("11:00 AM"))
-        assertEquals("الحادية عشرة مساءاً", TimeStep.apply("11:00 PM"))
+        assertEquals("الحادية عشرة مساءً", TimeStep.apply("11:00 PM"))
 
         // نفس المصفوفة الستّ بلاحقات عربية
         assertEquals("الثانية عشرة صباحاً", TimeStep.apply("12:00 صباحاً"))
-        assertEquals("الثانية عشرة مساءاً", TimeStep.apply("12:00 مساءً"))
+        assertEquals("الثانية عشرة مساءً", TimeStep.apply("12:00 مساءً"))
         assertEquals("الواحدة صباحاً", TimeStep.apply("1:00 صباحاً"))
-        assertEquals("الواحدة مساءاً", TimeStep.apply("1:00 مساءً"))
+        assertEquals("الواحدة مساءً", TimeStep.apply("1:00 مساءً"))
         assertEquals("الحادية عشرة صباحاً", TimeStep.apply("11:00 صباحاً"))
-        assertEquals("الحادية عشرة مساءاً", TimeStep.apply("11:00 مساءً"))
+        assertEquals("الحادية عشرة مساءً", TimeStep.apply("11:00 مساءً"))
     }
 
     @Test
     fun time_withSeconds_spoken() {
         assertEquals(
-            "الثانية والنصف و خمس وأربعون ثانية مساءاً",
+            "الثانية والنصف و خمس وأربعون ثانية مساءً",
             TimeStep.apply("14:30:45")
         )
     }
@@ -405,7 +405,7 @@ class PipelineStepsTest {
     fun time_zeroSeconds_treatedAsWholeMinute() {
         assertEquals("الثانية عشرة ظهراً", TimeStep.apply("12:00:00"))
         // الصيغة 24 ساعة تُنطق بصيغة 12 ساعة فتصير 14:30 الثانية (2 ظهراً)
-        assertEquals("الثانية والنصف مساءاً", TimeStep.apply("14:30:00"))
+        assertEquals("الثانية والنصف مساءً", TimeStep.apply("14:30:00"))
     }
 
     @Test
@@ -416,13 +416,13 @@ class PipelineStepsTest {
     @Test
     fun time_shortArabicSuffixes() {
         // الصيغة 24 ساعة تُنطق بصيغة 12 ساعة: 14:30 = الثانية بعد الظهر
-        assertEquals("الثانية والنصف مساءاً", TimeStep.apply("14:30م"))
+        assertEquals("الثانية والنصف مساءً", TimeStep.apply("14:30م"))
         assertEquals("الثامنة و خمس دقائق صباحاً", TimeStep.apply("8:05ص"))
         // «صم» لاحقة قصيرة ثنائية تُقرأ مساءً (المؤشر الأخير م = مساءً)
-        assertEquals("الثانية والنصف مساءاً", TimeStep.apply("14:30صم"))
+        assertEquals("الثانية والنصف مساءً", TimeStep.apply("14:30صم"))
         // حرف م داخل كلمة («من») لا يُلتقط لاحقةً
         assertEquals(
-            "الثانية والنصف مساءاً من", TimeStep.apply("14:30 من")
+            "الثانية والنصف مساءً من", TimeStep.apply("14:30 من")
         )
     }
 

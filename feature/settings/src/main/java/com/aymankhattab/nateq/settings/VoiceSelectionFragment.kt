@@ -668,16 +668,6 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
         pronunciationDictAdapter = null
 
-        // إلغاء تسجيل مستقبل التنزيل (بند 6.6): لو اكتمل التنزيل بعد تدوير
-        // الشاشة أو مغادرتها وبقي المستقبل مسجلاً، يبقى مرجع الفصيل حياً
-        // (تسريب) وقد يُستدعى على واجهة مدمّرة.
-        val pendingReceiver = updateReceiver
-        if (pendingReceiver != null) {
-            runCatching {
-                context?.applicationContext?.unregisterReceiver(pendingReceiver)
-            }
-            updateReceiver = null
-        }
         // إغلاق المتحدث المستقل الخاص بالمعاينة (إن أُنشئ) حتى لا يبقى محرك
         // TTS مفتوحاً بعد مغادرة الشاشة. المثيل هنا خاص بالشاشة وليس المشترك
         // (getInstance) الذي تُدار حياته في مستقبلات الإعلانات التلقائية.
@@ -1560,15 +1550,26 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             }
 
             sb.appendLine("=== Lord TTS — التشخيص ===")
-            sb.appendLine("الإصدار: $versionName ($versionCode)")
             sb.appendLine(
-                "الجهاز: " +
-                    "${android.os.Build.MANUFACTURER} " +
-                    android.os.Build.MODEL
+                getString(
+                    R.string.error_report_version,
+                    versionName,
+                    versionCode
+                )
             )
             sb.appendLine(
-                "أندرويد: ${android.os.Build.VERSION.RELEASE}" +
-                    " (API ${android.os.Build.VERSION.SDK_INT})"
+                getString(
+                    R.string.error_report_device,
+                    android.os.Build.MANUFACTURER,
+                    android.os.Build.MODEL
+                )
+            )
+            sb.appendLine(
+                getString(
+                    R.string.error_report_android_os,
+                    android.os.Build.VERSION.RELEASE,
+                    android.os.Build.VERSION.SDK_INT
+                )
             )
             sb.appendLine("")
 
@@ -1901,6 +1902,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         )
 
         val appContext = context.applicationContext
+        val fragmentRef = java.lang.ref.WeakReference(this)
         // مستمع مؤقت مشترك يفتح شاشة التثبيت عند اكتمال تنزيل الـ APK.
         val receiver = object : android.content.BroadcastReceiver() {
             override fun onReceive(
@@ -1924,6 +1926,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                         ctx, id, expectedSha256Hex
                     )
                     Handler(Looper.getMainLooper()).post {
+                        val frag = fragmentRef.get()
                         when (result) {
                             is UpdateChecker.DownloadResult.Success -> {
                                 UpdateChecker.promptInstall(
@@ -1940,8 +1943,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                                     msg,
                                     Toast.LENGTH_LONG
                                 ).show()
-                                if (isAdded) {
-                                    view?.announceCompat(msg)
+                                if (frag?.isAdded == true) {
+                                    frag.view?.announceCompat(msg)
                                 }
                             }
                             is UpdateChecker.DownloadResult.Failed -> {
@@ -1953,8 +1956,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                                     msg,
                                     Toast.LENGTH_LONG
                                 ).show()
-                                if (isAdded) {
-                                    view?.announceCompat(msg)
+                                if (frag?.isAdded == true) {
+                                    frag.view?.announceCompat(msg)
                                 }
                             }
                         }

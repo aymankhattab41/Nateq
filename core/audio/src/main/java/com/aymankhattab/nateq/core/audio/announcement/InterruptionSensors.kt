@@ -108,6 +108,7 @@ internal class InterruptionSensors(
      *  لا يُسجَّل أي مستشعر إذا كان المفتاحان معطلين حفظاً للبطارية. */
     @Synchronized
     fun start(context: Context) {
+        stop()
         val shake = shakeEnabled()
         val proximity = proximityEnabled()
         if (!shake && !proximity) return

@@ -177,7 +177,7 @@ internal class NotificationReadingController(
                 val finalSet = when {
                     SettingsRepository.NOTIF_READ_ALL in selected ->
                         setOf(SettingsRepository.NOTIF_READ_ALL)
-                    selected.isEmpty() -> current
+                    selected.isEmpty() -> emptySet()
                     else -> selected.toSet()
                 }
                 runCatching { settings.setNotificationAppsSelection(finalSet) }

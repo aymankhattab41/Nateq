@@ -95,7 +95,7 @@ class AnnouncementTileService : TileService() {
         // — بلا هذا الحارس تنهار البلاطة NoSuchMethodError على الإصدارات
         // الأقدم. بدون contentDescription: يقرأ النظام label تلقائياً
         // (تسمية) + حالة STATE — إضافته تُكرّر القراءة لنفس النص.
-        if (subtitleSupported(Build.VERSION.SDK_INT)) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             tile.subtitle = getString(R.string.tile_label_description)
         }
         tile.updateTile()
