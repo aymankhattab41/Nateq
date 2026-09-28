@@ -498,14 +498,6 @@ class AnnouncementSchedulerService : Service() {
             }
         }
         batteryReceiver = null
-        // إغلاق محرك TTS وإبطال كل مؤقتات النطق المعلّقة عند خروج الخدمة
-        // حتى لا تبقى موقتات/Hوandler معلّقة تشغّل النطق بعد أكبر عمراً
-        // (بند [7]) — المتحدث المشترك يُعاد بناؤه عند الحاجة لاحقاً.
-        try {
-            AnnouncementSpeaker.getInstance(this).stop()
-        } catch (t: Throwable) {
-            Log.w(TAG, "announcement speaker stop failed", t)
-        }
     }
 
     /** نطق الوقت فوراً (من زر "أعلن الآن") — يتجاوز ساعات الهدوء عمداً. */

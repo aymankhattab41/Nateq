@@ -38,12 +38,8 @@ class TimeAlarmReceiver : BroadcastReceiver() {
         const val ACTION_TICK =
             "com.aymankhattab.nateq.action.TIME_ANNOUNCE_TICK"
 
-        /** سقفُ إبقاء بثّ goAsync حياً بانتظار اكتمال النطق (بند [4]) — أقل
-         *  من مهلة نظام البث (~10 ثوانٍ) بهامش واضح (~6 ثوانٍ) فلا يصل
-         *  goAsync حافتَها فيقع ANR عند تعلّق المحرك بلا onDone (كما رُصد
-         *  على أجهزة فعلية). النطق السليم يُنهي البث مبكراً عبر مستمع
-         *  الاكتمال؛ هذا السقف للعلّال فقط. */
-        private const val ALARM_ASYNC_WINDOW_MS = 6_000L
+        /** سقفُ إبقاء بثّ goAsync حياً بانتظار اكتمال النطق (10 ثوانٍ). */
+        private const val ALARM_ASYNC_WINDOW_MS = 10_000L
 
         /** requestCode ثابت ليكون PendingIntent واحداً
          * (أي استدعاء لاحق يستبدله). */
@@ -142,13 +138,8 @@ class TimeAlarmReceiver : BroadcastReceiver() {
             )
         }
 
-        /** مدة نافذة WakeLock العابرة: تُحافظ على مساواة
-         *  [ALARM_ASYNC_WINDOW_MS] (6 ثوانٍ) — فللقفل أن يغطي نافذة
-         *  goAsync كاملةً (ربط المحرك وتهيئة الصوت والنطق) ولا ينتهي قبلها
-         *  فينام المعالج والنطق ناقص (بند [4]). */
-        // (internal لا private): يُستعارُ من مستقبلاتِ الرسائل/المتصل/البطارية
-        // (بند 3.9) فيبقى النطقُ محمياً بالمسارِ الأوحدِ نفسه.
-        internal const val SHORT_WAKE_LOCK_MS = 6_000L
+        /** مدة نافذة WakeLock العابرة (10 ثوانٍ). */
+        internal const val SHORT_WAKE_LOCK_MS = 10_000L
 
         /** نافذة WakeLock جزئية مؤقتة (6 ثوانٍ = نافذة البث): تُحرَّر تلقائياً
          *  بوتوقيتها (acquire(timeout)) فالتسريب المقيّد مقصود — بلا حاجة لـ

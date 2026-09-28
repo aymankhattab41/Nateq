@@ -73,6 +73,11 @@ object FrancoArabic {
 
     /** يبدّل كلمات الفرانكو في [text] مع بقاء كل ما عداه كما هو. */
     fun convert(text: String): String {
+        if (text.isEmpty() ||
+            text.none { (it in 'a'..'z') || (it in 'A'..'Z') }
+        ) {
+            return text
+        }
         val sb = StringBuilder(text.length)
         var cursor = 0
         for (match in TOKEN_REGEX.findAll(text)) {

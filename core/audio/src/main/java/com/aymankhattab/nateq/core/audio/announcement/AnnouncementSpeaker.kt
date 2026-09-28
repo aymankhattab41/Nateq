@@ -426,11 +426,10 @@ class AnnouncementSpeaker(
         activeUtteranceIds.clear()
     }
 
-    /** تغيير الصوت المفضّل لدورات النطق القادمة (يُعيد الربط إن لزم) */
+    /** تغيير الصوت المفضّل لدورات النطق القادمة دون هدم اتصال المحرك */
     fun resetVoice(newVoiceId: String?) {
         if (newVoiceId == voiceId) return
         voiceId = newVoiceId
-        shutdownSafely()
     }
 
     /** رصد الإسكات الفوري (هز/تقارب) أثناء النطق الجاري — معطّل افتراضياً
@@ -540,9 +539,19 @@ class AnnouncementSpeaker(
         val engine = finalEngine
         boundEngine = engine
         var newTts: TextToSpeech? = null
+        val timeoutRunnable = Runnable {
+            Log.w(TAG, "[Speaker] Engine $engine init timed out")
+            val completion = initGate.complete(false)
+            completion.served.forEach { cb -> cb(false) }
+            if (completion.hasNext) {
+                startInit(completion.nextEngine)
+            }
+        }
+        mainHandler.postDelayed(timeoutRunnable, 5_000L)
         // **المنشئ الثلاثي الصريح** TextToSpeech(context, listener, engine):
         // الربط المباشر بحزمة المحرك المحسومة صراحة يمنع الحلقات الذاتية.
         newTts = TextToSpeech(appContext, { status ->
+            mainHandler.removeCallbacks(timeoutRunnable)
             val success = status == TextToSpeech.SUCCESS
             if (success) {
                 // لا تُخزَّن إلا المثيلات الناجحة؛ المثيل الفاشل يُهمَل ولا
@@ -552,9 +561,7 @@ class AnnouncementSpeaker(
                 tts = null
             }
             // تصفية البوابة خارجها: تُصرف النداءات المطابقة لمحرك هذه
-            // التهيئة فقط، وما بقي بمحركٍ مختلف يُعاد تهيئته بعدها. لا
-            // استدعاء تحت قفلٍ لتجنب أي deadlock لو دخلت الـ callback
-            // دعوةً متزامنة أخرى.
+            // التهيئة فقط، وما بقي بمحركٍ مختلف يُعاد تهيئته بعدها.
             val completion = initGate.complete(success)
             completion.served.forEach { cb -> cb(success) }
             if (completion.hasNext) {
@@ -570,19 +577,12 @@ class AnnouncementSpeaker(
 
                     @Deprecated("Java Override")
                     override fun onDone(utteranceId: String?) {
-                        // بند 1.1: انتهى إشعارُ المعرّف — أخرجه من السجل.
                         if (utteranceId != null) {
                             activeUtteranceIds.remove(utteranceId)
                         }
-                        // نحرر التركيز فقط عند اكتمال آخر جزء في
-                        // الطابور، لا عند أول جزء — الإعلان متعدد
-                        // المقاطع (نص + أسماء إيموجي متتابعة) يبقى
-                        // محمياً من تشويش التطبيقات الأخرى حتى
-                        // ينتهي كامل النطق. التحرير في [finally]
-                        // يضمن تخلي النظام عن Audio Focus مهما
-                        // أُجهِض التنظيفُ بينه (نصيحة المراجعة 3).
-                        val isFinal = utteranceId != null
-                            && utteranceId == lastQueuedUtteranceId
+                        val isFinal = (utteranceId != null &&
+                            utteranceId == lastQueuedUtteranceId) ||
+                            activeUtteranceIds.isEmpty()
                         try {
                             if (isFinal) {
                                 cancelSpeechWatchdog()
@@ -592,32 +592,39 @@ class AnnouncementSpeaker(
                             if (isFinal) releaseAudioFocus()
                         }
                         if (isFinal) {
-                            // **بند 1.2:** «يجرى النطق الآن» يُصفَّر فقط عند
-                            // نهاية آخر جزء؛ كان يُصفَّر عند انتصاف النطق
-                            // فيسقُط إعلان وسيط وقد تُفتح الباب أمام
-                            // استدعاءات متشابكة فوق بعضها.
                             notifySpeechComplete()
                             nowSpeaking = false
                         }
                     }
 
+                    override fun onError(
+                        utteranceId: String?,
+                        errorCode: Int
+                    ) {
+                        handleFailure(utteranceId)
+                    }
+
                     @Deprecated("Java Override")
                     override fun onError(utteranceId: String?) {
-                        // بند 1.1: عادَ إشعارُ الخطأ — أخرج المعرّف من السجل.
+                        handleFailure(utteranceId)
+                    }
+
+                    private fun handleFailure(utteranceId: String?) {
                         if (utteranceId != null) {
                             activeUtteranceIds.remove(utteranceId)
                         }
-                        val isFinal = utteranceId != null
-                            && utteranceId == lastQueuedUtteranceId
+                        val shouldClean = (utteranceId != null &&
+                            utteranceId == lastQueuedUtteranceId) ||
+                            activeUtteranceIds.isEmpty()
                         try {
-                            if (isFinal) {
+                            if (shouldClean) {
                                 cancelSpeechWatchdog()
                                 stopInterruptionMonitoring()
                             }
                         } finally {
-                            if (isFinal) releaseAudioFocus()
+                            if (shouldClean) releaseAudioFocus()
                         }
-                        if (isFinal) {
+                        if (shouldClean) {
                             notifySpeechComplete()
                             nowSpeaking = false
                         }
@@ -799,9 +806,7 @@ class AnnouncementSpeaker(
      *  أو عند انقضاء مهلة الأمان القصوى — مع التحقق من سلامة دورة النطق. */
     private fun enqueueWhileSpeaking(gen: Long, speakAction: () -> Unit) {
         deferredWhileSpeaking.add {
-            if (gen == speechGeneration.get()) {
-                speakWithFocus(gen, speakAction)
-            }
+            speakWithFocus(speechGeneration.get(), speakAction)
         }
         registerSpeakingLockObserverIfNeeded()
         if (speakingLockTimeout == null) {
@@ -976,17 +981,16 @@ class AnnouncementSpeaker(
         // [ensureInit] بوابةُ طيرانٍ مفرد آمنة التزامن — يعاود استدعاءُ
         // startSpeech اللاحق الانضمام إليها بلا سباقٍ ولا تكرار تهيئة.
         ensureInit({ _ -> }, engineOverride)
-        AudioCuePlayer.getInstance(appContext).play(cue) { ok ->
-            if (gen == speechGeneration.get() && ok) {
+        AudioCuePlayer.getInstance(appContext).play(cue) { _ ->
+            if (gen == speechGeneration.get()) {
                 startSpeech(
                     text, locale, speechRate, pitch, volume,
                     emojiCfg, parts, engineOverride,
                     immediate = true
                 )
             } else {
-                // بند 2.3: فشل عزف النغمة أو تَقادم دورة النطق أثناءها
-                // (stop()/نطقٌ أحدث) — لا نطق يلي، فيُحرَّر التركيز هنا
-                // حصراً بدل بقائه محجوزاً صامتاً حتى النطق التالي.
+                // تقادم دورة النطق أثناء عزف النغمة (stop()/نطق أحدث)
+                // فيُحرَّر التركيز هنا بدل بقائه محجوزاً صامتاً.
                 releaseAudioFocus()
             }
         }
@@ -1085,11 +1089,12 @@ class AnnouncementSpeaker(
         startInterruptionMonitoring()
         // السمات تُطبق عند كل دورة إن اختلفت فعلياً (لا تتبع القارئ).
         applySpeechAudioAttributes()
+        val unitUtteranceIds = units.map { nextUtteranceId() }
+        lastQueuedUtteranceId = unitUtteranceIds.lastOrNull()
         try {
             units.forEachIndexed { index, unit ->
                 val queueMode = if (index == 0) {
-                    // بند 1.1: أولُ جزءٍ يصل بـ FLUSH يُبطل كل معرّفات الدورات
-                    // السابقة (محركٌ يُسقط منتصفَها بلا إشعارٍ أحياناً).
+                    // أولُ جزءٍ يصل بـ FLUSH يُبطل كل معرّفات الدورات السابقة
                     invalidateActiveUtterances()
                     TextToSpeech.QUEUE_FLUSH
                 } else {
@@ -1103,7 +1108,8 @@ class AnnouncementSpeaker(
                     unit.volume,
                     partVoice = unit.voiceId,
                     queueMode = queueMode,
-                    attempt = attempt
+                    attempt = attempt,
+                    assignedUtteranceId = unitUtteranceIds[index]
                 )
             }
             // حد ختام للدورة: مهما طال النص يُفتح حارس الانتهاء قبل إرسال
@@ -1333,6 +1339,23 @@ class AnnouncementSpeaker(
         queueMode: Int,
         attempt: Int
     ) {
+        doSpeak(
+            text, locale, speechRate, pitch, volume,
+            partVoice, queueMode, attempt, null
+        )
+    }
+
+    private fun doSpeak(
+        text: String,
+        locale: Locale,
+        speechRate: Float,
+        pitch: Float,
+        volume: Float,
+        partVoice: String?,
+        queueMode: Int,
+        attempt: Int,
+        assignedUtteranceId: String?
+    ) {
         val tts = tts ?: return
         // مضاعف السرعة العام (إن فعّله المستخدم): يُضرب بالسرعة النهائية
         // قبل قصّها على الحد الآمن — كل الإعلانات (وقت/أرقام/بطارية/متصل/
@@ -1426,13 +1449,11 @@ class AnnouncementSpeaker(
             stripEmojis(text),
             java.text.Normalizer.Form.NFC
         )
-        val utteranceId = nextUtteranceId()
-        // بند 1.1: سُجِّل المعرّف كي يُبطَل مع أسلافه في دورة FLUSH/الإيقاف؛
-        // المستمع النشط يبقى منتظراً إشعارَ العودة (onDone/onError) فقط.
+        val utteranceId = assignedUtteranceId ?: nextUtteranceId()
         trackUtterance(utteranceId)
-        // سجّل آخر معرّف يُرسَل قبل speak حتى يقارن به المستمع onDone/onError
-        // ليحرر التركيز عند اكتمال آخر جزء فقط (لا بعد أول جزء من الجملة).
-        lastQueuedUtteranceId = utteranceId
+        if (assignedUtteranceId == null) {
+            lastQueuedUtteranceId = utteranceId
+        }
         val status = tts.speak(cleanText, queueMode, params, utteranceId)
         // المحركُ رفض المعرّفَ فلن يُشعِر بعودته لاحقاً، فأخرجه من السجل
         if (status == TextToSpeech.ERROR) {
@@ -1442,7 +1463,8 @@ class AnnouncementSpeaker(
             mainHandler.postDelayed({
                 doSpeak(
                     text, locale, speechRate, pitch, volume,
-                    partVoice, queueMode, attempt + 1
+                    partVoice, queueMode, attempt + 1,
+                    assignedUtteranceId = utteranceId
                 )
             }, 120)
         } else if (status == TextToSpeech.ERROR) {
@@ -1472,6 +1494,7 @@ class AnnouncementSpeaker(
         tts?.stop()
         // بند 1.1: الإيقاف يبطل كل المعرّفات المعلقة — لا «مستمع معلّق».
         invalidateActiveUtterances()
+        deferredWhileSpeaking.clear()
         releaseAudioFocus()
         nowSpeaking = false
     }
@@ -1533,6 +1556,7 @@ class AnnouncementSpeaker(
                 tts?.stop()
                 nowSpeaking = false
                 releaseAudioFocus()
+                notifySpeechComplete()
             }
             // AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK: إعلاننا قصير، نستمر دون حاجة
             // لخفض الصوت (النظام يخفض الوسائط المخالفة لا إعلاننا).

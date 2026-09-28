@@ -29,6 +29,19 @@ internal class DateStep : TextProcessingStep {
             "", "January", "February", "March", "April", "May", "June",
             "July", "August", "September", "October", "November", "December"
         )
+
+        // الأشهر الميلادية بالعربية.
+        val MONTHS_AR = arrayOf(
+            "", "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
+            "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"
+        )
+
+        // isYMD=true → group1=year,group2=month,group3=day. العكس للـ DMY/DOTY.
+        val DATE_PATTERNS = listOf(
+            PATTERN_DATE_YMD to true,   // YYYY-MM-DD أو YYYY/MM/DD
+            PATTERN_DATE_DMY to false,  // DD-MM-YYYY أو DD/MM/YYYY
+            PATTERN_DATE_DOTY to false  // DD.MM.YYYY
+        )
     }
 
     override fun apply(input: String): String = process(input, english = false)
@@ -39,15 +52,8 @@ internal class DateStep : TextProcessingStep {
         process(input, english = true)
 
     private fun process(input: String, english: Boolean): String {
-        // isYMD=true → group1=year,group2=month,group3=day. العكس للـ DMY/DOTY.
-        val patterns = listOf(
-            PATTERN_DATE_YMD to true,   // YYYY-MM-DD أو YYYY/MM/DD
-            PATTERN_DATE_DMY to false,  // DD-MM-YYYY أو DD/MM/YYYY
-            PATTERN_DATE_DOTY to false  // DD.MM.YYYY
-        )
-
         var result = input
-        for ((pattern, isYMD) in patterns) {
+        for ((pattern, isYMD) in DATE_PATTERNS) {
             val matcher = pattern.matcher(result)
             val buffer = StringBuffer()
             while (matcher.find()) {
@@ -93,13 +99,9 @@ internal class DateStep : TextProcessingStep {
     private fun formatDate(day: Int, month: Int, year: Int): String {
         if (month !in 1..12) return "التاريخ غير صالح"
         if (day !in 1..31) return "التاريخ غير صالح"
-        val months = arrayOf(
-            "", "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
-            "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"
-        )
         val dayText = NumberWordsConverter.numberToWords(day.toLong())
         val yearText = NumberWordsConverter.numberToWords(year.toLong())
-        return "$dayText ${months[month]} $yearText"
+        return "$dayText ${MONTHS_AR[month]} $yearText"
     }
 
     /** تنسيق التاريخ بالإنجليزية: شهر أولاً ثم اليوم الترتيبي ثم السنة

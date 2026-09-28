@@ -118,7 +118,7 @@ class PronunciationDictionary(
     private var lastDiskCheckNanos = 0L
 
     init {
-        val (global, langs) = loadFromPrefs()
+        val (global, langs) = loadFromPrefs(prefs)
         entries = global
         langEntries = langs
         removeLegacyDefaultsOnce()
@@ -484,15 +484,16 @@ class PronunciationDictionary(
         return NateqJson.toJson(source)
     }
 
-    private fun loadFromPrefs():
-        Pair<Map<String, String>, Map<String, Map<String, String>>> {
+    private fun loadFromPrefs(
+        sourceSp: android.content.SharedPreferences? = null
+    ): Pair<Map<String, String>, Map<String, Map<String, String>>> {
         // تُقرأ القيم من «مثيل طازج» (انظر [openPrefs]) لا من الكائن العضو
         // المخبئ — تصطاد تعديلات عملية الواجهة عبر الطابع. على فشل الفتح أو
         // الفك نقف عند آخر ما رصدناه بدل مسح القاموس الحي (تفضيلُ مستخدمٍ
         // حقيقي لا يجوز أن يُمحى بسبب خللٍ عابر). القراءة بمفتاحين معلومين
         // فقط — بلا عدّ [SharedPreferences.all] غير المدعوم في التخزين
         // المشفّر على بعض البيئات فيُسقط الحفظ كاملاً.
-        val sp = openPrefs() ?: return entries to langEntries
+        val sp = sourceSp ?: openPrefs() ?: return entries to langEntries
         val globalJson = try {
             sp.getString("dictionary", "{}")
         } catch (t: Throwable) {

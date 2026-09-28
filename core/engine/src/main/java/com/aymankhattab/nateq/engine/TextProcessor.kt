@@ -293,7 +293,7 @@ class TextProcessor(
         // معجم المصدر: كل كلمة مشكولة مقابل مجردها — تتم المحاكاة بعد
         // تقسيمٍ متوازٍ، والمشكولةُ الأصلي تُؤخذ من المصدر مباشرة.
         val normalizedSource = voweledSource
-            .replace(Regex("""\s+"""), " ").trim()
+            .replace(PATTERN_WHITESPACE, " ").trim()
         val stripped = TashkeelStripStep.apply(normalizedSource)
         val sourceStripped = stripped.split(' ')
         val sourceVoweled = normalizedSource.split(' ')
@@ -606,5 +606,8 @@ class TextProcessor(
 
         /** أول محرف في منطقة الاستخدام الخاص يُستخدم لحجز الروابط. */
         private const val URL_MASK_BASE = '\uE000'
+
+        /** نمط الفراغات الموحد المخبأ لتجنب تكرار الترجمة عند كل جملة. */
+        private val PATTERN_WHITESPACE = Regex("""\s+""")
     }
 }
