@@ -123,7 +123,14 @@ internal class SnapshotPrefs(
         }
 
         override fun apply() {
-            delegate.edit().also { applyOps(it) }.commit()
+            // **بند الأداء:** كان يُنفَّذ commit() متزامناً (كتابة إلزامية
+            // على القرص داخل خيط المتصل) — الآن نقل كله إلى الآلية غير
+            // المتزامنة المدمجة للـ SharedPreferences (خيط QueuedWork):
+            // الذاكرة (يمكن قراءتها فوراً) تُحدَّث تزامنياً، وقرصُ الكتابة
+            // يخرج من خيط الواجهة. محفوظٌ أيضاً: أي commit لاحق على نفس
+            // المخزن يكتب كل الحالة المتضمنة هذه التعديلات فوراً (توثيق
+            // SharedPreferences.Editor) فلا تتسرب قراءة قديمة.
+            delegate.edit().also { applyOps(it) }.apply()
             snapshot = delegate.all
             onChanged()
         }

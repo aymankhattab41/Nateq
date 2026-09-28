@@ -122,14 +122,32 @@ internal fun chimeVolumeFromProgress(progress: Int): Float =
 internal class VoicePreviewHelper(private val context: Context) {
 
     /** مثيل محرك المعاينة الجاري — يُغلق قبل أي معاينة جديدة وعند الإطلاق. */
+    @Volatile
     private var currentPreviewTts: TextToSpeech? = null
 
-    /** يغلق أي معاينة جارية ويحرر المرجع (يُستدعى من onDestroyView). */
+    /** محرك معاينة دافئ يُعاد استخدامه بين المعاينات المتتالية على نفس
+     *  المحرك (بند الأداء): بدل إغلاق المحرك وإعادة تهيئة ربطه عند كل
+     *  معاينة — يتسبب في زمن انتظار وارتجاف — يبقى جاهزاً فيُستدعى ثانيةً
+     *  بلا TextToSpeech جديدة. يُغلق عند تغيّر المحرك أو مغادرة الشاشة. */
+    @Volatile
+    private var warmTts: TextToSpeech? = null
+
+    /** حزمة المحرك الذي بُني عليه [warmTts] (null = المحرك النظامي). */
+    @Volatile
+    private var warmTtsEngine: String? = null
+
+    /** يغلق أي معاينة جارية والمثيل الدافئ ويحرر المرجعين
+     *  (يُستدعى من onDestroyView). */
     fun release() {
         currentPreviewTts?.let { tts ->
             runCatching { tts.shutdown() }
         }
         currentPreviewTts = null
+        warmTts?.let { tts ->
+            runCatching { tts.shutdown() }
+        }
+        warmTts = null
+        warmTtsEngine = null
     }
 
     /**
@@ -140,7 +158,8 @@ internal class VoicePreviewHelper(private val context: Context) {
     @Suppress("DEPRECATION")
     fun play(params: PreviewParams, onFinished: () -> Unit = {}) {
         // بند 4.2: إغلاق أي معاينة جارية أولاً — الضغط السريع المتكرر لا
-        // يتراكم محركات معلقة.
+        // يتراكم محركات معلقة (المثيل القائم لا يُعاد استخدامه بعد إيقافه
+        // المفاجئ؛ يُغلق ويُخلق سواه).
         currentPreviewTts?.let { tts ->
             runCatching { tts.stop() }
             runCatching { tts.shutdown() }
@@ -150,6 +169,27 @@ internal class VoicePreviewHelper(private val context: Context) {
         val appContext = context.applicationContext
         val hold = arrayOfNulls<TextToSpeech>(1)
         val mainHandler = Handler(Looper.getMainLooper())
+        val desiredEngine = params.enginePkg?.takeIf { it.isNotBlank() }
+
+        // المثيل الدافئ لنفس المحرك يُعاد استخدامه مباشرةً — لا إعادة
+        // ربط ولا تهيئة (بند الأداء). نتزحزحه من الدفء إلى الجاري.
+        val warm = warmTts
+        if (warm != null && warmTtsEngine == desiredEngine) {
+            hold[0] = warm
+            currentPreviewTts = warm
+            warmTts = null
+            warmTtsEngine = null
+            mainHandler.post {
+                speakSample(warm, params, onFinished)
+            }
+            return
+        }
+
+        // محركٌ مختلف أو أول معاينة: إغلاق الدافئ السابق وتهيئة مثيل جديد.
+        warm?.let { runCatching { it.shutdown() } }
+        warmTts = null
+        warmTtsEngine = null
+
         val listener: (Int) -> Unit = { status ->
             mainHandler.post {
                 val tts = hold[0]
@@ -168,10 +208,10 @@ internal class VoicePreviewHelper(private val context: Context) {
         }
         val created = runCatching {
             @Suppress("DEPRECATION")
-            val instance = if (params.enginePkg.isNullOrBlank()) {
+            val instance = if (desiredEngine == null) {
                 TextToSpeech(appContext, listener)
             } else {
-                TextToSpeech(appContext, listener, params.enginePkg)
+                TextToSpeech(appContext, listener, desiredEngine)
             }
             hold[0] = instance
             currentPreviewTts = instance
@@ -181,6 +221,22 @@ internal class VoicePreviewHelper(private val context: Context) {
             runCatching { hold[0]?.shutdown() }
             currentPreviewTts = null
             onFinished()
+        }
+    }
+
+    /** ينهي معاينة [tts] بعد اكتمالها/فشلها: يُعيدها دافئةً لمعاينة تالية
+     *  على نفس المحرك إن لم تسبقها معاينةٌ أحدث، وإلا يُغلقها. */
+    private fun finishPreview(
+        tts: TextToSpeech?,
+        engineKey: String?
+    ) {
+        if (tts == null) return
+        if (currentPreviewTts === tts) currentPreviewTts = null
+        if (warmTts == null) {
+            warmTts = tts
+            warmTtsEngine = engineKey
+        } else {
+            runCatching { tts.shutdown() }
         }
     }
 
@@ -216,26 +272,20 @@ internal class VoicePreviewHelper(private val context: Context) {
             }
             previewTts.setOnUtteranceProgressListener(
                 object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) {}
+                    override fun onStart(utteranceId: String?) {}
 
-                @Deprecated("Java Deprecated")
-                override fun onDone(utteranceId: String?) {
-                    runCatching { previewTts.shutdown() }
-                    if (currentPreviewTts === previewTts) {
-                        currentPreviewTts = null
+                    @Deprecated("Java Deprecated")
+                    override fun onDone(utteranceId: String?) {
+                        finishPreview(previewTts, engineKey(params))
+                        onFinished()
                     }
-                    onFinished()
-                }
 
-                @Deprecated("Java Deprecated")
-                override fun onError(utteranceId: String?) {
-                    runCatching { previewTts.shutdown() }
-                    if (currentPreviewTts === previewTts) {
-                        currentPreviewTts = null
+                    @Deprecated("Java Deprecated")
+                    override fun onError(utteranceId: String?) {
+                        finishPreview(previewTts, engineKey(params))
+                        onFinished()
                     }
-                    onFinished()
-                }
-            })
+                })
             val result = runCatching {
                 previewTts.speak(
                     params.sampleText,
@@ -245,18 +295,19 @@ internal class VoicePreviewHelper(private val context: Context) {
                 )
             }.getOrDefault(TextToSpeech.ERROR)
             if (result == TextToSpeech.ERROR) {
-                runCatching { previewTts.shutdown() }
-                if (currentPreviewTts === previewTts) {
-                    currentPreviewTts = null
-                }
+                finishPreview(previewTts, engineKey(params))
                 onFinished()
                 return
             }
         } catch (t: Throwable) {
             Log.w("NATEQ_TTS", "preview failed", t)
-            runCatching { previewTts.shutdown() }
-            if (currentPreviewTts === previewTts) currentPreviewTts = null
+            finishPreview(previewTts, engineKey(params))
             onFinished()
         }
     }
+
+    /** مفتاح المحرك الذي سيعاد به مثيلٌ دافئ — حزمة المحرك المختارة أو
+     *  null للنظامي (يطابق [VoicePreviewHelper] معيار إعادة الاستخدام). */
+    private fun engineKey(params: PreviewParams): String? =
+        params.enginePkg?.takeIf { it.isNotBlank() }
 }

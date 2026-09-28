@@ -45,6 +45,19 @@ class SettingsRepository(context: Context) :
         private const val FALLBACK_PREFS = "nateq_fallback_settings"
         private const val KEY_MIGRATED = "_migrated_to_plain"
 
+        /** منفّذ إعادة تحميل الإعدادات خارج الواجهة (بند الأداء): تحليل ملف
+         *  الإعدادات وتبديل اللقطة عند إشعار العملية الأخرى عمل ثقيل كان
+         *  يجري على خيط الواجهة (ContentObserver) — يُنفَّذ هنا تسلسلياً،
+         *  وخيطه وصّي فلا يحجب ضغط العملية. [reload] نفسه يبقى تزامنياً
+         *  لمستدعيه المباشرين (الخدمة) ولا يُحوَّل إلا مسار المراقب. */
+        private val reloadExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+                Thread(r, "nateq-prefs-reload").apply {
+                    isDaemon = true
+                    priority = Thread.NORM_PRIORITY - 1
+                }
+            }
+
         const val VOICE_CATEGORY_TIME = "time"
         const val VOICE_CATEGORY_NUMBERS = "numbers"
         const val VOICE_CATEGORY_NOTIFICATIONS = "notifications"
@@ -192,12 +205,13 @@ class SettingsRepository(context: Context) :
     )
 
     /** مراقب التغييرات بين العمليتين: يستيقظ عند إشعار [SettingsChangeProvider]
-     *  (كتابةٌ في العملية الأخرى) فيستدعي [reload] لتبديل اللقطة محلياً. */
+     *  (كتابةٌ في العملية الأخرى) فيستدعي [reload] لتبديل اللقطة محلياً —
+     *  على [reloadExecutor] خارج الواجهة (بند الأداء). */
     private val settingsObserver = object : ContentObserver(
         Handler(Looper.getMainLooper())
     ) {
         override fun onChange(selfChange: Boolean) {
-            reload()
+            reloadExecutor.execute { reload() }
         }
     }
 
@@ -278,6 +292,15 @@ class SettingsRepository(context: Context) :
         // الملف يُكتب عليه دائماً عند الترحيل فيبقى موجوداً في fresh).
         prefs.replaceSnapshot(fresh)
         refreshPrefsStamp()
+    }
+
+    /** ينتظر اكتمال أي إعادة تحميل معلّقة على [reloadExecutor] (أداة
+     *  تحديدٍ في الاختبارات بعد إشعار العملية الأخرى؛ لا تُستخدم في
+     *  الإنتاج — مسار المراقب غير تزامني عمداً الآن). */
+    internal fun awaitReloadForTesting() {
+        val latch = java.util.concurrent.CountDownLatch(1)
+        reloadExecutor.execute { latch.countDown() }
+        latch.await(5, java.util.concurrent.TimeUnit.SECONDS)
     }
 
     /** يُبلغ بطاقةَ الـ ContentObserver المعلنة في Manifest الوحدة بعد كل

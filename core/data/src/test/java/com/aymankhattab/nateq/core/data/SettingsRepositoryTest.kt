@@ -776,9 +776,13 @@ class SettingsRepositoryTest {
             context.contentResolver.notifyChange(
                 SettingsChangeProvider.uri(), null
             )
+            // إرسال الإشعار على حلقة الواجهة، فيستدعي المراقب إعادة التحميل
+            // على منفّذ خلفي (بند الأداء) — ننتظر إتمامها ثم نتحقق من
+            // تبدّل اللقطة.
             org.robolectric.Shadows.shadowOf(
                 android.os.Looper.getMainLooper()
             ).idle()
+            repo.awaitReloadForTesting()
             assertEquals(
                 "المراقب يُعاود التحميل تلقائياً عند إشعار العملية الأخرى",
                 7, repo.getNumberReadingMode()
