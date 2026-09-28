@@ -208,30 +208,30 @@ class AnnouncementSchedulerService : Service() {
         }
 
 private fun startSafely(context: Context, action: String) {
-        val intent = Intent(
-            context, AnnouncementSchedulerService::class.java
-        ).setAction(action)
-        try {
-            ContextCompat.startForegroundService(context, intent)
-        } catch (t: Throwable) {
-            // **بند 4.2 (تراجع لعابر):** قيود أندرويد 12+ تمنع FGS من الخلفية
-            // (ForegroundServiceStartNotAllowedException). الخدمة العادية غير
-            // مشروطةً بـ startForeground خلال مهلة النظام، فبدء تشغيلها عابراً
-            // لا يطلق RemoteServiceException؛ وإن مُنعت الترقية تقف ذاتياً
-            // ويكون النطق قد جرى في العملية عبر المتحدث بتركيز صوتي —
-            // الشبكة الآمنة لفظية لا هيكلية.
-            Log.w(TAG,
-                "startForegroundService denied — falling back" +
-                " to background start")
+            val intent = Intent(
+                context, AnnouncementSchedulerService::class.java
+            ).setAction(action)
             try {
-                context.startService(intent)
-            } catch (t2: Throwable) {
+                ContextCompat.startForegroundService(context, intent)
+            } catch (t: Throwable) {
+                // **بند 4.2 (تراجع لعابر):** قيود أندرويد 12+ تمنع FGS
+                // من الخلفية (ForegroundServiceStartNotAllowedException).
+                // الخدمة العادية غير مشروطةً بـ startForeground خلال مهلة
+                // النظام، فبدء تشغيلها عابراً لا يطلق RemoteServiceException؛
+                // وإن مُنعت الترقية تقف ذاتياً ويكون النطق قد جرى في العملية
+                // عبر المتحدث بتركيز صوتي — الشبكة الآمنة لفظية لا هيكلية.
                 Log.w(TAG,
-                    "background startService failed too" +
-                    " (context transient)", t2)
+                    "startForegroundService denied — falling back" +
+                    " to background start")
+                try {
+                    context.startService(intent)
+                } catch (t2: Throwable) {
+                    Log.w(TAG,
+                        "background startService failed too" +
+                        " (context transient)", t2)
+                }
             }
         }
-    }
 
         private fun wasUserStopped(context: Context): Boolean =
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

@@ -201,7 +201,11 @@
 
         <!-- الخدمة الأمامية للإعلانات الدورية: تستضيف جدولة الساعة ومستقبل
              البطارية في عملية التطبيق الرئيسية (لا عملية المحرك :tts) وتعمل
-             بإشعار دائم قابل للإيقاف، مع زرار "أعلن الآن" -->
+             بإشعار دائم قابل للإيقاف، مع زرار "أعلن الآن".
+             specialUse محفوظ عمداً بقرار المدير: نوع WorkInUnconstrained
+             معدوم في جرات المنصة المثبتة 34–37.0، وspecialUse مع خاصية
+             PROPERTY_SPECIAL_USE_FGS_SUBTYPE هو التوثيق الرسمي المقبول
+             للخدمات العامة بلا مهلة (الاستعمال المعلَن spoken_time_and_battery). -->
         <service
             android:name="com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService"
             android:exported="false"
