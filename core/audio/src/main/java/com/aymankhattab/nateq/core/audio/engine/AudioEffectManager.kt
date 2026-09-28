@@ -12,7 +12,12 @@ import java.util.concurrent.ConcurrentHashMap
  * يعمل مباشرة على AudioTrack.audioSessionId عبر واجهات النظام الرسمية
  * android.media.audiofx دون أي تبعيات أو مكتبات DSP خارجية تثقل الـ APK.
  * يعطي إحساساً باتساع مكاني خفيف ومريح عبر سماعات الأذن.
+ *
+ * واجهة [Virtualizer] أصبحت مُهجَّرة في جرة API 37 مع بقاء سلوكها الوظيفي
+ * بلا بديل مباشر (الاحتماء بالـ AudioEffect الأعم يقلّص الفوائد الصوتية)،
+ * فنجتوي تحذير التهجير هنا باحتوائه واقعياً في هذا الملف الواحد.
  */
+@Suppress("DEPRECATION")
 class AudioEffectManager {
 
     companion object {

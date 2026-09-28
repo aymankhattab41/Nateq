@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.settings
 
 import android.content.Context
+import android.content.res.Configuration
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.SeekBar
@@ -16,6 +17,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.util.Locale
 
 /**
  * الاختبار الحاسم لإتاحة قارئ الشاشة في حوار «إعداد جميع اللغات»:
@@ -89,5 +91,49 @@ class LanguageConvertDialogTalkBackTest {
             seekBar(R.id.seek_convert_dialog_volume), 60, false
         )
         assertFalse(saveButton().isEnabled)
+    }
+
+    @Test
+    fun seekBars_keepMinimumTouchTarget_48dp() {
+        val min = 48 * context.resources.displayMetrics.density
+        for (id in intArrayOf(
+            R.id.seek_convert_dialog_volume,
+            R.id.seek_convert_dialog_pitch,
+            R.id.seek_convert_dialog_rate
+        )) {
+            assertTrue(
+                "seekbar $id أصغر من 48dp",
+                seekBar(id).minimumHeight >= min.toInt()
+            )
+        }
+    }
+
+    @Test
+    fun ltrParentheticalStrings_areBidiIsolated() {
+        val lre = "\u202a"
+        val pdf = "\u202c"
+        val arabic = context.createConfigurationContext(
+            Configuration().apply {
+                setLocale(Locale.forLanguageTag("ar"))
+            }
+        )
+        assertTrue(
+            "time_chime_at_0=[${arabic.getString(R.string.time_chime_at_0)}]",
+            arabic.getString(R.string.time_chime_at_0).contains(lre)
+        )
+        assertTrue(
+            arabic.getString(R.string.time_chime_at_0).endsWith("$pdf)")
+        )
+        assertTrue(
+            arabic.getString(R.string.time_chime_custom_quarter_15)
+                .contains(lre)
+        )
+        assertTrue(
+            arabic.getString(R.string.rate_value_format).startsWith(lre)
+        )
+        assertTrue(arabic.getString(R.string.rate_value_format).endsWith(pdf))
+        assertFalse(
+            context.getString(R.string.time_chime_at_0).contains(lre)
+        )
     }
 }

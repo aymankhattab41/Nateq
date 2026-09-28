@@ -285,7 +285,7 @@ spinnerSelector =
                     if (bindingInputs) return
                     val text = format(progress)
                     valueView?.text = text
-                    valueView?.setSeekStateDescription(text)
+                    seekBar.setSeekStateDescription(text)
                     if (fromUser) markDirty()
                 }
 

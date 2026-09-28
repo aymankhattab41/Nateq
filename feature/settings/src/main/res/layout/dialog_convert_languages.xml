@@ -93,6 +93,7 @@
         android:id="@+id/seek_convert_dialog_volume"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:minHeight="48dp"
         android:max="100"
         android:progress="100"
         android:contentDescription="@string/auto_convert_volume" />
@@ -122,6 +123,7 @@
         android:id="@+id/seek_convert_dialog_pitch"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:minHeight="48dp"
         android:max="200"
         android:progress="100"
         android:contentDescription="@string/auto_convert_pitch" />
@@ -151,6 +153,7 @@
         android:id="@+id/seek_convert_dialog_rate"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:minHeight="48dp"
         android:max="200"
         android:progress="100"
         android:contentDescription="@string/auto_convert_rate" />

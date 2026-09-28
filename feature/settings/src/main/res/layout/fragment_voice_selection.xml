@@ -417,6 +417,7 @@
                     android:id="@+id/seekbar_time_chime_volume"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
+                    android:minHeight="48dp"
                     android:layout_weight="1.6"
                     android:contentDescription="@string/time_chime_volume_desc" />
             </LinearLayout>
@@ -523,6 +524,7 @@
                 android:background="?attr/selectableItemBackground"
                 android:clickable="true"
                 android:focusable="true"
+                android:contentDescription="@string/exact_alarm_permission_grant"
                 android:orientation="vertical"
                 android:padding="12dp"
                 android:visibility="gone">
@@ -532,7 +534,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/exact_alarm_permission_title"
-                    android:textAppearance="?attr/textAppearanceBody2" />
+                    android:textAppearance="?attr/textAppearanceBody2"
+                    android:importantForAccessibility="no" />
 
                 <TextView
                     android:layout_width="match_parent"
@@ -540,7 +543,8 @@
                     android:layout_marginTop="4dp"
                     android:text="@string/exact_alarm_permission_summary"
                     android:textAppearance="?attr/textAppearanceCaption"
-                    android:textColor="@color/text_secondary" />
+                    android:textColor="@color/text_secondary"
+                    android:importantForAccessibility="no" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_exact_alarm_permission"
@@ -549,7 +553,8 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:minHeight="48dp"
-                    android:text="@string/exact_alarm_permission_grant" />
+                    android:text="@string/exact_alarm_permission_grant"
+                    android:importantForAccessibility="no" />
 
                 <!-- بند الأوامر 5: تلميحٌ بأن التأخير المتكرر من إعدادات
                      البطارية/التشغيل التلقائي، مع رابط لإرشادات المصنّع -->
@@ -947,6 +952,7 @@
                 android:id="@+id/seek_sms_reading_rate"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:minHeight="48dp"
                 android:max="200"
                 android:progress="100"
                 android:contentDescription="@string/sms_reading_rate" />
@@ -978,6 +984,7 @@
                 android:id="@+id/seek_sms_reading_volume"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:minHeight="48dp"
                 android:max="100"
                 android:progress="100"
                 android:contentDescription="@string/sms_reading_volume" />
@@ -1009,6 +1016,7 @@
                 android:id="@+id/seek_sms_reading_pitch"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:minHeight="48dp"
                 android:max="200"
                 android:progress="100"
                 android:contentDescription="@string/sms_reading_pitch" />
@@ -1202,6 +1210,7 @@
                 android:id="@+id/seek_caller_rate"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:minHeight="48dp"
                 android:max="200"
                 android:progress="100"
                 android:contentDescription="@string/caller_announcement_rate" />
@@ -1233,6 +1242,7 @@
                 android:id="@+id/seek_caller_volume"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:minHeight="48dp"
                 android:max="100"
                 android:progress="100"
                 android:contentDescription="@string/caller_announcement_volume" />
@@ -1264,6 +1274,7 @@
                 android:id="@+id/seek_caller_pitch"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:minHeight="48dp"
                 android:max="200"
                 android:progress="100"
                 android:contentDescription="@string/caller_announcement_pitch" />
@@ -2004,7 +2015,9 @@
                 android:id="@+id/seek_power_saver_threshold"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:minHeight="48dp"
                 android:max="100"
+                android:contentDescription="@string/power_saver_battery_threshold_label"
                 android:visibility="gone" />
 
             <!-- عنوان المستويات (قابل للتوسيع) -->
@@ -2091,6 +2104,7 @@
                 android:id="@+id/seek_battery_cue_volume"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:minHeight="48dp"
                 android:max="100"
                 android:progress="80"
                 android:contentDescription="@string/battery_cue_volume" />
@@ -2194,6 +2208,7 @@
                     android:id="@+id/seek_default_speech_rate"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:minHeight="48dp"
                     android:max="200"
                     android:progress="100"
                     android:contentDescription="@string/speech_rate_summary" />
@@ -2268,6 +2283,7 @@
                     android:id="@+id/seek_default_pitch"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:minHeight="48dp"
                     android:max="200"
                     android:progress="100"
                     android:contentDescription="@string/pitch_summary" />
@@ -2308,6 +2324,7 @@
                     android:id="@+id/seek_default_volume"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:minHeight="48dp"
                     android:max="100"
                     android:progress="100"
                     android:contentDescription="@string/volume_summary" />

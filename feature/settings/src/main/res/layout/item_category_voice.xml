@@ -107,6 +107,7 @@
             android:id="@+id/seek_category_speech_rate"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:minHeight="48dp"
             android:max="200"
             android:progress="100"
             android:contentDescription="@string/speech_rate_summary" />
@@ -147,6 +148,7 @@
             android:id="@+id/seek_category_pitch"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:minHeight="48dp"
             android:max="200"
             android:progress="100"
             android:contentDescription="@string/pitch_summary" />
@@ -187,6 +189,7 @@
             android:id="@+id/seek_category_volume"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:minHeight="48dp"
             android:max="100"
             android:progress="100"
             android:contentDescription="@string/volume_summary" />

@@ -34,9 +34,9 @@
     <string name="time_chime_custom_preview">معاينة</string>
     <string name="time_chime_custom_clear">حذف النغمة المخصصة</string>
     <string name="time_chime_custom_quarters_title">نغمة مخصصة لكل ربع</string>
-    <string name="time_chime_custom_quarter_15">نغمة الربع (:15)</string>
-    <string name="time_chime_custom_quarter_30">نغمة النصف (:30)</string>
-    <string name="time_chime_custom_quarter_45">نغمة الـ 45 دقيقة (:45)</string>
+    <string name="time_chime_custom_quarter_15">نغمة الربع (‪:15‬)</string>
+    <string name="time_chime_custom_quarter_30">نغمة النصف (‪:30‬)</string>
+    <string name="time_chime_custom_quarter_45">نغمة الـ 45 دقيقة (‪:45‬)</string>
     <string name="time_chime_custom_status_default">الرنة الحالية: الرنات المولّدة الافتراضية</string>
     <string name="time_chime_custom_status_file">الملف المخصص: %1$s</string>
     <string name="time_chime_custom_hint">الملف يبقى في مكانه الأصلي (لا يُنسخ داخل التطبيق) ويُقرَأ عبر صلاحية دائمة — إن نقلت الملف أو حذفته ستتوقف الرنة المخصصة ويعود التطبيق للرنة الافتراضية.</string>
@@ -135,10 +135,10 @@
 <string name="time_chime_volume">مستوى صوت الرنة</string>
 <string name="time_chime_volume_desc">مستوى صوت رنة رأس الساعة</string>
 <string name="time_chime_quarters_title">أوقات تشغيل الرنة</string>
-<string name="time_chime_at_0">رأس الساعة (:00)</string>
-<string name="time_chime_at_15">الربع (:15)</string>
-<string name="time_chime_at_30">النصف (:30)</string>
-<string name="time_chime_at_45">الـ 45 دقيقة (:45)</string>
+<string name="time_chime_at_0">رأس الساعة (‪:00‬)</string>
+<string name="time_chime_at_15">الربع (‪:15‬)</string>
+<string name="time_chime_at_30">النصف (‪:30‬)</string>
+<string name="time_chime_at_45">الـ 45 دقيقة (‪:45‬)</string>
 <string name="time_chime_at_0_checked">تم تفعيل رنة رأس الساعة</string>
 <string name="time_chime_at_0_unchecked">تم تعطيل رنة رأس الساعة</string>
 <string name="time_chime_at_15_checked">تم تفعيل رنة الربع</string>
@@ -332,7 +332,7 @@
 <string name="follow_reader_rate_enabled">اتبع سرعة قارئ الشاشة</string>
 <string name="follow_reader_rate_summary">يُنتقى النطق بسرعة القارئ الفعلية (100 = طبيعي) بلا مضاعفة تفضيلات سرعة التطبيق. عند التعطيل تُضرب سرعة القارئ في السرعة المحفوظة لديك للتطبيق</string>
 <string name="speech_boost_enabled">مضاعفة السرعة</string>
-<string name="speech_boost_summary">تُضرب السرعة النهائية لكل نطق (إعلانات وقارئ الشاشة) في المضاعف المختار حتى الحد الآمن للمحرك (2.5×)</string>
+<string name="speech_boost_summary">تُضرب السرعة النهائية لكل نطق (إعلانات وقارئ الشاشة) في المضاعف المختار حتى الحد الآمن للمحرك (‪2.5×‬)</string>
 <string name="speech_boost_value_label">مضاعف السرعة</string>
 <string name="volume_boost_enabled">مضاعفة مستوى الصوت</string>
 <string name="volume_boost_summary">يُضرب مستوى الصوت النهائي لكل نطق (إعلانات وقارئ الشاشة) في المضاعف المختار ثم يُقصّ على الكامل (أعلى مستوى متاح للنظام)</string>
@@ -440,7 +440,7 @@
 <string name="voice_name_english">الإنجليزية</string>
 <string name="volume_label">مستوى الصوت</string>
 <string name="volume_summary">ضبط مستوى الصوت</string>
-<string name="rate_value_format">%1$.1f×</string>
+<string name="rate_value_format">‪%1$.1f×‬</string>
 <plurals name="caller_announcement_interval_seconds">
         <item quantity="zero">%d ثانية</item>
         <item quantity="one">ثانية واحدة</item>
