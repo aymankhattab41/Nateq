@@ -7,6 +7,9 @@ import androidx.benchmark.macro.StartupTimingMetric
 import androidx.benchmark.macro.junit4.MacrobenchmarkRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Direction
+import androidx.test.uiautomator.Until
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -60,7 +63,7 @@ class AppStartupBenchmark {
     /**
      * يُولّد ملف Baseline Profile:
      * كل trace مُسجَّل هنا يُضاف كقاعدة ترجمة مسبقة في
-     * baseline-prof.txt — مسارات الإقلاع وأول نطق مُغطاةٌ بدقة.
+     * baseline-prof.txt — مسارات الإقلاع وشاشة الإعدادات وسحبها.
      */
     @Test
     fun baselineProfileGenerator() {
@@ -76,8 +79,20 @@ class AppStartupBenchmark {
             pressHome()
             // إقلاع التطبيق (الشاشة الرئيسية)
             startActivityAndWait()
-            // انتظار استقرار واجهة الإعدادات (أبطأ نقطة بعد إقلاع TTS)
-            device.waitForIdle(3_000L)
+            // انتظار استقرار واجهة الإعدادات وسحبها (بند 2)
+            val scrollContainer = device.wait(
+                Until.findObject(By.res(targetPackage, "sv_settings_scroll")),
+                5_000L
+            )
+            device.waitForIdle()
+
+            if (scrollContainer != null) {
+                scrollContainer.setGestureMargin(device.displayWidth / 5)
+                scrollContainer.fling(Direction.DOWN)
+                device.waitForIdle()
+                scrollContainer.fling(Direction.UP)
+                device.waitForIdle()
+            }
         }
     }
 }

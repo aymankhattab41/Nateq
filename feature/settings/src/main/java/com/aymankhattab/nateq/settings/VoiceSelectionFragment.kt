@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.Trace
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.ArrayAdapter
@@ -300,7 +301,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private lateinit var accordion: SettingsAccordionController
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
+        Trace.beginSection("VoiceSelectionFragment.onViewCreated")
+        try {
+            super.onViewCreated(view, savedInstanceState)
         // لا إنشاء مباشر للإعدادات/القاموس: كلاهما محقون عبر
         // SettingsViewModel.
 
@@ -634,8 +637,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             }
         }
 
-        // فحص تلقائي عند فتح التطبيق: يُنبه بوجود تحديث (صامت إن لم يوجد)
-        checkForUpdatesOnStart()
+            // فحص تلقائي عند فتح التطبيق: يُنبه بوجود تحديث (صامت إن لم يوجد)
+            checkForUpdatesOnStart()
+        } finally {
+            Trace.endSection()
+        }
     }
 
     /** بند 4.7: عند العودة من شاشات النظام (منح إذن المنبهات الدقيقة /
