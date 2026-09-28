@@ -1225,9 +1225,14 @@ class AnnouncementSpeaker(
         val secondaryLanguage = runCatching {
             settings?.getSecondaryLanguage()
         }.getOrNull() ?: LanguageCode.EN.tag
-        val semanticText = runCatching {
-            textProcessor.processSemantics(text, LanguageCode.AR.tag)
-        }.getOrDefault(text)
+        // معالجةُ المعاني تُطبَّق قبل تقسيم اللغة حتى لا يفصل المقسمُ رمز
+            // العملة/الوحدة عن مبلغه (يُقسَّم «1500 USD» مقطعاً واحداً).
+            // اللغة المختارة لغةُ السياق (locale) لا العربية الثابتة — كانت
+            // عربيةً دائماً فتُنطق الإعلاناتُ الإنجليزية المختلطة معانٍ
+            // عربيةً رغم لغةِ قراءتها الإنجليزية.
+            val semanticText = runCatching {
+                textProcessor.processSemantics(text, baseLocale.language)
+            }.getOrDefault(text)
         val languageSegments = runCatching {
             languageSegmenter.segment(
                 semanticText,

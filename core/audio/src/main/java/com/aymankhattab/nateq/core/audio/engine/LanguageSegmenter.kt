@@ -314,9 +314,19 @@ class LanguageSegmenter(
      *  فلا تنتمي لكِتَابٍ ما ننسبه لسكربتٍ آخر، بل تُعدُّ محايدةً (مسافة رفيعة/
      *  فاصلة اتجاه / علامات رقم Bidi) يساندها المقطع المجاور. */
     private fun kindOf(codePoint: Int): Pair<Kind, Character.UnicodeScript?> {
-        // الأرقام أولاً (بكل أنظمة العدّ): تُنسب فوراً وحصرياً للغة الأرقام.
+        // الأرقام أولاً تُنسب فوراً وحصرياً للغة الأرقام (بند الإعدادات).
+        // لكن الأنظمة الرقمية خارج العربية-الهندية/الفارسية/اللاتينية (بنغالية/
+        // تاميلية/ملايالامية/تيلوغوية…) تُنسب لسكربت نظام عدّها — فلا يُنطق
+        // عددٌ هنديٌّ لغةَ الأرقام العربية/الإنجليزية (بند 6-7).
         if (Character.isDigit(codePoint)) {
-            return Kind.NUMBER to null
+            val arabicFamily = codePoint in 0x0660..0x0669 ||
+                codePoint in 0x06F0..0x06F9 ||
+                codePoint in '0'.code..'9'.code
+            return if (arabicFamily) {
+                Kind.NUMBER to null
+            } else {
+                Kind.SCRIPT to Character.UnicodeScript.of(codePoint)
+            }
         }
         if (Character.isWhitespace(codePoint)) {
             return Kind.NEUTRAL to null
