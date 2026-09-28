@@ -3,6 +3,7 @@ package com.aymankhattab.nateq.settings
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.text.format.DateFormat
 import android.view.View
 import android.widget.TextView
 import android.widget.Toast
@@ -17,6 +18,8 @@ import com.aymankhattab.nateq.util.announceCompat
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.switchmaterial.SwitchMaterial
 import java.util.Calendar
+import java.util.Locale
+import java.text.SimpleDateFormat
 import com.aymankhattab.nateq.core.audio.engine.LatinLanguageDetector
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.data.SettingsRepository
@@ -53,6 +56,15 @@ internal class SettingsAccordionController(
 ) {
 
     private val accordionEntries = mutableListOf<AccordionEntry>()
+
+    /** الفاصل بين عناصر الملخصات: «،» عربية لواجهة عربية و«, » إنجليزية
+     *  لواجهة إنجليزية — كانت الفاصلة العربية تظهر حرفياً في نصوص إنجليزية. */
+    private val listSeparator: String
+        get() = if (LanguageCode.isEnglish(Locale.getDefault().language)) {
+            ", "
+        } else {
+            "، "
+        }
 
     // ===== المجموعات الأربع (محرك/إعلانات/نصوص/نظام) =====
     // التقسيم المنطقي مستقل عن الموضع الفيزيائي في التخطيط: كل بطاقة تحمل
@@ -192,7 +204,7 @@ internal class SettingsAccordionController(
         val base = e.header.tag as? String ?: ""
         val statusText = e.status?.text?.toString()?.trim().orEmpty()
         e.header.contentDescription = if (statusText.isNotEmpty()) {
-            base + "، " + statusText
+            base + listSeparator + statusText
         } else {
             base
         }
@@ -668,21 +680,37 @@ internal class SettingsAccordionController(
             val on = if (enabled) fragment.getString(R.string.toggle_on)
             else fragment.getString(R.string.toggle_off)
             append(on)
-            append("، ").append(intervalLabel)
+            append(listSeparator).append(intervalLabel)
             if (quietEnabled) {
-                append("، ")
+                append(listSeparator)
                 append(
                     fragment.getString(R.string.time_quiet_schedule_title)
                 )
-                append(": ").append(quietStart).append("/").append(quietEnd)
+                append(": ").append(formatQuietHour(quietStart))
+                    .append("/").append(formatQuietHour(quietEnd))
             } else {
-                append("، ")
+                append(listSeparator)
                 append(
                     fragment.getString(R.string.time_quiet_schedule_title)
                 )
                 append(": ")
                 append(fragment.getString(R.string.toggle_off))
             }
+        }
+    }
+
+    /** ساعة الهدوء بصيغة عرضٍ احتراماً لإعداد النظام 12/24 — كانت تُعرض
+     *  دائماً على 24 دون مبالاة بتفضيل المستخدم. */
+    private fun formatQuietHour(hour: Int): String {
+        return if (DateFormat.is24HourFormat(fragment.requireContext())) {
+            hour.toString()
+        } else {
+            SimpleDateFormat("h a", Locale.getDefault()).format(
+                java.util.Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, hour.coerceIn(0, 23))
+                    set(Calendar.MINUTE, 0)
+                }.time
+            )
         }
     }
 
@@ -717,7 +745,7 @@ internal class SettingsAccordionController(
         return buildString {
             append(fragment.getString(R.string.punctuation_reading_level))
                 .append(": ").append(label)
-            append("، ")
+            append(listSeparator)
                 .append(fragment.getString(R.string.secondary_language_title))
             append(": ").append(secondaryLanguageLabel())
         }
@@ -762,7 +790,7 @@ internal class SettingsAccordionController(
         return buildString {
             append(fragment.getString(R.string.shake_to_stop_enabled))
                 .append(": ").append(shakeLabel)
-            append("، ")
+            append(listSeparator)
                 .append(fragment.getString(R.string.proximity_silence_enabled))
             append(": ").append(proximityLabel)
         }
@@ -775,10 +803,11 @@ internal class SettingsAccordionController(
             .getOrDefault(emptySet())
         val on = if (enabled) fragment.getString(R.string.toggle_on)
         else fragment.getString(R.string.toggle_off)
-        val summary = levels.sortedDescending().joinToString("، ") { "$it%" }
+        val summary = levels.sortedDescending()
+            .joinToString(listSeparator) { "$it%" }
         return buildString {
             append(on)
-            if (summary.isNotEmpty()) append("، ").append(summary)
+            if (summary.isNotEmpty()) append(listSeparator).append(summary)
         }
     }
 
@@ -796,7 +825,7 @@ internal class SettingsAccordionController(
         }
         return buildString {
             append(on)
-            append("، ")
+            append(listSeparator)
                 .append(fragment.getString(R.string.notification_apps_title))
             append(": ").append(apps)
         }
@@ -825,7 +854,7 @@ internal class SettingsAccordionController(
         val intervalLabel = fragment.resources.getQuantityString(
             R.plurals.caller_announcement_interval_seconds, interval, interval
         )
-        return "$on، $label، $intervalLabel"
+        return listOf(on, label, intervalLabel).joinToString(listSeparator)
     }
 
     private fun buildEmojiStatus(): String {
@@ -877,13 +906,13 @@ internal class SettingsAccordionController(
         return buildString {
             append(fragment.getString(R.string.default_speech_rate_label))
                 .append(": ").append(rateText)
-            append("، ").append(volumeText)
-            append("، ")
+            append(listSeparator).append(volumeText)
+            append(listSeparator)
                 .append(
                     fragment.getString(R.string.follow_reader_rate_enabled)
                 )
                 .append(": ").append(followText)
-            append("، ")
+            append(listSeparator)
                 .append(fragment.getString(R.string.audio_expansion_label))
                 .append(": ").append(expansionText)
         }
@@ -912,7 +941,7 @@ internal class SettingsAccordionController(
             labels.add(fragment.getString(R.string.device_health_memory_label))
         }
         return if (labels.isEmpty()) fragment.getString(R.string.toggle_off)
-        else labels.joinToString("، ")
+        else labels.joinToString(listSeparator)
     }
 
     /** تسجيل أزرار المجموعات الأربع كأزرار مستقلة: ضغطة تفتح شاشة المجموعة */

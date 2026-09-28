@@ -86,7 +86,6 @@
             android:id="@+id/tv_convert_dialog_volume_value"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="100%"
             android:textAppearance="?attr/textAppearanceBody2" />
     </LinearLayout>
     <SeekBar
@@ -116,7 +115,6 @@
             android:id="@+id/tv_convert_dialog_pitch_value"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="1.0x"
             android:textAppearance="?attr/textAppearanceBody2" />
     </LinearLayout>
     <SeekBar
@@ -146,7 +144,6 @@
             android:id="@+id/tv_convert_dialog_rate_value"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="1.0x"
             android:textAppearance="?attr/textAppearanceBody2" />
     </LinearLayout>
     <SeekBar

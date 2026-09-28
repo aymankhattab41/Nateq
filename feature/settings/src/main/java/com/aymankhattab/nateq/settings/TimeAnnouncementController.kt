@@ -10,6 +10,7 @@ import android.provider.OpenableColumns
 import androidx.activity.result.ActivityResult
 import android.os.Build
 import android.provider.Settings
+import android.text.format.DateFormat
 import android.view.View
 import android.widget.AdapterView
 import android.widget.LinearLayout
@@ -25,7 +26,9 @@ import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
 import com.google.android.material.checkbox.MaterialCheckBox
 import com.google.android.material.switchmaterial.SwitchMaterial
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Locale
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /** ضابط قسم «إعلان الوقت»: الفاصل الزمني/الصيغة/ساعات الهدوء. */
@@ -868,6 +871,27 @@ internal class TimeAnnouncementController(
         }
     }
 
+    /** تسميات ساعات الهدوء احتراماً لإعداد النظام 12/24: 00..23 اليومية
+     *  أو الصباح/المساء بصيغة «h a» — كانت صيغة 24 ساعةٍ ثابتة. */
+    private fun quietHourLabels(): List<String> {
+        val hours = (0..23).toList()
+        return if (DateFormat.is24HourFormat(fragment.requireContext())) {
+            hours.map { it.toString().padStart(2, '0') }
+        } else {
+            val format = SimpleDateFormat(
+                "h a", Locale.getDefault()
+            )
+            hours.map { hour ->
+                format.format(
+                    Calendar.getInstance().apply {
+                        set(Calendar.HOUR_OF_DAY, hour)
+                        set(Calendar.MINUTE, 0)
+                    }.time
+                )
+            }
+        }
+    }
+
     /**
      * يبني صفوف ساعات الهدوء السبعة: لكل يوم مفتاح تفعيل (سويتش) + سبنرا
      * بداية/نهاية 0..23، يُحفظان فور تعديلهما ويُفعَّلان/يُعطَّلان مع المفتاح
@@ -885,7 +909,8 @@ internal class TimeAnnouncementController(
             R.string.day_saturday to Calendar.SATURDAY
         )
         val density = fragment.resources.displayMetrics.density
-        val hoursLabels = (0..23).map { it.toString().padStart(2, '0') }
+        val quietTimePadding = (8 * density).toInt()
+        val hoursLabels = quietHourLabels()
         val fromLabel = fragment.getString(R.string.time_quiet_start_hint)
         val toLabel = fragment.getString(R.string.time_quiet_end_hint)
 
@@ -915,12 +940,12 @@ internal class TimeAnnouncementController(
             gravity = android.view.Gravity.CENTER_VERTICAL
             addView(TextView(fragment.requireContext()).apply {
                 text = fromLabel
-                setPadding(8, 0, 8, 0)
+                setPadding(quietTimePadding, 0, quietTimePadding, 0)
             })
             addView(masterStartSpinner)
             addView(TextView(fragment.requireContext()).apply {
                 text = toLabel
-                setPadding(8, 0, 8, 0)
+                setPadding(quietTimePadding, 0, quietTimePadding, 0)
             })
             addView(masterEndSpinner)
         }
@@ -1042,12 +1067,12 @@ internal class TimeAnnouncementController(
                     visibility = if (dayEnabled) View.VISIBLE else View.GONE
                     addView(TextView(fragment.requireContext()).apply {
                         text = fromLabel
-                        setPadding(8, 0, 8, 0)
+                        setPadding(quietTimePadding, 0, quietTimePadding, 0)
                     })
                     addView(startSpinner)
                     addView(TextView(fragment.requireContext()).apply {
                         text = toLabel
-                        setPadding(8, 0, 8, 0)
+                        setPadding(quietTimePadding, 0, quietTimePadding, 0)
                     })
                     addView(endSpinner)
                 }

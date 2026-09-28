@@ -488,9 +488,9 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-• Performance: added Macrobenchmark scroll &amp; open metrics with FrameTimingMetric, Trace, and integrated with Baseline Profile
-• Audio focus: reuse AudioFocusRequest instance in AnnouncementSpeaker, prevent duplicate requests, and abandon before replacing
-• Number speech: split numeric segments from text in LanguageSegmenter to always speak numbers using their dedicated voice category
+• User Interface: 12/24h quiet hours formatting, localized list separators, dp-scaled padding, and eliminated default Latin text flicker
+• Emoji semantics: context-based language semantics, script-based Indic numbering, and extended Eastern digit normalization
+• Emoji cleaning: constrained cleaning instead of broad regex, preserved non-sequence ZWJ, and named 0x2300 technical symbols
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>

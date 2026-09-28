@@ -108,15 +108,15 @@ internal class BatteryAnnouncementController(
                 .getOrDefault(setOf("20", "15"))
         llBatteryLevels?.removeAllViews()
         val allLevels = (1..20).map { it * 5 } // 5, 10, ... 100
+        val density = fragment.resources.displayMetrics.density
         for (level in allLevels) {
             val levelStr = level.toString()
             val cb = CheckBox(fragment.requireContext()).apply {
                 text = "$level%"
                 isChecked = levelStr in enabledLevels
                 textSize = 16f
-                setPadding(0, 4, 0, 4)
-                minHeight =
-                    (48 * fragment.resources.displayMetrics.density).toInt()
+                setPadding(0, (4 * density).toInt(), 0, (4 * density).toInt())
+                minHeight = (48 * density).toInt()
                 accessibilityDelegate =
                     object : android.view.View.AccessibilityDelegate() {
                     override fun onInitializeAccessibilityNodeInfo(

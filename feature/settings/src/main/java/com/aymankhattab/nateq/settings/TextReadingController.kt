@@ -13,6 +13,7 @@ import com.aymankhattab.nateq.util.announceCompat
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.switchmaterial.SwitchMaterial
+import java.util.Locale
 
 /** ضابط قسم «قراءة النصوص»: مستوى نطق علامات الترقيم + إبقاء التشكيل. */
 internal class TextReadingController(
@@ -27,6 +28,15 @@ internal class TextReadingController(
     private var switchTashkeelPreserved: SwitchMaterial? = null
     private var btnSecondaryLanguage: MaterialButton? = null
     private var btnNumberReadingLanguage: MaterialButton? = null
+
+    /** الفاصل اللفظي: «،» لواجهة عربية و«, » لإنجليزية — كانت الفاصلة
+     *  العربية تظهر حرفياً في اسم اللغة الاحتياطية بإنجليزية الواجهة. */
+    private val listSeparator: String
+        get() = if (LanguageCode.isEnglish(Locale.getDefault().language)) {
+            ", "
+        } else {
+            "، "
+        }
 
     fun setup(view: View) {
         spinnerPunctuationLevel =
@@ -166,7 +176,7 @@ internal class TextReadingController(
             ?: LanguageCode.EN.tag
         btnSecondaryLanguage?.text =
             fragment.getString(R.string.secondary_language_title) +
-                "، " + languageDisplayName(language)
+                listSeparator + languageDisplayName(language)
     }
 
     /** الاسم المقروء للغة من الموارد — سقوطٌ على الوسام إن لم يُعرَف. */

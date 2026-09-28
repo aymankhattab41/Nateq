@@ -944,7 +944,6 @@
                     android:id="@+id/tv_sms_reading_rate_value"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="1.0x"
                     android:textAppearance="?attr/textAppearanceBody2" />
             </LinearLayout>
 
@@ -976,7 +975,6 @@
                     android:id="@+id/tv_sms_reading_volume_value"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="100%"
                     android:textAppearance="?attr/textAppearanceBody2" />
             </LinearLayout>
 
@@ -1008,7 +1006,6 @@
                     android:id="@+id/tv_sms_reading_pitch_value"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="1.0x"
                     android:textAppearance="?attr/textAppearanceBody2" />
             </LinearLayout>
 
@@ -1202,7 +1199,6 @@
                     android:id="@+id/tv_caller_rate_value"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="1.0x"
                     android:textAppearance="?attr/textAppearanceBody2" />
             </LinearLayout>
 
@@ -1234,7 +1230,6 @@
                     android:id="@+id/tv_caller_volume_value"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="100%"
                     android:textAppearance="?attr/textAppearanceBody2" />
             </LinearLayout>
 
@@ -1266,7 +1261,6 @@
                     android:id="@+id/tv_caller_pitch_value"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="1.0x"
                     android:textAppearance="?attr/textAppearanceBody2" />
             </LinearLayout>
 
@@ -2007,7 +2001,6 @@
                     android:id="@+id/tv_power_saver_threshold_value"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="20%"
                     android:textAppearance="?attr/textAppearanceBody2" />
             </LinearLayout>
 
@@ -2096,7 +2089,6 @@
                     android:id="@+id/tv_battery_cue_volume_value"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="80%"
                     android:textAppearance="?attr/textAppearanceBody2" />
             </LinearLayout>
 
@@ -2199,7 +2191,6 @@
                         android:id="@+id/tv_default_speech_rate_value"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="1.0x"
                         android:textAppearance="?attr/textAppearanceBody2" />
 
                 </LinearLayout>
@@ -2274,7 +2265,6 @@
                         android:id="@+id/tv_default_pitch_value"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="1.0x"
                         android:textAppearance="?attr/textAppearanceBody2" />
 
                 </LinearLayout>
@@ -2315,7 +2305,6 @@
                         android:id="@+id/tv_default_volume_value"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="100%"
                         android:textAppearance="?attr/textAppearanceBody2" />
 
                 </LinearLayout>
