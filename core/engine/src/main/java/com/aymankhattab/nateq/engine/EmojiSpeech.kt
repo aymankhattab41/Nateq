@@ -73,7 +73,8 @@ object EmojiSpeech {
             val startOfUnit = i
             when {
                 EmojiNames.isEmojiModifier(cp) -> {
-                    // تعديلات منفصلة (ZWJ/ألوان بشرة/مؤشر أشكال) تُسقط بصمت
+                    // تعديلات منفصلة (ألوان بشرة/مؤشرات أشكال/Keycap/وسوم
+                    // أعلام) تُسقط بصمت؛ ZWJ خارج التسلسل يُحفظ (نصوص هندية)
                     i += chars
                 }
                 EmojiNames.isRegionalIndicator(cp) -> {

@@ -1144,6 +1144,68 @@ class PipelineStepsTest {
         )
     }
 
+    @Test
+    fun emojiSpeech_miscTechnicalSymbols_getTheirNames() {
+        // كتلة Miscellaneous Technical (0x2300–0x23FF: ⏰ ⌚ ⏳…) أصبحت
+        // ضمن كتل الإيموجي وتُنطق بأسمائها بدل المرور خامسةً بلا نطق
+        // (بند 6-3).
+        assertEquals(
+            listOf(SpeechPart("منبه", true)),
+            EmojiSpeech.split("\u23F0", true)
+        )
+        assertEquals(
+            listOf(SpeechPart("ساعة رملية تعمل", true)),
+            EmojiSpeech.split("\u23F3", true)
+        )
+        assertEquals(
+            listOf(SpeechPart("alarm clock", true)),
+            EmojiSpeech.split("\u23F0", false)
+        )
+    }
+
+    @Test
+    fun emojiSpeech_zwj_isPreservedInNonEmojiScripts() {
+        // الكونجونكت الديفاناغاري क्ष (क + ZWJ + ष): حذف كل ZWJ كان
+        // يكسر نطق الكونجونكتات الهندية (ديفاناغاري/بنغالي/تاميلية)،
+        // فأصبح ZWJ يُحفظ خارج تسلسلات الإيموجي (بند 6-2).
+        val compact = "\u0915\u200D\u0937"
+        assertEquals(
+            listOf(SpeechPart(compact, false)),
+            EmojiSpeech.split(compact, true)
+        )
+    }
+
+    @Test
+    fun emojiSpeech_asciiSmile_survivesArabicContext() {
+        // «:)» الملاصقة لحرف عربي كانت لا تُنطق لأن الحارس \p{L} يمنع
+        // كل الحروف، فأصبح الحارس لاتينياً (\p{IsLatin}) فتُنطق الوجوه
+        // جزءٍ… الاستبدال لاحقٌ يقع قبل التقسيم أصلاً فينتج نصاً عربياً محوراً
+        // (بلا مسافة جديدة عن الاستبدال، نفس سلوك بقية أسماء الـ ASCII).
+        assertEquals(
+            listOf(SpeechPart("مرحباابتسامة", false)),
+            EmojiSpeech.split("مرحبا:)", true)
+        )
+        assertEquals(
+            listOf(SpeechPart("قلب", false)),
+            EmojiSpeech.split("<3", true)
+        )
+    }
+
+    @Test
+    fun emojiSpeech_asciiSmile_stillNoMatchInsideLatinWord() {
+        // لا يزال الحارس يمنع المطابقة بين حدود كلمة لاتينية (حرف لاتيني
+        // أو رقم مباشرةً قبل الوجه) فلا تُنطق الوجوه داخل النص الإنجليزي
+        // الكلمات (بند 6-6).
+        assertEquals(
+            listOf(SpeechPart("work:)", false)),
+            EmojiSpeech.split("work:)", true)
+        )
+        assertEquals(
+            listOf(SpeechPart("مدخل 5:)", false)),
+            EmojiSpeech.split("مدخل 5:)", true)
+        )
+    }
+
     // ═══════════════════════ AcronymStep ═══════════════════════
     // بند ب.txt 2.6-2: الاختصارات التقنية تُنطق عربياً قبل تقسيم اللغة.
 

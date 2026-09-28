@@ -164,16 +164,47 @@ class AnnouncementSpeaker(
         }
 
         // نطاق الإيموجي الشائع (بلوكات Unicode): رموز التباين (2600-27BF)،
-        // الأسهم/الرموز الإضافية (2B00-2BFF)، الأعلام الإقليمية (1F1E6-1F1FF)
-        // والبلوكات التكميلية كلها تُغطى بزوج الاستبدال العام
-        // (D83C-DBFF + DC00-DFFF) مع متغير التباين FE0F والرابط
-        // الصفري ZWJ (200D). يُستخدم لتنظيف النصوص
-        // الخارجية (SMS/إشعارات/اسم المتصل) قبل النطق عبر المحرك الخارجي حتى
-        // لا يُقرأ الإيموجي باسمه الإنجليزي (مثل بعض المحركات).
-        private val EMOJI_REGEX = Regex(
-            "[\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u200D" +
-                "\uD83C-\uDBFF\uDC00-\uDFFF]+"
-        )
+        // الأسهم/الرموز الإضافية (2B00-2BFF) والبلوكات التكميلية الخاصة
+        // بالإيموجي (1F000-1FBFF: الفقر والرموز والإيموجي والرموز
+        // التصويرية)، إضافةً لمتغير التباين FE0F والرابط الصفري ZWJ (200D).
+        // تنظيف الإيموجي برمجيٌّ بنقاط الكود (لا Regex فئات surrogate التي
+        // تتذرّع في النمط العربي من البيئة) فيستبعد حروفاً ليست إيموجي مثل
+        // امتداد CJK-B (U+20000) وOld Italic (U+10300) وامتداد الرموز
+        // المكملة (U+2A6D6) — كانت تُبتلع سابقاً. يُستخدم لتنظيف النصوص
+        // الخارجية (SMS/إشعارات/اسم المتصل) قبل النطق عبر المحرك الخارجي
+        // حتى لا يُقرأ الإيموجي باسمه الإنجليزي (مثل بعض المحركات).
+        internal fun stripEmojis(text: String): String {
+            val sb = StringBuilder(text.length)
+            var i = 0
+            var emojiRun = false
+            while (i < text.length) {
+                val cp = text.codePointAt(i)
+                val isEmoji = cp in 0x2600..0x27BF || cp in 0x2B00..0x2BFF ||
+                    cp in 0x1F000..0x1FBFF || cp == 0xFE0F || cp == 0x200D
+                if (isEmoji) {
+                    if (!emojiRun) {
+                        emojiRun = true
+                        sb.append(' ')
+                    }
+                    // يتم ابتلاع الركض المتواصل (مشكلة إيموجي متتابع) بمسافة
+                    // واحدة، كخطوة التنظيف القديمة عبر Regex+.
+                    i += Character.charCount(cp)
+                } else {
+                    emojiRun = false
+                    sb.appendCodePoint(cp)
+                    i += Character.charCount(cp)
+                }
+            }
+            // ركض إيموجي في مستهل النص لا يترك مسافة افتتاحية (نفس ما كان
+            // يفعله النمط القديم، فالركض يُستبدل بمسافة واحدة تبقى في
+            // المقدمة). يُزيلها التنظيف شرطَ ألا يفقد كل المحتوى.
+            val cleaned = sb.toString()
+            return if (cleaned.startsWith(" ") && cleaned.length > 1) {
+                cleaned.substring(1)
+            } else {
+                cleaned
+            }
+        }
 
         // مثيل واحد مشترك لكل عملية. تعدد المتحدثات (مثيل لكل مستقبِل) كان
         // يفتح محرك TTS منفصلاً في كل مرة فيتقاطع صوتان ويستنزف الذاكرة.
@@ -1385,7 +1416,7 @@ class AnnouncementSpeaker(
         // وتطبيع NFC يرمم النصوص القادمة مشكولةً
         // Bidi/NFD من الجذر (SMS/إشعارات).
         val cleanText = java.text.Normalizer.normalize(
-            EMOJI_REGEX.replace(text, " "),
+            stripEmojis(text),
             java.text.Normalizer.Form.NFC
         )
         val utteranceId = nextUtteranceId()

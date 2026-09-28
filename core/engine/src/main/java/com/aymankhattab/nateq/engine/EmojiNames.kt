@@ -222,6 +222,24 @@ object EmojiNames {
         0x267F to "رمز الكرسي المتحرك",
         0x26BD to "كرة قدم",
         0x26BE to "كرة بيسبول",
+        0x231A to "ساعة يد",
+        0x231B to "ساعة رملية",
+        0x2328 to "لوحة مفاتيح",
+        0x23CF to "زر الإخراج",
+        0x23E9 to "زر التقديم السريع",
+        0x23EA to "زر الترجيع",
+        0x23EB to "زر الرفع السريع",
+        0x23EC to "زر الخفض السريع",
+        0x23ED to "زر المقطع التالي",
+        0x23EE to "زر المقطع السابق",
+        0x23EF to "زر التشغيل والإيقاف المؤقت",
+        0x23F0 to "منبه",
+        0x23F1 to "ساعة إيقاف",
+        0x23F2 to "مؤقت",
+        0x23F3 to "ساعة رملية تعمل",
+        0x23F8 to "زر إيقاف مؤقت",
+        0x23F9 to "زر إيقاف",
+        0x23FA to "زر تسجيل",
         0x1F3C0 to "كرة سلة",
         0x1F3C8 to "كرة قدم أمريكية",
         0x1F3C9 to "كرة رغبي",
@@ -594,6 +612,24 @@ object EmojiNames {
         0x267F to "wheelchair symbol",
         0x26BD to "soccer ball",
         0x26BE to "baseball",
+        0x231A to "watch",
+        0x231B to "hourglass done",
+        0x2328 to "keyboard",
+        0x23CF to "eject button",
+        0x23E9 to "fast-forward button",
+        0x23EA to "fast reverse button",
+        0x23EB to "fast up button",
+        0x23EC to "fast down button",
+        0x23ED to "next track button",
+        0x23EE to "previous track button",
+        0x23EF to "play or pause button",
+        0x23F0 to "alarm clock",
+        0x23F1 to "stopwatch",
+        0x23F2 to "timer clock",
+        0x23F3 to "hourglass not done",
+        0x23F8 to "pause button",
+        0x23F9 to "stop button",
+        0x23FA to "record button",
         0x1F3C0 to "basketball",
         0x1F3C8 to "American football",
         0x1F3C9 to "rugby",
@@ -776,17 +812,23 @@ object EmojiNames {
     /** تمييز مؤشرات المناطق (🇦️..🇿️): تُقرن مثنىً لتكوين أعلام. */
     fun isRegionalIndicator(cp: Int): Boolean = cp in 0x1F1E6..0x1F1FF
 
-    /** تعديلات إيموجي تُسقط بصمت: ZWJ، ألوان البشرة، مؤشرات شكل النص،
+    /** تعديلات إيموجي تُسقط بصمت: ألوان البشرة، مؤشرات شكل النص،
      *  ومحرف keycap الملتفّ (U+20E3 مثل 1️⃣) ووسوم الأعلام (U+E0020–E007F)
-     *  التي تُكمل العَلَم ذي الوسوم (بند 2 اختياري). */
+     *  التي تُكمل العَلَم ذي الوسوم (بند 2 اختياري). لا يشمل ZWJ (U+200D):
+     *  خارج تسلسلات الإيموجي (نصوص هندية معقّدة مثل الكونجونكتات) يجب
+     *  إبقاؤه ولا يُحذف؛ داخلها يراه مسارُ كلٍّ من TextProcessor
+     *  و EmojiSpeech بنفسه (zwjSeen). */
     fun isEmojiModifier(cp: Int): Boolean =
-        cp == 0x200D || cp in 0xFE0E..0xFE0F || cp in 0x1F3FB..0x1F3FF ||
+        cp in 0xFE0E..0xFE0F || cp in 0x1F3FB..0x1F3FF ||
             cp == 0x20E3 || cp in 0xE0020..0xE007F
 
-    /** كتل الإيموجي الصوريّة (بدون مؤشر الشكل FE0F الذي يُعالج كتعديل). */
+    /** كتل الإيموجي الصوريّة (بدون مؤشر الشكل FE0F الذي يُعالج كتعديل).
+     *  يشمل كتلة الرموز التقنية 0x2300–0x23FF (⌚ ⏰ ⏳ وغيرها) التي
+     *  تحوي الرموز الإيموجية من Miscellaneous Technical. */
     fun isEmojiBlockCp(cp: Int): Boolean =
         cp in 0x1F300..0x1FAFF || cp in 0x2600..0x27BF ||
-        cp in 0x2B00..0x2BFF || cp in 0x1F000..0x1F1FF
+            cp in 0x2B00..0x2BFF || cp in 0x1F000..0x1F1FF ||
+            cp in 0x2300..0x23FF
 
     /**
      * اسم نطق العلم كاملاً («علم السعودية»/«flag of Saudi Arabia»)
@@ -806,83 +848,87 @@ object EmojiNames {
     /** رموز المشاعر النصية (ASCII/word-based) تُنطق بأسمائها قبل أي معالجة. */
     val ASCII_EMOTICONS: List<Triple<Pattern, String, String>> = listOf(
         Triple(
-            Pattern.compile("(?<![\\p{L}\\d])</3(?![\\p{L}\\d])"),
+            Pattern.compile("(?<![\\p{IsLatin}\\d])</3(?![\\p{IsLatin}\\d])"),
             "قلب مكسور", "broken heart"
         ),
         Triple(
-            Pattern.compile("(?<![\\p{L}\\d])<3(?![\\p{L}\\d])"),
+            Pattern.compile("(?<![\\p{IsLatin}\\d])<3(?![\\p{IsLatin}\\d])"),
             "قلب", "heart"
         ),
         Triple(
-            Pattern.compile("(?<![\\p{L}\\d]):-'-(?![\\p{L}\\d])"),
+            Pattern.compile("(?<![\\p{IsLatin}\\d]):-'-(?![\\p{IsLatin}\\d])"),
             "بكاء", "crying"
         ),
         Triple(
-            Pattern.compile("(?<![\\p{L}\\d]):'\\((?![\\p{L}\\d])"),
+            Pattern.compile("(?<![\\p{IsLatin}\\d]):'\\((?![\\p{IsLatin}\\d])"),
             "بكاء", "crying"
         ),
         Triple(
-            Pattern.compile("(?<![\\p{L}\\d]):-\\)(?![\\p{L}\\d])"),
+            Pattern.compile("(?<![\\p{IsLatin}\\d]):-\\)(?![\\p{IsLatin}\\d])"),
             "ابتسامة", "smile"
         ),
         Triple(
-            Pattern.compile("(?<![\\p{L}\\d]):\\)(?![\\p{L}\\d])"),
+            Pattern.compile("(?<![\\p{IsLatin}\\d]):\\)(?![\\p{IsLatin}\\d])"),
             "ابتسامة", "smile"
         ),
         Triple(
-            Pattern.compile("(?<![\\p{L}\\d]);-\\)(?![\\p{L}\\d])"),
+            Pattern.compile("(?<![\\p{IsLatin}\\d]);-\\)(?![\\p{IsLatin}\\d])"),
             "غمزة", "wink"
         ),
         Triple(
-            Pattern.compile("(?<![\\p{L}\\d]);\\)(?![\\p{L}\\d])"),
+            Pattern.compile("(?<![\\p{IsLatin}\\d]);\\)(?![\\p{IsLatin}\\d])"),
             "غمزة", "wink"
         ),
         Triple(
-            Pattern.compile("(?<![\\p{L}\\d]):-\\((?![\\p{L}\\d])"),
+            Pattern.compile("(?<![\\p{IsLatin}\\d]):-\\((?![\\p{IsLatin}\\d])"),
             "حزين", "sad"
         ),
         Triple(
-            Pattern.compile("(?<![\\p{L}\\d]):\\((?![\\p{L}\\d])"),
+            Pattern.compile("(?<![\\p{IsLatin}\\d]):\\((?![\\p{IsLatin}\\d])"),
             "حزين", "sad"
         ),
         Triple(
-            Pattern.compile("(?<![\\p{L}\\d]):-D(?![\\p{L}\\d])"),
+            Pattern.compile("(?<![\\p{IsLatin}\\d]):-D(?![\\p{IsLatin}\\d])"),
             "ضحك", "laughing"
         ),
         Triple(
-            Pattern.compile("(?<![\\p{L}\\d]):D(?![\\p{L}\\d])"),
+            Pattern.compile("(?<![\\p{IsLatin}\\d]):D(?![\\p{IsLatin}\\d])"),
             "ضحك", "laughing"
         ),
         Triple(
-            Pattern.compile("(?<![\\p{L}\\d])[xX][dD](?![\\p{L}\\d])"),
+            Pattern.compile(
+                "(?<![\\p{IsLatin}\\d])[xX][dD](?![\\p{IsLatin}\\d])"
+            ),
             "ضحك شديد", "laughing out loud"
         ),
         Triple(
-            Pattern.compile("(?<![\\p{L}\\d]):-P(?![\\p{L}\\d])"),
+            Pattern.compile("(?<![\\p{IsLatin}\\d]):-P(?![\\p{IsLatin}\\d])"),
             "يلعب", "playful"
         ),
         Triple(
-            Pattern.compile("(?<![\\p{L}\\d]):P(?![\\p{L}\\d])"),
+            Pattern.compile("(?<![\\p{IsLatin}\\d]):P(?![\\p{IsLatin}\\d])"),
             "يلعب", "playful"
         ),
         Triple(
-            Pattern.compile("(?<![\\p{L}\\d]):-\\*(?![\\p{L}\\d])"),
+            Pattern.compile("(?<![\\p{IsLatin}\\d]):-\\*(?![\\p{IsLatin}\\d])"),
             "قبلة", "kiss"
         ),
         Triple(
-            Pattern.compile("(?<![\\p{L}\\d]):\\*(?![\\p{L}\\d])"),
+            Pattern.compile("(?<![\\p{IsLatin}\\d]):\\*(?![\\p{IsLatin}\\d])"),
             "قبلة", "kiss"
         ),
         Triple(
-            Pattern.compile("(?<![\\p{L}\\d]):-\\|(?![\\p{L}\\d])"),
+            Pattern.compile("(?<![\\p{IsLatin}\\d]):-\\|(?![\\p{IsLatin}\\d])"),
             "محايد", "neutral"
         ),
         Triple(
-            Pattern.compile("(?<![\\p{L}\\d]):\\|(?![\\p{L}\\d])"),
+            Pattern.compile("(?<![\\p{IsLatin}\\d]):\\|(?![\\p{IsLatin}\\d])"),
             "محايد", "neutral"
         ),
         Triple(
-            Pattern.compile("(?<![\\p{L}\\d])\\^_\\^(?![\\p{L}\\d])"),
+            Pattern.compile(
+                "(?<![\\p{IsLatin}\\d])\\^_\\^(?![\\p{IsLatin}\\d])"
+            ),
             "سعيد", "happy"
         )
     )

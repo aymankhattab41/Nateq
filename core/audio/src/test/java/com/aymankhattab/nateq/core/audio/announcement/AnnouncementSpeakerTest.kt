@@ -62,6 +62,49 @@ class AnnouncementSpeakerTest {
     }
 
     @Test
+    fun `emoji stripping removes common emoji but not cjk extensions`() {
+        // ينظّف الإيموجي الشائع (U+1F600) قبل النطق الخارجي (يُستبدل
+        // بمسافة واحدة عن الركض)...
+        val emoji = "\uD83D\uDE00"
+        assertEquals(" ", AnnouncementSpeaker.stripEmojis(emoji))
+        // امتداد CJK-B (U+20000) خارج بلوكات الإيموجي — لا يُبتلع، لأن
+        // تنظيفه بنقاط كود مقيدة (كان يُبتلع سابقاً عبر نمط surrogate).
+        val cjkB = String(Character.toChars(0x20000))
+        assertEquals(cjkB, AnnouncementSpeaker.stripEmojis(cjkB))
+    }
+
+    @Test
+    fun `emoji stripping keeps supplementary non emoji codepoints`() {
+        // مسطح الأحرف القديمة (Old Italic، U+10300) في المستوي التكميلي
+        // الأول — خارج نطاقات الإيموجي، لا يُمسّ به.
+        val oldItalic = String(Character.toChars(0x10300))
+        assertEquals(oldItalic, AnnouncementSpeaker.stripEmojis(oldItalic))
+        // امتداد الرموز التكميلية (U+2A6D6) — كذلك غير إيموجي.
+        val extSymbols = String(Character.toChars(0x2A6D6))
+        assertEquals(extSymbols, AnnouncementSpeaker.stripEmojis(extSymbols))
+        // نص عادي يبقى دون تغيير.
+        assertEquals(
+            "مرحبا بعالم كامل",
+            AnnouncementSpeaker.stripEmojis("مرحبا بعالم كامل")
+        )
+    }
+
+    @Test
+    fun `emoji stripping collapses an emoji run into one space`() {
+        // ركض إيموجي متواصل (U+1F600 U+1F600) يتحول لمسافة واحدة بدل
+        // تكرار المسافات، وZWJ/FE0F تعديلات تُبتلع مع الركض صامتةً.
+        val twinEmoji = "\uD83D\uDE00\uD83D\uDE00"
+        assertEquals(" ", AnnouncementSpeaker.stripEmojis(twinEmoji))
+        val heartSeq = "\u2764\uFE0F\u200D"
+        assertEquals(" ", AnnouncementSpeaker.stripEmojis(heartSeq))
+        // ركض في منتصف النص يتحول لمسافة واحدة لا غير (~نفس سلوك Regex+).
+        assertEquals(
+            "أنا أحبك",
+            AnnouncementSpeaker.stripEmojis("أنا\uD83D\uDE00\uD83D\uDE00أحبك")
+        )
+    }
+
+    @Test
     fun `prewarm schedules text processor warm up on creation`() {
         val speaker = AnnouncementSpeaker.getInstance(context)
         try {
