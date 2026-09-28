@@ -216,6 +216,8 @@ class AnnouncementSpeaker(
         android.os.Looper.getMainLooper()
     )
     private var audioFocusRequest: AudioFocusRequest? = null
+    private var lastFocusGain: Int? = null
+    private var lastAudioAttributes: AudioAttributes? = null
     private var hasAudioFocus = false
 
     // آخر سمات طُبّقت على المحرك: نتغير فقط عند الاختلاف الفعلي فلا نُعيد
@@ -1417,6 +1419,11 @@ class AnnouncementSpeaker(
         speakingLockTimeout = null
         deferredWhileSpeaking.clear()
         releaseAudioFocus()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioFocusRequest = null
+            lastFocusGain = null
+            lastAudioAttributes = null
+        }
         initGate.reset()
         shutdownSafely()
         nowSpeaking = false
@@ -1455,6 +1462,11 @@ class AnnouncementSpeaker(
      * @return نتيجة النظام: GRANTED / DELAYED / FAILED (يُحترم الجميع).
      */
     private fun requestAudioFocus(): Int {
+        if (hasAudioFocus && (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+            audioFocusRequest != null)
+        ) {
+            return AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        }
         return try {
             val settings =
                 (appContext as? AnnouncementAppContext)
@@ -1465,17 +1477,37 @@ class AnnouncementSpeaker(
             }.getOrDefault(true)
             val focusGain = audioFocusTypeFor(duckMedia)
             val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val focusReq = AudioFocusRequest.Builder(focusGain)
-                    .setAudioAttributes(
-                        speechAudioAttributes()
-                    )
-                    // نحتاج قبول التأجيل: على أندرويد 17
-                    // قد يُنبّه النظام بطلبٍ
-                    // مؤجل (DELAYED) عند ارتفاع ضغط الصوت في الخلفية.
-                    .setAcceptsDelayedFocusGain(true)
-                    .setOnAudioFocusChangeListener(onAudioFocusChange)
-                    .build()
-                audioFocusRequest = focusReq
+                val attrs = speechAudioAttributes()
+                val focusReq = if (audioFocusRequest != null &&
+                    lastFocusGain == focusGain &&
+                    lastAudioAttributes == attrs
+                ) {
+                    audioFocusRequest!!
+                } else {
+                    audioFocusRequest?.let { oldReq ->
+                        try {
+                            audioManager.abandonAudioFocusRequest(oldReq)
+                        } catch (t: Throwable) {
+                            Log.w(
+                                TAG,
+                                "abandon previous focus request failed",
+                                t
+                            )
+                        }
+                    }
+                    val newReq = AudioFocusRequest.Builder(focusGain)
+                        .setAudioAttributes(attrs)
+                        // نحتاج قبول التأجيل: على أندرويد 17
+                        // قد يُنبّه النظام بطلبٍ
+                        // مؤجل (DELAYED) عند ارتفاع ضغط الصوت في الخلفية.
+                        .setAcceptsDelayedFocusGain(true)
+                        .setOnAudioFocusChangeListener(onAudioFocusChange)
+                        .build()
+                    audioFocusRequest = newReq
+                    lastFocusGain = focusGain
+                    lastAudioAttributes = attrs
+                    newReq
+                }
                 audioManager.requestAudioFocus(focusReq)
             } else {
                 @Suppress("DEPRECATION")
@@ -1515,6 +1547,8 @@ class AnnouncementSpeaker(
                     audioManager.abandonAudioFocusRequest(it)
                 }
                 audioFocusRequest = null
+                lastFocusGain = null
+                lastAudioAttributes = null
             } else {
                 @Suppress("DEPRECATION")
                 audioManager.abandonAudioFocus(onAudioFocusChange)
@@ -1524,7 +1558,10 @@ class AnnouncementSpeaker(
         }
     }
 
-    /** التخلي عن Audio Focus بعد انتهاء النطق. */
+    /**
+     * التخلي عن Audio Focus بعد انتهاء النطق مع إبقاء مثيل الطلب
+     * لإعادة استخدامه.
+     */
     private fun releaseAudioFocus() {
         hasAudioFocus = false
         // إلغاء أي نطق معلّق بانتظار التركيز حتى لا يُنطق نص قديم لاحقاً.
@@ -1536,7 +1573,6 @@ class AnnouncementSpeaker(
                 audioFocusRequest?.let {
                     audioManager.abandonAudioFocusRequest(it)
                 }
-                audioFocusRequest = null
             } else {
                 // تمرير نفس المستمع المسجَّل عند الطلب (لا null): null يُطلق
                 // التركيز لكنه يترك تسجيل المستمع في

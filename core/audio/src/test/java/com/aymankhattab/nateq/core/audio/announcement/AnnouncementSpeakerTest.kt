@@ -13,7 +13,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -704,6 +706,93 @@ class AnnouncementSpeakerTest {
             assertNotNull(
                 "مسار الأحداث يطلب تركيزاً صوتياً خفيفاً",
                 shadowAudio.getLastAudioFocusRequest()
+            )
+        } finally {
+            speaker.shutdown()
+        }
+    }
+
+    @Test
+    fun `requestAudioFocus reuses same instance and avoids duplicates`() {
+        val speaker = AnnouncementSpeaker(context)
+        try {
+            val reqMethod = AnnouncementSpeaker::class.java
+                .getDeclaredMethod("requestAudioFocus")
+            reqMethod.isAccessible = true
+
+            val focusReqField = AnnouncementSpeaker::class.java
+                .getDeclaredField("audioFocusRequest")
+            focusReqField.isAccessible = true
+
+            // أول طلب تركيز
+            val result1 = reqMethod.invoke(speaker) as Int
+            assertEquals(AudioManager.AUDIOFOCUS_REQUEST_GRANTED, result1)
+            val firstReq = focusReqField.get(speaker)
+            assertNotNull(firstReq)
+
+            // طلب ثانٍ أثناء حيازة التركيز
+            val result2 = reqMethod.invoke(speaker) as Int
+            assertEquals(AudioManager.AUDIOFOCUS_REQUEST_GRANTED, result2)
+            val secondReq = focusReqField.get(speaker)
+            assertSame(
+                "يُعاد استخدام نفس مثيل AudioFocusRequest دون طلب جديد",
+                firstReq,
+                secondReq
+            )
+
+            // بعد التخلي عن التركيز (انتهاء النطق)
+            val releaseMethod = AnnouncementSpeaker::class.java
+                .getDeclaredMethod("releaseAudioFocus")
+            releaseMethod.isAccessible = true
+            releaseMethod.invoke(speaker)
+
+            // طلب جديد بعد release: يجب إعادة استخدام نفس المثيل
+            val result3 = reqMethod.invoke(speaker) as Int
+            assertEquals(AudioManager.AUDIOFOCUS_REQUEST_GRANTED, result3)
+            val thirdReq = focusReqField.get(speaker)
+            assertSame(
+                "يُعاد استخدام نفس المثيل حتى بعد releaseAudioFocus",
+                firstReq,
+                thirdReq
+            )
+        } finally {
+            speaker.shutdown()
+        }
+    }
+
+    @Test
+    fun `requestAudioFocus abandons previous request when settings change`() {
+        val repo = SettingsRepository(context)
+        repo.setDuckMediaDuringAnnouncements(true)
+
+        val speaker = AnnouncementSpeaker(context)
+        try {
+            val reqMethod = AnnouncementSpeaker::class.java
+                .getDeclaredMethod("requestAudioFocus")
+            reqMethod.isAccessible = true
+            val focusReqField = AnnouncementSpeaker::class.java
+                .getDeclaredField("audioFocusRequest")
+            focusReqField.isAccessible = true
+
+            reqMethod.invoke(speaker)
+            val firstReq = focusReqField.get(speaker)
+            assertNotNull(firstReq)
+
+            val releaseMethod = AnnouncementSpeaker::class.java
+                .getDeclaredMethod("releaseAudioFocus")
+            releaseMethod.isAccessible = true
+            releaseMethod.invoke(speaker)
+
+            // تغيير إعداد ducking
+            repo.setDuckMediaDuringAnnouncements(false)
+
+            reqMethod.invoke(speaker)
+            val secondReq = focusReqField.get(speaker)
+            assertNotNull(secondReq)
+            assertNotSame(
+                "تم إنشاء واستبدال الطلب عند تغيّر إعداد التركيز",
+                firstReq,
+                secondReq
             )
         } finally {
             speaker.shutdown()
