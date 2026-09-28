@@ -87,6 +87,17 @@ class AnnouncementSpeaker(
         internal fun clampedSpeechRate(rate: Float): Float =
             rate.coerceIn(MIN_RATE_OR_PITCH, MAX_SPEECH_RATE)
 
+        /** منفّذ تسلسلي لمعالجة نصوص الإعلانات الثقيلة خارج خيط الواجهة؛
+         *  خيطه وصّي (daemon) فلا يحجب عمليات الإنصات، ويمنع تزاحمَ
+         *  معالجات الإعلانات المتقاربة على نفسه (وقوف في الصف). */
+        private val textProcessorExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+                Thread(r, "nateq-announce-process").apply {
+                    isDaemon = true
+                    priority = Thread.NORM_PRIORITY - 1
+                }
+            }
+
         // **قفل النطق العابر:** مهلة قصوى لانتظار هدوء تخليق قارئ الشاشة
         // (رفعَهُ محركُ :tts عبر content://…/speaking) قبل نطق الإعلانات
         // المؤجلة — بعدها يُنطق الإعلان على أي حال (لا ضياع).
@@ -997,6 +1008,44 @@ class AnnouncementSpeaker(
         parts: List<SpeechPart>?,
         attempt: Int
     ) {
+        val gen = speechGeneration.get()
+        // **بند الأداء (خارج خيط الواجهة):** بناء وحدات النطق (معالجة
+        // الدلالات وفصل اللغات والتحويل الرقمي) عبءٌ ثقيل كان يجري على
+        // خيط الواجهة عند كل إعلان فيجمّده لحظياً — ننقله إلى منفّذ خلفي
+        // تسلسلي ثم نعيد إرسال الأجزاء إلى الخيط الرئيسي فقط إن بقيت
+        // دورةُ النطق سليمة (تقدمت دورةٌ أحدث أثناء المعالجة = إسقاط).
+        textProcessorExecutor.execute {
+            val built = try {
+                mergeAdjacentSameVoice(
+                    buildSpeakUnits(
+                        text, locale, speechRate, pitch, volume, emojiCfg, parts
+                    )
+                )
+            } catch (t: Throwable) {
+                // خطأ متزامن أثناء بناء الوحدات (قاموس مفقود...) — تحرير
+                // التركيز حتى لا يبقى محجوزاً لمثل هذا الإعلان (بند 2.3).
+                mainHandler.post {
+                    if (gen == speechGeneration.get()) {
+                        cancelSpeechWatchdog()
+                        stopInterruptionMonitoring()
+                        releaseAudioFocus()
+                        Log.w(TAG, "doSpeakParts failed", t)
+                    }
+                }
+                return@execute
+            }
+            mainHandler.post {
+                if (gen == speechGeneration.get()) {
+                    sendSpeakUnits(built, attempt)
+                }
+            }
+        }
+    }
+
+    /** إرسال وحدات النطق الجاهزة إلى المحرك بالتتابع (من الخيط الرئيسي
+     *  حصراً): يرفع عداد الدورة، يبدأ رصد الإسكات، يطبق السمات، ثم يُرسل
+     *  الأجزاء ويُسلِّح محرسَ انتهاء النطق. */
+    private fun sendSpeakUnits(units: List<SpeakUnit>, attempt: Int) {
         // **بند 5.1:** أول جزءٍ يُرسل فعلياً يرفع عداد الدورة — سجّلته هنا
         // الأداةُ قبل طلب النطق، فيرفض خطافُها اكتمالَ أي دورةٍ سبقته.
         speechCycle.incrementAndGet()
@@ -1004,11 +1053,6 @@ class AnnouncementSpeaker(
         // السمات تُطبق عند كل دورة إن اختلفت فعلياً (لا تتبع القارئ).
         applySpeechAudioAttributes()
         try {
-            val units = mergeAdjacentSameVoice(
-                buildSpeakUnits(
-                    text, locale, speechRate, pitch, volume, emojiCfg, parts
-                )
-            )
             units.forEachIndexed { index, unit ->
                 val queueMode = if (index == 0) {
                     // بند 1.1: أولُ جزءٍ يصل بـ FLUSH يُبطل كل معرّفات الدورات
@@ -1033,7 +1077,7 @@ class AnnouncementSpeaker(
             // الأجزاء ليلتقط أي محرك يعلّق صامتاً (بلا onDone/onError).
             armSpeechWatchdog(units)
         } catch (t: Throwable) {
-            // أي استثناء متزامن أثناء بناء/إرسال الوحدات (محرك مكسور،
+            // أي استثناء متزامن أثناء إرسال الوحدات (محرك مكسور،
             // خطأ معاملات...) يقع قبل تسليح الحارس — فيُحرَّر التركيز
             // ويرتفع رصد الإسكات فوراً حتى لا يبقى النظام محجوزاً صامتاً
             // (الحماية المؤقتة الصارمة للتركيز — نصيحة المراجعة 3).

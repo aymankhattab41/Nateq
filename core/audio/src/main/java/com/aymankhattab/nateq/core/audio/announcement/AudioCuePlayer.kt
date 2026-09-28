@@ -6,8 +6,6 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import android.view.accessibility.AccessibilityEvent
-import android.view.accessibility.AccessibilityManager
 import android.widget.Toast
 import com.aymankhattab.nateq.core.audio.R
 import java.util.concurrent.atomic.AtomicBoolean
@@ -30,7 +28,8 @@ class AudioCuePlayer private constructor(
     private val context: Context?,
     private val sink: CueSink?,
     private val synth: CueSynth,
-    private val handler: Handler
+    private val handler: Handler,
+    private val background: java.util.concurrent.Executor
 ) {
 
     companion object {
@@ -40,6 +39,17 @@ class AudioCuePlayer private constructor(
 
         @Volatile
         private var shared: AudioCuePlayer? = null
+
+        /** منفّذ خلفي واحد للعملية كلها: التخليق وكتابة الملف وmp.prepare()
+         *  خارج خيط الواجهة، ويتسلسل إيقاع نغمةٍ واحدة في كل لحظة.
+         *  خيوطه وصّاية (daemon) فلا تحجز خروجَ العملية. */
+        private fun bgExecutor(): java.util.concurrent.Executor =
+            java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+                Thread(r, "nateq-cue").apply {
+                    isDaemon = true
+                    priority = Thread.NORM_PRIORITY - 1
+                }
+            }
 
         @JvmStatic
         fun getInstance(context: Context): AudioCuePlayer {
@@ -55,7 +65,8 @@ class AudioCuePlayer private constructor(
                             Handler(Looper.getMainLooper())
                         ),
                         synth = CueSynth,
-                        handler = Handler(Looper.getMainLooper())
+                        handler = Handler(Looper.getMainLooper()),
+                        background = bgExecutor()
                     )
                 }.getOrElse { t ->
                     Log.w(TAG, "SoundPool cue player failed", t)
@@ -63,19 +74,24 @@ class AudioCuePlayer private constructor(
                         context = appContext,
                         sink = null,
                         synth = CueSynth,
-                        handler = Handler(Looper.getMainLooper())
+                        handler = Handler(Looper.getMainLooper()),
+                        background = bgExecutor()
                     )
                 }.also { shared = it }
             }
         }
 
-        /** إنشاء مثيل قابل للاختبار بسلك وهمي. */
+        /** إنشاء مثيل قابل للاختبار بسلك وهمي — منفّذ فوري (inline) إلا إن
+         *  حُقن آخر، فيبقى سلوك النطق التزامنياً كما تعتمده الاختبارات. */
         internal fun forTesting(
             sink: CueSink,
             synth: CueSynth = CueSynth,
             handler: Handler = Handler(Looper.getMainLooper()),
-            context: Context? = null
-        ): AudioCuePlayer = AudioCuePlayer(context, sink, synth, handler)
+            context: Context? = null,
+            background: java.util.concurrent.Executor =
+                java.util.concurrent.Executor { it.run() }
+        ): AudioCuePlayer =
+            AudioCuePlayer(context, sink, synth, handler, background)
 
         /** استبدال المثيل المشترك بنسخة اختبار (سلك وهمي) بين دورات
          *  الاختبار — لا يُستخدم في الإنتاج إطلاقاً. */
@@ -84,7 +100,12 @@ class AudioCuePlayer private constructor(
         }
     }
 
+    private val playEpoch = java.util.concurrent.atomic.AtomicLong(0)
+
+    @Volatile
     private var timeoutRunnable: Runnable? = null
+
+    @Volatile
     private var activeMediaPlayer: MediaPlayer? = null
 
     /**
@@ -93,74 +114,87 @@ class AudioCuePlayer private constructor(
      *   أو انتهاء المهلة.
      */
     fun play(cue: AudioCue, onDone: (Boolean) -> Unit) {
+        // حقبة الإيقاف: أي play() يُبطل نغمةً أقدم قيد التخليق على
+        // المنفّذ الخلفي (stop()/play أحدث) — لا نغمةٌ بعد صمتٍ ولا
+        // استدعاءُ onDone لدورةٍ أُجهضت.
+        val epoch = playEpoch.incrementAndGet()
         stopInternal()
 
         val guard = AtomicBoolean(false)
         val finishOnce: (Boolean) -> Unit = { ok ->
-            if (guard.compareAndSet(false, true)) {
+            if (epoch == playEpoch.get() && guard.compareAndSet(false, true)) {
                 onDone(ok)
             }
         }
+        val cancelled: () -> Boolean = { epoch != playEpoch.get() }
 
-        // مسار النغمة المخصصة عبر MediaPlayer (بند 3)
-        val customUriStr = cue.customUri
-        val ctx = context
-        if (!customUriStr.isNullOrBlank() && ctx != null) {
-            val uri = Uri.parse(customUriStr)
-            val canRead = runCatching {
-                ctx.contentResolver.openAssetFileDescriptor(
-                    uri, "r"
-                )?.use { true } ?: false
-            }.getOrDefault(false)
+        // **بند الأداء:** التخليق (CueSynth) وكتابة ملف WAV (SoundPoolCueSink)
+        // وmp.prepare() لكلُّه عبءٌ ثقيل كان يجري على خيط الواجهة في تعليقٍ
+        // ظاهرٍ عند كل إشارة — ننقله كله إلى المنفّذ الخلفي، والنتائج تُعاد
+        // إلى [handler] (الرئيسي) كما كانت. في الاختبارات (منفّذ فوري) يبقى
+        // السلوك التزامنياً نفسه بالضبط.
+        background.execute {
+            if (cancelled()) return@execute
 
-            if (canRead) {
-                val played = playCustomMediaUri(
-                    uri = uri,
-                    volume = cue.volume,
-                    finishOnce = finishOnce
-                )
-                if (played) return
+            // مسار النغمة المخصصة عبر MediaPlayer (بند 3)
+            val customUriStr = cue.customUri
+            val ctx = context
+            if (!customUriStr.isNullOrBlank() && ctx != null) {
+                val uri = Uri.parse(customUriStr)
+                val canRead = runCatching {
+                    ctx.contentResolver.openAssetFileDescriptor(uri, "r")
+                        ?.use { true } ?: false
+                }.getOrDefault(false)
+                if (canRead && playCustomMediaUri(
+                        uri, cue.volume, epoch, finishOnce
+                    )
+                ) {
+                    return@execute
+                }
+                if (cancelled()) return@execute
+                // فشلت القراءة أو سُحبت الصلاحية أو تعثر التحضير —
+                // إعلان التنبيه والرجوع للافتراضي.
+                notifyCustomChimeUnavailable(ctx)
             }
 
-            // فشلت القراءة أو سُحبت الصلاحية — إعلان التنبيه والرجوع للافتراضي
-            notifyCustomChimeUnavailable(ctx)
-        }
+            if (sink == null) {
+                handler.post { finishOnce(false) }
+                return@execute
+            }
 
-        if (sink == null) {
-            finishOnce(false)
-            return
-        }
+            val pcm = try {
+                synth.synthesize(cue)
+            } catch (t: Throwable) {
+                Log.w(TAG, "synth failed", t)
+                handler.post { finishOnce(false) }
+                return@execute
+            }
 
-        val pcm = try {
-            synth.synthesize(cue)
-        } catch (t: Throwable) {
-            Log.w(TAG, "synth failed", t)
-            finishOnce(false)
-            return
-        }
+            val durationMs = synth.durationMs(cue)
+            if (cancelled()) return@execute
+            val timeout = Runnable {
+                sink.stop()
+                finishOnce(false)
+            }
+            timeoutRunnable = timeout
+            handler.postDelayed(
+                timeout,
+                durationMs.toLong() + CUE_SAFETY_MARGIN_MS
+            )
 
-        val durationMs = synth.durationMs(cue)
-        val timeout = Runnable {
-            sink.stop()
-            finishOnce(false)
-        }
-        timeoutRunnable = timeout
-        handler.postDelayed(
-            timeout,
-            durationMs.toLong() + CUE_SAFETY_MARGIN_MS
-        )
-
-        val cueKey = "${cue.type}|${cue.soundName ?: ""}"
-        sink.play(
-            pcm,
-            CueSynth.SAMPLE_RATE,
-            cue.volume.coerceIn(0f, 1f),
-            cueKey
-        ) { success ->
-            handler.post {
-                timeoutRunnable?.let { handler.removeCallbacks(it) }
-                timeoutRunnable = null
-                finishOnce(success)
+            val cueKey = "${cue.type}|${cue.soundName ?: ""}"
+            sink.play(
+                pcm,
+                CueSynth.SAMPLE_RATE,
+                cue.volume.coerceIn(0f, 1f),
+                cueKey
+            ) { success ->
+                handler.post {
+                    if (epoch != playEpoch.get()) return@post
+                    timeoutRunnable?.let { handler.removeCallbacks(it) }
+                    timeoutRunnable = null
+                    finishOnce(success)
+                }
             }
         }
     }
@@ -168,6 +202,7 @@ class AudioCuePlayer private constructor(
     private fun playCustomMediaUri(
         uri: Uri,
         volume: Float,
+        epoch: Long,
         finishOnce: (Boolean) -> Unit
     ): Boolean {
         return try {
@@ -180,13 +215,16 @@ class AudioCuePlayer private constructor(
             mp.setVolume(clampedVol, clampedVol)
 
             val timeout = Runnable {
-                stopCustomMedia()
-                finishOnce(false)
+                if (epoch == playEpoch.get()) {
+                    stopCustomMedia()
+                    finishOnce(false)
+                }
             }
             timeoutRunnable = timeout
 
             mp.setOnCompletionListener {
                 handler.post {
+                    if (epoch != playEpoch.get()) return@post
                     timeoutRunnable?.let { handler.removeCallbacks(it) }
                     timeoutRunnable = null
                     stopCustomMedia()
@@ -196,6 +234,7 @@ class AudioCuePlayer private constructor(
             mp.setOnErrorListener { _, what, extra ->
                 Log.w(TAG, "MediaPlayer error what=$what extra=$extra")
                 handler.post {
+                    if (epoch != playEpoch.get()) return@post
                     timeoutRunnable?.let { handler.removeCallbacks(it) }
                     timeoutRunnable = null
                     stopCustomMedia()
@@ -229,20 +268,6 @@ class AudioCuePlayer private constructor(
         handler.post {
             runCatching {
                 Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-            }
-            runCatching {
-                val am = context.getSystemService(
-                    Context.ACCESSIBILITY_SERVICE
-                ) as? AccessibilityManager
-                if (am?.isEnabled == true) {
-                    val event = AccessibilityEvent.obtain(
-                        AccessibilityEvent.TYPE_ANNOUNCEMENT
-                    )
-                    event.text.add(msg)
-                    event.className = javaClass.name
-                    event.packageName = context.packageName
-                    am.sendAccessibilityEvent(event)
-                }
             }
         }
     }
