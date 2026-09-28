@@ -393,6 +393,39 @@ class PipelineStepsTest {
         assertEquals("الحادية عشرة مساءاً", TimeStep.apply("11:00 مساءً"))
     }
 
+    @Test
+    fun time_withSeconds_spoken() {
+        assertEquals(
+            "الثانية والنصف و خمس وأربعون ثانية مساءاً",
+            TimeStep.apply("14:30:45")
+        )
+    }
+
+    @Test
+    fun time_zeroSeconds_treatedAsWholeMinute() {
+        assertEquals("الثانية عشرة ظهراً", TimeStep.apply("12:00:00"))
+        // الصيغة 24 ساعة تُنطق بصيغة 12 ساعة فتصير 14:30 الثانية (2 ظهراً)
+        assertEquals("الثانية والنصف مساءاً", TimeStep.apply("14:30:00"))
+    }
+
+    @Test
+    fun time_invalidSeconds_leftUnchanged() {
+        assertEquals("14:30:99", TimeStep.apply("14:30:99"))
+    }
+
+    @Test
+    fun time_shortArabicSuffixes() {
+        // الصيغة 24 ساعة تُنطق بصيغة 12 ساعة: 14:30 = الثانية بعد الظهر
+        assertEquals("الثانية والنصف مساءاً", TimeStep.apply("14:30م"))
+        assertEquals("الثامنة و خمس دقائق صباحاً", TimeStep.apply("8:05ص"))
+        // «صم» لاحقة قصيرة ثنائية تُقرأ مساءً (المؤشر الأخير م = مساءً)
+        assertEquals("الثانية والنصف مساءاً", TimeStep.apply("14:30صم"))
+        // حرف م داخل كلمة («من») لا يُلتقط لاحقةً
+        assertEquals(
+            "الثانية والنصف مساءاً من", TimeStep.apply("14:30 من")
+        )
+    }
+
     // ═══════════════════════ RomanNumeralStep ═══════════════════════
 
     @Test

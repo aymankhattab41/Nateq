@@ -9,6 +9,10 @@ package com.aymankhattab.nateq.engine
  */
 object NumberSpeech {
 
+    /** مسجِّل JVM صافٍ — يعمل في الاختبارات الوحدة وفي أندرويد على السواء. */
+    private val logger = java.util.logging.Logger
+        .getLogger("Nateq.NumberSpeech")
+
     /**
      * تحويل رقم إلى كلمات إنجليزية (للأرقام المنفصلة).
      * يدعم حتى 99,999,999 (8 خانات) لخدمة التجميع الخماسي..الثُماني.
@@ -225,7 +229,10 @@ object NumberSpeech {
             1 -> if (isFeminine) "مئة" else "مائة"
             2 -> "مائتان"
             in 3..9 -> hundredsTable[h]
-            else -> "${numberToWordsHelper(h)}مائة"
+            // لا يُستدعى بمئات أكبر من 9 (الخانة العليا في النطاق 100..999
+            // لا تتجاوز 9)، وتُثبَّت دفاعياً في حدّ المئات الصحيح كي لا ينتج
+            // نص مكسور (أرقام ملصوقة بـ«مائة») إن أُسيء الاستدعاء مستقبلاً.
+            else -> hundredsTable[h.coerceIn(3, 9)]
         }
 
         return when {
@@ -328,14 +335,6 @@ object NumberSpeech {
         11 -> "الحادية عشرة"
         12 -> "الثانية عشرة"
         else -> toArabicWords(hour12)
-    }
-
-    /** محوّل مؤقت لمئات أكبر من 10 (لا يُستخدم فعلياً إلا بصيغة مذكر). */
-    private fun numberToWordsHelper(n: Int): String = when (n) {
-        in 3..10 -> arrayOf(
-            "", "", "", "ثلاث", "أربع", "خمس", "ست", "سبع", "ثمان", "تسع", "عشر"
-        )[n]
-        else -> n.toString()
     }
 
     /** حذف نون المثنى من «مائتان/مئتان» عند إضافتها فوق الاسم (التمييز):
@@ -479,7 +478,14 @@ object NumberSpeech {
                     }
                 }.joinToString(" ")
             } else {
-                val v = try { g.toInt() } catch (t: Throwable) { 0 }
+                val v = try { g.toInt() } catch (t: Throwable) {
+                    // لا يقع عملياً (المجاميع ≤ 8 خانات داخل Int) لكن لا يصمت
+                    // عن خطأ مستقبلي: يُسجَّل مع النص المُبهَم ويُتجاوز بأمان.
+                    logger.warning(
+                        "مجموعة أرقام غير قابلة للتحويل (mode=$safeMode): '$g'"
+                    )
+                    0
+                }
                 if (isEnglish) {
                     toEnglishWords(v)
                 } else {

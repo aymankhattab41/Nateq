@@ -7,9 +7,10 @@ import java.util.regex.Pattern
 internal object TimeStep : TextProcessingStep {
 
     private val PATTERN_TIME = Pattern.compile(
-        """(\d{1,2}):(\d{2})(?::(\d{2}))?\s*""" +
+        """(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*""" +
             """([AaPp]\.?[Mm]\.?|صباح(?:اً|ا)?|""" +
-            """مساء(?:ً|اً|ا)?|ظهر(?:اً|ا)?|[صم](?!\p{L}))?"""
+            """مساء(?:اً|ً|ا)?|ظهر(?:اً|ا)?|صم|""" +
+            """(?<!\p{L})[صم](?!\p{L})))?"""
     )
 
     override fun apply(input: String): String {
@@ -22,6 +23,13 @@ internal object TimeStep : TextProcessingStep {
             val rawHour = matcher.group(1)!!.toInt()
             val minute = matcher.group(2)!!.toInt()
             if (rawHour !in 0..23 || minute !in 0..59) continue
+            val secondsGroup = matcher.group(3)
+            val seconds = secondsGroup?.toIntOrNull()
+            if (secondsGroup != null &&
+                (seconds == null || seconds !in 0..59)
+            ) {
+                continue
+            }
             val suffix = matcher.group(4)
             val isPm: Boolean? = if (!suffix.isNullOrBlank()) {
                 val lower = suffix.lowercase(java.util.Locale.ROOT)
@@ -29,6 +37,8 @@ internal object TimeStep : TextProcessingStep {
                     lower.contains("p") ||
                         lower.contains("مساء") ||
                         lower.contains("ظهر") -> true
+                    // «صم» لاحقة قصيرة تُقرأ مساءً (المؤشر الأخير م = مساءً)
+                    lower == "صم" -> true
                     lower.contains("a") ||
                         lower.contains("صباح") -> false
                     lower.startsWith("م") -> true
@@ -38,7 +48,7 @@ internal object TimeStep : TextProcessingStep {
             } else {
                 null
             }
-            val timeText = formatTime(rawHour, minute, isPm, suffix)
+            val timeText = formatTime(rawHour, minute, seconds, isPm, suffix)
             matcher.appendReplacement(
                 buffer, java.util.regex.Matcher.quoteReplacement(timeText)
             )
@@ -51,6 +61,7 @@ internal object TimeStep : TextProcessingStep {
     private fun formatTime(
         rawHour: Int,
         minute: Int,
+        seconds: Int? = null,
         isPm: Boolean? = null,
         suffix: String? = null
     ): String {
@@ -99,24 +110,43 @@ internal object TimeStep : TextProcessingStep {
             else -> "${NumberSpeech.toArabicWords(count)} دقيقة"
         }
 
-        return when (minute) {
-            0 -> "$hourText $period"
-            15 -> "$hourText والربع $period"
-            30 -> "$hourText والنصف $period"
-            45 -> {
-                val nextHour = if (hour12 == 12) 1 else hour12 + 1
-                val nextHourText = NumberSpeech.toOrdinalHourWord(nextHour)
-                "$nextHourText إلا ربع $period"
-            }
-            in 1..29 -> "$hourText و ${minutesPart(minute)} $period"
-            in 31..44 -> "$hourText و ${minutesPart(minute)} $period"
-            in 46..59 -> {
-                val remaining = 60 - minute
-                val nextHour = if (hour12 == 12) 1 else hour12 + 1
-                val nextHourText = NumberSpeech.toOrdinalHourWord(nextHour)
-                "$nextHourText إلا ${minutesOmissionPart(remaining)} $period"
-            }
-            else -> "$hourText $period"
+        fun secondsPart(count: Int): String = when (count) {
+            1 -> "ثانية واحدة"
+            2 -> "ثانيتان"
+            in 3..10 -> "${NumberSpeech.toArabicWords(count)} ثوانٍ"
+            else -> "${NumberSpeech.toArabicWords(count)} ثانية"
         }
+
+        val body = if (seconds == null || seconds == 0) {
+            when (minute) {
+                0 -> hourText
+                15 -> "$hourText والربع"
+                30 -> "$hourText والنصف"
+                45 -> {
+                    val nextHour = if (hour12 == 12) 1 else hour12 + 1
+                    val nextHourText = NumberSpeech.toOrdinalHourWord(nextHour)
+                    "$nextHourText إلا ربع"
+                }
+                in 1..29 -> "$hourText و ${minutesPart(minute)}"
+                in 31..44 -> "$hourText و ${minutesPart(minute)}"
+                in 46..59 -> {
+                    val remaining = 60 - minute
+                    val nextHour = if (hour12 == 12) 1 else hour12 + 1
+                    val nextHourText = NumberSpeech.toOrdinalHourWord(nextHour)
+                    "$nextHourText إلا ${minutesOmissionPart(remaining)}"
+                }
+                else -> hourText
+            }
+        } else {
+            // الثواني مذكورة: الدقائق تُنطق صريحة (بلا «إلا») ثم تُلحق الثواني
+            val minutesPhrase = when (minute) {
+                0 -> hourText
+                15 -> "$hourText والربع"
+                30 -> "$hourText والنصف"
+                else -> "$hourText و ${minutesPart(minute)}"
+            }
+            "$minutesPhrase و ${secondsPart(seconds)}"
+        }
+        return "$body $period"
     }
 }
