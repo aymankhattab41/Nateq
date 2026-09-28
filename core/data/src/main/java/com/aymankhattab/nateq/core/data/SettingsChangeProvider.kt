@@ -37,6 +37,9 @@ class SettingsChangeProvider : ContentProvider() {
     @Volatile
     private var speakingFlag = 0
 
+    @Volatile
+    private var speakingTimestamp = 0L
+
     override fun onCreate(): Boolean = true
 
     override fun query(
@@ -47,8 +50,17 @@ class SettingsChangeProvider : ContentProvider() {
         sortOrder: String?
     ): Cursor? {
         if (uri.lastPathSegment != SPEAKING_PATH) return null
+        val now = android.os.SystemClock.elapsedRealtime()
+        val currentFlag = if (speakingFlag > 0 &&
+            (now - speakingTimestamp) > SPEAKING_TTL_MS
+        ) {
+            speakingFlag = 0
+            0
+        } else {
+            speakingFlag
+        }
         return MatrixCursor(arrayOf(SPEAKING_COLUMN)).apply {
-            addRow(arrayOf(speakingFlag))
+            addRow(arrayOf(currentFlag))
         }
     }
 
@@ -64,6 +76,7 @@ class SettingsChangeProvider : ContentProvider() {
     ): Int {
         if (uri.lastPathSegment != SPEAKING_PATH) return 0
         speakingFlag = 0
+        speakingTimestamp = 0L
         publishSpeaking()
         return 1
     }
@@ -77,6 +90,11 @@ class SettingsChangeProvider : ContentProvider() {
         if (uri.lastPathSegment != SPEAKING_PATH) return 0
         val raw = values?.getAsInteger(SPEAKING_COLUMN) ?: return 0
         speakingFlag = if (raw > 0) 1 else 0
+        speakingTimestamp = if (speakingFlag > 0) {
+            android.os.SystemClock.elapsedRealtime()
+        } else {
+            0L
+        }
         publishSpeaking()
         return 1
     }
@@ -95,6 +113,7 @@ class SettingsChangeProvider : ContentProvider() {
 
         private const val SPEAKING_PATH = "speaking"
         private const val SPEAKING_COLUMN = "speaking"
+        private const val SPEAKING_TTL_MS = 6000L
 
         fun uri(): Uri = Uri.parse("content://$AUTHORITY")
 

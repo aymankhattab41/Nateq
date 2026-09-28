@@ -476,9 +476,9 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+• Intermittent Silence Fixes: hung engine recovery in speech watchdog, self-expiring TTL for SpeechLock to prevent delays, and auto-route to media when accessibility is muted
 • Performance &amp; Event Delivery: optimized processing latency &amp; main thread startup, guaranteed time &amp; battery announcements, and extended Doze mode guard
 • Comprehensive fixes: Arabic billion scale pronunciation, currency &amp; Franco precision, audio service stability, silence sensors, and backup reliability
-• User Interface: 12/24h quiet hours formatting, localized list separators, dp-scaled padding, and eliminated default Latin text flicker
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>

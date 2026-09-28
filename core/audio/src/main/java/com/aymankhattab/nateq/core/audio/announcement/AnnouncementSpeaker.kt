@@ -104,10 +104,10 @@ class AnnouncementSpeaker(
         private const val SPEAKING_WAIT_TIMEOUT_MS = 5000L
 
         // إعادة جدولة طلب التركيز المرفوض (AUDIOFOCUS_REQUEST_FAILED):
-        // محاولتان بفاصل فعلي، ثم إسقاطٌ صامت صريح (لا حلقة لا نهائية فوق
+        // محاولات بفاصل وجيز، ثم إسقاطٌ صامت صريح (لا حلقة لا نهائية فوق
         // مشغّلٍ محجوز للمكالمة/الوسائط).
-        private const val FOCUS_RETRY_DELAY_MS = 400L
-        private const val MAX_FOCUS_RETRIES = 2
+        private const val FOCUS_RETRY_DELAY_MS = 500L
+        private const val MAX_FOCUS_RETRIES = 3
         val EVENT_CATEGORIES: Set<String> = setOf(
             SettingsRepository.VOICE_CATEGORY_TIME,
             SettingsRepository.VOICE_CATEGORY_BATTERY,
@@ -294,6 +294,8 @@ class AnnouncementSpeaker(
 
     private var tts: TextToSpeech? = null
     private var nowSpeaking = false
+    @Volatile
+    private var currentCategory: String? = null
 
     // مؤقّت أمان على Main (المحور السادس): إن علّق المحرك بلا onDone/onError
     // يُحرَّر التركيز الصوتي ويُرفع رصد الإسكات — فلا يبقى النظام محجوزاً
@@ -485,10 +487,14 @@ class AnnouncementSpeaker(
             speechWatchdog = null
             Log.w(TAG,
                 "[Watchdog] انقضت $seconds ث بلا onDone/onError" +
-                " — تحرير التركيز وإيقاف رصد الإسكات" +
-                " (محرك معلّق)")
+                " — تصفير الحالة وتحرير التركيز وهدم المحرك المعلّق")
             stopInterruptionMonitoring()
             releaseAudioFocus()
+            nowSpeaking = false
+            currentCategory = null
+            notifySpeechComplete()
+            invalidateActiveUtterances()
+            shutdownSafely()
         }
         speechWatchdog = timer
         mainHandler.postDelayed(timer, (seconds * 1000).toLong())
@@ -594,6 +600,7 @@ class AnnouncementSpeaker(
                         if (isFinal) {
                             notifySpeechComplete()
                             nowSpeaking = false
+                            currentCategory = null
                         }
                     }
 
@@ -627,6 +634,7 @@ class AnnouncementSpeaker(
                         if (shouldClean) {
                             notifySpeechComplete()
                             nowSpeaking = false
+                            currentCategory = null
                         }
                     }
                 })
@@ -699,6 +707,7 @@ class AnnouncementSpeaker(
         }
 
         val gen = speechGeneration.incrementAndGet()
+        currentCategory = category
         val isEvent = isEventCategory(category)
         val speakAction = {
             launchWithCue(
@@ -770,7 +779,7 @@ class AnnouncementSpeaker(
                     }
                 }
                 pendingFocusTimer = timer
-                mainHandler.postDelayed(timer, 3000)
+                mainHandler.postDelayed(timer, 3000L)
             }
             AudioManager.AUDIOFOCUS_REQUEST_FAILED -> {
                 // رفض التركيز (مشغّل آخر حجز الوسائط) — لا نطق فوقه؛ نعيد
@@ -854,6 +863,9 @@ class AnnouncementSpeaker(
         if (!force && SpeechLock.isSpeaking(appContext)) return
         speakingLockTimeout?.let { mainHandler.removeCallbacks(it) }
         speakingLockTimeout = null
+        if (force) {
+            runCatching { SpeechLock.setSpeaking(appContext, false) }
+        }
         val pending = ArrayList<() -> Unit>(deferredWhileSpeaking)
         deferredWhileSpeaking.clear()
         unregisterSpeakingLockObserver()
@@ -1008,11 +1020,7 @@ class AnnouncementSpeaker(
         engineOverride: String? = null,
         immediate: Boolean = false
     ) {
-        ensureInit({ ready ->
-            if (!ready) {
-                releaseAudioFocus()
-                return@ensureInit
-            }
+        val executeSpeech = {
             if (immediate) {
                 doSpeakParts(
                     text, locale, speechRate, pitch, volume,
@@ -1028,6 +1036,28 @@ class AnnouncementSpeaker(
                         emojiCfg, parts, attempt = 1
                     )
                 }, 80)
+            }
+        }
+        ensureInit({ ready ->
+            if (ready) {
+                executeSpeech()
+            } else if (engineOverride != null) {
+                Log.w(
+                    TAG,
+                    "[Speaker] فشل تهيئة $engineOverride —" +
+                    " التراجع لمحرك النظام الافتراضي"
+                )
+                ensureInit({ fallbackReady ->
+                    if (fallbackReady) {
+                        executeSpeech()
+                    } else {
+                        releaseAudioFocus()
+                        notifySpeechComplete()
+                    }
+                }, requestedEngine = null)
+            } else {
+                releaseAudioFocus()
+                notifySpeechComplete()
             }
         }, engineOverride)
     }
@@ -1416,13 +1446,14 @@ class AnnouncementSpeaker(
             }
         }
         val params = android.os.Bundle().apply {
-            val boostedVolume = (volume * volumeBoost).coerceIn(0f, 1f)
-            if (volume in 0f..1f) {
-                putFloat(
-                    TextToSpeech.Engine.KEY_PARAM_VOLUME,
-                    boostedVolume
-                )
-            }
+            val effectiveVolume = if (volume <= 0f) 0.05f else volume
+            val boostedVolume = (effectiveVolume * volumeBoost).coerceIn(
+                0.05f, 1f
+            )
+            putFloat(
+                TextToSpeech.Engine.KEY_PARAM_VOLUME,
+                boostedVolume
+            )
             val mediaStreamAlways = settings?.let { s ->
                 runCatching {
                     s.isAnnouncementMediaStreamAlways()
@@ -1497,6 +1528,7 @@ class AnnouncementSpeaker(
         deferredWhileSpeaking.clear()
         releaseAudioFocus()
         nowSpeaking = false
+        currentCategory = null
     }
 
     /**
@@ -1532,6 +1564,7 @@ class AnnouncementSpeaker(
         initGate.reset()
         shutdownSafely()
         nowSpeaking = false
+        currentCategory = null
     }
 
     // طلب تخفيف صوت الوسائط أثناء النطق (Audio Ducking).
@@ -1550,11 +1583,21 @@ class AnnouncementSpeaker(
             }
             AudioManager.AUDIOFOCUS_LOSS,
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                if (currentCategory ==
+                    SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+                ) {
+                    Log.d(
+                        TAG,
+                        "[Focus] فقدان عابر أثناء إعلان المتصل — المتابعة"
+                    )
+                    return@OnAudioFocusChangeListener
+                }
                 // فقد التركيز (مكالمة/وسائط) — أوقف النطق فوراً
                 hasAudioFocus = false
                 AudioCuePlayer.getInstance(appContext).stop()
                 tts?.stop()
                 nowSpeaking = false
+                currentCategory = null
                 releaseAudioFocus()
                 notifySpeechComplete()
             }

@@ -38,6 +38,12 @@ class BatteryAnnouncementReceiver(
         @Volatile
         private var lastFilterKey: String? = null
 
+        @Volatile
+        private var lastPowerActionTime = 0L
+
+        @Volatile
+        private var lastPowerAction: String? = null
+
         // **بند 5.5:** سقف احتياطي لإنهاء البث أقصاه ما قبل مهلة نظام البث
         // (~10 ثوانٍ) بهامش واضح (~6 ثوانٍ) — كان السقف يبلغ 10 ثوانٍ فيصل
         // goAsync حافة المهلة فيقع ANR عند تعلّق المحرك بلا onDone (كما
@@ -70,6 +76,8 @@ class BatteryAnnouncementReceiver(
         @JvmStatic
         internal fun resetLevelFilterForTesting() {
             lastFilterKey = null
+            lastPowerAction = null
+            lastPowerActionTime = 0L
         }
     }
 
@@ -80,6 +88,19 @@ class BatteryAnnouncementReceiver(
             action != Intent.ACTION_POWER_DISCONNECTED
         ) {
             return
+        }
+        // منع تكرار أحداث الشاحن اللحظية المتطابقة خلال 1.5 ثانية
+        if (action == Intent.ACTION_POWER_CONNECTED ||
+            action == Intent.ACTION_POWER_DISCONNECTED
+        ) {
+            val now = timeProvider.currentTimeMillis()
+            if (action == lastPowerAction &&
+                (now - lastPowerActionTime) < 1500L
+            ) {
+                return
+            }
+            lastPowerAction = action
+            lastPowerActionTime = now
         }
         // فلترة البث الدائم في الذاكرة (بند 16.1): يُعالج بث البطارية فقط عند
         // تغيّر النسبة أو حالة الشحن أو مصدر التوصيل، فلا تُطلق كورووتينات

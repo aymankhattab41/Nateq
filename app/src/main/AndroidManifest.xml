@@ -161,8 +161,16 @@
             </intent-filter>
         </activity>
 
-        <!-- مستقبل البطارية يُسجَّل ديناميكياً من AnnouncementSchedulerService -->
-        <!-- لا يُسجَّل هنا لأن BATTERY_CHANGED ممنوع في الـ manifest منذ أندرويد 8+ (API 26) -->
+        <!-- مستقبل أحداث توصيل وفصل الشاحن (مستثناة صراحة من قيود البث في الخلفية) -->
+        <!-- BATTERY_CHANGED يُسجَّل ديناميكياً من AnnouncementSchedulerService -->
+        <receiver
+            android:name="com.aymankhattab.nateq.core.audio.announcement.BatteryAnnouncementReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
+                <action android:name="android.intent.action.ACTION_POWER_DISCONNECTED" />
+            </intent-filter>
+        </receiver>
 
         <!-- مستقبل إعلان اسم المتصل الوارد -->
         <!-- exported=true + permission=READ_PHONE_STATE ضروريان معاً لوصول

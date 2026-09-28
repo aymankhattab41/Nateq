@@ -217,23 +217,12 @@ class AnnouncementSchedulerService : Service() {
             try {
                 ContextCompat.startForegroundService(context, intent)
             } catch (t: Throwable) {
-                // **بند 4.2 (تراجع لعابر):** قيود أندرويد 12+ تمنع FGS
-                // من الخلفية (ForegroundServiceStartNotAllowedException).
-                // الخدمة العادية غير مشروطةً بـ startForeground خلال مهلة
-                // النظام، فبدء تشغيلها عابراً لا يطلق RemoteServiceException؛
-                // وإن مُنعت الترقية تقف ذاتياً ويكون النطق قد جرى في العملية
-                // عبر المتحدث بتركيز صوتي — الشبكة الآمنة لفظية لا هيكلية.
+                // قيود أندرويد 14+ تمنع FGS من الخلفية.
+                // لا نحاول startService العادية لأنها ممنوعة أيضاً على API 26+؛
+                // النطق يكتمل مباشرة عبر سياق البث المحمي بـ WakeLock.
                 Log.w(TAG,
-                    "startForegroundService denied — falling back" +
-                    " to background start")
-                try {
-                    intent.putExtra(EXTRA_FALLBACK_BACKGROUND, true)
-                    context.startService(intent)
-                } catch (t2: Throwable) {
-                    Log.w(TAG,
-                        "background startService failed too" +
-                        " (context transient)", t2)
-                }
+                    "startForegroundService denied —" +
+                    " background start restricted", t)
             }
         }
 

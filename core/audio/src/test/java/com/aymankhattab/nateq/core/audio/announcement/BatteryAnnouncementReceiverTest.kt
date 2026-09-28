@@ -436,6 +436,19 @@ class BatteryAnnouncementReceiverTest {
             BatteryAnnouncementReceiver(clock).announcedRecently(context, "%50")
         )
     }
+
+    @Test
+    fun `power events within debounce window are deduplicated`() {
+        BatteryAnnouncementReceiver.resetLevelFilterForTesting()
+        val clock = FakeClock(baseNow)
+        val receiver = BatteryAnnouncementReceiver(clock)
+        val intent = Intent(Intent.ACTION_POWER_CONNECTED)
+        receiver.onReceive(context, intent)
+        clock.setTo(baseNow + 500L)
+        receiver.onReceive(context, intent)
+        clock.setTo(baseNow + 2000L)
+        receiver.onReceive(context, intent)
+    }
 }
 
 /** ساعة افتراضية قابلة للضبط — تحكّم كامل بالخط الزمني في الاختبارات. */

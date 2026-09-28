@@ -82,4 +82,20 @@ class SpeechLockTest {
             context.contentResolver.unregisterContentObserver(observer)
         }
     }
+
+    @Test
+    fun speakingLock_expiresAfterTtl() {
+        SpeechLock.setSpeaking(context, true)
+        assertTrue(
+            "العلم مرفوع قبل انقضاء المهلة",
+            SpeechLock.isSpeaking(context)
+        )
+        org.robolectric.shadows.ShadowSystemClock.advanceBy(
+            java.time.Duration.ofMillis(7000L)
+        )
+        assertFalse(
+            "يسقط القفل تلقائياً بعد انقضاء مهلة TTL",
+            SpeechLock.isSpeaking(context)
+        )
+    }
 }
