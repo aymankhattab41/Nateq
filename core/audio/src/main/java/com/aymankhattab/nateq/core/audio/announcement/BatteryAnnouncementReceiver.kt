@@ -107,10 +107,16 @@ class BatteryAnnouncementReceiver(
         // ولا تُفتح SharedPreferences لعشرات البثات المتكررة بنفس الحالة
         // (حرارة/جهد/شحن). أحداث التوصيل والفصل أفعال منفصلة لا تمرّ
         // بالفلتر وتُعالج دائماً.
-        if (action == Intent.ACTION_BATTERY_CHANGED &&
-            !isNewLevel(intent!!)
-        ) {
-            return
+        // كبت إعلان البطارية إذا سبقه حدث توصيل/فصل شاحن خلال 1.5 ثانية
+        // لمنع تصادم طلبات التركيز وتكرار الإعلانات اللحظية.
+        if (action == Intent.ACTION_BATTERY_CHANGED) {
+            val now = timeProvider.currentTimeMillis()
+            if ((now - lastPowerActionTime) < 1500L) {
+                return
+            }
+            if (!isNewLevel(intent!!)) {
+                return
+            }
         }
         // goAsync() يمنع Android من قتل المستقبل قبل انتهاء العمل اللاتزامني
         val pendingResult = goAsync()

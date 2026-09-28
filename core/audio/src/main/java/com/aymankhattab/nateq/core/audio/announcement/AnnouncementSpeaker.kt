@@ -716,21 +716,12 @@ class AnnouncementSpeaker(
                 immediate = isEvent
             )
         }
-        if (isEvent) {
-            // فئات الأحداث (الساعة، البطارية، المتصل):
-            // تجاوز قفل النطق العابر (SpeechLock) بالكامل بلا انتظار،
-            // وإطلاق طلب التركيز والنطق معاً بلا انتظار رد AUDIOFOCUS_GAIN
-            // ليقطع QUEUE_FLUSH القراءة الجارية فوراً وبصوت طبيعي.
-            requestAudioFocus()
-            speakAction()
-            return
-        }
         // **قفل النطق العابر:** إن كان محرك التخليق (:tts) ينطق حالياً
         // (قراءة قارئ الشاشة فوق content://…/speaking) فلا ننطق فوقه —
-        // نؤجل الإعلان حتى يهدأ القفل أو تنقضي مهلة الأمان. طلبُ التركيز
-        // وحده لا يقي من TalkBack (لا يطلب قارئ الشاشة تركيزاً ولا
-        // يستجيب لفقدانه) فيبقى القفلُ وسيلةَ التنسيق الوحيدة معه.
-        if (SpeechLock.isSpeaking(appContext)) {
+        // نؤجل الإعلان حتى يهدأ القفل أو تنقضي مهلة الأمان. فئات الأحداث
+        // (الساعة، البطارية، المتصل) تتجاوز القفل؛ والجميع يمر عبر
+        // speakWithFocus احتراماً لنتائج التركيز (Delayed/Failed/Granted).
+        if (!isEvent && SpeechLock.isSpeaking(appContext)) {
             enqueueWhileSpeaking(gen, speakAction)
             return
         }
@@ -978,7 +969,11 @@ class AnnouncementSpeaker(
         cue: AudioCue?,
         immediate: Boolean = false
     ) {
-        if (gen != speechGeneration.get()) return
+        if (gen != speechGeneration.get()) {
+            releaseAudioFocus()
+            notifySpeechComplete()
+            return
+        }
         if (cue == null) {
             startSpeech(
                 text, locale, speechRate, pitch, volume,
@@ -1004,6 +999,7 @@ class AnnouncementSpeaker(
                 // تقادم دورة النطق أثناء عزف النغمة (stop()/نطق أحدث)
                 // فيُحرَّر التركيز هنا بدل بقائه محجوزاً صامتاً.
                 releaseAudioFocus()
+                notifySpeechComplete()
             }
         }
     }
@@ -1096,6 +1092,7 @@ class AnnouncementSpeaker(
                         cancelSpeechWatchdog()
                         stopInterruptionMonitoring()
                         releaseAudioFocus()
+                        notifySpeechComplete()
                         Log.w(TAG, "doSpeakParts failed", t)
                     }
                 }
@@ -1104,6 +1101,9 @@ class AnnouncementSpeaker(
             mainHandler.post {
                 if (gen == speechGeneration.get()) {
                     sendSpeakUnits(built, attempt)
+                } else {
+                    releaseAudioFocus()
+                    notifySpeechComplete()
                 }
             }
         }
@@ -1113,16 +1113,26 @@ class AnnouncementSpeaker(
      *  حصراً): يرفع عداد الدورة، يبدأ رصد الإسكات، يطبق السمات، ثم يُرسل
      *  الأجزاء ويُسلِّح محرسَ انتهاء النطق. */
     private fun sendSpeakUnits(units: List<SpeakUnit>, attempt: Int) {
+        val validUnits = units.filter { it.text.isNotBlank() }
+        if (validUnits.isEmpty()) {
+            cancelSpeechWatchdog()
+            stopInterruptionMonitoring()
+            releaseAudioFocus()
+            notifySpeechComplete()
+            nowSpeaking = false
+            currentCategory = null
+            return
+        }
         // **بند 5.1:** أول جزءٍ يُرسل فعلياً يرفع عداد الدورة — سجّلته هنا
         // الأداةُ قبل طلب النطق، فيرفض خطافُها اكتمالَ أي دورةٍ سبقته.
         speechCycle.incrementAndGet()
         startInterruptionMonitoring()
         // السمات تُطبق عند كل دورة إن اختلفت فعلياً (لا تتبع القارئ).
         applySpeechAudioAttributes()
-        val unitUtteranceIds = units.map { nextUtteranceId() }
+        val unitUtteranceIds = validUnits.map { nextUtteranceId() }
         lastQueuedUtteranceId = unitUtteranceIds.lastOrNull()
         try {
-            units.forEachIndexed { index, unit ->
+            validUnits.forEachIndexed { index, unit ->
                 val queueMode = if (index == 0) {
                     // أولُ جزءٍ يصل بـ FLUSH يُبطل كل معرّفات الدورات السابقة
                     invalidateActiveUtterances()
@@ -1144,7 +1154,7 @@ class AnnouncementSpeaker(
             }
             // حد ختام للدورة: مهما طال النص يُفتح حارس الانتهاء قبل إرسال
             // الأجزاء ليلتقط أي محرك يعلّق صامتاً (بلا onDone/onError).
-            armSpeechWatchdog(units)
+            armSpeechWatchdog(validUnits)
         } catch (t: Throwable) {
             // أي استثناء متزامن أثناء إرسال الوحدات (محرك مكسور،
             // خطأ معاملات...) يقع قبل تسليح الحارس — فيُحرَّر التركيز
@@ -1153,7 +1163,8 @@ class AnnouncementSpeaker(
             cancelSpeechWatchdog()
             stopInterruptionMonitoring()
             releaseAudioFocus()
-            Log.w(TAG, "doSpeakParts failed", t)
+            notifySpeechComplete()
+            Log.w(TAG, "sendSpeakUnits failed", t)
         }
     }
 
@@ -1386,7 +1397,15 @@ class AnnouncementSpeaker(
         attempt: Int,
         assignedUtteranceId: String?
     ) {
-        val tts = tts ?: return
+        val tts = tts ?: run {
+            cancelSpeechWatchdog()
+            stopInterruptionMonitoring()
+            releaseAudioFocus()
+            notifySpeechComplete()
+            nowSpeaking = false
+            currentCategory = null
+            return
+        }
         // مضاعف السرعة العام (إن فعّله المستخدم): يُضرب بالسرعة النهائية
         // قبل قصّها على الحد الآمن — كل الإعلانات (وقت/أرقام/بطارية/متصل/
         // رسائل/إشعارات) تمر من هنا فيُطبَّق تناسقياً على النطق كله.
@@ -1480,6 +1499,23 @@ class AnnouncementSpeaker(
             stripEmojis(text),
             java.text.Normalizer.Form.NFC
         )
+        if (cleanText.isBlank()) {
+            if (assignedUtteranceId != null) {
+                activeUtteranceIds.remove(assignedUtteranceId)
+            }
+            val isFinal = (assignedUtteranceId != null &&
+                assignedUtteranceId == lastQueuedUtteranceId) ||
+                activeUtteranceIds.isEmpty()
+            if (isFinal) {
+                cancelSpeechWatchdog()
+                stopInterruptionMonitoring()
+                releaseAudioFocus()
+                notifySpeechComplete()
+                nowSpeaking = false
+                currentCategory = null
+            }
+            return
+        }
         val utteranceId = assignedUtteranceId ?: nextUtteranceId()
         trackUtterance(utteranceId)
         if (assignedUtteranceId == null) {
@@ -1505,6 +1541,7 @@ class AnnouncementSpeaker(
             cancelSpeechWatchdog()
             stopInterruptionMonitoring()
             releaseAudioFocus()
+            notifySpeechComplete()
             shutdownSafely()
         }
     }
@@ -1579,7 +1616,14 @@ class AnnouncementSpeaker(
                 pendingFocusAction = null
                 pendingFocusTimer?.let { mainHandler.removeCallbacks(it) }
                 pendingFocusTimer = null
-                action?.invoke()
+                if (action != null) {
+                    action.invoke()
+                } else if (!nowSpeaking) {
+                    // إذا وصل AUDIOFOCUS_GAIN متأخراً بعد أن أُلغي الإعلان
+                    // أو انتهى ولم نعد ننطق، يجب تحرير التركيز فوراً حتى لا
+                    // نحتجز تركيز النظام ونهنج مشغلات الوسائط الخارجية!
+                    releaseAudioFocus()
+                }
             }
             AudioManager.AUDIOFOCUS_LOSS,
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
