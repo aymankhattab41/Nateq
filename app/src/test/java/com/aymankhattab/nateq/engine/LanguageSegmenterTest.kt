@@ -94,21 +94,20 @@ class LanguageSegmenterTest {
     }
 
     @Test
-    fun digitsBetweenArabicWords_areNeutral() {
+    fun digitsBetweenArabicWords_splitIntoSeparateSegments() {
         val input = "العمر 30 عاما"
         val (texts, tags) = textsAndTags(input, "ar")
-        // الأرقام والمسافات محايدات: تبقى داخل المقطع العربي الواحد بلا تفتيت.
-        assertEquals(listOf("العمر 30 عاما"), texts)
-        assertEquals(listOf("ar"), tags)
+        assertEquals(listOf("العمر ", "30 ", "عاما"), texts)
+        assertEquals(listOf("ar", "ar", "ar"), tags)
         assertEquals(input, texts.joinToString(""))
     }
 
     @Test
-    fun arabicIndicDigits_areNeutral() {
+    fun arabicIndicDigits_splitIntoSeparateSegments() {
         val input = "عندي ٣ كتب"
         val (texts, tags) = textsAndTags(input, "ar")
-        assertEquals(listOf("عندي ٣ كتب"), texts)
-        assertEquals(listOf("ar"), tags)
+        assertEquals(listOf("عندي ", "٣ ", "كتب"), texts)
+        assertEquals(listOf("ar", "ar", "ar"), tags)
         assertEquals(input, texts.joinToString(""))
     }
 
@@ -144,7 +143,7 @@ class LanguageSegmenterTest {
     @Test
     fun numbersDoNotAttachToStrongestNeighbor() {
         // الرقم لا يلتحق بالجار الأقوى اللاتيني:
-        // يُنسب للغة نطق الأرقام حصراً.
+        // يُنسب للغة نطق الأرقام حصراً وينفصل في مقطعه.
         val (textsAr, tagsAr) = textsAndTags("Status 123", "ar")
         assertEquals(listOf("Status ", "123"), textsAr)
         assertEquals(listOf("en", "ar"), tagsAr)
@@ -152,8 +151,8 @@ class LanguageSegmenterTest {
         val (textsEn, tagsEn) = textsAndTagsWithNumber(
             "Status 123", "ar", "en"
         )
-        assertEquals(listOf("Status 123"), textsEn)
-        assertEquals(listOf("en"), tagsEn)
+        assertEquals(listOf("Status ", "123"), textsEn)
+        assertEquals(listOf("en", "en"), tagsEn)
     }
 
     @Test
@@ -318,36 +317,72 @@ class LanguageSegmenterTest {
     }
 
     @Test
-    fun unitWithNumber_neutralAttachesToArabicNotLatin() {
-        // بند المحايد الذكي: «50» أرقام محايدةٌ تسبقُها العربية فتلتحق
-        // بها (لا تُنسب للكتلة اللاتينية اللاحقة «kg»)؛ والوحدة
-        // «50kg» يُحِيلها تحويلُ الوحدات في خطوةٍ لاحقة إلى العربية
-        // (اختبار [TextProcessorTest]) فلا يبقى التقسيم وحده فاصلاً
-        // نهائياً. هنا نتحقق من المقسّم فقط.
+    fun unitWithNumber_numberSplitsFromArabicAndLatin() {
         val (texts, tags) = textsAndTags("الوزن 50kg", "ar")
-        assertEquals(listOf("الوزن 50", "kg"), texts)
-        assertEquals(listOf("ar", "en"), tags)
+        assertEquals(listOf("الوزن ", "50", "kg"), texts)
+        assertEquals(listOf("ar", "ar", "en"), tags)
         assertEquals("الوزن 50kg", texts.joinToString(""))
     }
 
     @Test
-    fun timeWithSuffix_neutralAttachesToArabicNotLatin() {
-        // «10:30» محايدة تسبقها العربية فتلتحق بهَا؛ «AM» لاتينيةٌ
-        // وحدها مقطعة.
+    fun timeWithSuffix_numberSplitsFromArabicAndLatin() {
         val (texts, tags) = textsAndTags("الاجتماع 10:30 AM", "ar")
-        assertEquals(listOf("الاجتماع 10:30 ", "AM"), texts)
-        assertEquals(listOf("ar", "en"), tags)
+        assertEquals(listOf("الاجتماع ", "10:30 ", "AM"), texts)
+        assertEquals(listOf("ar", "ar", "en"), tags)
         assertEquals("الاجتماع 10:30 AM", texts.joinToString(""))
     }
 
     @Test
-    fun percentWithSuffix_neutralAttachesToArabicNotLatin() {
+    fun percentWithSuffix_numberSplitsFromArabicAndLatin() {
         val (texts, tags) = textsAndTags("خصم 25% off", "ar")
-        // «25%» يُلحق بالعربية السابقة (اللغة التي تسبقها مباشرة)،
-        // و«off» اللاتينية وحدها مقطعة — بلا فرض افتراضية على الرقم.
-        assertEquals(listOf("خصم 25% ", "off"), texts)
-        assertEquals(listOf("ar", "en"), tags)
+        assertEquals(listOf("خصم ", "25% ", "off"), texts)
+        assertEquals(listOf("ar", "ar", "en"), tags)
         assertEquals("خصم 25% off", texts.joinToString(""))
+    }
+
+    @Test
+    fun numberInMiddle_splitsIntoThreeSegments() {
+        val input = "الكمية 5 فقط"
+        val (texts, tags) = textsAndTags(input, "ar")
+        assertEquals(listOf("الكمية ", "5 ", "فقط"), texts)
+        assertEquals(listOf("ar", "ar", "ar"), tags)
+        assertEquals(input, texts.joinToString(""))
+    }
+
+    @Test
+    fun numberAtBeginning_splitsIntoTwoSegments() {
+        val input = "5 كتب"
+        val (texts, tags) = textsAndTags(input, "ar")
+        assertEquals(listOf("5 ", "كتب"), texts)
+        assertEquals(listOf("ar", "ar"), tags)
+        assertEquals(input, texts.joinToString(""))
+    }
+
+    @Test
+    fun numberAtEnd_splitsIntoTwoSegments() {
+        val input = "الكمية 5"
+        val (texts, tags) = textsAndTags(input, "ar")
+        assertEquals(listOf("الكمية ", "5"), texts)
+        assertEquals(listOf("ar", "ar"), tags)
+        assertEquals(input, texts.joinToString(""))
+    }
+
+    @Test
+    fun formattedNumber_splitsIntoTwoSegments() {
+        val input = "30,496.00 جنيه"
+        val (texts, tags) = textsAndTags(input, "ar")
+        assertEquals(listOf("30,496.00 ", "جنيه"), texts)
+        assertEquals(listOf("ar", "ar"), tags)
+        assertEquals(input, texts.joinToString(""))
+    }
+
+    @Test
+    fun alphanumericIdentifier_splitsLettersAndDigits() {
+        val input = "abdo290"
+        val (texts, tags) = textsAndTags(input, "ar")
+        assertEquals(listOf("abdo", "290"), texts)
+        assertEquals(listOf("en", "ar"), tags)
+        assertEquals(input, texts.joinToString(""))
     }
 
     @Test

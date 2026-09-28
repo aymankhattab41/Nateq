@@ -172,6 +172,7 @@ class LanguageSegmenter(
         val segments = ArrayList<Segment>()
         var openStart = -1
         var openLanguage: String? = null
+        var openKind: Kind? = null
         var leadingStart = -1
         for (run in runs) {
             when (run.kind) {
@@ -192,7 +193,10 @@ class LanguageSegmenter(
                             if (leadingStart != -1) leadingStart else run.start
                         leadingStart = -1
                         openLanguage = language
-                    } else if (openLanguage != language) {
+                        openKind = run.kind
+                    } else if (openLanguage != language ||
+                        openKind != run.kind
+                    ) {
                         var cutPoint = run.start
                         if (cutPoint > 0 && cutPoint > openStart) {
                             val prevChar = text[cutPoint - 1]
@@ -209,8 +213,9 @@ class LanguageSegmenter(
                         )
                         openStart = cutPoint
                         openLanguage = language
+                        openKind = run.kind
                     }
-                    // نفس اللغة: يمدّ النهاية إلى نهاية الجولة
+                    // نفس اللغة ونفس النوع: يمدّ النهاية إلى نهاية الجولة
                     // (المحايد بينهما داخلٌ).
                 }
             }
@@ -228,14 +233,21 @@ class LanguageSegmenter(
         return segments
     }
 
-    /** يضيف مقطعاً جديداً ويدمجه مع السابق إن تطابقت لغتهما المحسومة. */
+    /**
+     * يضيف مقطعاً جديداً ويدمجه مع السابق إن تطابقت لغتهما ولم يكن أحدهما
+     * رقمياً.
+     */
     private fun addSegment(
         segments: ArrayList<Segment>,
         newSegment: Segment
     ) {
         if (newSegment.text.isEmpty()) return
         val last = segments.lastOrNull()
-        if (last != null && last.languageTag == newSegment.languageTag) {
+        if (last != null &&
+            last.languageTag == newSegment.languageTag &&
+            !last.isNumericOnly() &&
+            !newSegment.isNumericOnly()
+        ) {
             segments[segments.size - 1] = Segment(
                 last.text + newSegment.text,
                 last.languageTag
