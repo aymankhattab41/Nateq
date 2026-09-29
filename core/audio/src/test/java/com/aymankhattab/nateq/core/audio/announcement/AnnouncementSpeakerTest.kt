@@ -939,4 +939,85 @@ class AnnouncementSpeakerTest {
         )
         assertEquals("com.google.android.tts", result)
     }
+
+    @Test
+    fun `voiceFor matches iso3 language and country codes from vocalizer`() {
+        val vocalizerVoices = listOf(
+            Voice(
+                "vocalizer-laila",
+                Locale("ara", "SAU"),
+                Voice.QUALITY_HIGH, 0, false, emptySet()
+            ),
+            Voice(
+                "vocalizer-maged",
+                Locale("ara", "EGY"),
+                Voice.QUALITY_HIGH, 0, false, emptySet()
+            ),
+            Voice(
+                "vocalizer-tom",
+                Locale("eng", "USA"),
+                Voice.QUALITY_HIGH, 0, false, emptySet()
+            )
+        )
+        val arMatch = AnnouncementSpeaker.voiceFor(
+            vocalizerVoices, null, Locale("ar")
+        )
+        assertNotNull(arMatch)
+        assertEquals("vocalizer-laila", arMatch?.name)
+
+        val egMatch = AnnouncementSpeaker.voiceFor(
+            vocalizerVoices, null, Locale("ar", "EG")
+        )
+        assertEquals("vocalizer-maged", egMatch?.name)
+
+        val enMatch = AnnouncementSpeaker.voiceFor(
+            vocalizerVoices, null, Locale("en")
+        )
+        assertEquals("vocalizer-tom", enMatch?.name)
+    }
+
+    @Test
+    fun `fallbackVoiceFor matches iso3 language codes from vocalizer`() {
+        val vocalizerVoices = listOf(
+            Voice(
+                "vocalizer-laila",
+                Locale("ara", "SAU"),
+                Voice.QUALITY_HIGH, 0, false, emptySet()
+            ),
+            Voice(
+                "vocalizer-maged",
+                Locale("ara", "EGY"),
+                Voice.QUALITY_HIGH, 0, false, emptySet()
+            )
+        )
+        val fallback = AnnouncementSpeaker.fallbackVoiceFor(
+            vocalizerVoices,
+            Locale("ar"),
+            "vocalizer-laila"
+        )
+        assertEquals("vocalizer-maged", fallback?.name)
+    }
+
+    @Test
+    fun `resolveFallbackLocale prefers matching voice locale or region`() {
+        val vocalizerVoices = listOf(
+            Voice(
+                "vocalizer-laila",
+                Locale("ara", "SAU"),
+                Voice.QUALITY_HIGH, 0, false, emptySet()
+            )
+        )
+        val voiceFallback = AnnouncementSpeaker.resolveFallbackLocale(
+            Locale("ar"),
+            vocalizerVoices
+        )
+        assertEquals("ara", voiceFallback?.language)
+
+        val defaultFallback = AnnouncementSpeaker.resolveFallbackLocale(
+            Locale("ar"),
+            emptyList()
+        )
+        assertEquals("ar", defaultFallback?.language)
+        assertEquals("SA", defaultFallback?.country)
+    }
 }

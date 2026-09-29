@@ -22,6 +22,7 @@ import com.aymankhattab.nateq.core.data.SettingsChangeProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.SpeechLock
 import com.aymankhattab.nateq.util.LanguageCode
+import com.aymankhattab.nateq.util.LocaleUtils
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -138,17 +139,20 @@ class AnnouncementSpeaker(
             partVoice?.let { vid ->
                 voices.firstOrNull { it.name == vid }?.let { return it }
             }
+            val targetLang = LocaleUtils.normalizeLanguageCode(locale.language)
             val sameLanguage = voices.filter {
-                it.locale?.language == locale.language
+                LocaleUtils.normalizeLanguageCode(it.locale?.language) ==
+                    targetLang
             }
             if (sameLanguage.isEmpty()) return null
-            val country = locale.country
+            val country = LocaleUtils.normalizeCountryCode(locale.country)
             if (!country.isNullOrEmpty()) {
                 sameLanguage
                     .firstOrNull {
-                        it.locale?.country?.equals(
-                            country, ignoreCase = true
-                        ) == true
+                        val c = LocaleUtils.normalizeCountryCode(
+                            it.locale?.country
+                        )
+                        c?.equals(country, ignoreCase = true) == true
                     }
                     ?.let { return it }
             }
@@ -166,19 +170,48 @@ class AnnouncementSpeaker(
             excludedName: String?
         ): Voice? {
             if (voices.isNullOrEmpty()) return null
+            val targetLang = LocaleUtils.normalizeLanguageCode(locale.language)
             val eligible = voices.filter {
-                it.locale?.language == locale.language &&
-                    it.name != excludedName
+                LocaleUtils.normalizeLanguageCode(it.locale?.language) ==
+                    targetLang && it.name != excludedName
             }
             if (eligible.isEmpty()) return null
-            val country = locale.country
-            return eligible
-                .firstOrNull {
-                    it.locale?.country?.equals(
-                        country, ignoreCase = true
-                    ) == true
-                }
-                ?: eligible.first()
+            val country = LocaleUtils.normalizeCountryCode(locale.country)
+            return if (!country.isNullOrEmpty()) {
+                eligible
+                    .firstOrNull {
+                        val c = LocaleUtils.normalizeCountryCode(
+                            it.locale?.country
+                        )
+                        c?.equals(country, ignoreCase = true) == true
+                    }
+                    ?: eligible.first()
+            } else {
+                eligible.first()
+            }
+        }
+
+        /** حل لسان بديل مدعوم بإقليم عند رفض المحرك اللسان المجرد (مثل
+         *  رفض Vocalizer لـ Locale("ar") بدون بلد): يفضل إقليم أول صوت
+         *  مطابق في المحرك، وإلا إقليماً قياسياً شهيراً باللسان ذاته. */
+        internal fun resolveFallbackLocale(
+            locale: Locale,
+            voices: Collection<Voice>?
+        ): Locale? {
+            val targetLang = LocaleUtils.normalizeLanguageCode(locale.language)
+            val voiceMatch = voices?.firstOrNull {
+                LocaleUtils.normalizeLanguageCode(it.locale?.language) ==
+                    targetLang
+            }
+            if (voiceMatch?.locale != null) {
+                return voiceMatch.locale
+            }
+            return when (targetLang) {
+                LanguageCode.AR.tag -> Locale.forLanguageTag("ar-SA")
+                LanguageCode.EN.tag -> Locale.US
+                "fr" -> Locale.FRANCE
+                else -> null
+            }
         }
 
         // نطاق الإيموجي الشائع (بلوكات Unicode): رموز التباين (2600-27BF)،
@@ -1067,8 +1100,13 @@ class AnnouncementSpeaker(
         engineOverride: String? = null,
         immediate: Boolean = false
     ) {
+        val wasWarm = tts != null && boundEngine == (
+            engineOverride?.takeIf {
+                it in EnginePicker.installedEnginePackages(appContext)
+            }
+        )
         val executeSpeech = {
-            if (immediate) {
+            if (immediate && wasWarm) {
                 doSpeakParts(
                     text, locale, speechRate, pitch, volume,
                     emojiCfg, parts, attempt = 1
@@ -1076,13 +1114,14 @@ class AnnouncementSpeaker(
             } else {
                 // تأجيل قصير يسمح لاتصال محرك TTS بالاستقرار بعد
                 // onInit (حتى لو أعلن Success مبكراً، قد يبقى ربط
-                // النظام معلقاً لحظياً ويُسقط speak فورياً).
+                // النظام معلقاً لحظياً ويُسقط speak فورياً كما في Vocalizer).
+                val delayMs = if (immediate) 60L else 80L
                 mainHandler.postDelayed({
                     doSpeakParts(
                         text, locale, speechRate, pitch, volume,
                         emojiCfg, parts, attempt = 1
                     )
-                }, 80)
+                }, delayMs)
             }
         }
         ensureInit({ ready ->
@@ -1507,26 +1546,36 @@ class AnnouncementSpeaker(
         var voiceApplied = false
         if (chosen == null) {
             Log.w(TAG, "[Speaker] no engine voice for $locale")
-        } else if (tts.setVoice(chosen) == TextToSpeech.SUCCESS) {
-            voiceApplied = true
         } else {
-            Log.w(
-                TAG,
-                "[Speaker] engine refused voice " +
-                    "(name=${chosen.name}) — نبحث بديلاً باللسان ذاته"
-            )
-            var nameToSkip: String? = chosen.name
-            while (!voiceApplied) {
-                val next = fallbackVoiceFor(voices, locale, nameToSkip)
-                    ?: break
-                if (tts.setVoice(next) == TextToSpeech.SUCCESS) {
-                    voiceApplied = true
-                } else {
-                    nameToSkip = next.name
-                }
+            // محرك Vocalizer ومحركات أخرى تشترط تعيين لغة الصوت أولاً عبر
+            // setLanguage قبل setVoice حتى لا يُرفض الصوت لاختلاف سياق المحرك
+            runCatching {
+                chosen.locale?.let { tts.setLanguage(it) }
             }
-            if (!voiceApplied) {
-                Log.w(TAG, "[Speaker] no usable voice — نحو setLanguage")
+            if (tts.setVoice(chosen) == TextToSpeech.SUCCESS) {
+                voiceApplied = true
+            } else {
+                Log.w(
+                    TAG,
+                    "[Speaker] engine refused voice " +
+                        "(name=${chosen.name}) — نبحث بديلاً باللسان ذاته"
+                )
+                var nameToSkip: String? = chosen.name
+                while (!voiceApplied) {
+                    val next = fallbackVoiceFor(voices, locale, nameToSkip)
+                        ?: break
+                    runCatching {
+                        next.locale?.let { tts.setLanguage(it) }
+                    }
+                    if (tts.setVoice(next) == TextToSpeech.SUCCESS) {
+                        voiceApplied = true
+                    } else {
+                        nameToSkip = next.name
+                    }
+                }
+                if (!voiceApplied) {
+                    Log.w(TAG, "[Speaker] no usable voice — نحو setLanguage")
+                }
             }
         }
         if (!voiceApplied) {
@@ -1536,7 +1585,15 @@ class AnnouncementSpeaker(
             // بصوتٍ عربي — يُسجَّل تحذير (لا افتراض نجاح صامت) مثل
             // SystemVoiceProvider (الجولة الخامسة، الأمر 4) لأن هذا مثيل
             // TextToSpeech منفصل تماماً.
-            val langResult = tts.setLanguage(locale)
+            var langResult = tts.setLanguage(locale)
+            if (langResult == TextToSpeech.LANG_NOT_SUPPORTED
+                || langResult == TextToSpeech.LANG_MISSING_DATA
+            ) {
+                val fallbackLocale = resolveFallbackLocale(locale, voices)
+                if (fallbackLocale != null && fallbackLocale != locale) {
+                    langResult = tts.setLanguage(fallbackLocale)
+                }
+            }
             if (langResult == TextToSpeech.LANG_NOT_SUPPORTED
                 || langResult == TextToSpeech.LANG_MISSING_DATA
             ) {
@@ -1615,7 +1672,7 @@ class AnnouncementSpeaker(
         if (status == TextToSpeech.ERROR) {
             activeUtteranceIds.remove(utteranceId)
         }
-        if (status == TextToSpeech.ERROR && attempt < 3) {
+        if (status == TextToSpeech.ERROR && attempt < 4) {
             mainHandler.postDelayed({
                 doSpeak(
                     text, locale, speechRate, pitch, volume,
