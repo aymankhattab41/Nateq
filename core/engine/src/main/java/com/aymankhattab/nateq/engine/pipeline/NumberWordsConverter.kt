@@ -83,9 +83,9 @@ internal object NumberWordsConverter {
     /**
      * تحويل نص رقم عشري (مثل "1.0" أو "3.141") إلى
      * كلمات عربية، مع الحفاظ على الأصفار العشرية
-     * («1.0» → واحد فاصلة صِفْرْ). صفرٌ عشري وحيد يُنطق
-     * لإبراز دقة العشر، والأصفار المتكررة («.00») عُشاريٌ
-     * صفري تُسقط فيُكتفى بالجزء الصحيح.
+     * («1.0» → واحد فاصلة صِفْرْ). العشرية الصفرية بالكامل
+     * تُنطق صفراً واحداً («5.00» → خمسة فاصلة صِفْرْ) بلا
+     * تكرارٍ ولا حذفٍ لدقة العدد.
      */
     fun decimalStringToWords(plain: String): String {
         val dot = plain.indexOf('.')
@@ -105,11 +105,11 @@ internal object NumberWordsConverter {
         val intWord = integerPart?.let { numberToWords(it) }
             ?: spokenDigits(integerPartStr)
         val decimalDigits = clean.substring(cleanDot + 1)
-        // «30496.00» عُشاريُها صفريٌ بالكامل: نطق «ثلاثون ألفاً…
-        // فاصلة صِفْرْ صِفْرْ» ثرثرةٌ بلا دلالة، والعددُ الصحيحُ
-        // سابقاً كان يُنطق هكذا عبر المسار القديم على Double.
-        if (decimalDigits.all { it == '0' } && decimalDigits.length > 1) {
-            return "$base$intWord"
+        // العشرية الصفرية بالكامل («.0»/«.00») لا تُسقط: تُنطق صفراً
+        // واحداً («30496.00» → «… فاصلة صِفْرْ») — لا «صِفْرْ صِفْرْ»
+        // المكررتين بلا دلالة ولا حذفٍ للصفر الذي يحفظ دقة العدد.
+        if (decimalDigits.all { it == '0' }) {
+            return "$base$intWord فاصلة صِفْرْ"
         }
         return when (decimalDigits) {
             "5" -> if (integerPart == 0L) "${base}نصف"

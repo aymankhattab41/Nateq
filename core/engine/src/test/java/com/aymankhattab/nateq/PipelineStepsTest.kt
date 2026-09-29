@@ -568,23 +568,23 @@ class PipelineStepsTest {
     }
 
     @Test
-    fun decimalStringToWords_repeatedZeroTenths_keptAsInteger() {
-        // الأصفار العشرية المتكررة («.00»/«.000») عُشاريٌ صفري بلا
-        // دلالة: يُكتفى بالجزء الصحيح كالمسار القديم على Double.
+    fun decimalStringToWords_repeatedZeroTenths_spokenAsSingleZero() {
+        // الأصفار العشرية المتكررة («.00»/«.000») تُنطق صفراً واحداً
+        // فتُحفظ دقة العدد بلا «صِفْرْ صِفْرْ» مكررتين بلا دلالة.
         assertEquals(
-            "واحد",
+            "واحد فاصلة صِفْرْ",
             NumberWordsConverter.decimalStringToWords("1.00")
         )
         assertEquals(
-            "واحد",
+            "واحد فاصلة صِفْرْ",
             NumberWordsConverter.decimalStringToWords("1.000")
         )
         assertEquals(
-            "ثلاثون ألفاً وأربعمائة وستة وتسعون",
+            "ثلاثون ألفاً وأربعمائة وستة وتسعون فاصلة صِفْرْ",
             NumberWordsConverter.decimalStringToWords("30496.00")
         )
         assertEquals(
-            "ناقص خمسة",
+            "ناقص خمسة فاصلة صِفْرْ",
             NumberWordsConverter.decimalStringToWords("-5.00")
         )
     }
@@ -1007,7 +1007,7 @@ class PipelineStepsTest {
             PhoneNumberStep.apply("المبلغ 30,496.00")
         )
         assertEquals(
-            "المبلغ ثلاثون ألفاً وأربعمائة وستة وتسعون",
+            "المبلغ ثلاثون ألفاً وأربعمائة وستة وتسعون فاصلة صِفْرْ",
             NumberStep.apply(PhoneNumberStep.apply("المبلغ 30496.00"))
         )
     }
