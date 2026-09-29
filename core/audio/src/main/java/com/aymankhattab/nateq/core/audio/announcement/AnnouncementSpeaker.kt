@@ -566,7 +566,7 @@ class AnnouncementSpeaker(
     private fun armSpeechWatchdog(units: List<SpeakUnit>) {
         cancelSpeechWatchdog()
         val totalChars = units.sumOf { it.text.length }
-        val seconds = (totalChars / 20.0 + 2.5).coerceIn(2.5, 60.0)
+        val seconds = (totalChars / 8.0 + 20.0).coerceIn(20.0, 120.0)
         val timer = Runnable {
             speechWatchdog = null
             Log.w(TAG,

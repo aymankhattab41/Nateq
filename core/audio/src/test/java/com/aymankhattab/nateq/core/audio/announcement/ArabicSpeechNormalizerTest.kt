@@ -16,19 +16,19 @@ class ArabicSpeechNormalizerTest {
         )
     }
 
+    private val expectedMasa =
+        "\u0645\u064e\u0633\u064e\u0627\u0621\u064e\u0646\u0652"
+
     @Test
     fun masaA_isFullyVoweled() {
         val raw = "\u0645\u0633\u0627\u0621\u064b" // مساءً
-        assertEquals(
-            "\u0645\u064e\u0633\u064e\u0627\u0621\u0627\u064b", // مَسَاءاً
-            ArabicSpeechNormalizer.normalize(raw)
-        )
-        // ومَسَاءً المشكولة سلفاً بغير ألف تُعوَّض بمَسَاءاً
+        assertEquals(expectedMasa, ArabicSpeechNormalizer.normalize(raw))
+        // ومَسَاءً المشكولة سلفاً بتنوين الهمزة
         val preVoweled = "\u0645\u064e\u0633\u064e\u0627\u0621\u064b"
-        assertEquals(
-            "\u0645\u064e\u0633\u064e\u0627\u0621\u0627\u064b",
-            ArabicSpeechNormalizer.normalize(preVoweled)
-        )
+        assertEquals(expectedMasa, ArabicSpeechNormalizer.normalize(preVoweled))
+        // ومساءا (بألف بعد تجريد التنوين)
+        val plainAlif = "\u0645\u0633\u0627\u0621\u0627"
+        assertEquals(expectedMasa, ArabicSpeechNormalizer.normalize(plainAlif))
     }
 
     @Test
@@ -41,14 +41,25 @@ class ArabicSpeechNormalizerTest {
     }
 
     @Test
+    fun timeAnnouncement_normalizesStrippedMasa() {
+        val rawTime = "الساعة الآن السادسة مساء"
+        val out = ArabicSpeechNormalizer.normalize(rawTime)
+        assertTrue(out.endsWith(expectedMasa))
+    }
+
+    @Test
+    fun masaAlKhair_unTouched() {
+        val greeting = "مساء الخير"
+        assertEquals(greeting, ArabicSpeechNormalizer.normalize(greeting))
+    }
+
+    @Test
     fun mixedSentence_normalizesWordsOnly() {
         val raw = "الواحدة \u0648\u0627\u062d\u062f " + // واحد
             "\u0648\u064e" + // وَ
             "النصف \u0645\u0633\u0627\u0621\u064b" // مساءً
         val out = ArabicSpeechNormalizer.normalize(raw)
-        val expectedMasaA =
-            "\u0645\u064e\u0633\u064e\u0627\u0621\u0627\u064b"
-        assertTrue(out.contains(expectedMasaA))
+        assertTrue(out.contains(expectedMasa))
     }
 
     @Test
