@@ -1020,4 +1020,98 @@ class AnnouncementSpeakerTest {
         assertEquals("ar", defaultFallback?.language)
         assertEquals("SA", defaultFallback?.country)
     }
+
+    @Test
+    fun `isResumableCategory identifies notifications and sms only`() {
+        assertTrue(
+            AnnouncementSpeaker.isResumableCategory(
+                SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+            )
+        )
+        assertTrue(
+            AnnouncementSpeaker.isResumableCategory(
+                SettingsRepository.ANNOUNCE_CATEGORY_SMS
+            )
+        )
+        assertFalse(
+            AnnouncementSpeaker.isResumableCategory(
+                SettingsRepository.VOICE_CATEGORY_BATTERY
+            )
+        )
+        assertFalse(
+            AnnouncementSpeaker.isResumableCategory(
+                SettingsRepository.VOICE_CATEGORY_TIME
+            )
+        )
+        assertFalse(AnnouncementSpeaker.isResumableCategory(null))
+    }
+
+    @Test
+    fun `splitIntoSentences breaks long notifications at punctuation`() {
+        val shortText = "رسالة قصيرة"
+        assertEquals(
+            listOf(shortText),
+            AnnouncementSpeaker.splitIntoSentences(shortText)
+        )
+
+        val longText =
+            "السلام عليكم ورحمة الله وبركاته. أردت إخبارك بأن " +
+            "موعد الاجتماع غداً الساعة العاشرة صباحاً، برجاء الحضور."
+        val sentences = AnnouncementSpeaker.splitIntoSentences(longText)
+        assertTrue(sentences.size >= 2)
+        assertEquals("السلام عليكم ورحمة الله وبركاته.", sentences[0])
+    }
+
+    @Test
+    fun `shouldPreemptCurrentSpeech triggers when event preempts message`() {
+        val speaker = AnnouncementSpeaker(context)
+        try {
+            val nowSpeakingField = AnnouncementSpeaker::class.java
+                .getDeclaredField("nowSpeaking")
+            nowSpeakingField.isAccessible = true
+            val currentCategoryField = AnnouncementSpeaker::class.java
+                .getDeclaredField("currentCategory")
+            currentCategoryField.isAccessible = true
+
+            // ليس هناك نطق جارٍ
+            nowSpeakingField.set(speaker, false)
+            currentCategoryField.set(
+                speaker,
+                SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+            )
+            assertFalse(
+                speaker.shouldPreemptCurrentSpeech(
+                    SettingsRepository.VOICE_CATEGORY_BATTERY
+                )
+            )
+
+            // نطق جارٍ لإشعار، وحدث بطارية قادم
+            nowSpeakingField.set(speaker, true)
+            assertTrue(
+                speaker.shouldPreemptCurrentSpeech(
+                    SettingsRepository.VOICE_CATEGORY_BATTERY
+                )
+            )
+
+            // نطق جارٍ لإشعار، وإشعار آخر قادم: لا يقاطع
+            assertFalse(
+                speaker.shouldPreemptCurrentSpeech(
+                    SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+                )
+            )
+
+            // نطق جارٍ لبطارية، وإعلان وقت قادم: لا يقاطع
+            currentCategoryField.set(
+                speaker,
+                SettingsRepository.VOICE_CATEGORY_BATTERY
+            )
+            assertFalse(
+                speaker.shouldPreemptCurrentSpeech(
+                    SettingsRepository.VOICE_CATEGORY_TIME
+                )
+            )
+        } finally {
+            speaker.shutdown()
+        }
+    }
 }

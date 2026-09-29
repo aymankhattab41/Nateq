@@ -122,6 +122,33 @@ class AnnouncementSpeaker(
         fun isEventCategory(category: String?): Boolean =
             category != null && category in EVENT_CATEGORIES
 
+        fun isResumableCategory(category: String?): Boolean =
+            category == SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS ||
+                category == SettingsRepository.ANNOUNCE_CATEGORY_SMS
+
+        /** تجزئة نصوص الإشعارات والرسائل الطويلة إلى جمل طبيعية مستقلة
+         *  لتمكين مقاطعتها بحدث آني واستئناف ما تبقى منها بسلاسة. */
+        internal fun splitIntoSentences(text: String): List<String> {
+            if (text.length <= 60) return listOf(text)
+            val result = mutableListOf<String>()
+            val current = StringBuilder()
+            val delimiters = charArrayOf('.', '!', '?', '،', '؛', '\n', ':')
+            for (i in text.indices) {
+                val c = text[i]
+                current.append(c)
+                if (c in delimiters && current.length >= 25) {
+                    val s = current.toString().trim()
+                    if (s.isNotBlank()) result.add(s)
+                    current.setLength(0)
+                }
+            }
+            val remaining = current.toString().trim()
+            if (remaining.isNotBlank()) {
+                result.add(remaining)
+            }
+            return if (result.isEmpty()) listOf(text) else result
+        }
+
         /** حلّ صوت وحدةٍ لغوية من صوت المحرك: يفضّل المعرّف الصريح
          *  ([partVoice] كاسم صوت مخصص في إعدادات اللغة)؛ وإلا أفضلَ صوتٍ
          *  لسانُه لسانُ الوحدة — تُرجَّح مطابقةُ رمز البلد، ثم أيُّ صوتٍ
@@ -312,6 +339,12 @@ class AnnouncementSpeaker(
     private var lastFocusGain: Int? = null
     private var lastAudioAttributes: AudioAttributes? = null
     private var hasAudioFocus = false
+    private var skippedFocusForMedia = false
+
+    @Volatile
+    private var resumableAnnouncement: ResumableAnnouncement? = null
+    private val pendingUnitsForResume =
+        CopyOnWriteArrayList<Pair<String, SpeakUnit>>()
 
     // آخر سمات طُبّقت على المحرك: نتغير فقط عند الاختلاف الفعلي فلا نُعيد
     // setAudioAttributes بلا داعٍ (تبقى أغلى قليلاً من الفحص البسيط).
@@ -636,6 +669,14 @@ class AnnouncementSpeaker(
                     override fun onDone(utteranceId: String?) {
                         if (utteranceId != null) {
                             activeUtteranceIds.remove(utteranceId)
+                            pendingUnitsForResume.removeAll {
+                                it.first == utteranceId
+                            }
+                            if (pendingUnitsForResume.isEmpty() &&
+                                isResumableCategory(currentCategory)
+                            ) {
+                                resumableAnnouncement = null
+                            }
                         }
                         val isFinal = (utteranceId != null &&
                             utteranceId == lastQueuedUtteranceId) ||
@@ -652,6 +693,7 @@ class AnnouncementSpeaker(
                             notifySpeechComplete()
                             nowSpeaking = false
                             currentCategory = null
+                            checkAndResumeInterruptedSpeech()
                         }
                     }
 
@@ -762,6 +804,22 @@ class AnnouncementSpeaker(
             }
         } catch (t: Throwable) {
             Log.w(TAG, "scheduler service start failed", t)
+        }
+
+        if (shouldPreemptCurrentSpeech(category)) {
+            val remaining = pendingUnitsForResume.map { it.second }
+            if (remaining.isNotEmpty()) {
+                resumableAnnouncement = ResumableAnnouncement(
+                    units = remaining,
+                    engineOverride = boundEngine,
+                    category = currentCategory,
+                    voiceId = voiceId
+                )
+            }
+        } else if (!isEventCategory(category) &&
+            !isResumableCategory(category)
+        ) {
+            resumableAnnouncement = null
         }
 
         val gen = speechGeneration.incrementAndGet()
@@ -1229,6 +1287,12 @@ class AnnouncementSpeaker(
         applySpeechAudioAttributes()
         val unitUtteranceIds = validUnits.map { nextUtteranceId() }
         lastQueuedUtteranceId = unitUtteranceIds.lastOrNull()
+        pendingUnitsForResume.clear()
+        if (isResumableCategory(currentCategory)) {
+            validUnits.forEachIndexed { index, unit ->
+                pendingUnitsForResume.add(unitUtteranceIds[index] to unit)
+            }
+        }
         try {
             validUnits.forEachIndexed { index, unit ->
                 val queueMode = if (index == 0) {
@@ -1266,9 +1330,47 @@ class AnnouncementSpeaker(
         }
     }
 
+    /** بيانات جلسة إشعار/رسالة تم مقاطعتها بحدث آني؛ تُحفظ لاستئنافها فوراً. */
+    internal data class ResumableAnnouncement(
+        val units: List<SpeakUnit>,
+        val engineOverride: String?,
+        val category: String?,
+        val voiceId: String?
+    )
+
+    internal fun shouldPreemptCurrentSpeech(
+        incomingCategory: String?
+    ): Boolean {
+        return nowSpeaking &&
+            isResumableCategory(currentCategory) &&
+            isEventCategory(incomingCategory) &&
+            !isResumableCategory(incomingCategory)
+    }
+
+    private fun checkAndResumeInterruptedSpeech() {
+        val toResume = resumableAnnouncement ?: return
+        resumableAnnouncement = null
+        if (toResume.units.isEmpty()) return
+        mainHandler.postDelayed({
+            resumeInterruptedSpeech(toResume)
+        }, 80L)
+    }
+
+    private fun resumeInterruptedSpeech(target: ResumableAnnouncement) {
+        if (nowSpeaking) return
+        currentCategory = target.category
+        voiceId = target.voiceId
+        val gen = speechGeneration.incrementAndGet()
+        ensureInit({ ready ->
+            if (ready && gen == speechGeneration.get()) {
+                sendSpeakUnits(target.units, attempt = 1)
+            }
+        }, target.engineOverride)
+    }
+
     /** وحدة نطق مستقلة بمعاملاتها (لغة/صوت/أشرطة)
      *  داخل دورة الإعلان الواحدة. */
-    private data class SpeakUnit(
+    internal data class SpeakUnit(
         val text: String,
         val locale: Locale,
         val rate: Float,
@@ -1330,6 +1432,9 @@ class AnnouncementSpeaker(
     private fun mergeAdjacentSameVoice(
         units: List<SpeakUnit>
     ): List<SpeakUnit> {
+        if (isResumableCategory(currentCategory)) {
+            return units
+        }
         if (units.size < 2) return units
         val merged = ArrayList<SpeakUnit>(units.size)
         for (unit in units) {
@@ -1415,15 +1520,30 @@ class AnnouncementSpeaker(
                     segment.text, segment.languageTag, boundEngine
                 )
             }.getOrDefault(segment.text)
-            out.add(
-                SpeakUnit(
-                    readyText, segmentLocale,
-                    numbersSpeech?.rate ?: baseRate,
-                    numbersSpeech?.pitch ?: basePitch,
-                    numbersSpeech?.volume ?: baseVolume,
-                    segmentVoice
+            if (isResumableCategory(currentCategory)) {
+                val sentences = splitIntoSentences(readyText)
+                sentences.forEach { sentence ->
+                    out.add(
+                        SpeakUnit(
+                            sentence, segmentLocale,
+                            numbersSpeech?.rate ?: baseRate,
+                            numbersSpeech?.pitch ?: basePitch,
+                            numbersSpeech?.volume ?: baseVolume,
+                            segmentVoice
+                        )
+                    )
+                }
+            } else {
+                out.add(
+                    SpeakUnit(
+                        readyText, segmentLocale,
+                        numbersSpeech?.rate ?: baseRate,
+                        numbersSpeech?.pitch ?: basePitch,
+                        numbersSpeech?.volume ?: baseVolume,
+                        segmentVoice
+                    )
                 )
-            )
+            }
         }
     }
 
@@ -1697,6 +1817,8 @@ class AnnouncementSpeaker(
      *  يجب ألا يُجبر الإعلانَ التالي على إعادة بناء المحرك بثانية كاملة —
      *  التدمير الكامل يخصّ [shutdown] عند خروج الخدمة نهائياً). */
     fun stop() {
+        resumableAnnouncement = null
+        pendingUnitsForResume.clear()
         speechGeneration.incrementAndGet()
         AudioCuePlayer.getInstance(appContext).stop()
         stopInterruptionMonitoring()
@@ -1804,6 +1926,24 @@ class AnnouncementSpeaker(
      * @return نتيجة النظام: GRANTED / DELAYED / FAILED (يُحترم الجميع).
      */
     private fun requestAudioFocus(): Int {
+        val isMusicActive = runCatching {
+            audioManager.isMusicActive
+        }.getOrDefault(false)
+        val inCall = runCatching {
+            val mode = audioManager.mode
+            mode == AudioManager.MODE_IN_CALL ||
+                mode == AudioManager.MODE_IN_COMMUNICATION
+        }.getOrDefault(false)
+
+        // عند تشغيل الوسائط خارج المكالمات: لا نطلب التركيز الصوتي حتى
+        // لا يُخفض أندرويد صوت مشغلات الموسيقى والفيديوهات (منع Audio Ducking).
+        if (isMusicActive && !inCall) {
+            hasAudioFocus = true
+            skippedFocusForMedia = true
+            return AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        }
+        skippedFocusForMedia = false
+
         if (hasAudioFocus && (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
             audioFocusRequest != null)
         ) {
@@ -1873,6 +2013,7 @@ class AnnouncementSpeaker(
     fun resetAudioFocusUnconditionally() {
         Log.i(TAG, "[Focus] إعادة ضبط يدوية — abandon بلا شرط")
         hasAudioFocus = false
+        skippedFocusForMedia = false
         pendingFocusAction = null
         pendingFocusTimer?.let { mainHandler.removeCallbacks(it) }
         pendingFocusTimer = null
@@ -1903,6 +2044,10 @@ class AnnouncementSpeaker(
         pendingFocusAction = null
         pendingFocusTimer?.let { mainHandler.removeCallbacks(it) }
         pendingFocusTimer = null
+        if (skippedFocusForMedia) {
+            skippedFocusForMedia = false
+            return
+        }
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 audioFocusRequest?.let {
