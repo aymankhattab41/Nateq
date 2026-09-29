@@ -845,9 +845,10 @@ override fun onDestroy() {
         )
         val finalEngine = routed.engine
         val finalLocale = if (matchesRequest) {
-            convertTarget?.let { it.convertLocale }
+            convertTarget?.convertLocale
+                ?: Locale.forLanguageTag(languageTag)
         } else {
-            null
+            Locale.forLanguageTag(languageTag)
         }
         val finalVoiceName = routed.voiceName
 
@@ -1003,7 +1004,12 @@ override fun onDestroy() {
         return SegmentParams(
             processed, voice, provider, finalRate, finalPitch,
             finalVolume, routed.engine,
-            if (matches) convert?.convertLocale else null,
+            if (matches) {
+                convert?.convertLocale
+                    ?: Locale.forLanguageTag(segTag)
+            } else {
+                Locale.forLanguageTag(segTag)
+            },
             routed.voiceName
         )
     }

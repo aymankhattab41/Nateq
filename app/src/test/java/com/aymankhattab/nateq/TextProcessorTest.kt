@@ -559,6 +559,11 @@ class TextProcessorTest {
     }
 
     @Test
+    fun testOnePointZeroProcessing() {
+        assertEquals("واحد", processor.process("1.0", "ar"))
+    }
+
+    @Test
     fun thousandsSeparators_stillRemoved() {
         assertEquals(
             "ألف ومائتان وأربعة وثلاثون",

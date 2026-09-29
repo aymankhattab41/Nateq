@@ -445,7 +445,8 @@ class SystemVoiceProvider(
                     runCatching { instance.stop() }
                 }
             }
-            val resolvedEngine = resolveEngine(enginePackage, voiceLocale)
+            val targetLocale = voiceLocale ?: voice.locale
+            val resolvedEngine = resolveEngine(enginePackage, targetLocale)
             if (resolvedEngine == null) {
                 val installed = EnginePicker.installedEnginePackages(context)
                 if (enginePackage != null
@@ -959,6 +960,30 @@ class SystemVoiceProvider(
                         return false
                     }
                     engine.voice = matching
+                }
+            }
+        } else {
+            // إن لم يُحدد اسم صوت صريح، نتحقق أن صوت المحرك الحالي
+            // يطابق لغة النطق المطلوبة حتى لا يبقى المحرك على صوت لغة سابقة
+            // (كالإنجليزية) عند نطق مقطع عربي فيقرأ الحروف هجاءً مفرّقاً.
+            runCatching {
+                val current = engine.voice
+                if (current == null ||
+                    current.locale.language != voice.locale.language
+                ) {
+                    val matching = engine.voices
+                        ?.filter {
+                            it.locale.language == voice.locale.language
+                        }
+                        ?.sortedWith(
+                            compareBy(
+                                { it.isNetworkConnectionRequired },
+                                { it.locale.country != voice.locale.country }
+                            )
+                        )?.firstOrNull()
+                    if (matching != null) {
+                        engine.voice = matching
+                    }
                 }
             }
         }

@@ -36,6 +36,11 @@ class PipelineStepsTest {
     // ═══════════════════════ UnitStep ═══════════════════════
 
     @Test
+    fun testOnePointZero() {
+        assertEquals("واحد", NumberStep.apply("1.0"))
+    }
+
+    @Test
     fun unit_1_masculine() {
         assertEquals("متر واحد", UnitStep.apply("1 م"))
     }
