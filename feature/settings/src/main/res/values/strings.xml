@@ -343,8 +343,6 @@
 <string name="language_spanish">الإسبانية</string>
 <string name="media_stream_always">الإعلانات على مسار الوسائط دائماً</string>
 <string name="media_stream_always_summary">ينطق الإعلان عبر مسار الموسيقى حتى دون قارئ الشاشة، ليتجاوز كتم مسار الإتاحة على بعض الأجهزة</string>
-<string name="duck_media_during_announcements">خفض صوت الوسائط أثناء النطق</string>
-<string name="duck_media_during_announcements_summary">عند النطق تُخفض وسائط التطبيقات الأخرى مؤقتاً ثم تعود تلقائياً. معطّل: تتوقف وسائطها مؤقتاً دون أي خفض لمستوى الصوت</string>
 <string name="time_announcement_scenarios_title">نطق الساعة في حالات خاصة</string>
 <string name="time_announcement_during_calls">نطق الساعة أثناء المكالمات</string>
 <string name="time_announcement_during_calls_summary">يعلن الوقت تلقائياً حتى أثناء المكالمة الهاتفية (معطّل افتراضياً)</string>

@@ -343,8 +343,6 @@
 <string name="language_spanish">Spanish</string>
 <string name="media_stream_always">Always announce on the media stream</string>
 <string name="media_stream_always_summary">Speak through the music stream even when the screen reader is off, to bypass the muted accessibility stream on some devices</string>
-<string name="duck_media_during_announcements">Lower other apps\' media while speaking</string>
-<string name="duck_media_during_announcements_summary">While an announcement plays, other apps\' media is temporarily lowered and returns on its own. Off: their media pauses briefly with no volume lowering</string>
 <string name="time_announcement_scenarios_title">Time announcement in special cases</string>
 <string name="time_announcement_during_calls">Announce the time during calls</string>
 <string name="time_announcement_during_calls_summary">Announce the time automatically even during a phone call (off by default)</string>

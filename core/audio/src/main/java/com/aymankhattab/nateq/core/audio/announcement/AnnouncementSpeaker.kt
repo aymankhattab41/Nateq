@@ -113,21 +113,13 @@ class AnnouncementSpeaker(
             SettingsRepository.VOICE_CATEGORY_BATTERY,
             SettingsRepository.ANNOUNCE_CATEGORY_CALLER,
             SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR,
-            SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN,
+            SettingsRepository.ANNOUNCE_CATEGORY_SMS,
+            SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
         )
 
         fun isEventCategory(category: String?): Boolean =
             category != null && category in EVENT_CATEGORIES
-
-        /** نوع التركيز الصوتي حسب مفتاح «خفض صوت الوسائط أثناء النطق»:
-         *  مفعّل = MAY_DUCK (تُخفض وسائط الآخرين مؤقتاً)؛ معطّل =
-         *  GAIN_TRANSIENT (تتوقف وسائط الآخرين مؤقتاً بلا خفض للمستوى). */
-        internal fun audioFocusTypeFor(duckMedia: Boolean): Int =
-            if (duckMedia) {
-                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
-            } else {
-                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
-            }
 
         /** حلّ صوت وحدةٍ لغوية من صوت المحرك: يفضّل المعرّف الصريح
          *  ([partVoice] كاسم صوت مخصص في إعدادات اللغة)؛ وإلا أفضلَ صوتٍ
@@ -473,7 +465,7 @@ class AnnouncementSpeaker(
         speechWatchdog = null
     }
 
-    /** فتح حارس انتهاء النطق بميزانية تتدرج من طول النص (أدنى 5 ثوانٍ
+    /** فتح حارس انتهاء النطق بميزانية تتدرج من طول النص (أدنى 2.5 ثانية
      *  حتى أقصى 60): إن لم يصل onDone/onError لدورة النطق الجارية خلالها —
      *  محركٌ علّق صامتاً — يُحرَّر التركيز ويُرفع رصد الإسكات (المحور
      *  السادس: لا «تركيز مكتوم» بلا مخرج أبداً). عند الاطلاق المتأخر للحدث
@@ -482,7 +474,7 @@ class AnnouncementSpeaker(
     private fun armSpeechWatchdog(units: List<SpeakUnit>) {
         cancelSpeechWatchdog()
         val totalChars = units.sumOf { it.text.length }
-        val seconds = (totalChars / 20.0 + 5.0).coerceIn(5.0, 60.0)
+        val seconds = (totalChars / 20.0 + 2.5).coerceIn(2.5, 60.0)
         val timer = Runnable {
             speechWatchdog = null
             Log.w(TAG,
@@ -607,6 +599,13 @@ class AnnouncementSpeaker(
                     override fun onError(
                         utteranceId: String?,
                         errorCode: Int
+                    ) {
+                        handleFailure(utteranceId)
+                    }
+
+                    override fun onStop(
+                        utteranceId: String?,
+                        interrupted: Boolean
                     ) {
                         handleFailure(utteranceId)
                     }
@@ -1478,9 +1477,24 @@ class AnnouncementSpeaker(
             vid,
             locale
         )
-        if (chosen != null) {
-            tts.voice = chosen
+        // تعيينُ صوت الوحدة بنتيجةٍ مُتفحَّصة لا خاصيةً صامتةً: كانت
+        // `tts.voice = chosen` تُهمل نتيجة التحكيم، فبعض المحركات (ظاهرة
+        // Vocalizer) ترفض الصوتَ بصمتٍ وتُكمل الدورةَ بإخراجِ لا صوتَ فيه.
+        // نتيجة != SUCCESS تنزل اللغةَ بدل أن تُنتج جملةً صامتة.
+        val voiceApplied = if (chosen != null) {
+            val voiceResult = tts.setVoice(chosen)
+            if (voiceResult != TextToSpeech.SUCCESS) {
+                Log.w(
+                    TAG,
+                    "[Speaker] engine refused voice (" +
+                    "result=$voiceResult) — نطقٌ بلغة الوحدة"
+                )
+            }
+            voiceResult == TextToSpeech.SUCCESS
         } else {
+            false
+        }
+        if (!voiceApplied) {
             // بند الأوامر 2: عائد setLanguage كان مُهملاً — إن رجع
             // LANG_NOT_SUPPORTED/LANG_MISSING_DATA يبقى المحرك على آخر لغة
             // ضبطها (غالباً عربية من المقطع السابق) فيقرأ الحروف اللاتينية
@@ -1533,9 +1547,11 @@ class AnnouncementSpeaker(
         // أصلاً) فالتنظيف هنا لا مساس به.
         // وتطبيع NFC يرمم النصوص القادمة مشكولةً
         // Bidi/NFD من الجذر (SMS/إشعارات).
-        val cleanText = java.text.Normalizer.normalize(
-            stripEmojis(text),
-            java.text.Normalizer.Form.NFC
+        val cleanText = ArabicSpeechNormalizer.normalize(
+            java.text.Normalizer.normalize(
+                stripEmojis(text),
+                java.text.Normalizer.Form.NFC
+            )
         )
         if (cleanText.isBlank()) {
             if (assignedUtteranceId != null) {
@@ -1689,7 +1705,10 @@ class AnnouncementSpeaker(
     }
 
     /**
-     * يطلب Audio Focus متقطع قابل للخفض (AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK).
+     * يطلب Audio Focus متقطعاً (AUDIOFOCUS_GAIN_TRANSIENT) — لا MAY_DUCK:
+     * خفضُ وسائط الآخرين يخفض المستوى لدى بعض الأجهزة ولا يستعيده عند
+     * نهاية الإعلان، فحُذف مفتاح «خفض صوت الوسائط أثناء النطق» وبقي النطق
+     * يوقف تشغيل الوسائط مؤقتاً لحظياً ثم يستأنف بلا أي خفضٍ للمستوى.
      * @return نتيجة النظام: GRANTED / DELAYED / FAILED (يُحترم الجميع).
      */
     private fun requestAudioFocus(): Int {
@@ -1699,14 +1718,7 @@ class AnnouncementSpeaker(
             return AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         }
         return try {
-            val settings =
-                (appContext as? AnnouncementAppContext)
-                    ?.settingsRepository
-                ?: SettingsRepository.create(appContext)
-            val duckMedia = runCatching {
-                settings.isDuckMediaDuringAnnouncements()
-            }.getOrDefault(true)
-            val focusGain = audioFocusTypeFor(duckMedia)
+            val focusGain = AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
             val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val attrs = speechAudioAttributes()
                 val focusReq = if (audioFocusRequest != null &&

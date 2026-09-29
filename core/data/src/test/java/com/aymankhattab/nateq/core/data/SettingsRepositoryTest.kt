@@ -220,29 +220,24 @@ class SettingsRepositoryTest {
     }
 
     @Test
-    fun duckAndTimeScenarioFlags_defaultsRoundTripExportReset() {
-        assertTrue(repo.isDuckMediaDuringAnnouncements())
+    fun timeScenarioFlags_defaultsRoundTripExportReset() {
         assertFalse(repo.isAnnounceTimeDuringCalls())
         assertTrue(repo.isAnnounceTimeDuringMedia())
         assertTrue(repo.isAnnounceTimeDuringSilent())
 
-        repo.setDuckMediaDuringAnnouncements(false)
         repo.setAnnounceTimeDuringCalls(true)
         repo.setAnnounceTimeDuringMedia(false)
         repo.setAnnounceTimeDuringSilent(false)
-        assertFalse(repo.isDuckMediaDuringAnnouncements())
         assertTrue(repo.isAnnounceTimeDuringCalls())
         assertFalse(repo.isAnnounceTimeDuringMedia())
         assertFalse(repo.isAnnounceTimeDuringSilent())
 
         val exported = repo.exportSettings()
-        assertTrue(exported.containsKey("duck_media_during_announcements"))
         assertTrue(exported.containsKey("announce_time_during_calls"))
         assertTrue(exported.containsKey("announce_time_during_media"))
         assertTrue(exported.containsKey("announce_time_during_silent"))
 
         repo.resetAllToDefault()
-        assertTrue(repo.isDuckMediaDuringAnnouncements())
         assertFalse(repo.isAnnounceTimeDuringCalls())
         assertTrue(repo.isAnnounceTimeDuringMedia())
         assertTrue(repo.isAnnounceTimeDuringSilent())

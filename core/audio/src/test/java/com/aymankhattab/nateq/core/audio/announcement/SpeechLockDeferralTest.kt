@@ -267,7 +267,7 @@ class SpeechLockDeferralTest {
     }
 
     @Test
-    fun normalNotification_remainsDeferredBySpeakingLock() {
+    fun notificationCategory_firesImmediatelyLikeOtherEvents() {
         SpeechLock.setSpeaking(appContext, true)
         val s = speaker()
 
@@ -281,18 +281,16 @@ class SpeechLockDeferralTest {
         )
         ShadowLooper.idleMainLooper(600, TimeUnit.MILLISECONDS)
 
+        // الإشعارات ضمن فئة الأحداث (EVENT_CATEGORIES) فتُنطق فوراً
+        // كالوقت والبطارية والمتصل: لا تؤجَّل خلف قراءةٍ طويلة.
         assertEquals(
-            "إشعار الواتساب يُدرج في طابور التأجيل",
-            1,
+            "فئة الإشعارات تُنطق فوراً فلا تُدرج في طابور التأجيل",
+            0,
             deferredQueueSize(s)
         )
-        assertNull(
-            "إشعار الواتساب يؤجل ولا يطلب تركيزاً أثناء القفل",
+        assertNotNull(
+            "طلب التركيز ينطلق فوراً لإشعار الواتساب رغم القفل",
             shadowAudio.getLastAudioFocusRequest()
-        )
-        assertTrue(
-            "لا محرك يُهيأ لإشعار الواتساب أثناء القفل",
-            ttsIsNull(s)
         )
         s.shutdown()
     }

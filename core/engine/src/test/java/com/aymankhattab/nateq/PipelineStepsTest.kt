@@ -37,7 +37,10 @@ class PipelineStepsTest {
 
     @Test
     fun testOnePointZero() {
-        assertEquals("واحد", NumberStep.apply("1.0"))
+        assertEquals(
+            "واحد فاصلة صِفْرْ",
+            NumberStep.apply("1.0")
+        )
     }
 
     @Test
@@ -553,6 +556,37 @@ class PipelineStepsTest {
     @Test
     fun numberToWords_zero_integer() {
         assertEquals("صِفْرْ", NumberWordsConverter.numberToWords(0))
+    }
+
+    @Test
+    fun decimalStringToWords_singleTenthZero_spokenExplicitly() {
+        // الصفر العشري الوحيد («1.0») يُنطق لإبراز دقة العشر.
+        assertEquals(
+            "واحد فاصلة صِفْرْ",
+            NumberWordsConverter.decimalStringToWords("1.0")
+        )
+    }
+
+    @Test
+    fun decimalStringToWords_repeatedZeroTenths_keptAsInteger() {
+        // الأصفار العشرية المتكررة («.00»/«.000») عُشاريٌ صفري بلا
+        // دلالة: يُكتفى بالجزء الصحيح كالمسار القديم على Double.
+        assertEquals(
+            "واحد",
+            NumberWordsConverter.decimalStringToWords("1.00")
+        )
+        assertEquals(
+            "واحد",
+            NumberWordsConverter.decimalStringToWords("1.000")
+        )
+        assertEquals(
+            "ثلاثون ألفاً وأربعمائة وستة وتسعون",
+            NumberWordsConverter.decimalStringToWords("30496.00")
+        )
+        assertEquals(
+            "ناقص خمسة",
+            NumberWordsConverter.decimalStringToWords("-5.00")
+        )
     }
 
     @Test

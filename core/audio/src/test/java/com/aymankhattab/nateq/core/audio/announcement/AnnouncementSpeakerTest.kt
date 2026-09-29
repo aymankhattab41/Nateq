@@ -46,22 +46,6 @@ class AnnouncementSpeakerTest {
     }
 
     @Test
-    fun `audioFocusTypeFor duck on requests may duck`() {
-        assertEquals(
-            AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,
-            AnnouncementSpeaker.audioFocusTypeFor(duckMedia = true)
-        )
-    }
-
-    @Test
-    fun `audioFocusTypeFor duck off requests transient without duck`() {
-        assertEquals(
-            AudioManager.AUDIOFOCUS_GAIN_TRANSIENT,
-            AnnouncementSpeaker.audioFocusTypeFor(duckMedia = false)
-        )
-    }
-
-    @Test
     fun `emoji stripping removes common emoji but not cjk extensions`() {
         // ينظّف الإيموجي الشائع (U+1F600) قبل النطق الخارجي (يُستبدل
         // بمسافة واحدة عن الركض)...
@@ -826,10 +810,7 @@ class AnnouncementSpeakerTest {
     }
 
     @Test
-    fun `requestAudioFocus abandons previous request when settings change`() {
-        val repo = SettingsRepository(context)
-        repo.setDuckMediaDuringAnnouncements(true)
-
+    fun `repeated focus requests reuse the same request instance`() {
         val speaker = AnnouncementSpeaker(context)
         try {
             val reqMethod = AnnouncementSpeaker::class.java
@@ -848,14 +829,13 @@ class AnnouncementSpeakerTest {
             releaseMethod.isAccessible = true
             releaseMethod.invoke(speaker)
 
-            // تغيير إعداد ducking
-            repo.setDuckMediaDuringAnnouncements(false)
-
+            // التركيزُ الآن ثابت (GAIN_TRANSIENT بلا خفض) — تُعاد الدورات
+            // المتتالية استخدامَ المثيل ذاته بلا إعادة بناء الطلب.
             reqMethod.invoke(speaker)
             val secondReq = focusReqField.get(speaker)
             assertNotNull(secondReq)
-            assertNotSame(
-                "تم إنشاء واستبدال الطلب عند تغيّر إعداد التركيز",
+            assertSame(
+                "يُعاد استخدام مثيل الطلب ذاته عند ثبات المعايير",
                 firstReq,
                 secondReq
             )

@@ -643,19 +643,6 @@ class SettingsRepository(context: Context) :
             .putBoolean("announcement_media_stream_always", enabled)
             .apply()
 
-    // ============ خفض صوت الوسائط أثناء النطق (بند الصوتيات) ============
-    // يُطلب التركيز بنوع MAY_DUCK افتراضياً (تخفض التطبيقات الأخرى
-    // وسائطها مؤقتاً ثم تعود). عند التعطيل يُطلب GAIN_TRANSIENT فتتوقف
-    // الوسائط مؤقتاً بلا أي خفضٍ لمستوى الصوت (شكوى «انخفاض صوت
-    // الوسائط») — يُقرأ في AnnouncementSpeaker.requestAudioFocus.
-    fun isDuckMediaDuringAnnouncements(): Boolean =
-        prefs.getBoolean("duck_media_during_announcements", true)
-
-    fun setDuckMediaDuringAnnouncements(enabled: Boolean) =
-        prefs.edit()
-            .putBoolean("duck_media_during_announcements", enabled)
-            .apply()
-
     // ============ نطق الساعة في السيناريوهات الصوتية ============
     // مفاتيح إيقاف/تفعيل الإعلان التلقائي للوقت أثناء: المكالمة
     // الهاتفية، تشغيل الوسائط، ووضع الصامت — تُقرأ في

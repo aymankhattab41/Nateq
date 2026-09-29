@@ -141,8 +141,8 @@ internal class NumberStep(
             return NumberSpeech.formatByMode(mode, cleaned, english)
         }
         if (english) return englishDecimalWords(cleaned)
-        val number = cleaned.toDoubleOrNull() ?: return numberStr
-        return NumberWordsConverter.numberToWords(number)
+        if (cleaned.toDoubleOrNull() == null) return numberStr
+        return NumberWordsConverter.decimalStringToWords(cleaned)
     }
 
     /** كسر عشري إنجليزي: «3.141» → «three point one four one»،

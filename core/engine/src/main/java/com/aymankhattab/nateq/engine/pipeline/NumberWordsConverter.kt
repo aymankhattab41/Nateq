@@ -63,31 +63,8 @@ internal object NumberWordsConverter {
                     ?: spokenDigits(plain)
                 return "$base$integerText"
             }
-            val integerPartStr = plain.substring(0, dot)
-            val integerPart = integerPartStr.toLongOrNull()
-            // **بند 3.6:** جزءٌ صحيحٌ أعرض من Long — ننطقه رقماً رقماً بدل
-            // الانفجار بـ NumberFormatException والتشويه عبر Double.
-            val intWord = integerPart?.let { numberToWords(it) }
-                ?: spokenDigits(integerPartStr)
-            // خانات الكسر كما وردت (الأصفار البادئة والوسطية محفوظة).
-            val decimalDigits = plain.substring(dot + 1)
-            // نطق طبيعي للكسور الشائعة: «ونصف/وربع/وثلاثة أرباع» بدل «فاصلة…».
-            return when (decimalDigits) {
-                "5" -> if (integerPart == 0L) "${base}نصف"
-                    else "$base$intWord ونصف"
-                "25" -> if (integerPart == 0L) "${base}ربع"
-                    else "$base$intWord وربع"
-                "75" -> if (integerPart == 0L) {
-                    "${base}ثلاثة أرباع"
-                } else {
-                    "$base$intWord وثلاثة أرباع"
-                }
-                // غيرها: نطق الخانات رقماً رقماً مع إبقاء الأصفار
-                // («05» → صفر خمسة)
-                else -> "$base$intWord فاصلة " + decimalDigits
-                    .map { digit -> numberToWords(digit.toString().toLong()) }
-                    .joinToString(" ")
-            }
+            val decimalString = if (negative) "-$plain" else plain
+            return decimalStringToWords(decimalString)
         }
 
         val num = number.toLong()
@@ -101,6 +78,53 @@ internal object NumberWordsConverter {
             return "ناقص ${numberToWords(-num)}"
         }
         return positiveWordsFromDecimal(num.toString())
+    }
+
+    /**
+     * تحويل نص رقم عشري (مثل "1.0" أو "3.141") إلى
+     * كلمات عربية، مع الحفاظ على الأصفار العشرية
+     * («1.0» → واحد فاصلة صِفْرْ). صفرٌ عشري وحيد يُنطق
+     * لإبراز دقة العشر، والأصفار المتكررة («.00») عُشاريٌ
+     * صفري تُسقط فيُكتفى بالجزء الصحيح.
+     */
+    fun decimalStringToWords(plain: String): String {
+        val dot = plain.indexOf('.')
+        if (dot < 0) {
+            val integerText = plain.toLongOrNull()
+                ?.let { numberToWords(it) }
+                ?: spokenDigits(plain)
+            return integerText
+        }
+        val negative = plain.startsWith("-")
+        val clean = if (negative) plain.substring(1) else plain
+        val cleanDot = clean.indexOf('.')
+        val base = if (negative) "ناقص " else ""
+
+        val integerPartStr = clean.substring(0, cleanDot)
+        val integerPart = integerPartStr.toLongOrNull()
+        val intWord = integerPart?.let { numberToWords(it) }
+            ?: spokenDigits(integerPartStr)
+        val decimalDigits = clean.substring(cleanDot + 1)
+        // «30496.00» عُشاريُها صفريٌ بالكامل: نطق «ثلاثون ألفاً…
+        // فاصلة صِفْرْ صِفْرْ» ثرثرةٌ بلا دلالة، والعددُ الصحيحُ
+        // سابقاً كان يُنطق هكذا عبر المسار القديم على Double.
+        if (decimalDigits.all { it == '0' } && decimalDigits.length > 1) {
+            return "$base$intWord"
+        }
+        return when (decimalDigits) {
+            "5" -> if (integerPart == 0L) "${base}نصف"
+                else "$base$intWord ونصف"
+            "25" -> if (integerPart == 0L) "${base}ربع"
+                else "$base$intWord وربع"
+            "75" -> if (integerPart == 0L) {
+                "${base}ثلاثة أرباع"
+            } else {
+                "$base$intWord وثلاثة أرباع"
+            }
+            else -> "$base$intWord فاصلة " + decimalDigits
+                .map { digit -> numberToWords(digit.toString().toLong()) }
+                .joinToString(" ")
+        }
     }
 
     /** تحويل تمثيل عشري موجب (أرقام فقط) إلى كلمات عربية حتى الكوينتيليون. */

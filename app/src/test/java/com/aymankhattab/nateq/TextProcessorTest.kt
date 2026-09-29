@@ -560,7 +560,10 @@ class TextProcessorTest {
 
     @Test
     fun testOnePointZeroProcessing() {
-        assertEquals("واحد", processor.process("1.0", "ar"))
+        assertEquals(
+            "واحد فاصلة صِفْرْ",
+            processor.process("1.0", "ar")
+        )
     }
 
     @Test
