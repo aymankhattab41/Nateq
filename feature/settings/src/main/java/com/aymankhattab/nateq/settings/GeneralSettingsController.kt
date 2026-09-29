@@ -271,11 +271,10 @@ internal class GeneralSettingsController(
             view.findViewById(R.id.ll_speech_boost_value)
         spinnerSpeechBoost =
             view.findViewById(R.id.spinner_speech_boost)
-        val boostLabels = arrayOf(
-            "1.0x", "1.1x", "1.2x", "1.3x", "1.4x", "1.5x",
-            "1.6x", "1.7x", "1.8x", "1.9x", "2.0x", "2.1x",
-            "2.2x", "2.3x", "2.4x", "2.5x"
-        )
+        val boostLabels = fragment.requireContext()
+            .resources.getStringArray(
+                R.array.boost_multiplier_labels
+            )
         spinnerSpeechBoost?.adapter = ArrayAdapter(
             fragment.requireContext(),
             android.R.layout.simple_spinner_dropdown_item,

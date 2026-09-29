@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- قيم مضاعِفَي السرعة والصوت العامَين (1.0x..2.5x خطوة 0.1) — أرقام
+     قياسية عالمية معروضة في القائمتين، ومحدَّدة كموارد قابلة للترجمة. -->
+<resources>
+    <string-array name="boost_multiplier_labels">
+        <item>1.0x</item>
+        <item>1.1x</item>
+        <item>1.2x</item>
+        <item>1.3x</item>
+        <item>1.4x</item>
+        <item>1.5x</item>
+        <item>1.6x</item>
+        <item>1.7x</item>
+        <item>1.8x</item>
+        <item>1.9x</item>
+        <item>2.0x</item>
+        <item>2.1x</item>
+        <item>2.2x</item>
+        <item>2.3x</item>
+        <item>2.4x</item>
+        <item>2.5x</item>
+    </string-array>
+</resources>
