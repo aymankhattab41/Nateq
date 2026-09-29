@@ -476,9 +476,9 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+• External App Crash Prevention &amp; Guaranteed Event Speech: enforce default USAGE_MEDIA stream to prevent screen reader and media conflicts, and speak events as best-effort on background focus rejection or delay
 • Decimal Number Pronunciation &amp; Engine Voice Alignment: pronounce 1.0 naturally as "one" ("واحد"), and align TTS engine active voice with speech language to prevent spelling out characters
 • Battery Voice Category Reordering: reposition battery voice category directly after time in default voice category menus
-• Android 17 Event Speech &amp; Android 10 Engine Compatibility: route event speech to accessibility stream to bypass background audio hardening, prevent self-binding loops, and fix Samsung &amp; Vocalizer voice detection
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>

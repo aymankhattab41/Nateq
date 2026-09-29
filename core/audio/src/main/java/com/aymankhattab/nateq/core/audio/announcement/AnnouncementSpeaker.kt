@@ -755,10 +755,24 @@ class AnnouncementSpeaker(
                     // مكالمةٍ أو وسائطَ صارمةٍ حجزت التركيز، كما كان يحدث).
                     if (hasAudioFocus) {
                         action?.invoke()
+                    } else if (isEventCategory(currentCategory) &&
+                        audioManager.mode != AudioManager.MODE_IN_CALL &&
+                        audioManager.mode !=
+                            AudioManager.MODE_IN_COMMUNICATION
+                    ) {
+                        Log.w(
+                            TAG,
+                            "[Focus] DELAYED انقضت المهلة —" +
+                            " نطق أفضل جهد"
+                        )
+                        releaseAudioFocus()
+                        action?.invoke()
                     } else {
-                        Log.w(TAG,
-                        "[Focus] DELAYED أُلغيت الصامتة:" +
-                        " التركيز لم يُسلَّم")
+                        Log.w(
+                            TAG,
+                            "[Focus] DELAYED أُلغيت الصامتة:" +
+                            " التركيز لم يُسلَّم"
+                        )
                         // **تحرير التركيز عند المهلة:** طلبُنا المؤجل ما زال
                         // مسجلاً بالنظام؛ حين يحرر
                         // المشغّل الآخرُ الصوتَ لاحقاً
@@ -778,18 +792,33 @@ class AnnouncementSpeaker(
                 // حتى منحٍ أو نفاد المحاولات (ثم إسقاطٌ صامت صريح بدل حلقة
                 // لا نهائية فوق الأغنية/المكالمة).
                 if (focusRetries > 0) {
-                    Log.w(TAG,
+                    Log.w(
+                        TAG,
                         "[Focus] FAILED — إعادة جدولة" +
-                        " (تبقّى $focusRetries)")
+                        " (تبقّى $focusRetries)"
+                    )
                     mainHandler.postDelayed({
                         if (gen == speechGeneration.get()) {
                             speakWithFocus(gen, speakAction, focusRetries - 1)
                         }
                     }, FOCUS_RETRY_DELAY_MS)
+                } else if (isEventCategory(currentCategory) &&
+                    audioManager.mode != AudioManager.MODE_IN_CALL &&
+                    audioManager.mode != AudioManager.MODE_IN_COMMUNICATION
+                ) {
+                    Log.w(
+                        TAG,
+                        "[Focus] FAILED — نطق أفضل جهد" +
+                        " للحدث دون تركيز"
+                    )
+                    releaseAudioFocus()
+                    speakAction()
                 } else {
-                    Log.w(TAG,
+                    Log.w(
+                        TAG,
                         "[Focus] FAILED — إسقاط صامت" +
-                        " بعد نفاد إعادة الجدولة")
+                        " بعد نفاد إعادة الجدولة"
+                    )
                     releaseAudioFocus()
                     notifySpeechComplete()
                 }
@@ -914,19 +943,14 @@ class AnnouncementSpeaker(
         }.getOrNull()?.let { settings ->
             runCatching {
                 settings.isAnnouncementMediaStreamAlways()
-            }.getOrDefault(false)
-        } ?: false
+            }.getOrDefault(true)
+        } ?: true
 
         val isMusicActive = runCatching {
             audioManager.isMusicActive
         }.getOrDefault(false)
 
-        val isEvent = isEventCategory(currentCategory)
-        val useMedia = if (isEvent) {
-            false
-        } else {
-            mediaStreamAlways || isMusicActive
-        }
+        val useMedia = mediaStreamAlways || isMusicActive
 
         val builder = AudioAttributes.Builder()
             .setUsage(
@@ -1486,17 +1510,12 @@ class AnnouncementSpeaker(
             val mediaStreamAlways = settings?.let { s ->
                 runCatching {
                     s.isAnnouncementMediaStreamAlways()
-                }.getOrDefault(false)
-            } ?: false
+                }.getOrDefault(true)
+            } ?: true
             val isMusicActive = runCatching {
                 audioManager.isMusicActive
             }.getOrDefault(false)
-            val isEvent = isEventCategory(currentCategory)
-            val useMedia = if (isEvent) {
-                false
-            } else {
-                mediaStreamAlways || isMusicActive
-            }
+            val useMedia = mediaStreamAlways || isMusicActive
             putInt(
                 TextToSpeech.Engine.KEY_PARAM_STREAM,
                 if (useMedia) {

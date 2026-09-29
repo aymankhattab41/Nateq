@@ -721,7 +721,29 @@ class AnnouncementSpeakerTest {
     }
 
     @Test
-    fun `events track uses accessibility stream with audio focus request`() {
+    fun `events track uses media stream by default to protect other apps`() {
+        val repo = SettingsRepository(context)
+        repo.setAnnouncementMediaStreamAlways(true)
+
+        val speaker = AnnouncementSpeaker(context)
+        try {
+            val method = AnnouncementSpeaker::class.java
+                .getDeclaredMethod("speechAudioAttributes")
+            method.isAccessible = true
+            val attrs = method.invoke(speaker)
+                as android.media.AudioAttributes
+            assertEquals(
+                "الافتراضي لمسار الأحداث هو USAGE_MEDIA",
+                android.media.AudioAttributes.USAGE_MEDIA,
+                attrs.usage
+            )
+        } finally {
+            speaker.shutdown()
+        }
+    }
+
+    @Test
+    fun `events track uses accessibility stream when media stream disabled`() {
         val audioManager = context.getSystemService(
             Context.AUDIO_SERVICE
         ) as AudioManager
