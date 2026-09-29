@@ -17,7 +17,7 @@ import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /**
- * فئات السبnner العلوي في «الصوت الافتراضي»: خمس فئات صوتية + إعلان المتصل.
+ * فئات السبnner العلوي في «الصوت الافتراضي»: ست فئات صوتية + إعلان المتصل.
  * [categoryKey] هو المفتاح المحفوظ في [SettingsRepository] للفئة الصوتية،
  * أما المتصل فيُحمل عبر مفاتيحه الفرعية (عربي/إنجليزي).
  */
@@ -33,6 +33,10 @@ internal enum class CategoryPanelEntry(
         SettingsRepository.VOICE_CATEGORY_TIME,
         R.string.voice_category_time
     ),
+    BATTERY(
+        SettingsRepository.VOICE_CATEGORY_BATTERY,
+        R.string.voice_category_battery
+    ),
     NUMBERS(
         SettingsRepository.VOICE_CATEGORY_NUMBERS,
         R.string.voice_category_numbers
@@ -44,10 +48,6 @@ internal enum class CategoryPanelEntry(
     EMOJI(
         SettingsRepository.VOICE_CATEGORY_EMOJI,
         R.string.voice_category_emoji
-    ),
-    BATTERY(
-        SettingsRepository.VOICE_CATEGORY_BATTERY,
-        R.string.voice_category_battery
     ),
     CALLER(
         SettingsRepository.ANNOUNCE_CATEGORY_CALLER,

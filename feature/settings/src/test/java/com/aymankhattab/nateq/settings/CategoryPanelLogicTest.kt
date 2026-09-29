@@ -17,10 +17,10 @@ class CategoryPanelLogicTest {
             listOf(
                 SettingsRepository.VOICE_CATEGORY_DEFAULT,
                 SettingsRepository.VOICE_CATEGORY_TIME,
+                SettingsRepository.VOICE_CATEGORY_BATTERY,
                 SettingsRepository.VOICE_CATEGORY_NUMBERS,
                 SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS,
                 SettingsRepository.VOICE_CATEGORY_EMOJI,
-                SettingsRepository.VOICE_CATEGORY_BATTERY,
                 SettingsRepository.ANNOUNCE_CATEGORY_CALLER
             ),
             CategoryPanelEntry.entries.map { it.categoryKey }
