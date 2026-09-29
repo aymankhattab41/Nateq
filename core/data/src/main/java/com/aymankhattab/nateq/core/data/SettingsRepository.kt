@@ -632,12 +632,11 @@ class SettingsRepository(context: Context) :
         setCategoryPitch("sms_reading_pitch", pitch)
 
     // ============ مسار الصوت للإعلانات (بند 1.4) ============
-    // إجبار النطق على مسار الموسيقى (USAGE_MEDIA) حتى دون قارئ شاشة:
-    // مسار USAGE_ASSISTANCE_ACCESSIBILITY يُكتم صوتُه أو يُخفى على بعض
-    // أجهزة OEM حين لا يكون قارئ الشاشة متفاعلاً — يُقرأ في
-    // AnnouncementSpeaker.speechAudioAttributes.
+    // إجبار النطق على مسار الموسيقى (USAGE_MEDIA) اختيارياً:
+    // الافتراضي false لاعتماد مسار الإتاحة (USAGE_ASSISTANCE_ACCESSIBILITY)
+    // الذي يضمن استمرار نطق الأحداث في خلفية أندرويد 17 (API 37) دون كتم.
     fun isAnnouncementMediaStreamAlways(): Boolean =
-        prefs.getBoolean("announcement_media_stream_always", true)
+        prefs.getBoolean("announcement_media_stream_always", false)
 
     fun setAnnouncementMediaStreamAlways(enabled: Boolean) =
         prefs.edit()

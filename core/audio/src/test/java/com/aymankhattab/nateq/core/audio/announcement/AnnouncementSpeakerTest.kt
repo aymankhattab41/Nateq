@@ -841,4 +841,48 @@ class AnnouncementSpeakerTest {
             speaker.shutdown()
         }
     }
+
+    @Test
+    fun `safeEngineForAnnouncement uses explicit external engine`() {
+        val result = safeEngineForAnnouncement(
+            context,
+            "com.samsung.SMT"
+        )
+        assertEquals("com.samsung.SMT", result)
+    }
+
+    @Test
+    fun `safeEngineForAnnouncement avoids self package when requested`() {
+        val result = safeEngineForAnnouncement(
+            context,
+            context.packageName,
+            defaultSynthProvider = { "com.google.android.tts" },
+            installedEnginesProvider = { listOf("com.google.android.tts") }
+        )
+        assertEquals("com.google.android.tts", result)
+    }
+
+    @Test
+    fun `safeEngineForAnnouncement avoids self when system default is self`() {
+        val result = safeEngineForAnnouncement(
+            context,
+            null,
+            defaultSynthProvider = { context.packageName },
+            installedEnginesProvider = {
+                listOf(context.packageName, "com.samsung.SMT")
+            }
+        )
+        assertEquals("com.samsung.SMT", result)
+    }
+
+    @Test
+    fun `safeEngineForAnnouncement uses system default when external`() {
+        val result = safeEngineForAnnouncement(
+            context,
+            null,
+            defaultSynthProvider = { "com.google.android.tts" },
+            installedEnginesProvider = { listOf("com.google.android.tts") }
+        )
+        assertEquals("com.google.android.tts", result)
+    }
 }

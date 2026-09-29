@@ -20,9 +20,16 @@ internal object EngineBindVerifier {
     /** أقصى عدد محاولات إعادة ربط عند اكتشاف محرك دخيل. */
     const val MAX_REBIND_ATTEMPTS = 1
 
-    /** وسم أسماء أصوات Google (مثل "ar-x-isc#female_2-local") — أسماء
-     *  أصوات المحركات الأخرى (eSpeak/SVOX/سامسونج) لا تحمله. */
-    private val GOOGLE_VOICE_MARKERS: List<String> = listOf("-x-", "#")
+    /** وسم أصوات Google الحصرية: أصوات جوجل تنتهي بـ "-local" أو
+     *  "-network" (مثل "ar-x-isc#female_2-local") أو تحمل وسوماً مميزة
+     *  (مثل "-x-isc" أو "-x-sfg"). أصوات المحركات الأخرى (سامسونج
+     *  "ar-x-smn#female_1"، وفوكاليزر "ar-xa-x-laila"، وإسبيك) تستخدم
+     *  معيار BCP-47 مع "-x-" أو "#" لكنها لا تخص محرك جوجل. */
+    private val GOOGLE_SPECIFIC_TAGS: List<String> = listOf(
+        "-x-isc", "-x-sfg", "-x-iom", "-x-iob", "-x-iol",
+        "-x-ffa", "-x-tld", "-x-gpf", "-x-jad", "-x-kda",
+        "-x-dfz", "-x-apa", "-x-ear", "-x-wfb", "-x-cfl"
+    )
 
     private const val GOOGLE_ENGINE_PACKAGE = "com.google.android.tts"
 
@@ -30,6 +37,16 @@ internal object EngineBindVerifier {
      *  دخيل عندما يطلب المستخدم جوجل عمداً. */
     fun isGoogleEngine(requestedEngine: String): Boolean =
         requestedEngine == GOOGLE_ENGINE_PACKAGE
+
+    /** فحص نقي لاسم الصوت: هل يحمل وسم محرك Google حصراً؟ */
+    fun isGoogleVoiceName(voiceName: String): Boolean {
+        val lower = voiceName.lowercase()
+        val hasGoogleNetworkOrLocal = lower.contains("-x-") &&
+            (lower.endsWith("-local") || lower.endsWith("-network") ||
+                lower.contains("-local-") || lower.contains("-network-"))
+        val hasGoogleTag = GOOGLE_SPECIFIC_TAGS.any { lower.contains(it) }
+        return hasGoogleNetworkOrLocal || hasGoogleTag
+    }
 
     /** هل أصوات المحرك المربوط فعلياً [actualVoiceNames] تحمل وسم Google
      *  بينما نطلب محركاً غير جوجل؟ — ربطٌ دخيل يجب رفضه (جوجل بدل المختار).
@@ -39,9 +56,7 @@ internal object EngineBindVerifier {
         actualVoiceNames: List<String>
     ): Boolean {
         if (isGoogleEngine(requestedEngine)) return false
-        return actualVoiceNames.any { name ->
-            GOOGLE_VOICE_MARKERS.any { name.contains(it) }
-        }
+        return actualVoiceNames.any { isGoogleVoiceName(it) }
     }
 
     /** هل نعيد محاولة الربط بعد [rebindAttempts] محاولةً سابقة؟ محاولة

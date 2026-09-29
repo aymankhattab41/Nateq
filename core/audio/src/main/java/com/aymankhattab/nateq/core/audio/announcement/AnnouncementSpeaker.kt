@@ -542,7 +542,7 @@ class AnnouncementSpeaker(
         if (tts != null) {
             shutdownSafely()
         }
-        val engine = finalEngine
+        val engine = safeEngineForAnnouncement(appContext, finalEngine)
         boundEngine = engine
         var newTts: TextToSpeech? = null
         val timeoutRunnable = Runnable {
@@ -914,14 +914,19 @@ class AnnouncementSpeaker(
         }.getOrNull()?.let { settings ->
             runCatching {
                 settings.isAnnouncementMediaStreamAlways()
-            }.getOrDefault(true)
-        } ?: true
+            }.getOrDefault(false)
+        } ?: false
 
         val isMusicActive = runCatching {
             audioManager.isMusicActive
         }.getOrDefault(false)
 
-        val useMedia = mediaStreamAlways || isMusicActive
+        val isEvent = isEventCategory(currentCategory)
+        val useMedia = if (isEvent) {
+            false
+        } else {
+            mediaStreamAlways || isMusicActive
+        }
 
         val builder = AudioAttributes.Builder()
             .setUsage(
@@ -1038,16 +1043,24 @@ class AnnouncementSpeaker(
                 Log.w(
                     TAG,
                     "[Speaker] فشل تهيئة $engineOverride —" +
-                    " التراجع لمحرك النظام الافتراضي"
+                    " التراجع لمحرك بديل"
                 )
-                ensureInit({ fallbackReady ->
-                    if (fallbackReady) {
-                        executeSpeech()
-                    } else {
-                        releaseAudioFocus()
-                        notifySpeechComplete()
-                    }
-                }, requestedEngine = null)
+                val fallback = safeEngineForAnnouncement(
+                    appContext, null
+                )
+                if (fallback != null && fallback != engineOverride) {
+                    ensureInit({ fallbackReady ->
+                        if (fallbackReady) {
+                            executeSpeech()
+                        } else {
+                            releaseAudioFocus()
+                            notifySpeechComplete()
+                        }
+                    }, requestedEngine = fallback)
+                } else {
+                    releaseAudioFocus()
+                    notifySpeechComplete()
+                }
             } else {
                 releaseAudioFocus()
                 notifySpeechComplete()
@@ -1473,12 +1486,17 @@ class AnnouncementSpeaker(
             val mediaStreamAlways = settings?.let { s ->
                 runCatching {
                     s.isAnnouncementMediaStreamAlways()
-                }.getOrDefault(true)
-            } ?: true
+                }.getOrDefault(false)
+            } ?: false
             val isMusicActive = runCatching {
                 audioManager.isMusicActive
             }.getOrDefault(false)
-            val useMedia = mediaStreamAlways || isMusicActive
+            val isEvent = isEventCategory(currentCategory)
+            val useMedia = if (isEvent) {
+                false
+            } else {
+                mediaStreamAlways || isMusicActive
+            }
             putInt(
                 TextToSpeech.Engine.KEY_PARAM_STREAM,
                 if (useMedia) {
@@ -1811,4 +1829,39 @@ internal fun resolveAnnouncementEngine(
     requested
 } else {
     configuredEngine
+}
+
+/**
+ * حسم محرك آمن لنطق الإعلانات والأحداث:
+ * يمنع التكرار الذاتي وحلقات الربط الفاشلة؛ إن كان المحرك المطلوب فارغاً
+ * أو هو حزمة التطبيق نفسها (التي تتطلب BIND_TTS_SERVICE للنظام فتفشل عند ربط
+ * التطبيق بذاته)، يتم تفويض أول محرك خارجي مثبت من [EnginePicker].
+ */
+internal fun safeEngineForAnnouncement(
+    context: Context,
+    engine: String?,
+    defaultSynthProvider: () -> String? = {
+        runCatching {
+            android.provider.Settings.Secure.getString(
+                context.contentResolver,
+                "tts_default_synth"
+            )
+        }.getOrNull()
+    },
+    installedEnginesProvider: () -> List<String> = {
+        EnginePicker.installedEnginePackages(context)
+    }
+): String? {
+    if (!engine.isNullOrBlank() && engine != context.packageName) {
+        return engine
+    }
+    val defaultSynth = defaultSynthProvider()
+    if (!defaultSynth.isNullOrBlank() &&
+        defaultSynth != context.packageName
+    ) {
+        return defaultSynth
+    }
+    return installedEnginesProvider().firstOrNull {
+        it != context.packageName
+    }
 }

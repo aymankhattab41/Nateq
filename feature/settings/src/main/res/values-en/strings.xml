@@ -476,9 +476,9 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-• Hardware Audio HAL &amp; Media Crash Fix: route cues and speech to STREAM_MUSIC &amp; USAGE_MEDIA, eliminate Spatializer conflict, and close SoundPool streams immediately on cue finish
+• Android 17 Event Speech &amp; Android 10 Engine Compatibility: route event speech to accessibility stream to bypass background audio hardening, prevent self-binding loops, and fix Samsung &amp; Vocalizer voice detection
+• Hardware Audio HAL &amp; Media Crash Fix: eliminate Spatializer conflict, close SoundPool streams immediately on cue finish, and prevent audio server deadlocks
 • Audio Focus &amp; Media Crash Prevention: respect delayed/failed focus responses during events, release orphaned focus on late gains or empty units, and debounce charger/battery event collision
-• Intermittent Silence Fixes: hung engine recovery in speech watchdog, self-expiring TTL for SpeechLock to prevent delays, and auto-route to media when accessibility is muted
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>

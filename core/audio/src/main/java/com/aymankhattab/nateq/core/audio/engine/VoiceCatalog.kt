@@ -158,11 +158,25 @@ val lang = LocaleUtils.normalizeLanguageCode(
                         .takeIf { it.isNotBlank() }
                 }
                 .distinct()
-                .filter { locale ->
-                    val availability = languageAvailability(
-                        Locale.forLanguageTag(locale)
-                    )
-                    availability == TextToSpeech.LANG_MISSING_DATA
+                .filter { lang ->
+                    val voicesForLang = voices.filter { v ->
+                        LocaleUtils.normalizeLanguageCode(
+                            v.locale?.language
+                        ) == lang
+                    }
+                    val anyVoiceAvailable = voicesForLang.any { v ->
+                        val loc = v.locale ?: return@any false
+                        languageAvailability(loc) >=
+                            TextToSpeech.LANG_AVAILABLE
+                    }
+                    if (anyVoiceAvailable) {
+                        false
+                    } else {
+                        val availability = languageAvailability(
+                            Locale.forLanguageTag(lang)
+                        )
+                        availability == TextToSpeech.LANG_MISSING_DATA
+                    }
                 }
                 .toSet()
             val isNotInstalled = { voice: Voice ->

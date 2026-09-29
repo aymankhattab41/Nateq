@@ -41,6 +41,36 @@ class EngineBindVerifierTest {
     }
 
     @Test
+    fun samsungEngineWithSamsungVoices_isAccepted() {
+        assertFalse(
+            EngineBindVerifier.isWronglyBoundToGoogle(
+                "com.samsung.SMT",
+                listOf("ar-x-smn#female_1", "en-us-x-smn#male_1")
+            )
+        )
+    }
+
+    @Test
+    fun vocalizerEngineWithVocalizerVoices_isAccepted() {
+        assertFalse(
+            EngineBindVerifier.isWronglyBoundToGoogle(
+                "es.codefactory.vocalizertts",
+                listOf("ar-xa-x-laila", "en-gb-x-fis-phone-hmm-r2")
+            )
+        )
+    }
+
+    @Test
+    fun acapelaEngineWithAcapelaVoices_isAccepted() {
+        assertFalse(
+            EngineBindVerifier.isWronglyBoundToGoogle(
+                "com.acapela.android.tts",
+                listOf("ar-sa-x-salma#22k", "en-us-x-will#22k")
+            )
+        )
+    }
+
+    @Test
     fun emptyOrAmbiguousVoices_areAccepted() {
         // لا دليل على ربط دخيل — لا نرفض بلا دليل (يجنّب قطع النطق لئلا
         // تُخلّ محركات تعلن أصواتها متأخراً).

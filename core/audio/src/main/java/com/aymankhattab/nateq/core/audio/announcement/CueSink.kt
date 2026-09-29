@@ -73,13 +73,13 @@ internal object CueAudioAttributes {
                     as? AudioManager
             val mediaAlways = runCatching {
                 settings.isAnnouncementMediaStreamAlways()
-            }.getOrDefault(true)
+            }.getOrDefault(false)
             val musicActive = runCatching {
                 audio?.isMusicActive == true
             }.getOrDefault(false)
             mediaAlways || musicActive
         } else {
-            true
+            false
         }
         return if (isMedia) {
             AudioAttributes.Builder()
