@@ -13,6 +13,7 @@ import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.aymankhattab.nateq.core.audio.announcement.ArabicSpeechNormalizer
 import com.aymankhattab.nateq.core.audio.announcement.InterruptionSensors
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
@@ -857,6 +858,11 @@ override fun onDestroy() {
         val processedText = textProcessor.process(
             rawText, languageTag, finalEngine
         )
+        val speechText = if (LanguageCode.isArabic(languageTag)) {
+            ArabicSpeechNormalizer.normalize(processedText)
+        } else {
+            processedText
+        }
 
         // تخليق الصوت الفعلي عبر المزوّد. يُبلّغنا التنسيق
         // (معدل عينات/قنوات) قبل أول شريحة، فنبدأ
@@ -865,7 +871,7 @@ override fun onDestroy() {
         // بسرعة ونبرة خاطئتين.
         var started = false
         provider.synthesize(
-            processedText, voice, finalRate, finalPitch, finalVolume,
+            speechText, voice, finalRate, finalPitch, finalVolume,
             { sampleRateInHz, channelCount ->
                 if (!started) {
                     callback.start(
@@ -993,6 +999,11 @@ override fun onDestroy() {
         val processed = textProcessor.process(
             segment.text, segTag, routed.engine
         )
+        val speechText = if (LanguageCode.isArabic(segTag)) {
+            ArabicSpeechNormalizer.normalize(processed)
+        } else {
+            processed
+        }
         val (voice, foundProvider) = resolveVoiceWithFallback(segTag)
         val provider = foundProvider
         if (provider == null) {
@@ -1002,7 +1013,7 @@ override fun onDestroy() {
             return null
         }
         return SegmentParams(
-            processed, voice, provider, finalRate, finalPitch,
+            speechText, voice, provider, finalRate, finalPitch,
             finalVolume, routed.engine,
             if (matches) {
                 convert?.convertLocale

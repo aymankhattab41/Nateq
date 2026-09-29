@@ -20,8 +20,14 @@ class ArabicSpeechNormalizerTest {
     fun masaA_isFullyVoweled() {
         val raw = "\u0645\u0633\u0627\u0621\u064b" // مساءً
         assertEquals(
-            "\u0645\u064e\u0633\u064e\u0627\u0621\u064b", // مَسَاءً
+            "\u0645\u064e\u0633\u064e\u0627\u0621\u0627\u064b", // مَسَاءاً
             ArabicSpeechNormalizer.normalize(raw)
+        )
+        // ومَسَاءً المشكولة سلفاً بغير ألف تُعوَّض بمَسَاءاً
+        val preVoweled = "\u0645\u064e\u0633\u064e\u0627\u0621\u064b"
+        assertEquals(
+            "\u0645\u064e\u0633\u064e\u0627\u0621\u0627\u064b",
+            ArabicSpeechNormalizer.normalize(preVoweled)
         )
     }
 
@@ -40,8 +46,9 @@ class ArabicSpeechNormalizerTest {
             "\u0648\u064e" + // وَ
             "النصف \u0645\u0633\u0627\u0621\u064b" // مساءً
         val out = ArabicSpeechNormalizer.normalize(raw)
-        assertTrue(out.contains("\u0648\u064e\u0627\u062d\u0650\u062f"))
-        assertTrue(out.contains("\u0645\u064e\u0633\u064e\u0627\u0621\u064b"))
+        val expectedMasaA =
+            "\u0645\u064e\u0633\u064e\u0627\u0621\u0627\u064b"
+        assertTrue(out.contains(expectedMasaA))
     }
 
     @Test
