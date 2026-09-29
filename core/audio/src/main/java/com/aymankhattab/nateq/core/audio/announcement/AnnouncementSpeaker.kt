@@ -155,6 +155,32 @@ class AnnouncementSpeaker(
             return sameLanguage.first()
         }
 
+        /** صوتٌ عربي/نفسُ اللسان بديل عن صوتٍ مرفوض: بعض المحركات (ظاهرة
+         *  Vocalizer) تعرض أصواتاً برموز مختلفة عن المعرّف المُخصَّص،
+         *  فتنجح `setVoice` بغير الصوت المُفضَّل. يُستبعد المعرّضُ الفاشل
+         *  ويُرجَّح صوتُ البلد المطابق ثم أيُّ صوتٍ باللغة (بلا صوتٌ
+         *  أجنبيٍّ للوحدة)، وإلا null للرضى بالـ setLanguage. */
+        internal fun fallbackVoiceFor(
+            voices: Collection<Voice>?,
+            locale: Locale,
+            excludedName: String?
+        ): Voice? {
+            if (voices.isNullOrEmpty()) return null
+            val eligible = voices.filter {
+                it.locale?.language == locale.language &&
+                    it.name != excludedName
+            }
+            if (eligible.isEmpty()) return null
+            val country = locale.country
+            return eligible
+                .firstOrNull {
+                    it.locale?.country?.equals(
+                        country, ignoreCase = true
+                    ) == true
+                }
+                ?: eligible.first()
+        }
+
         // نطاق الإيموجي الشائع (بلوكات Unicode): رموز التباين (2600-27BF)،
         // الأسهم/الرموز الإضافية (2B00-2BFF) والبلوكات التكميلية الخاصة
         // بالإيموجي (1F000-1FBFF: الفقر والرموز والإيموجي والرموز
@@ -1471,28 +1497,37 @@ class AnnouncementSpeaker(
         // على setLanguage وحده الذي قد يُبقي بعض المحركات لغته السابقة.
         // إن لم يوجد صوتٌ ملائم (محرك خارجي بلا صوتٍ لتلك اللغة) نرجع
         // لتحديد اللغة فقط، فيبقى اختيار الصوت محدوداً بلسان المحرك.
-        val vid = partVoice
-        val chosen = voiceFor(
-            runCatching { tts.voices }.getOrNull(),
-            vid,
-            locale
-        )
         // تعيينُ صوت الوحدة بنتيجةٍ مُتفحَّصة لا خاصيةً صامتةً: كانت
         // `tts.voice = chosen` تُهمل نتيجة التحكيم، فبعض المحركات (ظاهرة
         // Vocalizer) ترفض الصوتَ بصمتٍ وتُكمل الدورةَ بإخراجِ لا صوتَ فيه.
-        // نتيجة != SUCCESS تنزل اللغةَ بدل أن تُنتج جملةً صامتة.
-        val voiceApplied = if (chosen != null) {
-            val voiceResult = tts.setVoice(chosen)
-            if (voiceResult != TextToSpeech.SUCCESS) {
-                Log.w(
-                    TAG,
-                    "[Speaker] engine refused voice (" +
-                    "result=$voiceResult) — نطقٌ بلغة الوحدة"
-                )
-            }
-            voiceResult == TextToSpeech.SUCCESS
+        // عند الرفض تُجرّب أصواتٌ بديلةٌ من نفس لسانِ المحرك أولاً (رموزُ
+        // Vocalizer قد تخالف المعرّف المخصص) قبل الرضى بالـ setLanguage.
+        val voices = runCatching { tts.voices }.getOrNull()
+        val chosen = voiceFor(voices, partVoice, locale)
+        var voiceApplied = false
+        if (chosen == null) {
+            Log.w(TAG, "[Speaker] no engine voice for $locale")
+        } else if (tts.setVoice(chosen) == TextToSpeech.SUCCESS) {
+            voiceApplied = true
         } else {
-            false
+            Log.w(
+                TAG,
+                "[Speaker] engine refused voice " +
+                    "(name=${chosen.name}) — نبحث بديلاً باللسان ذاته"
+            )
+            var nameToSkip: String? = chosen.name
+            while (!voiceApplied) {
+                val next = fallbackVoiceFor(voices, locale, nameToSkip)
+                    ?: break
+                if (tts.setVoice(next) == TextToSpeech.SUCCESS) {
+                    voiceApplied = true
+                } else {
+                    nameToSkip = next.name
+                }
+            }
+            if (!voiceApplied) {
+                Log.w(TAG, "[Speaker] no usable voice — نحو setLanguage")
+            }
         }
         if (!voiceApplied) {
             // بند الأوامر 2: عائد setLanguage كان مُهملاً — إن رجع

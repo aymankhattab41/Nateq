@@ -452,6 +452,58 @@ class AnnouncementSpeakerTest {
     }
 
     @Test
+    fun `fallback voice stays on the unit language after refusal`() {
+        // عند رفض الصوت المفضّل تُجرّب الأصوات الباقية من لسان الوحدة
+        // (ظاهرة Vocalizer) فلا يُرضخ للـ setLanguage قبل جَهدٍ أوسع.
+        val voices = listOf(
+            voiceWith("ar-sa", "ar", "SA"),
+            voiceWith("ar-eg", "ar", "EG"),
+            voice("en-us", "en")
+        )
+        assertEquals(
+            "ar-eg",
+            AnnouncementSpeaker.fallbackVoiceFor(
+                voices,
+                Locale.forLanguageTag("ar-SA"),
+                "ar-sa"
+            )?.name
+        )
+        assertNull(
+            AnnouncementSpeaker.fallbackVoiceFor(
+                voices,
+                Locale.forLanguageTag("fr-FR"),
+                "fr-fr"
+            )
+        )
+    }
+
+    @Test
+    fun `fallback never offers a foreign language voice`() {
+        // لا يُقدَّم صوتٌ أجنبيٌّ للوحدة مهما رُفض: إن لم يتبقَّ صوتٌ
+        // لسانُه لسانُ الوحدة تُترك المحاولة للـ setLanguage.
+        val voices = listOf(
+            voiceWith("en-gb", "en", "GB"),
+            voiceWith("ar-sa", "ar", "SA"),
+            voiceWith("ar-eg", "ar", "EG")
+        )
+        assertEquals(
+            "ar-eg",
+            AnnouncementSpeaker.fallbackVoiceFor(
+                voices,
+                Locale.forLanguageTag("ar"),
+                "ar-sa"
+            )?.name
+        )
+        assertNull(
+            AnnouncementSpeaker.fallbackVoiceFor(
+                voices,
+                Locale.forLanguageTag("fr"),
+                "fr-fr"
+            )
+        )
+    }
+
+    @Test
     fun `announcement text is converted through TextProcessor like the reader`(
     ) {
         // بند الأوامر 1: نصوص الإعلانات تمر عبر TextProcessor (أرقام/أوقات/
