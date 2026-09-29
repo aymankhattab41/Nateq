@@ -474,9 +474,9 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-• Fixed pronunciation of "masa\'an" by phonetically appending an alif (مساءاً) so TTS engines explicitly pronounce the nunation (tanween)
-• Synchronized and auto-resumed WhatsApp messages upon event interruptions, and disabled media audio ducking during speech
-• Fixed Vocalizer engine compatibility in event speech by normalizing ISO-3 language codes and configuring voice locale fallbacks
+• Fixed caller announcement to always speak caller name and number, with fallback call log lookup
+• Phonetically refined "masa'an" pronunciation (مَسَاءَنْ) and increased speech watchdog timeout
+• Synchronized and auto-resumed WhatsApp messages upon event interruptions, and disabled media ducking
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>

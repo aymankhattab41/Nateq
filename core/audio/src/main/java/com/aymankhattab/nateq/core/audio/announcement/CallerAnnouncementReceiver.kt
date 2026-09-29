@@ -280,9 +280,23 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 }
 
                 @Suppress("DEPRECATION")
-                val incomingNumber = intent.getStringExtra(
+                val rawNumber = intent.getStringExtra(
                     TelephonyManager.EXTRA_INCOMING_NUMBER
                 )
+
+                val hasCallLog = hasPermission(
+                    context, Manifest.permission.READ_CALL_LOG
+                )
+                val hasContacts = hasPermission(
+                    context, Manifest.permission.READ_CONTACTS
+                )
+
+                // استرداد بديل من سجل المكالمات إن حجب أندرويد 10+ الرقم
+                val fallbackCall = if (rawNumber.isNullOrBlank()) {
+                    resolveLatestCallFromLog(context, hasCallLog)
+                } else null
+
+                val incomingNumber = rawNumber ?: fallbackCall?.first
 
                 // الاسم المخصص للمستخدم (خريطة رقم -> اسم) له الأولوية القصوى،
                 // ثم البحث في دفتر الاتصالات ثم سجل المكالمات.
@@ -290,19 +304,13 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 val contactName = customName ?: resolveContactName(
                     context,
                     number = incomingNumber,
-                    hasReadContacts = hasPermission(
-                        context, Manifest.permission.READ_CONTACTS
-                    ),
-                    hasReadCallLog = hasPermission(
-                        context, Manifest.permission.READ_CALL_LOG
-                    )
-                )
+                    hasReadContacts = hasContacts,
+                    hasReadCallLog = hasCallLog
+                ) ?: fallbackCall?.second
 
-                // خصوصية قفل الشاشة: عند القفل نكتفي بعبارة عامة
-                // «اتصال وارد» دون اسم المتصل أو رقمه — حماية
-                // للخصوصية (قد يكون المتصل حسّاساً).
-                val privacyLocked = settings.isLockScreenPrivacyEnabled()
-                        && settings.isDeviceScreenLocked()
+                // إعلان اسم المتصل ورقمه ينطق دائماً عند رنين الهاتف حتى لو
+                // كانت الشاشة مقفلة (الهدف الأساسي للمكفوفين وسائقي المركبات).
+                val privacyLocked = false
 
                 val text = buildAnnouncementText(
                     context,
@@ -834,6 +842,58 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         } finally {
             cursor?.close()
         }
+    }
+
+    /**
+     * استرداد أحدث مكالمة من سجل المكالمات (CallLog) كبديل إن حجب أندرويد
+     * الحديث EXTRA_INCOMING_NUMBER عن بث PHONE_STATE.
+     * يعيد Pair(رقم المتصل, الاسم المخزن إن وجد) لمكالمة حديثة.
+     */
+    internal fun resolveLatestCallFromLog(
+        context: Context,
+        hasReadCallLog: Boolean
+    ): Pair<String?, String?>? {
+        if (!hasReadCallLog) return null
+        return runCatching {
+            val uri = android.provider.CallLog.Calls.CONTENT_URI
+            val projection = arrayOf(
+                android.provider.CallLog.Calls.NUMBER,
+                android.provider.CallLog.Calls.CACHED_NAME,
+                android.provider.CallLog.Calls.DATE
+            )
+            val cursor = context.contentResolver.query(
+                uri,
+                projection,
+                null,
+                null,
+                "${android.provider.CallLog.Calls.DATE} DESC"
+            )
+            cursor?.use { c ->
+                if (c.moveToFirst()) {
+                    val dateIdx =
+                        c.getColumnIndex(android.provider.CallLog.Calls.DATE)
+                    val callDate =
+                        if (dateIdx >= 0) c.getLong(dateIdx) else 0L
+                    val now = System.currentTimeMillis()
+                    // نتحقق أن السجل لمكالمة حديثة جداً (خلال آخر 30 ثانية)
+                    if (kotlin.math.abs(now - callDate) < 30_000L) {
+                        val numIdx = c.getColumnIndex(
+                            android.provider.CallLog.Calls.NUMBER
+                        )
+                        val nameIdx = c.getColumnIndex(
+                            android.provider.CallLog.Calls.CACHED_NAME
+                        )
+                        val num =
+                            if (numIdx >= 0) c.getString(numIdx) else null
+                        val name =
+                            if (nameIdx >= 0) c.getString(nameIdx) else null
+                        if (!num.isNullOrBlank() || !name.isNullOrBlank()) {
+                            Pair(num, name)
+                        } else null
+                    } else null
+                } else null
+            }
+        }.getOrNull()
     }
 }
 

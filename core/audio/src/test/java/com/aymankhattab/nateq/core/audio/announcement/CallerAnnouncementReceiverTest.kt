@@ -508,4 +508,13 @@ class CallerAnnouncementReceiverTest {
             speaker.shutdown()
         }
     }
+
+    @Test
+    fun `resolveLatestCallFromLog returns null when permission denied`() {
+        val receiver = CallerAnnouncementReceiver()
+        val result = receiver.resolveLatestCallFromLog(
+            context, hasReadCallLog = false
+        )
+        org.junit.Assert.assertNull(result)
+    }
 }
