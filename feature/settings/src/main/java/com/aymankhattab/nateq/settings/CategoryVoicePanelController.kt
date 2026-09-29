@@ -537,7 +537,12 @@ spinnerSelector =
     private fun refreshVoiceSpinner() {
         val key = currentEntry.categoryKey
         val engine = if (categoryHasDedicatedEngine(key)) {
-            runCatching { settings.getEngineForCategory(key) }.getOrNull()
+            val engineIdx = spinnerEngine?.selectedItemPosition ?: -1
+            if (engineIdx in categoryEngines.indices) {
+                categoryEngines[engineIdx].packageName
+            } else {
+                runCatching { settings.getEngineForCategory(key) }.getOrNull()
+            }
         } else {
             null
         }
