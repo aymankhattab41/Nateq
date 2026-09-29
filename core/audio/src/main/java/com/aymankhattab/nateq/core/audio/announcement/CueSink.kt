@@ -50,14 +50,13 @@ internal interface CueSink {
 }
 
 /**
- * سمات الصوت الموحّدة للمؤثرات (Audio Cues): مُوجّهة لمسار الإتاحة
- * (USAGE_ASSISTANCE_ACCESSIBILITY) ليتوافق مع مسار نطق الأحداث والإعلانات
- * ونوع نغمة إعلامية — يُستخدم من مُنفّذي [CueSink] كلَيهما. كائن داخلي ليُفحص
- * في الاختبارات.
+ * سمات الصوت الموحّدة للمؤثرات (Audio Cues): مُوجّهة لمسار الوسائط
+ * (USAGE_MEDIA) لمنع واجهات الأجهزة (مثل سامسونج) من خفض صوت الوسائط
+ * الأخرى (Audio Ducking) تلقائياً، ونوع نغمة إعلامية.
  */
 internal object CueAudioAttributes {
     val forCue: AudioAttributes = AudioAttributes.Builder()
-        .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+        .setUsage(AudioAttributes.USAGE_MEDIA)
         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
         .build()
 
@@ -68,26 +67,19 @@ internal object CueAudioAttributes {
                 (appContext as? AnnouncementAppContext)
                     ?.settingsRepository
                     ?: SettingsRepository.create(appContext)
-            val audio =
-                appContext.getSystemService(Context.AUDIO_SERVICE)
-                    as? AudioManager
-            val mediaAlways = runCatching {
+            runCatching {
                 settings.isAnnouncementMediaStreamAlways()
             }.getOrDefault(true)
-            val musicActive = runCatching {
-                audio?.isMusicActive == true
-            }.getOrDefault(false)
-            mediaAlways || musicActive
         } else {
             true
         }
         return if (isMedia) {
+            forCue
+        } else {
             AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .build()
-        } else {
-            forCue
         }
     }
 }

@@ -104,18 +104,19 @@ class SpeechLockDeferralTest {
             "لا طلب تركيزٍ أثناء القفل (لم يُرسل إلى tts.speak)",
             shadowAudio.getLastAudioFocusRequest()
         )
-        assertTrue(
-            "لا محرك يُهيَّأ أثناء القفل",
-            ttsIsNull(s)
+        assertEquals(
+            "لم يُطلق الإعلان أثناء القفل",
+            0L,
+            s.speechDispatchedCount
         )
 
         // القراءة انتهت: :tts يخفض العلم ويُبثّ الإشعار — يُحرَّر الإعلان
-        // المؤجَّل فوراً فيبدأ بالمسار المعتاد (طلب التركيز أول خطوة).
+        // المؤجَّل فوراً فيبدأ بالمسار المعتاد.
         SpeechLock.setSpeaking(appContext, false)
         ShadowLooper.idleMainLooper(300, TimeUnit.MILLISECONDS)
-        assertNotNull(
+        assertTrue(
             "الإعلان ينطلق بعد هبوط العلم",
-            shadowAudio.getLastAudioFocusRequest()
+            s.speechDispatchedCount > 0L
         )
         s.shutdown()
     }
@@ -130,9 +131,9 @@ class SpeechLockDeferralTest {
         s.speak("إعلانٌ بعد مهلة", arLocale, 1f, 1f, 1f)
         ShadowLooper.idleMainLooper(5600, TimeUnit.MILLISECONDS)
 
-        assertNotNull(
+        assertTrue(
             "المهلة القصوى تُطلق الإعلان حتى مع بقاء القفل",
-            shadowAudio.getLastAudioFocusRequest()
+            s.speechDispatchedCount > 0L
         )
         s.shutdown()
     }
@@ -159,10 +160,9 @@ class SpeechLockDeferralTest {
             0,
             deferredQueueSize(s)
         )
-        // طلب التركيز الصوتي يُطلق في اللحظة ذاتها
-        assertNotNull(
-            "طلب التركيز ينطلق فوراً لفئة الوقت رغم القفل",
-            shadowAudio.getLastAudioFocusRequest()
+        assertTrue(
+            "المتحدث ينطلق فوراً لفئة الوقت رغم القفل",
+            s.speechDispatchedCount > 0L
         )
         // التحقق من سمات الصوت: مسار الإتاحة وبمستوى صوت طبيعي مطابق
         val method = AnnouncementSpeaker::class.java
@@ -198,21 +198,20 @@ class SpeechLockDeferralTest {
         val manager = TimeAnnouncementManager(
             context, repo, catalog, handler, clock
         )
+        val s = AnnouncementSpeaker.getInstance(context)
+        val initialCount = s.speechDispatchedCount
         manager.announceNow()
         var waited = 0
-        while (shadowAudio.getLastAudioFocusRequest() == null &&
-            waited < 100
-        ) {
+        while (s.speechDispatchedCount == initialCount && waited < 100) {
             Thread.sleep(50)
             ShadowLooper.idleMainLooper(50, TimeUnit.MILLISECONDS)
             waited++
         }
 
-        assertNotNull(
-            "announceNow ينطلق فوراً ويطلب التركيز بلا انتظار هبوط القفل",
-            shadowAudio.getLastAudioFocusRequest()
+        assertTrue(
+            "announceNow ينطلق فوراً بلا انتظار هبوط القفل",
+            s.speechDispatchedCount > initialCount
         )
-        val s = AnnouncementSpeaker.getInstance(context)
         assertEquals(
             "طابور تأجيل القفل فارغ لـ announceNow",
             0,
@@ -240,11 +239,12 @@ class SpeechLockDeferralTest {
             0,
             deferredQueueSize(s)
         )
-        assertNotNull(
-            "طلب التركيز ينطلق فوراً للبطارية",
-            shadowAudio.getLastAudioFocusRequest()
+        assertTrue(
+            "المتحدث ينطلق فوراً للبطارية",
+            s.speechDispatchedCount > 0L
         )
 
+        val countBeforeCaller = s.speechDispatchedCount
         s.speak(
             "مكالمة واردة",
             arLocale,
@@ -258,9 +258,9 @@ class SpeechLockDeferralTest {
             0,
             deferredQueueSize(s)
         )
-        assertNotNull(
-            "طلب التركيز ينطلق فوراً للمتصل",
-            shadowAudio.getLastAudioFocusRequest()
+        assertTrue(
+            "المتحدث ينطلق فوراً للمتصل",
+            s.speechDispatchedCount > countBeforeCaller
         )
 
         s.shutdown()
@@ -288,9 +288,9 @@ class SpeechLockDeferralTest {
             0,
             deferredQueueSize(s)
         )
-        assertNotNull(
-            "طلب التركيز ينطلق فوراً لإشعار الواتساب رغم القفل",
-            shadowAudio.getLastAudioFocusRequest()
+        assertTrue(
+            "المتحدث ينطلق فوراً لإشعار الواتساب رغم القفل",
+            s.speechDispatchedCount > 0L
         )
         s.shutdown()
     }

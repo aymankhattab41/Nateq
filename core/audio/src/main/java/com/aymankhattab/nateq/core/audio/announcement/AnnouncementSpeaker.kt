@@ -340,6 +340,8 @@ class AnnouncementSpeaker(
     private var lastAudioAttributes: AudioAttributes? = null
     private var hasAudioFocus = false
     private var skippedFocusForMedia = false
+    internal var speechDispatchedCount: Long = 0L
+        private set
 
     @Volatile
     private var resumableAnnouncement: ResumableAnnouncement? = null
@@ -852,6 +854,7 @@ class AnnouncementSpeaker(
         speakAction: () -> Unit,
         focusRetries: Int = MAX_FOCUS_RETRIES
     ) {
+        speechDispatchedCount++
         // نتيجة منح التركيز تُحترم: على أندرويد 17 قد يُنبّه النظام بطلبٍ
         // مؤجل (DELAYED) أو مرفوض (FAILED) بدل المنح الفوري.
         when (requestAudioFocus()) {
@@ -1919,89 +1922,30 @@ class AnnouncementSpeaker(
     }
 
     /**
-     * يطلب Audio Focus متقطعاً (AUDIOFOCUS_GAIN_TRANSIENT) — لا MAY_DUCK:
-     * خفضُ وسائط الآخرين يخفض المستوى لدى بعض الأجهزة ولا يستعيده عند
-     * نهاية الإعلان، فحُذف مفتاح «خفض صوت الوسائط أثناء النطق» وبقي النطق
-     * يوقف تشغيل الوسائط مؤقتاً لحظياً ثم يستأنف بلا أي خفضٍ للمستوى.
-     * @return نتيجة النظام: GRANTED / DELAYED / FAILED (يُحترم الجميع).
+     * تركيز الصوت لإعلانات ناطق:
+     * لمنع خفض صوت الوسائط تماماً (Zero Audio Ducking) وضمان استمرار
+     * تشغيل الموسيقى ومقاطع الفيديو بنفس مستوى الصوت بالتوازي مع النطق
+     * دون أي تأخير، لا نطلب Audio Focus من نظام أندرويد (إذ إن طلب التركيز
+     * هو ما يدفع النظام لإرسال إشارة خفض الصوت لمشغلات الوسائط).
+     * يتم التحقق المباشر من نمط الصوت (Mode) لحماية المكالمات الهاتفية فقط.
      */
     private fun requestAudioFocus(): Int {
-        val isMusicActive = runCatching {
-            audioManager.isMusicActive
-        }.getOrDefault(false)
         val inCall = runCatching {
             val mode = audioManager.mode
             mode == AudioManager.MODE_IN_CALL ||
                 mode == AudioManager.MODE_IN_COMMUNICATION
         }.getOrDefault(false)
 
-        // عند تشغيل الوسائط خارج المكالمات: لا نطلب التركيز الصوتي حتى
-        // لا يُخفض أندرويد صوت مشغلات الموسيقى والفيديوهات (منع Audio Ducking).
-        if (isMusicActive && !inCall) {
-            hasAudioFocus = true
-            skippedFocusForMedia = true
-            return AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        // أثناء المكالمات الهاتفية: يُرفض التركيز لمنع التشويش على المكالمة.
+        if (inCall) {
+            return AudioManager.AUDIOFOCUS_REQUEST_FAILED
         }
-        skippedFocusForMedia = false
 
-        if (hasAudioFocus && (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
-            audioFocusRequest != null)
-        ) {
-            return AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-        }
-        return try {
-            val focusGain = AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
-            val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val attrs = speechAudioAttributes()
-                val focusReq = if (audioFocusRequest != null &&
-                    lastFocusGain == focusGain &&
-                    lastAudioAttributes == attrs
-                ) {
-                    audioFocusRequest!!
-                } else {
-                    audioFocusRequest?.let { oldReq ->
-                        try {
-                            audioManager.abandonAudioFocusRequest(oldReq)
-                        } catch (t: Throwable) {
-                            Log.w(
-                                TAG,
-                                "abandon previous focus request failed",
-                                t
-                            )
-                        }
-                    }
-                    val newReq = AudioFocusRequest.Builder(focusGain)
-                        .setAudioAttributes(attrs)
-                        // نحتاج قبول التأجيل: على أندرويد 17
-                        // قد يُنبّه النظام بطلبٍ
-                        // مؤجل (DELAYED) عند ارتفاع ضغط الصوت في الخلفية.
-                        .setAcceptsDelayedFocusGain(true)
-                        .setOnAudioFocusChangeListener(onAudioFocusChange)
-                        .build()
-                    audioFocusRequest = newReq
-                    lastFocusGain = focusGain
-                    lastAudioAttributes = attrs
-                    newReq
-                }
-                audioManager.requestAudioFocus(focusReq)
-            } else {
-                @Suppress("DEPRECATION")
-                audioManager.requestAudioFocus(
-                    onAudioFocusChange,
-                    AudioManager.STREAM_MUSIC,
-                    focusGain
-                )
-            }
-            if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-                hasAudioFocus = true
-            }
-            result
-        } catch (t: Throwable) {
-            // بدون إذن MODIFY_AUDIO_SETTINGS في الـ Manifest يرمي النظام
-            // SecurityException هنا — نلتقطه ونُعد النطق بلا تركيز (أفضل جهد).
-            Log.w(TAG, "requestAudioFocus failed", t)
-            AudioManager.AUDIOFOCUS_REQUEST_FAILED
-        }
+        // خارج المكالمات: نمنح الإذن بالنطق فوراً وبلا طلب تركيز من النظام
+        // (Zero-Ducking)، فيقوم AudioFlinger بمزج الصوت مع الوسائط بالتوازي.
+        hasAudioFocus = true
+        skippedFocusForMedia = true
+        return AudioManager.AUDIOFOCUS_REQUEST_GRANTED
     }
 
     /**

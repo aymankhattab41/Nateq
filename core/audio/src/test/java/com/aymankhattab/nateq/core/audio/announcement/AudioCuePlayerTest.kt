@@ -185,12 +185,10 @@ class AudioCuePlayerTest {
     }
 
     @Test
-    fun `cue audio attributes target accessibility sonification`() {
-        // سمات المؤثر تُوجّه لمسار الإتاحة —
-        // نفس البناء من المشغّلَين
-        // (AudioTrack وSoundPool).
+    fun `cue audio attributes target media sonification`() {
+        // سمات المؤثر تُوجّه لمسار الوسائط لمنع الـ Ducking
         assertEquals(
-            AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY,
+            AudioAttributes.USAGE_MEDIA,
             CueAudioAttributes.forCue.usage
         )
         assertEquals(

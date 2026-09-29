@@ -8,6 +8,7 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -69,62 +70,43 @@ class AnnouncementSpeakerFocusTest {
         fieldOf(s, name) as Boolean
 
     @Test
-    fun focusRequestFailed_defersAndRetries_thenDropsSilently() {
+    fun focusRequestFailed_duringCall_defersAndRetries_thenDropsSilently() {
         val s = speaker()
-        shadowAudio.setNextFocusRequestResponse(
-            AudioManager.AUDIOFOCUS_REQUEST_FAILED
-        )
+        audioManager.mode = AudioManager.MODE_IN_CALL
         s.speak("اختبار المكالمة", arLocale, 1f, 1f, 1f)
         // لا تهيئة فورية بعد الرفض: يُعيد جدولة طلب التركيز لاحقاً (لا نطق
-        // فوق مشغّلٍ محجوز — المكالمة) بدل النطق فوقه بحسن نية.
+        // فوق مشغّلٍ محجوز — المكالمة) بدل النطق فوقه.
         assertTrue("لا محرك يتهيأ قبل إعادة الجدولة", ttsIsNull(s))
         assertTrue("لا إجراء نطق معلّق فورياً", pendingActionIsNull(s))
-        // المحاولة المعادة لا تزال مرفوضة (بقي محجوزاً) — تتابع حتى النفاد.
-        shadowAudio.setNextFocusRequestResponse(
-            AudioManager.AUDIOFOCUS_REQUEST_FAILED
-        )
+
         ShadowLooper.idleMainLooper(500, TimeUnit.MILLISECONDS)
-        shadowAudio.setNextFocusRequestResponse(
-            AudioManager.AUDIOFOCUS_REQUEST_FAILED
-        )
         ShadowLooper.idleMainLooper(500, TimeUnit.MILLISECONDS)
-        // نفاد محاولات إعادة الجدولة: إسقاطٌ صامت — لا محركٍ ولا إجراءٍ
-        // معلّق (بدل حلقة لا نهائية فوق الأغنية/المكالمة).
+
+        // نفاد محاولات إعادة الجدولة: إسقاطٌ صامت حمايةً للمكالمة.
         assertTrue("لا محرك يتهيأ بعد نفاد المحاولات", ttsIsNull(s))
         assertTrue("الإجراء أُلغي بعد النفاد", pendingActionIsNull(s))
+        audioManager.mode = AudioManager.MODE_NORMAL
         s.shutdown()
     }
 
     @Test
-    fun delayedFocus_timeoutWithoutGain_cancelsSilently() {
+    fun normalMode_grantsFocusImmediatelyWithoutDucking() {
         val s = speaker()
-        shadowAudio.setNextFocusRequestResponse(
-            AudioManager.AUDIOFOCUS_REQUEST_DELAYED
+        audioManager.mode = AudioManager.MODE_NORMAL
+        s.speak("اختبار فوري", arLocale, 1f, 1f, 1f)
+        // في الوضع الطبيعي: منح فوري وتزامن كامل بلا تأخير
+        assertTrue(
+            "يُمنح التركيز فوراً دون تأجيل",
+            boolField(s, "hasAudioFocus")
         )
-        s.speak("اختبار مؤجل", arLocale, 1f, 1f, 1f)
-        // الإجراء مسجّل بانتظار التركيز قبل انقضاء المهلة.
-        assertFalse("الإجراء مسجّل بانتظار التركيز", pendingActionIsNull(s))
-        // انقضاء مؤقّت الأمان (3 ثوانٍ) من دون وصول AUDIOFOCUS_GAIN:
-        // الآن لا يُنطق شيء (الحارس يتحقق من بلوغ التركيز الفعلي).
-        ShadowLooper.idleMainLooper(3200, TimeUnit.MILLISECONDS)
-        assertTrue("لا محرك يتهيأ بعد انقضاء المهلة بلا تركيز", ttsIsNull(s))
-        assertTrue("الإجراء المؤجل أُلغي", pendingActionIsNull(s))
-        s.shutdown()
-    }
-
-    @Test
-    fun delayedFocus_onGain_consumesPendingActionAndStartsSpeech() {
-        val s = speaker()
-        shadowAudio.setNextFocusRequestResponse(
-            AudioManager.AUDIOFOCUS_REQUEST_DELAYED
+        assertNull(
+            "لا يُرسل طلب تركيز للنظام لمنع خفض صوت الوسائط",
+            shadowAudio.getLastAudioFocusRequest()
         )
-        s.speak("وصول التركيز لاحقاً", arLocale, 1f, 1f, 1f)
-        val listener = shadowAudio.getLastAudioFocusRequest().listener
-        assertNotNull("المستمع مسجّل في طلب التركيز", listener)
-        // النظام يسلم التركيز فعلاً → يُستهلك الإجراء المعلّق
-        // وتُحرَّك دورة النطق.
-        listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_GAIN)
-        assertTrue("الإجراء اُستهلك عند تسليم التركيز", pendingActionIsNull(s))
+        assertTrue(
+            "لا يوجد إجراء مؤجل لانتظار التركيز",
+            pendingActionIsNull(s)
+        )
         s.shutdown()
     }
 
@@ -146,8 +128,9 @@ class AnnouncementSpeakerFocusTest {
     fun focusLoss_duringAnnouncement_stopsAndReleasesFocus() {
         val s = speaker()
         s.speak("إعلانٌ أثناء مكالمة", arLocale, 1f, 1f, 1f)
-        val listener = shadowAudio.getLastAudioFocusRequest().listener
-        assertNotNull("المستمع مسجّل في طلب التركيز", listener)
+        val listener = fieldOf(
+            s, "onAudioFocusChange"
+        ) as AudioManager.OnAudioFocusChangeListener
         // بدأت مكالمة (فقد التركيز النهائي) — يُوقف النطق فوراً ويحرر التركيز.
         listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS)
         assertFalse(
@@ -165,10 +148,10 @@ class AnnouncementSpeakerFocusTest {
     fun focusLossTransient_duringAnnouncement_stopsAndReleasesFocus() {
         val s = speaker()
         s.speak("إعلانٌ عابر", arLocale, 1f, 1f, 1f)
-        val listener = shadowAudio.getLastAudioFocusRequest().listener
-        assertNotNull("المستمع مسجّل في طلب التركيز", listener)
-        // فقدان مؤقت (إشعار/وسائط تتدخل) — نفس سلوك الفقد النهائي:
-        // إيقاف وتحليل.
+        val listener = fieldOf(
+            s, "onAudioFocusChange"
+        ) as AudioManager.OnAudioFocusChangeListener
+        // فقدان مؤقت — إيقاف وتحرير التركيز.
         listener.onAudioFocusChange(
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT
         )
@@ -214,17 +197,15 @@ class AnnouncementSpeakerFocusTest {
     @Test
     fun resetUnconditional_whenFocusIsGranted_stillCallsAbandon() {
         val s = speaker()
-        // اطلب التركيز أولاً ليُمنح (GRANTED) فيُعيَّن hasAudioFocus=true.
-        shadowAudio.setNextFocusRequestResponse(
-            AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-        )
         s.speak("طلب التركيز أولاً", arLocale, 1f, 1f, 1f)
         assertTrue(
             "hasAudioFocus=true بعد المنح",
             boolField(s, "hasAudioFocus")
         )
-        val requestBefore = shadowAudio.getLastAudioFocusRequest()
-        assertNotNull("طلب تركيز مسجّل", requestBefore)
+        assertNull(
+            "لا يُرسل طلب تركيز للنظام لمنع خفض صوت الوسائط",
+            shadowAudio.getLastAudioFocusRequest()
+        )
         // إعادة الضبط اليدوية — abandon مباشرة.
         s.resetAudioFocusUnconditionally()
         assertFalse(

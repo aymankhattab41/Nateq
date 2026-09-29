@@ -804,8 +804,8 @@ class AnnouncementSpeakerTest {
                 "حدث تزامني", Locale.forLanguageTag("ar"), 1f, 1f, 1f,
                 category = SettingsRepository.VOICE_CATEGORY_TIME
             )
-            assertNotNull(
-                "مسار الأحداث يطلب تركيزاً صوتياً خفيفاً",
+            assertNull(
+                "مسار الأحداث لا يطلب تركيزاً صوتياً لمنع خفض صوت الوسائط",
                 shadowAudio.getLastAudioFocusRequest()
             )
         } finally {
@@ -814,83 +814,53 @@ class AnnouncementSpeakerTest {
     }
 
     @Test
-    fun `requestAudioFocus reuses same instance and avoids duplicates`() {
+    fun `requestAudioFocus grants without ducking and protects calls`() {
         val speaker = AnnouncementSpeaker(context)
         try {
             val reqMethod = AnnouncementSpeaker::class.java
                 .getDeclaredMethod("requestAudioFocus")
             reqMethod.isAccessible = true
 
-            val focusReqField = AnnouncementSpeaker::class.java
-                .getDeclaredField("audioFocusRequest")
-            focusReqField.isAccessible = true
+            // في الحالة العادية خارج المكالمات: يُمنح فوراً دون طلب تركيز
+            val result = reqMethod.invoke(speaker) as Int
+            assertEquals(AudioManager.AUDIOFOCUS_REQUEST_GRANTED, result)
 
-            // أول طلب تركيز
-            val result1 = reqMethod.invoke(speaker) as Int
-            assertEquals(AudioManager.AUDIOFOCUS_REQUEST_GRANTED, result1)
-            val firstReq = focusReqField.get(speaker)
-            assertNotNull(firstReq)
-
-            // طلب ثانٍ أثناء حيازة التركيز
-            val result2 = reqMethod.invoke(speaker) as Int
-            assertEquals(AudioManager.AUDIOFOCUS_REQUEST_GRANTED, result2)
-            val secondReq = focusReqField.get(speaker)
-            assertSame(
-                "يُعاد استخدام نفس مثيل AudioFocusRequest دون طلب جديد",
-                firstReq,
-                secondReq
+            val audioManager = context.getSystemService(
+                Context.AUDIO_SERVICE
+            ) as AudioManager
+            val shadowAudio = shadowOf(audioManager)
+            assertNull(
+                "لا يُرسل طلب تركيز للنظام لمنع الـ Ducking",
+                shadowAudio.getLastAudioFocusRequest()
             )
 
-            // بعد التخلي عن التركيز (انتهاء النطق)
-            val releaseMethod = AnnouncementSpeaker::class.java
-                .getDeclaredMethod("releaseAudioFocus")
-            releaseMethod.isAccessible = true
-            releaseMethod.invoke(speaker)
-
-            // طلب جديد بعد release: يجب إعادة استخدام نفس المثيل
-            val result3 = reqMethod.invoke(speaker) as Int
-            assertEquals(AudioManager.AUDIOFOCUS_REQUEST_GRANTED, result3)
-            val thirdReq = focusReqField.get(speaker)
-            assertSame(
-                "يُعاد استخدام نفس المثيل حتى بعد releaseAudioFocus",
-                firstReq,
-                thirdReq
-            )
+            // أثناء المكالمات الهاتفية: يُرفض التركيز حمايةً للمكالمة
+            audioManager.mode = AudioManager.MODE_IN_CALL
+            val callResult = reqMethod.invoke(speaker) as Int
+            assertEquals(AudioManager.AUDIOFOCUS_REQUEST_FAILED, callResult)
         } finally {
             speaker.shutdown()
         }
     }
 
     @Test
-    fun `repeated focus requests reuse the same request instance`() {
+    fun `releaseAudioFocus clears state smoothly without lingering requests`() {
         val speaker = AnnouncementSpeaker(context)
         try {
             val reqMethod = AnnouncementSpeaker::class.java
                 .getDeclaredMethod("requestAudioFocus")
             reqMethod.isAccessible = true
-            val focusReqField = AnnouncementSpeaker::class.java
-                .getDeclaredField("audioFocusRequest")
-            focusReqField.isAccessible = true
-
-            reqMethod.invoke(speaker)
-            val firstReq = focusReqField.get(speaker)
-            assertNotNull(firstReq)
-
             val releaseMethod = AnnouncementSpeaker::class.java
                 .getDeclaredMethod("releaseAudioFocus")
             releaseMethod.isAccessible = true
+
+            reqMethod.invoke(speaker)
             releaseMethod.invoke(speaker)
 
-            // التركيزُ الآن ثابت (GAIN_TRANSIENT بلا خفض) — تُعاد الدورات
-            // المتتالية استخدامَ المثيل ذاته بلا إعادة بناء الطلب.
-            reqMethod.invoke(speaker)
-            val secondReq = focusReqField.get(speaker)
-            assertNotNull(secondReq)
-            assertSame(
-                "يُعاد استخدام مثيل الطلب ذاته عند ثبات المعايير",
-                firstReq,
-                secondReq
-            )
+            val hasFocusField = AnnouncementSpeaker::class.java
+                .getDeclaredField("hasAudioFocus")
+            hasFocusField.isAccessible = true
+            assertFalse(hasFocusField.get(speaker) as Boolean)
         } finally {
             speaker.shutdown()
         }
