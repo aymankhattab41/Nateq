@@ -815,8 +815,10 @@ class PipelineStepsTest {
 
     @Test
     fun currency_bare_jim_english() {
+        // محرّك الأرقام الإنجليزية يكتب المركّب بمسافة («fifty seven»)،
+        // والمحرّك العربي بعطف («سبعة وخمسون») — كلٌ باصطلاح لغته.
         assertEquals(
-            "eight pounds and fifty-seven piastres",
+            "eight pounds and fifty seven piastres",
             CurrencyStep.applyEnglish("8.57ج")
         )
     }

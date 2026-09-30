@@ -473,10 +473,14 @@ internal object CurrencyStep : TextProcessingStep {
         symbol.length == 1 && symbol[0].code in 0x0600..0x06FF
 
     /** يبني أنماط لغةٍ من جدول رموزها — البنية نفسها (نمط المبلغ/الأكواد)
-     *  للغتين، والمختلف مفرداتُ الاستبدال فقط. */
+     *  للغتين، والمختلف مفرداتُ الاستبدال فقط. تُرتَّب الرموز الأطول أولاً
+     *  («د.ج» قبل «ج») فلا يلتقط الحرفُ المفرد ذيلَ رمزٍ مركّبٍ مهما بُدِّلَ
+     *  الترتيب في الخريطة، ويعمل حارسُ «بلا حرف عربي» للمفرد ضمنَ ما يلي.
+     */
     private fun <T> compilePatterns(infos: Map<String, T>): Patterns<T> {
+        val sorted = infos.toList().sortedByDescending { it.first.length }
         // أنماط الرموز قبل المبلغ: «$100» مع مسافة اختيارية بين الرمز والمبلغ.
-        val before = infos.map { (symbol, info) ->
+        val before = sorted.map { (symbol, info) ->
             val headGuard = if (isBareArabicSymbol(symbol)) {
                 "(?<!\\p{IsArabic})"
             } else {
@@ -490,7 +494,7 @@ internal object CurrencyStep : TextProcessingStep {
         // والرمز. الحارس السالب للعدد يشمل الإشارة نفسها: لا تُلتقط «-2$»
         // كجزء من رقم أطول/رقمٍ سالبٍ سابق («12-2$» تُترك كما هي).
         // الحرفُ العربي المفرد يُمنع بعده حرفٌ عربي («5 جيد» تبقى أرقاماً).
-        val after = infos.map { (symbol, info) ->
+        val after = sorted.map { (symbol, info) ->
             val tailGuard = if (isBareArabicSymbol(symbol)) {
                 "(?!\\p{IsArabic})"
             } else {
