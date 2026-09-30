@@ -88,4 +88,13 @@ class PronunciationDictionaryLanguageTest {
         assertTrue(exported.contains("صالح"))
         assertFalse(exported.contains("مقابل"))
     }
+
+    @Test
+    fun `diacriticsOnlyKeyIsRejectedAndDoesNotCorruptTrie`() {
+        assertFalse(dict.addEntry("ً", "تنوين"))
+        assertFalse(dict.addEntry("ّ", "شدة"))
+        assertTrue(dict.importFromJson("""{"ً": "تنوين", "د.": "دكتور"}"""))
+        assertEquals("دكتور محمد", dict.apply("د. محمد"))
+        assertEquals("سلام عليكم", dict.apply("سلام عليكم"))
+    }
 }

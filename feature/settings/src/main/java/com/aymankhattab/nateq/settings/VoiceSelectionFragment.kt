@@ -700,6 +700,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         if (::instantSilenceSection.isInitialized) {
             instantSilenceSection.cleanup()
         }
+        updateReceiver?.let { receiver ->
+            runCatching {
+                requireContext().applicationContext.unregisterReceiver(receiver)
+            }
+            updateReceiver = null
+        }
         if (::accordion.isInitialized) accordion.cleanup()
         super.onDestroyView()
     }
@@ -978,17 +984,18 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 val newNames = mutableMapOf<String, String>()
                 var duplicate = false
                 for (i in 0 until listContainer.childCount) {
-                    val rowLayout = listContainer.getChildAt(i) as?
-                    com.google.android.material.textfield
-                        .TextInputLayout ?: continue
-                    val fields = rowLayout.getChildAt(0)
+                    val rowLayout = listContainer.getChildAt(i)
                         as? android.widget.LinearLayout ?: continue
-                    if (fields.childCount < 2) continue
-                    val num = (fields.getChildAt(0)
-                        as? android.widget.EditText)?.text?.toString()
+                    if (rowLayout.childCount < 2) continue
+                    val numLayout = rowLayout.getChildAt(0)
+                        as? com.google.android.material.textfield
+                            .TextInputLayout ?: continue
+                    val nameLayout = rowLayout.getChildAt(1)
+                        as? com.google.android.material.textfield
+                            .TextInputLayout ?: continue
+                    val num = numLayout.editText?.text?.toString()
                         ?.trim().orEmpty()
-                    val nm = (fields.getChildAt(1)
-                        as? android.widget.EditText)?.text?.toString()
+                    val nm = nameLayout.editText?.text?.toString()
                         ?.trim().orEmpty()
                     if (num.isEmpty() || nm.isEmpty()) continue
                     if (newNames.containsKey(num)) {

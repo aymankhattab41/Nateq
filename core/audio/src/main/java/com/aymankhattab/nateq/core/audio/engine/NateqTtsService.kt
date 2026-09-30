@@ -44,6 +44,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 /**
@@ -101,6 +102,8 @@ class NateqTtsService : TextToSpeechService() {
 
         /** ترميز PCM 16-bit المستخدم في كل البث (ثابت أندرويد). */
         private const val PCM_16BIT = AudioFormat.ENCODING_PCM_16BIT
+        private const val SYNTHESIS_TIMEOUT_MS = 20_000L
+        private const val EMPTY_TEXT_SAMPLE_RATE = 16_000
 
         /** معيار البث الموحّد للنص المختلط (44100 مونو 16-bit) — ثابتٌ ليُتاح
          *  التدفق مقطعاً بمقطعٍ دون تجميع كامل الصوت في الذاكرة (الذروة = أكبر
@@ -604,6 +607,11 @@ override fun onDestroy() {
                 // فارغة) فكان toString() المباشر يرمي NPE ويسقط التخليق —
                 // الاستدعاء الآمن يرد النص الفارغ بدل الانهيار.
                 val rawText = request.charSequenceText?.toString().orEmpty()
+                if (rawText.isBlank()) {
+                    callback.start(EMPTY_TEXT_SAMPLE_RATE, PCM_16BIT, 1)
+                    callback.done()
+                    return@launch
+                }
                 // **بند التقسيم:** المعالجة الدلالية تُطبَّق قبل تقسيم اللغة
                 // حتى لا يفصل المقسمُ رمزَ العملة («USD»/«EUR») عن مبلغه
                 // فلينقطع «1500 USD» إلى مقطعٍ عربي وآخر إنجليزي؛ ناتجُها
@@ -667,7 +675,8 @@ override fun onDestroy() {
                     // يبقى AudioTrack مفتوحاً.
                     runCatching { callback.error() }
                 }
-            } catch (e: Exception) {
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
                 runCatching { callback.error() }
             }
         }
@@ -675,9 +684,16 @@ override fun onDestroy() {
         job.start()
         try {
             // انتظار متزامن على خيط التخليق حتى اكتمال التوليف (معيار AOSP)؛
-            // التقاط Throwable يُبقي الخدمة حية حتى لو قذف التخليق خطأً
-            // غير متوقع — لا انهيار لخيط النظام إطلاقاً.
-            runBlocking { job.join() }
+            // مع سقف زمني يحمي من تجميد خيط النظام إن علق المحرك أو المعالجة.
+            runBlocking {
+                withTimeoutOrNull(SYNTHESIS_TIMEOUT_MS) {
+                    job.join()
+                } ?: run {
+                    Log.w(TAG, "onSynthesizeText timed out")
+                    job.cancel()
+                    runCatching { callback.error() }
+                }
+            }
         } catch (t: Throwable) {
             Log.w(TAG, "onSynthesizeText join interrupted", t)
         } finally {

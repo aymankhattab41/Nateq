@@ -356,6 +356,8 @@ class PronunciationDictionary(
     ): Boolean {
         if (abbreviation.isBlank() || pronunciation.isBlank()) return false
         val key = abbreviation.trim()
+        val strippedKey = TashkeelStripStep.apply(key).trim()
+        if (strippedKey.isEmpty()) return false
         val value = pronunciation.trim()
         if (key.length > MAX_KEY_LENGTH ||
             value.length > MAX_VALUE_LENGTH
@@ -587,7 +589,8 @@ private class AhoCorasick(entries: Map<String, String>) {
         // في العقد المشتركة
         for ((rawKey, value) in
             entries.entries.sortedByDescending { it.key.length }) {
-            val key = TashkeelStripStep.apply(rawKey)
+            val key = TashkeelStripStep.apply(rawKey).trim()
+            if (key.isEmpty()) continue
             var node = root
             for (ch in key) {
                 node = node.children.getOrPut(ch) { Node() }

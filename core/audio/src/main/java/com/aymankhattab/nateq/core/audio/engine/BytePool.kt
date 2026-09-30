@@ -60,6 +60,7 @@ class BytePool(
         if (array.size < minRetainedSize) return false
         synchronized(lock) {
             if (available.size >= maxCapacity) return false
+            if (available.any { it === array }) return false
             available.addLast(array)
         }
         return true

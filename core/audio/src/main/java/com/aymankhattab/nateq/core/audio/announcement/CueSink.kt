@@ -220,6 +220,8 @@ internal class SoundPoolCueSink(
         java.util.concurrent.ConcurrentHashMap<String, Int>()
     private val pendingLoad =
         java.util.concurrent.ConcurrentHashMap<Int, () -> Unit>()
+    private val pendingFiles =
+        java.util.concurrent.ConcurrentHashMap<Int, File>()
     private var activeStreamId = 0
     private var activeOnDone: ((Boolean) -> Unit)? = null
     private var completionRunnable: Runnable? = null
@@ -233,6 +235,8 @@ internal class SoundPoolCueSink(
             .setAudioAttributes(CueAudioAttributes.attributesFor(context))
             .build()
         soundPool.setOnLoadCompleteListener { _, sampleId, status ->
+            val wavFile = pendingFiles.remove(sampleId)
+            wavFile?.let { runCatching { it.delete() } }
             val pending = pendingLoad.remove(sampleId)
             if (status == 0 && pending != null) {
                 pending()
@@ -268,14 +272,12 @@ internal class SoundPoolCueSink(
                 runCatching { wavFile.delete() }
                 finish(false); return
             }
+            pendingFiles[sid] = wavFile
             soundIds[key] = sid
             // إن صدر stop() (أو play() أحدث ألغاه) قبل اكتمال تحميل
             // الدفعة نتخلى عن التشغيل: البوابة تُسقط الرجلَ المتأخر
             // (سباق بين خيط التحميل وخيط الإيقاف) فلا نغمةٌ بعد الصمت.
             pendingLoad[sid] = {
-                // بند 2.6: الملف بات مخزّناً في ذاكرة SoundPool —
-                // نحذفه فوراً حتى لا تتراكم ملفات مؤقتة في cacheDir.
-                runCatching { wavFile.delete() }
                 if (activeGuard.get()) {
                     loaded.add(key)
                     startStream(sid, volume, durationMs)
@@ -300,6 +302,10 @@ internal class SoundPoolCueSink(
         // فلا تنطلق نغمةً لن تُسمع؛ النداء الذي انفصل لحظة الإلغاء تحرسه
         // بوابة [activeGuard] في [play] فلا يشغّل بعد الإيقاف.
         pendingLoad.clear()
+        pendingFiles.values.forEach { file ->
+            runCatching { file.delete() }
+        }
+        pendingFiles.clear()
         if (activeGuard.compareAndSet(true, false)) {
             val callback = activeOnDone
             activeOnDone = null
@@ -309,6 +315,10 @@ internal class SoundPoolCueSink(
 
     override fun release() {
         stop()
+        pendingFiles.values.forEach { file ->
+            runCatching { file.delete() }
+        }
+        pendingFiles.clear()
         soundPool.release()
     }
 

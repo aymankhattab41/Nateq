@@ -12,6 +12,7 @@ import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.google.android.material.switchmaterial.SwitchMaterial
+import kotlin.math.roundToInt
 
 /** ضابط قسم «الإعدادات العامة»: السرعة/النبرة/مستوى الصوت الافتراضية
  *  ومفتاح مسار الوسائط الدائم للإعلانات (بند 1.4). */
@@ -292,7 +293,8 @@ internal class GeneralSettingsController(
         }
         val savedBoost = runCatching { settings.getSpeechBoostValue() }
             .getOrDefault(1.0f).coerceIn(1f, 2.5f)
-        val boostIndex = (savedBoost * 10).toInt().coerceIn(10, 25) - 10
+        val boostIndex =
+            (savedBoost * 10).roundToInt().coerceIn(10, 25) - 10
         spinnerSpeechBoost?.setSelection(boostIndex)
         switchSpeechBoost?.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setSpeechBoostEnabled(checked) }
@@ -346,7 +348,7 @@ internal class GeneralSettingsController(
             settings.getVolumeBoostValue()
         }.getOrDefault(1.0f).coerceIn(1f, 2.5f)
         val volumeBoostIndex =
-            (savedVolumeBoost * 10).toInt().coerceIn(10, 25) - 10
+            (savedVolumeBoost * 10).roundToInt().coerceIn(10, 25) - 10
         spinnerVolumeBoost?.setSelection(volumeBoostIndex)
         switchVolumeBoost?.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setVolumeBoostEnabled(checked) }

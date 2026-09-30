@@ -157,4 +157,12 @@ class BytePoolTest {
             drained <= cap
         )
     }
+
+    @Test
+    fun `duplicateReleaseOfSameArrayIsRejected`() {
+        val pool = BytePool(minRetainedSize = 64, maxCapacity = 4)
+        val array = ByteArray(128)
+        assertTrue(pool.release(array))
+        assertFalse(pool.release(array))
+    }
 }

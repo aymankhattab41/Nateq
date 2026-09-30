@@ -211,7 +211,16 @@ class SettingsRepository(context: Context) :
         Handler(Looper.getMainLooper())
     ) {
         override fun onChange(selfChange: Boolean) {
-            reloadExecutor.execute { reload() }
+            reloadExecutor.execute {
+                reload()
+                // إن كانت الكتابة عبر apply() في العملية الأخرى، قد
+                // يستغرق تفريغ القرص بضع ميلي ثوانٍ؛ نعيد المحاولة
+                // لضمان التقاط التعديل فور استقرار القرص.
+                try {
+                    Thread.sleep(60)
+                    reload()
+                } catch (_: InterruptedException) {}
+            }
         }
     }
 
@@ -1890,22 +1899,25 @@ class SettingsRepository(context: Context) :
     }
 
     /** تعقّل قيمة عشرية حسب المفتاح (السرعة/النبرة تعبان، المستوى نسبة). */
-    private fun sanitizeFloat(key: String, value: Float): Float = when {
-        // مضاعفا السرعة والصوت نطاقهما آمنٌ خاص (1.0..2.5) — لا يقعان تحت
-        // فرعَي _rate/_volume (اسماهما لا يحويان المقطعين) فبدون هذا
-        // الفرع تمرّ قيمتهما الجامحة من sanitizeFloat بلا قصّ أصلاً.
-        key == "speech_boost_value" ||
-            key == "volume_boost_value" -> value.coerceIn(1f, 2.5f)
-        // مستويا صوت الرنة ونغمة البطارية لا يهبطان تحت 0.1 — يُفحصان قبل
-        // الفرع العام لـ _volume وإلا ابتلعه الفرعُ العامُ بمجرد احتوائهما
-        // على المقطع (0..1) فسقط السقف الأدنى.
-        key == "time_chime_volume" ||
-            key == "battery_cue_volume" -> value.coerceIn(0.1f, 1f)
-        key.contains("_volume") ||
-            key == "default_volume" -> value.coerceIn(0f, 1f)
-        key.contains("_rate") ||
-            key.contains("_pitch") -> value.coerceIn(0f, 2f)
-        else -> value
+    private fun sanitizeFloat(key: String, value: Float): Float {
+        if (!value.isFinite()) return 1.0f
+        return when {
+            // مضاعفا السرعة والصوت نطاقهما آمنٌ خاص (1.0..2.5) — لا يقعان تحت
+            // فرعَي _rate/_volume (اسماهما لا يحويان المقطعين) فبدون هذا
+            // الفرع تمرّ قيمتهما الجامحة من sanitizeFloat بلا قصّ أصلاً.
+            key == "speech_boost_value" ||
+                key == "volume_boost_value" -> value.coerceIn(1f, 2.5f)
+            // مستويا صوت الرنة ونغمة البطارية لا يهبطان تحت 0.1 — يُفحصان قبل
+            // الفرع العام لـ _volume وإلا ابتلعه الفرعُ العامُ بمجرد احتوائهما
+            // على المقطع (0..1) فسقط السقف الأدنى.
+            key == "time_chime_volume" ||
+                key == "battery_cue_volume" -> value.coerceIn(0.1f, 1f)
+            key.contains("_volume") ||
+                key == "default_volume" -> value.coerceIn(0f, 1f)
+            key.contains("_rate") ||
+                key.contains("_pitch") -> value.coerceIn(0f, 2f)
+            else -> value
+        }
     }
 
     /** تعقّل مجموعة سلاسل: مستويات البطارية تبقى مضاعفات 5 في المدى 5..100. */
@@ -1979,6 +1991,7 @@ class SettingsRepository(context: Context) :
                         val isFloatKey = key.contains("_volume") ||
                             key.contains("_rate") ||
                             key.contains("_pitch") ||
+                            key.startsWith("rms_calibration_") ||
                             key == "default_volume" ||
                             key == "time_chime_volume" ||
                             key == "battery_cue_volume" ||
@@ -1998,6 +2011,7 @@ class SettingsRepository(context: Context) :
                         val isFloatKey = key.contains("_volume") ||
                             key.contains("_rate") ||
                             key.contains("_pitch") ||
+                            key.startsWith("rms_calibration_") ||
                             key == "default_volume" ||
                             key == "time_chime_volume" ||
                             key == "battery_cue_volume" ||

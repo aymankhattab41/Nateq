@@ -1,4 +1,4 @@
-﻿<#
+<#
     سكربت الإصدار الواحد لتطبيق Lord TTS — يرفع الترقيم تلقائياً من git
     (بدون لمس يدوي للـ versionCode/versionName)، يبني Release APK، يلتزم
     الترقيم، يضع الوسم vN، يدفع، وينشئ Release على GitHub بمرفق الـ APK
@@ -146,7 +146,6 @@ try {
 if ($localHas) {
     throw "الوسم $targetTag موجود محلياً — لا نشر متكرر."
 }
-$remoteHas = Get-RemoteTagMax | Out-Null
 $previousEf = $ErrorActionPreference
 $ErrorActionPreference = 'SilentlyContinue'
 try {
@@ -157,6 +156,12 @@ try {
 }
 if ($null -ne $remoteHas) {
     throw "الوسم $targetTag موجود على الـ remote — لا نشر متكرر."
+}
+
+# فحص نظافة شجرة العمل قبل النشر (منع حزم تعديلات محلية غير ملتزمة داخل الـ APK)
+$dirty = & git status --porcelain
+if ($dirty) {
+    throw "توجد ملفات معدلة غير ملتزمة في شجرة العمل. التزم كافة التغييرات قبل النشر."
 }
 
 Write-Host "=> الإصدار المستهدف: $targetVersion  (وسم $targetTag، versionCode $targetCode)"
