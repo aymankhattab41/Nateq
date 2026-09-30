@@ -473,7 +473,7 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-• Temporarily raise the caller announcement channel to full volume during speech and restore it afterwards, so it stays loud even in silent mode
+• Temporarily raise the announcement channel to full volume during every announcement (caller, time, SMS, battery, notifications, numbers) and restore it afterwards, so speech stays loud even in silent mode
 • Unified the caller-panel selector order: language, then engine, then voice
 • Fixed bare «ج» being captured inside compound symbols (like «د.ج») by processing longer patterns first, and corrected the English number convention
 </string>
