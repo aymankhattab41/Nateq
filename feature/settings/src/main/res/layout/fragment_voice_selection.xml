@@ -1432,20 +1432,6 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
 
-                    <!-- صوت نطق الأسماء العربية -->
-                    <com.google.android.material.textfield.TextInputLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:hint="@string/caller_announcement_voice_ar">
-                        <androidx.appcompat.widget.AppCompatSpinner
-                            android:id="@+id/spinner_caller_voice_ar"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:contentDescription="@string/caller_announcement_voice_ar"
-                            android:minHeight="48dp" />
-                    </com.google.android.material.textfield.TextInputLayout>
-
                     <!-- محرك نطق الأسماء العربية (يحدد أصواتها المتاحة) -->
                     <TextView
                         android:id="@+id/tv_caller_engine_ar_label"
@@ -1462,6 +1448,20 @@
                         android:layout_height="wrap_content"
                         android:contentDescription="@string/caller_engine_ar_label"
                         android:minHeight="48dp" />
+
+                    <!-- صوت نطق الأسماء العربية -->
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:hint="@string/caller_announcement_voice_ar">
+                        <androidx.appcompat.widget.AppCompatSpinner
+                            android:id="@+id/spinner_caller_voice_ar"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:contentDescription="@string/caller_announcement_voice_ar"
+                            android:minHeight="48dp" />
+                    </com.google.android.material.textfield.TextInputLayout>
                 </LinearLayout>
 
                 <!-- مجموعة صوت نطق الأسماء الإنجليزية -->
@@ -1471,20 +1471,6 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
                     android:visibility="gone">
-
-                    <!-- صوت نطق الأسماء الإنجليزية -->
-                    <com.google.android.material.textfield.TextInputLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:hint="@string/caller_announcement_voice_en">
-                        <androidx.appcompat.widget.AppCompatSpinner
-                            android:id="@+id/spinner_caller_voice_en"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:contentDescription="@string/caller_announcement_voice_en"
-                            android:minHeight="48dp" />
-                    </com.google.android.material.textfield.TextInputLayout>
 
                     <!-- محرك نطق الأسماء الإنجليزية (يحدد أصواتها المتاحة) -->
                     <TextView
@@ -1502,6 +1488,20 @@
                         android:layout_height="wrap_content"
                         android:contentDescription="@string/caller_engine_en_label"
                         android:minHeight="48dp" />
+
+                    <!-- صوت نطق الأسماء الإنجليزية -->
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:hint="@string/caller_announcement_voice_en">
+                        <androidx.appcompat.widget.AppCompatSpinner
+                            android:id="@+id/spinner_caller_voice_en"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:contentDescription="@string/caller_announcement_voice_en"
+                            android:minHeight="48dp" />
+                    </com.google.android.material.textfield.TextInputLayout>
                 </LinearLayout>
 
                 <!-- معاينة إعلان المتصل باللغة المختارة والقيم المعروضة -->
