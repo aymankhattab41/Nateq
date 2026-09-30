@@ -30,7 +30,10 @@ class AnnouncementBootReceiver : BroadcastReceiver() {
             return
         }
         val pendingResult = goAsync()
-        CoroutineScope(Dispatchers.IO).launch {
+        val appScope =
+            (context.applicationContext as? AnnouncementAppContext)?.appScope
+                ?: CoroutineScope(Dispatchers.IO)
+        appScope.launch {
             try {
                 val started =
                     AnnouncementSchedulerService.startIfNeeded(context)

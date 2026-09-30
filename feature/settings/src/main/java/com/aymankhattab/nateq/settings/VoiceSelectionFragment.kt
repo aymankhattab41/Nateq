@@ -619,6 +619,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         // قبل تدوير الجهاز بدل طردِه إلى الصفحة الرئيسية.
         if (savedInstanceState != null) {
             accordion.restoreState(savedInstanceState)
+            if (::timeSection.isInitialized) {
+                timeSection.restoreInstanceState(savedInstanceState)
+            }
         }
 
         // التحديث التفاعلي: المراجعة الابتدائية (0) لا تُحدّث شيئاً،
@@ -658,6 +661,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         super.onSaveInstanceState(outState)
         if (::accordion.isInitialized) {
             outState.putAll(accordion.saveState())
+        }
+        if (::timeSection.isInitialized) {
+            timeSection.saveInstanceState(outState)
         }
     }
 

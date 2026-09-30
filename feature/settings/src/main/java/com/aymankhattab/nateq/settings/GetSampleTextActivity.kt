@@ -16,34 +16,36 @@ class GetSampleTextActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        try {
+            // **بند 4.1:** كانت القيمة النصية ترسل مفتاح اللغة نصياً وكان يُرجع
+            // RESULT_OK (-1) الذي يعني في عقد المحركات LANG_MISSING_DATA
+            // فيعطّل زر المعاينة. مفتاح اللغة «language» لا ثابتاً عاماً له
+            // (KEY_PARAM_LANGUAGE مخفي @hide) فيبقى نَصياً؛ أما إخراج عيّنة
+            // النص فبالثابت العام Engine.EXTRA_SAMPLE_TEXT ورمز التوافق
+            // TextToSpeech.LANG_AVAILABLE.
+            val lang = intent.getStringExtra("language")
 
-        // **بند 4.1:** كانت القيمة النصية ترسل مفتاح اللغة نصياً وكان يُرجع
-        // RESULT_OK (-1) الذي يعني في عقد المحركات LANG_MISSING_DATA
-        // فيعطّل زر المعاينة. مفتاح اللغة «language» لا ثابتاً عاماً له
-        // (KEY_PARAM_LANGUAGE مخفي @hide) فيبقى نَصياً؛ أما إخراج عيّنة
-        // النص فبالثابت العام Engine.EXTRA_SAMPLE_TEXT ورمز التوافق
-        // TextToSpeech.LANG_AVAILABLE.
-        val lang = intent.getStringExtra("language")
+            val returnData = Intent()
 
-        val returnData = Intent()
+            // نص تجريبي مناسب لكل لغة معلنة (ar/en/fr/de/es) حسب جذر لغة
+            // الطلب ("ar-EG"/"ara"/"fra"/"fr" ⇒ root واحد) — بدل النصين اللذين
+            // كانا يخدمان الأساسيتين فقط. اللغات المكتشفة خارج الإعلان تسقط
+            // أماناً على نص العربية الافتراضي.
+            val sampleTextRes = when (LocaleUtils.languageRoot(lang ?: "")) {
+                LanguageCode.EN.tag -> R.string.sample_text_activity_en
+                "fr" -> R.string.sample_text_activity_fr
+                "de" -> R.string.sample_text_activity_de
+                "es" -> R.string.sample_text_activity_es
+                else -> R.string.sample_text_activity_ar
+            }
 
-        // نص تجريبي مناسب لكل لغة معلنة (ar/en/fr/de/es) حسب جذر لغة
-        // الطلب ("ar-EG"/"ara"/"fra"/"fr" ⇒ root واحد) — بدل النصين اللذين
-        // كانا يخدمان الأساسيتين فقط. اللغات المكتشفة خارج الإعلان تسقط
-        // أماناً على نص العربية الافتراضي.
-        val sampleTextRes = when (LocaleUtils.languageRoot(lang ?: "")) {
-            LanguageCode.EN.tag -> R.string.sample_text_activity_en
-            "fr" -> R.string.sample_text_activity_fr
-            "de" -> R.string.sample_text_activity_de
-            "es" -> R.string.sample_text_activity_es
-            else -> R.string.sample_text_activity_ar
+            returnData.putExtra(
+                TextToSpeech.Engine.EXTRA_SAMPLE_TEXT,
+                getString(sampleTextRes)
+            )
+            setResult(TextToSpeech.LANG_AVAILABLE, returnData)
+        } finally {
+            finish()
         }
-
-        returnData.putExtra(
-            TextToSpeech.Engine.EXTRA_SAMPLE_TEXT,
-            getString(sampleTextRes)
-        )
-        setResult(TextToSpeech.LANG_AVAILABLE, returnData)
-        finish()
     }
 }

@@ -207,9 +207,6 @@ class AnnouncementSchedulerService : Service() {
             )
         }
 
-        private const val EXTRA_FALLBACK_BACKGROUND =
-            "com.aymankhattab.nateq.EXTRA_FALLBACK_BG"
-
         private fun startSafely(context: Context, action: String) {
             val intent = Intent(
                 context, AnnouncementSchedulerService::class.java
@@ -247,7 +244,6 @@ class AnnouncementSchedulerService : Service() {
     lateinit var settingsRepository: SettingsRepository
 
     private lateinit var settings: SettingsRepository
-    private var isFallbackBackground = false
     private var timeManager: TimeAnnouncementManager? = null
     private var batteryReceiver: BatteryAnnouncementReceiver? = null
 
@@ -260,9 +256,7 @@ class AnnouncementSchedulerService : Service() {
         super.onCreate()
         isRunning = true
         createNotificationChannel()
-        if (!isFallbackBackground) {
-            startAsForeground(buildNotification())
-        }
+        startAsForeground(buildNotification())
 
         // دفاعية: عند بدء النظام للخدمة مباشرة (STICKY) قد تكون الحقول المحقونة
         // غير جاهزة؛ نبني مرجعاً محلياً عندها (نمط NateqTtsService).
@@ -309,17 +303,9 @@ class AnnouncementSchedulerService : Service() {
         flags: Int,
         startId: Int
     ): Int {
-        val isFallback = intent?.getBooleanExtra(
-            EXTRA_FALLBACK_BACKGROUND, false
-        ) == true
-        if (isFallback) {
-            isFallbackBackground = true
-        }
         // أي أمر جديد يُبطل مؤقت إيقاف النافذة العابرة (قد يصبح فترة دائمة).
         mainHandler.removeCallbacksAndMessages(null)
-        if (!isFallbackBackground) {
-            startAsForeground(buildNotification())
-        }
+        startAsForeground(buildNotification())
         when (intent?.action) {
             ACTION_ANNOUNCE_NOW -> announceNow()
             ACTION_STOP -> {
@@ -570,7 +556,6 @@ class AnnouncementSchedulerService : Service() {
     }
 
     private fun startAsForeground(notification: Notification) {
-        if (isFallbackBackground) return
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 // الطريقة الأصلية (API 34+) — النوع معرف

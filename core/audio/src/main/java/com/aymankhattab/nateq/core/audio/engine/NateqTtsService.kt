@@ -357,7 +357,7 @@ override fun onDestroy() {
             "onIsLanguageAvailable() lang=$lang" +
             " country=$country variant=$variant")
         refreshDiscoveryIfNeeded()
-        if (lang == null) return TextToSpeech.LANG_NOT_SUPPORTED
+        if (lang.isNullOrBlank()) return TextToSpeech.LANG_NOT_SUPPORTED
 
         val normLang = normalizeLanguageCode(lang)
         val normCountry = normalizeCountryCode(country)
@@ -388,6 +388,7 @@ override fun onDestroy() {
         Log.d(TAG,
             "onLoadLanguage() lang=$lang" +
             " country=$country variant=$variant")
+        if (lang.isNullOrBlank()) return TextToSpeech.LANG_NOT_SUPPORTED
         val normLang = normalizeLanguageCode(lang)
         val normCountry = normalizeCountryCode(country)
         val result = onIsLanguageAvailable(normLang, normCountry, variant)

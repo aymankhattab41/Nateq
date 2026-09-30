@@ -521,10 +521,6 @@ class SettingsRepository(context: Context) :
         edit.putBoolean(KEY_BATTERY_VOICE_MIGRATED, true).apply()
     }
 
-    @androidx.annotation.VisibleForTesting
-    internal fun isBatteryVoiceMigrationCompleted(): Boolean =
-        prefs.getBoolean(KEY_BATTERY_VOICE_MIGRATED, false)
-
     /** لغة التطبيق المختارة يدوياً: "ar"/"en"/null (null = تتبع لغة النظام) */
     override fun getAppLanguage(): String? =
         prefs.getString("app_language", null)
@@ -623,13 +619,6 @@ class SettingsRepository(context: Context) :
 
     fun setCallerAnnouncementPitch(pitch: Float) =
         setCategoryPitch("caller_announcement_pitch", pitch)
-
-    fun getBatteryAnnouncementPitchOrDefault(
-        languageTag: String
-    ): Float = getPitchForCategory(VOICE_CATEGORY_BATTERY)
-
-    fun setBatteryAnnouncementPitch(pitch: Float) =
-        setPitchForCategory(VOICE_CATEGORY_BATTERY, pitch)
 
     fun getSmsReadingPitchOrDefault(
         languageTag: String
@@ -1698,7 +1687,6 @@ class SettingsRepository(context: Context) :
      */
     private fun ensureConvertSlotsMigrated() {
         if (prefs.getBoolean(KEY_CONVERT_SLOTS_MIGRATED, false)) return
-        prefs.edit().putBoolean(KEY_CONVERT_SLOTS_MIGRATED, true).apply()
 
         val map = readConvertPrefs().toMutableMap()
         // السلوت الأول كان بحقّ اللغة العربية افتراضياً، والثاني الإنجليزية.
@@ -1718,7 +1706,14 @@ class SettingsRepository(context: Context) :
             ),
             LanguageCode.EN.tag
         )
-        if (map != readConvertPrefs()) writeConvertPrefs(map)
+        val editor = prefs.edit().putBoolean(KEY_CONVERT_SLOTS_MIGRATED, true)
+        if (map != readConvertPrefs()) {
+            editor.putString(
+                KEY_CONVERT_PREFS_JSON,
+                ConvertPreferencesCodec.toJson(map)
+            )
+        }
+        editor.apply()
         Log.w(
             TAG,
             "تم ترحيل سلوتات التحويل القديمة إلى الخريطة الديناميكية " +

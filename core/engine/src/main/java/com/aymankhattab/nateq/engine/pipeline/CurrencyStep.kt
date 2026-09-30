@@ -168,10 +168,19 @@ internal object CurrencyStep : TextProcessingStep {
             "سنتيمات",
             false
         ),
+        "د.م" to CurrencyInfo(
+            "درهم مغربي",
+            "دراهم مغربية",
+            "درهمان مغربيان",
+            false,
+            "سنتيم",
+            "سنتيمات",
+            false
+        ),
         "ر.م" to CurrencyInfo(
-            "ريال مغربي",
-            "ريالات مغربية",
-            "ريالان مغربيان",
+            "درهم مغربي",
+            "دراهم مغربية",
+            "درهمان مغربيان",
             false,
             "سنتيم",
             "سنتيمات",
@@ -372,6 +381,7 @@ internal object CurrencyStep : TextProcessingStep {
             "dinar", "dinars", "millime", "millimes", 1000
         ),
         "د.ج" to CurrencyInfoEn("dinar", "dinars", "centime", "centimes"),
+        "د.م" to CurrencyInfoEn("dirham", "dirhams", "centime", "centimes"),
         "ر.م" to CurrencyInfoEn("dirham", "dirhams", "centime", "centimes")
     )
 

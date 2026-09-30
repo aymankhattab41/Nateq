@@ -31,9 +31,6 @@ internal class SnapshotPrefs(
         snapshot = values
     }
 
-    /** لقطة القراءة الحالية (لأغراض الفحص والمقارنة في reload). */
-    fun currentSnapshot(): Map<String, Any?> = snapshot
-
     override fun getAll(): MutableMap<String, *> = HashMap(snapshot)
 
     override fun getString(key: String, defValue: String?): String? {

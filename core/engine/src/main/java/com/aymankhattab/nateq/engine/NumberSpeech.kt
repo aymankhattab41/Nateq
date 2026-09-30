@@ -416,17 +416,6 @@ object NumberSpeech {
         return (sign + result).trim()
     }
 
-    /** التحقق هل المتوالية رقم هاتف يُلزم النطق المفرد (7..15 خانة). */
-    fun isPhoneNumber(raw: String, digits: String): Boolean {
-        if (digits.length !in 7..15) return false
-        val clean = raw.trimStart()
-        if (clean.startsWith("+")) return true
-        if (digits.startsWith("0")) return true
-        return raw.any {
-            it == '-' || it == '(' || it == ')' || it == '/'
-        }
-    }
-
     /** نسخة Long عامة تحافظ على الأعداد الكبيرة السالبة وإشارتها. */
     fun formatByMode(mode: Int, number: Long, isEnglish: Boolean): String {
         if (number == Long.MIN_VALUE) {

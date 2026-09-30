@@ -9,6 +9,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.result.ActivityResult
 import android.os.Build
+import android.os.Bundle
 import android.provider.Settings
 import android.text.format.DateFormat
 import android.view.View
@@ -1278,5 +1279,19 @@ internal class TimeAnnouncementController(
         quarterChimeChoose.clear()
         quarterChimePreview.clear()
         quarterChimeClear.clear()
+    }
+
+    fun saveInstanceState(outState: Bundle) {
+        outState.putInt(KEY_PENDING_CHIME_MINUTE, pendingCustomChimeMinute)
+    }
+
+    fun restoreInstanceState(savedInstanceState: Bundle) {
+        pendingCustomChimeMinute =
+            savedInstanceState.getInt(KEY_PENDING_CHIME_MINUTE, 0)
+    }
+
+    private companion object {
+        private const val KEY_PENDING_CHIME_MINUTE =
+            "pending_custom_chime_minute"
     }
 }

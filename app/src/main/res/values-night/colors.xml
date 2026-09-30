@@ -25,7 +25,4 @@
 
     <!-- فاصل فاتح على خلفية داكنة -->
     <color name="divider_color">#33FFFFFF</color>
-
-    <!-- نص/أيقونة أداة الساعة الناطقة (تُعرض فوق خلفية زرقاء داكنة دائماً) -->
-    <color name="widget_foreground">#FFFFFF</color>
 </resources>

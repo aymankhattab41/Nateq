@@ -297,10 +297,6 @@ interface AnnouncementPrefs {
     /** يعيّن نظام الساعة 24. */
     fun setTime24Hour(enabled: Boolean)
 
-    /** تفعيل ودجت الساعة الناطقة. */
-
-    /** يعيّن تفعيل ودجت الساعة الناطقة. */
-
     /** تفعيل رنة الزمن. */
     fun isTimeChimeEnabled(): Boolean
 

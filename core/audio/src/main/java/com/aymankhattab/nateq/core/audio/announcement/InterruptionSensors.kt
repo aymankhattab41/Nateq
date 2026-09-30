@@ -145,18 +145,7 @@ internal class InterruptionSensors(
     fun stop() {
         val sm = sensorManager ?: return
         runCatching {
-            if (shakeRegistered) {
-                sm.unregisterListener(
-                    sensorListener,
-                    sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-                )
-            }
-            if (proximityRegistered) {
-                sm.unregisterListener(
-                    sensorListener,
-                    sm.getDefaultSensor(Sensor.TYPE_PROXIMITY)
-                )
-            }
+            sm.unregisterListener(sensorListener)
         }
         shakeRegistered = false
         proximityRegistered = false

@@ -15,7 +15,7 @@ internal class DateStep : TextProcessingStep {
         // أنماط التواريخ: حدود الكلمات (\\b) في الطرفين تمنع التقاط تاريخ
         // داخل متوالية أرقام لاصقة («x12.05.2024y» أو نهاية عنوان IP).
         val PATTERN_DATE_YMD = Pattern.compile(
-            """\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b"""
+            """\b(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})\b"""
         )
         val PATTERN_DATE_DMY = Pattern.compile(
             """\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b"""
@@ -38,7 +38,8 @@ internal class DateStep : TextProcessingStep {
 
         // isYMD=true → group1=year,group2=month,group3=day. العكس للـ DMY/DOTY.
         val DATE_PATTERNS = listOf(
-            PATTERN_DATE_YMD to true,   // YYYY-MM-DD أو YYYY/MM/DD
+            // YYYY-MM-DD أو YYYY/MM/DD أو YYYY.MM.DD
+            PATTERN_DATE_YMD to true,
             PATTERN_DATE_DMY to false,  // DD-MM-YYYY أو DD/MM/YYYY
             PATTERN_DATE_DOTY to false  // DD.MM.YYYY
         )

@@ -87,7 +87,9 @@ internal object UnitStep : TextProcessingStep {
     private val UNIT_PATTERNS = UNIT_NAMES.map { info ->
         val pattern = when (info.symbol) {
             "م" -> Pattern.compile(
-                """(?<!ساعة\s)(?<!الساعة\s)(?<!عام\s)(?<!سنة\s)\b""" +
+                """(?<!ساعة\s)(?<!الساعة\s)(?<!عام\s)(?<!سنة\s)""" +
+                    """(?<!في\s)(?<!منذ\s)(?<!حتى\s)(?<!بين\s)""" +
+                    """(?<!ولد\s)(?<!توفي\s)\b""" +
                     """(\d+(?:[.,]\d{3})*(?:[.,]\d+)?)\s*""" +
                     """${Pattern.quote(info.symbol)}""" +
                     """(?!\s*/\s*ث)(?!\.?\s*ب(?:ايت|ت)?)""" +

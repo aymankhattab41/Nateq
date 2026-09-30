@@ -69,10 +69,11 @@ object SsmlStep {
         }
         // 3) أي وسوم متبقية: تشطر أطرافها ويبقى محتواها.
         out = out.replace(genericTag, "")
-        // 4) فك رموز الكيانات الصغيرة (المرمَّزة والمسماة الأربع).
+        // 4) فك رموز الكيانات الصغيرة (المرمَّزة والمسماة القياسية).
         out = out.replace("&lt;", "<")
             .replace("&gt;", ">")
             .replace("&quot;", "\"")
+            .replace("&apos;", "'")
             .replace("&#39;", "'")
             .replace("&amp;", "&")
         return out
