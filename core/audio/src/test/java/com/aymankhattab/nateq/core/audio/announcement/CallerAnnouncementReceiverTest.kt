@@ -425,21 +425,60 @@ class CallerAnnouncementReceiverTest {
         assertFalse(repo.isCallerAnnouncementDuringCallEnabled())
     }
 
-    @Test
-    fun `waiting call ring is detected over an active call`() {
-        // مكالمة انتظار: رنين بعد OFFHOOK مباشرة، أو رنّات متكررة للرنين
-        // نفسه مع استمرار علم المكالمة النشطة.
-        assertTrue(
-            CallerAnnouncementReceiver.isWaitingCall(
-                TelephonyManager.EXTRA_STATE_OFFHOOK, true
+@Test
+fun `waiting call ring is detected over an active call`() {
+    // مكالمة انتظار: رنين بعد OFFHOOK مباشرة، أو رنّات متكررة للرنين
+    // نفسه مع استمرار علم المكالمة النشطة.
+    assertTrue(
+        CallerAnnouncementReceiver.isWaitingCall(
+            TelephonyManager.EXTRA_STATE_OFFHOOK, true
+        )
+    )
+    assertTrue(
+        CallerAnnouncementReceiver.isWaitingCall(
+            TelephonyManager.EXTRA_STATE_RINGING, true
+        )
+    )
+}
+
+@Test
+fun `waiting call speaks only when during call toggle enabled`() {
+    // رنين الانتظار (خلف مكالمة نشطة) يُنطق عند تفعيل «نطق اسم المتصل
+    // أثناء المكالمة» فقط — وقد عُدِّل مسار التكرار ليطبّق جدول الإعدادات
+    // نفسه على مكالمة الانتظار بدل تخفيفها لنطقٍ واحد.
+    val repo = SettingsRepository(context)
+    repo.setCallerAnnouncementEnabled(true)
+    repo.setAllAnnouncementsEnabled(true)
+    repo.setCallerAnnouncementDuringCallEnabled(false)
+    try {
+        val receiver = CallerAnnouncementReceiver()
+        assertFalse(
+            "انتظار بلا مفتاحه: لا يُنطق",
+            receiver.announceIncomingCall(
+                context = context,
+                settings = repo,
+                incomingNumber = "0501234567",
+                previousState = TelephonyManager.EXTRA_STATE_OFFHOOK,
+                callActive = true
             )
         )
+        repo.setCallerAnnouncementDuringCallEnabled(true)
+        ShadowTextToSpeech.reset()
         assertTrue(
-            CallerAnnouncementReceiver.isWaitingCall(
-                TelephonyManager.EXTRA_STATE_RINGING, true
+            "انتظار بمفتاحه: يُنطق",
+            receiver.announceIncomingCall(
+                context = context,
+                settings = repo,
+                incomingNumber = "0501234567",
+                previousState = TelephonyManager.EXTRA_STATE_OFFHOOK,
+                callActive = true
             )
         )
+    } finally {
+        repo.setCallerAnnouncementDuringCallEnabled(false)
+        repo.setAllAnnouncementsEnabled(false)
     }
+}
 
     @Test
     fun `plain idle ring is not a waiting call`() {

@@ -1938,9 +1938,18 @@ class AnnouncementSpeaker(
                 mode == AudioManager.MODE_IN_COMMUNICATION
         }.getOrDefault(false)
 
-        // أثناء المكالمات الهاتفية: يُرفض التركيز لمنع التشويش على المكالمة.
+        // أثناء المكالمات الهاتفية: يُرفض التركيز لمنع التشويش على المكالمة —
+        // إلا للفئات المسموح بها صراحةً عبر مفاتيح «أثناء المكالمة»:
+        // إعلانُ المتصل (مكالمة انتظار) والوقت؛ تُمنح فوراً وبلا طلب تركيز
+        // من النظام (Zero-Ducking) فينبثق الإعلان فوق المكالمة النشطة.
         if (inCall) {
-            return AudioManager.AUDIOFOCUS_REQUEST_FAILED
+            return if (isAllowedDuringCall()) {
+                hasAudioFocus = true
+                skippedFocusForMedia = true
+                AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            } else {
+                AudioManager.AUDIOFOCUS_REQUEST_FAILED
+            }
         }
 
         // خارج المكالمات: نمنح الإذن بالنطق فوراً وبلا طلب تركيز من النظام
@@ -1948,6 +1957,23 @@ class AnnouncementSpeaker(
         hasAudioFocus = true
         skippedFocusForMedia = true
         return AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+    }
+
+    /** هل تُسمح فئة النطق الحالية بالمرور فوق مكالمةٍ هاتفية نشطة؟
+     *  المتصلُ (بجميع أنواعه) عند تفعيل «نطق اسم المتصل أثناء المكالمة»،
+     *  والوقت عند تفعيل «نطق الوقت أثناء المكالمة»؛ ما عداها (البطارية/الرسائل/
+     *  الإشعارات/نصوص عامة) يُرفضُ فوق المكالمة لحمايتها من التشويش. */
+    private fun isAllowedDuringCall(): Boolean {
+        val repo = settings ?: return false
+        return when (currentCategory) {
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER,
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR,
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN ->
+                repo.isCallerAnnouncementDuringCallEnabled()
+            SettingsRepository.VOICE_CATEGORY_TIME ->
+                repo.isAnnounceTimeDuringCalls()
+            else -> false
+        }
     }
 
     /**

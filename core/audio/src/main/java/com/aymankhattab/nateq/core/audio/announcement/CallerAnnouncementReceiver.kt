@@ -468,7 +468,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 val schedule = repeatSchedule(
                     repeat, intervalMs, BROADCAST_ASYNC_WINDOW_MS
                 )
-                val totalWakeMs = if (waitingCall || schedule.isEmpty()) {
+                val totalWakeMs = if (schedule.isEmpty()) {
                     TimeAlarmReceiver.SHORT_WAKE_LOCK_MS
                 } else {
                     val maxOffset = schedule.lastOrNull() ?: 0L
@@ -478,7 +478,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 wakeLock = TimeAlarmReceiver.acquireShortWakeLock(
                     context, totalWakeMs
                 )
-                if (waitingCall || schedule.isEmpty()) {
+                if (schedule.isEmpty()) {
                     completionListener = { finishOnce() }
                     speaker.addCompletionListener(completionListener!!)
                 }
@@ -497,9 +497,11 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 // قائمة مستمعي المتحدث المشترك (بند [8]) فلا يطمس خطاف أداة
                 // الساعة أو مستقبلٍ آخر، ويُزال في finally.
                 val appCtx = context.applicationContext
-                // رنينُ الانتظار أثناء مكالمة: نطقٌ واحد فقط بلا تكرار
-                // (لا يُزعج الحوارَ المتواصلَ بتكراراتٍ فوقه).
-                if (!waitingCall && schedule.isNotEmpty()) {
+                // تكرارُ الإعلان (وإن كان لرنينِ انتظارٍ أثناء مكالمة) يتبع
+                // جدولَ الإعدادات نفسه: عدد مرات وفواصل مضبوطة بحد أقصى نافذة
+                // البث — فإعلانُ المتصل أثناء مكالمة نشطة يُكرَّر كباقي الرنّات
+                // (لا تخفيفٌ لنطقٍ واحد فوقها بلا سبب).
+                if (schedule.isNotEmpty()) {
                     var lastLaunchMs = 0L
                     for ((index, offsetMs) in schedule.withIndex()) {
                         delay(offsetMs - lastLaunchMs)

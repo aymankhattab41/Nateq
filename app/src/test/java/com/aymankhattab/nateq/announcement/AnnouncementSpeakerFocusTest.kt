@@ -111,6 +111,107 @@ class AnnouncementSpeakerFocusTest {
     }
 
     @Test
+    fun callerDuringCall_grantedWhenToggleEnabled() {
+        val repo = com.aymankhattab.nateq.core.data.SettingsRepository(
+            context
+        )
+        repo.setCallerAnnouncementDuringCallEnabled(true)
+        try {
+            val s = speaker()
+            audioManager.mode = AudioManager.MODE_IN_CALL
+            s.speak(
+                "مكالمة من أحمد",
+                arLocale, 1f, 1f, 1f,
+                category = "caller"
+            )
+            // إعلانُ المتصل فوق مكالمة (مكالمة انتظار) يُمنح فوراً عند تفعيل
+            // مفتاحه — لا يُرفض كبقية الفئات.
+            assertTrue(
+                "المتصل أثناء المكالمة يُمنح التركيز",
+                boolField(s, "hasAudioFocus")
+            )
+            s.shutdown()
+        } finally {
+            repo.setCallerAnnouncementDuringCallEnabled(false)
+        }
+    }
+
+    @Test
+    fun callerDuringCall_deniedWhenToggleDisabled() {
+        val repo = com.aymankhattab.nateq.core.data.SettingsRepository(
+            context
+        )
+        repo.setCallerAnnouncementDuringCallEnabled(false)
+        val s = speaker()
+        audioManager.mode = AudioManager.MODE_IN_CALL
+        s.speak(
+            "مكالمة من أحمد",
+            arLocale, 1f, 1f, 1f,
+            category = "caller"
+        )
+        // دون تفعيل المفتاح: رفضٌ صامت (لا نطق فوق المكالمة).
+        assertFalse(
+            "المتصل بلا مفتاحه يُرفض فوق المكالمة",
+            boolField(s, "hasAudioFocus")
+        )
+        ShadowLooper.idleMainLooper(500, TimeUnit.MILLISECONDS)
+        ShadowLooper.idleMainLooper(500, TimeUnit.MILLISECONDS)
+        ShadowLooper.idleMainLooper(500, TimeUnit.MILLISECONDS)
+        assertTrue("لا محرك يتهيأ بعد الرفض", ttsIsNull(s))
+        audioManager.mode = AudioManager.MODE_NORMAL
+        s.shutdown()
+    }
+
+    @Test
+    fun timeDuringCall_grantedWhenToggleEnabled() {
+        val repo = com.aymankhattab.nateq.core.data.SettingsRepository(
+            context
+        )
+        repo.setAnnounceTimeDuringCalls(true)
+        try {
+            val s = speaker()
+            audioManager.mode = AudioManager.MODE_IN_CALL
+            s.speak(
+                "الآن التاسعة",
+                arLocale, 1f, 1f, 1f,
+                category = "time"
+            )
+            assertTrue(
+                "الوقت أثناء المكالمة يُمنح عند تفعيل مفتاحه",
+                boolField(s, "hasAudioFocus")
+            )
+            s.shutdown()
+        } finally {
+            repo.setAnnounceTimeDuringCalls(false)
+        }
+    }
+
+    @Test
+    fun batteryDuringCall_deniedEvenIfFeatureEnabled() {
+        val repo = com.aymankhattab.nateq.core.data.SettingsRepository(
+            context
+        )
+        repo.setAllAnnouncementsEnabled(true)
+        try {
+            val s = speaker()
+            audioManager.mode = AudioManager.MODE_IN_CALL
+            s.speak(
+                "البطارية ممتلئة",
+                arLocale, 1f, 1f, 1f,
+                category = "battery"
+            )
+            // البطارية بلا مفتاح «أثناء المكالمة»: صامتةٌ فوق المكالمة دائماً.
+            assertFalse(
+                "البطارية تُرفض فوق المكالمة",
+                boolField(s, "hasAudioFocus")
+            )
+            s.shutdown()
+        } finally {
+            repo.setAllAnnouncementsEnabled(false)
+        }
+    }
+
+    @Test
     @Config(sdk = [24])
     fun preO_abandon_passesRegisteredListener_notNull() {
         // على أندرويد قبل 8.0: الإخلاء بلا مستمع (null) كان يترك تسجيل المستمع

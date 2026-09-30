@@ -149,6 +149,18 @@ internal object CurrencyStep : TextProcessingStep {
             "قروش",
             false
         ),
+        // «ج» المصرية المفردة («رصيدك 8.57ج»): نفس بيانات «ج.م» لحرفٍ واحد.
+        // ضوابطُ حدودِ الكلمة (قبل/بعد) تُبنى في compilePatterns فلا يلتقط
+        // الحرفَ تكراراً داخل كلامٍ عربي («5 جيد» تبقى أرقاماً).
+        "ج" to CurrencyInfo(
+            "جنيه مصري",
+            "جنيهات مصرية",
+            "جنيهان مصريان",
+            false,
+            "قرش",
+            "قروش",
+            false
+        ),
         "د.ت" to CurrencyInfo(
             "دينار تونسي",
             "دنانير تونسية",
@@ -377,6 +389,7 @@ internal object CurrencyStep : TextProcessingStep {
         "ر.ع" to CurrencyInfoEn("riyal", "riyals", "baisa", "baisa", 1000),
         "د.ب" to CurrencyInfoEn("dinar", "dinars", "fils", "fils", 1000),
         "ج.م" to CurrencyInfoEn("pound", "pounds", "piastre", "piastres"),
+        "ج" to CurrencyInfoEn("pound", "pounds", "piastre", "piastres"),
         "د.ت" to CurrencyInfoEn(
             "dinar", "dinars", "millime", "millimes", 1000
         ),
@@ -453,21 +466,38 @@ internal object CurrencyStep : TextProcessingStep {
         val any: Pattern
     )
 
+    /** هل الرمز حرف عربي مفرد («ج» المصري)؟ يُقيَّد بضابطي حدود الكلمة
+     *  (بلا حرف عربي قبله/بعده) في [compilePatterns] — الحرفُ وحده قد يكون
+     *  داخل لفظٍ عربي («مج 5»، «5 جيد») فلا يلتقطه بدون الحارسَين. */
+    private fun isBareArabicSymbol(symbol: String): Boolean =
+        symbol.length == 1 && symbol[0].code in 0x0600..0x06FF
+
     /** يبني أنماط لغةٍ من جدول رموزها — البنية نفسها (نمط المبلغ/الأكواد)
      *  للغتين، والمختلف مفرداتُ الاستبدال فقط. */
     private fun <T> compilePatterns(infos: Map<String, T>): Patterns<T> {
         // أنماط الرموز قبل المبلغ: «$100» مع مسافة اختيارية بين الرمز والمبلغ.
         val before = infos.map { (symbol, info) ->
-            val source = Pattern.quote(symbol) + "\\s*(" +
+            val headGuard = if (isBareArabicSymbol(symbol)) {
+                "(?<!\\p{IsArabic})"
+            } else {
+                ""
+            }
+            val source = headGuard + Pattern.quote(symbol) + "\\s*(" +
                 AMOUNT_REGEX + ")\\b"
             Pattern.compile(source) to info
         }
         // أنماط الرموز بعد المبلغ: «100$» مع مسافة اختيارية بين المبلغ
         // والرمز. الحارس السالب للعدد يشمل الإشارة نفسها: لا تُلتقط «-2$»
         // كجزء من رقم أطول/رقمٍ سالبٍ سابق («12-2$» تُترك كما هي).
+        // الحرفُ العربي المفرد يُمنع بعده حرفٌ عربي («5 جيد» تبقى أرقاماً).
         val after = infos.map { (symbol, info) ->
+            val tailGuard = if (isBareArabicSymbol(symbol)) {
+                "(?!\\p{IsArabic})"
+            } else {
+                ""
+            }
             val source = "(?<![-\\d])(" + AMOUNT_REGEX + ")\\s*" +
-                Pattern.quote(symbol)
+                Pattern.quote(symbol) + tailGuard
             Pattern.compile(source) to info
         }
         // بوابة عدم التطابق: دمج OR صريح لكل أنماط العملة (قبل/بعد/كود/

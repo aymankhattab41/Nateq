@@ -788,6 +788,40 @@ class PipelineStepsTest {
     }
 
     @Test
+    fun currency_bare_egyptian_jim_after() {
+        // «ج» المصرية المفردة («رصيدك 8.57ج»): جنيه مصري، وكسرُ 57 يُنطق
+        // رقماً كاملاً (سبعة وخمسون قرشاً) لا أرقاماً مفردة (5 7).
+        assertEquals(
+            "رصيدك ثمانية جنيهات مصرية وسبعة وخمسون قرشاً",
+            CurrencyStep.apply("رصيدك 8.57ج")
+        )
+        assertEquals(
+            "ثمانية جنيهات مصرية",
+            CurrencyStep.apply("8ج")
+        )
+        assertEquals(
+            "ثلاثة جنيهات مصرية",
+            CurrencyStep.apply("3ج")
+        )
+    }
+
+    @Test
+    fun currency_bare_jim_guarded_against_arabic_words() {
+        // الحرف المفرد «ج» يلزمه ضابطا حدود: لا يُلتقط داخل كلمة عربية
+        // تلي رقمها («5 جيد» تبقى أرقاماً) ولا وسط كلمة تسبقه («مج 5»).
+        assertEquals("5 جيد", CurrencyStep.apply("5 جيد"))
+        assertEquals("مج 5", CurrencyStep.apply("مج 5"))
+    }
+
+    @Test
+    fun currency_bare_jim_english() {
+        assertEquals(
+            "eight pounds and fifty-seven piastres",
+            CurrencyStep.applyEnglish("8.57ج")
+        )
+    }
+
+    @Test
     fun currency_tens_withOne_masculine() {
         // بند 3.1: «العشرون» بآحاد «واحد» لا «أحد» («واحد وعشرون»).
         assertEquals(
