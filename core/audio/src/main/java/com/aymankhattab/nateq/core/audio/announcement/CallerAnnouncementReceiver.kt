@@ -67,6 +67,36 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         @Volatile
         private var callActive = false
 
+        /** الرقم المحلول في جلسة الرنين الحالية */
+        @Volatile
+        internal var lastResolvedNumber: String? = null
+
+        /** الاسم المحلول في جلسة الرنين الحالية */
+        @Volatile
+        internal var lastResolvedName: String? = null
+
+        /** وقت بداية رنين المكالمة الحالية */
+        @Volatile
+        internal var ringingStartTime: Long = 0L
+
+        /** هل أُعلن عن رنين هذه المكالمة بالفعل؟ */
+        @Volatile
+        internal var ringingAnnounced = false
+
+        /** مهلة انتظار وصول رقم المتصل عند وصول بث فارغ (1.8 ثانية) */
+        internal const val CALLER_RESOLVE_GRACE_PERIOD_MS = 1_800L
+
+        /** فاصل فحص سجل المكالمات أثناء مهلة الانتظار (300 مللي ثانية) */
+        internal const val CALLER_LOG_POLL_INTERVAL_MS = 300L
+
+        /** تصفير حالة جلسة الرنين عند إنهاء المكالمة أو الرد عليها */
+        internal fun resetRingingSession() {
+            lastResolvedNumber = null
+            lastResolvedName = null
+            ringingStartTime = 0L
+            ringingAnnounced = false
+        }
+
         /** هل رنينُ الحالة الحالية رنينُ مكالمةٍ واردة أثناء مكالمة نشطة
          *  (مكالمة انتظار)؟ نعم إن كانت الحالة RINGING والمكالمة نشطة —
          *  بالعلم الثابت أو بانتقالٍ مباشر من OFFHOOK. خالصٌ قابل للاختبار. */
@@ -194,6 +224,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     val cycle = activeCallCycle
                     activeCallCycle = null
                     cycle?.cancel()
+                    resetRingingSession()
                     runCatching {
                         AnnouncementSpeaker.getInstance(context).stop()
                     }
@@ -201,10 +232,40 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 finishOnce()
                 return@launch
             }
-            // أي رنين جديد يحلّ replace لدورة التكرار السابقة إن بقيت
-            // (رنينٌ متكرر لمكالمةٍ نفسها) — لا حلقاتِ نطقٍ متوازية.
+
+            @Suppress("DEPRECATION")
+            val rawNumber = intent.getStringExtra(
+                TelephonyManager.EXTRA_INCOMING_NUMBER
+            )?.trim()?.takeIf { it.isNotBlank() }
+
+            if (rawNumber != null) {
+                lastResolvedNumber = rawNumber
+            }
+
+            // إن كانت المكالمة قد أُعلنت بالفعل وحلقتها نشطة ولا يوجد
+            // رقم جديد، ننهي البث بهدوء دون مقاطعة حلقة النطق الجارية
+            if (ringingAnnounced && activeCallCycle?.isActive == true &&
+                (rawNumber == null || rawNumber == lastResolvedNumber)
+            ) {
+                finishOnce()
+                return@launch
+            }
+
+            // إن كان هناك كوروتين ينتظر في مهلة السماح والبث الحالي فارغ،
+            // نتركه يكمل انتظاره دون إلغاء أو مقاطعة
+            if (!ringingAnnounced && activeCallCycle?.isActive == true &&
+                rawNumber == null
+            ) {
+                finishOnce()
+                return@launch
+            }
+
+            // وصول بث برقم أو رنين جديد: استبدال الدورة السابقة وأخذ المقبض
             activeCallCycle?.cancel()
             activeCallCycle = coroutineContext.job
+            if (ringingStartTime == 0L) {
+                ringingStartTime = System.currentTimeMillis()
+            }
             // مستمعُ اكتمالٍ يُسجَّل في try ويُزال في finally (بند [8]) —
             // لا يبقى مسجلاً بعد نافذة البث فلا يُستدعى في دورةٍ لا تخصنا.
             var completionListener: (() -> Unit)? = null
@@ -279,11 +340,6 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     return@launch
                 }
 
-                @Suppress("DEPRECATION")
-                val rawNumber = intent.getStringExtra(
-                    TelephonyManager.EXTRA_INCOMING_NUMBER
-                )
-
                 val hasCallLog = hasPermission(
                     context, Manifest.permission.READ_CALL_LOG
                 )
@@ -291,28 +347,82 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     context, Manifest.permission.READ_CONTACTS
                 )
 
+                var incomingNumber = rawNumber ?: lastResolvedNumber
+                var contactName = lastResolvedName
+
+                // مهلة سماح عند وصول بث فارغ: ننتظر مهلة قصيرة ونفحص
+                // سجل المكالمات دورياً، لتجنب التعجل بنطق عبارة
+                // "اتصال وارد" العامة قبل وصول بث الرقم الحقيقي.
+                if (incomingNumber == null && !ringingAnnounced) {
+                    val elapsed =
+                        System.currentTimeMillis() - ringingStartTime
+                    val remainingGrace = (CALLER_RESOLVE_GRACE_PERIOD_MS -
+                        elapsed).coerceAtLeast(0L)
+                    var waited = 0L
+                    while (waited < remainingGrace) {
+                        delay(CALLER_LOG_POLL_INTERVAL_MS)
+                        waited += CALLER_LOG_POLL_INTERVAL_MS
+                        if (lastResolvedNumber != null) {
+                            incomingNumber = lastResolvedNumber
+                            contactName = lastResolvedName
+                            break
+                        }
+                        if (hasCallLog) {
+                            val fromLog = resolveLatestCallFromLog(
+                                context, hasCallLog
+                            )
+                            if (fromLog != null &&
+                                !fromLog.first.isNullOrBlank()
+                            ) {
+                                incomingNumber = fromLog.first
+                                if (contactName == null) {
+                                    contactName = fromLog.second
+                                }
+                                lastResolvedNumber = incomingNumber
+                                break
+                            }
+                        }
+                    }
+                }
+
                 // استرداد بديل من سجل المكالمات إن حجب أندرويد 10+ الرقم
-                val fallbackCall = if (rawNumber.isNullOrBlank()) {
-                    resolveLatestCallFromLog(context, hasCallLog)
-                } else null
+                if (incomingNumber == null && hasCallLog) {
+                    val fallbackCall = resolveLatestCallFromLog(
+                        context, hasCallLog
+                    )
+                    incomingNumber = fallbackCall?.first
+                    if (contactName == null) {
+                        contactName = fallbackCall?.second
+                    }
+                }
 
-                val incomingNumber = rawNumber ?: fallbackCall?.first
+                if (incomingNumber != null) {
+                    lastResolvedNumber = incomingNumber
+                }
 
-                // الاسم المخصص للمستخدم (خريطة رقم -> اسم) له الأولوية القصوى،
-                // ثم البحث في دفتر الاتصالات ثم سجل المكالمات.
-                val customName = resolveCustomName(settings, incomingNumber)
-                val contactName = customName ?: resolveContactName(
-                    context,
-                    number = incomingNumber,
-                    hasReadContacts = hasContacts,
-                    hasReadCallLog = hasCallLog
-                ) ?: fallbackCall?.second
+                // الاسم المخصص للمستخدم له الأولوية القصوى، ثم دفتر
+                // الاتصالات ثم سجل المكالمات.
+                if (contactName == null && incomingNumber != null) {
+                    val customName = resolveCustomName(
+                        settings, incomingNumber
+                    )
+                    contactName = customName ?: resolveContactName(
+                        context,
+                        number = incomingNumber,
+                        hasReadContacts = hasContacts,
+                        hasReadCallLog = hasCallLog
+                    )
+                }
+
+                if (contactName != null) {
+                    lastResolvedName = contactName
+                }
 
                 // إعلان اسم المتصل ورقمه ينطق دائماً عند رنين الهاتف حتى لو
                 // كانت الشاشة مقفلة (الهدف الأساسي للمكفوفين وسائقي المركبات).
                 val privacyLocked = false
 
-                val text = buildAnnouncementText(
+                var text = buildAnnouncementText(
                     context,
                     number = incomingNumber,
                     contactName = contactName,
@@ -323,10 +433,10 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
 
                 val speechRate = settings.getCallerAnnouncementRate()
                 val volume = settings.getCallerAnnouncementVolume()
-                val hasArabic = callerSpeechLanguage(
+                var hasArabic = callerSpeechLanguage(
                     contactName, incomingNumber
                 ) == LanguageCode.AR.tag
-                val locale = if (hasArabic) {
+                var locale = if (hasArabic) {
                     Locale.forLanguageTag(LanguageCode.AR.tag)
                 } else {
                     Locale.forLanguageTag(LanguageCode.EN.tag)
@@ -337,11 +447,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 // (عربي/إنجليزي حسب لغة النص الفعلي) حتى لا يبقى
                 // عالقاً على صوتٍ من دورة سابقة (إشعار/رسالة...) —
                 // نفس النمط المطبّق في SmsReadingReceiver.
-                val callerVoice = if (hasArabic) {
-                    settings.getCallerAnnouncementArabicVoiceId()
-                } else {
-                    settings.getCallerAnnouncementEnglishVoiceId()
-                }
+                var callerVoice = callerVoice(settings, hasArabic)
                 speaker.resetVoice(callerVoice)
 
                 // تكرار النطق «repeat» مرات بفاصل «intervalMs»؛ الأول يقع
@@ -356,7 +462,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     .coerceIn(1, 10) * 1000L
                 // بند 2.1/2.2: نبرة «نطق المتصل» المستقلة (بديل: نبرةُ نطق
                 // اللغة) — نبرةُ الحلقةِ كاملةً.
-                val pitch = settings.getCallerAnnouncementPitchOrDefault(
+                var pitch = settings.getCallerAnnouncementPitchOrDefault(
                     locale.language
                 )
                 val schedule = repeatSchedule(
@@ -383,6 +489,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     ),
                     category = SettingsRepository.ANNOUNCE_CATEGORY_CALLER
                 )
+                ringingAnnounced = true
                 // **بند 5.5:** إنهاءٌ مبكر بمستمع الاكتمال: محركٌ سليم يُنهي
                 // البث فور اكتمال (onDone) الجملة الأولى فعلياً — بلا حجزٍ
                 // أطول من اللازم ولا ذيلِ صوتٍ مبتور (جمدُ العملية بعد
@@ -400,6 +507,57 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                         if (index == schedule.lastIndex) {
                             completionListener = { finishOnce() }
                             speaker.addCompletionListener(completionListener!!)
+                        }
+                        // إن كان الاسم مفقوداً في النطق الأول وتحقق
+                        // لاحقاً، نحدّث نص النطق واللغة والصوت للتكرارات
+                        if (contactName == null) {
+                            val num = lastResolvedNumber ?: (if (hasCallLog) {
+                                resolveLatestCallFromLog(
+                                    context, hasCallLog
+                                )?.first
+                            } else null)
+                            if (num != null) {
+                                incomingNumber = num
+                                val resolved = lastResolvedName
+                                    ?: resolveCustomName(settings, num)
+                                    ?: resolveContactName(
+                                        context, num, hasContacts, hasCallLog
+                                    )
+                                if (resolved != null) {
+                                    contactName = resolved
+                                    lastResolvedName = resolved
+                                    text = buildAnnouncementText(
+                                        context,
+                                        number = incomingNumber,
+                                        contactName = contactName,
+                                        template = settings
+                                            .getCallerAnnouncementTemplate(),
+                                        privacyLocked = privacyLocked,
+                                        numberReadingMode = settings
+                                            .getNumberReadingMode()
+                                    )
+                                    hasArabic = callerSpeechLanguage(
+                                        contactName, incomingNumber
+                                    ) == LanguageCode.AR.tag
+                                    locale = if (hasArabic) {
+                                        Locale.forLanguageTag(
+                                            LanguageCode.AR.tag
+                                        )
+                                    } else {
+                                        Locale.forLanguageTag(
+                                            LanguageCode.EN.tag
+                                        )
+                                    }
+                                    callerVoice = callerVoice(
+                                        settings, hasArabic
+                                    )
+                                    speaker.resetVoice(callerVoice)
+                                    pitch = settings
+                                        .getCallerAnnouncementPitchOrDefault(
+                                            locale.language
+                                        )
+                                }
+                            }
                         }
                         try {
                             AnnouncementSpeaker.getInstance(appCtx).speak(
@@ -501,11 +659,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         }
 
         val speaker = AnnouncementSpeaker.getInstance(context)
-        val callerVoice = if (hasArabic) {
-            settings.getCallerAnnouncementArabicVoiceId()
-        } else {
-            settings.getCallerAnnouncementEnglishVoiceId()
-        }
+        val callerVoice = callerVoice(settings, hasArabic)
         speaker.resetVoice(callerVoice)
 
         val pitch = settings.getCallerAnnouncementPitchOrDefault(
@@ -519,6 +673,15 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             category = SettingsRepository.ANNOUNCE_CATEGORY_CALLER
         )
         return true
+    }
+
+    private fun callerVoice(
+        settings: SettingsRepository,
+        hasArabic: Boolean
+    ): String? = if (hasArabic) {
+        settings.getCallerAnnouncementArabicVoiceId()
+    } else {
+        settings.getCallerAnnouncementEnglishVoiceId()
     }
 
     /** النص الصادق حسب ما هو متاح فعلاً (لا يدّعي "غير محفوظ" جزافاً). */

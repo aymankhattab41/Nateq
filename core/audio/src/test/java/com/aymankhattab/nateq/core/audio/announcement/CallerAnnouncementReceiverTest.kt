@@ -517,4 +517,35 @@ class CallerAnnouncementReceiverTest {
         )
         org.junit.Assert.assertNull(result)
     }
+
+    @Test
+    fun `resetRingingSession clears all ringing state`() {
+        CallerAnnouncementReceiver.lastResolvedNumber = "01012345678"
+        CallerAnnouncementReceiver.lastResolvedName = "أحمد"
+        CallerAnnouncementReceiver.ringingStartTime = 12345L
+        CallerAnnouncementReceiver.ringingAnnounced = true
+
+        CallerAnnouncementReceiver.resetRingingSession()
+
+        assertNull(CallerAnnouncementReceiver.lastResolvedNumber)
+        assertNull(CallerAnnouncementReceiver.lastResolvedName)
+        assertEquals(0L, CallerAnnouncementReceiver.ringingStartTime)
+        assertFalse(CallerAnnouncementReceiver.ringingAnnounced)
+    }
+
+    @Test
+    fun `grace period constants are valid and within safe cap`() {
+        assertTrue(
+            CallerAnnouncementReceiver.CALLER_RESOLVE_GRACE_PERIOD_MS in
+                1_000L..3_000L
+        )
+        assertTrue(
+            CallerAnnouncementReceiver.CALLER_LOG_POLL_INTERVAL_MS in
+                100L..500L
+        )
+        assertTrue(
+            CallerAnnouncementReceiver.CALLER_RESOLVE_GRACE_PERIOD_MS >
+                CallerAnnouncementReceiver.CALLER_LOG_POLL_INTERVAL_MS
+        )
+    }
 }
