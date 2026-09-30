@@ -1,4 +1,4 @@
-<#
+﻿<#
     سكربت الإصدار الواحد لتطبيق Lord TTS — يرفع الترقيم تلقائياً من git
     (بدون لمس يدوي للـ versionCode/versionName)، يبني Release APK، يلتزم
     الترقيم، يضع الوسم vN، يدفع، وينشئ Release على GitHub بمرفق الـ APK
