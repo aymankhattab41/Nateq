@@ -212,6 +212,13 @@ class SystemVoiceProvider(
          *  متأخراً ("بطء الاستجابة") خصوصاً مع النصوص الإنجليزية الطويلة. */
         private const val STREAM_CHUNK_BYTES = 16 * 1024
 
+        /** عتبة **أول** شريحة بثّ (بند جديد): عنصرُ قارئ الشاشة القصير
+         *  (زرٌّ/كلمةٌ) قد لا يبلغ إجمالاً عتبة 16KB فيبقى صامتاً حتى يعلن
+         *  المحرك onDone (والمحركات تؤجله) فيبدو النطق متأخراً لكل عنصرٍ
+         *  ممسوح. 1KB (≈15–40ms صوت) تكفي لبدء تدفق أول صوتٍ فور اكتمال
+         *  الرأس وخانة data، ثم تستمر الشرائح اللاحقة بحجمها المعتاد. */
+        private const val STREAM_FIRST_CHUNK_BYTES = 1 * 1024
+
         /** طول رأس WAV المقروء لفحص خاناته أثناء البثّ — يكفي لرؤوس
          *  المحركات المعهودة (44 بايتاً + قوائم خانات نحيفة) دون قراءة
          *  الملف كاملاً. */
@@ -1154,7 +1161,9 @@ class SystemVoiceProvider(
                         }
                         val available = tempFile.length() - start
                         val toRead = available - readSoFar
-                        if (toRead >= STREAM_CHUNK_BYTES) {
+                        if (toRead >= streamChunkMinBytes(
+    emittedAny, STREAM_FIRST_CHUNK_BYTES, STREAM_CHUNK_BYTES
+)) {
                             try {
                                 emitStreamChunk(
                                     tempFile, start + readSoFar,
@@ -1680,6 +1689,20 @@ internal fun extendStreamDeadline(
     now: Long
 ): Long {
     return if (chunkEmitted) now + STREAM_DEADLINE_EXTEND_MS else deadline
+}
+
+/** أصغر حدّ لقراءة شريحة البثّ: أوله بعتبة صغيرة ([firstChunkMinBytes])
+ *  كي يتفجّر صوتُ عناصر قارئ الشاشة القصيرة (زر/كلمة — إجمالها دون
+ *  16KB فكانت تبقى صامتة حتى onDone فيبدو النطقُ متأخراً)، ثم الشرائح
+ *  اللاحقة بحدّها المعتاد ([regularChunkBytes]) فلا قراءات رقاقة خلف
+ *  رقاقة على ملفٍ ينمو. منطقٌ نقي قابل للاختبار الآلي.
+ */
+internal fun streamChunkMinBytes(
+    emittedAny: Boolean,
+    firstChunkMinBytes: Int,
+    regularChunkBytes: Int
+): Int {
+    return if (emittedAny) regularChunkBytes else firstChunkMinBytes
 }
 
 /** جولاتُ استقرار حجم الملف بلا نمو قبل تصريف ذيلٍ اكتملت كتابتُه
