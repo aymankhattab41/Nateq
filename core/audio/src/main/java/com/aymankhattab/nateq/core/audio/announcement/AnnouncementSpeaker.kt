@@ -345,13 +345,13 @@ class AnnouncementSpeaker(
     internal var speechDispatchedCount: Long = 0L
         private set
 
-    // **رفع حجم قناة نطق المتصل مؤقتاً (منخفض الصوت الشكوى):** يُحفظ مستوى
-    // حجم القناة الصوتية التي سيُنطق عليها إعلان المتصل (MUSIC أو
-    // ACCESSIBILITY) ثم تُرفع إلى قمتها طوال النطق وتُستعاد بعده؛ ليصدر
-    // الإعلان بأقصى صوتٍ فعلي حتى لو كان مستوى تلك القناة منخفضاً على
-    // الجهاز. يعمل أيضاً في الوضع الصامت لأن مفتاح الصمت يُسكت قناة
-    // الرنين/الإشعارات لا قناتَي الوسائط أوإتاحة (بند رفع نطق المتصل).
-    // -1 تعني عدم وجود رفع قائم حالياً.
+    // **رفع حجم القناة الصوتية مؤقتاً لفئات النطق التي يشكو الصوتُ عليها
+    // (نطق المتصل ونطق الساعة):** يُحفظ مستوى حجم القناة التي سيُنطق عليها
+    // الإعلان (MUSIC أو ACCESSIBILITY) ثم تُرفع إلى قمتها طوال النطق
+    // وتُستعاد بعده؛ فيصدر الإعلان بأقصى صوتٍ فعلي حتى لو كان مستوى تلك
+    // القناة منخفضاً على الجهاز. يعمل أيضاً في الوضع الصامت لأن مفتاح
+    // الصمت يُسكت قناة الرنين/الإشعارات لا قناتَي الوسائط أو الإتاحة
+    // (بند رفع حجم نطق المتصل والساعة). -1 تعني عدم وجود رفعٍ قائم حالياً.
     private var boostedStream: Int = -1
     private var savedStreamVolume: Int = -1
 
@@ -1298,9 +1298,10 @@ class AnnouncementSpeaker(
         // الأداةُ قبل طلب النطق، فيرفض خطافُها اكتمالَ أي دورةٍ سبقته.
         speechCycle.incrementAndGet()
         startInterruptionMonitoring()
-        // رفع حجم قناة نطق المتصل مؤقتاً (فئة المتصل فقط): يُحفظ المستوى
-        // الأصلي ويُستعاد عند الاكتمال/الإيقاف عبر restoreBoostedStreamVolume.
-        boostStreamVolumeForCaller(currentCategory)
+        // رفع حجم القناة الصوتية مؤقتاً لكل نطق يُرسل (المتصل والساعة والأحداث
+        // بالكامل): يُحفظ المستوى الأصلي ويُستعاد عند الاكتمال/الإيقاف عبر
+        // restoreBoostedStreamVolume.
+        boostStreamVolume()
         // السمات تُطبق عند كل دورة إن اختلفت فعلياً (لا تتبع القارئ).
         applySpeechAudioAttributes()
         val unitUtteranceIds = validUnits.map { nextUtteranceId() }
@@ -1936,21 +1937,16 @@ class AnnouncementSpeaker(
         }
     }
 
-    /** هل تفئة إعلان المتصل؟ (تستعملها رقعة رفع الحجم مؤقتاً وفئات النداء). */
-    private fun isCallerCategory(category: String?): Boolean =
-        category == SettingsRepository.ANNOUNCE_CATEGORY_CALLER ||
-            category == SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR ||
-            category == SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
-
-    /** رفع حجم قناة نطق المتصل إلى قمتها مؤقتاً — يُحفظ المستوى الأصلي
-     *  أولاً ليُستعاد عند اكتمال النطق ([restoreBoostedStreamVolume]).
-     *  يرفع القناة الفعلية التي سينطق عليها المتحدث (MUSIC/ACCESSIBILITY)
-     *  — لا قناة الرنين التي يُسكتها مفتاح الصمت — فيعمل الإعلان بأقصى
-     *  صوتٍ حتى في الوضع الصامت. لا شيء لو كانت الفئة ليست متصلاً أو كان
-     *  رفعٌ قائماً (لا نكسر قيمةً سُجِّلت لهذه الدورة). */
+    /** رفع حجم قناة النطق إلى قمتها مؤقتاً — يُحفظ المستوى الأصلي أولاً
+     *  ليُستعاد عند اكتمال النطق ([restoreBoostedStreamVolume]). يرفع
+     *  القناة الفعلية التي سينطق عليها المتحدث (MUSIC/ACCESSIBILITY) —
+     *  لا قناة الرنين التي يُسكتها مفتاح الصمت — فيعمل النطق بأقصى صوتٍ
+     *  حتى في الوضع الصامت لكل الفئات (متصل، ساعة، رسائل، بطارية،
+     *  إشعارات، أرقام، وغيرها). لا شيء لو كان رفعٌ قائماً (لا نكسر قيمةً
+     *  سُجِّلت لهذه الدورة). */
     @VisibleForTesting
-    internal fun boostStreamVolumeForCaller(category: String?) {
-        if (!isCallerCategory(category) || boostedStream != -1) return
+    internal fun boostStreamVolume() {
+        if (boostedStream != -1) return
         val mediaStreamAlways = settings?.let { s ->
             runCatching { s.isAnnouncementMediaStreamAlways() }
                 .getOrDefault(true)
@@ -2080,9 +2076,10 @@ class AnnouncementSpeaker(
      */
     private fun releaseAudioFocus() {
         hasAudioFocus = false
-        // استعادة مستوى الحجم الأصلي للقناة المرفوعة لنطق المتصل (إن كانت
-        // دورةُ نطقٍ مرفوعةً لا تزال قائمة) — كل مسارات الاكتمال/الإيقاف
-        // تُطلق التركيز فتمرّ عبر هذه النقطة فتُستعاد مرةً واحدة صحيحة.
+        // استعادة مستوى الحجم الأصلي للقناة المرفوعة لنطق المتصل/الساعة
+        // (إن كانت دورةُ نطقٍ مرفوعةً لا تزال قائمة) — كل مسارات الاكتمال/
+        // الإيقاف تُطلق التركيز فتمرّ عبر هذه النقطة فتُستعاد مرةً واحدة
+        // صحيحة.
         restoreBoostedStreamVolume()
         // إلغاء أي نطق معلّق بانتظار التركيز حتى لا يُنطق نص قديم لاحقاً.
         pendingFocusAction = null

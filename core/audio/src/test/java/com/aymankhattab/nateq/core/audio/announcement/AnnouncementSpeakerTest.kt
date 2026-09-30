@@ -1086,7 +1086,7 @@ class AnnouncementSpeakerTest {
     }
 
     @Test
-    fun `caller announcement boosts stream volume and restores after`() {
+    fun `announcement boosts stream volume and restores after`() {
         val speaker = AnnouncementSpeaker(context)
         try {
             val am = context.getSystemService(Context.AUDIO_SERVICE)
@@ -1097,25 +1097,21 @@ class AnnouncementSpeakerTest {
             }
             val original = am.getStreamVolume(AudioManager.STREAM_MUSIC)
 
-            // رفع حجم قناة نطق المتصل: الفئة يجب أن تكون فئةَ متصل.
-            speaker.boostStreamVolumeForCaller(
-                SettingsRepository.ANNOUNCE_CATEGORY_CALLER
-            )
+            // الرفع غير مشروط بالفئة: كل نطق (متصل/ساعة/رسائل/icons...) يُرفع.
+            speaker.boostStreamVolume()
             assertEquals(
-                "حجم قناة المتصل يُرفع للقمة أثناء نطقه",
+                "حجم قناة النطق يُرفع للقمة أثناء النطق",
                 max,
                 am.getStreamVolume(AudioManager.STREAM_MUSIC)
             )
 
-            // رفع ثانٍ لنفس الفئة لا يفسد التتبّع (لا حالة مسجلة تُكسر).
-            speaker.boostStreamVolumeForCaller(
-                SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
-            )
+            // رفع ثانٍ (عند فئة أخرى/نطق متداخل) لا يفسد التتبّع.
+            speaker.boostStreamVolume()
 
             // الاستعادة تُعيد المستوى الأصلي تماماً.
             speaker.restoreBoostedStreamVolume()
             assertEquals(
-                "مستوى القناة يُستعاد بعد اكتمال نطق المتصل",
+                "مستوى القناة يُستعاد بعد اكتمال النطق",
                 original,
                 am.getStreamVolume(AudioManager.STREAM_MUSIC)
             )
@@ -1126,7 +1122,7 @@ class AnnouncementSpeakerTest {
     }
 
     @Test
-    fun `non caller categories do not boost stream volume`() {
+    fun `every category including numbers and default boosts stream volume`() {
         val speaker = AnnouncementSpeaker(context)
         try {
             val am = context.getSystemService(Context.AUDIO_SERVICE)
@@ -1136,26 +1132,39 @@ class AnnouncementSpeakerTest {
                 return
             }
             val original = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-            am.setStreamVolume(
-                AudioManager.STREAM_MUSIC,
-                (original.coerceAtMost(max - 1)).coerceAtLeast(0),
-                0
-            )
 
-            // فئات خارج المتصل (وقت/بطارية) لا تُرفع قناة النطق.
-            speaker.boostStreamVolumeForCaller(
-                SettingsRepository.VOICE_CATEGORY_BATTERY
-            )
-            speaker.boostStreamVolumeForCaller(
-                SettingsRepository.VOICE_CATEGORY_TIME
-            )
-            assertNotEquals(
-                "الفئات غير المتصل لا ترفع حجم القناة",
-                max,
+            // كل الفئات (أرقام/افتراضي/ساعة/رسائل/بطارية/إشعارات/باطلة)
+            // ترفع القناة للقمة — لا استثناءات تحتاج صيانة عند الإضافة.
+            listOf(
+                SettingsRepository.ANNOUNCE_CATEGORY_SMS,
+                SettingsRepository.VOICE_CATEGORY_BATTERY,
+                SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS,
+                SettingsRepository.VOICE_CATEGORY_NUMBERS,
+                SettingsRepository.VOICE_CATEGORY_DEFAULT,
+                SettingsRepository.VOICE_CATEGORY_TIME,
+                null
+            ).forEach { category ->
+                speaker.restoreBoostedStreamVolume()
+                am.setStreamVolume(
+                    AudioManager.STREAM_MUSIC,
+                    original.coerceAtMost(max - 1).coerceAtLeast(0),
+                    0
+                )
+                speaker.boostStreamVolume()
+                assertEquals(
+                    "النطق (category=$category) يرفع القناة للقمة",
+                    max,
+                    am.getStreamVolume(AudioManager.STREAM_MUSIC)
+                )
+            }
+            speaker.restoreBoostedStreamVolume()
+            assertEquals(
+                "مستوى القناة يُستعاد بعد اكتمال النطق",
+                original,
                 am.getStreamVolume(AudioManager.STREAM_MUSIC)
             )
-            speaker.restoreBoostedStreamVolume()
         } finally {
+            speaker.restoreBoostedStreamVolume()
             speaker.shutdown()
         }
     }
