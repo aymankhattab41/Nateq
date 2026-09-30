@@ -473,9 +473,9 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+• Fixed release-script encoding so Arabic text parses correctly when publishing
 • Speak bare «ج» amounts (e.g. «8.57ج») as Egyptian pounds and piastres, and speak the caller name during an active call
 • Safely remove the redundant generic default voice from the category voices panel
-• Fixed delayed caller name announcement and avoided premature generic speech before the number arrives
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
