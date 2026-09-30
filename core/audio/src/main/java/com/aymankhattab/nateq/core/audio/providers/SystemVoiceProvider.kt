@@ -48,6 +48,21 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  * "المحرك الافتراضي" في شاشة إعدادات TTS النظامية التي قد تُسقطها
  * المَشغّلون كسامسونج. ومستبعدٌ دائماً كونُه نفسه، فلا يحدث تكرار ذاتي.
  */
+
+/** ترتّب أهداف التدفئة (بند الأداء): المحركُ المخصصُ للعربية والإنجليزية
+ *  (اللغتان اللتان يسأل عنهما قارئ الشاشة غالباً) يُربط أولاً فيسبق
+ *  دخولُ أول طلبٍ حقيقي على مثيلٍ دافئ، ثم المحركات المثبتة الباقية.
+ *  دالةٌ نقيّة بلا Context تُختبر مباشرةً: [engines] طلباتُ المتصل،
+ *  [installed] المثبتة فعلياً، [preferred] المحركات المميزة بالترتيب. */
+internal fun reorderForPrewarm(
+    engines: List<String>,
+    installed: List<String>,
+    preferred: List<String>
+): List<String> {
+    val ranked = preferred.filter { it in installed }.distinct()
+    return ranked + engines.filter { it in installed && it !in ranked }
+}
+
 class SystemVoiceProvider(
     private val context: Context,
     /** المرجع المحقون عبر Hilt إن وُجد
@@ -1372,7 +1387,9 @@ class SystemVoiceProvider(
     fun prewarmEngines(engines: List<String>) {
         if (shutdownCalled || engines.isEmpty()) return
         val installed = EnginePicker.installedEnginePackages(context)
-        val targets = engines.filter { it in installed }
+        val targets = reorderForPrewarm(
+            engines, installed, preferredPrewarmEngines()
+        )
         if (targets.isEmpty()) return
         // سقف التدفئة بالذاكرة أيضاً: لا تُربط مثيلات فوق طاقة الجهاز.
         val capped = targets.take(
@@ -1427,6 +1444,22 @@ class SystemVoiceProvider(
                 hold[0] = instance
             }
         }
+    }
+
+    /** المحركات المميزة للتدفئة: محرك اللغة العربية والإنجليزية من الإعدادات
+     *  (سارٍ في نطق قارئ الشاشة)، مع محركٍ واحد لكل لغة عند التطابق. */
+    private fun preferredPrewarmEngines(): List<String> {
+        val source = injectedSettings
+            ?: runCatching {
+                SettingsRepository.create(context)
+            }.getOrNull()
+            ?: return emptyList()
+        return listOfNotNull(
+            runCatching { source.getEngineForLanguage(LanguageCode.AR.tag) }
+                .getOrNull(),
+            runCatching { source.getEngineForLanguage(LanguageCode.EN.tag) }
+                .getOrNull()
+        ).distinct()
     }
 
     /** يقرأ [len] بايتاً من موضع [start] في ملف التخليق النامي، يطبّق مستوى
