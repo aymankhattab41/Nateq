@@ -120,11 +120,11 @@ object LocaleUtils {
      *  + نماذج العرض A/B للنصوص القديمة)؟ */
     fun containsArabic(text: String): Boolean {
         return text.any {
-            it in '\u0600'..'\u06FF' ||
+            (it in '\u0600'..'\u06FF' && it != '\u061C') ||
                 it in '\u0750'..'\u077F' ||
                 it in '\u08A0'..'\u08FF' ||
                 it in '\uFB50'..'\uFDFF' ||
-                it in '\uFE70'..'\uFEFF'
+                it in '\uFE70'..'\uFEFC'
         }
     }
 
@@ -158,6 +158,7 @@ object LocaleUtils {
                     c in 0x1040..0x1049 -> (c - 0x1040 + '0'.code).toChar()
                     c in 0x17E0..0x17E9 -> (c - 0x17E0 + '0'.code).toChar()
                     c in 0x1810..0x1819 -> (c - 0x1810 + '0'.code).toChar()
+                    c in 0xFF10..0xFF19 -> (c - 0xFF10 + '0'.code).toChar()
                     c == 0x066B -> '.'   // فاصلة عشرية عربية («١٫٥»)
                     c == 0x066C -> ','   // فاصلة آلاف عربية («١٬٥٠٠»)
                     else -> ch

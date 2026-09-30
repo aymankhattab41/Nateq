@@ -43,6 +43,7 @@ class SmsReadingReceiver : BroadcastReceiver() {
         const val MODE_OFF = "off"
         const val MODE_FULL = "full"
         const val MODE_SOURCE = "source"
+        const val MAX_SMS_CONTENT_LENGTH = 600
 
         // **بند 5.5:** سقف احتياطي لإنهاء البث أقصاه ما قبل مهلة نظام البث
         // (~10 ثوانٍ) بهامش واضح (~6 ثوانٍ) — كان السقف يبلغ 10 ثوانٍ فيصل
@@ -189,7 +190,7 @@ class SmsReadingReceiver : BroadcastReceiver() {
                 val speechRate = settings.getSmsReadingRate()
                 val volume = settings.getSmsReadingVolume()
 
-                val content = body.trim()
+                val content = body.trim().take(MAX_SMS_CONTENT_LENGTH)
                 // خصوصية قفل الشاشة: عند القفل لا يُنطق محتوى الرسالة (قد يحوي
                 // كود تحقق OTP أو معلومة خاصة) بل المصدر فقط — مهما كان الوضع.
                 val privacyLocked = settings.isLockScreenPrivacyEnabled()

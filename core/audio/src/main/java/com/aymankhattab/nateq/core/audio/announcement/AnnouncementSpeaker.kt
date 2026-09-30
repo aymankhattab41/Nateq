@@ -132,7 +132,9 @@ class AnnouncementSpeaker(
             if (text.length <= 60) return listOf(text)
             val result = mutableListOf<String>()
             val current = StringBuilder()
-            val delimiters = charArrayOf('.', '!', '?', '،', '؛', '\n', ':')
+            val delimiters = charArrayOf(
+                '.', '!', '?', '؟', '،', '؛', '…', '\n', ':'
+            )
             for (i in text.indices) {
                 val c = text[i]
                 current.append(c)

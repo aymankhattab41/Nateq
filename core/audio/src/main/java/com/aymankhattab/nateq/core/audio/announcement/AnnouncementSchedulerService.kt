@@ -307,7 +307,12 @@ class AnnouncementSchedulerService : Service() {
         mainHandler.removeCallbacksAndMessages(null)
         startAsForeground(buildNotification())
         when (intent?.action) {
-            ACTION_ANNOUNCE_NOW -> announceNow()
+            ACTION_ANNOUNCE_NOW -> {
+                announceNow()
+                if (!needsForegroundService(settings)) {
+                    armTemporarySelfStop()
+                }
+            }
             ACTION_STOP -> {
                 markUserStopped(this)
                 // إيقاف المستخدم الصريح: نُلغي منبه إعلان الوقت أيضاً حتى لا

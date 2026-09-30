@@ -210,6 +210,11 @@ internal class PhoneNumberStep(
         if (looksLikeArithmetic(body)) return false
         // أعداد عشرية («30496.00»، «12345.67») ليست هواتف إطلاقاً
         if (looksLikeDecimal(body)) return false
+        // سلاسل الأرقام المفردة المفصولة بمسافات («1 2 3 4 5 6 7») ليست هواتف
+        val spaceGroups = body.split(' ').filter { it.isNotBlank() }
+        if (spaceGroups.size >= 4 && spaceGroups.all { it.length == 1 }) {
+            return false
+        }
         // فواصل هاتفية قياسية (مسافة/شرطة/أقواس/نقطة)
         return body.any {
             it == ' ' || it == '-' || it == '(' || it == ')' || it == '.'

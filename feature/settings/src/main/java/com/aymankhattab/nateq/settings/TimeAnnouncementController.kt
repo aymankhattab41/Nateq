@@ -393,6 +393,22 @@ internal class TimeAnnouncementController(
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
+        spinnerTimeFormat?.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                val format = if (position == 1) "digital" else "arabic_natural"
+                runCatching { settings.setTimeAnnouncementFormat(format) }
+                onStatusChanged()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
         // بند الأوامر 4: أزرار المعاينة (إعلان الوقت ورنة الساعة).
         setupPreviewButtons(view)
         // إعداد عناصر النغمة المخصصة للساعة (ACTION_OPEN_DOCUMENT).

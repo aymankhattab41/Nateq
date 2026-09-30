@@ -297,7 +297,8 @@ class NateqNotificationListener : NotificationListenerService() {
         val speechRate = settings.getSmsReadingRate()
         val volume = settings.getSmsReadingVolume()
 
-        val content = body ?: ""
+        val content = (body ?: "").trim()
+            .take(SmsReadingReceiver.MAX_SMS_CONTENT_LENGTH)
         // خصوصية قفل الشاشة: عند القفل يُنطق المصدر فقط
         // دون المحتوى (حماية OTP).
         val privacyLocked = settings.isLockScreenPrivacyEnabled()

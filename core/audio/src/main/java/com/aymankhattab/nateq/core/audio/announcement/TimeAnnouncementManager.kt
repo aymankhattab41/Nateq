@@ -178,8 +178,11 @@ class TimeAnnouncementManager(
         }
 
         // نطق الوقت الحالي ثم جدولة الإعلان القادم
-        announceCurrentTime()
-        scheduleNextAlarm()
+        try {
+            announceCurrentTime()
+        } finally {
+            scheduleNextAlarm()
+        }
     }
 
     /** جدولة الإعلان القادم عبر منبه النظام الدقيق. */
