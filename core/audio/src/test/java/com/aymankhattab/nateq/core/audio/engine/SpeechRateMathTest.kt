@@ -123,27 +123,4 @@ class SpeechRateMathTest {
         val inRange = computeFinalVolume(0.2f, boost = 4.0f)
         assertTrue("داخل النطاق الكامل", inRange in 0f..1f)
     }
-
-    @Test
-    fun reloadDue_beforeInterval_isSkipped() {
-        // أول طلب (0، now=100) قبل العتبة (500) → لا إعادة تحميل؛ عند
-        // لحظة الحدّ نفسه (بالضبط) تُعاد.
-        assertTrue("0→99 مسافة تحت العتبة تُتخطى", !settingsReloadDue(0L, 99L))
-        assertTrue("0→500 عند العتبة تُعاد", settingsReloadDue(0L, 500L))
-    }
-
-    @Test
-    fun reloadDue_afterInterval_isForced() {
-        assertTrue(settingsReloadDue(0L, 501L))
-        assertTrue(settingsReloadDue(1_000L, 2_100L))
-    }
-
-    @Test
-    fun reloadDue_usesDefaultInterval() {
-        // نفس العتبة الافتراضية 500 حتى بلا تمرير معامل الفاصل.
-        assertEquals(
-            settingsReloadDue(0L, 500L, 500L),
-            settingsReloadDue(0L, 500L)
-        )
-    }
 }

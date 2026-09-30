@@ -18,12 +18,21 @@ class ChangelogSpeechTest {
     private val context: Context =
         ApplicationProvider.getApplicationContext()
 
-    private val sampleChangelog = """
-        الإصدار 0.100.0
-        • توحيد قناة النطق على مسار الوسائط لكل الأحداث (المتصل، الساعة، الرسائل، البطارية، الإشعارات، الأرقام) بلا شرط — فلا يُسقط أي نطق إلى مسار الإتاحة أو الرنين شبه الصامت، ويبقى كل النطق على نفس قناة البطارية الصاخبة
-        • تفجير أول صوتٍ لعناصر قارئ الشاشة القصيرة (زر/كلمة): بثٌّ أول بشريحة صغيرة 1KB فور توفّرها بدل انتظار اكتمال الكتابة وإعلان onDone المتأخر، ثم استكمال الشرائح بحجمها المعتاد
-        • تسريع استجابة نطق قارئ الشاشة: إعادة تحميل الإعدادات بحدٍّ زمني بدل كل طلب، ونقل علم النطق إلى خلفية، ومشاركة مؤثرات الصوت عبر طلبات الجلسة، وتدفئة المحرك المطلوب أولاً
-    """.trimIndent()
+    private val sampleChangelog = listOf(
+        "الإصدار 0.100.0",
+        "• توحيد قناة النطق على مسار الوسائط لكل الأحداث" +
+            " (المتصل، الساعة، الرسائل، البطارية، الإشعارات، الأرقام)" +
+            " بلا شرط — فلا يُسقط أي نطق إلى مسار الإتاحة أو الرنين" +
+            " شبه الصامت، ويبقى كل النطق على نفس قناة البطارية الصاخبة",
+        "• تفجير أول صوتٍ لعناصر قارئ الشاشة القصيرة (زر/كلمة):" +
+            " بثٌّ أول بشريحة صغيرة 1KB فور توفّرها بدل انتظار" +
+            " اكتمال الكتابة وإعلان onDone المتأخر، ثم استكمال" +
+            " الشرائح بحجمها المعتاد",
+        "• تسريع استجابة نطق قارئ الشاشة: إعادة تحميل الإعدادات" +
+            " بحدٍّ زمني بدل كل طلب، ونقل علم النطق إلى خلفية،" +
+            " ومشاركة مؤثرات الصوت عبر طلبات الجلسة، وتدفئة" +
+            " المحرك المطلوب أولاً"
+    ).joinToString("\n")
 
     private fun splitIntoChunks(text: String, maxLen: Int = 200): List<String> {
         val lines = text.split("\n")
@@ -47,7 +56,8 @@ class ChangelogSpeechTest {
                 remaining = remaining.substring(breakAt).trimStart()
             }
 
-            if (current.length + remaining.length + 1 > maxLen && current.isNotEmpty()) {
+            val overflows = current.length + remaining.length + 1 > maxLen
+            if (overflows && current.isNotEmpty()) {
                 chunks.add(current.toString().trim())
                 current = StringBuilder()
             }

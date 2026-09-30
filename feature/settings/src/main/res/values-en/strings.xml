@@ -472,9 +472,9 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-• Unified announcement channel on the media stream for all events (caller, time, SMS, battery, notifications, numbers) with no conditions — no speech drops to the muted accessibility or ringtone channel, and all events stay on the same loud channel as the battery
-• Burst out the first audio of short screen-reader elements (buttons/words): a first 1KB chunk streams as soon as it is available instead of waiting for the engine to finish writing and its delayed onDone, then chunks continue at their regular size
-• Faster screen-reader speech response: settings are reloaded on a time threshold instead of with every request, the speaking flag moves to a background thread, per-session audio effects are shared across requests, and the most-needed engine is pre-warmed first
+• Reverted screen-reader response optimizations that affected drag/swipe performance (timed settings reload, background speaking flag, per-session effects sharing, preferred-engine pre-warm ordering) and removed their associated tests
+• Split lines exceeding 80 characters in ChangelogSpeechTest and CategoryVoicePanelController, enforcing the ≤80-char rule across all Kotlin files
+• Unified announcement channel on the media stream for all events (caller, time, SMS, battery, notifications) with no conditions — no speech drops to the muted accessibility or ringtone channel
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>

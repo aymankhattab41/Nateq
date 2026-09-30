@@ -49,19 +49,6 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  * المَشغّلون كسامسونج. ومستبعدٌ دائماً كونُه نفسه، فلا يحدث تكرار ذاتي.
  */
 
-/** ترتّب أهداف التدفئة (بند الأداء): المحركُ المخصصُ للعربية والإنجليزية
- *  (اللغتان اللتان يسأل عنهما قارئ الشاشة غالباً) يُربط أولاً فيسبق
- *  دخولُ أول طلبٍ حقيقي على مثيلٍ دافئ، ثم المحركات المثبتة الباقية.
- *  دالةٌ نقيّة بلا Context تُختبر مباشرةً: [engines] طلباتُ المتصل،
- *  [installed] المثبتة فعلياً، [preferred] المحركات المميزة بالترتيب. */
-internal fun reorderForPrewarm(
-    engines: List<String>,
-    installed: List<String>,
-    preferred: List<String>
-): List<String> {
-    val ranked = preferred.filter { it in installed }.distinct()
-    return ranked + engines.filter { it in installed && it !in ranked }
-}
 
 class SystemVoiceProvider(
     private val context: Context,
@@ -212,12 +199,6 @@ class SystemVoiceProvider(
          *  متأخراً ("بطء الاستجابة") خصوصاً مع النصوص الإنجليزية الطويلة. */
         private const val STREAM_CHUNK_BYTES = 16 * 1024
 
-        /** عتبة **أول** شريحة بثّ (بند جديد): عنصرُ قارئ الشاشة القصير
-         *  (زرٌّ/كلمةٌ) قد لا يبلغ إجمالاً عتبة 16KB فيبقى صامتاً حتى يعلن
-         *  المحرك onDone (والمحركات تؤجله) فيبدو النطق متأخراً لكل عنصرٍ
-         *  ممسوح. 1KB (≈15–40ms صوت) تكفي لبدء تدفق أول صوتٍ فور اكتمال
-         *  الرأس وخانة data، ثم تستمر الشرائح اللاحقة بحجمها المعتاد. */
-        private const val STREAM_FIRST_CHUNK_BYTES = 1 * 1024
 
         /** طول رأس WAV المقروء لفحص خاناته أثناء البثّ — يكفي لرؤوس
          *  المحركات المعهودة (44 بايتاً + قوائم خانات نحيفة) دون قراءة
@@ -1161,9 +1142,7 @@ class SystemVoiceProvider(
                         }
                         val available = tempFile.length() - start
                         val toRead = available - readSoFar
-                        if (toRead >= streamChunkMinBytes(
-    emittedAny, STREAM_FIRST_CHUNK_BYTES, STREAM_CHUNK_BYTES
-)) {
+                        if (toRead >= STREAM_CHUNK_BYTES) {
                             try {
                                 emitStreamChunk(
                                     tempFile, start + readSoFar,
@@ -1396,11 +1375,10 @@ class SystemVoiceProvider(
     fun prewarmEngines(engines: List<String>) {
         if (shutdownCalled || engines.isEmpty()) return
         val installed = EnginePicker.installedEnginePackages(context)
-        val targets = reorderForPrewarm(
-            engines, installed, preferredPrewarmEngines()
-        )
+        val targets = engines.filter { it in installed }
         if (targets.isEmpty()) return
-        // سقف التدفئة بالذاكرة أيضاً: لا تُربط مثيلات فوق طاقة الجهاز.
+        // سقف التدفئة بالذاكرة أيضاً: لا تُربط مثيلات فوق طاقة
+        // الجهاز.
         val capped = targets.take(
             resolvedPoolSize(targets.size, totalDeviceMemory(context))
         )
@@ -1446,29 +1424,19 @@ class SystemVoiceProvider(
                         }
                     }, engine)
                 } catch (t: Throwable) {
-                    Log.e(TAG, "[Provider] prewarm bind failed: $engine", t)
-                    synchronized(ttsLock) { prewarmingEngines.remove(engine) }
+                    Log.e(
+                        TAG,
+                        "[Provider] prewarm bind failed: $engine",
+                        t
+                    )
+                    synchronized(ttsLock) {
+                        prewarmingEngines.remove(engine)
+                    }
                     continue
                 }
                 hold[0] = instance
             }
         }
-    }
-
-    /** المحركات المميزة للتدفئة: محرك اللغة العربية والإنجليزية من الإعدادات
-     *  (سارٍ في نطق قارئ الشاشة)، مع محركٍ واحد لكل لغة عند التطابق. */
-    private fun preferredPrewarmEngines(): List<String> {
-        val source = injectedSettings
-            ?: runCatching {
-                SettingsRepository.create(context)
-            }.getOrNull()
-            ?: return emptyList()
-        return listOfNotNull(
-            runCatching { source.getEngineForLanguage(LanguageCode.AR.tag) }
-                .getOrNull(),
-            runCatching { source.getEngineForLanguage(LanguageCode.EN.tag) }
-                .getOrNull()
-        ).distinct()
     }
 
     /** يقرأ [len] بايتاً من موضع [start] في ملف التخليق النامي، يطبّق مستوى

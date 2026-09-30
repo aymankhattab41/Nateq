@@ -147,48 +147,4 @@ class SystemVoiceProviderTest {
         )
         assertEquals(0, result.validLength)
     }
-
-    @Test
-    fun `reorderForPrewarm brings configured engines first`() {
-        val engines = listOf("engine.z", "engine.a", "engine.m")
-        val installed = listOf("engine.z", "engine.a", "engine.m")
-        val preferred = listOf("engine.m", "engine.a")
-        val ordered = reorderForPrewarm(
-            engines, installed, preferred
-        )
-        assertEquals(
-            listOf("engine.m", "engine.a", "engine.z"),
-            ordered
-        )
-    }
-
-    @Test
-    fun `reorderForPrewarm drops engines that are not installed`() {
-        val engines = listOf("engine.z", "engine.m")
-        val installed = listOf("engine.z")
-        val ordered = reorderForPrewarm(
-            engines, installed, listOf("engine.m", "missing")
-        )
-        assertEquals(listOf("engine.z"), ordered)
-    }
-
-    @Test
-    fun `reorderForPrewarm preserves input order when no preference`() {
-        val engines = listOf("engine.z", "engine.a")
-        val ordered = reorderForPrewarm(
-            engines, engines, emptyList()
-        )
-        assertEquals(listOf("engine.z", "engine.a"), ordered)
-    }
-
-    @Test
-    fun `reorderForPrewarm deduplicates without repeating engines`() {
-        val engines = listOf("engine.a", "engine.b")
-        val ordered = reorderForPrewarm(
-            engines,
-            engines,
-            listOf("engine.b", "engine.b", "engine.a")
-        )
-        assertEquals(listOf("engine.b", "engine.a"), ordered)
-    }
 }

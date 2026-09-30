@@ -80,19 +80,6 @@ internal fun computeFinalVolume(
     boost: Float = 1.0f
 ): Float = (volume * boost).coerceIn(0f, 1f)
 
-/** عتبة إعادة تحميل الإعدادات (بند الأداء): كل عدّة ميلي ثانية على
- *  الأكثر — لا `reload()` عند كل طلبٍ متلاحق من قارئ الشاشة لأن
- *  [SettingsRepository] يملك [ContentObserver] يستدرك التعديلات
- *  العابرة للعمليات فوراً. هذا يفصل قراءات القرص عن تتابع النطق. */
-internal const val SETTINGS_RELOAD_INTERVAL_MS = 500L
-
-/** هل حان وقت إعادة تحميل الإعدادات؟ — دالةٌ نقيّة: آخر تحميل [lastMs] قبل
- *  [SETTINGS_RELOAD_INTERVAL_MS] من [now] يعني التخطي (بند الأداء). */
-internal fun settingsReloadDue(
-    lastMs: Long,
-    nowMs: Long,
-    intervalMs: Long = SETTINGS_RELOAD_INTERVAL_MS
-): Boolean = (nowMs - lastMs) >= intervalMs
 
 /**
  * ==========================================================
@@ -164,18 +151,6 @@ class NateqTtsService : TextToSpeechService() {
         SupervisorJob() + synthesisExecutor.asCoroutineDispatcher()
     )
 
-    /** منفّذ خلفية أحادي الخيط لعمليات قفل النطق العابر
-     *  ([SpeechLock.setSpeaking]) — خطوةُ `contentResolver.update` عبر
-     *  العملية تكون بطيئة أحياناً فلا تُحجب بها خيوطُ التخليق ولا خيطُ
-     *  الطلب (حرجٌ مع قارئ الشاشة حيث يتتابع النطق على كل عنصر).
-     *  أحاديةُ الخيط تحفظ ترتيب الرفع/الخفض عبر الطلبات. */
-    private val speechLockExecutor = Executors.newSingleThreadExecutor()
-
-    /** آخر لحظةٍ أُعيد تحميل فيها ملف الإعدادات من القرص (مللي ثانية من
-     *  [SystemClock]) — مانع القراءة المتكررة لكل طلبٍ متتالٍ مرةً فوق
-     *  الثانية مع بقاء المراقب [ContentObserver] عاكفاً على التحديثات
-     *  البينية (بند الأداء: تقليل I/O على خيط التخليق الحرِج). */
-    @Volatile private var lastSettingsReloadMs: Long = 0L
 
     private lateinit var settings: SettingsRepository
     private lateinit var catalog: VoiceCatalog
@@ -204,11 +179,6 @@ class NateqTtsService : TextToSpeechService() {
     /** مدير مؤثرات اتساع الصوت المدمجة لنطق القارئ (بنود 2-3). */
     private val audioEffectManager = AudioEffectManager()
 
-    /** جلسة الصوت النشطة حالياً للمؤثرات (بند الأداء): تتذكّر آخر جلسة
-     *  رُبطت بها المؤثرات فلا يُعاد بناء Virtualizer/Reverb لكل طلبٍ متتالٍ
-     *  على ذات الجلسة (TalkBack يرسل عادةً طلباتٍ متتابعة على جلسة واحدة) —
-     *  بناء المؤثرات البنّاءُ يكلّف أحياناً عبر IPC، والمشاركة تُلغيه. */
-    @Volatile private var currentEffectsSession: Int = 0
 
     /** كلماتُ التنقل الشائعة التي يكرّر قارئ الشاشة نطقها عبر الواجهة
      *  (بند ب.txt 3.5-1) — تُخلَّق وتُخزَّن في كاش PCM عند الإقلاع فعلى
@@ -361,7 +331,6 @@ override fun onDestroy() {
         serviceScope.cancel()
         synthesisScope.cancel()
         synthesisExecutor.shutdown()
-        speechLockExecutor.shutdown()
         audioEffectManager.releaseAll()
         // إلغاء تسجيل مستشعرات الهز/التقارب كي لا تبقى مرصودةً بعد تدمير
         // الخدمة (تسجيلها في onCreate يليه إلغاؤه هنا — بند 8).
@@ -525,17 +494,6 @@ override fun onDestroy() {
         interruptionSensors?.start(applicationContext)
     }
 
-    /** إعادة تحميل الإعدادات بحدٍّ زمني (بند الأداء): القراءةُ من القرص
-     *  عند كل طلبٍ متتابع من قارئ الشاشة عبءٌ؛ [SettingsRepository] يملك
-     *  [ContentObserver] يستدرك الكتابات العابرة للعمليات فوراً، فتكفي
-     *  إعادةُ تحميلٍ دورية رخيصة تُبقي الصورة حديثة مع تقليل I/O على
-     *  خيط التخليق الحرِج. */
-    private fun refreshSettingsIfStale() {
-        val now = SystemClock.elapsedRealtime()
-        if (!settingsReloadDue(lastSettingsReloadMs, now)) return
-        lastSettingsReloadMs = now
-        settings.reload()
-    }
 
     /** إيقاف رصد الهز/التقارب فور انتهاء رحلة التخليق أو عند onDestroy. */
     private fun stopInterruptionMonitoring() {
@@ -601,12 +559,7 @@ override fun onDestroy() {
         // /speaking فيبدأ متحدث الإعلانات (AnnouncementSpeaker) بتأجيل
         // إعلاناته حتى يكتمل هذا التخليق — فيتسلسل صوت الإعلان بعد قراءة
         // قارئ الشاشة بدل تراكبه فوقها. يُخفض في finally أدناه.
-        // يُنفَّذ على خيط خلفية أحادي (بند الأداء): contentResolver.update
-        // عبر العمليتين قد يحجب خيطَ طلبِ قارئ الشاشة، والمنفّذ يحفظ ترتيب
-        // الرفع قبل الخفض لطائفة الطلبات المتتابعة.
-        speechLockExecutor.execute {
-            SpeechLock.setSpeaking(applicationContext, true)
-        }
+        SpeechLock.setSpeaking(applicationContext, true)
 
         // رصد الإسكات الفوري أثناء التخليق فقط حفظاً للبطارية
         val shake = runCatching { settings.isShakeToStopEnabled() }
@@ -632,26 +585,15 @@ override fun onDestroy() {
                 // process منفصل عن عملية الإعدادات
                 // (SettingsActivity)، وSharedPreferences لا
                 // يتشارك عبر العمليات. بدون reload() تبقى
-                // القيم القديمة محشوة في الذاكرة — لكن بحدّ
-                // زمني (بند الأداء): لا نقرأ القرص عند كل
-                // طلبٍ متتابع ما دامت [SettingsRepository]
-                // تتعقب التعديلات عبر الـ ContentObserver.
-                refreshSettingsIfStale()
+                // القيم القديمة محشوة في الذاكرة.
+                settings.reload()
                 val expansionLevel = runCatching {
                     settings.getAudioExpansionLevel()
                 }.getOrDefault(AudioExpansionLevels.DEFAULT)
                 if (audioSessionId > 0 &&
                     expansionLevel > AudioExpansionLevels.OFF
                 ) {
-                    if (currentEffectsSession != audioSessionId) {
-                        if (currentEffectsSession > 0) {
-                            audioEffectManager.detach(currentEffectsSession)
-                        }
-                        audioEffectManager.attach(
-                            audioSessionId, expansionLevel
-                        )
-                        currentEffectsSession = audioSessionId
-                    }
+                    audioEffectManager.attach(audioSessionId, expansionLevel)
                 }
                 // **بند 17 — النصوص المختلطة واللغات:**
                 // 1) تقسيم النص المختلط الكتابات (عربي/إنجليزي/غيرها)
@@ -757,24 +699,13 @@ override fun onDestroy() {
         } finally {
             stopInterruptionMonitoring()
             currentJob = null
-            // مؤثراتُ الجلسة لا تُفكّ فور كل طلب (بند الأداء): تبقى لصيقةً
-            // بجلسة الصوت الواحدة عبر طلبات قارئ الشاشة المتتابعة (فيُعاد
-            // استخدام Virtualizer/Reverb المُجهَّز بدل بنائه لكل نطق)، وتُفكّ
-            // عند تبدل الجلسة في attachٍ لاحق أو عند تدمير الخدمة عبر
-            // [releaseAll]. عندما يأتي طلبٌ بلا معرف جلسة (0) نُفكّ المؤثرات
-            // المعلَّقة للجلسة السابقة كي لا تتسرب عبر طلباتٍ مختلفة العنقود.
-            if (audioSessionId == 0 && currentEffectsSession > 0) {
-                audioEffectManager.detach(currentEffectsSession)
-                currentEffectsSession = 0
+            if (audioSessionId > 0) {
+                audioEffectManager.detach(audioSessionId)
             }
             // **بند قفل النطق العابر:** نهاية التخليق (نجاح/خطأ/إلغاء) تخفض
             // علم «نطق جارٍ» — يُنبَّه المراقبون (متحدث الإعلانات) فوراً
-            // فينطلق الإعلانُ المؤجَّل خلف القراءة. يُنفَّذ على خيط خلفية
-            // أحادي فلا يُحجب خيطُ الطلب بدورة contentResolver العابرة
-            // للعمليات.
-            speechLockExecutor.execute {
-                SpeechLock.setSpeaking(applicationContext, false)
-            }
+            // فينطلق الإعلانُ المؤجَّل خلف القراءة.
+            SpeechLock.setSpeaking(applicationContext, false)
         }
     }
 

@@ -63,7 +63,10 @@ internal fun callerSubCategory(languageTag: String): String =
         SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR
     }
 
-/** الفئات الصوتية النشطة تملك محركاً مخصصاً (الافتراضية السابقة لم تكن تملكه). */
+/**
+ * الفئات الصوتية النشطة تملك محركاً مخصصاً
+ * (الافتراضية السابقة لم تكن تملكه).
+ */
 internal fun categoryHasDedicatedEngine(categoryKey: String): Boolean =
     categoryKey != SettingsRepository.VOICE_CATEGORY_DEFAULT
 
