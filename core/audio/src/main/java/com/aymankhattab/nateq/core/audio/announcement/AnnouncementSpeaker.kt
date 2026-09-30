@@ -345,6 +345,16 @@ class AnnouncementSpeaker(
     internal var speechDispatchedCount: Long = 0L
         private set
 
+    // **رفع حجم قناة نطق المتصل مؤقتاً (منخفض الصوت الشكوى):** يُحفظ مستوى
+    // حجم القناة الصوتية التي سيُنطق عليها إعلان المتصل (MUSIC أو
+    // ACCESSIBILITY) ثم تُرفع إلى قمتها طوال النطق وتُستعاد بعده؛ ليصدر
+    // الإعلان بأقصى صوتٍ فعلي حتى لو كان مستوى تلك القناة منخفضاً على
+    // الجهاز. يعمل أيضاً في الوضع الصامت لأن مفتاح الصمت يُسكت قناة
+    // الرنين/الإشعارات لا قناتَي الوسائط أوإتاحة (بند رفع نطق المتصل).
+    // -1 تعني عدم وجود رفع قائم حالياً.
+    private var boostedStream: Int = -1
+    private var savedStreamVolume: Int = -1
+
     @Volatile
     private var resumableAnnouncement: ResumableAnnouncement? = null
     private val pendingUnitsForResume =
@@ -1288,6 +1298,9 @@ class AnnouncementSpeaker(
         // الأداةُ قبل طلب النطق، فيرفض خطافُها اكتمالَ أي دورةٍ سبقته.
         speechCycle.incrementAndGet()
         startInterruptionMonitoring()
+        // رفع حجم قناة نطق المتصل مؤقتاً (فئة المتصل فقط): يُحفظ المستوى
+        // الأصلي ويُستعاد عند الاكتمال/الإيقاف عبر restoreBoostedStreamVolume.
+        boostStreamVolumeForCaller(currentCategory)
         // السمات تُطبق عند كل دورة إن اختلفت فعلياً (لا تتبع القارئ).
         applySpeechAudioAttributes()
         val unitUtteranceIds = validUnits.map { nextUtteranceId() }
@@ -1923,6 +1936,59 @@ class AnnouncementSpeaker(
         }
     }
 
+    /** هل تفئة إعلان المتصل؟ (تستعملها رقعة رفع الحجم مؤقتاً وفئات النداء). */
+    private fun isCallerCategory(category: String?): Boolean =
+        category == SettingsRepository.ANNOUNCE_CATEGORY_CALLER ||
+            category == SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR ||
+            category == SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
+
+    /** رفع حجم قناة نطق المتصل إلى قمتها مؤقتاً — يُحفظ المستوى الأصلي
+     *  أولاً ليُستعاد عند اكتمال النطق ([restoreBoostedStreamVolume]).
+     *  يرفع القناة الفعلية التي سينطق عليها المتحدث (MUSIC/ACCESSIBILITY)
+     *  — لا قناة الرنين التي يُسكتها مفتاح الصمت — فيعمل الإعلان بأقصى
+     *  صوتٍ حتى في الوضع الصامت. لا شيء لو كانت الفئة ليست متصلاً أو كان
+     *  رفعٌ قائماً (لا نكسر قيمةً سُجِّلت لهذه الدورة). */
+    @VisibleForTesting
+    internal fun boostStreamVolumeForCaller(category: String?) {
+        if (!isCallerCategory(category) || boostedStream != -1) return
+        val mediaStreamAlways = settings?.let { s ->
+            runCatching { s.isAnnouncementMediaStreamAlways() }
+                .getOrDefault(true)
+        } ?: true
+        val isMusicActive = runCatching {
+            audioManager.isMusicActive
+        }.getOrDefault(false)
+        val useMedia = mediaStreamAlways || isMusicActive
+        val stream = if (useMedia) {
+            AudioManager.STREAM_MUSIC
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            AudioManager.STREAM_ACCESSIBILITY
+        } else {
+            AudioManager.STREAM_MUSIC
+        }
+        runCatching {
+            val max = audioManager.getStreamMaxVolume(stream)
+            val current = audioManager.getStreamVolume(stream)
+            if (max <= 0 || current >= max) return@runCatching
+            savedStreamVolume = current
+            boostedStream = stream
+            audioManager.setStreamVolume(stream, max, 0)
+        }
+    }
+
+    /** استعادة مستوى الحجم الأصلي للقناة المرفوعة بعد اكتمال نطق المتصل
+     *  أو إيقافه/إغلاقه — لا يبقى الجهاز مرتفع الحجم بعد الإعلان. آمنة
+     *  (no-op) عند غياب رفعٍ قائم. */
+    @VisibleForTesting
+    internal fun restoreBoostedStreamVolume() {
+        val stream = boostedStream
+        val saved = savedStreamVolume
+        if (stream == -1 || saved == -1) return
+        boostedStream = -1
+        savedStreamVolume = -1
+        runCatching { audioManager.setStreamVolume(stream, saved, 0) }
+    }
+
     /**
      * تركيز الصوت لإعلانات ناطق:
      * لمنع خفض صوت الوسائط تماماً (Zero Audio Ducking) وضمان استمرار
@@ -1984,6 +2050,8 @@ class AnnouncementSpeaker(
      */
     fun resetAudioFocusUnconditionally() {
         Log.i(TAG, "[Focus] إعادة ضبط يدوية — abandon بلا شرط")
+        // لا تبقى قناةٌ مرفوعة بعد إعادة الضبط — استعادة فورية لها.
+        restoreBoostedStreamVolume()
         hasAudioFocus = false
         skippedFocusForMedia = false
         pendingFocusAction = null
@@ -2012,6 +2080,10 @@ class AnnouncementSpeaker(
      */
     private fun releaseAudioFocus() {
         hasAudioFocus = false
+        // استعادة مستوى الحجم الأصلي للقناة المرفوعة لنطق المتصل (إن كانت
+        // دورةُ نطقٍ مرفوعةً لا تزال قائمة) — كل مسارات الاكتمال/الإيقاف
+        // تُطلق التركيز فتمرّ عبر هذه النقطة فتُستعاد مرةً واحدة صحيحة.
+        restoreBoostedStreamVolume()
         // إلغاء أي نطق معلّق بانتظار التركيز حتى لا يُنطق نص قديم لاحقاً.
         pendingFocusAction = null
         pendingFocusTimer?.let { mainHandler.removeCallbacks(it) }
