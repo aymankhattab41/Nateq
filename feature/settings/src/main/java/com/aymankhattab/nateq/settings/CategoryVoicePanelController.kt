@@ -17,7 +17,7 @@ import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /**
- * فئات السبnner العلوي في «الصوت الافتراضي»: ست فئات صوتية + إعلان المتصل.
+ * فئات السبnner العلوي في «الصوت الافتراضي»: خمس فئات صوتية + إعلان المتصل.
  * [categoryKey] هو المفتاح المحفوظ في [SettingsRepository] للفئة الصوتية،
  * أما المتصل فيُحمل عبر مفاتيحه الفرعية (عربي/إنجليزي).
  */
@@ -25,10 +25,6 @@ internal enum class CategoryPanelEntry(
     val categoryKey: String,
     val labelRes: Int
 ) {
-    DEFAULT(
-        SettingsRepository.VOICE_CATEGORY_DEFAULT,
-        R.string.voice_category_default
-    ),
     TIME(
         SettingsRepository.VOICE_CATEGORY_TIME,
         R.string.voice_category_time
@@ -67,7 +63,7 @@ internal fun callerSubCategory(languageTag: String): String =
         SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR
     }
 
-/** الفئة الافتراضية بلا محرك مخصص (سطر المحرك مخفي) — بقية الفئات تملكه. */
+/** الفئات الصوتية النشطة تملك محركاً مخصصاً (الافتراضية السابقة لم تكن تملكه). */
 internal fun categoryHasDedicatedEngine(categoryKey: String): Boolean =
     categoryKey != SettingsRepository.VOICE_CATEGORY_DEFAULT
 
@@ -113,7 +109,7 @@ internal class CategoryVoicePanelController(
     private var btnTest: View? = null
 
     /** الفئة المعروضة حالياً. */
-    private var currentEntry: CategoryPanelEntry = CategoryPanelEntry.DEFAULT
+    private var currentEntry: CategoryPanelEntry = CategoryPanelEntry.TIME
 
     /** لغة اللوحة الصوتية الحالية (تُحدَّث من سبnner اللغة). */
     private var currentPanelLanguage: String = "ar"
@@ -147,9 +143,9 @@ internal class CategoryVoicePanelController(
     private var bindingInputs = false
 
     /** يربط العرض: سبnner الفئة واللوحتين ومستمعي كل تحكّم، ثم يفتح
-     *  على فئة «النصوص العامة» (اول الفئات منطقياً). */
+     *  على فئة «صوت الساعة» (أول الفئات). */
     fun setup(view: View) {
-spinnerSelector =
+        spinnerSelector =
             view.findViewWithTag<Spinner>("spinner_category_selector")
         llCategoryPanel =
             view.findViewWithTag<View>("ll_category_panel")
@@ -162,7 +158,7 @@ spinnerSelector =
         inflateVoicePanelRow()
         bindSelector(view)
         bindCallerPanel(view)
-        currentEntry = CategoryPanelEntry.DEFAULT
+        currentEntry = CategoryPanelEntry.TIME
         bindEntry(currentEntry)
     }
 
@@ -220,14 +216,7 @@ spinnerSelector =
                     id: Long
                 ) {
                     if (bindingInputs) return
-                    // الفئة الافتراضية بلا محرك خاص — لا يُغيّر
-                    // اختيارُها شيئاً.
-                    if (currentEntry.isCaller ||
-                        currentEntry.categoryKey ==
-                        SettingsRepository.VOICE_CATEGORY_DEFAULT
-                    ) {
-                        return
-                    }
+                    if (currentEntry.isCaller) return
                     markDirty()
                     refreshVoiceSpinner()
                 }
@@ -519,7 +508,7 @@ spinnerSelector =
                 context.getString(R.string.voice_category_emoji_summary)
             SettingsRepository.VOICE_CATEGORY_BATTERY ->
                 context.getString(R.string.voice_category_battery_summary)
-            else -> context.getString(R.string.voice_category_default_summary)
+            else -> ""
         }
 
     /** لغة الفئة إن لم تُحفظ صراحةً: تُستنتج من صوتها المحفوظ عبر الكتالوج،

@@ -620,13 +620,13 @@ internal class SettingsAccordionController(
         return "$prefix: $detail"
     }
 
-    /** حالة قسم الفئات: اسم الصوت الفعلي المحفوظ للفئة الافتراضية — صوتُ
+    /** حالة قسم الفئات: اسم الصوت الفعلي المحفوظ لفئة الساعة الأولى — صوتُ
      *  لورد من قائمة الأصوات، أو صوتُ محركٍ مكتشفٍ بتسميته الكاملة
      *  (المحرك: الصوت)، أو السقوط الواضح عند غياب الحفظ. */
     private fun buildCategoriesStatus(): String {
         val saved = runCatching {
             settings.getPreferredVoiceIdForCategory(
-                SettingsRepository.VOICE_CATEGORY_DEFAULT
+                SettingsRepository.VOICE_CATEGORY_TIME
             )
         }.getOrNull().orEmpty()
         val label = when {
