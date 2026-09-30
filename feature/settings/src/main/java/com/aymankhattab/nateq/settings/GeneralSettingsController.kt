@@ -30,7 +30,6 @@ internal class GeneralSettingsController(
     private var tvDefaultPitchValue: TextView? = null
     private var seekDefaultVolume: SeekBar? = null
     private var tvDefaultVolumeValue: TextView? = null
-    private var switchMediaStreamAlways: SwitchMaterial? = null
     private var switchFollowReaderRate: SwitchMaterial? = null
     private var switchSpeechBoost: SwitchMaterial? = null
     private var llSpeechBoostValue: android.view.View? = null
@@ -56,19 +55,6 @@ internal class GeneralSettingsController(
         tvDefaultPitchValue = view.findViewById(R.id.tv_default_pitch_value)
         seekDefaultVolume = view.findViewById(R.id.seek_default_volume)
         tvDefaultVolumeValue = view.findViewById(R.id.tv_default_volume_value)
-        switchMediaStreamAlways =
-            view.findViewById(R.id.switch_media_stream_always)
-        switchMediaStreamAlways?.isChecked =
-            runCatching { settings.isAnnouncementMediaStreamAlways() }
-                .getOrDefault(false)
-        switchMediaStreamAlways?.setOnCheckedChangeListener { _, checked ->
-            // بند 1.4: «دائماً على مسار الوسائط» — يُمكّن المستخدم من
-            // تجاوز كتم مسار الإتاحة على الأجهزة التي يخفت فيها صوته
-            // دون قارئ شاشة.
-            runCatching { settings.setAnnouncementMediaStreamAlways(checked) }
-            onStatusChanged()
-        }
-
         switchFollowReaderRate =
             view.findViewById(R.id.switch_follow_reader_rate)
         switchFollowReaderRate?.isChecked =
@@ -384,7 +370,6 @@ internal class GeneralSettingsController(
         tvDefaultPitchValue = null
         seekDefaultVolume = null
         tvDefaultVolumeValue = null
-        switchMediaStreamAlways = null
         switchFollowReaderRate = null
         switchSpeechBoost = null
         llSpeechBoostValue = null

@@ -1063,36 +1063,15 @@ class AnnouncementSpeaker(
     }
 
     /**
-     * سمات نطق الأحداث والإعلانات: مسار الإتاحة دائماً
-     * (USAGE_ASSISTANCE_ACCESSIBILITY) ليتوافق مع قارئ الشاشة وإمكانية الوصول؛
-     * ما عدا مفتاح «دائماً على مسار الوسائط» (USAGE_MEDIA).
+     * سمات نطق الأحداث والإعلانات: مسار الوسائط (USAGE_MEDIA) ثابتاً
+     * على كل الأحداث بلا شرط — نفس قناة البطارية — فلا يُسقط أي نطق
+     * إلى مسار الإتاحة/الرنين شبه الصامت على أجهزة سامسونج.
      */
     private fun speechAudioAttributes(): AudioAttributes {
-        val mediaStreamAlways = runCatching {
-            (appContext as? AnnouncementAppContext)?.settingsRepository
-                ?: SettingsRepository.create(appContext)
-        }.getOrNull()?.let { settings ->
-            runCatching {
-                settings.isAnnouncementMediaStreamAlways()
-            }.getOrDefault(true)
-        } ?: true
-
-        val isMusicActive = runCatching {
-            audioManager.isMusicActive
-        }.getOrDefault(false)
-
-        val useMedia = mediaStreamAlways || isMusicActive
-
-        val builder = AudioAttributes.Builder()
-            .setUsage(
-                if (useMedia) {
-                    AudioAttributes.USAGE_MEDIA
-                } else {
-                    AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY
-                }
-            )
+        return AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-        return builder.build()
+            .build()
     }
 
     /** إعادة تطبيق سمات النطق فقط إذا اختلفت فعلياً عن المطبَّقة (بلا
@@ -1752,24 +1731,12 @@ class AnnouncementSpeaker(
                 TextToSpeech.Engine.KEY_PARAM_VOLUME,
                 boostedVolume
             )
-            val mediaStreamAlways = settings?.let { s ->
-                runCatching {
-                    s.isAnnouncementMediaStreamAlways()
-                }.getOrDefault(true)
-            } ?: true
-            val isMusicActive = runCatching {
-                audioManager.isMusicActive
-            }.getOrDefault(false)
-            val useMedia = mediaStreamAlways || isMusicActive
+            // قناة النطق موحدة على مسار الوسائط لكل الأحداث (نفس قناة
+            // البطارية): لا تفرقة بفئة ولا شرط بحالة الموسيقى أو بمفتاح
+            // «دائماً على مسار الوسائط» — فلا يقع أي نطق على الإتاحة.
             putInt(
                 TextToSpeech.Engine.KEY_PARAM_STREAM,
-                if (useMedia) {
-                    AudioManager.STREAM_MUSIC
-                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    AudioManager.STREAM_ACCESSIBILITY
-                } else {
-                    AudioManager.STREAM_MUSIC
-                }
+                AudioManager.STREAM_MUSIC
             )
         }
         // تنظيف النص من الإيموجي قبل النطق (نصوص خارجية قد
@@ -1939,29 +1906,15 @@ class AnnouncementSpeaker(
 
     /** رفع حجم قناة النطق إلى قمتها مؤقتاً — يُحفظ المستوى الأصلي أولاً
      *  ليُستعاد عند اكتمال النطق ([restoreBoostedStreamVolume]). يرفع
-     *  القناة الفعلية التي سينطق عليها المتحدث (MUSIC/ACCESSIBILITY) —
-     *  لا قناة الرنين التي يُسكتها مفتاح الصمت — فيعمل النطق بأقصى صوتٍ
+     *  قناة الوسائط MUSIC (نفس قناة البطارية) موحدةً لكل الفئات — لا
+     *  قناة الرنين التي يُسكتها مفتاح الصمت — فيعمل النطق بأقصى صوتٍ
      *  حتى في الوضع الصامت لكل الفئات (متصل، ساعة، رسائل، بطارية،
      *  إشعارات، أرقام، وغيرها). لا شيء لو كان رفعٌ قائماً (لا نكسر قيمةً
      *  سُجِّلت لهذه الدورة). */
     @VisibleForTesting
     internal fun boostStreamVolume() {
         if (boostedStream != -1) return
-        val mediaStreamAlways = settings?.let { s ->
-            runCatching { s.isAnnouncementMediaStreamAlways() }
-                .getOrDefault(true)
-        } ?: true
-        val isMusicActive = runCatching {
-            audioManager.isMusicActive
-        }.getOrDefault(false)
-        val useMedia = mediaStreamAlways || isMusicActive
-        val stream = if (useMedia) {
-            AudioManager.STREAM_MUSIC
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            AudioManager.STREAM_ACCESSIBILITY
-        } else {
-            AudioManager.STREAM_MUSIC
-        }
+        val stream = AudioManager.STREAM_MUSIC
         runCatching {
             val max = audioManager.getStreamMaxVolume(stream)
             val current = audioManager.getStreamVolume(stream)

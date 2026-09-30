@@ -48,8 +48,6 @@ class AnnouncementSpeakerFocusTest {
 
     @org.junit.Before
     fun setUp() {
-        com.aymankhattab.nateq.core.data.SettingsRepository(context)
-            .setAnnouncementMediaStreamAlways(true)
     }
 
     private fun speaker(): AnnouncementSpeaker = AnnouncementSpeaker(context)

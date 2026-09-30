@@ -629,18 +629,6 @@ class SettingsRepository(context: Context) :
     fun setSmsReadingPitch(pitch: Float) =
         setCategoryPitch("sms_reading_pitch", pitch)
 
-    // ============ مسار الصوت للإعلانات (بند 1.4) ============
-    // إجبار النطق على مسار الموسيقى (USAGE_MEDIA):
-    // الافتراضي true لتفادي تعارض STREAM_ACCESSIBILITY مع قارئات
-    // الشاشة ومشغلات الوسائط الذي يسبب انهيار التطبيقات الأخرى.
-    fun isAnnouncementMediaStreamAlways(): Boolean =
-        prefs.getBoolean("announcement_media_stream_always", true)
-
-    fun setAnnouncementMediaStreamAlways(enabled: Boolean) =
-        prefs.edit()
-            .putBoolean("announcement_media_stream_always", enabled)
-            .apply()
-
     // ============ نطق الساعة في السيناريوهات الصوتية ============
     // مفاتيح إيقاف/تفعيل الإعلان التلقائي للوقت أثناء: المكالمة
     // الهاتفية، تشغيل الوسائط، ووضع الصامت — تُقرأ في

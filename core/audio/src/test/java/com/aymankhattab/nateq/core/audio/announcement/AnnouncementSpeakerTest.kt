@@ -758,9 +758,6 @@ class AnnouncementSpeakerTest {
 
     @Test
     fun `events track uses media stream by default to protect other apps`() {
-        val repo = SettingsRepository(context)
-        repo.setAnnouncementMediaStreamAlways(true)
-
         val speaker = AnnouncementSpeaker(context)
         try {
             val method = AnnouncementSpeaker::class.java
@@ -769,7 +766,7 @@ class AnnouncementSpeakerTest {
             val attrs = method.invoke(speaker)
                 as android.media.AudioAttributes
             assertEquals(
-                "الافتراضي لمسار الأحداث هو USAGE_MEDIA",
+                "مسار الأحداث موحد على USAGE_MEDIA",
                 android.media.AudioAttributes.USAGE_MEDIA,
                 attrs.usage
             )
@@ -779,13 +776,11 @@ class AnnouncementSpeakerTest {
     }
 
     @Test
-    fun `events track uses accessibility stream when media stream disabled`() {
+    fun `events track stays on media stream even when switch is off`() {
         val audioManager = context.getSystemService(
             Context.AUDIO_SERVICE
         ) as AudioManager
         val shadowAudio = shadowOf(audioManager)
-        val repo = SettingsRepository(context)
-        repo.setAnnouncementMediaStreamAlways(false)
 
         val speaker = AnnouncementSpeaker(context)
         try {
@@ -795,8 +790,8 @@ class AnnouncementSpeakerTest {
             val attrs = method.invoke(speaker)
                 as android.media.AudioAttributes
             assertEquals(
-                "مسار الأحداث يستهدف الإتاحة USAGE_ASSISTANCE_ACCESSIBILITY",
-                android.media.AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY,
+                "تعطيل المفتاح لا يُسقط النطق للإتاحة — يبقى MEDIA",
+                android.media.AudioAttributes.USAGE_MEDIA,
                 attrs.usage
             )
 

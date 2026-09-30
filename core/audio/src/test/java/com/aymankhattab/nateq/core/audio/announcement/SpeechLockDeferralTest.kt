@@ -70,8 +70,6 @@ class SpeechLockDeferralTest {
 
     @Before
     fun installProvider() {
-        com.aymankhattab.nateq.core.data.SettingsRepository(appContext)
-            .setAnnouncementMediaStreamAlways(true)
         // نثبّت مزوّد الإشعارات الحقيقي على سلطانه المعلن حتى يعمل
         // SpeechLock عبر content://…/speaking داخل بيئة الاختبار فعلياً.
         // لا بد من تمرير السلطان صريحاً (الصيغة بلا سلطان لا تسجّل المزوّد
@@ -140,8 +138,6 @@ class SpeechLockDeferralTest {
 
     @Test
     fun eventCategory_time_interruptsSpeakingLockImmediately() {
-        val repo = SettingsRepository(appContext)
-        repo.setAnnouncementMediaStreamAlways(false)
         SpeechLock.setSpeaking(appContext, true)
         val s = speaker()
 
@@ -164,14 +160,14 @@ class SpeechLockDeferralTest {
             "المتحدث ينطلق فوراً لفئة الوقت رغم القفل",
             s.speechDispatchedCount > 0L
         )
-        // التحقق من سمات الصوت: مسار الإتاحة وبمستوى صوت طبيعي مطابق
+        // التحقق من سمات الصوت: مسار الوسائط الموحد لكل الأحداث
         val method = AnnouncementSpeaker::class.java
             .getDeclaredMethod("speechAudioAttributes")
         method.isAccessible = true
         val attrs = method.invoke(s) as android.media.AudioAttributes
         assertEquals(
-            "مسار نطق الحدث هو مسار الإتاحة الطبيعي",
-            android.media.AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY,
+            "مسار نطق الحدث موحد على مسار الوسائط",
+            android.media.AudioAttributes.USAGE_MEDIA,
             attrs.usage
         )
 
@@ -181,7 +177,6 @@ class SpeechLockDeferralTest {
     @Test
     fun announceNow_duringSpeakingLock_interruptsImmediately() {
         val repo = SettingsRepository(appContext)
-        repo.setAnnouncementMediaStreamAlways(false)
         SpeechLock.setSpeaking(appContext, true)
 
         val providers = listOf(
@@ -221,8 +216,6 @@ class SpeechLockDeferralTest {
 
     @Test
     fun batteryAndCallerEvents_interruptSpeakingLockImmediately() {
-        val repo = SettingsRepository(appContext)
-        repo.setAnnouncementMediaStreamAlways(false)
         SpeechLock.setSpeaking(appContext, true)
         val s = speaker()
 

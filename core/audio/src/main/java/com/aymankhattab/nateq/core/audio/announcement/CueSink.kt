@@ -10,7 +10,6 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.engine.AudioEffectManager
-import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.engine.AudioExpansionLevels
 import java.io.File
 import java.io.FileOutputStream
@@ -52,7 +51,8 @@ internal interface CueSink {
 /**
  * سمات الصوت الموحّدة للمؤثرات (Audio Cues): مُوجّهة لمسار الوسائط
  * (USAGE_MEDIA) لمنع واجهات الأجهزة (مثل سامسونج) من خفض صوت الوسائط
- * الأخرى (Audio Ducking) تلقائياً، ونوع نغمة إعلامية.
+ * الأخرى (Audio Ducking) تلقائياً، ونوع نغمة إعلامية. ثابتة على MEDIA
+ * لكل الأحداث (نفس قناة البطارية) بلا شرط بمفتاحٍ أو بحالة الموسيقى.
  */
 internal object CueAudioAttributes {
     val forCue: AudioAttributes = AudioAttributes.Builder()
@@ -60,27 +60,8 @@ internal object CueAudioAttributes {
         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
         .build()
 
-    fun attributesFor(context: Context?): AudioAttributes {
-        val appContext = context?.applicationContext
-        val isMedia = if (appContext != null) {
-            val settings =
-                (appContext as? AnnouncementAppContext)
-                    ?.settingsRepository
-                    ?: SettingsRepository.create(appContext)
-            runCatching {
-                settings.isAnnouncementMediaStreamAlways()
-            }.getOrDefault(true)
-        } else {
-            true
-        }
-        return if (isMedia) {
-            forCue
-        } else {
-            AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .build()
-        }
+    fun attributesFor(): AudioAttributes {
+        return forCue
     }
 }
 
@@ -232,7 +213,7 @@ internal class SoundPoolCueSink(
     init {
         soundPool = android.media.SoundPool.Builder()
             .setMaxStreams(2)
-            .setAudioAttributes(CueAudioAttributes.attributesFor(context))
+            .setAudioAttributes(CueAudioAttributes.attributesFor())
             .build()
         soundPool.setOnLoadCompleteListener { _, sampleId, status ->
             val wavFile = pendingFiles.remove(sampleId)
