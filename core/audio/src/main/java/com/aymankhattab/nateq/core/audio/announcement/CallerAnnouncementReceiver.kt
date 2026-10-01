@@ -319,7 +319,10 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             // **تتبّع تشخيصي مؤقّت:** يُظهر تسلسلَ البثوث كاملاً (الحالة
             // السابقة والحالية والرقم) فميّز بثّاً مكرراً لمكالمةٍ واحدة
             // من مكالمةٍ جديدة فعلاً، وميّز إعادةَ الجلسة من IDLE.
-            Log.d(
+            // **المستوى `w` لا `d`:** قواعد ProGuard تحذف `Log.d`
+            // بالكامل من نسخة release، فالتتبّع بـ`d` لا يُكتب أصلاً
+            // ولا يظهر في تقرير الأخطاء (وهو ما أخفى التشخيص سابقاً).
+            Log.w(
                 TAG,
                 "RX state=$state prev=$previousState" +
                     " num=${rawNumber ?: "?"} announced=$announcedNumber" +
@@ -346,7 +349,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     incomingNumber = rawNumber
                 )
             ) {
-                Log.d(
+                Log.w(
                     TAG,
                     "suppressed duplicate ring announcement" +
                         " (announced=${announcedNumber ?: "?"}," +
@@ -366,7 +369,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     incomingNumber = rawNumber
                 )
             ) {
-                Log.d(
+                Log.w(
                     TAG,
                     "joined in-flight cycle (same call," +
                         " pending=${pendingRingNumber ?: "?"})"
@@ -387,7 +390,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             }
             // **تتبّع تشخيصي:** يكشف أيّ بثّ RINGING يبدأ دورةً جديدة
             // رغم وجود دورةٍ حيّة — وهو ما يعيد نطق «اتصال وارد» رابعاً.
-            Log.d(
+            Log.w(
                 TAG,
                 "START new cycle (replacingLive=${previousCycleActive}," +
                     " announcedWas=$ringingAnnounced," +
@@ -614,7 +617,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 // **تتبّع تشخيصي:** يُسجّل النصّ المنطوق فعلياً في كل
                 // نطق — يكشف أي إعلانٍ رابع زائد ومن أين جاء.
                 speakCounter++
-                Log.d(
+                Log.w(
                     TAG,
                     "SPEAK#$speakCounter text=$text num=" +
                         "${incomingNumber ?: "?"} name=${contactName ?: "?"}"
@@ -710,7 +713,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                         }
                         try {
                             speakCounter++
-                            Log.d(
+                            Log.w(
                                 TAG,
                                 "SPEAK#$speakCounter(repeat+" +
                                     "${offsetMs}ms) text=$text num=" +

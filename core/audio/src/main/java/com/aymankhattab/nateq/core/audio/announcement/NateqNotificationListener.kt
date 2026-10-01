@@ -195,7 +195,7 @@ class NateqNotificationListener : NotificationListenerService() {
                 text?.contains("وارد", ignoreCase = true) == true ||
                 text?.contains("incoming", ignoreCase = true) == true
             if (looksLikeCall) {
-                Log.d(
+                Log.w(
                     TAG,
                     "CALL-LOOKING notification pkg=$pkg cat=" +
                         "${notification.category} title=$title" +
