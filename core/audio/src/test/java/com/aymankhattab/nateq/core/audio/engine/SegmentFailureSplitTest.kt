@@ -58,21 +58,45 @@ class SegmentFailureSplitTest {
 
     @Test
     fun splitCuts_atPunctuation_notMidWord() {
-        // جملةٌ طويلة بلا حدّ ثم حدٌّ بعد المنتصف: يجب ألا يقع القطع
-        // في منتصف كلمةٍ إن وُجد حدٌّ.
-        val head = "ا".repeat(SEGMENT_SPLIT_FALLBACK_CHARS / 2 + 100)
+        // حدٌّ لغويٌّ واضحٌ داخل العتبة: القطعُ يجب أن يقع عليه لا في
+        // منتصف كلمة. والعتبةُ حدُّ ميزانيةٍ لا يُتجاوز، فالبحثُ عنها
+        // **عكسيّ**: أطولُ جزءٍ ضمن 1500 ينتهي على الفاصلة.
+        val head = "ا".repeat(1_400)
         val text = head + "،" + "ب".repeat(SEGMENT_SPLIT_FALLBACK_CHARS)
         val parts = splitOnFailureBoundary(text)
-        assertTrue(parts.size > 1)
+        assertTrue("يجب أن يُقسَّم: ${parts.size}", parts.size > 1)
+        assertEquals('،', parts[0].last())
         parts.forEach {
-            // القطعُ على الفاصلة لا في الكلمة: الجزءُ ينتهي بالفاصلة
-            // نفسها (بعد التشذيب) لا بحرفٍ من كلمةٍ مقطوعة.
             assertTrue(
-                "جزءٌ مقطوعٌ في منتصف كلمة: '${it.takeLast(12)}'",
-                it.isBlank() ||
-                    it.last() in SEGMENT_BOUNDARIES ||
-                    it.last() == ',' ||
-                    it.last() == 'ا'
+                "كل جزءٍ ضمن العتبة: ${it.length}",
+                it.length <= SEGMENT_SPLIT_FALLBACK_CHARS
+            )
+        }
+    }
+
+    /** النصُّ فوق 3000 حرف كان **الأخطر**: فمنتصفُه يتجاوز العتبة
+     *  فيصير نطاقُ البحث الأماميُ [midpoint, limit] فارغاً، فيُقطعَ
+     *  عند العتبةِ في منتصف كلمةٍ بلا بحثٍ عن حدٍّ أصلاً. هذا الحارسُ
+     *  يمسك الإصلاح: القطعُ على حدٍّ لغويٍّ لا على الحدِّ الثابت. */
+    @Test
+    fun longText_over3000Chars_stillCutsOnRealBoundary() {
+        val text = "سطر. ".repeat(1_000)
+        assertTrue("اختبارُ غير صالح: ${text.length}", text.length > 3_000)
+        val parts = splitOnFailureBoundary(text)
+        assertTrue("يجب أن يُقسَّم: ${parts.size}", parts.size > 1)
+        parts.forEach {
+            assertTrue(
+                "جزءٌ تجاوز العتبة: ${it.length}",
+                it.length <= SEGMENT_SPLIT_FALLBACK_CHARS
+            )
+        }
+        // آخرُ جزءٍ قد يكون نُذِرَ بلا حدٍّ؛ ما قبله فلا بدّ أن يكون
+        // على حدٍّ — وهذا ما ينهار لولا الإصلاح.
+        parts.dropLast(1).forEach {
+            assertTrue(
+                "جزءٌ مقطوعٌ في منتصف كلمة: '${it.takeLast(16)}'",
+                it.isEmpty() || it.last() in SEGMENT_BOUNDARIES ||
+                    it.last() == ' '
             )
         }
     }
