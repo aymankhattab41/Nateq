@@ -43,6 +43,29 @@ class PipelineStepsTest {
         )
     }
 
+    /** انحدار: رقم إصدار التطبيق كان يُنطق مدمجاً — «Lord TTS 1.6.1»
+     *  كانت تُقرأ «ستة عشر فاصلة واحد» لأن `sanitizeNumerals` أسقطت
+     *  النقطة الأولى معاملةً إياها فاصلَ آلاف («1.6.1» ← «16.1»).
+     *  الإصدار يُلفظ خانةً خانة، والأعداد الحقيقية لا تُمَسّ. */
+    @Test
+    fun testVersionReadDigitByDigit() {
+        assertEquals("واحد فاصلة ستة فاصلة واحد", NumberStep.apply("1.6.1"))
+        assertEquals("عشرة فاصلة اثنان فاصلة خمسة عشر",
+            NumberStep.apply("10.2.15"))
+        // «1.0» عشرية واحدة محضة فلا تُعامَل كإصدار (بند سابق).
+        assertEquals("واحد فاصلة صِفْرْ", NumberStep.apply("1.0"))
+        // «1.234.567» فواصل آلاف لا إصدار (كل جزء ثلاث خانات) = 1234567.
+        assertEquals("مليون ومائتان وأربعة وثلاثون ألفاً "
+                + "وخمسمائة وسبعة وستون",
+            NumberStep.apply("1.234.567"))
+    }
+
+    /** العنوان الشبكي يبقى على حاله بلا نطق عدديّ (حارس مقابل الإصدار). */
+    @Test
+    fun testIpv4NotMistakenForVersion() {
+        assertEquals("192.168.1.1", NumberStep.apply("192.168.1.1"))
+    }
+
     @Test
     fun unit_1_masculine() {
         assertEquals("متر واحد", UnitStep.apply("1 م"))

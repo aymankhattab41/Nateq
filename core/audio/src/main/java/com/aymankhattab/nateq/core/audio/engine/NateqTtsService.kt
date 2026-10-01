@@ -1091,7 +1091,14 @@ override fun onDestroy() {
 
     /** يخلّق مقطعاً واحداً ويجمع شريحاته الخام (نسخٌ مستقلة لأن المزوّد يعيد
      *  كل شريحةٍ لمسبحه بعد ندائها) — خطوةُ العمل الموازي في
-     *  [synthesizeParallel]. مقطعٌ يعجز محركُه يُسقط وحده (null). */
+     *  [synthesizeParallel].
+     *
+     *  **حارس عدم الإسقاط الصامت (الإصلاح الجذري):** كان الفشل يُعيد
+     *  `null` فيُسقط المقطعُ بصمت — كلماتٌ كاملة تختفي بلا صوت ولا
+     *  خطأ، فيبدو للنصّ «تحسّنٌ» لكنه لا يكتمل (شكواه المُبلَّغة بعد
+     *  1.6.1). الآن يُقسَّم المقطعُ المتعثّر إلى أنصاف عند الفشل
+     *  ([splitOnFailureBoundary]) فيُنطق كلُّ ما يُنطق منه، ولا يُنسى
+     *  نصٌّ إلا بخطأٍ صريح لغيره. */
     private suspend fun synthesizeSegmentRaw(
         segment: Segment,
         readerRate: Float
@@ -1101,43 +1108,68 @@ override fun onDestroy() {
         val chunks = ArrayList<ByteArray>()
         var nativeRate = 0
         var nativeChannels = 1
-        try {
-                // **بند النص الطويل:** يُسلَّم النصُّ كلُّه طلباً واحداً
-            // بلا تقسيم. كان يُقسَّم بمقاطع 200 حرف (حلٌّ
-            // للعَرَض لا للسبب: المهلة)، فكان يفشل مقطعٌ فتُسقط كلماتٍ
-            // كاملةً بصمت، ويُقطع النطق عند حدود القطع. وسببُه
-            // الجذريُّ مُصلَح في [SynthesisBudget] و[SystemVoiceProvider]
-            // (ميزانيةٌ واحدة + إتمامٌ بالطول المُعلَن)، فلم يبقَ
-            // داعٍ للتقسيم.
-            params.provider.synthesize(
-                params.text,
-                params.voice,
-                params.speechRate,
-                params.pitch,
-                params.volume,
-                { sampleRateInHz, channelCount ->
-                    nativeRate = sampleRateInHz
-                    nativeChannels = channelCount
-                },
-                { chunk, validLength ->
-                    if (validLength > 0) {
-                        chunks.add(chunk.copyOf(validLength))
-                    }
-                },
-                params.engine,
-                params.locale,
-                params.voiceName
-            )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (t: Throwable) {
+        // **بند النص الطويل:** يُسلَّم النصُّ كلُّه طلباً واحداً بلا تقسيم
+        // مسبق (التقسيمُ المسبقُ كان حلّاً للعَرَض فأسقط كلماتٍ بصمت)،
+        // فالتقسيمُ الآن **عند الفشل فقط** — لا يُقسَّم إلا ما يعجز
+        // محرّكه فعلاً، فلا تقطيعٌ في النص السليم ولا إسقاطٌ صامت.
+        val pieceBudgets = splitOnFailureBoundary(params.text)
+        if (pieceBudgets.size > 1) {
             Log.w(TAG,
-            "synthesizeMixed: مقطع ${segment.languageTag}" +
-            " فشل تخليقه — يُسقط وحده", t)
-            return null
+                "synthesizeSegment: المقطع ${segment.languageTag}" +
+                " (${params.text.length} حرفاً) سيُقسَّم إلى" +
+                " ${pieceBudgets.size} عند الفشل فقط")
         }
-        return SegmentAudio(nativeRate, nativeChannels, chunks)
+        for (piece in pieceBudgets) {
+            // **حارس الأجزاء:** المقطعُ الذي يفشل بعد تقسيمه يُتخطّى
+            // صراحةً (لا صمت) — ما يبقى منه يُنطق، وما لا يُنطق يُعلَن.
+            val produced = try {
+                var pieceRate = 0
+                var pieceChannels = 1
+                params.provider.synthesize(
+                    piece,
+                    params.voice,
+                    params.speechRate,
+                    params.pitch,
+                    params.volume,
+                    { sampleRateInHz, channelCount ->
+                        pieceRate = sampleRateInHz
+                        pieceChannels = channelCount
+                    },
+                    { chunk, validLength ->
+                        if (validLength > 0) {
+                            chunks.add(chunk.copyOf(validLength))
+                        }
+                    },
+                    params.engine,
+                    params.locale,
+                    params.voiceName
+                )
+                if (pieceRate > 0) {
+                    nativeRate = pieceRate
+                    nativeChannels = pieceChannels
+                }
+                true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                Log.w(TAG,
+                    "synthesizeSegment: جزء ${piece.length} حرفاً" +
+                    " من مقطع ${segment.languageTag} فشل" +
+                    " — يُتخطّى صراحةً لا بصمت", t)
+                false
+            }
+            if (!produced && pieceBudgets.size == 1) {
+                // فشل المقطعُ كاملاً ولا تقسيمَ بعدُ — لا حلّ.
+                return null
+            }
+        }
+        return if (chunks.isEmpty()) null
+        else SegmentAudio(nativeRate, nativeChannels, chunks)
     }
+
+    /** يقسّم نصاً عند **أول حدٍّ آمن** (نقطة/تعجب/سطر) ليعاد التخليقُ جزءاً
+     *  جزءاً — انظر [splitOnFailureBoundary] (دالّةٌ مشتركة في
+     *  [SegmentFailureSplit.kt] لتفادي التكرار ولتسهيل الاختبار). */
 
     /**
      * يعيد معاينة شريحةِ مقطعٍ محلي إلى المعيار الموحّد ويبثّها بالترتيب —
@@ -1253,49 +1285,73 @@ override fun onDestroy() {
         callback: SynthesisCallback
     ) {
         var started = false
+        // عدّادُ الأجزاء التي لم تُنطق: صفرٌ في المسار السليم، وأيُّ
+        // قيمةٍ تُعلَن في السجلّ كإٍ صريحٍ بدل الصمت.
+        var skippedSegments = 0
         val maxBytes = callback.maxBufferSize
         val crossfader = ChunkCrossfader(CROSSFADE_FRAMES)
         for (segment in segments) {
             val params = resolveSegmentParams(segment, readerRate)
-                ?: continue
+            if (params == null) {
+                // **حارس عدم الإسقاط الصامت:** مقطعٌ بلا صوتٍ ولا
+                // محرّك لا يجوز أن يمرّ بلا أثر — يُعلَن الخلل صريحاً
+                // في السجلّ حتى لا يمرّ النصُّ الناقص بلا تفسير.
+                skippedSegments++
+                Log.w(TAG,
+                    "synthesizeMixed: لا مزود لمقطع" +
+                    " ${segment.languageTag} — يُعدّ متجاوَزاً")
+                continue
+            }
             var nativeRate = 0
             var nativeChannels = 1
             val phase = LongArray(2)
-            try {
-                // **بند النص الطويل:** يُسلَّم المقطعُ اللغويّ كلُّه
-                // طلباً واحداً بلا تقسيم (كان ≤200 حرف حلّاً
-                // للعَرَض لمهلة التخليق، فأسقط كلماتٍ بصمت
-                // عند فشل أيّ مقطع). و[phase] و[crossfader] يظلّان
-                // كما هما لاستمرارية إعادة العينات بلا فجوة.
-                params.provider.synthesize(
-                    params.text,
-                    params.voice,
-                    params.speechRate,
-                    params.pitch,
-                    params.volume,
-                    { sampleRateInHz, channelCount ->
-                        nativeRate = sampleRateInHz
-                        nativeChannels = channelCount
-                    },
-                    { chunk, validLength ->
-                        emitMixedChunk(
-                            chunk, validLength, nativeRate,
-                            nativeChannels, phase, crossfader,
-                            maxBytes, { started },
-                            { started = true }, callback
-                        )
-                    },
-                    params.engine,
-                    params.locale,
-                    params.voiceName
-                )
-            } catch (e: CancellationException) {
-                throw e
-            } catch (t: Throwable) {
-                Log.w(TAG,
-                "synthesizeMixed: مقطع ${segment.languageTag}" +
-                " فشل تخليقه — يُسقط وحده", t)
+            // **بند النص الطويل:** يُقسَّم المقطعُ عند حدوده اللغوية
+            // فقط إن تجاوز [SEGMENT_SPLIT_FALLBACK_CHARS]، فيُنطق كلُّ
+            // ما يُنطق منه بلا إسقاطٍ صامت. و[phase] و[crossfader]
+            // يظلّان كما هما لاستمرارية إعادة العينات بلا فجوة.
+            for (piece in splitOnFailureBoundary(params.text)) {
+                var producedHere = false
+                try {
+                    params.provider.synthesize(
+                        piece,
+                        params.voice,
+                        params.speechRate,
+                        params.pitch,
+                        params.volume,
+                        { sampleRateInHz, channelCount ->
+                            nativeRate = sampleRateInHz
+                            nativeChannels = channelCount
+                        },
+                        { chunk, validLength ->
+                            producedHere = true
+                            emitMixedChunk(
+                                chunk, validLength, nativeRate,
+                                nativeChannels, phase, crossfader,
+                                maxBytes, { started },
+                                { started = true }, callback
+                            )
+                        },
+                        params.engine,
+                        params.locale,
+                        params.voiceName
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    Log.w(TAG,
+                        "synthesizeMixed: جزء ${piece.length} حرفاً من" +
+                        " مقطع ${segment.languageTag} فشل تخليقه" +
+                        " — يُتخطّى صراحةً", t)
+                }
+                if (!producedHere) {
+                    skippedSegments++
+                }
             }
+        }
+        if (skippedSegments > 0) {
+            Log.e(TAG,
+                "synthesizeMixed: ${skippedSegments} جزءاً لم يُنطق" +
+                " — النصُّ الناطق ناقص (${segments.size} مقطعاً)")
         }
         emitCrossfadeTail(
             crossfader, maxBytes, { started },

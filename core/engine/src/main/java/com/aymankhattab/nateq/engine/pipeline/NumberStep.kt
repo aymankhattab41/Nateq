@@ -29,6 +29,17 @@ internal class NumberStep(
     // شبكة لا مبلغ يُلفظ، فتُترك كما هي كاملةً من دون قراءتها عدّاً.
     private val PATTERN_IPV4 = Pattern.compile("""\d{1,3}(?:\.\d{1,3}){3}""")
 
+    // أرقام الإصدارات (1.6.1 / 10.2.15): تُنطق خانةً خانة مع «فاصلة» بين
+    // الأجزاء. **بلا هذا التمييز كان رقم الإصدار يُنطق مدمجاً**: فـ
+    // `AmountParser.sanitizeNumerals` يفترض أن كل فاصلٍ ما قبل الأخير
+    // فاصلُ آلاف، فيُسقط النقطة الأولى من «1.6.1» فيصير «16.1» — أي أن
+    // «Lord TTS 1.6.1» كان يُنطق «ستة عشر فاصلة واحد»! (الإصدار يُقرأ من
+    // نصّ «آخر التحديثات» عبر `%1$s`.)
+    // التمييز: كل الأجزاء خانة أو خانتان (فلا فاصل آلاف ممكن، إذ يفرض
+    // ثلاثةَ خاناتٍ في المجموعة الوسيطة) وثلاثةُ أجزاء فأكثر.
+    private val PATTERN_VERSION =
+        Pattern.compile("""^\d{1,2}(?:\.\d{1,2}){2,}$""")
+
     // رموز العملات التي تحمي الأرقام المحيطة بها من النطق الرقمي،
     // مُعرّفة مرة واحدة لا داخل حلقة المطابقات لكل رقم.
     private val CURRENCY_SYMBOLS = setOf('$', '€', '£', '¥', '₹', '₽', '₩', '﷼')
@@ -117,6 +128,12 @@ internal class NumberStep(
      *  - 3.14 → 3.14 (عشري)
      */
     private fun parseNumberText(numberStr: String, english: Boolean): String {
+        // **رقم إصدار قبل أي تطبيع:** «1.6.1» تُعامل خانةً خانة. فـ
+        // `sanitizeNumerals` في الأسفل تعتبر النقطة الأولى فاصلَ آلاف
+        // فتصف «1.6.1» ← «16.1» (نطقٌ خطأ لاسم التطبيق نفسه).
+        if (PATTERN_VERSION.matcher(numberStr).matches()) {
+            return versionWords(numberStr, english)
+        }
         // الفصل بين فواصل الآلاف والفاصلة العشرية يتم عبر sanitizeNumerals
         // الذي لا يُهلك الأعداد العشرية ثلاثية الخانات (3.141 تبقى عشرية).
         val cleaned = AmountParser.sanitizeNumerals(numberStr)
@@ -161,4 +178,17 @@ internal class NumberStep(
     private fun englishSpokenDigits(digits: String): String = digits
         .map { NumberSpeech.toEnglishWords(it.digitToInt()) }
         .joinToString(" ")
+
+    /** رقم إصدار خانةً خانة: «1.6.1» ← «واحد فاصلة ستة فاصلة واحد»،
+     *  و«one point six point one» بالإنجليزية. الخانة الواحدة بأولها
+     *  تُلفظ «واحد» لا «رقم واحد» لتبقى الصياغة سليمة. */
+    private fun versionWords(version: String, english: Boolean): String {
+        val separator = if (english) " point " else " فاصلة "
+        return version.split('.').joinToString(separator) { part ->
+            part.toLongOrNull()?.let {
+                if (english) NumberSpeech.toEnglishWords(it)
+                else NumberWordsConverter.numberToWords(it)
+            } ?: englishSpokenDigits(part)
+        }
+    }
 }

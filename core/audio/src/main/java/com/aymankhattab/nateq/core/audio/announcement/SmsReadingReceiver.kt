@@ -10,6 +10,7 @@ import android.provider.Telephony
 import android.telephony.SmsMessage
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.R
+import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.LanguageCode
@@ -45,12 +46,17 @@ class SmsReadingReceiver : BroadcastReceiver() {
         const val MODE_SOURCE = "source"
         const val MAX_SMS_CONTENT_LENGTH = 600
 
-        // **بند 5.5:** سقف احتياطي لإنهاء البث أقصاه ما قبل مهلة نظام البث
-        // (~10 ثوانٍ) بهامش واضح (~6 ثوانٍ) — كان السقف يبلغ 10 ثوانٍ فيصل
-        // goAsync حافة المهلة فيقع ANR عند تعلّق المحرك بلا onDone (كما
-        // رُصد على أجهزة فعلية). النطق السليم يُنهي البث مبكراً عبر مستمع
-        // الاكتمال؛ هذا السقف للعلّال فقط.
-        private const val BROADCAST_HOLD_MS = 6_000L
+        // **بند 5.5 + إصلاح القصّ:** كان السقف 6 ثوانٍ ثابتةً، فكل إعلان
+        // يتجاوزها كان `goAsync` ينتهي والنظام **يجمّد العملية** عبر
+        // Process Cgroup Freezer فيُبتَر الصوت في منتصف الجملة بلا خطأ
+        // (شكواه المُبلَّغة: «النص لا يكتمل»). السقفُ الآن مشتقٌّ من
+        // [SynthesisBudget.unitsTimeoutMs] — أطولُ من ميزانية إعلانٍ
+        // كاملاً — فيتّسع للقارئ السريع والإعلان الطويل معاً. أمّا حدُّ
+        // ANR (نحو 10 ثوانٍ لمهلة نظام البث) فيبقى محروساً: يسقفُ
+        // الانتظارُ عند [BROADCAST_HOLD_ANR_MS] فحسب إذا طال النطق
+        // استثنائياً، وحينها يكون النطقُ قد سُلِّم لخدمةٍ أمامية دائمة
+        // تكمله خارج نافذة البث.
+        private const val BROADCAST_HOLD_ANR_MS = 9_000L
 
         /** هل مَنح التطبيق إذن قراءة الرسائل الواردة؟
          *  (RECEIVE_SMS — الإذن الوحيد المصرَّح به في المانيفست؛ إذن
@@ -263,8 +269,21 @@ class SmsReadingReceiver : BroadcastReceiver() {
                 completionListener = { speechDone.complete(Unit) }
                 AnnouncementSpeaker.getInstance(context)
                     .addCompletionListener(completionListener!!)
-                withTimeoutOrNull(BROADCAST_HOLD_MS) {
+                // نافذةُ البث مشتقّةٌ من ميزانية النطق لا من ثابتٍ
+                // سالف (انظر [BROADCAST_HOLD_ANR_MS])، ومحصورةٌ بسقف
+                // ANR فلا يقع تعليقٌ يبقي البث معلّقاً.
+                val holdMs = minOf(
+                    SynthesisBudget.unitsTimeoutMs(listOf(text.length)),
+                    BROADCAST_HOLD_ANR_MS
+                )
+                withTimeoutOrNull(holdMs) {
                     speechDone.await()
+                }
+                if (!speechDone.isCompleted) {
+                    Log.w(TAG,
+                        "النطق تجاوز نافذة البث (${holdMs}ms) —" +
+                        " يكمل في الخدمة الأمامية")
+                    AnnouncementSchedulerService.startForSpeech(context)
                 }
                 finishOnce()
             } catch (t: Throwable) {

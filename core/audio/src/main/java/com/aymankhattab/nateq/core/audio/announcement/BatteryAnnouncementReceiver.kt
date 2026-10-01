@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.annotation.VisibleForTesting
 import com.aymankhattab.nateq.core.audio.R
+import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.core.common.readStickyBattery
 import com.aymankhattab.nateq.core.common.SystemTimeProvider
 import com.aymankhattab.nateq.core.common.TimeProvider
@@ -46,12 +47,12 @@ class BatteryAnnouncementReceiver(
         @Volatile
         private var lastPowerAction: String? = null
 
-        // **بند 5.5:** سقف احتياطي لإنهاء البث أقصاه ما قبل مهلة نظام البث
-        // (~10 ثوانٍ) بهامش واضح (~6 ثوانٍ) — كان السقف يبلغ 10 ثوانٍ فيصل
-        // goAsync حافة المهلة فيقع ANR عند تعلّق المحرك بلا onDone (كما
-        // رُصد على أجهزة فعلية). النطق السليم يُنهي البث مبكراً عبر مستمع
-        // الاكتمال؛ هذا السقف للعلّال فقط.
-        private const val BROADCAST_HOLD_MS = 6_000L
+        // **بند 5.5 + إصلاح القصّ:** كان 6 ثوانٍ ثابتةً، فإعلانٌ أطول منها كان
+        // `goAsync` ينتهي والنظام **يجمّد العملية** (Process Cgroup
+        // Freezer) فيُبتَر الصوت بلا خطأ. السقفُ الآن مشتقٌّ من
+        // [SynthesisBudget.unitsTimeoutMs] ومحصورٌ بسقف ANR، فإن طال
+        // النطق استثنائياً سُلِّم إلى خدمةٍ أمامية تكمله خارج نافذة البث.
+        private const val BROADCAST_HOLD_ANR_MS = 9_000L
 
         /** اسم بديل نسبة البطارية في نصوص الإعلانات. */
         private const val PERCENT_PLACEHOLDER = "{percent}"
@@ -163,8 +164,16 @@ class BatteryAnnouncementReceiver(
                     )
                 ) {
                     wakeLock = TimeAlarmReceiver.acquireShortWakeLock(context)
-                    withTimeoutOrNull(BROADCAST_HOLD_MS) {
+                    val holdMs = minOf(
+                        SynthesisBudget.unitsTimeoutMs(listOf(60)),
+                        BROADCAST_HOLD_ANR_MS
+                    )
+                    withTimeoutOrNull(holdMs) {
                         speechDone.await()
+                    }
+                    if (!speechDone.isCompleted) {
+                        AnnouncementSchedulerService
+                            .startForSpeech(context)
                     }
                     finishOnce()
                 } else {
