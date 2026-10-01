@@ -111,6 +111,7 @@ internal object DiagnosticLogRecorder {
             if (recording) return false
             recording = true
             buffer.clear()
+            charCount = 0
             buffer.addLast("=== بداية التقاط السجل التقني (${now()}) ===")
         }
         readerThread = thread(
@@ -157,7 +158,9 @@ internal object DiagnosticLogRecorder {
             if (!recording) return
             buffer.addLast(line)
             charCount += line.length
-            trimHead(buffer, MAX_LINES)
+            // كل اقتطاع من الرأس يُنقص عدّاد الحروف وإلّا بقى
+            // العدّاد أعلى من الواقع فيُقصّ السجل أكثر مما يجب.
+            charCount -= trimHead(buffer, MAX_LINES)
             // سقفُ الذاكرة بالحروف — يُقصُّ من الرأس فيبقى الترتيب
             // الزمني صحيحاً (القصُّ من الوسط يفسد تسلسل الأحداث).
             while (charCount > MAX_CHARS && buffer.size > 1) {
@@ -166,9 +169,16 @@ internal object DiagnosticLogRecorder {
         }
     }
 
-    /** يبقي القائمة ضمن السعة القصوى بإسقاط الأقدم من الرأس (نقي—يُختبر). */
-    internal fun trimHead(list: MutableList<String>, maxLines: Int) {
-        while (list.size > maxLines) list.removeAt(0)
+    /**
+     * يبقي القائمة ضمن السعة القصوى بإسقاط الأقدم من الرأس.
+     * يُرجع مجموع حروف الأسطر المُسقطة ليتحدّث عدّاد [charCount].
+     */
+    internal fun trimHead(list: MutableList<String>, maxLines: Int): Int {
+        var removedChars = 0
+        while (list.size > maxLines) {
+            removedChars += list.removeAt(0).length
+        }
+        return removedChars
     }
 
     private fun now(): String =

@@ -41,6 +41,14 @@ class DiagnosticLogRecorderTest {
     }
 
     @Test
+    fun trimHead_returnsRemovedCharsSoCounterStaysAccurate() {
+        val list = mutableListOf("aa", "bbb")
+        val removed = DiagnosticLogRecorder.trimHead(list, 1)
+        assertEquals(listOf("bbb"), list)
+        assertEquals(2, removed)
+    }
+
+    @Test
     fun stop_whenIdle_returnsEmpty() {
         assertEquals(emptyList<String>(), DiagnosticLogRecorder.stop())
         assertFalse(DiagnosticLogRecorder.isRecording())

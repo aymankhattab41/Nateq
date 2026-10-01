@@ -474,7 +474,7 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-- Fixed the error log report: it printed only the last 150 captured lines, so important details never appeared no matter how much was collected; now every captured line is included (up to 20 thousand lines), the app's own diagnostic lines are shown at the top of the report, and error and warning detection now works because the line level was previously read from the wrong position
+- Fixed the error log report: it printed only the last 150 captured lines, so important details never appeared no matter how much was collected; now every captured line is included (up to 20 thousand lines), the app\'s own diagnostic lines are shown at the top of the report, and error and warning detection now works because the line level was previously read from the wrong position
 - Root fix for long text being cut: the speech timeout was computed from the total character count as if the text were a single piece, while it is actually split into several parts each with its own budget, so the ceiling ran ahead of the real work and cut the text off mid-way. The timeout is now derived from the actual parts and recalculated after splitting
 - Fixed version number pronunciation: "1.6.1" was spoken as "16.1" because the first dot was treated as a thousands separator and the parts merged; it is now read digit by digit (one point six point one), while "1.0" stays decimal and "1.234.567" stays thousands-separated
 </string>
