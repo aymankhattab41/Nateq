@@ -474,8 +474,8 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-- Wider error log report: it now prints every captured line (up to 20 thousand lines) instead of only the last 150, the own diagnostic lines of the app are shown at the top of the report, and error and warning detection now works because the line level was being read from the wrong position
-- Fixed the log character counter: it was not decremented when old lines were dropped once the capacity was full, so the log was trimmed more than it should be, and it was not reset when a new capture session started
+- Fixed the diagnostic trace being hidden completely: the caller announcement trace was written at Log.d level, which the shrinker strips from the release build, so not a single line of it ever reached the error report. It now uses Log.w, so the full broadcast sequence shows up and the source of the extra announcement becomes visible
+- Wider error log report: it now prints every captured line (up to 20 thousand lines) instead of only the last 150, the own diagnostic lines of the app are shown at the top of the report, and error and warning detection now works because the line level was being read from the wrong position; ending the capture no longer records a fake error that fills the critical errors section
 - Root fix for long text being cut: the speech timeout was computed from the total character count as if the text were a single piece, while it is actually split into several parts each with its own budget, so the ceiling ran ahead of the real work and cut the text off mid-way. The timeout is now derived from the actual parts and recalculated after splitting
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
