@@ -32,6 +32,7 @@ import dagger.hilt.android.AndroidEntryPoint
 
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -121,6 +122,37 @@ class NateqTtsService : TextToSpeechService() {
          */
         internal fun synthesisTimeoutMs(charCount: Int): Long =
             SynthesisBudget.requestTimeoutMs(charCount)
+
+        /**
+         * مهلة الطلب من **أطوال المقاطع الفعلية** لا من مجموع حروف
+         * النص — وهو مصدرُ الانقطاع الحقيقي.
+         *
+         * **لماذا مجموعُ الحروف مخطئ؟** النصُّ يُقسَّم إلى عدة مقاطع
+         * (`LanguageSegmenter` يفصل الأرقام واللاتينية عن العربية،
+         * و`splitOnFailureBoundary` يقطع الطويل عند حدود الجُمل)، وكل
+         * مقطعٍ يُخلَّق بميزانيةٍ مستقلّة في `SystemVoiceProvider`. غير
+         * أن المهلة كانت تُحسب كأن النصَّ **قطعةٌ واحدة**:
+         * `requestTimeoutMs(total)` = ميزانيةُ الحروف + تكلفةُ وحدة،
+         * أي `piece(800)+2s` ≈ 25 ثانية، بينما العملُ الفعلي ثماني
+         * وحدات = `8 × (piece(100)+2s)` ≈ 80 ثانية. فالعجزُ 55s
+         * يقتل الطلبَ في منتصفه بـ`callback.error()` — وهو عرضُ
+         * «يقرأ أطولَ لكنه لا يكتمل» تماماً. وكلما كثُرَت المقاطع
+         * (نصٌّ غنيٌّ بالأرقام) ازداد العجز، فكان القصُّ يتناسب مع
+         * كثافة الأرقام — وهذه بالضبط بصمةُ العطل.
+         *
+         * الصوابُ هو [SynthesisBudget.unitsTimeoutMs] القائم أصلاً
+         * للمقاطع: مجموعُ ميزانيةِ كل مقطعٍ + تكلفةُ كل وحدة + هامش.
+         * فالمهلةُ الآن **تشتقّ من الشجرة الفعلية للتنفيذ** ولا تسبق
+         * عملها أبداً — وهو العقدُ الحاكم نفسه.
+         *
+         * ملاحظة: تحقّقُ الإلغاء المتبادل (`instance.stop()` على كامل
+         * المجمّعة عند إلغاء طلب) يجعلالتنفيذ رتيباً تسلسلياً في
+         * الحالة الحرجة، فمجموعُ الوحدات هو الاحتمالُ الأسوأ الآمن
+         * — ولا يُستخدم أقلُّ منه.
+         */
+        internal fun synthesisTimeoutMsForSegments(
+            segmentCharCounts: List<Int>
+        ): Long = SynthesisBudget.unitsTimeoutMs(segmentCharCounts)
 
         /** معيار البث الموحّد للنص المختلط (44100 مونو 16-bit) — ثابتٌ ليُتاح
          *  التدفق مقطعاً بمقطعٍ دون تجميع كامل الصوت في الذاكرة (الذروة = أكبر
@@ -595,7 +627,16 @@ override fun onDestroy() {
         ) ?: 0
 
         val rawText = request.charSequenceText?.toString().orEmpty()
-        val timeoutMs = synthesisTimeoutMs(rawText.length)
+        // **المهلة تُشتقّ من المقاطع الفعلية** بعد التفتيت أدناه لا من
+        // مجموع حروف النص — فانظر [synthesisTimeoutMsForSegments]
+        // فأصلُ الانقطاع.
+        //
+        // وهي **ذرّيةٌ متغيّرة** (AtomicLong) لا `var` عادية: الخيطُ
+        // المنتظر يقرأها (`withTimeoutOrNull`) بينما خيطُ التخليق
+        // يكتبها بعد التقطيع. فمع `var` كانت القراءةُ قد تقع على القيمة
+        // القديمة — وهو الخللُ عينُه الذي نحاربه.
+        val timeoutHolder = AtomicLong(synthesisTimeoutMs(rawText.length))
+        fun timeoutMs(): Long = timeoutHolder.get()
         val job = synthesisScope.launch(start = CoroutineStart.LAZY) {
             try {
                 // إعادة تحميل الإعدادات من القرص لأن `:tts`
@@ -669,6 +710,31 @@ override fun onDestroy() {
                 } else {
                     // نص مختلط الكتابات: نطق كل مقطع بلغته/محركه ثم مزج الصوت
                     // بمعدلٍ موحّد عبر بثٍّ واحد (مونو).
+                    //
+                    // **تصحيحُ الميزانية:** كل مقطعٍ يُخلَّق بميزانيته
+                    // المستقلّة، فالمهلةُ يجب أن تجمعها لا أن تحسب
+                    // النصَّ قطعةً واحدة. بدون هذا يسبق السقفُ العملَ
+                    // الحقيقي فيقطعه (وهي بصمةُ «يقرأ أطولَ ولا
+                    // يكتمل»). وتُحسب على أطوال المقاطع **بعد** تقطيع
+                    // الفشل المحتمل (`splitOnFailureBoundary`)، لأن ذلك
+                    // يزيد عدد الوحدات.
+                    val unitCounts = segments.flatMap { segment ->
+                        splitOnFailureBoundary(segment.text)
+                            .map { it.length }
+                    }
+                    val correctMs =
+                        synthesisTimeoutMsForSegments(unitCounts)
+                    // لا نخفض المهلة أبداً: لو سبق السقفُ previous
+                    // لَبقي محسوباً على الحروف كلها وهو أوسعُ احتياطاً،
+                    // وإن كان أعلى فهو الصوابُ (احترامُ العقد).
+                    timeoutHolder.set(
+                        maxOf(timeoutHolder.get(), correctMs)
+                    )
+                    Log.d(TAG,
+                        "budget: ${segments.size} segments -> " +
+                            "${unitCounts.size} units, " +
+                            "$correctMs ms (was ${timeoutHolder.get()})"
+                    )
                     synthesizeMixed(segments, readerRate, callback)
                 }
             } catch (e: CancellationException) {
@@ -703,15 +769,35 @@ override fun onDestroy() {
             // مع سقف زمني متكيّف مع طول النص يحمي من تجميد الخيط إن علق
             // المحرك — النصوص الطويلة تأخذ وقتها دون قطع.
             runBlocking {
-                withTimeoutOrNull(timeoutMs) {
-                    job.join()
-                } ?: run {
-                    Log.w(TAG,
-                        "onSynthesizeText timed out" +
-                        " (${rawText.length} chars, ${timeoutMs}ms)"
-                    )
-                    job.cancel()
-                    runCatching { callback.error() }
+                // **الانتظارُ يعيد قراءةَ المهلة عند كل دورة**، لا
+                // :Reading قيمةً واحدة قبل
+                // التقطيع يقرأُ الحسابَ القديمَ بالضرورة (التقطيعُ يقع
+                // بعد ذلك في خيط التخليق)، فيبقى العجزُ قائماً ويظلّ
+                // القطعُ بعينه. فانتظارُ كل دورةٍ يُعيد الحساب من
+                // الميزانية الذرّية المصحَّحة.
+                //
+                // والتمديدُ لا يتكرر: موقعُ التصحيح واحد، فينتظر
+                // أطولَ مرّتين كحدٍّ أقصى (15 دقيقة × 2 سقفاً).
+                while (true) {
+                    val budget = timeoutMs()
+                    val joined = withTimeoutOrNull(budget) {
+                        job.join()
+                    } != null
+                    if (joined || job.isCompleted) {
+                        break
+                    }
+                    // انتهت المهلة: إمّا عجزٌ حقيقي، وإمّا رُفعت
+                    // الميزانية بعد التقطيع. لا نقتل إلا إذا لم
+                    // تتغيّر — فنُعيد القراءة ولا نُبقي على حكمٍ جاهز.
+                    if (timeoutMs() <= budget) {
+                        Log.w(TAG,
+                            "onSynthesizeText timed out (${rawText.length}" +
+                                " chars, ${budget}ms)"
+                        )
+                        job.cancel()
+                        runCatching { callback.error() }
+                        break
+                    }
                 }
             }
         } catch (t: Throwable) {

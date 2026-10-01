@@ -71,6 +71,73 @@ class SynthesisBudgetTest {
     }
 
     @Test
+    fun readerBudget_coversEverySegmentNotJustTotalChars() {
+        // **هذا هو الحارسُ الذي كان غائباً** وينتج عنه القطع.
+        //
+        // الاختبارُ القديم ([requestBudget_neverBelowProviderBudget])
+        // قارن الطلبَ بميزانية **قطعةٍ واحدة** بطول النص كلِّه، وهو
+        // ما لا يحدث في المسار الحقيقي: النصُّ يُقطَّع إلى عدة مقاطع،
+        // وكل مقطعٍ له ميزانيتُه. فالمقارنةُ الصحيحة أن يُقارَن طلبٌ
+        // محسوبٌ من الأطوالِ الفعلية بمجموع ميزانياتِ القطع.
+        //
+        // الأرقامُ من واقع المسار: نصٌّ عربيٌّ غنيٌّ بالأرقام
+        // (URL، تواريخ، مبالغ) ينقسم إلى عشرات المقاطع القصيرة،
+        // فيكون مجموعُ ميزانياتها **أكبرَ بمرات** من ميزانية الحروف
+        // الإجمالية. وهذا يفسّر لماذا كان القصُّ يبتدئ بعد audiou
+        // مقداره ويشتدّ كلما كثُرَت الأرقام.
+        val chunkCounts = listOf(
+            // نص قصير: مقطع واحد.
+            listOf(120),
+            // نص متوسط: قطعٌ قصيرة متعددة (نصٌّ كثير الأرقام).
+            List(8) { 100 },
+            List(20) { 90 },
+            // نص طويل: قطع متوسطة.
+            List(8) { 200 },
+            List(15) { 400 },
+            // نص طويل جداً.
+            List(40) { 300 }
+        )
+        for (counts in chunkCounts) {
+            val total = counts.sum()
+            val readerTimeout =
+                NateqTtsService.synthesisTimeoutMsForSegments(counts)
+            val internal = counts.sumOf {
+                SynthesisBudget.pieceTimeoutMs(it)
+            }
+            assertTrue(
+                "مهلة القارئ ${readerTimeout}ms عند ${counts.size} قطعة" +
+                    " (${total} حرفاً) أقلّ من مجموع ميزانيات القطع" +
+                    " ${internal}ms — القطعُ مضمون",
+                readerTimeout >= internal
+            )
+            // **وأهمّ:** لا يجوز أن تكون مهلةُ القارئ أقلّ من الحساب
+            // القديم أبداً (قد نكون أخطأنا فجعلناها أضيق).
+            assertTrue(
+                "مهلة القارئ ${readerTimeout}ms أضيقُ من الحساب" +
+                    " القديم عند ${counts.size} قطعة",
+                readerTimeout >= NateqTtsService.synthesisTimeoutMs(total)
+            )
+        }
+    }
+
+    /** حالةُ الانقطاع المرجعية: نصٌّ واحدٌ كبير vs ثماني قطع —
+     *  يوثّق الفارق رقمياً فيبقى ظاهراً إن عاد الخلل. */
+    @Test
+    fun budgetGap_isVisibleForNumberDenseText() {
+        val onePiece = NateqTtsService.synthesisTimeoutMs(800)
+        val eightPieces = NateqTtsService.synthesisTimeoutMsForSegments(
+            List(8) { 100 }
+        )
+        // الحسابُ القديم يظنّ أن العملَ قطعةٌ واحدة فيعطي ~25s،
+        // والحقيقةُ ثماني وحداتٍ فيحتاج ~80s. الفارقُ هو العجزُ الذي
+        // كان يقتل الطلب.
+        assertTrue(
+            "متوقّع فارقٌ جوهري، لكنه $onePiece مقابل $eightPieces",
+            eightPieces > onePiece * 2
+        )
+    }
+
+    @Test
     fun budgets_respectFloorAndAbsoluteCeiling() {
         // حدٌ أدنى معقولٌ لنصٍّ قصير (لا انتظار عبثيّ).
         assertTrue(NateqTtsService.synthesisTimeoutMs(0) >= 20_000L)
