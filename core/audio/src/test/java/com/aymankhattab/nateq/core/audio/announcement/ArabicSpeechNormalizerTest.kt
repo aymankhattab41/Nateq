@@ -69,4 +69,15 @@ class ArabicSpeechNormalizerTest {
             ArabicSpeechNormalizer.normalize("hello 123 !")
         )
     }
+
+    @Test
+    fun masaMidSentence_isNormalized() {
+        // مساء المجردة بعد وقت في وسط الجملة تُضبط كما في نهايتها
+        val raw = "الساعة الآن السادسة مساء وعندك موعد"
+        val out = ArabicSpeechNormalizer.normalize(raw)
+        assertTrue(
+            "مساء في وسط الجملة لم تُطبَّق عليها مَسَاءَنْ",
+            out.contains(expectedMasa)
+        )
+    }
 }

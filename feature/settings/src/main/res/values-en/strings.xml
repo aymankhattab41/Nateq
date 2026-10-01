@@ -471,10 +471,10 @@
 <string name="time_alarm_max_precision_title">Maximum alarm precision (shows an alarm icon)</string>
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
-<string name="changelog_text">Version %1$s
-• Reverted screen-reader response optimizations that affected drag/swipe performance (timed settings reload, background speaking flag, per-session effects sharing, preferred-engine pre-warm ordering) and removed their associated tests
-• Split lines exceeding 80 characters in ChangelogSpeechTest and CategoryVoicePanelController, enforcing the ≤80-char rule across all Kotlin files
-• Unified announcement channel on the media stream for all events (caller, time, SMS, battery, notifications) with no conditions — no speech drops to the muted accessibility or ringtone channel
+<string name="changelog_text">الإصدار %1$s
+• تجاهل الزخارف القرآنية (﷽ ۞ الألف الخنجرية) وجرد ڪ إلى ك عند النطق، وإصلاح نطق «مساء» في وسط الجملة
+• التراجع عن تحسينات استجابة قارئ الشاشة أثناء السحب وإزالة اختباراتها المرتبطة
+• تقسيم الأسطر الطويلة في ChangelogSpeechTest وCategoryVoicePanelController
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>

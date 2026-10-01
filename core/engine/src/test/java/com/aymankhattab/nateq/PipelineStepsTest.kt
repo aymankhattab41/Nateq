@@ -866,16 +866,43 @@ class PipelineStepsTest {
     }
 
     @Test
-    fun tashkeel_preservesQuranicMarks() {
-        // بند 3.4: حروف المصحف المعجمة فوقُ الألف (U+0670) والواو/الياء
-        // المصحفيّتان (U+06E5/U+06E6) تُبقى بينما تُجرَّد الحركات العادية.
+    fun tashkeel_stripsQuranicDiacritics() {
+        // U+0670 (ألف خنجرية علوية) تُحذف مع سائر الحركات بعد مراجعة البند 3.4.
         assertEquals(
-            "\u0643\u0670\u062A\u0627\u0628",
+            "\u0643\u062A\u0627\u0628",
             TashkeelStripStep.apply("\u0643\u0670\u062A\u064E\u0627\u0628")
         )
+        // U+06E5/U+06E6 (واو/ياء مصحفيّتان) تُحذف ضمن نطاق U+06D6..U+06ED.
         assertEquals(
-            "\u0628\u06E5\u06E6",
+            "\u0628",
             TashkeelStripStep.apply("\u0628\u064E\u06E5\u06E6\u064E")
+        )
+    }
+
+    @Test
+    fun tashkeel_stripsQuranicOrnaments() {
+        // ﷽ (U+FDFD) تُحذف — رمز تصويري لا حرف.
+        assertEquals(
+            "\u0648\u0644\u0633\u0648\u0641",
+            TashkeelStripStep.apply(
+                "\uFDFD\u0648\u0644\u0633\u0648\u0641"
+            )
+        )
+        // ۞ (U+06DE دائرة الآية) تُحذف ضمن U+06D6..U+06ED.
+        assertEquals(
+            "\u0648\u0644\u0633\u0648\u0641",
+            TashkeelStripStep.apply(
+                "\u06DE\u0648\u0644\u0633\u0648\u0641"
+            )
+        )
+    }
+
+    @Test
+    fun tashkeel_swashKafReplacedWithRegular() {
+        // ڪ (U+06AA) تُستبدل بـ ك (U+0643) لا تُحذف.
+        assertEquals(
+            "\u0631\u0628\u0643",
+            TashkeelStripStep.apply("\u0631\u0628\u064F\u06AA\u064E")
         )
     }
 
