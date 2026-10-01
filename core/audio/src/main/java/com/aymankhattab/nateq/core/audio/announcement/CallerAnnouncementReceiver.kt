@@ -128,23 +128,27 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         }
 
         /**
-         * هل ستتكرّر الرنةُ لنفس المكالمة؟ بعض الأجهزة ترسل
-         * `PHONE_STATE/RINGING` **أكثر من مرة** للمكالمة الواحدة
-         * (شريحة SIM ثانية DSDS، تحديث IMS/VoLTE، تغيّر مسار التنبيه)،
-         * فبلا حارسٍ صامد يُعاد الإعلان كاملاً — فيُسمع «اتصال وارد»
-         * مرّتين أو ثلاثاً قبل أن يحمل الاسم.
+         * هل تُكبَت الرنةُ المتأخّرة بعد أن أُعلن بالفعل؟
          *
-         * **الخ.Decisive أن الحارس لا يعلّق على `activeCallCycle`**: ذلك
-         * عمرُ كوروثين ينتهي في `finally` خلال أجزاء الثانية من
-         * `speak()` — قبل أن يبدأ الصوت أصلاً — فيموت الحارسُ بعد أول
-         * إعلانٍ فلا يبقى أثرٌ له. فالحارسُ هنا على **حالة الجلسة**
-         * الدائمة (`ringingAnnounced` + `announcedNumber`)، وهي تبقى
-         * بعد انتهاء الكوروثين حتى تصفّرها `resetRingingSession()` عند
-         * OFFHOOK/IDLE.
+         * نعم ما دامت الجلسةُ واحدة، وكل انتقالٍ إلى `IDLE`/`OFFHOOK`
+         * يصفّر `announcedNumber` ([resetRingingSession]) فتبتدئ جلسةٌ
+         * جديدةٌ تُعلَن بلا كبح.
          *
-         * `(rawNumber == null)` يُعامَل كـ«ليس رقماً جديداً» لأن بعض
-         * الأجهزة تحجب الرقم في البثّ الثاني؛ فلا يُعاد إعلانُ
-         * الجلسات التي لا تحمل دليلاً على أنها جديدة.
+         * **والحارسُ على حالة الجلسة لا على `activeCallCycle`:** ذلك عمرُ
+         * كوروثين ينتهي في `finally` خلال أجزاء الثانية من `speak()` —
+         * قبل أن يبدأ الصوت أصلاً — فيموت الحارسُ بعد أول إعلانٍ فلا يبقى
+         * أثرٌ له. فالحارسُ هنا على الحالة الدائمة (`ringingAnnounced` +
+         * `announcedNumber`).
+         *
+         * **إعلانٌ سابق بلا رقم** يعني أن الرقم لم يكن متاحاً وقتئذٍ، لا
+         * أنه رقمٌ آخر — فبثٌّ لاحق يحمل رقماً لا يثبت أنه مكالمةٌ جديدة.
+         * وهذا هو العيب الذي كان يُضاعف النطق: المنصّة ترسل `RINGING`
+         * مرّتين للمكالمة الواحدة، الأولى بلا رقم فيبقى `announcedNumber`
+         * على `null`، والثانية بعد نحو ستّ ثوانٍ ومعها الرقم. فالمقارنةُ
+         * `"01287308580" == null` كانت تُقيَّم خطأً — أي «مكالمةٌ أخرى» —
+         * فيُعاد فتح جدول التكرار كاملاً (٥ بلا اسم + ٥ بالاسم = ١٠ عند
+         * repeat=٥). وكذلك `incomingNumber == null`: غيابُ الرقم ليس دليلاً
+         * على مكالمة جديدة.
          *
          * خالصٌ قابل للاختبار.
          */
@@ -154,15 +158,43 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             incomingNumber: String?
         ): Boolean {
             if (!alreadyAnnounced) return false
+            if (announcedNumber.isNullOrBlank()) return true
             if (incomingNumber == null) return true
             return incomingNumber == announcedNumber
         }
 
-        /** مهلة انتظار وصول رقم المتصل عند وصول بث فارغ (1.8 ثانية) */
-        internal const val CALLER_RESOLVE_GRACE_PERIOD_MS = 1_800L
+        /**
+         * مهلة انتظار وصول رقم المتصل عند وصول بث فارغ.
+         *
+         * المنصّة تُرسل `PHONE_STATE/RINGING` مرّتين للمكالمة الواحدة:
+         * الأولى فوريةً بلا رقم، والثانية بعد نحو ستّ ثوانٍ ومعه الرقم
+         * (رُصد ٦٫١s مرّتين متتاليتين على جهاز فعلي). فمهلةٌ قصيرة —
+         * ١٫٨s سابقاً — تنتهي قبل بثّ الرقم، فينطق «اتصال وارد» بلا اسم
+         * ثم يفتح بثُّ رقمٍ دورةً ثانية كاملة، فيصير النطق ضعفَ عدد
+         * التكرار المضبوط (٥ + ٥ = ١٠ عند repeat=٥).
+         *
+         * فالمهلة تغطّي فجوةَ المنصّة المرصودة بهامش، فينطق الاسم من
+         * الدورةِ الوحيدة ولا تتضاعف النطقات. وإن تأخّر الرقم عنها كُبِت
+         * بثّه ([shouldSuppressDuplicateAnnouncement]) فيُكتفي بالعبارة
+         * العامة ولا يتضاعف النطق.
+         */
+        internal const val CALLER_RESOLVE_GRACE_PERIOD_MS = 7_000L
 
         /** فاصل فحص سجل المكالمات أثناء مهلة الانتظار (300 مللي ثانية) */
         internal const val CALLER_LOG_POLL_INTERVAL_MS = 300L
+
+        /**
+         * سقف قفل الاستيقاظ لدورة المتصل (20 ثانية).
+         *
+         * يغطّي مهلةَ انتظار الرقم + نطقَ الجملة الأخيرة. وهو أطول من
+         * [BROADCAST_ASYNC_WINDOW_MS] (10 ثوانٍ) لأن ذلك يحدّ *جدولَ
+         * التكرار*، أما القفل فيمتدّ على الانتظار قبله — ولم يكن يشمله
+         * أصلاً. سقفُ الـ ANR ([BROADCAST_SAFE_CAP_MS]) لا يُرفع: يبقى
+         * 9 ثوانٍ لأن إنهاءَ `goAsync` متأخّراً يُجمد العملية، والامتدادُ
+         * هنا على قفل الاستيقاظ فقط — فالنطق يبقى داخل `appScope` والخدمة
+         * الأمامية تُبقي العمليةَ أماميةً بعد إنهاء البث.
+         */
+        internal const val CALLER_WAKE_LOCK_CAP_MS = 20_000L
 
         /** تصفير حالة جلسة الرنين عند إنهاء المكالمة أو الرد عليها */
         internal fun resetRingingSession() {
@@ -194,8 +226,14 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
          *  فيقع ANR «إيقاف مستمر» على الأجهزة الفعلية — كما رُصد على Galaxy
          *  A23 مع محرك TTS معطوب). **مرفوع من 6 إلى 9 ثوانٍ** بعد رصد
          *  بترِ الإعلانات الطويلة: 6 ثوانٍ كانت تقطع أيّ إعلانٍ يتجاوزها
-         *  بتجميد العملية (Process Cgroup Freezer) بلا خطأ. */
-        private const val BROADCAST_SAFE_CAP_MS = 9_000L
+         *  بتجميد العملية (Process Cgroup Freezer) بلا خطأ.
+         *
+         *  **ثابتٌ لا يُرفع مهما طالت الميزانيةُ الزمنية:** فتمديد مهلة
+         *  انتظار رقم المتصل إلى سبع ثوانٍ ثمّ نطقُ التكرارات يُخرج
+         *  النطق عن نافذة البث عمداً — ويُبقى هذا السقف على حاله ليُنهى
+         *  البث قبل حافة نظام التشغيل، ويبقى ما بعده في `appScope` خارج
+         *  نافذة البث. */
+        internal const val BROADCAST_SAFE_CAP_MS = 9_000L
 
         /** كم عدد الخانات الرقمية الواجب تطابقها في المطابقة الذكية الأخيرة
          *  (المطابقة بآخر 8 خانات). */
@@ -482,9 +520,37 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 var incomingNumber = rawNumber ?: lastResolvedNumber
                 var contactName = lastResolvedName
 
-                // مهلة سماح عند وصول بث فارغ: ننتظر مهلة قصيرة ونفحص
-                // سجل المكالمات دورياً، لتجنب التعجل بنطق عبارة
-                // "اتصال وارد" العامة قبل وصول بث الرقم الحقيقي.
+                // **ميزانية الاستيقاظ تُحسب هنا لا بعد الانتظار:** قفلُ
+                // الاستيقاظ كان يُكتسب بعد حلقة الانتظار، فمع مهلةٍ
+                // سبعَ ثوانٍ (=`CALLER_RESOLVE_GRACE_PERIOD_MS`) كان
+                // الانتظارُ يجري بلا استيقاظ، و`delay()` على
+                // `Dispatchers.IO` والشاشةُ مطفأة يتأخّر فيُفشِل الانتظارُ
+                // في مهمّته. فصار القفل يغطّي الانتظارَ والنطقَ معاً.
+                val repeat = settings
+                    .getCallerAnnouncementRepeat().coerceIn(1, 5)
+                val intervalMs = settings.getCallerAnnouncementIntervalSeconds()
+                    .coerceIn(1, 10) * 1000L
+                val schedule = repeatSchedule(
+                    repeat, intervalMs, BROADCAST_ASYNC_WINDOW_MS
+                )
+                val speechWakeMs = if (schedule.isEmpty()) {
+                    TimeAlarmReceiver.SHORT_WAKE_LOCK_MS
+                } else {
+                    (schedule.lastOrNull() ?: 0L) +
+                        TimeAlarmReceiver.SHORT_WAKE_LOCK_MS
+                }
+                wakeLock = TimeAlarmReceiver.acquireShortWakeLock(
+                    context,
+                    (CALLER_RESOLVE_GRACE_PERIOD_MS + speechWakeMs)
+                        .coerceAtMost(CALLER_WAKE_LOCK_CAP_MS)
+                )
+
+                // مهلة سماح عند وصول بث فارغ: ننتظر ونفحص سجلَ المكالمات
+                // دورياً — ونفحص `lastResolvedNumber` أولَ كلّ شيء، فهو
+                // ما يكتبه بثُّ RINGING الثاني الذي يحمل الرقم، فلا
+                // يتوقف الانتظارُ على إذن READ_CALL_LOG. ننتظر هنا أطول
+                // من السابق قصداً واحداً: أن يقع الاسمُ في الدورةِ
+                // الوحيدة (وإلا فُتحت دورةٌ ثانية فضاعف النطق).
                 if (incomingNumber == null && !ringingAnnounced) {
                     val elapsed =
                         System.currentTimeMillis() - ringingStartTime
@@ -588,27 +654,11 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 // جملة فعلياً أو حارسُ الأمان) لا يقطعها — فتبقى تُنطق حتى
                 // لو جُمّدت العملية لاحقاً (الخدمة الأمامية التي يضمنها
                 // النطق تُبقي العملية أماميةً غالباً).
-                val repeat = settings
-                    .getCallerAnnouncementRepeat().coerceIn(1, 5)
-                val intervalMs = settings.getCallerAnnouncementIntervalSeconds()
-                    .coerceIn(1, 10) * 1000L
+                // (جدولُ التكرار وقفلُ الاستيقاظ حُسبا قبل حلقة الانتظار.)
                 // بند 2.1/2.2: نبرة «نطق المتصل» المستقلة (بديل: نبرةُ نطق
                 // اللغة) — نبرةُ الحلقةِ كاملةً.
                 var pitch = settings.getCallerAnnouncementPitchOrDefault(
                     locale.language
-                )
-                val schedule = repeatSchedule(
-                    repeat, intervalMs, BROADCAST_ASYNC_WINDOW_MS
-                )
-                val totalWakeMs = if (schedule.isEmpty()) {
-                    TimeAlarmReceiver.SHORT_WAKE_LOCK_MS
-                } else {
-                    val maxOffset = schedule.lastOrNull() ?: 0L
-                    (maxOffset + TimeAlarmReceiver.SHORT_WAKE_LOCK_MS)
-                        .coerceAtMost(BROADCAST_ASYNC_WINDOW_MS)
-                }
-                wakeLock = TimeAlarmReceiver.acquireShortWakeLock(
-                    context, totalWakeMs
                 )
                 if (schedule.isEmpty()) {
                     completionListener = { finishOnce() }

@@ -636,6 +636,74 @@ fun `waiting call speaks only when during call toggle enabled`() {
     }
 
     @Test
+    fun `a late numbered ring after a numberless announce is suppressed`() {
+        // **هذا هو العيب المُصلَح، وحالةُ الجهاز المرصودة بالضبط.**
+        // المنصّة ترسل RINGING مرّتين: الأولى بلا رقم (فيُعلن «اتصال
+        // وارد» و`announcedNumber` يبقى `null`)، والثانية بعد ~٦ ثوانٍ
+        // ومعها الرقم. كان `"01287308580" == null` يقيَّم خطأً فيفتح
+        // دورةً ثانية كاملة، فينطق ٥ بلا اسم ثم ٥ بالاسم — ضعفَ
+        // التكرار المضبوط. إعلانٌ بلا رقم = «الرقم لم يُعرف بعد»،
+        // لا «هذا رقمٌ آخر»، فبثٌّ لاحق يحمل رقماً لا يعيد التكرار.
+        assertTrue(
+            "بثٌّ متأخّر يحمل رقماً بعد إعلانٍ بلا رقم يجب أن يُكبَت",
+            CallerAnnouncementReceiver.shouldSuppressDuplicateAnnouncement(
+                alreadyAnnounced = true,
+                announcedNumber = null,
+                incomingNumber = "01287308580"
+            )
+        )
+    }
+
+    @Test
+    fun `a blank announced number is treated as unknown`() {
+        // الفراغُ في `announcedNumber` يعني الرقمَ غيرَ المحفوظ، لا
+        // رقماً فارغاً يُقارَن.
+        assertTrue(
+            CallerAnnouncementReceiver.shouldSuppressDuplicateAnnouncement(
+                alreadyAnnounced = true,
+                announcedNumber = "  ",
+                incomingNumber = "01287308580"
+            )
+        )
+    }
+
+    @Test
+    fun `the wake lock covers the grace period and the speech`() {
+        // قفل الاستيقاظ كان يُكتسب **بعد** حلقة الانتظار، فمع مهلةٍ
+        // سبعَ ثوانٍ كان الانتظار يجري بلا استيقاظ فيتأخّر `delay()`
+        // مع شاشةٍ مطفأة. سقفُ القفل يجب أن يتجاوز الانتظارَ والنطقَ معاً.
+        val grace = CallerAnnouncementReceiver
+            .CALLER_RESOLVE_GRACE_PERIOD_MS
+        val lockCap = CallerAnnouncementReceiver
+            .CALLER_WAKE_LOCK_CAP_MS
+        assertTrue(
+            "سقف قفل الاستيقاظ يجب أن يتجاوز مهلة الانتظار",
+            lockCap > grace
+        )
+        assertTrue(
+            "سقف قفل الاستيقاظ يجب أن يتجاوز مهلة الانتظار + نطق الجملة",
+            lockCap >= grace + TimeAlarmReceiver.SHORT_WAKE_LOCK_MS
+        )
+    }
+
+    @Test
+    fun `the anr safe cap stays under the system broadcast limit`() {
+        // **حارس عقدِ لا يُرفع:** إنهاءُ goAsync متأخّراً عن حافة النظام
+        // يُجمد العملية (Process Cgroup Freezer) ويقطع الصوت بلا خطأ.
+        // فتمديدُ مهلة انتظار الرقم إلى سبع ثوانٍ يجب ألّا يمسّ هذا السقف
+        // أبداً — يُرفع قفلُ الاستيقاظ فقط.
+        val cap = CallerAnnouncementReceiver.BROADCAST_SAFE_CAP_MS
+        assertTrue(
+            "سقف ANR يجب أن يبقى دون مهلة بثّ النظام (~10s)",
+            cap < 10_000L
+        )
+        assertTrue(
+            "سقف ANR يجب ألّا ينزل تحت 9 ثوانٍ فيُقصّر نافذة النطق",
+            cap >= 9_000L
+        )
+    }
+
+    @Test
     fun `duplicate ring carrying the same number joins the pending cycle`() {
         // **هذا هو العيب المُصلَح:** كان انضمامُ البث المكرّر مشروطاً
         // بغياب الرقم، فبثٌّ يحمل الرقم نفسه كان يُلغي الدورةَ الجارية
@@ -742,10 +810,19 @@ fun `waiting call speaks only when during call toggle enabled`() {
     }
 
     @Test
-    fun `grace period constants are valid and within safe cap`() {
+    fun `grace period constants are valid and cover the platform gap`() {
+        // مهلةُ الانتظار تغطّي فجوةَ المنصّة المرصودة (~٦٫١s: الرنين
+        // الأول بلا رقم والثاني متأخّر) بهامش، وتبقى دون سقف الـ ANR
+        // فلا تُخرج البثّ عن حافة النظام.
         assertTrue(
-            CallerAnnouncementReceiver.CALLER_RESOLVE_GRACE_PERIOD_MS in
-                1_000L..3_000L
+            "مهلة الانتظار يجب أن تتجاوز فجوة المنصّة المرصودة (~6.1s)",
+            CallerAnnouncementReceiver.CALLER_RESOLVE_GRACE_PERIOD_MS >=
+                6_500L
+        )
+        assertTrue(
+            "مهلة الانتظار يجب أن تبقى دون سقف ANR",
+            CallerAnnouncementReceiver.CALLER_RESOLVE_GRACE_PERIOD_MS <
+                CallerAnnouncementReceiver.BROADCAST_SAFE_CAP_MS
         )
         assertTrue(
             CallerAnnouncementReceiver.CALLER_LOG_POLL_INTERVAL_MS in
