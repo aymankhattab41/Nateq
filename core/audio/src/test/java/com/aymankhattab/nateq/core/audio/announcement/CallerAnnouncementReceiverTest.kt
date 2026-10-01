@@ -636,9 +636,88 @@ fun `waiting call speaks only when during call toggle enabled`() {
     }
 
     @Test
+    fun `duplicate ring carrying the same number joins the pending cycle`() {
+        // **هذا هو العيب المُصلَح:** كان انضمامُ البث المكرّر مشروطاً
+        // بغياب الرقم، فبثٌّ يحمل الرقم نفسه كان يُلغي الدورةَ الجارية
+        // ويفتح أخرى — والنطقُ القديم داخل speak() قد لا يُلغى فينطق
+        // مرّتين. الآن يتطابق الرقمان فينضمّ ولا يُستبدَل.
+        assertTrue(
+            CallerAnnouncementReceiver.shouldJoinPendingCycle(
+                alreadyAnnounced = false,
+                cycleActive = true,
+                pendingNumber = "01012345678",
+                incomingNumber = "01012345678"
+            )
+        )
+    }
+
+    @Test
+    fun `duplicate ring with no number still joins the pending cycle`() {
+        assertTrue(
+            CallerAnnouncementReceiver.shouldJoinPendingCycle(
+                alreadyAnnounced = false,
+                cycleActive = true,
+                pendingNumber = "01012345678",
+                incomingNumber = null
+            )
+        )
+    }
+
+    @Test
+    fun `pending cycle with no number absorbs a later numbered ring`() {
+        // الرقم، فيجب ألّا تُلغى الدورةُ بسبب مجيئه متأخّراً.
+        assertTrue(
+            CallerAnnouncementReceiver.shouldJoinPendingCycle(
+                alreadyAnnounced = false,
+                cycleActive = true,
+                pendingNumber = null,
+                incomingNumber = "01012345678"
+            )
+        )
+    }
+
+    @Test
+    fun `a different number replaces the pending cycle`() {
+        // رقمان مختلفان غير فارغين = مكالمتان حقيقيتان.
+        assertFalse(
+            CallerAnnouncementReceiver.shouldJoinPendingCycle(
+                alreadyAnnounced = false,
+                cycleActive = true,
+                pendingNumber = "01012345678",
+                incomingNumber = "01087654321"
+            )
+        )
+    }
+
+    @Test
+    fun `a ring never joins after the announcement was made`() {
+        // بعد أول إعلان يتكفّل به الحارس الأعلى لا هذا.
+        assertFalse(
+            CallerAnnouncementReceiver.shouldJoinPendingCycle(
+                alreadyAnnounced = true,
+                cycleActive = true,
+                pendingNumber = "01012345678",
+                incomingNumber = "01012345678"
+            )
+        )
+    }
+
+    @Test
+    fun `no pending cycle means nothing to join`() {
+        assertFalse(
+            CallerAnnouncementReceiver.shouldJoinPendingCycle(
+                alreadyAnnounced = false,
+                cycleActive = false,
+                pendingNumber = "01012345678",
+                incomingNumber = "01012345678"
+            )
+        )
+    }
+
+    @Test
     fun `announced number is captured once and survives name resolution`() {
         // **بصمةُ العطل المُبلّغ:** «اتصال وارد» ثلاثاً ثم الاسم في
-        // الرابعة. التكرارُ المبرمج المبرمج يولّد ثلاثاً، والرابعة دورةٌ
+        // الرابعة. التكرارُ المبرمج يولّد ثلاثاً، والرابعة دورةٌ
         // جديدةٌ أعادها بثّ مكرر — واسمُها ظهر متأخراً.
         CallerAnnouncementReceiver.resetRingingSession()
         CallerAnnouncementReceiver.ringingAnnounced = true

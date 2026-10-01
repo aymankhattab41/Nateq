@@ -94,6 +94,40 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         internal var announcedNumber: String? = null
 
         /**
+         * الرقم الذي تنتظر دورتُه الجاريةُ حلَّه قبل أول إعلان — يُميَّز
+         * به بثُّ `RINGING` المكرّر للمكالمة نفسها عن مكالمةٍ مختلفة.
+         *
+         * كان انضمامُ البث المكرّر مشروطاً بـ`rawNumber == null` وحدها،
+         * فبثٌّ مكرّر **يحمل رقمه** — وهو الأشيع — يقع في فرع استبدال
+         * الدورة: يُلغي الدورة الجارية ويفتح أخرى. والإلغاء لا يسري إلا
+         * عند نقاط التعليق، فإن كانت الدورة داخل `speak()` آنذاك نطقت
+         * الدورةُ الملغاة والجديدة معاً فنسمع «اتصال وارد» زائداً. الآن
+         * يُقارَن الرقم فيُنضمّ المكرّر ويُستبدَل الاختلافُ فعلاً.
+         */
+        @Volatile
+        internal var pendingRingNumber: String? = null
+
+        /**
+         * هل ينضمّ هذا البثّ إلى دورةٍ حيّة قائمة أم يستبدلها؟
+         *
+         * الانضمام يصحّ إذا لم يُعلن بعد، والدورة حيّة، والرقمان
+         * متوافقان (أحدهما فارغ = لا دليل على اختلاف المكالمة، والفراغ
+         * لا يعني مكالمةً أخرى). والاختلاف الصريح لرقمين غير فارغين
+         * يعني مكالمةً جديدة فيجب أن تُلغى الدورةُ السابقة.
+         */
+        internal fun shouldJoinPendingCycle(
+            alreadyAnnounced: Boolean,
+            cycleActive: Boolean,
+            pendingNumber: String?,
+            incomingNumber: String?
+        ): Boolean {
+            if (alreadyAnnounced || !cycleActive) return false
+            return pendingNumber.isNullOrBlank() ||
+                incomingNumber.isNullOrBlank() ||
+                pendingNumber == incomingNumber
+        }
+
+        /**
          * هل ستتكرّر الرنةُ لنفس المكالمة؟ بعض الأجهزة ترسل
          * `PHONE_STATE/RINGING` **أكثر من مرة** للمكالمة الواحدة
          * (شريحة SIM ثانية DSDS، تحديث IMS/VoLTE، تغيّر مسار التنبيه)،
@@ -137,6 +171,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             ringingStartTime = 0L
             ringingAnnounced = false
             announcedNumber = null
+            pendingRingNumber = null
         }
 
         /** هل رنينُ الحالة الحالية رنينُ مكالمةٍ واردة أثناء مكالمة نشطة
@@ -321,12 +356,21 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 return@launch
             }
 
-            // إن كان هناك كوروتين ينتظر في مهلة السماح والبث الحالي فارغ،
-            // نتركه يكمل انتظاره دون إلغاء أو مقاطعة
-            if (!ringingAnnounced && activeCallCycle?.isActive == true &&
-                rawNumber == null
+            // بثٌّ مكرّر للمكالمة نفسها: ينضمّ إلى الدورة الحيّة القائمة
+            // بدل إلغائها وفتح دورةٍ جديدة — فينتظر مرةً واحدة فقط
+            // ويظهر «اتصال وارد» عددَ مرّات الإعداد لا أكثر.
+            if (shouldJoinPendingCycle(
+                    alreadyAnnounced = ringingAnnounced,
+                    cycleActive = activeCallCycle?.isActive == true,
+                    pendingNumber = pendingRingNumber,
+                    incomingNumber = rawNumber
+                )
             ) {
-                Log.d(TAG, "joined in-flight cycle (waiting for number)")
+                Log.d(
+                    TAG,
+                    "joined in-flight cycle (same call," +
+                        " pending=${pendingRingNumber ?: "?"})"
+                )
                 finishOnce()
                 return@launch
             }
@@ -335,6 +379,9 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             val previousCycleActive = activeCallCycle?.isActive == true
             activeCallCycle?.cancel()
             activeCallCycle = coroutineContext.job
+            // **الرقم الذي تنتظر هذه الدورة حلَّه** — به يتميّز بثُّ
+            // RINGING المكرّر للمكالمة نفسها عن مكالمةٍ جديدة فعلاً.
+            pendingRingNumber = rawNumber ?: lastResolvedNumber
             if (ringingStartTime == 0L) {
                 ringingStartTime = System.currentTimeMillis()
             }
@@ -580,6 +627,9 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     category = SettingsRepository.ANNOUNCE_CATEGORY_CALLER
                 )
                 ringingAnnounced = true
+                // انتهى الانتظار: لا داعي لتمييز البث المكرّر بعده —
+                // الحارس الأعلى (`ringingAnnounced`) يتكفّل به من الآن فصاعداً.
+                pendingRingNumber = null
                 // **رقمُ ما أُعلن فعلاً** — يُلتقط قبل أي إعادة حلّ
                 // في نبضات التكرار، لأن الحارس يقارن به لا بآخر رقم
                 // شوهد. يُثبَّت مرّةً واحدة (أول إعلان) فلا تتبعه
