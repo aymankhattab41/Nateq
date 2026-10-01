@@ -185,6 +185,24 @@ class NateqNotificationListener : NotificationListenerService() {
 
             if (title.isNullOrBlank() && text.isNullOrBlank()) return
 
+            // **تتبّع تشخيصي مؤقّت:** يكشف ما إذا كان قارئُ الإشعارات
+            // نفسه هو مصدر نطق «مكالمة واردة» (إشعارُ تطبيق الاتصال)
+            // فيتشابك مع إعلان Lord TTS فيبدو «تكراراً» وهو مصدران.
+            val looksLikeCall = notification.category ==
+                Notification.CATEGORY_CALL ||
+                title?.contains("وارد", ignoreCase = true) == true ||
+                title?.contains("incoming", ignoreCase = true) == true ||
+                text?.contains("وارد", ignoreCase = true) == true ||
+                text?.contains("incoming", ignoreCase = true) == true
+            if (looksLikeCall) {
+                Log.d(
+                    TAG,
+                    "CALL-LOOKING notification pkg=$pkg cat=" +
+                        "${notification.category} title=$title" +
+                        " text=${notificationBodyText(extras)}"
+                )
+            }
+
             val appName = getAppName(pkg)
             // خصوصية قفل الشاشة: عند القفل يُنطق اسم التطبيق فقط دون العنوان
             // والنص (حماية لكلمات تحقق OTP وغيرها من الحساسيات في الإشعارات).

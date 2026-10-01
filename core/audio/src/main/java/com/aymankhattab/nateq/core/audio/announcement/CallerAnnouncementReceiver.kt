@@ -281,6 +281,18 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 TelephonyManager.EXTRA_INCOMING_NUMBER
             )?.trim()?.takeIf { it.isNotBlank() }
 
+            // **تتبّع تشخيصي مؤقّت:** يُظهر تسلسلَ البثوث كاملاً (الحالة
+            // السابقة والحالية والرقم) فميّز بثّاً مكرراً لمكالمةٍ واحدة
+            // من مكالمةٍ جديدة فعلاً، وميّز إعادةَ الجلسة من IDLE.
+            Log.d(
+                TAG,
+                "RX state=$state prev=$previousState" +
+                    " num=${rawNumber ?: "?"} announced=$announcedNumber" +
+                    " flag=$ringingAnnounced" +
+                    " cycle=${activeCallCycle?.isActive}" +
+                    " t=${System.currentTimeMillis()}"
+            )
+
             if (rawNumber != null) {
                 lastResolvedNumber = rawNumber
             }
@@ -314,19 +326,31 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             if (!ringingAnnounced && activeCallCycle?.isActive == true &&
                 rawNumber == null
             ) {
+                Log.d(TAG, "joined in-flight cycle (waiting for number)")
                 finishOnce()
                 return@launch
             }
 
             // وصول بث برقم أو رنين جديد: استبدال الدورة السابقة وأخذ المقبض
+            val previousCycleActive = activeCallCycle?.isActive == true
             activeCallCycle?.cancel()
             activeCallCycle = coroutineContext.job
             if (ringingStartTime == 0L) {
                 ringingStartTime = System.currentTimeMillis()
             }
+            // **تتبّع تشخيصي:** يكشف أيّ بثّ RINGING يبدأ دورةً جديدة
+            // رغم وجود دورةٍ حيّة — وهو ما يعيد نطق «اتصال وارد» رابعاً.
+            Log.d(
+                TAG,
+                "START new cycle (replacingLive=${previousCycleActive}," +
+                    " announcedWas=$ringingAnnounced," +
+                    " num=${rawNumber ?: "?"})"
+            )
             // مستمعُ اكتمالٍ يُسجَّل في try ويُزال في finally (بند [8]) —
             // لا يبقى مسجلاً بعد نافذة البث فلا يُستدعى في دورةٍ لا تخصنا.
             var completionListener: (() -> Unit)? = null
+            // عدّاد النطقات الفعليّة في هذه الدورة — للتتبّع فقط.
+            var speakCounter = 0
             try {
                 // فحص وقائي: وصول بث PHONE_STATE بحد ذاته يتطلب
                 // منح READ_PHONE_STATE وقت الإرسال (النظام يفلتر
@@ -540,6 +564,14 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     completionListener = { finishOnce() }
                     speaker.addCompletionListener(completionListener!!)
                 }
+                // **تتبّع تشخيصي:** يُسجّل النصّ المنطوق فعلياً في كل
+                // نطق — يكشف أي إعلانٍ رابع زائد ومن أين جاء.
+                speakCounter++
+                Log.d(
+                    TAG,
+                    "SPEAK#$speakCounter text=$text num=" +
+                        "${incomingNumber ?: "?"} name=${contactName ?: "?"}"
+                )
                 speaker.speak(
                     text, locale, speechRate, pitch, volume,
                     engineOverride = callerSpeechEngine(
@@ -627,6 +659,14 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                             }
                         }
                         try {
+                            speakCounter++
+                            Log.d(
+                                TAG,
+                                "SPEAK#$speakCounter(repeat+" +
+                                    "${offsetMs}ms) text=$text num=" +
+                                    "${incomingNumber ?: "?"}" +
+                                    " name=${contactName ?: "?"}"
+                            )
                             AnnouncementSpeaker.getInstance(appCtx).speak(
                                 text, locale, speechRate, pitch,
                                 volume,
