@@ -16,7 +16,10 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.feature.settings.R
+import android.content.Context
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
+import com.aymankhattab.nateq.core.audio.announcement.CallerScreeningService
+import com.aymankhattab.nateq.core.audio.announcement.NateqNotificationListener
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
@@ -68,6 +71,9 @@ internal class CallerAnnouncementController(
     private var etCallerTemplate:
         com.google.android.material.textfield.TextInputEditText? = null
     private var templateWatcher: android.text.TextWatcher? = null
+    // مسار الهوية الفورية (إشعار الهاتف + دور فرز المكالمات)
+    private var btnInstantIdentity: View? = null
+    private var tvInstantIdentityStatus: TextView? = null
     private var spinnerCallerVoiceAr: Spinner? = null
     private var spinnerCallerVoiceEn: Spinner? = null
     private var spinnerCallerEngineAr: Spinner? = null
@@ -114,7 +120,12 @@ internal class CallerAnnouncementController(
         tvCallerVolumeValue = view.findViewById(R.id.tv_caller_volume_value)
         seekCallerPitch = view.findViewById(R.id.seek_caller_pitch)
         tvCallerPitchValue = view.findViewById(R.id.tv_caller_pitch_value)
-        etCallerTemplate = view.findViewById(R.id.et_caller_template)
+etCallerTemplate =
+            view.findViewById(R.id.et_caller_template)
+        btnInstantIdentity =
+            view.findViewById(R.id.btn_caller_instant_identity)
+        tvInstantIdentityStatus =
+            view.findViewById(R.id.tv_caller_instant_identity_status)
         spinnerCallerVoiceAr = view.findViewById(R.id.spinner_caller_voice_ar)
         spinnerCallerVoiceEn = view.findViewById(R.id.spinner_caller_voice_en)
         spinnerCallerEngineAr =
@@ -466,10 +477,110 @@ internal class CallerAnnouncementController(
         }
         refreshCallerVoices()
 
+        setupInstantIdentityRow()
+
         // استرداد ذكي: إذا كانت ميزة المتصّل مفعّلة لكن أذوناتها سُحبت (سحب
         // النظام التلقائي للأذونات غير المستخدمة، خصوصاً على أندرويد 11+)
         // نكتشف ذلك فور فتح الإعدادات ونعرض إعادة المنح بدل تركه صامتاً.
         checkRevokedPermissionsAndRecover()
+    }
+
+    /**
+ * صفُّ الهوية الفورية: مساران يقرّبان نطقَ اسم المتصل من لحظة الرنّة،
+ * وكلاهما **منحٌ يدويّ من إعدادات النظام** (لا إذن وقت التشغيل):
+ *
+ *  - **إشعار الهاتف** — يمنحه النظام فيُفتح إشعارُ المكالمة ويصلنا
+ *    الاسمُ مُحلّى وقت الرنّة (وهو ما تعتمد TalkBack وGoogle Phone).
+ *  - **دور فرز المكالمات** — يستدعينا النظام قبل الرنّة.
+ *
+ * أيّهما تُتاح كان كافياً؛ فالنصُّ يوضّح ذلك بأن المسارين اختياريّان
+ * وButtonُه واحدٌ يفتح ما ينقص. **بلاهما** يبقى التطبيق يعمل، لكن
+ * الرقمَ قد يتأخّر ~٦ ثوانٍ كما رُصد على أجهزةٍ حقيقية، فلا يُنطق
+ * إلا نغمةُ التنبيه بلا اسم.
+ */
+private fun setupInstantIdentityRow() {
+        btnInstantIdentity?.setOnClickListener {
+            val ctx = fragment.requireContext()
+            val notifGranted = runCatching {
+                NateqNotificationListener.isPermissionGranted(ctx)
+            }.getOrDefault(false)
+            val roleHeld = runCatching {
+                CallerScreeningService.hasScreeningRole(ctx)
+            }.getOrDefault(false)
+            when {
+                !notifGranted -> openNotificationListenerSettings(ctx)
+                !roleHeld -> requestScreeningRoleOrExplain(ctx)
+                else -> Toast.makeText(
+                    ctx, R.string.caller_instant_identity_granted,
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            // العودة من إعدادات النظام تعيد الرسم، لكن التحديث الفوري
+            // يجعل الحالة صحيحة لو عاد المستخدم بلا تغيير.
+            refreshInstantIdentityStatus()
+        }
+        refreshInstantIdentityStatus()
+    }
+
+    /** حالة المسارين تُعرض صراحةً — المستخدم يحتاج أن يعرف أيّهما فعّال
+     *  وإلا ظنّ أنّ التطبيق لا ينطق الاسم. */
+    private fun refreshInstantIdentityStatus() {
+        val ctx = fragment.context ?: return
+        val notifGranted = runCatching {
+            NateqNotificationListener.isPermissionGranted(ctx)
+        }.getOrDefault(false)
+        val roleHeld = runCatching {
+            CallerScreeningService.hasScreeningRole(ctx)
+        }.getOrDefault(false)
+        val resId = when {
+            notifGranted && roleHeld ->
+                R.string.caller_instant_identity_status_both
+            notifGranted ->
+                R.string.caller_instant_identity_status_notif
+            roleHeld ->
+                R.string.caller_instant_identity_status_role
+            else ->
+                R.string.caller_instant_identity_status_none
+        }
+        tvInstantIdentityStatus?.text = ctx.getString(resId)
+    }
+
+    private fun openNotificationListenerSettings(context: Context) {
+        runCatching {
+            context.startActivity(
+                Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }.onFailure {
+            Toast.makeText(
+                context, R.string.notification_permission_needed,
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    /**
+     * طلبُ دور فرز المكالمات. قد يرفض النظامُ الطلب (شرطُه أن يكون
+     * التطبيقُ معالجَ المكالمات النشطة)، وعندها نفتح إعدادات الدور
+     * مباشرةً ليختاره المستخدم بنفسه بدل رسالةِ فشلٍ جافة.
+     */
+    private fun requestScreeningRoleOrExplain(context: Context) {
+        val launched = runCatching {
+            CallerScreeningService.requestScreeningRole(context)
+        }.getOrDefault(false)
+        if (!launched) {
+            runCatching {
+                context.startActivity(
+                    Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }.onFailure {
+                Toast.makeText(
+                    context, R.string.caller_screening_unavailable,
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
     }
 
     /** يضبط سبنر محرك إحدى اللغتين: يُبنى بـ«تلقائي» ثم المحركات المثبتة،
@@ -795,6 +906,8 @@ internal class CallerAnnouncementController(
         }
         templateWatcher = null
         etCallerTemplate = null
+        btnInstantIdentity = null
+        tvInstantIdentityStatus = null
         spinnerCallerVoiceAr = null
         spinnerCallerVoiceEn = null
         spinnerCallerEngineAr = null
