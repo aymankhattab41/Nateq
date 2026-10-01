@@ -60,6 +60,56 @@ class DiagnosticLogRecorderTest {
     }
 
     @Test
+    fun severityOf_readsTheLevelFieldNotTheDatePrefix() {
+        // **العطل المُصلَح:** كان التقرير يكشف الخطورة بالحرف الأول
+        // (`line[0] == 'E'`)، لكن سطر logcat يبدأ بالتاريخ فالحرفُ
+        // الأول رقم — فلم تُملأ قسمةُ الأخطاء ولا التحذيرات ولا مرّة.
+        assertEquals(
+            'E',
+            DiagnosticLogRecorder.severityOf(
+                "10-01 14:48:56.882  4433  4643 E SomeTag: boom"
+            )
+        )
+        assertEquals(
+            'W',
+            DiagnosticLogRecorder.severityOf(
+                "10-01 14:48:56.882  4433  4643 W SomeTag: careful"
+            )
+        )
+        assertEquals(
+            'D',
+            DiagnosticLogRecorder.severityOf(
+                "10-01 14:48:56.882  4433  4643 D NATEQ_CALLER: SPEAK#1"
+            )
+        )
+    }
+
+    @Test
+    fun severityOf_fallsBackToLeadingLevelMarker() {
+        assertEquals('E', DiagnosticLogRecorder.severityOf("E/plain/line"))
+        assertEquals(null, DiagnosticLogRecorder.severityOf("plain line"))
+    }
+
+    @Test
+    fun isDiagnosticLine_findsOurOwnTags() {
+        assertTrue(
+            DiagnosticLogRecorder.isDiagnosticLine(
+                "10-01 14:48:56.882  4433  4643 D NATEQ_CALLER: RX state"
+            )
+        )
+        assertTrue(
+            DiagnosticLogRecorder.isDiagnosticLine(
+                "10-01 14:48:56.882  4433  4643 D NATEQ_NOTIF: notification"
+            )
+        )
+        assertFalse(
+            DiagnosticLogRecorder.isDiagnosticLine(
+                "10-01 14:48:56.882  4433  4643 D WindowManager: hide()"
+            )
+        )
+    }
+
+    @Test
     fun stop_returnsStartMarker_andResetsSession() {
         installFakeProvider(listOf("l1", "l2"))
         assertTrue(DiagnosticLogRecorder.start())

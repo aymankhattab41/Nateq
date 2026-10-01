@@ -70,6 +70,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         // أي إذن.
         // المعرّف الرسمي لبوت الدعم: @LordTTSBot (أنشئ عبر @BotFather).
         const val DEVELOPER_SUPPORT_URL = "https://t.me/LordTTSBot"
+
+        /**
+         * سقفُ أسطر «بصمة التطبيق» في رأس التقرير — يحمي القارئ من
+         تقريرٍ ضخمٍ ويكفي كلَّ ما يهمّ التشخيص.
+         */
+        private const val MAX_DIAGNOSTIC_LINES = 800
     }
 
     // طبقة الحالة المحقونة عبر Hilt (تحوي مصدرَي الإعدادات والقاموس).
@@ -1369,28 +1375,50 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 if (logLines.isEmpty()) {
                     appendLine("(لم يُسجَّل نشاط في logcat للعملية الحالية)")
                 } else {
+                    // **بصمةُ التطبيق أولاً:** أسطرُه التشخيصية هي كل ما
+                    // يهمّ التشخيص، وقد تغرق في ضجيج النظام ضمن آلاف
+                    // الأسطر. تُوضع في المقدمة فلا يحتاج القارئ أن يبحث عنها.
+                    val diagnostic = logLines.filter {
+                        DiagnosticLogRecorder.isDiagnosticLine(it)
+                    }
+                    if (diagnostic.isNotEmpty()) {
+                        appendLine(
+                            "--- أسطر Lord TTS التشخيصية" +
+                                " (${diagnostic.size}) ---"
+                        )
+                        diagnostic.takeLast(MAX_DIAGNOSTIC_LINES)
+                            .forEach { appendLine(it) }
+                        appendLine("")
+                    }
                     val errors = logLines.filter {
-                        it.isNotEmpty() && (it[0] == 'E' || it[0] == 'F')
+                        val level = DiagnosticLogRecorder.severityOf(it)
+                        level == 'E' || level == 'F'
                     }
                     val warnings = logLines.filter {
-                        it.isNotEmpty() && it[0] == 'W'
+                        DiagnosticLogRecorder.severityOf(it) == 'W'
                     }
                     if (errors.isNotEmpty()) {
                         appendLine(
                             "--- أسطر الأخطاء الحرجة (${errors.size}) ---"
                         )
-                        errors.forEach { appendLine(it) }
+                        errors.takeLast(300).forEach { appendLine(it) }
                         appendLine("")
                     }
                     if (warnings.isNotEmpty()) {
                         appendLine(
                             "--- أسطر التحذيرات (${warnings.size}) ---"
                         )
-                        warnings.takeLast(100).forEach { appendLine(it) }
+                        warnings.takeLast(200).forEach { appendLine(it) }
                         appendLine("")
                     }
-                    appendLine("--- آخر سطور نشاط التطبيق ---")
-                    logLines.takeLast(150).forEach { appendLine(it) }
+                    // **كان `takeLast(150)`** يطبع التقرير آخر 150 سطراً فقط
+                    // مهما بلغ ما التقطه الجامع (20 ألف سطر)، فتضيع
+                    // الأسطرُ المفيدة وسط الصمت. الآن يُطبع المخزنُ كلُّه
+                    // وقد حُدَّت سعته بسقفٍ آمن في ذاكرة الجهاز.
+                    appendLine(
+                        "--- سجل نشاط التطبيق (${logLines.size} سطر) ---"
+                    )
+                    logLines.forEach { appendLine(it) }
                 }
             }
         }

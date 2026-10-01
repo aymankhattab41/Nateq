@@ -21,7 +21,40 @@ import kotlin.concurrent.thread
 internal object DiagnosticLogRecorder {
 
     private const val TAG = "NATEQ_TTS"
-    private const val MAX_LINES = 4000
+
+    /**
+     * سعةُ التخزين القصوى بالأسطر — كُبِّرت إلى 20 ألف سطر لأن جلسة
+     * إعادة إنتاج قد تمتدّ دقائق وتغرق في ضجيج النظام قبل أن تصل
+     * الأسطرُ المفيدة. ومع ذلك يبقى التقرير مُقيَّداً بسقفٍ مستقلّ.
+     */
+    private const val MAX_LINES = 20_000
+
+    /**
+     * سقفُ الذاكرة بالحروف (~6 ميغابايت) يمنع استنزاف الذاكرة في جلسة
+     * طويلة؛ يُقصُّ من **الرأس** فيبقى الترتيبُ الزمني صحيحاً — مهمٌّ
+     * لأن تشخيص ترتيب الأحداث (بثّ ثم نطق) يبطل بترتّبها.
+     */
+    private const val MAX_CHARS = 6_000_000
+
+    /**
+     * رصيدُ أسطرٍ سابقة يُلتقط مع بدء المراقبة بدل السطر الأخير فقط،
+     * فلا تضيع الأحداثُ التي وقعت قبل الضغطة بلحظة (نمطٌ شائع: يبدأ
+     * الرنين ثم يتّجه المستخدم إلى الإعدادات).
+     */
+    private const val START_BACKLOG_LINES = "500"
+
+    /**
+     * سطرُ logcat بصيغة الوقت: `10-01 14:48:56.882  4433 4643 D Wmf:`.
+     * المجموعةُ الأولى هي حقلُ المستوى — وهو موضعُه الصحيح.
+     */
+    private val LOG_LINE = Regex(
+        """^\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d+\s+\d+\s+\d+""" +
+            """\s+([VDIWEFAS])\s.*"""
+    )
+
+    /** هل هذا السطر من وسوم التطبيق التشخيصية (تُبرز في رأس التقرير)؟ */
+    internal fun isDiagnosticLine(line: String): Boolean =
+        line.contains("NATEQ_")
 
     private val lock = Any()
     private val buffer = ArrayDeque<String>()
@@ -31,11 +64,14 @@ internal object DiagnosticLogRecorder {
     private var readerThread: Thread? = null
     private var process: Process? = null
 
+    /** مجموع حروف المخزن لحساب سقف الذاكرة دون مسحٍ لكل سطر. */
+    private var charCount = 0
+
     private val defaultReaderProvider: () -> BufferedReader? = {
         runCatching {
             val p = Runtime.getRuntime().exec(
                 arrayOf(
-                    "logcat", "-T", "1",
+                    "logcat", "-T", START_BACKLOG_LINES,
                     "--pid", android.os.Process.myPid().toString()
                 )
             )
@@ -43,6 +79,18 @@ internal object DiagnosticLogRecorder {
             p.inputStream.bufferedReader()
         }.getOrNull()
     }
+
+    /**
+     * مستوىُ خطِّ السطر التقني (`D` أو `W` أو `E`…) أو null.
+     *
+     * كان التقرير يكشف الخطورة بـ`line[0] == 'E'`، وهو خطأٌ صامت: أسطر
+     * logcat تبدأ بالتاريخ، فالحرفُ الأول رقمٌ لا مستوى — فلم تُملأ
+     * قسمةُ الأخطاء ولا التحذيرات ولا مرّة. الآن يُقرأ حقلُ المستوى
+     * من موضعه الصحيح، مع احتياطٍ للسطور تبدأ بالمستوى مباشرة.
+     */
+    internal fun severityOf(line: String): Char? =
+        LOG_LINE.find(line)?.groupValues?.getOrNull(1)?.firstOrNull()
+            ?: line.firstOrNull()?.takeIf { it in "VDIWEF" }
 
     /** واجهة إنتاج قارئ التدفُّق — قابلة للاستبدال في الاختبارات
      *  لتجنّب تشغيل `logcat` حقيقي على جهاز القياس. */
@@ -108,7 +156,13 @@ internal object DiagnosticLogRecorder {
         synchronized(lock) {
             if (!recording) return
             buffer.addLast(line)
+            charCount += line.length
             trimHead(buffer, MAX_LINES)
+            // سقفُ الذاكرة بالحروف — يُقصُّ من الرأس فيبقى الترتيب
+            // الزمني صحيحاً (القصُّ من الوسط يفسد تسلسل الأحداث).
+            while (charCount > MAX_CHARS && buffer.size > 1) {
+                charCount -= buffer.removeFirst().length
+            }
         }
     }
 
