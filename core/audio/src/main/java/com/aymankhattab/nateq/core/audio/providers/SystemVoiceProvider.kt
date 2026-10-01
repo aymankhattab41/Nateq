@@ -184,10 +184,15 @@ class SystemVoiceProvider(
          * في :core:data).
          */
         fun synthesisTimeoutMs(textLength: Int): Long = when {
-            textLength <= 10 -> 1500L
-            textLength <= 80 -> 2000L
-            textLength <= 300 -> 3000L
-            else -> 8000L
+            textLength <= 10  -> 1_500L
+            textLength <= 80  -> 2_000L
+            textLength <= 300 -> 3_000L
+            // النصوص الأطول: 3 ثوانٍ أساس + 30ms/حرف بحد أقصى 5 دقائق.
+            // المحرك يكتب ملف WAV كاملاً قبل البث: النص 1000 حرف ≈ 33ث،
+            // 2000 حرف ≈ 63ث، 5000 حرف ≈ 153ث — سخيٌّ بما يكفي لأبطأ
+            // المحركات دون تجميد قارئ الشاشة إن علق المحرك فعلاً.
+            else -> (3_000L + textLength * 30L)
+                .coerceAtMost(5 * 60 * 1_000L)
         }
 
 

@@ -472,7 +472,7 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">الإصدار %1$s
-• إصلاح توقف الناطق في منتصف النصوص الطويلة: استبدال المهلة الثابتة (20ث) بدالة متكيّفة (4ms/حرف بحد أدنى 20ث وأقصى 5د)
+• إصلاح جذري لتوقف الناطق في منتصف النصوص الطويلة: مهلة تخليق المحرك كانت 8ث ثابتة لأي نص > 300 حرف — استبدلت بمعادلة 30ms/حرف (حد أدنى 3ث، أقصى 5د)
 • تجاهل الزخارف القرآنية (﷽ ۞ الألف الخنجرية) وجرد ڪ إلى ك عند النطق، وإصلاح نطق «مساء» في وسط الجملة
 • التراجع عن تحسينات استجابة قارئ الشاشة أثناء السحب وإزالة اختباراتها المرتبطة
 </string>
