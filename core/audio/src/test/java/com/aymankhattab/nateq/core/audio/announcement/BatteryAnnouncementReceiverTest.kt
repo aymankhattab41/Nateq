@@ -4,8 +4,10 @@ import android.content.Context
 import android.content.Intent
 import android.os.BatteryManager
 import androidx.test.core.app.ApplicationProvider
+import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.common.TimeProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.engine.NumberSpeech
 import java.util.Calendar
 import java.util.Locale
 import org.junit.After
@@ -448,6 +450,76 @@ class BatteryAnnouncementReceiverTest {
         receiver.onReceive(context, intent)
         clock.setTo(baseNow + 2000L)
         receiver.onReceive(context, intent)
+    }
+
+    // ══════════ نسبة البطارية في إعلانَي توصيل/فصل الشاحن ══════════
+
+    private fun withPercent(
+        text: String,
+        intent: Intent?,
+        arabic: Boolean
+    ): String {
+        val receiver = BatteryAnnouncementReceiver(FakeClock(baseNow))
+        // دالةٌ امتداديةٌ عضوٌة: المستقبِل الأول هو كائن المستقبل.
+        return with(receiver) { text.withBatteryPercent(intent, arabic) }
+    }
+
+    @Test
+    fun `charger text carries the battery percentage in arabic`() {
+        val template = context.getString(R.string.battery_connected)
+        val out = withPercent(template, batteryIntent(63), arabic = true)
+        assertFalse(
+            "لم تُملأ نسبة البطارية في نص إعلان التوصيل",
+            out.contains("{percent}")
+        )
+        assertTrue(
+            "النسبة لفظيةٌ عربية لا رقمٌ خام: $out",
+            out.contains(NumberSpeech.toArabicWords(63))
+        )
+    }
+
+    @Test
+    fun `charger text carries the battery percentage in english`() {
+        val template = context.getString(R.string.battery_disconnected)
+        val out = withPercent(template, batteryIntent(87), arabic = false)
+        assertFalse(
+            "لم تُملأ نسبة البطارية في نص إعلان الفصل",
+            out.contains("{percent}")
+        )
+        assertTrue(
+            "النسبة لفظيةٌ إنجليزية: $out",
+            out.contains(NumberSpeech.toEnglishWords(87))
+        )
+    }
+
+    @Test
+    fun `charger text keeps template when battery level is unavailable`() {
+        val template = context.getString(R.string.battery_connected)
+        assertEquals(
+            "بثٌّ بلا نسبة صالحة يُبقي النص كما هو",
+            template, withPercent(template, null, arabic = true)
+        )
+        assertEquals(
+            "نسبةٌ فاسدة (بلا مقياس) تُبقي النص كما هو",
+            template,
+            withPercent(
+                template,
+                Intent(Intent.ACTION_BATTERY_CHANGED).apply {
+                    putExtra(BatteryManager.EXTRA_LEVEL, 50)
+                    putExtra(BatteryManager.EXTRA_SCALE, 0)
+                },
+                arabic = true
+            )
+        )
+    }
+
+    @Test
+    fun `text without placeholder is untouched`() {
+        assertEquals(
+            "نصٌّ بلا بديلٍ لا يُمسّ",
+            "البطارية ممتلئة",
+            withPercent("البطارية ممتلئة", batteryIntent(100), arabic = true)
+        )
     }
 }
 

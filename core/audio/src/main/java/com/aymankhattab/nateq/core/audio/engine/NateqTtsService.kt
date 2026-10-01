@@ -904,47 +904,75 @@ override fun onDestroy() {
         // callback.start بالقيم الفعلية بدل 22050 الثابتة
         // التي كانت تجعل Android يشغّل ملفات 24k/44.1k
         // بسرعة ونبرة خاطئتين.
+        //
+        // **بند النص الطويل (إصلاح التوقّف في المنتصف):** الطلب
+        // الواحد الطويل كان يُبتره المحرك أو يعلّقه فيتوقف النطق
+        // عند حدٍّ ثابت — فالنصّ يُقسَّم إلى مقاطع (SpeechChunker)
+        // تُخلَّق وتُبثّ واحدةً تلو الأخرى في تدفّقٍ واحدٍ متّصل،
+        // و`start` يُمرَّر مرّةً واحدة بتنسيق الشريحة الأولى
+        // و`done()` بعد آخر مقطع.
         var started = false
-        provider.synthesize(
-            speechText, voice, finalRate, finalPitch, finalVolume,
-            { sampleRateInHz, channelCount ->
-                if (!started) {
-                    callback.start(
-                        /* sampleRateInHz = */ sampleRateInHz,
-                        /* audioFormat = */ PCM_16BIT,
-                        /* channelCount = */ channelCount
-                    )
-                    started = true
-                }
-            }, { chunk, validLength ->
-                // ضمانة: إن لم يبلّغ المزوّد بالتنسيق مطلقاً نبدأ بالقيم
-                // الافتراضية قبل أول بايت حتى يبقى التخليق صالحاً دائماً.
-                if (!started) {
-                    callback.start(
-                        /* sampleRateInHz = */ 22050,
-                        /* audioFormat = */ PCM_16BIT,
-                        /* channelCount = */ 1
-                    )
-                    started = true
-                }
-                // المنهج المُثبَت (كما في TtsService الرسمي
-                // لـ espeak-ng/MultiTTS): لا يجوز تمرير كامل
-                // المخزن المؤقت دفعةً واحدة؛ يُقسَّم إلى أجزاء
-                // بمقدار callback.getMaxBufferSize() وإلا يرفض
-                // النظام التخليق ويهبط الصوت. نقسّم كل دفعة من
-                // المزوّد احتراماً لقيود الـ callback.
-            // المعامل الثاني (validLength) هو طول
-                // البيانات الصالح الصريح — فقد تكون مصفوفة
-                // الشريحة بحجم أكبر من بياناتها الفعلية (مسبح
-                // مُعاد استخدامه)، فيُمسح حتى length فقط.
-                val maxBytes = callback.maxBufferSize
-                var offset = 0
-                while (offset < validLength) {
-                    val bytesToWrite = minOf(maxBytes, validLength - offset)
-                    callback.audioAvailable(chunk, offset, bytesToWrite)
-                    offset += bytesToWrite
-                }
-        }, finalEngine, finalLocale, finalVoiceName)
+        for (piece in SpeechChunker.split(speechText)) {
+            try {
+                provider.synthesize(
+                    piece, voice, finalRate, finalPitch, finalVolume,
+                    { sampleRateInHz, channelCount ->
+                        if (!started) {
+                            callback.start(
+                                /* sampleRateInHz = */ sampleRateInHz,
+                                /* audioFormat = */ PCM_16BIT,
+                                /* channelCount = */ channelCount
+                            )
+                            started = true
+                        }
+                    }, { chunk, validLength ->
+                        // ضمانة: إن لم يبلّغ المزوّد بالتنسيق مطلقاً
+                        // نبدأ بالقيم الافتراضية قبل أول بايت حتى
+                        // يبقى التخليق صالحاً دائماً.
+                        if (!started) {
+                            callback.start(
+                                /* sampleRateInHz = */ 22050,
+                                /* audioFormat = */ PCM_16BIT,
+                                /* channelCount = */ 1
+                            )
+                            started = true
+                        }
+                        // المنهج المُثبَت (كما في TtsService الرسمي
+                        // لـ espeak-ng/MultiTTS): لا يجوز تمرير كامل
+                        // المخزن المؤقت دفعةً واحدة؛ يُقسَّم إلى أجزاء
+                        // بمقدار callback.getMaxBufferSize() وإلا
+                        // يرفض النظام التخليق ويهبط الصوت. نقسّم كل
+                        // دفعة من المزوّد احتراماً لقيود الـ callback.
+                        // المعامل الثاني (validLength) هو طول البيانات
+                        // الصالح الصريح — فقد تكون مصفوفة الشريحة
+                        // بحجم أكبر من بياناتها الفعلية (مسبح مُعاد
+                        // استخدامه)، فيُمسح حتى length فقط.
+                        val maxBytes = callback.maxBufferSize
+                        var offset = 0
+                        while (offset < validLength) {
+                            val bytesToWrite =
+                                minOf(maxBytes, validLength - offset)
+                            callback.audioAvailable(
+                                chunk, offset, bytesToWrite
+                            )
+                            offset += bytesToWrite
+                        }
+                    }, finalEngine, finalLocale, finalVoiceName
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                // مقطعٌ يعجز محركُه يُسقط وحده ويُكمل البقية (نمط
+                // المسار المختلط) — فلا يُضيع مقطعٌ واحدٌ بقيةَ
+                // النص، و`started` يبقى false عند فشل الكل فيُنهى
+                // بإعلان الخطأ أدناه.
+                Log.w(
+                    TAG,
+                    "synthesizeSingle: مقطع فشل تخليقه — يُسقط وحده",
+                    t
+                )
+            }
+        }
 
         // **ضمانة انهيار:** done() قبل start() ترمي
         // IllegalStateException في إطار أندرويد — إن فشل

@@ -11,8 +11,8 @@
     <string name="announce_service_notification_text">Lord TTS is running in the background to announce time and battery</string>
     <string name="announce_action_speak_now">Announce now</string>
     <string name="announce_action_stop">Stop</string>
-    <string name="battery_connected">Charger connected</string>
-    <string name="battery_disconnected">Charger disconnected</string>
+    <string name="battery_connected">Charger connected, battery at {percent} percent</string>
+    <string name="battery_disconnected">Charger disconnected, battery at {percent} percent</string>
     <string name="battery_full_unplug">Battery full, you can unplug the charger</string>
     <string name="battery_full">Battery full</string>
     <string name="battery_level_50">Battery at fifty percent</string>

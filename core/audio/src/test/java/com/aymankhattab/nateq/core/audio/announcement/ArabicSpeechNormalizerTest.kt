@@ -41,6 +41,58 @@ class ArabicSpeechNormalizerTest {
     }
 
     @Test
+    fun sabah_bareAlefAfterStripping_isFullyVoweled() {
+        // ناتج TimeStep «صباحاً» يمرّ على TashkeelStripStep فيصير «صباحا»
+        // (ألف عارية بلا تنوين) — وهو ما كان يمرّ للمحرّك خاماً فيُسقط
+        // اللفظ. الآن يُضبَط كما ضُبطت «مساءاً».
+        val stripped = "\u0635\u0628\u0627\u062d\u0627" // صباحا
+        assertEquals(
+            "\u0635\u064e\u0628\u064e\u0627\u062d\u064e\u0627\u064b",
+            ArabicSpeechNormalizer.normalize(stripped)
+        )
+        // والتنوين على الباء (صباحًا) صيغة حديثة تُضبط كذلك.
+        val tanweenOnBa = "\u0635\u0628\u0627\u062d\u064b\u0627" // صباحًا
+        assertEquals(
+            "\u0635\u064e\u0628\u064e\u0627\u062d\u064e\u0627\u064b",
+            ArabicSpeechNormalizer.normalize(tanweenOnBa)
+        )
+    }
+
+    @Test
+    fun dhuhr_bareAlefAfterStripping_isFullyVoweled() {
+        assertEquals(
+            "\u0638\u064e\u0647\u0652\u0631\u064e\u0627\u064b",
+            ArabicSpeechNormalizer.normalize("\u0638\u0647\u0631\u0627") // ظهرا
+        )
+        assertEquals(
+            "\u0638\u064e\u0647\u0652\u0631\u064e\u0627\u064b",
+            ArabicSpeechNormalizer.normalize(
+                "\u0638\u0647\u0631\u0627\u064b" // ظهراً
+            )
+        )
+    }
+
+    @Test
+    fun bareAlif_doesNotTouchWordsEndingWithIt() {
+        // «صباحات» (كلمة مستقلة) لا تُمسّ — القالب يشترط ألّا يتبع
+        // الألفَ العاريةَ حرفٌ.
+        val word = "\u0635\u0628\u0627\u062d\u0627\u062a" // صباحات
+        assertEquals(word, ArabicSpeechNormalizer.normalize(word))
+    }
+
+    @Test
+    fun strippedTimeAnnouncement_normalizesSaba() {
+        // «الساعة الآن السادسة صباحا» بعد التجريد — يجب ألّا تصل الكلمة
+        // إلى المحرك بألفٍ عارية.
+        val out = ArabicSpeechNormalizer.normalize(
+            "الساعة الآن السادسة \u0635\u0628\u0627\u062d\u0627" // صباحا
+        )
+        val expectedSaba =
+            "\u0635\u064e\u0628\u064e\u0627\u062d\u064e\u0627\u064b"
+        assertTrue(out.contains(expectedSaba))
+    }
+
+    @Test
     fun timeAnnouncement_normalizesStrippedMasa() {
         val rawTime = "الساعة الآن السادسة مساء"
         val out = ArabicSpeechNormalizer.normalize(rawTime)

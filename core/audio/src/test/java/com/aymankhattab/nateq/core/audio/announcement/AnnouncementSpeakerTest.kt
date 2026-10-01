@@ -7,6 +7,7 @@ import android.media.AudioManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
 import androidx.test.core.app.ApplicationProvider
+import com.aymankhattab.nateq.core.audio.engine.SpeechChunker
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import java.util.Locale
 import org.junit.Assert.assertEquals
@@ -1162,5 +1163,57 @@ class AnnouncementSpeakerTest {
             speaker.restoreBoostedStreamVolume()
             speaker.shutdown()
         }
+    }
+
+    @Test
+    fun `long announcement text is split into engine safe units`() {
+        // إصلاح التوقّف في المنتصف: إعلانٌ طويلٌ بلا حدود جملٍ يُرسل
+        // للمحرّك مقطعاً واحداً ضخماً فيُبتَر نطقه. نتحقق أن بناء
+        // الوحدات يقسّمه إلى مقاطع ≤ SpeechChunker.MAX_CHARS.
+        val speaker = AnnouncementSpeaker(context)
+        try {
+            val units = buildLanguageUnits(speaker, longArabicText(900))
+            assertTrue("وحدات نطق وُلّدت", units.isNotEmpty())
+            val textField = units.first().javaClass
+                .getDeclaredField("text").also { it.isAccessible = true }
+            units.forEach { unit ->
+                val text = requireNotNull(textField.get(unit) as? String)
+                assertTrue(
+                    "وحدة تتجاوز حدّ المحرّك (${text.length} حرف): $text",
+                    text.length <= SpeechChunker.MAX_CHARS
+                )
+            }
+        } finally {
+            speaker.shutdown()
+        }
+    }
+
+    /** نصٌّ عربيٌّ طويلٌ بلا علامات جملٍ (أسوأ حالةٍ للمحرّك). */
+    private fun longArabicText(chars: Int): String =
+        "قراءة ".repeat((chars / 6) + 1).take(chars)
+
+    /** استدعاء addLanguageUnits خاصةً (نفس نمط الانعكاس في الاختبارات). */
+    @Suppress("UNCHECKED_CAST")
+    private fun buildLanguageUnits(
+        speaker: AnnouncementSpeaker,
+        text: String
+    ): List<Any> {
+        val method = AnnouncementSpeaker::class.java
+            .getDeclaredMethod(
+                "addLanguageUnits",
+                MutableList::class.java,
+                String::class.java,
+                Locale::class.java,
+                Float::class.javaPrimitiveType,
+                Float::class.javaPrimitiveType,
+                Float::class.javaPrimitiveType
+            )
+        method.isAccessible = true
+        val out = mutableListOf<Any>()
+        method.invoke(
+            speaker, out, text, Locale.forLanguageTag("ar"),
+            1.0f, 1.0f, 1.0f
+        )
+        return out
     }
 }

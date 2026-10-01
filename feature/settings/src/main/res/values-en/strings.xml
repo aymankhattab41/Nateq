@@ -471,10 +471,10 @@
 <string name="time_alarm_max_precision_title">Maximum alarm precision (shows an alarm icon)</string>
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
-<string name="changelog_text">الإصدار %1$s
-• إصلاح جذري لتوقف الناطق في منتصف النصوص الطويلة: مهلة تخليق المحرك كانت 8ث ثابتة لأي نص > 300 حرف — استبدلت بمعادلة 30ms/حرف (حد أدنى 3ث، أقصى 5د)
-• تجاهل الزخارف القرآنية (﷽ ۞ الألف الخنجرية) وجرد ڪ إلى ك عند النطق، وإصلاح نطق «مساء» في وسط الجملة
-• التراجع عن تحسينات استجابة قارئ الشاشة أثناء السحب وإزالة اختباراتها المرتبطة
+<string name="changelog_text">Version %1$s
+• Speech fixes: long texts are split into 200-character chunks for smooth uninterrupted reading; "8 PM/AM" style hour-only with Arabic suffix is spoken as a full time (not misread as a unit); "ṣabāḥan/ẓuhran" forms normalized after stripping diacritics; battery percentage added to charger connect/disconnect announcements
+• Major fix for TTS stopping mid-long text: engine synthesis timeout increased from fixed 8s to 30ms/char (min 3s, max 5m)
+• Ignore Quranic decorative marks (﷽ ۞ dagger alif) and normalize ڪ→ك in speech; fix "masāʾ" in the middle of a sentence
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>

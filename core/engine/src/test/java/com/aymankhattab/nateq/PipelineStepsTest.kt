@@ -434,6 +434,52 @@ class PipelineStepsTest {
         )
     }
 
+    @Test
+    fun time_hourOnlyWithPeriodSuffix() {
+        // «الساعة 8 م» / «الساعة 8 ص»: ساعةٌ مجرّدة بلاحقة الفترة —
+        // كانت تمرّ خاماً فيُنطق الحرف «ماء» حرفاً أو تُقرأ متراً.
+        assertEquals(
+            "الساعة الثامنة مساءً", TimeStep.apply("الساعة 8 م")
+        )
+        assertEquals(
+            "الساعة الثامنة صباحاً", TimeStep.apply("الساعة 8 ص")
+        )
+        // «الساعة الآن 11 ص» بمرساة الوقت الكاملة.
+        assertEquals(
+            "الساعة الآن الحادية عشرة صباحاً",
+            TimeStep.apply("الساعة الآن 11 ص")
+        )
+        // لصاق الحرف بالرقم بلا مسافة: «8م» صيغة وقت لا متر.
+        assertEquals("الثامنة مساءً", TimeStep.apply("8م"))
+        assertEquals("العاشرة صباحاً", TimeStep.apply("10ص"))
+        // جملة كاملة حوله.
+        assertEquals(
+            "موعدك الساعة الخامسة مساءً اليوم",
+            TimeStep.apply("موعدك الساعة 5 م اليوم")
+        )
+    }
+
+    @Test
+    fun time_hourOnlySuffix_doesNotBreakMeters() {
+        // حماية وحدات القياس: «10 م» ساقٍ و«50 م» متر بلا كلمة وقت.
+        assertEquals("10 م", TimeStep.apply("10 م"))
+        assertEquals("50 م", TimeStep.apply("50 م"))
+        // حتى مع كلمة الوقت: الساعة من 1..12 فقط، فـ«الساعة 30 م» ليست
+        // وقتاً (30 > 12) ولا يُمسّ.
+        assertEquals("الساعة 30 م", TimeStep.apply("الساعة 30 م"))
+        // ولا «الساعة 13 م» (13 خارج نطاق 12 ساعة).
+        assertEquals("الساعة 13 م", TimeStep.apply("الساعة 13 م"))
+    }
+
+    @Test
+    fun time_hourOnlySuffix_keepsFullTimeIntact() {
+        // الصيغة الكاملة لا تتأثر بقاعدة الساعة المجرّدة.
+        assertEquals(
+            "الساعة الثانية والنصف مساءً",
+            TimeStep.apply("الساعة 14:30 م")
+        )
+    }
+
     // ═══════════════════════ RomanNumeralStep ═══════════════════════
 
     @Test

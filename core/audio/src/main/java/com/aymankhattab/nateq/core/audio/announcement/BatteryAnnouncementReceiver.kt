@@ -3,7 +3,9 @@ package com.aymankhattab.nateq.core.audio.announcement
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import androidx.annotation.VisibleForTesting
 import com.aymankhattab.nateq.core.audio.R
+import com.aymankhattab.nateq.core.common.readStickyBattery
 import com.aymankhattab.nateq.core.common.SystemTimeProvider
 import com.aymankhattab.nateq.core.common.TimeProvider
 import com.aymankhattab.nateq.engine.NumberSpeech
@@ -50,6 +52,9 @@ class BatteryAnnouncementReceiver(
         // رُصد على أجهزة فعلية). النطق السليم يُنهي البث مبكراً عبر مستمع
         // الاكتمال؛ هذا السقف للعلّال فقط.
         private const val BROADCAST_HOLD_MS = 6_000L
+
+        /** اسم بديل نسبة البطارية في نصوص الإعلانات. */
+        private const val PERCENT_PLACEHOLDER = "{percent}"
 
         /** هل هذا البث يمثل حالةً لم تُعالج بعد؟ يحسب النسبة مثل معالجة
          *  handler نفسها دون أي I/O؛ وبلا بيانات صالحة يُمرَّر البث فتتجاهله
@@ -245,7 +250,7 @@ class BatteryAnnouncementReceiver(
                     context, if (isArabic) LanguageCode.AR.tag
                     else LanguageCode.EN.tag,
                     R.string.battery_connected, R.string.battery_connected
-                )
+                ).withBatteryPercent(readStickyBattery(context), isArabic)
                 spoke = speak(
                     context, settings, text, locale, voiceId,
                     CueType.BATTERY_CHARGING, onCueDone
@@ -260,7 +265,7 @@ class BatteryAnnouncementReceiver(
                     context, if (isArabic) LanguageCode.AR.tag
                     else LanguageCode.EN.tag,
                     R.string.battery_disconnected, R.string.battery_disconnected
-                )
+                ).withBatteryPercent(readStickyBattery(context), isArabic)
                 spoke = speak(
                     context, settings, text, locale, voiceId,
                     CueType.BATTERY_DISCONNECTED, onCueDone
@@ -276,16 +281,7 @@ class BatteryAnnouncementReceiver(
                     return false
                 }
 
-                val level =
-                    intent.getIntExtra(
-                        android.os.BatteryManager.EXTRA_LEVEL, -1
-                    )
-                val scale =
-                    intent.getIntExtra(
-                        android.os.BatteryManager.EXTRA_SCALE, -1
-                    )
-                if (level < 0 || scale <= 0) return false
-                val percentage = (level * 100) / scale
+                val percentage = batteryPercent(intent) ?: return false
                 val status =
                     intent.getIntExtra(
                         android.os.BatteryManager.EXTRA_STATUS, -1
@@ -341,6 +337,44 @@ class BatteryAnnouncementReceiver(
             }
         }
         return spoke
+    }
+
+    /** نسبة البطارية من نَسَب extras، أو null إن غابت/فسدت. */
+    private fun batteryPercent(intent: Intent?): Int? {
+        if (intent == null) return null
+        val level = intent.getIntExtra(
+            android.os.BatteryManager.EXTRA_LEVEL, -1
+        )
+        val scale = intent.getIntExtra(
+            android.os.BatteryManager.EXTRA_SCALE, -1
+        )
+        if (level < 0 || scale <= 0) return null
+        return (level * 100) / scale
+    }
+
+    /**
+     * يملأ `{percent}` في نص إعلان توصيل/فصل الشاحن بنسبة البطارية
+     * بصيغة لفظية (ContentResolver.getString مع بديل، لا
+     * resources.getString(int, Object) لأنها تتطلب Locale في هذا المسار).
+     *
+     * أحداث التوصيل والفصل لا تحمل EXTRA_LEVEL ولا EXTRA_SCALE (بثّان
+     * منفصلان)، فنقرأ البث اللاصق للبطارية عبر [readStickyBattery] ونمرّره
+     * هنا — وبلا نسبة صالحة يبقى النص كما هو (بلا نسبة) بدل إعلانٍ يحمل
+     * البديلَ الحرفي.
+     */
+    @VisibleForTesting
+    internal fun String.withBatteryPercent(
+        batteryIntent: Intent?,
+        isArabic: Boolean
+    ): String {
+        if (!contains(PERCENT_PLACEHOLDER)) return this
+        val percent = batteryPercent(batteryIntent) ?: return this
+        val words = if (isArabic) {
+            NumberSpeech.toArabicWords(percent)
+        } else {
+            NumberSpeech.toEnglishWords(percent)
+        }
+        return replace(PERCENT_PLACEHOLDER, words)
     }
 
     private fun buildLevelText(

@@ -12,6 +12,7 @@ import android.speech.tts.Voice
 import android.util.Log
 import androidx.annotation.VisibleForTesting
 import com.aymankhattab.nateq.engine.EmojiSpeech
+import com.aymankhattab.nateq.core.audio.engine.SpeechChunker
 import com.aymankhattab.nateq.core.audio.engine.LanguageSegmenter
 import com.aymankhattab.nateq.core.audio.engine.Segment
 import com.aymankhattab.nateq.core.audio.engine.isNumericOnly
@@ -1521,9 +1522,31 @@ class AnnouncementSpeaker(
             if (isResumableCategory(currentCategory)) {
                 val sentences = splitIntoSentences(readyText)
                 sentences.forEach { sentence ->
+                    // سقفٌ إضافي للمقطع الواحد: الجملة الواحدة قد
+                    // تتجاوز حدّ المحرك فيُبتَر نطقُها — فيُقسَّم
+                    // كلُّ نصٍّ أطولُ من [SpeechChunker.MAX_CHARS]
+                    // إلى مقاطعَ قصيرةٍ عند كلماتٍ واضحة.
+                    SpeechChunker.split(sentence).forEach { piece ->
+                        out.add(
+                            SpeakUnit(
+                                piece, segmentLocale,
+                                numbersSpeech?.rate ?: baseRate,
+                                numbersSpeech?.pitch ?: basePitch,
+                                numbersSpeech?.volume ?: baseVolume,
+                                segmentVoice
+                            )
+                        )
+                    }
+                }
+            } else {
+                // النطق العادي (غير قابلة للاستئناف): يُقسَّم كل
+                // مقطع لغوي طويل إلى مقاطع [SpeechChunker] تصلُ
+                // متواصلةً بلا فجوات سكتٍّ إضافية (لأننا ندمج
+                // المتعاقب ذي الصوت نفسه لاحقاً إن لم يكن resumable).
+                SpeechChunker.split(readyText).forEach { piece ->
                     out.add(
                         SpeakUnit(
-                            sentence, segmentLocale,
+                            piece, segmentLocale,
                             numbersSpeech?.rate ?: baseRate,
                             numbersSpeech?.pitch ?: basePitch,
                             numbersSpeech?.volume ?: baseVolume,
@@ -1531,16 +1554,6 @@ class AnnouncementSpeaker(
                         )
                     )
                 }
-            } else {
-                out.add(
-                    SpeakUnit(
-                        readyText, segmentLocale,
-                        numbersSpeech?.rate ?: baseRate,
-                        numbersSpeech?.pitch ?: basePitch,
-                        numbersSpeech?.volume ?: baseVolume,
-                        segmentVoice
-                    )
-                )
             }
         }
     }
