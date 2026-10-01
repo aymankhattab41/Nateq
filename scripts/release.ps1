@@ -1,8 +1,9 @@
 ﻿<#
     سكربت الإصدار الواحد لتطبيق Lord TTS — يرفع الترقيم تلقائياً من git
     (بدون لمس يدوي للـ versionCode/versionName)، يبني Release APK، يلتزم
-    الترقيم، يضع الوسم vN، يدفع، وينشئ Release على GitHub بمرفق الـ APK
-    وملاحظاتِ المستجدات من changelog_text داخل التطبيق (لا توليد آلي).
+    الترقيم، يضع الوسم vX.Y.Z، يدفع، وينشئ Release على GitHub بمرفق
+    الـ APK وملاحظاتِ المستجدات من changelog_text داخل التطبيق (لا توليد
+    آلي).
 
     الاستخدام (من جذر المستودع):
         .\scripts\release.ps1            # ينفّذ الإصدار كاملاً
@@ -10,11 +11,15 @@
 
     القواعد الملتزمة بالمشروع:
         - بناء Release فقط (assembleRelease) + الاختبارات قبل أي commit.
-        - app_name ثابت "Lord TTS"، والوسم الأحادي vN → 0.N.0
-          (متوافق مع alignZeroRelease في UpdateChecker).
-        - كل دفع = إصدار جديد تلقائياً: النسخة دائماً (أعلى وسم منشور + 1)
-          فيعمل التحققُ من التحديثات تلقائياً؛ ولا إصدار بلا التزامات
-          جديدة واصلة من آخر وسم إلى HEAD (منع الإصدار الفارغ).
+        - app_name ثابت "Lord TTS".
+        - **الترقيم دلاليّ SemVer** بأوسمة `vX.Y.Z`: أول إصدار بعد
+          التحويل من الأوسمة الأحادية القديمة `vN` هو `v1.6.1` ثم
+          `v1.6.2` وهكذا (كل إصدار = أحدث إصدار منشور + واحد على
+          الجزء Patch).
+        - versionCode مشتقٌّ من النسخة (major*10000 + minor*100 +
+          patch) فيبقى تصاعدياً دائماً ومفهوماً بلا جدول موازٍ.
+        - لا إصدار بلا التزامات جديدة واصلة من آخر وسم إلى HEAD
+          (منع الإصدار الفارغ).
 #>
 [CmdletBinding()]
 param(
@@ -48,9 +53,11 @@ function Invoke-Git {
     return $out
 }
 
-# أعلى وسم vN على الـ remote (عبر ls-remote)، وهي المرجع الأوثق حتى مع
-# استنساخ جديد أو غياب الأوسمة محلياً.
-function Get-RemoteTagMax {
+# كل أوسمة الـ remote (عبر ls-remote)، وهي المرجع الأوثق حتى مع
+# استنساخ جديد أو غياب الأوسمة محلياً. تُرجع مصفوفة أوسمة بلا
+# البادئة «v»: إمّا أحادية (`'106'`) من مرحلة ما قبل SemVer، وإما
+# ثلاثية (`'1.6.1'`).
+function Get-RemoteTags {
     $previousEf = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
@@ -60,18 +67,75 @@ function Get-RemoteTagMax {
         $ErrorActionPreference = $previousEf
     }
     if ($exitCode -ne 0) {
-        return $null
+        return @()
     }
-    $maxN = $null
+    $tags = New-Object System.Collections.Generic.List[string]
     foreach ($line in $out) {
-        if ($line -match 'refs/tags/v(\d+)$') {
-            $n = [int]$matches[1]
-            if ($null -eq $maxN -or $n -gt $maxN) {
-                $maxN = $n
-            }
+        # نمط يقبل الصيغتين: أحادية (`v106` من مرحلة ما قبل SemVer)
+        # وثلاثية (`v1.6.1`) — مكوّنات رقمية فقط (صفر فواصل أو واحد
+        # أو اثنان).
+        if ($line -match 'refs/tags/v(\d+(?:\.\d+){0,2})$') {
+            $tags.Add($matches[1])
         }
     }
-    return $maxN
+    return $tags.ToArray()
+}
+
+# ترتيب ثلاثي على نصّ نسخة بلا بادئة — المقارنة عددية لكل مكوّن
+# (الترتيب المعجمي خاطئ: «10» أصغر من «9» نصياً).
+function Compare-Version {
+    param(
+        [string]$Left,
+        [string]$Right
+    )
+    $l = @($Left.Split('.') | ForEach-Object { [int]$_ })
+    $r = @($Right.Split('.') | ForEach-Object { [int]$_ })
+    $max = [Math]::Max($l.Count, $r.Count)
+    for ($i = 0; $i -lt $max; $i++) {
+        $lv = if ($i -lt $l.Count) { $l[$i] } else { 0 }
+        $rv = if ($i -lt $r.Count) { $r[$i] } else { 0 }
+        if ($lv -gt $rv) { return 1 }
+        if ($lv -lt $rv) { return -1 }
+    }
+    return 0
+}
+
+# newest وسم منشور: يُرجع كائناً يحمل **النسخة المُطبَّعة** (للحساب
+# العددي) و**اسم الوسم الحقيقي** (لـ rev-list). الفصل بينهما جوهري:
+# الأحادي القديم «v106» يُحسب «0.106.0» فيرتفع رقمه، لكن `rev-list
+# v0.106.0..HEAD` يفشل fatalاً لأن الاسم المنشور هو «v106» — فضيع
+# عدّ الالتزامات ويسقط الإصدار. فتبقى الحالة الاثنتان معاً.
+function ConvertTo-NormalizedVersion {
+    param([string]$Tag)
+    $parts = @($Tag.Split('.'))
+    if ($parts.Count -eq 1) {
+        return "0.$Tag.0"
+    }
+    if ($parts.Count -eq 2) {
+        return "$Tag.0"
+    }
+    return $Tag
+}
+
+function Get-LatestRemoteTag {
+    $tags = @(Get-RemoteTags)
+    $bestNormalized = $null
+    $bestRaw = $null
+    foreach ($tag in $tags) {
+        $normalized = ConvertTo-NormalizedVersion $tag
+        if ($null -eq $bestNormalized -or
+            (Compare-Version $normalized $bestNormalized) -gt 0) {
+            $bestNormalized = $normalized
+            $bestRaw = $tag
+        }
+    }
+    if ($null -eq $bestRaw) {
+        return $null
+    }
+    return [PSCustomObject]@{
+        Version = $bestNormalized
+        Tag     = "v$bestRaw"
+    }
 }
 
 # fallback: آخر وسم واصِل من HEAD محلياً.
@@ -84,13 +148,19 @@ try {
     $ErrorActionPreference = $previousEf
 }
 
-$remoteMax = Get-RemoteTagMax
-if ($null -ne $remoteMax) {
-    $latestTagN = [int]$remoteMax
-} elseif ($describeOk -and ($describeOut | Out-String).Trim() -match '^v(\d+)$') {
-    $latestTagN = [int]$matches[1]
-} else {
-    $latestTagN = 0
+# أحدث وسم منشور: مرجع الـ remote أولاً، ثم آخر وسم محلي واصل من
+# HEAD (fallback عند غياب الشبكة). الاثنتان منفصلتان دائماً:
+# $latestVersion للنسخة المُطبَّعة الثلاثية، و$latestTag للاسم الحقيقي.
+$latestRemote = Get-LatestRemoteTag
+$latestVersion = if ($null -ne $latestRemote) { $latestRemote.Version } else { $null }
+$latestTag = if ($null -ne $latestRemote) { $latestRemote.Tag } else { $null }
+if ($null -eq $latestVersion -and
+    $describeOk -and
+    ($describeOut | Out-String).Trim() -match '^v(\d+(?:\.\d+){0,2})$'
+) {
+    $localTag = $matches[1]
+    $latestVersion = ConvertTo-NormalizedVersion $localTag
+    $latestTag = "v$localTag"
 }
 
 # versionCode الحالي في build.gradle.kts (عرض/ملف فقط — لا يُرجع).
@@ -114,9 +184,11 @@ try {
 } finally {
     $ErrorActionPreference = $previousEf
 }
-if ($latestTagN -gt 0) {
-    $commitOut = Invoke-Git @('rev-list', '--count', "v$latestTagN..HEAD")
-    $sinceTag = "v$latestTagN"
+if ($null -ne $latestTag) {
+    $commitOut = Invoke-Git @(
+        'rev-list', '--count', "$latestTag..HEAD"
+    )
+    $sinceTag = $latestTag
 } else {
     # أول إصدار في المستودع: كل تاريخ master يُعدّ جديداً.
     $commitOut = Invoke-Git @('rev-list', '--count', 'HEAD')
@@ -127,12 +199,34 @@ if ($newCommitCount -lt 1) {
     throw "لا التزامات جديدة منذ $sinceTag — لا حاجة لإصدار."
 }
 
-# الرفع التلقائي الإجباري: نسخة كل دفع = أعلى وسم منشور على الـ remote
-# بمقدار واحد (المرجع الـ remote دائماً، ولا حالة «معلّقة» تُفقد إصدارها) —
-# فيعمل التحققُ من التحديثات تلقائياً مع كل إصدار جديد.
-$targetCode = $latestTagN + 1
-$targetVersion = "0.$targetCode.0"
-$targetTag = "v$targetCode"
+# الرفع التلقائي الإجباري: نسخة كل دفع = أحدث وسم منشور + واحد على
+# الجزء Patch (المرجع الـ remote دائماً، ولا حالة «معلّقة» تُفقد
+# إصدارها) — فيعمل التحققُ من التحديثات تلقائياً مع كل إصدار جديد.
+# **نقطة التحويل من الأوسمة الأحادية:** آخر وسم قديم «0.106.0»
+# يُتبع بإصدار «1.6.1» (بداية ترقيم SemVer المطلوب)، ثم «1.6.2»
+# ف «1.6.3»… بزيادة Patch وحده.
+$targetMajor = 1
+$targetMinor = 6
+$targetPatch = 1
+if ($null -ne $latestVersion) {
+    $latestParts = @($latestVersion.Split('.') | ForEach-Object { [int]$_ })
+    if ($latestParts[0] -ne 0) {
+        $targetMajor = $latestParts[0]
+        $targetMinor = $latestParts[1]
+        $targetPatch = $latestParts[2] + 1
+    }
+}
+$targetVersion = "$targetMajor.$targetMinor.$targetPatch"
+$targetTag = "v$targetVersion"
+
+# versionCode مشتقٌّ من النسخة (major*10000 + minor*100 + patch) — يكبر
+# دائماً مع كل إصدار (1.6.1 = 10601) فلا يتعارض مع 0.106.0 = 106،
+# ويبقى مفهوماً بلا جدول موازٍ.
+$targetCode = ($targetMajor * 10000) + ($targetMinor * 100) + $targetPatch
+if ($targetCode -le $currentCode) {
+    throw ("ترقيم النسخة $targetVersion (versionCode $targetCode) لا يسبق " +
+        "النسخة المنشورة حالياً (versionCode $currentCode).")
+}
 
 # منع النشر المتكرر لنفس الإصدار (محلياً وعلى الـ remote).
 $previousEf = $ErrorActionPreference
@@ -274,7 +368,7 @@ try {
 }
 if ($hasStaged) {
     Invoke-Git @(
-        'commit', '-m', "إصدار v$targetCode — رفع الترقيم الآلي إلى $targetVersion",
+        'commit', '-m', "إصدار $targetTag — رفع الترقيم الآلي إلى $targetVersion",
         '--', 'app/build.gradle.kts'
     )
 } else {

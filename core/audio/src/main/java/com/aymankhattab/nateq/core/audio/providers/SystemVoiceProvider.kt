@@ -13,6 +13,7 @@ import android.widget.Toast
 import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.audio.engine.BytePool
 import com.aymankhattab.nateq.core.audio.engine.PcmEqualizer
+import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.core.data.VoicePrefsProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.ConnectivityMonitor
@@ -173,28 +174,17 @@ class SystemVoiceProvider(
         private const val CANCELLATION_POLL_MS = 100L
 
         /**
-         * مهلة انتظار اكتمال كتابة المحرك لملف الصوت
-         * حسب طول النص (بالمللي ثانية).
-         * للنصوص القصيرة 1.5–3 ثوانٍ فقط: قارئات الشاشة
-         * لا تحتمل مهلة 30 ثانية لكل محرك (وتصل سلسلة
-         * التراجع بين محركين إلى 60 ثانية — بطء غير مقبول)،
-         * والنصوص الطويلة تحصل على مهلة أوسع لكتابة
-         * الملف كاملاً. عامة (لا internal) لأن اختبارها
-         * في وحدة :app مباشرة (نفس نمط UpdateChecker
-         * في :core:data).
+         * مهلة انتظار اكتمال كتابة المحرك لملف الصوت حسب طول
+         * النص — ميزانيةُ مقطعٍ واحد، ومصدرُها الوحيد
+         * [SynthesisBudget.pieceTimeoutMs] فمصدرُ حقيقةٍ واحد
+         * مشتركٌ مع مهلة الطلب في الخدمة؛ فالتعارضُ بين
+         * الصيغتين (الأقصرُ خارجياً) هو ما كان يقطع النص
+         * الطويل في منتصفه. وللنصّ القصير ميزانيةٌ قصيرة
+         * (1.5–8 ثوانٍ) كي لا تحتبس قارئاتُ الشاشة،
+         * وللطويل ميزانيةٌ أوسع تكفي لكتابة الخانة كاملةً.
          */
-        fun synthesisTimeoutMs(textLength: Int): Long = when {
-            textLength <= 10  -> 1_500L
-            textLength <= 80  -> 2_000L
-            textLength <= 300 -> 3_000L
-            // النصوص الأطول: 3 ثوانٍ أساس + 30ms/حرف بحد أقصى 5 دقائق.
-            // المحرك يكتب ملف WAV كاملاً قبل البث: النص 1000 حرف ≈ 33ث،
-            // 2000 حرف ≈ 63ث، 5000 حرف ≈ 153ث — سخيٌّ بما يكفي لأبطأ
-            // المحركات دون تجميد قارئ الشاشة إن علق المحرك فعلاً.
-            else -> (3_000L + textLength * 30L)
-                .coerceAtMost(5 * 60 * 1_000L)
-        }
-
+        fun synthesisTimeoutMs(textLength: Int): Long =
+            SynthesisBudget.pieceTimeoutMs(textLength)
 
         /** حجم الدفعة الدنيا لقراءة صوت التخليق أثناء كتابته (بند ب.txt
          *  3.2): لا يُقرأ الملف النامي إلا حين يتراكم ما يعادل هذا الحجم
@@ -1146,6 +1136,20 @@ class SystemVoiceProvider(
                             dataStart
                         }
                         val available = tempFile.length() - start
+                        // نموٌّ بطيء: الملف يكبر دون أن يبلغ حجم
+                        // شريحةٍ صالحةٍ واحدة (محرّكٌ متريّد)، فكان
+                        // تمديدُ المهلة مقصوراً على إصدار الشريحة
+                        // فتنتهي وسطَ الكتابةِ فيُبتَر النص. تُرحَّل
+                        // المهلةُ على النموّ نفسه وتصفَّر عدّادُ
+                        // الجمود فيُعرف أنّ الكتابةَ حيّة.
+                        if (available + start > lastLen) {
+                            lastLen = available + start
+                            stallPolls = 0
+                            deadline = extendStreamDeadline(
+                                deadline, true,
+                                SystemClock.elapsedRealtime()
+                            )
+                        }
                         val toRead = available - readSoFar
                         if (toRead >= STREAM_CHUNK_BYTES) {
                             try {
@@ -1188,11 +1192,11 @@ class SystemVoiceProvider(
                                         "المسار الكامل"
                                     }, e)
                             }
-                            // تصريف ذيلٍ اكتملت كتابته دون onDone: استقر حجم
-                            // الملف بلا نمو جولاتٍ والمتبقي دون شريحةٍ وصدر
-                            // صوتٌ فعلاً => نُعلِّم الذيل منجزاً ونخرج إلى
-                            // مسار النجاح فلا يتوقف النطق بانتظار إعلامٍ
-                            // متأخر (سامسونج) أو غائب.
+                            // حسمُ اكتمال الكتابة: طولُ خانة البيانات
+                            // المُعلَن دليلٌ قاطعٌ يُنهي البثَّ فوراً،
+                            // وإعلام onDone دليلٌ قاطعٌ متأخر،
+                            // واستقرارُ حجم الملف بعد مهلة أمانٍ
+                            // أوّلًا، فلا يُقطعَ نصٌّ على توقّفٍ عابر.
                             if (!finished && tempFile.exists()) {
                                 val nowLen = tempFile.length()
                                 if (nowLen == lastLen) {
@@ -1207,6 +1211,7 @@ class SystemVoiceProvider(
                                         remaining, STALL_GRACE_POLLS,
                                         STALL_TAIL_MAX_BYTES
                                     )
+                                    || isWavWriteComplete(streamMeta, nowLen)
                                 ) {
                                     tailCompleted = true
                                     Log.d(TAG,
@@ -1222,12 +1227,14 @@ class SystemVoiceProvider(
                 Thread.currentThread().interrupt()
             }
 
-            if ((finished || tailCompleted) && !failed.get() &&
-                streamMeta != null && emittedAny
+            if ((finished || tailCompleted || emittedAny) && !failed.get() &&
+                streamMeta != null
             ) {
-                // إتمام البث: يُقرأ ما تبقى بعد آخر دفعة ثم يُعلَّم النجاح —
-                // لا مسار القراءة الكاملة (تجنّب بثٍّ مكرر). الذيلُ منجزٌ
-                // بالجمود (tailCompleted) يسلك نفس المسار فلا يُبثّ مكرراً.
+                // إتمام البث: يُقرأ ما تبقى بعد آخر دفعة ثم يُعلَّم
+                // النجاح — لا مسار القراءة الكاملة (تجنّب بثٍّ مكرر).
+                // والذيلُ المنجَز (بالجمود أو بالحجم المُعلَن أو
+                // بانتهاء المهلة مع صوتٍ صادر) يسلك المسار نفسه،
+                // فلا يُهدر صوتٌ بُثَّ فعلاً ولا يُبثّ مرّتين.
                 val start = if (dataStart < 0) 0L else dataStart
                 val remaining = tempFile.length() - start - readSoFar
                 if (remaining > 0) {
@@ -1651,37 +1658,25 @@ class SystemVoiceProvider(
 internal const val STREAM_DEADLINE_EXTEND_MS = 5_000L
 
 /**
- * يُرجئ مهلة البثّ [deadline] إن أُبثّت شريحةٌ فعلاً ([chunkEmitted]) —
- *  كتابةُ المحرك المتقدمةُ علامةُ حياةٍ فلا تُقطع قبل اكتمالها، بينما
- *  الجمودُ (لا شريحة جديدة) يُبقي الـ deadline الأصلي فيتحرر المدير.
- *  منطقٌ نقي (التواقيت من [android.os.SystemClock]) قابل للاختبار الآلي.
+ * يُرجئ مهلة البثّ [deadline] إن تقدّمت الكتابة فعلاً ([progressing]) —
+ * نموُّ ملفِّ المحرك (شريحةً مُصدَرةً أو لا) علامةُ حياةٍ فلا يُقطع قبل
+ * اكتمالها، بينما الجمودُ يُبقي الـ deadline الأصلي فيتحرر المدير.
+ * منطقٌ نقي (التواقيت من [android.os.SystemClock]) قابل للاختبار الآلي.
  */
 internal fun extendStreamDeadline(
     deadline: Long,
-    chunkEmitted: Boolean,
+    progressing: Boolean,
     now: Long
 ): Long {
-    return if (chunkEmitted) now + STREAM_DEADLINE_EXTEND_MS else deadline
-}
-
-/** أصغر حدّ لقراءة شريحة البثّ: أوله بعتبة صغيرة ([firstChunkMinBytes])
- *  كي يتفجّر صوتُ عناصر قارئ الشاشة القصيرة (زر/كلمة — إجمالها دون
- *  16KB فكانت تبقى صامتة حتى onDone فيبدو النطقُ متأخراً)، ثم الشرائح
- *  اللاحقة بحدّها المعتاد ([regularChunkBytes]) فلا قراءات رقاقة خلف
- *  رقاقة على ملفٍ ينمو. منطقٌ نقي قابل للاختبار الآلي.
- */
-internal fun streamChunkMinBytes(
-    emittedAny: Boolean,
-    firstChunkMinBytes: Int,
-    regularChunkBytes: Int
-): Int {
-    return if (emittedAny) regularChunkBytes else firstChunkMinBytes
+    return if (progressing) now + STREAM_DEADLINE_EXTEND_MS else deadline
 }
 
 /** جولاتُ استقرار حجم الملف بلا نمو قبل تصريف ذيلٍ اكتملت كتابتُه
- *  (5 جولات × 100ms = 500ms): نافذة كافية لتمييز الاكتمال الفعلي عن
- *  توقُّف كتابةٍ عابرٍ في منتصف النطق، وقصيرةٌ بما لا يُسمع الانتظار. */
-internal const val STALL_GRACE_POLLS = 5
+ *  (10 جولات × 100ms = ثانية واحدة): نافذةُ تمييزٍ أطولُ من
+ *  سابقتها (500ms) لأن التوقّف العابر في كتابة المحرك وسط النص
+ *  الطويل يبلغ جزءاً من الثانية عند محركات الشبكة، فالنافذةُ
+ *  القصيرة كانت تُعلن «انتهى» في منتصف الجملة فيُبتَر الكلام. */
+internal const val STALL_GRACE_POLLS = 10
 
 /** أكبر ذيلٍ يُصرف فور الاستقرار: بحد عتبة الشريحة (16KB) فيُصرف
  *  المتبقي الصغير الأخيرُ (أو الصفر) دون انتظار onDone — والذيلُ الأكبر
@@ -1881,17 +1876,42 @@ private fun parseWavChunks(
 
 /** وصف رأس WAV للبثّ المجزّأ (بند ب.txt 3.2): موضع بداية بيانات الصوت
  *  ([dataStart]) ومعدل العينات من خانة `fmt ` حين تُعرف، وعددُ القنوات
- *  (بند 2.2) ليُخفض الاستيريو إلى مونو قبل البث. */
+ *  (بند 2.2) ليُخفض الاستيريو إلى مونو قبل البث.
+ *
+ *  [declaredDataBytes] حجمُ خانة `data` كما أعلنه المحرك (صفرٌ إن كان
+ *  مؤقّتاً): إشارةُ اكتمالٍ قاطعة — متى بلغ الملفُ هذا الطول انتهت
+ *  الكتابةُ فعلاً ولا يصحّ التسابقُ عليها بتخمينات. */
 internal class WavStreamMeta(
     val dataStart: Long,
     val sampleRateInHz: Int,
-    val channelCount: Int = 1
+    val channelCount: Int = 1,
+    val declaredDataBytes: Long = 0L
 ) {
     companion object {
         /** حدّ أعلى/أدنى لمعدل عينات مقبول (يطابق [parseWavChunks]). */
         private const val MIN_RATE = 14_100
         private const val MAX_RATE = 192_000
     }
+}
+
+/** أقصى حجمٍ يُقبل كإعلانٍ لحجم خانة البيانات (سقفٌ واقعيٌّ
+ *  لملف تخليقٍ معقول؛ وما فوقه فإعلانٌ مؤقّتٌ أو تالفٌ يُعامَل
+ *  كالعدم فيبقى الحسمُ على إعلام onDone). */
+private const val MAX_DECLARED_DATA_BYTES = 512L * 1024 * 1024
+
+/**
+ * اكتمالُ كتابة ملف WAV بالطريق القاطع: هل بلغ الملفُ الحجمَ
+ * المُعلَن في خانة البيانات؟ وصفرُه يعني لا إعلانٍ فيبقى الحسمُ
+ * على إعلام onDone أو على زمن الجمود.
+ */
+internal fun isWavWriteComplete(
+    meta: WavStreamMeta?,
+    fileLength: Long
+): Boolean {
+    if (meta == null) return false
+    val declared = meta.declaredDataBytes
+    if (declared <= 0L) return false
+    return fileLength >= meta.dataStart + declared
 }
 
 /** يفحص [length] بايتاً من بداية ملف WAV (على نموّه أثناء كتابة المحرك)
@@ -1921,8 +1941,16 @@ internal fun readWavStreamMeta(
         )
         val chunkSize = readLeLong(bytes, offset.toInt() + 4)
         if (chunkId == "data") {
+            // إعلانُ حجم الخانة: قيمةٌ قاطعة فيُحسم الاكتمالُ عند
+            // بلوغه، ومؤقّتةٌ (0xFFFFFFFF أو صفر) فيبقى الحسمُ
+            // لإعلام onDone أو زمن الجمود.
             return WavStreamMeta(
-                offset + 8, sampleRate, channelCount
+                offset + 8, sampleRate, channelCount,
+                if (chunkSize in 1..MAX_DECLARED_DATA_BYTES) {
+                    chunkSize
+                } else {
+                    0L
+                }
             )
         }
         if (chunkId == "fmt " && chunkSize >= 16 &&

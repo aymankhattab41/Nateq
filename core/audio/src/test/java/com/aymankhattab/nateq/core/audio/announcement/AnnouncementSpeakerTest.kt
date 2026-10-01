@@ -1167,9 +1167,11 @@ class AnnouncementSpeakerTest {
 
     @Test
     fun `long announcement text is split into engine safe units`() {
-        // إصلاح التوقّف في المنتصف: إعلانٌ طويلٌ بلا حدود جملٍ يُرسل
-        // للمحرّك مقطعاً واحداً ضخماً فيُبتَر نطقه. نتحقق أن بناء
-        // الوحدات يقسّمه إلى مقاطع ≤ SpeechChunker.MAX_CHARS.
+        // شبكةُ أمانِ مسار الإعلانات: إعلانٌ طويلٌ يُقسَّم إلى وحدات
+        // ≤ SpeechChunker.MAX_CHARS، وكلُّ وحدةٍ تُنطق مستقلّةً في
+        // طابور المتحدّث ففشلُ واحدةٍ لا يُسقط ما بعدها. (لم يعد هذا
+        // حلَّ انقطاع النص الطويل — أُصلح سببُه في SynthesisBudget
+        // وأُزيل التقسيمُ من مسار القارئ.)
         val speaker = AnnouncementSpeaker(context)
         try {
             val units = buildLanguageUnits(speaker, longArabicText(900))

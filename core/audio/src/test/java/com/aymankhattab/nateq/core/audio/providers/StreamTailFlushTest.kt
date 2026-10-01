@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.core.audio.providers
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -100,5 +101,13 @@ class StreamTailFlushTest {
                 maxTailBytes = maxTailBytes
             )
         )
+    }
+
+    @Test
+    fun stallGraceWindow_isOneSecond() {
+        // النافذة صارت ثانيةً كاملة (10 × 100ms) لا نصفَ ثانية: التوقف
+        // العابر في كتابة محركٍ شبكي وسط النص الطويل يبلغ نصفَ ثانية
+        // ف كانت النافذةُ القديمة تُعلن «انتهى» وتقطع الجملة.
+        assertEquals(10, STALL_GRACE_POLLS)
     }
 }

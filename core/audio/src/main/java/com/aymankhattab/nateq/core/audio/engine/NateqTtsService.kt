@@ -105,21 +105,22 @@ class NateqTtsService : TextToSpeechService() {
         private const val PCM_16BIT = AudioFormat.ENCODING_PCM_16BIT
         private const val EMPTY_TEXT_SAMPLE_RATE = 16_000
 
-        /** مهلة التخليق الدنيا للنصوص القصيرة (20 ثانية). */
-        private const val SYNTHESIS_TIMEOUT_MIN_MS = 20_000L
-
-        /** مهلة التخليق القصوى مهما طال النص (5 دقائق). */
-        private const val SYNTHESIS_TIMEOUT_MAX_MS = 5 * 60 * 1000L
-
         /**
-         * مهلة زمنية متكيّفة مع طول النص — تمنع قطع النطق في منتصف النصوص
-         * الطويلة: تقدير 4ms/حرف (سخيٌّ لأبطأ المحركات وأعلى سرعات النطق)
-         * مضافاً إليه الحد الأدنى، ثم يُقصّ على الحد الأقصى.
-         * مثال: 500 حرف → 20+2s = 22s — 2000 حرف → 20+8s = 28s.
+         * مهلة الطلب الواحد كاملةً — ميزانيةُ تخليق نصّه
+         * مضافاً إليها تكلفةُ الوحدة، لا تقديرٌ مستقلّ عنها.
+         *
+         * **جذرُ انقطاع النص الطويل:** كانت هنا `20s + 4ms/حرف` بينما
+         * ميزانيةُ التخليق داخل المزوّد `3s + 30ms/حرف`، فالمهلةُ
+         * الخارجية كانت أقصرَ دائماً من ميزانية-piece واحدة. ثم جُرِّب
+         * حلٌّ ثانٍ (تقسيم 200 حرف) فاشتدّ الخلل: صارت ميزانيةُ
+         * قطعةٍ واحدة 8s بينما الطلبُ كلُّه 32s، فيُقطع بعد أوّل
+         * مقاطع. الصنفُ واحد: مهلةٌ خارجية أقصرُ من ميزانيتها
+         * الداخلية. الآن المصدرُ واحد — [SynthesisBudget.requestTimeoutMs]
+         * يضمن أن المهلة الخارجية ≥ ميزانية المزوّد دائماً، والنصُّ
+         * يُسلَّم طلباً واحداً متّصلاً بلا تقسيم.
          */
         internal fun synthesisTimeoutMs(charCount: Int): Long =
-            (SYNTHESIS_TIMEOUT_MIN_MS + charCount * 4L)
-                .coerceAtMost(SYNTHESIS_TIMEOUT_MAX_MS)
+            SynthesisBudget.requestTimeoutMs(charCount)
 
         /** معيار البث الموحّد للنص المختلط (44100 مونو 16-bit) — ثابتٌ ليُتاح
          *  التدفق مقطعاً بمقطعٍ دون تجميع كامل الصوت في الذاكرة (الذروة = أكبر
@@ -907,71 +908,71 @@ override fun onDestroy() {
         //
         // **بند النص الطويل (إصلاح التوقّف في المنتصف):** الطلب
         // الواحد الطويل كان يُبتره المحرك أو يعلّقه فيتوقف النطق
-        // عند حدٍّ ثابت — فالنصّ يُقسَّم إلى مقاطع (SpeechChunker)
-        // تُخلَّق وتُبثّ واحدةً تلو الأخرى في تدفّقٍ واحدٍ متّصل،
-        // و`start` يُمرَّر مرّةً واحدة بتنسيق الشريحة الأولى
-        // و`done()` بعد آخر مقطع.
+        // عند حدٍّ ثابت. كان الحلُّ تقسيمَ النص إلى مقاطع 200
+        // حرف، لكن ذلك كان يعالج العَرَض لا السبب: مقطعٌ يفشل
+        // يُسقط كلماتٍ كاملةً بصمت، ويُقطع الكلام عند حدود القطع.
+        // السببُ الجذريُّ مُصلَح في [SynthesisBudget] (ميزانيةُ
+        // الطلب الواحدة تغطي ميزانية كلِّ قطعةٍ داخلها) و
+        // [SystemVoiceProvider] (إتمامٌ بالطول المُعلَن في رأس WAV)،
+        // فيُسلَّم النصُّ كلُّه طلباً واحداً متّصلاً كما كان قبل
+        // v106. و`start` يُمرَّر مرّةً واحدة و`done()` بعد آخر شريحة.
         var started = false
-        for (piece in SpeechChunker.split(speechText)) {
-            try {
-                provider.synthesize(
-                    piece, voice, finalRate, finalPitch, finalVolume,
-                    { sampleRateInHz, channelCount ->
-                        if (!started) {
-                            callback.start(
-                                /* sampleRateInHz = */ sampleRateInHz,
-                                /* audioFormat = */ PCM_16BIT,
-                                /* channelCount = */ channelCount
-                            )
-                            started = true
-                        }
-                    }, { chunk, validLength ->
-                        // ضمانة: إن لم يبلّغ المزوّد بالتنسيق مطلقاً
-                        // نبدأ بالقيم الافتراضية قبل أول بايت حتى
-                        // يبقى التخليق صالحاً دائماً.
-                        if (!started) {
-                            callback.start(
-                                /* sampleRateInHz = */ 22050,
-                                /* audioFormat = */ PCM_16BIT,
-                                /* channelCount = */ 1
-                            )
-                            started = true
-                        }
-                        // المنهج المُثبَت (كما في TtsService الرسمي
-                        // لـ espeak-ng/MultiTTS): لا يجوز تمرير كامل
-                        // المخزن المؤقت دفعةً واحدة؛ يُقسَّم إلى أجزاء
-                        // بمقدار callback.getMaxBufferSize() وإلا
-                        // يرفض النظام التخليق ويهبط الصوت. نقسّم كل
-                        // دفعة من المزوّد احتراماً لقيود الـ callback.
-                        // المعامل الثاني (validLength) هو طول البيانات
-                        // الصالح الصريح — فقد تكون مصفوفة الشريحة
-                        // بحجم أكبر من بياناتها الفعلية (مسبح مُعاد
-                        // استخدامه)، فيُمسح حتى length فقط.
-                        val maxBytes = callback.maxBufferSize
-                        var offset = 0
-                        while (offset < validLength) {
-                            val bytesToWrite =
-                                minOf(maxBytes, validLength - offset)
-                            callback.audioAvailable(
-                                chunk, offset, bytesToWrite
-                            )
-                            offset += bytesToWrite
-                        }
-                    }, finalEngine, finalLocale, finalVoiceName
-                )
-            } catch (e: CancellationException) {
-                throw e
-            } catch (t: Throwable) {
-                // مقطعٌ يعجز محركُه يُسقط وحده ويُكمل البقية (نمط
-                // المسار المختلط) — فلا يُضيع مقطعٌ واحدٌ بقيةَ
-                // النص، و`started` يبقى false عند فشل الكل فيُنهى
-                // بإعلان الخطأ أدناه.
-                Log.w(
-                    TAG,
-                    "synthesizeSingle: مقطع فشل تخليقه — يُسقط وحده",
-                    t
-                )
-            }
+        try {
+            provider.synthesize(
+                speechText, voice, finalRate, finalPitch, finalVolume,
+                { sampleRateInHz, channelCount ->
+                    if (!started) {
+                        callback.start(
+                            /* sampleRateInHz = */ sampleRateInHz,
+                            /* audioFormat = */ PCM_16BIT,
+                            /* channelCount = */ channelCount
+                        )
+                        started = true
+                    }
+                }, { chunk, validLength ->
+                    // ضمانة: إن لم يبلّغ المزوّد بالتنسيق مطلقاً
+                    // نبدأ بالقيم الافتراضية قبل أول بايت حتى
+                    // يبقى التخليق صالحاً دائماً.
+                    if (!started) {
+                        callback.start(
+                            /* sampleRateInHz = */ 22050,
+                            /* audioFormat = */ PCM_16BIT,
+                            /* channelCount = */ 1
+                        )
+                        started = true
+                    }
+                    // المنهج المُثبَت (كما في TtsService الرسمي
+                    // لـ espeak-ng/MultiTTS): لا يجوز تمرير كامل
+                    // المخزن المؤقت دفعةً واحدة؛ يُقسَّم إلى أجزاء
+                    // بمقدار callback.getMaxBufferSize() وإلا
+                    // يرفض النظام التخليق ويهبط الصوت. نقسّم كل
+                    // دفعة من المزوّد احتراماً لقيود الـ callback.
+                    // المعامل الثاني (validLength) هو طول البيانات
+                    // الصالح الصريح — فقد تكون مصفوفة الشريحة
+                    // بحجم أكبر من بياناتها الفعلية (مسبح مُعاد
+                    // استخدامه)، فيُمسح حتى length فقط.
+                    val maxBytes = callback.maxBufferSize
+                    var offset = 0
+                    while (offset < validLength) {
+                        val bytesToWrite =
+                            minOf(maxBytes, validLength - offset)
+                        callback.audioAvailable(
+                            chunk, offset, bytesToWrite
+                        )
+                        offset += bytesToWrite
+                    }
+                }, finalEngine, finalLocale, finalVoiceName
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            // تعذُّر التخليق: يُسقط النصُّ كلُّه بخطأٍ صريح أسفله
+            // (فلا يُنسى`)started` صامتاً ولا يُبثّ ناقصاً.
+            Log.w(
+                TAG,
+                "synthesizeSingle: فشل تخليق النص — يُعلن الخطأ",
+                t
+            )
         }
 
         // **ضمانة انهيار:** done() قبل start() ترمي
@@ -1101,6 +1102,13 @@ override fun onDestroy() {
         var nativeRate = 0
         var nativeChannels = 1
         try {
+                // **بند النص الطويل:** يُسلَّم النصُّ كلُّه طلباً واحداً
+            // بلا تقسيم. كان يُقسَّم بمقاطع 200 حرف (حلٌّ
+            // للعَرَض لا للسبب: المهلة)، فكان يفشل مقطعٌ فتُسقط كلماتٍ
+            // كاملةً بصمت، ويُقطع النطق عند حدود القطع. وسببُه
+            // الجذريُّ مُصلَح في [SynthesisBudget] و[SystemVoiceProvider]
+            // (ميزانيةٌ واحدة + إتمامٌ بالطول المُعلَن)، فلم يبقَ
+            // داعٍ للتقسيم.
             params.provider.synthesize(
                 params.text,
                 params.voice,
@@ -1254,6 +1262,11 @@ override fun onDestroy() {
             var nativeChannels = 1
             val phase = LongArray(2)
             try {
+                // **بند النص الطويل:** يُسلَّم المقطعُ اللغويّ كلُّه
+                // طلباً واحداً بلا تقسيم (كان ≤200 حرف حلّاً
+                // للعَرَض لمهلة التخليق، فأسقط كلماتٍ بصمت
+                // عند فشل أيّ مقطع). و[phase] و[crossfader] يظلّان
+                // كما هما لاستمرارية إعادة العينات بلا فجوة.
                 params.provider.synthesize(
                     params.text,
                     params.voice,
@@ -1267,8 +1280,9 @@ override fun onDestroy() {
                     { chunk, validLength ->
                         emitMixedChunk(
                             chunk, validLength, nativeRate,
-                            nativeChannels, phase, crossfader, maxBytes,
-                            { started }, { started = true }, callback
+                            nativeChannels, phase, crossfader,
+                            maxBytes, { started },
+                            { started = true }, callback
                         )
                     },
                     params.engine,

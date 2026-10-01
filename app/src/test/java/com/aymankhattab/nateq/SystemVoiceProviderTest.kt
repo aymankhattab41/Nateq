@@ -15,22 +15,22 @@ class SystemVoiceProviderTest {
 
     @Test
     fun synthesisTimeout_isShortForShortTexts() {
-        // النصوص القصيرة (الأوامر والإعلانات) تتحرر فوراً: 1.5–3 ثوانٍ
+        // النصوص القصيرة (الأوامر والإعلانات) تتحرر فوراً: 1.5–8 ثوانٍ
         assertEquals(1_500L, SystemVoiceProvider.synthesisTimeoutMs(1))
         assertEquals(1_500L, SystemVoiceProvider.synthesisTimeoutMs(10))
-        assertEquals(2_000L, SystemVoiceProvider.synthesisTimeoutMs(80))
-        assertEquals(3_000L, SystemVoiceProvider.synthesisTimeoutMs(300))
+        assertEquals(3_000L, SystemVoiceProvider.synthesisTimeoutMs(80))
+        assertEquals(8_000L, SystemVoiceProvider.synthesisTimeoutMs(300))
     }
 
     @Test
     fun synthesisTimeout_wellsUpForLongTexts() {
-        // النص الطويل يحصل على مهلة واسعة: 3000 + طول*30 ms
-        // 301 حرف: 3000 + 301*30 = 12030ms
-        assertEquals(12_030L, SystemVoiceProvider.synthesisTimeoutMs(301))
-        // 1000 حرف: 3000 + 30000 = 33000ms
-        assertEquals(33_000L, SystemVoiceProvider.synthesisTimeoutMs(1_000))
-        // 5000 حرف: 3000 + 150000 = 153000ms
-        assertEquals(153_000L, SystemVoiceProvider.synthesisTimeoutMs(5_000))
+        // النص الطويل يحصل على مهلة واسعة: 8000 + (طول-300)*30 ms
+        // 301 حرف: 8000 + 30 = 8030ms
+        assertEquals(8_030L, SystemVoiceProvider.synthesisTimeoutMs(301))
+        // 1000 حرف: 8000 + 700*30 = 29000ms
+        assertEquals(29_000L, SystemVoiceProvider.synthesisTimeoutMs(1_000))
+        // 5000 حرف: 8000 + 4700*30 = 149000ms
+        assertEquals(149_000L, SystemVoiceProvider.synthesisTimeoutMs(5_000))
     }
 
     @Test
@@ -38,7 +38,7 @@ class SystemVoiceProviderTest {
         val cap = 5 * 60 * 1_000L
         // النص الضخم جداً يُقصّ على 5 دقائق
         assertEquals(cap, SystemVoiceProvider.synthesisTimeoutMs(Int.MAX_VALUE))
-        // 10000 حرف: 3000+300000 > 300000 → مقصوص
+        // 10000 حرف: 8000+9700*30 > 300000 → مقصوص
         assertTrue(
             SystemVoiceProvider.synthesisTimeoutMs(10_000) <= cap
         )

@@ -77,6 +77,30 @@
   `resetAllToDefault`؛ التثبيت في `SettingsRepository.sanitize` (المستشعرات
   توضع false والقيمة غير الصالحة للمستوى تُثبّت على SOME).
 
+### ميزانية التخليق الواحدة (إصلاح انقطاع النص الطويل —根源 الجذري)
+- **العقد الحاكم: كل مهلةٍ خارجية ≥ ميزانيتها الداخلية.** أي انقطاع في
+  منتصف النص ينشأ من كسر هذا العقد، لا من ضعف المحرّك.
+- `SynthesisBudget` (`core/audio/.../engine/SynthesisBudget.kt`) هو **مصدرُ
+  الحقيقة الوحيد** للمهل، ويشغل ثلاثة مواضع: مهلة الطلب في
+  `NateqTtsService` (`requestTimeoutMs`)، ومهلة كتابة ملف WAV في
+  `SystemVoiceProvider` (`pieceTimeoutMs`)، وحارس الإعلانات في
+  `AnnouncementSpeaker` (`unitsTimeoutMs`).
+  **لا تُكتب أي معادلة مهلة جديدة خارج هذا الملف أبداً** — أضِف حالةً
+  فيه مع اختبار.
+- الثوابت: عتبات القطعة `1.5s`/`3s`/`8s` حتى 300 حرف ثم `8s + 30ms/char`
+  بسقف 5 دقائق؛ والطلب = القطعة + تكلفة الوحدة 2s (أرضية 20s)؛ وحارس
+  الإعلانات = مجموع ميزانيات وحداته + هامش.
+- **التقسيمُ إلى مقاطع 200 حرف ليس حلّاً**: أُزيل من مسار القارئ
+  (`synthesizeSingle`/`synthesizeSegmentRaw`/`synthesizeMixedSequential`)
+  ويُسلَّم النصُّ كلُّه طلباً واحداً متّصلاً. وبقي `SpeechChunker` في
+  **الإعلانات فقط** لأن كل وحدةٍ تُنطق مستقلّةً في طابور المتحدّث
+  ففشلُ واحدةٍ لا يُسقط ما بعدها — وهو ما لا يصحّ في حلقة تخليق القارئ.
+- **إتمامُ البثّ في `SystemVoiceProvider`**: الطولُ المُعلَن في خانة `data`
+  دليلٌ قاطع (`isWavWriteComplete`)، ومعه `onDone`، ومعهما استقرارُ حجم
+  الملف بعد `STALL_GRACE_POLLS`. والمهلة تمتد على **نموّ الملف** لا على
+  إصدار الشريحة فقط (وإلا انتهت وسط كتابةٍ بطيئة)، والصوتُ المصدَر
+  يُحفظ عند انتهاء المهلة فلا يُهدر.
+
 ### الاختبارات الآلية (JUnit + Robolectric)
 - **مطلوبة قبل أي commit:** بعد تعديل المنطق شغّل
   `.\gradlew.bat :app:testDebugUnitTest --console=plain`.
@@ -84,6 +108,8 @@
 - الاختبارات: `NumberSpeechTest` (نقي)، وفئات مصفوفة التوافقية (Robolectric مع
   `@Config(sdk=[24,30,35,37])` — أوسع تغطية عبر النطاق المدعوم)، وفئات
   Robolectric المباشرة على `sdk=[37]` (أحدث بيئة نظام مستهدفة).
+- **حارسُ العقد**: `SynthesisBudgetTest` يمنع تكرار كسر العقد أعلاه،
+  و`WavWriteCompleteTest` يحمي دليل الاكتمال القاطع.
 - **دعم SDK 36/37 في اختبارات Robolectric 4.17**: يتطلب Java 21 في JVM الاختبارات
   مع إضافة `--add-opens=java.base/jdk.internal.access=ALL-UNNAMED` في `build.gradle.kts`
   (لأن محاكاة `FileDescriptor` لـ `ApplicationSharedMemory` في SDK 37 تستدعي

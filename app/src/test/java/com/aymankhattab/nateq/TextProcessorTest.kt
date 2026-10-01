@@ -241,6 +241,46 @@ class TextProcessorTest {
     }
 
     @Test
+    fun hourOnlyWithPeriodSuffix_readsAsFullTime() {
+        // «الساعة 8 ص» ساعةٌ مجرّدة بلاحقة الفترة — كانت تمرّ خاماً
+        // فيُنطق الحرف «صاد» حرفاً، أو «8 م» تُقرأ ثمانية أمتار.
+        assertEquals(
+            "الساعة الثامنة صباحاً",
+            processor.process("الساعة 8 ص", "ar")
+        )
+        assertEquals(
+            "الساعة الخامسة مساءً",
+            processor.process("الساعة 5 م", "ar")
+        )
+        // وحدات القياس: «10 م» عشرُ أمتار لا وقتٌ — حمايةٌ كاملة
+        // المسار (الرقم يُنطق لأن UnitStep يقرأ «م» متراً، بينما
+        // TimeStep وحده لا يمسّه بلا كلمة وقت — مغطّى في
+        // PipelineStepsTest.time_hourOnlySuffix_doesNotBreakMeters).
+        val meters = processor.process("10 م", "ar")
+        assertTrue(
+            "«10 م» تُقرأ أمتاراً لا وقتاً: $meters",
+            meters.contains("متر") || meters.contains("عشرة")
+        )
+        assertFalse(
+            "«10 م» لا تتحوّل إلى صيغة وقت: $meters",
+            meters.contains("صباح") || meters.contains("مساء")
+        )
+    }
+
+    @Test
+    fun stripEngine_keepsBareTanweenWordsIntact() {
+        // الضبطُ اللفظي لهذه الصيغ في [ArabicSpeechNormalizer] (وحدة
+        // :core:audio) بعد المعالجة — هنا نتحقق أن المعالجة نفسها لا
+        // تشوّهها: «صباحا» تبقى كما هي (لا ألفٌ زائدة ولا حذف) فيتولّى
+        // القاموس ضبطَها بعد ذلك، و«صباحات» لا تُشوَّه كذلك.
+        assertEquals("صباحا", processor.process("صباحا", "ar"))
+        assertEquals("مساءا", processor.process("مساءا", "ar"))
+        assertEquals(
+            "صباحات اليوم", processor.process("صباحات اليوم", "ar")
+        )
+    }
+
+    @Test
     fun urduText_withoutExtendedMarks_unchanged() {
         // نص أوردو عادي (لا يحمل رموز النطاق الممتد) — لا يتأثر
         // بالتوسيع الجديد: پاکستانی

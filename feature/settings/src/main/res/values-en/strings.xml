@@ -63,8 +63,10 @@
 <string name="battery_cue_mode_narration_only">Speech only</string>
 <string name="battery_cue_mode_cue_only">Cue only</string>
 <string name="spinner_battery_cue_mode_content">Choose battery sound cue</string>
-<string name="battery_connected">Charger connected</string>
-<string name="battery_disconnected">Charger disconnected</string>
+<!-- battery_connected/battery_disconnected live only in :core:audio (they
+     carry the {percent} placeholder); defining them here overrode the
+     :core:audio resources in the merged app, so the charger announcement
+     was spoken without the battery percentage. -->
 <string name="battery_level_contentdesc">Battery level %1$d percent</string>
 <string name="battery_level_checked">Level %1$d percent selected</string>
 <string name="battery_level_unchecked">Level %1$d percent cleared</string>
@@ -472,9 +474,9 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-• Speech fixes: long texts are split into 200-character chunks for smooth uninterrupted reading; "8 PM/AM" style hour-only with Arabic suffix is spoken as a full time (not misread as a unit); "ṣabāḥan/ẓuhran" forms normalized after stripping diacritics; battery percentage added to charger connect/disconnect announcements
-• Major fix for TTS stopping mid-long text: engine synthesis timeout increased from fixed 8s to 30ms/char (min 3s, max 5m)
-• Ignore Quranic decorative marks (﷽ ۞ dagger alif) and normalize ڪ→ك in speech; fix "masāʾ" in the middle of a sentence
+- Root fix for speech stopping mid long text: the cause was conflicting timeouts - the service request timeout was shorter than the engine synthesis timeout, and the announcement watchdog had a fixed 120-second cap below the sum of the budgets of its units. There is now one shared time budget across every path, guaranteeing each outer timeout covers its inner budget, so text is no longer cut off. Streaming now completes on the declared size in the WAV header, the deadline extends on any file growth, and audio already emitted is kept when the timeout expires. The 200-character chunking workaround is removed from the reading path entirely (it treated the symptom, not the cause, and silently dropped words when any piece failed)
+- Speech fixes: hour-only times with an Arabic suffix ("8 PM/AM") are spoken as a full time, "sabahan/zuhran" forms normalized after stripping diacritics, battery percentage added to charger connect/disconnect announcements
+- Ignore Quranic decorative marks and normalize the letter kaf in speech; fix the pronunciation of "masa" in the middle of a sentence
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>

@@ -13,6 +13,7 @@ import android.util.Log
 import androidx.annotation.VisibleForTesting
 import com.aymankhattab.nateq.engine.EmojiSpeech
 import com.aymankhattab.nateq.core.audio.engine.SpeechChunker
+import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.core.audio.engine.LanguageSegmenter
 import com.aymankhattab.nateq.core.audio.engine.Segment
 import com.aymankhattab.nateq.core.audio.engine.isNumericOnly
@@ -572,16 +573,21 @@ class AnnouncementSpeaker(
         speechWatchdog = null
     }
 
-    /** فتح حارس انتهاء النطق بميزانية تتدرج من طول النص (أدنى 2.5 ثانية
-     *  حتى أقصى 60): إن لم يصل onDone/onError لدورة النطق الجارية خلالها —
-     *  محركٌ علّق صامتاً — يُحرَّر التركيز ويُرفع رصد الإسكات (المحور
-     *  السادس: لا «تركيز مكتوم» بلا مخرج أبداً). عند الاطلاق المتأخر للحدث
-     *  النهائي يبقى المسار الطبيعي سالماً: [releaseAudioFocus] معفاةُ التكرار
-     *  ومستمعو الاكتمال يُستدعون من onDone فقط. */
+/** فتح حارس انتهاء النطق بميزانيةٍ مشتقّة من وحدات النطق نفسها
+     *  ([SynthesisBudget.unitsTimeoutMs]): إن لم يصل onDone/onError
+     *  لدورة النطق الجارية خلالها — محرّكٌ علّق صامتاً — يُحرَّر
+     *  التركيز ويُرفع رصد الإسكات (المحور السادس: لا «تركيز مكتوم»
+     *  بلا مخرج أبداً). كان السقفُ ثابتاً (سابقاً 120 ثانية) بينما
+     *  مجموعُ ميزانيات وحدات إعلانٍ طويل يتجاوزه، فيُقطع الإعلان
+     *  في منتصفه — الانقطاعُ الجذري نفسه في مسار الإعلانات. وعند
+     *  الاطلاق المتأخر للحدث النهائي يبقى المسار الطبيعي سالماً:
+     *  [releaseAudioFocus] معفاةُ التكرار ومستعدّو الاكتمال
+     *  يُستدعون من onDone فقط. */
     private fun armSpeechWatchdog(units: List<SpeakUnit>) {
         cancelSpeechWatchdog()
-        val totalChars = units.sumOf { it.text.length }
-        val seconds = (totalChars / 8.0 + 20.0).coerceIn(20.0, 120.0)
+        val timeoutMs =
+            SynthesisBudget.unitsTimeoutMs(units.map { it.text.length })
+        val seconds = timeoutMs / 1000L
         val timer = Runnable {
             speechWatchdog = null
             Log.w(TAG,
@@ -596,7 +602,7 @@ class AnnouncementSpeaker(
             shutdownSafely()
         }
         speechWatchdog = timer
-        mainHandler.postDelayed(timer, (seconds * 1000).toLong())
+        mainHandler.postDelayed(timer, timeoutMs)
     }
 
     /**

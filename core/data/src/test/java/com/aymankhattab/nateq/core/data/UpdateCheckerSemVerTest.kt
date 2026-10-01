@@ -60,6 +60,21 @@ class UpdateCheckerSemVerTest {
         assertTrue(UpdateChecker.isNewerVersion("v7", "6.0.0"))
     }
 
+    /** حدّ الانتقال من مرحلة 0.x إلى أول SemVer حقيقي «1.6.1» (بداية
+     *  ترقيم `scripts/release.ps1` بعد وسم «0.106.0»): كل مستخدم على
+     *  «0.106.0» يجب أن يُعرض عليه التحديث، ثم تكمل المقارنة بزيادة
+     *  Patch وحده. الحالة حرجة عند القفزة من 0.x إلى 1.x تحديداً لأن
+     *  أرقام النسخة تتراجع ظاهرياً (106 → 6) فيلوهم المقارن الساذج
+     *  بأن 1.6.1 أقدم من 0.106.0. */
+    @Test
+    fun zeroToSemVer_boundary_firstOneIsNewer() {
+        assertTrue(UpdateChecker.isNewerVersion("1.6.1", "0.106.0"))
+        assertTrue(UpdateChecker.isNewerVersion("v1.6.1", "0.106.0"))
+        assertFalse(UpdateChecker.isNewerVersion("1.6.1", "1.6.1"))
+        assertTrue(UpdateChecker.isNewerVersion("1.6.2", "1.6.1"))
+        assertFalse(UpdateChecker.isNewerVersion("1.6.1", "1.6.2"))
+    }
+
     /** بند المرفق المتغيّر: النسخة المثبّتة التي تبحث عن اسمٍ سابق
      *  لا ترى مرفقاً باسم `nateq.apk` فتُعلن «محدّثاً» وهمياً — الاختيار
      *  يجب أن يلتقط أي مرفق `.apk` مع أفضلية الاسم المتوقع. */

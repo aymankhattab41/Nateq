@@ -5,14 +5,15 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 /**
- * اختبار تمديد مهلة البثّ (مرحلة 7): بثُّ شريحةٍ بنجاح يُرجئ الـ deadline
- * فلا تُقطع كتابةُ محركٍ بطيءٍ ما زالت تتقدم، والجمودُ (لا شريحة) يُبقي
- * الأجلَ الأصلي فيتحرر المدير. منطقٌ نقي (الزمن يُمرَّر صراحةً).
+ * اختبار تمديد مهلة البثّ: أيّ تقدّمٍ في كتابة الملف (إصدارُ شريحةٍ أو
+ * نموٌ بطيء دون شريحة) يُرجئ الـ deadline فلا تُقطع كتابةُ محركٍ ما زالت
+ * تتقدم، والجمودُ يُبقي الأجلَ الأصلي فيتحرر المدير. منطقٌ نقي (الزمن
+ * يُمرَّر صراحةً).
  */
 class StreamDeadlineExtendTest {
 
     @Test
-    fun emittedChunk_extendsDeadlineForward() {
+    fun progress_extendsDeadlineForward() {
         val oldDeadline = 1_000L
         val now = 2_000L
         val extended = extendStreamDeadline(oldDeadline, true, now)
@@ -23,7 +24,7 @@ class StreamDeadlineExtendTest {
     }
 
     @Test
-    fun noChunk_progressKeepsOriginalDeadline() {
+    fun noProgress_keepsOriginalDeadline() {
         val oldDeadline = 4_000L
         val now = 9_000L
         assertEquals(

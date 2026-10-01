@@ -31,13 +31,15 @@ class ArabicSpeechNormalizerTest {
         assertEquals(expectedMasa, ArabicSpeechNormalizer.normalize(plainAlif))
     }
 
+    // صَبَاحَنْ — التنوين بنونٍ ساكنة صريحة (حرفٌ تقرؤه كل المحركات)،
+    // لا بعلامة التنوين «ً» التي تُهمَل عند التجريد فيُفقد اللفظ.
+    private val expectedSaba = "\u0635\u064e\u0628\u064e\u0627\u062d\u064e\u0646\u0652"
+    private val expectedDhuhr = "\u0638\u064e\u0647\u0652\u0631\u064e\u0646\u0652"
+
     @Test
     fun sabaha_isFullyVoweled() {
         val raw = "\u0635\u0628\u0627\u062d\u0627\u064b" // صباحاً
-        assertEquals(
-            "\u0635\u064e\u0628\u064e\u0627\u062d\u064e\u0627\u064b",
-            ArabicSpeechNormalizer.normalize(raw)
-        )
+        assertEquals(expectedSaba, ArabicSpeechNormalizer.normalize(raw))
     }
 
     @Test
@@ -45,39 +47,74 @@ class ArabicSpeechNormalizerTest {
         // ناتج TimeStep «صباحاً» يمرّ على TashkeelStripStep فيصير «صباحا»
         // (ألف عارية بلا تنوين) — وهو ما كان يمرّ للمحرّك خاماً فيُسقط
         // اللفظ. الآن يُضبَط كما ضُبطت «مساءاً».
-        val stripped = "\u0635\u0628\u0627\u062d\u0627" // صباحا
         assertEquals(
-            "\u0635\u064e\u0628\u064e\u0627\u062d\u064e\u0627\u064b",
-            ArabicSpeechNormalizer.normalize(stripped)
+            expectedSaba,
+            ArabicSpeechNormalizer.normalize("\u0635\u0628\u0627\u062d\u0627") // صباحا
         )
         // والتنوين على الباء (صباحًا) صيغة حديثة تُضبط كذلك.
-        val tanweenOnBa = "\u0635\u0628\u0627\u062d\u064b\u0627" // صباحًا
         assertEquals(
-            "\u0635\u064e\u0628\u064e\u0627\u062d\u064e\u0627\u064b",
-            ArabicSpeechNormalizer.normalize(tanweenOnBa)
+            expectedSaba,
+            ArabicSpeechNormalizer.normalize("\u0635\u0628\u0627\u062d\u064b\u0627") // صباحًا
         )
     }
 
     @Test
     fun dhuhr_bareAlefAfterStripping_isFullyVoweled() {
         assertEquals(
-            "\u0638\u064e\u0647\u0652\u0631\u064e\u0627\u064b",
+            expectedDhuhr,
             ArabicSpeechNormalizer.normalize("\u0638\u0647\u0631\u0627") // ظهرا
         )
         assertEquals(
-            "\u0638\u064e\u0647\u0652\u0631\u064e\u0627\u064b",
-            ArabicSpeechNormalizer.normalize(
-                "\u0638\u0647\u0631\u0627\u064b" // ظهراً
+            expectedDhuhr,
+            ArabicSpeechNormalizer.normalize("\u0638\u0647\u0631\u0627\u064b") // ظهراً
+        )
+    }
+
+    @Test
+    fun tanweenWords_carryNoTanweenMark() {
+        // **جذر «غير منونة» مسموعةً:** علامة التنوين «ً» حرفٌ ليس
+        // فيه — فأي محرّكٍ يجرّد الحركات يُسقطها ويُخرج الكلمة بلا نون.
+        // الخيارات المُطبَّقة كلها تحمل نوناً ساكنة صريحة.
+        listOf(
+            "\u0635\u0628\u0627\u062d\u0627\u064b", // صباحاً
+            "\u0635\u0628\u0627\u062d\u0627", // صباحا
+            "\u0645\u0633\u0627\u0621\u0627\u064b", // مساءاً
+            "\u0645\u0633\u0627\u0621\u0627", // مساءا
+            "\u0638\u0647\u0631\u0627\u064b", // ظهراً
+            "\u0638\u0647\u0631\u0627" // ظهرا
+        ).forEach { raw ->
+            val out = ArabicSpeechNormalizer.normalize(raw)
+            assertTrue(
+                "«$raw» بلا نون ساكنة: $out",
+                out.endsWith("\u0646\u0652")
             )
+            assertTrue(
+                "«$raw» تُركت علامة تنوين: $out",
+                !out.contains('\u064B')
+            )
+        }
+    }
+
+    @Test
+    fun masaBareAlif_afterStripping_isNormalized() {
+        // «الساعة السادسة مساءا» بعد التجريد — الألف العارية تُضبط
+        // بالنون الساكنة كما في نظائرها المشكولة.
+        assertEquals(
+            expectedMasa,
+            ArabicSpeechNormalizer.normalize("\u0645\u0633\u0627\u0621\u0627") // مساءا
         )
     }
 
     @Test
     fun bareAlif_doesNotTouchWordsEndingWithIt() {
-        // «صباحات» (كلمة مستقلة) لا تُمسّ — القالب يشترط ألّا يتبع
-        // الألفَ العاريةَ حرفٌ.
-        val word = "\u0635\u0628\u0627\u062d\u0627\u062a" // صباحات
-        assertEquals(word, ArabicSpeechNormalizer.normalize(word))
+        // «صباحات» و«مساءات» (كلمتان مستقلتان) لا تُمسّان — القالب
+        // يشترط ألّا يتبع الألفَ العاريةَ حرفٌ.
+        listOf(
+            "\u0635\u0628\u0627\u062d\u0627\u062a", // صباحات
+            "\u0645\u0633\u0627\u0621\u0627\u062a" // مساءات
+        ).forEach { word ->
+            assertEquals(word, ArabicSpeechNormalizer.normalize(word))
+        }
     }
 
     @Test
@@ -87,8 +124,6 @@ class ArabicSpeechNormalizerTest {
         val out = ArabicSpeechNormalizer.normalize(
             "الساعة الآن السادسة \u0635\u0628\u0627\u062d\u0627" // صباحا
         )
-        val expectedSaba =
-            "\u0635\u064e\u0628\u064e\u0627\u062d\u064e\u0627\u064b"
         assertTrue(out.contains(expectedSaba))
     }
 

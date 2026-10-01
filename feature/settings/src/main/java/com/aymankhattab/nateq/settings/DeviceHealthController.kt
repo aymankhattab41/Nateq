@@ -7,6 +7,7 @@ import android.os.Environment
 import android.os.StatFs
 import android.view.View
 import android.widget.Toast
+import com.aymankhattab.nateq.core.audio.R as AudioR
 import com.aymankhattab.nateq.core.common.readStickyBattery
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.engine.NumberSpeech
@@ -146,7 +147,7 @@ internal class DeviceHealthController(
             parts.add(buildBatteryPart(context, langTag, isEnglish))
         }
         if (SettingsRepository.DEVICE_HEALTH_CHARGING in selected) {
-            parts.add(buildChargingPart(context, langTag))
+            parts.add(buildChargingPart(context, langTag, isEnglish))
         }
         if (SettingsRepository.DEVICE_HEALTH_STORAGE in selected) {
             parts.add(buildStoragePart(context, langTag, isEnglish))
@@ -218,12 +219,22 @@ internal class DeviceHealthController(
         ).replace("{percent}", percentWords)
     }
 
-    private fun buildChargingPart(context: Context, langTag: String): String {
-        val (_, charging) = batteryInfo(context)
-        val res = if (charging) R.string.battery_connected
-            else R.string.battery_disconnected
-        return LocaleUtils.stringForSpeech(
-            context, langTag, res, res
+    /** نصّ الشحن مع نسبة البطارية — النصوصُ في :core:audio (المصدرُ الوحيد
+     *  بعد حذف نسختها من هذه الوحدة) وتحمل بديل `{percent}`، فنملؤه
+     *  هنا من البث اللاصق تماماً كما في
+     *  BatteryAnnouncementReceiver (وحدةُAnnouncement). */
+    private fun buildChargingPart(
+        context: Context,
+        langTag: String,
+        isEnglish: Boolean
+    ): String {
+        val (percent, charging) = batteryInfo(context)
+        val res = if (charging) AudioR.string.battery_connected
+            else AudioR.string.battery_disconnected
+        val text = LocaleUtils.stringForSpeech(context, langTag, res, res)
+        if (percent <= 0 || !text.contains(PERCENT_PLACEHOLDER)) return text
+        return text.replace(
+            PERCENT_PLACEHOLDER, words(percent, isEnglish)
         )
     }
 
@@ -271,5 +282,8 @@ internal class DeviceHealthController(
 
     private companion object {
         const val GIB_CUBE = 1024.0 * 1024.0 * 1024.0
+
+        /** بديل نسبة البطارية في نصوص :core:audio. */
+        const val PERCENT_PLACEHOLDER = "{percent}"
     }
 }

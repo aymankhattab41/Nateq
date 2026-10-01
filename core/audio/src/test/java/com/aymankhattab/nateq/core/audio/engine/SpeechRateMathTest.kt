@@ -125,25 +125,27 @@ class SpeechRateMathTest {
     }
 
     @Test
-    fun synthesisTimeout_shortText_usesMinimum() {
-        // النص القصير (0 حرف) يحصل على الحد الأدنى 20 ثانية.
+    fun synthesisTimeout_shortText_usesFloor() {
+        // النص القصير: ميزانيةُ القطعة 1.5s + تكلفة الوحدة = 3.5s،
+        // فترفعها أرضيةُ الـ20 ثانية (سلوكٌ تاريخيّ محفوظ).
         assertEquals(20_000L, NateqTtsService.synthesisTimeoutMs(0))
-        assertEquals(20_400L, NateqTtsService.synthesisTimeoutMs(100))
+        assertEquals(20_000L, NateqTtsService.synthesisTimeoutMs(100))
     }
 
     @Test
-    fun synthesisTimeout_longText_scalesWithLength() {
-        // 1000 حرف: 20000 + 1000*4 = 24000ms
-        assertEquals(24_000L, NateqTtsService.synthesisTimeoutMs(1_000))
-        // 5000 حرف: 20000 + 5000*4 = 40000ms
-        assertEquals(40_000L, NateqTtsService.synthesisTimeoutMs(5_000))
+    fun synthesisTimeout_longText_coversPieceBudgetPlusOverhead() {
+        // 1000 حرف: 8000 + 700*30 = 29000ms + 2000ms تكلفةً = 31000ms
+        assertEquals(31_000L, NateqTtsService.synthesisTimeoutMs(1_000))
+        // 5000 حرف: 8000 + 4700*30 = 149000ms + 2000ms = 151000ms
+        assertEquals(151_000L, NateqTtsService.synthesisTimeoutMs(5_000))
     }
 
     @Test
-    fun synthesisTimeout_veryLongText_cappedAtFiveMinutes() {
-        // النص المطوّل جداً يُقصّ على 5 دقائق.
+    fun synthesisTimeout_veryLongText_cappedAtPieceCeiling() {
+        // النصّ الشاذُّ يُقصّ على سقف القطعة (5 دقائق) مضافاً إليه
+        // تكلفة الوحدة، فالمهلةُ تظلّ ≥ ميزانية المزوّد دائماً.
         assertEquals(
-            5 * 60 * 1000L,
+            5 * 60 * 1000L + 2_000L,
             NateqTtsService.synthesisTimeoutMs(100_000)
         )
     }
