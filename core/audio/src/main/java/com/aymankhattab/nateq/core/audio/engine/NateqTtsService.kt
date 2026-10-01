@@ -102,10 +102,24 @@ class NateqTtsService : TextToSpeechService() {
          *  إنشاء لعملية :tts التي تُقتل بين الجلسات غالباً. */
         private const val DISCOVERY_TTL_MS = 60 * 60 * 1000L
 
-        /** ترميز PCM 16-bit المستخدم في كل البث (ثابت أندرويد). */
         private const val PCM_16BIT = AudioFormat.ENCODING_PCM_16BIT
-        private const val SYNTHESIS_TIMEOUT_MS = 20_000L
         private const val EMPTY_TEXT_SAMPLE_RATE = 16_000
+
+        /** مهلة التخليق الدنيا للنصوص القصيرة (20 ثانية). */
+        private const val SYNTHESIS_TIMEOUT_MIN_MS = 20_000L
+
+        /** مهلة التخليق القصوى مهما طال النص (5 دقائق). */
+        private const val SYNTHESIS_TIMEOUT_MAX_MS = 5 * 60 * 1000L
+
+        /**
+         * مهلة زمنية متكيّفة مع طول النص — تمنع قطع النطق في منتصف النصوص
+         * الطويلة: تقدير 4ms/حرف (سخيٌّ لأبطأ المحركات وأعلى سرعات النطق)
+         * مضافاً إليه الحد الأدنى، ثم يُقصّ على الحد الأقصى.
+         * مثال: 500 حرف → 20+2s = 22s — 2000 حرف → 20+8s = 28s.
+         */
+        internal fun synthesisTimeoutMs(charCount: Int): Long =
+            (SYNTHESIS_TIMEOUT_MIN_MS + charCount * 4L)
+                .coerceAtMost(SYNTHESIS_TIMEOUT_MAX_MS)
 
         /** معيار البث الموحّد للنص المختلط (44100 مونو 16-bit) — ثابتٌ ليُتاح
          *  التدفق مقطعاً بمقطعٍ دون تجميع كامل الصوت في الذاكرة (الذروة = أكبر
@@ -579,6 +593,8 @@ override fun onDestroy() {
             0
         ) ?: 0
 
+        val rawText = request.charSequenceText?.toString().orEmpty()
+        val timeoutMs = synthesisTimeoutMs(rawText.length)
         val job = synthesisScope.launch(start = CoroutineStart.LAZY) {
             try {
                 // إعادة تحميل الإعدادات من القرص لأن `:tts`
@@ -606,7 +622,6 @@ override fun onDestroy() {
                 // **بند 2.2:** charSequenceText قد يكون null (طلبات قديمة/
                 // فارغة) فكان toString() المباشر يرمي NPE ويسقط التخليق —
                 // الاستدعاء الآمن يرد النص الفارغ بدل الانهيار.
-                val rawText = request.charSequenceText?.toString().orEmpty()
                 if (rawText.isBlank()) {
                     callback.start(EMPTY_TEXT_SAMPLE_RATE, PCM_16BIT, 1)
                     callback.done()
@@ -652,7 +667,7 @@ override fun onDestroy() {
                     )
                 } else {
                     // نص مختلط الكتابات: نطق كل مقطع بلغته/محركه ثم مزج الصوت
-                    // بمعدلٍ موحّد عبر بثٍّ واحد (مونو).
+                    // بمعدلٍ موحّد عبر بثٍّ واحد (مونو).
                     synthesizeMixed(segments, readerRate, callback)
                 }
             } catch (e: CancellationException) {
@@ -684,12 +699,16 @@ override fun onDestroy() {
         job.start()
         try {
             // انتظار متزامن على خيط التخليق حتى اكتمال التوليف (معيار AOSP)؛
-            // مع سقف زمني يحمي من تجميد خيط النظام إن علق المحرك أو المعالجة.
+            // مع سقف زمني متكيّف مع طول النص يحمي من تجميد الخيط إن علق
+            // المحرك — النصوص الطويلة تأخذ وقتها دون قطع.
             runBlocking {
-                withTimeoutOrNull(SYNTHESIS_TIMEOUT_MS) {
+                withTimeoutOrNull(timeoutMs) {
                     job.join()
                 } ?: run {
-                    Log.w(TAG, "onSynthesizeText timed out")
+                    Log.w(TAG,
+                        "onSynthesizeText timed out" +
+                        " (${rawText.length} chars, ${timeoutMs}ms)"
+                    )
                     job.cancel()
                     runCatching { callback.error() }
                 }

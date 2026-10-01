@@ -123,4 +123,28 @@ class SpeechRateMathTest {
         val inRange = computeFinalVolume(0.2f, boost = 4.0f)
         assertTrue("داخل النطاق الكامل", inRange in 0f..1f)
     }
+
+    @Test
+    fun synthesisTimeout_shortText_usesMinimum() {
+        // النص القصير (0 حرف) يحصل على الحد الأدنى 20 ثانية.
+        assertEquals(20_000L, NateqTtsService.synthesisTimeoutMs(0))
+        assertEquals(20_400L, NateqTtsService.synthesisTimeoutMs(100))
+    }
+
+    @Test
+    fun synthesisTimeout_longText_scalesWithLength() {
+        // 1000 حرف: 20000 + 1000*4 = 24000ms
+        assertEquals(24_000L, NateqTtsService.synthesisTimeoutMs(1_000))
+        // 5000 حرف: 20000 + 5000*4 = 40000ms
+        assertEquals(40_000L, NateqTtsService.synthesisTimeoutMs(5_000))
+    }
+
+    @Test
+    fun synthesisTimeout_veryLongText_cappedAtFiveMinutes() {
+        // النص المطوّل جداً يُقصّ على 5 دقائق.
+        assertEquals(
+            5 * 60 * 1000L,
+            NateqTtsService.synthesisTimeoutMs(100_000)
+        )
+    }
 }
