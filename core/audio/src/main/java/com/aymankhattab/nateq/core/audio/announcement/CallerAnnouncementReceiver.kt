@@ -83,6 +83,47 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         @Volatile
         internal var ringingAnnounced = false
 
+        /**
+         * الرقم الذي **أُعلن به فعلاً** في جلسة الرنين الحالية — لا
+         * «آخر رقم شوهد». الفرقُ حاسم: حين كان يُسجَّل الرقم الوارد
+         * في [lastResolvedNumber] **قبل** المقارنة، كانت
+         * `rawNumber == lastResolvedNumber` تتحقّق **دائماً** متى وُجد
+         * رقم، فالحارسُ لم يكن يفحص شيئاً.
+         */
+        @Volatile
+        internal var announcedNumber: String? = null
+
+        /**
+         * هل ستتكرّر الرنةُ لنفس المكالمة؟ بعض الأجهزة ترسل
+         * `PHONE_STATE/RINGING` **أكثر من مرة** للمكالمة الواحدة
+         * (شريحة SIM ثانية DSDS، تحديث IMS/VoLTE، تغيّر مسار التنبيه)،
+         * فبلا حارسٍ صامد يُعاد الإعلان كاملاً — فيُسمع «اتصال وارد»
+         * مرّتين أو ثلاثاً قبل أن يحمل الاسم.
+         *
+         * **الخ.Decisive أن الحارس لا يعلّق على `activeCallCycle`**: ذلك
+         * عمرُ كوروثين ينتهي في `finally` خلال أجزاء الثانية من
+         * `speak()` — قبل أن يبدأ الصوت أصلاً — فيموت الحارسُ بعد أول
+         * إعلانٍ فلا يبقى أثرٌ له. فالحارسُ هنا على **حالة الجلسة**
+         * الدائمة (`ringingAnnounced` + `announcedNumber`)، وهي تبقى
+         * بعد انتهاء الكوروثين حتى تصفّرها `resetRingingSession()` عند
+         * OFFHOOK/IDLE.
+         *
+         * `(rawNumber == null)` يُعامَل كـ«ليس رقماً جديداً» لأن بعض
+         * الأجهزة تحجب الرقم في البثّ الثاني؛ فلا يُعاد إعلانُ
+         * الجلسات التي لا تحمل دليلاً على أنها جديدة.
+         *
+         * خالصٌ قابل للاختبار.
+         */
+        internal fun shouldSuppressDuplicateAnnouncement(
+            alreadyAnnounced: Boolean,
+            announcedNumber: String?,
+            incomingNumber: String?
+        ): Boolean {
+            if (!alreadyAnnounced) return false
+            if (incomingNumber == null) return true
+            return incomingNumber == announcedNumber
+        }
+
         /** مهلة انتظار وصول رقم المتصل عند وصول بث فارغ (1.8 ثانية) */
         internal const val CALLER_RESOLVE_GRACE_PERIOD_MS = 1_800L
 
@@ -95,6 +136,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             lastResolvedName = null
             ringingStartTime = 0L
             ringingAnnounced = false
+            announcedNumber = null
         }
 
         /** هل رنينُ الحالة الحالية رنينُ مكالمةٍ واردة أثناء مكالمة نشطة
@@ -243,11 +285,26 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 lastResolvedNumber = rawNumber
             }
 
-            // إن كانت المكالمة قد أُعلنت بالفعل وحلقتها نشطة ولا يوجد
-            // رقم جديد، ننهي البث بهدوء دون مقاطعة حلقة النطق الجارية
-            if (ringingAnnounced && activeCallCycle?.isActive == true &&
-                (rawNumber == null || rawNumber == lastResolvedNumber)
+            // **حارس منع التكرار — على حالة الجلسة لا على عمر الكوروثين.**
+            // كان معلقاً على `activeCallCycle?.isActive` وهو عمرُ
+            // كوروثين ينتهي فور `speak()`، فيموت الحارسُ بعد أول إعلان
+            // فلا يمنع بثّ `RINGING` الثاني للمكالمة نفسها — وهو ما
+            // يجعل بعض الأجهزة تنطق «اتصال وارد» ثلاثاً قبل الاسم.
+            // والمقارنةُ صارت على [announcedNumber] (رقمُ ما أُعلن)
+            // لا على [lastResolvedNumber] (آخرُ رقم شوهد) الذي كُتب
+            // قبلها بسطر، فكانت المقارنةُ تتحقّق دائماً ولا تفحص شيئاً.
+            if (shouldSuppressDuplicateAnnouncement(
+                    alreadyAnnounced = ringingAnnounced,
+                    announcedNumber = announcedNumber,
+                    incomingNumber = rawNumber
+                )
             ) {
+                Log.d(
+                    TAG,
+                    "suppressed duplicate ring announcement" +
+                        " (announced=${announcedNumber ?: "?"}," +
+                        " incoming=${rawNumber ?: "?"})"
+                )
                 finishOnce()
                 return@launch
             }
@@ -491,6 +548,13 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     category = SettingsRepository.ANNOUNCE_CATEGORY_CALLER
                 )
                 ringingAnnounced = true
+                // **رقمُ ما أُعلن فعلاً** — يُلتقط قبل أي إعادة حلّ
+                // في نبضات التكرار، لأن الحارس يقارن به لا بآخر رقم
+                // شوهد. يُثبَّت مرّةً واحدة (أول إعلان) فلا تتبعه
+                // تغييراتُ حلّ الاسم اللاحقة.
+                if (announcedNumber == null) {
+                    announcedNumber = lastResolvedNumber ?: rawNumber
+                }
                 // **بند 5.5:** إنهاءٌ مبكر بمستمع الاكتمال: محركٌ سليم يُنهي
                 // البث فور اكتمال (onDone) الجملة الأولى فعلياً — بلا حجزٍ
                 // أطول من اللازم ولا ذيلِ صوتٍ مبتور (جمدُ العملية بعد

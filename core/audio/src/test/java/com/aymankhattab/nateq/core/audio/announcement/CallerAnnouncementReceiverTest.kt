@@ -563,6 +563,7 @@ fun `waiting call speaks only when during call toggle enabled`() {
         CallerAnnouncementReceiver.lastResolvedName = "أحمد"
         CallerAnnouncementReceiver.ringingStartTime = 12345L
         CallerAnnouncementReceiver.ringingAnnounced = true
+        CallerAnnouncementReceiver.announcedNumber = "01012345678"
 
         CallerAnnouncementReceiver.resetRingingSession()
 
@@ -570,6 +571,95 @@ fun `waiting call speaks only when during call toggle enabled`() {
         assertNull(CallerAnnouncementReceiver.lastResolvedName)
         assertEquals(0L, CallerAnnouncementReceiver.ringingStartTime)
         assertFalse(CallerAnnouncementReceiver.ringingAnnounced)
+        // **حارسُ التكرار يعتمد حالةَ الجلسة، فتصفيرُها إجباريٌّ وإلا
+        // صمت إعلانُ المكالمة التالية إلى الأبد.**
+        assertNull(CallerAnnouncementReceiver.announcedNumber)
+    }
+
+    /**
+     * حارسُ منع تكرار إعلان المتصل.
+     *
+     * **العَرَض المُبلّغ:** في بعض الهواتف يُنطق «اتصال وارد» ثلاث مرّات
+     * ثم رابعاً بالاسم — لأن الجهاز يرسل `PHONE_STATE/RINGING` أكثر من
+     * مرّة للمكالمة الواحدة، وكان الحارسُ معلقاً على `activeCallCycle`
+     * (عمرُ كوروثين ينتهي فور `speak()`) فيموت بعد أول إعلان. والحارسُ
+     * الجديد على حالةِ الجلسة الدائمة فيصمد بعد موت الكوروثين.
+     */
+    @Test
+    fun `duplicate ring with same number is suppressed after announce`() {
+        assertTrue(
+            "بثّ RINGING مكرر لنفس الرقم يجب أن يُكبَت",
+            CallerAnnouncementReceiver.shouldSuppressDuplicateAnnouncement(
+                alreadyAnnounced = true,
+                announcedNumber = "01012345678",
+                incomingNumber = "01012345678"
+            )
+        )
+    }
+
+    @Test
+    fun `duplicate ring without number is suppressed after announce`() {
+        // بعض الأجهزة تحجب الرقم في البثّ الثاني: غيابُ الرقم ليس
+        // دليلاً على مكالمة جديدة.
+        assertTrue(
+            CallerAnnouncementReceiver.shouldSuppressDuplicateAnnouncement(
+                alreadyAnnounced = true,
+                announcedNumber = "01012345678",
+                incomingNumber = null
+            )
+        )
+    }
+
+    @Test
+    fun `first ring is never suppressed`() {
+        // **الأهم:** لا يُكبَتُ أول إعلانٍ أبداً.
+        assertFalse(
+            CallerAnnouncementReceiver.shouldSuppressDuplicateAnnouncement(
+                alreadyAnnounced = false,
+                announcedNumber = null,
+                incomingNumber = "01012345678"
+            )
+        )
+    }
+
+    @Test
+    fun `a different number is treated as a new call`() {
+        // مكالمةٌ جديدةٌ من رقمٍ آخر يجب أن تُعلَن ولو كان قد سبق
+        // إعلانٌ في الجلسة قبل إنهائها.
+        assertFalse(
+            CallerAnnouncementReceiver.shouldSuppressDuplicateAnnouncement(
+                alreadyAnnounced = true,
+                announcedNumber = "01012345678",
+                incomingNumber = "01087654321"
+            )
+        )
+    }
+
+    @Test
+    fun `announced number is captured once and survives name resolution`() {
+        // **بصمةُ العطل المُبلّغ:** «اتصال وارد» ثلاثاً ثم الاسم في
+        // الرابعة. التكرارُ المبرمج المبرمج يولّد ثلاثاً، والرابعة دورةٌ
+        // جديدةٌ أعادها بثّ مكرر — واسمُها ظهر متأخراً.
+        CallerAnnouncementReceiver.resetRingingSession()
+        CallerAnnouncementReceiver.ringingAnnounced = true
+        if (CallerAnnouncementReceiver.announcedNumber == null) {
+            CallerAnnouncementReceiver.announcedNumber = "01012345678"
+        }
+        // إعادةُ حلّ الاسم في نبضة تكرارٍ لاحقة لا يجوز أن تُغيّر
+        // رقمَ ما أُعلن (وإلا عاد الحارسُ إلى نقطة الصفر).
+        CallerAnnouncementReceiver.lastResolvedName = "أحمد"
+        assertEquals(
+            "01012345678",
+            CallerAnnouncementReceiver.announcedNumber
+        )
+        assertTrue(
+            CallerAnnouncementReceiver.shouldSuppressDuplicateAnnouncement(
+                alreadyAnnounced = CallerAnnouncementReceiver.ringingAnnounced,
+                announcedNumber = CallerAnnouncementReceiver.announcedNumber,
+                incomingNumber = "01012345678"
+            )
+        )
+        CallerAnnouncementReceiver.resetRingingSession()
     }
 
     @Test
