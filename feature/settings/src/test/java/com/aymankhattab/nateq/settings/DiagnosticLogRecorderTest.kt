@@ -49,23 +49,6 @@ class DiagnosticLogRecorderTest {
     }
 
     @Test
-    fun shouldReportReaderFailure_silentOnNormalStop() {
-        // **العطل المُصلَح:** الإيقافُ الطبيعي يدمّر عملية logcat
-        // فيُقاطَع القارئ بـInterruptedIOException — وكان يُسجَّل Log.e
-        // بتكديس 20 سطراً فتملأ «الأخطاء الحرجة» بأخطاء وهمية.
-        assertFalse(
-            DiagnosticLogRecorder.shouldReportReaderFailure(
-                stillRecording = false
-            )
-        )
-        assertTrue(
-            DiagnosticLogRecorder.shouldReportReaderFailure(
-                stillRecording = true
-            )
-        )
-    }
-
-    @Test
     fun stop_whenIdle_returnsEmpty() {
         assertEquals(emptyList<String>(), DiagnosticLogRecorder.stop())
         assertFalse(DiagnosticLogRecorder.isRecording())

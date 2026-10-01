@@ -23,7 +23,6 @@ internal object CueSynth {
             CueType.BATTERY_DISCONNECTED -> batteryDisconnected()
             CueType.BATTERY_FULL -> batteryFull()
             CueType.BATTERY_LOW -> batteryLow()
-            CueType.CALL_UNIDENTIFIED -> callUnidentified()
         }
         return floatsToShort(floats)
     }
@@ -38,7 +37,6 @@ internal object CueSynth {
         CueType.BATTERY_DISCONNECTED -> 260
         CueType.BATTERY_FULL -> 650
         CueType.BATTERY_LOW -> 620
-        CueType.CALL_UNIDENTIFIED -> 400
     }
 
     private fun hourlyChime(soundName: String?): FloatArray =
@@ -200,42 +198,6 @@ internal object CueSynth {
                     val tN = t - note2Start
                     val env = (tN / atk).coerceAtMost(1.0) *
                         exp(-tN / 0.08).coerceAtMost(1.0)
-                    sin(2.0 * PI * notes[1] * t) * env
-                }
-            }
-            floats[i] = (s * peak).toFloat()
-        }
-        return floats
-    }
-
-    /**
-     * نغمة «مكالمة بلا هوية» — نغمتان صاعدتان قصيرتان (A5 ثم D6).
-     * نمطُها متعمَّد مختلفٌ عن كل نغمة البطارية والساعة ليسهل تمييزها
-     * سمعياً بأنها «مكالمة» لا «بطارية».
-     */
-    private fun callUnidentified(): FloatArray {
-        val noteDur = 0.13
-        val gapDur = 0.05
-        val dur = 0.40
-        val n = (dur * SAMPLE_RATE).toInt()
-        val floats = FloatArray(n)
-        val notes = doubleArrayOf(880.0, 1174.66)
-        val peak = 0.55
-        val atk = 0.005
-        val note2Start = noteDur + gapDur
-        for (i in 0 until n) {
-            val t = i.toDouble() / SAMPLE_RATE
-            val s = when {
-                t < noteDur -> {
-                    val env = (t / atk).coerceAtMost(1.0) *
-                        exp(-t / 0.05).coerceAtMost(1.0)
-                    sin(2.0 * PI * notes[0] * t) * env
-                }
-                t < note2Start -> 0.0
-                else -> {
-                    val tN = t - note2Start
-                    val env = (tN / atk).coerceAtMost(1.0) *
-                        exp(-tN / 0.05).coerceAtMost(1.0)
                     sin(2.0 * PI * notes[1] * t) * env
                 }
             }

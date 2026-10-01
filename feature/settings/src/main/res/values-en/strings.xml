@@ -72,13 +72,6 @@
 <string name="battery_level_unchecked">Level %1$d percent cleared</string>
 <string name="caller_announcement_enabled">Enable caller announcement</string>
 <string name="caller_announcement_during_call">Announce caller name during a call</string>
-<string name="caller_instant_identity_grant">Enable instant caller name</string>
-<string name="caller_instant_identity_status_none">Not enabled: the caller name may be delayed, or not announced if the network hides it. Tap the button to open system settings.</string>
-<string name="caller_instant_identity_status_notif">Enabled via call notification: the name is announced as the call starts ringing.</string>
-<string name="caller_instant_identity_status_role">Enabled via call screening: the number arrives before ringing.</string>
-<string name="caller_instant_identity_status_both">Enabled via both: fastest and most accurate identity source.</string>
-<string name="caller_instant_identity_granted">Instant announcement is already enabled</string>
-<string name="caller_screening_unavailable">Could not open call screening settings on this device</string>
 <string name="caller_announcement_interval">Interval between repeats (seconds)</string>
 <string name="caller_announcement_rate">Caller speech rate</string>
 <string name="caller_announcement_pitch">Caller announcement pitch</string>
@@ -481,9 +474,8 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-- The caller identity is now immediate, coming from two sources at once: the call notification (CATEGORY_CALL) and the call screening service (CallScreeningService), and the app never speaks "Incoming call" anymore, since the identity is the only thing worth speaking. When the number is late, a short tone with vibration plays instead of silence, so you know a call is there without hearing an empty label, and the name is spoken the moment it arrives without repeating
-- Fixed the caller announcement being spoken twice: the platform sends the ringing state twice for a single call, the first one immediately without a number and the second one about six seconds later carrying it, so an incoming call was announced without a name and then the guard read the arriving number as a new call and opened a whole extra cycle with the name, making what you hear double the repeat count you set, ten announcements at five. The name now lands in the single cycle after waiting for the number, and the speech no longer doubles if the number arrives late
-- Fixed the diagnostic trace being hidden completely: the caller announcement trace was written at Log.d level, which the shrinker strips from the release build, so not a single line of it ever reached the error report. It now uses Log.w, so the full broadcast sequence shows up and the source of the extra announcement becomes visible
+- Reverted the caller announcement changes from the last two releases: they never met the goal of announcing the name at the first ring, so all of them were pulled and the announcement went back to the version before them, before the late-number, duplicate-speech and diagnostic-trace fixes, while the original feature stays as it was with its settings and permissions
+- Wider error log report: it now prints every captured line (up to 20 thousand lines) instead of only the last 150, the own diagnostic lines of the app are shown at the top of the report, and error and warning detection now works because the line level was being read from the wrong position; ending the capture no longer records a fake error that fills the critical errors section
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
