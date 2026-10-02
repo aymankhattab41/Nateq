@@ -28,6 +28,10 @@ import com.google.android.material.switchmaterial.SwitchMaterial
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LanguageCode
 
+/** شفافيةُ الضابط المعطّل — لا يُعتمَل على قيمة المنصّة فالتعتيم يختلف
+ *  فيها، والأرقام في هذا الملف. */
+private const val DISABLED_CONTROL_ALPHA = 0.4f
+
 /** ضابط قسم «إعلان اسم المتصل»: التفعيل بالأذونات، التكرار، السرعة،
  *  القالب والأصوات. */
 internal class CallerAnnouncementController(
@@ -77,15 +81,29 @@ internal class CallerAnnouncementController(
     private var tvCallerVolumeValue: TextView? = null
     private var seekCallerPitch: SeekBar? = null
     private var tvCallerPitchValue: TextView? = null
-    private var etCallerTemplate:
-        com.google.android.material.textfield.TextInputEditText? = null
-    private var templateWatcher: android.text.TextWatcher? = null
     private var spinnerCallerVoiceAr: Spinner? = null
     private var spinnerCallerVoiceEn: Spinner? = null
     private var spinnerCallerEngineAr: Spinner? = null
     private var spinnerCallerEngineEn: Spinner? = null
     private var tvCallerEngineArLabel: TextView? = null
     private var tvCallerEngineEnLabel: TextView? = null
+
+    // جملتا «قبل» و«بعد» (قرار المدير): مراقبٌ مستقلٌ لكل حقل، وشريطُ
+    // خفض الرنين بمربّعِه — كلها بـandroid:tag لا id (حدّ الـ binding).
+    private var cbCallerPrefix: androidx.appcompat.widget.AppCompatCheckBox? =
+        null
+    private var etCallerPrefix:
+        com.google.android.material.textfield.TextInputEditText? = null
+    private var cbCallerSuffix: androidx.appcompat.widget.AppCompatCheckBox? =
+        null
+    private var etCallerSuffix:
+        com.google.android.material.textfield.TextInputEditText? = null
+    private var affixWatchers:
+        Pair<android.text.TextWatcher, android.text.TextWatcher>? = null
+    private var cbCallerRingDuck: androidx.appcompat.widget.AppCompatCheckBox? =
+        null
+    private var seekCallerRingDuck: SeekBar? = null
+    private var tvCallerRingDuckValue: TextView? = null
 
     /** خيارات محرك نطق المتصل: المحركات المثبتة */
     private var callerEngineOptions: List<EnginePicker.InstalledEngine> =
@@ -126,8 +144,30 @@ internal class CallerAnnouncementController(
         tvCallerVolumeValue = view.findViewById(R.id.tv_caller_volume_value)
         seekCallerPitch = view.findViewById(R.id.seek_caller_pitch)
         tvCallerPitchValue = view.findViewById(R.id.tv_caller_pitch_value)
-etCallerTemplate =
-            view.findViewById(R.id.et_caller_template)
+etCallerPrefix =
+            view.findViewWithTag<
+                com.google.android.material.textfield.TextInputEditText
+                >("et_caller_prefix")
+        cbCallerPrefix =
+            view.findViewWithTag<
+                androidx.appcompat.widget.AppCompatCheckBox
+                >("cb_caller_prefix")
+        etCallerSuffix =
+            view.findViewWithTag<
+                com.google.android.material.textfield.TextInputEditText
+                >("et_caller_suffix")
+        cbCallerSuffix =
+            view.findViewWithTag<
+                androidx.appcompat.widget.AppCompatCheckBox
+                >("cb_caller_suffix")
+        cbCallerRingDuck =
+            view.findViewWithTag<
+                androidx.appcompat.widget.AppCompatCheckBox
+                >("cb_caller_ring_duck")
+        seekCallerRingDuck =
+            view.findViewWithTag<SeekBar>("seek_caller_ring_duck")
+        tvCallerRingDuckValue =
+            view.findViewWithTag<TextView>("tv_caller_ring_duck_value")
         spinnerCallerVoiceAr = view.findViewById(R.id.spinner_caller_voice_ar)
         spinnerCallerVoiceEn = view.findViewById(R.id.spinner_caller_voice_en)
         spinnerCallerEngineAr =
@@ -410,36 +450,79 @@ etCallerTemplate =
             }
         })
 
-        // قالب إعلان المتصل: {name} لاسم المتصل
-        etCallerTemplate?.setText(
-            runCatching { settings.getCallerAnnouncementTemplate() }
-                .getOrNull()
+        // **جملتا «قبل» و«بعد»:** المستخدم هو مَن يحدّد ما يُنطق في كلٍّ
+        // منهما (قرار المدير: لا قالبً واحداً كان يمزجهما).
+        etCallerPrefix?.setText(
+            runCatching { settings.getCallerPrefixText() }.getOrNull()
         )
-        templateWatcher?.let { etCallerTemplate?.removeTextChangedListener(it) }
-        val callerWatcher = object : TextWatcher {
-            override fun beforeTextChanged(
-                s: CharSequence?,
-                start: Int,
-                count: Int,
-                after: Int
-            ) {}
-
-            override fun onTextChanged(
-                s: CharSequence?,
-                start: Int,
-                before: Int,
-                count: Int
-            ) {}
-            override fun afterTextChanged(s: Editable?) {
-                runCatching {
-                    settings.setCallerAnnouncementTemplate(
-                        s?.toString()?.trim()?.takeIf { it.isNotBlank() }
-                    )
-                }
-            }
+        etCallerSuffix?.setText(
+            runCatching { settings.getCallerSuffixText() }.getOrNull()
+        )
+        affixWatchers?.let { (prefixWatcher, suffixWatcher) ->
+            etCallerPrefix?.removeTextChangedListener(prefixWatcher)
+            etCallerSuffix?.removeTextChangedListener(suffixWatcher)
         }
-        templateWatcher = callerWatcher
-        etCallerTemplate?.addTextChangedListener(callerWatcher)
+        // مراقبٌ مستقلٌ لكل حقل: النصوصُ قد تتطابق فيُشتبَه بالحقل
+        // الخطأ وتُحفَظ قيمةُ الجملة في الموضع الآخر — فالفصلُ بالذات
+        // هو ما يمنع ذلك، لا أيُّ تمييزٍ لاحقٍ.
+        val prefixWatcher = affixWatcher { text ->
+            runCatching { settings.setCallerPrefixText(text) }
+        }
+        val suffixWatcher = affixWatcher { text ->
+            runCatching { settings.setCallerSuffixText(text) }
+        }
+        affixWatchers = prefixWatcher to suffixWatcher
+        etCallerPrefix?.addTextChangedListener(prefixWatcher)
+        etCallerSuffix?.addTextChangedListener(suffixWatcher)
+
+        cbCallerPrefix?.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setCallerPrefixEnabled(checked) }
+            onStatusChanged()
+        }
+        cbCallerSuffix?.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setCallerSuffixEnabled(checked) }
+            onStatusChanged()
+        }
+
+        // خفض الرنين أثناء إعلان المتصل.
+        cbCallerRingDuck?.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setCallerRingDuckingEnabled(checked) }
+            refreshCallerRingDuck()
+            onStatusChanged()
+        }
+        seekCallerRingDuck?.apply {
+            max = SettingsRepository.CALLER_RING_DUCK_MAX -
+                SettingsRepository.CALLER_RING_DUCK_MIN
+            progress = (runCatching {
+                settings.getCallerRingDuckPercent()
+            }.getOrDefault(SettingsRepository.CALLER_RING_DUCK_DEFAULT)) -
+                SettingsRepository.CALLER_RING_DUCK_MIN
+            setOnSeekBarChangeListener(object :
+                android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(
+                    seekBar: SeekBar,
+                    progress: Int,
+                    fromUser: Boolean
+                ) {
+                    val percent = progress +
+                        SettingsRepository.CALLER_RING_DUCK_MIN
+                    showDuckPercent(percent)
+                    runCatching { settings.setCallerRingDuckPercent(percent) }
+                    onStatusChanged()
+                }
+
+                override fun onStartTrackingTouch(seekBar: SeekBar) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar) {
+                    val percent = seekBar.progress +
+                        SettingsRepository.CALLER_RING_DUCK_MIN
+                    showDuckPercent(percent)
+                    runCatching { settings.setCallerRingDuckPercent(percent) }
+                    seekBar.announceCompat(duckPercentLabel(percent))
+                    onStatusChanged()
+                }
+            })
+        }
+        refreshCallerRingDuck()
 
         // صوت نطق الأسماء العربية في إعلان المتصل (من الكتالوج).
         spinnerCallerVoiceAr?.onItemSelectedListener =
@@ -491,6 +574,71 @@ etCallerTemplate =
     /** يضبط سبنر محرك إحدى اللغتين: يُبنى بـ«تلقائي» ثم المحركات المثبتة،
      *  يحدد القيمة المحفوظة لفئته، ويحفظ اختيار المستخدم لفئته فقط ثم
      *  يُحدّث أصوات تلك اللغة. */
+    /** يعرض نسبة الخفض الحالية ويجعل الشريطَ فعّالاً مع مربّعه فقط. */
+    private fun refreshCallerRingDuck() {
+        val enabled = runCatching {
+            settings.isCallerRingDuckingEnabled()
+        }.getOrDefault(false)
+        cbCallerRingDuck?.setOnCheckedChangeListener(null)
+        cbCallerRingDuck?.isChecked = enabled
+        cbCallerRingDuck?.setOnCheckedChangeListener { _, checked ->
+            runCatching { settings.setCallerRingDuckingEnabled(checked) }
+            refreshCallerRingDuck()
+            onStatusChanged()
+        }
+        seekCallerRingDuck?.isEnabled = enabled
+        seekCallerRingDuck?.alpha = if (enabled) 1f else DISABLED_CONTROL_ALPHA
+        tvCallerRingDuckValue?.alpha =
+            if (enabled) 1f else DISABLED_CONTROL_ALPHA
+        val percent = runCatching { settings.getCallerRingDuckPercent() }
+            .getOrDefault(SettingsRepository.CALLER_RING_DUCK_DEFAULT)
+            .coerceIn(
+                SettingsRepository.CALLER_RING_DUCK_MIN,
+                SettingsRepository.CALLER_RING_DUCK_MAX
+            )
+        if (seekCallerRingDuck?.progress != percent -
+            SettingsRepository.CALLER_RING_DUCK_MIN
+        ) {
+            seekCallerRingDuck?.progress = percent -
+                SettingsRepository.CALLER_RING_DUCK_MIN
+        }
+        showDuckPercent(percent)
+    }
+
+    /** مراقبُ نصٍّ يحفظ ما يكتبه المستخدم في [onSave] — منفصلٌ لكل حقل
+     *  (قبل/بعد) فلا تتداخل نصوصُهما المتطابقة. */
+    private fun affixWatcher(
+        onSave: (String) -> Unit
+    ): TextWatcher = object : TextWatcher {
+        override fun beforeTextChanged(
+            s: CharSequence?,
+            start: Int,
+            count: Int,
+            after: Int
+        ) {}
+
+        override fun onTextChanged(
+            s: CharSequence?,
+            start: Int,
+            before: Int,
+            count: Int
+        ) {}
+
+        override fun afterTextChanged(s: Editable?) {
+            onSave(s?.toString().orEmpty())
+        }
+    }
+
+    /** نصّ نسبة الخفض «40%» بلغة الواجهة. */
+    private fun duckPercentLabel(percent: Int): String =
+        fragment.getString(R.string.percent_value_format, percent)
+
+    private fun showDuckPercent(percent: Int) {
+        val label = duckPercentLabel(percent)
+        tvCallerRingDuckValue?.text = label
+        seekCallerRingDuck?.setSeekStateDescription(label)
+    }
+
     private fun setupCallerEngineSpinner(
         spinner: Spinner?,
         label: TextView?,
@@ -806,11 +954,18 @@ etCallerTemplate =
         tvCallerVolumeValue = null
         seekCallerPitch = null
         tvCallerPitchValue = null
-        templateWatcher?.let {
-            etCallerTemplate?.removeTextChangedListener(it)
+        affixWatchers?.let { (prefixWatcher, suffixWatcher) ->
+            etCallerPrefix?.removeTextChangedListener(prefixWatcher)
+            etCallerSuffix?.removeTextChangedListener(suffixWatcher)
         }
-        templateWatcher = null
-        etCallerTemplate = null
+        affixWatchers = null
+        etCallerPrefix = null
+        cbCallerPrefix = null
+        etCallerSuffix = null
+        cbCallerSuffix = null
+        cbCallerRingDuck = null
+        seekCallerRingDuck = null
+        tvCallerRingDuckValue = null
         spinnerCallerVoiceAr = null
         spinnerCallerVoiceEn = null
         spinnerCallerEngineAr = null

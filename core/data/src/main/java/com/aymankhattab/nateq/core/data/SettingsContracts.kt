@@ -428,6 +428,18 @@ interface AnnouncementPrefs {
     /** يعيّن نطق اسم المتصل الثاني الوارد أثناء مكالمة نشطة. */
     fun setCallerAnnouncementDuringCallEnabled(enabled: Boolean)
 
+    /** هل تُخفض نغمة الرنين أثناء نطق اسم المتصل؟ */
+    fun isCallerRingDuckingEnabled(): Boolean
+
+    /** يعيّن خفض نغمة الرنين أثناء نطق اسم المتصل. */
+    fun setCallerRingDuckingEnabled(enabled: Boolean)
+
+    /** نسبة خفض الرنين (10..90 بالمئة من مستوى الرنين الأصلي). */
+    fun getCallerRingDuckPercent(): Int
+
+    /** يعيّن نسبة خفض الرنين. */
+    fun setCallerRingDuckPercent(percent: Int)
+
     /** عدد مرات تكرار إعلان المتصل. */
     fun getCallerAnnouncementRepeat(): Int
 
@@ -464,11 +476,29 @@ interface AnnouncementPrefs {
     /** يعيّن مستوى صوت إعلان المتصل. */
     fun setCallerAnnouncementVolume(volume: Float)
 
-    /** قالب نص إعلان المتصل (مع سلسلة الاستبدال). */
-    fun getCallerAnnouncementTemplate(): String
+    /** هل تُنطق جملةٌ **قبل** اسم المتصل/رقمه؟ */
+    fun isCallerPrefixEnabled(): Boolean
 
-    /** يعيّن قالب نص إعلان المتصل. */
-    fun setCallerAnnouncementTemplate(template: String?)
+    /** يعيّن تفعيل جملة ما قبل اسم المتصل. */
+    fun setCallerPrefixEnabled(enabled: Boolean)
+
+    /** نص الجملة التي تُنطق قبل اسم المتصل/رقمه (المستخدم يكتبه). */
+    fun getCallerPrefixText(): String
+
+    /** يعيّن نص الجملة التي تُنطق قبل اسم المتصل/رقمه. */
+    fun setCallerPrefixText(text: String?)
+
+    /** هل تُنطق جملةٌ **بعد** اسم المتصل/رقمه؟ */
+    fun isCallerSuffixEnabled(): Boolean
+
+    /** يعيّن تفعيل جملة ما بعد اسم المتصل. */
+    fun setCallerSuffixEnabled(enabled: Boolean)
+
+    /** نص الجملة التي تُنطق بعد اسم المتصل/رقمه (المستخدم يكتبه). */
+    fun getCallerSuffixText(): String
+
+    /** يعيّن نص الجملة التي تُنطق بعد اسم المتصل/رقمه. */
+    fun setCallerSuffixText(text: String?)
 
     /** قالب نص إعلان الرسائل (مع سلسلة الاستبدال). */
     fun getSmsAnnouncementTemplate(): String

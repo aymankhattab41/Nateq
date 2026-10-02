@@ -1262,4 +1262,160 @@ class SettingsRepositoryTest {
         assertFalse(prefs.contains("battery_announcement_voice"))
         assertFalse(prefs.contains("battery_announcement_rate"))
     }
+
+    // ===== جملتا «قبل» و«بعد»: المستخدم يحدّد ما يُنطق في كلٍّ منهما =====
+
+    @Test
+    fun callerAffixesAreOffAndEmptyByDefault() {
+        assertFalse("المربع الأول مطفي افتراضياً", repo.isCallerPrefixEnabled())
+        assertFalse("والمربع الثاني كذلك", repo.isCallerSuffixEnabled())
+        assertEquals("ولا نصّ قبل", "", repo.getCallerPrefixText())
+        assertEquals("ولا نصّ بعد", "", repo.getCallerSuffixText())
+    }
+
+    @Test
+    fun callerAffixesRoundTripThroughTheRepository() {
+        repo.setCallerPrefixEnabled(true)
+        repo.setCallerPrefixText("اتصال وارد من")
+        repo.setCallerSuffixEnabled(true)
+        repo.setCallerSuffixText("على الخط")
+        val restarted = SettingsRepository(context)
+        assertTrue(restarted.isCallerPrefixEnabled())
+        assertEquals("اتصال وارد من", restarted.getCallerPrefixText())
+        assertTrue(restarted.isCallerSuffixEnabled())
+        assertEquals("على الخط", restarted.getCallerSuffixText())
+    }
+
+    @Test
+    fun callerAffixTextIsTrimmedOnImportAndOnWrite() {
+        // جملةٌ من مسافاتٍ فقط ليست جملة: تُقصّ إلى الفراغ عند كل مدخل
+        // (كتابةً أو استيراداً) فلا ينتظرها مستهلِكٌ يحمل فراغاً في
+        // الذاكرة ظنّاً أنها نص.
+        repo.setCallerPrefixText("   ")
+        assertEquals("", repo.getCallerPrefixText())
+        repo.importSettings(mapOf("caller_prefix_text" to "   "))
+        assertEquals("", repo.getCallerPrefixText())
+        repo.setCallerSuffixText("  على الخط  ")
+        assertEquals(
+            "المسافاتُ الطرفية تُقصّ",
+            "على الخط",
+            repo.getCallerSuffixText()
+        )
+    }
+
+    @Test
+    fun callerRingDuckingDefaultsOffAtFortyPercent() {
+        assertFalse(
+            "لا نمسّ الرنين إلا بطلب صريح",
+            repo.isCallerRingDuckingEnabled()
+        )
+        assertEquals(40, repo.getCallerRingDuckPercent())
+    }
+
+    @Test
+    fun callerRingDuckPercentIsClampedOnWrite() {
+        repo.setCallerRingDuckPercent(5)
+        assertEquals(
+            "أقلّ من 10 يُقصّ إلى الحدّ الأدنى",
+            10,
+            repo.getCallerRingDuckPercent()
+        )
+        repo.setCallerRingDuckPercent(95)
+        assertEquals(
+            "أكثر من 90 يُقصّ إلى السقف",
+            90,
+            repo.getCallerRingDuckPercent()
+        )
+    }
+
+    @Test
+    fun callerRingDuckPercentSurvivesImportWithoutEscapingTheRange() {
+        // القيمُ الجامحة في ملف مستورد كانت تُخزَّن كما هي فيقرأها
+        // Consumer خارج المدى فينطق حسابٌ بلا معنى.
+        repo.importSettings(mapOf("caller_ring_duck_percent" to 500))
+        assertEquals(90, repo.getCallerRingDuckPercent())
+    }
+
+    @Test
+    fun callerRepeatIsNotClampedBelowTenOnImport() {
+        // الحارس: التكرار 1..10، فقيمةٌ عشرية يجب ألّا تُقصّ إلى 5
+        // (سقفٌ قديم باقٍ في تعقّل القيم).
+        repo.importSettings(mapOf("caller_announcement_repeat" to 9))
+        assertEquals(9, repo.getCallerAnnouncementRepeat())
+    }
+
+    @Test
+    fun timeDuringCallsVolumeDefaultsToFullAndIsClamped() {
+        assertEquals(
+            "الافتراضي 100%",
+            1.0f,
+            repo.getTimeDuringCallsVolume(),
+            0.001f
+        )
+        repo.setTimeDuringCallsVolume(0.4f)
+        assertEquals(0.4f, repo.getTimeDuringCallsVolume(), 0.001f)
+        repo.setTimeDuringCallsVolume(4f)
+        assertEquals(
+            "قيمةٌ جامحة تُقصّ إلى الواحد",
+            1.0f,
+            repo.getTimeDuringCallsVolume(),
+            0.001f
+        )
+    }
+
+    @Test
+    fun newCallerKeysRoundTripThroughExport() {
+        repo.setCallerPrefixText("اتصال وارد من")
+        repo.setCallerSuffixText("على الخط")
+        repo.setCallerRingDuckingEnabled(true)
+        repo.setCallerRingDuckPercent(60)
+        repo.setTimeDuringCallsVolume(0.3f)
+        val exported = repo.exportSettings()
+        assertEquals("اتصال وارد من", exported["caller_prefix_text"])
+        assertEquals("على الخط", exported["caller_suffix_text"])
+        assertEquals(true, exported["caller_ring_ducking_enabled"])
+        assertEquals(60, exported["caller_ring_duck_percent"])
+        assertEquals(0.3f, exported["time_during_calls_volume"])
+    }
+
+    @Test
+    fun resetClearsTheNewCallerKeys() {
+        repo.setCallerPrefixEnabled(true)
+        repo.setCallerPrefixText("اتصال وارد من")
+        repo.setCallerSuffixEnabled(true)
+        repo.setCallerSuffixText("على الخط")
+        repo.setCallerRingDuckingEnabled(true)
+        repo.setCallerRingDuckPercent(70)
+        repo.setTimeDuringCallsVolume(0.2f)
+        repo.resetAllToDefault()
+        assertFalse(repo.isCallerPrefixEnabled())
+        assertEquals("", repo.getCallerPrefixText())
+        assertFalse(repo.isCallerSuffixEnabled())
+        assertEquals("", repo.getCallerSuffixText())
+        assertFalse(repo.isCallerRingDuckingEnabled())
+        assertEquals(40, repo.getCallerRingDuckPercent())
+        assertEquals(1.0f, repo.getTimeDuringCallsVolume(), 0.001f)
+    }
+
+    @Test
+    fun theRemovedCallerTemplateNeverComesBack() {
+        // الحارس: القالبُ محذوفٌ من الكود والواجهة، فمفتاحُه في مخزن
+        // تثبيتٍ سابقٍ يجب ألّا يعود حيّاً في التصدير (بلا واجهة تُقرأه
+        // فيظهر للمستخدم كإعدادٍ مجهول في كل نسخة لاحقة).
+        val prefs = context.getSharedPreferences(
+            "nateq_settings", Context.MODE_PRIVATE
+        )
+        prefs.edit()
+            .putString("caller_announcement_template", "اتصال وارد من {name}")
+            .commit()
+        val fresh = SettingsRepository(context)
+        assertFalse(
+            "مفتاح القالب القديم يُطمس عند التركيب",
+            prefs.contains("caller_announcement_template")
+        )
+        assertFalse(
+            "ولا يظهر في التصدير",
+            fresh.exportSettings().containsKey("caller_announcement_template")
+        )
+    }
 }

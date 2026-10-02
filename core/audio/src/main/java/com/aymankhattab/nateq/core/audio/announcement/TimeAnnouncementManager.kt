@@ -406,19 +406,28 @@ class TimeAnnouncementManager(
         ) {
             return
         }
-        speakCurrentTime()
+        speakCurrentTime(inCall = scene.inCall)
     }
 
     /**
      * نطق الوقت فوراً عند طلب المستخدم (زر "أعلن الآن") — يتجاوز ساعات
      * الهدوء عمداً لأن المستخدم طلب النطق بنفسه.
+     *
+     * [inCall] يبقى افتراضياً `false`: طلبُ المستخدم الصريح لا يُصنَّف
+     * مكالمةً جاريةً، فيقرأ مستوىَ فئة الساعة لا مستوىَ المكالمات.
      */
     fun announceNow() {
-        speakCurrentTime()
+        speakCurrentTime(inCall = false)
     }
 
-    /** المنطق المشترك لنطق الوقت بالصوت المفضل للفئة وبإعداداتها. */
-    private fun speakCurrentTime() {
+    /** المنطق المشترك لنطق الوقت بالصوت المفضل للفئة وبإعداداتها.
+     *
+     * [inCall] يبدّل **مستوى الصوت وحده** إلى شريط «الساعة أثناء
+     * المكالمات» المستقلّ (بقرار المدير: مستوىٌ وحده، لا نبرةٌ ولا
+     * سرعة). ولا يمسّ شيئاً من مشهد المكالمة نفسه: منطقُ التركيز
+     * الصوتية وإعطاؤه الأولوية يمرّان كما هي، ويُقرأ المستوى وحده.
+     */
+    private fun speakCurrentTime(inCall: Boolean = false) {
         // تُستبدل أي عقدة نطق سابقة (تتراكم النطقات المتداخلة عند تكرار الطلب).
         activeAnnounceJob?.cancel()
         activeAnnounceJob = announceScope.launch {
@@ -444,8 +453,14 @@ class TimeAnnouncementManager(
                 val pitch = requestHandler.getPitchForCategory(
                     SettingsRepository.VOICE_CATEGORY_TIME
                 )
-                val volume = requestHandler.getVolumeForCategory(
-                    SettingsRepository.VOICE_CATEGORY_TIME
+                val volume = resolveTimeSpeechVolume(
+                    inCall = inCall,
+                    categoryVolume = requestHandler.getVolumeForCategory(
+                        SettingsRepository.VOICE_CATEGORY_TIME
+                    ),
+                    callsVolume = runCatching {
+                        settings.getTimeDuringCallsVolume()
+                    }.getOrDefault(1.0f)
                 )
 
                 // محرك النطق يحسمه AnnouncementSpeaker: فئة الساعة الصريح ثم
@@ -823,5 +838,23 @@ class TimeAnnouncementManager(
             savedVoiceId = numPref,
             appLanguage = effectiveAppLanguage()
         )
+    }
+
+    /**
+     * مستوىُ صوت نطق الساعة: شريطُ «الساعة أثناء المكالمات» المستقلّ
+     * في مشهد المكالمة، وإلا مستوىُ فئة الساعة.
+     *
+     * منفصلٌ كدالة صرفةٍ ليُختبر بلا مراقب نطقٍ أو محرّك: العقدُ الحاكم
+     * هو **أَن لا يسرّب الشريطُ المستقلُّ نفسه إلى ما ليس مكالمة** —
+     * فتسريبُه يجعل صوت الساعة العادية ينخفض بلا سببٍ خفي.
+     */
+    internal fun resolveTimeSpeechVolume(
+        inCall: Boolean,
+        categoryVolume: Float,
+        callsVolume: Float
+    ): Float = if (inCall) {
+        callsVolume.coerceIn(0f, 1f)
+    } else {
+        categoryVolume
     }
 }

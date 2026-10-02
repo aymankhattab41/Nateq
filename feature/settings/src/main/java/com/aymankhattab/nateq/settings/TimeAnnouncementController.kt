@@ -49,6 +49,8 @@ internal class TimeAnnouncementController(
     private var spinnerTimeFormat: Spinner? = null
     private var switchTime24h: SwitchMaterial? = null
     private var switchTimeDuringCalls: SwitchMaterial? = null
+    private var seekTimeDuringCallsVolume: SeekBar? = null
+    private var tvTimeDuringCallsVolume: TextView? = null
     private var switchTimeDuringMedia: SwitchMaterial? = null
     private var switchTimeDuringSilent: SwitchMaterial? = null
     private var switchTimeChime: SwitchMaterial? = null
@@ -168,12 +170,48 @@ internal class TimeAnnouncementController(
         }.getOrDefault(false)
         switchTimeDuringCalls?.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setAnnounceTimeDuringCalls(checked) }
+            refreshTimeDuringCallsVolume()
             fragment.view?.announceCompat(
                 fragment.getString(
                     if (checked) R.string.toggle_on else R.string.toggle_off
                 )
             )
         }
+        // شريطُ مستوى الساعة أثناء المكالمات — مستقلٌّ عن مستوى فئة
+        // الساعة بقرار المدير، ولا يظهر إلا مع تفعيل نطق الساعة في
+        // المكالمة (وإلا فهو شريطٌ بلا أثر). يُبلَغ عبر android:tag.
+        seekTimeDuringCallsVolume =
+            view.findViewWithTag<SeekBar>("seek_time_during_calls_volume")
+        tvTimeDuringCallsVolume =
+            view.findViewWithTag<TextView>("tv_time_during_calls_volume_value")
+        seekTimeDuringCallsVolume?.max = MAX_TIME_CALLS_VOLUME_PERCENT
+        seekTimeDuringCallsVolume?.setOnSeekBarChangeListener(object :
+            SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(
+                seekBar: SeekBar,
+                progress: Int,
+                fromUser: Boolean
+            ) {
+                val percent = progress
+                    .coerceIn(0, MAX_TIME_CALLS_VOLUME_PERCENT)
+                showTimeDuringCallsVolume(percent)
+                runCatching {
+                    settings.setTimeDuringCallsVolume(percent / 100f)
+                }
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                val percent = seekBar.progress
+                    .coerceIn(0, MAX_TIME_CALLS_VOLUME_PERCENT)
+                showTimeDuringCallsVolume(percent)
+                runCatching {
+                    settings.setTimeDuringCallsVolume(percent / 100f)
+                }
+                seekBar.announceCompat(timeCallsVolumeLabel(percent))
+            }
+        })
+        refreshTimeDuringCallsVolume()
         switchTimeDuringMedia = view.findViewById(R.id.switch_time_during_media)
         switchTimeDuringMedia?.isChecked = runCatching {
             settings.isAnnounceTimeDuringMedia()
@@ -419,6 +457,37 @@ internal class TimeAnnouncementController(
 
     /** فهرس القائمة الحسابي لقيمة الفاصل المحفوظة (5..60 بخطوة 5):
      *  index = (value / 5) - 1 — لا قائمة حرفية نفسها. */
+    /**
+     * يضبط فعالية شريط «الساعة أثناء المكالمات» على مفتاح النطق: شريطٌ
+     * بلا نطقٍ في المكالمة-adjusted = شريطٌ مضلِّل، فيُعطَّل ويُعتَّم.
+     */
+    private fun refreshTimeDuringCallsVolume() {
+        val announcedInCalls = runCatching {
+            settings.isAnnounceTimeDuringCalls()
+        }.getOrDefault(false)
+        seekTimeDuringCallsVolume?.isEnabled = announcedInCalls
+        val alpha = if (announcedInCalls) 1f else 0.4f
+        seekTimeDuringCallsVolume?.alpha = alpha
+        tvTimeDuringCallsVolume?.alpha = alpha
+        val percent = (runCatching { settings.getTimeDuringCallsVolume() }
+            .getOrDefault(1f) * 100f)
+            .toInt()
+            .coerceIn(0, MAX_TIME_CALLS_VOLUME_PERCENT)
+        if (seekTimeDuringCallsVolume?.progress != percent) {
+            seekTimeDuringCallsVolume?.progress = percent
+        }
+        showTimeDuringCallsVolume(percent)
+    }
+
+    private fun showTimeDuringCallsVolume(percent: Int) {
+        val label = timeCallsVolumeLabel(percent)
+        tvTimeDuringCallsVolume?.text = label
+        seekTimeDuringCallsVolume?.setSeekStateDescription(label)
+    }
+
+    private fun timeCallsVolumeLabel(percent: Int): String =
+        fragment.getString(R.string.percent_value_format, percent)
+
     private fun intervalIndex(interval: Int): Int =
         ((interval.coerceIn(5, 60) / 5) - 1).coerceIn(0, 11)
 
@@ -1273,6 +1342,8 @@ internal class TimeAnnouncementController(
         spinnerTimeFormat = null
         switchTime24h = null
         switchTimeDuringCalls = null
+        seekTimeDuringCallsVolume = null
+        tvTimeDuringCallsVolume = null
         switchTimeDuringMedia = null
         switchTimeDuringSilent = null
         switchTimeChime = null
@@ -1309,5 +1380,10 @@ internal class TimeAnnouncementController(
     private companion object {
         private const val KEY_PENDING_CHIME_MINUTE =
             "pending_custom_chime_minute"
+
+        /** أعلى نسبةٍ لشريط مستوى الساعة أثناء المكالمات — 100% قصداً
+         *  (لا 200): فالمستوى نسبةٌ 0..1 في المخزن، وشريطُ 200% كان
+         *  رقماً بلا معنى صوتي. */
+        private const val MAX_TIME_CALLS_VOLUME_PERCENT = 100
     }
 }

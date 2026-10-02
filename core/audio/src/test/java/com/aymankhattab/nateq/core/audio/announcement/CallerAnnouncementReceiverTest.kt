@@ -125,8 +125,8 @@ class CallerAnnouncementReceiverTest {
     }
 
     // حارس: الحدّان متّسقان بين المخزن والواجهة والاستهلاك — فأيُّ حدٍّ
-    // منفرد بلا太长 يخلق خياراً ميتاً في الواجهة أو قيمةً منفلتة في
-    // التخزين (قاعدة «الإ الواحد في ثلاثة مواضع»).
+    // منفرد بلا حدٍّ في الموضع يصنع خياراً ميتاً في الواجهة
+    // والتخزين (قاعدة «الحدّ الواحد في ثلاثة مواضع»).
     @Test
     fun `repeat bounds agree across repository and consumer`() {
         assertEquals(1, SettingsRepository.CALLER_REPEAT_MIN)
@@ -169,8 +169,9 @@ class CallerAnnouncementReceiverTest {
             android.Manifest.permission.READ_CALL_LOG
         )
         // **العقد الحاكم بعد تغيير المستخدم:** بلا هوية لا نطقَ البتّة.
-        // العبارة العامة «اتصال وارد» سُحبت، ومعها التلميحُ عن السجل
-        // (كان يقرؤه المستخدم كأنه معلومة عن المتصل وهي ليست كذلك).
+        // العبارةُ العامة «اتصال وارد» حُذفت نهائياً، فلم يبقَ نصٌّ
+        // يُقال بلا اسمٍ ولا رقم — ومعها حُذف التلميحُ عن السجل (كان
+        // يقرؤه المستخدم كأنه معلومة عن المتصل وهي ليست كذلك).
         // البديلُ نغمةُ التنبيه + اهتزاز قبل الوصول إلى هنا.
         assertEquals(
             "بلا هوية: لا نصّ ولا تلميح",
@@ -616,7 +617,7 @@ fun `waiting call speaks only when during call toggle enabled`() {
      *
      * **العَرَض المُبلّغ:** في بعض الهواتف يُنطق «اتصال وارد» ثلاث مرّات
      * ثم رابعاً بالاسم — لأن الجهاز يرسل `PHONE_STATE/RINGING` أكثر من
-     * مرّة للمكالمة الواحدة، وكان الحارسُ معلقاً على `activeCallCycle`
+     * مرّة للمكالمة الواحددة، وكان الحارسُ معلقاً على `activeCallCycle`
      * (عمرُ كوروثين ينتهي فور `speak()`) فيموت بعد أول إعلان. والحارسُ
      * الجديد على حالةِ الجلسة الدائمة فيصمد بعد موت الكوروثين.
      */
@@ -1118,6 +1119,142 @@ fun `waiting call speaks only when during call toggle enabled`() {
                 notificationCallActive = true,
                 announcedNumber = "01001234567",
                 incomingNumber = null
+            )
+        )
+    }
+
+    // ===== حارس الاتجاه: الصادرةُ والمنتهيةُ لا تُعلَن «اتصال وارد» =====
+
+    @Test
+    fun `an ongoing call notification is not announced as incoming`() {
+        // **العيبُ الذي شكا منه المستخدم:** هو المُرسل، فينطق التطبيقُ
+        // إشعارَ مكالمةٍ جاريةٍ (ongoing) فيُقرأ «اتصال وارد من فلان».
+        // الدليلُ الحاكم: جريانُ الإشعار — المكالمةُ قائمةٌ لا رنّة.
+        assertFalse(
+            CallerAnnouncementReceiver.shouldAnnounceCallNotification(
+                isOngoing = true,
+                networkCallInProgress = false,
+                endedCallAt = 0L,
+                sameEndedIdentity = false,
+                now = 1_000L
+            )
+        )
+    }
+
+    @Test
+    fun `no announcement while a phone call is in progress`() {
+        // الشبكةُ في OFFHOOK: إشعارُ التطبيق يخصّ المكالمةِ القائمة،
+        // والثنائياتُ تُعلنها بثوثُ `PHONE_STATE` لا الإشعار.
+        assertFalse(
+            CallerAnnouncementReceiver.shouldAnnounceCallNotification(
+                isOngoing = false,
+                networkCallInProgress = true,
+                endedCallAt = 0L,
+                sameEndedIdentity = false,
+                now = 1_000L
+            )
+        )
+    }
+
+    @Test
+    fun `the ended call notification is not announced right after hangup`() {
+        // **الشكوى الثانية:** ينطق «اتصال وارد» بعد انتهاء المكالمة،
+        // لأن التطبيق ينشر إشعارَ انتهاءٍ بدل إزالته.
+        val endedAt = 10_000L
+        val grace = CallerAnnouncementReceiver.AFTER_HANGUP_GRACE_MS
+        assertFalse(
+            CallerAnnouncementReceiver.shouldAnnounceCallNotification(
+                isOngoing = false,
+                networkCallInProgress = false,
+                endedCallAt = endedAt,
+                sameEndedIdentity = true,
+                now = endedAt + grace - 1
+            )
+        )
+    }
+
+    @Test
+    fun `a different caller ringing right after hangup is announced`() {
+        // الحارسُ لا يعمّ: شخصٌ آخر يرنّ قبل انتهاء النافذة يُعلَن.
+        val endedAt = 10_000L
+        assertTrue(
+            CallerAnnouncementReceiver.shouldAnnounceCallNotification(
+                isOngoing = false,
+                networkCallInProgress = false,
+                endedCallAt = endedAt,
+                sameEndedIdentity = false,
+                now = endedAt + 500L
+            )
+        )
+    }
+
+    @Test
+    fun `a real incoming ring after the grace window is announced`() {
+        // نفسُ الرقم بعد انقضاء النافذة: رنّةٌ جديدة، فلا تُكبَح.
+        val endedAt = 10_000L
+        assertTrue(
+            CallerAnnouncementReceiver.shouldAnnounceCallNotification(
+                isOngoing = false,
+                networkCallInProgress = false,
+                endedCallAt = endedAt,
+                sameEndedIdentity = true,
+                now = endedAt +
+                    CallerAnnouncementReceiver.AFTER_HANGUP_GRACE_MS + 1
+            )
+        )
+    }
+
+    @Test
+    fun `an incoming voip ring is still announced`() {
+        // **لا انحدارٌ في الميزة:** مكالمةُ واتساب واردةٌ (لا شبكة، فلا
+        // OFFHOOK، ولا جريان، ولا مكالمةٌ سابقة) تُعلَن كما كانت.
+        assertTrue(
+            CallerAnnouncementReceiver.shouldAnnounceCallNotification(
+                isOngoing = false,
+                networkCallInProgress = false,
+                endedCallAt = 0L,
+                sameEndedIdentity = false,
+                now = 1_000L
+            )
+        )
+    }
+
+    @Test
+    fun `ended call identity matches by number or by name`() {
+        assertTrue(
+            "المطابقة بالرقم",
+            CallerAnnouncementReceiver.matchesLastNetworkCall(
+                lastNumber = "01001234567",
+                lastName = "سالم",
+                number = "01001234567",
+                name = null
+            )
+        )
+        assertTrue(
+            "والمطابقة بالاسم حين لا يحمل الإشعار رقماً",
+            CallerAnnouncementReceiver.matchesLastNetworkCall(
+                lastNumber = "01001234567",
+                lastName = "سالم",
+                number = null,
+                name = "سالم"
+            )
+        )
+        assertFalse(
+            "وشخصٌ آخر لا يُطابق",
+            CallerAnnouncementReceiver.matchesLastNetworkCall(
+                lastNumber = "01001234567",
+                lastName = "سالم",
+                number = "01009999999",
+                name = "علي"
+            )
+        )
+        assertFalse(
+            "وسابقةٌ بلا هويةٍ لا تُطابق ولا تُكبَح",
+            CallerAnnouncementReceiver.matchesLastNetworkCall(
+                lastNumber = null,
+                lastName = null,
+                number = null,
+                name = "سالم"
             )
         )
     }

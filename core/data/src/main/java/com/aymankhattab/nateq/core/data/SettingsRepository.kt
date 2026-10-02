@@ -45,6 +45,12 @@ class SettingsRepository(context: Context) :
         private const val FALLBACK_PREFS = "nateq_fallback_settings"
         private const val KEY_MIGRATED = "_migrated_to_plain"
 
+        /** قالب إعلان المتصل المحذوف: كان يُخزَّن قبل إزالته، واسمه
+         *  محفوظٌ هنا ليُطمس من مخازن التثبيتات السابقة
+         *  ([dropObsoleteCallerTemplateKey]). */
+        private const val KEY_CALLER_TEMPLATE_OBSOLETE =
+            "caller_announcement_template"
+
         /** منفّذ إعادة تحميل الإعدادات خارج الواجهة (بند الأداء): تحليل ملف
          *  الإعدادات وتبديل اللقطة عند إشعار العملية الأخرى عمل ثقيل كان
          *  يجري على خيط الواجهة (ContentObserver) — يُنفَّذ هنا تسلسلياً،
@@ -76,6 +82,13 @@ class SettingsRepository(context: Context) :
          *  CallerAnnouncementReceiver. */
         const val CALLER_REPEAT_MIN = 1
         const val CALLER_REPEAT_MAX = 10
+
+        /** مدى نسبة خفض الرنين أثناء إعلان المتصل (بالمئة): من 10 إلى 90
+         *  — لا صفرَ (كتمٌ تامٌ مزعج) ولا 100 (لا خفضٌ أصلاً فيُكذَب
+         *  المفتاح). الافتراضي 40. */
+        const val CALLER_RING_DUCK_MIN = 10
+        const val CALLER_RING_DUCK_MAX = 90
+        const val CALLER_RING_DUCK_DEFAULT = 40
 
         private const val KEY_BATTERY_VOICE_MIGRATED =
             "_battery_voice_migrated"
@@ -199,6 +212,7 @@ class SettingsRepository(context: Context) :
     private val rawPrefs: SharedPreferences = openSharedPrefs().also {
         migrateIfNeeded(it)
         migrateBatteryVoicePrefsIfNeeded(it)
+        dropObsoleteCallerTemplateKey(it)
     }
 
     /**
@@ -533,6 +547,21 @@ class SettingsRepository(context: Context) :
         edit.putBoolean(KEY_BATTERY_VOICE_MIGRATED, true).apply()
     }
 
+    /**
+     * يحذف مفتاح قالب إعلان المتصل القديم.
+     *
+     * **لماذا الحذف لازم:** القالب لم يعد له واجهة ولا دالّة، لكن المفتاح
+     * يبقى في مخزّن مُثبَّتٍ سابقاً — و[exportSettings] ينسخ كل مفتاحٍ بلا
+     * بادئة سفلية، فيُصدَّر كإعدادٍ «ghost» إلى الملفات والنسخ الاحتياطية
+     * ويبقى حيّاً بعد [resetAllToDefault]؟ لا: الطمس يمسح كل شيء — لكن
+     * التصدير يسبق المسح فيبدأ الملف المستوردُ به من جديد. الحذف يُنهي
+     * وجوده نهائياً فلا يعود يظهر في أي نسخة.
+     */
+    internal fun dropObsoleteCallerTemplateKey(targetPrefs: SharedPreferences) {
+        if (!targetPrefs.contains(KEY_CALLER_TEMPLATE_OBSOLETE)) return
+        targetPrefs.edit().remove(KEY_CALLER_TEMPLATE_OBSOLETE).apply()
+    }
+
     /** لغة التطبيق المختارة يدوياً: "ar"/"en"/null (null = تتبع لغة النظام) */
     override fun getAppLanguage(): String? =
         prefs.getString("app_language", null)
@@ -652,6 +681,18 @@ class SettingsRepository(context: Context) :
 
     fun setAnnounceTimeDuringCalls(enabled: Boolean) =
         prefs.edit().putBoolean("announce_time_during_calls", enabled)
+            .apply()
+
+    /** مستوىُ صوت نطق الساعة **أثناء المكالمات** وحده (شريطٌ مستقلّ
+     *  بقرار المدير، افتراضُه 100% ولا يتبع مستوى فئة الساعة). يُستبدل
+     *  به مستوىُ فئة الساعة في [TimeAnnouncementManager] حصراً حين يكون
+     *  المشهدُ مكالمةً نشطة. */
+    fun getTimeDuringCallsVolume(): Float =
+        prefs.getFloat("time_during_calls_volume", 1.0f)
+
+    fun setTimeDuringCallsVolume(volume: Float) =
+        prefs.edit()
+            .putFloat("time_during_calls_volume", volume.coerceIn(0f, 1f))
             .apply()
 
     fun isAnnounceTimeDuringMedia(): Boolean =
@@ -943,13 +984,33 @@ class SettingsRepository(context: Context) :
         }
     }
 
-    // ============ قوالب الإعلانات ============
+    // ============ جملتا إعلان المتصل (قبل / بعد) ============
 
-    /** قالب إعلان المتصل: يُستبدل {name} باسم المتصل. فارغ = الافتراضي. */
-    override fun getCallerAnnouncementTemplate(): String =
-        prefs.getString("caller_announcement_template", "") ?: ""
-    override fun setCallerAnnouncementTemplate(template: String?) =
-        prefs.edit().putString("caller_announcement_template", template).apply()
+    /** الحقلّان الجديدان يحدّدهما المستخدم: ما يُنطق قبل اسم المتصل وما
+     *  يُنطق بعده. **حُذف القالب الواحد** بقرار المستخدم: قالبٌ واحدٌ
+     *  يستبدل العبارة كلها كان يخلط «قبل» بـ«بعد» فيصير ضبطُهما مستحيلاً
+     *  بلا كتابة العبارة كاملة. */
+    override fun isCallerPrefixEnabled(): Boolean =
+        prefs.getBoolean("caller_prefix_enabled", false)
+    override fun setCallerPrefixEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("caller_prefix_enabled", enabled).apply()
+    override fun getCallerPrefixText(): String =
+        prefs.getString("caller_prefix_text", "") ?: ""
+    override fun setCallerPrefixText(text: String?) =
+        prefs.edit()
+            .putString("caller_prefix_text", text?.trim().orEmpty())
+            .apply()
+
+    override fun isCallerSuffixEnabled(): Boolean =
+        prefs.getBoolean("caller_suffix_enabled", false)
+    override fun setCallerSuffixEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("caller_suffix_enabled", enabled).apply()
+    override fun getCallerSuffixText(): String =
+        prefs.getString("caller_suffix_text", "") ?: ""
+    override fun setCallerSuffixText(text: String?) =
+        prefs.edit()
+            .putString("caller_suffix_text", text?.trim().orEmpty())
+            .apply()
 
     /** قالب قراءة الرسائل: يُستبدل {name} و{message} باسم المرسل
      *  ومحتوى الرسالة. */
@@ -1489,6 +1550,24 @@ class SettingsRepository(context: Context) :
             .putBoolean("caller_announcement_during_call_enabled", enabled)
             .apply()
 
+    /** خفضُ نغمة الرنين أثناء إعلان المتصل: مربّعٌ معطّل افتراضياً
+     *  (لا نُمسّ الرنين إلا بطلب صريح)، ونسبةُ خفضٍ يختارها المستخدم. */
+    override fun isCallerRingDuckingEnabled(): Boolean =
+        prefs.getBoolean("caller_ring_ducking_enabled", false)
+    override fun setCallerRingDuckingEnabled(enabled: Boolean) =
+        prefs.edit()
+            .putBoolean("caller_ring_ducking_enabled", enabled)
+            .apply()
+    override fun getCallerRingDuckPercent(): Int =
+        prefs.getInt("caller_ring_duck_percent", CALLER_RING_DUCK_DEFAULT)
+    override fun setCallerRingDuckPercent(percent: Int) =
+        prefs.edit()
+            .putInt(
+                "caller_ring_duck_percent",
+                percent.coerceIn(CALLER_RING_DUCK_MIN, CALLER_RING_DUCK_MAX)
+            )
+            .apply()
+
     /** عدد مرات تكرار اسم المتصل: من مرة واحدة إلى عشر (بقرار المدير) */
     override fun getCallerAnnouncementRepeat(): Int =
         prefs.getInt("caller_announcement_repeat", 1)
@@ -1874,7 +1953,10 @@ class SettingsRepository(context: Context) :
                 AudioExpansionLevels.MIN,
                 AudioExpansionLevels.MAX
             )
-        key == "caller_announcement_repeat" -> value.coerceIn(1, 5)
+        key == "caller_announcement_repeat" ->
+            value.coerceIn(CALLER_REPEAT_MIN, CALLER_REPEAT_MAX)
+        key == "caller_ring_duck_percent" ->
+            value.coerceIn(CALLER_RING_DUCK_MIN, CALLER_RING_DUCK_MAX)
         key == "caller_announcement_interval_seconds" ->
             value.coerceIn(CALLER_INTERVAL_MIN, CALLER_INTERVAL_MAX)
         key == "power_saver_battery_threshold" -> value.coerceIn(0, 100)
@@ -1895,6 +1977,10 @@ class SettingsRepository(context: Context) :
             it in VALID_SECONDARY_LANGUAGES
         } ?: LanguageCode.EN.tag
         "number_reading_language" -> if (value == "en") "en" else "ar"
+        // جملتا «قبل» و«بعد»: تُقصّان إلى الفراغ عند كل مدخل (كتابةً
+        // أو استيراداً) فمسافاتٌ فقط ليست جملةً تُنطق.
+        "caller_prefix_text" -> value.trim()
+        "caller_suffix_text" -> value.trim()
         else -> value
     }
 

@@ -224,6 +224,40 @@
                 android:textColor="@color/text_secondary"
                 android:importantForAccessibility="no" />
 
+<!-- مستوى صوت الساعة أثناء المكالمات: شريط مستقل عن مستوى فئة
+                 الساعة (بقرار المدير)، عن طريق android:tag لا id. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="4dp"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="@string/time_during_calls_volume"
+                    android:textAppearance="?attr/textAppearanceBody2" />
+
+                <TextView
+                    android:tag="tv_time_during_calls_volume_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="?attr/textAppearanceBody2" />
+            </LinearLayout>
+
+            <SeekBar
+                android:tag="seek_time_during_calls_volume"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:minHeight="48dp"
+                android:contentDescription="@string/time_during_calls_volume" />
+
             <!-- نطق الساعة أثناء تشغيل الوسائط -->
             <com.google.android.material.switchmaterial.SwitchMaterial
                 android:id="@+id/switch_time_during_media"
@@ -1162,16 +1196,26 @@
                 android:text="@string/caller_custom_names"
                 android:importantForAccessibility="yes" />
 
-            <!-- قالب إعلان المتصل -->
-            <com.google.android.material.textfield.TextInputLayout
-                android:id="@+id/ll_caller_template_input"
+            <!-- جملة «قبل» اسم المتصل: مربع + حقل يكتبه المستخدم.
+                 بلا android:id لكلٍّ منهما (منشئ الـ binding في حدود
+                 255 معاملاً) فيُبلَغان عن طريق android:tag. -->
+            <androidx.appcompat.widget.AppCompatCheckBox
+                android:tag="cb_caller_prefix"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:hint="@string/caller_announcement_template_hint"
-                app:helperText="@string/caller_announcement_template_placeholder">
+                android:minHeight="48dp"
+                android:text="@string/caller_prefix_enabled"
+                android:importantForAccessibility="yes" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:hint="@string/caller_prefix_hint"
+                app:helperText="@string/caller_prefix_helper">
                 <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/et_caller_template"
+                    android:tag="et_caller_prefix"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:minHeight="48dp"
@@ -1179,6 +1223,70 @@
                     android:maxLines="2"
                     android:importantForAccessibility="yes" />
             </com.google.android.material.textfield.TextInputLayout>
+
+<!-- جملة «بعد» اسم المتصل -->
+            <androidx.appcompat.widget.AppCompatCheckBox
+                android:tag="cb_caller_suffix"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:minHeight="48dp"
+                android:text="@string/caller_suffix_enabled"
+                android:importantForAccessibility="yes" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:hint="@string/caller_suffix_hint"
+                app:helperText="@string/caller_suffix_helper">
+                <com.google.android.material.textfield.TextInputEditText
+                    android:tag="et_caller_suffix"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:inputType="text"
+                    android:maxLines="2"
+                    android:importantForAccessibility="yes" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+<!-- خفض نغمة الرنين أثناء إعلان المتصل -->
+            <androidx.appcompat.widget.AppCompatCheckBox
+                android:tag="cb_caller_ring_duck"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:minHeight="48dp"
+                android:text="@string/caller_ring_duck_enabled"
+                android:importantForAccessibility="yes" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="4dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="@string/caller_ring_duck_percent"
+                    android:textAppearance="?attr/textAppearanceBody2" />
+
+                <TextView
+                    android:tag="tv_caller_ring_duck_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="?attr/textAppearanceBody2" />
+            </LinearLayout>
+
+            <SeekBar
+                android:tag="seek_caller_ring_duck"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:contentDescription="@string/caller_ring_duck_percent" />
 
             <!-- سرعة النطق -->
             <LinearLayout

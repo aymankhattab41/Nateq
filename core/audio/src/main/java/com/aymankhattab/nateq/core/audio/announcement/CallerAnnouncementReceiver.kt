@@ -67,6 +67,85 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         @Volatile
         private var callActive = false
 
+        /** وقت آخر انتقالٍ إلى `IDLE` (انتهاء مكالمة شبكة)، بالمللي ثانية. */
+        @Volatile
+        internal var lastPhoneIdleAt = 0L
+
+        /** هوية آخر مكالمةِ شبكةٍ (واردةً كانت أم صادرة) — رقمُها واسمُها.
+         *  تُلتقط من جلسة الرنين **قبل** تصفيرها عند الردّ، وتبقى بعد
+         *  `IDLE` لتُقارَن بإشعار «انتهت المكالمة». */
+        @Volatile
+        internal var lastNetworkCallNumber: String? = null
+
+        @Volatile
+        internal var lastNetworkCallName: String? = null
+
+        /**
+         * نافذةُ كتم إشعارِ «انتهت المكالمة» بعد `IDLE` (بالمللي ثانية).
+         *
+         * التطبيقُ ينشر إشعاراً جديداً عند انتهاء المكالمة (أحياناً باسم
+         * المتصل)، وهو من فئة `CATEGORY_CALL` فيمرّ في
+         * [`NateqNotificationListener`] فيُقرأ إعلانَ مكالمةٍ **واردةٍ** —
+         * فيُنطق «اتصال وارد من فلان» بعد انتهائها، وهو ما شكا منه
+         * المستخدم. والنافذةُ قصيرةً عمداً لأن رنّةً واردةً خلال ثوانٍ من
+         * إنهاء مكالمةٍ نادرة، بينما إعلانةُ مكالمةٍ منتهيةٍ شائعة.
+         */
+        internal const val AFTER_HANGUP_GRACE_MS = 6_000L
+
+        /**
+         * هل يُطلَق نطقُ مكالمةٍ واردةٍ من إشعار `CATEGORY_CALL`؟
+         *
+         * **لماذا الحارس:** الإشعارُ وحده لا يميّز الواردةَ من الصادرة ولا
+         * من المنتهية. وتطبيقُ الهاتف ينشر إشعارَ مكالمةٍ جاريةٍ من فئة
+         * `CATEGORY_CALL` عند إجراء المستخدم مكالمةً صادرة — فكان يُعلَن
+         * «اتصال وارد» لمن *هو المتصل*. وبعد قطعها ينشر إشعارُ انتهاءٍ
+         * فيُعلَن ثانيةً. فثلاثةُ أدلّةٍ تُطرح بالترتيب:
+         *
+         *  1. **مكالمةُ شبكةٍ قائمة** (`OFFHOOK`): الإشعارُ يخصّها، والشبكة
+         *     تُعلن الثنائيات عبر `PHONE_STATE` — لا إعلانَ من الإشعار.
+         *  2. **إشعارٌ جارٍ** (`FLAG_ONGOING_EVENT`): المكالمةُ قائمةٌ لا
+         *     رنّةٌ جديدة (وهو ما تنشره تطبيقاتُ VoIP بمجرد الاتصال).
+         *  3. **إشعارُ آخر مكالمةِ شبكةٍ انتهيناها** داخل
+         *     [AFTER_HANGUP_GRACE_MS]: إعلانُه يعني نطقَ مكالمةٍ بعد
+         *     انتهائها — فلا يُعلَن. والمطابقةُ بالهوية (رقمٌ أو اسمٌ) لا
+         *     بالمجرّد، فلا تُكبَح رنّةُ شخصٍ آخر في تلك الثواني.
+         *
+         * خالصٌ قابلٌ للاختبار.
+         */
+        internal fun shouldAnnounceCallNotification(
+            isOngoing: Boolean,
+            networkCallInProgress: Boolean,
+            endedCallAt: Long,
+            sameEndedIdentity: Boolean,
+            now: Long,
+            graceMs: Long = AFTER_HANGUP_GRACE_MS
+        ): Boolean {
+            if (networkCallInProgress) return false
+            if (isOngoing) return false
+            if (sameEndedIdentity && endedCallAt > 0L &&
+                now - endedCallAt < graceMs
+            ) {
+                return false
+            }
+            return true
+        }
+
+        /**
+         * هل إشعارُ المكالمة يخصّ آخر مكالمةِ شبكةٍ انتهيناها؟ بالمقارنة
+         * بالرقم أولاً ثم بالاسم (قد لا يحمل الإشعار إلا الاسم). خالص.
+         */
+        internal fun matchesLastNetworkCall(
+            lastNumber: String?,
+            lastName: String?,
+            number: String?,
+            name: String?
+        ): Boolean {
+            if (!lastNumber.isNullOrBlank() && lastNumber == number) {
+                return true
+            }
+            return !lastName.isNullOrBlank() && lastName == name
+        }
+
         /** الرقم المحلول في جلسة الرنين الحالية */
         @Volatile
         internal var lastResolvedNumber: String? = null
@@ -222,8 +301,19 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
          */
         internal const val CALLER_WAKE_LOCK_CAP_MS = 70_000L
 
-/** تصفير حالة جلسة الرنين عند إنهاء المكالمة أو الرد عليها */
+/** تصفير حالة جلسة الرنين عند إنهاء المكالمة أو الرد عليها. */
         internal fun resetRingingSession() {
+            // **الهويةُ تُلتقط قبل التصفير:** الحارسُ الذي يمنع إعلانَ
+            // مكالمةٍ منتهية ([matchesLastNetworkCall]) يحتاجها بعد
+            // `IDLE`، و`resetRingingSession` يمحوها — فبلا الالتقاط
+            // كان الحارسُ بلا دليلٍ دائماً فيُكبَح كلُّ إشعارٍ أو لا يُكبَح
+            // شيء. ولا يُلتقطُ الخائب: فرنّةٌ واحدةٌ بلا هويةٍ لا تُطابَق.
+            if (!lastResolvedNumber.isNullOrBlank()) {
+                lastNetworkCallNumber = lastResolvedNumber
+            }
+            if (!lastResolvedName.isNullOrBlank()) {
+                lastNetworkCallName = lastResolvedName
+            }
             lastResolvedNumber = null
             lastResolvedName = null
             ringingStartTime = 0L
@@ -532,6 +622,10 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     callActive = true
                 } else if (state == TelephonyManager.EXTRA_STATE_IDLE) {
                     callActive = false
+                    // وقتُ الانتهاء يُسجَّل هنا لبدء نافذة كتم إشعار
+                    // «انتهت المكالمة» ([AFTER_HANGUP_GRACE_MS]): التطبيق
+                    // ينشره بعد `IDLE` بثلث ثانية تقريباً.
+                    lastPhoneIdleAt = System.currentTimeMillis()
                 }
             }
             if (state != TelephonyManager.EXTRA_STATE_RINGING) {
@@ -577,9 +671,9 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             )
 
 if (rawNumber != null) {
-                    lastResolvedNumber = rawNumber
-                    RingCallerIdentity.publish(rawNumber, null)
-                }
+                lastResolvedNumber = rawNumber
+                RingCallerIdentity.publish(rawNumber, null)
+            }
 
             // **حارس منع التكرار — على حالة الجلسة لا على عمر الكوروثين.**
             // كان معلقاً على `activeCallCycle?.isActive` وهو عمرُ
@@ -900,7 +994,7 @@ if (rawNumber != null) {
                     context,
                     number = incomingNumber,
                     contactName = contactName,
-                    template = settings.getCallerAnnouncementTemplate(),
+                    settings = settings,
                     privacyLocked = privacyLocked,
                     numberReadingMode = settings.getNumberReadingMode()
                 )
@@ -1008,8 +1102,7 @@ if (rawNumber != null) {
                                         context,
                                         number = incomingNumber,
                                         contactName = contactName,
-                                        template = settings
-                                            .getCallerAnnouncementTemplate(),
+                                        settings = settings,
                                         privacyLocked = privacyLocked,
                                         numberReadingMode = settings
                                             .getNumberReadingMode()
@@ -1134,7 +1227,7 @@ if (rawNumber != null) {
             context,
             number = incomingNumber,
             contactName = contactName,
-            template = settings.getCallerAnnouncementTemplate(),
+            settings = settings,
             privacyLocked = privacyLocked,
             numberReadingMode = settings.getNumberReadingMode()
         )
@@ -1248,44 +1341,92 @@ if (rawNumber != null) {
         settings.getCallerAnnouncementEnglishVoiceId()
     }
 
-    /** النص الصادق حسب ما هو متاح فعلاً (لا يدّعي "غير محفوظ" جزافاً). */
+    /** نصّ إعلان المتصل = **[ما قبل] + [الاسم أو الرقم] + [ما بعد]**.
+     *
+     *  - الوسطُ هو هويةُ المتصل مجرّدةً (`buildDefaultCallerPhrase`): الاسمُ
+     *    محفوظٌ فاسمُه وحده، والرقمُ فوصفُ «غير محفوظ» ثم رقمُه. **بلا
+     *    عبارةٍ افتراضية** — حُذفت «اتصال وارد» نهائياً.
+     *  - «ما قبل» و«ما بعد» جملتان يكتبهما المستخدم ويقرّر تشغيلَ كلٍّ منهما
+     *    بمربّعه، فهو صاحبُ الجملةِ كلها بلا استثناء.
+     *
+     * بلا مربّع أو بحقلٍ فارغ يُهمَل ذلك الجزء فيُنطق ما يكتبه المستخدم فقط.
+     * والعقدُ الحاكمُ باقٍ: **لا نصَّ بلا هوية** — فبلا اسمٍ ولا رقمٍ يُعاد
+     * الفراغُ الفارغ كما كان، لا جملةً ناقصةَ الاسم.
+     */
     private fun buildAnnouncementText(
         context: Context,
         number: String?,
         contactName: String?,
-        template: String?,
+        settings: SettingsRepository,
         privacyLocked: Boolean,
         numberReadingMode: Int = 1
     ): String {
-        // عند القفل: **صمتٌ تام** لا العبارة العامة. كان يُنطق «اتصال وارد»
-        // حفاظاً على الخصوصية، وهو يناقض عقد «لا نطق بلا هوية»
+        // عند القفل: **صمتٌ تام** بلا هوية. كان يُنطق نصٌّ عامٌ حفاظاً على
+        // الخصوصية، وهو يناقض عقد «لا نطق بلا هوية»
         // (ترويسةٌ بلا هوية = تسميةٌ بلا معلومة) ويكشف وجودَ المكالمة
         // نفسها — وهو ما يريدُ الحاجبُ منعَه. فالخصوصيةُ تقتضي الصمت،
         // والإعلانُ يقتضي الهوية.
-        return if (privacyLocked) {
-            ""
-        } else if (!template.isNullOrBlank()) {
-            val filled = template
-                .replace("{name}", contactName ?: number.orEmpty())
-                .replace("{number}", number.orEmpty())
-                .trim()
-            if (filled.isBlank()) {
-                buildDefaultCallerPhrase(
-                    context, number, contactName, numberReadingMode
-                )
-            } else {
-                filled
-            }
-        } else {
-            buildDefaultCallerPhrase(
-                context, number, contactName, numberReadingMode
-            )
-        }
+        if (privacyLocked) return ""
+        val identity = buildDefaultCallerPhrase(
+            context, number, contactName, numberReadingMode
+        )
+        if (identity.isBlank()) return ""
+        val prefix = callerAffixText(
+            enabled = settings.isCallerPrefixEnabled(),
+            text = settings.getCallerPrefixText(),
+            contactName = contactName,
+            number = number
+        )
+        val suffix = callerAffixText(
+            enabled = settings.isCallerSuffixEnabled(),
+            text = settings.getCallerSuffixText(),
+            contactName = contactName,
+            number = number
+        )
+        return listOf(prefix, identity, suffix)
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+            .trim()
     }
 
     /**
-     * عبارة النطق الافتراضية مع قرار اللغة من الاسم/الرقم (عربي أم إنجليزي)
-     * وليس من لغة واجهة التطبيق: مرسل عربي يُنطق بالعربية والعكس.
+     * جزءٌ اختياريّ (قبل/بعد) يُنطق بمربّعه فقط، مع استبدال العناصر.
+     *
+     * **العناصرُ باقيةٌ للمستخدم:** كان القالبُ القديم يستبدل `{name}`
+     * و`{number}`، فحذفُه كان سيُنزع من جملة المستخدم ما كتبه فيها من
+     * عناصر — فيُقرأ «اتصال من {name}» حرفياً. فنستبدلها هنا كما كان
+     * القالبُ يفعل: `{name}` الاسمُ ثم الرقمُ إن غاب الاسم، و`{number}`
+     * الرقمُ دائماً.
+     */
+    private fun callerAffixText(
+        enabled: Boolean,
+        text: String,
+        contactName: String?,
+        number: String?
+    ): String {
+        if (!enabled) return ""
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return ""
+        return trimmed
+            .replace("{name}", contactName ?: number.orEmpty())
+            .replace("{number}", number.orEmpty())
+    }
+
+    /**
+     * **هويةُ المتصل مجرّدةً: الاسمُ لو وُجد، وإلا «رقم غير محفوظ» + رقم.**
+     *
+     * **لا عبارةَ افتراضيةَ قبلها — بقرار المدير:** حُذفت عبارة «اتصال
+     * وارد» نهائياً، فالجملةُ التي تُنطق قبل الهوية وبعدها لا يقرّرها
+     * إلا المستخدم بمربّعي «قبل» و«بعد»، فأيُّ عبارةٍ يفرضها التطبيق
+     * تناقض اختيارَه وتُنطق مكرّرةً إن كتب نفسَها.
+     *
+     * **بقيت «رقم غير محفوظ» بقرارِه أيضاً:** هي ليست عبارةً بل **معلومة**
+     * (المتصلُ غير محفوظٍ في دفتر اتصالاتك) من غيرها لا يميّز الرقمَ المقروءَ
+     * عن اسمٍ محفوظ — فمنعُها يُفقد المستخدمَ دليلاً حقيقياً. فالاسمُ
+     * المحفوظ يُنطق مجرّداً لأن اسمه يعرّفه، والرقمُ لا يعرّفه إلا الوصف.
+     *
+     * وقرارُ اللغة يبقى من الاسم/الرقم (عربي أم إنجليزي) لا من لغة الواجهة:
+     * مرسلٌ عربيٌ يُنطق بالعربية والعكس.
      */
     private fun buildDefaultCallerPhrase(
         context: Context,
@@ -1297,15 +1438,13 @@ if (rawNumber != null) {
         val isArabic = language == LanguageCode.AR.tag
         val lang = language
         return when {
-            contactName != null -> LocaleUtils.stringForSpeech(
-                context, lang, R.string.caller_from, R.string.caller_from
-            ).replace("{name}", contactName)
+            contactName != null -> contactName
             !number.isNullOrBlank() -> LocaleUtils.stringForSpeech(
                 context,
                 lang,
-                R.string.caller_from_number,
-                R.string.caller_from_number
-            ) + formatCallerNumberForSpeech(
+                R.string.caller_unsaved_number,
+                R.string.caller_unsaved_number
+            ) + " " + formatCallerNumberForSpeech(
                 number, isArabic, numberReadingMode
             )
             // **لا تُنتج هذه الدالة نصاً بلا هوية أبداً** (العقد الحاكم): لا

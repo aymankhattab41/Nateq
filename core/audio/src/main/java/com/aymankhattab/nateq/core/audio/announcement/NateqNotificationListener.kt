@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.core.audio.R
@@ -182,6 +183,24 @@ class NateqNotificationListener : NotificationListenerService() {
                         "CALL-IDENTITY pkg=$pkg num=${callNumber ?: "?"}" +
                             " name=${callName ?: "?"}"
                     )
+                    // **حارس الاتجاه (الاسماء الصادرة والمنتهية):** إشعارُ
+                    // `CATEGORY_CALL` وحده لا يميّز الواردةَ من الصادرة
+                    // ولا المنتهية — فكان يُنطق «اتصال وارد من فلان» لمن
+                    // *هو* المتصل، وأحياناً بعد انتهاء المكالمة. الحارسُ
+                    // نقيٌّ في [CallerAnnouncementReceiver] ومفحوصٌ هناك.
+                    if (!shouldAnnounceCallNotification(
+                            notification = notification,
+                            number = callNumber,
+                            name = callName
+                        )
+                    ) {
+                        Log.w(
+                            TAG,
+                            "CALL-IDENTITY skipped pkg=$pkg" +
+                                " num=${callNumber ?: "?"}"
+                        )
+                        return
+                    }
                     // **نُطلق ولا ننطق — والنطقُ وحيدٌ في
                     // [CallerAnnouncementReceiver].** مكالماتُ التطبيقات
                     // (واتساب/تلجرام/ميسنجر) VoIPُ بحتٌ فلا يصدر لها بثّ
@@ -316,6 +335,44 @@ class NateqNotificationListener : NotificationListenerService() {
         } catch (t: Throwable) {
             Log.e(TAG, "onNotificationPosted failed", t)
         }
+    }
+
+    /**
+     * هل يستحقّ إشعارُ مكالمةٍ إعلانَ «اتصال وارد»؟ يفوّض القرارَ كلَّه
+     * إلى [CallerAnnouncementReceiver.shouldAnnounceCallNotification] ليبقى
+     * الحارسُ نقيّاً مختبراً في مكانٍ واحد، ويجلب له الدلائلَ الثلاثة من
+     * النظام: جريانُ الإشعار، وحالةُ خطّ الهاتف، وآخرُ مكالمةٍ انتهيناها.
+     */
+    private fun shouldAnnounceCallNotification(
+        notification: Notification,
+        number: String?,
+        name: String?
+    ): Boolean {
+        val ongoing = (notification.flags and
+            Notification.FLAG_ONGOING_EVENT) != 0
+        // حالةُ خطّ الهاتف تُقرأ مباشرةً لا من عَلَم المستقبل: بثّ
+        // `OFFHOOK` يُعالَج في coroutineٍ قد يتأخّر، والإشعارُ يصل بعده
+        // مباشرةً — فمن يقرأ العَلَمَ يظنّ المكالمةَ غيرَ قائمة.
+        val callInProgress = runCatching {
+            val tm = applicationContext.getSystemService(
+                Context.TELEPHONY_SERVICE
+            ) as? TelephonyManager
+            tm?.callState == TelephonyManager.CALL_STATE_OFFHOOK
+        }.getOrDefault(false)
+        val endedAt = CallerAnnouncementReceiver.lastPhoneIdleAt
+        val sameEnded = CallerAnnouncementReceiver.matchesLastNetworkCall(
+            lastNumber = CallerAnnouncementReceiver.lastNetworkCallNumber,
+            lastName = CallerAnnouncementReceiver.lastNetworkCallName,
+            number = number,
+            name = name
+        )
+        return CallerAnnouncementReceiver.shouldAnnounceCallNotification(
+            isOngoing = ongoing,
+            networkCallInProgress = callInProgress,
+            endedCallAt = endedAt,
+            sameEndedIdentity = sameEnded,
+            now = System.currentTimeMillis()
+        )
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {

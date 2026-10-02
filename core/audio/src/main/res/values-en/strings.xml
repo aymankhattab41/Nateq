@@ -23,8 +23,7 @@
     <string name="sms_unknown_sender">Unknown sender</string>
     <string name="sms_from">Message from {name}</string>
     <string name="sms_otp_safe">A message from {name} containing a secure verification code</string>
-    <string name="caller_from">Incoming call from {name}</string>
-    <string name="caller_from_number">Incoming call from an unsaved number</string>
+    <string name="caller_unsaved_number">Unsaved number</string>
     <string name="notif_new">New notification from {app}</string>
     <string name="notif_from_title_text">Notification from {app}: {title}. {text}</string>
     <string name="notif_from_title">Notification from {app}: {title}</string>

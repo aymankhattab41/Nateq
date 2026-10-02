@@ -357,6 +357,15 @@ class AnnouncementSpeaker(
     private var boostedStream: Int = -1
     private var savedStreamVolume: Int = -1
 
+    // **خفضُ نغمة الرنين أثناء إعلان المتصل (اختياريّ):** رفعُ قناة
+    // الموسيقى لا يمسّ قناة الرنين في AOSP (وهي ليست ضمن الـducking)،
+    // فيختفي اسمُ المتصل تحت الرنّة. فنخفضها استثناءً بالمقدار الذي
+    // يختاره المستخدم ونعيدها بعد النطق — وهو [boostStreamVolume] في
+    // الاتجاه المعاكس. -1 تعني «لا خفضٌ قائم» فلا تكرارَ ولا استرجاعَ
+    // بلا سبب.
+    private var duckedRingStream: Int = -1
+    private var savedRingVolume: Int = -1
+
     @Volatile
     private var resumableAnnouncement: ResumableAnnouncement? = null
     private val pendingUnitsForResume =
@@ -1287,7 +1296,11 @@ class AnnouncementSpeaker(
         // رفع حجم القناة الصوتية مؤقتاً لكل نطق يُرسل (المتصل والساعة والأحداث
         // بالكامل): يُحفظ المستوى الأصلي ويُستعاد عند الاكتمال/الإيقاف عبر
         // restoreBoostedStreamVolume.
-        boostStreamVolume()
+boostStreamVolume()
+        // خفضُ الرنين لفئة المتصل وحدها (اختياريّ، بمربّع المستخدم):
+        // له نفسُ عمرِ الرفع فيُستعاد في releaseAudioFocus مع مسارات
+        // الإنهاء كلّها.
+        duckRingVolumeIfCallerCategory(currentCategory)
         // السمات تُطبق عند كل دورة إن اختلفت فعلياً (لا تتبع القارئ).
         applySpeechAudioAttributes()
         val unitUtteranceIds = validUnits.map { nextUtteranceId() }
@@ -1958,6 +1971,77 @@ class AnnouncementSpeaker(
     }
 
     /**
+     * خفضُ نغمة الرنين أثناء إعلان المتصل — لفئة المتصل وحدها (بقرار
+     * المستخدم ومربّعه).
+     *
+     * **لماذا قناةٌ نخفّضها بأنفسنا؟** خفضُ الصوت المؤقت في AOSP
+     * (ducking) يشمل الموسيقى والإشعارات ولا يشمل `STREAM_RING`،
+     * فرنّةُ الاتصال تعلو على الاسم. فنخفضها بالمقدار الذي اختاره
+     * المستخدم في [RingtoneDuckMath]، **من مستوى الرنين الحالي** (لا من
+     * قمّته) فيبقى المقدارُ متناسباً مع ما سمعه، ولا خفضَ في الوضع
+     * الصامت/المهتز أو على رنّةٍ أصلاً معدومة.
+     */
+    @VisibleForTesting
+    internal fun duckRingVolumeIfCallerCategory(category: String?) {
+        if (category != SettingsRepository.ANNOUNCE_CATEGORY_CALLER &&
+            category != SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR &&
+            category != SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
+        ) {
+            return
+        }
+        if (duckedRingStream != -1) return
+        val repo = settings ?: return
+        if (!repo.isCallerRingDuckingEnabled()) return
+        val stream = AudioManager.STREAM_RING
+        runCatching {
+            if (audioManager.ringerMode == AudioManager.RINGER_MODE_SILENT ||
+                audioManager.ringerMode == AudioManager.RINGER_MODE_VIBRATE
+            ) {
+                return@runCatching
+            }
+            val current = audioManager.getStreamVolume(stream)
+            val max = audioManager.getStreamMaxVolume(stream)
+            if (max <= 0 || current <= 0) return@runCatching
+            val target = RingtoneDuckMath.duckedLevel(
+                current, max, repo.getCallerRingDuckPercent()
+            )
+            if (target >= current) return@runCatching
+            savedRingVolume = current
+            duckedRingStream = stream
+            audioManager.setStreamVolume(stream, target, 0)
+        }
+    }
+
+    /**
+     * إعادةُ الرنين لمستواه الأصلي بعد النطق أو إيقافه — **مشروطةٌ
+     * بالقيمة التي تركناها**: إن غيّر المستخدمُ الرنينَ بنفسه أثناء
+     * النطق فلا نطمس اختياره. آمنة (no-op) عند غياب خفضٍ قائم.
+     *
+     * **مقصودةٌ خارجَ [restoreBoostedStreamVolume]**: استدعاؤها من داخله
+     * كانت ستبتلعها خروجهُ المبكر حين لا رفعَ قائم (قناةُ الموسيقى على
+     * قمّتها أصلاً) فيبقى الرنينُ مخفوضاً بعد كل إعلان. فالمَجمَعُ الوحيد
+     * هو [releaseAudioFocus] — كل مسارات الاكتمال والإيقاف تمرّ به.
+     */
+    @VisibleForTesting
+    internal fun restoreDuckedRingVolume() {
+        val stream = duckedRingStream
+        val saved = savedRingVolume
+        duckedRingStream = -1
+        savedRingVolume = -1
+        if (stream == -1 || saved == -1) return
+        val percent = settings?.getCallerRingDuckPercent()
+            ?: return
+        runCatching {
+            val max = audioManager.getStreamMaxVolume(stream)
+            val expected = RingtoneDuckMath.duckedLevel(saved, max, percent)
+            if (audioManager.getStreamVolume(stream) != expected) {
+                return@runCatching
+            }
+            audioManager.setStreamVolume(stream, saved, 0)
+        }
+    }
+
+    /**
      * تركيز الصوت لإعلانات ناطق:
      * لمنع خفض صوت الوسائط تماماً (Zero Audio Ducking) وضمان استمرار
      * تشغيل الموسيقى ومقاطع الفيديو بنفس مستوى الصوت بالتوازي مع النطق
@@ -2053,6 +2137,9 @@ class AnnouncementSpeaker(
         // الإيقاف تُطلق التركيز فتمرّ عبر هذه النقطة فتُستعاد مرةً واحدة
         // صحيحة.
         restoreBoostedStreamVolume()
+        // إعادةُ الرنين إن كان مخفوضاً أثناء إعلان المتصل (نفسُ المسار
+        // المجمَع لكل مسارات الإنهاء).
+        restoreDuckedRingVolume()
         // إلغاء أي نطق معلّق بانتظار التركيز حتى لا يُنطق نص قديم لاحقاً.
         pendingFocusAction = null
         pendingFocusTimer?.let { mainHandler.removeCallbacks(it) }

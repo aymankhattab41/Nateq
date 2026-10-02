@@ -84,8 +84,14 @@
 <string name="caller_announcement_rate">Caller speech rate</string>
 <string name="caller_announcement_pitch">Caller announcement pitch</string>
 <string name="caller_announcement_repeat">Number of repeats</string>
-<string name="caller_announcement_template_hint">Caller announcement template</string>
-<string name="caller_announcement_template_placeholder" formatted="false">Use {name} for the caller\'s name — leave empty for the default phrase</string>
+<string name="caller_prefix_enabled">Speak a phrase before the caller name</string>
+<string name="caller_prefix_hint">Phrase before the caller name</string>
+<string name="caller_prefix_helper">Type what you want spoken before the name or number — spoken only when the box is on</string>
+<string name="caller_suffix_enabled">Speak a phrase after the caller name</string>
+<string name="caller_suffix_hint">Phrase after the caller name</string>
+<string name="caller_suffix_helper">Type what you want spoken after the name or number — spoken only when the box is on</string>
+<string name="caller_ring_duck_enabled">Lower the ringtone during caller announcement</string>
+<string name="caller_ring_duck_percent">Ringtone lower percentage</string>
 <string name="caller_announcement_voice_ar">Arabic names speech voice</string>
 <string name="caller_announcement_voice_en">English names speech voice</string>
 <string name="caller_voice_section_title">Caller announcement voice</string>
@@ -102,7 +108,7 @@
 <string name="caller_names_title">Custom caller names</string>
 <string name="caller_permission_grant_again">Grant permissions again</string>
 <string name="caller_permission_rationale_title">Call log is required to announce the caller</string>
-<string name="caller_permission_rationale_message">On Android 12 and later, the caller number is only delivered to apps that hold call log permission; without it, only a generic "incoming call" is spoken and the caller name is never announced even if saved in your contacts. This app is made for blind and low-vision users: granting the log lets it announce the caller by voice before answering, so a blind user knows who is calling before lifting the phone. The permission is used for announcing the name only; nothing else is read.</string>
+<string name="caller_permission_rationale_message">On Android 12 and later, the caller number is only delivered to apps that hold call log permission; without it the caller name is never announced even if saved in your contacts, and only what the phone notification shows is spoken. This app is made for blind and low-vision users: granting the log lets it announce the caller by voice before answering, so a blind user knows who is calling before lifting the phone. The permission is used for announcing the name only; nothing else is read.</string>
 <string name="caller_permission_granted_both">Permissions granted; caller name will be spoken from call log or contacts</string>
 <string name="caller_permission_granted_contacts_only">Contacts granted; name may not arrive on Android 12+ without call log</string>
 <string name="caller_permission_needed">Caller announcement needs call log and phone state permission</string>
@@ -355,6 +361,7 @@
 <string name="time_announcement_scenarios_title">Time announcement in special cases</string>
 <string name="time_announcement_during_calls">Announce the time during calls</string>
 <string name="time_announcement_during_calls_summary">Announce the time automatically even during a phone call (off by default)</string>
+<string name="time_during_calls_volume">Volume during a call</string>
 <string name="time_announcement_during_media">Announce the time while media plays</string>
 <string name="time_announcement_during_media_summary">Announce the time automatically while music or video plays (on by default)</string>
 <string name="time_announcement_during_silent">Announce the time in silent mode</string>
@@ -439,6 +446,7 @@
 <string name="volume_label">Volume</string>
 <string name="volume_summary">Adjust the volume level</string>
 <string name="rate_value_format">%1$.1fx</string>
+<string name="percent_value_format">%1$d%%</string>
 <plurals name="caller_announcement_repeat_times">
         <item quantity="one">Once</item>
         <item quantity="other">%d times</item>
@@ -486,9 +494,13 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-- Caller repeat interval is now limited to three values: 3, 4, or 5 seconds
-- Incoming calls from messaging apps (WhatsApp, Telegram, Messenger, and others) are now announced through the call notification, since the system sends no phone broadcast for them and they went unheard
-- Fixed long-text reading cutting off: a long single segment is now split at linguistic boundaries and streamed piece by piece instead of being sent whole to the engine, which truncated it
+• Speak a phrase you choose before the caller name and one after it: two boxes and two fields, the single template is gone, and what gets spoken is exactly what you type
+• The phrase \"Incoming call from\" is removed for good: a saved name is spoken on its own, and an unsaved number is announced as \"Unsaved number\"
+• Fixed \"incoming call from\" being spoken to the caller themselves (outgoing) and after the call ended: only a genuine incoming ring is announced now
+• Lower the phone ringtone while the caller is announced: an enable box and a percentage you choose (10%% to 90%%)
+• A separate volume level during calls (for announcements such as the clock), from 0%% to 100%%
+• Caller announcement repeat now goes from once up to ten times, with a 3, 4, or 5 second interval
+• The dictionary is open with no length ceiling: any key you type applies, and the silence on units and currencies glued to numbers (50g, 300gm) is fixed
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>

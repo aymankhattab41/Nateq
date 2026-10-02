@@ -1190,6 +1190,144 @@ class AnnouncementSpeakerTest {
         }
     }
 
+    // ============ خفض الرنين أثناء إعلان المتصل ============
+
+    /**
+     * يهيّئ قناة الرنين بمستوىٍ معلوم (ويعيده)، ويتخطّى الحالة إن
+     * لم تكن القناة قابلةً للقياس في Robolectric.
+     */
+    private fun withRingVolume(
+        speaker: AnnouncementSpeaker,
+        level: Int,
+        block: (AudioManager, Int) -> Unit
+    ) {
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val max = am.getStreamMaxVolume(AudioManager.STREAM_RING)
+        val original = am.getStreamVolume(AudioManager.STREAM_RING)
+        try {
+            if (max <= 1) return
+            am.setStreamVolume(AudioManager.STREAM_RING, level, 0)
+            if (am.getStreamVolume(AudioManager.STREAM_RING) != level) return
+            block(am, level)
+        } finally {
+            speaker.restoreDuckedRingVolume()
+            am.setStreamVolume(AudioManager.STREAM_RING, original, 0)
+        }
+    }
+
+    private fun setCallerDucking(enabled: Boolean, percent: Int) {
+        val prefs = context
+            .getSharedPreferences("nateq_settings", Context.MODE_PRIVATE)
+        prefs.edit()
+            .putBoolean("caller_ring_ducking_enabled", enabled)
+            .putInt("caller_ring_duck_percent", percent)
+            .commit()
+    }
+
+    @Test
+    fun `ringtone is lowered only for the caller category`() {
+        val speaker = AnnouncementSpeaker(context)
+        setCallerDucking(true, 40)
+        try {
+            withRingVolume(speaker, 5) { am, level ->
+                val expected = RingtoneDuckMath.duckedLevel(level, 7, 40)
+                speaker.duckRingVolumeIfCallerCategory(
+                    SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+                )
+                assertEquals(
+                    "فئة المتصل تخفض الرنين إلى النسبة المطلوبة",
+                    expected,
+                    am.getStreamVolume(AudioManager.STREAM_RING)
+                )
+                speaker.restoreDuckedRingVolume()
+                assertEquals(
+                    "الاستعادة تُعيد المستوى الأصلي",
+                    level,
+                    am.getStreamVolume(AudioManager.STREAM_RING)
+                )
+
+                // فئة غير المتصل (ساعة/بطارية/رسالة): الرنين لا يُمَسّ.
+                speaker.duckRingVolumeIfCallerCategory(
+                    SettingsRepository.VOICE_CATEGORY_TIME
+                )
+                assertEquals(
+                    "الساعة لا تخفض الرنين",
+                    level,
+                    am.getStreamVolume(AudioManager.STREAM_RING)
+                )
+                speaker.duckRingVolumeIfCallerCategory(null)
+                assertEquals(
+                    "ولا فئةٌ باطنة",
+                    level,
+                    am.getStreamVolume(AudioManager.STREAM_RING)
+                )
+            }
+        } finally {
+            speaker.shutdown()
+        }
+    }
+
+    @Test
+    fun `ringtone stays untouched while the box is off`() {
+        val speaker = AnnouncementSpeaker(context)
+        setCallerDucking(false, 40)
+        try {
+            withRingVolume(speaker, 5) { am, level ->
+                speaker.duckRingVolumeIfCallerCategory(
+                    SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+                )
+                assertEquals(
+                    "بلا مربّع لا نمسّ الرنين البتّة",
+                    level,
+                    am.getStreamVolume(AudioManager.STREAM_RING)
+                )
+            }
+        } finally {
+            speaker.shutdown()
+        }
+    }
+
+    @Test
+    fun `a ringtone changed by the user is not overwritten`() {
+        val speaker = AnnouncementSpeaker(context)
+        setCallerDucking(true, 40)
+        try {
+            withRingVolume(speaker, 6) { am, level ->
+                speaker.duckRingVolumeIfCallerCategory(
+                    SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+                )
+                // المستخدم رفع الرنين بنفسه أثناء النطق.
+                am.setStreamVolume(AudioManager.STREAM_RING, level, 0)
+                speaker.restoreDuckedRingVolume()
+                assertEquals(
+                    "اختيار المستخدم أثناء النطق لا يُطمس",
+                    level,
+                    am.getStreamVolume(AudioManager.STREAM_RING)
+                )
+            }
+        } finally {
+            speaker.shutdown()
+        }
+    }
+
+    @Test
+    fun `restoring without a duck is a no op`() {
+        val speaker = AnnouncementSpeaker(context)
+        try {
+            withRingVolume(speaker, 4) { am, level ->
+                speaker.restoreDuckedRingVolume()
+                speaker.restoreDuckedRingVolume()
+                assertEquals(
+                    "بلا خفضٍ قائم لا استعادةَ بلا سبب",
+                    level,
+                    am.getStreamVolume(AudioManager.STREAM_RING)
+                )
+            }
+        } finally {
+            speaker.shutdown()
+        }
+    }
+
     /** نصٌّ عربيٌّ طويلٌ بلا علامات جملٍ (أسوأ حالةٍ للمحرّك). */
     private fun longArabicText(chars: Int): String =
         "قراءة ".repeat((chars / 6) + 1).take(chars)
