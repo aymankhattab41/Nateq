@@ -33,13 +33,13 @@ class PronunciationDictionaryTest {
         dict = PronunciationDictionary(context)
     }
 
-    // ===== حدّ الرقم: اختصارُ وحدةٍ/عملةٍ ملتصقٌ به =====
+    // ===== القاموس مفتوح: أي مفتاحٍ يُطبَّق حيث ورد =====
 
     // حارس: الكسر المُبلَّغ — القاموسُ كان صامتاً عن كل ما يُكتب ملتصقاً
     // بالرقم («٥٠ج» و«٣٠٠جم») لأن الرقمَ كان حدّاً يمنع الاستبدالَ من
     // الجانبين، فتسجيلُ «جم» في القاموس لم يكن يُغيّر النطق أبداً.
     @Test
-    fun amountAbbreviationGluedToNumber_isNowReplaced() {
+    fun anyKeyGluedToNumber_isApplied() {
         dict.addEntry("جم", "جيم")
         assertEquals("الوزن 300جيم", dict.apply("الوزن 300جم"))
         assertEquals("الوزن 300 جيم", dict.apply("الوزن 300 جم"))
@@ -52,7 +52,7 @@ class PronunciationDictionaryTest {
     }
 
     @Test
-    fun gluedAmountAbbreviation_usesArabicAndLatinDigits() {
+    fun gluedKey_usesArabicAndLatinDigits() {
         dict.addEntry("جم", "جيم")
         assertEquals("الوزن ٣٠٠جيم", dict.apply("الوزن ٣٠٠جم"))
         assertEquals("الوزن ٢٥٠٫٥جيم", dict.apply("الوزن ٢٥٠٫٥جم"))
@@ -65,26 +65,39 @@ class PronunciationDictionaryTest {
         assertEquals("أرسل م2", dict.apply("أرسل م2"))
     }
 
-    // حارس: الكلمةُ الطويلةُ الملتصقةُ بالرقم لا تُبدَّل (سقفُ ثلاثة أحرف
-    // يفصل اختصارَ الوحدة عن الكلمة)
+    // حارس: لا سقفَ لطول المفتاح ولا شرطَ على لغته — كلمةٌ كاملةٌ تُبدَّل
+    // وهي ملتصقةٌ بالرقم، في كل طولٍ (حرفٌ واحد، وثلاثة، وخمسة، وأطول)
     @Test
-    fun longArabicWordGluedToNumber_staysUntouched() {
+    fun longKeyGluedToNumber_isAlsoApplied() {
         dict.addEntry("جنيه", "جنيه مصري")
-        assertEquals("المبلغ 50جنيه", dict.apply("المبلغ 50جنيه"))
-        // وكلمةٌ من ثلاثة أحرفٍ فوق الزناد تُعامَل معاملةَ الاختصار
+        assertEquals("المبلغ 50جنيه مصري", dict.apply("المبلغ 50جنيه"))
         dict.addEntry("دولار", "دولار أمريكي")
-        assertEquals("السعر 7دولار", dict.apply("السعر 7دولار"))
-    }
-
-    @Test
-    fun threeLetterArabicWordGluedToNumber_countsAsAbbreviation() {
-        // سقفُ ثلاثة أحرفٍ قرارٌ واعٍ: «متر» و«جم» و«كجم» اختصاراتٌ
-        // يلتصقُن بالرقم، وكلمةٌ من ثلاثة أحرفٍ ملتصقةٌ به نادرة.
+        assertEquals("السعر 7دولار أمريكي", dict.apply("السعر 7دولار"))
+        dict.addEntry("متر", "مِتْر")
+        assertEquals("الطول 5مِتْر", dict.apply("الطول 5متر"))
         dict.addEntry("باص", "حافلة")
         assertEquals("رقم 7حافلة", dict.apply("رقم 7باص"))
     }
 
-    // حارس: داخلَ الكلمةِ لا استبدالُ أبداً («مج 5» و«5ممتاز»)
+    // حارس: الطلبُ المُبلَّغ — القاموسُ مفتوحٌ على مفاتيحَ بفراغاتٍ في
+    // وسطها، تُبدَّل كاملةً بلا تصفيةٍ ولا شرط.
+    @Test
+    fun multiWordKey_isReplacedWholesale() {
+        dict.addEntry("عبد السلام", "محمد")
+        assertEquals("اتصل محمد", dict.apply("اتصل عبد السلام"))
+        assertEquals(
+            "السلام عليكم",
+            dict.apply("السلام عليكم")
+        )
+        dict.addEntry("شركة الاتصالات", "الشركة")
+        assertEquals(
+            "went to الشركة",
+            dict.apply("went to شركة الاتصالات")
+        )
+    }
+
+    // حارس: داخلَ الكلمةِ لا استبدالُ أبداً («مج 5» و«5ممتاز») — هذه
+    // القاعدةُ الوحيدة المتبقّية وإلا انهار القاموس («مرحبا» ← «مترحبا»)
     @Test
     fun keyInsideWord_stillNeverReplaced() {
         dict.addEntry("جم", "جيم")
