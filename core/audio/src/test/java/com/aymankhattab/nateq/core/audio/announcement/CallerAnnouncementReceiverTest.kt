@@ -98,6 +98,17 @@ class CallerAnnouncementReceiverTest {
         )
     }
 
+    @Test
+    fun `call log hint is needed only when denied on sdk 31 plus`() {
+        // على أندرويد 12+ (API 31+) الرقم فارغ لأن READ_CALL_LOG غير
+        // ممنوح — فيُرشد المستخدم إلى منحه من الإعدادات.
+        assertTrue(callerCallLogHintNeeded(hasCallLog = false, sdkInt = 31))
+        assertTrue(callerCallLogHintNeeded(hasCallLog = false, sdkInt = 37))
+        // الإذن ممنوح أو النظام أقدم من 12: لا تلميح.
+        assertFalse(callerCallLogHintNeeded(hasCallLog = true, sdkInt = 31))
+        assertFalse(callerCallLogHintNeeded(hasCallLog = false, sdkInt = 30))
+    }
+
     private fun buildPhrase(
         number: String?,
         contactName: String?,
@@ -119,34 +130,31 @@ class CallerAnnouncementReceiverTest {
     }
 
     @Test
-    fun `blank number without call log permission yields no speech at all`() {
+    fun `blank number without call log permission appends the grant hint`() {
         val app =
             ApplicationProvider.getApplicationContext<android.app.Application>()
         shadowOf(app).denyPermissions(
             android.Manifest.permission.READ_CALL_LOG
         )
-        // **العقد الحاكم بعد تغيير المستخدم:** بلا هوية لا نطقَ البتّة.
-        // العبارة العامة «اتصال وارد» سُحبت، ومعها التلميحُ عن السجل
-        // (كان يقرؤه المستخدم كأنه معلومة عن المتصل وهي ليست كذلك).
-        // البديلُ نغمةُ التنبيه + اهتزاز قبل الوصول إلى هنا.
-        assertEquals(
-            "بلا هوية: لا نصّ ولا تلميح",
-            "",
-            buildPhrase(number = null, contactName = null)
+        // رقم فارغ بلا اسم وإذنُ سجلٍ غير ممنوح على API 31+: اللاحقة ظاهرة.
+        val text = buildPhrase(number = null, contactName = null)
+        assertTrue(
+            "التلميح يُلحق بعد «اتصال وارد» عند سحب إذن السجل",
+            text.contains("سجل المكالمات")
         )
+        assertTrue(text.startsWith("اتصال وارد"))
     }
 
     @Test
-    fun `blank number with call log granted also yields no speech`() {
+    fun `blank number with call log granted stays generic`() {
         val app =
             ApplicationProvider.getApplicationContext<android.app.Application>()
         shadowOf(app).grantPermissions(
             android.Manifest.permission.READ_CALL_LOG
         )
-        // الإذن ممنوح والرقم ما زال فارغاً (حجبٌ حقيقي): النتيجةُ
-        // نفسها — الصمت، لا عبارةَ عامة.
+        // الإذن ممنوح والرقم ما زال فارغاً: حجب حقيقي — لا تلميح.
         assertEquals(
-            "",
+            "اتصال وارد",
             buildPhrase(number = null, contactName = null)
         )
     }
@@ -555,7 +563,6 @@ fun `waiting call speaks only when during call toggle enabled`() {
         CallerAnnouncementReceiver.lastResolvedName = "أحمد"
         CallerAnnouncementReceiver.ringingStartTime = 12345L
         CallerAnnouncementReceiver.ringingAnnounced = true
-        CallerAnnouncementReceiver.announcedNumber = "01012345678"
 
         CallerAnnouncementReceiver.resetRingingSession()
 
@@ -563,255 +570,13 @@ fun `waiting call speaks only when during call toggle enabled`() {
         assertNull(CallerAnnouncementReceiver.lastResolvedName)
         assertEquals(0L, CallerAnnouncementReceiver.ringingStartTime)
         assertFalse(CallerAnnouncementReceiver.ringingAnnounced)
-        // **حارسُ التكرار يعتمد حالةَ الجلسة، فتصفيرُها إجباريٌّ وإلا
-        // صمت إعلانُ المكالمة التالية إلى الأبد.**
-        assertNull(CallerAnnouncementReceiver.announcedNumber)
     }
 
-    /**
-     * حارسُ منع تكرار إعلان المتصل.
-     *
-     * **العَرَض المُبلّغ:** في بعض الهواتف يُنطق «اتصال وارد» ثلاث مرّات
-     * ثم رابعاً بالاسم — لأن الجهاز يرسل `PHONE_STATE/RINGING` أكثر من
-     * مرّة للمكالمة الواحدة، وكان الحارسُ معلقاً على `activeCallCycle`
-     * (عمرُ كوروثين ينتهي فور `speak()`) فيموت بعد أول إعلان. والحارسُ
-     * الجديد على حالةِ الجلسة الدائمة فيصمد بعد موت الكوروثين.
-     */
     @Test
-    fun `duplicate ring with same number is suppressed after announce`() {
+    fun `grace period constants are valid and within safe cap`() {
         assertTrue(
-            "بثّ RINGING مكرر لنفس الرقم يجب أن يُكبَت",
-            CallerAnnouncementReceiver.shouldSuppressDuplicateAnnouncement(
-                alreadyAnnounced = true,
-                announcedNumber = "01012345678",
-                incomingNumber = "01012345678"
-            )
-        )
-    }
-
-    @Test
-    fun `duplicate ring without number is suppressed after announce`() {
-        // بعض الأجهزة تحجب الرقم في البثّ الثاني: غيابُ الرقم ليس
-        // دليلاً على مكالمة جديدة.
-        assertTrue(
-            CallerAnnouncementReceiver.shouldSuppressDuplicateAnnouncement(
-                alreadyAnnounced = true,
-                announcedNumber = "01012345678",
-                incomingNumber = null
-            )
-        )
-    }
-
-    @Test
-    fun `first ring is never suppressed`() {
-        // **الأهم:** لا يُكبَتُ أول إعلانٍ أبداً.
-        assertFalse(
-            CallerAnnouncementReceiver.shouldSuppressDuplicateAnnouncement(
-                alreadyAnnounced = false,
-                announcedNumber = null,
-                incomingNumber = "01012345678"
-            )
-        )
-    }
-
-    @Test
-    fun `a different number is treated as a new call`() {
-        // مكالمةٌ جديدةٌ من رقمٍ آخر يجب أن تُعلَن ولو كان قد سبق
-        // إعلانٌ في الجلسة قبل إنهائها.
-        assertFalse(
-            CallerAnnouncementReceiver.shouldSuppressDuplicateAnnouncement(
-                alreadyAnnounced = true,
-                announcedNumber = "01012345678",
-                incomingNumber = "01087654321"
-            )
-        )
-    }
-
-    @Test
-    fun `a late numbered ring after a numberless announce is suppressed`() {
-        // **هذا هو العيب المُصلَح، وحالةُ الجهاز المرصودة بالضبط.**
-        // المنصّة ترسل RINGING مرّتين: الأولى بلا رقم (فيُعلن «اتصال
-        // وارد» و`announcedNumber` يبقى `null`)، والثانية بعد ~٦ ثوانٍ
-        // ومعها الرقم. كان `"01287308580" == null` يقيَّم خطأً فيفتح
-        // دورةً ثانية كاملة، فينطق ٥ بلا اسم ثم ٥ بالاسم — ضعفَ
-        // التكرار المضبوط. إعلانٌ بلا رقم = «الرقم لم يُعرف بعد»،
-        // لا «هذا رقمٌ آخر»، فبثٌّ لاحق يحمل رقماً لا يعيد التكرار.
-        assertTrue(
-            "بثٌّ متأخّر يحمل رقماً بعد إعلانٍ بلا رقم يجب أن يُكبَت",
-            CallerAnnouncementReceiver.shouldSuppressDuplicateAnnouncement(
-                alreadyAnnounced = true,
-                announcedNumber = null,
-                incomingNumber = "01287308580"
-            )
-        )
-    }
-
-    @Test
-    fun `a blank announced number is treated as unknown`() {
-        // الفراغُ في `announcedNumber` يعني الرقمَ غيرَ المحفوظ، لا
-        // رقماً فارغاً يُقارَن.
-        assertTrue(
-            CallerAnnouncementReceiver.shouldSuppressDuplicateAnnouncement(
-                alreadyAnnounced = true,
-                announcedNumber = "  ",
-                incomingNumber = "01287308580"
-            )
-        )
-    }
-
-    @Test
-    fun `the wake lock covers the grace period and the speech`() {
-        // قفل الاستيقاظ كان يُكتسب **بعد** حلقة الانتظار، فمع مهلةٍ
-        // سبعَ ثوانٍ كان الانتظار يجري بلا استيقاظ فيتأخّر `delay()`
-        // مع شاشةٍ مطفأة. سقفُ القفل يجب أن يتجاوز الانتظارَ والنطقَ معاً.
-        val grace = CallerAnnouncementReceiver
-            .CALLER_RESOLVE_GRACE_PERIOD_MS
-        val lockCap = CallerAnnouncementReceiver
-            .CALLER_WAKE_LOCK_CAP_MS
-        assertTrue(
-            "سقف قفل الاستيقاظ يجب أن يتجاوز مهلة الانتظار",
-            lockCap > grace
-        )
-        assertTrue(
-            "سقف قفل الاستيقاظ يجب أن يتجاوز مهلة الانتظار + نطق الجملة",
-            lockCap >= grace + TimeAlarmReceiver.SHORT_WAKE_LOCK_MS
-        )
-    }
-
-    @Test
-    fun `the anr safe cap stays under the system broadcast limit`() {
-        // **حارس عقدِ لا يُرفع:** إنهاءُ goAsync متأخّراً عن حافة النظام
-        // يُجمد العملية (Process Cgroup Freezer) ويقطع الصوت بلا خطأ.
-        // فتمديدُ مهلة انتظار الرقم إلى سبع ثوانٍ يجب ألّا يمسّ هذا السقف
-        // أبداً — يُرفع قفلُ الاستيقاظ فقط.
-        val cap = CallerAnnouncementReceiver.BROADCAST_SAFE_CAP_MS
-        assertTrue(
-            "سقف ANR يجب أن يبقى دون مهلة بثّ النظام (~10s)",
-            cap < 10_000L
-        )
-        assertTrue(
-            "سقف ANR يجب ألّا ينزل تحت 9 ثوانٍ فيُقصّر نافذة النطق",
-            cap >= 9_000L
-        )
-    }
-
-    @Test
-    fun `duplicate ring carrying the same number joins the pending cycle`() {
-        // **هذا هو العيب المُصلَح:** كان انضمامُ البث المكرّر مشروطاً
-        // بغياب الرقم، فبثٌّ يحمل الرقم نفسه كان يُلغي الدورةَ الجارية
-        // ويفتح أخرى — والنطقُ القديم داخل speak() قد لا يُلغى فينطق
-        // مرّتين. الآن يتطابق الرقمان فينضمّ ولا يُستبدَل.
-        assertTrue(
-            CallerAnnouncementReceiver.shouldJoinPendingCycle(
-                alreadyAnnounced = false,
-                cycleActive = true,
-                pendingNumber = "01012345678",
-                incomingNumber = "01012345678"
-            )
-        )
-    }
-
-    @Test
-    fun `duplicate ring with no number still joins the pending cycle`() {
-        assertTrue(
-            CallerAnnouncementReceiver.shouldJoinPendingCycle(
-                alreadyAnnounced = false,
-                cycleActive = true,
-                pendingNumber = "01012345678",
-                incomingNumber = null
-            )
-        )
-    }
-
-    @Test
-    fun `pending cycle with no number absorbs a later numbered ring`() {
-        // الرقم، فيجب ألّا تُلغى الدورةُ بسبب مجيئه متأخّراً.
-        assertTrue(
-            CallerAnnouncementReceiver.shouldJoinPendingCycle(
-                alreadyAnnounced = false,
-                cycleActive = true,
-                pendingNumber = null,
-                incomingNumber = "01012345678"
-            )
-        )
-    }
-
-    @Test
-    fun `a different number replaces the pending cycle`() {
-        // رقمان مختلفان غير فارغين = مكالمتان حقيقيتان.
-        assertFalse(
-            CallerAnnouncementReceiver.shouldJoinPendingCycle(
-                alreadyAnnounced = false,
-                cycleActive = true,
-                pendingNumber = "01012345678",
-                incomingNumber = "01087654321"
-            )
-        )
-    }
-
-    @Test
-    fun `a ring never joins after the announcement was made`() {
-        // بعد أول إعلان يتكفّل به الحارس الأعلى لا هذا.
-        assertFalse(
-            CallerAnnouncementReceiver.shouldJoinPendingCycle(
-                alreadyAnnounced = true,
-                cycleActive = true,
-                pendingNumber = "01012345678",
-                incomingNumber = "01012345678"
-            )
-        )
-    }
-
-    @Test
-    fun `no pending cycle means nothing to join`() {
-        assertFalse(
-            CallerAnnouncementReceiver.shouldJoinPendingCycle(
-                alreadyAnnounced = false,
-                cycleActive = false,
-                pendingNumber = "01012345678",
-                incomingNumber = "01012345678"
-            )
-        )
-    }
-
-    @Test
-    fun `announced number is captured once and survives name resolution`() {
-        // **بصمةُ العطل المُبلّغ:** «اتصال وارد» ثلاثاً ثم الاسم في
-        // الرابعة. التكرارُ المبرمج يولّد ثلاثاً، والرابعة دورةٌ
-        // جديدةٌ أعادها بثّ مكرر — واسمُها ظهر متأخراً.
-        CallerAnnouncementReceiver.resetRingingSession()
-        CallerAnnouncementReceiver.ringingAnnounced = true
-        if (CallerAnnouncementReceiver.announcedNumber == null) {
-            CallerAnnouncementReceiver.announcedNumber = "01012345678"
-        }
-        // إعادةُ حلّ الاسم في نبضة تكرارٍ لاحقة لا يجوز أن تُغيّر
-        // رقمَ ما أُعلن (وإلا عاد الحارسُ إلى نقطة الصفر).
-        CallerAnnouncementReceiver.lastResolvedName = "أحمد"
-        assertEquals(
-            "01012345678",
-            CallerAnnouncementReceiver.announcedNumber
-        )
-        assertTrue(
-            CallerAnnouncementReceiver.shouldSuppressDuplicateAnnouncement(
-                alreadyAnnounced = CallerAnnouncementReceiver.ringingAnnounced,
-                announcedNumber = CallerAnnouncementReceiver.announcedNumber,
-                incomingNumber = "01012345678"
-            )
-        )
-        CallerAnnouncementReceiver.resetRingingSession()
-    }
-
-    @Test
-    fun `instant identity grace is short enough to feel immediate`() {
-        // **عقد المستخدم:** لا صمت طويل قبل أول كلمة. مهلة الهوية
-        // الفورية قصيرةٌ عمداً (١٫٥s) لأنها تنتظر مصادرَ فورية (إشعار
-        // الهاتف وخدمة الفرز)، لا فجوةَ الشبكة التي تُغطّى بمهلة
-        // الهوية المتأخرة.
-        assertTrue(
-            "مهلة الهوية الفورية يجب ألا تتجاوز ثانيتين" +
-                " (صمتٌ طويل يُفقد المكالمة)",
-            CallerAnnouncementReceiver.CALLER_RESOLVE_GRACE_PERIOD_MS <=
-                2_000L
+            CallerAnnouncementReceiver.CALLER_RESOLVE_GRACE_PERIOD_MS in
+                1_000L..3_000L
         )
         assertTrue(
             CallerAnnouncementReceiver.CALLER_LOG_POLL_INTERVAL_MS in
@@ -820,47 +585,6 @@ fun `waiting call speaks only when during call toggle enabled`() {
         assertTrue(
             CallerAnnouncementReceiver.CALLER_RESOLVE_GRACE_PERIOD_MS >
                 CallerAnnouncementReceiver.CALLER_LOG_POLL_INTERVAL_MS
-        )
-    }
-
-    @Test
-    fun `late identity wait covers the observed platform gap`() {
-        // فجوةُ المنصّة المرصودة ~٦٫١s (الرنين الأول بلا رقم والثاني
-        // متأخّر) — فمهلةُ الهوية المتأخرة يجب أن تتجاوزها بهامش فتُلتقط
-        // الهويةُ وتُعلَن مرّةً واحدة بدل النغمة وحدها.
-        assertTrue(
-            "مهلة الهوية المتأخرة يجب أن تتجاوز فجوة المنصّة (~6.1s)",
-            CallerAnnouncementReceiver.CALLER_IDENTITY_LATE_WAIT_MS >=
-                6_500L
-        )
-        assertTrue(
-            "مجلموع الانتظار يبقى دون سقف ANR حتى مع النطق",
-            CallerAnnouncementReceiver.CALLER_RESOLVE_GRACE_PERIOD_MS +
-                CallerAnnouncementReceiver
-                    .CALLER_IDENTITY_LATE_WAIT_MS <
-                CallerAnnouncementReceiver.BROADCAST_SAFE_CAP_MS
-        )
-    }
-
-    @Test
-    fun `no identity means no speech - only cue`() {
-        // **القاعدة الحاكمة: لا نطق بلا هوية.** بلا اسمٍ ولا رقم لا
-        // تُنتج الدالةُ نصّاً قابلاً للنطق إطلاقاً.
-        assertFalse(
-            "بلا هوية: لا اسم ولا رقم = لا نطق",
-            CallerAnnouncementReceiver.hasSpeakableIdentity(null, null)
-        )
-        assertFalse(
-            "نصٌّ فارغ ليس هوية",
-            CallerAnnouncementReceiver.hasSpeakableIdentity("   ", "")
-        )
-        assertTrue(
-            "الرقم وحده هوية صالحة",
-            CallerAnnouncementReceiver.hasSpeakableIdentity("0100", null)
-        )
-        assertTrue(
-            "الاسم وحده هوية صالحة",
-            CallerAnnouncementReceiver.hasSpeakableIdentity(null, "أحمد")
         )
     }
 }

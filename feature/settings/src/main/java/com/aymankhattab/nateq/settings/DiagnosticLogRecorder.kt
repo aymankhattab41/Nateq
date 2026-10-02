@@ -132,14 +132,7 @@ internal object DiagnosticLogRecorder {
                     }
                 }
             } catch (e: Exception) {
-                // **الإيقافُ الطبيعي ليس عطلاً:** [stop] يدمّر عملية
-                // logcat فيُقاطَع قراءتها بـ`InterruptedIOException` وتُرمى
-                // `useLines` — وهي نهايةٌ متوقّعة لا فشل. كان تُسجَّل
-                // `Log.e` بتكديس 20 سطراً فتملأ قسمة «الأخطاء الحرجة»
-                // في التقرير بأخطاءٍ وهمية وتُخفي أخطاءً حقيقية.
-                if (shouldReportReaderFailure(isRecording())) {
-                    Log.e(TAG, "logcat recorder failed", e)
-                }
+                Log.e(TAG, "logcat recorder failed", e)
             } finally {
                 synchronized(lock) { process = null }
             }
@@ -175,19 +168,6 @@ internal object DiagnosticLogRecorder {
             }
         }
     }
-
-    /**
-     * هل يُبلَّغ عن فشل القارئ أم أنه الإيقافُ الطبيعي؟
-     *
-     * [stop] يدمّر عملية logcat فيُقاطَع القارئُ بـ
-     * `InterruptedIOException` — وهو سلوكٌ متوقّع للمتوقِّف لا عطل،
-     * فتسجيله `Log.e` بتكديسٍ كامل ملأ قسمة «الأخطاء الحرجة» في
-     * التقرير بأخطاءٍ وهمية أخفت أخطاءً حقيقية (كما حدث في v1.6.7:
-     * 22 سطراً من الأخطاء الحرجة كلُّها InterruptedIOException واحد).
-     * نقيّ—يُختبر بلا logcat حقيقي.
-     */
-    internal fun shouldReportReaderFailure(stillRecording: Boolean): Boolean =
-        stillRecording
 
     /**
      * يبقي القائمة ضمن السعة القصوى بإسقاط الأقدم من الرأس.

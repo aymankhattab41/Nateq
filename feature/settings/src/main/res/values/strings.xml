@@ -71,13 +71,6 @@
     <string name="battery_level_unchecked">أُلغي تحديد %1$d بالمئة</string>
 <string name="caller_announcement_enabled">تفعيل إعلان المتصل</string>
 <string name="caller_announcement_during_call">نطق اسم المتصل أثناء المكالمة</string>
-<string name="caller_instant_identity_grant">تفعيل النطق الفوري لاسم المتصل</string>
-<string name="caller_instant_identity_status_none">غير مفعّل: قد يتأخّر اسم المتصل، أو لا يُنطق إن أخفته الشبكة. اضغط الزر لفتح إعدادات النظام.</string>
-<string name="caller_instant_identity_status_notif">مفعّل عبر إشعار الهاتف: يُنطق الاسمُ فور رنّة المكالمة.</string>
-<string name="caller_instant_identity_status_role">مفعّل عبر فرز المكالمات: يصل الرقمُ قبل الرنّة.</string>
-<string name="caller_instant_identity_status_both">مفعّل عبر المسارين: أسرع وأدقّ مصدر للهوية.</string>
-<string name="caller_instant_identity_granted">النطق الفوري مفعّل بالفعل</string>
-<string name="caller_screening_unavailable">تعذّر فتح إعدادات فرز المكالمات على هذا الجهاز</string>
 <string name="caller_announcement_interval">الفاصل بين كل نطق (بالثواني)</string>
 <string name="caller_announcement_rate">سرعة نطق المتصل</string>
 <string name="caller_announcement_pitch">نبرة إعلان المتصل</string>
@@ -484,7 +477,7 @@
 <string name="time_alarm_max_precision_summary">تستخدم منبّه النظام الدقيق (setAlarmClock) متجاوزةً كل قيود Doze والبطارية فيعمل إعلان الوقت في اللحظة المضبوطة؛ أثرُها الجانبي أن أيقونة منبّه ثابتة تظهر في شريط الحالة.</string>
 <string name="changelog_title">آخر التحديثات</string>
 <string name="changelog_text">الإصدار %1$s
-• الرجوع إلى 1.6.10
+• الرجوع إلى 1.6.11
 </string>
     <string name="diagnostics_title">معلومات التشخيص</string>
     <string name="diagnostics_desc">معلومات حول حالة التطبيق ومحركات النطق للمساعدة في حل المشاكل.</string>
