@@ -963,4 +963,119 @@ fun `waiting call speaks only when during call toggle enabled`() {
             callerNumbersEquivalent("5551234", "5559999")
         )
     }
+
+    @Test
+    fun `a notification call is announced once despite repeated posts`() {
+        // التطبيق يحدّث إشعارَ المكالمة (جارٍ الاتصال ← يرنّ) فيصل
+        // الإشعار نفسه مرتين بمفتاحٍ واحد — نطقٌ واحدٌ فقط.
+        val key = NateqNotificationListener.notificationCallKey(
+            "com.whatsapp", null, "سارة"
+        )
+        val start = 1_000_000L
+        assertTrue(
+            CallerAnnouncementReceiver.shouldTriggerNotificationCall(
+                key, null, 0L, start
+            )
+        )
+        assertFalse(
+            "تحديثُ الإشعار لا يُعيد النطق",
+            CallerAnnouncementReceiver.shouldTriggerNotificationCall(
+                key, key, start, start + 5_000L
+            )
+        )
+    }
+
+    @Test
+    fun `a new caller in the notification path always triggers`() {
+        // متصلٌ مختلف = مفتاحٌ مختلف، فيُنطق فوراً بلا انتظار النافذة.
+        assertTrue(
+            CallerAnnouncementReceiver.shouldTriggerNotificationCall(
+                "a|1|سارة", "b|2|أحمد", 0L, 10L
+            )
+        )
+    }
+
+    @Test
+    fun `the same caller after the dedup window triggers again`() {
+        // انتهاءُ النافذة يعني مكالمةً جديدة من المتصل نفسه — وإلا
+        // لكُبِحت كلُّ مكالماته التالية بمفتاحه الأول.
+        val key = "c||أحمد"
+        assertFalse(
+            CallerAnnouncementReceiver.shouldTriggerNotificationCall(
+                key, key, 0L, 5_000L
+            )
+        )
+        assertTrue(
+            CallerAnnouncementReceiver.shouldTriggerNotificationCall(
+                key, key, 0L,
+                CallerAnnouncementReceiver
+                    .NOTIFICATION_CALL_DEDUP_MS
+            )
+        )
+    }
+
+    @Test
+    fun `a voip notification does not double up with the phone state ring`() {
+        // **عقد الازدواج لمكالمات VoIP:** التطبيق يُشغّل
+        // ACTION_NOTIFICATION_CALL بينما قد يُرسل بعض الأجهزة بثّ
+        // PHONE_STATE للمكالمة نفسها — فالحارسُ الأعلى على حالة الجلسة
+        // يجب أن يكبّح الثاني، تماماً كما يكبّح الرنينَ المكررَ للشبكة.
+        CallerAnnouncementReceiver.resetRingingSession()
+        CallerAnnouncementReceiver.ringingAnnounced = true
+        CallerAnnouncementReceiver.announcedNumber = null
+        // إعلانٌ سابق بلا رقم (حالُ واتساب: اسمٌ فقط) — فيكبَح أي رقم
+        // لاحقٍ للمكالمة نفسها، ولا يُفتح جدولُ تكرارٍ ثانٍ.
+        assertTrue(
+            CallerAnnouncementReceiver.shouldSuppressDuplicateAnnouncement(
+                alreadyAnnounced = true,
+                announcedNumber = CallerAnnouncementReceiver.announcedNumber,
+                incomingNumber = "01001234567"
+            )
+        )
+        CallerAnnouncementReceiver.resetRingingSession()
+    }
+
+    @Test
+    fun `the dialer call notification is skipped after a phone state ring`() {
+        // **ازدواجٌ حقيقي من تغييرنا:** مكالمةُ الشبكة تبدأ ببثّ
+        // PHONE_STATE، ثم يُنشر تطبيقُ الهاتف إشعارَ CATEGORY_CALL
+        // للمكالمة نفسها — فلا يجوز أن يُطلَق نطقٌ ثانٍ فوقها.
+        assertFalse(
+            CallerAnnouncementReceiver.shouldLaunchNotificationCall(
+                alreadyAnnounced = true,
+                notificationCallActive = false,
+                announcedNumber = "01001234567",
+                incomingNumber = "01001234567"
+            )
+        )
+    }
+
+    @Test
+    fun `a notification call is launched when no ring is active`() {
+        // لا جلسةَ قائمة: مكالمةُ واتساب تخلو من أيّ PHONE_STATE
+        // فينبغي أن تُطلَق بلا تردّد.
+        assertTrue(
+            CallerAnnouncementReceiver.shouldLaunchNotificationCall(
+                alreadyAnnounced = false,
+                notificationCallActive = false,
+                announcedNumber = null,
+                incomingNumber = null
+            )
+        )
+    }
+
+    @Test
+    fun `a second notification caller is not blocked by the first`() {
+        // بعد إعلانِ مكالمةِ إشعارٍ أولى، مكالمةُ شخصٍ ثانٍ **بلا رقم**
+        // (الاسمُ وحده) يجب أن تُطلَق — لا أن يكبَحها رقمٌ مخزَّنٌ من
+        // المكالمة الأولى، فمفتاحُ الجولة (لا الرقمُ) هو الحاسم.
+        assertTrue(
+            CallerAnnouncementReceiver.shouldLaunchNotificationCall(
+                alreadyAnnounced = true,
+                notificationCallActive = true,
+                announcedNumber = "01001234567",
+                incomingNumber = null
+            )
+        )
+    }
 }

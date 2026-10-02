@@ -228,6 +228,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             ringingAnnounced = false
             announcedNumber = null
             pendingRingNumber = null
+            notificationCallActive = false
             // هوية الجلسة مشتركة مع إشعار الهاتف وخدمة الفرز، فلا
             // تتسرّب هوية مكالمةٍ إلى ما بعدها (بثّ IDLE متأخر).
             RingCallerIdentity.clear()
@@ -299,6 +300,163 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             }
             return launches
         }
+
+        /**
+         * إجراء مكالمةِ تطبيق (VoIP) — لا يرسل النظام لها بثّ
+         * `PHONE_STATE` إطلاقاً، فمستمعُ الإشعارات يستخرج الهوية من إشعار
+         * `CATEGORY_CALL` ثم يبثّ هذا الإجراء فينفّذ
+         * [CallerAnnouncementReceiver] **مسار الرنين نفسه**: انتظارُ
+         * الهوية والتكرارات والفواصل وحرّاس الازدواج — فتنطق واتساب وتلجرام
+         * وميسنجر بلا ازدواجٍ مع مكالمات الشبكة.
+         */
+        internal const val ACTION_NOTIFICATION_CALL =
+            "com.aymankhattab.nateq.action.NOTIFICATION_CALL"
+
+        /** نافذةُ اعتبار إشعارَي مكالمةٍ واحدٍ (التطبيق يحدّث إشعار
+         *  المكالمة مراتٍ فلا يُعاد النطق)، وبعدها تُعدّ مكالمةٌ جديدة. */
+        internal const val NOTIFICATION_CALL_DEDUP_MS = 45_000L
+
+        /** مفتاحُ مكالمة الإشعار الجارية: «حزمة|الرقم|الاسم». */
+        @Volatile
+        private var notificationCallKey: String? = null
+
+        /** وقتُ إطلاق مكالمة الإشعار الجارية (نافذة منع التكرار). */
+        @Volatile
+        private var notificationCallAt = 0L
+
+        /** هل هذه الجولةَ نطقَها إشعارُ تطبيق (لا بثُّ شبكة)؟ عندئذٍ تُحسم
+         *  المزدوجةُ بنافذة المفتاح لا بمقارنة الرقم. */
+        @Volatile
+        private var notificationCallActive = false
+
+        /**
+         * هل تُطلَق دورةُ نطقٍ لمكالمةِ إشعارٍ بهويتها هذه؟
+         *
+         * **الحالةُ الحاكمة:** تطبيقُ الهاتف نفسه يُنشر إشعارَ
+         * `CATEGORY_CALL` لمكالمةِ الشبكة التي بدأها بثّ `PHONE_STATE` —
+         * فبلا هذا الحارس يُطلَق نطقٌ ثانٍ فوق مكالمةٍ جاريةٍ (ازدواجٌ
+         * صريح نُشِئ بتغييرنا لا سِبقَ له). والجلسةُ القائمةُ من **إشعارٍ
+         * سابق** فمفتاحُها يحسمها ([shouldTriggerNotificationCall]) فلا
+         * مقارنةَ أرقامَ هنا — وإلا كُبِحَت مكالمةُ شخصٍ ثانٍ.
+         */
+        internal fun shouldLaunchNotificationCall(
+            alreadyAnnounced: Boolean,
+            notificationCallActive: Boolean,
+            announcedNumber: String?,
+            incomingNumber: String?
+        ): Boolean {
+            if (notificationCallActive) return true
+            return !shouldSuppressDuplicateAnnouncement(
+                alreadyAnnounced = alreadyAnnounced,
+                announcedNumber = announcedNumber,
+                incomingNumber = incomingNumber
+            )
+        }
+
+        /**
+         * هل تُطلَق دورةُ نطقٍ لمكالمةِ إشعارٍ بهذا المفتاح؟
+         *
+         * نفس المفتاح خلال [windowMs] فهو **نفس الرنّة** فلا يُعاد
+         * النطق؛ ومفتاحٌ مختلفٌ أو انقضت النافذةُ فهو مكالمةٌ جديدة.
+         * خالصٌ قابل للاختبار.
+         */
+        internal fun shouldTriggerNotificationCall(
+            key: String,
+            lastKey: String?,
+            lastAt: Long,
+            now: Long,
+            windowMs: Long = NOTIFICATION_CALL_DEDUP_MS
+        ): Boolean =
+            key != lastKey || (now - lastAt) >= windowMs
+
+        /**
+         * إطلاق نطقِ مكالمةٍ واردةٍ من إشعار تطبيق.
+         *
+         * **لماذا بثٌّ إلى المستقبل نفسه لا نطقٌ مستقل؟** لأن النطق
+         * وحيدٌ في [CallerAnnouncementReceiver] بحكم بند v1.6.8: تكرارٌ
+         * هنا كان سيضاعِف النطق مع مسار الشبكة ويكسر حرّاس الجلسة.
+         * فنترك المستقبل ينفّذ مسارَ الرنين كاملاً بنفس الحالة.
+         *
+         * وتصفيرُ الجلسة قبل النشر مقصود: بلاه يبقى `ringingAnnounced`
+         * من مكالمةٍ سابقة فيُكبَح نطقُ المكالمة الجديدةِ بلا رقم (وهو
+         * حالُ واتساب الذي يعرض الاسمَ لا الرقمَ) فلا يُعلَن إلا أول
+         * مكالمةٍ واحدةً في عمر التطبيق.
+         */
+        internal fun announceNotificationCall(
+            context: Context,
+            number: String?,
+            name: String?,
+            key: String
+        ) {
+            val now = System.currentTimeMillis()
+            if (!shouldTriggerNotificationCall(
+                    key = key,
+                    lastKey = notificationCallKey,
+                    lastAt = notificationCallAt,
+                    now = now
+                )
+            ) {
+                Log.w(TAG, "CALL notification repeat — not re-announced ($key)")
+                return
+            }
+            if (!shouldLaunchNotificationCall(
+                    alreadyAnnounced = ringingAnnounced,
+                    notificationCallActive = notificationCallActive,
+                    announcedNumber = announcedNumber,
+                    incomingNumber = number
+                )
+            ) {
+                Log.w(
+                    TAG,
+                    "CALL notification after a phone-state ring —" +
+                        " not announced again ($key)"
+                )
+                return
+            }
+            notificationCallKey = key
+            notificationCallAt = now
+            resetRingingSession()
+            // بعد التصفير (الذي يخفض العَلَم) — فتدلّ هذه الجولةُ على
+            // نطقٍ مصدرُه إشعارٌ لا شبكة.
+            notificationCallActive = true
+            RingCallerIdentity.publish(number, name)
+            val intent = Intent(context, CallerAnnouncementReceiver::class.java)
+            intent.action = ACTION_NOTIFICATION_CALL
+            intent.putExtra(
+                TelephonyManager.EXTRA_STATE,
+                TelephonyManager.EXTRA_STATE_RINGING
+            )
+            if (!number.isNullOrBlank()) {
+                @Suppress("DEPRECATION")
+                intent.putExtra(TelephonyManager.EXTRA_INCOMING_NUMBER, number)
+            }
+            context.sendBroadcast(intent)
+        }
+
+        /**
+         * انتهاءُ مكالمةِ إشعار (حُذف إشعارُ المكالمة): يوقف النطق ويصفّر
+         * الجلسة ويُبيح مكالمةً جديدةً **من المتصل نفسه** — وإلا كُبحت
+         * كلُّ مكالماته التالية بمفتاحه الأول.
+         *
+         * ولا يُلمس شيءٌ إن كان الحذفُ من تطبيقٍ غير الذي أطلق الجولةَ
+         * الجارية (مثل حذف إشعار مكالمةِ شبكةٍ أثناءَ مكالمة VoIP).
+         */
+        internal fun endNotificationCall(
+            context: Context,
+            packageName: String?
+        ) {
+            val key = notificationCallKey ?: return
+            if (packageName != null && !key.startsWith("$packageName|")) return
+            notificationCallKey = null
+            notificationCallAt = 0L
+            notificationCallActive = false
+            activeCallCycle?.cancel()
+            activeCallCycle = null
+            resetRingingSession()
+            runCatching {
+                AnnouncementSpeaker.getInstance(context).stop()
+            }
+        }
     }
 
     /** مصدر الإعدادات المحقون — كائن واحد مشترك عبر العمليات
@@ -307,8 +465,10 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
     lateinit var settingsRepository: SettingsRepository
 
     override fun onReceive(context: Context, intent: Intent?) {
+        val action = intent?.action
         if (
-            intent?.action != TelephonyManager.ACTION_PHONE_STATE_CHANGED
+            action != TelephonyManager.ACTION_PHONE_STATE_CHANGED &&
+            action != ACTION_NOTIFICATION_CALL
         ) {
             return
         }
@@ -337,8 +497,16 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 ?: CoroutineScope(Dispatchers.Default)
         appScope.launch {
             var wakeLock: android.os.PowerManager.WakeLock? = null
-            val state =
+            // مكالمةُ إشعارِ تطبيق تسير في مسار الرنين نفسه، لكنّها **لا تمسّ
+            // تتبّعَ حالة الشبكة**: لا تُكتب في lastPhoneState ولا تغيّر
+            // callActive، وإلا أفسدت تمييزَ رنينِ انتظارٍ لمكالمةِ شبكةٍ
+            // (المستقبلان يتنافسان على نفس الحقلين).
+            val isNotificationCall = action == ACTION_NOTIFICATION_CALL
+            val state = if (isNotificationCall) {
+                TelephonyManager.EXTRA_STATE_RINGING
+            } else {
                 intent.getStringExtra(TelephonyManager.EXTRA_STATE)
+            }
             if (state == null) {
                 // بلا حالة في البث — لا عمل: يُنهى البث فوراً (بدل تركه
                 // معلقاً حتى حارس الأمان) ونخرج بهدوء.
@@ -348,11 +516,13 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             // سجلّ الحالة قبل أي فرع: القراءة السابقة تخدم تمييز رنين
             // الانتظار، وتحديثُ وسم المكالمة النشطة يبقى متسقاً عبر البثوث.
             val previousState = lastPhoneState
-            lastPhoneState = state
-            if (state == TelephonyManager.EXTRA_STATE_OFFHOOK) {
-                callActive = true
-            } else if (state == TelephonyManager.EXTRA_STATE_IDLE) {
-                callActive = false
+            if (!isNotificationCall) {
+                lastPhoneState = state
+                if (state == TelephonyManager.EXTRA_STATE_OFFHOOK) {
+                    callActive = true
+                } else if (state == TelephonyManager.EXTRA_STATE_IDLE) {
+                    callActive = false
+                }
             }
             if (state != TelephonyManager.EXTRA_STATE_RINGING) {
                 // **بند 5.2:** كل انتقالٍ للحالة — الرد على المكالمة
@@ -557,7 +727,10 @@ if (rawNumber != null) {
                 val repeat = settings
                     .getCallerAnnouncementRepeat().coerceIn(1, 5)
                 val intervalMs = settings.getCallerAnnouncementIntervalSeconds()
-                    .coerceIn(1, 10) * 1000L
+                    .coerceIn(
+                        SettingsRepository.CALLER_INTERVAL_MIN,
+                        SettingsRepository.CALLER_INTERVAL_MAX
+                    ) * 1000L
                 val schedule = repeatSchedule(
                     repeat, intervalMs, BROADCAST_ASYNC_WINDOW_MS
                 )

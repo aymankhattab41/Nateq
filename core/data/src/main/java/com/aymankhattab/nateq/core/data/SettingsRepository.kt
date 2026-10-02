@@ -65,6 +65,11 @@ class SettingsRepository(context: Context) :
         const val VOICE_CATEGORY_EMOJI = "emoji"
         const val VOICE_CATEGORY_BATTERY = "battery"
 
+        /** حدّا الفاصل الزمني بين تكرارات إعلان المتصل (بالثواني): ثلاث
+         *  قيم فقط 3/4/5 — وهما حدُّ المخزن فيساوي حدَّ الواجهة. */
+        const val CALLER_INTERVAL_MIN = 3
+        const val CALLER_INTERVAL_MAX = 5
+
         private const val KEY_BATTERY_VOICE_MIGRATED =
             "_battery_voice_migrated"
 
@@ -1485,14 +1490,15 @@ class SettingsRepository(context: Context) :
             .putInt("caller_announcement_repeat", repeat.coerceIn(1, 5))
             .apply()
 
-    /** الفاصل الزمني (بالثواني) بين كل مرة نطق لاسم المتصل — 1..10 ثوانٍ */
+    /** الفاصل الزمني (بالثواني) بين كل مرة نطق لاسم المتصل — 3..5 ثوانٍ */
     override fun getCallerAnnouncementIntervalSeconds(): Int =
         prefs.getInt("caller_announcement_interval_seconds", 3)
+            .coerceIn(CALLER_INTERVAL_MIN, CALLER_INTERVAL_MAX)
     override fun setCallerAnnouncementIntervalSeconds(seconds: Int) =
         prefs.edit()
             .putInt(
                 "caller_announcement_interval_seconds",
-                seconds.coerceIn(1, 10)
+                seconds.coerceIn(CALLER_INTERVAL_MIN, CALLER_INTERVAL_MAX)
             )
             .apply()
 
@@ -1859,7 +1865,8 @@ class SettingsRepository(context: Context) :
                 AudioExpansionLevels.MAX
             )
         key == "caller_announcement_repeat" -> value.coerceIn(1, 5)
-        key == "caller_announcement_interval_seconds" -> value.coerceIn(1, 10)
+        key == "caller_announcement_interval_seconds" ->
+            value.coerceIn(CALLER_INTERVAL_MIN, CALLER_INTERVAL_MAX)
         key == "power_saver_battery_threshold" -> value.coerceIn(0, 100)
         key == "battery_sound_cue_mode" -> value.coerceIn(0, 2)
         else -> value

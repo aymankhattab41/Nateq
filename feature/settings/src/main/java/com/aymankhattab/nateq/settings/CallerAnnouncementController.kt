@@ -38,6 +38,10 @@ internal class CallerAnnouncementController(
 ) {
 
     companion object {
+        /** حدّا خيارات الفاصل الزمني (بالثواني): ثلاث قيم فقط 3/4/5. */
+        internal const val CALLER_INTERVAL_MIN = 3
+        internal const val CALLER_INTERVAL_MAX = 5
+
         /** بوّابة تفعيل نطق اسم المتصل. [requiresCallLog] صحيح على أندرويد 12+
          *  (API 31+): ثم لا يُسلَّم رقم المتصل في بث PHONE_STATE إلا بإذن
          *  READ_CALL_LOG صراحةً — حتى مع READ_CONTACTS — فيُشرَط ضرورةً،
@@ -227,8 +231,9 @@ etCallerTemplate =
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
-        // الفاصل الزمني (بالثواني) بين كل مرة نطق
-        val intervals = (1..10).map { s ->
+        // الفاصل الزمني (بالثواني) بين كل مرة نطق — محصورٌ بثلاث خيارات
+        // (3/4/5) بقرار المستخدم، مطابقاً لحدّ المخزن [3,5].
+        val intervals = (CALLER_INTERVAL_MIN..CALLER_INTERVAL_MAX).map { s ->
             fragment.requireContext().resources.getQuantityString(
                 R.plurals.caller_announcement_interval_seconds, s, s
             )
@@ -238,7 +243,8 @@ etCallerTemplate =
             runCatching { settings.getCallerAnnouncementIntervalSeconds() }
                 .getOrDefault(3)
         spinnerCallerInterval?.setSelection(
-            (savedInterval - 1).coerceIn(0, intervals.size - 1)
+            (savedInterval - CALLER_INTERVAL_MIN)
+                .coerceIn(0, intervals.size - 1)
         )
         spinnerCallerInterval?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
@@ -249,7 +255,9 @@ etCallerTemplate =
                 id: Long
             ) {
                 runCatching {
-                    settings.setCallerAnnouncementIntervalSeconds(position + 1)
+                    settings.setCallerAnnouncementIntervalSeconds(
+                        position + CALLER_INTERVAL_MIN
+                    )
                 }
                 onStatusChanged()
             }

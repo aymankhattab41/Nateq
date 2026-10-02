@@ -412,8 +412,10 @@ class SettingsRepositoryTest {
     @Test
     fun callerInterval_defaultAndRoundTrip() {
         assertEquals(3, repo.getCallerAnnouncementIntervalSeconds())
-        repo.setCallerAnnouncementIntervalSeconds(7)
-        assertEquals(7, repo.getCallerAnnouncementIntervalSeconds())
+        repo.setCallerAnnouncementIntervalSeconds(4)
+        assertEquals(4, repo.getCallerAnnouncementIntervalSeconds())
+        repo.setCallerAnnouncementIntervalSeconds(5)
+        assertEquals(5, repo.getCallerAnnouncementIntervalSeconds())
     }
 
     @Test
@@ -521,9 +523,9 @@ class SettingsRepositoryTest {
         repo.setCallerAnnouncementRepeat(0)
         assertEquals(1, repo.getCallerAnnouncementRepeat())
         repo.setCallerAnnouncementIntervalSeconds(100)
-        assertEquals(10, repo.getCallerAnnouncementIntervalSeconds())
+        assertEquals(5, repo.getCallerAnnouncementIntervalSeconds())
         repo.setCallerAnnouncementIntervalSeconds(0)
-        assertEquals(1, repo.getCallerAnnouncementIntervalSeconds())
+        assertEquals(3, repo.getCallerAnnouncementIntervalSeconds())
     }
 
     @Test

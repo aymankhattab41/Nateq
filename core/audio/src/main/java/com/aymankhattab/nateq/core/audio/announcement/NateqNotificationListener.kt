@@ -50,6 +50,15 @@ class NateqNotificationListener : NotificationListenerService() {
             return flat.contains(cn.flattenToString())
         }
 
+        /** مفتاحُ هوية مكالمة الإشعار: حزمةُ التطبيق + الرقم + الاسم — به
+         *  تُميَّز مكالمةٌ عن تحديثٍ لإشعار المكالمة ذاتها. خالص. */
+        fun notificationCallKey(
+            pkg: String?,
+            number: String?,
+            name: String?
+        ): String = "${pkg.orEmpty()}|${number.orEmpty()}|" +
+            "${name.orEmpty()}"
+
         /** هل يحوي عنوان/نص الإشعار رمز تحقق سري ينبغي حجبه؟ يُطبَّق فقط مع
          * تفعيل حماية الخصوصية — نفس منطق فلتر OTP الخاص بالرسائل النصية. */
         fun shouldMaskOtp(
@@ -173,10 +182,23 @@ class NateqNotificationListener : NotificationListenerService() {
                         "CALL-IDENTITY pkg=$pkg num=${callNumber ?: "?"}" +
                             " name=${callName ?: "?"}"
                     )
-                    // **ننشر الهوية ولا ننطق** — النطقُ وحيدٌ في
-                    // [CallerAnnouncementReceiver]، فالنطقُ هنا كان
-                    // سيضاعِف النطق (العيبُ المُصلَح في v1.6.8).
-                    RingCallerIdentity.publish(callNumber, callName)
+                    // **نُطلق ولا ننطق — والنطقُ وحيدٌ في
+                    // [CallerAnnouncementReceiver].** مكالماتُ التطبيقات
+                    // (واتساب/تلجرام/ميسنجر) VoIPُ بحتٌ فلا يصدر لها بثّ
+                    // `PHONE_STATE` أبداً — فلو اكتفينا بنشر الهوية لبقيت
+                    // بلا نطقٍ واحد. فنبثّ [ACTION_NOTIFICATION_CALL]
+                    // فينفّذ المستقبلُ مسارَ الرنين نفسه (تكراراتٌ وفواصلٌ
+                    // وحرّاسُ ازدواجٍ بلا مضاعفةٍ مع مكالمات الشبكة).
+                    if (callNumber != null || callName != null) {
+                        CallerAnnouncementReceiver.announceNotificationCall(
+                            context = applicationContext,
+                            number = callNumber,
+                            name = callName,
+                            key = notificationCallKey(
+                                pkg, callNumber, callName
+                            )
+                        )
+                    }
                 }
                 return
             }
@@ -297,7 +319,16 @@ class NateqNotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
-        // لا نفعل شيئاً عند حذف الإشعار
+        sbn ?: return
+        // حذفُ إشعار المكالمة = انتهاؤها (أو ردٌّ يُخفيه التطبيق). وهو
+        // **الحدثُ الوحيد الذي ينهي مكالمة VoIP** فلا يُصدره النظام بثّاً،
+        // فبلاه يُكبح النطقُ كلُّ مكالماتِ نفس المتصل التالية بمفتاحه.
+        // والإجراءُ نفسه يتحقق من الحزمة فلا يختلُّ شيءٌ لحذفِ إشعارِ
+        // مكالمةِ شبكةٍ أثناءَ جولةِ إشعارٍ جارية.
+        if (sbn.notification?.category != Notification.CATEGORY_CALL) return
+        CallerAnnouncementReceiver.endNotificationCall(
+            applicationContext, sbn.packageName
+        )
     }
 
     override fun onListenerDisconnected() {

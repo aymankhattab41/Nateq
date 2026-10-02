@@ -121,4 +121,46 @@ class RingCallerIdentityTest {
             CallerAnnouncementReceiver.hasSpeakableIdentity(number, name)
         )
     }
+
+    @Test
+    fun `whatsapp incoming call yields the contact name`() {
+        // واتساب: العنوان اسم جهة الاتصال، والنصّ عبارةٌ عن مكالمة.
+        val (number, name) = RingCallerIdentity.extractFromCallNotification(
+            "سارة عبد الله", "Incoming voice call", null
+        )
+        assertNull(number)
+        assertEquals("سارة عبد الله", name)
+    }
+
+    @Test
+    fun `telegram incoming call yields the contact name`() {
+        // تلجرام: العنوان اسم، والنصّ اسم التطبيق، والسطر السفلي «يتصل».
+        val (number, name) = RingCallerIdentity.extractFromCallNotification(
+            "أحمد", "Telegram", "Calling..."
+        )
+        assertNull(number)
+        assertEquals("أحمد", name)
+    }
+
+    @Test
+    fun `messenger incoming call yields the contact name`() {
+        val (number, name) = RingCallerIdentity.extractFromCallNotification(
+            "Mary Smith", "Incoming call", null
+        )
+        assertNull(number)
+        assertEquals("Mary Smith", name)
+    }
+
+    @Test
+    fun `voip call without a number still carries a speakable name`() {
+        // خلاصةُ مسار VoIP: هويةٌ بلا رقم (اسمٌ فقط) تبقى قابلة للنطق —
+        // وهي الحالات الغالبة في واتساب/تلجرام.
+        val (number, name) = RingCallerIdentity.extractFromCallNotification(
+            "فريق العمل", "مكالمة صوتية واردة", null
+        )
+        assertNull(number)
+        assertTrue(
+            CallerAnnouncementReceiver.hasSpeakableIdentity(number, name)
+        )
+    }
 }
