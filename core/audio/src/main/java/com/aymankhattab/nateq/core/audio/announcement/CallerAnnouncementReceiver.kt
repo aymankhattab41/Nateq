@@ -83,18 +83,154 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         @Volatile
         internal var ringingAnnounced = false
 
-        /** مهلة انتظار وصول رقم المتصل عند وصول بث فارغ (1.8 ثانية) */
-        internal const val CALLER_RESOLVE_GRACE_PERIOD_MS = 1_800L
+        /**
+         * الرقم الذي **أُعلن به فعلاً** في جلسة الرنين الحالية — لا
+         * «آخر رقم شوهد». الفرقُ حاسم: حين كان يُسجَّل الرقم الوارد
+         * في [lastResolvedNumber] **قبل** المقارنة، كانت
+         * `rawNumber == lastResolvedNumber` تتحقّق **دائماً** متى وُجد
+         * رقم، فالحارسُ لم يكن يفحص شيئاً.
+         */
+        @Volatile
+        internal var announcedNumber: String? = null
+
+        /**
+         * الرقم الذي تنتظر دورتُه الجاريةُ حلَّه قبل أول إعلان — يُميَّز
+         * به بثُّ `RINGING` المكرّر للمكالمة نفسها عن مكالمةٍ مختلفة.
+         *
+         * كان انضمامُ البث المكرّر مشروطاً بـ`rawNumber == null` وحدها،
+         * فبثٌّ مكرّر **يحمل رقمه** — وهو الأشيع — يقع في فرع استبدال
+         * الدورة: يُلغي الدورة الجارية ويفتح أخرى. والإلغاء لا يسري إلا
+         * عند نقاط التعليق، فإن كانت الدورة داخل `speak()` آنذاك نطقت
+         * الدورةُ الملغاة والجديدة معاً فنسمع «اتصال وارد» زائداً. الآن
+         * يُقارَن الرقم فيُنضمّ المكرّر ويُستبدَل الاختلافُ فعلاً.
+         */
+        @Volatile
+        internal var pendingRingNumber: String? = null
+
+        /**
+         * هل ينضمّ هذا البثّ إلى دورةٍ حيّة قائمة أم يستبدلها؟
+         *
+         * الانضمام يصحّ إذا لم يُعلن بعد، والدورة حيّة، والرقمان
+         * متوافقان (أحدهما فارغ = لا دليل على اختلاف المكالمة، والفراغ
+         * لا يعني مكالمةً أخرى). والاختلاف الصريح لرقمين غير فارغين
+         * يعني مكالمةً جديدة فيجب أن تُلغى الدورةُ السابقة.
+         */
+        internal fun shouldJoinPendingCycle(
+            alreadyAnnounced: Boolean,
+            cycleActive: Boolean,
+            pendingNumber: String?,
+            incomingNumber: String?
+        ): Boolean {
+            if (alreadyAnnounced || !cycleActive) return false
+            return pendingNumber.isNullOrBlank() ||
+                incomingNumber.isNullOrBlank() ||
+                pendingNumber == incomingNumber
+        }
+
+        /**
+         * هل تُكبَت الرنةُ المتأخّرة بعد أن أُعلن بالفعل؟
+         *
+         * نعم ما دامت الجلسةُ واحدة، وكل انتقالٍ إلى `IDLE`/`OFFHOOK`
+         * يصفّر `announcedNumber` ([resetRingingSession]) فتبتدئ جلسةٌ
+         * جديدةٌ تُعلَن بلا كبح.
+         *
+         * **والحارسُ على حالة الجلسة لا على `activeCallCycle`:** ذلك عمرُ
+         * كوروثين ينتهي في `finally` خلال أجزاء الثانية من `speak()` —
+         * قبل أن يبدأ الصوت أصلاً — فيموت الحارسُ بعد أول إعلانٍ فلا يبقى
+         * أثرٌ له. فالحارسُ هنا على الحالة الدائمة (`ringingAnnounced` +
+         * `announcedNumber`).
+         *
+         * **إعلانٌ سابق بلا رقم** يعني أن الرقم لم يكن متاحاً وقتئذٍ، لا
+         * أنه رقمٌ آخر — فبثٌّ لاحق يحمل رقماً لا يثبت أنه مكالمةٌ جديدة.
+         * وهذا هو العيب الذي كان يُضاعف النطق: المنصّة ترسل `RINGING`
+         * مرّتين للمكالمة الواحدة، الأولى بلا رقم فيبقى `announcedNumber`
+         * على `null`، والثانية بعد نحو ستّ ثوانٍ ومعها الرقم. فالمقارنةُ
+         * `"01287308580" == null` كانت تُقيَّم خطأً — أي «مكالمةٌ أخرى» —
+         * فيُعاد فتح جدول التكرار كاملاً (٥ بلا اسم + ٥ بالاسم = ١٠ عند
+         * repeat=٥). وكذلك `incomingNumber == null`: غيابُ الرقم ليس دليلاً
+         * على مكالمة جديدة.
+         *
+         * خالصٌ قابل للاختبار.
+         */
+        internal fun shouldSuppressDuplicateAnnouncement(
+            alreadyAnnounced: Boolean,
+            announcedNumber: String?,
+            incomingNumber: String?
+        ): Boolean {
+            if (!alreadyAnnounced) return false
+            if (announcedNumber.isNullOrBlank()) return true
+            if (incomingNumber == null) return true
+            return incomingNumber == announcedNumber
+        }
+
+        /**
+         * مهلة انتظار وصول رقم المتصل عند وصول بث فارغ.
+         *
+         * المنصّة تُرسل `PHONE_STATE/RINGING` مرّتين للمكالمة الواحدة:
+* الأولى فوريةً بلا رقم، والثانية بعد نحو ستّ ثوانٍ ومعه الرقم
+         * (رُصد ٦٫١s مرّتين متتاليتين على جهاز فعلي).
+         *
+         * **السبع ثوانٍ لم تعُد مقبولةً عند المستخدم** — صمتٌ طويلٌ
+         * قبل أوّل كلمةٍ تُسمعه مكالمةً «ماتت». فصار الانتظارُ على
+         * **الهوية الفورية** فقط، وهو أمدٌ قصيرٌ يُعطى للمسارات التي
+         * تُعيد الاسمَ وقت الرنّة ([RingCallerIdentity]) فتنطق فوراً.
+         *
+         * وإن لم تصل هويةٌ خلال هذه المهلة، **لا تُنطق عبارةٌ عامةٌ
+         * أبداً** — يُشغَّل [CueType.CALL_UNIDENTIFIED] مع اهتزاز
+         * (قرار المستخدم: نغمة قصيرة بدل الكلمة المجرّدة)، ويبقى
+         * الانتظارُ مفتوحاً على [CALLER_RESOLVE_GRACE_PERIOD_MS] +
+         * [CALLER_IDENTITY_LATE_WAIT_MS] ليُعلَن الاسمُ متى وصل.
+         */
+        internal const val CALLER_RESOLVE_GRACE_PERIOD_MS = 1_500L
+
+        /**
+         * مهلة الانتظار **بعد** نفاد مهلة الهوية الفورية: نحتاجها لأن
+         * الهوية قد تصل متأخرةً (بثّ الرقم بعد ~٦s كما رُصد، أو تأخّر
+         * إشعار الهاتف). بلاها لبخلنا النغمة ثم أبخلنا بالاسم.
+         *
+         * تلتقط الهويةَ المتأخرةَ لتُعلَن **مرّةً واحدة** — لا تُفتح
+         * دورةُ تكرارٍ ثانية (وذلك ما كان يضاعف النطق).
+         */
+        internal const val CALLER_IDENTITY_LATE_WAIT_MS = 6_500L
 
         /** فاصل فحص سجل المكالمات أثناء مهلة الانتظار (300 مللي ثانية) */
         internal const val CALLER_LOG_POLL_INTERVAL_MS = 300L
 
-        /** تصفير حالة جلسة الرنين عند إنهاء المكالمة أو الرد عليها */
+        /**
+         * هل تتوفّر هويةٌ صالحة للنطق (اسمٌ أو رقم)؟ إن لم تتوفّر فالإجابة
+         * «لا» تُلزم المسارَ بالنغمة والاهتزاز بدل العبارة العامة — وهذا
+         * شرطُ المستخدم الحاكم: **لا نطق بلا هوية**.
+         */
+        internal fun hasSpeakableIdentity(
+            number: String?,
+            contactName: String?
+        ): Boolean =
+            !contactName.isNullOrBlank() || !number.isNullOrBlank()
+
+        /**
+         * سقف قفل الاستيقاظ لدورة المتصل (20 ثانية).
+         *
+         * يغطّي مهلةَ انتظار الرقم + نطقَ الجملة الأخيرة. وهو أطول من
+         * [BROADCAST_ASYNC_WINDOW_MS] (10 ثوانٍ) لأن ذلك يحدّ *جدولَ
+         * التكرار*، أما القفل فيمتدّ على الانتظار قبله — ولم يكن يشمله
+         * أصلاً. سقفُ الـ ANR ([BROADCAST_SAFE_CAP_MS]) لا يُرفع: يبقى
+         * 9 ثوانٍ لأن إنهاءَ `goAsync` متأخّراً يُجمد العملية، والامتدادُ
+         * هنا على قفل الاستيقاظ فقط — فالنطق يبقى داخل `appScope` والخدمة
+         * الأمامية تُبقي العمليةَ أماميةً بعد إنهاء البث.
+         */
+        internal const val CALLER_WAKE_LOCK_CAP_MS = 20_000L
+
+/** تصفير حالة جلسة الرنين عند إنهاء المكالمة أو الرد عليها */
         internal fun resetRingingSession() {
             lastResolvedNumber = null
             lastResolvedName = null
             ringingStartTime = 0L
             ringingAnnounced = false
+            announcedNumber = null
+            pendingRingNumber = null
+            // هوية الجلسة مشتركة مع إشعار الهاتف وخدمة الفرز، فلا
+            // تتسرّب هوية مكالمةٍ إلى ما بعدها (بثّ IDLE متأخر).
+            RingCallerIdentity.clear()
         }
 
         /** هل رنينُ الحالة الحالية رنينُ مكالمةٍ واردة أثناء مكالمة نشطة
@@ -117,8 +253,14 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
          *  فيقع ANR «إيقاف مستمر» على الأجهزة الفعلية — كما رُصد على Galaxy
          *  A23 مع محرك TTS معطوب). **مرفوع من 6 إلى 9 ثوانٍ** بعد رصد
          *  بترِ الإعلانات الطويلة: 6 ثوانٍ كانت تقطع أيّ إعلانٍ يتجاوزها
-         *  بتجميد العملية (Process Cgroup Freezer) بلا خطأ. */
-        private const val BROADCAST_SAFE_CAP_MS = 9_000L
+         *  بتجميد العملية (Process Cgroup Freezer) بلا خطأ.
+         *
+         *  **ثابتٌ لا يُرفع مهما طالت الميزانيةُ الزمنية:** فتمديد مهلة
+         *  انتظار رقم المتصل إلى سبع ثوانٍ ثمّ نطقُ التكرارات يُخرج
+         *  النطق عن نافذة البث عمداً — ويُبقى هذا السقف على حاله ليُنهى
+         *  البث قبل حافة نظام التشغيل، ويبقى ما بعده في `appScope` خارج
+         *  نافذة البث. */
+        internal const val BROADCAST_SAFE_CAP_MS = 9_000L
 
         /** كم عدد الخانات الرقمية الواجب تطابقها في المطابقة الذكية الأخيرة
          *  (المطابقة بآخر 8 خانات). */
@@ -239,37 +381,92 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 TelephonyManager.EXTRA_INCOMING_NUMBER
             )?.trim()?.takeIf { it.isNotBlank() }
 
-            if (rawNumber != null) {
-                lastResolvedNumber = rawNumber
-            }
+            // **تتبّع تشخيصي مؤقّت:** يُظهر تسلسلَ البثوث كاملاً (الحالة
+            // السابقة والحالية والرقم) فميّز بثّاً مكرراً لمكالمةٍ واحدة
+            // من مكالمةٍ جديدة فعلاً، وميّز إعادةَ الجلسة من IDLE.
+            // **المستوى `w` لا `d`:** قواعد ProGuard تحذف `Log.d`
+            // بالكامل من نسخة release، فالتتبّع بـ`d` لا يُكتب أصلاً
+            // ولا يظهر في تقرير الأخطاء (وهو ما أخفى التشخيص سابقاً).
+            Log.w(
+                TAG,
+                "RX state=$state prev=$previousState" +
+                    " num=${rawNumber ?: "?"} announced=$announcedNumber" +
+                    " flag=$ringingAnnounced" +
+                    " cycle=${activeCallCycle?.isActive}" +
+                    " t=${System.currentTimeMillis()}"
+            )
 
-            // إن كانت المكالمة قد أُعلنت بالفعل وحلقتها نشطة ولا يوجد
-            // رقم جديد، ننهي البث بهدوء دون مقاطعة حلقة النطق الجارية
-            if (ringingAnnounced && activeCallCycle?.isActive == true &&
-                (rawNumber == null || rawNumber == lastResolvedNumber)
+if (rawNumber != null) {
+                    lastResolvedNumber = rawNumber
+                    RingCallerIdentity.publish(rawNumber, null)
+                }
+
+            // **حارس منع التكرار — على حالة الجلسة لا على عمر الكوروثين.**
+            // كان معلقاً على `activeCallCycle?.isActive` وهو عمرُ
+            // كوروثين ينتهي فور `speak()`، فيموت الحارسُ بعد أول إعلان
+            // فلا يمنع بثّ `RINGING` الثاني للمكالمة نفسها — وهو ما
+            // يجعل بعض الأجهزة تنطق «اتصال وارد» ثلاثاً قبل الاسم.
+            // والمقارنةُ صارت على [announcedNumber] (رقمُ ما أُعلن)
+            // لا على [lastResolvedNumber] (آخرُ رقم شوهد) الذي كُتب
+            // قبلها بسطر، فكانت المقارنةُ تتحقّق دائماً ولا تفحص شيئاً.
+            if (shouldSuppressDuplicateAnnouncement(
+                    alreadyAnnounced = ringingAnnounced,
+                    announcedNumber = announcedNumber,
+                    incomingNumber = rawNumber
+                )
             ) {
+                Log.w(
+                    TAG,
+                    "suppressed duplicate ring announcement" +
+                        " (announced=${announcedNumber ?: "?"}," +
+                        " incoming=${rawNumber ?: "?"})"
+                )
                 finishOnce()
                 return@launch
             }
 
-            // إن كان هناك كوروتين ينتظر في مهلة السماح والبث الحالي فارغ،
-            // نتركه يكمل انتظاره دون إلغاء أو مقاطعة
-            if (!ringingAnnounced && activeCallCycle?.isActive == true &&
-                rawNumber == null
+            // بثٌّ مكرّر للمكالمة نفسها: ينضمّ إلى الدورة الحيّة القائمة
+            // بدل إلغائها وفتح دورةٍ جديدة — فينتظر مرةً واحدة فقط
+            // ويظهر «اتصال وارد» عددَ مرّات الإعداد لا أكثر.
+            if (shouldJoinPendingCycle(
+                    alreadyAnnounced = ringingAnnounced,
+                    cycleActive = activeCallCycle?.isActive == true,
+                    pendingNumber = pendingRingNumber,
+                    incomingNumber = rawNumber
+                )
             ) {
+                Log.w(
+                    TAG,
+                    "joined in-flight cycle (same call," +
+                        " pending=${pendingRingNumber ?: "?"})"
+                )
                 finishOnce()
                 return@launch
             }
 
             // وصول بث برقم أو رنين جديد: استبدال الدورة السابقة وأخذ المقبض
+            val previousCycleActive = activeCallCycle?.isActive == true
             activeCallCycle?.cancel()
             activeCallCycle = coroutineContext.job
+            // **الرقم الذي تنتظر هذه الدورة حلَّه** — به يتميّز بثُّ
+            // RINGING المكرّر للمكالمة نفسها عن مكالمةٍ جديدة فعلاً.
+            pendingRingNumber = rawNumber ?: lastResolvedNumber
             if (ringingStartTime == 0L) {
                 ringingStartTime = System.currentTimeMillis()
             }
+            // **تتبّع تشخيصي:** يكشف أيّ بثّ RINGING يبدأ دورةً جديدة
+            // رغم وجود دورةٍ حيّة — وهو ما يعيد نطق «اتصال وارد» رابعاً.
+            Log.w(
+                TAG,
+                "START new cycle (replacingLive=${previousCycleActive}," +
+                    " announcedWas=$ringingAnnounced," +
+                    " num=${rawNumber ?: "?"})"
+            )
             // مستمعُ اكتمالٍ يُسجَّل في try ويُزال في finally (بند [8]) —
             // لا يبقى مسجلاً بعد نافذة البث فلا يُستدعى في دورةٍ لا تخصنا.
             var completionListener: (() -> Unit)? = null
+            // عدّاد النطقات الفعليّة في هذه الدورة — للتتبّع فقط.
+            var speakCounter = 0
             try {
                 // فحص وقائي: وصول بث PHONE_STATE بحد ذاته يتطلب
                 // منح READ_PHONE_STATE وقت الإرسال (النظام يفلتر
@@ -351,9 +548,37 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 var incomingNumber = rawNumber ?: lastResolvedNumber
                 var contactName = lastResolvedName
 
-                // مهلة سماح عند وصول بث فارغ: ننتظر مهلة قصيرة ونفحص
-                // سجل المكالمات دورياً، لتجنب التعجل بنطق عبارة
-                // "اتصال وارد" العامة قبل وصول بث الرقم الحقيقي.
+                // **ميزانية الاستيقاظ تُحسب هنا لا بعد الانتظار:** قفلُ
+                // الاستيقاظ كان يُكتسب بعد حلقة الانتظار، فمع مهلةٍ
+                // سبعَ ثوانٍ (=`CALLER_RESOLVE_GRACE_PERIOD_MS`) كان
+                // الانتظارُ يجري بلا استيقاظ، و`delay()` على
+                // `Dispatchers.IO` والشاشةُ مطفأة يتأخّر فيُفشِل الانتظارُ
+                // في مهمّته. فصار القفل يغطّي الانتظارَ والنطقَ معاً.
+                val repeat = settings
+                    .getCallerAnnouncementRepeat().coerceIn(1, 5)
+                val intervalMs = settings.getCallerAnnouncementIntervalSeconds()
+                    .coerceIn(1, 10) * 1000L
+                val schedule = repeatSchedule(
+                    repeat, intervalMs, BROADCAST_ASYNC_WINDOW_MS
+                )
+                val speechWakeMs = if (schedule.isEmpty()) {
+                    TimeAlarmReceiver.SHORT_WAKE_LOCK_MS
+                } else {
+                    (schedule.lastOrNull() ?: 0L) +
+                        TimeAlarmReceiver.SHORT_WAKE_LOCK_MS
+                }
+                wakeLock = TimeAlarmReceiver.acquireShortWakeLock(
+                    context,
+                    (CALLER_RESOLVE_GRACE_PERIOD_MS + speechWakeMs)
+                        .coerceAtMost(CALLER_WAKE_LOCK_CAP_MS)
+                )
+
+                // مهلة سماح عند وصول بث فارغ: ننتظر ونفحص سجلَ المكالمات
+                // دورياً — ونفحص `lastResolvedNumber` أولَ كلّ شيء، فهو
+                // ما يكتبه بثُّ RINGING الثاني الذي يحمل الرقم، فلا
+                // يتوقف الانتظارُ على إذن READ_CALL_LOG. ننتظر هنا أطول
+                // من السابق قصداً واحداً: أن يقع الاسمُ في الدورةِ
+                // الوحيدة (وإلا فُتحت دورةٌ ثانية فضاعف النطق).
                 if (incomingNumber == null && !ringingAnnounced) {
                     val elapsed =
                         System.currentTimeMillis() - ringingStartTime
@@ -363,6 +588,19 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     while (waited < remainingGrace) {
                         delay(CALLER_LOG_POLL_INTERVAL_MS)
                         waited += CALLER_LOG_POLL_INTERVAL_MS
+                        // **الأسبقية للهوية المشتركة:** إشعار الهاتف
+                        // وخدمة الفرز يكتبان هنا مباشرةً، وهما أسرع من
+                        // سجلّ المكالمات (DB). نقرأها أوّلَ كل نبضة.
+                        val shared = RingCallerIdentity.snapshot()
+                        if (shared.first != null || shared.second != null) {
+                            if (incomingNumber == null) {
+                                incomingNumber = shared.first
+                            }
+                            if (contactName == null) {
+                                contactName = shared.second
+                            }
+                            break
+                        }
                         if (lastResolvedNumber != null) {
                             incomingNumber = lastResolvedNumber
                             contactName = lastResolvedName
@@ -423,6 +661,47 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 // كانت الشاشة مقفلة (الهدف الأساسي للمكفوفين وسائقي المركبات).
                 val privacyLocked = false
 
+                // **لا نطق بلا هوية — القاعدة الحاكمة (طلب المستخدم).**
+                // إن لم يتوفّر اسمٌ ولا رقمٌ بعد مهلة الهوية الفورية
+                // فلا تُنطق عبارةٌ عامةٌ واحدة: تُشغَّل نغمة
+                // [CueType.CALL_UNIDENTIFIED] مع اهتزاز (قرار المستخدم)،
+                // ثم ننتظر [CALLER_IDENTITY_LATE_WAIT_MS] لعلّ الهوية
+                // تصل متأخرةً (بثّ الرقم بعد ~٦s أو تأخّر إشعار
+                // الهاتف) فنُعلِنها **مرّةً واحدة**.
+                if (!hasSpeakableIdentity(incomingNumber, contactName)) {
+                    Log.w(
+                        TAG,
+                        "no identity after grace — cue+vibration," +
+                            " waiting up to" +
+                            " ${CALLER_IDENTITY_LATE_WAIT_MS}ms"
+                    )
+                    playUnidentifiedCallAlert(context)
+                    val late = awaitLateIdentity(context, hasCallLog)
+                    if (late == null) {
+                        Log.w(
+                            TAG,
+                            "identity never arrived — silent end" +
+                                " (no generic phrase by design)"
+                        )
+                        finishOnce()
+                        return@launch
+                    }
+                    incomingNumber = late.first ?: incomingNumber
+                    contactName = late.second ?: contactName
+                    // ثم تُحلّ الهوية بتسلسل الأولوية نفسه (مخصص ثم دفتر).
+                    if (contactName == null && incomingNumber != null) {
+                        val custom = resolveCustomName(
+                            settings, incomingNumber
+                        )
+                        contactName = custom ?: resolveContactName(
+                            context,
+                            number = incomingNumber,
+                            hasReadContacts = hasContacts,
+                            hasReadCallLog = hasCallLog
+                        )
+                    }
+                }
+
                 var text = buildAnnouncementText(
                     context,
                     number = incomingNumber,
@@ -457,32 +736,24 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 // جملة فعلياً أو حارسُ الأمان) لا يقطعها — فتبقى تُنطق حتى
                 // لو جُمّدت العملية لاحقاً (الخدمة الأمامية التي يضمنها
                 // النطق تُبقي العملية أماميةً غالباً).
-                val repeat = settings
-                    .getCallerAnnouncementRepeat().coerceIn(1, 5)
-                val intervalMs = settings.getCallerAnnouncementIntervalSeconds()
-                    .coerceIn(1, 10) * 1000L
+                // (جدولُ التكرار وقفلُ الاستيقاظ حُسبا قبل حلقة الانتظار.)
                 // بند 2.1/2.2: نبرة «نطق المتصل» المستقلة (بديل: نبرةُ نطق
                 // اللغة) — نبرةُ الحلقةِ كاملةً.
                 var pitch = settings.getCallerAnnouncementPitchOrDefault(
                     locale.language
                 )
-                val schedule = repeatSchedule(
-                    repeat, intervalMs, BROADCAST_ASYNC_WINDOW_MS
-                )
-                val totalWakeMs = if (schedule.isEmpty()) {
-                    TimeAlarmReceiver.SHORT_WAKE_LOCK_MS
-                } else {
-                    val maxOffset = schedule.lastOrNull() ?: 0L
-                    (maxOffset + TimeAlarmReceiver.SHORT_WAKE_LOCK_MS)
-                        .coerceAtMost(BROADCAST_ASYNC_WINDOW_MS)
-                }
-                wakeLock = TimeAlarmReceiver.acquireShortWakeLock(
-                    context, totalWakeMs
-                )
                 if (schedule.isEmpty()) {
                     completionListener = { finishOnce() }
                     speaker.addCompletionListener(completionListener!!)
                 }
+                // **تتبّع تشخيصي:** يُسجّل النصّ المنطوق فعلياً في كل
+                // نطق — يكشف أي إعلانٍ رابع زائد ومن أين جاء.
+                speakCounter++
+                Log.w(
+                    TAG,
+                    "SPEAK#$speakCounter text=$text num=" +
+                        "${incomingNumber ?: "?"} name=${contactName ?: "?"}"
+                )
                 speaker.speak(
                     text, locale, speechRate, pitch, volume,
                     engineOverride = callerSpeechEngine(
@@ -491,6 +762,16 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     category = SettingsRepository.ANNOUNCE_CATEGORY_CALLER
                 )
                 ringingAnnounced = true
+                // انتهى الانتظار: لا داعي لتمييز البث المكرّر بعده —
+                // الحارس الأعلى (`ringingAnnounced`) يتكفّل به من الآن فصاعداً.
+                pendingRingNumber = null
+                // **رقمُ ما أُعلن فعلاً** — يُلتقط قبل أي إعادة حلّ
+                // في نبضات التكرار، لأن الحارس يقارن به لا بآخر رقم
+                // شوهد. يُثبَّت مرّةً واحدة (أول إعلان) فلا تتبعه
+                // تغييراتُ حلّ الاسم اللاحقة.
+                if (announcedNumber == null) {
+                    announcedNumber = lastResolvedNumber ?: rawNumber
+                }
                 // **بند 5.5:** إنهاءٌ مبكر بمستمع الاكتمال: محركٌ سليم يُنهي
                 // البث فور اكتمال (onDone) الجملة الأولى فعلياً — بلا حجزٍ
                 // أطول من اللازم ولا ذيلِ صوتٍ مبتور (جمدُ العملية بعد
@@ -563,6 +844,14 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                             }
                         }
                         try {
+                            speakCounter++
+                            Log.w(
+                                TAG,
+                                "SPEAK#$speakCounter(repeat+" +
+                                    "${offsetMs}ms) text=$text num=" +
+                                    "${incomingNumber ?: "?"}" +
+                                    " name=${contactName ?: "?"}"
+                            )
                             AnnouncementSpeaker.getInstance(appCtx).speak(
                                 text, locale, speechRate, pitch,
                                 volume,
@@ -641,6 +930,12 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         val privacyLocked = settings.isLockScreenPrivacyEnabled() &&
             settings.isDeviceScreenLocked()
 
+        // **بلا هوية: لا نطق.** المسار المُختبَر يُستدعى مباشرةً وقد
+        // يُمرَّر له رقمٌ فارغ، فلا يجوز أن ينطق عبارةً عامة. المسار
+        // الحقيقي يحرس نفسه قبل الوصول (`playUnidentifiedCallAlert`)،
+        // وهذا الحارسُ يجعل العقدَ محفوظاً في المسارِ المُختبَر أيضاً.
+        if (!hasSpeakableIdentity(incomingNumber, contactName)) return false
+
         val text = buildAnnouncementText(
             context,
             number = incomingNumber,
@@ -678,6 +973,78 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         return true
     }
 
+    /**
+     * انتظارُ الهوية المتأخرة بعد نفاد مهلة الهوية الفورية.
+     *
+     * يُفحص [RingCallerIdentity] (إشعار الهاتف وخدمة الفرز) أوّلَ كلّ
+     * نبضة، ثم آخرُ رقمٍ حُلّ، ثم سجلُّ المكالمات — بترتيب الأولوية:
+     * الأسرعُ فالأبطأ.
+     *
+     * @return زوج (الرقم، الاسم) إن توفّرت هوية، و`null` إن انقضت
+     *   المهلةُ بلا هوية — فيُنهي المسارُ صامتاً بلا كلمةٍ عامة.
+     */
+    private suspend fun awaitLateIdentity(
+        context: Context,
+        hasCallLog: Boolean
+    ): Pair<String?, String?>? {
+        var waited = 0L
+        while (waited < CALLER_IDENTITY_LATE_WAIT_MS) {
+            delay(CALLER_LOG_POLL_INTERVAL_MS)
+            waited += CALLER_LOG_POLL_INTERVAL_MS
+            val shared = RingCallerIdentity.snapshot()
+            if (hasSpeakableIdentity(shared.first, shared.second)) {
+                return shared
+            }
+            if (hasSpeakableIdentity(lastResolvedNumber, lastResolvedName)) {
+                return Pair(lastResolvedNumber, lastResolvedName)
+            }
+            if (hasCallLog) {
+                val fromLog = resolveLatestCallFromLog(context, hasCallLog)
+                if (hasSpeakableIdentity(fromLog?.first, fromLog?.second)) {
+                    return fromLog
+                }
+            }
+        }
+        return null
+    }
+
+    /**
+     * نغمةُ «مكالمة بلا هوية» + اهتزاز مميّز — بديلُ العبارة العامة.
+     *
+     * تُشغَّل عبر [AudioCuePlayer] فتستعمل نفس محرّك المؤثرات والبنية
+     * الصوتية القائمة (لا كودِ صوتيٍّ جديد)، ونمطُ النغمة أطولُ
+     * وأحدُّّ من نغمات البطارية ليسهل تمييزُه سمعياً.
+     *
+     * الاهتزازُ نمطٌ قصيرٌ متكرّر (300ms/150ms × 3) فهو محسوسٌ بلا أن
+     * يزعج. كلٌّ منهما في `runCatching` — فشلُ الاهتزاز (لا اهتزاز في
+     * الجهاز، إذنٌ مسحوب) يجب ألّا يُسقط النغمةَ ولا يُفقد الحدث.
+     */
+    private fun playUnidentifiedCallAlert(context: Context) {
+        runCatching {
+            AudioCuePlayer.getInstance(context).play(
+                AudioCue(CueType.CALL_UNIDENTIFIED, volume = 0.7f)
+            ) {}
+        }.onFailure { Log.w(TAG, "unidentified call cue failed", it) }
+
+        runCatching {
+            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                context.getSystemService(
+                    android.os.VibratorManager::class.java
+                )?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                context.getSystemService(Context.VIBRATOR_SERVICE)
+                    as? android.os.Vibrator
+            }
+            if (vibrator?.hasVibrator() == true) {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(
+                    longArrayOf(0, 300, 150, 300, 150, 300), -1
+                )
+            }
+        }.onFailure { Log.w(TAG, "unidentified call vibration failed", it) }
+    }
+
     private fun callerVoice(
         settings: SettingsRepository,
         hasArabic: Boolean
@@ -696,15 +1063,13 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         privacyLocked: Boolean,
         numberReadingMode: Int = 1
     ): String {
-        // عند القفل ننطق العبارة العامة فقط حتى لو ضبط
-        // المستخدم قالباً أو اسم من.
+        // عند القفل: **صمتٌ تام** لا العبارة العامة. كان يُنطق «اتصال وارد»
+        // حفاظاً على الخصوصية، وهو يناقض عقد «لا نطق بلا هوية»
+        // (ترويسةٌ بلا هوية = تسميةٌ بلا معلومة) ويكشف وجودَ المكالمة
+        // نفسها — وهو ما يريدُ الحاجبُ منعَه. فالخصوصيةُ تقتضي الصمت،
+        // والإعلانُ يقتضي الهوية.
         return if (privacyLocked) {
-            LocaleUtils.stringForSpeech(
-                context,
-                LanguageCode.AR.tag,
-                R.string.caller_only,
-                R.string.caller_only
-            )
+            ""
         } else if (!template.isNullOrBlank()) {
             val filled = template
                 .replace("{name}", contactName ?: number.orEmpty())
@@ -749,35 +1114,11 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             ) + formatCallerNumberForSpeech(
                 number, isArabic, numberReadingMode
             )
-            else -> genericOnlyPhrase(context, lang)
-        }
-    }
-
-    /** عبارة «اتصال وارد» العام مع لاحقةٍ توجيهية اختيارية: على أندرويد
-     *  12+ الرقمُ فارغٌ لأن READ_CALL_LOG غير ممنوح (بدونه لا يصل رقم
-     *  المتصل إلى البث أصلاً) فنُرشد المستخدم إلى منحه من الإعدادات؛
-     *  والإذنُ ممنوحٌ مع رقمٍ فارغٍ (حجبٌ حقيقي) يبقي العبارةَ عامة. */
-    private fun genericOnlyPhrase(
-        context: Context,
-        lang: String
-    ): String {
-        val phrase = LocaleUtils.stringForSpeech(
-            context, lang, R.string.caller_only, R.string.caller_only
-        )
-        return if (
-            callerCallLogHintNeeded(
-                hasCallLog = hasPermission(
-                    context, Manifest.permission.READ_CALL_LOG
-                ),
-                sdkInt = Build.VERSION.SDK_INT
-            )
-        ) {
-            phrase + LocaleUtils.stringForSpeech(
-                context, lang,
-                R.string.caller_call_log_hint, R.string.caller_call_log_hint
-            )
-        } else {
-            phrase
+            // **لا تُنتج هذه الدالة نصاً بلا هوية أبداً** (العقد الحاكم): لا
+            // يصل فرعُ الفارغ أبداً لأن الحلقة تُنهي المسارَ بنغمةٍ
+            // واهتزاز قبل الوصول هنا، لكن الفرعَ يُبقيها صالحةً ولو
+            // أُعيد استعمالها من مسارٍ آخر في المستقبل.
+            else -> ""
         }
     }
 
@@ -1081,15 +1422,6 @@ internal fun formatCallerNumberForSpeech(
     )
     return " $spoken"
 }
-
-/** هل يُلحَق تلميح منح إذن سجل المكالمات بعد «اتصال وارد»؟ تحديداً عند
- *  رقمٍ فارغٍ بلا اسمٍ وإذنِ سجلٍ غيرِ ممنوحٍ على أندرويد 12+ (API 31+)
- *  — حيث لا يصل رقم المتصل إلى البث أصلاً دون READ_CALL_LOG. إن كان
- *  الإذن ممنوحاً والرقم ما زال فارغاً (حجبٌ حقيقي) فلا تلميح. */
-internal fun callerCallLogHintNeeded(
-    hasCallLog: Boolean,
-    sdkInt: Int
-): Boolean = !hasCallLog && sdkInt >= Build.VERSION_CODES.S
 
 /**
  * قرار لغة نطق اسم المتصل من الاسم/الرقم لا من النص الكامل (فالقالب قد

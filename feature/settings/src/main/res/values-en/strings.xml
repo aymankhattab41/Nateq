@@ -72,6 +72,13 @@
 <string name="battery_level_unchecked">Level %1$d percent cleared</string>
 <string name="caller_announcement_enabled">Enable caller announcement</string>
 <string name="caller_announcement_during_call">Announce caller name during a call</string>
+<string name="caller_instant_identity_grant">Enable instant caller name</string>
+<string name="caller_instant_identity_status_none">Not enabled: the caller name may be delayed, or not announced if the network hides it. Tap the button to open system settings.</string>
+<string name="caller_instant_identity_status_notif">Enabled via call notification: the name is announced as the call starts ringing.</string>
+<string name="caller_instant_identity_status_role">Enabled via call screening: the number arrives before ringing.</string>
+<string name="caller_instant_identity_status_both">Enabled via both: fastest and most accurate identity source.</string>
+<string name="caller_instant_identity_granted">Instant announcement is already enabled</string>
+<string name="caller_screening_unavailable">Could not open call screening settings on this device</string>
 <string name="caller_announcement_interval">Interval between repeats (seconds)</string>
 <string name="caller_announcement_rate">Caller speech rate</string>
 <string name="caller_announcement_pitch">Caller announcement pitch</string>
@@ -474,7 +481,7 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-- Reverted to 1.6.11
+- Reverted to 1.6.10
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>

@@ -1123,6 +1123,27 @@
                 android:text="@string/caller_announcement_during_call"
                 android:importantForAccessibility="yes" />
 
+            <!-- مسار الهوية الفورية: زرٌّ واحد يمنح الطريقين (إشعار الهاتف
+                 ودور فرز المكالمات) — كلاهما يمنحه المستخدم من إعدادات
+                 النظام، فلا يُطلب إذناً وقت التشغيل. -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_caller_instant_identity"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/caller_instant_identity_grant"
+                android:contentDescription="@string/caller_instant_identity_grant" />
+
+            <TextView
+                android:id="@+id/tv_caller_instant_identity_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textSize="13sp"
+                android:importantForAccessibility="yes" />
+
             <!-- عدد مرات التكرار -->
             <com.google.android.material.textfield.TextInputLayout
                 android:layout_width="match_parent"
