@@ -481,6 +481,8 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+- Fixed long-text reading cutting off: a long single segment (pure Arabic/English) is now split at linguistic boundaries and streamed piece by piece instead of being sent whole to the engine, which truncated it
+- Fixed caller name announcement: waits for the saved name and merges identity from the call notification and call log instead of speaking the number
 - Reverted to 1.6.10
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>

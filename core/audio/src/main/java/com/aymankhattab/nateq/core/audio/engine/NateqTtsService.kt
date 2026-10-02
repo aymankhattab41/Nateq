@@ -154,6 +154,28 @@ class NateqTtsService : TextToSpeechService() {
             segmentCharCounts: List<Int>
         ): Long = SynthesisBudget.unitsTimeoutMs(segmentCharCounts)
 
+        /**
+         * هل يُسلَّم النصُّ إلى **المسار الأحادي** ([synthesizeSingle])
+         * أم إلى **المسار المتسلسل المقسَّم** ([synthesizeMixed])؟
+         *
+         * المعيار: مقطعٌ واحدٌ **ضمن** عتبة تعثّر المحرّكات
+         * ([SEGMENT_SPLIT_FALLBACK_CHARS]) → أحادي؛ وإلا (متعددُ
+         * المقاطع، أو مقطعٌ واحدٌ تجاوز العتبة) → مختلط.
+         *
+         * **لماذا؟** النصُّ العربي/الإنجليزي الخالص الطويل يبقى مقطعاً
+         * واحداً فيُسلَّم كاملاً إلى المحرّك عبر `synthesizeToFile`
+         * الواحد، والمحرّكاتُ تعجز عن ما فوق العتبة فتبتره أو تعلّقه
+         * بلا خطأ فيُسمع جزءٌ ثم ينقطع. أما المسارُ المتسلسل فيقسّم
+         * المقطع عند حدوده اللغوية ([splitOnFailureBoundary]) ويبثّ
+         * جزءاً جزءاً ويشتقّ الميزانية من الأجزاء الفعلية — وهو
+         * الحارسُ نفسُه الذي يحمي المقاطع المتعددة.
+         */
+        internal fun shouldSynthesizeSingle(
+            segmentCharCounts: List<Int>
+        ): Boolean =
+            segmentCharCounts.size == 1 &&
+                segmentCharCounts[0] <= SEGMENT_SPLIT_FALLBACK_CHARS
+
         /** معيار البث الموحّد للنص المختلط (44100 مونو 16-bit) — ثابتٌ ليُتاح
          *  التدفق مقطعاً بمقطعٍ دون تجميع كامل الصوت في الذاكرة (الذروة = أكبر
          *  مقطعٍ لا مجمل المدة)، ويحفظ جودةً لا تقل عن
@@ -697,7 +719,11 @@ override fun onDestroy() {
                 val reqRate = request.getSpeechRate().toFloat()
                 val readerRate = readerRateFromPercent(reqRate)
 
-                if (segments.size == 1) {
+                // **حارسُ المقطع الأحادي الطويل:** المقطعُ الواحد إن
+                // تجاوز عتبة تعثّر المحرّكات لا يُسلَّم كاملاً إلى
+                // [synthesizeSingle] فيبتره المحرّك بلا خطأ، بل يُوجَّه
+                // للمسار المتسلسل المقسَّم كسائر النصوص الطويلة.
+                if (shouldSynthesizeSingle(segments.map { it.text.length })) {
                     // **بند 2.5:** حتى النص المفرد تُستعمل لغةُ المقطع
                     // المكتشفة للتوجيه لا لغةُ الطلب الأصلية — كلمةٌ إنجليزية
                     // وحيدة («Settings»، «Cancel») داخل واجهة عربية لم تعد

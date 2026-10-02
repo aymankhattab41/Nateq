@@ -863,4 +863,104 @@ fun `waiting call speaks only when during call toggle enabled`() {
             CallerAnnouncementReceiver.hasSpeakableIdentity(null, "أحمد")
         )
     }
+
+    /**
+     * **بصمةُ العطل المُبلَّغ (نطق الرقم بدل الاسم):** خدمةُ الفرز أو
+     * إشعارُ الهاتف ينشران الرقمَ أوّلاً بلا اسم، ثم الاسمَ بعده بقليل.
+     * كانت حلقةُ الانتظار تكسر على الرقم وحده فتُعلن الرقمَ ويضيع الاسم.
+     * الحارس: الرقمُ وحده **لا** يُنهي الانتظار — الاسمُ فقط.
+     */
+    @Test
+    fun `number only identity does not stop waiting for the name`() {
+        assertFalse(
+            "الرقم وحده لا يكفي لإيقاف الانتظار",
+            identityHasName(null)
+        )
+        assertFalse(identityHasName(""))
+        assertFalse(identityHasName("   "))
+        assertTrue(
+            "وصول الاسم يوقف الانتظار",
+            identityHasName("أحمد")
+        )
+    }
+
+    @Test
+    fun `merge keeps the earlier number and adds the late name`() {
+        // النبضة الأولى: الرقم من خدمة الفرز بلا اسم.
+        val first = mergeCallerIdentity(
+            number = "+201001234567",
+            name = null,
+            shared = Pair("+201001234567", null),
+            lastResolved = Pair(null, null),
+            fromLog = null
+        )
+        assertEquals("+201001234567", first.first)
+        assertNull(
+            "الرقم وحده ليس اسماً — الحلقة تواصل الانتظار",
+            first.second
+        )
+        // النبضة التالية: الاسم وصل من إشعار الهاتف.
+        val second = mergeCallerIdentity(
+            number = first.first,
+            name = first.second,
+            shared = Pair("+201001234567", "أحمد"),
+            lastResolved = Pair(null, null),
+            fromLog = null
+        )
+        assertEquals("+201001234567", second.first)
+        assertEquals("أحمد", second.second)
+    }
+
+    @Test
+    fun `merge never lets a number overwrite a resolved name`() {
+        val merged = mergeCallerIdentity(
+            number = null,
+            name = "أحمد",
+            shared = Pair("+201001234567", null),
+            lastResolved = Pair("+201001234567", null),
+            fromLog = Pair("+201001234567", null)
+        )
+        assertEquals("أحمد", merged.second)
+        assertEquals("+201001234567", merged.first)
+    }
+
+    @Test
+    fun `merge fills number from the call log when others lack it`() {
+        val merged = mergeCallerIdentity(
+            number = null,
+            name = null,
+            shared = Pair(null, null),
+            lastResolved = Pair(null, null),
+            fromLog = Pair("01001234567", null)
+        )
+        assertEquals("01001234567", merged.first)
+        assertNull(merged.second)
+    }
+
+    @Test
+    fun `caller numbers match across country code and formatting`() {
+        assertTrue(
+            callerNumbersEquivalent("201001234567", "201001234567")
+        )
+        assertTrue(
+            "رمز بلد مُضاف في السجل",
+            callerNumbersEquivalent("201001234567", "01001234567")
+        )
+        assertTrue(
+            "رمز بلد محذوف من الوارد",
+            callerNumbersEquivalent("501234567", "966501234567")
+        )
+    }
+
+    @Test
+    fun `caller numbers reject short or divergent digits`() {
+        assertFalse(
+            callerNumbersEquivalent("0501234567", "0511234567")
+        )
+        assertFalse(callerNumbersEquivalent("1234", "5678"))
+        assertFalse(
+            "ذيلٌ قصير لا يكفي للحكم بالتكافؤ",
+            callerNumbersEquivalent("5551234", "5559999")
+        )
+    }
 }

@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.core.audio.engine
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -134,6 +135,48 @@ class SynthesisBudgetTest {
         assertTrue(
             "متوقّع فارقٌ جوهري، لكنه $onePiece مقابل $eightPieces",
             eightPieces > onePiece * 2
+        )
+    }
+
+    /** **حارسُ المقطع الأحادي الطويل:** نصٌّ خالصٌ طويل (مقطعٌ واحد)
+     *  يجب ألّا يُسلَّم كاملاً إلى المحرّك، بل يُقسَّم كالمختلط — وإلا
+     *  بتره المحرّك عند عتبة تعثّره بلا خطأ. */
+    @Test
+    fun longSingleSegment_routesToSplitPath() {
+        assertTrue(NateqTtsService.shouldSynthesizeSingle(listOf(200)))
+        assertTrue(
+            NateqTtsService.shouldSynthesizeSingle(
+                listOf(SEGMENT_SPLIT_FALLBACK_CHARS)
+            )
+        )
+        assertFalse(
+            NateqTtsService.shouldSynthesizeSingle(
+                listOf(SEGMENT_SPLIT_FALLBACK_CHARS + 1)
+            )
+        )
+        assertFalse(NateqTtsService.shouldSynthesizeSingle(listOf(100, 100)))
+        assertFalse(NateqTtsService.shouldSynthesizeSingle(listOf(4_000)))
+        assertFalse(NateqTtsService.shouldSynthesizeSingle(emptyList()))
+    }
+
+    /** ميزانيةُ المقطع الأحادي الطويل تُشتقّ من **أجزائه بعد التقسيم**
+     *  لا من طوله كاملاً — وإلا أُنقصت فقُطع. */
+    @Test
+    fun longSingleSegment_budgetCoversSplitPieces() {
+        val long = "ا".repeat(4_000)
+        val pieces = splitOnFailureBoundary(long).map { it.length }
+        assertTrue("يجب أن يُقسَّم: ${pieces.size}", pieces.size > 1)
+        val readerTimeout =
+            NateqTtsService.synthesisTimeoutMsForSegments(pieces)
+        val internal = pieces.sumOf { SynthesisBudget.pieceTimeoutMs(it) }
+        assertTrue(
+            "مهلة القارئ ${readerTimeout}ms أقلّ من مجموع الأجزاء" +
+                " ${internal}ms",
+            readerTimeout >= internal
+        )
+        assertTrue(
+            "مهلة القارئ أضيقُ من حساب النصّ كقطعةٍ واحدة",
+            readerTimeout >= NateqTtsService.synthesisTimeoutMs(4_000)
         )
     }
 

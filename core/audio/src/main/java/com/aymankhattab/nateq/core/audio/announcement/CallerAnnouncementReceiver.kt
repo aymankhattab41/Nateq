@@ -573,54 +573,62 @@ if (rawNumber != null) {
                         .coerceAtMost(CALLER_WAKE_LOCK_CAP_MS)
                 )
 
-                // مهلة سماح عند وصول بث فارغ: ننتظر ونفحص سجلَ المكالمات
-                // دورياً — ونفحص `lastResolvedNumber` أولَ كلّ شيء، فهو
-                // ما يكتبه بثُّ RINGING الثاني الذي يحمل الرقم، فلا
-                // يتوقف الانتظارُ على إذن READ_CALL_LOG. ننتظر هنا أطول
-                // من السابق قصداً واحداً: أن يقع الاسمُ في الدورةِ
-                // الوحيدة (وإلا فُتحت دورةٌ ثانية فضاعف النطق).
-                if (incomingNumber == null && !ringingAnnounced) {
+                // مهلة سماح عند وصول بث فارغ: ننتظر ونفحص المصادر
+                // الثلاثة (الهوية المشتركة، آخر رقمٍ محلول، سجلّ
+                // المكالمات) دورياً. **ننتظر الاسمَ لا الرقم:** خدمةُ
+                // الفرز وإشعارُ الهاتف قد ينشران الرقمَ أوّلاً ثم الاسمَ
+                // بعده بمئات المللي ثانية؛ فإن كسرنا الحلقة على الرقم
+                // وحده أعلنّا الرقمَ وضاع الاسمُ الذي وصل بعدها بقليل.
+                // فالرقمُ الوحيد لا يُنهي الانتظار — نُنهيه عند توفّر
+                // **اسم** أو نفاد المهلة، فنقع في الدورة الواحدة ولا
+                // تُفتح دورةٌ ثانيةٌ تضاعف النطق.
+                if (contactName == null && !ringingAnnounced) {
                     val elapsed =
                         System.currentTimeMillis() - ringingStartTime
                     val remainingGrace = (CALLER_RESOLVE_GRACE_PERIOD_MS -
                         elapsed).coerceAtLeast(0L)
                     var waited = 0L
+                    var triedLocalResolve = false
                     while (waited < remainingGrace) {
                         delay(CALLER_LOG_POLL_INTERVAL_MS)
                         waited += CALLER_LOG_POLL_INTERVAL_MS
-                        // **الأسبقية للهوية المشتركة:** إشعار الهاتف
-                        // وخدمة الفرز يكتبان هنا مباشرةً، وهما أسرع من
-                        // سجلّ المكالمات (DB). نقرأها أوّلَ كل نبضة.
-                        val shared = RingCallerIdentity.snapshot()
-                        if (shared.first != null || shared.second != null) {
-                            if (incomingNumber == null) {
-                                incomingNumber = shared.first
-                            }
-                            if (contactName == null) {
-                                contactName = shared.second
-                            }
-                            break
+                        val fromLog = if (hasCallLog) {
+                            resolveLatestCallFromLog(context, hasCallLog)
+                        } else {
+                            null
                         }
-                        if (lastResolvedNumber != null) {
-                            incomingNumber = lastResolvedNumber
-                            contactName = lastResolvedName
-                            break
+                        val merged = mergeCallerIdentity(
+                            number = incomingNumber,
+                            name = contactName,
+                            shared = RingCallerIdentity.snapshot(),
+                            lastResolved = Pair(
+                                lastResolvedNumber, lastResolvedName
+                            ),
+                            fromLog = fromLog
+                        )
+                        incomingNumber = merged.first
+                        contactName = merged.second
+                        if (incomingNumber != null) {
+                            lastResolvedNumber = incomingNumber
                         }
-                        if (hasCallLog) {
-                            val fromLog = resolveLatestCallFromLog(
-                                context, hasCallLog
+                        // حلُّ الاسم محلياً مرّةً واحدة (PhoneLookup
+                        // فوري) فلا نؤخّر مكالمةَ جهةٍ محفوظة أبداً.
+                        if (contactName == null &&
+                            incomingNumber != null &&
+                            !triedLocalResolve
+                        ) {
+                            triedLocalResolve = true
+                            val custom = resolveCustomName(
+                                settings, incomingNumber
                             )
-                            if (fromLog != null &&
-                                !fromLog.first.isNullOrBlank()
-                            ) {
-                                incomingNumber = fromLog.first
-                                if (contactName == null) {
-                                    contactName = fromLog.second
-                                }
-                                lastResolvedNumber = incomingNumber
-                                break
-                            }
+                            contactName = custom ?: resolveContactName(
+                                context,
+                                number = incomingNumber,
+                                hasReadContacts = hasContacts,
+                                hasReadCallLog = hasCallLog
+                            )
                         }
+                        if (identityHasName(contactName)) break
                     }
                 }
 
@@ -1275,33 +1283,53 @@ if (rawNumber != null) {
         return null
     }
 
-    /** البحث عن الاسم في سجل المكالمات (CACHED_NAME) — يتطلب READ_CALL_LOG. */
+    /**
+     * البحث عن الاسم في سجل المكالمات (CACHED_NAME) — يتطلب READ_CALL_LOG.
+     *
+     * **المطابقةُ بالتطبيع الرقمي لا بالنصّ الحرفي:** صيغةُ الرقم في
+     * السجل تختلف عن الواردة («+966…» مقابل «0…») فالمقارنةُ النصّية
+     * تُفوّت الاسمَ وتُنطق الرقمَ. نفحص أحدث المكالمات ونقارن الخانات
+     * المطبّعة (تطابقٌ تام أو ذيلٌ برمز بلدٍ مُضاف/محذوف).
+     */
     private fun lookupNameViaCallLog(
         context: Context,
         phoneNumber: String
     ): String? {
+        val target = normalizeCallerNumber(phoneNumber) ?: return null
         return runCatching {
             val uri = android.provider.CallLog.Calls.CONTENT_URI
-            val projection = arrayOf(android.provider.CallLog.Calls.CACHED_NAME)
-            val selection = "${android.provider.CallLog.Calls.NUMBER} = ?"
+            val projection = arrayOf(
+                android.provider.CallLog.Calls.NUMBER,
+                android.provider.CallLog.Calls.CACHED_NAME
+            )
             val cursor = context.contentResolver.query(
                 uri,
                 projection,
-                selection,
-                arrayOf(phoneNumber),
+                null,
+                null,
                 "${android.provider.CallLog.Calls.DATE} DESC"
             )
             try {
-                if (cursor != null && cursor.moveToFirst()) {
-                    val idx = cursor.getColumnIndex(
+                var scanned = 0
+                while (cursor != null &&
+                    cursor.moveToNext() &&
+                    scanned < CALL_LOG_SCAN_LIMIT
+                ) {
+                    scanned++
+                    val numIdx = cursor.getColumnIndex(
+                        android.provider.CallLog.Calls.NUMBER
+                    )
+                    val nameIdx = cursor.getColumnIndex(
                         android.provider.CallLog.Calls.CACHED_NAME
                     )
-                    if (idx >= 0) {
-                        val cached = cursor.getString(idx)
-                        return cached?.takeIf {
-        it.isNotBlank() &&
-            !it.equals(phoneNumber, ignoreCase = true)
-    }
+                    if (numIdx < 0 || nameIdx < 0) continue
+                    val logged = cursor.getString(numIdx)
+                    val cached = cursor.getString(nameIdx)
+                    if (cached.isNullOrBlank()) continue
+                    if (cached.equals(logged, ignoreCase = true)) continue
+                    val digits = normalizeCallerNumber(logged) ?: continue
+                    if (callerNumbersEquivalent(target, digits)) {
+                        return@runCatching cached
                     }
                 }
                 null
@@ -1460,3 +1488,56 @@ internal fun callerSpeechEngine(
         SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
     }
 )
+
+/**
+ * دمجُ هوية المتصل من المصادر الثلاثة: الحاوية المشتركة
+ * ([RingCallerIdentity]) التي يكتب فيها إشعارُ الهاتف وخدمةُ الفرز، وآخر
+ * رقمٍ/اسمٍ محلولَين في الجلسة، وسجلّ المكالمات. **الاسمُ لا يُداس بالرقم
+ * ولا العكس:** كلُّ مصدرٍ يملأ الفارغَ فقط، فيبقى الاسمُ الصالح مهما تأخّر
+ * وصولُه. خالصٌ بلا `Context` فيُختبر مباشرةً.
+ */
+internal fun mergeCallerIdentity(
+    number: String?,
+    name: String?,
+    shared: Pair<String?, String?>,
+    lastResolved: Pair<String?, String?>,
+    fromLog: Pair<String?, String?>?
+): Pair<String?, String?> {
+    var mergedNumber = number
+    var mergedName = name
+    if (mergedNumber.isNullOrBlank()) mergedNumber = shared.first
+    if (mergedName.isNullOrBlank()) mergedName = shared.second
+    if (mergedNumber.isNullOrBlank()) mergedNumber = lastResolved.first
+    if (mergedName.isNullOrBlank()) mergedName = lastResolved.second
+    if (fromLog != null) {
+        if (mergedNumber.isNullOrBlank()) mergedNumber = fromLog.first
+        if (mergedName.isNullOrBlank()) mergedName = fromLog.second
+    }
+    return Pair(mergedNumber, mergedName)
+}
+
+/**
+ * هل الهويةُ مكتملةٌ بما يكفي لإيقاف انتظار الاسم؟ **الاسمُ وحده** هو
+ * الشرط: الرقمُ وحده ليس دليلاً على أن الاسمَ لن يصل بعد لحظات — وهذا
+ * بالضبط عيبُ نطق الرقم بدل الاسم. خالصةٌ للاختبار.
+ */
+internal fun identityHasName(name: String?): Boolean =
+    !name.isNullOrBlank()
+
+/** حدُّ فحص سجلّ المكالمات عند البحث بالرقم (آخر ٥٠ مكالمة). */
+private const val CALL_LOG_SCAN_LIMIT = 50
+
+/** أدنى طولٍ لكفاية الذيل في تكافؤ رقمَي هاتف (يمنع تقارب ذيلٍ قصير). */
+private const val MIN_EQUIV_DIGITS = 7
+
+/**
+ * تكافؤ رقمَي هاتف **بعد التطبيع**: تطابقٌ تام، أو ذيلٌ لأحدهما (رمزُ
+ * بلدٍ مُضاف أو محذوف) بحدٍّ أدنى للطول — فلا تُطابق أرقامٌ قصيرةٌ
+ * متباعدة. خالصةٌ للاختبار.
+ */
+internal fun callerNumbersEquivalent(a: String, b: String): Boolean {
+    if (a == b) return true
+    val shorter = if (a.length <= b.length) a else b
+    val longer = if (a.length <= b.length) b else a
+    return shorter.length >= MIN_EQUIV_DIGITS && longer.endsWith(shorter)
+}
