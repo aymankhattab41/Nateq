@@ -70,6 +70,13 @@ class SettingsRepository(context: Context) :
         const val CALLER_INTERVAL_MIN = 3
         const val CALLER_INTERVAL_MAX = 5
 
+        /** حدّا عدد تكرارات إعلان المتصل: من مرة واحدة إلى عشر — وهما
+         *  حدُّ المخزن فيساوي حدَّ الواجهة [REPEAT_MAX] في
+         *  CallerAnnouncementController، ويوافقُه consumeRepeat في
+         *  CallerAnnouncementReceiver. */
+        const val CALLER_REPEAT_MIN = 1
+        const val CALLER_REPEAT_MAX = 10
+
         private const val KEY_BATTERY_VOICE_MIGRATED =
             "_battery_voice_migrated"
 
@@ -1482,12 +1489,15 @@ class SettingsRepository(context: Context) :
             .putBoolean("caller_announcement_during_call_enabled", enabled)
             .apply()
 
-    /** عدد مرات تكرار اسم المتصل */
+    /** عدد مرات تكرار اسم المتصل: من مرة واحدة إلى عشر (بقرار المدير) */
     override fun getCallerAnnouncementRepeat(): Int =
         prefs.getInt("caller_announcement_repeat", 1)
     override fun setCallerAnnouncementRepeat(repeat: Int) =
         prefs.edit()
-            .putInt("caller_announcement_repeat", repeat.coerceIn(1, 5))
+            .putInt(
+                "caller_announcement_repeat",
+                repeat.coerceIn(CALLER_REPEAT_MIN, CALLER_REPEAT_MAX)
+            )
             .apply()
 
     /** الفاصل الزمني (بالثواني) بين كل مرة نطق لاسم المتصل — 3..5 ثوانٍ */

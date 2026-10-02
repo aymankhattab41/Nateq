@@ -1123,27 +1123,6 @@
                 android:text="@string/caller_announcement_during_call"
                 android:importantForAccessibility="yes" />
 
-            <!-- مسار الهوية الفورية: زرٌّ واحد يمنح الطريقين (إشعار الهاتف
-                 ودور فرز المكالمات) — كلاهما يمنحه المستخدم من إعدادات
-                 النظام، فلا يُطلب إذناً وقت التشغيل. -->
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_caller_instant_identity"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:minHeight="48dp"
-                android:text="@string/caller_instant_identity_grant"
-                android:contentDescription="@string/caller_instant_identity_grant" />
-
-            <TextView
-                android:id="@+id/tv_caller_instant_identity_status"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:textSize="13sp"
-                android:importantForAccessibility="yes" />
-
             <!-- عدد مرات التكرار -->
             <com.google.android.material.textfield.TextInputLayout
                 android:layout_width="match_parent"
@@ -2987,9 +2966,44 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:layout_marginBottom="8dp"
                 android:minHeight="48dp"
                 android:text="@string/btn_open_autostart_settings"
+                android:importantForAccessibility="yes" />
+
+            <!-- عنوان المجموعة: مسارُ الهوية الفورية نُقل من «إعلان المتصل»
+                 إلى هنا لأنّه إذنان يمنحهما المستخدم من إعدادات النظام
+                 ويختلف أحدهما بين المصنّعات، فهو من إرشادات التوافق لا من
+                 ضوابط النطق. -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:layout_marginBottom="4dp"
+                android:text="@string/caller_instant_identity_group_title"
+                android:textAppearance="?attr/textAppearanceSubtitle2"
+                android:accessibilityHeading="true"
+                android:importantForAccessibility="yes" />
+
+            <!-- مسار الهوية الفورية: زرٌّ واحد يمنح الطريقين (إشعار الهاتف
+                 ودور فرز المكالمات) — كلاهما يمنحه المستخدم من إعدادات
+                 النظام، فلا يُطلب إذناً وقت التشغيل. -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_caller_instant_identity"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/caller_instant_identity_grant"
+                android:contentDescription="@string/caller_instant_identity_grant" />
+
+            <TextView
+                android:id="@+id/tv_caller_instant_identity_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="8dp"
+                android:textSize="13sp"
                 android:importantForAccessibility="yes" />
         </LinearLayout>
 

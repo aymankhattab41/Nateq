@@ -72,6 +72,7 @@
 <string name="battery_level_unchecked">Level %1$d percent cleared</string>
 <string name="caller_announcement_enabled">Enable caller announcement</string>
 <string name="caller_announcement_during_call">Announce caller name during a call</string>
+<string name="caller_instant_identity_group_title">Instant caller name announcement</string>
 <string name="caller_instant_identity_grant">Enable instant caller name</string>
 <string name="caller_instant_identity_status_none">Not enabled: the caller name may be delayed, or not announced if the network hides it. Tap the button to open system settings.</string>
 <string name="caller_instant_identity_status_notif">Enabled via call notification: the name is announced as the call starts ringing.</string>
@@ -438,6 +439,10 @@
 <string name="volume_label">Volume</string>
 <string name="volume_summary">Adjust the volume level</string>
 <string name="rate_value_format">%1$.1fx</string>
+<plurals name="caller_announcement_repeat_times">
+        <item quantity="one">Once</item>
+        <item quantity="other">%d times</item>
+    </plurals>
 <plurals name="caller_announcement_interval_seconds">
         <item quantity="one">%d second</item>
         <item quantity="other">%d seconds</item>

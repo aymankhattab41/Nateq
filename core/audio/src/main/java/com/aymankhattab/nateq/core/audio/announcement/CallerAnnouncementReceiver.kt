@@ -208,17 +208,19 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             !contactName.isNullOrBlank() || !number.isNullOrBlank()
 
         /**
-         * سقف قفل الاستيقاظ لدورة المتصل (20 ثانية).
+         * سقف قفل الاستيقاظ لدورة المتصل (70 ثانية).
          *
-         * يغطّي مهلةَ انتظار الرقم + نطقَ الجملة الأخيرة. وهو أطول من
-         * [BROADCAST_ASYNC_WINDOW_MS] (10 ثوانٍ) لأن ذلك يحدّ *جدولَ
-         * التكرار*، أما القفل فيمتدّ على الانتظار قبله — ولم يكن يشمله
-         * أصلاً. سقفُ الـ ANR ([BROADCAST_SAFE_CAP_MS]) لا يُرفع: يبقى
-         * 9 ثوانٍ لأن إنهاءَ `goAsync` متأخّراً يُجمد العملية، والامتدادُ
-         * هنا على قفل الاستيقاظ فقط — فالنطق يبقى داخل `appScope` والخدمة
-         * الأمامية تُبقي العمليةَ أماميةً بعد إنهاء البث.
+         * يغطّي مهلةَ انتظار الرقم + جدولَ التكرارات كلَّه. **رُفع من 20
+         * إلى 70** لأنّ عشرَ تكراراتٍ × أقصى فاصل (5 ثوانٍ) = 45 ثانيةً
+         * قبل آخر نطق، فسقفُ 20 كان يُطلق القفلَ على بُعد ثلثي النطق فيتأخّر
+         * ما تبقّى على شاشةِ إطفاءٍ خاملة. والصيغةُ مشتقّةٌ لا متفرّقة:
+         * نافذةُ الجدولة ([REPEAT_SCHEDULE_WINDOW_MS]) + قفلُ النطق القصير.
+         *
+         * **سقفُ الـ ANR ([BROADCAST_SAFE_CAP_MS]) لا يُرفع** ويبقى 9 ثوانٍ
+         * لأن إنهاءَ `goAsync` متأخّراً يُجمد العملية؛ والامتدادُ هنا على قفل
+         * الاستيقاظ فقط — فالنطق يبقى داخل `appScope` بعد إنهاء البث.
          */
-        internal const val CALLER_WAKE_LOCK_CAP_MS = 20_000L
+        internal const val CALLER_WAKE_LOCK_CAP_MS = 70_000L
 
 /** تصفير حالة جلسة الرنين عند إنهاء المكالمة أو الرد عليها */
         internal fun resetRingingSession() {
@@ -245,8 +247,16 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
 
         /** نافذة جدولة تكرارات نطق المتصل (بعد النطق الأول) — لا يرتبط بها
          *  عمرُ البث إطلاقاً (التكرارات تُجدول في النطاق العام appScope وتستمر
-         *  بعد إنهاء الـ goAsync): سقفٌ داخلي لعدد التكرارات المنطقية فقط. */
-        private const val BROADCAST_ASYNC_WINDOW_MS = 10_000L
+         *  بعد إنهاء الـ goAsync عبر [BROADCAST_SAFE_CAP_MS]): سقفٌ داخلي
+         *  لعدد التكرارات المنطقية فقط.
+         *
+         *  **رُفعت من 10 إلى 60 ثانية** لسببٍ حاسم: كانت تحسب ثلاثَ
+         *  نبضاتٍ فقط عند فاصل 3 ثوانٍ، فاختيارُ المستخدم «عشر مرات» كان
+         *  يُنطق ثلاثاً أو أربعاً بصمت — وهو إسقاطٌ صامتٌ يخالف القاعدة
+         *  الحاكمة. والصيغةُ الآن مشتقّةٌ من الأسوأ: عشرُ نبضاتٍ × أقصى
+         *  فاصل (5 ثوانٍ) = 45 ثانيةً كآخر إزاحة، فالسقفُ 60 يحميها.
+         */
+        private const val REPEAT_SCHEDULE_WINDOW_MS = 60_000L
 
         /** سقف أمان إنهاء بثّ goAsync — أقل من مهلة نظام البث (~10 ثوانٍ)
          *  بهامش واضح: يُنهى البث حتماً قبل حافة المهلة حتى لو علّق المحركُ
@@ -724,15 +734,18 @@ if (rawNumber != null) {
                 // الانتظارُ يجري بلا استيقاظ، و`delay()` على
                 // `Dispatchers.IO` والشاشةُ مطفأة يتأخّر فيُفشِل الانتظارُ
                 // في مهمّته. فصار القفل يغطّي الانتظارَ والنطقَ معاً.
-                val repeat = settings
-                    .getCallerAnnouncementRepeat().coerceIn(1, 5)
+                val repeat = settings.getCallerAnnouncementRepeat()
+                    .coerceIn(
+                        SettingsRepository.CALLER_REPEAT_MIN,
+                        SettingsRepository.CALLER_REPEAT_MAX
+                    )
                 val intervalMs = settings.getCallerAnnouncementIntervalSeconds()
                     .coerceIn(
                         SettingsRepository.CALLER_INTERVAL_MIN,
                         SettingsRepository.CALLER_INTERVAL_MAX
                     ) * 1000L
                 val schedule = repeatSchedule(
-                    repeat, intervalMs, BROADCAST_ASYNC_WINDOW_MS
+                    repeat, intervalMs, REPEAT_SCHEDULE_WINDOW_MS
                 )
                 val speechWakeMs = if (schedule.isEmpty()) {
                     TimeAlarmReceiver.SHORT_WAKE_LOCK_MS

@@ -9,6 +9,8 @@ import android.provider.Settings
 import android.view.View
 import android.widget.TextView
 import android.widget.Toast
+import com.aymankhattab.nateq.core.audio.announcement.CallerScreeningService
+import com.aymankhattab.nateq.core.audio.announcement.NateqNotificationListener
 import com.aymankhattab.nateq.feature.settings.R
 import com.google.android.material.button.MaterialButton
 import java.util.Locale
@@ -22,10 +24,18 @@ import java.util.Locale
  * الإعلانات الصوتية للخلفية تُقتل على أجهزة Xiaomi/Huawei/Oppo/Vivo عند عدم
  * السماح للتطبيق بالتشغيل في الخلفية — لهذا يحتاج المستخدم هذا الدليل
  * بخطوة واحدة داخل التطبيق بدل البحث عن الشاشات يدوياً.
+ *
+ * وفيه **مسارُ الهوية الفورية لاسم المتصل** (نُقل من قسم «إعلان المتصل»):
+ * كلاهما منحٌ يدويٌّ من إعدادات النظام لا من التطبيق، وكلاهما يختلف بين
+ * المصنّعات (فدورُ فرز المكالمات غيرُ موجودٍ أصلاً على بعض الأجهزة)، فمكانُه
+ * هنا مع أزرار التوافق لا في ضوابط النطق.
  */
 internal class OemGuidanceController(
     private val fragment: VoiceSelectionFragment
 ) {
+
+    private var btnInstantIdentity: View? = null
+    private var tvInstantIdentityStatus: TextView? = null
 
     fun setup(view: View) {
         val vendor = OemVendor.detect(Build.MANUFACTURER)
@@ -57,6 +67,116 @@ internal class OemGuidanceController(
         }
         btnAutostart.setOnClickListener {
             openAutostartSettings(fragment.requireContext(), vendor)
+        }
+
+        btnInstantIdentity = view.findViewById(R.id.btn_caller_instant_identity)
+        tvInstantIdentityStatus =
+            view.findViewById(R.id.tv_caller_instant_identity_status)
+        setupInstantIdentityRow()
+    }
+
+    /**
+     * صفُّ الهوية الفورية: مساران يقرّبان نطقَ اسم المتصل من لحظة الرنّة،
+     * وكلاهما **منحٌ يدويّ من إعدادات النظام** (لا إذن وقت التشغيل):
+     *
+     *  - **إشعار الهاتف** — يمنحه النظام فيُفتح إشعارُ المكالمة ويصلنا
+     *    الاسمُ مُحلّى وقت الرنّة (وهو ما تعتمد TalkBack وGoogle Phone).
+     *  - **دور فرز المكالمات** — يستدعينا النظام قبل الرنّة.
+     *
+     * أيّهما تُتاح كان كافياً؛ فالنصُّ يوضّح ذلك بأن المسارين اختياريّان
+     * وButtonُه واحدٌ يفتح ما ينقص. **بلاهما** يبقى التطبيق يعمل، لكن
+     * الرقمَ قد يتأخّر ~٦ ثوانٍ كما رُصد على أجهزةٍ حقيقية، فلا يُنطق
+     * إلا نغمةُ التنبيه بلا اسم.
+     */
+    private fun setupInstantIdentityRow() {
+        btnInstantIdentity?.setOnClickListener {
+            val ctx = fragment.requireContext()
+            val notifGranted = runCatching {
+                NateqNotificationListener.isPermissionGranted(ctx)
+            }.getOrDefault(false)
+            val roleHeld = runCatching {
+                CallerScreeningService.hasScreeningRole(ctx)
+            }.getOrDefault(false)
+            when {
+                !notifGranted -> openNotificationListenerSettings(ctx)
+                !roleHeld -> requestScreeningRoleOrExplain(ctx)
+                else -> Toast.makeText(
+                    ctx, R.string.caller_instant_identity_granted,
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            // العودة من إعدادات النظام تعيد الرسم، لكن التحديث الفوري
+            // يجعل الحالة صحيحة لو عاد المستخدم بلا تغيير.
+            refreshInstantIdentityStatus()
+        }
+        refreshInstantIdentityStatus()
+    }
+
+    /** حالة المسارين تُعرض صراحةً — المستخدم يحتاج أن يعرف أيّهما فعّال
+     *  وإلا ظنّ أنّ التطبيق لا ينطق الاسم. يُنادى أيضاً في [onResume] الفَصل
+     *  لأنّ الحالة تتغيّر بتغيّر إعدادات النظام لا بتغيّر بيانات التطبيق. */
+    fun refreshInstantIdentityStatus() {
+        val ctx = fragment.context ?: return
+        val notifGranted = runCatching {
+            NateqNotificationListener.isPermissionGranted(ctx)
+        }.getOrDefault(false)
+        val roleHeld = runCatching {
+            CallerScreeningService.hasScreeningRole(ctx)
+        }.getOrDefault(false)
+        val resId = when {
+            notifGranted && roleHeld ->
+                R.string.caller_instant_identity_status_both
+            notifGranted ->
+                R.string.caller_instant_identity_status_notif
+            roleHeld ->
+                R.string.caller_instant_identity_status_role
+            else ->
+                R.string.caller_instant_identity_status_none
+        }
+        tvInstantIdentityStatus?.text = ctx.getString(resId)
+    }
+
+    /** يُفرّغ المراجع عند تدمير الواجهة حتى لا يحتجز الـFragment آباءً. */
+    fun release() {
+        btnInstantIdentity = null
+        tvInstantIdentityStatus = null
+    }
+
+    private fun openNotificationListenerSettings(context: Context) {
+        runCatching {
+            context.startActivity(
+                Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }.onFailure {
+            Toast.makeText(
+                context, R.string.notification_permission_needed,
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    /**
+     * طلبُ دور فرز المكالمات. قد يرفض النظامُ الطلب (شرطُه أن يكون
+     * التطبيقُ معالجَ المكالمات النشطة)، وعندها نفتح إعدادات الدور
+     * مباشرةً ليختاره المستخدم بنفسه بدل رسالةِ فشلٍ جافة.
+     */
+    private fun requestScreeningRoleOrExplain(context: Context) {
+        val launched = runCatching {
+            CallerScreeningService.requestScreeningRole(context)
+        }.getOrDefault(false)
+        if (!launched) {
+            runCatching {
+                context.startActivity(
+                    Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }.onFailure {
+                Toast.makeText(
+                    context, R.string.caller_screening_unavailable,
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
 

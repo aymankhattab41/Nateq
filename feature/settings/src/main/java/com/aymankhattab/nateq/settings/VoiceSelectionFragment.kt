@@ -112,6 +112,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private lateinit var batterySection: BatteryAnnouncementController
     private lateinit var notificationSection: NotificationReadingController
     private lateinit var callerSection: CallerAnnouncementController
+
+/** إرشادات توافق الجهاز — تضمّ أيضاً مسار النطق الفوري لاسم المتصل،
+ *  فيُنعش حالته في [onResume] لأنّها تتبع إعدادات النظام لا بيانات
+     *  التطبيق. */
+    private lateinit var oemGuidance: OemGuidanceController
     private lateinit var smsSection: SmsReadingController
     private lateinit var generalSection: GeneralSettingsController
     private lateinit var numberSection: NumberReadingController
@@ -583,7 +588,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         instantSilenceSection = InstantSilenceController(
             this, settings, { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
-        OemGuidanceController(this).apply { setup(view) }
+        oemGuidance = OemGuidanceController(this).apply { setup(view) }
         setupLanguageToggle()
         setupCheckUpdates()
         engineSection.setupAutoConvertUI(view)
@@ -659,6 +664,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     override fun onResume() {
         super.onResume()
         if (::timeSection.isInitialized) timeSection.refreshExactAlarmRow()
+        if (::oemGuidance.isInitialized) {
+            oemGuidance.refreshInstantIdentityStatus()
+        }
         if (::accordion.isInitialized) accordion.updateSectionStatuses()
     }
 
@@ -691,6 +699,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         // إغلاق معاينة النطق المشتركة (بند 4.2) — أي محرك TTS مؤقت فُتح
         // للمعاينة يُغلق تماماً عند مغادرة الشاشة.
         if (::voicePreview.isInitialized) voicePreview.release()
+        if (::oemGuidance.isInitialized) oemGuidance.release()
         // إغلاق كل النوافذ المفتوحة حتى لا تتسرب مراجع الواجهة (WindowLeaked)
         // عند تدوير الشاشة أو مغادرتها.
         val open = activeDialogs.toList()

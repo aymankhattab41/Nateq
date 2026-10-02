@@ -518,14 +518,32 @@ class SettingsRepositoryTest {
 
     @Test
     fun callerRepeatAndInterval_clamped() {
+        repo.setCallerAnnouncementRepeat(100)
+        assertEquals(10, repo.getCallerAnnouncementRepeat())
         repo.setCallerAnnouncementRepeat(9)
-        assertEquals(5, repo.getCallerAnnouncementRepeat())
+        assertEquals(9, repo.getCallerAnnouncementRepeat())
+        repo.setCallerAnnouncementRepeat(10)
+        assertEquals(10, repo.getCallerAnnouncementRepeat())
         repo.setCallerAnnouncementRepeat(0)
         assertEquals(1, repo.getCallerAnnouncementRepeat())
         repo.setCallerAnnouncementIntervalSeconds(100)
         assertEquals(5, repo.getCallerAnnouncementIntervalSeconds())
         repo.setCallerAnnouncementIntervalSeconds(0)
         assertEquals(3, repo.getCallerAnnouncementIntervalSeconds())
+    }
+
+    // حارس: خيار «عشر مرات» يجب أن يُحفظ عشراً لا أن يُقصَّ — فالحدُّ
+    // القديم (5) كان يُقصي اختيارَ المستخدم بصمت ليجهله أنّ الاختيار
+    // نُفِّذ، وهو إسقاطٌ صامتٌ لا يجوز في مسار يسمعه المستخدم.
+    @Test
+    fun callerRepeat_acceptsFullTenRange() {
+        (1..10).forEach { n ->
+            repo.setCallerAnnouncementRepeat(n)
+            assertEquals(
+                n,
+                repo.getCallerAnnouncementRepeat()
+            )
+        }
     }
 
     @Test

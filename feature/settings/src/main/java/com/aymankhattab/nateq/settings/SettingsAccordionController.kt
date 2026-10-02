@@ -835,21 +835,19 @@ internal class SettingsAccordionController(
         val enabled = runCatching { settings.isCallerAnnouncementEnabled() }
             .getOrDefault(false)
         val repeat = runCatching { settings.getCallerAnnouncementRepeat() }
-            .getOrDefault(1).coerceIn(1, 5)
+            .getOrDefault(1)
+            .coerceIn(
+                SettingsRepository.CALLER_REPEAT_MIN,
+                SettingsRepository.CALLER_REPEAT_MAX
+            )
         val interval =
             runCatching {
                 settings.getCallerAnnouncementIntervalSeconds()
             }.getOrDefault(3).coerceIn(1, 10)
         val on = if (enabled) fragment.getString(R.string.toggle_on)
         else fragment.getString(R.string.toggle_off)
-        val label = fragment.getString(
-            when (repeat) {
-                1 -> R.string.repeat_once
-                2 -> R.string.repeat_twice
-                3 -> R.string.repeat_3
-                4 -> R.string.repeat_4
-                else -> R.string.repeat_5
-            }
+        val label = fragment.resources.getQuantityString(
+            R.plurals.caller_announcement_repeat_times, repeat, repeat
         )
         val intervalLabel = fragment.resources.getQuantityString(
             R.plurals.caller_announcement_interval_seconds, interval, interval

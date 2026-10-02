@@ -71,6 +71,7 @@
     <string name="battery_level_unchecked">أُلغي تحديد %1$d بالمئة</string>
 <string name="caller_announcement_enabled">تفعيل إعلان المتصل</string>
 <string name="caller_announcement_during_call">نطق اسم المتصل أثناء المكالمة</string>
+<string name="caller_instant_identity_group_title">النطق الفوري لاسم المتصل</string>
 <string name="caller_instant_identity_grant">تفعيل النطق الفوري لاسم المتصل</string>
 <string name="caller_instant_identity_status_none">غير مفعّل: قد يتأخّر اسم المتصل، أو لا يُنطق إن أخفته الشبكة. اضغط الزر لفتح إعدادات النظام.</string>
 <string name="caller_instant_identity_status_notif">مفعّل عبر إشعار الهاتف: يُنطق الاسمُ فور رنّة المكالمة.</string>
@@ -437,6 +438,14 @@
 <string name="volume_label">مستوى الصوت</string>
 <string name="volume_summary">ضبط مستوى الصوت</string>
 <string name="rate_value_format">‪%1$.1f×‬</string>
+<plurals name="caller_announcement_repeat_times">
+        <item quantity="zero">بلا تكرار</item>
+        <item quantity="one">مرة واحدة</item>
+        <item quantity="two">مرتان</item>
+        <item quantity="few">%d مرات</item>
+        <item quantity="many">%d مرة</item>
+        <item quantity="other">%d مرة</item>
+    </plurals>
 <plurals name="caller_announcement_interval_seconds">
         <item quantity="zero">%d ثانية</item>
         <item quantity="one">ثانية واحدة</item>

@@ -98,6 +98,49 @@ class CallerAnnouncementReceiverTest {
         )
     }
 
+    /**
+     * حارس: **«عشر مرات» يجب أن تُنطق عشراً في كل فاصلٍ مسموح.**
+     *
+     * الكسر الذي يحرسه: نافذةُ الجدولة كانت 10 ثوانٍ، فاختيارُ عشرِ
+     * تكراراتٍ عند فاصل 3 ثوانٍ كان يُحسب ثلاثَ نبضاتٍ فقط ويُنطق
+     * ما دونها — إسقاطٌ صامتٌ لاختيارِ المستخدم. والاختبارُ يبني
+     * الجدولَ بنفس نافذةِ الإنتاج ([CALLER_WAKE_LOCK_CAP_MS] بوصفها
+     * الحدَّ الأعلى للمحسوب) فيتحقّق أن عددَ الإزاحات = عددُ التكرارات
+     * ناقصَ واحد، عند أسوأ فاصل (5 ثوانٍ) وأدناه (3 ثوانٍ).
+     */
+    @Test
+    fun `ten repeats survive the schedule window at worst interval`() {
+        val worst = listOf(3_000L, 5_000L)
+        worst.forEach { interval ->
+            val ticks = CallerAnnouncementReceiver.repeatSchedule(
+                10, interval,
+                CallerAnnouncementReceiver.CALLER_WAKE_LOCK_CAP_MS
+            )
+            assertEquals(
+                "عشرُ تكراراتٍ عند فاصل ${interval}ms", 9, ticks.size
+            )
+            // ولا تتجاوز النافذةَ سقفَ قفل الاستيقاظ (وإلا قُطع النطق)
+            ticks.forEach { assertTrue(it < 70_000L) }
+        }
+    }
+
+    // حارس: الحدّان متّسقان بين المخزن والواجهة والاستهلاك — فأيُّ حدٍّ
+    // منفرد بلا太长 يخلق خياراً ميتاً في الواجهة أو قيمةً منفلتة في
+    // التخزين (قاعدة «الإ الواحد في ثلاثة مواضع»).
+    @Test
+    fun `repeat bounds agree across repository and consumer`() {
+        assertEquals(1, SettingsRepository.CALLER_REPEAT_MIN)
+        assertEquals(10, SettingsRepository.CALLER_REPEAT_MAX)
+        // والفاصل: الأقصرُ 3 فيولّد آخرَ إزاحةٍ عند 45 ثانية، أقلّ من
+        // السقف 60 الذي تحسبه نافذةُ الجدولة — فلا اقتطاعَ مع العشر.
+        val lastTick = CallerAnnouncementReceiver.repeatSchedule(
+            SettingsRepository.CALLER_REPEAT_MAX,
+            SettingsRepository.CALLER_INTERVAL_MAX * 1000L,
+            60_000L
+        ).last()
+        assertEquals(45_000L, lastTick)
+    }
+
     private fun buildPhrase(
         number: String?,
         contactName: String?,
