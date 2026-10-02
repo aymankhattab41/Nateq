@@ -33,14 +33,77 @@ class PronunciationDictionaryTest {
         dict = PronunciationDictionary(context)
     }
 
+    // ===== حدّ الرقم: اختصارُ وحدةٍ/عملةٍ ملتصقٌ به =====
+
+    // حارس: الكسر المُبلَّغ — القاموسُ كان صامتاً عن كل ما يُكتب ملتصقاً
+    // بالرقم («٥٠ج» و«٣٠٠جم») لأن الرقمَ كان حدّاً يمنع الاستبدالَ من
+    // الجانبين، فتسجيلُ «جم» في القاموس لم يكن يُغيّر النطق أبداً.
+    @Test
+    fun amountAbbreviationGluedToNumber_isNowReplaced() {
+        dict.addEntry("جم", "جيم")
+        assertEquals("الوزن 300جيم", dict.apply("الوزن 300جم"))
+        assertEquals("الوزن 300 جيم", dict.apply("الوزن 300 جم"))
+        dict.addEntry("ج", "جنيه مصري")
+        assertEquals("السعر 50جنيه مصري", dict.apply("السعر 50ج"))
+        dict.addEntry("م", "متر")
+        assertEquals("الطول 5متر", dict.apply("الطول 5م"))
+        dict.addEntry("كم", "كيلومتر")
+        assertEquals("المسافة 12كيلومتر", dict.apply("المسافة 12كم"))
+    }
+
+    @Test
+    fun gluedAmountAbbreviation_usesArabicAndLatinDigits() {
+        dict.addEntry("جم", "جيم")
+        assertEquals("الوزن ٣٠٠جيم", dict.apply("الوزن ٣٠٠جم"))
+        assertEquals("الوزن ٢٥٠٫٥جيم", dict.apply("الوزن ٢٥٠٫٥جم"))
+    }
+
+    // حارس: الرقمُ على اليمين يبقى حدّاً — «م2» رمزُ ترتيبٍ لا وحدة
+    @Test
+    fun digitOnRightOfKey_stillBlocksSubstitution() {
+        dict.addEntry("م", "متر")
+        assertEquals("أرسل م2", dict.apply("أرسل م2"))
+    }
+
+    // حارس: الكلمةُ الطويلةُ الملتصقةُ بالرقم لا تُبدَّل (سقفُ ثلاثة أحرف
+    // يفصل اختصارَ الوحدة عن الكلمة)
+    @Test
+    fun longArabicWordGluedToNumber_staysUntouched() {
+        dict.addEntry("جنيه", "جنيه مصري")
+        assertEquals("المبلغ 50جنيه", dict.apply("المبلغ 50جنيه"))
+        // وكلمةٌ من ثلاثة أحرفٍ فوق الزناد تُعامَل معاملةَ الاختصار
+        dict.addEntry("دولار", "دولار أمريكي")
+        assertEquals("السعر 7دولار", dict.apply("السعر 7دولار"))
+    }
+
+    @Test
+    fun threeLetterArabicWordGluedToNumber_countsAsAbbreviation() {
+        // سقفُ ثلاثة أحرفٍ قرارٌ واعٍ: «متر» و«جم» و«كجم» اختصاراتٌ
+        // يلتصقُن بالرقم، وكلمةٌ من ثلاثة أحرفٍ ملتصقةٌ به نادرة.
+        dict.addEntry("باص", "حافلة")
+        assertEquals("رقم 7حافلة", dict.apply("رقم 7باص"))
+    }
+
+    // حارس: داخلَ الكلمةِ لا استبدالُ أبداً («مج 5» و«5ممتاز»)
+    @Test
+    fun keyInsideWord_stillNeverReplaced() {
+        dict.addEntry("جم", "جيم")
+        dict.addEntry("م", "متر")
+        assertEquals("مجموع 5", dict.apply("مجموع 5"))
+        assertEquals("5ممتاز", dict.apply("5ممتاز"))
+        assertEquals("مرحبا", dict.apply("مرحبا"))
+    }
+
     // ===== حدود الكلمات في آلة Aho-Corasick (البند 10-2) =====
 
     @Test
-    fun digit_precedes_key_blocksSubstitution() {
+    fun digitGluedToAmountAbbreviation_isApplied() {
+        // عقدٌ متغيّر عمداً: كان الرقمُ يمنعُ الاستبدالَ من الجانبين فلا
+        // يُطبَّق القاموسُ على ما يُكتب في العربية ملتصقاً بالرقم، فتسجيلُ
+        // «م» في القاموس لم يكن يُغيّر النطق. الآن «50م» ← «50متر».
         dict.addEntry("م", "متر")
-        // الرقم جزءٌ من الكلمة: لا تُفسد "50م" قبل مرحلة معالجة الوحدات
-        assertEquals("الطلب 50م", dict.apply("الطلب 50م"))
-        assertEquals("السعر 50م وعشرة", dict.apply("السعر 50م وعشرة"))
+        assertEquals("الطلب 50متر", dict.apply("الطلب 50م"))
+        assertEquals("السعر 50متر وعشرة", dict.apply("السعر 50م وعشرة"))
     }
 
     @Test

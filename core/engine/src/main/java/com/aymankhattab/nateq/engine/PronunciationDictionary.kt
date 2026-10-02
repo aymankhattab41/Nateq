@@ -641,6 +641,45 @@ private class AhoCorasick(entries: Map<String, String>) {
     private fun isSymbol(ch: Char): Boolean =
         !ch.isLetterOrDigit() && !ch.isWhitespace() && !isDiacritic(ch)
 
+    /** حرفٌ عربيّ: النطاق الأساسي 0621..064A (وفيه م و ك و ه وكلُّ حروف
+     *  العربية المعتادة) مع النطاق الممتدّ 066E..06D3 (پ چ ژ ک گ ی). */
+    private fun isArabicLetter(ch: Char): Boolean =
+        ch.code in 0x0621..0x064A || ch.code in 0x066E..0x06D3
+
+    /**
+     * مفتاحٌ **اختصارُ وحدةٍ أو عملةٍ** ملتصقٌ برقمٍ على يساره: أحرفٌ عربية
+     * صِرْفةٌ بثلاثة أحرفٍ فأقلّ («ج» و«م» و«جم» و«كم» و«كجم»).
+     *
+     * في الكتابة العربية تُلصق الوحدةُ والعملةُ بالرقم بلا فاصل («٥٠ج» =
+     * جنيه، «٣٠٠جم» = غرام، «٥م» = متر)، والرقمُ كان يمنعُ الاستبدالَ من
+     * الجانبين فيبقى القاموسُ بلا أثرٍ يُسمع — وهو ما اشتكى منه المستخدم.
+     * فهنا يُسمح للرقم أن يكون الحدَّ الأيسرَ لمفتاحٍ من هذه العائلة فقط:
+     * فلا يقع الاستبدالُ داخلَ كلمةٍ («مج 5» و«مرحبا» محفوظان)، ويبقى
+     * الحدُّ **الأيمن** حرفاً أو رقماً كما هو (حارسُ «م2» محفوظ).
+     *
+     * السقفُ ثلاثةُ أحرفٍ يفصل الاختصارَ عن الكلمة: «كم» و«كجم» اختصارانِ
+     * وملحقان، و«جنيه» أو «متر» كلمتانِ لا تلتصقان بالرقمِ إلا نادراً،
+     * فإدخالهما هنا كان سيُفسد «٥٠جنيه» المتّصلة.
+     */
+    private fun isAmountAbbreviation(key: String): Boolean =
+        key.length in 1..3 && key.all { isArabicLetter(it) }
+
+    /** هل الحدُّ الأيسرُ صالحٌ لمفتاحٍ يبدأ عند [start]؟ */
+    private fun leftBoundaryOk(key: String, text: String, start: Int): Boolean {
+        if (start == 0) return true
+        if (isSymbol(key.first())) return true
+        val before = text[start - 1]
+        if (before.isDigit()) return isAmountAbbreviation(key)
+        return !isWordChar(before)
+    }
+
+    /** هل الحدُّ الأيمنُ صالحٌ لمفتاحٍ ينتهي عند [end]؟ */
+    private fun rightBoundaryOk(key: String, text: String, end: Int): Boolean {
+        if (key.endsWith('.')) return true
+        if (isSymbol(key.last())) return true
+        return end >= text.length || !isWordChar(text[end])
+    }
+
     /** يطبّق استبدالات القاموس على النص في تمريرة واحدة */
     fun apply(text: String): String {
         if (text.isEmpty()) return text
@@ -661,20 +700,16 @@ private class AhoCorasick(entries: Map<String, String>) {
             val start = i - key.length + 1
             if (start < 0) continue
             // حدود الكلمة: لا حرف ولا رقم (بأي لغة) قبلها
-            // ولا بعدها — الرقم جزءٌ
-            // من الكلمة فيمنع إفساد "50م" قبل مرحلة الوحدات،
-            // ويُعفى شرط "ما بعد"
-            // للمفاتيح المنتهية بنقطة ليُسمح باختصارات مثل "د.أحمد"،
-            // ورمزٌ طرفي في المفتاح (مثل # $ ٪) يفتح حدّه حتى تلتصق
-            // الرموز المركّبة بكلماتٍ وأرقام ("#عاجل" و"$50" — بند 3.5).
-            val endsWithDot = key.endsWith('.')
-            val startsWithSymbol = key.isNotEmpty() &&
-                isSymbol(key.first())
-            val endsWithSymbol = key.isNotEmpty() && isSymbol(key.last())
-            val leftOk = startsWithSymbol || start == 0 ||
-                !isWordChar(text[start - 1])
-            val rightOk = endsWithDot || endsWithSymbol ||
-                i + 1 >= n || !isWordChar(text[i + 1])
+            // ولا بعدها، ويُعفى شرطُ ما بعد للمفاتيح المنتهية بنقطة
+            // ليُسمح باختصارات مثل "د.أحمد"، ورمزٌ طرفيٌّ في المفتاح
+            // (مثل # $ ٪) يفتح حدّه حتى تلتصق الرموز المركّبة
+            // بكلماتٍ وأرقام ("#عاجل" و"$50" — بند 3.5). والاستثناءُ
+            // الوحيدُ للرقم: يسارَ اختصارِ وحدةٍ أو عملةٍ عربية («٥٠ج»)،
+            // إذ لولا هذا الاستثناء لبقي القاموسُ صامتاً عن كل ما
+            // يُكتب ملتصقاً بالرقم في الاستعمال العربي —
+            // [isAmountAbbreviation].
+            val leftOk = leftBoundaryOk(key, text, start)
+            val rightOk = rightBoundaryOk(key, text, i + 1)
 
             if (!leftOk || !rightOk) {
                 // الأطول فشل بحدود الكلمة — ننزل عبر «روابط الفشل» بحثاً عن
@@ -692,20 +727,12 @@ private class AhoCorasick(entries: Map<String, String>) {
                         continue
                     }
                     val fs = i - k.length + 1
-                    if (fs >= 0) {
-                        val fDot = k.endsWith('.')
-                        val fLeftSym = k.isNotEmpty() &&
-                            isSymbol(k.first())
-                        val fRightSym = k.isNotEmpty() &&
-                            isSymbol(k.last())
-                        val fLeftOk = fLeftSym || fs == 0 ||
-                            !isWordChar(text[fs - 1])
-                        val fRightOk = fDot || fRightSym ||
-                            i + 1 >= n || !isWordChar(text[i + 1])
-                        if (fLeftOk && fRightOk) {
-                            matches.add(Match(fs, i + 1, v))
-                            break
-                        }
+                    if (fs >= 0 &&
+                        leftBoundaryOk(k, text, fs) &&
+                        rightBoundaryOk(k, text, i + 1)
+                    ) {
+                        matches.add(Match(fs, i + 1, v))
+                        break
                     }
                     fallback = fallback.fail
                 }
