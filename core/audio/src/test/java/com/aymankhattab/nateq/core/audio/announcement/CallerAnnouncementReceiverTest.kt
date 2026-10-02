@@ -98,17 +98,6 @@ class CallerAnnouncementReceiverTest {
         )
     }
 
-    @Test
-    fun `call log hint is needed only when denied on sdk 31 plus`() {
-        // على أندرويد 12+ (API 31+) الرقم فارغ لأن READ_CALL_LOG غير
-        // ممنوح — فيُرشد المستخدم إلى منحه من الإعدادات.
-        assertTrue(callerCallLogHintNeeded(hasCallLog = false, sdkInt = 31))
-        assertTrue(callerCallLogHintNeeded(hasCallLog = false, sdkInt = 37))
-        // الإذن ممنوح أو النظام أقدم من 12: لا تلميح.
-        assertFalse(callerCallLogHintNeeded(hasCallLog = true, sdkInt = 31))
-        assertFalse(callerCallLogHintNeeded(hasCallLog = false, sdkInt = 30))
-    }
-
     private fun buildPhrase(
         number: String?,
         contactName: String?,
@@ -130,31 +119,34 @@ class CallerAnnouncementReceiverTest {
     }
 
     @Test
-    fun `blank number without call log permission appends the grant hint`() {
+    fun `blank number without call log permission yields no speech at all`() {
         val app =
             ApplicationProvider.getApplicationContext<android.app.Application>()
         shadowOf(app).denyPermissions(
             android.Manifest.permission.READ_CALL_LOG
         )
-        // رقم فارغ بلا اسم وإذنُ سجلٍ غير ممنوح على API 31+: اللاحقة ظاهرة.
-        val text = buildPhrase(number = null, contactName = null)
-        assertTrue(
-            "التلميح يُلحق بعد «اتصال وارد» عند سحب إذن السجل",
-            text.contains("سجل المكالمات")
+        // **العقد الحاكم بعد تغيير المستخدم:** بلا هوية لا نطقَ البتّة.
+        // العبارة العامة «اتصال وارد» سُحبت، ومعها التلميحُ عن السجل
+        // (كان يقرؤه المستخدم كأنه معلومة عن المتصل وهي ليست كذلك).
+        // البديلُ نغمةُ التنبيه + اهتزاز قبل الوصول إلى هنا.
+        assertEquals(
+            "بلا هوية: لا نصّ ولا تلميح",
+            "",
+            buildPhrase(number = null, contactName = null)
         )
-        assertTrue(text.startsWith("اتصال وارد"))
     }
 
     @Test
-    fun `blank number with call log granted stays generic`() {
+    fun `blank number with call log granted also yields no speech`() {
         val app =
             ApplicationProvider.getApplicationContext<android.app.Application>()
         shadowOf(app).grantPermissions(
             android.Manifest.permission.READ_CALL_LOG
         )
-        // الإذن ممنوح والرقم ما زال فارغاً: حجب حقيقي — لا تلميح.
+        // الإذن ممنوح والرقم ما زال فارغاً (حجبٌ حقيقي): النتيجةُ
+        // نفسها — الصمت، لا عبارةَ عامة.
         assertEquals(
-            "اتصال وارد",
+            "",
             buildPhrase(number = null, contactName = null)
         )
     }
@@ -810,19 +802,16 @@ fun `waiting call speaks only when during call toggle enabled`() {
     }
 
     @Test
-    fun `grace period constants are valid and cover the platform gap`() {
-        // مهلةُ الانتظار تغطّي فجوةَ المنصّة المرصودة (~٦٫١s: الرنين
-        // الأول بلا رقم والثاني متأخّر) بهامش، وتبقى دون سقف الـ ANR
-        // فلا تُخرج البثّ عن حافة النظام.
+    fun `instant identity grace is short enough to feel immediate`() {
+        // **عقد المستخدم:** لا صمت طويل قبل أول كلمة. مهلة الهوية
+        // الفورية قصيرةٌ عمداً (١٫٥s) لأنها تنتظر مصادرَ فورية (إشعار
+        // الهاتف وخدمة الفرز)، لا فجوةَ الشبكة التي تُغطّى بمهلة
+        // الهوية المتأخرة.
         assertTrue(
-            "مهلة الانتظار يجب أن تتجاوز فجوة المنصّة المرصودة (~6.1s)",
-            CallerAnnouncementReceiver.CALLER_RESOLVE_GRACE_PERIOD_MS >=
-                6_500L
-        )
-        assertTrue(
-            "مهلة الانتظار يجب أن تبقى دون سقف ANR",
-            CallerAnnouncementReceiver.CALLER_RESOLVE_GRACE_PERIOD_MS <
-                CallerAnnouncementReceiver.BROADCAST_SAFE_CAP_MS
+            "مهلة الهوية الفورية يجب ألا تتجاوز ثانيتين" +
+                " (صمتٌ طويل يُفقد المكالمة)",
+            CallerAnnouncementReceiver.CALLER_RESOLVE_GRACE_PERIOD_MS <=
+                2_000L
         )
         assertTrue(
             CallerAnnouncementReceiver.CALLER_LOG_POLL_INTERVAL_MS in
@@ -831,6 +820,47 @@ fun `waiting call speaks only when during call toggle enabled`() {
         assertTrue(
             CallerAnnouncementReceiver.CALLER_RESOLVE_GRACE_PERIOD_MS >
                 CallerAnnouncementReceiver.CALLER_LOG_POLL_INTERVAL_MS
+        )
+    }
+
+    @Test
+    fun `late identity wait covers the observed platform gap`() {
+        // فجوةُ المنصّة المرصودة ~٦٫١s (الرنين الأول بلا رقم والثاني
+        // متأخّر) — فمهلةُ الهوية المتأخرة يجب أن تتجاوزها بهامش فتُلتقط
+        // الهويةُ وتُعلَن مرّةً واحدة بدل النغمة وحدها.
+        assertTrue(
+            "مهلة الهوية المتأخرة يجب أن تتجاوز فجوة المنصّة (~6.1s)",
+            CallerAnnouncementReceiver.CALLER_IDENTITY_LATE_WAIT_MS >=
+                6_500L
+        )
+        assertTrue(
+            "مجلموع الانتظار يبقى دون سقف ANR حتى مع النطق",
+            CallerAnnouncementReceiver.CALLER_RESOLVE_GRACE_PERIOD_MS +
+                CallerAnnouncementReceiver
+                    .CALLER_IDENTITY_LATE_WAIT_MS <
+                CallerAnnouncementReceiver.BROADCAST_SAFE_CAP_MS
+        )
+    }
+
+    @Test
+    fun `no identity means no speech - only cue`() {
+        // **القاعدة الحاكمة: لا نطق بلا هوية.** بلا اسمٍ ولا رقم لا
+        // تُنتج الدالةُ نصّاً قابلاً للنطق إطلاقاً.
+        assertFalse(
+            "بلا هوية: لا اسم ولا رقم = لا نطق",
+            CallerAnnouncementReceiver.hasSpeakableIdentity(null, null)
+        )
+        assertFalse(
+            "نصٌّ فارغ ليس هوية",
+            CallerAnnouncementReceiver.hasSpeakableIdentity("   ", "")
+        )
+        assertTrue(
+            "الرقم وحده هوية صالحة",
+            CallerAnnouncementReceiver.hasSpeakableIdentity("0100", null)
+        )
+        assertTrue(
+            "الاسم وحده هوية صالحة",
+            CallerAnnouncementReceiver.hasSpeakableIdentity(null, "أحمد")
         )
     }
 }

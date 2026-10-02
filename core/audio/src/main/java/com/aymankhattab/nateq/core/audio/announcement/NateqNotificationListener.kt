@@ -139,6 +139,48 @@ class NateqNotificationListener : NotificationListenerService() {
         try {
             val pkg = sbn.packageName ?: return
 
+            // إشعارُ الهاتف يُفحص **قبل كل البوابات** لا بعدها: هو أسرع
+            // مصدرٍ للهوية، وملفُّه مستقلٌّ عن قائمة التطبيقات التي اختارها
+            // المستخدم — فمنعُ إشعار تطبيق الهاتف ليس رفضاً لإعلان هوية
+            // المتصل. فلو فحصناه بعد `isNotificationReadingEnabled`
+            // وقائمة التطبيقات لبقي الهاتفُ خارج المسارِ دائماً.
+            //
+            // **لكن** بوّابة الإذن تبقى للمصادقة: إذنُ الاستماع أذنه
+            // المستخدم لمنحِ إشعاراتِ تطبيقاتِ **مختارة**، ولا يُقرأ
+            // كلُّ إشعارٍ لمجرّد أنه يُقرأ تطبيقُ الهاتف. فمسارُ هوية
+            // المتصل محصورٌ في `CATEGORY_CALL` وحده ولا ينفتح إلا
+            // بتفعيل إعلان المتصل (وإلا صار إشعارُ الهاتف قناةً
+            // لقراءة إشعارات لم يطلبها).
+            val notification = sbn.notification
+            if (notification != null &&
+                notification.category == Notification.CATEGORY_CALL
+            ) {
+                if (settingsRepository.isCallerAnnouncementEnabled()) {
+                    val extras = notification.extras
+                    val rawTitle = extras.getCharSequence(
+                        Notification.EXTRA_TITLE
+                    )?.toString()?.trim()
+                    val rawText = notificationBodyText(extras)
+                    val rawSubText = extras.getCharSequence(
+                        Notification.EXTRA_SUB_TEXT
+                    )?.toString()?.trim()
+                    val (callNumber, callName) =
+                        RingCallerIdentity.extractFromCallNotification(
+                            rawTitle, rawText, rawSubText
+                        )
+                    Log.w(
+                        TAG,
+                        "CALL-IDENTITY pkg=$pkg num=${callNumber ?: "?"}" +
+                            " name=${callName ?: "?"}"
+                    )
+                    // **ننشر الهوية ولا ننطق** — النطقُ وحيدٌ في
+                    // [CallerAnnouncementReceiver]، فالنطقُ هنا كان
+                    // سيضاعِف النطق (العيبُ المُصلَح في v1.6.8).
+                    RingCallerIdentity.publish(callNumber, callName)
+                }
+                return
+            }
+
             val settings = settingsRepository
             if (!settings.isNotificationReadingEnabled()) return
             // المفتاح الرئيسي يُوقف كل الإعلانات دفعة واحدة.
@@ -176,32 +218,13 @@ class NateqNotificationListener : NotificationListenerService() {
                 return
             }
 
-            val notification = sbn.notification ?: return
-            val extras = notification.extras
+            val extras = sbn.notification?.extras ?: return
 
             val title = extras.getCharSequence(Notification.EXTRA_TITLE)
                 ?.toString()?.trim()
             val text = notificationBodyText(extras)
 
             if (title.isNullOrBlank() && text.isNullOrBlank()) return
-
-            // **تتبّع تشخيصي مؤقّت:** يكشف ما إذا كان قارئُ الإشعارات
-            // نفسه هو مصدر نطق «مكالمة واردة» (إشعارُ تطبيق الاتصال)
-            // فيتشابك مع إعلان Lord TTS فيبدو «تكراراً» وهو مصدران.
-            val looksLikeCall = notification.category ==
-                Notification.CATEGORY_CALL ||
-                title?.contains("وارد", ignoreCase = true) == true ||
-                title?.contains("incoming", ignoreCase = true) == true ||
-                text?.contains("وارد", ignoreCase = true) == true ||
-                text?.contains("incoming", ignoreCase = true) == true
-            if (looksLikeCall) {
-                Log.w(
-                    TAG,
-                    "CALL-LOOKING notification pkg=$pkg cat=" +
-                        "${notification.category} title=$title" +
-                        " text=${notificationBodyText(extras)}"
-                )
-            }
 
             val appName = getAppName(pkg)
             // خصوصية قفل الشاشة: عند القفل يُنطق اسم التطبيق فقط دون العنوان

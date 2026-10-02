@@ -248,6 +248,17 @@
             </intent-filter>
         </service>
 
+        <!-- خدمة فرز المكالمات: أسرع مصدرٍ لهوية المتصل (تُنادى قبل الرنّة).
+     تحتاج دور CALL_SCREENING من إعدادات النظام؛ ولا نطلب إذناً. -->
+        <service
+            android:name="com.aymankhattab.nateq.core.audio.announcement.CallerScreeningService"
+            android:exported="true"
+            android:permission="android.permission.BIND_CALL_SCREENING_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.CallScreeningService" />
+            </intent-filter>
+        </service>
+
         <!-- بلاطة الإعدادات السريعة: مفتاح رئيسي واحد لإعلانات التطبيق -->
         <service
             android:name=".settings.AnnouncementTileService"
