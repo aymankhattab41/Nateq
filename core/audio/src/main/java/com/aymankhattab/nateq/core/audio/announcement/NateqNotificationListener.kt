@@ -359,11 +359,27 @@ class NateqNotificationListener : NotificationListenerService() {
         // حالةُ خطّ الهاتف تُقرأ مباشرةً لا من عَلَم المستقبل: بثّ
         // `OFFHOOK` يُعالَج في coroutineٍ قد يتأخّر، والإشعارُ يصل بعده
         // مباشرةً — فمن يقرأ العَلَمَ يظنّ المكالمةَ غيرَ قائمة.
+        //
+        // **بند 5.6 — تُحسب كلُّ حالةِ الاتصال لا `OFFHOOK` وحدها:** هذا
+        // هو إصلاحُ «المكالمةُ الصادرة تُعلَن واردة». مُشغِّلُ الهاتف
+        // ينشر إشعارَ مكالمته الصادرة في نافذة `DIALING`/`ALERTING`
+        // — أي **قبل** `OFFHOOK` — فكان الحارسُ يعجزُ عنها بالضبط.
+        // وهذان الدولان لا تحدثان إلا لمكالمةٍ بدأها المستخدمُ، فهما
+        // دليلُ قاطعٍ لا تخمينُ نصٍّ.
+        //
+        // **و`getCallState()` مُهمَلٌ رسمياً — مع ذلك نقرأه:** بديلُه
+        // `TelecomManager.isInCall()` لا يُميّز `DIALING`/`ALERTING` عن
+        // `OFFHOOK` (بل يرجع `false` قبل اتصال المحطة)، والحارسُ بأكمله
+        // يقوم على تمييز هذه الدول — فمن يعطيه `isInCall()` يفقد النافذةَ التي
+        // إصلاحُ هذا العيب يقوم عليها.
+        @Suppress("DEPRECATION")
         val callInProgress = runCatching {
             val tm = applicationContext.getSystemService(
                 Context.TELEPHONY_SERVICE
             ) as? TelephonyManager
-            tm?.callState == TelephonyManager.CALL_STATE_OFFHOOK
+            CallerAnnouncementReceiver.isOutgoingNetworkCallState(
+                tm?.callState ?: TelephonyManager.CALL_STATE_IDLE
+            )
         }.getOrDefault(false)
         val endedAt = CallerAnnouncementReceiver.lastPhoneIdleAt
         val sameEnded = CallerAnnouncementReceiver.matchesLastNetworkCall(

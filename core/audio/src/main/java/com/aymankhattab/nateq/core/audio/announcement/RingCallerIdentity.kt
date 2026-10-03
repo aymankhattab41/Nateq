@@ -76,6 +76,14 @@ internal object RingCallerIdentity {
      * فيه)، ثم في `EXTRA_TEXT` ثم `EXTRA_SUB_TEXT`. يُستبعد النص العام
      * لأنه **ليس هوية** — وعودتنا للمستخدم ألا ننطق بلا اسم أو رقم.
      *
+     * **الرقمُ والاسمُ يُستخرجان معاً من كل المرشحين لا من أولّهم فقط**
+     * (بند 5.6): كان يُؤخذ المرشُّ الأول فقط، فإن وضع تطبيقُ الهاتف
+     * **الرقمَ في العنوان والاسمَ في النصّ** طُرح الاسمُ كلياً — وهو
+     * بالضبط عيبُ «المُسجَّل يُنطق رقمَه لا اسمَه»، إذ ينشر
+     * [publish] ما يملأ الفراغَ فقط فلا يعود الاسمُ من هذا المصدر.
+     * فصار لكل حقلٍ دورُه: أوّلُ ما يبدو رقماً رقمٌ، وأوّلُ ما يبدو
+     * اسماً اسمٌ، ويُعطى كلٌّ منهما أوّلُ مرشّحٍ له.
+     *
      * خالصة بلا `Context` فهي قابلة للاختبار وحدها.
      */
     fun extractFromCallNotification(
@@ -84,17 +92,36 @@ internal object RingCallerIdentity {
         subText: String?
     ): Pair<String?, String?> {
         val candidates = listOfNotNull(title, text, subText)
-            .map { it.trim() }
+            .map { stripBidiControls(it).trim() }
             .filter { it.isNotEmpty() && !isGenericCallPhrase(it) }
         if (candidates.isEmpty()) return Pair(null, null)
-        // أول مرشح يبدو رقماً فهو رقم بلا اسم؛ وإلا فهو اسم محلول.
-        val first = candidates.first()
-        return if (looksLikePhoneNumber(first)) {
-            Pair(first, null)
-        } else {
-            Pair(null, first)
-        }
+        val number = candidates.firstOrNull { looksLikePhoneNumber(it) }
+        val name = candidates.firstOrNull { !looksLikePhoneNumber(it) }
+        return Pair(number, name)
     }
+
+    /**
+     * حذفُ محارف الضبط الاتجاهي (bidi) من نصٍّ مستخرج: `LRM` و`RLM`
+     * و`ALM` والفراغِ الصفرِي والـ`BOM`. تُغشّي تطبيقاتُ الهاتف الرقمَ
+     * والاسمَ بها في الواجهة العربية (وهي مقبولةٌ في
+     * [looksLikePhoneNumber] عمداً)، فبدون الحذف تخرج في الهوية
+     * المنطوقة وفي مفتاح منع التكرار فتبخَق المقارنات.
+     *
+     * خالصةٌ قابلةٌ للاختبار.
+     */
+    internal fun stripBidiControls(text: String): String =
+        text.filterNot { it in BIDI_CONTROL_CHARS }
+
+    /**
+     * محارفُ الضبط الاتجاهي — لا تُنطق ولا تُقارَن. تُكتبُ بترميزٍ
+     * صريحٍ (`\u200E`) لا حرفياً: فهي غيرُ مرئيةٍ في المحرّر، والكتابةُ
+     * الحرفيةُ تتلاشى عند الحفظ فتُنتج محرفاً فارغاً في compilation.
+     */
+    private val BIDI_CONTROL_CHARS = setOf(
+        '\u200E', '\u200F', '\u202A', '\u202B', '\u202C', '\u202D',
+        '\u202E', '\u2066', '\u2067', '\u2068', '\u2069', '\u061C',
+        '\u200B', '\uFEFF'
+    )
 
     /**
      * هل النص عبارة عامة عن مكالمة بلا هوية؟ تُستبعد حتى لا تُنطق
@@ -116,30 +143,86 @@ internal object RingCallerIdentity {
     }
 
     /**
-     * هل النصّ يصفّ مكالمةً **صادرة** (المستخدمُ هو المتصل)؟
-     *
-* **لماذا وُجد (انحدارُ جوجل ميت):** كان حارسُ الاتجاه يرفض كلَّ
-     * إشعارٍ مُعلَّم `ongoing`، فسقط إعلانُ Meet بصمت. وجوجل ميت
-     * يُعلِّم إشعارَ مكالمته الواردة `ongoing` **من لحظة الرنّ** (لأنه
-     * واجهةُ مكالمةٍ حيّة لا إشعارُ حدثٍ عابر)، فسقط كلُّ إعلانٍ لجوجل
-     * ميت بصمت. ولم يكن في الحارس ما يميّز «واردةً مُعلَّمة ongoing»
-     * من «صادرةً مُعلَّمة ongoing» — بل كان يرفض الاثنين معاً.
-     *
-     * فالحارسُ صار يرفض `ongoing` إذا بدا نصُّه صادراً، ويقبله وإلا.
-     * وهذه هي العلاماتُ التي تنشرُها التطبيقات عند إجراء المستخدم
-     * المكالمة (عربياً وإنجليزياً).
-     */
+    * هل النصّ يصفّ مكالمةً **صادرة** (المستخدمُ هو المتصل)؟
+    *
+    * **لماذا وُجد (انحدارُ جوجل ميت):** كان حارسُ الاتجاه يرفض كلَّ
+    * إشعارٍ مُعلَّم `ongoing`، فسقط إعلانُ Meet بصمت. وجوجل ميت
+    * يُعلِّم إشعارَ مكالمته الواردة `ongoing` **من لحظة الرنّ** (لأنه
+    * واجهةُ مكالمةٍ حيّة لا إشعارُ حدثٍ عابر)، فسقط كلُّ إعلانٍ لجوجل
+    * ميت بصمت. ولم يكن في الحارس ما يميّز «واردةً مُعلَّمة ongoing»
+    * من «صادرةً مُعلَّمة ongoing» — بل كان يرفض الاثنين معاً.
+    *
+    * فالحارسُ صار يرفض `ongoing` إذا بدا نصُّه صادراً، ويقبله وإلا.
+    *
+    * **بند 5.6 — لا تُطابَق كتابةُ مُشغِّلِ الهاتف حرفياً:** كان الشرطُ
+    * تساوياً تامّاً (`t == it || t.startsWith("$it ")`) على قائمةٍ صغيرة،
+    * فتنكسر المطابقةُ عند أوّل اختلافٍ طباعيٍّ يكتبه التطبيقُ فعلياً:
+    * «**جارٍ** الاتصال» بتشكيلٍ لا «جاري»، و«**جارى**» بألفٍ مقصورة
+    * لا بياء، و«مكالم**ة** صادرة جاري**ة**» جملةً لا عبارتين. فنُطبَّع
+    * النصّ أولاً ([normalizeCallPhrase]: تشكيلٌ محذوف، همزاتٌ موحَّدة،
+    * تاءُ مربوطةٌ كـ«ه»، وعلاماتُ وقفٍ منقوصةٌ محذوفة) ويُبحث
+    * بـ**تضمينٍ** لا بتساوٍ، فصار النصُّ الحقيقيُّ يُلتقَط. والبحثُ
+    * بالتضمين لا يُخلط: لا اسمَ عربيٌّ ولا عبارةٌ واردةٌ تحوي أيَّ
+    * واحدةٍ من هذه العلامات.
+    */
     internal fun isOutgoingCallPhrase(text: String): Boolean {
-        val t = text.trim().lowercase()
+        val t = normalizeCallPhrase(text)
         if (t.isEmpty()) return false
-        val markers = listOf(
-            "calling", "calling...", "calling…",
-            "outgoing call", "outgoing", "placing call", "dialing",
-            "ringing...", "ringing…", "ringing",
-            "جاري الاتصال", "جاري الإتصال", "يتصل",
-            "مكالمة صادرة", "اتصال صادر", "صادرة"
-        )
-        return markers.any { t == it || t.startsWith("$it ") }
+        return normalizedOutgoingMarkers.any { marker -> t.contains(marker) }
+    }
+
+    /**
+     * تطبيعُ نصّ عبارةِ مكالمة قبل مطابقتها: حروفٌ صغيرة، تشكيلٌ
+     * (علاماتُ الوقف والهمزات والتطويل) محذوف، همزاتُ الألف
+     * (أ إ آ ٱ) موحَّدةً على «ا»، وألفُ مقصورة «ى» على «ي»،
+     * وتاءُ مربوطة «ة» على «ه»، وعلاماتُ الوقف اللاتينية (`.` `…` `!`)
+     * محذوفةٌ أيضاً فلا تُبقي «calling…» خارجَ قائمة «calling».
+     *
+     * خالصةٌ وقابلةٌ للاختبار.
+     */
+    internal fun normalizeCallPhrase(text: String): String {
+        val sb = StringBuilder(text.length)
+        for (ch in text.trim().lowercase()) {
+            when {
+                ch in TASHKEEL_RANGE -> Unit
+                ch in QURANIC_MARKS_RANGE -> Unit
+                ch in ALEF_VARIANTS -> sb.append('ا')
+                ch == 'ى' -> sb.append('ي')
+                ch == 'ة' -> sb.append('ه')
+                ch in STOP_MARKS -> Unit
+                else -> sb.append(ch)
+            }
+        }
+        return sb.toString().trim()
+    }
+
+    /** مدى علامات التشكيل والوقف العربي (تُحذف كلّها). */
+    private val TASHKEEL_RANGE = 'ً'..'ٰ'
+
+    /** مدى علامات المصحف الصغيرة (حركاتٌ وعلاماتُ وقفٍ — تُحذف). */
+    private val QURANIC_MARKS_RANGE = 'ۖ'..'ۭ'
+
+    /** صيغُ همزات الألف الأربع التي تُوحَّد على «ا». */
+    private val ALEF_VARIANTS = setOf('أ', 'إ', 'آ', 'ٱ')
+
+    /** علاماتُ الوقف التي تُحذف فلا تُبقي «calling…» خارجَ «calling». */
+    private val STOP_MARKS = setOf('.', '…', '!', '؟', '،')
+
+    /** علاماتُ نصِّ صادر — تُكتب خاماً ثم تُطبَّع مرّةً واحدة عند أول
+     *  استعمال، فتكفي صيغةٌ واحدة مهما اختلف هجاءُ العربية.
+     *
+     *  «جار الاتصال» و«جاري الاتصال» صيغتان شائعتان لنفس العبارة
+     *  («جارٍ» بلا ياء أصلاً فيُكتب كذلك)، وكلتاهما مشمولةٌ بعد التطبيع. */
+    private val OUTGOING_PHRASE_MARKERS = listOf(
+        "calling", "outgoing call", "outgoing", "placing call",
+        "placing", "dialing call", "dialing", "ringing",
+        "جاري الاتصال", "جار الاتصال", "يتصل",
+        "مكالمة صادرة", "اتصال صادر", "صادرة", "صادر"
+    )
+
+    /** العلاماتُ بعد التطبيع — فلا يُقارَن نصٌّ مُطبَّعٌ بعلامةٍ خام. */
+    private val normalizedOutgoingMarkers: List<String> by lazy {
+        OUTGOING_PHRASE_MARKERS.map { normalizeCallPhrase(it) }
     }
 
     /** أرقام فقط (مع رموز الاتصال المسموحة) فهو هوية رقمية. */

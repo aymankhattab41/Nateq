@@ -60,13 +60,22 @@ class TextProcessor(
     /** المرجع المحقون عبر Hilt إن وُجد (يمرره NateqTtsService)، وإلا يُبنى
      *  محلياً لإعدادات النطق. */
     private val injectedSettings: SynthesisConfig? = null,
-    /** القاموس المحقون عبر Hilt إن وُجد (يمرره NateqTtsService) — وإلا يُبنى
-     *  محلياً للاختبارات؛ مثيل موحَّد مع نسخة الواجهة ورصد لحظي لقرصه. */
+    /** القاموس المحقون عبر Hilt إن وُجد (يمرره NateqTtsService). */
     private val injectedDict: PronunciationDictionary? = null
 ) {
 
+    /**
+     * **الافتراضيُّ هو [PronunciationDictionary.shared] لا `new`.**
+     *
+     * كان الغيابُ يُنتج `PronunciationDictionary(context)` — نسخةً جديدةً
+     * **فارغة** لكل معالِج — فتنعدم القاموسُ في مسار النطق بينما يراه
+     * المستخدمُ في الإعدادات. والمعالجُ الذي لا يحقن قاموساً (بناءُ
+     * AnnouncementSpeaker هو المثال) كان يصيبُ العطبَ كلَّه. فصار
+     * الافتراضيُّ نفسَ الكائن، وبقي [PronunciationDictionary] المباشرُ
+     * للاختبارات التي تحتاج عزلةً.
+     */
     private val pronunciationDict =
-        injectedDict ?: PronunciationDictionary(context)
+        injectedDict ?: PronunciationDictionary.shared(context)
 
     /**
      * هل نطق أسماء الإيموجي مفعّل؟ بلا حقنة Settings

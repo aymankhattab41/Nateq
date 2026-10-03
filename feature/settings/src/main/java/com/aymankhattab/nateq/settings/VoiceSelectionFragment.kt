@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.settings
 
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.app.Dialog
 import android.appwidget.AppWidgetManager
@@ -522,6 +523,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         btnExportDict.setOnClickListener {
             runCatching { createDictLauncher.launch(DICT_EXPORT_FILE_NAME) }
         }
+        val btnClearDict = view.findViewById<MaterialButton>(R.id.btn_clear_dict)
+        btnClearDict.setOnClickListener { showClearDictConfirmDialog() }
 
         // المفتاح الرئيسي لكل الإعلانات
         switchAllAnnouncements =
@@ -900,6 +903,25 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                         getString(R.string.enter_word_and_pronunciation)
                     )
                 }
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .create().also(::trackDialog).show()
+    }
+
+    /** مربع تأكيد لمسح القاموس بالكامل */
+    private fun showClearDictConfirmDialog() {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(getString(R.string.dict_clear_all))
+            .setMessage(getString(R.string.dict_clear_confirm))
+            .setPositiveButton(getString(R.string.dict_clear_all)) { _, _ ->
+                runCatching { pronunciationDict.clearAll() }
+                refreshDictAdapter()
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.dict_cleared_ok),
+                    Toast.LENGTH_SHORT
+                ).show()
+                view?.announceCompat(getString(R.string.dict_cleared_ok))
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .create().also(::trackDialog).show()

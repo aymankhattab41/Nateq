@@ -163,8 +163,8 @@ class CallerAnnouncementReceiverTest {
 
     @Test
     fun `blank number without call log permission yields no speech at all`() {
-        val app =
-            ApplicationProvider.getApplicationContext<android.app.Application>()
+        val app = ApplicationProvider
+            .getApplicationContext<android.app.Application>()
         shadowOf(app).denyPermissions(
             android.Manifest.permission.READ_CALL_LOG
         )
@@ -182,8 +182,8 @@ class CallerAnnouncementReceiverTest {
 
     @Test
     fun `blank number with call log granted also yields no speech`() {
-        val app =
-            ApplicationProvider.getApplicationContext<android.app.Application>()
+        val app = ApplicationProvider
+            .getApplicationContext<android.app.Application>()
         shadowOf(app).grantPermissions(
             android.Manifest.permission.READ_CALL_LOG
         )
@@ -399,8 +399,8 @@ class CallerAnnouncementReceiverTest {
     @Test
     fun `hasCallerPermission reflects granted state`() {
         val receiver = CallerAnnouncementReceiver()
-        val app =
-            ApplicationProvider.getApplicationContext<android.app.Application>()
+        val app = ApplicationProvider
+            .getApplicationContext<android.app.Application>()
         shadowOf(app).denyPermissions(
             android.Manifest.permission.READ_PHONE_STATE,
             android.Manifest.permission.READ_CALL_LOG
@@ -1379,6 +1379,210 @@ fun `waiting call speaks only when during call toggle enabled`() {
                 number = null,
                 name = "سالم"
             )
+        )
+    }
+
+    // ===== بند 5.6: صِدْعُ «المُسجَّل يُنطق رقمَه لا اسمَه» =====
+
+    /**
+     * **حارسُ الكسر الأول:** الرقمُ في العنوان والاسمُ في النصّ.
+     *
+     * كان الاستخراجُ يأخذ **المرشّحَ الأول فقط**، فإذا وضع مُشغِّلُ
+     * الهاتف الرقمَ في `EXTRA_TITLE` والاسمَ المحلولَ في `EXTRA_TEXT`
+     * طُرح الاسمُ كلياً — ومع أن [RingCallerIdentity.publish] يملأ
+     * الفراغَ فقط، فلا يعود الاسمُ من هذا المصدر أبداً فيُنطق الرقم.
+     *
+     * هذا الاختبارٌ **يسقط** على الكود القديم ويمرّ على الجديد.
+     */
+    @Test
+    fun `a number title with a name text keeps both`() {
+        val (number, name) = RingCallerIdentity.extractFromCallNotification(
+            "0501234567", "أحمد محمد", null
+        )
+        assertEquals("الرقم من العنوان", "0501234567", number)
+        assertEquals("والاسم لا يُطرح مع الرقم", "أحمد محمد", name)
+    }
+
+    /** وعكسُها: الاسمُ في العنوان والرقمُ في النصّ — كلاهما يُلتقط. */
+    @Test
+    fun `a name title with a number sub text keeps both`() {
+        val (number, name) = RingCallerIdentity.extractFromCallNotification(
+            "سارة", "0509876543", null
+        )
+        assertEquals("0509876543", number)
+        assertEquals("سارة", name)
+    }
+
+    /**
+     * محارفُ الضبط الاتجاهي (`LRM`) تغشّي أرقامَ تطبيقات الهاتف في
+     * الواجهة العربية — وتُقبل في [RingCallerIdentity.looksLikePhoneNumber]
+     * عمداً، لكنها لا يجوز أن تخرج مع الهوية المنطوقة.
+     */
+    @Test
+    fun `bidi controls are stripped from the extracted identity`() {
+        val (number, name) = RingCallerIdentity.extractFromCallNotification(
+            "‎خالد", "‎+966501234567", null
+        )
+        assertEquals("محرفُ الضبط يُزال من الرقم", "+966501234567", number)
+        assertEquals("ومن الاسم", "خالد", name)
+    }
+
+    /**والترتيبُ العكسي: لو عكَس الهاتفُ الحقلين بقي العقدُ قائماً. */
+    @Test
+    fun `both identity fields survive a sub text swap`() {
+        val (number, name) = RingCallerIdentity.extractFromCallNotification(
+            "خالد", "+966501234567", "جارٍ الاتصال"
+        )
+        assertEquals("+966501234567", number)
+        assertEquals("خالد", name)
+    }
+
+    /**
+     * **حارسُ الكسر الثاني:** صيغُ الرقم في دفتر الاتصالات.
+     *
+     * كان البحثُ يُرسَل بالرقم الخام وحده، و`PhoneLookup` لا يُطبِّع رمز
+     * البلد — فمُسجَّلٌ محفوظٌ محلياً لا يُطابَق وارداً دولياً فيبقى
+     * الرقمُ وحدَه هويةً. الآن تُجرَّب الصيغُ كلُّها.
+     */
+    @Test
+    fun `contact lookup tries raw digits and e164 forms`() {
+        val forms = CallerAnnouncementReceiver.callerLookupForms(
+            "+966 (50) 123-4567", "SA"
+        )
+        assertTrue("الخام أولاً", "+966 (50) 123-4567" in forms)
+        assertTrue("ثم الخانات", "966501234567" in forms)
+        assertTrue(
+            "ثم الصيغة الدولية",
+            "+966501234567" in forms
+        )
+        assertEquals(
+            "بلا تكرار بين الصيغ",
+            forms.size,
+            forms.distinct().size
+        )
+    }
+
+    /**بلا منطقةٍ معروفة لا تُختلق `E164` ولا تُهمَل الصيغُ الأخرى. */
+    @Test
+    fun `contact lookup forms survive a missing region`() {
+        val forms = CallerAnnouncementReceiver.callerLookupForms(
+            "0501234567", null
+        )
+        assertEquals(listOf("0501234567"), forms)
+        assertEquals(
+            emptyList<String>(),
+            CallerAnnouncementReceiver.callerLookupForms("   ", "SA")
+        )
+    }
+
+    // ===== بند 5.6: صِدْعُ «المكالمة الصادرة تُعلَن واردة» =====
+
+    /**
+     * **حارسُ الكسر:** `DIALING` و`ALERTING` تُثبتان أنّ المتصلَ هو
+     * المستخدم.
+     *
+     * هذا هو جذرُ الشكوى: مُشغِّلُ الهاتف ينشر إشعارَ مكالمته الصادرة
+     * **قبل** وصول بثّ `OFFHOOK`، أي في نافذة `DIALING`/`ALERTING` —
+     * وكان الحارسُ يقرأ `OFFHOOK` وحده فيفوتها، فيُعلَن «اتصال وارد»
+     * لمن هو المُرسِل.
+     *
+     * وهذا الاختبارُ **يسقط** على الكود القديم (كان `OFFHOOK` وحده).
+     */
+    @Test
+    fun `dialing and alerting prove the user is the caller`() {
+        assertTrue(
+            "DIALING دليلٌ قاطع",
+            CallerAnnouncementReceiver.isOutgoingNetworkCallState(
+                CALL_STATE_DIALING
+            )
+        )
+        assertTrue(
+            "ALERTING دليلٌ قاطع",
+            CallerAnnouncementReceiver.isOutgoingNetworkCallState(
+                CALL_STATE_ALERTING
+            )
+        )
+        assertTrue(
+            "وOFFHOOK كذلك",
+            CallerAnnouncementReceiver.isOutgoingNetworkCallState(
+                android.telephony.TelephonyManager.CALL_STATE_OFFHOOK
+            )
+        )
+    }
+
+    /** **ولا انحدار:** الرنّةُ واردةٌ لا تثبت outgoing — فيجب أن تُعلَن. */
+    @Test
+    fun `ringing and idle do not prove an outgoing call`() {
+        assertFalse(
+            "الواردةُ ليست صادرة",
+            CallerAnnouncementReceiver.isOutgoingNetworkCallState(
+                android.telephony.TelephonyManager.CALL_STATE_RINGING
+            )
+        )
+        assertFalse(
+            "والخمولُ ليس صادراً",
+            CallerAnnouncementReceiver.isOutgoingNetworkCallState(
+                android.telephony.TelephonyManager.CALL_STATE_IDLE
+            )
+        )
+    }
+
+    /**
+     * قيمتا `DIALING`/`ALERTING` محجوبتان في `android.jar` — نُعرِّفهما
+     * هنا بالقيمةِ الرسمية من واجهة `TelephonyManager` ليحرس الاختبارُ
+     * نفسَ قيمِ الحارس، فسيكسر إن غُيّرت إحداهما.
+     */
+    private companion object {
+        const val CALL_STATE_DIALING = 3
+        const val CALL_STATE_ALERTING = 4
+    }
+
+    /** الخصلةُ الحاكمة: إشعارٌ جارٍ أثناء `DIALING` — направُ من protocols. */
+    @Test
+    fun `an ongoing call notification during dialing is vetoed`() {
+        // بلا نصٍّ صادرٍ (=بلا `outgoing`) ومع ذلك لا يُعلَن: الدليلُ
+        // قاطعٌ من حالة الخطّ فالنصُّ لم يعد له دور.
+        assertFalse(
+            CallerAnnouncementReceiver.shouldAnnounceCallNotification(
+                isOngoing = true,
+                networkCallInProgress = true,
+                endedCallAt = 0L,
+                sameEndedIdentity = false,
+                now = 1_000L,
+                outgoing = false
+            )
+        )
+    }
+
+    /**
+     * **حارسُ الكتابة الطباعية:** نصُّ مُشغِّلِ الهاتف الحقيقيُّ
+     * «جارٍ الاتصال» بتشكيلٍ — كان التساويُ الحرفيُّ يفشل فيُعلَن
+     * الصاردُ واردةً.
+     */
+    @Test
+    fun `the real dialer arabic text is recognised despite tashkeel`() {
+        assertTrue(
+            "جارٍ بتشكيل",
+            RingCallerIdentity.isOutgoingCallPhrase("جارٍ الاتصال…")
+        )
+        assertTrue(
+            "وألف مقصورة",
+            RingCallerIdentity.isOutgoingCallPhrase("جارى الاتصال")
+        )
+        assertTrue(
+            "جملةٌ كاملةٌ لا عبارتان",
+            RingCallerIdentity.isOutgoingCallPhrase("مكالمة صادرة جارية")
+        )
+        assertTrue(
+            "وإنجليزيةٌ بنقطةٍ وتطويل",
+            RingCallerIdentity.isOutgoingCallPhrase("Ringing tone…")
+        )
+        // ولا تنكسر قاعدةُ «ليس اسماً ولا وارداً»
+        assertFalse(
+            RingCallerIdentity.isOutgoingCallPhrase("جاريات المدينة")
+        )
+        assertFalse(
+            RingCallerIdentity.isOutgoingCallPhrase("مكالمة واردة")
         )
     }
 }

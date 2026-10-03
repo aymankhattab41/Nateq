@@ -79,9 +79,18 @@ object EnginePicker {
         return engines
     }
 
-    /** كل حزم محركات TTS المثبتة في النظام (تُستعلم ديناميكياً) */
+/** كل حزم محركات TTS المثبتة في النظام (تُستعلم ديناميكياً) */
     fun installedEnginePackages(context: Context): List<String> {
         return installedEngines(context).map { it.packageName }
     }
 
+    /** تسخين الكاش في الخلفية — يُستدعى عند بدء التطبيق لتجنب الاستعلام
+     *  المتزامن عند أول فتح للإعدادات. */
+    fun warmupCache(context: Context) {
+        try {
+            installedEngines(context)
+        } catch (e: Exception) {
+            // تجاهل — الكاش سيُبنى عند الطلب الفعلي
+        }
+    }
 }

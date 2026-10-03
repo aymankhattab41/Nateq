@@ -71,6 +71,12 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         @Volatile
         internal var lastPhoneIdleAt = 0L
 
+        /** هل مكالمةٌ صادرةٌ جاريةٌ (OFFHOOK بدون RINGING سابق)؟
+         *  تُسنَّع عند انتقال IDLE→OFFHOOK مباشرة، وتُصفَّر عند IDLE.
+         *  تُستخدم لمنع نطق إعلانات «واردة» لمكالماتٍ نحن من بدأناها. */
+        @Volatile
+        private var outgoingCallActive = false
+
         /** هوية آخر مكالمةِ شبكةٍ (واردةً كانت أم صادرة) — رقمُها واسمُها.
          *  تُلتقط من جلسة الرنين **قبل** تصفيرها عند الردّ، وتبقى بعد
          *  `IDLE` لتُقارَن بإشعار «انتهت المكالمة». */
@@ -91,6 +97,69 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
          * إنهاء مكالمةٍ نادرة، بينما إعلانةُ مكالمةٍ منتهيةٍ شائعة.
          */
         internal const val AFTER_HANGUP_GRACE_MS = 6_000L
+
+/**
+ * دولا الاتصال مُعرَّفةً هنا لا من الـ SDK:
+ * `TelephonyManager.CALL_STATE_DIALING` و`CALL_STATE_ALERTING` محجوبتان
+ * (`@hide`) في `android.jar` المتَّبع فلا يمكن الرجوع إليهما بالاسم.
+ * قيمتُهما ثابتةٌ في واجهة `TelephonyManager` منذ صدورها
+ * (`IDLE=0`, `RINGING=1`, `OFFHOOK=2`, `DIALING=3`, `ALERTING=4`)،
+ * والحارسُ يعتمد عليهما ولا بديلَ لهما — راجع
+ * [isOutgoingNetworkCallState].
+ */
+private const val CALL_STATE_DIALING = 3
+private const val CALL_STATE_ALERTING = 4
+
+/**
+         * هل حالةُ خطّ الهاتف **تثبت أن المستخدمَ هو المتصل**؟
+         *
+         * **لماذا هذا هو الدليلُ القاطع لخلل «المكالمة الصادرة تُعلَن
+         * واردة»:** كان الحارسُ يعتمد على ثلاثِ إشاراتٍ هشّة: عَلَمُ
+         * `outgoingCallActive` (يُضبط عند معالجة بثّ `OFFHOOK` — والإشعارُ
+         * يصل **قبل**ه)، و`callState == OFFHOOK` وحده، ونصّ الإشعار.
+         * ومكالمةٌ صادرةٌ يمرّ بدولِ `DIALING` ثم `ALERTING` **قبل**
+         * `OFFHOOK`، فتنشرُ مُشغِّلُ الهاتف إشعارَ مكالمتها في تلك النافذة
+         * بالذات — وهي النافذةُ التي كان الحارسُ يعجزُ فيها عن الكبّ.
+         *
+         * وهذه الحالاتُ الثلاثُ **قاطعةٌ بالبروتوكول لا بالتخمين**:
+         * `DIALING` و`ALERTING` لا تحدثان إلا لمكالمةٍ بدأها المستخدمُ
+         * (الواردةُ تسير `RINGING` ثم `OFFHOOK` فقط)، و`OFFHOOK` قائمةٌ
+         * تُعلنها بثوثُ الشبكة نفسها — فلا يُعلَن إلا ما لم يبدأه المستخدم.
+         *
+         * خالصةٌ قابلةٌ للاختبار بلا `Context`.
+         */
+        internal fun isOutgoingNetworkCallState(callState: Int): Boolean =
+            callState == CALL_STATE_DIALING ||
+                callState == CALL_STATE_ALERTING ||
+                callState == TelephonyManager.CALL_STATE_OFFHOOK
+
+        /**
+         * صيغُ الرقم التي يُجرَّب البحثُ بها في دفتر الاتصالات، بترتيب
+         * الأولوية بلا تكرار: الخامُ كما ورد، ثم الخاناتُ وحدها،
+         * ثم الصيغةُ الدولية `E164` إن أمكن تصريفُها.
+         *
+         * **خاليةٌ region** تُسقِط صيغةَ `E164` ولا تُسقط الأخريين. خالصةٌ
+         * قابلةٌ للاختبار بلا `Context`.
+         */
+        internal fun callerLookupForms(
+            number: String,
+            region: String?
+        ): List<String> {
+            val raw = number.trim()
+            if (raw.isEmpty()) return emptyList()
+            val digits = raw.filter { it.isDigit() }
+            val forms = LinkedHashSet<String>()
+            forms += raw
+            if (digits.isNotEmpty() && digits != raw) forms += digits
+            val iso = region?.trim()?.takeIf { it.isNotEmpty() }
+            if (iso != null && digits.isNotEmpty()) {
+                val e164 = runCatching {
+                    PhoneNumberUtils.formatNumberToE164(digits, iso)
+                }.getOrNull()
+                if (!e164.isNullOrBlank()) forms += e164
+            }
+            return forms.toList()
+        }
 
         /**
          * هل يُطلَق نطقُ مكالمةٍ واردةٍ من إشعار `CATEGORY_CALL`؟
@@ -125,6 +194,13 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
          */
         internal fun shouldAnnounceCallNotification(
             isOngoing: Boolean,
+            /**
+             * هل حالةُ خطّ الهاتف تثبت أنّ **المستخدمَ هو المتصل**؟
+             * يمرّرها المستمعُ من [isOutgoingNetworkCallState] — أي
+             * `DIALING`/`ALERTING`/`OFFHOOK` — لا `OFFHOOK` وحدَه، فالنافذةُ
+             * التي يُنشر فيها مُشغِّلُ الهاتف إشعارَ مكالمةٍ صادرة قبل
+             * وصول بثّ `OFFHOOK` تُكبَّت أيضاً.
+             */
             networkCallInProgress: Boolean,
             endedCallAt: Long,
             sameEndedIdentity: Boolean,
@@ -133,6 +209,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             outgoing: Boolean = false,
             graceMs: Long = AFTER_HANGUP_GRACE_MS
         ): Boolean {
+            if (outgoingCallActive) return false
             if (networkCallInProgress) return false
             if (isOngoing && outgoing) return false
             if (sameEndedIdentity && endedCallAt > 0L &&
@@ -645,8 +722,15 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 lastPhoneState = state
                 if (state == TelephonyManager.EXTRA_STATE_OFFHOOK) {
                     callActive = true
+                    // مكالمة صادرة = انتقال من IDLE (أو لا شيء) إلى OFFHOOK
+                    // مباشرة بدون RINGING سابق. نحفظ هذا لنمنع إعلانات
+                    // «واردة» من إشعار CATEGORY_CALL الخاص بالمكالمة نفسها.
+                    if (previousState != TelephonyManager.EXTRA_STATE_RINGING) {
+                        outgoingCallActive = true
+                    }
                 } else if (state == TelephonyManager.EXTRA_STATE_IDLE) {
                     callActive = false
+                    outgoingCallActive = false
                     // وقتُ الانتهاء يُسجَّل هنا لبدء نافذة كتم إشعار
                     // «انتهت المكالمة» ([AFTER_HANGUP_GRACE_MS]): التطبيق
                     // ينشره بعد `IDLE` بثلث ثانية تقريباً.
@@ -695,7 +779,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     " t=${System.currentTimeMillis()}"
             )
 
-if (rawNumber != null) {
+            if (rawNumber != null) {
                 lastResolvedNumber = rawNumber
                 RingCallerIdentity.publish(rawNumber, null)
             }
@@ -1703,20 +1787,46 @@ if (rawNumber != null) {
         }.getOrNull()
     }
 
-    /**
-     * البحث عن اسم جهة الاتصال من رقم الهاتف باستخدام ContactsContract.
+/**
+     * البحث عن جهة الاتصال من رقم الهاتف باستخدام ContactsContract.
      * يُستدعى فقط بعد التحقق من منح READ_CONTACTS (لا رمي SecurityException).
      * استعلام متزامن (نُستدعى من داخل Coroutine على خيط IO).
+     *
+     * **بند 5.6 — تُجرَّب صيغُ الرقم كلُّها لا صيغةٌ واحدة:** كان
+     * الاستعلامُ يُرسَل بالرقم الخام وحده، و`PhoneLookup` لا يُطبِّع رمز
+     * البلد بنفسه — فرقمٌ محفوظٌ محلياً (`0501234567`) لا يُطابَق وارداً
+     * دولياً (`+966501234567`) فيُرجع `null`، ولا يبقى إلا الرقمُ ليُنطق.
+     * وهذا تفسيرُ «المُسجَّل يُنطق رقمَه لا اسمَه» المباشر، إذ لا يملك
+     * أثناء الرنّةَ اسمٌ إلا دفترُ الاتصالات أو إشعارُ الهاتف (وسجلُّ
+     * المكالمات يُكتب **بعد** انتهاء المكالمة، فلا نفعَ له هنا).
+     * فصار [_callerLookupForms] يُجرِّب الخامَ ثم الأرقامَ ثم `E164`
+     * ([android.telephony.PhoneNumberUtils.formatNumberToE164]).
      */
     private fun lookupContactName(
         context: Context,
         phoneNumber: String
     ): String? {
+        val forms = callerLookupForms(
+            phoneNumber,
+            defaultRegion(context)
+        )
+        for (form in forms) {
+            val found = queryContactName(context, form) ?: continue
+            return found
+        }
+        return null
+    }
+
+    /** استعلامٌ واحد على [ContactsContract.PhoneLookup] بشكلٍ واحد. */
+    private fun queryContactName(
+        context: Context,
+        form: String
+    ): String? {
         var cursor: Cursor? = null
         return try {
             val uri = Uri.withAppendedPath(
                 ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
-                Uri.encode(phoneNumber)
+                Uri.encode(form)
             )
             cursor = context.contentResolver.query(
                 uri,
@@ -1741,6 +1851,22 @@ if (rawNumber != null) {
         } finally {
             cursor?.close()
         }
+    }
+
+/**
+ * منطقةُ الدولة لِتصريفِ `E164`: رمزُ الدولة من شريحة الشبكة أو من
+     * اللغة المفضّلة، فأولاهما أدقّ. **بلا إذن** وبلا اتصال، وتُغلَّف
+     * بـ`runCatching` فلا يُسقط استثناءُ النظام اسمَ المتصل.
+     */
+    private fun defaultRegion(context: Context): String? {
+        val fromSim = runCatching {
+            val tm = context.getSystemService(
+                Context.TELEPHONY_SERVICE
+            ) as? TelephonyManager
+            tm?.simCountryIso
+        }.getOrNull()
+        return fromSim?.trim()?.takeIf { it.isNotEmpty() }
+            ?: Locale.getDefault().country.takeIf { it.isNotEmpty() }
     }
 
     /**

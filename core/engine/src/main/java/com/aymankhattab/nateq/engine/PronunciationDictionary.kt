@@ -54,32 +54,147 @@ class PronunciationDictionary(
         // — لا نعدّ مفاتيح التفضيلات كلها ([SharedPreferences.all] غير مدعوم
         // في EncryptedSharedPreferences على بعض البيئات) فلا مخاطرة ولا أطلال.
         private const val KEY_SCOPES = "dictionary_scopes"
+        // اسمُ التفضيلات نفسه للتشفيرِ وللتخزين العادي — فالملفُ واحدٌ
+        // فيقرؤه أيّهما: path واحد ولا ازدواج.
+        const val PREFS_NAME = "nateq_pronunciation_dict"
+        private const val LOG_TAG = "NateqDict"
+
+        /**
+         * **المثّل الواحد على مستوى العملية — جذرُ عطل «القاموس لا يعمل».**
+         *
+         * كان لكلِّ مستهلكٍ نسختُه الخاصة: الواجهةُ تحقن Hilt نسخةً، و
+         * [AnnouncementSpeaker] (نطقُ الإعلانات والمعاينات) يبني نسخةً أخرى
+         * بـ`TextProcessor(appContext, settings)` بلا قاموسٍ محقون. ولا يجمع
+         * بينهما إلا **قراءةُ الملف من القرص** عبر `reloadIfChanged` — وهي
+         * تنهار بصمتٍ إن: تعذّر فتحُ التخزين المشفّر (Keystore معطوبٌ بعد
+         * استرجاع نسخة احتياطية، أو Tink مقطوع، أو بعضُ الأجهزة) فيصير
+         * القاموسُ **بالذاكرة فقط** لكل نسخة، فلا يرى النطقُ ما كتبته
+         * الواجهةُ أبداً؛ أو لم يتغيّر `lastModified()` على بعض الأنظمة؛ أو
+         * وقع الطلبُ داخل نافذةِ الخنق (1.5s). **والعَرَضُ واحدٌ في الحالات
+         * الثلاث: قائمةُ الإعدادات تُظهر المدخلات والنطقُ لا يطبّقها.**
+         *
+         * فالمثيلُ الواحد يُلغي المزامنةَ بين العملية الواحدة تماماً: لا
+         * استطلاعَ للقرص ولا نافذةَ انتظار. ويبقى الاستطلاعُ لعمليّة `:tts`
+         * وحدها لأنها genuinely منفصلة.
+         *
+         * ولا غموض: الاختباراتُ تستدعي [PronunciationDictionary] مباشرةً
+         * فتحصل كلٌّ على نسختها المعزولة (شرطُ عزلة الاختبار).
+         */
+        @Volatile
+        private var sharedInstance: PronunciationDictionary? = null
+
+        /** مثيلُ العملية الواحدة — انظر [sharedInstance] للسبب. */
+        fun shared(context: Context): PronunciationDictionary =
+            sharedInstance ?: synchronized(this) {
+                sharedInstance ?: PronunciationDictionary(
+                    context.applicationContext
+                ).also { sharedInstance = it }
+            }
+
+        /**
+         * يُصفّر المثّلَ المشترك — **للاختبارات وحدها** (عزلُ كل حالة JVM).
+         * في الإنتاج لا يفرّغه أبداً: إفراغُه ينسخ القاموسَ من حيٍّ إلى ميت
+         * ويُفقد النطقَ ما أضيفَ في-flight، فلا داعيَ لمساره في الكود الحقيقي.
+         */
+        fun resetSharedForTests() {
+            synchronized(this) { sharedInstance = null }
+        }
     }
 
-    // لا يجوز أبداً أن يرمي إنشاء التخزين المشفّر: خدمة :tts تُنشئ هذا الكائن
-    // في onCreate()، وأي استثناء هنا (Keystore معطوب، Tink مقطوع، وضع محاكي…)
-    // يُسقط الخدمة فيرفض نظام سامسونج المحرك برسالة "يستمر التطبيق في التوقف".
-    // عند الفشل يعمل القاموس بالذاكرة فقط (بلا حفظ دائم) ولا ينهار النطق.
-    private val prefs: android.content.SharedPreferences? = openPrefs()
+    /** نمطُ التخزين الساري — يُعرَض في شاشة التشخيص ليعرف المستخدمُ
+     *  أيَّ حالةٍ يعمل بها القاموس بدل أن يفشل صامتاً. */
+    enum class StorageMode { ENCRYPTED, PLAIN, MEMORY_ONLY }
+
+    // **لا يجوزُ أبداً أن يرمي إنشاءُ التخزينِ خدمةَ :tts** فهي تنشئ هذا
+    // الكائن في onCreate()، وأي استثناء هنا (Keystore معطوب، Tink مقطوع،
+    // وضع محاكي…) يُسقطها فيرفض نظامُ سامسونج المحركَ برسالة «يستمر التطبيق
+    // في التوقف». فالاختيارُ تراتبٌ لا خيارات: مشفّرٌ أولاً، ثم عاديٌّ إن
+    // تعذّر، ثم الذاكرةُ وحدها.
+    //
+    // **ولماذا عاديٌّ لا ذاكرة؟** القاموسُ تفضيلاتُ نطقٍ لا سرّ: قيمةُ
+    // «ج = جنيه» ليست بياناتٍ يستحقّها التشفير. فالتشفيرُ هنا لا يضيفُ
+    // أماناً يُذكر، وإنّما يجعل الميزةَ **تفشل صامتاً** إن تعذّر فتحُ
+    // Keystore — وهو ما كان يُبطلُ القاموسَ كلَّه على جهاز المستخدم. أمّا
+    // الذاكرةُ وحدها فهي الخيارُ الأخير: عملٌ دون حفظٍ دائم، وهو
+    // أهونُ من ضياعٍ صامت.
+    private val storageRef: StorageMode
+    private val prefs: android.content.SharedPreferences?
+
+    init {
+        val encrypted = runCatching { openEncryptedPrefs() }.getOrNull()
+        val plain = if (encrypted == null) {
+            runCatching {
+                context.getSharedPreferences(
+                    PREFS_NAME, android.content.Context.MODE_PRIVATE
+                )
+            }.getOrNull()
+        } else {
+            null
+        }
+        when {
+            encrypted != null -> {
+                storageRef = StorageMode.ENCRYPTED
+                prefs = encrypted
+            }
+            plain != null -> {
+                storageRef = StorageMode.PLAIN
+                prefs = plain
+                android.util.Log.w(
+                    LOG_TAG,
+                    "تعذّر فتح التخزين المشفّر لقاموس النطق؛ التحويل إلى" +
+                        " تخزين عادي كي لا يفشل القاموس صامتاً"
+                )
+            }
+            else -> {
+                storageRef = StorageMode.MEMORY_ONLY
+                prefs = null
+                android.util.Log.w(
+                    LOG_TAG,
+                    "تعذّر فتح أيّ تخزين لقاموس النطق؛ سيعمل بالذاكرة" +
+                        " وحدها وستضيع المدخلاتُ بإعادة التشغيل"
+                )
+            }
+}
+    }
+
+    /** نمطُ التخزين الساري — بعد [init] لا قبله، وإلا قُرئ غيرَ مهيّأ. */
+    val storageMode: StorageMode get() = storageRef
 
     /** يفتح مثيلاً جديداً من تخزين التفضيلات المشفّر. كل مكالمة تنشئ كائناً
      *  جديداً بلا كاش داخلي سابق — تُستخدم للقراءة في [loadFromPrefs] لأن
      *  الكائن العضو [prefs] يخزّن نواتج فك التشفير في ذاكرته فلا يرى
-     *  تعديل عملية الواجهة الأجنبية حتى لو تغيّر طابع الملف. */
-    private fun openPrefs(): android.content.SharedPreferences? = try {
+     * تعديل عملية الواجهة الأجنبية حتى لو تغيّر طابع الملف. */
+    private fun openEncryptedPrefs(): android.content.SharedPreferences? {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
-        EncryptedSharedPreferences.create(
+        return EncryptedSharedPreferences.create(
             context,
-            "nateq_pronunciation_dict",
+            PREFS_NAME,
             masterKey,
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
-    } catch (t: Throwable) {
-        null
     }
+
+    /**
+     * نسخةٌ **طازجة** من التخزين الساري: الكائن العضو [prefs] يخزّن
+     * نواتج فك التشفير في
+     * ذاكرته فلا يرى تعديلَ كائنٍ آخر، فتن القراءةُ تُجرى بنسخةٍ جديدة
+     * كلّما ظهر تغيّرٌ على القرص. تأخذ النمطَ الساري (مشفّر/عادي) فلا
+     * تقرأ من تخزينٍ غير الذي كُتب فيه.
+     */
+    private fun openFreshPrefs(): android.content.SharedPreferences? =
+        when (storageRef) {
+            StorageMode.ENCRYPTED -> runCatching { openEncryptedPrefs() }
+                .getOrNull()
+            StorageMode.PLAIN -> runCatching {
+                context.getSharedPreferences(
+                    PREFS_NAME, android.content.Context.MODE_PRIVATE
+                )
+            }.getOrNull()
+            StorageMode.MEMORY_ONLY -> null
+        }
 
     // مظلة JSON الموحّدة (البند 3): كل JSON يمر عبر NateqJson في مكان واحد.
     // «خريطة لقطة» تُستبدل مرجعاً ذرياً (Copy-on-Write) عند كل تغيير أو إعادة
@@ -269,7 +384,7 @@ class PronunciationDictionary(
             swapEntries(updated)
             save()
         }
-        sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
+sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
     }
 
     /** هل التخزين المشفّر متاح فعلاً (Keystore سليم) أم يُعمل بالذاكرة فقط؟ */
@@ -288,6 +403,22 @@ class PronunciationDictionary(
             version++
         }
         lastStamp = currentStamp()
+    }
+
+    /** مسح كل إدخالات القاموس (عامة ولغات) — يُستخدم لإعادة الضبط الكامل. */
+    fun clearAll(): Boolean {
+        if (prefs == null) return false
+        synchronized(this) {
+            entries = emptyMap()
+            langEntries = emptyMap()
+            cache = null
+            version++
+        }
+        return try {
+            prefs.edit().clear().commit()
+        } catch (e: Exception) {
+            false
+        }
     }
 
     /** إعادة تحميل فورية فقط إذا تغيّر طابع الملف على القرص منذ آخر قراءة —
@@ -517,13 +648,13 @@ class PronunciationDictionary(
     private fun loadFromPrefs(
         sourceSp: android.content.SharedPreferences? = null
     ): Pair<Map<String, String>, Map<String, Map<String, String>>> {
-        // تُقرأ القيم من «مثيل طازج» (انظر [openPrefs]) لا من الكائن العضو
+        // تُقرأ القيم من «مثيل طازج» (انظر [openFreshPrefs]) لا من الكائن العضو
         // المخبئ — تصطاد تعديلات عملية الواجهة عبر الطابع. على فشل الفتح أو
         // الفك نقف عند آخر ما رصدناه بدل مسح القاموس الحي (تفضيلُ مستخدمٍ
         // حقيقي لا يجوز أن يُمحى بسبب خللٍ عابر). القراءة بمفتاحين معلومين
         // فقط — بلا عدّ [SharedPreferences.all] غير المدعوم في التخزين
         // المشفّر على بعض البيئات فيُسقط الحفظ كاملاً.
-        val sp = sourceSp ?: openPrefs() ?: return entries to langEntries
+        val sp = sourceSp ?: openFreshPrefs() ?: return entries to langEntries
         val globalJson = try {
             sp.getString("dictionary", "{}")
         } catch (t: Throwable) {
@@ -582,12 +713,21 @@ class PronunciationDictionary(
     private fun save(): Boolean {
         val sp = prefs ?: return false
         return try {
-            sp.edit()
+            // **commit() لا apply()** — والسببُ هو نفسُ العطب لا غيره: مع
+            // `apply()` يبقى الكتابةُ في طريقها إلى القرص بعد عودة
+            // `addEntry`، فيقرأ القارئُ (عمليةُ `:tts` المستقلة، أو نسخةٌ
+            // أخرى تستجوب الطابع) طابعَ ما **قبل** أن يكتمل الملف فيقارن
+            // غيرَ المتغيّر فلا يستجدّ شيئاً… ثم يُصفّر [lastStamp] على
+            // الطابع القديم فيضيع التحديثُ نافذةً كاملة. وcommit() يُنهي
+            // الكتابةَ قبل العودة فيصحّ الطابعُ ويكون ما على القرش هو ما
+            // في الذاكرة. والكتابةُ صغيرة (JSON واحد) وتنتج عن فعلِ
+            // المستخدم، فحجبُ الخيطِ لحظاتٍ ثمنُ صحّة البيانات لا ترفٌّ.
+            val ok = sp.edit()
                 .putString("dictionary", NateqJson.toJson(entries))
                 .putString(KEY_SCOPES, NateqJson.toJson(langEntries))
-                .apply()
+                .commit()
             lastStamp = currentStamp()
-            true
+            ok
         } catch (e: Exception) {
             false
         }

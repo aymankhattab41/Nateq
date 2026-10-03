@@ -495,6 +495,13 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+• Fixed an app crash when opening any file: the file provider was declared exported and Android refused it with \"Provider must not be exported\", taking the app down the moment it opened
+• The dictionary is now actually applied while speaking: every consumer used to build its own empty copy, so the settings screen showed your entries while speech ignored them; there is now one instance per process, and a broken Keystore falls back to plain storage instead of disabling the dictionary
+• The delete and import dictionary options are now visible: they already existed on the screen but had zero width and never drew, and they now sit side by side with a confirmation before deleting
+• A saved caller is now spoken by name instead of number: the number in the notification title and the name in its body were both needed, and both are now read from every field, with the contacts lookup trying three number formats
+• A call you place is no longer announced back to you as incoming: the check now covers the dialling and alerting states before ringing, and matches your dialer\'s text ignoring Arabic diacritics
+• Stuck TTS engines no longer freeze opening the settings: the probe timeout is down to 5 seconds and a failing engine is skipped for 24 hours
+• Opening the settings is faster: a light loading screen appears immediately and the engines warm up in the background
 • Fixed Google Meet caller announcements: the direction guard rejected every ongoing call notification, and Meet marks its ringing notification as ongoing from the first moment, so the caller name was never spoken there since v1.6.20
 • Caller name is spoken sooner: the check now runs before the wait, so the 300 milliseconds are no longer paid while the name is already in memory — about 300ms faster on WhatsApp and Telegram
 • Caller identity is checked every 50ms instead of 300ms (a free memory read), while the call log lookup stays at 300ms

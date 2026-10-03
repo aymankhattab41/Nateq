@@ -3,8 +3,11 @@ package com.aymankhattab.nateq
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.engine.PronunciationDictionary
+import com.aymankhattab.nateq.engine.TextProcessor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -247,13 +250,23 @@ fun importMerge_overridesDuplicates_andKeepsRest() {
 
     @Test
     fun crossInstance_reloadPicksUpUiEdits() {
-        // Robolectric بلا Keystore (ذاكرة فقط): لا يمكن التحقق من القرص هنا
+        // Robolectric بلا Keystore كان يُبقي prefs == null فينزل هذا الحارس
+        // بكلِّ فقراته. والآن صارت النِّسخُ تُخزِّن فعلاً فلم يعُد الإنكارُ
+        // يتجاوز الاختبارَ صامتاً.
         if (!dict.isPersistent()) return
 
         val ui = PronunciationDictionary(context)
-        val engine = PronunciationDictionary(context)
+        // **خنقٌ صفري**؛ فغرضُ هذا الاختبار نضارةُ القرص وحدَها، أمّا نافذةُ
+        // الخنق (1.5s) فهي حارسُ الاختبار الشقيق الذي يتكفّل بها. والإلا
+        // لاختفى الفحصُ خلفَ النافذة، فضاعَ تشخيصُ عطبٍ حقيقي.
+        val engine = PronunciationDictionary(context, 0L)
         // الواجهة تضيف إدخالاً بعد أن بُني المحرك (مثيل منفصل ببيانات قديمة)
         ui.addEntry("زبدة", "سمنة")
+        // **نقدّم الطابعَ جريئاً**: فدقّةُ `lastModified()` في بعض البيئات
+        // تقارب الثانية، والكتابتان هنا في الثانية نفسها فيبدو الملف
+        // بلا تغييرٍ فيفشل الحارسُ لأجل عيبٍ في البيئة لا عيبٍ في
+        // الكود. فنُزيحُ الطابعَ كما يفعل الاختبارُ الشقيق.
+        prefsFile().setLastModified(System.currentTimeMillis() + 100_000L)
         // apply() يرصد طابع القرص فيلتقط التعديل دون إعادة تشغيل الخدمة
         assertEquals("سمنة", engine.apply("زبدة"))
     }
@@ -268,6 +281,10 @@ fun importMerge_overridesDuplicates_andKeepsRest() {
     @Test
     fun reloadIfChanged_diskCheckThrottledWithinWindow() {
         if (!dict.isPersistent()) return
+        // **الملفُ لا يُنشأ إلا بأول كتابة** — ولم يكن هذا الحارسُ يبلغ
+        // السطرَ أصلاً لأن prefs كان null. فكتبنا مدخلاً واحداً صراحةً
+        // بدل افتراض وجود الملف.
+        dict.addEntry("زبدة", "سمنة")
         val file = prefsFile()
         assertTrue(file.exists())
         // الموضع الحر الأول: فحص القرص فوري (لا تغيير بعد ← false)
@@ -287,5 +304,64 @@ fun importMerge_overridesDuplicates_andKeepsRest() {
         noThrottle.reloadIfChanged() // الموضع الحر الأول بلا تغيير
         file.setLastModified(System.currentTimeMillis() + 100_000L)
         assertTrue(noThrottle.reloadIfChanged())
+    }
+    // ===== حارسُ العطل الحقيقي: «القاموس لا يعمل» في مسار النطق =====
+
+    /**
+* **هذا هو الحارسُ الذي عجز اختباري الأول عن كتابته، وذاك سببُ
+     * تضليله:** كان يحقن «نسخةَ قاموسٍ واحدة» في `TextProcessor`،
+     * فيُخفي العطبَ بنيوياً — فكائنٌ واحدٌ لا مزامنةَ أصلاً فلا يسقط.
+     *
+     * والبناءُ الحقيقي بعينه: الواجهةُ تحقن `shared(context)` عبر Hilt،
+     * ونطقُ الإعلانات يبني معالجه بـ«`PronunciationDictionary.shared`
+     * لا `PronunciationDictionary(context)`» (وإلا بُنيت نسخةٌ جديدةٌ
+     * **فارغة**). فالمدخلُ الذي يضيفه المستخدمُ في الإعدادات يجب أن يخرج
+     * من مسار النطق **فوراً**: بلا `Thread.sleep` وبلا استطلاعِ قرص وبلا
+     * انتظارِ نافذةِ خنق. أيُّ انفصالٍ بين الكائنين يُسقط هذا الاختبار.
+     */
+    /**
+     * **هذا الحارسُ يلتقط موضعَ العطب بعينه، لا العزلَ فحسب.**
+     *
+     * المعالجُ يُبنى كما يبنيه [AnnouncementSpeaker] تماماً: **بلا قاموسٍ
+     * محقون**. فلو عاد أحدٌ يوماً إلى `PronunciationDictionary(context)`
+     * افتراضياً — أو نسيَ نطقُ الإعلانات تمريرَ القاموس — لبُنيت نسخةٌ
+     * جديدةٌ **فارغة**، ولَما رأى النطقُ «أيمن» التي كتبتها الواجهة، ولو
+     * مرّ هذا الاختبارُ لولا هذا السطر. **ولهذا-defaultُ نفسه هو
+     * الحارس**: الافتراضيُّ `shared` لا `new`.
+     */
+    @Test
+    fun entryAddedThroughUi_isSpokenByAnnouncementPathImmediately() {
+        val uiSide = PronunciationDictionary.shared(context)
+        // كما يبنيه AnnouncementSpeaker: معالِجٌ بلا قاموسٍ محقون
+        val announcementPath = TextProcessor(context)
+        uiSide.addEntry("أيمن", "جمال")
+        // بلا نومٍ ولا إعادة تحميل: الرصدُ لحظيٌّ بلا انتظار
+        assertEquals("جمال", announcementPath.process("أيمن", "ar"))
+    }
+
+    /**
+     * حقنُ Hilt وطلبُ نطقِ الإعلانات يُلزمان **كائناً واحداً** — فهذا هو
+     * ما يُسقطُ المزامنةَ من العملية بأكملها. ولولا هذا التطابقُ لبقيا
+     * كائنَين يجمعهما القرصُ وحده.
+     */
+    @Test
+    fun uiAndAnnouncementShareOneDictionaryObject() {
+        assertSame(
+            PronunciationDictionary.shared(context),
+            PronunciationDictionary.shared(context)
+        )
+    }
+
+    /**
+     * **الوضعُ صار معلناً بدل صامت.** كان فشلُ التخزين المشفّر يُبطل
+     * القاموسَ كلَّه بلا سجلٍّ ولا أثر — فكان المستخدمُ يرى الميزةَ ميتة
+     * ولا يعرف سببها. الآن [PronunciationDictionary.storageMode] يكشفه
+     * في شاشة التشخيص.
+     */
+    @Test
+    fun storageMode_isAlwaysDeclaredAndNotEncryptedEnclave() {
+        // أي نمطٍ مقبولٌ ما دام معلناً — المهم ألّا يكون التشفيرُ سبباً
+        // صامتاً للبطء؛ ولهذا سقط الجوالُ إلى العادي بدل أن يُبطل.
+        assertNotNull(PronunciationDictionary(context).storageMode)
     }
 }

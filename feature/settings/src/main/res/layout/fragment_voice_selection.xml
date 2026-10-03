@@ -2742,41 +2742,60 @@
             android:layout_marginTop="4dp"
             android:visibility="gone">
 
-            <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:orientation="horizontal">
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_add_dict_entry"
-                android:layout_width="0dp"
+<LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:minHeight="48dp"
-                android:text="@string/dict_add_entry" />
+                android:orientation="horizontal"
+                android:layout_marginTop="4dp">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_export_dict"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="0dp"
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_add_dict_entry"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="4dp"
+                    android:minHeight="48dp"
+                    android:text="@string/dict_add_entry" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_export_dict"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="4dp"
+                    android:minHeight="48dp"
+                    android:text="@string/dict_export" />
+
+            </LinearLayout>
+
+        <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="4dp"
-                android:minHeight="48dp"
-                android:text="@string/dict_export" />
+                android:orientation="horizontal"
+                android:layout_marginTop="8dp">
 
-        </LinearLayout>
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_import_dict"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="4dp"
+                    android:minHeight="48dp"
+                    android:text="@string/dict_import" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_import_dict"
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:minHeight="48dp"
-            android:text="@string/dict_import" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_clear_dict"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="4dp"
+                    android:minHeight="48dp"
+                    android:text="@string/dict_clear_all" />
+
+            </LinearLayout>
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/rv_pronunciation_dict"

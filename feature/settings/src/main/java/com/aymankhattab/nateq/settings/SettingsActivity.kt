@@ -3,6 +3,8 @@ package com.aymankhattab.nateq.settings
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.view.View
 import androidx.activity.enableEdgeToEdge
@@ -11,12 +13,16 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.commit
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
+import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.announceCompat
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -72,10 +78,11 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
             startActivity(Intent(this, FirstRunSetupActivity::class.java))
         }
 
+        // عرض واجهة خفيفة فوراً، والفصيل الثقيل يُحمّل في الخلفية
         if (savedInstanceState == null) {
-            supportFragmentManager.commit {
-                replace(R.id.settings_container, VoiceSelectionFragment())
-            }
+            showLoadingPlaceholder()
+            // تأخير بسيط للسماح برسم الواجهة أولاً، ثم إنشاء الفصيل
+            mainHandler.postDelayed({ attachSettingsFragment() }, 50L)
         }
 
         // طلب الأذونات عند أول تشغيل بعد اكتمال الإعداد الأولي
@@ -85,8 +92,7 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
         }
 
         // إعادة تشغيل خدمة إعلانات الوقت/البطارية إن كان أي منها مفعّلاً
-        // بعد إنجاز
-        // نظام الأندرويد (العمليات في الخلفية قد توقفت) دون أن يفتح
+        // بعد إنجاز نظام الأندرويد (العمليات في الخلفية قد توقفت) دون أن يفتح
         // المستخدم أي إعداد.
         if (savedInstanceState == null) {
             val started = runCatching {
@@ -99,6 +105,43 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
                 runCatching {
                     AnnouncementSchedulerService.ensureTimeAlarm(this)
                 }
+            }
+        }
+    }
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private fun showLoadingPlaceholder() {
+        setContentView(R.layout.activity_settings_loading)
+    }
+
+    private fun attachSettingsFragment() {
+        setContentView(R.layout.activity_settings)
+        supportFragmentManager.commit {
+            replace(R.id.settings_container, VoiceSelectionFragment())
+        }
+
+        // تهيئة المحركات في الخلفية (لا تمنع رسم الواجهة)
+        lifecycleScope.launch(Dispatchers.IO) {
+            EnginePicker.warmupCache(applicationContext)
+        }
+
+        // طلب الأذونات عند أول تشغيل بعد اكتمال الإعداد الأولي
+        val isFirstRun = runCatching {
+            !settingsRepository.isFirstRunSetupCompleted()
+        }.getOrDefault(false)
+        if (!isFirstRun) {
+            permissionsChecked = true
+            checkAndRequestPermissions()
+        }
+
+        // إعادة تشغيل خدمة إعلانات الوقت/البطارية
+        val started = runCatching {
+            AnnouncementSchedulerService.startIfNeeded(this)
+        }.getOrDefault(false)
+        if (!started) {
+            runCatching {
+                AnnouncementSchedulerService.ensureTimeAlarm(this)
             }
         }
     }

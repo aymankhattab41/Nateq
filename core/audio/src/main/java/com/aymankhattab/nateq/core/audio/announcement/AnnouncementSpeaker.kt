@@ -12,6 +12,7 @@ import android.speech.tts.Voice
 import android.util.Log
 import androidx.annotation.VisibleForTesting
 import com.aymankhattab.nateq.engine.EmojiSpeech
+import com.aymankhattab.nateq.engine.PronunciationDictionary
 import com.aymankhattab.nateq.core.audio.engine.SpeechChunker
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.core.audio.engine.LanguageSegmenter
@@ -443,8 +444,19 @@ class AnnouncementSpeaker(
     // نطق طبيعية قبل إرسالها للمحرك. الإعدادات تُحقَن عبر
     // AnnouncementAppContext إن وُجدت (Hilt) وإلا تُبنى محلياً —
     // قراءة لحظية للتشكيل/التهجئة/الإيموجي.
+    //
+    // **والقاموسُ محقونٌ حصراً بالمثّل المشترك** — وهذا كان عطل
+    // «القاموس لا يعمل» بأكمله: بلا حقنٍ كان كلُّ نداءٍ يبني
+    // `PronunciationDictionary(context)` جديدةً **فارغة**، فلا يرى نطقُ
+    // الإعلانات ما كتبه المستخدمُ في الإعدادات إلا عبر استطلاعٍ للقرص
+    // ينهار صامتاً (Keystore معطوب، أو طابعٌ لم يتغيّر، أو نافذةُ خنق).
+    // فالمثّلُ الواحد يُسقطُ المزامنةَ من العملية الواحدة كلها.
     private val textProcessor: TextProcessor by lazy {
-        TextProcessor(appContext, settings)
+        TextProcessor(
+            appContext,
+            settings,
+            PronunciationDictionary.shared(appContext)
+        )
     }
 
     // **التحميل المسبق لمسار المعالجة (بند الأوامر د.1):** أول استخدامٍ فعلي

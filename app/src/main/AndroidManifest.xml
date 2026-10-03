@@ -273,7 +273,9 @@
 
 
         <!-- FileProvider: يعرض ملف الـ APK المُنزَل لمثبّت الحزم (package installer)
-             عبر رابطة content:// آمنة (الملف محلي ولا يُرفع لأي طرف) -->
+             عبر رابطة content:// آمنة (الملف محلي ولا يُرفع لأي طرف).
+             exported="false" + grantUriPermissions="true" لصلاح مشاركة اللوجات
+             مع تطبيقات خارجية (Telegram، البريد، إلخ) على Android 10+. -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
+import android.util.Log
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
@@ -45,8 +46,27 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
         private const val TAG = "NATEQ_TTS"
 
         /** مهلة استجابة المحرك الواحد أثناء الاكتشاف (ثوانٍ) —
-         *  بعض المحركات تعلّق. */
-        private const val ENGINE_PROBE_TIMEOUT_MS = 10_000L
+         *  بعض المحركات تعلّق. خُفّضت إلى 5 ث للحد من تأثير المحركات البطيئة. */
+        private const val ENGINE_PROBE_TIMEOUT_MS = 5_000L
+
+        /**
+         * القائمة السوداء للمحركات التي فشلت تهيئتها —
+         *  تُحدّث ديناميكياً وتتجاوزها في محاولات الاكتشاف اللاحقة.
+         *  مفتاح: packageName، قيمة: timestamp آخر فشل (لإمكانية إعادة المحاولة مستقبلاً).
+         */
+        @Volatile
+        private var engineBlacklist: Map<String, Long> = emptyMap()
+
+        private const val BLACKLIST_TTL_MS = 24 * 60 * 60 * 1000L // 24 ساعة
+
+        private fun isBlacklisted(pkg: String): Boolean {
+            val stamp = engineBlacklist[pkg]
+            return stamp != null && (System.currentTimeMillis() - stamp < BLACKLIST_TTL_MS)
+        }
+
+        private fun blacklistEngine(pkg: String) {
+            engineBlacklist = engineBlacklist + (pkg to System.currentTimeMillis())
+        }
 
         /**
          * يكتشف فعلياً كل اللغات المتاحة عبر كل محركات TTS المثبتة في النظام:
@@ -69,6 +89,7 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             // يبقى الاختيار اليدوي صريحاً لهم.
             val engines = EnginePicker.installedEngines(context)
                 .filterNot { EnginePicker.isScreenReader(it.packageName) }
+                .filterNot { isBlacklisted(it.packageName) }
             // الفحص بالتوازي (كل محرك في مهمة IO مستقلة): كان متتابعاً فتبلغ
             // مدة الفحص N×10 ث بعشرة محركات بطيئة، الآن أقصى انتظار كحدود
             // المحرك الأبطأ نفسه (~10 ث) فتنفتح شاشة المحول بسرعة.
@@ -228,6 +249,9 @@ val lang = LocaleUtils.normalizeLanguageCode(
                                 }
                                 try {
                                     if (status != TextToSpeech.SUCCESS) {
+                                        // وضع المحرك في القائمة السوداء لتجنّب إعادة المحاولة
+                                        blacklistEngine(enginePackage)
+                                        Log.w(TAG, "محرك $enginePackage فشل في التهيئة (status=$status) — أُضيف للقائمة السوداء")
                                         if (cont.isActive) {
                                             cont.resume(emptyList())
                                         }
@@ -249,6 +273,7 @@ val lang = LocaleUtils.normalizeLanguageCode(
                     if (created.isFailure) {
                         // محرك غير قابل للربط (حزمة غير صالحة
                         // أو منزوعة): لا أصوات.
+                        blacklistEngine(enginePackage)
                         cont.resume(emptyList())
                     }
                     // إن أُغلق الاكتشاف (مهلة/إلغاء) نغلق النسخة المعلقة.
@@ -260,7 +285,13 @@ val lang = LocaleUtils.normalizeLanguageCode(
                     }
                 }
             }
-            return result ?: emptyList()
+            val voices = result ?: run {
+                // مهلة أو إلغاء: أضف المحرك للقائمة السوداء
+                blacklistEngine(enginePackage)
+                Log.w(TAG, "محرك $enginePackage تجاوز المهلة (${ENGINE_PROBE_TIMEOUT_MS}ms) — أُضيف للقائمة السوداء")
+                emptyList<Voice>()
+            }
+            return voices
         }
 
         /**

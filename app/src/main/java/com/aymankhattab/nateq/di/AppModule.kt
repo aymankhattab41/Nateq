@@ -30,10 +30,19 @@ object AppModule {
     ): SettingsRepository =
         SettingsRepository.create(context)
 
+    /**
+     * **[PronunciationDictionary.shared] لا نسخةً خاصةً بالحُقنة.**
+     *
+     * كان هذا يخلّق نسخةً مستقلة، فيصير في التطبيق **كائنان لا واحد**:
+     * نسخةُ الواجهة (هذه) ونسخةُ نطق الإعلانات ([AnnouncementSpeaker]) —
+     * ولا يجمعهما إلا قراءةُ الملف من القرص وهي تنهار صامتاً (Keystore
+     * معطوب، أو طابعٌ لم يتغيّر، أو نافذةُ خنق). فصار الحقنُ يطلبُ
+     * **المثّل المشترك** فيصير النطقُ والإاجهةُ كائناً واحداً لا يحتاج
+     * مزامنةً داخل العملية.
+     */
     @Provides
     @Singleton
     fun providePronunciationDictionary(
         @ApplicationContext context: Context
-    ): PronunciationDictionary =
-        PronunciationDictionary(context)
+    ): PronunciationDictionary = PronunciationDictionary.shared(context)
 }
