@@ -160,11 +160,20 @@ class SpeechLockDeferralTest {
             "المتحدث ينطلق فوراً لفئة الوقت رغم القفل",
             s.speechDispatchedCount > 0L
         )
-        // التحقق من سمات الصوت: مسار الوسائط الموحد لكل الأحداث
+        // التحقق من سمات الصوت: مسار الوسائط لغير فئة المتصل (وقت).
+        // ملاحظة: نمرّر الفئة صراحةً لأن [speechAudioAttributes] صار
+        // يميّز فئات المتصل (إشعار) عن غيرها (وسائط) — انظر حارس
+        // AnnouncementSpeakerTest.
         val method = AnnouncementSpeaker::class.java
-            .getDeclaredMethod("speechAudioAttributes")
+            .getDeclaredMethod(
+                "speechAudioAttributes",
+                String::class.java
+            )
         method.isAccessible = true
-        val attrs = method.invoke(s) as android.media.AudioAttributes
+        val attrs = method.invoke(
+            s,
+            SettingsRepository.VOICE_CATEGORY_TIME
+        ) as android.media.AudioAttributes
         assertEquals(
             "مسار نطق الحدث موحد على مسار الوسائط",
             android.media.AudioAttributes.USAGE_MEDIA,

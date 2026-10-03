@@ -128,6 +128,18 @@ class AnnouncementSpeaker(
             category == SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS ||
                 category == SettingsRepository.ANNOUNCE_CATEGORY_SMS
 
+        /** فئاتُ إعلان المتصل (ثلاثها: افتراضية/عربية/إنجليزية) — وهي
+         *  الفئةُ الوحيدة التي تُنطق **فوق مكالمةٍ جارية**، فتخضع
+         *  لتخفيض النظام للوسائط أثناء المكالمة (Voice-call Ducking)،
+         *  وهو ما جعل صوتها منخفضاً على أجهزةٍ مثل Pixel (أندرويد 17)
+         *  بينما يعلو نطقُ البطارية والساعة اللذين لا يُخفضهما النظام.
+         *  لذلك يُنطق المتصل على مسار الإشعار بدل مسار الوسائط —
+         *  انظر [speechAudioAttributes]. */
+        fun isCallerCategory(category: String?): Boolean =
+            category == SettingsRepository.ANNOUNCE_CATEGORY_CALLER ||
+                category == SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR ||
+                category == SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
+
         /** تجزئة نصوص الإشعارات والرسائل الطويلة إلى جمل طبيعية مستقلة
          *  لتمكين مقاطعتها بحدث آني واستئناف ما تبقى منها بسلاسة. */
         internal fun splitIntoSentences(text: String): List<String> {
@@ -769,11 +781,13 @@ class AnnouncementSpeaker(
                     }
                 })
 
-            // سمات نطق الإعلانات: مسار الإتاحة ثابتاً (لا مسار موسيقى ولا
+            // سمات نطق الإعلانات: مسار الوسائط افتراضياً (لا مسار إتاحة ولا
             // تبعية لحالة قارئ الشاشة بعد قفل النطق العابر) — تُطبَّق عند
-            // الربط وتُعاد كل دورة فقط إذا اختلفت فعلياً.
+            // الربط وتُعاد كل دورة فقط إذا اختلفت فعلياً. ولا فئةَ حالية
+            // هنا، فيُمنح المسارُ الافتراضي ثم يُصحَّح في
+            // [applySpeechAudioAttributes] عند أوّل نطقٍ فعلي.
             lastAppliedAudioAttributes = null
-            applySpeechAudioAttributes()
+            applySpeechAudioAttributes(null)
             // يُربط المحرك مباشرةً عبر المنشئ الثلاثي أعلاه — لا داعٍ
             // لـ setEngineByPackageName (مُهملٍ ويُعاد ربطه بالكائن قسراً).
         }
@@ -1079,21 +1093,45 @@ class AnnouncementSpeaker(
     }
 
     /**
-     * سمات نطق الأحداث والإعلانات: مسار الوسائط (USAGE_MEDIA) ثابتاً
-     * على كل الأحداث بلا شرط — نفس قناة البطارية — فلا يُسقط أي نطق
-     * إلى مسار الإتاحة/الرنين شبه الصامت على أجهزة سامسونج.
+     * سمات نطق الأحداث والإعلانات.
+     *
+     * **فئة المتصل وحدها** على مسار **الإشعار** (`USAGE_NOTIFICATION_EVENT`
+     * / `STREAM_NOTIFICATION`) لا مسار الوسائط. **لماذا؟** لأن إعلان المتصل
+     * هو الفئةُ الوحيدة التي تُنطق فوق مكالمةٍ جارية، والنظام يخفض صوت
+     * `STREAM_MUSIC` تلقائياً أثناء المكالمة (Voice-call Ducking) فيصوت
+     * منخفضاً، بينما يعلو نطقُ البطارية والساعة لأن النظام لا يخفضهما.
+     * فالمعاملُ في الحالتين 1.0 عند الافتراضي، فالسببُ المسارُ لا المستوى،
+     * ولهذا لا يفيد رفعُ شريط مستوى صوت المتصل أصلاً. وقد ظهر الفرقُ
+     * على أجهزة بعينها (Pixel بندرويد 17) لأن شدّة التخفيض تختلف بين
+     * الأجهزة وإصدارات النظام.
+     *
+     * مسارُ الإشعار لا تخفضه مكالمةٌ جارية فيصعد الصوت كما تصعد البطارية،
+     * ولا يقع في فخّ «الإتاحة شبه الصامت» على سامسونج (كما يقع لو
+     * استُعمل `USAGE_ACCESSIBILITY`)، وسمّته `SONIFICATION` لا تُعدّ
+     * الموسيقى فيفضّلها النظام، ويبقى قابلاً للرفع إلى قمّته مع
+     * [boostStreamVolume].
+     *
+     * وبقية الفئات على مسار الوسائط كما كان — نفس قناة البطارية.
      */
-    private fun speechAudioAttributes(): AudioAttributes {
-        return AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_MEDIA)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-            .build()
+    private fun speechAudioAttributes(category: String?): AudioAttributes {
+        val builder = AudioAttributes.Builder()
+        return if (isCallerCategory(category)) {
+            builder
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+        } else {
+            builder
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+        }
     }
 
     /** إعادة تطبيق سمات النطق فقط إذا اختلفت فعلياً عن المطبَّقة (بلا
      *  اعتماد على حالة قارئ الشاشة — انظر [speechAudioAttributes]). */
-    private fun applySpeechAudioAttributes() {
-        val attributes = speechAudioAttributes()
+    private fun applySpeechAudioAttributes(category: String?) {
+        val attributes = speechAudioAttributes(category)
         if (attributes == lastAppliedAudioAttributes) return
         lastAppliedAudioAttributes = attributes
         try {
@@ -1291,18 +1329,20 @@ class AnnouncementSpeaker(
         }
         // **بند 5.1:** أول جزءٍ يُرسل فعلياً يرفع عداد الدورة — سجّلته هنا
         // الأداةُ قبل طلب النطق، فيرفض خطافُها اكتمالَ أي دورةٍ سبقته.
-        speechCycle.incrementAndGet()
+speechCycle.incrementAndGet()
         startInterruptionMonitoring()
         // رفع حجم القناة الصوتية مؤقتاً لكل نطق يُرسل (المتصل والساعة والأحداث
         // بالكامل): يُحفظ المستوى الأصلي ويُستعاد عند الاكتمال/الإيقاف عبر
-        // restoreBoostedStreamVolume.
-boostStreamVolume()
+        // restoreBoostedStreamVolume. تُرفع القناةُ التي يمرّ عليها نطقُ
+        // الفئة الحالية — الإشعارُ للمتصل والوسائطُ لغيره (انظر
+        // speechAudioAttributes) فلا يُرفع ما لا يُنطق عليه.
+        boostStreamVolume(currentCategory)
         // خفضُ الرنين لفئة المتصل وحدها (اختياريّ، بمربّع المستخدم):
         // له نفسُ عمرِ الرفع فيُستعاد في releaseAudioFocus مع مسارات
         // الإنهاء كلّها.
         duckRingVolumeIfCallerCategory(currentCategory)
         // السمات تُطبق عند كل دورة إن اختلفت فعلياً (لا تتبع القارئ).
-        applySpeechAudioAttributes()
+        applySpeechAudioAttributes(currentCategory)
         val unitUtteranceIds = validUnits.map { nextUtteranceId() }
         lastQueuedUtteranceId = unitUtteranceIds.lastOrNull()
         pendingUnitsForResume.clear()
@@ -1763,12 +1803,17 @@ boostStreamVolume()
                 TextToSpeech.Engine.KEY_PARAM_VOLUME,
                 boostedVolume
             )
-            // قناة النطق موحدة على مسار الوسائط لكل الأحداث (نفس قناة
-            // البطارية): لا تفرقة بفئة ولا شرط بحالة الموسيقى أو بمفتاح
-            // «دائماً على مسار الوسائط» — فلا يقع أي نطق على الإتاحة.
+            // القناة مطابقةٌ لسمات النطق: الإشعارُ للمتصل والوسائطُ
+            // لغيره. **يجب أن تتطابقا** وإلا تجاهل المحرّكُ السمةَ
+            // ورجّع النطق إلى `STREAM_MUSIC` الذي تخفضه المكالمة الجارية
+            // فيعود العَرَض (صوتٌ منخفض على Pixel).
             putInt(
                 TextToSpeech.Engine.KEY_PARAM_STREAM,
-                AudioManager.STREAM_MUSIC
+                if (isCallerCategory(currentCategory)) {
+                    AudioManager.STREAM_NOTIFICATION
+                } else {
+                    AudioManager.STREAM_MUSIC
+                }
             )
         }
         // تنظيف النص من الإيموجي قبل النطق (نصوص خارجية قد
@@ -1937,16 +1982,24 @@ boostStreamVolume()
     }
 
     /** رفع حجم قناة النطق إلى قمتها مؤقتاً — يُحفظ المستوى الأصلي أولاً
-     *  ليُستعاد عند اكتمال النطق ([restoreBoostedStreamVolume]). يرفع
-     *  قناة الوسائط MUSIC (نفس قناة البطارية) موحدةً لكل الفئات — لا
-     *  قناة الرنين التي يُسكتها مفتاح الصمت — فيعمل النطق بأقصى صوتٍ
-     *  حتى في الوضع الصامت لكل الفئات (متصل، ساعة، رسائل، بطارية،
-     *  إشعارات، أرقام، وغيرها). لا شيء لو كان رفعٌ قائماً (لا نكسر قيمةً
-     *  سُجِّلت لهذه الدورة). */
+     *  ليُستعاد عند اكتمال النطق ([restoreBoostedStreamVolume]). تُرفع
+     *  القناةُ التي يمرّ عليها نطقُ الفئة الحالية: `STREAM_NOTIFICATION`
+     *  للمتصل و`STREAM_MUSIC` لغيره (نفس قناة البطارية) — موحدةً لكل
+     *  فئات كل مسار، لا قناة الرنين التي يُسكتها مفتاح الصمت — فيعمل
+     *  النطق بأقصى صوتٍ حتى في الوضع الصامت. لا شيء لو كان رفعٌ
+     *  قائماً (لا نكسر قيمةً سُجِّلت لهذه الدورة).
+     *
+     *  **الوسائط تُخفَض من النظام أثناء المكالمة الجارية** فالإعلان
+     *  عليها لا يرتفع بِرفع قناتها، ولهذا يُنطق المتصل على قناة
+     *  الإشعار التي لا تخفضها المكالمة (انظر [speechAudioAttributes]). */
     @VisibleForTesting
-    internal fun boostStreamVolume() {
+    internal fun boostStreamVolume(category: String? = null) {
         if (boostedStream != -1) return
-        val stream = AudioManager.STREAM_MUSIC
+        val stream = if (isCallerCategory(category)) {
+            AudioManager.STREAM_NOTIFICATION
+        } else {
+            AudioManager.STREAM_MUSIC
+        }
         runCatching {
             val max = audioManager.getStreamMaxVolume(stream)
             val current = audioManager.getStreamVolume(stream)
@@ -1983,10 +2036,7 @@ boostStreamVolume()
      */
     @VisibleForTesting
     internal fun duckRingVolumeIfCallerCategory(category: String?) {
-        if (category != SettingsRepository.ANNOUNCE_CATEGORY_CALLER &&
-            category != SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR &&
-            category != SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
-        ) {
+        if (!isCallerCategory(category)) {
             return
         }
         if (duckedRingStream != -1) return

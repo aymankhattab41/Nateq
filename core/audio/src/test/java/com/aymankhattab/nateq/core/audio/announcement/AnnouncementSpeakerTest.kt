@@ -761,11 +761,7 @@ class AnnouncementSpeakerTest {
     fun `events track uses media stream by default to protect other apps`() {
         val speaker = AnnouncementSpeaker(context)
         try {
-            val method = AnnouncementSpeaker::class.java
-                .getDeclaredMethod("speechAudioAttributes")
-            method.isAccessible = true
-            val attrs = method.invoke(speaker)
-                as android.media.AudioAttributes
+            val attrs = speechAudioAttributes(speaker, null)
             assertEquals(
                 "مسار الأحداث موحد على USAGE_MEDIA",
                 android.media.AudioAttributes.USAGE_MEDIA,
@@ -785,11 +781,7 @@ class AnnouncementSpeakerTest {
 
         val speaker = AnnouncementSpeaker(context)
         try {
-            val method = AnnouncementSpeaker::class.java
-                .getDeclaredMethod("speechAudioAttributes")
-            method.isAccessible = true
-            val attrs = method.invoke(speaker)
-                as android.media.AudioAttributes
+            val attrs = speechAudioAttributes(speaker, null)
             assertEquals(
                 "تعطيل المفتاح لا يُسقط النطق للإتاحة — يبقى MEDIA",
                 android.media.AudioAttributes.USAGE_MEDIA,
@@ -1093,8 +1085,8 @@ class AnnouncementSpeakerTest {
             }
             val original = am.getStreamVolume(AudioManager.STREAM_MUSIC)
 
-            // الرفع غير مشروط بالفئة: كل نطق (متصل/ساعة/رسائل/icons...) يُرفع.
-            speaker.boostStreamVolume()
+            // الرفع على قناة الوسائط لكل نطق غير فئة المتصل.
+            speaker.boostStreamVolume(SettingsRepository.VOICE_CATEGORY_TIME)
             assertEquals(
                 "حجم قناة النطق يُرفع للقمة أثناء النطق",
                 max,
@@ -1102,7 +1094,7 @@ class AnnouncementSpeakerTest {
             )
 
             // رفع ثانٍ (عند فئة أخرى/نطق متداخل) لا يفسد التتبّع.
-            speaker.boostStreamVolume()
+            speaker.boostStreamVolume(SettingsRepository.VOICE_CATEGORY_TIME)
 
             // الاستعادة تُعيد المستوى الأصلي تماماً.
             speaker.restoreBoostedStreamVolume()
@@ -1111,6 +1103,133 @@ class AnnouncementSpeakerTest {
                 original,
                 am.getStreamVolume(AudioManager.STREAM_MUSIC)
             )
+        } finally {
+            speaker.restoreBoostedStreamVolume()
+            speaker.shutdown()
+        }
+    }
+
+    /** انعكاس سمات النطق لفئةٍ بعينها — أي تغيّر في توقيعها الخاص
+     *  يُفشل البناء هنا بدل أن يسقط بصمت. */
+    private fun speechAudioAttributes(
+        speaker: AnnouncementSpeaker,
+        category: String?
+    ): android.media.AudioAttributes {
+        val method = AnnouncementSpeaker::class.java
+            .getDeclaredMethod(
+                "speechAudioAttributes",
+                String::class.java
+            )
+        method.isAccessible = true
+        return method.invoke(speaker, category)
+            as android.media.AudioAttributes
+    }
+
+    // ===== حارس نطق المتصل: لا يمرّ على قناة تخفضها المكالمة الجارية =====
+
+    /**
+     * يحرس الكسر: **نطق المتصل لا يجوز أن يمرّ على `STREAM_MUSIC`** لأن
+     * النظام يخفضه تلقائياً أثناء مكالمةٍ جارية (Voice-call Ducking)،
+     * فيصوت منخفضاً — وهو ما ظهر على Pixel (أندرويد 17) بينما يعلو
+     * نطقُ البطارية والساعة اللذين لا يُخفضهما النظام.
+     *
+     * **الفارق بالجهاز** لا بالإعداد: معامل الصوت 1.0 في الحالتين، فرفعُ
+     * شريط المستوى لا يغيّر شيئاً، والسببُ المسارُ لا القيمة.
+     */
+    @Test
+    fun `caller announcement avoids media stream that active call ducks`() {
+        val speaker = AnnouncementSpeaker(context)
+        try {
+            val callerAttrs = speechAudioAttributes(
+                speaker,
+                SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+            )
+            assertNotEquals(
+                "نطق المتصل على USAGE_MEDIA = النظام يخفضه أثناء المكالمة",
+                android.media.AudioAttributes.USAGE_MEDIA,
+                callerAttrs.usage
+            )
+            assertEquals(
+                "نطق المتصل ينتقل إلى مسار الإشعار",
+                android.media.AudioAttributes.USAGE_NOTIFICATION_EVENT,
+                callerAttrs.usage
+            )
+
+            // الفئتان العربيتان والإنجليزيتان من المتصل أيضاً — واحدة
+            // مخترَقة تعني أن إعلاناً منهم يبقى على المسار المخفَّض.
+            listOf(
+                SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR,
+                SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
+            ).forEach { category ->
+                assertEquals(
+                    "كل فئات المتصل الثلاث على مسار الإشعار — $category",
+                    android.media.AudioAttributes.USAGE_NOTIFICATION_EVENT,
+                    speechAudioAttributes(speaker, category).usage
+                )
+            }
+        } finally {
+            speaker.shutdown()
+        }
+    }
+
+    /** حارسُ المقابَل: الفئاتُ غير المتصل تُبقى على مسار الوسائط، وإلا
+     *  سرّب تغييرُ مسار المتصل الصوتَ إلى البطارية والساعة والرسائل. */
+    @Test
+    fun `non caller categories stay on media stream`() {
+        val speaker = AnnouncementSpeaker(context)
+        try {
+            listOf(
+                SettingsRepository.VOICE_CATEGORY_TIME,
+                SettingsRepository.VOICE_CATEGORY_BATTERY,
+                SettingsRepository.ANNOUNCE_CATEGORY_SMS,
+                SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+            ).forEach { category ->
+                assertEquals(
+                    "فئة غير المتصل تبقى على مسار الوسائط — $category",
+                    android.media.AudioAttributes.USAGE_MEDIA,
+                    speechAudioAttributes(speaker, category).usage
+                )
+            }
+        } finally {
+            speaker.shutdown()
+        }
+    }
+
+    /** حارسُ الرفع: المتصل يُرفع على قناة **الإشعار** (لا الوسائط)،
+     *  فإلا رُفعت قناتهُ التي يُنطق عليها لصوتٌ منخفض — وهو العَرَض
+     *  الأصلي وإن اختلف سببُه. */
+    @Test
+    fun `caller boost raises notification stream not media`() {
+        val speaker = AnnouncementSpeaker(context)
+        try {
+            val am = context.getSystemService(Context.AUDIO_SERVICE)
+                as AudioManager
+            val musicMax = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            val musicOriginal = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+            val notifyMax =
+                am.getStreamMaxVolume(AudioManager.STREAM_NOTIFICATION)
+            if (musicMax <= 0 || notifyMax <= 0) {
+                return
+            }
+            // نبدأ من مستوى منخفض لنتأكد أن الرفع فعلاً رفعٌ لا لا شيء.
+            am.setStreamVolume(AudioManager.STREAM_NOTIFICATION, 1, 0)
+
+            speaker.boostStreamVolume(
+                SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+            )
+
+            assertEquals(
+                "قناة الإشعار (القناة التي يُنطق عليها المتصل) تُرفع للقمة",
+                notifyMax,
+                am.getStreamVolume(AudioManager.STREAM_NOTIFICATION)
+            )
+            assertEquals(
+                "قناة الوسائط لا تُمسّ في رفع المتصل — إقرار التتبع",
+                musicOriginal,
+                am.getStreamVolume(AudioManager.STREAM_MUSIC)
+            )
+
+            speaker.restoreBoostedStreamVolume()
         } finally {
             speaker.restoreBoostedStreamVolume()
             speaker.shutdown()
@@ -1146,7 +1265,7 @@ class AnnouncementSpeakerTest {
                     original.coerceAtMost(max - 1).coerceAtLeast(0),
                     0
                 )
-                speaker.boostStreamVolume()
+                speaker.boostStreamVolume(category)
                 assertEquals(
                     "النطق (category=$category) يرفع القناة للقمة",
                     max,

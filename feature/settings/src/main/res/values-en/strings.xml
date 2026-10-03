@@ -499,6 +499,7 @@
 • Fixed \"incoming call from\" being spoken to the caller themselves (outgoing) and after the call ended: only a genuine incoming ring is announced now
 • Lower the phone ringtone while the caller is announced: an enable box and a percentage you choose (10%% to 90%%)
 • A separate volume level during calls (for announcements such as the clock), from 0%% to 100%%
+• Caller announcement is now always as loud as battery and clock announcements: it moved to an audio path that an active call does not duck, so it sounds the same on every device including Android 17
 • Caller announcement repeat now goes from once up to ten times, with a 3, 4, or 5 second interval
 • The dictionary is open with no length ceiling: any key you type applies, and the silence on units and currencies glued to numbers (50g, 300gm) is fixed
 </string>
