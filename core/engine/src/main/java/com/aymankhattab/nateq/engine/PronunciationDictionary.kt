@@ -28,11 +28,22 @@ class PronunciationDictionary(
 ) {
 
     companion object {
-        // حدود دفاعية ضد ملفات JSON خبيثة/ضخمة واردة من SAF أو مصادر أخرى
-        private const val MAX_IMPORT_BYTES = 2 * 1024 * 1024   // 2 MB
-        private const val MAX_IMPORT_ENTRIES = 5000
-        private const val MAX_KEY_LENGTH = 200
-        private const val MAX_VALUE_LENGTH = 200
+        // حدود دفاعية ضد ملفات JSON ضخمة/خبيثة واردة من SAF. الملف
+        // يُقرأ كاملاً في الذاكرة قبل التجزئة، فالسقف ضروري: فوقه
+        // يَOOM التطبيق عند قراءة الملف قبل التحقق. 8 ميغابايت أوسعُ
+        // من احتياج القاموس الحقيقي بأضعاف (آلاف المدخلات = أقلّ من
+        // ميغابايت) مع بقائه آمناً على الأجهزة الضعيفة.
+        const val MAX_IMPORT_BYTES = 8 * 1024 * 1024
+        // سقفٌ تقنيّ لا تقييد عملي: يحمي من قاموسٍ يُغرق بناءَ آلة
+        // Aho-Corasick في الذاكرة. **عامٌّ** ليبقى المرجعُ واحداً
+        // في القاموس وفي اختباره، فلا يتناقِثُ الحدّان (بند 3.7:
+        // حدٌّ في موضعين = قيمةٌ منفلتة في أحدهما).
+        const val MAX_IMPORT_ENTRIES = 200_000
+        // طول المفتاح والقيمة: بلا سقف عملي — تُقصّ فقط حمايةً من
+        // مدخلٍ شارد يبني عقداً عملاقة بلا فائدة. 8 آلاف حرف أوسعُ
+        // من أي كلمة أو اختصار حقيقي.
+        const val MAX_KEY_LENGTH = 8_000
+        const val MAX_VALUE_LENGTH = 8_000
         // الخنق بين فحصَي القرص في reloadIfChanged: استدعاء lastModified()
         // على ملف التفضيلات المُنفَّذ لكل فقرة صوتية — الخنق يقلّص الـ I/O.
         private const val DISK_CHECK_THROTTLE_NANOS =
@@ -423,46 +434,63 @@ class PronunciationDictionary(
         else (langEntries[lang] ?: emptyMap()).toMap()
     }
 
-    /** استيراد قاموس من JSON — يتخطى الصفوف غير الصالحة بدل إفشال الاستيراد
-     *  كاملاً، ويدعم الدمج مع الإدخالات الحالية أو الاستبدال الكامل، وكلٌّ
-     *  في نطاقه ([languageTag] null عام وإلا خاصة بلغة).
-     *  @param merge true: يُدمج مع الحالي (تتغلب الإدخالات الجديدة على المفاتيح
-     *               المكررة مع بقاء بقية الحالي)؛ false: يحل محله بالكامل.
-     *  @return true إن طُبِّق صف صالح واحد على الأقل (الذاكرة تتحدّث دائماً؛
-     *          لا يُعدّ فشل التخزين المشفّر نجاحاً). */
+/**
+     * استيراد قاموس من JSON — **بلا تسامح مع أي خطأ** (قرار المدير):
+     * المدخلُ غير الصالح (قيمةٌ ليست نصّاً، أو مفتاحٌ/قيمةٌ فارغة، أو
+     * أطولُ من الحدّ) **يُفشل الملفَ كاملاً** ولا يُستورد منه شيء.
+     *
+     * **لماذا الفشلُ لا التخطّي؟** كان الصفُّ الفاسد يُتخطّى صامتاً
+     * فيخرج المستخدمُ بقاموسٍ ناقصٍ لا يعرف ما الذي ضاع منه، فيظنّ
+     * أن كل شيءٍ دخل — وصمتٌ يُقنعه بما لم يكن. الآن إمّا الملفُ كلُّه
+     * أو لا شيء.
+     *
+     * @param merge true: يُدمج مع الحالي (تتغلب الجديدات على المفاتيح
+     *               المكررة مع بقية الحالي)؛ false: يحل محله بالكامل.
+     * @return true إن طُبِّق الملفُ كاملاً وحُفظ؛ false عند أي خطأ.
+     */
     fun importFromJson(
         json: String,
         merge: Boolean = false,
         languageTag: String? = null
     ): Boolean {
         if (json.length > MAX_IMPORT_BYTES) return false
-        // تجزئة بلا رمي عبر المظلة: فاسد/غير مطابق ← null ← نرفض الاستيراد.
-        val map = NateqJson.fromJson<Map<*, *>>(json, typeToken)
-            as? Map<*, *> ?: return false
+        // **تحليلٌ إلى شجرة JSON لا إلى Map<String,String>**: Gson يُحوّل
+        // الرقمَ 5 إلى نصٍّ «5» فيمرّ مدخلٌ غيرُ نصّيٍّ بصفته نصّاً — وكان
+        // الاستيرادُ يقبل `{"أ": 5}` و`{"أ": true}`. الشجرةُ تُبقي نوعَ
+        // القيمة فيُتحقَّق منه صراحةً.
+        val obj = NateqJson.parseObject(json) ?: return false
+        if (obj.size() == 0) return false
 
-        // فلترة الصفوف الصالحة فقط: مفتاح/قيمة نصيان غير فارغين ضمن الحدود
+        // تحقّقٌ صارم: أي مدخلٍ فاسد يُفشل الملفَ كلَّه بلا استثناء،
+        // فلا استيراد جزئي ولا مدخلات مفقودة بلا إشعار.
         val valid = LinkedHashMap<String, String>()
-        for ((rawKey, rawValue) in map) {
-            if (rawKey !is String || rawValue !is String) continue
+        for ((rawKey, element) in obj.entrySet()) {
+            // يجب أن يكون نصّاً خاماً: لا رقمٌ ولا منطقيٌ ولا null.
+            if (!element.isJsonPrimitive || !element.asJsonPrimitive.isString) {
+                return false
+            }
             val key = rawKey.trim()
-            val value = rawValue.trim()
-            if (key.isEmpty() || key.length > MAX_KEY_LENGTH) continue
-            if (value.isEmpty() || value.length > MAX_VALUE_LENGTH) continue
+            val value = element.asString.trim()
+            if (key.isEmpty() || key.length > MAX_KEY_LENGTH) return false
+            if (value.isEmpty() || value.length > MAX_VALUE_LENGTH) {
+                return false
+            }
             valid[key] = value
         }
         if (valid.isEmpty()) return false
 
-        // السقف التراكمي: الحالي أولاً ثم الجديد بترتيبه حتى MAX_IMPORT_ENTRIES
-        // (القفل يثبّت قراءة الحالي مع البناء والاستبدال — بند 3.13).
+        // السقف التراكمي: **تجاوزُه يُفشل الاستيراد** لا يقتطعُ صامتاً.
         val lang = normalizeLangTag(languageTag)
         val imported = synchronized(this) {
             val base = if (lang == null) entries
             else (langEntries[lang] ?: emptyMap())
             val updated = if (merge) LinkedHashMap(base)
-                else LinkedHashMap<String, String>()
+            else LinkedHashMap<String, String>()
+            if (updated.size + valid.size > MAX_IMPORT_ENTRIES) {
+                return@synchronized -1
+            }
             var count = 0
             for ((key, value) in valid) {
-                if (updated.size >= MAX_IMPORT_ENTRIES) break
                 updated[key] = value
                 count++
             }
@@ -472,7 +500,7 @@ class PronunciationDictionary(
             }
             count
         }
-        if (imported == 0) return false
+        if (imported <= 0) return false
 
         val sp = prefs ?: return true
         return save()
@@ -622,135 +650,56 @@ private class AhoCorasick(entries: Map<String, String>) {
         }
     }
 
-    /** علامات التشكيل العربية والتركيبية — تُعدّ داخل الكلمة ولا تكسر حدودها
-     *  (كانت isLetterOrDigit=false فتنقلب فواصلَ كلماتٍ خاطئة فيُستبدل مفتاح
-     *  في منتصف كلمة مشكولة — بند 3.5). */
-    private fun isDiacritic(ch: Char): Boolean =
-        ch in '\u064B'..'\u065F' ||
-            ch in '\u0670'..'\u0674' ||
-            ch == '\u06D6' || ch == '\u06D7' ||
-            ch == '\u06DF' || ch == '\u06E0' ||
-            ch == '\u06E8' || ch == '\u06EA' || ch == '\u06EB'
+/**
+ * القاموس مفتوحٌ بلا حدود: يُطبَّق مفتاحُه **أينما ورد** في النص،
+ * يميناً ويساراً، بلا شرط حدود الكلمة.
+ *
+ * **قرار المدير:** كان الحرفُ حدّاً (لا يُبدَّل داخل كلمةٍ أخرى)، فكان
+ * القاموسُ صامتاً عن كل ما يُكتب ملتصقاً — «٥٠ج»، «٣٠٠جم»، «كم2» —
+ * مع أن المستخدم أدخله بيده، وهو ما اشتكى منه. فلم يبقَ حدّ: لا
+ * أيسرَ ولا أيمن، والرقمُ والعربيةُ والإنجليزيةُ سواء.
+ *
+ * **الأثرُ المقصود:** مفتاحٌ قصير يُطبَّق داخل كلماتٍ أطول فيشوّهها
+ * («م»←«متر» يجعل «مرحبا»←«مترحبا») — عَمدُ المستخدم بمفتاحه القصير،
+ * والقرارُ له. وما يخفّفه: **الأطولُ يُطبَّق أولاً** (ترتيبُ المطابقات
+ * تنازلياً عند بدايةٍ واحدة)، فمفتاحُ «كجم» يحجبُ «كغ» داخله لا العكس.
+ */
+fun apply(text: String): String {
+    if (text.isEmpty()) return text
+    val n = text.length
 
-    /** هل المحرف جزءٌ من كلمة (حرف/رقم/علامة تشكيل)؟ */
-    private fun isWordChar(ch: Char): Boolean =
-        ch.isLetterOrDigit() || isDiacritic(ch)
-
-    /** رمزٌ غير حرفي (لا حرف/رقم/مسافة/تشكيل) مثل # $ % — لا يُحسب كلمةً
-     *  فلا يمنع إلحاق المفتاح الرمزي بها (بند 3.5: «#عاجل» و«$50»). */
-    private fun isSymbol(ch: Char): Boolean =
-        !ch.isLetterOrDigit() && !ch.isWhitespace() && !isDiacritic(ch)
-
-    /**
-     * هل الحدُّ الأيسرُ صالحٌ لمفتاحٍ يبدأ عند [start]؟
-     *
-     * **القاموس مفتوحٌ بلا شروط:** أي مفتاحٍ يكتبه المستخدم يُطبَّق حيث
-     * ورد، فلا تصفيةَ ولا حصرَ ولا شرطَ على طوله أو لغته:
-     * - «عبد السلام» ← «محمد» يُطبَّق كما هو (مفتاحٌ بفراغٍ في وسطه)،
-     * - «جنيه» و«متر» و«دولار» تُبدَّل وهي ملتصقةٌ بالرقم («٥٠جنيه»)،
-     * - «جم» و«كم» و«كجم» اختصاراتٌ فتُبدَّل كذلك.
-     *
-     * **والاستثناءُ الوحيدُ المتبقّي هو الحرفُ والحرفُ يبقى حدّاً** — لا
-     * يمكن رفعه دون أن ينهار القاموس: مفتاحُ «م» ← «متر» كان سيكتب
-     * «مرحبا» ← «مترحبا» و«الجامعة» ← «الجنيه مصريامعة». فالقاعدةُ
-     * الواحدة الباقية: الكلمةُ تُبدَّل ولا تُقصّ، ولا يُبدَّل حرفٌ داخل
-     * كلمةٍ أخرى.
-     *
-     * والرقمُ على اليسار **ما عاد حدّاً** (كان يمنع القاموسَ عن كل ما
-     * يُكتب ملتصقاً بالرقم: «٥٠ج» و«٣٠٠جم»)؛ وبقيَ على اليمين حدّاً
-     * لئلا يبتلع مفتاحٌ رقمَ ما بعده («م2» رمزُ ترتيبٍ لا وحدة).
-     */
-    private fun leftBoundaryOk(key: String, text: String, start: Int): Boolean {
-        if (start == 0) return true
-        if (isSymbol(key.first())) return true
-        val before = text[start - 1]
-        if (before.isDigit()) return true
-        return !isWordChar(before)
-    }
-
-    /** هل الحدُّ الأيمنُ صالحٌ لمفتاحٍ ينتهي عند [end]؟ */
-    private fun rightBoundaryOk(key: String, text: String, end: Int): Boolean {
-        if (key.endsWith('.')) return true
-        if (isSymbol(key.last())) return true
-        return end >= text.length || !isWordChar(text[end])
-    }
-
-    /** يطبّق استبدالات القاموس على النص في تمريرة واحدة */
-    fun apply(text: String): String {
-        if (text.isEmpty()) return text
-        val n = text.length
-
-        // تمريرة الفحص: اجمع كل التطابقات الصالحة (ضمن حدود الكلمة)
-        val matches = ArrayList<Match>()
-        var node = root
-        for (i in 0 until n) {
-            val ch = text[i]
-            while (node !== root && !node.children.containsKey(ch)) {
-                node = node.fail ?: root
-            }
-            node = node.children[ch] ?: root
-
-            val key = node.key ?: continue
-            val value = node.value ?: continue
-            val start = i - key.length + 1
-            if (start < 0) continue
-            // حدود الكلمة: لا حرف ولا رقم (بأي لغة) قبلها
-            // ولا بعدها، ويُعفى شرطُ ما بعد للمفاتيح المنتهية بنقطة
-            // ليُسمح باختصارات مثل "د.أحمد"، ورمزٌ طرفيٌّ في المفتاح
-            // (مثل # $ ٪) يفتح حدّه حتى تلتصق الرموز المركّبة
-            // بكلماتٍ وأرقام ("#عاجل" و"$50" — بند 3.5). والاستثناءُ
-            // الوحيدُ للرقم: يسارَ اختصارِ وحدةٍ أو عملةٍ عربية («٥٠ج»)،
-            // إذ لولا هذا الاستثناء لبقي القاموسُ صامتاً عن كل ما
-            // يُكتب ملتصقاً بالرقم في الاستعمال العربي —
-            // [isAmountAbbreviation].
-            val leftOk = leftBoundaryOk(key, text, start)
-            val rightOk = rightBoundaryOk(key, text, i + 1)
-
-            if (!leftOk || !rightOk) {
-                // الأطول فشل بحدود الكلمة — ننزل عبر «روابط الفشل» بحثاً عن
-                // مفتاحٍ أقصر ينتهي عند نفس الموضع ويمرّ بحدوده. المثال:
-                // «x dye» (يخفق اليسار في «ayx dye» لأن قبلها حرف) بينما
-                // لاحقته «dye» تبدأ بعد مسافة فتمرّ — كانت تُفقد والكلمة
-                // تُترك بلا نطق رغم وجود مفتاحٍ صالح. حدُّ اليمين لا يتبدل
-                // (نفسُ الموضع) لكن نفحصه اتساقاً.
-                var fallback: Node? = node.fail
-                while (fallback != null) {
-                    val k = fallback.key
-                    val v = fallback.value
-                    if (k == null || v == null) {
-                        fallback = fallback.fail
-                        continue
-                    }
-                    val fs = i - k.length + 1
-                    if (fs >= 0 &&
-                        leftBoundaryOk(k, text, fs) &&
-                        rightBoundaryOk(k, text, i + 1)
-                    ) {
-                        matches.add(Match(fs, i + 1, v))
-                        break
-                    }
-                    fallback = fallback.fail
-                }
-                continue
-            }
-            matches.add(Match(start, i + 1, value))
+    // تمريرة الفحص: كل تطابقٍ وارد، بلا شرط حدود
+    val matches = ArrayList<Match>()
+    var node = root
+    for (i in 0 until n) {
+        val ch = text[i]
+        while (node !== root && !node.children.containsKey(ch)) {
+            node = node.fail ?: root
         }
+        node = node.children[ch] ?: root
 
-        if (matches.isEmpty()) return text
-
-        // تمريرة الاستبدال: غير متداخل، والأطول أولاً لكل موضع بداية
-        matches.sortWith(
-            compareBy<Match> { it.start }.thenByDescending { it.end }
-        )
-        val result = StringBuilder(n)
-        var cursor = 0
-        for (m in matches) {
-            if (m.start < cursor) continue
-            result.append(text, cursor, m.start)
-            result.append(m.value)
-            cursor = m.end
-        }
-        if (cursor < n) result.append(text, cursor, n)
-        return result.toString()
+        val key = node.key ?: continue
+        val value = node.value ?: continue
+        val start = i - key.length + 1
+        if (start < 0) continue
+        matches.add(Match(start, i + 1, value))
     }
+
+    if (matches.isEmpty()) return text
+
+    // تمريرة الاستبدال: غير متداخل، والأطول أولاً لكل موضع بداية
+    matches.sortWith(
+        compareBy<Match> { it.start }.thenByDescending { it.end }
+    )
+    val result = StringBuilder(n)
+    var cursor = 0
+    for (m in matches) {
+        if (m.start < cursor) continue
+        result.append(text, cursor, m.start)
+        result.append(m.value)
+        cursor = m.end
+    }
+    if (cursor < n) result.append(text, cursor, n)
+    return result.toString()
+}
 }

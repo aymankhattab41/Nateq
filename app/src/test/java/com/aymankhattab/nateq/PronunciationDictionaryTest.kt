@@ -35,35 +35,39 @@ class PronunciationDictionaryTest {
 
     // ===== القاموس مفتوح: أي مفتاحٍ يُطبَّق حيث ورد =====
 
-    // حارس: الكسر المُبلَّغ — القاموسُ كان صامتاً عن كل ما يُكتب ملتصقاً
-    // بالرقم («٥٠ج» و«٣٠٠جم») لأن الرقمَ كان حدّاً يمنع الاستبدالَ من
-    // الجانبين، فتسجيلُ «جم» في القاموس لم يكن يُغيّر النطق أبداً.
-    @Test
-    fun anyKeyGluedToNumber_isApplied() {
-        dict.addEntry("جم", "جيم")
-        assertEquals("الوزن 300جيم", dict.apply("الوزن 300جم"))
-        assertEquals("الوزن 300 جيم", dict.apply("الوزن 300 جم"))
-        dict.addEntry("ج", "جنيه مصري")
-        assertEquals("السعر 50جنيه مصري", dict.apply("السعر 50ج"))
-        dict.addEntry("م", "متر")
-        assertEquals("الطول 5متر", dict.apply("الطول 5م"))
-        dict.addEntry("كم", "كيلومتر")
-        assertEquals("المسافة 12كيلومتر", dict.apply("المسافة 12كم"))
-    }
+// حارس: الكسر المُبلَّغ — القاموسُ كان صامتاً عن كل ما يُكتب ملتصقاً
+// بالرقم («٥٠ج» و«٣٠٠جم») لأن الرقمَ كان حدّاً يمنع الاستبدالَ من
+// الجانبين، فتسجيلُ «جم» في القاموس لم يكن يُغيّر النطق أبداً.
+// **الحدودُ أُلغيت كلها** (قرار المدير) فالملتصقُ يُطبَّق من أيّ جهة.
+@Test
+fun anyKeyGluedToNumber_isApplied() {
+    dict.addEntry("جم", "جيم")
+    assertEquals("الوزن 300جيم", dict.apply("الوزن 300جم"))
+    assertEquals("الوزن 300 جيم", dict.apply("الوزن 300 جم"))
+    dict.addEntry("ج", "جنيه مصري")
+    assertEquals("السعر 50جنيه مصري", dict.apply("السعر 50ج"))
+    // المفتاح على يسار الرقم يُطبَّق أيضاً (كان الرقمُ يسدّ الطريق)
+    // ولا مفتاحُه الأقصر: «ج» و«جم» يبدأان من الموضع نفسه فيُطبَّق
+    // الأطولُ «جم» ← «جيم»، فلا يُقتطع Short عمّا بعده.
+    assertEquals("جيم300", dict.apply("جم300"))
+}
 
-    @Test
-    fun gluedKey_usesArabicAndLatinDigits() {
-        dict.addEntry("جم", "جيم")
-        assertEquals("الوزن ٣٠٠جيم", dict.apply("الوزن ٣٠٠جم"))
-        assertEquals("الوزن ٢٥٠٫٥جيم", dict.apply("الوزن ٢٥٠٫٥جم"))
-    }
+@Test
+fun gluedKey_usesArabicAndLatinDigits() {
+    dict.addEntry("جم", "جيم")
+    assertEquals("الوزن ٣٠٠جيم", dict.apply("الوزن ٣٠٠جم"))
+    assertEquals("الوزن ٢٥٠٫٥جيم", dict.apply("الوزن ٢٥٠٫٥جم"))
+}
 
-    // حارس: الرقمُ على اليمين يبقى حدّاً — «م2» رمزُ ترتيبٍ لا وحدة
-    @Test
-    fun digitOnRightOfKey_stillBlocksSubstitution() {
-        dict.addEntry("م", "متر")
-        assertEquals("أرسل م2", dict.apply("أرسل م2"))
-    }
+/**
+ * حارس: الرقمُ على **اليمين** لم يبقَ حدّاً. «م2» رمزُ ترتيبٍ في نظر
+ * صاحب القرار، فالتطبيقُ هو المطلوب لا المنع.
+ */
+@Test
+fun digitOnRightOfKey_appliesToo() {
+    dict.addEntry("م", "متر")
+    assertEquals("أرسل متر2", dict.apply("أرسل م2"))
+}
 
     // حارس: لا سقفَ لطول المفتاح ولا شرطَ على لغته — كلمةٌ كاملةٌ تُبدَّل
     // وهي ملتصقةٌ بالرقم، في كل طولٍ (حرفٌ واحد، وثلاثة، وخمسة، وأطول)
@@ -96,16 +100,30 @@ class PronunciationDictionaryTest {
         )
     }
 
-    // حارس: داخلَ الكلمةِ لا استبدالُ أبداً («مج 5» و«5ممتاز») — هذه
-    // القاعدةُ الوحيدة المتبقّية وإلا انهار القاموس («مرحبا» ← «مترحبا»)
-    @Test
-    fun keyInsideWord_stillNeverReplaced() {
-        dict.addEntry("جم", "جيم")
-        dict.addEntry("م", "متر")
-        assertEquals("مجموع 5", dict.apply("مجموع 5"))
-        assertEquals("5ممتاز", dict.apply("5ممتاز"))
-        assertEquals("مرحبا", dict.apply("مرحبا"))
-    }
+/**
+ * **الأثرُ المقصودُ لقرارٍ بلا حدود:** المفتاحُ يُطبَّق داخل كلمةٍ أطول
+ * فيشوّهها — «مرحبا» ← «متررحبا». كان هذا ممنوعاً بحدّ الكلمة، وهو
+ * الآن سلوكٌ معلنٌ لا مُصادفة: **المفتاحُ القصير يُدخل صاحبه في
+ * Responsibility كل كلمةٍ تحويه**، وما يخفّفه أن الأطولَ يُطبَّق أولاً.
+ *
+ * فاحسبها قبل أن تُدخل مفتاحاً من حرفٍ واحد.
+ */
+@Test
+fun keyInsideWord_isApplied_notBlocked() {
+    dict.addEntry("م", "متر")
+    // «مرحبا» = م + رحبا ← «متر» + «رحبا»؛ الاستبدالُ يلصقُ ولا يقطع.
+    assertEquals("متررحبا", dict.apply("مرحبا"))
+    // ولا حارسَ له يُعيد العمل؛ فالعقدُ الواحد يجب أن يبقى واحداً
+    assertEquals("ألمتراً", dict.apply("ألماً"))
+}
+
+/** وما يخفّف الأثرَ: الأطولُ يُطبَّق أولاً عند بدايةٍ واحدة. */
+@Test
+fun longerKeyWinsInsideShorterKeyOccurrence() {
+    dict.addEntry("م", "متر")
+    dict.addEntry("متر", "مِتْر")
+    assertEquals("مِتْر", dict.apply("متر"))
+}
 
     // ===== حدود الكلمات في آلة Aho-Corasick (البند 10-2) =====
 
@@ -119,26 +137,22 @@ class PronunciationDictionaryTest {
         assertEquals("السعر 50متر وعشرة", dict.apply("السعر 50م وعشرة"))
     }
 
-    @Test
-    fun digit_follows_key_blocksSubstitution() {
-        dict.addEntry("م", "متر")
-        // حرف بعد الرقم مباشرة في وحدات مثل "م2"
-        assertEquals("أرسل م2", dict.apply("أرسل م2"))
-    }
+@Test
+fun standaloneKey_stillReplaced() {
+    dict.addEntry("م", "متر")
+    assertEquals("قياس متر", dict.apply("قياس م"))
+}
 
-    @Test
-    fun standaloneKey_stillReplaced() {
-        dict.addEntry("م", "متر")
-        assertEquals("قياس متر", dict.apply("قياس م"))
-    }
-
-    @Test
-    fun letter_prevAndNext_stillBlocksCompounding() {
-        dict.addEntry("م", "متر")
-        // الكلمة الأطول تبقى سليمة ولا تُحوَّل داخل "مرحبا"
-        assertEquals("مرحبا", dict.apply("مرحبا"))
-        assertEquals("ألماً", dict.apply("ألماً"))
-    }
+/**
+ * حارس: **حدودُ الكلمة أُلغيت كلها** — لا حرفٌ قبل ولا بعد يمنع
+ * الاستبدالَ anymore. كان هذا الحارسُ يقود إلى «مرحبا» سليمة، وهو
+ * بالضبط ما عارضه صاحب القرار: أن يُطبَّق المفتاحُ حيث ورد.
+ */
+@Test
+fun letter_prevAndNext_noLongerBlockCompounding() {
+    dict.addEntry("م", "متر")
+    assertEquals("متررحبا", dict.apply("مرحبا"))
+}
 
     @Test
     fun dottedAbbreviation_matchesBeforeLetter() {
@@ -148,12 +162,12 @@ class PronunciationDictionaryTest {
         assertEquals("قال دكتورمحمد", dict.apply("قال د.محمد"))
     }
 
-    @Test
-    fun dottedAbbreviation_blockedWhenPartOfLongWord() {
-        dict.addEntry("د.", "دكتور")
-        // حرف قبل النقطة يمنع الاستبدال داخل كلمة أطول
-        assertEquals("ود.أحمد", dict.apply("ود.أحمد"))
-    }
+@Test
+fun dottedAbbreviation_appliesInsideLongWordToo() {
+    dict.addEntry("د.", "دكتور")
+    // حرفٌ قبل النقطة لم يبقَ مانعاً (بلا حدود)
+    assertEquals("ودكتورأحمد", dict.apply("ود.أحمد"))
+}
 
     @Test
     fun longestKeyWins_overSharedPrefix() {
@@ -162,28 +176,39 @@ class PronunciationDictionaryTest {
         assertEquals("زور أستاذ دكتور", dict.apply("زور أ.د"))
     }
 
-    // ===== الاستيراد: الدمج والتخطي (البند 10-3) =====
+// ===== الاستيراد: الفشلُ الذريّ لا التخطي (قرار المدير) =====
 
-    @Test
-    fun importReplace_skipsInvalidRows() {
-        dict.addEntry("قديم", "مقابل")
-        val longKey = "z".repeat(201) // أطول من MAX_KEY_LENGTH (200)
-        val json = "{\"\":\"قيمة فارغة\", \"   \":\"مسافة\", " +
-            "\"$longKey\":\"طويل\", \"مفتاح\":\"\", \"جديد\":\"صالح\"}"
-        assertTrue(dict.importFromJson(json))
-        assertEquals(mapOf("جديد" to "صالح"), dict.getAllEntries())
-    }
+/**
+ * عقدُ الفشل الذري: **سطرٌ واحدٌ فاسدٌ يُفشل الملفَ كاملاً**. كان
+ * السطرُ الفاسد يُتخطّى صامتاً فيخرج المستخدمُ بقاموسٍ ناقصٍ لا يعرف
+ * ما ضاع منه —وهذا صمتٌ يُقنعه بأنّ كل شيءٍ دخل.
+ */
+@Test
+fun importReplace_withAnyInvalidRow_failsAndTakesNothing() {
+    dict.addEntry("قديم", "مقابل")
+    val longKey = "z".repeat(
+        PronunciationDictionary.MAX_KEY_LENGTH + 1
+    )
+    val json = "{\"\":\"قيمة فارغة\", \"   \":\"مسافة\", " +
+        "\"$longKey\":\"طويل\", \"مفتاح\":\"\", \"جديد\":\"صالح\"}"
+    assertFalse("أي مدخلٍ فاسد يُفشل الملف", dict.importFromJson(json))
+    assertEquals(
+        "والقاموسُ القائم لم يُمسّ",
+        mapOf("قديم" to "مقابل"), dict.getAllEntries()
+    )
+}
 
-    @Test
-    fun importMerge_keepsExisting_andOverridesDuplicates() {
-        dict.addEntry("قديم", "مقابل")
-        val json = "{\"قديم\":\"مقابل2\", \"جديد\":\"صالح\", \"مفتاح\":\"\"}"
-        assertTrue(dict.importFromJson(json, merge = true))
-        assertEquals(
-            mapOf("قديم" to "مقابل2", "جديد" to "صالح"),
-            dict.getAllEntries()
-        )
-    }
+@Test
+fun importMerge_overridesDuplicates_andKeepsRest() {
+    dict.addEntry("قديم", "مقابل")
+    dict.addEntry("آخر", "يبقى")
+    val json = "{\"قديم\":\"مقابل2\", \"جديد\":\"صالح\"}"
+    assertTrue(dict.importFromJson(json, merge = true))
+    assertEquals(
+        mapOf("قديم" to "مقابل2", "آخر" to "يبقى", "جديد" to "صالح"),
+        dict.getAllEntries()
+    )
+}
 
     @Test
     fun import_allInvalid_returnsFalseAndKeepsExisting() {

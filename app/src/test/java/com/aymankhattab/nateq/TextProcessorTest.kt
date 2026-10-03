@@ -6,6 +6,7 @@ import com.aymankhattab.nateq.engine.TextProcessor
 import com.aymankhattab.nateq.core.audio.engine.LanguageSegmenter
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.engine.PunctuationLevels
+import com.aymankhattab.nateq.engine.PronunciationDictionary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -32,6 +33,41 @@ class TextProcessorTest {
     fun blankText_isReturned() {
         assertEquals("", processor.process("", "ar"))
         assertEquals("   ", processor.process("   ", "ar"))
+    }
+
+    /**
+     * حارسُ المسار الإنجليزي (بند 3.4 — أي مسارٍ جديد يجب أن يُثبت
+     * صنفَه): القاموسُ كان **مُستثنىً من الإنجليزية** فيُخرج المستخدمُ
+     * مفتاحاً لاتينياً («HTTP» أو «AI») فلا يُطبَّق أبداً — وهو نصف
+     * سبب «القاموس لا يعمل».
+     *
+     * واللمسةُ الثانية: بلا حدودٍ، فالمفتاحُ الملتصقُ برقمٍ يُطبَّق
+     * على الإنكليزية كما تطبّقه العربية.
+     */
+    @Test
+    fun englishPath_appliesDictionary() {
+        val ctx: Context = ApplicationProvider.getApplicationContext()
+        val dict = PronunciationDictionary(ctx)
+        dict.addEntry("HTTP", "إتش تي تي بي")
+        dict.addEntry("AI", "إيه آي")
+        val p = TextProcessor(ctx, null, dict)
+        assertTrue(p.process("open HTTP now", "en").contains("إتش تي تي بي"))
+        assertTrue(p.process("the AI model", "en").contains("إيه آي"))
+        // ملتصقٌ برقم: يُطبَّق بلا حدودٍ على أيّ جهة
+        dict.addEntry("km", "كيلومتر")
+        assertTrue(p.process("we drove 5km today", "en").contains("كيلومتر"))
+        dict.clear()
+    }
+
+    /** والقاموسُ يبقى مُطبَّقاً في العربية كما كان (لا انعكاس). */
+    @Test
+    fun arabicPath_stillAppliesDictionary() {
+        val ctx: Context = ApplicationProvider.getApplicationContext()
+        val dict = PronunciationDictionary(ctx)
+        dict.addEntry("د.", "دكتور")
+        val p = TextProcessor(ctx, null, dict)
+        assertTrue(p.process("قال د. أحمد", "ar").contains("دكتور"))
+        dict.clear()
     }
 
     @Test

@@ -194,7 +194,8 @@
 <string name="dict_export_failed">Failed to export dictionary</string>
 <string name="dict_exported_ok">Dictionary exported</string>
 <string name="dict_import">Import dictionary</string>
-<string name="dict_import_failed">Failed to import dictionary</string>
+<string name="dict_import_failed">Failed to import dictionary — nothing was imported. The file may contain an invalid entry or exceed the allowed limit</string>
+<string name="dict_import_too_large">File is larger than the allowed limit (8 MB) — nothing was imported</string>
 <string name="dict_import_merge">Merge with existing entries</string>
 <string name="dict_import_mode_title">Import method</string>
 <string name="dict_import_replace">Replace all</string>
@@ -494,12 +495,22 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-• Speak a phrase you choose before the caller name and one after it: two boxes and two fields, the single template is gone, and what gets spoken is exactly what you type
+• Fixed Google Meet caller announcements: the direction guard rejected every ongoing call notification, and Meet marks its ringing notification as ongoing from the first moment, so the caller name was never spoken there since v1.6.20
+• Caller name is spoken sooner: the check now runs before the wait, so the 300 milliseconds are no longer paid while the name is already in memory — about 300ms faster on WhatsApp and Telegram
+• Caller identity is checked every 50ms instead of 300ms (a free memory read), while the call log lookup stays at 300ms
+• The caller preview now sounds exactly like the real announcement instead of louder (it used the music stream, and the engine ignored the volume slider)
+• The dictionary now matches with no boundaries at all: it applies glued to numbers from either side (50g, 300gm, 2km), which used to stay silent
+• The dictionary now applies to English as well: it never went through the English path, so keys like \"HTTP\" or \"AI\" were not spoken
+• A broken import now fails completely: an invalid line used to be skipped silently and produce a partial dictionary; now it is the whole file or nothing
+• Dictionary import accepts JSON files only, and reads at most 8 megabytes while reading so it never weighs the app down
+• Import limits: 200,000 entries and 8,000 characters per key and value; exceeding them fails instead of truncating silently
+• The dictionary export file is now named LOR_dictionary.json
 • The phrase \"Incoming call from\" is removed for good: a saved name is spoken on its own, and an unsaved number is announced as \"Unsaved number\"
 • Fixed \"incoming call from\" being spoken to the caller themselves (outgoing) and after the call ended: only a genuine incoming ring is announced now
 • Lower the phone ringtone while the caller is announced: an enable box and a percentage you choose (10%% to 90%%)
 • A separate volume level during calls (for announcements such as the clock), from 0%% to 100%%
 • Caller announcement is now always as loud as battery and clock announcements: it moved to an audio path that an active call does not duck, so it sounds the same on every device including Android 17
+• Speak a phrase you choose before the caller name and one after it: two boxes and two fields, the single template is gone, and what gets spoken is exactly what you type
 • Caller announcement repeat now goes from once up to ten times, with a 3, 4, or 5 second interval
 • The dictionary is open with no length ceiling: any key you type applies, and the silence on units and currencies glued to numbers (50g, 300gm) is fixed
 </string>

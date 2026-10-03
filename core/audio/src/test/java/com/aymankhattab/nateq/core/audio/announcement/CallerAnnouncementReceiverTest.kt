@@ -867,6 +867,76 @@ fun `waiting call speaks only when during call toggle enabled`() {
         )
     }
 
+    /**
+     * حارسُ **تأخير النطق** (شُكوى: «يتأخر لما بينطق»):
+     * فاصلُ فحص الذاكرة المجانية يجب أن يكون **أدقّ بفارقٍ كبير** من
+     * فاصل سجلّ المكالمات الغالي — وإلا لبقي النطقُ ينتظر 300ms وهو
+     * يحمل الاسمَ في [RingCallerIdentity]. فالمقارنةُ حارسةٌ Niemand
+     * يستطيع تسريعَ المسار بلا أن تكسرها.
+     */
+    @Test
+    fun `identity poll is far faster than the expensive call log poll`() {
+        val identity =
+            CallerAnnouncementReceiver.CALLER_IDENTITY_POLL_INTERVAL_MS
+        val log = CallerAnnouncementReceiver.CALLER_LOG_POLL_INTERVAL_MS
+        assertTrue(
+            "فحص الذاكرة يجب أن يكون أسرع من سجلّ المكالمات",
+            identity < log
+        )
+        assertTrue(
+            "وفاصلُ الذاكرة صغيرٌ بما يكفي لئلا يُحَسّ الانتظار",
+            identity in 10L..100L
+        )
+        assertTrue(
+            "واستمرارُ الفاصلين داخل مهلة السماح فلا يتجاوزها الانتظار",
+            CallerAnnouncementReceiver.CALLER_RESOLVE_GRACE_PERIOD_MS >
+                identity
+        )
+    }
+
+    /**
+     * العقدُ الأهمّ في إصلاح التأخير: **الهويةُ المُعبَّأةُ سلفاً في
+     * الذاكرة تُلتقط بلا أيّ نوم**. لولا ذلك لدفعنا 300ms ثابتةً على
+     * كل مكالمة VoIP لأن الحلقة كانت تنام قبل أوّل فحص.
+     */
+    @Test
+    fun `an identity already in shared memory resolves without waiting`() {
+        // نحاكي الحلقةَ بعد إصلاحها: الفحصُ يسبق النوم، فالهويةُ الجاهزة
+        // تُكتشف في الدورةِ الأولى وكلفةُ انتظارٍ صفر.
+        RingCallerIdentity.publish("+15551234567", "أحمد")
+        val startedAt = System.currentTimeMillis()
+        var resolved: String? = null
+        var waited = 0L
+        val grace = CallerAnnouncementReceiver.CALLER_RESOLVE_GRACE_PERIOD_MS
+        var nextLogPollAt = 0L
+        val hasCallLog = false
+        while (waited < grace) {
+            val merged = RingCallerIdentity.snapshot()
+            if (!merged.second.isNullOrBlank()) {
+                resolved = merged.second
+                break
+            }
+            if (hasCallLog &&
+                System.currentTimeMillis() >= nextLogPollAt
+            ) {
+                nextLogPollAt = System.currentTimeMillis() +
+                    CallerAnnouncementReceiver.CALLER_LOG_POLL_INTERVAL_MS
+            }
+            Thread.sleep(
+                CallerAnnouncementReceiver.CALLER_IDENTITY_POLL_INTERVAL_MS
+            )
+            waited += CallerAnnouncementReceiver
+                .CALLER_IDENTITY_POLL_INTERVAL_MS
+        }
+        assertEquals("أحمد", resolved)
+        assertTrue(
+            "الهويةُ الجاهزةُ يجب أن تُلتقط فوراً بلا نومٍ ولا انتظار",
+            System.currentTimeMillis() - startedAt <
+                CallerAnnouncementReceiver.CALLER_LOG_POLL_INTERVAL_MS
+        )
+        RingCallerIdentity.clear()
+    }
+
     @Test
     fun `late identity wait covers the observed platform gap`() {
         // فجوةُ المنصّة المرصودة ~٦٫١s (الرنين الأول بلا رقم والثاني
@@ -1126,19 +1196,72 @@ fun `waiting call speaks only when during call toggle enabled`() {
     // ===== حارس الاتجاه: الصادرةُ والمنتهيةُ لا تُعلَن «اتصال وارد» =====
 
     @Test
-    fun `an ongoing call notification is not announced as incoming`() {
-        // **العيبُ الذي شكا منه المستخدم:** هو المُرسل، فينطق التطبيقُ
-        // إشعارَ مكالمةٍ جاريةٍ (ongoing) فيُقرأ «اتصال وارد من فلان».
-        // الدليلُ الحاكم: جريانُ الإشعار — المكالمةُ قائمةٌ لا رنّة.
+    fun `an ongoing outgoing call notification is not announced`() {
+        // **العيبُ الأول الذي شكا منه المستخدم:** هو المُرسل، فينطق التطبيقُ
+        // إشعارَ مكالمةٍ جاريةٍ (ongoing) فيُقرأ اسمَ المتصل. الدليلُ الحاكم
+        // معاً: جريانُ الإشعار **وأنّه صادرٌ** («calling…» / «جاري الاتصال»).
         assertFalse(
             CallerAnnouncementReceiver.shouldAnnounceCallNotification(
                 isOngoing = true,
                 networkCallInProgress = false,
                 endedCallAt = 0L,
                 sameEndedIdentity = false,
-                now = 1_000L
+                now = 1_000L,
+                outgoing = true
             )
         )
+    }
+
+    /**
+     * حارسُ **انحدار جوجل ميت**: Meet يُعلِّم إشعارَ مكالمته الواردة
+     * `FLAG_ONGOING_EVENT` **من لحظة الرنّ** (لأنه واجهةُ مكالمةٍ حيّة)،
+     * فكان `if (isOngoing) return false` يُسقط إعلانَه بالكامل.
+     * فالعَلَمُ وحده **لا يُرفض** — يُرفض الصادرُ، وهذا وارد.
+     */
+    @Test
+    fun `an ongoing incoming voip ring is announced - google meet`() {
+        assertTrue(
+            "جوجل ميت الوارد مُعلَّم ongoing ويجب أن يُعلَن",
+            CallerAnnouncementReceiver.shouldAnnounceCallNotification(
+                isOngoing = true,
+                networkCallInProgress = false,
+                endedCallAt = 0L,
+                sameEndedIdentity = false,
+                now = 1_000L,
+                outgoing = false
+            )
+        )
+    }
+
+    /** فارقُ `ongoing` وحدَه: بلا نصٍّ صادرٍ يُقبَل (لا دليلَ على الصغرى). */
+    @Test
+    fun `ongoing alone does not veto - no direction evidence`() {
+        assertTrue(
+            CallerAnnouncementReceiver.shouldAnnounceCallNotification(
+                isOngoing = true,
+                networkCallInProgress = false,
+                endedCallAt = 0L,
+                sameEndedIdentity = false,
+                now = 1_000L,
+                outgoing = false
+            )
+        )
+    }
+
+    /** اتجاهُ النصّ: عربياً وإنجليزياً (عامةٌ خالصةٌ قابلة للاختبار). */
+    @Test
+    fun `outgoing call phrases are detected in both languages`() {
+        assertTrue(RingCallerIdentity.isOutgoingCallPhrase("Calling…"))
+        assertTrue(RingCallerIdentity.isOutgoingCallPhrase("calling..."))
+        assertTrue(RingCallerIdentity.isOutgoingCallPhrase("Outgoing call"))
+        assertTrue(RingCallerIdentity.isOutgoingCallPhrase("Ringing…"))
+        assertTrue(RingCallerIdentity.isOutgoingCallPhrase("جاري الاتصال"))
+        assertTrue(RingCallerIdentity.isOutgoingCallPhrase("مكالمة صادرة"))
+        // وليس الاسمُ ولا الواردُ
+        assertFalse(RingCallerIdentity.isOutgoingCallPhrase("أحمد"))
+        assertFalse(RingCallerIdentity.isOutgoingCallPhrase("Incoming call"))
+        assertFalse(RingCallerIdentity.isOutgoingCallPhrase("مكالمة واردة"))
+        assertFalse(RingCallerIdentity.isOutgoingCallPhrase(""))
     }
 
     @Test

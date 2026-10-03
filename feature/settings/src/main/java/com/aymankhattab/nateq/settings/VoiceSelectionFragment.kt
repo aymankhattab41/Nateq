@@ -76,6 +76,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
          تقريرٍ ضخمٍ ويكفي كلَّ ما يهمّ التشخيص.
          */
         private const val MAX_DIAGNOSTIC_LINES = 800
+
+        /** اسم ملف تصدير القاموس (بقرار المدير: `LOR_dictionary` لا
+         *  `nateq_dictionary`) — مع امتداد JSON الذي يفرضه نوعُ
+         *  `CreateDocument`، وقد يضيف النظام رقماً عند التصدير مرتين. */
+        private const val DICT_EXPORT_FILE_NAME = "LOR_dictionary.json"
     }
 
     // طبقة الحالة المحقونة عبر Hilt (تحوي مصدرَي الإعدادات والقاموس).
@@ -183,26 +188,114 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         dialog.setOnDismissListener { activeDialogs.remove(dialog) }
     }
 
+    /**
+     * استيراد القاموس: **`.json` فقط** (بقرار المدير) — لا تُعرض كل
+     * الملفات ولا تُقبل إلا JSON.
+     *
+     * **لماذا ثلاثة أنواع MIME لا واحد؟** فلتر SAF يستثني ما لا يطابق
+     * نوعه، وكثيرٌ من مزوّدي الملفات يُبلّغ عن `.json` بصفة `text/plain`
+     * أو `application/octet-stream` لا `application/json` — فيختفي الملف
+     * الصحيح من القائمة ولا يراه المستخدم. فالمفلتر يعرض الثلاثة، ثم
+     * يُتحقَّق من الامتداد أدناه فيُرفض غيرُ `.json` صراحةً. فالنتيجة
+     * المطلوبة محققة: **لا يُعرض إلا JSON ولا يُقبل إلا JSON**.
+     */
+    private val jsonOnlyMimeTypes = arrayOf(
+        "application/json",
+        "text/json",
+        "text/plain"
+    )
+
     private val openDictLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
             val resolver =
                 context?.contentResolver ?: return@registerForActivityResult
+            // التحقق من الامتداد: يُقبل ما ينتهي بـ `.json` فقط، وما
+            // لا اسمَ له (بعض المزوّدين) يُحمل على أنه JSON ويُخضعه
+            // لفشل التجزئة لاحقاً — فلا يدخل إلا ما يمكن قراءته.
+            val name = runCatching {
+                resolver.query(uri, null, null, null, null)?.use { cur ->
+                    val idx = cur.getColumnIndex(
+                        android.provider.OpenableColumns.DISPLAY_NAME
+                    )
+                    if (idx >= 0 && cur.moveToFirst()) cur.getString(idx)
+                    else null
+                }
+            }.getOrNull()
+            if (name != null &&
+                !name.endsWith(".json", ignoreCase = true)
+            ) {
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.dict_import_failed),
+                    Toast.LENGTH_SHORT
+                ).show()
+                return@registerForActivityResult
+            }
             // نقرأ الملف على خيط IO ثم نعرض حوار طريقة الاستيراد (دمج/استبدال)
             lifecycleScope.launch(AppDispatchers.io) {
-                val text = runCatching {
-                    resolver.openInputStream(uri)
-                        ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
-                }.getOrNull()
+                val result = runCatching { readJsonWithinLimit(resolver, uri) }
+                    .getOrDefault(DictReadResult.Unreadable)
                 withContext(AppDispatchers.main) {
-                    if (isAdded && text != null) {
-                        pendingImportJson = text
-                        showImportModeDialog()
+                    if (!isAdded) return@withContext
+                    when (result) {
+                        is DictReadResult.Ok -> {
+                            pendingImportJson = result.json
+                            showImportModeDialog()
+                        }
+                        // سببان مختلفان ورسالتان: «الكبير» ليس «الفاسد».
+                        DictReadResult.TooLarge -> toast(
+                            getString(R.string.dict_import_too_large)
+                        )
+                        DictReadResult.Unreadable -> toast(
+                            getString(R.string.dict_import_failed)
+                        )
                     }
                 }
             }
         }
+    }
+
+    private fun toast(message: String) {
+        Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
+    }
+
+    /** نتيجة قراءة ملف القاموس — تُميّز سببَ الرفض ليُقال للمستخدم. */
+    private sealed interface DictReadResult {
+        data class Ok(val json: String) : DictReadResult
+        data object TooLarge : DictReadResult
+        data object Unreadable : DictReadResult
+    }
+
+    /**
+     * قراءةٌ **محدودةٌ بالبايت** لا `readText()` المفتوح.
+     *
+     * **لماذا؟** `readText()` يقرأ الملف كلَّه ثم نُفحص الحجم بعده — فسقفُ
+     * 8 ميغابايت لا يمنع شيئاً، بل يكتشف الخسارة بعد وقوعها: ملفٌ
+     * بمئة ميغابايت يُحمَّل كاملاً فيُOOM التطبيق قبل أن تُقال «رُفض».
+     * فنتوقّف عند تجاوز السقف أثناء القراءة، فلا يُحمَّل إلا ما يُسمح.
+     */
+    private fun readJsonWithinLimit(
+        resolver: android.content.ContentResolver,
+        uri: android.net.Uri
+    ): DictReadResult {
+        val out = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(16 * 1024)
+        val max = PronunciationDictionary.MAX_IMPORT_BYTES
+        val stream = resolver.openInputStream(uri)
+            ?: return DictReadResult.Unreadable
+        stream.use { input ->
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                // لا نقرأ أكثر من السقف أبداً: الملفُ الزائد يُرفض
+                // وهو لم يُحمَّل بعد.
+                if (out.size() + read > max) return DictReadResult.TooLarge
+                out.write(buffer, 0, read)
+            }
+        }
+        return DictReadResult.Ok(String(out.toByteArray(), Charsets.UTF_8))
     }
 
     private val createDictLauncher = registerForActivityResult(
@@ -422,12 +515,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         btnImportDict = view.findViewById(R.id.btn_import_dict)
         btnImportDict.setOnClickListener {
             runCatching {
-                openDictLauncher.launch(arrayOf("application/json"))
+                openDictLauncher.launch(jsonOnlyMimeTypes)
             }
         }
         btnExportDict = view.findViewById(R.id.btn_export_dict)
         btnExportDict.setOnClickListener {
-            runCatching { createDictLauncher.launch("nateq_dictionary.json") }
+            runCatching { createDictLauncher.launch(DICT_EXPORT_FILE_NAME) }
         }
 
         // المفتاح الرئيسي لكل الإعلانات

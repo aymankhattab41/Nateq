@@ -716,7 +716,10 @@ etCallerPrefix =
                 rateProgress = seekCallerRate?.progress ?: 100,
                 pitchProgress = seekCallerPitch?.progress ?: 100,
                 volumePercent = seekCallerVolume?.progress ?: 100,
-                sampleText = sample
+                sampleText = sample,
+                // المعاينةُ على سماتِ الإشعار كالنطقِ الحقيقي، فتراها
+                // بالصوتِ والمجرى نفسيهما (شُكوى: صارت أعلى من النطق).
+                isCallerCategory = true
             )
         )
     }

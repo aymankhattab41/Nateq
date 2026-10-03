@@ -20,7 +20,19 @@ internal data class PreviewParams(
     val speechRate: Float,
     val pitch: Float,
     val volume: Float,
-    val sampleText: String
+    val sampleText: String,
+    /**
+     * هل هذه معاينةُ **فئةِ متصل**؟ فتُطبَّق سماتُ المسار الحقيقي
+     * (`USAGE_NOTIFICATION_EVENT` + مجرى الإشعارات) فتخرج المعاينةُ
+     * بالصوتِ نفسه الذي يخرج به النطقُ الفعلي.
+     *
+     * **لماذا غابت قبلُ (شُكوى: «صوت المعاينة أعلى»):** المعاينةُ لم
+     * تطبّق `setAudioAttributes` ولا `KEY_PARAM_STREAM`، فمضى الصوتُ
+     * على `STREAM_MUSIC` كاملاً، ولم يبقَ إلا `KEY_PARAM_VOLUME` —
+     * **معاملٌ تتجاهله أغلبُ محركات النطق**. فلم يكن الشريطُ يُخفض
+     * شيئاً. وهذا حصرٌ في المتصل: بقيةُ الفئات على مسارها كما كان.
+     */
+    val isCallerCategory: Boolean = false
 )
 
 /**
@@ -58,7 +70,8 @@ internal fun buildPreviewParamsFrom(
     rateProgress: Int,
     pitchProgress: Int,
     volumePercent: Int,
-    sampleText: String
+    sampleText: String,
+    isCallerCategory: Boolean = false
 ): PreviewParams = PreviewParams(
     enginePkg = enginePkg,
     voiceName = voiceName,
@@ -66,7 +79,8 @@ internal fun buildPreviewParamsFrom(
     speechRate = rateProgress.speedFactor(),
     pitch = pitchProgress.speedFactor(),
     volume = (volumePercent / 100f).coerceIn(0f, 1f),
-    sampleText = sampleText
+    sampleText = sampleText,
+    isCallerCategory = isCallerCategory
 )
 
 /**
@@ -265,11 +279,38 @@ internal class VoicePreviewHelper(private val context: Context) {
                         Locale.forLanguageTag(params.languageTag)
                 }
             }
-            previewTts.setSpeechRate(params.speechRate)
-            runCatching { previewTts.setPitch(params.pitch) }
-            val bundle = Bundle().apply {
-                putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, params.volume)
+previewTts.setSpeechRate(params.speechRate)
+        runCatching { previewTts.setPitch(params.pitch) }
+        // **معاينةُ المتصل تُطبِّق سماتِ المسارِ الحقيقي** — بلاها كان
+        // الصوتُ يخرج على `STREAM_MUSIC` كاملاً فيرتفع عن شريط الصوت،
+        // لأن `KEY_PARAM_VOLUME` وحده تتجاهله أغلبُ المحركات. نفسُ
+        // السماتِ المستعملة في [AnnouncementSpeaker] فالمعاينةُ تسمع
+        // ما سيُنطَقُ فعلاً لا ما يُفترض.
+        if (params.isCallerCategory) {
+            runCatching {
+                previewTts.setAudioAttributes(
+                    android.media.AudioAttributes.Builder()
+                        .setUsage(
+                            android.media.AudioAttributes
+                                .USAGE_NOTIFICATION_EVENT
+                        )
+                        .setContentType(
+                            android.media.AudioAttributes
+                                .CONTENT_TYPE_SONIFICATION
+                        )
+                        .build()
+                )
             }
+        }
+        val bundle = Bundle().apply {
+            putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, params.volume)
+            if (params.isCallerCategory) {
+                putInt(
+                    TextToSpeech.Engine.KEY_PARAM_STREAM,
+                    android.media.AudioManager.STREAM_NOTIFICATION
+                )
+            }
+        }
             previewTts.setOnUtteranceProgressListener(
                 object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {}

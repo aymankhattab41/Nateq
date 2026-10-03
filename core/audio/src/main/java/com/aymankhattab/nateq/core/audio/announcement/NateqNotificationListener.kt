@@ -350,6 +350,12 @@ class NateqNotificationListener : NotificationListenerService() {
     ): Boolean {
         val ongoing = (notification.flags and
             Notification.FLAG_ONGOING_EVENT) != 0
+        // **الاتجاهُ من النصّ لا من العَلَم:** جوجل ميت يُعلِّم إشعارَ
+        // مكالمته الواردة `ongoing` من لحظة الرنّ، فرفضُ كلِّ `ongoing`
+        // (سلوك v1.6.20) أسقط إعلانَه بالكامل. فالدليلُ على الصغرى
+        // أن يكون النصُّ «calling…» أو «جاري الاتصال».
+        val outgoing = notificationCallPhrases(notification)
+            .any { RingCallerIdentity.isOutgoingCallPhrase(it) }
         // حالةُ خطّ الهاتف تُقرأ مباشرةً لا من عَلَم المستقبل: بثّ
         // `OFFHOOK` يُعالَج في coroutineٍ قد يتأخّر، والإشعارُ يصل بعده
         // مباشرةً — فمن يقرأ العَلَمَ يظنّ المكالمةَ غيرَ قائمة.
@@ -371,8 +377,22 @@ class NateqNotificationListener : NotificationListenerService() {
             networkCallInProgress = callInProgress,
             endedCallAt = endedAt,
             sameEndedIdentity = sameEnded,
-            now = System.currentTimeMillis()
+            now = System.currentTimeMillis(),
+            outgoing = outgoing
         )
+    }
+
+    /** نصوصُ إشعار المكالمة الثلاثة كما نراها خاماً (العنوان والنصّ
+     *  والورقة) — تُقرأ مرةً واحدة هنا وتُستخدم للحارس وللاستخراج. */
+    private fun notificationCallPhrases(
+        notification: Notification
+    ): List<String> {
+        val extras = notification.extras
+        return listOfNotNull(
+            extras.getCharSequence(Notification.EXTRA_TITLE)?.toString(),
+            notificationBodyText(extras),
+            extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()
+        ).map { it.trim() }.filter { it.isNotEmpty() }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {

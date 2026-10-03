@@ -103,12 +103,23 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
          *
          *  1. **مكالمةُ شبكةٍ قائمة** (`OFFHOOK`): الإشعارُ يخصّها، والشبكة
          *     تُعلن الثنائيات عبر `PHONE_STATE` — لا إعلانَ من الإشعار.
-         *  2. **إشعارٌ جارٍ** (`FLAG_ONGOING_EVENT`): المكالمةُ قائمةٌ لا
-         *     رنّةٌ جديدة (وهو ما تنشره تطبيقاتُ VoIP بمجرد الاتصال).
+         *  2. **إشعارٌ صادرٌ جارٍ** (`ongoing` + نصٌّ صادرٌ): المكالمةُ
+         *     قائمةٌ لا رنّةٌ جديدة. **وشرطُ الصغرى النصُّ لا العَلَمُ
+         *     وحده** — انظر [outgoing] وسببه أدناه.
          *  3. **إشعارُ آخر مكالمةِ شبكةٍ انتهيناها** داخل
          *     [AFTER_HANGUP_GRACE_MS]: إعلانُه يعني نطقَ مكالمةٍ بعد
          *     انتهائها — فلا يُعلَن. والمطابقةُ بالهوية (رقمٌ أو اسمٌ) لا
          *     بالمجرّد، فلا تُكبَح رنّةُ شخصٍ آخر في تلك الثواني.
+         *
+         * **لماذا لم يبقَ `ongoing` ساداً — انحدارُ جوجل ميت:**
+         * كان `if (isOngoing) return false` فيسقط *كلَّ* إشعارٍ جارٍ،
+         * وفيه مكالمةُ **جوجل ميت** الواردة: Meet يُعلِّم إشعارَ
+         * مكالمته `FLAG_ONGOING_EVENT` **من لحظة الرنّ** (لأنه واجهةُ
+         * مكالمةٍ حيّة لا إشعارُ حدثٍ عابر)، فلم يُنطق اسمُ المتصل فيها
+         * أبداً — انحدارٌ كامل للتطبيق. فلم يبقَ للعَلَم vetoٌ مطلق؛
+         * وصار لازمَ أن يُثبِتَ الدليلُ **الاتجاهَ** بنفسه: يُرفض
+         * `ongoing` إذا بدا نصُّه صادراً ([outgoing])، ويُقبل وإلا.
+         * فمن أرسلنا إليه لا يُعلَن، وجوجل ميت الوارد يُعلَن.
          *
          * خالصٌ قابلٌ للاختبار.
          */
@@ -118,10 +129,12 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             endedCallAt: Long,
             sameEndedIdentity: Boolean,
             now: Long,
+            /** هل نصُّ الإشعار يصفّ مكالمةً صادرة (المستخدمُ المتصل)؟ */
+            outgoing: Boolean = false,
             graceMs: Long = AFTER_HANGUP_GRACE_MS
         ): Boolean {
             if (networkCallInProgress) return false
-            if (isOngoing) return false
+            if (isOngoing && outgoing) return false
             if (sameEndedIdentity && endedCallAt > 0L &&
                 now - endedCallAt < graceMs
             ) {
@@ -274,6 +287,18 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
 
         /** فاصل فحص سجل المكالمات أثناء مهلة الانتظار (300 مللي ثانية) */
         internal const val CALLER_LOG_POLL_INTERVAL_MS = 300L
+
+        /**
+         * فاصل فحص **الهوية المشتركة** أثناء مهلة الانتظار (50 مللي ثانية).
+         *
+         * **لماذا أسرعُ من سجلّ المكالمات؟** لأن قراءتَها قراءةُ ذاكرة
+         * ([RingCallerIdentity]) تكاد تكون مجانية، بينما استعلامُ سجلّ
+         * المكالمات `ContentResolver` غالٍ. فكان الاثنانُ يقترنان على
+         * 300ms، فينتظرُ نطقُ المتصل 300ms كاملةً although الاسمَ كان
+         * قد وصلَ قبل البثّ بأجزاءٍ من الثانية (مسارُ VoIP ينشره سلفاً).
+         * ففصلنا الفاصلَين: الذاكرةُ كل 50ms، والسجلُّ كل 300ms كما كان.
+         */
+        internal const val CALLER_IDENTITY_POLL_INTERVAL_MS = 50L
 
         /**
          * هل تتوفّر هويةٌ صالحة للنطق (اسمٌ أو رقم)؟ إن لم تتوفّر فالإجابة
@@ -869,10 +894,22 @@ if (rawNumber != null) {
                         elapsed).coerceAtLeast(0L)
                     var waited = 0L
                     var triedLocalResolve = false
+                    // **نبدأُ بالفحصِ لا بالنوم** (إصلاحُ تأخير النطق):
+                    // كانت الحلقةُ `delay(300)` ثم تفحص، فتدفع 300ms
+                    // ثابتةً على *كل* مكالمة. وفي مسار VoIP يكون الاسمُ
+                    // مُعبَّأً سلفاً في [RingCallerIdentity] — потому
+                    // ينشرُه مستمعُ الإشعارات قبل البثّ — فكنّا ننتظر
+                    // ونحمل الجوابَ في الذاكرة.
+                    var nextLogPollAt = 0L
                     while (waited < remainingGrace) {
-                        delay(CALLER_LOG_POLL_INTERVAL_MS)
-                        waited += CALLER_LOG_POLL_INTERVAL_MS
-                        val fromLog = if (hasCallLog) {
+                        // سجلُّ المكالمات غالٍ (ContentResolver) فيُنفَذ
+                        // كل [CALLER_LOG_POLL_INTERVAL_MS]، والذاكرةُ
+                        // المجانيةُ كل [CALLER_IDENTITY_POLL_INTERVAL_MS].
+                        val fromLog = if (hasCallLog &&
+                            System.currentTimeMillis() >= nextLogPollAt
+                        ) {
+                            nextLogPollAt = System.currentTimeMillis() +
+                                CALLER_LOG_POLL_INTERVAL_MS
                             resolveLatestCallFromLog(context, hasCallLog)
                         } else {
                             null
@@ -909,6 +946,8 @@ if (rawNumber != null) {
                             )
                         }
                         if (identityHasName(contactName)) break
+                        delay(CALLER_IDENTITY_POLL_INTERVAL_MS)
+                        waited += CALLER_IDENTITY_POLL_INTERVAL_MS
                     }
                 }
 

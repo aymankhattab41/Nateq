@@ -115,6 +115,33 @@ internal object RingCallerIdentity {
         return !t.any { it.isDigit() }
     }
 
+    /**
+     * هل النصّ يصفّ مكالمةً **صادرة** (المستخدمُ هو المتصل)؟
+     *
+* **لماذا وُجد (انحدارُ جوجل ميت):** كان حارسُ الاتجاه يرفض كلَّ
+     * إشعارٍ مُعلَّم `ongoing`، فسقط إعلانُ Meet بصمت. وجوجل ميت
+     * يُعلِّم إشعارَ مكالمته الواردة `ongoing` **من لحظة الرنّ** (لأنه
+     * واجهةُ مكالمةٍ حيّة لا إشعارُ حدثٍ عابر)، فسقط كلُّ إعلانٍ لجوجل
+     * ميت بصمت. ولم يكن في الحارس ما يميّز «واردةً مُعلَّمة ongoing»
+     * من «صادرةً مُعلَّمة ongoing» — بل كان يرفض الاثنين معاً.
+     *
+     * فالحارسُ صار يرفض `ongoing` إذا بدا نصُّه صادراً، ويقبله وإلا.
+     * وهذه هي العلاماتُ التي تنشرُها التطبيقات عند إجراء المستخدم
+     * المكالمة (عربياً وإنجليزياً).
+     */
+    internal fun isOutgoingCallPhrase(text: String): Boolean {
+        val t = text.trim().lowercase()
+        if (t.isEmpty()) return false
+        val markers = listOf(
+            "calling", "calling...", "calling…",
+            "outgoing call", "outgoing", "placing call", "dialing",
+            "ringing...", "ringing…", "ringing",
+            "جاري الاتصال", "جاري الإتصال", "يتصل",
+            "مكالمة صادرة", "اتصال صادر", "صادرة"
+        )
+        return markers.any { t == it || t.startsWith("$it ") }
+    }
+
     /** أرقام فقط (مع رموز الاتصال المسموحة) فهو هوية رقمية. */
     internal fun looksLikePhoneNumber(text: String): Boolean {
         val t = text.trim()
