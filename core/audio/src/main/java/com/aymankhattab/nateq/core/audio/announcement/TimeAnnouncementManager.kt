@@ -538,7 +538,11 @@ class TimeAnnouncementManager(
             AudioCue(
                 type = CueType.TIME_HOURLY,
                 soundName = settings.getTimeChimeSound(),
-                volume = settings.getTimeChimeVolume(),
+                // **المستوى الفعّال لا اليدوي:** الرنّةُ تتبع صوتَ نطق
+                // الساعة افتراضياً، فيرتفع جرسُها بنطقه وينخفض بنقصه،
+                // ولا يُستعمل المستوى اليدويّ إلا إن ألغى المستخدمُ
+                // التتبّع. (القرارُ في `TimeChimeVolumeLink`.)
+                volume = settings.getEffectiveTimeChimeVolume(),
                 customUri = customUri
             )
         } catch (t: Throwable) {

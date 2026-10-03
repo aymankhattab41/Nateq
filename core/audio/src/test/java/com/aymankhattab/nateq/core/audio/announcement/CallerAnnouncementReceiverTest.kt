@@ -124,6 +124,120 @@ class CallerAnnouncementReceiverTest {
         }
     }
 
+    /**
+     * حارسُ عقد **«لا نطقَ فوق مكالمةٍ جارية»** — الكسرُ الذي يحرسه:
+     * حلقةُ التكرار كانت تنفّذ `delay` ثم تنطق بلا أي فحص، فلا يوقفها
+     * إلا `OFFHOOK`؛ ومكالماتُ التطبيقات (VoIP) لا يُبَثّ لها
+     * `PHONE_STATE` إطلاقاً ولا يُلغى إشعارُها إلا بالحذف — فردُّ
+     * المستخدم يُبقي الإشعارَ «جارياً» فيمتدّ اسمه فوق مكالمته حتى آخر
+     * نبضةٍ في الدقيقة (عشرُ مرّاتٍ افتراضياً).
+     */
+    @Test
+    fun `repeats stop once a VoIP call is answered`() {
+        // الرنينُ جارٍ: التكرارُ مشروع.
+        assertTrue(
+            CallerAnnouncementReceiver.shouldContinueRepeating(
+                notificationStillRinging = true,
+                callAnnouncedAnswered = false,
+                networkCallAnswered = false
+            )
+        )
+        // **الكسر:** إشعارُ مكالمة التطبيق ما زال حيّاً (لم يُحذف)، لكن
+        // الدليلُ الصريح على الردّ («مكالمة جارية») وصل — فالتكرارُ
+        // يجب أن يتوقف. هذا ما كان ينطق فوق مكالمة المستخدم.
+        assertFalse(
+            CallerAnnouncementReceiver.shouldContinueRepeating(
+                notificationStillRinging = true,
+                callAnnouncedAnswered = true,
+                networkCallAnswered = false
+            )
+        )
+    }
+
+    /**
+     * الحارسُ نفسُه لمكالمة الشبكة: `OFFHOOK` يُعيد قراءته داخل الحلقة
+     * لأن الإلغاءَ قد يسبق تحققَ الحلقة فيسباقِ `delay`.
+     */
+    @Test
+    fun `repeats stop once a network call is answered`() {
+        assertFalse(
+            CallerAnnouncementReceiver.shouldContinueRepeating(
+                notificationStillRinging = true,
+                callAnnouncedAnswered = false,
+                networkCallAnswered = true
+            )
+        )
+    }
+
+    /** ولا يتوقف التكرارُ قبل الأوان: «لا أعرف» ليست «انتهى». */
+    @Test
+    fun `unknown state keeps repeating`() {
+        assertTrue(
+            CallerAnnouncementReceiver.shouldContinueRepeating(
+                notificationStillRinging = true,
+                callAnnouncedAnswered = false,
+                networkCallAnswered = false
+            )
+        )
+    }
+
+    /**
+     * حذفُ إشعار المكالمة (انتهاءُها) يوقف التكرار كذلك — والمُدخلُ
+     * الأولُ للحارس هو حالةُ `notificationCallActive`.
+     */
+    @Test
+    fun `dismissed call notification stops repeating`() {
+        assertFalse(
+            CallerAnnouncementReceiver.shouldContinueRepeating(
+                notificationStillRinging = false,
+                callAnnouncedAnswered = false,
+                networkCallAnswered = false
+            )
+        )
+    }
+
+    /**
+     * **الإثباتُ بالإيجاب لا بغياب الدليل:** نصُّ إعلانِ مكالمةٍ **واردة**
+     * أو **صادرة** لا يُحسب دليلَ ردٍّ أبداً — وإلا انحدر إعلانُ
+     * جوجل ميت الوارد («Ringing tone…») وهو إصلاحٌ سابق (بند 5.6).
+     */
+    @Test
+    fun `incoming and outgoing ringing texts are not answered marks`() {
+        val ringing = listOf(
+            "Ringing tone…",
+            "incoming call",
+            "Incoming voice call",
+            "مكالمة واردة",
+            "جار الاتصال",
+            "جارٍ الاتصال"
+        )
+        ringing.forEach {
+            assertFalse(
+                "نصٌّ رنٍّ لا يُحسب دليلَ ردٍّ: $it",
+                RingCallerIdentity.isAnsweredCallPhrase(it)
+            )
+        }
+    }
+
+    /** ونقيضُها: عباراتُ الجوارحة الصريحة دليلٌ قاطعٌ على الردّ. */
+    @Test
+    fun `explicit ongoing phrases are answered marks`() {
+        val answered = listOf(
+            "Ongoing call",
+            "ongoing call",
+            "Active call",
+            "مكالمة جارية",
+            "مكالمة نشطة",
+            "مكالمة متصلة"
+        )
+        answered.forEach {
+            assertTrue(
+                "عبارةُ جوارحةٍ صريحة دليلُ ردٍّ: $it",
+                RingCallerIdentity.isAnsweredCallPhrase(it)
+            )
+        }
+    }
+
     // حارس: الحدّان متّسقان بين المخزن والواجهة والاستهلاك — فأيُّ حدٍّ
     // منفرد بلا حدٍّ في الموضع يصنع خياراً ميتاً في الواجهة
     // والتخزين (قاعدة «الحدّ الواحد في ثلاثة مواضع»).

@@ -144,6 +144,10 @@
 <string name="spinner_time_chime_sound_content">Choose hourly chime sound</string>
 <string name="time_chime_volume">Chime volume</string>
 <string name="time_chime_volume_desc">Hourly chime volume</string>
+<string name="time_chime_follows_announcement">Chime follows the announcement volume</string>
+<string name="time_chime_follows_announcement_desc">The chime rises and falls with the spoken time. Turn it off to set its level on its own</string>
+<string name="time_chime_follows_announcement_on">The chime now follows the spoken volume</string>
+<string name="time_chime_follows_announcement_off">The chime will no longer follow the spoken volume</string>
 <string name="time_chime_quarters_title">Chime schedule</string>
 <string name="time_chime_at_0">Top of the hour (:00)</string>
 <string name="time_chime_at_15">Quarter past (:15)</string>
@@ -495,6 +499,8 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+• The hourly chime now follows the spoken volume: its level used to be an independent control with no link to the speech, so raising the time volume left the chime untouched; it now follows by default, and anyone who wants them separate can turn the link off and set its own level (it never falls silent: the lowest link is the bottom of the chime range)
+• The caller name no longer repeats over your call after you answer: the loop used to wait without checking anything, so only the hangup signal stopped it, and app calls (WhatsApp, Telegram) get no such signal at all, which left your name sounding over the call until the last beat; it now stops the moment ringing ends, for both kinds of call
 • Fixed an app crash when opening any file: the file provider was declared exported and Android refused it with \"Provider must not be exported\", taking the app down the moment it opened
 • The dictionary is now actually applied while speaking: every consumer used to build its own empty copy, so the settings screen showed your entries while speech ignored them; there is now one instance per process, and a broken Keystore falls back to plain storage instead of disabling the dictionary
 • The delete and import dictionary options are now visible: they already existed on the screen but had zero width and never drew, and they now sit side by side with a confirmation before deleting

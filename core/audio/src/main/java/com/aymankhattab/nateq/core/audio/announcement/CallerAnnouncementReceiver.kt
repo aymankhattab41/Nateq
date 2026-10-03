@@ -134,6 +134,74 @@ private const val CALL_STATE_ALERTING = 4
                 callState == TelephonyManager.CALL_STATE_OFFHOOK
 
         /**
+         * **هل ما زال الرنينُ جارياً؟** — حارسُ تكرار إعلان المتصل.
+         *
+         * **جذرُ «نطق المتصل بعد فتح المكالمة»:** كانت حلقةُ التكرار
+         * تنفّذ `delay` ثم تنطق بلا أي فحص. فيُوقفها `OFFHOOK` وحده،
+         * ومكالماتُ التطبيقات (VoIP) لا يُبَثّ لها `PHONE_STATE` إطلاقاً
+         * فلا يوقفها شيءٌ حتى لو ردّ المستخدم — فاستمرّ الاسمُ يُنطق
+         * فوق المكالمةِ الجارية (حتى 10 مرات في 60 ثانية).
+         *
+         * **فالمُدخلان:**
+         * - [notificationCallActive] — أعلَمُ أن إشعارَ مكالمةٍ ما زال
+         *   حيّاً (يُصفَّر عند حذفه أو عند [markCallAnswered]).
+         * - [callAnnouncedAnswered] — عَلَمٌ يرفعه مستمعُ الإشعارات
+         *   حين يرى نصَّ «مكالمة جارية» الصريح، وهو الطريقُ الوحيد
+         *   المتاح لمكالمة التطبيق (لا بثَّ هاتف ولا إذن).
+         *
+         * **وعلى مكالمة الشبكة يُضاف** فحصُ `OFFHOOK` بين التكرارات
+         * ([isNetworkCallAnswered]) فيُغلق سباقَ `delay`: فالإلغاءُ
+         * وحدَه قد سبقَ تحققَ الحلقة فلا يكفي.
+         *
+         * خالصةٌ قابلةٌ للاختبار بلا `Context`.
+         */
+        internal fun shouldContinueRepeating(
+            notificationStillRinging: Boolean,
+            callAnnouncedAnswered: Boolean,
+            networkCallAnswered: Boolean
+        ): Boolean =
+            notificationStillRinging &&
+                !callAnnouncedAnswered &&
+                !networkCallAnswered
+
+        /**
+         * رفعُ عَلَم «انتهى الرنين» لمكالمةِ إشعار — يوقفه حارسُ التكرار
+         * بلا إلغاءِ دورةٍ كاملة (فيُنهى البثُّ طبيعياً بعد آخر نطق).
+         *
+         * يُستدعى من مستمعِ الإشعارات فقط عند **إيجابٍ صريح**
+         * ([RingCallerIdentity.isAnsweredCallPhrase])، فلا يُلمس إعلانُ
+         * مكالمةٍ ما زالت ترنّ.
+         */
+        internal fun markCallAnswered() {
+            if (!callAnnouncedAnswered) {
+                callAnnouncedAnswered = true
+                Log.w(TAG, "CALL ANSWERED — أُوقف تكرار إعلان المتصل")
+            }
+        }
+
+        /** تصفيرُ عَلَم «انتهى الرنين» — مع بدء جلسةِ رنينٍ جديدة. */
+        internal fun clearCallAnswered() {
+            callAnnouncedAnswered = false
+        }
+
+        /**
+         * هل حالتُ خطّ الهاتف الآن **مكالمةٌ قائمةٌ جارٍ ردُّها** (ردّ
+         * المستخدم)؟ تُقرأ مباشرةً لا من عَلَمٍprevious، إذ قد يكون بثُّ
+         * `OFFHOOK` أُحلِّر قبل تحقق الحلقة — فلا يكفي الإلغاءُ وحده
+         * ليُغلق سباقَ `delay`. أي خطأٍ في القراءة = «لا أعرف» فلا
+         * توقف (لئلا يُسقط إعلانٌ مشروع).
+         */
+        private fun isNetworkCallAnswered(context: Context): Boolean =
+            runCatching {
+                @Suppress("DEPRECATION")
+                val state = (context.getSystemService(
+                    Context.TELEPHONY_SERVICE
+                ) as? TelephonyManager)?.callState
+                    ?: TelephonyManager.CALL_STATE_IDLE
+                state == TelephonyManager.CALL_STATE_OFFHOOK
+            }.getOrDefault(false)
+
+        /**
          * صيغُ الرقم التي يُجرَّب البحثُ بها في دفتر الاتصالات، بترتيب
          * الأولوية بلا تكرار: الخامُ كما ورد، ثم الخاناتُ وحدها،
          * ثم الصيغةُ الدولية `E164` إن أمكن تصريفُها.
@@ -421,6 +489,7 @@ private const val CALL_STATE_ALERTING = 4
             ringingStartTime = 0L
             ringingAnnounced = false
             announcedNumber = null
+            clearCallAnswered()
             pendingRingNumber = null
             notificationCallActive = false
             // هوية الجلسة مشتركة مع إشعار الهاتف وخدمة الفرز، فلا
@@ -458,11 +527,12 @@ private const val CALL_STATE_ALERTING = 4
          *  بترِ الإعلانات الطويلة: 6 ثوانٍ كانت تقطع أيّ إعلانٍ يتجاوزها
          *  بتجميد العملية (Process Cgroup Freezer) بلا خطأ.
          *
-         *  **ثابتٌ لا يُرفع مهما طالت الميزانيةُ الزمنية:** فتمديد مهلة
-         *  انتظار رقم المتصل إلى سبع ثوانٍ ثمّ نطقُ التكرارات يُخرج
-         *  النطق عن نافذة البث عمداً — ويُبقى هذا السقف على حاله ليُنهى
-         *  البث قبل حافة نظام التشغيل، ويبقى ما بعده في `appScope` خارج
-         *  نافذة البث. */
+* **ثابتٌ لا يُرفع مهما طالت الميزانيةُ الزمنية:** فتمديدُ
+         * انتظار المتصل إلى [CALLER_RESOLVE_GRACE_PERIOD_MS] +
+         * [CALLER_IDENTITY_LATE_WAIT_MS] (ثمّ نطقُ التكرارات) يُخرج
+         * النطقَ عن نافذة البث عمداً — ويبقى هذا السقف على حاله ليُنهى
+         * البثُّ قبل حافة نظام التشغيل، ويبقى ما بعده في `appScope`
+         * خارج نافذة البث. */
         internal const val BROADCAST_SAFE_CAP_MS = 9_000L
 
         /** كم عدد الخانات الرقمية الواجب تطابقها في المطابقة الذكية الأخيرة
@@ -530,6 +600,17 @@ private const val CALL_STATE_ALERTING = 4
          *  المزدوجةُ بنافذة المفتاح لا بمقارنة الرقم. */
         @Volatile
         private var notificationCallActive = false
+
+        /**
+         * **هل رُدَّ على مكالمةِ الإشعار؟** — العَلَمُ الوحيد المتاح
+         * لمكالمةِ تطبيق، لأنه لا `PHONE_STATE` لها ولا إذنَّ لرصد
+         * حالتها. يرفعه مستمعُ الإشعارات عند **إيجابٍ صريح** في نصّ
+         * الإشعار ([RingCallerIdentity.isAnsweredCallPhrase]) أي
+         * «مكالمة جارية» — لا بغيابِ دليل، فلا يُلمس إعلانُ مكالمةٍ
+         * ما زالت ترنّ. ويصفّره [resetRingingSession] مع كل رنّة.
+         */
+        @Volatile
+        private var callAnnouncedAnswered = false
 
         /**
          * هل تُطلَق دورةُ نطقٍ لمكالمةِ إشعارٍ بهويتها هذه؟
@@ -1190,15 +1271,38 @@ private const val CALL_STATE_ALERTING = 4
                 // قائمة مستمعي المتحدث المشترك (بند [8]) فلا يطمس خطاف أداة
                 // الساعة أو مستقبلٍ آخر، ويُزال في finally.
                 val appCtx = context.applicationContext
-                // تكرارُ الإعلان (وإن كان لرنينِ انتظارٍ أثناء مكالمة) يتبع
-                // جدولَ الإعدادات نفسه: عدد مرات وفواصل مضبوطة بحد أقصى نافذة
-                // البث — فإعلانُ المتصل أثناء مكالمة نشطة يُكرَّر كباقي الرنّات
-                // (لا تخفيفٌ لنطقٍ واحد فوقها بلا سبب).
+                // تكرارُ الإعلان يتبع جدولَ الإعدادات نفسه: عدد مرات وفواصل
+                // مضبوطة بحد أقصى نافذة البث.
+                //
+                // **ولا يُكرَّر فوق مكالمةٍ جارية** — حارسٌ عند كل
+                // نبضة: الجذرُ أن الحلقةَ كانت تنفّذ `delay` ثم تنطق بلا
+                // فحصٍ، فلا يوقفها إلا `OFFHOOK`؛ ومكالماتُ التطبيقات
+                // لا `PHONE_STATE` لها فيمتدّ الاسمُ فوق مكالمتك بعد
+                // ردّك (حتى آخر نبضة في الدقيقة).
                 if (schedule.isNotEmpty()) {
                     var lastLaunchMs = 0L
                     for ((index, offsetMs) in schedule.withIndex()) {
                         delay(offsetMs - lastLaunchMs)
                         lastLaunchMs = offsetMs
+                        if (!shouldContinueRepeating(
+                                notificationStillRinging =
+                                    notificationCallActive,
+                                callAnnouncedAnswered =
+                                    callAnnouncedAnswered,
+                                networkCallAnswered =
+                                    isNetworkCallAnswered(appCtx)
+                            )
+                        ) {
+                            Log.w(
+                                TAG,
+                                "REPEAT STOPPED at+" +
+                                    "${offsetMs}ms — انتهى الرنين"
+                            )
+                            // الإنهاءُ هنا كلِّه في `finally` أدناه
+                            // (تحريرُ الـ wakeLock وإزالةُ المستمع
+                            // و[finishOnce]) فلا داعي لتكراره.
+                            return@launch
+                        }
                         if (index == schedule.lastIndex) {
                             completionListener = { finishOnce() }
                             speaker.addCompletionListener(completionListener!!)

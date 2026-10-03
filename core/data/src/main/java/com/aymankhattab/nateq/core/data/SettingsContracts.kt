@@ -331,6 +331,23 @@ interface AnnouncementPrefs {
     /** يعيّن مستوى صوت الرنة. */
     fun setTimeChimeVolume(volume: Float)
 
+    /**
+     * هل تتبع رنّةُ الساعةَ صوتَ نطقها؟ مفعّلةٌ افتراضياً — فالمستوى
+     * اليدويّ تجاوزٌ لمن أراد فصلَهما، لا القيمةُ التي يسير عليها
+     * الجميع.
+     */
+    fun isTimeChimeVolumeFollowsAnnouncement(): Boolean
+
+    /** يعيّن تتبّع الرنّةِ لنطق الساعة. */
+    fun setTimeChimeVolumeFollowsAnnouncement(follows: Boolean)
+
+    /**
+     * مستوى رنّة الساعة **الفعّال** — وهو ما يُبنى عليه [AudioCue]
+     * عند النطق، لا القيمة اليدوية المحفوظة: التتبُّعُ يُجيب بحجم
+     * النطق نفسه، وإلا فبالحجم اليدويّ.
+     */
+    fun getEffectiveTimeChimeVolume(): Float
+
     /** مسار URI لملف رنة الساعة المخصص (أو فارغ إن لم يُحدد). */
     fun getCustomChimeUri(): String
 

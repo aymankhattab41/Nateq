@@ -1485,6 +1485,32 @@ class SettingsRepository(context: Context) :
             "time_chime_volume", volume.coerceIn(0.1f, 1f)
         ).apply()
 
+    /**
+     * تتبُّعُ الرنّةِ لنطق الساعة — **مفعّلٌ افتراضياً**: فالرنّةُ لم
+     * تعد ضابطاً مستقلاً بل تابعاً لصوت النطق، والمستوى اليدويّ
+     * تجاوزٌ لمن أراد فصلهما.
+     */
+    override fun isTimeChimeVolumeFollowsAnnouncement(): Boolean =
+        prefs.getBoolean("time_chime_volume_follows_announcement", true)
+    override fun setTimeChimeVolumeFollowsAnnouncement(follows: Boolean) =
+        prefs.edit()
+            .putBoolean("time_chime_volume_follows_announcement", follows)
+            .apply()
+
+    /**
+     * المستوى الذي يُبنى عليه [AudioCue] فعلياً. **مصدرُ الحقيقة
+     * الوحيد:** كلُّ مستهلكٍ للرنّة يقرأ هنا، فلا يستعمل أحدٌ القيمةَ
+     * اليدويةَ مباشرةً فيُسمع ما لم يُختر.
+     */
+    override fun getEffectiveTimeChimeVolume(): Float =
+        TimeChimeVolumeLink.effective(
+            followsAnnouncement =
+                isTimeChimeVolumeFollowsAnnouncement(),
+            announcementVolume =
+                getVolumeForCategory(VOICE_CATEGORY_TIME),
+            manualVolume = getTimeChimeVolume()
+        )
+
     /** مسار URI لملف رنة الساعة المخصص. */
     override fun getCustomChimeUri(): String =
         prefs.getString("custom_chime_uri", "").orEmpty()

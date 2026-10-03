@@ -432,7 +432,18 @@
                     android:contentDescription="@string/spinner_time_chime_sound_content" />
             </com.google.android.material.textfield.TextInputLayout>
 
-            <!-- مستوى صوت رنة الساعة -->
+            <!-- تتبّع الرنّة لنطق الساعة: مربّعٌ يخفي شريطَ المستوى حين يبقى
+     التتبّعُ مفعّلاً (الافتراضي)، فلا يُضبط مستوًى لا يُسمع -->
+            <CheckBox
+                android:id="@+id/cb_time_chime_follows_announcement"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/time_chime_follows_announcement"
+                android:contentDescription="@string/time_chime_follows_announcement_desc" />
+
+<!-- مستوى صوت رنة الساعة -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -441,6 +452,7 @@
                 android:orientation="horizontal">
 
                 <TextView
+                    android:id="@+id/tv_time_chime_volume_label"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"

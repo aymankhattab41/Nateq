@@ -183,6 +183,23 @@ class NateqNotificationListener : NotificationListenerService() {
                         "CALL-IDENTITY pkg=$pkg num=${callNumber ?: "?"}" +
                             " name=${callName ?: "?"}"
                     )
+                    // **رفعُ عَلَم «انتهى الرنين» قبل كل البوابات**
+                    // (بند 5.6 معكوس): إن كان الجوابُ قد وقع فالموضوعُ
+                    // ليس إعلاناً جديداً بل **وقفُ تكرارٍ جارٍ** — وهو
+                    // يَحتاج أن يُعلَم حتى حين يُكبَح الإعلانُ نفسه أدناه.
+                    // والإثباتُ بالإيجاب فقط ([isAnsweredCallPhrase]) فلا
+                    // يُمسّ إعلانُ مكالمةٍ ما زالت ترنّ (Meet الوارد مثلاً).
+                    if (notificationCallPhrases(notification).any {
+                            RingCallerIdentity.isAnsweredCallPhrase(it)
+                        }
+                    ) {
+                        Log.w(
+                            TAG,
+                            "CALL ANSWERED pkg=$pkg — أُوقف تكرارُ " +
+                                "إعلان المتصل"
+                        )
+                        CallerAnnouncementReceiver.markCallAnswered()
+                    }
                     // **حارس الاتجاه (الاسماء الصادرة والمنتهية):** إشعارُ
                     // `CATEGORY_CALL` وحده لا يميّز الواردةَ من الصادرة
                     // ولا المنتهية — فكان يُنطق «اتصال وارد من فلان» لمن

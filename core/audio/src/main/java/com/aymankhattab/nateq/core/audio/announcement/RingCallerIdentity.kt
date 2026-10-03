@@ -225,6 +225,43 @@ internal object RingCallerIdentity {
         OUTGOING_PHRASE_MARKERS.map { normalizeCallPhrase(it) }
     }
 
+    /**
+     * هل انتهى رنينُ المكالمة — أي صارت **مُجابةً/نشطة** لا رنّةً؟
+     *
+     * **جذرُ «نطق المتصل بعد فتح المكالمة»:** حلقةُ التكرار كانت تنفّذ
+     * `delay` ثم تنطق بلا أي فحص، فلا يتوقفُ النطقُ إلا بإلغاءٍ من
+     * `OFFHOOK`. ومكالماتُ التطبيقات (VoIP) **لا يُبَثّ لها
+     * `PHONE_STATE` إطلاقاً**، فالإلغاءُ الوحيد فيها عند *حذف* إشعار
+     * المكالمة — وردُّ المستخدم يحوّل الإشعارَ إلى «جارية» ولا يحذفه،
+     * فاستمرّ الاسمُ يُنطق فوق المكالمةِ الجارية حتى آخر تكرار.
+     *
+     * **والإثباتُ بالإيجاب لا بغياب الدليل:** لا يكفي أن ينقص
+     * «جارٍ الاتصال» من النصّ، فقد يغيّر التطبيقُ صياغتَه فلا يبقى ما
+     * يُطابَق. فلا تُحسب إلا عبارةٌ **صريحةٌ بالجوارحة**، بالعربية
+     * والإنجليزية — فهذه القاعدة لا تصيب إعلانَ Meet الوارد
+     * («Ringing tone…») وهو إصلاحٌ سابق (بند 5.6).
+     *
+     * خالصةٌ قابلةٌ للاختبار بلا `Context`.
+     */
+    internal fun isAnsweredCallPhrase(text: String): Boolean {
+        val t = normalizeCallPhrase(text)
+        if (t.isEmpty()) return false
+        return normalizedAnsweredMarkers.any { marker -> t.contains(marker) }
+    }
+
+    /** عباراتُ الجوارحة الصريحة — تُكتب خاماً فتُطبَّع عند أول استعمال. */
+    private val ANSWERED_PHRASE_MARKERS = listOf(
+        "ongoing call", "ongoing", "active call", "on call",
+        "in call", "connected call", "call in progress",
+        "مكالمة جارية", "مكالمة جاريه", "مكالمة نشطة", "مكالمة نشطه",
+        "مكالمة متصلة", "مكالمة متصله", "جاريه", "جار مكالمه"
+    )
+
+    /** العباراتُ بعد التطبيع — فلا يُقارَن نصٌّ مُطبَّعٌ بعلامةٍ خام. */
+    private val normalizedAnsweredMarkers: List<String> by lazy {
+        ANSWERED_PHRASE_MARKERS.map { normalizeCallPhrase(it) }
+    }
+
     /** أرقام فقط (مع رموز الاتصال المسموحة) فهو هوية رقمية. */
     internal fun looksLikePhoneNumber(text: String): Boolean {
         val t = text.trim()

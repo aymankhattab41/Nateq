@@ -58,8 +58,10 @@ internal class TimeAnnouncementController(
     private var cbTimeChimeAt15: MaterialCheckBox? = null
     private var cbTimeChimeAt30: MaterialCheckBox? = null
     private var cbTimeChimeAt45: MaterialCheckBox? = null
+    private var cbChimeFollows: MaterialCheckBox? = null
     private var spinnerTimeChimeSound: Spinner? = null
     private var seekTimeChimeVolume: SeekBar? = null
+    private var tvChimeVolumeLabel: TextView? = null
 
     /** صف منح إذن المنبهات الدقيقة — تُحدَّث رؤيته في onResume (بند 4.7). */
     private var llExactAlarmPermission: View? = null
@@ -248,6 +250,10 @@ internal class TimeAnnouncementController(
             view.findViewById(R.id.spinner_time_chime_sound)
         seekTimeChimeVolume =
             view.findViewById(R.id.seekbar_time_chime_volume)
+        tvChimeVolumeLabel =
+            view.findViewById(R.id.tv_time_chime_volume_label)
+        cbChimeFollows =
+            view.findViewById(R.id.cb_time_chime_follows_announcement)
         val chimeSounds = listOf(
             fragment.getString(R.string.time_chime_sound_classic_bell),
             fragment.getString(R.string.time_chime_sound_digital_chime),
@@ -335,6 +341,28 @@ internal class TimeAnnouncementController(
         val savedChimeVol = runCatching {
             settings.getTimeChimeVolume()
         }.getOrDefault(0.5f)
+        // تتبّعُ الرنّة لنطق الساعة: مربّعٌ يُبقي الشريطَ على مستواه
+        // اليدويّ وحده عند تفعيله (الافتراضي) فلا يُضبط مستوًى
+        // لا يُسمع.
+        val chimeFollows = runCatching {
+            settings.isTimeChimeVolumeFollowsAnnouncement()
+        }.getOrDefault(true)
+        cbChimeFollows?.isChecked = chimeFollows
+        cbChimeFollows?.setOnCheckedChangeListener { _, checked ->
+            runCatching {
+                settings.setTimeChimeVolumeFollowsAnnouncement(checked)
+            }
+            refreshChimeVolumeEnabled(chimeEnabled)
+            fragment.view?.announceCompat(
+                fragment.getString(
+                    if (checked) {
+                        R.string.time_chime_follows_announcement_on
+                    } else {
+                        R.string.time_chime_follows_announcement_off
+                    }
+                )
+            )
+        }
         val seekProgress = ((savedChimeVol - 0.1f) / 0.9f * 100)
             .toInt().coerceIn(0, 100)
         seekTimeChimeVolume?.max = 100
@@ -344,11 +372,10 @@ internal class TimeAnnouncementController(
         } finally {
             bindingSlider = false
         }
-        // وصف الحالة الإتاحي للشريط عند التهيئة: يقرأه TalkBack فور الوصول
-        // إليه (بدل الوصول ثم انتظار حركةٍ بالتوقف).
-        seekTimeChimeVolume?.setSeekStateDescription(
-            "${(savedChimeVol * 100).toInt()}%"
-        )
+// وصفُ الحالة الإتاحي للشريط عند التهيئة: يقرأه TalkBack فور
+        // الوصول إليه (بند 6.3) — و[refreshChimeVolumeEnabled] هو
+        // من يحدّده، فيُخبر عن التتبّعِ بدل نسبةٍ لا مستوىَ لها.
+        refreshChimeVolumeEnabled(chimeEnabled)
 
         switchTimeChime?.setOnCheckedChangeListener { _, checked ->
             runCatching { settings.setTimeChimeEnabled(checked) }
@@ -612,16 +639,31 @@ internal class TimeAnnouncementController(
         }
     }
 
+    /**
+     * مستوىُ معاينة الرنّة — **كما تُنطق فعلاً**: فإن كانت الرنّةُ على
+     * صوت النطق فيُؤخذ مستوىُ النطق من المستودع، وإلا فمستوىُ الشريط
+     * اليدويّ. فلولا ذلك لباعت المعاينةُ ما لا يُسمع أبداً.
+     */
+    private fun previewChimeVolume(): Float {
+        val follows = runCatching {
+            settings.isTimeChimeVolumeFollowsAnnouncement()
+        }.getOrDefault(true)
+        val seek = seekTimeChimeVolume
+        return if (follows || seek?.isEnabled != true) {
+            runCatching {
+                settings.getEffectiveTimeChimeVolume()
+            }.getOrDefault(0.5f)
+        } else {
+            chimeVolumeFromProgress(seek!!.progress)
+        }
+    }
+
     /** معاينة رنة رأس الساعة: تعزف النغمة المختارة بمستوى الشريط الحالي. */
     private fun previewChime() {
         val sound = chimeSoundNameAt(
             spinnerTimeChimeSound?.selectedItemPosition ?: 0
         )
-        val seek = seekTimeChimeVolume
-        val volume = seek?.let { chimeVolumeFromProgress(it.progress) }
-            ?: runCatching {
-                settings.getTimeChimeVolume()
-            }.getOrDefault(0.5f)
+        val volume = previewChimeVolume()
         val customUri = runCatching {
             settings.getCustomChimeUri().takeIf { it.isNotBlank() }
         }.getOrNull()
@@ -820,11 +862,7 @@ internal class TimeAnnouncementController(
     }
 
     private fun previewSpecificUri(uri: Uri) {
-        val seek = seekTimeChimeVolume
-        val volume = seek?.let { chimeVolumeFromProgress(it.progress) }
-            ?: runCatching {
-                settings.getTimeChimeVolume()
-            }.getOrDefault(0.5f)
+        val volume = previewChimeVolume()
 
         fragment.view?.announceCompat(
             fragment.getString(R.string.sample_preview_starting)
@@ -1316,9 +1354,12 @@ internal class TimeAnnouncementController(
         cbTimeChimeAt30?.isEnabled = enabled
         cbTimeChimeAt45?.isEnabled = enabled
         spinnerTimeChimeSound?.isEnabled = enabled
-        seekTimeChimeVolume?.isEnabled = enabled
+        cbChimeFollows?.isEnabled = enabled
         btnPreviewChime?.isEnabled = enabled
         btnChooseCustomChime?.isEnabled = enabled
+        // شريطُ مستوى الرنّة وحده يتأثّر بالتبّع: يُعطَّل ويبهت مع
+        // تسمياتِه حين تكون الرنّةُ على صوت النطق.
+        refreshChimeVolumeEnabled(enabled)
         val hasCustom = runCatching { settings.getCustomChimeUri() }
             .getOrDefault("").isNotBlank()
         btnPreviewCustomChime?.isEnabled = enabled && hasCustom
@@ -1334,9 +1375,34 @@ internal class TimeAnnouncementController(
         }
     }
 
+    /**
+     * شريطُ مستوى الرنّة: يُعطَّل ويبهت مع تسميتِه ما دامت الرنّةُ على
+     * صوت النطق، فلا يُعدّل مستوًى لا يُقرأ — على نمطِ `caller_ring_duck`
+     * فنمطُ «مربّعٌ يُسقط شريطَه» واحدٌ في الشاشة.
+     */
+    private fun refreshChimeVolumeEnabled(chimeOn: Boolean) {
+        val follows = runCatching {
+            settings.isTimeChimeVolumeFollowsAnnouncement()
+        }.getOrDefault(true)
+        val usable = chimeOn && !follows
+        seekTimeChimeVolume?.isEnabled = usable
+        seekTimeChimeVolume?.alpha =
+            if (usable) 1f else DISABLED_CONTROL_ALPHA
+        tvChimeVolumeLabel?.alpha =
+            if (usable) 1f else DISABLED_CONTROL_ALPHA
+        seekTimeChimeVolume?.setSeekStateDescription(
+            if (follows) {
+                fragment.getString(
+                    R.string.time_chime_follows_announcement_desc
+                )
+            } else {
+                "${((settings.getTimeChimeVolume()) * 100).toInt()}%"
+            }
+        )
+    }
+
     /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */
     fun cleanup() {
-        switchTimeAnnouncement = null
         spinnerTimeInterval = null
         llQuietSchedule = null
         spinnerTimeFormat = null
@@ -1352,6 +1418,8 @@ internal class TimeAnnouncementController(
         cbTimeChimeAt30 = null
         cbTimeChimeAt45 = null
         spinnerTimeChimeSound = null
+        cbChimeFollows = null
+        tvChimeVolumeLabel = null
         seekTimeChimeVolume = null
         llExactAlarmPermission = null
         btnPreviewTime = null
@@ -1385,5 +1453,8 @@ internal class TimeAnnouncementController(
          *  (لا 200): فالمستوى نسبةٌ 0..1 في المخزن، وشريطُ 200% كان
          *  رقماً بلا معنى صوتي. */
         private const val MAX_TIME_CALLS_VOLUME_PERCENT = 100
+
+        /** بهتُ ضوابطٍ معطّلة — نمطٌ واحدٌ في شاشة الإعدادات. */
+        private const val DISABLED_CONTROL_ALPHA = 0.4f
     }
 }

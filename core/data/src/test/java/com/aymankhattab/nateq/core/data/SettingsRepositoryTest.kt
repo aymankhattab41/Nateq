@@ -985,6 +985,39 @@ class SettingsRepositoryTest {
         assertEquals(2, repo.getBatterySoundCueMode())
     }
 
+    /**
+     * حارسُ **«رنّةُ الساعة تتبعُ نطقَها»** في المخزن نفسه — فالقرارُ
+     * النقيُّ في [TimeChimeVolumeLink] بلا هذا يبقىUnused: يكفي أن
+     * يمرّ مستوىٌ يدويٌّ ما زال يُقرأ منه.
+     */
+    @Test
+    fun timeChimeFollowsAnnouncement_defaultsOnAndDrivesTheEffectiveLevel() {
+        // الافتراضي: التتبُّعُ مفعّل.
+        assertTrue(repo.isTimeChimeVolumeFollowsAnnouncement())
+        repo.setVolumeForCategory(SettingsRepository.VOICE_CATEGORY_TIME, 0.8f)
+        repo.setTimeChimeVolume(0.2f)
+        assertEquals(
+            0.8f, repo.getEffectiveTimeChimeVolume(), 0.0001f
+        )
+        // الفصلُ يقرؤ اليدويّ.
+        repo.setTimeChimeVolumeFollowsAnnouncement(false)
+        assertFalse(repo.isTimeChimeVolumeFollowsAnnouncement())
+        assertEquals(
+            0.2f, repo.getEffectiveTimeChimeVolume(), 0.0001f
+        )
+        // والعودةُ للتتبّع.
+        repo.setTimeChimeVolumeFollowsAnnouncement(true)
+        assertEquals(
+            0.8f, repo.getEffectiveTimeChimeVolume(), 0.0001f
+        )
+        // والقاعُ: نطقٌ صامتٌ لا يُطفئ الرنّة.
+        repo.setVolumeForCategory(SettingsRepository.VOICE_CATEGORY_TIME, 0f)
+        assertEquals(
+            TimeChimeVolumeLink.MIN,
+            repo.getEffectiveTimeChimeVolume(), 0.0001f
+        )
+    }
+
     @Test
     fun batteryCueVolume_defaultsAndClamps() {
         // افتراضياً 0.8؛ خارج 0.1..1 يُقيَّد (بند 3-3).
