@@ -26,8 +26,8 @@ android {
         minSdk = 24
         // أندرويد 17 = API 37: أحدث نسخة مثبّتة محلياً وهدف التوافق الحالي
         targetSdk = 37
-        versionCode = 10621
-        versionName = "1.6.21"
+        versionCode = 10622
+        versionName = "1.6.22"
         // مشغّل الاختبارات المدمجة على الأجهزة (بند 6#7).
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
