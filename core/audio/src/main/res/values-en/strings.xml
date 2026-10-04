@@ -24,6 +24,9 @@
     <string name="sms_from">Message from {name}</string>
     <string name="sms_otp_safe">A message from {name} containing a secure verification code</string>
     <string name="caller_unsaved_number">Unsaved number</string>
+    <!-- Answer-button label: matched against the posting app's own
+         translated strings (item 1) -->
+    <string name="caller_answer">Answer</string>
     <string name="notif_new">New notification from {app}</string>
     <string name="notif_from_title_text">Notification from {app}: {title}. {text}</string>
     <string name="notif_from_title">Notification from {app}: {title}</string>

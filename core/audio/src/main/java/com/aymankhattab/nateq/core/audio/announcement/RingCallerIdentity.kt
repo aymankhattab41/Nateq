@@ -33,39 +33,118 @@ internal object RingCallerIdentity {
 
     private val lock = Any()
 
+    /**
+     * **بند 3 — سقفُ عمرِ الهوية: خمسَ عشرةَ ثانية.**
+     *
+     * **جذرُه:** كانت الهويةُ بلا طابعٍ زمنيٍّ أبداً، فتبقى بصفتِها
+     * «متاحة» ما لم يمرَّ عليها [clear]. و[clear] يُستدعى من
+     * [resetRingingSession] عند انتهاء المكالمة، **فأيُّ مسارٍ لا يمرّ
+     * به — موتُ العملية، أو بثٌّ لم يُعتمد، أو استثناءٌ في فرعٍ ما —
+     * يُبقي هويةَ مكالمةٍ سابقةٍ تُنطق في رنينٍ لاحقٍ** بلا دليلٍ على
+     * أنّها لهذه المكالمة.
+     *
+     * **ولماذا 15 ثانية؟** المسارُ الحيُّ من النشر إلى النطق لا يتجاوز
+     * `CALLER_RESOLVE_GRACE_PERIOD_MS` (1.5s) زائداً
+     * `CALLER_IDENTITY_LATE_WAIT_MS` (6.5s) — أي أقلَّ من ثماني ثوانٍ —
+     * فالسقفُ يترك هامشاً سخياً ويبقى أقصرَ ما يمكن على رنينٍ لاحق.
+     *
+     * **وعند كلِّ نشرٍ يُجدَّد** (لا عند أوله): المساراتُ الثلاثة تكتب
+     * على دفعات — الفرزُ ينشر الرقمَ قبل الرنّة ثم يُنشر الاسمُ من
+     * الإشعار أثناءها — فحسابُ العمرِ من أول نشرٍ يُبطل اسمَ وصل
+     * متأخّراً رغم حداثته.
+     */
+    internal const val IDENTITY_TTL_MS = 15_000L
+
     @Volatile
     private var number: String? = null
 
     @Volatile
     private var name: String? = null
 
+    /** زمنُ آخر نشرٍ **بالمللي ثانية**، وصفرٌ يعني «لا هويةَ منشورة». */
+    @Volatile
+    private var publishedAtMs: Long = 0L
+
     /**
      * نشر هوية: يملأ ما هو فارغ فقط فلا تُداس هوية أعلى منه. الاسم
      * مفضّل على الرقم (أدق للمستخدم)، والاسم الفارغ لا يحذف اسماً وصل
      * قبلياً.
+     *
+     * **ويُجدد الطابعَ الزمنيَّ (بند 3)** في كلِّ نشرٍ **غير فارغ** —
+     * فالاسمُ أو الرقمُ الذي وصل متأخّراً يُبقي الهويةَ حيّةً ولو كان
+     * أولُ نشرٍ قديماً. والنشرُ الفارغ `(null, null)` يُبطل عملَ الدالّة
+     * فلا يُنشئ هويةً ولا يُجدد طابعاً: تجديدُه بكتابةٍ فارغة كان
+     * سيمدّ عمرَ اسمٍ منتهيٍ ويبقيه يُنطق بعد مكالمةٍ انتهت.
+     *
+     * @param now زمنُ النشر بالمللي ثانية، **معاملٌ صريحٌ لأجل
+     *   الاختبار** (الساعةُ تُمرَّر ولا تُقرأ من داخل الدالّة فيبقى
+     *   العقدُ قابلاً للاختبار بمرور وقتٍ محاكى).
      */
-    fun publish(callerNumber: String?, callerName: String?) {
+    fun publish(
+        callerNumber: String?,
+        callerName: String?,
+        now: Long = System.currentTimeMillis()
+    ) {
         val n = callerNumber?.trim()?.takeIf { it.isNotEmpty() }
         val m = callerName?.trim()?.takeIf { it.isNotEmpty() }
         if (n == null && m == null) return
         synchronized(lock) {
             if (number == null && n != null) number = n
             if (name == null && m != null) name = m
+            publishedAtMs = now
         }
     }
 
-    /** لقطة للحالة: زوج (الرقم، الاسم)، وكلاهما قد يكون فارغاً. */
-    fun snapshot(): Pair<String?, String?> = Pair(number, name)
+    /**
+     * لقطةٌ للحالة: زوج (الرقم، الاسم) **إن كانت ضمن صلاحيتها**،
+     * وإلا زوجٌ فارغ.
+     *
+     * **والانتهاءُ هو السلوكُ المطلوب (بند 3):** هويةٌ تجاوزت
+     * [IDENTITY_TTL_MS] من آخر نشرٍ تُقرأ كأنها غيرُ موجودة، فلا
+     * تتسرّب هويةُ مكالمةٍ سابقةٍ إلى رنينٍ لاحق.
+     */
+    fun snapshot(
+        now: Long = System.currentTimeMillis()
+    ): Pair<String?, String?> =
+        if (isIdentityFresh(now)) {
+            Pair(number, name)
+        } else {
+            Pair(null, null)
+        }
 
-    /** هل توفرت هوية صالحة للنطق (اسم أو رقم)؟ */
-    fun hasIdentity(): Boolean =
-        !name.isNullOrEmpty() || !number.isNullOrEmpty()
+    /**
+     * هل توفرت هويةٌ صالحةٌ للنطق (اسمٌ أو رقم) **ضمن عمرها**؟
+     *
+     * فالهويةُ المنتهيةُ كالغائبةِ تماماً — وهي التي كان مسحُ التكرار
+     * يجدُها في لقطةٍ فلا ينطق اسماً لمكالمةٍ قديمة.
+     */
+    fun hasIdentity(now: Long = System.currentTimeMillis()): Boolean =
+        isIdentityFresh(now) &&
+            (!name.isNullOrEmpty() || !number.isNullOrEmpty())
 
-    /** تصفير الجلسة — عند انتهاء المكالمة. */
+    /**
+     * هل الطابعُ الزمنيُّ ضمن [IDENTITY_TTL_MS]؟
+     *
+     * **خالصةٌ بلا حالةٍ داخلية** فتحسب عقدَ العمر وحدَه. والسالبُ
+     * (`now` قبل الطابع — تقديماً يدوياً للساعة أو قياسٌ في عمليةٍ
+     * أخرى) **لا يُحسب انتهاءً**: النتيجةُ «نُشر حديثاً» وهي آمنة،
+     * لأن الأسوأَ تأخيرُ الانتهاء لا نطقَ هويةٍ منتهية.
+     *
+     * والصفرُ لا هويةَ معه: قبل أوّل نشرٍ لا طابع، فلا تُقرأ هوية.
+     */
+    private fun isIdentityFresh(now: Long): Boolean {
+        val published = publishedAtMs
+        if (published == 0L) return false
+        val age = now - published
+        return age < IDENTITY_TTL_MS
+    }
+
+    /** تصفيرُ الجلسة — عند انتهاء المكالمة. */
     fun clear() {
         synchronized(lock) {
             number = null
             name = null
+            publishedAtMs = 0L
         }
     }
 
@@ -212,10 +291,21 @@ internal object RingCallerIdentity {
      *  استعمال، فتكفي صيغةٌ واحدة مهما اختلف هجاءُ العربية.
      *
      *  «جار الاتصال» و«جاري الاتصال» صيغتان شائعتان لنفس العبارة
-     *  («جارٍ» بلا ياء أصلاً فيُكتب كذلك)، وكلتاهما مشمولةٌ بعد التطبيع. */
+     * («جارٍ» بلا ياء أصلاً فيُكتب كذلك)، وكلتاهما مشمولةٌ بعد التطبيع.
+     *
+     *  **و«ringing» محذوفةٌ منها — وهو تصحيحُ خطأٍ حقيقي:** كان سطرُها
+     *  فحُسبت دليلاً على الصدور، و Meet يكتب «Ringing tone…» على
+     *  مكالمتِه **الواردة**. فكان الحارسُ في المسارِ الحقيقي يكبِتُ
+     *  إعلانَ Meet الوارد (`ongoing` مع `outgoing`) — أي انحدارُ
+     *  v1.6.20 الذي ظُنّ مُصلَحاً. واختبارُ v1.6.20 كان يمرّر
+     *  `outgoing = false` مكتوبةً بيده فلا يمسّ الدالةَ أصلاً، فحُرِس
+     *  الحالةُ باطل. والكلمةُ ملتبسةٌ بطبيعتها
+     *  (الواردُ يرنّ والمُرسِلُ يَرِنّ) فلا يجوز أن تكون رفضاً بلا سند؛
+     *  وإثباتُ الصادرة صار بالغياب: من لا دليلَ له على الورود لا يُعلَن
+     *  ([isPositivelyIncoming]). */
     private val OUTGOING_PHRASE_MARKERS = listOf(
         "calling", "outgoing call", "outgoing", "placing call",
-        "placing", "dialing call", "dialing", "ringing",
+        "placing", "dialing call", "dialing",
         "جاري الاتصال", "جار الاتصال", "يتصل",
         "مكالمة صادرة", "اتصال صادر", "صادرة", "صادر"
     )
@@ -223,6 +313,46 @@ internal object RingCallerIdentity {
     /** العلاماتُ بعد التطبيع — فلا يُقارَن نصٌّ مُطبَّعٌ بعلامةٍ خام. */
     private val normalizedOutgoingMarkers: List<String> by lazy {
         OUTGOING_PHRASE_MARKERS.map { normalizeCallPhrase(it) }
+    }
+
+    /**
+     * هل النصّ يصفّ مكالمةً **واردة** بدليلٍ إيجابي؟
+     *
+     * **علاماتُ هذه الدالة تعمل على `API < 31` وحدَها** — انظر
+     * [isPositivelyIncoming] وما يقابلها من معامل. فمن 31 فصاعداً توفّر
+     * المنصّةُ نفسُها نوعَ المكالمةَ والإجراءَ الدلاليَّ، ويصير نصُّ
+     * تطبيقٍ مُترجَمٌ تخميناً بلا سندٍ منطقي — فيعود سببُ الشكوى الأصلي:
+     * نطقُ الصادرةِ واردةً. **فهي ممنوعةٌ فوق 31.**
+     *
+     * **ولماذا لا «ringing»؟** لأنها في قائمة الصادرة: Meet يكتب
+     * «Ringing tone…» على مكالمتِه **الواردة**، فلو أُدرجت هنا لتناقضت
+     * القائمتان فيُرفض إعلانُ Meet الوارد — وهو الانحدارُ الذي حدث فعلاً
+     * في v1.6.20.
+     *
+     * خالصةٌ قابلةٌ للاختبار مباشرةً.
+     */
+    internal fun isIncomingCallPhrase(text: String): Boolean {
+        val t = normalizeCallPhrase(text)
+        if (t.isEmpty()) return false
+        return normalizedIncomingMarkers.any { marker -> t == marker }
+    }
+
+    /**
+     * علاماتُ الوارد — تُكتب خاماً فتُطبَّع عند أول استعمال.
+     *
+     * **والتساويُ لا التضمين، وذلك مقصود:** النصوصُ المفحوصة هي عنوانُ
+     * الإشعار ونصُّه، واسمُ المتصل يقيمُ في النصِّ نفسِه («مكالمة واردة
+     * من أحمد»). فبالتضمين يصير الاسمُ وحدَه دليلَ اتجاهٍ فيُعلَن كلُّ
+     * متصلٍ في كلِّ مكالمة. أمّا التساويُ فلا يُدخل إلا العبارةَ التي هي
+     * نفسُها الاتجاه.
+     */
+    private val INCOMING_PHRASE_MARKERS = listOf(
+        "incoming call", "incoming", "مكالمة واردة", "مكالمه وارده"
+    )
+
+    /** العلاماتُ بعد التطبيع — فلا يُقارَن نصٌّ مُطبَّعٌ بعلامةٍ خام. */
+    private val normalizedIncomingMarkers: List<String> by lazy {
+        INCOMING_PHRASE_MARKERS.map { normalizeCallPhrase(it) }
     }
 
     /**

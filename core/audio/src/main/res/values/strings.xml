@@ -27,6 +27,8 @@
     <string name="sms_from">رسالة من {name}</string>
     <string name="sms_otp_safe">رسالة من {name} تحتوي على رمز تحقق سري</string>
     <string name="caller_unsaved_number">رقم غير محفوظ</string>
+    <!-- نصُّ زرّ الردّ: يُقارَن بنصوصِ التطبيقات الناشرِّة (بند 1) -->
+    <string name="caller_answer">رد</string>
     <string name="notif_new">إشعار جديد من {app}</string>
     <string name="notif_from_title_text">إشعار من {app}: {title}. {text}</string>
     <string name="notif_from_title">إشعار من {app}: {title}</string>

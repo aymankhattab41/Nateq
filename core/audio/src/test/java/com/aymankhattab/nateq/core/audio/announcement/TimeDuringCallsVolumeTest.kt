@@ -74,7 +74,8 @@ class TimeDuringCallsVolumeTest {
     @Test
     fun `announce now never counts as an in call scene`() {
         val settings = SettingsRepository.create(context)
-        // الشريط منخفض جداً — فلوmisesерен في طلب «أعلن الآن» لانخفض النطق.
+            // الشريط منخفض جداً — فلو انخفض في طلب «أعلن الآن» لانخفض النطق.
+
         settings.setTimeDuringCallsVolume(0f)
         assertEquals(
             "الطلب الصريح خارج المكالمة فلا ينزل الصوت",

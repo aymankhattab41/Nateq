@@ -5,9 +5,11 @@ import android.app.Notification
 import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.telecom.TelecomManager
 import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -200,6 +202,59 @@ class NateqNotificationListener : NotificationListenerService() {
                         )
                         CallerAnnouncementReceiver.markCallAnswered()
                     }
+                    // ===== بند 1 و4: إثباتُ الورود ثم حسمُ المسار =====
+                    //
+                    // **لا نطقَ إلا بدليلِ ورودٍ إيجابي.** فكان الحارسُ
+                    // القديم ينطق ما لم يجد دليلَ صدور، فيُعلَن الصادرةُ
+                    // واردةً. والأدلّةُ تُقرأ من النظام مباشرةً: نوعُ
+                    // المكالمة، ونافذةُ ملءِ الشاشة، وإجراءُ الردّ، ورنينُ
+                    // الخطّ — والاستنتاجُ كلُّه في دالةٍ خالصةٍ مفحوصة.
+                    //
+                    // **وحالُ الخطّ تُقرأ لا من عَلَمٍ في الذاكرة:** فموتُ
+                    // العملية بين `OFFHOOK` والإشعار يُنسي العَلَمَ ولا
+                    // يُنسي النظامَ — وهذا ما يجعل حارسَ موتِ العملية
+                    // حقيقياً.
+                    val callState = telephonyCallState()
+                    val positivelyIncoming = isPositivelyIncoming(
+                        notification, callState
+                    )
+                    val isDefaultDialer =
+                        CallerAnnouncementReceiver.isDefaultDialerPackage(
+                            pkg, defaultDialerPackage()
+                        )
+                    val route = CallerAnnouncementReceiver
+                        .decideCallNotificationRoute(
+                            isDefaultDialer = isDefaultDialer,
+                            telephonyCallState = callState,
+                            positiveIncoming = positivelyIncoming
+                        )
+                    when (route) {
+                        CallerAnnouncementReceiver.CallNotificationRoute
+                            .SILENT -> {
+                            Log.w(
+                                TAG,
+                                "CALL no proof of incoming pkg=$pkg" +
+                                    " state=$callState dialer=$isDefaultDialer"
+                            )
+                            return
+                        }
+                        CallerAnnouncementReceiver.CallNotificationRoute
+                            .PUBLISH_IDENTITY_ONLY -> {
+                            // **بند 4:** حزمةُ الافتراضي لا تنطق أبداً —
+                            // `PHONE_STATE` وحده ناطِقُ مكالمات الشبكة.
+                            // وإشعارُها أسرعُ مصدرٍ لاسم المتصل فننشرُه
+                            // فقط، فينطقه البثُّ مع الرقم.
+                            RingCallerIdentity.publish(callNumber, callName)
+                            Log.w(
+                                TAG,
+                                "CALL identity from dialer pkg=$pkg" +
+                                    " num=${callNumber ?: "?"}" +
+                                    " name=${callName ?: "?"}"
+                            )
+                            return
+                        }
+                        else -> Unit
+                    }
                     // **حارس الاتجاه (الاسماء الصادرة والمنتهية):** إشعارُ
                     // `CATEGORY_CALL` وحده لا يميّز الواردةَ من الصادرة
                     // ولا المنتهية — فكان يُنطق «اتصال وارد من فلان» لمن
@@ -209,7 +264,7 @@ class NateqNotificationListener : NotificationListenerService() {
                             notification = notification,
                             number = callNumber,
                             name = callName
-                        )
+                    )
                     ) {
                         Log.w(
                             TAG,
@@ -222,12 +277,14 @@ class NateqNotificationListener : NotificationListenerService() {
                     // [CallerAnnouncementReceiver].** مكالماتُ التطبيقات
                     // (واتساب/تلجرام/ميسنجر) VoIPُ بحتٌ فلا يصدر لها بثّ
                     // `PHONE_STATE` أبداً — فلو اكتفينا بنشر الهوية لبقيت
-                    // بلا نطقٍ واحد. فنبثّ [ACTION_NOTIFICATION_CALL]
-                    // فينفّذ المستقبلُ مسارَ الرنين نفسه (تكراراتٌ وفواصلٌ
-                    // وحرّاسُ ازدواجٍ بلا مضاعفةٍ مع مكالمات الشبكة).
+                    // بلا نطقٍ واحد. فنستدعي مسارَ الرنين مباشرةً داخل
+                    // العملية (بند 7: لا بثَّ إلى المستقبل المصدَّر)
+                    // فينفّذ تكراراتٍ وفواصلَ وحرّاسَ ازدواجٍ بلا مضاعفةٍ
+                    // مع مكالمات الشبكة.
                     if (callNumber != null || callName != null) {
                         CallerAnnouncementReceiver.announceNotificationCall(
                             context = applicationContext,
+                            settings = settingsRepository,
                             number = callNumber,
                             name = callName,
                             key = notificationCallKey(
@@ -373,31 +430,20 @@ class NateqNotificationListener : NotificationListenerService() {
         // أن يكون النصُّ «calling…» أو «جاري الاتصال».
         val outgoing = notificationCallPhrases(notification)
             .any { RingCallerIdentity.isOutgoingCallPhrase(it) }
-        // حالةُ خطّ الهاتف تُقرأ مباشرةً لا من عَلَم المستقبل: بثّ
-        // `OFFHOOK` يُعالَج في coroutineٍ قد يتأخّر، والإشعارُ يصل بعده
-        // مباشرةً — فمن يقرأ العَلَمَ يظنّ المكالمةَ غيرَ قائمة.
+        // حالةُ خطّ الهاتف تُقرأ مباشرةً من النظام لا من عَلَم المستقبل:
+        // بثّ `OFFHOOK` يُعالَج في coroutineٍ قد يتأخّر، والإشعارُ يصل
+        // بعده مباشرةً — فمن يقرأ العَلَمَ يظنّ المكالمةَ غيرَ قائمة.
         //
-        // **بند 5.6 — تُحسب كلُّ حالةِ الاتصال لا `OFFHOOK` وحدها:** هذا
-        // هو إصلاحُ «المكالمةُ الصادرة تُعلَن واردة». مُشغِّلُ الهاتف
-        // ينشر إشعارَ مكالمته الصادرة في نافذة `DIALING`/`ALERTING`
-        // — أي **قبل** `OFFHOOK` — فكان الحارسُ يعجزُ عنها بالضبط.
-        // وهذان الدولان لا تحدثان إلا لمكالمةٍ بدأها المستخدمُ، فهما
-        // دليلُ قاطعٍ لا تخمينُ نصٍّ.
-        //
-        // **و`getCallState()` مُهمَلٌ رسمياً — مع ذلك نقرأه:** بديلُه
-        // `TelecomManager.isInCall()` لا يُميّز `DIALING`/`ALERTING` عن
-        // `OFFHOOK` (بل يرجع `false` قبل اتصال المحطة)، والحارسُ بأكمله
-        // يقوم على تمييز هذه الدول — فمن يعطيه `isInCall()` يفقد النافذةَ التي
-        // إصلاحُ هذا العيب يقوم عليها.
-        @Suppress("DEPRECATION")
-        val callInProgress = runCatching {
-            val tm = applicationContext.getSystemService(
-                Context.TELEPHONY_SERVICE
-            ) as? TelephonyManager
+        // **و`callState` مُهمَلٌ رسمياً — مع ذلك نقرأه:** بديلُه
+        // `TelecomManager.isInCall()` لا يميّز رنيناً من مشغولٍ بل يُرجع
+        // `true` لكلِّ مكالمةٍ قائمة — بما فيها مكالمةُ تطبيقٍ مُدارةٍ عبر
+        // Telecom، فيُكبِت إعلانُ مكالمةٍ **واردة** زائفةً. فهو أسوأُ من
+        // `callState` في هذا الحارس. ولهذا نمرّ على [telephonyCallState]
+        // لا على قراءةٍ مباشرة، فيبقى لكلِّ الأدلّة مصدرٌ واحد.
+        val callInProgress =
             CallerAnnouncementReceiver.isOutgoingNetworkCallState(
-                tm?.callState ?: TelephonyManager.CALL_STATE_IDLE
+                telephonyCallState()
             )
-        }.getOrDefault(false)
         val endedAt = CallerAnnouncementReceiver.lastPhoneIdleAt
         val sameEnded = CallerAnnouncementReceiver.matchesLastNetworkCall(
             lastNumber = CallerAnnouncementReceiver.lastNetworkCallNumber,
@@ -428,6 +474,147 @@ class NateqNotificationListener : NotificationListenerService() {
         ).map { it.trim() }.filter { it.isNotEmpty() }
     }
 
+    /**
+     * **هل إشعارُ المكالمة يُثبت ورودَها بالإيجاب؟** — واجهةُ الاستدعاء
+     * التي يستدعيها المسارُ الحقيقيُّ بتوقيعها المطلوب.
+     *
+     * **وهي غلافٌ رقيقٌ يُحيلُ إلى نواةٍ نقيّة:** تستخرج الأدلّةَ من
+     * `Notification` وتُمرّرها إلى
+     * [CallerAnnouncementReceiver.isPositivelyIncoming] — وهي الدالةُ
+     * الخالصةُ التي تحمل العقدَ كلَّه وتُفحَص ببنودها.
+     *
+     * **ولماذا الغلافُ هنا لا هناك؟** لأنّ استخراج دليلين يحتاج `Context`:
+     *  - عنوانُ إجراء الردّ يُقارَن بكلمةِ «ردّ» **المترجَمةِ من مواردنا**،
+     *    فالمصدرُ مواردُ لا قائمةُ كلماتٍ ثابتة؛
+     *  - تسميةُ اللغة الفعلية عبر [LocaleUtils].
+     *
+     *فالسياقُ لازمٌ لهذه الغلاف، **وليس للنواة**. ولذلك تبقى النواةُ بلا
+     * `Context` قابلةً للاختبار، وتبقى الواجهةُ بتوقيع
+     * `isPositivelyIncoming(notification, telephonyCallState)` كما طُلبت
+     * بالضبط.
+     */
+    private fun isPositivelyIncoming(
+        notification: Notification,
+        telephonyCallState: Int
+    ): Boolean = CallerAnnouncementReceiver.isPositivelyIncoming(
+        callTypeExtra = callTypeOf(notification),
+        hasFullScreenIntent = notification.fullScreenIntent != null,
+        hasAnswerAction = hasAnswerAction(notification),
+        telephonyCallState = telephonyCallState,
+        sdkInt = Build.VERSION.SDK_INT,
+        legacyIncomingPhrase = legacyIncomingPhrase(notification)
+    )
+
+    // ===== جمعُ أدلّة الورود (بند 1) — impure، والاستنتاجُ نقيٌّ =====
+
+    /**
+     * حالةُ خطّ الهاتف **من النظام مباشرةً** لا من عَلَمٍ في الذاكرة.
+     *
+     * **ولهذا يُقرأ في كلِّ إشعار:** عَلَمُ «مكالمةٌ صادرة» يُضبط عند
+     * معالجة بثّ `OFFHOOK` في coroutineٍ قد يتأخّر أو تُفقد بموتِ
+     * العملية، فمن يقرأ العَلَمَ يظنّ المكالمةَ غيرَ قائمة بعد موته.
+     */
+    private fun telephonyCallState(): Int = runCatching {
+        @Suppress("DEPRECATION")
+        (applicationContext.getSystemService(
+            Context.TELEPHONY_SERVICE
+        ) as? TelephonyManager)?.callState
+            ?: TelephonyManager.CALL_STATE_IDLE
+    }.getOrDefault(TelephonyManager.CALL_STATE_IDLE)
+
+    /**
+     * نوعُ المكالمة الذي أعلنَه التطبيقُ (`EXTRA_CALL_TYPE`)، أو `null`
+     * إن لم يذكره.
+     *
+     * **و`null` يعني «لا معلومة» لا «مجهول»:** فالتطبيقُ القديم لا يضع
+     * المفتاحَ أصلاً، فلا يجوز أن يُقرأ صفراً. والمجهولُ صراحةً يبقى
+     * صفراً فيقرأه الحارسُ على حقيقته ولا يسودُ على بقية الأدلّة.
+     */
+    private fun callTypeOf(notification: Notification): Int? {
+        val extras = notification.extras ?: return null
+        if (!extras.containsKey(Notification.EXTRA_CALL_TYPE)) return null
+        return extras.getInt(
+            Notification.EXTRA_CALL_TYPE,
+            CallerAnnouncementReceiver.CALL_TYPE_UNKNOWN
+        )
+    }
+
+    /**
+     * هل في الإشعار **إجراءُ ردّ**؟ بالدلالي الرسميّ أو بنصٍّ **مُترجَمٍ من
+     * الحزمة الناشرِّة** — لا بقائمة عربي/إنجليزي ثابتة.
+     *
+     * **ومصدرُ النصّ هو موارد التطبيق نفسه:** المنصّة تُصفّ عنوانَ الإجراء
+     * في `Notification.Action.title` بعد ترجمته من موارد التطبيق الناشر
+     * (لا واصفٌ عامّ في `android.jar` — فتُقرأ الترجمةُ جاهزةً ولا نحتاج
+     * `PackageManager`). ثم نُقابلها بكلمةِ «ردّ» **المترجَمةِ من مواردنا**
+     * إلى اللغتين المدعومتين، فتأتي المقارنةُ بين نصَّين من مواردَين لا
+     * بين نصٍّ وقائمةٍ مكتوبة.
+     *
+     * **وقائمةُ كلماتٍ ثابتة مستبعدةٌ عمداً:** نصوصُ التطبيقات تختلف
+     * باللهجة والإصدار (`رد` / `رد الآن` / `إجابة` / `Answer call`).
+     *
+     * ولا زرَّ ردٍّ على مكالمةٍ أنتَ من بدأتها — فهذا دليلُ ورودٍ قاطع.
+     */
+    private fun hasAnswerAction(notification: Notification): Boolean {
+        val actions = notification.actions
+        if (actions.isNullOrEmpty()) return false
+        val words = answerWordsFromOurResources()
+        return actions.any { action ->
+            action.semanticAction ==
+                Notification.Action.SEMANTIC_ACTION_CALL ||
+                isAnswerLabel(action.title?.toString(), words)
+        }
+    }
+
+    /**
+     * كلماتُ الردّ من **مواردنا** للغتين المدعومتين — فالمصدرُ مواردٌ لا
+     * جدولٌ مكتوبٌ في الكود.
+     */
+    private fun answerWordsFromOurResources(): List<String> {
+        val words = ArrayList<String>(2)
+        for (tag in listOf(LanguageCode.AR.tag, LanguageCode.EN.tag)) {
+            val normalized = RingCallerIdentity.normalizeCallPhrase(
+                LocaleUtils.stringForSpeech(
+                    applicationContext, tag,
+                    R.string.caller_answer, R.string.caller_answer
+                )
+            )
+            if (normalized.isNotEmpty() && !words.contains(normalized)) {
+                words.add(normalized)
+            }
+        }
+        return words
+    }
+
+    /**
+     * هل عنوانُ الإجراء كلمةُ ردّ؟ بـ`startsWith` بعد التطبيع ليقبل
+     * «رد» و«رد الآن» و«Answer call» معاً.
+     */
+    private fun isAnswerLabel(title: String?, words: List<String>): Boolean {
+        if (title.isNullOrBlank()) return false
+        val normalized = RingCallerIdentity.normalizeCallPhrase(title)
+        if (normalized.isEmpty()) return false
+        return words.any { word -> normalized.startsWith(word) }
+    }
+
+    /**
+     * الطبقةُ النصّيةُ الثانوية: هل في نصوص الإشعار عبارةُ ورودٍ صريحة؟
+     *
+     * **وتركيبُ حدِّ النظام داخلَ الدالةِ الخالصة** ([isPositivelyIncoming])
+     * لا هنا — فمصدرُ الحقيقةِ واحد. فلا تُهمَلُ على كلِّ الحالات،
+     * والحاسمةُ هي الدالةُ النقيّة.
+     */
+    private fun legacyIncomingPhrase(notification: Notification): Boolean =
+        notificationCallPhrases(notification)
+            .any { RingCallerIdentity.isIncomingCallPhrase(it) }
+
+    /** حزمةُ مُشغِّلِ الهاتف الافتراضي، أو `null` إن لم يُعرف. */
+    private fun defaultDialerPackage(): String? = runCatching {
+        (applicationContext.getSystemService(
+            Context.TELECOM_SERVICE
+        ) as? TelecomManager)?.defaultDialerPackage
+    }.getOrNull()
+
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         sbn ?: return
         // حذفُ إشعار المكالمة = انتهاؤها (أو ردٌّ يُخفيه التطبيق). وهو
@@ -439,6 +626,91 @@ class NateqNotificationListener : NotificationListenerService() {
         CallerAnnouncementReceiver.endNotificationCall(
             applicationContext, sbn.packageName
         )
+    }
+
+    /**
+     * **إعادةُ بناء مفتاح المكالمة الجارية عند ربط المستمع من جديد.**
+     *
+     * **والعيبُ الذي يسدّده:** مفتاحُ جلسة مكالمة الإشعار في ذاكرة
+     * العملية ([CallerAnnouncementReceiver.notificationCallKey]). فتموت
+     * العمليةُ في وسط رنينٍ فيُنسى المفتاح، ثم يردُّ التطبيقُ تحديثَ
+     * مكالمته فيحسبه [CallerAnnouncementReceiver] إعلاناً جديداً
+     * فيُنطق الاسمُ ثانيةً فوق مكالمةٍ جارية — مع جدولِ تكراراته.
+     *
+     * **والمخرجُ الذي يُبنى منه هو النظامُ نفسُه** — لا ساعةٌ ولا
+     * تخزينٌ جديد: `activeNotifications` تُرجع إشعارَ المكالمة التي
+     * كانت ترنّ قبل الموت، فنُنبِئُ الحارسَ بها فيرفض تحديثَها.
+     *
+     * **ولماذا هنا وحده:** الربطُ حدثٌ لا يتكرّر فيُفسد شيئاً. أمّا
+     * `onNotificationPosted` فلا يصلح للتبنّي من فيه لأن الإشعار
+     * الحالي داخلَ القائمة دائماً فيبدو سابقاً لموتنا — فلا يُميَّز
+     * عن حيٍّ. أمّا هنا فالمقروءُ قائمةٌ من لحظتِه لا لحظتِ إشعارٍ
+     * قادم.
+     *
+     * **وتُرتَّب المفاتيحُ بـ`postTime`** فينتقي
+     * [CallerAnnouncementReceiver.pickNewestLiveCallKey] أحدثَها: وهي
+     * التي رنَّت الآن، والأقدمُ تُركتُ بلا مفتاحٍ فتُعلَن لو وحدَها
+     * حدثت.
+     *
+     * **ويُستثنى مُشغِّلُ الهاتف الافتراضي:** مسارُه
+     * `PUBLISH_IDENTITY_ONLY` لا يلمس المفتاح أصلاً (بند 4)، فتبنّيُ
+     * مفتاحٍ منه يحجبُ مفتاحَ مكالمةٍ تطبيقٍ حقيقيةٍ أحدثُ منه.
+     *
+     * **والعملُ كلُّه على `appScope`** كمسار `onNotificationPosted`:
+     * `activeNotifications` قراءةُ IPC على خيط الربط، و`postTime`
+     * و`extras` قراءاتُ نظامٍ لا يصحّ أن تُحسَب على خيط الربط.
+     */
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        val scope = (applicationContext as? AnnouncementAppContext)?.appScope
+            ?: CoroutineScope(Dispatchers.Default)
+        scope.launch {
+            try {
+                adoptLiveCallNotifications()
+            } catch (t: Throwable) {
+                Log.e(TAG, "adoptLiveCallNotifications failed", t)
+            }
+        }
+    }
+
+    private fun adoptLiveCallNotifications() {
+        val live = runCatching { activeNotifications }
+            .getOrNull()
+            .orEmpty()
+        if (live.isEmpty()) return
+        if (!settingsRepository.isCallerAnnouncementEnabled()) return
+        val dialer = defaultDialerPackage()
+        val candidates = live.mapNotNull { sbn ->
+            val notification = sbn.notification ?: return@mapNotNull null
+            if (notification.category != Notification.CATEGORY_CALL) {
+                return@mapNotNull null
+            }
+            val pkg = sbn.packageName ?: return@mapNotNull null
+            if (CallerAnnouncementReceiver.isDefaultDialerPackage(
+                    pkg, dialer
+                )
+            ) {
+                return@mapNotNull null
+            }
+            val extras = notification.extras
+            val (number, name) = RingCallerIdentity
+                .extractFromCallNotification(
+                    title = extras.getCharSequence(
+                        Notification.EXTRA_TITLE
+                    )?.toString()?.trim(),
+                    text = notificationBodyText(extras),
+                    subText = extras.getCharSequence(
+                        Notification.EXTRA_SUB_TEXT
+                    )?.toString()?.trim()
+                )
+            if (number == null && name == null) return@mapNotNull null
+            sbn.postTime to notificationCallKey(pkg, number, name)
+        }
+        val adopted = CallerAnnouncementReceiver
+            .pickNewestLiveCallKey(candidates)
+        if (adopted == null) return
+        Log.w(TAG, "CALL rebind saw ${candidates.size} live call(s)")
+        CallerAnnouncementReceiver.adoptLiveNotificationCall(adopted)
     }
 
     override fun onListenerDisconnected() {

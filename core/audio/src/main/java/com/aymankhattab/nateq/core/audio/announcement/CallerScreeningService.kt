@@ -41,6 +41,53 @@ class CallerScreeningService : CallScreeningService() {
     companion object {
         private const val TAG = "NATEQ_SCREEN"
 
+        // ===== بند 3: اتجاهُ المكالمة =====
+        //
+        // **ثوابتُ `Call.Details` مستنسخةٌ هنا لا مُحيلةً إليها**، لأنها
+        // `int` فيُضمَّن مقدارُها وقتَ التصريف فلا نحتاج أن نقرأ حقلَ
+        // `getCallDirection()` أصلاً على الأجهزة القديمة. والقيمُ
+        // مُثبَتةٌ بـ`javap` على `android.jar` (الإصدار 37) وأمنعُ
+        // انحرافَها بحارس `platform call direction constants are
+        // mirrored`.
+        internal const val DIRECTION_UNKNOWN = -1
+        internal const val DIRECTION_INCOMING = 0
+        internal const val DIRECTION_OUTGOING = 1
+
+        /**
+         * **هل تُنشر هويةُ المتصل من خدمة الفرز؟**
+         *
+         * **جذرُ البند:** `onScreenCall` تُستدعى **لكلِّ مكالمةٍ تجري**
+         * قبل الرنّة، بما فيها الصادرةُ — فكان الرقمُ يُنشر
+         * بلا تمييزٍ فيصير المتصلُ نفسُه (الذي بدأ المكالمة) هويةَ
+         * «متصلٍ وارد» فيُعلَن صوتاً. والخدمةُ أسبقُ المساراتِ زمنياً
+         * فهي **الفائزُ الأول** بالهوية، فخطؤها يلغي ما بعده ولا يُصحَّح.
+         *
+         * **والإثباتُ بالإيجاب لا بغياب الدليل:** يُشترط
+         * `DIRECTION_INCOMING` صراحةً، فـ`DIRECTION_UNKNOWN` (حالةٌ
+         * حقيقيةٌ في المنصّة) ترفض ولا تُنشر.
+         *
+         * **وحارسُ `sdkInt` ليس زينة:** حقلُ الاتجاه `getCallDirection()`
+         * وُجد في Q (29) بينما `CallScreeningService` موجودةٌ من 24،
+         * فمن لم يحرس لـ`sdkInt` انهار بـ`NoSuchMethodError` على جهازٍ
+         * قديم. ودورُ الفرز نفسه من 29 فلا تُستدعى الخدمةُ أصلاً على ما
+         * دونه — فالمرورُ بلا تمييزٍ هناك مسارٌ غيرُ قابل للتنفيذ.
+         *
+         * **و[readDirection] تُؤخَّذ دالّةً لا قيمةً — وهذا هو حارسُ
+         * الانهيار لا زينةٌ him:** تمريرُ `callDetails.callDirection`
+         * قيمةً يجعل Kotlin يقيّمُها **قبل** الدخول إلى الدالة، فلا
+         * يحرسها `sdkInt` بل يقع الانهيارُ قبل أن تُفتح. فبالدالّة
+         * يكون قَصْرُ الدائرة في `||` باطنها يحفظُها، والعقدُ قابلٌ
+         * للاختبار، والكسرُ محفورٌ في اسم اختبار.
+         *
+         * خالصةٌ بلا `Context` فتبقى قابلةً للاختبار بكلِّ حدودها.
+         */
+        internal inline fun shouldPublishIdentity(
+            sdkInt: Int,
+            readDirection: () -> Int
+        ): Boolean =
+            sdkInt < Build.VERSION_CODES.Q ||
+                readDirection() == DIRECTION_INCOMING
+
         /**
          * هل يحمل التطبيق دور فرز المكالمات؟ يُقرأ من النظام مباشرةً
          * بدل تخزين نسخة — فالدور قد يُمنح أو يُسحب في أي وقت، والنسخة
@@ -92,6 +139,26 @@ class CallerScreeningService : CallScreeningService() {
     override fun onScreenCall(callDetails: Call.Details) {
         try {
             if (!settingsRepository.isCallerAnnouncementEnabled()) return
+            // **بند 3:** الرقمُ يُنشر للواردةِ فقط. الخدمةُ تُستدعى
+            // لكلِّ مكالمةٍ تجري — الصادرةَ قبل الرنّة كغيرها — فبلا
+            // هذا الحارس صار المتصلُ نفسُه هويةَ «متصلٍ وارد».
+            //
+            // **والقراءةُ داخلَ دالّةٍ لا خارجه:** فمضى
+            // `callDetails.callDirection` معاملاً يقيَّم **قبل**
+            // الحارس، فينهار `getCallDirection()` على جهازٍ دون 29
+            // بـ`NoSuchMethodError` قبل أن يفتح الحارسُ أصلاً — أي أن
+            // التعليقَ القديم كان يصفُ حارساً لم يكن موجوداً.
+            if (!shouldPublishIdentity(Build.VERSION.SDK_INT) {
+                    callDetails.callDirection
+                }
+            ) {
+                Log.w(
+                    TAG,
+                    "CALL-SCREEN skipped direction=" +
+                        "${callDetails.callDirection}"
+                )
+                return
+            }
             // استدعاءُ هذه الدالة مزامِنٌ على خيط الربط، ومنعُه يوقف
             // المهلة ويوقف الرنّة — فلا يُلمس القرص ولا الشبكة هنا.
             val number = callDetails.handle?.schemeSpecificPart

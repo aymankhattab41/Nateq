@@ -6,6 +6,7 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
+import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
@@ -67,6 +68,65 @@ internal data class NumbersCategorySpeech(
  * ليتفادى حلقة ربط النظام TextToSpeech → خدمة LORD نفسها (التي قد تُسقط
  * الصوت)، يستبعد دائماً حزمة التطبيق نفسه عند اختيار المحرك فيفوض النطق
  * لمحركٍ مثبّت خارجي (منهج MultiTTS).
+ */
+
+/**
+ * **أيُّ قناةٍ يعبر عليها النطق فعلاً.**
+ *
+ * **ولماذا لا تكفي الفئة وحدها؟** لأن `isCallerCategory`
+ * تخلط حالتين: رنينُ متصلٍ بلا مكالمة، ومكالمةُ انتظار ثمة
+ * مكالمةٌ جارية. الأولى تُراد فوق الرنين فقناةُ الإشعار
+ * مختارةٌ لها (النظام يخفض `STREAM_MUSIC` أثناء الرنين).
+ * والثانية تُراد في جوف مكالمة المستخدم، فقناةُ الإشعار فيها
+ * غلطان: ليست على مسار المكالمة — فمعالجةُ المسار الهاتفي
+ * لا تسري عليها فيلتقطها الميكروفون — ويرفعها
+ * [boostStreamVolume] إلى القمّة بلا منحنى صوت يخفضها.
+ */
+internal enum class SpeechRoute {
+    /** فوق مكالمة جارية. */
+    CALL,
+
+    /** رنينُ متصلٍ بلا مكالمة. */
+    NOTIFICATION,
+
+    /** ما عداه. */
+    MEDIA
+}
+
+/**
+ * بُعدُ النعمة التي تبقى فيها قناةُ المكالمة مقفولةً بعد
+ * انتهاء المكالمة.
+ *
+ * **لماذا نعمة؟** لأن `mode` قد يرجع إلى `MODE_NORMAL`
+ * قبل إرسال آخر جزء، فنطبّق المسار الجديد في وسط الكلمة
+ * فيسمع المستخدم نقلةَ قناة. فنعمةٌ قصيرة تكمل الذيل على
+ * قناةٍ واحدة.
+ */
+internal const val CALL_ROUTE_GRACE_MS = 600L
+
+/**
+ * قفلُ قناةِ المكالمة: يعاين الحالة ويعيدُ ما إذا كانت
+ * القناة مقفلةً بالإغلاق الطازج أو بميعاد النعمة.
+ *
+ * ابتدائيٌّ مفتوح — قفلٌ لم يرَ مكالمةً لا يدّعي أنه مقفل.
+ */
+internal class CallRouteLatch {
+    private var latchedUntil = Long.MIN_VALUE
+
+    fun observe(inCall: Boolean, nowMs: Long): Boolean {
+        if (inCall) {
+            latchedUntil = nowMs + CALL_ROUTE_GRACE_MS
+        }
+        return nowMs < latchedUntil
+    }
+}
+
+/**
+ * قرارُ المسار — خالصٌ بلا `Context` فيفحصُه اختبارُ الوحدة.
+ *
+ * **وفئاتُ غير المتصل لا تصل قناةَ المكالمة أبداً**
+ * (بطارية/وقت/رسائل): خطفُ مسار مكالمة المستخدم لها أسوأُ
+ * من التسريب نفسِه.
  */
 class AnnouncementSpeaker(
     context: Context,
@@ -140,6 +200,34 @@ class AnnouncementSpeaker(
             category == SettingsRepository.ANNOUNCE_CATEGORY_CALLER ||
                 category == SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR ||
                 category == SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
+        /**
+         * قرارُ المسار — خالصٌ بلا `Context` فيفحصُه اختبارُ الوحدة.
+         *
+         * **وفئاتُ غير المتصل لا تصل قناةَ المكالمة أبداً**
+         * (بطارية/وقت/رسائل): خطفُ مسار مكالمة المستخدم لها أسوأُ
+         * من التسريب نفسِه.
+         */
+        internal fun speechRouteFor(
+            category: String?,
+            inCall: Boolean
+        ): SpeechRoute = when {
+            !isCallerCategory(category) -> SpeechRoute.MEDIA
+            inCall -> SpeechRoute.CALL
+            else -> SpeechRoute.NOTIFICATION
+        }
+
+        /**
+         * قناةُ كلِّ مسار.
+         *
+         * **ومرادُها التامُّ لـ[speechAudioAttributes] شرطٌ لا يحتمل
+         * كسرَه:** انظر تحذير `doSpeak` — فإن اختلفت، تجاهل
+         * المحرّكُ السمةَ ورجع إلى `STREAM_MUSIC` فعاد العلة.
+         */
+        internal fun streamForRoute(route: SpeechRoute): Int = when (route) {
+            SpeechRoute.CALL -> AudioManager.STREAM_VOICE_CALL
+            SpeechRoute.NOTIFICATION -> AudioManager.STREAM_NOTIFICATION
+            SpeechRoute.MEDIA -> AudioManager.STREAM_MUSIC
+        }
 
         /** تجزئة نصوص الإشعارات والرسائل الطويلة إلى جمل طبيعية مستقلة
          *  لتمكين مقاطعتها بحدث آني واستئناف ما تبقى منها بسلاسة. */
@@ -369,6 +457,32 @@ class AnnouncementSpeaker(
     // (بند رفع حجم نطق المتصل والساعة). -1 تعني عدم وجود رفعٍ قائم حالياً.
     private var boostedStream: Int = -1
     private var savedStreamVolume: Int = -1
+
+    /**
+     * قفلُ قناةِ المكالمة — يقرأ `mode` فيغلقُه، ويبقى مقفلاً بميعاد
+     * [CALL_ROUTE_GRACE_MS] بعد انتهاء المكالمة.
+     *
+     * **و[nowMs] محقونٌ ليكون قابلاً للفحص:** ساعةٌ لا تتأثر
+     * بتغيّر وقت الجهاز (فلو كان الحسابُ بتوقيت الجدار لقَصَرَت
+     * النعمةُ أو طالت).
+     */
+    @VisibleForTesting
+    internal fun speechRouteForNow(
+        category: String?,
+        nowMs: Long = SystemClock.elapsedRealtime()
+    ): SpeechRoute {
+        val inCall = runCatching {
+            val mode = audioManager.mode
+            mode == AudioManager.MODE_IN_CALL ||
+                mode == AudioManager.MODE_IN_COMMUNICATION
+        }.getOrDefault(false)
+        return speechRouteFor(
+            category,
+            callRouteLatch.observe(inCall, nowMs)
+        )
+    }
+
+    private val callRouteLatch = CallRouteLatch()
 
     // **خفضُ نغمة الرنين أثناء إعلان المتصل (اختياريّ):** رفعُ قناة
     // الموسيقى لا يمسّ قناة الرنين في AOSP (وهي ليست ضمن الـducking)،
@@ -1124,6 +1238,16 @@ class AnnouncementSpeaker(
      * [boostStreamVolume].
      *
      * وبقية الفئات على مسار الوسائط كما كان — نفس قناة البطارية.
+     *
+     * **والسماتُ لا تُغيَّر فوقَ مكالمةٍ جارية (بند 5) — انحرافٌ
+     * مقصود:** قرارُ المدير القناةَ وحدها عبر `KEY_PARAM_STREAM`،
+     * فتبقى `USAGE_NOTIFICATION_EVENT`. فقاعدةُ «يجب أن تتطابق» أعلاه
+     * مستثناةٌ هنا، **وهذا مقايضةٌ موعودةٌ لا نتيجةَ مثبتة**: لم
+     * تُكتب السماتُ على مسار المكالمة فلا نضمن أن يجتاز الصوتُ
+     * معالجةَ المسار (إلغاءُ الصدى) فلا يتسرّب للطرف الآخر. وهو ما
+     * يبقي **إثباتَ عدم التسريب على جهازٍ حقيقيٍّ بمكالمةٍ فعلية**
+     * مطلوباً. فلو ثبت التسرّب فالمحاولةُ التالية هي
+     * `USAGE_VOICE_COMMUNICATION` — وهي تعديلٌ للسمات لا للقناة.
      */
     private fun speechAudioAttributes(category: String?): AudioAttributes {
         val builder = AudioAttributes.Builder()
@@ -1815,17 +1939,14 @@ speechCycle.incrementAndGet()
                 TextToSpeech.Engine.KEY_PARAM_VOLUME,
                 boostedVolume
             )
-            // القناة مطابقةٌ لسمات النطق: الإشعارُ للمتصل والوسائطُ
-            // لغيره. **يجب أن تتطابقا** وإلا تجاهل المحرّكُ السمةَ
-            // ورجّع النطق إلى `STREAM_MUSIC` الذي تخفضه المكالمة الجارية
-            // فيعود العَرَض (صوتٌ منخفض على Pixel).
+            // القناة من قرارِ المسار نفسه — الإشعارُ للمتصل خارج
+            // المكالمة، و**قناةُ المكالمةِ لمكالمةِ الانتظار** (بند 5)،
+            // والوسائطُ لغيره. **يجب أن تتطابق مع السمات** وإلا تجاهل
+            // المحرّكُ السمةَ ورجّع النطق إلى `STREAM_MUSIC` الذي تخفضه
+            // المكالمة الجارية فيعود العَرَض (صوتٌ منخفض على Pixel).
             putInt(
                 TextToSpeech.Engine.KEY_PARAM_STREAM,
-                if (isCallerCategory(currentCategory)) {
-                    AudioManager.STREAM_NOTIFICATION
-                } else {
-                    AudioManager.STREAM_MUSIC
-                }
+                streamForRoute(speechRouteForNow(currentCategory))
             )
         }
         // تنظيف النص من الإيموجي قبل النطق (نصوص خارجية قد
@@ -2003,15 +2124,19 @@ speechCycle.incrementAndGet()
      *
      *  **الوسائط تُخفَض من النظام أثناء المكالمة الجارية** فالإعلان
      *  عليها لا يرتفع بِرفع قناتها، ولهذا يُنطق المتصل على قناة
-     *  الإشعار التي لا تخفضها المكالمة (انظر [speechAudioAttributes]). */
+     *  الإشعار التي لا تخفضها المكالمة (انظر [speechAudioAttributes]).
+     *
+     *  **ولا رفعَ على قناة المكالمة أبداً (بند 5):** فوقَ مكالمةٍ
+     *  جارية يمرّ النطقُ على `STREAM_VOICE_CALL`، وهي قناةُ
+     *  **مكالمةِ المستخدم نفسِه** — رفعُها إلى القمّة يعني الصراخَ في
+     *  أذنه وفي وجه الطرف الآخر.')[boostedStream] على
+     *  `STREAM_NOTIFICATION` لا يسري أصلاً على هذا المسار. */
     @VisibleForTesting
     internal fun boostStreamVolume(category: String? = null) {
         if (boostedStream != -1) return
-        val stream = if (isCallerCategory(category)) {
-            AudioManager.STREAM_NOTIFICATION
-        } else {
-            AudioManager.STREAM_MUSIC
-        }
+        val route = speechRouteForNow(category)
+        if (route == SpeechRoute.CALL) return
+        val stream = streamForRoute(route)
         runCatching {
             val max = audioManager.getStreamMaxVolume(stream)
             val current = audioManager.getStreamVolume(stream)
@@ -2045,12 +2170,16 @@ speechCycle.incrementAndGet()
      * المستخدم في [RingtoneDuckMath]، **من مستوى الرنين الحالي** (لا من
      * قمّته) فيبقى المقدارُ متناسباً مع ما سمعه، ولا خفضَ في الوضع
      * الصامت/المهتز أو على رنّةٍ أصلاً معدومة.
+     *
+     * **ولا خفضَ فوقَ مكالمةٍ جارية (بند 5):** رنّةُ متصلٍ آخر لا
+     * معنى لها والمستخدمُ على مكالمته، فلا نلمس مستوى الرنين.
      */
     @VisibleForTesting
     internal fun duckRingVolumeIfCallerCategory(category: String?) {
         if (!isCallerCategory(category)) {
             return
         }
+        if (speechRouteForNow(category) == SpeechRoute.CALL) return
         if (duckedRingStream != -1) return
         val repo = settings ?: return
         if (!repo.isCallerRingDuckingEnabled()) return

@@ -5,6 +5,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.telephony.TelephonyManager
 import androidx.test.core.app.ApplicationProvider
+import com.aymankhattab.nateq.core.audio.announcement.CallerAnnouncementReceiver.Companion.CALL_STATE_OFFHOOK
+import com.aymankhattab.nateq.core.audio.announcement.CallerAnnouncementReceiver.Companion.CALL_STATE_RINGING
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LanguageCode
 import java.util.concurrent.TimeUnit
@@ -137,9 +139,10 @@ class CallerAnnouncementReceiverTest {
         // الرنينُ جارٍ: التكرارُ مشروع.
         assertTrue(
             CallerAnnouncementReceiver.shouldContinueRepeating(
+                isNotificationCall = true,
                 notificationStillRinging = true,
                 callAnnouncedAnswered = false,
-                networkCallAnswered = false
+                networkCallState = CALL_STATE_RINGING
             )
         )
         // **الكسر:** إشعارُ مكالمة التطبيق ما زال حيّاً (لم يُحذف)، لكن
@@ -147,9 +150,10 @@ class CallerAnnouncementReceiverTest {
         // يجب أن يتوقف. هذا ما كان ينطق فوق مكالمة المستخدم.
         assertFalse(
             CallerAnnouncementReceiver.shouldContinueRepeating(
+                isNotificationCall = true,
                 notificationStillRinging = true,
                 callAnnouncedAnswered = true,
-                networkCallAnswered = false
+                networkCallState = CALL_STATE_RINGING
             )
         )
     }
@@ -162,9 +166,10 @@ class CallerAnnouncementReceiverTest {
     fun `repeats stop once a network call is answered`() {
         assertFalse(
             CallerAnnouncementReceiver.shouldContinueRepeating(
+                isNotificationCall = true,
                 notificationStillRinging = true,
                 callAnnouncedAnswered = false,
-                networkCallAnswered = true
+                networkCallState = CALL_STATE_OFFHOOK
             )
         )
     }
@@ -174,9 +179,10 @@ class CallerAnnouncementReceiverTest {
     fun `unknown state keeps repeating`() {
         assertTrue(
             CallerAnnouncementReceiver.shouldContinueRepeating(
+                isNotificationCall = true,
                 notificationStillRinging = true,
                 callAnnouncedAnswered = false,
-                networkCallAnswered = false
+                networkCallState = CALL_STATE_RINGING
             )
         )
     }
@@ -189,9 +195,10 @@ class CallerAnnouncementReceiverTest {
     fun `dismissed call notification stops repeating`() {
         assertFalse(
             CallerAnnouncementReceiver.shouldContinueRepeating(
+                isNotificationCall = true,
                 notificationStillRinging = false,
                 callAnnouncedAnswered = false,
-                networkCallAnswered = false
+                networkCallState = CALL_STATE_RINGING
             )
         )
     }
@@ -1196,19 +1203,22 @@ fun `waiting call speaks only when during call toggle enabled`() {
     fun `a notification call is announced once despite repeated posts`() {
         // التطبيق يحدّث إشعارَ المكالمة (جارٍ الاتصال ← يرنّ) فيصل
         // الإشعار نفسه مرتين بمفتاحٍ واحد — نطقٌ واحدٌ فقط.
+        //
+        // **وعقدُ الزمنِ انتقل** إلى [NotificationCallLifeTest]: كان هنا
+        // اختبارٌ يثبت أن انقضاءَ نافذةِ 45 ثانية يُعيد النطق، وهو
+        // **العيبُ نفسُه** لا صفةٌ مرغوبة. فحُذف مع النافذة.
         val key = NateqNotificationListener.notificationCallKey(
             "com.whatsapp", null, "سارة"
         )
-        val start = 1_000_000L
         assertTrue(
             CallerAnnouncementReceiver.shouldTriggerNotificationCall(
-                key, null, 0L, start
+                key = key, lastKey = null
             )
         )
         assertFalse(
             "تحديثُ الإشعار لا يُعيد النطق",
             CallerAnnouncementReceiver.shouldTriggerNotificationCall(
-                key, key, start, start + 5_000L
+                key = key, lastKey = key
             )
         )
     }
@@ -1218,34 +1228,15 @@ fun `waiting call speaks only when during call toggle enabled`() {
         // متصلٌ مختلف = مفتاحٌ مختلف، فيُنطق فوراً بلا انتظار النافذة.
         assertTrue(
             CallerAnnouncementReceiver.shouldTriggerNotificationCall(
-                "a|1|سارة", "b|2|أحمد", 0L, 10L
-            )
-        )
-    }
-
-    @Test
-    fun `the same caller after the dedup window triggers again`() {
-        // انتهاءُ النافذة يعني مكالمةً جديدة من المتصل نفسه — وإلا
-        // لكُبِحت كلُّ مكالماته التالية بمفتاحه الأول.
-        val key = "c||أحمد"
-        assertFalse(
-            CallerAnnouncementReceiver.shouldTriggerNotificationCall(
-                key, key, 0L, 5_000L
-            )
-        )
-        assertTrue(
-            CallerAnnouncementReceiver.shouldTriggerNotificationCall(
-                key, key, 0L,
-                CallerAnnouncementReceiver
-                    .NOTIFICATION_CALL_DEDUP_MS
+                key = "a|1|سارة", lastKey = "b|2|أحمد"
             )
         )
     }
 
     @Test
     fun `a voip notification does not double up with the phone state ring`() {
-        // **عقد الازدواج لمكالمات VoIP:** التطبيق يُشغّل
-        // ACTION_NOTIFICATION_CALL بينما قد يُرسل بعض الأجهزة بثّ
+        // **عقد الازدواج لمكالمات VoIP:** التطبيق يُطلق مسارَ الرنين
+        // مباشرةً (بند 7) بينما قد يُرسل بعض الأجهزة بثّ
         // PHONE_STATE للمكالمة نفسها — فالحارسُ الأعلى على حالة الجلسة
         // يجب أن يكبّح الثاني، تماماً كما يكبّح الرنينَ المكررَ للشبكة.
         CallerAnnouncementReceiver.resetRingingSession()
@@ -1362,13 +1353,43 @@ fun `waiting call speaks only when during call toggle enabled`() {
         )
     }
 
+    /**
+     * **حارسُ انحدار Meet الحقيقي:** اختبارُ [an ongoing incoming voip ring
+     * is announced - google meet] يمرّر `outgoing = false` مكتوبةً بيده
+     * فلا يمسّ [RingCallerIdentity.isOutgoingCallPhrase] ولا واحد — فلم
+     * يكن يحرس شيئاً. وهذا يقرأ **النصَّ الحقيقيَّ بالدالةِ نفسِها** كما
+     * في الإنتاج، فيمرّ الحارسُ بمجموعِه.
+     */
+    @Test
+    fun `google meet ongoing incoming is not vetoed by its real text`() {
+        val meetText = "Ringing tone…"
+        val outgoing = RingCallerIdentity.isOutgoingCallPhrase(meetText)
+        assertFalse(
+            "نصُّ Meet ليس دليلَ صدور",
+            outgoing
+        )
+        assertTrue(
+            "إعلانُ Meet الوارد يجب أن يمرّ",
+            CallerAnnouncementReceiver.shouldAnnounceCallNotification(
+                isOngoing = true,
+                networkCallInProgress = false,
+                endedCallAt = 0L,
+                sameEndedIdentity = false,
+                now = 1_000L,
+                outgoing = outgoing
+            )
+        )
+    }
+
     /** اتجاهُ النصّ: عربياً وإنجليزياً (عامةٌ خالصةٌ قابلة للاختبار). */
     @Test
     fun `outgoing call phrases are detected in both languages`() {
         assertTrue(RingCallerIdentity.isOutgoingCallPhrase("Calling…"))
         assertTrue(RingCallerIdentity.isOutgoingCallPhrase("calling..."))
         assertTrue(RingCallerIdentity.isOutgoingCallPhrase("Outgoing call"))
-        assertTrue(RingCallerIdentity.isOutgoingCallPhrase("Ringing…"))
+        // **و«Ringing…» ليست دليلَ صدور:** Meet يكتبها على مكالمتِه
+        // الواردة، فحُسبت دليلاً كانت تُكبِتُ إعلانَه في المسار الحقيقي.
+        assertFalse(RingCallerIdentity.isOutgoingCallPhrase("Ringing…"))
         assertTrue(RingCallerIdentity.isOutgoingCallPhrase("جاري الاتصال"))
         assertTrue(RingCallerIdentity.isOutgoingCallPhrase("مكالمة صادرة"))
         // وليس الاسمُ ولا الواردُ
@@ -1592,70 +1613,45 @@ fun `waiting call speaks only when during call toggle enabled`() {
     // ===== بند 5.6: صِدْعُ «المكالمة الصادرة تُعلَن واردة» =====
 
     /**
-     * **حارسُ الكسر:** `DIALING` و`ALERTING` تُثبتان أنّ المتصلَ هو
-     * المستخدم.
+     * OFFHOOK يُثبت أن خطَّ الشبكة مشغولٌ — إشعارُ التطبيق يُكبَت
+     * لأن بثوثَ PHONE_STATE تتولّى الإعلانَ بدلاً عنه.
      *
-     * هذا هو جذرُ الشكوى: مُشغِّلُ الهاتف ينشر إشعارَ مكالمته الصادرة
-     * **قبل** وصول بثّ `OFFHOOK`، أي في نافذة `DIALING`/`ALERTING` —
-     * وكان الحارسُ يقرأ `OFFHOOK` وحده فيفوتها، فيُعلَن «اتصال وارد»
-     * لمن هو المُرسِل.
-     *
-     * وهذا الاختبارُ **يسقط** على الكود القديم (كان `OFFHOOK` وحده).
+     * ⚠️ تاريخيٌّ: كان الاختبارُ يفحص أيضاً DIALING=3 وALERTING=4،
+     * لكنهما قيمٌ `@hide` لا يُرجعهما `callState` العلنيُّ قطُّ،
+     * فحُذفتا مع اختبارهما (كود ميت مؤكَّد).
      */
     @Test
-    fun `dialing and alerting prove the user is the caller`() {
+    fun `offhook proves network call in progress`() {
         assertTrue(
-            "DIALING دليلٌ قاطع",
-            CallerAnnouncementReceiver.isOutgoingNetworkCallState(
-                CALL_STATE_DIALING
-            )
-        )
-        assertTrue(
-            "ALERTING دليلٌ قاطع",
-            CallerAnnouncementReceiver.isOutgoingNetworkCallState(
-                CALL_STATE_ALERTING
-            )
-        )
-        assertTrue(
-            "وOFFHOOK كذلك",
+            "OFFHOOK = خطٌّ مشغول",
             CallerAnnouncementReceiver.isOutgoingNetworkCallState(
                 android.telephony.TelephonyManager.CALL_STATE_OFFHOOK
             )
         )
     }
 
-    /** **ولا انحدار:** الرنّةُ واردةٌ لا تثبت outgoing — فيجب أن تُعلَن. */
+    /** لا انحدار: RINGING وIDLE لا يُعدّان خطاً مشغولاً. */
     @Test
-    fun `ringing and idle do not prove an outgoing call`() {
+    fun `ringing and idle are not network-call-in-progress states`() {
         assertFalse(
-            "الواردةُ ليست صادرة",
+            "رنينٌ وارد ليس OFFHOOK",
             CallerAnnouncementReceiver.isOutgoingNetworkCallState(
                 android.telephony.TelephonyManager.CALL_STATE_RINGING
             )
         )
         assertFalse(
-            "والخمولُ ليس صادراً",
+            "خمول ليس OFFHOOK",
             CallerAnnouncementReceiver.isOutgoingNetworkCallState(
                 android.telephony.TelephonyManager.CALL_STATE_IDLE
             )
         )
     }
 
-    /**
-     * قيمتا `DIALING`/`ALERTING` محجوبتان في `android.jar` — نُعرِّفهما
-     * هنا بالقيمةِ الرسمية من واجهة `TelephonyManager` ليحرس الاختبارُ
-     * نفسَ قيمِ الحارس، فسيكسر إن غُيّرت إحداهما.
-     */
-    private companion object {
-        const val CALL_STATE_DIALING = 3
-        const val CALL_STATE_ALERTING = 4
-    }
-
-    /** الخصلةُ الحاكمة: إشعارٌ جارٍ أثناء `DIALING` — направُ من protocols. */
+    /** الخطُّ مشغول (OFFHOOK): الإشعارُ لا يُعلَن — PHONE_STATE يتولّى. */
     @Test
-    fun `an ongoing call notification during dialing is vetoed`() {
-        // بلا نصٍّ صادرٍ (=بلا `outgoing`) ومع ذلك لا يُعلَن: الدليلُ
-        // قاطعٌ من حالة الخطّ فالنصُّ لم يعد له دور.
+    fun `an ongoing call notification during offhook is vetoed`() {
+        // networkCallInProgress = true (= OFFHOOK): الخطُّ مشغول،
+        // فلا يُعلَن إشعارُ التطبيق بصرف النظر عن نصّه.
         assertFalse(
             CallerAnnouncementReceiver.shouldAnnounceCallNotification(
                 isOngoing = true,
@@ -1687,8 +1683,11 @@ fun `waiting call speaks only when during call toggle enabled`() {
             "جملةٌ كاملةٌ لا عبارتان",
             RingCallerIdentity.isOutgoingCallPhrase("مكالمة صادرة جارية")
         )
-        assertTrue(
-            "وإنجليزيةٌ بنقطةٍ وتطويل",
+        // **ولا «Ringing tone…»:**Meet يكتبها وهو **وارد**، فحُسبت
+        // صادرةً فيُكبِتُ إعلانُه. انظر حارسَ
+        // `google meet ongoing incoming is not vetoed by its real text`.
+        assertFalse(
+            "عبارةُ Meet الوارد ليست صادرة",
             RingCallerIdentity.isOutgoingCallPhrase("Ringing tone…")
         )
         // ولا تنكسر قاعدةُ «ليس اسماً ولا وارداً»
