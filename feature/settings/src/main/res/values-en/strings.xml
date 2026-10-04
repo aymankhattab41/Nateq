@@ -499,39 +499,39 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-â€¢ Exported receiver guard uses exact action equality (not startsWith) â€” prevents `action == null` from passing, and `ACTION_NOTIFICATION_CALL` removed from new internal call path
-â€¢ API 29 guard in Call Screening Service now testable: reading `callDetails.callDirection` is now a lambda, short-circuit in `||` guarantees it's never read on API &lt; 29, regression guard `pre-29 never reads the direction field at all` asserts zero reads
-â€¢ New call-route tests (`SpeechRouteDecisionTest`): verifies `STREAM_VOICE_CALL` never boosted, `STREAM_NOTIFICATION` never boosted, and `KEY_PARAM_STREAM` maps correctly during an active call
-â€¢ Fixed Korean character corruption in `TimeDuringCallsVolumeTest` comment
-â€¢ Documented intentional attribute/stream divergence in `AnnouncementSpeaker`: `USAGE_NOTIFICATION_EVENT` stays on call path by director decision; leakage proof required on real device
-â€¢ Added 9 guard test files for governing contracts (call direction, call notification, exported receiver, instant speech, wait lifecycle, positively incoming, process death key, repeat truth source, speech route decision)
-â€¢ The hourly chime now follows the spoken volume: its level used to be an independent control with no link to the speech, so raising the time volume left the chime untouched; it now follows by default, and anyone who wants them separate can turn the link off and set its own level (it never falls silent: the lowest link is the bottom of the chime range)
-â€¢ The caller name no longer repeats over your call after you answer: the loop used to wait without checking anything, so only the hangup signal stopped it, and app calls (WhatsApp, Telegram) get no such signal at all, which left your name sounding over the call until the last beat; it now stops the moment ringing ends, for both kinds of call
-â€¢ Fixed an app crash when opening any file: the file provider was declared exported and Android refused it with "Provider must not be exported", taking the app down the moment it opened
-â€¢ The dictionary is now actually applied while speaking: every consumer used to build its own empty copy, so the settings screen showed your entries while speech ignored them; there is now one instance per process, and a broken Keystore falls back to plain storage instead of disabling the dictionary
-â€¢ The delete and import dictionary options are now visible: they already existed on the screen but had zero width and never drew, and they now sit side by side with a confirmation before deleting
-â€¢ A saved caller is now spoken by name instead of number: the number in the notification title and the name in its body were both needed, and both are now read from every field, with the contacts lookup trying three number formats
-â€¢ A call you place is no longer announced back to you as incoming: the check now covers the dialling and alerting states before ringing, and matches your dialer's text ignoring Arabic diacritics
-â€¢ Stuck TTS engines no longer freeze opening the settings: the probe timeout is down to 5 seconds and a failing engine is skipped for 24 hours
-â€¢ Opening the settings is faster: a light loading screen appears immediately and the engines warm up in the background
-â€¢ Fixed Google Meet caller announcements: the direction guard rejected every ongoing call notification, and Meet marks its ringing notification as ongoing from the first moment, so the caller name was never spoken there since v1.6.20
-â€¢ Caller name is spoken sooner: the check now runs before the wait, so the 300 milliseconds are no longer paid while the name is already in memory â€” about 300ms faster on WhatsApp and Telegram
-â€¢ Caller identity is checked every 50ms instead of 300ms (a free memory read), while the call log lookup stays at 300ms
-â€¢ The caller preview now sounds exactly like the real announcement instead of louder (it used the music stream, and the engine ignored the volume slider)
-â€¢ The dictionary now matches with no boundaries at all: it applies glued to numbers from either side (50g, 300gm, 2km), which used to stay silent
-â€¢ The dictionary now applies to English as well: it never went through the English path, so keys like "HTTP" or "AI" were not spoken
-â€¢ A broken import now fails completely: an invalid line used to be skipped silently and produce a partial dictionary; now it is the whole file or nothing
-â€¢ Dictionary import accepts JSON files only, and reads at most 8 megabytes while reading so it never weighs the app down
-â€¢ Import limits: 200,000 entries and 8,000 characters per key and value; exceeding them fails instead of truncating silently
-â€¢ The dictionary export file is now named LOR_dictionary.json
-â€¢ The phrase "Incoming call from" is removed for good: a saved name is spoken on its own, and an unsaved number is announced as "Unsaved number"
-â€¢ Fixed "incoming call from" being spoken to the caller themselves (outgoing) and after the call ended: only a genuine incoming ring is announced now
-â€¢ Lower the phone ringtone while the caller is announced: an enable box and a percentage you choose (10%% to 90%%)
-â€¢ A separate volume level during calls (for announcements such as the clock), from 0%% to 100%%
-â€¢ Caller announcement is now always as loud as battery and clock announcements: it moved to an audio path that an active call does not duck, so it sounds the same on every device including Android 17
-â€¢ Speak a phrase you choose before the caller name and one after it: two boxes and two fields, the single template is gone, and what gets spoken is exactly what you type
-â€¢ Caller announcement repeat now goes from once up to ten times, with a 3, 4, or 5 second interval
-â€¢ The dictionary is open with no length ceiling: any key you type applies, and the silence on units and currencies glued to numbers (50g, 300gm) is fixed
+- Exported receiver guard uses exact action equality (not startsWith) -- prevents `action == null` from passing, and `ACTION_NOTIFICATION_CALL` removed from new internal call path
+- API 29 guard in Call Screening Service now testable: reading `callDetails.callDirection` is now a lambda, short-circuit in `||` guarantees it's never read on API < 29, regression guard `pre-29 never reads the direction field at all` asserts zero reads
+- New call-route tests (`SpeechRouteDecisionTest`): verifies `STREAM_VOICE_CALL` never boosted, `STREAM_NOTIFICATION` never boosted, and `KEY_PARAM_STREAM` maps correctly during an active call
+- Fixed Korean character corruption in `TimeDuringCallsVolumeTest` comment
+- Documented intentional attribute/stream divergence in `AnnouncementSpeaker`: `USAGE_NOTIFICATION_EVENT` stays on call path by director decision; leakage proof required on real device
+- Added 9 guard test files for governing contracts (call direction, call notification, exported receiver, instant speech, wait lifecycle, positively incoming, process death key, repeat truth source, speech route decision)
+- The hourly chime now follows the spoken volume: its level used to be an independent control with no link to the speech, so raising the time volume left the chime untouched; it now follows by default, and anyone who wants them separate can turn the link off and set its own level (it never falls silent: the lowest link is the bottom of the chime range)
+- The caller name no longer repeats over your call after you answer: the loop used to wait without checking anything, so only the hangup signal stopped it, and app calls (WhatsApp, Telegram) get no such signal at all, which left your name sounding over the call until the last beat; it now stops the moment ringing ends, for both kinds of call
+- Fixed an app crash when opening any file: the file provider was declared exported and Android refused it with "Provider must not be exported", taking the app down the moment it opened
+- The dictionary is now actually applied while speaking: every consumer used to build its own empty copy, so the settings screen showed your entries while speech ignored them; there is now one instance per process, and a broken Keystore falls back to plain storage instead of disabling the dictionary
+- The delete and import dictionary options are now visible: they already existed on the screen but had zero width and never drew, and they now sit side by side with a confirmation before deleting
+- A saved caller is now spoken by name instead of number: the number in the notification title and the name in its body were both needed, and both are now read from every field, with the contacts lookup trying three number formats
+- A call you place is no longer announced back to you as incoming: the check now covers the dialling and alerting states before ringing, and matches your dialer's text ignoring Arabic diacritics
+- Stuck TTS engines no longer freeze opening the settings: the probe timeout is down to 5 seconds and a failing engine is skipped for 24 hours
+- Opening the settings is faster: a light loading screen appears immediately and the engines warm up in the background
+- Fixed Google Meet caller announcements: the direction guard rejected every ongoing call notification, and Meet marks its ringing notification as ongoing from the first moment, so the caller name was never spoken there since v1.6.20
+- Caller name is spoken sooner: the check now runs before the wait, so the 300 milliseconds are no longer paid while the name is already in memory -- about 300ms faster on WhatsApp and Telegram
+- Caller identity is checked every 50ms instead of 300ms (a free memory read), while the call log lookup stays at 300ms
+- The caller preview now sounds exactly like the real announcement instead of louder (it used the music stream, and the engine ignored the volume slider)
+- The dictionary now matches with no boundaries at all: it applies glued to numbers from either side (50g, 300gm, 2km), which used to stay silent
+- The dictionary now applies to English as well: it never went through the English path, so keys like "HTTP" or "AI" were not spoken
+- A broken import now fails completely: an invalid line used to be skipped silently and produce a partial dictionary; now it is the whole file or nothing
+- Dictionary import accepts JSON files only, and reads at most 8 megabytes while reading so it never weighs the app down
+- Import limits: 200,000 entries and 8,000 characters per key and value; exceeding them fails instead of truncating silently
+- The dictionary export file is now named LOR_dictionary.json
+- The phrase "Incoming call from" is removed for good: a saved name is spoken on its own, and an unsaved number is announced as "Unsaved number"
+- Fixed "incoming call from" being spoken to the caller themselves (outgoing) and after the call ended: only a genuine incoming ring is announced now
+- Lower the phone ringtone while the caller is announced: an enable box and a percentage you choose (10%% to 90%%)
+- A separate volume level during calls (for announcements such as the clock), from 0%% to 100%%
+- Caller announcement is now always as loud as battery and clock announcements: it moved to an audio path that an active call does not duck, so it sounds the same on every device including Android 17
+- Speak a phrase you choose before the caller name and one after it: two boxes and two fields, the single template is gone, and what gets spoken is exactly what you type
+- Caller announcement repeat now goes from once up to ten times, with a 3, 4, or 5 second interval
+- The dictionary is open with no length ceiling: any key you type applies, and the silence on units and currencies glued to numbers (50g, 300gm) is fixed
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
