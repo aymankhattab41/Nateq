@@ -382,21 +382,12 @@ internal class CategoryVoicePanelController(
     /** طلب تبديل الفئة: تعديلاتٌ غير محفوظة تفرض تأكيد المستخدم. */
     private fun requestSwitch(newEntry: CategoryPanelEntry) {
         if (newEntry == currentEntry) return
-        if (!dirtyPanel) {
+if (!dirtyPanel) {
             bindEntry(newEntry)
             return
         }
-        MaterialAlertDialogBuilder(fragment.requireContext())
-            .setTitle(R.string.categories_unsaved_dialog_title)
-            .setMessage(R.string.categories_unsaved_dialog_message)
-            .setPositiveButton(R.string.categories_unsaved_keep) { _, _ ->
-                restoreSelectorToCurrent()
-            }
-            .setNegativeButton(R.string.categories_unsaved_discard) { _, _ ->
-                bindEntry(newEntry)
-            }
-            .setOnCancelListener { restoreSelectorToCurrent() }
-            .create().also { fragment.trackDialog(it) }.show()
+        // المستخدم طلب تجاهل التعديلات غير المحفوظة — الانتقال مباشرة
+        bindEntry(newEntry)
     }
 
     /** يردّ سبnner الفئة لموضع الفئة الحالية دون إطلاق المستمع. */

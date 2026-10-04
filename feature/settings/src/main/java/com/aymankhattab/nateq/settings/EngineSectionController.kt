@@ -171,7 +171,6 @@ internal class EngineSectionController(
                 fragment.getString(R.string.convert_languages_dialog_title)
             )
             .setView(dialogView)
-            .setPositiveButton(fragment.getString(R.string.reset_cancel), null)
             .create()
 
         fragment.lifecycleScope.launch(AppDispatchers.io) {
