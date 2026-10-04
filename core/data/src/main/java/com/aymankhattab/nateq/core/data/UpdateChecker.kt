@@ -157,7 +157,8 @@ object UpdateChecker {
 
     suspend fun check(
         currentVersionName: String,
-        preferCache: Boolean = false
+        preferCache: Boolean = false,
+        githubPat: String? = null
     ): CheckResult {
         val now = nowProvider()
         cachedCheck(currentVersionName, now, preferCache)?.let {
@@ -166,7 +167,7 @@ object UpdateChecker {
         var result: CheckResult = CheckResult.NetworkError
         var attempt = 0
         while (attempt < RETRY_ATTEMPTS) {
-            result = checkOnce(currentVersionName)
+            result = checkOnce(currentVersionName, githubPat)
             if (result !is CheckResult.NetworkError) break
             attempt++
             if (attempt < RETRY_ATTEMPTS) delay(RETRY_DELAY_MS)
@@ -176,7 +177,8 @@ object UpdateChecker {
     }
 
     private suspend fun checkOnce(
-        currentVersionName: String
+        currentVersionName: String,
+        githubPat: String? = null
     ): CheckResult =
         withContext(AppDispatchers.io) {
             try {
@@ -196,6 +198,12 @@ object UpdateChecker {
                         "Accept",
                         "application/vnd.github.v3+json"
                     )
+                    // GitHub PAT للمستودع الخاص — يضيف Authorization header
+                    githubPat?.let { pat ->
+                        if (pat.isNotBlank()) {
+                            conn.setRequestProperty("Authorization", "Bearer $pat")
+                        }
+                    }
                     if (conn.responseCode != 200) {
                         return@withContext CheckResult.NetworkError
                     }

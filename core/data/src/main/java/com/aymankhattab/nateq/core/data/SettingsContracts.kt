@@ -150,7 +150,20 @@ interface CategoryVoicePrefs {
 
     companion object {
         const val VOICE_CATEGORY_BATTERY = "battery"
-    }
+}
+
+/**
+ * [UpdatePrefs] — نطاق التحديثات: مفتاح GitHub PAT للمستودع الخاص.
+ * ينفّذها SettingsRepository.
+ */
+interface UpdatePrefs {
+
+    /** مفتاح GitHub PAT (Personal Access Token) للمستودع الخاص — null إن لم يُضبط. */
+    fun getGitHubUpdatePat(): String?
+
+    /** يعيّن مفتاح GitHub PAT (null = حذف). */
+    fun setGitHubUpdatePat(token: String?)
+}
 
     /** الصوت المفضّل لمجموعة صوتية معيّنة. */
     fun getPreferredVoiceIdForCategory(category: String): String?
@@ -701,4 +714,17 @@ interface CallerNamesStore {
 
     /** يستبدل خارطة أسماء المتصلين المخصّص بالكامل. */
     fun setCustomCallerNames(names: Map<String, String>)
+}
+
+/**
+ * [UpdatePrefs] — نطاق التحديثات: مفتاح GitHub PAT للمستودع الخاص.
+ * ينفّذها SettingsRepository.
+ */
+interface UpdatePrefs {
+
+    /** مفتاح GitHub PAT (Personal Access Token) للمستودع الخاص — null إن لم يُضبط. */
+    fun getGitHubUpdatePat(): String?
+
+    /** يعيّن مفتاح GitHub PAT (null = حذف). */
+    fun setGitHubUpdatePat(token: String?)
 }

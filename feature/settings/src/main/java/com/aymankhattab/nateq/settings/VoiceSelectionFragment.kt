@@ -1971,11 +1971,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
 
         viewLifecycleOwner.lifecycleScope.launch {
+            val pat = settings.getGitHubUpdatePat()
             // الفحص التلقائي يفضّل الكاش (لا يضغط GitHub عند كل فتح شاشة)؛
             // الفحص اليدوي يلتفّ عليه دائماً ليُجيب فوراً عن «هل من جديد؟».
             when (
                 val res = UpdateChecker.check(
-                    currentName, preferCache = !showFeedback
+                    currentName, preferCache = !showFeedback, githubPat = pat
                 )
             ) {
                 is UpdateChecker.CheckResult.UpdateAvailable -> {

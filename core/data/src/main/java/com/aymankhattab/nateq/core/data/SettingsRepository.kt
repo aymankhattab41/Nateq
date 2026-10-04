@@ -36,7 +36,8 @@ class SettingsRepository(context: Context) :
     AnnouncementPrefs,
     DevicePrefs,
     ConvertPrefs,
-    CallerNamesStore {
+    CallerNamesStore,
+    UpdatePrefs {
 
     companion object {
         private const val TAG = "NATEQ_TTS"
@@ -982,6 +983,77 @@ class SettingsRepository(context: Context) :
             memoryCallerNames.clear()
             cleaned.forEach { (k, v) -> memoryCallerNames[k] = v }
         }
+    }
+
+    // ============ GitHub PAT للتحديث من مستودع خاص ============
+
+    /**
+     * مفتاح الـ PAT المشفر (GitHub Personal Access Token) — يُخزّن مشفراً
+     * عبر EncryptedSharedPreferences (Android Keystore) لأن صلاحيته حساسة.
+     * يستخدمه [UpdateChecker] لإضافة `Authorization: Bearer <token>`
+     * عند طلب GitHub Releases API للمستودع الخاص.
+     */
+    override fun getGitHubUpdatePat(): String? =
+        getEncryptedPrefs()?.getString("github_update_pat", null)
+
+    override fun setGitHubUpdatePat(token: String?) {
+        val encrypted = getOrCreateEncryptedPrefs()
+        if (encrypted != null) {
+            if (token.isNullOrBlank()) {
+                encrypted.edit().remove("github_update_pat").apply()
+            } else {
+                encrypted.edit().putString("github_update_pat", token.trim()).apply()
+            }
+        }
+    }
+
+    /** يفتح أو ينشئ التخزين المشفر للـ PAT. */
+    @Volatile
+    private var patEncryptedPrefs: SharedPreferences? = null
+
+    private fun getEncryptedPrefs(): SharedPreferences? {
+        val cached = patEncryptedPrefs
+        if (cached != null) return cached
+        synchronized(this) {
+            patEncryptedPrefs?.let { return it }
+            return openOrCreateEncryptedPrefs()
+        }
+    }
+
+    private fun getOrCreateEncryptedPrefs(): SharedPreferences? {
+        val cached = patEncryptedPrefs
+        if (cached != null) return cached
+        synchronized(this) {
+            patEncryptedPrefs?.let { return it }
+            return openOrCreateEncryptedPrefs()
+        }
+    }
+
+    private fun openOrCreateEncryptedPrefs(): SharedPreferences? {
+        repeat(2) { attempt ->
+            try {
+                val masterKey = androidx.security.crypto.MasterKey
+                    .Builder(appContext)
+                    .setKeyScheme(
+                        androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM
+                    )
+                    .build()
+                return androidx.security.crypto.EncryptedSharedPreferences
+                    .create(
+                        appContext, "nateq_pat_store", masterKey,
+                        androidx.security.crypto.EncryptedSharedPreferences
+                            .PrefKeyEncryptionScheme.AES256_SIV,
+                        androidx.security.crypto.EncryptedSharedPreferences
+                            .PrefValueEncryptionScheme.AES256_GCM
+                    ).also { patEncryptedPrefs = it }
+            } catch (e: Throwable) {
+                if (attempt == 1) {
+                    Log.w(TAG, "تعذر فتح التخزين المشفر للـ PAT", e)
+                    return null
+                }
+            }
+        }
+        return null
     }
 
     // ============ جملتا إعلان المتصل (قبل / بعد) ============
