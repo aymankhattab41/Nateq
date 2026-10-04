@@ -500,7 +500,7 @@
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
 - Exported receiver guard uses exact action equality (not startsWith) -- prevents `action == null` from passing, and `ACTION_NOTIFICATION_CALL` removed from new internal call path
-- API 29 guard in Call Screening Service now testable: reading `callDetails.callDirection` is now a lambda, short-circuit in `||` guarantees it's never read on API < 29, regression guard `pre-29 never reads the direction field at all` asserts zero reads
+- API 29 guard in Call Screening Service now testable: reading `callDetails.callDirection` is now a lambda, short-circuit in `||` guarantees it's never read on API &lt; 29, regression guard `pre-29 never reads the direction field at all` asserts zero reads
 - New call-route tests (`SpeechRouteDecisionTest`): verifies `STREAM_VOICE_CALL` never boosted, `STREAM_NOTIFICATION` never boosted, and `KEY_PARAM_STREAM` maps correctly during an active call
 - Fixed Korean character corruption in `TimeDuringCallsVolumeTest` comment
 - Documented intentional attribute/stream divergence in `AnnouncementSpeaker`: `USAGE_NOTIFICATION_EVENT` stays on call path by director decision; leakage proof required on real device
