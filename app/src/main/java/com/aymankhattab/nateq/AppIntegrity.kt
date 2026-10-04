@@ -116,13 +116,14 @@ object AppIntegrity {
             val rootOk = !isRooted(context)
             val hookOk = !detectHooks(context)
             val integrityOk = checkPlayIntegrity(context)
+            val checksumOk = verifyApkChecksum(context)
 
-            val allOk = signatureOk && debuggableOk && rootOk && hookOk && integrityOk
+            val allOk = signatureOk && debuggableOk && rootOk && hookOk && integrityOk && checksumOk
 
-            Log.i(TAG, "Integrity check: sig=$signatureOk dbg=$debuggableOk root=$rootOk hook=$hookOk pi=$integrityOk => $allOk")
+            Log.i(TAG, "Integrity check: sig=$signatureOk dbg=$debuggableOk root=$rootOk hook=$hookOk pi=$integrityOk cs=$checksumOk => $allOk")
 
             if (!allOk) {
-                Log.e(TAG, "INTEGRITY FAILED — sig=$signatureOk dbg=$debuggableOk root=$rootOk hook=$hookOk pi=$integrityOk")
+                Log.e(TAG, "INTEGRITY FAILED — sig=$signatureOk dbg=$debuggableOk root=$rootOk hook=$hookOk pi=$integrityOk cs=$checksumOk")
             }
 
             // نرجع للـ Main thread للنتيجة
@@ -306,7 +307,7 @@ object AppIntegrity {
         return false
     }
 
-    // ===== 5. Play Integrity API (اختياري، عبر Reflection) =====
+    // ===== 5. Play Integrity API (إلزامي، عبر Reflection) =====
     private fun checkPlayIntegrity(context: Context): Boolean {
         return try {
             // محاولة تحميل فئات Play Integrity عبر Reflection
@@ -344,11 +345,11 @@ object AppIntegrity {
             Log.i(TAG, "Play Integrity token received (len=${token.length})")
             token.isNotEmpty()
         } catch (e: ClassNotFoundException) {
-            Log.i(TAG, "Play Integrity library not available — skipped")
-            true // المكتبة غير موجودة — نتجاوز الاختبار
+            Log.e(TAG, "Play Integrity library NOT FOUND — integrity check FAILED")
+            false // المكتبة غير موجودة = فشل إلزامي
         } catch (e: Exception) {
-            Log.w(TAG, "Play Integrity check failed/skipped: ${e.message}")
-            true // أي خطأ آخر: نسمح لكن نسجل
+            Log.e(TAG, "Play Integrity check FAILED: ${e.message}")
+            false // أي خطأ = فشل إلزامي
         }
     }
 
@@ -358,11 +359,34 @@ object AppIntegrity {
         return Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP)
     }
 
-    // ===== 6. Anti-tamper: APK self-checksum (اختياري، يبطئ الإقلاع) =====
-    @Suppress("UNUSED_PARAMETER")
+    // ===== 6. Anti-tamper: APK self-checksum (إلزامي) =====
     private fun verifyApkChecksum(context: Context): Boolean {
-        // معطل افتراضياً لتجنب إبطاء الإقلاع — فعّله لو احتجت حماية إضافية
-        return true
+        return try {
+            val apkPath = context.applicationInfo.sourceDir
+            val file = File(apkPath)
+            if (!file.exists()) {
+                Log.e(TAG, "APK file not found: $apkPath")
+                return false
+            }
+            // حساب SHA-256 للملف
+            val digest = MessageDigest.getInstance("SHA-256")
+            val buffer = ByteArray(8192)
+            var bytesRead: Int
+            file.inputStream().use { input ->
+                while (input.read(buffer).also { bytesRead = it } != -1) {
+                    digest.update(buffer, 0, bytesRead)
+                }
+            }
+            val hash = digest.digest()
+            val hex = hash.joinToString(":") { "%02X".format(it) }
+            // في الإنتاج: قارن بـ hash معروف ومخزن بأمان (KeyStore/Keystore)
+            // حالياً: نحسب ونسجل فقط — المقارنة تحتاج hash مرجعي مخزن بأمان
+            Log.i(TAG, "APK SHA-256: $hex")
+            true // حالياً نمرر — إضافة مقارنة فعلية تحتاج hash مرجعي مخزن
+        } catch (e: Exception) {
+            Log.e(TAG, "APK checksum verification FAILED: ${e.message}")
+            false
+        }
     }
 }
 
