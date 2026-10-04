@@ -18,8 +18,8 @@
 <string name="auto_convert_rate">Rate</string>
 <string name="auto_convert_save">Save</string>
 <string name="auto_convert_saved">Language settings saved</string>
-<string name="auto_convert_pending">Unsaved changes — tap Save to apply</string>
-<string name="auto_convert_summary">Choose an engine, voice, and sliders for each language so spoken text is converted automatically — for any number of languages</string>
+<string name="auto_convert_pending">Unsaved changes â€” tap Save to apply</string>
+<string name="auto_convert_summary">Choose an engine, voice, and sliders for each language so spoken text is converted automatically â€” for any number of languages</string>
 <string name="auto_convert_voice">Voice</string>
 <string name="auto_convert_volume">Volume</string>
     <string name="audio_expansion_label">Audio expansion</string>
@@ -86,10 +86,10 @@
 <string name="caller_announcement_repeat">Number of repeats</string>
 <string name="caller_prefix_enabled">Speak a phrase before the caller name</string>
 <string name="caller_prefix_hint">Phrase before the caller name</string>
-<string name="caller_prefix_helper">Type what you want spoken before the name or number — spoken only when the box is on</string>
+<string name="caller_prefix_helper">Type what you want spoken before the name or number â€” spoken only when the box is on</string>
 <string name="caller_suffix_enabled">Speak a phrase after the caller name</string>
 <string name="caller_suffix_hint">Phrase after the caller name</string>
-<string name="caller_suffix_helper">Type what you want spoken after the name or number — spoken only when the box is on</string>
+<string name="caller_suffix_helper">Type what you want spoken after the name or number â€” spoken only when the box is on</string>
 <string name="caller_ring_duck_enabled">Lower the ringtone during caller announcement</string>
 <string name="caller_ring_duck_percent">Ringtone lower percentage</string>
 <string name="caller_announcement_voice_ar">Arabic names speech voice</string>
@@ -101,7 +101,7 @@
 <string name="caller_names_delete">Delete</string>
 <string name="caller_names_delete_for">Delete %1$s</string>
 <string name="caller_names_duplicate">This number is already added</string>
-<string name="caller_names_empty">No custom names yet — add a number with a name to be spoken</string>
+<string name="caller_names_empty">No custom names yet â€” add a number with a name to be spoken</string>
 <string name="caller_names_name_hint">Spoken name</string>
 <string name="caller_names_number_hint">Phone number</string>
 <string name="caller_names_saved">Caller names saved</string>
@@ -127,14 +127,14 @@
 <string name="check_updates_desc">Check if a newer version is available</string>
 <string name="check_updates_downloading_title">Downloading the update</string>
 <string name="check_updates_download_failed">Failed to download the update. Check your internet connection or use a browser</string>
-<string name="check_updates_checksum_failed">Integrity check (SHA-256) of the downloaded file failed — not installing. Try again or use a stable connection</string>
+<string name="check_updates_checksum_failed">Integrity check (SHA-256) of the downloaded file failed â€” not installing. Try again or use a stable connection</string>
 <string name="check_updates_network_error">Could not reach the server. Check your internet connection</string>
 <string name="check_updates_up_to_date">App is up to date</string>
 <string name="check_updates_confirm_title">Update available</string>
 <string name="check_updates_confirm_message">A newer version of the app is available. Do you want to download it now?</string>
 <string name="check_updates_confirm_yes">Yes</string>
 <string name="check_updates_confirm_no">No</string>
-<string name="check_updates_no_digest_warning">The file checksum (SHA-256) cannot be verified — the publisher did not provide it. The file will be installed as-is without an integrity check. Continue?</string>
+<string name="check_updates_no_digest_warning">The file checksum (SHA-256) cannot be verified â€” the publisher did not provide it. The file will be installed as-is without an integrity check. Continue?</string>
     <string name="check_updates_metered_warning">You are on a mobile data (metered) connection. Downloading will use your data.</string>
 <string name="time_chime_enabled">Hourly chime</string>
 <string name="time_chime_sound">Chime sound</string>
@@ -165,10 +165,10 @@
 <string name="contact_developer">Contact the developer</string>
 <string name="contact_developer_desc">Open the official Telegram chat to reach the developer</string>
 <string name="contact_developer_no_handler">No app available to open the link right now</string>
-<string name="convert_languages_button">Set up all languages…</string>
+<string name="convert_languages_button">Set up all languagesâ€¦</string>
 <string name="convert_languages_dialog_title">Auto-convert language settings</string>
 <string name="convert_languages_hint">Pick a language, engine, and voice, adjust the sliders, then tap Save to apply them to the selected language. Choosing no engine keeps the sliders only.</string>
-<string name="convert_languages_loading">Discovering languages across all installed engines…</string>
+<string name="convert_languages_loading">Discovering languages across all installed enginesâ€¦</string>
 <string name="day_friday">Friday</string>
 <string name="day_monday">Monday</string>
 <string name="day_saturday">Saturday</string>
@@ -198,8 +198,8 @@
 <string name="dict_export_failed">Failed to export dictionary</string>
 <string name="dict_exported_ok">Dictionary exported</string>
 <string name="dict_import">Import dictionary</string>
-<string name="dict_import_failed">Failed to import dictionary — nothing was imported. The file may contain an invalid entry or exceed the allowed limit</string>
-<string name="dict_import_too_large">File is larger than the allowed limit (8 MB) — nothing was imported</string>
+<string name="dict_import_failed">Failed to import dictionary â€” nothing was imported. The file may contain an invalid entry or exceed the allowed limit</string>
+<string name="dict_import_too_large">File is larger than the allowed limit (8 MB) â€” nothing was imported</string>
 <string name="dict_import_merge">Merge with existing entries</string>
 <string name="dict_import_mode_title">Import method</string>
 <string name="dict_import_replace">Replace all</string>
@@ -208,7 +208,7 @@
 <string name="dict_removed">Dictionary entry deleted</string>
 <string name="dict_word_hint">Word</string>
 <string name="emoji_reading_enabled">Speak emoji and emoticon names</string>
-<string name="emoji_reading_helper">Emoji names are spoken instead of being removed from text (e.g. 😀 is read as "beaming face"). When off, emoticon symbols are dropped from speech.</string>
+<string name="emoji_reading_helper">Emoji names are spoken instead of being removed from text (e.g. ðŸ˜€ is read as "beaming face"). When off, emoticon symbols are dropped from speech.</string>
 <string name="enter_word_and_pronunciation">Enter the word and its pronunciation</string>
 <string name="exact_alarm_permission_grant">Open exact alarm settings</string>
 <string name="exact_alarm_permission_summary">Granting permission makes time announcements fire at the exact minute. Without it a flexible alarm fires near the intended time (slightly delayed during battery saver).</string>
@@ -277,19 +277,19 @@
 <string name="repeat_once">Once</string>
 <string name="repeat_twice">Twice</string>
 <string name="report_error">Collect app error logs and share with developer</string>
-<string name="report_error_collecting">Collecting error logs and diagnostics…</string>
+<string name="report_error_collecting">Collecting error logs and diagnosticsâ€¦</string>
 <string name="report_error_desc">Collect error lines from the app log and share them with the developer via Telegram or other apps</string>
 <string name="report_error_empty">No errors are currently recorded in the app log</string>
 <string name="report_error_no_handler">Could not open share apps or Telegram</string>
-<string name="report_error_subject">Error and diagnostic log — Lord TTS</string>
-<string name="report_error_started">Log recording started — reproduce the problem now, then press “Done — Finish and Collect the Report”</string>
-<string name="report_error_finish">Done — Finish and Collect the Report</string>
+<string name="report_error_subject">Error and diagnostic log â€” Lord TTS</string>
+<string name="report_error_started">Log recording started â€” reproduce the problem now, then press â€œDone â€” Finish and Collect the Reportâ€</string>
+<string name="report_error_finish">Done â€” Finish and Collect the Report</string>
 <string name="error_report_dialog_title">Error and Diagnostic Log</string>
 <string name="error_report_dialog_message">Diagnostic report and app logs have been collected successfully.\nYou can send the log directly to the Telegram support bot or share it as a file.</string>
 <string name="error_report_send_telegram">Send to Telegram Bot</string>
 <string name="error_report_share_file">Share as file or text</string>
 <string name="error_report_copied_telegram_hint">Log copied to clipboard, opening Telegram bot to attach or paste</string>
-<string name="error_report_header_title">Error and Diagnostic Log — Lord TTS</string>
+<string name="error_report_header_title">Error and Diagnostic Log â€” Lord TTS</string>
 <string name="error_report_version">Version: %1$s (%2$d)</string>
 <string name="error_report_device">Device: %1$s %2$s</string>
 <string name="error_report_android_os">Android: %1$s (API %2$d)</string>
@@ -299,27 +299,27 @@
 <string name="reset_confirm_title">Restore defaults?</string>
 <string name="reset_done">Defaults restored</string>
 <string name="reset_settings">Restore defaults</string>
-<string name="restore_confirm_message">All current settings, the dictionary, and caller names will be replaced by those in the backup. The file may contain contact names — keep it safe.</string>
+<string name="restore_confirm_message">All current settings, the dictionary, and caller names will be replaced by those in the backup. The file may contain contact names â€” keep it safe.</string>
 <string name="restore_confirm_title">Restore backup?</string>
 <string name="restore_done">Restore completed successfully</string>
-<string name="restore_done_callers_only">Restored caller names only — the backup contained no settings or dictionary</string>
-<string name="restore_failed">Restore failed — the file is invalid or incomplete</string>
+<string name="restore_done_callers_only">Restored caller names only â€” the backup contained no settings or dictionary</string>
+<string name="restore_failed">Restore failed â€” the file is invalid or incomplete</string>
 <string name="restore_settings">Restore backup</string>
-<string name="sample_text_activity_ar">مرحباً، هذا نص تجريبي لـ Lord TTS.</string>
+<string name="sample_text_activity_ar">Ù…Ø±Ø­Ø¨Ø§Ù‹ØŒ Ù‡Ø°Ø§ Ù†Øµ ØªØ¬Ø±ÙŠØ¨ÙŠ Ù„Ù€ Lord TTS.</string>
 <string name="sample_text_activity_en">Hello, this is a sample text for Lord TTS.</string>
     <string name="sample_text_activity_fr">Bonjour, ceci est un texte d\'essai pour Lord TTS.</string>
-    <string name="sample_text_activity_de">Hallo, dies ist ein Beispieltext für Lord TTS.</string>
+    <string name="sample_text_activity_de">Hallo, dies ist ein Beispieltext fÃ¼r Lord TTS.</string>
     <string name="sample_text_activity_es">Hola, este es un texto de ejemplo para Lord TTS.</string>
-<string name="sample_text_default_ar">مرحباً، هذه عينة من صوت Lord TTS</string>
+<string name="sample_text_default_ar">Ù…Ø±Ø­Ø¨Ø§Ù‹ØŒ Ù‡Ø°Ù‡ Ø¹ÙŠÙ†Ø© Ù…Ù† ØµÙˆØª Lord TTS</string>
 <string name="sample_text_default_en">Hello, this is a sample of Lord TTS voice</string>
-<string name="sample_text_emoji_ar">رحلة سعيدة ودّيًّا، ابتسامة وقلب 😊❤️</string>
-<string name="sample_text_emoji_en">Have a happy trip, a smile and a heart 😊❤️</string>
-<string name="sample_text_notifications_ar">لديك إشعار جديد</string>
+<string name="sample_text_emoji_ar">Ø±Ø­Ù„Ø© Ø³Ø¹ÙŠØ¯Ø© ÙˆØ¯Ù‘ÙŠÙ‹Ù‘Ø§ØŒ Ø§Ø¨ØªØ³Ø§Ù…Ø© ÙˆÙ‚Ù„Ø¨ ðŸ˜Šâ¤ï¸</string>
+<string name="sample_text_emoji_en">Have a happy trip, a smile and a heart ðŸ˜Šâ¤ï¸</string>
+<string name="sample_text_notifications_ar">Ù„Ø¯ÙŠÙƒ Ø¥Ø´Ø¹Ø§Ø± Ø¬Ø¯ÙŠØ¯</string>
 <string name="sample_text_notifications_en">You have a new notification</string>
-<string name="sample_text_numbers_ar">واحد اثنان ثلاثة أربعة خمسة</string>
+<string name="sample_text_numbers_ar">ÙˆØ§Ø­Ø¯ Ø§Ø«Ù†Ø§Ù† Ø«Ù„Ø§Ø«Ø© Ø£Ø±Ø¨Ø¹Ø© Ø®Ù…Ø³Ø©</string>
 <string name="sample_text_numbers_en">One two three four five</string>
-<string name="sample_text_preview_ar">نص تجريبي: بسم الله الرحمن الرحيم.</string>
-<string name="sample_text_time_ar">الساعة الآن العاشرة وخمس عشرة دقيقة</string>
+<string name="sample_text_preview_ar">Ù†Øµ ØªØ¬Ø±ÙŠØ¨ÙŠ: Ø¨Ø³Ù… Ø§Ù„Ù„Ù‡ Ø§Ù„Ø±Ø­Ù…Ù† Ø§Ù„Ø±Ø­ÙŠÙ….</string>
+<string name="sample_text_time_ar">Ø§Ù„Ø³Ø§Ø¹Ø© Ø§Ù„Ø¢Ù† Ø§Ù„Ø¹Ø§Ø´Ø±Ø© ÙˆØ®Ù…Ø³ Ø¹Ø´Ø±Ø© Ø¯Ù‚ÙŠÙ‚Ø©</string>
 <string name="sample_text_time_en">It is now ten fifteen in the morning</string>
 <string name="save">Save</string>
 <string name="save_settings">Save settings</string>
@@ -372,7 +372,7 @@
 <string name="time_announcement_during_silent">Announce the time in silent mode</string>
 <string name="time_announcement_during_silent_summary">Announce the time automatically when the device is in silent or vibrate mode (on by default)</string>
 <string name="sms_announcement_template_hint">Message reading template</string>
-<string name="sms_announcement_template_placeholder" formatted="false">Use {name} for the sender and {message} for the message — leave empty for the default phrase</string>
+<string name="sms_announcement_template_placeholder" formatted="false">Use {name} for the sender and {message} for the message â€” leave empty for the default phrase</string>
 <string name="sms_mode_full">Enabled</string>
 <string name="sms_mode_off">Disabled</string>
 <string name="sms_mode_source">Read message source only</string>
@@ -427,7 +427,7 @@
 <string name="btn_open_battery_settings">Open battery settings</string>
 <string name="btn_open_autostart_settings">Open autostart management</string>
 <string name="oem_screen_open_failed">Could not open the requested screen on this device</string>
-<string name="auto_convert_auto_enabled">Automatic conversion was enabled for the chosen engine — you can turn it off from the engine screen</string>
+<string name="auto_convert_auto_enabled">Automatic conversion was enabled for the chosen engine â€” you can turn it off from the engine screen</string>
 <string name="first_run_default_engine">Make Lord TTS the default engine</string>
 <string name="first_run_default_engine_hint">Open the speech settings and choose Lord TTS as the system default engine</string>
 <string name="voice_category_default">Default voice</string>
@@ -461,12 +461,12 @@
         <item quantity="other">%d seconds</item>
     </plurals>
 <string name="first_run_welcome_title">Welcome to Lord TTS</string>
-<string name="first_run_welcome_description">Choose the interface language and the text-to-speech engine to get started — you can change everything later from Settings.</string>
+<string name="first_run_welcome_description">Choose the interface language and the text-to-speech engine to get started â€” you can change everything later from Settings.</string>
 <string name="first_run_language_label">Interface language</string>
 <string name="first_run_engine_label">Text-to-speech engine</string>
 <string name="first_run_save">Save and continue</string>
 <string name="first_run_skip">Skip</string>
-<string name="first_run_lang_arabic">العربية</string>
+<string name="first_run_lang_arabic">Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©</string>
 <string name="first_run_lang_english">English</string>
 <string name="engine_for_category_label">Category announcement engine</string>
 <string name="caller_engine_ar_label">Arabic names engine</string>
@@ -499,39 +499,39 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
-• Exported receiver guard uses exact action equality (not startsWith) — prevents `action == null` from passing, and `ACTION_NOTIFICATION_CALL` removed from new internal call path
-• API 29 guard in Call Screening Service now testable: reading `callDetails.callDirection` is now a lambda, short-circuit in `||` guarantees it's never read on API < 29, regression guard `pre-29 never reads the direction field at all` asserts zero reads
-• New call-route tests (`SpeechRouteDecisionTest`): verifies `STREAM_VOICE_CALL` never boosted, `STREAM_NOTIFICATION` never boosted, and `KEY_PARAM_STREAM` maps correctly during an active call
-• Fixed Korean character corruption in `TimeDuringCallsVolumeTest` comment
-• Documented intentional attribute/stream divergence in `AnnouncementSpeaker`: `USAGE_NOTIFICATION_EVENT` stays on call path by director decision; leakage proof required on real device
-• Added 9 guard test files for governing contracts (call direction, call notification, exported receiver, instant speech, wait lifecycle, positively incoming, process death key, repeat truth source, speech route decision)
-• The hourly chime now follows the spoken volume: its level used to be an independent control with no link to the speech, so raising the time volume left the chime untouched; it now follows by default, and anyone who wants them separate can turn the link off and set its own level (it never falls silent: the lowest link is the bottom of the chime range)
-• The caller name no longer repeats over your call after you answer: the loop used to wait without checking anything, so only the hangup signal stopped it, and app calls (WhatsApp, Telegram) get no such signal at all, which left your name sounding over the call until the last beat; it now stops the moment ringing ends, for both kinds of call
-• Fixed an app crash when opening any file: the file provider was declared exported and Android refused it with "Provider must not be exported", taking the app down the moment it opened
-• The dictionary is now actually applied while speaking: every consumer used to build its own empty copy, so the settings screen showed your entries while speech ignored them; there is now one instance per process, and a broken Keystore falls back to plain storage instead of disabling the dictionary
-• The delete and import dictionary options are now visible: they already existed on the screen but had zero width and never drew, and they now sit side by side with a confirmation before deleting
-• A saved caller is now spoken by name instead of number: the number in the notification title and the name in its body were both needed, and both are now read from every field, with the contacts lookup trying three number formats
-• A call you place is no longer announced back to you as incoming: the check now covers the dialling and alerting states before ringing, and matches your dialer's text ignoring Arabic diacritics
-• Stuck TTS engines no longer freeze opening the settings: the probe timeout is down to 5 seconds and a failing engine is skipped for 24 hours
-• Opening the settings is faster: a light loading screen appears immediately and the engines warm up in the background
-• Fixed Google Meet caller announcements: the direction guard rejected every ongoing call notification, and Meet marks its ringing notification as ongoing from the first moment, so the caller name was never spoken there since v1.6.20
-• Caller name is spoken sooner: the check now runs before the wait, so the 300 milliseconds are no longer paid while the name is already in memory — about 300ms faster on WhatsApp and Telegram
-• Caller identity is checked every 50ms instead of 300ms (a free memory read), while the call log lookup stays at 300ms
-• The caller preview now sounds exactly like the real announcement instead of louder (it used the music stream, and the engine ignored the volume slider)
-• The dictionary now matches with no boundaries at all: it applies glued to numbers from either side (50g, 300gm, 2km), which used to stay silent
-• The dictionary now applies to English as well: it never went through the English path, so keys like "HTTP" or "AI" were not spoken
-• A broken import now fails completely: an invalid line used to be skipped silently and produce a partial dictionary; now it is the whole file or nothing
-• Dictionary import accepts JSON files only, and reads at most 8 megabytes while reading so it never weighs the app down
-• Import limits: 200,000 entries and 8,000 characters per key and value; exceeding them fails instead of truncating silently
-• The dictionary export file is now named LOR_dictionary.json
-• The phrase "Incoming call from" is removed for good: a saved name is spoken on its own, and an unsaved number is announced as "Unsaved number"
-• Fixed "incoming call from" being spoken to the caller themselves (outgoing) and after the call ended: only a genuine incoming ring is announced now
-• Lower the phone ringtone while the caller is announced: an enable box and a percentage you choose (10%% to 90%%)
-• A separate volume level during calls (for announcements such as the clock), from 0%% to 100%%
-• Caller announcement is now always as loud as battery and clock announcements: it moved to an audio path that an active call does not duck, so it sounds the same on every device including Android 17
-• Speak a phrase you choose before the caller name and one after it: two boxes and two fields, the single template is gone, and what gets spoken is exactly what you type
-• Caller announcement repeat now goes from once up to ten times, with a 3, 4, or 5 second interval
-• The dictionary is open with no length ceiling: any key you type applies, and the silence on units and currencies glued to numbers (50g, 300gm) is fixed
+â€¢ Exported receiver guard uses exact action equality (not startsWith) â€” prevents `action == null` from passing, and `ACTION_NOTIFICATION_CALL` removed from new internal call path
+â€¢ API 29 guard in Call Screening Service now testable: reading `callDetails.callDirection` is now a lambda, short-circuit in `||` guarantees it's never read on API &lt; 29, regression guard `pre-29 never reads the direction field at all` asserts zero reads
+â€¢ New call-route tests (`SpeechRouteDecisionTest`): verifies `STREAM_VOICE_CALL` never boosted, `STREAM_NOTIFICATION` never boosted, and `KEY_PARAM_STREAM` maps correctly during an active call
+â€¢ Fixed Korean character corruption in `TimeDuringCallsVolumeTest` comment
+â€¢ Documented intentional attribute/stream divergence in `AnnouncementSpeaker`: `USAGE_NOTIFICATION_EVENT` stays on call path by director decision; leakage proof required on real device
+â€¢ Added 9 guard test files for governing contracts (call direction, call notification, exported receiver, instant speech, wait lifecycle, positively incoming, process death key, repeat truth source, speech route decision)
+â€¢ The hourly chime now follows the spoken volume: its level used to be an independent control with no link to the speech, so raising the time volume left the chime untouched; it now follows by default, and anyone who wants them separate can turn the link off and set its own level (it never falls silent: the lowest link is the bottom of the chime range)
+â€¢ The caller name no longer repeats over your call after you answer: the loop used to wait without checking anything, so only the hangup signal stopped it, and app calls (WhatsApp, Telegram) get no such signal at all, which left your name sounding over the call until the last beat; it now stops the moment ringing ends, for both kinds of call
+â€¢ Fixed an app crash when opening any file: the file provider was declared exported and Android refused it with "Provider must not be exported", taking the app down the moment it opened
+â€¢ The dictionary is now actually applied while speaking: every consumer used to build its own empty copy, so the settings screen showed your entries while speech ignored them; there is now one instance per process, and a broken Keystore falls back to plain storage instead of disabling the dictionary
+â€¢ The delete and import dictionary options are now visible: they already existed on the screen but had zero width and never drew, and they now sit side by side with a confirmation before deleting
+â€¢ A saved caller is now spoken by name instead of number: the number in the notification title and the name in its body were both needed, and both are now read from every field, with the contacts lookup trying three number formats
+â€¢ A call you place is no longer announced back to you as incoming: the check now covers the dialling and alerting states before ringing, and matches your dialer's text ignoring Arabic diacritics
+â€¢ Stuck TTS engines no longer freeze opening the settings: the probe timeout is down to 5 seconds and a failing engine is skipped for 24 hours
+â€¢ Opening the settings is faster: a light loading screen appears immediately and the engines warm up in the background
+â€¢ Fixed Google Meet caller announcements: the direction guard rejected every ongoing call notification, and Meet marks its ringing notification as ongoing from the first moment, so the caller name was never spoken there since v1.6.20
+â€¢ Caller name is spoken sooner: the check now runs before the wait, so the 300 milliseconds are no longer paid while the name is already in memory â€” about 300ms faster on WhatsApp and Telegram
+â€¢ Caller identity is checked every 50ms instead of 300ms (a free memory read), while the call log lookup stays at 300ms
+â€¢ The caller preview now sounds exactly like the real announcement instead of louder (it used the music stream, and the engine ignored the volume slider)
+â€¢ The dictionary now matches with no boundaries at all: it applies glued to numbers from either side (50g, 300gm, 2km), which used to stay silent
+â€¢ The dictionary now applies to English as well: it never went through the English path, so keys like "HTTP" or "AI" were not spoken
+â€¢ A broken import now fails completely: an invalid line used to be skipped silently and produce a partial dictionary; now it is the whole file or nothing
+â€¢ Dictionary import accepts JSON files only, and reads at most 8 megabytes while reading so it never weighs the app down
+â€¢ Import limits: 200,000 entries and 8,000 characters per key and value; exceeding them fails instead of truncating silently
+â€¢ The dictionary export file is now named LOR_dictionary.json
+â€¢ The phrase "Incoming call from" is removed for good: a saved name is spoken on its own, and an unsaved number is announced as "Unsaved number"
+â€¢ Fixed "incoming call from" being spoken to the caller themselves (outgoing) and after the call ended: only a genuine incoming ring is announced now
+â€¢ Lower the phone ringtone while the caller is announced: an enable box and a percentage you choose (10%% to 90%%)
+â€¢ A separate volume level during calls (for announcements such as the clock), from 0%% to 100%%
+â€¢ Caller announcement is now always as loud as battery and clock announcements: it moved to an audio path that an active call does not duck, so it sounds the same on every device including Android 17
+â€¢ Speak a phrase you choose before the caller name and one after it: two boxes and two fields, the single template is gone, and what gets spoken is exactly what you type
+â€¢ Caller announcement repeat now goes from once up to ten times, with a 3, 4, or 5 second interval
+â€¢ The dictionary is open with no length ceiling: any key you type applies, and the silence on units and currencies glued to numbers (50g, 300gm) is fixed
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
