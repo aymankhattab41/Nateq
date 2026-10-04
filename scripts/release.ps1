@@ -351,6 +351,66 @@ if (-not (Test-Path -LiteralPath $apkFile)) {
     throw "الـ APK غير موجود بعد البناء: $apkFile"
 }
 
+# ===== حساب توقيع التوقيع (SHA-256) من الـ keystore وتحديث AppIntegrity.kt =====
+Write-Host "=> حساب توقيع Release keystore SHA-256..."
+try {
+    $keyPropsFile = Join-Path $repoRoot 'key.properties'
+    if (Test-Path -LiteralPath $keyPropsFile) {
+        $keyProps = @{}
+        Get-Content -LiteralPath $keyPropsFile | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') {
+                $keyProps[$matches[1]] = $matches[2]
+            }
+        }
+        $storeFile = $keyProps['storeFile']
+        $storePassword = $keyProps['storePassword']
+        $keyAlias = $keyProps['keyAlias']
+        $keyPassword = $keyProps['keyPassword']
+
+        if ($storeFile -and $storePassword -and $keyAlias -and $keyPassword) {
+            $fullStorePath = Join-Path $repoRoot $storeFile
+            if (Test-Path -LiteralPath $fullStorePath) {
+                # استخراج الشهادة من الـ keystore وحساب SHA-256
+                $certBytes = & keytool -exportcert -keystore $fullStorePath `
+                    -storepass $storePassword -keypass $keyPassword `
+                    -alias $keyAlias -rfc 2>$null
+                if ($LASTEXITCODE -eq 0 -and $certBytes) {
+                    # تحويل PEM إلى بايتات وحساب SHA-256
+                    $pem = $certBytes -join "`n"
+                    $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+                        [System.Text.Encoding]::UTF8.GetBytes($pem)
+                    )
+                    $sha256 = $cert.GetCertHashString([System.Security.Cryptography.HashAlgorithmName]::SHA256)
+                    # تنسيق بالـ uppercase مفصول بنقطتين
+                    $formattedSig = ($sha256 -replace '(.{2})', '$1:').TrimEnd(':')
+                    Write-Host "=> توقيع Release: $formattedSig"
+
+                    # تحديث AppIntegrity.kt
+                    $integrityFile = Join-Path $repoRoot 'app\src\main\java\com\aymankhattab\nateq\AppIntegrity.kt'
+                    if (Test-Path -LiteralPath $integrityFile) {
+                        $content = [System.IO.File]::ReadAllText($integrityFile, [System.Text.UTF8Encoding]::new($false))
+                        $newContent = $content -replace 'REPLACE_WITH_RELEASE_SIGNATURE_SHA256', $formattedSig
+                        if ($newContent -cne $content) {
+                            [System.IO.File]::WriteAllText($integrityFile, $newContent, [System.Text.UTF8Encoding]::new($false))
+                            Write-Host "=> تم تحديث AppIntegrity.kt بالتوقيع الفعلي"
+                        }
+                    }
+                } else {
+                    Write-Warning "فشل استخراج الشهادة من keystore (keytool exit code: $LASTEXITCODE)"
+                }
+            } else {
+                Write-Warning "ملف keystore غير موجود: $fullStorePath"
+            }
+        } else {
+            Write-Warning "معلومات keystore ناقصة في key.properties"
+        }
+    } else {
+        Write-Warning "ملف key.properties غير موجود — تخطيت تحديث التوقيع"
+    }
+} catch {
+    Write-Warning "خطأ أثناء حساب/تحديث التوقيع: $_"
+}
+
 # **بند 5.3:** سطر SHA-256 للـ APK يُلحق بملاحظات الإصدار — يُحسب من
 # القرص مباشرةً بمجرد وجود الملف (بلا نسخ مؤقتة) ويتيح التحققَ من سلامة
 # المرفق قبل التثبيت.

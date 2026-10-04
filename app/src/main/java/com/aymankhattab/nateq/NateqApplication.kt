@@ -60,6 +60,17 @@ class NateqApplication : Application(), AnnouncementAppContext {
     override fun onCreate() {
         super.onCreate()
 
+        // ===== التحقق من سلامة التطبيق (Anti-tamper / Anti-debug / Play Integrity) =====
+        // يعمل غير حاصر — الفشل يسجّل خطأ ويقرر السلوك لاحقاً (لا يُسقط الإقلاع صامتاً).
+        // في بناء Release حقيقي: EXPECTED_SIGNATURE_SHA256 تُستبدل بالقيمة الفعلية.
+        verifyAppIntegrity(this) { ok ->
+            if (!ok) {
+                Log.e("NATEQ_APP", "App integrity check FAILED — بيئة غير موثوقة")
+                // هنا يمكن: إيقاف الميزات الحساسة، إظهار تحذير، إغلاق التطبيق، إلخ.
+                // حالياً: تسجّل الخطأ وتستمر لتفادي false-positive على أجهزة نادرة.
+            }
+        }
+
         // وجهة إشعار خدمة الإعلانات: تُسجَّل من هنا (المطبق الذي يعرف
         // شاشة الإعدادات) بدل تسميتها نصياً في core:audio.
         SettingsOpenRegistry.register { ctx ->

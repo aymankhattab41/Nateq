@@ -37,6 +37,7 @@ uiautomator = "2.3.0"
 # --- مكتبات خارجية ---------------------------------------------------------
 gson = "2.12.1"
 coroutines = "1.10.1"
+playIntegrity = "1.2.0"
 
 # --- اختبارات ---------------------------------------------------------------
 # Robolectric 4.17 = أوسع تغطية (23-37) فيدعم SDK 37 (Cinnamon Bun) ويتطلب Java 21
@@ -65,6 +66,7 @@ kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 
 # Gson (واجهة NateqJson المركزية والـ ParameterizedType)
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
+play-integrity = { group = "com.google.android.play", name = "integrity", version.ref = "playIntegrity" }
 
 # اختبارات
 junit = { group = "junit", name = "junit", version.ref = "junit" }
