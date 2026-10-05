@@ -519,6 +519,8 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+- Fixed update checker: GitHub tag `vN` in 0.x phase treated as `0.N.0` — no false update when equal (v1.6.29 = 1.6.29)
+- Cleaned changelog: removed internal references ("manager decision"), changelog is now public-facing
 - Exported receiver guard uses exact action equality (not startsWith)
 - API 29 guard in Call Screening Service now testable
 - New call-route tests (SpeechRouteDecisionTest)

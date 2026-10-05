@@ -529,6 +529,8 @@
 <string name="time_alarm_max_precision_summary">تستخدم منبّه النظام الدقيق (setAlarmClock) متجاوزةً كل قيود Doze والبطارية فيعمل إعلان الوقت في اللحظة المضبوطة؛ أثرُها الجانبي أن أيقونة منبّه ثابتة تظهر في شريط الحالة.</string>
 <string name="changelog_title">آخر التحديثات</string>
 <string name="changelog_text">الإصدار %1$s
+- إصلاح فحص التحديث: وسم GitHub `vN` في مرحلة 0.x يُعامل كـ `0.N.0` — لا يُعلن تحديثاً وهمياً عند المساواة (v1.6.29 = 1.6.29)
+- تنظيف المستجدات: إزالة إشارات داخلية («قرار المدير»)، المستجدات واضحة للعامة
 - حارس تصدير المستقبِل يساوي الإجراء تساوياً لا جزئياً -- يمنع مرور `action == null` عبر `startsWith`، و`ACTION_NOTIFICATION_CALL` أُزيل من المسار الجديد للاستدعاء الداخلي
 - حارس API 29 في خدمة فرز المكالمات صار قابلاً للاختبار: قراءة `callDetails.callDirection` أصبحت دالةً لا قيمةً، فقَصْر الدائرة في `||` يضمن ألّا تُقرأ ما دون 29، وحارس الكسر `pre-29 never reads the direction field at all` يضبط القراءات بصفر
 - اختبارات جديدة لمسار المكالمة (`SpeechRouteDecisionTest`): التحقق من عدم رفع `STREAM_VOICE_CALL`، عدم رفع `STREAM_NOTIFICATION`، ومسار `KEY_PARAM_STREAM` فوق مكالمة جارية
