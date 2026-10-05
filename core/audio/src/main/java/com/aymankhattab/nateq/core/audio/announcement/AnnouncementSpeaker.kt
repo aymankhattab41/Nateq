@@ -14,6 +14,7 @@ import android.util.Log
 import androidx.annotation.VisibleForTesting
 import com.aymankhattab.nateq.engine.EmojiSpeech
 import com.aymankhattab.nateq.engine.PronunciationDictionary
+import com.aymankhattab.nateq.core.audio.engine.AudioEffectManager
 import com.aymankhattab.nateq.core.audio.engine.SpeechChunker
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.core.audio.engine.LanguageSegmenter
@@ -794,7 +795,8 @@ class AnnouncementSpeaker(
         // يُنطق النص أبداً بمحركٍ حُسم لاحقاً عن التهيئة الجارية.
         when (initGate.enqueue(requested, onReady)) {
             InitGate.Decision.JOIN -> return
-            InitGate.Decision.START -> startInit(requested, languageEngine, fallbackEngine, locale)
+            InitGate.Decision.START ->
+                startInit(requested, languageEngine, fallbackEngine, locale)
         }
     }
 
@@ -804,7 +806,8 @@ class AnnouncementSpeaker(
      *
      * @param finalEngine المحرك الصريح المطلوب لهذه الفئة (قد يكون null)
      * @param languageEngine محرك اللغة المضبوط للُغة الحالية
-     * @param fallbackEngine محرك TTS الاحتياطي للإعلانات (إعداد announcement_fallback_engine)
+     * @param fallbackEngine محرك TTS الاحتياطي للإعلانات
+     *   (إعداد announcement_fallback_engine)
      */
     private fun startInit(
         finalEngine: String?,
@@ -818,7 +821,14 @@ class AnnouncementSpeaker(
             shutdownSafely()
         }
         val engine = safeEngineForAnnouncement(
-            appContext, finalEngine, languageEngine, fallbackEngine
+            appContext,
+            finalEngine,
+            settings?.getEngineForCategory(
+                com.aymankhattab.nateq.core.data.SettingsRepository
+                    .VOICE_CATEGORY_DEFAULT
+            ),
+            languageEngine,
+            fallbackEngine
         )
         boundEngine = engine
         var newTts: TextToSpeech? = null
@@ -833,7 +843,12 @@ class AnnouncementSpeaker(
                 val fallbackEngine = runCatching {
                     settings?.getAnnouncementFallbackEngine()
                 }.getOrNull()
-                startInit(completion.nextEngine, languageEngine, fallbackEngine, locale)
+                startInit(
+                    completion.nextEngine,
+                    languageEngine,
+                    fallbackEngine,
+                    locale
+                )
             }
         }
         // **المنشئ الثلاثي الصريح** TextToSpeech(context, listener, engine):
@@ -859,7 +874,12 @@ class AnnouncementSpeaker(
                 val fallbackEngine = runCatching {
                     settings?.getAnnouncementFallbackEngine()
                 }.getOrNull()
-                startInit(completion.nextEngine, languageEngine, fallbackEngine, locale)
+                startInit(
+                    completion.nextEngine,
+                    languageEngine,
+                    fallbackEngine,
+                    locale
+                )
             }
         }, engine)
         newTts.apply {
@@ -1409,7 +1429,8 @@ class AnnouncementSpeaker(
                 // فشل التهيئة — لا تراجع تلقائي؛ شغّل نغمة خطأ وعرض تحذير
                 Log.w(
                     TAG,
-                    "[Speaker] فشل تهيئة $engineOverride — لا تراجع تلقائي (بند D1)"
+                    "[Speaker] فشل تهيئة $engineOverride" +
+                        " — لا تراجع تلقائي (بند D1)"
                 )
                 playNoEngineCue()
                 releaseAudioFocus()
@@ -1455,7 +1476,8 @@ class AnnouncementSpeaker(
             val built = try {
                 mergeAdjacentSameVoice(
                     buildSpeakUnits(
-                        text, locale, speechRate, pitch, volume, emojiCfg, parts
+                        text, locale, speechRate, pitch, volume,
+                        emojiCfg, parts
                     )
                 )
             } catch (t: Throwable) {
@@ -1558,7 +1580,8 @@ speechCycle.incrementAndGet()
         }
     }
 
-    /** بيانات جلسة إشعار/رسالة تم مقاطعتها بحدث آني؛ تُحفظ لاستئنافها فوراً. */
+    /** بيانات جلسة إشعار/رسالة تم مقاطعتها بحدث آني؛
+     *  تُحفظ لاستئنافها فوراً. */
     internal data class ResumableAnnouncement(
         val units: List<SpeakUnit>,
         val engineOverride: String?,
@@ -1983,6 +2006,13 @@ speechCycle.incrementAndGet()
                 TextToSpeech.Engine.KEY_PARAM_STREAM,
                 streamForRoute(speechRouteForNow(currentCategory))
             )
+            // **بند V3 — التأثيرات لكل فئة:** تُمرَّر فئةُ النطق هنا
+            // فيقرأها NateqTtsService عند ربط المؤثرات، فيسقطُ
+            // التأثيرُ عن فئةٍ معطّلة من الإعدادات ويبقى لغيرها.
+            putString(
+                AudioEffectManager.PARAM_CATEGORY,
+                currentCategory.orEmpty()
+            )
         }
         // تنظيف النص من الإيموجي قبل النطق (نصوص خارجية قد
         // تحوي رموزاً يُقرؤها المحرك الخارجي أسماءها الإنجليزية).
@@ -2305,8 +2335,9 @@ speechCycle.incrementAndGet()
 
     /** هل تُسمح فئة النطق الحالية بالمرور فوق مكالمةٍ هاتفية نشطة؟
      *  المتصلُ (بجميع أنواعه) عند تفعيل «نطق اسم المتصل أثناء المكالمة»،
-     *  والوقت عند تفعيل «نطق الوقت أثناء المكالمة»؛ ما عداها (البطارية/الرسائل/
-     *  الإشعارات/نصوص عامة) يُرفضُ فوق المكالمة لحمايتها من التشويش. */
+     *  والوقت عند تفعيل «نطق الوقت أثناء المكالمة»؛ ما عداها
+     *  (البطارية/الرسائل/الإشعارات/نصوص عامة) يُرفضُ فوق المكالمة
+     *  لحمايتها من التشويش. */
     private fun isAllowedDuringCall(): Boolean {
         val repo = settings ?: return false
         return when (currentCategory) {
@@ -2426,14 +2457,21 @@ internal fun resolveAnnouncementEngine(
 }
 
 /**
- * حسم محرك آمن لنطق الإعلانات والأحداث:
- * يمنع التكرار الذاتي وحلقات الربط الفاشلة؛ إن كان المحرك المطلوب فارغاً
- * أو هو حزمة التطبيق نفسها (التي تتطلب BIND_TTS_SERVICE للنظام فتفشل عند ربط
- * التطبيق بذاته)، يتم تفويض أول محرك خارجي مثبت من [EnginePicker].
+ * حسم محرك آمن لنطق الإعلانات والأحداث (نسخة صريحة وفق L1).
+ *
+ * **ترتيب الحسم (لا افتراضات، ولا اختيار Google تلقائي):**
+ * 1. محرك الفئة الصريح (أو "default" داخل الفئة) إن وُجد وصالح
+ * 2. محرك "الافتراضي" العام إن وُجد وصالح
+ * 3. محرك اللغة إن وُجد وصالح
+ * 4. لا محرك ← يعاد `null` ويُصدر نغمة خطأ في المستدعي (لا يستدعي
+ *    أي محرك تلقائياً)
+ *
+ * "default" تُخزِّنه الفئة مع صوتها الخاص (لا يُدمج مع فئة أخرى).
  */
 internal fun safeEngineForAnnouncement(
     context: Context,
     requestedCategoryEngine: String?,
+    defaultEngine: String?,
     languageEngine: String?,
     announcementFallbackEngine: String?
 ): String? {
@@ -2443,18 +2481,24 @@ internal fun safeEngineForAnnouncement(
     ) {
         return requestedCategoryEngine
     }
-    // 2. محرك اللغة
+    // 2. محرك "الافتراضي" العام
+    if (!defaultEngine.isNullOrBlank() &&
+        defaultEngine != context.packageName
+    ) {
+        return defaultEngine
+    }
+    // 3. محرك اللغة
     if (!languageEngine.isNullOrBlank() &&
         languageEngine != context.packageName
     ) {
         return languageEngine
     }
-    // 3. محرك الاحتياط الصريح للمستخدم (إعداد announcementFallbackEngine)
+    // 4. محرك الاحتياط العام (fallback) إن وُجد — يُستخدم عند غياب
+    // أي محرك صريح آخر، بحسب ترتيب الحسم الجديد.
     if (!announcementFallbackEngine.isNullOrBlank() &&
         announcementFallbackEngine != context.packageName
     ) {
         return announcementFallbackEngine
     }
-    // لا فرع تلقائي — الفشل التام يُعاد null ويُعالَج في المستدعي
     return null
 }
