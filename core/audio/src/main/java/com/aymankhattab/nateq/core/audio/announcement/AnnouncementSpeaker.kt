@@ -17,6 +17,8 @@ import com.aymankhattab.nateq.engine.PronunciationDictionary
 import com.aymankhattab.nateq.core.audio.engine.SpeechChunker
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.core.audio.engine.LanguageSegmenter
+import com.aymankhattab.nateq.core.audio.announcement.CueSynth
+import com.aymankhattab.nateq.core.audio.announcement.CueType
 import com.aymankhattab.nateq.core.audio.engine.Segment
 import com.aymankhattab.nateq.core.audio.engine.isNumericOnly
 import com.aymankhattab.nateq.engine.SpeechPart
@@ -145,6 +147,10 @@ class AnnouncementSpeaker(
         // تصمت بلا onDone ولا onError (بند 2.4). الواجهة تقتصِر أصلاً على
         // 2.0، ويبقى السقف هنا وقائياً على حدود المحرك مهما كان مصدر القيمة.
         private const val MAX_SPEECH_RATE = 2.5f
+
+        /** زمن آخر نغمة خطأ NO_ENGINE (للتخفيف من التكرار). */
+        @Volatile
+        var lastNoEngineCueTime: Long = 0
 
         /** تثبيت سرعة النطق ضمن المدى الآمن للمحرك وقائياً (بند 2.4):
          *  حدٌّ أدنى فلا يتعطل المحرك، وحدٌّ أعلى فلا يعلّق صامتاً. */
@@ -763,12 +769,19 @@ class AnnouncementSpeaker(
      */
     private fun ensureInit(
         onReady: (Boolean) -> Unit,
-        requestedEngine: String? = null
+        requestedEngine: String? = null,
+        locale: Locale
     ) {
         val requested = requestedEngine
             ?.takeIf {
                 it in EnginePicker.installedEnginePackages(appContext)
             }
+        val languageEngine = runCatching {
+            settings?.getEngineForLanguage(locale.language)
+        }.getOrNull()
+        val fallbackEngine = runCatching {
+            settings?.getAnnouncementFallbackEngine()
+        }.getOrNull()
         // مسارٌ جاهز: المثيل الحالي مرتبط فعلاً بنفس المحرك المطلوب —
         // نداء فوري بلا بوابة (لا تهيئة جديدة ولا انتظار دورة).
         if (tts != null && boundEngine == requested) {
@@ -781,20 +794,32 @@ class AnnouncementSpeaker(
         // يُنطق النص أبداً بمحركٍ حُسم لاحقاً عن التهيئة الجارية.
         when (initGate.enqueue(requested, onReady)) {
             InitGate.Decision.JOIN -> return
-            InitGate.Decision.START -> startInit(requested)
+            InitGate.Decision.START -> startInit(requested, languageEngine, fallbackEngine, locale)
         }
     }
 
     /** يبدأ تهيئة TextToSpeech لمحركٍ محسوم؛ عند الاكتمال تُصفّى البوابة
      *  خارجها (تخدم النداءات المطابقة وتُسلسل إعادة تهيئةٍ للمحرك
-     *  المتبقي بمحركٍ مختلف). */
-    private fun startInit(finalEngine: String?) {
+     *  المتبقي بمحركٍ مختلف).
+     *
+     * @param finalEngine المحرك الصريح المطلوب لهذه الفئة (قد يكون null)
+     * @param languageEngine محرك اللغة المضبوط للُغة الحالية
+     * @param fallbackEngine محرك TTS الاحتياطي للإعلانات (إعداد announcement_fallback_engine)
+     */
+    private fun startInit(
+        finalEngine: String?,
+        languageEngine: String?,
+        fallbackEngine: String?,
+        locale: Locale
+    ) {
         // محرك مختلف للفئة القادمة (أو تهيئة أولى): أُغلق الربط القديم
         // كاملاً ثم أُهيّئ الجديد (لا تبقى مثيلات معلقة على محرك آخر).
         if (tts != null) {
             shutdownSafely()
         }
-        val engine = safeEngineForAnnouncement(appContext, finalEngine)
+        val engine = safeEngineForAnnouncement(
+            appContext, finalEngine, languageEngine, fallbackEngine
+        )
         boundEngine = engine
         var newTts: TextToSpeech? = null
         val timeoutRunnable = Runnable {
@@ -802,10 +827,15 @@ class AnnouncementSpeaker(
             val completion = initGate.complete(false)
             completion.served.forEach { cb -> cb(false) }
             if (completion.hasNext) {
-                startInit(completion.nextEngine)
+                val languageEngine = runCatching {
+                    settings?.getEngineForLanguage(locale.language)
+                }.getOrNull()
+                val fallbackEngine = runCatching {
+                    settings?.getAnnouncementFallbackEngine()
+                }.getOrNull()
+                startInit(completion.nextEngine, languageEngine, fallbackEngine, locale)
             }
         }
-        mainHandler.postDelayed(timeoutRunnable, 5_000L)
         // **المنشئ الثلاثي الصريح** TextToSpeech(context, listener, engine):
         // الربط المباشر بحزمة المحرك المحسومة صراحة يمنع الحلقات الذاتية.
         newTts = TextToSpeech(appContext, { status ->
@@ -823,7 +853,13 @@ class AnnouncementSpeaker(
             val completion = initGate.complete(success)
             completion.served.forEach { cb -> cb(success) }
             if (completion.hasNext) {
-                startInit(completion.nextEngine)
+                val languageEngine = runCatching {
+                    settings?.getEngineForLanguage(locale.language)
+                }.getOrNull()
+                val fallbackEngine = runCatching {
+                    settings?.getAnnouncementFallbackEngine()
+                }.getOrNull()
+                startInit(completion.nextEngine, languageEngine, fallbackEngine, locale)
             }
         }, engine)
         newTts.apply {
@@ -1313,7 +1349,7 @@ class AnnouncementSpeaker(
         // الكلامُ فور انتهائها على محركٍ دافئ بدل «نغمة ← ربط ← كلام».
         // [ensureInit] بوابةُ طيرانٍ مفرد آمنة التزامن — يعاود استدعاءُ
         // startSpeech اللاحق الانضمام إليها بلا سباقٍ ولا تكرار تهيئة.
-        ensureInit({ _ -> }, engineOverride)
+        ensureInit({ _ -> }, engineOverride, locale)
         AudioCuePlayer.getInstance(appContext).play(cue) { _ ->
             if (gen == speechGeneration.get()) {
                 startSpeech(
@@ -1369,33 +1405,31 @@ class AnnouncementSpeaker(
         ensureInit({ ready ->
             if (ready) {
                 executeSpeech()
-            } else if (engineOverride != null) {
+            } else {
+                // فشل التهيئة — لا تراجع تلقائي؛ شغّل نغمة خطأ وعرض تحذير
                 Log.w(
                     TAG,
-                    "[Speaker] فشل تهيئة $engineOverride —" +
-                    " التراجع لمحرك بديل"
+                    "[Speaker] فشل تهيئة $engineOverride — لا تراجع تلقائي (بند D1)"
                 )
-                val fallback = safeEngineForAnnouncement(
-                    appContext, null
-                )
-                if (fallback != null && fallback != engineOverride) {
-                    ensureInit({ fallbackReady ->
-                        if (fallbackReady) {
-                            executeSpeech()
-                        } else {
-                            releaseAudioFocus()
-                            notifySpeechComplete()
-                        }
-                    }, requestedEngine = fallback)
-                } else {
-                    releaseAudioFocus()
-                    notifySpeechComplete()
-                }
-            } else {
+                playNoEngineCue()
                 releaseAudioFocus()
                 notifySpeechComplete()
             }
-        }, engineOverride)
+        }, engineOverride, locale)
+    }
+
+    /** يُشغّل نغمة خطأ قصيرة (CueSynth.NO_ENGINE) عند عدم وجود محرك للإعلانات.
+     *  محمية بمهلة 60 ثانية لتجنب تكرار النغمة المزعجة. */
+    private fun playNoEngineCue() {
+        val now = System.currentTimeMillis()
+        if (now - AnnouncementSpeaker.lastNoEngineCueTime < 60_000) return
+        AnnouncementSpeaker.lastNoEngineCueTime = now
+        try {
+            val cue = AudioCue(type = CueType.NO_ENGINE)
+            AudioCuePlayer.getInstance(appContext).play(cue) { _ -> }
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to play NO_ENGINE cue", t)
+        }
     }
 
     /** ينطق المقاطع بالتتابع: النصوص بصوت الإعلان (النص المختلط الكتابات
@@ -1555,11 +1589,12 @@ speechCycle.incrementAndGet()
         currentCategory = target.category
         voiceId = target.voiceId
         val gen = speechGeneration.incrementAndGet()
+        val locale = target.units.firstOrNull()?.locale ?: Locale.getDefault()
         ensureInit({ ready ->
             if (ready && gen == speechGeneration.get()) {
                 sendSpeakUnits(target.units, attempt = 1)
             }
-        }, target.engineOverride)
+        }, target.engineOverride, locale)
     }
 
     /** وحدة نطق مستقلة بمعاملاتها (لغة/صوت/أشرطة)
@@ -2398,29 +2433,28 @@ internal fun resolveAnnouncementEngine(
  */
 internal fun safeEngineForAnnouncement(
     context: Context,
-    engine: String?,
-    defaultSynthProvider: () -> String? = {
-        runCatching {
-            android.provider.Settings.Secure.getString(
-                context.contentResolver,
-                "tts_default_synth"
-            )
-        }.getOrNull()
-    },
-    installedEnginesProvider: () -> List<String> = {
-        EnginePicker.installedEnginePackages(context)
-    }
+    requestedCategoryEngine: String?,
+    languageEngine: String?,
+    announcementFallbackEngine: String?
 ): String? {
-    if (!engine.isNullOrBlank() && engine != context.packageName) {
-        return engine
-    }
-    val defaultSynth = defaultSynthProvider()
-    if (!defaultSynth.isNullOrBlank() &&
-        defaultSynth != context.packageName
+    // 1. محرك الفئة الصريح
+    if (!requestedCategoryEngine.isNullOrBlank() &&
+        requestedCategoryEngine != context.packageName
     ) {
-        return defaultSynth
+        return requestedCategoryEngine
     }
-    return installedEnginesProvider().firstOrNull {
-        it != context.packageName
+    // 2. محرك اللغة
+    if (!languageEngine.isNullOrBlank() &&
+        languageEngine != context.packageName
+    ) {
+        return languageEngine
     }
+    // 3. محرك الاحتياط الصريح للمستخدم (إعداد announcementFallbackEngine)
+    if (!announcementFallbackEngine.isNullOrBlank() &&
+        announcementFallbackEngine != context.packageName
+    ) {
+        return announcementFallbackEngine
+    }
+    // لا فرع تلقائي — الفشل التام يُعاد null ويُعالَج في المستدعي
+    return null
 }

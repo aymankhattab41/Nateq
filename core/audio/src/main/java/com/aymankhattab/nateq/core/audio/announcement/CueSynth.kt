@@ -24,6 +24,7 @@ internal object CueSynth {
             CueType.BATTERY_FULL -> batteryFull()
             CueType.BATTERY_LOW -> batteryLow()
             CueType.CALL_UNIDENTIFIED -> callUnidentified()
+            CueType.NO_ENGINE -> noEngineCue()
         }
         return floatsToShort(floats)
     }
@@ -39,6 +40,7 @@ internal object CueSynth {
         CueType.BATTERY_FULL -> 650
         CueType.BATTERY_LOW -> 620
         CueType.CALL_UNIDENTIFIED -> 400
+        CueType.NO_ENGINE -> 500
     }
 
     private fun hourlyChime(soundName: String?): FloatArray =
@@ -253,5 +255,24 @@ internal object CueSynth {
                 .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
                 .toShort()
         }
+    }
+
+    /** نغمة خطأ قصيرة عند عدم وجود محرك — نغمة هابطة سريعة (D#5 → C#5). */
+    private fun noEngineCue(): FloatArray {
+        val dur = 0.5
+        val n = (dur * SAMPLE_RATE).toInt()
+        val floats = FloatArray(n)
+        val startFreq = 622.25  // D#5
+        val endFreq = 554.37    // C#5
+        val peak = 0.5
+        val atk = 0.005
+        for (i in 0 until n) {
+            val t = i.toDouble() / SAMPLE_RATE
+            val progress = t / dur
+            val freq = startFreq + (endFreq - startFreq) * progress
+            val env = (t / atk).coerceAtMost(1.0) * exp(-t / 0.15).coerceAtMost(1.0)
+            floats[i] = (sin(2.0 * PI * freq * t) * env * peak).toFloat()
+        }
+        return floats
     }
 }

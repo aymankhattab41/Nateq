@@ -2244,4 +2244,19 @@ class SettingsRepository(context: Context) :
             false
         }
     }
+
+    // ============ محرك TTS الاحتياطي للإعلانات ============
+
+    /** مفتاح محرك TTS الاحتياطي للإعلانات (اختياري، مختار يدوياً). */
+    override fun getAnnouncementFallbackEngine(): String? =
+        prefs.getString("announcement_fallback_engine", null)
+
+    /** حفظ محرك TTS الاحتياطي للإعلانات (null = حذف). */
+    override fun setAnnouncementFallbackEngine(enginePackage: String?) {
+        if (enginePackage.isNullOrBlank()) {
+            prefs.edit().remove("announcement_fallback_engine").apply()
+        } else {
+            prefs.edit().putString("announcement_fallback_engine", enginePackage).apply()
+        }
+    }
 }

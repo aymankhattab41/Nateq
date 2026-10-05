@@ -500,7 +500,7 @@
 <string name="preview_chime_button">اختبار رنة الساعة</string>
 <string name="preview_notification_button">اختبار قراءة إشعار</string>
 <string name="preview_sms_button">اختبار قراءة رسالة</string>
-<string name="preview_caller_button">اختبار إعلان المتصل</string>
+<string name="preview_caller_button">اختبار</string>
 <string name="preview_battery_button">اختبار إعلان البطارية</string>
 <string name="sample_text_time_preview">الساعة الثالثة وخمس عشرة دقيقة</string>
 <string name="sample_text_notification_preview">رسالة جديدة من أحمد عبر واتساب</string>
@@ -556,4 +556,14 @@
 
     <string name="quiet_schedule_master">نفس الساعات لكل أيام الأسبوع</string>
     <string name="quiet_schedule_individual">تخصيص كل يوم على حدة</string>
+
+    <!-- محرك TTS الاحتياطي للإعلانات -->
+    <string name="announcement_fallback_engine_title">محرك TTS الاحتياطي للإعلانات</string>
+    <string name="announcement_fallback_engine_summary">يُستخدم فقط عندما لا يوجد محرك للفئة ولا محرك للغة — آخر محاولة قبل الفشل التام. اتركه فارغاً لعدم وجود محرك احتياطي.</string>
+    <string name="announcement_fallback_engine_no_engine">لا يوجد محرك احتياطي (افتراضي)</string>
+    <string name="announcement_fallback_engine_select">اختر محركاً احتياطياً</string>
+
+    <!-- تحذير عدم وجود محرك للإعلانات -->
+    <string name="no_engine_for_announcements_warning">الإعلانات بلا محرك: لم يُضبط محرك للإعلانات ولم يُوجد محرك احتياطي. الإعلانات لن تُنطق. اضغط لضبط محرك في الإعدادات.</string>
+
 </resources>

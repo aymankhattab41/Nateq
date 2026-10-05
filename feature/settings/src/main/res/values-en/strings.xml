@@ -490,7 +490,7 @@
 <string name="preview_chime_button">Test hourly chime</string>
 <string name="preview_notification_button">Test notification reading</string>
 <string name="preview_sms_button">Test SMS reading</string>
-<string name="preview_caller_button">Test caller announcement</string>
+<string name="preview_caller_button">Test</string>
 <string name="preview_battery_button">Test battery announcement</string>
 <string name="sample_text_time_preview">It is now three fifteen</string>
 <string name="sample_text_notification_preview">New message from Ahmed on WhatsApp</string>
@@ -546,4 +546,14 @@
 
     <string name="quiet_schedule_master">Same hours for all days of the week</string>
     <string name="quiet_schedule_individual">Customize each day individually</string>
+
+    <!-- Announcement fallback engine -->
+    <string name="announcement_fallback_engine_title">Announcement Fallback TTS Engine</string>
+    <string name="announcement_fallback_engine_summary">Used only when no category engine and no language engine are set — last resort before total failure. Leave empty for no fallback engine.</string>
+    <string name="announcement_fallback_engine_no_engine">No fallback engine (default)</string>
+    <string name="announcement_fallback_engine_select">Select a fallback engine</string>
+
+    <!-- No engine for announcements warning -->
+    <string name="no_engine_for_announcements_warning">Announcements have no engine: no engine configured for announcements and no fallback engine. Announcements will not be spoken. Tap to configure an engine in settings.</string>
+
 </resources>

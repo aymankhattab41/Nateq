@@ -47,4 +47,12 @@ interface VoicePrefsProvider {
 
     /** مسح كسب معادِل الصوت لمحرك. */
     fun clearEngineEqualizerGains(enginePackage: String) {}
+
+    /** محرك TTS الاحتياطي للإعلانات (اختياري، مختار يدوياً من قائمة
+     *  المحركات المثبّتة) — يستخدم فقط عندما لا يوجد محرك للفئة
+     *  ولا محرك للغة، وهو آخر محاولة قبل الفشل التام. null = لا يوجد. */
+    fun getAnnouncementFallbackEngine(): String?
+
+    /** حفظ محرك TTS الاحتياطي للإعلانات (null = حذف). */
+    fun setAnnouncementFallbackEngine(enginePackage: String?)
 }
