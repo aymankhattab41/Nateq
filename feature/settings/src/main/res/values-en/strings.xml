@@ -118,7 +118,7 @@
 <string name="cancel">Cancel</string>
 <string name="categories_saved">Voice settings saved</string>
 <string name="categories_save_button">Save voice changes</string>
-<string name="cd_test_voice_button">Play a sample voice for testing</string>
+<string name="cd_test_voice_button">Test</string>
 <string name="cd_convert_play_for_language">Play a sample voice for testing, %1$s language</string>
 <string name="cd_convert_save_for_language">Save settings for the %1$s language</string>
 <string name="charging_complete_announcement_enabled" formatted="false">Announce when charging completes (100%)</string>
@@ -379,6 +379,12 @@
 <string name="sms_otp_block_hint">Warning: OTP messages are blocked for the first 3 hours after enabling, per Android 17 policy</string>
 <string name="sms_permission_needed">Reading messages requires granting SMS permission</string>
 <string name="sms_reading_mode">Message reading mode</string>
+
+<string name="notification_reading_mode">Notification reading mode</string>
+<string name="notification_mode_full">Enabled</string>
+<string name="notification_mode_off">Disabled</string>
+<string name="notification_mode_source">Read notification source only</string>
+<string name="spinner_notification_reading_mode_content">Notification reading mode</string>
 <string name="sms_reading_rate">Message reading rate</string>
 <string name="sms_reading_pitch">Message reading pitch</string>
 <string name="sms_reading_via_nls">Message reading will use the notification listener service instead of SMS permission</string>

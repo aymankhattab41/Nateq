@@ -39,7 +39,7 @@ object AppIntegrity {
     // القيمة المرجعية لتوقيع SHA-256 للحزمة (Release keystore).
     // تُستبدل آلياً عند بناء Release عبر `scripts/release.ps1` أو يدوياً.
     // صيغة: "aa:bb:cc..." (uppercase hex مفصول بنقطتين).
-    private const val EXPECTED_SIGNATURE_SHA256 = "REPLACE_WITH_RELEASE_SIGNATURE_SHA256"
+    private const val EXPECTED_SIGNATURE_SHA256 = "79:3A:A5:31:F8:89:04:A1:9B:9C:1C:33:A6:7B:23:8F:31:42:92:63:F5:D3:24:F9:5E:AE:CE:E8:81:1F:E8:C3"
 
     // قائمة المسارات الشائعة لـ su/binaries الجذر
     private val rootPaths = listOf(
@@ -135,7 +135,7 @@ object AppIntegrity {
 
     // ===== 1. تحقق التوقيع =====
     private fun checkSignature(context: Context): Boolean {
-        if (EXPECTED_SIGNATURE_SHA256 == "REPLACE_WITH_RELEASE_SIGNATURE_SHA256") {
+        if (EXPECTED_SIGNATURE_SHA256 == "79:3A:A5:31:F8:89:04:A1:9B:9C:1C:33:A6:7B:23:8F:31:42:92:63:F5:D3:24:F9:5E:AE:CE:E8:81:1F:E8:C3") {
             Log.w(TAG, "Signature check skipped — placeholder not replaced")
             return true // نسمح في البناء المحلي، لكن Release الحقيقي يجب استبدال القيمة
         }

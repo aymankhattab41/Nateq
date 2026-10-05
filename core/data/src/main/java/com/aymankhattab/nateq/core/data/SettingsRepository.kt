@@ -2000,6 +2000,14 @@ class SettingsRepository(context: Context) :
     override fun setNotificationReadingEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("notification_reading_enabled", enabled).apply()
 
+    /** وضع قراءة الإشعارات: "full"=مفعّل، "off"=معطّل، "source"=مصدر فقط. */
+    override fun getNotificationReadingMode(): String =
+        prefs.getString("notification_reading_mode", "off") ?: "off"
+
+    /** يعيّن وضع قراءة الإشعارات: "full" | "off" | "source". */
+    override fun setNotificationReadingMode(mode: String) =
+        prefs.edit().putString("notification_reading_mode", mode).apply()
+
     // ============ اختيار تطبيقات قراءة الإشعارات ============
 
     /** الحزمة "كل التطبيقات" تعني قراءة كل الإشعارات، وإلا حزم مختارة.

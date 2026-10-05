@@ -3,6 +3,7 @@ package com.aymankhattab.nateq.settings
 import android.content.Intent
 import android.provider.Settings
 import android.view.View
+import android.widget.ArrayAdapter
 import android.widget.Toast
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
@@ -11,9 +12,10 @@ import com.aymankhattab.nateq.util.announceCompat
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.google.android.material.textfield.MaterialAutoCompleteTextView
 
 /** ضابط قسم «قراءة الإشعارات»: المفتاح + فتح إعدادات صلاحية النظام
- *  + اختيار التطبيقات. */
+ *  + اختيار التطبيقات + وضع القراءة (مفعّل/معطّل/مصدر فقط). */
 internal class NotificationReadingController(
     private val fragment: VoiceSelectionFragment,
     private val settings: SettingsRepository,
@@ -25,12 +27,14 @@ internal class NotificationReadingController(
     // (بند 4.1) حتى لا تبقى شجرة العرض القديمة محتجزة في الخلفية.
     private var switchNotificationReading: SwitchMaterial? = null
     private var llNotificationListenerSettings: View? = null
+    private var actvNotificationReadingMode: MaterialAutoCompleteTextView? = null
 
     fun setup(view: View) {
         switchNotificationReading =
             view.findViewById(R.id.switch_notification_reading)
         llNotificationListenerSettings =
             view.findViewById(R.id.ll_notification_listener_settings)
+        actvNotificationReadingMode = view.findViewById(R.id.actv_notification_reading_mode)
 
         // المفتاح الرئيسي
         switchNotificationReading?.isChecked =
@@ -55,6 +59,9 @@ internal class NotificationReadingController(
                 )
             )
         }
+
+        // وضع قراءة الإشعارات
+        setupNotificationReadingModeSpinner()
 
         // فتح إعدادات إذن الوصول للإشعارات من النظام
         llNotificationListenerSettings?.setOnClickListener {
@@ -195,9 +202,54 @@ internal class NotificationReadingController(
             .create().also { fragment.trackDialog(it) }.show()
     }
 
+    /** يُنشئ كمبو اختيار وضع قراءة الإشعارات (مفعّل/معطّل/مصدر فقط). */
+    private fun setupNotificationReadingModeSpinner() {
+        actvNotificationReadingMode?.let { actv ->
+            val items = listOf(
+                fragment.getString(R.string.notification_mode_full),
+                fragment.getString(R.string.notification_mode_off),
+                fragment.getString(R.string.notification_mode_source)
+            )
+            val adapter = ArrayAdapter(
+                actv.context,
+                android.R.layout.simple_list_item_1,
+                items
+            )
+            actv.setAdapter(adapter)
+
+            // تعيين القيمة الحالية
+            val currentMode = runCatching { settings.getNotificationReadingMode() }
+                .getOrDefault("off")
+            val currentLabel = when (currentMode) {
+                "full" -> fragment.getString(R.string.notification_mode_full)
+                "source" -> fragment.getString(R.string.notification_mode_source)
+                else -> fragment.getString(R.string.notification_mode_off)
+            }
+            actv.setText(currentLabel, false)
+
+            actv.setOnItemClickListener { _, _, pos, _ ->
+                val selectedMode = when (pos) {
+                    0 -> "full"
+                    1 -> "off"
+                    2 -> "source"
+                    else -> "off"
+                }
+                runCatching { settings.setNotificationReadingMode(selectedMode) }
+                onStatusChanged()
+                fragment.view?.announceCompat(
+                    fragment.getString(
+                        if (selectedMode == "off") R.string.announcement_turned_off
+                        else R.string.announcement_turned_on
+                    )
+                )
+            }
+        }
+    }
+
     /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */
     fun cleanup() {
         switchNotificationReading = null
         llNotificationListenerSettings = null
+        actvNotificationReadingMode = null
     }
 }

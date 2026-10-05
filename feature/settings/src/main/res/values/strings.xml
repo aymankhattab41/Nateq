@@ -117,7 +117,7 @@
 <string name="cancel">إلغاء</string>
 <string name="categories_saved">تم حفظ إعدادات الأصوات</string>
 <string name="categories_save_button">حفظ تغييرات الأصوات</string>
-<string name="cd_test_voice_button">تشغيل عيّنة صوتية للاختبار</string>
+<string name="cd_test_voice_button">اختبار</string>
 <string name="cd_convert_play_for_language">تشغيل عيّنة صوتية للاختبار، لغة %1$s</string>
 <string name="cd_convert_save_for_language">حفظ إعدادات لغة %1$s</string>
 <string name="charging_complete_announcement_enabled" formatted="false">الإعلان عند اكتمال الشحن (100%)</string>
@@ -381,6 +381,12 @@
 <string name="sms_otp_block_hint">تحذير: رسائل OTP تُحجب 3 ساعات أولى بعد التفعيل حسب سياسة أندرويد 17</string>
 <string name="sms_permission_needed">تتطلب قراءة الرسائل منح إذن الوصول إلى الرسائل النصية</string>
 <string name="sms_reading_mode">وضع قراءة الرسائل</string>
+
+<string name="notification_reading_mode">وضع قراءة الإشعارات</string>
+<string name="notification_mode_full">مفعّل</string>
+<string name="notification_mode_off">معطّل</string>
+<string name="notification_mode_source">قراءة مصدر الإشعار فقط</string>
+<string name="spinner_notification_reading_mode_content">وضع قراءة الإشعارات</string>
 <string name="sms_reading_rate">سرعة نطق الرسائل</string>
 <string name="sms_reading_pitch">نبرة نطق الرسائل</string>
 <string name="sms_reading_via_nls">سُتفعل قراءة الرسائل عبر خدمة الاستماع للإشعارات بدلاً من إذن الرسائل</string>

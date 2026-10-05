@@ -739,6 +739,24 @@
                     android:importantForAccessibility="no" />
             </LinearLayout>
 
+            <!-- وضع قراءة الإشعارات -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_notification_reading_mode"
+                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:hint="@string/notification_reading_mode">
+                <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                    android:id="@+id/actv_notification_reading_mode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="none"
+                    android:minHeight="48dp"
+                    android:importantForAccessibility="yes"
+                    android:contentDescription="@string/spinner_notification_reading_mode_content" />
+            </com.google.android.material.textfield.TextInputLayout>
+
             <!-- اختيار تطبيقات قراءة الإشعارات -->
             <LinearLayout
                 android:id="@+id/ll_notification_apps_settings"

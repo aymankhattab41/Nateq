@@ -601,6 +601,12 @@ interface DevicePrefs {
     /** يعيّن تفعيل قراءة الإشعارات. */
     fun setNotificationReadingEnabled(enabled: Boolean)
 
+    /** وضع قراءة الإشعارات: "full"=مفعّل، "off"=معطّل، "source"=مصدر فقط. */
+    fun getNotificationReadingMode(): String
+
+    /** يعيّن وضع قراءة الإشعارات. */
+    fun setNotificationReadingMode(mode: String)
+
     /** حزم التطبيقات المختارة لقراءة إشعاراتها. */
     fun getNotificationAppsSelection(): Set<String>
 
