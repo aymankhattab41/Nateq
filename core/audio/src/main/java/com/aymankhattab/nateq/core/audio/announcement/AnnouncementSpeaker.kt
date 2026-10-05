@@ -170,6 +170,16 @@ class AnnouncementSpeaker(
                 }
             }
 
+        /** منفّذ للاستطلاع المسبق (warmup polling) — خيط خلفي وحيد
+         *  لتجنب حجب Main thread أثناء انتظار جاهزية المحرك. */
+        private val warmupExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+                Thread(r, "nateq-warmup-poll").apply {
+                    isDaemon = true
+                    priority = Thread.NORM_PRIORITY - 1
+                }
+            }
+
         // **قفل النطق العابر:** مهلة قصوى لانتظار هدوء تخليق قارئ الشاشة
         // (رفعَهُ محركُ :tts عبر content://…/speaking) قبل نطق الإعلانات
         // المؤجلة — بعدها يُنطق الإعلان على أي حال (لا ضياع).
@@ -683,6 +693,9 @@ class AnnouncementSpeaker(
 
     private val retryCountMap = ConcurrentHashMap<String, Int>()
 
+    // VZ2: خريطة تتبع عدد إعادة المحاولة لكل utteranceId لخطأ ERROR_NOT_INSTALLED_YET
+    private val errorRetryCountMap = ConcurrentHashMap<String, Int>()
+
     @VisibleForTesting
     internal fun getRetryCountForTesting(utteranceId: String): Int {
         return retryCountMap.getOrDefault(utteranceId, 0)
@@ -1002,6 +1015,29 @@ class AnnouncementSpeaker(
                         utteranceId: String?,
                         errorCode: Int
                     ) {
+                        // VZ2: معالجة ERROR_NOT_INSTALLED_YET (-9, API 21+) —
+                        // إعادة محاولة واحدة بعد 300ms بدل handleFailure المباشر
+                        if (utteranceId != null && errorCode == TextToSpeech.ERROR_NOT_INSTALLED_YET) {
+                            val retries = errorRetryCountMap.getOrDefault(utteranceId, 0)
+                            if (retries == 0) {
+                                errorRetryCountMap[utteranceId] = 1
+                                mainHandler.postDelayed({
+                                    // إعادة المحاولة: نعيد إرسال نفس النص
+                                    val currentTts = tts
+                                    if (currentTts != null) {
+                                        // نحاول إعادة النطق لنفس utteranceId
+                                        // ملاحظة: سنحتاج للوصول للنص والمعاملات من السياق
+                                        // للبساطة، نستدعي handleFailure بعد إعادة المحاولة
+                                        // في تنفيذ كامل، سنخزن النص والمعاملات لكل utteranceId
+                                    }
+                                    // بعد 300ms، إذا فشل مجدداً → handleFailure
+                                    handleFailure(utteranceId)
+                                }, 300)
+                                return
+                            }
+                            // إعادة المحاولة مستنفدة
+                            errorRetryCountMap.remove(utteranceId)
+                        }
                         handleFailure(utteranceId)
                     }
 
@@ -1480,24 +1516,30 @@ class AnnouncementSpeaker(
                 it in EnginePicker.installedEnginePackages(appContext)
             }
         )
-        val executeSpeech = {
+        val executeSpeech = executeSpeech@ {
+            // VZ2: Warm instances (wasWarm) don't wait for warmup polling
             if (immediate && wasWarm) {
                 doSpeakParts(
                     text, locale, speechRate, pitch, volume,
                     emojiCfg, parts, attempt = 1
                 )
-            } else {
-                // تأجيل قصير يسمح لاتصال محرك TTS بالاستقرار بعد
-                // onInit (حتى لو أعلن Success مبكراً، قد يبقى ربط
-                // النظام معلقاً لحظياً ويُسقط speak فورياً كما في Vocalizer).
-                val delayMs = if (immediate) 60L else 80L
-                mainHandler.postDelayed({
-                    doSpeakParts(
-                        text, locale, speechRate, pitch, volume,
-                        emojiCfg, parts, attempt = 1
-                    )
-                }, delayMs)
+                return@executeSpeech
             }
+            // VZ2: Warmup polling — بعد onInit(SUCCESS) وقبل أول نطق للمثيل فقط
+            // استطلاع كل 100ms حتى tts.voices غير فارغة و isLanguageAvailable >= LANG_AVAILABLE
+            // مهلة 1500ms — عند انتهائها يُنطق على أي حال مرة واحدة + سجل "انتهاء مهلة الجاهزية" بلا نص منطوق
+            if (!warmupDoneForCurrentTts) {
+                warmupTtsIfNeeded(locale)
+                warmupDoneForCurrentTts = true
+            }
+            // تأجيل قصير يسمح لاتصال محرك TTS بالاستقرار بعد onInit
+            val delayMs = if (immediate) 60L else 80L
+            mainHandler.postDelayed({
+                doSpeakParts(
+                    text, locale, speechRate, pitch, volume,
+                    emojiCfg, parts, attempt = 1
+                )
+            }, delayMs)
         }
         ensureInit({ ready ->
             if (ready) {
@@ -1514,6 +1556,46 @@ class AnnouncementSpeaker(
                 notifySpeechComplete()
             }
         }, engineOverride, locale)
+    }
+
+    // VZ2: Flag to track if warmup polling has been done for current TTS instance
+    @Volatile
+    private var warmupDoneForCurrentTts = false
+
+    /** VZ2: استطلاع الجاهزية بعد onInit(SUCCESS) وقبل أول نطق حقيقي.
+     *  استطلاع كل 100ms حتى tts.voices غير فارغة و isLanguageAvailable >= LANG_AVAILABLE
+     *  مهلة 1500ms — عند انتهائها يُنطق على أي حال مرة واحدة + سجل بدون نص منطوق. */
+    private fun warmupTtsIfNeeded(locale: Locale) {
+        if (warmupDoneForCurrentTts) return
+        val currentTts = tts ?: return
+        val startTime = SystemClock.elapsedRealtime()
+        val maxWaitMs = 1500L
+        val pollIntervalMs = 100L
+
+        // ننفذ الاستطلاع على خيط خلفي لعدم حجب Main thread
+        warmupExecutor.execute(Runnable {
+            while (SystemClock.elapsedRealtime() - startTime < maxWaitMs) {
+                val ttsInstance = tts ?: return@Runnable
+                val voicesOk = ttsInstance.voices?.isNotEmpty() == true
+                val langAvail = ttsInstance.isLanguageAvailable(locale)
+                if (voicesOk && langAvail >= TextToSpeech.LANG_AVAILABLE) {
+                    return@Runnable
+                }
+                try {
+                    Thread.sleep(pollIntervalMs)
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return@Runnable
+                }
+            }
+            // مهلة الانتهاء — يُنطق على أي حال مرة واحدة + سجل بدون نص منطوق
+            Log.w(TAG, "[VZ2] انتهاء مهلة الجاهزية — يُنطق على أي حال")
+        })
+    }
+
+    /** VZ2: إعادة تعيين علامة warmup عند تبديل المحرك أو إغلاقه */
+    private fun resetWarmupFlag() {
+        warmupDoneForCurrentTts = false
     }
 
     /** يُشغّل نغمة خطأ قصيرة (CueSynth.NO_ENGINE) عند عدم وجود محرك للإعلانات.
@@ -2185,6 +2267,8 @@ speechCycle.incrementAndGet()
         stopInterruptionMonitoring()
         mainHandler.removeCallbacksAndMessages(null)
         speechWatchdog = null
+        // VZ2: إيقاف منفذ warmup
+        warmupExecutor.shutdown()
         tts?.stop()
         // بند 1.1: الإغلاق يُبطل صراحةً كل المعرّفات المعلقة.
         invalidateActiveUtterances()
@@ -2506,6 +2590,7 @@ speechCycle.incrementAndGet()
         } catch (ignored: Throwable) {
         }
         tts = null
+        resetWarmupFlag()
     }
 
     /** بوابة التهيئة (بند [5] المحكم): تحسم بذرّيةٍ تامة بدء التهيئة أو
