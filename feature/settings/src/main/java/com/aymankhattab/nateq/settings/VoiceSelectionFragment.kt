@@ -523,7 +523,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         btnExportDict.setOnClickListener {
             runCatching { createDictLauncher.launch(DICT_EXPORT_FILE_NAME) }
         }
-        val btnClearDict = view.findViewById<MaterialButton>(R.id.btn_clear_dict)
+        val btnClearDict = view.findViewById<MaterialButton>(
+            R.id.btn_clear_dict
+        )
         btnClearDict.setOnClickListener { showClearDictConfirmDialog() }
 
         // المفتاح الرئيسي لكل الإعلانات
@@ -670,7 +672,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
         generalSection = GeneralSettingsController(
-            this, settings, { accordion.updateSectionStatuses() }
+            this, settings, voicePreview,
+            { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
         numberSection = NumberReadingController(
             this, settings, { accordion.updateSectionStatuses() }
@@ -819,7 +822,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
         updateReceiver?.let { receiver ->
             runCatching {
-                requireContext().applicationContext.unregisterReceiver(receiver)
+                requireContext().applicationContext
+                    .unregisterReceiver(receiver)
             }
             updateReceiver = null
         }
@@ -1657,7 +1661,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         val currentContext = context ?: return
         viewLifecycleOwner.lifecycleScope.launch {
             val info = buildDiagnosticsInfo(currentContext)
-            if (!isAdded || activity == null || activity?.isFinishing == true) {
+            if (!isAdded || activity == null ||
+                activity?.isFinishing == true
+            ) {
                 return@launch
             }
             val ctx = context ?: return@launch

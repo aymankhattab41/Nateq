@@ -30,7 +30,8 @@ import java.security.NoSuchAlgorithmException
  * 5. Play Integrity API — تحقق Google من التوقيع + الجهاز + بيئة التشغيل.
  * 6. Anti-tamper: تحقق الـ APK checksum ذاتياً (اختياري، يبطئ الإقلاع).
  *
- * أي فشل يسجّل خطأً ويعيد false — الطبقة المستدعية تقرر السلوك (إغلاق، تقييد، تسجيل).
+ * أي فشل يسجّل خطأً ويعيد false — الطبقة المستدعية تقرر السلوك (إغلاق، تقييد،
+* تسجيل).
  */
 object AppIntegrity {
 
@@ -39,7 +40,13 @@ object AppIntegrity {
     // القيمة المرجعية لتوقيع SHA-256 للحزمة (Release keystore).
     // تُستبدل آلياً عند بناء Release عبر `scripts/release.ps1` أو يدوياً.
     // صيغة: "aa:bb:cc..." (uppercase hex مفصول بنقطتين).
-    private const val EXPECTED_SIGNATURE_SHA256 = "79:3A:A5:31:F8:89:04:A1:9B:9C:1C:33:A6:7B:23:8F:31:42:92:63:F5:D3:24:F9:5E:AE:CE:E8:81:1F:E8:C3"
+    private const val PLACEHOLDER_SHA256 =
+        "79:3A:A5:31:F8:89:04:A1:9B:9C:1C:33:A6:7B:23:8F:31:42:92:63:" +
+            "F5:D3:24:F9:5E:AE:CE:E8:81:1F:E8:C3"
+
+    private const val EXPECTED_SIGNATURE_SHA256 =
+        "79:3A:A5:31:F8:89:04:A1:9B:9C:1C:33:A6:7B:23:8F:31:42:92:63:" +
+            "F5:D3:24:F9:5E:AE:CE:E8:81:1F:E8:C3"
 
     // قائمة المسارات الشائعة لـ su/binaries الجذر
     private val rootPaths = listOf(
@@ -118,12 +125,25 @@ object AppIntegrity {
             val integrityOk = checkPlayIntegrity(context)
             val checksumOk = verifyApkChecksum(context)
 
-            val allOk = signatureOk && debuggableOk && rootOk && hookOk && integrityOk && checksumOk
+            val allOk = signatureOk && debuggableOk && rootOk &&
+                hookOk && integrityOk && checksumOk
 
-            Log.i(TAG, "Integrity check: sig=$signatureOk dbg=$debuggableOk root=$rootOk hook=$hookOk pi=$integrityOk cs=$checksumOk => $allOk")
+            Log.i(
+                TAG,
+                "Integrity check: sig=$signatureOk "
+                    + "dbg=$debuggableOk root=$rootOk "
+                    + "hook=$hookOk pi=$integrityOk "
+                    + "cs=$checksumOk => $allOk"
+            )
 
             if (!allOk) {
-                Log.e(TAG, "INTEGRITY FAILED — sig=$signatureOk dbg=$debuggableOk root=$rootOk hook=$hookOk pi=$integrityOk cs=$checksumOk")
+                Log.e(
+                    TAG,
+                    "INTEGRITY FAILED — sig=$signatureOk "
+                        + "dbg=$debuggableOk root=$rootOk "
+                        + "hook=$hookOk pi=$integrityOk "
+                        + "cs=$checksumOk"
+                )
             }
 
             // نرجع للـ Main thread للنتيجة
@@ -135,9 +155,10 @@ object AppIntegrity {
 
     // ===== 1. تحقق التوقيع =====
     private fun checkSignature(context: Context): Boolean {
-        if (EXPECTED_SIGNATURE_SHA256 == "79:3A:A5:31:F8:89:04:A1:9B:9C:1C:33:A6:7B:23:8F:31:42:92:63:F5:D3:24:F9:5E:AE:CE:E8:81:1F:E8:C3") {
+        if (EXPECTED_SIGNATURE_SHA256 == PLACEHOLDER_SHA256) {
             Log.w(TAG, "Signature check skipped — placeholder not replaced")
-            return true // نسمح في البناء المحلي، لكن Release الحقيقي يجب استبدال القيمة
+            // نسمح في البناء المحلي، لكن Release الحقيقي يجب استبدال القيمة
+            return true
         }
         try {
             val pkgInfo: PackageInfo = context.packageManager.getPackageInfo(
@@ -150,10 +171,15 @@ object AppIntegrity {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                     // Android 9+ (API 28+)
                     info.apkContentsSigners?.let { signatures.addAll(it) }
-                    info.signingCertificateHistory?.let { signatures.addAll(it) }
+                    info.signingCertificateHistory?.let {
+                        signatures.addAll(it)
+                    }
                 }
             }
-            // fallback للـ signatures القديمة
+            // مسارُ ما قبل API 28: الحقلُ مهجورٌ فيSIGNED_INFO لكنه
+            // الطريقُ الوحيد على الأجهزة القديمة، فإسكاتُ التحذير هنا
+            // مقصودٌ وموثَّق.
+            @Suppress("DEPRECATION")
             pkgInfo.signatures?.let { signatures.addAll(it.toList()) }
 
             if (signatures.isEmpty()) {
@@ -179,7 +205,8 @@ object AppIntegrity {
 
     // ===== 2. فلاج debuggable =====
     private fun isDebuggable(context: Context): Boolean {
-        return (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        val flags = context.applicationInfo.flags
+        return (flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
     }
 
     // ===== 3. كشف الجذر =====
@@ -311,27 +338,49 @@ object AppIntegrity {
     private fun checkPlayIntegrity(context: Context): Boolean {
         return try {
             // محاولة تحميل فئات Play Integrity عبر Reflection
-            val integrityManagerFactoryClass = Class.forName("com.google.android.play.integrity.IntegrityManagerFactory")
-            val integrityManagerClass = Class.forName("com.google.android.play.integrity.IntegrityManager")
-            val integrityTokenRequestClass = Class.forName("com.google.android.play.integrity.IntegrityTokenRequest")
-            val integrityTokenResponseClass = Class.forName("com.google.android.play.integrity.IntegrityTokenResponse")
+            val integrityManagerFactoryClass = Class.forName(
+                "com.google.android.play.integrity.IntegrityManagerFactory"
+            )
+            val integrityManagerClass = Class.forName(
+                "com.google.android.play.integrity.IntegrityManager"
+            )
+            val integrityTokenRequestClass = Class.forName(
+                "com.google.android.play.integrity.IntegrityTokenRequest"
+            )
+            val integrityTokenResponseClass = Class.forName(
+                "com.google.android.play.integrity.IntegrityTokenResponse"
+            )
 
             // IntegrityManagerFactory.create(context)
-            val createMethod = integrityManagerFactoryClass.getMethod("create", Context::class.java)
+            val createMethod = integrityManagerFactoryClass.getMethod(
+                "create", Context::class.java
+            )
             val integrityManager = createMethod.invoke(null, context)
 
             // generateNonce()
             val nonce = generateNonce()
 
-            // IntegrityTokenRequest.builder().setCloudProjectNumber(0).setNonce(nonce).build()
-            val builderClass = Class.forName("com.google.android.play.integrity.IntegrityTokenRequest\$Builder")
-            val builder = integrityTokenRequestClass.getMethod("builder").invoke(null)
-            builderClass.getMethod("setCloudProjectNumber", Long::class.java).invoke(builder, 0L)
-            builderClass.getMethod("setNonce", String::class.java).invoke(builder, generateNonce())
+            // IntegrityTokenRequest.builder()
+            //     .setCloudProjectNumber(0)
+            //     .setNonce(nonce).build()
+            val builderClass = Class.forName(
+                "com.google.android.play.integrity." +
+                    "IntegrityTokenRequest\$Builder"
+            )
+            val builder = integrityTokenRequestClass
+                .getMethod("builder").invoke(null)
+            builderClass.getMethod(
+                "setCloudProjectNumber", Long::class.java
+            ).invoke(builder, 0L)
+            builderClass.getMethod("setNonce", String::class.java)
+                .invoke(builder, generateNonce())
             val request = builderClass.getMethod("build").invoke(builder)
 
             // integrityManager.requestIntegrityToken(request)
-            val requestMethod = integrityManagerClass.getMethod("requestIntegrityToken", Class.forName("com.google.android.play.integrity.IntegrityTokenRequest"))
+            val requestMethod = integrityManagerClass.getMethod(
+                "requestIntegrityToken",
+                integrityTokenRequestClass
+            )
             val task = requestMethod.invoke(integrityManager, request)
 
             // task.await() - kotlinx.coroutines.await extension
@@ -339,13 +388,18 @@ object AppIntegrity {
             val response = awaitMethod.invoke(task)
 
             // response.token()
-            val tokenMethod = Class.forName("com.google.android.play.integrity.IntegrityTokenResponse").getMethod("token")
+            val tokenMethod = integrityTokenResponseClass
+                .getMethod("token")
             val token = tokenMethod.invoke(response) as String
 
             Log.i(TAG, "Play Integrity token received (len=${token.length})")
             token.isNotEmpty()
         } catch (e: ClassNotFoundException) {
-            Log.e(TAG, "Play Integrity library NOT FOUND — integrity check FAILED")
+            Log.e(
+                TAG,
+                "Play Integrity library NOT FOUND "
+                    + "— integrity check FAILED"
+            )
             false // المكتبة غير موجودة = فشل إلزامي
         } catch (e: Exception) {
             Log.e(TAG, "Play Integrity check FAILED: ${e.message}")

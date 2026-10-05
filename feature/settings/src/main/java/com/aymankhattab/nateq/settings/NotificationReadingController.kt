@@ -27,14 +27,17 @@ internal class NotificationReadingController(
     // (بند 4.1) حتى لا تبقى شجرة العرض القديمة محتجزة في الخلفية.
     private var switchNotificationReading: SwitchMaterial? = null
     private var llNotificationListenerSettings: View? = null
-    private var actvNotificationReadingMode: MaterialAutoCompleteTextView? = null
+    private var actvNotificationReadingMode:
+        MaterialAutoCompleteTextView? = null
 
     fun setup(view: View) {
         switchNotificationReading =
             view.findViewById(R.id.switch_notification_reading)
         llNotificationListenerSettings =
             view.findViewById(R.id.ll_notification_listener_settings)
-        actvNotificationReadingMode = view.findViewById(R.id.actv_notification_reading_mode)
+        actvNotificationReadingMode = view.findViewById(
+            R.id.actv_notification_reading_mode
+        )
 
         // المفتاح الرئيسي
         switchNotificationReading?.isChecked =
@@ -218,11 +221,15 @@ internal class NotificationReadingController(
             actv.setAdapter(adapter)
 
             // تعيين القيمة الحالية
-            val currentMode = runCatching { settings.getNotificationReadingMode() }
+            val currentMode = runCatching {
+                settings.getNotificationReadingMode()
+            }
                 .getOrDefault("off")
             val currentLabel = when (currentMode) {
                 "full" -> fragment.getString(R.string.notification_mode_full)
-                "source" -> fragment.getString(R.string.notification_mode_source)
+                "source" -> fragment.getString(
+                    R.string.notification_mode_source
+                )
                 else -> fragment.getString(R.string.notification_mode_off)
             }
             actv.setText(currentLabel, false)
@@ -234,11 +241,14 @@ internal class NotificationReadingController(
                     2 -> "source"
                     else -> "off"
                 }
-                runCatching { settings.setNotificationReadingMode(selectedMode) }
+                runCatching {
+                    settings.setNotificationReadingMode(selectedMode)
+                }
                 onStatusChanged()
                 fragment.view?.announceCompat(
                     fragment.getString(
-                        if (selectedMode == "off") R.string.announcement_turned_off
+                        if (selectedMode == "off")
+                            R.string.announcement_turned_off
                         else R.string.announcement_turned_on
                     )
                 )

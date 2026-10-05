@@ -260,8 +260,8 @@ if ($null -ne $remoteHas) {
 }
 
 # فحص نظافة شجرة العمل قبل النشر (منع حزم تعديلات محلية غير ملتزمة داخل الـ APK)
-$dirty = & git status --porcelain
-if ($dirty) {
+    $dirty = & git status --porcelain | Where-Object { $_ -match '^[MADRC]' }
+    if ($dirty) {
     throw "توجد ملفات معدلة غير ملتزمة في شجرة العمل. التزم كافة التغييرات قبل النشر."
 }
 

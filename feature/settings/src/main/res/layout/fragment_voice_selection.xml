@@ -2443,7 +2443,75 @@
                 android:minHeight="48dp"
                 android:contentDescription="@string/spinner_audio_expansion_content" />
 
-        </LinearLayout>        <View
+            <!-- معاينة الاتساع: تُنطق عيّنة عبر المسار الحقيقي فيُسمع
+                 الأثرُ الذي اختاره المستخدم قبل حفظه (بند V5). -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_preview_audio_expansion"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:minHeight="48dp"
+                android:text="@string/audio_expansion_preview" />
+
+            <!-- سطرُ عدم الدعم: يظهر فقط إن أخفق الجهازُ في توفير
+                 المؤثرين (بند V1)، فتُعطَّل الخياراتُ كلها. -->
+            <TextView
+                android:id="@+id/tv_audio_effects_unsupported"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/audio_effects_unsupported"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:visibility="gone"
+                android:importantForAccessibility="yes" />
+
+            <!-- الصدى: مفتاحٌ مستقل عن الاتساع، افتراضياً مُعطَّل (V2). -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_audio_reverb"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:minHeight="48dp"
+                android:text="@string/audio_reverb_label" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/audio_reverb_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:importantForAccessibility="no" />
+
+            <!-- تعطيلُ التأثير في فئات الإعلانات (بند V3)؛ صفوفُه
+                 تُبنى برمجياً من EVENT_CATEGORIES فتبقى كلُّ فئةٍ
+                 مربوطاً باسمها الحقيقي بلا تكرار في التخطيط. -->
+            <TextView
+                android:id="@+id/tv_audio_effects_categories_label"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/audio_effects_categories_label"
+                android:textAppearance="?attr/textAppearanceBody2" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/audio_effects_categories_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:importantForAccessibility="no" />
+
+            <LinearLayout
+                android:id="@+id/ll_audio_effects_categories"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+        </LinearLayout>
+
+        <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginTop="16dp"

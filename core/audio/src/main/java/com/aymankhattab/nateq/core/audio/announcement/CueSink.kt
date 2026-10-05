@@ -2,15 +2,10 @@ package com.aymankhattab.nateq.core.audio.announcement
 
 import android.content.Context
 import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioManager
-import android.media.AudioTrack
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import com.aymankhattab.nateq.core.audio.engine.AudioEffectManager
-import com.aymankhattab.nateq.core.engine.AudioExpansionLevels
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
@@ -65,118 +60,6 @@ internal object CueAudioAttributes {
     }
 }
 
-/**
- * مُنفّذ عبر AudioTrack في الوضع الثابت (MODE_STATIC):
- * يكتب PCM كاملاً ثم يُشغّل ويُعلم بالاكتمال.
- *
- * selectedItem(s) وهمية: يُنشئ AudioTrack واحداً ويعيد استخدامه
- * (نغمة واحدة في أي وقت). يلبي تصميم AudioCuePlayer.
- */
-internal class AudioTrackCueSink(
-    private val audioEffectManager: AudioEffectManager? = null,
-    private val expansionLevel: () -> Int = { 0 }
-) : CueSink {
-
-    companion object {
-        private const val TAG = "NATEQ_CUE"
-    }
-
-    private var track: AudioTrack? = null
-    private var handler = Handler(Looper.getMainLooper())
-    private val completed = AtomicBoolean(false)
-
-    override fun play(
-        pcm: ShortArray,
-        sampleRate: Int,
-        volume: Float,
-        cueKey: String,
-        onDone: (Boolean) -> Unit
-    ) {
-        stop()
-        completed.set(false)
-        try {
-            val minBuf = AudioTrack.getMinBufferSize(
-                sampleRate,
-                AudioFormat.CHANNEL_OUT_MONO,
-                AudioFormat.ENCODING_PCM_16BIT
-            )
-            val bufSize = maxOf(minBuf, pcm.size * 2)
-            val attrs = CueAudioAttributes.forCue
-            val fmt = AudioFormat.Builder()
-                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                .setSampleRate(sampleRate)
-                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                .build()
-            val t = AudioTrack.Builder()
-                .setAudioAttributes(attrs)
-                .setAudioFormat(fmt)
-                .setBufferSizeInBytes(bufSize)
-                .setTransferMode(AudioTrack.MODE_STATIC)
-                .build()
-            track = t
-            val sessionId = t.audioSessionId
-            val level = expansionLevel()
-            if (sessionId > 0 && level > AudioExpansionLevels.OFF) {
-                audioEffectManager?.attach(sessionId, level)
-            }
-            t.setVolume(volume)
-            t.write(pcm, 0, pcm.size)
-            t.setNotificationMarkerPosition(pcm.size)
-            t.setPlaybackPositionUpdateListener(
-                object : AudioTrack.OnPlaybackPositionUpdateListener {
-                    override fun onMarkerReached(at: AudioTrack?) {
-                        if (completed.compareAndSet(false, true)) {
-                            if (sessionId > 0) {
-                                audioEffectManager?.detach(sessionId)
-                            }
-                            runCatching {
-                                at?.stop()
-                                at?.release()
-                            }
-                            if (track === at) track = null
-                            handler?.post { onDone(true) }
-                        }
-                    }
-                    override fun onPeriodicNotification(at: AudioTrack?) {}
-                }
-            )
-            t.play()
-        } catch (t: Throwable) {
-            Log.w(TAG, "AudioTrack play failed", t)
-            track?.audioSessionId?.takeIf { it > 0 }?.let {
-                audioEffectManager?.detach(it)
-            }
-            runCatching {
-                track?.stop()
-                track?.release()
-            }
-            track = null
-            if (completed.compareAndSet(false, true)) {
-                onDone(false)
-            }
-        }
-    }
-
-    override fun stop() {
-        track?.audioSessionId?.takeIf { it > 0 }?.let {
-            audioEffectManager?.detach(it)
-        }
-        try {
-            track?.stop()
-        } catch (_: IllegalStateException) {
-        }
-        track?.release()
-        track = null
-    }
-
-    override fun release() {
-        stop()
-    }
-
-    fun setHandler(handler: Handler) {
-        this.handler = handler
-    }
-}
 
 /**
  * مُولّد ملفات WAV مؤقتة + SoundPool:

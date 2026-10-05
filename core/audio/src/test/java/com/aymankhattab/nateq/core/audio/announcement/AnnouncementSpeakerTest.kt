@@ -858,7 +858,10 @@ class AnnouncementSpeakerTest {
     fun `safeEngineForAnnouncement uses explicit external engine`() {
         val result = safeEngineForAnnouncement(
             context,
-            "com.samsung.SMT"
+            "com.samsung.SMT",
+            null,
+            null,
+            null
         )
         assertEquals("com.samsung.SMT", result)
     }
@@ -868,8 +871,9 @@ class AnnouncementSpeakerTest {
         val result = safeEngineForAnnouncement(
             context,
             context.packageName,
-            defaultSynthProvider = { "com.google.android.tts" },
-            installedEnginesProvider = { listOf("com.google.android.tts") }
+            null,
+            "com.google.android.tts",
+            null
         )
         assertEquals("com.google.android.tts", result)
     }
@@ -879,21 +883,21 @@ class AnnouncementSpeakerTest {
         val result = safeEngineForAnnouncement(
             context,
             null,
-            defaultSynthProvider = { context.packageName },
-            installedEnginesProvider = {
-                listOf(context.packageName, "com.samsung.SMT")
-            }
+            null,
+            "com.samsung.SMT",
+            null
         )
         assertEquals("com.samsung.SMT", result)
     }
 
     @Test
-    fun `safeEngineForAnnouncement uses system default when external`() {
+    fun `safeEngine uses fallback when no category or language engine`() {
         val result = safeEngineForAnnouncement(
             context,
             null,
-            defaultSynthProvider = { "com.google.android.tts" },
-            installedEnginesProvider = { listOf("com.google.android.tts") }
+            null,
+            null,
+            "com.google.android.tts"
         )
         assertEquals("com.google.android.tts", result)
     }

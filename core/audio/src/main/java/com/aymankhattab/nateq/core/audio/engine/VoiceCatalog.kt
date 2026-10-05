@@ -46,13 +46,15 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
         private const val TAG = "NATEQ_TTS"
 
         /** مهلة استجابة المحرك الواحد أثناء الاكتشاف (ثوانٍ) —
-         *  بعض المحركات تعلّق. خُفّضت إلى 5 ث للحد من تأثير المحركات البطيئة. */
+         *  بعض المحركات تعلّق. خُفّضت إلى 5 ث للحد
+         *  من تأثير المحركات البطيئة. */
         private const val ENGINE_PROBE_TIMEOUT_MS = 5_000L
 
         /**
          * القائمة السوداء للمحركات التي فشلت تهيئتها —
          *  تُحدّث ديناميكياً وتتجاوزها في محاولات الاكتشاف اللاحقة.
-         *  مفتاح: packageName، قيمة: timestamp آخر فشل (لإمكانية إعادة المحاولة مستقبلاً).
+         *  مفتاح: packageName، قيمة: timestamp آخر فشل
+         *  (لإمكانية إعادة المحاولة مستقبلاً).
          */
         @Volatile
         private var engineBlacklist: Map<String, Long> = emptyMap()
@@ -61,11 +63,13 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
 
         private fun isBlacklisted(pkg: String): Boolean {
             val stamp = engineBlacklist[pkg]
-            return stamp != null && (System.currentTimeMillis() - stamp < BLACKLIST_TTL_MS)
+            return stamp != null &&
+                (System.currentTimeMillis() - stamp < BLACKLIST_TTL_MS)
         }
 
         private fun blacklistEngine(pkg: String) {
-            engineBlacklist = engineBlacklist + (pkg to System.currentTimeMillis())
+            engineBlacklist = engineBlacklist +
+                (pkg to System.currentTimeMillis())
         }
 
         /**
@@ -249,9 +253,16 @@ val lang = LocaleUtils.normalizeLanguageCode(
                                 }
                                 try {
                                     if (status != TextToSpeech.SUCCESS) {
-                                        // وضع المحرك في القائمة السوداء لتجنّب إعادة المحاولة
+                                        // وضع المحرك في القائمة السوداء
+                                        // لتجنّب إعادة المحاولة
                                         blacklistEngine(enginePackage)
-                                        Log.w(TAG, "محرك $enginePackage فشل في التهيئة (status=$status) — أُضيف للقائمة السوداء")
+                                        Log.w(
+                                            TAG,
+                                            "محرك $enginePackage " +
+                                                "فشل في التهيئة " +
+                                                "(status=$status) — " +
+                                                "أُضيف للقائمة السوداء"
+                                        )
                                         if (cont.isActive) {
                                             cont.resume(emptyList())
                                         }
@@ -288,7 +299,12 @@ val lang = LocaleUtils.normalizeLanguageCode(
             val voices = result ?: run {
                 // مهلة أو إلغاء: أضف المحرك للقائمة السوداء
                 blacklistEngine(enginePackage)
-                Log.w(TAG, "محرك $enginePackage تجاوز المهلة (${ENGINE_PROBE_TIMEOUT_MS}ms) — أُضيف للقائمة السوداء")
+                Log.w(
+                    TAG,
+                    "محرك $enginePackage تجاوز المهلة "
+                        + "(${ENGINE_PROBE_TIMEOUT_MS}ms) — أُضيف "
+                        + "للقائمة السوداء"
+                )
                 emptyList<Voice>()
             }
             return voices

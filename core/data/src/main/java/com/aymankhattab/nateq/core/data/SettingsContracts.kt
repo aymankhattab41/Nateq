@@ -95,6 +95,25 @@ interface SynthesisPrefs : SynthesisConfig, VoicePrefsProvider {
     /** يعيّن مستوى اتساع الصوت. */
     fun setAudioExpansionLevel(level: Int)
 
+    /**
+     * هل الصدى (PresetReverb) مفعّل؟ **مستقلٌّ عن الاتساع** ويبدأ
+     * مُعطَّلاً، فالأساسُ الوحيد هو Virtualizer.
+     */
+    fun isAudioReverbEnabled(): Boolean
+
+    /** يعيّن تفعيل الصدى. */
+    fun setAudioReverbEnabled(enabled: Boolean)
+
+    /**
+     * فئاتُ الإعلانات التي عُطّل فيها مؤثرات الصوت (الساعة/البطارية/
+     * المتصل/الرسائل/الإشعارات). **قراءةُ النص الطويل ليست منها** فلا
+     * يمكن تعطيلُ تأثيرها. والقائمة الفارغة تعني: الكلُّ مفعّل.
+     */
+    fun getAudioEffectsDisabledCategories(): Set<String>
+
+    /** يعيّن فئات الإعلانات التي عُطّل فيها مؤثرات الصوت. */
+    fun setAudioEffectsDisabledCategories(categories: Set<String>)
+
     /** هل مضاعف السرعة مفعّل؟ (مربع «مضاعفة السرعة») — يُضرب بالسرعة
      *  النهائية لكل نطق عبر المسارات كلها قبل قصّها على الحد الآمن. */
     fun isSpeechBoostEnabled(): Boolean
@@ -158,7 +177,8 @@ interface CategoryVoicePrefs {
  */
 interface UpdatePrefs {
 
-    /** مفتاح GitHub PAT (Personal Access Token) للمستودع الخاص — null إن لم يُضبط. */
+    /** مفتاح GitHub PAT (Personal Access Token) للمستودع الخاص.
+     *  null إن لم يُضبط. */
     fun getGitHubUpdatePat(): String?
 
     /** يعيّن مفتاح GitHub PAT (null = حذف). */
@@ -728,7 +748,8 @@ interface CallerNamesStore {
  */
 interface UpdatePrefs {
 
-    /** مفتاح GitHub PAT (Personal Access Token) للمستودع الخاص — null إن لم يُضبط. */
+    /** مفتاح GitHub PAT (Personal Access Token) للمستودع الخاص.
+     *  null إن لم يُضبط. */
     fun getGitHubUpdatePat(): String?
 
     /** يعيّن مفتاح GitHub PAT (null = حذف). */

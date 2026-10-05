@@ -6,11 +6,14 @@ import android.widget.ArrayAdapter
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.appcompat.widget.AppCompatSpinner
+import com.aymankhattab.nateq.core.audio.engine.AudioEffectAvailability
+import com.aymankhattab.nateq.core.audio.engine.AudioEffectManager
 import com.aymankhattab.nateq.core.engine.AudioExpansionLevels
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.switchmaterial.SwitchMaterial
 import kotlin.math.roundToInt
 
@@ -19,8 +22,38 @@ import kotlin.math.roundToInt
 internal class GeneralSettingsController(
     private val fragment: VoiceSelectionFragment,
     private val settings: SettingsRepository,
+    private val preview: VoicePreviewHelper,
     private val onStatusChanged: () -> Unit
 ) {
+
+    companion object {
+        /**
+         * فئاتُ الإعلانات القابلةُ لتعطيل المؤثر (بند V3) — تُشتقّ من
+         * `AnnouncementSpeaker.EVENT_CATEGORIES` عمداً.
+         *
+         * **فئاتُ المتصل ثلاثٌ لا واحدة** (`caller`/`caller_ar`/`caller_en`):
+         * لكلٍّ منها مسارُ توجيهٍ وصوتٌ خاص — الافتراضي والعربي
+         * والإنجليزي — فتعطيلُ واحدٍ منها حقٌّ مستقلٌّ لا يصحّ دمجُه
+         * في مفتاحٍ واحد. وكلُّ مفتاحٍ منهما يمرّ إلى
+         * `PARAM_CATEGORY` كما هو بلا ترجمة.
+         */
+        private val EFFECT_CATEGORY_LABELS = linkedMapOf(
+            SettingsRepository.VOICE_CATEGORY_TIME to
+                R.string.audio_effects_category_time,
+            SettingsRepository.VOICE_CATEGORY_BATTERY to
+                R.string.audio_effects_category_battery,
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER to
+                R.string.audio_effects_category_caller,
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR to
+                R.string.audio_effects_category_caller_ar,
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN to
+                R.string.audio_effects_category_caller_en,
+            SettingsRepository.ANNOUNCE_CATEGORY_SMS to
+                R.string.audio_effects_category_sms,
+            SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS to
+                R.string.audio_effects_category_notifications
+        )
+    }
 
     // مراجع العرض قابلة للتصفير في cleanup() عند تدمير عرض الفصيل
     // (بند 4.1) حتى لا تبقى شجرة العرض القديمة محتجزة في الخلفية.
@@ -38,6 +71,18 @@ internal class GeneralSettingsController(
     private var llVolumeBoostValue: android.view.View? = null
     private var spinnerVolumeBoost: AppCompatSpinner? = null
     private var spinnerAudioExpansion: AppCompatSpinner? = null
+    private var switchAudioReverb: SwitchMaterial? = null
+    private var tvAudioEffectsUnsupported: TextView? = null
+    private var llAudioEffectsCategories: android.view.View? = null
+    private var previewButton: MaterialButton? =
+        null
+    private var categorySwitches: Map<String, SwitchMaterial> = emptyMap()
+
+    /**
+     * مُدقِّقُ فئات الإعدادات — كائنٌ واحد يُعاد استعماله لكل اختبار حتى
+     * لا يتكرّر استعلامُ النظام في كل مرة تُفتح فيها الشاشة.
+     */
+    private val effects = AudioEffectManager()
 
     // **بند 6.3:** علمُ الربط البرمجي — يُسنَّع حول setProgress في attach
     // حتى لا يُفسَّر الإسنادُ البرمجي تعديلَ مستخدم (يُخزَّن تفريغاً). دون
@@ -250,6 +295,7 @@ internal class GeneralSettingsController(
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
+        bindAudioEffects(view)
         // مضاعف السرعة العام: مربع تفعيل + قائمة قيم (1.0x..2.5x خطوة 0.1)
         // تُطبق على السرعة النهائية لكل نطق عبر المسارات كلها.
         switchSpeechBoost =
@@ -363,6 +409,131 @@ internal class GeneralSettingsController(
     }
 
     /** يصفّر مراجع العرض (بند 4.1) — يُستدعى من onDestroyView. */
+
+    /**
+     * **بنود V1/V2/V3/V5 — صفُّ مؤثرات الصوت:**
+     * كشفُ التوفّر، وفصلُ الصدى، وتعطيلُ التأثير لكل فئة إعلانية،
+     * وزرُّ المعاينة.
+     */
+    private fun bindAudioEffects(view: View) {
+        val available = runCatching { effects.availability() }
+            .getOrElse { AudioEffectAvailability(false, false) }
+        val virtualizerOk = available.virtualizer
+        val reverbOk = available.reverb
+        val anyOk = virtualizerOk || reverbOk
+
+        tvAudioEffectsUnsupported =
+            view.findViewById(R.id.tv_audio_effects_unsupported)
+        tvAudioEffectsUnsupported?.visibility = if (anyOk) {
+            android.view.View.GONE
+        } else {
+            android.view.View.VISIBLE
+        }
+
+        // الاتساع متاحٌ فقط إن كان Virtualizer موجوداً؛ وإلا فالحفظُ
+        // يُخفى ويبقى المستوى على "إيقاف" فلا يدّعي شيئاً غير موجود.
+        spinnerAudioExpansion?.isEnabled = virtualizerOk
+        tvAudioExpansionLabel(view)?.alpha = if (virtualizerOk) 1f else 0.5f
+        if (!virtualizerOk) {
+            runCatching {
+                settings.setAudioExpansionLevel(AudioExpansionLevels.OFF)
+            }
+            spinnerAudioExpansion?.setSelection(AudioExpansionLevels.OFF)
+        }
+
+        previewButton = view.findViewById(R.id.btn_preview_audio_expansion)
+        previewButton?.isEnabled = anyOk
+        previewButton?.setOnClickListener { previewAudioEffects() }
+
+        switchAudioReverb = view.findViewById(R.id.switch_audio_reverb)
+        switchAudioReverb?.visibility = if (reverbOk) {
+            android.view.View.VISIBLE
+        } else {
+            android.view.View.GONE
+        }
+        if (!reverbOk) {
+            runCatching { settings.setAudioReverbEnabled(false) }
+        }
+        switchAudioReverb?.apply {
+            isChecked = reverbOk &&
+                runCatching { settings.isAudioReverbEnabled() }
+                    .getOrDefault(false)
+            setOnCheckedChangeListener { _, checked ->
+                runCatching { settings.setAudioReverbEnabled(checked) }
+                onStatusChanged()
+            }
+        }
+
+        bindCategorySwitches(view, anyOk)
+    }
+
+    private fun tvAudioExpansionLabel(view: View): TextView? =
+        view.findViewById(R.id.tv_audio_expansion_label)
+
+    /**
+     * صفوفُ «تعطيل التأثير» لكل فئة إعلانية.
+     *
+     * تُبنى برمجياً من [EFFECT_CATEGORY_LABELS] لا من التخطيط، فيبقى
+     * اسمُ الفئة في مكانٍ واحد ولا يتكرّر في XML. والقيمة المحفوظة
+     * مجموعةُ فئاتٍ معطّلة، فالمفتاحُ المعاكس (مفعّل) أنظفُ للمستخدم.
+     */
+    private fun bindCategorySwitches(view: View, anyOk: Boolean) {
+        val container = view.findViewById<android.widget.LinearLayout>(
+            R.id.ll_audio_effects_categories
+        ) ?: return
+        llAudioEffectsCategories = container
+        container.removeAllViews()
+        categorySwitches = emptyMap()
+        if (!anyOk) return
+
+        val disabled = runCatching {
+            settings.getAudioEffectsDisabledCategories()
+        }.getOrDefault(emptySet())
+
+        val built = mutableMapOf<String, SwitchMaterial>()
+        val touchTargetPx = (48 * fragment.resources.displayMetrics.density)
+            .toInt()
+        for ((category, labelRes) in EFFECT_CATEGORY_LABELS) {
+            val row = SwitchMaterial(fragment.requireContext()).apply {
+                text = fragment.getString(labelRes)
+                isChecked = category !in disabled
+                minHeight = touchTargetPx
+                setOnCheckedChangeListener { _, checked ->
+                    runCatching {
+                        val nowDisabled = runCatching {
+                            settings.getAudioEffectsDisabledCategories()
+                        }.getOrDefault(emptySet())
+                        val updated = if (checked) {
+                            nowDisabled - category
+                        } else {
+                            nowDisabled + category
+                        }
+                        settings.setAudioEffectsDisabledCategories(updated)
+                    }
+                    onStatusChanged()
+                }
+            }
+            container.addView(row)
+            built[category] = row
+        }
+        categorySwitches = built
+    }
+
+    /** معاينةُ الأثر عبر المسار الحقيقي (بند V5). */
+    private fun previewAudioEffects() {
+        val sample = fragment.getString(R.string.audio_effects_preview_sample)
+        val params = PreviewParams(
+            enginePkg = null,
+            voiceName = "",
+            languageTag = "",
+            speechRate = 1.0f,
+            pitch = 1.0f,
+            volume = 1.0f,
+            sampleText = sample
+        )
+        runCatching { preview.play(params) }
+    }
+
     fun cleanup() {
         seekDefaultSpeechRate = null
         tvDefaultSpeechRateValue = null
@@ -378,5 +549,15 @@ internal class GeneralSettingsController(
         llVolumeBoostValue = null
         spinnerVolumeBoost = null
         spinnerAudioExpansion = null
+        switchAudioReverb?.setOnCheckedChangeListener(null)
+        switchAudioReverb = null
+        tvAudioEffectsUnsupported = null
+        previewButton?.setOnClickListener(null)
+        previewButton = null
+        for (row in categorySwitches.values) {
+            row.setOnCheckedChangeListener(null)
+        }
+        categorySwitches = emptyMap()
+        llAudioEffectsCategories = null
     }
 }

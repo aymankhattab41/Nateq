@@ -46,6 +46,27 @@ class SettingsRepository(context: Context) :
         private const val FALLBACK_PREFS = "nateq_fallback_settings"
         private const val KEY_MIGRATED = "_migrated_to_plain"
 
+        /** **بند V2:** تفعيلُ الصدى (PresetReverb) — مستقلٌّ عن
+         *  `audio_expansion_level` وافتراضياً false. */
+        private const val KEY_AUDIO_REVERB_ENABLED = "audio_reverb_enabled"
+
+        /** **بند V3:** فئاتُ الإعلانات التي عُطّل فيها مؤثر الصوت. */
+        private const val KEY_AUDIO_EFFECTS_DISABLED_CATEGORIES =
+            "audio_effects_disabled_categories"
+
+        /** فئاتُ الإعلانات التي يقبلها [KNOWN_EFFECT_CATEGORIES] — مطابقة
+         *  لـ`AnnouncementSpeaker.EVENT_CATEGORIES` عمداً، فكلُّ فئةٍ
+         *  إعلانية قابلةٌ للتعطيل ما عدا قراءةِ النص الطويل. */
+        private val KNOWN_EFFECT_CATEGORIES = setOf(
+            VOICE_CATEGORY_TIME,
+            VOICE_CATEGORY_BATTERY,
+            ANNOUNCE_CATEGORY_CALLER,
+            ANNOUNCE_CATEGORY_CALLER_AR,
+            ANNOUNCE_CATEGORY_CALLER_EN,
+            ANNOUNCE_CATEGORY_SMS,
+            VOICE_CATEGORY_NOTIFICATIONS
+        )
+
         /** قالب إعلان المتصل المحذوف: كان يُخزَّن قبل إزالته، واسمه
          *  محفوظٌ هنا ليُطمس من مخازن التثبيتات السابقة
          *  ([dropObsoleteCallerTemplateKey]). */
@@ -1002,7 +1023,9 @@ class SettingsRepository(context: Context) :
             if (token.isNullOrBlank()) {
                 encrypted.edit().remove("github_update_pat").apply()
             } else {
-                encrypted.edit().putString("github_update_pat", token.trim()).apply()
+                encrypted.edit()
+                    .putString("github_update_pat", token.trim())
+                    .apply()
             }
         }
     }
@@ -1394,6 +1417,31 @@ class SettingsRepository(context: Context) :
             AudioExpansionLevels.MAX
         )
         prefs.edit().putInt("audio_expansion_level", safe).apply()
+    }
+
+    /** **بند V2:** الصدى مفتاحٌ مستقل عن الاتساع، **افتراضياً مُعطَّل**
+     *  (الأساسُ هو Virtualizer وحده عبر مستوى الاتساع). */
+    override fun isAudioReverbEnabled(): Boolean =
+        prefs.getBoolean(KEY_AUDIO_REVERB_ENABLED, false)
+
+    override fun setAudioReverbEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AUDIO_REVERB_ENABLED, enabled).apply()
+    }
+
+    /** **بند V3:** فئاتُ الإعلانات التي عُطّل فيها المؤثر — تُنقّى إلى
+     *  [KNOWN_EFFECT_CATEGORIES] فلا يتسرّب مفتاحٌ غريب من نسخةِ استيراد
+     *  قديمة أو من قيمةٍ كُتبت يدوياً. */
+    override fun getAudioEffectsDisabledCategories(): Set<String> =
+        prefs.getStringSet(
+            KEY_AUDIO_EFFECTS_DISABLED_CATEGORIES,
+            mutableSetOf<String>()
+        ).orEmpty().filter { it in KNOWN_EFFECT_CATEGORIES }.toSet()
+
+    override fun setAudioEffectsDisabledCategories(categories: Set<String>) {
+        prefs.edit().putStringSet(
+            KEY_AUDIO_EFFECTS_DISABLED_CATEGORIES,
+            categories.filter { it in KNOWN_EFFECT_CATEGORIES }.toSet()
+        ).apply()
     }
 
     /** مضاعف السرعة العام (مربع تفعيل + قيمة 1.0..2.5) — يُضرب بالسرعة
@@ -2123,6 +2171,9 @@ class SettingsRepository(context: Context) :
         "device_health_items" -> value.filter {
             it in validDeviceHealthItems()
         }.toSet()
+        KEY_AUDIO_EFFECTS_DISABLED_CATEGORIES -> value.filter {
+            it in KNOWN_EFFECT_CATEGORIES
+        }.toSet()
         else -> value
     }
 
@@ -2256,7 +2307,9 @@ class SettingsRepository(context: Context) :
         if (enginePackage.isNullOrBlank()) {
             prefs.edit().remove("announcement_fallback_engine").apply()
         } else {
-            prefs.edit().putString("announcement_fallback_engine", enginePackage).apply()
+            prefs.edit()
+                .putString("announcement_fallback_engine", enginePackage)
+                .apply()
         }
     }
 }

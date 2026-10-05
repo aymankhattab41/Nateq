@@ -270,7 +270,8 @@ internal object CueSynth {
             val t = i.toDouble() / SAMPLE_RATE
             val progress = t / dur
             val freq = startFreq + (endFreq - startFreq) * progress
-            val env = (t / atk).coerceAtMost(1.0) * exp(-t / 0.15).coerceAtMost(1.0)
+            val env = (t / atk).coerceAtMost(1.0) *
+                exp(-t / 0.15).coerceAtMost(1.0)
             floats[i] = (sin(2.0 * PI * freq * t) * env * peak).toFloat()
         }
         return floats

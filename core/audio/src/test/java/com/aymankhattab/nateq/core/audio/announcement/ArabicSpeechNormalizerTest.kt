@@ -33,8 +33,10 @@ class ArabicSpeechNormalizerTest {
 
     // صَبَاحَنْ — التنوين بنونٍ ساكنة صريحة (حرفٌ تقرؤه كل المحركات)،
     // لا بعلامة التنوين «ً» التي تُهمَل عند التجريد فيُفقد اللفظ.
-    private val expectedSaba = "\u0635\u064e\u0628\u064e\u0627\u062d\u064e\u0646\u0652"
-    private val expectedDhuhr = "\u0638\u064e\u0647\u0652\u0631\u064e\u0646\u0652"
+    private val expectedSaba = "\u0635\u064e\u0628\u064e" +
+        "\u0627\u062d\u064e\u0646\u0652"
+    private val expectedDhuhr = "\u0638\u064e\u0647\u0652" +
+        "\u0631\u064e\u0646\u0652"
 
     @Test
     fun sabaha_isFullyVoweled() {
@@ -49,12 +51,18 @@ class ArabicSpeechNormalizerTest {
         // اللفظ. الآن يُضبَط كما ضُبطت «مساءاً».
         assertEquals(
             expectedSaba,
-            ArabicSpeechNormalizer.normalize("\u0635\u0628\u0627\u062d\u0627") // صباحا
+            // صباحا
+            ArabicSpeechNormalizer.normalize(
+                "\u0635\u0628\u0627\u062d\u0627"
+            )
         )
         // والتنوين على الباء (صباحًا) صيغة حديثة تُضبط كذلك.
         assertEquals(
             expectedSaba,
-            ArabicSpeechNormalizer.normalize("\u0635\u0628\u0627\u062d\u064b\u0627") // صباحًا
+            // صباحًا
+            ArabicSpeechNormalizer.normalize(
+                "\u0635\u0628\u0627\u062d\u064b\u0627"
+            )
         )
     }
 
@@ -66,7 +74,10 @@ class ArabicSpeechNormalizerTest {
         )
         assertEquals(
             expectedDhuhr,
-            ArabicSpeechNormalizer.normalize("\u0638\u0647\u0631\u0627\u064b") // ظهراً
+            // ظهراً
+            ArabicSpeechNormalizer.normalize(
+                "\u0638\u0647\u0631\u0627\u064b"
+            )
         )
     }
 
@@ -101,7 +112,10 @@ class ArabicSpeechNormalizerTest {
         // بالنون الساكنة كما في نظائرها المشكولة.
         assertEquals(
             expectedMasa,
-            ArabicSpeechNormalizer.normalize("\u0645\u0633\u0627\u0621\u0627") // مساءا
+            // مساءا
+            ArabicSpeechNormalizer.normalize(
+                "\u0645\u0633\u0627\u0621\u0627"
+            )
         )
     }
 

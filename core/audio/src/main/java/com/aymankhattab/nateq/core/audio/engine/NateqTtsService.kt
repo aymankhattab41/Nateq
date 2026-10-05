@@ -670,10 +670,33 @@ override fun onDestroy() {
                 val expansionLevel = runCatching {
                     settings.getAudioExpansionLevel()
                 }.getOrDefault(AudioExpansionLevels.DEFAULT)
-                if (audioSessionId > 0 &&
-                    expansionLevel > AudioExpansionLevels.OFF
-                ) {
-                    audioEffectManager.attach(audioSessionId, expansionLevel)
+                // **بند V2:** الصدى مفتاحٌ مستقلّ عن الاتساع (افتراضياً
+                // مُعطَّل)، فيُقرأ كلَّ تخليقٍ بعد إعادة تحميل الإعدادات.
+                audioEffectManager.setReverbEnabled(
+                    runCatching { settings.isAudioReverbEnabled() }
+                        .getOrDefault(false)
+                )
+                // **بند V3:** فئاتُ الإعلانات التي عُطّل فيها التأثير —
+                // وتبقى قراءةُ النص الطويل (الفئة العامة) خارجَها
+                // عمداً فلا تعطيلَ لها.
+                audioEffectManager.setDisabledCategories(
+                    runCatching {
+                        settings.getAudioEffectsDisabledCategories()
+                    }.getOrDefault(emptySet())
+                )
+                // الفئة تُمرَّر من AnnouncementSpeaker في PARAM_CATEGORY،
+                // وغيابُها يعني النطق العام (بلا تعطيل خاص).
+                val effectCategory = request.params?.getString(
+                    AudioEffectManager.PARAM_CATEGORY
+                ).orEmpty()
+                // الاستدعاءُ بلا شرطِ مستوى: الصدى قد يكون مفعّلاً
+                // والاتساع مُطفأً (فصلٌ تامّ بين المفتاحين).
+                if (audioSessionId > 0) {
+                    audioEffectManager.attach(
+                        audioSessionId,
+                        expansionLevel,
+                        effectCategory
+                    )
                 }
                 // **بند 17 — النصوص المختلطة واللغات:**
                 // 1) تقسيم النص المختلط الكتابات (عربي/إنجليزي/غيرها)

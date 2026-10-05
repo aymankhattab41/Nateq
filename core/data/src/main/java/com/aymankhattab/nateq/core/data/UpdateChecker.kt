@@ -201,7 +201,9 @@ object UpdateChecker {
                     // GitHub PAT للمستودع الخاص — يضيف Authorization header
                     githubPat?.let { pat ->
                         if (pat.isNotBlank()) {
-                            conn.setRequestProperty("Authorization", "Bearer $pat")
+                            conn.setRequestProperty(
+                                "Authorization", "Bearer $pat"
+                            )
                         }
                     }
                     if (conn.responseCode != 200) {

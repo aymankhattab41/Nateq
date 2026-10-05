@@ -186,6 +186,14 @@ class SystemVoiceProviderLanguageFallbackTest {
             override fun getPitchForCategory(category: String): Float = 1.0f
 
             override fun getVolumeForCategory(category: String): Float = 1.0f
+
+            // لا محركَ احتياطي في هذا المزوّد المجرّد: null تعني «بلا
+            // احتياطي» وهو السلوكُ الآمن الذي نختبره هنا.
+            override fun getAnnouncementFallbackEngine(): String? = null
+
+            override fun setAnnouncementFallbackEngine(
+                enginePackage: String?
+            ) = Unit
         }
         val provider = SystemVoiceProvider(context, fakePrefs)
 

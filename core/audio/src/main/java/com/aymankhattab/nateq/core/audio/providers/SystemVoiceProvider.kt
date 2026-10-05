@@ -133,7 +133,11 @@ class SystemVoiceProvider(
             engineFailureNotified.add(key)
         }
         if (shouldNotify) {
-            Log.e(TAG, "[Provider] engine failed for selected (engine=$engine)")
+            Log.e(
+                TAG,
+                "[Provider] engine failed for selected "
+                    + "(engine=$engine)"
+            )
         }
     }
 
@@ -1275,7 +1279,9 @@ class SystemVoiceProvider(
                     // كاملاً ثم نسخه — كان ذلك يرفع ذروة الذاكرة 2-3× حجم
                     // الملف للنصوص الطويلة.
                     val extracted = extractPcm(tempFile)
-                    if (extracted.pcm.isEmpty() || extracted.validLength == 0) {
+                    if (extracted.pcm.isEmpty() ||
+                        extracted.validLength == 0
+                    ) {
                         Log.e(TAG, "[Provider] extractPcm returned empty")
                     } else {
                         // إبلاغ المتصل بالتنسيق الفعلي
@@ -1381,7 +1387,8 @@ class SystemVoiceProvider(
      * النطق لو تعثر. أول ربط [TextToSpeech] يكلف غالباً 150–800ms لدى بعض
      * المحركات — فإذا أقبل TalkBack وأولُ طلبٍ على محركٍ بارد، علِق أول نطق
      * على هذه الكلفة؛ التدفئة تجعل المثيل جاهزاً في [enginePool] قبل السؤال.
-     * المثيلاتُ لا تُعرض للاختيار قبل نجاح onInit (تُجمع في [prewarmingEngines]
+     * المثيلاتُ لا تُعرض للاختيار قبل نجاح onInit
+     * (تُجمع في [prewarmingEngines]
      * ثم تُنقل)، والمحركات المربوطة أصلاً تُتجاوز — فاستدعاءٌ متكرر آمن.
      */
     fun prewarmEngines(engines: List<String>) {
@@ -2007,7 +2014,8 @@ private fun readFromPoolOrNull(
 }
 
 /** يقرأ [len] بايت كاملة من [start] — [java.io.RandomAccessFile.read]
- *  قد يُرجع أقل من المطلوب، فنجمع حتى الاكتمال. تُرجع false عند نهاية الملف. */
+ *  قد يُرجع أقل من المطلوب، فنجمع حتى الاكتمال.
+ *  تُرجع false عند نهاية الملف. */
 private fun readFully(
     raf: java.io.RandomAccessFile,
     out: ByteArray,

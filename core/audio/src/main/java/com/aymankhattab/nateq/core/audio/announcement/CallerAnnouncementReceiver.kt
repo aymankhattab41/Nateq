@@ -716,7 +716,8 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
 
         /** جدول إطلاق تكرارات النطق (بعد النطق الأول): كل [intervalMs]
          *  حتى بلوغ [windowMs] — لا يُجدوَل أي تكرارٍ على حافةِ السقف أو
-         *  خارجه حتى لا تبلغ عمليةُ البثِ مهلة النظام. خالصٌ قابلٌ للاختبار. */
+         *  خارجه حتى لا تبلغ عمليةُ البثِ مهلة النظام.
+         *  خالصٌ قابلٌ للاختبار. */
         internal fun repeatSchedule(
             repeat: Int,
             intervalMs: Long,
@@ -1833,7 +1834,9 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         }.onFailure { Log.w(TAG, "unidentified call cue failed", it) }
 
         runCatching {
-            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vibrator = if (
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+            ) {
                 context.getSystemService(
                     android.os.VibratorManager::class.java
                 )?.defaultVibrator
@@ -2047,8 +2050,9 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
 
     /**
      * تطبيع رقم المتصل للبحث عنه: يُستبعد ختم «لا معرّف/خاص/مجهول» الشائع في
-     * EXTRA_INCOMING_NUMBER («-1» و«UNKNOWN» ونظائره) والقيم الخالية أو الخالية
-     * بالأرقام، فيُعاد null بلا بحث. خلاف ذلك تُستخرج خاناته الرقمية فقط.
+     * EXTRA_INCOMING_NUMBER («-1» و«UNKNOWN» ونظائره) والقيم الخالية
+     * أو الخالية بالأرقام، فيُعاد null بلا بحث.
+     *  خلاف ذلك تُستخرج خاناته الرقمية فقط.
      */
     private fun normalizeCallerNumber(number: String?): String? {
         if (number.isNullOrBlank()) return null

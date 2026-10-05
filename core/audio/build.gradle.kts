@@ -28,6 +28,12 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
+            // حارسُ «استثناء المؤثر لا يقطع النطق» يستدعي Log.w في مسار
+            // الإسناد الفاشل، وandroid.util.Log غير منفَّذ على JVM فيرمي
+            // "not mocked" ويُفشل الاختبارَ زوراً. القيمةُ الافتراضية
+            // تجعل الاستدعاء صامتاً كما في الأندرويد، فلا يفقد الحارسُ
+            // معناه.
+            isReturnDefaultValues = true
             all {
                 it.maxHeapSize = "2048m"
             }

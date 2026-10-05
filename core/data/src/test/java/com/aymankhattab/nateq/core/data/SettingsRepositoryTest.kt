@@ -33,6 +33,10 @@ class SettingsRepositoryTest {
         repo = SettingsRepository(context)
     }
 
+    /** مخزنٌ جديدٌ على الإعدادات نفسها (لفحص استيراد نسخةٍ مصدَّرة). */
+    private fun newRepository(): SettingsRepository =
+        SettingsRepository(context)
+
     // وفاءُ الصفَّ بالعقود موثقٌ في إعلان الصنف نفسه، فالفحوصات أدناه تُثبّت
 // القصد دون قيمة تشغيلية (الثنائي يثبت الصدفان أعلاه).
 @Suppress("USELESS_IS_CHECK")
@@ -86,6 +90,61 @@ class SettingsRepositoryTest {
         assertEquals(2, repo.getAudioExpansionLevel())
         repo.setAudioExpansionLevel(-5)
         assertEquals(0, repo.getAudioExpansionLevel())
+    }
+
+    @Test
+    fun audioReverb_isIndependentFromExpansionAndOffByDefault() {
+        assertFalse(repo.isAudioReverbEnabled())
+        repo.setAudioExpansionLevel(2)
+        assertFalse(repo.isAudioReverbEnabled())
+        repo.setAudioReverbEnabled(true)
+        assertTrue(repo.isAudioReverbEnabled())
+        assertEquals(2, repo.getAudioExpansionLevel())
+        repo.setAudioExpansionLevel(0)
+        assertTrue(repo.isAudioReverbEnabled())
+    }
+
+    @Test
+    fun audioEffectsDisabledCategories_dropsUnknownNames() {
+        assertEquals(
+            emptySet<String>(),
+            repo.getAudioEffectsDisabledCategories()
+        )
+        repo.setAudioEffectsDisabledCategories(
+            setOf(SettingsRepository.VOICE_CATEGORY_TIME)
+        )
+        assertEquals(
+            setOf(SettingsRepository.VOICE_CATEGORY_TIME),
+            repo.getAudioEffectsDisabledCategories()
+        )
+        repo.setAudioEffectsDisabledCategories(
+            setOf(
+                "not_a_real_category",
+                SettingsRepository.ANNOUNCE_CATEGORY_SMS
+            )
+        )
+        assertEquals(
+            setOf(SettingsRepository.ANNOUNCE_CATEGORY_SMS),
+            repo.getAudioEffectsDisabledCategories()
+        )
+    }
+
+    @Test
+    fun audioEffects_surviveExportImportRoundTrip() {
+        repo.setAudioReverbEnabled(true)
+        repo.setAudioEffectsDisabledCategories(
+            setOf(SettingsRepository.VOICE_CATEGORY_BATTERY)
+        )
+
+        val exported = repo.exportSettings()
+        val fresh = newRepository()
+        fresh.importSettings(exported)
+
+        assertTrue(fresh.isAudioReverbEnabled())
+        assertEquals(
+            setOf(SettingsRepository.VOICE_CATEGORY_BATTERY),
+            fresh.getAudioEffectsDisabledCategories()
+        )
     }
 
     @Test

@@ -299,6 +299,10 @@ fun importMerge_overridesDuplicates_andKeepsRest() {
     fun reloadIfChanged_noThrottle_detectsStampChangeImmediately() {
         if (!dict.isPersistent()) return
         val noThrottle = PronunciationDictionary(context, 0L)
+        // **الملفُ لا يُنشأ إلا بأول كتابة** — فبلا هذا السطر كان الحارسُ
+        // يعتمد على بقايا اختبارٍ آخر في الصنف (ترتيبٌ عشوائي) فيمرّ
+        // أحياناً ويفشل أحياناً. الكتابةُ هنا صريحةٌ كالاختبار السابق.
+        dict.addEntry("ليمون", "شراب")
         val file = prefsFile()
         assertTrue(file.exists())
         noThrottle.reloadIfChanged() // الموضع الحر الأول بلا تغيير

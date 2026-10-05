@@ -48,7 +48,8 @@ class PronunciationDictionary(
         // على ملف التفضيلات المُنفَّذ لكل فقرة صوتية — الخنق يقلّص الـ I/O.
         private const val DISK_CHECK_THROTTLE_NANOS =
             1_500_000_000L // 1.5 ثانية
-        // مفتاح تتبّع هجرة حذف الإدخالات الافتراضية القديمة (تُنفَّذ مرة واحدة)
+        // مفتاح تتبّع هجرة حذف الإدخالات الافتراضية القديمة (تُنفَّذ مرة
+        // واحدة)
         private const val KEY_DEFAULTS_MIGRATED = "defaults_migrated_to_empty"
         // مفتاح تخزين الطبقات اللغوية: كائن JSON واحد {وسم: {مفتاح: قيمة}}
         // — لا نعدّ مفاتيح التفضيلات كلها ([SharedPreferences.all] غير مدعوم
@@ -356,7 +357,8 @@ class PronunciationDictionary(
             "ديس" to "ديسمبر"
         )
 
-    /** هجرة لمرة واحدة: حذف الإدخالات الافتراضية القديمة المخزّنة عند المستخدم.
+    /** هجرة لمرة واحدة: حذف الإدخالات الافتراضية القديمة
+     *  المخزّنة عند المستخدم.
      *  تُحذف المزاوجات المطابقة للافتراضي فقط
      *  (لا تُمسّ تعديلات المستخدم على نفس المفتاح). */
     private fun removeLegacyDefaultsOnce() {
@@ -597,7 +599,9 @@ sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
         val valid = LinkedHashMap<String, String>()
         for ((rawKey, element) in obj.entrySet()) {
             // يجب أن يكون نصّاً خاماً: لا رقمٌ ولا منطقيٌ ولا null.
-            if (!element.isJsonPrimitive || !element.asJsonPrimitive.isString) {
+            if (!element.isJsonPrimitive ||
+                !element.asJsonPrimitive.isString
+            ) {
                 return false
             }
             val key = rawKey.trim()
@@ -648,7 +652,8 @@ sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
     private fun loadFromPrefs(
         sourceSp: android.content.SharedPreferences? = null
     ): Pair<Map<String, String>, Map<String, Map<String, String>>> {
-        // تُقرأ القيم من «مثيل طازج» (انظر [openFreshPrefs]) لا من الكائن العضو
+        // تُقرأ القيم من «مثيل طازج» (انظر [openFreshPrefs]) لا من الكائن
+        // العضو
         // المخبئ — تصطاد تعديلات عملية الواجهة عبر الطابع. على فشل الفتح أو
         // الفك نقف عند آخر ما رصدناه بدل مسح القاموس الحي (تفضيلُ مستخدمٍ
         // حقيقي لا يجوز أن يُمحى بسبب خللٍ عابر). القراءة بمفتاحين معلومين
