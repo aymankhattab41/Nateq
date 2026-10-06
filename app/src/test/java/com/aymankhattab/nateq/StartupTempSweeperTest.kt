@@ -2,9 +2,11 @@ package com.aymankhattab.nateq
 
 import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.core.data.StartupTempSweeper
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -22,6 +24,18 @@ class StartupTempSweeperTest {
     private val context
         get() = ApplicationProvider
             .getApplicationContext<android.content.Context>()
+
+    @Before
+    @After
+    fun cleanDirs() {
+        context.cacheDir.listFiles()?.forEach { it.delete() }
+        listOfNotNull(
+            context.getExternalFilesDir(null),
+            context.filesDir
+        ).forEach { base ->
+            File(base, "downloads").listFiles()?.forEach { it.delete() }
+        }
+    }
 
     @Test
     fun orphanWavFilesInCache_areDeleted() {
