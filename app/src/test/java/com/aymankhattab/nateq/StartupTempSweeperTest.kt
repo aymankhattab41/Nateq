@@ -70,10 +70,14 @@ class StartupTempSweeperTest {
         assertEquals(0, deleted)
     }
 
+    private fun getDownloadsDir(): File {
+        val base = context.getExternalFilesDir(null) ?: context.filesDir
+        return File(base, "downloads").apply { mkdirs() }
+    }
+
     @Test
     fun activeApkInDownloads_isNeverDeleted() {
-        val downloads = File(context.getExternalFilesDir(null), "downloads")
-            .apply { mkdirs() }
+        val downloads = getDownloadsDir()
         val apk = File(downloads, "nateq.apk")
             .apply { writeBytes(ByteArray(10_000)) }
 
@@ -82,18 +86,23 @@ class StartupTempSweeperTest {
         assertTrue("ملف الـ APK الحالي بقي", apk.exists())
     }
 
+    private fun setFileTimestamp(file: File, time: Long) {
+        for (attempt in 0..5) {
+            if (file.setLastModified(time)) break
+            Thread.sleep(10)
+        }
+    }
+
     @Test
     fun staleOldNamedApkInDownloads_isSwept() {
         // بند د.3.9: ملف APK قديم باسمٍ آخر فيُكنس عند القدم — لا يُعامل
         // معاملة النشط (nateq.apk).
-        val downloads = File(context.getExternalFilesDir(null), "downloads")
-            .apply { mkdirs() }
+        val downloads = getDownloadsDir()
         val cutoff = System.currentTimeMillis() - 60 * 60 * 1000L
-        val stale = File(downloads, "stale_old.apk")
-            .apply {
-                writeBytes(ByteArray(10_000))
-                setLastModified(cutoff - 60 * 60 * 1000L)
-            }
+        val stale = File(downloads, "stale_old.apk").apply {
+            writeBytes(ByteArray(10_000))
+        }
+        stale.setLastModified(cutoff - 60 * 60 * 1000L)
 
         val deleted = StartupTempSweeper(context).sweep()
 
@@ -103,8 +112,7 @@ class StartupTempSweeperTest {
 
     @Test
     fun partialAndEmptyDownloads_areNotDeleted() {
-        val downloads = File(context.getExternalFilesDir(null), "downloads")
-            .apply { mkdirs() }
+        val downloads = getDownloadsDir()
         val empty = File(downloads, "empty.bin")
             .apply { writeBytes(ByteArray(0)) }
         val partial = File(downloads, "update.tmp")

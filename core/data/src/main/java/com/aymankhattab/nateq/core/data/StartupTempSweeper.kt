@@ -76,27 +76,29 @@ class StartupTempSweeper(private val context: Context) {
 
     private fun sweepDownloads(): Int {
         return runCatching {
-            // قد يُرجع getExternalFilesDir null (تخزين مشفَّر أو ممتلئ): نتدارك
-            // بمسار داخلي للدليل بدل بناء مسار فارغ/بلا وجهة — يبقى التنظيف
-            // آمناً ولا يُحبط دورة التحديث (بند 19.2).
-            val base = context.getExternalFilesDir(null)
-                ?: context.filesDir
-                ?: return 0
-            val downloads = File(base, "downloads")
-            if (!downloads.exists() || !downloads.isDirectory) return 0
+            // فحص مجلدات التنزيلات في التخزين الخارجي والداخلي معاً لضمان
+            // تنظيف أي ملف APK قديم في المسارين (بند 19.2).
+            val targets = listOfNotNull(
+                context.getExternalFilesDir(null),
+                context.filesDir
+            ).distinct()
             var deleted = 0
             val cutoff = System.currentTimeMillis() - MIN_AGE_MS
-            downloads.listFiles()?.filter { file ->
-                file.isFile &&
-                    !file.name.equals(ACTIVE_APK_NAME, ignoreCase = true)
-            }?.forEach { file ->
-                // لا نلمس ملفاً أثناء تنزيل نشط (حجم صفري أو لاحقة جزئية) أو
-                // ملفاً حديثاً (قد يكتبه الآن مديرُ التنزيلات أو تُعالج نسخته).
-                if (file.length() == 0L) return@forEach
-                if (file.name.endsWith(".tmp") ||
-                    file.name.endsWith(".part")) return@forEach
-                if (file.lastModified() >= cutoff) return@forEach
-                if (file.delete()) deleted++
+            for (base in targets) {
+                val downloads = File(base, "downloads")
+                if (!downloads.exists() || !downloads.isDirectory) continue
+                downloads.listFiles()?.filter { file ->
+                    file.isFile &&
+                        !file.name.equals(ACTIVE_APK_NAME, ignoreCase = true)
+                }?.forEach { file ->
+                    // لا نلمس ملفاً أثناء تنزيل نشط أو ملفاً حديثاً.
+                    if (file.length() == 0L) return@forEach
+                    if (file.name.endsWith(".tmp") ||
+                        file.name.endsWith(".part")
+                    ) return@forEach
+                    if (file.lastModified() >= cutoff) return@forEach
+                    if (file.delete()) deleted++
+                }
             }
             deleted
         }.getOrDefault(0)
