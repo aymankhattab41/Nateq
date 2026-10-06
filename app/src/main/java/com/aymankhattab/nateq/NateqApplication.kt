@@ -88,24 +88,28 @@ class NateqApplication : Application(), AnnouncementAppContext {
 
         // كاش محركات TTS يُلغى عند تثبيت/إزالة/استبدال أي حزمة حتى يلتقط
         // المسحُ التالي محركاً جديداً فورياً (بلا انتظار انتهاء الخمس دقائق).
-        ContextCompat.registerReceiver(
-            this,
-            object : BroadcastReceiver() {
-                override fun onReceive(
-                    context: Context?,
-                    intent: Intent?
-                ) {
-                    EnginePicker.invalidateCache()
-                }
-            },
-            IntentFilter().apply {
-                addAction(Intent.ACTION_PACKAGE_ADDED)
-                addAction(Intent.ACTION_PACKAGE_REMOVED)
-                addAction(Intent.ACTION_PACKAGE_REPLACED)
-                addDataScheme("package")
-            },
-            ContextCompat.RECEIVER_EXPORTED
-        )
+        try {
+            ContextCompat.registerReceiver(
+                this,
+                object : BroadcastReceiver() {
+                    override fun onReceive(
+                        context: Context?,
+                        intent: Intent?
+                    ) {
+                        EnginePicker.invalidateCache()
+                    }
+                },
+                IntentFilter().apply {
+                    addAction(Intent.ACTION_PACKAGE_ADDED)
+                    addAction(Intent.ACTION_PACKAGE_REMOVED)
+                    addAction(Intent.ACTION_PACKAGE_REPLACED)
+                    addDataScheme("package")
+                },
+                ContextCompat.RECEIVER_EXPORTED
+            )
+        } catch (e: Exception) {
+            Log.w("NATEQ_APP", "تعذر تسجيل مستقبل الحزم", e)
+        }
 
         // **بند 2.19 (تغيّر إذن المنبهات الدقيقة):** مستقبلُ بثٍّ ديناميكيٌّ
         // (في التطبيق — صاحبُ سياقِ العمليةِ الرئيسيةِ) يستمعُ إلى بثِّ
@@ -119,24 +123,29 @@ class NateqApplication : Application(), AnnouncementAppContext {
             val exactAlarmPermissionChanged =
                 AlarmManager
                     .ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED
-            ContextCompat.registerReceiver(
-                this,
-                object : BroadcastReceiver() {
-                    override fun onReceive(
-                        context: Context?,
-                        intent: Intent?
-                    ) {
-                        if (
-                            intent?.action == exactAlarmPermissionChanged
+            try {
+                ContextCompat.registerReceiver(
+                    this,
+                    object : BroadcastReceiver() {
+                        override fun onReceive(
+                            context: Context?,
+                            intent: Intent?
                         ) {
-                            TimeAnnouncementManager.shared(applicationContext)
-                                .onExactAlarmPermissionChanged()
+                            if (
+                                intent?.action == exactAlarmPermissionChanged
+                            ) {
+                                TimeAnnouncementManager.shared(
+                                    applicationContext
+                                ).onExactAlarmPermissionChanged()
+                            }
                         }
-                    }
-                },
-                IntentFilter(exactAlarmPermissionChanged),
-                ContextCompat.RECEIVER_NOT_EXPORTED
-            )
+                    },
+                    IntentFilter(exactAlarmPermissionChanged),
+                    ContextCompat.RECEIVER_NOT_EXPORTED
+                )
+            } catch (e: Exception) {
+                Log.w("NATEQ_APP", "تعذر تسجيل مستقبل إذن المنبهات", e)
+            }
         }
 
         // تنظيف الملفات المؤقتة اليتيمة عند الإقلاع (بند 19.2) — غير حاصر،
