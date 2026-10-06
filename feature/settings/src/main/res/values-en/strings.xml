@@ -70,7 +70,7 @@
 <string name="backup_settings">Backup settings</string>
 <string name="battery_announcement_enabled">Enable battery announcement</string>
 <string name="battery_announcement_levels">Enabled levels</string>
-<string name="battery_announcement_levels_summary" formatted="false">Choose which percentages are announced (multiples of 5%)</string>
+<string name="battery_announcement_levels_summary" formatted="false">Choose which percentages are announced (multiples of 5%%)</string>
 <string name="battery_cue_mode">Battery sound cue</string>
 <string name="battery_cue_volume">Sound cue volume</string>
 <string name="battery_cue_mode_narration_cue">Speech &amp; cue</string>
@@ -135,7 +135,7 @@
 <string name="cd_test_voice_button">Test</string>
 <string name="cd_convert_play_for_language">Play a sample voice for testing, %1$s language</string>
 <string name="cd_convert_save_for_language">Save settings for the %1$s language</string>
-<string name="charging_complete_announcement_enabled" formatted="false">Announce when charging completes (100%)</string>
+<string name="charging_complete_announcement_enabled" formatted="false">Announce when charging completes (100%%)</string>
 <string name="charging_disconnect_announcement_enabled">Announce when the charger is unplugged</string>
 <string name="check_updates">Check for updates</string>
 <string name="check_updates_desc">Check if a newer version is available</string>
@@ -275,7 +275,7 @@
 <string name="permission_sms_granted">SMS reading permission granted</string>
 <string name="pitch_label">Pitch</string>
 <string name="pitch_summary">Adjust the pitch (low/high)</string>
-<string name="power_saver_battery_threshold_label" formatted="false">Power saver threshold (%)</string>
+<string name="power_saver_battery_threshold_label" formatted="false">Power saver threshold (%%)</string>
 <string name="power_saver_mode_enabled">Power saver: reduce time announcements when the battery is low</string>
 <string name="preview_stop">Stop</string>
 <string name="proximity_silence_enabled">Silence when covering the device</string>
@@ -519,9 +519,10 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+- Fix changelog crash: escape literal % signs in changelog strings (%%) to prevent UnknownFormatConversionException when opening changelog dialog
 - Concurrency cap and deferred engine discovery: Capped concurrent engine probes to max 3 with immediate shutdown per probe, and deferred catalog discovery until the engine section is opened instead of running on home view
 - Call waiting caller announcement routed to earpiece: On Android 12+ (API 31+) via setCommunicationDevice(TYPE_BUILTIN_EARPIECE) and USAGE_VOICE_COMMUNICATION without raising STREAM_VOICE_CALL, with single-announcement guarantee
-- Progressive speedup for long texts: New setting (long_text_speedup_enabled) disabled by default, gradually increases rate up to +15% after 300 characters without affecting screen readers, with tests for 299/300/301 boundaries
+- Progressive speedup for long texts: New setting (long_text_speedup_enabled) disabled by default, gradually increases rate up to +15%% after 300 characters without affecting screen readers, with tests for 299/300/301 boundaries
 - Added caller_ar and caller_en categories to Diagnostics Info (buildDiagnosticsInfo) with resolved engine and voice origin (explicit, inherited, or none)
 - Fixed update checker: GitHub tag `vN` in 0.x phase treated as `0.N.0` — no false update when equal (v1.6.29 = 1.6.29)
 - Cleaned changelog: removed internal references ("manager decision"), changelog is now public-facing
