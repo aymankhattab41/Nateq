@@ -126,6 +126,14 @@ class VoiceCatalogAccessTest {
         )
     }
 
+    /** التحقق من سقف استعلامات المحركات المتزامنة (بين 2 و3). */
+    @Test
+    fun maxConcurrentEngineProbes_isWithinBudget() {
+        val ceiling = VoiceCatalog.MAX_CONCURRENT_ENGINE_PROBES
+        assertTrue("سقف التوازي لا يقل عن 2", ceiling >= 2)
+        assertTrue("سقف التوازي لا يتجاوز 3", ceiling <= 3)
+    }
+
     private companion object {
         /** فترة صلاحية طويلة تُبقي الاختبار بعيداً عن كرونومتر النظام. */
         const val LONG_TTL_MS = 60 * 60 * 1000L

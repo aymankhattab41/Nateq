@@ -169,7 +169,8 @@ class SettingsRepository(context: Context) :
          *  (المحور 6 — «إعداد آمن عند الاستيراد»). */
         private val SAFE_DEFAULT_FALSE_KEYS = setOf(
             "shake_to_stop_enabled",
-            "proximity_silence_enabled"
+            "proximity_silence_enabled",
+            "long_text_speedup_enabled"
         )
 
         /** التطبيقات الافتراضية التي تُقرأ إشعاراتها قبل أي اختيار صريح. */
@@ -1370,6 +1371,12 @@ class SettingsRepository(context: Context) :
         prefs.getBoolean("follow_reader_rate_enabled", true)
     override fun setFollowReaderRateEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("follow_reader_rate_enabled", enabled).apply()
+
+    /** تسريع نطق النصوص الطويلة بعد 300 حرف: مطفأ افتراضياً. */
+    override fun isLongTextSpeedupEnabled(): Boolean =
+        prefs.getBoolean("long_text_speedup_enabled", false)
+    override fun setLongTextSpeedupEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("long_text_speedup_enabled", enabled).apply()
 
     // ============ الإسكات الفوري: الهز والتقارب ============
 

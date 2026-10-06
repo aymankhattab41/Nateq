@@ -1282,11 +1282,15 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         // الانتظارُ يجري بلا استيقاظ، و`delay()` على
         // `Dispatchers.IO` والشاشةُ مطفأة يتأخّر فيُفشِل الانتظارُ
         // في مهمّته. فصار القفل يغطّي الانتظارَ والنطقَ معاً.
-        val repeat = settings.getCallerAnnouncementRepeat()
-            .coerceIn(
-                SettingsRepository.CALLER_REPEAT_MIN,
-                SettingsRepository.CALLER_REPEAT_MAX
-            )
+        val repeat = if (waitingCall) {
+            1
+        } else {
+            settings.getCallerAnnouncementRepeat()
+                .coerceIn(
+                    SettingsRepository.CALLER_REPEAT_MIN,
+                    SettingsRepository.CALLER_REPEAT_MAX
+                )
+        }
         val intervalMs = settings.getCallerAnnouncementIntervalSeconds()
             .coerceIn(
                 SettingsRepository.CALLER_INTERVAL_MIN,

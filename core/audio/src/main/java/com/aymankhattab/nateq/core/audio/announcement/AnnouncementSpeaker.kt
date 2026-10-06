@@ -3,6 +3,7 @@ package com.aymankhattab.nateq.core.audio.announcement
 import android.content.Context
 import android.database.ContentObserver
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
@@ -520,6 +521,9 @@ class AnnouncementSpeaker(
     // setAudioAttributes بلا داعٍ (تبقى أغلى قليلاً من الفحص البسيط).
     private var lastAppliedAudioAttributes: AudioAttributes? = null
 
+    // هل تم توجيه الصوت لسماعة الأذن على API 31+ لنطق مسار المكالمة
+    private var communicationDeviceSet: Boolean = false
+
     // النطق المنتظر لحين وصول Audio Focus المؤجل (DELAYED): يُخزَّن الإجراء
     // ويُطلق فور استلام AUDIOFOCUS_GAIN، مع مؤقّت أمان يمنع ضياع الإعلان
     // إن لم يتحرر التركيز أبداً.
@@ -646,11 +650,11 @@ class AnnouncementSpeaker(
         // المهلة القصوى 1500ms — عند انتهائها يُنطق على أي حال مرة واحدة + سجل "انتهاء مهلة الجاهزية"
         if (ttsInitializedForTesting) return // wasWarm — لا ينتظر
         
-        val startTime = SystemClock.elapsedRealtime()
+        val startTime = System.currentTimeMillis()
         val maxWaitMs = 1500L
         val pollIntervalMs = 100L
         
-        while (SystemClock.elapsedRealtime() - startTime < maxWaitMs) {
+        while (System.currentTimeMillis() - startTime < maxWaitMs) {
             val currentTts = tts
             if (currentTts != null) {
                 val voicesOk = if (simulatedVoicesEmpty) {
@@ -1419,17 +1423,57 @@ class AnnouncementSpeaker(
      * `USAGE_VOICE_COMMUNICATION` — وهي تعديلٌ للسمات لا للقناة.
      */
     private fun speechAudioAttributes(category: String?): AudioAttributes {
+        val route = speechRouteForNow(category)
+        return speechAudioAttributes(category, route)
+    }
+
+    private fun speechAudioAttributes(
+        category: String?,
+        route: SpeechRoute
+    ): AudioAttributes {
         val builder = AudioAttributes.Builder()
-        return if (isCallerCategory(category)) {
-            builder
+        return when {
+            route == SpeechRoute.CALL -> builder
+                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+            isCallerCategory(category) -> builder
                 .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .build()
-        } else {
-            builder
+            else -> builder
                 .setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                 .build()
+        }
+    }
+
+    /** توجيه الصوت لسماعة الأذن على API 31+ عند نطق مسار المكالمة. */
+    private fun routeToEarpieceIfCallRoute(category: String?) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            speechRouteForNow(category) == SpeechRoute.CALL
+        ) {
+            runCatching {
+                val devices = audioManager.availableCommunicationDevices
+                val earpiece = devices.firstOrNull {
+                    it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+                }
+                if (earpiece != null &&
+                    audioManager.setCommunicationDevice(earpiece)
+                ) {
+                    communicationDeviceSet = true
+                }
+            }
+        }
+    }
+
+    /** إلغاء توجيه سماعة الأذن بعد انتهاء النطق واستعادة الجهاز الأصلي. */
+    private fun clearCommunicationDeviceIfSet() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            communicationDeviceSet
+        ) {
+            communicationDeviceSet = false
+            runCatching { audioManager.clearCommunicationDevice() }
         }
     }
 
@@ -1692,6 +1736,8 @@ speechCycle.incrementAndGet()
         // له نفسُ عمرِ الرفع فيُستعاد في releaseAudioFocus مع مسارات
         // الإنهاء كلّها.
         duckRingVolumeIfCallerCategory(currentCategory)
+        // توجيه الصوت لسماعة الأذن على API 31+ إن كان مسار النطق مكالمة.
+        routeToEarpieceIfCallRoute(currentCategory)
         // السمات تُطبق عند كل دورة إن اختلفت فعلياً (لا تتبع القارئ).
         applySpeechAudioAttributes(currentCategory)
         val unitUtteranceIds = validUnits.map { nextUtteranceId() }
@@ -2522,6 +2568,7 @@ speechCycle.incrementAndGet()
         Log.i(TAG, "[Focus] إعادة ضبط يدوية — abandon بلا شرط")
         // لا تبقى قناةٌ مرفوعة بعد إعادة الضبط — استعادة فورية لها.
         restoreBoostedStreamVolume()
+        clearCommunicationDeviceIfSet()
         hasAudioFocus = false
         skippedFocusForMedia = false
         pendingFocusAction = null
@@ -2555,6 +2602,8 @@ speechCycle.incrementAndGet()
         // الإيقاف تُطلق التركيز فتمرّ عبر هذه النقطة فتُستعاد مرةً واحدة
         // صحيحة.
         restoreBoostedStreamVolume()
+        // استعادة جهاز الصوت الأصلي بعد توجيهه لسماعة الأذن على API 31+.
+        clearCommunicationDeviceIfSet()
         // إعادةُ الرنين إن كان مخفوضاً أثناء إعلان المتصل (نفسُ المسار
         // المجمَع لكل مسارات الإنهاء).
         restoreDuckedRingVolume()

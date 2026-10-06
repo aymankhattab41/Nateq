@@ -20,6 +20,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** محرك TTS يوفّر لغةً محددة، مع الأصوات المتاحة له داخلها. */
@@ -49,6 +51,9 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
          *  بعض المحركات تعلّق. خُفّضت إلى 5 ث للحد
          *  من تأثير المحركات البطيئة. */
         private const val ENGINE_PROBE_TIMEOUT_MS = 5_000L
+
+        /** سقف عدد استعلامات المحركات المتزامنة لمنع إغراق الموارد. */
+        internal const val MAX_CONCURRENT_ENGINE_PROBES = 3
 
         /**
          * القائمة السوداء للمحركات التي فشلت تهيئتها —
@@ -94,17 +99,20 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             val engines = EnginePicker.installedEngines(context)
                 .filterNot { EnginePicker.isScreenReader(it.packageName) }
                 .filterNot { isBlacklisted(it.packageName) }
-            // الفحص بالتوازي (كل محرك في مهمة IO مستقلة): كان متتابعاً فتبلغ
-            // مدة الفحص N×10 ث بعشرة محركات بطيئة، الآن أقصى انتظار كحدود
-            // المحرك الأبطأ نفسه (~10 ث) فتنفتح شاشة المحول بسرعة.
+            // الفحص بالتوازي مع سقف 2-3 محركات متزامنة عبر Semaphore
+            // لمنع فتح مثيلات غير محدودة في نفس اللحظة وإغراق الموارد.
+            val semaphore = Semaphore(MAX_CONCURRENT_ENGINE_PROBES)
             val voicesByEngine = try {
                 coroutineScope {
                     engines
                         .map { engine ->
                             async(Dispatchers.IO) {
-                                engine.packageName to probeEngineVoices(
-                                    context, engine.packageName
-                                )
+                                val voices = semaphore.withPermit {
+                                    probeEngineVoices(
+                                        context, engine.packageName
+                                    )
+                                }
+                                engine.packageName to voices
                             }
                         }
                         .awaitAll()

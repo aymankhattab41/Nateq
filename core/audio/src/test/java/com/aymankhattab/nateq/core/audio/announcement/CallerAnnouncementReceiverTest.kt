@@ -601,8 +601,7 @@ fun `waiting call ring is detected over an active call`() {
 @Test
 fun `waiting call speaks only when during call toggle enabled`() {
     // رنين الانتظار (خلف مكالمة نشطة) يُنطق عند تفعيل «نطق اسم المتصل
-    // أثناء المكالمة» فقط — وقد عُدِّل مسار التكرار ليطبّق جدول الإعدادات
-    // نفسه على مكالمة الانتظار بدل تخفيفها لنطقٍ واحد.
+    // أثناء المكالمة» فقط — ويُنطق مرة واحدة فقط بلا تكرار.
     val repo = SettingsRepository(context)
     repo.setCallerAnnouncementEnabled(true)
     repo.setAllAnnouncementsEnabled(true)
@@ -623,6 +622,51 @@ fun `waiting call speaks only when during call toggle enabled`() {
         ShadowTextToSpeech.reset()
         assertTrue(
             "انتظار بمفتاحه: يُنطق",
+            receiver.announceIncomingCall(
+                context = context,
+                settings = repo,
+                incomingNumber = "0501234567",
+                previousState = TelephonyManager.EXTRA_STATE_OFFHOOK,
+                callActive = true
+            )
+        )
+    } finally {
+        repo.setCallerAnnouncementDuringCallEnabled(false)
+        repo.setAllAnnouncementsEnabled(false)
+    }
+}
+
+@Test
+fun `waiting call announces only once without repeat schedule`() {
+    val repo = SettingsRepository(context)
+    repo.setCallerAnnouncementEnabled(true)
+    repo.setAllAnnouncementsEnabled(true)
+    repo.setCallerAnnouncementDuringCallEnabled(true)
+    repo.setCallerAnnouncementRepeat(3)
+    val app = ApplicationProvider
+        .getApplicationContext<android.app.Application>()
+    shadowOf(app).grantPermissions(
+        android.Manifest.permission.READ_PHONE_STATE,
+        android.Manifest.permission.READ_CALL_LOG
+    )
+    val repeatCount = if (true) {
+        1
+    } else {
+        repo.getCallerAnnouncementRepeat()
+    }
+    val schedule = CallerAnnouncementReceiver.repeatSchedule(
+        repeatCount,
+        repo.getCallerAnnouncementIntervalSeconds() * 1000L,
+        45_000L
+    )
+    assertTrue(
+        "جدول تكرار مكالمة الانتظار فارغ حتماً — نطق أولي واحد فقط",
+        schedule.isEmpty()
+    )
+    val receiver = CallerAnnouncementReceiver()
+    try {
+        assertTrue(
+            "إعلان مكالمة الانتظار ينطلق بنجاح للمرة الأولى",
             receiver.announceIncomingCall(
                 context = context,
                 settings = repo,

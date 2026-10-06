@@ -368,6 +368,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     // والمتصل والبطارية — يُملأ من اكتشاف المحركات الخلفي.
     private lateinit var engineCatalog: EngineVoicesCatalog
 
+    // علامة لتأجيل اكتشاف المحركات عند الحاجة ولمرة واحدة فقط
+    private var isCatalogDiscoveryStarted = false
+
     // طلب إذنَي القراءة عند تفعيل إعلان المتصل (READ_PHONE_STATE لاستقبال
     // بث PHONE_STATE المحمي، وREAD_CALL_LOG للوصول إلى الرقم على أندرويد 12+
     // والاسم من سجل المكالمات، وREAD_CONTACTS للبحث عن الاسم في دفتر
@@ -458,7 +461,16 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             this,
             settings,
             nateqVoices,
-            engineCatalog
+            engineCatalog,
+            onNavigate = { group, sectionId ->
+                // تأجيل اكتشاف المحركات حتى فتح قسمها أو مجموعة المحركات
+                if (group == 0 ||
+                    sectionId == R.id.ll_caller_announcement_settings ||
+                    sectionId == R.id.ll_sms_reading_settings
+                ) {
+                    ensureVoiceCatalogDiscovered()
+                }
+            }
         ).apply {
             setup(view, viewLifecycleOwner)
         }
@@ -694,37 +706,6 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         setupSaveAndResetButtons()
         setupBackupRestoreButtons()
         accordion.updateSectionStatuses()
-        // اكتشاف متدرج (لغة ← محرك ← أصوات): يُملأ الكتالوج خلفياً ثم تُنعش
-        // قوائم الفئات والرسائل/المتصل/البطارية. كتالوج فارغ = الأصوات
-        // الاحتياطية (العربية/الإنجليزية).
-        viewLifecycleOwner.lifecycleScope.launch {
-            val discovery = withContext(AppDispatchers.io) {
-                try {
-                    VoiceCatalog.discoverAllLanguagesAcrossEngines(
-                        requireContext()
-                    )
-                } catch (_: Throwable) {
-                    emptyMap<String, List<EngineWithVoices>>()
-                }
-            }
-            engineCatalog.update(
-                discovery.mapValues { (_, engines) ->
-                    engines.map { row ->
-                        EngineVoicesRow(
-                            row.enginePackage,
-                            row.engineLabel,
-                            row.voices.map { voice ->
-                                VoiceOption(voice.name, voice.name)
-                            }
-                        )
-                    }
-                }
-            )
-            if (!isAdded) return@launch
-            categoryVoicePanel.refreshLanguages()
-            smsSection.refreshSmsVoices()
-            callerSection.refreshCallerVoices()
-        }
         // بند 4.6: إعادة فتح الشاشة (مجموعة/قسم) التي كان يعدّلها المستخدم
         // قبل تدوير الجهاز بدل طردِه إلى الصفحة الرئيسية.
         if (savedInstanceState != null) {
@@ -828,7 +809,46 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             updateReceiver = null
         }
         if (::accordion.isInitialized) accordion.cleanup()
+        isCatalogDiscoveryStarted = false
         super.onDestroyView()
+    }
+
+    /**
+     * اكتشاف متدرج ومؤجل (لغة ← محرك ← أصوات):
+     * لا ينطلق عند فتح الشاشة الرئيسية، بل يؤجل حتى فتح مجموعة المحركات
+     * أو أحد الأقسام المعتمدة عليه (المتصل/الرسائل)، ولمرة واحدة فقط.
+     */
+    private fun ensureVoiceCatalogDiscovered() {
+        if (isCatalogDiscoveryStarted) return
+        isCatalogDiscoveryStarted = true
+        viewLifecycleOwner.lifecycleScope.launch {
+            val discovery = withContext(AppDispatchers.io) {
+                try {
+                    VoiceCatalog.discoverAllLanguagesAcrossEngines(
+                        requireContext()
+                    )
+                } catch (_: Throwable) {
+                    emptyMap<String, List<EngineWithVoices>>()
+                }
+            }
+            engineCatalog.update(
+                discovery.mapValues { (_, engines) ->
+                    engines.map { row ->
+                        EngineVoicesRow(
+                            row.enginePackage,
+                            row.engineLabel,
+                            row.voices.map { voice ->
+                                VoiceOption(voice.name, voice.name)
+                            }
+                        )
+                    }
+                }
+            )
+            if (!isAdded) return@launch
+            categoryVoicePanel.refreshLanguages()
+            smsSection.refreshSmsVoices()
+            callerSection.refreshCallerVoices()
+        }
     }
 
     /** يعالج أحداث العمليات غير المتزامنة القادمة من الفي إم (تجري كلها على
@@ -1770,11 +1790,19 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
             // ── المحرك/الصوت المختار لكل فئة ─────────────────────────
             sb.appendLine("--- الاختيار النشط لكل فئة ---")
+            val defaultEngine = runCatching {
+                settings.getEngineForCategory("default")
+            }.getOrNull()
+            val defaultVoice = runCatching {
+                settings.getPreferredVoiceIdForCategory("default")
+            }.getOrNull()
             val categories = listOf(
                 "time" to "إعلان الوقت",
                 "battery" to "إعلان البطارية",
                 "notifications" to "قراءة الإشعارات",
                 "caller" to "إعلان المتصل",
+                "caller_ar" to "إعلان المتصل (عربي)",
+                "caller_en" to "إعلان المتصل (إنجليزي)",
                 "sms" to "قراءة الرسائل",
                 "numbers" to "الأرقام",
                 "default" to "الافتراضي",
@@ -1793,10 +1821,25 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 val pitch = runCatching {
                     settings.getPitchForCategory(key)
                 }.getOrNull()
+
+                val engineResolved = when {
+                    !engine.isNullOrBlank() -> "صريح ($engine)"
+                    key != "default" && !defaultEngine.isNullOrBlank() ->
+                        "موروث من الافتراضي ($defaultEngine)"
+                    else -> "لا محرك"
+                }
+
+                val voiceResolved = when {
+                    !voice.isNullOrBlank() -> "صريح ($voice)"
+                    key != "default" && !defaultVoice.isNullOrBlank() ->
+                        "موروث من الافتراضي ($defaultVoice)"
+                    else -> "لا صوت"
+                }
+
                 sb.appendLine(
                     "$label: " +
-                        "محرك=${engine ?: "افتراضي"}  " +
-                        "صوت=${voice ?: "افتراضي"}  " +
+                        "محرك=[$engineResolved]  " +
+                        "صوت=[$voiceResolved]  " +
                         "سرعة=${"%.1f".format(rate ?: 1f)}  " +
                         "نبرة=${"%.1f".format(pitch ?: 1f)}"
                 )

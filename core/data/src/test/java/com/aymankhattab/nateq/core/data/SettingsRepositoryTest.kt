@@ -459,6 +459,16 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun longTextSpeedup_defaultOffAndRoundTrip() {
+        // تسريع النصوص الطويلة بعد 300 حرف معطل افتراضياً
+        assertFalse(repo.isLongTextSpeedupEnabled())
+        repo.setLongTextSpeedupEnabled(true)
+        assertTrue(repo.isLongTextSpeedupEnabled())
+        repo.setLongTextSpeedupEnabled(false)
+        assertFalse(repo.isLongTextSpeedupEnabled())
+    }
+
+    @Test
     fun firstRunSetup_defaultNotCompleted_roundTrip() {
         // أول تشغيل: المعالج غير منجز فيُعرض مرة واحدة
         assertFalse(repo.isFirstRunSetupCompleted())
@@ -1137,18 +1147,20 @@ class SettingsRepositoryTest {
 
     @Test
     fun importSettings_safeDefaultFalseKeys_resetEvenIfTrue() {
-        // مفاتيح المستشعرات الحساسة (الهز/التقارب) تُثبَّت false على
-        // الاستيراد مهما وردت في النسخة — لا يجوز إكمالهما عند ترميناً
-        // الانتقال من جهازٍ آخر مفعَّلاً عليه
+        // مفاتيح المستشعرات الحساسة والتسريع تُثبَّت false على
+        // الاستيراد مهما وردت في النسخة.
         repo.setShakeToStopEnabled(true)
         repo.setProximitySilenceEnabled(true)
+        repo.setLongTextSpeedupEnabled(true)
         val imported = mapOf(
             "shake_to_stop_enabled" to true,
-            "proximity_silence_enabled" to true
+            "proximity_silence_enabled" to true,
+            "long_text_speedup_enabled" to true
         )
         assertTrue(repo.importSettings(imported))
         assertFalse(repo.isShakeToStopEnabled())
         assertFalse(repo.isProximitySilenceEnabled())
+        assertFalse(repo.isLongTextSpeedupEnabled())
     }
 
     @Test

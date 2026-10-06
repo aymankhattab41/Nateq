@@ -234,4 +234,65 @@ class SpeechRouteDecisionTest {
             speaker.shutdown()
         }
     }
+
+    @Test
+    fun `caller during call uses voice communication attributes`() {
+        val speaker = AnnouncementSpeaker(context)
+        try {
+            val method = AnnouncementSpeaker::class.java
+                .getDeclaredMethod(
+                    "speechAudioAttributes",
+                    String::class.java,
+                    SpeechRoute::class.java
+                )
+            method.isAccessible = true
+            val attrs = method.invoke(
+                speaker,
+                caller,
+                SpeechRoute.CALL
+            ) as android.media.AudioAttributes
+            assertEquals(
+                "مسار المكالمة يستخدم USAGE_VOICE_COMMUNICATION",
+                android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION,
+                attrs.usage
+            )
+            assertEquals(
+                "نوع المحتوى صوت نطق CONTENT_TYPE_SPEECH",
+                android.media.AudioAttributes.CONTENT_TYPE_SPEECH,
+                attrs.contentType
+            )
+        } finally {
+            speaker.shutdown()
+        }
+    }
+
+    @Test
+    fun `earpiece routing is triggered and cleared on call route`() {
+        val speaker = AnnouncementSpeaker(context)
+        try {
+            val routeMethod = AnnouncementSpeaker::class.java
+                .getDeclaredMethod(
+                    "routeToEarpieceIfCallRoute",
+                    String::class.java
+                )
+            routeMethod.isAccessible = true
+            val clearMethod = AnnouncementSpeaker::class.java
+                .getDeclaredMethod("clearCommunicationDeviceIfSet")
+            clearMethod.isAccessible = true
+
+            duringCall {
+                routeMethod.invoke(speaker, caller)
+                val flagField = AnnouncementSpeaker::class.java
+                    .getDeclaredField("communicationDeviceSet")
+                flagField.isAccessible = true
+                val wasSet = flagField.getBoolean(speaker)
+
+                clearMethod.invoke(speaker)
+                val afterClear = flagField.getBoolean(speaker)
+                assertFalse("تفريغ الجهاز يعيد العلم إلى false", afterClear)
+            }
+        } finally {
+            speaker.shutdown()
+        }
+    }
 }

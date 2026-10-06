@@ -52,7 +52,9 @@ internal class SettingsAccordionController(
     private val fragment: Fragment,
     private val settings: SettingsRepository,
     private val voices: List<NateqVoice>,
-    private val engineCatalog: EngineVoicesCatalog
+    private val engineCatalog: EngineVoicesCatalog,
+    private val onNavigate: ((group: Int, sectionContentId: Int?) -> Unit)? =
+        null
 ) {
 
     private val accordionEntries = mutableListOf<AccordionEntry>()
@@ -233,6 +235,7 @@ internal class SettingsAccordionController(
         currentGroup = group
         applyGroupVisibility(false)
         setSectionDividersVisible(false)
+        onNavigate?.invoke(group.group, content.id)
         svSettingsScroll?.scrollTo(0, 0)
         var sectionName = ""
         for (e in accordionEntries) {
@@ -280,6 +283,7 @@ internal class SettingsAccordionController(
         llDetailBack?.visibility = View.VISIBLE
         llMasterSwitch?.visibility = View.GONE
         applyGroupVisibility(false)
+        onNavigate?.invoke(group.group, null)
         svSettingsScroll?.scrollTo(0, 0)
         for (e in accordionEntries) {
             val inGroup = e.group == group.group
