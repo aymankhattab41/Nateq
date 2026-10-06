@@ -73,8 +73,17 @@ android {
     }
 
     testOptions {
-        unitTests.all {
-            it.maxHeapSize = "2048m"
+        unitTests {
+            isIncludeAndroidResources = true
+            isReturnDefaultValues = true
+            all { testTask ->
+                testTask.maxHeapSize = "3072m"
+                testTask.jvmArgs(
+                    "-Xmx3072m",
+                    "--add-opens=java.base/java.lang=ALL-UNNAMED",
+                    "--add-opens=java.base/jdk.internal.access=ALL-UNNAMED"
+                )
+            }
         }
     }
 }
