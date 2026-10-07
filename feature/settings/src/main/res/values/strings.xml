@@ -1,4 +1,23 @@
 <resources>
+    <string name="accessibility_service_label">خدمات الشاشة (Lord TTS)</string>
+    <string name="accessibility_service_description">خدمات إمكانية الوصول وقراءة الشاشة لتحسين تجربة النطق وتوسيع الرسائل</string>
+    <string name="a11y_tile_label">خدمات الشاشة</string>
+    <string name="a11y_status_active">نشطة</string>
+    <string name="a11y_status_paused">متوقفة مؤقتاً</string>
+    <string name="a11y_status_disabled">معطّلة في النظام</string>
+    <string name="a11y_pause_duration_title">مدة الإيقاف المؤقت لخدمات الشاشة</string>
+    <string name="a11y_pause_15m">15 دقيقة</string>
+    <string name="a11y_pause_1h">ساعة واحدة</string>
+    <string name="a11y_pause_3h">3 ساعات</string>
+    <string name="a11y_pause_midnight">حتى منتصف الليل</string>
+    <string name="a11y_pause_manual">يدوياً (حتى الاستئناف)</string>
+    <string name="a11y_onboarding_title">تفعيل خدمات الشاشة</string>
+    <string name="a11y_onboarding_explanation">تتيح خدمات الشاشة توسيع الرسائل المقتطعة تلقائياً وقراءة الرسائل الحية داخل التطبيقات. الخدمة لا تجمع أي بيانات شخصية ولا تنقل نصوص الشاشة خارج جهازك إطلاقاً.</string>
+    <string name="a11y_restricted_settings_title">الخطوة 1: السماح بالإعدادات المقيّدة (أندرويد 13+)</string>
+    <string name="a11y_restricted_settings_desc">اضغط الزر أدناه لفتح معلومات التطبيق، ثم اضغط القائمة (النقاط الثلاث في الأعلى) واختر «السماح بالإعدادات المقيّدة».</string>
+    <string name="a11y_open_app_details">فتح معلومات التطبيق</string>
+    <string name="a11y_enable_service_button">فتح إعدادات إمكانية الوصول للتفعيل</string>
+    <string name="a11y_service_enabled_announcement">تم تفعيل خدمات الشاشة بنجاح</string>
 <string name="all_announcements_enabled">كل الإعلانات مفعّلة</string>
 <string name="all_announcements_summary">إيقافه يُوقف الإعلانات التلقائية (الوقت، البطارية، الرسائل، الإشعارات، المتصل) بصمت</string>
 <string name="announcement_turned_off">معطّل</string>
@@ -541,6 +560,9 @@
 <string name="time_alarm_max_precision_summary">تستخدم منبّه النظام الدقيق (setAlarmClock) متجاوزةً كل قيود Doze والبطارية فيعمل إعلان الوقت في اللحظة المضبوطة؛ أثرُها الجانبي أن أيقونة منبّه ثابتة تظهر في شريط الحالة.</string>
 <string name="changelog_title">آخر التحديثات</string>
 <string name="changelog_text">الإصدار %1$s
+- خدمات الشاشة وإمكانية الوصول: توسيع الرسائل المقتطعة تلقائياً وقراءة الرسائل الحية وقراءة الحافظة وتأكيد الكتابة واختصار الطوارئ وحوار الإيقاف المؤقت وسياسة التطبيقات المسموحة
+- سلسلة معالجة الصوت التناظرية والرقمية (DSP): معادِل صوتي بارامتري 5 نطاقات وضغط ديناميكي واتساع مكاني وصدى ومؤثرات صوتية ومسارات صوتية مخصصة
+- منظومة حسم الفئات وسلامة المحركات (CategoryResolver): منع الاختيار الصامت للمحركات غير المحددة وإعادة المحاولة التلقائية لمحرك جوجل ومعالجة جاهزية الأصوات
 - تسجيل تشخيص شامل عند أول نطق: إضافة سجل تفصيلي لبيانات المحرك المرتبط وعدد الأصوات والصوت واللسان في AnnouncementSpeaker
 - إضافة مفاتيح التحكم في مراحل معالجة النصوص (الوقت، العملات، الوحدات، الرموز، الهواتف، وتطبيع الحروف) وتصحيح حارس الفراغ في المتصل
 - إصلاح كراش شاشة «أحدث المستجدات»: تصحيح الأحرف %% غير المنسقة في نصوص المستجدات (تحويل %% الحرفي إلى %%) لتفادي UnknownFormatConversionException عند فتح الحوار

@@ -170,21 +170,7 @@ interface CategoryVoicePrefs {
 
     companion object {
         const val VOICE_CATEGORY_BATTERY = "battery"
-}
-
-/**
- * [UpdatePrefs] — نطاق التحديثات: مفتاح GitHub PAT للمستودع الخاص.
- * ينفّذها SettingsRepository.
- */
-interface UpdatePrefs {
-
-    /** مفتاح GitHub PAT (Personal Access Token) للمستودع الخاص.
-     *  null إن لم يُضبط. */
-    fun getGitHubUpdatePat(): String?
-
-    /** يعيّن مفتاح GitHub PAT (null = حذف). */
-    fun setGitHubUpdatePat(token: String?)
-}
+    }
 
     /** الصوت المفضّل لمجموعة صوتية معيّنة. */
     fun getPreferredVoiceIdForCategory(category: String): String?
@@ -215,6 +201,15 @@ interface UpdatePrefs {
 
     /** يعيّن مستوى الصوت لمجموعة صوتية معيّنة. */
     fun setVolumeForCategory(category: String, volume: Float)
+
+    /** هل ضُبط معدل الكلام صراحةً لهذه الفئة؟ */
+    fun hasExplicitSpeechRateForCategory(category: String): Boolean = false
+
+    /** هل ضُبطت درجة الصوت صراحةً لهذه الفئة؟ */
+    fun hasExplicitPitchForCategory(category: String): Boolean = false
+
+    /** هل ضُبط مستوى الصوت صراحةً لهذه الفئة؟ */
+    fun hasExplicitVolumeForCategory(category: String): Boolean = false
 }
 
 /**
@@ -787,4 +782,47 @@ interface TextProcessingPrefs :
 
     /** يعيّن تفعيل تطبيع الحروف العربية. */
     fun setArabicNormalizationEnabled(enabled: Boolean)
+}
+
+/**
+ * [AccessibilityPrefs] — نطاق إعدادات إمكانية الوصول وخدمات الشاشة.
+ * ينفّذها SettingsRepository.
+ */
+interface AccessibilityPrefs {
+
+    /** هل الميزة المعطاة مفعّلة في الإعدادات؟ */
+    fun isAccessibilityFeatureEnabled(featureKey: String): Boolean
+
+    /** تعيين حالة تفعيل ميزة إمكانية الوصول. */
+    fun setAccessibilityFeatureEnabled(featureKey: String, enabled: Boolean)
+
+    /** هل خدمات الشاشة متوقفة مؤقتاً؟ */
+    fun isA11yPaused(): Boolean
+
+    /** تعيين حالة الإيقاف المؤقت لخدمات الشاشة. */
+    fun setA11yPaused(paused: Boolean)
+
+    /** وقت انتهاء الإيقاف المؤقت بالمللي ثانية (Epoch). */
+    fun getA11yPausedUntil(): Long
+
+    /** تعيين وقت انتهاء الإيقاف المؤقت. */
+    fun setA11yPausedUntil(untilEpoch: Long)
+
+    /** مستوى الإيقاف المؤقت (1 = خفيف، 2 = إيقاف كامل). */
+    fun getA11yPauseLevel(): Int
+
+    /** تعيين مستوى الإيقاف المؤقت. */
+    fun setA11yPauseLevel(level: Int)
+
+    /** قائمة الحزم المسموحة لخدمات الشاشة. */
+    fun getA11yAllowedPackages(): Set<String>?
+
+    /** تعيين قائمة الحزم المسموحة لخدمات الشاشة. */
+    fun setA11yAllowedPackages(packages: Set<String>?)
+
+    /** هل يُسمح لجميع التطبيقات دون تقييد بالقائمة البيضاء؟ */
+    fun isA11yAllowAllApps(): Boolean
+
+    /** تعيين السماح لجميع التطبيقات. */
+    fun setA11yAllowAllApps(allowAll: Boolean)
 }

@@ -46,4 +46,35 @@ object AccessibilityUtils {
             }
         }.getOrDefault(false)
     }
+
+    /**
+     * هل خدمة إمكانية الوصول الخاصة بنا مفعّلة في إعدادات النظام؟ (ع٢٧-4)
+     */
+    fun isNateqAccessibilityServiceEnabled(context: Context): Boolean {
+        val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE)
+            as? AccessibilityManager
+        if (am != null) {
+            val enabledServices = runCatching {
+                am.getEnabledAccessibilityServiceList(
+                    android.accessibilityservice.AccessibilityServiceInfo
+                        .FEEDBACK_ALL_MASK
+                )
+            }.getOrNull()
+            if (enabledServices != null && enabledServices.any {
+                it.resolveInfo?.serviceInfo?.packageName == context.packageName
+            }) {
+                return true
+            }
+        }
+        return runCatching {
+            val enabled = Settings.Secure.getString(
+                context.contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ) ?: return false
+            enabled.split(':').any {
+                it.startsWith("${context.packageName}/") &&
+                    it.contains("NateqAccessibilityService")
+            }
+        }.getOrDefault(false)
+    }
 }

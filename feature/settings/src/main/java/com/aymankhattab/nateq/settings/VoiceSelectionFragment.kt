@@ -2022,6 +2022,38 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 "لاختبار مسار النطق مباشرةً: " +
                     "استخدم «اختبر إعلان المتصل» في قسم إعلان المتصل"
             )
+            sb.appendLine("")
+
+            // ── خدمات الشاشة وإمكانية الوصول (ع٢٧-77) ─────────────────
+            sb.appendLine("--- خدمات الشاشة وإمكانية الوصول (ع٢٧-77) ---")
+            val a11yEnabled = com.aymankhattab.nateq.util.AccessibilityUtils
+                .isNateqAccessibilityServiceEnabled(context)
+            val store = com.aymankhattab.nateq.core.audio.accessibility
+                .A11yStateStore.getInstance(context)
+            val isConnected = store?.isConnected() ?: false
+            val isPaused = store?.isPaused() ?: false
+            val untilEpoch = store?.getPausedUntilEpoch() ?: 0L
+            val pauseLevel = store?.getPauseLevel() ?: 1
+
+            sb.appendLine(
+                "الخدمة في الإعدادات: " +
+                    if (a11yEnabled) "مفعّلة ✓" else "معطّلة ✗"
+            )
+            sb.appendLine(
+                "حالة الاتصال: " +
+                    if (isConnected) "متصلة ✓" else "منفصلة ✗"
+            )
+            sb.appendLine(
+                "الإيقاف المؤقت: " +
+                    if (isPaused) {
+                        "نعم (مستوى $pauseLevel، حتى $untilEpoch)"
+                    } else {
+                        "لا (نشطة)"
+                    }
+            )
+            val fgPkg = com.aymankhattab.nateq.core.audio.accessibility
+                .AccessibilityBridge.foregroundPackage()
+            sb.appendLine("تطبيق الواجهة: ${fgPkg ?: "غير معروف"}")
 
             sb.toString()
         }

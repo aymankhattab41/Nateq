@@ -1,4 +1,23 @@
 <resources>
+    <string name="accessibility_service_label">Screen Services (Lord TTS)</string>
+    <string name="accessibility_service_description">Accessibility and screen reading services to enhance speech experience and expand messages</string>
+    <string name="a11y_tile_label">Screen Services</string>
+    <string name="a11y_status_active">Active</string>
+    <string name="a11y_status_paused">Paused</string>
+    <string name="a11y_status_disabled">Disabled in System</string>
+    <string name="a11y_pause_duration_title">Screen Services Pause Duration</string>
+    <string name="a11y_pause_15m">15 minutes</string>
+    <string name="a11y_pause_1h">1 hour</string>
+    <string name="a11y_pause_3h">3 hours</string>
+    <string name="a11y_pause_midnight">Until midnight</string>
+    <string name="a11y_pause_manual">Manual (until resumed)</string>
+    <string name="a11y_onboarding_title">Enable Screen Services</string>
+    <string name="a11y_onboarding_explanation">Screen services enable auto-expansion of truncated messages and live chat reading inside supported apps. No personal data or screen text is ever collected or transmitted outside your device.</string>
+    <string name="a11y_restricted_settings_title">Step 1: Allow Restricted Settings (Android 13+)</string>
+    <string name="a11y_restricted_settings_desc">Tap the button below to open App Info, then tap the menu (three dots at the top) and select \"Allow restricted settings\".</string>
+    <string name="a11y_open_app_details">Open App Info</string>
+    <string name="a11y_enable_service_button">Open Accessibility Settings</string>
+    <string name="a11y_service_enabled_announcement">Screen services enabled successfully</string>
 <string name="all_announcements_enabled">All announcements enabled</string>
 <string name="all_announcements_summary">Turning it off silently stops automatic announcements (time, battery, messages, notifications, caller)</string>
 <string name="announcement_turned_off">Off</string>
@@ -531,6 +550,9 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+- Screen and Accessibility Services: Automatic expansion of truncated messages, live chat reading, clipboard reading, typing echo, emergency shortcut, pause duration picker, and app whitelist policy
+- Audio DSP Processing Chain: 5-band parametric equalizer, dynamic range compressor, spatial panner, reverb, earcon generator, and dedicated audio routing
+- Category Resolution and Engine Safety (CategoryResolver): Prevention of silent default engine fallback, automatic Google TTS retry, and voice readiness handling
 - Comprehensive diagnostic logging at first speech: Added detailed log for bound engine, voices count, voiceId, and locale in AnnouncementSpeaker
 - Added text processing stage controls (time, currency, units, symbols, phone, Arabic normalization) and fixed blank caller number guard
 - Fix changelog crash: escape literal %% signs in changelog strings (%%) to prevent UnknownFormatConversionException when opening changelog dialog

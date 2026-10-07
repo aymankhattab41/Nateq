@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="accessibility_service_label">Screen Services (Lord TTS)</string>
+    <string name="accessibility_service_description">Accessibility and screen reading services to enhance speech experience and expand messages</string>
     <string name="voice_provider_system">System voice</string>
     <string name="voice_name_arabic">Arabic</string>
     <string name="voice_name_english">English</string>

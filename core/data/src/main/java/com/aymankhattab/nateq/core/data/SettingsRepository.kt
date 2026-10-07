@@ -37,7 +37,8 @@ class SettingsRepository(context: Context) :
     DevicePrefs,
     ConvertPrefs,
     CallerNamesStore,
-    UpdatePrefs {
+    UpdatePrefs,
+    AccessibilityPrefs {
 
     companion object {
         private const val TAG = "NATEQ_TTS"
@@ -1204,6 +1205,15 @@ class SettingsRepository(context: Context) :
             .putFloat("volume_$category", volume.coerceIn(0f, 1f))
             .apply()
 
+    override fun hasExplicitSpeechRateForCategory(category: String): Boolean =
+        prefs.contains("speech_rate_$category")
+
+    override fun hasExplicitPitchForCategory(category: String): Boolean =
+        prefs.contains("pitch_$category")
+
+    override fun hasExplicitVolumeForCategory(category: String): Boolean =
+        prefs.contains("volume_$category")
+
     /** معايرة RMS الدائمة لكل محرك (بند الأوامر د.3.3): كسب التطبيع
      *  المستقر تحت `rms_calibration_<engine>` — تُصدَّر/تُستورَد تلقائياً
      *  (لا تبدأ بشرطة سفلية)، وتُمسح مع «استعادة الافتراضيات». القارئ
@@ -2193,6 +2203,7 @@ class SettingsRepository(context: Context) :
             value.coerceIn(CALLER_INTERVAL_MIN, CALLER_INTERVAL_MAX)
         key == "power_saver_battery_threshold" -> value.coerceIn(0, 100)
         key == "battery_sound_cue_mode" -> value.coerceIn(0, 2)
+        key == "a11y_service_pause_level" -> value.coerceIn(1, 2)
         else -> value
     }
 
@@ -2390,4 +2401,61 @@ class SettingsRepository(context: Context) :
                 .apply()
         }
     }
+
+    // ============ إعدادات خدمة إمكانية الوصول وخدمات الشاشة ============
+
+    override fun isAccessibilityFeatureEnabled(featureKey: String): Boolean =
+        prefs.getBoolean(featureKey, false)
+
+    override fun setAccessibilityFeatureEnabled(
+        featureKey: String,
+        enabled: Boolean
+    ) = prefs.edit().putBoolean(featureKey, enabled).apply()
+
+    override fun isA11yPaused(): Boolean =
+        prefs.getBoolean("a11y_service_paused", false)
+
+    override fun setA11yPaused(paused: Boolean) =
+        prefs.edit().putBoolean("a11y_service_paused", paused).apply()
+
+    override fun getA11yPausedUntil(): Long =
+        prefs.getLong("a11y_service_paused_until_epoch", 0L)
+
+    override fun setA11yPausedUntil(untilEpoch: Long) =
+        prefs.edit().putLong("a11y_service_paused_until_epoch", untilEpoch)
+            .apply()
+
+    override fun getA11yPauseLevel(): Int =
+        prefs.getInt("a11y_service_pause_level", 1)
+
+    override fun setA11yPauseLevel(level: Int) =
+        prefs.edit().putInt("a11y_service_pause_level", level.coerceIn(1, 2))
+            .apply()
+
+    fun setA11yPausedState(paused: Boolean, untilEpoch: Long, level: Int) {
+        prefs.edit()
+            .putBoolean("a11y_service_paused", paused)
+            .putLong("a11y_service_paused_until_epoch", untilEpoch)
+            .putInt("a11y_service_pause_level", level.coerceIn(1, 2))
+            .apply()
+    }
+
+    override fun getA11yAllowedPackages(): Set<String>? =
+        prefs.getStringSet("a11y_allowed_packages", null)?.toSet()
+
+    override fun setA11yAllowedPackages(packages: Set<String>?) {
+        if (packages == null) {
+            prefs.edit().remove("a11y_allowed_packages").apply()
+        } else {
+            prefs.edit()
+                .putStringSet("a11y_allowed_packages", packages.toMutableSet())
+                .apply()
+        }
+    }
+
+    override fun isA11yAllowAllApps(): Boolean =
+        prefs.getBoolean("a11y_allow_all_apps", false)
+
+    override fun setA11yAllowAllApps(allowAll: Boolean) =
+        prefs.edit().putBoolean("a11y_allow_all_apps", allowAll).apply()
 }

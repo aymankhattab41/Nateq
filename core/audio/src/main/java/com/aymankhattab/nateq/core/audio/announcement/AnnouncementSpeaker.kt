@@ -26,6 +26,8 @@ import com.aymankhattab.nateq.core.audio.engine.Segment
 import com.aymankhattab.nateq.core.audio.engine.isNumericOnly
 import com.aymankhattab.nateq.engine.SpeechPart
 import com.aymankhattab.nateq.engine.TextProcessor
+import android.os.Bundle
+import com.aymankhattab.nateq.core.audio.providers.EngineBindVerifier
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.data.SettingsChangeProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
@@ -790,6 +792,16 @@ class AnnouncementSpeaker(
     // لخطأ ERROR_NOT_INSTALLED_YET
     private val errorRetryCountMap = ConcurrentHashMap<String, Int>()
 
+    internal data class UtteranceData(
+        val cleanText: String,
+        val queueMode: Int,
+        val params: Bundle?,
+        val utteranceId: String
+    )
+    private val pendingUtteranceDataMap =
+        ConcurrentHashMap<String, UtteranceData>()
+    private val rebindAttemptMap = ConcurrentHashMap<String, Int>()
+
     @VisibleForTesting
     internal fun getRetryCountForTesting(utteranceId: String): Int {
         return retryCountMap.getOrDefault(utteranceId, 0)
@@ -864,6 +876,7 @@ class AnnouncementSpeaker(
     /** إبطال صريح لكل المعرّفات النشطة (دورة FLUSH جديدة أو إيقاف/إغلاق). */
     internal fun invalidateActiveUtterances() {
         activeUtteranceIds.clear()
+        pendingUtteranceDataMap.clear()
     }
 
     /** تغيير الصوت المفضّل لدورات النطق القادمة دون هدم اتصال المحرك */
@@ -967,16 +980,24 @@ class AnnouncementSpeaker(
         val fallbackEngine = runCatching {
             settings?.getAnnouncementFallbackEngine()
         }.getOrNull()
-        // مسارٌ جاهز: المثيل الحالي مرتبط فعلاً بنفس المحرك المطلوب —
-        // نداء فوري بلا بوابة (لا تهيئة جديدة ولا انتظار دورة).
-        if (tts != null && boundEngine == requested) {
+        val defaultCategoryEngine = settings?.getEngineForCategory(
+            com.aymankhattab.nateq.core.data.SettingsRepository
+                .VOICE_CATEGORY_DEFAULT
+        )
+        // ع٢٧-A1 بند 2: قارن boundEngine بالمحرك المحسوم لا بالمطلوب
+        val resolved = safeEngineForAnnouncement(
+            appContext,
+            requested,
+            defaultCategoryEngine,
+            languageEngine,
+            fallbackEngine
+        )
+        // مسارٌ جاهز: المثيل الحالي مرتبط فعلاً بنفس المحرك المحسوم
+        if (tts != null && boundEngine != null && boundEngine == resolved) {
             onReady(true)
             return
         }
-        // خلاف ذلك يُحسم القرار عبر البوابة (بند [5]): إن كانت تهيئةٌ
-        // ما قائمة يُصرف الخطاف عند اكتمال محركٍ مطابق داخل تلك الدورة،
-        // وإن كان المحرك مختلفاً ينتظر إعادة تهيئةٍ تُسلسل بعدها — فلا
-        // يُنطق النص أبداً بمحركٍ حُسم لاحقاً عن التهيئة الجارية.
+        // خلاف ذلك يُحسم القرار عبر البوابة
         when (initGate.enqueue(requested, onReady)) {
             InitGate.Decision.JOIN -> return
             InitGate.Decision.START ->
@@ -1014,6 +1035,33 @@ class AnnouncementSpeaker(
             languageEngine,
             fallbackEngine
         )
+        if (engine.isNullOrBlank()) {
+            // ع٢٧-A1 بند 1: لا ربط بلا محرك صريح
+            Log.w(
+                TAG,
+                "[Speaker] لا يوجد محرك صريح للإعلانات — إنهاء فوري ونغمة خطأ"
+            )
+            boundEngine = null
+            tts = null
+            playNoEngineCue()
+            val completion = initGate.complete(false)
+            completion.served.forEach { cb -> cb(false) }
+            if (completion.hasNext) {
+                val nextLanguageEngine = runCatching {
+                    settings?.getEngineForLanguage(locale.language)
+                }.getOrNull()
+                val nextFallbackEngine = runCatching {
+                    settings?.getAnnouncementFallbackEngine()
+                }.getOrNull()
+                startInit(
+                    completion.nextEngine,
+                    nextLanguageEngine,
+                    nextFallbackEngine,
+                    locale
+                )
+            }
+            return
+        }
         boundEngine = engine
         var newTts: TextToSpeech? = null
         val timeoutRunnable = Runnable {
@@ -1021,16 +1069,16 @@ class AnnouncementSpeaker(
             val completion = initGate.complete(false)
             completion.served.forEach { cb -> cb(false) }
             if (completion.hasNext) {
-                val languageEngine = runCatching {
+                val nextLanguageEngine = runCatching {
                     settings?.getEngineForLanguage(locale.language)
                 }.getOrNull()
-                val fallbackEngine = runCatching {
+                val nextFallbackEngine = runCatching {
                     settings?.getAnnouncementFallbackEngine()
                 }.getOrNull()
                 startInit(
                     completion.nextEngine,
-                    languageEngine,
-                    fallbackEngine,
+                    nextLanguageEngine,
+                    nextFallbackEngine,
                     locale
                 )
             }
@@ -1039,29 +1087,71 @@ class AnnouncementSpeaker(
         // الربط المباشر بحزمة المحرك المحسومة صراحة يمنع الحلقات الذاتية.
         newTts = TextToSpeech(appContext, { status ->
             mainHandler.removeCallbacks(timeoutRunnable)
-            val success = status == TextToSpeech.SUCCESS
+            var success = status == TextToSpeech.SUCCESS
+            // ع٢٧-A1 بند 3: فحص EngineBindVerifier بعد onInit
+            if (success) {
+                val actualVoices = runCatching {
+                    newTts?.voices?.map { it.name } ?: emptyList()
+                }.getOrDefault(emptyList())
+                if (EngineBindVerifier.isWronglyBoundToGoogle(
+                        engine,
+                        actualVoices
+                    )
+                ) {
+                    val retries = rebindAttemptMap.getOrDefault(engine, 0)
+                    if (EngineBindVerifier.shouldRetryRebind(retries)) {
+                        rebindAttemptMap[engine] = retries + 1
+                        Log.w(
+                            TAG,
+                            "[Speaker] Engine $engine wrongly bound to Google" +
+                            " — retry rebind once"
+                        )
+                        newTts?.shutdown()
+                        tts = null
+                        startInit(
+                            finalEngine,
+                            languageEngine,
+                            fallbackEngine,
+                            locale
+                        )
+                        return@TextToSpeech
+                    } else {
+                        Log.e(
+                            TAG,
+                            "[Speaker] Engine $engine wrongly bound to Google" +
+                            " after retry — failing without fallback"
+                        )
+                        rebindAttemptMap.remove(engine)
+                        success = false
+                        playNoEngineCue()
+                    }
+                } else {
+                    rebindAttemptMap.remove(engine)
+                }
+            }
             if (success) {
                 // لا تُخزَّن إلا المثيلات الناجحة؛ المثيل الفاشل يُهمَل ولا
                 // يظل "جاهزاً" للدورات اللاحقة (كان يفسد المتحدث مسبقاً).
                 tts = newTts
             } else {
                 tts = null
+                newTts?.shutdown()
             }
             // تصفية البوابة خارجها: تُصرف النداءات المطابقة لمحرك هذه
             // التهيئة فقط، وما بقي بمحركٍ مختلف يُعاد تهيئته بعدها.
             val completion = initGate.complete(success)
             completion.served.forEach { cb -> cb(success) }
             if (completion.hasNext) {
-                val languageEngine = runCatching {
+                val nextLanguageEngine = runCatching {
                     settings?.getEngineForLanguage(locale.language)
                 }.getOrNull()
-                val fallbackEngine = runCatching {
+                val nextFallbackEngine = runCatching {
                     settings?.getAnnouncementFallbackEngine()
                 }.getOrNull()
                 startInit(
                     completion.nextEngine,
-                    languageEngine,
-                    fallbackEngine,
+                    nextLanguageEngine,
+                    nextFallbackEngine,
                     locale
                 )
             }
@@ -1077,6 +1167,7 @@ class AnnouncementSpeaker(
                     override fun onDone(utteranceId: String?) {
                         if (utteranceId != null) {
                             activeUtteranceIds.remove(utteranceId)
+                            pendingUtteranceDataMap.remove(utteranceId)
                             pendingUnitsForResume.removeAll {
                                 it.first == utteranceId
                             }
@@ -1109,8 +1200,7 @@ class AnnouncementSpeaker(
                         utteranceId: String?,
                         errorCode: Int
                     ) {
-                        // VZ2: معالجة ERROR_NOT_INSTALLED_YET (-9, API 21+) —
-                        // إعادة محاولة بعد 300ms بدل handleFailure المباشر
+                        // VZ2 / ع٢٧-A1: معالجة ERROR_NOT_INSTALLED_YET (-9)
                         if (utteranceId != null &&
                             errorCode == TextToSpeech.ERROR_NOT_INSTALLED_YET
                         ) {
@@ -1118,22 +1208,28 @@ class AnnouncementSpeaker(
                                 errorRetryCountMap.getOrDefault(utteranceId, 0)
                             if (retries == 0) {
                                 errorRetryCountMap[utteranceId] = 1
+                                val data = pendingUtteranceDataMap[utteranceId]
                                 mainHandler.postDelayed({
-                                    // إعادة المحاولة: نعيد إرسال نفس النص
                                     val currentTts = tts
-                                    if (currentTts != null) {
-                                        // نحاول إعادة النطق لنفس utteranceId
-                                        // سنحتاج للوصول للنص والمعاملات
-                                        // للبساطة، نستدعي handleFailure
-                                        // بعد إعادة المحاولة
-                                        // في تنفيذ كامل، سنخزن النص والمعاملات
+                                    if (currentTts != null &&
+                                        data != null &&
+                                        isActiveUtterance(utteranceId)
+                                    ) {
+                                        val status = currentTts.speak(
+                                            data.cleanText,
+                                            data.queueMode,
+                                            data.params,
+                                            data.utteranceId
+                                        )
+                                        if (status == TextToSpeech.ERROR) {
+                                            handleFailure(utteranceId)
+                                        }
+                                    } else {
+                                        handleFailure(utteranceId)
                                     }
-                                    // بعد 300ms، إذا فشل مجدداً → handleFailure
-                                    handleFailure(utteranceId)
                                 }, 300)
                                 return
                             }
-                            // إعادة المحاولة مستنفدة
                             errorRetryCountMap.remove(utteranceId)
                         }
                         handleFailure(utteranceId)
@@ -1154,6 +1250,7 @@ class AnnouncementSpeaker(
                     private fun handleFailure(utteranceId: String?) {
                         if (utteranceId != null) {
                             activeUtteranceIds.remove(utteranceId)
+                            pendingUtteranceDataMap.remove(utteranceId)
                         }
                         val shouldClean = (utteranceId != null &&
                             utteranceId == lastQueuedUtteranceId) ||
@@ -2403,6 +2500,12 @@ speechCycle.incrementAndGet()
         }
         val utteranceId = assignedUtteranceId ?: nextUtteranceId()
         trackUtterance(utteranceId)
+        pendingUtteranceDataMap[utteranceId] = UtteranceData(
+            cleanText = cleanText,
+            queueMode = queueMode,
+            params = params,
+            utteranceId = utteranceId
+        )
         if (assignedUtteranceId == null) {
             lastQueuedUtteranceId = utteranceId
         }
@@ -2410,6 +2513,7 @@ speechCycle.incrementAndGet()
         // المحركُ رفض المعرّفَ فلن يُشعِر بعودته لاحقاً، فأخرجه من السجل
         if (status == TextToSpeech.ERROR) {
             activeUtteranceIds.remove(utteranceId)
+            pendingUtteranceDataMap.remove(utteranceId)
         }
         if (status == TextToSpeech.ERROR && attempt < 4) {
             mainHandler.postDelayed({

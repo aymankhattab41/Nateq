@@ -48,6 +48,12 @@ class AnnouncementSpeakerFocusTest {
 
     @org.junit.Before
     fun setUp() {
+        val repo = com.aymankhattab.nateq.core.data.SettingsRepository(context)
+        repo.setEngineForCategory(
+            com.aymankhattab.nateq.core.data.SettingsRepository
+                .VOICE_CATEGORY_DEFAULT,
+            "com.google.android.tts"
+        )
     }
 
     private fun speaker(): AnnouncementSpeaker = AnnouncementSpeaker(context)

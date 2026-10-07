@@ -124,6 +124,24 @@
                 android:resource="@xml/tts_engine" />
         </service>
 
+        <!-- ============================================= -->
+        <!-- خدمة إمكانية الوصول وقراءة الشاشة (ع٢٧-1)       -->
+        <!-- ============================================= -->
+        <service
+            android:name="com.aymankhattab.nateq.core.audio.accessibility.NateqAccessibilityService"
+            android:process=":tts"
+            android:exported="true"
+            android:label="@string/accessibility_service_label"
+            android:description="@string/accessibility_service_description"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/nateq_accessibility_config" />
+        </service>
+
         <!-- شاشة التطبيق الرئيسية (أيقونة الشاشة الرئيسية) -->
         <activity
             android:name=".settings.SettingsActivity"
@@ -141,6 +159,12 @@
             android:name=".settings.FirstRunSetupActivity"
             android:exported="false"
             android:label="@string/first_run_welcome_title" />
+
+        <!-- شاشة تفعيل خدمات إمكانية الوصول وقراءة الشاشة (ع٢٧-4) -->
+        <activity
+            android:name=".settings.AccessibilityOnboardingActivity"
+            android:exported="false"
+            android:label="@string/a11y_onboarding_title" />
 
         <!-- Activity لفحص بيانات TTS (اللغات/الأصوات المتاحة) — مطلوبة من سامسونج -->
         <activity
@@ -273,6 +297,28 @@
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
+
+        <!-- بلاطة الإعدادات السريعة لخدمات الشاشة (ع٢٧-16) -->
+        <service
+            android:name=".settings.ScreenServicesTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_number_reading"
+            android:label="@string/a11y_tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- مستقبل استئناف خدمات الشاشة التلقائي (ع٢٧-14) -->
+        <receiver
+            android:name="com.aymankhattab.nateq.core.audio.accessibility.A11yResumeReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.aymankhattab.nateq.action.A11Y_RESUME" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
 
         <!-- FileProvider: يعرض ملف الـ APK المُنزَل لمثبّت الحزم (package installer)
