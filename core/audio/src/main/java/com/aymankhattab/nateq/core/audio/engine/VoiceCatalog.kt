@@ -6,6 +6,7 @@ import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
 import android.util.Log
+import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
@@ -100,33 +101,56 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             val engines = EnginePicker.installedEngines(context)
                 .filterNot { EnginePicker.isScreenReader(it.packageName) }
                 .filterNot { isBlacklisted(it.packageName) }
-            val embeddedPkg = VocalizerEmbeddedVoiceProvider.PROVIDER_ID
+            val vocalizerPkg = VocalizerEmbeddedVoiceProvider.PROVIDER_ID
+            val acapelaPkg = AcapelaEmbeddedVoiceProvider.PROVIDER_ID
+            val embeddedPkgs = setOf(vocalizerPkg, acapelaPkg)
             val externalEngines = engines.filterNot {
-                it.packageName == embeddedPkg
+                it.packageName in embeddedPkgs
             }
-            val hasEmbedded = engines.any { it.packageName == embeddedPkg }
-            val embeddedVoices = if (hasEmbedded) {
+            val embeddedVoicesMap = mutableMapOf<String, List<Voice>>()
+            if (engines.any { it.packageName == vocalizerPkg }) {
                 try {
                     val vocalizer = VocalizerEmbeddedVoiceProvider(context)
                     if (vocalizer.isConfigured()) {
-                        vocalizer.listVoices(Locale.ROOT).map { desc ->
+                        val vList = vocalizer.listVoices(Locale.ROOT).map { d ->
                             Voice(
-                                desc.displayName,
-                                desc.locale,
+                                d.displayName,
+                                d.locale,
                                 Voice.QUALITY_HIGH,
                                 Voice.LATENCY_LOW,
                                 false,
                                 offlineFeature
                             )
                         }
-                    } else {
-                        emptyList()
+                        if (vList.isNotEmpty()) {
+                            embeddedVoicesMap[vocalizerPkg] = vList
+                        }
                     }
                 } catch (_: Throwable) {
-                    emptyList()
+                    // تجاهل أي خطأ في أصوات Vocalizer المدمجة
                 }
-            } else {
-                emptyList()
+            }
+            if (engines.any { it.packageName == acapelaPkg }) {
+                try {
+                    val acapela = AcapelaEmbeddedVoiceProvider(context)
+                    if (acapela.isConfigured()) {
+                        val aList = acapela.listVoices(Locale.ROOT).map { d ->
+                            Voice(
+                                d.displayName,
+                                d.locale,
+                                Voice.QUALITY_HIGH,
+                                Voice.LATENCY_LOW,
+                                false,
+                                offlineFeature
+                            )
+                        }
+                        if (aList.isNotEmpty()) {
+                            embeddedVoicesMap[acapelaPkg] = aList
+                        }
+                    }
+                } catch (_: Throwable) {
+                    // تجاهل أي خطأ في أصوات Acapela المدمجة
+                }
             }
             // الفحص بالتوازي مع سقف 2-3 محركات متزامنة عبر Semaphore
             // لمنع فتح مثيلات غير محدودة في نفس اللحظة وإغراق الموارد.
@@ -147,8 +171,8 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                         .awaitAll()
                         .toMap()
                         .toMutableMap()
-                    if (hasEmbedded && embeddedVoices.isNotEmpty()) {
-                        externalResults[embeddedPkg] = embeddedVoices
+                    for ((pkg, vList) in embeddedVoicesMap) {
+                        externalResults[pkg] = vList
                     }
                     externalResults
                 }

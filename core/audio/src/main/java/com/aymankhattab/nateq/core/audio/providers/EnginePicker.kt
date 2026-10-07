@@ -87,7 +87,21 @@ object EnginePicker {
                 )
             }
         } catch (_: Throwable) {
-            // تجاهل أي خطأ في فحص المحرك المدمج
+            // تجاهل أي خطأ في فحص محرك Vocalizer المدمج
+        }
+
+        try {
+            val acapela = AcapelaEmbeddedVoiceProvider(context)
+            if (acapela.isConfigured()) {
+                engines.add(
+                    InstalledEngine(
+                        AcapelaEmbeddedVoiceProvider.PROVIDER_ID,
+                        acapela.displayName
+                    )
+                )
+            }
+        } catch (_: Throwable) {
+            // تجاهل أي خطأ في فحص محرك Acapela المدمج
         }
 
         val result = engines.distinctBy { it.packageName }

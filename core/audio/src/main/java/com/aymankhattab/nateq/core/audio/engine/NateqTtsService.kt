@@ -16,6 +16,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.core.audio.announcement.ArabicSpeechNormalizer
 import com.aymankhattab.nateq.core.audio.announcement.InterruptionSensors
+import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
@@ -331,7 +332,8 @@ class NateqTtsService : TextToSpeechService() {
 
         val providers = listOf(
             SystemVoiceProvider(applicationContext, settings),
-            VocalizerEmbeddedVoiceProvider(applicationContext)
+            VocalizerEmbeddedVoiceProvider(applicationContext),
+            AcapelaEmbeddedVoiceProvider(applicationContext)
         )
         catalog = VoiceCatalog(providers)
         requestHandler = SynthesisRequestHandler(catalog, settings)
