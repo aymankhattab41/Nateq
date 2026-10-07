@@ -5,6 +5,7 @@
     <string name="accessibility_service_label">خدمات الشاشة (Lord TTS)</string>
     <string name="accessibility_service_description">خدمات إمكانية الوصول وقراءة الشاشة لتحسين تجربة النطق وتوسيع الرسائل</string>
     <string name="voice_provider_system">صوت النظام</string>
+    <string name="voice_provider_vocalizer_embedded">Vocalizer Expressive 2 (مدمج)</string>
     <string name="voice_name_arabic">العربية</string>
     <string name="voice_name_english">الإنجليزية</string>
 
