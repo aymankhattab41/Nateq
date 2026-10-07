@@ -29,3 +29,7 @@ local.properties
 
 # كاش وأسرار wrangler (Cloudflare) — لا تُرفع أبداً (قد تحوي بيانات حساب)
 relay-worker/.wrangler/
+
+# ملفات الحزم والأصوات الكبيرة
+*.apk
+/VocalizerEx2/
