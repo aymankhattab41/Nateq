@@ -74,9 +74,25 @@ object EnginePicker {
                 if (pkg == context.packageName) return@mapNotNull null
                 InstalledEngine(pkg, ri.loadLabel(pm).toString())
             }
-            .distinctBy { it.packageName }
-        cache = CachedEngines(now, engines)
-        return engines
+            .toMutableList()
+
+        try {
+            val vocalizer = VocalizerEmbeddedVoiceProvider(context)
+            if (vocalizer.isConfigured()) {
+                engines.add(
+                    InstalledEngine(
+                        VocalizerEmbeddedVoiceProvider.PROVIDER_ID,
+                        vocalizer.displayName
+                    )
+                )
+            }
+        } catch (_: Throwable) {
+            // تجاهل أي خطأ في فحص المحرك المدمج
+        }
+
+        val result = engines.distinctBy { it.packageName }
+        cache = CachedEngines(now, result)
+        return result
     }
 
 /** كل حزم محركات TTS المثبتة في النظام (تُستعلم ديناميكياً) */

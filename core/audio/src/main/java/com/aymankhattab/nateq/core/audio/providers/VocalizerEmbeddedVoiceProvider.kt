@@ -13,8 +13,6 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Locale
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 /**
  * مزود صوت محلي مدمج لمحرك Nuance Vocalizer Expressive 2 (Embedded Engine).
@@ -113,7 +111,7 @@ class VocalizerEmbeddedVoiceProvider(
                             id = "vocalizer_${v.voiceName.lowercase()}",
                             providerId = PROVIDER_ID,
                             displayName = v.voiceName,
-                            locale = Locale(lang)
+                            locale = Locale.forLanguageTag(lang)
                         )
                     )
                 }
@@ -142,9 +140,11 @@ class VocalizerEmbeddedVoiceProvider(
             val eng = engine ?: return@withContext
 
             val targetVoiceName = desiredVoiceName ?: voice.displayName
+            val cleanTarget = targetVoiceName.removePrefix("vocalizer_")
             val voices = eng.voiceList
             val matchedVoice = voices?.firstOrNull {
-                it.voiceName.equals(targetVoiceName, ignoreCase = true)
+                it.voiceName.equals(targetVoiceName, ignoreCase = true) ||
+                    it.voiceName.equals(cleanTarget, ignoreCase = true)
             } ?: voices?.firstOrNull()
 
             if (matchedVoice != null) {
@@ -161,8 +161,6 @@ class VocalizerEmbeddedVoiceProvider(
 
             val sampleRate = matchedVoice?.sampleRate ?: 22050
             onFormatInfo(sampleRate, 1)
-
-            val latch = CountDownLatch(1)
 
             eng.setAudioOutputListener(
                 object : VocalizerAudioOutputListener {
@@ -185,7 +183,6 @@ class VocalizerEmbeddedVoiceProvider(
 
             try {
                 eng.speak(text)
-                latch.await(15, TimeUnit.SECONDS)
             } finally {
                 eng.stop()
             }

@@ -7,6 +7,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
+import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
 import com.aymankhattab.nateq.util.LanguageCode
@@ -99,12 +100,40 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             val engines = EnginePicker.installedEngines(context)
                 .filterNot { EnginePicker.isScreenReader(it.packageName) }
                 .filterNot { isBlacklisted(it.packageName) }
+            val embeddedPkg = VocalizerEmbeddedVoiceProvider.PROVIDER_ID
+            val externalEngines = engines.filterNot {
+                it.packageName == embeddedPkg
+            }
+            val hasEmbedded = engines.any { it.packageName == embeddedPkg }
+            val embeddedVoices = if (hasEmbedded) {
+                try {
+                    val vocalizer = VocalizerEmbeddedVoiceProvider(context)
+                    if (vocalizer.isConfigured()) {
+                        vocalizer.listVoices(Locale.ROOT).map { desc ->
+                            Voice(
+                                desc.displayName,
+                                desc.locale,
+                                Voice.QUALITY_HIGH,
+                                Voice.LATENCY_LOW,
+                                false,
+                                offlineFeature
+                            )
+                        }
+                    } else {
+                        emptyList()
+                    }
+                } catch (_: Throwable) {
+                    emptyList()
+                }
+            } else {
+                emptyList()
+            }
             // الفحص بالتوازي مع سقف 2-3 محركات متزامنة عبر Semaphore
             // لمنع فتح مثيلات غير محدودة في نفس اللحظة وإغراق الموارد.
             val semaphore = Semaphore(MAX_CONCURRENT_ENGINE_PROBES)
             val voicesByEngine = try {
                 coroutineScope {
-                    engines
+                    val externalResults = externalEngines
                         .map { engine ->
                             async(Dispatchers.IO) {
                                 val voices = semaphore.withPermit {
@@ -117,6 +146,11 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                         }
                         .awaitAll()
                         .toMap()
+                        .toMutableMap()
+                    if (hasEmbedded && embeddedVoices.isNotEmpty()) {
+                        externalResults[embeddedPkg] = embeddedVoices
+                    }
+                    externalResults
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // إلغاء تعاوني (onStop/استباق): لا نصطاده مع بقية الأخطاء.
