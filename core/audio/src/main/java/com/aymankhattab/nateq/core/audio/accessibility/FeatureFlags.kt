@@ -31,6 +31,8 @@ object FeatureFlags {
     const val FEATURE_WHERE_AM_I = "a11y_where_am_i"
     const val FEATURE_OCR_READING = "a11y_ocr_reading"
     const val FEATURE_BLUETOOTH_ANNOUNCEMENT = "a11y_bluetooth_announcement"
+    const val FEATURE_SMART_PAUSE_CALL = "a11y_smart_pause_call"
+    const val FEATURE_SMART_PAUSE_GAME = "a11y_smart_pause_game"
 
     val ALL_FEATURES = listOf(
         FEATURE_READ_MORE_EXPAND,
@@ -53,7 +55,9 @@ object FeatureFlags {
         FEATURE_CALL_KEY_ACTIONS,
         FEATURE_WHERE_AM_I,
         FEATURE_OCR_READING,
-        FEATURE_BLUETOOTH_ANNOUNCEMENT
+        FEATURE_BLUETOOTH_ANNOUNCEMENT,
+        FEATURE_SMART_PAUSE_CALL,
+        FEATURE_SMART_PAUSE_GAME
     )
 
     /**

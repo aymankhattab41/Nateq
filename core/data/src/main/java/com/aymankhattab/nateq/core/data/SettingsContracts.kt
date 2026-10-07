@@ -825,4 +825,16 @@ interface AccessibilityPrefs {
 
     /** تعيين السماح لجميع التطبيقات. */
     fun setA11yAllowAllApps(allowAll: Boolean)
+
+    /** هل الإيقاف المؤقت الذكي أثناء المكالمات مفعّل؟ */
+    fun isA11ySmartPauseCallEnabled(): Boolean
+
+    /** تعيين تفعيل الإيقاف المؤقت الذكي أثناء المكالمات. */
+    fun setA11ySmartPauseCallEnabled(enabled: Boolean)
+
+    /** هل الإيقاف المؤقت الذكي أثناء الألعاب مفعّل؟ */
+    fun isA11ySmartPauseGameEnabled(): Boolean
+
+    /** تعيين تفعيل الإيقاف المؤقت الذكي أثناء الألعاب. */
+    fun setA11ySmartPauseGameEnabled(enabled: Boolean)
 }

@@ -2,16 +2,18 @@ package com.aymankhattab.nateq.settings
 
 import android.content.Context
 import android.content.Intent
-import android.widget.Toast
+import android.view.View
+import android.widget.TextView
 import com.aymankhattab.nateq.core.audio.accessibility.A11yPauseScheduler
 import com.aymankhattab.nateq.core.audio.accessibility.A11yStateStore
 import com.aymankhattab.nateq.core.audio.accessibility.AppPolicy
 import com.aymankhattab.nateq.core.audio.accessibility.FeatureFlags
-import com.aymankhattab.nateq.core.audio.accessibility.NateqAccessibilityService
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.util.AccessibilityUtils
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.switchmaterial.SwitchMaterial
 import java.util.Calendar
 
 /**
@@ -20,6 +22,7 @@ import java.util.Calendar
  * - فحص تفعيل الخدمة في النظام وتوجيه المستخدم لشاشة التهيئة.
  * - حوار الإيقاف المؤقت لمدد محددة (15 دقيقة، ساعة، منتصف الليل، يدوي).
  * - حوار قائمة التطبيقات المسموحة (AppPolicy).
+ * - مفاتيح جميع ميزات قراءة الشاشة والمحادثات.
  */
 class ScreenServicesCardController(
     private val context: Context,
@@ -28,6 +31,8 @@ class ScreenServicesCardController(
 ) {
 
     private val stateStore = A11yStateStore.getInstance(context)
+
+    private var tvStatus: TextView? = null
 
     fun isServiceEnabledInSystem(): Boolean {
         return AccessibilityUtils.isNateqAccessibilityServiceEnabled(
@@ -51,6 +56,105 @@ class ScreenServicesCardController(
                 context.getString(R.string.a11y_status_active)
             }
         }
+    }
+
+    fun setup(root: View) {
+        tvStatus = root.findViewById(R.id.tv_a11y_services_status)
+
+        val btnSetup =
+            root.findViewWithTag<MaterialButton>("btn_a11y_setup_service")
+        btnSetup?.setOnClickListener { openOnboarding() }
+
+        val btnPause =
+            root.findViewWithTag<MaterialButton>("btn_a11y_pause_duration")
+        btnPause?.setOnClickListener {
+            showPauseDurationDialog { updateUiState() }
+        }
+
+        val btnAllowedApps =
+            root.findViewWithTag<MaterialButton>("btn_a11y_allowed_apps")
+        btnAllowedApps?.setOnClickListener {
+            showAppPolicyDialog { updateUiState() }
+        }
+
+        bindSwitch(
+            root,
+            "switch_a11y_read_more",
+            FeatureFlags.FEATURE_READ_MORE_EXPAND
+        )
+        bindSwitch(
+            root,
+            "switch_a11y_chat_live",
+            FeatureFlags.FEATURE_CHAT_LIVE_READING
+        )
+        bindSwitch(
+            root,
+            "switch_a11y_chat_summary",
+            FeatureFlags.FEATURE_CHAT_SUMMARY
+        )
+        bindSwitch(
+            root,
+            "switch_a11y_typing_echo",
+            FeatureFlags.FEATURE_TYPING_ECHO
+        )
+        bindSwitch(
+            root,
+            "switch_a11y_otp_reading",
+            FeatureFlags.FEATURE_OTP_READING
+        )
+        bindSwitch(
+            root,
+            "switch_a11y_url_shortening",
+            FeatureFlags.FEATURE_URL_SHORTENING
+        )
+        bindSwitch(
+            root,
+            "switch_a11y_popup",
+            FeatureFlags.FEATURE_POPUP_ANNOUNCEMENT
+        )
+        bindSwitch(
+            root,
+            "switch_a11y_progress",
+            FeatureFlags.FEATURE_PROGRESS_MONITORING
+        )
+        bindSwitch(
+            root,
+            "switch_a11y_bluetooth",
+            FeatureFlags.FEATURE_BLUETOOTH_ANNOUNCEMENT
+        )
+
+        val switchCall = root.findViewWithTag<SwitchMaterial>(
+            "switch_a11y_smart_pause_call"
+        )
+        switchCall?.isChecked = settings.isA11ySmartPauseCallEnabled()
+        switchCall?.setOnCheckedChangeListener { _, checked ->
+            settings.setA11ySmartPauseCallEnabled(checked)
+            onStatusChanged()
+        }
+
+        val switchGame = root.findViewWithTag<SwitchMaterial>(
+            "switch_a11y_smart_pause_game"
+        )
+        switchGame?.isChecked = settings.isA11ySmartPauseGameEnabled()
+        switchGame?.setOnCheckedChangeListener { _, checked ->
+            settings.setA11ySmartPauseGameEnabled(checked)
+            onStatusChanged()
+        }
+
+        updateUiState()
+    }
+
+    private fun bindSwitch(root: View, tag: String, feature: String) {
+        val sw = root.findViewWithTag<SwitchMaterial>(tag) ?: return
+        sw.isChecked = settings.isAccessibilityFeatureEnabled(feature)
+        sw.setOnCheckedChangeListener { _, checked ->
+            settings.setAccessibilityFeatureEnabled(feature, checked)
+            onStatusChanged()
+        }
+    }
+
+    fun updateUiState() {
+        tvStatus?.text = getServiceStatusText()
     }
 
     fun openOnboarding() {
@@ -97,10 +201,13 @@ class ScreenServicesCardController(
 
                 stateStore?.setPaused(paused, untilEpoch, 1)
                 if (paused && untilEpoch > now) {
-                    A11yPauseScheduler.scheduleResumeAlarm(context, untilEpoch)
+                    A11yPauseScheduler.scheduleResumeAlarm(
+                        context, untilEpoch
+                    )
                 } else if (!paused) {
                     A11yPauseScheduler.cancelResumeAlarm(context)
                 }
+                updateUiState()
                 onStatusChanged()
                 onSelected()
             }
@@ -111,6 +218,7 @@ class ScreenServicesCardController(
     fun resumeService() {
         stateStore?.setPaused(false, 0L, 1)
         A11yPauseScheduler.cancelResumeAlarm(context)
+        updateUiState()
         onStatusChanged()
     }
 
@@ -139,7 +247,9 @@ class ScreenServicesCardController(
 
         MaterialAlertDialogBuilder(context)
             .setTitle(context.getString(R.string.a11y_tile_label))
-            .setMultiChoiceItems(appLabels, checkedItems) { _, which, checked ->
+            .setMultiChoiceItems(
+                appLabels, checkedItems
+            ) { _, which, checked ->
                 val pkg = defaultApps[which]
                 if (checked) {
                     currentAllowed.add(pkg)

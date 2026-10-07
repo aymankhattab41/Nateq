@@ -898,6 +898,323 @@
             android:layout_height="1dp"
             android:layout_marginTop="16dp"
             android:layout_marginBottom="4dp"
+            android:tag="section_divider"
+            android:background="@color/divider_color" />
+
+        <!-- بطاقة «خدمات الشاشة وإمكانية الوصول» (المجموعة 1) -->
+        <LinearLayout
+            android:id="@+id/ll_a11y_services_header"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:minHeight="48dp"
+            android:padding="4dp"
+            android:background="?attr/selectableItemBackground"
+            android:focusable="true"
+            android:accessibilityHeading="true"
+            android:importantForAccessibility="yes">
+
+            <TextView
+                android:id="@+id/tv_a11y_services_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:importantForAccessibility="no"
+                android:text="@string/section_accessibility_services"
+                android:textAppearance="?attr/textAppearanceHeadline6" />
+
+            <TextView
+                android:id="@+id/tv_a11y_services_arrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:drawableEnd="@drawable/ic_expand_more"
+                android:textSize="14sp"
+                android:paddingStart="8dp"
+                android:importantForAccessibility="no" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tv_a11y_services_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textAppearance="?attr/textAppearanceCaption"
+            android:textColor="@color/text_secondary"
+            android:importantForAccessibility="no" />
+
+        <LinearLayout
+            android:id="@+id/ll_a11y_services_settings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="12dp"
+            android:visibility="gone">
+
+            <!-- بطاقة وصف الخدمة وزر التفعيل -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/a11y_onboarding_explanation"
+                android:textSize="13sp"
+                android:lineSpacingMultiplier="1.2"
+                android:textColor="@color/text_secondary"
+                android:layout_marginBottom="12dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:tag="btn_a11y_setup_service"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/a11y_open_onboarding"
+                android:layout_marginBottom="8dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:tag="btn_a11y_pause_duration"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/a11y_btn_pause_duration"
+                android:layout_marginBottom="8dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:tag="btn_a11y_allowed_apps"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/a11y_btn_allowed_apps"
+                android:layout_marginBottom="16dp" />
+
+            <!-- مفتاح توسيع قراءة المزيد -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:tag="switch_a11y_read_more"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/a11y_read_more_title"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/a11y_read_more_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary" />
+
+            <!-- مفتاح قراءة الرسائل الحية -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:tag="switch_a11y_chat_live"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/a11y_chat_live_title"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/a11y_chat_live_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary" />
+
+            <!-- مفتاح تلخيص الرسائل -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:tag="switch_a11y_chat_summary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/a11y_chat_summary_title"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/a11y_chat_summary_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary" />
+
+            <!-- مفتاح صدى الكتابة -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:tag="switch_a11y_typing_echo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/a11y_typing_echo_title"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/a11y_typing_echo_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary" />
+
+            <!-- مفتاح قراءة OTP -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:tag="switch_a11y_otp_reading"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/a11y_otp_reading_title"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/a11y_otp_reading_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary" />
+
+            <!-- مفتاح تقصير الروابط -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:tag="switch_a11y_url_shortening"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/a11y_url_shortening_title"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/a11y_url_shortening_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary" />
+
+            <!-- مفتاح إعلان النوافذ المنبثقة -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:tag="switch_a11y_popup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/a11y_popup_announcement_title"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/a11y_popup_announcement_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary" />
+
+            <!-- مفتاح مراقبة التقدم -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:tag="switch_a11y_progress"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/a11y_progress_monitoring_title"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/a11y_progress_monitoring_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary" />
+
+            <!-- مفتاح إعلانات البلوتوث -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:tag="switch_a11y_bluetooth"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/a11y_bluetooth_announcement_title"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/a11y_bluetooth_announcement_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary" />
+
+            <!-- مفتاح الإيقاف الذكي أثناء المكالمة -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:tag="switch_a11y_smart_pause_call"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/a11y_smart_pause_call_title"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/a11y_smart_pause_call_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary" />
+
+            <!-- مفتاح الإيقاف الذكي أثناء الألعاب -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:tag="switch_a11y_smart_pause_game"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/a11y_smart_pause_game_title"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/a11y_smart_pause_game_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary" />
+
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="4dp"
+            android:tag="section_divider"
             android:background="@color/divider_color" />
 <LinearLayout
             android:id="@+id/ll_sms_reading_header"

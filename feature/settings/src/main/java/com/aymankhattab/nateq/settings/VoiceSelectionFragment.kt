@@ -131,6 +131,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private lateinit var textReadingSection: TextReadingController
     private lateinit var textProcessingSection: TextProcessingController
     private lateinit var instantSilenceSection: InstantSilenceController
+    private lateinit var a11yServicesSection: ScreenServicesCardController
 
     // مفتاح تبديل لغة التطبيق (أسفل الشاشة)
     private lateinit var btnToggleLanguage:
@@ -704,6 +705,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         instantSilenceSection = InstantSilenceController(
             this, settings, { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
+        a11yServicesSection = ScreenServicesCardController(
+            requireContext(), settings
+        ) { accordion.updateSectionStatuses() }.apply { setup(view) }
         oemGuidance = OemGuidanceController(this).apply { setup(view) }
         setupLanguageToggle()
         setupCheckUpdates()
@@ -751,6 +755,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         if (::timeSection.isInitialized) timeSection.refreshExactAlarmRow()
         if (::oemGuidance.isInitialized) {
             oemGuidance.refreshInstantIdentityStatus()
+        }
+        if (::a11yServicesSection.isInitialized) {
+            a11yServicesSection.updateUiState()
         }
         if (::accordion.isInitialized) accordion.updateSectionStatuses()
     }

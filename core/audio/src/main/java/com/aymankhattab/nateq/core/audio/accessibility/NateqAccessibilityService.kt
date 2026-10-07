@@ -12,6 +12,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
+import android.accessibilityservice.AccessibilityButtonController
 import android.os.Handler
 import android.os.Looper
 import android.os.VibrationEffect
@@ -53,6 +54,26 @@ class NateqAccessibilityService : AccessibilityService() {
             applyServiceInfo()
         }
         applyServiceInfo()
+        registerAccessibilityButton()
+    }
+
+    private fun registerAccessibilityButton() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val btnController = accessibilityButtonController
+            val callback =
+                object :
+                    AccessibilityButtonController.
+                    AccessibilityButtonCallback() {
+                    override fun onClicked(
+                        controller: AccessibilityButtonController?
+                    ) {
+                        WhereAmIController.announceCurrentLocation(
+                            this@NateqAccessibilityService
+                        )
+                    }
+                }
+            btnController.registerAccessibilityButtonCallback(callback)
+        }
     }
 
     /**
@@ -210,6 +231,33 @@ class NateqAccessibilityService : AccessibilityService() {
                 AccessibilityBridge.updateForeground(pkg, cls)
             }
         }
+
+        val repo = SettingsRepository.create(this)
+        val store = stateStore
+
+        // صدى الكتابة (ع٢٧-31)
+        if (eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED &&
+            FeatureFlags.isActive(
+                FeatureFlags.FEATURE_TYPING_ECHO,
+                packageName = pkg,
+                context = this,
+                settings = repo,
+                stateStore = store
+            )
+        ) {
+            val echoText = TypingEcho.getEchoText(
+                event.beforeText,
+                event.text?.joinToString(""),
+                TypingEcho.EchoMode.CHARACTERS
+            )
+            if (!echoText.isNullOrBlank()) {
+                A11ySpeechCoordinator.speakAnnouncement(
+                    context = this,
+                    text = echoText,
+                    isInterruptAllowed = true
+                )
+            }
+        }
     }
 
     /**
@@ -239,8 +287,17 @@ class NateqAccessibilityService : AccessibilityService() {
      * تنفيذ توسيع قراءة المزيد (ع٢٧-20، ع٢٧-21)
      */
     internal fun expandReadMoreInternal(prefix: String): String? {
-        // سيتم التوسيع في أمر ع٢٧-20
-        return null
+        val root = rootInActiveWindow ?: return null
+        return try {
+            val expanded = ReadMoreExpander.tryExpand(root)
+            if (expanded) {
+                findCurrentAccessibilityFocusSnapshot()?.readableText()
+            } else {
+                null
+            }
+        } finally {
+            SafeNodeWalker.safeRecycle(root)
+        }
     }
 
     private fun registerScreenOffReceiver() {

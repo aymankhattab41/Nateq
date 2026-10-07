@@ -435,6 +435,8 @@ internal class SettingsAccordionController(
         val textReading = fragment.getString(R.string.section_text_reading)
         val instantSilence =
             fragment.getString(R.string.section_instant_silence)
+        val a11yServices =
+            fragment.getString(R.string.section_accessibility_services)
         val oem = fragment.getString(R.string.section_oem_guidance)
 
         // مجموعة «المحرك والأصوات»: صناديق اختيار المحرك/التحويل التلقائي
@@ -504,6 +506,14 @@ internal class SettingsAccordionController(
             R.id.tv_instant_silence_status,
             R.id.ll_instant_silence_settings,
             instantSilence, 1
+        )
+        accordionEntry(
+            view,
+            R.id.ll_a11y_services_header,
+            R.id.tv_a11y_services_arrow,
+            R.id.tv_a11y_services_status,
+            R.id.ll_a11y_services_settings,
+            a11yServices, 1
         )
 
         // مجموعة «النصوص والأرقام»: قراءة الأرقام / القاموس / نطق الإيموجي /
@@ -590,6 +600,27 @@ internal class SettingsAccordionController(
             buildDeviceHealthStatus()
         )
         setSectionStatus(R.id.ll_emoji_content, buildEmojiStatus())
+        setSectionStatus(
+            R.id.ll_a11y_services_settings,
+            buildA11yServicesStatus()
+        )
+    }
+
+    private fun buildA11yServicesStatus(): String {
+        val ctx = fragment.context ?: return ""
+        val enabled = com.aymankhattab.nateq.util.AccessibilityUtils
+            .isNateqAccessibilityServiceEnabled(ctx)
+        if (!enabled) {
+            return fragment.getString(R.string.a11y_status_disabled)
+        }
+        val store = com.aymankhattab.nateq.core.audio.accessibility
+            .A11yStateStore.getInstance(ctx)
+        val paused = store?.isPaused() ?: settings.isA11yPaused()
+        return if (paused) {
+            fragment.getString(R.string.a11y_status_paused)
+        } else {
+            fragment.getString(R.string.a11y_status_active)
+        }
     }
 
     private fun buildEngineStatus(): String {

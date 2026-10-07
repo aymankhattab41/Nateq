@@ -1591,4 +1591,35 @@ class SettingsRepositoryTest {
         assertFalse(fresh.isPhoneConversionEnabled())
         assertFalse(fresh.isArabicNormalizationEnabled())
     }
+
+    @Test
+    fun accessibilityPrefs_defaultsAndRoundTrip() {
+        assertFalse(repo.isAccessibilityFeatureEnabled("a11y_read_more"))
+        assertFalse(repo.isA11yPaused())
+        assertEquals(0L, repo.getA11yPausedUntil())
+        assertEquals(1, repo.getA11yPauseLevel())
+        assertNull(repo.getA11yAllowedPackages())
+        assertFalse(repo.isA11yAllowAllApps())
+        assertFalse(repo.isA11ySmartPauseCallEnabled())
+        assertFalse(repo.isA11ySmartPauseGameEnabled())
+
+        repo.setAccessibilityFeatureEnabled("a11y_read_more", true)
+        repo.setA11yPaused(true)
+        repo.setA11yPausedUntil(123456L)
+        repo.setA11yPauseLevel(2)
+        repo.setA11yAllowedPackages(setOf("com.whatsapp"))
+        repo.setA11yAllowAllApps(true)
+        repo.setA11ySmartPauseCallEnabled(true)
+        repo.setA11ySmartPauseGameEnabled(true)
+
+        val fresh = newRepository()
+        assertTrue(fresh.isAccessibilityFeatureEnabled("a11y_read_more"))
+        assertTrue(fresh.isA11yPaused())
+        assertEquals(123456L, fresh.getA11yPausedUntil())
+        assertEquals(2, fresh.getA11yPauseLevel())
+        assertEquals(setOf("com.whatsapp"), fresh.getA11yAllowedPackages())
+        assertTrue(fresh.isA11yAllowAllApps())
+        assertTrue(fresh.isA11ySmartPauseCallEnabled())
+        assertTrue(fresh.isA11ySmartPauseGameEnabled())
+    }
 }

@@ -2458,4 +2458,16 @@ class SettingsRepository(context: Context) :
 
     override fun setA11yAllowAllApps(allowAll: Boolean) =
         prefs.edit().putBoolean("a11y_allow_all_apps", allowAll).apply()
+
+    override fun isA11ySmartPauseCallEnabled(): Boolean =
+        isAccessibilityFeatureEnabled("a11y_smart_pause_call")
+
+    override fun setA11ySmartPauseCallEnabled(enabled: Boolean) =
+        setAccessibilityFeatureEnabled("a11y_smart_pause_call", enabled)
+
+    override fun isA11ySmartPauseGameEnabled(): Boolean =
+        isAccessibilityFeatureEnabled("a11y_smart_pause_game")
+
+    override fun setA11ySmartPauseGameEnabled(enabled: Boolean) =
+        setAccessibilityFeatureEnabled("a11y_smart_pause_game", enabled)
 }
