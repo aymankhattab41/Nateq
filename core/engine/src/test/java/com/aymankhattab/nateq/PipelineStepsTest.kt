@@ -21,16 +21,24 @@ import com.aymankhattab.nateq.engine.pipeline.TashkeelStripStep
 import com.aymankhattab.nateq.engine.pipeline.TimeStep
 import com.aymankhattab.nateq.engine.pipeline.UnitStep
 import com.aymankhattab.nateq.engine.pipeline.UrlStep
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
+import com.aymankhattab.nateq.engine.PronunciationDictionary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * اختبارات خطوات المعالجة ككائنات مستقلة (internal objects) — بدون Context أو
  * Robolectric — لتغطية حالات الحافة التي لا تصلها اختبارات TextProcessor
  * عبر المعالج الكامل.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [37])
 class PipelineStepsTest {
 
     // ═══════════════════════ UnitStep ═══════════════════════
@@ -1624,6 +1632,99 @@ class PipelineStepsTest {
             "زائد اثنان صِفْرْ واحد واحد " +
                 "خمسة خمسة خمسة اثنان أربعة أربعة اثنان",
             stepAr.applyEnglish("+20 11 5552442")
+        )
+    }
+
+    @Test
+    fun testDictionaryAppliedAfterAdd() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val dict = PronunciationDictionary(context)
+        dict.addEntry("د.", "دكتور")
+
+        // تصفير الخنق — يُحاكي سلوك ع٢٨-7
+        dict.invalidate()
+        dict.reloadIfChanged()
+
+        val result = dict.apply("وصل د. أحمد")
+        assertEquals("وصل دكتور أحمد", result)
+    }
+
+    @Test
+    fun testDictionaryUpdatedAfterRemove() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val dict = PronunciationDictionary(context)
+        dict.addEntry("م.", "مهندس")
+        dict.removeEntry("م.")
+        dict.invalidate()
+        dict.reloadIfChanged()
+
+        val result = dict.apply("تكلّم م. علي")
+        assertEquals("تكلّم م. علي", result) // بلا استبدال
+    }
+
+    @Test
+    fun testLegacyDefaultEntriesIsEmpty() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val dict = PronunciationDictionary(context)
+        dict.invalidate()
+        dict.reloadIfChanged()
+        // بلا قاموس مخصص لا يتم تحويل "م" أو "د" إلى كلمات مدمجة
+        val result = dict.apply("م")
+        assertEquals("م", result)
+    }
+
+    @Test
+    fun testTextProcessorDisabledConversions() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val prefsDisabled = object :
+            com.aymankhattab.nateq.core.engine.SynthesisConfig {
+            override fun isTimeConversionEnabled(): Boolean = false
+            override fun isCurrencyConversionEnabled(): Boolean = false
+            override fun isUnitConversionEnabled(): Boolean = false
+            override fun isSymbolConversionEnabled(): Boolean = false
+            override fun isPhoneConversionEnabled(): Boolean = false
+            override fun isArabicNormalizationEnabled(): Boolean = false
+            override fun isEmojiPronunciationEnabled(): Boolean = false
+            override fun getPunctuationLevel(): Int = 0
+            override fun isTashkeelPreserved(): Boolean = false
+        }
+        val processor = com.aymankhattab.nateq.engine.TextProcessor(
+            context = context,
+            injectedSettings = prefsDisabled
+        )
+        // الوقت لن يتحول إلى "الثانية عشرة والنصف"
+        val timeResult = processor.process("12:30", "ar")
+        assertFalse(timeResult.contains("الثانية عشرة"))
+
+        // العملة لن تتحول إلى "دولار"
+        val currencyResult = processor.process("$50", "ar")
+        assertFalse(currencyResult.contains("دولار"))
+    }
+
+    @Test
+    fun testTextProcessorEnabledConversions() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val prefsEnabled = object :
+            com.aymankhattab.nateq.core.engine.SynthesisConfig {
+            override fun isTimeConversionEnabled(): Boolean = true
+            override fun isCurrencyConversionEnabled(): Boolean = true
+            override fun isUnitConversionEnabled(): Boolean = true
+            override fun isSymbolConversionEnabled(): Boolean = true
+            override fun isPhoneConversionEnabled(): Boolean = true
+            override fun isArabicNormalizationEnabled(): Boolean = true
+            override fun isEmojiPronunciationEnabled(): Boolean = true
+            override fun getPunctuationLevel(): Int = 1
+            override fun isTashkeelPreserved(): Boolean = false
+        }
+        val processor = com.aymankhattab.nateq.engine.TextProcessor(
+            context = context,
+            injectedSettings = prefsEnabled
+        )
+        // العملة تتحول إلى دولارات
+        val currencyResult = processor.process("$50", "ar")
+        assertTrue(
+            currencyResult.contains("دولار") ||
+                currencyResult.contains("دولارات")
         )
     }
 }

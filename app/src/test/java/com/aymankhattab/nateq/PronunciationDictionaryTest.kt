@@ -309,6 +309,21 @@ fun importMerge_overridesDuplicates_andKeepsRest() {
         file.setLastModified(System.currentTimeMillis() + 100_000L)
         assertTrue(noThrottle.reloadIfChanged())
     }
+
+    @Test
+    fun mutationResetsThrottle_allowingImmediateReload() {
+        if (!dict.isPersistent()) return
+        dict.addEntry("تفاح", "فاكهة")
+        val file = prefsFile()
+        assertTrue(file.exists())
+        // فحص أولي لتثبيت مؤقت الخنق
+        assertFalse(dict.reloadIfChanged())
+        // تعديل في القاموس يصفّر الخنق
+        dict.addEntry("موز", "ثمار")
+        file.setLastModified(System.currentTimeMillis() + 100_000L)
+        // بعد التعديل، reloadIfChanged يفحص القرص فوراً
+        assertTrue(dict.reloadIfChanged())
+    }
     // ===== حارسُ العطل الحقيقي: «القاموس لا يعمل» في مسار النطق =====
 
     /**
@@ -367,5 +382,19 @@ fun importMerge_overridesDuplicates_andKeepsRest() {
         // أي نمطٍ مقبولٌ ما دام معلناً — المهم ألّا يكون التشفيرُ سبباً
         // صامتاً للبطء؛ ولهذا سقط الجوالُ إلى العادي بدل أن يُبطل.
         assertNotNull(PronunciationDictionary(context).storageMode)
+    }
+
+    @Test
+    fun dictionaryDiagnosticFormatting_showsBeforeAndAfter() {
+        val tp = TextProcessor(context, null, dict)
+        dict.addEntry("ص", "صفحة")
+        val original = "ص"
+        val result = tp.process(original, "ar")
+        val formatted = if (result != original) {
+            "قبل: $original\nبعد: $result ✓"
+        } else {
+            "لم يُعثر على تطابق: $original"
+        }
+        assertEquals("قبل: ص\nبعد: صفحة ✓", formatted)
     }
 }

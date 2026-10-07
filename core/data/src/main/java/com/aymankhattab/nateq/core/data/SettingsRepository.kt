@@ -128,6 +128,18 @@ class SettingsRepository(context: Context) :
         /** فئة إعلان الرسائل النصية (محرك/نبرة مستقلان إن ضُبطا). */
         const val ANNOUNCE_CATEGORY_SMS = "sms"
 
+        val ALL_VOICE_CATEGORIES = listOf(
+            VOICE_CATEGORY_DEFAULT,
+            VOICE_CATEGORY_TIME,
+            VOICE_CATEGORY_NUMBERS,
+            VOICE_CATEGORY_NOTIFICATIONS,
+            VOICE_CATEGORY_BATTERY,
+            ANNOUNCE_CATEGORY_CALLER,
+            ANNOUNCE_CATEGORY_CALLER_AR,
+            ANNOUNCE_CATEGORY_CALLER_EN,
+            ANNOUNCE_CATEGORY_SMS
+        )
+
         /** تطبيقات الإشعارات الافتراضية قبل أي اختيار صريح. */
         const val NOTIF_READ_ALL = "all_apps"
 
@@ -1128,6 +1140,33 @@ class SettingsRepository(context: Context) :
     ) =
         prefs.edit().putString("preferred_voice_$category", voiceId).apply()
 
+    /** يُحدّث اسم الصوت المحفوظ في كل الفئات التي تستخدم الاسم القديم */
+    fun updateSavedVoiceNameIfNeeded(oldName: String, newName: String) {
+        if (oldName == newName) return
+        val categories = ALL_VOICE_CATEGORIES + listOf(VOICE_CATEGORY_EMOJI)
+        for (cat in categories) {
+            val saved = getPreferredVoiceIdForCategory(cat)
+            if (saved == oldName) {
+                setPreferredVoiceIdForCategory(cat, newName)
+                Log.i(
+                    TAG,
+                    "Updated voice name: $cat: $oldName → $newName"
+                )
+            }
+        }
+        // الأصوات المربوطة باللغة
+        for (lang in listOf("ar", "en", "ar-SA", "ar-EG", "ar-AE")) {
+            val saved = getPreferredVoiceId(lang)
+            if (saved == oldName) {
+                setPreferredVoiceId(lang, newName)
+                Log.i(
+                    TAG,
+                    "Updated voice name for lang: $lang: $oldName → $newName"
+                )
+            }
+        }
+    }
+
     /** لغة الصوت المختارة لكل فئة (category -> رمز ISO) — تقيّد قائمة
      *  الأصوات وتُحسم لغة النطق الفعلية لها. */
     fun getLanguageForCategory(category: String): String? =
@@ -1363,6 +1402,38 @@ class SettingsRepository(context: Context) :
         prefs.getBoolean("tashkeel_preserved", false)
     override fun setTashkeelPreserved(enabled: Boolean) =
         prefs.edit().putBoolean("tashkeel_preserved", enabled).apply()
+
+    // ============ مراحل تحويل معالجة النصوص ============
+
+    override fun isTimeConversionEnabled(): Boolean =
+        prefs.getBoolean("text_processing_time", true)
+    override fun setTimeConversionEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("text_processing_time", enabled).apply()
+
+    override fun isCurrencyConversionEnabled(): Boolean =
+        prefs.getBoolean("text_processing_currency", true)
+    override fun setCurrencyConversionEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("text_processing_currency", enabled).apply()
+
+    override fun isUnitConversionEnabled(): Boolean =
+        prefs.getBoolean("text_processing_units", true)
+    override fun setUnitConversionEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("text_processing_units", enabled).apply()
+
+    override fun isSymbolConversionEnabled(): Boolean =
+        prefs.getBoolean("text_processing_symbols", true)
+    override fun setSymbolConversionEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("text_processing_symbols", enabled).apply()
+
+    override fun isPhoneConversionEnabled(): Boolean =
+        prefs.getBoolean("text_processing_phones", true)
+    override fun setPhoneConversionEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("text_processing_phones", enabled).apply()
+
+    override fun isArabicNormalizationEnabled(): Boolean =
+        prefs.getBoolean("arabic_normalization", true)
+    override fun setArabicNormalizationEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("arabic_normalization", enabled).apply()
 
     /** اتباع سرعة قارئ الشاشة (النسبة المئوية 100 = طبيعي) في نطق نصه:
      *  عند التفعيل (افتراضياً) تُهمل أشرطة سرعة LORD فتكون سرعة النطق

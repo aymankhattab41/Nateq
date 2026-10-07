@@ -1,5 +1,6 @@
-﻿package com.aymankhattab.nateq.core.audio.announcement
+package com.aymankhattab.nateq.core.audio.announcement
 
+import android.content.Context
 import android.speech.tts.TextToSpeech
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
@@ -16,7 +17,9 @@ import java.util.Locale
 class AnnouncementSpeakerWarmupTest {
     @Test
     fun warmInstanceDoesNotPoll() {
-        val speaker = AnnouncementSpeaker(ApplicationProvider.getApplicationContext())
+        val appCtx = ApplicationProvider
+            .getApplicationContext<Context>()
+        val speaker = AnnouncementSpeaker(appCtx)
         val wasWarm = true
         assertEquals(true, wasWarm)
     }
@@ -24,10 +27,12 @@ class AnnouncementSpeakerWarmupTest {
     @Test
     fun warmupPoll_warmInstanceDoesNotWait() {
         // VZ2: المثيلات الدافئة (wasWarm) لا تنتظر — تنطق فوراً
-        val speaker = AnnouncementSpeaker(ApplicationProvider.getApplicationContext())
+        val appCtx = ApplicationProvider
+            .getApplicationContext<Context>()
+        val speaker = AnnouncementSpeaker(appCtx)
         // محاكاة مثيل دافئ: نهيئ TTS أولاً
         speaker.prewarmTtsForTesting(Locale.getDefault())
-        
+
         val startTime = System.currentTimeMillis()
         speaker.warmupIfNeeded(Locale.getDefault())
         val elapsed = System.currentTimeMillis() - startTime
@@ -37,7 +42,9 @@ class AnnouncementSpeakerWarmupTest {
     @Test
     fun warmupIfNeeded_isIdempotent() {
         // استدعاء warmupIfNeeded عدة مرات لا يسبب مشاكل
-        val speaker = AnnouncementSpeaker(ApplicationProvider.getApplicationContext())
+        val appCtx = ApplicationProvider
+            .getApplicationContext<Context>()
+        val speaker = AnnouncementSpeaker(appCtx)
         speaker.warmupIfNeeded(Locale.getDefault())
         speaker.warmupIfNeeded(Locale.getDefault())
         speaker.warmupIfNeeded(Locale.getDefault())
@@ -48,14 +55,18 @@ class AnnouncementSpeakerWarmupTest {
     @Test
     fun simulateOnError_incrementsRetryCount() {
         // اختبار آلية إعادة المحاولة لخطأ ERROR_NOT_INSTALLED_YET
-        val speaker = AnnouncementSpeaker(ApplicationProvider.getApplicationContext())
+        val appCtx = ApplicationProvider
+            .getApplicationContext<Context>()
+        val speaker = AnnouncementSpeaker(appCtx)
         val utteranceId = "test_utterance_retry"
-        
+
         // محاكاة خطأ ERROR_NOT_INSTALLED_YET عبر استدعاء داخلي
-        speaker.simulateOnErrorForTesting(utteranceId, TextToSpeech.ERROR_NOT_INSTALLED_YET)
-        
+        speaker.simulateOnErrorForTesting(
+            utteranceId,
+            TextToSpeech.ERROR_NOT_INSTALLED_YET
+        )
+
         // يجب أن يكون هناك عد إعادة محاولة واحد
         assertEquals(1, speaker.getRetryCountForTesting(utteranceId))
     }
 }
-

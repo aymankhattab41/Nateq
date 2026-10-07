@@ -387,6 +387,37 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 }.getOrNull()
                 if (!e164.isNullOrBlank()) forms += e164
             }
+
+            val cleanIntl = when {
+                raw.startsWith("+") -> "+$digits"
+                raw.startsWith("00") -> "+${digits.drop(2)}"
+                forms.any { it.startsWith("+") } ->
+                    forms.first { it.startsWith("+") }
+                else -> null
+            }
+            if (cleanIntl != null && cleanIntl.startsWith("+")) {
+                val prefixes3 = listOf(
+                    "+966", "+971", "+965", "+974", "+973",
+                    "+968", "+962", "+963", "+964", "+967"
+                )
+                for (p in prefixes3) {
+                    if (cleanIntl.startsWith(p)) {
+                        val withoutCode = cleanIntl.drop(p.length)
+                        if (withoutCode.length >= 7) {
+                            forms += "0$withoutCode"
+                            forms += withoutCode
+                        }
+                    }
+                }
+                if (cleanIntl.startsWith("+20")) {
+                    val withoutCode = cleanIntl.drop(3)
+                    if (withoutCode.length >= 7) {
+                        forms += "0$withoutCode"
+                        forms += withoutCode
+                    }
+                }
+            }
+
             return forms.toList()
         }
 
@@ -484,6 +515,10 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         @Volatile
         internal var ringingAnnounced = false
 
+        /** هل حمل الإعلان السابق اسماً حقيقياً (لا رقماً فقط)؟ */
+        @Volatile
+        internal var lastAnnouncedHadName = false
+
         /**
          * الرقم الذي **أُعلن به فعلاً** في جلسة الرنين الحالية — لا
          * «آخر رقم شوهد». الفرقُ حاسم: حين كان يُسجَّل الرقم الوارد
@@ -556,12 +591,17 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         internal fun shouldSuppressDuplicateAnnouncement(
             alreadyAnnounced: Boolean,
             announcedNumber: String?,
-            incomingNumber: String?
+            incomingNumber: String?,
+            hadName: Boolean = lastAnnouncedHadName,
+            currentHasName: Boolean = false
         ): Boolean {
             if (!alreadyAnnounced) return false
+            // الدورة السابقة أُعلنت بلا اسم والآن فيه اسم → لا تكتم
+            if (!hadName && currentHasName) return false
             if (announcedNumber.isNullOrBlank()) return true
-            if (incomingNumber == null) return true
-            return incomingNumber == announcedNumber
+            if (incomingNumber.isNullOrBlank()) return true
+            if (announcedNumber != incomingNumber) return false
+            return true
         }
 
         /**
@@ -652,6 +692,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             lastResolvedName = null
             ringingStartTime = 0L
             ringingAnnounced = false
+            lastAnnouncedHadName = false
             announcedNumber = null
             clearCallAnswered()
             pendingRingNumber = null
@@ -1141,6 +1182,30 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         RingCallerIdentity.publish(rawNumber, null)
     }
 
+    Log.w(TAG, "[CallerDiag] === دورة إعلان جديدة ===")
+    Log.w(TAG, "[CallerDiag] rawNumber='${rawNumber ?: "null"}'")
+    Log.w(
+        TAG,
+        "[CallerDiag] lastResolvedNumber=" +
+            "'${lastResolvedNumber ?: "null"}'"
+    )
+    Log.w(TAG, "[CallerDiag] ringingAnnounced=$ringingAnnounced")
+    Log.w(
+        TAG,
+        "[CallerDiag] announcedNumber=" +
+            "'${announcedNumber ?: "null"}'"
+    )
+    Log.w(
+        TAG,
+        "[CallerDiag] hasReadContacts=" +
+            "${hasPermission(context, Manifest.permission.READ_CONTACTS)}"
+    )
+    Log.w(
+        TAG,
+        "[CallerDiag] hasReadCallLog=" +
+            "${hasPermission(context, Manifest.permission.READ_CALL_LOG)}"
+    )
+
     // **حارس منع التكرار — على حالة الجلسة لا على عمر الكوروثين.**
     // كان معلقاً على `activeCallCycle?.isActive` وهو عمرُ
     // كوروثين ينتهي فور `speak()`، فيموت الحارسُ بعد أول إعلان
@@ -1149,10 +1214,28 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
     // والمقارنةُ صارت على [announcedNumber] (رقمُ ما أُعلن)
     // لا على [lastResolvedNumber] (آخرُ رقم شوهد) الذي كُتب
     // قبلها بسطر، فكانت المقارنةُ تتحقّق دائماً ولا تفحص شيئاً.
+    val hasContactsForSuppression = hasPermission(
+        context, Manifest.permission.READ_CONTACTS
+    )
+    val hasCallLogForSuppression = hasPermission(
+        context, Manifest.permission.READ_CALL_LOG
+    )
+    val currentHasName =
+        !RingCallerIdentity.snapshot().second.isNullOrBlank() ||
+            !resolveCustomName(settings, rawNumber).isNullOrBlank() ||
+            (rawNumber != null &&
+                !resolveContactName(
+                    context,
+                    rawNumber,
+                    hasContactsForSuppression,
+                    hasCallLogForSuppression
+                ).isNullOrBlank())
     if (shouldSuppressDuplicateAnnouncement(
             alreadyAnnounced = ringingAnnounced,
             announcedNumber = announcedNumber,
-            incomingNumber = rawNumber
+            incomingNumber = rawNumber,
+            hadName = lastAnnouncedHadName,
+            currentHasName = currentHasName
         )
     ) {
         Log.w(
@@ -1310,6 +1393,30 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             (CALLER_RESOLVE_GRACE_PERIOD_MS + speechWakeMs)
                 .coerceAtMost(CALLER_WAKE_LOCK_CAP_MS)
         )
+
+        if (rawNumber.isNullOrBlank() && !ringingAnnounced) {
+            Log.w(
+                TAG,
+                "[CallerDiag] no number yet — waiting 800ms for" +
+                    " delayed EXTRA_INCOMING_NUMBER"
+            )
+            delay(800L)
+            val resolvedNumber = pendingRingNumber ?: lastResolvedNumber
+                ?: RingCallerIdentity.snapshot().first
+            if (!resolvedNumber.isNullOrBlank()) {
+                Log.w(
+                    TAG,
+                    "[CallerDiag] number arrived after delay: $resolvedNumber"
+                )
+                incomingNumber = resolvedNumber
+                lastResolvedNumber = resolvedNumber
+            }
+            val resolvedName = RingCallerIdentity.snapshot().second
+            if (!resolvedName.isNullOrBlank()) {
+                contactName = resolvedName
+                lastResolvedName = resolvedName
+            }
+        }
 
         // مهلة سماح عند وصول بث فارغ: ننتظر ونفحص المصادر
         // الثلاثة (الهوية المشتركة، آخر رقمٍ محلول، سجلّ
@@ -1522,6 +1629,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             category = SettingsRepository.ANNOUNCE_CATEGORY_CALLER
         )
         ringingAnnounced = true
+        lastAnnouncedHadName = !contactName.isNullOrBlank()
         // انتهى الانتظار: لا داعي لتمييز البث المكرّر بعده —
         // الحارس الأعلى (`ringingAnnounced`) يتكفّل به من الآن فصاعداً.
         pendingRingNumber = null
@@ -1737,6 +1845,12 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 context, Manifest.permission.READ_CALL_LOG
             )
         )
+        Log.w(TAG, "[CallerDiag] resolvedName='${contactName ?: "null"}'")
+        Log.w(
+            TAG,
+            "[CallerDiag] hasSpeakableIdentity=" +
+                "${hasSpeakableIdentity(incomingNumber, contactName)}"
+        )
 
         val privacyLocked = settings.isLockScreenPrivacyEnabled() &&
             settings.isDeviceScreenLocked()
@@ -1781,6 +1895,8 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             ),
             category = SettingsRepository.ANNOUNCE_CATEGORY_CALLER
         )
+        ringingAnnounced = true
+        lastAnnouncedHadName = !contactName.isNullOrBlank()
         return true
     }
 

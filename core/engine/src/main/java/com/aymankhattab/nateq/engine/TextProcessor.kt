@@ -78,6 +78,14 @@ class TextProcessor(
         injectedDict ?: PronunciationDictionary.shared(context)
 
     /**
+     * إبطال التخزين المؤقت للقاموس وتصفير خنق فحص القرص
+     * ليُعاد التحميل من القرص فوراً عند النطق التالي.
+     */
+    fun invalidateDictionary() {
+        pronunciationDict.invalidate()
+    }
+
+    /**
      * هل نطق أسماء الإيموجي مفعّل؟ بلا حقنة Settings
      * (الاختبارات) يُفترض مفعّل.
      */
@@ -117,76 +125,70 @@ class TextProcessor(
     // «تصحيحُ ألف التنوين» (مساءاً ← مَسَاءَنْ) ليس هنا: مِلكُه
     // ArabicSpeechNormalizer في :core:audio، ويُطبَّق على النص المنطوق بعد
     // المعالجة مباشرةً، فهو مِلكٌ واحدٌ لتلك الصيغ لا تكرارٌ في خطٍّ آخر.
-    private val preamble: List<TextProcessingStep> = listOf(
+    private fun buildPreamble(): List<TextProcessingStep> {
+        val steps = mutableListOf<TextProcessingStep>()
+        val s = injectedSettings
+        steps += IndicDigitsStep
+        if (s?.isArabicNormalizationEnabled() != false) {
+            steps += FrancoArabicStep()
+        }
+        steps += TashkeelStripStep
+        steps += EmojiStripStep { emojiEnabled }
+        steps += DictionaryStep(pronunciationDict)
+        return steps
+    }
+
+    private fun buildBaseSteps(): List<TextProcessingStep> {
+        val steps = mutableListOf<TextProcessingStep>()
+        val s = injectedSettings
+        steps += IndicDigitsStep
+        steps += UrlStep
+        if (s?.isTimeConversionEnabled() != false) steps += DateStep()
+        if (s?.isTimeConversionEnabled() != false) steps += TimeStep
+        if (s?.isCurrencyConversionEnabled() != false) steps += CurrencyStep
+        if (s?.isUnitConversionEnabled() != false) steps += UnitStep
+        steps += AcronymStep
+        steps += ArabicSlashStep
+        return steps
+    }
+
+    private fun buildHeavySteps(): List<TextProcessingStep> {
+        val steps = mutableListOf<TextProcessingStep>()
+        val s = injectedSettings
+        steps += buildBaseSteps()
+        steps += RomanNumeralStep
+        if (s?.isPhoneConversionEnabled() != false) steps += phoneNumberStep
+        if (s?.isSymbolConversionEnabled() != false) steps += SymbolStep
+        steps += punctuationStep
+        steps += numberStep
+        return steps
+    }
+
+    private fun buildEnglishPreamble(): List<TextProcessingStep> = listOf(
         IndicDigitsStep,
-        FrancoArabicStep(),
-        TashkeelStripStep,
         EmojiStripStep { emojiEnabled },
         DictionaryStep(pronunciationDict)
     )
 
-    // الخطوات الدلالية المبكرة: تُطبَّق على النص الكامل قبل تقسيم اللغة
-    // (عبر processSemantics) حتى لا ينفصل رمزُ العملة/الوحدة (حروف لاتينية
-    // مثل «USD») إلى مقطعٍ إنجليزي مستقل — فينقطع «1500 USD» إلى مبلغٍ عربي
-    // ورمزٍ إنجليزي. ثم يكررها المسار الثقيل على المقطع العربي (ناتجُها
-    // كلماتٌ عربية بلا أرقام فلا يطابقها نمطٌ مجدداً — سلوك مطابق).
-    // **بند 2.7:** تطبيع الأرقام الشرقية/الفارسية/الهندية أولُها: بدونها
-    // كانت processSemantics تُشاهد «١٥٠٠ USD» بلا تطبيع فتنشطر للمقاطع،
-    // وأنماط العملات/الوحدات/الأوقات لا تعترف بأرقامٍ شرقية (أنماطها \d
-    // غربية) — الخطوة مطابقة للهوية بعد مسار التمهيد فلا ضرر من تكرارها.
-    private val baseSteps: List<TextProcessingStep> = listOf(
-        IndicDigitsStep,
-        UrlStep,
-        DateStep(),
-        TimeStep,
-        CurrencyStep,
-        UnitStep,
-        AcronymStep,
-        ArabicSlashStep
-    )
+    private fun buildEnglishBaseSteps(): List<TextProcessingStep> {
+        val steps = mutableListOf<TextProcessingStep>()
+        val s = injectedSettings
+        steps += IndicDigitsStep
+        if (s?.isTimeConversionEnabled() != false) steps += DateStep()
+        if (s?.isCurrencyConversionEnabled() != false) steps += CurrencyStep
+        return steps
+    }
 
-    // الخطوات الثقيلة (تنطبق فقط إن فشل المسار السريع) — ترتيبها مُطابق تماماً
-    // لترتيب معالجة النص الأصلي: روابط → تواريخ → أوقات → عملات → وحدات →
-    // رومانية → هواتف → رموز → ترقيم → أرقام. تُعالَج الروابط أولاً حمايةً لها
-    // من أي تشويه تلحقه خطوة لاحقة (تاريخ/وقت/عملة داخل الرابط مثل
-    // 2026-03-09)، ويأتي نطق الترقيم بعد الحماية فترى الروابط/التواريخ/
-    // الهواتف منقّاةً ولا يمس أجزاءها.
-    private val heavySteps: List<TextProcessingStep> = baseSteps + listOf(
-        RomanNumeralStep,
-        phoneNumberStep,
-        SymbolStep,
-        punctuationStep,
-        numberStep
-    )
-
-// المسار الإنجليزي (اللغة الثانية): نفس بنية الخطوات بمفردات إنجليزية.
-// **القاموسُ مُطبَّق هنا أيضاً** (كان محجوباً عن الإنجليزية فمدخلاتُ
-// المستخدم اللاتينية — «HTTP» و«AI» و«CEO» — لم تكن تُنطق أبداً)،
-// والوحدات/الأوقات/المختصرات/الرومانية تبقى عربيةَ محضة فلا تُطبَّق.
-// الروابط تُحجب مؤقتاً كي لا تشوّهها خطوة الترقيم.
-private val englishPreamble: List<TextProcessingStep> = listOf(
-    IndicDigitsStep,
-    EmojiStripStep { emojiEnabled },
-    DictionaryStep(pronunciationDict)
-)
-
-    // الدلالات المبكرة للإنجليزية: تطبيع الأرقام ثم التواريخ/العملات، فلا
-    // ينفصل رمزُ العملة («USD») عن مبلغه عند تقسيم اللغة.
-    private val englishBaseSteps: List<TextProcessingStep> = listOf(
-        IndicDigitsStep,
-        DateStep(),
-        CurrencyStep
-    )
-
-    // ثقيل الإنجليزي: يواصل بعد الدلالات المبكرة بالهاتف فالرموز فالترقيم
-    // ثم الأرقام.
-    private val englishHeavySteps: List<TextProcessingStep> =
-        englishBaseSteps + listOf(
-            phoneNumberStep,
-            SymbolStep,
-            punctuationStep,
-            numberStep
-        )
+    private fun buildEnglishHeavySteps(): List<TextProcessingStep> {
+        val steps = mutableListOf<TextProcessingStep>()
+        val s = injectedSettings
+        steps += buildEnglishBaseSteps()
+        if (s?.isPhoneConversionEnabled() != false) steps += phoneNumberStep
+        if (s?.isSymbolConversionEnabled() != false) steps += SymbolStep
+        steps += punctuationStep
+        steps += numberStep
+        return steps
+    }
 
     /**
      * معالجة نص كامل وتحويله لصيغة نطق طبيعية.
@@ -228,11 +230,13 @@ private val englishPreamble: List<TextProcessingStep> = listOf(
         // تُنطق إنجليزية، مع حجب الروابط كي لا تشوّهها خطوةُ الترقيم.
         if (LanguageCode.isEnglish(languageTag)) {
             var out = expanded ?: result
-            for (step in englishPreamble) out = step.applyEnglish(out)
+            for (step in buildEnglishPreamble()) out = step.applyEnglish(out)
             val urls = ArrayList<String>()
             out = maskUrls(out, urls)
             if (requiresEnglishPipeline(out)) {
-                for (step in englishHeavySteps) out = step.applyEnglish(out)
+                for (step in buildEnglishHeavySteps()) {
+                    out = step.applyEnglish(out)
+                }
             }
             out = unmaskUrls(out, urls)
             return CleanupStep.apply(out)
@@ -262,7 +266,7 @@ private val englishPreamble: List<TextProcessingStep> = listOf(
         }
         val urls = ArrayList<String>()
         var out = maskUrls(result, urls)
-        for (step in preamble) out = step.apply(out, languageTag)
+        for (step in buildPreamble()) out = step.apply(out, languageTag)
 
         // المسار السريع (Fast-path): إن لم يحتوِ النص على أي محفِّز لأرقام
         // الرموز/الصيغ (أرقام، فواصل، رموز عملة، حروف رومانية...) — أي نص
@@ -274,7 +278,7 @@ private val englishPreamble: List<TextProcessingStep> = listOf(
             return finalizeArabic(voweledSource, CleanupStep.apply(out))
         }
 
-        for (step in heavySteps) out = step.apply(out)
+        for (step in buildHeavySteps()) out = step.apply(out)
         out = unmaskUrls(out, urls)
         return finalizeArabic(voweledSource, CleanupStep.apply(out))
     }
@@ -359,7 +363,7 @@ private val englishPreamble: List<TextProcessingStep> = listOf(
             val urls = ArrayList<String>()
             var english = maskUrls(normalized, urls)
             if (requiresEnglishPipeline(english)) {
-                for (step in englishBaseSteps) {
+                for (step in buildEnglishBaseSteps()) {
                     english = step.applyEnglish(english)
                 }
             }
@@ -373,7 +377,7 @@ private val englishPreamble: List<TextProcessingStep> = listOf(
             result = unmaskUrls(result, urls)
             return CleanupStep.apply(result)
         }
-        for (step in baseSteps) result = step.apply(result)
+        for (step in buildBaseSteps()) result = step.apply(result)
         result = unmaskUrls(result, urls)
         return result
     }

@@ -869,6 +869,30 @@ fun `waiting call announces only once without repeat schedule`() {
     }
 
     @Test
+    fun `second broadcast with available name is not suppressed`() {
+        assertFalse(
+            "إذا أُعلن أولاً بلا اسم وجاء الثاني باسم لا يُكبت",
+            CallerAnnouncementReceiver.shouldSuppressDuplicateAnnouncement(
+                alreadyAnnounced = true,
+                announcedNumber = "01012345678",
+                incomingNumber = "01012345678",
+                hadName = false,
+                currentHasName = true
+            )
+        )
+        assertTrue(
+            "إذا أُعلن أولاً باسم وجاء الثاني باسم لنفس الرقم يُكبت",
+            CallerAnnouncementReceiver.shouldSuppressDuplicateAnnouncement(
+                alreadyAnnounced = true,
+                announcedNumber = "01012345678",
+                incomingNumber = "01012345678",
+                hadName = true,
+                currentHasName = true
+            )
+        )
+    }
+
+    @Test
     fun `the wake lock covers the grace period and the speech`() {
         // قفل الاستيقاظ كان يُكتسب **بعد** حلقة الانتظار، فمع مهلةٍ
         // سبعَ ثوانٍ كان الانتظار يجري بلا استيقاظ فيتأخّر `delay()`
@@ -1652,6 +1676,28 @@ fun `waiting call announces only once without repeat schedule`() {
             emptyList<String>(),
             CallerAnnouncementReceiver.callerLookupForms("   ", "SA")
         )
+    }
+
+    @Test
+    fun `caller lookup forms generate local and international variants`() {
+        val saForms = CallerAnnouncementReceiver.callerLookupForms(
+            "+966501234567", "SA"
+        )
+        assertTrue("+966501234567" in saForms)
+        assertTrue("0501234567" in saForms)
+        assertTrue("501234567" in saForms)
+
+        val uaeForms = CallerAnnouncementReceiver.callerLookupForms(
+            "+971501234567", "AE"
+        )
+        assertTrue("+971501234567" in uaeForms)
+        assertTrue("0501234567" in uaeForms)
+
+        val egForms = CallerAnnouncementReceiver.callerLookupForms(
+            "+201012345678", "EG"
+        )
+        assertTrue("+201012345678" in egForms)
+        assertTrue("01012345678" in egForms)
     }
 
     // ===== بند 5.6: صِدْعُ «المكالمة الصادرة تُعلَن واردة» =====

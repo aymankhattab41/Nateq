@@ -38,7 +38,10 @@ data class EngineQuirks(
     /** هل يحتاج المحرك setLanguage قبل setVoice حتى لا يرفض الصوت؟ */
     val needsSetLanguageBeforeSetVoice: Boolean = false,
 
-    /** سقف سرعة النطق الآمن لهذا المحرك (بند 2.4) — فوقه قد يصمت بلا onDone/onError. */
+    /**
+     * سقف سرعة النطق الآمن لهذا المحرك (بند 2.4) — فوقه قد يصمت بلا
+     * onDone/onError.
+     */
     val maxSafeSpeechRate: Float = 2.5f,
 
     /** سياسة التشكيل لهذا المحرك — UNKNOWN مؤقتاً. */
@@ -50,7 +53,9 @@ data class EngineQuirks(
     /** أسماء أصوات معروفة بأنها مشكلة لهذا المحرك. */
     val problematicVoiceNames: Set<String> = emptySet(),
 ) {
-    /** يُعيد [EngineQuirks] للحزمة المعطاة، أو كائن افتراضي إن لم توجد قواعد. */
+    /**
+     * يُعيد [EngineQuirks] للحزمة المعطاة، أو كائن افتراضي إن لم توجد قواعد.
+     */
     companion object {
         private val QUIRKS_DB: Map<String, EngineQuirks> = mapOf(
             // es.codefactory.vocalizertts — Vocalizer TTS
@@ -68,6 +73,7 @@ data class EngineQuirks(
         )
 
         fun forPackage(packageName: String?): EngineQuirks =
-            packageName?.let { QUIRKS_DB[it] } ?: EngineQuirks(packageName = packageName.orEmpty())
+            packageName?.let { QUIRKS_DB[it] }
+                ?: EngineQuirks(packageName = packageName.orEmpty())
     }
 }

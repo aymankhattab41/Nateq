@@ -71,6 +71,18 @@ class TextProcessorTest {
     }
 
     @Test
+    fun invalidateDictionary_resetsThrottle() {
+        val ctx: Context = ApplicationProvider.getApplicationContext()
+        val dict = PronunciationDictionary(ctx)
+        val p = TextProcessor(ctx, null, dict)
+        dict.addEntry("تفاحة", "فاكهة")
+        // استدعاء invalidateDictionary لا يرمي استثناء ويُصفّر الخنق
+        p.invalidateDictionary()
+        assertTrue(p.process("أكل تفاحة", "ar").contains("فاكهة"))
+        dict.clear()
+    }
+
+    @Test
     fun processSemantics_currency_keptWholeForSegmentation() {
         // «1500 USD» (المبلغ ثم الكود) يبقى وحدةً واحدة بعد المعالجة الدلالية
         // المبكرة — لا ينفصل رمزُ العملة لاتينياً في مقطعٍ إنجليزي مستقل.

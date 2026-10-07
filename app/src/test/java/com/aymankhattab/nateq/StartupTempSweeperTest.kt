@@ -42,15 +42,11 @@ class StartupTempSweeperTest {
         val cache = context.cacheDir
         val cutoff = System.currentTimeMillis() - 60 * 60 * 1000L
         val wavA = File(cache, "nateq_tts_1.wav")
-            .apply {
-                writeBytes(ByteArray(64))
-                setLastModified(cutoff - 60 * 60 * 1000L)
-            }
+            .apply { writeBytes(ByteArray(64)) }
+        setFileTimestamp(wavA, cutoff - 60 * 60 * 1000L)
         val wavB = File(cache, "nateq_tts_2.wav")
-            .apply {
-                writeBytes(ByteArray(64))
-                setLastModified(cutoff - 3 * 60 * 60 * 1000L)
-            }
+            .apply { writeBytes(ByteArray(64)) }
+        setFileTimestamp(wavB, cutoff - 3 * 60 * 60 * 1000L)
         val kept = File(cache, "settings.dat")
             .apply { writeBytes(ByteArray(16)) }
 
@@ -116,7 +112,7 @@ class StartupTempSweeperTest {
         val stale = File(downloads, "stale_old.apk").apply {
             writeBytes(ByteArray(10_000))
         }
-        stale.setLastModified(cutoff - 60 * 60 * 1000L)
+        setFileTimestamp(stale, cutoff - 60 * 60 * 1000L)
 
         val deleted = StartupTempSweeper(context).sweep()
 

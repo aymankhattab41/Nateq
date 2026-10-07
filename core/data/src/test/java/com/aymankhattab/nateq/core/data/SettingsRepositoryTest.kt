@@ -1522,4 +1522,73 @@ class SettingsRepositoryTest {
             fresh.exportSettings().containsKey("caller_announcement_template")
         )
     }
+
+    @Test
+    fun updateSavedVoiceNameIfNeeded_migratesCategoriesAndLanguages() {
+        repo.setPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_TIME,
+            "vocalizer-laila-compact"
+        )
+        repo.setPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_BATTERY,
+            "vocalizer-maged"
+        )
+        repo.setPreferredVoiceId("ar", "vocalizer-laila-compact")
+        repo.setPreferredVoiceId("en", "other-voice")
+
+        repo.updateSavedVoiceNameIfNeeded(
+            "vocalizer-laila-compact",
+            "vocalizer-laila-enhanced"
+        )
+
+        assertEquals(
+            "vocalizer-laila-enhanced",
+            repo.getPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_TIME
+            )
+        )
+        assertEquals(
+            "vocalizer-maged",
+            repo.getPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_BATTERY
+            )
+        )
+        assertEquals(
+            "vocalizer-laila-enhanced",
+            repo.getPreferredVoiceId("ar")
+        )
+        assertEquals("other-voice", repo.getPreferredVoiceId("en"))
+    }
+
+    @Test
+    fun textProcessingPreferences_defaultsAreTrueAndSettersPersist() {
+        assertTrue(repo.isTimeConversionEnabled())
+        assertTrue(repo.isCurrencyConversionEnabled())
+        assertTrue(repo.isUnitConversionEnabled())
+        assertTrue(repo.isSymbolConversionEnabled())
+        assertTrue(repo.isPhoneConversionEnabled())
+        assertTrue(repo.isArabicNormalizationEnabled())
+
+        repo.setTimeConversionEnabled(false)
+        repo.setCurrencyConversionEnabled(false)
+        repo.setUnitConversionEnabled(false)
+        repo.setSymbolConversionEnabled(false)
+        repo.setPhoneConversionEnabled(false)
+        repo.setArabicNormalizationEnabled(false)
+
+        assertFalse(repo.isTimeConversionEnabled())
+        assertFalse(repo.isCurrencyConversionEnabled())
+        assertFalse(repo.isUnitConversionEnabled())
+        assertFalse(repo.isSymbolConversionEnabled())
+        assertFalse(repo.isPhoneConversionEnabled())
+        assertFalse(repo.isArabicNormalizationEnabled())
+
+        val fresh = newRepository()
+        assertFalse(fresh.isTimeConversionEnabled())
+        assertFalse(fresh.isCurrencyConversionEnabled())
+        assertFalse(fresh.isUnitConversionEnabled())
+        assertFalse(fresh.isSymbolConversionEnabled())
+        assertFalse(fresh.isPhoneConversionEnabled())
+        assertFalse(fresh.isArabicNormalizationEnabled())
+    }
 }

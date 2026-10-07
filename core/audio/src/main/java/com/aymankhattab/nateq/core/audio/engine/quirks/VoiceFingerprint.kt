@@ -5,7 +5,8 @@ import com.aymankhattab.nateq.util.LocaleUtils
 import java.util.Locale
 
 /**
- * بصمة صوتية وصفية — تُستخدم لإعادة اختيار نفس الصوت المنطقي حتى عند تغيّر أسماء أصوات Vocalizer.
+ * بصمة صوتية وصفية — تُستخدم لإعادة اختيار نفس الصوت المنطقي حتى
+ * عند تغيّر أسماء أصوات Vocalizer.
  * غير مرتبطة بـ `Voice.name` الأصلي (قد يتغير مع تحديث المحرك).
  *
  * [enginePackage] حزمة المحرك (مثل "es.codefactory.vocalizertts")
@@ -22,8 +23,12 @@ data class VoiceFingerprint(
     /** يُعيد بصمة من صوت محرك حالي. */
     companion object {
         fun fromVoice(enginePackage: String, voice: Voice): VoiceFingerprint {
-            val lang = LocaleUtils.normalizeLanguageCode(voice.locale?.language ?: "")
-            val country = LocaleUtils.normalizeCountryCode(voice.locale?.country) ?: ""
+            val lang = LocaleUtils.normalizeLanguageCode(
+                voice.locale?.language ?: ""
+            )
+            val country = LocaleUtils.normalizeCountryCode(
+                voice.locale?.country
+            ) ?: ""
             return VoiceFingerprint(
                 enginePackage = enginePackage,
                 languageTag = lang,
@@ -42,8 +47,12 @@ data class VoiceFingerprint(
         // 1. الاسم الأصلي (fallback أخير)
         if (originalName.isNotBlank() && voice.name == originalName) return true
 
-        val vLang = LocaleUtils.normalizeLanguageCode(voice.locale?.language ?: "")
-        val vCountry = LocaleUtils.normalizeCountryCode(voice.locale?.country) ?: ""
+        val vLang = LocaleUtils.normalizeLanguageCode(
+            voice.locale?.language ?: ""
+        )
+        val vCountry = LocaleUtils.normalizeCountryCode(
+            voice.locale?.country
+        ) ?: ""
 
         // 2. نفس locale (language + country)
         if (vLang == languageTag && vCountry == countryTag) return true

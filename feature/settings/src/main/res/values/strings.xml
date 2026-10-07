@@ -357,6 +357,18 @@
 <string name="set_default_engine_hint">اختر Lord TTS من قائمة المحركات ثم اضغط أيقونة الإعدادات بجانبه لاختيار لغته المفضلة</string>
 <string name="shake_to_stop_enabled">إيقاف النطق بهز الجهاز</string>
 <string name="shake_to_stop_summary">هز الجهاز أثناء الإعلان الطويل يوقف النطق فوراً</string>
+<string name="time_conversion_enabled">تحويل صيغ الوقت</string>
+<string name="time_conversion_summary">نطق صيغ الوقت (مثل 12:30 أو 5:45م) بعبارات واضحة؛ معطّل افتراضياً</string>
+<string name="currency_conversion_enabled">تحويل العملات والمبالغ</string>
+<string name="currency_conversion_summary">نطق رموز العملات والمبالغ المالية بالكلمات؛ معطّل افتراضياً</string>
+<string name="unit_conversion_enabled">تحويل وحدات القياس</string>
+<string name="unit_conversion_summary">نطق اختصارات وحدات القياس (مثل كم، سم، كغ) بأسمائها الكاملة؛ معطّل افتراضياً</string>
+<string name="symbol_conversion_enabled">تحويل الرموز التعبيرية والرياضية</string>
+<string name="symbol_conversion_summary">نطق الرموز الرياضية والحسابية الشائعة؛ معطّل افتراضياً</string>
+<string name="phone_conversion_enabled">تحويل أرقام الهواتف</string>
+<string name="phone_conversion_summary">نطق أرقام الهواتف المقسمة خانة خانة بوضوح؛ معطّل افتراضياً</string>
+<string name="arabic_normalization_enabled">تطبيع الحروف العربية</string>
+<string name="arabic_normalization_summary">توحيد أشكال الهمزات والألف والياء والتاء المربوطة لتسهيل النطق؛ معطّل افتراضياً</string>
 <string name="tashkeel_preserved_enabled">إبقاء تشكيل النصوص العربية</string>
 <string name="tashkeel_preserved_summary">تُسلَّم الكلماتُ العربية غير المتحوّلة إلى المحرك بتشكيلها الأصلي، فينطق المحركُ الفاهمُ للتشكيل الحركاتَ بوضوح. تُفعل مع المحركات العربية المتقدمة؛ معطّل افتراضياً</string>
 <string name="follow_reader_rate_enabled">اتبع سرعة قارئ الشاشة</string>
@@ -529,6 +541,8 @@
 <string name="time_alarm_max_precision_summary">تستخدم منبّه النظام الدقيق (setAlarmClock) متجاوزةً كل قيود Doze والبطارية فيعمل إعلان الوقت في اللحظة المضبوطة؛ أثرُها الجانبي أن أيقونة منبّه ثابتة تظهر في شريط الحالة.</string>
 <string name="changelog_title">آخر التحديثات</string>
 <string name="changelog_text">الإصدار %1$s
+- تسجيل تشخيص شامل عند أول نطق: إضافة سجل تفصيلي لبيانات المحرك المرتبط وعدد الأصوات والصوت واللسان في AnnouncementSpeaker
+- إضافة مفاتيح التحكم في مراحل معالجة النصوص (الوقت، العملات، الوحدات، الرموز، الهواتف، وتطبيع الحروف) وتصحيح حارس الفراغ في المتصل
 - إصلاح كراش شاشة «أحدث المستجدات»: تصحيح الأحرف %% غير المنسقة في نصوص المستجدات (تحويل %% الحرفي إلى %%) لتفادي UnknownFormatConversionException عند فتح الحوار
 - سقف توازي استعلام المحركات وتأجيل الاكتشاف: تحديد سقف استعلامات المحركات المتزامنة بـ 3 محركات كحد أقصى وإغلاق كل مثيل فور انتهاء السبر، وتأجيل اكتشاف المحركات إلى حين فتح قسمها أو مجموعتها بدل إطلاقها عند فتح الشاشة الرئيسية
 - توجيه إعلان المتصل أثناء انتظار المكالمة إلى سماعة الأذن (Earpiece): على أندرويد 12+ (API 31+) عبر setCommunicationDevice(TYPE_BUILTIN_EARPIECE) و USAGE_VOICE_COMMUNICATION دون رفع مستوى صوت المكالمة، مع التحقق من النطق لمرة واحدة

@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.settings
 
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -515,6 +516,34 @@ if (!dirtyPanel) {
         return catalog.languageForSavedVoice(saved) ?: "ar"
     }
 
+    /** مقارنة الاسم المحفوظ بالأسماء المتاحة وتحديثه بالتسامح إن لزم. */
+    private fun reconcileSavedVoiceName(
+        categoryKey: String,
+        available: List<VoiceOption>
+    ) {
+        val savedName = settings.getPreferredVoiceIdForCategory(categoryKey)
+            ?: return
+
+        // تطابق تام — لا حاجة لتحديث
+        if (available.any { it.name == savedName }) return
+
+        // تطابق متسامح
+        val suffixRegex = Regex(
+            "-(compact|standard|enhanced|premium)$",
+            RegexOption.IGNORE_CASE
+        )
+        val savedBase = savedName.replace(suffixRegex, "")
+        val match = available.firstOrNull { v ->
+            v.name.equals(savedName, ignoreCase = true) ||
+                v.name.replace(suffixRegex, "")
+                    .equals(savedBase, ignoreCase = true)
+        }
+        if (match != null) {
+            Log.i(TAG, "Reconciling voice name: $savedName → ${match.name}")
+            settings.setPreferredVoiceIdForCategory(categoryKey, match.name)
+        }
+    }
+
     /** يعيد بناء سبnner الأصوات للغة/محرك الفئة الحالية: أصوات (اللغة،
      *  محرك الفئة) مع سقوطٍ منطقي ثم اختيار الصوت المحفوظ تحت علم الربط. */
     private fun refreshVoiceSpinner() {
@@ -530,6 +559,7 @@ if (!dirtyPanel) {
             null
         }
         voiceOptions = catalog.voicesFor(currentPanelLanguage, engine)
+        reconcileSavedVoiceName(key, voiceOptions)
         val saved = runCatching {
             settings.getPreferredVoiceIdForCategory(key)
         }.getOrNull()
@@ -801,5 +831,9 @@ if (!dirtyPanel) {
         seekVolume = null
         tvVolumeValue = null
         btnTest = null
+    }
+
+    companion object {
+        private const val TAG = "NATEQ_SETTINGS"
     }
 }

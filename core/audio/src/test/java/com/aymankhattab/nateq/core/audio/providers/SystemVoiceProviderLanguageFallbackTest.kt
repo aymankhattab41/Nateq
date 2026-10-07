@@ -229,4 +229,52 @@ class SystemVoiceProviderLanguageFallbackTest {
 
         assertTrue(chunks.isEmpty())
     }
+
+    @Test
+    fun `matchVoice matches exact case-insensitive and suffix variants`() {
+        val voices = listOf(
+            android.speech.tts.Voice(
+                "vocalizer-Laila-compact",
+                Locale("ara", "SAU"),
+                android.speech.tts.Voice.QUALITY_HIGH, 0, false, emptySet()
+            ),
+            android.speech.tts.Voice(
+                "vocalizer-Maged-enhanced",
+                Locale("ara", "EGY"),
+                android.speech.tts.Voice.QUALITY_HIGH, 0, false, emptySet()
+            )
+        )
+
+        // 1. Exact match
+        val exact = SystemVoiceProvider.matchVoice(
+            voices, "vocalizer-Laila-compact"
+        )
+        org.junit.Assert.assertEquals("vocalizer-Laila-compact", exact?.name)
+
+        // 2. Case-insensitive
+        val caseInsensitive = SystemVoiceProvider.matchVoice(
+            voices, "VOCALIZER-LAILA-COMPACT"
+        )
+        org.junit.Assert.assertEquals(
+            "vocalizer-Laila-compact",
+            caseInsensitive?.name
+        )
+
+        // 3. Suffix normalized
+        val baseMatch = SystemVoiceProvider.matchVoice(
+            voices, "vocalizer-laila"
+        )
+        org.junit.Assert.assertEquals(
+            "vocalizer-Laila-compact",
+            baseMatch?.name
+        )
+
+        val premiumMatch = SystemVoiceProvider.matchVoice(
+            voices, "vocalizer-maged-premium"
+        )
+        org.junit.Assert.assertEquals(
+            "vocalizer-Maged-enhanced",
+            premiumMatch?.name
+        )
+    }
 }

@@ -73,7 +73,11 @@ class VoiceFingerprintTest {
         assertFalse("Different language doesn't match", fp.matches(v))
     }
 
-    private fun createVoice(name: String, lang: String, country: String): Voice {
+    private fun createVoice(
+        name: String,
+        lang: String,
+        country: String
+    ): Voice {
         return Voice(
             name,
             java.util.Locale.forLanguageTag("$lang-$country"),

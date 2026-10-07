@@ -961,6 +961,38 @@ class AnnouncementSpeakerTest {
     }
 
     @Test
+    fun `voiceFor matches tolerant case-insensitive and suffix variants`() {
+        val voices = listOf(
+            Voice(
+                "vocalizer-Laila-compact",
+                Locale("ara", "SAU"),
+                Voice.QUALITY_HIGH, 0, false, emptySet()
+            ),
+            Voice(
+                "vocalizer-Maged-enhanced",
+                Locale("ara", "EGY"),
+                Voice.QUALITY_HIGH, 0, false, emptySet()
+            )
+        )
+        // Case-insensitive match without suffix change
+        val caseMatch = AnnouncementSpeaker.voiceFor(
+            voices, "VOCALIZER-LAILA-COMPACT", Locale("ar")
+        )
+        assertEquals("vocalizer-Laila-compact", caseMatch?.name)
+
+        // Suffix-normalized match (requested base or different suffix)
+        val baseMatch = AnnouncementSpeaker.voiceFor(
+            voices, "vocalizer-laila", Locale("ar")
+        )
+        assertEquals("vocalizer-Laila-compact", baseMatch?.name)
+
+        val premiumMatch = AnnouncementSpeaker.voiceFor(
+            voices, "vocalizer-maged-premium", Locale("ar")
+        )
+        assertEquals("vocalizer-Maged-enhanced", premiumMatch?.name)
+    }
+
+    @Test
     fun `resolveFallbackLocale prefers matching voice locale or region`() {
         val vocalizerVoices = listOf(
             Voice(
@@ -980,7 +1012,7 @@ class AnnouncementSpeakerTest {
             emptyList()
         )
         assertEquals("ar", defaultFallback?.language)
-        assertEquals("SA", defaultFallback?.country)
+        assertEquals("AE", defaultFallback?.country)
     }
 
     @Test

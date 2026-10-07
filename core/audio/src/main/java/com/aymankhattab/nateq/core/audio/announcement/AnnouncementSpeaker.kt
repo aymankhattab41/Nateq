@@ -7,6 +7,7 @@ import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
+import android.os.FileObserver
 import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
@@ -288,26 +289,95 @@ class AnnouncementSpeaker(
         ): Voice? {
             if (voices.isNullOrEmpty()) return null
             partVoice?.let { vid ->
-                voices.firstOrNull { it.name == vid }?.let { return it }
+                // 1. تطابق تام
+                voices.firstOrNull { it.name == vid }?.let { v ->
+                    Log.d(
+                        TAG,
+                        "[voiceFor] exact match: requested=$vid → " +
+                            "found=${v.name}"
+                    )
+                    return v
+                }
+                // 2. تطابق بدون حساسية الحالة
+                voices.firstOrNull {
+                    it.name.equals(vid, ignoreCase = true)
+                }?.let { v ->
+                    Log.d(
+                        TAG,
+                        "[voiceFor] case-insensitive match: " +
+                            "requested=$vid → found=${v.name}"
+                    )
+                    return v
+                }
+                // 3. تطابق بعد حذف اللاحقة (compact/enhanced/...)
+                val suffixRegex = Regex(
+                    "-(compact|standard|enhanced|premium)$",
+                    RegexOption.IGNORE_CASE
+                )
+                val vidBase = vid.replace(suffixRegex, "")
+                voices.firstOrNull { v ->
+                    v.name.replace(suffixRegex, "")
+                        .equals(vidBase, ignoreCase = true)
+                }?.let { v ->
+                    Log.d(
+                        TAG,
+                        "[voiceFor] normalized match: " +
+                            "requested=$vid → found=${v.name}"
+                    )
+                    return v
+                }
+                // لم يُعثر على تطابق تام أو متسامح — سجّل الأسماء بنفس اللغة
+                val lang = LocaleUtils.normalizeLanguageCode(
+                    locale.language
+                )
+                val available = voices.filter {
+                    LocaleUtils.normalizeLanguageCode(it.locale?.language) ==
+                        lang
+                }.map { it.name }
+                Log.w(
+                    TAG,
+                    "[voiceFor] requested=$vid NOT FOUND. " +
+                        "locale=$locale, same-lang voices=" +
+                        available.take(10)
+                )
             }
-            val targetLang = LocaleUtils.normalizeLanguageCode(locale.language)
+            val targetLang = LocaleUtils.normalizeLanguageCode(
+                locale.language
+            )
             val sameLanguage = voices.filter {
                 LocaleUtils.normalizeLanguageCode(it.locale?.language) ==
                     targetLang
             }
-            if (sameLanguage.isEmpty()) return null
+            if (sameLanguage.isEmpty()) {
+                Log.w(
+                    TAG,
+                    "[voiceFor] no voice for lang=$targetLang in " +
+                        "${voices.size} voices"
+                )
+                return null
+            }
             val country = LocaleUtils.normalizeCountryCode(locale.country)
             if (!country.isNullOrEmpty()) {
-                sameLanguage
-                    .firstOrNull {
-                        val c = LocaleUtils.normalizeCountryCode(
-                            it.locale?.country
-                        )
-                        c?.equals(country, ignoreCase = true) == true
-                    }
-                    ?.let { return it }
+                sameLanguage.firstOrNull {
+                    val c = LocaleUtils.normalizeCountryCode(
+                        it.locale?.country
+                    )
+                    c?.equals(country, ignoreCase = true) == true
+                }?.let { v ->
+                    Log.d(
+                        TAG,
+                        "[voiceFor] country match: ${v.name} (${v.locale})"
+                    )
+                    return v
+                }
             }
-            return sameLanguage.first()
+            val first = sameLanguage.first()
+            Log.w(
+                TAG,
+                "[voiceFor] fallback to first same-lang: " +
+                    "${first.name} (${first.locale})"
+            )
+            return first
         }
 
         /** صوتٌ عربي/نفسُ اللسان بديل عن صوتٍ مرفوض: بعض المحركات (ظاهرة
@@ -349,16 +419,23 @@ class AnnouncementSpeaker(
             locale: Locale,
             voices: Collection<Voice>?
         ): Locale? {
-            val targetLang = LocaleUtils.normalizeLanguageCode(locale.language)
+            val targetLang = LocaleUtils.normalizeLanguageCode(
+                locale.language
+            )
             val voiceMatch = voices?.firstOrNull {
                 LocaleUtils.normalizeLanguageCode(it.locale?.language) ==
                     targetLang
             }
             if (voiceMatch?.locale != null) {
+                Log.d(
+                    TAG,
+                    "[resolveFallbackLocale] engine locale=" +
+                        "${voiceMatch.locale} for $locale"
+                )
                 return voiceMatch.locale
             }
             return when (targetLang) {
-                LanguageCode.AR.tag -> Locale.forLanguageTag("ar-SA")
+                LanguageCode.AR.tag -> Locale.forLanguageTag("ar-AE")
                 LanguageCode.EN.tag -> Locale.US
                 "fr" -> Locale.FRANCE
                 else -> null
@@ -538,6 +615,7 @@ class AnnouncementSpeaker(
     // تراكبها فوقها.
     private val deferredWhileSpeaking = ConcurrentLinkedQueue<() -> Unit>()
     private var speakingLockObserver: ContentObserver? = null
+    private var dictionaryFileObserver: FileObserver? = null
     private var speakingLockTimeout: Runnable? = null
 
     // عدّاد جيل النطق: يزداد في كل دورة speak وينفي مسارات مؤجلة
@@ -587,6 +665,10 @@ class AnnouncementSpeaker(
     // الإعلانات ما كتبه المستخدمُ في الإعدادات إلا عبر استطلاعٍ للقرص
     // ينهار صامتاً (Keystore معطوب، أو طابعٌ لم يتغيّر، أو نافذةُ خنق).
     // فالمثّلُ الواحد يُسقطُ المزامنةَ من العملية الواحدة كلها.
+    init {
+        registerDictionaryObserver()
+    }
+
     private val textProcessor: TextProcessor by lazy {
         TextProcessor(
             appContext,
@@ -646,8 +728,10 @@ class AnnouncementSpeaker(
     @VisibleForTesting
     internal fun warmupIfNeeded(locale: Locale) {
         // VZ2: بعد onInit(SUCCESS) وقبل أول نطق للمثيل فقط، استطلاع كل 100ms
-        // حتى tts.voices غير فارغة و isLanguageAvailable(locale) >= LANG_AVAILABLE
-        // المهلة القصوى 1500ms — عند انتهائها يُنطق على أي حال مرة واحدة + سجل "انتهاء مهلة الجاهزية"
+        // حتى tts.voices غير فارغة و isLanguageAvailable(locale)
+        // >= LANG_AVAILABLE
+        // المهلة القصوى 1500ms — عند انتهائها يُنطق على أي حال مرة واحدة
+        // + سجل "انتهاء مهلة الجاهزية"
         if (ttsInitializedForTesting) return // wasWarm — لا ينتظر
         
         val startTime = System.currentTimeMillis()
@@ -687,17 +771,23 @@ class AnnouncementSpeaker(
     }
 
     @VisibleForTesting
-    internal fun simulateOnErrorForTesting(utteranceId: String?, errorCode: Int) {
+    internal fun simulateOnErrorForTesting(
+        utteranceId: String?,
+        errorCode: Int
+    ) {
         // محاكاة استدعاء onError في UtteranceProgressListener
         // للاختبار: نزيد عداد إعادة المحاولة
-        if (utteranceId != null && errorCode == TextToSpeech.ERROR_NOT_INSTALLED_YET) {
+        if (utteranceId != null &&
+            errorCode == TextToSpeech.ERROR_NOT_INSTALLED_YET
+        ) {
             retryCountMap.compute(utteranceId) { _, v -> (v ?: 0) + 1 }
         }
     }
 
     private val retryCountMap = ConcurrentHashMap<String, Int>()
 
-    // VZ2: خريطة تتبع عدد إعادة المحاولة لكل utteranceId لخطأ ERROR_NOT_INSTALLED_YET
+    // VZ2: خريطة تتبع عدد إعادة المحاولة لكل utteranceId
+    // لخطأ ERROR_NOT_INSTALLED_YET
     private val errorRetryCountMap = ConcurrentHashMap<String, Int>()
 
     @VisibleForTesting
@@ -1020,9 +1110,12 @@ class AnnouncementSpeaker(
                         errorCode: Int
                     ) {
                         // VZ2: معالجة ERROR_NOT_INSTALLED_YET (-9, API 21+) —
-                        // إعادة محاولة واحدة بعد 300ms بدل handleFailure المباشر
-                        if (utteranceId != null && errorCode == TextToSpeech.ERROR_NOT_INSTALLED_YET) {
-                            val retries = errorRetryCountMap.getOrDefault(utteranceId, 0)
+                        // إعادة محاولة بعد 300ms بدل handleFailure المباشر
+                        if (utteranceId != null &&
+                            errorCode == TextToSpeech.ERROR_NOT_INSTALLED_YET
+                        ) {
+                            val retries =
+                                errorRetryCountMap.getOrDefault(utteranceId, 0)
                             if (retries == 0) {
                                 errorRetryCountMap[utteranceId] = 1
                                 mainHandler.postDelayed({
@@ -1030,9 +1123,10 @@ class AnnouncementSpeaker(
                                     val currentTts = tts
                                     if (currentTts != null) {
                                         // نحاول إعادة النطق لنفس utteranceId
-                                        // ملاحظة: سنحتاج للوصول للنص والمعاملات من السياق
-                                        // للبساطة، نستدعي handleFailure بعد إعادة المحاولة
-                                        // في تنفيذ كامل، سنخزن النص والمعاملات لكل utteranceId
+                                        // سنحتاج للوصول للنص والمعاملات
+                                        // للبساطة، نستدعي handleFailure
+                                        // بعد إعادة المحاولة
+                                        // في تنفيذ كامل، سنخزن النص والمعاملات
                                     }
                                     // بعد 300ms، إذا فشل مجدداً → handleFailure
                                     handleFailure(utteranceId)
@@ -1310,6 +1404,38 @@ class AnnouncementSpeaker(
         }
     }
 
+    /** مراقب ملف القاموس على القرص لإبطال الكاش وتصفير الخنق فور تعديله. */
+    private fun registerDictionaryObserver() {
+        if (dictionaryFileObserver != null) return
+        val prefsDir = java.io.File(
+            appContext.filesDir?.parentFile,
+            "shared_prefs"
+        )
+        if (!prefsDir.exists()) {
+            prefsDir.mkdirs()
+        }
+        @Suppress("DEPRECATION")
+        val observer = object : FileObserver(
+            prefsDir.absolutePath,
+            CLOSE_WRITE or MODIFY or MOVED_TO or CREATE
+        ) {
+            override fun onEvent(event: Int, path: String?) {
+                if (path == null || path.contains("nateq_pronunciation")) {
+                    textProcessor.invalidateDictionary()
+                }
+            }
+        }
+        runCatching {
+            observer.startWatching()
+            dictionaryFileObserver = observer
+        }
+    }
+
+    private fun unregisterDictionaryObserver() {
+        runCatching { dictionaryFileObserver?.stopWatching() }
+        dictionaryFileObserver = null
+    }
+
     private fun registerSpeakingLockObserverIfNeeded() {
         if (speakingLockObserver != null) return
         val observer = object : ContentObserver(mainHandler) {
@@ -1337,7 +1463,8 @@ class AnnouncementSpeaker(
      *  حتى لو كان القفل ما يزال مرفوعاً (لم يعد الانتظار مجدياً). */
     private fun flushDeferredWhileSpeaking(force: Boolean) {
         if (deferredWhileSpeaking.isEmpty()) {
-            unregisterSpeakingLockObserver()
+            unregisterDictionaryObserver()
+        unregisterSpeakingLockObserver()
             return
         }
         if (!force && SpeechLock.isSpeaking(appContext)) return
@@ -1570,8 +1697,9 @@ class AnnouncementSpeaker(
                 return@executeSpeech
             }
             // VZ2: Warmup polling — بعد onInit(SUCCESS) وقبل أول نطق للمثيل فقط
-            // استطلاع كل 100ms حتى tts.voices غير فارغة و isLanguageAvailable >= LANG_AVAILABLE
-            // مهلة 1500ms — عند انتهائها يُنطق على أي حال مرة واحدة + سجل "انتهاء مهلة الجاهزية" بلا نص منطوق
+            // استطلاع كل 100ms حتى tts.voices غير فارغة و isLanguageAvailable
+            // >= LANG_AVAILABLE، مهلة 1500ms — عند انتهائها يُنطق على أي حال
+            // مرة واحدة + سجل "انتهاء مهلة الجاهزية" بلا نص منطوق
             if (!warmupDoneForCurrentTts) {
                 warmupTtsIfNeeded(locale)
                 warmupDoneForCurrentTts = true
@@ -1587,6 +1715,12 @@ class AnnouncementSpeaker(
         }
         ensureInit({ ready ->
             if (ready) {
+                Log.w(
+                    TAG,
+                    "[SpeakerDiag] boundEngine=$boundEngine, " +
+                        "tts voices=${tts?.voices?.size ?: 0}, " +
+                        "voiceId=$voiceId, locale=$locale"
+                )
                 executeSpeech()
             } else {
                 // فشل التهيئة — لا تراجع تلقائي؛ شغّل نغمة خطأ وعرض تحذير
@@ -1602,13 +1736,14 @@ class AnnouncementSpeaker(
         }, engineOverride, locale)
     }
 
-    // VZ2: Flag to track if warmup polling has been done for current TTS instance
+    // VZ2: Flag to track if warmup polling has been done for current TTS
     @Volatile
     private var warmupDoneForCurrentTts = false
 
     /** VZ2: استطلاع الجاهزية بعد onInit(SUCCESS) وقبل أول نطق حقيقي.
-     *  استطلاع كل 100ms حتى tts.voices غير فارغة و isLanguageAvailable >= LANG_AVAILABLE
-     *  مهلة 1500ms — عند انتهائها يُنطق على أي حال مرة واحدة + سجل بدون نص منطوق. */
+     *  استطلاع كل 100ms حتى tts.voices غير فارغة و isLanguageAvailable
+     *  >= LANG_AVAILABLE، مهلة 1500ms — عند انتهائها يُنطق على أي حال
+     *  مرة واحدة + سجل بدون نص منطوق. */
     private fun warmupTtsIfNeeded(locale: Locale) {
         if (warmupDoneForCurrentTts) return
         val currentTts = tts ?: return
@@ -2141,8 +2276,26 @@ speechCycle.incrementAndGet()
             runCatching {
                 chosen.locale?.let { tts.setLanguage(it) }
             }
+            Log.d(
+                TAG,
+                "[Speaker] setting voice: ${chosen.name} (${chosen.locale})"
+            )
             if (tts.setVoice(chosen) == TextToSpeech.SUCCESS) {
                 voiceApplied = true
+                // تحديث الاسم المحفوظ إن اختلف (Vocalizer يُغيّر الأسماء)
+                if (partVoice != null && chosen.name != partVoice) {
+                    Log.w(
+                        TAG,
+                        "[doSpeak] voice name drift: saved=$partVoice → " +
+                            "actual=${chosen.name}"
+                    )
+                    runCatching {
+                        settings?.updateSavedVoiceNameIfNeeded(
+                            partVoice,
+                            chosen.name
+                        )
+                    }
+                }
             } else {
                 Log.w(
                     TAG,

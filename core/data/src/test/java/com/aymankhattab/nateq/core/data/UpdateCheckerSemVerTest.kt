@@ -75,8 +75,11 @@ class UpdateCheckerSemVerTest {
         assertFalse(UpdateChecker.isNewerVersion("1.6.1", "1.6.2"))
     }
 
-    /** السيناريو الحالي: التطبيق على 1.6.29 والإصدار الأخير على GitHub هو v1.6.29 —
-     *  يجب أن يُعدّ مطابِقاً (ليس تحديثاً). */
+    /**
+     * السيناريو الحالي: التطبيق على 1.6.29
+     * والإصدار الأخير على GitHub هو v1.6.29
+     * — يجب أن يُعدّ مطابِقاً (ليس تحديثاً).
+     */
     @Test
     fun currentRelease_notNewerWhenEqual() {
         assertFalse(UpdateChecker.isNewerVersion("v1.6.29", "1.6.29"))

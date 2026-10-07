@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq.core.audio.providers
+package com.aymankhattab.nateq.core.audio.providers
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -50,7 +50,8 @@ class EngineVoiceFingerprintTest {
     fun matchWhenIntersection() {
         val fp = setOf("Laila", "Ahmed")
         val actual = listOf("Ahmed", "New")
-        val v = EngineVoiceFingerprint.isBoundToExpectedEngine("pkg", actual, fp)
+        val v = EngineVoiceFingerprint
+            .isBoundToExpectedEngine("pkg", actual, fp)
         assertEquals(EngineVoiceFingerprint.Verdict.MATCH, v)
     }
 
@@ -58,7 +59,8 @@ class EngineVoiceFingerprintTest {
     fun mismatchWhenNoIntersection() {
         val fp = setOf("Laila", "Ahmed")
         val actual = listOf("GoogleTTSVoice1", "GoogleTTSVoice2")
-        val v = EngineVoiceFingerprint.isBoundToExpectedEngine("pkg", actual, fp)
+        val v = EngineVoiceFingerprint
+            .isBoundToExpectedEngine("pkg", actual, fp)
         assertEquals(EngineVoiceFingerprint.Verdict.MISMATCH, v)
     }
 
@@ -66,7 +68,8 @@ class EngineVoiceFingerprintTest {
     fun unknownWhenFingerprintEmpty() {
         val fp = emptySet<String>()
         val actual = listOf("VoiceA")
-        val v = EngineVoiceFingerprint.isBoundToExpectedEngine("pkg", actual, fp)
+        val v = EngineVoiceFingerprint
+            .isBoundToExpectedEngine("pkg", actual, fp)
         assertEquals(EngineVoiceFingerprint.Verdict.UNKNOWN, v)
     }
 
@@ -74,7 +77,8 @@ class EngineVoiceFingerprintTest {
     fun mismatchWhenGoogleTagsForNonGoogle() {
         val fp = setOf("Laila")
         val actual = listOf("com.google.android.tts:VoiceA")
-        val v = EngineVoiceFingerprint.isBoundToExpectedEngine("com.other", actual, fp)
+        val v = EngineVoiceFingerprint
+            .isBoundToExpectedEngine("com.other", actual, fp)
         assertEquals(EngineVoiceFingerprint.Verdict.MISMATCH, v)
     }
 
@@ -82,8 +86,8 @@ class EngineVoiceFingerprintTest {
     fun noMismatchForGoogleWithGoogleTags() {
         val fp = setOf("VoiceA")
         val actual = listOf("com.google.android.tts:VoiceA")
-        val v = EngineVoiceFingerprint.isBoundToExpectedEngine("com.google.android.tts", actual, fp)
+        val v = EngineVoiceFingerprint
+            .isBoundToExpectedEngine("com.google.android.tts", actual, fp)
         assertEquals(EngineVoiceFingerprint.Verdict.MATCH, v)
     }
 }
-

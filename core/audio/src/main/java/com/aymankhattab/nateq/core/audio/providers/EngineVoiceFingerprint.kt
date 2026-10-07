@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq.core.audio.providers
+package com.aymankhattab.nateq.core.audio.providers
 
 import android.content.SharedPreferences
 
@@ -10,7 +10,11 @@ object EngineVoiceFingerprint {
         MATCH, MISMATCH, UNKNOWN
     }
 
-    fun store(prefs: SharedPreferences, enginePackage: String, voiceNames: Set<String>) {
+    fun store(
+        prefs: SharedPreferences,
+        enginePackage: String,
+        voiceNames: Set<String>
+    ) {
         val names = if (voiceNames.size <= MAX_NAMES) {
             voiceNames.toSet()
         } else {
@@ -21,7 +25,8 @@ object EngineVoiceFingerprint {
     }
 
     fun load(prefs: SharedPreferences, enginePackage: String): Set<String> {
-        val raw = prefs.getString(KEY_PREFIX + enginePackage, null) ?: return emptySet()
+        val raw = prefs.getString(KEY_PREFIX + enginePackage, null)
+            ?: return emptySet()
         if (raw.isEmpty()) return emptySet()
         return raw.split("|").filter { it.isNotEmpty() }.toSet()
     }
@@ -33,10 +38,14 @@ object EngineVoiceFingerprint {
     ): Verdict {
         if (fingerprint.isNotEmpty()) {
             val intersection = actualVoiceNames.any { actualName ->
-                fingerprint.any { fpName -> actualName.contains(fpName) || fpName.contains(actualName) }
+                fingerprint.any { fpName ->
+                    actualName.contains(fpName) || fpName.contains(actualName)
+                }
             }
             if (intersection) return Verdict.MATCH
-            val hasGoogleTag = actualVoiceNames.any { it.contains("com.google.android.tts") }
+            val hasGoogleTag = actualVoiceNames.any {
+                it.contains("com.google.android.tts")
+            }
             if (hasGoogleTag && requestedEngine != "com.google.android.tts") {
                 return Verdict.MISMATCH
             }

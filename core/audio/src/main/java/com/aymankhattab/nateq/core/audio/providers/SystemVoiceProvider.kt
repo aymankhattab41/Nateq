@@ -7,6 +7,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.speech.tts.Voice
 import android.util.LruCache
 import android.util.Log
 import android.widget.Toast
@@ -197,6 +198,34 @@ class SystemVoiceProvider(
          *  الشاشة كان ينتظر عتبةً بعيدة (~1.4 ث عند 24k) فبدا النطقُ
          *  متأخراً ("بطء الاستجابة") خصوصاً مع النصوص الإنجليزية الطويلة. */
         private const val STREAM_CHUNK_BYTES = 16 * 1024
+
+        /** مطابقة اسم الصوت بتسامح (تامة، تجاهل الحالة، تجريد اللواحق). */
+        internal fun matchVoice(
+            voices: Collection<Voice>?,
+            desiredVoiceName: String?
+        ): Voice? {
+            if (voices.isNullOrEmpty() || desiredVoiceName.isNullOrBlank()) {
+                return null
+            }
+            // 1. تطابق تام
+            voices.firstOrNull { it.name == desiredVoiceName }?.let {
+                return it
+            }
+            // 2. تطابق بدون حساسية الحالة
+            voices.firstOrNull {
+                it.name.equals(desiredVoiceName, ignoreCase = true)
+            }?.let { return it }
+            // 3. تطابق بعد حذف اللاحقة (compact/standard/enhanced/premium)
+            val suffixRegex = Regex(
+                "-(compact|standard|enhanced|premium)$",
+                RegexOption.IGNORE_CASE
+            )
+            val vidBase = desiredVoiceName.replace(suffixRegex, "")
+            return voices.firstOrNull { v ->
+                v.name.replace(suffixRegex, "")
+                    .equals(vidBase, ignoreCase = true)
+            }
+        }
 
 
         /** طول رأس WAV المقروء لفحص خاناته أثناء البثّ — يكفي لرؤوس
@@ -942,9 +971,7 @@ class SystemVoiceProvider(
         // اللغة إذا لم يجده المحرك (تجنّباً لكسر النطق لمجرد اسم غير مطابق).
         if (!desiredVoiceName.isNullOrBlank()) {
             runCatching {
-                val matching = engine.voices?.firstOrNull {
-                    it.name == desiredVoiceName
-                }
+                val matching = matchVoice(engine.voices, desiredVoiceName)
                 if (matching != null) {
                     // صوتٌ يتطلب اتصالاً (جوجل السحابي)
                     // مع غياب الإنترنت: تراجع فوري دون دفع

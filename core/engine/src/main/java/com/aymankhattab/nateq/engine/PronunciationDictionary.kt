@@ -266,96 +266,11 @@ class PronunciationDictionary(
         return LinkedHashMap(entries).apply { putAll(overlay) }
     }
 
-    /** الإدخالات الافتراضية القديمة التي كانت تُزرَع تلقائياً في نسخ سابقة؛
-     *  تُحذف عند الترقية ليبقى القاموس افتراضياً فارغاً ويبنيه المستخدم وحده
-     *  (إضافة/تعديل/استيراد/تصدير) دون كلمات مفروضة من التطبيق. */
-    private fun legacyDefaultEntries(): Map<String, String> = mapOf(
-            // اختصارات طبية — مع النقطة فقط لمنع الاستبدال
-            // غير المقصود في النصوص العادية
-            "د." to "دكتور",
-            "أ.د" to "أستاذ دكتور",
-            "بروفسور" to "بروفيسور",
-
-            // اختصارات عامة — مع رمز التمييز لتجنب استبدال الكلمات الكاملة
-            "صـ" to "صفحة",
-            "ج." to "جزء",
-
-            // وحدات قياس
-            "كم" to "كيلومتر",
-            "سم" to "سنتيمتر",
-            "مم" to "مليمتر",
-            "كغ" to "كيلوغرام",
-            "غم" to "غرام",
-            "مل" to "مليلتر",
-
-            // تقنيات
-            "HTTP" to "إتش تي تي بي",
-            "HTTPS" to "إتش تي تي بي إس",
-            "URL" to "يو آر إل",
-            "HTML" to "إتش تي إم إل",
-            "CSS" to "سي إس إس",
-            "JS" to "جافا سكريبت",
-            "API" to "إيه بي آي",
-            "JSON" to "جيسون",
-            "XML" to "إكس إم إل",
-            "SQL" to "سيكويل",
-            "CPU" to "سي بي يو",
-            "GPU" to "جي بي يو",
-            "RAM" to "رام",
-            "SSD" to "إس إس دي",
-            "USB" to "يو إس بي",
-            "WiFi" to "واي فاي",
-            "Bluetooth" to "بلوتوث",
-            "AI" to "إيه آي",
-            "ML" to "إم إل",
-
-            // منظمات
-            "WHO" to "منظمة الصحة العالمية",
-            "UN" to "الأمم المتحدة",
-            "EU" to "الاتحاد الأوروبي",
-            "NASA" to "ناسا",
-            "FIFA" to "فيفا",
-            "UEFA" to "يويفا",
-
-            // دول (اختصارات)
-            "السعودية" to "المملكة العربية السعودية",
-            "الإمارات" to "الإمارات العربية المتحدة",
-            "أمريكا" to "الولايات المتحدة الأمريكية",
-            "بريطانيا" to "المملكة المتحدة",
-            "الصين" to "جمهورية الصين الشعبية",
-            "روسيا" to "الاتحاد الروسي",
-
-            // رموز رياضية
-            "دورى" to "دوري",
-
-            // عملات — يُستخدم الرمز ر.س وما إليه من الوحدات؛ ولا تُحوَّل كلمة
-            // "ريال" العامة (قد تكون قطرياً/عمانياً/مغربياً) فيجري إصلاح
-            // "50 ريال قطري" من قبل الاستبدال الافتراضي الخاطئ.
-            "درهم" to "درهم إماراتي",
-            "دينار" to "دينار كويتي",
-            "جنيه" to "جنيه مصري",
-
-            // أيام الأسبوع
-            "أح" to "الأحد",
-            "اث" to "الاثنين",
-            "ثث" to "الثلاثاء",
-            "أرب" to "الأربعاء",
-            "خم" to "الخميس",
-            "سبت" to "السبت",
-
-            // شهور
-            "ينا" to "يناير",
-            "فبر" to "فبراير",
-            "مار" to "مارس",
-            "أبر" to "أبريل",
-            "ماي" to "مايو",
-            "يون" to "يونيو",
-            "يول" to "يوليو",
-            "أغس" to "أغسطس",
-            "أكت" to "أكتوبر",
-            "نوف" to "نوفمبر",
-            "ديس" to "ديسمبر"
-        )
+    /**
+     * الإدخالات الافتراضية القديمة — فارغة ليبقى القاموس تحت تحكم المستخدم
+     * كاملاً بلا تحويلات افتراضية مفروضة.
+     */
+    private fun legacyDefaultEntries(): Map<String, String> = emptyMap()
 
     /** هجرة لمرة واحدة: حذف الإدخالات الافتراضية القديمة
      *  المخزّنة عند المستخدم.
@@ -416,11 +331,18 @@ sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
             cache = null
             version++
         }
-        return try {
+        val ok = try {
             prefs.edit().clear().commit()
         } catch (e: Exception) {
             false
         }
+        lastDiskCheckNanos = 0L
+        return ok
+    }
+
+    /** تصفير مؤقت الخنق لإجبار [reloadIfChanged] على فحص القرص فوراً. */
+    fun invalidate() {
+        lastDiskCheckNanos = 0L
     }
 
     /** إعادة تحميل فورية فقط إذا تغيّر طابع الملف على القرص منذ آخر قراءة —
@@ -521,6 +443,7 @@ sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
                 swapLangEntries(lang, overlay)
             }
         }
+        lastDiskCheckNanos = 0L
         return save()
     }
 
@@ -544,6 +467,7 @@ sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
                 if (changed) swapLangEntries(lang, overlay)
             }
         }
+        lastDiskCheckNanos = 0L
         return if (changed) save() else false
     }
 
@@ -557,6 +481,7 @@ sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
             cache = null
             version++
         }
+        lastDiskCheckNanos = 0L
         save()
     }
 
@@ -732,6 +657,7 @@ sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
                 .putString(KEY_SCOPES, NateqJson.toJson(langEntries))
                 .commit()
             lastStamp = currentStamp()
+            lastDiskCheckNanos = 0L
             ok
         } catch (e: Exception) {
             false

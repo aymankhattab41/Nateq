@@ -355,6 +355,18 @@
 <string name="set_default_engine_hint">Choose Lord TTS from the engine list, then tap its settings icon to set its preferred language</string>
 <string name="shake_to_stop_enabled">Shake to stop speech</string>
 <string name="shake_to_stop_summary">Shaking the device during a long announcement stops speech immediately</string>
+<string name="time_conversion_enabled">Time formats conversion</string>
+<string name="time_conversion_summary">Pronounce time formats (e.g. 12:30 or 5:45 PM) in clear spoken phrases; off by default</string>
+<string name="currency_conversion_enabled">Currencies and amounts conversion</string>
+<string name="currency_conversion_summary">Pronounce currency symbols and financial amounts in words; off by default</string>
+<string name="unit_conversion_enabled">Measurement units conversion</string>
+<string name="unit_conversion_summary">Pronounce measurement unit abbreviations (e.g. km, cm, kg) as full names; off by default</string>
+<string name="symbol_conversion_enabled">Math and general symbols conversion</string>
+<string name="symbol_conversion_summary">Pronounce common mathematical and calculation symbols; off by default</string>
+<string name="phone_conversion_enabled">Phone numbers conversion</string>
+<string name="phone_conversion_summary">Pronounce grouped phone numbers digit by digit clearly; off by default</string>
+<string name="arabic_normalization_enabled">Arabic characters normalization</string>
+<string name="arabic_normalization_summary">Normalize variations of Hamza, Alef, Yaa, and Taa Marbuta for uniform speech; off by default</string>
 <string name="tashkeel_preserved_enabled">Keep Arabic text diacritics</string>
 <string name="tashkeel_preserved_summary">Send unchanged Arabic words to the engine with their original diacritics, so diacritics-aware engines pronounce the vowels clearly. Enable with advanced Arabic engines; off by default</string>
 <string name="follow_reader_rate_enabled">Follow the screen-reader speed</string>
@@ -519,6 +531,8 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+- Comprehensive diagnostic logging at first speech: Added detailed log for bound engine, voices count, voiceId, and locale in AnnouncementSpeaker
+- Added text processing stage controls (time, currency, units, symbols, phone, Arabic normalization) and fixed blank caller number guard
 - Fix changelog crash: escape literal %% signs in changelog strings (%%) to prevent UnknownFormatConversionException when opening changelog dialog
 - Concurrency cap and deferred engine discovery: Capped concurrent engine probes to max 3 with immediate shutdown per probe, and deferred catalog discovery until the engine section is opened instead of running on home view
 - Call waiting caller announcement routed to earpiece: On Android 12+ (API 31+) via setCommunicationDevice(TYPE_BUILTIN_EARPIECE) and USAGE_VOICE_COMMUNICATION without raising STREAM_VOICE_CALL, with single-announcement guarantee

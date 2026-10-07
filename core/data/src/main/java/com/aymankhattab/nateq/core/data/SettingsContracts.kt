@@ -36,7 +36,8 @@ interface LanguagePrefs {
  * و[VoicePrefsProvider] ليكسو حاجات خط الإنتاج ومزوّدي الأصوات بنطاق واحد
  * (البند 4). ينفّذها SettingsRepository.
  */
-interface SynthesisPrefs : SynthesisConfig, VoicePrefsProvider {
+interface SynthesisPrefs :
+    SynthesisConfig, VoicePrefsProvider, TextProcessingPrefs {
 
     /** الصوت المفضّل للغة معيّنة (معرّف صوت داخل المحرك). */
     fun getPreferredVoiceId(languageTag: String): String?
@@ -760,4 +761,30 @@ interface UpdatePrefs {
 
     /** يعيّن مفتاح GitHub PAT (null = حذف). */
     fun setGitHubUpdatePat(token: String?)
+}
+
+/**
+ * [TextProcessingPrefs] — نطاق مفاتيح مراحل معالجة النصوص.
+ * ينفّذها SettingsRepository.
+ */
+interface TextProcessingPrefs :
+    com.aymankhattab.nateq.core.engine.TextProcessingPreferences {
+
+    /** يعيّن تفعيل تحويل الأوقات والتواريخ. */
+    fun setTimeConversionEnabled(enabled: Boolean)
+
+    /** يعيّن تفعيل تحويل العملات والمبالغ. */
+    fun setCurrencyConversionEnabled(enabled: Boolean)
+
+    /** يعيّن تفعيل تحويل وحدات القياس. */
+    fun setUnitConversionEnabled(enabled: Boolean)
+
+    /** يعيّن تفعيل تحويل الرموز. */
+    fun setSymbolConversionEnabled(enabled: Boolean)
+
+    /** يعيّن تفعيل تحويل أرقام الهواتف. */
+    fun setPhoneConversionEnabled(enabled: Boolean)
+
+    /** يعيّن تفعيل تطبيع الحروف العربية. */
+    fun setArabicNormalizationEnabled(enabled: Boolean)
 }

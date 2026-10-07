@@ -14,10 +14,16 @@ class EngineQuirksTest {
         assertTrue("Vocalizer يحتاج warmup polling", q.needsWarmupPolling)
         assertTrue("Vocalizer يتطلب إقليماً", q.requiresLocaleWithRegion)
         assertTrue("Vocalizer يرفض الصوت بصمت أحياناً", q.rejectsVoiceSilently)
-        assertTrue("Vocalizer يحتاج setLanguage قبل setVoice", q.needsSetLanguageBeforeSetVoice)
+        assertTrue(
+            "Vocalizer يحتاج setLanguage قبل setVoice",
+            q.needsSetLanguageBeforeSetVoice
+        )
         assertEquals(2.5f, q.maxSafeSpeechRate, 0.001f)
         assertEquals(TashkeelPolicy.UNKNOWN, q.tashkeelPolicy)
-        assertTrue("العربية في اللغات المشكلة", q.problematicLanguages.contains("ar"))
+        assertTrue(
+            "العربية في اللغات المشكلة",
+            q.problematicLanguages.contains("ar")
+        )
     }
 
     @Test

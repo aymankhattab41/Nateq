@@ -42,6 +42,7 @@ import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
 import com.aymankhattab.nateq.engine.NumberSpeech
 import com.aymankhattab.nateq.engine.PronunciationDictionary
+import com.aymankhattab.nateq.engine.TextProcessor
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.LanguageCode
@@ -128,6 +129,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private lateinit var numberSection: NumberReadingController
     private lateinit var deviceHealthSection: DeviceHealthController
     private lateinit var textReadingSection: TextReadingController
+    private lateinit var textProcessingSection: TextProcessingController
     private lateinit var instantSilenceSection: InstantSilenceController
 
     // مفتاح تبديل لغة التطبيق (أسفل الشاشة)
@@ -696,6 +698,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         textReadingSection = TextReadingController(
             this, settings, { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
+        textProcessingSection = TextProcessingController(
+            settings, requireContext(), { accordion.updateSectionStatuses() }
+        ).apply { bind(view) }
         instantSilenceSection = InstantSilenceController(
             this, settings, { accordion.updateSectionStatuses() }
         ).apply { setup(view) }
@@ -890,6 +895,29 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         simpleAdapter(requireContext(), items)
 
     // ===== قاموس النطق =====
+    internal fun testDictionaryEntry(
+        original: String,
+        language: String = "ar",
+        resultView: TextView? = null
+    ): String {
+        val textProcessor = TextProcessor(
+            requireContext(),
+            settings,
+            pronunciationDict
+        )
+        val result = textProcessor.process(original, language)
+        val output = if (result != original) {
+            "قبل: $original\nبعد: $result ✓"
+        } else {
+            "لم يُعثر على تطابق: $original"
+        }
+        resultView?.apply {
+            visibility = View.VISIBLE
+            text = output
+        }
+        return output
+    }
+
     private fun showDictEditDialog(existing: Pair<String, String>? = null) {
         val builder = MaterialAlertDialogBuilder(requireContext())
         val inflater = LayoutInflater.from(requireContext())
@@ -897,9 +925,30 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         val etWord = dialogView.findViewById<EditText>(R.id.et_dict_word)
         val etPhonetic =
             dialogView.findViewById<EditText>(R.id.et_dict_phonetic)
+        val tvTestResult =
+            dialogView.findViewById<TextView>(R.id.tv_dict_test_result)
+        val btnTest =
+            dialogView.findViewById<View>(R.id.btn_test_dict_entry)
         if (existing != null) {
             etWord.setText(existing.first)
             etPhonetic.setText(existing.second)
+        }
+        btnTest?.setOnClickListener {
+            val word = etWord.text.toString().trim()
+            val phonetic = etPhonetic.text.toString().trim()
+            if (word.isEmpty()) {
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.enter_word_and_pronunciation),
+                    Toast.LENGTH_SHORT
+                ).show()
+                return@setOnClickListener
+            }
+            if (phonetic.isNotEmpty()) {
+                runCatching { pronunciationDict.addEntry(word, phonetic) }
+                refreshDictAdapter()
+            }
+            testDictionaryEntry(word, "ar", tvTestResult)
         }
         builder.setView(dialogView)
             .setTitle(
@@ -2306,6 +2355,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         numberSection.setup(v)
         deviceHealthSection.setup(v)
         textReadingSection.setup(v)
+        textProcessingSection.bind(v)
         instantSilenceSection.setup(v)
         categoryVoicePanel.reloadCurrent()
         refreshDictAdapter()
