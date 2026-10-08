@@ -265,7 +265,7 @@ class PipelineStepsTest {
     @Test
     fun currency_code_afterAmount() {
         // بند: «1500 USD» (المبلغ قبل الكود) كان يُقسم إلى مقطع عربي وآخر
-        // إنجليزي فيفقد خطُّ العملة مبلغَه المكسور؛ يُستبدل الآن عربياً كاملاً.
+        // إنجليزي فيفقد خطُّ العملة مبلغَه المكسور؛ يُستبدل عربياً الآن.
         assertEquals(
             "ألف وخمسمائة دولار أمريكي",
             CurrencyStep.apply("1500 USD")
@@ -627,7 +627,10 @@ class PipelineStepsTest {
 
     @Test
     fun numberToWords_negative() {
-        assertEquals("ناقص واحد ونصف", NumberWordsConverter.numberToWords(-1.5))
+        assertEquals(
+            "ناقص واحد ونصف",
+            NumberWordsConverter.numberToWords(-1.5)
+        )
     }
 
     @Test
@@ -944,7 +947,7 @@ class PipelineStepsTest {
 
     @Test
     fun tashkeel_stripsQuranicDiacritics() {
-        // U+0670 (ألف خنجرية علوية) تُحذف مع سائر الحركات بعد مراجعة البند 3.4.
+        // U+0670 (ألف خنجرية علوية) تُحذف مع سائر الحركات بعد مراجعة 3.4.
         assertEquals(
             "\u0643\u062A\u0627\u0628",
             TashkeelStripStep.apply("\u0643\u0670\u062A\u064E\u0627\u0628")
@@ -1239,7 +1242,7 @@ class PipelineStepsTest {
 
     @Test
     fun symbol_percentAndComparisons_notGlued() {
-        // الادعاء: استبدال «%» بلا مسافات يلصق الكلمات («خمسونبالمئة») — والجذر
+        // استبدال «%» بلا مسافات يلصق الكلمات («خمسونبالمئة») — والجذر
         // نفسه يصيب بقية الرموز («5>3» ← «5أكبر من3»). المسافات الطرفية
         // تُنظَّف في CleanupStep في المسار الكامل. النطق بالمئة من مسؤولية
         // PunctuationStep (مستوى «البعض» الافتراضي) لا SymbolStep.

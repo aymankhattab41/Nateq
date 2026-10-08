@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+    ع٢٩-5: مضيف المحركات الأصلية في عملية معزولة.
+
+    كل المكتبات الأصلية (Nuance Vocalizer / Acapela / Sherpa-ONNX)
+    تُحمَّل وتُستدعى داخل :engine_host وحدها؛ فأي انهيار JNI
+    (segfault / abort / exit) يقتل هذه العملية فقط ويبقى مزوّدو
+    الصوت والخدمة والتطبيق حيّين. الواجهة AIDL غير مُصدَّرة
+    (exported="false"): لا تصل لتطبيق خارجي إطلاقاً.
+    -->
+    <application>
+        <service
+            android:name="com.aymankhattab.nateq.core.audio.enginehost.EmbeddedEngineHostService"
+            android:exported="false"
+            android:process=":engine_host" />
+    </application>
+
+</manifest>

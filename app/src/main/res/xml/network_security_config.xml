@@ -14,6 +14,12 @@
             <certificates src="system" />
         </trust-anchors>
     </domain-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">downloads.codefactoryglobal.com</domain>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
     <debug-overrides>
         <trust-anchors>
             <certificates src="system" />

@@ -16,10 +16,9 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.core.audio.announcement.ArabicSpeechNormalizer
 import com.aymankhattab.nateq.core.audio.announcement.InterruptionSensors
-import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
-import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
 import com.aymankhattab.nateq.core.common.AppDispatchers
@@ -332,8 +331,9 @@ class NateqTtsService : TextToSpeechService() {
 
         val providers = listOf(
             SystemVoiceProvider(applicationContext, settings),
-            VocalizerEmbeddedVoiceProvider(applicationContext),
-            AcapelaEmbeddedVoiceProvider(applicationContext)
+            EmbeddedProviders.vocalizer(applicationContext),
+            EmbeddedProviders.acapela(applicationContext),
+            EmbeddedProviders.sherpa(applicationContext)
         )
         catalog = VoiceCatalog(providers)
         requestHandler = SynthesisRequestHandler(catalog, settings)
@@ -396,7 +396,7 @@ class NateqTtsService : TextToSpeechService() {
         )
     }
 
-override fun onDestroy() {
+    override fun onDestroy() {
         // إلغاء كل العمليات اللاتزامنية المعلّقة للخدمة حتى لا تتسرب مع عمر
         // عملية المحرك، ثم إغلاق النطق الجاري إن وُجد.
         currentJob?.cancel()
@@ -416,6 +416,10 @@ override fun onDestroy() {
         // تدمير الخدمة — حارس isInitialized لمسارات التدمير
         // المبكر قبل onCreate.
         if (::catalog.isInitialized) catalog.shutdown()
+        // ع٢٩-2 (5): إغلاق نسخ المزوّدات المدمجة المشتركة وإلغاء
+        // مراجعها في السجل — فلا تبقى نسخة أصلية حيّة بعد تدمير
+        // الخدمة، وتعاد الإنشاء لاحقاً من إنشاءٍ حيٍّ عند الحاجة.
+        EmbeddedProviders.shutdownAll()
         super.onDestroy()
     }
 
@@ -1057,7 +1061,12 @@ override fun onDestroy() {
         // v106. و`start` يُمرَّر مرّةً واحدة و`done()` بعد آخر شريحة.
         var started = false
         try {
-            provider.synthesize(
+            val targetProvider = if (finalEngine != null) {
+                catalog.findProvider(finalEngine) ?: provider
+            } else {
+                provider
+            }
+            targetProvider.synthesize(
                 speechText, voice, finalRate, finalPitch, finalVolume,
                 { sampleRateInHz, channelCount ->
                     if (!started) {
@@ -1208,7 +1217,11 @@ override fun onDestroy() {
             processed
         }
         val (voice, foundProvider) = resolveVoiceWithFallback(segTag)
-        val provider = foundProvider
+        val provider = if (routed.engine != null) {
+            catalog.findProvider(routed.engine) ?: foundProvider
+        } else {
+            foundProvider
+        }
         if (provider == null) {
             Log.w(TAG,
             "synthesizeMixed: لا مزود لمقطع $segTag —" +

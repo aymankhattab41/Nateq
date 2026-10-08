@@ -7,9 +7,8 @@ import com.aymankhattab.nateq.core.common.TimeProvider
 import com.aymankhattab.nateq.core.common.readStickyBattery
 import com.aymankhattab.nateq.core.audio.engine.SynthesisRequestHandler
 import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
-import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
 import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
-import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.engine.NumberSpeech
@@ -64,8 +63,9 @@ class TimeAnnouncementManager(
                         ?: SettingsRepository.create(appContext)
                     val providers = listOf(
                         SystemVoiceProvider(appContext, sharedSettings),
-                        VocalizerEmbeddedVoiceProvider(appContext),
-                        AcapelaEmbeddedVoiceProvider(appContext)
+                        EmbeddedProviders.vocalizer(appContext),
+                        EmbeddedProviders.acapela(appContext),
+                        EmbeddedProviders.sherpa(appContext)
                     )
                     val catalog = VoiceCatalog(providers)
                     val handler = SynthesisRequestHandler(

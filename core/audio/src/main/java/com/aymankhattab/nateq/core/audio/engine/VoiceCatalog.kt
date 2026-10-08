@@ -7,7 +7,9 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
+import com.aymankhattab.nateq.core.audio.providers.SherpaOnnxVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
@@ -80,6 +82,19 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
         }
 
         /**
+         * ع٢٩-9: عدّاد تغيّر محتوى التخزين (تنزيل/حذف/استيراد/هجرة)
+         * من أي مكوّن في العملية؛ تقارن كل نسخة كتالوج برقمه في
+         * [needsRefresh] حتى يُعاد الاكتشاف فوراً بدل انتظار المهلة.
+         */
+        private val storageEpoch =
+            java.util.concurrent.atomic.AtomicLong(0L)
+
+        /** تُستدعى عند أي تغيير في محتوى التخزين المدمج. */
+        fun noteStorageChange() {
+            storageEpoch.incrementAndGet()
+        }
+
+        /**
          * يكتشف فعلياً كل اللغات المتاحة عبر كل محركات TTS المثبتة في النظام:
          * يبني لكل محرك نسخة مؤقتة من [TextToSpeech] ويسألها [getVoices]، ثم
          * يغلقه فوراً ([shutdown]) مهما كانت النتيجة حتى لا تُسرّب موارد.
@@ -103,14 +118,15 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                 .filterNot { isBlacklisted(it.packageName) }
             val vocalizerPkg = VocalizerEmbeddedVoiceProvider.PROVIDER_ID
             val acapelaPkg = AcapelaEmbeddedVoiceProvider.PROVIDER_ID
-            val embeddedPkgs = setOf(vocalizerPkg, acapelaPkg)
+            val sherpaPkg = SherpaOnnxVoiceProvider.PROVIDER_ID
+            val embeddedPkgs = setOf(vocalizerPkg, acapelaPkg, sherpaPkg)
             val externalEngines = engines.filterNot {
                 it.packageName in embeddedPkgs
             }
             val embeddedVoicesMap = mutableMapOf<String, List<Voice>>()
             if (engines.any { it.packageName == vocalizerPkg }) {
                 try {
-                    val vocalizer = VocalizerEmbeddedVoiceProvider(context)
+                    val vocalizer = EmbeddedProviders.vocalizer(context)
                     if (vocalizer.isConfigured()) {
                         val vList = vocalizer.listVoices(Locale.ROOT).map { d ->
                             Voice(
@@ -132,7 +148,7 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             }
             if (engines.any { it.packageName == acapelaPkg }) {
                 try {
-                    val acapela = AcapelaEmbeddedVoiceProvider(context)
+                    val acapela = EmbeddedProviders.acapela(context)
                     if (acapela.isConfigured()) {
                         val aList = acapela.listVoices(Locale.ROOT).map { d ->
                             Voice(
@@ -150,6 +166,28 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                     }
                 } catch (_: Throwable) {
                     // تجاهل أي خطأ في أصوات Acapela المدمجة
+                }
+            }
+            if (engines.any { it.packageName == sherpaPkg }) {
+                try {
+                    val sherpa = EmbeddedProviders.sherpa(context)
+                    if (sherpa.isConfigured()) {
+                        val sList = sherpa.listVoices(Locale.ROOT).map { d ->
+                            Voice(
+                                d.displayName,
+                                d.locale,
+                                Voice.QUALITY_HIGH,
+                                Voice.LATENCY_LOW,
+                                false,
+                                offlineFeature
+                            )
+                        }
+                        if (sList.isNotEmpty()) {
+                            embeddedVoicesMap[sherpaPkg] = sList
+                        }
+                    }
+                } catch (_: Throwable) {
+                    // تجاهل أي خطأ في أصوات Sherpa-ONNX المدمجة
                 }
             }
             // الفحص بالتوازي مع سقف 2-3 محركات متزامنة عبر Semaphore
@@ -459,15 +497,22 @@ val lang = LocaleUtils.normalizeLanguageCode(
     @Volatile
     private var lastDiscoveryAtMs = 0L
 
+    /** رقم عدّاد التخزين السائد عند بناء ذاكرة الاكتشاف الحالية. */
+    @Volatile
+    private var discoveredAtEpoch = 0L
+
     /** يُحدّث ذاكرة الاكتشاف (يستدعيها المتصل بعد اكتشاف خلفي). */
     fun applyDiscovery(map: Map<String, List<EngineWithVoices>>) {
         discoveredByLanguage = map
         lastDiscoveryAtMs = System.currentTimeMillis()
+        discoveredAtEpoch = storageEpoch.get()
     }
 
-    /** هل الاكتشاف مُعدَم أو انتهت صلاحيته (بعد مرور ttlMs)؟ */
+    /** هل الاكتشاف مُعدَم أو انتهت صلاحيته (بعد مرور ttlMs)؟
+     *  أو تغيّر محتوى التخزين بعد بنائه (ع٢٩-9)؟ */
     fun needsRefresh(ttlMs: Long): Boolean =
         lastDiscoveryAtMs == 0L ||
+            discoveredAtEpoch != storageEpoch.get() ||
             System.currentTimeMillis() - lastDiscoveryAtMs > ttlMs
 
     /**

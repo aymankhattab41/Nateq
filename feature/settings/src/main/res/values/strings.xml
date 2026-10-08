@@ -647,7 +647,32 @@
     <string name="announcement_fallback_engine_no_engine">لا يوجد محرك احتياطي (افتراضي)</string>
     <string name="announcement_fallback_engine_select">اختر محركاً احتياطياً</string>
 
-    <!-- تحذير عدم وجود محرك للإعلانات -->
-    <string name="no_engine_for_announcements_warning">الإعلانات بلا محرك: لم يُضبط محرك للإعلانات ولم يُوجد محرك احتياطي. الإعلانات لن تُنطق. اضغط لضبط محرك في الإعدادات.</string>
+    <!-- المحركات المدمجة وتنزيل الأصوات -->
+    <string name="group_embedded_engines_title">المحركات المدمجة وتنزيل الأصوات</string>
+    <string name="section_embedded_downloader_title">تنزيل وإدارة الأصوات المدمجة (Piper &amp; Vocalizer &amp; Acapela)</string>
+    <string name="section_embedded_downloader_summary">أصوات عصبية ومدمجة محلية تعمل بلا إنترنت وبأعلى جودة مع دعم الاستيراد</string>
+    <string name="embedded_engine_piper">Piper TTS (ONNX)</string>
+    <string name="embedded_engine_vocalizer">Vocalizer Ex 2</string>
+    <string name="embedded_engine_acapela">Acapela TTS</string>
+    <string name="embedded_import_zip">استيراد صوت من ملف ZIP</string>
+    <string name="embedded_importing_zip">جاري استيراد باقة الصوت…</string>
+    <string name="embedded_import_success">تم استيراد الصوت (%1$s) لمحرك %2$s بنجاح</string>
+    <string name="embedded_import_error">فشل استيراد الملف المضغوط: %1$s</string>
+    <string name="embedded_acapela_empty_hint">لا توجد أصوات Acapela مثبتة حالياً. يمكنك استيراد صوت عبر زر «استيراد صوت من ملف ZIP» أو بفتح ملف .zip من أي مدير ملفات.</string>
+    <string name="embedded_download_btn">تنزيل الصوت</string>
+    <string name="embedded_installed_badge">مُثبَّت</string>
+    <string name="embedded_delete_btn">حذف</string>
+    <string name="embedded_preview_btn">معاينة الصوت</string>
+    <string name="embedded_downloading">جاري التحميل (%1$d%%)…</string>
+    <string name="embedded_filter_all">الكل</string>
+    <string name="embedded_filter_ar">العربية</string>
+    <string name="embedded_filter_en">الإنجليزية</string>
+    <string name="embedded_filter_other">لغات أخرى</string>
+    <string name="embedded_download_success">تم تنزيل وتثبيت الصوت بنجاح</string>
+    <string name="embedded_download_error">تعذر تنزيل الصوت: %1$s</string>
+    <string name="embedded_delete_confirm">هل أنت متأكد من حذف هذا الصوت من الذاكرة؟</string>
+    <string name="embedded_delete_success">تم حذف الصوت بنجاح</string>
+    <string name="embedded_empty_list">لا توجد أصوات مطابقة للفلتر المحدد</string>
+    <string name="embedded_header_desc">أصوات ذكاء اصطناعي ومحركات مدمجة سريعة تعمل دون الحاجة للاتصال بالإنترنت بمجرد تنزيلها أو استيرادها.</string>
 
 </resources>

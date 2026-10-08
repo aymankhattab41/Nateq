@@ -201,8 +201,7 @@ class NateqAccessibilityService : AccessibilityService() {
 
         // اهتزاز تأكيدي
         runCatching {
-            val vibrator =
-                getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            val vibrator = getSystemService(Vibrator::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 vibrator?.vibrate(
                     VibrationEffect.createOneShot(

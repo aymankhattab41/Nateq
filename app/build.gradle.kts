@@ -72,6 +72,16 @@ android {
         viewBinding = true
     }
 
+    // extractNativeLibs يُضبط من DSL لا من المانيفست (تحذير AGP:
+    // «should not be specified in this source AndroidManifest.xml»).
+    // false = تُحمّل المكتبات من الـ APK دون فكّها (نفس سلوك
+    // android:extractNativeLibs="false" القديم).
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+    }
+
     testOptions {
         unitTests {
             isIncludeAndroidResources = true

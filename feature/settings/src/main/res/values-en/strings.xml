@@ -637,7 +637,32 @@
     <string name="announcement_fallback_engine_no_engine">No fallback engine (default)</string>
     <string name="announcement_fallback_engine_select">Select a fallback engine</string>
 
-    <!-- No engine for announcements warning -->
-    <string name="no_engine_for_announcements_warning">Announcements have no engine: no engine configured for announcements and no fallback engine. Announcements will not be spoken. Tap to configure an engine in settings.</string>
+    <!-- Embedded engines & voice downloads -->
+    <string name="group_embedded_engines_title">Embedded Engines &amp; Voice Downloads</string>
+    <string name="section_embedded_downloader_title">Download &amp; Manage Embedded Voices (Piper &amp; Vocalizer &amp; Acapela)</string>
+    <string name="section_embedded_downloader_summary">High quality offline neural and embedded voices working completely without internet with ZIP import support</string>
+    <string name="embedded_engine_piper">Piper TTS (ONNX)</string>
+    <string name="embedded_engine_vocalizer">Vocalizer Ex 2</string>
+    <string name="embedded_engine_acapela">Acapela TTS</string>
+    <string name="embedded_import_zip">Import Voice from ZIP</string>
+    <string name="embedded_importing_zip">Importing voice package…</string>
+    <string name="embedded_import_success">Voice (%1$s) for %2$s imported successfully</string>
+    <string name="embedded_import_error">Failed to import ZIP file: %1$s</string>
+    <string name="embedded_acapela_empty_hint">No Acapela voices installed currently. You can import a voice package via "Import Voice from ZIP" or by opening a .zip file from any file manager.</string>
+    <string name="embedded_download_btn">Download Voice</string>
+    <string name="embedded_installed_badge">Installed</string>
+    <string name="embedded_delete_btn">Delete</string>
+    <string name="embedded_preview_btn">Preview Voice</string>
+    <string name="embedded_downloading">Downloading (%1$d%%)…</string>
+    <string name="embedded_filter_all">All</string>
+    <string name="embedded_filter_ar">Arabic</string>
+    <string name="embedded_filter_en">English</string>
+    <string name="embedded_filter_other">Other Languages</string>
+    <string name="embedded_download_success">Voice downloaded and installed successfully</string>
+    <string name="embedded_download_error">Failed to download voice: %1$s</string>
+    <string name="embedded_delete_confirm">Are you sure you want to delete this voice model?</string>
+    <string name="embedded_delete_success">Voice deleted successfully</string>
+    <string name="embedded_empty_list">No voices matching the selected filter</string>
+    <string name="embedded_header_desc">Fast neural AI and embedded voices running entirely offline once downloaded or imported.</string>
 
 </resources>

@@ -1730,12 +1730,19 @@
 
         </LinearLayout>
         </LinearLayout>
+
+        <!-- المجموعة المستقلة: المحركات المدمجة وتنزيل الأصوات -->
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginTop="16dp"
             android:layout_marginBottom="4dp"
+            android:tag="section_divider"
             android:background="@color/divider_color" />
+
+        <!-- المجموعة 5: المحركات المدمجة وتنزيل الأصوات -->
+        <include layout="@layout/section_embedded_downloader" />
+
         <LinearLayout
             android:id="@+id/ll_group_general_header"
             android:layout_width="match_parent"
