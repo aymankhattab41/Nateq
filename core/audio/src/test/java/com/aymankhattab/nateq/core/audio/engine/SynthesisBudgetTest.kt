@@ -34,6 +34,26 @@ class SynthesisBudgetTest {
         }
     }
 
+    /**
+     * ع٢٩-5 — عقد المضيف: مهلة قراءة الأنبوب في
+     * `EngineHostClient` ([SynthesisBudget.requestTimeoutMs]) يجب
+     * أن تكون أكبرَ دائماً من ميزانية التوليد داخل `:engine_host`
+     * ([SynthesisBudget.pieceTimeoutMs]) — وإلا أُغلق الأنبوب على
+     * المضيف وهو يكتب فيتوسط النصّ.
+     */
+    @Test
+    fun hostPipeReaderBudget_strictlyCoversHostGenerationBudget() {
+        for (chars in charCounts) {
+            val reader = SynthesisBudget.requestTimeoutMs(chars)
+            val host = SynthesisBudget.pieceTimeoutMs(chars)
+            assertTrue(
+                "مهلة قارئ الأنبوب ${reader}ms ليست أكبر من ميزانية" +
+                    " المضيف ${host}ms عند $chars حرفاً",
+                reader > host
+            )
+        }
+    }
+
     @Test
     fun announcementBudget_neverBelowSumOfUnitBudgets() {
         // قائمة وحدات إعلانات: مجموع ميزانياتها لا يجوز أن يتجاوز

@@ -1,22 +1,20 @@
 package com.aymankhattab.nateq.core.audio.providers
 
 import android.content.Context
-import android.os.Environment
 import android.util.Log
-import com.nuance.android.vocalizer.VocalizerAudioOutputListener
-import com.nuance.android.vocalizer.VocalizerAudioSettings
-import com.nuance.android.vocalizer.VocalizerEngine
-import com.nuance.android.vocalizer.VocalizerVoice
+import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
+import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.util.Locale
 
 /**
- * مزود صوت محلي مدمج لمحرك Nuance Vocalizer Expressive 2 (Embedded Engine).
- * يقوم بتخليق الصوت مباشرة من ملفات .dat دون الحاجة لتطبيق وسيط خارجي.
+ * مزود صوت محرك Nuance Vocalizer Expressive 2 (Embedded Engine) —
+ * **لا تُحمَّل المكتبة الأصلية في هذه العملية أبداً** (ع٢٩-5): كل
+ * نداء (تهيئة/قائمة أصوات/نطق) يمرّ عبر [EngineHostClient] إلى
+ * `:engine_host`، فيه يعيش `VocalizerEngine` وحده؛ فإن انهار
+ *JNI قُتلت تلك العملية فقط.
  */
 class VocalizerEmbeddedVoiceProvider(
     private val context: Context,
@@ -26,97 +24,127 @@ class VocalizerEmbeddedVoiceProvider(
     companion object {
         private const val TAG = "VocalizerEmbedded"
         const val PROVIDER_ID = "vocalizer_embedded"
-
-        val DEFAULT_SEARCH_PATHS = listOf(
-            File("/sdcard/VocalizerEx2"),
-            File("/storage/emulated/0/VocalizerEx2"),
-            File(
-                Environment.getExternalStorageDirectory(),
-                "VocalizerEx2"
-            )
-        )
     }
 
     override val providerId: String = PROVIDER_ID
     override val displayName: String = "Vocalizer Expressive 2 (مدمج)"
 
-    private var engine: VocalizerEngine? = null
-    private var isInitialized = false
-    private var activeDataPath: String? = null
+    /** مسار بيانات مُتحقق منه يُعاد استخدامه (بلا مسح قرصي متكرر). */
+    @Volatile
+    private var cachedDataPath: String? = null
 
-    init {
-        initEngine()
+    /** كل مجلدات البحث من المصدر الموحّد (ع٢٩-3) — بلا مسارات خام. */
+    private fun searchDirs(): List<File> {
+        val extra = listOfNotNull(customVoiceDir)
+        return EmbeddedStorage.allSearchDirs(
+            context,
+            EmbeddedStorage.Engine.VOCALIZER,
+            extra
+        )
     }
 
-    @Synchronized
-    private fun initEngine(): Boolean {
-        if (isInitialized && engine != null) return true
-
-        val searchDirs = mutableListOf<File>()
-        customVoiceDir?.let { searchDirs.add(it) }
-        searchDirs.addAll(DEFAULT_SEARCH_PATHS)
-        context.getExternalFilesDir(null)?.let {
-            searchDirs.add(File(it, "VocalizerEx2"))
-        }
-
-        var selectedDir: File? = null
-        for (dir in searchDirs) {
+    /**
+     * يبحث عن مجلد فيه ملفات بيانات Vocalizer (.dat/.hdr).
+     * فحصُ قرصٍ فقط — لا يلمس المكتبة الأصلية ولا المضيف.
+     */
+    private fun findDataDir(): File? {
+        for (dir in searchDirs()) {
             if (dir.exists() && dir.isDirectory) {
                 val datFiles = dir.listFiles { f ->
                     f.extension == "dat" || f.extension == "hdr"
                 }
-                if (!datFiles.isNullOrEmpty()) {
-                    selectedDir = dir
-                    break
-                }
+                if (!datFiles.isNullOrEmpty()) return dir
             }
         }
-
-        val targetPath = selectedDir?.absolutePath
-            ?: DEFAULT_SEARCH_PATHS[0].absolutePath
-        activeDataPath = targetPath
-
-        return try {
-            val eng = VocalizerEngine(context)
-            val success = eng.initialize(targetPath)
-            if (success) {
-                engine = eng
-                isInitialized = true
-                Log.i(TAG, "Vocalizer embedded engine ready at: $targetPath")
-            }
-            success
-        } catch (t: Throwable) {
-            Log.e(TAG, "Failed to initialize embedded Vocalizer: ${t.message}")
-            false
-        }
+        return null
     }
 
+    /**
+     * ع٢٩-2 (3): فحص خفيف لا يلمس المكتبة الأصلية — يعود true
+     * إذا وُجدت ملفات البيانات في أحد المجلدات. لا يلزم نجاح
+     * التهيئة ليظهر المحرك.
+     */
     override fun isConfigured(): Boolean {
-        return isInitialized && engine != null
+        return findDataDir() != null
+    }
+
+    /**
+     * ع٢٩-5: تهيئة المحرّك **في المضيف**. المسار يُحقَن مرة واحدة،
+     * ثم يُستدعى init عند كل نطق/قائمة حتى يعود المضيف المُعاد
+     * تشغيله (session جديدة) إلى جاهزيته بنداءٍ واحد سريع.
+     */
+    private suspend fun ensureInitialized(): Boolean {
+        if (cachedDataPath == null) {
+            // ع٢٩-3: تُنجَز هجرة المجلد الخارجي قبل البحث.
+            EmbeddedStorage.migrateExternalToInternal(
+                context,
+                EmbeddedStorage.Engine.VOCALIZER
+            )
+            // ع٢٩-2 (6): بلا مجلد بيانات صالح لا ننشئ محركاً أصلاً.
+            val dataDir = findDataDir()
+            if (dataDir == null) {
+                Log.w(
+                    TAG,
+                    "No Vocalizer data dir (.dat/.hdr) found — " +
+                        "engine will not be created"
+                )
+                return false
+            }
+            cachedDataPath = dataDir.absolutePath
+        }
+        val result = EngineHostClient.init(
+            context,
+            HostProtocol.ENGINE_VOCALIZER,
+            cachedDataPath.orEmpty()
+        )
+        if (!result.ok) {
+            Log.e(
+                TAG,
+                "تهيئة المضيف فشلت [${result.code}]: ${result.message}"
+            )
+            return false
+        }
+        // ع٢٩-9: نجاح التهيئة يُبطل كاش المحركات والاكتشاف.
+        EnginePicker.invalidateAfterStorageChange()
+        return true
     }
 
     override suspend fun listVoices(locale: Locale): List<VoiceDescriptor> {
         return withContext(Dispatchers.IO) {
-            if (!initEngine()) return@withContext emptyList()
-            val voices = engine?.voiceList ?: return@withContext emptyList()
-            val list = mutableListOf<VoiceDescriptor>()
-
-            for (v in voices) {
-                val lang = v.language ?: ""
-                val matchesLang = locale.language.isEmpty() ||
-                    lang.startsWith(locale.language, ignoreCase = true)
-                if (matchesLang) {
-                    list.add(
-                        VoiceDescriptor(
-                            id = "vocalizer_${v.voiceName.lowercase()}",
-                            providerId = PROVIDER_ID,
-                            displayName = v.voiceName,
-                            locale = Locale.forLanguageTag(lang)
-                        )
-                    )
-                }
+            if (!ensureInitialized()) return@withContext emptyList()
+            val result = EngineHostClient.listVoices(
+                context,
+                HostProtocol.ENGINE_VOCALIZER
+            )
+            result.failure?.let { failure ->
+                Log.e(
+                    TAG,
+                    "قائمة أصوات المضيف فشلت " +
+                        "[${failure.code}]: ${failure.message}"
+                )
+                return@withContext emptyList()
             }
-            list
+            result.voices.mapNotNull { voice ->
+                val name = voice.name.ifBlank { return@mapNotNull null }
+                // ع٢٩-10 (4): الإقليم الفعلي من المحرّك لا يُسقط.
+                val voiceLocale = if (voice.langTag.isBlank()) {
+                    locale
+                } else {
+                    Locale.forLanguageTag(voice.langTag)
+                }
+                val matchesLang = locale.language.isEmpty() ||
+                    voiceLocale.language.equals(
+                        locale.language,
+                        ignoreCase = true
+                    )
+                if (!matchesLang) return@mapNotNull null
+                VoiceDescriptor(
+                    id = voice.id,
+                    providerId = PROVIDER_ID,
+                    displayName = name,
+                    locale = voiceLocale
+                )
+            }
         }
     }
 
@@ -133,69 +161,36 @@ class VocalizerEmbeddedVoiceProvider(
         desiredVoiceName: String?
     ) {
         withContext(Dispatchers.IO) {
-            if (!initEngine()) {
-                Log.e(TAG, "Cannot synthesize: Engine not initialized")
+            if (!ensureInitialized()) {
+                Log.e(TAG, "Cannot synthesize: host not initialized")
                 return@withContext
             }
-            val eng = engine ?: return@withContext
-
             val targetVoiceName = desiredVoiceName ?: voice.displayName
-            val cleanTarget = targetVoiceName.removePrefix("vocalizer_")
-            val voices = eng.voiceList
-            val matchedVoice = voices?.firstOrNull {
-                it.voiceName.equals(targetVoiceName, ignoreCase = true) ||
-                    it.voiceName.equals(cleanTarget, ignoreCase = true)
-            } ?: voices?.firstOrNull()
-
-            if (matchedVoice != null) {
-                eng.loadVoice(matchedVoice)
-            }
-
-            val rateInt = (speechRate * 100).toInt().coerceIn(20, 400)
-            val pitchInt = (pitch * 100).toInt().coerceIn(50, 200)
-            val volumeInt = (volume * 100).toInt().coerceIn(0, 100)
-
-            eng.setSpeechRate(rateInt)
-            eng.setSpeechPitch(pitchInt)
-            eng.setSpeechVolume(volumeInt)
-
-            val sampleRate = matchedVoice?.sampleRate ?: 22050
-            onFormatInfo(sampleRate, 1)
-
-            eng.setAudioOutputListener(
-                object : VocalizerAudioOutputListener {
-                    override fun onAudioData(
-                        settings: VocalizerAudioSettings?,
-                        audioData: ShortArray?
-                    ) {
-                        if (audioData == null || audioData.isEmpty()) return
-                        val byteBuffer = ByteBuffer.allocate(audioData.size * 2)
-                        byteBuffer.order(ByteOrder.LITTLE_ENDIAN)
-                        for (s in audioData) {
-                            byteBuffer.putShort(s)
-                        }
-                        val byteArray = byteBuffer.array()
-                        onAudioChunk(byteArray, byteArray.size)
-                    }
-                },
-                true
+            val result = EngineHostClient.synthesize(
+                context = context,
+                engineId = HostProtocol.ENGINE_VOCALIZER,
+                voiceId = targetVoiceName,
+                text = text,
+                rate = speechRate,
+                pitch = pitch,
+                volume = volume,
+                onFormatInfo = onFormatInfo,
+                onAudioChunk = onAudioChunk
             )
-
-            try {
-                eng.speak(text)
-            } finally {
-                eng.stop()
+            if (!result.ok) {
+                Log.e(
+                    TAG,
+                    "نطق المضيف فشل [${result.code}]: ${result.message}"
+                )
             }
         }
     }
 
     override fun shutdown() {
-        try {
-            engine?.release()
-            engine = null
-            isInitialized = false
-        } catch (t: Throwable) {
-            Log.e(TAG, "Error closing Vocalizer engine: ${t.message}")
-        }
+        cachedDataPath = null
+        EngineHostClient.release(
+            context,
+            HostProtocol.ENGINE_VOCALIZER
+        )
     }
 }

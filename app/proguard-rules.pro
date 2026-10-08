@@ -60,6 +60,24 @@
 # الوصول عبر انعكاس من أطراف المساعدة (AccessibilityService)
 -keep class * extends android.accessibilityservice.AccessibilityService { *; }
 
+# ============================================================
+#  مكتبات JNI: تصل لفئاتها وحقولها بالاسم — ممنوع التغيير أو الحذف
+# ============================================================
+# محرّك Vocalizer الأصلي (libNuanceVocalizer.so) يستدعي GetFieldID/
+# SetLongField بأسماء حقول مكتوبة في السجل (.rodata)، مثل
+# mNativeEnginePtr. أي إعادة تسمية أو حذف تجعل fid == null ويُسقط العملية.
+# القاعدة نفسها تنطبق على Acapela (libttsacattsandroidextended.so)
+# وعلى sherpa-onnx (JNI ثابت + استدعاءات انعكاسية على مُهيّئات النموذج).
+-keep class com.nuance.android.vocalizer.** { *; }
+-keep class com.acapelagroup.android.** { *; }
+-keep class com.k2fsa.sherpa.onnx.** { *; }
+-keepclasseswithmembernames,includedescriptorclasses class * {
+    native <methods>;
+}
+-keepclassmembers class * {
+    @androidx.annotation.Keep *;
+}
+
 # حافظ على أصناف تمثل جافا الثوابت/Parcelable/native للسلامة
 -keep class * implements android.os.Parcelable { *; }
 -keepclassmembers class * implements java.io.Serializable { *; }

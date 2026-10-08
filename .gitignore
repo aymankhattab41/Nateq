@@ -33,3 +33,8 @@ relay-worker/.wrangler/
 # ملفات الحزم والأصوات الكبيرة
 *.apk
 /VocalizerEx2/
+
+# مخرجات ماسح JNI الخام (تُولَّد وقت الحاجة من tools/vocalizer_jni_scan.py)
+.jni_idx.json
+.jni_strings.json
+__pycache__/

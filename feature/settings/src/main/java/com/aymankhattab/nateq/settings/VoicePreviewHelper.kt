@@ -1,13 +1,28 @@
 package com.aymankhattab.nateq.settings
 
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
+import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
+import com.aymankhattab.nateq.core.audio.providers.SherpaOnnxVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
+import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
 import java.util.Locale
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * قيم معاينة نطق: كلها تُبنى من قيم العرض الحالية المعروضة في الشاشة
@@ -135,6 +150,14 @@ internal fun chimeVolumeFromProgress(progress: Int): Float =
  */
 internal class VoicePreviewHelper(private val context: Context) {
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    @Volatile
+    private var currentEmbeddedJob: Job? = null
+
+    @Volatile
+    private var currentAudioTrack: AudioTrack? = null
+
     /** مثيل محرك المعاينة الجاري — يُغلق قبل أي معاينة جديدة وعند الإطلاق. */
     @Volatile
     private var currentPreviewTts: TextToSpeech? = null
@@ -153,6 +176,9 @@ internal class VoicePreviewHelper(private val context: Context) {
     /** يغلق أي معاينة جارية والمثيل الدافئ ويحرر المرجعين
      *  (يُستدعى من onDestroyView). */
     fun release() {
+        currentEmbeddedJob?.cancel()
+        currentEmbeddedJob = null
+        stopAudioTrack()
         currentPreviewTts?.let { tts ->
             runCatching { tts.shutdown() }
         }
@@ -164,6 +190,146 @@ internal class VoicePreviewHelper(private val context: Context) {
         warmTtsEngine = null
     }
 
+    private fun stopAudioTrack() {
+        currentAudioTrack?.let { track ->
+            runCatching {
+                track.pause()
+                track.flush()
+                track.release()
+            }
+        }
+        currentAudioTrack = null
+    }
+
+    private fun isEmbeddedEngine(pkg: String?): Boolean =
+        pkg == SherpaOnnxVoiceProvider.PROVIDER_ID ||
+            pkg == VocalizerEmbeddedVoiceProvider.PROVIDER_ID ||
+            pkg == AcapelaEmbeddedVoiceProvider.PROVIDER_ID
+
+    private fun getEmbeddedProvider(pkg: String): VoiceProvider =
+        when (pkg) {
+            SherpaOnnxVoiceProvider.PROVIDER_ID ->
+                EmbeddedProviders.sherpa(context.applicationContext)
+            VocalizerEmbeddedVoiceProvider.PROVIDER_ID ->
+                EmbeddedProviders.vocalizer(context.applicationContext)
+            AcapelaEmbeddedVoiceProvider.PROVIDER_ID ->
+                EmbeddedProviders.acapela(context.applicationContext)
+            else ->
+                throw IllegalArgumentException("Unknown engine: $pkg")
+        }
+
+    private suspend fun playEmbeddedPreview(
+        enginePkg: String,
+        params: PreviewParams,
+        onFinished: () -> Unit
+    ) {
+        val mainHandler = Handler(Looper.getMainLooper())
+        withContext(Dispatchers.IO) {
+            var track: AudioTrack? = null
+            var totalFramesWritten = 0L
+            var bytesPerFrame = 2
+            try {
+                val provider = getEmbeddedProvider(enginePkg)
+                val loc = if (params.languageTag.isNotBlank()) {
+                    Locale.forLanguageTag(params.languageTag)
+                } else {
+                    Locale.getDefault()
+                }
+                val descriptor = VoiceDescriptor(
+                    id = params.voiceName,
+                    providerId = enginePkg,
+                    displayName = params.voiceName,
+                    locale = loc
+                )
+
+                provider.synthesize(
+                    text = params.sampleText,
+                    voice = descriptor,
+                    speechRate = params.speechRate,
+                    pitch = params.pitch,
+                    volume = params.volume,
+                    onFormatInfo = { sampleRateInHz, channelCount ->
+                        val channelConfig = if (channelCount == 2) {
+                            AudioFormat.CHANNEL_OUT_STEREO
+                        } else {
+                            AudioFormat.CHANNEL_OUT_MONO
+                        }
+                        bytesPerFrame = channelCount * 2
+                        val minBuf = AudioTrack.getMinBufferSize(
+                            sampleRateInHz,
+                            channelConfig,
+                            AudioFormat.ENCODING_PCM_16BIT
+                        )
+                        val bufSize = maxOf(minBuf, 8192)
+                        val attrs = AudioAttributes.Builder()
+                            .setUsage(
+                                if (params.isCallerCategory) {
+                                    AudioAttributes.USAGE_NOTIFICATION_EVENT
+                                } else {
+                                    AudioAttributes.USAGE_MEDIA
+                                }
+                            )
+                            .setContentType(
+                                if (params.isCallerCategory) {
+                                    AudioAttributes.CONTENT_TYPE_SONIFICATION
+                                } else {
+                                    AudioAttributes.CONTENT_TYPE_SPEECH
+                                }
+                            )
+                            .build()
+                        val format = AudioFormat.Builder()
+                            .setSampleRate(sampleRateInHz)
+                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                            .setChannelMask(channelConfig)
+                            .build()
+                        val newTrack = AudioTrack.Builder()
+                            .setAudioAttributes(attrs)
+                            .setAudioFormat(format)
+                            .setBufferSizeInBytes(bufSize)
+                            .setTransferMode(AudioTrack.MODE_STREAM)
+                            .build()
+                        newTrack.setVolume(params.volume)
+                        newTrack.play()
+                        track = newTrack
+                        currentAudioTrack = newTrack
+                    },
+                    onAudioChunk = { chunk, validLength ->
+                        val current = track
+                        if (current != null &&
+                            current.playState == AudioTrack.PLAYSTATE_PLAYING
+                        ) {
+                            current.write(chunk, 0, validLength)
+                            totalFramesWritten += (validLength / bytesPerFrame)
+                        }
+                    },
+                    enginePackage = enginePkg,
+                    voiceLocale = loc,
+                    desiredVoiceName = params.voiceName
+                )
+                track?.let { t ->
+                    val startWait = System.currentTimeMillis()
+                    while (t.playState == AudioTrack.PLAYSTATE_PLAYING &&
+                        t.playbackHeadPosition < totalFramesWritten &&
+                        System.currentTimeMillis() - startWait < 3000L
+                    ) {
+                        Thread.sleep(25)
+                    }
+                    runCatching { t.stop() }
+                }
+            } catch (t: Throwable) {
+                Log.w("NATEQ_TTS", "Embedded preview failed", t)
+            } finally {
+                track?.let { t ->
+                    runCatching { t.release() }
+                }
+                if (currentAudioTrack === track) {
+                    currentAudioTrack = null
+                }
+                mainHandler.post { onFinished() }
+            }
+        }
+    }
+
     /**
      * يشغّل المعاينة بالقيم المعطاة. [onFinished] يُستدعى مرة واحدة عند
      * اكتمال النطق أو فشله أو تعذر تهيئة المحرك — يُستخدم لإعلان حالة
@@ -171,6 +337,10 @@ internal class VoicePreviewHelper(private val context: Context) {
      */
     @Suppress("DEPRECATION")
     fun play(params: PreviewParams, onFinished: () -> Unit = {}) {
+        currentEmbeddedJob?.cancel()
+        currentEmbeddedJob = null
+        stopAudioTrack()
+
         // بند 4.2: إغلاق أي معاينة جارية أولاً — الضغط السريع المتكرر لا
         // يتراكم محركات معلقة (المثيل القائم لا يُعاد استخدامه بعد إيقافه
         // المفاجئ؛ يُغلق ويُخلق سواه).
@@ -180,10 +350,17 @@ internal class VoicePreviewHelper(private val context: Context) {
         }
         currentPreviewTts = null
 
+        val desiredEngine = params.enginePkg?.takeIf { it.isNotBlank() }
+        if (isEmbeddedEngine(desiredEngine)) {
+            currentEmbeddedJob = scope.launch {
+                playEmbeddedPreview(desiredEngine!!, params, onFinished)
+            }
+            return
+        }
+
         val appContext = context.applicationContext
         val hold = arrayOfNulls<TextToSpeech>(1)
         val mainHandler = Handler(Looper.getMainLooper())
-        val desiredEngine = params.enginePkg?.takeIf { it.isNotBlank() }
 
         // المثيل الدافئ لنفس المحرك يُعاد استخدامه مباشرةً — لا إعادة
         // ربط ولا تهيئة (بند الأداء). نتزحزحه من الدفء إلى الجاري.

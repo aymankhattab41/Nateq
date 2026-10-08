@@ -1103,8 +1103,9 @@ class AnnouncementSpeaker(
                         rebindAttemptMap[engine] = retries + 1
                         Log.w(
                             TAG,
-                            "[Speaker] Engine $engine wrongly bound to Google" +
-                            " — retry rebind once"
+                            "[Speaker] Engine $engine " +
+                                "wrongly bound to Google" +
+                                " — retry rebind once"
                         )
                         newTts?.shutdown()
                         tts = null
@@ -1118,8 +1119,10 @@ class AnnouncementSpeaker(
                     } else {
                         Log.e(
                             TAG,
-                            "[Speaker] Engine $engine wrongly bound to Google" +
-                            " after retry — failing without fallback"
+                            "[Speaker] Engine $engine " +
+                                "wrongly bound to Google" +
+                                " after retry — failing" +
+                                " without fallback"
                         )
                         rebindAttemptMap.remove(engine)
                         success = false
@@ -1793,7 +1796,7 @@ class AnnouncementSpeaker(
                 )
                 return@executeSpeech
             }
-            // VZ2: Warmup polling — بعد onInit(SUCCESS) وقبل أول نطق للمثيل فقط
+            // VZ2: Warmup polling — بعد onInit(SUCCESS) وقبل أول نطق فقط
             // استطلاع كل 100ms حتى tts.voices غير فارغة و isLanguageAvailable
             // >= LANG_AVAILABLE، مهلة 1500ms — عند انتهائها يُنطق على أي حال
             // مرة واحدة + سجل "انتهاء مهلة الجاهزية" بلا نص منطوق

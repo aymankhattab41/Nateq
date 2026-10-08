@@ -51,8 +51,10 @@ import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker.InstalledEngine
+import com.aymankhattab.nateq.core.audio.providers.EmbeddedStorage
 import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
 import com.aymankhattab.nateq.core.audio.engine.EngineWithVoices
+import com.aymankhattab.nateq.core.audio.providers.VoicePackageImporter
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.settings.OemVendor
 import com.aymankhattab.nateq.settings.SettingsViewModel.SettingsOperation
@@ -121,7 +123,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private lateinit var callerSection: CallerAnnouncementController
 
 /** إرشادات توافق الجهاز — تضمّ أيضاً مسار النطق الفوري لاسم المتصل،
- *  فيُنعش حالته في [onResume] لأنّها تتبع إعدادات النظام لا بيانات
+     *  فيُنعش حالته في [onResume] لأنّها تتبع إعدادات النظام لا بيانات
      *  التطبيق. */
     private lateinit var oemGuidance: OemGuidanceController
     private lateinit var smsSection: SmsReadingController
@@ -132,6 +134,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     private lateinit var textProcessingSection: TextProcessingController
     private lateinit var instantSilenceSection: InstantSilenceController
     private lateinit var a11yServicesSection: ScreenServicesCardController
+    private lateinit var embeddedDownloaderSection:
+        EmbeddedEngineDownloaderController
+
+    /** آخر رقم إصدار تخزين شوهدت الشاشة (ع٢٩-9) — يقارَن في
+     *  [onResume] لكشف تغيّر الملفات أثناء خلفية الشاشة. */
+    private var lastSeenStorageVersion: Int = -1
 
     // مفتاح تبديل لغة التطبيق (أسفل الشاشة)
     private lateinit var btnToggleLanguage:
@@ -208,6 +216,74 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         "text/json",
         "text/plain"
     )
+
+    private val openVoiceZipLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            handleImportVoiceZip(uri)
+        }
+    }
+
+    fun requestVoiceZipImport() {
+        openVoiceZipLauncher.launch(
+            arrayOf(
+                "application/zip",
+                "application/x-zip",
+                "application/x-zip-compressed",
+                "application/octet-stream",
+                "*/*"
+            )
+        )
+    }
+
+    fun handleImportVoiceZip(uri: android.net.Uri) {
+        val ctx = context ?: return
+        Toast.makeText(
+            ctx,
+            R.string.embedded_importing_zip,
+            Toast.LENGTH_SHORT
+        ).show()
+
+        viewLifecycleOwner.lifecycleScope.launch(AppDispatchers.io) {
+            val result = VoicePackageImporter.importFromUri(ctx, uri)
+            withContext(AppDispatchers.main) {
+                if (!isAdded) return@withContext
+                if (result.isSuccess) {
+                    val engineLabel = when (result.engineType) {
+                        VoicePackageImporter.ENGINE_ACAPELA -> "Acapela TTS"
+                        VoicePackageImporter.ENGINE_PIPER -> "Piper TTS"
+                        VoicePackageImporter.ENGINE_VOCALIZER -> "Vocalizer"
+                        else -> result.engineType
+                    }
+                    Toast.makeText(
+                        ctx,
+                        getString(
+                            R.string.embedded_import_success,
+                            result.voiceName,
+                            engineLabel
+                        ),
+                        Toast.LENGTH_LONG
+                    ).show()
+
+                    EnginePicker.warmupCache(ctx)
+                    accordion.updateSectionStatuses()
+                    view?.let { root ->
+                        embeddedDownloaderSection.refresh(root)
+                    }
+                } else {
+                    Toast.makeText(
+                        ctx,
+                        getString(
+                            R.string.embedded_import_error,
+                            result.errorMessage ?: "Unknown error"
+                        ),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
 
     private val openDictLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -708,6 +784,15 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         a11yServicesSection = ScreenServicesCardController(
             requireContext(), settings
         ) { accordion.updateSectionStatuses() }.apply { setup(view) }
+        embeddedDownloaderSection = EmbeddedEngineDownloaderController(
+            this, settings, voicePreview
+        ).apply {
+            onStatusChanged = { accordion.updateSectionStatuses() }
+            setup(view)
+        }
+        accordion.embeddedDownloaderStatusSupplier = {
+            embeddedDownloaderSection.buildStatusSummary()
+        }
         oemGuidance = OemGuidanceController(this).apply { setup(view) }
         setupLanguageToggle()
         setupCheckUpdates()
@@ -760,6 +845,31 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             a11yServicesSection.updateUiState()
         }
         if (::accordion.isInitialized) accordion.updateSectionStatuses()
+        refreshEmbeddedUiIfStorageChanged()
+    }
+
+    /**
+     * ع٢٩-9: عند عودة الشاشة للمقدمة، إن تغيّر رقم إصدار التخزين
+     * (تنزيل/حذف/هجرة حدثت وهي في الخلفية) يُبطل الكاش وتُعاد قوائم
+     * المحركات فوراً بدل انتظار مهلة الكاش.
+     */
+    private fun refreshEmbeddedUiIfStorageChanged() {
+        val version = EmbeddedStorage.version
+        if (version == lastSeenStorageVersion) return
+        val isFirstRead = lastSeenStorageVersion == -1
+        lastSeenStorageVersion = version
+        if (isFirstRead) return
+
+        EnginePicker.invalidateAfterStorageChange()
+        if (::engineSection.isInitialized) {
+            engineSection.setupEngineDiscovery()
+        }
+        if (::accordion.isInitialized) accordion.updateSectionStatuses()
+        view?.let { root ->
+            if (::embeddedDownloaderSection.isInitialized) {
+                embeddedDownloaderSection.refresh(root)
+            }
+        }
     }
 
     /** بند 4.6: حفظ موضع التنقّل في الأكورديون لاستعادته بعد التدوير. */
@@ -2396,6 +2506,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         textReadingSection.setup(v)
         textProcessingSection.bind(v)
         instantSilenceSection.setup(v)
+        embeddedDownloaderSection.setup(v)
         categoryVoicePanel.reloadCurrent()
         refreshDictAdapter()
         engineSection.setupAutoConvertUI(v)

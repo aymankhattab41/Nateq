@@ -19,6 +19,16 @@ public class VocalizerSpeechMark {
     public int mMouthUpturn;
     public int mLipTension;
     public int mTonguePos;
+
+    /**
+     * صوت الحرف التالي/السابق (Next/Previous phoneme) بالنص.
+     *
+     * <p>حقل مطلوب حرفياً في عقد JNI: اسمه "mLHPhoneme" وتوقيعه
+     * "Ljava/lang/String;" مأخوذان من سجل libNuanceVocalizer.so.
+     * غيابه يجعل GetFieldID يعيد null.
+     */
+    public String mLHPhoneme;
+
     public short[] mAudioData;
 
     public VocalizerSpeechMark() {

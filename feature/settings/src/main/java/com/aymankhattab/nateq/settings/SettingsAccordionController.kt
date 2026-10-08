@@ -58,6 +58,7 @@ internal class SettingsAccordionController(
 ) {
 
     private val accordionEntries = mutableListOf<AccordionEntry>()
+    var embeddedDownloaderStatusSupplier: (() -> String)? = null
 
     /** الفاصل بين عناصر الملخصات: «،» عربية لواجهة عربية و«, » إنجليزية
      *  لواجهة إنجليزية — كانت الفاصلة العربية تظهر حرفياً في نصوص إنجليزية. */
@@ -87,6 +88,12 @@ internal class SettingsAccordionController(
             0
         ),
         GroupState(
+            R.id.ll_group_embedded_header,
+            R.id.tv_group_embedded_arrow,
+            R.string.group_embedded_engines_title,
+            4
+        ),
+        GroupState(
             R.id.ll_group_general_header,
             R.id.tv_group_general_arrow,
             R.string.group_announcements_title,
@@ -110,6 +117,7 @@ internal class SettingsAccordionController(
      *  المجموعة الواحدة قد تعيش في أكثر من وعاء. */
     private val groupContentIds = listOf(
         R.id.ll_group_special_content,
+        R.id.ll_group_embedded_content,
         R.id.ll_group_general_content,
         R.id.ll_group_advanced_content,
         R.id.ll_group_system_content
@@ -460,6 +468,19 @@ internal class SettingsAccordionController(
             cats, 0
         )
 
+        // مجموعة «المحركات المدمجة وتنزيل الأصوات»: تنزيل وإدارة أصوات Piper
+        val embeddedDownloader = fragment.getString(
+            R.string.section_embedded_downloader_title
+        )
+        accordionEntry(
+            view,
+            R.id.ll_embedded_downloader_header,
+            R.id.tv_embedded_downloader_arrow,
+            R.id.tv_embedded_downloader_status,
+            R.id.ll_embedded_downloader_content,
+            embeddedDownloader, 4
+        )
+
         // مجموعة «الإعلانات والتنبيهات»: الوقت / البطارية / نطق المتصل /
         // الرسائل / الإشعارات
         accordionEntry(
@@ -604,6 +625,12 @@ internal class SettingsAccordionController(
             R.id.ll_a11y_services_settings,
             buildA11yServicesStatus()
         )
+        embeddedDownloaderStatusSupplier?.let { supplier ->
+            setSectionStatus(
+                R.id.ll_embedded_downloader_content,
+                supplier()
+            )
+        }
     }
 
     private fun buildA11yServicesStatus(): String {

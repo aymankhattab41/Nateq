@@ -13,6 +13,10 @@ android {
     compileSdk = 37
     defaultConfig {
         minSdk = 24
+        // قواعد R8 الموروثة (consumer-rules.pro): مكتبات JNI في هذه
+        // الوحدة (Vocalizer/Acapela/Sherpa) تصل لفئاتها وحقولها بالاسم،
+        // فتُطبَّق تلقائياً على أي تطبيق مضيف بلا إعادة كتابة.
+        consumerProguardFiles("consumer-rules.pro")
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
@@ -20,6 +24,12 @@ android {
     }
     kotlin {
         jvmToolchain(21)
+    }
+
+    // ع٢٩-5: واجهة AIDL إلى المضيف المعزول (:engine_host) — مُعطَّلة
+    // افتراضياً منذ AGP 4.1 فلا تُبنى الملفات بلا تفعيل صريح.
+    buildFeatures {
+        aidl = true
     }
 
     // اختبارات Robolectric تُحمّل موارد الوحدة (نصوص النطق) من أقراصها
@@ -49,6 +59,9 @@ dependencies {
 
     // كوروتينز — الكوروتينات اللاتزامنية لخدمة المحرك ولمزوّدي الأصوات.
     implementation(libs.kotlinx.coroutines.android)
+
+    // Sherpa-ONNX — محرك توليد الصوت العصبي المحلي (Piper / Coqui / VITS)
+    implementation(libs.sherpa.onnx)
 
     // **بند 9.4:** المواصفات الصريحة لتوابع androidx.core (NotificationCompat/
     // ContextCompat...) بدل الاعتماد الضمني المتسرب من :core:data — إغلاق
