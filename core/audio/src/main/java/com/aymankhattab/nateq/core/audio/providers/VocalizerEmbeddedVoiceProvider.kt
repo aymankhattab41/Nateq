@@ -24,6 +24,20 @@ class VocalizerEmbeddedVoiceProvider(
     companion object {
         private const val TAG = "VocalizerEmbedded"
         const val PROVIDER_ID = "vocalizer_embedded"
+
+        fun resolveDataDir(context: Context): File? =
+            VocalizerEmbeddedVoiceProvider(context).resolveDataDir()
+    }
+
+    /**
+     * ع٣١-2: تحديد مجلد البيانات الفعلي لـ Vocalizer.
+     */
+    fun resolveDataDir(): File? {
+        EmbeddedStorage.migrateExternalToInternal(
+            context,
+            EmbeddedStorage.Engine.VOCALIZER
+        )
+        return findDataDir()
     }
 
     override val providerId: String = PROVIDER_ID
@@ -44,28 +58,45 @@ class VocalizerEmbeddedVoiceProvider(
     }
 
     /**
-     * يبحث عن مجلد فيه ملفات بيانات Vocalizer (.dat/.hdr).
-     * فحصُ قرصٍ فقط — لا يلمس المكتبة الأصلية ولا المضيف.
+     * يبحث عن مجلد فيه ملفات بيانات Vocalizer (.dat/.hdr) لصوت مكتمل.
+     * فحصُ قرصٍ فقط — لا يلمس المكتبة الأصلية ولا المضيف ولا يُنشئ مجلدات.
      */
     private fun findDataDir(): File? {
+        val inv = EmbeddedStorage.inventory(
+            context,
+            EmbeddedStorage.Engine.VOCALIZER,
+            listOfNotNull(customVoiceDir)
+        )
+        if (!inv.isCompleteVoicePresent) return null
+
         for (dir in searchDirs()) {
             if (dir.exists() && dir.isDirectory) {
-                val datFiles = dir.listFiles { f ->
-                    f.extension == "dat" || f.extension == "hdr"
+                val files = dir.listFiles() ?: continue
+                val hdrs = files.filter {
+                    it.extension.equals("hdr", ignoreCase = true)
                 }
-                if (!datFiles.isNullOrEmpty()) return dir
+                for (hdr in hdrs) {
+                    val baseName = hdr.nameWithoutExtension
+                    val dat = File(dir, "$baseName.dat")
+                    if (dat.exists() && dat.length() >= 1_048_576L) {
+                        return dir
+                    }
+                }
             }
         }
         return null
     }
 
     /**
-     * ع٢٩-2 (3): فحص خفيف لا يلمس المكتبة الأصلية — يعود true
-     * إذا وُجدت ملفات البيانات في أحد المجلدات. لا يلزم نجاح
-     * التهيئة ليظهر المحرك.
+     * ع٣١-4: فحص خفيف لا يلمس المكتبة الأصلية — يعود true
+     * فقط عند وجود صوت مكتمل واحد على الأقل (.hdr + .dat >= 1MB).
      */
     override fun isConfigured(): Boolean {
-        return findDataDir() != null
+        return EmbeddedStorage.inventory(
+            context,
+            EmbeddedStorage.Engine.VOCALIZER,
+            listOfNotNull(customVoiceDir)
+        ).isCompleteVoicePresent
     }
 
     /**
@@ -88,10 +119,17 @@ class VocalizerEmbeddedVoiceProvider(
                     "No Vocalizer data dir (.dat/.hdr) found — " +
                         "engine will not be created"
                 )
+                EngineStatusRegistry.record(
+                    PROVIDER_ID,
+                    EngineStatusRegistry.State.NOT_INSTALLED,
+                    message = "لا ملفات أصوات Vocalizer على القرص"
+                )
                 return false
             }
             cachedDataPath = dataDir.absolutePath
         }
+        val prevState = EngineStatusRegistry.statusOf(PROVIDER_ID)?.state
+        EngineStatusRegistry.noteInitPending(PROVIDER_ID)
         val result = EngineHostClient.init(
             context,
             HostProtocol.ENGINE_VOCALIZER,
@@ -102,10 +140,18 @@ class VocalizerEmbeddedVoiceProvider(
                 TAG,
                 "تهيئة المضيف فشلت [${result.code}]: ${result.message}"
             )
+            EngineStatusRegistry.noteFailure(
+                PROVIDER_ID,
+                result.code,
+                result.message
+            )
             return false
         }
-        // ع٢٩-9: نجاح التهيئة يُبطل كاش المحركات والاكتشاف.
-        EnginePicker.invalidateAfterStorageChange()
+        EngineStatusRegistry.noteReady(PROVIDER_ID)
+        // ع٣٠-9: إبطال الكاش فقط عند الانتقال إلى READY من غيرها
+        if (prevState != EngineStatusRegistry.State.READY) {
+            EnginePicker.invalidateAfterStorageChange()
+        }
         return true
     }
 
@@ -121,6 +167,11 @@ class VocalizerEmbeddedVoiceProvider(
                     TAG,
                     "قائمة أصوات المضيف فشلت " +
                         "[${failure.code}]: ${failure.message}"
+                )
+                EngineStatusRegistry.noteFailure(
+                    PROVIDER_ID,
+                    failure.code,
+                    failure.message
                 )
                 return@withContext emptyList()
             }
@@ -181,6 +232,11 @@ class VocalizerEmbeddedVoiceProvider(
                 Log.e(
                     TAG,
                     "نطق المضيف فشل [${result.code}]: ${result.message}"
+                )
+                EngineStatusRegistry.noteFailure(
+                    PROVIDER_ID,
+                    result.code,
+                    result.message
                 )
             }
         }

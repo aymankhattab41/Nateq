@@ -11,7 +11,9 @@ import android.widget.TextView
 import androidx.lifecycle.lifecycleScope
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.common.AppDispatchers
+import com.aymankhattab.nateq.core.audio.engine.DiscoveryResult
 import com.aymankhattab.nateq.core.audio.engine.EngineWithVoices
+import com.aymankhattab.nateq.core.audio.engine.UnavailableEngine
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
@@ -174,14 +176,17 @@ internal class EngineSectionController(
             .create()
 
         fragment.lifecycleScope.launch(AppDispatchers.io) {
-            val discovered = runCatching {
+            val discovery = runCatching {
                 VoiceCatalog.discoverAllLanguagesAcrossEngines(
                     ctx.applicationContext
                 )
-            }.getOrDefault(emptyMap())
+            }.getOrDefault(DiscoveryResult(emptyMap()))
             withContext(AppDispatchers.main) {
                 if (!fragment.isAdded || !dialog.isShowing) return@withContext
-                val rows = buildLanguageRows(discovered)
+                val rows = buildLanguageRows(
+                    discovery.languages,
+                    discovery.unavailableEngines
+                )
                 LanguageConvertDialogController(
                     ctx,
                     settings,
@@ -210,8 +215,10 @@ internal class EngineSectionController(
      * بأي لغة. المحركات والأصوات تبقى مستقراة من الجهاز وليست نظرية.
      */
     private fun buildLanguageRows(
-        discovered: Map<String, List<EngineWithVoices>>
-    ): List<LanguageRow> = buildAllLanguageRows(discovered)
+        discovered: Map<String, List<EngineWithVoices>>,
+        unavailableEngines: List<UnavailableEngine> = emptyList()
+    ): List<LanguageRow> =
+        buildAllLanguageRows(discovered, unavailableEngines)
 
     /** يُشغّل تكليفاً تجريبياً عبر [VoicePreviewHelper] المشترك بأية القيم
      *  المختارة دون حفظ. بند 4.2 (إغلاق أي معاينة جارية والإغلاق عند
@@ -267,7 +274,8 @@ internal class EngineSectionController(
  *  أبجدياً — بلا أي حصر ثنائيّ في اللغتين
  *  (بند 17.2: إتاحة كل اللغات المكتشفة). */
 internal fun buildAllLanguageRows(
-    discovered: Map<String, List<EngineWithVoices>>
+    discovered: Map<String, List<EngineWithVoices>>,
+    unavailableEngines: List<UnavailableEngine> = emptyList()
 ): List<LanguageRow> {
     val tags = LinkedHashSet<String>()
     tags.add(LanguageCode.AR.tag)
@@ -277,7 +285,8 @@ internal fun buildAllLanguageRows(
         LanguageRow(
             languageTag = tag,
             displayName = Locale.forLanguageTag(tag).displayName,
-            engines = discovered[tag].orEmpty()
+            engines = discovered[tag].orEmpty(),
+            unavailableEngines = unavailableEngines
         )
     }
 }

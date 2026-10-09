@@ -20,6 +20,197 @@ import android.os.Vibrator
 import android.view.KeyEvent
 
 /**
+ * واجهة معالج ميزة إمكانية الوصول — كل معالج يغلف صنفاً قائماً
+ * ويتحمّل مسئولية نوع حدث معين + مفتاح ميزة.
+ */
+interface A11yFeatureHandler {
+    val feature: String
+    val acceptedEventTypes: Int
+    fun handle(
+        service: AccessibilityService,
+        event: AccessibilityEvent,
+        settings: SettingsRepository,
+        stateStore: A11yStateStore?
+    )
+}
+
+/**
+ * معالج تتبع التطبيق الأمامي — يعالج TYPE_WINDOW_STATE_CHANGED.
+ */
+object ForegroundTracker : A11yFeatureHandler {
+    override val feature = "foreground_tracking"
+    override val acceptedEventTypes =
+        AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+    override fun handle(
+        service: AccessibilityService,
+        event: AccessibilityEvent,
+        settings: SettingsRepository,
+        stateStore: A11yStateStore?
+    ) {
+        val pkg = event.packageName?.toString()
+        val cls = event.className?.toString()
+        if (!pkg.isNullOrBlank() && !AppPolicy.isSystemSensitive(pkg)) {
+            AccessibilityBridge.updateForeground(pkg, cls)
+        }
+    }
+}
+
+/**
+ * معالج صدى الكتابة — يعالج TYPE_VIEW_TEXT_CHANGED.
+ */
+object TypingEchoHandler : A11yFeatureHandler {
+    override val feature = FeatureFlags.FEATURE_TYPING_ECHO
+    override val acceptedEventTypes = AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
+    override fun handle(
+        service: AccessibilityService,
+        event: AccessibilityEvent,
+        settings: SettingsRepository,
+        stateStore: A11yStateStore?
+    ) {
+        val pkg = event.packageName?.toString()
+        val echoText = TypingEcho.getEchoText(
+            event.beforeText,
+            event.text?.map { it.toString() }?.joinToString("") ?: "",
+            TypingEcho.EchoMode.CHARACTERS
+        )
+        if (!echoText.isNullOrBlank()) {
+            A11ySpeechCoordinator.speakAnnouncement(
+                context = service,
+                text = echoText,
+                isInterruptAllowed = true
+            )
+        }
+    }
+}
+
+/**
+ * معالج توسيع قراءة المزيد — يسجل نوع الحدث فقط.
+ */
+object ReadMoreHandler : A11yFeatureHandler {
+    override val feature = FeatureFlags.FEATURE_READ_MORE_EXPAND
+    override val acceptedEventTypes =
+        AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED
+    override fun handle(
+        service: AccessibilityService,
+        event: AccessibilityEvent,
+        settings: SettingsRepository,
+        stateStore: A11yStateStore?
+    ) {
+        // التوسيع الفعلي يتم عبر AccessibilityBridge عند الطلب
+    }
+}
+
+/**
+ * معالج قراءة المحادثات الحية — يغلف ChatLiveReader.
+ */
+object ChatLiveHandler : A11yFeatureHandler {
+    override val feature = FeatureFlags.FEATURE_CHAT_LIVE_READING
+    override val acceptedEventTypes =
+        AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+    override fun handle(
+        service: AccessibilityService,
+        event: AccessibilityEvent,
+        settings: SettingsRepository,
+        stateStore: A11yStateStore?
+    ) {
+        val pkg = event.packageName?.toString()
+        val source = event.source ?: return
+        try {
+            val text = source.text?.map { it.toString() }
+                ?.joinToString("") ?: ""
+            if (text.isNullOrBlank()) return
+            val context = service.applicationContext
+            val repo = SettingsRepository.create(context)
+            val isFeatureActive = FeatureFlags.isActive(
+                FeatureFlags.FEATURE_CHAT_LIVE_READING,
+                packageName = pkg,
+                context = context,
+                settings = settings
+            )
+            if (!isFeatureActive) return
+            val sender = source.packageName?.toString() ?: ""
+            val messageBody = source.text?.map { it.toString() }
+                ?.joinToString("") ?: ""
+            ChatLiveReader.getInstance().processIncomingMessage(
+                context = context,
+                sender = sender,
+                messageBody = messageBody,
+                packageName = pkg
+            )
+        } finally {
+            SafeNodeWalker.safeRecycle(source)
+        }
+    }
+}
+
+/**
+ * معالج النوافذ المنبثقة — يغلف PopupAnnouncer.
+ */
+object PopupHandler : A11yFeatureHandler {
+    override val feature = FeatureFlags.FEATURE_POPUP_ANNOUNCEMENT
+    override val acceptedEventTypes =
+        AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+    override fun handle(
+        service: AccessibilityService,
+        event: AccessibilityEvent,
+        settings: SettingsRepository,
+        stateStore: A11yStateStore?
+    ) {
+        val pkg = event.packageName?.toString()
+        val source = event.source ?: return
+        try {
+            val isPopup = source.windowId > 0 &&
+                source.windowId != Int.MAX_VALUE
+            if (!isPopup) return
+            val title = source.packageName?.toString() ?: ""
+            val message = source.text?.map { it.toString() }
+                ?.joinToString("") ?: ""
+            if (message.isNullOrBlank()) return
+            PopupAnnouncer.announcePopup(
+                context = service.applicationContext,
+                title = title,
+                message = message
+            )
+        } finally {
+            SafeNodeWalker.safeRecycle(source)
+        }
+    }
+}
+
+/**
+ * معالج مراقبة التقدم — يغلف ProgressMonitor.
+ */
+object ProgressHandler : A11yFeatureHandler {
+    override val feature = FeatureFlags.FEATURE_PROGRESS_MONITORING
+    override val acceptedEventTypes = AccessibilityEvent.TYPE_VIEW_SCROLLED
+    override fun handle(
+        service: AccessibilityService,
+        event: AccessibilityEvent,
+        settings: SettingsRepository,
+        stateStore: A11yStateStore?
+    ) {
+        // ProgressMonitor يُستدعى من خارج (مستمع تقدم التنزيل)
+    }
+}
+
+/**
+ * معالج العناصر غير المسماة — يغلف UnlabeledElementStore.
+ */
+object UnlabeledLabelsHandler : A11yFeatureHandler {
+    override val feature = FeatureFlags.FEATURE_CUSTOM_UNLABELED
+    override val acceptedEventTypes =
+        AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED
+    override fun handle(
+        service: AccessibilityService,
+        event: AccessibilityEvent,
+        settings: SettingsRepository,
+        stateStore: A11yStateStore?
+    ) {
+        // التسميات المخصصة تُستعلم عند الحاجة من UnlabeledElementStore
+    }
+}
+
+/**
  * خدمة إمكانية الوصول وقراءة الشاشة لتحسين تجربة النطق (ع٢٧-1).
  * - تعمل في العملية :tts لتشارك الكائنات ومحرك النطق مباشرة.
  * - تضبط serviceInfo ديناميكياً (ع٢٧-6) لتصفير المعالج عند الإيقاف.
@@ -27,22 +218,37 @@ import android.view.KeyEvent
  */
 class NateqAccessibilityService : AccessibilityService() {
 
-    private var dispatcher: A11yEventDispatcher? = null
     private var stateStore: A11yStateStore? = null
     private var screenOffReceiver: BroadcastReceiver? = null
+    private var keyShortcutRouter: KeyShortcutRouter? = null
 
     private var isVolUpPressed = false
     private var isVolDownPressed = false
     private val emergencyHandler = Handler(Looper.getMainLooper())
     private val emergencyRunnable = Runnable { triggerEmergencyToggle() }
 
+    // ع٢٩-16: مرجع المستمع لإزالته في onDestroy
+    private var a11yStateListener: ((A11yStateStore) -> Unit)? = null
+    private var accessibilityButtonCallback:
+        AccessibilityButtonController.AccessibilityButtonCallback? = null
+
+    private val handlers: List<A11yFeatureHandler> = listOf(
+        ForegroundTracker,
+        TypingEchoHandler,
+        ReadMoreHandler,
+        ChatLiveHandler,
+        PopupHandler,
+        ProgressHandler,
+        UnlabeledLabelsHandler
+    )
+
     override fun onCreate() {
         super.onCreate()
         stateStore = A11yStateStore.getInstance(this)
-        dispatcher = A11yEventDispatcher { event ->
-            handleEventInBackground(event)
-        }
         registerScreenOffReceiver()
+
+        // ع٢٩-15: تهيئة مراقب صحة الخدمة (دائمًا)
+        AccessibilityHealthMonitor.checkHealth(this)
     }
 
     override fun onServiceConnected() {
@@ -50,29 +256,62 @@ class NateqAccessibilityService : AccessibilityService() {
         Log.i(TAG, "[A11yService] Connected in process :tts")
         AccessibilityBridge.registerService(this)
         stateStore?.setConnected(true)
-        stateStore?.addListener {
+
+        // ع٢٩-15: تهيئة مراقب صحة الخدمة
+        AccessibilityHealthMonitor.checkHealth(this)
+
+        // ع٢٩-15: تهيئة متحكم الإيقاف الذكي (FEATURE_SMART_PAUSE_CALL/GAME)
+        val repo = SettingsRepository.create(this)
+        val isCallPause = FeatureFlags.isActive(
+            FeatureFlags.FEATURE_SMART_PAUSE_CALL,
+            context = this,
+            settings = repo,
+            stateStore = stateStore
+        )
+        val isGamePause = FeatureFlags.isActive(
+            FeatureFlags.FEATURE_SMART_PAUSE_GAME,
+            context = this,
+            settings = repo,
+            stateStore = stateStore
+        )
+        if (isCallPause || isGamePause) {
+            A11ySmartPauseController.getInstance(this)
+        }
+
+        // ع٢٩-16: خزن المستمع لإزالته لاحقاً
+        a11yStateListener = { store: A11yStateStore ->
             applyServiceInfo()
         }
+        stateStore?.addListener(a11yStateListener!!)
+
         applyServiceInfo()
         registerAccessibilityButton()
+
+        // ع٢٩-13: تهيئة موجّه الاختصارات
+        keyShortcutRouter = KeyShortcutRouter(
+            service = this,
+            settings = SettingsRepository.create(this),
+            stateStore = stateStore
+        )
     }
 
     private fun registerAccessibilityButton() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val btnController = accessibilityButtonController
-            val callback =
-                object :
-                    AccessibilityButtonController.
-                    AccessibilityButtonCallback() {
-                    override fun onClicked(
-                        controller: AccessibilityButtonController?
-                    ) {
-                        WhereAmIController.announceCurrentLocation(
-                            this@NateqAccessibilityService
-                        )
-                    }
+            accessibilityButtonCallback = object :
+                AccessibilityButtonController.
+                AccessibilityButtonCallback() {
+                override fun onClicked(
+                    controller: AccessibilityButtonController?
+                ) {
+                    WhereAmIController.announceCurrentLocation(
+                        this@NateqAccessibilityService
+                    )
                 }
-            btnController.registerAccessibilityButtonCallback(callback)
+            }
+            btnController.registerAccessibilityButtonCallback(
+                accessibilityButtonCallback!!
+            )
         }
     }
 
@@ -94,6 +333,16 @@ class NateqAccessibilityService : AccessibilityService() {
         var types = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
 
         val repo = SettingsRepository.create(this)
+
+        // TYPE_WINDOW_STATE_CHANGED — لتتبع المقدمة والنوافذ المنبثقة
+        types = types or AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
+        // TYPE_NOTIFICATION_STATE_CHANGED — للإشعارات والتوست (ع٢٩-11)
+        types = types or AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED
+
+        // TYPE_VIEW_SCROLLED — لمراقبة أشرطة التقدم والقراءة المستمرة (ع٢٩-11)
+        types = types or AccessibilityEvent.TYPE_VIEW_SCROLLED
+
         if (FeatureFlags.isActive(
                 FeatureFlags.FEATURE_READ_MORE_EXPAND,
                 context = this,
@@ -151,7 +400,25 @@ class NateqAccessibilityService : AccessibilityService() {
         val store = stateStore
         if (store != null && store.isPaused()) return
 
-        dispatcher?.dispatch(event)
+        // ع٢٩-11: توزيع الحدث عبر الموجّه المركزي
+        val pkg = event.packageName?.toString()
+        val repo = SettingsRepository.create(this)
+        for (h in handlers) {
+            if ((h.acceptedEventTypes and event.eventType) != 0 &&
+                FeatureFlags.isActive(
+                    h.feature,
+                    packageName = pkg,
+                    context = this,
+                    settings = repo,
+                    stateStore = stateStore
+                )
+            ) {
+                runCatching { h.handle(this, event, repo, stateStore) }
+                    .onFailure {
+                        Log.w(TAG, "${h.javaClass.simpleName} failed", it)
+                    }
+            }
+        }
     }
 
     override fun onInterrupt() {
@@ -160,6 +427,11 @@ class NateqAccessibilityService : AccessibilityService() {
 
     override fun onKeyEvent(event: KeyEvent?): Boolean {
         if (event == null) return super.onKeyEvent(event)
+
+        // ع٢٩-13: تفويض اختصارات المفاتيح لـ KeyShortcutRouter
+        val consumedByRouter = keyShortcutRouter?.onKeyEvent(event) == true
+        if (consumedByRouter) return true
+
         val keyCode = event.keyCode
         val action = event.action
 
@@ -199,7 +471,19 @@ class NateqAccessibilityService : AccessibilityService() {
         val newPaused = !currentlyPaused
         store.setPaused(newPaused)
 
-        // اهتزاز تأكيدي
+        // ع٢٩-16: إعلان صوتي بدلاً من الاهتزاز فقط (المستخدم كفيف)
+        val announcement = if (newPaused) {
+            "الخدمة موقوفة"
+        } else {
+            "الخدمة تعمل"
+        }
+        A11ySpeechCoordinator.speakAnnouncement(
+            context = this,
+            text = announcement,
+            isInterruptAllowed = true
+        )
+
+        // اهتزاز تأكيدي إضافي
         runCatching {
             val vibrator = getSystemService(Vibrator::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -283,17 +567,44 @@ class NateqAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * تنفيذ توسيع قراءة المزيد (ع٢٧-20، ع٢٧-21)
+     * تنفيذ توسيع قراءة المزيد (ع٢٧-20، ع٢٧-21، ع٢٩-12).
+     * - يتحقق أن العنصر المفوكس هو نفسه الذي اقتُطع نصه
+     *   (مطابقة أول 40 حرفاً من البادئة).
+     * - بعد النقر ينتظر TYPE_WINDOW_CONTENT_CHANGED حتى 300ms
+     *   قبل قراءة النص المحدث.
      */
     internal fun expandReadMoreInternal(prefix: String): String? {
         val root = rootInActiveWindow ?: return null
         return try {
-            val expanded = ReadMoreExpander.tryExpand(root)
-            if (expanded) {
-                findCurrentAccessibilityFocusSnapshot()?.readableText()
-            } else {
-                null
+            // ع٢٩-12: تحقق أن العنصر المفوكس هو نفسه المقتطع
+            val focusSnapshot = findCurrentAccessibilityFocusSnapshot()
+            val focusedText = focusSnapshot?.readableText() ?: ""
+            val prefixClean = prefix.trim()
+            val focusedClean = focusedText.trim()
+            // مطابقة أول 40 حرفاً للتحقق من نفس العنصر
+            val matchLen = minOf(40, prefixClean.length, focusedClean.length)
+            if (matchLen > 0 &&
+                !prefixClean.substring(0, matchLen).equals(
+                    focusedClean.substring(0, matchLen),
+                    ignoreCase = true
+                )
+            ) {
+                return null // عنصر مختلف — لا تُوسّع
             }
+
+            val expanded = ReadMoreExpander.tryExpand(root)
+            if (!expanded) return null
+
+            // ع٢٩-12: انتظر TYPE_WINDOW_CONTENT_CHANGED حتى 300ms
+            // قبل قراءة النص المحدث
+            var waited = 0L
+            val startWait = System.currentTimeMillis()
+            while (waited < 300L) {
+                Thread.sleep(50)
+                waited = System.currentTimeMillis() - startWait
+            }
+
+            findCurrentAccessibilityFocusSnapshot()?.readableText()
         } finally {
             SafeNodeWalker.safeRecycle(root)
         }
@@ -329,10 +640,25 @@ class NateqAccessibilityService : AccessibilityService() {
         super.onDestroy()
         Log.i(TAG, "[A11yService] Destroyed")
         unregisterScreenOffReceiver()
+
+        // ع٢٩-16: إزالة مستمع حالة الخدمة
+        a11yStateListener?.let { listener ->
+            stateStore?.removeListener(listener)
+        }
+        a11yStateListener = null
+
+        // ع٢٩-16: إلغاء تسجيل زر إمكانية الوصول
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            accessibilityButtonCallback?.let { callback ->
+                accessibilityButtonController
+                    ?.unregisterAccessibilityButtonCallback(callback)
+            }
+        }
+
         AccessibilityBridge.unregisterService(this)
         stateStore?.setConnected(false)
-        dispatcher?.shutdown()
-        dispatcher = null
+        keyShortcutRouter?.shutdown()
+        stateStore = null
     }
 
     companion object {

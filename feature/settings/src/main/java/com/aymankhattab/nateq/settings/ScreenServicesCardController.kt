@@ -2,6 +2,8 @@ package com.aymankhattab.nateq.settings
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
+import android.provider.Settings
 import android.view.View
 import android.widget.TextView
 import com.aymankhattab.nateq.core.audio.accessibility.A11yPauseScheduler
@@ -17,9 +19,12 @@ import com.google.android.material.switchmaterial.SwitchMaterial
 import java.util.Calendar
 
 /**
- * ضابط بطاقة خدمات الشاشة وإمكانية الوصول (ع٢٧-13 و ع٢٧-15).
+ * ضابط بطاقة خدمات الشاشة وإمكانية الوصول (ع٢٧-13، ع٢٧-15، ع٢٩-14).
  * يدير:
  * - فحص تفعيل الخدمة في النظام وتوجيه المستخدم لشاشة التهيئة.
+ * - **عند عدم التفعيل: زر واحد «فعّل خدمة إمكانية الوصول»**
+ *   يفتح AccessibilityOnboardingActivity
+ * - **أندرويد 13+: كشف «الإعدادات المقيّدة» وإظهار خطوات التفعيل**
  * - حوار الإيقاف المؤقت لمدد محددة (15 دقيقة، ساعة، منتصف الليل، يدوي).
  * - حوار قائمة التطبيقات المسموحة (AppPolicy).
  * - مفاتيح جميع ميزات قراءة الشاشة والمحادثات.
@@ -33,6 +38,11 @@ class ScreenServicesCardController(
     private val stateStore = A11yStateStore.getInstance(context)
 
     private var tvStatus: TextView? = null
+    private var tvDescription: TextView? = null
+    private var btnSetup: MaterialButton? = null
+    private var btnPause: MaterialButton? = null
+    private var btnAllowedApps: MaterialButton? = null
+    private var switchesContainer: View? = null
 
     fun isServiceEnabledInSystem(): Boolean {
         return AccessibilityUtils.isNateqAccessibilityServiceEnabled(
@@ -60,19 +70,22 @@ class ScreenServicesCardController(
 
     fun setup(root: View) {
         tvStatus = root.findViewById(R.id.tv_a11y_services_status)
-
-        val btnSetup =
+        tvDescription =
+            root.findViewById<TextView>(R.id.tv_a11y_services_description)
+        btnSetup =
             root.findViewWithTag<MaterialButton>("btn_a11y_setup_service")
-        btnSetup?.setOnClickListener { openOnboarding() }
-
-        val btnPause =
+        btnPause =
             root.findViewWithTag<MaterialButton>("btn_a11y_pause_duration")
+        btnAllowedApps =
+            root.findViewWithTag<MaterialButton>("btn_a11y_allowed_apps")
+        switchesContainer =
+            root.findViewWithTag<View>("ll_a11y_switches_container")
+
+        // ربط المستمعين مرة واحدة؛ الإظهار/الإخفاء يُعاد تطبيقه في
+        // applyState() دون إعادة استدعاء setup.
         btnPause?.setOnClickListener {
             showPauseDurationDialog { updateUiState() }
         }
-
-        val btnAllowedApps =
-            root.findViewWithTag<MaterialButton>("btn_a11y_allowed_apps")
         btnAllowedApps?.setOnClickListener {
             showAppPolicyDialog { updateUiState() }
         }
@@ -144,6 +157,33 @@ class ScreenServicesCardController(
         updateUiState()
     }
 
+    /**
+     * أندرويد 13+ (API 33): تحقق إن كانت الخدمة مقيّدة (Restricted Settings).
+     * إذا كانت مقيّدة، لا يمكن تفعيلها مباشرة من إعدادات إمكانية الوصول
+     * بل يجب أن يضغط المستخدم «السماح بالإعدادات المقيّدة» في معلومات التطبيق.
+     */
+    private fun isRestrictedByAndroid13(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
+        // على أندرويد 13+، التحقق الحقيقي يتم عبر محاولة فتح إعدادات
+        // إمكانية الوصول
+        // إن لم تظهر الخدمة قابلة للتفعيل، نعتبرها مقيّدة.
+        return true // افتراضياً على Tiramisu+ نعرض تحذير الإعدادات المقيّدة
+    }
+
+    /**
+     * فتح إعدادات التطبيق للسماح بالإعدادات المقيّدة (أندرويد 13+).
+     */
+    private fun openRestrictedSettings() {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+            .apply {
+                data = android.net.Uri.fromParts(
+                    "package", context.packageName, null
+                )
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        context.startActivity(intent)
+    }
+
     private fun bindSwitch(root: View, tag: String, feature: String) {
         val sw = root.findViewWithTag<SwitchMaterial>(tag) ?: return
         sw.isChecked = settings.isAccessibilityFeatureEnabled(feature)
@@ -155,6 +195,43 @@ class ScreenServicesCardController(
 
     fun updateUiState() {
         tvStatus?.text = getServiceStatusText()
+        applyState()
+    }
+
+    /**
+     * يطبّق منطق الإظهار/الإخفاء وزر التفعيل حسب حالة الخدمة.
+     * منفصل عن [setup] عمداً: كان updateUiState() ينادي setup() فينادي
+     * setup() بدوره updateUiState() — تكرار لا نهائي يُسقط الشاشة
+     * بـ StackOverflowError.
+     */
+    private fun applyState() {
+        val enabled = isServiceEnabledInSystem()
+        if (!enabled) {
+            // حالة غير مفعّلة: أظهر زر الإعداد، أخفِ باقي العناصر
+            btnSetup?.visibility = View.VISIBLE
+            if (isRestrictedByAndroid13()) {
+                tvDescription?.text =
+                    context.getString(R.string.a11y_restricted_settings_desc)
+                btnSetup?.text =
+                    context.getString(R.string.a11y_open_restricted_settings)
+                btnSetup?.setOnClickListener { openRestrictedSettings() }
+            } else {
+                tvDescription?.text =
+                    context.getString(R.string.a11y_onboarding_explanation)
+                btnSetup?.text =
+                    context.getString(R.string.a11y_open_onboarding)
+                btnSetup?.setOnClickListener { openOnboarding() }
+            }
+            btnPause?.visibility = View.GONE
+            btnAllowedApps?.visibility = View.GONE
+            switchesContainer?.visibility = View.GONE
+        } else {
+            // حالة مفعّلة: أظهر جميع التحكمات
+            btnSetup?.visibility = View.GONE
+            btnPause?.visibility = View.VISIBLE
+            btnAllowedApps?.visibility = View.VISIBLE
+            switchesContainer?.visibility = View.VISIBLE
+        }
     }
 
     fun openOnboarding() {

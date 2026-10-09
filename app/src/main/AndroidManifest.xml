@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- اختياري: إشعار أثناء التخليق الصوتي الطويل (نصوص كبيرة) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- الخدمة الأمامية لتنزيل ملفات ونماذج الأصوات المدمجة في الخلفية (ع٣٠-7) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- الخدمة الأمامية الخاصة بالإعلانات الدورية (نوع متخصص لا يقيده
          أندرويد 15 عند الإقلاع، بخلاف mediaPlayback) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
@@ -178,6 +180,9 @@
                 <data android:mimeType="application/x-zip-compressed" />
                 <data android:mimeType="application/octet-stream" />
             </intent-filter>
+            <meta-data
+                android:name="android.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
 
         <!-- معالج الإعداد الأولي القابل للتخطي: يُعرض مرة واحدة (اختيار
@@ -281,6 +286,12 @@
                 android:value="spoken_time_and_battery_announcements" />
         </service>
 
+        <!-- خدمة تنزيل أصوات النماذج في الخلفية بخدمة أمامية dataSync (ع٣٠-7) -->
+        <service
+            android:name="com.aymankhattab.nateq.core.audio.providers.VoiceDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <!-- مستقبل قراءة الرسائل الواردة -->
         <receiver
             android:name="com.aymankhattab.nateq.core.audio.announcement.SmsReadingReceiver"
@@ -325,12 +336,12 @@
             </intent-filter>
         </service>
 
-        <!-- بلاطة الإعدادات السريعة لخدمات الشاشة (ع٢٧-16) -->
+        <!-- بلاطة الإعدادات السريعة لخدمات الشاشة (ع٢٩-14) — تظهر في Quick Settings -->
         <service
             android:name=".settings.ScreenServicesTileService"
             android:exported="true"
-            android:icon="@drawable/ic_number_reading"
-            android:label="@string/a11y_tile_label"
+            android:icon="@drawable/ic_accessibility"
+            android:label="@string/tile_service_label"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />

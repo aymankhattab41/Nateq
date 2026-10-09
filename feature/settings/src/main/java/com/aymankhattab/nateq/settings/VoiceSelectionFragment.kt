@@ -44,6 +44,11 @@ import com.aymankhattab.nateq.engine.NumberSpeech
 import com.aymankhattab.nateq.engine.PronunciationDictionary
 import com.aymankhattab.nateq.engine.TextProcessor
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
+import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
+import com.aymankhattab.nateq.core.audio.providers.SherpaOnnxVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.VocalizerDownloader
+import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.NetworkMetering
@@ -225,6 +230,14 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
     }
 
+    private val openVoiceFolderLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            handleImportVoiceFolder(uri)
+        }
+    }
+
     fun requestVoiceZipImport() {
         openVoiceZipLauncher.launch(
             arrayOf(
@@ -237,6 +250,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         )
     }
 
+    fun requestVoiceFolderImport() {
+        openVoiceFolderLauncher.launch(null)
+    }
+
     fun handleImportVoiceZip(uri: android.net.Uri) {
         val ctx = context ?: return
         Toast.makeText(
@@ -247,6 +264,54 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
         viewLifecycleOwner.lifecycleScope.launch(AppDispatchers.io) {
             val result = VoicePackageImporter.importFromUri(ctx, uri)
+            withContext(AppDispatchers.main) {
+                if (!isAdded) return@withContext
+                if (result.isSuccess) {
+                    val engineLabel = when (result.engineType) {
+                        VoicePackageImporter.ENGINE_ACAPELA -> "Acapela TTS"
+                        VoicePackageImporter.ENGINE_PIPER -> "Piper TTS"
+                        VoicePackageImporter.ENGINE_VOCALIZER -> "Vocalizer"
+                        else -> result.engineType
+                    }
+                    Toast.makeText(
+                        ctx,
+                        getString(
+                            R.string.embedded_import_success,
+                            result.voiceName,
+                            engineLabel
+                        ),
+                        Toast.LENGTH_LONG
+                    ).show()
+
+                    EnginePicker.warmupCache(ctx)
+                    accordion.updateSectionStatuses()
+                    view?.let { root ->
+                        embeddedDownloaderSection.refresh(root)
+                    }
+                } else {
+                    Toast.makeText(
+                        ctx,
+                        getString(
+                            R.string.embedded_import_error,
+                            result.errorMessage ?: "Unknown error"
+                        ),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
+    private fun handleImportVoiceFolder(uri: android.net.Uri) {
+        val ctx = context ?: return
+        Toast.makeText(
+            ctx,
+            getString(R.string.embedded_importing_zip),
+            Toast.LENGTH_SHORT
+        ).show()
+
+        viewLifecycleOwner.lifecycleScope.launch(AppDispatchers.io) {
+            val result = VoicePackageImporter.importFromDocumentTree(ctx, uri)
             withContext(AppDispatchers.main) {
                 if (!isAdded) return@withContext
                 if (result.isSuccess) {
@@ -845,6 +910,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             a11yServicesSection.updateUiState()
         }
         if (::accordion.isInitialized) accordion.updateSectionStatuses()
+        if (::categoryVoicePanel.isInitialized) {
+            categoryVoicePanel.onResume()
+        }
         refreshEmbeddedUiIfStorageChanged()
     }
 
@@ -863,6 +931,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         EnginePicker.invalidateAfterStorageChange()
         if (::engineSection.isInitialized) {
             engineSection.setupEngineDiscovery()
+        }
+        if (::categoryVoicePanel.isInitialized) {
+            categoryVoicePanel.refreshCategoryEngines()
         }
         if (::accordion.isInitialized) accordion.updateSectionStatuses()
         view?.let { root ->
@@ -1954,6 +2025,59 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             }
             sb.appendLine("")
 
+            // ── المحركات المدمجة (ع٢٩-8 بند 5) ──────────────────────────────
+            sb.appendLine("--- المحركات المدمجة ---")
+            val embeddedEngines = listOf(
+                EmbeddedEngineDiag(
+                    id = VocalizerEmbeddedVoiceProvider.PROVIDER_ID,
+                    name = "Vocalizer Ex 2",
+                    storageEngine =
+                        com.aymankhattab.nateq.core.audio.providers
+                            .EmbeddedStorage.Engine.VOCALIZER
+                ),
+                EmbeddedEngineDiag(
+                    id = AcapelaEmbeddedVoiceProvider.PROVIDER_ID,
+                    name = "Acapela TTS",
+                    storageEngine =
+                        com.aymankhattab.nateq.core.audio.providers
+                            .EmbeddedStorage.Engine.ACAPELA
+                ),
+                EmbeddedEngineDiag(
+                    id = SherpaOnnxVoiceProvider.PROVIDER_ID,
+                    name = "Piper TTS (Sherpa-ONNX)",
+                    storageEngine =
+                        com.aymankhattab.nateq.core.audio.providers
+                            .EmbeddedStorage.Engine.SHERPA
+                )
+            )
+            embeddedEngines.forEach { diag ->
+                val status = EngineStatusRegistry.statusOf(diag.id)
+                val stateLabel = status?.state?.let {
+                    EngineStatusRegistry.labelAr(it)
+                } ?: "غير معروف"
+                val lastError = status?.lastError ?: "لا يوجد"
+                val code = status?.code ?: "—"
+
+                val searchDirs =
+                    com.aymankhattab.nateq.core.audio.providers
+                        .EmbeddedStorage.allSearchDirs(
+                            context,
+                            diag.storageEngine
+                        )
+                val paths = searchDirs.map { it.absolutePath }
+                    .joinToString("\n    ")
+                val totalSize = searchDirs.sumOf { dirSize(it) }
+                val sizeText = formatSize(totalSize)
+
+                sb.appendLine("محرك: ${diag.name} (${diag.id})")
+                sb.appendLine("  الحالة: $stateLabel")
+                sb.appendLine("  الرمز: $code")
+                sb.appendLine("  آخر خطأ: $lastError")
+                sb.appendLine("  المسارات:\n    $paths")
+                sb.appendLine("  الحجم الكلي: $sizeText")
+                sb.appendLine("")
+            }
+
             // ── المحرك/الصوت المختار لكل فئة ─────────────────────────
             sb.appendLine("--- الاختيار النشط لكل فئة ---")
             val defaultEngine = runCatching {
@@ -2513,4 +2637,31 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         accordion.updateSectionStatuses()
     }
 
+    // ===== مساعدات التشخيص (ع٢٩-8 بند 5) =====
+
+    private data class EmbeddedEngineDiag(
+        val id: String,
+        val name: String,
+        val storageEngine:
+            com.aymankhattab.nateq.core.audio.providers.EmbeddedStorage.Engine
+    )
+
+    private fun dirSize(dir: File): Long {
+        if (!dir.exists()) return 0L
+        var size = 0L
+        dir.walk().forEach { file ->
+            if (file.isFile) size += file.length()
+        }
+        return size
+    }
+
+    private fun formatSize(bytes: Long): String {
+        if (bytes < 1024) return "$bytes B"
+        val kb = bytes / 1024
+        if (kb < 1024) return "${kb} KB"
+        val mb = kb / 1024
+        if (mb < 1024) return "${mb} MB"
+        val gb = mb / 1024
+        return "${gb} GB"
+    }
 }

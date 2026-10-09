@@ -6,7 +6,9 @@ import android.widget.ArrayAdapter
 import android.widget.SeekBar
 import android.widget.TextView
 import com.aymankhattab.nateq.feature.settings.R
+import android.widget.Toast
 import com.aymankhattab.nateq.core.audio.engine.EngineWithVoices
+import com.aymankhattab.nateq.core.audio.engine.UnavailableEngine
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
@@ -18,7 +20,9 @@ internal data class LanguageRow(
     val languageTag: String,
     val displayName: String,
     /** المحركات التي توفّر هذه اللغة (فارغة = لا محرك قادراً عليها). */
-    val engines: List<EngineWithVoices>
+    val engines: List<EngineWithVoices>,
+    /** المحركات غير المتاحة مع شارة السبب (ع٣١-5). */
+    val unavailableEngines: List<UnavailableEngine> = emptyList()
 )
 
 /** حالة محرك اللغة للتبليغ عنها في سطر حالة قسم المحرك. */
@@ -50,23 +54,41 @@ internal data class ConvertChoice(
 )
 
 /** عناصر قائمة المحرك + فهرس المحرّك المحفوظ: خيار «بدون محرك» في المقدمة
- *  ثم محركات اللغة؛ ولغة بلا محرك تُعرض بعنصر وحيد «لا توجد خيارات». */
+ *  ثم محركات اللغة ثم المحركات غير المتاحة بشاراتها؛ ولغة بلا محرك تُعرض
+ *  بعنصر وحيد «لا توجد خيارات». */
 internal fun engineChoice(
     row: LanguageRow,
     noEngineLabel: String,
     noOptionsLabel: String,
     savedEngine: String?
 ): ConvertChoice {
-    if (row.engines.isEmpty()) {
+    if (row.engines.isEmpty() && row.unavailableEngines.isEmpty()) {
         return ConvertChoice(listOf(noOptionsLabel), null)
     }
     val items = mutableListOf(noEngineLabel)
     items += row.engines.map { it.engineLabel }
+    items += row.unavailableEngines.map { unavail ->
+        val reason = unavail.message ?: unavail.code ?: "معطّل"
+        "${unavail.engineLabel} (غير متاح: $reason)"
+    }
     val resolved = if (savedEngine == null) {
         0
     } else {
-        row.engines.indexOfFirst { it.enginePackage == savedEngine }
-            .takeIf { it >= 0 }?.plus(1) ?: 0
+        val availIdx = row.engines.indexOfFirst {
+            it.enginePackage == savedEngine
+        }
+        if (availIdx >= 0) {
+            availIdx + 1
+        } else {
+            val unavailIdx = row.unavailableEngines.indexOfFirst {
+                it.enginePackage == savedEngine
+            }
+            if (unavailIdx >= 0) {
+                1 + row.engines.size + unavailIdx
+            } else {
+                0
+            }
+        }
     }
     return ConvertChoice(items, resolved)
 }
@@ -82,8 +104,14 @@ internal fun enginePackageForLabel(
     if (selectedLabel.isNullOrBlank()) return null
     val trimmed = selectedLabel.trim()
     if (trimmed == noEngineLabel || trimmed == noOptionsLabel) return null
-    return row.engines.firstOrNull { it.engineLabel == trimmed }
-        ?.enginePackage
+    val matched = row.engines.firstOrNull { it.engineLabel == trimmed }
+    if (matched != null) return matched.enginePackage
+    val unavail = row.unavailableEngines.firstOrNull { un ->
+        val reason = un.message ?: un.code ?: "معطّل"
+        trimmed == "${un.engineLabel} (غير متاح: $reason)" ||
+            trimmed.startsWith(un.engineLabel)
+    }
+    return unavail?.enginePackage
 }
 
 /** عناصر قائمة الصوت المحسومة من أسماء أصوات المحرك المختار + فهرس
@@ -289,7 +317,8 @@ internal class LanguageConvertDialogController(
             row, noEngineLabel, noOptionsLabel, saved.engine
         )
         bindDropdown(actvEngine, engine.labels, engine.resolvedIndex)
-        actvEngine.isEnabled = row.engines.isNotEmpty()
+        actvEngine.isEnabled =
+            row.engines.isNotEmpty() || row.unavailableEngines.isNotEmpty()
 
         val enginePkg = enginePackageForLabel(
             row, actvEngine.text?.toString(), noEngineLabel, noOptionsLabel
@@ -312,6 +341,19 @@ internal class LanguageConvertDialogController(
         val enginePkg = enginePackageForLabel(
             currentRow, label, noEngineLabel, noOptionsLabel
         )
+        val unavail = currentRow.unavailableEngines.firstOrNull {
+            it.enginePackage == enginePkg
+        }
+        if (unavail != null) {
+            val reason = unavail.message ?: unavail.code ?: "المحرك غير جاهز"
+            tvSaved.text = "تنبيه: ${unavail.engineLabel} ($reason)"
+            tvSaved.announceCompat(tvSaved.text.toString())
+            Toast.makeText(
+                context,
+                "${unavail.engineLabel}: $reason",
+                Toast.LENGTH_LONG
+            ).show()
+        }
         bindVoiceFor(enginePkg)
         markPending()
     }
@@ -353,6 +395,27 @@ internal class LanguageConvertDialogController(
 
     /** حفظ صريح: يكتب إعدادات اللغة المختارة حالياً. */
     private fun saveCurrent() {
+        val enginePkg = enginePackageForLabel(
+            currentRow,
+            actvEngine.text?.toString(),
+            noEngineLabel,
+            noOptionsLabel
+        )
+        val unavail = currentRow.unavailableEngines.firstOrNull {
+            it.enginePackage == enginePkg
+        }
+        if (unavail != null) {
+            val reason = unavail.message ?: unavail.code ?: "المحرك غير جاهز"
+            tvSaved.text = "تعذر الحفظ: ${unavail.engineLabel} ($reason)"
+            tvSaved.announceCompat(tvSaved.text.toString())
+            Toast.makeText(
+                context,
+                "تعذر الحفظ: ${unavail.engineLabel} ($reason)",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
         val params = convertSaveValues(
             currentRow,
             actvEngine.text?.toString(),

@@ -94,8 +94,10 @@ class EnginePickerCacheTest {
     fun embeddedEnginesRescanAfterShortTtlWhileSystemStaysCached() {
         val vocalizerDir = File(context.filesDir, "VocalizerEx2")
         vocalizerDir.mkdirs()
+        val hdrFile = File(vocalizerDir, "sample.hdr")
+        hdrFile.writeBytes(ByteArray(100))
         val dataFile = File(vocalizerDir, "sample.dat")
-        dataFile.writeText("DATA")
+        dataFile.writeBytes(ByteArray(1_048_576))
 
         val first = EnginePicker.installedEngines(context)
         assertTrue(
@@ -106,7 +108,7 @@ class EnginePickerCacheTest {
         )
 
         // حذف الصوت لا يظهر قبل انقضاء مهلة المدمج (كاش 15 ثانية).
-        assertTrue(dataFile.delete())
+        assertTrue(dataFile.delete() && hdrFile.delete())
         val stillCached = EnginePicker.installedEngines(context)
         assertTrue(
             stillCached.any {

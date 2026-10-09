@@ -21,6 +21,7 @@ import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerServi
 import com.aymankhattab.nateq.core.audio.announcement.CallerScreeningService
 import com.aymankhattab.nateq.core.audio.announcement.NateqNotificationListener
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
+import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -669,8 +670,26 @@ etCallerPrefix =
                 parent: AdapterView<*>?, v: View?,
                 pos: Int, id: Long
             ) {
-                val pkg = callerEngineOptions
-                    .getOrNull(pos)?.packageName
+                val engine = callerEngineOptions.getOrNull(pos)
+                val pkg = engine?.packageName
+                if (engine != null && pkg != null) {
+                    val status = EngineStatusRegistry.statusOf(
+                        fragment.requireContext(), pkg
+                    )
+                    if (status.state != EngineStatusRegistry.State.READY &&
+                        status.state !=
+                        EngineStatusRegistry.State.VOICES_PRESENT
+                    ) {
+                        val reason = status.lastError
+                            ?: EngineStatusRegistry.labelAr(status.state)
+                        Toast.makeText(
+                            fragment.requireContext(),
+                            "${engine.label}: $reason",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        return
+                    }
+                }
                 runCatching {
                     settings.setEngineForCategory(category, pkg)
                 }

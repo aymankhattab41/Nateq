@@ -48,4 +48,11 @@
          فلن يرى المستخدم إشعار الخدمة الأمامية وزرّيها (بلا إعادة طلب مزعجة) -->
     <string name="fgs_notifications_disabled_hint">الإشعارات معطّلة — لن ترى إشعار الخدمة وزرّيها «أعلن الآن» و«إيقاف»، والإعلانات تعمل في الخلفية</string>
     <string name="custom_chime_unavailable_fallback">تعذّر تشغيل ملف النغمة المخصّص، تم الرجوع للرنة الافتراضية</string>
+
+    <!-- ع٣٠-7 — خدمة تنزيل أصوات ونماذج المحركات المدمجة في الخلفية -->
+    <string name="voice_download_channel_name">تنزيل أصوات Lord TTS</string>
+    <string name="voice_download_channel_description">إشعار تقدم تنزيل ملفات ونماذج الأصوات المدمجة</string>
+    <string name="voice_download_notification_title">جارٍ تنزيل الأصوات المدمجة</string>
+    <string name="voice_download_notification_text">جارٍ تنزيل %1$s (%2$d%%)</string>
+    <string name="voice_download_action_cancel">إلغاء</string>
 </resources>

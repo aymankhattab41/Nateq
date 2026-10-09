@@ -67,6 +67,7 @@ dependencies {
     // ContextCompat...) بدل الاعتماد الضمني المتسرب من :core:data — إغلاق
     // هشاشة البناء حين تُعدَّل تبعيات أي وحدة أخرى.
     implementation(libs.androidx.core.ktx)
+    implementation("androidx.documentfile:documentfile:1.0.1")
 
     // Hilt — NateqTtsService مُعلَّم بـ @AndroidEntryPoint وتُحقن فيه إعدادات
     // التطبيق وقاموس النطق (نفس إصدار :app).

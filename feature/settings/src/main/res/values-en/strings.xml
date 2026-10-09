@@ -5,6 +5,8 @@
     <string name="a11y_status_active">Active</string>
     <string name="a11y_status_paused">Paused</string>
     <string name="a11y_status_disabled">Disabled in System</string>
+    <string name="a11y_restricted_settings_desc">Service is restricted in system settings (Android 13+). Tap the button below to open app info, then tap the menu (⋮) and select "Allow restricted settings".</string>
+    <string name="a11y_open_restricted_settings">Open App Settings</string>
     <string name="a11y_pause_duration_title">Screen Services Pause Duration</string>
     <string name="a11y_pause_15m">15 minutes</string>
     <string name="a11y_pause_1h">1 hour</string>
@@ -14,7 +16,6 @@
     <string name="a11y_onboarding_title">Enable Screen Services</string>
     <string name="a11y_onboarding_explanation">Screen services enable auto-expansion of truncated messages and live chat reading inside supported apps. No personal data or screen text is ever collected or transmitted outside your device.</string>
     <string name="a11y_restricted_settings_title">Step 1: Allow Restricted Settings (Android 13+)</string>
-    <string name="a11y_restricted_settings_desc">Tap the button below to open App Info, then tap the menu (three dots at the top) and select \"Allow restricted settings\".</string>
     <string name="a11y_open_app_details">Open App Info</string>
     <string name="a11y_enable_service_button">Open Accessibility Settings</string>
     <string name="a11y_service_enabled_announcement">Screen services enabled successfully</string>
@@ -577,6 +578,12 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+- Embedded engines &amp; live storage inventory: Unified engine IDs across client and host endpoints, accurate live inventory tracking, and engine data cleanup
+- Fixed Sherpa and Piper search paths: Corrected model discovery, automatic storage migration, and instant cache invalidation upon download
+- Visible unavailable engines: Disabled engine rows with clear failure reasons and status badges across selection lists
+- Enhanced engine details dialog: Background auto-initialization for completed voices and detailed diagnostic logs
+- Unified voice preview: Explicit failure messages and accurate model directory resolution for Sherpa models
+- Comprehensive unit test suite covering host sessions, live storage inventory, status registry, and model discovery
 - Screen and Accessibility Services: Automatic expansion of truncated messages, live chat reading, clipboard reading, typing echo, emergency shortcut, pause duration picker, and app whitelist policy
 - Audio DSP Processing Chain: 5-band parametric equalizer, dynamic range compressor, spatial panner, reverb, earcon generator, and dedicated audio routing
 - Category Resolution and Engine Safety (CategoryResolver): Prevention of silent default engine fallback, automatic Google TTS retry, and voice readiness handling
@@ -644,6 +651,52 @@
     <string name="embedded_engine_piper">Piper TTS (ONNX)</string>
     <string name="embedded_engine_vocalizer">Vocalizer Ex 2</string>
     <string name="embedded_engine_acapela">Acapela TTS</string>
+
+    <!-- ع٢٩-8 بند 2: Engine status + details dialog -->
+    <string name="engine_state_unknown">Unknown</string>
+    <string name="engine_detail_state">State: %1$s</string>
+    <string name="engine_detail_code">Code: %1$s</string>
+    <string name="engine_detail_error">Last Error: %1$s</string>
+    <string name="engine_detail_paths">Paths:\n%1$s</string>
+    <string name="engine_detail_size">Total Size: %1$s</string>
+    <string name="no_failure_recorded">No failure recorded</string>
+    <string name="engine_not_attempted">Initialization not attempted yet</string>
+    <string name="engine_no_errors">No errors</string>
+    <string name="engine_no_installed_voices_for_init">No installed voice files found on disk for initialization</string>
+    <string name="engine_detail_host_log_title">Host Log (:engine_host):</string>
+    <string name="no_code">—</string>
+    <string name="retry_init">Retry Init</string>
+    <string name="copy_diagnostics">Copy Diagnostics</string>
+    <string name="copied_to_clipboard">Copied to clipboard</string>
+    <string name="engine_retry_success">%1$s re-initialized successfully</string>
+    <string name="engine_retry_failed">Retry failed: %1$s - %2$s</string>
+    <string name="engine_detail_files_title">Installed Files (%1$d):</string>
+    <string name="engine_detail_file_unknown">Unrecognized</string>
+    <string name="engine_detail_file_delete">Delete</string>
+    <string name="engine_delete_all_data">Delete Engine Data</string>
+    <string name="engine_delete_data_confirm_title">Confirm Delete Engine Data</string>
+    <string name="engine_delete_data_confirm_msg">Are you sure you want to delete all files and data for %1$s?\n\nThis will wipe the engine directory and reset its state.</string>
+    <string name="engine_delete_file_confirm">Are you sure you want to delete file \"%1$s\"?</string>
+    <string name="engine_file_deleted">File deleted successfully</string>
+    <string name="engine_data_deleted">Engine data deleted successfully</string>
+    <string name="engine_more_files_format">+ %1$d more files…</string>
+
+    <!-- ع٢٩-8 بند 3: Storage screen -->
+    <string name="storage_screen_title">Storage</string>
+    <string name="storage_engine_paths">Paths:\n%1$s</string>
+    <string name="storage_engine_size">Total Size: %1$s</string>
+    <string name="storage_voice_delete_confirm">Delete voice %1$s?</string>
+    <string name="storage_move_to_internal">Move to Internal Storage</string>
+    <string name="storage_migration_progress">Migrating: %1$d/%2$d</string>
+    <string name="storage_migration_done">Moved %1$d files</string>
+    <string name="import_from_folder">Import Voices from Folder</string>
+    <string name="import_folder_picker_title">Select Voice Package Folder</string>
+    <string name="import_success">Imported successfully</string>
+    <string name="import_error">Import failed: %1$s</string>
+    <string name="no_voices_installed">No voices installed for this engine</string>
+    <string name="voice_size_format">%1$s (%2$s)</string>
+    <string name="voice_count_format">Voices installed: %1$d</string>
+    <string name="already_migrated">Already migrated or no external content</string>
     <string name="embedded_import_zip">Import Voice from ZIP</string>
     <string name="embedded_importing_zip">Importing voice package…</string>
     <string name="embedded_import_success">Voice (%1$s) for %2$s imported successfully</string>
@@ -655,6 +708,20 @@
     <string name="embedded_preview_btn">Preview Voice</string>
     <string name="embedded_downloading">Downloading (%1$d%%)…</string>
     <string name="embedded_filter_all">All</string>
+
+    <!-- ع٢٩-13: Launcher shortcuts -->
+    <string name="shortcut_pause_service">Pause/Resume Service</string>
+    <string name="shortcut_pause_service_long">Pause or resume the reading service</string>
+    <string name="shortcut_read_screen">Read Screen</string>
+    <string name="shortcut_read_screen_long">Read current screen content</string>
+    <string name="shortcut_open_accessibility">Accessibility Settings</string>
+    <string name="shortcut_open_accessibility_long">Open accessibility service settings</string>
+
+    <!-- ع٢٩-14: Quick Settings Tile -->
+    <string name="tile_service_label">Screen Services (Lord TTS)</string>
+    <string name="tile_service_paused">Paused</string>
+    <string name="tile_service_active">Active</string>
+    <string name="tile_service_disabled">Disabled</string>
     <string name="embedded_filter_ar">Arabic</string>
     <string name="embedded_filter_en">English</string>
     <string name="embedded_filter_other">Other Languages</string>
@@ -664,5 +731,15 @@
     <string name="embedded_delete_success">Voice deleted successfully</string>
     <string name="embedded_empty_list">No voices matching the selected filter</string>
     <string name="embedded_header_desc">Fast neural AI and embedded voices running entirely offline once downloaded or imported.</string>
+    <string name="embedded_test_connection">Test Connection</string>
+    <string name="embedded_test_connection_title">Server Connection Test</string>
+    <string name="embedded_test_connection_failed">Connection Test Failed</string>
+    <string name="embedded_test_connection_result">Final URL:\n%1$s\n\nResponse Code: HTTP %2$d\nDeclared Size: %3$s\nContent-Type: %4$s</string>
+    <string name="testing_connection">Testing server connection…</string>
+    <string name="embedded_download_errors_title">Recent Download Errors:</string>
+    <string name="embedded_cancel_download_btn">Cancel</string>
+    <string name="embedded_resume_download_btn">Resume Download</string>
+    <string name="embedded_partial_download_hint">Resumed from %1$s</string>
+    <string name="embedded_download_cancelled">Download cancelled</string>
 
 </resources>

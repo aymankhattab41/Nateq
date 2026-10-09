@@ -8,6 +8,7 @@ import android.widget.AdapterView
 import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.view.isVisible
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.util.LanguageCode
@@ -15,6 +16,8 @@ import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
+import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
+import com.aymankhattab.nateq.core.audio.providers.EmbeddedStorage
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /**
@@ -133,14 +136,18 @@ internal class CategoryVoicePanelController(
         fragment.requireContext(),
         languages.map { catalog.languageDisplayName(it) }
     )
-    private val categoryEngines =
+    private var categoryEngines: List<EnginePicker.InstalledEngine> =
         runCatching {
             EnginePicker.installedEngines(fragment.requireContext())
         }.getOrDefault(emptyList())
+    private val categoryEngineLabels = mutableListOf<String>().apply {
+        addAll(categoryEngines.map { it.label })
+    }
     private val engineAdapter = simpleAdapter(
         fragment.requireContext(),
-        categoryEngines.map { it.label }
+        categoryEngineLabels
     )
+    private var lastStorageVersion: Int = EmbeddedStorage.version
 
     // **بند 6.2:** علم الربط البرمجي — يُسنَّع حول setSelection وsetProgress
     // حتى لا يُسجَّل اختيارٌ برمجي أو يُفسَّر إسنادُ الشريط تعديلَ مستخدم.
@@ -221,6 +228,24 @@ internal class CategoryVoicePanelController(
                 ) {
                     if (bindingInputs) return
                     if (currentEntry.isCaller) return
+                    val engine = categoryEngines.getOrNull(pos)
+                    if (engine != null) {
+                        val status = EngineStatusRegistry.statusOf(
+                            fragment.requireContext(), engine.packageName
+                        )
+                        if (status.state != EngineStatusRegistry.State.READY &&
+                            status.state !=
+                            EngineStatusRegistry.State.VOICES_PRESENT
+                        ) {
+                            val reason = status.lastError
+                                ?: EngineStatusRegistry.labelAr(status.state)
+                            Toast.makeText(
+                                fragment.requireContext(),
+                                "${engine.label}: $reason",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
                     markDirty()
                     refreshVoiceSpinner()
                 }
@@ -599,6 +624,46 @@ if (!dirtyPanel) {
         }
     }
 
+    /**
+     * يعيد استكشاف المحركات المثبتة ويحدّث محول السبنر مع الحفاظ على الاختيار
+     * (ع٣١-5).
+     */
+    internal fun refreshCategoryEngines() {
+        val context = fragment.context ?: return
+        val currentIdx = spinnerEngine?.selectedItemPosition ?: -1
+        val currentSelectedPkg = if (currentIdx in categoryEngines.indices) {
+            categoryEngines[currentIdx].packageName
+        } else {
+            runCatching {
+                settings.getEngineForCategory(currentEntry.categoryKey)
+            }.getOrNull()
+        }
+
+        categoryEngines = runCatching {
+            EnginePicker.installedEngines(context)
+        }.getOrDefault(emptyList())
+
+        categoryEngineLabels.clear()
+        categoryEngineLabels.addAll(categoryEngines.map { it.label })
+        engineAdapter.notifyDataSetChanged()
+
+        if (currentSelectedPkg != null) {
+            val newIdx = engineIndexFor(categoryEngines, currentSelectedPkg)
+            bindingInputs = true
+            try {
+                spinnerEngine?.setSelection(newIdx)
+            } finally {
+                bindingInputs = false
+            }
+        }
+        lastStorageVersion = EmbeddedStorage.version
+    }
+
+    /** يُستدعى في onResume لتحديث المحركات عند تغيّر التخزين (ع٣١-5). */
+    internal fun onResume() {
+        refreshCategoryEngines()
+    }
+
     /** حفظٌ صريح: يكتب الفئة المعروضة فقط. للمتصل يكتب فرعيَّ اللغة
      *  معاً (كلاهما محمّل في اللوحة ومحرَّر)، وللفئة الصوتية يكتب
      *  لغتها ومحركها وصوتها وأشرطتها. */
@@ -622,9 +687,26 @@ if (!dirtyPanel) {
         if (categoryHasDedicatedEngine(key)) {
             val engineIdx = spinnerEngine?.selectedItemPosition ?: -1
             if (engineIdx in categoryEngines.indices) {
+                val engine = categoryEngines[engineIdx]
+                val status = EngineStatusRegistry.statusOf(
+                    fragment.requireContext(), engine.packageName
+                )
+                if (status.state != EngineStatusRegistry.State.READY &&
+                    status.state !=
+                    EngineStatusRegistry.State.VOICES_PRESENT
+                ) {
+                    val reason = status.lastError
+                        ?: EngineStatusRegistry.labelAr(status.state)
+                    Toast.makeText(
+                        fragment.requireContext(),
+                        "لا يمكن حفظ ${engine.label}: $reason",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return
+                }
                 runCatching {
                     settings.setEngineForCategory(
-                        key, categoryEngines[engineIdx].packageName
+                        key, engine.packageName
                     )
                 }
             }
@@ -683,9 +765,26 @@ if (!dirtyPanel) {
     ) {
         val engineIdx = engineSpinner?.selectedItemPosition ?: -1
         if (engineIdx in categoryEngines.indices) {
+            val engine = categoryEngines[engineIdx]
+            val status = EngineStatusRegistry.statusOf(
+                fragment.requireContext(), engine.packageName
+            )
+            if (status.state != EngineStatusRegistry.State.READY &&
+                status.state !=
+                EngineStatusRegistry.State.VOICES_PRESENT
+            ) {
+                val reason = status.lastError
+                    ?: EngineStatusRegistry.labelAr(status.state)
+                Toast.makeText(
+                    fragment.requireContext(),
+                    "لا يمكن حفظ ${engine.label}: $reason",
+                    Toast.LENGTH_LONG
+                ).show()
+                return
+            }
             runCatching {
                 settings.setEngineForCategory(
-                    categoryKey, categoryEngines[engineIdx].packageName
+                    categoryKey, engine.packageName
                 )
             }
         }

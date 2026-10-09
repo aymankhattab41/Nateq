@@ -4,7 +4,6 @@ import android.content.Context
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedStorage
-import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.audio.providers.SherpaModelCatalog
 import com.aymankhattab.nateq.core.audio.providers.SherpaModelChecks
 import com.aymankhattab.nateq.core.audio.providers.SherpaModelException
@@ -35,7 +34,7 @@ internal class SherpaHostSession(
 ) : HostEngineSession {
 
     companion object {
-        private const val TAG = "SherpaHost"
+        private const val ENGINE_ID = HostProtocol.ENGINE_SHERPA
 
         /** مسار نسخة espeak المضمّنة في الأصول. */
         private const val ESPEAK_ASSET_PATH = "espeak-ng-data"
@@ -74,12 +73,22 @@ internal class SherpaHostSession(
     override fun init(dataDir: String): HostResult {
         if (dataDir.isNotBlank()) extraSearchDir = dataDir
         synchronized(engineLock) {
-            if (inited) return HostProtocol.success()
+            if (inited) {
+                HostLog.d(ENGINE_ID, "المحرك مهيّأ مسبقاً")
+                return HostProtocol.success()
+            }
+            HostLog.logInitDetails(
+                ENGINE_ID,
+                dataDir,
+                mapOf(
+                    "library" to "libonnxruntime.so + libsherpa-onnx-c-api.so"
+                )
+            )
             val espeak = ensureEspeakDir()
             val missing = SherpaModelChecks.missingEspeakEntries(espeak)
             if (missing.isNotEmpty()) {
-                Log.e(
-                    TAG,
+                HostLog.e(
+                    ENGINE_ID,
                     "espeak-ng-data ناقص: missing=$missing " +
                         "local=${espeak.listFiles()?.size ?: -1}"
                 )
@@ -90,7 +99,7 @@ internal class SherpaHostSession(
             }
             espeakDir = espeak
             inited = true
-            Log.i(TAG, "espeak جاهز على ${espeak.absolutePath}")
+            HostLog.i(ENGINE_ID, "espeak جاهز على ${espeak.absolutePath}")
             return HostProtocol.success()
         }
     }
@@ -144,10 +153,13 @@ internal class SherpaHostSession(
             getOrCreateTts(matched)
         } catch (e: SherpaModelException) {
             // ع٢٩-6: رفض تحقق مسبق برمز معنون لا خطأ عام.
-            Log.e(TAG, "Sherpa init refused [${e.code}]: ${e.message}")
+            HostLog.e(
+                ENGINE_ID,
+                "Sherpa init refused [${e.code}]: ${e.message}"
+            )
             return HostResult.failure(e.code, e.message)
         } catch (t: Throwable) {
-            Log.e(TAG, "فشل بناء Sherpa TTS: ${t.message}", t)
+            HostLog.e(ENGINE_ID, "فشل بناء Sherpa TTS: ${t.message}", t)
             return HostResult.failure(
                 "INIT_FAILED",
                 t.message ?: "فشل بناء المحرّك"
@@ -196,8 +208,8 @@ internal class SherpaHostSession(
                 } ?: false
                 if (!finished) {
                     abort.set(true)
-                    Log.e(
-                        TAG,
+                    HostLog.e(
+                        ENGINE_ID,
                         "Sherpa تجاوز ميزانيته ${budgetMs}ms: " +
                             matched.displayName
                     )
@@ -213,7 +225,7 @@ internal class SherpaHostSession(
                 HostProtocol.success()
             }
         } catch (t: Throwable) {
-            Log.e(TAG, "خطأ في توليد Sherpa: ${t.message}", t)
+            HostLog.e(ENGINE_ID, "خطأ في توليد Sherpa: ${t.message}", t)
             HostResult.failure(
                 "ENGINE_ERROR",
                 t.message ?: "خطأ غير متوقّع"
@@ -277,10 +289,6 @@ internal class SherpaHostSession(
         )
         val tts = try {
             OfflineTts(assetManager = null, config = finalConfig)
-        } catch (t: Throwable) {
-            // ع٢٩-9: فشل التهيئة يُبطل الكاش ليظهر السبب في القائمة.
-            EnginePicker.invalidateAfterStorageChange()
-            throw t
         } finally {
             HostProtocol.clearMarker(
                 context.filesDir,
@@ -288,8 +296,8 @@ internal class SherpaHostSession(
             )
         }
         ttsInstances[model.id] = tts
-        Log.i(
-            TAG,
+        HostLog.i(
+            ENGINE_ID,
             "Sherpa-ONNX ${sherpaVersionTag()} initialized " +
                 "model=${model.modelFile.absolutePath} " +
                 "size=${model.modelFile.length()}B " +
@@ -297,8 +305,6 @@ internal class SherpaHostSession(
                 "espeak=${espeakData.absolutePath} " +
                 "threads=$threads"
         )
-        // ع٢٩-9: نجاح التهيئة يُبطل كاش المحركات والاكتشاف.
-        EnginePicker.invalidateAfterStorageChange()
         return tts
     }
 
@@ -317,7 +323,7 @@ internal class SherpaHostSession(
                 try {
                     instance.release()
                 } catch (t: Throwable) {
-                    Log.w(TAG, "خطأ في تحرير $id: ${t.message}")
+                    HostLog.w(ENGINE_ID, "خطأ في تحرير $id: ${t.message}", t)
                 }
             }
             ttsInstances.clear()
@@ -359,8 +365,8 @@ internal class SherpaHostSession(
             if (!espeakDirUsable(target, assetCount)) {
                 val missing = SherpaModelChecks
                     .missingEspeakEntries(target)
-                Log.e(
-                    TAG,
+                HostLog.e(
+                    ENGINE_ID,
                     "espeak-ng-data incomplete after copy: " +
                         "missing=$missing " +
                         "local=${target.listFiles()?.size ?: -1} " +
@@ -428,7 +434,11 @@ internal class SherpaHostSession(
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed copying asset $assetPath: ${e.message}")
+            HostLog.w(
+                ENGINE_ID,
+                "Failed copying asset $assetPath: ${e.message}",
+                e
+            )
         }
     }
 }

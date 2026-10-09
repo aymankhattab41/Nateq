@@ -44,4 +44,10 @@ interface IEmbeddedEngineHost {
 
     /** إغلاق محرك وتحرير موارده في المضيف. */
     String shutdown(String engineId);
+
+    /**
+     * ع٣٠-2: استرجاع آخر سجلات المضيف للمحرك المحدد.
+     * [maxLines] = أقصى عدد أسطر مطلوبة (مثل 200).
+     */
+    String getLog(String engineId, int maxLines);
 }

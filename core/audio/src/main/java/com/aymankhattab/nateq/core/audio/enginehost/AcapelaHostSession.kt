@@ -10,12 +10,15 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * منطقُ التهيئة والنطق مطابقٌ لما كان في
  * `AcapelaEmbeddedVoiceProvider` (نفس nInit ثم nSetCurrentVoice
- * والخصائص ثم nSpeak) — نُقل دون تغيير سلوك.
+ * والخصائص ثم nSpeak) — نُقل دون تغيير سلوك؛
+ * الفرق الوحيد أنه لم يعد يُستدعى في العملية الأمامية أبداً.
+ * ع٢٩-7: المكتبة لا تستدعي دوال Context على كائن الخدمة
+ * (مُتحقق في AcapelaJniContractTest).
  */
 internal class AcapelaHostSession : HostEngineSession {
 
     companion object {
-        private const val TAG = "AcapelaHost"
+        private const val ENGINE_ID = HostProtocol.ENGINE_ACAPELA
     }
 
     private val engineLock = Any()
@@ -31,29 +34,55 @@ internal class AcapelaHostSession : HostEngineSession {
 
     override fun init(dataDir: String): HostResult {
         synchronized(engineLock) {
-            if (service != null) return HostProtocol.success()
+            if (service != null) {
+                HostLog.d(ENGINE_ID, "المحرك مهيّأ مسبقاً")
+                return HostProtocol.success()
+            }
             if (dataDir.isBlank()) {
+                HostLog.w(ENGINE_ID, "مسار مجلد البيانات فارغ")
                 return HostResult.failure(
                     "NO_DATA_DIR",
                     "لا مجلد بيانات لمحرك Acapela"
                 )
             }
+            HostLog.logInitDetails(
+                ENGINE_ID,
+                dataDir,
+                mapOf(
+                    "library" to "libttsacattsandroidextended.so"
+                )
+            )
+            // ع٢٩-7: المكتب لا تستدعي دوال Context على كائن الخدمة
             val s = AcattsandroidService()
             val res = try {
                 s.nInit(dataDir)
             } catch (t: Throwable) {
-                Log.e(TAG, "استثناء أثناء nInit: ${t.message}")
+                HostLog.e(ENGINE_ID, "استثناء أثناء nInit: ${t.message}", t)
                 -1
             }
             if (res < 0) {
-                Log.e(TAG, "nInit=$res على $dataDir")
-                return HostResult.failure(
-                    "INIT_FAILED",
-                    "تعذّرت تهيئة Acapela على $dataDir (nInit=$res)"
-                )
+                HostLog.e(ENGINE_ID, "nInit=$res على $dataDir")
+                // ع٢٩-7: مطابقة أكواد الترخيص الخاصة بأكابيلا
+                val code = when (res) {
+                    -100 -> "LICENSE_EXPIRED"
+                    -101 -> "LICENSE_INVALID"
+                    -102 -> "LICENSE_MISSING"
+                    -103 -> "LICENSE_DEVICE_LIMIT"
+                    -104 -> "LICENSE_VERSION_MISMATCH"
+                    else -> "INIT_FAILED"
+                }
+                val msg = when (code) {
+                    "LICENSE_EXPIRED" -> "ترخيص Acapela منتهي الصلاحية"
+                    "LICENSE_INVALID" -> "ترخيص Acapela غير صالح"
+                    "LICENSE_MISSING" -> "ملف ترخيص Acapela مفقود (0x00*)"
+                    "LICENSE_DEVICE_LIMIT" -> "تجاوز حد الأجهزة المرخصة"
+                    "LICENSE_VERSION_MISMATCH" -> "عدم تطابق إصدار الترخيص"
+                    else -> "تعذّرت تهيئة Acapela على $dataDir (nInit=$res)"
+                }
+                return HostResult.failure(code, msg)
             }
             service = s
-            Log.i(TAG, "Acapela جاهز على $dataDir")
+            HostLog.i(ENGINE_ID, "Acapela جاهز على $dataDir")
             return HostProtocol.success()
         }
     }
@@ -127,11 +156,11 @@ internal class AcapelaHostSession : HostEngineSession {
                 override fun done(): Int = 0
 
                 override fun error() {
-                    Log.e(TAG, "Acapela أبلغ خطأً عاماً")
+                    HostLog.e(ENGINE_ID, "Acapela أبلغ خطأً عاماً")
                 }
 
                 override fun error(errorCode: Int) {
-                    Log.e(TAG, "Acapela أبلغ خطأ $errorCode")
+                    HostLog.e(ENGINE_ID, "Acapela أبلغ خطأ $errorCode")
                 }
 
                 override fun hasStarted(): Boolean = started

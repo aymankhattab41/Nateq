@@ -7,6 +7,7 @@ import android.os.ParcelFileDescriptor
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -70,10 +71,11 @@ class EmbeddedEngineHostService : Service() {
             dataDir: String?,
             force: Boolean
         ): String {
-            val id = engineId ?: return HostProtocol.error(
+            val rawId = engineId ?: return HostProtocol.error(
                 "BAD_ENGINE",
                 "معرف محرك فارغ"
             )
+            val id = HostProtocol.normalizeEngineId(rawId)
             if (id !in KNOWN_ENGINES) {
                 return HostProtocol.error("UNKNOWN_ENGINE", id)
             }
@@ -81,6 +83,14 @@ class EmbeddedEngineHostService : Service() {
             if (!force && HostProtocol.hasMarker(filesDir, id)) {
                 val detail = HostProtocol.readMarker(filesDir, id)
                 Log.e(TAG, "$id انهار في آخر تشغيل: $detail")
+                val status = EngineStatusRegistry.EngineStatus(
+                    engineId = id,
+                    state = EngineStatusRegistry.State.CRASHED_LAST_RUN,
+                    code = "CRASHED_LAST_RUN",
+                    lastError = detail,
+                    updatedAt = System.currentTimeMillis()
+                )
+                EngineStatusRegistry.writeStatusFile(filesDir, status)
                 return HostProtocol.error("CRASHED_LAST_RUN", detail)
             }
             val session = sessionFor(id)
@@ -97,6 +107,35 @@ class EmbeddedEngineHostService : Service() {
                     "$id init refused [${res.code}]: ${res.message}"
                 )
             }
+            val status = if (res.ok) {
+                EngineStatusRegistry.EngineStatus(
+                    engineId = id,
+                    state = EngineStatusRegistry.State.READY,
+                    code = null,
+                    lastError = null,
+                    updatedAt = System.currentTimeMillis()
+                )
+            } else {
+                val isExp = id == HostProtocol.ENGINE_ACAPELA && (
+                    res.code?.contains("LICENSE", ignoreCase = true) == true ||
+                    res.code?.contains("JNI", ignoreCase = true) == true ||
+                    res.code?.contains("CONTEXT", ignoreCase = true) == true ||
+                    res.code?.contains("NATIVE", ignoreCase = true) == true
+                )
+                val st = if (isExp) {
+                    EngineStatusRegistry.State.EXPERIMENTAL
+                } else {
+                    EngineStatusRegistry.stateForCode(res.code ?: "UNKNOWN")
+                }
+                EngineStatusRegistry.EngineStatus(
+                    engineId = id,
+                    state = st,
+                    code = res.code,
+                    lastError = res.message,
+                    updatedAt = System.currentTimeMillis()
+                )
+            }
+            EngineStatusRegistry.writeStatusFile(filesDir, status)
             return encode(res)
         }
 
@@ -104,10 +143,11 @@ class EmbeddedEngineHostService : Service() {
             engineId: String?,
             langTag: String?
         ): String {
-            val id = engineId ?: return HostProtocol.error(
+            val rawId = engineId ?: return HostProtocol.error(
                 "BAD_ENGINE",
                 "معرف محرك فارغ"
             )
+            val id = HostProtocol.normalizeEngineId(rawId)
             if (id !in KNOWN_ENGINES) {
                 return HostProtocol.error("UNKNOWN_ENGINE", id)
             }
@@ -136,10 +176,11 @@ class EmbeddedEngineHostService : Service() {
             volume: Float,
             out: ParcelFileDescriptor?
         ): String {
-            val id = engineId ?: return HostProtocol.error(
+            val rawId = engineId ?: return HostProtocol.error(
                 "BAD_ENGINE",
                 "معرف محرك فارغ"
             )
+            val id = HostProtocol.normalizeEngineId(rawId)
             val pipe = out ?: return HostProtocol.error(
                 "BAD_PIPE",
                 "لم يُمرَّر أنبوب صوت"
@@ -271,15 +312,28 @@ class EmbeddedEngineHostService : Service() {
         }
 
         override fun shutdown(engineId: String?): String {
-            val id = engineId ?: return HostProtocol.error(
+            val rawId = engineId ?: return HostProtocol.error(
                 "BAD_ENGINE",
                 "معرف محرك فارغ"
             )
+            val id = HostProtocol.normalizeEngineId(rawId)
             sessions.remove(id)?.let { session ->
                 runCatching { session.shutdown() }
             }
             Log.i(TAG, "أُغلق محرك $id")
+            HostLog.i(id, "أُغلق محرك $id")
             return HostProtocol.ok()
+        }
+
+        override fun getLog(engineId: String?, maxLines: Int): String {
+            val rawId = engineId ?: return ""
+            val id = HostProtocol.normalizeEngineId(rawId)
+            val lines = if (maxLines <= 0) {
+                HostLog.BUFFER_CAPACITY
+            } else {
+                maxLines
+            }
+            return HostLog.getLog(id, lines)
         }
     }
 
@@ -307,8 +361,9 @@ class EmbeddedEngineHostService : Service() {
 
     /** جلسة المحرك (تُنشأ عند أول استعمال). */
     private fun sessionFor(id: String): HostEngineSession? {
-        sessions[id]?.let { return it }
-        val created = when (id) {
+        val normId = HostProtocol.normalizeEngineId(id)
+        sessions[normId]?.let { return it }
+        val created = when (normId) {
             HostProtocol.ENGINE_VOCALIZER ->
                 VocalizerHostSession(this)
             HostProtocol.ENGINE_ACAPELA ->
@@ -317,7 +372,7 @@ class EmbeddedEngineHostService : Service() {
                 SherpaHostSession(this)
             else -> return null
         }
-        return sessions.putIfAbsent(id, created) ?: created
+        return sessions.putIfAbsent(normId, created) ?: created
     }
 
     /** أصوات Acapela من ملفاتها (مسح قرصي بلا مكتبة أصلية). */

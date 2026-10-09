@@ -14,6 +14,9 @@ import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.aymankhattab.nateq.core.audio.accessibility.AccessibilityBridge
+import com.aymankhattab.nateq.core.audio.accessibility.FeatureFlags
+import com.aymankhattab.nateq.core.audio.accessibility.SelectorPacks
 import com.aymankhattab.nateq.core.audio.announcement.ArabicSpeechNormalizer
 import com.aymankhattab.nateq.core.audio.announcement.InterruptionSensors
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
@@ -722,12 +725,40 @@ class NateqTtsService : TextToSpeechService() {
                     callback.done()
                     return@launch
                 }
+                // ع٢٩-12: توسيع «قراءة المزيد» تلقائياً قبل المعالجة الدلالية
+                var processedText = rawText
+                val readMoreEnabled = runCatching {
+                    settings.reload()
+                    FeatureFlags.isActive(
+                        FeatureFlags.FEATURE_READ_MORE_EXPAND,
+                        context = applicationContext,
+                        settings = settings
+                    )
+                }.getOrDefault(false)
+                if (readMoreEnabled &&
+                    SelectorPacks.looksTruncated(rawText)
+                ) {
+                    val expanded = AccessibilityBridge.expandReadMore(rawText)
+                    val prefixLen = minOf(40, rawText.trim().length)
+                    val prefix = rawText.trim().substring(0, prefixLen)
+                    if (expanded != null &&
+                        expanded.length > rawText.length &&
+                        expanded.startsWith(prefix)
+                    ) {
+                        processedText = expanded
+                        Log.i(
+                            TAG,
+                            "Read more expanded: ${rawText.length} -> " +
+                                "${expanded.length} chars"
+                        )
+                    }
+                }
                 // **بند التقسيم:** المعالجة الدلالية تُطبَّق قبل تقسيم اللغة
                 // حتى لا يفصل المقسمُ رمزَ العملة («USD»/«EUR») عن مبلغه
                 // فلينقطع «1500 USD» إلى مقطعٍ عربي وآخر إنجليزي؛ ناتجُها
                 // كلماتٌ عربية فيُقسَّم المبلغُ كله مقطعاً عربياً واحداً.
                 val semanticText = textProcessor.processSemantics(
-                    rawText, languageTag
+                    processedText, languageTag
                 )
                 val secondaryLanguage = runCatching {
                     settings.getSecondaryLanguage()

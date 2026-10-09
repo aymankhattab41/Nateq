@@ -24,6 +24,7 @@ import com.aymankhattab.nateq.core.audio.announcement.CueSynth
 import com.aymankhattab.nateq.core.audio.announcement.CueType
 import com.aymankhattab.nateq.core.audio.engine.Segment
 import com.aymankhattab.nateq.core.audio.engine.isNumericOnly
+import com.aymankhattab.nateq.core.audio.engine.quirks.EngineQuirks
 import com.aymankhattab.nateq.engine.SpeechPart
 import com.aymankhattab.nateq.engine.TextProcessor
 import android.os.Bundle
@@ -2371,29 +2372,79 @@ speechCycle.incrementAndGet()
         if (chosen == null) {
             Log.w(TAG, "[Speaker] no engine voice for $locale")
         } else {
-            // محرك Vocalizer ومحركات أخرى تشترط تعيين لغة الصوت أولاً عبر
-            // setLanguage قبل setVoice حتى لا يُرفض الصوت لاختلاف سياق المحرك
-            runCatching {
-                chosen.locale?.let { tts.setLanguage(it) }
+            // ع٢٩-ج: تطبيق EngineQuirks قبل setVoice
+            val enginePackage = runCatching { boundEngine }.getOrNull()
+            val quirks = enginePackage?.let { EngineQuirks.forPackage(it) }
+            val needsLangFirst = quirks?.needsSetLanguageBeforeSetVoice == true
+            val needsRegion = quirks?.requiresLocaleWithRegion == true
+            val rejectsSilently = quirks?.rejectsVoiceSilently == true
+
+            // ع٢٩-ج: تطبيق EngineQuirks قبل setVoice
+            // needsSetLanguageBeforeSetVoice: تعيين اللغة قبل الصوت
+            if (needsLangFirst) {
+                runCatching { chosen.locale?.let { tts.setLanguage(it) } }
             }
+            // requiresLocaleWithRegion: استخدام ar-AE الفعلي من أصوات المحرك
+            val effectiveLocale = if (needsRegion) {
+                runCatching {
+                    tts.voices?.firstOrNull {
+                        it.locale.language == locale.language
+                    }?.locale
+                }.getOrNull() ?: chosen.locale
+            } else {
+                chosen.locale
+            }
+            if (needsLangFirst) {
+                runCatching { effectiveLocale?.let { tts.setLanguage(it) } }
+            }
+
             Log.d(
                 TAG,
-                "[Speaker] setting voice: ${chosen.name} (${chosen.locale})"
+                "[Speaker] setting voice: ${chosen.name} (${effectiveLocale})"
             )
             if (tts.setVoice(chosen) == TextToSpeech.SUCCESS) {
                 voiceApplied = true
-                // تحديث الاسم المحفوظ إن اختلف (Vocalizer يُغيّر الأسماء)
-                if (partVoice != null && chosen.name != partVoice) {
+                // ع٢٩-ج: تحقق من تطبيق الصوت فعلياً (VoiceApplyMismatch)
+                // بعض المحركات (خاصة Vocalizer) تُعيد SUCCESS لكن لا تطبق الصوت
+                val appliedVoice = runCatching { tts.voice }
+                    .getOrNull()?.name
+                if (appliedVoice != null && appliedVoice != chosen.name) {
                     Log.w(
                         TAG,
-                        "[doSpeak] voice name drift: saved=$partVoice → " +
-                            "actual=${chosen.name}"
+                        "[VoiceApplyMismatch] requested=${chosen.name} " +
+                            "applied=$appliedVoice — retry after 100ms"
                     )
-                    runCatching {
-                        settings?.updateSavedVoiceNameIfNeeded(
-                            partVoice,
-                            chosen.name
+                    mainHandler.postDelayed({
+                        if (tts.setVoice(chosen) == TextToSpeech.SUCCESS) {
+                            voiceApplied = true
+                            Log.i(
+                                TAG,
+                                "[VoiceApplyMismatch] retry succeeded " +
+                                    "for ${chosen.name}"
+                            )
+                        } else {
+                            Log.w(
+                                TAG,
+                                "[VoiceApplyMismatch] retry failed " +
+                                    "for ${chosen.name}"
+                            )
+                        }
+                    }, 100)
+                } else {
+                    voiceApplied = true
+                    // تحديث الاسم المحفوظ إن اختلف (Vocalizer يُغيّر الأسماء)
+                    if (partVoice != null && chosen.name != partVoice) {
+                        Log.w(
+                            TAG,
+                            "[doSpeak] voice name drift: saved=$partVoice → " +
+                                "actual=${chosen.name}"
                         )
+                        runCatching {
+                            settings?.updateSavedVoiceNameIfNeeded(
+                                partVoice,
+                                chosen.name
+                            )
+                        }
                     }
                 }
             } else {

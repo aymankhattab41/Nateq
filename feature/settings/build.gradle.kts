@@ -21,6 +21,13 @@ android {
     }
     buildFeatures {
         viewBinding = true
+        dataBinding = false
+    }
+    // Disable data binding tasks by matching task names
+    tasks.all {
+        if (name.contains("dataBinding", ignoreCase = true)) {
+            enabled = false
+        }
     }
     testOptions {
         unitTests {

@@ -35,6 +35,12 @@ internal object SynthesisBudget {
     private const val MAX_REQUEST_MS = 15 * 60_000L
 
     /**
+     * هامش المعاينة فوق ميزانية الطلب: تجهيز AudioTrack وتفريغه
+     * (سداسية ثوانٍ) — لا يدخل في ميزانية النطق الفعلي.
+     */
+    private const val PREVIEW_DRAIN_MARGIN_MS = 10_000L
+
+    /**
      * ميزانية تخليق **نصٍّ واحد** بطول [chars] حرفاً: تُنتظر فيها
      * كتابةُ ملف WAV كاملاً من المحرك.
      *
@@ -78,4 +84,14 @@ internal object SynthesisBudget {
         return (sum + UNIT_SLACK * UNIT_OVERHEAD_MS)
             .coerceIn(MIN_REQUEST_MS, MAX_REQUEST_MS)
     }
+
+    /**
+     * مهلة **المعاينة** (ع٢٩-10 بند 2): ميزانية الطلب نفسه
+     * ([requestTimeoutMs]) مضافاً إليها هامشُ تجهيز AudioTrack
+     * وتفريغه بعد آخر دفعة (حلقة تفريغٍ بسقف 3 ثوانٍ في مساعد
+     * المعاينة). لا معادلة مستقلّة: المعاينة لا تُلغى قبل ما لا
+     * يُلغى النطق، ثم تزيد بفارق التمثيل الصوتي فقط.
+     */
+    fun previewTimeoutMs(totalChars: Int): Long =
+        requestTimeoutMs(totalChars) + PREVIEW_DRAIN_MARGIN_MS
 }
