@@ -5,6 +5,8 @@
     <string name="a11y_status_active">نشطة</string>
     <string name="a11y_status_paused">متوقفة مؤقتاً</string>
     <string name="a11y_status_disabled">معطّلة في النظام</string>
+    <string name="a11y_restricted_settings_desc">الخدمة مقيّدة في إعدادات النظام (أندرويد 13+). اضغط الزر أدناه لفتح معلومات التطبيق، ثم اضغط القائمة (⋮) واختر «السماح بالإعدادات المقيّدة».</string>
+    <string name="a11y_open_restricted_settings">فتح إعدادات التطبيق</string>
     <string name="a11y_pause_duration_title">مدة الإيقاف المؤقت لخدمات الشاشة</string>
     <string name="a11y_pause_15m">15 دقيقة</string>
     <string name="a11y_pause_1h">ساعة واحدة</string>
@@ -14,7 +16,6 @@
     <string name="a11y_onboarding_title">تفعيل خدمات الشاشة</string>
     <string name="a11y_onboarding_explanation">تتيح خدمات الشاشة توسيع الرسائل المقتطعة تلقائياً وقراءة الرسائل الحية داخل التطبيقات. الخدمة لا تجمع أي بيانات شخصية ولا تنقل نصوص الشاشة خارج جهازك إطلاقاً.</string>
     <string name="a11y_restricted_settings_title">الخطوة 1: السماح بالإعدادات المقيّدة (أندرويد 13+)</string>
-    <string name="a11y_restricted_settings_desc">اضغط الزر أدناه لفتح معلومات التطبيق، ثم اضغط القائمة (النقاط الثلاث في الأعلى) واختر «السماح بالإعدادات المقيّدة».</string>
     <string name="a11y_open_app_details">فتح معلومات التطبيق</string>
     <string name="a11y_enable_service_button">فتح إعدادات إمكانية الوصول للتفعيل</string>
     <string name="a11y_service_enabled_announcement">تم تفعيل خدمات الشاشة بنجاح</string>
@@ -587,6 +588,12 @@
 <string name="time_alarm_max_precision_summary">تستخدم منبّه النظام الدقيق (setAlarmClock) متجاوزةً كل قيود Doze والبطارية فيعمل إعلان الوقت في اللحظة المضبوطة؛ أثرُها الجانبي أن أيقونة منبّه ثابتة تظهر في شريط الحالة.</string>
 <string name="changelog_title">آخر التحديثات</string>
 <string name="changelog_text">الإصدار %1$s
+- منظومة المحركات المدمجة وجرد التخزين الحي: توحيد معرّفات المحركات في نقاط العميل والمضيف، وجرد حي للملفات واشتقاق الحالات بدقة وتصفير البيانات
+- إصلاح مسارات محركات Sherpa و Piper: تصحيح مجلدات البحث وهجرة الملفات التلقائية وإبطال الكاش الحي فور التنزيل
+- إبقاء المحركات غير الجاهزة في القوائم مع بيان سبب وحالة الفشل بدون إخفاء صامت
+- تحسين نافذة تفاصيل المحركات مع التهيئة التلقائية للأصوات المكتملة وعرض سجلات التشخيص بدقة
+- توحيد مسار المعاينة الصوتية للمحركات المدمجة مع إعلان أسباب التعثر نصياً وضبط مسارات نماذج Sherpa
+- حزمة اختبارات شاملة تغطي المضيف والجرد الحي وسجل الحالات واكتشاف النماذج
 - خدمات الشاشة وإمكانية الوصول: توسيع الرسائل المقتطعة تلقائياً وقراءة الرسائل الحية وقراءة الحافظة وتأكيد الكتابة واختصار الطوارئ وحوار الإيقاف المؤقت وسياسة التطبيقات المسموحة
 - سلسلة معالجة الصوت التناظرية والرقمية (DSP): معادِل صوتي بارامتري 5 نطاقات وضغط ديناميكي واتساع مكاني وصدى ومؤثرات صوتية ومسارات صوتية مخصصة
 - منظومة حسم الفئات وسلامة المحركات (CategoryResolver): منع الاختيار الصامت للمحركات غير المحددة وإعادة المحاولة التلقائية لمحرك جوجل ومعالجة جاهزية الأصوات
@@ -654,6 +661,52 @@
     <string name="embedded_engine_piper">Piper TTS (ONNX)</string>
     <string name="embedded_engine_vocalizer">Vocalizer Ex 2</string>
     <string name="embedded_engine_acapela">Acapela TTS</string>
+
+    <!-- ع٢٩-8 بند 2: حالة المحركات + حوار التفاصيل -->
+    <string name="engine_state_unknown">غير معروف</string>
+    <string name="engine_detail_state">الحالة: %1$s</string>
+    <string name="engine_detail_code">الرمز: %1$s</string>
+    <string name="engine_detail_error">آخر خطأ: %1$s</string>
+    <string name="engine_detail_paths">المسارات:\n%1$s</string>
+    <string name="engine_detail_size">الحجم الكلي: %1$s</string>
+    <string name="no_failure_recorded">لا يوجد سجل عطل</string>
+    <string name="engine_not_attempted">لم تُحاوَل التهيئة بعد</string>
+    <string name="engine_no_errors">لا أخطاء</string>
+    <string name="engine_no_installed_voices_for_init">لا توجد ملفات أصوات صالحة للتهيئة على القرص</string>
+    <string name="engine_detail_host_log_title">سجل المضيف (:engine_host):</string>
+    <string name="no_code">—</string>
+    <string name="retry_init">إعادة المحاولة</string>
+    <string name="copy_diagnostics">نسخ التشخيص</string>
+    <string name="copied_to_clipboard">تم النسخ إلى الحافظة</string>
+    <string name="engine_retry_success">تمت إعادة تهيئة %1$s بنجاح</string>
+    <string name="engine_retry_failed">فشلت إعادة المحاولة: %1$s - %2$s</string>
+    <string name="engine_detail_files_title">الملفات المثبتة (%1$d):</string>
+    <string name="engine_detail_file_unknown">غير معروف</string>
+    <string name="engine_detail_file_delete">حذف</string>
+    <string name="engine_delete_all_data">حذف بيانات المحرك</string>
+    <string name="engine_delete_data_confirm_title">تأكيد حذف بيانات المحرك</string>
+    <string name="engine_delete_data_confirm_msg">هل أنت متأكد من حذف كافة ملفات وبيانات محرك %1$s؟\n\nسيتم مسح مجلد المحرك وتصفير حالته.</string>
+    <string name="engine_delete_file_confirm">هل أنت متأكد من حذف الملف «%1$s»؟</string>
+    <string name="engine_file_deleted">تم حذف الملف بنجاح</string>
+    <string name="engine_data_deleted">تم حذف بيانات المحرك بنجاح</string>
+    <string name="engine_more_files_format">+ %1$d ملفات إضافية…</string>
+
+    <!-- ع٢٩-8 بند 3: شاشة التخزين -->
+    <string name="storage_screen_title">التخزين</string>
+    <string name="storage_engine_paths">المسارات:\n%1$s</string>
+    <string name="storage_engine_size">الحجم الكلي: %1$s</string>
+    <string name="storage_voice_delete_confirm">حذف الصوت %1$s؟</string>
+    <string name="storage_move_to_internal">نقل إلى التخزين الداخلي</string>
+    <string name="storage_migration_progress">جاري النقل: %1$d/%2$d</string>
+    <string name="storage_migration_done">تم نقل %1$d ملفات</string>
+    <string name="import_from_folder">استيراد أصوات من مجلد</string>
+    <string name="import_folder_picker_title">اختر مجلد باقة الصوت</string>
+    <string name="import_success">تم الاستيراد بنجاح</string>
+    <string name="import_error">فشل الاستيراد: %1$s</string>
+    <string name="no_voices_installed">لا توجد أصوات مثبتة لهذا المحرك</string>
+    <string name="voice_size_format">%1$s (%2$s)</string>
+    <string name="voice_count_format">أصوات مثبتة: %1$d</string>
+    <string name="already_migrated">مُنقل مسبقاً أو لا يوجد محتوى خارجي</string>
     <string name="embedded_import_zip">استيراد صوت من ملف ZIP</string>
     <string name="embedded_importing_zip">جاري استيراد باقة الصوت…</string>
     <string name="embedded_import_success">تم استيراد الصوت (%1$s) لمحرك %2$s بنجاح</string>
@@ -665,6 +718,20 @@
     <string name="embedded_preview_btn">معاينة الصوت</string>
     <string name="embedded_downloading">جاري التحميل (%1$d%%)…</string>
     <string name="embedded_filter_all">الكل</string>
+
+    <!-- ع٢٩-13: اختصارات المشغّل (launcher shortcuts) -->
+    <string name="shortcut_pause_service">إيقاف/تشغيل الخدمة</string>
+    <string name="shortcut_pause_service_long">إيقاف أو تشغيل خدمة القراءة مؤقتاً</string>
+    <string name="shortcut_read_screen">اقرأ الشاشة</string>
+    <string name="shortcut_read_screen_long">قراءة محتوى الشاشة الحالي</string>
+    <string name="shortcut_open_accessibility">إعدادات إمكانية الوصول</string>
+    <string name="shortcut_open_accessibility_long">فتح إعدادات خدمة إمكانية الوصول</string>
+
+    <!-- ع٢٩-14: بلاط الإعدادات السريعة (TileService) -->
+    <string name="tile_service_label">خدمات الشاشة (Lord TTS)</string>
+    <string name="tile_service_paused">موقوفة</string>
+    <string name="tile_service_active">نشطة</string>
+    <string name="tile_service_disabled">معطّلة</string>
     <string name="embedded_filter_ar">العربية</string>
     <string name="embedded_filter_en">الإنجليزية</string>
     <string name="embedded_filter_other">لغات أخرى</string>
@@ -674,5 +741,15 @@
     <string name="embedded_delete_success">تم حذف الصوت بنجاح</string>
     <string name="embedded_empty_list">لا توجد أصوات مطابقة للفلتر المحدد</string>
     <string name="embedded_header_desc">أصوات ذكاء اصطناعي ومحركات مدمجة سريعة تعمل دون الحاجة للاتصال بالإنترنت بمجرد تنزيلها أو استيرادها.</string>
+    <string name="embedded_test_connection">اختبار الاتصال</string>
+    <string name="embedded_test_connection_title">اختبار الاتصال بالخادم</string>
+    <string name="embedded_test_connection_failed">فشل اختبار الاتصال</string>
+    <string name="embedded_test_connection_result">الرابط النهائي:\n%1$s\n\nرمز الاستجابة: HTTP %2$d\nالحجم المعلَن: %3$s\nنوع المحتوى: %4$s</string>
+    <string name="testing_connection">جاري اختبار الاتصال بالخادم…</string>
+    <string name="embedded_download_errors_title">أخطاء التنزيل الأخيرة:</string>
+    <string name="embedded_cancel_download_btn">إلغاء التنزيل</string>
+    <string name="embedded_resume_download_btn">استئناف التنزيل</string>
+    <string name="embedded_partial_download_hint">مستأنف من %1$s</string>
+    <string name="embedded_download_cancelled">تم إلغاء التنزيل</string>
 
 </resources>

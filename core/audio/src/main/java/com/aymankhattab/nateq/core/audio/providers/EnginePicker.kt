@@ -74,6 +74,7 @@ object EnginePicker {
 
     /** كل محركات TTS المثبتة في النظام (تُستعلم ديناميكياً) مع تسمياتها */
     fun installedEngines(context: Context): List<InstalledEngine> {
+        EngineStatusRegistry.setFilesDir(context.filesDir)
         val now = nowProvider()
 
         val system = systemCache
@@ -126,47 +127,69 @@ object EnginePicker {
 
         try {
             val vocalizer = EmbeddedProviders.vocalizer(context)
-            if (vocalizer.isConfigured()) {
-                engines.add(
-                    InstalledEngine(
-                        VocalizerEmbeddedVoiceProvider.PROVIDER_ID,
-                        vocalizer.displayName
-                    )
-                )
-            }
-        } catch (_: Throwable) {
-            // تجاهل أي خطأ في فحص محرك Vocalizer المدمج
+            scanOneEmbedded(
+                engines,
+                vocalizer,
+                VocalizerEmbeddedVoiceProvider.PROVIDER_ID
+            )
+        } catch (t: Throwable) {
+            // ع٢٩-8: السبب يُسجَّل ولا يُبتلع بصمت.
+            EngineStatusRegistry.noteFailure(
+                VocalizerEmbeddedVoiceProvider.PROVIDER_ID,
+                "SCAN_FAILED",
+                t.message ?: t.javaClass.simpleName
+            )
         }
 
         try {
             val acapela = EmbeddedProviders.acapela(context)
-            if (acapela.isConfigured()) {
-                engines.add(
-                    InstalledEngine(
-                        AcapelaEmbeddedVoiceProvider.PROVIDER_ID,
-                        acapela.displayName
-                    )
-                )
-            }
-        } catch (_: Throwable) {
-            // تجاهل أي خطأ في فحص محرك Acapela المدمج
+            scanOneEmbedded(
+                engines,
+                acapela,
+                AcapelaEmbeddedVoiceProvider.PROVIDER_ID
+            )
+        } catch (t: Throwable) {
+            EngineStatusRegistry.noteFailure(
+                AcapelaEmbeddedVoiceProvider.PROVIDER_ID,
+                "SCAN_FAILED",
+                t.message ?: t.javaClass.simpleName
+            )
         }
 
         try {
             val sherpa = EmbeddedProviders.sherpa(context)
-            if (sherpa.isConfigured()) {
-                engines.add(
-                    InstalledEngine(
-                        SherpaOnnxVoiceProvider.PROVIDER_ID,
-                        sherpa.displayName
-                    )
-                )
-            }
-        } catch (_: Throwable) {
-            // تجاهل أي خطأ في فحص محرك Sherpa-ONNX المدمج
+            scanOneEmbedded(
+                engines,
+                sherpa,
+                SherpaOnnxVoiceProvider.PROVIDER_ID
+            )
+        } catch (t: Throwable) {
+            EngineStatusRegistry.noteFailure(
+                SherpaOnnxVoiceProvider.PROVIDER_ID,
+                "SCAN_FAILED",
+                t.message ?: t.javaClass.simpleName
+            )
         }
 
         return engines.distinctBy { it.packageName }
+    }
+
+    /**
+     * يفحص مزوداً مدمجاً واحداً ويحدّث سجلّ حالته (ع٢٩-8): الملفات
+     * موجودة ⇐ `VOICES_PRESENT` ويُعرض؛ لا ملفات ⇐ `NOT_INSTALLED`
+     * ولا يدخل قائمة الجاهز للنطق.
+     */
+    private fun scanOneEmbedded(
+        engines: MutableList<InstalledEngine>,
+        provider: VoiceProvider,
+        providerId: String
+    ) {
+        if (provider.isConfigured()) {
+            EngineStatusRegistry.noteFilesPresent(providerId)
+            engines.add(InstalledEngine(providerId, provider.displayName))
+        } else {
+            EngineStatusRegistry.noteFilesAbsent(providerId)
+        }
     }
 
     /** كل حزم محركات TTS المثبتة في النظام (تُستعلم ديناميكياً) */

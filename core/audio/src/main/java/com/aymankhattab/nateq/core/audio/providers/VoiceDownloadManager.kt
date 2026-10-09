@@ -1,0 +1,281 @@
+package com.aymankhattab.nateq.core.audio.providers
+
+import android.content.Context
+import android.content.Intent
+import android.util.Log
+import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import java.io.File
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArraySet
+
+/**
+ * مدير تنزيل الأصوات المدمجة في الخلفية مع دعم الاستئناف والإلغاء (ع٣٠-7).
+ */
+object VoiceDownloadManager {
+
+    private const val TAG = "VoiceDownloadManager"
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    sealed class DownloadState {
+        object Idle : DownloadState()
+        data class Downloading(
+            val percent: Int,
+            val downloadedBytes: Long,
+            val totalBytes: Long
+        ) : DownloadState()
+        object Success : DownloadState()
+        data class Error(val error: DownloadError) : DownloadState()
+        object Cancelled : DownloadState()
+    }
+
+    fun interface DownloadListener {
+        fun onStateChanged(voiceId: String, state: DownloadState)
+    }
+
+    private val activeJobs = ConcurrentHashMap<String, Job>()
+    private val activeStates = ConcurrentHashMap<String, DownloadState>()
+    private val voiceTitles = ConcurrentHashMap<String, String>()
+    private val listeners = CopyOnWriteArraySet<DownloadListener>()
+
+    fun addListener(listener: DownloadListener) {
+        listeners.add(listener)
+    }
+
+    fun removeListener(listener: DownloadListener) {
+        listeners.remove(listener)
+    }
+
+    fun isDownloading(voiceId: String): Boolean =
+        activeJobs.containsKey(voiceId)
+
+    fun getState(voiceId: String): DownloadState =
+        activeStates[voiceId] ?: DownloadState.Idle
+
+    fun getVoiceTitle(voiceId: String): String =
+        voiceTitles[voiceId] ?: voiceId
+
+    fun hasActiveDownloads(): Boolean = activeJobs.isNotEmpty()
+
+    /**
+     * فحص وجود تنزيل جزئي متبقٍ وحجمه بالبايت.
+     */
+    fun getPartialBytes(
+        context: Context,
+        engine: String,
+        voiceId: String
+    ): Long {
+        val dir = DownloadHttpHelper.getDownloadsDir(context)
+        val file = when (engine.lowercase()) {
+            "vocalizer" -> File(dir, "vocalizer_${voiceId}.zip.part")
+            else -> File(dir, "piper_${voiceId}.onnx.part")
+        }
+        return if (file.exists() && file.length() > 0) file.length() else 0L
+    }
+
+    /**
+     * حذف الملفات المؤقتة الجزئية لصوت معين.
+     */
+    fun deletePartial(context: Context, engine: String, voiceId: String) {
+        val dir = DownloadHttpHelper.getDownloadsDir(context)
+        when (engine.lowercase()) {
+            "vocalizer" -> {
+                val f = File(dir, "vocalizer_${voiceId}.zip.part")
+                if (f.exists()) f.delete()
+            }
+            else -> {
+                val f1 = File(dir, "piper_${voiceId}.tokens.part")
+                val f2 = File(dir, "piper_${voiceId}.onnx.part")
+                if (f1.exists()) f1.delete()
+                if (f2.exists()) f2.delete()
+            }
+        }
+    }
+
+    private fun updateState(voiceId: String, state: DownloadState) {
+        activeStates[voiceId] = state
+        listeners.forEach {
+            try {
+                it.onStateChanged(voiceId, state)
+            } catch (t: Throwable) {
+                Log.w(TAG, "Listener error for $voiceId", t)
+            }
+        }
+    }
+
+    /**
+     * بدء تنزيل صوت Piper في الخلفية عبر الخدمة الأمامية.
+     */
+    fun startPiperDownload(
+        context: Context,
+        item: PiperCatalogItem
+    ) {
+        if (isDownloading(item.id)) return
+        val appContext = context.applicationContext
+        voiceTitles[item.id] = item.displayNameAr
+
+        ensureServiceRunning(appContext)
+
+        val job = scope.launch {
+            updateState(
+                item.id,
+                DownloadState.Downloading(0, 0L, -1L)
+            )
+            notifyServiceProgress(appContext, item.id, 0)
+
+            val result = PiperDownloader.downloadVoice(appContext, item) {
+                downloaded, total, percent ->
+                updateState(
+                    item.id,
+                    DownloadState.Downloading(percent, downloaded, total)
+                )
+                notifyServiceProgress(appContext, item.id, percent)
+            }
+
+            activeJobs.remove(item.id)
+
+            if (result.isSuccess) {
+                DownloadLog.clearError(item.id)
+                updateState(item.id, DownloadState.Success)
+            } else {
+                val ex = result.exceptionOrNull()
+                val err = if (ex is DownloadError) ex else {
+                    DownloadError(
+                        DownloadError.NETWORK,
+                        ex?.message ?: "Download failed"
+                    )
+                }
+                DownloadLog.recordError(
+                    voiceId = item.id,
+                    engineId = SherpaOnnxVoiceProvider.PROVIDER_ID,
+                    errorCode = err.code,
+                    errorMessage = err.details
+                )
+                updateState(item.id, DownloadState.Error(err))
+            }
+            checkAllCompleted(appContext)
+        }
+        activeJobs[item.id] = job
+    }
+
+    /**
+     * بدء تنزيل صوت Vocalizer في الخلفية عبر الخدمة الأمامية.
+     */
+    fun startVocalizerDownload(
+        context: Context,
+        item: VocalizerCatalogItem
+    ) {
+        if (isDownloading(item.id)) return
+        val appContext = context.applicationContext
+        voiceTitles[item.id] = item.displayNameAr
+
+        ensureServiceRunning(appContext)
+
+        val job = scope.launch {
+            updateState(
+                item.id,
+                DownloadState.Downloading(0, 0L, -1L)
+            )
+            notifyServiceProgress(appContext, item.id, 0)
+
+            val result = VocalizerDownloader.downloadVoice(appContext, item) {
+                percent ->
+                updateState(
+                    item.id,
+                    DownloadState.Downloading(percent, 0L, -1L)
+                )
+                notifyServiceProgress(appContext, item.id, percent)
+            }
+
+            activeJobs.remove(item.id)
+
+            if (result.isSuccess) {
+                DownloadLog.clearError(item.id)
+                updateState(item.id, DownloadState.Success)
+            } else {
+                val ex = result.exceptionOrNull()
+                val err = if (ex is DownloadError) ex else {
+                    DownloadError(
+                        DownloadError.NETWORK,
+                        ex?.message ?: "Download failed"
+                    )
+                }
+                DownloadLog.recordError(
+                    voiceId = item.id,
+                    engineId = VocalizerEmbeddedVoiceProvider.PROVIDER_ID,
+                    errorCode = err.code,
+                    errorMessage = err.details
+                )
+                updateState(item.id, DownloadState.Error(err))
+            }
+            checkAllCompleted(appContext)
+        }
+        activeJobs[item.id] = job
+    }
+
+    /**
+     * إلغاء تنزيل جاري لصوت معين.
+     */
+    fun cancelDownload(context: Context, voiceId: String) {
+        val job = activeJobs.remove(voiceId)
+        if (job != null) {
+            job.cancel()
+            updateState(voiceId, DownloadState.Cancelled)
+            checkAllCompleted(context.applicationContext)
+        }
+    }
+
+    private fun ensureServiceRunning(context: Context) {
+        try {
+            val intent = Intent(
+                context,
+                VoiceDownloadService::class.java
+            ).apply {
+                action = VoiceDownloadService.ACTION_START
+            }
+            ContextCompat.startForegroundService(context, intent)
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed starting VoiceDownloadService", t)
+        }
+    }
+
+    private fun notifyServiceProgress(
+        context: Context,
+        voiceId: String,
+        percent: Int
+    ) {
+        try {
+            val intent = Intent(
+                context,
+                VoiceDownloadService::class.java
+            ).apply {
+                action = VoiceDownloadService.ACTION_UPDATE_PROGRESS
+                putExtra(VoiceDownloadService.EXTRA_VOICE_ID, voiceId)
+                putExtra(VoiceDownloadService.EXTRA_PERCENT, percent)
+            }
+            context.startService(intent)
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed notifying service progress", t)
+        }
+    }
+
+    private fun checkAllCompleted(context: Context) {
+        if (!hasActiveDownloads()) {
+            try {
+                val intent = Intent(
+                    context,
+                    VoiceDownloadService::class.java
+                ).apply {
+                    action = VoiceDownloadService.ACTION_STOP
+                }
+                context.startService(intent)
+            } catch (t: Throwable) {
+                Log.w(TAG, "Failed stopping VoiceDownloadService", t)
+            }
+        }
+    }
+}

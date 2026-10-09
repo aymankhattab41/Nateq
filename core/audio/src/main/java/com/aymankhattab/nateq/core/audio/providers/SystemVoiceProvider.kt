@@ -15,6 +15,7 @@ import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.audio.engine.BytePool
 import com.aymankhattab.nateq.core.audio.engine.PcmEqualizer
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
+import com.aymankhattab.nateq.core.audio.engine.quirks.EngineQuirks
 import com.aymankhattab.nateq.core.data.VoicePrefsProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.ConnectivityMonitor
@@ -966,6 +967,28 @@ class SystemVoiceProvider(
                 " (result=$langResult) — fallback")
             return false
         }
+        // ع٢٩-ج: تطبيق EngineQuirks قبل setVoice
+        val quirks = enginePackage?.let { EngineQuirks.forPackage(it) }
+        val needsLangFirst = quirks?.needsSetLanguageBeforeSetVoice == true
+        val needsRegion = quirks?.requiresLocaleWithRegion == true
+        val rejectsSilently = quirks?.rejectsVoiceSilently == true
+
+        // needsSetLanguageBeforeSetVoice: تعيين اللغة قبل الصوت
+        if (needsLangFirst) {
+            runCatching { engine.setLanguage(voice.locale) }
+        }
+        // requiresLocaleWithRegion: استخدام ar-AE الفعلي من أصوات المحرك
+        val effectiveLocale = if (needsRegion) {
+            engine.voices?.firstOrNull {
+                it.locale.language == voice.locale.language
+            }?.locale ?: voice.locale
+        } else {
+            voice.locale
+        }
+        if (needsLangFirst) {
+            runCatching { engine.setLanguage(effectiveLocale) }
+        }
+
         // إن اختار المستخدم صوتاً محدداً من حوار التحويل (اسم صوت في محرك
         // خارجي مثل MultiTTS) نطبّقه هنا عبر `voice`، مع التراجع الصامت إلى
         // اللغة إذا لم يجده المحرك (تجنّباً لكسر النطق لمجرد اسم غير مطابق).
@@ -989,9 +1012,42 @@ class SystemVoiceProvider(
                         return false
                     }
                     engine.voice = matching
+                // ع٢٩-ج: تحقق من تطبيق الصوت فعلياً (VoiceApplyMismatch)
+                val appliedVoice = runCatching {
+                    engine.voice
+                }.getOrNull()?.name
+                if (appliedVoice != null && appliedVoice != matching.name) {
+                    Log.w(
+                        TAG,
+                        "[VoiceApplyMismatch] requested=${matching.name} " +
+                            "applied=$appliedVoice — retry"
+                    )
+                    runCatching { engine.voice = matching }
                 }
             }
+        }
         } else {
+            // ع٢٩-ج: تطبيق EngineQuirks قبل setVoice
+            val quirks = enginePackage?.let { EngineQuirks.forPackage(it) }
+            val needsLangFirst = quirks?.needsSetLanguageBeforeSetVoice == true
+            val needsRegion = quirks?.requiresLocaleWithRegion == true
+
+            // needsSetLanguageBeforeSetVoice: تعيين اللغة قبل الصوت
+            if (needsLangFirst) {
+                runCatching { engine.setLanguage(voice.locale) }
+            }
+            // requiresLocaleWithRegion: استخدام ar-AE الفعلي من أصوات المحرك
+            val effectiveLocale = if (needsRegion) {
+                engine.voices?.firstOrNull {
+                    it.locale.language == voice.locale.language
+                }?.locale ?: voice.locale
+            } else {
+                voice.locale
+            }
+            if (needsLangFirst) {
+                runCatching { engine.setLanguage(effectiveLocale) }
+            }
+
             // إن لم يُحدد اسم صوت صريح، نتحقق أن صوت المحرك الحالي
             // يطابق لغة النطق المطلوبة حتى لا يبقى المحرك على صوت لغة سابقة
             // (كالإنجليزية) عند نطق مقطع عربي فيقرأ الحروف هجاءً مفرّقاً.
@@ -1012,6 +1068,21 @@ class SystemVoiceProvider(
                         )?.firstOrNull()
                     if (matching != null) {
                         engine.voice = matching
+                        // ع٢٩-ج: تحقق من تطبيق الصوت فعلياً
+                        val appliedVoice = runCatching {
+                            engine.voice
+                        }.getOrNull()?.name
+                        if (appliedVoice != null &&
+                            appliedVoice != matching.name
+                        ) {
+                            Log.w(
+                                TAG,
+                                "[VoiceApplyMismatch] " +
+                                    "requested=${matching.name} " +
+                                    "applied=$appliedVoice — retry"
+                            )
+                            runCatching { engine.voice = matching }
+                        }
                     }
                 }
             }

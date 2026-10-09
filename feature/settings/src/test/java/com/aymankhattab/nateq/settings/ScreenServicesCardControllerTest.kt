@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.settings
 
 import android.content.Context
+import android.widget.FrameLayout
 import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.core.audio.accessibility.A11yStateStore
 import com.aymankhattab.nateq.core.data.SettingsRepository
@@ -48,5 +49,18 @@ class ScreenServicesCardControllerTest {
 
         controller.resumeService()
         assertFalse(controller.isServicePaused())
+    }
+
+    /**
+     * حارس ضد التراجع: كان updateUiState() ينادي setup() فينادي setup()
+     * بدوره updateUiState() — تكرار لا نهائي يُسقط الشاشة بـ
+     * StackOverflowError. الاختبار يمرّ الآن فقط إن انكسرت الحلقة.
+     * الجذر عمداً FrameLayout فارغ فكل العروض null (المسارات آمنة).
+     */
+    @Test
+    fun setupThenUpdateUiState_doesNotRecurseIntoSetup() {
+        val root = FrameLayout(context)
+        controller.setup(root)
+        controller.updateUiState()
     }
 }

@@ -14,6 +14,8 @@ import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.core.audio.R
+import com.aymankhattab.nateq.core.audio.accessibility.FeatureFlags
+import com.aymankhattab.nateq.core.audio.accessibility.OtpReader
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.LanguageCode
@@ -359,10 +361,40 @@ class NateqNotificationListener : NotificationListenerService() {
                 } else {
                     LanguageCode.EN.tag
                 }
-                LocaleUtils.stringForSpeech(
-                    applicationContext, appLang,
-                    R.string.notif_otp_safe, R.string.notif_otp_safe
-                ).replace("{app}", appName)
+                // ع٢٩-15: استخراج وقراءة OTP حرفاً حرفاً عند تفعيل الميزة
+                val repo = settingsRepository
+                val otpEnabled = FeatureFlags.isActive(
+                    FeatureFlags.FEATURE_OTP_READING,
+                    context = applicationContext,
+                    settings = settingsRepository
+                )
+                val otpText = if (otpEnabled) {
+                    val combinedText = "${title.orEmpty()} ${text.orEmpty()}"
+                    OtpReader.extractOtp(combinedText)?.let {
+                        OtpReader.formatOtpForSpeech(it)
+                    } ?: run {
+                        val appLang = if (LocaleUtils.containsArabic(appName)) {
+                            LanguageCode.AR.tag
+                        } else {
+                            LanguageCode.EN.tag
+                        }
+                        LocaleUtils.stringForSpeech(
+                            applicationContext, appLang,
+                            R.string.notif_otp_safe, R.string.notif_otp_safe
+                        ).replace("{app}", appName)
+                    }
+                } else {
+                    val appLang = if (LocaleUtils.containsArabic(appName)) {
+                        LanguageCode.AR.tag
+                    } else {
+                        LanguageCode.EN.tag
+                    }
+                    LocaleUtils.stringForSpeech(
+                        applicationContext, appLang,
+                        R.string.notif_otp_safe, R.string.notif_otp_safe
+                    ).replace("{app}", appName)
+                }
+                otpText
             } else {
                 buildSpeechText(appName, title, text, privacyLocked)
             }

@@ -3,6 +3,7 @@ package com.aymankhattab.nateq.core.audio.providers
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.BufferedInputStream
@@ -346,5 +347,223 @@ object VoicePackageImporter {
             }
         }
         return count
+    }
+
+    /**
+     * استيراد باقة صوت من مجلد (DocumentFile tree) — ع٢٩-8 بند 4.
+     * ينسخ محتويات المجلد المحدّد إلى مجلد المحرك المناسب
+     * بدون الحاجة لملف ZIP. لا يحتاج إذن تخزين.
+     */
+    suspend fun importFromDocumentTree(
+        context: Context,
+        treeUri: Uri,
+        onProgress: ((Float) -> Unit)? = null
+    ): VoiceImportResult = withContext(Dispatchers.IO) {
+        try {
+            val docFile = DocumentFile.fromTreeUri(context, treeUri)
+                ?: return@withContext VoiceImportResult(
+                    isSuccess = false,
+                    engineType = ENGINE_UNKNOWN,
+                    voiceName = "",
+                    targetDir = null,
+                    extractedFilesCount = 0,
+                    errorMessage = "Cannot build DocumentFile from tree URI"
+                )
+
+            // افحص الملفات لتحديد المحرك
+            val (engineType, detectedVoiceName) = inspectDocumentTree(docFile)
+            if (engineType == ENGINE_UNKNOWN) {
+                return@withContext VoiceImportResult(
+                    isSuccess = false,
+                    engineType = ENGINE_UNKNOWN,
+                    voiceName = detectedVoiceName,
+                    targetDir = null,
+                    extractedFilesCount = 0,
+                    errorMessage = "Unrecognized voice package format in folder"
+                )
+            }
+
+            val targetDir = when (engineType) {
+                ENGINE_ACAPELA -> AcapelaEmbeddedVoiceProvider
+                    .getAcapelaBaseDir(context)
+                ENGINE_PIPER -> PiperDownloader
+                    .getPiperBaseDir(context)
+                ENGINE_VOCALIZER -> VocalizerDownloader
+                    .getVocalizerBaseDir(context)
+                else -> AcapelaEmbeddedVoiceProvider
+                    .getAcapelaBaseDir(context)
+            }
+
+            if (!targetDir.exists()) {
+                targetDir.mkdirs()
+            }
+
+            val copiedCount = copyDocumentTree(
+                docFile,
+                targetDir,
+                context,
+                onProgress
+            )
+            val finalVoiceName = if (detectedVoiceName.isNotEmpty()) {
+                detectedVoiceName
+            } else {
+                "Voice"
+            }
+
+            // ع٢٩-9: اكتمال الاستيراد يرفع إصدار التخزين ويبطل الكاش.
+            if (copiedCount > 0) {
+                EmbeddedStorage.bumpVersion()
+                EnginePicker.invalidateAfterStorageChange()
+            }
+
+            VoiceImportResult(
+                isSuccess = true,
+                engineType = engineType,
+                voiceName = finalVoiceName,
+                targetDir = targetDir,
+                extractedFilesCount = copiedCount
+            )
+        } catch (t: Throwable) {
+            Log.e(TAG, "Error importing from folder: ${t.message}", t)
+            VoiceImportResult(
+                isSuccess = false,
+                engineType = ENGINE_UNKNOWN,
+                voiceName = "",
+                targetDir = null,
+                extractedFilesCount = 0,
+                errorMessage = t.message ?: "Folder import failed"
+            )
+        }
+    }
+
+    private fun inspectDocumentTree(
+        docFile: DocumentFile
+    ): Pair<String, String> {
+        var isAcapela = false
+        var isPiper = false
+        var isVocalizer = false
+        var detectedVoice = ""
+
+        fun recurse(file: DocumentFile) {
+            if (file.isDirectory) {
+                file.listFiles()?.forEach { recurse(it) }
+            } else {
+                val name = file.name?.lowercase() ?: ""
+                val entryBaseName = File(file.name ?: "").name
+                when {
+                    name.contains("acapela/") ||
+                        name.endsWith(".bvcu") ||
+                        name.endsWith(".bvcu.inf") ||
+                        name.endsWith(".bvcu.ini") ||
+                        name.contains("userdicos/") ||
+                        name.contains("nlp/") ||
+                        entryBaseName.startsWith("0x00") ||
+                        entryBaseName == "voicelist" -> {
+                        isAcapela = true
+                        if (name.endsWith(".inf")) {
+                            val c = extractVoiceNameFromEntry(entryBaseName)
+                            if (c.isNotEmpty()) detectedVoice = c
+                        } else if (
+                            name.contains("22k") && detectedVoice.isEmpty()
+                        ) {
+                            val c = extractVoiceNameFromEntry(entryBaseName)
+                            if (c.isNotEmpty()) detectedVoice = c
+                        }
+                    }
+                    name.endsWith(".onnx") ||
+                        name.endsWith(".onnx.json") ||
+                        entryBaseName == "tokens.txt" ||
+                        name.contains("espeak-ng-data") -> {
+                        isPiper = true
+                        if (
+                            name.endsWith(".onnx") &&
+                            !name.endsWith(".onnx.json") &&
+                            detectedVoice.isEmpty()
+                        ) {
+                            val fName =
+                                File(file.name ?: "").nameWithoutExtension
+                            detectedVoice = fName
+                        }
+                    }
+                    name.contains("ve_pipeline") ||
+                        name.endsWith(".hdr") ||
+                        name.contains("vocalizer") ||
+                        name.contains("speech/components") -> {
+                        isVocalizer = true
+                        if (
+                            detectedVoice.isEmpty() &&
+                            entryBaseName.endsWith(".hdr")
+                        ) {
+                            detectedVoice = entryBaseName
+                                .removePrefix("ve_pipeline_")
+                                .removeSuffix(".hdr")
+                        }
+                    }
+                }
+            }
+        }
+
+        recurse(docFile)
+
+        val engine = when {
+            isAcapela -> ENGINE_ACAPELA
+            isPiper -> ENGINE_PIPER
+            isVocalizer -> ENGINE_VOCALIZER
+            else -> ENGINE_UNKNOWN
+        }
+
+        if (detectedVoice.isEmpty() && engine == ENGINE_ACAPELA) {
+            val name = docFile.name ?: ""
+            detectedVoice = name.lowercase()
+                .removePrefix("acapela-")
+                .replace("-old", "")
+                .replace("ara-sau-", "")
+        }
+
+        return Pair(engine, detectedVoice)
+    }
+
+    private fun copyDocumentTree(
+        src: DocumentFile,
+        dest: File,
+        context: Context,
+        onProgress: ((Float) -> Unit)? = null
+    ): Int {
+        var count = 0
+        val files = collectFiles(src)
+        val total = files.size.toFloat().coerceAtLeast(1f)
+        var processed = 0f
+
+        for (file in files) {
+            // DocumentFile.name is nullable, fallback to empty
+            val relativePath = file.name ?: ""
+            val destFile = File(dest, relativePath)
+            destFile.parentFile?.mkdirs()
+
+            context.contentResolver.openInputStream(file.uri).use { input ->
+                if (input != null) {
+                    FileOutputStream(destFile).use { output ->
+                        input.copyTo(output)
+                    }
+                    count++
+                }
+            }
+            processed++
+            onProgress?.invoke((processed / total).coerceIn(0f, 1f))
+        }
+        return count
+    }
+
+    private fun collectFiles(docFile: DocumentFile): List<DocumentFile> {
+        val list = mutableListOf<DocumentFile>()
+        fun recurse(f: DocumentFile) {
+            if (f.isDirectory) {
+                f.listFiles()?.forEach { recurse(it) }
+            } else {
+                list.add(f)
+            }
+        }
+        recurse(docFile)
+        return list
     }
 }

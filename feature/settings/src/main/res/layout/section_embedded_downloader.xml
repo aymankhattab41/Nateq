@@ -102,6 +102,17 @@
                 android:textSize="13sp"
                 android:textColor="@color/text_secondary" />
 
+            <!-- قائمة حالة المحركات الثلاثة (ع٢٩-8 بند 2): تُعرض دائماً مع
+                 شارة الحالة، ضغطة تفتح حوار تفاصيل (السبب، المسار، الحجم،
+                 إعادة المحاولة، نسخ التشخيص). -->
+            <LinearLayout
+                android:id="@+id/ll_engine_status_list"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                android:orientation="vertical"
+                android:padding="4dp" />
+
             <!-- تبديل المحرك: Piper أو Vocalizer أو Acapela -->
             <com.google.android.material.button.MaterialButtonToggleGroup
                 android:id="@+id/toggle_group_engine_filter"

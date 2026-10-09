@@ -24,6 +24,17 @@ class SherpaOnnxVoiceProvider(
     companion object {
         private const val TAG = "SherpaOnnxEmbedded"
         const val PROVIDER_ID = "sherpa_onnx_embedded"
+
+        fun resolveDataDir(context: Context): File? =
+            SherpaOnnxVoiceProvider(context).resolveDataDir()
+    }
+
+    /**
+     * ع٣١-2: تحديد مجلد البيانات الفعلي لـ Sherpa-ONNX (مجلد النموذج الأول).
+     */
+    fun resolveDataDir(): File? {
+        val models = discoverModels()
+        return models.firstOrNull()?.modelDir
     }
 
     override val providerId: String = PROVIDER_ID
@@ -56,13 +67,17 @@ class SherpaOnnxVoiceProvider(
     }
 
     override fun isConfigured(): Boolean {
-        // ع٢٩-9: الكاش مرتبط برقم إصدار التخزين، فتغيّر الملفات
-        // (تنزيل/حذف/هجرة) يعيد الفحص فوراً بدل التجميد الدائم.
+        // ع٢٩-9 + ع٣١-4: الكاش مرتبط برقم إصدار التخزين،
+        // والجرد الحي يتحقق من اكتمال النماذج (.onnx + tokens.txt).
         val version = EmbeddedStorage.version
         isConfiguredCached?.let {
             if (configuredAtVersion == version) return it
         }
-        val configured = discoverModels().isNotEmpty()
+        val configured = EmbeddedStorage.inventory(
+            context,
+            EmbeddedStorage.Engine.SHERPA,
+            listOfNotNull(customModelDir)
+        ).isCompleteVoicePresent
         configuredAtVersion = version
         isConfiguredCached = configured
         return configured
@@ -111,6 +126,11 @@ class SherpaOnnxVoiceProvider(
             val models = discoverModels()
             if (models.isEmpty()) {
                 Log.w(TAG, "No Sherpa-ONNX models found")
+                EngineStatusRegistry.record(
+                    PROVIDER_ID,
+                    EngineStatusRegistry.State.NOT_INSTALLED,
+                    message = "لا نماذج Sherpa/Piper على القرص"
+                )
                 return@withContext
             }
 
@@ -139,18 +159,26 @@ class SherpaOnnxVoiceProvider(
 
             // تهيئة المضيف (تحقق espeak داخله) — بنداء سريع
             // متكرر يعيد جاهزيته إن أُعيد تشغيل العملية الأمامية.
+            val modelDir = customModelDir ?: matchedModel.modelDir
+            EngineStatusRegistry.noteInitPending(PROVIDER_ID)
             val init = EngineHostClient.init(
                 context,
                 HostProtocol.ENGINE_SHERPA,
-                customModelDir?.absolutePath.orEmpty()
+                modelDir.absolutePath
             )
             if (!init.ok) {
                 Log.e(
                     TAG,
                     "تهيئة المضيف فشلت [${init.code}]: ${init.message}"
                 )
+                EngineStatusRegistry.noteFailure(
+                    PROVIDER_ID,
+                    init.code,
+                    init.message
+                )
                 return@withContext
             }
+            EngineStatusRegistry.noteReady(PROVIDER_ID)
 
             val result = EngineHostClient.synthesize(
                 context = context,
@@ -167,6 +195,11 @@ class SherpaOnnxVoiceProvider(
                 Log.e(
                     TAG,
                     "نطق المضيف فشل [${result.code}]: ${result.message}"
+                )
+                EngineStatusRegistry.noteFailure(
+                    PROVIDER_ID,
+                    result.code,
+                    result.message
                 )
             }
         }

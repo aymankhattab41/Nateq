@@ -182,4 +182,17 @@ class VocalizerJniContractTest {
         assertEquals(4096L, info.startOffset)
         assertEquals(204800L, info.length)
     }
+
+    @Test
+    fun engineErrorTrackingContractMethods() {
+        checkMethods(
+            VocalizerEngine::class.java,
+            setOf(
+                "isNativeCreated",
+                "getCreateError",
+                "getLastError",
+                "getInitError"
+            )
+        )
+    }
 }

@@ -7,17 +7,21 @@ import kotlinx.coroutines.withContext
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.zip.ZipInputStream
 
 /**
  * مدير تنزيل وتثبيت وحذف أصوات
- * ومكونات Nuance Vocalizer Expressive 2 المدمجة.
+ * ومكونات Nuance Vocalizer Expressive 2 المدمجة (ع٣٠-5 و ع٣٠-6).
  */
 object VocalizerDownloader {
 
     private const val TAG = "VocalizerDownloader"
+
+    /** نتيجة فك ضغط الأرشيف: عدد الملفات المستخرجة وقائمتها. */
+    internal data class UnzipResult(
+        val count: Int,
+        val fileNames: List<String>
+    )
 
     /**
      * جميع المسارات المحتملة للبحث عن أصوات VocalizerEx2 —
@@ -56,8 +60,8 @@ object VocalizerDownloader {
     }
 
     /**
-     * تنزيل حزمة صوت Vocalizer Expressive 2
-     * وفك ضغط ملفات .dat و .hdr تلقائياً داخل المجلد.
+     * تنزيل حزمة صوت Vocalizer Expressive 2 وفك ضغط ملفات .dat و .hdr
+     * تلقائياً داخل المجلد مع التحقق الكامل ورموز الخطأ الواضحة (ع٣٠-6).
      */
     suspend fun downloadVoice(
         context: Context,
@@ -68,78 +72,144 @@ object VocalizerDownloader {
         val destination = targetDir ?: getVocalizerBaseDir(context)
         if (!destination.exists() && !destination.mkdirs()) {
             return@withContext Result.failure(
-                IllegalStateException("Cannot create Vocalizer directory")
+                DownloadError(
+                    DownloadError.NETWORK,
+                    "Cannot create Vocalizer directory: ${destination.path}"
+                )
             )
         }
 
-        val tempZipFile = File(
-            context.cacheDir,
-            "vocalizer_${item.id}_${System.currentTimeMillis()}.zip"
+        // ع٣٠-6 بند 3: التحقق من المساحة الحرة قبل البدء (StatFs)
+        try {
+            DownloadHttpHelper.checkStorageSpace(destination, item.sizeMb)
+        } catch (e: DownloadError) {
+            return@withContext Result.failure(e)
+        }
+
+        val partZipFile = File(
+            DownloadHttpHelper.getDownloadsDir(context),
+            "vocalizer_${item.id}.zip.part"
         )
 
         try {
-            // 1. تنزيل ملف الـ Zip مع متابعة نسبة التقدم
-            val url = URL(item.downloadUrl)
-            val conn = url.openConnection() as HttpURLConnection
-            conn.connectTimeout = 20_000
-            conn.readTimeout = 30_000
-            conn.instanceFollowRedirects = true
-            conn.setRequestProperty(
-                "User-Agent",
-                "Mozilla/5.0 (Android; Mobile)"
+            val startTime = System.currentTimeMillis()
+
+            // 1. تنزيل ملف الـ Zip مع دعم الاستئناف ومتابعة التقدم (ع٣٠-7)
+            val downloadResult = DownloadHttpHelper.downloadToFileWithResume(
+                urlString = item.downloadUrl,
+                partFile = partZipFile
+            ) { _, _, percent ->
+                onProgress(percent.coerceIn(0, 95))
+            }
+
+            if (downloadResult.isFailure) {
+                val ex = downloadResult.exceptionOrNull()
+                val err = if (ex is DownloadError) ex else {
+                    DownloadError(
+                        DownloadError.NETWORK,
+                        ex?.message ?: "Download failed"
+                    )
+                }
+                return@withContext Result.failure(err)
+            }
+
+            val durationMs = System.currentTimeMillis() - startTime
+
+            // ع٣٠-5 بند 4: توثيق القياسات في السجل
+            Log.i(
+                TAG,
+                "تنزيل ${item.id}: size=${partZipFile.length()}B, " +
+                    "time=${durationMs}ms"
             )
 
-            val code = conn.responseCode
-            if (code !in 200..299) {
-                conn.disconnect()
-                return@withContext Result.failure(
-                    IllegalStateException("HTTP error $code from server")
+            // ع٣٠-5 بند 1 و ع٣٠-6: التحقق من التوقيع السحري لـ ZIP
+            val head = ByteArray(200)
+            val headRead = partZipFile.inputStream().use { it.read(head) }
+            val isZip = headRead >= 4 &&
+                head[0] == 0x50.toByte() &&
+                head[1] == 0x4B.toByte() &&
+                head[2] == 0x03.toByte() &&
+                head[3] == 0x04.toByte()
+
+            if (!isZip) {
+                val headText = if (headRead > 0) {
+                    String(head, 0, headRead, Charsets.UTF_8)
+                        .replace("\r", "")
+                        .replace("\n", " ")
+                        .take(200)
+                } else {
+                    "(empty)"
+                }
+                Log.e(
+                    TAG,
+                    "الملف المنزّل ليس ZIP صالحاً [NOT_A_ZIP]: head=$headText"
+                )
+                partZipFile.delete()
+                throw DownloadError(
+                    DownloadError.NOT_A_ZIP,
+                    "head=$headText"
                 )
             }
 
-            val totalBytes = conn.contentLength.toLong()
-            var downloadedBytes = 0L
-
-            BufferedInputStream(conn.inputStream).use { input ->
-                FileOutputStream(tempZipFile).use { output ->
-                    val buffer = ByteArray(32 * 1024)
-                    var bytesRead: Int
-                    while (input.read(buffer).also { bytesRead = it } != -1) {
-                        output.write(buffer, 0, bytesRead)
-                        downloadedBytes += bytesRead
-                        if (totalBytes > 0) {
-                            val percent = (
-                                (downloadedBytes * 100) / totalBytes
-                            ).toInt().coerceIn(0, 95)
-                            onProgress(percent)
-                        }
-                    }
-                }
-            }
-            conn.disconnect()
-
             // 2. فك ضغط ملفات الـ Zip داخل مجلد VocalizerEx2
             onProgress(96)
-            unzipToDirectory(tempZipFile, destination)
+            val unzipResult = unzipToDirectory(partZipFile, destination)
+
+            // ع٣٠-5 بند 2 و ع٣٠-6: التحقق من وجود ملفات مستخرجة
+            if (unzipResult.count == 0) {
+                Log.e(TAG, "الأرشيف فارغ لم يستخرج أي ملف [EMPTY_ARCHIVE]")
+                partZipFile.delete()
+                throw DownloadError(
+                    DownloadError.EMPTY_ARCHIVE,
+                    "لم يستخرج أي ملف من الأرشيف"
+                )
+            }
+
+            // ع٣٠-5 بند 3 و ع٣٠-6: التحقق من وجود ملف الـ Header وحجمه
+            val isInstalled = VocalizerModelCatalog.isVoiceInstalled(
+                destination,
+                item
+            )
+            val hdrFile = File(destination, item.headerFileName)
+            if (!isInstalled || !hdrFile.exists() || hdrFile.length() <= 0L) {
+                val extractedList = unzipResult.fileNames.joinToString(", ")
+                Log.e(
+                    TAG,
+                    "ملف الـ header مفقود [HEADER_MISSING]: " +
+                        "expected=${item.headerFileName}, " +
+                        "extracted=[$extractedList]"
+                )
+                throw DownloadError(
+                    DownloadError.HEADER_MISSING,
+                    "متوقع ${item.headerFileName}، المستخرج: [$extractedList]"
+                )
+            }
+
             onProgress(100)
 
-            // ع٢٩-9: أي تغيير في المحتوى يرفع رقم إصدار التخزين ويبطل الكاش.
+            // حذف الملف المؤقت فقط بعد التحقق الناجح
+            partZipFile.delete()
+
+            // ع٣٠-5 بند 5: رفع إصدار التخزين وإبطال الكاش فقط بعد التحقق
             EmbeddedStorage.bumpVersion()
             EnginePicker.invalidateAfterStorageChange()
 
             Log.i(
                 TAG,
-                "Voice ${item.voiceName} installed at " +
-                    destination.absolutePath
+                "Voice ${item.voiceName} verified and installed at " +
+                    destination.absolutePath +
+                    " (${unzipResult.count} files)"
             )
             Result.success(true)
         } catch (t: Throwable) {
             Log.e(TAG, "Failed to download voice ${item.id}", t)
-            Result.failure(t)
-        } finally {
-            if (tempZipFile.exists()) {
-                tempZipFile.delete()
+            val err = if (t is DownloadError) t else {
+                DownloadError(
+                    DownloadError.NETWORK,
+                    t.message ?: "Network error"
+                )
             }
+            Result.failure(err)
         }
     }
 
@@ -156,9 +226,11 @@ object VocalizerDownloader {
         zipFile: File,
         targetDir: File,
         maxBytes: Long = MAX_EXTRACTION_BYTES
-    ) {
+    ): UnzipResult {
         val canonicalTarget = targetDir.canonicalFile
         var extractedBytes = 0L
+        val extractedNames = mutableListOf<String>()
+
         ZipInputStream(zipFile.inputStream().buffered()).use { zis ->
             var entry = zis.nextEntry
             val buffer = ByteArray(32 * 1024)
@@ -184,18 +256,19 @@ object VocalizerDownloader {
                             extractedBytes += len
                             if (extractedBytes > maxBytes) {
                                 throw IllegalStateException(
-                                    "Extraction exceeds " +
-                                        "$maxBytes bytes"
+                                    "Extraction exceeds $maxBytes bytes"
                                 )
                             }
                             fos.write(buffer, 0, len)
                         }
                     }
+                    extractedNames.add(cleanName)
                 }
                 zis.closeEntry()
                 entry = zis.nextEntry
             }
         }
+        return UnzipResult(extractedNames.size, extractedNames)
     }
 
     /**
@@ -230,6 +303,15 @@ object VocalizerDownloader {
                     deletedAny = file.delete() || deletedAny
                 }
             }
+        }
+
+        // 3. حذف أي ملف تنزيل مؤقت متبقٍ
+        val partFile = File(
+            DownloadHttpHelper.getDownloadsDir(context),
+            "vocalizer_${item.id}.zip.part"
+        )
+        if (partFile.exists()) {
+            deletedAny = partFile.delete() || deletedAny
         }
 
         return deletedAny.also {

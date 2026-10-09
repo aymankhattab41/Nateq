@@ -10,19 +10,26 @@ import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
+import android.widget.Toast
+import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
+import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
+import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
 import com.aymankhattab.nateq.core.audio.providers.SherpaOnnxVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
 import java.util.Locale
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 /**
  * قيم معاينة نطق: كلها تُبنى من قيم العرض الحالية المعروضة في الشاشة
@@ -201,22 +208,27 @@ internal class VoicePreviewHelper(private val context: Context) {
         currentAudioTrack = null
     }
 
-    private fun isEmbeddedEngine(pkg: String?): Boolean =
-        pkg == SherpaOnnxVoiceProvider.PROVIDER_ID ||
-            pkg == VocalizerEmbeddedVoiceProvider.PROVIDER_ID ||
-            pkg == AcapelaEmbeddedVoiceProvider.PROVIDER_ID
+    private fun isEmbeddedEngine(pkg: String?): Boolean {
+        if (pkg.isNullOrBlank()) return false
+        val norm = HostProtocol.normalizeEngineId(pkg)
+        return norm == HostProtocol.ENGINE_SHERPA ||
+            norm == HostProtocol.ENGINE_VOCALIZER ||
+            norm == HostProtocol.ENGINE_ACAPELA
+    }
 
-    private fun getEmbeddedProvider(pkg: String): VoiceProvider =
-        when (pkg) {
-            SherpaOnnxVoiceProvider.PROVIDER_ID ->
+    private fun getEmbeddedProvider(pkg: String): VoiceProvider {
+        val norm = HostProtocol.normalizeEngineId(pkg)
+        return when (norm) {
+            HostProtocol.ENGINE_SHERPA ->
                 EmbeddedProviders.sherpa(context.applicationContext)
-            VocalizerEmbeddedVoiceProvider.PROVIDER_ID ->
+            HostProtocol.ENGINE_VOCALIZER ->
                 EmbeddedProviders.vocalizer(context.applicationContext)
-            AcapelaEmbeddedVoiceProvider.PROVIDER_ID ->
+            HostProtocol.ENGINE_ACAPELA ->
                 EmbeddedProviders.acapela(context.applicationContext)
             else ->
                 throw IllegalArgumentException("Unknown engine: $pkg")
         }
+    }
 
     private suspend fun playEmbeddedPreview(
         enginePkg: String,
@@ -228,96 +240,143 @@ internal class VoicePreviewHelper(private val context: Context) {
             var track: AudioTrack? = null
             var totalFramesWritten = 0L
             var bytesPerFrame = 2
+            var timedOut = false
+            var errored = false
             try {
-                val provider = getEmbeddedProvider(enginePkg)
-                val loc = if (params.languageTag.isNotBlank()) {
-                    Locale.forLanguageTag(params.languageTag)
-                } else {
-                    Locale.getDefault()
-                }
-                val descriptor = VoiceDescriptor(
-                    id = params.voiceName,
-                    providerId = enginePkg,
-                    displayName = params.voiceName,
-                    locale = loc
+                // ع٢٩-10 (2): مهلة صريحة من SynthesisBudget عبر
+                // EngineHostClient — لا تعليقٌ مفتوح إن تعثّر المضيف.
+                val timeoutMs = EngineHostClient.previewTimeoutMs(
+                    params.sampleText
                 )
-
-                provider.synthesize(
-                    text = params.sampleText,
-                    voice = descriptor,
-                    speechRate = params.speechRate,
-                    pitch = params.pitch,
-                    volume = params.volume,
-                    onFormatInfo = { sampleRateInHz, channelCount ->
-                        val channelConfig = if (channelCount == 2) {
-                            AudioFormat.CHANNEL_OUT_STEREO
-                        } else {
-                            AudioFormat.CHANNEL_OUT_MONO
-                        }
-                        bytesPerFrame = channelCount * 2
-                        val minBuf = AudioTrack.getMinBufferSize(
-                            sampleRateInHz,
-                            channelConfig,
-                            AudioFormat.ENCODING_PCM_16BIT
-                        )
-                        val bufSize = maxOf(minBuf, 8192)
-                        val attrs = AudioAttributes.Builder()
-                            .setUsage(
-                                if (params.isCallerCategory) {
-                                    AudioAttributes.USAGE_NOTIFICATION_EVENT
-                                } else {
-                                    AudioAttributes.USAGE_MEDIA
-                                }
-                            )
-                            .setContentType(
-                                if (params.isCallerCategory) {
-                                    AudioAttributes.CONTENT_TYPE_SONIFICATION
-                                } else {
-                                    AudioAttributes.CONTENT_TYPE_SPEECH
-                                }
-                            )
-                            .build()
-                        val format = AudioFormat.Builder()
-                            .setSampleRate(sampleRateInHz)
-                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                            .setChannelMask(channelConfig)
-                            .build()
-                        val newTrack = AudioTrack.Builder()
-                            .setAudioAttributes(attrs)
-                            .setAudioFormat(format)
-                            .setBufferSizeInBytes(bufSize)
-                            .setTransferMode(AudioTrack.MODE_STREAM)
-                            .build()
-                        newTrack.setVolume(params.volume)
-                        newTrack.play()
-                        track = newTrack
-                        currentAudioTrack = newTrack
-                    },
-                    onAudioChunk = { chunk, validLength ->
-                        val current = track
-                        if (current != null &&
-                            current.playState == AudioTrack.PLAYSTATE_PLAYING
-                        ) {
-                            current.write(chunk, 0, validLength)
-                            totalFramesWritten += (validLength / bytesPerFrame)
-                        }
-                    },
-                    enginePackage = enginePkg,
-                    voiceLocale = loc,
-                    desiredVoiceName = params.voiceName
-                )
-                track?.let { t ->
-                    val startWait = System.currentTimeMillis()
-                    while (t.playState == AudioTrack.PLAYSTATE_PLAYING &&
-                        t.playbackHeadPosition < totalFramesWritten &&
-                        System.currentTimeMillis() - startWait < 3000L
-                    ) {
-                        Thread.sleep(25)
+                withTimeout(timeoutMs) {
+                    val provider = getEmbeddedProvider(enginePkg)
+                    val loc = if (params.languageTag.isNotBlank()) {
+                        Locale.forLanguageTag(params.languageTag)
+                    } else {
+                        Locale.getDefault()
                     }
-                    runCatching { t.stop() }
+                    val descriptor = VoiceDescriptor(
+                        id = params.voiceName,
+                        providerId = enginePkg,
+                        displayName = params.voiceName,
+                        locale = loc
+                    )
+
+                    provider.synthesize(
+                        text = params.sampleText,
+                        voice = descriptor,
+                        speechRate = params.speechRate,
+                        pitch = params.pitch,
+                        volume = params.volume,
+                        onFormatInfo = { sampleRateInHz, channelCount ->
+                            val channelConfig =
+                                if (channelCount == 2) {
+                                    AudioFormat.CHANNEL_OUT_STEREO
+                                } else {
+                                    AudioFormat.CHANNEL_OUT_MONO
+                                }
+                            bytesPerFrame = channelCount * 2
+                            val minBuf = AudioTrack.getMinBufferSize(
+                                sampleRateInHz,
+                                channelConfig,
+                                AudioFormat.ENCODING_PCM_16BIT
+                            )
+                            val bufSize = maxOf(minBuf, 8192)
+                            val attrs = AudioAttributes.Builder()
+                                .setUsage(
+                                    if (params.isCallerCategory) {
+                                        AudioAttributes
+                                            .USAGE_NOTIFICATION_EVENT
+                                    } else {
+                                        AudioAttributes.USAGE_MEDIA
+                                    }
+                                )
+                                .setContentType(
+                                    if (params.isCallerCategory) {
+                                        AudioAttributes
+                                            .CONTENT_TYPE_SONIFICATION
+                                    } else {
+                                        AudioAttributes
+                                            .CONTENT_TYPE_SPEECH
+                                    }
+                                )
+                                .build()
+                            val format = AudioFormat.Builder()
+                                .setSampleRate(sampleRateInHz)
+                                .setEncoding(
+                                    AudioFormat.ENCODING_PCM_16BIT
+                                )
+                                .setChannelMask(channelConfig)
+                                .build()
+                            val newTrack = AudioTrack.Builder()
+                                .setAudioAttributes(attrs)
+                                .setAudioFormat(format)
+                                .setBufferSizeInBytes(bufSize)
+                                .setTransferMode(
+                                    AudioTrack.MODE_STREAM
+                                )
+                                .build()
+                            newTrack.setVolume(params.volume)
+                            newTrack.play()
+                            track = newTrack
+                            currentAudioTrack = newTrack
+                        },
+                        onAudioChunk = { chunk, validLength ->
+                            val current = track
+                            if (current != null &&
+                                current.playState ==
+                                AudioTrack.PLAYSTATE_PLAYING
+                            ) {
+                                current.write(
+                                    chunk,
+                                    0,
+                                    validLength
+                                )
+                                totalFramesWritten +=
+                                    (validLength / bytesPerFrame)
+                            }
+                        },
+                        enginePackage = enginePkg,
+                        voiceLocale = loc,
+                        desiredVoiceName = params.voiceName
+                    )
+                    track?.let { t ->
+                        val startWait = System.currentTimeMillis()
+                        while (t.playState ==
+                            AudioTrack.PLAYSTATE_PLAYING &&
+                            t.playbackHeadPosition <
+                            totalFramesWritten &&
+                            System.currentTimeMillis() - startWait
+                            < 3000L
+                        ) {
+                            Thread.sleep(25)
+                        }
+                        runCatching { t.stop() }
+                    }
                 }
+            } catch (e: TimeoutCancellationException) {
+                timedOut = true
+                val spent = EngineHostClient.previewTimeoutMs(
+                    params.sampleText
+                )
+                Log.w(
+                    "NATEQ_TTS",
+                    "Embedded preview timeout after ${spent}ms: $e"
+                )
+                postStatus(
+                    mainHandler,
+                    "انتهت مهلة المعاينة على " +
+                        providerLabel(enginePkg)
+                )
+            } catch (e: CancellationException) {
+                throw e
             } catch (t: Throwable) {
+                errored = true
                 Log.w("NATEQ_TTS", "Embedded preview failed", t)
+                postStatus(
+                    mainHandler,
+                    failureReason(enginePkg, t.message)
+                )
             } finally {
                 track?.let { t ->
                     runCatching { t.release() }
@@ -327,6 +386,57 @@ internal class VoicePreviewHelper(private val context: Context) {
                 }
                 mainHandler.post { onFinished() }
             }
+
+            // ع٢٩-10 (2): صوتٌ لم يصل أصلاً (تهيئة فاشلة تُسجَّل ولا
+            // تُرمي) — يُعرض السبب الفعلي من السجلّ لا «فشل» عام.
+            if (!timedOut && !errored &&
+                track == null && totalFramesWritten == 0L
+            ) {
+                postStatus(mainHandler, failureReason(enginePkg, null))
+            }
+        }
+    }
+
+    /** يعرض نص حالة المعاينة على Toast في الخيط الرئيسي. */
+    private fun postStatus(mainHandler: Handler, message: String) {
+        mainHandler.post {
+            Toast.makeText(
+                context.applicationContext,
+                message,
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    /** اسم المحرك المعروض؛ يعود للـ id إن تعذّر أخذه. */
+    private fun providerLabel(enginePkg: String): String =
+        runCatching { getEmbeddedProvider(enginePkg).displayName }
+            .getOrDefault(enginePkg)
+
+    /**
+     * السبب الفعلي للعرض (ع٢٩-10 بند 2): رسالة الاستثناء إن وُجدت،
+     * وإلا آخر خطأ مسجَّل في [EngineStatusRegistry] مع تسمية حالة
+     * غير نهائية (لا «جاهز» يُقرأ فشلاً)، ثم صياغة مُعنونة لا «فشل».
+     */
+    private fun failureReason(
+        enginePkg: String,
+        throwableMessage: String?
+    ): String {
+        val status = EngineStatusRegistry.statusOf(
+            context.applicationContext, enginePkg
+        )
+        val label = status.state
+            .takeIf { it != EngineStatusRegistry.State.READY }
+            ?.takeIf { it != EngineStatusRegistry.State.INIT_PENDING }
+            ?.let { EngineStatusRegistry.labelAr(it) }
+        val errDetail = status.lastError?.takeIf { it.isNotBlank() }
+            ?: status.code?.takeIf { it.isNotBlank() }
+        val detail = throwableMessage?.takeIf { it.isNotBlank() } ?: errDetail
+        return when {
+            detail != null && label != null -> "$label: $detail"
+            detail != null -> detail
+            label != null -> "$label — ${providerLabel(enginePkg)}"
+            else -> "تعذّر تشغيل المعاينة على ${providerLabel(enginePkg)}"
         }
     }
 

@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.settings
 
 import com.aymankhattab.nateq.core.audio.engine.EngineWithVoices
+import com.aymankhattab.nateq.core.audio.engine.UnavailableEngine
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -52,6 +53,28 @@ class LanguageConvertDialogLogicTest {
         assertEquals(0, choice.resolvedIndex)
     }
 
+    @Test
+    fun engineChoice_withUnavailableEngines_appendsThemWithReason() {
+        val unavail = UnavailableEngine(
+            enginePackage = "com.pkg.unavail",
+            engineLabel = "محرك غير متاح",
+            code = "NATIVE_INIT_FAILED",
+            message = "فشل JNI"
+        )
+        val r = LanguageRow(
+            languageTag = "ar",
+            displayName = "العربية",
+            engines = listOf(engine("a", "محرك أ")),
+            unavailableEngines = listOf(unavail)
+        )
+        val choice = engineChoice(r, "بدون", "لا", null)
+        assertEquals(
+            listOf("بدون", "محرك أ", "محرك غير متاح (غير متاح: فشل JNI)"),
+            choice.labels
+        )
+        assertEquals(0, choice.resolvedIndex)
+    }
+
     // ===== استخراج المحرك من العنوان =====
 
     @Test
@@ -71,6 +94,27 @@ class LanguageConvertDialogLogicTest {
     fun enginePackageForLabel_knownLabel_returnsPackage() {
         val r = row(engines = listOf(engine("a", "محرك أ"), engine("b")))
         assertEquals("a", enginePackageForLabel(r, "محرك أ", "بدون", "لا"))
+    }
+
+    @Test
+    fun enginePackageForLabel_unavailableEngineLabel_returnsPackage() {
+        val unavail = UnavailableEngine(
+            enginePackage = "com.pkg.unavail",
+            engineLabel = "محرك معطّل",
+            code = "NOT_INSTALLED",
+            message = "غير مثبّت"
+        )
+        val r = LanguageRow(
+            languageTag = "ar",
+            displayName = "العربية",
+            engines = listOf(engine("a", "محرك أ")),
+            unavailableEngines = listOf(unavail)
+        )
+        val label = "محرك معطّل (غير متاح: غير مثبّت)"
+        assertEquals(
+            "com.pkg.unavail",
+            enginePackageForLabel(r, label, "بدون", "لا")
+        )
     }
 
     @Test

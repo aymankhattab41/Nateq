@@ -313,4 +313,68 @@ class HostProtocolTest {
             HostProtocol.hasMarker(dir, "acapela")
         )
     }
+
+    // ----------------------------------------------------------------
+    // توحيد معرّفات المحركات (ع٣١-1)
+    // ----------------------------------------------------------------
+
+    @Test
+    fun normalizeEngineId_mapsAliasesToCanonicalNames() {
+        assertEquals(
+            HostProtocol.ENGINE_VOCALIZER,
+            HostProtocol.normalizeEngineId("vocalizer_embedded")
+        )
+        assertEquals(
+            HostProtocol.ENGINE_VOCALIZER,
+            HostProtocol.normalizeEngineId("VOCALIZER_EMBEDDED")
+        )
+        assertEquals(
+            HostProtocol.ENGINE_ACAPELA,
+            HostProtocol.normalizeEngineId("acapela_embedded")
+        )
+        assertEquals(
+            HostProtocol.ENGINE_ACAPELA,
+            HostProtocol.normalizeEngineId("ACAPELA_EMBEDDED")
+        )
+        assertEquals(
+            HostProtocol.ENGINE_SHERPA,
+            HostProtocol.normalizeEngineId("sherpa_onnx_piper")
+        )
+        assertEquals(
+            HostProtocol.ENGINE_SHERPA,
+            HostProtocol.normalizeEngineId("SHERPA_ONNX_PIPER")
+        )
+        assertEquals(
+            HostProtocol.ENGINE_SHERPA,
+            HostProtocol.normalizeEngineId("sherpa_piper")
+        )
+        assertEquals(
+            HostProtocol.ENGINE_SHERPA,
+            HostProtocol.normalizeEngineId("SHERPA_PIPER")
+        )
+    }
+
+    @Test
+    fun normalizeEngineId_preservesCanonicalAndOtherNamesLowercased() {
+        assertEquals(
+            HostProtocol.ENGINE_VOCALIZER,
+            HostProtocol.normalizeEngineId("vocalizer")
+        )
+        assertEquals(
+            HostProtocol.ENGINE_ACAPELA,
+            HostProtocol.normalizeEngineId("acapela")
+        )
+        assertEquals(
+            HostProtocol.ENGINE_SHERPA,
+            HostProtocol.normalizeEngineId("sherpa")
+        )
+        assertEquals(
+            "custom_engine",
+            HostProtocol.normalizeEngineId("CUSTOM_ENGINE")
+        )
+        assertEquals(
+            "google_tts",
+            HostProtocol.normalizeEngineId("Google_TTS")
+        )
+    }
 }

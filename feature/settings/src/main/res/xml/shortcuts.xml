@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="pause_service"
+        android:enabled="true"
+        android:icon="@drawable/ic_pause_circle"
+        android:shortcutShortLabel="@string/shortcut_pause_service"
+        android:shortcutLongLabel="@string/shortcut_pause_service_long">
+        <intent
+            android:action="com.aymankhattab.nateq.ACTION_TOGGLE_SERVICE"
+            android:targetPackage="com.aymankhattab.nateq"
+            android:targetClass="com.aymankhattab.nateq.settings.VoiceSelectionFragment" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="read_screen"
+        android:enabled="true"
+        android:icon="@drawable/ic_read_aloud"
+        android:shortcutShortLabel="@string/shortcut_read_screen"
+        android:shortcutLongLabel="@string/shortcut_read_screen_long">
+        <intent
+            android:action="com.aymankhattab.nateq.ACTION_READ_SCREEN_NOW"
+            android:targetPackage="com.aymankhattab.nateq"
+            android:targetClass="com.aymankhattab.nateq.settings.VoiceSelectionFragment" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="open_accessibility"
+        android:enabled="true"
+        android:icon="@drawable/ic_accessibility"
+        android:shortcutShortLabel="@string/shortcut_open_accessibility"
+        android:shortcutLongLabel="@string/shortcut_open_accessibility_long">
+        <intent
+            android:action="android.settings.ACCESSIBILITY_SETTINGS"
+            android:targetPackage="com.android.settings" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+</shortcuts>

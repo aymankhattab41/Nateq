@@ -239,10 +239,25 @@ class AcapelaEmbeddedVoiceProvider(
                 0.0
             }
         }
+
+        fun resolveDataDir(context: Context): File? =
+            AcapelaEmbeddedVoiceProvider(context).resolveDataDir()
     }
 
     override val providerId: String = PROVIDER_ID
     override val displayName: String = "Acapela TTS (مدمج)"
+
+    /**
+     * ع٣١-2: تحديد مجلد البيانات الفعلي لـ Acapela (عبر findBestInitDir).
+     */
+    fun resolveDataDir(): File? {
+        val searchDirs = getSearchDirectories(context, customVoiceDir)
+        for (baseDir in searchDirs) {
+            val candidate = findBestInitDir(baseDir)
+            if (candidate != null) return candidate
+        }
+        return null
+    }
 
     /** مسار تهيئة مُتحقق منه يُعاد استخدامه (بلا مسح قرصي متكرر). */
     @Volatile
@@ -272,10 +287,17 @@ class AcapelaEmbeddedVoiceProvider(
                     "No Acapela data dir (voicelist/voices) found — " +
                         "engine will not be created"
                 )
+                EngineStatusRegistry.record(
+                    PROVIDER_ID,
+                    EngineStatusRegistry.State.NOT_INSTALLED,
+                    message = "لا ملفات أصوات Acapela على القرص"
+                )
                 return false
             }
             cachedInitPath = selectedDir.absolutePath
         }
+        val prevState = EngineStatusRegistry.statusOf(PROVIDER_ID)?.state
+        EngineStatusRegistry.noteInitPending(PROVIDER_ID)
         val result = EngineHostClient.init(
             context,
             HostProtocol.ENGINE_ACAPELA,
@@ -286,22 +308,45 @@ class AcapelaEmbeddedVoiceProvider(
                 TAG,
                 "تهيئة المضيف فشلت [${result.code}]: ${result.message}"
             )
+            // ع٢٩-7 بند 4: إذا فشل التهيئة بسبب عقدة JNI/سياق،
+            // علّم المحرك كتجريبي
+            val isExperimental = result.code != null && (
+                result.code!!.contains("LICENSE", ignoreCase = true) ||
+                result.code!!.contains("JNI", ignoreCase = true) ||
+                result.code!!.contains("CONTEXT", ignoreCase = true) ||
+                result.code!!.contains("NATIVE", ignoreCase = true)
+            )
+            val state = if (isExperimental) {
+                EngineStatusRegistry.State.EXPERIMENTAL
+            } else {
+                EngineStatusRegistry.stateForCode(result.code!!)
+            }
+            EngineStatusRegistry.record(
+                PROVIDER_ID,
+                state,
+                result.code,
+                result.message
+            )
             return false
         }
-        // ع٢٩-9: نجاح التهيئة يُبطل كاش المحركات والاكتشاف.
-        EnginePicker.invalidateAfterStorageChange()
+        EngineStatusRegistry.noteReady(PROVIDER_ID)
+        // ع٣٠-9: إبطال الكاش فقط عند الانتقال إلى READY من غيرها
+        if (prevState != EngineStatusRegistry.State.READY) {
+            EnginePicker.invalidateAfterStorageChange()
+        }
         return true
     }
 
     /**
-     * ع٢٩-2 (3): فحص خفيف لا يلمس المكتبة الأصلي — يعود true
-     * إذا وُجد ملف voicelist أو مجلد صوت في أحد المجلدات.
+     * ع٣١-4: فحص خفيف لا يلمس المكتبة الأصلية — يعود true
+     * فقط عند وجود صوت Acapela مكتمل واحد على الأقل.
      */
     override fun isConfigured(): Boolean {
-        for (dir in getSearchDirectories(context, customVoiceDir)) {
-            if (findBestInitDir(dir) != null) return true
-        }
-        return false
+        return EmbeddedStorage.inventory(
+            context,
+            EmbeddedStorage.Engine.ACAPELA,
+            listOfNotNull(customVoiceDir)
+        ).isCompleteVoicePresent
     }
 
     private fun findBestInitDir(dir: File, depth: Int = 0): File? {
@@ -332,6 +377,17 @@ class AcapelaEmbeddedVoiceProvider(
                 if (found != null) return found
             }
         }
+
+        // ع٢٩-7 بند 3: سجّل المسار والملفات عند الفشل لتشخيص السبب
+        val fileNames = files.map { it.name }.joinToString(", ")
+        Log.w(
+            TAG,
+            "findBestInitDir failed at ${dir.absolutePath} " +
+                "(depth=$depth). Files: [$fileNames]. " +
+                "voicelist=$hasVoicelist, " +
+                "license(0x00*)=$hasLicense, " +
+                "voiceSubdir=$hasVoiceSubdir"
+        )
         return null
     }
 
@@ -394,6 +450,11 @@ class AcapelaEmbeddedVoiceProvider(
                 Log.e(
                     TAG,
                     "نطق المضيف فشل [${result.code}]: ${result.message}"
+                )
+                EngineStatusRegistry.noteFailure(
+                    PROVIDER_ID,
+                    result.code,
+                    result.message
                 )
             }
         }

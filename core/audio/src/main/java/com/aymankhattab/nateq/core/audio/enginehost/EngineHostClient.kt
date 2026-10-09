@@ -53,6 +53,17 @@ object EngineHostClient {
 
     private val connections = ConcurrentHashMap<String, HostConnection>()
 
+    /** تذكر نجاح التهيئة لكل محرك (ع٣٠-9) لتفادي نداءات Binder المكررة. */
+    private val initializedEngines = ConcurrentHashMap<String, String>()
+
+    /**
+     * مهلة المعاينة المدمجة (ع٢٩-10 بند 2) للواجهة العامة خارج
+     * الوحدة: ميزانية الطلب + هامش تفريغ AudioTrack، كلها من
+     * [SynthesisBudget] — لا معادلة مهلة مستقلّة خارجه.
+     */
+    fun previewTimeoutMs(text: String): Long =
+        SynthesisBudget.previewTimeoutMs(text.length)
+
     /** أوامر الإلغاء والتحرير تعمل خارج أي خيط مُستدعي. */
     private val background: ExecutorService =
         Executors.newSingleThreadExecutor { runnable ->
@@ -74,9 +85,13 @@ object EngineHostClient {
         dataDir: String,
         force: Boolean = false
     ): HostResult {
-        val call = callHost(context, engineId) { svc ->
+        val id = HostProtocol.normalizeEngineId(engineId)
+        if (!force && initializedEngines[id] == dataDir) {
+            return HostResult(ok = true)
+        }
+        val call = callHost(context, id) { svc ->
             val decoded = HostProtocol.decodeResult(
-                svc.init(engineId, dataDir, force)
+                svc.init(id, dataDir, force)
             )
             if (!decoded.ok) {
                 throw HostCallException(
@@ -85,7 +100,13 @@ object EngineHostClient {
                 )
             }
         }
-        return call.toHostResult()
+        val res = call.toHostResult()
+        if (res.ok) {
+            initializedEngines[id] = dataDir
+        } else {
+            initializedEngines.remove(id)
+        }
+        return res
     }
 
     /** قائمة أصوات المضيف؛ فشلها سببٌ معنون لا قائمةٌ صامتة. */
@@ -93,9 +114,10 @@ object EngineHostClient {
         context: Context,
         engineId: String
     ): HostVoicesResult {
-        val call = callHost(context, engineId) { svc ->
+        val id = HostProtocol.normalizeEngineId(engineId)
+        val call = callHost(context, id) { svc ->
             val decoded = HostProtocol.decodeVoicesResponse(
-                svc.listVoices(engineId, null)
+                svc.listVoices(id, null)
             )
             decoded.failure?.let { failure ->
                 throw HostCallException(
@@ -116,6 +138,25 @@ object EngineHostClient {
     }
 
     /**
+     * استرجاع آخر سجلات المضيف للمحرك المحدد (ع٣٠-2).
+     */
+    suspend fun getLog(
+        context: Context,
+        engineId: String,
+        maxLines: Int = 200
+    ): String {
+        val id = HostProtocol.normalizeEngineId(engineId)
+        val call = callHost(context, id) { svc ->
+            svc.getLog(id, maxLines) ?: ""
+        }
+        return when (call) {
+            is HostCall.Success -> call.value
+            is HostCall.Failure ->
+                "تعذّر جلب سجل المضيف [${call.code}]: ${call.message}"
+        }
+    }
+
+    /**
      * نطق نصّ كامل إلى [onFormatInfo]/[onAudioChunk] عبر أنبوب
      * المضيف. تعود بفشلٍ برمز معنون إن مات المضيف أو انتهت المهلة
      * أو أُلغي الطلب (إلغاء كوروتين المُستدعي يصل المضيف في الحال —
@@ -132,16 +173,17 @@ object EngineHostClient {
         onFormatInfo: (sampleRateInHz: Int, channelCount: Int) -> Unit,
         onAudioChunk: (ByteArray, Int) -> Unit
     ): HostResult {
+        val id = HostProtocol.normalizeEngineId(engineId)
         if (text.isEmpty()) {
             return HostResult.failure("EMPTY_TEXT", "نصّ فارغ")
         }
         val deadlineAt = SystemClock.uptimeMillis() +
             SynthesisBudget.requestTimeoutMs(text.length)
-        val call = callHost(context, engineId) { svc ->
+        val call = callHost(context, id) { svc ->
             val (readFd, writeFd) = ParcelFileDescriptor.createPipe()
             val raw = try {
                 svc.synthesize(
-                    engineId,
+                    id,
                     voiceId,
                     text,
                     rate,
@@ -179,10 +221,25 @@ object EngineHostClient {
             } finally {
                 // يوقف المضيف عند المهلة/الإلغاء؛ وبعد النجاح لا يجد
                 // الطلب فعلاً فيكون نداءً صامتاً بلا أثر.
-                cancelRequest(engineId, svc, requestId)
+                cancelRequest(id, svc, requestId)
             }
         }
         return call.toHostResult()
+    }
+
+    /**
+     * إلغاء طلب جارٍ في المضيف.
+     */
+    fun cancel(context: Context, engineId: String, requestId: Long) {
+        val id = HostProtocol.normalizeEngineId(engineId)
+        val svc = connections[id]?.current() ?: return
+        cancelRequest(id, svc, requestId)
+    }
+
+    fun cancel(engineId: String, requestId: Long) {
+        val id = HostProtocol.normalizeEngineId(engineId)
+        val svc = connections[id]?.current() ?: return
+        cancelRequest(id, svc, requestId)
     }
 
     /**
@@ -190,17 +247,43 @@ object EngineHostClient {
      * انتظار (لا يعلّق خيط المُستدعي — يُنفَّذ خلفياً).
      */
     fun release(context: Context, engineId: String) {
-        val connection = connections.remove(engineId) ?: return
+        val id = HostProtocol.normalizeEngineId(engineId)
+        initializedEngines.remove(id)
+        val connection = connections.remove(id) ?: return
         background.execute {
-            runCatching { connection.current()?.shutdown(engineId) }
+            runCatching { connection.current()?.shutdown(id) }
             connection.close()
         }
     }
 
     /** هل ثمة ربط حيّ بهذا المحرك الآن؟ (فحص الاختبارات فقط). */
     @VisibleForTesting
-    fun isBound(engineId: String): Boolean =
-        connections[engineId]?.current() != null
+    fun isBound(engineId: String): Boolean {
+        val id = HostProtocol.normalizeEngineId(engineId)
+        return connections[id]?.current() != null
+    }
+
+    /** فحص حالة الذاكرة المؤقتة للتهيئة (للاختبارات فقط). */
+    @VisibleForTesting
+    fun isEngineInitialized(engineId: String, dataDir: String): Boolean {
+        val id = HostProtocol.normalizeEngineId(engineId)
+        return initializedEngines[id] == dataDir
+    }
+
+    @VisibleForTesting
+    fun clearInitialized(engineId: String? = null) {
+        if (engineId != null) {
+            val id = HostProtocol.normalizeEngineId(engineId)
+            initializedEngines.remove(id)
+        } else {
+            initializedEngines.clear()
+        }
+    }
+
+    internal fun onHostDied(engineId: String) {
+        val id = HostProtocol.normalizeEngineId(engineId)
+        initializedEngines.remove(id)
+    }
 
     // ----------------------------------------------------------------
     // النداء مع إعادة المحاولة الواحدة
@@ -216,18 +299,19 @@ object EngineHostClient {
         engineId: String,
         body: suspend (IEmbeddedEngineHost) -> T
     ): HostCall<T> {
+        val id = HostProtocol.normalizeEngineId(engineId)
         var attempt = 0
         var last = HostCall.Failure(
             "HOST_UNAVAILABLE",
-            "تعذّر الوصول إلى مضيف $engineId"
+            "تعذّر الوصول إلى مضيف $id"
         )
         while (attempt < 2) {
             attempt++
-            val svc = connection(context, engineId).service()
+            val svc = connection(context, id).service()
             if (svc == null) {
                 last = HostCall.Failure(
                     "HOST_UNAVAILABLE",
-                    "تعذّر ربط مضيف $engineId"
+                    "تعذّر ربط مضيف $id"
                 )
                 continue
             }
@@ -237,7 +321,7 @@ object EngineHostClient {
                 HostCall.Failure(t.code, t.message)
             } catch (t: DeadObjectException) {
                 Log.e(TAG, "موت المضيف أثناء النداء: ${t.message}")
-                HostCall.Failure("HOST_DIED", "انهار مضيف $engineId")
+                HostCall.Failure("HOST_DIED", "انهار مضيف $id")
             } catch (t: CancellationException) {
                 throw t
             } catch (t: RemoteException) {
@@ -255,9 +339,15 @@ object EngineHostClient {
             }
             val died = last.code == "HOST_DIED" ||
                 last.code == "HOST_UNAVAILABLE"
-            if (!died || attempt >= 2) return last
+            if (!died || attempt >= 2) {
+                if (died) {
+                    initializedEngines.remove(id)
+                }
+                return last
+            }
             // ع٢٩-5: إعادة محاولة واحدة فقط — أعد البناء ثم أعد النداء.
-            connection(context, engineId).invalidate()
+            initializedEngines.remove(id)
+            connection(context, id).invalidate()
         }
         return last
     }
@@ -267,11 +357,12 @@ object EngineHostClient {
         svc: IEmbeddedEngineHost,
         requestId: Long
     ) {
+        val id = HostProtocol.normalizeEngineId(engineId)
         if (requestId <= 0) return
         background.execute {
             runCatching { svc.cancel(requestId) }
                 .onFailure {
-                    Log.w(TAG, "إلغاء $engineId/$requestId: ${it.message}")
+                    Log.w(TAG, "إلغاء $id/$requestId: ${it.message}")
                 }
         }
     }
@@ -304,8 +395,8 @@ object EngineHostClient {
                         when (frame) {
                             is HostProtocol.HostFrame.Format ->
                                 onFormatInfo(
-                                    frame.sampleRate,
-                                    frame.channels
+                                     frame.sampleRate,
+                                     frame.channels
                                 )
                             is HostProtocol.HostFrame.Pcm ->
                                 onAudioChunk(
@@ -374,9 +465,10 @@ object EngineHostClient {
         context: Context,
         engineId: String
     ): HostConnection {
-        connections[engineId]?.let { return it }
-        val created = HostConnection(context.applicationContext, engineId)
-        return connections.putIfAbsent(engineId, created) ?: created
+        val id = HostProtocol.normalizeEngineId(engineId)
+        connections[id]?.let { return it }
+        val created = HostConnection(context.applicationContext, id)
+        return connections.putIfAbsent(id, created) ?: created
     }
 }
 
@@ -431,12 +523,14 @@ private class HostConnection(
         override fun onServiceDisconnected(name: ComponentName?) {
             // ماتت العملية: المنظومة تعيد تشغيلها وتستدعي الربط ثانية.
             service = null
+            EngineHostClient.onHostDied(engineId)
             Log.w(TAG, "انفصل المضيف $engineId — ستعيده المنظومة")
         }
 
         override fun onBindingDied(name: ComponentName?) {
             // ربطٌ ميت لا يُستعاد تلقائياً: نظّفه ليُبنى من جديد.
             drop()
+            EngineHostClient.onHostDied(engineId)
             Log.w(TAG, "مات ربط المضيف $engineId")
         }
 
@@ -471,6 +565,7 @@ private class HostConnection(
 
     private fun drop() {
         service = null
+        EngineHostClient.onHostDied(engineId)
         if (bound) {
             bound = false
             runCatching { app.unbindService(callback) }
@@ -489,6 +584,7 @@ private class HostConnection(
 
     private fun onBinderDied() {
         service = null
+        EngineHostClient.onHostDied(engineId)
         failSignal()
     }
 

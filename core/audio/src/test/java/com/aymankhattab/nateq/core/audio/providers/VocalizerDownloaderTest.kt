@@ -2,6 +2,7 @@ package com.aymankhattab.nateq.core.audio.providers
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -11,6 +12,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -24,6 +27,19 @@ class VocalizerDownloaderTest {
         context = ApplicationProvider.getApplicationContext()
         testDir = File(context.filesDir, "VocalizerEx2")
         testDir.mkdirs()
+    }
+
+    private fun createTestZip(
+        file: File,
+        entries: Map<String, ByteArray>
+    ) {
+        ZipOutputStream(file.outputStream().buffered()).use { zos ->
+            for ((name, data) in entries) {
+                zos.putNextEntry(ZipEntry(name))
+                zos.write(data)
+                zos.closeEntry()
+            }
+        }
     }
 
     @Test
@@ -86,5 +102,72 @@ class VocalizerDownloaderTest {
         assertTrue(deleted)
         assertFalse(dummyHdr.exists())
         assertFalse(dummyDat.exists())
+    }
+
+    @Test
+    fun unzipToDirectory_extractsValidFilesAndReturnsResults() {
+        val zipFile = File(context.cacheDir, "test_valid.zip")
+        createTestZip(
+            zipFile,
+            mapOf(
+                "voice.hdr" to "HEADER".toByteArray(),
+                "voice.dat" to "DATA".toByteArray()
+            )
+        )
+
+        val target = File(context.cacheDir, "out_valid")
+        target.mkdirs()
+        try {
+            val res = VocalizerDownloader.unzipToDirectory(zipFile, target)
+            assertEquals(2, res.count)
+            assertTrue(res.fileNames.contains("voice.hdr"))
+            assertTrue(res.fileNames.contains("voice.dat"))
+            assertTrue(File(target, "voice.hdr").exists())
+            assertTrue(File(target, "voice.dat").exists())
+        } finally {
+            zipFile.delete()
+            target.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun unzipToDirectory_emptyZipReturnsZeroCount() {
+        val zipFile = File(context.cacheDir, "test_empty.zip")
+        createTestZip(zipFile, emptyMap())
+
+        val target = File(context.cacheDir, "out_empty")
+        target.mkdirs()
+        try {
+            val res = VocalizerDownloader.unzipToDirectory(zipFile, target)
+            assertEquals(0, res.count)
+            assertTrue(res.fileNames.isEmpty())
+        } finally {
+            zipFile.delete()
+            target.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun unzipToDirectory_rejectsZipSlipTraversal() {
+        val zipFile = File(context.cacheDir, "test_slip.zip")
+        createTestZip(
+            zipFile,
+            mapOf(
+                "../evil.txt" to "EVIL".toByteArray(),
+                "safe.dat" to "SAFE".toByteArray()
+            )
+        )
+
+        val target = File(context.cacheDir, "out_slip")
+        target.mkdirs()
+        try {
+            val res = VocalizerDownloader.unzipToDirectory(zipFile, target)
+            assertEquals(1, res.count)
+            assertTrue(res.fileNames.contains("safe.dat"))
+            assertFalse(File(target.parentFile, "evil.txt").exists())
+        } finally {
+            zipFile.delete()
+            target.deleteRecursively()
+        }
     }
 }

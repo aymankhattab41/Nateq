@@ -48,6 +48,9 @@ public class VocalizerEngine {
         new VocalizerAudioSettings(22050, VocalizerAudioSettings.MONO);
 
     private String mDataPath = null;
+    private Throwable mCreateError = null;
+    private Throwable mInitError = null;
+    private String mLastError = null;
 
     /**
      * عنوان مؤشر المحرك الأصلي (CVocalizerEngine*) الذي يُنشئه
@@ -70,23 +73,56 @@ public class VocalizerEngine {
         try {
             createNativeEngine();
         } catch (Throwable t) {
-            Log.e(TAG, "Error in createNativeEngine: " + t.getMessage());
+            this.mCreateError = t;
+            this.mLastError = t.getClass().getSimpleName() + ": " +
+                t.getMessage();
+            Log.e(TAG, "Error in createNativeEngine: " + t.getMessage(), t);
         }
+    }
+
+    public Throwable getCreateError() {
+        return mCreateError;
+    }
+
+    public boolean isNativeCreated() {
+        return mNativeEnginePtr != 0L;
+    }
+
+    public long getNativeEnginePtr() {
+        return mNativeEnginePtr;
+    }
+
+    public Throwable getInitError() {
+        return mInitError;
+    }
+
+    public String getLastError() {
+        return mLastError;
     }
 
     public synchronized boolean initialize(String dataDirectory) {
         this.mDataPath = dataDirectory;
+        this.mInitError = null;
+        this.mLastError = null;
         try {
             File dir = new File(dataDirectory);
             if (!dir.exists()) {
-                Log.w(TAG, "Vocalizer data directory does not exist: " +
-                    dataDirectory);
+                mLastError = "Vocalizer data directory does not exist: " +
+                    dataDirectory;
+                Log.w(TAG, mLastError);
             }
             mIsInitialized = initializeNative(dataDirectory);
             Log.i(TAG, "initializeNative result: " + mIsInitialized);
+            if (!mIsInitialized && mLastError == null) {
+                mLastError = "initializeNative returned false";
+            }
             return mIsInitialized;
         } catch (Throwable t) {
-            Log.e(TAG, "Exception during initializeNative: " + t.getMessage());
+            this.mInitError = t;
+            this.mLastError = t.getClass().getSimpleName() + ": " +
+                t.getMessage();
+            Log.e(TAG, "Exception during initializeNative: " +
+                t.getMessage(), t);
             return false;
         }
     }

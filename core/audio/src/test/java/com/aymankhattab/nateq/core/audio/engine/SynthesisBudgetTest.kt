@@ -54,6 +54,35 @@ class SynthesisBudgetTest {
         }
     }
 
+    /**
+     * ع٢٩-10 (2) — عقد المعاينة: مهلة المعاينة أقصرُ من مهلة الطلب
+     * = عودة الانقطاع في مسارٍ آخر: تُلغى المعاينة وهي تكتب صوتاً
+     * فيبدو «فشل» عام بلا سبب. فالمعاينة تغطّي الطلب دائماً +
+     * هامش تجهيز/تفريغ AudioTrack.
+     */
+    @Test
+    fun previewBudget_strictlyCoversRequestBudget() {
+        for (chars in charCounts) {
+            val preview = SynthesisBudget.previewTimeoutMs(chars)
+            val request = SynthesisBudget.requestTimeoutMs(chars)
+            assertTrue(
+                "مهلة المعاينة ${preview}ms ليست أكبر من مهلة الطلب" +
+                    " ${request}ms عند $chars حرفاً",
+                preview > request
+            )
+            assertTrue(
+                "مهلة المعاينة ${preview}ms عند $chars حرفاً أنقصُ" +
+                    " من ميزانية المزوّد داخلها",
+                preview > SynthesisBudget.pieceTimeoutMs(chars)
+            )
+        }
+        // السقف: حدٌّ مطلقٌ للطلب + هامش ثابت للمعاينة فقط.
+        assertTrue(
+            SynthesisBudget.previewTimeoutMs(Int.MAX_VALUE) <=
+                absoluteCeiling + 60_000L
+        )
+    }
+
     @Test
     fun announcementBudget_neverBelowSumOfUnitBudgets() {
         // قائمة وحدات إعلانات: مجموع ميزانياتها لا يجوز أن يتجاوز
