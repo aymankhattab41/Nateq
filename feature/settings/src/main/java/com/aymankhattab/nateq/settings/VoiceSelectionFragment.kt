@@ -17,6 +17,13 @@ import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.Spinner
+import android.app.DownloadManager
+import android.content.DialogInterface
+import androidx.appcompat.app.AlertDialog
+import com.google.android.material.progressindicator.LinearProgressIndicator
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -117,6 +124,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
      *  [onDestroyView] (بند 6.6) حتى لا يتسرب الفصيل عند تدوير الشاشة
      *  أو مغادرتها أثناء التنزيل. */
     private var updateReceiver: android.content.BroadcastReceiver? = null
+
+    /** حوار متابعة تنزيل التحديث النشط ومهمة الاستعلام الدوري عن تقدمه. */
+    private var updateProgressDialog: AlertDialog? = null
+    private var updatePollingJob: Job? = null
+    private var updateDialogDismissedByUser: Boolean = false
 
     // قسم المحرك والتحويل التلقائي (الاكتشاف/setupAutoConvertUI/
     // قائمة اللغات المكتشفة لكل المحركات...) انتقل بالكامل إلى
@@ -942,6 +954,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
         refreshEmbeddedUiIfStorageChanged()
         refreshVoiceCatalogDiscovery()
+        resumeUpdateDownloadIfNeeded()
     }
 
     /**
@@ -1033,6 +1046,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         if (::accordion.isInitialized) accordion.cleanup()
         catalogDiscoveryJob?.cancel()
         catalogDiscoveryJob = null
+        updatePollingJob?.cancel()
+        updatePollingJob = null
+        updateProgressDialog = null
         super.onDestroyView()
     }
 
@@ -2507,45 +2523,53 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             .create().also(::trackDialog).show()
     }
 
-    /** ينزّل الـ APK ويعرض إشعاراً بأن التنزيل بدأ — يُستدعى بعد موافقة
-     *  المستخدم. [expectedSha256Hex] (إن وُجدت) تُفحص قبل فتح شاشة
-     *  التثبيت: بصمة متوقعة محلّياً تساوي بصمة التنزيل = نثبّت؛ غير ذلك
-     *  يُحذف الملف ويُبلغ المستخدم. */
+    /**
+     * ع٤٢-10: ينزّل الـ APK ويعرض حوار تقدم التنزيل الفوري.
+     */
     private fun startApkDownload(
         context: android.content.Context,
         apkUrl: String,
         expectedSha256Hex: String?,
         allowMetered: Boolean
     ) {
-        Toast.makeText(
-            context,
-            getString(R.string.check_updates_downloading_title),
-            Toast.LENGTH_SHORT
-        ).show()
         val downloadId = UpdateChecker.enqueueDownload(
             context, apkUrl, allowMetered
+        )
+        settings.setActiveUpdateDownload(
+            downloadId, apkUrl, expectedSha256Hex
+        )
+        updateDialogDismissedByUser = false
+        showUpdateProgressDialog(
+            downloadId = downloadId,
+            apkUrl = apkUrl,
+            expectedSha256Hex = expectedSha256Hex,
+            allowMetered = allowMetered
         )
 
         val appContext = context.applicationContext
         val fragmentRef = java.lang.ref.WeakReference(this)
-        // مستمع مؤقت مشترك يفتح شاشة التثبيت عند اكتمال تنزيل الـ APK.
         val receiver = object : android.content.BroadcastReceiver() {
             override fun onReceive(
                 ctx: android.content.Context,
                 intent: Intent
             ) {
                 val id = intent.getLongExtra(
-                    android.app.DownloadManager.EXTRA_DOWNLOAD_ID, -1L
+                    DownloadManager.EXTRA_DOWNLOAD_ID, -1L
                 )
                 if (id != downloadId) return
+                val currentActive = fragmentRef.get()?.settings
+                    ?.getActiveUpdateDownloadId() ?: -1L
+                if (currentActive != downloadId) {
+                    // تمت معالجته بالفعل عبر حوار التقدم أو تم إلغاؤه
+                    return
+                }
+                fragmentRef.get()?.settings?.clearActiveUpdateDownload()
                 try {
                     ctx.applicationContext.unregisterReceiver(this)
                     updateReceiver = null
                 } catch (_: IllegalArgumentException) {
                     /* سبق تسجيله أو فُكّ */
                 }
-                // معالجة التنزيل والتحقق من سلامة البصمة على خيط خلفي
-                // لمنع تجميد واجهة المستخدم (onReceive) أثناء قراءة الملف.
                 Thread {
                     val result = UpdateChecker.processCompletedDownload(
                         ctx, id, expectedSha256Hex
@@ -2594,19 +2618,337 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             appContext,
             receiver,
             android.content.IntentFilter(
-                android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE
+                DownloadManager.ACTION_DOWNLOAD_COMPLETE
             ),
-            // **بند 2.20 (اكتمال تنزيلات الصوت على Android 14+ — P0):**
-            // بثُّ DownloadManager.ACTION_DOWNLOAD_COMPLETE بثٌّ نظاميٌّ من
-            // «مديرِ التنزيلاتِ» (تطبيقُ نظامٍ بامتيازاتٍ رفيعةٍ) غيرُ محميٍّ؛
-            // والمستقبِلُ غيرُ المُصدَّرِ (RECEIVER_NOT_EXPORTED) لا يستقبلُه
-            // على Android 14+ فيفشلُ تحديثُ حالةِ التنزيلِ عندَ اكتمالِ صوتٍ؛
-            // يُصدَّرُ المستقبِلُ هنا (RECEIVER_EXPORTED) فيتلقّى البثَّ
-            // الوحيدَ الذي يهمُّه (محمياً بحراسةِ اتساقِ الحالةِ والوصولِ
-            // الآمنِ) بلا مخاطرةِ واجهةٍ خارجيةٍ.
             ContextCompat.RECEIVER_EXPORTED
         )
         updateReceiver = receiver
+    }
+
+    /**
+     * ع٤٢-10: يعرض حوار تقدم تنزيل التحديث بـ LinearProgressIndicator
+     * غير قابل للإلغاء بالنقر الخارجي، ويستعلم DownloadManager كل 300ms
+     * مع إعلانات الوصول كل 10٪ وتحديث contentDescription.
+     */
+    private fun showUpdateProgressDialog(
+        downloadId: Long,
+        apkUrl: String,
+        expectedSha256Hex: String?,
+        allowMetered: Boolean
+    ) {
+        val ctx = context ?: return
+        updatePollingJob?.cancel()
+        updateProgressDialog?.dismiss()
+
+        val dialogView = LayoutInflater.from(ctx).inflate(
+            R.layout.dialog_update_progress, null
+        )
+        val tvFileName = dialogView.findViewById<TextView>(
+            R.id.tv_update_file_name
+        )
+        val progressBar =
+            dialogView.findViewById<LinearProgressIndicator>(
+                R.id.progress_update_download
+            )
+        val tvProgressText = dialogView.findViewById<TextView>(
+            R.id.tv_update_progress_text
+        )
+        val tvStatusMessage = dialogView.findViewById<TextView>(
+            R.id.tv_update_status_message
+        )
+
+        tvFileName.text = getString(
+            R.string.update_dialog_file_name,
+            UpdateChecker.APK_NAME
+        )
+        progressBar.isIndeterminate = true
+        tvProgressText.text = getString(R.string.update_dialog_starting)
+        tvStatusMessage.visibility = View.GONE
+
+        val dialog = MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.update_dialog_title)
+            .setView(dialogView)
+            .setCancelable(false)
+            .setNegativeButton(R.string.update_dialog_btn_cancel) { _, _ ->
+                updatePollingJob?.cancel()
+                updatePollingJob = null
+                updateProgressDialog = null
+                UpdateChecker.cancelDownload(ctx, downloadId)
+                settings.clearActiveUpdateDownload()
+                updateReceiver?.let {
+                    runCatching {
+                        ctx.applicationContext.unregisterReceiver(it)
+                    }
+                    updateReceiver = null
+                }
+            }
+            .setNeutralButton(R.string.update_dialog_btn_hide) { d, _ ->
+                updateDialogDismissedByUser = true
+                updateProgressDialog = null
+                d.dismiss()
+            }
+            .setPositiveButton(R.string.update_dialog_btn_install, null)
+            .create()
+
+        trackDialog(dialog)
+        dialog.show()
+        updateProgressDialog = dialog
+
+        val positiveBtn = dialog.getButton(DialogInterface.BUTTON_POSITIVE)
+        positiveBtn?.visibility = View.GONE
+
+        var lastAnnouncedMilestone = 0
+
+        updatePollingJob = viewLifecycleOwner.lifecycleScope.launch {
+            while (isActive) {
+                val progress = withContext(AppDispatchers.io) {
+                    UpdateChecker.queryProgress(ctx, downloadId)
+                }
+
+                if (progress == null || progress.status == -1) {
+                    settings.clearActiveUpdateDownload()
+                    break
+                }
+
+                when (progress.status) {
+                    DownloadManager.STATUS_RUNNING,
+                    DownloadManager.STATUS_PENDING -> {
+                        tvStatusMessage.visibility = View.GONE
+                        if (progress.totalBytes > 0L) {
+                            progressBar.isIndeterminate = false
+                            progressBar.progress = progress.percent
+                            val dlMb = progress.downloadedBytes.toDouble() /
+                                (1024.0 * 1024.0)
+                            val totMb = progress.totalBytes.toDouble() /
+                                (1024.0 * 1024.0)
+                            tvProgressText.text = getString(
+                                R.string.update_dialog_progress_text,
+                                progress.percent,
+                                dlMb,
+                                totMb
+                            )
+                            val desc = getString(
+                                R.string.update_dialog_progress_content_desc,
+                                progress.percent
+                            )
+                            progressBar.contentDescription = desc
+
+                            val milestone = (progress.percent / 10) * 10
+                            if (milestone > lastAnnouncedMilestone &&
+                                milestone > 0
+                            ) {
+                                lastAnnouncedMilestone = milestone
+                                val ann = getString(
+                                    R.string
+                                        .update_dialog_progress_announcement,
+                                    milestone
+                                )
+                                dialogView.announceCompat(ann)
+                            }
+                        } else {
+                            progressBar.isIndeterminate = true
+                            tvProgressText.text = getString(
+                                R.string.update_dialog_starting
+                            )
+                        }
+                    }
+                    DownloadManager.STATUS_PAUSED -> {
+                        tvStatusMessage.visibility = View.VISIBLE
+                        if (progress.reason ==
+                            DownloadManager.PAUSED_QUEUED_FOR_WIFI
+                        ) {
+                            tvStatusMessage.text = getString(
+                                R.string.update_dialog_paused_wifi
+                            )
+                        } else {
+                            tvStatusMessage.text = getString(
+                                R.string.update_dialog_paused_network
+                            )
+                        }
+                    }
+                    DownloadManager.STATUS_SUCCESSFUL -> {
+                        progressBar.isIndeterminate = false
+                        progressBar.progress = 100
+                        val res = withContext(AppDispatchers.io) {
+                            UpdateChecker.processCompletedDownload(
+                                ctx,
+                                downloadId,
+                                expectedSha256Hex
+                            )
+                        }
+                        settings.clearActiveUpdateDownload()
+                        updateReceiver?.let {
+                            runCatching {
+                                ctx.applicationContext.unregisterReceiver(it)
+                            }
+                            updateReceiver = null
+                        }
+
+                        when (res) {
+                            is UpdateChecker.DownloadResult.Success -> {
+                                tvProgressText.text = getString(
+                                    R.string.update_dialog_complete
+                                )
+                                tvStatusMessage.visibility = View.GONE
+                                dialogView.announceCompat(
+                                    getString(R.string.update_dialog_complete)
+                                )
+                                dialog.getButton(
+                                    DialogInterface.BUTTON_NEUTRAL
+                                )?.visibility = View.GONE
+                                positiveBtn?.visibility = View.VISIBLE
+                                positiveBtn?.setText(
+                                    R.string.update_dialog_btn_install
+                                )
+                                positiveBtn?.setOnClickListener {
+                                    UpdateChecker.promptInstall(
+                                        ctx, res.apkFile
+                                    )
+                                }
+                                dialog.getButton(
+                                    DialogInterface.BUTTON_NEGATIVE
+                                )?.apply {
+                                    setText(android.R.string.cancel)
+                                    setOnClickListener { dialog.dismiss() }
+                                }
+                                UpdateChecker.promptInstall(
+                                    ctx, res.apkFile
+                                )
+                            }
+                            is UpdateChecker.DownloadResult
+                                .ChecksumMismatch -> {
+                                val msg = getString(
+                                    R.string.check_updates_checksum_failed
+                                )
+                                tvStatusMessage.visibility = View.VISIBLE
+                                tvStatusMessage.text = msg
+                                dialogView.announceCompat(msg)
+                                positiveBtn?.visibility = View.VISIBLE
+                                positiveBtn?.setText(
+                                    R.string.update_dialog_btn_retry
+                                )
+                                positiveBtn?.setOnClickListener {
+                                    dialog.dismiss()
+                                    updateProgressDialog = null
+                                    UpdateChecker.cancelDownload(
+                                        ctx, downloadId
+                                    )
+                                    startApkDownload(
+                                        ctx,
+                                        apkUrl,
+                                        expectedSha256Hex,
+                                        allowMetered
+                                    )
+                                }
+                            }
+                            is UpdateChecker.DownloadResult.Failed -> {
+                                val msg = getString(
+                                    R.string.check_updates_download_failed
+                                )
+                                tvStatusMessage.visibility = View.VISIBLE
+                                tvStatusMessage.text = msg
+                                dialogView.announceCompat(msg)
+                                positiveBtn?.visibility = View.VISIBLE
+                                positiveBtn?.setText(
+                                    R.string.update_dialog_btn_retry
+                                )
+                                positiveBtn?.setOnClickListener {
+                                    dialog.dismiss()
+                                    updateProgressDialog = null
+                                    UpdateChecker.cancelDownload(
+                                        ctx, downloadId
+                                    )
+                                    startApkDownload(
+                                        ctx,
+                                        apkUrl,
+                                        expectedSha256Hex,
+                                        allowMetered
+                                    )
+                                }
+                            }
+                        }
+                        break
+                    }
+                    DownloadManager.STATUS_FAILED -> {
+                        settings.clearActiveUpdateDownload()
+                        tvStatusMessage.visibility = View.VISIBLE
+                        val errText = if (progress.reason ==
+                            DownloadManager.ERROR_INSUFFICIENT_SPACE
+                        ) {
+                            getString(
+                                R.string.update_dialog_error_insufficient_space
+                            )
+                        } else {
+                            getString(R.string.update_dialog_error_network)
+                        }
+                        tvStatusMessage.text = errText
+                        dialogView.announceCompat(errText)
+                        positiveBtn?.visibility = View.VISIBLE
+                        positiveBtn?.setText(
+                            R.string.update_dialog_btn_retry
+                        )
+                        positiveBtn?.setOnClickListener {
+                            dialog.dismiss()
+                            updateProgressDialog = null
+                            UpdateChecker.cancelDownload(ctx, downloadId)
+                            startApkDownload(
+                                ctx,
+                                apkUrl,
+                                expectedSha256Hex,
+                                allowMetered
+                            )
+                        }
+                        break
+                    }
+                }
+                delay(300L)
+            }
+        }
+    }
+
+    /**
+     * ع٤٢-10: استئناف عرض تقدم تنزيل نشط إن وجد عند العودة للشاشة.
+     */
+    private fun resumeUpdateDownloadIfNeeded() {
+        val activeId = settings.getActiveUpdateDownloadId()
+        if (activeId <= 0L) return
+        val apkUrl = settings.getActiveUpdateApkUrl() ?: return
+        val expectedSha = settings.getActiveUpdateExpectedSha256()
+
+        val ctx = context ?: return
+        val progress = UpdateChecker.queryProgress(ctx, activeId)
+        if (progress == null || progress.status == -1) {
+            settings.clearActiveUpdateDownload()
+            return
+        }
+
+        if (progress.status == DownloadManager.STATUS_SUCCESSFUL) {
+            val targetApk = UpdateChecker.downloadedApk(ctx)
+            if (targetApk.exists()) {
+                settings.clearActiveUpdateDownload()
+                UpdateChecker.promptInstall(ctx, targetApk)
+            } else {
+                settings.clearActiveUpdateDownload()
+            }
+            return
+        }
+
+        if (progress.status == DownloadManager.STATUS_FAILED) {
+            settings.clearActiveUpdateDownload()
+            return
+        }
+
+        if (!updateDialogDismissedByUser &&
+            (updateProgressDialog == null ||
+                !updateProgressDialog!!.isShowing)
+        ) {
+            showUpdateProgressDialog(
+                downloadId = activeId,
+                apkUrl = apkUrl,
+                expectedSha256Hex = expectedSha,
+                allowMetered = NetworkMetering.isMetered(ctx)
+            )
+        }
     }
 
     // ===== زر الحفظ + زر استعادة الافتراضيات =====

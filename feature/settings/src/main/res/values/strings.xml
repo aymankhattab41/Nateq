@@ -251,6 +251,21 @@
 <string name="check_updates_confirm_no">لا</string>
 <string name="check_updates_no_digest_warning">لا يمكن التحقق من بصمة الملف (SHA-256) — الناشر لم يُوفرها. سيُثبَّت الملف كما هو دون تحقق سلامة. هل تريد المتابعة؟</string>
     <string name="check_updates_metered_warning">أنت متصل بشبكة بيانات الهاتف (مدفوعة). التنزيل سيستهلك بياناتك.</string>
+    <string name="update_dialog_title">تنزيل التحديث</string>
+    <string name="update_dialog_file_name">الملف: %1$s</string>
+    <string name="update_dialog_progress_text">%1$d%% — %2$.1f من %3$.1f ميغابايت</string>
+    <string name="update_dialog_starting">جارٍ بدء التنزيل...</string>
+    <string name="update_dialog_btn_cancel">إلغاء</string>
+    <string name="update_dialog_btn_hide">إخفاء</string>
+    <string name="update_dialog_btn_retry">إعادة المحاولة</string>
+    <string name="update_dialog_btn_install">تثبيت</string>
+    <string name="update_dialog_complete">اكتمل التنزيل — جاهز للتثبيت</string>
+    <string name="update_dialog_error_insufficient_space">فشل التنزيل: لا توجد مساحة كافية على الجهاز</string>
+    <string name="update_dialog_error_network">فشل التنزيل بسبب خطأ في اتصال الشبكة</string>
+    <string name="update_dialog_paused_wifi">التنزيل معلق في انتظار شبكة Wi-Fi</string>
+    <string name="update_dialog_paused_network">التنزيل معلق في انتظار توفر الشبكة</string>
+    <string name="update_dialog_progress_announcement">%1$d بالمئة</string>
+    <string name="update_dialog_progress_content_desc">نسبة اكتمال تنزيل التحديث %1$d بالمئة</string>
 <string name="time_chime_enabled">رنة رأس الساعة</string>
 <string name="time_chime_sound">نوع الرنة</string>
 <string name="time_chime_sound_classic_bell">جرس كلاسيكي</string>
@@ -649,6 +664,7 @@
 <string name="changelog_title">آخر التحديثات</string>
 <string name="changelog_text">الإصدار %1$s
 ملاحظة: هذه نسخة تجريبية قد يُتراجَع عنها والعودة إلى النظام القديم، وقد تجدون ميزات كثيرة لا تعمل. وإن كانت الانطباعات سلبية فسنرجع إلى النظام القديم. ننتظر انطباعاتكم على بوت التليجرام، ولاحظوا أن الرسائل الصوتية لا تصل. ومن أراد تواصلاً شخصياً لأي سبب فليكتب أي بيانات تواصل، لأن البوت لا يُظهر هوية أحد ولا أستطيع التواصل معهم.
+- نافذة تقدم تنزيل التحديثات الفورية (ع٤٢-10): حوار تقدم غير قابل للإلغاء مع شريط ومؤشر رقمي وحجم بالميجابايت، إعلانات وصول صوتية حية كل 10٪، زر إخفاء لمتابعة التنزيل بالخلفية مع إشعار ظاهر، زر إلغاء لحذف التنزيل والملف المؤقت، واستئناف تلقائي للتقدم عند العودة للشاشة
 - تكرار إعلان المتصل قائم على العدد: استبدال النافذة الزمنية بحلقة تكرار قائمة على العدد تنتظر اكتمال كل نطق قبل بدء الفاصل بلا تداخل، مع سقف أمان 90 ثانية لانتهاء الرنين، وضبط مستقل لتكرار إعلان مكالمات الانتظار، وقفل تيقظ مشتق بحسب الحاجة بسقف 120 ثانية
 - سياسة جهارة الأحداث (EventLoudnessPolicy): رفع مستوى صوت نطق المتصل والساعة والبطارية والرسائل للحد الأقصى مع تجاوز الصامت ووضع عدم الإزعاج عبر قناة الإنذار، وسقف أمان لسماعات الأذن والبلوتوث، وتخزين واستعادة مستوى الصوت تلقائياً
 - مرحلة كسب PCM ومحدّد ناعم (LoudnessStage): تعزيز قوة عينات صوت المحركات المدمجة للأحداث حتى +6 ديسيبل مع محدد ناعم لمنع التشويه

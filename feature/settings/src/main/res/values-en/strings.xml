@@ -252,6 +252,21 @@
 <string name="check_updates_confirm_no">No</string>
 <string name="check_updates_no_digest_warning">The file checksum (SHA-256) cannot be verified â€” the publisher did not provide it. The file will be installed as-is without an integrity check. Continue?</string>
     <string name="check_updates_metered_warning">You are on a mobile data (metered) connection. Downloading will use your data.</string>
+    <string name="update_dialog_title">Downloading Update</string>
+    <string name="update_dialog_file_name">File: %1$s</string>
+    <string name="update_dialog_progress_text">%1$d%% — %2$.1f of %3$.1f MB</string>
+    <string name="update_dialog_starting">Starting download...</string>
+    <string name="update_dialog_btn_cancel">Cancel</string>
+    <string name="update_dialog_btn_hide">Hide</string>
+    <string name="update_dialog_btn_retry">Retry</string>
+    <string name="update_dialog_btn_install">Install</string>
+    <string name="update_dialog_complete">Download completed — ready to install</string>
+    <string name="update_dialog_error_insufficient_space">Download failed: insufficient storage space</string>
+    <string name="update_dialog_error_network">Download failed due to a network connection error</string>
+    <string name="update_dialog_paused_wifi">Download paused waiting for Wi-Fi</string>
+    <string name="update_dialog_paused_network">Download paused waiting for network</string>
+    <string name="update_dialog_progress_announcement">%1$d percent</string>
+    <string name="update_dialog_progress_content_desc">Update download progress %1$d percent</string>
 <string name="time_chime_enabled">Hourly chime</string>
 <string name="time_chime_sound">Chime sound</string>
 <string name="time_chime_sound_classic_bell">Classic bell</string>
@@ -639,6 +654,7 @@
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
 Note: this is an experimental build that may be reverted to the old system, and many features may not work. If feedback is negative, we will revert to the old system. We are waiting for your feedback on the Telegram bot; note that voice messages do not arrive. Anyone who wants personal contact for any reason should write some contact details, because the bot does not reveal the identity of anyone and I cannot reach them.
+- Real-time update download progress dialog (R42-10): Non-dismissible progress dialog with percentage and downloaded MBs, live accessibility announcements every 10%, hide button to continue in background with visible notification, cancel button to purge download and file, and auto-resume upon returning to screen
 - Count-based caller repetition: Replaced time-window scheduling with a count-based loop that awaits each speech completion before the interval to prevent overlapping, with a 90-second ringing safety cap, independent repeat count for call waiting, and adaptive wake lock capped at 120 seconds
 - Event Loudness Policy (EventLoudnessPolicy): Force maximum volume for caller, time, battery, and SMS with silent and DND bypass via alarm stream, safe volume cap for wired and Bluetooth headsets, and automatic volume restore
 - PCM Loudness Stage and Soft Limiter (LoudnessStage): Boost PCM audio gain up to +6 dB for embedded engines during event announcements with a soft limiter to prevent clipping

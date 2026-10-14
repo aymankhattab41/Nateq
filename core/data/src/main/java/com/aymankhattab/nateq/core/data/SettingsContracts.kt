@@ -762,6 +762,25 @@ interface UpdatePrefs {
 
     /** يعيّن مفتاح GitHub PAT (null = حذف). */
     fun setGitHubUpdatePat(token: String?)
+
+    /** معرّف التنزيل النشط في DownloadManager (-1 إن لم يوجد). */
+    fun getActiveUpdateDownloadId(): Long
+
+    /** رابط التحديث النشط إن وُجد تنزيل جارٍ. */
+    fun getActiveUpdateApkUrl(): String?
+
+    /** بصمة SHA-256 المتوقعة للتنزيل النشط إن وُجدت. */
+    fun getActiveUpdateExpectedSha256(): String?
+
+    /** حفظ بيانات التنزيل النشط لاستعادتها عند عودة المستخدم. */
+    fun setActiveUpdateDownload(
+        downloadId: Long,
+        apkUrl: String,
+        expectedSha256: String?
+    )
+
+    /** مسح بيانات التنزيل النشط بعد الاكتمال أو الإلغاء. */
+    fun clearActiveUpdateDownload()
 }
 
 /**
