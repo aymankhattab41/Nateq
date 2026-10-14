@@ -1833,6 +1833,18 @@ class SettingsRepository(context: Context) :
             )
             .apply()
 
+    /** عدد مرات تكرار إعلان مكالمة الانتظار (افتراضياً 1) — 1..10 */
+    override fun getCallWaitingRepeat(): Int =
+        prefs.getInt("call_waiting_repeat", 1)
+            .coerceIn(CALLER_REPEAT_MIN, CALLER_REPEAT_MAX)
+    override fun setCallWaitingRepeat(repeat: Int) =
+        prefs.edit()
+            .putInt(
+                "call_waiting_repeat",
+                repeat.coerceIn(CALLER_REPEAT_MIN, CALLER_REPEAT_MAX)
+            )
+            .apply()
+
     /** الفاصل الزمني (بالثواني) بين كل مرة نطق لاسم المتصل — 3..5 ثوانٍ */
     override fun getCallerAnnouncementIntervalSeconds(): Int =
         prefs.getInt("caller_announcement_interval_seconds", 3)
@@ -2215,7 +2227,8 @@ class SettingsRepository(context: Context) :
                 AudioExpansionLevels.MIN,
                 AudioExpansionLevels.MAX
             )
-        key == "caller_announcement_repeat" ->
+        key == "caller_announcement_repeat" ||
+        key == "call_waiting_repeat" ->
             value.coerceIn(CALLER_REPEAT_MIN, CALLER_REPEAT_MAX)
         key == "caller_ring_duck_percent" ->
             value.coerceIn(CALLER_RING_DUCK_MIN, CALLER_RING_DUCK_MAX)

@@ -186,6 +186,8 @@
 <string name="battery_level_unchecked">Level %1$d percent cleared</string>
 <string name="caller_announcement_enabled">Enable caller announcement</string>
 <string name="caller_announcement_during_call">Announce caller name during a call</string>
+<string name="call_waiting_repeat">Call waiting repeat count</string>
+<string name="spinner_call_waiting_repeat_content">Call waiting repeat count</string>
 <string name="caller_instant_identity_group_title">Instant caller name announcement</string>
 <string name="caller_instant_identity_grant">Enable instant caller name</string>
 <string name="caller_instant_identity_status_none">Not enabled: the caller name may be delayed, or not announced if the network hides it. Tap the button to open system settings.</string>
@@ -637,6 +639,7 @@
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
 Note: this is an experimental build that may be reverted to the old system, and many features may not work. If feedback is negative, we will revert to the old system. We are waiting for your feedback on the Telegram bot; note that voice messages do not arrive. Anyone who wants personal contact for any reason should write some contact details, because the bot does not reveal the identity of anyone and I cannot reach them.
+- Count-based caller repetition: Replaced time-window scheduling with a count-based loop that awaits each speech completion before the interval to prevent overlapping, with a 90-second ringing safety cap, independent repeat count for call waiting, and adaptive wake lock capped at 120 seconds
 - Event Loudness Policy (EventLoudnessPolicy): Force maximum volume for caller, time, battery, and SMS with silent and DND bypass via alarm stream, safe volume cap for wired and Bluetooth headsets, and automatic volume restore
 - PCM Loudness Stage and Soft Limiter (LoudnessStage): Boost PCM audio gain up to +6 dB for embedded engines during event announcements with a soft limiter to prevent clipping
 - Unified Speech Planner for Numbers and Emojis (SpeechPlanner): Language family matching to keep same-family numbers and Arabic text in a single consistent voice, unified emoji category support across screen reader and announcements, with custom pronunciation dictionary priority

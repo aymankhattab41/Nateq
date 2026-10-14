@@ -27,6 +27,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -34,6 +35,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * مستقبل إعلان اسم المتصل الوارد.
@@ -664,19 +666,21 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             !contactName.isNullOrBlank() || !number.isNullOrBlank()
 
         /**
-         * سقف قفل الاستيقاظ لدورة المتصل (70 ثانية).
+         * سقف قفل الاستيقاظ لدورة المتصل (120 ثانية).
          *
-         * يغطّي مهلةَ انتظار الرقم + جدولَ التكرارات كلَّه. **رُفع من 20
-         * إلى 70** لأنّ عشرَ تكراراتٍ × أقصى فاصل (5 ثوانٍ) = 45 ثانيةً
-         * قبل آخر نطق، فسقفُ 20 كان يُطلق القفلَ على بُعد ثلثي النطق فيتأخّر
-         * ما تبقّى على شاشةِ إطفاءٍ خاملة. والصيغةُ مشتقّةٌ لا متفرّقة:
-         * نافذةُ الجدولة ([REPEAT_SCHEDULE_WINDOW_MS]) + قفلُ النطق القصير.
-         *
-         * **سقفُ الـ ANR ([BROADCAST_SAFE_CAP_MS]) لا يُرفع** ويبقى 9 ثوانٍ
-         * لأن إنهاءَ `goAsync` متأخّراً يُجمد العملية؛ والامتدادُ هنا على قفل
-         * الاستيقاظ فقط — فالنطق يبقى داخل `appScope` بعد إنهاء البث.
+         * يغطّي مهلةَ انتظار الرقم + جدولَ التكرارات القائم على العدد.
+         * الصيغةُ مشتقّة: repeat * (مدة النطق + الفاصل) بسقف 120 ثانية.
          */
-        internal const val CALLER_WAKE_LOCK_CAP_MS = 70_000L
+        internal const val CALLER_WAKE_LOCK_CAP_MS = 120_000L
+
+        /** سقف الأمان الكلي لتكرارات إعلان المتصل (90 ثانية). */
+        internal const val CALLER_REPEAT_SAFETY_CAP_MS = 90_000L
+
+        /** مهلة أمان انتظار اكتمال نطق جملة المتصل الواحدة (15 ثانية). */
+        internal const val SPEECH_COMPLETION_TIMEOUT_MS = 15_000L
+
+        /** التقدير الزمني لنطق جملة المتصل الواحدة لحساب ميزانية القفل. */
+        internal const val ESTIMATED_SPEECH_DURATION_MS = 5_000L
 
 /** تصفير حالة جلسة الرنين عند إنهاء المكالمة أو الرد عليها. */
         internal fun resetRingingSession() {
@@ -757,6 +761,67 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         /** عتبة طول الرقمين (بالخانات) للسماح بمطابقة آخر 8 خانات — تجنباً
          *  للتصادم على الأرقام القصيرة حيث البادئة جزءٌ من الهوية. */
         private const val MIN_SMART_MATCH_DIGITS = 8
+
+        /**
+         * حلقة تكرار إعلان المتصل القائمة على العدد:
+         * 1. لكل k من 1 إلى repeat:
+         *    - فحص هل الرنين ما زال قائماً وسقف الأمان لم يُبلغ.
+         *    - نطق الجملة وانتظار اكتمال النطق (callback الإتمام).
+         *    - إشعار اكتمال النطق الأول لتحرير البث مبكراً.
+         *    - إن كان k < repeat: فحص الرنين وسقف الأمان ثم انتظار الفاصل.
+         *
+         * مفصولة للاختبار الآلي الدقيق.
+         */
+        internal suspend fun runCountBasedRepeatLoop(
+            repeat: Int,
+            intervalMs: Long,
+            safetyCapMs: Long = CALLER_REPEAT_SAFETY_CAP_MS,
+            currentTimeMs: () -> Long = { System.currentTimeMillis() },
+            delayMs: suspend (Long) -> Unit = { delay(it) },
+            shouldContinue: () -> Boolean,
+            speakAndAwait: suspend (iteration: Int) -> Boolean,
+            onFirstFinished: () -> Unit = {}
+        ): Int {
+            val count = repeat.coerceIn(
+                SettingsRepository.CALLER_REPEAT_MIN,
+                SettingsRepository.CALLER_REPEAT_MAX
+            )
+            val startTime = currentTimeMs()
+            var completed = 0
+            for (k in 1..count) {
+                if (!shouldContinue()) {
+                    Log.w(TAG, "REPEAT STOPPED before repetition $k — ended")
+                    break
+                }
+                if (currentTimeMs() - startTime >= safetyCapMs) {
+                    Log.w(TAG, "REPEAT STOPPED before repetition $k — cap")
+                    break
+                }
+                speakAndAwait(k)
+                completed++
+                if (k == 1) {
+                    onFirstFinished()
+                }
+                if (k < count) {
+                    if (!shouldContinue()) {
+                        Log.w(
+                            TAG,
+                            "REPEAT STOPPED after repetition $k — ended"
+                        )
+                        break
+                    }
+                    if (currentTimeMs() - startTime >= safetyCapMs) {
+                        Log.w(
+                            TAG,
+                            "REPEAT STOPPED after repetition $k — cap"
+                        )
+                        break
+                    }
+                    delayMs(intervalMs)
+                }
+            }
+            return completed
+        }
 
         /** جدول إطلاق تكرارات النطق (بعد النطق الأول): كل [intervalMs]
          *  حتى بلوغ [windowMs] — لا يُجدوَل أي تكرارٍ على حافةِ السقف أو
@@ -1369,7 +1434,11 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         // `Dispatchers.IO` والشاشةُ مطفأة يتأخّر فيُفشِل الانتظارُ
         // في مهمّته. فصار القفل يغطّي الانتظارَ والنطقَ معاً.
         val repeat = if (waitingCall) {
-            1
+            settings.getCallWaitingRepeat()
+                .coerceIn(
+                    SettingsRepository.CALLER_REPEAT_MIN,
+                    SettingsRepository.CALLER_REPEAT_MAX
+                )
         } else {
             settings.getCallerAnnouncementRepeat()
                 .coerceIn(
@@ -1382,19 +1451,16 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 SettingsRepository.CALLER_INTERVAL_MIN,
                 SettingsRepository.CALLER_INTERVAL_MAX
             ) * 1000L
-        val schedule = repeatSchedule(
-            repeat, intervalMs, REPEAT_SCHEDULE_WINDOW_MS
+        val estimatedTotalMs = repeat * (
+            ESTIMATED_SPEECH_DURATION_MS + intervalMs
         )
-        val speechWakeMs = if (schedule.isEmpty()) {
-            TimeAlarmReceiver.SHORT_WAKE_LOCK_MS
-        } else {
-            (schedule.lastOrNull() ?: 0L) +
-                TimeAlarmReceiver.SHORT_WAKE_LOCK_MS
-        }
         wakeLock = TimeAlarmReceiver.acquireShortWakeLock(
             context,
-            (CALLER_RESOLVE_GRACE_PERIOD_MS + speechWakeMs)
-                .coerceAtMost(CALLER_WAKE_LOCK_CAP_MS)
+            (CALLER_RESOLVE_GRACE_PERIOD_MS + estimatedTotalMs)
+                .coerceIn(
+                    TimeAlarmReceiver.SHORT_WAKE_LOCK_MS,
+                    CALLER_WAKE_LOCK_CAP_MS
+                )
         )
 
         if (rawNumber.isNullOrBlank() && !ringingAnnounced) {
@@ -1612,83 +1678,24 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         var pitch = settings.getCallerAnnouncementPitchOrDefault(
             locale.language
         )
-        if (schedule.isEmpty()) {
-            completionListener = { finish() }
-            speaker.addCompletionListener(completionListener!!)
-        }
-        // **تتبّع تشخيصي:** يُسجّل النصّ المنطوق فعلياً في كل
-        // نطق — يكشف أي إعلانٍ رابع زائد ومن أين جاء.
-        speakCounter++
-        Log.w(
-            TAG,
-            "SPEAK#$speakCounter text=$text num=" +
-                "${incomingNumber ?: "?"} name=${contactName ?: "?"}"
-        )
-        speaker.speak(
-            text, locale, speechRate, pitch, volume,
-            engineOverride = callerSpeechEngine(
-                settings, locale.language
-            ),
-            category = SettingsRepository.ANNOUNCE_CATEGORY_CALLER
-        )
-        ringingAnnounced = true
-        lastAnnouncedHadName = !contactName.isNullOrBlank()
-        // انتهى الانتظار: لا داعي لتمييز البث المكرّر بعده —
-        // الحارس الأعلى (`ringingAnnounced`) يتكفّل به من الآن فصاعداً.
-        pendingRingNumber = null
-        // **رقمُ ما أُعلن فعلاً** — يُلتقط قبل أي إعادة حلّ
-        // في نبضات التكرار، لأن الحارس يقارن به لا بآخر رقم
-        // شوهد. يُثبَّت مرّةً واحدة (أول إعلان) فلا تتبعه
-        // تغييراتُ حلّ الاسم اللاحقة.
-        if (announcedNumber == null) {
-            announcedNumber = lastResolvedNumber ?: rawNumber
-        }
-        // **بند 5.5:** إنهاءٌ مبكر بمستمع الاكتمال: محركٌ سليم يُنهي
-        // البث فور اكتمال (onDone) الجملة الأولى فعلياً — بلا حجزٍ
-        // أطول من اللازم ولا ذيلِ صوتٍ مبتور (جمدُ العملية بعد
-        // finish() كان يقتطع آخر الصوت على أندرويد 14+). يُسجَّل في
-        // قائمة مستمعي المتحدث المشترك (بند [8]) فلا يطمس خطاف أداة
-        // الساعة أو مستقبلٍ آخر، ويُزال في finally.
         val appCtx = context.applicationContext
-        // تكرارُ الإعلان يتبع جدولَ الإعدادات نفسه: عدد مرات وفواصل
-        // مضبوطة بحد أقصى نافذة البث.
-        //
-        // **ولا يُكرَّر فوق مكالمةٍ جارية** — حارسٌ عند كل
-        // نبضة: الجذرُ أن الحلقةَ كانت تنفّذ `delay` ثم تنطق بلا
-        // فحصٍ، فلا يوقفها إلا `OFFHOOK`؛ ومكالماتُ التطبيقات
-        // لا `PHONE_STATE` لها فيمتدّ الاسمُ فوق مكالمتك بعد
-        // ردّك (حتى آخر نبضة في الدقيقة).
-        if (schedule.isNotEmpty()) {
-            var lastLaunchMs = 0L
-            for ((index, offsetMs) in schedule.withIndex()) {
-                delay(offsetMs - lastLaunchMs)
-                lastLaunchMs = offsetMs
-                if (!shouldContinueRepeating(
-                        isNotificationCall = isNotificationCall,
-                        notificationStillRinging =
-                            notificationCallActive,
-                        callAnnouncedAnswered =
-                            callAnnouncedAnswered,
-                        networkCallState = readPhoneCallState(appCtx)
-                    )
-                ) {
-                    Log.w(
-                        TAG,
-                        "REPEAT STOPPED at+" +
-                            "${offsetMs}ms — انتهى الرنين"
-                    )
-                    // الإنهاءُ هنا كلِّه في `finally` أدناه
-                    // (تحريرُ الـ wakeLock وإزالةُ المستمع
-                    // و[finish]) فلا داعي لتكراره.
-                    return
-                }
-                if (index == schedule.lastIndex) {
-                    completionListener = { finish() }
-                    speaker.addCompletionListener(completionListener!!)
-                }
-                // إن كان الاسم مفقوداً في النطق الأول وتحقق
-                // لاحقاً، نحدّث نص النطق واللغة والصوت للتكرارات
-                if (contactName == null) {
+
+        runCountBasedRepeatLoop(
+            repeat = repeat,
+            intervalMs = intervalMs,
+            safetyCapMs = CALLER_REPEAT_SAFETY_CAP_MS,
+            currentTimeMs = { System.currentTimeMillis() },
+            delayMs = { delay(it) },
+            shouldContinue = {
+                shouldContinueRepeating(
+                    isNotificationCall = isNotificationCall,
+                    notificationStillRinging = notificationCallActive,
+                    callAnnouncedAnswered = callAnnouncedAnswered,
+                    networkCallState = readPhoneCallState(appCtx)
+                )
+            },
+            speakAndAwait = { iteration ->
+                if (iteration > 1 && contactName == null) {
                     val num = lastResolvedNumber ?: (if (hasCallLog) {
                         resolveLatestCallFromLog(
                             context, hasCallLog
@@ -1736,29 +1743,54 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                         }
                     }
                 }
+                speakCounter++
+                Log.w(
+                    TAG,
+                    "SPEAK#$speakCounter(repeat $iteration/$repeat)" +
+                        " text=$text num=${incomingNumber ?: "?"}" +
+                        " name=${contactName ?: "?"}"
+                )
+                val speechDeferred = CompletableDeferred<Unit>()
+                val listener: () -> Unit = {
+                    speechDeferred.complete(Unit)
+                }
+                completionListener = listener
+                speaker.addCompletionListener(listener)
                 try {
-                    speakCounter++
-                    Log.w(
-                        TAG,
-                        "SPEAK#$speakCounter(repeat+" +
-                            "${offsetMs}ms) text=$text num=" +
-                            "${incomingNumber ?: "?"}" +
-                            " name=${contactName ?: "?"}"
-                    )
-                    AnnouncementSpeaker.getInstance(appCtx).speak(
-                        text, locale, speechRate, pitch,
-                        volume,
+                    speaker.speak(
+                        text, locale, speechRate, pitch, volume,
                         engineOverride = callerSpeechEngine(
                             settings, locale.language
                         ),
                         category =
                             SettingsRepository.ANNOUNCE_CATEGORY_CALLER
                     )
+                    ringingAnnounced = true
+                    lastAnnouncedHadName = !contactName.isNullOrBlank()
+                    pendingRingNumber = null
+                    if (announcedNumber == null) {
+                        announcedNumber = lastResolvedNumber ?: rawNumber
+                    }
+                    withTimeoutOrNull(SPEECH_COMPLETION_TIMEOUT_MS) {
+                        speechDeferred.await()
+                    } != null
                 } catch (t: Throwable) {
+                    if (t is kotlinx.coroutines.CancellationException) {
+                        throw t
+                    }
                     Log.e(TAG, "repeat speak failed", t)
+                    false
+                } finally {
+                    speaker.removeCompletionListener(listener)
+                    if (completionListener === listener) {
+                        completionListener = null
+                    }
                 }
+            },
+            onFirstFinished = {
+                finish()
             }
-        }
+        )
     } catch (t: Throwable) {
         // الإلغاء (بند 5.2: الرد/الإنهاء) ليس عطلاً — يُنهيه
         // finally أدناه ويُنظّف، وانتظارُ الجدولة يُحرَّر بلا صخب.

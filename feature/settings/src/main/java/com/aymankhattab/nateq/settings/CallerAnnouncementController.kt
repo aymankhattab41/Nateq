@@ -77,6 +77,7 @@ internal class CallerAnnouncementController(
     private var switchCallerAnnouncement: SwitchMaterial? = null
     private var cbCallerAnnounceDuringCall:
         androidx.appcompat.widget.AppCompatCheckBox? = null
+    private var spinnerCallWaitingRepeat: Spinner? = null
     private var spinnerCallerRepeat: Spinner? = null
     private var spinnerCallerInterval: Spinner? = null
     private var seekCallerRate: SeekBar? = null
@@ -149,6 +150,10 @@ internal class CallerAnnouncementController(
             view.findViewWithTag<
                 androidx.appcompat.widget.AppCompatCheckBox
                 >("cb_caller_announce_during_call")
+        spinnerCallWaitingRepeat =
+            view.findViewWithTag<
+                androidx.appcompat.widget.AppCompatSpinner
+                >("spinner_call_waiting_repeat")
         spinnerCallerRepeat = view.findViewById(R.id.spinner_caller_repeat)
         spinnerCallerInterval = view.findViewById(R.id.spinner_caller_interval)
         seekCallerRate = view.findViewById(R.id.seek_caller_rate)
@@ -294,6 +299,30 @@ etCallerPrefix =
             ) {
                 runCatching {
                     settings.setCallerAnnouncementRepeat(position + 1)
+                }
+                onStatusChanged()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        spinnerCallWaitingRepeat?.adapter = fragment.simpleAdapter(repeats)
+        val savedWaitingRepeat =
+            runCatching { settings.getCallWaitingRepeat() }
+                .getOrDefault(1)
+        spinnerCallWaitingRepeat?.setSelection(
+            (savedWaitingRepeat - 1).coerceIn(0, repeats.size - 1)
+        )
+        spinnerCallWaitingRepeat?.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                runCatching {
+                    settings.setCallWaitingRepeat(position + 1)
                 }
                 onStatusChanged()
             }
@@ -1198,6 +1227,7 @@ etCallerPrefix =
     fun cleanup() {
         switchCallerAnnouncement = null
         cbCallerAnnounceDuringCall = null
+        spinnerCallWaitingRepeat = null
         spinnerCallerRepeat = null
         spinnerCallerInterval = null
         seekCallerRate = null

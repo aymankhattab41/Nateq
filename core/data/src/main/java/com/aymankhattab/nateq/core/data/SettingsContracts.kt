@@ -498,6 +498,12 @@ interface AnnouncementPrefs {
     /** يعيّن عدد مرات تكرار إعلان المتصل. */
     fun setCallerAnnouncementRepeat(repeat: Int)
 
+    /** عدد مرات تكرار إعلان مكالمة الانتظار. */
+    fun getCallWaitingRepeat(): Int
+
+    /** يعيّن عدد مرات تكرار إعلان مكالمة الانتظار. */
+    fun setCallWaitingRepeat(repeat: Int)
+
     /** الفاصل الزمني بين تكرارات إعلان المتصل (بالثواني). */
     fun getCallerAnnouncementIntervalSeconds(): Int
 
