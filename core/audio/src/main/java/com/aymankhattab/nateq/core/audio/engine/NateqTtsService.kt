@@ -659,6 +659,16 @@ class NateqTtsService : TextToSpeechService() {
         ) ?: 0
 
         val rawText = request.charSequenceText?.toString().orEmpty()
+        val startUptime = SystemClock.uptimeMillis()
+        val lastProgressAt = AtomicLong(startUptime)
+        val lastPieceDurationMs = AtomicLong(0L)
+        val monitoredCallback = MonitoredSynthesisCallback(callback) { bytes ->
+            lastProgressAt.set(SystemClock.uptimeMillis())
+            if (bytes > 0) {
+                val dur = (bytes * 1000L) / 44100L
+                lastPieceDurationMs.set(dur)
+            }
+        }
         // **المهلة تُشتقّ من المقاطع الفعلية** بعد التفتيت أدناه لا من
         // مجموع حروف النص — فانظر [synthesisTimeoutMsForSegments]
         // فأصلُ الانقطاع.
@@ -815,7 +825,7 @@ class NateqTtsService : TextToSpeechService() {
                     // المناسب فوراً.
                     synthesizeSingle(
                         segments[0].text, segments[0].languageTag,
-                        callback, readerRate, effectCategory,
+                        monitoredCallback, readerRate, effectCategory,
                         segments[0].role
                     )
                 } else {
@@ -847,7 +857,7 @@ class NateqTtsService : TextToSpeechService() {
                             "$correctMs ms (was ${timeoutHolder.get()})"
                     )
                     synthesizeMixed(
-                        segments, readerRate, callback, effectCategory
+                        segments, readerRate, monitoredCallback, effectCategory
                     )
                 }
             } catch (e: CancellationException) {
@@ -879,33 +889,41 @@ class NateqTtsService : TextToSpeechService() {
         job.start()
         try {
             // انتظار متزامن على خيط التخليق حتى اكتمال التوليف (معيار AOSP)؛
-            // مع سقف زمني متكيّف مع طول النص يحمي من تجميد الخيط إن علق
-            // المحرك — النصوص الطويلة تأخذ وقتها دون قطع.
+            // مع حارس خمول التقدّم (ع٤٢-7): لا تُلغى المهمة إلا عند انقطاع
+            // الصوت لمدّة تتجاوز مهلة الخمول، أو تجاوز السقف المطلق.
             runBlocking {
-                // **الانتظارُ يعيد قراءةَ المهلة عند كل دورة**، لا
-                // :Reading قيمةً واحدة قبل
-                // التقطيع يقرأُ الحسابَ القديمَ بالضرورة (التقطيعُ يقع
-                // بعد ذلك في خيط التخليق)، فيبقى العجزُ قائماً ويظلّ
-                // القطعُ بعينه. فانتظارُ كل دورةٍ يُعيد الحساب من
-                // الميزانية الذرّية المصحَّحة.
-                //
-                // والتمديدُ لا يتكرر: موقعُ التصحيح واحد، فينتظر
-                // أطولَ مرّتين كحدٍّ أقصى (15 دقيقة × 2 سقفاً).
-                while (true) {
-                    val budget = timeoutMs()
-                    val joined = withTimeoutOrNull(budget) {
+                while (!job.isCompleted) {
+                    val joined = withTimeoutOrNull(500L) {
                         job.join()
                     } != null
                     if (joined || job.isCompleted) {
                         break
                     }
-                    // انتهت المهلة: إمّا عجزٌ حقيقي، وإمّا رُفعت
-                    // الميزانية بعد التقطيع. لا نقتل إلا إذا لم
-                    // تتغيّر — فنُعيد القراءة ولا نُبقي على حكمٍ جاهز.
-                    if (timeoutMs() <= budget) {
-                        Log.w(TAG,
-                            "onSynthesizeText timed out (${rawText.length}" +
-                                " chars, ${budget}ms)"
+                    val now = SystemClock.uptimeMillis()
+                    val idleElapsed = now - lastProgressAt.get()
+                    val currentIdleLimit = SynthesisBudget.idleTimeoutMs(
+                        lastPieceDurationMs.get()
+                    )
+                    if (idleElapsed >= currentIdleLimit) {
+                        Log.w(
+                            TAG,
+                            "onSynthesizeText timed out " +
+                                "(idle=${idleElapsed}ms > " +
+                                "${currentIdleLimit}ms, " +
+                                "${rawText.length} chars)"
+                        )
+                        job.cancel()
+                        runCatching { callback.error() }
+                        break
+                    }
+                    val totalElapsed = now - startUptime
+                    if (totalElapsed >=
+                        SynthesisBudget.ABSOLUTE_REQUEST_TIMEOUT_MS
+                    ) {
+                        Log.w(
+                            TAG,
+                            "onSynthesizeText absolute timeout: " +
+                                "${totalElapsed}ms"
                         )
                         job.cancel()
                         runCatching { callback.error() }
@@ -1918,5 +1936,41 @@ if (rate == 1.0f && pitch == 1.0f && volume == 1.0f
         // اسم الصوت المختار داخل المحرك (اختياري — يُطبَّق إن وُجد بالمحرك).
         val convertVoiceName: String?
     )
+}
+
+/**
+ * مغلّف لمراقب تقدّم دفق الصوت في [SynthesisCallback] (ع٤٢-7):
+ * يرصد كل استدعاء لـ start و audioAvailable و done لتصفير عدّاد خمول
+ * التقدّم في حارس التخليق المتكيّف، ويحسب مدة آخر قطعة صوت مستلمة.
+ */
+internal class MonitoredSynthesisCallback(
+    private val delegate: SynthesisCallback,
+    private val onProgress: (bytesWritten: Int) -> Unit
+) : SynthesisCallback by delegate {
+
+    override fun start(
+        sampleRateInHz: Int,
+        audioFormat: Int,
+        channelCount: Int
+    ): Int {
+        onProgress(0)
+        return delegate.start(sampleRateInHz, audioFormat, channelCount)
+    }
+
+    override fun audioAvailable(
+        buffer: ByteArray?,
+        offset: Int,
+        length: Int
+    ): Int {
+        if (length > 0) {
+            onProgress(length)
+        }
+        return delegate.audioAvailable(buffer, offset, length)
+    }
+
+    override fun done(): Int {
+        onProgress(0)
+        return delegate.done()
+    }
 }
 

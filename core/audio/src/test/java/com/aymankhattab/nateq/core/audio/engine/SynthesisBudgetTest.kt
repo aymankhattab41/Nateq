@@ -245,4 +245,17 @@ class SynthesisBudgetTest {
                 absoluteCeiling
         )
     }
+
+    @Test
+    fun idleBudget_respectsFloorAndDynamicDuration() {
+        assertEquals(15_000L, SynthesisBudget.idleTimeoutMs(0L))
+        assertEquals(15_000L, SynthesisBudget.idleTimeoutMs(1_000L))
+        assertEquals(15_000L, SynthesisBudget.idleTimeoutMs(5_000L))
+        assertEquals(18_000L, SynthesisBudget.idleTimeoutMs(6_000L))
+        assertEquals(30_000L, SynthesisBudget.idleTimeoutMs(10_000L))
+        assertEquals(
+            30 * 60_000L,
+            SynthesisBudget.ABSOLUTE_REQUEST_TIMEOUT_MS
+        )
+    }
 }

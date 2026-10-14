@@ -201,7 +201,10 @@ class EmbeddedEngineHostService : Service() {
                     runCatching { session.stop() }
                 }
             }
-            val budgetMs = SynthesisBudget.pieceTimeoutMs(content.length)
+            val budgetMs = maxOf(
+                SynthesisBudget.IDLE_TIMEOUT_FLOOR_MS,
+                SynthesisBudget.pieceTimeoutMs(content.length)
+            )
             executor.execute {
                 var guard: ScheduledFuture<*>? = null
                 var gateHeld = false
