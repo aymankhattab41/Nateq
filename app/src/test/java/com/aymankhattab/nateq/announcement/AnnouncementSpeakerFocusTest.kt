@@ -3,9 +3,12 @@ package com.aymankhattab.nateq.announcement
 import android.content.Context
 import android.media.AudioManager
 import androidx.test.core.app.ApplicationProvider
+import com.aymankhattab.nateq.core.audio.announcement.AnnouncementAppContext
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -46,14 +49,32 @@ class AnnouncementSpeakerFocusTest {
 
     private val arLocale = Locale.forLanguageTag("ar")
 
+    /** المستودعُ الفعليّ الذي يقرأ منه [AnnouncementSpeaker] إعداداته —
+     *  مثيلُ التطبيق المحقون عبر [AnnouncementAppContext]. الكتابةُ عبر
+     *  مثيلٍ منفصل لا تظهر له لأن `SnapshotPrefs` لقطةٌ بالذاكرة، فلا بدّ
+     *  من الكتابة على هذا المثيل نفسه لقياس السلوك الحقيقي. */
+    private val appSettings: SettingsRepository
+        get() = (appContext as AnnouncementAppContext).settingsRepository
+
     @org.junit.Before
     fun setUp() {
-        val repo = com.aymankhattab.nateq.core.data.SettingsRepository(context)
+        val repo = appSettings
         repo.setEngineForCategory(
-            com.aymankhattab.nateq.core.data.SettingsRepository
-                .VOICE_CATEGORY_DEFAULT,
+            SettingsRepository.VOICE_CATEGORY_DEFAULT,
             "com.google.android.tts"
         )
+        val componentName = android.content.ComponentName(
+            "com.google.android.tts",
+            "com.google.android.tts.GoogleTtsService"
+        )
+        val shadowPm = shadowOf(context.packageManager)
+        shadowPm.addServiceIfNotPresent(componentName)
+        shadowPm.addIntentFilterForService(
+            componentName,
+            android.content.IntentFilter("android.intent.action.TTS_SERVICE")
+        )
+        com.aymankhattab.nateq.core.audio.providers.EnginePicker
+            .invalidateCache()
     }
 
     private fun speaker(): AnnouncementSpeaker = AnnouncementSpeaker(context)
@@ -64,14 +85,44 @@ class AnnouncementSpeakerFocusTest {
         return field.get(instance)
     }
 
+    private fun setField(
+        instance: Any,
+        name: String,
+        value: Any?
+    ) {
+        val field = instance.javaClass.getDeclaredField(name)
+        field.isAccessible = true
+        field.set(instance, value)
+    }
+
     private fun ttsIsNull(s: AnnouncementSpeaker): Boolean =
         fieldOf(s, "tts") == null
 
     private fun pendingActionIsNull(s: AnnouncementSpeaker): Boolean =
         fieldOf(s, "pendingFocusAction") == null
 
-    private fun boolField(s: AnnouncementSpeaker, name: String): Boolean =
-        fieldOf(s, name) as Boolean
+    private fun boolField(
+        s: AnnouncementSpeaker,
+        name: String
+    ): Boolean = fieldOf(s, name) as Boolean
+
+    /**
+     * يستدعي [AnnouncementSpeaker.requestAudioFocus] مباشرةً عبر Reflection.
+     * منطق Zero-Ducking يضع hasAudioFocus صراحةً بلا حاجة لعبور TTS.
+     */
+    private fun invokeRequestAudioFocus(
+        s: AnnouncementSpeaker
+    ): Int {
+        val m = s.javaClass.getDeclaredMethod("requestAudioFocus")
+        m.isAccessible = true
+        return m.invoke(s) as Int
+    }
+
+    /** يضبط currentCategory مباشرةً دون المرور بـ speak(). */
+    private fun setCategory(
+        s: AnnouncementSpeaker,
+        category: String?
+    ) = setField(s, "currentCategory", category)
 
     @Test
     fun focusRequestFailed_duringCall_defersAndRetries_thenDropsSilently() {
@@ -95,10 +146,17 @@ class AnnouncementSpeakerFocusTest {
 
     @Test
     fun normalMode_grantsFocusImmediatelyWithoutDucking() {
+        // نختبر requestAudioFocus() مباشرةً (Zero-Ducking) بلا عبور TTS
+        // الذي يفشل في Robolectric ويستدعي releaseAudioFocus() تلقائياً.
         val s = speaker()
         audioManager.mode = AudioManager.MODE_NORMAL
-        s.speak("اختبار فوري", arLocale, 1f, 1f, 1f)
-        // في الوضع الطبيعي: منح فوري وتزامن كامل بلا تأخير
+        val result = invokeRequestAudioFocus(s)
+        // في الوضع الطبيعي: منح فوري وتزامن كامل بلا تأجيل
+        assertEquals(
+            "نتيجة الطلب GRANTED فوراً",
+            AudioManager.AUDIOFOCUS_REQUEST_GRANTED,
+            result
+        )
         assertTrue(
             "يُمنح التركيز فوراً دون تأجيل",
             boolField(s, "hasAudioFocus")
@@ -116,20 +174,22 @@ class AnnouncementSpeakerFocusTest {
 
     @Test
     fun callerDuringCall_grantedWhenToggleEnabled() {
-        val repo = com.aymankhattab.nateq.core.data.SettingsRepository(
-            context
-        )
+        // isAllowedDuringCall() يعود true للـ caller حين المفتاح مفعّل؛
+        // نختبر requestAudioFocus() مباشرةً بلا عبور TTS.
+        val repo = appSettings
         repo.setCallerAnnouncementDuringCallEnabled(true)
         try {
             val s = speaker()
             audioManager.mode = AudioManager.MODE_IN_CALL
-            s.speak(
-                "مكالمة من أحمد",
-                arLocale, 1f, 1f, 1f,
-                category = "caller"
+            setCategory(s, "caller")
+            val result = invokeRequestAudioFocus(s)
+            // إعلانُ المتصل فوق مكالمة (مكالمة انتظار) يُمنح فوراً عند
+            // تفعيل مفتاحه — لا يُرفض كبقية الفئات.
+            assertEquals(
+                "نتيجة الطلب GRANTED للمتصل المسموح",
+                AudioManager.AUDIOFOCUS_REQUEST_GRANTED,
+                result
             )
-            // إعلانُ المتصل فوق مكالمة (مكالمة انتظار) يُمنح فوراً عند تفعيل
-            // مفتاحه — لا يُرفض كبقية الفئات.
             assertTrue(
                 "المتصل أثناء المكالمة يُمنح التركيز",
                 boolField(s, "hasAudioFocus")
@@ -142,9 +202,7 @@ class AnnouncementSpeakerFocusTest {
 
     @Test
     fun callerDuringCall_deniedWhenToggleDisabled() {
-        val repo = com.aymankhattab.nateq.core.data.SettingsRepository(
-            context
-        )
+        val repo = appSettings
         repo.setCallerAnnouncementDuringCallEnabled(false)
         val s = speaker()
         audioManager.mode = AudioManager.MODE_IN_CALL
@@ -168,17 +226,18 @@ class AnnouncementSpeakerFocusTest {
 
     @Test
     fun timeDuringCall_grantedWhenToggleEnabled() {
-        val repo = com.aymankhattab.nateq.core.data.SettingsRepository(
-            context
-        )
+        val repo = appSettings
         repo.setAnnounceTimeDuringCalls(true)
         try {
             val s = speaker()
             audioManager.mode = AudioManager.MODE_IN_CALL
-            s.speak(
-                "الآن التاسعة",
-                arLocale, 1f, 1f, 1f,
-                category = "time"
+            // نضبط الفئة مباشرةً ثم نستدعي requestAudioFocus()
+            setCategory(s, "time")
+            val result = invokeRequestAudioFocus(s)
+            assertEquals(
+                "نتيجة الطلب GRANTED للوقت المسموح",
+                AudioManager.AUDIOFOCUS_REQUEST_GRANTED,
+                result
             )
             assertTrue(
                 "الوقت أثناء المكالمة يُمنح عند تفعيل مفتاحه",
@@ -192,9 +251,7 @@ class AnnouncementSpeakerFocusTest {
 
     @Test
     fun batteryDuringCall_deniedEvenIfFeatureEnabled() {
-        val repo = com.aymankhattab.nateq.core.data.SettingsRepository(
-            context
-        )
+        val repo = appSettings
         repo.setAllAnnouncementsEnabled(true)
         try {
             val s = speaker()
@@ -301,8 +358,11 @@ class AnnouncementSpeakerFocusTest {
      */
     @Test
     fun resetUnconditional_whenFocusIsGranted_stillCallsAbandon() {
+        // نمنح التركيز مباشرةً عبر requestAudioFocus() بلا عبور TTS
+        // (الذي يُلغي التركيز في Robolectric بعد فشل onInit).
         val s = speaker()
-        s.speak("طلب التركيز أولاً", arLocale, 1f, 1f, 1f)
+        audioManager.mode = AudioManager.MODE_NORMAL
+        invokeRequestAudioFocus(s)
         assertTrue(
             "hasAudioFocus=true بعد المنح",
             boolField(s, "hasAudioFocus")

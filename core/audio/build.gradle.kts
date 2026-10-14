@@ -11,12 +11,20 @@ plugins {
 android {
     namespace = "com.aymankhattab.nateq.core.audio"
     compileSdk = 37
+    // حارس fdsan الأصلي يُبنى محلياً بهذه النسخة من NDK (المثبّتة).
+    ndkVersion = "28.2.13676358"
     defaultConfig {
         minSdk = 24
         // قواعد R8 الموروثة (consumer-rules.pro): مكتبات JNI في هذه
-        // الوحدة (Vocalizer/Acapela/Sherpa) تصل لفئاتها وحقولها بالاسم،
+        // الوحدة (Vocalizer) تصل لفئاتها وحقولها بالاسم،
         // فتُطبَّق تلقائياً على أي تطبيق مضيف بلا إعادة كتابة.
         consumerProguardFiles("consumer-rules.pro")
+        // حارس fdsan يُبنى للمعماريات المدعومة نفسها في :app
+        // (arm64-v8a + armeabi-v7a) فلا تُقيَّد الحزمة النهائية.
+        ndk {
+            abiFilters.add("arm64-v8a")
+            abiFilters.add("armeabi-v7a")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
@@ -30,6 +38,14 @@ android {
     // افتراضياً منذ AGP 4.1 فلا تُبنى الملفات بلا تفعيل صريح.
     buildFeatures {
         aidl = true
+    }
+
+    // يُبنى libnateqfdsan.so محلياً؛ تُستدعى دالّة تعطيل fdsan عند بدء
+    // عملية :engine_host قبل تحميل المحرك (انظر NativeFdsanGuard).
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+        }
     }
 
     // اختبارات Robolectric تُحمّل موارد الوحدة (نصوص النطق) من أقراصها
@@ -60,14 +76,18 @@ dependencies {
     // كوروتينز — الكوروتينات اللاتزامنية لخدمة المحرك ولمزوّدي الأصوات.
     implementation(libs.kotlinx.coroutines.android)
 
-    // Sherpa-ONNX — محرك توليد الصوت العصبي المحلي (Piper / Coqui / VITS)
-    implementation(libs.sherpa.onnx)
 
     // **بند 9.4:** المواصفات الصريحة لتوابع androidx.core (NotificationCompat/
     // ContextCompat...) بدل الاعتماد الضمني المتسرب من :core:data — إغلاق
     // هشاشة البناء حين تُعدَّل تبعيات أي وحدة أخرى.
     implementation(libs.androidx.core.ktx)
     implementation("androidx.documentfile:documentfile:1.0.1")
+
+    // ع٤١-ب12: التعرّف الضوئي على نصّ الصور (OCR). تأتي المكتبة من JitPack
+    // (لا من Maven Central)، وتضمّ Tesseract وLeptonica بلغات JNI. تُشحن
+    // لكل معماريات abiFilters في :app (arm64-v8a وarmeabi-v7a)، وبيانات
+    // اللغة (ara.traineddata) تُنزَّل عند أول استعمال (OcrScreenReader) لا تُحزَم.
+    implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
 
     // Hilt — NateqTtsService مُعلَّم بـ @AndroidEntryPoint وتُحقن فيه إعدادات
     // التطبيق وقاموس النطق (نفس إصدار :app).

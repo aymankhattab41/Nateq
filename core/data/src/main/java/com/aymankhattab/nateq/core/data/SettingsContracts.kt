@@ -837,4 +837,83 @@ interface AccessibilityPrefs {
 
     /** تعيين تفعيل الإيقاف المؤقت الذكي أثناء الألعاب. */
     fun setA11ySmartPauseGameEnabled(enabled: Boolean)
+
+    /**
+     * جدولُ ربط اختصارات المفاتيح مُرمَّزاً، أو null للافتراضي.
+     */
+    fun getA11yShortcutBindings(): String?
+
+    /**
+     * تعيين جدول ربط اختصارات المفاتيح (null يُعيد الافتراضي).
+     */
+    fun setA11yShortcutBindings(encoded: String?)
+
+    /**
+     * تكوين جهارة الصوت لفئة حدث معينة (ع٤٢-2).
+     */
+    fun getCategoryLoudnessConfig(category: String?): CategoryLoudnessConfig
+
+    /**
+     * تعيين تكوين جهارة الصوت لفئة حدث معينة (ع٤٢-2).
+     */
+    fun setCategoryLoudnessConfig(
+        category: String,
+        config: CategoryLoudnessConfig
+    )
+
+    /** هل رفع الصوت للأقصى مفعّل لهذه الفئة؟ */
+    fun isLoudnessForceMaxEnabled(category: String?): Boolean
+
+    /** تعيين رفع الصوت للأقصى لهذه الفئة. */
+    fun setLoudnessForceMaxEnabled(category: String, enabled: Boolean)
+
+    /**
+     * هل تجاوز الوضع الصامت مفعّل لهذه الفئة؟
+     */
+    fun isLoudnessBypassSilentEnabled(category: String?): Boolean
+
+    /** تعيين تجاوز الوضع الصامت لهذه الفئة. */
+    fun setLoudnessBypassSilentEnabled(category: String, enabled: Boolean)
+
+    /** وضع تيار الصوت لفئة الحدث. */
+    fun getLoudnessStreamMode(category: String?): StreamMode
+
+    /** تعيين وضع تيار الصوت لفئة الحدث. */
+    fun setLoudnessStreamMode(category: String, mode: StreamMode)
+
+    /**
+     * سقف الصوت لسماعات الرأس والبلوتوث كنسبة مئوية (0..100).
+     */
+    fun getLoudnessHeadsetCapPercent(category: String?): Int
+
+    /**
+     * تعيين سقف الصوت لسماعات الرأس والبلوتوث.
+     */
+    fun setLoudnessHeadsetCapPercent(category: String, percent: Int)
+
+    /**
+     * حفظ مستوى الصوت وتيار القناة المعلقة قبل الرفع (استعادة آمنة).
+     */
+    fun savePendingBoost(stream: Int, originalVolume: Int)
+
+    /**
+     * مسح مؤشر الرفع المعلق بعد الاستعادة الناجحة.
+     */
+    fun clearPendingBoost()
+
+    /**
+     * استعلام تيار الصوت المرفوع المعلق (-1 إن لم يوجد).
+     */
+    fun getPendingBoostStream(): Int
+
+    /**
+     * استعلام مستوى الصوت الأصلي المعلق (-1 إن لم يوجد).
+     */
+    fun getPendingBoostVolume(): Int
+
+    /** كسب PCM بالديسيبل لأحداث النظام للمحركات المدمجة (ع٤٢-3). */
+    fun getEventPcmGainDb(): Float
+
+    /** تعيين كسب PCM بالديسيبل لأحداث النظام (ع٤٢-3). */
+    fun setEventPcmGainDb(gainDb: Float)
 }

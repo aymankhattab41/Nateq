@@ -1730,4 +1730,34 @@ class PipelineStepsTest {
                 currencyResult.contains("دولارات")
         )
     }
+
+    @Test
+    fun urlShortening_appliedOnlyWhenEnabled() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val off = object :
+            com.aymankhattab.nateq.core.engine.SynthesisConfig {
+            override fun isEmojiPronunciationEnabled(): Boolean = false
+            override fun getPunctuationLevel(): Int = 0
+            override fun isTashkeelPreserved(): Boolean = false
+        }
+        val on = object :
+            com.aymankhattab.nateq.core.engine.SynthesisConfig {
+            override fun isEmojiPronunciationEnabled(): Boolean = false
+            override fun getPunctuationLevel(): Int = 0
+            override fun isTashkeelPreserved(): Boolean = false
+            override fun isUrlShorteningEnabled(): Boolean = true
+        }
+        val url = "https://www.youtube.com/watch?v=abcdef123"
+        val text = "شاهد $url"
+        val offResult = com.aymankhattab.nateq.engine.TextProcessor(
+            context = context,
+            injectedSettings = off
+        ).process(text, "ar")
+        val onResult = com.aymankhattab.nateq.engine.TextProcessor(
+            context = context,
+            injectedSettings = on
+        ).process(text, "ar")
+        assertTrue(offResult.contains(url))
+        assertTrue(onResult.contains("رابط youtube.com"))
+    }
 }

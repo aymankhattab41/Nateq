@@ -86,8 +86,8 @@ class EngineHostClientCacheTest {
 
     @Test
     fun onHostDied_clearsInitializedCache() {
-        val engineId = HostProtocol.ENGINE_ACAPELA
-        val dataDir = "/test/acapela/dir"
+        val engineId = HostProtocol.ENGINE_VOCALIZER
+        val dataDir = "/test/vocalizer/dir"
 
         val field = EngineHostClient::class.java
             .getDeclaredField("initializedEngines")
@@ -138,9 +138,9 @@ class EngineHostClientCacheTest {
 
     @Test
     fun onHostDied_withAlias_clearsCanonicalCacheEntry() {
-        val canonical = HostProtocol.ENGINE_SHERPA
-        val alias = "sherpa_onnx_piper"
-        val dataDir = "/test/sherpa/dir"
+        val canonical = HostProtocol.ENGINE_VOCALIZER
+        val alias = "vocalizer_embedded"
+        val dataDir = "/test/vocalizer/dir"
 
         val field = EngineHostClient::class.java
             .getDeclaredField("initializedEngines")

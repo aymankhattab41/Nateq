@@ -70,9 +70,9 @@ class EngineHostClientIdTest {
     @Test
     fun init_withAcapelaAliases_doesNotProduceUnknownEngine() {
         val aliases = listOf(
-            "acapela_embedded",
-            "ACAPELA_EMBEDDED",
-            "acapela"
+            "vocalizer_embedded",
+            "vocalizer_embedded",
+            "vocalizer"
         )
         for (alias in aliases) {
             val raw = binder.init(alias, "/dummy/data/dir", false)
@@ -86,7 +86,7 @@ class EngineHostClientIdTest {
     }
 
     @Test
-    fun init_withSherpaAliases_doesNotProduceUnknownEngine() {
+    fun init_withSherpaAliases_producesUnknownEngineAfterRemoval() {
         val aliases = listOf(
             "sherpa_onnx_piper",
             "SHERPA_ONNX_PIPER",
@@ -97,8 +97,8 @@ class EngineHostClientIdTest {
         for (alias in aliases) {
             val raw = binder.init(alias, "/dummy/data/dir", false)
             val res = HostProtocol.decodeResult(raw)
-            assertNotEquals(
-                "النداء بـ $alias لا ينتج UNKNOWN_ENGINE",
+            assertEquals(
+                "النداء بـ $alias ينتج UNKNOWN_ENGINE بعد حذف المحرك",
                 "UNKNOWN_ENGINE",
                 res.code
             )

@@ -17,6 +17,9 @@ interface VoicePrefsProvider {
     /** الصوت المفضّل لمجموعة صوتية معيّنة (مثل VOICE_CATEGORY_EMOJI). */
     fun getPreferredVoiceIdForCategory(category: String): String?
 
+    /** المحرك المخصص لمجموعة صوتية معينة (null = تلقائي). */
+    fun getEngineForCategory(category: String): String? = null
+
     /** معدل الكلام لمجموعة صوتية معيّنة (نسبة من الطبيعي). */
     fun getSpeechRateForCategory(category: String): Float
 

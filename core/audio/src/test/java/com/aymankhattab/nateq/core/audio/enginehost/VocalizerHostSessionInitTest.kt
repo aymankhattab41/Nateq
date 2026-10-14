@@ -51,19 +51,38 @@ class VocalizerHostSessionInitTest {
     }
 
     @Test
-    fun getCandidatePaths_ordersDirSlashAndCanonicalCorrectly() {
-        val testDir = context.filesDir.resolve("VocalizerEx2")
-        testDir.mkdirs()
+    fun outputSampleRateHz_convertsEngineKhzToAcceptableHz() {
+        // المحرّك يعيد 22 (كيلوهرتز) — يجب ألا يُبنى AudioTrack
+        // بمعدّل كيلوهرتزيّ فيرفضه النظام («Invalid sample rate»).
+        val rate = VocalizerHostSession.outputSampleRateHz(22)
+        assertEquals(22000, rate)
+        assertTrue("المعدل يجب أن يقبله AudioTrack: $rate", rate > 8000)
+    }
 
-        val paths = VocalizerHostSession.getCandidatePaths(testDir.path)
-        assertTrue(paths.isNotEmpty())
-        assertEquals(testDir.path, paths[0])
-        val expectedSlash = if (testDir.path.endsWith("/")) {
-            testDir.path
-        } else {
-            "${testDir.path}/"
-        }
-        assertTrue(paths.contains(expectedSlash))
-        assertTrue(paths.contains(testDir.canonicalPath))
+    @Test
+    fun outputSampleRateHz_keepsAlreadyHzValuesUnchanged() {
+        // القيمة 22050 هرتز أصلاً (الافتراضي) لا تُضاعف خطأً.
+        assertEquals(
+            22050,
+            VocalizerHostSession.outputSampleRateHz(22050)
+        )
+    }
+
+    @Test
+    fun outputSampleRateHz_fallsBackWhenInvalid() {
+        val fallback =
+            VocalizerHostSession.DEFAULT_OUTPUT_SAMPLE_RATE_HZ
+        assertEquals(
+            fallback,
+            VocalizerHostSession.outputSampleRateHz(0)
+        )
+        assertEquals(
+            fallback,
+            VocalizerHostSession.outputSampleRateHz(-5)
+        )
+        assertEquals(
+            fallback,
+            VocalizerHostSession.outputSampleRateHz(500_000)
+        )
     }
 }

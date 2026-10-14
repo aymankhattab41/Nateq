@@ -63,4 +63,35 @@ class ScreenServicesCardControllerTest {
         controller.setup(root)
         controller.updateUiState()
     }
+
+    /**
+     * حارس بوابة اختصارات المفاتيح: مفتاح [switch_a11y_key_shortcuts] كان
+     * غائباً عن التخطيط فتظل FEATURE_KEY_SHORTCUTS مطفأةً بلا وسيلة تفعيل
+     * (المفاتيح الفيزيائية لا تعمل إطلاقاً). يفشل هذا إن غاب TAG عن التخطيط.
+     */
+    @Test
+    fun keyShortcutsSwitch_isPresentInLayout() {
+        val parser = context.resources.getXml(
+            com.aymankhattab.nateq.feature.settings.R.layout
+                .fragment_voice_selection
+        )
+        var found = false
+        var event = parser.eventType
+        while (event != android.content.res.XmlResourceParser.END_DOCUMENT) {
+            if (event == android.content.res.XmlResourceParser.START_TAG) {
+                for (i in 0 until parser.attributeCount) {
+                    val isTag = parser.getAttributeName(i) == "tag"
+                    val value = parser.getAttributeValue(i)
+                    if (isTag && value == "switch_a11y_key_shortcuts") {
+                        found = true
+                    }
+                }
+            }
+            event = parser.next()
+        }
+        assertTrue(
+            "مفتاح switch_a11y_key_shortcuts غائب عن fragment_voice_selection",
+            found
+        )
+    }
 }

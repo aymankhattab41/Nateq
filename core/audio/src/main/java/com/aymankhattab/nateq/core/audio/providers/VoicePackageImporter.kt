@@ -29,16 +29,12 @@ data class VoiceImportResult(
 /**
  * مستورد حزم الأصوات المحلية الموحد لمشروع Lord TTS.
  * يدعم استيراد باقات ZIP لمحركات:
- * 1) Acapela TTS (مثل acapela-ara-SAU-Nizar-Old.zip)
- * 2) Piper TTS (Sherpa-ONNX)
- * 3) Vocalizer Expressive 2
+ * 2) Vocalizer Expressive 2
  */
 object VoicePackageImporter {
 
     private const val TAG = "VoicePackageImporter"
 
-    const val ENGINE_ACAPELA = "acapela"
-    const val ENGINE_PIPER = "piper"
     const val ENGINE_VOCALIZER = "vocalizer"
     const val ENGINE_UNKNOWN = "unknown"
 
@@ -128,16 +124,8 @@ object VoicePackageImporter {
                 )
             }
 
-            val targetDir = when (engineType) {
-                ENGINE_ACAPELA -> AcapelaEmbeddedVoiceProvider
-                    .getAcapelaBaseDir(context)
-                ENGINE_PIPER -> PiperDownloader
-                    .getPiperBaseDir(context)
-                ENGINE_VOCALIZER -> VocalizerDownloader
-                    .getVocalizerBaseDir(context)
-                else -> AcapelaEmbeddedVoiceProvider
-                    .getAcapelaBaseDir(context)
-            }
+            val targetDir =
+                VocalizerDownloader.getVocalizerBaseDir(context)
 
             if (!targetDir.exists()) {
                 targetDir.mkdirs()
@@ -150,7 +138,7 @@ object VoicePackageImporter {
                 "Voice"
             }
 
-// ع٢٩-9: اكتمال الاستيراد تغيّرٌ في المحتوى يُبطل الكاش فوراً.
+            // ع٢٩-9: اكتمال الاستيراد تغيّرٌ في المحتوى يُبطل الكاش فوراً.
             if (extractedCount > 0) {
                 EmbeddedStorage.bumpVersion()
                 EnginePicker.invalidateAfterStorageChange()
@@ -188,8 +176,6 @@ object VoicePackageImporter {
 
     /** فحص محتويات ملف ZIP لتحديد المحرك واسم الصوت */
     fun inspectZip(zipFile: File): Pair<String, String> {
-        var isAcapela = false
-        var isPiper = false
         var isVocalizer = false
         var detectedVoice = ""
 
@@ -201,7 +187,6 @@ object VoicePackageImporter {
                 val entryBaseName = File(entry.name).name
 
                 when {
-                    name.contains("acapela/") ||
                         name.endsWith(".bvcu") ||
                         name.endsWith(".bvcu.inf") ||
                         name.endsWith(".bvcu.ini") ||
@@ -209,7 +194,6 @@ object VoicePackageImporter {
                         name.contains("nlp/") ||
                         entryBaseName.startsWith("0x00") ||
                         entryBaseName == "voicelist" -> {
-                        isAcapela = true
                         if (name.endsWith(".inf")) {
                             val c = extractVoiceNameFromEntry(entryBaseName)
                             if (c.isNotEmpty()) detectedVoice = c
@@ -218,20 +202,6 @@ object VoicePackageImporter {
                         ) {
                             val c = extractVoiceNameFromEntry(entryBaseName)
                             if (c.isNotEmpty()) detectedVoice = c
-                        }
-                    }
-                    name.endsWith(".onnx") ||
-                        name.endsWith(".onnx.json") ||
-                        entryBaseName == "tokens.txt" ||
-                        name.contains("espeak-ng-data") -> {
-                        isPiper = true
-                        if (
-                            name.endsWith(".onnx") &&
-                            !name.endsWith(".onnx.json") &&
-                            detectedVoice.isEmpty()
-                        ) {
-                            val fName = File(entry.name).nameWithoutExtension
-                            detectedVoice = fName
                         }
                     }
                     name.contains("ve_pipeline") ||
@@ -255,17 +225,8 @@ object VoicePackageImporter {
         }
 
         val engine = when {
-            isAcapela -> ENGINE_ACAPELA
-            isPiper -> ENGINE_PIPER
             isVocalizer -> ENGINE_VOCALIZER
             else -> ENGINE_UNKNOWN
-        }
-
-        if (detectedVoice.isEmpty() && engine == ENGINE_ACAPELA) {
-            detectedVoice = zipFile.nameWithoutExtension
-                .replace("acapela-", "", ignoreCase = true)
-                .replace("-Old", "", ignoreCase = true)
-                .replace("ara-SAU-", "", ignoreCase = true)
         }
 
         return Pair(engine, detectedVoice)
@@ -383,16 +344,8 @@ object VoicePackageImporter {
                 )
             }
 
-            val targetDir = when (engineType) {
-                ENGINE_ACAPELA -> AcapelaEmbeddedVoiceProvider
-                    .getAcapelaBaseDir(context)
-                ENGINE_PIPER -> PiperDownloader
-                    .getPiperBaseDir(context)
-                ENGINE_VOCALIZER -> VocalizerDownloader
-                    .getVocalizerBaseDir(context)
-                else -> AcapelaEmbeddedVoiceProvider
-                    .getAcapelaBaseDir(context)
-            }
+            val targetDir =
+                VocalizerDownloader.getVocalizerBaseDir(context)
 
             if (!targetDir.exists()) {
                 targetDir.mkdirs()
@@ -439,8 +392,6 @@ object VoicePackageImporter {
     private fun inspectDocumentTree(
         docFile: DocumentFile
     ): Pair<String, String> {
-        var isAcapela = false
-        var isPiper = false
         var isVocalizer = false
         var detectedVoice = ""
 
@@ -451,7 +402,6 @@ object VoicePackageImporter {
                 val name = file.name?.lowercase() ?: ""
                 val entryBaseName = File(file.name ?: "").name
                 when {
-                    name.contains("acapela/") ||
                         name.endsWith(".bvcu") ||
                         name.endsWith(".bvcu.inf") ||
                         name.endsWith(".bvcu.ini") ||
@@ -459,7 +409,6 @@ object VoicePackageImporter {
                         name.contains("nlp/") ||
                         entryBaseName.startsWith("0x00") ||
                         entryBaseName == "voicelist" -> {
-                        isAcapela = true
                         if (name.endsWith(".inf")) {
                             val c = extractVoiceNameFromEntry(entryBaseName)
                             if (c.isNotEmpty()) detectedVoice = c
@@ -468,21 +417,6 @@ object VoicePackageImporter {
                         ) {
                             val c = extractVoiceNameFromEntry(entryBaseName)
                             if (c.isNotEmpty()) detectedVoice = c
-                        }
-                    }
-                    name.endsWith(".onnx") ||
-                        name.endsWith(".onnx.json") ||
-                        entryBaseName == "tokens.txt" ||
-                        name.contains("espeak-ng-data") -> {
-                        isPiper = true
-                        if (
-                            name.endsWith(".onnx") &&
-                            !name.endsWith(".onnx.json") &&
-                            detectedVoice.isEmpty()
-                        ) {
-                            val fName =
-                                File(file.name ?: "").nameWithoutExtension
-                            detectedVoice = fName
                         }
                     }
                     name.contains("ve_pipeline") ||
@@ -506,18 +440,8 @@ object VoicePackageImporter {
         recurse(docFile)
 
         val engine = when {
-            isAcapela -> ENGINE_ACAPELA
-            isPiper -> ENGINE_PIPER
             isVocalizer -> ENGINE_VOCALIZER
             else -> ENGINE_UNKNOWN
-        }
-
-        if (detectedVoice.isEmpty() && engine == ENGINE_ACAPELA) {
-            val name = docFile.name ?: ""
-            detectedVoice = name.lowercase()
-                .removePrefix("acapela-")
-                .replace("-old", "")
-                .replace("ara-sau-", "")
         }
 
         return Pair(engine, detectedVoice)

@@ -58,10 +58,23 @@ class ChatLiveReader private constructor() {
         )
 
         if (isFeatureActive) {
+            // ع٤١-ب10/ب11: صوت جهة الاتصال (باسم المرسِل) وملف التطبيق
+            // الأمامي يتقدّمان على إعدادات الفئة.
+            val voice = A11yVoiceResolver.resolve(
+                context = context,
+                settings = repo,
+                packageName = packageName,
+                senderName = sender
+            )
             A11ySpeechCoordinator.speakAnnouncement(
                 context = context,
                 text = textToSpeak,
-                isInterruptAllowed = false
+                isInterruptAllowed = false,
+                voiceId = voice?.voiceId,
+                engineOverride = voice?.engine,
+                speechRate = voice?.speechRate,
+                pitch = voice?.pitch,
+                volume = voice?.volume
             )
             return true
         }

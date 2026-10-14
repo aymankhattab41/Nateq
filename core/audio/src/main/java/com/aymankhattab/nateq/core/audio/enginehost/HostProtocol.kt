@@ -32,21 +32,15 @@ object HostProtocol {
 
     // محرّكات المضيف — أسماء ثابتة تمرّ عبر AIDL.
     const val ENGINE_VOCALIZER = "vocalizer"
-    const val ENGINE_ACAPELA = "acapela"
-    const val ENGINE_SHERPA = "sherpa"
 
     /**
      * توحيد معرّف المحرك إلى الاسم القانوني المعتمد في المضيف:
      * vocalizer_embedded -> vocalizer
-     * acapela_embedded -> acapela
-     * sherpa_onnx_piper / sherpa_piper -> sherpa
      * الباقي كما هو بعد تحويله إلى أحرف صغيرة.
      */
     fun normalizeEngineId(id: String): String =
         when (val lower = id.lowercase()) {
             "vocalizer_embedded" -> ENGINE_VOCALIZER
-            "acapela_embedded" -> ENGINE_ACAPELA
-            "sherpa_onnx_piper", "sherpa_piper" -> ENGINE_SHERPA
             else -> lower
         }
 

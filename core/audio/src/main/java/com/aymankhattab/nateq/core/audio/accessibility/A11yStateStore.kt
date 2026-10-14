@@ -90,6 +90,11 @@ class A11yStateStore private constructor(private val appContext: Context) {
         pausedUntilEpoch.set(untilEpoch)
         pauseLevel.set(level)
 
+        // ع٤١-ب4: يُمسح سجلّ «ما قيل» عند الإيقاف المؤقت.
+        if (paused) {
+            RepeatSpellController.clear()
+        }
+
         settings.setA11yPausedState(paused, untilEpoch, level)
 
         notifyListeners()

@@ -113,6 +113,12 @@ class SettingsRepository(context: Context) :
         const val CALLER_RING_DUCK_MAX = 90
         const val CALLER_RING_DUCK_DEFAULT = 40
 
+        const val KEY_PENDING_BOOSTED_STREAM = "pending_boosted_stream"
+        const val KEY_PENDING_BOOSTED_VOLUME = "pending_boosted_volume"
+        const val KEY_EVENT_PCM_GAIN_DB = "event_pcm_gain_db"
+        const val DEFAULT_EVENT_PCM_GAIN_DB = 6.0f
+        const val MAX_EVENT_PCM_GAIN_DB = 6.0f
+
         private const val KEY_BATTERY_VOICE_MIGRATED =
             "_battery_voice_migrated"
 
@@ -1445,6 +1451,20 @@ class SettingsRepository(context: Context) :
     override fun setArabicNormalizationEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("arabic_normalization", enabled).apply()
 
+    /**
+     * نطق الروابط بنطاقاتها المختصرة (ع٤١-ب7)
+     * — مطفأٌ افتراضياً.
+     * المفتاحُ هو نفسه الذي تكتبه بطاقةُ الإعدادات
+     * في خدمة إمكانية الوصول
+     * (`FeatureFlags.FEATURE_URL_SHORTENING` =
+     * `a11y_url_shortening`)،
+     * لكن لا يُشارَك من `:core:audio` تفادياً
+     * للاعتماد العكسي — فالقيمةُ حرفٌ واحد في الموضعين
+     * (اقرأ التعليق في FeatureFlags).
+     */
+    override fun isUrlShorteningEnabled(): Boolean =
+        isAccessibilityFeatureEnabled("a11y_url_shortening")
+
     /** اتباع سرعة قارئ الشاشة (النسبة المئوية 100 = طبيعي) في نطق نصه:
      *  عند التفعيل (افتراضياً) تُهمل أشرطة سرعة LORD فتكون سرعة النطق
      *  سرعة القارئ الفعلية بلا مضاعفة. */
@@ -2204,6 +2224,7 @@ class SettingsRepository(context: Context) :
         key == "power_saver_battery_threshold" -> value.coerceIn(0, 100)
         key == "battery_sound_cue_mode" -> value.coerceIn(0, 2)
         key == "a11y_service_pause_level" -> value.coerceIn(1, 2)
+        key.startsWith("loudness_headset_cap_") -> value.coerceIn(0, 100)
         else -> value
     }
 
@@ -2224,7 +2245,11 @@ class SettingsRepository(context: Context) :
         // أو استيراداً) فمسافاتٌ فقط ليست جملةً تُنطق.
         "caller_prefix_text" -> value.trim()
         "caller_suffix_text" -> value.trim()
-        else -> value
+        else -> if (key.startsWith("loudness_stream_mode_")) {
+            StreamMode.fromId(value).id
+        } else {
+            value
+        }
     }
 
     /** تعقّل قيمة عشرية حسب المفتاح (السرعة/النبرة تعبان، المستوى نسبة). */
@@ -2241,6 +2266,8 @@ class SettingsRepository(context: Context) :
             // على المقطع (0..1) فسقط السقف الأدنى.
             key == "time_chime_volume" ||
                 key == "battery_cue_volume" -> value.coerceIn(0.1f, 1f)
+            key == KEY_EVENT_PCM_GAIN_DB ->
+                value.coerceIn(0f, MAX_EVENT_PCM_GAIN_DB)
             key.contains("_volume") ||
                 key == "default_volume" -> value.coerceIn(0f, 1f)
             key.contains("_rate") ||
@@ -2470,4 +2497,176 @@ class SettingsRepository(context: Context) :
 
     override fun setA11ySmartPauseGameEnabled(enabled: Boolean) =
         setAccessibilityFeatureEnabled("a11y_smart_pause_game", enabled)
+
+    override fun getA11yShortcutBindings(): String? =
+        prefs.getString("a11y_shortcut_bindings", null)
+
+    override fun setA11yShortcutBindings(encoded: String?) {
+        if (encoded == null) {
+            prefs.edit().remove("a11y_shortcut_bindings").apply()
+        } else {
+            prefs.edit().putString("a11y_shortcut_bindings", encoded).apply()
+        }
+    }
+
+    // ع٤١-ب8: تبديل مفاتيح الردّ/الرفض أثناء الرنين
+    // (افتراضياً: صوت+ ردّ).
+    fun isA11yCallKeysSwapped(): Boolean =
+        prefs.getBoolean("a11y_call_keys_swapped", false)
+
+    fun setA11yCallKeysSwapped(swapped: Boolean) =
+        prefs.edit().putBoolean("a11y_call_keys_swapped", swapped).apply()
+
+    private fun sanitizeLoudnessCategory(category: String?): String =
+        if (category.isNullOrBlank()) VOICE_CATEGORY_DEFAULT else category
+
+    override fun getCategoryLoudnessConfig(
+        category: String?
+    ): CategoryLoudnessConfig {
+        val cat = sanitizeLoudnessCategory(category)
+        val default = CategoryLoudnessConfig.defaultForCategory(cat)
+        val modeStr = prefs.getString("loudness_stream_mode_$cat", null)
+        val mode = if (modeStr != null) {
+            StreamMode.fromId(modeStr)
+        } else {
+            default.streamMode
+        }
+        val forceMax = prefs.getBoolean(
+            "loudness_force_max_$cat",
+            default.forceMax
+        )
+        val bypassSilent = prefs.getBoolean(
+            "loudness_bypass_silent_$cat",
+            default.bypassSilent
+        )
+        val cap = prefs.getInt(
+            "loudness_headset_cap_$cat",
+            default.headsetCapPercent
+        ).coerceIn(0, 100)
+        return CategoryLoudnessConfig(
+            streamMode = mode,
+            forceMax = forceMax,
+            bypassSilent = bypassSilent,
+            headsetCapPercent = cap
+        )
+    }
+
+    override fun setCategoryLoudnessConfig(
+        category: String,
+        config: CategoryLoudnessConfig
+    ) {
+        val cat = sanitizeLoudnessCategory(category)
+        prefs.edit()
+            .putString("loudness_stream_mode_$cat", config.streamMode.id)
+            .putBoolean("loudness_force_max_$cat", config.forceMax)
+            .putBoolean("loudness_bypass_silent_$cat", config.bypassSilent)
+            .putInt(
+                "loudness_headset_cap_$cat",
+                config.headsetCapPercent.coerceIn(0, 100)
+            )
+            .apply()
+    }
+
+    override fun isLoudnessForceMaxEnabled(category: String?): Boolean {
+        val cat = sanitizeLoudnessCategory(category)
+        val default = CategoryLoudnessConfig.defaultForCategory(cat)
+        return prefs.getBoolean("loudness_force_max_$cat", default.forceMax)
+    }
+
+    override fun setLoudnessForceMaxEnabled(
+        category: String,
+        enabled: Boolean
+    ) {
+        val cat = sanitizeLoudnessCategory(category)
+        prefs.edit().putBoolean("loudness_force_max_$cat", enabled).apply()
+    }
+
+    override fun isLoudnessBypassSilentEnabled(category: String?): Boolean {
+        val cat = sanitizeLoudnessCategory(category)
+        val default = CategoryLoudnessConfig.defaultForCategory(cat)
+        return prefs.getBoolean(
+            "loudness_bypass_silent_$cat",
+            default.bypassSilent
+        )
+    }
+
+    override fun setLoudnessBypassSilentEnabled(
+        category: String,
+        enabled: Boolean
+    ) {
+        val cat = sanitizeLoudnessCategory(category)
+        prefs.edit()
+            .putBoolean("loudness_bypass_silent_$cat", enabled)
+            .apply()
+    }
+
+    override fun getLoudnessStreamMode(category: String?): StreamMode {
+        val cat = sanitizeLoudnessCategory(category)
+        val default = CategoryLoudnessConfig.defaultForCategory(cat)
+        val modeStr = prefs.getString("loudness_stream_mode_$cat", null)
+        return if (modeStr != null) {
+            StreamMode.fromId(modeStr)
+        } else {
+            default.streamMode
+        }
+    }
+
+    override fun setLoudnessStreamMode(category: String, mode: StreamMode) {
+        val cat = sanitizeLoudnessCategory(category)
+        prefs.edit()
+            .putString("loudness_stream_mode_$cat", mode.id)
+            .apply()
+    }
+
+    override fun getLoudnessHeadsetCapPercent(category: String?): Int {
+        val cat = sanitizeLoudnessCategory(category)
+        val default = CategoryLoudnessConfig.defaultForCategory(cat)
+        return prefs.getInt(
+            "loudness_headset_cap_$cat",
+            default.headsetCapPercent
+        ).coerceIn(0, 100)
+    }
+
+    override fun setLoudnessHeadsetCapPercent(
+        category: String,
+        percent: Int
+    ) {
+        val cat = sanitizeLoudnessCategory(category)
+        prefs.edit()
+            .putInt("loudness_headset_cap_$cat", percent.coerceIn(0, 100))
+            .apply()
+    }
+
+    override fun savePendingBoost(stream: Int, originalVolume: Int) {
+        prefs.edit()
+            .putInt(KEY_PENDING_BOOSTED_STREAM, stream)
+            .putInt(KEY_PENDING_BOOSTED_VOLUME, originalVolume)
+            .commit()
+    }
+
+    override fun clearPendingBoost() {
+        prefs.edit()
+            .remove(KEY_PENDING_BOOSTED_STREAM)
+            .remove(KEY_PENDING_BOOSTED_VOLUME)
+            .commit()
+    }
+
+    override fun getPendingBoostStream(): Int =
+        prefs.getInt(KEY_PENDING_BOOSTED_STREAM, -1)
+
+    override fun getPendingBoostVolume(): Int =
+        prefs.getInt(KEY_PENDING_BOOSTED_VOLUME, -1)
+
+    override fun getEventPcmGainDb(): Float =
+        prefs.getFloat(KEY_EVENT_PCM_GAIN_DB, DEFAULT_EVENT_PCM_GAIN_DB)
+            .coerceIn(0.0f, MAX_EVENT_PCM_GAIN_DB)
+
+    override fun setEventPcmGainDb(gainDb: Float) {
+        prefs.edit()
+            .putFloat(
+                KEY_EVENT_PCM_GAIN_DB,
+                gainDb.coerceIn(0.0f, MAX_EVENT_PCM_GAIN_DB)
+            )
+            .apply()
+    }
 }

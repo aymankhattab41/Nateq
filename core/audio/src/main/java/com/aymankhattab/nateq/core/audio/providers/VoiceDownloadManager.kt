@@ -64,36 +64,19 @@ object VoiceDownloadManager {
     /**
      * فحص وجود تنزيل جزئي متبقٍ وحجمه بالبايت.
      */
-    fun getPartialBytes(
-        context: Context,
-        engine: String,
-        voiceId: String
-    ): Long {
+    fun getPartialBytes(context: Context, voiceId: String): Long {
         val dir = DownloadHttpHelper.getDownloadsDir(context)
-        val file = when (engine.lowercase()) {
-            "vocalizer" -> File(dir, "vocalizer_${voiceId}.zip.part")
-            else -> File(dir, "piper_${voiceId}.onnx.part")
-        }
+        val file = File(dir, "vocalizer_${voiceId}.zip.part")
         return if (file.exists() && file.length() > 0) file.length() else 0L
     }
 
     /**
      * حذف الملفات المؤقتة الجزئية لصوت معين.
      */
-    fun deletePartial(context: Context, engine: String, voiceId: String) {
+    fun deletePartial(context: Context, voiceId: String) {
         val dir = DownloadHttpHelper.getDownloadsDir(context)
-        when (engine.lowercase()) {
-            "vocalizer" -> {
-                val f = File(dir, "vocalizer_${voiceId}.zip.part")
-                if (f.exists()) f.delete()
-            }
-            else -> {
-                val f1 = File(dir, "piper_${voiceId}.tokens.part")
-                val f2 = File(dir, "piper_${voiceId}.onnx.part")
-                if (f1.exists()) f1.delete()
-                if (f2.exists()) f2.delete()
-            }
-        }
+        val f = File(dir, "vocalizer_${voiceId}.zip.part")
+        if (f.exists()) f.delete()
     }
 
     private fun updateState(voiceId: String, state: DownloadState) {
@@ -105,61 +88,6 @@ object VoiceDownloadManager {
                 Log.w(TAG, "Listener error for $voiceId", t)
             }
         }
-    }
-
-    /**
-     * بدء تنزيل صوت Piper في الخلفية عبر الخدمة الأمامية.
-     */
-    fun startPiperDownload(
-        context: Context,
-        item: PiperCatalogItem
-    ) {
-        if (isDownloading(item.id)) return
-        val appContext = context.applicationContext
-        voiceTitles[item.id] = item.displayNameAr
-
-        ensureServiceRunning(appContext)
-
-        val job = scope.launch {
-            updateState(
-                item.id,
-                DownloadState.Downloading(0, 0L, -1L)
-            )
-            notifyServiceProgress(appContext, item.id, 0)
-
-            val result = PiperDownloader.downloadVoice(appContext, item) {
-                downloaded, total, percent ->
-                updateState(
-                    item.id,
-                    DownloadState.Downloading(percent, downloaded, total)
-                )
-                notifyServiceProgress(appContext, item.id, percent)
-            }
-
-            activeJobs.remove(item.id)
-
-            if (result.isSuccess) {
-                DownloadLog.clearError(item.id)
-                updateState(item.id, DownloadState.Success)
-            } else {
-                val ex = result.exceptionOrNull()
-                val err = if (ex is DownloadError) ex else {
-                    DownloadError(
-                        DownloadError.NETWORK,
-                        ex?.message ?: "Download failed"
-                    )
-                }
-                DownloadLog.recordError(
-                    voiceId = item.id,
-                    engineId = SherpaOnnxVoiceProvider.PROVIDER_ID,
-                    errorCode = err.code,
-                    errorMessage = err.details
-                )
-                updateState(item.id, DownloadState.Error(err))
-            }
-            checkAllCompleted(appContext)
-        }
-        activeJobs[item.id] = job
     }
 
     /**
@@ -225,8 +153,11 @@ object VoiceDownloadManager {
         if (job != null) {
             job.cancel()
             updateState(voiceId, DownloadState.Cancelled)
-            checkAllCompleted(context.applicationContext)
         }
+        // الإلغاء يعني التخلّي عن الجزء الناقص أيضاً، فلا يبقى
+        // معلّقاً في الواجهة كـ«استئناف التنزيل».
+        deletePartial(context, voiceId)
+        checkAllCompleted(context.applicationContext)
     }
 
     private fun ensureServiceRunning(context: Context) {

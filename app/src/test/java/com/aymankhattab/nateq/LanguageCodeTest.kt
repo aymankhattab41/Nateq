@@ -97,4 +97,21 @@ class LanguageCodeTest {
         assertNull(LanguageCode.fromTagOrNull("ar-EG"))
         assertNull(LanguageCode.fromTagOrNull(""))
     }
+
+    @Test
+    fun isSameFamily_matchesFamiliesCorrectly() {
+        assertTrue(LanguageCode.isSameFamily("ar", "ar"))
+        assertTrue(LanguageCode.isSameFamily("ar", "ar-SA"))
+        assertTrue(LanguageCode.isSameFamily("ar-EG", "ar-SA"))
+        assertTrue(LanguageCode.isSameFamily("ara", "ar"))
+        assertTrue(LanguageCode.isSameFamily("en", "en-US"))
+        assertTrue(LanguageCode.isSameFamily("en-GB", "en-US"))
+        assertTrue(LanguageCode.isSameFamily("fr", "fr-FR"))
+        assertTrue(LanguageCode.isSameFamily(null, null))
+
+        assertFalse(LanguageCode.isSameFamily("ar", "en"))
+        assertFalse(LanguageCode.isSameFamily("ar", "fr"))
+        assertFalse(LanguageCode.isSameFamily("ar", null))
+        assertFalse(LanguageCode.isSameFamily(null, "ar"))
+    }
 }

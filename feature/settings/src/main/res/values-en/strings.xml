@@ -42,10 +42,63 @@
     <string name="a11y_progress_monitoring_summary">Announces progress percentage at regular intervals</string>
     <string name="a11y_bluetooth_announcement_title">Bluetooth Device Announcements</string>
     <string name="a11y_bluetooth_announcement_summary">Announces Bluetooth device name upon connect or disconnect</string>
+    <string name="a11y_contact_voices_title">Contact voices</string>
+    <string name="a11y_contact_voices_summary">A dedicated voice per contact for their calls and messages</string>
+    <string name="a11y_app_profiles_title">App profiles</string>
+    <string name="a11y_app_profiles_summary">Set a voice and detail level per application</string>
+    <string name="a11y_auto_profile_title">Automatic profile switching</string>
+    <string name="a11y_auto_profile_summary">Applies the foreground app\'s voice profile while reading</string>
+    <string name="a11y_contact_voices_manage">Manage contact voices…</string>
+    <string name="a11y_app_profiles_manage">Manage app profiles…</string>
+    <string name="a11y_voice_phone_hint">Phone number (e.g. 0500000000)</string>
+    <string name="a11y_voice_add">Add</string>
+    <string name="a11y_voice_remove">Remove</string>
+    <string name="a11y_voice_engine">Engine</string>
+    <string name="a11y_voice_voice">Voice</string>
+    <string name="a11y_voice_rate">Speed</string>
+    <string name="a11y_voice_pitch">Pitch</string>
+    <string name="a11y_voice_volume">Volume</string>
+    <string name="a11y_voice_preview">Preview</string>
+    <string name="a11y_voice_system_engine">System (default)</string>
+    <string name="a11y_voice_loading">Loading voices…</string>
+    <string name="a11y_voice_no_voices">No voices for this engine</string>
+    <string name="a11y_guide_title">Features and gestures guide</string>
+    <string name="a11y_guide_text">Voice-key gestures (customizable from \"Key shortcuts\"):\n• Long-press Volume Up\n• Long-press Volume Down\n• Hold both keys together: stop or start the service and announce the state\n• Double-press Volume Up or Down\n• Triple-press Volume Up or Down\n\nActions available for each gesture:\n• Read screen now\n• Continuous reading (page by page with scrolling)\n• Read clipboard\n• Read images with OCR\n• Repeat last speech and speech history\n• Where am I (describes the focused element and its place)\n• Quick menu\n\nActivating the service:\n• Enable \"Lord TTS\" in the system Accessibility settings.\n• Holding both keys stops or starts the service and announces the state.\n\nNote: voice-key shortcuts may conflict with the screen reader; disable clashing bindings in TalkBack when needed.</string>
+    <string name="a11y_continuous_reading_title">Continuous Reading</string>
+    <string name="a11y_continuous_reading_summary">Reads the screen page by page, scrolling content automatically to the end</string>
+    <string name="a11y_ocr_reading_title">Image Reading (OCR)</string>
+    <string name="a11y_ocr_reading_summary">Recognizes and reads text of the focused element — requires Android 11+; language data is downloaded on first use</string>
     <string name="a11y_smart_pause_call_title">Smart Pause in Phone Calls</string>
     <string name="a11y_smart_pause_call_summary">Temporarily pauses screen services during calls</string>
     <string name="a11y_smart_pause_game_title">Smart Pause in Games &amp; Video</string>
     <string name="a11y_smart_pause_game_summary">Temporarily pauses screen services in full-screen apps</string>
+    <string name="a11y_shortcut_bindings_title">Volume Key Shortcuts</string>
+    <string name="a11y_shortcut_bindings_summary">Assign volume-key gestures to screen service actions</string>
+    <string name="a11y_shortcut_btn">Customize key shortcuts</string>
+    <string name="a11y_shortcut_dialog_title">Bind volume-key gestures to actions</string>
+    <string name="a11y_shortcut_choose_action">Choose the action for the gesture:</string>
+    <string name="a11y_shortcut_test">Test</string>
+    <string name="a11y_shortcut_saved">Binding saved</string>
+    <string name="a11y_gesture_vol_up_long">Volume up (long press)</string>
+    <string name="a11y_gesture_vol_down_long">Volume down (long press)</string>
+    <string name="a11y_gesture_both_hold">Both keys (hold)</string>
+    <string name="a11y_gesture_vol_up_double">Volume up (double press)</string>
+    <string name="a11y_gesture_vol_down_double">Volume down (double press)</string>
+    <string name="a11y_gesture_vol_up_triple">Volume up (triple press)</string>
+    <string name="a11y_gesture_vol_down_triple">Volume down (triple press)</string>
+    <string name="a11y_action_none">None</string>
+    <string name="a11y_action_read_screen">Read screen</string>
+    <string name="a11y_action_read_clipboard">Read clipboard</string>
+    <string name="a11y_action_repeat_last">Repeat last spoken</string>
+    <string name="a11y_action_spell_last">Spell last text</string>
+    <string name="a11y_action_where_am_i">Where am I</string>
+    <string name="a11y_action_toggle_pause">Toggle pause/resume</string>
+    <string name="a11y_action_toggle_continuous">Toggle continuous reading</string>
+    <string name="a11y_action_ocr_focus">Read focused text (OCR)</string>
+    <string name="a11y_action_show_quick_menu">Quick actions menu</string>
+    <string name="a11y_action_read_full_url">Read full link</string>
+    <string name="a11y_action_repeat_previous">Read the one before</string>
+    <string name="a11y_action_speech_history">Read history</string>
 <string name="all_announcements_enabled">All announcements enabled</string>
 <string name="all_announcements_summary">Turning it off silently stops automatic announcements (time, battery, messages, notifications, caller)</string>
 <string name="announcement_turned_off">Off</string>
@@ -230,6 +283,11 @@
 <string name="convert_languages_dialog_title">Auto-convert language settings</string>
 <string name="convert_languages_hint">Pick a language, engine, and voice, adjust the sliders, then tap Save to apply them to the selected language. Choosing no engine keeps the sliders only.</string>
 <string name="convert_languages_loading">Discovering languages across all installed enginesâ€¦</string>
+<string name="loading_voices_indicator">Loading voices…</string>
+<string name="voice_not_available_for_engine">Voice "%1$s" is not available for "%2$s"</string>
+<string name="voice_cannot_save_invalid">Cannot save voice because it is not available for the selected engine</string>
+<string name="btn_refresh_voices">Refresh voices list</string>
+<string name="voices_refreshed">Voices list refreshed</string>
 <string name="day_friday">Friday</string>
 <string name="day_monday">Monday</string>
 <string name="day_saturday">Saturday</string>
@@ -578,6 +636,18 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+Note: this is an experimental build that may be reverted to the old system, and many features may not work. If feedback is negative, we will revert to the old system. We are waiting for your feedback on the Telegram bot; note that voice messages do not arrive. Anyone who wants personal contact for any reason should write some contact details, because the bot does not reveal the identity of anyone and I cannot reach them.
+- Event Loudness Policy (EventLoudnessPolicy): Force maximum volume for caller, time, battery, and SMS with silent and DND bypass via alarm stream, safe volume cap for wired and Bluetooth headsets, and automatic volume restore
+- PCM Loudness Stage and Soft Limiter (LoudnessStage): Boost PCM audio gain up to +6 dB for embedded engines during event announcements with a soft limiter to prevent clipping
+- Unified Speech Planner for Numbers and Emojis (SpeechPlanner): Language family matching to keep same-family numbers and Arabic text in a single consistent voice, unified emoji category support across screen reader and announcements, with custom pronunciation dictionary priority
+- Quick actions: an overlay above apps that announces the implemented screen-service actions (read screen, read clipboard, repeat last, spell last, where am I, pause, continuous reading, image reading)
+- Continuous reading: announces the screen page by page, scrolling content automatically to the end; stops on app change, screen off, or a call
+- Image reading (OCR): recognizes and reads the focused element text via Tesseract, downloading language data on first use (requires Android 11+)
+- Two new settings switches to enable continuous reading and image reading
+- Volume-key shortcut customization screen: gesture list (long/double/triple/both-hold) with per-gesture action choice and an instant test button
+- Redesigned volume-key shortcuts: a gesture is consumed only after it is completed, so volume never changes before the shortcut fires; bindings are configurable and persisted
+- Throttled window-content-change events (80 ms) to reduce main-thread load
+- Removed dead code in the accessibility service
 - Embedded engines &amp; live storage inventory: Unified engine IDs across client and host endpoints, accurate live inventory tracking, and engine data cleanup
 - Fixed Sherpa and Piper search paths: Corrected model discovery, automatic storage migration, and instant cache invalidation upon download
 - Visible unavailable engines: Disabled engine rows with clear failure reasons and status badges across selection lists
@@ -629,6 +699,19 @@
 - Speak a phrase you choose before the caller name and one after it
 - Caller announcement repeat now goes from once up to ten times
 - The dictionary is open with no length ceiling
+- Voice-key shortcut bindings: gestures (long/double/triple/both) with a live test button
+- Quick accessibility menu and accessibility button gate
+- Where am I: announces the focused element role and screen location
+- Repeat and spell with a rolling speech history (20 entries)
+- Chat summary: reads new-chat overview (sender names and counts) with throttling
+- Spoken URL shortening with an independent toggle
+- Call key actions: answer or reject with a volume key while ringing (swappable)
+- Audio route and Bluetooth device announcements on Android 12+
+- Contact voices: a per-contact voice applied to their calls and messages
+- App profiles and automatic per-app voice switching
+- Features and gestures guide button
+- Full voice editor for contacts and app profiles: engine, voice, speed, pitch and volume with preview
+- 32-bit device support: ship armeabi-v7a alongside arm64-v8a (system engine, OCR and all features work; embedded Vocalizer remain 64-bit only)
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
@@ -646,11 +729,10 @@
 
     <!-- Embedded engines & voice downloads -->
     <string name="group_embedded_engines_title">Embedded Engines &amp; Voice Downloads</string>
-    <string name="section_embedded_downloader_title">Download &amp; Manage Embedded Voices (Piper &amp; Vocalizer &amp; Acapela)</string>
+    <string name="section_embedded_downloader_title">Download &amp; Manage Embedded Voices (Vocalizer)</string>
     <string name="section_embedded_downloader_summary">High quality offline neural and embedded voices working completely without internet with ZIP import support</string>
-    <string name="embedded_engine_piper">Piper TTS (ONNX)</string>
     <string name="embedded_engine_vocalizer">Vocalizer Ex 2</string>
-    <string name="embedded_engine_acapela">Acapela TTS</string>
+    <string name="embedded_engine_Vocalizer">Vocalizer TTS</string>
 
     <!-- ع٢٩-8 بند 2: Engine status + details dialog -->
     <string name="engine_state_unknown">Unknown</string>
@@ -701,13 +783,12 @@
     <string name="embedded_importing_zip">Importing voice package…</string>
     <string name="embedded_import_success">Voice (%1$s) for %2$s imported successfully</string>
     <string name="embedded_import_error">Failed to import ZIP file: %1$s</string>
-    <string name="embedded_acapela_empty_hint">No Acapela voices installed currently. You can import a voice package via "Import Voice from ZIP" or by opening a .zip file from any file manager.</string>
+    <string name="embedded_Vocalizer_empty_hint">No Vocalizer voices installed currently. You can import a voice package via "Import Voice from ZIP" or by opening a .zip file from any file manager.</string>
     <string name="embedded_download_btn">Download Voice</string>
     <string name="embedded_installed_badge">Installed</string>
     <string name="embedded_delete_btn">Delete</string>
     <string name="embedded_preview_btn">Preview Voice</string>
     <string name="embedded_downloading">Downloading (%1$d%%)…</string>
-    <string name="embedded_filter_all">All</string>
 
     <!-- ع٢٩-13: Launcher shortcuts -->
     <string name="shortcut_pause_service">Pause/Resume Service</string>
@@ -722,15 +803,12 @@
     <string name="tile_service_paused">Paused</string>
     <string name="tile_service_active">Active</string>
     <string name="tile_service_disabled">Disabled</string>
-    <string name="embedded_filter_ar">Arabic</string>
-    <string name="embedded_filter_en">English</string>
-    <string name="embedded_filter_other">Other Languages</string>
     <string name="embedded_download_success">Voice downloaded and installed successfully</string>
     <string name="embedded_download_error">Failed to download voice: %1$s</string>
     <string name="embedded_delete_confirm">Are you sure you want to delete this voice model?</string>
     <string name="embedded_delete_success">Voice deleted successfully</string>
-    <string name="embedded_empty_list">No voices matching the selected filter</string>
-    <string name="embedded_header_desc">Fast neural AI and embedded voices running entirely offline once downloaded or imported.</string>
+    <string name="embedded_empty_list">No voices available</string>
+    <string name="embedded_header_desc">Fast embedded voices running entirely offline once downloaded or imported.</string>
     <string name="embedded_test_connection">Test Connection</string>
     <string name="embedded_test_connection_title">Server Connection Test</string>
     <string name="embedded_test_connection_failed">Connection Test Failed</string>
@@ -741,5 +819,28 @@
     <string name="embedded_resume_download_btn">Resume Download</string>
     <string name="embedded_partial_download_hint">Resumed from %1$s</string>
     <string name="embedded_download_cancelled">Download cancelled</string>
+    <string name="embedded_nav_back">Back</string>
+    <string name="embedded_voice_installed_count">Installed %1$d of %2$d</string>
+    <string name="embedded_nav_breadcrumb">%1$s / %2$s</string>
+    <string name="piper_engine_removed">Piper engine removed; voices reset to default</string>
+    <string name="loudness_force_max_title">Raise volume to maximum during speech</string>
+    <string name="loudness_force_max_summary">Raises stream volume to max during event announcement and restores it automatically afterwards</string>
+    <string name="loudness_bypass_silent_title">Announce caller name during silent or vibrate mode</string>
+    <string name="loudness_bypass_silent_summary">Speaks caller name even when the device is silent or vibrating</string>
+    <string name="loudness_stream_mode_title">Audio stream mode</string>
+    <string name="loudness_headset_cap_title">Headphone &amp; Bluetooth hearing safety cap</string>
+    <string name="loudness_headset_cap_desc">Limits maximum volume in headphones to protect hearing (%1$d%%)</string>
+    <string name="stream_mode_auto">Auto (Recommended)</string>
+    <string name="stream_mode_accessibility">Accessibility</string>
+    <string name="stream_mode_alarm">Alarm</string>
+    <string name="stream_mode_notification">Notifications</string>
+    <string name="stream_mode_media">Media</string>
+    <string name="loudness_pcm_gain_title">Embedded Engine Events PCM Gain</string>
+    <string name="loudness_pcm_gain_desc">Boosts PCM audio samples with soft limiting to prevent clipping distortion (+%1$d dB)</string>
+    <string name="loudness_pcm_gain_disabled">Disabled (0 dB)</string>
+    <string name="dnd_permission_dialog_title">Bypass Do Not Disturb</string>
+    <string name="dnd_permission_dialog_message">To accurately bypass Do Not Disturb via system channels, you can grant Do Not Disturb access. If not granted, Nateq will automatically use the Alarm stream to bypass silent mode without needing extra permissions.</string>
+    <string name="dnd_permission_dialog_positive">Open Settings</string>
+    <string name="dnd_permission_dialog_negative">Use Alarm Stream</string>
 
 </resources>

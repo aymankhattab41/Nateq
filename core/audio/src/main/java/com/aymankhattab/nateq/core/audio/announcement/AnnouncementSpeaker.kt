@@ -16,6 +16,7 @@ import android.util.Log
 import androidx.annotation.VisibleForTesting
 import com.aymankhattab.nateq.engine.EmojiSpeech
 import com.aymankhattab.nateq.engine.PronunciationDictionary
+import com.aymankhattab.nateq.core.audio.accessibility.RepeatSpellController
 import com.aymankhattab.nateq.core.audio.engine.AudioEffectManager
 import com.aymankhattab.nateq.core.audio.engine.SpeechChunker
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
@@ -23,6 +24,8 @@ import com.aymankhattab.nateq.core.audio.engine.LanguageSegmenter
 import com.aymankhattab.nateq.core.audio.announcement.CueSynth
 import com.aymankhattab.nateq.core.audio.announcement.CueType
 import com.aymankhattab.nateq.core.audio.engine.Segment
+import com.aymankhattab.nateq.core.audio.engine.SpeechPlanner
+import com.aymankhattab.nateq.core.audio.engine.SpeechRole
 import com.aymankhattab.nateq.core.audio.engine.isNumericOnly
 import com.aymankhattab.nateq.core.audio.engine.quirks.EngineQuirks
 import com.aymankhattab.nateq.engine.SpeechPart
@@ -32,6 +35,7 @@ import com.aymankhattab.nateq.core.audio.providers.EngineBindVerifier
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.data.SettingsChangeProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.core.data.CategoryLoudnessConfig
 import com.aymankhattab.nateq.core.data.SpeechLock
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.LocaleUtils
@@ -581,6 +585,36 @@ class AnnouncementSpeaker(
         )
     }
 
+    /**
+     * ع٤٢-2: حل مسار الصوت والسمات
+     * وقناة التدفق المطابقة وفق سياسة
+     * جهارة الأحداث [EventLoudnessPolicy].
+     */
+    @VisibleForTesting
+    internal fun resolvedRouteForNow(
+        category: String?,
+        nowMs: Long = SystemClock.elapsedRealtime()
+    ): ResolvedAudioRoute {
+        val inCall = runCatching {
+            val mode = audioManager.mode
+            mode == AudioManager.MODE_IN_CALL ||
+                mode == AudioManager.MODE_IN_COMMUNICATION
+        }.getOrDefault(false)
+        val latchedInCall = callRouteLatch.observe(inCall, nowMs)
+        val isSilent = runCatching {
+            audioManager.ringerMode == AudioManager.RINGER_MODE_SILENT ||
+                audioManager.ringerMode == AudioManager.RINGER_MODE_VIBRATE
+        }.getOrDefault(false)
+        val config = settings?.getCategoryLoudnessConfig(category)
+            ?: CategoryLoudnessConfig.defaultForCategory(category)
+        return EventLoudnessPolicy.resolveTargetStreamAndAttributes(
+            category = category,
+            config = config,
+            inCall = latchedInCall,
+            isSilentOrVibrate = isSilent
+        )
+    }
+
     private val callRouteLatch = CallRouteLatch()
 
     // **خفضُ نغمة الرنين أثناء إعلان المتصل (اختياريّ):** رفعُ قناة
@@ -670,6 +704,9 @@ class AnnouncementSpeaker(
     // فالمثّلُ الواحد يُسقطُ المزامنةَ من العملية الواحدة كلها.
     init {
         registerDictionaryObserver()
+        settings?.let { repo ->
+            EventLoudnessPolicy.restorePendingBoostIfAny(audioManager, repo)
+        }
     }
 
     private val textProcessor: TextProcessor by lazy {
@@ -1309,6 +1346,14 @@ class AnnouncementSpeaker(
         cue: AudioCue? = null,
         category: String? = null
     ) {
+        // ع٤١-ب4: تسجيل النص النهائي للإعلان في سجلّ
+        // «ما قيل» قبل أي معالجة خاصة بالمحرك
+        // — مع استثناء فئة المكالمات ورموز OTP.
+        RepeatSpellController.updateLastSpokenText(
+            text,
+            source = RepeatSpellController.Source.ANNOUNCEMENT,
+            isCall = isCallerCategory(category)
+        )
         // إعدادات نطق الإيموجي تُحسم قبل طلب التركيز حتى تكون المقاطع جاهزة
         // للدورة (بلا قراءة متكررة للإعدادات عند كل عودة تركيز).
         val emojiCfg = resolveEmojiConfig(locale)
@@ -1651,8 +1696,7 @@ class AnnouncementSpeaker(
      * `USAGE_VOICE_COMMUNICATION` — وهي تعديلٌ للسمات لا للقناة.
      */
     private fun speechAudioAttributes(category: String?): AudioAttributes {
-        val route = speechRouteForNow(category)
-        return speechAudioAttributes(category, route)
+        return resolvedRouteForNow(category).audioAttributes
     }
 
     private fun speechAudioAttributes(
@@ -2199,12 +2243,22 @@ speechCycle.incrementAndGet()
             } else {
                 Locale.forLanguageTag(LanguageCode.EN.tag)
             }
-            // الرقم البحت (بلا حروف) يُنطق بصوتِ فئة الأرقام المحفوظ
-            // وأشرطتها لا بالصوت العام — بلا تخصيصٍ للفئة يبقى السلوك
-            // الحالي (المسار الموازي المطلوب لنطق الأرقام بالإعلانات).
-            val numbersSpeech = numbersCategoryFor(segment)
-            val segmentVoice = numbersSpeech?.voiceId
-                ?: if (arabic) voiceId else enVoice
+            val role = if (segment.isNumericOnly()) {
+                SpeechRole.NUMBER
+            } else {
+                SpeechRole.TEXT
+            }
+            val resolved = SpeechPlanner.resolveVoiceForSegment(
+                languageTag = segment.languageTag,
+                role = role,
+                settings = settings,
+                defaultEngine = boundEngine,
+                defaultVoiceId = if (arabic) voiceId else enVoice,
+                defaultRate = baseRate,
+                defaultPitch = basePitch,
+                defaultVolume = baseVolume
+            )
+            val segmentVoice = resolved.voiceId
             // بند الأوامر 1: معالجة نص المقطع عبر TextProcessor بلغته (أرقام،
             // أوقات، عملات، روابط...) قبل إرساله للمحرك — موحّداً مع القارئ.
             // أي خطأ في المعالجة (قاموس مفقود...) يُسقط النص الخام لا الصمت.
@@ -2224,9 +2278,9 @@ speechCycle.incrementAndGet()
                         out.add(
                             SpeakUnit(
                                 piece, segmentLocale,
-                                numbersSpeech?.rate ?: baseRate,
-                                numbersSpeech?.pitch ?: basePitch,
-                                numbersSpeech?.volume ?: baseVolume,
+                                resolved.rate,
+                                resolved.pitch,
+                                resolved.volume,
                                 segmentVoice
                             )
                         )
@@ -2241,9 +2295,9 @@ speechCycle.incrementAndGet()
                     out.add(
                         SpeakUnit(
                             piece, segmentLocale,
-                            numbersSpeech?.rate ?: baseRate,
-                            numbersSpeech?.pitch ?: basePitch,
-                            numbersSpeech?.volume ?: baseVolume,
+                            resolved.rate,
+                            resolved.pitch,
+                            resolved.volume,
                             segmentVoice
                         )
                     )
@@ -2513,7 +2567,7 @@ speechCycle.incrementAndGet()
             // المكالمة الجارية فيعود العَرَض (صوتٌ منخفض على Pixel).
             putInt(
                 TextToSpeech.Engine.KEY_PARAM_STREAM,
-                streamForRoute(speechRouteForNow(currentCategory))
+                resolvedRouteForNow(currentCategory).stream
             )
             // **بند V3 — التأثيرات لكل فئة:** تُمرَّر فئةُ النطق هنا
             // فيقرأها NateqTtsService عند ربط المؤثرات، فيسقطُ
@@ -2717,16 +2771,41 @@ speechCycle.incrementAndGet()
     @VisibleForTesting
     internal fun boostStreamVolume(category: String? = null) {
         if (boostedStream != -1) return
-        val route = speechRouteForNow(category)
-        if (route == SpeechRoute.CALL) return
-        val stream = streamForRoute(route)
-        runCatching {
+        val resolved = resolvedRouteForNow(category)
+        if (resolved.stream == AudioManager.STREAM_VOICE_CALL) return
+        val stream = resolved.stream
+        val config = settings?.getCategoryLoudnessConfig(category)
+            ?: CategoryLoudnessConfig.defaultForCategory(category)
+        if (!config.forceMax) return
+
+        try {
             val max = audioManager.getStreamMaxVolume(stream)
             val current = audioManager.getStreamVolume(stream)
-            if (max <= 0 || current >= max) return@runCatching
+            if (max <= 0) return
+            val isHeadset = EventLoudnessPolicy.isHeadsetConnected(audioManager)
+            val target = EventLoudnessPolicy.computeTargetVolume(
+                current = current,
+                max = max,
+                config = config,
+                isHeadsetConnected = isHeadset
+            )
+            if (target <= current) return
             savedStreamVolume = current
             boostedStream = stream
-            audioManager.setStreamVolume(stream, max, 0)
+            settings?.savePendingBoost(stream, current)
+            audioManager.setStreamVolume(stream, target, 0)
+        } catch (t: Throwable) {
+            EventLoudnessPolicy.classifyFailureReason(t, audioManager)
+            Log.w(
+                TAG,
+                "[EventLoudness] Failed to set stream=$stream to target: " +
+                    "(reason=${EventLoudnessPolicy.lastFailureReason}): " +
+                    "${t.message}",
+                t
+            )
+            settings?.clearPendingBoost()
+            boostedStream = -1
+            savedStreamVolume = -1
         }
     }
 
@@ -2740,7 +2819,17 @@ speechCycle.incrementAndGet()
         if (stream == -1 || saved == -1) return
         boostedStream = -1
         savedStreamVolume = -1
-        runCatching { audioManager.setStreamVolume(stream, saved, 0) }
+        try {
+            audioManager.setStreamVolume(stream, saved, 0)
+            settings?.clearPendingBoost()
+        } catch (t: Throwable) {
+            Log.w(
+                TAG,
+                "[EventLoudness] Failed to restore stream=$stream to $saved: " +
+                    "${t.message}",
+                t
+            )
+        }
     }
 
     /**

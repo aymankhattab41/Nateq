@@ -42,10 +42,63 @@
     <string name="a11y_progress_monitoring_summary">إعلان نسب التحميل عند تغيرها بفواصل ملائمة</string>
     <string name="a11y_bluetooth_announcement_title">إعلانات أجهزة البلوتوث</string>
     <string name="a11y_bluetooth_announcement_summary">إعلان اسم جهاز البلوتوث عند الاتصال أو الانفصال</string>
+    <string name="a11y_contact_voices_title">أصوات جهات الاتصال</string>
+    <string name="a11y_contact_voices_summary">صوت مستقل لكل جهة اتصال يُستخدم عند نطق مكالماتها ورسائلها</string>
+    <string name="a11y_app_profiles_title">ملفات التطبيقات</string>
+    <string name="a11y_app_profiles_summary">إعداد صوت ومستوى تفصيل لكل تطبيق</string>
+    <string name="a11y_auto_profile_title">التبديل التلقائي للملفات</string>
+    <string name="a11y_auto_profile_summary">تطبيق ملف صوت التطبيق الأمامي تلقائياً أثناء القراءة</string>
+    <string name="a11y_contact_voices_manage">إدارة أصوات جهات الاتصال…</string>
+    <string name="a11y_app_profiles_manage">إدارة ملفات التطبيقات…</string>
+    <string name="a11y_voice_phone_hint">رقم الهاتف (مثال: 0500000000)</string>
+    <string name="a11y_voice_add">إضافة</string>
+    <string name="a11y_voice_remove">حذف</string>
+    <string name="a11y_voice_engine">المحرك</string>
+    <string name="a11y_voice_voice">الصوت</string>
+    <string name="a11y_voice_rate">السرعة</string>
+    <string name="a11y_voice_pitch">النبرة</string>
+    <string name="a11y_voice_volume">مستوى الصوت</string>
+    <string name="a11y_voice_preview">تجربة</string>
+    <string name="a11y_voice_system_engine">النظامي (الافتراضي)</string>
+    <string name="a11y_voice_loading">جارٍ تحميل الأصوات…</string>
+    <string name="a11y_voice_no_voices">لا توجد أصوات لهذا المحرك</string>
+    <string name="a11y_guide_title">دليل الميزات والإيماءات</string>
+    <string name="a11y_guide_text">إيماءات مفاتيح الصوت (قابلة للتخصيص من «اختصارات المفاتيح»):\n• ضغط مطوّل على رفع الصوت\n• ضغط مطوّل على خفض الصوت\n• الضغط على المفتاحين معاً باستمرار: إيقاف الخدمة أو تشغيلها مع نطق الحالة\n• ضغط مزدوج على رفع الصوت أو خفضه\n• ضغط ثلاثي على رفع الصوت أو خفضه\n\nالإجراءات المتاحة لكل إيماءة:\n• قراءة الشاشة الآن\n• القراءة المستمرة (صفحة بصفحة مع التمرير)\n• قراءة الحافظة\n• قراءة الصور بالتعرف الضوئي\n• تكرار آخر نطق وسجل النطق\n• أين أنا (وصف العنصر المركّز وموضعه)\n• القائمة السريعة\n\nتفعيل الخدمة:\n• فعّل «Lord TTS» من إعدادات إمكانية الوصول في النظام.\n• المفتاحان معاً يوقفان الخدمة ويشغّلانها وينطقان الحالة.\n\nتنبيه: قد تتعارض اختصارات مفاتيح الصوت مع قارئ الشاشة؛ عطّل التعيينات المتعارضة في TalkBack عند الازدحام.</string>
+    <string name="a11y_continuous_reading_title">القراءة المستمرة</string>
+    <string name="a11y_continuous_reading_summary">اقرأ الشاشة صفحةً صفحةً مع تمرير المحتوى تلقائياً حتى نهايته</string>
+    <string name="a11y_ocr_reading_title">قراءة الصور (OCR)</string>
+    <string name="a11y_ocr_reading_summary">تعرّف على نصّ العنصر المركّز واقرأه — تتطلب أندرويد 11+، وتُنزَّل بيانات اللغة عند أول استعمال</string>
     <string name="a11y_smart_pause_call_title">إيقاف ذكي أثناء المكالمات الهاتفية</string>
     <string name="a11y_smart_pause_call_summary">إيقاف خدمات الشاشة مؤقتاً وبشكل تلقائي أثناء المكالمة</string>
     <string name="a11y_smart_pause_game_title">إيقاف ذكي أثناء الألعاب والفيديو</string>
     <string name="a11y_smart_pause_game_summary">إيقاف خدمات الشاشة أثناء تشغيل تطبيقات ملء الشاشة</string>
+    <string name="a11y_shortcut_bindings_title">اختصارات مفاتيح الصوت</string>
+    <string name="a11y_shortcut_bindings_summary">خصّص إيماءات أزرار الصوت لتنفيذ أفعال خدمات الشاشة</string>
+    <string name="a11y_shortcut_btn">تخصيص اختصارات المفاتيح</string>
+    <string name="a11y_shortcut_dialog_title">ربط إيماءات مفاتيح الصوت بالأفعال</string>
+    <string name="a11y_shortcut_choose_action">اختر الفعل للإيماءة:</string>
+    <string name="a11y_shortcut_test">اختبار</string>
+    <string name="a11y_shortcut_saved">تم حفظ الربط</string>
+    <string name="a11y_gesture_vol_up_long">صوت+ (ضغط مطوّل)</string>
+    <string name="a11y_gesture_vol_down_long">صوت- (ضغط مطوّل)</string>
+    <string name="a11y_gesture_both_hold">المفتاحان معاً (مطوّل)</string>
+    <string name="a11y_gesture_vol_up_double">صوت+ (ضغطتان)</string>
+    <string name="a11y_gesture_vol_down_double">صوت- (ضغطتان)</string>
+    <string name="a11y_gesture_vol_up_triple">صوت+ (ثلاث ضغطات)</string>
+    <string name="a11y_gesture_vol_down_triple">صوت- (ثلاث ضغطات)</string>
+    <string name="a11y_action_none">بلا</string>
+    <string name="a11y_action_read_screen">اقرأ الشاشة</string>
+    <string name="a11y_action_read_clipboard">اقرأ الحافظة</string>
+    <string name="a11y_action_repeat_last">أعد آخر نطق</string>
+    <string name="a11y_action_spell_last">هجِّ آخر نص</string>
+    <string name="a11y_action_where_am_i">أين أنا</string>
+    <string name="a11y_action_toggle_pause">تبديل الإيقاف/الاستئناف</string>
+    <string name="a11y_action_toggle_continuous">تبديل القراءة المستمرة</string>
+    <string name="a11y_action_ocr_focus">قراءة نص العنصر (OCR)</string>
+    <string name="a11y_action_show_quick_menu">قائمة الإجراءات السريعة</string>
+    <string name="a11y_action_read_full_url">قراءة الرابط كاملاً</string>
+    <string name="a11y_action_repeat_previous">اقرأ ما قبله</string>
+    <string name="a11y_action_speech_history">اقرأ السجل</string>
 <string name="all_announcements_enabled">كل الإعلانات مفعّلة</string>
 <string name="all_announcements_summary">إيقافه يُوقف الإعلانات التلقائية (الوقت، البطارية، الرسائل، الإشعارات، المتصل) بصمت</string>
 <string name="announcement_turned_off">معطّل</string>
@@ -229,6 +282,11 @@
 <string name="convert_languages_dialog_title">إعداد لغات التحويل التلقائي</string>
 <string name="convert_languages_hint">اختر اللغة ثم محركها وصوتها وعدّل الأشرطة، ثم اضغط «حفظ» لتطبيق الإعدادات على اللغة المختارة. اختيار «بدون محرك» يُبقي الأشرطة فقط.</string>
 <string name="convert_languages_loading">جارٍ اكتشاف اللغات عبر كل المحركات المثبتة…</string>
+<string name="loading_voices_indicator">جارٍ تحميل الأصوات…</string>
+<string name="voice_not_available_for_engine">الصوت «%1$s» غير متوفر للمحرك «%2$s»</string>
+<string name="voice_cannot_save_invalid">لا يمكن حفظ الصوت لأنه غير متوفر للمحرك المختار</string>
+<string name="btn_refresh_voices">تحديث قائمة الأصوات</string>
+<string name="voices_refreshed">تم تحديث قائمة الأصوات</string>
 <string name="day_friday">الجمعة</string>
 <string name="day_monday">الاثنين</string>
 <string name="day_saturday">السبت</string>
@@ -588,6 +646,18 @@
 <string name="time_alarm_max_precision_summary">تستخدم منبّه النظام الدقيق (setAlarmClock) متجاوزةً كل قيود Doze والبطارية فيعمل إعلان الوقت في اللحظة المضبوطة؛ أثرُها الجانبي أن أيقونة منبّه ثابتة تظهر في شريط الحالة.</string>
 <string name="changelog_title">آخر التحديثات</string>
 <string name="changelog_text">الإصدار %1$s
+ملاحظة: هذه نسخة تجريبية قد يُتراجَع عنها والعودة إلى النظام القديم، وقد تجدون ميزات كثيرة لا تعمل. وإن كانت الانطباعات سلبية فسنرجع إلى النظام القديم. ننتظر انطباعاتكم على بوت التليجرام، ولاحظوا أن الرسائل الصوتية لا تصل. ومن أراد تواصلاً شخصياً لأي سبب فليكتب أي بيانات تواصل، لأن البوت لا يُظهر هوية أحد ولا أستطيع التواصل معهم.
+- سياسة جهارة الأحداث (EventLoudnessPolicy): رفع مستوى صوت نطق المتصل والساعة والبطارية والرسائل للحد الأقصى مع تجاوز الصامت ووضع عدم الإزعاج عبر قناة الإنذار، وسقف أمان لسماعات الأذن والبلوتوث، وتخزين واستعادة مستوى الصوت تلقائياً
+- مرحلة كسب PCM ومحدّد ناعم (LoudnessStage): تعزيز قوة عينات صوت المحركات المدمجة للأحداث حتى +6 ديسيبل مع محدد ناعم لمنع التشويه
+- توحيد قراءة الأرقام والإيموجي عبر مخطط النطق (SpeechPlanner): عدم تجزئة الأرقام عن النص العربي من نفس العائلة اللغوية ونطقها بصوت واحد متّسق، ودعم فئة الإيموجي في القراءة العامة والإعلانات مع تقديم القاموس المخصص
+- القائمة السريعة: نافذة إجراءات فوق التطبيقات تنطق أفعال خدمات الشاشة المنفَّذة (قراءة الشاشة والحافظة وإعادة آخر رسالة وتهجّيها وأين أنا والإيقاف والقراءة المستمرة وقراءة الصور)
+- القراءة المستمرة: نطق الشاشة صفحةً صفحةً مع تمرير المحتوى تلقائياً حتى نهايته، وتتوقف عند تبديل التطبيق أو إطفاء الشاشة أو المكالمة
+- قراءة الصور (OCR): التعرّف على نصّ العنصر المركّز وقراءته عبر Tesseract مع تنزيل بيانات اللغة عند أول استعمال (تتطلب أندرويد 11+)
+- مفتاحان جديدان في الإعدادات لتفعيل القراءة المستمرة وقراءة الصور
+- شاشة تخصيص اختصارات مفاتيح الصوت: قائمة الإيماءات (ضغط مطوّل/مزدوج/ثلاثي/المفتاحان معاً) واختيار فعل لكل إيماءة مع زر اختبار فوري
+- إعادة تصميم اختصارات مفاتيح الصوت: استهلاك الإيماءة عند اكتمالها فقط فلا يتغيّر مستوى الصوت قبل تحقّق الاختصار، مع جدول ربط قابل للتخصيص محفوظ في الإعدادات
+- خنق أحداث تغيّر محتوى النافذة (٨٠ مللي ثانية) لتخفيف الحمل على الخيط الرئيسي
+- تنظيف كود ميت في خدمة إمكانية الوصول
 - منظومة المحركات المدمجة وجرد التخزين الحي: توحيد معرّفات المحركات في نقاط العميل والمضيف، وجرد حي للملفات واشتقاق الحالات بدقة وتصفير البيانات
 - إصلاح مسارات محركات Sherpa و Piper: تصحيح مجلدات البحث وهجرة الملفات التلقائية وإبطال الكاش الحي فور التنزيل
 - إبقاء المحركات غير الجاهزة في القوائم مع بيان سبب وحالة الفشل بدون إخفاء صامت
@@ -639,6 +709,20 @@
 - مستوى صوت مستقل أثناء المكالمات (للإعلانات كإعلان الساعة) من 0%% إلى 100%%
 - تكرار إعلان المتصل صار من مرة واحدة إلى عشر مرات، مع فاصل 3 أو 4 أو 5 ثوانٍ
 - فتح القاموس بلا سقف طول: أي مفتاح تكتبه يُطبَّق، مع تصحيح صمت الوحدات والعملات الملتصقة بالرقم (٥٠ج، ٣٠٠جم)
+- اختصارات لوحة مفاتيح قابلة للتخصيص كاملةً: ضغط مطوّل/مزدوج/ثلاثي/المفتاحان معاً لكل إيماءة، مع زر اختبار فوري وربط محفوظ
+- قائمة وصول سريعة عائمة: عرض فعلي للإيماءات وإطلاقها من زر إمكانية الوصول ولوح الإعدادات السريع
+- ميزة «أين أنا»: وصف موضع التركيز الحيوي وموقعه على الشاشة بأدوار دلالية واضحة
+- تكرار آخر نطق وذاكرة نطق: إعادة آخر نصٍّ منطوق ومراجعة سجلّ النطق ومسحه
+- ملخّص الدردشة: نطق ملخص المحادثة عند فتحها (عدد الرسائل وأسماء المرسلين) مع تثبيط التكرار
+- قراءة الروابط منطوقةً: اختصار الروابط الطويلة إلى نطقها المفهوم مع خيار تفعيل مستقل
+- إجراءات مفاتيح المكالمة: الرد أو الرفض بمفتاح الصوت أثناء الرنين مع إمكانية تبديل المفتاحين
+- إعلان مسار الصوت والبلوتوث عند اتصال/فصل الجهاز على أندرويد 12+ مع إذن BLUETOOTH_CONNECT
+- أصوات جهات الاتصال: صوت مستقل لكل جهة اتصال يُطبَّق على نطق مكالماتها ورسائلها بأولوية تسبق الفئة
+- ملفات التطبيقات والتبديل التلقائي: صوت ومستوى تفصيل لكل تطبيق يُطبَّق حسب التطبيق الأمامي
+- دمج مسار الإعلان في وحدة قراءة واحدة للمتصل وإزالة موزّع الأحداث الميت
+- دليل الميزات والإيماءات: زر مساعدة يشرح كل إيماءة وإجراء وطريقة تفعيل الخدمة
+- محرّر صوت كامل لجهات الاتصال وملفات التطبيقات: اختيار المحرك والصوت والسرعة والنبرة والمستوى مع معاينة
+- دعم الأجهزة 32-بت: شحن معمارية armeabi-v7a بجانب arm64-v8a (يعمل محرّك النظام وOCR وبقية الميزات؛ محرّكا Vocalizer المدمجان لأجهزة 64-بت فقط)
 </string>
     <string name="diagnostics_title">معلومات التشخيص</string>
     <string name="diagnostics_desc">معلومات حول حالة التطبيق ومحركات النطق للمساعدة في حل المشاكل.</string>
@@ -656,11 +740,10 @@
 
     <!-- المحركات المدمجة وتنزيل الأصوات -->
     <string name="group_embedded_engines_title">المحركات المدمجة وتنزيل الأصوات</string>
-    <string name="section_embedded_downloader_title">تنزيل وإدارة الأصوات المدمجة (Piper &amp; Vocalizer &amp; Acapela)</string>
+    <string name="section_embedded_downloader_title">تنزيل وإدارة الأصوات المدمجة (Vocalizer)</string>
     <string name="section_embedded_downloader_summary">أصوات عصبية ومدمجة محلية تعمل بلا إنترنت وبأعلى جودة مع دعم الاستيراد</string>
-    <string name="embedded_engine_piper">Piper TTS (ONNX)</string>
     <string name="embedded_engine_vocalizer">Vocalizer Ex 2</string>
-    <string name="embedded_engine_acapela">Acapela TTS</string>
+    <string name="embedded_engine_Vocalizer">Vocalizer TTS</string>
 
     <!-- ع٢٩-8 بند 2: حالة المحركات + حوار التفاصيل -->
     <string name="engine_state_unknown">غير معروف</string>
@@ -711,13 +794,12 @@
     <string name="embedded_importing_zip">جاري استيراد باقة الصوت…</string>
     <string name="embedded_import_success">تم استيراد الصوت (%1$s) لمحرك %2$s بنجاح</string>
     <string name="embedded_import_error">فشل استيراد الملف المضغوط: %1$s</string>
-    <string name="embedded_acapela_empty_hint">لا توجد أصوات Acapela مثبتة حالياً. يمكنك استيراد صوت عبر زر «استيراد صوت من ملف ZIP» أو بفتح ملف .zip من أي مدير ملفات.</string>
+    <string name="embedded_Vocalizer_empty_hint">لا توجد أصوات Vocalizer مثبتة حالياً. يمكنك استيراد صوت عبر زر «استيراد صوت من ملف ZIP» أو بفتح ملف .zip من أي مدير ملفات.</string>
     <string name="embedded_download_btn">تنزيل الصوت</string>
     <string name="embedded_installed_badge">مُثبَّت</string>
     <string name="embedded_delete_btn">حذف</string>
     <string name="embedded_preview_btn">معاينة الصوت</string>
     <string name="embedded_downloading">جاري التحميل (%1$d%%)…</string>
-    <string name="embedded_filter_all">الكل</string>
 
     <!-- ع٢٩-13: اختصارات المشغّل (launcher shortcuts) -->
     <string name="shortcut_pause_service">إيقاف/تشغيل الخدمة</string>
@@ -732,15 +814,12 @@
     <string name="tile_service_paused">موقوفة</string>
     <string name="tile_service_active">نشطة</string>
     <string name="tile_service_disabled">معطّلة</string>
-    <string name="embedded_filter_ar">العربية</string>
-    <string name="embedded_filter_en">الإنجليزية</string>
-    <string name="embedded_filter_other">لغات أخرى</string>
     <string name="embedded_download_success">تم تنزيل وتثبيت الصوت بنجاح</string>
     <string name="embedded_download_error">تعذر تنزيل الصوت: %1$s</string>
     <string name="embedded_delete_confirm">هل أنت متأكد من حذف هذا الصوت من الذاكرة؟</string>
     <string name="embedded_delete_success">تم حذف الصوت بنجاح</string>
-    <string name="embedded_empty_list">لا توجد أصوات مطابقة للفلتر المحدد</string>
-    <string name="embedded_header_desc">أصوات ذكاء اصطناعي ومحركات مدمجة سريعة تعمل دون الحاجة للاتصال بالإنترنت بمجرد تنزيلها أو استيرادها.</string>
+    <string name="embedded_empty_list">لا توجد أصوات متاحة</string>
+    <string name="embedded_header_desc">محركات صوتية مدمجة سريعة تعمل دون الحاجة للاتصال بالإنترنت بمجرد تنزيلها أو استيرادها.</string>
     <string name="embedded_test_connection">اختبار الاتصال</string>
     <string name="embedded_test_connection_title">اختبار الاتصال بالخادم</string>
     <string name="embedded_test_connection_failed">فشل اختبار الاتصال</string>
@@ -751,5 +830,28 @@
     <string name="embedded_resume_download_btn">استئناف التنزيل</string>
     <string name="embedded_partial_download_hint">مستأنف من %1$s</string>
     <string name="embedded_download_cancelled">تم إلغاء التنزيل</string>
+    <string name="embedded_nav_back">رجوع</string>
+    <string name="embedded_voice_installed_count">مُثبَّت %1$d من %2$d</string>
+    <string name="embedded_nav_breadcrumb">%1$s / %2$s</string>
+    <string name="piper_engine_removed">حُذف محرك Piper؛ أُعيدت الأصوات إلى الافتراضي</string>
+    <string name="loudness_force_max_title">رفع الصوت للحد الأقصى أثناء النطق</string>
+    <string name="loudness_force_max_summary">يرفع قناة الصوت إلى القمة أثناء نطق الحدث ثم يستعيد مستواها الأصلي تلقائياً</string>
+    <string name="loudness_bypass_silent_title">نطق اسم المتصل أثناء وضع الصامت أو الاهتزاز</string>
+    <string name="loudness_bypass_silent_summary">ينطق اسم المتصل حتى إذا كان الجهاز في وضع الصامت أو الاهتزاز</string>
+    <string name="loudness_stream_mode_title">مسار تدفق الصوت</string>
+    <string name="loudness_headset_cap_title">سقف أمان سماعات الأذن والبلوتوث</string>
+    <string name="loudness_headset_cap_desc">يحد أقصى ارتفاع للصوت داخل سماعات الأذن حفاظاً على حاسة السمع (%1$d%%)</string>
+    <string name="stream_mode_auto">تلقائي (موصى به)</string>
+    <string name="stream_mode_accessibility">إمكانية الوصول</string>
+    <string name="stream_mode_alarm">إنذار / منبّه</string>
+    <string name="stream_mode_notification">إشعارات</string>
+    <string name="stream_mode_media">وسائط</string>
+    <string name="loudness_pcm_gain_title">كسب PCM للأحداث بالمحركات المدمجة</string>
+    <string name="loudness_pcm_gain_desc">تعزيز قوة عينات الصوت PCM مع محدد ناعم لمنع التشويه (+%1$d dB)</string>
+    <string name="loudness_pcm_gain_disabled">معطّل (0 dB)</string>
+    <string name="dnd_permission_dialog_title">تجاوز وضع عدم الإزعاج</string>
+    <string name="dnd_permission_dialog_message">لتجاوز وضع «عدم الإزعاج» بدقة عبر نظام التشغيل، يمكنك منح إذن «الوصول إلى سياسة عدم الإزعاج». إذا لم تمنح الإذن، سيعتمد ناطق قناة الإنذار (Alarm) تلقائياً لتخطي الصامت دون الحاجة لأي إذن إضافي.</string>
+    <string name="dnd_permission_dialog_positive">فتح الإعدادات للمنح</string>
+    <string name="dnd_permission_dialog_negative">الاعتماد على قناة الإنذار</string>
 
 </resources>

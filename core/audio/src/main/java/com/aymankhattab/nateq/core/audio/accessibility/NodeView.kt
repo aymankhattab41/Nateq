@@ -19,6 +19,10 @@ data class NodeView(
     val isAccessibilityFocused: Boolean = false,
     val isPassword: Boolean = false,
     val isEditable: Boolean = false,
+    val isEnabled: Boolean = true,
+    val isCheckable: Boolean = false,
+    val isChecked: Boolean = false,
+    val isSelected: Boolean = false,
     val actions: List<Int> = emptyList(),
     val customActionLabels: List<CharSequence> = emptyList(),
     val depth: Int = 0

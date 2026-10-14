@@ -14,7 +14,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * اختبارات [resolveDataDir] للمزودين الثلاثة (ع٣١-2).
+ * اختبارات [resolveDataDir] للمزوّد المدمج (ع٣١-2).
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -34,18 +34,15 @@ class ProviderResolveDataDirTest {
     }
 
     private fun cleanupDirs() {
-        listOf(
-            EmbeddedStorage.Engine.VOCALIZER,
-            EmbeddedStorage.Engine.ACAPELA,
-            EmbeddedStorage.Engine.SHERPA
-        ).forEach { engine ->
-            val dir = EmbeddedStorage.baseDir(context, engine)
-            if (dir.exists()) dir.deleteRecursively()
-        }
+        val dir = EmbeddedStorage.baseDir(
+            context,
+            EmbeddedStorage.Engine.VOCALIZER
+        )
+        if (dir.exists()) dir.deleteRecursively()
     }
 
     @Test
-    fun vocalizer_resolveDataDir_returnsNullWhenEmpty_andDirWhenFilesPresent() {
+    fun vocalizer_resolveDataDir_nullWhenEmpty_dirWhenFilesPresent() {
         val resolvedEmpty =
             VocalizerEmbeddedVoiceProvider.resolveDataDir(context)
         assertNull(resolvedEmpty)
@@ -62,46 +59,6 @@ class ProviderResolveDataDirTest {
 
         val resolved =
             VocalizerEmbeddedVoiceProvider.resolveDataDir(context)
-        assertNotNull(resolved)
-        assertEquals(baseDir.absolutePath, resolved!!.absolutePath)
-    }
-
-    @Test
-    fun sherpa_resolveDataDir_returnsNullWhenEmpty_andModelDirWhenPresent() {
-        val resolvedEmpty =
-            SherpaOnnxVoiceProvider.resolveDataDir(context)
-        assertNull(resolvedEmpty)
-
-        val baseDir = EmbeddedStorage.baseDir(
-            context,
-            EmbeddedStorage.Engine.SHERPA
-        )
-        val modelDir = File(baseDir, "v1")
-        modelDir.mkdirs()
-        File(modelDir, "model.onnx").writeBytes(ByteArray(16))
-        File(modelDir, "tokens.txt").writeText("a 1\nb 2")
-
-        val resolved =
-            SherpaOnnxVoiceProvider.resolveDataDir(context)
-        assertNotNull(resolved)
-        assertEquals(modelDir.absolutePath, resolved!!.absolutePath)
-    }
-
-    @Test
-    fun acapela_resolveDataDir_returnsNullWhenEmpty_andCandidateWhenPresent() {
-        val resolvedEmpty =
-            AcapelaEmbeddedVoiceProvider.resolveDataDir(context)
-        assertNull(resolvedEmpty)
-
-        val baseDir = EmbeddedStorage.baseDir(
-            context,
-            EmbeddedStorage.Engine.ACAPELA
-        )
-        baseDir.mkdirs()
-        File(baseDir, "voicelist").writeText("voice1\nvoice2")
-
-        val resolved =
-            AcapelaEmbeddedVoiceProvider.resolveDataDir(context)
         assertNotNull(resolved)
         assertEquals(baseDir.absolutePath, resolved!!.absolutePath)
     }

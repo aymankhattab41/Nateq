@@ -4,6 +4,9 @@ import android.content.Context;
 import android.content.res.AssetFileDescriptor;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
+import com.aymankhattab.nateq.core.audio.enginehost.HostLog;
+import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol;
+import com.aymankhattab.nateq.core.audio.enginehost.VocalizerDataProvider;
 import com.nuance.android.vocalizer.internal.VocalizerFileInfo;
 import com.nuance.android.vocalizer.internal.VocalizerResourceInfo;
 import com.nuance.android.vocalizer.internal.VocalizerStatusInfo;
@@ -19,6 +22,12 @@ import java.util.Map;
  */
 public class VocalizerEngine {
     private static final String TAG = "VocalizerEngine";
+
+    /**
+     * معرّف المحرك في سجل المضيف (:engine_host) الموحّد.
+     */
+    private static final String ENGINE_ID =
+        HostProtocol.ENGINE_VOCALIZER;
 
     public static final int DEFAULT_RATE = 100;
     public static final int DEFAULT_PITCH = 100;
@@ -47,10 +56,15 @@ public class VocalizerEngine {
     private VocalizerAudioSettings mAudioSettings =
         new VocalizerAudioSettings(22050, VocalizerAudioSettings.MONO);
 
-    private String mDataPath = null;
     private Throwable mCreateError = null;
     private Throwable mInitError = null;
     private String mLastError = null;
+
+    /**
+     * ترويسات خط المعالجة المجمّعة من ملفات .hdr، تُمرَّر
+     * حرفياً إلى initializeNative (وليس مسار مجلد).
+     */
+    private String mPipelineHeaders = null;
 
     /**
      * عنوان مؤشر المحرك الأصلي (CVocalizerEngine*) الذي يُنشئه
@@ -100,18 +114,24 @@ public class VocalizerEngine {
         return mLastError;
     }
 
-    public synchronized boolean initialize(String dataDirectory) {
-        this.mDataPath = dataDirectory;
+    /**
+     * يهيّئ المحرك بترويسات خط المعالجة المجمّعة من ملفات .hdr.
+     *
+     * <p>عقد المكتبة الأصلية: initializeNative(String) ينتظر
+     * <b>نصّ</b> الترويسات (تسلسل محتوى كل ملفات .hdr) لا مساراً.
+     * تمرير مسار كان يجعل المحرك يحاول تحليله كـ XML فيفشل بـ
+     * 0x80000004 ("The engine could not be initialized").
+     *
+     * @param pipelineHeaders نصّ الترويسات المجمّع.
+     */
+    public synchronized boolean initialize(String pipelineHeaders) {
+        this.mPipelineHeaders = pipelineHeaders == null
+            ? "" : pipelineHeaders;
         this.mInitError = null;
         this.mLastError = null;
         try {
-            File dir = new File(dataDirectory);
-            if (!dir.exists()) {
-                mLastError = "Vocalizer data directory does not exist: " +
-                    dataDirectory;
-                Log.w(TAG, mLastError);
-            }
-            mIsInitialized = initializeNative(dataDirectory);
+            mIsInitialized =
+                initializeNative(this.mPipelineHeaders);
             Log.i(TAG, "initializeNative result: " + mIsInitialized);
             if (!mIsInitialized && mLastError == null) {
                 mLastError = "initializeNative returned false";
@@ -125,6 +145,13 @@ public class VocalizerEngine {
                 t.getMessage(), t);
             return false;
         }
+    }
+
+    /**
+     * ترويسات خط المعالجة الممرّرة للتهيئة.
+     */
+    public String getPipelineHeaders() {
+        return mPipelineHeaders;
     }
 
     public boolean isInitialized() {
@@ -219,7 +246,11 @@ public class VocalizerEngine {
                     t.getMessage());
             }
             mIsInitialized = false;
-            closeAllOpenFiles();
+        }
+        closeAllOpenFiles();
+        VocalizerDataProvider provider = mDataProvider;
+        if (provider != null) {
+            provider.closeAll();
         }
     }
 
@@ -250,60 +281,98 @@ public class VocalizerEngine {
     // ================= عقد JNI: فتح/غلق ملفات الأصول =================
 
     /**
-     * وصفات ملفات مفتوحة نحتفظ بها حتى يستدعي الكود الأصلي
+     * وصفات ملفات أصول مفتوحة نحتفظ بها حتى يستدعي الكود الأصلي
      * closeAssetFile. المفتاح هو رقم الوصف (fd).
      */
     private final Map<Integer, ParcelFileDescriptor> mOpenFiles =
         new HashMap<>();
 
     /**
-     * يفتح ملف صوت/أصول ويعيد معلوماته: رقم الوصف، الإزاحة
-     * داخل الملف، وطوله.
+     * تسطيح اسم أصل إلى اسم ملف .xmf (عقد فتح الأصول).
+     * مفوَّض إلى {@link VocalizerDataProvider#flattenAssetName}.
+     */
+    public static String flattenAssetName(String name) {
+        return VocalizerDataProvider.flattenAssetName(name);
+    }
+
+    /**
+     * مزوّد ملفات الصوت الخارجية .dat (يُحقن من جلسة المضيف).
+     * إن كان null تُتخطّى ملفات .dat وتُفتح الأصول فقط.
+     */
+    private VocalizerDataProvider mDataProvider = null;
+
+    /**
+     * يضبط مزوّد ملفات .dat الخارجية قبل التهيئة.
+     */
+    public synchronized void setDataProvider(VocalizerDataProvider p) {
+        this.mDataProvider = p;
+    }
+
+    /**
+     * يفتح ملف بيانات أو أصل ويعيد معلوماته.
      *
-     * <p>عقد JNI المأخوذ من libNuanceVocalizer.so:
-     * GetMethodID(VocalizerEngine, "openAssetFile",
+     * <p>الترتيب مطابقٌ لمحرك Nuance الأصلي:
+     * <ol>
+     *   <li>ملفات الصوت الخارجية .dat عبر {@link VocalizerDataProvider}
+     *       (المفتاح: الاسم مسطّحاً + .dat)؛</li>
+     *   <li>أصول أساسية .xmf داخل assets/vocalizer/ بعد تسطيح
+     *       الاسم، غير المضغوطة تُفتح بـ openFd والمضغوطة تُنسخ
+     *       إلى cache.</li>
+     * </ol>
+     *
+     * <p>عقد JNI: GetMethodID(VocalizerEngine, "openAssetFile",
      * "(Ljava/lang/String;)Lcom/nuance/android/vocalizer/internal/
-     * VocalizerFileInfo;") يُنادى على الكائن نفسه — أي على
-     * NewGlobalRef(thiz) المخزّن في CVocalizerEngine عند الإزاحة
-     * 0x18 (انظر CVocalizerEngine::CVocalizerEngine).
+     * VocalizerFileInfo;") يُنادى على الكائن نفسه.
      *
-     * @return null إذا تعذّر الفتح؛ يفحص الكود الأصلي النتيجة
-     *         قبل استخدامها.
+     * @return null إذا تعذّر الفتح.
      */
     public synchronized VocalizerFileInfo openAssetFile(String path) {
         if (path == null || path.isEmpty()) {
             Log.w(TAG, "openAssetFile: path is empty");
             return null;
         }
+
+        VocalizerDataProvider provider = mDataProvider;
+        VocalizerFileInfo external = provider == null
+            ? null : provider.openDataFile(path);
+        if (external != null) {
+            HostLog.w(ENGINE_ID,
+                "openAssetFile path='" + path +
+                "' source=external fd=" + external.descriptor +
+                " off=" + external.startOffset +
+                " len=" + external.length);
+            return external;
+        }
+
+        String flat = VocalizerDataProvider.flattenAssetName(path);
+        String assetPath = "vocalizer/" + flat;
         ParcelFileDescriptor pfd;
         long start = 0L;
         long length = 0L;
         try {
-            File local = resolveLocalFile(path);
-            if (local != null) {
-                pfd = ParcelFileDescriptor.open(
-                    local, ParcelFileDescriptor.MODE_READ_ONLY);
-                length = local.length();
+            AssetRef ref = openFromAssets(assetPath);
+            if (ref != null) {
+                pfd = ref.pfd;
+                start = ref.startOffset;
+                length = ref.length;
             } else {
-                AssetRef ref = openFromAssets(path);
-                if (ref != null) {
-                    pfd = ref.pfd;
-                    start = ref.startOffset;
-                    length = ref.length;
-                } else {
-                    File cached = copyAssetToCache(path);
-                    if (cached == null) {
-                        Log.w(TAG,
-                            "openAssetFile: not found: " + path);
-                        return null;
-                    }
-                    pfd = ParcelFileDescriptor.open(
-                        cached, ParcelFileDescriptor.MODE_READ_ONLY);
-                    length = cached.length();
+                File cached = copyAssetToCache(assetPath);
+                if (cached == null) {
+                    HostLog.w(ENGINE_ID,
+                        "openAssetFile [MISSING] path='" + path +
+                        "' asset='" + assetPath +
+                        "' flat='" + flat + "' source=null");
+                    return null;
                 }
+                pfd = ParcelFileDescriptor.open(
+                    cached, ParcelFileDescriptor.MODE_READ_ONLY);
+                length = cached.length();
             }
         } catch (IOException e) {
-            Log.w(TAG, "openAssetFile failed: " + path + " - " + e);
+            HostLog.w(ENGINE_ID,
+                "openAssetFile [FAILED] path='" + path +
+                "' asset='" + assetPath + "' flat='" + flat + "'",
+                e);
             return null;
         }
         VocalizerFileInfo info = new VocalizerFileInfo();
@@ -311,20 +380,31 @@ public class VocalizerEngine {
         info.startOffset = start;
         info.length = length;
         mOpenFiles.put(info.descriptor, pfd);
+        HostLog.w(ENGINE_ID,
+            "openAssetFile path='" + path + "' asset='" + assetPath +
+            "' flat='" + flat + "' source=asset fd=" + info.descriptor +
+            " off=" + start + " len=" + length);
         return info;
     }
 
     /**
      * يغلق وصف ملف فتحته openAssetFile.
      *
-     * <p>عقد JNI: GetMethodID(VocalizerEngine, "closeAssetFile",
-     * "(I)V") يُنادى على الكائن نفسه. لا نغلق إلا أوصافاً
-     * فتحناها نحن، لأن إغلاق وصف لا نملكه قد يقطع مقبساً
-     * يخص النظام ( شبكة/قناة صوتية ).
+     * <p>يوّجه الإغلاق إلى المالك الصحيح: ملفات .dat الخارجية
+     * يديرها {@link VocalizerDataProvider}، وملفات الأصول المحلية
+     * يديرها هذا المحرك. لا نغلق وصفاً لا نملكه، لأن ذلك قد يقطع
+     * مقبساً يخص النظام.
      *
      * @param descriptor رقم الوصف الذي أعطاه الكود الأصلي.
      */
     public synchronized void closeAssetFile(int descriptor) {
+        VocalizerDataProvider provider = mDataProvider;
+        if (provider != null && provider.hasOpenFile(descriptor)) {
+            provider.closeAssetFile(descriptor);
+            HostLog.w(ENGINE_ID,
+                "closeAssetFile #" + descriptor + " source=external");
+            return;
+        }
         ParcelFileDescriptor pfd = mOpenFiles.remove(descriptor);
         if (pfd == null) {
             Log.w(TAG, "closeAssetFile: unknown fd " + descriptor);
@@ -332,25 +412,11 @@ public class VocalizerEngine {
         }
         try {
             pfd.close();
+            HostLog.w(ENGINE_ID,
+                "closeAssetFile #" + descriptor + " source=asset");
         } catch (IOException e) {
             Log.w(TAG, "closeAssetFile: " + descriptor + " - " + e);
         }
-    }
-
-    /**
-     * يبحث عن المسار في القرص أولاً (مجلد البيانات ثم filesDir).
-     * يعيد null إن لم يوجد.
-     */
-    private File resolveLocalFile(String path) {
-        File direct = new File(path);
-        if (direct.isAbsolute() && direct.isFile()) return direct;
-        File inFiles = new File(mContext.getFilesDir(), path);
-        if (inFiles.isFile()) return inFiles;
-        if (mDataPath != null) {
-            File inData = new File(mDataPath, path);
-            if (inData.isFile()) return inData;
-        }
-        return null;
     }
 
     /**

@@ -8,6 +8,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
+// `AccessibilityNodeInfo.obtain()` مُهمَل في API 36، لكن البديل (المُنشئ)
+// متاح من API 30 فقط، وتشمل هذه الفئة sdk=24، لذا يلزم الإبقاء عليه.
+@Suppress("DEPRECATION")
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [24, 30, 35, 37])
 class SafeNodeWalkerTest {

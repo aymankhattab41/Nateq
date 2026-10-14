@@ -17,16 +17,16 @@ class DownloadLogTest {
     @Test
     fun recordAndGetError_recordsCorrectly() {
         DownloadLog.recordError(
-            voiceId = "vits-piper-ar-kareem",
-            engineId = "sherpa",
+            voiceId = "vocalizer-test",
+            engineId = "vocalizer",
             errorCode = DownloadError.NO_SPACE,
             errorMessage = "المساحة غير كافية"
         )
 
-        val err = DownloadLog.getError("vits-piper-ar-kareem")
+        val err = DownloadLog.getError("vocalizer-test")
         assertNotNull(err)
-        assertEquals("vits-piper-ar-kareem", err?.voiceId)
-        assertEquals("sherpa", err?.engineId)
+        assertEquals("vocalizer-test", err?.voiceId)
+        assertEquals("vocalizer", err?.engineId)
         assertEquals(DownloadError.NO_SPACE, err?.errorCode)
         assertEquals("المساحة غير كافية", err?.errorMessage)
     }
@@ -55,7 +55,7 @@ class DownloadLogTest {
         )
         DownloadLog.recordError(
             voiceId = "voice2",
-            engineId = "piper",
+            engineId = "other_engine",
             errorCode = DownloadError.NETWORK,
             errorMessage = "Network err"
         )
@@ -71,8 +71,8 @@ class DownloadLogTest {
         assertTrue(vocErrors.any { it.voiceId == "voice1" })
         assertTrue(vocErrors.any { it.voiceId == "voice3" })
 
-        val piperErrors = DownloadLog.getAllErrorsForEngine("piper")
-        assertEquals(1, piperErrors.size)
-        assertEquals("voice2", piperErrors.first().voiceId)
+        val otherErrors = DownloadLog.getAllErrorsForEngine("other_engine")
+        assertEquals(1, otherErrors.size)
+        assertEquals("voice2", otherErrors.first().voiceId)
     }
 }

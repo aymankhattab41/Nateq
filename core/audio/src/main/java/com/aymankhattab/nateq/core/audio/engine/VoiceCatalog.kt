@@ -6,11 +6,9 @@ import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
 import android.util.Log
-import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
-import com.aymankhattab.nateq.core.audio.providers.SherpaOnnxVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
@@ -141,9 +139,7 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                 engines.firstOrNull { it.packageName == pkg }?.label ?: pkg
 
             val vocalizerPkg = VocalizerEmbeddedVoiceProvider.PROVIDER_ID
-            val acapelaPkg = AcapelaEmbeddedVoiceProvider.PROVIDER_ID
-            val sherpaPkg = SherpaOnnxVoiceProvider.PROVIDER_ID
-            val embeddedPkgs = setOf(vocalizerPkg, acapelaPkg, sherpaPkg)
+            val embeddedPkgs = setOf(vocalizerPkg)
             val externalEngines = engines.filterNot {
                 it.packageName in embeddedPkgs
             }
@@ -207,121 +203,7 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                     )
                 }
             }
-            if (engines.any { it.packageName == acapelaPkg }) {
-                try {
-                    val acapela = EmbeddedProviders.acapela(context)
-                    if (acapela.isConfigured()) {
-                        val aList = acapela.listVoices(Locale.ROOT).map { d ->
-                            Voice(
-                                d.displayName,
-                                d.locale,
-                                Voice.QUALITY_HIGH,
-                                Voice.LATENCY_LOW,
-                                false,
-                                offlineFeature
-                            )
-                        }
-                        if (aList.isNotEmpty()) {
-                            embeddedVoicesMap[acapelaPkg] = aList
-                        } else {
-                            val st = EngineStatusRegistry.statusOf(
-                                context, acapelaPkg
-                            )
-                            unavailableEngines.add(
-                                UnavailableEngine(
-                                    enginePackage = acapelaPkg,
-                                    engineLabel = labelFor(acapelaPkg),
-                                    code = st.code ?: "NO_VOICES",
-                                    message = st.lastError
-                                        ?: "لم تُرجع أصواتاً رغم وجود الملفات"
-                                )
-                            )
-                        }
-                    }
-                } catch (e: kotlinx.coroutines.CancellationException) {
-                    throw e
-                } catch (t: Throwable) {
-                    Log.w(
-                        TAG,
-                        "Failed to list voices for $acapelaPkg: ${t.message}",
-                        t
-                    )
-                    EngineStatusRegistry.noteFailure(
-                        acapelaPkg,
-                        "LIST_VOICES_FAILED",
-                        t.message
-                    )
-                    val st = EngineStatusRegistry.statusOf(
-                        context, acapelaPkg
-                    )
-                    unavailableEngines.add(
-                        UnavailableEngine(
-                            enginePackage = acapelaPkg,
-                            engineLabel = labelFor(acapelaPkg),
-                            code = st.code ?: "LIST_VOICES_FAILED",
-                            message = st.lastError ?: t.message
-                        )
-                    )
-                }
-            }
-            if (engines.any { it.packageName == sherpaPkg }) {
-                try {
-                    val sherpa = EmbeddedProviders.sherpa(context)
-                    if (sherpa.isConfigured()) {
-                        val sList = sherpa.listVoices(Locale.ROOT).map { d ->
-                            Voice(
-                                d.displayName,
-                                d.locale,
-                                Voice.QUALITY_HIGH,
-                                Voice.LATENCY_LOW,
-                                false,
-                                offlineFeature
-                            )
-                        }
-                        if (sList.isNotEmpty()) {
-                            embeddedVoicesMap[sherpaPkg] = sList
-                        } else {
-                            val st = EngineStatusRegistry.statusOf(
-                                context, sherpaPkg
-                            )
-                            unavailableEngines.add(
-                                UnavailableEngine(
-                                    enginePackage = sherpaPkg,
-                                    engineLabel = labelFor(sherpaPkg),
-                                    code = st.code ?: "NO_VOICES",
-                                    message = st.lastError
-                                        ?: "لم تُرجع أصواتاً رغم وجود الملفات"
-                                )
-                            )
-                        }
-                    }
-                } catch (e: kotlinx.coroutines.CancellationException) {
-                    throw e
-                } catch (t: Throwable) {
-                    Log.w(
-                        TAG,
-                        "Failed to list voices for $sherpaPkg: ${t.message}",
-                        t
-                    )
-                    EngineStatusRegistry.noteFailure(
-                        sherpaPkg,
-                        "LIST_VOICES_FAILED",
-                        t.message
-                    )
-                    val st = EngineStatusRegistry.statusOf(
-                        context, sherpaPkg
-                    )
-                    unavailableEngines.add(
-                        UnavailableEngine(
-                            enginePackage = sherpaPkg,
-                            engineLabel = labelFor(sherpaPkg),
-                            code = st.code ?: "LIST_VOICES_FAILED",
-                            message = st.lastError ?: t.message
-                        )
-                    )
-                }
-            }
-            // الفحص بالتوازي مع سقف 2-3 محركات متزامنة عبر Semaphore
+            // الفحص بالتوازي مع سقف المحركات المتزامنة عبر Semaphore
             // لمنع فتح مثيلات غير محدودة في نفس اللحظة وإغراق الموارد.
             val semaphore = Semaphore(MAX_CONCURRENT_ENGINE_PROBES)
             val voicesByEngine = try {
@@ -374,6 +256,19 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                     "Failed in discoverAllLanguagesAcrossEngines: ${t.message}",
                     t
                 )
+                for (engine in engines) {
+                    val st = EngineStatusRegistry.statusOf(
+                        context, engine.packageName
+                    )
+                    unavailableEngines.add(
+                        UnavailableEngine(
+                            enginePackage = engine.packageName,
+                            engineLabel = engine.label,
+                            code = st.code ?: "DISCOVERY_FAILED",
+                            message = st.lastError ?: t.message
+                        )
+                    )
+                }
                 emptyMap<String, List<Voice>>()
             }
 
@@ -408,7 +303,6 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                     .distinctBy { it.enginePackage }
             )
         }
-
         /**
          * يبني خريطة (languageTag -> المحركات التي توفرها) من أصوات المحركات
          * الفعلية فقط (بعد فلترة [filterVoicesWithInstalledData]) — أي لغة لم
@@ -425,7 +319,7 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
         >()
             for ((pkg, voices) in voicesByEngine) {
                 for (voice in voices) {
-val lang = LocaleUtils.normalizeLanguageCode(
+                    val lang = LocaleUtils.normalizeLanguageCode(
                         voice.locale?.language
                     )
                     if (lang.isBlank()) continue

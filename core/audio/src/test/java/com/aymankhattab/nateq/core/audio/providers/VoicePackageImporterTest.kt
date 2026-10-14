@@ -34,43 +34,7 @@ class VoicePackageImporterTest {
     }
 
     @Test
-    fun inspectZip_detectsAcapelaPackage() {
-        val zipFile = tempFolder.newFile("acapela-ara-SAU-Nizar-Old.zip")
-        val base = "acapela/zIKZf7gAdYV5J6rtVR6E8l0w4EQpvmW0h48FhxjqSU="
-        createMockZip(
-            zipFile,
-            listOf(
-                "$base/logfile.txt",
-                "$base/voicelist",
-                "$base/nizar22k_hq/ar_sa_hd_nizar_22k_lf.bvcu.inf",
-                "$base/nizar22k_hq/nizar_lf/nizar_22k_lf.bvcu"
-            )
-        )
-
-        val (engine, voice) = VoicePackageImporter.inspectZip(zipFile)
-        assertEquals(VoicePackageImporter.ENGINE_ACAPELA, engine)
-        assertEquals("Nizar", voice)
-    }
-
-    @Test
-    fun inspectZip_detectsPiperPackage() {
-        val zipFile = tempFolder.newFile("kareem_voice.zip")
-        createMockZip(
-            zipFile,
-            listOf(
-                "ar_JO-kareem-low.onnx",
-                "ar_JO-kareem-low.onnx.json",
-                "tokens.txt"
-            )
-        )
-
-        val (engine, voice) = VoicePackageImporter.inspectZip(zipFile)
-        assertEquals(VoicePackageImporter.ENGINE_PIPER, engine)
-        assertEquals("ar_JO-kareem-low", voice)
-    }
-
-    @Test
-    fun inspectZip_detectsVocalizerPackage() {
+    fun inspectZip_vocalizerPackage_detectsEngineAndVoice() {
         val zipFile = tempFolder.newFile("vocalizer_maged.zip")
         createMockZip(
             zipFile,
@@ -85,27 +49,49 @@ class VoicePackageImporterTest {
         assertEquals("maged", voice)
     }
 
+    /**
+     * حزمة بنمط محرّك قديم (ملفات .bvcu/22k): المحرّك أُزيل فيرجع
+     * `ENGINE_UNKNOWN`، لكن استكشاف اسم الصوت من أسماء الملفات باقٍ.
+     */
     @Test
-    fun importFromZipFile_extractsFilesAndDiscoversVoice() = runBlocking {
-        val zipFile = tempFolder.newFile("nizar_test.zip")
+    fun inspectZip_legacyEngineStylePackage_reportsUnknownEngine() {
+        val zipFile = tempFolder.newFile("nizar.zip")
+        val base = "legacy/zIKZf7gAdYV5J6rtVR6E8l0w4EQpvmW0h48FhxjqSU="
         createMockZip(
             zipFile,
             listOf(
-                "acapela/test_dir/ar_sa_hd_nizar_22k_lf.bvcu.inf",
-                "acapela/test_dir/nizar_22k_lf.bvcu"
+                "$base/logfile.txt",
+                "$base/voicelist",
+                "$base/nizar22k_hq/ar_sa_hd_nizar_22k_lf.bvcu.inf",
+                "$base/nizar22k_hq/nizar_lf/nizar_22k_lf.bvcu"
+            )
+        )
+
+        val (engine, voice) = VoicePackageImporter.inspectZip(zipFile)
+        assertEquals(VoicePackageImporter.ENGINE_UNKNOWN, engine)
+        assertEquals("Nizar", voice)
+    }
+
+    @Test
+    fun importFromZipFile_extractsFilesAndDiscoversVoice() = runBlocking {
+        val zipFile = tempFolder.newFile("vocalizer_test.zip")
+        createMockZip(
+            zipFile,
+            listOf(
+                "ve_pipeline_maged.hdr",
+                "languages/ara/speech/components/maged.dat"
             )
         )
 
         val result = VoicePackageImporter.importFromZipFile(context, zipFile)
         assertTrue(result.isSuccess)
-        assertEquals(VoicePackageImporter.ENGINE_ACAPELA, result.engineType)
-        assertEquals("Nizar", result.voiceName)
+        assertEquals(
+            VoicePackageImporter.ENGINE_VOCALIZER,
+            result.engineType
+        )
+        assertEquals("maged", result.voiceName)
         assertNotNull(result.targetDir)
         assertTrue(result.extractedFilesCount >= 2)
-
-        // التحقق من استكشاف الصوت المكتشف عبر Provider
-        val installed = AcapelaEmbeddedVoiceProvider.getInstalledVoices(context)
-        assertTrue(installed.any { it.voiceName == "Nizar" })
     }
 
     @Test

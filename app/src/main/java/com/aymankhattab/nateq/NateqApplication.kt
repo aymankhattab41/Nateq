@@ -11,9 +11,11 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementAppContext
+import com.aymankhattab.nateq.core.audio.announcement.EventLoudnessPolicy
 import com.aymankhattab.nateq.core.audio.announcement.TimeAnnouncementManager
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.common.AppDispatchers
+import com.aymankhattab.nateq.core.data.LegacySherpaMigrator
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.StartupTempSweeper
 import com.aymankhattab.nateq.nav.SettingsOpenRegistry
@@ -156,9 +158,33 @@ class NateqApplication : Application(), AnnouncementAppContext {
         // **بند 7.1:** تُميَّز العملية عبر [ProcessUtils] الموحَّد —
         // المقارنة في main حصراً لتفادي حذف صوت جلسة :tts الجاري توليده.
         if (ProcessUtils.isMainProcess(this)) {
+            // هجرة وتنظيف مخلفات Sherpa/Piper عند أول تشغيل (ع٤٠-7)
+            runCatching {
+                LegacySherpaMigrator(
+                    applicationContext,
+                    settingsRepository
+                ).migrateIfNeeded()
+            }.onFailure { e ->
+                Log.w(
+                    "NATEQ_APP",
+                    "فشلت هجرة إعدادات Sherpa/Piper",
+                    e
+                )
+            }
+
             appScope.launch {
                 runCatching {
                     StartupTempSweeper(applicationContext).sweep()
+                }
+                runCatching {
+                    val am = getSystemService(Context.AUDIO_SERVICE)
+                        as? android.media.AudioManager
+                    if (am != null) {
+                        EventLoudnessPolicy.restorePendingBoostIfAny(
+                            am,
+                            settingsRepository
+                        )
+                    }
                 }
             }
         }

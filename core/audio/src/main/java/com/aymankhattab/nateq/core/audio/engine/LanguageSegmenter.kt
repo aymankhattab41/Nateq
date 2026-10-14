@@ -8,7 +8,8 @@ import com.aymankhattab.nateq.util.LanguageCode
  */
 data class Segment(
     val text: String,
-    val languageTag: String
+    val languageTag: String,
+    val role: SpeechRole = SpeechRole.TEXT
 )
 
 /** هل المقطع «رقمي بحت»؟ أرقامٌ (لاتينية أو غيرها) مع محايدات مسموحةٍ
@@ -194,9 +195,7 @@ class LanguageSegmenter(
                         leadingStart = -1
                         openLanguage = language
                         openKind = run.kind
-                    } else if (openLanguage != language ||
-                        openKind != run.kind
-                    ) {
+                    } else if (shouldSplit(openLanguage, language)) {
                         var cutPoint = run.start
                         if (cutPoint > 0 && cutPoint > openStart) {
                             val prevChar = text[cutPoint - 1]
@@ -233,9 +232,21 @@ class LanguageSegmenter(
         return segments
     }
 
+    /** هل يجب فصل المقطع الحالي؟ مقارنة باللغة والعائلة اللغوية. */
+    private fun shouldSplit(
+        openLanguage: String,
+        newLanguage: String
+    ): Boolean {
+        if (openLanguage == LATIN_PLACEHOLDER ||
+            newLanguage == LATIN_PLACEHOLDER
+        ) {
+            return openLanguage != newLanguage
+        }
+        return !LanguageCode.isSameFamily(openLanguage, newLanguage)
+    }
+
     /**
-     * يضيف مقطعاً جديداً ويدمجه مع السابق إن تطابقت لغتهما ولم يكن أحدهما
-     * رقمياً.
+     * يضيف مقطعاً جديداً ويدمجه مع السابق إن تطابقت عائلتهما اللغوية.
      */
     private fun addSegment(
         segments: ArrayList<Segment>,
@@ -244,9 +255,7 @@ class LanguageSegmenter(
         if (newSegment.text.isEmpty()) return
         val last = segments.lastOrNull()
         if (last != null &&
-            last.languageTag == newSegment.languageTag &&
-            !last.isNumericOnly() &&
-            !newSegment.isNumericOnly()
+            LanguageCode.isSameFamily(last.languageTag, newSegment.languageTag)
         ) {
             segments[segments.size - 1] = Segment(
                 last.text + newSegment.text,

@@ -35,9 +35,76 @@ internal class EngineVoicesCatalog(
     @Volatile
     private var byLanguage: Map<String, List<EngineVoicesRow>> = initial
 
+    @Volatile
+    private var unavailable: Map<String, String> = emptyMap()
+
+    private val loadingEngines =
+        java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     /** يحدّث الخريطة بعد اكتمال الاكتشاف الخلفي للمحركات. */
-    fun update(discovery: Map<String, List<EngineVoicesRow>>) {
+    fun update(
+        discovery: Map<String, List<EngineVoicesRow>>,
+        unavailableMap: Map<String, String> = emptyMap()
+    ) {
         byLanguage = discovery
+        unavailable = unavailableMap
+    }
+
+    /** يُسجّل أو يُلغي حالة جارٍ التحميل لمحرك معين. */
+    fun setLoading(engine: String, loading: Boolean) {
+        if (loading) {
+            loadingEngines.add(engine)
+        } else {
+            loadingEngines.remove(engine)
+        }
+    }
+
+    /** يضيف أصواتاً جديدة لمحرك معين تحت لغة معينة في الكتالوج. */
+    @Synchronized
+    fun addVoicesForEngine(
+        language: String,
+        enginePackage: String,
+        engineLabel: String,
+        voices: List<VoiceOption>
+    ) {
+        val currentRows = byLanguage[language].orEmpty().toMutableList()
+        val existingIndex = currentRows.indexOfFirst {
+            it.enginePackage == enginePackage
+        }
+        val newRow = EngineVoicesRow(enginePackage, engineLabel, voices)
+        if (existingIndex >= 0) {
+            currentRows[existingIndex] = newRow
+        } else {
+            currentRows.add(newRow)
+        }
+        val mutableMap = byLanguage.toMutableMap()
+        mutableMap[language] = currentRows
+        byLanguage = mutableMap
+    }
+
+    /**
+     * يعيد سبب غياب أصوات المحرك:
+     * - «جارٍ التحميل» إن كان قيد الجلب.
+     * - «المحرك غير جاهز: <السبب>» إن كان المحرك معطلاً أو تعذرت قراءته.
+     * - «لا توجد أصوات لهذا المحرك بهذه اللغة» إن كان جاهزاً لكن لا أصوات له.
+     */
+    fun reasonFor(engine: String, language: String): String? {
+        if (loadingEngines.contains(engine)) {
+            return "جارٍ التحميل"
+        }
+        val unavailReason = unavailable[engine]
+        if (unavailReason != null) {
+            return "المحرك غير جاهز: $unavailReason"
+        }
+        val engines = byLanguage[language].orEmpty()
+        val row = engines.firstOrNull { it.enginePackage == engine }
+        if (row != null && row.voices.isEmpty()) {
+            return "لا توجد أصوات لهذا المحرك بهذه اللغة"
+        }
+        if (row == null) {
+            return "لا توجد أصوات لهذا المحرك بهذه اللغة"
+        }
+        return null
     }
 
     /** اللغات المعروضة: العربية والإنجليزية أولاً ثم الباقي أبجدياً. */
@@ -59,9 +126,9 @@ internal class EngineVoicesCatalog(
     }
 
     /** أصوات اللغة لمحركٍ محدد (أو مُسطَّحة عبر كل محركات اللغة عند null).
-     *  إن لم يقدّم المحرك/اللغة أصواتاً نرجع الأصوات المنطقية الثابتة
-     *  (ar-EG/en-US) حتى لا تُعرض قائمة فارغة فيبقى النطق الافتراضي
-     *  قابلاً للاختيار — ولغاتٍ أخرى بلا أصوات تُرجع القائمة الفارغة. */
+     *  إن كان engine != null كانت القائمة فارغة فأعد قائمة فارغة.
+     *  عند engine == null لا يوجد fallback أصوات — يُترك للواجهة التعامل
+     *  مع الحالة الفارغة (ع٤٠-1: إزالة الصوت الوهمي ar-EG/en-US). */
     internal fun voicesFor(
         language: String,
         engine: String?
@@ -72,32 +139,20 @@ internal class EngineVoicesCatalog(
         } else {
             engines
         }
-        val flat = picked
+        return picked
             .flatMap { row ->
                 row.voices.map { voice ->
                     if (engine == null) {
-                        voice.copy(label = "${row.engineLabel}: ${voice.label}")
+                        voice.copy(
+                            label = "${row.engineLabel}: ${voice.label}"
+                        )
                     } else {
                         voice
                     }
                 }
             }
             .distinctBy { it.name }
-        if (flat.isNotEmpty()) return flat
-        return fallbackVoices(language)
     }
-
-    /** الأصوات المنطقية الثابتة للّغتين المضمونتين. */
-    internal fun fallbackVoices(language: String): List<VoiceOption> =
-        when (language) {
-            LANGUAGE_AR -> listOf(
-                VoiceOption(DEFAULT_AR_NAME, arabicVoiceLabel)
-            )
-            LANGUAGE_EN -> listOf(
-                VoiceOption(DEFAULT_EN_NAME, englishVoiceLabel)
-            )
-            else -> emptyList()
-        }
 
     /** لغة صوتٍ مكتشفٍ محفوظ عبر البحث في خريطة الاكتشاف (أو null إن لم
      *  يُعرَف) — يُعتمد للاستدلال اللغوي عند غياب لغةٍ محفوظة صراحة. */

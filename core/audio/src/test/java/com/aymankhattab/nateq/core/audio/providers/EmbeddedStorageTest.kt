@@ -115,6 +115,15 @@ class EmbeddedStorageTest {
     }
 
     @Test
+    fun migrateLegacyInternalDirs_isNoOpWhenEngineHasNoLegacyNames() {
+        val moved = EmbeddedStorage.migrateLegacyInternalDirs(
+            context,
+            EmbeddedStorage.Engine.VOCALIZER
+        )
+        assertEquals(0, moved)
+    }
+
+    @Test
     fun bumpVersion_raisesStorageVersion() {
         val before = EmbeddedStorage.version
         EmbeddedStorage.bumpVersion()

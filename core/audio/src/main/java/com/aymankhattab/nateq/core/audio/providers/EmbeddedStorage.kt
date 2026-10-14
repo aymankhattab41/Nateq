@@ -31,33 +31,19 @@ object EmbeddedStorage {
 
     /**
      * المحرّك المدمج ومجلده الأساسي وأسماء مجلداته القديمة.
+     *
+     * حصراً — المكتبة الأصلية ترفض أي مسار لا يحوي هذا الاسم.
+     * [legacyInternalNames] مجلدات داخلية قديمة تُهاجَر مرة واحدة.
      */
     enum class Engine(
         val dirName: String,
-        val legacyExternalNames: List<String>
+        val legacyExternalNames: List<String>,
+        val legacyInternalNames: List<String> = emptyList()
     ) {
         VOCALIZER(
             "VocalizerEx2",
             listOf("VocalizerEx2")
-        ),
-        ACAPELA(
-            "AcapelaTTS",
-            listOf("AcapelaTTS", "AcapelaGroup", "acapela")
-        ),
-        PIPER(
-            "Piper",
-            listOf("Piper", "piper")
-        ),
-        SHERPA(
-            "SherpaTTS",
-            listOf(
-                "SherpaTTS",
-                "sherpatts",
-                "Piper",
-                "piper",
-                "models"
-            )
-        ),
+        )
     }
 
     /**
@@ -184,9 +170,6 @@ object EmbeddedStorage {
      * كل المجلدات التي يقرأ منها المزوّد والمنزِّل — بنفس الترتيب:
      * الداخلي أولاً (الأولوية له) ثم الخارجي القديم ثم المجلدات
      * الإضافية الصريحة (مجلد مستورد أو مجلد اختبار).
-     *
-     * ع٣١-3: لـ Engine.SHERPA يُضاف baseDir(context, Engine.PIPER)
-     * بعد baseDir(SHERPA) دائماً مع إزالة التكرار.
      */
     fun allSearchDirs(
         context: Context,
@@ -195,9 +178,6 @@ object EmbeddedStorage {
     ): List<File> {
         val dirs = LinkedHashSet<File>()
         dirs.add(baseDir(context, engine))
-        if (engine == Engine.SHERPA) {
-            dirs.add(baseDir(context, Engine.PIPER))
-        }
         dirs.addAll(externalDirs(context, engine))
         extraDirs.forEach { dirs.add(it) }
         return dirs.toList()
@@ -230,18 +210,9 @@ object EmbeddedStorage {
         when (engine) {
             Engine.VOCALIZER -> {
                 for (dir in searchDirs) {
-                    if (!dir.exists() || !dir.isDirectory) continue
-                    val files = dir.listFiles() ?: continue
-                    val hdrs = files.filter {
-                        it.extension.equals("hdr", ignoreCase = true)
-                    }
-                    for (hdr in hdrs) {
-                        val baseName = hdr.nameWithoutExtension
-                        val dat = File(dir, "$baseName.dat")
-                        if (dat.exists() && dat.length() >= 1_048_576L) {
-                            completedVoices.add(baseName)
-                        }
-                    }
+                    completedVoices.addAll(
+                        VocalizerVoiceManifest.completeVoiceBases(dir)
+                    )
                 }
                 for (f in distinctFiles) {
                     val ext = f.extension.lowercase()
@@ -273,57 +244,6 @@ object EmbeddedStorage {
                     )
                 }
             }
-            Engine.SHERPA,
-            Engine.PIPER -> {
-                val models = SherpaModelCatalog.discover(searchDirs)
-                for (m in models) {
-                    completedVoices.add(m.displayName)
-                }
-                for (f in distinctFiles) {
-                    val ext = f.extension.lowercase()
-                    val isModelFile = ext == "onnx" ||
-                        f.name.endsWith(".tokens.txt", ignoreCase = true) ||
-                        f.name.equals("tokens.txt", ignoreCase = true) ||
-                        ext == "json"
-                    val isEspeakData =
-                        f.absolutePath.contains("espeak-ng-data")
-                    val isTxtOrDoc = ext == "txt" || ext == "md"
-                    val recognized = isModelFile || isEspeakData || isTxtOrDoc
-                    inventoryFiles.add(
-                        InventoryFile(
-                            file = f,
-                            relativePath = f.name,
-                            name = f.name,
-                            size = f.length(),
-                            isRecognized = recognized
-                        )
-                    )
-                }
-            }
-            Engine.ACAPELA -> {
-                val installed = AcapelaEmbeddedVoiceProvider
-                    .getInstalledVoices(context)
-                for (v in installed) {
-                    completedVoices.add(v.voiceName)
-                }
-                for (f in distinctFiles) {
-                    val ext = f.extension.lowercase()
-                    val isAcapelaFile = ext == "inf" || ext == "dat" ||
-                        ext == "dic" || ext == "bvcu" ||
-                        f.name.equals("voicelist", ignoreCase = true) ||
-                        f.name.startsWith("0x00") || ext == "wav" ||
-                        ext == "mp3" || ext == "txt"
-                    inventoryFiles.add(
-                        InventoryFile(
-                            file = f,
-                            relativePath = f.name,
-                            name = f.name,
-                            size = f.length(),
-                            isRecognized = isAcapelaFile
-                        )
-                    )
-                }
-            }
         }
 
         return EngineInventory(
@@ -338,65 +258,10 @@ object EmbeddedStorage {
      * هل يلزم إنجاز هجرة هذا المحرّك بعد؟ (فحص تفضيل بلا نقل).
      */
     fun needsMigration(context: Context, engine: Engine): Boolean {
-        if (engine == Engine.SHERPA) {
-            val piperBase = baseDir(context, Engine.PIPER)
-            if (piperBase.exists() &&
-                piperBase.listFiles()?.isNotEmpty() == true
-            ) {
-                return true
-            }
-        }
         if (isMigrated(context, engine)) return false
         return externalDirs(context, engine).any { dir ->
             dir.listFiles()?.isNotEmpty() == true
         }
-    }
-
-    /**
-     * ع٣١-3: هجرة لمرة واحدة من filesDir/Piper
-     * إلى filesDir/SherpaTTS.
-     */
-    fun migratePiperToSherpa(
-        context: Context,
-        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }
-    ): Int {
-        val piperBase = baseDir(context, Engine.PIPER)
-        val sherpaBase = baseDir(context, Engine.SHERPA)
-        if (!piperBase.exists() || !piperBase.isDirectory) return 0
-        if (!sherpaBase.exists()) sherpaBase.mkdirs()
-
-        val pending = mutableListOf<Pair<File, File>>()
-        piperBase.listFiles()?.forEach { child ->
-            val target = File(sherpaBase, child.name)
-            if (!target.exists()) pending.add(child to target)
-        }
-        if (pending.isEmpty()) return 0
-
-        var done = 0
-        val total = pending.size
-        onProgress(done, total)
-        for ((src, dst) in pending) {
-            val moved = src.renameTo(dst) || copyRecursively(src, dst)
-            if (moved) {
-                src.deleteRecursively()
-                done++
-            } else {
-                Log.w(
-                    TAG,
-                    "Piper migration failed for ${src.absolutePath}"
-                )
-            }
-            onProgress(done, total)
-        }
-        if (done > 0) {
-            bumpVersion()
-            Log.i(
-                TAG,
-                "Migrated $done/$total Piper entries into " +
-                    sherpaBase.absolutePath
-            )
-        }
-        return done
     }
 
     private fun isMigrated(context: Context, engine: Engine): Boolean =
@@ -420,11 +285,7 @@ object EmbeddedStorage {
         engine: Engine,
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }
     ): Int {
-        var extraMoved = 0
-        if (engine == Engine.SHERPA) {
-            extraMoved = migratePiperToSherpa(context, onProgress)
-        }
-        if (isMigrated(context, engine)) return extraMoved
+        if (isMigrated(context, engine)) return 0
         val base = baseDir(context, engine)
         if (!base.exists()) base.mkdirs()
 
@@ -439,7 +300,7 @@ object EmbeddedStorage {
 
         if (pending.isEmpty()) {
             markMigrated(context, engine)
-            return extraMoved
+            return 0
         }
 
         var done = 0
@@ -465,7 +326,48 @@ object EmbeddedStorage {
             "Migrated $done/$total entries of ${engine.name} " +
                 "into ${base.absolutePath}"
         )
-        return done + extraMoved
+        return done
+    }
+
+    /**
+     * نقل محتوى المجلدات الداخلية القديمة إلى المجلد الأساسي
+     * (لا يجد المجلد القديم في المرة الثانية فيكون 0).
+     */
+    fun migrateLegacyInternalDirs(
+        context: Context,
+        engine: Engine
+    ): Int {
+        if (engine.legacyInternalNames.isEmpty()) return 0
+        val base = baseDir(context, engine)
+        if (!base.exists()) base.mkdirs()
+        var moved = 0
+        for (name in engine.legacyInternalNames) {
+            val legacy = File(context.filesDir, name)
+            if (!legacy.exists() || !legacy.isDirectory) continue
+            val children = legacy.listFiles() ?: continue
+            for (child in children) {
+                val dst = File(base, child.name)
+                if (dst.exists()) continue
+                val ok = child.renameTo(dst) ||
+                    copyRecursively(child, dst)
+                if (ok) {
+                    if (child.isDirectory) {
+                        child.deleteRecursively()
+                    }
+                    moved++
+                }
+            }
+        }
+        if (moved > 0) {
+            EnginePicker.invalidateAfterStorageChange()
+            bumpVersion()
+            Log.i(
+                TAG,
+                "نُقل $moved عنصراً من مجلد ${engine.name} القديم " +
+                    "إلى ${base.absolutePath}"
+            )
+        }
+        return moved
     }
 
     /**
@@ -478,6 +380,9 @@ object EmbeddedStorage {
     ): Int {
         var moved = 0
         for (engine in Engine.entries) {
+            // الهجرة الداخلية تُنفَّذ دائماً (خارج مفتاح الهجرة
+            // الخارجية) لأنها إصلاح مسار لا يمنعها تفضيلٌ قديم.
+            moved += migrateLegacyInternalDirs(context, engine)
             if (!needsMigration(context, engine)) continue
             moved += migrateExternalToInternal(context, engine) { d, t ->
                 onProgress(engine, d, t)

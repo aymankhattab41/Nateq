@@ -113,7 +113,6 @@
                 android:orientation="vertical"
                 android:padding="4dp" />
 
-            <!-- تبديل المحرك: Piper أو Vocalizer أو Acapela -->
             <com.google.android.material.button.MaterialButtonToggleGroup
                 android:id="@+id/toggle_group_engine_filter"
                 android:layout_width="match_parent"
@@ -123,14 +122,6 @@
                 app:selectionRequired="true">
 
                 <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_engine_piper"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/embedded_engine_piper" />
-
-                <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_engine_vocalizer"
                     style="?attr/materialButtonOutlinedStyle"
                     android:layout_width="0dp"
@@ -138,13 +129,6 @@
                     android:layout_weight="1"
                     android:text="@string/embedded_engine_vocalizer" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_engine_acapela"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/embedded_engine_acapela" />
             </com.google.android.material.button.MaterialButtonToggleGroup>
 
             <!-- زر استيراد باقة صوت ZIP -->
@@ -158,51 +142,43 @@
                 app:icon="@drawable/ic_folder_zip"
                 app:iconGravity="textStart" />
 
-            <!-- أزرار الفلترة حسب اللغة -->
-            <com.google.android.material.button.MaterialButtonToggleGroup
-                android:id="@+id/toggle_group_lang_filter"
+            <!-- شريط التنقّل الهرمي: اللغة ← الصوت ← الجودة -->
+            <LinearLayout
+                android:id="@+id/ll_embedded_nav_header"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                app:singleSelection="true"
-                app:selectionRequired="true">
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="8dp"
+                android:visibility="gone">
 
                 <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_filter_all"
-                    style="?attr/materialButtonOutlinedStyle"
+                    android:id="@+id/btn_embedded_nav_back"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="0dp"
+                    android:minHeight="48dp"
+                    android:text="@string/embedded_nav_back"
+                    app:icon="@drawable/ic_arrow_back"
+                    app:iconGravity="textStart" />
+
+                <TextView
+                    android:id="@+id/tv_embedded_nav_breadcrumb"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="@string/embedded_filter_all" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_filter_ar"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/embedded_filter_ar" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_filter_en"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/embedded_filter_en" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_filter_other"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/embedded_filter_other" />
-            </com.google.android.material.button.MaterialButtonToggleGroup>
+                    android:gravity="end|center_vertical"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text_secondary" />
+            </LinearLayout>
 
             <!-- قائمة بطاقات الأصوات -->
             <LinearLayout
-                android:id="@+id/ll_piper_voices_list"
+                android:id="@+id/ll_embedded_voices_list"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical" />

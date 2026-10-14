@@ -69,6 +69,20 @@ class VocalizerDownloaderTest {
     }
 
     @Test
+    fun catalog_arabicVoicesFollowUaeRegionConvention() {
+        // معيار التطبيق للعربية الناطقية الجهوية هو ar-AE (كما في
+        // AnnouncementSpeaker.resolveFallbackLocale) لا ar-SA.
+        val arabic = VocalizerModelCatalog.ITEMS.filter {
+            it.languageCategory == "ar"
+        }
+        assertTrue(arabic.isNotEmpty())
+        for (item in arabic) {
+            assertEquals("ar", item.locale.language)
+            assertEquals("AE", item.locale.country)
+        }
+    }
+
+    @Test
     fun isVoiceInstalled_detectsPresenceOfHeaderFile() {
         val lailaItem = VocalizerModelCatalog.ITEMS.first {
             it.id == "vocalizer-ara-sau-laila-compact"

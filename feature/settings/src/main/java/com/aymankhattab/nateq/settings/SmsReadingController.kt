@@ -13,6 +13,7 @@ import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
 import com.aymankhattab.nateq.core.audio.announcement.NateqNotificationListener
+import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
@@ -418,6 +419,9 @@ internal class SmsReadingController(
                 SettingsRepository.ANNOUNCE_CATEGORY_SMS
             )
         }.getOrNull()
+        val canonEngine = engine?.let {
+            HostProtocol.normalizeEngineId(it)
+        } ?: engine
         val sample = fragment.getString(R.string.sample_text_sms_preview)
         fragment.previewSpeech(
             buildPreviewParamsFrom(
@@ -425,7 +429,7 @@ internal class SmsReadingController(
                     .getOrNull(spinnerSmsVoice?.selectedItemPosition ?: 0)
                     ?.name.orEmpty(),
                 languageTag = smsLanguage,
-                enginePkg = engine,
+                enginePkg = canonEngine,
                 rateProgress = seekSmsRate?.progress ?: 100,
                 pitchProgress = seekSmsPitch?.progress ?: 100,
                 volumePercent = seekSmsVolume?.progress ?: 100,

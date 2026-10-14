@@ -91,9 +91,6 @@ object EngineStatusRegistry {
     /** توحيد معرف المحرك بين صيغ المضيف والمزود. */
     fun normalizeId(engineId: String): String = when (engineId.lowercase()) {
         "vocalizer", "vocalizer_embedded" -> "vocalizer_embedded"
-        "acapela", "acapela_embedded" -> "acapela_embedded"
-        "sherpa", "sherpa_onnx_piper", "sherpa_piper" ->
-            "sherpa_onnx_piper"
         else -> engineId.lowercase()
     }
 
@@ -288,29 +285,19 @@ object EngineStatusRegistry {
     }
 
     /**
-     * قراءة الحالة مع الاشتقاق الحي لحالتي NOT_INSTALLED و VOICES_PRESENT
-     * من [EmbeddedStorage.inventory] عند كل طلب (ع٣١-4).
+     * قراءة الحالة مع الاشتقاق الحي من [EmbeddedStorage.inventory] عند كل طلب.
+     * الفشل المسجل يُعاد إن كان أحدث من آخر تغيير في التخزين
+     * [EmbeddedStorage.lastBumpTime]؛ وإلا يُعتبر قديماً وتُستبدل بحالة حية
+     * (VOICES_PRESENT إن وُجدت ملفات، NOT_INSTALLED إن لم تُوجَد) — ع٤٠-1.
      */
     fun statusOf(context: Context, engineId: String): EngineStatus {
         setFilesDir(context.filesDir)
         val norm = normalizeId(engineId)
         val recorded = statusOf(norm)
 
-        if (recorded != null &&
-            recorded.state != State.NOT_INSTALLED &&
-            recorded.state != State.VOICES_PRESENT
-        ) {
-            return recorded
-        }
-
         val storageEngine = when (norm) {
             "vocalizer", "vocalizer_embedded" ->
                 EmbeddedStorage.Engine.VOCALIZER
-            "acapela", "acapela_embedded" ->
-                EmbeddedStorage.Engine.ACAPELA
-            "sherpa", "sherpa_onnx_piper", "sherpa_piper",
-            "sherpa_onnx_embedded" ->
-                EmbeddedStorage.Engine.SHERPA
             else -> null
         }
 
@@ -321,12 +308,63 @@ object EngineStatusRegistry {
             false
         }
 
-        val liveState = if (hasVoices) State.VOICES_PRESENT
-        else State.NOT_INSTALLED
+        val bumpTime = EmbeddedStorage.lastBumpTime
 
+        // دالة مساعدة: هل الحالة المسجلة "مُنهية" (فشل/جاهز) وأقدم من الـ bump؟
+        fun isStaleTerminal(rec: EngineStatus): Boolean =
+            (rec.state == State.NATIVE_INIT_FAILED ||
+             rec.state == State.CRASHED_LAST_RUN ||
+             rec.state == State.LICENSE_ISSUE ||
+             rec.state == State.EXPERIMENTAL) &&
+            rec.updatedAt < bumpTime
+
+        // إذا كانت الملفات موجودة الآن
+        if (hasVoices) {
+            // فشل قديم (أقدم من bump)؟ نظّفه
+            recorded?.let { rec ->
+                if (isStaleTerminal(rec)) {
+                    statuses.remove(norm)
+                }
+            }
+            // فشل حديث (أحدث من bump)؟ أعده كما هو — يعني فشل بعد وجود الملفات
+            recorded?.let { rec ->
+                if (rec.state == State.NATIVE_INIT_FAILED ||
+                    rec.state == State.CRASHED_LAST_RUN ||
+                    rec.state == State.LICENSE_ISSUE ||
+                    rec.state == State.EXPERIMENTAL
+                ) {
+                    // ليس قديماً (updatedAt >= bumpTime) → أعد الفشل
+                    return rec
+                }
+            }
+            // غير ذلك (VOICES_PRESENT، NOT_INSTALLED، READY،
+            // أو لا حالة): VOICES_PRESENT
+            return EngineStatus(
+                engineId = norm,
+                state = State.VOICES_PRESENT,
+                updatedAt = nowProvider()
+            )
+        }
+
+        // لا ملفات: إذا كان هناك فشل قديم، نظّفه وأعد NOT_INSTALLED
+        recorded?.let { rec ->
+            if (isStaleTerminal(rec)) {
+                statuses.remove(norm)
+            }
+        }
+
+        // أرجع الحالة المسجلة إن كانت ذات معنى (فشل حديث، READY، إلخ)
+        if (recorded != null &&
+            recorded.state != State.NOT_INSTALLED &&
+            recorded.state != State.VOICES_PRESENT
+        ) {
+            return recorded
+        }
+
+        // لا ملفات ولا حالة مسجلة ذات معنى: NOT_INSTALLED
         return EngineStatus(
             engineId = norm,
-            state = liveState,
+            state = State.NOT_INSTALLED,
             updatedAt = nowProvider()
         )
     }
@@ -336,8 +374,6 @@ object EngineStatusRegistry {
         if (context != null) {
             val canonicalEngines = listOf(
                 "vocalizer_embedded",
-                "acapela_embedded",
-                "sherpa_onnx_piper"
             )
             return canonicalEngines.map { statusOf(context, it) }
         }

@@ -79,38 +79,4 @@ class EngineStatusRegistryLiveTest {
             status.state
         )
     }
-
-    @Test
-    fun staleVoicesPresentOnDisk_forSherpa_isOverriddenByLiveEmptyInventory() {
-        val staleDiskStatus = EngineStatusRegistry.EngineStatus(
-            engineId = "sherpa",
-            state = EngineStatusRegistry.State.VOICES_PRESENT,
-            updatedAt = 5_000L
-        )
-        EngineStatusRegistry.writeStatusFile(filesDir, staleDiskStatus)
-        EngineStatusRegistry.statusesClearOnly()
-
-        val status = EngineStatusRegistry.statusOf(context, "sherpa")
-        assertEquals(
-            EngineStatusRegistry.State.NOT_INSTALLED,
-            status.state
-        )
-    }
-
-    @Test
-    fun staleVoicesPresentOnDisk_forAcapela_isOverriddenByLiveEmptyInventory() {
-        val staleDiskStatus = EngineStatusRegistry.EngineStatus(
-            engineId = "acapela",
-            state = EngineStatusRegistry.State.VOICES_PRESENT,
-            updatedAt = 5_000L
-        )
-        EngineStatusRegistry.writeStatusFile(filesDir, staleDiskStatus)
-        EngineStatusRegistry.statusesClearOnly()
-
-        val status = EngineStatusRegistry.statusOf(context, "acapela")
-        assertEquals(
-            EngineStatusRegistry.State.NOT_INSTALLED,
-            status.state
-        )
-    }
 }

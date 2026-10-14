@@ -2,22 +2,33 @@ package com.aymankhattab.nateq.core.audio.accessibility
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.database.ContentObserver
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.os.Build
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.aymankhattab.nateq.core.data.SettingsChangeProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
 import android.accessibilityservice.AccessibilityButtonController
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.text.TextUtils
 import android.view.KeyEvent
+import android.view.View
+import java.util.Locale
 
 /**
  * واجهة معالج ميزة إمكانية الوصول — كل معالج يغلف صنفاً قائماً
@@ -144,6 +155,42 @@ object ChatLiveHandler : A11yFeatureHandler {
 }
 
 /**
+ * معالج ملخّص المحادثة عند الدخول (ع٤١-ب5) — يغلف [ChatSummaryTracker].
+ * عند فتح شاشة محادثة في تطبيق دردشة مسموح: يجمع رسائل الشاشة،
+ * يحسب الجديدة منذ آخر زيارة، وينطق جملة الملخص مرة واحدة.
+ */
+object ChatSummaryHandler : A11yFeatureHandler {
+    override val feature = FeatureFlags.FEATURE_CHAT_SUMMARY
+    override val acceptedEventTypes =
+        AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+    override fun handle(
+        service: AccessibilityService,
+        event: AccessibilityEvent,
+        settings: SettingsRepository,
+        stateStore: A11yStateStore?
+    ) {
+        val pkg = event.packageName?.toString()
+        if (!AppPolicy.isChatPackage(pkg)) return
+        val svc = service as? NateqAccessibilityService ?: return
+        val summary = svc.summarizeChat(
+            packageName = pkg!!,
+            chatScreen = event.className?.toString()
+        ) ?: return
+        // ع٤١-ب5.3: لا تُنطق نصوص الرسائل — العدد والأسماء فقط.
+        val text = ChatSummarizer.summarize(
+            summary.senders,
+            summary.messageCount
+        )
+        if (text.isBlank()) return
+        A11ySpeechCoordinator.speakAnnouncement(
+            context = service,
+            text = text,
+            isInterruptAllowed = true
+        )
+    }
+}
+
+/**
  * معالج النوافذ المنبثقة — يغلف PopupAnnouncer.
  */
 object PopupHandler : A11yFeatureHandler {
@@ -220,10 +267,27 @@ class NateqAccessibilityService : AccessibilityService() {
 
     private var stateStore: A11yStateStore? = null
     private var screenOffReceiver: BroadcastReceiver? = null
+    private var bluetoothReceiver: BroadcastReceiver? = null
+    private var audioDeviceCallback: AudioDeviceCallback? = null
+    private var shortcutTestReceiver: BroadcastReceiver? = null
+    private var bindingsObserver: ContentObserver? = null
     private var keyShortcutRouter: KeyShortcutRouter? = null
+
+    // ع٤١-ب9: بوّابة تثبيط أحداث البلوتوث ومسارات الصوت
+    private val deviceEventGate = BluetoothEventGate()
+
+    // ع٤١-ب5: متتبّع ملخّصات المحادثات (ذاكرة فقط)
+    private val chatSummaryTracker = ChatSummaryTracker()
+
+    // ع٤١-ب8: كاشف أوامر المكالمة بالمفاتيح وبوّابة تنفيذها
+    private val callKeyDetector = CallKeyDetector()
+    private val callGateway: CallGateway by lazy {
+        AndroidCallGateway(applicationContext)
+    }
 
     private var isVolUpPressed = false
     private var isVolDownPressed = false
+    private var lastContentChangeAt = 0L
     private val emergencyHandler = Handler(Looper.getMainLooper())
     private val emergencyRunnable = Runnable { triggerEmergencyToggle() }
 
@@ -237,6 +301,7 @@ class NateqAccessibilityService : AccessibilityService() {
         TypingEchoHandler,
         ReadMoreHandler,
         ChatLiveHandler,
+        ChatSummaryHandler,
         PopupHandler,
         ProgressHandler,
         UnlabeledLabelsHandler
@@ -246,6 +311,8 @@ class NateqAccessibilityService : AccessibilityService() {
         super.onCreate()
         stateStore = A11yStateStore.getInstance(this)
         registerScreenOffReceiver()
+        registerBluetoothReceiver()
+        registerAudioRouteCallback()
 
         // ع٢٩-15: تهيئة مراقب صحة الخدمة (دائمًا)
         AccessibilityHealthMonitor.checkHealth(this)
@@ -280,12 +347,14 @@ class NateqAccessibilityService : AccessibilityService() {
 
         // ع٢٩-16: خزن المستمع لإزالته لاحقاً
         a11yStateListener = { store: A11yStateStore ->
+            if (store.isPaused()) ContinuousReader.stopSilently()
             applyServiceInfo()
         }
         stateStore?.addListener(a11yStateListener!!)
 
         applyServiceInfo()
-        registerAccessibilityButton()
+        applyAccessibilityButton()
+        registerBluetoothReceiver()
 
         // ع٢٩-13: تهيئة موجّه الاختصارات
         keyShortcutRouter = KeyShortcutRouter(
@@ -293,25 +362,100 @@ class NateqAccessibilityService : AccessibilityService() {
             settings = SettingsRepository.create(this),
             stateStore = stateStore
         )
+        registerShortcutTestReceiver()
+        registerBindingsObserver()
     }
 
-    private fun registerAccessibilityButton() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val btnController = accessibilityButtonController
-            accessibilityButtonCallback = object :
-                AccessibilityButtonController.
-                AccessibilityButtonCallback() {
+    /** ع٤١-ب1.6: يستقبل طلب «اختبار» إيماءةٍ من شاشة الإعدادات. */
+    private fun registerShortcutTestReceiver() {
+        if (shortcutTestReceiver != null) return
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action != KeyShortcutRouter.ACTION_TEST_SHORTCUT) {
+                    return
+                }
+                val name = intent.getStringExtra(
+                    KeyShortcutRouter.EXTRA_GESTURE
+                )
+                val gesture = ShortcutGesture.fromName(name) ?: return
+                keyShortcutRouter?.reloadBindings()
+                keyShortcutRouter?.executeGesture(gesture)
+            }
+        }
+        shortcutTestReceiver = receiver
+        val filter = IntentFilter(KeyShortcutRouter.ACTION_TEST_SHORTCUT)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(receiver, filter)
+        }
+    }
+
+    /** ع٤١-ب1.6: يعيد تحميل جدول الربط عند تغيّره من الإعدادات. */
+    private fun registerBindingsObserver() {
+        if (bindingsObserver != null) return
+        val observer = object : ContentObserver(
+            Handler(Looper.getMainLooper())
+        ) {
+            override fun onChange(selfChange: Boolean) {
+                keyShortcutRouter?.reloadBindings()
+                applyAccessibilityButton()
+                // ع٤١-ب9: إعادة محاولة تسجيل مستقبل البلوتوث بعد منح الإذن
+                registerBluetoothReceiver()
+            }
+        }
+        bindingsObserver = observer
+        runCatching {
+            contentResolver.registerContentObserver(
+                SettingsChangeProvider.uri(),
+                true,
+                observer
+            )
+        }
+    }
+
+    /**
+     * ع٤١-ب2: يسجّل مستمع زر إمكانية الوصول أو يزيله بحسب المفتاح
+     * والتوفّر — عند النقر تظهر قائمة الإجراءات السريعة ([A11yQuickMenu])
+     * بنفس مسار الإيماءات ([KeyShortcutRouter.executeAction]).
+     */
+    private fun applyAccessibilityButton() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val controller = accessibilityButtonController ?: return
+        val active = FeatureFlags.isActive(
+            FeatureFlags.FEATURE_ACCESSIBILITY_BUTTON,
+            context = this,
+            settings = SettingsRepository.create(this),
+            stateStore = stateStore
+        )
+        val available = Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
+            controller.isAccessibilityButtonAvailable
+        val shouldRegister = AccessibilityButtonGate.shouldRegister(
+            featureActive = active,
+            sdkInt = Build.VERSION.SDK_INT,
+            buttonAvailable = available
+        )
+        val registered = accessibilityButtonCallback != null
+        if (shouldRegister && !registered) {
+            val callback = object :
+                AccessibilityButtonController.AccessibilityButtonCallback() {
                 override fun onClicked(
                     controller: AccessibilityButtonController?
                 ) {
-                    WhereAmIController.announceCurrentLocation(
-                        this@NateqAccessibilityService
-                    )
+                    A11yQuickMenu.toggle(this@NateqAccessibilityService) {
+                        keyShortcutRouter?.executeAction(it)
+                    }
                 }
             }
-            btnController.registerAccessibilityButtonCallback(
-                accessibilityButtonCallback!!
-            )
+            accessibilityButtonCallback = callback
+            controller.registerAccessibilityButtonCallback(callback)
+        } else if (!shouldRegister && registered) {
+            accessibilityButtonCallback?.let {
+                runCatching {
+                    controller.unregisterAccessibilityButtonCallback(it)
+                }
+            }
+            accessibilityButtonCallback = null
         }
     }
 
@@ -400,6 +544,18 @@ class NateqAccessibilityService : AccessibilityService() {
         val store = stateStore
         if (store != null && store.isPaused()) return
 
+        // ع٤١-ب0.4: خنق أحداث تغيّر محتوى النافذة (≥80ms) فلا تُغرق
+        // الخيطَ الرئيسي بالمعالجة أثناء التمرير أو البثّ الحيّ.
+        if (event.eventType ==
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+        ) {
+            val now = SystemClock.uptimeMillis()
+            if (now - lastContentChangeAt < CONTENT_CHANGE_THROTTLE_MS) {
+                return
+            }
+            lastContentChangeAt = now
+        }
+
         // ع٢٩-11: توزيع الحدث عبر الموجّه المركزي
         val pkg = event.packageName?.toString()
         val repo = SettingsRepository.create(this)
@@ -419,16 +575,59 @@ class NateqAccessibilityService : AccessibilityService() {
                     }
             }
         }
+
+        // ع٤١-ب6: تقدّم القراءة المستمرة مع تمرير المحتوى أو تبديل النافذة
+        if (ContinuousReader.isReading()) {
+            when (event.eventType) {
+                AccessibilityEvent.TYPE_VIEW_SCROLLED,
+                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ->
+                    ContinuousReader.onContentChanged()
+                AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ->
+                    ContinuousReader.onWindowChanged(pkg)
+            }
+        }
     }
 
     override fun onInterrupt() {
         Log.i(TAG, "[A11yService] onInterrupt called")
+        ContinuousReader.stopSilently()
     }
 
     override fun onKeyEvent(event: KeyEvent?): Boolean {
         if (event == null) return super.onKeyEvent(event)
 
-        // ع٢٩-13: تفويض اختصارات المفاتيح لـ KeyShortcutRouter
+        // ع٤١-ب8: أوامر المكالمة بالمفاتيح أثناء الرنين
+        val volumeKey = volumeKeyOf(event.keyCode)
+        if (volumeKey != null && isCallKeyActionsActive()) {
+            val ringing = CallStateReader.isRinging(this)
+            when (event.action) {
+                KeyEvent.ACTION_DOWN -> {
+                    if (callKeyDetector.onDown(
+                            volumeKey,
+                            ringing,
+                            event.eventTime
+                        )
+                    ) {
+                        return true
+                    }
+                }
+                KeyEvent.ACTION_UP -> {
+                    val action = callKeyDetector.onUp(
+                        volumeKey,
+                        ringing,
+                        event.eventTime,
+                        isCallKeysSwapped()
+                    )
+                    if (action != null) {
+                        performCallAction(action)
+                        return true
+                    }
+                    if (ringing) return true
+                }
+            }
+        }
+
+        // ع٢٩-١٣: تفويض اختصارات المفاتيح لـ KeyShortcutRouter
         val consumedByRouter = keyShortcutRouter?.onKeyEvent(event) == true
         if (consumedByRouter) return true
 
@@ -465,25 +664,49 @@ class NateqAccessibilityService : AccessibilityService() {
         return super.onKeyEvent(event)
     }
 
-    private fun triggerEmergencyToggle() {
-        val store = stateStore ?: return
-        val currentlyPaused = store.isPaused()
-        val newPaused = !currentlyPaused
-        store.setPaused(newPaused)
+    /** ع٤١-ب8: هل ميزة أوامر المكالمة بالمفاتيح مفعّلة؟ */
+    private fun isCallKeyActionsActive(): Boolean = FeatureFlags.isActive(
+        FeatureFlags.FEATURE_CALL_KEY_ACTIONS,
+        context = this,
+        settings = SettingsRepository.create(this),
+        stateStore = stateStore
+    )
 
-        // ع٢٩-16: إعلان صوتي بدلاً من الاهتزاز فقط (المستخدم كفيف)
-        val announcement = if (newPaused) {
-            "الخدمة موقوفة"
+    /** ع٤١-ب8: هل مُبدَّلٌ ربطُ الردّ/الرفض؟ (افتراضياً: صوت+ ردّ). */
+    private fun isCallKeysSwapped(): Boolean =
+        SettingsRepository.create(this).isA11yCallKeysSwapped()
+
+    /** ع٤١-ب8: ينفّذ فعل المكالمة وينطق تأكيداً قصيراً. */
+    private fun performCallAction(action: CallAction) {
+        val success = CallActionInvoker.invoke(action, callGateway)
+        val text = if (success) {
+            CallActionInvoker.confirmationText(action)
         } else {
-            "الخدمة تعمل"
+            "تعذّر تنفيذ الأمر — تحقّق من إذن المكالمة"
         }
         A11ySpeechCoordinator.speakAnnouncement(
             context = this,
-            text = announcement,
+            text = text,
             isInterruptAllowed = true
         )
+    }
+
+    private fun volumeKeyOf(keyCode: Int): VolumeKey? = when (keyCode) {
+        KeyEvent.KEYCODE_VOLUME_UP -> VolumeKey.UP
+        KeyEvent.KEYCODE_VOLUME_DOWN -> VolumeKey.DOWN
+        else -> null
+    }
+
+    private fun triggerEmergencyToggle() {
+        // ع٤١-ب1: استمرارُ المفتاحين إيماءةٌ قابلةٌ للتخصيص، الافتراضي
+        // فيها تبديلُ الإيقاف (TOGGLE_PAUSE) مع الإعلان الصوتي.
+        keyShortcutRouter?.executeGesture(ShortcutGesture.BOTH_HOLD)
+        vibrateEmergency()
 
         // اهتزاز تأكيدي إضافي
+    }
+
+    private fun vibrateEmergency() {
         runCatching {
             val vibrator = getSystemService(Vibrator::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -496,49 +719,6 @@ class NateqAccessibilityService : AccessibilityService() {
             } else {
                 @Suppress("DEPRECATION")
                 vibrator?.vibrate(200L)
-            }
-        }
-    }
-
-    /**
-     * معالجة أحداث إمكانية الوصول على خيط الخلفية.
-     */
-    private fun handleEventInBackground(event: AccessibilityEvent) {
-        val eventType = event.eventType
-        val pkg = event.packageName?.toString()
-        val cls = event.className?.toString()
-
-        if (eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            // تتبع التطبيق والنشاط الأمامي (ع٢٧-12)
-            if (!pkg.isNullOrBlank() && !AppPolicy.isSystemSensitive(pkg)) {
-                AccessibilityBridge.updateForeground(pkg, cls)
-            }
-        }
-
-        val repo = SettingsRepository.create(this)
-        val store = stateStore
-
-        // صدى الكتابة (ع٢٧-31)
-        if (eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED &&
-            FeatureFlags.isActive(
-                FeatureFlags.FEATURE_TYPING_ECHO,
-                packageName = pkg,
-                context = this,
-                settings = repo,
-                stateStore = store
-            )
-        ) {
-            val echoText = TypingEcho.getEchoText(
-                event.beforeText,
-                event.text?.joinToString(""),
-                TypingEcho.EchoMode.CHARACTERS
-            )
-            if (!echoText.isNullOrBlank()) {
-                A11ySpeechCoordinator.speakAnnouncement(
-                    context = this,
-                    text = echoText,
-                    isInterruptAllowed = true
-                )
             }
         }
     }
@@ -565,6 +745,89 @@ class NateqAccessibilityService : AccessibilityService() {
             SafeNodeWalker.safeRecycle(root)
         }
     }
+
+    /**
+     * نصوص الشاشة الحالية مرتّبة بصرياً (ع٤١-ب6، ب7).
+     * تعتمد [SafeNodeWalker] للاجتياز الآمن و[ScreenTextOrder] للترتيب.
+     */
+    fun readScreenTexts(): List<String> {
+        val root = rootInActiveWindow ?: return emptyList()
+        return try {
+            ScreenTextOrder.orderedTexts(
+                views = SafeNodeWalker.walk(root),
+                rtl = isRtlLayout()
+            )
+        } finally {
+            SafeNodeWalker.safeRecycle(root)
+        }
+    }
+
+    /** ع٤١-ب5: عُقد الشاشة الحالية مسطّحةً (لقراءة لقطة المحادثة). */
+    fun readScreenViews(): List<NodeView> {
+        val root = rootInActiveWindow ?: return emptyList()
+        return try {
+            SafeNodeWalker.walk(root)
+        } finally {
+            SafeNodeWalker.safeRecycle(root)
+        }
+    }
+
+    /**
+     * ع٤١-ب5: يحسب ملخّص جديد رسائل المحادثة الحالية، أو null إن لم
+     * تكن هناك رسائل جديدة (أو كانت مثبَّطة). المفتاح يمزج الحزمة مع
+     * شاشة المحادثة للتمييز بين المحادثات.
+     */
+    internal fun summarizeChat(
+        packageName: String,
+        chatScreen: String?
+    ): ChatSummary? {
+        val messages = ChatSnapshotReader.messagesFrom(readScreenViews())
+        if (messages.isEmpty()) return null
+        val chatKey = packageName + "#" + chatScreen.orEmpty()
+        return chatSummaryTracker.onVisit(
+            chatKey = chatKey,
+            messages = messages,
+            nowMs = SystemClock.elapsedRealtime()
+        )
+    }
+
+    /** يمرّر النافذة النشطة للأمام عبر أول عقدة قابلة للتمرير (ع٤١-ب6). */
+    fun scrollForwardActiveWindow(): Boolean {
+        val root = rootInActiveWindow ?: return false
+        return try {
+            val target = findScrollableNode(root) ?: return false
+            try {
+                target.performAction(
+                    AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+                )
+            } finally {
+                SafeNodeWalker.safeRecycle(target)
+            }
+        } finally {
+            SafeNodeWalker.safeRecycle(root)
+        }
+    }
+
+    private fun findScrollableNode(
+        node: AccessibilityNodeInfo
+    ): AccessibilityNodeInfo? {
+        if (node.isScrollable) return node
+        for (i in 0 until node.childCount) {
+            val child = runCatching { node.getChild(i) }.getOrNull()
+                ?: continue
+            val found = findScrollableNode(child)
+            if (found != null) {
+                if (found !== child) SafeNodeWalker.safeRecycle(child)
+                return found
+            }
+            SafeNodeWalker.safeRecycle(child)
+        }
+        return null
+    }
+
+    private fun isRtlLayout(): Boolean =
+        TextUtils.getLayoutDirectionFromLocale(Locale.getDefault()) ==
+            View.LAYOUT_DIRECTION_RTL
 
     /**
      * تنفيذ توسيع قراءة المزيد (ع٢٧-20، ع٢٧-21، ع٢٩-12).
@@ -615,8 +878,11 @@ class NateqAccessibilityService : AccessibilityService() {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == Intent.ACTION_SCREEN_OFF) {
-                    // مسح المخازن المؤقتة عند إطفاء الشاشة (ع٢٧-11)
+                    // مسح المخازن المؤقتة عند إطفاء الشاشة (ع٢٧-11، ع٤١-ب4)
                     AccessibilityBridge.updateLastScreenTexts(emptyList())
+                    RepeatSpellController.clear()
+                    chatSummaryTracker.clear()
+                    ContinuousReader.stopSilently()
                 }
             }
         }
@@ -636,10 +902,153 @@ class NateqAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * ع٤١-ب9: يسجّل مستقبل اتصال/فصل أجهزة البلوتوث. يتطلّب إذن
+     * BLUETOOTH_CONNECT على API 31+؛ وإن غاب لا يُسجَّل (يُعاد المحاولة
+     * عند كل اتصال خدمة)، فتقع الإعلانات باسمٍ عام دون اسم الجهاز.
+     */
+    private fun registerBluetoothReceiver() {
+        if (bluetoothReceiver != null) return
+        val granted = checkSelfPermission(
+            android.Manifest.permission.BLUETOOTH_CONNECT
+        ) == PackageManager.PERMISSION_GRANTED
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !granted) {
+            return
+        }
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                handleBluetoothEvent(intent)
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+            addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+        }
+        val registered = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(receiver, filter)
+            }
+        }.isSuccess
+        if (registered) {
+            bluetoothReceiver = receiver
+        }
+    }
+
+    private fun unregisterBluetoothReceiver() {
+        bluetoothReceiver?.let {
+            runCatching { unregisterReceiver(it) }
+            bluetoothReceiver = null
+        }
+    }
+
+    private fun handleBluetoothEvent(intent: Intent?) {
+        val action = intent?.action ?: return
+        val connected = when (action) {
+            BluetoothDevice.ACTION_ACL_CONNECTED -> true
+            BluetoothDevice.ACTION_ACL_DISCONNECTED -> false
+            else -> return
+        }
+        if (!isBluetoothAnnouncementActive()) return
+        val device = deviceFrom(intent)
+        val key = device?.address ?: UNKNOWN_DEVICE_KEY
+        val name = runCatching { device?.name }.getOrNull()
+        val now = SystemClock.elapsedRealtime()
+        if (deviceEventGate.shouldAnnounce(key, connected, now)) {
+            BluetoothAnnouncer.announceDeviceState(this, name, connected)
+        }
+    }
+
+    private fun deviceFrom(intent: Intent): BluetoothDevice? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(
+                BluetoothDevice.EXTRA_DEVICE,
+                BluetoothDevice::class.java
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+        }
+
+    /** ع٤١-ب9: يسجّل مستمع تغيّر مسار الصوت (سماعة/مكبّر). */
+    private fun registerAudioRouteCallback() {
+        if (audioDeviceCallback != null) return
+        val manager = getSystemService(AudioManager::class.java) ?: return
+        val callback = object : AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(
+                addedDevices: Array<out AudioDeviceInfo>
+            ) {
+                announceRouteAdded(addedDevices)
+            }
+
+            override fun onAudioDevicesRemoved(
+                removedDevices: Array<out AudioDeviceInfo>
+            ) {
+                announceRouteRemoved(removedDevices)
+            }
+        }
+        val ok = runCatching {
+            manager.registerAudioDeviceCallback(callback, emergencyHandler)
+        }
+        if (ok.isSuccess) {
+            audioDeviceCallback = callback
+        }
+    }
+
+    private fun unregisterAudioRouteCallback() {
+        audioDeviceCallback?.let { callback ->
+            runCatching {
+                getSystemService(AudioManager::class.java)
+                    ?.unregisterAudioDeviceCallback(callback)
+            }
+        }
+        audioDeviceCallback = null
+    }
+
+    private fun announceRouteAdded(devices: Array<out AudioDeviceInfo>) {
+        if (!isBluetoothAnnouncementActive()) return
+        val device = devices.firstOrNull {
+            AudioRouteLabel.nameOf(it.type) != null
+        } ?: return
+        val name = AudioRouteLabel.nameOf(device.type) ?: return
+        announceRoute(device.type, name, connected = true)
+    }
+
+    private fun announceRouteRemoved(devices: Array<out AudioDeviceInfo>) {
+        if (!isBluetoothAnnouncementActive()) return
+        val device = devices.firstOrNull {
+            AudioRouteLabel.shouldAnnounceRemoval(it.type)
+        } ?: return
+        val name = AudioRouteLabel.nameOf(device.type) ?: return
+        announceRoute(device.type, name, connected = false)
+    }
+
+    private fun announceRoute(type: Int, name: String, connected: Boolean) {
+        val key = "route:$type"
+        val now = SystemClock.elapsedRealtime()
+        if (deviceEventGate.shouldAnnounce(key, connected, now)) {
+            BluetoothAnnouncer.announceDeviceState(this, name, connected)
+        }
+    }
+
+    private fun isBluetoothAnnouncementActive(): Boolean =
+        FeatureFlags.isActive(
+            FeatureFlags.FEATURE_BLUETOOTH_ANNOUNCEMENT,
+            context = this,
+            stateStore = stateStore
+        )
+
     override fun onDestroy() {
         super.onDestroy()
         Log.i(TAG, "[A11yService] Destroyed")
+        ContinuousReader.stopSilently()
         unregisterScreenOffReceiver()
+        unregisterBluetoothReceiver()
+        unregisterAudioRouteCallback()
+        deviceEventGate.clear()
+        chatSummaryTracker.clear()
+        callKeyDetector.reset()
 
         // ع٢٩-16: إزالة مستمع حالة الخدمة
         a11yStateListener?.let { listener ->
@@ -654,14 +1063,32 @@ class NateqAccessibilityService : AccessibilityService() {
                     ?.unregisterAccessibilityButtonCallback(callback)
             }
         }
+        accessibilityButtonCallback = null
+
+        // ع٤١-ب1.6: إزالة مستمع تغيّر جدول الربط ومستقبل اختبار الإيماءة
+        bindingsObserver?.let { observer ->
+            runCatching {
+                contentResolver.unregisterContentObserver(observer)
+            }
+        }
+        bindingsObserver = null
+        shortcutTestReceiver?.let { receiver ->
+            runCatching { unregisterReceiver(receiver) }
+        }
+        shortcutTestReceiver = null
 
         AccessibilityBridge.unregisterService(this)
         stateStore?.setConnected(false)
-        keyShortcutRouter?.shutdown()
         stateStore = null
     }
 
     companion object {
         private const val TAG = "NATEQ_A11Y"
+
+        /** حدّ خنق أحداث TYPE_WINDOW_CONTENT_CHANGED (ع٤١-ب0.4). */
+        private const val CONTENT_CHANGE_THROTTLE_MS = 80L
+
+        /** مفتاح جهاز البلوتوث عند تعذّر قراءة العنوان (ع٤١-ب9). */
+        private const val UNKNOWN_DEVICE_KEY = "unknown"
     }
 }

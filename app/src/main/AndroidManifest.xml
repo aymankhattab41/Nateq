@@ -16,6 +16,8 @@
          SecurityException ويُبتلع طلب التركيز فيفشل صوت الخلفية) — إذن عادي
          يُمنح عند التثبيت تلقائياً بلا طلب وقت التشغيل -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- لتجاوز سياسة عدم الإزعاج (DND) وتعديل مستويات القنوات المكتومة -->
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
     <!-- إعادة تشغيل جدولة الإعلانات بعد إقلاع الجهاز -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- لمنبهات إعلان الوقت الدقيقة عبر AlarmManager (setExactAndAllowWhileIdle):
@@ -36,7 +38,19 @@
 
     <!-- لسماع بث PHONE_STATE ومعرفة حالة المكالمة (إعلان المتصل) —
          يُطلب وقت التشغيل عند تفعيل الميزة -->
+    <!-- ع٤١-ب9: إعلان حالة أجهزة البلوتوث عند الاتصال/الفصل وقراءة اسمها.
+         BLUETOOTH_CONNECT وقت التشغيل على API 31+، وBLUETOOTH القديم
+         (يُمنح تلقائياً عند التثبيت) لِما قبلها — يُطفأ على 31+ لأنه مستبدل. -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_CONNECT"
+        tools:targetApi="s" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- ع٤١-ب8: الردّ/الرفض بمفاتيح الصوت أثناء الرنين عبر TelecomManager.
+         يُطلب وقت التشغيل عند تفعيل الميزة؛ وبدونه تبقى الميزة معطّلة. -->
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
     <!-- إعلان المتصل [READ_CONTACTS] — للبحث عن اسم المتصل في دفتر الاتصالات.
          سياسة Google Play: هذه الأذونات القيود (بيانات دفتر الاتصال) معرّضة
          لطلب "Permissions Declaration Form" عند رفع الـ APK على Play Console.
@@ -152,7 +166,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- استيراد حزم الأصوات المحلية (Acapela / Piper / Vocalizer) عبر فتح ملف ZIP -->
+            <!-- استيراد حزم الأصوات المحلية (Vocalizer) عبر فتح ملف ZIP -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

@@ -1,56 +1,152 @@
 package com.aymankhattab.nateq.core.audio.accessibility
 
 import android.content.Context
-import java.util.concurrent.atomic.AtomicReference
+import java.util.ArrayDeque
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * تحكم إعادة النطق وهجاء الكلمات (ع٢٧-32).
- * يتيح إعادة آخر عبارة منطوقة أو هجائها حرفاً حرفاً.
+ * تحكم إعادة النطق وهجاء الكلمات وسجلّ «ما قيل» (ع٢٧-32، ع٤١-ب4).
+ * - سجلٌّ حلقيّ بسعة [MAX_ENTRIES] (نص + وقت + مصدر) في الذاكرة فقط.
+ * - هجاءٌ بأسماء الحروف/الأرقام/الرموز عبر [SpellTable]، مع أولوية القاموس.
  */
 object RepeatSpellController {
 
-    private val lastSpokenTextRef = AtomicReference<String?>()
+    const val MAX_ENTRIES = 20
 
-    fun updateLastSpokenText(text: String?) {
-        if (!text.isNullOrBlank()) {
-            lastSpokenTextRef.set(text.trim())
+    /** من أين جاء النص المسجَّل. */
+    enum class Source { READER, ANNOUNCEMENT }
+
+    data class Entry(
+        val text: String,
+        val timestampMs: Long,
+        val source: Source
+    )
+
+    private val lock = Any()
+
+    /** الأقدم أولاً؛ الأحدث آخراً. */
+    private val entries = ArrayDeque<Entry>()
+
+    /** يمنع تسجيل نطق أدوات «كرّر/هجِّ/السجل» نفسها فتلوّث التاريخ. */
+    private val recordingSuppressed = AtomicBoolean(false)
+
+    fun updateLastSpokenText(
+        text: String?,
+        source: Source = Source.ANNOUNCEMENT,
+        isCall: Boolean = false
+    ) {
+        if (recordingSuppressed.get()) return
+        if (!SpeechHistoryPolicy.shouldRecord(text, isCall)) return
+        val trimmed = text!!.trim()
+        synchronized(lock) {
+            entries.addLast(
+                Entry(trimmed, System.currentTimeMillis(), source)
+            )
+            while (entries.size > MAX_ENTRIES) {
+                entries.removeFirst()
+            }
         }
     }
 
-    fun getLastSpokenText(): String? = lastSpokenTextRef.get()
+    fun getLastSpokenText(): String? =
+        synchronized(lock) { entries.lastOrNull()?.text }
 
-    /**
-     * تحويل النص إلى هجاء حرفاً حرفاً مفصولاً بمسافات
-     */
-    fun spellText(text: String?): String {
-        if (text.isNullOrBlank()) return ""
-        return text.map { char ->
-            if (char.isWhitespace()) "مسافة" else char.toString()
-        }.joinToString(" ")
+    /** السجلّ من الأحدث إلى الأقدم. */
+    fun history(): List<Entry> =
+        synchronized(lock) { entries.toList().asReversed() }
+
+    fun size(): Int = synchronized(lock) { entries.size }
+
+    fun clear() {
+        synchronized(lock) { entries.clear() }
+    }
+
+    /** يمنع تسجيل ما يُنطق داخل [block] (نطقُ الأدوات لا يُسجَّل). */
+    private inline fun withoutRecording(block: () -> Unit) {
+        recordingSuppressed.set(true)
+        try {
+            block()
+        } finally {
+            recordingSuppressed.set(false)
+        }
     }
 
     /**
-     * نطق إعادة آخر عبارة منطوقة
+     * هجاء النص خانةً خانة. [dictionaryApply] (اختياري) يمنح القاموس
+     * الأولوية: إن أعاد للخانة نطقاً مخالفاً لها استُعمل، وإلا اسمُها من
+     * [SpellTable].
      */
+    fun spellText(
+        text: String?,
+        dictionaryApply: ((String) -> String)? = null
+    ): String {
+        if (text.isNullOrBlank()) return ""
+        return text.map { char -> spellChar(char, dictionaryApply) }
+            .joinToString(" ")
+    }
+
+    private fun spellChar(
+        char: Char,
+        dictionaryApply: ((String) -> String)?
+    ): String {
+        if (char.isWhitespace()) return "مسافة"
+        val raw = char.toString()
+        if (dictionaryApply != null) {
+            val custom = runCatching { dictionaryApply(raw) }.getOrNull()
+            if (!custom.isNullOrBlank() && custom != raw) return custom
+        }
+        return SpellTable.nameOf(char)
+    }
+
+    /** نطق إعادة آخر عبارة منطوقة. */
     fun repeatLast(context: Context) {
         val last = getLastSpokenText() ?: return
-        A11ySpeechCoordinator.speakAnnouncement(
-            context = context,
-            text = last,
-            isInterruptAllowed = true
-        )
+        speak(context, last)
     }
 
-    /**
-     * هجاء آخر عبارة منطوقة حرفاً حرفاً
-     */
+    /** هجاء آخر عبارة منطوقة بأسماء الحروف وليس بالحرف ذاته. */
     fun spellLast(context: Context) {
         val last = getLastSpokenText() ?: return
-        val spelled = spellText(last)
-        A11ySpeechCoordinator.speakAnnouncement(
-            context = context,
-            text = spelled,
-            isInterruptAllowed = true
-        )
+        speak(context, spellText(last, dictionaryResolver(context)))
     }
+
+    /** «اقرأ ما قبله»: يرجع في السجل إلى المدخل السابق. */
+    fun repeatPrevious(context: Context) {
+        val previous = history().getOrNull(1)?.text
+        if (previous == null) {
+            speak(context, "لا يوجد ما قبله")
+        } else {
+            speak(context, previous)
+        }
+    }
+
+    /** «اقرأ السجل»: كل ما قيل من الأحدث إلى الأقدم. */
+    fun announceHistory(context: Context) {
+        val items = history().map { it.text }
+        val text = if (items.isEmpty()) "السجل فارغ"
+        else items.joinToString("، ")
+        speak(context, text)
+    }
+
+    private fun speak(context: Context, text: String) {
+        withoutRecording {
+            A11ySpeechCoordinator.speakAnnouncement(
+                context = context,
+                text = text,
+                isInterruptAllowed = true
+            )
+        }
+    }
+
+    /** حاقل نطق القاموس لخانةٍ واحدة (الأولوية للقاموس في الهجاء). */
+    private fun dictionaryResolver(context: Context): ((String) -> String)? =
+        runCatching {
+            val dictionary =
+                com.aymankhattab.nateq.engine.PronunciationDictionary
+                    .shared(context)
+            val resolver: (String) -> String = { word ->
+                dictionary.apply(word)
+            }
+            resolver
+        }.getOrNull()
 }

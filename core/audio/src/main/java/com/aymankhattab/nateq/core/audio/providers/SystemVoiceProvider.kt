@@ -451,7 +451,8 @@ class SystemVoiceProvider(
         onAudioChunk: (ByteArray, Int) -> Unit,
         enginePackage: String?,
         voiceLocale: Locale?,
-        desiredVoiceName: String?
+        desiredVoiceName: String?,
+        category: String?
     ) {
         // **تفويض النطق لمحركٍ مثبّت** (منهج MultiTTS):
         // نصّل دائماً عبر محرك TTS خارجي نربط به مباشرةً

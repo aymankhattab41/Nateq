@@ -61,10 +61,10 @@ class EngineBindVerifierTest {
     }
 
     @Test
-    fun acapelaEngineWithAcapelaVoices_isAccepted() {
+    fun googleEngineWithReportedVoices_isAccepted() {
         assertFalse(
             EngineBindVerifier.isWronglyBoundToGoogle(
-                "com.acapela.android.tts",
+                "com.google.android.tts",
                 listOf("ar-sa-x-salma#22k", "en-us-x-will#22k")
             )
         )
