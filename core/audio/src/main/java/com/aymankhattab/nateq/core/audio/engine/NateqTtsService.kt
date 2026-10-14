@@ -16,6 +16,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.core.audio.accessibility.AccessibilityBridge
 import com.aymankhattab.nateq.core.audio.accessibility.FeatureFlags
+import com.aymankhattab.nateq.core.audio.accessibility.RepeatSpellController
 import com.aymankhattab.nateq.core.audio.accessibility.SelectorPacks
 import com.aymankhattab.nateq.core.audio.announcement.ArabicSpeechNormalizer
 import com.aymankhattab.nateq.core.audio.announcement.InterruptionSensors
@@ -335,8 +336,6 @@ class NateqTtsService : TextToSpeechService() {
         val providers = listOf(
             SystemVoiceProvider(applicationContext, settings),
             EmbeddedProviders.vocalizer(applicationContext),
-            EmbeddedProviders.acapela(applicationContext),
-            EmbeddedProviders.sherpa(applicationContext)
         )
         catalog = VoiceCatalog(providers)
         requestHandler = SynthesisRequestHandler(catalog, settings)
@@ -760,17 +759,11 @@ class NateqTtsService : TextToSpeechService() {
                 val semanticText = textProcessor.processSemantics(
                     processedText, languageTag
                 )
-                val secondaryLanguage = runCatching {
-                    settings.getSecondaryLanguage()
-                }.getOrDefault(LanguageCode.EN.tag)
-                val numberLanguage = runCatching {
-                    settings.getNumberReadingLanguage()
-                }.getOrDefault(LanguageCode.AR.tag)
-                val segments = segmenter.segment(
+                // ع٤١-ب4: سجلّ «ما قيل» لمسار قارئ الشاشة (TalkBack) بعد
+                // تجهيز النص النهائي وقبل أي معالجة خاصة بالمحرك.
+                RepeatSpellController.updateLastSpokenText(
                     semanticText,
-                    fallbackLanguage = languageTag,
-                    secondaryLanguage = secondaryLanguage,
-                    numberLanguage = numberLanguage
+                    source = RepeatSpellController.Source.READER
                 )
                 // **سرعة القارئ (معامل مُوحّد للمسارين):** نسبةُ
                 // request.getSpeechRate() المئوية (100 = طبيعي) تتحول هنا مرة
@@ -780,6 +773,35 @@ class NateqTtsService : TextToSpeechService() {
                 // المختلط request إطلاقاً.
                 val reqRate = request.getSpeechRate().toFloat()
                 val readerRate = readerRateFromPercent(reqRate)
+
+                val secondaryLanguage = runCatching {
+                    settings.getSecondaryLanguage()
+                }.getOrDefault(LanguageCode.EN.tag)
+                val numberLanguage = runCatching {
+                    settings.getNumberReadingLanguage()
+                }.getOrDefault(LanguageCode.AR.tag)
+                val emojiEnabled = runCatching {
+                    settings.isEmojiPronunciationEnabled()
+                }.getOrDefault(false)
+
+                val planItems = SpeechPlanner.plan(
+                    rawText = semanticText,
+                    fallbackLanguage = languageTag,
+                    secondaryLanguage = secondaryLanguage,
+                    numberLanguage = numberLanguage,
+                    emojiPronunciationEnabled = emojiEnabled,
+                    dictionary = pronunciationDictionary,
+                    settings = settings,
+                    defaultRate = readerRate,
+                    segmenter = segmenter
+                )
+                val segments = if (planItems.isEmpty()) {
+                    listOf(Segment(semanticText, languageTag))
+                } else {
+                    planItems.map { item ->
+                        Segment(item.text, item.languageTag, item.role)
+                    }
+                }
 
                 // **حارسُ المقطع الأحادي الطويل:** المقطعُ الواحد إن
                 // تجاوز عتبة تعثّر المحرّكات لا يُسلَّم كاملاً إلى
@@ -792,8 +814,9 @@ class NateqTtsService : TextToSpeechService() {
                     // تُنطق بصوت/محرك العربية أو تتعثّر: تُوجَّه لمحركها
                     // المناسب فوراً.
                     synthesizeSingle(
-                        semanticText, segments[0].languageTag,
-                        callback, readerRate
+                        segments[0].text, segments[0].languageTag,
+                        callback, readerRate, effectCategory,
+                        segments[0].role
                     )
                 } else {
                     // نص مختلط الكتابات: نطق كل مقطع بلغته/محركه ثم مزج الصوت
@@ -823,7 +846,9 @@ class NateqTtsService : TextToSpeechService() {
                             "${unitCounts.size} units, " +
                             "$correctMs ms (was ${timeoutHolder.get()})"
                     )
-                    synthesizeMixed(segments, readerRate, callback)
+                    synthesizeMixed(
+                        segments, readerRate, callback, effectCategory
+                    )
                 }
             } catch (e: CancellationException) {
                 // إبطال صريح: الإيقاف (onStop) معروف للنظام فلا نُطلق خطأً
@@ -963,7 +988,9 @@ class NateqTtsService : TextToSpeechService() {
         rawText: String,
         languageTag: String,
         callback: SynthesisCallback,
-        readerRate: Float
+        readerRate: Float,
+        effectCategory: String = "",
+        role: SpeechRole = SpeechRole.TEXT
     ) {
         val (voice, foundProvider) = resolveVoiceWithFallback(languageTag)
         val provider = foundProvider ?: run {
@@ -974,10 +1001,10 @@ class NateqTtsService : TextToSpeechService() {
             return
         }
         val autoConvert = requestHandler.isAutoConvertEnabled()
-        // الرقم البحت (نصُّ الطلب كامله مقطعٌ واحد) مع صوتٍ محفوظ لفئة
-        // الأرقام يُحسم به لا بالصوت العام للغة (المسار الموازي المطلوب).
+        // الرقم البحت أو الإيموجي مع صوتٍ محفوظ لفئته
         val convertTarget =
-            numbersCategoryTarget(Segment(rawText, languageTag))
+            emojiCategoryTarget(Segment(rawText, languageTag, role))
+                ?: numbersCategoryTarget(Segment(rawText, languageTag, role))
                 ?: resolveConvertTarget(languageTag)
         // **سرعة النطق — نموذج الضرب (readerRate أساس، وLORD معامل):**
         // كان النموذج القديم استبدالاً (إما سرعة LORD أو نسبة القارئ)، وكان
@@ -1065,9 +1092,13 @@ class NateqTtsService : TextToSpeechService() {
 
         // Process text through TextProcessor
         // (numbers, dates, currencies, etc.)
-        val processedText = textProcessor.process(
-            rawText, languageTag, finalEngine
-        )
+        val processedText = if (role == SpeechRole.EMOJI) {
+            rawText
+        } else {
+            textProcessor.process(
+                rawText, languageTag, finalEngine
+            )
+        }
         val speechText = if (LanguageCode.isArabic(languageTag)) {
             ArabicSpeechNormalizer.normalize(processedText)
         } else {
@@ -1140,7 +1171,8 @@ class NateqTtsService : TextToSpeechService() {
                         )
                         offset += bytesToWrite
                     }
-                }, finalEngine, finalLocale, finalVoiceName
+                }, finalEngine, finalLocale, finalVoiceName,
+                effectCategory
             )
         } catch (e: CancellationException) {
             throw e
@@ -1203,9 +1235,9 @@ class NateqTtsService : TextToSpeechService() {
         val segRate = requestHandler.getSpeechRate(segTag)
         val segPitch = requestHandler.getPitch(segTag)
         val segVolume = requestHandler.getVolume(segTag)
-        // الرقم البحت مع صوتٍ محفوظ لفئة الأرقام يُحسم به لا بالصوت العام
-        // للغة (المسار الموازي المطلوب) وإلا يبقى سلوك التحويل المعتاد.
-        val convert = numbersCategoryTarget(segment)
+        // الرقم البحت أو الإيموجي مع صوتٍ محفوظ لفئته
+        val convert = emojiCategoryTarget(segment)
+            ?: numbersCategoryTarget(segment)
             ?: resolveConvertTarget(segTag)
         val segLang = segTag.takeWhile { it.isLetter() }
         val convertLang = convert?.convertLocale?.language
@@ -1239,9 +1271,13 @@ class NateqTtsService : TextToSpeechService() {
         // **بند التشكيل الشرطي:** تُمرَّر حزمةُ المحرك المحسومة إلى
         // [TextProcessor.process] — المحركات التي تفهم التشكيل العربي
         // تحتفظ به في الناتج (مسار الاستعادة) بدل تجريده دائماً.
-        val processed = textProcessor.process(
-            segment.text, segTag, routed.engine
-        )
+        val processed = if (segment.role == SpeechRole.EMOJI) {
+            segment.text
+        } else {
+            textProcessor.process(
+                segment.text, segTag, routed.engine
+            )
+        }
         val speechText = if (LanguageCode.isArabic(segTag)) {
             ArabicSpeechNormalizer.normalize(processed)
         } else {
@@ -1284,7 +1320,8 @@ class NateqTtsService : TextToSpeechService() {
      *  نصٌّ إلا بخطأٍ صريح لغيره. */
     private suspend fun synthesizeSegmentRaw(
         segment: Segment,
-        readerRate: Float
+        readerRate: Float,
+        effectCategory: String = ""
     ): SegmentAudio? {
         val params = resolveSegmentParams(segment, readerRate)
             ?: return null
@@ -1325,7 +1362,8 @@ class NateqTtsService : TextToSpeechService() {
                     },
                     params.engine,
                     params.locale,
-                    params.voiceName
+                    params.voiceName,
+                    effectCategory
                 )
                 if (pieceRate > 0) {
                     nativeRate = pieceRate
@@ -1465,7 +1503,8 @@ class NateqTtsService : TextToSpeechService() {
     private suspend fun synthesizeMixedSequential(
         segments: List<Segment>,
         readerRate: Float,
-        callback: SynthesisCallback
+        callback: SynthesisCallback,
+        effectCategory: String = ""
     ) {
         var started = false
         // عدّادُ الأجزاء التي لم تُنطق: صفرٌ في المسار السليم، وأيُّ
@@ -1516,7 +1555,8 @@ class NateqTtsService : TextToSpeechService() {
                         },
                         params.engine,
                         params.locale,
-                        params.voiceName
+                        params.voiceName,
+                        effectCategory
                     )
                 } catch (e: CancellationException) {
                     throw e
@@ -1559,12 +1599,13 @@ class NateqTtsService : TextToSpeechService() {
     private suspend fun synthesizeParallel(
         segments: List<Segment>,
         readerRate: Float,
-        callback: SynthesisCallback
+        callback: SynthesisCallback,
+        effectCategory: String = ""
     ) {
         val audios = coroutineScope {
             segments.map { segment ->
                 async(AppDispatchers.io) {
-                    synthesizeSegmentRaw(segment, readerRate)
+                    synthesizeSegmentRaw(segment, readerRate, effectCategory)
                 }
             }.map { it.await() }
         }
@@ -1620,13 +1661,16 @@ class NateqTtsService : TextToSpeechService() {
     private suspend fun synthesizeMixed(
         segments: List<Segment>,
         readerRate: Float,
-        callback: SynthesisCallback
+        callback: SynthesisCallback,
+        effectCategory: String = ""
     ) {
         val totalChars = segments.sumOf { it.text.length }
         if (segments.size > 1 && totalChars <= PARALLEL_MAX_CHARS) {
-            synthesizeParallel(segments, readerRate, callback)
+            synthesizeParallel(segments, readerRate, callback, effectCategory)
         } else {
-            synthesizeMixedSequential(segments, readerRate, callback)
+            synthesizeMixedSequential(
+                segments, readerRate, callback, effectCategory
+            )
         }
     }
 
@@ -1708,6 +1752,49 @@ class NateqTtsService : TextToSpeechService() {
         }
     }
 
+    /** إعداد هدف فئة نطق الإيموجي للمقطع ذي الدور EMOJI. */
+    internal fun emojiCategoryTarget(segment: Segment): ConvertTarget? {
+        if (segment.role != SpeechRole.EMOJI) return null
+        val voiceId = runCatching {
+            settings.getPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_EMOJI
+            )
+        }.getOrNull() ?: return null
+        val engine = runCatching {
+            settings.getEngineForCategory(
+                SettingsRepository.VOICE_CATEGORY_EMOJI
+            )
+        }.getOrNull()
+        val rate = runCatching {
+            settings.getSpeechRateForCategory(
+                SettingsRepository.VOICE_CATEGORY_EMOJI
+            )
+        }.getOrDefault(1.0f)
+        val pitch = runCatching {
+            settings.getPitchForCategory(
+                SettingsRepository.VOICE_CATEGORY_EMOJI
+            )
+        }.getOrDefault(1.0f)
+        val volume = runCatching {
+            settings.getVolumeForCategory(
+                SettingsRepository.VOICE_CATEGORY_EMOJI
+            )
+        }.getOrDefault(1.0f)
+        val locale = if (segment.languageTag.isNullOrEmpty()) {
+            null
+        } else {
+            Locale.forLanguageTag(segment.languageTag)
+        }
+        return ConvertTarget(
+            convertEngine = engine,
+            convertLocale = locale,
+            convertRate = rate,
+            convertPitch = pitch,
+            convertVolume = volume,
+            convertVoiceName = voiceId
+        )
+    }
+
     /** هدف التحويل لفئة الأرقام للمقطع الرقمي البحت — المسار الموازي
      *  المطلوب أن يُستدعى بدل [resolveConvertTarget] حصراً للمقاطع الرقمية
      *  البحتة: إن حفظ المستخدم صوتاً مخصصاً لفئة الأرقام
@@ -1719,7 +1806,9 @@ class NateqTtsService : TextToSpeechService() {
      *  الافتراضية). لا يتقيد بـ checkbox التحويل التلقائي لأن فئة الأرقام
      *  صوتٌ صريحٌ يُنطق به في الإعلانات على أي حال. */
     internal fun numbersCategoryTarget(segment: Segment): ConvertTarget? {
-        if (!segment.isNumericOnly()) return null
+        if (segment.role != SpeechRole.NUMBER && !segment.isNumericOnly()) {
+            return null
+        }
         val voiceId = runCatching {
             settings.getPreferredVoiceIdForCategory(
                 SettingsRepository.VOICE_CATEGORY_NUMBERS

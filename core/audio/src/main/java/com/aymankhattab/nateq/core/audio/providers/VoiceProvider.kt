@@ -51,7 +51,8 @@ interface VoiceProvider {
         onAudioChunk: (ByteArray, Int) -> Unit,
         enginePackage: String? = null,
         voiceLocale: Locale? = null,
-        desiredVoiceName: String? = null
+        desiredVoiceName: String? = null,
+        category: String? = null
     )
 
     /**

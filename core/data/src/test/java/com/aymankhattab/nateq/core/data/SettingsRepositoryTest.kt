@@ -1602,6 +1602,7 @@ class SettingsRepositoryTest {
         assertFalse(repo.isA11yAllowAllApps())
         assertFalse(repo.isA11ySmartPauseCallEnabled())
         assertFalse(repo.isA11ySmartPauseGameEnabled())
+        assertNull(repo.getA11yShortcutBindings())
 
         repo.setAccessibilityFeatureEnabled("a11y_read_more", true)
         repo.setA11yPaused(true)
@@ -1611,15 +1612,23 @@ class SettingsRepositoryTest {
         repo.setA11yAllowAllApps(true)
         repo.setA11ySmartPauseCallEnabled(true)
         repo.setA11ySmartPauseGameEnabled(true)
+        repo.setA11yShortcutBindings("VOL_UP_LONG=READ_SCREEN")
 
         val fresh = newRepository()
         assertTrue(fresh.isAccessibilityFeatureEnabled("a11y_read_more"))
         assertTrue(fresh.isA11yPaused())
         assertEquals(123456L, fresh.getA11yPausedUntil())
         assertEquals(2, fresh.getA11yPauseLevel())
-        assertEquals(setOf("com.whatsapp"), fresh.getA11yAllowedPackages())
+        assertEquals(
+            setOf("com.whatsapp"),
+            fresh.getA11yAllowedPackages()
+        )
         assertTrue(fresh.isA11yAllowAllApps())
         assertTrue(fresh.isA11ySmartPauseCallEnabled())
         assertTrue(fresh.isA11ySmartPauseGameEnabled())
+        assertEquals(
+            "VOL_UP_LONG=READ_SCREEN",
+            fresh.getA11yShortcutBindings()
+        )
     }
 }

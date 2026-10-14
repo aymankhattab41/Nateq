@@ -1,12 +1,14 @@
 package com.aymankhattab.nateq.core.audio.enginehost
 
 import android.os.ParcelFileDescriptor
+import android.os.SystemClock
 import java.io.BufferedOutputStream
 import java.io.Closeable
 import java.io.DataOutputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /** طلب نطق واحد يمرّ من العملية الأمامية إلى :engine_host. */
 internal data class SpeakRequest(
@@ -61,6 +63,9 @@ internal class PcmSink(
     )
     private val closed = AtomicBoolean(false)
 
+    /** زمن (uptime) آخر تقدّم — تقيس به سياسة الحارس الخمول. */
+    private val lastProgressAt = AtomicLong(SystemClock.uptimeMillis())
+
     @Volatile
     private var headerWritten = false
 
@@ -68,6 +73,7 @@ internal class PcmSink(
         if (headerWritten) return
         HostProtocol.writeFormat(out, sampleRate, channels)
         headerWritten = true
+        touchProgress()
     }
 
     fun writePcm(bytes: ByteArray, length: Int) {
@@ -75,6 +81,14 @@ internal class PcmSink(
             throw IOException("PCM قبل إطار الصيغة")
         }
         HostProtocol.writePcm(out, bytes, length)
+        touchProgress()
+    }
+
+    /** زمن (uptime) آخر ترويسة أو شريحة PCM كُتبت فعلاً. */
+    fun lastProgressAtMs(): Long = lastProgressAt.get()
+
+    private fun touchProgress() {
+        lastProgressAt.set(SystemClock.uptimeMillis())
     }
 
     /**

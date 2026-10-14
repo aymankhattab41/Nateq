@@ -13,18 +13,22 @@ object BluetoothAnnouncer {
         deviceName: String?,
         isConnected: Boolean
     ) {
-        val name = deviceName?.trim()?.takeIf { it.isNotBlank() }
-            ?: "جهاز بلوتوث"
-        val text = if (isConnected) {
-            "تم اتصال $name"
-        } else {
-            "تم فصل $name"
-        }
-
+        val text = buildText(deviceName, isConnected)
         A11ySpeechCoordinator.speakAnnouncement(
             context = context,
             text = text,
             isInterruptAllowed = true
         )
+    }
+
+    /**
+     * يبني نص الإعلان (منطق نقي — قابل للاختبار بلا Context).
+     * @param deviceName اسم الجهاز أو null/فراغ ⟹ «جهاز بلوتوث».
+     * @param isConnected true = اتصال، false = فصل.
+     */
+    internal fun buildText(deviceName: String?, isConnected: Boolean): String {
+        val name = deviceName?.trim()?.takeIf { it.isNotBlank() }
+            ?: "جهاز بلوتوث"
+        return if (isConnected) "تم اتصال $name" else "تم فصل $name"
     }
 }

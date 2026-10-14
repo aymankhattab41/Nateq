@@ -4,9 +4,9 @@ import android.app.Service
 import android.content.Intent
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
+import android.os.SystemClock
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
-import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
@@ -22,12 +22,11 @@ import kotlinx.coroutines.runBlocking
 /**
  * ع٢٩-5: مضيف المحركات الأصلية في عملية `:engine_host`.
  *
- * كل مكتبة أصلية (Vocalizer / Acapela / Sherpa-ONNX) تُحمَّل هنا
  * وحدها؛ فأي انهيار JNI يقتل هذه العملية فقط. الواجهة AIDL غير
  * مُصدَّرة ولا تصل لتطبيق خارجي أبداً.
  *
  * سلامة الأنبوب: كتّاب الـPCM لا يتقاطعون (محادثةٌ واحدة في كل
- * وقت — ردّ اتصال المحرّك أثناء speak، أو مولّد Sherpa وحده)،
+ * وقت — ردّ اتصال المحرّك أثناء speak)،
  * والإطار الأخير (الحالة) يُكتب قبل إغلاق الأنبوب دائماً فيقرأه
  * العميل قبل EOF بترتيبٍ مضمون.
  *
@@ -43,8 +42,6 @@ class EmbeddedEngineHostService : Service() {
         /** المحركات المعروفة — أي معرّف آخر يُرفض برمز معنون. */
         private val KNOWN_ENGINES = setOf(
             HostProtocol.ENGINE_VOCALIZER,
-            HostProtocol.ENGINE_ACAPELA,
-            HostProtocol.ENGINE_SHERPA
         )
     }
 
@@ -116,17 +113,9 @@ class EmbeddedEngineHostService : Service() {
                     updatedAt = System.currentTimeMillis()
                 )
             } else {
-                val isExp = id == HostProtocol.ENGINE_ACAPELA && (
-                    res.code?.contains("LICENSE", ignoreCase = true) == true ||
-                    res.code?.contains("JNI", ignoreCase = true) == true ||
-                    res.code?.contains("CONTEXT", ignoreCase = true) == true ||
-                    res.code?.contains("NATIVE", ignoreCase = true) == true
+                val st = EngineStatusRegistry.stateForCode(
+                    res.code ?: "UNKNOWN"
                 )
-                val st = if (isExp) {
-                    EngineStatusRegistry.State.EXPERIMENTAL
-                } else {
-                    EngineStatusRegistry.stateForCode(res.code ?: "UNKNOWN")
-                }
                 EngineStatusRegistry.EngineStatus(
                     engineId = id,
                     state = st,
@@ -156,13 +145,7 @@ class EmbeddedEngineHostService : Service() {
                     val session = sessions[id] as? VocalizerHostSession
                     session?.listVoices() ?: emptyList()
                 }
-                HostProtocol.ENGINE_ACAPELA -> acapelaVoices()
-                else -> {
-                    val session = sessionFor(id)
-                    session?.let {
-                        (it as? SherpaHostSession)?.listVoices()
-                    } ?: emptyList()
-                }
+                else -> emptyList()
             }
             return HostProtocol.encodeVoices(voices)
         }
@@ -240,14 +223,24 @@ class EmbeddedEngineHostService : Service() {
                         return@execute
                     }
                     speakingRequestId.set(requestId)
-                    guard = watchdog.schedule(
+                    // حارس الخمول لا الزمن الكلّي: ما دامت الشرائح
+                    // تتوالى (تقدّمٌ حديث) لا يُقطع الطلب مهما طال؛
+                    // وإن انقطع لمدّة الميزانية فهو خمولٌ حقيقي.
+                    guard = watchdog.scheduleWithFixedDelay(
                         {
-                            if (!speakDone.get()) {
+                            if (!speakDone.get() &&
+                                HostWatchdog.expired(
+                                    SystemClock.uptimeMillis(),
+                                    sink.lastProgressAtMs(),
+                                    budgetMs
+                                )
+                            ) {
                                 timedOut.set(true)
                                 runCatching { session.stop() }
                             }
                         },
                         budgetMs,
+                        HostWatchdog.DEFAULT_POLL_MS,
                         TimeUnit.MILLISECONDS
                     )
                     var res = try {
@@ -265,7 +258,7 @@ class EmbeddedEngineHostService : Service() {
                     if (timedOut.get() && res.ok) {
                         res = HostResult.failure(
                             "GENERATION_TIMEOUT",
-                            "تجاوز نطق $id ميزانيته ${budgetMs}ms"
+                            "خمل نطق $id ${budgetMs}ms بلا تقدّم"
                         )
                     }
                     sink.end(
@@ -339,6 +332,11 @@ class EmbeddedEngineHostService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        // قبل أي استخدام للمحرك: عطّل fdsan في هذه العملية.
+        // libNuanceVocalizer.so يغلق واصفاً مملوكاً لـFILE* بـclose خام
+        // (vplatform_file_Close)، وهو ما يُجهض العملية عند تفعيل fdsan
+        // (targetSdk 29+). SmartVoice ينجو لأنه يستهدف API 28.
+        NativeFdsanGuard.ensureDisabled()
         executor = Executors.newCachedThreadPool { runnable ->
             Thread(runnable, "engine-host-synth")
         }
@@ -366,31 +364,9 @@ class EmbeddedEngineHostService : Service() {
         val created = when (normId) {
             HostProtocol.ENGINE_VOCALIZER ->
                 VocalizerHostSession(this)
-            HostProtocol.ENGINE_ACAPELA ->
-                AcapelaHostSession()
-            HostProtocol.ENGINE_SHERPA ->
-                SherpaHostSession(this)
             else -> return null
         }
         return sessions.putIfAbsent(normId, created) ?: created
-    }
-
-    /** أصوات Acapela من ملفاتها (مسح قرصي بلا مكتبة أصلية). */
-    private fun acapelaVoices(): List<HostVoice> {
-        return try {
-            AcapelaEmbeddedVoiceProvider
-                .getInstalledVoices(this)
-                .map {
-                    HostVoice(
-                        id = it.id,
-                        name = it.voiceName,
-                        langTag = it.locale.toLanguageTag()
-                    )
-                }
-        } catch (t: Throwable) {
-            Log.e(TAG, "قائمة أصوات Acapela فشلت: ${t.message}")
-            emptyList()
-        }
     }
 
     private fun encode(res: HostResult): String {

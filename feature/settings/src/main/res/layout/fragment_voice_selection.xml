@@ -82,7 +82,14 @@
 
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/a11y_bluetooth_announcement_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
 
-            
+            <com.google.android.material.switchmaterial.SwitchMaterial android:tag="switch_a11y_continuous_reading" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/a11y_continuous_reading_title" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
+
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/a11y_continuous_reading_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
+
+            <com.google.android.material.switchmaterial.SwitchMaterial android:tag="switch_a11y_ocr_reading" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/a11y_ocr_reading_title" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
+
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/a11y_ocr_reading_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
+
             <com.google.android.material.switchmaterial.SwitchMaterial android:tag="switch_a11y_smart_pause_call" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/a11y_smart_pause_call_title" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/a11y_smart_pause_call_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
@@ -91,6 +98,28 @@
             <com.google.android.material.switchmaterial.SwitchMaterial android:tag="switch_a11y_smart_pause_game" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/a11y_smart_pause_game_title" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/a11y_smart_pause_game_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
+
+            <com.google.android.material.switchmaterial.SwitchMaterial android:tag="switch_a11y_key_shortcuts" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/a11y_shortcut_bindings_title" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
+
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/a11y_shortcut_bindings_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
+
+            <com.google.android.material.button.MaterialButton android:tag="btn_a11y_shortcut_bindings" style="@style/Widget.MaterialComponents.Button.TextButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:layout_marginTop="8dp" android:gravity="start|center_vertical" android:text="@string/a11y_shortcut_btn" />
+
+            <com.google.android.material.switchmaterial.SwitchMaterial android:tag="switch_a11y_contact_voices" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/a11y_contact_voices_title" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
+
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/a11y_contact_voices_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
+
+            <com.google.android.material.switchmaterial.SwitchMaterial android:tag="switch_a11y_app_profiles" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/a11y_app_profiles_title" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
+
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/a11y_app_profiles_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
+
+            <com.google.android.material.switchmaterial.SwitchMaterial android:tag="switch_a11y_auto_profile" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/a11y_auto_profile_title" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
+
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/a11y_auto_profile_summary" android:textSize="12sp" android:textColor="@color/text_secondary" />
+
+            <com.google.android.material.button.MaterialButton android:tag="btn_a11y_contact_voices" style="@style/Widget.MaterialComponents.Button.TextButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:layout_marginTop="8dp" android:gravity="start|center_vertical" android:text="@string/a11y_contact_voices_manage" />
+
+            <com.google.android.material.button.MaterialButton android:tag="btn_a11y_app_profiles" style="@style/Widget.MaterialComponents.Button.TextButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:layout_marginTop="8dp" android:gravity="start|center_vertical" android:text="@string/a11y_app_profiles_manage" />
 
         </LinearLayout>
 
@@ -446,6 +475,35 @@
 
             <SeekBar android:tag="seek_caller_ring_duck" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:contentDescription="@string/caller_ring_duck_percent" />
 
+            <androidx.appcompat.widget.AppCompatCheckBox android:tag="cb_caller_loudness_force_max" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:minHeight="48dp" android:text="@string/loudness_force_max_title" android:importantForAccessibility="yes" />
+
+            <androidx.appcompat.widget.AppCompatCheckBox android:tag="cb_caller_loudness_bypass_silent" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/loudness_bypass_silent_title" android:importantForAccessibility="yes" />
+
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginTop="8dp">
+
+                <TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="@string/loudness_stream_mode_title" android:textAppearance="?attr/textAppearanceBody2" />
+
+                <androidx.appcompat.widget.AppCompatSpinner android:tag="spinner_caller_stream_mode" android:layout_width="wrap_content" android:layout_height="wrap_content" android:minHeight="48dp" android:contentDescription="@string/loudness_stream_mode_title" />
+            </LinearLayout>
+
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginTop="8dp">
+
+                <TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="@string/loudness_headset_cap_title" android:textAppearance="?attr/textAppearanceBody2" />
+
+                <TextView android:tag="tv_caller_headset_cap_value" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textAppearance="?attr/textAppearanceBody2" />
+            </LinearLayout>
+
+            <SeekBar android:tag="seek_caller_headset_cap" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:max="100" android:contentDescription="@string/loudness_headset_cap_title" />
+
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginTop="8dp">
+
+                <TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="@string/loudness_pcm_gain_title" android:textAppearance="?attr/textAppearanceBody2" />
+
+                <TextView android:tag="tv_caller_pcm_gain_value" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textAppearance="?attr/textAppearanceBody2" />
+            </LinearLayout>
+
+            <SeekBar android:tag="seek_caller_pcm_gain" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:max="6" android:contentDescription="@string/loudness_pcm_gain_title" />
+
             
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginTop="12dp">
 
@@ -557,6 +615,8 @@
 
             
             <com.google.android.material.button.MaterialButton android:id="@+id/btn_save_categories" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:minHeight="48dp" android:text="@string/categories_save_button" android:importantForAccessibility="yes" />
+
+            <com.google.android.material.button.MaterialButton android:id="@+id/btn_refresh_voices" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/btn_refresh_voices" android:importantForAccessibility="yes" />
 
         </LinearLayout>
 
@@ -974,6 +1034,8 @@
 
             
             <com.google.android.material.button.MaterialButton android:id="@+id/btn_changelog" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/changelog_title" android:importantForAccessibility="yes" app:icon="@drawable/ic_history" app:iconGravity="textStart" />
+
+            <com.google.android.material.button.MaterialButton android:id="@+id/btn_a11y_guide" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/a11y_guide_title" android:importantForAccessibility="yes" app:icon="@drawable/ic_history" app:iconGravity="textStart" />
 
             
             <com.google.android.material.button.MaterialButton android:id="@+id/btn_report_error" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/report_error" android:contentDescription="@string/report_error_desc" android:importantForAccessibility="yes" app:icon="@drawable/ic_report_bug" app:iconGravity="textStart" />

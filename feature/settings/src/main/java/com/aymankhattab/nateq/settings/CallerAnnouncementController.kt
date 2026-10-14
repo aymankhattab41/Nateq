@@ -14,12 +14,15 @@ import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.widget.AppCompatSpinner
 import androidx.core.content.ContextCompat
+import com.aymankhattab.nateq.core.data.StreamMode
 import com.aymankhattab.nateq.feature.settings.R
 import android.content.Context
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
 import com.aymankhattab.nateq.core.audio.announcement.CallerScreeningService
 import com.aymankhattab.nateq.core.audio.announcement.NateqNotificationListener
+import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
 import com.aymankhattab.nateq.util.announceCompat
@@ -105,6 +108,15 @@ internal class CallerAnnouncementController(
         null
     private var seekCallerRingDuck: SeekBar? = null
     private var tvCallerRingDuckValue: TextView? = null
+    private var cbCallerLoudnessForceMax:
+        androidx.appcompat.widget.AppCompatCheckBox? = null
+    private var cbCallerLoudnessBypassSilent:
+        androidx.appcompat.widget.AppCompatCheckBox? = null
+    private var spinnerCallerStreamMode: AppCompatSpinner? = null
+    private var seekCallerHeadsetCap: SeekBar? = null
+    private var tvCallerHeadsetCapValue: TextView? = null
+    private var seekCallerPcmGain: SeekBar? = null
+    private var tvCallerPcmGainValue: TextView? = null
 
     /** خيارات محرك نطق المتصل: المحركات المثبتة */
     private var callerEngineOptions: List<EnginePicker.InstalledEngine> =
@@ -169,6 +181,26 @@ etCallerPrefix =
             view.findViewWithTag<SeekBar>("seek_caller_ring_duck")
         tvCallerRingDuckValue =
             view.findViewWithTag<TextView>("tv_caller_ring_duck_value")
+        cbCallerLoudnessForceMax =
+            view.findViewWithTag<
+                androidx.appcompat.widget.AppCompatCheckBox
+                >("cb_caller_loudness_force_max")
+        cbCallerLoudnessBypassSilent =
+            view.findViewWithTag<
+                androidx.appcompat.widget.AppCompatCheckBox
+                >("cb_caller_loudness_bypass_silent")
+        spinnerCallerStreamMode =
+            view.findViewWithTag<AppCompatSpinner>(
+                "spinner_caller_stream_mode"
+            )
+        seekCallerHeadsetCap =
+            view.findViewWithTag<SeekBar>("seek_caller_headset_cap")
+        tvCallerHeadsetCapValue =
+            view.findViewWithTag<TextView>("tv_caller_headset_cap_value")
+        seekCallerPcmGain =
+            view.findViewWithTag<SeekBar>("seek_caller_pcm_gain")
+        tvCallerPcmGainValue =
+            view.findViewWithTag<TextView>("tv_caller_pcm_gain_value")
         spinnerCallerVoiceAr = view.findViewById(R.id.spinner_caller_voice_ar)
         spinnerCallerVoiceEn = view.findViewById(R.id.spinner_caller_voice_en)
         spinnerCallerEngineAr =
@@ -525,6 +557,126 @@ etCallerPrefix =
         }
         refreshCallerRingDuck()
 
+        cbCallerLoudnessForceMax?.setOnCheckedChangeListener { _, checked ->
+            runCatching {
+                settings.setLoudnessForceMaxEnabled(
+                    SettingsRepository.ANNOUNCE_CATEGORY_CALLER,
+                    checked
+                )
+            }
+        }
+        cbCallerLoudnessBypassSilent?.setOnCheckedChangeListener { _, checked ->
+            runCatching {
+                settings.setLoudnessBypassSilentEnabled(
+                    SettingsRepository.ANNOUNCE_CATEGORY_CALLER,
+                    checked
+                )
+            }
+            if (checked) {
+                checkDndPermissionAndExplain()
+            }
+        }
+
+        val streamModes = listOf(
+            StreamMode.AUTO to R.string.stream_mode_auto,
+            StreamMode.ACCESSIBILITY to R.string.stream_mode_accessibility,
+            StreamMode.ALARM to R.string.stream_mode_alarm,
+            StreamMode.NOTIFICATION to R.string.stream_mode_notification,
+            StreamMode.MEDIA to R.string.stream_mode_media
+        )
+        val modeLabels = streamModes.map { fragment.getString(it.second) }
+        spinnerCallerStreamMode?.adapter = fragment.simpleAdapter(modeLabels)
+        val currentMode = runCatching {
+            settings.getLoudnessStreamMode(
+                SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+            )
+        }.getOrDefault(StreamMode.AUTO)
+        val initialModeIndex = streamModes.indexOfFirst {
+            it.first == currentMode
+        }.coerceAtLeast(0)
+        spinnerCallerStreamMode?.setSelection(initialModeIndex)
+        spinnerCallerStreamMode?.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(
+                    parent: AdapterView<*>?,
+                    view: View?,
+                    position: Int,
+                    id: Long
+                ) {
+                    val mode = streamModes.getOrNull(position)?.first
+                        ?: StreamMode.AUTO
+                    runCatching {
+                        settings.setLoudnessStreamMode(
+                            SettingsRepository.ANNOUNCE_CATEGORY_CALLER,
+                            mode
+                        )
+                    }
+                }
+
+                override fun onNothingSelected(parent: AdapterView<*>?) {}
+            }
+
+        seekCallerHeadsetCap?.apply {
+            max = 100
+            val initialCap = runCatching {
+                settings.getLoudnessHeadsetCapPercent(
+                    SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+                )
+            }.getOrDefault(85)
+            progress = initialCap
+            tvCallerHeadsetCapValue?.text = "$initialCap%"
+            setOnSeekBarChangeListener(object :
+                android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(
+                    seekBar: SeekBar,
+                    progress: Int,
+                    fromUser: Boolean
+                ) {
+                    val p = progress.coerceIn(0, 100)
+                    tvCallerHeadsetCapValue?.text = "$p%"
+                    if (fromUser) {
+                        runCatching {
+                            settings.setLoudnessHeadsetCapPercent(
+                                SettingsRepository.ANNOUNCE_CATEGORY_CALLER,
+                                p
+                            )
+                        }
+                    }
+                }
+
+                override fun onStartTrackingTouch(seekBar: SeekBar) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar) {}
+            })
+        }
+        seekCallerPcmGain?.apply {
+            max = 6
+            val initialGain = runCatching {
+                settings.getEventPcmGainDb().toInt()
+            }.getOrDefault(6)
+            progress = initialGain
+            updatePcmGainLabel(initialGain)
+            setOnSeekBarChangeListener(object :
+                android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(
+                    seekBar: SeekBar,
+                    progress: Int,
+                    fromUser: Boolean
+                ) {
+                    val g = progress.coerceIn(0, 6)
+                    updatePcmGainLabel(g)
+                    if (fromUser) {
+                        runCatching {
+                            settings.setEventPcmGainDb(g.toFloat())
+                        }
+                    }
+                }
+
+                override fun onStartTrackingTouch(seekBar: SeekBar) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar) {}
+            })
+        }
+        refreshCallerLoudness()
+
         // صوت نطق الأسماء العربية في إعلان المتصل (من الكتالوج).
         spinnerCallerVoiceAr?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
@@ -604,6 +756,81 @@ etCallerPrefix =
                 SettingsRepository.CALLER_RING_DUCK_MIN
         }
         showDuckPercent(percent)
+    }
+
+    private fun refreshCallerLoudness() {
+        val cat = SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+        val forceMax = runCatching {
+            settings.isLoudnessForceMaxEnabled(cat)
+        }.getOrDefault(true)
+        cbCallerLoudnessForceMax?.isChecked = forceMax
+
+        val bypassSilent = runCatching {
+            settings.isLoudnessBypassSilentEnabled(cat)
+        }.getOrDefault(true)
+        cbCallerLoudnessBypassSilent?.isChecked = bypassSilent
+
+        val currentMode = runCatching {
+            settings.getLoudnessStreamMode(cat)
+        }.getOrDefault(StreamMode.AUTO)
+        val modeIndex = when (currentMode) {
+            StreamMode.AUTO -> 0
+            StreamMode.ACCESSIBILITY -> 1
+            StreamMode.ALARM -> 2
+            StreamMode.NOTIFICATION -> 3
+            StreamMode.MEDIA -> 4
+        }
+        spinnerCallerStreamMode?.setSelection(modeIndex)
+
+        val cap = runCatching {
+            settings.getLoudnessHeadsetCapPercent(cat)
+        }.getOrDefault(85)
+        seekCallerHeadsetCap?.progress = cap
+        tvCallerHeadsetCapValue?.text = "$cap%"
+
+        val pcmGain = runCatching {
+            settings.getEventPcmGainDb().toInt()
+        }.getOrDefault(6)
+        seekCallerPcmGain?.progress = pcmGain
+        updatePcmGainLabel(pcmGain)
+    }
+
+    private fun checkDndPermissionAndExplain() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val ctx = fragment.context ?: return
+            val nm = ctx.getSystemService(
+                android.app.NotificationManager::class.java
+            )
+            if (nm != null && !nm.isNotificationPolicyAccessGranted) {
+                MaterialAlertDialogBuilder(ctx)
+                    .setTitle(R.string.dnd_permission_dialog_title)
+                    .setMessage(R.string.dnd_permission_dialog_message)
+                    .setPositiveButton(
+                        R.string.dnd_permission_dialog_positive
+                    ) { _, _ ->
+                        runCatching {
+                            val intent = Intent(
+                                Settings
+                                    .ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS
+                            )
+                            fragment.startActivity(intent)
+                        }
+                    }
+                    .setNegativeButton(
+                        R.string.dnd_permission_dialog_negative,
+                        null
+                    )
+                    .show()
+            }
+        }
+    }
+
+    private fun updatePcmGainLabel(gain: Int) {
+        tvCallerPcmGainValue?.text = if (gain > 0) {
+            "+$gain dB"
+        } else {
+            fragment.getString(R.string.loudness_pcm_gain_disabled)
+        }
     }
 
     /** مراقبُ نصٍّ يحفظ ما يكتبه المستخدم في [onSave] — منفصلٌ لكل حقل
@@ -725,13 +952,16 @@ etCallerPrefix =
             spinnerCallerVoiceEn
         }
         val sample = fragment.getString(R.string.sample_text_caller_preview)
+        val canonEngine = enginePkg?.let {
+            HostProtocol.normalizeEngineId(it)
+        } ?: enginePkg
         fragment.previewSpeech(
             buildPreviewParamsFrom(
                 voiceName = voices.getOrNull(
                     voiceSpinner?.selectedItemPosition ?: 0
                 )?.name.orEmpty(),
                 languageTag = if (isArabic) "ar" else "en",
-                enginePkg = enginePkg,
+                enginePkg = canonEngine,
                 rateProgress = seekCallerRate?.progress ?: 100,
                 pitchProgress = seekCallerPitch?.progress ?: 100,
                 volumePercent = seekCallerVolume?.progress ?: 100,
@@ -988,6 +1218,13 @@ etCallerPrefix =
         cbCallerRingDuck = null
         seekCallerRingDuck = null
         tvCallerRingDuckValue = null
+        cbCallerLoudnessForceMax = null
+        cbCallerLoudnessBypassSilent = null
+        spinnerCallerStreamMode = null
+        seekCallerHeadsetCap = null
+        tvCallerHeadsetCapValue = null
+        seekCallerPcmGain = null
+        tvCallerPcmGainValue = null
         spinnerCallerVoiceAr = null
         spinnerCallerVoiceEn = null
         spinnerCallerEngineAr = null

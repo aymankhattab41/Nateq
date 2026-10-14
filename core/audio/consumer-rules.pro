@@ -10,8 +10,10 @@
 # mNativeEnginePtr؛ إعادة التسمية تجعل fid == null وتُسقط العملية
 # بـJNI DETECTED ERROR في createNativeEngine.
 -keep class com.nuance.android.vocalizer.** { *; }
--keep class com.acapelagroup.android.** { *; }
--keep class com.k2fsa.sherpa.onnx.** { *; }
+
+# ع٤١-ب12: Tesseract4Android — طبقاتها الأصلية (JNI) تصل لفئاتها
+# وحقولها بالاسم، فتُصان من التقليص.
+-keep class com.googlecode.tesseract.android.** { *; }
 
 # كل دالة native يجب أن تحتفظ باسمها لأن النظام يطابقها بالتوقيع
 # عند تسجيل JNI (RegisterNatives أو الافتراضي عبر اسم الصنف).

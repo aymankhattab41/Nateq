@@ -16,7 +16,10 @@ import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.core.audio.R
+import com.aymankhattab.nateq.core.audio.accessibility.FeatureFlags
+import com.aymankhattab.nateq.core.data.ContactVoiceStore
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.core.data.VoiceProfile
 import com.aymankhattab.nateq.engine.NumberSpeech
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.LanguageCode
@@ -1881,18 +1884,24 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             Locale.forLanguageTag(LanguageCode.EN.tag)
         }
 
+        // **ع٤١-ب10**: صوتُ جهة الاتصال يتقدّم على إعدادات الفئة.
+        val contactVoice = callerContactVoice(
+            context, settings, incomingNumber
+        )
+        val effectiveRate = contactVoice?.speechRate ?: speechRate
+        val effectiveVolume = contactVoice?.volume ?: volume
+
         val speaker = AnnouncementSpeaker.getInstance(context)
-        val callerVoice = callerVoice(settings, hasArabic)
+        val callerVoice = contactVoice?.voiceId
+            ?: callerVoice(settings, hasArabic)
         speaker.resetVoice(callerVoice)
 
-        val pitch = settings.getCallerAnnouncementPitchOrDefault(
-            locale.language
-        )
+        val pitch = contactVoice?.pitch
+            ?: settings.getCallerAnnouncementPitchOrDefault(locale.language)
         speaker.speak(
-            text, locale, speechRate, pitch, volume,
-            engineOverride = callerSpeechEngine(
-                settings, locale.language
-            ),
+            text, locale, effectiveRate, pitch, effectiveVolume,
+            engineOverride = contactVoice?.engine
+                ?: callerSpeechEngine(settings, locale.language),
             category = SettingsRepository.ANNOUNCE_CATEGORY_CALLER
         )
         ringingAnnounced = true
@@ -1981,6 +1990,28 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         settings.getCallerAnnouncementArabicVoiceId()
     } else {
         settings.getCallerAnnouncementEnglishVoiceId()
+    }
+
+    /**
+     * صوت جهة الاتصال المخزَّن لرقم المتصل (ع٤١-ب10)، أو null إن كانت
+     * الميزة معطّلة أو لا صوت محفوظ. يُطبَّع الرقم بكل صِيَغه الممكنة.
+     */
+    internal fun callerContactVoice(
+        context: Context,
+        settings: SettingsRepository,
+        number: String?
+    ): VoiceProfile? {
+        val raw = number?.trim().orEmpty()
+        if (raw.isEmpty()) return null
+        if (!settings.isAccessibilityFeatureEnabled(
+                FeatureFlags.FEATURE_CONTACT_VOICES
+            )
+        ) {
+            return null
+        }
+        val region = Locale.getDefault().country
+        val forms = callerLookupForms(raw, region)
+        return ContactVoiceStore.create(context).find(forms)
     }
 
     /** نصّ إعلان المتصل = **[ما قبل] + [الاسم أو الرقم] + [ما بعد]**.

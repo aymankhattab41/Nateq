@@ -54,6 +54,24 @@ object AccessibilityBridge {
     }
 
     /**
+     * نصوص الشاشة الحالية مرتّبة بصرياً (ع٤١-ب6، ب7).
+     * يعود إلى آخر نصوص محفوظة إن لم تكن الخدمة متصلة.
+     */
+    fun readScreenTexts(): List<String> {
+        val service = activeServiceRef.get() ?: return lastScreenTexts()
+        val texts = runCatching { service.readScreenTexts() }
+            .getOrDefault(emptyList())
+        return if (texts.isEmpty()) lastScreenTexts() else texts
+    }
+
+    /** يمرّر النافذة النشطة للأمام (ع٤١-ب6). @return هل نجح التمرير؟ */
+    fun scrollForward(): Boolean {
+        val service = activeServiceRef.get() ?: return false
+        return runCatching { service.scrollForwardActiveWindow() }
+            .getOrDefault(false)
+    }
+
+    /**
      * توسيع الرسالة المقتطعة تلقائياً بمهلة زمنية (ع٢٧-20، ع٢٧-21)
      */
     suspend fun expandReadMore(

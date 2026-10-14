@@ -455,14 +455,30 @@ class TextProcessor(
         return buffer.toString()
     }
 
-    /** استرجاع الروابط التي حجبتها [maskUrls] إلى مواضع محارف الحجز. */
+    /**
+     * استرجاع الروابط التي حجبتها [maskUrls] إلى مواضع محارف الحجز.
+     *
+     * وعند تفعيل مفتاح اختبار الروابط (ع٤١-ب7) تُستبدل كلُّ محجوزةٍ
+     * بصيغتها المنطوقة المختصرة ([UrlSpeech.shorten]) — **وهذا بعد
+     * القاموس** (يجري في [buildPreamble])؛ فلا يُمسّ ناتجُ القاموس
+     * لأنه ليس محجوزاً بعلامة، وإنما تُبدَّل مواضعُ الروابط المحجوزة
+     * وحدها (حمايةُ العلامات المحجوزة). المفتاحُ مطفأٌ افتراضياً فلا
+     * يتغيّر السلوك القائم.
+     */
     private fun unmaskUrls(text: String, store: List<String>): String {
         if (store.isEmpty()) return text
+        val shorten = injectedSettings?.isUrlShorteningEnabled() ?: false
         val sb = StringBuilder(text.length + store.sumOf { it.length })
         for (ch in text) {
             val idx = ch - URL_MASK_BASE
             if (idx in store.indices) {
-                sb.append(store[idx])
+                val original = store[idx]
+                val replacement = if (shorten) {
+                    UrlSpeech.shorten(original)
+                } else {
+                    original
+                }
+                sb.append(replacement)
             } else {
                 sb.append(ch)
             }

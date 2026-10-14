@@ -44,20 +44,6 @@ class EmbeddedProvidersTest {
     }
 
     @Test
-    fun acapela_returnsSingleInstancePerProcess() {
-        val first = EmbeddedProviders.acapela(context)
-        val second = EmbeddedProviders.acapela(context)
-        assertSame(first, second)
-    }
-
-    @Test
-    fun sherpa_returnsSingleInstancePerProcess() {
-        val first = EmbeddedProviders.sherpa(context)
-        val second = EmbeddedProviders.sherpa(context)
-        assertSame(first, second)
-    }
-
-    @Test
     fun sharedInstance_ignoresDifferentContextWrappers() {
         val direct = EmbeddedProviders.vocalizer(context)
         val viaOther = EmbeddedProviders.vocalizer(
@@ -68,9 +54,9 @@ class EmbeddedProvidersTest {
 
     @Test
     fun shutdownAll_clearsRegistrySoNextAccessIsFresh() {
-        val before = EmbeddedProviders.acapela(context)
+        val before = EmbeddedProviders.vocalizer(context)
         EmbeddedProviders.shutdownAll()
-        val after = EmbeddedProviders.acapela(context)
+        val after = EmbeddedProviders.vocalizer(context)
         assertNotSame(before, after)
     }
 
@@ -78,24 +64,12 @@ class EmbeddedProvidersTest {
     fun construction_doesNotCreateNativeEngine() {
         VocalizerEmbeddedVoiceProvider(context)
         assertNoHostBinding(HostProtocol.ENGINE_VOCALIZER)
-
-        AcapelaEmbeddedVoiceProvider(context)
-        assertNoHostBinding(HostProtocol.ENGINE_ACAPELA)
-
-        SherpaOnnxVoiceProvider(context)
-        assertNoHostBinding(HostProtocol.ENGINE_SHERPA)
     }
 
     @Test
     fun isConfigured_doesNotTouchNativeEngine() {
         VocalizerEmbeddedVoiceProvider(context).isConfigured()
         assertNoHostBinding(HostProtocol.ENGINE_VOCALIZER)
-
-        AcapelaEmbeddedVoiceProvider(context).isConfigured()
-        assertNoHostBinding(HostProtocol.ENGINE_ACAPELA)
-
-        SherpaOnnxVoiceProvider(context).isConfigured()
-        assertNoHostBinding(HostProtocol.ENGINE_SHERPA)
     }
 
     @Test

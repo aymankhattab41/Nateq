@@ -19,6 +19,14 @@ import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedStorage
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import androidx.lifecycle.lifecycleScope
+import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
+import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
+import com.aymankhattab.nateq.core.common.AppDispatchers
+import java.util.Locale
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * فئات السبnner العلوي في «الصوت الافتراضي»: خمس فئات صوتية + إعلان المتصل.
@@ -247,7 +255,31 @@ internal class CategoryVoicePanelController(
                         }
                     }
                     markDirty()
-                    refreshVoiceSpinner()
+                    if (engine != null) {
+                        val existing = catalog.voicesFor(
+                            currentPanelLanguage, engine.packageName
+                        )
+                        if (existing.isEmpty() &&
+                            isEmbeddedEngine(engine.packageName)
+                        ) {
+                            fetchVoicesOnDemand(
+                                engine.packageName,
+                                engine.label,
+                                currentPanelLanguage
+                            ) {
+                                refreshVoiceSpinner()
+                            }
+                        } else if (existing.isEmpty()) {
+                            (fragment as? VoiceSelectionFragment)
+                                ?.refreshVoiceCatalogDiscovery {
+                                    refreshVoiceSpinner()
+                                }
+                        } else {
+                            refreshVoiceSpinner()
+                        }
+                    } else {
+                        refreshVoiceSpinner()
+                    }
                 }
 
                 override fun onNothingSelected(parent: AdapterView<*>?) {}
@@ -541,10 +573,79 @@ if (!dirtyPanel) {
         return catalog.languageForSavedVoice(saved) ?: "ar"
     }
 
+    private fun isEmbeddedEngine(pkg: String?): Boolean {
+        if (pkg.isNullOrBlank()) return false
+        val norm = HostProtocol.normalizeEngineId(pkg)
+        return norm == HostProtocol.ENGINE_VOCALIZER
+    }
+
+    private fun fetchVoicesOnDemand(
+        enginePkg: String,
+        engineLabel: String,
+        language: String,
+        onComplete: () -> Unit
+    ) {
+        val norm = HostProtocol.normalizeEngineId(enginePkg)
+        val context = fragment.context ?: run {
+            onComplete()
+            return
+        }
+        catalog.setLoading(enginePkg, true)
+        Toast.makeText(
+            context,
+            R.string.loading_voices_indicator,
+            Toast.LENGTH_SHORT
+        ).show()
+
+        fragment.viewLifecycleOwner.lifecycleScope.launch {
+            val voices = withContext(AppDispatchers.io) {
+                withTimeoutOrNull(15_000L) {
+                    try {
+                        val provider = when (norm) {
+                            HostProtocol.ENGINE_VOCALIZER ->
+                                EmbeddedProviders.vocalizer(context)
+                            else -> null
+                        }
+                        val loc = Locale.forLanguageTag(language)
+                        provider?.listVoices(loc)?.map { desc ->
+                            VoiceOption(desc.id, desc.displayName)
+                        } ?: emptyList()
+                    } catch (t: Throwable) {
+                        // سجّل الفشل في EngineStatusRegistry لتظهر
+                        // السبب في الواجهة
+                        val msg = t.localizedMessage
+                            ?: t.message
+                            ?: t.javaClass.simpleName
+                        EngineStatusRegistry.noteFailure(
+                            norm,
+                            "FETCH_ERROR",
+                            msg
+                        )
+                        Log.w(TAG, "On-demand voice fetch error", t)
+                        emptyList()
+                    }
+                } ?: emptyList()
+            }
+            catalog.setLoading(enginePkg, false)
+            if (voices.isNotEmpty()) {
+                catalog.addVoicesForEngine(
+                    language,
+                    enginePkg,
+                    engineLabel,
+                    voices
+                )
+            }
+            if (fragment.isAdded) {
+                onComplete()
+            }
+        }
+    }
+
     /** مقارنة الاسم المحفوظ بالأسماء المتاحة وتحديثه بالتسامح إن لزم. */
     private fun reconcileSavedVoiceName(
         categoryKey: String,
-        available: List<VoiceOption>
+        available: List<VoiceOption>,
+        enginePkg: String? = null
     ) {
         val savedName = settings.getPreferredVoiceIdForCategory(categoryKey)
             ?: return
@@ -566,6 +667,45 @@ if (!dirtyPanel) {
         if (match != null) {
             Log.i(TAG, "Reconciling voice name: $savedName → ${match.name}")
             settings.setPreferredVoiceIdForCategory(categoryKey, match.name)
+            return
+        }
+
+        // ع٤٠-4: إذا لم تُعثر على مطابقة، والأصوات المتاحة فارغة لمحرك مدمج،
+        // أزل الصوت المحفوظ الوهمي (مثل ar-EG) لتفشل المعاينة بوضوح بدل
+        // استخدام صوت غير موجود.
+        val isEmbedded = isEmbeddedEngine(enginePkg)
+        if (available.isNotEmpty()) {
+            val fallbackMatch = available.first()
+            Log.i(
+                TAG,
+                "Reconciled legacy voice $savedName to " +
+                    "${fallbackMatch.name} for $categoryKey"
+            )
+            settings.setPreferredVoiceIdForCategory(
+                categoryKey,
+                fallbackMatch.name
+            )
+        } else if (isEmbedded || !enginePkg.isNullOrBlank()) {
+            // لا توجد أصوات متاحة: امسح الصوت المحفوظ لتجنب حفظ اسم وهمي
+            Log.i(
+                TAG,
+                "Clearing unavailable legacy voice $savedName " +
+                    "for $categoryKey (engine=$enginePkg)"
+            )
+            settings.setPreferredVoiceIdForCategory(categoryKey, "")
+            val engineLabel = categoryEngines
+                .firstOrNull { it.packageName == enginePkg }?.label
+                ?: enginePkg
+            val msg = fragment.getString(
+                R.string.voice_not_available_for_engine,
+                savedName,
+                engineLabel
+            )
+            Toast.makeText(
+                fragment.requireContext(),
+                msg,
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
@@ -584,7 +724,22 @@ if (!dirtyPanel) {
             null
         }
         voiceOptions = catalog.voicesFor(currentPanelLanguage, engine)
-        reconcileSavedVoiceName(key, voiceOptions)
+        if (engine != null &&
+            isEmbeddedEngine(engine) &&
+            voiceOptions.isEmpty()
+        ) {
+            val engineObj = categoryEngines
+                .firstOrNull { it.packageName == engine }
+            val label = engineObj?.label ?: engine
+            if (catalog.reasonFor(engine, currentPanelLanguage) !=
+                "جارٍ التحميل"
+            ) {
+                fetchVoicesOnDemand(engine, label, currentPanelLanguage) {
+                    refreshVoiceSpinner()
+                }
+            }
+        }
+        reconcileSavedVoiceName(key, voiceOptions, engine)
         val saved = runCatching {
             settings.getPreferredVoiceIdForCategory(key)
         }.getOrNull()
@@ -712,19 +867,43 @@ if (!dirtyPanel) {
             }
         }
         val voiceIdx = spinnerVoice?.selectedItemPosition ?: -1
-        if (voiceIdx in voiceOptions.indices) {
-            val chosenVoice = voiceOptions[voiceIdx]
-            runCatching {
-                settings.setPreferredVoiceIdForCategory(
-                    key, chosenVoice.name
+        if (voiceOptions.isEmpty() || voiceIdx !in voiceOptions.indices) {
+            Toast.makeText(
+                fragment.requireContext(),
+                R.string.voice_cannot_save_invalid,
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        val chosenVoice = voiceOptions[voiceIdx]
+        if (categoryHasDedicatedEngine(key)) {
+            val engineIdx = spinnerEngine?.selectedItemPosition ?: -1
+            if (engineIdx in categoryEngines.indices) {
+                val selectedEngine = categoryEngines[engineIdx].packageName
+                val validVoices = catalog.voicesFor(
+                    currentPanelLanguage,
+                    selectedEngine
                 )
+                if (validVoices.none { it.name == chosenVoice.name }) {
+                    Toast.makeText(
+                        fragment.requireContext(),
+                        R.string.voice_cannot_save_invalid,
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return
+                }
             }
-            val voiceLang = catalog.languageForSavedVoice(chosenVoice.name)
-                ?: catalog.languageOfVoice(chosenVoice.name)
-                ?: currentPanelLanguage
-            runCatching {
-                settings.setLanguageForCategory(key, voiceLang)
-            }
+        }
+        runCatching {
+            settings.setPreferredVoiceIdForCategory(
+                key, chosenVoice.name
+            )
+        }
+        val voiceLang = catalog.languageForSavedVoice(chosenVoice.name)
+            ?: catalog.languageOfVoice(chosenVoice.name)
+            ?: currentPanelLanguage
+        runCatching {
+            settings.setLanguageForCategory(key, voiceLang)
         }
         runCatching {
             settings.setSpeechRateForCategory(
@@ -788,14 +967,21 @@ if (!dirtyPanel) {
                 )
             }
         }
-        val voice = callerVoicesFor(categoryKey)
-            .getOrNull(voiceSpinner?.selectedItemPosition ?: -1)
-        if (voice != null) {
-            runCatching {
-                settings.setPreferredVoiceIdForCategory(
-                    categoryKey, voice.name
-                )
-            }
+        val callerVoices = callerVoicesFor(categoryKey)
+        val voiceIdx = voiceSpinner?.selectedItemPosition ?: -1
+        if (callerVoices.isEmpty() || voiceIdx !in callerVoices.indices) {
+            Toast.makeText(
+                fragment.requireContext(),
+                R.string.voice_cannot_save_invalid,
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        val voice = callerVoices[voiceIdx]
+        runCatching {
+            settings.setPreferredVoiceIdForCategory(
+                categoryKey, voice.name
+            )
         }
     }
 
@@ -843,11 +1029,14 @@ if (!dirtyPanel) {
         } else {
             null
         }
+        val canonEngine = enginePkg?.let {
+            HostProtocol.normalizeEngineId(it)
+        } ?: enginePkg
         fragment.previewSpeech(
             buildPreviewParamsFrom(
                 voiceName = voiceName,
                 languageTag = currentPanelLanguage,
-                enginePkg = enginePkg,
+                enginePkg = canonEngine,
                 rateProgress = seekRate?.progress ?: 100,
                 pitchProgress = seekPitch?.progress ?: 100,
                 volumePercent = seekVolume?.progress ?: 100,

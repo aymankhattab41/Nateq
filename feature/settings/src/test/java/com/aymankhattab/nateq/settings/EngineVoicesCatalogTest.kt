@@ -87,22 +87,42 @@ class EngineVoicesCatalogTest {
     }
 
     @Test
-    fun `unknown engine for language falls back to logical voices`() {
+    fun `chosen engine without voices yields empty list not fallback`() {
+        // ع٤٠-1: محرك مختار بلا أصوات ⇒ قائمة فارغة وليس «العربية».
         val options = catalog.voicesFor("ar", "com.unknown.engine")
-        assertEquals(listOf(VoiceOption("ar-EG", "العربية")), options)
+        assertTrue(options.isEmpty())
     }
 
     @Test
-    fun `fallback returns logical voices for ar and en only`() {
-        assertEquals(
-            listOf(VoiceOption("ar-EG", "العربية")),
-            catalog.fallbackVoices("ar")
+    fun `null engine yields empty list when catalog empty`() {
+        val empty = EngineVoicesCatalog(
+            emptyMap(), "العربية", "English"
+        )
+        val options = empty.voicesFor("ar", null)
+        assertTrue(options.isEmpty())
+    }
+
+    @Test
+    fun `reasonFor reports loading, unavailable, or missing voices`() {
+        val testCat = EngineVoicesCatalog(
+            emptyMap(), "العربية", "English"
+        )
+        testCat.update(
+            discovery = mapOf("ar" to listOf(acapella)),
+            unavailableMap = mapOf("com.broken" to "CRASHED")
         )
         assertEquals(
-            listOf(VoiceOption("en-US", "English")),
-            catalog.fallbackVoices("en")
+            "المحرك غير جاهز: CRASHED",
+            testCat.reasonFor("com.broken", "ar")
         )
-        assertTrue(catalog.fallbackVoices("fr").isEmpty())
+        testCat.setLoading("com.acapella", true)
+        assertEquals("جارٍ التحميل", testCat.reasonFor("com.acapella", "ar"))
+        testCat.setLoading("com.acapella", false)
+        assertNull(testCat.reasonFor("com.acapella", "ar"))
+        assertEquals(
+            "لا توجد أصوات لهذا المحرك بهذه اللغة",
+            testCat.reasonFor("com.google.android.tts", "ar")
+        )
     }
 
     @Test

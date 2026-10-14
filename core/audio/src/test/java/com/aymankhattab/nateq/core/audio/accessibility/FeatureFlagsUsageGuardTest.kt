@@ -58,13 +58,14 @@ class FeatureFlagsUsageGuardTest {
                 "عند دخول نافذة محادثة 🔄",
             ),
             FeatureFlags.FEATURE_CONTACT_VOICES to listOf(
-                "مخطط: أصوات جهات الاتصال 🔄",
+                "CallerAnnouncementReceiver.callerContactVoice ✅",
+                "A11yVoiceResolver.resolve ✅",
             ),
             FeatureFlags.FEATURE_APP_PROFILES to listOf(
-                "مخطط: ملفات تعريف التطبيقات 🔄",
+                "A11yVoiceResolver.resolve ✅",
             ),
             FeatureFlags.FEATURE_AUTO_PROFILE_SWITCH to listOf(
-                "مخطط: التبديل التلقائي للملفات 🔄",
+                "A11yVoiceResolver.resolve ✅",
             ),
             FeatureFlags.FEATURE_CUSTOM_UNLABELED to listOf(
                 "NateqAccessibilityService (via UnlabeledLabelsHandler) ✅",
@@ -82,7 +83,7 @@ class FeatureFlagsUsageGuardTest {
                 "KeyShortcutRouter.handleDoubleVolUp ✅",
             ),
             FeatureFlags.FEATURE_CONTINUOUS_READING to listOf(
-                "مخطط: القراءة المستمرة 🔄",
+                "KeyShortcutRouter.toggleContinuous ✅",
             ),
             FeatureFlags.FEATURE_CLIPBOARD_READING to listOf(
                 "KeyShortcutRouter.handleDoubleVolDown ✅",
@@ -100,13 +101,13 @@ class FeatureFlagsUsageGuardTest {
                 "ProgressMonitor.onProgressChanged ✅",
             ),
             FeatureFlags.FEATURE_CALL_KEY_ACTIONS to listOf(
-                "مخطط: إجراءات مفاتيح المكالمة 🔄",
+                "NateqAccessibilityService.onKeyEvent ✅",
             ),
             FeatureFlags.FEATURE_WHERE_AM_I to listOf(
                 "WhereAmIController.announceCurrentLocation ✅",
             ),
             FeatureFlags.FEATURE_OCR_READING to listOf(
-                "مخطط: قراءة OCR 🔄",
+                "KeyShortcutRouter.readImage ✅",
             ),
             FeatureFlags.FEATURE_BLUETOOTH_ANNOUNCEMENT to listOf(
                 "BluetoothAnnouncer.announceDeviceState ✅",

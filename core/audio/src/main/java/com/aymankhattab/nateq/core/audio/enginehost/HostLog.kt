@@ -56,16 +56,20 @@ object HostLog {
         }
     }
 
+    @JvmStatic
     fun d(engineId: String, msg: String) {
         logToAndroid("D", tag(engineId), msg)
         append(engineId, "D", msg)
     }
 
+    @JvmStatic
     fun i(engineId: String, msg: String) {
         logToAndroid("I", tag(engineId), msg)
         append(engineId, "I", msg)
     }
 
+    @JvmStatic
+    @JvmOverloads
     fun w(engineId: String, msg: String, t: Throwable? = null) {
         logToAndroid("W", tag(engineId), msg, t)
         if (t != null) {
@@ -76,6 +80,8 @@ object HostLog {
         }
     }
 
+    @JvmStatic
+    @JvmOverloads
     fun e(engineId: String, msg: String, t: Throwable? = null) {
         logToAndroid("E", tag(engineId), msg, t)
         if (t != null) {

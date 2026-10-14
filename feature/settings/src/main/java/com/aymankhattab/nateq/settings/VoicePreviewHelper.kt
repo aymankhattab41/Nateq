@@ -13,10 +13,8 @@ import android.util.Log
 import android.widget.Toast
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
-import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
 import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
-import com.aymankhattab.nateq.core.audio.providers.SherpaOnnxVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
@@ -158,6 +156,7 @@ internal fun chimeVolumeFromProgress(progress: Int): Float =
 internal class VoicePreviewHelper(private val context: Context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     @Volatile
     private var currentEmbeddedJob: Job? = null
@@ -211,20 +210,14 @@ internal class VoicePreviewHelper(private val context: Context) {
     private fun isEmbeddedEngine(pkg: String?): Boolean {
         if (pkg.isNullOrBlank()) return false
         val norm = HostProtocol.normalizeEngineId(pkg)
-        return norm == HostProtocol.ENGINE_SHERPA ||
-            norm == HostProtocol.ENGINE_VOCALIZER ||
-            norm == HostProtocol.ENGINE_ACAPELA
+        return norm == HostProtocol.ENGINE_VOCALIZER
     }
 
     private fun getEmbeddedProvider(pkg: String): VoiceProvider {
         val norm = HostProtocol.normalizeEngineId(pkg)
         return when (norm) {
-            HostProtocol.ENGINE_SHERPA ->
-                EmbeddedProviders.sherpa(context.applicationContext)
             HostProtocol.ENGINE_VOCALIZER ->
                 EmbeddedProviders.vocalizer(context.applicationContext)
-            HostProtocol.ENGINE_ACAPELA ->
-                EmbeddedProviders.acapela(context.applicationContext)
             else ->
                 throw IllegalArgumentException("Unknown engine: $pkg")
         }
@@ -338,7 +331,12 @@ internal class VoicePreviewHelper(private val context: Context) {
                         },
                         enginePackage = enginePkg,
                         voiceLocale = loc,
-                        desiredVoiceName = params.voiceName
+                        desiredVoiceName = params.voiceName,
+                        category = if (params.isCallerCategory) {
+                            "caller"
+                        } else {
+                            null
+                        }
                     )
                     track?.let { t ->
                         val startWait = System.currentTimeMillis()
@@ -364,7 +362,6 @@ internal class VoicePreviewHelper(private val context: Context) {
                     "Embedded preview timeout after ${spent}ms: $e"
                 )
                 postStatus(
-                    mainHandler,
                     "انتهت مهلة المعاينة على " +
                         providerLabel(enginePkg)
                 )
@@ -374,7 +371,6 @@ internal class VoicePreviewHelper(private val context: Context) {
                 errored = true
                 Log.w("NATEQ_TTS", "Embedded preview failed", t)
                 postStatus(
-                    mainHandler,
                     failureReason(enginePkg, t.message)
                 )
             } finally {
@@ -392,13 +388,13 @@ internal class VoicePreviewHelper(private val context: Context) {
             if (!timedOut && !errored &&
                 track == null && totalFramesWritten == 0L
             ) {
-                postStatus(mainHandler, failureReason(enginePkg, null))
+                postStatus(failureReason(enginePkg, null))
             }
         }
     }
 
     /** يعرض نص حالة المعاينة على Toast في الخيط الرئيسي. */
-    private fun postStatus(mainHandler: Handler, message: String) {
+    private fun postStatus(message: String) {
         mainHandler.post {
             Toast.makeText(
                 context.applicationContext,
@@ -462,8 +458,9 @@ internal class VoicePreviewHelper(private val context: Context) {
 
         val desiredEngine = params.enginePkg?.takeIf { it.isNotBlank() }
         if (isEmbeddedEngine(desiredEngine)) {
+            val canon = HostProtocol.normalizeEngineId(desiredEngine!!)
             currentEmbeddedJob = scope.launch {
-                playEmbeddedPreview(desiredEngine!!, params, onFinished)
+                playEmbeddedPreview(canon, params, onFinished)
             }
             return
         }
@@ -501,6 +498,9 @@ internal class VoicePreviewHelper(private val context: Context) {
                 if (status != TextToSpeech.SUCCESS) {
                     runCatching { tts.shutdown() }
                     if (currentPreviewTts === tts) currentPreviewTts = null
+                    postStatus(
+                        "تعذر تهيئة محرك النطق: ${desiredEngine ?: "النظامي"}"
+                    )
                     onFinished()
                 } else {
                     speakSample(tts, params, onFinished)
@@ -521,6 +521,10 @@ internal class VoicePreviewHelper(private val context: Context) {
         if (created.isFailure) {
             runCatching { hold[0]?.shutdown() }
             currentPreviewTts = null
+            postStatus(
+                "تعذر إنشاء TextToSpeech للمحرك: " +
+                    (desiredEngine ?: "النظامي")
+            )
             onFinished()
         }
     }
@@ -566,38 +570,41 @@ internal class VoicePreviewHelper(private val context: Context) {
                         Locale.forLanguageTag(params.languageTag)
                 }
             }
-previewTts.setSpeechRate(params.speechRate)
-        runCatching { previewTts.setPitch(params.pitch) }
-        // **معاينةُ المتصل تُطبِّق سماتِ المسارِ الحقيقي** — بلاها كان
-        // الصوتُ يخرج على `STREAM_MUSIC` كاملاً فيرتفع عن شريط الصوت،
-        // لأن `KEY_PARAM_VOLUME` وحده تتجاهله أغلبُ المحركات. نفسُ
-        // السماتِ المستعملة في [AnnouncementSpeaker] فالمعاينةُ تسمع
-        // ما سيُنطَقُ فعلاً لا ما يُفترض.
-        if (params.isCallerCategory) {
-            runCatching {
-                previewTts.setAudioAttributes(
-                    android.media.AudioAttributes.Builder()
-                        .setUsage(
-                            android.media.AudioAttributes
-                                .USAGE_NOTIFICATION_EVENT
-                        )
-                        .setContentType(
-                            android.media.AudioAttributes
-                                .CONTENT_TYPE_SONIFICATION
-                        )
-                        .build()
-                )
-            }
-        }
-        val bundle = Bundle().apply {
-            putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, params.volume)
+            previewTts.setSpeechRate(params.speechRate)
+            runCatching { previewTts.setPitch(params.pitch) }
+            // **معاينةُ المتصل تُطبِّق سماتِ المسارِ الحقيقي** — بلاها كان
+            // الصوتُ يخرج على `STREAM_MUSIC` كاملاً فيرتفع عن شريط الصوت،
+            // لأن `KEY_PARAM_VOLUME` وحده تتجاهله أغلبُ المحركات. نفسُ
+            // السماتِ المستعملة في [AnnouncementSpeaker] فالمعاينةُ تسمع
+            // ما سيُنطَقُ فعلاً لا ما يُفترض.
             if (params.isCallerCategory) {
-                putInt(
-                    TextToSpeech.Engine.KEY_PARAM_STREAM,
-                    android.media.AudioManager.STREAM_NOTIFICATION
-                )
+                runCatching {
+                    previewTts.setAudioAttributes(
+                        android.media.AudioAttributes.Builder()
+                            .setUsage(
+                                android.media.AudioAttributes
+                                    .USAGE_NOTIFICATION_EVENT
+                            )
+                            .setContentType(
+                                android.media.AudioAttributes
+                                    .CONTENT_TYPE_SONIFICATION
+                            )
+                            .build()
+                    )
+                }
             }
-        }
+            val bundle = Bundle().apply {
+                putFloat(
+                    TextToSpeech.Engine.KEY_PARAM_VOLUME,
+                    params.volume
+                )
+                if (params.isCallerCategory) {
+                    putInt(
+                        TextToSpeech.Engine.KEY_PARAM_STREAM,
+                        android.media.AudioManager.STREAM_NOTIFICATION
+                    )
+                }
+            }
             previewTts.setOnUtteranceProgressListener(
                 object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {}
@@ -611,6 +618,10 @@ previewTts.setSpeechRate(params.speechRate)
                     @Deprecated("Java Deprecated")
                     override fun onError(utteranceId: String?) {
                         finishPreview(previewTts, engineKey(params))
+                        val engineName = params.enginePkg ?: "المحرك النظامي"
+                        postStatus(
+                            "خطأ أثناء نطق المعاينة على $engineName"
+                        )
                         onFinished()
                     }
                 })
@@ -624,12 +635,19 @@ previewTts.setSpeechRate(params.speechRate)
             }.getOrDefault(TextToSpeech.ERROR)
             if (result == TextToSpeech.ERROR) {
                 finishPreview(previewTts, engineKey(params))
+                val engineName = params.enginePkg ?: "النظامي"
+                postStatus(
+                    "فشل إرسال النص لمحرك النطق: $engineName"
+                )
                 onFinished()
                 return
             }
         } catch (t: Throwable) {
             Log.w("NATEQ_TTS", "preview failed", t)
             finishPreview(previewTts, engineKey(params))
+            postStatus(
+                t.localizedMessage ?: "تعذر تشغيل المعاينة"
+            )
             onFinished()
         }
     }

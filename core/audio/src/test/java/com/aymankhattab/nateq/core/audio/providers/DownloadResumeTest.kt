@@ -43,26 +43,43 @@ class DownloadResumeTest {
         val downloadsDir = DownloadHttpHelper.getDownloadsDir(context)
         val testVoiceId = "test-voice-resume"
 
-        val partFile = File(downloadsDir, "piper_${testVoiceId}.onnx.part")
+        val partFile = File(downloadsDir, "vocalizer_${testVoiceId}.zip.part")
         if (partFile.exists()) partFile.delete()
 
         assertEquals(
             0L,
-            VoiceDownloadManager.getPartialBytes(context, "piper", testVoiceId)
+            VoiceDownloadManager.getPartialBytes(context, testVoiceId)
         )
 
         partFile.writeBytes(ByteArray(1024 * 50)) // 50 KB
 
         assertEquals(
             1024L * 50,
-            VoiceDownloadManager.getPartialBytes(context, "piper", testVoiceId)
+            VoiceDownloadManager.getPartialBytes(context, testVoiceId)
         )
 
-        VoiceDownloadManager.deletePartial(context, "piper", testVoiceId)
+        VoiceDownloadManager.deletePartial(context, testVoiceId)
         assertFalse(partFile.exists())
         assertEquals(
             0L,
-            VoiceDownloadManager.getPartialBytes(context, "piper", testVoiceId)
+            VoiceDownloadManager.getPartialBytes(context, testVoiceId)
+        )
+    }
+
+    @Test
+    fun cancelDownload_deletesLeftoverPartialFile() {
+        val downloadsDir = DownloadHttpHelper.getDownloadsDir(context)
+        val voiceId = "cancel-clear-voice"
+        val partFile = File(downloadsDir, "vocalizer_${voiceId}.zip.part")
+        partFile.writeBytes(ByteArray(2048))
+        assertTrue(partFile.exists())
+
+        VoiceDownloadManager.cancelDownload(context, voiceId)
+
+        assertFalse(partFile.exists())
+        assertEquals(
+            0L,
+            VoiceDownloadManager.getPartialBytes(context, voiceId)
         )
     }
 

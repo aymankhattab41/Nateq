@@ -23,6 +23,7 @@ import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerServi
 import com.aymankhattab.nateq.core.audio.announcement.AudioCue
 import com.aymankhattab.nateq.core.audio.announcement.AudioCuePlayer
 import com.aymankhattab.nateq.core.audio.announcement.CueType
+import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.setSeekStateDescription
 import com.google.android.material.checkbox.MaterialCheckBox
@@ -601,12 +602,15 @@ internal class TimeAnnouncementController(
         val volume = runCatching {
             settings.getVolumeForCategory(category)
         }.getOrDefault(1.0f)
+        val canonEngine = engine?.let {
+            HostProtocol.normalizeEngineId(it)
+        } ?: engine
         val sample = fragment.getString(R.string.sample_text_time_preview)
         fragment.previewSpeech(
             buildCategoryPreviewParams(
                 voices = voices,
                 voiceId = voiceId,
-                enginePkg = engine,
+                enginePkg = canonEngine,
                 rate = rate,
                 pitch = pitch,
                 volume = volume,

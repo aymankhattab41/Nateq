@@ -38,7 +38,6 @@ uiautomator = "2.3.0"
 gson = "2.12.1"
 coroutines = "1.10.1"
 playIntegrity = "1.2.0"
-sherpaOnnx = "v1.13.0"
 
 # --- اختبارات ---------------------------------------------------------------
 # Robolectric 4.17 = أوسع تغطية (23-37) فيدعم SDK 37 (Cinnamon Bun) ويتطلب Java 21
@@ -68,7 +67,6 @@ kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 # Gson (واجهة NateqJson المركزية والـ ParameterizedType)
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 play-integrity = { group = "com.google.android.play", name = "integrity", version.ref = "playIntegrity" }
-sherpa-onnx = { group = "com.github.k2-fsa", name = "sherpa-onnx", version.ref = "sherpaOnnx" }
 
 # اختبارات
 junit = { group = "junit", name = "junit", version.ref = "junit" }

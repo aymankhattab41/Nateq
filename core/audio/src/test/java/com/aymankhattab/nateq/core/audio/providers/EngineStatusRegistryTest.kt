@@ -207,22 +207,6 @@ class EngineStatusRegistryTest {
             "vocalizer_embedded",
             EngineStatusRegistry.normalizeId("vocalizer_embedded")
         )
-        assertEquals(
-            "acapela_embedded",
-            EngineStatusRegistry.normalizeId("acapela")
-        )
-        assertEquals(
-            "acapela_embedded",
-            EngineStatusRegistry.normalizeId("acapela_embedded")
-        )
-        assertEquals(
-            "sherpa_onnx_piper",
-            EngineStatusRegistry.normalizeId("sherpa")
-        )
-        assertEquals(
-            "sherpa_onnx_piper",
-            EngineStatusRegistry.normalizeId("sherpa_onnx_piper")
-        )
     }
 
     @Test

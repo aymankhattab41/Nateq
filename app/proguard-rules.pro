@@ -66,11 +66,7 @@
 # محرّك Vocalizer الأصلي (libNuanceVocalizer.so) يستدعي GetFieldID/
 # SetLongField بأسماء حقول مكتوبة في السجل (.rodata)، مثل
 # mNativeEnginePtr. أي إعادة تسمية أو حذف تجعل fid == null ويُسقط العملية.
-# القاعدة نفسها تنطبق على Acapela (libttsacattsandroidextended.so)
-# وعلى sherpa-onnx (JNI ثابت + استدعاءات انعكاسية على مُهيّئات النموذج).
 -keep class com.nuance.android.vocalizer.** { *; }
--keep class com.acapelagroup.android.** { *; }
--keep class com.k2fsa.sherpa.onnx.** { *; }
 -keepclasseswithmembernames,includedescriptorclasses class * {
     native <methods>;
 }

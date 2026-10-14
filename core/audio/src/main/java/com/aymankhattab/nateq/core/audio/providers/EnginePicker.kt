@@ -141,43 +141,13 @@ object EnginePicker {
             )
         }
 
-        try {
-            val acapela = EmbeddedProviders.acapela(context)
-            scanOneEmbedded(
-                engines,
-                acapela,
-                AcapelaEmbeddedVoiceProvider.PROVIDER_ID
-            )
-        } catch (t: Throwable) {
-            EngineStatusRegistry.noteFailure(
-                AcapelaEmbeddedVoiceProvider.PROVIDER_ID,
-                "SCAN_FAILED",
-                t.message ?: t.javaClass.simpleName
-            )
-        }
-
-        try {
-            val sherpa = EmbeddedProviders.sherpa(context)
-            scanOneEmbedded(
-                engines,
-                sherpa,
-                SherpaOnnxVoiceProvider.PROVIDER_ID
-            )
-        } catch (t: Throwable) {
-            EngineStatusRegistry.noteFailure(
-                SherpaOnnxVoiceProvider.PROVIDER_ID,
-                "SCAN_FAILED",
-                t.message ?: t.javaClass.simpleName
-            )
-        }
-
         return engines.distinctBy { it.packageName }
     }
 
     /**
      * يفحص مزوداً مدمجاً واحداً ويحدّث سجلّ حالته (ع٢٩-8): الملفات
      * موجودة ⇐ `VOICES_PRESENT` ويُعرض؛ لا ملفات ⇐ `NOT_INSTALLED`
-     * ولا يدخل قائمة الجاهز للنطق.
+     * ولكن المحرك يُعرض دائماً في القائمة مع شارة توضح حالته.
      */
     private fun scanOneEmbedded(
         engines: MutableList<InstalledEngine>,

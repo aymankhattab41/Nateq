@@ -187,30 +187,73 @@ class EmbeddedStorageInventoryTest {
         assertEquals(EngineStatusRegistry.State.VOICES_PRESENT, status.state)
     }
 
+    /**
+     * حارس ع٣٢-2: حزمة Vocalizer المدمجة تُسمّي الرأس
+     * `ve_pipeline_..._x-y-z.hdr` والبيانات `arw_..._x-y-z.dat`
+     * (اسمان مختلفان) — يجب ألا يمنع اختلافُ الأسماء عدّ الصوت
+     * مكتملاً، وإلا بقي المحرّك غير مهيّأ ففشلت المعاينة والنطق.
+     */
     @Test
-    fun sherpa_completeModel_detectedByInventory() {
+    fun vocalizer_headerAndVoiceDatNamesDiffer_stillComplete() {
         val baseDir = EmbeddedStorage.baseDir(
             context,
-            EmbeddedStorage.Engine.SHERPA
+            EmbeddedStorage.Engine.VOCALIZER
         )
-        val modelDir = File(baseDir, "piper-ar-voice")
-        modelDir.mkdirs()
+        baseDir.mkdirs()
 
-        val onnx = File(modelDir, "model.onnx")
-        onnx.writeBytes(ByteArray(150 * 1024)) // > 100KB
-
-        val tokens = File(modelDir, "tokens.txt")
-        tokens.writeText("token 1\n")
+        File(
+            baseDir,
+            "ve_pipeline_arw_laila_22_embedded-compact_1-0-5.hdr"
+        ).writeBytes(ByteArray(3448))
+        File(baseDir, "arw_laila_embedded-compact_1-0-5.dat")
+            .writeBytes(ByteArray(2 * 1024 * 1024))
+        File(baseDir, "clm.dat")
+            .writeBytes(ByteArray(2 * 1024 * 1024))
 
         val inv = EmbeddedStorage.inventory(
             context,
-            EmbeddedStorage.Engine.SHERPA
+            EmbeddedStorage.Engine.VOCALIZER
         )
         assertTrue(inv.isCompleteVoicePresent)
+        assertEquals(1, inv.completedVoices.size)
+        assertEquals(
+            "ve_pipeline_arw_laila_22_embedded-compact_1-0-5",
+            inv.completedVoices[0]
+        )
 
-        val provider = SherpaOnnxVoiceProvider(context)
+        val provider = VocalizerEmbeddedVoiceProvider(context)
         assertTrue(provider.isConfigured())
     }
+
+    /**
+     * رأس موجود لكن مع بيانات محرّك مشتركة فقط (بلا .dat صوتي)
+     * ليس صوتاً مكتملاً.
+     */
+    @Test
+    fun vocalizer_headerWithSharedDatOnly_isNotComplete() {
+        val baseDir = EmbeddedStorage.baseDir(
+            context,
+            EmbeddedStorage.Engine.VOCALIZER
+        )
+        baseDir.mkdirs()
+
+        File(
+            baseDir,
+            "ve_pipeline_arw_laila_22_embedded-compact_1-0-5.hdr"
+        ).writeBytes(ByteArray(3448))
+        File(baseDir, "clm.dat")
+            .writeBytes(ByteArray(2 * 1024 * 1024))
+        File(baseDir, "synth_med_fxd_bet3f22.dat")
+            .writeBytes(ByteArray(2 * 1024 * 1024))
+
+        val inv = EmbeddedStorage.inventory(
+            context,
+            EmbeddedStorage.Engine.VOCALIZER
+        )
+        assertFalse(inv.isCompleteVoicePresent)
+        assertTrue(inv.completedVoices.isEmpty())
+    }
+
 
     @Test
     fun engineStatus_staleFailureInvalidatedOnBump() {

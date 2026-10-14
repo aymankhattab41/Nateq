@@ -10,7 +10,7 @@ class DownloadHttpHelperTest {
 
     @Test
     fun validateProtocol_acceptsHttps() {
-        val url = URL("https://huggingface.co/rhasspy/piper-voices/model.onnx")
+        val url = URL("https://example.com/model.onnx")
         DownloadHttpHelper.validateProtocol(url)
     }
 

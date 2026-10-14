@@ -45,7 +45,7 @@ object VocalizerModelCatalog {
             voiceName = "Laila",
             displayNameAr = "ليلى (مضغوط - خفيف)",
             displayNameEn = "Laila (Compact)",
-            locale = Locale.forLanguageTag("ar-SA"),
+            locale = Locale.forLanguageTag("ar-AE"),
             languageCategory = "ar",
             modelId = "embedded_compact",
             headerFileName =
@@ -62,7 +62,7 @@ object VocalizerModelCatalog {
             voiceName = "Laila",
             displayNameAr = "ليلى (جودة عالية)",
             displayNameEn = "Laila (High Quality)",
-            locale = Locale.forLanguageTag("ar-SA"),
+            locale = Locale.forLanguageTag("ar-AE"),
             languageCategory = "ar",
             modelId = "embedded_high",
             headerFileName =
@@ -79,7 +79,7 @@ object VocalizerModelCatalog {
             voiceName = "Maged",
             displayNameAr = "ماجد (مضغوط - خفيف)",
             displayNameEn = "Maged (Compact)",
-            locale = Locale.forLanguageTag("ar-SA"),
+            locale = Locale.forLanguageTag("ar-AE"),
             languageCategory = "ar",
             modelId = "embedded_compact",
             headerFileName =
@@ -96,7 +96,7 @@ object VocalizerModelCatalog {
             voiceName = "Maged",
             displayNameAr = "ماجد (جودة عالية)",
             displayNameEn = "Maged (High Quality)",
-            locale = Locale.forLanguageTag("ar-SA"),
+            locale = Locale.forLanguageTag("ar-AE"),
             languageCategory = "ar",
             modelId = "embedded_high",
             headerFileName =
@@ -113,7 +113,7 @@ object VocalizerModelCatalog {
             voiceName = "Tarik",
             displayNameAr = "طارق (مضغوط - خفيف)",
             displayNameEn = "Tarik (Compact)",
-            locale = Locale.forLanguageTag("ar-SA"),
+            locale = Locale.forLanguageTag("ar-AE"),
             languageCategory = "ar",
             modelId = "embedded_compact",
             headerFileName =
@@ -130,7 +130,7 @@ object VocalizerModelCatalog {
             voiceName = "Tarik",
             displayNameAr = "طارق (جودة عالية)",
             displayNameEn = "Tarik (High Quality)",
-            locale = Locale.forLanguageTag("ar-SA"),
+            locale = Locale.forLanguageTag("ar-AE"),
             languageCategory = "ar",
             modelId = "embedded_high",
             headerFileName =
@@ -147,7 +147,7 @@ object VocalizerModelCatalog {
             voiceName = "Mariam",
             displayNameAr = "مريم (مضغوط - خفيف)",
             displayNameEn = "Mariam (Compact)",
-            locale = Locale.forLanguageTag("ar-SA"),
+            locale = Locale.forLanguageTag("ar-AE"),
             languageCategory = "ar",
             modelId = "embedded_compact",
             headerFileName =
@@ -164,7 +164,7 @@ object VocalizerModelCatalog {
             voiceName = "Mariam",
             displayNameAr = "مريم (جودة عالية)",
             displayNameEn = "Mariam (High Quality)",
-            locale = Locale.forLanguageTag("ar-SA"),
+            locale = Locale.forLanguageTag("ar-AE"),
             languageCategory = "ar",
             modelId = "embedded_high",
             headerFileName =

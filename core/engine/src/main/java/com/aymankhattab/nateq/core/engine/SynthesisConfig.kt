@@ -22,6 +22,9 @@ interface TextProcessingPreferences {
 
     /** تطبيع الحروف العربية. الافتراضي: true. */
     fun isArabicNormalizationEnabled(): Boolean = true
+
+    /** نطق الروابط بنطاقها المختصر بدل قراءتها كاملة. الافتراضي: false. */
+    fun isUrlShorteningEnabled(): Boolean = false
 }
 
 /**

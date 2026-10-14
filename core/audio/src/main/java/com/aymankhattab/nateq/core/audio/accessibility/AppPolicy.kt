@@ -15,6 +15,24 @@ object AppPolicy {
         "org.telegram.messenger"
     )
 
+    /** حزم تطبيقات الدردشة المدعومة في ملخّص المحادثة (ع٤١-ب5). */
+    val CHAT_PACKAGES = setOf(
+        "com.whatsapp",
+        "com.whatsapp.w4b",
+        "org.telegram.messenger",
+        "org.telegram.messenger.web",
+        "org.telegram.plus",
+        "com.facebook.orca",
+        "com.android.mms",
+        "com.google.android.apps.messaging"
+    )
+
+    /** هل الحزمة تطبيق دردشة مدعوم؟ */
+    fun isChatPackage(packageName: String?): Boolean {
+        if (packageName.isNullOrBlank()) return false
+        return CHAT_PACKAGES.contains(packageName.lowercase())
+    }
+
     /** الحزم الحساسة المحجوبة قطعياً */
     private val SENSITIVE_PACKAGES = setOf(
         "com.android.settings",

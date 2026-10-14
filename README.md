@@ -57,6 +57,10 @@ app/src/main/java/com/aymankhattab/nateq/
 
 ## ملاحظات للمطوّرين
 
+- **المعماريات المدعومة**: `arm64-v8a` و`armeabi-v7a` (أجهزة 32-بت). محرّكا
+  Vocalizer المدمجان لا تتوفّر مكتبتاهما الأصليتان إلا لـ`arm64-v8a`،
+  فيسقطان على أجهزة 32-بت بلا انهيار (تُلتقط `UnsatisfiedLinkError`)، بينما
+  يعمل محرّك النظام وOCR (tesseract/leptonica) وبقية الميزات طبيعياً.
 - الواجهة مبنية لقرّاء الشاشة: أهداف لمس ≥ 48dp، `contentDescription` لكل عنصر،
   `accessibilityHeading` للأقسام، وإعلانات `announceForAccessibility` عند التغيير.
 - جميع الأحجام النصية بـ `sp` — تستجيب لضبط خط النظام تلقائياً.
@@ -65,3 +69,57 @@ app/src/main/java/com/aymankhattab/nateq/
   مع إعادة توجيه تركيز الوصول عند فتح/إغلاق أي قسم.
 - البناء: `.\gradlew.bat :app:assembleRelease` → `app/build/outputs/apk/release/nateq.apk`
   (R8 + تصغير الموارد مفعّلان في الـ release).
+
+## خدمات الشاشة وإمكانية الوصول
+
+- **اختصارات مفاتيح الصوت القابلة للتهيئة**: جدول ربط (ضغط مطوّل/مزدوج/ثلاثي/
+  المفتاحان معاً) لكل إيماءة فعل، مع شاشة اختبار فوري، ويُستهلك المفتاح عند
+  اكتمال الإيماءة فقط فلا يتغيّر مستوى الصوت قبل تحقّق الاختصار.
+- **القائمة السريعة وزر إمكانية الوصول**: نافذة إجراءات عائمة تنطق الأفعال
+  المتاحة، مربوطة بزر الوصول وبلاطة الإعدادات السريعة.
+- **القراءة الحية والدردشة**: قراءة الرسائل الجديدة، وتوسيع المقتطع، وملخّص
+  الدردشة (أسماء المرسلين وعدد الرسائل) مع تثبيط التكرار.
+- **أصوات جهات الاتصال** (`a11y_contact_voices`): صوت مستقل لكل جهة اتصال
+  يُطبَّق على نطق مكالماتها ورسائلها بأولوية تسبق صوت الفئة، مخزَّنٌ محلياً
+  في `ContactVoiceStore` ومفتاحُ البحث رقمٌ مُطبَّع. ويُضاف/يُحرَّر من
+  **محرّر صوتٍ كامل** (`VoiceProfileEditorDialog`).
+- **ملفات التطبيقات والتبديل التلقائي** (`a11y_app_profiles`,
+  `a11y_auto_profile_switch`): صوتٌ ومستوى تفصيل لكل تطبيق (`AppProfileStore`)
+  يُطبَّق حسب التطبيق الأمامي عبر `A11yVoiceResolver`.
+- **إجراءات مفاتيح المكالمة**: الرد أو الرفض بمفتاح الصوت أثناء الرنين
+  (إذن `ANSWER_PHONE_CALLS`) مع إمكانية تبديل المفتاحين.
+- **إعلان مسار الصوت والبلوتوث**: عند اتصال/فصل جهاز صوتي (أندرويد 12+
+  يحتاج `BLUETOOTH_CONNECT`).
+
+### حسم صوت الإعلانات
+
+`VoiceProfileResolver.effective` يحسم الأولوية مركّزاً:
+**الافتراضي ← الفئة ← ملف التطبيق ← جهة الاتصال** — كل طبقة تُطبَّق فوق
+الأثقل منها فلا يُغيَّر إلا الحقل المحدَّد.
+
+## جدول الميزات والمفاتيح والاختبارات
+
+| الميزة | مفتاح الإعدادات | الاختبار الحارس |
+|--------|------------------|------------------|
+| توسيع «اقرأ المزيد» | `a11y_read_more_expand` | `FeatureFlagsUsageGuardTest` |
+| قراءة الدردشة الحية | `a11y_chat_live_reading` | `ChatSummarizerTest`، `SelectorPacksTest` |
+| ملخّص الدردشة | `a11y_chat_summary` | `ChatSummaryTest` |
+| تأكيد الكتابة | `a11y_typing_echo` | `FeatureFlagsUsageGuardTest` |
+| قراءة رموز OTP | `a11y_otp_reading` | — |
+| اختصار الروابط منطوقةً | `a11y_url_shortening` | `TextProcessorTest` |
+| الإعلان المنبثق | `a11y_popup_announcement` | — |
+| رصد التقدّم | `a11y_progress_monitoring` | — |
+| إعلان البلوتوث ومسار الصوت | `a11y_bluetooth_announcement` | `BluetoothAnnouncerTest`، `BluetoothEventGateTest` |
+| القراءة المستمرة | `a11y_continuous_reading` | — |
+| قراءة الصور (OCR) | `a11y_ocr_reading` | — |
+| الإيقاف الذكي (مكالمة/لعبة) | `a11y_smart_pause_call` / `_game` | — |
+| اختصارات المفاتيح | `a11y_key_shortcuts` | `ShortcutBindingTableTest` |
+| إجراءات مفاتيح المكالمة | `a11y_call_key_actions` | `CallKeyDetectorTest` |
+| أصوات جهات الاتصال | `a11y_contact_voices` | `ContactVoiceStoreTest` |
+| ملفات التطبيقات | `a11y_app_profiles` | `AppProfileStoreTest` |
+| التبديل التلقائي للملفات | `a11y_auto_profile_switch` | `ContactVoiceStoreTest` |
+| زر الوصول | `a11y_accessibility_button` | — |
+| ميزانية التخليق واكتمال WAV | داخلي (`SynthesisBudget`) | `SynthesisBudgetTest`، `WavWriteCompleteTest` |
+
+**تشغيل الاختبارات:** `.\gradlew.bat :core:data:testDebugUnitTest
+:core:audio:testDebugUnitTest :feature:settings:testDebugUnitTest`.

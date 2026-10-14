@@ -468,7 +468,7 @@ internal class SettingsAccordionController(
             cats, 0
         )
 
-        // مجموعة «المحركات المدمجة وتنزيل الأصوات»: تنزيل وإدارة أصوات Piper
+        // مجموعة «المحركات المدمجة وتنزيل الأصوات»: تنزيل وإدارة الأصوات
         val embeddedDownloader = fragment.getString(
             R.string.section_embedded_downloader_title
         )

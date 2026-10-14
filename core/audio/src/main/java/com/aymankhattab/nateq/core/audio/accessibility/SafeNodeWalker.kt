@@ -102,11 +102,23 @@ object SafeNodeWalker {
             isAccessibilityFocused = node.isAccessibilityFocused,
             isPassword = node.isPassword,
             isEditable = node.isEditable,
+            isEnabled = node.isEnabled,
+            isCheckable = node.isCheckable,
+            isChecked = isCheckedOf(node),
+            isSelected = node.isSelected,
             actions = actionsList,
             customActionLabels = customLabels,
             depth = depth
         )
     }
+
+    /**
+     * `isChecked` مُهمَل في SDK 37 لعدم توفّر بديلٍ عام على كل المستويات،
+     * فالاعتماد عليه لازمٌ لحالة العناصر المحددة.
+     */
+    @Suppress("DEPRECATION")
+    private fun isCheckedOf(node: AccessibilityNodeInfo): Boolean =
+        node.isChecked
 
     /**
      * إعادة تدوير العقدة بأمان (قبل API 33 فقط).

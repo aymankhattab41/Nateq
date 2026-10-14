@@ -24,6 +24,8 @@ object FeatureFlags {
     const val FEATURE_CONTINUOUS_READING = "a11y_continuous_reading"
     const val FEATURE_CLIPBOARD_READING = "a11y_clipboard_reading"
     const val FEATURE_OTP_READING = "a11y_otp_reading"
+    /** يُطبَّق في محرّك النطق عبر `SynthesisConfig.isUrlShorteningEnabled`؛
+     *  وقيمةُ المفتاح حرفٌ مكرّر في `SettingsRepository` (لا اعتماد عكسي). */
     const val FEATURE_URL_SHORTENING = "a11y_url_shortening"
     const val FEATURE_POPUP_ANNOUNCEMENT = "a11y_popup_announcement"
     const val FEATURE_PROGRESS_MONITORING = "a11y_progress_monitoring"

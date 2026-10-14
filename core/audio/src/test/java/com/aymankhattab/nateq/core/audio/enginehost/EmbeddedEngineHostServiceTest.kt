@@ -47,21 +47,21 @@ class EmbeddedEngineHostServiceTest {
     }
 
     @Test
-    fun init_withAcapelaEmbeddedAlias_doesNotReturnUnknownEngine() {
+    fun init_withAcapelaEmbeddedAlias_returnsUnknownEngine() {
         val raw = binder.init("acapela_embedded", "/dummy/dir", false)
         val res = HostProtocol.decodeResult(raw)
-        assertNotEquals("UNKNOWN_ENGINE", res.code)
+        assertEquals("UNKNOWN_ENGINE", res.code)
     }
 
     @Test
-    fun init_withSherpaAliases_doesNotReturnUnknownEngine() {
+    fun init_withSherpaAliases_returnsUnknownEngine() {
         val raw1 = binder.init("sherpa_onnx_piper", "/dummy/dir", false)
         val res1 = HostProtocol.decodeResult(raw1)
-        assertNotEquals("UNKNOWN_ENGINE", res1.code)
+        assertEquals("UNKNOWN_ENGINE", res1.code)
 
         val raw2 = binder.init("sherpa_piper", "/dummy/dir", false)
         val res2 = HostProtocol.decodeResult(raw2)
-        assertNotEquals("UNKNOWN_ENGINE", res2.code)
+        assertEquals("UNKNOWN_ENGINE", res2.code)
     }
 
     @Test
@@ -87,32 +87,5 @@ class EmbeddedEngineHostServiceTest {
         )
         assertNotNull(sVocalizerCanonical)
         assertSame(sVocalizerCanonical, sVocalizerAlias)
-
-        val sAcapelaCanonical = sessionForMethod.invoke(
-            service,
-            HostProtocol.ENGINE_ACAPELA
-        )
-        val sAcapelaAlias = sessionForMethod.invoke(
-            service,
-            "acapela_embedded"
-        )
-        assertNotNull(sAcapelaCanonical)
-        assertSame(sAcapelaCanonical, sAcapelaAlias)
-
-        val sSherpaCanonical = sessionForMethod.invoke(
-            service,
-            HostProtocol.ENGINE_SHERPA
-        )
-        val sSherpaAlias1 = sessionForMethod.invoke(
-            service,
-            "sherpa_onnx_piper"
-        )
-        val sSherpaAlias2 = sessionForMethod.invoke(
-            service,
-            "sherpa_piper"
-        )
-        assertNotNull(sSherpaCanonical)
-        assertSame(sSherpaCanonical, sSherpaAlias1)
-        assertSame(sSherpaCanonical, sSherpaAlias2)
     }
 }

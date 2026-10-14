@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq.core.audio.providers
+package com.aymankhattab.nateq.core.audio.providers
 
 import android.content.Context
 import java.util.concurrent.atomic.AtomicReference
@@ -9,12 +9,6 @@ import java.util.concurrent.atomic.AtomicReference
  */
 object EmbeddedProviders {
     private val vocalizerRef = AtomicReference<VocalizerEmbeddedVoiceProvider?>(
-        null
-    )
-    private val acapelaRef = AtomicReference<AcapelaEmbeddedVoiceProvider?>(
-        null
-    )
-    private val sherpaRef = AtomicReference<SherpaOnnxVoiceProvider?>(
         null
     )
 
@@ -28,32 +22,8 @@ object EmbeddedProviders {
     }
 
     @Synchronized
-    fun acapela(context: Context): AcapelaEmbeddedVoiceProvider {
-        val app = context.applicationContext
-        acapelaRef.get()?.let { return it }
-        val inst = AcapelaEmbeddedVoiceProvider(app)
-        acapelaRef.set(inst)
-        return inst
-    }
-
-    @Synchronized
-    fun sherpa(context: Context): SherpaOnnxVoiceProvider {
-        val app = context.applicationContext
-        sherpaRef.get()?.let { return it }
-        val inst = SherpaOnnxVoiceProvider(app)
-        sherpaRef.set(inst)
-        return inst
-    }
-
-    @Synchronized
     fun shutdownAll() {
         vocalizerRef.getAndSet(null)?.let {
-            runCatching { it.shutdown() }
-        }
-        acapelaRef.getAndSet(null)?.let {
-            runCatching { it.shutdown() }
-        }
-        sherpaRef.getAndSet(null)?.let {
             runCatching { it.shutdown() }
         }
     }

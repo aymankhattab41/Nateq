@@ -94,21 +94,31 @@ class LanguageSegmenterTest {
     }
 
     @Test
-    fun digitsBetweenArabicWords_splitIntoSeparateSegments() {
+    fun digitsBetweenArabicWords_mergedWhenSameLanguageFamily() {
         val input = "العمر 30 عاما"
         val (texts, tags) = textsAndTags(input, "ar")
-        assertEquals(listOf("العمر ", "30 ", "عاما"), texts)
-        assertEquals(listOf("ar", "ar", "ar"), tags)
+        assertEquals(listOf("العمر 30 عاما"), texts)
+        assertEquals(listOf("ar"), tags)
         assertEquals(input, texts.joinToString(""))
+
+        // وعندما تختلف لغة الأرقام صراحة يُفصل الرقم
+        val (textsEn, tagsEn) = textsAndTagsWithNumber(input, "ar", "en")
+        assertEquals(listOf("العمر ", "30 ", "عاما"), textsEn)
+        assertEquals(listOf("ar", "en", "ar"), tagsEn)
     }
 
     @Test
-    fun arabicIndicDigits_splitIntoSeparateSegments() {
+    fun arabicIndicDigits_mergedWhenSameLanguageFamily() {
         val input = "عندي ٣ كتب"
         val (texts, tags) = textsAndTags(input, "ar")
-        assertEquals(listOf("عندي ", "٣ ", "كتب"), texts)
-        assertEquals(listOf("ar", "ar", "ar"), tags)
+        assertEquals(listOf("عندي ٣ كتب"), texts)
+        assertEquals(listOf("ar"), tags)
         assertEquals(input, texts.joinToString(""))
+
+        // وعندما تختلف لغة الأرقام صراحة يُفصل الرقم
+        val (textsEn, tagsEn) = textsAndTagsWithNumber(input, "ar", "en")
+        assertEquals(listOf("عندي ", "٣ ", "كتب"), textsEn)
+        assertEquals(listOf("ar", "en", "ar"), tagsEn)
     }
 
     @Test
@@ -151,8 +161,8 @@ class LanguageSegmenterTest {
         val (textsEn, tagsEn) = textsAndTagsWithNumber(
             "Status 123", "ar", "en"
         )
-        assertEquals(listOf("Status ", "123"), textsEn)
-        assertEquals(listOf("en", "en"), tagsEn)
+        assertEquals(listOf("Status 123"), textsEn)
+        assertEquals(listOf("en"), tagsEn)
     }
 
     @Test
@@ -317,63 +327,97 @@ class LanguageSegmenterTest {
     }
 
     @Test
-    fun unitWithNumber_numberSplitsFromArabicAndLatin() {
+    fun unitWithNumber_numberMergedWithArabic_splitsFromLatin() {
         val (texts, tags) = textsAndTags("الوزن 50kg", "ar")
-        assertEquals(listOf("الوزن ", "50", "kg"), texts)
-        assertEquals(listOf("ar", "ar", "en"), tags)
+        assertEquals(listOf("الوزن 50", "kg"), texts)
+        assertEquals(listOf("ar", "en"), tags)
         assertEquals("الوزن 50kg", texts.joinToString(""))
+
+        val (textsEn, tagsEn) = textsAndTagsWithNumber(
+            "الوزن 50kg", "ar", "en"
+        )
+        assertEquals(listOf("الوزن ", "50kg"), textsEn)
+        assertEquals(listOf("ar", "en"), tagsEn)
     }
 
     @Test
-    fun timeWithSuffix_numberSplitsFromArabicAndLatin() {
+    fun timeWithSuffix_numberMergedWithArabic_splitsFromLatin() {
         val (texts, tags) = textsAndTags("الاجتماع 10:30 AM", "ar")
-        assertEquals(listOf("الاجتماع ", "10:30 ", "AM"), texts)
-        assertEquals(listOf("ar", "ar", "en"), tags)
+        assertEquals(listOf("الاجتماع 10:30 ", "AM"), texts)
+        assertEquals(listOf("ar", "en"), tags)
         assertEquals("الاجتماع 10:30 AM", texts.joinToString(""))
+
+        val (textsEn, tagsEn) = textsAndTagsWithNumber(
+            "الاجتماع 10:30 AM", "ar", "en"
+        )
+        assertEquals(listOf("الاجتماع ", "10:30 AM"), textsEn)
+        assertEquals(listOf("ar", "en"), tagsEn)
     }
 
     @Test
-    fun percentWithSuffix_numberSplitsFromArabicAndLatin() {
+    fun percentWithSuffix_numberMergedWithArabic_splitsFromLatin() {
         val (texts, tags) = textsAndTags("خصم 25% off", "ar")
-        assertEquals(listOf("خصم ", "25% ", "off"), texts)
-        assertEquals(listOf("ar", "ar", "en"), tags)
+        assertEquals(listOf("خصم 25% ", "off"), texts)
+        assertEquals(listOf("ar", "en"), tags)
         assertEquals("خصم 25% off", texts.joinToString(""))
+
+        val (textsEn, tagsEn) = textsAndTagsWithNumber(
+            "خصم 25% off", "ar", "en"
+        )
+        assertEquals(listOf("خصم ", "25% off"), textsEn)
+        assertEquals(listOf("ar", "en"), tagsEn)
     }
 
     @Test
     fun numberInMiddle_splitsIntoThreeSegments() {
         val input = "الكمية 5 فقط"
         val (texts, tags) = textsAndTags(input, "ar")
-        assertEquals(listOf("الكمية ", "5 ", "فقط"), texts)
-        assertEquals(listOf("ar", "ar", "ar"), tags)
+        assertEquals(listOf("الكمية 5 فقط"), texts)
+        assertEquals(listOf("ar"), tags)
         assertEquals(input, texts.joinToString(""))
+
+        val (textsEn, tagsEn) = textsAndTagsWithNumber(input, "ar", "en")
+        assertEquals(listOf("الكمية ", "5 ", "فقط"), textsEn)
+        assertEquals(listOf("ar", "en", "ar"), tagsEn)
     }
 
     @Test
     fun numberAtBeginning_splitsIntoTwoSegments() {
         val input = "5 كتب"
         val (texts, tags) = textsAndTags(input, "ar")
-        assertEquals(listOf("5 ", "كتب"), texts)
-        assertEquals(listOf("ar", "ar"), tags)
+        assertEquals(listOf("5 كتب"), texts)
+        assertEquals(listOf("ar"), tags)
         assertEquals(input, texts.joinToString(""))
+
+        val (textsEn, tagsEn) = textsAndTagsWithNumber(input, "ar", "en")
+        assertEquals(listOf("5 ", "كتب"), textsEn)
+        assertEquals(listOf("en", "ar"), tagsEn)
     }
 
     @Test
     fun numberAtEnd_splitsIntoTwoSegments() {
         val input = "الكمية 5"
         val (texts, tags) = textsAndTags(input, "ar")
-        assertEquals(listOf("الكمية ", "5"), texts)
-        assertEquals(listOf("ar", "ar"), tags)
+        assertEquals(listOf("الكمية 5"), texts)
+        assertEquals(listOf("ar"), tags)
         assertEquals(input, texts.joinToString(""))
+
+        val (textsEn, tagsEn) = textsAndTagsWithNumber(input, "ar", "en")
+        assertEquals(listOf("الكمية ", "5"), textsEn)
+        assertEquals(listOf("ar", "en"), tagsEn)
     }
 
     @Test
     fun formattedNumber_splitsIntoTwoSegments() {
         val input = "30,496.00 جنيه"
         val (texts, tags) = textsAndTags(input, "ar")
-        assertEquals(listOf("30,496.00 ", "جنيه"), texts)
-        assertEquals(listOf("ar", "ar"), tags)
+        assertEquals(listOf("30,496.00 جنيه"), texts)
+        assertEquals(listOf("ar"), tags)
         assertEquals(input, texts.joinToString(""))
+
+        val (textsEn, tagsEn) = textsAndTagsWithNumber(input, "ar", "en")
+        assertEquals(listOf("30,496.00 ", "جنيه"), textsEn)
+        assertEquals(listOf("en", "ar"), tagsEn)
     }
 
     @Test

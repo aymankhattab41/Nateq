@@ -907,33 +907,33 @@ class AnnouncementSpeakerTest {
         val vocalizerVoices = listOf(
             Voice(
                 "vocalizer-laila",
-                Locale("ara", "SAU"),
+                Locale.of("ara", "SAU"),
                 Voice.QUALITY_HIGH, 0, false, emptySet()
             ),
             Voice(
                 "vocalizer-maged",
-                Locale("ara", "EGY"),
+                Locale.of("ara", "EGY"),
                 Voice.QUALITY_HIGH, 0, false, emptySet()
             ),
             Voice(
                 "vocalizer-tom",
-                Locale("eng", "USA"),
+                Locale.of("eng", "USA"),
                 Voice.QUALITY_HIGH, 0, false, emptySet()
             )
         )
         val arMatch = AnnouncementSpeaker.voiceFor(
-            vocalizerVoices, null, Locale("ar")
+            vocalizerVoices, null, Locale.of("ar")
         )
         assertNotNull(arMatch)
         assertEquals("vocalizer-laila", arMatch?.name)
 
         val egMatch = AnnouncementSpeaker.voiceFor(
-            vocalizerVoices, null, Locale("ar", "EG")
+            vocalizerVoices, null, Locale.of("ar", "EG")
         )
         assertEquals("vocalizer-maged", egMatch?.name)
 
         val enMatch = AnnouncementSpeaker.voiceFor(
-            vocalizerVoices, null, Locale("en")
+            vocalizerVoices, null, Locale.of("en")
         )
         assertEquals("vocalizer-tom", enMatch?.name)
     }
@@ -943,18 +943,18 @@ class AnnouncementSpeakerTest {
         val vocalizerVoices = listOf(
             Voice(
                 "vocalizer-laila",
-                Locale("ara", "SAU"),
+                Locale.of("ara", "SAU"),
                 Voice.QUALITY_HIGH, 0, false, emptySet()
             ),
             Voice(
                 "vocalizer-maged",
-                Locale("ara", "EGY"),
+                Locale.of("ara", "EGY"),
                 Voice.QUALITY_HIGH, 0, false, emptySet()
             )
         )
         val fallback = AnnouncementSpeaker.fallbackVoiceFor(
             vocalizerVoices,
-            Locale("ar"),
+            Locale.of("ar"),
             "vocalizer-laila"
         )
         assertEquals("vocalizer-maged", fallback?.name)
@@ -965,29 +965,29 @@ class AnnouncementSpeakerTest {
         val voices = listOf(
             Voice(
                 "vocalizer-Laila-compact",
-                Locale("ara", "SAU"),
+                Locale.of("ara", "SAU"),
                 Voice.QUALITY_HIGH, 0, false, emptySet()
             ),
             Voice(
                 "vocalizer-Maged-enhanced",
-                Locale("ara", "EGY"),
+                Locale.of("ara", "EGY"),
                 Voice.QUALITY_HIGH, 0, false, emptySet()
             )
         )
         // Case-insensitive match without suffix change
         val caseMatch = AnnouncementSpeaker.voiceFor(
-            voices, "VOCALIZER-LAILA-COMPACT", Locale("ar")
+            voices, "VOCALIZER-LAILA-COMPACT", Locale.of("ar")
         )
         assertEquals("vocalizer-Laila-compact", caseMatch?.name)
 
         // Suffix-normalized match (requested base or different suffix)
         val baseMatch = AnnouncementSpeaker.voiceFor(
-            voices, "vocalizer-laila", Locale("ar")
+            voices, "vocalizer-laila", Locale.of("ar")
         )
         assertEquals("vocalizer-Laila-compact", baseMatch?.name)
 
         val premiumMatch = AnnouncementSpeaker.voiceFor(
-            voices, "vocalizer-maged-premium", Locale("ar")
+            voices, "vocalizer-maged-premium", Locale.of("ar")
         )
         assertEquals("vocalizer-Maged-enhanced", premiumMatch?.name)
     }
@@ -997,18 +997,18 @@ class AnnouncementSpeakerTest {
         val vocalizerVoices = listOf(
             Voice(
                 "vocalizer-laila",
-                Locale("ara", "SAU"),
+                Locale.of("ara", "SAU"),
                 Voice.QUALITY_HIGH, 0, false, emptySet()
             )
         )
         val voiceFallback = AnnouncementSpeaker.resolveFallbackLocale(
-            Locale("ar"),
+            Locale.of("ar"),
             vocalizerVoices
         )
         assertEquals("ara", voiceFallback?.language)
 
         val defaultFallback = AnnouncementSpeaker.resolveFallbackLocale(
-            Locale("ar"),
+            Locale.of("ar"),
             emptyList()
         )
         assertEquals("ar", defaultFallback?.language)
@@ -1273,8 +1273,9 @@ class AnnouncementSpeakerTest {
     }
 
     @Test
-    fun `every category including numbers and default boosts stream volume`() {
+    fun `categories with forceMax enabled boost stream volume`() {
         val speaker = AnnouncementSpeaker(context)
+        val repo = SettingsRepository.create(context)
         try {
             val am = context.getSystemService(Context.AUDIO_SERVICE)
                 as AudioManager
@@ -1284,8 +1285,8 @@ class AnnouncementSpeakerTest {
             }
             val original = am.getStreamVolume(AudioManager.STREAM_MUSIC)
 
-            // كل الفئات (أرقام/افتراضي/ساعة/رسائل/بطارية/إشعارات/باطلة)
-            // ترفع القناة للقمة — لا استثناءات تحتاج صيانة عند الإضافة.
+            // كل الفئات عند تفعيل forceMax
+            // ترفع القناة للقمة وتُستعاد بعدها.
             listOf(
                 SettingsRepository.ANNOUNCE_CATEGORY_SMS,
                 SettingsRepository.VOICE_CATEGORY_BATTERY,
@@ -1295,6 +1296,14 @@ class AnnouncementSpeakerTest {
                 SettingsRepository.VOICE_CATEGORY_TIME,
                 null
             ).forEach { category ->
+                if (category != null) {
+                    repo.setLoudnessForceMaxEnabled(category, true)
+                } else {
+                    repo.setLoudnessForceMaxEnabled(
+                        SettingsRepository.VOICE_CATEGORY_DEFAULT,
+                        true
+                    )
+                }
                 speaker.restoreBoostedStreamVolume()
                 am.setStreamVolume(
                     AudioManager.STREAM_MUSIC,

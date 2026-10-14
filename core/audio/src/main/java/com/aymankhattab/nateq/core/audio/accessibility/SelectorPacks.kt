@@ -45,6 +45,26 @@ object SelectorPacks {
         "chat_message_text"
     )
 
+    // معرّفات عقد الرسائل المعروفة (الجزء الأخير من viewIdResourceName)
+    val MESSAGE_VIEW_IDS = listOf(
+        "message_text",
+        "chat_message_text",
+        "text_message",
+        "message_body",
+        "bubble"
+    )
+
+    /**
+     * هل معرّف العقدة عقدة رسالة دردشة؟ (ع٤١-ب5)
+     * يقارن الجزء الأخير بعد «/» من `viewIdResourceName` بالمعرّفات المعروفة.
+     */
+    fun isMessageViewId(id: String?): Boolean {
+        if (id.isNullOrBlank()) return false
+        val tail = id.substringAfterLast('/', "").lowercase()
+        if (tail.isEmpty()) return false
+        return MESSAGE_VIEW_IDS.any { tail == it }
+    }
+
     /**
      * هل النص يمثل زر «قراءة المزيد»؟
      */

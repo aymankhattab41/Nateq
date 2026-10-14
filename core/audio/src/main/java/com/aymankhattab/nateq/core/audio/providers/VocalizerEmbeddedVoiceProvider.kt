@@ -2,8 +2,10 @@ package com.aymankhattab.nateq.core.audio.providers
 
 import android.content.Context
 import android.util.Log
+import com.aymankhattab.nateq.core.audio.announcement.LoudnessStage
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -62,26 +64,9 @@ class VocalizerEmbeddedVoiceProvider(
      * فحصُ قرصٍ فقط — لا يلمس المكتبة الأصلية ولا المضيف ولا يُنشئ مجلدات.
      */
     private fun findDataDir(): File? {
-        val inv = EmbeddedStorage.inventory(
-            context,
-            EmbeddedStorage.Engine.VOCALIZER,
-            listOfNotNull(customVoiceDir)
-        )
-        if (!inv.isCompleteVoicePresent) return null
-
         for (dir in searchDirs()) {
-            if (dir.exists() && dir.isDirectory) {
-                val files = dir.listFiles() ?: continue
-                val hdrs = files.filter {
-                    it.extension.equals("hdr", ignoreCase = true)
-                }
-                for (hdr in hdrs) {
-                    val baseName = hdr.nameWithoutExtension
-                    val dat = File(dir, "$baseName.dat")
-                    if (dat.exists() && dat.length() >= 1_048_576L) {
-                        return dir
-                    }
-                }
+            if (VocalizerVoiceManifest.hasCompleteVoice(dir)) {
+                return dir
             }
         }
         return null
@@ -177,18 +162,27 @@ class VocalizerEmbeddedVoiceProvider(
             }
             result.voices.mapNotNull { voice ->
                 val name = voice.name.ifBlank { return@mapNotNull null }
-                // ع٢٩-10 (4): الإقليم الفعلي من المحرّك لا يُسقط.
-                val voiceLocale = if (voice.langTag.isBlank()) {
-                    locale
-                } else {
-                    Locale.forLanguageTag(voice.langTag)
+                
+                // ع٣١-10 (4): أصلح locale باستخدام الكتالوج الثابت لأن المضيف
+                // يرجع display name مثل "American English" وليس language tag.
+                val catalogItem =
+                    VocalizerModelCatalog.ITEMS.firstOrNull { item ->
+                    item.voiceName == name || item.id == voice.id
                 }
+                val voiceLocale = catalogItem?.locale
+                    ?: if (voice.langTag.isBlank()) {
+                        locale
+                    } else {
+                        Locale.forLanguageTag(voice.langTag)
+                    }
+                
                 val matchesLang = locale.language.isEmpty() ||
                     voiceLocale.language.equals(
                         locale.language,
                         ignoreCase = true
                     )
                 if (!matchesLang) return@mapNotNull null
+                
                 VoiceDescriptor(
                     id = voice.id,
                     providerId = PROVIDER_ID,
@@ -209,7 +203,8 @@ class VocalizerEmbeddedVoiceProvider(
         onAudioChunk: (ByteArray, Int) -> Unit,
         enginePackage: String?,
         voiceLocale: Locale?,
-        desiredVoiceName: String?
+        desiredVoiceName: String?,
+        category: String?
     ) {
         withContext(Dispatchers.IO) {
             if (!ensureInitialized()) {
@@ -217,6 +212,26 @@ class VocalizerEmbeddedVoiceProvider(
                 return@withContext
             }
             val targetVoiceName = desiredVoiceName ?: voice.displayName
+            val isEvent = LoudnessStage.isEventCategory(category)
+            val chunkConsumer: (ByteArray, Int) -> Unit = if (isEvent) {
+                val gainDb = runCatching {
+                    SettingsRepository.create(context).getEventPcmGainDb()
+                }.getOrDefault(LoudnessStage.DEFAULT_GAIN_DB)
+                if (gainDb > 0f) {
+                    { chunk, validLength ->
+                        if (validLength > 0) {
+                            LoudnessStage.processPcm16(
+                                chunk, 0, validLength, gainDb
+                            )
+                        }
+                        onAudioChunk(chunk, validLength)
+                    }
+                } else {
+                    onAudioChunk
+                }
+            } else {
+                onAudioChunk
+            }
             val result = EngineHostClient.synthesize(
                 context = context,
                 engineId = HostProtocol.ENGINE_VOCALIZER,
@@ -226,7 +241,7 @@ class VocalizerEmbeddedVoiceProvider(
                 pitch = pitch,
                 volume = volume,
                 onFormatInfo = onFormatInfo,
-                onAudioChunk = onAudioChunk
+                onAudioChunk = chunkConsumer
             )
             if (!result.ok) {
                 Log.e(

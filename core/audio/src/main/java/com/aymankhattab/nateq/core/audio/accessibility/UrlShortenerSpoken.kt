@@ -1,30 +1,25 @@
 package com.aymankhattab.nateq.core.audio.accessibility
 
-import java.net.URI
+import com.aymankhattab.nateq.engine.UrlSpeech
 
 /**
- * تهذيب الروابط للنطق الصوتي (ع٢٧-40).
- * يستبدل الروابط الطويلة والمعقدة باسم النطاق فقط لتسريع القراءة ووضوحها.
+ * تهذيب الروابط للنطق الصوتي (ع٤١-ب7).
+ * واجهةُ `:core:audio` الرفيعة على [UrlSpeech] في `:core:engine` — مصدرٌ
+ * واحدٌ للقاعدة، بلا ازدواج. يُستدعى من إيماءة «اقرأ الرابط كاملاً»،
+ * بينما يطبّقه محرّكُ النطق (TextProcessor) عبر [UrlSpeech] مباشرة.
  */
 object UrlShortenerSpoken {
 
-    private val URL_REGEX =
-        Regex("""https?://[^\s/$.?#].[^\s]*""", RegexOption.IGNORE_CASE)
-
     /**
-     * استبدال الروابط في النص بنطاقاتها المقروءة
+     * استبدال الروابط في النص بنطاقاتها المقروءة.
+     * @param keepFullUrl الاحتفاظ بالرابط كاملاً بدل النطاق المختصر.
      */
-    fun sanitizeUrlsForSpeech(text: String?): String {
-        if (text.isNullOrBlank()) return ""
+    fun sanitizeUrlsForSpeech(
+        text: String?,
+        keepFullUrl: Boolean = false
+    ): String = UrlSpeech.shorten(text, keepFullUrl)
 
-        return URL_REGEX.replace(text) { matchResult ->
-            val urlString = matchResult.value
-            val domain = runCatching {
-                val uri = URI(urlString)
-                val host = uri.host ?: urlString
-                host.removePrefix("www.")
-            }.getOrDefault(urlString)
-            "رابط $domain"
-        }
-    }
+    /** الروابط الواردة في النص (منقّاة من الترقيم النهائي). */
+    fun findUrlsForSpeech(text: String?): List<String> =
+        UrlSpeech.findUrls(text)
 }

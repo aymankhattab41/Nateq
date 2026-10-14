@@ -1,20 +1,21 @@
 package com.aymankhattab.nateq.core.audio.accessibility
 
 import android.accessibilityservice.AccessibilityService
+import android.content.ClipboardManager
 import android.content.Context
-import android.content.Intent
+import android.util.Log
 import android.view.KeyEvent
 import com.aymankhattab.nateq.core.data.SettingsRepository
-import com.aymankhattab.nateq.util.LanguageCode
+import java.util.concurrent.atomic.AtomicReference
 
 /**
- * موجّه اختصارات المفاتيح (ع٢٩-13).
- * يدعم:
- * - ضغط مطوّل صوت+ + صوت- : تبديل الطوارئ (موجود في NateqAccessibilityService)
- * - ضغطتان سريعتان لصوت+ : «اقرأ الشاشة» (FEATURE_READ_SCREEN_NOW)
- * - ضغطتان سريعتان لصوت- : «ماذا قلتَ للتو» (FEATURE_CLIPBOARD_READING)
- * - تخصيص كل اختصار من إعدادات الخدمة.
- * لا يستهلك مفاتيح الصوت (return false) إلا عند تحقق اختصار مفعّل فعلاً.
+ * موجّه اختصارات المفاتيح القابل للتهيئة (ع٢٩-13، ع٤١-ب1).
+ * - يقرأ جدول الربط من الإعدادات عند كل حدث (ShortcutBindingTable).
+ * - يستهلك المفتاح فقط عند تحقّق إيماءةٍ مربوطة (النمط المعتمد في ب1).
+ * - استمرارُ المفتاحين معاً يتولّاه مؤقّت الطوارئ في الخدمة التي تنادي
+ *   executeGesture(BOTH_HOLD).
+ * - أثناء الإيقاف المؤقت لا يُستهلك ولا يُنفَّذ غير BOTH_HOLD (الاستئناف)،
+ *   لأنّ isActive تعود false والمؤقّت يبقى يعمل.
  */
 class KeyShortcutRouter(
     private val service: AccessibilityService,
@@ -22,132 +23,248 @@ class KeyShortcutRouter(
     private val stateStore: A11yStateStore?
 ) {
 
-    private var volUpPressCount = 0
-    private var volDownPressCount = 0
-    private var lastVolUpTime = 0L
-    private var lastVolDownTime = 0L
-    private val DOUBLE_PRESS_WINDOW_MS = 300L
+    private val bindingsRef = AtomicReference(
+        ShortcutBindingTable.decode(settings.getA11yShortcutBindings())
+    )
 
-    private val volUpRunnable = Runnable { volUpPressCount = 0 }
-    private val volDownRunnable = Runnable { volDownPressCount = 0 }
-    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val detector = ShortcutGestureDetector(
+        isGestureBound = { bindingsRef.get().isBound(it) }
+    )
 
+    /** جدول الربط الحالي (نسخةٌ للقراءة). */
+    fun bindings(): ShortcutBindingTable = bindingsRef.get()
+
+    /** إعادة تحميل جدول الربط بعد تغييره من الإعدادات. */
+    fun reloadBindings() {
+        bindingsRef.set(
+            ShortcutBindingTable.decode(settings.getA11yShortcutBindings())
+        )
+    }
+
+    /** حفظ جدول ربطٍ جديد في الإعدادات وتطبيقه فوراً. */
+    fun setBindings(table: ShortcutBindingTable) {
+        bindingsRef.set(table)
+        settings.setA11yShortcutBindings(table.encode())
+    }
+
+    /** @return هل تم استهلاك الحدث؟ */
     fun onKeyEvent(event: KeyEvent?): Boolean {
         if (event == null) return false
-        val keyCode = event.keyCode
-        val action = event.action
+        val key = volumeKeyOf(event.keyCode) ?: return false
 
-        // ع٢٩-16: في حالة الإيقاف المؤقت لا تعالج مفاتيح الصوت
-        // إلا اختصار الاستئناف (ضغطتان لصوت-)
-        val isPaused = stateStore?.isPaused() == true
-        if (isPaused && (keyCode == KeyEvent.KEYCODE_VOLUME_UP ||
-                keyCode == KeyEvent.KEYCODE_VOLUME_DOWN)
-        ) {
-            // في حالة الإيقاف: نسمح فقط بضغطتين لصوت- للاستئناف
-            if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN &&
-                action == KeyEvent.ACTION_DOWN
-            ) {
-                val now = System.currentTimeMillis()
-                if (now - lastVolDownTime <= DOUBLE_PRESS_WINDOW_MS) {
-                    volDownPressCount++
-                } else {
-                    volDownPressCount = 1
-                }
-                lastVolDownTime = now
-                handler.removeCallbacks(volDownRunnable)
-                handler.postDelayed(volDownRunnable, DOUBLE_PRESS_WINDOW_MS)
-                if (volDownPressCount == 2) {
-                    return handleDoubleVolDown()
-                }
-            }
-            // تجاهل باقي مفاتيح الصوت في حالة الإيقاف
+        val active = FeatureFlags.isActive(
+            FeatureFlags.FEATURE_KEY_SHORTCUTS,
+            context = service.applicationContext,
+            settings = settings,
+            stateStore = stateStore
+        )
+        if (!active) {
+            detector.reset()
             return false
         }
 
-        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP ||
-            keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
+        return when (event.action) {
+            KeyEvent.ACTION_DOWN -> {
+                val detection = detector.onKeyDown(
+                    key = key,
+                    eventTimeMs = event.eventTime,
+                    isLongPress = event.isLongPress,
+                    repeatCount = event.repeatCount
+                )
+                detection.gesture?.let { executeGesture(it) }
+                detection.consume
+            }
+            KeyEvent.ACTION_UP -> {
+                val detection = detector.onKeyUp(key, event.eventTime)
+                detection.gesture?.let { executeGesture(it) }
+                detection.consume
+            }
+            else -> false
+        }
+    }
+
+    /** تنفيذ الفعل المربوط بإيماءةٍ (يُستدعى من اختصار المفاتيح والطوارئ). */
+    fun executeGesture(gesture: ShortcutGesture) {
+        executeAction(bindingsRef.get().actionFor(gesture))
+    }
+
+    /** تنفيذ فعلٍ مباشرةً. */
+    fun executeAction(action: ShortcutAction) {
+        val context = service.applicationContext
+        when (action) {
+            ShortcutAction.READ_SCREEN -> readScreenNow(context)
+            ShortcutAction.READ_CLIPBOARD -> readClipboard(context)
+            ShortcutAction.REPEAT_LAST ->
+                RepeatSpellController.repeatLast(context)
+            ShortcutAction.SPELL_LAST ->
+                RepeatSpellController.spellLast(context)
+            ShortcutAction.WHERE_AM_I ->
+                WhereAmIController.announceCurrentLocation(context)
+            ShortcutAction.TOGGLE_PAUSE -> togglePause(context)
+            ShortcutAction.TOGGLE_CONTINUOUS -> toggleContinuous(context)
+            ShortcutAction.OCR_FOCUS -> readImage(context)
+            ShortcutAction.READ_FULL_URL -> readFullLinks(context)
+            ShortcutAction.REPEAT_PREVIOUS ->
+                RepeatSpellController.repeatPrevious(context)
+            ShortcutAction.SPEECH_HISTORY ->
+                RepeatSpellController.announceHistory(context)
+            ShortcutAction.SHOW_QUICK_MENU -> A11yQuickMenu.toggle(service) {
+                executeAction(it)
+            }
+            ShortcutAction.NONE ->
+                Log.i(TAG, "no action bound for gesture")
+        }
+    }
+
+    /** ع٤١-ب6: يبدّل القراءة المستمرة (مشروطة بمفتاح ميزتها). */
+    private fun toggleContinuous(context: Context) {
+        val reading = ContinuousReader.isReading()
+        if (!reading && !isFeatureActive(
+                FeatureFlags.FEATURE_CONTINUOUS_READING, context
+            )
         ) {
-            val now = System.currentTimeMillis()
-            if (action == KeyEvent.ACTION_DOWN) {
-                if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
-                    if (now - lastVolUpTime <= DOUBLE_PRESS_WINDOW_MS) {
-                        volUpPressCount++
-                    } else {
-                        volUpPressCount = 1
-                    }
-                    lastVolUpTime = now
-                    handler.removeCallbacks(volUpRunnable)
-                    handler.postDelayed(volUpRunnable, DOUBLE_PRESS_WINDOW_MS)
-                    if (volUpPressCount == 2) {
-                        return handleDoubleVolUp()
-                    }
-                } else {
-                    if (now - lastVolDownTime <= DOUBLE_PRESS_WINDOW_MS) {
-                        volDownPressCount++
-                    } else {
-                        volDownPressCount = 1
-                    }
-                    lastVolDownTime = now
-                    handler.removeCallbacks(volDownRunnable)
-                    handler.postDelayed(volDownRunnable, DOUBLE_PRESS_WINDOW_MS)
-                    if (volDownPressCount == 2) {
-                        return handleDoubleVolDown()
-                    }
-                }
+            announce(context, "القراءة المستمرة غير مفعّلة")
+            return
+        }
+        ContinuousReader.toggle(continuousSource())
+    }
+
+    /** ع٤١-ب12: يقرأ العنصر المركّز بالتصوير (مشروط بمفتاح ميزته). */
+    private fun readImage(context: Context) {
+        if (!isFeatureActive(FeatureFlags.FEATURE_OCR_READING, context)) {
+            announce(context, "قراءة الصور غير مفعّلة")
+            return
+        }
+        OcrScreenReader.readFocusedElement(service)
+    }
+
+    private fun isFeatureActive(feature: String, context: Context): Boolean =
+        FeatureFlags.isActive(
+            feature,
+            context = context,
+            settings = settings,
+            stateStore = stateStore
+        )
+
+    private fun announce(context: Context, text: String) {
+        // ع٤١-ب11: التبديل التلقائي حسب التطبيق الأمامي (ملف التطبيق).
+        val voice = A11yVoiceResolver.resolve(
+            context = context,
+            settings = settings,
+            packageName = AccessibilityBridge.foregroundPackage(),
+            senderName = null
+        )
+        A11ySpeechCoordinator.speakAnnouncement(
+            context = context,
+            text = text,
+            isInterruptAllowed = true,
+            voiceId = voice?.voiceId,
+            engineOverride = voice?.engine,
+            speechRate = voice?.speechRate,
+            pitch = voice?.pitch,
+            volume = voice?.volume
+        )
+    }
+
+    private fun continuousSource(): ContinuousReader.Source =
+        object : ContinuousReader.Source {
+            override fun readTexts(): List<String> =
+                AccessibilityBridge.readScreenTexts()
+
+            override fun scrollForward(): Boolean =
+                AccessibilityBridge.scrollForward()
+
+            override fun currentPackage(): String? =
+                AccessibilityBridge.foregroundPackage()
+
+            override fun announce(text: String) {
+                this@KeyShortcutRouter.announce(
+                    service.applicationContext,
+                    text
+                )
             }
         }
-        return false // لا نستهلك المفتاح افتراضياً
-    }
 
-    private fun handleDoubleVolUp(): Boolean {
-        val context = service.applicationContext
-        val repo = SettingsRepository.create(context)
-        if (FeatureFlags.isActive(
-                FeatureFlags.FEATURE_READ_SCREEN_NOW,
-                context = context,
-                settings = repo,
-                stateStore = stateStore
-            )
-        ) {
-            readScreenNow()
-            return true // تم استهلاك الاختصار
+    private fun readScreenNow(context: Context) {
+        val texts = AccessibilityBridge.readScreenTexts()
+            .filter { it.isNotBlank() }
+        val focus = AccessibilityBridge.focusSnapshot()
+            ?.readableText()
+            ?.takeIf { it.isNotBlank() }
+        val message = when {
+            texts.isNotEmpty() -> texts.joinToString(". ")
+            focus != null -> focus
+            else -> "لا يوجد نصّ على الشاشة"
         }
-        return false
+        announce(context, message)
     }
 
-    private fun handleDoubleVolDown(): Boolean {
-        val context = service.applicationContext
-        val repo = SettingsRepository.create(context)
-        if (FeatureFlags.isActive(
-                FeatureFlags.FEATURE_CLIPBOARD_READING,
-                context = context,
-                settings = repo,
-                stateStore = stateStore
-            )
-        ) {
-            readClipboard()
-            return true
+    /** ع٤١-ب7: ينطق الروابط كاملةً من الشاشة (إيماءة «اقرأ الرابط
+     *  كاملاً») — بديلُ الطلب عن النطق المختصر؛ مشروطٌ بمفتاح الميزة. */
+    private fun readFullLinks(context: Context) {
+        if (!isFeatureActive(FeatureFlags.FEATURE_URL_SHORTENING, context)) {
+            announce(context, "اختصار الروابط غير مفعّل")
+            return
         }
-        return false
+        val texts = buildList {
+            AccessibilityBridge.focusSnapshot()?.readableText()
+                ?.let { add(it) }
+            addAll(AccessibilityBridge.readScreenTexts())
+        }
+        val urls = texts
+            .flatMap { UrlShortenerSpoken.findUrlsForSpeech(it) }
+            .distinct()
+        val message = if (urls.isEmpty()) {
+            "لا يوجد رابط على الشاشة"
+        } else {
+            urls.joinToString(". ") { "رابط $it" }
+        }
+        announce(context, message)
     }
 
-    private fun readScreenNow() {
-        // TODO: استدعاء قراءة الشاشة الحالية عبر AccessibilityBridge
-        // AccessibilityBridge.focusSnapshot()?.readableText()?.let { text ->
-        //     A11ySpeechCoordinator.speakAnnouncement(
-        //         context = service,
-        //         text = text,
-        //         isInterruptAllowed = true
-        //     )
-        // }
+    private fun readClipboard(context: Context) {
+        val manager = context.getSystemService(
+            Context.CLIPBOARD_SERVICE
+        ) as? ClipboardManager
+        val clip = manager?.primaryClip
+        val text = if (clip != null && clip.itemCount > 0) {
+            clip.getItemAt(0).coerceToText(context).toString()
+        } else {
+            null
+        }
+        val message = text?.takeIf { it.isNotBlank() } ?: "الحافظة فارغة"
+        A11ySpeechCoordinator.speakAnnouncement(
+            context = context,
+            text = message,
+            isInterruptAllowed = true
+        )
     }
 
-    private fun readClipboard() {
-        // TODO: قراءة محتوى الحافظة
+    private fun togglePause(context: Context) {
+        val store = stateStore ?: return
+        val newPaused = !store.isPaused()
+        store.setPaused(newPaused)
+        A11ySpeechCoordinator.speakAnnouncement(
+            context = context,
+            text = if (newPaused) "الخدمة موقوفة" else "الخدمة تعمل",
+            isInterruptAllowed = true
+        )
     }
 
-    fun shutdown() {
-        handler.removeCallbacks(volUpRunnable)
-        handler.removeCallbacks(volDownRunnable)
+    private fun volumeKeyOf(keyCode: Int): VolumeKey? = when (keyCode) {
+        KeyEvent.KEYCODE_VOLUME_UP -> VolumeKey.UP
+        KeyEvent.KEYCODE_VOLUME_DOWN -> VolumeKey.DOWN
+        else -> null
+    }
+
+    companion object {
+        private const val TAG = "NATEQ_TTS"
+
+        /** إجراء اختبار إيماءةٍ يُرسَل من شاشة الإعدادات (ع٤١-ب1.6). */
+        const val ACTION_TEST_SHORTCUT =
+            "com.aymankhattab.nateq.action.TEST_SHORTCUT"
+
+        /** مفتاح الإيماءة المطلوب اختبارها في بثّ الاختبار. */
+        const val EXTRA_GESTURE = "gesture"
     }
 }

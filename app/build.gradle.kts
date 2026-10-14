@@ -28,6 +28,15 @@ android {
         targetSdk = 37
         versionCode = 10634
         versionName = "1.6.34"
+        // ع٤٠-14 ثم دعم الأجهزة 32-بت: نُشحن arm64-v8a (الأساسي) و
+        // armeabi-v7a (أجهزة 32-بت). مكتبة Vocalizer الأصلية
+        // (libNuanceVocalizer.so) متوفّرة للمعماريتين معاً، فيعمل
+        // المحرّك المدمج على أجهزتَي 32-بت و64-بت على السواء، وOCR
+        // (tesseract/leptonica يُشحنان لكل المعماريات) كذلك.
+        ndk {
+            abiFilters.add("arm64-v8a")
+            abiFilters.add("armeabi-v7a")
+        }
         // مشغّل الاختبارات المدمجة على الأجهزة (بند 6#7).
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -74,8 +83,9 @@ android {
 
     // extractNativeLibs يُضبط من DSL لا من المانيفست (تحذير AGP:
     // «should not be specified in this source AndroidManifest.xml»).
-    // false = تُحمّل المكتبات من الـ APK دون فكّها (نفس سلوك
-    // android:extractNativeLibs="false" القديم).
+    // ع٤٠-14 — useLegacyPackaging = false: تبقى المكتبات الأصلية غير
+    // مضغوطة داخل الـAPK وتُحمَّل منه مباشرة (بلا فكّ عند التثبيت) فأصغر
+    // حجم تثبيت وأسرع إقلاع، مقابل تنزيل أكبر (~21.6MB بدل ~13.9MB).
     packaging {
         jniLibs {
             useLegacyPackaging = false

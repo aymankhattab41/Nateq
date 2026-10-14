@@ -97,9 +97,15 @@ class StartupTempSweeperTest {
     }
 
     private fun setFileTimestamp(file: File, time: Long) {
-        for (attempt in 0..5) {
-            if (file.setLastModified(time)) break
-            Thread.sleep(10)
+        val target = java.nio.file.attribute.FileTime.fromMillis(time)
+        repeat(30) {
+            runCatching {
+                java.nio.file.Files.setLastModifiedTime(file.toPath(), target)
+            }
+            file.setLastModified(time)
+            val actual = file.lastModified()
+            if (kotlin.math.abs(actual - time) < 1000L) return
+            Thread.sleep(15)
         }
     }
 
@@ -113,10 +119,16 @@ class StartupTempSweeperTest {
             writeBytes(ByteArray(10_000))
         }
         setFileTimestamp(stale, cutoff - 60 * 60 * 1000L)
+        assertTrue("الملف أُنشئ بنجاح", stale.exists())
 
         val deleted = StartupTempSweeper(context).sweep()
 
-        assertTrue(deleted >= 1)
+        assertTrue(
+            "deleted=$deleted exists=${stale.exists()} " +
+                "mtime=${stale.lastModified()} " +
+                "now=${System.currentTimeMillis()} cutoff=$cutoff",
+            deleted >= 1
+        )
         assertFalse("الملف القديم اليتيم كُنس", stale.exists())
     }
 

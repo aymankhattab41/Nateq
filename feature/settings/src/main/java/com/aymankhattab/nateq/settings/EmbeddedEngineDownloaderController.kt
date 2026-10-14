@@ -12,18 +12,12 @@ import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
-import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
-import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceItem
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
 import com.aymankhattab.nateq.core.audio.providers.DownloadError
 import com.aymankhattab.nateq.core.audio.providers.DownloadHttpHelper
 import com.aymankhattab.nateq.core.audio.providers.DownloadLog
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedStorage
-import com.aymankhattab.nateq.core.audio.providers.PiperCatalogItem
-import com.aymankhattab.nateq.core.audio.providers.PiperDownloader
-import com.aymankhattab.nateq.core.audio.providers.PiperModelCatalog
-import com.aymankhattab.nateq.core.audio.providers.SherpaOnnxVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VocalizerCatalogItem
 import com.aymankhattab.nateq.core.audio.providers.VocalizerDownloader
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
@@ -43,7 +37,7 @@ import java.util.Locale
 
 /**
  * ضابط شاشة تنزيل وإدارة أصوات ومحركات
- * Piper / Sherpa-ONNX و Vocalizer Expressive 2 المدمجة.
+ * Vocalizer Expressive 2 و Vocalizer المدمجة.
  */
 internal class EmbeddedEngineDownloaderController(
     private val fragment: VoiceSelectionFragment,
@@ -53,8 +47,12 @@ internal class EmbeddedEngineDownloaderController(
 
     var onStatusChanged: () -> Unit = {}
 
-    private var activeEngine = "piper"
-    private var activeFilter = "all"
+    private var activeEngine = "vocalizer"
+
+    private enum class NavLevel { LANGUAGES, VOICES, QUALITIES }
+    private var navLevel = NavLevel.LANGUAGES
+    private var selectedLocale: Locale? = null
+    private var selectedVoiceKey: String? = null
 
     private val downloadListener =
         VoiceDownloadManager.DownloadListener { voiceId, state ->
@@ -72,6 +70,7 @@ internal class EmbeddedEngineDownloaderController(
                         ).show()
                         onStatusChanged()
                         renderVoicesList(root)
+                        notifyCatalogChanged()
                     }
                     is VoiceDownloadManager.DownloadState.Error -> {
                         val err = state.error
@@ -114,23 +113,16 @@ internal class EmbeddedEngineDownloaderController(
         val engineToggle = root.findViewById<MaterialButtonToggleGroup>(
             R.id.toggle_group_engine_filter
         )
-        val langToggle = root.findViewById<MaterialButtonToggleGroup>(
-            R.id.toggle_group_lang_filter
-        )
 
         engineToggle?.check(
             when (activeEngine) {
-                "vocalizer" -> R.id.btn_engine_vocalizer
-                "acapela" -> R.id.btn_engine_acapela
-                else -> R.id.btn_engine_piper
+                else -> R.id.btn_engine_vocalizer
             }
         )
         engineToggle?.addOnButtonCheckedListener { _, checkedId, isChecked ->
             if (isChecked) {
                 activeEngine = when (checkedId) {
-                    R.id.btn_engine_vocalizer -> "vocalizer"
-                    R.id.btn_engine_acapela -> "acapela"
-                    else -> "piper"
+                    else -> "vocalizer"
                 }
                 renderVoicesList(root)
             }
@@ -141,19 +133,6 @@ internal class EmbeddedEngineDownloaderController(
         )
         btnImport?.setOnClickListener {
             fragment.requestVoiceZipImport()
-        }
-
-        langToggle?.check(R.id.btn_filter_all)
-        langToggle?.addOnButtonCheckedListener { _, checkedId, isChecked ->
-            if (isChecked) {
-                activeFilter = when (checkedId) {
-                    R.id.btn_filter_ar -> "ar"
-                    R.id.btn_filter_en -> "en"
-                    R.id.btn_filter_other -> "other"
-                    else -> "all"
-                }
-                renderVoicesList(root)
-            }
         }
 
         renderVoicesList(root)
@@ -169,20 +148,12 @@ internal class EmbeddedEngineDownloaderController(
     fun buildStatusSummary(): String {
         val ctx = fragment.context ?: return ""
 
-        val piperDir = PiperDownloader.getPiperBaseDir(ctx)
-        val piperCount = PiperModelCatalog.ITEMS.count { item ->
-            PiperModelCatalog.isModelInstalled(piperDir, item)
-        }
-
         val vocDir = VocalizerDownloader.getVocalizerBaseDir(ctx)
         val vocCount = VocalizerModelCatalog.ITEMS.count { item ->
             VocalizerModelCatalog.isVoiceInstalled(vocDir, item)
         }
 
-        val acapelaCount = AcapelaEmbeddedVoiceProvider
-            .getInstalledVoices(ctx).size
-
-        val total = piperCount + vocCount + acapelaCount
+        val total = vocCount
         val isAr = LanguageCode.isArabic(Locale.getDefault().language)
         return if (total > 0) {
             if (isAr) {
@@ -201,7 +172,7 @@ internal class EmbeddedEngineDownloaderController(
 
     private fun renderVoicesList(root: View) {
         val container = root.findViewById<LinearLayout>(
-            R.id.ll_piper_voices_list
+            R.id.ll_embedded_voices_list
         ) ?: return
         val emptyView = root.findViewById<TextView>(
             R.id.tv_embedded_empty
@@ -210,74 +181,122 @@ internal class EmbeddedEngineDownloaderController(
         container.removeAllViews()
 
         when (activeEngine) {
-            "acapela" -> renderAcapelaVoices(container, emptyView)
-            "vocalizer" -> renderVocalizerVoices(container, emptyView)
-            else -> renderPiperVoices(container, emptyView)
+            else -> renderVocalizerNav(container, emptyView)
         }
+        renderNavHeader(root)
     }
 
-    private fun renderPiperVoices(
+    /** توزيع المستوى الحالي في الهرم: لغة ← صوت ← جودة. */
+    private fun renderVocalizerNav(
         container: LinearLayout,
         emptyView: TextView?
     ) {
-        val filtered = when (activeFilter) {
-            "ar" -> PiperModelCatalog.ITEMS.filter {
-                it.languageCategory == "ar"
-            }
-            "en" -> PiperModelCatalog.ITEMS.filter {
-                it.languageCategory == "en"
-            }
-            "other" -> PiperModelCatalog.ITEMS.filter {
-                it.languageCategory == "other"
-            }
-            else -> PiperModelCatalog.ITEMS
+        when (navLevel) {
+            NavLevel.LANGUAGES -> renderLanguages(container, emptyView)
+            NavLevel.VOICES -> renderVoices(container, emptyView)
+            NavLevel.QUALITIES -> renderQualities(container, emptyView)
         }
+    }
 
-        if (filtered.isEmpty()) {
+    /** المستوى ١: اللغات، وكل صفٍّ له أيقونة تفتح أصواتها. */
+    private fun renderLanguages(
+        container: LinearLayout,
+        emptyView: TextView?
+    ) {
+        val locales = EmbeddedVoiceTree.vocalizerLanguages()
+        if (locales.isEmpty()) {
             emptyView?.visibility = View.VISIBLE
             return
         }
         emptyView?.visibility = View.GONE
 
         val inflater = LayoutInflater.from(fragment.requireContext())
-        for (item in filtered) {
+        for (locale in locales) {
             val itemView = inflater.inflate(
-                R.layout.item_piper_voice,
+                R.layout.item_embedded_language,
                 container,
                 false
             )
-            bindPiperCard(itemView, item)
+            itemView.findViewById<TextView>(
+                R.id.tv_language_title
+            ).text = languageTitle(locale)
+            itemView.findViewById<TextView>(
+                R.id.tv_language_tag
+            ).text = locale.toLanguageTag()
+            itemView.setOnClickListener {
+                selectedLocale = locale
+                selectedVoiceKey = null
+                navLevel = NavLevel.VOICES
+                fragment.view?.let { renderVoicesList(it) }
+            }
             container.addView(itemView)
         }
     }
 
-    private fun renderVocalizerVoices(
+    /** المستوى ٢: أصوات اللغة، وكل صوتٍ له أيقونة تفتح جوداته. */
+    private fun renderVoices(
         container: LinearLayout,
         emptyView: TextView?
     ) {
-        val filtered = when (activeFilter) {
-            "ar" -> VocalizerModelCatalog.ITEMS.filter {
-                it.languageCategory == "ar"
-            }
-            "en" -> VocalizerModelCatalog.ITEMS.filter {
-                it.languageCategory == "en"
-            }
-            "other" -> VocalizerModelCatalog.ITEMS.filter {
-                it.languageCategory == "other"
-            }
-            else -> VocalizerModelCatalog.ITEMS
+        val locale = selectedLocale ?: return
+        val voices = EmbeddedVoiceTree.vocalizerVoices(locale)
+        if (voices.isEmpty()) {
+            emptyView?.visibility = View.VISIBLE
+            return
         }
+        emptyView?.visibility = View.GONE
 
-        if (filtered.isEmpty()) {
+        val ctx = fragment.requireContext()
+        val isAr = LanguageCode.isArabic(Locale.getDefault().language)
+        val baseDir = VocalizerDownloader.getVocalizerBaseDir(ctx)
+        val inflater = LayoutInflater.from(ctx)
+        for (node in voices) {
+            val installed = node.variants.count {
+                VocalizerModelCatalog.isVoiceInstalled(baseDir, it)
+            }
+            val itemView = inflater.inflate(
+                R.layout.item_embedded_voice_group,
+                container,
+                false
+            )
+            itemView.findViewById<TextView>(
+                R.id.tv_voice_group_title
+            ).text = if (isAr) node.titleAr else node.titleEn
+            itemView.findViewById<TextView>(
+                R.id.tv_voice_group_subtitle
+            ).text = fragment.getString(
+                R.string.embedded_voice_installed_count,
+                installed,
+                node.variants.size
+            )
+            itemView.setOnClickListener {
+                selectedVoiceKey = node.key
+                navLevel = NavLevel.QUALITIES
+                fragment.view?.let { renderVoicesList(it) }
+            }
+            container.addView(itemView)
+        }
+    }
+
+    /** المستوى ٣: جودات الصوت المختار (مضغوط/عالية) كبطاقات تنزيل. */
+    private fun renderQualities(
+        container: LinearLayout,
+        emptyView: TextView?
+    ) {
+        val locale = selectedLocale ?: return
+        val key = selectedVoiceKey ?: return
+        val node = EmbeddedVoiceTree.vocalizerVoices(locale)
+            .firstOrNull { it.key == key }
+        if (node == null || node.variants.isEmpty()) {
             emptyView?.visibility = View.VISIBLE
             return
         }
         emptyView?.visibility = View.GONE
 
         val inflater = LayoutInflater.from(fragment.requireContext())
-        for (item in filtered) {
+        for (item in node.variants) {
             val itemView = inflater.inflate(
-                R.layout.item_piper_voice,
+                R.layout.item_embedded_voice,
                 container,
                 false
             )
@@ -286,123 +305,73 @@ internal class EmbeddedEngineDownloaderController(
         }
     }
 
-    private fun bindPiperCard(view: View, item: PiperCatalogItem) {
-        val ctx = fragment.requireContext()
-        val isAr = LanguageCode.isArabic(Locale.getDefault().language)
+    /** شريط التنقّل: زر رجوع + مسار المستوى الحالي. */
+    private fun renderNavHeader(root: View) {
+        val header = root.findViewById<LinearLayout>(
+            R.id.ll_embedded_nav_header
+        ) ?: return
+        val breadcrumb = root.findViewById<TextView>(
+            R.id.tv_embedded_nav_breadcrumb
+        )
+        val back = root.findViewById<MaterialButton>(
+            R.id.btn_embedded_nav_back
+        )
+        back?.setOnClickListener { navigateUp() }
 
-        val tvTitle = view.findViewById<TextView>(R.id.tv_voice_title)
-        val tvSubtitle = view.findViewById<TextView>(R.id.tv_voice_subtitle)
-        val badge = view.findViewById<TextView>(R.id.tv_voice_status_badge)
-        val btnDownload = view.findViewById<MaterialButton>(
-            R.id.btn_voice_download
-        )
-        val btnTestConn = view.findViewById<MaterialButton>(
-            R.id.btn_voice_test_connection
-        )
-        val btnPreview = view.findViewById<MaterialButton>(
-            R.id.btn_voice_preview
-        )
-        val btnDelete = view.findViewById<MaterialButton>(
-            R.id.btn_voice_delete
-        )
-        val llProgress = view.findViewById<LinearLayout>(
-            R.id.ll_download_progress
-        )
-        val pbDownload = view.findViewById<ProgressBar>(R.id.pb_download)
-        val tvProgress = view.findViewById<TextView>(
-            R.id.tv_download_progress_text
-        )
-        val btnCancel = view.findViewById<MaterialButton>(
-            R.id.btn_voice_cancel
-        )
-
-        tvTitle.text = if (isAr) item.displayNameAr else item.displayNameEn
-        val langTag = item.locale.toLanguageTag()
-
-        val baseDir = PiperDownloader.getPiperBaseDir(ctx)
-        val isInstalled = PiperModelCatalog.isModelInstalled(baseDir, item)
-        val isDownloading = VoiceDownloadManager.isDownloading(item.id)
-        val downloadState = VoiceDownloadManager.getState(item.id)
-        val partialBytes = VoiceDownloadManager.getPartialBytes(
-            ctx,
-            "piper",
-            item.id
-        )
-
-        if (isDownloading) {
-            badge.visibility = View.GONE
-            btnDownload.visibility = View.GONE
-            btnTestConn?.visibility = View.GONE
-            btnPreview.visibility = View.GONE
-            btnDelete.visibility = View.GONE
-            llProgress.visibility = View.VISIBLE
-            val pct = when (downloadState) {
-                is VoiceDownloadManager.DownloadState.Downloading -> {
-                    downloadState.percent
+        when (navLevel) {
+            NavLevel.LANGUAGES -> {
+                header.visibility = View.GONE
+            }
+            NavLevel.VOICES -> {
+                header.visibility = View.VISIBLE
+                breadcrumb?.text = languageTitle(selectedLocale)
+            }
+            NavLevel.QUALITIES -> {
+                header.visibility = View.VISIBLE
+                val voiceTitle = selectedVoiceTitle()
+                breadcrumb?.text = if (voiceTitle != null) {
+                    fragment.getString(
+                        R.string.embedded_nav_breadcrumb,
+                        languageTitle(selectedLocale),
+                        voiceTitle
+                    )
+                } else {
+                    languageTitle(selectedLocale)
                 }
-                else -> 0
-            }
-            pbDownload.progress = pct
-            tvProgress.text = fragment.getString(
-                R.string.embedded_downloading,
-                pct
-            )
-            btnCancel?.setOnClickListener {
-                VoiceDownloadManager.cancelDownload(ctx, item.id)
-            }
-        } else if (isInstalled) {
-            tvSubtitle.text =
-                "Piper • $langTag • ${item.sizeMb} MB • ${item.quality}"
-            badge.visibility = View.VISIBLE
-            btnDownload.visibility = View.GONE
-            btnTestConn?.visibility = View.GONE
-            btnPreview.visibility = View.VISIBLE
-            btnDelete.visibility = View.VISIBLE
-            llProgress.visibility = View.GONE
-
-            btnPreview.setOnClickListener {
-                previewPiperVoice(item)
-            }
-
-            btnDelete.setOnClickListener {
-                confirmDeletePiperVoice(item)
-            }
-        } else {
-            badge.visibility = View.GONE
-            btnDownload.visibility = View.VISIBLE
-            btnTestConn?.visibility = View.VISIBLE
-            btnPreview.visibility = View.GONE
-            btnDelete.visibility = View.GONE
-            llProgress.visibility = View.GONE
-
-            if (partialBytes > 0) {
-                btnDownload.text = fragment.getString(
-                    R.string.embedded_resume_download_btn
-                )
-                val hint = fragment.getString(
-                    R.string.embedded_partial_download_hint,
-                    formatSize(partialBytes)
-                )
-                tvSubtitle.text =
-                    "Piper • $langTag • ${item.sizeMb} MB • $hint"
-            } else {
-                btnDownload.text = fragment.getString(
-                    R.string.embedded_download_btn
-                )
-                tvSubtitle.text =
-                    "Piper • $langTag • ${item.sizeMb} MB • " +
-                    item.quality
-            }
-
-            btnTestConn?.setOnClickListener {
-                testVoiceConnection(item.displayNameEn, item.getOnnxUrl())
-            }
-
-            btnDownload.setOnClickListener {
-                startPiperDownload(item)
             }
         }
     }
+
+    private fun languageTitle(locale: Locale?): String {
+        if (locale == null) return ""
+        return locale.getDisplayLanguage(Locale.getDefault())
+    }
+
+    private fun selectedVoiceTitle(): String? {
+        val locale = selectedLocale ?: return null
+        val key = selectedVoiceKey ?: return null
+        val isAr = LanguageCode.isArabic(Locale.getDefault().language)
+        val node = EmbeddedVoiceTree.vocalizerVoices(locale)
+            .firstOrNull { it.key == key } ?: return null
+        return if (isAr) node.titleAr else node.titleEn
+    }
+
+    /** الرجوع درجةً واحدة في الهرم. */
+    private fun navigateUp() {
+        when (navLevel) {
+            NavLevel.QUALITIES -> {
+                navLevel = NavLevel.VOICES
+                selectedVoiceKey = null
+            }
+            NavLevel.VOICES -> {
+                navLevel = NavLevel.LANGUAGES
+                selectedLocale = null
+            }
+            NavLevel.LANGUAGES -> return
+        }
+        fragment.view?.let { renderVoicesList(it) }
+    }
+
 
     private fun bindVocalizerCard(view: View, item: VocalizerCatalogItem) {
         val ctx = fragment.requireContext()
@@ -441,11 +410,14 @@ internal class EmbeddedEngineDownloaderController(
         val isInstalled = VocalizerModelCatalog.isVoiceInstalled(baseDir, item)
         val isDownloading = VoiceDownloadManager.isDownloading(item.id)
         val downloadState = VoiceDownloadManager.getState(item.id)
-        val partialBytes = VoiceDownloadManager.getPartialBytes(
-            ctx,
-            "vocalizer",
-            item.id
-        )
+        var partialBytes = VoiceDownloadManager.getPartialBytes(ctx, item.id)
+        val expectedBytes = item.sizeMb.toLong() * 1024L * 1024L
+        // ملفُّ الجزء الناقص لا يجوز أن يتجاوز حجم الصوت المتوقع بفارق
+        // كبير؛ فإن حدث فهو تالفٌ أو من صوت آخر فيُطرح فوراً.
+        if (partialBytes > expectedBytes + expectedBytes / 2) {
+            VoiceDownloadManager.deletePartial(ctx, item.id)
+            partialBytes = 0L
+        }
 
         if (isDownloading) {
             badge.visibility = View.GONE
@@ -564,13 +536,6 @@ internal class EmbeddedEngineDownloaderController(
         }
     }
 
-    private fun startPiperDownload(item: PiperCatalogItem) {
-        val ctx = fragment.requireContext()
-        val root = fragment.view ?: return
-        VoiceDownloadManager.startPiperDownload(ctx, item)
-        renderVoicesList(root)
-    }
-
     private fun startVocalizerDownload(item: VocalizerCatalogItem) {
         val ctx = fragment.requireContext()
         val root = fragment.view ?: return
@@ -580,24 +545,20 @@ internal class EmbeddedEngineDownloaderController(
 
     private fun updateProgressUi(root: View, itemId: String, percent: Int) {
         val container = root.findViewById<LinearLayout>(
-            R.id.ll_piper_voices_list
+            R.id.ll_embedded_voices_list
         ) ?: return
         val count = container.childCount
         for (i in 0 until count) {
             val child = container.getChildAt(i)
             val tvTitle = child.findViewById<TextView>(R.id.tv_voice_title)
-            val matchingTitle = if (activeEngine == "piper") {
-                val match = PiperModelCatalog.ITEMS.firstOrNull {
-                    it.id == itemId
-                }
-                val isAr = LanguageCode.isArabic(Locale.getDefault().language)
-                if (isAr) match?.displayNameAr else match?.displayNameEn
+            val match = VocalizerModelCatalog.ITEMS.firstOrNull {
+                it.id == itemId
+            }
+            val isAr = LanguageCode.isArabic(Locale.getDefault().language)
+            val matchingTitle = if (isAr) {
+                match?.displayNameAr
             } else {
-                val match = VocalizerModelCatalog.ITEMS.firstOrNull {
-                    it.id == itemId
-                }
-                val isAr = LanguageCode.isArabic(Locale.getDefault().language)
-                if (isAr) match?.displayNameAr else match?.displayNameEn
+                match?.displayNameEn
             }
             if (matchingTitle != null && tvTitle?.text == matchingTitle) {
                 val pb = child.findViewById<ProgressBar>(R.id.pb_download)
@@ -612,25 +573,6 @@ internal class EmbeddedEngineDownloaderController(
                 break
             }
         }
-    }
-
-    private fun previewPiperVoice(item: PiperCatalogItem) {
-        val sampleText = if (LanguageCode.isArabic(item.locale.language)) {
-            "مرحباً بك، هذا نموذج صوت تجريبي " +
-                "لمحرك بيبر المدمج."
-        } else {
-            "Hello, this is a sample preview of the embedded Piper voice."
-        }
-        val params = PreviewParams(
-            enginePkg = SherpaOnnxVoiceProvider.PROVIDER_ID,
-            voiceName = item.modelFileName.removeSuffix(".onnx"),
-            languageTag = item.locale.toLanguageTag(),
-            speechRate = 1.0f,
-            pitch = 1.0f,
-            volume = 1.0f,
-            sampleText = sampleText
-        )
-        preview.play(params)
     }
 
     private fun previewVocalizerVoice(item: VocalizerCatalogItem) {
@@ -652,173 +594,6 @@ internal class EmbeddedEngineDownloaderController(
         preview.play(params)
     }
 
-    private fun confirmDeletePiperVoice(item: PiperCatalogItem) {
-        val ctx = fragment.requireContext()
-        MaterialAlertDialogBuilder(ctx)
-            .setTitle(R.string.embedded_delete_btn)
-            .setMessage(R.string.embedded_delete_confirm)
-            .setPositiveButton(R.string.embedded_delete_btn) { _, _ ->
-                val deleted = PiperDownloader.deleteVoice(ctx, item)
-                VoiceDownloadManager.deletePartial(ctx, "piper", item.id)
-                if (deleted) {
-                    Toast.makeText(
-                        ctx,
-                        R.string.embedded_delete_success,
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    onStatusChanged()
-                    fragment.view?.let { renderVoicesList(it) }
-                }
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
-    private fun renderAcapelaVoices(
-        container: LinearLayout,
-        emptyView: TextView?
-    ) {
-        val ctx = fragment.requireContext()
-        val installed = AcapelaEmbeddedVoiceProvider.getInstalledVoices(ctx)
-
-        val filtered = when (activeFilter) {
-            "ar" -> installed.filter {
-                LanguageCode.isArabic(it.locale.language)
-            }
-            "en" -> installed.filter {
-                it.locale.language.startsWith("en", ignoreCase = true)
-            }
-            "other" -> installed.filter {
-                !LanguageCode.isArabic(it.locale.language) &&
-                    !it.locale.language.startsWith("en", ignoreCase = true)
-            }
-            else -> installed
-        }
-
-        if (filtered.isEmpty()) {
-            emptyView?.text = fragment.getString(
-                R.string.embedded_acapela_empty_hint
-            )
-            emptyView?.visibility = View.VISIBLE
-            return
-        }
-        emptyView?.visibility = View.GONE
-
-        val inflater = LayoutInflater.from(ctx)
-        for (item in filtered) {
-            val itemView = inflater.inflate(
-                R.layout.item_piper_voice,
-                container,
-                false
-            )
-            bindAcapelaCard(itemView, item)
-            container.addView(itemView)
-        }
-    }
-
-    private fun bindAcapelaCard(view: View, item: AcapelaVoiceItem) {
-        val tvTitle = view.findViewById<TextView>(R.id.tv_voice_title)
-        val tvSubtitle = view.findViewById<TextView>(R.id.tv_voice_subtitle)
-        val badge = view.findViewById<TextView>(R.id.tv_voice_status_badge)
-        val btnDownload = view.findViewById<MaterialButton>(
-            R.id.btn_voice_download
-        )
-        val btnPreview = view.findViewById<MaterialButton>(
-            R.id.btn_voice_preview
-        )
-        val btnDelete = view.findViewById<MaterialButton>(
-            R.id.btn_voice_delete
-        )
-        val llProgress = view.findViewById<LinearLayout>(
-            R.id.ll_download_progress
-        )
-
-        tvTitle.text = item.displayName
-        // ع٢٩-7 بند 4: عرض حالة تجريبي للمحركات غير الجاهزة
-        val status = EngineStatusRegistry.statusOf(
-            AcapelaEmbeddedVoiceProvider.PROVIDER_ID
-        )
-        val isExperimental =
-            status?.state == EngineStatusRegistry.State.EXPERIMENTAL
-        val langTag = item.locale.toLanguageTag()
-        if (isExperimental) {
-            tvSubtitle.text =
-                "Acapela • $langTag • ${item.sizeMb} MB • " +
-                "تجريبي — غير جاهز"
-            badge.text = "تجريبي — غير جاهز"
-            badge.setTextColor(
-                fragment.requireContext().getColor(
-                    android.R.color.holo_orange_dark
-                )
-            )
-            badge.visibility = View.VISIBLE
-            btnDownload.visibility = View.GONE
-            btnPreview.visibility = View.GONE
-            btnDelete.visibility = View.GONE
-        } else {
-            tvSubtitle.text = "Acapela • $langTag • ${item.sizeMb} MB"
-            badge.text = "مُثبّت"
-            badge.setTextColor(
-                fragment.requireContext().getColor(
-                    android.R.color.holo_green_dark
-                )
-            )
-            badge.visibility = View.VISIBLE
-            btnDownload.visibility = View.GONE
-            btnPreview.visibility = View.VISIBLE
-            btnDelete.visibility = View.VISIBLE
-        }
-        llProgress.visibility = View.GONE
-
-        btnPreview.setOnClickListener {
-            previewAcapelaVoice(item)
-        }
-
-        btnDelete.setOnClickListener {
-            confirmDeleteAcapelaVoice(item)
-        }
-    }
-
-    private fun previewAcapelaVoice(item: AcapelaVoiceItem) {
-        val sampleText = if (LanguageCode.isArabic(item.locale.language)) {
-            "مرحباً بك، هذا نموذج صوت تجريبي " +
-                "لمحرك أكابيلا المدمج."
-        } else {
-            "Hello, this is a sample preview of the embedded Acapela voice."
-        }
-        val params = PreviewParams(
-            enginePkg = AcapelaEmbeddedVoiceProvider.PROVIDER_ID,
-            voiceName = item.voiceName,
-            languageTag = item.locale.toLanguageTag(),
-            speechRate = 1.0f,
-            pitch = 1.0f,
-            volume = 1.0f,
-            sampleText = sampleText
-        )
-        preview.play(params)
-    }
-
-    private fun confirmDeleteAcapelaVoice(item: AcapelaVoiceItem) {
-        val ctx = fragment.requireContext()
-        MaterialAlertDialogBuilder(ctx)
-            .setTitle(R.string.embedded_delete_btn)
-            .setMessage(R.string.embedded_delete_confirm)
-            .setPositiveButton(R.string.embedded_delete_btn) { _, _ ->
-                val deleted = AcapelaEmbeddedVoiceProvider.deleteVoice(item)
-                if (deleted) {
-                    Toast.makeText(
-                        ctx,
-                        R.string.embedded_delete_success,
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    onStatusChanged()
-                    fragment.view?.let { renderVoicesList(it) }
-                }
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
     private fun confirmDeleteVocalizerVoice(item: VocalizerCatalogItem) {
         val ctx = fragment.requireContext()
         MaterialAlertDialogBuilder(ctx)
@@ -826,7 +601,7 @@ internal class EmbeddedEngineDownloaderController(
             .setMessage(R.string.embedded_delete_confirm)
             .setPositiveButton(R.string.embedded_delete_btn) { _, _ ->
                 val deleted = VocalizerDownloader.deleteVoice(ctx, item)
-                VoiceDownloadManager.deletePartial(ctx, "vocalizer", item.id)
+                VoiceDownloadManager.deletePartial(ctx, item.id)
                 if (deleted) {
                     Toast.makeText(
                         ctx,
@@ -835,6 +610,7 @@ internal class EmbeddedEngineDownloaderController(
                     ).show()
                     onStatusChanged()
                     fragment.view?.let { renderVoicesList(it) }
+                    notifyCatalogChanged()
                 }
             }
             .setNegativeButton(android.R.string.cancel, null)
@@ -860,16 +636,6 @@ internal class EmbeddedEngineDownloaderController(
                 id = VocalizerEmbeddedVoiceProvider.PROVIDER_ID,
                 name = ctx.getString(R.string.embedded_engine_vocalizer),
                 storageEngine = EmbeddedStorage.Engine.VOCALIZER
-            ),
-            EngineEntry(
-                id = AcapelaEmbeddedVoiceProvider.PROVIDER_ID,
-                name = ctx.getString(R.string.embedded_engine_acapela),
-                storageEngine = EmbeddedStorage.Engine.ACAPELA
-            ),
-            EngineEntry(
-                id = SherpaOnnxVoiceProvider.PROVIDER_ID,
-                name = ctx.getString(R.string.embedded_engine_piper),
-                storageEngine = EmbeddedStorage.Engine.SHERPA
             )
         )
 
@@ -910,10 +676,6 @@ internal class EmbeddedEngineDownloaderController(
         return when (HostProtocol.normalizeEngineId(engineId)) {
             HostProtocol.ENGINE_VOCALIZER ->
                 VocalizerEmbeddedVoiceProvider.resolveDataDir(ctx)
-            HostProtocol.ENGINE_ACAPELA ->
-                AcapelaEmbeddedVoiceProvider.resolveDataDir(ctx)
-            HostProtocol.ENGINE_SHERPA ->
-                SherpaOnnxVoiceProvider.resolveDataDir(ctx)
             else -> null
         }
     }
@@ -1125,17 +887,6 @@ internal class EmbeddedEngineDownloaderController(
                         entry.storageEngine
                     )
                     if (base.exists()) base.deleteRecursively()
-                    if (entry.storageEngine ==
-                        EmbeddedStorage.Engine.SHERPA
-                    ) {
-                        val piperBase = EmbeddedStorage.baseDir(
-                            ctx,
-                            EmbeddedStorage.Engine.PIPER
-                        )
-                        if (piperBase.exists()) {
-                            piperBase.deleteRecursively()
-                        }
-                    }
                     val statusFile = EngineStatusRegistry.statusFile(
                         ctx.filesDir,
                         entry.id
@@ -1275,7 +1026,6 @@ internal class EmbeddedEngineDownloaderController(
                     }
                     text = label
                     setTextAppearance(
-                        ctx,
                         com.google.android.material.R.style
                             .TextAppearance_MaterialComponents_Caption
                     )
@@ -1313,7 +1063,9 @@ internal class EmbeddedEngineDownloaderController(
                             fileItem.name
                         )
                         MaterialAlertDialogBuilder(ctx)
-                            .setTitle(R.string.engine_delete_data_confirm_title)
+                            .setTitle(
+                                R.string.engine_delete_data_confirm_title
+                            )
                             .setMessage(msg)
                             .setNegativeButton(
                                 android.R.string.cancel,
@@ -1359,7 +1111,6 @@ internal class EmbeddedEngineDownloaderController(
                         inv.files.size - 30
                     )
                     setTextAppearance(
-                        ctx,
                         com.google.android.material.R.style
                             .TextAppearance_MaterialComponents_Caption
                     )
@@ -1520,18 +1271,6 @@ internal class EmbeddedEngineDownloaderController(
                 name = ctx.getString(R.string.embedded_engine_vocalizer),
                 storageEngine = EmbeddedStorage.Engine.VOCALIZER,
                 voiceProvider = "vocalizer"
-            ),
-            StorageEngineEntry(
-                id = AcapelaEmbeddedVoiceProvider.PROVIDER_ID,
-                name = ctx.getString(R.string.embedded_engine_acapela),
-                storageEngine = EmbeddedStorage.Engine.ACAPELA,
-                voiceProvider = "acapela"
-            ),
-            StorageEngineEntry(
-                id = SherpaOnnxVoiceProvider.PROVIDER_ID,
-                name = ctx.getString(R.string.embedded_engine_piper),
-                storageEngine = EmbeddedStorage.Engine.SHERPA,
-                voiceProvider = "piper"
             )
         )
 
@@ -1666,28 +1405,6 @@ internal class EmbeddedEngineDownloaderController(
                         )
                     }
             }
-            "acapela" -> {
-                AcapelaEmbeddedVoiceProvider.getInstalledVoices(ctx)
-                    .map {
-                        VoiceInfo(
-                            it.displayName,
-                            it.sizeMb.toLong() * 1024 * 1024
-                        )
-                    }
-            }
-            "piper" -> {
-                val baseDir = PiperDownloader.getPiperBaseDir(ctx)
-                PiperModelCatalog.ITEMS
-                    .filter {
-                        PiperModelCatalog.isModelInstalled(baseDir, it)
-                    }
-                    .map {
-                        VoiceInfo(
-                            it.displayNameEn,
-                            it.sizeMb.toLong() * 1024 * 1024
-                        )
-                    }
-            }
             else -> emptyList()
         }
     }
@@ -1715,21 +1432,6 @@ internal class EmbeddedEngineDownloaderController(
                             VocalizerDownloader.deleteVoice(ctx, it)
                         }
                     }
-                    "acapela" -> {
-                        val item = AcapelaEmbeddedVoiceProvider
-                            .getInstalledVoices(ctx)
-                            .firstOrNull { it.displayName == voice.name }
-                        item?.let {
-                            AcapelaEmbeddedVoiceProvider.deleteVoice(it)
-                        }
-                    }
-                    "piper" -> {
-                        val item = PiperModelCatalog.ITEMS
-                            .firstOrNull { it.displayNameEn == voice.name }
-                        item?.let {
-                            PiperDownloader.deleteVoice(ctx, it)
-                        }
-                    }
                 }
                 Toast.makeText(
                     ctx,
@@ -1737,6 +1439,7 @@ internal class EmbeddedEngineDownloaderController(
                     Toast.LENGTH_SHORT
                 ).show()
                 onStatusChanged()
+                notifyCatalogChanged()
                 // إعادة بناء الحوار
                 (dialogView.parent as? android.view.ViewGroup)?.let {
                     it.removeAllViews()
@@ -1789,5 +1492,10 @@ internal class EmbeddedEngineDownloaderController(
                 }
             }
         }
+    }
+
+    private fun notifyCatalogChanged() {
+        (fragment as? VoiceSelectionFragment)
+            ?.refreshVoiceCatalogDiscovery()
     }
 }

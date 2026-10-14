@@ -43,10 +43,11 @@ import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerServi
 import com.aymankhattab.nateq.engine.NumberSpeech
 import com.aymankhattab.nateq.engine.PronunciationDictionary
 import com.aymankhattab.nateq.engine.TextProcessor
+import android.util.Log
+import com.aymankhattab.nateq.core.audio.engine.DiscoveryResult
+import com.aymankhattab.nateq.core.audio.engine.UnavailableEngine
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
-import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
-import com.aymankhattab.nateq.core.audio.providers.SherpaOnnxVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VocalizerDownloader
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.util.announceCompat
@@ -268,9 +269,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 if (!isAdded) return@withContext
                 if (result.isSuccess) {
                     val engineLabel = when (result.engineType) {
-                        VoicePackageImporter.ENGINE_ACAPELA -> "Acapela TTS"
-                        VoicePackageImporter.ENGINE_PIPER -> "Piper TTS"
-                        VoicePackageImporter.ENGINE_VOCALIZER -> "Vocalizer"
+                        VoicePackageImporter.ENGINE_VOCALIZER ->
+                            "Vocalizer Ex 2"
                         else -> result.engineType
                     }
                     Toast.makeText(
@@ -288,6 +288,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     view?.let { root ->
                         embeddedDownloaderSection.refresh(root)
                     }
+                    refreshVoiceCatalogDiscovery()
                 } else {
                     Toast.makeText(
                         ctx,
@@ -316,9 +317,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 if (!isAdded) return@withContext
                 if (result.isSuccess) {
                     val engineLabel = when (result.engineType) {
-                        VoicePackageImporter.ENGINE_ACAPELA -> "Acapela TTS"
-                        VoicePackageImporter.ENGINE_PIPER -> "Piper TTS"
-                        VoicePackageImporter.ENGINE_VOCALIZER -> "Vocalizer"
+                        VoicePackageImporter.ENGINE_VOCALIZER ->
+                            "Vocalizer Ex 2"
                         else -> result.engineType
                     }
                     Toast.makeText(
@@ -336,6 +336,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     view?.let { root ->
                         embeddedDownloaderSection.refresh(root)
                     }
+                    refreshVoiceCatalogDiscovery()
                 } else {
                     Toast.makeText(
                         ctx,
@@ -512,8 +513,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     // والمتصل والبطارية — يُملأ من اكتشاف المحركات الخلفي.
     private lateinit var engineCatalog: EngineVoicesCatalog
 
-    // علامة لتأجيل اكتشاف المحركات عند الحاجة ولمرة واحدة فقط
-    private var isCatalogDiscoveryStarted = false
+    // مهمة اكتشاف المحركات الجارية — إلغاؤها عند بدء جولة جديدة يمنع التسابق
+    private var catalogDiscoveryJob: kotlinx.coroutines.Job? = null
 
     // طلب إذنَي القراءة عند تفعيل إعلان المتصل (READ_PHONE_STATE لاستقبال
     // بث PHONE_STATE المحمي، وREAD_CALL_LOG للوصول إلى الرقم على أندرويد 12+
@@ -651,6 +652,27 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             categoryVoicePanel.saveCurrent()
             view.announceCompat(getString(R.string.categories_saved))
             accordion.updateSectionStatuses()
+        }
+
+        val btnRefreshVoices = view.findViewById<
+            com.google.android.material.button.MaterialButton
+        >(R.id.btn_refresh_voices)
+        btnRefreshVoices?.setOnClickListener {
+            view.announceCompat(getString(R.string.convert_languages_loading))
+            Toast.makeText(
+                requireContext(),
+                R.string.convert_languages_loading,
+                Toast.LENGTH_SHORT
+            ).show()
+            refreshVoiceCatalogDiscovery {
+                if (isAdded) {
+                    Toast.makeText(
+                        requireContext(),
+                        R.string.voices_refreshed,
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
         }
 
         // Pronunciation dictionary RecyclerView
@@ -799,6 +821,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         btnChangelog = view.findViewById(R.id.btn_changelog)
         btnChangelog.setOnClickListener { showChangelogDialog() }
 
+        // زر دليل الميزات والإيماءات (ع٤١-ب14.3): شرح مختصر يقرؤه TalkBack
+        view.findViewById<View>(R.id.btn_a11y_guide).setOnClickListener {
+            showA11yGuideDialog()
+        }
+
         // زر التشخيص: يعرض معلومات شاملة عن حالة التطبيق والمحركات والأذونات
         // مع إمكانية النسخ إلى الحافظة
         val btnDiagnostics = view.findViewById<View>(R.id.btn_diagnostics)
@@ -914,6 +941,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             categoryVoicePanel.onResume()
         }
         refreshEmbeddedUiIfStorageChanged()
+        refreshVoiceCatalogDiscovery()
     }
 
     /**
@@ -941,6 +969,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 embeddedDownloaderSection.refresh(root)
             }
         }
+        refreshVoiceCatalogDiscovery()
     }
 
     /** بند 4.6: حفظ موضع التنقّل في الأكورديون لاستعادته بعد التدوير. */
@@ -1002,46 +1031,71 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             updateReceiver = null
         }
         if (::accordion.isInitialized) accordion.cleanup()
-        isCatalogDiscoveryStarted = false
+        catalogDiscoveryJob?.cancel()
+        catalogDiscoveryJob = null
         super.onDestroyView()
     }
 
     /**
-     * اكتشاف متدرج ومؤجل (لغة ← محرك ← أصوات):
-     * لا ينطلق عند فتح الشاشة الرئيسية، بل يؤجل حتى فتح مجموعة المحركات
-     * أو أحد الأقسام المعتمدة عليه (المتصل/الرسائل)، ولمرة واحدة فقط.
+     * ع٤٠-2: اكتشاف متدرج ومحدث للمحركات والأصوات بتزامن واحد:
+     * يلغي أي عملية جارية سابقة حتى لا تتسابق نتيجتان، ويسجل الأخطاء
+     * دون ابتلاعها، ويمرر unavailableEngines إلى EngineVoicesCatalog.
      */
-    private fun ensureVoiceCatalogDiscovered() {
-        if (isCatalogDiscoveryStarted) return
-        isCatalogDiscoveryStarted = true
-        viewLifecycleOwner.lifecycleScope.launch {
+    internal fun refreshVoiceCatalogDiscovery(
+        onComplete: (() -> Unit)? = null
+    ) {
+        catalogDiscoveryJob?.cancel()
+        catalogDiscoveryJob = viewLifecycleOwner.lifecycleScope.launch {
             val discovery = withContext(AppDispatchers.io) {
                 try {
                     VoiceCatalog.discoverAllLanguagesAcrossEngines(
                         requireContext()
                     )
-                } catch (_: Throwable) {
-                    emptyMap<String, List<EngineWithVoices>>()
+                } catch (t: Throwable) {
+                    Log.w(
+                        "VoiceSelectionFragment",
+                        "Voice catalog discovery failed: ${t.message}",
+                        t
+                    )
+                    DiscoveryResult(
+                        languages = emptyMap<String, List<EngineWithVoices>>(),
+                        unavailableEngines = listOf(
+                            UnavailableEngine(
+                                enginePackage = "all",
+                                engineLabel = "Discovery Error",
+                                message = t.localizedMessage ?: t.message
+                            )
+                        )
+                    )
                 }
             }
-            engineCatalog.update(
-                discovery.mapValues { (_, engines) ->
-                    engines.map { row ->
-                        EngineVoicesRow(
-                            row.enginePackage,
-                            row.engineLabel,
-                            row.voices.map { voice ->
-                                VoiceOption(voice.name, voice.name)
-                            }
-                        )
-                    }
+            val unavailMap = discovery.unavailableEngines.associate { row ->
+                row.enginePackage to (row.message ?: row.code ?: "غير متاح")
+            }
+            val rows = discovery.languages.mapValues { (_, engines) ->
+                engines.map { row ->
+                    EngineVoicesRow(
+                        row.enginePackage,
+                        row.engineLabel,
+                        row.voices.map { voice ->
+                            VoiceOption(voice.name, voice.name)
+                        }
+                    )
                 }
-            )
+            }
+            engineCatalog.update(rows, unavailMap)
             if (!isAdded) return@launch
             categoryVoicePanel.refreshLanguages()
-            smsSection.refreshSmsVoices()
-            callerSection.refreshCallerVoices()
+            if (::smsSection.isInitialized) smsSection.refreshSmsVoices()
+            if (::callerSection.isInitialized) {
+                callerSection.refreshCallerVoices()
+            }
+            onComplete?.invoke()
         }
+    }
+
+    internal fun ensureVoiceCatalogDiscovered() {
+        refreshVoiceCatalogDiscovery()
     }
 
     /** يعالج أحداث العمليات غير المتزامنة القادمة من الفي إم (تجري كلها على
@@ -1913,6 +1967,21 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         view?.announceCompat(getString(R.string.changelog_title))
     }
 
+    /**
+     * دليل الميزات والإيماءات (ع٤١-ب14.3): نصٌّ قصيرٌ قابل للقراءة بـ
+     * TalkBack يشرح كل إيماءة وإجراءٍ متاح وطريقة تفعيل الخدمة.
+     */
+    private fun showA11yGuideDialog() {
+        val dialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.a11y_guide_title)
+            .setMessage(R.string.a11y_guide_text)
+            .setPositiveButton(android.R.string.ok, null)
+            .create()
+            .also(::trackDialog)
+        dialog.show()
+        view?.announceCompat(getString(R.string.a11y_guide_title))
+    }
+
     // ===== التشخيص =====
     private fun showDiagnosticsDialog() {
         val currentContext = context ?: return
@@ -2036,18 +2105,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                             .EmbeddedStorage.Engine.VOCALIZER
                 ),
                 EmbeddedEngineDiag(
-                    id = AcapelaEmbeddedVoiceProvider.PROVIDER_ID,
-                    name = "Acapela TTS",
-                    storageEngine =
-                        com.aymankhattab.nateq.core.audio.providers
-                            .EmbeddedStorage.Engine.ACAPELA
-                ),
-                EmbeddedEngineDiag(
-                    id = SherpaOnnxVoiceProvider.PROVIDER_ID,
-                    name = "Piper TTS (Sherpa-ONNX)",
-                    storageEngine =
-                        com.aymankhattab.nateq.core.audio.providers
-                            .EmbeddedStorage.Engine.SHERPA
+                    id = VocalizerEmbeddedVoiceProvider.PROVIDER_ID,
+                    name = "Vocalizer Ex 2",
+                    storageEngine = EmbeddedStorage.Engine.VOCALIZER
                 )
             )
             embeddedEngines.forEach { diag ->
@@ -2199,6 +2259,34 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             sb.appendLine(
                 "الوصول للإشعارات: " +
                     if (notificationListener) "مُمنوح ✓" else "محجوب ✗"
+            )
+
+            val dndGranted = if (
+                android.os.Build.VERSION.SDK_INT >=
+                android.os.Build.VERSION_CODES.M
+            ) {
+                nm?.isNotificationPolicyAccessGranted == true
+            } else {
+                true
+            }
+            sb.appendLine(
+                "الوصول لسياسة عدم الإزعاج (DND): " +
+                    if (dndGranted) {
+                        "مُمنوح ✓"
+                    } else {
+                        "تلقائي عبر الإنذار (ALARM) ℹ"
+                    }
+            )
+            val failureReason =
+                com.aymankhattab.nateq.core.audio.announcement
+                    .EventLoudnessPolicy.lastFailureReason
+            sb.appendLine(
+                "تشخيص جهارة الأحداث: " +
+                    if (failureReason == "none") {
+                        "سليم ✓"
+                    } else {
+                        failureReason
+                    }
             )
 
             val powerManager =

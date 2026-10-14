@@ -1,0 +1,110 @@
+<?xml version="1.0"?>
+<NUANCE>
+<VERSION>NUAN_1.0</VERSION>
+<HEADER>
+  <BROKERSTRING>pipeline/Arabic/laila/22/embedded-pro/1.0.5/text/pcm</BROKERSTRING>
+  <PRIORITY>5312</PRIORITY>
+  <PARAMETERS>
+    <language>Arabic</language>
+    <langcode>ARW</langcode>
+    <langietf>ar-WW</langietf>
+    <langversion>9.5.002000</langversion>
+    <voice>Laila</voice>
+    <voiceversion>1.0.0</voiceversion>
+    <vopversion>1.0.5</vopversion>
+    <gender>Female</gender>
+    <age>Adult</age>
+    <fecfg>cfg3</fecfg>
+    <voiceml>no</voiceml>
+    <mlset>arw,eng</mlset>
+    <extclccfg>eng+*=clc/eng/mpthreevadml</extclccfg>
+    <extraesclang>eng</extraesclang>
+    <datapackagename>arw/laila/embedded-pro/1-0-5</datapackagename>
+    <fedataprefix></fedataprefix>
+    <feextcfgdataprefix></feextcfgdataprefix>
+    <fedatapackaging>clc</fedatapackaging>
+    <fevoice>Laila</fevoice>
+    <frequencyhz>22050</frequencyhz>
+    <voicemodel>vop2_sch1f22</voicemodel>
+    <voiceoperatingpoint>embedded-pro</voiceoperatingpoint>
+    <reduction>vop2</reduction>
+    <coder>sch1f22</coder>
+    <bitrate></bitrate>
+    <overheadframes></overheadframes>
+    <audiooutputmimetype>audio/L16;rate=22050</audiooutputmimetype>
+    <audiooutputsamplebits>16</audiooutputsamplebits>
+    <typeofsynthesis>psola</typeofsynthesis>
+    <nlucompatvc6be>yes</nlucompatvc6be>
+    <compatstrongbnd>no</compatstrongbnd>
+  </PARAMETERS>
+  <OBJECTS>
+    <AUDIOFETCHER>audiofetch</AUDIOFETCHER>
+    <DCTEG>dcteg</DCTEG>
+    <DOMAINMNGR>domain_mngr</DOMAINMNGR>
+    <FE_DCTLKP>fe/fe_dctlkp</FE_DCTLKP>
+    <FE_DEPES>fe/fe_depes</FE_DEPES>
+    <INET>inetspi</INET>
+    <PHONMAP>phonmap</PHONMAP>
+  </OBJECTS>
+  <COMPONENTS>
+    <COMPONENT>xcoder</COMPONENT>
+    <COMPONENT>ttt/tbm</COMPONENT>
+    <COMPONENT>ttt/re</COMPONENT>
+    <COMPONENT>pp/text_parser</COMPONENT>
+    <COMPONENT>pp/sent_parser</COMPONENT>
+    <COMPONENT>pp/word_parser</COMPONENT>
+    <COMPONENT>fe/fe_lid</COMPONENT>
+    <COMPONENT>fe/fe_voice_switch</COMPONENT>
+    <COMPONENT>fe/fe_udwl</COMPONENT>
+    <COMPONENT>fe/fe_clcml</COMPONENT>
+    <COMPONENT>fe/fe_promptoriorth</COMPONENT>
+    <COMPONENT>fe/fe_sprop</COMPONENT>
+    <COMPONENT>fe/fe_unixlit</COMPONENT>
+    <COMPONENT>fe/fe_araparser</COMPONENT>
+    <COMPONENT>fe/fe_initlingdb</COMPONENT>
+    <COMPONENT>fe/fe_promptorth</COMPONENT>
+    <COMPONENT>fe/tokentn</COMPONENT>
+    <COMPONENT>fe/fe_abbrtn</COMPONENT>
+    <COMPONENT>fe/fe_puncsptn</COMPONENT>
+    <COMPONENT>fe/fe_oneword</COMPONENT>
+    <COMPONENT>fe/fe_pos</COMPONENT>
+    <COMPONENT>fe/fe_hmogrph</COMPONENT>
+    <COMPONENT>fe/fe_phrasing</COMPONENT>
+    <COMPONENT>fe/fe_normout</COMPONENT>
+    <COMPONENT>fe/fe_prmfx</COMPONENT>
+    <COMPONENT>fe/fe_prompt</COMPONENT>
+    <COMPONENT>fe/fe_global</COMPONENT>
+    <COMPONENT>fe/be_adapt</COMPONENT>
+    <COMPONENT>be/featextract</COMPONENT>
+    <COMPONENT>uselect/bet1</COMPONENT>
+    <COMPONENT>synth/bet1</COMPONENT>
+    <COMPONENT>audioinserter</COMPONENT>
+    <COMPONENT>phonmap/mrk</COMPONENT>
+    <COMPONENT>xcoder/mrksync</COMPONENT>
+  </COMPONENTS>
+  <RESOURCES>
+    <!-- The next entries specify default broker strings for the user dictionary resources, once language specific and once voice specific -->
+    <RESOURCE content-type="application/edct-bin-dictionary;loader=broker">
+      userdct/arw
+    </RESOURCE>
+    <RESOURCE content-type="application/edct-bin-dictionary;loader=broker">
+      userdct/arw/laila
+    </RESOURCE>
+
+    <!-- The next entries specify default broker strings tuning resources if available -->
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+  </RESOURCES>
+</HEADER>
+</NUANCE>

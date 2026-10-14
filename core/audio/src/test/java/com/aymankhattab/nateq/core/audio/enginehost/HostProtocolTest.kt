@@ -291,16 +291,16 @@ class HostProtocolTest {
     @Test
     fun marker_lifecycle_writeReadClear() {
         val dir = tempFolder.newFolder("files")
-        assertFalse(HostProtocol.hasMarker(dir, "sherpa"))
+        assertFalse(HostProtocol.hasMarker(dir, "vocalizer"))
 
-        HostProtocol.writeMarker(dir, "sherpa", "init dir=/x")
-        assertTrue(HostProtocol.hasMarker(dir, "sherpa"))
-        val content = HostProtocol.readMarker(dir, "sherpa")
+        HostProtocol.writeMarker(dir, "vocalizer", "init dir=/x")
+        assertTrue(HostProtocol.hasMarker(dir, "vocalizer"))
+        val content = HostProtocol.readMarker(dir, "vocalizer")
         assertTrue(content.contains("init dir=/x"))
 
-        HostProtocol.clearMarker(dir, "sherpa")
-        assertFalse(HostProtocol.hasMarker(dir, "sherpa"))
-        assertEquals("", HostProtocol.readMarker(dir, "sherpa"))
+        HostProtocol.clearMarker(dir, "vocalizer")
+        assertFalse(HostProtocol.hasMarker(dir, "vocalizer"))
+        assertEquals("", HostProtocol.readMarker(dir, "vocalizer"))
     }
 
     @Test
@@ -310,7 +310,7 @@ class HostProtocolTest {
         assertTrue(HostProtocol.hasMarker(dir, "vocalizer"))
         assertFalse(
             "علامة محرك لا تؤثر في آخر",
-            HostProtocol.hasMarker(dir, "acapela")
+            HostProtocol.hasMarker(dir, "other_engine")
         )
     }
 
@@ -328,30 +328,6 @@ class HostProtocolTest {
             HostProtocol.ENGINE_VOCALIZER,
             HostProtocol.normalizeEngineId("VOCALIZER_EMBEDDED")
         )
-        assertEquals(
-            HostProtocol.ENGINE_ACAPELA,
-            HostProtocol.normalizeEngineId("acapela_embedded")
-        )
-        assertEquals(
-            HostProtocol.ENGINE_ACAPELA,
-            HostProtocol.normalizeEngineId("ACAPELA_EMBEDDED")
-        )
-        assertEquals(
-            HostProtocol.ENGINE_SHERPA,
-            HostProtocol.normalizeEngineId("sherpa_onnx_piper")
-        )
-        assertEquals(
-            HostProtocol.ENGINE_SHERPA,
-            HostProtocol.normalizeEngineId("SHERPA_ONNX_PIPER")
-        )
-        assertEquals(
-            HostProtocol.ENGINE_SHERPA,
-            HostProtocol.normalizeEngineId("sherpa_piper")
-        )
-        assertEquals(
-            HostProtocol.ENGINE_SHERPA,
-            HostProtocol.normalizeEngineId("SHERPA_PIPER")
-        )
     }
 
     @Test
@@ -359,14 +335,6 @@ class HostProtocolTest {
         assertEquals(
             HostProtocol.ENGINE_VOCALIZER,
             HostProtocol.normalizeEngineId("vocalizer")
-        )
-        assertEquals(
-            HostProtocol.ENGINE_ACAPELA,
-            HostProtocol.normalizeEngineId("acapela")
-        )
-        assertEquals(
-            HostProtocol.ENGINE_SHERPA,
-            HostProtocol.normalizeEngineId("sherpa")
         )
         assertEquals(
             "custom_engine",
