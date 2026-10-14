@@ -61,24 +61,23 @@ class ContactVoiceStoreTest {
     }
 
     @Test
-    fun resolver_contactWinsOverCategoryAndDefault() {
-        val base = EffectiveVoice(
-            engine = null, voiceId = "catVoice",
-            speechRate = 1.0f, pitch = 1.0f, volume = 1.0f
-        )
+    fun resolver_contactMultipliesRateAndPitchOverCategoryAndApp() {
+        val base = EffectiveVoice()
         val contact = VoiceProfile(
-            voiceId = "contactVoice", speechRate = 1.5f
+            voiceId = "contactVoice", speechRate = 1.5f, pitch = 1.2f
         )
         val resolved = VoiceProfileResolver.effective(
             base = base,
-            category = VoiceProfile(speechRate = 1.1f),
+            category = VoiceProfile(speechRate = 1.1f, pitch = 0.9f),
+            appProfile = VoiceProfile(speechRate = 1.0f),
             contact = contact
         )
         assertEquals("contactVoice", resolved.voiceId)
-        assertEquals(1.5f, resolved.speechRate)
-        // النبرة والمستوى لم يحددهما الاتصال فيرث الفئة/الأساس
-        assertEquals(1.0f, resolved.pitch)
-        assertEquals(1.0f, resolved.volume)
+        // 1.1 * 1.0 * 1.5 = 1.65
+        assertEquals(1.65f, resolved.speechRate!!, 0.001f)
+        // 0.9 * 1.2 = 1.08
+        assertEquals(1.08f, resolved.pitch!!, 0.001f)
+        assertNull(resolved.volume)
     }
 
     @Test
@@ -94,8 +93,20 @@ class ContactVoiceStoreTest {
             contact = VoiceProfile(volume = 0.2f)
         )
         assertEquals("app", resolved.voiceId)
-        assertEquals(1.0f, resolved.speechRate)
-        assertEquals(1.3f, resolved.pitch)
-        assertEquals(0.2f, resolved.volume)
+        assertEquals(1.0f, resolved.speechRate!!, 0.001f)
+        assertEquals(1.3f, resolved.pitch!!, 0.001f)
+        assertEquals(0.2f, resolved.volume!!, 0.001f)
+    }
+
+    @Test
+    fun resolver_engineChangeResetsVoiceIdUnlessSpecified() {
+        val base = EffectiveVoice(engine = "eng1", voiceId = "v1")
+        val app = VoiceProfile(engine = "eng2")
+        val resolved = VoiceProfileResolver.effective(
+            base = base,
+            appProfile = app
+        )
+        assertEquals("eng2", resolved.engine)
+        assertNull(resolved.voiceId)
     }
 }

@@ -10,6 +10,8 @@ import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.TextView
 import androidx.core.view.isVisible
+import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
+import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.data.VoiceProfile
 import com.aymankhattab.nateq.feature.settings.R
@@ -85,6 +87,23 @@ internal object VoiceProfileEditorDialog {
             tts = null
             voiceNames[0] = emptyList()
             voiceSpinner.adapter = simpleAdapter(context, emptyList())
+
+            if (isEmbeddedEngine(enginePkg)) {
+                val declared = VoiceCatalog.declaredVoices()
+                val names = declared.map { it.name }
+                voiceNames[0] = names
+                val labels = declared.map { v ->
+                    val disp = v.locale?.displayName.orEmpty()
+                    if (disp.isBlank()) v.name else "$disp — ${v.name}"
+                }
+                voiceSpinner.adapter = simpleAdapter(context, labels)
+                voiceStatus.isVisible = false
+                val initialIdx = initial.voiceId?.let { names.indexOf(it) }
+                    ?.takeIf { it >= 0 } ?: 0
+                voiceSpinner.setSelection(initialIdx)
+                return
+            }
+
             val holder = arrayOfNulls<TextToSpeech>(1)
             val listener: (Int) -> Unit = { status ->
                 val instance = holder[0]
@@ -110,6 +129,9 @@ internal object VoiceProfileEditorDialog {
                         }
                     )
                     voiceStatus.isVisible = false
+                    val initialIdx = initial.voiceId?.let { names.indexOf(it) }
+                        ?.takeIf { it >= 0 } ?: 0
+                    voiceSpinner.setSelection(initialIdx)
                 }
             }
             val created = runCatching {
@@ -161,15 +183,22 @@ internal object VoiceProfileEditorDialog {
             setText(R.string.a11y_voice_preview)
             setOnClickListener {
                 val names = voiceNames[0].orEmpty()
+                val chosenVoice = names.getOrNull(
+                    voiceSpinner.selectedItemPosition
+                ).orEmpty()
+                val chosenEngine = enginePackages.getOrNull(
+                    engineSpinner.selectedItemPosition
+                )
+                val langTag = if (isEmbeddedEngine(chosenEngine)) {
+                    chosenVoice.substringBefore('-')
+                } else {
+                    ""
+                }
                 previewHelper.play(
                     buildPreviewParamsFrom(
-                        voiceName = names.getOrNull(
-                            voiceSpinner.selectedItemPosition
-                        ).orEmpty(),
-                        languageTag = "",
-                        enginePkg = enginePackages.getOrNull(
-                            engineSpinner.selectedItemPosition
-                        ),
+                        voiceName = chosenVoice,
+                        languageTag = langTag,
+                        enginePkg = chosenEngine,
                         rateProgress = rate.progress,
                         pitchProgress = pitch.progress,
                         volumePercent = volume.progress,
@@ -271,6 +300,12 @@ internal object VoiceProfileEditorDialog {
 
     private fun volumeToProgress(volume: Float?): Int =
         VoiceEditorProgress.volumeToProgress(volume)
+
+    private fun isEmbeddedEngine(pkg: String?): Boolean {
+        if (pkg.isNullOrBlank()) return false
+        val norm = HostProtocol.normalizeEngineId(pkg)
+        return norm == HostProtocol.ENGINE_VOCALIZER
+    }
 
     private fun matchWrap(): LinearLayout.LayoutParams =
         LinearLayout.LayoutParams(
