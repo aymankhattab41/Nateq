@@ -14,6 +14,7 @@ import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.aymankhattab.nateq.core.audio.accessibility.A11yVoiceResolver
 import com.aymankhattab.nateq.core.audio.accessibility.AccessibilityBridge
 import com.aymankhattab.nateq.core.audio.accessibility.FeatureFlags
 import com.aymankhattab.nateq.core.audio.accessibility.RepeatSpellController
@@ -26,6 +27,7 @@ import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
 import com.aymankhattab.nateq.core.common.AppDispatchers
+import com.aymankhattab.nateq.core.data.EffectiveVoice
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.SpeechLock
 import com.aymankhattab.nateq.core.engine.AudioExpansionLevels
@@ -709,6 +711,9 @@ class NateqTtsService : TextToSpeechService() {
                 val effectCategory = request.params?.getString(
                     AudioEffectManager.PARAM_CATEGORY
                 ).orEmpty()
+                // ع٤٢-11: ملف التطبيق النشط لقراءة الشاشة العادية فقط
+                // (تُستثنى إعلانات النظام الحاملة لفئة صريحة).
+                val activeAppVoice = resolveActiveAppVoice(effectCategory)
                 // الاستدعاءُ بلا شرطِ مستوى: الصدى قد يكون مفعّلاً
                 // والاتساع مُطفأً (فصلٌ تامّ بين المفتاحين).
                 if (audioSessionId > 0) {
@@ -826,7 +831,7 @@ class NateqTtsService : TextToSpeechService() {
                     synthesizeSingle(
                         segments[0].text, segments[0].languageTag,
                         monitoredCallback, readerRate, effectCategory,
-                        segments[0].role
+                        segments[0].role, activeAppVoice
                     )
                 } else {
                     // نص مختلط الكتابات: نطق كل مقطع بلغته/محركه ثم مزج الصوت
@@ -857,7 +862,8 @@ class NateqTtsService : TextToSpeechService() {
                             "$correctMs ms (was ${timeoutHolder.get()})"
                     )
                     synthesizeMixed(
-                        segments, readerRate, monitoredCallback, effectCategory
+                        segments, readerRate, monitoredCallback,
+                        effectCategory, activeAppVoice
                     )
                 }
             } catch (e: CancellationException) {
@@ -1008,7 +1014,8 @@ class NateqTtsService : TextToSpeechService() {
         callback: SynthesisCallback,
         readerRate: Float,
         effectCategory: String = "",
-        role: SpeechRole = SpeechRole.TEXT
+        role: SpeechRole = SpeechRole.TEXT,
+        appVoice: EffectiveVoice? = null
     ) {
         val (voice, foundProvider) = resolveVoiceWithFallback(languageTag)
         val provider = foundProvider ?: run {
@@ -1082,12 +1089,26 @@ class NateqTtsService : TextToSpeechService() {
             || (normLanguage == LanguageCode.EN.tag
             && convertLang == "eng")
 
-        val finalRate = speechRate
-        val finalPitch = convertTarget?.let { it.convertPitch } ?: pitch
-        val finalVolume = computeFinalVolume(
-            convertTarget?.let { it.convertVolume } ?: volume,
-            currentVolumeBoost()
-        )
+        val basePitch = convertTarget?.let { it.convertPitch } ?: pitch
+        val baseVolume = convertTarget?.let { it.convertVolume } ?: volume
+        val appRate = appVoice?.speechRate
+        val finalRate = if (appRate != null) {
+            (speechRate * appRate).coerceIn(0.1f, 6.0f)
+        } else {
+            speechRate
+        }
+        val appPitch = appVoice?.pitch
+        val finalPitch = if (appPitch != null) {
+            (basePitch * appPitch).coerceIn(0.2f, 2.0f)
+        } else {
+            basePitch
+        }
+        val appVol = appVoice?.volume
+        val finalVolume = if (appVol != null) {
+            computeFinalVolume(appVol, currentVolumeBoost())
+        } else {
+            computeFinalVolume(baseVolume, currentVolumeBoost())
+        }
         // توجيه المحرك/الصوت: يفضّل هدف التحويل المطابق، وإلا تفضيل لغة النص
         // نفسه (سارٍ دائماً بلا ربط بحالة «التحويل التلقائي»). **يُجرى قبل
         // المعالجة** ليُمرَّر المحركُ المحسوم إلى [TextProcessor.process] —
@@ -1099,14 +1120,20 @@ class NateqTtsService : TextToSpeechService() {
             perLanguageEngine = settings.getEngineForLanguage(languageTag),
             perLanguageVoiceName = settings.getVoiceForLanguage(languageTag)
         )
-        val finalEngine = routed.engine
+        val finalEngine = appVoice?.engine ?: routed.engine
         val finalLocale = if (matchesRequest) {
             convertTarget?.convertLocale
                 ?: Locale.forLanguageTag(languageTag)
         } else {
             Locale.forLanguageTag(languageTag)
         }
-        val finalVoiceName = routed.voiceName
+        val finalVoiceName = if (appVoice?.engine != null &&
+            appVoice.engine != routed.engine
+        ) {
+            appVoice.voiceId
+        } else {
+            appVoice?.voiceId ?: routed.voiceName
+        }
 
         // Process text through TextProcessor
         // (numbers, dates, currencies, etc.)
@@ -1217,10 +1244,29 @@ class NateqTtsService : TextToSpeechService() {
         }
     }
 
+    /**
+     * حسم ملف التطبيق النشط لقراءة الشاشة (ع٤٢-11).
+     * يُستثنى إعلانات النظام الحاملة لفئة صريحة في effectCategory.
+     */
+    internal fun resolveActiveAppVoice(
+        effectCategory: String,
+        targetPackage: String? = AccessibilityBridge.foregroundPackage()
+    ): EffectiveVoice? = if (effectCategory.isEmpty()) {
+        val ctx = runCatching { applicationContext }.getOrNull() ?: this
+        A11yVoiceResolver.resolve(
+            context = ctx,
+            settings = settings,
+            packageName = targetPackage,
+            senderName = null
+        )
+    } else {
+        null
+    }
+
     /** وصفُ مقطعٍ محلول جاهز للتخليق (بعد تجهيز النص وحل الصوت والتحويل
      *  والتوجيه) — مشترك بين المسارين المتسلسل والمتوازي لتُبنى أشرطةُ
      *  الصوت ومفاتيحُ الكاش نفسها. */
-    private class SegmentParams(
+    internal class SegmentParams(
         val text: String,
         val voice: VoiceDescriptor,
         val provider: VoiceProvider,
@@ -1245,9 +1291,10 @@ class NateqTtsService : TextToSpeechService() {
      *  المحرك/اللغة عبر [LanguageSpeechRouter] — خريطةٌ واحدة يعتمدها المساران
      *  المتسلسل والمتوازي فتتطابق أصواتُ النطق ومفاتيحُ الكاش بينهما.
      *  يرجع null عند غياب مزودٍ للمقطع (يُسقَط وحده كدأب المسار المختلط). */
-    private suspend fun resolveSegmentParams(
+    internal suspend fun resolveSegmentParams(
         segment: Segment,
-        readerRate: Float
+        readerRate: Float,
+        appVoice: EffectiveVoice? = null
     ): SegmentParams? {
         val segTag = segment.languageTag
         val segRate = requestHandler.getSpeechRate(segTag)
@@ -1271,14 +1318,29 @@ class NateqTtsService : TextToSpeechService() {
             } else {
                 convert?.convertRate ?: segRate ?: 1.0f
             }
-        val finalRate = computeFinalSpeechRate(
+        val computedRate = computeFinalSpeechRate(
             readerRate, nateqMultiplier, currentSpeechBoost()
         )
-        val finalPitch = convert?.convertPitch ?: segPitch
-        val finalVolume = computeFinalVolume(
-            convert?.convertVolume ?: segVolume,
-            currentVolumeBoost()
-        )
+        val appRate = appVoice?.speechRate
+        val finalRate = if (appRate != null) {
+            (computedRate * appRate).coerceIn(0.1f, 6.0f)
+        } else {
+            computedRate
+        }
+        val basePitch = convert?.convertPitch ?: segPitch
+        val appPitch = appVoice?.pitch
+        val finalPitch = if (appPitch != null) {
+            (basePitch * appPitch).coerceIn(0.2f, 2.0f)
+        } else {
+            basePitch
+        }
+        val baseVolume = convert?.convertVolume ?: segVolume
+        val appVol = appVoice?.volume
+        val finalVolume = if (appVol != null) {
+            computeFinalVolume(appVol, currentVolumeBoost())
+        } else {
+            computeFinalVolume(baseVolume, currentVolumeBoost())
+        }
         val routed = LanguageSpeechRouter.route(
             matchesRequest = matches,
             convertEngine = convert?.convertEngine,
@@ -1286,6 +1348,14 @@ class NateqTtsService : TextToSpeechService() {
             perLanguageEngine = settings.getEngineForLanguage(segTag),
             perLanguageVoiceName = settings.getVoiceForLanguage(segTag)
         )
+        val targetEngine = appVoice?.engine ?: routed.engine
+        val targetVoiceName = if (appVoice?.engine != null &&
+            appVoice.engine != routed.engine
+        ) {
+            appVoice.voiceId
+        } else {
+            appVoice?.voiceId ?: routed.voiceName
+        }
         // **بند التشكيل الشرطي:** تُمرَّر حزمةُ المحرك المحسومة إلى
         // [TextProcessor.process] — المحركات التي تفهم التشكيل العربي
         // تحتفظ به في الناتج (مسار الاستعادة) بدل تجريده دائماً.
@@ -1293,7 +1363,7 @@ class NateqTtsService : TextToSpeechService() {
             segment.text
         } else {
             textProcessor.process(
-                segment.text, segTag, routed.engine
+                segment.text, segTag, targetEngine
             )
         }
         val speechText = if (LanguageCode.isArabic(segTag)) {
@@ -1302,8 +1372,8 @@ class NateqTtsService : TextToSpeechService() {
             processed
         }
         val (voice, foundProvider) = resolveVoiceWithFallback(segTag)
-        val provider = if (routed.engine != null) {
-            catalog.findProvider(routed.engine) ?: foundProvider
+        val provider = if (targetEngine != null) {
+            catalog.findProvider(targetEngine) ?: foundProvider
         } else {
             foundProvider
         }
@@ -1315,14 +1385,14 @@ class NateqTtsService : TextToSpeechService() {
         }
         return SegmentParams(
             speechText, voice, provider, finalRate, finalPitch,
-            finalVolume, routed.engine,
+            finalVolume, targetEngine,
             if (matches) {
                 convert?.convertLocale
                     ?: Locale.forLanguageTag(segTag)
             } else {
                 Locale.forLanguageTag(segTag)
             },
-            routed.voiceName
+            targetVoiceName
         )
     }
 
@@ -1339,9 +1409,10 @@ class NateqTtsService : TextToSpeechService() {
     private suspend fun synthesizeSegmentRaw(
         segment: Segment,
         readerRate: Float,
-        effectCategory: String = ""
+        effectCategory: String = "",
+        appVoice: EffectiveVoice? = null
     ): SegmentAudio? {
-        val params = resolveSegmentParams(segment, readerRate)
+        val params = resolveSegmentParams(segment, readerRate, appVoice)
             ?: return null
         val chunks = ArrayList<ByteArray>()
         var nativeRate = 0
@@ -1522,7 +1593,8 @@ class NateqTtsService : TextToSpeechService() {
         segments: List<Segment>,
         readerRate: Float,
         callback: SynthesisCallback,
-        effectCategory: String = ""
+        effectCategory: String = "",
+        appVoice: EffectiveVoice? = null
     ) {
         var started = false
         // عدّادُ الأجزاء التي لم تُنطق: صفرٌ في المسار السليم، وأيُّ
@@ -1531,7 +1603,9 @@ class NateqTtsService : TextToSpeechService() {
         val maxBytes = callback.maxBufferSize
         val crossfader = ChunkCrossfader(CROSSFADE_FRAMES)
         for (segment in segments) {
-            val params = resolveSegmentParams(segment, readerRate)
+            val params = resolveSegmentParams(
+                segment, readerRate, appVoice
+            )
             if (params == null) {
                 // **حارس عدم الإسقاط الصامت:** مقطعٌ بلا صوتٍ ولا
                 // محرّك لا يجوز أن يمرّ بلا أثر — يُعلَن الخلل صريحاً
@@ -1618,12 +1692,15 @@ class NateqTtsService : TextToSpeechService() {
         segments: List<Segment>,
         readerRate: Float,
         callback: SynthesisCallback,
-        effectCategory: String = ""
+        effectCategory: String = "",
+        appVoice: EffectiveVoice? = null
     ) {
         val audios = coroutineScope {
             segments.map { segment ->
                 async(AppDispatchers.io) {
-                    synthesizeSegmentRaw(segment, readerRate, effectCategory)
+                    synthesizeSegmentRaw(
+                        segment, readerRate, effectCategory, appVoice
+                    )
                 }
             }.map { it.await() }
         }
@@ -1680,14 +1757,17 @@ class NateqTtsService : TextToSpeechService() {
         segments: List<Segment>,
         readerRate: Float,
         callback: SynthesisCallback,
-        effectCategory: String = ""
+        effectCategory: String = "",
+        appVoice: EffectiveVoice? = null
     ) {
         val totalChars = segments.sumOf { it.text.length }
         if (segments.size > 1 && totalChars <= PARALLEL_MAX_CHARS) {
-            synthesizeParallel(segments, readerRate, callback, effectCategory)
+            synthesizeParallel(
+                segments, readerRate, callback, effectCategory, appVoice
+            )
         } else {
             synthesizeMixedSequential(
-                segments, readerRate, callback, effectCategory
+                segments, readerRate, callback, effectCategory, appVoice
             )
         }
     }

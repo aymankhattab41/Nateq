@@ -15,25 +15,26 @@ data class VoiceProfile(
     val volume: Float? = null
 )
 
-/** معاملات النطق الفعلية بعد الحسم (كلها محسومة). */
+/** معاملات النطق الفعلية بعد الحسم (كلها قابلة للإلغاء: null = ورث). */
 data class EffectiveVoice(
-    val engine: String?,
-    val voiceId: String?,
-    val speechRate: Float,
-    val pitch: Float,
-    val volume: Float
+    val engine: String? = null,
+    val voiceId: String? = null,
+    val speechRate: Float? = null,
+    val pitch: Float? = null,
+    val volume: Float? = null
 )
 
 /**
- * حاسم أولوية الأصوات (ع٤١-ب10.3، ب11.2):
+ * حاسم أولوية الأصوات (ع٤١-ب10.3، ب11.2، ع٤٢-11):
  * الافتراضي ← الفئة ← ملف التطبيق ← جهة الاتصال.
- * كل طبقةٍ تُمرَّر بعد الأثقل منها، فتُطبَّق بالترتيب فتفوز الأخصّ.
+ * كل طبقةٍ تُمرَّر بعد الأثقل منها، والسرعة والنبرة تتضاعفان بدلاً
+ * من الاستبدال المطلق، بينما يُلغي مستوى الصوت ما قبله عند التحديد.
  * دالة نقية قابلة للاختبار.
  */
 object VoiceProfileResolver {
 
     fun effective(
-        base: EffectiveVoice,
+        base: EffectiveVoice = EffectiveVoice(),
         category: VoiceProfile? = null,
         appProfile: VoiceProfile? = null,
         contact: VoiceProfile? = null
@@ -41,12 +42,33 @@ object VoiceProfileResolver {
         var out = base
         for (layer in listOf(category, appProfile, contact)) {
             if (layer == null) continue
+            val newEngine = layer.engine ?: out.engine
+            val newVoiceId = if (layer.engine != null &&
+                layer.engine != out.engine
+            ) {
+                layer.voiceId
+            } else {
+                layer.voiceId ?: out.voiceId
+            }
+            val newRate = when {
+                out.speechRate != null && layer.speechRate != null ->
+                    (out.speechRate * layer.speechRate).coerceIn(0.1f, 6.0f)
+                layer.speechRate != null -> layer.speechRate
+                else -> out.speechRate
+            }
+            val newPitch = when {
+                out.pitch != null && layer.pitch != null ->
+                    (out.pitch * layer.pitch).coerceIn(0.2f, 2.0f)
+                layer.pitch != null -> layer.pitch
+                else -> out.pitch
+            }
+            val newVolume = layer.volume ?: out.volume
             out = EffectiveVoice(
-                engine = layer.engine ?: out.engine,
-                voiceId = layer.voiceId ?: out.voiceId,
-                speechRate = layer.speechRate ?: out.speechRate,
-                pitch = layer.pitch ?: out.pitch,
-                volume = layer.volume ?: out.volume
+                engine = newEngine,
+                voiceId = newVoiceId,
+                speechRate = newRate,
+                pitch = newPitch,
+                volume = newVolume
             )
         }
         return out
