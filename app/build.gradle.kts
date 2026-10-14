@@ -28,17 +28,21 @@ android {
         targetSdk = 37
         versionCode = 10634
         versionName = "1.6.34"
-        // ع٤٠-14 ثم دعم الأجهزة 32-بت: نُشحن arm64-v8a (الأساسي) و
-        // armeabi-v7a (أجهزة 32-بت). مكتبة Vocalizer الأصلية
-        // (libNuanceVocalizer.so) متوفّرة للمعماريتين معاً، فيعمل
-        // المحرّك المدمج على أجهزتَي 32-بت و64-بت على السواء، وOCR
-        // (tesseract/leptonica يُشحنان لكل المعماريات) كذلك.
-        ndk {
-            abiFilters.add("arm64-v8a")
-            abiFilters.add("armeabi-v7a")
-        }
+        // ع٤٢-1: دعم كامل لمعماريتَي 64-بت (arm64-v8a) و32-بت (armeabi-v7a).
+        // مكتبة Vocalizer الأصلية (libNuanceVocalizer.so) متوفرة للمعماريتين.
+        // تم اعتماد splits.abi أدناه لإنتاج APK مستقل لكل معمارية
+        // (حيث يمنع AGP الجمع بين ndk.abiFilters و splits.abi).
         // مشغّل الاختبارات المدمجة على الأجهزة (بند 6#7).
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = false
+        }
     }
 
     signingConfigs {
@@ -108,15 +112,21 @@ android {
     }
 }
 
-// إعادة تسمية مخرجات APK بمسمى ثابت nateq.apk بدل app-release.apk
-// (androidComponents هي واجهة AGP الحديثة، تبقى صالحة في AGP 9+ بدل
-//  applicationVariants/outputs القديمة التي أُزيلت). تُقيَّد بالنسخة
-// release فقط — نحوّل اسم مخرجها (بنية MultiOutput) ليدوم ثابتاً.
+// إعادة تسمية مخرجات APK بمسمى ناطق لكل معمارية عند تفعيل splits.abi
 androidComponents {
     onVariants(androidComponents.selector().withBuildType("release")) {
         variant ->
         variant.outputs.forEach { output ->
-            output.outputFileName.set("nateq.apk")
+            val abi = output.filters.find {
+                it.filterType ==
+                    com.android.build.api.variant.FilterConfiguration
+                        .FilterType.ABI
+            }?.identifier
+            if (abi != null) {
+                output.outputFileName.set("nateq-$abi.apk")
+            } else {
+                output.outputFileName.set("nateq.apk")
+            }
         }
     }
 }

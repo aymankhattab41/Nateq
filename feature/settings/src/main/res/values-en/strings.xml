@@ -711,7 +711,7 @@ Note: this is an experimental build that may be reverted to the old system, and 
 - App profiles and automatic per-app voice switching
 - Features and gestures guide button
 - Full voice editor for contacts and app profiles: engine, voice, speed, pitch and volume with preview
-- 32-bit device support: ship armeabi-v7a alongside arm64-v8a (system engine, OCR and all features work; embedded Vocalizer remain 64-bit only)
+- 32-bit device support: ship armeabi-v7a alongside arm64-v8a (embedded Vocalizer, system engine, OCR, and all features work across both 32-bit and 64-bit)
 </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
