@@ -31,7 +31,8 @@ $ErrorActionPreference = 'Stop'
 # جذر المستودع = أعلى مجلد السكربت.
 $repoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $gradleFile = Join-Path $repoRoot 'app\build.gradle.kts'
-$apkFile = Join-Path $repoRoot 'app\build\outputs\apk\release\nateq.apk'
+$apkDir = Join-Path $repoRoot 'app\build\outputs\apk\release'
+$apkFile = Join-Path $apkDir 'nateq.apk'
 
 function Invoke-Git {
     param([Parameter(Mandatory = $true)][string[]]$GitArgs)
@@ -414,11 +415,16 @@ try {
 # **بند 5.3:** سطر SHA-256 للـ APK يُلحق بملاحظات الإصدار — يُحسب من
 # القرص مباشرةً بمجرد وجود الملف (بلا نسخ مؤقتة) ويتيح التحققَ من سلامة
 # المرفق قبل التثبيت.
-$sha256Line = (
-    Get-FileHash -LiteralPath $apkFile -Algorithm SHA256
-).Hash.ToLowerInvariant()
-$releaseNotes = $releaseNotes + "`r`n`r`n### المجموع الاختباري SHA-256`r`n" +
-    "``$sha256Line``  nateq.apk"
+$targetApkFiles = @(Get-ChildItem -Path $apkDir -Filter '*.apk' | Select-Object -ExpandProperty FullName)
+if ($targetApkFiles.Count -eq 0) {
+    throw "لم يُعثر على أي ملف APK ناتج في: $apkDir"
+}
+$releaseNotes = $releaseNotes + "`r`n`r`n### المجموع الاختباري SHA-256`r`n"
+foreach ($f in $targetApkFiles) {
+    $sha = (Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash.ToLowerInvariant()
+    $leaf = Split-Path -Leaf $f
+    $releaseNotes = $releaseNotes + "``$sha``  $leaf`r`n"
+}
 
 # 3) التصريح بملف الترقيم ثم الالتزام به فقط — حتى لا تنجرف أي تغييرات أخرى
 # مرحّلة أو غير مرحّلة في commit الإصدار. إن كان الترقيم مطبّقاً مسبقاً
@@ -455,10 +461,12 @@ if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
     exit 0
 }
 Write-Host "=> إنشاء Release $targetTag على GitHub..."
-$ghOut = & gh release create $targetTag $apkFile `
-    --repo 'aymankhattab41/Nateq' `
-    --title "Lord TTS $targetVersion" `
-    --notes $releaseNotes 2>&1 | ForEach-Object { "$_" }
+$ghArgs = @('release', 'create', $targetTag) + $targetApkFiles + @(
+    '--repo', 'aymankhattab41/Nateq',
+    '--title', "Lord TTS $targetVersion",
+    '--notes', $releaseNotes
+)
+$ghOut = & gh @ghArgs 2>&1 | ForEach-Object { "$_" }
 if ($LASTEXITCODE -ne 0) {
     Write-Warning "فشل gh release create: $(($ghOut | Out-String).Trim())"
     Write-Warning "أعده لاحقاً بـ: gh release create $targetTag $apkFile"

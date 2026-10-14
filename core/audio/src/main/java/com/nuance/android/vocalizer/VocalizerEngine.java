@@ -40,10 +40,16 @@ public class VocalizerEngine {
     static {
         try {
             System.loadLibrary("NuanceVocalizer");
-            Log.i(TAG, "libNuanceVocalizer.so loaded successfully");
+            String abis =
+                java.util.Arrays.toString(android.os.Build.SUPPORTED_ABIS);
+            boolean is64 = android.os.Process.is64Bit();
+            Log.i(TAG, "libNuanceVocalizer.so loaded; is64Bit=" + is64 +
+                ", supportedABIs=" + abis);
         } catch (UnsatisfiedLinkError e) {
+            String abis =
+                java.util.Arrays.toString(android.os.Build.SUPPORTED_ABIS);
             Log.e(TAG, "Failed to load libNuanceVocalizer.so: " +
-                e.getMessage());
+                e.getMessage() + ", supportedABIs=" + abis);
         }
     }
 
@@ -124,19 +130,52 @@ public class VocalizerEngine {
      *
      * @param pipelineHeaders نصّ الترويسات المجمّع.
      */
+    /**
+     * تسجيل إحصائيات الذاكرة ومراقبة مساحة العنونة على 32-بت.
+     */
+    public void logMemoryStats(String stage) {
+        try {
+            VocalizerStatusInfo stat = getStatInfo();
+            Runtime rt = Runtime.getRuntime();
+            long freeMb = rt.freeMemory() / (1024 * 1024);
+            long totalMb = rt.totalMemory() / (1024 * 1024);
+            boolean is64 = android.os.Process.is64Bit();
+            if (stat != null) {
+                Log.i(TAG, "[MemStat:" + stage + "] 64bit=" + is64 +
+                    " heapBlocks=" + stat.mHeapBlocks +
+                    ", assetHandles=" + stat.mAssetFileHandles +
+                    ", sysHandles=" + stat.mSystemFileHandles +
+                    ", jvmFree=" + freeMb + "MB/" + totalMb + "MB");
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Could not read stat info: " + t.getMessage());
+        }
+    }
+
     public synchronized boolean initialize(String pipelineHeaders) {
         this.mPipelineHeaders = pipelineHeaders == null
             ? "" : pipelineHeaders;
         this.mInitError = null;
         this.mLastError = null;
         try {
+            String abis =
+                java.util.Arrays.toString(android.os.Build.SUPPORTED_ABIS);
+            Log.i(TAG, "initializeNative starting; 64bit=" +
+                android.os.Process.is64Bit() + ", abis=" + abis);
             mIsInitialized =
                 initializeNative(this.mPipelineHeaders);
             Log.i(TAG, "initializeNative result: " + mIsInitialized);
             if (!mIsInitialized && mLastError == null) {
                 mLastError = "initializeNative returned false";
             }
+            logMemoryStats("after_init");
             return mIsInitialized;
+        } catch (OutOfMemoryError oom) {
+            this.mInitError = oom;
+            this.mLastError = "OOM in initializeNative";
+            Log.e(TAG, "OOM during initializeNative (32-bit limit)", oom);
+            logMemoryStats("OOM_init");
+            return false;
         } catch (Throwable t) {
             this.mInitError = t;
             this.mLastError = t.getClass().getSimpleName() + ": " +
@@ -162,7 +201,15 @@ public class VocalizerEngine {
         if (!mIsInitialized) return new VocalizerVoice[0];
         try {
             VocalizerVoice[] list = getAvailableVoiceListNative();
+            int count = list != null ? list.length : 0;
+            Log.i(TAG, "getVoiceList: count=" + count +
+                ", 64bit=" + android.os.Process.is64Bit());
+            logMemoryStats("getVoiceList");
             return list != null ? list : new VocalizerVoice[0];
+        } catch (OutOfMemoryError oom) {
+            Log.e(TAG, "OOM in getVoiceList on 32-bit/64-bit", oom);
+            logMemoryStats("OOM_getVoiceList");
+            return new VocalizerVoice[0];
         } catch (Throwable t) {
             Log.e(TAG, "Error getAvailableVoiceListNative: " + t.getMessage());
             return new VocalizerVoice[0];
@@ -172,6 +219,8 @@ public class VocalizerEngine {
     public synchronized boolean loadVoice(VocalizerVoice voice) {
         if (!mIsInitialized || voice == null) return false;
         try {
+            Log.i(TAG, "Loading voice: " + voice.getVoiceName() +
+                ", 64bit=" + android.os.Process.is64Bit());
             boolean success = loadVoiceNative(voice);
             if (success) {
                 mCurrentVoice = voice;
@@ -179,8 +228,17 @@ public class VocalizerEngine {
                     voice.getSampleRate(),
                     VocalizerAudioSettings.MONO
                 );
+                logMemoryStats("loadVoice:" + voice.getVoiceName());
+            } else {
+                Log.w(TAG, "loadVoiceNative returned false for " +
+                    voice.getVoiceName());
             }
             return success;
+        } catch (OutOfMemoryError oom) {
+            Log.e(TAG, "OOM loading voice " + voice.getVoiceName() +
+                " (32-bit address space limit)", oom);
+            logMemoryStats("OOM_loadVoice:" + voice.getVoiceName());
+            return false;
         } catch (Throwable t) {
             Log.e(TAG, "Error loadVoiceNative: " + t.getMessage());
             return false;
@@ -209,7 +267,11 @@ public class VocalizerEngine {
     public synchronized void speak(String text) {
         if (!mIsInitialized || text == null || text.isEmpty()) return;
         try {
+            logMemoryStats("before_speak");
             speakNative(text);
+        } catch (OutOfMemoryError oom) {
+            Log.e(TAG, "OOM in speakNative (32-bit address space)", oom);
+            logMemoryStats("OOM_speak");
         } catch (Throwable t) {
             Log.e(TAG, "Error in speakNative: " + t.getMessage());
         }
