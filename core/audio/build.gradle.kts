@@ -34,6 +34,10 @@ android {
         jvmToolchain(21)
     }
 
+    androidResources {
+        noCompress += listOf("xmf", "dat", "hdr")
+    }
+
     // ع٢٩-5: واجهة AIDL إلى المضيف المعزول (:engine_host) — مُعطَّلة
     // افتراضياً منذ AGP 4.1 فلا تُبنى الملفات بلا تفعيل صريح.
     buildFeatures {

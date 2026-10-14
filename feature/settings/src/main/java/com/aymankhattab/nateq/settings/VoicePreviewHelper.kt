@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -230,6 +231,46 @@ internal class VoicePreviewHelper(private val context: Context) {
     ) {
         val mainHandler = Handler(Looper.getMainLooper())
         withContext(Dispatchers.IO) {
+            val audioManager = context.getSystemService(
+                Context.AUDIO_SERVICE
+            ) as? android.media.AudioManager
+            if (audioManager?.mode ==
+                android.media.AudioManager.MODE_IN_CALL
+            ) {
+                mainHandler.post { onFinished() }
+                return@withContext
+            }
+            val focusUsage = if (params.isCallerCategory) {
+                AudioAttributes.USAGE_NOTIFICATION_EVENT
+            } else {
+                AudioAttributes.USAGE_MEDIA
+            }
+            val focusGain =
+                android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+            val focusReq = if (Build.VERSION.SDK_INT >= 26) {
+                android.media.AudioFocusRequest.Builder(focusGain)
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(focusUsage)
+                            .setContentType(
+                                AudioAttributes.CONTENT_TYPE_SPEECH
+                            )
+                            .build()
+                    )
+                    .build()
+            } else {
+                null
+            }
+            if (Build.VERSION.SDK_INT >= 26) {
+                focusReq?.let { audioManager?.requestAudioFocus(it) }
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager?.requestAudioFocus(
+                    null,
+                    android.media.AudioManager.STREAM_MUSIC,
+                    focusGain
+                )
+            }
             var track: AudioTrack? = null
             var totalFramesWritten = 0L
             var bytesPerFrame = 2
@@ -374,6 +415,14 @@ internal class VoicePreviewHelper(private val context: Context) {
                     failureReason(enginePkg, t.message)
                 )
             } finally {
+                if (Build.VERSION.SDK_INT >= 26) {
+                    focusReq?.let {
+                        audioManager?.abandonAudioFocusRequest(it)
+                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    audioManager?.abandonAudioFocus(null)
+                }
                 track?.let { t ->
                     runCatching { t.release() }
                 }
@@ -457,8 +506,18 @@ internal class VoicePreviewHelper(private val context: Context) {
         currentPreviewTts = null
 
         val desiredEngine = params.enginePkg?.takeIf { it.isNotBlank() }
-        if (isEmbeddedEngine(desiredEngine)) {
-            val canon = HostProtocol.normalizeEngineId(desiredEngine!!)
+        val isVocalizerVoice =
+            params.voiceName.startsWith("vocalizer", true) ||
+            params.voiceName.equals("Laila", true) ||
+            params.voiceName.equals("Maged", true) ||
+            params.voiceName.equals("Tariq", true) ||
+            params.voiceName.equals("Samantha", true)
+        if (isEmbeddedEngine(desiredEngine) || isVocalizerVoice) {
+            val canon = if (isEmbeddedEngine(desiredEngine)) {
+                HostProtocol.normalizeEngineId(desiredEngine!!)
+            } else {
+                HostProtocol.ENGINE_VOCALIZER
+            }
             currentEmbeddedJob = scope.launch {
                 playEmbeddedPreview(canon, params, onFinished)
             }

@@ -39,6 +39,8 @@ public class VocalizerEngine {
 
     static {
         try {
+            com.aymankhattab.nateq.core.audio.enginehost.NativeFdsanGuard
+                .INSTANCE.ensureDisabled();
             System.loadLibrary("NuanceVocalizer");
             String abis =
                 java.util.Arrays.toString(android.os.Build.SUPPORTED_ABIS);

@@ -42,4 +42,12 @@ class VocalizerVoiceMatchTest {
         assertFalse(match("Laila Extra", "Laila"))
         assertFalse(match("Lai", "Laila"))
     }
+
+    @Test
+    fun matchesCatalogItemIds() {
+        assertTrue(match("Laila", "vocalizer-ara-sau-laila-compact"))
+        assertTrue(match("Laila", "vocalizer-ara-sau-laila-high"))
+        assertTrue(match("Maged", "vocalizer-ara-sau-maged-compact"))
+        assertFalse(match("Laila", "vocalizer-ara-sau-maged-compact"))
+    }
 }

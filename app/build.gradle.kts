@@ -81,6 +81,10 @@ android {
         jvmToolchain(21)
     }
 
+    androidResources {
+        noCompress += listOf("xmf", "dat", "hdr")
+    }
+
     buildFeatures {
         viewBinding = true
     }
