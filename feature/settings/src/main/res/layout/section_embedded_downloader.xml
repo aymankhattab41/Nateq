@@ -131,16 +131,6 @@
 
             </com.google.android.material.button.MaterialButtonToggleGroup>
 
-            <!-- زر استيراد باقة صوت ZIP -->
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_import_voice_zip"
-                style="?attr/materialButtonTonalStyle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                android:text="@string/embedded_import_zip"
-                app:icon="@drawable/ic_folder_zip"
-                app:iconGravity="textStart" />
 
             <!-- شريط التنقّل الهرمي: اللغة ← الصوت ← الجودة -->
             <LinearLayout

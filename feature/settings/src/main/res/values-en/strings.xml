@@ -749,7 +749,7 @@ Note: this is an experimental build that may be reverted to the old system, and 
     <!-- Embedded engines & voice downloads -->
     <string name="group_embedded_engines_title">Embedded Engines &amp; Voice Downloads</string>
     <string name="section_embedded_downloader_title">Download &amp; Manage Embedded Voices (Vocalizer)</string>
-    <string name="section_embedded_downloader_summary">High quality offline neural and embedded voices working completely without internet with ZIP import support</string>
+    <string name="section_embedded_downloader_summary">High quality offline neural and embedded voices working completely without internet</string>
     <string name="embedded_engine_vocalizer">Vocalizer Ex 2</string>
     <string name="embedded_engine_Vocalizer">Vocalizer TTS</string>
 
@@ -790,19 +790,10 @@ Note: this is an experimental build that may be reverted to the old system, and 
     <string name="storage_move_to_internal">Move to Internal Storage</string>
     <string name="storage_migration_progress">Migrating: %1$d/%2$d</string>
     <string name="storage_migration_done">Moved %1$d files</string>
-    <string name="import_from_folder">Import Voices from Folder</string>
-    <string name="import_folder_picker_title">Select Voice Package Folder</string>
-    <string name="import_success">Imported successfully</string>
-    <string name="import_error">Import failed: %1$s</string>
     <string name="no_voices_installed">No voices installed for this engine</string>
     <string name="voice_size_format">%1$s (%2$s)</string>
     <string name="voice_count_format">Voices installed: %1$d</string>
     <string name="already_migrated">Already migrated or no external content</string>
-    <string name="embedded_import_zip">Import Voice from ZIP</string>
-    <string name="embedded_importing_zip">Importing voice package…</string>
-    <string name="embedded_import_success">Voice (%1$s) for %2$s imported successfully</string>
-    <string name="embedded_import_error">Failed to import ZIP file: %1$s</string>
-    <string name="embedded_Vocalizer_empty_hint">No Vocalizer voices installed currently. You can import a voice package via "Import Voice from ZIP" or by opening a .zip file from any file manager.</string>
     <string name="embedded_download_btn">Download Voice</string>
     <string name="embedded_installed_badge">Installed</string>
     <string name="embedded_delete_btn">Delete</string>
@@ -827,7 +818,7 @@ Note: this is an experimental build that may be reverted to the old system, and 
     <string name="embedded_delete_confirm">Are you sure you want to delete this voice model?</string>
     <string name="embedded_delete_success">Voice deleted successfully</string>
     <string name="embedded_empty_list">No voices available</string>
-    <string name="embedded_header_desc">Fast embedded voices running entirely offline once downloaded or imported.</string>
+    <string name="embedded_header_desc">Fast embedded voices running entirely offline once downloaded.</string>
     <string name="embedded_test_connection">Test Connection</string>
     <string name="embedded_test_connection_title">Server Connection Test</string>
     <string name="embedded_test_connection_failed">Connection Test Failed</string>

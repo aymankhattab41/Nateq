@@ -760,7 +760,7 @@
     <!-- المحركات المدمجة وتنزيل الأصوات -->
     <string name="group_embedded_engines_title">المحركات المدمجة وتنزيل الأصوات</string>
     <string name="section_embedded_downloader_title">تنزيل وإدارة الأصوات المدمجة (Vocalizer)</string>
-    <string name="section_embedded_downloader_summary">أصوات عصبية ومدمجة محلية تعمل بلا إنترنت وبأعلى جودة مع دعم الاستيراد</string>
+    <string name="section_embedded_downloader_summary">أصوات عصبية ومدمجة محلية تعمل بلا إنترنت وبأعلى جودة</string>
     <string name="embedded_engine_vocalizer">Vocalizer Ex 2</string>
     <string name="embedded_engine_Vocalizer">Vocalizer TTS</string>
 
@@ -801,19 +801,10 @@
     <string name="storage_move_to_internal">نقل إلى التخزين الداخلي</string>
     <string name="storage_migration_progress">جاري النقل: %1$d/%2$d</string>
     <string name="storage_migration_done">تم نقل %1$d ملفات</string>
-    <string name="import_from_folder">استيراد أصوات من مجلد</string>
-    <string name="import_folder_picker_title">اختر مجلد باقة الصوت</string>
-    <string name="import_success">تم الاستيراد بنجاح</string>
-    <string name="import_error">فشل الاستيراد: %1$s</string>
     <string name="no_voices_installed">لا توجد أصوات مثبتة لهذا المحرك</string>
     <string name="voice_size_format">%1$s (%2$s)</string>
     <string name="voice_count_format">أصوات مثبتة: %1$d</string>
     <string name="already_migrated">مُنقل مسبقاً أو لا يوجد محتوى خارجي</string>
-    <string name="embedded_import_zip">استيراد صوت من ملف ZIP</string>
-    <string name="embedded_importing_zip">جاري استيراد باقة الصوت…</string>
-    <string name="embedded_import_success">تم استيراد الصوت (%1$s) لمحرك %2$s بنجاح</string>
-    <string name="embedded_import_error">فشل استيراد الملف المضغوط: %1$s</string>
-    <string name="embedded_Vocalizer_empty_hint">لا توجد أصوات Vocalizer مثبتة حالياً. يمكنك استيراد صوت عبر زر «استيراد صوت من ملف ZIP» أو بفتح ملف .zip من أي مدير ملفات.</string>
     <string name="embedded_download_btn">تنزيل الصوت</string>
     <string name="embedded_installed_badge">مُثبَّت</string>
     <string name="embedded_delete_btn">حذف</string>
@@ -838,7 +829,7 @@
     <string name="embedded_delete_confirm">هل أنت متأكد من حذف هذا الصوت من الذاكرة؟</string>
     <string name="embedded_delete_success">تم حذف الصوت بنجاح</string>
     <string name="embedded_empty_list">لا توجد أصوات متاحة</string>
-    <string name="embedded_header_desc">محركات صوتية مدمجة سريعة تعمل دون الحاجة للاتصال بالإنترنت بمجرد تنزيلها أو استيرادها.</string>
+    <string name="embedded_header_desc">محركات صوتية مدمجة سريعة تعمل دون الحاجة للاتصال بالإنترنت بمجرد تنزيلها.</string>
     <string name="embedded_test_connection">اختبار الاتصال</string>
     <string name="embedded_test_connection_title">اختبار الاتصال بالخادم</string>
     <string name="embedded_test_connection_failed">فشل اختبار الاتصال</string>

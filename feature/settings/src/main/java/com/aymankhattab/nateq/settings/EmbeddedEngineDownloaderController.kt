@@ -128,12 +128,6 @@ internal class EmbeddedEngineDownloaderController(
             }
         }
 
-        val btnImport = root.findViewById<MaterialButton>(
-            R.id.btn_import_voice_zip
-        )
-        btnImport?.setOnClickListener {
-            fragment.requestVoiceZipImport()
-        }
 
         renderVoicesList(root)
     }
@@ -1363,11 +1357,6 @@ internal class EmbeddedEngineDownloaderController(
             container.addView(engineView)
         }
 
-        // زر استيراد من مجلد
-        dialogView.findViewById<MaterialButton>(R.id.btn_import_from_folder)
-            .setOnClickListener {
-                fragment.requestVoiceFolderImport()
-            }
 
         MaterialAlertDialogBuilder(ctx)
             .setView(dialogView)
