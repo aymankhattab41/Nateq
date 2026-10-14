@@ -82,6 +82,74 @@ internal class VocalizerHostSession(
             val requested = requestedId.removePrefix("vocalizer_")
             return engine.equals(requested, ignoreCase = true)
         }
+
+        /** الحد الأقصى لطول مقطع النطق لـ Vocalizer (ع٤٢-7). */
+        internal const val VOCALIZER_MAX_CHUNK_CHARS = 300
+
+        /** حدود جمل وفواصل آمنة لتقسيم النص لـ Vocalizer. */
+        internal val VOCALIZER_SENTENCE_BOUNDARIES = charArrayOf(
+            '.', '!', '?', '،', ',', '؛', ';', ':', '؟', '۔', '।', '\n'
+        )
+
+        /**
+         * يقسّم النص الطويل إلى جمل ومقاطع (≤ 300 حرف) عند حدود
+         * الجمل والترقيم والمسافات (ع٤٢-7 بند 3).
+         */
+        internal fun splitIntoVocalizerChunks(
+            text: String,
+            maxChars: Int = VOCALIZER_MAX_CHUNK_CHARS
+        ): List<String> {
+            val trimmed = text.trim()
+            if (trimmed.isEmpty()) return emptyList()
+            if (trimmed.length <= maxChars) return listOf(trimmed)
+
+            val chunks = ArrayList<String>()
+            var rest = trimmed
+            while (rest.length > maxChars) {
+                val cut = findVocalizerChunkCut(rest, maxChars)
+                val chunk = rest.substring(0, cut).trim()
+                if (chunk.isNotEmpty()) {
+                    chunks.add(chunk)
+                }
+                rest = rest.substring(cut).trim()
+            }
+            if (rest.isNotEmpty()) {
+                chunks.add(rest)
+            }
+            return chunks
+        }
+
+        private fun findVocalizerChunkCut(
+            text: String,
+            maxChars: Int
+        ): Int {
+            val limit = minOf(maxChars, text.length)
+            var i = limit - 1
+            while (i >= 0) {
+                if (text[i] in VOCALIZER_SENTENCE_BOUNDARIES) {
+                    return adjustSurrogate(text, i + 1)
+                }
+                i--
+            }
+            i = limit - 1
+            while (i >= 0) {
+                if (text[i].isWhitespace()) {
+                    return adjustSurrogate(text, i + 1)
+                }
+                i--
+            }
+            return adjustSurrogate(text, limit)
+        }
+
+        private fun adjustSurrogate(text: String, cut: Int): Int =
+            if (cut in 1 until text.length &&
+                Character.isHighSurrogate(text[cut - 1]) &&
+                Character.isLowSurrogate(text[cut])
+            ) {
+                cut - 1
+            } else {
+                cut
+            }
     }
 
     private val engineLock = Any()
@@ -97,6 +165,10 @@ internal class VocalizerHostSession(
 
     @Volatile
     private var engine: VocalizerEngine? = null
+
+    /** اسم الصوت المحمَّل حالياً لتفادي إعادة loadVoice في كل مقطع (ع٤٢-7). */
+    @Volatile
+    private var loadedVoiceName: String? = null
 
     @Volatile
     private var stopRequested = false
@@ -282,7 +354,7 @@ internal class VocalizerHostSession(
             stopRequested = false
             return try {
                 engineThread.submit(
-                    SynthesisBudget.requestTimeoutMs(req.text.length),
+                    SynthesisBudget.ABSOLUTE_REQUEST_TIMEOUT_MS,
                     "speak"
                 ) {
                     speakOnEngineThread(eng, req, sink, cancelled)
@@ -311,8 +383,8 @@ internal class VocalizerHostSession(
     }
 
     /**
-     * نطقٌ كامل **على خيط المحرك**: تحميل الصوت ثم إعداداته ثم
-     * `speak` — على الخيط نفسه الذي أنشأ المحرك ويهيّئه.
+     * نطقٌ كامل **على خيط المحرك**: تحميل الصوت (مع كاش) ثم إعداداته ثم
+     * `speak` على مقاطع (≤ 300 حرف) — على الخيط نفسه الذي أنشأ المحرك ويهيّئه.
      */
     private fun speakOnEngineThread(
         eng: VocalizerEngine,
@@ -320,6 +392,11 @@ internal class VocalizerHostSession(
         sink: PcmSink,
         cancelled: AtomicBoolean
     ): HostResult {
+        val chunks = splitIntoVocalizerChunks(req.text)
+        if (chunks.isEmpty()) {
+            return HostProtocol.success()
+        }
+
         val voices: Array<VocalizerVoice> = try {
             eng.voiceList ?: emptyArray()
         } catch (t: Throwable) {
@@ -338,25 +415,29 @@ internal class VocalizerHostSession(
             "VOICE_NOT_FOUND",
             "صوت Vocalizer غير موجود: ${req.voiceId}"
         )
-        if (!eng.loadVoice(matched)) {
-            HostLog.e(
+        val targetVoiceName = matched.voiceName
+        if (loadedVoiceName != targetVoiceName) {
+            if (!eng.loadVoice(matched)) {
+                HostLog.e(
+                    ENGINE_ID,
+                    "loadVoice فشل: name='${matched.voiceName}' " +
+                        "lang='${matched.language}' " +
+                        "requested='${req.voiceId}' " +
+                        "lastError='${eng.lastError}'"
+                )
+                return HostResult.failure(
+                    "LOAD_VOICE_FAILED",
+                    "تعذّر تحميل الصوت المطلوب: ${req.voiceId}"
+                )
+            }
+            loadedVoiceName = targetVoiceName
+            HostLog.i(
                 ENGINE_ID,
-                "loadVoice فشل: name='${matched.voiceName}' " +
-                    "lang='${matched.language}' " +
-                    "requested='${req.voiceId}' " +
-                    "lastError='${eng.lastError}'"
-            )
-            return HostResult.failure(
-                "LOAD_VOICE_FAILED",
-                "تعذّر تحميل الصوت المطلوب: ${req.voiceId}"
+                "حُمّل الصوت: ${matched.voiceName} " +
+                    "lang=${matched.language} " +
+                    "rate=${matched.sampleRate}"
             )
         }
-        HostLog.i(
-            ENGINE_ID,
-            "حُمّل الصوت: ${matched.voiceName} " +
-                "lang=${matched.language} " +
-                "rate=${matched.sampleRate}"
-        )
 
         val rateInt = (req.rate * 100).toInt().coerceIn(20, 400)
         val pitchInt = (req.pitch * 100).toInt().coerceIn(50, 200)
@@ -408,18 +489,16 @@ internal class VocalizerHostSession(
             "speak يبدأ: voice=${matched.voiceName} " +
                 "rateRaw=${matched.sampleRate} " +
                 "out=${outputSampleRateHz(matched.sampleRate)}Hz " +
-                "textLen=${req.text.length}"
+                "textLen=${req.text.length} chunks=${chunks.size}"
         )
         val speakStart = SystemClock.uptimeMillis()
         try {
-            // ع٢٩-10 (3): speak متزامن — أُثبت ذلك من ثنائية
-            // libNuanceVocalizer.so: ردّاها إلى Java لا يتجاوزان
-            // audioSamplesReceived/speechMarksReceived (لا استدعاء
-            // «اكتمال النطق» ولا حقل isSpeaking في StatusInfo)،
-            // فلا يعود speakNative إلا بعد تسليم كل الدفعات
-            // للمستمع؛ ولهذا يليه eng.stop() في finally عبثاً
-            // آمناً لا يقطع صوتاً.
-            eng.speak(req.text)
+            for (chunk in chunks) {
+                if (cancelled.get() || stopRequested || pipeBroken.get()) {
+                    break
+                }
+                eng.speak(chunk)
+            }
         } finally {
             HostLog.w(
                 ENGINE_ID,
@@ -461,6 +540,7 @@ internal class VocalizerHostSession(
 
     override fun shutdown() {
         synchronized(engineLock) {
+            loadedVoiceName = null
             val eng = engine
             engine = null
             if (eng != null) {

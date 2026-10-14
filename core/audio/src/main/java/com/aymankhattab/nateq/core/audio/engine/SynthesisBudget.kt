@@ -40,6 +40,19 @@ internal object SynthesisBudget {
      */
     private const val PREVIEW_DRAIN_MARGIN_MS = 10_000L
 
+    /** الحد الأدنى لمهلة خمول التقدّم (15 ثانية). */
+    const val IDLE_TIMEOUT_FLOOR_MS = 15_000L
+
+    /** سقفٌ مطلق لحارس التخليق (30 دقيقة) لحماية النظام من التعليق الدائم. */
+    const val ABSOLUTE_REQUEST_TIMEOUT_MS = 30 * 60_000L
+
+    /**
+     * مهلة حارس الخمول: تُلغى المهمة فقط إن لم يصل أي صوت خلال
+     * max(15s, 3 × مدة آخر قطعة).
+     */
+    fun idleTimeoutMs(lastPieceDurationMs: Long = 0L): Long =
+        maxOf(IDLE_TIMEOUT_FLOOR_MS, 3L * lastPieceDurationMs)
+
     /**
      * ميزانية تخليق **نصٍّ واحد** بطول [chars] حرفاً: تُنتظر فيها
      * كتابةُ ملف WAV كاملاً من المحرك.

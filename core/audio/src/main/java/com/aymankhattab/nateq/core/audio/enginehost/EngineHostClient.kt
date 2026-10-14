@@ -18,6 +18,8 @@ import java.io.FileInputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -177,8 +179,6 @@ object EngineHostClient {
         if (text.isEmpty()) {
             return HostResult.failure("EMPTY_TEXT", "نصّ فارغ")
         }
-        val deadlineAt = SystemClock.uptimeMillis() +
-            SynthesisBudget.requestTimeoutMs(text.length)
         val call = callHost(context, id) { svc ->
             val (readFd, writeFd) = ParcelFileDescriptor.createPipe()
             val raw = try {
@@ -208,7 +208,7 @@ object EngineHostClient {
             try {
                 val read = readFrames(
                     readFd,
-                    deadlineAt,
+                    id,
                     onFormatInfo,
                     onAudioChunk
                 )
@@ -379,11 +379,16 @@ object EngineHostClient {
      */
     private suspend fun readFrames(
         pfd: ParcelFileDescriptor,
-        deadlineAt: Long,
+        engineId: String,
         onFormatInfo: (Int, Int) -> Unit,
         onAudioChunk: (ByteArray, Int) -> Unit
     ): HostResult {
         val captured = AtomicReference<HostResult?>(null)
+        val lastProgressAt = AtomicLong(SystemClock.uptimeMillis())
+        val lastPieceDurationMs = AtomicLong(0L)
+        val sampleRateRef = AtomicInteger(22050)
+        val channelsRef = AtomicInteger(1)
+
         val reader = Thread({
             try {
                 DataInputStream(
@@ -393,17 +398,32 @@ object EngineHostClient {
                         val frame = HostProtocol.readFrame(input)
                             ?: break
                         when (frame) {
-                            is HostProtocol.HostFrame.Format ->
+                            is HostProtocol.HostFrame.Format -> {
+                                lastProgressAt.set(SystemClock.uptimeMillis())
+                                sampleRateRef.set(frame.sampleRate)
+                                channelsRef.set(frame.channels)
                                 onFormatInfo(
-                                     frame.sampleRate,
-                                     frame.channels
+                                    frame.sampleRate,
+                                    frame.channels
                                 )
-                            is HostProtocol.HostFrame.Pcm ->
+                            }
+                            is HostProtocol.HostFrame.Pcm -> {
+                                val sr = sampleRateRef.get()
+                                val ch = channelsRef.get()
+                                if (sr > 0 && frame.bytes.isNotEmpty()) {
+                                    val safeCh = maxOf(1, ch).toLong()
+                                    val dur = (frame.bytes.size.toLong() *
+                                        1000L) / (sr.toLong() * 2L * safeCh)
+                                    lastPieceDurationMs.set(dur)
+                                }
+                                lastProgressAt.set(SystemClock.uptimeMillis())
                                 onAudioChunk(
                                     frame.bytes,
                                     frame.bytes.size
                                 )
+                            }
                             is HostProtocol.HostFrame.End -> {
+                                lastProgressAt.set(SystemClock.uptimeMillis())
                                 captured.set(frame.toResult())
                                 break
                             }
@@ -432,21 +452,45 @@ object EngineHostClient {
         reader.isDaemon = true
         reader.start()
 
-        val budget = (deadlineAt - SystemClock.uptimeMillis())
-            .coerceAtLeast(0L)
-        val finished = withTimeoutOrNull(budget) {
-            while (reader.isAlive) delay(POLL_INTERVAL_MS)
-            true
-        } ?: false
-        if (finished) {
-            return captured.get() ?: HostResult.failure(
-                "HOST_EOF",
-                "انتهى الأنبوب قبل أن يسجّل القارئ نتيجة"
+        val startAt = SystemClock.uptimeMillis()
+        var timedOut = false
+        while (reader.isAlive) {
+            delay(POLL_INTERVAL_MS)
+            val now = SystemClock.uptimeMillis()
+            val idleElapsed = now - lastProgressAt.get()
+            val currentIdleLimit = SynthesisBudget.idleTimeoutMs(
+                lastPieceDurationMs.get()
+            )
+            if (idleElapsed > currentIdleLimit) {
+                HostLog.w(
+                    engineId,
+                    "خمول في استلام صوت المضيف: ${idleElapsed}ms > " +
+                        "${currentIdleLimit}ms"
+                )
+                timedOut = true
+                runCatching { pfd.close() }
+                break
+            }
+            val totalElapsed = now - startAt
+            if (totalElapsed > SynthesisBudget.ABSOLUTE_REQUEST_TIMEOUT_MS) {
+                HostLog.w(
+                    engineId,
+                    "تجاوز السقف المطلق للتخليق: ${totalElapsed}ms"
+                )
+                timedOut = true
+                runCatching { pfd.close() }
+                break
+            }
+        }
+        if (timedOut) {
+            return HostResult.failure(
+                "REQUEST_TIMEOUT",
+                "انتهت مهلة قراءة صوت المضيف (غياب التقدّم)"
             )
         }
-        return HostResult.failure(
-            "REQUEST_TIMEOUT",
-            "انتهت مهلة قراءة صوت المضيف"
+        return captured.get() ?: HostResult.failure(
+            "HOST_EOF",
+            "انتهى الأنبوب قبل أن يسجّل القارئ نتيجة"
         )
     }
 
