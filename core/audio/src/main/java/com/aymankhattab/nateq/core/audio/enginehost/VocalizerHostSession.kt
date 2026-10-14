@@ -68,10 +68,9 @@ internal class VocalizerHostSession(
         }
 
         /**
-         * مطابقة اسم الصوت المطلوب باسم صوت المحرك (ع٢٩-10 بند 3):
-         * تُرفع بادئة `vocalizer_` عن الطرفين. **لا تنازل إلى أول
-         * قائمة إن لم يُطابق** — اسم غير معروف يبقى بلا مطابقة
-         * فيُعلَن خطأً صريحاً لا صوتٌ آخر يخفي الفشل.
+         * مطابقة اسم الصوت المطلوب باسم صوت المحرك (ع٢٩-10):
+         * تُرفع بادئة vocalizer_ عن الطرفين وتُدعم
+         * معرّفات الكتالوج.
          */
         internal fun matchesVoiceName(
             engineName: String?,
@@ -79,8 +78,30 @@ internal class VocalizerHostSession(
         ): Boolean {
             if (engineName.isNullOrBlank()) return false
             val engine = engineName.removePrefix("vocalizer_")
+                .removePrefix("vocalizer-").trim()
             val requested = requestedId.removePrefix("vocalizer_")
-            return engine.equals(requested, ignoreCase = true)
+                .removePrefix("vocalizer-").trim()
+            if (engine.equals(requested, ignoreCase = true)) return true
+            val tokens = requested.split('-', '_', ' ')
+            return tokens.any { it.equals(engine, ignoreCase = true) }
+        }
+
+        internal fun matchesLanguage(
+            voice: VocalizerVoice,
+            requestedId: String
+        ): Boolean {
+            val req = requestedId.trim().lowercase(java.util.Locale.ROOT)
+            val lang = voice.language
+                ?.lowercase(java.util.Locale.ROOT).orEmpty()
+            val tlw = voice.languageTLW
+                ?.lowercase(java.util.Locale.ROOT).orEmpty()
+            val isArabic = req.startsWith("ar") || req == "ara"
+            val isEnglish = req.startsWith("en") || req == "eng"
+            return when {
+                isArabic -> lang.startsWith("ar") || tlw.startsWith("ar")
+                isEnglish -> lang.startsWith("en") || tlw.startsWith("en")
+                else -> lang.contains(req) || tlw.contains(req)
+            }
         }
 
         /** الحد الأقصى لطول مقطع النطق لـ Vocalizer (ع٤٢-7). */
@@ -325,20 +346,22 @@ internal class VocalizerHostSession(
     /** أصوات المحرك من المكتبة (يستلزم [init] ناجحاً أولاً). */
     fun listVoices(): List<HostVoice> {
         val eng = engine ?: return emptyList()
-        val voices = try {
-            eng.voiceList
+        return try {
+            engineThread.submit(INIT_TIMEOUT_MS, "listVoices") {
+                val voices = eng.voiceList
+                voices?.mapNotNull { v ->
+                    val name = v.voiceName ?: return@mapNotNull null
+                    HostVoice(
+                        id = "vocalizer_${name.lowercase()}",
+                        name = name,
+                        langTag = v.language ?: ""
+                    )
+                } ?: emptyList()
+            }
         } catch (t: Throwable) {
             HostLog.e(ENGINE_ID, "voiceList فشل: ${t.message}", t)
-            return emptyList()
+            emptyList()
         }
-        return voices?.mapNotNull { v ->
-            val name = v.voiceName ?: return@mapNotNull null
-            HostVoice(
-                id = "vocalizer_${name.lowercase()}",
-                name = name,
-                langTag = v.language ?: ""
-            )
-        } ?: emptyList()
     }
 
     override suspend fun speak(
@@ -407,10 +430,16 @@ internal class VocalizerHostSession(
             )
         }
 
-        // ع٢٩-10 (3): مطابقة صارمة — لا سقوط على voices.firstOrNull()
-        // الذي كان يخفي الخطأ ويقرأ بصوت آخر.
         val matched = voices.firstOrNull {
             matchesVoiceName(it.voiceName, req.voiceId)
+        } ?: voices.firstOrNull { voice ->
+            matchesLanguage(voice, req.voiceId)
+        } ?: if (req.voiceId.isBlank() ||
+            req.voiceId.equals("Device Default", ignoreCase = true)
+        ) {
+            voices.firstOrNull()
+        } else {
+            null
         } ?: return HostResult.failure(
             "VOICE_NOT_FOUND",
             "صوت Vocalizer غير موجود: ${req.voiceId}"

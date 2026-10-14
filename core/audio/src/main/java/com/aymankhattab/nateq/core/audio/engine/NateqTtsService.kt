@@ -26,6 +26,7 @@ import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.core.data.EffectiveVoice
 import com.aymankhattab.nateq.core.data.SettingsRepository
@@ -35,6 +36,7 @@ import com.aymankhattab.nateq.engine.PronunciationDictionary
 import com.aymankhattab.nateq.engine.TextProcessor
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.LocaleUtils
+import com.aymankhattab.nateq.util.VoiceIdContract
 import dagger.hilt.android.AndroidEntryPoint
 
 import java.util.Locale
@@ -538,8 +540,15 @@ class NateqTtsService : TextToSpeechService() {
         @Suppress("UNUSED_PARAMETER") country: String?,
         @Suppress("UNUSED_PARAMETER") variant: String?
     ): String? {
-        val normLang = normalizeLanguageCode(lang)
-        val name = catalog.defaultVoiceNameForLanguage(normLang)
+        val normLang = normalizeLanguageCode(lang).ifBlank {
+            LanguageCode.AR.tag
+        }
+        val preferred = runCatching {
+            settings.getPreferredVoiceId(normLang)
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+        val name = preferred
+            ?: catalog.defaultVoiceNameForLanguage(normLang)
+            ?: VoiceIdContract.createId(normLang)
         Log.d(TAG,
             "onGetDefaultVoiceNameFor() lang=$lang" +
             " -> norm=$normLang -> $name")
@@ -661,6 +670,7 @@ class NateqTtsService : TextToSpeechService() {
         ) ?: 0
 
         val rawText = request.charSequenceText?.toString().orEmpty()
+        val reqVoiceName = request.voiceName?.takeIf { it.isNotBlank() }
         val startUptime = SystemClock.uptimeMillis()
         val lastProgressAt = AtomicLong(startUptime)
         val lastPieceDurationMs = AtomicLong(0L)
@@ -831,7 +841,7 @@ class NateqTtsService : TextToSpeechService() {
                     synthesizeSingle(
                         segments[0].text, segments[0].languageTag,
                         monitoredCallback, readerRate, effectCategory,
-                        segments[0].role, activeAppVoice
+                        segments[0].role, activeAppVoice, reqVoiceName
                     )
                 } else {
                     // نص مختلط الكتابات: نطق كل مقطع بلغته/محركه ثم مزج الصوت
@@ -863,7 +873,7 @@ class NateqTtsService : TextToSpeechService() {
                     )
                     synthesizeMixed(
                         segments, readerRate, monitoredCallback,
-                        effectCategory, activeAppVoice
+                        effectCategory, activeAppVoice, reqVoiceName
                     )
                 }
             } catch (e: CancellationException) {
@@ -1015,7 +1025,8 @@ class NateqTtsService : TextToSpeechService() {
         readerRate: Float,
         effectCategory: String = "",
         role: SpeechRole = SpeechRole.TEXT,
-        appVoice: EffectiveVoice? = null
+        appVoice: EffectiveVoice? = null,
+        reqVoiceName: String? = null
     ) {
         val (voice, foundProvider) = resolveVoiceWithFallback(languageTag)
         val provider = foundProvider ?: run {
@@ -1132,7 +1143,10 @@ class NateqTtsService : TextToSpeechService() {
         ) {
             appVoice.voiceId
         } else {
-            appVoice?.voiceId ?: routed.voiceName
+            appVoice?.voiceId
+                ?: routed.voiceName
+                ?: reqVoiceName
+                ?: settings.getPreferredVoiceId(languageTag)
         }
 
         // Process text through TextProcessor
@@ -1172,6 +1186,25 @@ class NateqTtsService : TextToSpeechService() {
                 catalog.findProvider(finalEngine) ?: provider
             } else {
                 provider
+            }
+            val isVoc = finalEngine ==
+                VocalizerEmbeddedVoiceProvider.PROVIDER_ID ||
+                targetProvider.providerId ==
+                VocalizerEmbeddedVoiceProvider.PROVIDER_ID
+            val isGeneric = finalVoiceName.isNullOrBlank() ||
+                finalVoiceName.equals("Device Default", true) ||
+                finalVoiceName.equals("ar-EG", true) ||
+                finalVoiceName.equals("en-US", true) ||
+                finalVoiceName.equals("ar", true) ||
+                finalVoiceName.equals("en", true)
+            val resolvedVoiceName = if (isVoc && isGeneric) {
+                if (LanguageCode.isArabic(languageTag)) {
+                    "Laila"
+                } else {
+                    "Samantha"
+                }
+            } else {
+                finalVoiceName
             }
             targetProvider.synthesize(
                 speechText, voice, finalRate, finalPitch, finalVolume,
@@ -1216,7 +1249,7 @@ class NateqTtsService : TextToSpeechService() {
                         )
                         offset += bytesToWrite
                     }
-                }, finalEngine, finalLocale, finalVoiceName,
+                }, finalEngine, finalLocale, resolvedVoiceName,
                 effectCategory
             )
         } catch (e: CancellationException) {
@@ -1294,7 +1327,8 @@ class NateqTtsService : TextToSpeechService() {
     internal suspend fun resolveSegmentParams(
         segment: Segment,
         readerRate: Float,
-        appVoice: EffectiveVoice? = null
+        appVoice: EffectiveVoice? = null,
+        reqVoiceName: String? = null
     ): SegmentParams? {
         val segTag = segment.languageTag
         val segRate = requestHandler.getSpeechRate(segTag)
@@ -1354,7 +1388,10 @@ class NateqTtsService : TextToSpeechService() {
         ) {
             appVoice.voiceId
         } else {
-            appVoice?.voiceId ?: routed.voiceName
+            appVoice?.voiceId
+                ?: routed.voiceName
+                ?: reqVoiceName
+                ?: settings.getPreferredVoiceId(segTag)
         }
         // **بند التشكيل الشرطي:** تُمرَّر حزمةُ المحرك المحسومة إلى
         // [TextProcessor.process] — المحركات التي تفهم التشكيل العربي
@@ -1383,6 +1420,25 @@ class NateqTtsService : TextToSpeechService() {
             " يُسقط وحده: ${segment.text}")
             return null
         }
+        val isVoc = targetEngine ==
+            VocalizerEmbeddedVoiceProvider.PROVIDER_ID ||
+            provider.providerId ==
+            VocalizerEmbeddedVoiceProvider.PROVIDER_ID
+        val isGeneric = targetVoiceName.isNullOrBlank() ||
+            targetVoiceName.equals("Device Default", true) ||
+            targetVoiceName.equals("ar-EG", true) ||
+            targetVoiceName.equals("en-US", true) ||
+            targetVoiceName.equals("ar", true) ||
+            targetVoiceName.equals("en", true)
+        val resolvedVoiceName = if (isVoc && isGeneric) {
+            if (LanguageCode.isArabic(segTag)) {
+                "Laila"
+            } else {
+                "Samantha"
+            }
+        } else {
+            targetVoiceName
+        }
         return SegmentParams(
             speechText, voice, provider, finalRate, finalPitch,
             finalVolume, targetEngine,
@@ -1392,7 +1448,7 @@ class NateqTtsService : TextToSpeechService() {
             } else {
                 Locale.forLanguageTag(segTag)
             },
-            targetVoiceName
+            resolvedVoiceName
         )
     }
 
@@ -1410,10 +1466,12 @@ class NateqTtsService : TextToSpeechService() {
         segment: Segment,
         readerRate: Float,
         effectCategory: String = "",
-        appVoice: EffectiveVoice? = null
+        appVoice: EffectiveVoice? = null,
+        reqVoiceName: String? = null
     ): SegmentAudio? {
-        val params = resolveSegmentParams(segment, readerRate, appVoice)
-            ?: return null
+        val params = resolveSegmentParams(
+            segment, readerRate, appVoice, reqVoiceName
+        ) ?: return null
         val chunks = ArrayList<ByteArray>()
         var nativeRate = 0
         var nativeChannels = 1
@@ -1594,7 +1652,8 @@ class NateqTtsService : TextToSpeechService() {
         readerRate: Float,
         callback: SynthesisCallback,
         effectCategory: String = "",
-        appVoice: EffectiveVoice? = null
+        appVoice: EffectiveVoice? = null,
+        reqVoiceName: String? = null
     ) {
         var started = false
         // عدّادُ الأجزاء التي لم تُنطق: صفرٌ في المسار السليم، وأيُّ
@@ -1604,7 +1663,7 @@ class NateqTtsService : TextToSpeechService() {
         val crossfader = ChunkCrossfader(CROSSFADE_FRAMES)
         for (segment in segments) {
             val params = resolveSegmentParams(
-                segment, readerRate, appVoice
+                segment, readerRate, appVoice, reqVoiceName
             )
             if (params == null) {
                 // **حارس عدم الإسقاط الصامت:** مقطعٌ بلا صوتٍ ولا
@@ -1693,13 +1752,15 @@ class NateqTtsService : TextToSpeechService() {
         readerRate: Float,
         callback: SynthesisCallback,
         effectCategory: String = "",
-        appVoice: EffectiveVoice? = null
+        appVoice: EffectiveVoice? = null,
+        reqVoiceName: String? = null
     ) {
         val audios = coroutineScope {
             segments.map { segment ->
                 async(AppDispatchers.io) {
                     synthesizeSegmentRaw(
-                        segment, readerRate, effectCategory, appVoice
+                        segment, readerRate, effectCategory,
+                        appVoice, reqVoiceName
                     )
                 }
             }.map { it.await() }
@@ -1758,16 +1819,19 @@ class NateqTtsService : TextToSpeechService() {
         readerRate: Float,
         callback: SynthesisCallback,
         effectCategory: String = "",
-        appVoice: EffectiveVoice? = null
+        appVoice: EffectiveVoice? = null,
+        reqVoiceName: String? = null
     ) {
         val totalChars = segments.sumOf { it.text.length }
         if (segments.size > 1 && totalChars <= PARALLEL_MAX_CHARS) {
             synthesizeParallel(
-                segments, readerRate, callback, effectCategory, appVoice
+                segments, readerRate, callback, effectCategory,
+                appVoice, reqVoiceName
             )
         } else {
             synthesizeMixedSequential(
-                segments, readerRate, callback, effectCategory, appVoice
+                segments, readerRate, callback, effectCategory,
+                appVoice, reqVoiceName
             )
         }
     }
@@ -2019,20 +2083,37 @@ if (rate == 1.0f && pitch == 1.0f && volume == 1.0f
 }
 
 /**
- * مغلّف لمراقب تقدّم دفق الصوت في [SynthesisCallback] (ع٤٢-7):
- * يرصد كل استدعاء لـ start و audioAvailable و done لتصفير عدّاد خمول
- * التقدّم في حارس التخليق المتكيّف، ويحسب مدة آخر قطعة صوت مستلمة.
+ * مغلّف آمن لمراقب تقدّم دفق الصوت في
+ * [SynthesisCallback]:
+ * 1) يضمن استدعاء start مرة واحدة وقبل
+ *    أول دفعة صوت.
+ * 2) يقسّم دفعات audioAvailable بحيث لا
+ *    تتجاوز maxBufferSize أبداً.
+ * 3) يضمن استدعاء done أو error مرة
+ *    واحدة حتمية.
+ * 4) يرصد التقدّم لتصفير عدّاد خمول
+ *    حارس التخليق المتكيّف.
  */
 internal class MonitoredSynthesisCallback(
     private val delegate: SynthesisCallback,
     private val onProgress: (bytesWritten: Int) -> Unit
 ) : SynthesisCallback by delegate {
 
+    private val started = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val finished = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    val hasStarted: Boolean
+        get() = started.get()
+
     override fun start(
         sampleRateInHz: Int,
         audioFormat: Int,
         channelCount: Int
     ): Int {
+        if (finished.get()) return TextToSpeech.ERROR
+        if (!started.compareAndSet(false, true)) {
+            return TextToSpeech.SUCCESS
+        }
         onProgress(0)
         return delegate.start(sampleRateInHz, audioFormat, channelCount)
     }
@@ -2042,15 +2123,53 @@ internal class MonitoredSynthesisCallback(
         offset: Int,
         length: Int
     ): Int {
-        if (length > 0) {
-            onProgress(length)
+        if (finished.get() || buffer == null || length <= 0) {
+            return TextToSpeech.SUCCESS
         }
-        return delegate.audioAvailable(buffer, offset, length)
+        if (!started.get()) {
+            start(22050, AudioFormat.ENCODING_PCM_16BIT, 1)
+        }
+        onProgress(length)
+        val maxChunk = delegate.maxBufferSize
+        var currentOffset = offset
+        var remaining = length
+        var result = TextToSpeech.SUCCESS
+        while (remaining > 0) {
+            val toWrite = minOf(maxChunk, remaining)
+            result = delegate.audioAvailable(buffer, currentOffset, toWrite)
+            if (result != TextToSpeech.SUCCESS) break
+            currentOffset += toWrite
+            remaining -= toWrite
+        }
+        return result
     }
 
     override fun done(): Int {
+        if (!started.get()) {
+            error()
+            return TextToSpeech.ERROR
+        }
+        if (!finished.compareAndSet(false, true)) {
+            return TextToSpeech.SUCCESS
+        }
         onProgress(0)
         return delegate.done()
+    }
+
+    override fun error() {
+        if (!finished.compareAndSet(false, true)) {
+            return
+        }
+        onProgress(0)
+        delegate.error()
+    }
+
+    override fun error(errorCode: Int) {
+        if (!finished.compareAndSet(false, true)) {
+            return
+        }
+        onProgress(0)
+        delegate.error(errorCode)
     }
 }
 

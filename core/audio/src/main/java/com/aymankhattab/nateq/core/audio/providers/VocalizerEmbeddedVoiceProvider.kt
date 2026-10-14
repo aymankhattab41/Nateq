@@ -211,7 +211,22 @@ class VocalizerEmbeddedVoiceProvider(
                 Log.e(TAG, "Cannot synthesize: host not initialized")
                 return@withContext
             }
-            val targetVoiceName = desiredVoiceName ?: voice.displayName
+            val rawName = (desiredVoiceName ?: voice.displayName)
+                .removePrefix("vocalizer_")
+                .trim()
+            val targetVoiceName = when {
+                rawName.isNotBlank() &&
+                    !rawName.equals("Device Default", ignoreCase = true) &&
+                    !rawName.equals("ar-EG", ignoreCase = true) &&
+                    !rawName.equals("en-US", ignoreCase = true) &&
+                    !rawName.equals("ar", ignoreCase = true) &&
+                    !rawName.equals("en", ignoreCase = true) ->
+                    rawName
+                voiceLocale?.language.equals("en", ignoreCase = true) ->
+                    "Samantha"
+                else ->
+                    "Laila"
+            }
             val isEvent = LoudnessStage.isEventCategory(category)
             val chunkConsumer: (ByteArray, Int) -> Unit = if (isEvent) {
                 val gainDb = runCatching {
