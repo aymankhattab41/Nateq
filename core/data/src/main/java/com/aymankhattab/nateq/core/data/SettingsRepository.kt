@@ -1050,6 +1050,35 @@ class SettingsRepository(context: Context) :
         }
     }
 
+    override fun getActiveUpdateDownloadId(): Long =
+        prefs.getLong("active_update_download_id", -1L)
+
+    override fun getActiveUpdateApkUrl(): String? =
+        prefs.getString("active_update_apk_url", null)
+
+    override fun getActiveUpdateExpectedSha256(): String? =
+        prefs.getString("active_update_expected_sha256", null)
+
+    override fun setActiveUpdateDownload(
+        downloadId: Long,
+        apkUrl: String,
+        expectedSha256: String?
+    ) {
+        prefs.edit()
+            .putLong("active_update_download_id", downloadId)
+            .putString("active_update_apk_url", apkUrl)
+            .putString("active_update_expected_sha256", expectedSha256)
+            .apply()
+    }
+
+    override fun clearActiveUpdateDownload() {
+        prefs.edit()
+            .remove("active_update_download_id")
+            .remove("active_update_apk_url")
+            .remove("active_update_expected_sha256")
+            .apply()
+    }
+
     /** يفتح أو ينشئ التخزين المشفر للـ PAT. */
     @Volatile
     private var patEncryptedPrefs: SharedPreferences? = null

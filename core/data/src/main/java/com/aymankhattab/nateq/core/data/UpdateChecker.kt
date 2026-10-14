@@ -26,7 +26,7 @@ object UpdateChecker {
     private const val REPO = "aymankhattab41/Nateq"
     private const val RELEASES_API =
         "https://api.github.com/repos/$REPO/releases/latest"
-    private const val APK_NAME = "nateq.apk"
+    const val APK_NAME = "nateq.apk"
 
     /** مدة بقاء نتيجة الفحص المخزَّنة قبل إعادة الاتصال (6 ساعات). */
     internal const val CACHE_TTL_MS = 6L * 60 * 60 * 1000
@@ -287,10 +287,85 @@ object UpdateChecker {
     fun downloadedApk(context: Context): File =
         File(downloadsDir(context), APK_NAME)
 
+    data class DownloadProgress(
+        val downloadedBytes: Long,
+        val totalBytes: Long,
+        val percent: Int,
+        val status: Int,
+        val reason: Int
+    )
+
     sealed class DownloadResult {
         data class Success(val apkFile: File) : DownloadResult()
         object ChecksumMismatch : DownloadResult()
         data class Failed(val status: Int, val reason: Int) : DownloadResult()
+    }
+
+    /**
+     * حساب نسبة التنزيل المئوية بدقة وضمن المجال [0, 100].
+     */
+    fun calculatePercent(downloadedBytes: Long, totalBytes: Long): Int {
+        if (totalBytes <= 0L || downloadedBytes <= 0L) return 0
+        return ((downloadedBytes * 100L) / totalBytes)
+            .toInt()
+            .coerceIn(0, 100)
+    }
+
+    /**
+     * استعلام تقدم التنزيل الحالي من DownloadManager.
+     */
+    fun queryProgress(
+        context: Context,
+        downloadId: Long
+    ): DownloadProgress? {
+        val dm = context.getSystemService(
+            Context.DOWNLOAD_SERVICE
+        ) as? DownloadManager ?: return null
+        val cursor = runCatching {
+            dm.query(DownloadManager.Query().setFilterById(downloadId))
+        }.getOrNull() ?: return null
+
+        return cursor.use { c ->
+            if (c.moveToFirst()) {
+                val sIdx = c.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                val rIdx = c.getColumnIndex(DownloadManager.COLUMN_REASON)
+                val dIdx = c.getColumnIndex(
+                    DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR
+                )
+                val tIdx = c.getColumnIndex(
+                    DownloadManager.COLUMN_TOTAL_SIZE_BYTES
+                )
+                val status = if (sIdx >= 0) c.getInt(sIdx) else -1
+                val reason = if (rIdx >= 0) c.getInt(rIdx) else -1
+                val downloaded = if (dIdx >= 0) c.getLong(dIdx) else 0L
+                val total = if (tIdx >= 0) c.getLong(tIdx) else 0L
+                val percent = calculatePercent(downloaded, total)
+
+                DownloadProgress(
+                    downloadedBytes = downloaded,
+                    totalBytes = total,
+                    percent = percent,
+                    status = status,
+                    reason = reason
+                )
+            } else {
+                null
+            }
+        }
+    }
+
+    /**
+     * إلغاء تنزيل جارٍ وحذف أي ملف جزئي.
+     */
+    fun cancelDownload(context: Context, downloadId: Long) {
+        val dm = context.getSystemService(
+            Context.DOWNLOAD_SERVICE
+        ) as? DownloadManager
+        runCatching { dm?.remove(downloadId) }
+        val targetApk = downloadedApk(context)
+        if (targetApk.exists()) {
+            runCatching { targetApk.delete() }
+        }
     }
 
     /**
@@ -304,7 +379,9 @@ object UpdateChecker {
     fun enqueueDownload(
         context: Context,
         apkUrl: String,
-        allowMetered: Boolean = false
+        allowMetered: Boolean = false,
+        notificationVisibility: Int =
+            DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
     ): Long {
         val manager = context.getSystemService(
             Context.DOWNLOAD_SERVICE
@@ -314,15 +391,8 @@ object UpdateChecker {
             .setAllowedOverMetered(allowMetered)
             .setAllowedOverRoaming(false)
 
-        val hiddenSet = runCatching {
-            request.setNotificationVisibility(
-                DownloadManager.Request.VISIBILITY_HIDDEN
-            )
-        }.isSuccess
-        if (!hiddenSet) {
-            request.setNotificationVisibility(
-                DownloadManager.Request.VISIBILITY_VISIBLE
-            )
+        runCatching {
+            request.setNotificationVisibility(notificationVisibility)
         }
 
         val publicOk = runCatching {
