@@ -58,8 +58,6 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
         }
     }
 
-    private var pendingImportUri: android.net.Uri? = null
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -69,9 +67,6 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
         // ViewCompat.setOnApplyWindowInsetsListener على جذر القائمة
         // القابلة للتمرير.
         enableEdgeToEdge()
-
-        // استخراج ملف صوت وارد من تطبيق خارجي إن وجد
-        extractIncomingVoiceZipUri(intent)
 
         // معالج الإعداد الأولي: يُعرض مرة واحدة قبل استكشاف الواجهة.
         // «تخطّي» يُعلِّم الاكتمال في المخزن؛ لا يُفرض شيء على المستخدم.
@@ -117,36 +112,6 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        extractIncomingVoiceZipUri(intent)
-        deliverPendingImportIfNeeded()
-    }
-
-    private fun extractIncomingVoiceZipUri(intent: Intent?) {
-        val uri = intent?.data ?: if (
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-        ) {
-            intent?.getParcelableExtra(
-                Intent.EXTRA_STREAM,
-                android.net.Uri::class.java
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            intent?.getParcelableExtra(Intent.EXTRA_STREAM)
-        }
-        if (uri != null) {
-            pendingImportUri = uri
-        }
-    }
-
-    private fun deliverPendingImportIfNeeded() {
-        val uri = pendingImportUri ?: return
-        val frag = supportFragmentManager.findFragmentById(
-            R.id.settings_container
-        ) as? VoiceSelectionFragment
-        if (frag != null && frag.isAdded) {
-            frag.handleImportVoiceZip(uri)
-            pendingImportUri = null
-        }
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -166,11 +131,6 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
         lifecycleScope.launch(Dispatchers.IO) {
             EnginePicker.warmupCache(applicationContext)
         }
-
-        // تسليم استيراد الصوت المعلق
-        mainHandler.postDelayed({
-            deliverPendingImportIfNeeded()
-        }, 100L)
 
         // طلب الأذونات عند أول تشغيل بعد اكتمال الإعداد الأولي
         val isFirstRun = runCatching {
