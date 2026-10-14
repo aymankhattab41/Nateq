@@ -436,6 +436,10 @@
             
             <androidx.appcompat.widget.AppCompatCheckBox android:tag="cb_caller_announce_during_call" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/caller_announcement_during_call" android:importantForAccessibility="yes" />
 
+            <com.google.android.material.textfield.TextInputLayout android:tag="til_call_waiting_repeat" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:hint="@string/call_waiting_repeat">
+                <androidx.appcompat.widget.AppCompatSpinner android:tag="spinner_call_waiting_repeat" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:contentDescription="@string/spinner_call_waiting_repeat_content" />
+            </com.google.android.material.textfield.TextInputLayout>
+
             
             <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:hint="@string/caller_announcement_repeat">
                 <androidx.appcompat.widget.AppCompatSpinner android:id="@+id/spinner_caller_repeat" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:contentDescription="@string/spinner_caller_repeat_content" />

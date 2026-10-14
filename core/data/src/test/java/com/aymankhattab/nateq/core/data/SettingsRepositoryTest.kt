@@ -616,6 +616,21 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun callWaitingRepeat_defaultAndClamped() {
+        assertEquals(1, repo.getCallWaitingRepeat())
+        repo.setCallWaitingRepeat(5)
+        assertEquals(5, repo.getCallWaitingRepeat())
+        repo.setCallWaitingRepeat(100)
+        assertEquals(10, repo.getCallWaitingRepeat())
+        repo.setCallWaitingRepeat(0)
+        assertEquals(1, repo.getCallWaitingRepeat())
+        (1..10).forEach { n ->
+            repo.setCallWaitingRepeat(n)
+            assertEquals(n, repo.getCallWaitingRepeat())
+        }
+    }
+
+    @Test
     fun timeInterval_clamped5to60() {
         // بند الأوامر 3: الفاصل 5–60 بخطوة 5 — 5 دقائق قبلها تُقيّد إلى 5
         // (كان الحد الأدنى 15 فيُقيَّد 5 إلى 15).

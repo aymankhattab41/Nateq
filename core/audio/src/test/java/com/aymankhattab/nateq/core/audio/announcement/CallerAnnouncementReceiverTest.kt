@@ -10,6 +10,7 @@ import com.aymankhattab.nateq.core.audio.announcement.CallerAnnouncementReceiver
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LanguageCode
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -1787,5 +1788,177 @@ fun `waiting call announces only once without repeat schedule`() {
         assertFalse(
             RingCallerIdentity.isOutgoingCallPhrase("مكالمة واردة")
         )
+    }
+
+    /**
+     * اختبار ع٤٢-5: حلقة التكرار القائمة على العدد تُنفّذ بالضبط N مرات
+     * لكل N من 1 إلى 10 دون الاعتماد على نافذة زمنية.
+     */
+    @Test
+    fun `countBasedRepeatLoop runs exact count for N from 1 to 10`() =
+        runBlocking {
+            for (n in 1..10) {
+                val iterationsCalled = mutableListOf<Int>()
+                val completed =
+                    CallerAnnouncementReceiver.runCountBasedRepeatLoop(
+                        repeat = n,
+                        intervalMs = 10L,
+                        delayMs = { },
+                        shouldContinue = { true },
+                        speakAndAwait = { iteration ->
+                            iterationsCalled.add(iteration)
+                            true
+                        }
+                    )
+                assertEquals("عدد النطقات المكتملة لـ $n", n, completed)
+                assertEquals(
+                    "تسلسل النطقات لـ $n",
+                    (1..n).toList(),
+                    iterationsCalled
+                )
+            }
+        }
+
+    /**
+     * اختبار ع٤٢-5: نطق أطول من الفاصل لا يسبّب تداخلاً بل يكتمل
+     * بالتتابع حيث يُنتظر اكتمال النطق أولاً ثم يبدأ الفاصل.
+     */
+    @Test
+    fun `speech longer than interval completes with no overlap`() =
+        runBlocking {
+            var speechInProgress = false
+            var overlapDetected = false
+            val events = mutableListOf<String>()
+
+            val completed =
+                CallerAnnouncementReceiver.runCountBasedRepeatLoop(
+                    repeat = 3,
+                    intervalMs = 100L,
+                    delayMs = { ms ->
+                        assertFalse("لا تأخير أثناء النطق", speechInProgress)
+                        events.add("delay_$ms")
+                    },
+                    shouldContinue = { true },
+                    speakAndAwait = { iteration ->
+                        if (speechInProgress) {
+                            overlapDetected = true
+                        }
+                        speechInProgress = true
+                        events.add("speak_start_$iteration")
+                        events.add("speak_end_$iteration")
+                        speechInProgress = false
+                        true
+                    }
+                )
+
+            assertEquals(3, completed)
+            assertFalse("لا تداخل بين النطق والتكرار", overlapDetected)
+            assertEquals(
+                listOf(
+                    "speak_start_1", "speak_end_1", "delay_100",
+                    "speak_start_2", "speak_end_2", "delay_100",
+                    "speak_start_3", "speak_end_3"
+                ),
+                events
+            )
+        }
+
+    /**
+     * اختبار ع٤٢-5: يتوقف التكرار فوراً عند الرد أو انتهاء الرنين.
+     */
+    @Test
+    fun `repetition terminates immediately when call is answered`() =
+        runBlocking {
+            var ringing = true
+            val spoke = mutableListOf<Int>()
+
+            val completed =
+                CallerAnnouncementReceiver.runCountBasedRepeatLoop(
+                    repeat = 5,
+                    intervalMs = 100L,
+                    delayMs = { },
+                    shouldContinue = { ringing },
+                    speakAndAwait = { iteration ->
+                        spoke.add(iteration)
+                        if (iteration == 2) {
+                            ringing = false
+                        }
+                        true
+                    }
+                )
+
+            assertEquals("يتوقف عند الرد بعد التكرار 2", 2, completed)
+            assertEquals(listOf(1, 2), spoke)
+        }
+
+    /**
+     * اختبار ع٤٢-5: سقف الأمان 90 ثانية يوقف التكرار عند تجاوزه.
+     */
+    @Test
+    fun `repetition stops when 90-second safety cap is reached`() =
+        runBlocking {
+            var currentTime = 10_000L
+            val spoke = mutableListOf<Int>()
+
+            val completed =
+                CallerAnnouncementReceiver.runCountBasedRepeatLoop(
+                    repeat = 10,
+                    intervalMs = 5_000L,
+                    safetyCapMs = 90_000L,
+                    currentTimeMs = { currentTime },
+                    delayMs = { ms ->
+                        currentTime += ms
+                    },
+                    shouldContinue = { true },
+                    speakAndAwait = { iteration ->
+                        spoke.add(iteration)
+                        currentTime += 20_000L
+                        true
+                    }
+                )
+
+            assertTrue("توقف التكرار بسقف الأمان 90ث", completed < 10)
+            assertTrue("أنجز نطقات قبل السقف", completed > 0)
+        }
+
+    /**
+     * اختبار ع٤٢-5: النطق الأول يُشعر اكتماله عبر onFirstFinished.
+     */
+    @Test
+    fun `first repetition triggers onFirstFinished callback exactly once`() =
+        runBlocking {
+            var firstFinishedCount = 0
+            val completed =
+                CallerAnnouncementReceiver.runCountBasedRepeatLoop(
+                    repeat = 4,
+                    intervalMs = 10L,
+                    delayMs = { },
+                    shouldContinue = { true },
+                    speakAndAwait = { true },
+                    onFirstFinished = { firstFinishedCount++ }
+                )
+            assertEquals(4, completed)
+            assertEquals(
+                "يُستدعى مرة واحدة بالضبط",
+                1,
+                firstFinishedCount
+            )
+        }
+
+    /**
+     * اختبار ع٤٢-5: مكالمة الانتظار تستعمل عدداً مستقلاً عن المكالمة العادية.
+     */
+    @Test
+    fun `waiting call uses independent repeat count in settings`() {
+        val repo = SettingsRepository(context)
+        repo.setCallerAnnouncementRepeat(7)
+        repo.setCallWaitingRepeat(2)
+
+        assertEquals(7, repo.getCallerAnnouncementRepeat())
+        assertEquals(2, repo.getCallWaitingRepeat())
+
+        repo.setCallWaitingRepeat(4)
+        assertEquals(7, repo.getCallerAnnouncementRepeat())
+        assertEquals(4, repo.getCallWaitingRepeat())
     }
 }
