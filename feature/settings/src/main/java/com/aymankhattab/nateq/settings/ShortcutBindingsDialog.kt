@@ -118,5 +118,6 @@ class ShortcutBindingsDialog(
             R.string.a11y_action_show_quick_menu
         ShortcutAction.EXPAND_READ_MORE ->
             R.string.a11y_action_expand_read_more
+        ShortcutAction.NEXT_ENGINE -> R.string.a11y_action_next_engine
     }
 }

@@ -324,6 +324,17 @@ fun importMerge_overridesDuplicates_andKeepsRest() {
         // بعد التعديل، reloadIfChanged يفحص القرص فوراً
         assertTrue(dict.reloadIfChanged())
     }
+
+    @Test
+    fun invalidation_forcesReloadWhenFileTimestampDidNotChange() {
+        if (!dict.isPersistent()) return
+        dict.addEntry("تفاح", "فاكهة")
+        assertFalse(dict.reloadIfChanged())
+
+        dict.invalidate()
+
+        assertTrue(dict.reloadIfChanged())
+    }
     // ===== حارسُ العطل الحقيقي: «القاموس لا يعمل» في مسار النطق =====
 
     /**

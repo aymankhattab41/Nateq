@@ -18,6 +18,7 @@ enum class ShortcutAction {
     REPEAT_PREVIOUS,
     SPEECH_HISTORY,
     EXPAND_READ_MORE,
+    NEXT_ENGINE,
     NONE;
 
     companion object {

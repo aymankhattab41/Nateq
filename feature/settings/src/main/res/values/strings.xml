@@ -100,6 +100,7 @@
     <string name="a11y_action_repeat_previous">اقرأ ما قبله</string>
     <string name="a11y_action_speech_history">اقرأ السجل</string>
     <string name="a11y_action_expand_read_more">قراءة المزيد</string>
+    <string name="a11y_action_next_engine">المحرك التالي</string>
 <string name="all_announcements_enabled">كل الإعلانات مفعّلة</string>
 <string name="all_announcements_summary">إيقافه يُوقف الإعلانات التلقائية (الوقت، البطارية، الرسائل، الإشعارات، المتصل) بصمت</string>
 <string name="announcement_turned_off">معطّل</string>
@@ -665,6 +666,7 @@
 <string name="changelog_title">آخر التحديثات</string>
 <string name="changelog_text">الإصدار %1$s
 ملاحظة: هذه نسخة تجريبية قد يُتراجَع عنها والعودة إلى النظام القديم، وقد تجدون ميزات كثيرة لا تعمل. وإن كانت الانطباعات سلبية فسنرجع إلى النظام القديم. ننتظر انطباعاتكم على بوت التليجرام، ولاحظوا أن الرسائل الصوتية لا تصل. ومن أراد تواصلاً شخصياً لأي سبب فليكتب أي بيانات تواصل، لأن البوت لا يُظهر هوية أحد ولا أستطيع التواصل معهم.
+- التبديل السريع لمحرك Lord TTS: بلاطة مستقلة للمحرك التالي وقائمة إمكانية الوصول واختصارات الضغط المطوّل، مع إصلاح مزامنة قاموس النطق فور الحفظ بين عملية الإعدادات وعملية المحرك
 - دعم وتشغيل أصوات محرك فوكولايزر المدمج لجميع فئات الأحداث (الساعة، البطارية، المتصل، الإشعارات): تمكين مسار التخليق والتدفق الصوتي المباشر عبر AudioTrack و EmbeddedProviders.vocalizer في AnnouncementSpeaker مع دعم مستويات الصوت والتعزيز وتوجيه القنوات الصوتي والمقاطعة النظيفة، وتصحيح أسبقية توجيه الصوت في SpeechPlanner لمنع طغيان الصوت الافتراضي للغة على صوت الفئة المحدد
 - إعادة بناء وتطوير ميزة «قراءة المزيد» في واتساب وتطبيقات المحادثات: استراتيجيات بحث دقيقة تشمل العقد المجاورة والتوسيع داخل الحقل نفسه وإزالة لواحق الوقت وحالة القراءة وأدوار قارئ الشاشة من المقارنة لمنع الفشل، مع إضافة اختصار «توسيع قراءة المزيد» لقائمة الإجراءات السريعة واختصارات مفاتيح الصوت
 - إصلاح توليد صوت Vocalizer ودورة حياة SynthesisCallback: مطابقة معرّفات أصوات الكتالوج واللغة في VocalizerHostSession، والتحويل الافتراضي إلى ليلى/سامانثا، وتأكيد خيط المحرك لجميع استدعاءات JNI، وتجزئة الدفعات في MonitoredSynthesisCallback حسب السعة القصوى مع حماية التدفق الذري لـ start/done/error، وتعطيل fdsan قبل تحميل المكتبة الأصلية، وإدارة التركيز الصوتي في المعاينة
@@ -828,6 +830,8 @@
     <string name="tile_service_paused">موقوفة</string>
     <string name="tile_service_active">نشطة</string>
     <string name="tile_service_disabled">معطّلة</string>
+    <string name="tile_next_engine_label">المحرك التالي</string>
+    <string name="tile_next_engine_current">المحرك: %1$s</string>
     <string name="embedded_download_success">تم تنزيل وتثبيت الصوت بنجاح</string>
     <string name="embedded_download_error">تعذر تنزيل الصوت: %1$s</string>
     <string name="embedded_delete_confirm">هل أنت متأكد من حذف هذا الصوت من الذاكرة؟</string>

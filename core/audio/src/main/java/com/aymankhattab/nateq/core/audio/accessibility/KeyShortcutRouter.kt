@@ -112,9 +112,21 @@ class KeyShortcutRouter(
                 executeAction(it)
             }
             ShortcutAction.EXPAND_READ_MORE -> expandReadMoreExplicit(context)
+            ShortcutAction.NEXT_ENGINE -> switchToNextEngine(context)
             ShortcutAction.NONE ->
                 Log.i(TAG, "no action bound for gesture")
         }
+    }
+
+    /** يبدّل محرك Lord TTS دون الاعتماد على اتصال خدمة المحرك. */
+    private fun switchToNextEngine(context: Context) {
+        val result = NextEngineSwitcher.switchToNext(context)
+        val message = if (result == null) {
+            "لا يوجد محرك نطق آخر مثبت"
+        } else {
+            "المحرك التالي: ${result.label}"
+        }
+        announce(context, message)
     }
 
     /** ع٤٣-1: تنفيذ صريح لإيماءة «قراءة المزيد» وتوسيع الرسالة المفوكسة. */

@@ -215,6 +215,23 @@ class NateqTtsService : TextToSpeechService() {
     @Inject
     lateinit var pronunciationDictionary: PronunciationDictionary
 
+    /** يلتقط حفظ القاموس من عملية الواجهة ويحدّث لقطة عملية المحرك فوراً. */
+    private val dictionaryChangedReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action !=
+                PronunciationDictionary.ACTION_DICTIONARY_CHANGED
+            ) {
+                return
+            }
+            val dictionary = if (::pronunciationDictionary.isInitialized) {
+                pronunciationDictionary
+            } else {
+                PronunciationDictionary.shared(applicationContext)
+            }
+            dictionary.reload()
+        }
+    }
+
     private val serviceScope = CoroutineScope(
         SupervisorJob() + AppDispatchers.io
     )
@@ -400,6 +417,12 @@ class NateqTtsService : TextToSpeechService() {
             this, packageEventsReceiver, packageFilter,
             ContextCompat.RECEIVER_EXPORTED
         )
+        ContextCompat.registerReceiver(
+            this,
+            dictionaryChangedReceiver,
+            IntentFilter(PronunciationDictionary.ACTION_DICTIONARY_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
     }
 
     override fun onDestroy() {
@@ -417,6 +440,7 @@ class NateqTtsService : TextToSpeechService() {
         // إلغاء مستقبل الحزم (بند 6.5) — لا يبقى مستمعاً بعد تدمير
         // الخدمة فيتجمع بثّاتُ تثبيت/إزالة الحزم على كائن مردود.
         runCatching { unregisterReceiver(packageEventsReceiver) }
+        runCatching { unregisterReceiver(dictionaryChangedReceiver) }
         // إغلاق موارد المزوّدين (TextToSpeech المربوط بالمحرك الخارجي + مراقب
         // الإنترنت + منفّذ الخلفية) كي لا تبقى روابط Binder IPC معلقة بعد
         // تدمير الخدمة — حارس isInitialized لمسارات التدمير
