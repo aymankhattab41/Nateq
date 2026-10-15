@@ -1215,8 +1215,9 @@ class SettingsRepository(context: Context) :
      *  `engine_for_<category>` ليستقل كل إعلانٍ بمحركه. */
     override fun getEngineForCategory(category: String): String? =
         prefs.getString("engine_for_$category", null)
-    override fun setEngineForCategory(category: String, engine: String?) =
-        prefs.edit().putString("engine_for_$category", engine).apply()
+    override fun setEngineForCategory(category: String, engine: String?) {
+        prefs.edit().putString("engine_for_$category", engine).commit()
+    }
 
     /** سرعة النطق لكل فئة */
     override fun getSpeechRateForCategory(category: String): Float =
@@ -2048,13 +2049,38 @@ class SettingsRepository(context: Context) :
         }
     }
 
+    /**
+     * يعين محركاً موحّداً لجميع اللغات المحددة مع تصفير اسم الصوت ليختار
+     * المحرك الجديد صوته المناسب لكل لغة.
+     */
+    fun setEngineForAllLanguages(
+        languages: Collection<String>,
+        engine: String?
+    ) {
+        ensureConvertSlotsMigrated()
+        val map = readConvertPrefs().toMutableMap()
+        for (lang in languages) {
+            val key = ConvertPreferencesCodec.normalizeLanguageTag(lang)
+            val current = map[key] ?: LanguageSpeechPrefs()
+            val entry = ConvertPreferencesCodec.entryForSave(
+                engine = engine,
+                voiceName = null,
+                rate = current.rate,
+                pitch = current.pitch,
+                volume = current.volume
+            )
+            if (entry.hasAdjustment) map[key] = entry else map.remove(key)
+        }
+        writeConvertPrefs(map)
+    }
+
     private fun writeConvertPrefs(map: Map<String, LanguageSpeechPrefs>) {
         prefs.edit()
             .putString(
                 KEY_CONVERT_PREFS_JSON,
                 ConvertPreferencesCodec.toJson(map)
             )
-            .apply()
+            .commit()
     }
 
     /**

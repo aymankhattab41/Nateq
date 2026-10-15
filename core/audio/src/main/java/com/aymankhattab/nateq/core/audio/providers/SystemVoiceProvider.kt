@@ -371,14 +371,21 @@ class SystemVoiceProvider(
      * ذكياً على الإطلاق — إن لم يحدد المستخدم محركاً يُعاد null.
      */
     private fun pickEnginePackage(languageTag: String? = null): String? {
-        if (languageTag == null) return null
         val installed = EnginePicker.installedEnginePackages(context)
         val settings = injectedSettings
             ?: SettingsRepository.create(context)
         return try {
-            val perLang = settings.getEngineForLanguage(languageTag)
-            if (perLang != null && installed.contains(perLang)) {
-                perLang
+            val perLang = if (languageTag != null) {
+                settings.getEngineForLanguage(languageTag)
+            } else {
+                null
+            }
+            val defaultEngine = settings.getEngineForCategory(
+                SettingsRepository.VOICE_CATEGORY_DEFAULT
+            )
+            val candidate = perLang ?: defaultEngine
+            if (candidate != null && installed.contains(candidate)) {
+                candidate
             } else {
                 null
             }
@@ -496,7 +503,13 @@ class SystemVoiceProvider(
                                 ?: SettingsRepository.create(context))
                                 .getEngineForLanguage(tag)
                         }.getOrNull()
-                    }
+                    } ?: runCatching {
+                        (injectedSettings
+                            ?: SettingsRepository.create(context))
+                            .getEngineForCategory(
+                                SettingsRepository.VOICE_CATEGORY_DEFAULT
+                            )
+                    }.getOrNull()
                     if (configured == null) {
                         notifyNoEngineForLanguageOnce(langTag ?: "")
                     } else if (!installed.contains(configured)) {

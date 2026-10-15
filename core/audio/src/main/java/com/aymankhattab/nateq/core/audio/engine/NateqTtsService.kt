@@ -1158,12 +1158,16 @@ class NateqTtsService : TextToSpeechService() {
         // نفسه (سارٍ دائماً بلا ربط بحالة «التحويل التلقائي»). **يُجرى قبل
         // المعالجة** ليُمرَّر المحركُ المحسوم إلى [TextProcessor.process] —
         // فالمحركات التي تفهم التشكيل العربي تحتفظ به في الناتج (بند التشكيل).
+        val defaultCategoryEngine = settings.getEngineForCategory(
+            SettingsRepository.VOICE_CATEGORY_DEFAULT
+        )
         val routed = LanguageSpeechRouter.route(
             matchesRequest = matchesRequest,
             convertEngine = convertTarget?.convertEngine,
             convertVoiceName = convertTarget?.convertVoiceName,
             perLanguageEngine = settings.getEngineForLanguage(languageTag),
-            perLanguageVoiceName = settings.getVoiceForLanguage(languageTag)
+            perLanguageVoiceName = settings.getVoiceForLanguage(languageTag),
+            defaultEngine = defaultCategoryEngine
         )
         val finalEngine = appVoice?.engine ?: routed.engine
         val finalLocale = if (matchesRequest) {
@@ -1409,12 +1413,16 @@ class NateqTtsService : TextToSpeechService() {
         } else {
             computeFinalVolume(baseVolume, currentVolumeBoost())
         }
+        val defaultCategoryEngine = settings.getEngineForCategory(
+            SettingsRepository.VOICE_CATEGORY_DEFAULT
+        )
         val routed = LanguageSpeechRouter.route(
             matchesRequest = matches,
             convertEngine = convert?.convertEngine,
             convertVoiceName = convert?.convertVoiceName,
             perLanguageEngine = settings.getEngineForLanguage(segTag),
-            perLanguageVoiceName = settings.getVoiceForLanguage(segTag)
+            perLanguageVoiceName = settings.getVoiceForLanguage(segTag),
+            defaultEngine = defaultCategoryEngine
         )
         val targetEngine = appVoice?.engine ?: routed.engine
         val targetVoiceName = if (appVoice?.engine != null &&

@@ -27,12 +27,14 @@ object LanguageSpeechRouter {
         convertEngine: String?,
         convertVoiceName: String?,
         perLanguageEngine: String?,
-        perLanguageVoiceName: String?
+        perLanguageVoiceName: String?,
+        defaultEngine: String? = null
     ): RoutedEngine {
+        val fallback = perLanguageEngine ?: defaultEngine
         val engine = if (matchesRequest) {
-            convertEngine ?: perLanguageEngine
+            convertEngine ?: fallback
         } else {
-            perLanguageEngine
+            fallback
         }
         val voiceName = if (matchesRequest) {
             convertVoiceName ?: perLanguageVoiceName

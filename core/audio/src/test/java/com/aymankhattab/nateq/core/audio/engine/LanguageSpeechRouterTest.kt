@@ -73,4 +73,31 @@ class LanguageSpeechRouterTest {
         assertEquals("com.google.android.tts", routed.engine)
         assertEquals("multitts-ar", routed.voiceName)
     }
+
+    @Test
+    fun defaultEngine_used_whenConvertAndPerLanguageAreNull() {
+        val routed = LanguageSpeechRouter.route(
+            matchesRequest = true,
+            convertEngine = null,
+            convertVoiceName = null,
+            perLanguageEngine = null,
+            perLanguageVoiceName = null,
+            defaultEngine = "com.vocalizer.tts"
+        )
+        assertEquals("com.vocalizer.tts", routed.engine)
+        assertNull(routed.voiceName)
+    }
+
+    @Test
+    fun defaultEngine_used_whenNoConvertMatchAndNoPerLanguage() {
+        val routed = LanguageSpeechRouter.route(
+            matchesRequest = false,
+            convertEngine = "com.google.android.tts",
+            convertVoiceName = "goog-ar",
+            perLanguageEngine = null,
+            perLanguageVoiceName = null,
+            defaultEngine = "com.vocalizer.tts"
+        )
+        assertEquals("com.vocalizer.tts", routed.engine)
+    }
 }
