@@ -223,6 +223,19 @@ class SettingsRepository(context: Context) :
             KEY_BATTERY_VOICE_MIGRATED
         )
 
+        const val KEY_KEYBOARD_MODE = "keyboard_mode"
+        const val KEY_KEYBOARD_ACTIVATION = "keyboard_activation"
+        const val KEY_KEYBOARD_ANNOUNCE_AFTER_LIFT =
+            "keyboard_announce_after_lift"
+        const val KEY_KEYBOARD_HAPTIC = "keyboard_haptic"
+        const val KEY_KEYBOARD_SOUND = "keyboard_sound"
+        const val KEY_KEYBOARD_PHONETIC = "keyboard_phonetic"
+
+        const val KEYBOARD_MODE_BLIND = "blind"
+        const val KEYBOARD_MODE_LOW_VISION = "low_vision"
+        const val KEYBOARD_ACTIVATION_LIFT = "lift"
+        const val KEYBOARD_ACTIVATION_DOUBLE_TAP = "double_tap"
+
         /**
          * المصنّع الموحّد الوحيد لمثيل SettingsRepository — يُستعمل في كل
          * المواقع التي لا يتوفر فيها [AnnouncementAppContext] المعرّف من :app
@@ -2736,5 +2749,58 @@ class SettingsRepository(context: Context) :
                 gainDb.coerceIn(0.0f, MAX_EVENT_PCM_GAIN_DB)
             )
             .apply()
+    }
+
+    fun getKeyboardMode(): String =
+        prefs.getString(KEY_KEYBOARD_MODE, KEYBOARD_MODE_BLIND)
+            ?: KEYBOARD_MODE_BLIND
+
+    fun setKeyboardMode(mode: String) {
+        prefs.edit().putString(KEY_KEYBOARD_MODE, mode).commit()
+    }
+
+    fun getKeyboardActivation(): String =
+        prefs.getString(KEY_KEYBOARD_ACTIVATION, KEYBOARD_ACTIVATION_LIFT)
+            ?: KEYBOARD_ACTIVATION_LIFT
+
+    fun setKeyboardActivation(activation: String) {
+        prefs.edit().putString(KEY_KEYBOARD_ACTIVATION, activation).commit()
+    }
+
+    fun isKeyboardAnnounceAfterLiftEnabled(): Boolean =
+        prefs.getBoolean(KEY_KEYBOARD_ANNOUNCE_AFTER_LIFT, false)
+
+    fun isKeyboardAnnounceAfterLift(): Boolean =
+        isKeyboardAnnounceAfterLiftEnabled()
+
+    fun setKeyboardAnnounceAfterLiftEnabled(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_KEYBOARD_ANNOUNCE_AFTER_LIFT, enabled)
+            .commit()
+    }
+
+    fun setKeyboardAnnounceAfterLift(enabled: Boolean) {
+        setKeyboardAnnounceAfterLiftEnabled(enabled)
+    }
+
+    fun isKeyboardHapticEnabled(): Boolean =
+        prefs.getBoolean(KEY_KEYBOARD_HAPTIC, true)
+
+    fun setKeyboardHapticEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_KEYBOARD_HAPTIC, enabled).commit()
+    }
+
+    fun isKeyboardSoundEnabled(): Boolean =
+        prefs.getBoolean(KEY_KEYBOARD_SOUND, true)
+
+    fun setKeyboardSoundEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_KEYBOARD_SOUND, enabled).commit()
+    }
+
+    fun isKeyboardPhoneticEnabled(): Boolean =
+        prefs.getBoolean(KEY_KEYBOARD_PHONETIC, true)
+
+    fun setKeyboardPhoneticEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_KEYBOARD_PHONETIC, enabled).commit()
     }
 }

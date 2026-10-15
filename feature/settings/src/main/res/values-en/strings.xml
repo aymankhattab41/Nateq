@@ -861,5 +861,31 @@ Note: this is an experimental build that may be reverted to the old system, and 
     <string name="dnd_permission_dialog_message">To accurately bypass Do Not Disturb via system channels, you can grant Do Not Disturb access. If not granted, Nateq will automatically use the Alarm stream to bypass silent mode without needing extra permissions.</string>
     <string name="dnd_permission_dialog_positive">Open Settings</string>
     <string name="dnd_permission_dialog_negative">Use Alarm Stream</string>
+    <!-- Lord TTS Accessible Keyboard -->
+    <string name="keyboard_service_name">Lord TTS Accessible Keyboard</string>
+    <string name="keyboard_settings_title">Accessible Keyboard Settings</string>
+    <string name="keyboard_subtype_arabic">Arabic (Lord TTS)</string>
+    <string name="keyboard_subtype_english">English (Lord TTS)</string>
+    <string name="keyboard_section_title">Accessible Keyboard</string>
+    <string name="keyboard_section_desc">Accessible keyboard designed for blind and low vision users with voice typing, diacritics, and clipboard tools</string>
+    <string name="keyboard_mode_title">Visual Display Mode</string>
+    <string name="keyboard_mode_blind">Blind Mode (Minimal dark glare-free, audio &amp; haptic focused)</string>
+    <string name="keyboard_mode_low_vision">Low Vision Mode (High contrast yellow-on-black, bold keys)</string>
+    <string name="keyboard_activation_title">Key Typing Activation Method</string>
+    <string name="keyboard_activation_lift">Lift to Type (Explore by touch, lift finger to type immediately)</string>
+    <string name="keyboard_activation_double_tap">Double Tap (Explore by touch, double-tap to type)</string>
+    <string name="keyboard_announce_after_lift_title">Re-announce character after typing (Optional)</string>
+    <string name="keyboard_announce_after_lift_summary">"Announces confirmation such as 'Entered A' after typing a key"</string>
+    <string name="keyboard_phonetic_title">Phonetic Letter Spelling</string>
+    <string name="keyboard_phonetic_summary">"Announces spelling clues such as 'A - Lion' and 'Alpha' to prevent errors"</string>
+    <string name="keyboard_haptic_title">Haptic Feedback</string>
+    <string name="keyboard_haptic_summary">Gentle vibration on touch and distinct vibration on key commit</string>
+    <string name="keyboard_sound_title">Audio Click</string>
+    <string name="keyboard_sound_summary">Plays audible click sound effect while exploring keys</string>
+    <string name="keyboard_enable_step1">1. Enable Keyboard in System Settings</string>
+    <string name="keyboard_enable_step2">2. Select as Default Keyboard</string>
+    <string name="keyboard_test_title">Live Typing Test Area</string>
+    <string name="keyboard_test_hint">Tap here to test keyboard and voice typing…</string>
+    <string name="keyboard_clear_test">Clear Test Text</string>
 
 </resources>

@@ -86,6 +86,8 @@
     <!-- طلب تثبيت حزم من مصادر خارجية (تفعيل ميزة التحديث الذاتي).
          لا يثبّت شيئاً صمتاً: يعرض شاشة موافقة النظام دائماً. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- الكتابة بالصوت للوحة مفاتيح Lord TTS الميسّرة -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!-- رؤية محركات TTS الطرفية (package visibility على أندرويد 11+):
          بدون هذا لا يرى ناطق إلا المحركات المدمجة (سامسونج/جوجل)،
@@ -93,6 +95,9 @@
     <queries>
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
         </intent>
         <!-- رؤية حزم أجهزة المكوّنات (package visibility) لقسم «إرشادات توافق
              الجهاز»: تُفتح شاشات إدارة التشغيل التلقائي عبر Activity ComponentName
@@ -370,6 +375,25 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+        <!-- خدمة لوحة مفاتيح Lord TTS الميسّرة لذوي الإعاقة البصرية -->
+        <service
+            android:name="com.aymankhattab.nateq.core.audio.keyboard.LordKeyboardService"
+            android:exported="true"
+            android:label="@string/keyboard_service_name"
+            android:permission="android.permission.BIND_INPUT_METHOD">
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
+            <meta-data
+                android:name="android.view.im"
+                android:resource="@xml/method" />
+        </service>
+
+        <!-- شاشة إعدادات وتخصيص لوحة مفاتيح Lord TTS الميسّرة -->
+        <activity
+            android:name="com.aymankhattab.nateq.settings.KeyboardSettingsActivity"
+            android:exported="true"
+            android:label="@string/keyboard_settings_title" />
 
     </application>
 </manifest>
