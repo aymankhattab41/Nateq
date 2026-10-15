@@ -165,13 +165,14 @@ object VocalizerDownloader {
                 )
             }
 
-            // ع٣٠-5 بند 3 و ع٣٠-6: التحقق من وجود ملف الـ Header وحجمه
-            val isInstalled = VocalizerModelCatalog.isVoiceInstalled(
+            // ع٣٠-5 بند 3 و ع٣٠-6: التحقق من وجود ملف الـ Header وحجمه.
+            // يُقبل الرأس بعائلة الإصدار نفسه (تطابق غير حرفي) لأن رقم
+            // إصدار الرأس في الحزمة قد يخالف رقمه في الكتالوج.
+            val hdrFile = VocalizerModelCatalog.installedHeaderFile(
                 destination,
                 item
             )
-            val hdrFile = File(destination, item.headerFileName)
-            if (!isInstalled || !hdrFile.exists() || hdrFile.length() <= 0L) {
+            if (hdrFile == null) {
                 val extractedList = unzipResult.fileNames.joinToString(", ")
                 Log.e(
                     TAG,
@@ -287,9 +288,10 @@ object VocalizerDownloader {
         for (dir in dirs) {
             if (!dir.exists() || !dir.isDirectory) continue
 
-            // 1. حذف ملف الـ Header
-            val hdrFile = File(dir, item.headerFileName)
-            if (hdrFile.exists()) {
+            // 1. حذف ملف الـ Header (باسمه الفعلي المُثبَّت، لا الحرفي في
+            //    الكتالوج) — قد يختلف رقم إصداره عن الكتالوج.
+            val hdrFile = VocalizerModelCatalog.installedHeaderFile(dir, item)
+            if (hdrFile != null) {
                 deletedAny = hdrFile.delete() || deletedAny
             }
 

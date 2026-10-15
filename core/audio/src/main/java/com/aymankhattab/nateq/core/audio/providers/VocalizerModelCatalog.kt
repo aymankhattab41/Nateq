@@ -506,14 +506,36 @@ object VocalizerModelCatalog {
     )
 
     /**
-     * التحقق من تثبيت الصوت بفحص وجود ملف الـ Header الخاص به
-     * في مجلد VocalizerEx2.
+     * يُعيد ملف الرأس المُثبَّت فعلاً للصوت داخل [targetDir]، أو null.
+     *
+     * الحزم المنزّلة تُسمّي الرأس برقم إصدار قد يخالف رقمَ الكتالوج
+     * (`..._1-0-0.hdr` مقابل المتوقع `..._2-0-0.hdr`)؛ فهوية الصوت تقوم
+     * على (اللغة + الاسم + النوع) لا على لاحقة الإصدار. لذلك يُبحث أولاً
+     * عن التطابق الحرفي، ثم يُقبل أي رأس من **عائلة** الرأس نفسها
+     * ([VocalizerVoiceManifest.headerFamily]). بلا هذا كان التحقق يفشل
+     * على كل صوت لا يطابق رقم إصداره الكتالوجَ فيبدو التحميل ناقصاً.
      */
-    fun isVoiceInstalled(targetDir: File, item: VocalizerCatalogItem): Boolean {
-        if (!targetDir.exists() || !targetDir.isDirectory) return false
-        val hdrFile = File(targetDir, item.headerFileName)
-        return hdrFile.exists() && hdrFile.length() > 0
+    fun installedHeaderFile(
+        targetDir: File,
+        item: VocalizerCatalogItem
+    ): File? {
+        if (!targetDir.exists() || !targetDir.isDirectory) return null
+        val exact = File(targetDir, item.headerFileName)
+        if (exact.exists() && exact.length() > 0L) return exact
+        val family = VocalizerVoiceManifest.headerFamily(item.headerFileName)
+        return targetDir.listFiles { f ->
+            f.isFile && f.name.endsWith(".hdr", ignoreCase = true) &&
+                f.length() > 0L &&
+                VocalizerVoiceManifest.headerFamily(f.name) == family
+        }?.minByOrNull { it.name }
     }
+
+    /**
+     * التحقق من تثبيت الصوت بفحص وجود ملف الـ Header الخاص به
+     * في مجلد VocalizerEx2 (بتطابق العائلة لا الإصدار الحرفي).
+     */
+    fun isVoiceInstalled(targetDir: File, item: VocalizerCatalogItem): Boolean =
+        installedHeaderFile(targetDir, item) != null
 
     /**
      * فحص جميع المسارات المحتملة لمعرفة ما إذا كان الصوت مثبتاً.

@@ -258,6 +258,40 @@ public class VocalizerEngine {
         this.mAudioOutputListener = listener;
     }
 
+    /**
+     * يهيّئ مخزن الصوت الأصلي قبل النطق (setAudioBufferSize) — عقدٌ
+     * إلزاميٌّ لإصدار عينات PCM.
+     *
+     * <p>ردُّ نداء جهاز الإخراج في المكتبة الأصلية (VE_CALLBACKMSG
+     * رسالة {@code 0x08}) يمرّر إلى المحرك مؤشر المخزن
+     * ({@code CVocalizerEngine[+0x20]}) وحجمه ({@code [+0x28]})،
+     * وهما يُضبطان من هذا النداء وحده. وبدونهما يبقى المؤشر NULL
+     * فيعود {@code ve_ttsProcessText2Speech} فوراً بلا أي عينات
+     * (دفعات=0 بايت=0) مهما كان النص.
+     *
+     * <p>مطابقٌ حرفياً لـ {@code SynthThread.run} في SDK الأصلي
+     * الذي ينادي {@code setAudioBufferSize(i3)} مباشرةً قبل
+     * {@code speakNative}.
+     *
+     * @param size حجم المخزن بالبايت (زوجيٌّ، من مضاعفات 16-بت).
+     * @return true إذا خُصّص المخزن.
+     */
+    public synchronized boolean configureAudioBuffer(int size) {
+        if (!mIsInitialized || size <= 0) return false;
+        try {
+            boolean ok = setAudioBufferSize(size);
+            HostLog.w(ENGINE_ID,
+                "configureAudioBuffer size=" + size + " ok=" + ok);
+            if (!ok && mLastError == null) {
+                mLastError = "setAudioBufferSize returned false";
+            }
+            return ok;
+        } catch (Throwable t) {
+            Log.e(TAG, "setAudioBufferSize فشل: " + t.getMessage(), t);
+            return false;
+        }
+    }
+
     public void setListener(VocalizerEngineListener listener) {
         this.mEngineListener = listener;
     }
@@ -422,10 +456,16 @@ public class VocalizerEngine {
             } else {
                 File cached = copyAssetToCache(assetPath);
                 if (cached == null) {
-                    HostLog.w(ENGINE_ID,
-                        "openAssetFile [MISSING] path='" + path +
-                        "' asset='" + assetPath +
-                        "' flat='" + flat + "' source=null");
+                    if (VocalizerDataProvider.isOptionalUserDictionary(flat)) {
+                        HostLog.i(ENGINE_ID,
+                            "openAssetFile optional userdct absent: '" +
+                            path + "' flat='" + flat + "'");
+                    } else {
+                        HostLog.w(ENGINE_ID,
+                            "openAssetFile [MISSING] path='" + path +
+                            "' asset='" + assetPath +
+                            "' flat='" + flat + "' source=null");
+                    }
                     return null;
                 }
                 pfd = ParcelFileDescriptor.open(

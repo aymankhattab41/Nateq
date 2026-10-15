@@ -76,9 +76,17 @@ object FeatureFlags {
         settings: SettingsRepository? = null,
         stateStore: A11yStateStore? = null
     ): Boolean {
-        // التحقق من حالة الإيقاف المؤقت للخدمة
+        // التحقق من حالة الإيقاف المؤقت واتصال الخدمة
         val store = stateStore ?: A11yStateStore.getInstance(context)
-        if (store != null && (!store.isConnected() || store.isPaused())) {
+        if (store != null && store.isPaused()) {
+            return false
+        }
+        val connected = store?.isConnected() == true ||
+            AccessibilityBridge.isConnected() ||
+            (context != null &&
+                com.aymankhattab.nateq.util.AccessibilityUtils
+                    .isNateqAccessibilityServiceEnabled(context))
+        if (!connected) {
             return false
         }
 

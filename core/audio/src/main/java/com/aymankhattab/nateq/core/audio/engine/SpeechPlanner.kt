@@ -161,8 +161,8 @@ object SpeechPlanner {
         }.getOrNull()
 
         return VoiceResolution(
-            engine = langEngine ?: defaultEngine,
-            voiceId = langVoice ?: defaultVoiceId,
+            engine = defaultEngine ?: langEngine,
+            voiceId = defaultVoiceId ?: langVoice,
             rate = defaultRate,
             pitch = defaultPitch,
             volume = defaultVolume

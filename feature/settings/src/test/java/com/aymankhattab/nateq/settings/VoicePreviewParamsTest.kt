@@ -2,6 +2,8 @@ package com.aymankhattab.nateq.settings
 
 import java.util.Locale
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** اختبارات بناء معاينة النطق المشتركة (بند الأوامر 4): القيم تُقرأ من
@@ -108,5 +110,25 @@ class VoicePreviewParamsTest {
         assertEquals(0.55f, chimeVolumeFromProgress(50), 0.001f)
         assertEquals(1f, chimeVolumeFromProgress(100), 0f)
         assertEquals(1f, chimeVolumeFromProgress(150), 0f)
+    }
+
+    @Test
+    fun vocalizerVoiceName_classifiesEveryCatalogVoiceNotJustLaila() {
+        // كل أصوات الكتالوج (لا Laila وحدها) تُوجَّه للمسار المدمج.
+        assertTrue(isVocalizerVoiceName("Laila"))
+        assertTrue(isVocalizerVoiceName("Tarik"))
+        assertTrue(isVocalizerVoiceName("Maged"))
+        assertTrue(isVocalizerVoiceName("Samantha"))
+        assertTrue(isVocalizerVoiceName("Mariam"))
+        assertTrue(isVocalizerVoiceName("Yelda"))
+        assertTrue(isVocalizerVoiceName("vocalizer-ara-sau-tarik-compact"))
+    }
+
+    @Test
+    fun vocalizerVoiceName_rejectsSystemVoicesAndBlanks() {
+        assertFalse(isVocalizerVoiceName("com.google.android.tts"))
+        assertFalse(isVocalizerVoiceName("ar-voice"))
+        assertFalse(isVocalizerVoiceName(""))
+        assertFalse(isVocalizerVoiceName(null))
     }
 }

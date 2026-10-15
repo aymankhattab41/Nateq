@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.core.audio.accessibility
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicReference
@@ -71,12 +72,39 @@ object AccessibilityBridge {
             .getOrDefault(false)
     }
 
+    private val contentChangeSignal =
+        AtomicReference<CompletableDeferred<Unit>?>()
+
     /**
-     * توسيع الرسالة المقتطعة تلقائياً بمهلة زمنية (ع٢٧-20، ع٢٧-21)
+     * إشعار الجسر بحدوث تغيّر في محتوى النافذة لإيقاظ الانتظار
+     * اللاتزامني (ع٤٣-1).
+     */
+    fun notifyContentChanged() {
+        contentChangeSignal.getAndSet(null)?.complete(Unit)
+    }
+
+    /**
+     * انتظار لاتزامني غير حاجز حتى وصول إشعار تغيّر المحتوى أو انتهاء المهلة.
+     */
+    suspend fun waitForContentChange(timeoutMs: Long): Boolean {
+        val deferred = CompletableDeferred<Unit>()
+        contentChangeSignal.set(deferred)
+        return try {
+            withTimeoutOrNull(timeoutMs) {
+                deferred.await()
+                true
+            } ?: false
+        } finally {
+            contentChangeSignal.compareAndSet(deferred, null)
+        }
+    }
+
+    /**
+     * توسيع الرسالة المقتطعة تلقائياً بمهلة زمنية كافية (ع٢٧-20، ع٤٣-1)
      */
     suspend fun expandReadMore(
         prefix: String,
-        timeoutMs: Long = 350L
+        timeoutMs: Long = 1200L
     ): String? {
         val service = activeServiceRef.get() ?: return null
         return withTimeoutOrNull(timeoutMs) {

@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -96,6 +97,44 @@ class VocalizerDownloaderTest {
 
         assertTrue(VocalizerModelCatalog.isVoiceInstalled(testDir, lailaItem))
         assertTrue(VocalizerModelCatalog.isVoiceInstalled(context, lailaItem))
+    }
+
+    @Test
+    fun installedHeaderFile_acceptsDifferentVersionOfSameFamily() {
+        // الكتالوج يتوقّع عادةً رقم إصدار يخالف ما في الحزمة المنزّلة
+        // (مثلاً ..._2-0-0.hdr في الكتالوج و..._1-0-0.hdr في الأرشيف)؛
+        // فيجب أن يُقبل الرأس بالعائلة لا بالتطابق الحرفي وإلا بدا
+        // التحميل ناقصاً وفشل التثبيت.
+        val tarik = VocalizerModelCatalog.ITEMS.first {
+            it.id == "vocalizer-ara-sau-tarik-compact"
+        }
+        assertTrue(tarik.headerFileName.endsWith("_2-0-0.hdr"))
+
+        val actualName =
+            "ve_pipeline_arw_tarik_22_embedded-compact_1-0-0.hdr"
+        val actual = File(testDir, actualName)
+        actual.writeText("DUMMY_HDR_CONTENT")
+
+        assertTrue(VocalizerModelCatalog.isVoiceInstalled(testDir, tarik))
+        assertEquals(
+            actualName,
+            VocalizerModelCatalog.installedHeaderFile(testDir, tarik)?.name
+        )
+    }
+
+    @Test
+    fun isVoiceInstalled_rejectsHeaderOfAnotherVoice() {
+        val tarik = VocalizerModelCatalog.ITEMS.first {
+            it.id == "vocalizer-ara-sau-tarik-compact"
+        }
+        val otherVoice = File(
+            testDir,
+            "ve_pipeline_arw_maged_22_embedded-compact_1-0-0.hdr"
+        )
+        otherVoice.writeText("DUMMY_HDR_CONTENT")
+
+        assertFalse(VocalizerModelCatalog.isVoiceInstalled(testDir, tarik))
+        assertNull(VocalizerModelCatalog.installedHeaderFile(testDir, tarik))
     }
 
     @Test

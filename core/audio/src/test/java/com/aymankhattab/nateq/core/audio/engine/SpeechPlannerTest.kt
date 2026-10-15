@@ -250,4 +250,29 @@ class SpeechPlannerTest {
             assertEquals("تطابق العلو", sItem.volume, aItem.volume, 0.001f)
         }
     }
+
+    @Test
+    fun explicitCategoryVoiceAndEngine_notOverriddenByLanguageDefaults() {
+        val prefs = FakeVoicePrefs(
+            voices = mapOf("ar" to "voice-google-arabic"),
+            engines = mapOf("ar" to "com.google.android.tts")
+        )
+        val resolution = SpeechPlanner.resolveVoiceForSegment(
+            languageTag = "ar",
+            role = SpeechRole.TEXT,
+            settings = prefs,
+            defaultEngine = "vocalizer_embedded",
+            defaultVoiceId = "vocalizer_ar-XA_maged_premium-high"
+        )
+        assertEquals(
+            "المحرك الصريح لا يُداس بمحرك اللغة العام",
+            "vocalizer_embedded",
+            resolution.engine
+        )
+        assertEquals(
+            "الصوت الصريح لا يُداس بصوت اللغة العام",
+            "vocalizer_ar-XA_maged_premium-high",
+            resolution.voiceId
+        )
+    }
 }

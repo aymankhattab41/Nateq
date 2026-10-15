@@ -44,6 +44,12 @@ object HostProtocol {
             else -> lower
         }
 
+    /** هل الحزمة أو المعرّف يتبع محرّكاً مدمجاً في التطبيق؟ */
+    fun isEmbeddedEngine(pkg: String?): Boolean {
+        if (pkg.isNullOrBlank()) return false
+        return normalizeEngineId(pkg) == ENGINE_VOCALIZER
+    }
+
     // أنواع الإطارات في الأنبوب.
     private const val FRAME_FORMAT: Byte = 1
     private const val FRAME_PCM: Byte = 2

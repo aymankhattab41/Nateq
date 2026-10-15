@@ -17,6 +17,7 @@ import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
 import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.VocalizerModelCatalog
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
 import java.util.Locale
@@ -148,6 +149,27 @@ internal fun chimeSoundNameAt(position: Int): String = when (position) {
 internal fun chimeVolumeFromProgress(progress: Int): Float =
     (0.1f + progress / 100f * 0.9f).coerceIn(0.1f, 1f)
 
+/** أسماء كل أصوات Vocalizer في الكتالوج (الاسم والمعرّف) — تُبنى مرة. */
+private val VOCALIZER_VOICE_KEYS: Set<String> by lazy {
+    VocalizerModelCatalog.ITEMS
+        .flatMap { listOf(it.voiceName, it.id, it.modelId) }
+        .map { it.lowercase() }
+        .toSet()
+}
+
+/**
+ * هل الاسم صوتٌ من أصوات Vocalizer المدمجة؟ يُعرف بالكتالوج كاملاً لا
+ * بقائمة أسماء محصورة (كانت Laila/Maged/Tariq/Samantha فقط، فيُوجَّه
+ * غيرها خطأً إلى المسار النظامي). مطابقة كاملة (غير جزئية) مع الاسم أو
+ * المعرّف، أو بادئة معرّف `vocalizer`.
+ */
+internal fun isVocalizerVoiceName(voiceName: String?): Boolean {
+    val name = voiceName?.trim()?.lowercase() ?: return false
+    if (name.isEmpty()) return false
+    if (name.startsWith("vocalizer")) return true
+    return name in VOCALIZER_VOICE_KEYS
+}
+
 /**
  * معاينة نطق مشتركة لكل أقسام الشاشة (بند الأوامر 4): تُشغّل عيّنة عبر
  * محرك TTS مؤقت بقيم (محرك، صوت، سرعة، نبرة، مستوى صوت، نص) مع إغلاق
@@ -208,11 +230,8 @@ internal class VoicePreviewHelper(private val context: Context) {
         currentAudioTrack = null
     }
 
-    private fun isEmbeddedEngine(pkg: String?): Boolean {
-        if (pkg.isNullOrBlank()) return false
-        val norm = HostProtocol.normalizeEngineId(pkg)
-        return norm == HostProtocol.ENGINE_VOCALIZER
-    }
+    private fun isEmbeddedEngine(pkg: String?): Boolean =
+        HostProtocol.isEmbeddedEngine(pkg)
 
     private fun getEmbeddedProvider(pkg: String): VoiceProvider {
         val norm = HostProtocol.normalizeEngineId(pkg)
@@ -506,13 +525,9 @@ internal class VoicePreviewHelper(private val context: Context) {
         currentPreviewTts = null
 
         val desiredEngine = params.enginePkg?.takeIf { it.isNotBlank() }
-        val isVocalizerVoice =
-            params.voiceName.startsWith("vocalizer", true) ||
-            params.voiceName.equals("Laila", true) ||
-            params.voiceName.equals("Maged", true) ||
-            params.voiceName.equals("Tariq", true) ||
-            params.voiceName.equals("Samantha", true)
-        if (isEmbeddedEngine(desiredEngine) || isVocalizerVoice) {
+        if (isEmbeddedEngine(desiredEngine) ||
+            isVocalizerVoiceName(params.voiceName)
+        ) {
             val canon = if (isEmbeddedEngine(desiredEngine)) {
                 HostProtocol.normalizeEngineId(desiredEngine!!)
             } else {

@@ -759,21 +759,31 @@ class NateqTtsService : TextToSpeechService() {
                         settings = settings
                     )
                 }.getOrDefault(false)
-                if (readMoreEnabled &&
-                    SelectorPacks.looksTruncated(rawText)
-                ) {
+                val isTruncated = SelectorPacks.looksTruncated(rawText)
+                if (isTruncated) {
+                    Log.w(
+                        TAG,
+                        "[READMORE] Speech detected truncated text " +
+                            "(enabled=$readMoreEnabled, len=${rawText.length})"
+                    )
+                }
+                if (readMoreEnabled && isTruncated) {
                     val expanded = AccessibilityBridge.expandReadMore(rawText)
-                    val prefixLen = minOf(40, rawText.trim().length)
-                    val prefix = rawText.trim().substring(0, prefixLen)
                     if (expanded != null &&
                         expanded.length > rawText.length &&
-                        expanded.startsWith(prefix)
+                        SelectorPacks.isTextMatchingMessage(rawText, expanded)
                     ) {
                         processedText = expanded
-                        Log.i(
+                        Log.w(
                             TAG,
-                            "Read more expanded: ${rawText.length} -> " +
+                            "[READMORE] Expanded: ${rawText.length} -> " +
                                 "${expanded.length} chars"
+                        )
+                    } else {
+                        Log.w(
+                            TAG,
+                            "[READMORE] Expansion result: expanded=" +
+                                "${expanded != null}, len=${expanded?.length}"
                         )
                     }
                 }

@@ -28,6 +28,11 @@ import android.os.Vibrator
 import android.text.TextUtils
 import android.view.KeyEvent
 import android.view.View
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 /**
@@ -95,19 +100,28 @@ object TypingEchoHandler : A11yFeatureHandler {
 }
 
 /**
- * معالج توسيع قراءة المزيد — يسجل نوع الحدث فقط.
+ * معالج توسيع قراءة المزيد (ع٤٣-1).
+ * يستقبل أحداث التركيز وتغير المحتوى لإشعار الجسر فورياً بالتحديثات.
  */
 object ReadMoreHandler : A11yFeatureHandler {
     override val feature = FeatureFlags.FEATURE_READ_MORE_EXPAND
     override val acceptedEventTypes =
-        AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED
+        AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED or
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
     override fun handle(
         service: AccessibilityService,
         event: AccessibilityEvent,
         settings: SettingsRepository,
         stateStore: A11yStateStore?
     ) {
-        // التوسيع الفعلي يتم عبر AccessibilityBridge عند الطلب
+        when (event.eventType) {
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
+                AccessibilityBridge.notifyContentChanged()
+            }
+            AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED -> {
+                AccessibilityBridge.notifyContentChanged()
+            }
+        }
     }
 }
 
@@ -295,6 +309,10 @@ class NateqAccessibilityService : AccessibilityService() {
     private var a11yStateListener: ((A11yStateStore) -> Unit)? = null
     private var accessibilityButtonCallback:
         AccessibilityButtonController.AccessibilityButtonCallback? = null
+
+    // ع٤٣-1: نطاق كوروتينات الخدمة لتنفيذ إيماءات إمكانية الوصول غير الحاجزة
+    private val serviceJob = SupervisorJob()
+    private val serviceScope = CoroutineScope(Dispatchers.Main + serviceJob)
 
     private val handlers: List<A11yFeatureHandler> = listOf(
         ForegroundTracker,
@@ -725,25 +743,51 @@ class NateqAccessibilityService : AccessibilityService() {
 
     /**
      * العثور على العنصر المركّز عليه حالياً وإعادته كـ NodeView مسطح.
+     * يستخرج النص العميق إن كانت العقدة المفوكسة حاوية (ع٤٣-1).
      */
     fun findCurrentAccessibilityFocusSnapshot(): NodeView? {
-        val root = rootInActiveWindow ?: return null
+        val focused = findAccessibilityFocusAcrossWindows() ?: return null
         return try {
-            val focused =
-                root.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY)
-                    ?: root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-            if (focused != null) {
-                try {
-                    SafeNodeWalker.extractNodeView(focused)
-                } finally {
-                    SafeNodeWalker.safeRecycle(focused)
+            val nodeView = SafeNodeWalker.extractNodeView(focused)
+            if (nodeView.text.isNullOrBlank() &&
+                nodeView.contentDescription.isNullOrBlank()
+            ) {
+                val deepText = SafeNodeWalker.extractSubtreeText(focused)
+                if (deepText.isNotEmpty()) {
+                    return nodeView.copy(text = deepText)
                 }
-            } else {
-                null
             }
+            nodeView
         } finally {
-            SafeNodeWalker.safeRecycle(root)
+            SafeNodeWalker.safeRecycle(focused)
         }
+    }
+
+    /**
+     * العثور على عقدة التركيز عبر النافذة النشطة وباقي النوافذ (ع٤٣-1).
+     */
+    private fun findAccessibilityFocusAcrossWindows(): AccessibilityNodeInfo? {
+        val root = rootInActiveWindow
+        if (root != null) {
+            val focus = try {
+                root.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY)
+            } finally {
+                SafeNodeWalker.safeRecycle(root)
+            }
+            if (focus != null) return focus
+        }
+
+        val windowList = runCatching { windows }.getOrNull().orEmpty()
+        for (w in windowList) {
+            val wRoot = runCatching { w.root }.getOrNull() ?: continue
+            val focus = try {
+                wRoot.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY)
+            } finally {
+                SafeNodeWalker.safeRecycle(wRoot)
+            }
+            if (focus != null) return focus
+        }
+        return null
     }
 
     /**
@@ -830,46 +874,85 @@ class NateqAccessibilityService : AccessibilityService() {
             View.LAYOUT_DIRECTION_RTL
 
     /**
-     * تنفيذ توسيع قراءة المزيد (ع٢٧-20، ع٢٧-21، ع٢٩-12).
-     * - يتحقق أن العنصر المفوكس هو نفسه الذي اقتُطع نصه
-     *   (مطابقة أول 40 حرفاً من البادئة).
-     * - بعد النقر ينتظر TYPE_WINDOW_CONTENT_CHANGED حتى 300ms
-     *   قبل قراءة النص المحدث.
+     * تنفيذ توسيع قراءة المزيد (ع٢٧-20، ع٢٧-21، ع٢٩-12، ع٤٣-1).
+     * - يتحقق من تطابق العنصر المفوكس مع النص عبر [SelectorPacks].
+     * - ينفّذ التوسيع عبر [ReadMoreExpander] محصوراً بالشجرة المفوكسة.
+     * - ينتظر تغيّر محتوى النافذة لاتزامناً دون أي نوم حاجز.
+     * - يوثّق كل مرحلة في سجلات [READMORE].
      */
-    internal fun expandReadMoreInternal(prefix: String): String? {
-        val root = rootInActiveWindow ?: return null
-        return try {
-            // ع٢٩-12: تحقق أن العنصر المفوكس هو نفسه المقتطع
-            val focusSnapshot = findCurrentAccessibilityFocusSnapshot()
-            val focusedText = focusSnapshot?.readableText() ?: ""
-            val prefixClean = prefix.trim()
-            val focusedClean = focusedText.trim()
-            // مطابقة أول 40 حرفاً للتحقق من نفس العنصر
-            val matchLen = minOf(40, prefixClean.length, focusedClean.length)
-            if (matchLen > 0 &&
-                !prefixClean.substring(0, matchLen).equals(
-                    focusedClean.substring(0, matchLen),
-                    ignoreCase = true
-                )
-            ) {
-                return null // عنصر مختلف — لا تُوسّع
-            }
+    internal suspend fun expandReadMoreInternal(prefix: String): String? {
+        val focusSnapshot = findCurrentAccessibilityFocusSnapshot()
+        val focusedText = focusSnapshot?.readableText().orEmpty()
+        val prefixClean = prefix.trim()
 
-            val expanded = ReadMoreExpander.tryExpand(root)
-            if (!expanded) return null
+        // ع٤٣-1: فحص تطابق مرن بين نص الطلب والعنصر المفوكس
+        if (prefixClean.isNotEmpty() &&
+            focusedText.isNotEmpty() &&
+            !SelectorPacks.isTextMatchingMessage(prefixClean, focusedText)
+        ) {
+            Log.w(TAG, "[READMORE] Focused node does not match target text")
+            return null
+        }
 
-            // ع٢٩-12: انتظر TYPE_WINDOW_CONTENT_CHANGED حتى 300ms
-            // قبل قراءة النص المحدث
-            var waited = 0L
-            val startWait = System.currentTimeMillis()
-            while (waited < 300L) {
-                Thread.sleep(50)
-                waited = System.currentTimeMillis() - startWait
-            }
+        var focusedNode = findAccessibilityFocusAcrossWindows()
+        if (focusedNode == null) {
+            delay(60L)
+            focusedNode = findAccessibilityFocusAcrossWindows()
+        }
+        if (focusedNode == null) {
+            Log.w(TAG, "[READMORE] No focused node found across windows")
+            return null
+        }
 
-            findCurrentAccessibilityFocusSnapshot()?.readableText()
+        val oldLen = focusedText.length
+        val expanded = try {
+            ReadMoreExpander.tryExpand(focusedNode)
         } finally {
-            SafeNodeWalker.safeRecycle(root)
+            SafeNodeWalker.safeRecycle(focusedNode)
+        }
+
+        if (!expanded) {
+            Log.w(TAG, "[READMORE] tryExpand returned false")
+            return null
+        }
+
+        // ع٤٣-1: انتظار بتعليق غير حاجز حتى وصول إشارة تغيّر المحتوى
+        AccessibilityBridge.waitForContentChange(800L)
+
+        // التحقق من النص المحدّث
+        val updatedSnapshot = findCurrentAccessibilityFocusSnapshot()
+        val updatedText = updatedSnapshot?.readableText().orEmpty()
+        if (updatedText.length > oldLen) {
+            Log.w(
+                TAG,
+                "[READMORE] Expand successful: $oldLen -> " +
+                    "${updatedText.length} chars"
+            )
+            return updatedText
+        }
+
+        // مهلة تعليق إضافية قصيرة في حال تأخر تحديث الواجهة
+        delay(150L)
+        val finalSnapshot = findCurrentAccessibilityFocusSnapshot()
+        val finalText = finalSnapshot?.readableText().orEmpty()
+        return if (finalText.length > oldLen) {
+            Log.w(
+                TAG,
+                "[READMORE] Expand successful after grace delay: " +
+                    "$oldLen -> ${finalText.length} chars"
+            )
+            finalText
+        } else {
+            Log.w(TAG, "[READMORE] Text did not grow after click")
+            null
+        }
+    }
+
+    /** ع٤٣-1: تنفيذ صريح لإيماءة قراءة المزيد من KeyShortcutRouter. */
+    fun launchExpandReadMoreExplicit(onResult: (String?) -> Unit) {
+        serviceScope.launch {
+            val text = expandReadMoreInternal(prefix = "")
+            onResult(text)
         }
     }
 
@@ -1042,6 +1125,7 @@ class NateqAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         super.onDestroy()
         Log.i(TAG, "[A11yService] Destroyed")
+        serviceJob.cancel()
         ContinuousReader.stopSilently()
         unregisterScreenOffReceiver()
         unregisterBluetoothReceiver()

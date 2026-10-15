@@ -908,6 +908,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         if (::instantSilenceSection.isInitialized) {
             instantSilenceSection.cleanup()
         }
+        if (::embeddedDownloaderSection.isInitialized) {
+            embeddedDownloaderSection.detach()
+        }
         updateReceiver?.let { receiver ->
             runCatching {
                 requireContext().applicationContext

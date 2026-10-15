@@ -14,7 +14,11 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
+import java.util.Locale
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -124,5 +128,68 @@ class DownloadResumeTest {
         }
         service.onStartCommand(stopIntent, 0, 2)
         serviceController.destroy()
+    }
+
+    @Test
+    fun publishProgress_throttlesToDistinctPercent() {
+        val voiceId = "throttle-${System.nanoTime()}"
+        val downloading = AtomicInteger(0)
+        val listener = VoiceDownloadManager.DownloadListener { id, state ->
+            if (id == voiceId &&
+                state is VoiceDownloadManager.DownloadState.Downloading
+            ) {
+                downloading.incrementAndGet()
+            }
+        }
+        VoiceDownloadManager.addListener(listener)
+        try {
+            repeat(40) {
+                VoiceDownloadManager.publishProgress(context, voiceId, 0)
+            }
+            assertEquals(1, downloading.get())
+            VoiceDownloadManager.publishProgress(context, voiceId, 1)
+            VoiceDownloadManager.publishProgress(context, voiceId, 1)
+            VoiceDownloadManager.publishProgress(context, voiceId, 2)
+            assertEquals(3, downloading.get())
+        } finally {
+            VoiceDownloadManager.removeListener(listener)
+        }
+    }
+
+    @Test
+    fun fastFailure_doesNotLeaveStuckActiveJob() {
+        val voiceId = "fastfail-${System.nanoTime()}"
+        val item = VocalizerCatalogItem(
+            id = voiceId,
+            voiceName = "Test",
+            displayNameAr = "اختبار",
+            displayNameEn = "Test",
+            locale = Locale.US,
+            languageCategory = "other",
+            modelId = "embedded_compact",
+            headerFileName = "nope.hdr",
+            downloadUrl = "http://blocked.invalid/x.zip",
+            sampleUrl = "",
+            sizeMb = 1,
+            quality = "Compact"
+        )
+        val terminal = CountDownLatch(1)
+        val listener = VoiceDownloadManager.DownloadListener { id, state ->
+            val done =
+                state is VoiceDownloadManager.DownloadState.Error ||
+                    state is VoiceDownloadManager.DownloadState.Success
+            if (id == voiceId && done) terminal.countDown()
+        }
+        VoiceDownloadManager.addListener(listener)
+        try {
+            VoiceDownloadManager.startVocalizerDownload(context, item)
+            assertTrue(
+                "لم يصل التنزيل لحالة نهائية",
+                terminal.await(20, TimeUnit.SECONDS)
+            )
+            assertFalse(VoiceDownloadManager.isDownloading(voiceId))
+        } finally {
+            VoiceDownloadManager.removeListener(listener)
+        }
     }
 }

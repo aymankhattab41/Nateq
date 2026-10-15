@@ -115,6 +115,64 @@ class UpdateCheckerSemVerTest {
         assertEquals("MyApp.APK", pickedUpper)
     }
 
+    /** الأرفاق صارت مستقلة لكل معمارية (`nateq-<abi>.apk`): يُختار مرفق
+     *  معمارية الجهاز أولاً فلا يُنزَّل مرفق 32-بت فوق جهاز 64. */
+    @Test
+    fun pickApkAsset_prefersDeviceAbiOverListingOrder() {
+        val names: List<String> = listOf(
+            "nateq-armeabi-v7a.apk",
+            "nateq-arm64-v8a.apk",
+            "notes.txt"
+        )
+        // جهاز 64-بت: arm64 حتى لو بُرمج arm أولاً في أرفاق GitHub.
+        assertEquals(
+            "nateq-arm64-v8a.apk",
+            UpdateChecker.pickApkAsset(
+                names,
+                listOf("nateq-arm64-v8a.apk", "nateq-armeabi-v7a.apk")
+            ) { it }
+        )
+        // جهاز 32-بت فقط: لا يختار arm64.
+        assertEquals(
+            "nateq-armeabi-v7a.apk",
+            UpdateChecker.pickApkAsset(
+                names, listOf("nateq-armeabi-v7a.apk")
+            ) { it }
+        )
+        // معمارية الجهاز غير موجودة في الأرفاق → يسقط إلى nateq.apk.
+        val fallback: List<String> = listOf("nateq.apk", "legacy_app.apk")
+        assertEquals(
+            "nateq.apk",
+            UpdateChecker.pickApkAsset(
+                fallback, listOf("nateq-arm64-v8a.apk")
+            ) { it }
+        )
+    }
+
+    /** مشتقة أسماء الأرفاق من معماريات النظام: `armeabi` تنسدل إلى
+     *  `armeabi-v7a`، والتكرار يُزال، وغير المدعوم يُتجاهل. */
+    @Test
+    fun deviceApkCandidates_mapsAndDedupesAbis() {
+        assertEquals(
+            listOf("nateq-arm64-v8a.apk", "nateq-armeabi-v7a.apk"),
+            UpdateChecker.deviceApkCandidates(
+                listOf("arm64-v8a", "armeabi-v7a")
+            )
+        )
+        assertEquals(
+            listOf("nateq-armeabi-v7a.apk"),
+            UpdateChecker.deviceApkCandidates(
+                listOf("armeabi", "armeabi-v7a")
+            )
+        )
+        assertEquals(
+            listOf("nateq-arm64-v8a.apk"),
+            UpdateChecker.deviceApkCandidates(
+                listOf("x86_64", "arm64-v8a")
+            )
+        )
+    }
+
     /** بند 7.3: بصمة النشر من ملاحظات الإصدار (سطر SHA-256 أو SHA256SUMS). */
     @Test
     fun sha256_extractedFromReleaseNoteLine() {
@@ -158,6 +216,29 @@ class UpdateCheckerSemVerTest {
         assertNull(
             UpdateChecker.extractSha256FromReleaseNote(
                 "$bare  mapping.txt"
+            )
+        )
+    }
+
+    /** بصمة المرفق لكل معمارية (`nateq-<abi>.apk`): يُقبَل الاسم المختار
+     *  بالضبط لا اسم معمارية أخرى. */
+    @Test
+    fun sha256_extractedForSelectedAbiApkName() {
+        val hex =
+            "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+        assertEquals(
+            hex,
+            UpdateChecker.extractSha256FromReleaseNote(
+                "### المجموع الاختباري SHA-256\n`$hex`  " +
+                    "nateq-arm64-v8a.apk",
+                "nateq-arm64-v8a.apk"
+            )
+        )
+        // بصمة معمارية أخرى لا تُقبَل للهدف المطلوب (arm64).
+        assertNull(
+            UpdateChecker.extractSha256FromReleaseNote(
+                "`$hex`  nateq-armeabi-v7a.apk",
+                "nateq-arm64-v8a.apk"
             )
         )
     }

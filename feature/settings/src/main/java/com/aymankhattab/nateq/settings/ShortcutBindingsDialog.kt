@@ -116,5 +116,7 @@ class ShortcutBindingsDialog(
             R.string.a11y_action_speech_history
         ShortcutAction.SHOW_QUICK_MENU ->
             R.string.a11y_action_show_quick_menu
+        ShortcutAction.EXPAND_READ_MORE ->
+            R.string.a11y_action_expand_read_more
     }
 }
