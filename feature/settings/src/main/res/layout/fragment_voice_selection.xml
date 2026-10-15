@@ -121,6 +121,8 @@
 
             <com.google.android.material.button.MaterialButton android:tag="btn_a11y_app_profiles" style="@style/Widget.MaterialComponents.Button.TextButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:layout_marginTop="8dp" android:gravity="start|center_vertical" android:text="@string/a11y_app_profiles_manage" />
 
+            <com.google.android.material.button.MaterialButton android:tag="btn_open_keyboard_settings" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:layout_marginTop="12dp" android:gravity="start|center_vertical" android:text="@string/keyboard_settings_title" />
+
         </LinearLayout>
 
         </LinearLayout>

@@ -872,5 +872,31 @@
     <string name="dnd_permission_dialog_message">لتجاوز وضع «عدم الإزعاج» بدقة عبر نظام التشغيل، يمكنك منح إذن «الوصول إلى سياسة عدم الإزعاج». إذا لم تمنح الإذن، سيعتمد ناطق قناة الإنذار (Alarm) تلقائياً لتخطي الصامت دون الحاجة لأي إذن إضافي.</string>
     <string name="dnd_permission_dialog_positive">فتح الإعدادات للمنح</string>
     <string name="dnd_permission_dialog_negative">الاعتماد على قناة الإنذار</string>
+    <!-- لوحة مفاتيح Lord TTS الميسّرة -->
+    <string name="keyboard_service_name">لوحة مفاتيح Lord TTS الميسّرة</string>
+    <string name="keyboard_settings_title">إعدادات لوحة المفاتيح الميسّرة</string>
+    <string name="keyboard_subtype_arabic">العربية (Lord TTS)</string>
+    <string name="keyboard_subtype_english">الإنجليزية (Lord TTS)</string>
+    <string name="keyboard_section_title">لوحة المفاتيح الميسّرة</string>
+    <string name="keyboard_section_desc">لوحة مفاتيح متكاملة للمكفوفين وضعاف البصر بكتابة بالصوت وتشكيل وأدوات الحافظة</string>
+    <string name="keyboard_mode_title">وضع العرض البصري</string>
+    <string name="keyboard_mode_blind">وضع الكفيف (خلفية داكنة خالية من الوهج، تركيز على التغذية السمعية واللمسية)</string>
+    <string name="keyboard_mode_low_vision">وضع ضعيف البصر (ألوان تباين عالي أصفر على أسود، خطوط وحواف عريضة)</string>
+    <string name="keyboard_activation_title">طريقة تفعيل المفاتيح للكتابة</string>
+    <string name="keyboard_activation_lift">رفع الإصبع للتفعيل (Lift-to-Type: استكشف الحروف باللمس، وارفع إصبعك للكتابة فوراً)</string>
+    <string name="keyboard_activation_double_tap">الضغط مرتين للتفعيل (Double-Tap: استكشف الحروف باللمس، واضغط مرتين للكتابة)</string>
+    <string name="keyboard_announce_after_lift_title">إعادة نطق الحرف بعد التفعيل (اختياري)</string>
+    <string name="keyboard_announce_after_lift_summary">ينطق تأكيداً مثل «تم إدخال ألف» بعد كتابة الحرف برفع الإصبع</string>
+    <string name="keyboard_phonetic_title">نطق التهجئة التوضيحية للحروف</string>
+    <string name="keyboard_phonetic_summary">ينطق توضيحاً للحرف مثل «ألف - أسد» لتفادي أخطاء السماع</string>
+    <string name="keyboard_haptic_title">الاهتزاز اللمسي</string>
+    <string name="keyboard_haptic_summary">اهتزاز لطيف عند استكشاف المفاتيح واهتزاز مؤكد عند إدخال الحرف</string>
+    <string name="keyboard_sound_title">صوت النقر</string>
+    <string name="keyboard_sound_summary">إصدار صوت نقر مسموع عند ملامسة المفاتيح</string>
+    <string name="keyboard_enable_step1">1. تفعيل اللوحة في إعدادات النظام</string>
+    <string name="keyboard_enable_step2">2. اختيار اللوحة كافتراضية</string>
+    <string name="keyboard_test_title">مساحة التجربة الفورية</string>
+    <string name="keyboard_test_hint">المس هنا لتجربة لوحة المفاتيح والكتابة بالصوت…</string>
+    <string name="keyboard_clear_test">مسح النص التجريبي</string>
 
 </resources>
