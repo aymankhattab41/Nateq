@@ -28,6 +28,13 @@ class PronunciationDictionary(
 ) {
 
     companion object {
+        /**
+         * بثّ داخلي يعيد تحميل قاموس عملية محرك TTS فور حفظ تعديلٍ من
+         * عملية الواجهة؛ لا نعتمد على دقة طابع ملف التفضيلات بين العمليتين.
+         */
+        const val ACTION_DICTIONARY_CHANGED =
+            "com.aymankhattab.nateq.action.DICTIONARY_CHANGED"
+
         // حدود دفاعية ضد ملفات JSON ضخمة/خبيثة واردة من SAF. الملف
         // يُقرأ كاملاً في الذاكرة قبل التجزئة، فالسقف ضروري: فوقه
         // يَOOM التطبيق عند قراءة الملف قبل التحقق. 8 ميغابايت أوسعُ
@@ -343,6 +350,10 @@ sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
     /** تصفير مؤقت الخنق لإجبار [reloadIfChanged] على فحص القرص فوراً. */
     fun invalidate() {
         lastDiskCheckNanos = 0L
+        // لا تكتفِ بتصفير الخنق: أنظمة ملفاتٍ عدة لا تغيّر lastModified
+        // لكتابتين متقاربتين، فتظل عملية :tts على لقطة قديمة رغم وصول
+        // إشعار التغيير. null يجبر reloadIfChanged على قراءةٍ طازجة.
+        lastStamp = null
     }
 
     /** إعادة تحميل فورية فقط إذا تغيّر طابع الملف على القرص منذ آخر قراءة —
@@ -658,9 +669,20 @@ sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
                 .commit()
             lastStamp = currentStamp()
             lastDiskCheckNanos = 0L
+            if (ok) notifyChanged()
             ok
         } catch (e: Exception) {
             false
+        }
+    }
+
+    /** يوقظ النسخ الحية في عملية :tts من دون تعريض البث لأي تطبيق خارجي. */
+    private fun notifyChanged() {
+        runCatching {
+            context.sendBroadcast(
+                android.content.Intent(ACTION_DICTIONARY_CHANGED)
+                    .setPackage(context.packageName)
+            )
         }
     }
 }
