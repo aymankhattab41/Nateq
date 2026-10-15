@@ -99,6 +99,7 @@
     <string name="a11y_action_read_full_url">Read full link</string>
     <string name="a11y_action_repeat_previous">Read the one before</string>
     <string name="a11y_action_speech_history">Read history</string>
+    <string name="a11y_action_expand_read_more">Expand read more</string>
 <string name="all_announcements_enabled">All announcements enabled</string>
 <string name="all_announcements_summary">Turning it off silently stops automatic announcements (time, battery, messages, notifications, caller)</string>
 <string name="announcement_turned_off">Off</string>
@@ -654,6 +655,8 @@
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
 Note: this is an experimental build that may be reverted to the old system, and many features may not work. If feedback is negative, we will revert to the old system. We are waiting for your feedback on the Telegram bot; note that voice messages do not arrive. Anyone who wants personal contact for any reason should write some contact details, because the bot does not reveal the identity of anyone and I cannot reach them.
+- Embedded Vocalizer voices support for all event categories (time, battery, caller, notifications): Direct PCM synthesis and streaming playback via AudioTrack and EmbeddedProviders.vocalizer in AnnouncementSpeaker with category volume boosts, audio attributes routing, and clean interruption, plus fixing speech resolution precedence in SpeechPlanner to prevent language default from overriding category-specific voice and engine
+- Re-engineered "Read More" expansion for WhatsApp and messaging apps: Multi-strategy search targeting sibling nodes and direct actions while stripping TalkBack role, timestamp, and message status suffixes during prefix matching, with "Expand Read More" added to volume key shortcuts and Quick Menu
 - Vocalizer voice generation and SynthesisCallback lifecycle fix: Resolve catalog and language IDs in VocalizerHostSession, fallback defaults to Laila/Samantha, enforce native engine thread affinity for all JNI calls, chunk MonitoredSynthesisCallback buffers to maxBufferSize with atomic start/done/error lifecycles, disable fdsan before native library load, and manage audio focus in previews
 - Real-time update download progress dialog (R42-10): Non-dismissible progress dialog with percentage and downloaded MBs, live accessibility announcements every 10%%, hide button to continue in background with visible notification, cancel button to purge download and file, and auto-resume upon returning to screen
 - Count-based caller repetition: Replaced time-window scheduling with a count-based loop that awaits each speech completion before the interval to prevent overlapping, with a 90-second ringing safety cap, independent repeat count for call waiting, and adaptive wake lock capped at 120 seconds

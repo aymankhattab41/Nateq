@@ -17,6 +17,7 @@ enum class ShortcutAction {
     READ_FULL_URL,
     REPEAT_PREVIOUS,
     SPEECH_HISTORY,
+    EXPAND_READ_MORE,
     NONE;
 
     companion object {

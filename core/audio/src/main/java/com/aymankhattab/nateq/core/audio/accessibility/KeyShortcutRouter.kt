@@ -111,8 +111,33 @@ class KeyShortcutRouter(
             ShortcutAction.SHOW_QUICK_MENU -> A11yQuickMenu.toggle(service) {
                 executeAction(it)
             }
+            ShortcutAction.EXPAND_READ_MORE -> expandReadMoreExplicit(context)
             ShortcutAction.NONE ->
                 Log.i(TAG, "no action bound for gesture")
+        }
+    }
+
+    /** ع٤٣-1: تنفيذ صريح لإيماءة «قراءة المزيد» وتوسيع الرسالة المفوكسة. */
+    private fun expandReadMoreExplicit(context: Context) {
+        if (!isFeatureActive(
+                FeatureFlags.FEATURE_READ_MORE_EXPAND,
+                context
+            )
+        ) {
+            announce(context, "ميزة قراءة المزيد غير مفعّلة")
+            return
+        }
+        val svc = service as? NateqAccessibilityService
+        if (svc == null) {
+            announce(context, "خدمة إمكانية الوصول غير متصلة")
+            return
+        }
+        svc.launchExpandReadMoreExplicit { result ->
+            if (result != null) {
+                announce(context, result)
+            } else {
+                announce(context, "لا يوجد نص مقتطع لتوسيعه")
+            }
         }
     }
 

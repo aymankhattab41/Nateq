@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
+import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
 
 /**
  * يكتشف محركات TTS الطرفية التي يثبّتها المستخدم (مثل eSpeak، MultiTTS)
@@ -60,6 +61,9 @@ object EnginePicker {
     fun invalidateAfterStorageChange() {
         invalidateCache()
         VoiceCatalog.noteStorageChange()
+        // يُبطل أيضاً ذاكرة تهيئة المضيف كي يُعاد نداؤه فيعيد بناء
+        // المحرّك إن تغيّرت ترويسات الأصوات (تنزيل/حذف صوت مدمج).
+        EngineHostClient.onStorageChanged()
     }
 
     /** عدد المحركات في الكاش (0 قبل المسح أو بعده) — للفحص الآلي. */

@@ -139,6 +139,7 @@ object A11yQuickMenu {
         ShortcutAction.REPEAT_PREVIOUS -> "اقرأ ما قبله"
         ShortcutAction.SPEECH_HISTORY -> "اقرأ السجل"
         ShortcutAction.SHOW_QUICK_MENU -> "القائمة السريعة"
+        ShortcutAction.EXPAND_READ_MORE -> "قراءة المزيد"
         ShortcutAction.NONE -> "بلا"
     }
 
@@ -155,7 +156,8 @@ object A11yQuickMenu {
         ShortcutAction.TOGGLE_PAUSE,
         ShortcutAction.TOGGLE_CONTINUOUS,
         ShortcutAction.OCR_FOCUS,
-        ShortcutAction.READ_FULL_URL
+        ShortcutAction.READ_FULL_URL,
+        ShortcutAction.EXPAND_READ_MORE
     )
 
     /** الأفعال المعروضة في القائمة (للاكتشاف والاختبار). */

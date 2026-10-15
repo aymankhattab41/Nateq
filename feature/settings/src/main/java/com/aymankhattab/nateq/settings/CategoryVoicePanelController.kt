@@ -573,11 +573,8 @@ if (!dirtyPanel) {
         return catalog.languageForSavedVoice(saved) ?: "ar"
     }
 
-    private fun isEmbeddedEngine(pkg: String?): Boolean {
-        if (pkg.isNullOrBlank()) return false
-        val norm = HostProtocol.normalizeEngineId(pkg)
-        return norm == HostProtocol.ENGINE_VOCALIZER
-    }
+    private fun isEmbeddedEngine(pkg: String?): Boolean =
+        HostProtocol.isEmbeddedEngine(pkg)
 
     private fun fetchVoicesOnDemand(
         enginePkg: String,

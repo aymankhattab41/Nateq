@@ -39,3 +39,4 @@ relay-worker/.wrangler/
 .jni_strings.json
 __pycache__/
 temp_backup_untracked/
+*.zip

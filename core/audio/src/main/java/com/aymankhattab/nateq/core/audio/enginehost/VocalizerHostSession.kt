@@ -1,6 +1,8 @@
 package com.aymankhattab.nateq.core.audio.enginehost
 
 import android.content.Context
+import android.media.AudioFormat
+import android.media.AudioTrack
 import android.os.SystemClock
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.nuance.android.vocalizer.VocalizerAudioOutputListener
@@ -50,6 +52,20 @@ internal class VocalizerHostSession(
         /** معدل الصوت الافتراضي عند غياب قيمة صالحة. */
         internal const val DEFAULT_OUTPUT_SAMPLE_RATE_HZ = 22050
 
+        /** أعلى حجم لمخزن الصوت الأصلي (بالبايت)، مطابق SDK. */
+        internal const val MAX_AUDIO_BUFFER_SIZE = 65536
+
+        /**
+         * مضاعِف المخزن الداخلي في {@code SynthThread.run} الأصلي
+         * ({@code mInternalAudioBufferPayload = 10.0f}).
+         */
+        private const val INTERNAL_AUDIO_BUFFER_PAYLOAD = 10.0f
+
+        /**
+         * أدنى حجم مخزن يكفي دفعة المحرك الواحدة (5600 عيّنة × 2 بايت).
+         */
+        private const val MIN_AUDIO_BUFFER_BYTES = 11200
+
         /**
          * يحوّل معدل عينات الصوت العائد من المحرّك إلى **الهرتز**.
          *
@@ -65,6 +81,33 @@ internal class VocalizerHostSession(
             voiceSampleRate in MIN_SAMPLE_RATE_HZ..MAX_SAMPLE_RATE_HZ ->
                 voiceSampleRate
             else -> DEFAULT_OUTPUT_SAMPLE_RATE_HZ
+        }
+
+        /**
+         * حجم مخزن الصوت الأصلي بالبايت، مطابقاً لـ
+         * {@code SynthThread.run} في SDK:
+         * {@code min(65536, 10 × getMinBufferSize)} مقرّباً لزوجي،
+         * مع ضمان حدٍّ أدنى يكفي دفعة المحرك (11200 بايت).
+         *
+         * <p>مطلوبٌ قبل {@code speakNative} وإلا بقي مخزن المحرك
+         * NULL فعاد النطق بلا عينات.
+         */
+        internal fun audioBufferSizeFor(outputRateHz: Int): Int {
+            val hwMin = runCatching {
+                AudioTrack.getMinBufferSize(
+                    outputRateHz,
+                    AudioFormat.CHANNEL_OUT_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT
+                )
+            }.getOrDefault(0)
+            val payload = if (hwMin > 0) {
+                (INTERNAL_AUDIO_BUFFER_PAYLOAD * hwMin).toInt()
+            } else {
+                MAX_AUDIO_BUFFER_SIZE
+            }
+            val capped = minOf(MAX_AUDIO_BUFFER_SIZE, payload)
+                .coerceAtLeast(MIN_AUDIO_BUFFER_BYTES)
+            return (capped / 2) * 2
         }
 
         /**
@@ -85,6 +128,22 @@ internal class VocalizerHostSession(
             val tokens = requested.split('-', '_', ' ')
             return tokens.any { it.equals(engine, ignoreCase = true) }
         }
+
+        /**
+         * هل يجب إعادة بناء المحرّك الأصلي؟ يُعاد البناء إن لم يوجد
+         * محرّك، أو تغيّر مسار البيانات، أو تغيّر محتوى الترويسات.
+         * الترويساتُ تُقرأ مرة واحدة عند الإنشاء، فبلا إعادة البناء
+         * لا تظهر الأصوات المضافة (تنزيل صوتٍ جديد) ولا يختفي المحذوف.
+         */
+        internal fun shouldRebuildEngine(
+            enginePresent: Boolean,
+            dataDir: String,
+            loadedDataDir: String?,
+            headersText: String,
+            loadedHeadersText: String?
+        ): Boolean = !enginePresent ||
+            dataDir != loadedDataDir ||
+            headersText != loadedHeadersText
 
         internal fun matchesLanguage(
             voice: VocalizerVoice,
@@ -194,12 +253,19 @@ internal class VocalizerHostSession(
     @Volatile
     private var stopRequested = false
 
+    /**
+     * مسار البيانات ومحتوى الترويسات الذي بُني عليه المحرّك الحالي:
+     * أي تغيّر (تنزيل صوت جديد أو حذفه) يوجب إعادة بناء المحرّك لأن
+     * الأصوات تُقرأ مرة واحدة عند الإنشاء.
+     */
+    @Volatile
+    private var loadedDataDir: String? = null
+
+    @Volatile
+    private var loadedHeadersText: String? = null
+
     override fun init(dataDir: String): HostResult {
         synchronized(engineLock) {
-            if (engine != null) {
-                HostLog.d(ENGINE_ID, "المحرك مهيّأ مسبقاً")
-                return HostProtocol.success()
-            }
             if (dataDir.isBlank()) {
                 HostLog.w(ENGINE_ID, "مسار مجلد البيانات فارغ")
                 return HostResult.failure(
@@ -239,7 +305,39 @@ internal class VocalizerHostSession(
      * الأصلي ثم قراءة الترويسات ثم `initialize` — كلها على الخيط
      * الذي سيحمّل الصوت وينطق لاحقاً.
      */
+    /**
+     * يهدم محرّكاً سابقاً قبل إعادة البناء على خيط المحرك نفسه
+     * (الخيط الذي استخدمه) فلا يتعارض التحرير مع نطق جارٍ.
+     */
+    private fun releaseEngineBeforeRebuild() {
+        val old = engine
+        engine = null
+        loadedVoiceName = null
+        loadedDataDir = null
+        loadedHeadersText = null
+        if (old != null) {
+            runCatching { old.release() }
+        }
+    }
+
     private fun initializeOnEngineThread(dataDir: String): HostResult {
+        val scan = DataFolderScanner.scan(File(dataDir))
+        // إعادة استخدام المحرّك الحالي فقط إن كان بنفس المسار ونفس
+        // محتوى الترويسات؛ تغيّرُ المحتوى (تنزيل صوت أو حذفه) يوجب
+        // إعادة البناء وإلا بقيت قائمة الأصوات قديمة في المحرّك الأصلي.
+        val rebuild = shouldRebuildEngine(
+            enginePresent = engine != null,
+            dataDir = dataDir,
+            loadedDataDir = loadedDataDir,
+            headersText = scan.headersText,
+            loadedHeadersText = loadedHeadersText
+        )
+        if (!rebuild) {
+            HostLog.d(ENGINE_ID, "المحرك مهيّأ مسبقاً بنفس الترويسات")
+            return HostProtocol.success()
+        }
+        releaseEngineBeforeRebuild()
+
         val eng = VocalizerEngine(context)
         val createErr = eng.createError
         HostLog.logInitDetails(
@@ -278,7 +376,6 @@ internal class VocalizerHostSession(
             )
         }
 
-        val scan = DataFolderScanner.scan(File(dataDir))
         if (scan.headersText.isBlank()) {
             runCatching { eng.release() }
             HostLog.e(
@@ -329,6 +426,8 @@ internal class VocalizerHostSession(
         }
 
         engine = eng
+        loadedDataDir = dataDir
+        loadedHeadersText = scan.headersText
         runCatching {
             val names = eng.voiceList
                 ?.mapNotNull { it.voiceName }
@@ -475,7 +574,19 @@ internal class VocalizerHostSession(
         eng.setSpeechPitch(pitchInt)
         eng.setSpeechVolume(volumeInt)
 
-        sink.writeHeader(outputSampleRateHz(matched.sampleRate), 1)
+        val outRateHz = outputSampleRateHz(matched.sampleRate)
+        if (!eng.configureAudioBuffer(audioBufferSizeFor(outRateHz))) {
+            HostLog.e(
+                ENGINE_ID,
+                "تعذّر تخصيص مخزن صوت Vocalizer الأصلي"
+            )
+            return HostResult.failure(
+                "AUDIO_BUFFER_FAILED",
+                "تعذّر تخصيص مخزن صوت Vocalizer"
+            )
+        }
+
+        sink.writeHeader(outRateHz, 1)
 
         val pipeBroken = AtomicBoolean(false)
         val cbCount = AtomicInteger(0)

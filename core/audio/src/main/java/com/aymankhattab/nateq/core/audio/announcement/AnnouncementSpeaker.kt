@@ -5,7 +5,9 @@ import android.database.ContentObserver
 import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
+import android.media.AudioFormat
 import android.media.AudioManager
+import android.media.AudioTrack
 import android.os.Build
 import android.os.FileObserver
 import android.os.SystemClock
@@ -31,8 +33,12 @@ import com.aymankhattab.nateq.core.audio.engine.quirks.EngineQuirks
 import com.aymankhattab.nateq.engine.SpeechPart
 import com.aymankhattab.nateq.engine.TextProcessor
 import android.os.Bundle
+import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
+import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
 import com.aymankhattab.nateq.core.audio.providers.EngineBindVerifier
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
+import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.data.SettingsChangeProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.CategoryLoudnessConfig
@@ -42,6 +48,8 @@ import com.aymankhattab.nateq.util.LocaleUtils
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -666,6 +674,10 @@ class AnnouncementSpeaker(
     private val speechCycle = AtomicLong(0L)
 
     private var tts: TextToSpeech? = null
+    @Volatile
+    private var embeddedSpeechJob: Job? = null
+    @Volatile
+    private var embeddedAudioTrack: AudioTrack? = null
     private var nowSpeaking = false
     @Volatile
     private var currentCategory: String? = null
@@ -1031,7 +1043,12 @@ class AnnouncementSpeaker(
             fallbackEngine
         )
         // مسارٌ جاهز: المثيل الحالي مرتبط فعلاً بنفس المحرك المحسوم
-        if (tts != null && boundEngine != null && boundEngine == resolved) {
+        val isWarm = if (HostProtocol.isEmbeddedEngine(resolved)) {
+            boundEngine == resolved
+        } else {
+            tts != null && boundEngine != null && boundEngine == resolved
+        }
+        if (isWarm) {
             onReady(true)
             return
         }
@@ -1101,6 +1118,29 @@ class AnnouncementSpeaker(
             return
         }
         boundEngine = engine
+        if (HostProtocol.isEmbeddedEngine(engine)) {
+            tts = null
+            val isReady = runCatching {
+                EmbeddedProviders.vocalizer(appContext).isConfigured()
+            }.getOrDefault(false)
+            val completion = initGate.complete(isReady)
+            completion.served.forEach { cb -> cb(isReady) }
+            if (completion.hasNext) {
+                val nextLanguageEngine = runCatching {
+                    settings?.getEngineForLanguage(locale.language)
+                }.getOrNull()
+                val nextFallbackEngine = runCatching {
+                    settings?.getAnnouncementFallbackEngine()
+                }.getOrNull()
+                startInit(
+                    completion.nextEngine,
+                    nextLanguageEngine,
+                    nextFallbackEngine,
+                    locale
+                )
+            }
+            return
+        }
         var newTts: TextToSpeech? = null
         val timeoutRunnable = Runnable {
             Log.w(TAG, "[Speaker] Engine $engine init timed out")
@@ -1827,11 +1867,19 @@ class AnnouncementSpeaker(
         engineOverride: String? = null,
         immediate: Boolean = false
     ) {
-        val wasWarm = tts != null && boundEngine == (
-            engineOverride?.takeIf {
-                it in EnginePicker.installedEnginePackages(appContext)
-            }
-        )
+        val wasWarm = if (HostProtocol.isEmbeddedEngine(boundEngine)) {
+            boundEngine == (
+                engineOverride?.takeIf {
+                    it in EnginePicker.installedEnginePackages(appContext)
+                }
+            )
+        } else {
+            tts != null && boundEngine == (
+                engineOverride?.takeIf {
+                    it in EnginePicker.installedEnginePackages(appContext)
+                }
+            )
+        }
         val executeSpeech = executeSpeech@ {
             // VZ2: Warm instances (wasWarm) don't wait for warmup polling
             if (immediate && wasWarm) {
@@ -1845,7 +1893,9 @@ class AnnouncementSpeaker(
             // استطلاع كل 100ms حتى tts.voices غير فارغة و isLanguageAvailable
             // >= LANG_AVAILABLE، مهلة 1500ms — عند انتهائها يُنطق على أي حال
             // مرة واحدة + سجل "انتهاء مهلة الجاهزية" بلا نص منطوق
-            if (!warmupDoneForCurrentTts) {
+            if (!HostProtocol.isEmbeddedEngine(boundEngine) &&
+                !warmupDoneForCurrentTts
+            ) {
                 warmupTtsIfNeeded(locale)
                 warmupDoneForCurrentTts = true
             }
@@ -2020,6 +2070,10 @@ speechCycle.incrementAndGet()
         routeToEarpieceIfCallRoute(currentCategory)
         // السمات تُطبق عند كل دورة إن اختلفت فعلياً (لا تتبع القارئ).
         applySpeechAudioAttributes(currentCategory)
+        if (HostProtocol.isEmbeddedEngine(boundEngine)) {
+            speakEmbeddedUnits(validUnits)
+            return
+        }
         val unitUtteranceIds = validUnits.map { nextUtteranceId() }
         lastQueuedUtteranceId = unitUtteranceIds.lastOrNull()
         pendingUnitsForResume.clear()
@@ -2062,6 +2116,189 @@ speechCycle.incrementAndGet()
             releaseAudioFocus()
             notifySpeechComplete()
             Log.w(TAG, "sendSpeakUnits failed", t)
+        }
+    }
+
+    private fun stopEmbeddedAudioTrack() {
+        embeddedAudioTrack?.let { track ->
+            runCatching {
+                if (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
+                    track.pause()
+                    track.flush()
+                }
+                track.release()
+            }
+        }
+        embeddedAudioTrack = null
+    }
+
+    private fun speakEmbeddedUnits(units: List<SpeakUnit>) {
+        val gen = speechGeneration.get()
+        nowSpeaking = true
+        armSpeechWatchdog(units)
+
+        embeddedSpeechJob?.cancel()
+        stopEmbeddedAudioTrack()
+
+        embeddedSpeechJob = prewarmScope.launch {
+            val provider = EmbeddedProviders.vocalizer(appContext)
+            val boost = settings?.let { s ->
+                if (runCatching { s.isSpeechBoostEnabled() }
+                        .getOrDefault(false)
+                ) {
+                    runCatching { s.getSpeechBoostValue() }
+                        .getOrDefault(1.0f)
+                } else {
+                    1.0f
+                }
+            } ?: 1.0f
+            val volumeBoost = settings?.let { s ->
+                if (runCatching { s.isVolumeBoostEnabled() }
+                        .getOrDefault(false)
+                ) {
+                    runCatching { s.getVolumeBoostValue() }
+                        .getOrDefault(1.0f)
+                } else {
+                    1.0f
+                }
+            } ?: 1.0f
+
+            val route = resolvedRouteForNow(currentCategory)
+            val audioAttrs = route.audioAttributes
+
+            try {
+                for (unit in units) {
+                    if (gen != speechGeneration.get() || !nowSpeaking) break
+                    val cleanText = ArabicSpeechNormalizer.normalize(
+                        java.text.Normalizer.normalize(
+                            stripEmojis(unit.text),
+                            java.text.Normalizer.Form.NFC
+                        )
+                    )
+                    if (cleanText.isBlank()) continue
+
+                    val effectiveRate = clampedSpeechRate(unit.rate * boost)
+                    val effectiveVolume = (
+                        (if (unit.volume <= 0f) 0.05f else unit.volume) *
+                            volumeBoost
+                    ).coerceIn(0.05f, 1f)
+                    val effectivePitch =
+                        unit.pitch.coerceAtLeast(MIN_RATE_OR_PITCH)
+                    val rawVoice = unit.voiceId ?: voiceId
+                    val descriptor = VoiceDescriptor(
+                        id = rawVoice.orEmpty(),
+                        providerId = boundEngine
+                            ?: VocalizerEmbeddedVoiceProvider.PROVIDER_ID,
+                        displayName = rawVoice.orEmpty(),
+                        locale = unit.locale
+                    )
+
+                    var track: AudioTrack? = null
+                    var totalFramesWritten = 0L
+                    var bytesPerFrame = 2
+
+                    provider.synthesize(
+                        text = cleanText,
+                        voice = descriptor,
+                        speechRate = effectiveRate,
+                        pitch = effectivePitch,
+                        volume = effectiveVolume,
+                        onFormatInfo = { sampleRateInHz, channelCount ->
+                            if (gen != speechGeneration.get() || !nowSpeaking) {
+                                return@synthesize
+                            }
+                            val channelConfig = if (channelCount == 2) {
+                                AudioFormat.CHANNEL_OUT_STEREO
+                            } else {
+                                AudioFormat.CHANNEL_OUT_MONO
+                            }
+                            bytesPerFrame = channelCount * 2
+                            val minBuf = AudioTrack.getMinBufferSize(
+                                sampleRateInHz,
+                                channelConfig,
+                                AudioFormat.ENCODING_PCM_16BIT
+                            )
+                            val bufSize = maxOf(minBuf, 8192)
+                            val format = AudioFormat.Builder()
+                                .setSampleRate(sampleRateInHz)
+                                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                                .setChannelMask(channelConfig)
+                                .build()
+                            val newTrack = AudioTrack.Builder()
+                                .setAudioAttributes(audioAttrs)
+                                .setAudioFormat(format)
+                                .setBufferSizeInBytes(bufSize)
+                                .setTransferMode(AudioTrack.MODE_STREAM)
+                                .build()
+                            newTrack.setVolume(effectiveVolume)
+                            newTrack.play()
+                            track = newTrack
+                            embeddedAudioTrack = newTrack
+                        },
+                        onAudioChunk = { chunk, validLength ->
+                            if (gen != speechGeneration.get() || !nowSpeaking) {
+                                return@synthesize
+                            }
+                            val currentTrack = track
+                            if (currentTrack != null &&
+                                currentTrack.playState ==
+                                AudioTrack.PLAYSTATE_PLAYING &&
+                                validLength > 0
+                            ) {
+                                currentTrack.write(chunk, 0, validLength)
+                                totalFramesWritten +=
+                                    (validLength / bytesPerFrame)
+                            }
+                        },
+                        enginePackage = boundEngine,
+                        voiceLocale = unit.locale,
+                        desiredVoiceName = rawVoice,
+                        category = currentCategory
+                    )
+
+                    val activeTrack = track
+                    if (activeTrack != null &&
+                        activeTrack.playState == AudioTrack.PLAYSTATE_PLAYING
+                    ) {
+                        val sampleRate = activeTrack.sampleRate
+                        val playTimeoutMs = if (sampleRate > 0) {
+                            ((totalFramesWritten * 1000L) / sampleRate) + 500L
+                        } else {
+                            1000L
+                        }
+                        val startTime = System.currentTimeMillis()
+                        while (activeTrack.playState ==
+                            AudioTrack.PLAYSTATE_PLAYING &&
+                            activeTrack.playbackHeadPosition <
+                            totalFramesWritten &&
+                            (System.currentTimeMillis() - startTime) <
+                            playTimeoutMs &&
+                            gen == speechGeneration.get() &&
+                            nowSpeaking
+                        ) {
+                            delay(20L)
+                        }
+                    }
+                    stopEmbeddedAudioTrack()
+                }
+            } catch (t: Throwable) {
+                if (t !is kotlinx.coroutines.CancellationException) {
+                    Log.w(TAG, "Embedded announcement speech failed", t)
+                }
+            } finally {
+                stopEmbeddedAudioTrack()
+                mainHandler.post {
+                    if (gen == speechGeneration.get()) {
+                        cancelSpeechWatchdog()
+                        stopInterruptionMonitoring()
+                        releaseAudioFocus()
+                        notifySpeechComplete()
+                        nowSpeaking = false
+                        currentCategory = null
+                        checkAndResumeInterruptedSpeech()
+                    }
+                }
+            }
         }
     }
 
@@ -2651,6 +2888,9 @@ speechCycle.incrementAndGet()
         resumableAnnouncement = null
         pendingUnitsForResume.clear()
         speechGeneration.incrementAndGet()
+        embeddedSpeechJob?.cancel()
+        embeddedSpeechJob = null
+        stopEmbeddedAudioTrack()
         AudioCuePlayer.getInstance(appContext).stop()
         stopInterruptionMonitoring()
         mainHandler.removeCallbacksAndMessages(null)
@@ -3034,6 +3274,9 @@ speechCycle.incrementAndGet()
     }
 
     private fun shutdownSafely() {
+        embeddedSpeechJob?.cancel()
+        embeddedSpeechJob = null
+        stopEmbeddedAudioTrack()
         try {
             tts?.shutdown()
         } catch (ignored: Throwable) {

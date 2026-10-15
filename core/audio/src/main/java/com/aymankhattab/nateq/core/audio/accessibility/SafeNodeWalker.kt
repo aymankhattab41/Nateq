@@ -130,4 +130,48 @@ object SafeNodeWalker {
             runCatching { node.recycle() }
         }
     }
+
+    /**
+     * استخراج النص العميق من العقدة أو أبنائها المباشرين (ع٤٣-1).
+     * يفيد عندما تكون العقدة المفوكسة حاوية (مثل ViewGroup/LinearLayout)
+     * ونص الرسالة الفعلي موجود داخل عقدة فرعية (TextView).
+     */
+    fun extractSubtreeText(root: AccessibilityNodeInfo?): String {
+        if (root == null) return ""
+        val direct = root.text?.toString()?.trim()
+        if (!direct.isNullOrBlank()) return direct
+        val desc = root.contentDescription?.toString()?.trim()
+        if (!desc.isNullOrBlank() && !SelectorPacks.isReadMoreTrigger(desc)) {
+            return desc
+        }
+        return findTextInDescendants(root, depth = 0)
+    }
+
+    private fun findTextInDescendants(
+        node: AccessibilityNodeInfo,
+        depth: Int
+    ): String {
+        if (depth > 4) return ""
+        val count = runCatching { node.childCount }.getOrDefault(0)
+        for (i in 0 until count) {
+            val child = runCatching {
+                node.getChild(i)
+            }.getOrNull() ?: continue
+            try {
+                val t = child.text?.toString()?.trim()
+                if (!t.isNullOrBlank()) return t
+                val desc = child.contentDescription?.toString()?.trim()
+                if (!desc.isNullOrBlank() &&
+                    !SelectorPacks.isReadMoreTrigger(desc)
+                ) {
+                    return desc
+                }
+                val deeper = findTextInDescendants(child, depth + 1)
+                if (deeper.isNotBlank()) return deeper
+            } finally {
+                safeRecycle(child)
+            }
+        }
+        return ""
+    }
 }

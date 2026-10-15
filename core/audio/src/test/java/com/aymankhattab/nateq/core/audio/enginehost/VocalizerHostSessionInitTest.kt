@@ -69,6 +69,22 @@ class VocalizerHostSessionInitTest {
     }
 
     @Test
+    fun audioBufferSizeFor_isEvenAndWithinBounds() {
+        // عقدُ مخزن الصوت الأصلي (setAudioBufferSize): زوجيٌّ دائماً،
+        // وبين الحد الأدنى (11200 = دفعة 5600 عيّنة × 2 بايت) وسقف
+        // SDK (65536). غيابُه يجعل مخزن المحرك NULL فيخرج النطق
+        // بلا عينات (دفعات=0).
+        for (rate in intArrayOf(8000, 16000, 22050, 44100, 48000)) {
+            val size = VocalizerHostSession.audioBufferSizeFor(rate)
+            assertEquals("الزوجية عند $rate", 0, size % 2)
+            assertTrue(
+                "داخل الحدود عند $rate: $size",
+                size in 11_200..65_536
+            )
+        }
+    }
+
+    @Test
     fun outputSampleRateHz_fallsBackWhenInvalid() {
         val fallback =
             VocalizerHostSession.DEFAULT_OUTPUT_SAMPLE_RATE_HZ
@@ -83,6 +99,75 @@ class VocalizerHostSessionInitTest {
         assertEquals(
             fallback,
             VocalizerHostSession.outputSampleRateHz(500_000)
+        )
+    }
+
+    @Test
+    fun shouldRebuildEngine_reusesWhenDirAndHeadersUnchanged() {
+        // لا إعادة بناء بلا تغيير: ترويساتٌ مطابقة ومسارٌ مطابق.
+        assertFalse(
+            VocalizerHostSession.shouldRebuildEngine(
+                enginePresent = true,
+                dataDir = "/v",
+                loadedDataDir = "/v",
+                headersText = "hdr-tarik",
+                loadedHeadersText = "hdr-tarik"
+            )
+        )
+    }
+
+    @Test
+    fun shouldRebuildEngine_rebuildsWhenNewVoiceHeaderAdded() {
+        // الجذر المُصلَح: تنزيل صوتٍ جديد يضيف ترويسة → يجب إعادة
+        // البناء، وإلا بقيت قائمة الأصوات قديمة (طارق وحده).
+        assertTrue(
+            VocalizerHostSession.shouldRebuildEngine(
+                enginePresent = true,
+                dataDir = "/v",
+                loadedDataDir = "/v",
+                headersText = "hdr-tarik+hdr-laila",
+                loadedHeadersText = "hdr-tarik"
+            )
+        )
+    }
+
+    @Test
+    fun shouldRebuildEngine_rebuildsWhenVoiceHeaderRemoved() {
+        // حذف صوتٍ يقلّل الترويسات → إعادة بناء أيضاً.
+        assertTrue(
+            VocalizerHostSession.shouldRebuildEngine(
+                enginePresent = true,
+                dataDir = "/v",
+                loadedDataDir = "/v",
+                headersText = "hdr-tarik",
+                loadedHeadersText = "hdr-tarik+hdr-laila"
+            )
+        )
+    }
+
+    @Test
+    fun shouldRebuildEngine_rebuildsWhenNoEngineYet() {
+        assertTrue(
+            VocalizerHostSession.shouldRebuildEngine(
+                enginePresent = false,
+                dataDir = "/v",
+                loadedDataDir = null,
+                headersText = "hdr-tarik",
+                loadedHeadersText = null
+            )
+        )
+    }
+
+    @Test
+    fun shouldRebuildEngine_rebuildsWhenDataDirChanges() {
+        assertTrue(
+            VocalizerHostSession.shouldRebuildEngine(
+                enginePresent = true,
+                dataDir = "/v2",
+                loadedDataDir = "/v1",
+                headersText = "hdr-tarik",
+                loadedHeadersText = "hdr-tarik"
+            )
         )
     }
 }

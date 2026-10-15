@@ -85,6 +85,29 @@ class EngineHostClientCacheTest {
     }
 
     @Test
+    fun onStorageChanged_clearsInitializedCache() {
+        // تغيّر محتوى التخزين (تنزيل/حذف صوت) يجب أن يُبطل ذاكرة
+        // «سبق تهيئة المضيف» كي يُعاد نداؤه فيعيد بناء المحرّك
+        // بالترويسات الجديدة فتظهر الأصوات المضافة فوراً.
+        val engineId = HostProtocol.ENGINE_VOCALIZER
+        val dataDir = "/test/vocalizer/dir"
+
+        val field = EngineHostClient::class.java
+            .getDeclaredField("initializedEngines")
+        field.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val map = field.get(EngineHostClient) as
+            java.util.concurrent.ConcurrentHashMap<String, String>
+        map[engineId] = dataDir
+
+        assertTrue(EngineHostClient.isEngineInitialized(engineId, dataDir))
+
+        EngineHostClient.onStorageChanged()
+
+        assertFalse(EngineHostClient.isEngineInitialized(engineId, dataDir))
+    }
+
+    @Test
     fun onHostDied_clearsInitializedCache() {
         val engineId = HostProtocol.ENGINE_VOCALIZER
         val dataDir = "/test/vocalizer/dir"

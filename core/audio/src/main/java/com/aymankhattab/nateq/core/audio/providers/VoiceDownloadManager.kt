@@ -5,6 +5,7 @@ import android.content.Intent
 import android.util.Log
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -41,6 +42,13 @@ object VoiceDownloadManager {
     private val activeStates = ConcurrentHashMap<String, DownloadState>()
     private val voiceTitles = ConcurrentHashMap<String, String>()
     private val listeners = CopyOnWriteArraySet<DownloadListener>()
+
+    /**
+     * آخر نسبة أُعلنت لكل صوت — يمنع عاصفة التحديثات: نداءُ التقدّم
+     * يقع لكل قطعة 32KB (~1400 لملف 45MB)، وبلا خنقٍ تُغرق الخدمة
+     * الأمامية وSystemUI فتتجمّد الواجهة ويتأخّر التنزيل.
+     */
+    private val lastProgress = ConcurrentHashMap<String, Int>()
 
     fun addListener(listener: DownloadListener) {
         listeners.add(listener)
@@ -91,6 +99,24 @@ object VoiceDownloadManager {
     }
 
     /**
+     * ينشر تقدّمًا مخفّفًا: لا شيء إن لم تتغيّر النسبة الصحيحة. هكذا
+     * ينزل عدد إشعارات الخدمة ورسائل الواجهة من ~1400 إلى ≤100 لكل تنزيل.
+     */
+    internal fun publishProgress(
+        context: Context,
+        voiceId: String,
+        percent: Int
+    ) {
+        if (lastProgress[voiceId] == percent) return
+        lastProgress[voiceId] = percent
+        updateState(
+            voiceId,
+            DownloadState.Downloading(percent, 0L, -1L)
+        )
+        notifyServiceProgress(context, voiceId, percent)
+    }
+
+    /**
      * بدء تنزيل صوت Vocalizer في الخلفية عبر الخدمة الأمامية.
      */
     fun startVocalizerDownload(
@@ -103,7 +129,8 @@ object VoiceDownloadManager {
 
         ensureServiceRunning(appContext)
 
-        val job = scope.launch {
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            lastProgress[item.id] = 0
             updateState(
                 item.id,
                 DownloadState.Downloading(0, 0L, -1L)
@@ -112,14 +139,11 @@ object VoiceDownloadManager {
 
             val result = VocalizerDownloader.downloadVoice(appContext, item) {
                 percent ->
-                updateState(
-                    item.id,
-                    DownloadState.Downloading(percent, 0L, -1L)
-                )
-                notifyServiceProgress(appContext, item.id, percent)
+                publishProgress(appContext, item.id, percent)
             }
 
             activeJobs.remove(item.id)
+            lastProgress.remove(item.id)
 
             if (result.isSuccess) {
                 DownloadLog.clearError(item.id)
@@ -142,7 +166,10 @@ object VoiceDownloadManager {
             }
             checkAllCompleted(appContext)
         }
+        // التسجيل قبل الإطلاق يمنع سباقًا: لو انتهى الـ job فورًا (فشل
+        // سريع) لأزال نفسه من activeJobs قبل تسجيله فيبقى معلّقًا.
         activeJobs[item.id] = job
+        job.start()
     }
 
     /**

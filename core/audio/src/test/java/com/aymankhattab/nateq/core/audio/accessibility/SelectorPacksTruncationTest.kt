@@ -14,9 +14,17 @@ class SelectorPacksTruncationTest {
     fun looksTruncated_detectsArabicPatterns() {
         assertTrue(SelectorPacks.looksTruncated("رسالة طويلة…"))
         assertTrue(SelectorPacks.looksTruncated("رسالة طويلة..."))
-        assertTrue(SelectorPacks.looksTruncated("رسالة طويلة… المزيد"))
-        assertTrue(SelectorPacks.looksTruncated("رسالة طويلة... المزيد"))
-        assertTrue(SelectorPacks.looksTruncated("رسالة طويلة قراءة المزيد"))
+        assertTrue(
+            SelectorPacks.looksTruncated("رسالة طويلة… المزيد")
+        )
+        assertTrue(
+            SelectorPacks.looksTruncated("رسالة طويلة... المزيد")
+        )
+        assertTrue(
+            SelectorPacks.looksTruncated(
+                "رسالة طويلة قراءة المزيد"
+            )
+        )
     }
 
     @Test
@@ -55,7 +63,102 @@ class SelectorPacksTruncationTest {
     fun looksTruncated_rejectsMidTextKeywords() {
         // الكلمة في المنتصف لا تعني اقتطاعاً
         assertFalse(SelectorPacks.looksTruncated("See more details here"))
-        assertFalse(SelectorPacks.looksTruncated("قراءة المزيد متاحة"))
+        assertFalse(
+            SelectorPacks.looksTruncated("قراءة المزيد متاحة")
+        )
+    }
+
+    @Test
+    fun looksTruncated_detectsTalkBackRoleSuffixes() {
+        // ع٤٣-1: نصوص TalkBack تنتهي بدور العنصر (، زر / , button / إلخ)
+        assertTrue(
+            SelectorPacks.looksTruncated("رسالة طويلة… زر")
+        )
+        assertTrue(
+            SelectorPacks.looksTruncated(
+                "رسالة طويلة… قراءة المزيد، زر"
+            )
+        )
+        assertTrue(SelectorPacks.looksTruncated(
+            "رسالة طويلة... Read more, button"
+        ))
+        assertTrue(SelectorPacks.looksTruncated(
+            "رسالة طويلة... مزدوج النقر للتفعيل"
+        ))
+        assertTrue(SelectorPacks.looksTruncated(
+            "رسالة طويلة… زر إمكانية الوصول"
+        ))
+    }
+
+    @Test
+    fun looksTruncated_detectsMessagingMetadataSuffixes() {
+        // ع٤٣-1: نصوص واتساب وتلغرام المنتهية بالتوقيت وحالة الإرسال
+        assertTrue(
+            SelectorPacks.looksTruncated(
+                "رسالة طويلة... " +
+                    "\u200Fقراءة المزيد، ١:٤٦ ص، تم الإرسال"
+            )
+        )
+        assertTrue(
+            SelectorPacks.looksTruncated(
+                "Long message... Read more, 1:46 AM, Sent"
+            )
+        )
+        assertTrue(
+            SelectorPacks.looksTruncated(
+                "رسالة طويلة... " +
+                    "قراءة المزيد، ١٢:٣٠ م"
+            )
+        )
+        assertTrue(
+            SelectorPacks.looksTruncated(
+                "رسالة طويلة… المزيد، تم التسليم"
+            )
+        )
+        assertFalse(
+            SelectorPacks.looksTruncated(
+                "نص كامل عادي، ١:٤٦ ص، تم الإرسال"
+            )
+        )
+    }
+
+    @Test
+    fun isReadMoreTrigger_rejectsBlacklistedPatterns() {
+        // ع٤٣-1: استبعاد صريح لـ More options والخيارات والقوائم
+        assertFalse(SelectorPacks.isReadMoreTrigger("More options"))
+        assertFalse(SelectorPacks.isReadMoreTrigger("Show more options"))
+        assertFalse(
+            SelectorPacks.isReadMoreTrigger("خيارات إضافية")
+        )
+        assertFalse(
+            SelectorPacks.isReadMoreTrigger("مزيد من الخيارات")
+        )
+        assertFalse(SelectorPacks.isReadMoreTrigger("More settings"))
+        assertFalse(SelectorPacks.isReadMoreTrigger("See more details"))
+    }
+
+    @Test
+    fun isTextMatchingMessage_matchesAcrossTalkBackPrefixesAndRoles() {
+        val talkbackText =
+            "أحمد، 10:15: رسالة طويلة " +
+                "ومهمة جداً تتناول خطة العمل… زر"
+        val nodeText =
+            "رسالة طويلة ومهمة جداً " +
+                "تتناول خطة العمل…"
+        assertTrue(
+            SelectorPacks.isTextMatchingMessage(talkbackText, nodeText)
+        )
+        assertTrue(
+            SelectorPacks.isTextMatchingMessage(nodeText, talkbackText)
+        )
+
+        // نصوص غير متطابقة
+        assertFalse(
+            SelectorPacks.isTextMatchingMessage(
+                "رسالة أولى تتحدث عن الطقس",
+                "رسالة مختلفة تماماً عن الأخبار"
+            )
+        )
     }
 
     @Test
@@ -64,5 +167,35 @@ class SelectorPacksTruncationTest {
         assertTrue(SelectorPacks.isReadMoreTrigger("Read more"))
         assertTrue(SelectorPacks.isReadMoreTrigger("المزيد"))
         assertFalse(SelectorPacks.isReadMoreTrigger("نص عادي"))
+    }
+
+    @Test
+    fun isReadMoreTrigger_handlesBidiMarksAndWhitespace() {
+        // ع٤٣-1: واتساب يغلّف نصوص الأزرار بمحارف اتجاه مثل \u200F
+        assertTrue(
+            SelectorPacks.isReadMoreTrigger("\u200Fقراءة المزيد")
+        )
+        assertTrue(
+            SelectorPacks.isReadMoreTrigger(
+                "\u200Eقراءة المزيد\u200F"
+            )
+        )
+        assertTrue(SelectorPacks.isReadMoreTrigger("\u061Cالمزيد"))
+        assertTrue(SelectorPacks.isReadMoreTrigger("  \u200FRead more  "))
+    }
+
+    @Test
+    fun looksTruncated_handlesBidiMarksAndTalkBackSuffixes() {
+        // ع٤٣-1: محاكاة رسالة واتساب ونطق TalkBack الحقيقي
+        assertTrue(
+            SelectorPacks.looksTruncated(
+                "الإصدار 1.6... \u200Fقراءة المزيد، زر"
+            )
+        )
+        assertTrue(
+            SelectorPacks.looksTruncated(
+                "الإصدار 1.6:... \u200Fقراءة المزيد"
+            )
+        )
     }
 }

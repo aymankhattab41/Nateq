@@ -49,6 +49,9 @@ internal class EmbeddedEngineDownloaderController(
 
     private var activeEngine = "vocalizer"
 
+    /** يمنع تكرار إضافة المستمع ويكفل إزالته عند التدمير. */
+    private var listenerAttached = false
+
     private enum class NavLevel { LANGUAGES, VOICES, QUALITIES }
     private var navLevel = NavLevel.LANGUAGES
     private var selectedLocale: Locale? = null
@@ -104,7 +107,10 @@ internal class EmbeddedEngineDownloaderController(
         }
 
     fun setup(root: View) {
-        VoiceDownloadManager.addListener(downloadListener)
+        if (!listenerAttached) {
+            VoiceDownloadManager.addListener(downloadListener)
+            listenerAttached = true
+        }
 
         // ع٢٩-8 بند 2: تهيئة قائمة حالة المحركات الثلاثة
         // (دائماً ظاهرة)
@@ -134,6 +140,14 @@ internal class EmbeddedEngineDownloaderController(
 
     fun refresh(root: View) {
         renderVoicesList(root)
+    }
+
+    /** يفصل مستمع التنزيل عند تدمير الواجهة (منع تسريب الفصيل). */
+    fun detach() {
+        if (listenerAttached) {
+            VoiceDownloadManager.removeListener(downloadListener)
+            listenerAttached = false
+        }
     }
 
     /**

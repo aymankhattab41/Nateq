@@ -75,7 +75,10 @@ class VocalizerJniContractTest {
         checkMethods(VocalizerEngine::class.java, setOf(
             // الطريقتان اللتان تستدعيهما C++ من خيط أصلي (instance)
             "openAssetFile",
-            "closeAssetFile"
+            "closeAssetFile",
+            // يغلّف setAudioBufferSize الأصلي، وإلا بقي مخزن
+            // المحرك NULL فعاد النطق بلا أي عينات (دفعات=0).
+            "configureAudioBuffer"
         ))
     }
 

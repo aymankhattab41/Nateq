@@ -4,6 +4,7 @@ import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import androidx.core.content.FileProvider
 import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.util.NateqJson
@@ -27,6 +28,10 @@ object UpdateChecker {
     private const val RELEASES_API =
         "https://api.github.com/repos/$REPO/releases/latest"
     const val APK_NAME = "nateq.apk"
+
+    /** بادئة أسماء مرفقات الـAPK المبنيّة لكل معمارية: `nateq-<abi>.apk`
+     *  (انظر `splits.abi` و`outputFileName` في `app/build.gradle.kts`). */
+    private const val ABI_APK_PREFIX = "nateq-"
 
     /** مدة بقاء نتيجة الفحص المخزَّنة قبل إعادة الاتصال (6 ساعات). */
     internal const val CACHE_TTL_MS = 6L * 60 * 60 * 1000
@@ -125,20 +130,50 @@ object UpdateChecker {
         return false
     }
 
-    /** اختيار مرفق الـ APK من أصول الإصدار: يفضّل الاسم المتوقع
-     *  ([APK_NAME]) ثم أي مرفق ينتهي بـ `.apk` — فنسخة قديمة مثبّتة تبحث
-     *  عن اسمٍ قديم لا ترى مرفقاً باسم `nateq.apk` فتعلن «محدّثاً»
-     *  وهمياً. تُعيد null إن لم يوجد أي مرفق APK. منطق نقي قابل للاختبار. */
+    /** يحوّل اسم معمارية النظام إلى الاسم المطابق في مرفق الـAPK:
+     *  `armeabi` تنسدل إلى `armeabi-v7a` (الاسم المبني)، وغير المعماريتين
+     *  المدعومتين يُتجاهل. منطق نقي قابل للاختبار. */
+    internal fun canonicalAbi(abi: String): String? = when (
+        abi.trim().lowercase()
+    ) {
+        "arm64-v8a" -> "arm64-v8a"
+        "armeabi-v7a", "armeabi" -> "armeabi-v7a"
+        else -> null
+    }
+
+    /** أسماء أرفاق الـAPK المرشّحة لمعمارية الجهاز بترتيب الأفضلية، مشتقةٌ
+     *  من [supportedAbis] (أولها المفضّل — 64-بت على الأجهزة الحديثة)،
+     *  فلا يُنزَّل مرفق 32-بت فوق جهاز 64. منطق نقي قابل للاختبار. */
+    internal fun deviceApkCandidates(
+        supportedAbis: List<String> = Build.SUPPORTED_ABIS.toList()
+    ): List<String> = supportedAbis
+        .mapNotNull { canonicalAbi(it) }
+        .distinct()
+        .map { "$ABI_APK_PREFIX$it.apk" }
+
+    /** اختيار مرفق الـAPK الأنسب: معمارية الجهاز أولاً بترتيب الأفضلية
+     *  ([preferredNames])، ثم الاسم العام ([APK_NAME]) لإصدارات أحادية
+     *  قديمة، ثم أي مرفق ينتهي بـ`.apk` — فنسخة قديمة تبحث عن اسمٍ سابق
+     *  لا ترى `nateq.apk` فتستدلّ بأول مرفق بدل أن تُعلن «محدّثاً» وهمياً.
+     *  تُعيد null إن لم يوجد أي مرفق APK. منطق نقي قابل للاختبار. */
     internal fun <T> pickApkAsset(
         assets: List<T>,
+        preferredNames: List<String> = emptyList(),
         nameOf: (T) -> String
     ): T? {
         val apkAssets = assets.filter {
             nameOf(it).endsWith(".apk", ignoreCase = true)
         }
-        return apkAssets.minWithOrNull(
-            compareBy { nameOf(it) != APK_NAME }
-        )
+        if (apkAssets.isEmpty()) return null
+        for (preferred in preferredNames) {
+            apkAssets.firstOrNull {
+                nameOf(it).equals(preferred, ignoreCase = true)
+            }?.let { return it }
+        }
+        apkAssets.firstOrNull {
+            nameOf(it).equals(APK_NAME, ignoreCase = true)
+        }?.let { return it }
+        return apkAssets.first()
     }
 
     sealed class CheckResult {
@@ -230,9 +265,11 @@ object UpdateChecker {
                     // الاسم المتوقع أولاً ثم أي مرفق APK — حتى لا يضيع التحديث
                     // لو غُيّر اسم المرفق (نسخة سابقة باسمٍ قديم
                     // لا ترى `nateq.apk` فكانت تُعلن تحديثاً وهمياً).
-                    val apkAsset = pickApkAsset(apkAssets) {
-                        it.optString("name")
-                    }
+                    val apkAsset = pickApkAsset(
+                        apkAssets,
+                        preferredNames = deviceApkCandidates(),
+                        nameOf = { it.optString("name") }
+                    )
                     // إصدار أحدث لكن منشوره بلا أي مرفق APK على الإطلاق
                     // → لا شيء ننزله.
                     if (apkAsset == null) {
@@ -255,7 +292,8 @@ object UpdateChecker {
                         ?.removePrefix("sha256:")
                     val expectedSha = digestFromAsset
                         ?: extractSha256FromReleaseNote(
-                            root.optString("body")
+                            root.optString("body"),
+                            apkAsset.optString("name")
                         )
                     CheckResult.UpdateAvailable(
                         tag, urlEl.optString(), expectedSha
@@ -599,19 +637,24 @@ object UpdateChecker {
      *  سكربت النشر يُدرج إما سطر «SHA-256: …» أو محتوى ملف SHA256SUMS
      *  (سطر يبدأ بالبصمة ثم اسم الملف): يُقبل النمطان معاً. تُعاد null
      *  عند غياب بصمة صالحة. منطق نقي. */
-    internal fun extractSha256FromReleaseNote(text: String?): String? {
+    internal fun extractSha256FromReleaseNote(
+        text: String?,
+        fileName: String = APK_NAME
+    ): String? {
         if (text.isNullOrBlank()) return null
+        val target = fileName.ifBlank { APK_NAME }
         // تُقبل البصمة فقط حين ترتبط صراحةً بالهدف (بند 3.9): إما سطر
         // «SHA-256: …» (أو «SHA-256=»)، وإما تنسيق SHA256SUMS
-        // («البصمة  nateq.apk»). هكذا لا تُلتقط بصمةٌ عشوائية من
-        // الملاحظات — كملف المصدر أو mapping — فتثبيت فاشل.
+        // («البصمة  <اسم المرفق المختار>»). هكذا لا تُلتقط بصمةٌ عشوائية
+        // من الملاحظات — كملف المصدر أو mapping — فتثبيت فاشل.
         val prefixed = Regex(
             "(?im)^[ \\t`]*SHA-?256[ \\t`]*[:=][ \\t`]*" +
                 "([0-9a-f]{64})(?![0-9a-f])"
         ).find(text)
         prefixed?.let { return it.groupValues[1].lowercase() }
         val sums = Regex(
-            "(?im)^[ \\t`]*([0-9a-f]{64})[` \\t]+nateq\\.apk"
+            "(?im)^[ \\t`]*([0-9a-f]{64})[` \\t]+" +
+                Regex.escape(target)
         ).find(text)
         return sums?.groupValues?.get(1)?.lowercase()
     }

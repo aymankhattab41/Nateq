@@ -254,5 +254,16 @@ class VocalizerDataProvider(
             }
             return "${sb}.xmf"
         }
+
+        /**
+         * ملفات قاموس المستخدم (userdct_*) اختيارية: المحرك يطلبها لتُملأ
+         * بكلمات المستخدم، وغيابُها ليس خطأً ولا يمنع التخليق. يُقبل اسمٌ
+         * مسطّح أو مسارٌ أصلي.
+         */
+        @JvmStatic
+        fun isOptionalUserDictionary(name: String?): Boolean {
+            if (name.isNullOrBlank()) return false
+            return flattenAssetName(name).startsWith("userdct_")
+        }
     }
 }

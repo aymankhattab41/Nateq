@@ -32,7 +32,6 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $gradleFile = Join-Path $repoRoot 'app\build.gradle.kts'
 $apkDir = Join-Path $repoRoot 'app\build\outputs\apk\release'
-$apkFile = Join-Path $apkDir 'nateq.apk'
 
 function Invoke-Git {
     param([Parameter(Mandatory = $true)][string[]]$GitArgs)
@@ -272,7 +271,8 @@ Write-Host "=> يغطي $newCommitCount التزاماً جديداً منذ $si
 # ملاحظات الإصدار من بند المستجدات داخل التطبيق (عربي)، لا توليد آلي.
 $changelogXml = Join-Path $repoRoot 'feature\settings\src\main\res\values\strings.xml'
 $installNote =
-    "`r`n`r`n## التثبيت`r`nنزّل ``nateq.apk`` من مرفقات هذا الإصدار."
+    "`r`n`r`n## التثبيت`r`nنزّل ملف APK الموافق لمعمارية " +
+    "جهازك من مرفقات هذا الإصدار."
 if (Test-Path -LiteralPath $changelogXml) {
     $settingsDoc = New-Object System.Xml.XmlDocument
     $settingsDoc.Load($changelogXml)
@@ -305,8 +305,8 @@ if ($DryRun) {
         ' :app:assembleRelease'
     Write-Host '   - commit: app/build.gradle.kts فقط (رسالة عربية)'
     Write-Host "   - tag $targetTag ثم push origin master --tags"
-    Write-Host "   - gh release create $targetTag (يرفع nateq.apk" +
-        ' بملاحظات المستجدات من changelog_text)'
+    Write-Host "   - gh release create $targetTag (يرفع أرفاق APK لكل" +
+        ' معمارية بملاحظات المستجدات من changelog_text)'
     exit 0
 }
 
@@ -348,8 +348,12 @@ try {
     Pop-Location
 }
 
-if (-not (Test-Path -LiteralPath $apkFile)) {
-    throw "الـ APK غير موجود بعد البناء: $apkFile"
+# ناتج البناء صار APK مستقلاً لكل معمارية (nateq-<abi>.apk) — نجمع
+# كل الأرفاق الناتجة ولا نفترض اسماً واحداً ثابتاً.
+$apkFiles = @(Get-ChildItem -Path $apkDir -Filter '*.apk' `
+    -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
+if ($apkFiles.Count -eq 0) {
+    throw "لم يُعثر على أي ملف APK ناتج في: $apkDir"
 }
 
 # ===== حساب توقيع التوقيع (SHA-256) من الـ keystore وتحديث AppIntegrity.kt =====
@@ -412,13 +416,10 @@ try {
     Write-Warning "خطأ أثناء حساب/تحديث التوقيع: $_"
 }
 
-# **بند 5.3:** سطر SHA-256 للـ APK يُلحق بملاحظات الإصدار — يُحسب من
+# **بند 5.3:** سطر SHA-256 لكل APK يُلحق بملاحظات الإصدار — يُحسب من
 # القرص مباشرةً بمجرد وجود الملف (بلا نسخ مؤقتة) ويتيح التحققَ من سلامة
-# المرفق قبل التثبيت.
-$targetApkFiles = @(Get-ChildItem -Path $apkDir -Filter '*.apk' | Select-Object -ExpandProperty FullName)
-if ($targetApkFiles.Count -eq 0) {
-    throw "لم يُعثر على أي ملف APK ناتج في: $apkDir"
-}
+# المرفق قبل التثبيت (سطر بصمة لكل معمارية باسم مرفقها).
+$targetApkFiles = $apkFiles
 $releaseNotes = $releaseNotes + "`r`n`r`n### المجموع الاختباري SHA-256`r`n"
 foreach ($f in $targetApkFiles) {
     $sha = (Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -456,7 +457,8 @@ Invoke-Git @('push', 'origin', $targetTag)
 # 5) إنشاء Release على GitHub مع مرفق الـ APK.
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
     Write-Warning 'gh غير مثبت/موثّق — الدفع والوسم تمّا.'
-    Write-Warning "أنشئ الـ Release يدوياً: gh release create $targetTag $apkFile"
+    Write-Warning ("أنشئ الـ Release يدوياً: gh release create " +
+        "$targetTag $($targetApkFiles -join ' ')")
     Write-Warning "    --title `"Lord TTS $targetVersion`" --notes"
     exit 0
 }
@@ -469,9 +471,12 @@ $ghArgs = @('release', 'create', $targetTag) + $targetApkFiles + @(
 $ghOut = & gh @ghArgs 2>&1 | ForEach-Object { "$_" }
 if ($LASTEXITCODE -ne 0) {
     Write-Warning "فشل gh release create: $(($ghOut | Out-String).Trim())"
-    Write-Warning "أعده لاحقاً بـ: gh release create $targetTag $apkFile"
+    Write-Warning ("أعده لاحقاً بـ: gh release create " +
+        "$targetTag $($targetApkFiles -join ' ')")
     Write-Warning "    --title `"Lord TTS $targetVersion`" --notes"
 } else {
     Write-Host "=> نُشر الإصدار $targetVersion على GitHub ($targetTag)."
-    Write-Host "=> الـ APK: $apkFile"
+    foreach ($f in $targetApkFiles) {
+        Write-Host "=> الـ APK: $f"
+    }
 }
