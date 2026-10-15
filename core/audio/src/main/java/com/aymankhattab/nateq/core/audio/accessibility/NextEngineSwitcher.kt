@@ -7,8 +7,8 @@ import com.aymankhattab.nateq.core.data.SettingsRepository
 /**
  * يبدّل محرك Lord TTS الافتراضي إلى المحرك التالي في ترتيب النظام.
  *
- * لا يكتب إعداد TTS الافتراضي المحمي في أندرويد؛ بل يحدّث فئة Lord TTS
- * الافتراضية، لذلك يعمل من البلاطة حتى عندما لا تكون خدمة المحرك متصلة.
+ * يحدّث الفئة الافتراضية وجميع اللغات النشطة ليتحوّل قارئ الشاشة فعلياً
+ * إلى المحرك الجديد، ويعمل حتى عندما لا تكون خدمة المحرك متصلة.
  */
 object NextEngineSwitcher {
 
@@ -17,6 +17,23 @@ object NextEngineSwitcher {
         val label: String,
         val engineCount: Int
     )
+
+    /** يحدد حزمة المحرك النشط حالياً من الفئة الافتراضية أو اللغات. */
+    internal fun currentEnginePackage(
+        settings: SettingsRepository
+    ): String? {
+        val defaultCategory = settings.getEngineForCategory(
+            SettingsRepository.VOICE_CATEGORY_DEFAULT
+        )
+        if (!defaultCategory.isNullOrBlank()) return defaultCategory
+        val ar = settings.getEngineForLanguage("ar")
+        if (!ar.isNullOrBlank()) return ar
+        val en = settings.getEngineForLanguage("en")
+        if (!en.isNullOrBlank()) return en
+        return settings.allConvertLanguagePreferences().values
+            .firstOrNull { !it.engine.isNullOrBlank() }
+            ?.engine
+    }
 
     /** يختار التالي، أو أول عنصر عند غياب المحرك الحالي من القائمة. */
     internal fun nextEngine(
@@ -36,16 +53,28 @@ object NextEngineSwitcher {
         val appContext = context.applicationContext
         val settings = SettingsRepository.create(appContext)
         val engines = EnginePicker.installedEngines(appContext)
-        val next = nextEngine(
-            engines,
-            settings.getEngineForCategory(
-                SettingsRepository.VOICE_CATEGORY_DEFAULT
-            )
-        ) ?: return null
+        val current = currentEnginePackage(settings)
+        val next = nextEngine(engines, current) ?: return null
+
         settings.setEngineForCategory(
             SettingsRepository.VOICE_CATEGORY_DEFAULT,
             next.packageName
         )
+
+        val existingKeys = settings.allConvertLanguagePreferences().keys
+        val baseKeys = listOf(
+            "ar", "en",
+            settings.getAppLanguage(),
+            settings.getSecondaryLanguage()
+        )
+        val targetLanguages = (existingKeys + baseKeys)
+            .filterNotNull()
+            .filter { it.isNotBlank() }
+            .distinct()
+
+        settings.setEngineForAllLanguages(targetLanguages, next.packageName)
+        settings.setAutoConvertEnabled(true)
+
         return SwitchResult(next.packageName, next.label, engines.size)
     }
 
@@ -53,9 +82,7 @@ object NextEngineSwitcher {
     fun selectedEngineLabel(context: Context): String? {
         val appContext = context.applicationContext
         val settings = SettingsRepository.create(appContext)
-        val selected = settings.getEngineForCategory(
-            SettingsRepository.VOICE_CATEGORY_DEFAULT
-        ) ?: return null
+        val selected = currentEnginePackage(settings) ?: return null
         return EnginePicker.installedEngines(appContext)
             .firstOrNull { it.packageName == selected }
             ?.label

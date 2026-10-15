@@ -944,6 +944,32 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun setEngineForAllLanguages_updatesEngineAndClearsVoiceAcrossLanguages() {
+        repo.setEnginePreferenceForLanguage(
+            "ar", "org.nobody.multitts", "multitts-ar", 1.2f, 1.1f, 0.9f
+        )
+        repo.setEnginePreferenceForLanguage(
+            "en", "com.google.android.tts", "en-us-x-sfg", 1.0f, 1.0f, 1.0f
+        )
+        repo.setEngineForAllLanguages(
+            listOf("ar", "en", "fr"),
+            "com.vocalizer.tts"
+        )
+        val ar = repo.getEnginePreferenceForLanguage("ar")
+        assertEquals("com.vocalizer.tts", ar.engine)
+        assertNull(ar.voiceName)
+        assertEquals(1.2f, ar.rate, 0.001f)
+
+        val en = repo.getEnginePreferenceForLanguage("en")
+        assertEquals("com.vocalizer.tts", en.engine)
+        assertNull(en.voiceName)
+
+        val fr = repo.getEnginePreferenceForLanguage("fr")
+        assertEquals("com.vocalizer.tts", fr.engine)
+        assertNull(fr.voiceName)
+    }
+
+    @Test
     fun enginePerCategory_defaultsNull_roundTrip_removable() {
         // بلا إعداد → null (يُحسم المحرك ديناميكياً وقت النطق)
         assertNull(repo.getEngineForCategory("caller"))
