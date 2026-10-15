@@ -710,6 +710,16 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             showA11yGuideDialog()
         }
 
+        // زر إعدادات لوحة المفاتيح الميسّرة
+        view.findViewById<View>(R.id.btn_keyboard_settings)
+            ?.setOnClickListener {
+                val intent = Intent(
+                    requireContext(),
+                    KeyboardSettingsActivity::class.java
+                )
+                startActivity(intent)
+            }
+
         // زر التشخيص: يعرض معلومات شاملة عن حالة التطبيق والمحركات والأذونات
         // مع إمكانية النسخ إلى الحافظة
         val btnDiagnostics = view.findViewById<View>(R.id.btn_diagnostics)

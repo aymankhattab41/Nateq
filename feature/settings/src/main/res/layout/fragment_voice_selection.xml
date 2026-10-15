@@ -1043,6 +1043,8 @@
 
             <com.google.android.material.button.MaterialButton android:id="@+id/btn_a11y_guide" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/a11y_guide_title" android:importantForAccessibility="yes" app:icon="@drawable/ic_history" app:iconGravity="textStart" />
 
+            <com.google.android.material.button.MaterialButton android:id="@+id/btn_keyboard_settings" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/keyboard_settings_title" android:importantForAccessibility="yes" app:icon="@drawable/ic_accessibility" app:iconGravity="textStart" />
+
             
             <com.google.android.material.button.MaterialButton android:id="@+id/btn_report_error" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/report_error" android:contentDescription="@string/report_error_desc" android:importantForAccessibility="yes" app:icon="@drawable/ic_report_bug" app:iconGravity="textStart" />
 
