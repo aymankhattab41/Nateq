@@ -7,24 +7,29 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.os.Build
+import android.os.Bundle
 import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.util.AttributeSet
-import android.view.GestureDetector
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.SoundEffectConstants
 import android.view.View
+import androidx.core.view.ViewCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat.AccessibilityActionCompat
+import androidx.customview.widget.ExploreByTouchHelper
 import com.aymankhattab.nateq.core.audio.keyboard.KeyboardLayoutHelper.KeyModel
 import com.aymankhattab.nateq.core.audio.keyboard.KeyboardLayoutHelper.KeyType
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.util.AccessibilityUtils
 import kotlin.math.abs
 
 /**
  * واجهة لوحة مفاتيح Lord TTS الميسّرة المخصصة.
- * تدعم وضعي الكفيف وضعيف البصر، ونمطي التفعيل برفع الإصبع
- * أو الضغط مرتين، وإيماءات السحب الذكية.
+ * تدعم الاستكشاف باللمس الكامل مع قارئات الشاشة (TalkBack)،
+ * والرفع للتفعيل، والضغط مرتين، ووضعي الكفيف وضعيف البصر.
  */
 class LordKeyboardView @JvmOverloads constructor(
     context: Context,
@@ -43,6 +48,8 @@ class LordKeyboardView @JvmOverloads constructor(
 
     var actionListener: OnKeyboardActionListener? = null
 
+    private val settingsRepo = SettingsRepository(context)
+
     var keyboardMode: String = SettingsRepository.KEYBOARD_MODE_BLIND
         set(value) {
             field = value
@@ -58,6 +65,7 @@ class LordKeyboardView @JvmOverloads constructor(
     var soundEnabled: Boolean = true
 
     private var rows: List<List<KeyModel>> = emptyList()
+    private val flatKeys = mutableListOf<KeyModel>()
     private val keyRects = mutableMapOf<KeyModel, RectF>()
     private var hoveredKey: KeyModel? = null
 
@@ -78,60 +86,32 @@ class LordKeyboardView @JvmOverloads constructor(
     private val vibrator =
         context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
 
-    // كاشف الإيماءات السريعة
-    private val gestureDetector = GestureDetector(
-        context,
-        object : GestureDetector.SimpleOnGestureListener() {
-            private val swipeThreshold = 120
-            private val swipeVelocityThreshold = 150
+    // ميسّر إمكانية الوصول لقارئ الشاشة TalkBack
+    private val touchHelper = KeyboardTouchHelper(this)
 
-            override fun onFling(
-                e1: MotionEvent?,
-                e2: MotionEvent,
-                velocityX: Float,
-                velocityY: Float
-            ): Boolean {
-                if (e1 == null) return false
-                val diffX = e2.x - e1.x
-                val diffY = e2.y - e1.y
-
-                return if (abs(diffX) > abs(diffY)) {
-                    if (abs(diffX) > swipeThreshold &&
-                        abs(velocityX) > swipeVelocityThreshold
-                    ) {
-                        if (diffX > 0) {
-                            actionListener?.onSwipeRight()
-                        } else {
-                            actionListener?.onSwipeLeft()
-                        }
-                        true
-                    } else false
-                } else {
-                    if (abs(diffY) > swipeThreshold &&
-                        abs(velocityY) > swipeVelocityThreshold
-                    ) {
-                        if (diffY > 0) {
-                            actionListener?.onSwipeDown()
-                        } else {
-                            actionListener?.onSwipeUp()
-                        }
-                        true
-                    } else false
-                }
-            }
-        }
-    )
+    // تتبع السحب اليدوي بإصبع واحد فقط عندما لا يكون قارئ الشاشة نشطاً
+    private var touchDownX = 0f
+    private var touchDownY = 0f
+    private var touchDownTime = 0L
+    private val swipeMinDistance = 140f
+    private val swipeMaxDuration = 400L
 
     init {
         isFocusable = true
         isFocusableInTouchMode = true
+        ViewCompat.setAccessibilityDelegate(this, touchHelper)
         updateThemePaints()
     }
 
     fun setKeyRows(newRows: List<List<KeyModel>>) {
         rows = newRows
+        flatKeys.clear()
+        for (r in rows) {
+            flatKeys.addAll(r)
+        }
         hoveredKey = null
         recalculateKeyBounds()
+        touchHelper.invalidateRoot()
         invalidate()
     }
 
@@ -140,20 +120,20 @@ class LordKeyboardView @JvmOverloads constructor(
             keyboardMode == SettingsRepository.KEYBOARD_MODE_LOW_VISION
 
         if (isLowVision) {
-            // وضع ضعيف البصر: خلفية سوداء عميقة، مفاتيح بلون تباين أصفر وأبيض
+            // وضع ضعيف البصر: خلفية سوداء عميقة، تباين أصفر وأبيض عريض
             bgPaint.color = Color.BLACK
             keyBgPaint.color = Color.rgb(28, 28, 28)
-            keyHoverBgPaint.color = Color.rgb(255, 235, 59) // أصفر فاقع
+            keyHoverBgPaint.color = Color.rgb(255, 235, 59)
             keyBorderPaint.color = Color.rgb(255, 215, 0)
             keyBorderPaint.style = Paint.Style.STROKE
             keyBorderPaint.strokeWidth = 3.5f
             textPaint.color = Color.rgb(255, 255, 255)
             textHoverPaint.color = Color.BLACK
         } else {
-            // وضع الكفيف: واجهة داكنة مريحة مركزة على التغذية السمعية واللمسية
+            // وضع الكفيف: واجهة داكنة مريحة مركزة على التغذية السمعية
             bgPaint.color = Color.rgb(18, 18, 18)
             keyBgPaint.color = Color.rgb(38, 38, 38)
-            keyHoverBgPaint.color = Color.rgb(0, 150, 136) // تيل بارز
+            keyHoverBgPaint.color = Color.rgb(0, 150, 136)
             keyBorderPaint.color = Color.rgb(60, 60, 60)
             keyBorderPaint.style = Paint.Style.STROKE
             keyBorderPaint.strokeWidth = 1.5f
@@ -167,6 +147,7 @@ class LordKeyboardView @JvmOverloads constructor(
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         recalculateKeyBounds()
+        touchHelper.invalidateRoot()
     }
 
     private fun recalculateKeyBounds() {
@@ -240,14 +221,73 @@ class LordKeyboardView @JvmOverloads constructor(
         return targetSize.coerceIn(24f, 72f)
     }
 
+    /**
+     * تمرير أحداث التحويم (Hover Events) لمساعد إمكانية الوصول
+     * لتمكين استكشاف اللمس (Touch Exploration) الفعلي في TalkBack.
+     */
+    override fun dispatchHoverEvent(event: MotionEvent): Boolean {
+        val handled = touchHelper.dispatchHoverEvent(event)
+
+        val isScreenReader =
+            AccessibilityUtils.isScreenReaderEnabled(context)
+        if (isScreenReader) {
+            val key = findKeyAt(event.x, event.y)
+            when (event.actionMasked) {
+                MotionEvent.ACTION_HOVER_ENTER,
+                MotionEvent.ACTION_HOVER_MOVE -> {
+                    if (key != null && key != hoveredKey) {
+                        hoveredKey = key
+                        triggerHaptic(isStrong = false)
+                        triggerSound()
+                        invalidate()
+                    }
+                }
+                MotionEvent.ACTION_HOVER_EXIT -> {
+                    // في نمط الرفع للتفعيل أثناء استخدام قارئ الشاشة
+                    if (activationMode ==
+                        SettingsRepository.KEYBOARD_ACTIVATION_LIFT
+                    ) {
+                        val keyToCommit = hoveredKey ?: key
+                        if (keyToCommit != null) {
+                            commitKeyActivation(keyToCommit)
+                        }
+                    }
+                    hoveredKey = null
+                    invalidate()
+                }
+            }
+        }
+
+        return handled || super.dispatchHoverEvent(event)
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        gestureDetector.onTouchEvent(event)
+        val isScreenReader =
+            AccessibilityUtils.isScreenReaderEnabled(context)
+
+        // إذا كان قارئ الشاشة نشطاً، نتجنب اعتراض لمسات أندرويد المتعددة
+        if (isScreenReader && event.pointerCount > 1) {
+            return false
+        }
 
         val x = event.x
         val y = event.y
 
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
+            MotionEvent.ACTION_DOWN -> {
+                touchDownX = x
+                touchDownY = y
+                touchDownTime = SystemClock.uptimeMillis()
+
+                val key = findKeyAt(x, y)
+                if (key != null) {
+                    hoveredKey = key
+                    onKeyHovered(key)
+                    invalidate()
+                }
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
                 val key = findKeyAt(x, y)
                 if (key != null && key != hoveredKey) {
                     hoveredKey = key
@@ -257,6 +297,37 @@ class LordKeyboardView @JvmOverloads constructor(
                 return true
             }
             MotionEvent.ACTION_UP -> {
+                val duration = SystemClock.uptimeMillis() - touchDownTime
+                val diffX = x - touchDownX
+                val diffY = y - touchDownY
+
+                // التحقق من إيماءات السحب فقط عند إيقاف قارئ الشاشة
+                if (!isScreenReader && duration <= swipeMaxDuration) {
+                    if (abs(diffX) > swipeMinDistance &&
+                        abs(diffX) > abs(diffY) * 1.5f
+                    ) {
+                        hoveredKey = null
+                        invalidate()
+                        if (diffX > 0) {
+                            actionListener?.onSwipeRight()
+                        } else {
+                            actionListener?.onSwipeLeft()
+                        }
+                        return true
+                    } else if (abs(diffY) > swipeMinDistance &&
+                        abs(diffY) > abs(diffX) * 1.5f
+                    ) {
+                        hoveredKey = null
+                        invalidate()
+                        if (diffY > 0) {
+                            actionListener?.onSwipeDown()
+                        } else {
+                            actionListener?.onSwipeUp()
+                        }
+                        return true
+                    }
+                }
+
                 val key = hoveredKey ?: findKeyAt(x, y)
                 if (key != null) {
                     handleKeyReleaseOrTap(key)
@@ -293,10 +364,8 @@ class LordKeyboardView @JvmOverloads constructor(
         val now = SystemClock.uptimeMillis()
 
         if (activationMode == SettingsRepository.KEYBOARD_ACTIVATION_LIFT) {
-            // نمط رفع الإصبع للتفعيل (Lift-to-Type)
             commitKeyActivation(key)
         } else {
-            // نمط الضغط مرتين للتفعيل (Double-Tap)
             if (lastTappedKey == key &&
                 (now - lastTapTime) <= doubleTapTimeoutMs
             ) {
@@ -345,7 +414,81 @@ class LordKeyboardView @JvmOverloads constructor(
         try {
             playSoundEffect(SoundEffectConstants.CLICK)
         } catch (_: Exception) {
-            // تجاوز إذا تعذر تشغيل الصوت
+            // تجاهل إن تعذر تشغيل الصوت
+        }
+    }
+
+    /**
+     * ميسّر إمكانية الوصول الافتراضي لربط مسطح الرسم بـ TalkBack.
+     */
+    private inner class KeyboardTouchHelper(host: View) :
+        ExploreByTouchHelper(host) {
+
+        override fun getVirtualViewAt(x: Float, y: Float): Int {
+            for ((index, key) in flatKeys.withIndex()) {
+                val rect = keyRects[key]
+                if (rect != null && rect.contains(x, y)) {
+                    return index
+                }
+            }
+            return HOST_ID
+        }
+
+        override fun getVisibleVirtualViews(
+            virtualViewIds: MutableList<Int>
+        ) {
+            for (i in flatKeys.indices) {
+                virtualViewIds.add(i)
+            }
+        }
+
+        override fun onPopulateNodeForVirtualView(
+            virtualViewId: Int,
+            node: AccessibilityNodeInfoCompat
+        ) {
+            if (virtualViewId !in flatKeys.indices) {
+                node.contentDescription = ""
+                node.setBoundsInParent(Rect(0, 0, 1, 1))
+                return
+            }
+            val key = flatKeys[virtualViewId]
+            val rectF = keyRects[key] ?: RectF()
+            val rect = Rect(
+                rectF.left.toInt(),
+                rectF.top.toInt(),
+                rectF.right.toInt(),
+                rectF.bottom.toInt()
+            )
+
+            val isPhonetic = settingsRepo.isKeyboardPhoneticEnabled()
+            val desc = if (isPhonetic && !key.phonetic.isNullOrEmpty()) {
+                key.phonetic
+            } else {
+                key.spokenText
+            }
+
+            node.contentDescription = desc
+            node.text = key.label
+            node.className = "android.widget.Button"
+            node.isClickable = true
+            node.isFocusable = true
+            node.addAction(AccessibilityActionCompat.ACTION_CLICK)
+            node.setBoundsInParent(rect)
+        }
+
+        override fun onPerformActionForVirtualView(
+            virtualViewId: Int,
+            action: Int,
+            arguments: Bundle?
+        ): Boolean {
+            if (action == AccessibilityNodeInfoCompat.ACTION_CLICK) {
+                if (virtualViewId in flatKeys.indices) {
+                    val key = flatKeys[virtualViewId]
+                    commitKeyActivation(key)
+                    return true
+                }
+            }
+            return false
         }
     }
 }
