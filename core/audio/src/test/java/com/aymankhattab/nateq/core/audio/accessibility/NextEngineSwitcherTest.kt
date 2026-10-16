@@ -46,6 +46,32 @@ class NextEngineSwitcherTest {
     }
 
     @Test
+    fun previousEngine_keepsTheReverseSystemOrder() {
+        val prev = NextEngineSwitcher.previousEngine(engines, "three")
+
+        assertEquals("two", prev?.packageName)
+    }
+
+    @Test
+    fun previousEngine_wrapsBeforeTheFirstSystemEngine() {
+        val prev = NextEngineSwitcher.previousEngine(engines, "one")
+
+        assertEquals("three", prev?.packageName)
+    }
+
+    @Test
+    fun previousEngine_missingSavedEngine_startsWithLastSystemEngine() {
+        val prev = NextEngineSwitcher.previousEngine(engines, "removed")
+
+        assertEquals("three", prev?.packageName)
+    }
+
+    @Test
+    fun previousEngine_emptySystemList_doesNotInventAnEngine() {
+        assertNull(NextEngineSwitcher.previousEngine(emptyList(), null))
+    }
+
+    @Test
     fun currentEnginePackage_fallsBackThroughCategoryAndLanguages() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val settings = SettingsRepository.create(context)

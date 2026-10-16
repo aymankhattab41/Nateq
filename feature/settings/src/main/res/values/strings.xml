@@ -101,6 +101,7 @@
     <string name="a11y_action_speech_history">اقرأ السجل</string>
     <string name="a11y_action_expand_read_more">قراءة المزيد</string>
     <string name="a11y_action_next_engine">المحرك التالي</string>
+    <string name="a11y_action_previous_engine">المحرك السابق</string>
 <string name="all_announcements_enabled">كل الإعلانات مفعّلة</string>
 <string name="all_announcements_summary">إيقافه يُوقف الإعلانات التلقائية (الوقت، البطارية، الرسائل، الإشعارات، المتصل) بصمت</string>
 <string name="announcement_turned_off">معطّل</string>
@@ -836,6 +837,8 @@
     <string name="tile_service_disabled">معطّلة</string>
     <string name="tile_next_engine_label">المحرك التالي</string>
     <string name="tile_next_engine_current">المحرك: %1$s</string>
+    <string name="tile_previous_engine_label">المحرك السابق</string>
+    <string name="tile_previous_engine_current">المحرك: %1$s</string>
     <string name="embedded_download_success">تم تنزيل وتثبيت الصوت بنجاح</string>
     <string name="embedded_download_error">تعذر تنزيل الصوت: %1$s</string>
     <string name="embedded_delete_confirm">هل أنت متأكد من حذف هذا الصوت من الذاكرة؟</string>

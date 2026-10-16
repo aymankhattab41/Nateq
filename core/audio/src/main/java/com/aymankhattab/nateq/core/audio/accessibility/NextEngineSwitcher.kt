@@ -48,6 +48,23 @@ object NextEngineSwitcher {
         return engines[nextIndex]
     }
 
+    /** يختار السابق، أو آخر عنصر عند غياب المحرك الحالي من القائمة. */
+    internal fun previousEngine(
+        engines: List<EnginePicker.InstalledEngine>,
+        currentPackage: String?
+    ): EnginePicker.InstalledEngine? {
+        if (engines.isEmpty()) return null
+        val currentIndex = engines.indexOfFirst {
+            it.packageName == currentPackage
+        }
+        val prevIndex = if (currentIndex <= 0) {
+            engines.size - 1
+        } else {
+            currentIndex - 1
+        }
+        return engines[prevIndex]
+    }
+
     /** يقرأ القائمة الحالية ويحفظ المحرك التالي في إعداد Lord TTS العام. */
     fun switchToNext(context: Context): SwitchResult? {
         val appContext = context.applicationContext
@@ -55,10 +72,27 @@ object NextEngineSwitcher {
         val engines = EnginePicker.installedEngines(appContext)
         val current = currentEnginePackage(settings)
         val next = nextEngine(engines, current) ?: return null
+        return applyEngineSwitch(settings, next, engines.size)
+    }
 
+    /** يقرأ القائمة الحالية ويحفظ المحرك السابق في إعداد Lord TTS العام. */
+    fun switchToPrevious(context: Context): SwitchResult? {
+        val appContext = context.applicationContext
+        val settings = SettingsRepository.create(appContext)
+        val engines = EnginePicker.installedEngines(appContext)
+        val current = currentEnginePackage(settings)
+        val prev = previousEngine(engines, current) ?: return null
+        return applyEngineSwitch(settings, prev, engines.size)
+    }
+
+    private fun applyEngineSwitch(
+        settings: SettingsRepository,
+        target: EnginePicker.InstalledEngine,
+        engineCount: Int
+    ): SwitchResult {
         settings.setEngineForCategory(
             SettingsRepository.VOICE_CATEGORY_DEFAULT,
-            next.packageName
+            target.packageName
         )
 
         val existingKeys = settings.allConvertLanguagePreferences().keys
@@ -72,10 +106,10 @@ object NextEngineSwitcher {
             .filter { it.isNotBlank() }
             .distinct()
 
-        settings.setEngineForAllLanguages(targetLanguages, next.packageName)
+        settings.setEngineForAllLanguages(targetLanguages, target.packageName)
         settings.setAutoConvertEnabled(true)
 
-        return SwitchResult(next.packageName, next.label, engines.size)
+        return SwitchResult(target.packageName, target.label, engineCount)
     }
 
     /** المحرك المختار حالياً وتسمية عرضه في البلاطة. */

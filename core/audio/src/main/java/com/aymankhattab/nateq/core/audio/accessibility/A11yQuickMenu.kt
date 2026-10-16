@@ -141,6 +141,7 @@ object A11yQuickMenu {
         ShortcutAction.SHOW_QUICK_MENU -> "القائمة السريعة"
         ShortcutAction.EXPAND_READ_MORE -> "قراءة المزيد"
         ShortcutAction.NEXT_ENGINE -> "المحرك التالي"
+        ShortcutAction.PREVIOUS_ENGINE -> "المحرك السابق"
         ShortcutAction.NONE -> "بلا"
     }
 
@@ -159,7 +160,8 @@ object A11yQuickMenu {
         ShortcutAction.OCR_FOCUS,
         ShortcutAction.READ_FULL_URL,
         ShortcutAction.EXPAND_READ_MORE,
-        ShortcutAction.NEXT_ENGINE
+        ShortcutAction.NEXT_ENGINE,
+        ShortcutAction.PREVIOUS_ENGINE
     )
 
     /** الأفعال المعروضة في القائمة (للاكتشاف والاختبار). */

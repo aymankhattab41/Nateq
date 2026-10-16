@@ -113,6 +113,7 @@ class KeyShortcutRouter(
             }
             ShortcutAction.EXPAND_READ_MORE -> expandReadMoreExplicit(context)
             ShortcutAction.NEXT_ENGINE -> switchToNextEngine(context)
+            ShortcutAction.PREVIOUS_ENGINE -> switchToPreviousEngine(context)
             ShortcutAction.NONE ->
                 Log.i(TAG, "no action bound for gesture")
         }
@@ -125,6 +126,17 @@ class KeyShortcutRouter(
             "لا يوجد محرك نطق آخر مثبت"
         } else {
             "المحرك التالي: ${result.label}"
+        }
+        announce(context, message)
+    }
+
+    /** يبدّل محرك Lord TTS إلى المحرك السابق. */
+    private fun switchToPreviousEngine(context: Context) {
+        val result = NextEngineSwitcher.switchToPrevious(context)
+        val message = if (result == null) {
+            "لا يوجد محرك نطق آخر مثبت"
+        } else {
+            "المحرك السابق: ${result.label}"
         }
         announce(context, message)
     }
