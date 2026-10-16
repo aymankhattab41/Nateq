@@ -6,18 +6,28 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.os.Handler
+import android.os.Looper
+import android.os.PowerManager
 import android.telecom.Call
 import android.telecom.CallAudioState
 import android.telecom.InCallService
 import android.telecom.VideoProfile
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
- * خدمة إدارة المكالمات الهاتفية الجارية لنظام أندرويد Telecom.
- * تدعم الرد، الرفض، مكبر الصوت التلقائي عبر حساس التقارب، وإرسال DTMF.
+ * خدمة إدارة المكالمات الهاتفية الجارية لنظام Telecom.
+ * تدعم الرد، الرفض، مكبر الصوت التلقائي عبر حساس التقارب، وDTMF.
  */
 @Suppress("DEPRECATION")
 class LordInCallService : InCallService(), SensorEventListener {
+
+    interface CallListener {
+        fun onCallStateChanged(call: Call, state: Int)
+        fun onCallAudioStateChanged(audioState: CallAudioState)
+        fun onCallFinished()
+    }
 
     companion object {
         @Volatile
@@ -32,12 +42,26 @@ class LordInCallService : InCallService(), SensorEventListener {
             "com.aymankhattab.nateq.phone.ACTION_CALL_STATE_CHANGED"
         const val ACTION_FINISH_INCALL_UI =
             "com.aymankhattab.nateq.phone.ACTION_FINISH_INCALL_UI"
+
+        private val listeners = CopyOnWriteArrayList<CallListener>()
+
+        fun registerListener(listener: CallListener) {
+            if (!listeners.contains(listener)) {
+                listeners.add(listener)
+            }
+        }
+
+        fun unregisterListener(listener: CallListener) {
+            listeners.remove(listener)
+        }
     }
 
     private lateinit var settingsRepo: SettingsRepository
     private var sensorManager: SensorManager? = null
     private var proximitySensor: Sensor? = null
     private var isProximityRegistered = false
+    private var proximityWakeLock: PowerManager.WakeLock? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private val callCallback = object : Call.Callback() {
         override fun onStateChanged(call: Call, state: Int) {
@@ -54,12 +78,43 @@ class LordInCallService : InCallService(), SensorEventListener {
             as? SensorManager
         proximitySensor =
             sensorManager?.getDefaultSensor(Sensor.TYPE_PROXIMITY)
+        initProximityWakeLock()
+    }
+
+    private fun initProximityWakeLock() {
+        val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+        if (pm != null &&
+            pm.isWakeLockLevelSupported(
+                PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK
+            )
+        ) {
+            proximityWakeLock = pm.newWakeLock(
+                PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK,
+                "LordTTS:InCallProximityWakeLock"
+            )
+        }
+    }
+
+    private fun acquireProximityWakeLock() {
+        try {
+            if (proximityWakeLock != null && !proximityWakeLock!!.isHeld) {
+                proximityWakeLock?.acquire()
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun releaseProximityWakeLock() {
+        try {
+            if (proximityWakeLock != null && proximityWakeLock!!.isHeld) {
+                proximityWakeLock?.release()
+            }
+        } catch (_: Exception) {}
     }
 
     override fun onCallAdded(call: Call) {
         super.onCallAdded(call)
         currentCall = call
-        call.registerCallback(callCallback)
+        call.registerCallback(callCallback, mainHandler)
         launchInCallActivity()
         handleCallStateChange(call, call.state)
     }
@@ -68,33 +123,76 @@ class LordInCallService : InCallService(), SensorEventListener {
         super.onCallRemoved(call)
         if (currentCall == call) {
             stopProximityMonitoring()
+            releaseProximityWakeLock()
             CallRecordManager.stopRecording(this)
             currentCall = null
-            sendBroadcast(Intent(ACTION_FINISH_INCALL_UI))
+            val intent = Intent(ACTION_FINISH_INCALL_UI).apply {
+                setPackage(packageName)
+            }
+            sendBroadcast(intent)
+            mainHandler.post {
+                for (listener in listeners) {
+                    listener.onCallFinished()
+                }
+            }
         }
         call.unregisterCallback(callCallback)
     }
 
     private fun handleCallStateChange(call: Call, state: Int) {
-        sendBroadcast(Intent(ACTION_CALL_STATE_CHANGED))
+        val intent = Intent(ACTION_CALL_STATE_CHANGED).apply {
+            setPackage(packageName)
+        }
+        sendBroadcast(intent)
 
-        if (state == Call.STATE_ACTIVE) {
-            // التحقق من تفعيل التسجيل التلقائي
-            val handle = call.details?.handle?.schemeSpecificPart ?: ""
-            val name = call.details?.callerDisplayName ?: ""
-            val isKnown = name.isNotEmpty()
-            if (CallRecordManager.shouldAutoRecord(this, handle, isKnown)) {
-                CallRecordManager.startRecording(this, handle, name)
+        mainHandler.post {
+            for (listener in listeners) {
+                listener.onCallStateChanged(call, state)
             }
+        }
 
-            // تفعيل مستشعر التقارب إن كان مفعلاً اختيارياً
-            if (settingsRepo.isPhoneAutoSpeakerProximityEnabled()) {
-                startProximityMonitoring()
+        when (state) {
+            Call.STATE_ACTIVE -> {
+                // التأكد من عدم كتم الميكروفون عند بدء المكالمة
+                try {
+                    setMuted(false)
+                } catch (_: Exception) {}
+
+                acquireProximityWakeLock()
+
+                // التحقق من تفعيل التسجيل التلقائي
+                val handle = call.details?.handle?.schemeSpecificPart ?: ""
+                val name = call.details?.callerDisplayName ?: ""
+                val isKnown = name.isNotEmpty()
+                if (CallRecordManager.shouldAutoRecord(
+                        this, handle, isKnown
+                    )
+                ) {
+                    CallRecordManager.startRecording(this, handle, name)
+                }
+
+                // تفعيل مستشعر التقارب لمكبر الصوت
+                if (settingsRepo.isPhoneAutoSpeakerProximityEnabled()) {
+                    startProximityMonitoring()
+                }
             }
-        } else if (state == Call.STATE_DISCONNECTED) {
-            stopProximityMonitoring()
-            CallRecordManager.stopRecording(this)
-            sendBroadcast(Intent(ACTION_FINISH_INCALL_UI))
+            Call.STATE_DIALING, Call.STATE_CONNECTING -> {
+                acquireProximityWakeLock()
+            }
+            Call.STATE_DISCONNECTED -> {
+                stopProximityMonitoring()
+                releaseProximityWakeLock()
+                CallRecordManager.stopRecording(this)
+                val finishIntent = Intent(ACTION_FINISH_INCALL_UI).apply {
+                    setPackage(packageName)
+                }
+                sendBroadcast(finishIntent)
+                mainHandler.post {
+                    for (listener in listeners) {
+                        listener.onCallFinished()
+                    }
+                }
+            }
         }
     }
 
@@ -137,7 +235,7 @@ class LordInCallService : InCallService(), SensorEventListener {
         val state = callAudioState ?: return false
         val isSpeaker = (state.route == CallAudioState.ROUTE_SPEAKER)
         val targetRoute = if (isSpeaker) {
-            CallAudioState.ROUTE_EARPIECE
+            CallAudioState.ROUTE_WIRED_OR_EARPIECE
         } else {
             CallAudioState.ROUTE_SPEAKER
         }
@@ -152,12 +250,25 @@ class LordInCallService : InCallService(), SensorEventListener {
         return newMute
     }
 
+    @Deprecated("Deprecated in Android 34+")
+    override fun onCallAudioStateChanged(audioState: CallAudioState?) {
+        super.onCallAudioStateChanged(audioState)
+        audioState?.let { st ->
+            mainHandler.post {
+                for (listener in listeners) {
+                    listener.onCallAudioStateChanged(st)
+                }
+            }
+        }
+    }
+
     private fun startProximityMonitoring() {
         if (!isProximityRegistered && proximitySensor != null) {
             sensorManager?.registerListener(
                 this,
                 proximitySensor,
-                SensorManager.SENSOR_DELAY_NORMAL
+                SensorManager.SENSOR_DELAY_NORMAL,
+                mainHandler
             )
             isProximityRegistered = true
         }
@@ -174,14 +285,28 @@ class LordInCallService : InCallService(), SensorEventListener {
         if (event == null || event.sensor.type != Sensor.TYPE_PROXIMITY) return
         if (!settingsRepo.isPhoneAutoSpeakerProximityEnabled()) return
 
+        val state = callAudioState ?: return
+        val currentRoute = state.route
+        // إذا كان المستخدم يستخدم سماعة بلوتوث أو سلكية، لا نغير المسار
+        if (currentRoute == CallAudioState.ROUTE_BLUETOOTH ||
+            currentRoute == CallAudioState.ROUTE_WIRED_HEADSET
+        ) {
+            return
+        }
+
         val distance = event.values[0]
         val maxRange = proximitySensor?.maximumRange ?: 5.0f
-        val isNear = (distance < maxRange)
+        val isNear = distance < 1.0f ||
+            (maxRange > 1.0f && distance <= 3.0f && distance < maxRange)
 
-        if (isNear) {
-            setAudioRoute(CallAudioState.ROUTE_EARPIECE)
+        val targetRoute = if (isNear) {
+            CallAudioState.ROUTE_WIRED_OR_EARPIECE
         } else {
-            setAudioRoute(CallAudioState.ROUTE_SPEAKER)
+            CallAudioState.ROUTE_SPEAKER
+        }
+
+        if (currentRoute != targetRoute) {
+            setAudioRoute(targetRoute)
         }
     }
 
@@ -190,6 +315,7 @@ class LordInCallService : InCallService(), SensorEventListener {
     override fun onDestroy() {
         super.onDestroy()
         stopProximityMonitoring()
+        releaseProximityWakeLock()
         instance = null
     }
 }

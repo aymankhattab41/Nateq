@@ -64,6 +64,23 @@ class LordInCallActivity : AppCompatActivity() {
         }
     }
 
+    private val callListener = object : LordInCallService.CallListener {
+        override fun onCallStateChanged(call: Call, state: Int) {
+            updateCallUi()
+        }
+
+        override fun onCallAudioStateChanged(audioState: CallAudioState) {
+            val isSpeaker =
+                (audioState.route == CallAudioState.ROUTE_SPEAKER)
+            updateSpeakerUi(isSpeaker)
+            updateMuteUi(audioState.isMuted)
+        }
+
+        override fun onCallFinished() {
+            finish()
+        }
+    }
+
     private val callReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
@@ -84,7 +101,6 @@ class LordInCallActivity : AppCompatActivity() {
         window.addFlags(
             WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
                 WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
-                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
                 WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
         )
         setContentView(R.layout.activity_lord_in_call)
@@ -92,6 +108,8 @@ class LordInCallActivity : AppCompatActivity() {
         settingsRepo = SettingsRepository(this)
         initViews()
         initTts()
+
+        LordInCallService.registerListener(callListener)
 
         val filter = IntentFilter().apply {
             addAction(LordInCallService.ACTION_CALL_STATE_CHANGED)
@@ -156,10 +174,15 @@ class LordInCallActivity : AppCompatActivity() {
         val btnCloseDtmf = findViewById<MaterialButton>(R.id.btn_close_dtmf)
 
         btnAnswer.setOnClickListener {
+            llIncomingActions?.visibility = View.GONE
+            llActiveControls?.visibility = View.VISIBLE
+            btnEndCall?.visibility = View.VISIBLE
+            tvDuration?.visibility = View.VISIBLE
             LordInCallService.instance?.answerCall()
         }
 
         btnReject.setOnClickListener {
+            llIncomingActions?.visibility = View.GONE
             LordInCallService.instance?.rejectCall()
             finish()
         }
@@ -259,7 +282,8 @@ class LordInCallActivity : AppCompatActivity() {
         tvCallerName?.text = if (!name.isNullOrEmpty()) name else number
         tvCallerNumber?.text = if (!name.isNullOrEmpty()) number else ""
 
-        if (call.state == Call.STATE_RINGING) {
+        val isRinging = (call.state == Call.STATE_RINGING)
+        if (isRinging) {
             llIncomingActions?.visibility = View.VISIBLE
             llActiveControls?.visibility = View.GONE
             btnEndCall?.visibility = View.GONE
@@ -276,12 +300,12 @@ class LordInCallActivity : AppCompatActivity() {
                 mainHandler.post(durationRunnable)
             }
 
-            val isSpeaker = LordInCallService.instance?.callAudioState
-                ?.route == CallAudioState.ROUTE_SPEAKER
+            val audioState = LordInCallService.instance?.callAudioState
+            val isSpeaker =
+                (audioState?.route == CallAudioState.ROUTE_SPEAKER)
             updateSpeakerUi(isSpeaker)
 
-            val isMuted = LordInCallService.instance?.callAudioState
-                ?.isMuted == true
+            val isMuted = (audioState?.isMuted == true)
             updateMuteUi(isMuted)
 
             // إظهار أو إخفاء زر التسجيل حسب تفضيل المستخدم
@@ -298,12 +322,22 @@ class LordInCallActivity : AppCompatActivity() {
         btnSpeaker?.setBackgroundColor(
             if (isSpeaker) 0xFF00796B.toInt() else 0x00000000
         )
+        btnSpeaker?.contentDescription = if (isSpeaker) {
+            getString(R.string.phone_speaker_on)
+        } else {
+            getString(R.string.phone_speaker_off)
+        }
     }
 
     private fun updateMuteUi(isMuted: Boolean) {
         btnMute?.setBackgroundColor(
             if (isMuted) 0xFFC62828.toInt() else 0x00000000
         )
+        btnMute?.contentDescription = if (isMuted) {
+            getString(R.string.phone_mute_on)
+        } else {
+            getString(R.string.phone_mute_off)
+        }
     }
 
     private fun updateRecordUi(isRecording: Boolean) {
@@ -322,9 +356,14 @@ class LordInCallActivity : AppCompatActivity() {
             settingsRepo.isPhoneHardwareKeysAnswerEnabled()
         ) {
             if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+                llIncomingActions?.visibility = View.GONE
+                llActiveControls?.visibility = View.VISIBLE
+                btnEndCall?.visibility = View.VISIBLE
+                tvDuration?.visibility = View.VISIBLE
                 LordInCallService.instance?.answerCall()
                 return true
             } else if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+                llIncomingActions?.visibility = View.GONE
                 LordInCallService.instance?.rejectCall()
                 finish()
                 return true
@@ -335,6 +374,7 @@ class LordInCallActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        LordInCallService.unregisterListener(callListener)
         mainHandler.removeCallbacks(durationRunnable)
         try {
             unregisterReceiver(callReceiver)
