@@ -710,16 +710,6 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             showA11yGuideDialog()
         }
 
-        // زر إعدادات لوحة المفاتيح الميسّرة
-        view.findViewById<View>(R.id.btn_keyboard_settings)
-            ?.setOnClickListener {
-                val intent = Intent(
-                    requireContext(),
-                    KeyboardSettingsActivity::class.java
-                )
-                startActivity(intent)
-            }
-
         // زر التشخيص: يعرض معلومات شاملة عن حالة التطبيق والمحركات والأذونات
         // مع إمكانية النسخ إلى الحافظة
         val btnDiagnostics = view.findViewById<View>(R.id.btn_diagnostics)
@@ -785,6 +775,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         engineSection.setupAutoConvertUI(view)
         setupSaveAndResetButtons()
         setupBackupRestoreButtons()
+        setupToolsAppShortcuts()
         accordion.updateSectionStatuses()
         // بند 4.6: إعادة فتح الشاشة (مجموعة/قسم) التي كان يعدّلها المستخدم
         // قبل تدوير الجهاز بدل طردِه إلى الصفحة الرئيسية.
@@ -2917,6 +2908,36 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 .setNegativeButton(R.string.cancel, null)
                 .create().also(::trackDialog).show()
         }
+    }
+
+    // ===== اختصارات أدوات التطبيق (لوحة المفاتيح والهاتف) =====
+    private fun setupToolsAppShortcuts() {
+        view?.findViewById<View>(R.id.btn_open_phone_app)
+            ?.setOnClickListener {
+                val intent = Intent(
+                    requireContext(),
+                    com.aymankhattab.nateq.settings.phone
+                        .LordPhoneActivity::class.java
+                )
+                startActivity(intent)
+            }
+        view?.findViewById<View>(R.id.btn_phone_settings)
+            ?.setOnClickListener {
+                val intent = Intent(
+                    requireContext(),
+                    com.aymankhattab.nateq.settings.phone
+                        .PhoneSettingsActivity::class.java
+                )
+                startActivity(intent)
+            }
+        view?.findViewById<View>(R.id.btn_keyboard_settings)
+            ?.setOnClickListener {
+                val intent = Intent(
+                    requireContext(),
+                    KeyboardSettingsActivity::class.java
+                )
+                startActivity(intent)
+            }
     }
 
     /** إعادة تحميل كل قيم الواجهة بعد الاستعادة (دون إعادة إنشاء النشاط). */

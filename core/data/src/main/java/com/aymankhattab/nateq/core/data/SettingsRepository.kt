@@ -236,6 +236,31 @@ class SettingsRepository(context: Context) :
         const val KEYBOARD_ACTIVATION_LIFT = "lift"
         const val KEYBOARD_ACTIVATION_DOUBLE_TAP = "double_tap"
 
+        const val KEY_PHONE_MODE = "phone_mode"
+        const val KEY_PHONE_ACTIVATION = "phone_activation"
+        const val KEY_PHONE_ANNOUNCE_AFTER_LIFT =
+            "phone_announce_after_lift"
+        const val KEY_PHONE_HAPTIC = "phone_haptic"
+        const val KEY_PHONE_SOUND = "phone_sound"
+        const val KEY_PHONE_RECORD_ENABLED = "phone_record_enabled"
+        const val KEY_PHONE_RECORD_MODE = "phone_record_mode"
+        const val KEY_PHONE_SHOW_RECORD_BUTTON =
+            "phone_show_record_button"
+        const val KEY_PHONE_RECORD_BOOST_VOLUME =
+            "phone_record_boost_volume"
+        const val KEY_PHONE_AUTO_SPEAKER_PROXIMITY =
+            "phone_auto_speaker_proximity"
+        const val KEY_PHONE_HARDWARE_KEYS_ANSWER =
+            "phone_hardware_keys_answer"
+
+        const val PHONE_MODE_BLIND = "blind"
+        const val PHONE_MODE_LOW_VISION = "low_vision"
+        const val PHONE_ACTIVATION_LIFT = "lift"
+        const val PHONE_ACTIVATION_DOUBLE_TAP = "double_tap"
+        const val PHONE_RECORD_MODE_MANUAL = "manual"
+        const val PHONE_RECORD_MODE_AUTO_ALL = "auto_all"
+        const val PHONE_RECORD_MODE_AUTO_UNSAVED = "auto_unsaved"
+
         /**
          * المصنّع الموحّد الوحيد لمثيل SettingsRepository — يُستعمل في كل
          * المواقع التي لا يتوفر فيها [AnnouncementAppContext] المعرّف من :app
@@ -2326,6 +2351,19 @@ class SettingsRepository(context: Context) :
         // أو استيراداً) فمسافاتٌ فقط ليست جملةً تُنطق.
         "caller_prefix_text" -> value.trim()
         "caller_suffix_text" -> value.trim()
+        KEY_PHONE_MODE -> value.takeIf {
+            it in setOf(PHONE_MODE_BLIND, PHONE_MODE_LOW_VISION)
+        } ?: PHONE_MODE_BLIND
+        KEY_PHONE_ACTIVATION -> value.takeIf {
+            it in setOf(PHONE_ACTIVATION_LIFT, PHONE_ACTIVATION_DOUBLE_TAP)
+        } ?: PHONE_ACTIVATION_LIFT
+        KEY_PHONE_RECORD_MODE -> value.takeIf {
+            it in setOf(
+                PHONE_RECORD_MODE_MANUAL,
+                PHONE_RECORD_MODE_AUTO_ALL,
+                PHONE_RECORD_MODE_AUTO_UNSAVED
+            )
+        } ?: PHONE_RECORD_MODE_MANUAL
         else -> if (key.startsWith("loudness_stream_mode_")) {
             StreamMode.fromId(value).id
         } else {
@@ -2802,5 +2840,93 @@ class SettingsRepository(context: Context) :
 
     fun setKeyboardPhoneticEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_KEYBOARD_PHONETIC, enabled).commit()
+    }
+
+    fun getPhoneMode(): String =
+        prefs.getString(KEY_PHONE_MODE, PHONE_MODE_BLIND)
+            ?: PHONE_MODE_BLIND
+
+    fun setPhoneMode(mode: String) {
+        prefs.edit().putString(KEY_PHONE_MODE, mode).commit()
+    }
+
+    fun getPhoneActivation(): String =
+        prefs.getString(KEY_PHONE_ACTIVATION, PHONE_ACTIVATION_LIFT)
+            ?: PHONE_ACTIVATION_LIFT
+
+    fun setPhoneActivation(activation: String) {
+        prefs.edit().putString(KEY_PHONE_ACTIVATION, activation).commit()
+    }
+
+    fun isPhoneAnnounceAfterLiftEnabled(): Boolean =
+        prefs.getBoolean(KEY_PHONE_ANNOUNCE_AFTER_LIFT, false)
+
+    fun setPhoneAnnounceAfterLiftEnabled(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_PHONE_ANNOUNCE_AFTER_LIFT, enabled)
+            .commit()
+    }
+
+    fun isPhoneHapticEnabled(): Boolean =
+        prefs.getBoolean(KEY_PHONE_HAPTIC, true)
+
+    fun setPhoneHapticEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_PHONE_HAPTIC, enabled).commit()
+    }
+
+    fun isPhoneSoundEnabled(): Boolean =
+        prefs.getBoolean(KEY_PHONE_SOUND, true)
+
+    fun setPhoneSoundEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_PHONE_SOUND, enabled).commit()
+    }
+
+    fun isPhoneRecordEnabled(): Boolean =
+        prefs.getBoolean(KEY_PHONE_RECORD_ENABLED, false)
+
+    fun setPhoneRecordEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_PHONE_RECORD_ENABLED, enabled).commit()
+    }
+
+    fun getPhoneRecordMode(): String =
+        prefs.getString(KEY_PHONE_RECORD_MODE, PHONE_RECORD_MODE_MANUAL)
+            ?: PHONE_RECORD_MODE_MANUAL
+
+    fun setPhoneRecordMode(mode: String) {
+        prefs.edit().putString(KEY_PHONE_RECORD_MODE, mode).commit()
+    }
+
+    fun isPhoneShowRecordButton(): Boolean =
+        prefs.getBoolean(KEY_PHONE_SHOW_RECORD_BUTTON, true)
+
+    fun setPhoneShowRecordButton(show: Boolean) {
+        prefs.edit().putBoolean(KEY_PHONE_SHOW_RECORD_BUTTON, show).commit()
+    }
+
+    fun isPhoneRecordBoostVolumeEnabled(): Boolean =
+        prefs.getBoolean(KEY_PHONE_RECORD_BOOST_VOLUME, true)
+
+    fun setPhoneRecordBoostVolumeEnabled(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_PHONE_RECORD_BOOST_VOLUME, enabled)
+            .commit()
+    }
+
+    fun isPhoneAutoSpeakerProximityEnabled(): Boolean =
+        prefs.getBoolean(KEY_PHONE_AUTO_SPEAKER_PROXIMITY, false)
+
+    fun setPhoneAutoSpeakerProximityEnabled(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_PHONE_AUTO_SPEAKER_PROXIMITY, enabled)
+            .commit()
+    }
+
+    fun isPhoneHardwareKeysAnswerEnabled(): Boolean =
+        prefs.getBoolean(KEY_PHONE_HARDWARE_KEYS_ANSWER, true)
+
+    fun setPhoneHardwareKeysAnswerEnabled(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_PHONE_HARDWARE_KEYS_ANSWER, enabled)
+            .commit()
     }
 }

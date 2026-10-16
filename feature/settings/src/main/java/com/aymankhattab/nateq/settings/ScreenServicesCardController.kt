@@ -106,12 +106,6 @@ class ScreenServicesCardController(
             ?.setOnClickListener {
                 showAppProfilesDialog { updateUiState() }
             }
-        root.findViewWithTag<MaterialButton>("btn_open_keyboard_settings")
-            ?.setOnClickListener {
-                val intent =
-                    Intent(context, KeyboardSettingsActivity::class.java)
-                context.startActivity(intent)
-            }
 
         bindSwitch(
             root,

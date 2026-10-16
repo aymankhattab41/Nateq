@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black"
+    android:keepScreenOn="true">
+
+    <!-- معلومات المكالمة في الأعلى -->
+    <LinearLayout
+        android:id="@+id/ll_incall_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="24dp"
+        android:layout_alignParentTop="true">
+
+        <TextView
+            android:id="@+id/tv_incall_caller_name"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="26sp"
+            android:textStyle="bold"
+            android:textColor="@android:color/white"
+            android:gravity="center"
+            android:accessibilityHeading="true"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/tv_incall_caller_number"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="18sp"
+            android:textColor="#B0BEC5"
+            android:gravity="center"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/tv_incall_duration"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="18sp"
+            android:textColor="#80CBC4"
+            android:text="00:00"
+            android:gravity="center" />
+    </LinearLayout>
+
+    <!-- واجهة المكالمة الواردة (رنين) -->
+    <LinearLayout
+        android:id="@+id/ll_incoming_call_actions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_centerInParent="true"
+        android:padding="20dp"
+        android:visibility="gone">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_incall_reject"
+            android:layout_width="0dp"
+            android:layout_height="80dp"
+            android:layout_weight="1"
+            android:text="@string/phone_reject_call"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:backgroundTint="#D32F2F"
+            android:layout_marginEnd="10dp"
+            app:cornerRadius="16dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_incall_answer"
+            android:layout_width="0dp"
+            android:layout_height="80dp"
+            android:layout_weight="1"
+            android:text="@string/phone_answer_call"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:backgroundTint="#388E3C"
+            android:layout_marginStart="10dp"
+            app:cornerRadius="16dp" />
+    </LinearLayout>
+
+    <!-- واجهة التحكم أثناء المكالمة النشطة -->
+    <LinearLayout
+        android:id="@+id/ll_active_call_controls"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_above="@id/btn_incall_end_call"
+        android:layout_below="@id/ll_incall_header"
+        android:gravity="center"
+        android:padding="16dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginBottom="16dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_incall_speaker"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="64dp"
+                android:layout_weight="1"
+                android:text="@string/phone_speaker_label"
+                android:textSize="15sp"
+                android:textColor="@android:color/white"
+                android:layout_marginEnd="8dp"
+                app:cornerRadius="12dp"
+                app:strokeColor="#78909C" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_incall_mute"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="64dp"
+                android:layout_weight="1"
+                android:text="@string/phone_mute_label"
+                android:textSize="15sp"
+                android:textColor="@android:color/white"
+                android:layout_marginStart="8dp"
+                app:cornerRadius="12dp"
+                app:strokeColor="#78909C" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_incall_keypad"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="64dp"
+                android:layout_weight="1"
+                android:text="@string/phone_keypad_label"
+                android:textSize="15sp"
+                android:textColor="@android:color/white"
+                android:layout_marginEnd="8dp"
+                app:cornerRadius="12dp"
+                app:strokeColor="#78909C" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_incall_record"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="64dp"
+                android:layout_weight="1"
+                android:text="@string/phone_record_btn_label"
+                android:textSize="15sp"
+                android:textColor="@android:color/white"
+                android:layout_marginStart="8dp"
+                app:cornerRadius="12dp"
+                app:strokeColor="#E53935" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- حاوية لوحة الأرقام المنبثقة DTMF -->
+    <LinearLayout
+        android:id="@+id/ll_dtmf_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:background="@android:color/black"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:padding="12dp"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/tv_dtmf_digits"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="22sp"
+                android:textColor="#FFEB3B"
+                android:textStyle="bold"
+                android:paddingStart="12dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_close_dtmf"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/phone_close_keypad"
+                android:textColor="@android:color/white" />
+        </LinearLayout>
+
+        <com.aymankhattab.nateq.core.audio.phone.LordDialpadView
+            android:id="@+id/dialpad_incall"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+    </LinearLayout>
+
+    <!-- زر إنهاء المكالمة الضخم في الأسفل -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_incall_end_call"
+        android:layout_width="match_parent"
+        android:layout_height="72dp"
+        android:layout_alignParentBottom="true"
+        android:layout_margin="16dp"
+        android:text="@string/phone_end_call"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:textColor="@android:color/white"
+        android:backgroundTint="#C62828"
+        app:cornerRadius="16dp" />
+</RelativeLayout>
