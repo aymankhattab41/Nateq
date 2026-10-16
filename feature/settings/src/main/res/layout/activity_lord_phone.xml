@@ -1,0 +1,297 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="?android:attr/colorBackground">
+
+    <!-- الشريط العلوي -->
+    <LinearLayout
+        android:id="@+id/ll_phone_top_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="12dp"
+        android:background="?attr/colorSurface">
+
+        <TextView
+            android:id="@+id/tv_phone_app_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/phone_app_name"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="?android:attr/textColorPrimary"
+            android:accessibilityHeading="true" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_phone_settings"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/phone_settings_btn"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <!-- شريط تنبيه التعيين كتطبيق افتراضي -->
+    <LinearLayout
+        android:id="@+id/ll_default_dialer_banner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="8dp"
+        android:background="#FF6F00"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/phone_banner_not_default"
+            android:textColor="@android:color/white"
+            android:textSize="13sp"
+            android:paddingStart="8dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_banner_set_default"
+            style="@style/Widget.MaterialComponents.Button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/phone_btn_set_default"
+            android:textColor="@android:color/white"
+            android:backgroundTint="#E65100" />
+    </LinearLayout>
+
+    <!-- الحاوية المركزية للتبويبات -->
+    <FrameLayout
+        android:id="@+id/fl_phone_content"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <!-- تبويب لوحة الاتصال -->
+        <LinearLayout
+            android:id="@+id/ll_tab_dialpad"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
+            <!-- شريط عرض الرقم والمفاتيح السريعة -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:padding="12dp">
+
+                <TextView
+                    android:id="@+id/tv_phone_number_display"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:textSize="32sp"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:singleLine="true"
+                    android:ellipsize="start"
+                    android:gravity="start|center_vertical"
+                    android:hint="@string/phone_number_hint"
+                    android:padding="8dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_phone_delete"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/phone_delete_btn"
+                    android:textSize="14sp"
+                    android:minWidth="64dp" />
+            </LinearLayout>
+
+            <!-- لوحة الاتصال ذات الاستكشاف باللمس -->
+            <com.aymankhattab.nateq.core.audio.phone.LordDialpadView
+                android:id="@+id/dialpad_view"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <!-- زر الاتصال الضخم في الأسفل -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="12dp">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_phone_call"
+                    android:layout_width="match_parent"
+                    android:layout_height="64dp"
+                    android:text="@string/phone_call_btn"
+                    android:textSize="19sp"
+                    android:textStyle="bold"
+                    android:textColor="@android:color/white"
+                    android:backgroundTint="#2E7D32"
+                    app:cornerRadius="16dp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- تبويب سجل المكالمات -->
+        <LinearLayout
+            android:id="@+id/ll_tab_call_log"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/tv_call_log_empty"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="@string/phone_call_log_empty"
+                android:textSize="16sp"
+                android:textColor="?android:attr/textColorSecondary"
+                android:visibility="gone" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rv_call_log"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="8dp"
+                android:clipToPadding="false" />
+        </LinearLayout>
+
+        <!-- تبويب جهات الاتصال -->
+        <LinearLayout
+            android:id="@+id/ll_tab_contacts"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="8dp">
+
+                <EditText
+                    android:id="@+id/et_contact_search"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:hint="@string/phone_contacts_search_hint"
+                    android:inputType="text"
+                    android:padding="12dp"
+                    android:background="@drawable/rounded_edittext_bg" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_contact_voice_search"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/phone_voice_search_btn"
+                    android:layout_marginStart="8dp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tv_contacts_empty"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="@string/phone_contacts_empty"
+                android:textSize="16sp"
+                android:textColor="?android:attr/textColorSecondary"
+                android:visibility="gone" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rv_contacts"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="8dp"
+                android:clipToPadding="false" />
+        </LinearLayout>
+
+        <!-- تبويب التسجيلات (يظهر فقط في نمط التسجيل اليدوي) -->
+        <LinearLayout
+            android:id="@+id/ll_tab_recordings"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/tv_recordings_empty"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="@string/phone_recordings_empty"
+                android:textSize="16sp"
+                android:textColor="?android:attr/textColorSecondary"
+                android:visibility="gone" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rv_recordings"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="8dp"
+                android:clipToPadding="false" />
+        </LinearLayout>
+    </FrameLayout>
+
+    <!-- شريط التنقل السفلي الميسر للتبويبات -->
+    <LinearLayout
+        android:id="@+id/ll_bottom_navigation"
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:orientation="horizontal"
+        android:background="?attr/colorSurface"
+        android:elevation="8dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_nav_dialpad"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="@string/phone_tab_dialpad"
+            android:textSize="13sp"
+            android:textColor="?attr/colorPrimary" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_nav_call_log"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="@string/phone_tab_call_log"
+            android:textSize="13sp"
+            android:textColor="?android:attr/textColorSecondary" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_nav_contacts"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="@string/phone_tab_contacts"
+            android:textSize="13sp"
+            android:textColor="?android:attr/textColorSecondary" />
+
+        <!-- تبويب التسجيلات المشروط ذكياً -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_nav_recordings"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="@string/phone_tab_recordings"
+            android:textSize="13sp"
+            android:textColor="?android:attr/textColorSecondary"
+            android:visibility="gone" />
+    </LinearLayout>
+</LinearLayout>
