@@ -793,10 +793,20 @@ class NateqTtsService : TextToSpeechService() {
                 }
                 if (readMoreEnabled && isTruncated) {
                     val expanded = AccessibilityBridge.expandReadMore(rawText)
-                    if (expanded != null &&
-                        expanded.length > rawText.length &&
-                        SelectorPacks.isTextMatchingMessage(rawText, expanded)
-                    ) {
+                    val cleanRaw = SelectorPacks.cleanBidi(rawText).trim()
+                    val isValid = if (expanded != null) {
+                        val cleanExp = SelectorPacks.cleanBidi(expanded).trim()
+                        cleanExp.isNotEmpty() && (
+                            cleanExp.length > cleanRaw.length ||
+                            !SelectorPacks.looksTruncated(cleanExp) ||
+                            SelectorPacks.isTextMatchingMessage(
+                                rawText,
+                                expanded
+                            )
+                        )
+                    } else false
+
+                    if (expanded != null && isValid) {
                         processedText = expanded
                         Log.w(
                             TAG,

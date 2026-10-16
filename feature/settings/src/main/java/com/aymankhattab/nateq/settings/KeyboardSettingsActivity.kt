@@ -198,6 +198,8 @@ class KeyboardSettingsActivity : AppCompatActivity() {
             findViewById<SwitchMaterial>(R.id.switch_haptic)
         val swSound =
             findViewById<SwitchMaterial>(R.id.switch_sound)
+        val swAlwaysNumberRow =
+            findViewById<SwitchMaterial>(R.id.switch_always_show_number_row)
 
         swAnnounceAfterLift.isChecked =
             settingsRepo.isKeyboardAnnounceAfterLiftEnabled()
@@ -207,6 +209,8 @@ class KeyboardSettingsActivity : AppCompatActivity() {
             settingsRepo.isKeyboardHapticEnabled()
         swSound.isChecked =
             settingsRepo.isKeyboardSoundEnabled()
+        swAlwaysNumberRow.isChecked =
+            settingsRepo.isKeyboardAlwaysShowNumberRow()
 
         swAnnounceAfterLift.setOnCheckedChangeListener { _, isChecked ->
             settingsRepo.setKeyboardAnnounceAfterLiftEnabled(isChecked)
@@ -219,6 +223,9 @@ class KeyboardSettingsActivity : AppCompatActivity() {
         }
         swSound.setOnCheckedChangeListener { _, isChecked ->
             settingsRepo.setKeyboardSoundEnabled(isChecked)
+        }
+        swAlwaysNumberRow.setOnCheckedChangeListener { _, isChecked ->
+            settingsRepo.setKeyboardAlwaysShowNumberRow(isChecked)
         }
     }
 

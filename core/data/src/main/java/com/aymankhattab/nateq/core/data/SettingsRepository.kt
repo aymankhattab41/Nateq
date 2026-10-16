@@ -230,6 +230,8 @@ class SettingsRepository(context: Context) :
         const val KEY_KEYBOARD_HAPTIC = "keyboard_haptic"
         const val KEY_KEYBOARD_SOUND = "keyboard_sound"
         const val KEY_KEYBOARD_PHONETIC = "keyboard_phonetic"
+        const val KEY_KEYBOARD_ALWAYS_SHOW_NUMBER_ROW =
+            "keyboard_always_show_number_row"
 
         const val KEYBOARD_MODE_BLIND = "blind"
         const val KEYBOARD_MODE_LOW_VISION = "low_vision"
@@ -252,6 +254,10 @@ class SettingsRepository(context: Context) :
             "phone_auto_speaker_proximity"
         const val KEY_PHONE_HARDWARE_KEYS_ANSWER =
             "phone_hardware_keys_answer"
+        const val KEY_PHONE_LAUNCHER_ICON =
+            "phone_launcher_icon_enabled"
+        const val KEY_SPEED_DIAL_LAUNCHER_ICON =
+            "speed_dial_launcher_icon_enabled"
 
         const val PHONE_MODE_BLIND = "blind"
         const val PHONE_MODE_LOW_VISION = "low_vision"
@@ -2550,13 +2556,26 @@ class SettingsRepository(context: Context) :
 
     // ============ إعدادات خدمة إمكانية الوصول وخدمات الشاشة ============
 
-    override fun isAccessibilityFeatureEnabled(featureKey: String): Boolean =
-        prefs.getBoolean(featureKey, false)
+    override fun isAccessibilityFeatureEnabled(featureKey: String): Boolean {
+        if (featureKey == "a11y_read_more_expand") {
+            return prefs.getBoolean(
+                "a11y_read_more_expand",
+                prefs.getBoolean("a11y_read_more", false)
+            )
+        }
+        return prefs.getBoolean(featureKey, false)
+    }
 
     override fun setAccessibilityFeatureEnabled(
         featureKey: String,
         enabled: Boolean
-    ) = prefs.edit().putBoolean(featureKey, enabled).apply()
+    ) {
+        val editor = prefs.edit().putBoolean(featureKey, enabled)
+        if (featureKey == "a11y_read_more_expand") {
+            editor.putBoolean("a11y_read_more", enabled)
+        }
+        editor.apply()
+    }
 
     override fun isA11yPaused(): Boolean =
         prefs.getBoolean("a11y_service_paused", false)
@@ -2842,6 +2861,15 @@ class SettingsRepository(context: Context) :
         prefs.edit().putBoolean(KEY_KEYBOARD_PHONETIC, enabled).commit()
     }
 
+    fun isKeyboardAlwaysShowNumberRow(): Boolean =
+        prefs.getBoolean(KEY_KEYBOARD_ALWAYS_SHOW_NUMBER_ROW, false)
+
+    fun setKeyboardAlwaysShowNumberRow(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_KEYBOARD_ALWAYS_SHOW_NUMBER_ROW, enabled)
+            .commit()
+    }
+
     fun getPhoneMode(): String =
         prefs.getString(KEY_PHONE_MODE, PHONE_MODE_BLIND)
             ?: PHONE_MODE_BLIND
@@ -2927,6 +2955,22 @@ class SettingsRepository(context: Context) :
     fun setPhoneHardwareKeysAnswerEnabled(enabled: Boolean) {
         prefs.edit()
             .putBoolean(KEY_PHONE_HARDWARE_KEYS_ANSWER, enabled)
+            .commit()
+    }
+
+    fun isPhoneLauncherIconEnabled(): Boolean =
+        prefs.getBoolean(KEY_PHONE_LAUNCHER_ICON, false)
+
+    fun setPhoneLauncherIconEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_PHONE_LAUNCHER_ICON, enabled).commit()
+    }
+
+    fun isSpeedDialLauncherIconEnabled(): Boolean =
+        prefs.getBoolean(KEY_SPEED_DIAL_LAUNCHER_ICON, false)
+
+    fun setSpeedDialLauncherIconEnabled(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_SPEED_DIAL_LAUNCHER_ICON, enabled)
             .commit()
     }
 }

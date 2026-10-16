@@ -28,6 +28,14 @@
             android:accessibilityHeading="true" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_phone_speed_dial"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/speed_dial_title"
+            android:textSize="14sp" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_phone_settings"
             style="@style/Widget.MaterialComponents.Button.TextButton"
             android:layout_width="wrap_content"
@@ -119,23 +127,40 @@
                 android:layout_height="0dp"
                 android:layout_weight="1" />
 
-            <!-- زر الاتصال الضخم في الأسفل -->
+            <!-- أزرار الاتصال للشرائح في الأسفل -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:padding="12dp">
+                android:padding="8dp">
 
                 <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_phone_call"
-                    android:layout_width="match_parent"
+                    android:id="@+id/btn_phone_call_sim1"
+                    android:layout_width="0dp"
                     android:layout_height="64dp"
-                    android:text="@string/phone_call_btn"
-                    android:textSize="19sp"
+                    android:layout_weight="1"
+                    android:text="@string/phone_call_sim1"
+                    android:textSize="17sp"
                     android:textStyle="bold"
                     android:textColor="@android:color/white"
                     android:backgroundTint="#2E7D32"
-                    app:cornerRadius="16dp" />
+                    app:cornerRadius="16dp"
+                    app:icon="@drawable/ic_call"
+                    android:layout_marginEnd="4dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_phone_call_sim2"
+                    android:layout_width="0dp"
+                    android:layout_height="64dp"
+                    android:layout_weight="1"
+                    android:text="@string/phone_call_sim2"
+                    android:textSize="17sp"
+                    android:textStyle="bold"
+                    android:textColor="@android:color/white"
+                    android:backgroundTint="#1B5E20"
+                    app:cornerRadius="16dp"
+                    app:icon="@drawable/ic_call"
+                    android:layout_marginStart="4dp" />
             </LinearLayout>
         </LinearLayout>
 
@@ -177,6 +202,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
+                android:gravity="center_vertical"
                 android:padding="8dp">
 
                 <EditText
@@ -190,18 +216,37 @@
                     android:background="@drawable/rounded_edittext_bg" />
 
                 <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_contact_search_delete"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/phone_delete_btn"
+                    android:minWidth="48dp"
+                    android:layout_marginStart="6dp" />
+
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_contact_voice_search"
                     style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/phone_voice_search_btn"
-                    android:layout_marginStart="8dp" />
+                    android:minWidth="48dp"
+                    android:layout_marginStart="6dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_toggle_contacts_keyboard"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/phone_contacts_keyboard_toggle"
+                    android:layout_marginStart="4dp" />
             </LinearLayout>
 
             <TextView
                 android:id="@+id/tv_contacts_empty"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
                 android:gravity="center"
                 android:text="@string/phone_contacts_empty"
                 android:textSize="16sp"
@@ -211,9 +256,16 @@
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/rv_contacts"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
                 android:padding="8dp"
                 android:clipToPadding="false" />
+
+            <!-- لوحة أحرف استكشاف اللمس والرفع للتفعيل للبحث في جهات الاتصال -->
+            <com.aymankhattab.nateq.core.audio.keyboard.LordKeyboardView
+                android:id="@+id/keyboard_contacts_search"
+                android:layout_width="match_parent"
+                android:layout_height="220dp" />
         </LinearLayout>
 
         <!-- تبويب التسجيلات (يظهر فقط في نمط التسجيل اليدوي) -->

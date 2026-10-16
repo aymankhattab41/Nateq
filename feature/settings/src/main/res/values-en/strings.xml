@@ -657,6 +657,12 @@
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
 Note: this is an experimental build that may be reverted to the old system, and many features may not work. If feedback is negative, we will revert to the old system. We are waiting for your feedback on the Telegram bot; note that voice messages do not arrive. Anyone who wants personal contact for any reason should write some contact details, because the bot does not reveal the identity of anyone and I cannot reach them.
+- Accessible Speed Dial (slots 1 to 10,000): Dedicated memory for quick calling with caller name and number announcement on touch or "Empty", dual SIM calling dialog (SIM 1 / SIM 2), slot assignment and deletion remaining within speed dial list, and app drawer icon shortcut toggle in app tools and phone settings
+- Dual SIM support in Lord Phone: Side-by-side call buttons for SIM 1 and SIM 2 with automatic carrier name detection
+- Always show number row option in Accessible Keyboard: Option to pin a permanent number row (1-0) above letters in normal text mode for faster typing
+- Enhanced touch exploration for Lord Phone and Keyboard: Lift-to-type activation to prevent unintended input upon touch, along with improved accuracy for "Read More" expansion
+- Lord TTS Accessible Phone &amp; Call Recording: Fully accessible dialer and call history with automatic or on-demand call recording at maximum volume, and consolidated phone and keyboard shortcuts under App Tools
+- Previous engine switching: Backward engine toggle support via Quick Actions menu, Quick Settings tile, and system shortcuts
 - Fix keyboard TalkBack compatibility: Full touch exploration via ExploreByTouchHelper and hover event dispatching, removal of two-finger swipe interference, live test area responsiveness, and voice typing fix by eliminating TTS speech during recording, adding direct microphone permission request, haptic guidance, and comprehensive error handling
 - Direct entry point for accessible keyboard customization and settings added under app settings and tools menu
 - Lord TTS Accessible Keyboard for blind and visually impaired users: Supports Blind mode (audio/haptic focused) and Low Vision mode (high contrast), Lift-to-Type or Double-Tap activation, optional character re-announcement, phonetic letter hints, quick Arabic diacritics bar, integrated clipboard toolbar (copy, paste, cut, select all), and voice typing without auto-correct or spellcheck
@@ -964,4 +970,37 @@ Note: this is an experimental build that may be reverted to the old system, and 
     <string name="phone_playing_recording_announcement">Playing recording at maximum volume</string>
     <string name="phone_share_chooser_title">Share Call Recording</string>
     <string name="phone_voice_search_unavailable">Voice search is unavailable on this device</string>
+    <string name="phone_contacts_keyboard_toggle">Keyboard</string>
+    <string name="phone_contacts_keyboard_hide">Hide Keyboard</string>
+    <string name="phone_contacts_keyboard_show">Show Keyboard</string>
+    <string name="phone_contacts_keyboard_hidden">Keyboard hidden</string>
+    <string name="phone_contacts_keyboard_shown">Keyboard shown</string>
+    <string name="phone_btn_pin_shortcut">Add shortcut to home screen</string>
+    <string name="phone_pin_shortcut_success">Phone shortcut request sent to home screen</string>
+    <string name="phone_switch_app_drawer">Show phone icon in app drawer</string>
+    <string name="phone_shortcut_created">Phone icon enabled in app drawer</string>
+    <string name="phone_shortcut_removed">Phone icon removed from app drawer</string>
+    <string name="keyboard_always_show_number_row_title">Always show number row</string>
+    <string name="keyboard_always_show_number_row_summary">Always show a number row (1-0) at top of keyboard</string>
+    <string name="speed_dial_title">Speed Dial</string>
+    <string name="speed_dial_slot_title">Slot %1$d</string>
+    <string name="speed_dial_slot_empty">Slot %1$d is empty</string>
+    <string name="speed_dial_slot_assigned">Slot %1$d: %2$s - %3$s</string>
+    <string name="speed_dial_add_action">Add to Speed Dial</string>
+    <string name="speed_dial_delete_action">Remove from Speed Dial</string>
+    <string name="speed_dial_options_title">Speed Dial Options</string>
+    <string name="speed_dial_call_sim1">Call using SIM 1</string>
+    <string name="speed_dial_call_sim2">Call using SIM 2</string>
+    <string name="speed_dial_added_toast">Added %1$s to Slot %2$d in Speed Dial</string>
+    <string name="speed_dial_deleted_toast">Removed Slot %1$d from Speed Dial</string>
+    <string name="speed_dial_select_number_title">Select phone number for Slot %1$d:</string>
+    <string name="speed_dial_btn_pin_shortcut">Add Speed Dial shortcut to home screen</string>
+    <string name="speed_dial_pin_shortcut_success">Speed Dial shortcut request sent to home screen</string>
+    <string name="speed_dial_switch_app_drawer">Show Speed Dial icon in app drawer</string>
+    <string name="speed_dial_shortcut_created">Speed Dial icon enabled in app drawer</string>
+    <string name="speed_dial_shortcut_removed">Speed Dial icon removed from app drawer</string>
+    <string name="speed_dial_empty_list">No numbers added to Speed Dial yet</string>
+    <string name="phone_call_sim1">SIM 1</string>
+    <string name="phone_call_sim2">SIM 2</string>
+    <string name="phone_select_sim_title">Select SIM to Call</string>
 </resources>

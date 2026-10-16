@@ -1017,6 +1017,18 @@
                 android:importantForAccessibility="yes" />
 
             <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_open_speed_dial"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/speed_dial_title"
+                android:importantForAccessibility="yes"
+                app:icon="@drawable/ic_call"
+                app:iconGravity="textStart" />
+
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_phone_settings"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                 android:layout_width="match_parent"
@@ -1037,6 +1049,17 @@
                 android:importantForAccessibility="yes"
                 app:icon="@drawable/ic_accessibility"
                 app:iconGravity="textStart" />
+
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_tools_speed_dial_drawer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:minHeight="48dp"
+                android:text="@string/speed_dial_switch_app_drawer"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on"
+                android:importantForAccessibility="yes" />
 
             <com.google.android.material.button.MaterialButton android:id="@+id/btn_save_settings" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:minHeight="48dp" android:text="@string/save_settings" android:importantForAccessibility="yes" />
 

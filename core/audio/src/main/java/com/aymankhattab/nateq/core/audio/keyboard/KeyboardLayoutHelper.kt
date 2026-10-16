@@ -219,9 +219,15 @@ object KeyboardLayoutHelper {
         return listOf(row1, row2, row3, row4)
     }
 
+    fun getNumberRow(): List<KeyModel> {
+        val numChars = listOf(
+            "1", "2", "3", "4", "5", "6", "7", "8", "9", "0"
+        )
+        return numChars.map { ch -> KeyModel(ch, ch) }
+    }
+
     fun getSymbolsRows(): List<List<KeyModel>> {
-        val row1Chars = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
-        val row1 = row1Chars.map { ch -> KeyModel(ch, ch) }
+        val row1 = getNumberRow()
 
         val row2Chars = listOf("@", "#", "$", "%", "&", "*", "-", "+", "(", ")")
         val row2Spoken = listOf(

@@ -163,12 +163,19 @@ class LordKeyboardService : InputMethodService(),
     }
 
     private fun updateKeyboardLayout() {
-        val rows = when (currentLayer) {
+        val baseRows = when (currentLayer) {
             KeyboardLayer.ARABIC -> KeyboardLayoutHelper.getArabicRows()
             KeyboardLayer.ENGLISH ->
                 KeyboardLayoutHelper.getEnglishRows(isEnglishCaps)
             KeyboardLayer.SYMBOLS -> KeyboardLayoutHelper.getSymbolsRows()
             KeyboardLayer.TASHKEEL -> KeyboardLayoutHelper.getArabicRows()
+        }
+        val rows = if (settingsRepo.isKeyboardAlwaysShowNumberRow() &&
+            currentLayer != KeyboardLayer.SYMBOLS
+        ) {
+            listOf(KeyboardLayoutHelper.getNumberRow()) + baseRows
+        } else {
+            baseRows
         }
         keyboardView?.setKeyRows(rows)
     }

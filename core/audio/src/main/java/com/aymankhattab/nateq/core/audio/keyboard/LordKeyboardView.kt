@@ -69,6 +69,13 @@ class LordKeyboardView @JvmOverloads constructor(
     private val keyRects = mutableMapOf<KeyModel, RectF>()
     private var hoveredKey: KeyModel? = null
 
+    // تتبع حالة استكشاف اللمس ومنع التفعيل المبكر
+    private var isExploring: Boolean = false
+    private var hoverStartTime: Long = 0L
+    private var lastCommitTime: Long = -1000L
+    private val minHoverDurationMs: Long = 40L
+    private val duplicateCommitCooldownMs: Long = 250L
+
     // تتبع النقر المزدوج في وضع Double Tap
     private var lastTappedKey: KeyModel? = null
     private var lastTapTime: Long = 0L
@@ -246,34 +253,44 @@ class LordKeyboardView @JvmOverloads constructor(
      */
     public override fun dispatchHoverEvent(event: MotionEvent): Boolean {
         val handled = touchHelper.dispatchHoverEvent(event)
-
-        val isScreenReader =
-            AccessibilityUtils.isScreenReaderEnabled(context)
-        if (isScreenReader) {
-            val key = findKeyAt(event.x, event.y)
-            when (event.actionMasked) {
-                MotionEvent.ACTION_HOVER_ENTER,
-                MotionEvent.ACTION_HOVER_MOVE -> {
-                    if (key != null && key != hoveredKey) {
-                        hoveredKey = key
-                        triggerHaptic(isStrong = false)
-                        triggerSound()
-                        invalidate()
-                    }
-                }
-                MotionEvent.ACTION_HOVER_EXIT -> {
-                    // في نمط الرفع للتفعيل أثناء استخدام قارئ الشاشة
-                    if (activationMode ==
-                        SettingsRepository.KEYBOARD_ACTIVATION_LIFT
-                    ) {
-                        val keyToCommit = hoveredKey ?: key
-                        if (keyToCommit != null) {
-                            commitKeyActivation(keyToCommit)
-                        }
-                    }
-                    hoveredKey = null
+        val eventTime = if (event.eventTime > 0L) event.eventTime
+        else SystemClock.uptimeMillis()
+        val key = findKeyAt(event.x, event.y)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_HOVER_ENTER -> {
+                if (key != null) {
+                    isExploring = true
+                    hoverStartTime = eventTime
+                    hoveredKey = key
+                    triggerHaptic(isStrong = false)
+                    triggerSound()
+                    actionListener?.onKeyHover(key)
                     invalidate()
                 }
+            }
+            MotionEvent.ACTION_HOVER_MOVE -> {
+                if (key != null && key != hoveredKey) {
+                    isExploring = true
+                    hoverStartTime = eventTime
+                    hoveredKey = key
+                    triggerHaptic(isStrong = false)
+                    triggerSound()
+                    actionListener?.onKeyHover(key)
+                    invalidate()
+                }
+            }
+            MotionEvent.ACTION_HOVER_EXIT -> {
+                if (isExploring && hoveredKey != null &&
+                    activationMode ==
+                        SettingsRepository.KEYBOARD_ACTIVATION_LIFT &&
+                    (eventTime - hoverStartTime) >= minHoverDurationMs
+                ) {
+                    val keyToCommit = hoveredKey!!
+                    commitKeyActivation(keyToCommit, eventTime)
+                }
+                isExploring = false
+                hoveredKey = null
+                invalidate()
             }
         }
 
@@ -291,12 +308,14 @@ class LordKeyboardView @JvmOverloads constructor(
 
         val x = event.x
         val y = event.y
+        val eventTime = if (event.eventTime > 0L) event.eventTime
+        else SystemClock.uptimeMillis()
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 touchDownX = x
                 touchDownY = y
-                touchDownTime = SystemClock.uptimeMillis()
+                touchDownTime = eventTime
 
                 val key = findKeyAt(x, y)
                 if (key != null) {
@@ -316,7 +335,7 @@ class LordKeyboardView @JvmOverloads constructor(
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                val duration = SystemClock.uptimeMillis() - touchDownTime
+                val duration = eventTime - touchDownTime
                 val diffX = x - touchDownX
                 val diffY = y - touchDownY
 
@@ -349,7 +368,7 @@ class LordKeyboardView @JvmOverloads constructor(
 
                 val key = hoveredKey ?: findKeyAt(x, y)
                 if (key != null) {
-                    handleKeyReleaseOrTap(key)
+                    handleKeyReleaseOrTap(key, eventTime)
                 }
                 hoveredKey = null
                 invalidate()
@@ -379,16 +398,19 @@ class LordKeyboardView @JvmOverloads constructor(
         actionListener?.onKeyHover(key)
     }
 
-    private fun handleKeyReleaseOrTap(key: KeyModel) {
-        val now = SystemClock.uptimeMillis()
-
+    private fun handleKeyReleaseOrTap(
+        key: KeyModel,
+        eventTime: Long = SystemClock.uptimeMillis()
+    ) {
         if (activationMode == SettingsRepository.KEYBOARD_ACTIVATION_LIFT) {
-            commitKeyActivation(key)
+            commitKeyActivation(key, eventTime)
         } else {
+            val now = if (eventTime > 0L) eventTime
+            else SystemClock.uptimeMillis()
             if (lastTappedKey == key &&
                 (now - lastTapTime) <= doubleTapTimeoutMs
             ) {
-                commitKeyActivation(key)
+                commitKeyActivation(key, now)
                 lastTappedKey = null
                 lastTapTime = 0L
             } else {
@@ -400,7 +422,15 @@ class LordKeyboardView @JvmOverloads constructor(
         }
     }
 
-    private fun commitKeyActivation(key: KeyModel) {
+    private fun commitKeyActivation(
+        key: KeyModel,
+        eventTime: Long = SystemClock.uptimeMillis()
+    ) {
+        val now = if (eventTime > 0L) eventTime else SystemClock.uptimeMillis()
+        if (now - lastCommitTime < duplicateCommitCooldownMs) {
+            return
+        }
+        lastCommitTime = now
         triggerHaptic(isStrong = true)
         triggerSound()
         actionListener?.onKeySelected(key)

@@ -66,6 +66,13 @@ class LordDialpadView @JvmOverloads constructor(
     private val keyRects = mutableMapOf<DialpadKey, RectF>()
     private var hoveredKey: DialpadKey? = null
 
+    // تتبع حالة استكشاف اللمس ومنع التفعيل المبكر
+    private var isExploring: Boolean = false
+    private var hoverStartTime: Long = 0L
+    private var lastCommitTime: Long = -1000L
+    private val minHoverDurationMs: Long = 40L
+    private val duplicateCommitCooldownMs: Long = 250L
+
     // تتبع النقر المزدوج
     private var lastTappedKey: DialpadKey? = null
     private var lastTapTime: Long = 0L
@@ -164,6 +171,18 @@ class LordDialpadView @JvmOverloads constructor(
         touchHelper.invalidateRoot()
     }
 
+    override fun onLayout(
+        changed: Boolean,
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int
+    ) {
+        super.onLayout(changed, left, top, right, bottom)
+        recalculateKeyBounds()
+        touchHelper.invalidateRoot()
+    }
+
     private fun recalculateKeyBounds() {
         val totalWidth = width.toFloat()
         val totalHeight = height.toFloat()
@@ -239,36 +258,47 @@ class LordDialpadView @JvmOverloads constructor(
         }
     }
 
-    override fun dispatchHoverEvent(event: MotionEvent): Boolean {
+    public override fun dispatchHoverEvent(event: MotionEvent): Boolean {
         val handled = touchHelper.dispatchHoverEvent(event)
-        val isScreenReader = AccessibilityUtils.isScreenReaderEnabled(context)
-
-        if (isScreenReader) {
-            val key = findKeyAt(event.x, event.y)
-            when (event.actionMasked) {
-                MotionEvent.ACTION_HOVER_ENTER,
-                MotionEvent.ACTION_HOVER_MOVE -> {
-                    if (key != null && key != hoveredKey) {
-                        hoveredKey = key
-                        playTone(key.dtmfTone)
-                        triggerHaptic(isStrong = false)
-                        actionListener?.onKeyHover(key)
-                        invalidate()
-                    }
-                }
-                MotionEvent.ACTION_HOVER_EXIT -> {
-                    if (activationMode ==
-                        SettingsRepository.PHONE_ACTIVATION_LIFT
-                    ) {
-                        val keyToCommit = hoveredKey ?: key
-                        if (keyToCommit != null) {
-                            commitKey(keyToCommit)
-                        }
-                    }
-                    hoveredKey = null
-                    stopTone()
+        val eventTime = if (event.eventTime > 0L) event.eventTime
+        else SystemClock.uptimeMillis()
+        val key = findKeyAt(event.x, event.y)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_HOVER_ENTER -> {
+                if (key != null) {
+                    isExploring = true
+                    hoverStartTime = eventTime
+                    hoveredKey = key
+                    playTone(key.dtmfTone)
+                    triggerHaptic(isStrong = false)
+                    actionListener?.onKeyHover(key)
                     invalidate()
                 }
+            }
+            MotionEvent.ACTION_HOVER_MOVE -> {
+                if (key != null && key != hoveredKey) {
+                    isExploring = true
+                    hoverStartTime = eventTime
+                    hoveredKey = key
+                    playTone(key.dtmfTone)
+                    triggerHaptic(isStrong = false)
+                    actionListener?.onKeyHover(key)
+                    invalidate()
+                }
+            }
+            MotionEvent.ACTION_HOVER_EXIT -> {
+                if (isExploring && hoveredKey != null &&
+                    activationMode ==
+                        SettingsRepository.PHONE_ACTIVATION_LIFT &&
+                    (eventTime - hoverStartTime) >= minHoverDurationMs
+                ) {
+                    val keyToCommit = hoveredKey!!
+                    commitKey(keyToCommit, eventTime)
+                }
+                isExploring = false
+                hoveredKey = null
+                stopTone()
+                invalidate()
             }
         }
         return handled || super.dispatchHoverEvent(event)
@@ -283,6 +313,8 @@ class LordDialpadView @JvmOverloads constructor(
 
         val x = event.x
         val y = event.y
+        val eventTime = if (event.eventTime > 0L) event.eventTime
+        else SystemClock.uptimeMillis()
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -317,7 +349,7 @@ class LordDialpadView @JvmOverloads constructor(
                 stopTone()
                 val key = hoveredKey ?: findKeyAt(x, y)
                 if (key != null && !longPressTriggered) {
-                    handleKeySelection(key)
+                    handleKeySelection(key, eventTime)
                 }
                 hoveredKey = null
                 invalidate()
@@ -334,16 +366,20 @@ class LordDialpadView @JvmOverloads constructor(
         return super.onTouchEvent(event)
     }
 
-    private fun handleKeySelection(key: DialpadKey) {
+    private fun handleKeySelection(
+        key: DialpadKey,
+        eventTime: Long = SystemClock.uptimeMillis()
+    ) {
         if (activationMode == SettingsRepository.PHONE_ACTIVATION_LIFT) {
-            commitKey(key)
+            commitKey(key, eventTime)
         } else {
             // نمط الضغط مرتين
-            val now = SystemClock.uptimeMillis()
+            val now = if (eventTime > 0L) eventTime
+            else SystemClock.uptimeMillis()
             if (lastTappedKey == key &&
                 (now - lastTapTime) <= doubleTapTimeoutMs
             ) {
-                commitKey(key)
+                commitKey(key, now)
                 lastTappedKey = null
                 lastTapTime = 0L
             } else {
@@ -360,7 +396,15 @@ class LordDialpadView @JvmOverloads constructor(
         actionListener?.onKeyHover(key)
     }
 
-    fun commitKey(key: DialpadKey) {
+    fun commitKey(
+        key: DialpadKey,
+        eventTime: Long = SystemClock.uptimeMillis()
+    ) {
+        val now = if (eventTime > 0L) eventTime else SystemClock.uptimeMillis()
+        if (now - lastCommitTime < duplicateCommitCooldownMs) {
+            return
+        }
+        lastCommitTime = now
         triggerHaptic(isStrong = true)
         actionListener?.onKeySelected(key)
     }

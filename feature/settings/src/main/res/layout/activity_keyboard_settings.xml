@@ -213,6 +213,23 @@
                     android:text="@string/keyboard_sound_summary"
                     android:textSize="13sp"
                     android:textColor="?android:attr/textColorSecondary"
+                    android:layout_marginBottom="14dp"
+                    android:layout_marginStart="8dp"
+                    android:layout_marginEnd="8dp" />
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switch_always_show_number_row"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/keyboard_always_show_number_row_title"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/keyboard_always_show_number_row_summary"
+                    android:textSize="13sp"
+                    android:textColor="?android:attr/textColorSecondary"
                     android:layout_marginStart="8dp"
                     android:layout_marginEnd="8dp" />
             </LinearLayout>
