@@ -102,7 +102,7 @@ class CategoryResolverTest {
         val defaultCat = SettingsRepository.VOICE_CATEGORY_DEFAULT
         val prefs = FakeCategoryVoicePrefs(
             engines = mutableMapOf(
-                defaultCat to "com.acapela.tts"
+                defaultCat to null
             ),
             voices = mutableMapOf(
                 defaultCat to "ara-SAU-Mehdi"
@@ -125,7 +125,7 @@ class CategoryResolverTest {
             prefs
         )
 
-        assertEquals("com.acapela.tts", resolved.engine)
+        assertEquals(null, resolved.engine)
         assertEquals("ara-SAU-Mehdi", resolved.voiceId)
         assertEquals(1.5f, resolved.speechRate, 0.01f)
         assertEquals(1.0f, resolved.pitch, 0.01f)
@@ -152,7 +152,7 @@ class CategoryResolverTest {
             prefs
         )
 
-        assertEquals("com.acapela.tts", defaultResolved.engine)
+        assertEquals(null, defaultResolved.engine)
         assertEquals("ara-SAU-Mehdi", defaultResolved.voiceId)
         assertEquals("com.vocalizer.tts", notifResolved.engine)
         assertEquals("ar-xa-x-laila", notifResolved.voiceId)
@@ -178,11 +178,11 @@ class CategoryResolverTest {
     @Test
     fun `inferEngineFromVoice supports all known voice formats`() {
         assertEquals(
-            "com.acapela.tts",
+            null,
             CategoryResolver.inferEngineFromVoice("ara-SAU-Mehdi")
         )
         assertEquals(
-            "com.acapela.tts",
+            null,
             CategoryResolver.inferEngineFromVoice("ara-EGY-Salma")
         )
         assertEquals(
@@ -206,7 +206,7 @@ class CategoryResolverTest {
             CategoryResolver.inferEngineFromVoice("espeak:ar")
         )
         assertEquals(
-            "com.acapelagroup.android.tts",
+            null,
             CategoryResolver.inferEngineFromVoice(
                 "com.acapelagroup.android.tts:Salma"
             )

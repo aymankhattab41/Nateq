@@ -23,7 +23,7 @@ object CategoryResolver {
 
     /**
      * يستدل المحرك الصريح من اسم الصوت إن لم يكن المحرك محدداً صراحة.
-     * يدعم محركات Acapela وVocalizer وSamsung وGoogle وeSpeak وMultiTTS.
+     * يدعم محركات وVocalizer وSamsung وGoogle وeSpeak وMultiTTS.
      */
     fun inferEngineFromVoice(
         voiceName: String?,
@@ -62,15 +62,6 @@ object CategoryResolver {
                 lower.startsWith("com.vocalizer.") ||
                 lower.startsWith("com.nuance.") ->
                 "com.vocalizer.tts"
-
-            // Acapela voices (e.g. ara-SAU-Mehdi, ara-EGY-Salma...)
-            lower.startsWith("com.acapelagroup.") ->
-                "com.acapelagroup.android.tts"
-
-            lower.startsWith("ara-sau-") || lower.startsWith("ara-egy-") ||
-                lower.startsWith("ara-") || lower.contains("-acapela") ||
-                lower.startsWith("com.acapela.") ->
-                "com.acapela.tts"
 
             // eSpeak
             lower.startsWith("espeak:") || lower.startsWith("espeak-") ||
