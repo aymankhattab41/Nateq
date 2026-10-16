@@ -131,4 +131,68 @@ class VoicePreviewParamsTest {
         assertFalse(isVocalizerVoiceName(""))
         assertFalse(isVocalizerVoiceName(null))
     }
+
+    @Test
+    fun externalEngine_IsNotTreatedAsEmbedded() {
+        assertFalse(
+            com.aymankhattab.nateq.core.audio.enginehost
+                .HostProtocol.isEmbeddedEngine("com.vocalizer.tts")
+        )
+        assertFalse(
+            com.aymankhattab.nateq.core.audio.enginehost
+                .HostProtocol.isEmbeddedEngine("com.acapelagroup.android.tts")
+        )
+        assertTrue(
+            com.aymankhattab.nateq.core.audio.enginehost
+                .HostProtocol.isEmbeddedEngine("vocalizer")
+        )
+        assertTrue(
+            com.aymankhattab.nateq.core.audio.enginehost
+                .HostProtocol.isEmbeddedEngine("vocalizer_embedded")
+        )
+    }
+
+    @Test
+    fun category_RoutesCallerCorrectly() {
+        val params = buildPreviewParamsFrom(
+            voiceName = "ar-voice",
+            languageTag = "ar",
+            enginePkg = null,
+            rateProgress = 100,
+            pitchProgress = 100,
+            volumePercent = 100,
+            sampleText = "مكالمة",
+            category =
+                com.aymankhattab.nateq.core.data
+                    .SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+        )
+        assertTrue(params.isCallerCategory)
+        assertEquals(
+            com.aymankhattab.nateq.core.data
+                .SettingsRepository.ANNOUNCE_CATEGORY_CALLER,
+            params.category
+        )
+    }
+
+    @Test
+    fun category_RoutesBatteryCorrectly() {
+        val params = buildPreviewParamsFrom(
+            voiceName = "ar-voice",
+            languageTag = "ar",
+            enginePkg = null,
+            rateProgress = 100,
+            pitchProgress = 100,
+            volumePercent = 100,
+            sampleText = "بطارية",
+            category =
+                com.aymankhattab.nateq.core.data
+                    .SettingsRepository.VOICE_CATEGORY_BATTERY
+        )
+        assertFalse(params.isCallerCategory)
+        assertEquals(
+            com.aymankhattab.nateq.core.data
+                .SettingsRepository.VOICE_CATEGORY_BATTERY,
+            params.category
+        )
+    }
 }

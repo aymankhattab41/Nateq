@@ -614,7 +614,8 @@ internal class TimeAnnouncementController(
                 rate = rate,
                 pitch = pitch,
                 volume = volume,
-                sampleText = sample
+                sampleText = sample,
+                category = category
             )
         )
     }

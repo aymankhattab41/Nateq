@@ -170,8 +170,10 @@ internal class CategoryVoicePanelController(
             view.findViewWithTag<View>("ll_category_panel")
         llCallerPanel =
             view.findViewWithTag<View>("ll_caller_default_voice_panel")
-        llCallerArGroup = view.findViewWithTag<View>("ll_caller_voice_ar_group")
-        llCallerEnGroup = view.findViewWithTag<View>("ll_caller_voice_en_group")
+        llCallerArGroup =
+            view.findViewWithTag<View>("ll_caller_voice_ar_group")
+        llCallerEnGroup =
+            view.findViewWithTag<View>("ll_caller_voice_en_group")
         spinnerCallerLang =
             view.findViewWithTag<Spinner>("spinner_caller_default_lang")
         inflateVoicePanelRow()
@@ -237,7 +239,9 @@ internal class CategoryVoicePanelController(
                     if (bindingInputs) return
                     if (currentEntry.isCaller) return
                     val engine = categoryEngines.getOrNull(pos)
-                    if (engine != null) {
+                    if (engine != null &&
+                        isEmbeddedEngine(engine.packageName)
+                    ) {
                         val status = EngineStatusRegistry.statusOf(
                             fragment.requireContext(), engine.packageName
                         )
@@ -555,7 +559,9 @@ if (!dirtyPanel) {
             SettingsRepository.VOICE_CATEGORY_NUMBERS ->
                 context.getString(R.string.voice_category_numbers_summary)
             SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS ->
-                context.getString(R.string.voice_category_notifications_summary)
+                context.getString(
+                    R.string.voice_category_notifications_summary
+                )
             SettingsRepository.VOICE_CATEGORY_EMOJI ->
                 context.getString(R.string.voice_category_emoji_summary)
             SettingsRepository.VOICE_CATEGORY_BATTERY ->
@@ -671,38 +677,16 @@ if (!dirtyPanel) {
         // أزل الصوت المحفوظ الوهمي (مثل ar-EG) لتفشل المعاينة بوضوح بدل
         // استخدام صوت غير موجود.
         val isEmbedded = isEmbeddedEngine(enginePkg)
-        if (available.isNotEmpty()) {
-            val fallbackMatch = available.first()
+        if (isEmbedded &&
+            (savedName == "ar-EG" || savedName == "en-US") &&
+            available.isEmpty()
+        ) {
             Log.i(
                 TAG,
-                "Reconciled legacy voice $savedName to " +
-                    "${fallbackMatch.name} for $categoryKey"
-            )
-            settings.setPreferredVoiceIdForCategory(
-                categoryKey,
-                fallbackMatch.name
-            )
-        } else if (isEmbedded || !enginePkg.isNullOrBlank()) {
-            // لا توجد أصوات متاحة: امسح الصوت المحفوظ لتجنب حفظ اسم وهمي
-            Log.i(
-                TAG,
-                "Clearing unavailable legacy voice $savedName " +
+                "Clearing legacy dummy voice $savedName " +
                     "for $categoryKey (engine=$enginePkg)"
             )
             settings.setPreferredVoiceIdForCategory(categoryKey, "")
-            val engineLabel = categoryEngines
-                .firstOrNull { it.packageName == enginePkg }?.label
-                ?: enginePkg
-            val msg = fragment.getString(
-                R.string.voice_not_available_for_engine,
-                savedName,
-                engineLabel
-            )
-            Toast.makeText(
-                fragment.requireContext(),
-                msg,
-                Toast.LENGTH_SHORT
-            ).show()
         }
     }
 
@@ -840,21 +824,23 @@ if (!dirtyPanel) {
             val engineIdx = spinnerEngine?.selectedItemPosition ?: -1
             if (engineIdx in categoryEngines.indices) {
                 val engine = categoryEngines[engineIdx]
-                val status = EngineStatusRegistry.statusOf(
-                    fragment.requireContext(), engine.packageName
-                )
-                if (status.state != EngineStatusRegistry.State.READY &&
-                    status.state !=
-                    EngineStatusRegistry.State.VOICES_PRESENT
-                ) {
-                    val reason = status.lastError
-                        ?: EngineStatusRegistry.labelAr(status.state)
-                    Toast.makeText(
-                        fragment.requireContext(),
-                        "لا يمكن حفظ ${engine.label}: $reason",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    return
+                if (isEmbeddedEngine(engine.packageName)) {
+                    val status = EngineStatusRegistry.statusOf(
+                        fragment.requireContext(), engine.packageName
+                    )
+                    if (status.state != EngineStatusRegistry.State.READY &&
+                        status.state !=
+                        EngineStatusRegistry.State.VOICES_PRESENT
+                    ) {
+                        val reason = status.lastError
+                            ?: EngineStatusRegistry.labelAr(status.state)
+                        Toast.makeText(
+                            fragment.requireContext(),
+                            "لا يمكن حفظ ${engine.label}: $reason",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        return
+                    }
                 }
                 runCatching {
                     settings.setEngineForCategory(
@@ -881,7 +867,9 @@ if (!dirtyPanel) {
                     currentPanelLanguage,
                     selectedEngine
                 )
-                if (validVoices.none { it.name == chosenVoice.name }) {
+                if (validVoices.isNotEmpty() &&
+                    validVoices.none { it.name == chosenVoice.name }
+                ) {
                     Toast.makeText(
                         fragment.requireContext(),
                         R.string.voice_cannot_save_invalid,
@@ -942,21 +930,23 @@ if (!dirtyPanel) {
         val engineIdx = engineSpinner?.selectedItemPosition ?: -1
         if (engineIdx in categoryEngines.indices) {
             val engine = categoryEngines[engineIdx]
-            val status = EngineStatusRegistry.statusOf(
-                fragment.requireContext(), engine.packageName
-            )
-            if (status.state != EngineStatusRegistry.State.READY &&
-                status.state !=
-                EngineStatusRegistry.State.VOICES_PRESENT
-            ) {
-                val reason = status.lastError
-                    ?: EngineStatusRegistry.labelAr(status.state)
-                Toast.makeText(
-                    fragment.requireContext(),
-                    "لا يمكن حفظ ${engine.label}: $reason",
-                    Toast.LENGTH_LONG
-                ).show()
-                return
+            if (isEmbeddedEngine(engine.packageName)) {
+                val status = EngineStatusRegistry.statusOf(
+                    fragment.requireContext(), engine.packageName
+                )
+                if (status.state != EngineStatusRegistry.State.READY &&
+                    status.state !=
+                    EngineStatusRegistry.State.VOICES_PRESENT
+                ) {
+                    val reason = status.lastError
+                        ?: EngineStatusRegistry.labelAr(status.state)
+                    Toast.makeText(
+                        fragment.requireContext(),
+                        "لا يمكن حفظ ${engine.label}: $reason",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return
+                }
             }
             runCatching {
                 settings.setEngineForCategory(
@@ -1037,7 +1027,8 @@ if (!dirtyPanel) {
                 rateProgress = seekRate?.progress ?: 100,
                 pitchProgress = seekPitch?.progress ?: 100,
                 volumePercent = seekVolume?.progress ?: 100,
-                sampleText = sampleText
+                sampleText = sampleText,
+                category = entry.categoryKey
             )
         )
     }

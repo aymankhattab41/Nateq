@@ -12,6 +12,12 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import android.widget.Toast
+import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
+import com.aymankhattab.nateq.core.audio.announcement.ArabicSpeechNormalizer
+import com.aymankhattab.nateq.core.audio.announcement.EventLoudnessPolicy
+import com.aymankhattab.nateq.core.audio.announcement.ResolvedAudioRoute
+import com.aymankhattab.nateq.core.audio.engine.AudioEffectManager
+import com.aymankhattab.nateq.core.audio.engine.quirks.EngineQuirks
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
@@ -20,6 +26,10 @@ import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvide
 import com.aymankhattab.nateq.core.audio.providers.VocalizerModelCatalog
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
+import com.aymankhattab.nateq.core.data.CategoryLoudnessConfig
+import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.engine.PronunciationDictionary
+import com.aymankhattab.nateq.engine.TextProcessor
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -47,14 +57,14 @@ internal data class PreviewParams(
      * هل هذه معاينةُ **فئةِ متصل**؟ فتُطبَّق سماتُ المسار الحقيقي
      * (`USAGE_NOTIFICATION_EVENT` + مجرى الإشعارات) فتخرج المعاينةُ
      * بالصوتِ نفسه الذي يخرج به النطقُ الفعلي.
-     *
-     * **لماذا غابت قبلُ (شُكوى: «صوت المعاينة أعلى»):** المعاينةُ لم
-     * تطبّق `setAudioAttributes` ولا `KEY_PARAM_STREAM`، فمضى الصوتُ
-     * على `STREAM_MUSIC` كاملاً، ولم يبقَ إلا `KEY_PARAM_VOLUME` —
-     * **معاملٌ تتجاهله أغلبُ محركات النطق**. فلم يكن الشريطُ يُخفض
-     * شيئاً. وهذا حصرٌ في المتصل: بقيةُ الفئات على مسارها كما كان.
      */
-    val isCallerCategory: Boolean = false
+    val isCallerCategory: Boolean = false,
+    /**
+     * فئةُ النطق الصريحة (time أو battery أو caller أو sms أو notifications)
+     * لحلِّ مسار الصوت ومستوى جهارته ومؤثراته طبقاً لـ
+     * [AnnouncementSpeaker].
+     */
+    val category: String? = null
 )
 
 /**
@@ -71,7 +81,8 @@ internal fun buildPreviewParams(
     rateProgress: Int,
     pitchProgress: Int,
     volumePercent: Int,
-    sampleText: String
+    sampleText: String,
+    category: String? = null
 ): PreviewParams {
     val voice = voices.getOrNull(voiceSelection) ?: voices.firstOrNull()
     return buildPreviewParamsFrom(
@@ -81,7 +92,8 @@ internal fun buildPreviewParams(
         rateProgress = rateProgress,
         pitchProgress = pitchProgress,
         volumePercent = volumePercent,
-        sampleText = sampleText
+        sampleText = sampleText,
+        category = category
     )
 }
 
@@ -93,17 +105,27 @@ internal fun buildPreviewParamsFrom(
     pitchProgress: Int,
     volumePercent: Int,
     sampleText: String,
-    isCallerCategory: Boolean = false
-): PreviewParams = PreviewParams(
-    enginePkg = enginePkg,
-    voiceName = voiceName,
-    languageTag = languageTag,
-    speechRate = rateProgress.speedFactor(),
-    pitch = pitchProgress.speedFactor(),
-    volume = (volumePercent / 100f).coerceIn(0f, 1f),
-    sampleText = sampleText,
-    isCallerCategory = isCallerCategory
-)
+    isCallerCategory: Boolean = false,
+    category: String? = null
+): PreviewParams {
+    val caller = isCallerCategory ||
+        AnnouncementSpeaker.isCallerCategory(category)
+    return PreviewParams(
+        enginePkg = enginePkg,
+        voiceName = voiceName,
+        languageTag = languageTag,
+        speechRate = rateProgress.speedFactor(),
+        pitch = pitchProgress.speedFactor(),
+        volume = (volumePercent / 100f).coerceIn(0f, 1f),
+        sampleText = sampleText,
+        isCallerCategory = caller,
+        category = category ?: if (caller) {
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+        } else {
+            null
+        }
+    )
+}
 
 /**
  * يبني طلب معاينة لفئةٍ بلا أدوات صوت داخلها (الوقت/الإشعارات) من قيم
@@ -117,10 +139,12 @@ internal fun buildCategoryPreviewParams(
     rate: Float,
     pitch: Float,
     volume: Float,
-    sampleText: String
+    sampleText: String,
+    category: String? = null
 ): PreviewParams {
     val voice = voices.firstOrNull { it.name == voiceId }
         ?: voices.firstOrNull()
+    val isCaller = AnnouncementSpeaker.isCallerCategory(category)
     return PreviewParams(
         enginePkg = enginePkg,
         voiceName = voice?.name.orEmpty(),
@@ -128,8 +152,116 @@ internal fun buildCategoryPreviewParams(
         speechRate = rate.coerceAtLeast(MIN_SPEED_PITCH_FACTOR),
         pitch = pitch.coerceAtLeast(MIN_SPEED_PITCH_FACTOR),
         volume = volume.coerceIn(0f, 1f),
-        sampleText = sampleText
+        sampleText = sampleText,
+        isCallerCategory = isCaller,
+        category = category ?: if (isCaller) {
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+        } else {
+            null
+        }
     )
+}
+
+/**
+ * حلّ مسار الصوت للمعاينة ليطابق مسار النطق الحقيقي في [AnnouncementSpeaker]
+ * تماماً (القناة الصوتية وسمات AudioAttributes بحسب وضع القناة وسياسة
+ * الجهارة).
+ */
+internal fun resolvePreviewAudioRoute(
+    context: Context,
+    category: String?,
+    isCallerCategory: Boolean = false
+): ResolvedAudioRoute {
+    val audioManager = context.getSystemService(
+        Context.AUDIO_SERVICE
+    ) as? android.media.AudioManager
+    val inCall = runCatching {
+        val mode = audioManager?.mode
+        mode == android.media.AudioManager.MODE_IN_CALL ||
+            mode == android.media.AudioManager.MODE_IN_COMMUNICATION
+    }.getOrDefault(false)
+    val isSilent = runCatching {
+        val rm = audioManager?.ringerMode
+        rm == android.media.AudioManager.RINGER_MODE_SILENT ||
+            rm == android.media.AudioManager.RINGER_MODE_VIBRATE
+    }.getOrDefault(false)
+    val effectiveCat = category ?: if (isCallerCategory) {
+        SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+    } else {
+        null
+    }
+    val settings = SettingsRepository(context.applicationContext)
+    val config = settings.getCategoryLoudnessConfig(effectiveCat)
+    return EventLoudnessPolicy.resolveTargetStreamAndAttributes(
+        category = effectiveCat,
+        config = config,
+        inCall = inCall,
+        isSilentOrVibrate = isSilent
+    )
+}
+
+/**
+ * تجهيز نص المعاينة ليطابق مسار النطق الحقيقي في [AnnouncementSpeaker]:
+ * تنظيف الإيموجي وتطبيع NFC وضبط اللفظ العربي ومعالجة الدلالات وقاموس النطق.
+ */
+internal fun preparePreviewText(
+    context: Context,
+    rawText: String,
+    languageTag: String,
+    enginePkg: String?
+): String {
+    val stripped = AnnouncementSpeaker.stripEmojis(rawText)
+    val nfc = java.text.Normalizer.normalize(
+        stripped,
+        java.text.Normalizer.Form.NFC
+    )
+    val arabicNormalized = ArabicSpeechNormalizer.normalize(nfc)
+    val textProcessor = TextProcessor(
+        context.applicationContext,
+        SettingsRepository(context.applicationContext),
+        PronunciationDictionary.shared(context.applicationContext)
+    )
+    val processed = runCatching {
+        textProcessor.process(
+            arabicNormalized,
+            languageTag.ifBlank { "ar" },
+            enginePkg
+        )
+    }.getOrDefault(arabicNormalized)
+    return ArabicSpeechNormalizer.normalize(processed)
+}
+
+/**
+ * حساب السرعة والنبرة ومستوى الصوت الفعلي للمعاينة متطابقاً مع
+ * [AnnouncementSpeaker] بمراعاة معززات السرعة والصوت والسقف الآمن للمحرك.
+ */
+internal fun computeEffectivePreviewSpeech(
+    context: Context,
+    rate: Float,
+    pitch: Float,
+    volume: Float
+): Triple<Float, Float, Float> {
+    val settings = SettingsRepository(context.applicationContext)
+    val boost = if (runCatching { settings.isSpeechBoostEnabled() }
+            .getOrDefault(false)) {
+        runCatching { settings.getSpeechBoostValue() }
+            .getOrDefault(1.0f)
+    } else {
+        1.0f
+    }
+    val volumeBoost = if (runCatching { settings.isVolumeBoostEnabled() }
+            .getOrDefault(false)) {
+        runCatching { settings.getVolumeBoostValue() }
+            .getOrDefault(1.0f)
+    } else {
+        1.0f
+    }
+    val effectiveRate = AnnouncementSpeaker.clampedSpeechRate(rate * boost)
+    val effectivePitch = pitch.coerceAtLeast(0.25f)
+    val effectiveVolume = (
+        (if (volume <= 0f) 0.05f else volume) * volumeBoost
+    ).coerceIn(0.05f, 1f)
+    return Triple(effectiveRate, effectivePitch, effectiveVolume)
 }
 
 /** أسماء رنات رأس الساعة (تطابق قائمة spinner_time_chime_sound). */
@@ -259,23 +391,14 @@ internal class VoicePreviewHelper(private val context: Context) {
                 mainHandler.post { onFinished() }
                 return@withContext
             }
-            val focusUsage = if (params.isCallerCategory) {
-                AudioAttributes.USAGE_NOTIFICATION_EVENT
-            } else {
-                AudioAttributes.USAGE_MEDIA
-            }
+            val route = resolvePreviewAudioRoute(
+                context, params.category, params.isCallerCategory
+            )
             val focusGain =
                 android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
             val focusReq = if (Build.VERSION.SDK_INT >= 26) {
                 android.media.AudioFocusRequest.Builder(focusGain)
-                    .setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setUsage(focusUsage)
-                            .setContentType(
-                                AudioAttributes.CONTENT_TYPE_SPEECH
-                            )
-                            .build()
-                    )
+                    .setAudioAttributes(route.audioAttributes)
                     .build()
             } else {
                 null
@@ -286,10 +409,17 @@ internal class VoicePreviewHelper(private val context: Context) {
                 @Suppress("DEPRECATION")
                 audioManager?.requestAudioFocus(
                     null,
-                    android.media.AudioManager.STREAM_MUSIC,
+                    route.stream,
                     focusGain
                 )
             }
+            val (effectiveRate, effectivePitch, effectiveVolume) =
+                computeEffectivePreviewSpeech(
+                    context, params.speechRate, params.pitch, params.volume
+                )
+            val cleanText = preparePreviewText(
+                context, params.sampleText, params.languageTag, enginePkg
+            )
             var track: AudioTrack? = null
             var totalFramesWritten = 0L
             var bytesPerFrame = 2
@@ -299,7 +429,7 @@ internal class VoicePreviewHelper(private val context: Context) {
                 // ع٢٩-10 (2): مهلة صريحة من SynthesisBudget عبر
                 // EngineHostClient — لا تعليقٌ مفتوح إن تعثّر المضيف.
                 val timeoutMs = EngineHostClient.previewTimeoutMs(
-                    params.sampleText
+                    cleanText
                 )
                 withTimeout(timeoutMs) {
                     val provider = getEmbeddedProvider(enginePkg)
@@ -316,11 +446,11 @@ internal class VoicePreviewHelper(private val context: Context) {
                     )
 
                     provider.synthesize(
-                        text = params.sampleText,
+                        text = cleanText,
                         voice = descriptor,
-                        speechRate = params.speechRate,
-                        pitch = params.pitch,
-                        volume = params.volume,
+                        speechRate = effectiveRate,
+                        pitch = effectivePitch,
+                        volume = effectiveVolume,
                         onFormatInfo = { sampleRateInHz, channelCount ->
                             val channelConfig =
                                 if (channelCount == 2) {
@@ -335,25 +465,6 @@ internal class VoicePreviewHelper(private val context: Context) {
                                 AudioFormat.ENCODING_PCM_16BIT
                             )
                             val bufSize = maxOf(minBuf, 8192)
-                            val attrs = AudioAttributes.Builder()
-                                .setUsage(
-                                    if (params.isCallerCategory) {
-                                        AudioAttributes
-                                            .USAGE_NOTIFICATION_EVENT
-                                    } else {
-                                        AudioAttributes.USAGE_MEDIA
-                                    }
-                                )
-                                .setContentType(
-                                    if (params.isCallerCategory) {
-                                        AudioAttributes
-                                            .CONTENT_TYPE_SONIFICATION
-                                    } else {
-                                        AudioAttributes
-                                            .CONTENT_TYPE_SPEECH
-                                    }
-                                )
-                                .build()
                             val format = AudioFormat.Builder()
                                 .setSampleRate(sampleRateInHz)
                                 .setEncoding(
@@ -362,14 +473,14 @@ internal class VoicePreviewHelper(private val context: Context) {
                                 .setChannelMask(channelConfig)
                                 .build()
                             val newTrack = AudioTrack.Builder()
-                                .setAudioAttributes(attrs)
+                                .setAudioAttributes(route.audioAttributes)
                                 .setAudioFormat(format)
                                 .setBufferSizeInBytes(bufSize)
                                 .setTransferMode(
                                     AudioTrack.MODE_STREAM
                                 )
                                 .build()
-                            newTrack.setVolume(params.volume)
+                            newTrack.setVolume(effectiveVolume)
                             newTrack.play()
                             track = newTrack
                             currentAudioTrack = newTrack
@@ -392,11 +503,12 @@ internal class VoicePreviewHelper(private val context: Context) {
                         enginePackage = enginePkg,
                         voiceLocale = loc,
                         desiredVoiceName = params.voiceName,
-                        category = if (params.isCallerCategory) {
-                            "caller"
-                        } else {
-                            null
-                        }
+                        category = params.category
+                            ?: if (params.isCallerCategory) {
+                                SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+                            } else {
+                                null
+                            }
                     )
                     track?.let { t ->
                         val startWait = System.currentTimeMillis()
@@ -486,15 +598,17 @@ internal class VoicePreviewHelper(private val context: Context) {
         enginePkg: String,
         throwableMessage: String?
     ): String {
-        val status = EngineStatusRegistry.statusOf(
-            context.applicationContext, enginePkg
-        )
-        val label = status.state
-            .takeIf { it != EngineStatusRegistry.State.READY }
+        val status = if (isEmbeddedEngine(enginePkg)) {
+            EngineStatusRegistry.statusOf(
+                context.applicationContext, enginePkg
+            )
+        } else null
+        val label = status?.state
+            ?.takeIf { it != EngineStatusRegistry.State.READY }
             ?.takeIf { it != EngineStatusRegistry.State.INIT_PENDING }
             ?.let { EngineStatusRegistry.labelAr(it) }
-        val errDetail = status.lastError?.takeIf { it.isNotBlank() }
-            ?: status.code?.takeIf { it.isNotBlank() }
+        val errDetail = status?.lastError?.takeIf { it.isNotBlank() }
+            ?: status?.code?.takeIf { it.isNotBlank() }
         val detail = throwableMessage?.takeIf { it.isNotBlank() } ?: errDetail
         return when {
             detail != null && label != null -> "$label: $detail"
@@ -526,7 +640,7 @@ internal class VoicePreviewHelper(private val context: Context) {
 
         val desiredEngine = params.enginePkg?.takeIf { it.isNotBlank() }
         if (isEmbeddedEngine(desiredEngine) ||
-            isVocalizerVoiceName(params.voiceName)
+            (desiredEngine == null && isVocalizerVoiceName(params.voiceName))
         ) {
             val canon = if (isEmbeddedEngine(desiredEngine)) {
                 HostProtocol.normalizeEngineId(desiredEngine!!)
@@ -630,55 +744,87 @@ internal class VoicePreviewHelper(private val context: Context) {
             return
         }
         try {
-            val avail = runCatching { previewTts.getVoices().orEmpty() }
-                .getOrDefault(emptySet())
-            val voice = avail.firstOrNull { it.name == params.voiceName }
-            if (voice != null) {
-                // نضبط المحرك على لسان الصوت المختار حتى لا يقرأ النص بلغة
-                // المحرك الافتراضية.
-                runCatching { previewTts.setVoice(voice) }
-                runCatching { previewTts.language = voice.locale }
-            } else if (params.languageTag.isNotEmpty()) {
-                runCatching {
-                    previewTts.language =
-                        Locale.forLanguageTag(params.languageTag)
-                }
+            val avail = runCatching { previewTts.voices }.getOrNull()
+            val loc = if (params.languageTag.isNotBlank()) {
+                Locale.forLanguageTag(params.languageTag)
+            } else {
+                Locale.getDefault()
             }
-            previewTts.setSpeechRate(params.speechRate)
-            runCatching { previewTts.setPitch(params.pitch) }
-            // **معاينةُ المتصل تُطبِّق سماتِ المسارِ الحقيقي** — بلاها كان
-            // الصوتُ يخرج على `STREAM_MUSIC` كاملاً فيرتفع عن شريط الصوت،
-            // لأن `KEY_PARAM_VOLUME` وحده تتجاهله أغلبُ المحركات. نفسُ
-            // السماتِ المستعملة في [AnnouncementSpeaker] فالمعاينةُ تسمع
-            // ما سيُنطَقُ فعلاً لا ما يُفترض.
-            if (params.isCallerCategory) {
-                runCatching {
-                    previewTts.setAudioAttributes(
-                        android.media.AudioAttributes.Builder()
-                            .setUsage(
-                                android.media.AudioAttributes
-                                    .USAGE_NOTIFICATION_EVENT
-                            )
-                            .setContentType(
-                                android.media.AudioAttributes
-                                    .CONTENT_TYPE_SONIFICATION
-                            )
-                            .build()
-                    )
+            val chosen = AnnouncementSpeaker.voiceFor(
+                avail, params.voiceName, loc
+            )
+            val enginePackage = engineKey(params)
+            val quirks = enginePackage?.let { EngineQuirks.forPackage(it) }
+            val needsLangFirst = quirks?.needsSetLanguageBeforeSetVoice == true
+            val needsRegion = quirks?.requiresLocaleWithRegion == true
+
+            if (chosen != null) {
+                if (needsLangFirst) {
+                    runCatching {
+                        chosen.locale?.let { previewTts.language = it }
+                    }
                 }
+                val effectiveLocale = if (needsRegion) {
+                    runCatching {
+                        previewTts.voices?.firstOrNull {
+                            it.locale.language == loc.language
+                        }?.locale
+                    }.getOrNull() ?: chosen.locale
+                } else {
+                    chosen.locale
+                }
+                if (needsLangFirst) {
+                    runCatching {
+                        effectiveLocale?.let { previewTts.language = it }
+                    }
+                }
+                val setVoiceResult = previewTts.setVoice(chosen)
+                if (setVoiceResult != TextToSpeech.SUCCESS) {
+                    runCatching {
+                        previewTts.language = effectiveLocale ?: loc
+                    }
+                }
+            } else if (params.languageTag.isNotEmpty()) {
+                runCatching { previewTts.language = loc }
+            }
+
+            val (effectiveRate, effectivePitch, effectiveVolume) =
+                computeEffectivePreviewSpeech(
+                    context, params.speechRate, params.pitch, params.volume
+                )
+            previewTts.setSpeechRate(effectiveRate)
+            runCatching { previewTts.setPitch(effectivePitch) }
+
+            val route = resolvePreviewAudioRoute(
+                context, params.category, params.isCallerCategory
+            )
+            runCatching {
+                previewTts.setAudioAttributes(route.audioAttributes)
+            }
+            val cat = params.category ?: if (params.isCallerCategory) {
+                SettingsRepository.ANNOUNCE_CATEGORY_CALLER
+            } else {
+                null
             }
             val bundle = Bundle().apply {
                 putFloat(
                     TextToSpeech.Engine.KEY_PARAM_VOLUME,
-                    params.volume
+                    effectiveVolume
                 )
-                if (params.isCallerCategory) {
-                    putInt(
-                        TextToSpeech.Engine.KEY_PARAM_STREAM,
-                        android.media.AudioManager.STREAM_NOTIFICATION
+                putInt(
+                    TextToSpeech.Engine.KEY_PARAM_STREAM,
+                    route.stream
+                )
+                if (!cat.isNullOrBlank()) {
+                    putString(
+                        AudioEffectManager.PARAM_CATEGORY,
+                        cat
                     )
                 }
             }
+            val cleanText = preparePreviewText(
+                context, params.sampleText, params.languageTag, enginePackage
+            )
             previewTts.setOnUtteranceProgressListener(
                 object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {}
@@ -701,7 +847,7 @@ internal class VoicePreviewHelper(private val context: Context) {
                 })
             val result = runCatching {
                 previewTts.speak(
-                    params.sampleText,
+                    cleanText,
                     TextToSpeech.QUEUE_FLUSH,
                     bundle,
                     "preview"

@@ -206,6 +206,12 @@ class CategoryResolverTest {
             CategoryResolver.inferEngineFromVoice("espeak:ar")
         )
         assertEquals(
+            "com.acapelagroup.android.tts",
+            CategoryResolver.inferEngineFromVoice(
+                "com.acapelagroup.android.tts:Salma"
+            )
+        )
+        assertEquals(
             "org.nobody.multitts",
             CategoryResolver.inferEngineFromVoice("org.nobody.multitts:ar-1")
         )

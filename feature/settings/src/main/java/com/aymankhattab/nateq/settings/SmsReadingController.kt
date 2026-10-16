@@ -433,7 +433,8 @@ internal class SmsReadingController(
                 rateProgress = seekSmsRate?.progress ?: 100,
                 pitchProgress = seekSmsPitch?.progress ?: 100,
                 volumePercent = seekSmsVolume?.progress ?: 100,
-                sampleText = sample
+                sampleText = sample,
+                category = SettingsRepository.ANNOUNCE_CATEGORY_SMS
             )
         )
     }

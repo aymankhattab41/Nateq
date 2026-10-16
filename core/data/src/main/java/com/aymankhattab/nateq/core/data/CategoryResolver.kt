@@ -64,6 +64,9 @@ object CategoryResolver {
                 "com.vocalizer.tts"
 
             // Acapela voices (e.g. ara-SAU-Mehdi, ara-EGY-Salma...)
+            lower.startsWith("com.acapelagroup.") ->
+                "com.acapelagroup.android.tts"
+
             lower.startsWith("ara-sau-") || lower.startsWith("ara-egy-") ||
                 lower.startsWith("ara-") || lower.contains("-acapela") ||
                 lower.startsWith("com.acapela.") ->

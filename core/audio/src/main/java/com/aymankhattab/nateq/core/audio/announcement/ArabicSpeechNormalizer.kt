@@ -11,7 +11,7 @@ package com.aymankhattab.nateq.core.audio.announcement
  * علامةٌ تُهمَل عند التجريد فيُفقد اللفظ (انظر [MASA_AN]).
  * يُستدعى بعد تطبيع NFC على النص المنطوق.
  */
-internal object ArabicSpeechNormalizer {
+object ArabicSpeechNormalizer {
 
     // **نطق التنوين بنونٍ صريحة (لا بعلامة التنوين):** التنوين «ً» علامةُ
     // تشكيلٍ فقط بلا حرف، فمحركٌ يجرّد الحركات (أو لا يفهمها) يهملها
