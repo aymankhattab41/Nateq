@@ -40,7 +40,7 @@ class KeyboardLayoutHelperTest {
     @Test
     fun getArabicRows_hasPhoneticDescriptionsForArabicLetters() {
         val rows = KeyboardLayoutHelper.getArabicRows()
-        val alef = rows.flatten().find { it.label == "أ" }
+        val alef = rows.flatten().find { it.label == "ا" }
         assertNotNull(alef)
         assertEquals("ألف - أسد", alef?.phonetic)
 
