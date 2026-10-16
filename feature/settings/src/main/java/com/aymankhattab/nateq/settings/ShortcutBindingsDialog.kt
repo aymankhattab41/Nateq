@@ -119,5 +119,7 @@ class ShortcutBindingsDialog(
         ShortcutAction.EXPAND_READ_MORE ->
             R.string.a11y_action_expand_read_more
         ShortcutAction.NEXT_ENGINE -> R.string.a11y_action_next_engine
+        ShortcutAction.PREVIOUS_ENGINE ->
+            R.string.a11y_action_previous_engine
     }
 }

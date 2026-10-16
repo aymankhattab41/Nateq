@@ -351,6 +351,18 @@
             </intent-filter>
         </service>
 
+        <!-- بلاطة تبديل محرك Lord TTS إلى المحرك السابق. -->
+        <service
+            android:name=".settings.PreviousEngineTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_number_reading"
+            android:label="@string/tile_previous_engine_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <!-- مستقبل استئناف خدمات الشاشة التلقائي (ع٢٧-14) -->
         <receiver
             android:name="com.aymankhattab.nateq.core.audio.accessibility.A11yResumeReceiver"
