@@ -13,11 +13,13 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.CallLog
 import android.provider.ContactsContract
+import android.provider.Settings
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
 import android.telecom.TelecomManager
 import android.text.Editable
 import android.text.TextWatcher
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -30,6 +32,10 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.aymankhattab.nateq.core.audio.keyboard.KeyboardLayoutHelper
+import com.aymankhattab.nateq.core.audio.keyboard.KeyboardLayoutHelper.KeyModel
+import com.aymankhattab.nateq.core.audio.keyboard.KeyboardLayoutHelper.KeyType
+import com.aymankhattab.nateq.core.audio.keyboard.LordKeyboardView
 import com.aymankhattab.nateq.core.audio.phone.CallRecordItem
 import com.aymankhattab.nateq.core.audio.phone.CallRecordManager
 import com.aymankhattab.nateq.core.audio.phone.DialpadKey
@@ -37,6 +43,9 @@ import com.aymankhattab.nateq.core.audio.phone.LordDialpadView
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.feature.settings.R
 import com.google.android.material.button.MaterialButton
+import com.aymankhattab.nateq.settings.phone.SimCallHelper
+import com.aymankhattab.nateq.core.data.SpeedDialManager
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -48,10 +57,18 @@ import java.util.Locale
 @Suppress("DEPRECATION")
 class LordPhoneActivity : AppCompatActivity() {
 
+    companion object {
+        const val EXTRA_SPEED_DIAL_SLOT = "extra_speed_dial_slot"
+    }
+
     private lateinit var settingsRepo: SettingsRepository
+    private var speedDialTargetSlot: Int = 0
     private var tvDisplay: TextView? = null
     private var dialpadView: LordDialpadView? = null
     private var llDefaultBanner: View? = null
+    private var keyboardContacts: LordKeyboardView? = null
+    private var isContactsSymbolsLayer: Boolean = false
+    private var btnToggleContactsKeyboard: MaterialButton? = null
 
     // الحاويات
     private var llTabDialpad: View? = null
@@ -121,6 +138,7 @@ class LordPhoneActivity : AppCompatActivity() {
         super.onResume()
         updateDefaultDialerBanner()
         applyDialpadSettings()
+        applyContactsKeyboardSettings()
         updateDynamicTabsVisibility()
     }
 
@@ -133,8 +151,8 @@ class LordPhoneActivity : AppCompatActivity() {
         }
     }
 
-    private fun speak(text: String) {
-        if (!isTtsReady || text.isEmpty()) return
+    private fun speak(text: String?) {
+        if (!isTtsReady || text.isNullOrEmpty()) return
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "phone_speech")
     }
 
@@ -187,14 +205,32 @@ class LordPhoneActivity : AppCompatActivity() {
             true
         }
 
-        val btnCall = findViewById<MaterialButton>(R.id.btn_phone_call)
-        btnCall.setOnClickListener {
-            makeCall(tvDisplay?.text?.toString() ?: "")
+        findViewById<MaterialButton>(R.id.btn_phone_speed_dial)
+            ?.setOnClickListener {
+                val intent = Intent(this, LordSpeedDialActivity::class.java)
+                startActivity(intent)
+            }
+
+        val btnCallSim1 =
+            findViewById<MaterialButton>(R.id.btn_phone_call_sim1)
+        btnCallSim1?.setOnClickListener {
+            makeCall(tvDisplay?.text?.toString() ?: "", 0)
+        }
+
+        val btnCallSim2 =
+            findViewById<MaterialButton>(R.id.btn_phone_call_sim2)
+        btnCallSim2?.setOnClickListener {
+            makeCall(tvDisplay?.text?.toString() ?: "", 1)
         }
 
         setupDialpad()
         setupBottomNavigation()
         setupContactsSearch()
+
+        speedDialTargetSlot = intent.getIntExtra(EXTRA_SPEED_DIAL_SLOT, 0)
+        if (speedDialTargetSlot > 0) {
+            selectTab(2)
+        }
     }
 
     private fun setupDialpad() {
@@ -269,6 +305,11 @@ class LordPhoneActivity : AppCompatActivity() {
         llTabRecordings?.visibility =
             if (index == 3) View.VISIBLE else View.GONE
 
+        if (index == 2) {
+            applyContactsKeyboardSettings()
+            updateContactsKeyboardLayout()
+        }
+
         val colorPrimary = 0xFF00796B.toInt()
         val colorSecondary = 0xFF9E9E9E.toInt()
 
@@ -315,10 +356,16 @@ class LordPhoneActivity : AppCompatActivity() {
             if (roleManager?.isRoleAvailable(RoleManager.ROLE_DIALER) == true &&
                 !roleManager.isRoleHeld(RoleManager.ROLE_DIALER)
             ) {
-                val intent =
-                    roleManager.createRequestRoleIntent(RoleManager.ROLE_DIALER)
-                startActivity(intent)
-                return
+                try {
+                    val intent =
+                        roleManager.createRequestRoleIntent(
+                            RoleManager.ROLE_DIALER
+                        )
+                    startActivity(intent)
+                    return
+                } catch (e: Exception) {
+                    Log.w("LordPhone", "Role request failed", e)
+                }
             }
         }
 
@@ -332,27 +379,39 @@ class LordPhoneActivity : AppCompatActivity() {
                 )
             }
             startActivity(intent)
+            return
+        } catch (_: Exception) {}
+
+        try {
+            val intent = Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
+            startActivity(intent)
+            return
+        } catch (_: Exception) {}
+
+        try {
+            val intent = Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+            ).apply {
+                data = Uri.fromParts("package", packageName, null)
+            }
+            startActivity(intent)
         } catch (_: Exception) {}
     }
 
-    private fun makeCall(number: String) {
+    private fun makeCall(number: String, simSlot: Int? = null) {
         val clean = number.trim()
         if (clean.isEmpty()) {
             speak("الرجاء كتابة رقم الهاتف أولاً")
             return
         }
 
-        val hasCallPermission = ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.CALL_PHONE
-        ) == PackageManager.PERMISSION_GRANTED
-
-        val intent = if (hasCallPermission) {
-            Intent(Intent.ACTION_CALL, Uri.parse("tel:${Uri.encode(clean)}"))
+        if (simSlot != null) {
+            SimCallHelper.makeCall(this, clean, simSlot)
         } else {
-            Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(clean)}"))
+            SimCallHelper.showSimChooserDialog(this, clean) { slot ->
+                SimCallHelper.makeCall(this, clean, slot)
+            }
         }
-        startActivity(intent)
     }
 
     private fun checkAndRequestPermissions() {
@@ -386,7 +445,14 @@ class LordPhoneActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        intent?.let { handleIncomingIntent(it) }
+        intent?.let {
+            handleIncomingIntent(it)
+            val slot = it.getIntExtra(EXTRA_SPEED_DIAL_SLOT, 0)
+            if (slot > 0) {
+                speedDialTargetSlot = slot
+                selectTab(2)
+            }
+        }
     }
 
     private fun handleIncomingIntent(intent: Intent) {
@@ -404,27 +470,34 @@ class LordPhoneActivity : AppCompatActivity() {
         val etSearch = findViewById<EditText>(R.id.et_contact_search)
         val btnVoice =
             findViewById<MaterialButton>(R.id.btn_contact_voice_search)
+        val btnDelete =
+            findViewById<MaterialButton>(R.id.btn_contact_search_delete)
+        btnToggleContactsKeyboard =
+            findViewById(R.id.btn_toggle_contacts_keyboard)
+        keyboardContacts = findViewById(R.id.keyboard_contacts_search)
+
+        // تعطيل لوحة مفاتيح النظام التلقائية لمنع حجب اللوحة الميسرة
+        etSearch.showSoftInputOnFocus = false
 
         btnVoice.setOnClickListener {
-            val intent = Intent(
-                RecognizerIntent.ACTION_RECOGNIZE_SPEECH
-            ).apply {
-                putExtra(
-                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-                )
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ar")
-            }
-            try {
-                voiceSearchLauncher.launch(intent)
-            } catch (_: Exception) {
-                Toast.makeText(
-                    this,
-                    R.string.phone_voice_search_unavailable,
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
+            launchVoiceSearch()
         }
+
+        btnDelete?.setOnClickListener {
+            deleteContactSearchChar()
+        }
+        btnDelete?.setOnLongClickListener {
+            clearContactSearch()
+            true
+        }
+
+        btnToggleContactsKeyboard?.setOnClickListener {
+            val kb = keyboardContacts ?: return@setOnClickListener
+            val isCurrentlyVisible = kb.visibility == View.VISIBLE
+            toggleContactsKeyboard(!isCurrentlyVisible)
+        }
+
+        setupContactsKeyboard()
 
         etSearch.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(
@@ -443,6 +516,158 @@ class LordPhoneActivity : AppCompatActivity() {
             }
             override fun afterTextChanged(s: Editable?) {}
         })
+    }
+
+    private fun setupContactsKeyboard() {
+        val kb = keyboardContacts ?: return
+        applyContactsKeyboardSettings()
+        updateContactsKeyboardLayout()
+
+        kb.actionListener = object : LordKeyboardView.OnKeyboardActionListener {
+            override fun onKeySelected(key: KeyModel) {
+                val etSearch = findViewById<EditText>(R.id.et_contact_search)
+                when (key.type) {
+                    KeyType.CHARACTER -> {
+                        val current = etSearch.text?.toString() ?: ""
+                        etSearch.setText(current + key.label)
+                        etSearch.setSelection(etSearch.text.length)
+                        if (settingsRepo.isKeyboardAnnounceAfterLift()) {
+                            speak("تم إدخال ${key.spokenText}")
+                        }
+                    }
+                    KeyType.ACTION_BACKSPACE -> {
+                        deleteContactSearchChar()
+                    }
+                    KeyType.ACTION_SPACE -> {
+                        val current = etSearch.text?.toString() ?: ""
+                        etSearch.setText("$current ")
+                        etSearch.setSelection(etSearch.text.length)
+                        speak("مسافة")
+                    }
+                    KeyType.ACTION_SYMBOLS -> {
+                        isContactsSymbolsLayer = !isContactsSymbolsLayer
+                        val announcement = if (isContactsSymbolsLayer) {
+                            "الأرقام والرموز"
+                        } else {
+                            "الحروف"
+                        }
+                        speak(announcement)
+                        updateContactsKeyboardLayout()
+                    }
+                    KeyType.ACTION_VOICE -> {
+                        launchVoiceSearch()
+                    }
+                    KeyType.ACTION_HIDE -> {
+                        toggleContactsKeyboard(false)
+                    }
+                    else -> {}
+                }
+            }
+
+            override fun onKeyHover(key: KeyModel) {
+                val isPhonetic = settingsRepo.isKeyboardPhoneticEnabled()
+                val desc = if (isPhonetic && !key.phonetic.isNullOrEmpty()) {
+                    key.phonetic
+                } else {
+                    key.spokenText
+                }
+                speak(desc)
+            }
+
+            override fun onSwipeLeft() {
+                deleteContactSearchChar()
+            }
+
+            override fun onSwipeRight() {
+                val etSearch = findViewById<EditText>(R.id.et_contact_search)
+                val current = etSearch.text?.toString() ?: ""
+                etSearch.setText("$current ")
+                etSearch.setSelection(etSearch.text.length)
+                speak("مسافة")
+            }
+
+            override fun onSwipeDown() {}
+            override fun onSwipeUp() {}
+        }
+    }
+
+    private fun launchVoiceSearch() {
+        val intent = Intent(
+            RecognizerIntent.ACTION_RECOGNIZE_SPEECH
+        ).apply {
+            putExtra(
+                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+            )
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ar")
+        }
+        try {
+            voiceSearchLauncher.launch(intent)
+        } catch (_: Exception) {
+            Toast.makeText(
+                this,
+                R.string.phone_voice_search_unavailable,
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun applyContactsKeyboardSettings() {
+        val kb = keyboardContacts ?: return
+        kb.keyboardMode = settingsRepo.getKeyboardMode()
+        kb.activationMode = settingsRepo.getKeyboardActivation()
+        kb.soundEnabled = settingsRepo.isKeyboardSoundEnabled()
+        kb.hapticEnabled = settingsRepo.isKeyboardHapticEnabled()
+        kb.announceAfterLift = settingsRepo.isKeyboardAnnounceAfterLift()
+    }
+
+    private fun updateContactsKeyboardLayout() {
+        val baseRows = if (isContactsSymbolsLayer) {
+            KeyboardLayoutHelper.getSymbolsRows()
+        } else {
+            KeyboardLayoutHelper.getArabicRows()
+        }
+        val rows = if (settingsRepo.isKeyboardAlwaysShowNumberRow() &&
+            !isContactsSymbolsLayer
+        ) {
+            listOf(KeyboardLayoutHelper.getNumberRow()) + baseRows
+        } else {
+            baseRows
+        }
+        keyboardContacts?.setKeyRows(rows)
+    }
+
+    private fun toggleContactsKeyboard(show: Boolean) {
+        val kb = keyboardContacts ?: return
+        kb.visibility = if (show) View.VISIBLE else View.GONE
+        btnToggleContactsKeyboard?.setText(
+            if (show) R.string.phone_contacts_keyboard_hide
+            else R.string.phone_contacts_keyboard_show
+        )
+        speak(
+            getString(
+                if (show) R.string.phone_contacts_keyboard_shown
+                else R.string.phone_contacts_keyboard_hidden
+            )
+        )
+    }
+
+    private fun deleteContactSearchChar() {
+        val etSearch = findViewById<EditText>(R.id.et_contact_search)
+        val current = etSearch.text?.toString() ?: ""
+        if (current.isNotEmpty()) {
+            val deleted = current.last()
+            val remaining = current.dropLast(1)
+            etSearch.setText(remaining)
+            etSearch.setSelection(remaining.length)
+            speak("تم مسح $deleted")
+        }
+    }
+
+    private fun clearContactSearch() {
+        val etSearch = findViewById<EditText>(R.id.et_contact_search)
+        etSearch.setText("")
+        speak("تم مسح البحث بالكامل")
     }
 
     private fun loadCallLog() {
@@ -716,12 +941,94 @@ class LordPhoneActivity : AppCompatActivity() {
             val item = list[position]
             holder.tvName.text = item.name
             holder.tvDetails.text = item.number
-            holder.btnCall.setOnClickListener {
-                makeCall(item.number)
+
+            val clickListener = View.OnClickListener {
+                if (speedDialTargetSlot > 0) {
+                    assignContactToSpeedDial(item)
+                } else {
+                    makeCall(item.number)
+                }
             }
+
+            holder.btnCall.setOnClickListener(clickListener)
+            holder.itemView.setOnClickListener(clickListener)
         }
 
         override fun getItemCount(): Int = list.size
+    }
+
+    private fun assignContactToSpeedDial(item: ContactEntry) {
+        val slot = speedDialTargetSlot
+        val numbers = getNumbersForContact(item.name)
+        if (numbers.size <= 1) {
+            val chosenNumber =
+                if (numbers.isNotEmpty()) numbers[0] else item.number
+            finalizeSpeedDialAssignment(slot, item.name, chosenNumber)
+        } else {
+            val options = numbers.toTypedArray()
+            MaterialAlertDialogBuilder(this)
+                .setTitle(
+                    getString(R.string.speed_dial_select_number_title, slot)
+                )
+                .setItems(options) { _, which ->
+                    finalizeSpeedDialAssignment(
+                        slot,
+                        item.name,
+                        numbers[which]
+                    )
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+    }
+
+    private fun finalizeSpeedDialAssignment(
+        slot: Int,
+        name: String,
+        number: String
+    ) {
+        SpeedDialManager.saveSlot(this, slot, name, number)
+        val msg = getString(R.string.speed_dial_added_toast, name, slot)
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        speak(msg)
+        speedDialTargetSlot = 0
+        finish()
+    }
+
+    private fun getNumbersForContact(name: String): List<String> {
+        val numbers = mutableListOf<String>()
+        val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+        val projection = arrayOf(
+            ContactsContract.CommonDataKinds.Phone.NUMBER
+        )
+        val selection =
+            "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} = ?"
+        val selectionArgs = arrayOf(name)
+        var cursor: Cursor? = null
+        try {
+            cursor = contentResolver.query(
+                uri,
+                projection,
+                selection,
+                selectionArgs,
+                null
+            )
+            cursor?.let { c ->
+                val numIdx = c.getColumnIndex(
+                    ContactsContract.CommonDataKinds.Phone.NUMBER
+                )
+                while (c.moveToNext()) {
+                    val num = c.getString(numIdx) ?: continue
+                    if (num.isNotBlank() && !numbers.contains(num)) {
+                        numbers.add(num)
+                    }
+                }
+            }
+        } catch (_: Exception) {
+        } finally {
+            cursor?.close()
+        }
+        return numbers
     }
 
     private inner class RecordingsAdapter(

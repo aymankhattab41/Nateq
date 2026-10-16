@@ -667,6 +667,12 @@
 <string name="changelog_title">آخر التحديثات</string>
 <string name="changelog_text">الإصدار %1$s
 ملاحظة: هذه نسخة تجريبية قد يُتراجَع عنها والعودة إلى النظام القديم، وقد تجدون ميزات كثيرة لا تعمل. وإن كانت الانطباعات سلبية فسنرجع إلى النظام القديم. ننتظر انطباعاتكم على بوت التليجرام، ولاحظوا أن الرسائل الصوتية لا تصل. ومن أراد تواصلاً شخصياً لأي سبب فليكتب أي بيانات تواصل، لأن البوت لا يُظهر هوية أحد ولا أستطيع التواصل معهم.
+- ميزة الاتصال السريع الميسّر (1 إلى 10000): ذاكرة متكاملة للمواقع مع نطق اسم المتصل ورقمه فور لمس الموقع أو نطق فارغ، وحوار اتصال عبر الشريحتين SIM 1 و SIM 2 وإضافة الأرقام وحذفها مع استمرار العرض في قائمة الاتصال السريع، وخيار تفعيل أيقونة الاتصال السريع في درج التطبيقات وشاشة أدوات التطبيق
+- دعم الشريحتين (SIM 1 و SIM 2) في هاتف Lord TTS: زران متجاوران في لوحة الاتصال لإجراء المكالمة عبر أي من الشريحتين مباشرة مع اكتشاف أسماء مشغلي الشبكات تلقائياً
+- خيار إظهار صف الأرقام دائماً في لوحة المفاتيح الميسّرة: إمكانية تثبيت صف الأرقام (1-0) أعلى الحروف في وضع النصوص العادي لتسريع الكتابة للمكفوفين وضعاف البصر
+- ضبط الاستكشاف باللمس في هاتف Lord ولوحة المفاتيح: اعتماد الكتابة والإدخال عند رفع الإصبع فقط لمنع الإدخال الخاطئ بمجرد اللمس، مع تحسين دقة وتوسيع رسائل «قراءة المزيد»
+- هاتف Lord TTS الميسّر وتسجيل المكالمات: واجهة مخصصة بالكامل للمكفوفين للمكالمات وسجل الهاتف مع دعم تسجيل المكالمات تلقائياً أو عند الطلب بأعلى جودة صوتية ونقل اختصارات الهاتف ولوحة المفاتيح إلى قائمة أدوات التطبيق
+- ميزة الانتقال إلى المحرك السابق: إمكانية التبديل العكسي لمحركات النطق بسهولة عبر قائمة الإجراءات السريعة وبلاطة الإعدادات السريعة واختصارات النظام
 - إصلاح توافق لوحة المفاتيح مع TalkBack: دعم استكشاف اللمس الكامل عبر ExploreByTouchHelper وتمرير أحداث التحويم (Hover)، وإلغاء اعتراض السحب بإصبعين لمنع التضارب، وضبط استجابة مربع التجربة، وإصلاح الكتابة بالصوت بإلغاء النطق أثناء التسجيل لمنع التشويش وإضافة زر مباشر لطلب إذن الميكروفون والاهتزاز الإرشادي ومعالجة كافة أخطاء الصوت
 - إضافة مدخل مباشر لشاشة إعدادات وتخصيص لوحة المفاتيح الميسّرة في واجهة الإعدادات وقائمة أدوات التطبيق السريعة
 - إضافة لوحة مفاتيح Lord TTS الميسّرة للمكفوفين وضعاف البصر: تدعم وضع الكفيف (سمعي ولمسي داكن) ووضع ضعيف البصر (تباين عالٍ)، والتفعيل برفع الإصبع أو النقر المزدوج، والتأكيد الصوتي الاختياري، والتهجئة التوضيحية للحروف، وشريط تشكيل الحروف العربية السريع، وشريط أدوات الحافظة المتكامل (نسخ، لصق، قص، تحديد الكل)، والكتابة بالصوت، مع إلغاء التصحيح والتدقيق التلقائي
@@ -975,4 +981,37 @@
     <string name="phone_playing_recording_announcement">جارٍ تشغيل التسجيل بأعلى مستوى صوت</string>
     <string name="phone_share_chooser_title">مشاركة تسجيل المكالمة</string>
     <string name="phone_voice_search_unavailable">البحث الصوتي غير متاح على هذا الجهاز</string>
+    <string name="phone_contacts_keyboard_toggle">لوحة المفاتيح</string>
+    <string name="phone_contacts_keyboard_hide">إخفاء لوحة المفاتيح</string>
+    <string name="phone_contacts_keyboard_show">إظهار لوحة المفاتيح</string>
+    <string name="phone_contacts_keyboard_hidden">تم إخفاء لوحة المفاتيح</string>
+    <string name="phone_contacts_keyboard_shown">تم إظهار لوحة المفاتيح</string>
+    <string name="phone_btn_pin_shortcut">إضافة اختصار على الشاشة الرئيسية</string>
+    <string name="phone_pin_shortcut_success">تم إرسال طلب إضافة اختصار الهاتف إلى الشاشة الرئيسية</string>
+    <string name="phone_switch_app_drawer">إظهار أيقونة الهاتف في شاشة التطبيقات</string>
+    <string name="phone_shortcut_created">تم تفعيل أيقونة الهاتف في شاشة التطبيقات</string>
+    <string name="phone_shortcut_removed">تم إخفاء أيقونة الهاتف من شاشة التطبيقات</string>
+    <string name="keyboard_always_show_number_row_title">إظهار صف الأرقام دائماً</string>
+    <string name="keyboard_always_show_number_row_summary">عرض صف للأرقام (1-0) أعلى لوحة المفاتيح دائماً لتسهيل الكتابة</string>
+    <string name="speed_dial_title">الاتصال السريع</string>
+    <string name="speed_dial_slot_title">الموقع %1$d</string>
+    <string name="speed_dial_slot_empty">الموقع %1$d فارغ</string>
+    <string name="speed_dial_slot_assigned">الموقع %1$d: %2$s - %3$s</string>
+    <string name="speed_dial_add_action">إضافة للاتصال السريع</string>
+    <string name="speed_dial_delete_action">حذف من الاتصال السريع</string>
+    <string name="speed_dial_options_title">خيارات الاتصال السريع</string>
+    <string name="speed_dial_call_sim1">اتصال باستخدام SIM 1</string>
+    <string name="speed_dial_call_sim2">اتصال باستخدام SIM 2</string>
+    <string name="speed_dial_added_toast">تمت إضافة %1$s إلى الموقع %2$d في الاتصال السريع</string>
+    <string name="speed_dial_deleted_toast">تم حذف الموقع %1$d من الاتصال السريع</string>
+    <string name="speed_dial_select_number_title">اختر رقم الهاتف للموقع %1$d:</string>
+    <string name="speed_dial_btn_pin_shortcut">إضافة اختصار الاتصال السريع على الشاشة الرئيسية</string>
+    <string name="speed_dial_pin_shortcut_success">تم إرسال طلب إضافة اختصار الاتصال السريع إلى الشاشة الرئيسية</string>
+    <string name="speed_dial_switch_app_drawer">إظهار أيقونة الاتصال السريع في شاشة التطبيقات</string>
+    <string name="speed_dial_shortcut_created">تم تفعيل أيقونة الاتصال السريع في شاشة التطبيقات</string>
+    <string name="speed_dial_shortcut_removed">تم إخفاء أيقونة الاتصال السريع من شاشة التطبيقات</string>
+    <string name="speed_dial_empty_list">لا توجد أرقام مضافة في الاتصال السريع حتى الآن</string>
+    <string name="phone_call_sim1">شريحة 1</string>
+    <string name="phone_call_sim2">شريحة 2</string>
+    <string name="phone_select_sim_title">اختر الشريحة للاتصال</string>
 </resources>

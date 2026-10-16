@@ -79,22 +79,25 @@ object ReadMoreExpander {
             }
         }
 
-        // 2. إذا كانت العقدة نفسها زر قراءة المزيد وهي قابلة للنقر
-        if (isTriggerNodeText(node) && node.isClickable) {
-            return runCatching {
-                node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            }.getOrDefault(false)
+        // 2. إذا كانت العقدة نفسها زر قراءة المزيد
+        if (isTriggerNodeText(node)) {
+            if (node.isClickable) {
+                return runCatching {
+                    node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                }.getOrDefault(false)
+            }
+            if (tryClickClickableAncestor(node)) return true
         }
 
-        // 3. إذا كانت العقدة نص رسالة مقتطعة قابلة للنقر مباشرة
+        // 3. إذا كانت العقدة نص رسالة مقتطعة
         val text = node.text?.toString()
-        if (node.isClickable &&
-            !text.isNullOrBlank() &&
-            SelectorPacks.looksTruncated(text)
-        ) {
-            return runCatching {
-                node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            }.getOrDefault(false)
+        if (!text.isNullOrBlank() && SelectorPacks.looksTruncated(text)) {
+            if (node.isClickable) {
+                return runCatching {
+                    node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                }.getOrDefault(false)
+            }
+            if (tryClickClickableAncestor(node)) return true
         }
 
         return false
@@ -185,6 +188,15 @@ object ReadMoreExpander {
                     }
                 }
 
+                if (current.isClickable) {
+                    val ok = runCatching {
+                        current.performAction(
+                            AccessibilityNodeInfo.ACTION_CLICK
+                        )
+                    }.getOrDefault(false)
+                    if (ok) return true
+                }
+
                 // فحص إخوة الحاوية إن كان هناك زر في نفس الصف
                 val grandParent = runCatching { current.parent }.getOrNull()
                     ?: break
@@ -266,7 +278,9 @@ object ReadMoreExpander {
             try {
                 if (parent.isClickable) {
                     val ok = runCatching {
-                        parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                        parent.performAction(
+                            AccessibilityNodeInfo.ACTION_CLICK
+                        )
                     }.getOrDefault(false)
                     if (ok) return true
                 }
@@ -277,6 +291,58 @@ object ReadMoreExpander {
             } catch (_: Throwable) {
                 SafeNodeWalker.safeRecycle(parent)
                 break
+            }
+        }
+        return false
+    }
+
+    private fun tryClickClickableAncestor(
+        node: AccessibilityNodeInfo
+    ): Boolean {
+        var current = runCatching { node.parent }.getOrNull()
+        var depth = 0
+        while (current != null && depth < 3) {
+            try {
+                if (current.isClickable) {
+                    val clicked = runCatching {
+                        current.performAction(
+                            AccessibilityNodeInfo.ACTION_CLICK
+                        )
+                    }.getOrDefault(false)
+                    if (clicked) return true
+                }
+                val parent = runCatching { current.parent }.getOrNull()
+                SafeNodeWalker.safeRecycle(current)
+                current = parent
+                depth++
+            } catch (_: Throwable) {
+                SafeNodeWalker.safeRecycle(current)
+                break
+            }
+        }
+        return false
+    }
+
+    /**
+     * ع٤٣-2: مسح شجرة النافذة بالكامل كإجراء احتياطي للعثور على قراءة المزيد
+     */
+    fun findAndClickReadMore(root: AccessibilityNodeInfo): Boolean {
+        if (isTriggerNode(root)) {
+            if (performClickOrAction(root)) return true
+        }
+        val text = root.text?.toString()
+        if (!text.isNullOrBlank() && SelectorPacks.looksTruncated(text)) {
+            if (performClickOrAction(root)) return true
+        }
+        val count = runCatching { root.childCount }.getOrDefault(0)
+        for (i in 0 until count) {
+            val child = runCatching {
+                root.getChild(i)
+            }.getOrNull() ?: continue
+            try {
+                if (findAndClickReadMore(child)) return true
+            } finally {
+                SafeNodeWalker.safeRecycle(child)
             }
         }
         return false

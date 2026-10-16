@@ -7,6 +7,7 @@ import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -828,6 +829,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         refreshEmbeddedUiIfStorageChanged()
         refreshVoiceCatalogDiscovery()
         resumeUpdateDownloadIfNeeded()
+        refreshToolsShortcuts()
     }
 
     /**
@@ -2938,6 +2940,61 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 )
                 startActivity(intent)
             }
+        view?.findViewById<View>(R.id.btn_open_speed_dial)
+            ?.setOnClickListener {
+                val intent = Intent(
+                    requireContext(),
+                    com.aymankhattab.nateq.settings.phone
+                        .LordSpeedDialActivity::class.java
+                )
+                startActivity(intent)
+            }
+        val swSpeedDial = view?.findViewById<SwitchMaterial>(
+            R.id.switch_tools_speed_dial_drawer
+        )
+        swSpeedDial?.isChecked =
+            runCatching { settings.isSpeedDialLauncherIconEnabled() }
+                .getOrDefault(false)
+        swSpeedDial?.setOnCheckedChangeListener { _, isChecked ->
+            settings.setSpeedDialLauncherIconEnabled(isChecked)
+            setSpeedDialLauncherAliasEnabled(isChecked)
+            Toast.makeText(
+                requireContext(),
+                if (isChecked) R.string.speed_dial_shortcut_created
+                else R.string.speed_dial_shortcut_removed,
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun setSpeedDialLauncherAliasEnabled(enabled: Boolean) {
+        val ctx = context ?: return
+        val alias = ComponentName(
+            ctx,
+            "com.aymankhattab.nateq.settings.phone.LordSpeedDialLauncherAlias"
+        )
+        val state = if (enabled) {
+            PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+        } else {
+            PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+        }
+        ctx.packageManager.setComponentEnabledSetting(
+            alias,
+            state,
+            PackageManager.DONT_KILL_APP
+        )
+    }
+
+    private fun refreshToolsShortcuts() {
+        val sw = view?.findViewById<SwitchMaterial>(
+            R.id.switch_tools_speed_dial_drawer
+        ) ?: return
+        val enabled = runCatching {
+            settings.isSpeedDialLauncherIconEnabled()
+        }.getOrDefault(false)
+        if (sw.isChecked != enabled) {
+            sw.isChecked = enabled
+        }
     }
 
     /** إعادة تحميل كل قيم الواجهة بعد الاستعادة (دون إعادة إنشاء النشاط). */
@@ -2971,6 +3028,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         refreshDictAdapter()
         engineSection.setupAutoConvertUI(v)
         accordion.updateSectionStatuses()
+        refreshToolsShortcuts()
     }
 
     // ===== مساعدات التشخيص (ع٢٩-8 بند 5) =====

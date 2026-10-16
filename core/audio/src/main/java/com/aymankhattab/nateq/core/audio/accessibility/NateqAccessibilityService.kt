@@ -886,9 +886,13 @@ class NateqAccessibilityService : AccessibilityService() {
         val prefixClean = prefix.trim()
 
         // ع٤٣-1: فحص تطابق مرن بين نص الطلب والعنصر المفوكس
+        val isTruncatedPrefix = SelectorPacks.looksTruncated(prefixClean)
+        val isTruncatedFocus = SelectorPacks.looksTruncated(focusedText)
         if (prefixClean.isNotEmpty() &&
             focusedText.isNotEmpty() &&
-            !SelectorPacks.isTextMatchingMessage(prefixClean, focusedText)
+            !SelectorPacks.isTextMatchingMessage(prefixClean, focusedText) &&
+            !isTruncatedPrefix &&
+            !isTruncatedFocus
         ) {
             Log.w(TAG, "[READMORE] Focused node does not match target text")
             return null
@@ -896,28 +900,41 @@ class NateqAccessibilityService : AccessibilityService() {
 
         var focusedNode = findAccessibilityFocusAcrossWindows()
         if (focusedNode == null) {
-            delay(60L)
+            delay(50L)
             focusedNode = findAccessibilityFocusAcrossWindows()
-        }
-        if (focusedNode == null) {
-            Log.w(TAG, "[READMORE] No focused node found across windows")
-            return null
         }
 
         val oldLen = focusedText.length
-        val expanded = try {
-            ReadMoreExpander.tryExpand(focusedNode)
-        } finally {
-            SafeNodeWalker.safeRecycle(focusedNode)
+        var expanded = if (focusedNode != null) {
+            try {
+                ReadMoreExpander.tryExpand(focusedNode)
+            } finally {
+                SafeNodeWalker.safeRecycle(focusedNode)
+            }
+        } else false
+
+        // ع٤٣-2: إذا لم ينجح التوسيع في شجرة العقدة المفوكسة، نفحص شجرة النافذة
+        if (!expanded) {
+            val root = rootInActiveWindow
+            if (root != null) {
+                expanded = try {
+                    ReadMoreExpander.findAndClickReadMore(root)
+                } finally {
+                    SafeNodeWalker.safeRecycle(root)
+                }
+            }
         }
 
         if (!expanded) {
-            Log.w(TAG, "[READMORE] tryExpand returned false")
+            Log.w(TAG, "[READMORE] tryExpand and window scan returned false")
             return null
         }
 
-        // ع٤٣-1: انتظار بتعليق غير حاجز حتى وصول إشارة تغيّر المحتوى
-        AccessibilityBridge.waitForContentChange(800L)
+        // ع٤٣-1: انتظار سريع بتعليق غير حاجز لإشارة تغيّر المحتوى
+        val signaled = AccessibilityBridge.waitForContentChange(350L)
+        if (!signaled) {
+            delay(100L)
+        }
 
         // التحقق من النص المحدّث
         val updatedSnapshot = findCurrentAccessibilityFocusSnapshot()
@@ -932,7 +949,7 @@ class NateqAccessibilityService : AccessibilityService() {
         }
 
         // مهلة تعليق إضافية قصيرة في حال تأخر تحديث الواجهة
-        delay(150L)
+        delay(120L)
         val finalSnapshot = findCurrentAccessibilityFocusSnapshot()
         val finalText = finalSnapshot?.readableText().orEmpty()
         return if (finalText.length > oldLen) {
@@ -941,6 +958,11 @@ class NateqAccessibilityService : AccessibilityService() {
                 "[READMORE] Expand successful after grace delay: " +
                     "$oldLen -> ${finalText.length} chars"
             )
+            finalText
+        } else if (finalText.isNotEmpty() &&
+            (SelectorPacks.isTextMatchingMessage(prefixClean, finalText) ||
+                !SelectorPacks.looksTruncated(finalText))
+        ) {
             finalText
         } else {
             Log.w(TAG, "[READMORE] Text did not grow after click")

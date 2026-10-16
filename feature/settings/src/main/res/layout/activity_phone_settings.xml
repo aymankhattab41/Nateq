@@ -79,7 +79,43 @@
                     style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="@string/phone_btn_open_app" />
+                    android:text="@string/phone_btn_open_app"
+                    android:layout_marginBottom="8dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_pin_phone_shortcut"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/phone_btn_pin_shortcut"
+                    android:layout_marginBottom="8dp" />
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switch_phone_app_drawer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:text="@string/phone_switch_app_drawer"
+                    android:textOff="@string/toggle_off"
+                    android:textOn="@string/toggle_on" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_pin_speed_dial_shortcut"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/speed_dial_btn_pin_shortcut"
+                    android:layout_marginTop="8dp"
+                    android:layout_marginBottom="8dp" />
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switch_speed_dial_app_drawer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:text="@string/speed_dial_switch_app_drawer"
+                    android:textOff="@string/toggle_off"
+                    android:textOn="@string/toggle_on" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

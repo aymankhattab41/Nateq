@@ -418,6 +418,12 @@
             <intent-filter>
                 <action android:name="android.telecom.InCallService" />
             </intent-filter>
+            <meta-data
+                android:name="android.telecom.IN_CALL_SERVICE_UI"
+                android:value="true" />
+            <meta-data
+                android:name="android.telecom.IN_CALL_SERVICE_RINGING"
+                android:value="true" />
         </service>
 
         <!-- نشاط هاتف Lord TTS الميسّر ولوحة الاتصال -->
@@ -440,7 +446,25 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="tel" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.CALL_BUTTON" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
+
+        <!-- اختصار أيقونة هاتف Lord TTS في شاشة التطبيقات -->
+        <activity-alias
+            android:name="com.aymankhattab.nateq.settings.phone.LordPhoneLauncherAlias"
+            android:targetActivity="com.aymankhattab.nateq.settings.phone.LordPhoneActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_call"
+            android:label="@string/phone_app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <!-- شاشة المكالمة الجارية والواردة لهاتف Lord TTS -->
         <activity
@@ -456,6 +480,26 @@
             android:name="com.aymankhattab.nateq.settings.phone.PhoneSettingsActivity"
             android:exported="true"
             android:label="@string/phone_settings_title" />
+
+        <!-- شاشة الاتصال السريع الميسّرة لهاتف Lord TTS (ذاكرة 1-10000) -->
+        <activity
+            android:name="com.aymankhattab.nateq.settings.phone.LordSpeedDialActivity"
+            android:exported="true"
+            android:label="@string/speed_dial_title" />
+
+        <!-- اختصار أيقونة الاتصال السريع في شاشة التطبيقات -->
+        <activity-alias
+            android:name="com.aymankhattab.nateq.settings.phone.LordSpeedDialLauncherAlias"
+            android:targetActivity="com.aymankhattab.nateq.settings.phone.LordSpeedDialActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_call"
+            android:label="@string/speed_dial_title">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
     </application>
 </manifest>

@@ -163,10 +163,12 @@ class LordKeyboardViewTest {
             now, now, MotionEvent.ACTION_HOVER_MOVE, 100f, 100f, 0
         )
         keyboardView.dispatchHoverEvent(hoverMove)
+        assertEquals(null, selectedKey)
 
         val hoverExit = MotionEvent.obtain(
-            now, now + 50, MotionEvent.ACTION_HOVER_EXIT, 100f, 100f, 0
+            now, now + 60L, MotionEvent.ACTION_HOVER_EXIT, 100f, 100f, 0
         )
         keyboardView.dispatchHoverEvent(hoverExit)
+        assertNotNull(selectedKey)
     }
 }
