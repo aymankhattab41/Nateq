@@ -234,6 +234,16 @@
                 android:orientation="vertical"
                 android:padding="16dp">
 
+                <TextView
+                    android:id="@+id/tv_ime_status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="14sp"
+                    android:lineSpacingMultiplier="1.2"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="12dp"
+                    android:importantForAccessibility="yes" />
+
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_enable_ime"
                     android:layout_width="match_parent"
@@ -247,6 +257,15 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/keyboard_enable_step2"
+                    android:textSize="15sp"
+                    android:layout_marginBottom="10dp"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_mic_permission"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/keyboard_grant_mic_permission"
                     android:textSize="15sp"
                     style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
             </LinearLayout>

@@ -1,14 +1,21 @@
 package com.aymankhattab.nateq.core.audio.keyboard
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.inputmethodservice.InputMethodService
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -16,6 +23,7 @@ import android.speech.tts.TextToSpeech
 import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
@@ -23,6 +31,7 @@ import android.widget.Button
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.core.audio.keyboard.KeyboardLayoutHelper.KeyModel
 import com.aymankhattab.nateq.core.audio.keyboard.KeyboardLayoutHelper.KeyType
 import com.aymankhattab.nateq.core.audio.keyboard.KeyboardLayoutHelper.KeyboardLayer
@@ -70,6 +79,13 @@ class LordKeyboardService : InputMethodService(),
             }
         }
     }
+
+    override fun onEvaluateInputViewShown(): Boolean {
+        super.onEvaluateInputViewShown()
+        return true
+    }
+
+    override fun onEvaluateFullscreenMode(): Boolean = false
 
     override fun onCreateInputView(): View {
         val rootLayout = LinearLayout(this).apply {
@@ -492,59 +508,125 @@ class LordKeyboardService : InputMethodService(),
     }
 
     private fun startVoiceTyping() {
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            speakText("خدمة التعرف على الصوت غير متاحة على جهازك")
+        val hasMicPermission = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (!hasMicPermission) {
+            speakText(
+                "يرجى منح إذن الميكروفون أولاً. جارٍ فتح الإعدادات"
+            )
+            try {
+                val cls =
+                    "com.aymankhattab.nateq.settings.KeyboardSettingsActivity"
+                val intent = Intent().apply {
+                    setClassName(packageName, cls)
+                    putExtra("request_mic", true)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(intent)
+            } catch (_: Exception) {
+                val intent = Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.fromParts("package", packageName, null)
+                ).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(intent)
+            }
             return
         }
 
         if (isListeningVoice) {
             speechRecognizer?.stopListening()
             isListeningVoice = false
-            speakText("توقف الاستماع")
+            vibrateFeedback(40L)
+            speakText("تم إيقاف الاستماع")
+            return
+        }
+
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            speakText("خدمة التعرف على الصوت غير متاحة على جهازك")
             return
         }
 
         try {
             speechRecognizer?.destroy()
             speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
+            val langTag = if (currentLayer == KeyboardLayer.ENGLISH) "en-US"
+            else "ar-SA"
             val intent =
                 Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(
-                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-                )
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ar-SA")
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            }
+                    putExtra(
+                        RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                    )
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, langTag)
+                    putExtra(
+                        RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE,
+                        langTag
+                    )
+                    putExtra(
+                        RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE,
+                        langTag
+                    )
+                    putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                }
 
             speechRecognizer?.setRecognitionListener(object :
                 RecognitionListener {
                 override fun onReadyForSpeech(params: Bundle?) {
                     isListeningVoice = true
-                    speakText("تحدث الآن...")
+                    vibrateFeedback(60L)
                 }
 
                 override fun onBeginningOfSpeech() {}
                 override fun onRmsChanged(rmsdB: Float) {}
                 override fun onBufferReceived(buffer: ByteArray?) {}
+
                 override fun onEndOfSpeech() {
                     isListeningVoice = false
+                    vibrateFeedback(40L)
                 }
 
                 override fun onError(error: Int) {
                     isListeningVoice = false
-                    speakText("لم أتمكن من سماع صوتك، حاول ثانية")
+                    vibrateFeedback(40L)
+                    val errorMsg = when (error) {
+                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ->
+                            "يرجى منح إذن الميكروفون من إعدادات التطبيق"
+                        SpeechRecognizer.ERROR_NETWORK,
+                        SpeechRecognizer.ERROR_NETWORK_TIMEOUT ->
+                            "تعذر الاتصال بالشبكة للتعرف على الصوت"
+                        SpeechRecognizer.ERROR_AUDIO ->
+                            "خطأ في تسجيل الصوت"
+                        SpeechRecognizer.ERROR_SERVER ->
+                            "خطأ في خادم التعرف على الصوت"
+                        SpeechRecognizer.ERROR_RECOGNIZER_BUSY ->
+                            "خدمة الصوت مشغولة، حاول ثانية"
+                        SpeechRecognizer.ERROR_NO_MATCH,
+                        SpeechRecognizer.ERROR_SPEECH_TIMEOUT ->
+                            "لم أتمكن من سماع صوتك، حاول ثانية"
+                        else ->
+                            "تعذر التعرف على الصوت، حاول ثانية"
+                    }
+                    speakText(errorMsg)
                 }
 
                 override fun onResults(results: Bundle?) {
                     isListeningVoice = false
+                    vibrateFeedback(50L)
                     val matches = results?.getStringArrayList(
                         SpeechRecognizer.RESULTS_RECOGNITION
                     )
                     val text = matches?.firstOrNull()
                     if (!text.isNullOrEmpty()) {
                         currentInputConnection?.commitText(text, 1)
-                        speakText("تمت كتابة: $text")
+                        speakText("تم إدخال: $text")
+                    } else {
+                        speakText("لم يتم التعرف على أي نص")
                     }
                 }
 
@@ -553,9 +635,31 @@ class LordKeyboardService : InputMethodService(),
             })
 
             speechRecognizer?.startListening(intent)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             isListeningVoice = false
-            speakText("يرجى التأكد من صلاحية الميكروفون")
+            speakText("تعذر بدء التعرف على الصوت")
+        }
+    }
+
+    private fun vibrateFeedback(durationMs: Long = 40L) {
+        if (!settingsRepo.isKeyboardHapticEnabled()) return
+        try {
+            val vibrator =
+                getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator?.vibrate(
+                    VibrationEffect.createOneShot(
+                        durationMs, VibrationEffect.DEFAULT_AMPLITUDE
+                    )
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(durationMs)
+            }
+        } catch (_: Exception) {
+            keyboardView?.performHapticFeedback(
+                HapticFeedbackConstants.KEYBOARD_TAP
+            )
         }
     }
 

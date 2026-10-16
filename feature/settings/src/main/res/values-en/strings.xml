@@ -887,5 +887,13 @@ Note: this is an experimental build that may be reverted to the old system, and 
     <string name="keyboard_test_title">Live Typing Test Area</string>
     <string name="keyboard_test_hint">Tap here to test keyboard and voice typing…</string>
     <string name="keyboard_clear_test">Clear Test Text</string>
-
+    <string name="keyboard_status_not_enabled">"Notice: Keyboard is not enabled in System Settings. Tap '1' below to enable it first."</string>
+    <string name="keyboard_status_enabled_not_selected">"Keyboard is enabled in System. Tap '2' below to select it as default."</string>
+    <string name="keyboard_status_active">"✓ Lord TTS Keyboard is enabled and active as default. You can test typing below."</string>
+    <string name="keyboard_not_enabled_hint">"Please enable the keyboard in System Settings first (Step 1)"</string>
+    <string name="keyboard_not_selected_hint">"Please select Lord TTS Keyboard as default (Step 2)"</string>
+    <string name="keyboard_grant_mic_permission">3. Grant Microphone Permission for Voice Typing</string>
+    <string name="keyboard_mic_status_granted">✓ Microphone permission granted (Voice typing ready)</string>
+    <string name="keyboard_mic_granted_toast">Microphone permission granted successfully</string>
+    <string name="keyboard_mic_denied_toast">Microphone permission denied, voice typing unavailable</string>
 </resources>

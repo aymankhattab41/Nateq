@@ -898,5 +898,13 @@
     <string name="keyboard_test_title">مساحة التجربة الفورية</string>
     <string name="keyboard_test_hint">المس هنا لتجربة لوحة المفاتيح والكتابة بالصوت…</string>
     <string name="keyboard_clear_test">مسح النص التجريبي</string>
-
+    <string name="keyboard_status_not_enabled">تنبيه: اللوحة غير مفعّلة في إعدادات النظام. اضغط زر «1» أدناه لتفعيلها أولاً.</string>
+    <string name="keyboard_status_enabled_not_selected">اللوحة مفعّلة في النظام. اضغط زر «2» أدناه لتعيينها كلوحة افتراضية.</string>
+    <string name="keyboard_status_active">✓ لوحة Lord TTS مفعّلة كلوحة افتراضية. يمكنك الكتابة والتجربة الآن.</string>
+    <string name="keyboard_not_enabled_hint">يرجى تفعيل اللوحة في إعدادات النظام أولاً (الخطوة 1)</string>
+    <string name="keyboard_not_selected_hint">يرجى اختيار لوحة Lord TTS كافتراضية (الخطوة 2)</string>
+    <string name="keyboard_grant_mic_permission">3. منح إذن الميكروفون للكتابة بالصوت</string>
+    <string name="keyboard_mic_status_granted">✓ إذن الميكروفون ممنوح (الكتابة بالصوت جاهزة)</string>
+    <string name="keyboard_mic_granted_toast">تم منح إذن الميكروفون بنجاح</string>
+    <string name="keyboard_mic_denied_toast">لم يتم منح إذن الميكروفون، لن تتمكن من استخدام الكتابة بالصوت</string>
 </resources>

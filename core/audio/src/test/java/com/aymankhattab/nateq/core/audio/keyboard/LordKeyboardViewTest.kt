@@ -138,4 +138,35 @@ class LordKeyboardViewTest {
         // الآن تم الإدخال بنجاح بعد الضغط مرتين
         assertNotNull(selectedKey)
     }
+
+    @Test
+    fun hoverExploration_supportsHoverEventsForTalkBack() {
+        keyboardView.activationMode =
+            SettingsRepository.KEYBOARD_ACTIVATION_LIFT
+
+        var selectedKey: KeyModel? = null
+        keyboardView.actionListener =
+            object : LordKeyboardView.OnKeyboardActionListener {
+                override fun onKeySelected(key: KeyModel) {
+                    selectedKey = key
+                }
+
+                override fun onKeyHover(key: KeyModel) {}
+                override fun onSwipeLeft() {}
+                override fun onSwipeRight() {}
+                override fun onSwipeDown() {}
+                override fun onSwipeUp() {}
+            }
+
+        val now = SystemClock.uptimeMillis()
+        val hoverMove = MotionEvent.obtain(
+            now, now, MotionEvent.ACTION_HOVER_MOVE, 100f, 100f, 0
+        )
+        keyboardView.dispatchHoverEvent(hoverMove)
+
+        val hoverExit = MotionEvent.obtain(
+            now, now + 50, MotionEvent.ACTION_HOVER_EXIT, 100f, 100f, 0
+        )
+        keyboardView.dispatchHoverEvent(hoverExit)
+    }
 }
