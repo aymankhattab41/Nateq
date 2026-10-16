@@ -48,6 +48,17 @@ object AccessibilityUtils {
     }
 
     /**
+     * هل استكشاف اللمس (Touch Exploration) مفعّل في قارئ الشاشة؟
+     * عندما يكون مفعّلاً، تتحول اللمسات المفردة إلى أحداث تحويم (Hover)،
+     * بينما اللمسات المتعددة (إصبعين فأكثر) تكون للتمرير والتنقل في النظام.
+     */
+    fun isTouchExplorationEnabled(context: Context): Boolean {
+        val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE)
+            as? AccessibilityManager
+        return am?.isTouchExplorationEnabled == true
+    }
+
+    /**
      * هل خدمة إمكانية الوصول الخاصة بنا مفعّلة في إعدادات النظام؟ (ع٢٧-4)
      */
     fun isNateqAccessibilityServiceEnabled(context: Context): Boolean {

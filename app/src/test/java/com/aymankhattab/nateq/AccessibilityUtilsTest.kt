@@ -55,4 +55,11 @@ class AccessibilityUtilsTest {
         )
         assertFalse(AccessibilityUtils.isScreenReaderEnabled(context))
     }
+
+    @Test
+    fun isTouchExplorationEnabled_defaultReturnsFalse() {
+        val context = androidx.test.core.app
+            .ApplicationProvider.getApplicationContext<Context>()
+        assertFalse(AccessibilityUtils.isTouchExplorationEnabled(context))
+    }
 }

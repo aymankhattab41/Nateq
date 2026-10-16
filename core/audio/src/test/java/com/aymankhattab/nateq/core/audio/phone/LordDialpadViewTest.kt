@@ -252,4 +252,38 @@ class LordDialpadViewTest {
         assertNotNull(committed)
         assertEquals('2', committed?.digit)
     }
+
+    @Test
+    fun multiTouch_cancelsKeyCommit() {
+        dialpadView.activationMode =
+            SettingsRepository.PHONE_ACTIVATION_LIFT
+
+        var committed: DialpadKey? = null
+        dialpadView.actionListener =
+            object : LordDialpadView.OnDialpadActionListener {
+                override fun onKeySelected(key: DialpadKey) {
+                    committed = key
+                }
+
+                override fun onKeyHover(key: DialpadKey) {}
+            }
+
+        val now = SystemClock.uptimeMillis()
+        val down = MotionEvent.obtain(
+            now, now, MotionEvent.ACTION_DOWN, 50f, 50f, 0
+        )
+        dialpadView.onTouchEvent(down)
+
+        val pointerDown = MotionEvent.obtain(
+            now, now + 10L, MotionEvent.ACTION_POINTER_DOWN, 150f, 50f, 0
+        )
+        dialpadView.onTouchEvent(pointerDown)
+
+        val up = MotionEvent.obtain(
+            now, now + 50L, MotionEvent.ACTION_UP, 50f, 50f, 0
+        )
+        dialpadView.onTouchEvent(up)
+
+        assertEquals(null, committed)
+    }
 }

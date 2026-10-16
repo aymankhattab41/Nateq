@@ -16,6 +16,7 @@ import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
@@ -34,6 +35,12 @@ class PhoneSettingsActivity : AppCompatActivity() {
     private lateinit var settingsRepo: SettingsRepository
     private var tvDefaultDialerStatus: TextView? = null
     private var btnSetDefaultDialer: MaterialButton? = null
+
+    private val defaultDialerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        updateDefaultDialerStatus()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(
@@ -232,10 +239,23 @@ class PhoneSettingsActivity : AppCompatActivity() {
         )
     }
 
-    private fun updateDefaultDialerStatus() {
+    private fun isDefaultDialer(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roleManager = getSystemService(Context.ROLE_SERVICE)
+                as? RoleManager
+            if (roleManager != null &&
+                roleManager.isRoleHeld(RoleManager.ROLE_DIALER)
+            ) {
+                return true
+            }
+        }
         val telecom = getSystemService(Context.TELECOM_SERVICE)
             as? TelecomManager
-        val isDefault = telecom?.defaultDialerPackage == packageName
+        return telecom?.defaultDialerPackage == packageName
+    }
+
+    private fun updateDefaultDialerStatus() {
+        val isDefault = isDefaultDialer()
 
         if (isDefault) {
             tvDefaultDialerStatus?.text =
@@ -251,18 +271,21 @@ class PhoneSettingsActivity : AppCompatActivity() {
     }
 
     private fun requestDefaultDialerRole() {
+        if (isDefaultDialer()) {
+            updateDefaultDialerStatus()
+            return
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val roleManager = getSystemService(Context.ROLE_SERVICE)
                 as? RoleManager
-            if (roleManager?.isRoleAvailable(RoleManager.ROLE_DIALER) == true &&
-                !roleManager.isRoleHeld(RoleManager.ROLE_DIALER)
-            ) {
+            if (roleManager?.isRoleAvailable(RoleManager.ROLE_DIALER) == true) {
                 try {
                     val intent =
                         roleManager.createRequestRoleIntent(
                             RoleManager.ROLE_DIALER
                         )
-                    startActivity(intent)
+                    defaultDialerLauncher.launch(intent)
                     return
                 } catch (e: Exception) {
                     Log.w("PhoneSettings", "Role request failed", e)
@@ -279,13 +302,13 @@ class PhoneSettingsActivity : AppCompatActivity() {
                     packageName
                 )
             }
-            startActivity(intent)
+            defaultDialerLauncher.launch(intent)
             return
         } catch (_: Exception) {}
 
         try {
             val intent = Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
-            startActivity(intent)
+            defaultDialerLauncher.launch(intent)
             return
         } catch (_: Exception) {}
 
@@ -295,7 +318,7 @@ class PhoneSettingsActivity : AppCompatActivity() {
             ).apply {
                 data = Uri.fromParts("package", packageName, null)
             }
-            startActivity(intent)
+            defaultDialerLauncher.launch(intent)
         } catch (_: Exception) {}
     }
 
