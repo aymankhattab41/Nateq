@@ -45,6 +45,9 @@ interface SynthesisPrefs :
     /** يعيّن الصوت المفضّل للغة معيّنة. */
     fun setPreferredVoiceId(languageTag: String, voiceId: String)
 
+    /** يمسح الصوت المفضّل للغة معيّنة. */
+    fun clearPreferredVoiceId(languageTag: String)
+
     /** معدل الكلام للغة معيّنة (نسبة من الطبيعي). */
     fun getSpeechRate(languageTag: String): Float
 
@@ -159,6 +162,19 @@ interface SynthesisPrefs :
 
     /** كل تفضيلات اللغات في خارطة التحويل الديناميكية. */
     fun allConvertLanguagePreferences(): Map<String, LanguageSpeechPrefs>
+
+    /** الصوت المفضّل لمحرك نطق معيّن لكل لغة. */
+    fun getPreferredVoiceForEngine(
+        engine: String,
+        languageTag: String
+    ): String?
+
+    /** يعيّن الصوت المفضّل لمحرك نطق معيّن لكل لغة. */
+    fun setPreferredVoiceForEngine(
+        engine: String,
+        languageTag: String,
+        voiceName: String?
+    )
 }
 
 /**

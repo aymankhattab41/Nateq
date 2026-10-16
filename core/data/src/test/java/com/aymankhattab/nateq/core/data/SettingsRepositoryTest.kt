@@ -970,6 +970,47 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun setEngineForAllLanguages_restoresPreferredVoiceForEngine() {
+        repo.setPreferredVoiceForEngine(
+            "com.google.android.tts", "ar", "voice-g-ar"
+        )
+        repo.setPreferredVoiceForEngine(
+            "com.google.android.tts", "en", "voice-g-en"
+        )
+
+        repo.setEngineForAllLanguages(
+            listOf("ar", "en"),
+            "com.google.android.tts"
+        )
+        val ar = repo.getEnginePreferenceForLanguage("ar")
+        assertEquals("voice-g-ar", ar.voiceName)
+
+        val en = repo.getEnginePreferenceForLanguage("en")
+        assertEquals("voice-g-en", en.voiceName)
+    }
+
+    @Test
+    fun setEngineForAllLanguages_switchingToLordTtsRestoresPrimaryVoice() {
+        repo.setPreferredVoiceId("ar", "ar-EG")
+        repo.setPreferredVoiceId("en", "en-US")
+
+        repo.setEngineForAllLanguages(
+            listOf("ar", "en"),
+            "com.google.android.tts"
+        )
+        assertEquals("com.google.android.tts", repo.getEngineForLanguage("ar"))
+
+        // Switch back to Lord TTS (null)
+        repo.setEngineForAllLanguages(
+            listOf("ar", "en"),
+            null
+        )
+        assertNull(repo.getEngineForLanguage("ar"))
+        assertEquals("ar-EG", repo.getPreferredVoiceId("ar"))
+        assertEquals("en-US", repo.getPreferredVoiceId("en"))
+    }
+
+    @Test
     fun enginePerCategory_defaultsNull_roundTrip_removable() {
         // بلا إعداد → null (يُحسم المحرك ديناميكياً وقت النطق)
         assertNull(repo.getEngineForCategory("caller"))

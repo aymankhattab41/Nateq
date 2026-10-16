@@ -1006,7 +1006,15 @@ class SystemVoiceProvider(
         // إن اختار المستخدم صوتاً محدداً من حوار التحويل (اسم صوت في محرك
         // خارجي مثل MultiTTS) نطبّقه هنا عبر `voice`، مع التراجع الصامت إلى
         // اللغة إذا لم يجده المحرك (تجنّباً لكسر النطق لمجرد اسم غير مطابق).
-        if (!desiredVoiceName.isNullOrBlank()) {
+        val isGenericVoice = desiredVoiceName.isNullOrBlank() ||
+            desiredVoiceName.equals("Device Default", ignoreCase = true) ||
+            desiredVoiceName.equals("ar-EG", ignoreCase = true) ||
+            desiredVoiceName.equals("en-US", ignoreCase = true) ||
+            desiredVoiceName.equals("ar", ignoreCase = true) ||
+            desiredVoiceName.equals("en", ignoreCase = true)
+
+        var voiceApplied = false
+        if (!isGenericVoice) {
             runCatching {
                 val matching = matchVoice(engine.voices, desiredVoiceName)
                 if (matching != null) {
@@ -1015,32 +1023,44 @@ class SystemVoiceProvider(
                     // المحرك لانتظارِ مهلة التوليد كاملة عبثاً —
                     // الحالة يُرسلها [connectivity] استباقياً
                     // عبر NetworkCallback ومحسوبة حيّاً لحظياً.
-                    if (matching.isNetworkConnectionRequired
-                        && !connectivity.isOnlineNow()
+                    if (matching.isNetworkConnectionRequired &&
+                        !connectivity.isOnlineNow()
                     ) {
                         Log.w(
                             TAG,
                             "[Provider] offline & voice requires network" +
-                            " ($desiredVoiceName) — فوري محلي"
+                                " ($desiredVoiceName) — فوري محلي"
                         )
                         return false
                     }
                     engine.voice = matching
-                // ع٢٩-ج: تحقق من تطبيق الصوت فعلياً (VoiceApplyMismatch)
-                val appliedVoice = runCatching {
-                    engine.voice
-                }.getOrNull()?.name
-                if (appliedVoice != null && appliedVoice != matching.name) {
+                    // ع٢٩-ج: تحقق من تطبيق الصوت فعلياً
+                    // (VoiceApplyMismatch)
+                    val appliedVoice = runCatching {
+                        engine.voice
+                    }.getOrNull()?.name
+                    if (appliedVoice != null &&
+                        appliedVoice != matching.name
+                    ) {
+                        Log.w(
+                            TAG,
+                            "[VoiceApplyMismatch] requested=${matching.name} " +
+                                "applied=$appliedVoice — retry"
+                        )
+                        runCatching { engine.voice = matching }
+                    }
+                    voiceApplied = true
+                } else {
                     Log.w(
                         TAG,
-                        "[VoiceApplyMismatch] requested=${matching.name} " +
-                            "applied=$appliedVoice — retry"
+                        "[Provider] desired voice ($desiredVoiceName) " +
+                            "not found in engine $enginePackage — fallback"
                     )
-                    runCatching { engine.voice = matching }
                 }
             }
         }
-        } else {
+
+        if (!voiceApplied) {
             // ع٢٩-ج: تطبيق EngineQuirks قبل setVoice
             val quirks = enginePackage?.let { EngineQuirks.forPackage(it) }
             val needsLangFirst = quirks?.needsSetLanguageBeforeSetVoice == true
@@ -1068,7 +1088,8 @@ class SystemVoiceProvider(
             runCatching {
                 val current = engine.voice
                 if (current == null ||
-                    current.locale.language != voice.locale.language
+                    current.locale.language != voice.locale.language ||
+                    !voiceApplied
                 ) {
                     val matching = engine.voices
                         ?.filter {
@@ -1097,6 +1118,8 @@ class SystemVoiceProvider(
                             )
                             runCatching { engine.voice = matching }
                         }
+                    } else {
+                        runCatching { engine.setLanguage(effectiveLocale) }
                     }
                 }
             }

@@ -214,14 +214,12 @@ class VocalizerEmbeddedVoiceProvider(
             val rawName = (desiredVoiceName ?: voice.displayName)
                 .removePrefix("vocalizer_")
                 .trim()
+            val isKnownVoice = VocalizerModelCatalog.ITEMS.any { item ->
+                item.voiceName.equals(rawName, ignoreCase = true) ||
+                    item.id.equals(rawName, ignoreCase = true)
+            }
             val targetVoiceName = when {
-                rawName.isNotBlank() &&
-                    !rawName.equals("Device Default", ignoreCase = true) &&
-                    !rawName.equals("ar-EG", ignoreCase = true) &&
-                    !rawName.equals("en-US", ignoreCase = true) &&
-                    !rawName.equals("ar", ignoreCase = true) &&
-                    !rawName.equals("en", ignoreCase = true) ->
-                    rawName
+                isKnownVoice -> rawName
                 voiceLocale?.language.equals("en", ignoreCase = true) ->
                     "Samantha"
                 else ->

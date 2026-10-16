@@ -928,7 +928,9 @@ etCallerPrefix =
             ) {
                 val engine = callerEngineOptions.getOrNull(pos)
                 val pkg = engine?.packageName
-                if (engine != null && pkg != null) {
+                if (engine != null && pkg != null &&
+                    HostProtocol.isEmbeddedEngine(pkg)
+                ) {
                     val status = EngineStatusRegistry.statusOf(
                         fragment.requireContext(), pkg
                     )
@@ -997,7 +999,8 @@ etCallerPrefix =
                 sampleText = sample,
                 // المعاينةُ على سماتِ الإشعار كالنطقِ الحقيقي، فتراها
                 // بالصوتِ والمجرى نفسيهما (شُكوى: صارت أعلى من النطق).
-                isCallerCategory = true
+                isCallerCategory = true,
+                category = SettingsRepository.ANNOUNCE_CATEGORY_CALLER
             )
         )
     }

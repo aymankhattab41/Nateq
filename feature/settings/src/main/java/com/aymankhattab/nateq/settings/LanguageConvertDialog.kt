@@ -298,7 +298,16 @@ internal class LanguageConvertDialogController(
             R.string.cd_convert_save_for_language, row.displayName
         )
         val saved = settings.getEnginePreferenceForLanguage(row.languageTag)
-        savedVoice = saved.voiceName
+        val savedEngine = saved.engine
+        savedVoice = saved.voiceName ?: if (savedEngine != null) {
+            settings.getPreferredVoiceForEngine(
+                savedEngine, row.languageTag
+            )
+        } else {
+            settings.getPreferredVoiceForEngine(
+                SettingsRepository.ENGINE_LORD_TTS, row.languageTag
+            )
+        }
 
         seekVol.progress = (saved.volume * 100).toInt().coerceIn(0, 100)
         tvVol.text = "${seekVol.progress}%"
@@ -341,6 +350,16 @@ internal class LanguageConvertDialogController(
         val enginePkg = enginePackageForLabel(
             currentRow, label, noEngineLabel, noOptionsLabel
         )
+        savedVoice = if (enginePkg != null) {
+            settings.getPreferredVoiceForEngine(
+                enginePkg, currentRow.languageTag
+            )
+        } else {
+            settings.getPreferredVoiceForEngine(
+                SettingsRepository.ENGINE_LORD_TTS,
+                currentRow.languageTag
+            )
+        }
         val unavail = currentRow.unavailableEngines.firstOrNull {
             it.enginePackage == enginePkg
         }

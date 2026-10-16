@@ -364,7 +364,8 @@ internal class BatteryAnnouncementController(
                 rateProgress = (rate * 100).toInt().coerceIn(0, 200),
                 pitchProgress = (pitch * 100).toInt().coerceIn(0, 200),
                 volumePercent = (volume * 100).toInt().coerceIn(0, 100),
-                sampleText = sample
+                sampleText = sample,
+                category = category
             )
         )
     }

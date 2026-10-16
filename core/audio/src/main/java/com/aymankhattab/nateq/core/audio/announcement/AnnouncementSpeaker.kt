@@ -173,7 +173,7 @@ class AnnouncementSpeaker(
 
         /** تثبيت سرعة النطق ضمن المدى الآمن للمحرك وقائياً (بند 2.4):
          *  حدٌّ أدنى فلا يتعطل المحرك، وحدٌّ أعلى فلا يعلّق صامتاً. */
-        internal fun clampedSpeechRate(rate: Float): Float =
+        fun clampedSpeechRate(rate: Float): Float =
             rate.coerceIn(MIN_RATE_OR_PITCH, MAX_SPEECH_RATE)
 
         /** منفّذ تسلسلي لمعالجة نصوص الإعلانات الثقيلة خارج خيط الواجهة؛
@@ -297,7 +297,7 @@ class AnnouncementSpeaker(
          *  اللغة/المحرك أثراً حقيقياً بدل «أول صوتٍ» ثابت بلغة النظام
          *  (كان تبديل لغة النطق لا يغيّر الصوتَ على بعض المحركات).
          *  null إن لم يوجد صوت ملائم — يبقى `setLanguage` سقوطاً. */
-        internal fun voiceFor(
+        fun voiceFor(
             voices: Collection<Voice>?,
             partVoice: String?,
             locale: Locale
@@ -467,7 +467,7 @@ class AnnouncementSpeaker(
         // المكملة (U+2A6D6) — كانت تُبتلع سابقاً. يُستخدم لتنظيف النصوص
         // الخارجية (SMS/إشعارات/اسم المتصل) قبل النطق عبر المحرك الخارجي
         // حتى لا يُقرأ الإيموجي باسمه الإنجليزي (مثل بعض المحركات).
-        internal fun stripEmojis(text: String): String {
+        fun stripEmojis(text: String): String {
             val sb = StringBuilder(text.length)
             var i = 0
             var emojiRun = false

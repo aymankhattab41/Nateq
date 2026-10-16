@@ -93,6 +93,7 @@ class SettingsRepository(context: Context) :
         const val VOICE_CATEGORY_DEFAULT = "default"
         const val VOICE_CATEGORY_EMOJI = "emoji"
         const val VOICE_CATEGORY_BATTERY = "battery"
+        const val ENGINE_LORD_TTS = "lord_tts"
 
         /** حدّا الفاصل الزمني بين تكرارات إعلان المتصل (بالثواني): ثلاث
          *  قيم فقط 3/4/5 — وهما حدُّ المخزن فيساوي حدَّ الواجهة. */
@@ -692,8 +693,30 @@ class SettingsRepository(context: Context) :
         normalizeVoiceId(
             prefs.getString("preferred_voice_$languageTag", null)
         )
-    override fun setPreferredVoiceId(languageTag: String, voiceId: String) =
-        prefs.edit().putString("preferred_voice_$languageTag", voiceId).apply()
+    override fun setPreferredVoiceId(languageTag: String, voiceId: String) {
+        val key = ConvertPreferencesCodec.normalizeLanguageTag(languageTag)
+        val editor = prefs.edit()
+        val engine = getEngineForLanguage(key)
+            ?: getEngineForCategory(VOICE_CATEGORY_DEFAULT)
+        if (!engine.isNullOrBlank()) {
+            if (voiceId.isNotBlank()) {
+                setPreferredVoiceForEngine(engine, key, voiceId)
+                editor.putString("preferred_voice_$key", voiceId)
+            }
+        } else {
+            if (voiceId.isNotBlank()) {
+                editor.putString("preferred_voice_$key", voiceId)
+                editor.putString("primary_voice_$key", voiceId)
+                setPreferredVoiceForEngine(ENGINE_LORD_TTS, key, voiceId)
+            }
+        }
+        editor.apply()
+    }
+
+    override fun clearPreferredVoiceId(languageTag: String) {
+        val key = ConvertPreferencesCodec.normalizeLanguageTag(languageTag)
+        prefs.edit().remove("preferred_voice_$key").apply()
+    }
 
     /** سرعة النطق لكل لغة (languageTag -> speechRate) */
     override fun getSpeechRate(languageTag: String): Float =
@@ -1217,8 +1240,21 @@ class SettingsRepository(context: Context) :
     override fun setPreferredVoiceIdForCategory(
         category: String,
         voiceId: String
-    ) =
-        prefs.edit().putString("preferred_voice_$category", voiceId).apply()
+    ) {
+        val editor = prefs.edit().putString(
+            "preferred_voice_$category", voiceId
+        )
+        val engine = getEngineForCategory(category)
+        if (!engine.isNullOrBlank() && voiceId.isNotBlank()) {
+            setPreferredVoiceForEngine(engine, category, voiceId)
+        } else if (category == VOICE_CATEGORY_DEFAULT &&
+            voiceId.isNotBlank()
+        ) {
+            setPreferredVoiceForEngine(ENGINE_LORD_TTS, category, voiceId)
+            editor.putString("primary_voice_$category", voiceId)
+        }
+        editor.apply()
+    }
 
     /** يُحدّث اسم الصوت المحفوظ في كل الفئات التي تستخدم الاسم القديم */
     fun updateSavedVoiceNameIfNeeded(oldName: String, newName: String) {
@@ -1260,7 +1296,33 @@ class SettingsRepository(context: Context) :
     override fun getEngineForCategory(category: String): String? =
         prefs.getString("engine_for_$category", null)
     override fun setEngineForCategory(category: String, engine: String?) {
-        prefs.edit().putString("engine_for_$category", engine).commit()
+        val editor = prefs.edit().putString("engine_for_$category", engine)
+        if (category == VOICE_CATEGORY_DEFAULT) {
+            val isLord = engine.isNullOrBlank()
+            if (!isLord) {
+                val curLordVoice = prefs.getString(
+                    "preferred_voice_$category", null
+                )
+                if (!curLordVoice.isNullOrBlank()) {
+                    editor.putString("primary_voice_$category", curLordVoice)
+                }
+                val savedVoice = getPreferredVoiceForEngine(
+                    engine!!, category
+                )
+                if (!savedVoice.isNullOrBlank()) {
+                    editor.putString("preferred_voice_$category", savedVoice)
+                }
+            } else {
+                val lordVoice = prefs.getString(
+                    "primary_voice_$category", null
+                ) ?: getPreferredVoiceForEngine(ENGINE_LORD_TTS, category)
+                    ?: prefs.getString("preferred_voice_$category", null)
+                if (!lordVoice.isNullOrBlank()) {
+                    editor.putString("preferred_voice_$category", lordVoice)
+                }
+            }
+        }
+        editor.commit()
     }
 
     /** سرعة النطق لكل فئة */
@@ -2066,6 +2128,17 @@ class SettingsRepository(context: Context) :
         )
         if (entry.hasAdjustment) map[key] = entry else map.remove(key)
         writeConvertPrefs(map)
+
+        if (!engine.isNullOrBlank() && !voiceName.isNullOrBlank()) {
+            setPreferredVoiceForEngine(engine, key, voiceName)
+            prefs.edit().putString("preferred_voice_$key", voiceName).apply()
+        } else if (engine.isNullOrBlank() && !voiceName.isNullOrBlank()) {
+            setPreferredVoiceForEngine(ENGINE_LORD_TTS, key, voiceName)
+            prefs.edit()
+                .putString("preferred_voice_$key", voiceName)
+                .putString("primary_voice_$key", voiceName)
+                .apply()
+        }
     }
 
     /** محرك النطق الصريح للغة معيّنة (سارٍ في النطق العام بلا ربط
@@ -2084,6 +2157,31 @@ class SettingsRepository(context: Context) :
         return readConvertPrefs()
     }
 
+    override fun getPreferredVoiceForEngine(
+        engine: String,
+        languageTag: String
+    ): String? {
+        val key = ConvertPreferencesCodec.normalizeLanguageTag(languageTag)
+        return normalizeVoiceId(
+            prefs.getString("preferred_voice_${engine}_$key", null)
+        )
+    }
+
+    override fun setPreferredVoiceForEngine(
+        engine: String,
+        languageTag: String,
+        voiceName: String?
+    ) {
+        val key = ConvertPreferencesCodec.normalizeLanguageTag(languageTag)
+        if (voiceName.isNullOrBlank()) {
+            prefs.edit().remove("preferred_voice_${engine}_$key").apply()
+        } else {
+            prefs.edit()
+                .putString("preferred_voice_${engine}_$key", voiceName)
+                .apply()
+        }
+    }
+
     private fun readConvertPrefs(): Map<String, LanguageSpeechPrefs> {
         val json = prefs.getString(KEY_CONVERT_PREFS_JSON, null)
         return if (json.isNullOrBlank()) {
@@ -2094,8 +2192,9 @@ class SettingsRepository(context: Context) :
     }
 
     /**
-     * يعين محركاً موحّداً لجميع اللغات المحددة مع تصفير اسم الصوت ليختار
-     * المحرك الجديد صوته المناسب لكل لغة.
+     * يعين محركاً موحّداً لجميع اللغات المحددة مع استعادة صوت
+     * المحرك المفضل لكل لغة إن وُجد، أو تركه للمحرك ليختار
+     * صوته المناسب دون إبقاء صوت قديم.
      */
     fun setEngineForAllLanguages(
         languages: Collection<String>,
@@ -2103,19 +2202,51 @@ class SettingsRepository(context: Context) :
     ) {
         ensureConvertSlotsMigrated()
         val map = readConvertPrefs().toMutableMap()
+        val editor = prefs.edit()
+        val isVoc = engine == "vocalizer_embedded"
+        val isLord = engine.isNullOrBlank()
         for (lang in languages) {
             val key = ConvertPreferencesCodec.normalizeLanguageTag(lang)
             val current = map[key] ?: LanguageSpeechPrefs()
+            var engineVoice = if (!isLord) {
+                val curLord = prefs.getString("preferred_voice_$key", null)
+                if (!curLord.isNullOrBlank()) {
+                    editor.putString("primary_voice_$key", curLord)
+                }
+                getPreferredVoiceForEngine(engine!!, key)
+            } else {
+                getPreferredVoiceForEngine(ENGINE_LORD_TTS, key)
+                    ?: prefs.getString("primary_voice_$key", null)
+                    ?: prefs.getString("preferred_voice_$key", null)
+            }
+            if (engineVoice.isNullOrBlank() && isVoc) {
+                engineVoice = if (key.equals("en", ignoreCase = true)) {
+                    "Samantha"
+                } else {
+                    "Laila"
+                }
+            }
             val entry = ConvertPreferencesCodec.entryForSave(
                 engine = engine,
-                voiceName = null,
+                voiceName = if (isLord) null else engineVoice,
                 rate = current.rate,
                 pitch = current.pitch,
                 volume = current.volume
             )
             if (entry.hasAdjustment) map[key] = entry else map.remove(key)
+
+            if (isLord) {
+                val restoreVoice = engineVoice
+                    ?: VoiceIdContract.createId(key)
+                editor.putString("preferred_voice_$key", restoreVoice)
+            } else if (!engineVoice.isNullOrBlank()) {
+                editor.putString("preferred_voice_$key", engineVoice)
+            }
         }
-        writeConvertPrefs(map)
+        editor.putString(
+            KEY_CONVERT_PREFS_JSON,
+            ConvertPreferencesCodec.toJson(map)
+        ).commit()
     }
 
     private fun writeConvertPrefs(map: Map<String, LanguageSpeechPrefs>) {

@@ -103,4 +103,33 @@ class NextEngineSwitcherTest {
             NextEngineSwitcher.currentEnginePackage(settings)
         )
     }
+
+    @Test
+    fun availableEngines_startsWithLordTts() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val engines = NextEngineSwitcher.availableEngines(context)
+        assertEquals(
+            NextEngineSwitcher.LORD_TTS_PACKAGE,
+            engines.first().packageName
+        )
+        assertEquals("Lord TTS", engines.first().label)
+    }
+
+    @Test
+    fun nextEngine_wrapsThroughLordTts() {
+        val list = listOf(
+            EnginePicker.InstalledEngine(
+                NextEngineSwitcher.LORD_TTS_PACKAGE, "Lord TTS"
+            ),
+            EnginePicker.InstalledEngine("one", "One")
+        )
+        val fromLord = NextEngineSwitcher.nextEngine(list, null)
+        assertEquals("one", fromLord?.packageName)
+
+        val fromOne = NextEngineSwitcher.nextEngine(list, "one")
+        assertEquals(
+            NextEngineSwitcher.LORD_TTS_PACKAGE,
+            fromOne?.packageName
+        )
+    }
 }

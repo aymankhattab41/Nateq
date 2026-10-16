@@ -27,6 +27,7 @@ import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.VocalizerModelCatalog
 import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.core.data.EffectiveVoice
 import com.aymankhattab.nateq.core.data.SettingsRepository
@@ -540,7 +541,11 @@ class NateqTtsService : TextToSpeechService() {
     override fun onIsValidVoiceName(voiceName: String?): Int {
         Log.d(TAG, "onIsValidVoiceName() voiceName=$voiceName")
         if (voiceName == null) return TextToSpeech.ERROR
-        return if (catalog.supportedVoices().any { it.name == voiceName }) {
+        val inCatalog = catalog.supportedVoices().any { it.name == voiceName }
+        val inContract = VoiceIdContract.declaredVoiceNames().any {
+            it.equals(voiceName, ignoreCase = true)
+        }
+        return if (inCatalog || inContract) {
             TextToSpeech.SUCCESS
         } else {
             TextToSpeech.ERROR
@@ -553,6 +558,8 @@ class NateqTtsService : TextToSpeechService() {
         @Suppress("UNUSED_VARIABLE")
         val voice = catalog.supportedVoices().find {
             it.name == voiceName
+        } ?: VoiceIdContract.declaredVoiceNames().find {
+            it.equals(voiceName, ignoreCase = true)
         }
             ?: return TextToSpeech.ERROR
         // مستقبلاً: أبلّغ SystemVoiceProvider بالصوت المحمّل حالياً
@@ -570,7 +577,10 @@ class NateqTtsService : TextToSpeechService() {
         val preferred = runCatching {
             settings.getPreferredVoiceId(normLang)
         }.getOrNull()?.takeIf { it.isNotBlank() }
-        val name = preferred
+        val validCatalogVoice = catalog.supportedVoices().find {
+            it.name == preferred
+        }?.name
+        val name = validCatalogVoice
             ?: catalog.defaultVoiceNameForLanguage(normLang)
             ?: VoiceIdContract.createId(normLang)
         Log.d(TAG,
@@ -1186,15 +1196,26 @@ class NateqTtsService : TextToSpeechService() {
         } else {
             Locale.forLanguageTag(languageTag)
         }
+        val preferredForEngine = finalEngine?.let {
+            settings.getPreferredVoiceForEngine(it, languageTag)
+        }
         val finalVoiceName = if (appVoice?.engine != null &&
             appVoice.engine != routed.engine
         ) {
             appVoice.voiceId
+        } else if (finalEngine != null) {
+            if (routed.engine == finalEngine &&
+                !routed.voiceName.isNullOrBlank()
+            ) {
+                routed.voiceName
+            } else {
+                preferredForEngine
+            }
         } else {
             appVoice?.voiceId
                 ?: routed.voiceName
-                ?: reqVoiceName
                 ?: settings.getPreferredVoiceId(languageTag)
+                ?: VoiceIdContract.createId(languageTag)
         }
 
         // Process text through TextProcessor
@@ -1245,7 +1266,13 @@ class NateqTtsService : TextToSpeechService() {
                 finalVoiceName.equals("en-US", true) ||
                 finalVoiceName.equals("ar", true) ||
                 finalVoiceName.equals("en", true)
-            val resolvedVoiceName = if (isVoc && isGeneric) {
+            val isVocVoice = if (isVoc && !finalVoiceName.isNullOrBlank()) {
+                VocalizerModelCatalog.ITEMS.any { item ->
+                    item.voiceName.equals(finalVoiceName, ignoreCase = true) ||
+                        item.id.equals(finalVoiceName, ignoreCase = true)
+                }
+            } else false
+            val resolvedVoiceName = if (isVoc && (isGeneric || !isVocVoice)) {
                 if (LanguageCode.isArabic(languageTag)) {
                     "Laila"
                 } else {
@@ -1435,15 +1462,26 @@ class NateqTtsService : TextToSpeechService() {
             defaultEngine = defaultCategoryEngine
         )
         val targetEngine = appVoice?.engine ?: routed.engine
+        val preferredForEngine = targetEngine?.let {
+            settings.getPreferredVoiceForEngine(it, segTag)
+        }
         val targetVoiceName = if (appVoice?.engine != null &&
             appVoice.engine != routed.engine
         ) {
             appVoice.voiceId
+        } else if (targetEngine != null) {
+            if (routed.engine == targetEngine &&
+                !routed.voiceName.isNullOrBlank()
+            ) {
+                routed.voiceName
+            } else {
+                preferredForEngine
+            }
         } else {
             appVoice?.voiceId
                 ?: routed.voiceName
-                ?: reqVoiceName
                 ?: settings.getPreferredVoiceId(segTag)
+                ?: VoiceIdContract.createId(segTag)
         }
         // **بند التشكيل الشرطي:** تُمرَّر حزمةُ المحرك المحسومة إلى
         // [TextProcessor.process] — المحركات التي تفهم التشكيل العربي
@@ -1482,7 +1520,13 @@ class NateqTtsService : TextToSpeechService() {
             targetVoiceName.equals("en-US", true) ||
             targetVoiceName.equals("ar", true) ||
             targetVoiceName.equals("en", true)
-        val resolvedVoiceName = if (isVoc && isGeneric) {
+        val isVocVoice = if (isVoc && !targetVoiceName.isNullOrBlank()) {
+            VocalizerModelCatalog.ITEMS.any { item ->
+                item.voiceName.equals(targetVoiceName, ignoreCase = true) ||
+                    item.id.equals(targetVoiceName, ignoreCase = true)
+            }
+        } else false
+        val resolvedVoiceName = if (isVoc && (isGeneric || !isVocVoice)) {
             if (LanguageCode.isArabic(segTag)) {
                 "Laila"
             } else {

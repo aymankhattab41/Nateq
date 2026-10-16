@@ -8,6 +8,7 @@ import com.google.android.material.button.MaterialButton
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
@@ -20,39 +21,35 @@ class LordInCallActivityTest {
 
     @Test
     fun inCallActivity_initialUiDefaults_hideIncomingActionsWhenNoCall() {
-        val scenario =
-            ActivityScenario.launch(LordInCallActivity::class.java)
-
-        scenario.onActivity { activity ->
-            val llIncoming =
-                activity.findViewById<View>(R.id.ll_incoming_call_actions)
-            // في حالة عدم وجود مكالمة رنين،
-            // الواجهة تغلق أو تختفي إجراءات الرنين
-            assertEquals(View.GONE, llIncoming.visibility)
-        }
-        scenario.close()
+        val controller =
+            Robolectric.buildActivity(LordInCallActivity::class.java).setup()
+        val activity = controller.get()
+        val llIncoming =
+            activity.findViewById<View>(R.id.ll_incoming_call_actions)
+        // في حالة عدم وجود مكالمة رنين،
+        // الواجهة تغلق أو تختفي إجراءات الرنين
+        assertEquals(View.GONE, llIncoming.visibility)
+        controller.destroy()
     }
 
     @Test
     fun inCallActivity_answerClick_immediatelyHidesIncomingActions() {
-        val scenario =
-            ActivityScenario.launch(LordInCallActivity::class.java)
+        val controller =
+            Robolectric.buildActivity(LordInCallActivity::class.java).setup()
+        val activity = controller.get()
+        val llIncoming =
+            activity.findViewById<View>(R.id.ll_incoming_call_actions)
+        val btnAnswer =
+            activity.findViewById<MaterialButton>(R.id.btn_incall_answer)
 
-        scenario.onActivity { activity ->
-            val llIncoming =
-                activity.findViewById<View>(R.id.ll_incoming_call_actions)
-            val btnAnswer =
-                activity.findViewById<MaterialButton>(R.id.btn_incall_answer)
+        // محاكاة حالة الرنين بجعل الأزرار مرئية
+        llIncoming.visibility = View.VISIBLE
 
-            // محاكاة حالة الرنين بجعل الأزرار مرئية
-            llIncoming.visibility = View.VISIBLE
+        // النقر على زر الرد
+        btnAnswer.performClick()
 
-            // النقر على زر الرد
-            btnAnswer.performClick()
-
-            // التأكد من الاختفاء الفوري لأزرار الرد والرفض
-            assertEquals(View.GONE, llIncoming.visibility)
-        }
-        scenario.close()
+        // التأكد من الاختفاء الفوري لأزرار الرد والرفض
+        assertEquals(View.GONE, llIncoming.visibility)
+        controller.destroy()
     }
 }
