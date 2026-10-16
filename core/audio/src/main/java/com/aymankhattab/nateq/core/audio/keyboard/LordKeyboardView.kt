@@ -150,28 +150,39 @@ class LordKeyboardView @JvmOverloads constructor(
         touchHelper.invalidateRoot()
     }
 
+    override fun onLayout(
+        changed: Boolean,
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int
+    ) {
+        super.onLayout(changed, left, top, right, bottom)
+        recalculateKeyBounds()
+        touchHelper.invalidateRoot()
+    }
+
     private fun recalculateKeyBounds() {
         keyRects.clear()
         if (rows.isEmpty() || width == 0 || height == 0) return
 
         val rowCount = rows.size
         val rowHeight = height.toFloat() / rowCount
-        val horizontalPadding = 4f
-        val verticalPadding = 4f
 
         for ((rowIndex, row) in rows.withIndex()) {
-            val totalWeight = row.sumOf { it.widthWeight.toDouble() }.toFloat()
+            val totalWeight =
+                row.sumOf { it.widthWeight.toDouble() }.toFloat()
             if (totalWeight <= 0f) continue
 
-            val top = rowIndex * rowHeight + verticalPadding
-            val bottom = (rowIndex + 1) * rowHeight - verticalPadding
+            val top = rowIndex * rowHeight
+            val bottom = (rowIndex + 1) * rowHeight
             var currentX = 0f
 
             for (key in row) {
                 val keyWidth = (key.widthWeight / totalWeight) * width
-                val left = currentX + horizontalPadding
-                val right = currentX + keyWidth - horizontalPadding
-                keyRects[key] = RectF(left, top, right, bottom)
+                keyRects[key] = RectF(
+                    currentX, top, currentX + keyWidth, bottom
+                )
                 currentX += keyWidth
             }
         }
@@ -184,20 +195,28 @@ class LordKeyboardView @JvmOverloads constructor(
         val isLowVision =
             keyboardMode == SettingsRepository.KEYBOARD_MODE_LOW_VISION
         val cornerRadius = if (isLowVision) 14f else 8f
+        val keyDrawRect = RectF()
 
         for ((key, rect) in keyRects) {
             val isHovered = (key == hoveredKey)
             val currentBgPaint = if (isHovered) keyHoverBgPaint else keyBgPaint
             val currentTextPaint = if (isHovered) textHoverPaint else textPaint
 
-            canvas.drawRoundRect(
-                rect, cornerRadius, cornerRadius, currentBgPaint
-            )
-            canvas.drawRoundRect(
-                rect, cornerRadius, cornerRadius, keyBorderPaint
+            keyDrawRect.set(
+                rect.left + 4f,
+                rect.top + 4f,
+                rect.right - 4f,
+                rect.bottom - 4f
             )
 
-            val textSize = calculateTextSize(key, rect, isLowVision)
+            canvas.drawRoundRect(
+                keyDrawRect, cornerRadius, cornerRadius, currentBgPaint
+            )
+            canvas.drawRoundRect(
+                keyDrawRect, cornerRadius, cornerRadius, keyBorderPaint
+            )
+
+            val textSize = calculateTextSize(key, keyDrawRect, isLowVision)
             currentTextPaint.textSize = textSize
 
             currentTextPaint.getTextBounds(
@@ -225,7 +244,7 @@ class LordKeyboardView @JvmOverloads constructor(
      * تمرير أحداث التحويم (Hover Events) لمساعد إمكانية الوصول
      * لتمكين استكشاف اللمس (Touch Exploration) الفعلي في TalkBack.
      */
-    override fun dispatchHoverEvent(event: MotionEvent): Boolean {
+    public override fun dispatchHoverEvent(event: MotionEvent): Boolean {
         val handled = touchHelper.dispatchHoverEvent(event)
 
         val isScreenReader =
