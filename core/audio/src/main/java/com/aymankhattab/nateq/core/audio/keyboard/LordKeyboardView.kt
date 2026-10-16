@@ -102,6 +102,7 @@ class LordKeyboardView @JvmOverloads constructor(
     private var touchDownTime = 0L
     private val swipeMinDistance = 140f
     private val swipeMaxDuration = 400L
+    private var isMultiTouch = false
 
     init {
         isFocusable = true
@@ -298,11 +299,36 @@ class LordKeyboardView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        val isScreenReader =
-            AccessibilityUtils.isScreenReaderEnabled(context)
+        // عند تفعيل استكشاف اللمس، يتولى قارئ الشاشة اللمسات المفردة عبر
+        // dispatchHoverEvent و ExploreByTouchHelper، ونترك أحداث اللمس الخام
+        // تماماً للنظام لتنفيذ إيماءات التمرير والسحب بإصبعين دون أي اعتراض
+        if (AccessibilityUtils.isTouchExplorationEnabled(context)) {
+            if (hoveredKey != null) {
+                hoveredKey = null
+                invalidate()
+            }
+            return false
+        }
 
-        // إذا كان قارئ الشاشة نشطاً، نتجنب اعتراض لمسات أندرويد المتعددة
-        if (isScreenReader && event.pointerCount > 1) {
+        val action = event.actionMasked
+        val pointerCount = event.pointerCount
+
+        // كشف اللمس المتعدد (إصبعين فأكثر كإيماءات السحب أو التمرير)
+        if (pointerCount > 1 || action == MotionEvent.ACTION_POINTER_DOWN) {
+            isMultiTouch = true
+            hoveredKey = null
+            invalidate()
+            return false
+        }
+
+        if (isMultiTouch) {
+            if (action == MotionEvent.ACTION_UP ||
+                action == MotionEvent.ACTION_CANCEL
+            ) {
+                isMultiTouch = false
+                hoveredKey = null
+                invalidate()
+            }
             return false
         }
 
@@ -311,8 +337,9 @@ class LordKeyboardView @JvmOverloads constructor(
         val eventTime = if (event.eventTime > 0L) event.eventTime
         else SystemClock.uptimeMillis()
 
-        when (event.actionMasked) {
+        when (action) {
             MotionEvent.ACTION_DOWN -> {
+                isMultiTouch = false
                 touchDownX = x
                 touchDownY = y
                 touchDownTime = eventTime
@@ -339,8 +366,8 @@ class LordKeyboardView @JvmOverloads constructor(
                 val diffX = x - touchDownX
                 val diffY = y - touchDownY
 
-                // التحقق من إيماءات السحب فقط عند إيقاف قارئ الشاشة
-                if (!isScreenReader && duration <= swipeMaxDuration) {
+                // التحقق من إيماءات السحب السريعة بإصبع واحد
+                if (duration <= swipeMaxDuration) {
                     if (abs(diffX) > swipeMinDistance &&
                         abs(diffX) > abs(diffY) * 1.5f
                     ) {
@@ -376,6 +403,7 @@ class LordKeyboardView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_CANCEL -> {
                 hoveredKey = null
+                isMultiTouch = false
                 invalidate()
                 return true
             }

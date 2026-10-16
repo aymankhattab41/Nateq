@@ -119,6 +119,12 @@ class LordPhoneActivity : AppCompatActivity() {
         }
     }
 
+    private val defaultDialerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        updateDefaultDialerBanner()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(
             com.google.android.material.R.style
@@ -342,26 +348,43 @@ class LordPhoneActivity : AppCompatActivity() {
         }
     }
 
-    private fun updateDefaultDialerBanner() {
-        val telecom = getSystemService(Context.TELECOM_SERVICE)
-            as? TelecomManager
-        val isDefault = telecom?.defaultDialerPackage == packageName
-        llDefaultBanner?.visibility = if (isDefault) View.GONE else View.VISIBLE
-    }
-
-    private fun requestDefaultDialerRole() {
+    private fun isDefaultDialer(): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val roleManager = getSystemService(Context.ROLE_SERVICE)
                 as? RoleManager
-            if (roleManager?.isRoleAvailable(RoleManager.ROLE_DIALER) == true &&
-                !roleManager.isRoleHeld(RoleManager.ROLE_DIALER)
+            if (roleManager != null &&
+                roleManager.isRoleHeld(RoleManager.ROLE_DIALER)
             ) {
+                return true
+            }
+        }
+        val telecom = getSystemService(Context.TELECOM_SERVICE)
+            as? TelecomManager
+        return telecom?.defaultDialerPackage == packageName
+    }
+
+    private fun updateDefaultDialerBanner() {
+        val isDefault = isDefaultDialer()
+        llDefaultBanner?.visibility =
+            if (isDefault) View.GONE else View.VISIBLE
+    }
+
+    private fun requestDefaultDialerRole() {
+        if (isDefaultDialer()) {
+            updateDefaultDialerBanner()
+            return
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roleManager = getSystemService(Context.ROLE_SERVICE)
+                as? RoleManager
+            if (roleManager?.isRoleAvailable(RoleManager.ROLE_DIALER) == true) {
                 try {
                     val intent =
                         roleManager.createRequestRoleIntent(
                             RoleManager.ROLE_DIALER
                         )
-                    startActivity(intent)
+                    defaultDialerLauncher.launch(intent)
                     return
                 } catch (e: Exception) {
                     Log.w("LordPhone", "Role request failed", e)
@@ -378,13 +401,13 @@ class LordPhoneActivity : AppCompatActivity() {
                     packageName
                 )
             }
-            startActivity(intent)
+            defaultDialerLauncher.launch(intent)
             return
         } catch (_: Exception) {}
 
         try {
             val intent = Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
-            startActivity(intent)
+            defaultDialerLauncher.launch(intent)
             return
         } catch (_: Exception) {}
 
@@ -394,7 +417,7 @@ class LordPhoneActivity : AppCompatActivity() {
             ).apply {
                 data = Uri.fromParts("package", packageName, null)
             }
-            startActivity(intent)
+            defaultDialerLauncher.launch(intent)
         } catch (_: Exception) {}
     }
 

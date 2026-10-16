@@ -171,4 +171,79 @@ class LordKeyboardViewTest {
         keyboardView.dispatchHoverEvent(hoverExit)
         assertNotNull(selectedKey)
     }
+
+    @Test
+    fun multiTouch_cancelsKeySelectionOnActionUp() {
+        keyboardView.activationMode =
+            SettingsRepository.KEYBOARD_ACTIVATION_LIFT
+
+        var selectedKey: KeyModel? = null
+        keyboardView.actionListener =
+            object : LordKeyboardView.OnKeyboardActionListener {
+                override fun onKeySelected(key: KeyModel) {
+                    selectedKey = key
+                }
+
+                override fun onKeyHover(key: KeyModel) {}
+                override fun onSwipeLeft() {}
+                override fun onSwipeRight() {}
+                override fun onSwipeDown() {}
+                override fun onSwipeUp() {}
+            }
+
+        val now = SystemClock.uptimeMillis()
+        val down = MotionEvent.obtain(
+            now, now, MotionEvent.ACTION_DOWN, 100f, 100f, 0
+        )
+        keyboardView.onTouchEvent(down)
+
+        val pointerDown = MotionEvent.obtain(
+            now, now + 10, MotionEvent.ACTION_POINTER_DOWN, 200f, 200f, 0
+        )
+        keyboardView.onTouchEvent(pointerDown)
+
+        val up = MotionEvent.obtain(
+            now, now + 50, MotionEvent.ACTION_UP, 100f, 100f, 0
+        )
+        keyboardView.onTouchEvent(up)
+
+        assertEquals(null, selectedKey)
+    }
+
+    @Test
+    fun swipeLeft_triggersOnSwipeLeftAndDoesNotCommitKey() {
+        keyboardView.activationMode =
+            SettingsRepository.KEYBOARD_ACTIVATION_LIFT
+
+        var selectedKey: KeyModel? = null
+        var swipedLeft = false
+        keyboardView.actionListener =
+            object : LordKeyboardView.OnKeyboardActionListener {
+                override fun onKeySelected(key: KeyModel) {
+                    selectedKey = key
+                }
+
+                override fun onKeyHover(key: KeyModel) {}
+                override fun onSwipeLeft() {
+                    swipedLeft = true
+                }
+                override fun onSwipeRight() {}
+                override fun onSwipeDown() {}
+                override fun onSwipeUp() {}
+            }
+
+        val now = SystemClock.uptimeMillis()
+        val down = MotionEvent.obtain(
+            now, now, MotionEvent.ACTION_DOWN, 400f, 100f, 0
+        )
+        keyboardView.onTouchEvent(down)
+
+        val up = MotionEvent.obtain(
+            now, now + 100L, MotionEvent.ACTION_UP, 200f, 100f, 0
+        )
+        keyboardView.onTouchEvent(up)
+
+        assertTrue(swipedLeft)
+        assertEquals(null, selectedKey)
+    }
 }

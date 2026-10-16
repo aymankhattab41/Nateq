@@ -113,6 +113,7 @@ class LordDialpadView @JvmOverloads constructor(
         context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
 
     private val touchHelper = DialpadTouchHelper(this)
+    private var isMultiTouch = false
 
     init {
         isFocusable = true
@@ -305,9 +306,42 @@ class LordDialpadView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        val isScreenReader = AccessibilityUtils.isScreenReaderEnabled(context)
-        // عند تشغيل قارئ الشاشة، لا نعترض إيماءات التمرير المتعددة
-        if (isScreenReader && event.pointerCount > 1) {
+        // عند تفعيل استكشاف اللمس، يتولى قارئ الشاشة اللمسات المفردة عبر
+        // dispatchHoverEvent و DialpadTouchHelper، ونترك أحداث اللمس الخام
+        // تماماً للنظام لتنفيذ إيماءات التمرير والسحب بإصبعين دون أي اعتراض
+        if (AccessibilityUtils.isTouchExplorationEnabled(context)) {
+            mainHandler.removeCallbacks(longPressRunnable)
+            stopTone()
+            if (hoveredKey != null) {
+                hoveredKey = null
+                invalidate()
+            }
+            return false
+        }
+
+        val action = event.actionMasked
+        val pointerCount = event.pointerCount
+
+        // كشف اللمس المتعدد (إصبعين فأكثر كإيماءات السحب أو التمرير)
+        if (pointerCount > 1 || action == MotionEvent.ACTION_POINTER_DOWN) {
+            isMultiTouch = true
+            mainHandler.removeCallbacks(longPressRunnable)
+            stopTone()
+            hoveredKey = null
+            invalidate()
+            return false
+        }
+
+        if (isMultiTouch) {
+            if (action == MotionEvent.ACTION_UP ||
+                action == MotionEvent.ACTION_CANCEL
+            ) {
+                isMultiTouch = false
+                mainHandler.removeCallbacks(longPressRunnable)
+                stopTone()
+                hoveredKey = null
+                invalidate()
+            }
             return false
         }
 
@@ -316,8 +350,9 @@ class LordDialpadView @JvmOverloads constructor(
         val eventTime = if (event.eventTime > 0L) event.eventTime
         else SystemClock.uptimeMillis()
 
-        when (event.actionMasked) {
+        when (action) {
             MotionEvent.ACTION_DOWN -> {
+                isMultiTouch = false
                 longPressTriggered = false
                 val key = findKeyAt(x, y)
                 if (key != null) {
@@ -359,6 +394,7 @@ class LordDialpadView @JvmOverloads constructor(
                 mainHandler.removeCallbacks(longPressRunnable)
                 stopTone()
                 hoveredKey = null
+                isMultiTouch = false
                 invalidate()
                 return true
             }
