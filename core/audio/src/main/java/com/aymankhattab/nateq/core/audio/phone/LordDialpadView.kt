@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.core.audio.phone
 
 import android.content.Context
+import android.database.ContentObserver
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -16,6 +17,7 @@ import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.util.AttributeSet
+import android.util.Log
 import android.util.TypedValue
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
@@ -26,6 +28,7 @@ import androidx.core.view.accessibility.AccessibilityNodeInfoCompat.Accessibilit
 import androidx.customview.widget.ExploreByTouchHelper
 import com.aymankhattab.nateq.core.audio.input.CommitGate
 import com.aymankhattab.nateq.core.audio.input.Source
+import com.aymankhattab.nateq.core.data.SettingsChangeProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.AccessibilityUtils
 
@@ -39,6 +42,10 @@ class LordDialpadView @JvmOverloads constructor(
     attrs: AttributeSet? = null,
     defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
+
+    companion object {
+        private const val TAG = "LordDialpadView"
+    }
 
     interface OnDialpadActionListener {
         fun onKeySelected(key: DialpadKey)
@@ -64,11 +71,15 @@ class LordDialpadView @JvmOverloads constructor(
     var hapticEnabled: Boolean = true
     var soundEnabled: Boolean = true
 
-    private val rows: List<List<DialpadKey>> =
+    private var rows: List<List<DialpadKey>> =
         DialpadLayoutHelper.getStandardDialpadKeys()
     private val flatKeys = mutableListOf<DialpadKey>()
     private val keyRects = mutableMapOf<DialpadKey, RectF>()
     private var hoveredKey: DialpadKey? = null
+
+    internal fun getKeyRect(key: DialpadKey): RectF? = keyRects[key]
+    internal fun getFlatKeys(): List<DialpadKey> = flatKeys
+    internal fun getRows(): List<List<DialpadKey>> = rows
 
     // تتبع حالة استكشاف اللمس ومنع التفعيل المبكر
     private var isExploring: Boolean = false
@@ -97,6 +108,17 @@ class LordDialpadView @JvmOverloads constructor(
         }
     }
 
+    // مراقب تغيير إعدادات النمط والحجم
+    private val settingsObserver = object : ContentObserver(
+        Handler(Looper.getMainLooper())
+    ) {
+        override fun onChange(selfChange: Boolean) {
+            refreshFromSettings()
+            requestLayout()
+            invalidate()
+        }
+    }
+
     // نغمات الهاتف DTMF
     private var toneGenerator: ToneGenerator? = null
 
@@ -117,14 +139,41 @@ class LordDialpadView @JvmOverloads constructor(
     private var isMultiTouch = false
 
     init {
+        layoutDirection = View.LAYOUT_DIRECTION_LTR
         isFocusable = true
         isFocusableInTouchMode = true
         ViewCompat.setAccessibilityDelegate(this, touchHelper)
+        refreshFromSettings()
+        initToneGenerator()
+        updateThemePaints()
+    }
+
+    fun refreshFromSettings() {
+        phoneMode = settingsRepo.getPhoneMode()
+        activationMode = settingsRepo.getPhoneActivation()
+        announceAfterLift = settingsRepo.isPhoneAnnounceAfterLiftEnabled()
+        hapticEnabled = settingsRepo.isPhoneHapticEnabled()
+        soundEnabled = settingsRepo.isPhoneSoundEnabled()
+        val style = settingsRepo.getDialpadLayoutStyle()
+        rows = DialpadLayoutHelper.getKeys(style)
+        flatKeys.clear()
         for (r in rows) {
             flatKeys.addAll(r)
         }
-        initToneGenerator()
-        updateThemePaints()
+        recalculateKeyBounds()
+        touchHelper.invalidateRoot()
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        refreshFromSettings()
+        runCatching {
+            context.contentResolver.registerContentObserver(
+                SettingsChangeProvider.uri(),
+                true,
+                settingsObserver
+            )
+        }
     }
 
     private fun initToneGenerator() {
@@ -168,7 +217,12 @@ class LordDialpadView @JvmOverloads constructor(
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val desiredWidth = MeasureSpec.getSize(widthMeasureSpec)
+        val parentWidth = MeasureSpec.getSize(widthMeasureSpec)
+        val maxAllowedWidthPx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            420f,
+            resources.displayMetrics
+        )
         val sizeLevel = settingsRepo.getDialpadSizeLevel()
         val rowHeightDp = when (sizeLevel) {
             1 -> 56
@@ -180,9 +234,16 @@ class LordDialpadView @JvmOverloads constructor(
             rowHeightDp.toFloat(),
             resources.displayMetrics
         )
-        val desiredHeight = (4 * rowHeightPx +
+        val numRows = rows.size.coerceAtLeast(1)
+        val desiredHeight = (numRows * rowHeightPx +
             paddingTop + paddingBottom).toInt()
-        val measuredWidth = resolveSize(desiredWidth, widthMeasureSpec)
+        val desiredWidth = if (parentWidth > 0) {
+            minOf(parentWidth.toFloat(), maxAllowedWidthPx).toInt()
+        } else {
+            maxAllowedWidthPx.toInt()
+        }
+        val resolvedWidth = resolveSize(desiredWidth, widthMeasureSpec)
+        val measuredWidth = minOf(resolvedWidth, maxAllowedWidthPx.toInt())
         val measuredHeight = resolveSize(desiredHeight, heightMeasureSpec)
         setMeasuredDimension(measuredWidth, measuredHeight)
     }
@@ -211,22 +272,22 @@ class LordDialpadView @JvmOverloads constructor(
         if (totalWidth <= 0f || totalHeight <= 0f) return
 
         keyRects.clear()
-        val numRows = rows.size
-        val numCols = 3
+        val numRows = rows.size.coerceAtLeast(1)
         val maxAllowedWidthPx = TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_DIP,
-            360f,
+            420f,
             resources.displayMetrics
         )
         val dialpadWidth = minOf(totalWidth, maxAllowedWidthPx)
         val startX = (totalWidth - dialpadWidth) / 2f
-        val colWidth = dialpadWidth / numCols
         val rowHeight = totalHeight / numRows
 
         for (rowIndex in rows.indices) {
             val row = rows[rowIndex]
             val top = rowIndex * rowHeight
             val bottom = top + rowHeight
+            val colCount = row.size.coerceAtLeast(1)
+            val colWidth = dialpadWidth / colCount.toFloat()
 
             for (colIndex in row.indices) {
                 val key = row[colIndex]
@@ -235,6 +296,27 @@ class LordDialpadView @JvmOverloads constructor(
                 keyRects[key] = RectF(left, top, right, bottom)
             }
         }
+
+        val isLtr = layoutDirection == View.LAYOUT_DIRECTION_LTR
+        val keysLog = keyRects.entries.joinToString("; ") { (k, r) ->
+            "${k.digit}:${r.left.toInt()},${r.top.toInt()}," +
+                "${r.right.toInt()},${r.bottom.toInt()}"
+        }
+        Log.d(
+            TAG,
+            "Dialpad layout: w=$totalWidth, h=$totalHeight, ltr=$isLtr, " +
+                "keys=$keysLog"
+        )
+    }
+
+    private fun calculateTextSize(keyHeight: Float): Float {
+        val minTextSizePx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_SP,
+            20f,
+            resources.displayMetrics
+        )
+        val mainTextSize = keyHeight * 0.42f
+        return mainTextSize.coerceIn(minTextSizePx, 76f)
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -265,8 +347,8 @@ class LordDialpadView @JvmOverloads constructor(
                 keyDrawRect, cornerRadius, cornerRadius, keyBorderPaint
             )
 
-            val mainTextSize = keyDrawRect.height() * 0.42f
-            currentTextPaint.textSize = mainTextSize.coerceIn(28f, 76f)
+            val mainTextSize = calculateTextSize(keyDrawRect.height())
+            currentTextPaint.textSize = mainTextSize
             currentTextPaint.getTextBounds(
                 key.label, 0, key.label.length, textBounds
             )
@@ -557,6 +639,9 @@ class LordDialpadView @JvmOverloads constructor(
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        runCatching {
+            context.contentResolver.unregisterContentObserver(settingsObserver)
+        }
         mainHandler.removeCallbacks(longPressRunnable)
         commitGate.resetState(clearHistory = true)
         toneGenerator?.release()
@@ -584,10 +669,35 @@ class LordDialpadView @JvmOverloads constructor(
             }
         }
 
+        override fun onPopulateNodeForHost(node: AccessibilityNodeInfoCompat) {
+            super.onPopulateNodeForHost(node)
+            val numRows = rows.size
+            val maxCols = rows.maxOfOrNull { it.size } ?: 3
+            node.setCollectionInfo(
+                AccessibilityNodeInfoCompat.CollectionInfoCompat.obtain(
+                    numRows,
+                    maxCols,
+                    false
+                )
+            )
+        }
+
         override fun onPopulateNodeForVirtualView(
             virtualViewId: Int,
             node: AccessibilityNodeInfoCompat
         ) {
+            if (virtualViewId == HOST_ID) {
+                val numRows = rows.size
+                val maxCols = rows.maxOfOrNull { it.size } ?: 3
+                node.setCollectionInfo(
+                    AccessibilityNodeInfoCompat.CollectionInfoCompat.obtain(
+                        numRows,
+                        maxCols,
+                        false
+                    )
+                )
+                return
+            }
             if (virtualViewId !in flatKeys.indices) {
                 node.contentDescription = ""
                 node.setBoundsInParent(Rect(0, 0, 1, 1))
@@ -607,6 +717,26 @@ class LordDialpadView @JvmOverloads constructor(
             } else {
                 key.spokenLabel
             }
+
+            var keyRow = 0
+            var keyCol = 0
+            for ((rIndex, r) in rows.withIndex()) {
+                val cIndex = r.indexOf(key)
+                if (cIndex != -1) {
+                    keyRow = rIndex
+                    keyCol = cIndex
+                    break
+                }
+            }
+            node.setCollectionItemInfo(
+                AccessibilityNodeInfoCompat.CollectionItemInfoCompat.obtain(
+                    keyRow,
+                    1,
+                    keyCol,
+                    1,
+                    false
+                )
+            )
 
             node.contentDescription = desc
             node.text = key.label

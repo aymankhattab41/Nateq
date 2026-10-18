@@ -1,9 +1,12 @@
 package com.aymankhattab.nateq.core.data
 
+import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -11,14 +14,16 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * حارس ع٤١-ب10: مخزن أصوات جهات الاتصال وترميزه وحسم الأولوية.
+ * حارس ع٤١-ب10، ع٤٥: مخزن أصوات جهات الاتصال وترميزه وحسم الأولوية والتطبيع.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [37])
 class ContactVoiceStoreTest {
 
-    private fun store(): ContactVoiceStore =
-        ContactVoiceStore.create(ApplicationProvider.getApplicationContext())
+    private val context: Context
+        get() = ApplicationProvider.getApplicationContext()
+
+    private fun store(): ContactVoiceStore = ContactVoiceStore.create(context)
 
     @Test
     fun codec_roundTrips() {
@@ -28,7 +33,9 @@ class ContactVoiceStoreTest {
                 voiceId = "ara-SAU-Salma",
                 speechRate = 1.2f,
                 pitch = 0.9f,
-                volume = 0.8f
+                volume = 0.8f,
+                displayName = "سلمى",
+                voiceLanguage = "ar"
             )
         )
         val decoded = VoiceProfileCodec.decode(VoiceProfileCodec.encode(map))
@@ -58,6 +65,31 @@ class ContactVoiceStoreTest {
         assertTrue(s.remove("+966500000000"))
         assertNull(s.find(listOf("+966500000000")))
         assertFalse(s.remove("+966500000000"))
+    }
+
+    @Test
+    fun store_createReturnsSingletonPerProcess() {
+        val s1 = ContactVoiceStore.create(context)
+        val s2 = ContactVoiceStore.create(context)
+        assertSame(s1, s2)
+    }
+
+    @Test
+    fun store_autoIndexesNormalizedNameAndPhoneForms() {
+        val s = store()
+        s.put(
+            "د. أحمد",
+            VoiceProfile(
+                voiceId = "ahmedVoice",
+                displayName = "د. أحمد"
+            )
+        )
+        assertEquals("ahmedVoice", s.get("احمد")?.voiceId)
+        assertEquals("ahmedVoice", s.get("د. أحمد")?.voiceId)
+
+        val entries = s.displayEntries()
+        assertEquals(1, entries.filter { it.first == "د. أحمد" }.size)
+        s.remove("د. أحمد")
     }
 
     @Test
@@ -108,5 +140,26 @@ class ContactVoiceStoreTest {
         )
         assertEquals("eng2", resolved.engine)
         assertNull(resolved.voiceId)
+    }
+
+    @Test
+    fun migration_migratesLegacyContactVoicesFile() {
+        val legacyPrefs = context.getSharedPreferences(
+            "nateq_contact_voices", Context.MODE_PRIVATE
+        )
+        val profile = VoiceProfile(voiceId = "vContactLegacy")
+        val raw = VoiceProfileCodec.encode(mapOf("0509999999" to profile))
+        legacyPrefs.edit()
+            .putString("contact_voices", raw)
+            .commit()
+
+        val repo = SettingsRepository.create(context)
+        repo.migrateAppProfilesAndContactVoicesIfNeeded()
+
+        val s = store()
+        val migrated = s.get("0509999999")
+        assertNotNull(migrated)
+        assertEquals("vContactLegacy", migrated?.voiceId)
+        s.remove("0509999999")
     }
 }

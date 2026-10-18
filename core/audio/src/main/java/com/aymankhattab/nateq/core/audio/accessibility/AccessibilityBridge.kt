@@ -28,13 +28,50 @@ object AccessibilityBridge {
         activeServiceRef.compareAndSet(service, null)
     }
 
+    fun activeService(): NateqAccessibilityService? = activeServiceRef.get()
+
+    fun isServiceConnected(): Boolean = activeServiceRef.get() != null
+
     fun updateForeground(packageName: String?, activityName: String?) {
+        if (packageName.isNullOrBlank()) return
+        if (packageName.contains("talkback", ignoreCase = true)) return
         foregroundPackageRef.set(packageName)
         foregroundActivityRef.set(activityName)
     }
 
     /** التطبيق الأمامي الحالي النشط */
     fun foregroundPackage(): String? = foregroundPackageRef.get()
+
+    /**
+     * حساب الحزمة الأمامية بدقة من نوافذ التطبيق النشطة أو المفوكسة،
+     * والرجوع إلى [foregroundPackage] كاحتياط (ع٤٥ - الأمر 2).
+     */
+    fun resolveForegroundPackage(): String? {
+        val service = activeServiceRef.get()
+        if (service != null) {
+            val appPkg = runCatching {
+                service.windows?.firstOrNull { win ->
+                    win.type == android.view.accessibility
+                        .AccessibilityWindowInfo.TYPE_APPLICATION &&
+                        (win.isActive || win.isFocused)
+                }?.root?.packageName?.toString()
+            }.getOrNull()
+            if (!appPkg.isNullOrBlank() &&
+                !appPkg.contains("talkback", ignoreCase = true)
+            ) {
+                return appPkg
+            }
+        }
+        return foregroundPackage()
+    }
+
+    /**
+     * استخراج تلميح اسم المرسل من العقدة المفوكسة أو رأس المحادثة (ع٤٥).
+     */
+    fun currentSenderHint(): String? {
+        val service = activeServiceRef.get() ?: return null
+        return service.extractCurrentSenderHint()
+    }
 
     /** النشاط الأمامي الحالي النشط */
     fun foregroundActivity(): String? = foregroundActivityRef.get()

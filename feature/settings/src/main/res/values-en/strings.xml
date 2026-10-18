@@ -49,8 +49,12 @@
     <string name="a11y_auto_profile_title">Automatic profile switching</string>
     <string name="a11y_auto_profile_summary">Applies the foreground app\'s voice profile while reading</string>
     <string name="a11y_contact_voices_manage">Manage contact voices…</string>
+    <string name="a11y_test_contact_voice">Test contact voice…</string>
     <string name="a11y_app_profiles_manage">Manage app profiles…</string>
+    <string name="a11y_test_app_profile">Test app profile voice…</string>
     <string name="a11y_voice_phone_hint">Phone number (e.g. 0500000000)</string>
+    <string name="a11y_voice_name_hint">Contact name (optional)</string>
+    <string name="a11y_pick_contact">Pick from contacts</string>
     <string name="a11y_voice_add">Add</string>
     <string name="a11y_voice_remove">Remove</string>
     <string name="a11y_voice_engine">Engine</string>
@@ -656,6 +660,8 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+- System TTS switching without ADB and wide horizontal dialpad: Automate system TTS settings to switch default engine via accessibility service with root/su fast path, session protection, and secure fallback; wide horizontal dialpad layouts (3x4 wide grid, 5x2, single row) with height levels, 420dp cap, LTR enforcement, instant settings updates, and TalkBack grid navigation
+- Custom voice per app and contact: Configure independent voice, engine, rate, and pitch per application with auto-switching when foregrounded; assign custom voices per contact for incoming calls and notifications with normalization and live testing
 - Dialpad, Keyboard, and Engine Switching: Direct call dispatching via unified CallPlacer with dual-SIM account resolution and safe fallback, CommitGate input debounce across lift-to-type and double-tap with TalkBack hover speech suppression, dedicated Arabic hamzas keyboard row and configurable button sizes for keyboard and dialpad, strict selector-based "Read More" expansion, system-wide TTS engine switching via WRITE_SECURE_SETTINGS with built-in ADB guide activity, and atomic batch persistence for auto-convert language preferences
 - Unify voice preview with event announcement speech: Preview voice now strictly mirrors natural event speech across all categories (caller, battery, time, notifications, SMS) by matching AudioAttributes, stream mode routing, category audio effects, volume/speech boosts, custom pronunciation dictionary, and Arabic speech normalization
 - Engine switching improvements and Acapella support: Next-engine switcher immediately applies the new engine\'s voice upon switching, preserves default voice when returning to Lord TTS, ensures official Acapella TTS Voices app compatibility on Android 16 and 17, and hardens Vocalizer 2 category voice persistence
@@ -1016,6 +1022,10 @@
     <string name="phone_dialpad_size_normal">Normal (48dp row height)</string>
     <string name="phone_dialpad_size_medium">Medium (56dp row height)</string>
     <string name="phone_dialpad_size_large">Large (72dp row height)</string>
+    <string name="phone_dialpad_style_title">Dialpad layout style</string>
+    <string name="phone_dialpad_style_grid_wide">Wide grid (3 columns x 4 rows)</string>
+    <string name="phone_dialpad_style_grid_5x2">Two rows of 5 digits (5x2)</string>
+    <string name="phone_dialpad_style_single_row">Single horizontal row (1-0)</string>
     <!-- WRITE_SECURE_SETTINGS guide screen -->
     <string name="title_write_secure_settings_guide">Enable Fast Engine Switching via ADB</string>
     <string name="guide_secure_settings_desc">To enable system-wide instant TTS engine switching, grant the WRITE_SECURE_SETTINGS permission once using a computer and ADB tool.</string>

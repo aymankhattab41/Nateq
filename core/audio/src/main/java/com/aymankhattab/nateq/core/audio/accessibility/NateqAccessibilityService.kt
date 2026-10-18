@@ -65,9 +65,30 @@ object ForegroundTracker : A11yFeatureHandler {
     ) {
         val pkg = event.packageName?.toString()
         val cls = event.className?.toString()
-        if (!pkg.isNullOrBlank() && !AppPolicy.isSystemSensitive(pkg)) {
-            AccessibilityBridge.updateForeground(pkg, cls)
+        if (pkg.isNullOrBlank() || AppPolicy.isSystemSensitive(pkg)) return
+
+        // تجاهل نوافذ لوحات المفاتيح وتراكب النظام وقارئ الشاشة (ع٤٥)
+        if (pkg.contains("talkback", ignoreCase = true) ||
+            pkg.contains("accessibility", ignoreCase = true)
+        ) {
+            return
         }
+        if (pkg == service.packageName) return
+
+        val isIgnoredWindow = runCatching {
+            val winId = event.windowId
+            val win = service.windows?.firstOrNull { it.id == winId }
+            win?.type == android.view.accessibility.AccessibilityWindowInfo
+                .TYPE_INPUT_METHOD ||
+                win?.type == android.view.accessibility.AccessibilityWindowInfo
+                    .TYPE_SYSTEM ||
+                win?.type == android.view.accessibility.AccessibilityWindowInfo
+                    .TYPE_ACCESSIBILITY_OVERLAY
+        }.getOrDefault(false)
+
+        if (isIgnoredWindow) return
+
+        AccessibilityBridge.updateForeground(pkg, cls)
     }
 }
 
@@ -485,6 +506,15 @@ class NateqAccessibilityService : AccessibilityService() {
         val store = stateStore ?: return
         val info = serviceInfo ?: AccessibilityServiceInfo()
 
+        if (AppPolicy.isAutomationActive()) {
+            info.eventTypes =
+                AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
+                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+            info.packageNames = null
+            serviceInfo = info
+            return
+        }
+
         if (!store.isConnected() || store.isPaused()) {
             info.eventTypes = 0
             info.packageNames = null
@@ -559,6 +589,10 @@ class NateqAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
+        if (AppPolicy.isAutomationActive()) {
+            TtsSettingsAutomation.onAccessibilityEvent(event)
+            return
+        }
         val store = stateStore
         if (store != null && store.isPaused()) return
 
@@ -761,6 +795,55 @@ class NateqAccessibilityService : AccessibilityService() {
         } finally {
             SafeNodeWalker.safeRecycle(focused)
         }
+    }
+
+    /**
+     * استخراج تلميح اسم المرسل من العقدة المفوكسة أو رأس المحادثة
+     * في التطبيقات المسموحة (ع٤٥ - الأمر 3).
+     */
+    fun extractCurrentSenderHint(): String? {
+        return runCatching {
+            val focus = findCurrentAccessibilityFocusSnapshot()
+            val focusText = focus?.readableText().orEmpty().trim()
+            if (focusText.contains(':')) {
+                val candidate = focusText.substringBefore(':').trim()
+                if (candidate.length in 2..35 && !candidate.contains('\n')) {
+                    return@runCatching candidate
+                }
+            }
+
+            val root = rootInActiveWindow ?: return@runCatching null
+            try {
+                val nodes = SafeNodeWalker.walk(root)
+                for (node in nodes) {
+                    val id = node.viewIdResourceName.orEmpty()
+                    if (id.contains("contact_name") ||
+                        id.contains("conversation_title") ||
+                        id.contains("action_bar_title") ||
+                        id.contains("toolbar")
+                    ) {
+                        val t = node.readableText().trim()
+                        if (t.isNotBlank() && t.length in 2..40 &&
+                            !t.contains('\n')
+                        ) {
+                            return@runCatching t
+                        }
+                    }
+                }
+                val topCandidate = nodes.firstOrNull { n ->
+                    n.boundsInScreen.top <= 240 &&
+                        n.boundsInScreen.height() in 20..150 &&
+                        n.readableText().isNotBlank() &&
+                        n.readableText().length in 2..35 &&
+                        !n.isClickable &&
+                        !n.readableText().contains('\n')
+                }?.readableText()?.trim()
+
+                topCandidate
+            } finally {
+                SafeNodeWalker.safeRecycle(root)
+            }
+        }.getOrNull()
     }
 
     /**

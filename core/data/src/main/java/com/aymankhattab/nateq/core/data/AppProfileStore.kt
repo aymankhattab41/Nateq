@@ -1,11 +1,13 @@
 package com.aymankhattab.nateq.core.data
 
+import android.app.ActivityManager
 import android.content.Context
-import android.content.SharedPreferences
+import android.os.Process
+import android.util.Log
 
 /**
- * ملف تعريف تطبيقٍ (ع٤١-ب11.1): إعدادات صوتٍ ومستوى تفاصيل وميزات
- * مفعّلة خاصة بحزمة تطبيق. يُخزَّن محلياً بلا مزامنة.
+ * ملف تعريف تطبيقٍ (ع٤١-ب11.1، ع٤٥): إعدادات صوتٍ ومستوى تفاصيل وميزات
+ * مفعّلة خاصة بحزمة تطبيق. مشترك بين العمليات عبر SettingsRepository.
  */
 data class AppProfile(
     val packageName: String,
@@ -15,7 +17,8 @@ data class AppProfile(
     val pitch: Float? = null,
     val volume: Float? = null,
     val detailLevel: Int? = null,
-    val features: Set<String> = emptySet()
+    val features: Set<String> = emptySet(),
+    val voiceLanguage: String? = null
 ) {
     /** تحويل الجزء الصوتي منه إلى طبقة [VoiceProfile] للحسم. */
     fun toVoiceProfile(): VoiceProfile = VoiceProfile(
@@ -23,7 +26,8 @@ data class AppProfile(
         voiceId = voiceId,
         speechRate = speechRate,
         pitch = pitch,
-        volume = volume
+        volume = volume,
+        voiceLanguage = voiceLanguage
     )
 }
 
@@ -46,7 +50,8 @@ object AppProfileCodec {
                 p.pitch?.toString().orEmpty(),
                 p.volume?.toString().orEmpty(),
                 p.detailLevel?.toString().orEmpty(),
-                p.features.joinToString(FEATURE_SEP.toString())
+                p.features.joinToString(FEATURE_SEP.toString()),
+                p.voiceLanguage.orEmpty()
             ).joinToString(FIELD.toString())
         }
 
@@ -63,6 +68,11 @@ object AppProfileCodec {
                 .split(FEATURE_SEP)
                 .filter { it.isNotBlank() }
                 .toSet()
+            val voiceLang = if (parts.size >= 9) {
+                parts[8].ifBlank { null }
+            } else {
+                null
+            }
             result[pkg] = AppProfile(
                 packageName = pkg,
                 engine = parts[1].ifBlank { null },
@@ -71,7 +81,8 @@ object AppProfileCodec {
                 pitch = parts[4].toFloatOrNull(),
                 volume = parts[5].toFloatOrNull(),
                 detailLevel = parts[6].toIntOrNull(),
-                features = features
+                features = features,
+                voiceLanguage = voiceLang
             )
         }
         return result
@@ -79,41 +90,89 @@ object AppProfileCodec {
 }
 
 /**
- * مخزن ملفات التطبيقات (ع٤١-ب11) — محليٌّ في `SharedPreferences`.
+ * مخزن ملفات التطبيقات — مشترك بين العمليات عبر SettingsRepository (ع٤٥).
  */
-class AppProfileStore(
-    private val prefs: SharedPreferences
+class AppProfileStore private constructor(
+    private val context: Context,
+    private val settings: SettingsRepository
 ) {
 
     val all: Map<String, AppProfile>
-        get() = AppProfileCodec.decode(prefs.getString(KEY, null))
+        get() = AppProfileCodec.decode(settings.getAppProfilesRaw())
 
-    fun get(packageName: String): AppProfile? = all[packageName.trim()]
+    fun get(packageName: String): AppProfile? {
+        val trimmed = packageName.trim()
+        val currentAll = all
+        val result = currentAll[trimmed]
+        val proc = detectProcessName(context)
+        Log.d(
+            TAG,
+            "AppProfile.get: proc=$proc, key=$trimmed, " +
+                "found=${result != null}, count=${currentAll.size}"
+        )
+        return result
+    }
 
+    @Synchronized
     fun put(profile: AppProfile) {
         val pkg = profile.packageName.trim()
         if (pkg.isEmpty()) return
         val map = LinkedHashMap(all)
         map[pkg] = profile.copy(packageName = pkg)
-        prefs.edit().putString(KEY, AppProfileCodec.encode(map)).apply()
+        settings.setAppProfilesRaw(AppProfileCodec.encode(map))
     }
 
+    @Synchronized
     fun remove(packageName: String): Boolean {
         val map = LinkedHashMap(all)
         if (map.remove(packageName.trim()) == null) return false
-        prefs.edit().putString(KEY, AppProfileCodec.encode(map)).apply()
+        settings.setAppProfilesRaw(AppProfileCodec.encode(map))
         return true
     }
 
     fun packages(): Set<String> = all.keys
 
     companion object {
-        private const val KEY = "app_profiles"
-        private const val PREFS = "nateq_app_profiles"
+        private const val TAG = "AppProfileStore"
 
-        fun create(context: Context): AppProfileStore =
-            AppProfileStore(
-                context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            )
+        @Volatile
+        private var instance: AppProfileStore? = null
+
+        fun create(context: Context): AppProfileStore {
+            val app = context.applicationContext ?: context
+            val current = instance
+            if (current != null && current.context === app) {
+                return current
+            }
+            return synchronized(this) {
+                val existing = instance
+                if (existing != null && existing.context === app) {
+                    existing
+                } else {
+                    AppProfileStore(
+                        app,
+                        SettingsRepository.create(app)
+                    ).also { instance = it }
+                }
+            }
+        }
+
+        private fun detectProcessName(context: Context): String {
+            val pid = Process.myPid()
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE)
+                as? ActivityManager
+            val proc = am?.runningAppProcesses
+                ?.firstOrNull { it.pid == pid }?.processName
+            return when {
+                proc?.endsWith(":tts") == true -> "tts"
+                proc == context.packageName -> "main"
+                else -> proc ?: "unknown"
+            }
+        }
+
+        @androidx.annotation.VisibleForTesting
+        fun resetInstanceForTesting() {
+            instance = null
+        }
     }
 }

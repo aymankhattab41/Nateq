@@ -93,16 +93,13 @@ object SystemTtsEngineController {
     /**
      * يغيّر محرك النطق الافتراضي للنظام إلى الحزمة المحددة مع الحفاظ على
      * إعدادات السرعة والنبرة واللغة الافتراضية للنظام دون أي تغيير.
+     * يجرّب بالترتيب:
+     * 1. مسار إذن WRITE_SECURE_SETTINGS.
+     * 2. مسار root/su إن توفر (تسريع اختياري).
+     * 3. مسار الأتمتة عبر خدمة إمكانية الوصول.
+     * 4. مسار احتياطي أخير: فتح شاشة إعدادات النطق للمستخدم.
      */
     fun setSystemEngine(context: Context, pkg: String): SetEngineResult {
-        if (!hasPermission(context)) {
-            return SetEngineResult(
-                success = false,
-                packageName = pkg,
-                reason = "WRITE_SECURE_SETTINGS permission not granted"
-            )
-        }
-
         val resolver = context.contentResolver
         val initialRate = try {
             Settings.Secure.getString(resolver, KEY_TTS_DEFAULT_RATE)
@@ -116,45 +113,133 @@ object SystemTtsEngineController {
             Settings.Secure.getString(resolver, KEY_TTS_DEFAULT_LOCALE)
         } catch (_: Throwable) { null }
 
-        val written = try {
-            Settings.Secure.putString(resolver, KEY_TTS_DEFAULT_SYNTH, pkg)
+        // 1. مسار الإذن المباشر
+        if (hasPermission(context)) {
+            val written = try {
+                Settings.Secure.putString(resolver, KEY_TTS_DEFAULT_SYNTH, pkg)
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to write $KEY_TTS_DEFAULT_SYNTH", t)
+                false
+            }
+            if (written) {
+                val verified = currentSystemEngine(context)
+                if (verified == pkg) {
+                    restoreDefaults(
+                        resolver, initialRate, initialPitch, initialLocale
+                    )
+                    return SetEngineResult(success = true, packageName = pkg)
+                }
+            }
+        }
+
+        // 2. مسار root/su الاختياري للتسريع
+        if (trySetViaSu(pkg)) {
+            val verified = currentSystemEngine(context)
+            if (verified == pkg) {
+                restoreDefaults(
+                    resolver, initialRate, initialPitch, initialLocale
+                )
+                return SetEngineResult(success = true, packageName = pkg)
+            }
+        }
+
+        // 3. مسار الأتمتة عبر خدمة إمكانية الوصول
+        if (AccessibilityBridge.isServiceConnected()) {
+            val autoResult = kotlinx.coroutines.runBlocking {
+                TtsSettingsAutomation.run(context, pkg)
+            }
+            if (autoResult.success) {
+                val verified = currentSystemEngine(context)
+                if (verified == pkg) {
+                    restoreDefaults(
+                        resolver, initialRate, initialPitch, initialLocale
+                    )
+                    return SetEngineResult(success = true, packageName = pkg)
+                }
+            }
+            Log.w(
+                TAG,
+                "TtsSettingsAutomation unverified/failed: ${autoResult.reason}"
+            )
+        } else if (!hasPermission(context)) {
+            A11ySpeechCoordinator.speakAnnouncement(
+                context = context,
+                text = "فعّل خدمة إمكانية الوصول أولاً",
+                isInterruptAllowed = true
+            )
+            openAccessibilitySettings(context)
+            return SetEngineResult(
+                success = false,
+                packageName = pkg,
+                reason = "خدمة إمكانية الوصول غير متصلة"
+            )
+        }
+
+        // 4. مسار احتياطي أخير: فتح شاشة إعدادات النطق يدوياً للمستخدم
+        openTtsSettings(context)
+        A11ySpeechCoordinator.speakAnnouncement(
+            context = context,
+            text = "تعذّر التبديل التلقائي، اختر المحرك من هذه الشاشة",
+            isInterruptAllowed = true
+        )
+        return SetEngineResult(
+            success = false,
+            packageName = pkg,
+            reason = "تعذّر التبديل التلقائي، تم فتح شاشة إعدادات النطق"
+        )
+    }
+
+    private fun trySetViaSu(pkg: String): Boolean {
+        return try {
+            val proc = Runtime.getRuntime().exec(
+                arrayOf(
+                    "su",
+                    "-c",
+                    "settings put secure $KEY_TTS_DEFAULT_SYNTH $pkg"
+                )
+            )
+            proc.waitFor(2, java.util.concurrent.TimeUnit.SECONDS) &&
+                proc.exitValue() == 0
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun openAccessibilitySettings(context: Context) {
+        try {
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
         } catch (t: Throwable) {
-            Log.e(TAG, "Failed to write $KEY_TTS_DEFAULT_SYNTH", t)
-            return SetEngineResult(
-                success = false,
-                packageName = pkg,
-                reason = t.message ?: "SecurityException"
-            )
+            Log.e(TAG, "Failed to open accessibility settings", t)
         }
+    }
 
-        if (!written) {
-            return SetEngineResult(
-                success = false,
-                packageName = pkg,
-                reason = "Settings.Secure.putString returned false"
-            )
+    private fun openTtsSettings(context: Context) {
+        try {
+            val intent = Intent("com.android.settings.TTS_SETTINGS").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to open TTS settings fallback", t)
         }
+    }
 
-        val verified = try {
-            Settings.Secure.getString(resolver, KEY_TTS_DEFAULT_SYNTH)
-        } catch (_: Throwable) { null }
-
-        if (verified != pkg) {
-            return SetEngineResult(
-                success = false,
-                packageName = pkg,
-                reason = "Verification failed: expected $pkg but was $verified"
-            )
-        }
-
-        // استعادة القيم السابقة إن تغيّرت
+    private fun restoreDefaults(
+        resolver: android.content.ContentResolver,
+        rate: String?,
+        pitch: String?,
+        locale: String?
+    ) {
         try {
             val curRate = Settings.Secure.getString(
                 resolver, KEY_TTS_DEFAULT_RATE
             )
-            if (initialRate != null && curRate != initialRate) {
+            if (rate != null && curRate != rate) {
                 Settings.Secure.putString(
-                    resolver, KEY_TTS_DEFAULT_RATE, initialRate
+                    resolver, KEY_TTS_DEFAULT_RATE, rate
                 )
             }
         } catch (_: Throwable) {}
@@ -163,9 +248,9 @@ object SystemTtsEngineController {
             val curPitch = Settings.Secure.getString(
                 resolver, KEY_TTS_DEFAULT_PITCH
             )
-            if (initialPitch != null && curPitch != initialPitch) {
+            if (pitch != null && curPitch != pitch) {
                 Settings.Secure.putString(
-                    resolver, KEY_TTS_DEFAULT_PITCH, initialPitch
+                    resolver, KEY_TTS_DEFAULT_PITCH, pitch
                 )
             }
         } catch (_: Throwable) {}
@@ -174,13 +259,11 @@ object SystemTtsEngineController {
             val curLocale = Settings.Secure.getString(
                 resolver, KEY_TTS_DEFAULT_LOCALE
             )
-            if (initialLocale != null && curLocale != initialLocale) {
+            if (locale != null && curLocale != locale) {
                 Settings.Secure.putString(
-                    resolver, KEY_TTS_DEFAULT_LOCALE, initialLocale
+                    resolver, KEY_TTS_DEFAULT_LOCALE, locale
                 )
             }
         } catch (_: Throwable) {}
-
-        return SetEngineResult(success = true, packageName = pkg)
     }
 }

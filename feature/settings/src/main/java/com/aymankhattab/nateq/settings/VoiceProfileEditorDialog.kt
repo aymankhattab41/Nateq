@@ -68,6 +68,10 @@ internal object VoiceProfileEditorDialog {
             it.isVisible = false
             root.addView(it)
         }
+        val voiceLangLabel = TextView(context).also {
+            it.isVisible = false
+            root.addView(it, matchWrap())
+        }
 
         val rate = seekRow(context, root, R.string.a11y_voice_rate, 200)
         val pitch = seekRow(context, root, R.string.a11y_voice_pitch, 200)
@@ -76,13 +80,43 @@ internal object VoiceProfileEditorDialog {
         val previewHelper = VoicePreviewHelper(context)
         val voiceNames = arrayOfNulls<List<String>>(1)
         voiceNames[0] = emptyList()
+        val currentVoiceLang = arrayOfNulls<String>(1)
+        currentVoiceLang[0] = initial.voiceLanguage
 
         var tts: TextToSpeech? = null
         var isApplyingInitial = false
 
+        fun updateVoiceLangDisplay(
+            chosenEngine: String?,
+            chosenVoice: String?
+        ) {
+            if (chosenVoice.isNullOrBlank()) {
+                voiceLangLabel.isVisible = false
+                return
+            }
+            val loc = if (isEmbeddedEngine(chosenEngine)) {
+                VoiceCatalog.declaredVoices().firstOrNull {
+                    it.name == chosenVoice
+                }?.locale
+            } else {
+                tts?.voices?.firstOrNull { it.name == chosenVoice }?.locale
+            }
+            val tag = loc?.toLanguageTag() ?: loc?.language
+                ?: chosenVoice.substringBefore('-').substringBefore('_')
+                    .takeIf { it.length in 2..3 }
+                ?: initial.voiceLanguage
+            currentVoiceLang[0] = tag
+            val disp = loc?.displayName?.ifBlank { null }
+                ?: loc?.displayLanguage?.ifBlank { null }
+                ?: tag ?: "غير محدد"
+            voiceLangLabel.text = "لغة هذا الصوت: $disp (${tag.orEmpty()})"
+            voiceLangLabel.isVisible = true
+        }
+
         fun loadVoices(enginePkg: String?) {
             voiceStatus.setText(R.string.a11y_voice_loading)
             voiceStatus.isVisible = true
+            voiceLangLabel.isVisible = false
             runCatching { tts?.shutdown() }
             tts = null
             voiceNames[0] = emptyList()
@@ -101,6 +135,7 @@ internal object VoiceProfileEditorDialog {
                 val initialIdx = initial.voiceId?.let { names.indexOf(it) }
                     ?.takeIf { it >= 0 } ?: 0
                 voiceSpinner.setSelection(initialIdx)
+                updateVoiceLangDisplay(enginePkg, names.getOrNull(initialIdx))
                 return
             }
 
@@ -132,6 +167,10 @@ internal object VoiceProfileEditorDialog {
                     val initialIdx = initial.voiceId?.let { names.indexOf(it) }
                         ?.takeIf { it >= 0 } ?: 0
                     voiceSpinner.setSelection(initialIdx)
+                    updateVoiceLangDisplay(
+                        enginePkg,
+                        names.getOrNull(initialIdx)
+                    )
                 }
             }
             val created = runCatching {
@@ -160,6 +199,25 @@ internal object VoiceProfileEditorDialog {
                 ) {
                     if (isApplyingInitial) return
                     loadVoices(enginePackages.getOrNull(position))
+                }
+
+                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+            }
+
+        voiceSpinner.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(
+                    parent: AdapterView<*>?,
+                    view: android.view.View?,
+                    position: Int,
+                    id: Long
+                ) {
+                    val names = voiceNames[0].orEmpty()
+                    val voice = names.getOrNull(position)
+                    val engine = enginePackages.getOrNull(
+                        engineSpinner.selectedItemPosition
+                    )
+                    updateVoiceLangDisplay(engine, voice)
                 }
 
                 override fun onNothingSelected(parent: AdapterView<*>?) = Unit
@@ -225,7 +283,8 @@ internal object VoiceProfileEditorDialog {
                         ),
                         speechRate = rate.progress.speedFactor(),
                         pitch = pitch.progress.speedFactor(),
-                        volume = volume.progress / 100f
+                        volume = volume.progress / 100f,
+                        voiceLanguage = currentVoiceLang[0]
                     )
                 )
             }

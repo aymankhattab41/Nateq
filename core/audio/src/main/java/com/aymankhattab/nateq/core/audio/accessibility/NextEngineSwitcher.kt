@@ -111,15 +111,6 @@ object NextEngineSwitcher {
      */
     fun switchToNext(context: Context): SwitchResult? {
         val appContext = context.applicationContext
-        if (!SystemTtsEngineController.hasPermission(appContext)) {
-            announce(
-                appContext,
-                "التبديل على مستوى الهاتف يحتاج إذناً خاصاً مرة واحدة"
-            )
-            openGuideActivity(appContext)
-            return null
-        }
-
         val engines = availableEngines(appContext)
         if (engines.isEmpty()) {
             announce(appContext, "لا يوجد محرك نطق مثبت")
@@ -149,15 +140,6 @@ object NextEngineSwitcher {
      */
     fun switchToPrevious(context: Context): SwitchResult? {
         val appContext = context.applicationContext
-        if (!SystemTtsEngineController.hasPermission(appContext)) {
-            announce(
-                appContext,
-                "التبديل على مستوى الهاتف يحتاج إذناً خاصاً مرة واحدة"
-            )
-            openGuideActivity(appContext)
-            return null
-        }
-
         val engines = availableEngines(appContext)
         if (engines.isEmpty()) {
             announce(appContext, "لا يوجد محرك نطق مثبت")

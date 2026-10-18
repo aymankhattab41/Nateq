@@ -49,8 +49,12 @@
     <string name="a11y_auto_profile_title">التبديل التلقائي للملفات</string>
     <string name="a11y_auto_profile_summary">تطبيق ملف صوت التطبيق الأمامي تلقائياً أثناء القراءة</string>
     <string name="a11y_contact_voices_manage">إدارة أصوات جهات الاتصال…</string>
+    <string name="a11y_test_contact_voice">اختبار صوت جهة اتصال…</string>
     <string name="a11y_app_profiles_manage">إدارة ملفات التطبيقات…</string>
+    <string name="a11y_test_app_profile">اختبار صوت تطبيق…</string>
     <string name="a11y_voice_phone_hint">رقم الهاتف (مثال: 0500000000)</string>
+    <string name="a11y_voice_name_hint">اسم جهة الاتصال (اختياري)</string>
+    <string name="a11y_pick_contact">اختيار من جهات الاتصال</string>
     <string name="a11y_voice_add">إضافة</string>
     <string name="a11y_voice_remove">حذف</string>
     <string name="a11y_voice_engine">المحرك</string>
@@ -666,6 +670,8 @@
 <string name="time_alarm_max_precision_summary">تستخدم منبّه النظام الدقيق (setAlarmClock) متجاوزةً كل قيود Doze والبطارية فيعمل إعلان الوقت في اللحظة المضبوطة؛ أثرُها الجانبي أن أيقونة منبّه ثابتة تظهر في شريط الحالة.</string>
 <string name="changelog_title">آخر التحديثات</string>
 <string name="changelog_text">الإصدار %1$s
+- تبديل محرك النظام بلا ADB وأرقام أفقية عريضة في الهاتف: أتمتة شاشة إعدادات النطق لاختيار المحرك الافتراضي عبر خدمة إمكانية الوصول مع مسار root السريع وحماية الجلسة والاحتياط الآمن، وترتيب أرقام لوحة الاتصال أفقياً (شبكة عريضة 3×4، صفان 5×2، صف واحد) مع مستويات الارتفاع وسقف 420dp وتثبيت الترتيب LTR والتطبيق الفوري ودعم تنقل الشبكة في TalkBack
+- صوت مستقل لكل تطبيق ولكل جهة اتصال: إمكانية تخصيص صوت ومحرك وسرعة ونبرة لكل تطبيق مع التبديل التلقائي عند فتح التطبيق، وتعيين صوت مخصص لكل جهة اتصال يُطبق على نطق مكالماتها ورسائلها مع تطبيع الأرقام والأسماء ومعاينة الصوت المباشرة
 - لوحة الاتصال والمفاتيح والمحركات: توحيد مدخل الاتصال المباشر (CallPlacer) مع دعم الشريحتين والرجوع الآمن، وبوابة الالتزام (CommitGate) لمنع تكرار الإدخال وكتم النطق أثناء استكشاف TalkBack، وصف مستقل للهمزات في لوحة المفاتيح وخيارات تكبير الأزرار، ودقة حصرية لتوسيع «قراءة المزيد»، والتبديل الفوري لمحرك تحويل النص لكلام على مستوى النظام (WRITE_SECURE_SETTINGS) مع شاشة إرشادية، والحفظ الذري المتزامن لتفضيلات اللغات لمنع فقدان البيانات
 - توحيد مسار المعاينة الصوتية مع نطق الأحداث: مواءمة مسار المعاينة بالكامل ليطابق النطق الفعلي للأحداث (المتصل، البطارية، الوقت، الإشعارات، الرسائل) عبر مطابقة السمات الصوتية (AudioAttributes) ومجرى الصوت (StreamMode) ومؤثرات الفئات، وتطبيق تعزيز الصوت والنطق وقاموس النطق والتطبيع الصوتي العربي لمنع تهجئة الكلمات
 - تحسينات تبديل المحركات ودعم محرك Acapella: التبديل السريع للمحركات يعتمد صوت المحرك الجديد فور الانتقال إليه، والحفاظ على الصوت الافتراضي ثابتاً عند الرجوع لمحرك Lord TTS، وتأكيد كشف وتوافق تطبيق Acapella TTS Voices الرسمي على أندرويد 16 و17، وتثبيت آلية حفظ أصوات محرك Vocalizer 2 للأحداث
@@ -1027,6 +1033,10 @@
     <string name="phone_dialpad_size_normal">عادي (ارتفاع الصف 48dp)</string>
     <string name="phone_dialpad_size_medium">متوسط (ارتفاع الصف 56dp)</string>
     <string name="phone_dialpad_size_large">كبير (ارتفاع الصف 72dp)</string>
+    <string name="phone_dialpad_style_title">نمط ترتيب لوحة الاتصال</string>
+    <string name="phone_dialpad_style_grid_wide">شبكة عريضة (3 أعمدة × 4 صفوف)</string>
+    <string name="phone_dialpad_style_grid_5x2">صفان من 5 أرقام (5×2)</string>
+    <string name="phone_dialpad_style_single_row">صف أفقي واحد (1-0)</string>
     <!-- شاشة إرشادات صلاحية WRITE_SECURE_SETTINGS -->
     <string name="title_write_secure_settings_guide">تفعيل التبديل السريع للمحرك عبر ADB</string>
     <string name="guide_secure_settings_desc">لتفعيل التبديل الفوري لمحرك تحويل النص إلى كلام على مستوى النظام بالكامل، يلزم منح التطبيق صلاحية WRITE_SECURE_SETTINGS لمرة واحدة عبر جهاز الحاسوب باستخدام أداة ADB.</string>
