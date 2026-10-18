@@ -21,9 +21,19 @@ internal class SnapshotPrefs(
     private val onChanged: () -> Unit = {}
 ) : SharedPreferences {
 
-    /** اللقطة الحالية — تُستبدل ذرياً عبر [replaceSnapshot] أو بعد كل كتابة. */
     @Volatile
     private var snapshot: Map<String, Any?> = delegate.all
+
+    private val preferenceChangeListener =
+        SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+            snapshot = delegate.all
+        }
+
+    init {
+        delegate.registerOnSharedPreferenceChangeListener(
+            preferenceChangeListener
+        )
+    }
 
     /** يستبدل اللقطة التي تُقرأ منها القيم دون أي مساس بالقرص — جوهر
      *  الرحلة النظيفة في [SettingsRepository.reload]. */

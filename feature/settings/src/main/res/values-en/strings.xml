@@ -656,6 +656,7 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+- Dialpad, Keyboard, and Engine Switching: Direct call dispatching via unified CallPlacer with dual-SIM account resolution and safe fallback, CommitGate input debounce across lift-to-type and double-tap with TalkBack hover speech suppression, dedicated Arabic hamzas keyboard row and configurable button sizes for keyboard and dialpad, strict selector-based "Read More" expansion, system-wide TTS engine switching via WRITE_SECURE_SETTINGS with built-in ADB guide activity, and atomic batch persistence for auto-convert language preferences
 - Unify voice preview with event announcement speech: Preview voice now strictly mirrors natural event speech across all categories (caller, battery, time, notifications, SMS) by matching AudioAttributes, stream mode routing, category audio effects, volume/speech boosts, custom pronunciation dictionary, and Arabic speech normalization
 - Engine switching improvements and Acapella support: Next-engine switcher immediately applies the new engine\'s voice upon switching, preserves default voice when returning to Lord TTS, ensures official Acapella TTS Voices app compatibility on Android 16 and 17, and hardens Vocalizer 2 category voice persistence
 - In-call screen, proximity sensor, and audio fixes: Automatically turn off screen and disable touches near ear via PROXIMITY_SCREEN_OFF_WAKE_LOCK to prevent accidental mic mute or speaker toggle by cheek contact, permanently hide incoming answer and reject actions during active calls via direct CallListener, and fix proximity sensor auto-speaker routing to reliably switch between earpiece and speaker without freezing
@@ -1006,4 +1007,21 @@
     <string name="phone_call_sim1">SIM 1</string>
     <string name="phone_call_sim2">SIM 2</string>
     <string name="phone_select_sim_title">Select SIM to Call</string>
+    <!-- Keyboard and dialpad sizing -->
+    <string name="keyboard_size_title">Keyboard Size</string>
+    <string name="keyboard_size_small">Small (40dp row height)</string>
+    <string name="keyboard_size_medium">Medium (48dp row height)</string>
+    <string name="keyboard_size_large">Large (56dp row height)</string>
+    <string name="phone_dialpad_size_title">Dialpad Buttons Size</string>
+    <string name="phone_dialpad_size_normal">Normal (48dp row height)</string>
+    <string name="phone_dialpad_size_medium">Medium (56dp row height)</string>
+    <string name="phone_dialpad_size_large">Large (72dp row height)</string>
+    <!-- WRITE_SECURE_SETTINGS guide screen -->
+    <string name="title_write_secure_settings_guide">Enable Fast Engine Switching via ADB</string>
+    <string name="guide_secure_settings_desc">To enable system-wide instant TTS engine switching, grant the WRITE_SECURE_SETTINGS permission once using a computer and ADB tool.</string>
+    <string name="guide_adb_command_label">Required ADB Command:</string>
+    <string name="guide_btn_copy_command">Copy Command to Clipboard</string>
+    <string name="guide_btn_open_dev_options">Open Developer Options</string>
+    <string name="guide_btn_open_tts_settings">Open System TTS Settings</string>
+    <string name="guide_toast_command_copied">ADB command copied to clipboard</string>
 </resources>

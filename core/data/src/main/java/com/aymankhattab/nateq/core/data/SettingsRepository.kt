@@ -233,6 +233,7 @@ class SettingsRepository(context: Context) :
         const val KEY_KEYBOARD_PHONETIC = "keyboard_phonetic"
         const val KEY_KEYBOARD_ALWAYS_SHOW_NUMBER_ROW =
             "keyboard_always_show_number_row"
+        const val KEY_KEYBOARD_SIZE_LEVEL = "keyboard_size_level"
 
         const val KEYBOARD_MODE_BLIND = "blind"
         const val KEYBOARD_MODE_LOW_VISION = "low_vision"
@@ -241,6 +242,7 @@ class SettingsRepository(context: Context) :
 
         const val KEY_PHONE_MODE = "phone_mode"
         const val KEY_PHONE_ACTIVATION = "phone_activation"
+        const val KEY_DIALPAD_SIZE_LEVEL = "dialpad_size_level"
         const val KEY_PHONE_ANNOUNCE_AFTER_LIFT =
             "phone_announce_after_lift"
         const val KEY_PHONE_HAPTIC = "phone_haptic"
@@ -268,14 +270,42 @@ class SettingsRepository(context: Context) :
         const val PHONE_RECORD_MODE_AUTO_ALL = "auto_all"
         const val PHONE_RECORD_MODE_AUTO_UNSAVED = "auto_unsaved"
 
+        @Volatile
+        private var instance: SettingsRepository? = null
+
         /**
-         * المصنّع الموحّد الوحيد لمثيل SettingsRepository — يُستعمل في كل
-         * المواقع التي لا يتوفر فيها [AnnouncementAppContext] المعرّف من :app
-         * (البند 4 — توحيد الحقن بنقطة بناء واحدة بدل بناءات متفرقة).
+         * المصنّع الموحّد الوحيد لمثيل SettingsRepository
+         * — مفرد على مستوى العملية.
          */
-        fun create(context: Context): SettingsRepository =
-            SettingsRepository(context.applicationContext)
+        fun create(context: Context): SettingsRepository {
+            val app = context.applicationContext
+            val current = instance
+            if (current != null && current.appContext === app) {
+                return current
+            }
+            return synchronized(SettingsRepository::class.java) {
+                val existing = instance
+                if (existing != null && existing.appContext === app) {
+                    existing
+                } else {
+                    SettingsRepository(app).also {
+                        instance = it
+                    }
+                }
+            }
+        }
+
+        @androidx.annotation.VisibleForTesting
+        fun resetInstanceForTesting() {
+            synchronized(SettingsRepository::class.java) {
+                instance = null
+            }
+        }
     }
+
+    private val prefsLock = Any()
+    private val localWriteSeq = java.util.concurrent.atomic.AtomicLong(0)
+    private val flushedSeq = java.util.concurrent.atomic.AtomicLong(0)
 
     /** سياق التطبيق العام لضمان عدم احتجاز سياق النشاط في المراقبين. */
     private val appContext: Context = context.applicationContext
@@ -338,6 +368,9 @@ class SettingsRepository(context: Context) :
     }
 
     init {
+        synchronized(SettingsRepository::class.java) {
+            instance = this
+        }
         runCatching {
             appContext.contentResolver.registerContentObserver(
                 SettingsChangeProvider.uri(), false, settingsObserver
@@ -378,6 +411,7 @@ class SettingsRepository(context: Context) :
         java.util.concurrent.ConcurrentHashMap<String, String>()
 
     fun reload() {
+        if (localWriteSeq.get() != flushedSeq.get()) return
         // التطبيق يعمل في عمليتين (main و :tts) وSharedPreferences يحتفظ
         // بكاش في الذاكرة لكل عملية ولا يعيد قراءة القرص تلقائياً. لتخفيف
         // عبء I/O لا نعيد القراءة إلا عندما يتغيّر توقيت الملف الفعلي (أي
@@ -413,6 +447,7 @@ class SettingsRepository(context: Context) :
         // القراءة (كتابة متزامنة من العملية الأخرى) نتخلى عن التحديث
         // هذه الجولة وتُعالَج الأحدثُ في نداء reload() تالٍ.
         if (prefsFileStamp() != stampAtEntry) return
+        if (localWriteSeq.get() != flushedSeq.get()) return
         // تطبيق اللقطة في الذاكرة (مفتاح الترحيل محفوظ من القراءة الجديدة —
         // الملف يُكتب عليه دائماً عند الترحيل فيبقى موجوداً في fresh).
         prefs.replaceSnapshot(fresh)
@@ -2116,28 +2151,56 @@ class SettingsRepository(context: Context) :
         pitch: Float,
         volume: Float
     ) {
-        ensureConvertSlotsMigrated()
-        val map = readConvertPrefs().toMutableMap()
-        val key = ConvertPreferencesCodec.normalizeLanguageTag(languageTag)
-        val entry = ConvertPreferencesCodec.entryForSave(
-            engine,
-            voiceName,
-            rate,
-            pitch,
-            volume
-        )
-        if (entry.hasAdjustment) map[key] = entry else map.remove(key)
-        writeConvertPrefs(map)
+        synchronized(prefsLock) {
+            val seq = localWriteSeq.incrementAndGet()
+            ensureConvertSlotsMigrated()
+            val map = readConvertPrefs().toMutableMap()
+            val key = ConvertPreferencesCodec.normalizeLanguageTag(languageTag)
+            val entry = ConvertPreferencesCodec.entryForSave(
+                engine,
+                voiceName,
+                rate,
+                pitch,
+                volume
+            )
+            if (entry.hasAdjustment) map[key] = entry else map.remove(key)
 
-        if (!engine.isNullOrBlank() && !voiceName.isNullOrBlank()) {
-            setPreferredVoiceForEngine(engine, key, voiceName)
-            prefs.edit().putString("preferred_voice_$key", voiceName).apply()
-        } else if (engine.isNullOrBlank() && !voiceName.isNullOrBlank()) {
-            setPreferredVoiceForEngine(ENGINE_LORD_TTS, key, voiceName)
-            prefs.edit()
-                .putString("preferred_voice_$key", voiceName)
-                .putString("primary_voice_$key", voiceName)
-                .apply()
+            val editor = prefs.edit()
+            val json = ConvertPreferencesCodec.toJson(map)
+            editor.putString(KEY_CONVERT_PREFS_JSON, json)
+            val writtenKeys = mutableListOf(KEY_CONVERT_PREFS_JSON)
+
+            if (!engine.isNullOrBlank() && !voiceName.isNullOrBlank()) {
+                val prefKey = "preferred_voice_${engine}_$key"
+                editor.putString(prefKey, voiceName)
+                writtenKeys.add(prefKey)
+
+                val langKey = "preferred_voice_$key"
+                editor.putString(langKey, voiceName)
+                writtenKeys.add(langKey)
+            } else if (engine.isNullOrBlank() && !voiceName.isNullOrBlank()) {
+                val prefKey = "preferred_voice_${ENGINE_LORD_TTS}_$key"
+                editor.putString(prefKey, voiceName)
+                writtenKeys.add(prefKey)
+
+                val langKey = "preferred_voice_$key"
+                editor.putString(langKey, voiceName)
+                writtenKeys.add(langKey)
+
+                val primaryKey = "primary_voice_$key"
+                editor.putString(primaryKey, voiceName)
+                writtenKeys.add(primaryKey)
+            }
+
+            val ok = editor.commit()
+            flushedSeq.set(seq)
+
+            val readBack = getEnginePreferenceForLanguage(languageTag)
+            Log.i(
+                TAG,
+                "[SettingsRepo] setLangPref tag=$languageTag, ok=$ok, " +
+                    "keys=$writtenKeys, readBack=$readBack"
+            )
         }
     }
 
@@ -2200,53 +2263,69 @@ class SettingsRepository(context: Context) :
         languages: Collection<String>,
         engine: String?
     ) {
-        ensureConvertSlotsMigrated()
-        val map = readConvertPrefs().toMutableMap()
-        val editor = prefs.edit()
-        val isVoc = engine == "vocalizer_embedded"
-        val isLord = engine.isNullOrBlank()
-        for (lang in languages) {
-            val key = ConvertPreferencesCodec.normalizeLanguageTag(lang)
-            val current = map[key] ?: LanguageSpeechPrefs()
-            var engineVoice = if (!isLord) {
-                val curLord = prefs.getString("preferred_voice_$key", null)
-                if (!curLord.isNullOrBlank()) {
-                    editor.putString("primary_voice_$key", curLord)
-                }
-                getPreferredVoiceForEngine(engine!!, key)
-            } else {
-                getPreferredVoiceForEngine(ENGINE_LORD_TTS, key)
-                    ?: prefs.getString("primary_voice_$key", null)
-                    ?: prefs.getString("preferred_voice_$key", null)
-            }
-            if (engineVoice.isNullOrBlank() && isVoc) {
-                engineVoice = if (key.equals("en", ignoreCase = true)) {
-                    "Samantha"
-                } else {
-                    "Laila"
-                }
-            }
-            val entry = ConvertPreferencesCodec.entryForSave(
-                engine = engine,
-                voiceName = if (isLord) null else engineVoice,
-                rate = current.rate,
-                pitch = current.pitch,
-                volume = current.volume
-            )
-            if (entry.hasAdjustment) map[key] = entry else map.remove(key)
+        synchronized(prefsLock) {
+            val seq = localWriteSeq.incrementAndGet()
+            ensureConvertSlotsMigrated()
+            val map = readConvertPrefs().toMutableMap()
+            val editor = prefs.edit()
+            val isVoc = engine == "vocalizer_embedded"
+            val isLord = engine.isNullOrBlank()
+            val writtenKeys = mutableListOf<String>()
 
-            if (isLord) {
-                val restoreVoice = engineVoice
-                    ?: VoiceIdContract.createId(key)
-                editor.putString("preferred_voice_$key", restoreVoice)
-            } else if (!engineVoice.isNullOrBlank()) {
-                editor.putString("preferred_voice_$key", engineVoice)
+            for (lang in languages) {
+                val key = ConvertPreferencesCodec.normalizeLanguageTag(lang)
+                val current = map[key] ?: LanguageSpeechPrefs()
+                var engineVoice = if (!isLord) {
+                    val curLord = prefs.getString("preferred_voice_$key", null)
+                    if (!curLord.isNullOrBlank()) {
+                        editor.putString("primary_voice_$key", curLord)
+                        writtenKeys.add("primary_voice_$key")
+                    }
+                    getPreferredVoiceForEngine(engine!!, key)
+                } else {
+                    getPreferredVoiceForEngine(ENGINE_LORD_TTS, key)
+                        ?: prefs.getString("primary_voice_$key", null)
+                        ?: prefs.getString("preferred_voice_$key", null)
+                }
+                if (engineVoice.isNullOrBlank() && isVoc) {
+                    engineVoice = if (key.equals("en", ignoreCase = true)) {
+                        "Samantha"
+                    } else {
+                        "Laila"
+                    }
+                }
+                val entry = ConvertPreferencesCodec.entryForSave(
+                    engine = engine,
+                    voiceName = if (isLord) null else engineVoice,
+                    rate = current.rate,
+                    pitch = current.pitch,
+                    volume = current.volume
+                )
+                if (entry.hasAdjustment) map[key] = entry else map.remove(key)
+
+                if (isLord) {
+                    val restoreVoice = engineVoice
+                        ?: VoiceIdContract.createId(key)
+                    editor.putString("preferred_voice_$key", restoreVoice)
+                    writtenKeys.add("preferred_voice_$key")
+                } else if (!engineVoice.isNullOrBlank()) {
+                    editor.putString("preferred_voice_$key", engineVoice)
+                    writtenKeys.add("preferred_voice_$key")
+                }
             }
+            val json = ConvertPreferencesCodec.toJson(map)
+            editor.putString(KEY_CONVERT_PREFS_JSON, json)
+            writtenKeys.add(KEY_CONVERT_PREFS_JSON)
+
+            val ok = editor.commit()
+            flushedSeq.set(seq)
+
+            Log.i(
+                TAG,
+                "[SettingsRepo] setEngineForAllLanguages engine=$engine, " +
+                    "ok=$ok, keysCount=${writtenKeys.size}"
+            )
         }
-        editor.putString(
-            KEY_CONVERT_PREFS_JSON,
-            ConvertPreferencesCodec.toJson(map)
-        ).commit()
     }
 
     private fun writeConvertPrefs(map: Map<String, LanguageSpeechPrefs>) {
@@ -2467,6 +2546,8 @@ class SettingsRepository(context: Context) :
         key == "power_saver_battery_threshold" -> value.coerceIn(0, 100)
         key == "battery_sound_cue_mode" -> value.coerceIn(0, 2)
         key == "a11y_service_pause_level" -> value.coerceIn(1, 2)
+        key == KEY_KEYBOARD_SIZE_LEVEL -> value.coerceIn(0, 2)
+        key == KEY_DIALPAD_SIZE_LEVEL -> value.coerceIn(0, 2)
         key.startsWith("loudness_headset_cap_") -> value.coerceIn(0, 100)
         else -> value
     }
@@ -2706,6 +2787,27 @@ class SettingsRepository(context: Context) :
             editor.putBoolean("a11y_read_more", enabled)
         }
         editor.apply()
+    }
+
+    fun getReadMoreAllowedPackages(): Set<String> {
+        val defaultSet = setOf(
+            "com.whatsapp",
+            "com.whatsapp.w4b",
+            "org.telegram.messenger",
+            "org.telegram.messenger.web",
+            "org.thunderdog.challegram",
+            "com.facebook.orca",
+            "com.google.android.apps.messaging",
+            "com.samsung.android.messaging"
+        )
+        val saved = prefs.getStringSet("read_more_allowed_packages", null)
+        return saved ?: defaultSet
+    }
+
+    fun setReadMoreAllowedPackages(packages: Set<String>) {
+        prefs.edit()
+            .putStringSet("read_more_allowed_packages", packages)
+            .apply()
     }
 
     override fun isA11yPaused(): Boolean =
@@ -3103,5 +3205,26 @@ class SettingsRepository(context: Context) :
         prefs.edit()
             .putBoolean(KEY_SPEED_DIAL_LAUNCHER_ICON, enabled)
             .commit()
+    }
+
+    fun getKeyboardSizeLevel(): Int {
+        val level = prefs.getInt(KEY_KEYBOARD_SIZE_LEVEL, 0).coerceIn(0, 2)
+        if (getKeyboardMode() == KEYBOARD_MODE_LOW_VISION && level < 1) {
+            return 1
+        }
+        return level
+    }
+
+    fun setKeyboardSizeLevel(level: Int) {
+        val clamped = level.coerceIn(0, 2)
+        prefs.edit().putInt(KEY_KEYBOARD_SIZE_LEVEL, clamped).commit()
+    }
+
+    fun getDialpadSizeLevel(): Int =
+        prefs.getInt(KEY_DIALPAD_SIZE_LEVEL, 0).coerceIn(0, 2)
+
+    fun setDialpadSizeLevel(level: Int) {
+        val clamped = level.coerceIn(0, 2)
+        prefs.edit().putInt(KEY_DIALPAD_SIZE_LEVEL, clamped).commit()
     }
 }

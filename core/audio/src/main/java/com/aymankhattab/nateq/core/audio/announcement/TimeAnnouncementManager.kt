@@ -101,8 +101,8 @@ class TimeAnnouncementManager(
     private var activeAnnounceJob: Job? = null
 
     /** بدء جدولة إعلان الوقت عبر منبه النظام. عند إعادة التفعيل أثناء تشغيل
-     *  الخدمة (isRunning=true) يُلغى المنبه القديم ويُبنى جديد بتأجيل فوري قصير
-     *  فيُنطق الوقت قريباً وليس بعد فاصل كامل (بند [6]).
+     *  الخدمة (isRunning=true) يُلغى المنبه القديم ويُبنى جديد بتأجيل فوري
+     *  قصير فيُنطق الوقت قريباً وليس بعد فاصل كامل (بند [6]).
      *
      *  [announceImmediately] يتحكم في نطق أول تفعيل: true عندما يفعّل المستخدم
      *  الإعلان بنفسه (مفتاح/زر) فيُعلن الوقت حالاً؛ false عند الإقلاع أو إعادة
@@ -115,7 +115,8 @@ class TimeAnnouncementManager(
         isRunning = true
 
         // إلغاء أي منبه سابق (نفس PendingIntent يستبدله عند جدولة جديدة) —
-        // لا حاجة لإعادة البناء لأن آلية الجدولة واحدة دائماً عبر AlarmManager.
+        // لا حاجة لإعادة البناء لأن آلية الجدولة واحدة دائماً عبر
+        // AlarmManager.
         TimeAlarmReceiver.cancel(context)
 
         // أثناء ساعات الهدوء لا ننطق ولا نرسل فترات: نضبط منبهاً واحداً عند
@@ -430,7 +431,8 @@ class TimeAnnouncementManager(
      * الصوتية وإعطاؤه الأولوية يمرّان كما هي، ويُقرأ المستوى وحده.
      */
     private fun speakCurrentTime(inCall: Boolean = false) {
-        // تُستبدل أي عقدة نطق سابقة (تتراكم النطقات المتداخلة عند تكرار الطلب).
+        // تُستبدل أي عقدة نطق سابقة (تتراكم النطقات المتداخلة عند
+        // تكرار الطلب).
         activeAnnounceJob?.cancel()
         activeAnnounceJob = announceScope.launch {
             try {
@@ -561,7 +563,9 @@ class TimeAnnouncementManager(
             settings.getTimeAnnouncementFormat()
         }.getOrNull()
             ?: "arabic_natural"
-        val use24h = runCatching { settings.isTime24Hour() }.getOrDefault(false)
+        val use24h = runCatching {
+            settings.isTime24Hour()
+        }.getOrDefault(false)
         return if (format == "digital") {
             formatDigitalTime(hour, minute, isEnglish, use24h)
         } else if (isEnglish) {
@@ -798,7 +802,8 @@ class TimeAnnouncementManager(
      *  التطبيق الفعلية — عبر القارئ الموحّد. **لا يمرّر مفتاح اللغة العام
      *  (announcement_speech_language) إطلاقاً** لأن ذلك المفتاح ملك فئة
      *  الأرقام حصراً؛ إلزاماً باستقلال فئة الساعة عن إعدادات نطق الأرقام
-     *  (انتهاك التصميم — الجولة 11 — الذي كان يجعل لغة الأرقام تحكم الساعة). */
+     *  (انتهاك التصميم — الجولة 11 — الذي كان يجعل لغة الأرقام تحكم
+     *  الساعة). */
     internal fun resolveTimeSpeechLanguage(): String {
         val categoryLang = runCatching {
             settings.getLanguageForCategory(

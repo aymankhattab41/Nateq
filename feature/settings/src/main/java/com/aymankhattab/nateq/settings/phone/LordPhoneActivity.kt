@@ -125,6 +125,10 @@ class LordPhoneActivity : AppCompatActivity() {
         updateDefaultDialerBanner()
     }
 
+    private val callPlacer = CallPlacer(this) { text ->
+        speak(text)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(
             com.google.android.material.R.style
@@ -133,7 +137,7 @@ class LordPhoneActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_lord_phone)
 
-        settingsRepo = SettingsRepository(this)
+        settingsRepo = SettingsRepository.create(this)
         initTts()
         initViews()
         handleIncomingIntent(intent)
@@ -220,13 +224,13 @@ class LordPhoneActivity : AppCompatActivity() {
         val btnCallSim1 =
             findViewById<MaterialButton>(R.id.btn_phone_call_sim1)
         btnCallSim1?.setOnClickListener {
-            makeCall(tvDisplay?.text?.toString() ?: "", 0)
+            makeCall(tvDisplay?.text?.toString() ?: "", 0, "dialpad_sim1")
         }
 
         val btnCallSim2 =
             findViewById<MaterialButton>(R.id.btn_phone_call_sim2)
         btnCallSim2?.setOnClickListener {
-            makeCall(tvDisplay?.text?.toString() ?: "", 1)
+            makeCall(tvDisplay?.text?.toString() ?: "", 1, "dialpad_sim2")
         }
 
         setupDialpad()
@@ -421,7 +425,11 @@ class LordPhoneActivity : AppCompatActivity() {
         } catch (_: Exception) {}
     }
 
-    private fun makeCall(number: String, simSlot: Int? = null) {
+    private fun makeCall(
+        number: String,
+        simSlot: Int? = null,
+        source: String = "phone_activity"
+    ) {
         val clean = number.trim()
         if (clean.isEmpty()) {
             speak("الرجاء كتابة رقم الهاتف أولاً")
@@ -429,10 +437,10 @@ class LordPhoneActivity : AppCompatActivity() {
         }
 
         if (simSlot != null) {
-            SimCallHelper.makeCall(this, clean, simSlot)
+            callPlacer.placeCall(clean, simSlot, source)
         } else {
             SimCallHelper.showSimChooserDialog(this, clean) { slot ->
-                SimCallHelper.makeCall(this, clean, slot)
+                callPlacer.placeCall(clean, slot, "${source}_sim_chooser")
             }
         }
     }
@@ -920,7 +928,7 @@ class LordPhoneActivity : AppCompatActivity() {
             holder.tvDetails.text = "$typeStr • $dateStr"
 
             holder.btnCall.setOnClickListener {
-                makeCall(item.number)
+                makeCall(item.number, null, "call_log_item")
             }
 
             // فحص وجود تسجيل صوتي لهذه المكالمة
@@ -969,7 +977,7 @@ class LordPhoneActivity : AppCompatActivity() {
                 if (speedDialTargetSlot > 0) {
                     assignContactToSpeedDial(item)
                 } else {
-                    makeCall(item.number)
+                    makeCall(item.number, null, "contacts_item")
                 }
             }
 

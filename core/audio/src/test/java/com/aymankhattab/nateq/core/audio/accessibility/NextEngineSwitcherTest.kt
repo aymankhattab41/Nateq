@@ -109,7 +109,7 @@ class NextEngineSwitcherTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val engines = NextEngineSwitcher.availableEngines(context)
         assertEquals(
-            NextEngineSwitcher.LORD_TTS_PACKAGE,
+            context.packageName,
             engines.first().packageName
         )
         assertEquals("Lord TTS", engines.first().label)

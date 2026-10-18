@@ -190,7 +190,7 @@ internal fun resolvePreviewAudioRoute(
     } else {
         null
     }
-    val settings = SettingsRepository(context.applicationContext)
+    val settings = SettingsRepository.create(context)
     val config = settings.getCategoryLoudnessConfig(effectiveCat)
     return EventLoudnessPolicy.resolveTargetStreamAndAttributes(
         category = effectiveCat,
@@ -218,7 +218,7 @@ internal fun preparePreviewText(
     val arabicNormalized = ArabicSpeechNormalizer.normalize(nfc)
     val textProcessor = TextProcessor(
         context.applicationContext,
-        SettingsRepository(context.applicationContext),
+        SettingsRepository.create(context),
         PronunciationDictionary.shared(context.applicationContext)
     )
     val processed = runCatching {
@@ -241,7 +241,7 @@ internal fun computeEffectivePreviewSpeech(
     pitch: Float,
     volume: Float
 ): Triple<Float, Float, Float> {
-    val settings = SettingsRepository(context.applicationContext)
+    val settings = SettingsRepository.create(context)
     val boost = if (runCatching { settings.isSpeechBoostEnabled() }
             .getOrDefault(false)) {
         runCatching { settings.getSpeechBoostValue() }

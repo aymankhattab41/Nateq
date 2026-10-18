@@ -12,6 +12,7 @@ import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.util.AttributeSet
+import android.util.TypedValue
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.SoundEffectConstants
@@ -20,6 +21,8 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat.AccessibilityActionCompat
 import androidx.customview.widget.ExploreByTouchHelper
+import com.aymankhattab.nateq.core.audio.input.CommitGate
+import com.aymankhattab.nateq.core.audio.input.Source
 import com.aymankhattab.nateq.core.audio.keyboard.KeyboardLayoutHelper.KeyModel
 import com.aymankhattab.nateq.core.audio.keyboard.KeyboardLayoutHelper.KeyType
 import com.aymankhattab.nateq.core.data.SettingsRepository
@@ -48,7 +51,9 @@ class LordKeyboardView @JvmOverloads constructor(
 
     var actionListener: OnKeyboardActionListener? = null
 
-    private val settingsRepo = SettingsRepository(context)
+    private val settingsRepo = SettingsRepository.create(context)
+    private val commitGate = CommitGate { activationMode }
+    private var cachedPhoneticEnabled: Boolean = false
 
     var keyboardMode: String = SettingsRepository.KEYBOARD_MODE_BLIND
         set(value) {
@@ -72,9 +77,6 @@ class LordKeyboardView @JvmOverloads constructor(
     // تتبع حالة استكشاف اللمس ومنع التفعيل المبكر
     private var isExploring: Boolean = false
     private var hoverStartTime: Long = 0L
-    private var lastCommitTime: Long = -1000L
-    private val minHoverDurationMs: Long = 40L
-    private val duplicateCommitCooldownMs: Long = 250L
 
     // تتبع النقر المزدوج في وضع Double Tap
     private var lastTappedKey: KeyModel? = null
@@ -108,7 +110,22 @@ class LordKeyboardView @JvmOverloads constructor(
         isFocusable = true
         isFocusableInTouchMode = true
         ViewCompat.setAccessibilityDelegate(this, touchHelper)
+        updateSettingsCache()
         updateThemePaints()
+    }
+
+    fun updateSettingsCache() {
+        cachedPhoneticEnabled = settingsRepo.isKeyboardPhoneticEnabled()
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        updateSettingsCache()
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        commitGate.resetState(clearHistory = true)
     }
 
     fun setKeyRows(newRows: List<List<KeyModel>>) {
@@ -118,6 +135,9 @@ class LordKeyboardView @JvmOverloads constructor(
             flatKeys.addAll(r)
         }
         hoveredKey = null
+        commitGate.resetState(clearHistory = true)
+        updateSettingsCache()
+        requestLayout()
         recalculateKeyBounds()
         touchHelper.invalidateRoot()
         invalidate()
@@ -150,6 +170,27 @@ class LordKeyboardView @JvmOverloads constructor(
         }
         textPaint.textAlign = Paint.Align.CENTER
         textHoverPaint.textAlign = Paint.Align.CENTER
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val desiredWidth = MeasureSpec.getSize(widthMeasureSpec)
+        val rowCount = if (rows.isNotEmpty()) rows.size else 5
+        val sizeLevel = settingsRepo.getKeyboardSizeLevel()
+        val rowHeightDp = when (sizeLevel) {
+            1 -> 48
+            2 -> 56
+            else -> 40
+        }
+        val rowHeightPx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            rowHeightDp.toFloat(),
+            resources.displayMetrics
+        )
+        val desiredHeight = (rowCount * rowHeightPx +
+            paddingTop + paddingBottom).toInt()
+        val measuredWidth = resolveSize(desiredWidth, widthMeasureSpec)
+        val measuredHeight = resolveSize(desiredHeight, heightMeasureSpec)
+        setMeasuredDimension(measuredWidth, measuredHeight)
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -204,6 +245,11 @@ class LordKeyboardView @JvmOverloads constructor(
             keyboardMode == SettingsRepository.KEYBOARD_MODE_LOW_VISION
         val cornerRadius = if (isLowVision) 14f else 8f
         val keyDrawRect = RectF()
+        val marginPx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            2f,
+            resources.displayMetrics
+        )
 
         for ((key, rect) in keyRects) {
             val isHovered = (key == hoveredKey)
@@ -211,10 +257,10 @@ class LordKeyboardView @JvmOverloads constructor(
             val currentTextPaint = if (isHovered) textHoverPaint else textPaint
 
             keyDrawRect.set(
-                rect.left + 4f,
-                rect.top + 4f,
-                rect.right - 4f,
-                rect.bottom - 4f
+                rect.left + marginPx,
+                rect.top + marginPx,
+                rect.right - marginPx,
+                rect.bottom - marginPx
             )
 
             canvas.drawRoundRect(
@@ -240,12 +286,17 @@ class LordKeyboardView @JvmOverloads constructor(
         rect: RectF,
         isLowVision: Boolean
     ): Float {
+        val minSp = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_SP,
+            16f,
+            resources.displayMetrics
+        )
         val baseMultiplier = if (isLowVision) 0.55f else 0.45f
         var targetSize = rect.height() * baseMultiplier
         if (key.label.length > 2) {
             targetSize *= 0.65f
         }
-        return targetSize.coerceIn(24f, 72f)
+        return targetSize.coerceAtLeast(minSp).coerceAtMost(72f)
     }
 
     /**
@@ -259,6 +310,7 @@ class LordKeyboardView @JvmOverloads constructor(
         val key = findKeyAt(event.x, event.y)
         when (event.actionMasked) {
             MotionEvent.ACTION_HOVER_ENTER -> {
+                commitGate.onHoverEnter(eventTime)
                 if (key != null) {
                     isExploring = true
                     hoverStartTime = eventTime
@@ -271,6 +323,7 @@ class LordKeyboardView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_HOVER_MOVE -> {
                 if (key != null && key != hoveredKey) {
+                    commitGate.onHoverEnter(eventTime)
                     isExploring = true
                     hoverStartTime = eventTime
                     hoveredKey = key
@@ -281,13 +334,16 @@ class LordKeyboardView @JvmOverloads constructor(
                 }
             }
             MotionEvent.ACTION_HOVER_EXIT -> {
-                if (isExploring && hoveredKey != null &&
-                    activationMode ==
-                        SettingsRepository.KEYBOARD_ACTIVATION_LIFT &&
-                    (eventTime - hoverStartTime) >= minHoverDurationMs
-                ) {
-                    val keyToCommit = hoveredKey!!
-                    commitKeyActivation(keyToCommit, eventTime)
+                val keyToCommit = hoveredKey
+                if (keyToCommit != null) {
+                    val rect = keyRects[keyToCommit]
+                    val inside = rect?.contains(event.x, event.y) ?: true
+                    commitKeyActivation(
+                        keyToCommit,
+                        Source.HOVER_EXIT,
+                        eventTime,
+                        inside
+                    )
                 }
                 isExploring = false
                 hoveredKey = null
@@ -316,6 +372,7 @@ class LordKeyboardView @JvmOverloads constructor(
         // كشف اللمس المتعدد (إصبعين فأكثر كإيماءات السحب أو التمرير)
         if (pointerCount > 1 || action == MotionEvent.ACTION_POINTER_DOWN) {
             isMultiTouch = true
+            commitGate.setMultiTouchActive(true)
             hoveredKey = null
             invalidate()
             return false
@@ -326,6 +383,7 @@ class LordKeyboardView @JvmOverloads constructor(
                 action == MotionEvent.ACTION_CANCEL
             ) {
                 isMultiTouch = false
+                commitGate.setMultiTouchActive(false)
                 hoveredKey = null
                 invalidate()
             }
@@ -340,6 +398,8 @@ class LordKeyboardView @JvmOverloads constructor(
         when (action) {
             MotionEvent.ACTION_DOWN -> {
                 isMultiTouch = false
+                commitGate.setMultiTouchActive(false)
+                commitGate.onHoverEnter(eventTime)
                 touchDownX = x
                 touchDownY = y
                 touchDownTime = eventTime
@@ -355,6 +415,7 @@ class LordKeyboardView @JvmOverloads constructor(
             MotionEvent.ACTION_MOVE -> {
                 val key = findKeyAt(x, y)
                 if (key != null && key != hoveredKey) {
+                    commitGate.onHoverEnter(eventTime)
                     hoveredKey = key
                     onKeyHovered(key)
                     invalidate()
@@ -362,6 +423,7 @@ class LordKeyboardView @JvmOverloads constructor(
                 return true
             }
             MotionEvent.ACTION_UP -> {
+                commitGate.setMultiTouchActive(false)
                 val duration = eventTime - touchDownTime
                 val diffX = x - touchDownX
                 val diffY = y - touchDownY
@@ -395,7 +457,9 @@ class LordKeyboardView @JvmOverloads constructor(
 
                 val key = hoveredKey ?: findKeyAt(x, y)
                 if (key != null) {
-                    handleKeyReleaseOrTap(key, eventTime)
+                    val rect = keyRects[key]
+                    val inside = rect?.contains(x, y) ?: true
+                    handleKeyReleaseOrTap(key, eventTime, inside)
                 }
                 hoveredKey = null
                 invalidate()
@@ -404,6 +468,8 @@ class LordKeyboardView @JvmOverloads constructor(
             MotionEvent.ACTION_CANCEL -> {
                 hoveredKey = null
                 isMultiTouch = false
+                commitGate.setMultiTouchActive(false)
+                commitGate.resetState()
                 invalidate()
                 return true
             }
@@ -428,17 +494,23 @@ class LordKeyboardView @JvmOverloads constructor(
 
     private fun handleKeyReleaseOrTap(
         key: KeyModel,
-        eventTime: Long = SystemClock.uptimeMillis()
+        eventTime: Long = SystemClock.uptimeMillis(),
+        inside: Boolean = true
     ) {
         if (activationMode == SettingsRepository.KEYBOARD_ACTIVATION_LIFT) {
-            commitKeyActivation(key, eventTime)
+            commitKeyActivation(key, Source.RAW_UP, eventTime, inside)
         } else {
             val now = if (eventTime > 0L) eventTime
             else SystemClock.uptimeMillis()
             if (lastTappedKey == key &&
                 (now - lastTapTime) <= doubleTapTimeoutMs
             ) {
-                commitKeyActivation(key, now)
+                commitKeyActivation(
+                    key,
+                    Source.ACCESSIBILITY_CLICK,
+                    now,
+                    inside
+                )
                 lastTappedKey = null
                 lastTapTime = 0L
             } else {
@@ -450,15 +522,16 @@ class LordKeyboardView @JvmOverloads constructor(
         }
     }
 
-    private fun commitKeyActivation(
+    fun commitKeyActivation(
         key: KeyModel,
-        eventTime: Long = SystemClock.uptimeMillis()
+        source: Source = Source.ACCESSIBILITY_CLICK,
+        eventTime: Long = SystemClock.uptimeMillis(),
+        inside: Boolean = true
     ) {
         val now = if (eventTime > 0L) eventTime else SystemClock.uptimeMillis()
-        if (now - lastCommitTime < duplicateCommitCooldownMs) {
+        if (!commitGate.shouldCommit(key, source, now, inside)) {
             return
         }
-        lastCommitTime = now
         triggerHaptic(isStrong = true)
         triggerSound()
         actionListener?.onKeySelected(key)
@@ -537,7 +610,7 @@ class LordKeyboardView @JvmOverloads constructor(
                 rectF.bottom.toInt()
             )
 
-            val isPhonetic = settingsRepo.isKeyboardPhoneticEnabled()
+            val isPhonetic = cachedPhoneticEnabled
             val desc = if (isPhonetic && !key.phonetic.isNullOrEmpty()) {
                 key.phonetic
             } else {
@@ -561,7 +634,7 @@ class LordKeyboardView @JvmOverloads constructor(
             if (action == AccessibilityNodeInfoCompat.ACTION_CLICK) {
                 if (virtualViewId in flatKeys.indices) {
                     val key = flatKeys[virtualViewId]
-                    commitKeyActivation(key)
+                    commitKeyActivation(key, Source.ACCESSIBILITY_CLICK)
                     return true
                 }
             }

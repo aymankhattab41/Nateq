@@ -36,9 +36,12 @@ object KeyboardLayoutHelper {
     )
 
     private val ARABIC_PHONETICS = mapOf(
-        "أ" to "ألف - أسد",
-        "إ" to "ألف مكسورة - إبريق",
-        "آ" to "ألف مدّة - آية",
+        "أ" to "أحمد",
+        "إ" to "إبراهيم",
+        "آ" to "آدم",
+        "ؤ" to "مؤمن",
+        "ئ" to "بئر",
+        "ء" to "سماء",
         "ا" to "ألف - أسد",
         "ب" to "باء - بطة",
         "ت" to "تاء - تفاحة",
@@ -68,10 +71,19 @@ object KeyboardLayoutHelper {
         "و" to "واو - وردة",
         "ي" to "ياء - يد",
         "ة" to "تاء مربوطة",
-        "ى" to "ألف مقصورة",
-        "ء" to "همزة على السطر",
-        "ئ" to "همزة على نبرة",
-        "ؤ" to "همزة على واو"
+        "ى" to "ألف مقصورة"
+    )
+
+    private val ARABIC_SPOKEN_TEXTS = mapOf(
+        "أ" to "ألف همزة فوق",
+        "إ" to "ألف همزة تحت",
+        "آ" to "ألف مدّة",
+        "ؤ" to "واو همزة",
+        "ئ" to "ياء همزة",
+        "ء" to "همزة منفردة",
+        "ا" to "ألف",
+        "ة" to "تاء مربوطة",
+        "ى" to "ألف مقصورة"
     )
 
     private val ENGLISH_PHONETICS = mapOf(
@@ -91,25 +103,30 @@ object KeyboardLayoutHelper {
             "ض", "ص", "ث", "ق", "ف", "غ", "ع", "ه", "خ", "ح", "ج"
         )
         val row1 = row1Chars.map { ch ->
-            KeyModel(ch, ch, ARABIC_PHONETICS[ch])
+            val spoken = ARABIC_SPOKEN_TEXTS[ch] ?: ch
+            KeyModel(ch, spoken, ARABIC_PHONETICS[ch])
         }
 
         val row2Chars = listOf(
             "ش", "س", "ي", "ب", "ل", "ا", "ت", "ن", "م", "ك", "ط"
         )
         val row2 = row2Chars.map { ch ->
-            KeyModel(ch, ch, ARABIC_PHONETICS[ch])
+            val spoken = ARABIC_SPOKEN_TEXTS[ch] ?: ch
+            KeyModel(ch, spoken, ARABIC_PHONETICS[ch])
         }
 
-        val row3 = mutableListOf<KeyModel>()
-        row3.add(
-            KeyModel("ء", "همزة", ARABIC_PHONETICS["ء"], widthWeight = 1.0f)
-        )
-        val midChars = listOf("ذ", "د", "ز", "ر", "و", "ظ", "ة", "ى")
-        midChars.forEach { ch ->
-            row3.add(KeyModel(ch, ch, ARABIC_PHONETICS[ch]))
+        val row3Hamzas = listOf("أ", "إ", "آ", "ؤ", "ئ", "ء")
+        val row3 = row3Hamzas.map { ch ->
+            val spoken = ARABIC_SPOKEN_TEXTS[ch] ?: ch
+            KeyModel(ch, spoken, ARABIC_PHONETICS[ch])
         }
-        row3.add(
+
+        val row4Chars = listOf("ذ", "د", "ز", "ر", "و", "ظ", "ة", "ى")
+        val row4 = row4Chars.map { ch ->
+            val spoken = ARABIC_SPOKEN_TEXTS[ch] ?: ch
+            KeyModel(ch, spoken, ARABIC_PHONETICS[ch])
+        }.toMutableList()
+        row4.add(
             KeyModel(
                 label = "⌫",
                 spokenText = "حذف",
@@ -118,7 +135,7 @@ object KeyboardLayoutHelper {
             )
         )
 
-        val row4 = listOf(
+        val row5 = listOf(
             KeyModel(
                 label = "?123",
                 spokenText = "الأرقام والرموز",
@@ -129,13 +146,13 @@ object KeyboardLayoutHelper {
                 label = "🌐",
                 spokenText = "تبديل اللغة",
                 type = KeyType.ACTION_SWITCH_LANG,
-                widthWeight = 1.1f
+                widthWeight = 1.0f
             ),
             KeyModel(
                 label = "ً",
                 spokenText = "التشكيل",
                 type = KeyType.ACTION_TASHKEEL,
-                widthWeight = 1.1f
+                widthWeight = 1.0f
             ),
             KeyModel(
                 label = "مسافة",
@@ -148,11 +165,11 @@ object KeyboardLayoutHelper {
                 label = "↵",
                 spokenText = "إدخال",
                 type = KeyType.ACTION_ENTER,
-                widthWeight = 1.5f
+                widthWeight = 1.3f
             )
         )
 
-        return listOf(row1, row2, row3, row4)
+        return listOf(row1, row2, row3, row4, row5)
     }
 
     fun getEnglishRows(isCaps: Boolean = false): List<List<KeyModel>> {

@@ -36,6 +36,7 @@ import com.aymankhattab.nateq.core.audio.keyboard.KeyboardLayoutHelper.KeyModel
 import com.aymankhattab.nateq.core.audio.keyboard.KeyboardLayoutHelper.KeyType
 import com.aymankhattab.nateq.core.audio.keyboard.KeyboardLayoutHelper.KeyboardLayer
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.util.AccessibilityUtils
 import java.util.Locale
 
 /**
@@ -67,11 +68,19 @@ class LordKeyboardService : InputMethodService(),
 
     override fun onCreate() {
         super.onCreate()
-        settingsRepo = SettingsRepository(this)
+        settingsRepo = SettingsRepository.create(this)
         initTts()
     }
 
     private fun initTts() {
+        val defaultEngine = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.TTS_DEFAULT_SYNTH
+        )
+        if (defaultEngine == packageName) {
+            isTtsReady = false
+            return
+        }
         tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 tts?.language = Locale("ar")
@@ -370,6 +379,9 @@ class LordKeyboardService : InputMethodService(),
     }
 
     override fun onKeyHover(key: KeyModel) {
+        if (AccessibilityUtils.isTouchExplorationEnabled(this)) {
+            return
+        }
         if (isPasswordField) {
             speakText("رمز محمي")
             return

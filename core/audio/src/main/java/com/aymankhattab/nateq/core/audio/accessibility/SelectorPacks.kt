@@ -36,6 +36,23 @@ object SelectorPacks {
         "mostrar más"
     )
 
+    // كلمات دلالية إضافية لإجراءات التوسيع وقراءة المزيد (ع٤٣-3)
+    val EXPAND_ACTION_KEYWORDS = listOf(
+        "توسيع",
+        "توسعة",
+        "عرض بالكامل",
+        "إظهار بالكامل",
+        "عرض كامل",
+        "إظهار كامل",
+        "عرض النص كاملا",
+        "عرض النص كامل",
+        "عرض الرسالة كاملة",
+        "expand",
+        "show full",
+        "read full",
+        "view full"
+    )
+
     // كلمات القائمة السوداء لمنع الضغط الخطأ على عناصر مثل "More options"
     val DISALLOWED_KEYWORDS = listOf(
         "options",
@@ -194,6 +211,52 @@ object SelectorPacks {
         // إزالة علامات الترقيم والأقواس ومحارف التوجيه المحيطة
         val stripped = clean.trim { it in STRIP_CHARS }
         return READ_MORE_KEYWORDS.any { stripped == it }
+    }
+
+    /**
+     * هل النص يطابق قائمة الكلمات الصارمة لزر قراءة المزيد؟
+     */
+    fun isReadMoreText(text: CharSequence?): Boolean = isReadMoreTrigger(text)
+
+    /**
+     * هل اسم الإجراء (Action label) يمثل إجراء توسيع / قراءة المزيد؟ (ع٤٣-3)
+     * يفحص المطابقة الحرفية والجزئية مع استبعاد الكلمات المحظورة.
+     */
+    fun isReadMoreActionLabel(label: CharSequence?): Boolean {
+        if (label.isNullOrBlank()) return false
+        val clean = cleanBidi(label).trim().lowercase()
+
+        // استبعاد أي نص يحوي كلمات سوداء (خيارات/إعدادات/قائمة...)
+        if (DISALLOWED_KEYWORDS.any { clean.contains(it) }) {
+            return false
+        }
+
+        // 1. مطابقة دقيقة أولاً
+        if (isReadMoreTrigger(clean)) {
+            return true
+        }
+
+        // 2. فحص كلمات التوسيع الصريحة
+        if (EXPAND_ACTION_KEYWORDS.any { clean.contains(it) }) {
+            return true
+        }
+
+        // 3. فحص كلمات قراءة المزيد في سياق اسم الإجراء
+        for (kw in READ_MORE_KEYWORDS) {
+            if (kw == "المزيد" || kw == "more") {
+                if (clean == kw ||
+                    clean.startsWith("$kw ") ||
+                    clean.endsWith(" $kw") ||
+                    clean.contains(" $kw ")
+                ) {
+                    if (clean.length <= 30) return true
+                }
+            } else if (clean.contains(kw)) {
+                return true
+            }
+        }
+
+        return false
     }
 
     /**

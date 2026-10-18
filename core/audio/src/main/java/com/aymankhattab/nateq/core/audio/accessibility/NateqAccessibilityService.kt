@@ -882,6 +882,17 @@ class NateqAccessibilityService : AccessibilityService() {
      */
     internal suspend fun expandReadMoreInternal(prefix: String): String? {
         val focusSnapshot = findCurrentAccessibilityFocusSnapshot()
+        val appPkg = focusSnapshot?.packageName?.toString().orEmpty()
+        val settings = SettingsRepository.create(this)
+        val allowedApps = settings.getReadMoreAllowedPackages()
+        if (appPkg.isNotBlank() && !allowedApps.contains(appPkg)) {
+            Log.w(
+                TAG,
+                "[READMORE] App $appPkg is not in allowed packages"
+            )
+            return null
+        }
+
         val focusedText = focusSnapshot?.readableText().orEmpty()
         val prefixClean = prefix.trim()
 
@@ -905,7 +916,12 @@ class NateqAccessibilityService : AccessibilityService() {
         }
 
         val oldLen = focusedText.length
-        var expanded = if (focusedNode != null) {
+
+        // ع٤٣-3: تجهيز إشارة انتظار تغيّر المحتوى قبل تنفيذ التوسيع
+        // حتى لا يضيع حدث TYPE_WINDOW_CONTENT_CHANGED المتزامن مع النقر
+        val signal = AccessibilityBridge.prepareContentChangeSignal()
+
+        val expanded = if (focusedNode != null) {
             try {
                 ReadMoreExpander.tryExpand(focusedNode)
             } finally {
@@ -913,33 +929,20 @@ class NateqAccessibilityService : AccessibilityService() {
             }
         } else false
 
-        // ع٤٣-2: إذا لم ينجح التوسيع في شجرة العقدة المفوكسة، نفحص شجرة النافذة
         if (!expanded) {
-            val root = rootInActiveWindow
-            if (root != null) {
-                expanded = try {
-                    ReadMoreExpander.findAndClickReadMore(root)
-                } finally {
-                    SafeNodeWalker.safeRecycle(root)
-                }
-            }
-        }
-
-        if (!expanded) {
-            Log.w(TAG, "[READMORE] tryExpand and window scan returned false")
+            AccessibilityBridge.cancelContentChangeSignal(signal)
+            Log.w(TAG, "[READMORE] tryExpand returned false")
             return null
         }
 
-        // ع٤٣-1: انتظار سريع بتعليق غير حاجز لإشارة تغيّر المحتوى
-        val signaled = AccessibilityBridge.waitForContentChange(350L)
-        if (!signaled) {
-            delay(100L)
-        }
+        // ع٤٣-3: انتظار استجابة إشارة التغير بمهلة سريعة (250ms كحد أقصى)
+        val signaled = AccessibilityBridge.awaitContentChange(signal, 250L)
 
         // التحقق من النص المحدّث
         val updatedSnapshot = findCurrentAccessibilityFocusSnapshot()
         val updatedText = updatedSnapshot?.readableText().orEmpty()
         if (updatedText.length > oldLen) {
+            ReadMoreExpander.onExpandAttemptResult(true)
             Log.w(
                 TAG,
                 "[READMORE] Expand successful: $oldLen -> " +
@@ -948,11 +951,16 @@ class NateqAccessibilityService : AccessibilityService() {
             return updatedText
         }
 
-        // مهلة تعليق إضافية قصيرة في حال تأخر تحديث الواجهة
-        delay(120L)
+        // مهلة تعليق إضافية قصيرة جداً (60ms) فقط إن لم تكن الإشارة قد وصلت
+        if (!signaled) {
+            delay(60L)
+        }
         val finalSnapshot = findCurrentAccessibilityFocusSnapshot()
         val finalText = finalSnapshot?.readableText().orEmpty()
-        return if (finalText.length > oldLen) {
+        val didIncrease = finalText.length > oldLen
+        ReadMoreExpander.onExpandAttemptResult(didIncrease)
+
+        return if (didIncrease) {
             Log.w(
                 TAG,
                 "[READMORE] Expand successful after grace delay: " +

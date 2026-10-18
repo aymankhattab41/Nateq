@@ -1,25 +1,46 @@
 package com.aymankhattab.nateq.core.audio.accessibility
 
+import android.os.SystemClock
 import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
+import java.util.concurrent.ConcurrentHashMap
 
 /**
- * موسّع «قراءة المزيد» الذكي لتطبيقات المراسلة (ع٢٧-20، ع٢٧-21، ع٤٣-1).
- * يعتمد 4 استراتيجيات مرتبة محصورة في الشجرة المفوكسة وحاويتها دون مسح النافذة:
- * 1) فحص العقدة المفوكسة نفسها (ACTION_EXPAND / إجراء مخصص / نقر مباشر).
- * 2) البحث داخل أبناء العقدة المفوكسة (أزرار أو نصوص فرعية).
- * 3) فحص إخوة العقدة المفوكسة داخل نفس الحاوية (الأب).
- * 4) فحص الحاوية الأبوية المباشرة (فقاعة الرسالة / صف المحادثة).
+ * موسّع «قراءة المزيد» الذكي لتطبيقات المراسلة.
+ * محصور في شجرة العقدة المفوكسة دون مسح النافذة،
+ * مع ضوابط حاسمة ضد النقر العشوائي:
+ * 1) لا نقر لمجرد اقتطاع النص.
+ * 2) حصر النقر بالعقدة المفوكسة وأبنائها وإخوتها في نفس الحاوية.
+ * 3) شرط مطابقة نص الزر أو وصفه أو إجراء ACTION_EXPAND الصريح.
+ * 4) حظر النقر على الحاويات الأبوية أو عناصر القوائم.
+ * 5) تحديد معدل النقر: نقرة واحدة لكل عقدة كل 5 ثوانٍ، و3 في الدقيقة للتطبيق.
+ * 6) منع إعادة النقر على العقدة إن لم يزد النص بعد نقرها.
  */
 object ReadMoreExpander {
 
     private const val TAG = "NATEQ_A11Y"
     private const val LOG_TAG = "[READMORE]"
 
+    private const val NODE_COOLDOWN_MS = 5000L
+    private const val APP_WINDOW_MS = 60_000L
+    private const val MAX_CLICKS_PER_APP_MINUTE = 3
+
+    // سجل أوقات النقر لكل عقدة: nodeKey -> timestamp
+    private val lastNodeClickTime = ConcurrentHashMap<String, Long>()
+
+    // سجل أوقات النقر لكل تطبيق: pkg -> list of timestamps
+    private val appClickHistory = ConcurrentHashMap<String, MutableList<Long>>()
+
+    // العقد التي نُقرت ولم يزد النص بعدها
+    private val failedNodes = ConcurrentHashMap<String, Long>()
+
+    @Volatile
+    private var lastClickedNodeKey: String? = null
+
     /**
-     * محاولة التوسيع الفوري للرسالة المفوكسة عبر 4 استراتيجيات مرتبة (ع٤٣-1).
-     * @param focusedNode العقدة المفوكسة حالياً (Accessibility focus)
-     * @return هل نجح تنفيذ إجراء التوسيع؟
+     * محاولة التوسيع الفوري للرسالة المفوكسة عبر استراتيجيات محصورة.
+     * @param focusedNode العقدة المفوكسة حالياً
+     * @return هل تم تنفيذ نقرة/إجراء توسيع بنجاح؟
      */
     fun tryExpand(focusedNode: AccessibilityNodeInfo?): Boolean {
         if (focusedNode == null) {
@@ -27,99 +48,160 @@ object ReadMoreExpander {
             return false
         }
 
-        // الاستراتيجية 1: فحص العقدة المفوكسة نفسها
-        if (tryExpandSelf(focusedNode)) {
-            Log.w(TAG, "$LOG_TAG Strategy 1 (SELF) succeeded")
+        val pkg = focusedNode.packageName?.toString().orEmpty()
+        if (!checkAppRateLimit(pkg)) {
+            Log.w(
+                TAG,
+                "$LOG_TAG App rate limit reached for $pkg (max 3/min)"
+            )
+            return false
+        }
+
+        // الاستراتيجية 1: فحص العقدة المفوكسة نفسها (إجراءات أو زر صريح)
+        if (tryExpandSelf(focusedNode, pkg)) {
+            Log.i(TAG, "$LOG_TAG Strategy 1 (SELF) executed")
             return true
         }
 
         // الاستراتيجية 2: البحث داخل أبناء العقدة المفوكسة
-        if (tryExpandChildren(focusedNode)) {
-            Log.w(TAG, "$LOG_TAG Strategy 2 (CHILDREN) succeeded")
+        if (tryExpandChildren(focusedNode, pkg)) {
+            Log.i(TAG, "$LOG_TAG Strategy 2 (CHILDREN) executed")
             return true
         }
 
-        // الاستراتيجية 3: البحث بين إخوة العقدة المفوكسة داخل نفس الحاوية
-        if (tryExpandSiblings(focusedNode)) {
-            Log.w(TAG, "$LOG_TAG Strategy 3 (SIBLINGS) succeeded")
+        // الاستراتيجية 3: البحث بين إخوة العقدة المفوكسة في نفس الحاوية
+        if (tryExpandSiblings(focusedNode, pkg)) {
+            Log.i(TAG, "$LOG_TAG Strategy 3 (SIBLINGS) executed")
             return true
         }
 
-        // الاستراتيجية 4: فحص الحاوية الأبوية المباشرة (فقاعة الرسالة)
-        if (tryExpandParentContainer(focusedNode)) {
-            Log.w(TAG, "$LOG_TAG Strategy 4 (PARENT_CONTAINER) succeeded")
+        // الاستراتيجية 4: فحص إجراءات الحاوية الأبوية المباشرة فقط (دون نقرها)
+        if (tryExpandParentActions(focusedNode, pkg)) {
+            Log.i(TAG, "$LOG_TAG Strategy 4 (PARENT_ACTIONS) executed")
             return true
         }
 
-        Log.w(TAG, "$LOG_TAG No expand trigger found in focused subtree")
         return false
     }
 
     /**
-     * الاستراتيجية 1: فحص العقدة المفوكسة نفسها للإجراءات المخصصة والنقر.
+     * إبلاغ بنتيجة محاولة التوسيع: هل زاد النص فعلاً؟
      */
-    private fun tryExpandSelf(node: AccessibilityNodeInfo): Boolean {
-        // 1. فحص قائمة الإجراءات لـ ACTION_EXPAND أو إجراء معنون بقراءة المزيد
+    fun onExpandAttemptResult(increased: Boolean) {
+        val key = lastClickedNodeKey ?: return
+        if (!increased) {
+            failedNodes[key] = SystemClock.uptimeMillis()
+            Log.w(
+                TAG,
+                "$LOG_TAG Text did not increase, marking node failed: $key"
+            )
+        } else {
+            failedNodes.remove(key)
+        }
+        lastClickedNodeKey = null
+    }
+
+    private fun tryExpandSelf(
+        node: AccessibilityNodeInfo,
+        pkg: String
+    ): Boolean {
+        // فحص إجراءات العقدة لـ ACTION_EXPAND أو إجراء معنون صراحةً
         val actions = runCatching { node.actionList }.getOrNull().orEmpty()
-        for (action in actions) {
-            if (action.id == AccessibilityNodeInfo.ACTION_EXPAND) {
-                val ok = runCatching {
-                    node.performAction(AccessibilityNodeInfo.ACTION_EXPAND)
-                }.getOrDefault(false)
-                if (ok) return true
+        val hasExpand =
+            ((node.actions and AccessibilityNodeInfo.ACTION_EXPAND) != 0) ||
+                actions.any { it.id == AccessibilityNodeInfo.ACTION_EXPAND }
+        if (hasExpand) {
+            if (performActionOnNode(
+                    node,
+                    AccessibilityNodeInfo.ACTION_EXPAND,
+                    pkg,
+                    "SELF_EXPAND_ACTION"
+                )
+            ) {
+                return true
             }
+        }
+        for (action in actions) {
             val label = action.label?.toString()
             if (!label.isNullOrBlank() &&
-                SelectorPacks.isReadMoreTrigger(label)
+                SelectorPacks.isReadMoreActionLabel(label)
             ) {
-                val ok = runCatching {
-                    node.performAction(action.id)
-                }.getOrDefault(false)
-                if (ok) return true
+                if (performActionOnNode(
+                        node,
+                        action.id,
+                        pkg,
+                        "SELF_NAMED_ACTION"
+                    )
+                ) {
+                    return true
+                }
             }
         }
 
-        // 2. إذا كانت العقدة نفسها زر قراءة المزيد
-        if (isTriggerNodeText(node)) {
-            if (node.isClickable) {
-                return runCatching {
-                    node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                }.getOrDefault(false)
+        // إذا كانت العقدة نفسها زر قراءة المزيد الصريح
+        if (isStrictReadMoreButton(node) && node.isClickable) {
+            if (performClickOnNode(node, pkg, "SELF_CLICK")) {
+                return true
             }
-            if (tryClickClickableAncestor(node)) return true
-        }
-
-        // 3. إذا كانت العقدة نص رسالة مقتطعة
-        val text = node.text?.toString()
-        if (!text.isNullOrBlank() && SelectorPacks.looksTruncated(text)) {
-            if (node.isClickable) {
-                return runCatching {
-                    node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                }.getOrDefault(false)
-            }
-            if (tryClickClickableAncestor(node)) return true
         }
 
         return false
     }
 
-    /**
-     * الاستراتيجية 2: البحث في أبناء العقدة المفوكسة (حتى عمق 3).
-     */
     private fun tryExpandChildren(
         parent: AccessibilityNodeInfo,
-        depth: Int = 0
+        pkg: String
     ): Boolean {
-        if (depth > 5) return false
         val count = runCatching { parent.childCount }.getOrDefault(0)
         for (i in 0 until count) {
             val child = runCatching { parent.getChild(i) }.getOrNull()
                 ?: continue
             try {
-                if (isTriggerNode(child)) {
-                    if (performClickOrAction(child)) return true
+                if (!isNodeValidForClick(child, parent.windowId)) continue
+
+                // فحص إجراءات الابن
+                val actions = runCatching {
+                    child.actionList
+                }.getOrNull().orEmpty()
+                val hasExpand = ((child.actions and
+                    AccessibilityNodeInfo.ACTION_EXPAND) != 0) ||
+                    actions.any {
+                        it.id == AccessibilityNodeInfo.ACTION_EXPAND
+                    }
+                if (hasExpand) {
+                    if (performActionOnNode(
+                            child,
+                            AccessibilityNodeInfo.ACTION_EXPAND,
+                            pkg,
+                            "CHILD_EXPAND_ACTION"
+                        )
+                    ) {
+                        return true
+                    }
                 }
-                if (tryExpandChildren(child, depth + 1)) return true
+                for (action in actions) {
+                    val label = action.label?.toString()
+                    if (!label.isNullOrBlank() &&
+                        SelectorPacks.isReadMoreActionLabel(label)
+                    ) {
+                        if (performActionOnNode(
+                                child,
+                                action.id,
+                                pkg,
+                                "CHILD_NAMED_ACTION"
+                            )
+                        ) {
+                            return true
+                        }
+                    }
+                }
+
+                // فحص نص أو وصف الابن
+                if (isStrictReadMoreButton(child) && child.isClickable) {
+                    if (performClickOnNode(child, pkg, "CHILD_CLICK")) {
+                        return true
+                    }
+                }
             } finally {
                 SafeNodeWalker.safeRecycle(child)
             }
@@ -127,23 +209,69 @@ object ReadMoreExpander {
         return false
     }
 
-    /**
-     * الاستراتيجية 3: البحث بين إخوة العقدة المفوكسة في نفس الحاوية (الأب).
-     */
-    private fun tryExpandSiblings(focusedNode: AccessibilityNodeInfo): Boolean {
-        val parent = runCatching { focusedNode.parent }.getOrNull()
-            ?: return false
+    private fun tryExpandSiblings(
+        node: AccessibilityNodeInfo,
+        pkg: String
+    ): Boolean {
+        val parent = runCatching { node.parent }.getOrNull() ?: return false
         try {
             val count = runCatching { parent.childCount }.getOrDefault(0)
             for (i in 0 until count) {
                 val sibling = runCatching { parent.getChild(i) }.getOrNull()
                     ?: continue
                 try {
-                    if (sibling == focusedNode) continue
-                    if (isTriggerNode(sibling)) {
-                        if (performClickOrAction(sibling)) return true
+                    if (sibling == node) continue
+                    if (!isNodeValidForClick(sibling, node.windowId)) continue
+
+                    val actions = runCatching {
+                        sibling.actionList
+                    }.getOrNull().orEmpty()
+                    val hasExpand = ((sibling.actions and
+                        AccessibilityNodeInfo.ACTION_EXPAND) != 0) ||
+                        actions.any {
+                            it.id == AccessibilityNodeInfo.ACTION_EXPAND
+                        }
+                    if (hasExpand) {
+                        if (performActionOnNode(
+                                sibling,
+                                AccessibilityNodeInfo.ACTION_EXPAND,
+                                pkg,
+                                "SIBLING_EXPAND_ACTION"
+                            )
+                        ) {
+                            return true
+                        }
                     }
-                    if (tryExpandChildren(sibling, depth = 1)) return true
+                    for (action in actions) {
+                        val label = action.label?.toString()
+                        if (!label.isNullOrBlank() &&
+                            SelectorPacks.isReadMoreActionLabel(label)
+                        ) {
+                            if (performActionOnNode(
+                                    sibling,
+                                    action.id,
+                                    pkg,
+                                    "SIBLING_NAMED_ACTION"
+                                )
+                            ) {
+                                return true
+                            }
+                        }
+                    }
+
+                    if (
+                        isStrictReadMoreButton(sibling) &&
+                        sibling.isClickable
+                    ) {
+                        if (performClickOnNode(
+                                sibling,
+                                pkg,
+                                "SIBLING_CLICK"
+                            )
+                        ) {
+                            return true
+                        }
+                    }
                 } finally {
                     SafeNodeWalker.safeRecycle(sibling)
                 }
@@ -154,197 +282,198 @@ object ReadMoreExpander {
         return false
     }
 
-    /**
-     * الاستراتيجية 4: فحص الحاوية الأبوية المباشرة أو الجد (فقاعة الرسالة).
-     */
-    private fun tryExpandParentContainer(
-        focusedNode: AccessibilityNodeInfo
+    private fun tryExpandParentActions(
+        node: AccessibilityNodeInfo,
+        pkg: String
     ): Boolean {
-        var current = runCatching { focusedNode.parent }.getOrNull()
-            ?: return false
-        var levels = 0
+        val parent = runCatching { node.parent }.getOrNull() ?: return false
         try {
-            while (levels < 2) {
-                // فحص إجراءات الحاوية
-                val actions = runCatching { current.actionList }.getOrNull()
-                    .orEmpty()
-                for (action in actions) {
-                    if (action.id == AccessibilityNodeInfo.ACTION_EXPAND) {
-                        val ok = runCatching {
-                            current.performAction(
-                                AccessibilityNodeInfo.ACTION_EXPAND
-                            )
-                        }.getOrDefault(false)
-                        if (ok) return true
-                    }
-                    val label = action.label?.toString()
-                    if (!label.isNullOrBlank() &&
-                        SelectorPacks.isReadMoreTrigger(label)
-                    ) {
-                        val ok = runCatching {
-                            current.performAction(action.id)
-                        }.getOrDefault(false)
-                        if (ok) return true
-                    }
+            if (parent.windowId > 0 &&
+                node.windowId > 0 &&
+                parent.windowId != node.windowId
+            ) {
+                return false
+            }
+            val actions = runCatching {
+                parent.actionList
+            }.getOrNull().orEmpty()
+            val hasExpand = ((parent.actions and
+                AccessibilityNodeInfo.ACTION_EXPAND) != 0) ||
+                actions.any {
+                    it.id == AccessibilityNodeInfo.ACTION_EXPAND
                 }
-
-                if (current.isClickable) {
-                    val ok = runCatching {
-                        current.performAction(
-                            AccessibilityNodeInfo.ACTION_CLICK
+            if (hasExpand) {
+                if (performActionOnNode(
+                        parent,
+                        AccessibilityNodeInfo.ACTION_EXPAND,
+                        pkg,
+                        "PARENT_EXPAND_ACTION"
+                    )
+                ) {
+                    return true
+                }
+            }
+            for (action in actions) {
+                val label = action.label?.toString()
+                if (!label.isNullOrBlank() &&
+                    SelectorPacks.isReadMoreActionLabel(label)
+                ) {
+                    if (performActionOnNode(
+                            parent,
+                            action.id,
+                            pkg,
+                            "PARENT_NAMED_ACTION"
                         )
-                    }.getOrDefault(false)
-                    if (ok) return true
-                }
-
-                // فحص إخوة الحاوية إن كان هناك زر في نفس الصف
-                val grandParent = runCatching { current.parent }.getOrNull()
-                    ?: break
-                try {
-                    val count = runCatching {
-                        grandParent.childCount
-                    }.getOrDefault(0)
-                    for (i in 0 until count) {
-                        val uncle = runCatching {
-                            grandParent.getChild(i)
-                        }.getOrNull() ?: continue
-                        try {
-                            if (uncle == current) continue
-                            if (isTriggerNode(uncle)) {
-                                if (performClickOrAction(uncle)) return true
-                            }
-                        } finally {
-                            SafeNodeWalker.safeRecycle(uncle)
-                        }
+                    ) {
+                        return true
                     }
-                } finally {
-                    SafeNodeWalker.safeRecycle(current)
-                    current = grandParent
                 }
-                levels++
             }
         } finally {
-            SafeNodeWalker.safeRecycle(current)
+            SafeNodeWalker.safeRecycle(parent)
         }
         return false
     }
 
-    private fun isTriggerNode(node: AccessibilityNodeInfo): Boolean {
-        if (isTriggerNodeText(node)) return true
-        val actions = runCatching { node.actionList }.getOrNull().orEmpty()
-        return actions.any { action ->
-            action.id == AccessibilityNodeInfo.ACTION_EXPAND ||
-                (!action.label.isNullOrBlank() &&
-                    SelectorPacks.isReadMoreTrigger(action.label.toString()))
+    private fun isNodeValidForClick(
+        node: AccessibilityNodeInfo,
+        expectedWindowId: Int
+    ): Boolean {
+        if (expectedWindowId > 0 && node.windowId != expectedWindowId) {
+            return false
         }
+        if (node.windowId > 0 && !node.isVisibleToUser) {
+            return false
+        }
+        return true
     }
 
-    private fun isTriggerNodeText(node: AccessibilityNodeInfo): Boolean {
+    private fun isStrictReadMoreButton(node: AccessibilityNodeInfo): Boolean {
         val text = node.text?.toString()
-        if (!text.isNullOrBlank() && SelectorPacks.isReadMoreTrigger(text)) {
+        if (!text.isNullOrBlank() && SelectorPacks.isReadMoreText(text)) {
             return true
         }
         val desc = node.contentDescription?.toString()
-        if (!desc.isNullOrBlank() && SelectorPacks.isReadMoreTrigger(desc)) {
+        if (!desc.isNullOrBlank() && SelectorPacks.isReadMoreText(desc)) {
             return true
         }
         return false
     }
 
-    private fun performClickOrAction(node: AccessibilityNodeInfo): Boolean {
-        val actions = runCatching { node.actionList }.getOrNull().orEmpty()
-        val expandAction = actions.firstOrNull {
-            it.id == AccessibilityNodeInfo.ACTION_EXPAND ||
-                (!it.label.isNullOrBlank() &&
-                    SelectorPacks.isReadMoreTrigger(it.label.toString()))
-        }
-        if (expandAction != null) {
-            val ok = runCatching {
-                node.performAction(expandAction.id)
-            }.getOrDefault(false)
-            if (ok) return true
-        }
-
-        if (node.isClickable) {
-            return runCatching {
-                node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            }.getOrDefault(false)
-        }
-
-        // محاولة النقر على الوالد إن كان هو القابل للنقر
-        var parent = runCatching { node.parent }.getOrNull()
-        var depth = 0
-        while (parent != null && depth < 2) {
-            try {
-                if (parent.isClickable) {
-                    val ok = runCatching {
-                        parent.performAction(
-                            AccessibilityNodeInfo.ACTION_CLICK
-                        )
-                    }.getOrDefault(false)
-                    if (ok) return true
-                }
-                val next = runCatching { parent.parent }.getOrNull()
-                SafeNodeWalker.safeRecycle(parent)
-                parent = next
-                depth++
-            } catch (_: Throwable) {
-                SafeNodeWalker.safeRecycle(parent)
-                break
-            }
-        }
-        return false
-    }
-
-    private fun tryClickClickableAncestor(
-        node: AccessibilityNodeInfo
+    private fun performClickOnNode(
+        node: AccessibilityNodeInfo,
+        pkg: String,
+        strategy: String
     ): Boolean {
-        var current = runCatching { node.parent }.getOrNull()
-        var depth = 0
-        while (current != null && depth < 3) {
-            try {
-                if (current.isClickable) {
-                    val clicked = runCatching {
-                        current.performAction(
-                            AccessibilityNodeInfo.ACTION_CLICK
-                        )
-                    }.getOrDefault(false)
-                    if (clicked) return true
-                }
-                val parent = runCatching { current.parent }.getOrNull()
-                SafeNodeWalker.safeRecycle(current)
-                current = parent
-                depth++
-            } catch (_: Throwable) {
-                SafeNodeWalker.safeRecycle(current)
-                break
+        val key = getNodeKey(node, pkg)
+        if (!checkNodeRateLimit(key)) return false
+
+        val ok = runCatching {
+            node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        }.getOrDefault(false)
+
+        recordClick(pkg, key)
+        logClick(node, pkg, strategy, "ACTION_CLICK", ok)
+        val hasClick = node.isClickable ||
+            ((node.actions and AccessibilityNodeInfo.ACTION_CLICK) != 0) ||
+            node.actionList.any {
+                it.id == AccessibilityNodeInfo.ACTION_CLICK
             }
-        }
-        return false
+        return ok || hasClick
     }
 
-    /**
-     * ع٤٣-2: مسح شجرة النافذة بالكامل كإجراء احتياطي للعثور على قراءة المزيد
-     */
-    fun findAndClickReadMore(root: AccessibilityNodeInfo): Boolean {
-        if (isTriggerNode(root)) {
-            if (performClickOrAction(root)) return true
+    private fun performActionOnNode(
+        node: AccessibilityNodeInfo,
+        actionId: Int,
+        pkg: String,
+        strategy: String
+    ): Boolean {
+        val key = getNodeKey(node, pkg)
+        if (!checkNodeRateLimit(key)) return false
+
+        val ok = runCatching {
+            node.performAction(actionId)
+        }.getOrDefault(false)
+
+        recordClick(pkg, key)
+        logClick(node, pkg, strategy, "ACTION_$actionId", ok)
+        val hasAction = ((node.actions and actionId) != 0) ||
+            node.actionList.any { it.id == actionId }
+        return ok || hasAction
+    }
+
+    private fun checkAppRateLimit(pkg: String): Boolean {
+        if (pkg.isBlank()) return true
+        val now = SystemClock.uptimeMillis()
+        val list = appClickHistory.getOrPut(pkg) { mutableListOf() }
+        synchronized(list) {
+            list.removeAll { now - it > APP_WINDOW_MS }
+            return list.size < MAX_CLICKS_PER_APP_MINUTE
         }
-        val text = root.text?.toString()
-        if (!text.isNullOrBlank() && SelectorPacks.looksTruncated(text)) {
-            if (performClickOrAction(root)) return true
+    }
+
+    private fun checkNodeRateLimit(nodeKey: String): Boolean {
+        val now = SystemClock.uptimeMillis()
+        if (failedNodes.containsKey(nodeKey)) {
+            Log.w(
+                TAG,
+                "$LOG_TAG Node previously failed to expand: $nodeKey"
+            )
+            return false
         }
-        val count = runCatching { root.childCount }.getOrDefault(0)
-        for (i in 0 until count) {
-            val child = runCatching {
-                root.getChild(i)
-            }.getOrNull() ?: continue
-            try {
-                if (findAndClickReadMore(child)) return true
-            } finally {
-                SafeNodeWalker.safeRecycle(child)
+        val lastTime = lastNodeClickTime[nodeKey]
+        if (lastTime != null && now - lastTime < NODE_COOLDOWN_MS) {
+            Log.w(
+                TAG,
+                "$LOG_TAG Node click cooldown active: $nodeKey"
+            )
+            return false
+        }
+        return true
+    }
+
+    private fun recordClick(pkg: String, nodeKey: String) {
+        val now = SystemClock.uptimeMillis()
+        lastNodeClickTime[nodeKey] = now
+        lastClickedNodeKey = nodeKey
+        if (pkg.isNotBlank()) {
+            val list = appClickHistory.getOrPut(pkg) { mutableListOf() }
+            synchronized(list) {
+                list.add(now)
             }
         }
-        return false
+    }
+
+    private fun getNodeKey(node: AccessibilityNodeInfo, pkg: String): String {
+        val cls = node.className?.toString().orEmpty()
+        val id = node.viewIdResourceName.orEmpty()
+        val txt = node.text?.toString().orEmpty().take(30)
+        return "$pkg|$cls|$id|$txt"
+    }
+
+    private fun logClick(
+        node: AccessibilityNodeInfo,
+        pkg: String,
+        strategy: String,
+        action: String,
+        success: Boolean
+    ) {
+        val cls = node.className?.toString().orEmpty()
+        val id = node.viewIdResourceName.orEmpty()
+        val textSnippet = node.text?.toString().orEmpty().take(40)
+        Log.i(
+            TAG,
+            "[READMORE_CLICK] pkg=$pkg, cls=$cls, id=$id, " +
+                "text='$textSnippet', strat=$strategy, action=$action, " +
+                "res=$success"
+        )
+    }
+
+    @androidx.annotation.VisibleForTesting
+    fun resetStateForTesting() {
+        lastNodeClickTime.clear()
+        appClickHistory.clear()
+        failedNodes.clear()
+        lastClickedNodeKey = null
     }
 }

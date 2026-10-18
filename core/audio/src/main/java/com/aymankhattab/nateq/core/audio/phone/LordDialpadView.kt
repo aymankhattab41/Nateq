@@ -16,6 +16,7 @@ import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.util.AttributeSet
+import android.util.TypedValue
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
@@ -23,6 +24,8 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat.AccessibilityActionCompat
 import androidx.customview.widget.ExploreByTouchHelper
+import com.aymankhattab.nateq.core.audio.input.CommitGate
+import com.aymankhattab.nateq.core.audio.input.Source
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.AccessibilityUtils
 
@@ -44,7 +47,8 @@ class LordDialpadView @JvmOverloads constructor(
 
     var actionListener: OnDialpadActionListener? = null
 
-    private val settingsRepo = SettingsRepository(context)
+    private val settingsRepo = SettingsRepository.create(context)
+    private val commitGate = CommitGate { activationMode }
 
     var phoneMode: String = SettingsRepository.PHONE_MODE_BLIND
         set(value) {
@@ -69,9 +73,6 @@ class LordDialpadView @JvmOverloads constructor(
     // تتبع حالة استكشاف اللمس ومنع التفعيل المبكر
     private var isExploring: Boolean = false
     private var hoverStartTime: Long = 0L
-    private var lastCommitTime: Long = -1000L
-    private val minHoverDurationMs: Long = 40L
-    private val duplicateCommitCooldownMs: Long = 250L
 
     // تتبع النقر المزدوج
     private var lastTappedKey: DialpadKey? = null
@@ -166,6 +167,26 @@ class LordDialpadView @JvmOverloads constructor(
         subTextPaint.textAlign = Paint.Align.CENTER
     }
 
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val desiredWidth = MeasureSpec.getSize(widthMeasureSpec)
+        val sizeLevel = settingsRepo.getDialpadSizeLevel()
+        val rowHeightDp = when (sizeLevel) {
+            1 -> 56
+            2 -> 72
+            else -> 48
+        }
+        val rowHeightPx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            rowHeightDp.toFloat(),
+            resources.displayMetrics
+        )
+        val desiredHeight = (4 * rowHeightPx +
+            paddingTop + paddingBottom).toInt()
+        val measuredWidth = resolveSize(desiredWidth, widthMeasureSpec)
+        val measuredHeight = resolveSize(desiredHeight, heightMeasureSpec)
+        setMeasuredDimension(measuredWidth, measuredHeight)
+    }
+
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         recalculateKeyBounds()
@@ -192,7 +213,14 @@ class LordDialpadView @JvmOverloads constructor(
         keyRects.clear()
         val numRows = rows.size
         val numCols = 3
-        val colWidth = totalWidth / numCols
+        val maxAllowedWidthPx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            360f,
+            resources.displayMetrics
+        )
+        val dialpadWidth = minOf(totalWidth, maxAllowedWidthPx)
+        val startX = (totalWidth - dialpadWidth) / 2f
+        val colWidth = dialpadWidth / numCols
         val rowHeight = totalHeight / numRows
 
         for (rowIndex in rows.indices) {
@@ -202,7 +230,7 @@ class LordDialpadView @JvmOverloads constructor(
 
             for (colIndex in row.indices) {
                 val key = row[colIndex]
-                val left = colIndex * colWidth
+                val left = startX + colIndex * colWidth
                 val right = left + colWidth
                 keyRects[key] = RectF(left, top, right, bottom)
             }
@@ -266,6 +294,7 @@ class LordDialpadView @JvmOverloads constructor(
         val key = findKeyAt(event.x, event.y)
         when (event.actionMasked) {
             MotionEvent.ACTION_HOVER_ENTER -> {
+                commitGate.onHoverEnter(eventTime)
                 if (key != null) {
                     isExploring = true
                     hoverStartTime = eventTime
@@ -273,29 +302,42 @@ class LordDialpadView @JvmOverloads constructor(
                     playTone(key.dtmfTone)
                     triggerHaptic(isStrong = false)
                     actionListener?.onKeyHover(key)
+                    if (key.digit == '0') {
+                        mainHandler.postDelayed(longPressRunnable, 700L)
+                    }
                     invalidate()
                 }
             }
             MotionEvent.ACTION_HOVER_MOVE -> {
                 if (key != null && key != hoveredKey) {
+                    mainHandler.removeCallbacks(longPressRunnable)
+                    commitGate.onHoverEnter(eventTime)
                     isExploring = true
                     hoverStartTime = eventTime
                     hoveredKey = key
                     playTone(key.dtmfTone)
                     triggerHaptic(isStrong = false)
                     actionListener?.onKeyHover(key)
+                    if (key.digit == '0') {
+                        mainHandler.postDelayed(longPressRunnable, 700L)
+                    }
                     invalidate()
                 }
             }
             MotionEvent.ACTION_HOVER_EXIT -> {
-                if (isExploring && hoveredKey != null &&
-                    activationMode ==
-                        SettingsRepository.PHONE_ACTIVATION_LIFT &&
-                    (eventTime - hoverStartTime) >= minHoverDurationMs
-                ) {
-                    val keyToCommit = hoveredKey!!
-                    commitKey(keyToCommit, eventTime)
+                mainHandler.removeCallbacks(longPressRunnable)
+                val keyToCommit = hoveredKey
+                if (keyToCommit != null && !longPressTriggered) {
+                    val rect = keyRects[keyToCommit]
+                    val inside = rect?.contains(event.x, event.y) ?: true
+                    commitKey(
+                        keyToCommit,
+                        Source.HOVER_EXIT,
+                        eventTime,
+                        inside
+                    )
                 }
+                longPressTriggered = false
                 isExploring = false
                 hoveredKey = null
                 stopTone()
@@ -325,6 +367,7 @@ class LordDialpadView @JvmOverloads constructor(
         // كشف اللمس المتعدد (إصبعين فأكثر كإيماءات السحب أو التمرير)
         if (pointerCount > 1 || action == MotionEvent.ACTION_POINTER_DOWN) {
             isMultiTouch = true
+            commitGate.setMultiTouchActive(true)
             mainHandler.removeCallbacks(longPressRunnable)
             stopTone()
             hoveredKey = null
@@ -337,6 +380,7 @@ class LordDialpadView @JvmOverloads constructor(
                 action == MotionEvent.ACTION_CANCEL
             ) {
                 isMultiTouch = false
+                commitGate.setMultiTouchActive(false)
                 mainHandler.removeCallbacks(longPressRunnable)
                 stopTone()
                 hoveredKey = null
@@ -353,6 +397,8 @@ class LordDialpadView @JvmOverloads constructor(
         when (action) {
             MotionEvent.ACTION_DOWN -> {
                 isMultiTouch = false
+                commitGate.setMultiTouchActive(false)
+                commitGate.onHoverEnter(eventTime)
                 longPressTriggered = false
                 val key = findKeyAt(x, y)
                 if (key != null) {
@@ -370,6 +416,7 @@ class LordDialpadView @JvmOverloads constructor(
                 if (key != null && key != hoveredKey) {
                     mainHandler.removeCallbacks(longPressRunnable)
                     longPressTriggered = false
+                    commitGate.onHoverEnter(eventTime)
                     hoveredKey = key
                     onKeyHovered(key)
                     if (key.digit == '0') {
@@ -380,12 +427,16 @@ class LordDialpadView @JvmOverloads constructor(
                 return true
             }
             MotionEvent.ACTION_UP -> {
+                commitGate.setMultiTouchActive(false)
                 mainHandler.removeCallbacks(longPressRunnable)
                 stopTone()
                 val key = hoveredKey ?: findKeyAt(x, y)
                 if (key != null && !longPressTriggered) {
-                    handleKeySelection(key, eventTime)
+                    val rect = keyRects[key]
+                    val inside = rect?.contains(x, y) ?: true
+                    handleKeySelection(key, eventTime, inside)
                 }
+                longPressTriggered = false
                 hoveredKey = null
                 invalidate()
                 return true
@@ -395,6 +446,8 @@ class LordDialpadView @JvmOverloads constructor(
                 stopTone()
                 hoveredKey = null
                 isMultiTouch = false
+                commitGate.setMultiTouchActive(false)
+                commitGate.resetState()
                 invalidate()
                 return true
             }
@@ -404,10 +457,11 @@ class LordDialpadView @JvmOverloads constructor(
 
     private fun handleKeySelection(
         key: DialpadKey,
-        eventTime: Long = SystemClock.uptimeMillis()
+        eventTime: Long = SystemClock.uptimeMillis(),
+        inside: Boolean = true
     ) {
         if (activationMode == SettingsRepository.PHONE_ACTIVATION_LIFT) {
-            commitKey(key, eventTime)
+            commitKey(key, Source.RAW_UP, eventTime, inside)
         } else {
             // نمط الضغط مرتين
             val now = if (eventTime > 0L) eventTime
@@ -415,7 +469,12 @@ class LordDialpadView @JvmOverloads constructor(
             if (lastTappedKey == key &&
                 (now - lastTapTime) <= doubleTapTimeoutMs
             ) {
-                commitKey(key, now)
+                commitKey(
+                    key,
+                    Source.ACCESSIBILITY_CLICK,
+                    now,
+                    inside
+                )
                 lastTappedKey = null
                 lastTapTime = 0L
             } else {
@@ -434,13 +493,14 @@ class LordDialpadView @JvmOverloads constructor(
 
     fun commitKey(
         key: DialpadKey,
-        eventTime: Long = SystemClock.uptimeMillis()
+        source: Source = Source.ACCESSIBILITY_CLICK,
+        eventTime: Long = SystemClock.uptimeMillis(),
+        inside: Boolean = true
     ) {
         val now = if (eventTime > 0L) eventTime else SystemClock.uptimeMillis()
-        if (now - lastCommitTime < duplicateCommitCooldownMs) {
+        if (!commitGate.shouldCommit(key, source, now, inside)) {
             return
         }
-        lastCommitTime = now
         triggerHaptic(isStrong = true)
         actionListener?.onKeySelected(key)
     }
@@ -498,6 +558,7 @@ class LordDialpadView @JvmOverloads constructor(
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         mainHandler.removeCallbacks(longPressRunnable)
+        commitGate.resetState(clearHistory = true)
         toneGenerator?.release()
         toneGenerator = null
     }
@@ -564,7 +625,7 @@ class LordDialpadView @JvmOverloads constructor(
             if (action == AccessibilityNodeInfoCompat.ACTION_CLICK) {
                 if (virtualViewId in flatKeys.indices) {
                     val key = flatKeys[virtualViewId]
-                    commitKey(key)
+                    commitKey(key, Source.ACCESSIBILITY_CLICK)
                     return true
                 }
             }

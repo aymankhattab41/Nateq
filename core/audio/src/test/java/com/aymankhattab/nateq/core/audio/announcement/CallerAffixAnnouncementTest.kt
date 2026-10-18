@@ -40,6 +40,7 @@ class CallerAffixAnnouncementTest {
      * التالي فيفشل اختبارُ «بلا مربّعين» وهو يقرأ إعدادات غيره.
      */
     private fun settings(): SettingsRepository {
+        SettingsRepository.resetInstanceForTesting()
         context.getSharedPreferences("nateq_settings", Context.MODE_PRIVATE)
             .edit().clear().commit()
         return SettingsRepository.create(context)

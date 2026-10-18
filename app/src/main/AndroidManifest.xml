@@ -91,6 +91,10 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- الكتابة بالصوت للوحة مفاتيح Lord TTS الميسّرة -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- مطلوب للتبديل بين محركات نطق النظام افتراضياً (يُمنح عبر adb pm grant) -->
+    <uses-permission
+        android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
 
     <!-- رؤية محركات TTS الطرفية (package visibility على أندرويد 11+):
          بدون هذا لا يرى ناطق إلا المحركات المدمجة (سامسونج/جوجل)،
@@ -191,6 +195,12 @@
             android:name=".settings.AccessibilityOnboardingActivity"
             android:exported="false"
             android:label="@string/a11y_onboarding_title" />
+
+        <!-- شاشة إرشاد منح إذن تبديل محركات نطق النظام WRITE_SECURE_SETTINGS -->
+        <activity
+            android:name="com.aymankhattab.nateq.settings.WriteSecureSettingsGuideActivity"
+            android:exported="false"
+            android:label="@string/title_write_secure_settings_guide" />
 
         <!-- Activity لفحص بيانات TTS (اللغات/الأصوات المتاحة) — مطلوبة من سامسونج -->
         <activity

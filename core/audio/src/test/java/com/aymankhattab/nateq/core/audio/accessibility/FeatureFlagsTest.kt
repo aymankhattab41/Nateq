@@ -3,8 +3,10 @@ package com.aymankhattab.nateq.core.audio.accessibility
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -16,6 +18,24 @@ class FeatureFlagsTest {
 
     private val context: Context
         get() = ApplicationProvider.getApplicationContext()
+
+    @Before
+    fun setUp() {
+        cleanPrefs()
+    }
+
+    @After
+    fun tearDown() {
+        cleanPrefs()
+    }
+
+    private fun cleanPrefs() {
+        SettingsRepository.resetInstanceForTesting()
+        context.getSharedPreferences("nateq_settings", Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .commit()
+    }
 
     @Test
     fun `features default to false`() {

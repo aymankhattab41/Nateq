@@ -61,11 +61,12 @@ class KeyboardSettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_keyboard_settings)
 
-        settingsRepo = SettingsRepository(this)
+        settingsRepo = SettingsRepository.create(this)
         title = getString(R.string.keyboard_settings_title)
 
         setupModeSection()
         setupActivationSection()
+        setupSizeSection()
         setupSwitchesSection()
         setupActionButtons()
         setupTestArea()
@@ -184,6 +185,34 @@ class KeyboardSettingsActivity : AppCompatActivity() {
                 getString(R.string.keyboard_activation_double_tap)
             } else {
                 getString(R.string.keyboard_activation_lift)
+            }
+            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun setupSizeSection() {
+        val rgSize = findViewById<RadioGroup>(R.id.rg_keyboard_size)
+        val rbSmall = findViewById<RadioButton>(R.id.rb_keyboard_size_small)
+        val rbMedium = findViewById<RadioButton>(R.id.rb_keyboard_size_medium)
+        val rbLarge = findViewById<RadioButton>(R.id.rb_keyboard_size_large)
+
+        when (settingsRepo.getKeyboardSizeLevel()) {
+            1 -> rbMedium.isChecked = true
+            2 -> rbLarge.isChecked = true
+            else -> rbSmall.isChecked = true
+        }
+
+        rgSize.setOnCheckedChangeListener { _, checkedId ->
+            val level = when (checkedId) {
+                R.id.rb_keyboard_size_medium -> 1
+                R.id.rb_keyboard_size_large -> 2
+                else -> 0
+            }
+            settingsRepo.setKeyboardSizeLevel(level)
+            val msg = when (level) {
+                1 -> getString(R.string.keyboard_size_medium)
+                2 -> getString(R.string.keyboard_size_large)
+                else -> getString(R.string.keyboard_size_small)
             }
             Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
         }

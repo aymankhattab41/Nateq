@@ -445,25 +445,68 @@ internal class LanguageConvertDialogController(
             noEngineLabel,
             noOptionsLabel
         )
-        settings.setEnginePreferenceForLanguage(
-            currentRow.languageTag,
-            params.engine,
-            params.voice,
-            params.rate,
-            params.pitch,
-            params.volume
-        )
-        // اختيار محرك صريح يفعّل «التحويل التلقائي» فوراً؛ «بدون محرك» لا
-        // يغيّر حالة المفتاح (كما كان في حفظ الصف السابق).
-        if (params.engine != null && !settings.isAutoConvertEnabled()) {
-            settings.setAutoConvertEnabled(true)
+        fun performSave() {
+            settings.setEnginePreferenceForLanguage(
+                currentRow.languageTag,
+                params.engine,
+                params.voice,
+                params.rate,
+                params.pitch,
+                params.volume
+            )
+            if (params.engine != null && !settings.isAutoConvertEnabled()) {
+                settings.setAutoConvertEnabled(true)
+            }
         }
-        pending = false
-        btnSave.isEnabled = false
-        savedVoice = params.voice
-        tvSaved.text = context.getString(R.string.auto_convert_saved)
-        tvSaved.announceCompat(tvSaved.text.toString())
-        onChanged()
+
+        performSave()
+
+        val isDefault = params.engine == null &&
+            params.voice == null &&
+            params.rate == 1.0f &&
+            params.pitch == 1.0f &&
+            params.volume == 1.0f
+
+        fun isVerified(): Boolean {
+            val saved = settings.getEnginePreferenceForLanguage(
+                currentRow.languageTag
+            )
+            return if (isDefault) {
+                !saved.hasAdjustment
+            } else {
+                saved.engine == params.engine &&
+                    saved.voiceName == params.voice &&
+                    kotlin.math.abs(saved.rate - params.rate) < 0.05f &&
+                    kotlin.math.abs(saved.pitch - params.pitch) < 0.05f &&
+                    kotlin.math.abs(saved.volume - params.volume) < 0.05f
+            }
+        }
+
+        var verified = isVerified()
+        if (!verified) {
+            // إعادة المحاولة مرة واحدة تلقائياً
+            performSave()
+            verified = isVerified()
+        }
+
+        if (verified) {
+            pending = false
+            btnSave.isEnabled = false
+            savedVoice = params.voice
+            val msg = if (isDefault) {
+                "أُعيدت اللغة إلى الإعداد الافتراضي"
+            } else {
+                context.getString(R.string.auto_convert_saved)
+            }
+            tvSaved.text = msg
+            tvSaved.announceCompat(msg)
+            onChanged()
+        } else {
+            val errMsg = "تعذّر الحفظ، حاول مجدداً"
+            tvSaved.text = errMsg
+            tvSaved.announceCompat(errMsg)
+            Toast.makeText(context, errMsg, Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun playPreview() {
