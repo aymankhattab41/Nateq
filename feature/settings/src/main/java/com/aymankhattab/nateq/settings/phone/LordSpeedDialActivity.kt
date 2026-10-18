@@ -56,6 +56,10 @@ class LordSpeedDialActivity : AppCompatActivity() {
     private var currentSlotNumber: Int = 1
     private var typedDigits: String = "1"
 
+    private val callPlacer = CallPlacer(this) { text ->
+        speak(text)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(
             com.google.android.material.R.style
@@ -64,7 +68,7 @@ class LordSpeedDialActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_lord_speed_dial)
 
-        settingsRepo = SettingsRepository(this)
+        settingsRepo = SettingsRepository.create(this)
         initTts()
 
         findViewById<ImageButton>(R.id.btn_speed_dial_back).setOnClickListener {
@@ -281,15 +285,15 @@ class LordSpeedDialActivity : AppCompatActivity() {
                 .setTitle(title)
                 .setItems(options) { _, which ->
                     when (which) {
-                        0 -> SimCallHelper.makeCall(
-                            this,
+                        0 -> callPlacer.placeCall(
                             entry.phoneNumber,
-                            0
+                            0,
+                            "speed_dial_dialog_sim1"
                         )
-                        1 -> SimCallHelper.makeCall(
-                            this,
+                        1 -> callPlacer.placeCall(
                             entry.phoneNumber,
-                            1
+                            1,
+                            "speed_dial_dialog_sim2"
                         )
                         2 -> openPhoneToPickContact(slot)
                         3 -> deleteSlot(slot)
@@ -369,10 +373,10 @@ class LordSpeedDialActivity : AppCompatActivity() {
                     item.phoneNumber,
                     item.name
                 ) { simSlot ->
-                    SimCallHelper.makeCall(
-                        this@LordSpeedDialActivity,
+                    callPlacer.placeCall(
                         item.phoneNumber,
-                        simSlot
+                        simSlot,
+                        "speed_dial_list_item"
                     )
                 }
             }

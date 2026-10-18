@@ -13,28 +13,53 @@ import org.junit.Test
 class KeyboardLayoutHelperTest {
 
     @Test
-    fun getArabicRows_returnsFourRowsWithCorrectActions() {
+    fun getArabicRows_returnsFiveRowsWithCorrectActions() {
         val rows = KeyboardLayoutHelper.getArabicRows()
-        assertEquals(4, rows.size)
+        assertEquals(5, rows.size)
 
-        // الصف الأول يبدأ بـ ض
+        // الصف الأول يبدأ بـ ض (11 حرفاً)
         assertEquals("ض", rows[0].first().label)
-        // الصف الثالث يحتوي مفتاح الحذف
-        val backspaceKey = rows[2].find { it.type == KeyType.ACTION_BACKSPACE }
+        assertEquals(11, rows[0].size)
+
+        // الصف الثاني 11 حرفاً
+        assertEquals(11, rows[1].size)
+
+        // الصف الثالث همزات 6
+        assertEquals(6, rows[2].size)
+        assertEquals(
+            listOf("أ", "إ", "آ", "ؤ", "ئ", "ء"),
+            rows[2].map { it.label }
+        )
+
+        // الصف الرابع يحتوي 8 حروف ومفتاح الحذف
+        val backspaceKey = rows[3].find {
+            it.type == KeyType.ACTION_BACKSPACE
+        }
         assertNotNull(backspaceKey)
         assertEquals("حذف", backspaceKey?.spokenText)
 
-        // الصف الرابع يحتوي مفاتيح المسافة والإدخال واللغات والرموز والتشكيل
-        val spaceKey = rows[3].find { it.type == KeyType.ACTION_SPACE }
+        // الصف الخامس يحتوي مفاتيح المسافة والإدخال واللغات والرموز والتشكيل
+        val spaceKey = rows[4].find { it.type == KeyType.ACTION_SPACE }
         assertNotNull(spaceKey)
-        val enterKey = rows[3].find { it.type == KeyType.ACTION_ENTER }
+        val enterKey = rows[4].find { it.type == KeyType.ACTION_ENTER }
         assertNotNull(enterKey)
-        val langKey = rows[3].find { it.type == KeyType.ACTION_SWITCH_LANG }
+        val langKey = rows[4].find { it.type == KeyType.ACTION_SWITCH_LANG }
         assertNotNull(langKey)
-        val symbolsKey = rows[3].find { it.type == KeyType.ACTION_SYMBOLS }
+        val symbolsKey = rows[4].find { it.type == KeyType.ACTION_SYMBOLS }
         assertNotNull(symbolsKey)
-        val tashkeelKey = rows[3].find { it.type == KeyType.ACTION_TASHKEEL }
+        val tashkeelKey = rows[4].find { it.type == KeyType.ACTION_TASHKEEL }
         assertNotNull(tashkeelKey)
+    }
+
+    @Test
+    fun arabicCharacters_haveUniqueSpokenTexts() {
+        val rows = KeyboardLayoutHelper.getArabicRows()
+        val charKeys = rows.flatten().filter {
+            it.type == KeyType.CHARACTER
+        }
+        val spokenTexts = charKeys.map { it.spokenText }
+        val uniqueSpoken = spokenTexts.toSet()
+        assertEquals(spokenTexts.size, uniqueSpoken.size)
     }
 
     @Test

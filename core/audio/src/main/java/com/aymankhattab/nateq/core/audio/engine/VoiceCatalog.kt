@@ -150,7 +150,9 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                 try {
                     val vocalizer = EmbeddedProviders.vocalizer(context)
                     if (vocalizer.isConfigured()) {
-                        val vList = vocalizer.listVoices(Locale.ROOT).map { d ->
+                        val vList = vocalizer
+                            .listVoices(Locale.ROOT)
+                            .map { d ->
                             Voice(
                                 d.displayName,
                                 d.locale,
@@ -182,7 +184,8 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                 } catch (t: Throwable) {
                     Log.w(
                         TAG,
-                        "Failed to list voices for $vocalizerPkg: ${t.message}",
+                        "Failed to list voices for $vocalizerPkg: " +
+                            t.message,
                         t
                     )
                     EngineStatusRegistry.noteFailure(
@@ -253,7 +256,8 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             } catch (t: Throwable) {
                 Log.w(
                     TAG,
-                    "Failed in discoverAllLanguagesAcrossEngines: ${t.message}",
+                    "Failed in discoverAllLanguagesAcrossEngines: " +
+                        t.message,
                     t
                 )
                 for (engine in engines) {
@@ -623,8 +627,8 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
         providers.find { it.providerId == providerId }
 
     /** إغلاق نهائي لكل المزودين (الاتصالات الخارجية لمن يحتاجها) — يُستدعى من
-     *  [NateqTtsService.onDestroy] حتى لا تبقى روابط Binder IPC معلقة بعد تدمير
-     *  الخدمة. استدعاءات لاحقة لا أثر لها (كل مزود يضمن التسامح). */
+     *  [NateqTtsService.onDestroy] حتى لا تبقى روابط Binder IPC معلقة بعد
+     *  تدمير الخدمة. استدعاءات لاحقة لا أثر لها (كل مزود يضمن التسامح). */
     fun shutdown() {
         providers.forEach { provider ->
             runCatching { provider.shutdown() }
@@ -664,13 +668,13 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
     private fun voiceNameFor(locale: Locale): String {
         // أسماء الأصوات المعلنة في tts_engine.xml هي "ar-EG"/"en-US" للغتين
         // الأساسيتين، وهي نفسها المعرّفات التي يخزنها تطبيقنا في الإعدادات
-        // (بطارية/رسائل/متصل/فئات) والمعرّفات التي يُنتجها SystemVoiceProvider.
-        // للّغات المكتشفة حديثاً (fr/de/zh/…) نُصدِر اسمَ اللغة نفسِه (مثل
-        // "fr") كصوت موحّد صالح كـ Locale — سامسونج تفتت أسماء الأصوات عبر
-        // Locale.forLanguageTag فتنهار على صيغة "<lang>-local" القديمة؛ النطق
-        // الفعلي يذهب إلى المحرك الطرفي عبر خريطة التحويل
-        // (desiredVoiceName/engine). الصيغة كلها مولّدة من عقد واحد
-        // ([VoiceIdContract]) يشارك المزوّد في استخدامه فلا تنحرف الأسماء
+        // (بطارية/رسائل/متصل/فئات) والمعرّفات التي يُنتجها
+        // SystemVoiceProvider. للّغات المكتشفة حديثاً (fr/de/zh/…) نُصدِر
+        // اسمَ اللغة نفسِه (مثل "fr") كصوت موحّد صالح كـ Locale — سامسونج
+        // تفتت أسماء الأصوات عبر Locale.forLanguageTag فتنهار على صيغة
+        // "<lang>-local" القديمة؛ النطق الفعلي يذهب إلى المحرك الطرفي عبر
+        // خريطة التحويل (desiredVoiceName/engine). الصيغة كلها مولّدة من عقد
+        // واحد ([VoiceIdContract]) يشارك المزوّد في استخدامه فلا تنحرف الأسماء
         // المعلنة عن معرّفات الواصفات مجدداً.
         return VoiceIdContract.createId(locale.language)
     }

@@ -73,7 +73,7 @@ class LordInCallService : InCallService(), SensorEventListener {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        settingsRepo = SettingsRepository(this)
+        settingsRepo = SettingsRepository.create(this)
         sensorManager = getSystemService(Context.SENSOR_SERVICE)
             as? SensorManager
         proximitySensor =

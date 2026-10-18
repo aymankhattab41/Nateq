@@ -105,7 +105,7 @@ class LordInCallActivity : AppCompatActivity() {
         )
         setContentView(R.layout.activity_lord_in_call)
 
-        settingsRepo = SettingsRepository(this)
+        settingsRepo = SettingsRepository.create(this)
         initViews()
         initTts()
 

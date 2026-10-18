@@ -1385,6 +1385,7 @@ class SettingsRepositoryTest {
             .remove("volume_battery")
             .commit()
 
+        SettingsRepository.resetInstanceForTesting()
         val freshRepo = SettingsRepository.create(context)
         val cat = SettingsRepository.VOICE_CATEGORY_BATTERY
 
@@ -1433,6 +1434,7 @@ class SettingsRepositoryTest {
             .putFloat("speech_rate_battery", 1.8f)
             .commit()
 
+        SettingsRepository.resetInstanceForTesting()
         val freshRepo = SettingsRepository.create(context)
         val cat = SettingsRepository.VOICE_CATEGORY_BATTERY
 

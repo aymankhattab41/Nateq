@@ -124,8 +124,8 @@
             <com.aymankhattab.nateq.core.audio.phone.LordDialpadView
                 android:id="@+id/dialpad_view"
                 android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1" />
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal" />
 
             <!-- أزرار الاتصال للشرائح في الأسفل -->
             <LinearLayout
@@ -265,7 +265,7 @@
             <com.aymankhattab.nateq.core.audio.keyboard.LordKeyboardView
                 android:id="@+id/keyboard_contacts_search"
                 android:layout_width="match_parent"
-                android:layout_height="220dp" />
+                android:layout_height="wrap_content" />
         </LinearLayout>
 
         <!-- تبويب التسجيلات (يظهر فقط في نمط التسجيل اليدوي) -->

@@ -53,7 +53,7 @@ object CallRecordManager {
         phoneNumber: String,
         isKnownContact: Boolean
     ): Boolean {
-        val repo = SettingsRepository(context)
+        val repo = SettingsRepository.create(context)
         if (!repo.isPhoneRecordEnabled()) return false
 
         return when (repo.getPhoneRecordMode()) {
@@ -127,7 +127,7 @@ object CallRecordManager {
             return false
         }
 
-        val repo = SettingsRepository(context)
+        val repo = SettingsRepository.create(context)
         val boostEnabled = repo.isPhoneRecordBoostVolumeEnabled()
         // مضاعف تضخيم الصوت البرمجي للطرفين
         val gainMultiplier = if (boostEnabled) 2.5f else 1.0f

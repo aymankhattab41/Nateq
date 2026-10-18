@@ -119,26 +119,14 @@ class KeyShortcutRouter(
         }
     }
 
-    /** يبدّل محرك Lord TTS دون الاعتماد على اتصال خدمة المحرك. */
+    /** يبدّل محرك نطق النظام إلى المحرك التالي. */
     private fun switchToNextEngine(context: Context) {
-        val result = NextEngineSwitcher.switchToNext(context)
-        val message = if (result == null) {
-            "لا يوجد محرك نطق آخر مثبت"
-        } else {
-            "المحرك التالي: ${result.label}"
-        }
-        announce(context, message)
+        NextEngineSwitcher.switchToNext(context)
     }
 
-    /** يبدّل محرك Lord TTS إلى المحرك السابق. */
+    /** يبدّل محرك نطق النظام إلى المحرك السابق. */
     private fun switchToPreviousEngine(context: Context) {
-        val result = NextEngineSwitcher.switchToPrevious(context)
-        val message = if (result == null) {
-            "لا يوجد محرك نطق آخر مثبت"
-        } else {
-            "المحرك السابق: ${result.label}"
-        }
-        announce(context, message)
+        NextEngineSwitcher.switchToPrevious(context)
     }
 
     /** ع٤٣-1: تنفيذ صريح لإيماءة «قراءة المزيد» وتوسيع الرسالة المفوكسة. */

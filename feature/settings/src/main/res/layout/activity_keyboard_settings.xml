@@ -133,6 +133,64 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- قسم حجم لوحة المفاتيح -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="2dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="@color/divider_color">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/keyboard_size_title"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:layout_marginBottom="8dp"
+                    android:accessibilityHeading="true" />
+
+                <RadioGroup
+                    android:id="@+id/rg_keyboard_size"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+
+                    <RadioButton
+                        android:id="@+id/rb_keyboard_size_small"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/keyboard_size_small"
+                        android:textSize="15sp"
+                        android:padding="8dp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_keyboard_size_medium"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/keyboard_size_medium"
+                        android:textSize="15sp"
+                        android:padding="8dp" />
+
+                    <RadioButton
+                        android:id="@+id/rb_keyboard_size_large"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/keyboard_size_large"
+                        android:textSize="15sp"
+                        android:padding="8dp" />
+                </RadioGroup>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
         <!-- القسم الثالث: خيارات متقدمة -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"

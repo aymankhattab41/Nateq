@@ -1,17 +1,19 @@
 package com.aymankhattab.nateq.core.audio.accessibility
 
 import android.content.Context
+import android.content.Intent
+import android.util.Log
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /**
- * يبدّل محرك Lord TTS الافتراضي إلى المحرك التالي في ترتيب النظام.
- *
- * يحدّث الفئة الافتراضية وجميع اللغات النشطة ليتحوّل قارئ الشاشة فعلياً
- * إلى المحرك الجديد، مع إمكانية العودة إلى محرك Lord TTS الافتراضي.
+ * يبدّل محرك TTS الافتراضي على مستوى النظام بالكامل.
+ * يعتمد على [SystemTtsEngineController] مع إذن WRITE_SECURE_SETTINGS.
+ * لا يُغيّر أي إعدادات داخلية لـ Lord TTS.
  */
 object NextEngineSwitcher {
 
+    private const val TAG = "NATEQ_TTS"
     const val LORD_TTS_PACKAGE = "com.aymankhattab.nateq.default"
 
     data class SwitchResult(
@@ -21,21 +23,21 @@ object NextEngineSwitcher {
     )
 
     /**
-     * قائمة المحركات المتاحة في حلقة التبديل، وتبدأ دائماً
-     * بمحرك Lord TTS الافتراضي ثم المحركات المثبتة في النظام.
+     * قائمة المحركات المتاحة في حلقة التبديل من محركات النظام الفعلية.
      */
     fun availableEngines(
         context: Context
     ): List<EnginePicker.InstalledEngine> {
-        val lordTts = EnginePicker.InstalledEngine(
-            LORD_TTS_PACKAGE,
-            "Lord TTS"
-        )
-        val installed = EnginePicker.installedEngines(context)
-        return listOf(lordTts) + installed
+        val systemEngines =
+            SystemTtsEngineController.getInstalledEngines(context)
+        return systemEngines.map {
+            EnginePicker.InstalledEngine(it.packageName, it.label)
+        }
     }
 
-    /** يحدد حزمة المحرك النشط حالياً من الفئة الافتراضية أو اللغات. */
+    /**
+     * قراءة حزمة المحرك النشط من الإعدادات الداخلية للتوافق.
+     */
     internal fun currentEnginePackage(
         settings: SettingsRepository
     ): String? {
@@ -52,7 +54,9 @@ object NextEngineSwitcher {
             ?.engine
     }
 
-    /** يختار التالي، أو أول عنصر عند غياب المحرك الحالي من القائمة. */
+    /**
+     * يختار المحرك التالي في الترتيب الدائري.
+     */
     internal fun nextEngine(
         engines: List<EnginePicker.InstalledEngine>,
         currentPackage: String?
@@ -62,13 +66,23 @@ object NextEngineSwitcher {
         val currentIndex = engines.indexOfFirst {
             it.packageName == effective ||
                 (effective == LORD_TTS_PACKAGE &&
-                    it.packageName == LORD_TTS_PACKAGE)
+                    (it.packageName == LORD_TTS_PACKAGE ||
+                        it.packageName == "com.aymankhattab.nateq")) ||
+                (effective == "com.aymankhattab.nateq" &&
+                    (it.packageName == LORD_TTS_PACKAGE ||
+                        it.packageName == "com.aymankhattab.nateq"))
         }
-        val nextIndex = (currentIndex + 1).mod(engines.size)
+        val nextIndex = if (currentIndex < 0) {
+            0
+        } else {
+            (currentIndex + 1).mod(engines.size)
+        }
         return engines[nextIndex]
     }
 
-    /** يختار السابق، أو آخر عنصر عند غياب المحرك الحالي من القائمة. */
+    /**
+     * يختار المحرك السابق في الترتيب الدائري.
+     */
     internal fun previousEngine(
         engines: List<EnginePicker.InstalledEngine>,
         currentPackage: String?
@@ -78,7 +92,11 @@ object NextEngineSwitcher {
         val currentIndex = engines.indexOfFirst {
             it.packageName == effective ||
                 (effective == LORD_TTS_PACKAGE &&
-                    it.packageName == LORD_TTS_PACKAGE)
+                    (it.packageName == LORD_TTS_PACKAGE ||
+                        it.packageName == "com.aymankhattab.nateq")) ||
+                (effective == "com.aymankhattab.nateq" &&
+                    (it.packageName == LORD_TTS_PACKAGE ||
+                        it.packageName == "com.aymankhattab.nateq"))
         }
         val prevIndex = if (currentIndex <= 0) {
             engines.size - 1
@@ -88,63 +106,125 @@ object NextEngineSwitcher {
         return engines[prevIndex]
     }
 
-    /** يقرأ القائمة الحالية ويحفظ المحرك التالي في إعداد Lord TTS العام. */
+    /**
+     * يبدّل محرك النطق الافتراضي للنظام إلى المحرك التالي.
+     */
     fun switchToNext(context: Context): SwitchResult? {
         val appContext = context.applicationContext
-        val settings = SettingsRepository.create(appContext)
+        if (!SystemTtsEngineController.hasPermission(appContext)) {
+            announce(
+                appContext,
+                "التبديل على مستوى الهاتف يحتاج إذناً خاصاً مرة واحدة"
+            )
+            openGuideActivity(appContext)
+            return null
+        }
+
         val engines = availableEngines(appContext)
-        val current = currentEnginePackage(settings)
+        if (engines.isEmpty()) {
+            announce(appContext, "لا يوجد محرك نطق مثبت")
+            return null
+        }
+
+        val current = SystemTtsEngineController.currentSystemEngine(appContext)
+            ?: appContext.packageName
         val next = nextEngine(engines, current) ?: return null
-        return applyEngineSwitch(settings, next, engines.size)
+
+        val result = SystemTtsEngineController.setSystemEngine(
+            appContext,
+            next.packageName
+        )
+        return if (result.success) {
+            announce(appContext, "محرك الهاتف الآن: ${next.label}")
+            SwitchResult(next.packageName, next.label, engines.size)
+        } else {
+            val reason = result.reason ?: "خطأ غير معروف"
+            announce(appContext, "فشل تبديل المحرك: $reason")
+            null
+        }
     }
 
-    /** يقرأ القائمة الحالية ويحفظ المحرك السابق في إعداد Lord TTS العام. */
+    /**
+     * يبدّل محرك النطق الافتراضي للنظام إلى المحرك السابق.
+     */
     fun switchToPrevious(context: Context): SwitchResult? {
         val appContext = context.applicationContext
-        val settings = SettingsRepository.create(appContext)
+        if (!SystemTtsEngineController.hasPermission(appContext)) {
+            announce(
+                appContext,
+                "التبديل على مستوى الهاتف يحتاج إذناً خاصاً مرة واحدة"
+            )
+            openGuideActivity(appContext)
+            return null
+        }
+
         val engines = availableEngines(appContext)
-        val current = currentEnginePackage(settings)
+        if (engines.isEmpty()) {
+            announce(appContext, "لا يوجد محرك نطق مثبت")
+            return null
+        }
+
+        val current = SystemTtsEngineController.currentSystemEngine(appContext)
+            ?: appContext.packageName
         val prev = previousEngine(engines, current) ?: return null
-        return applyEngineSwitch(settings, prev, engines.size)
+
+        val result = SystemTtsEngineController.setSystemEngine(
+            appContext,
+            prev.packageName
+        )
+        return if (result.success) {
+            announce(appContext, "محرك الهاتف الآن: ${prev.label}")
+            SwitchResult(prev.packageName, prev.label, engines.size)
+        } else {
+            val reason = result.reason ?: "خطأ غير معروف"
+            announce(appContext, "فشل تبديل المحرك: $reason")
+            null
+        }
     }
 
-    private fun applyEngineSwitch(
-        settings: SettingsRepository,
-        target: EnginePicker.InstalledEngine,
-        engineCount: Int
-    ): SwitchResult {
-        val isLord = target.packageName == LORD_TTS_PACKAGE
-        val actualEngine = if (isLord) null else target.packageName
-
-        settings.setEngineForCategory(
-            SettingsRepository.VOICE_CATEGORY_DEFAULT,
-            actualEngine
-        )
-
-        val existingKeys = settings.allConvertLanguagePreferences().keys
-        val baseKeys = listOf(
-            "ar", "en",
-            settings.getAppLanguage(),
-            settings.getSecondaryLanguage()
-        )
-        val targetLanguages = (existingKeys + baseKeys)
-            .filterNotNull()
-            .filter { it.isNotBlank() }
-            .distinct()
-
-        settings.setEngineForAllLanguages(targetLanguages, actualEngine)
-        settings.setAutoConvertEnabled(!isLord)
-
-        return SwitchResult(target.packageName, target.label, engineCount)
-    }
-
-    /** المحرك المختار حالياً وتسمية عرضه في البلاطة. */
+    /**
+     * المحرك المختار حالياً كنظام وتسمية عرضه في البلاطة.
+     */
     fun selectedEngineLabel(context: Context): String? {
         val appContext = context.applicationContext
-        val settings = SettingsRepository.create(appContext)
-        val selected = currentEnginePackage(settings) ?: LORD_TTS_PACKAGE
+        val currentPkg =
+            SystemTtsEngineController.currentSystemEngine(appContext)
+                ?: appContext.packageName
         return availableEngines(appContext)
-            .firstOrNull { it.packageName == selected }
-            ?.label ?: "Lord TTS"
+            .firstOrNull { it.packageName == currentPkg }
+            ?.label
+            ?: if (currentPkg == appContext.packageName) {
+                "Lord TTS"
+            } else {
+                currentPkg
+            }
+    }
+
+    private fun announce(context: Context, text: String) {
+        try {
+            A11ySpeechCoordinator.speakAnnouncement(
+                context = context,
+                text = text,
+                isInterruptAllowed = true
+            )
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to speak announcement: $text", t)
+        }
+    }
+
+    private fun openGuideActivity(context: Context) {
+        try {
+            val guideClass = "com.aymankhattab.nateq.settings." +
+                "WriteSecureSettingsGuideActivity"
+            val intent = Intent().setClassName(
+                context.packageName,
+                guideClass
+            ).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to open WriteSecureSettingsGuideActivity", t)
+        }
     }
 }

@@ -197,8 +197,8 @@
         <com.aymankhattab.nateq.core.audio.phone.LordDialpadView
             android:id="@+id/dialpad_incall"
             android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1" />
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal" />
     </LinearLayout>
 
     <!-- زر إنهاء المكالمة الضخم في الأسفل -->

@@ -56,7 +56,7 @@ class KeyboardNumberRowTest {
         val arabicRows = KeyboardLayoutHelper.getArabicRows()
         val combined = listOf(numRow) + arabicRows
 
-        assertEquals(5, combined.size)
+        assertEquals(6, combined.size)
         assertEquals("1", combined[0][0].label)
         assertEquals("0", combined[0][9].label)
         assertEquals("ض", combined[1][0].label)

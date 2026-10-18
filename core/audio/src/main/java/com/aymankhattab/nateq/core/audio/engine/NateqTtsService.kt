@@ -786,7 +786,6 @@ class NateqTtsService : TextToSpeechService() {
                 // ع٢٩-12: توسيع «قراءة المزيد» تلقائياً قبل المعالجة الدلالية
                 var processedText = rawText
                 val readMoreEnabled = runCatching {
-                    settings.reload()
                     FeatureFlags.isActive(
                         FeatureFlags.FEATURE_READ_MORE_EXPAND,
                         context = applicationContext,
@@ -802,7 +801,10 @@ class NateqTtsService : TextToSpeechService() {
                     )
                 }
                 if (readMoreEnabled && isTruncated) {
-                    val expanded = AccessibilityBridge.expandReadMore(rawText)
+                    val expanded = AccessibilityBridge.expandReadMore(
+                        rawText,
+                        timeoutMs = 500L
+                    )
                     val cleanRaw = SelectorPacks.cleanBidi(rawText).trim()
                     val isValid = if (expanded != null) {
                         val cleanExp = SelectorPacks.cleanBidi(expanded).trim()

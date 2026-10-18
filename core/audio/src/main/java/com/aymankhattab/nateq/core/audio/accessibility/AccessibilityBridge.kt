@@ -84,11 +84,22 @@ object AccessibilityBridge {
     }
 
     /**
-     * انتظار لاتزامني غير حاجز حتى وصول إشعار تغيّر المحتوى أو انتهاء المهلة.
+     * ع٤٣-3: تجهيز إشارة انتظار تغيّر المحتوى مسبقاً قبل تنفيذ النقر
+     * لمنع ضياع الحدث اللاتزامني المتزامن مع الإجراء (Point 2).
      */
-    suspend fun waitForContentChange(timeoutMs: Long): Boolean {
+    fun prepareContentChangeSignal(): CompletableDeferred<Unit> {
         val deferred = CompletableDeferred<Unit>()
         contentChangeSignal.set(deferred)
+        return deferred
+    }
+
+    /**
+     * انتظار إشارة تغيّر المحتوى المجهزة مسبقاً بمهلة محددة.
+     */
+    suspend fun awaitContentChange(
+        deferred: CompletableDeferred<Unit>,
+        timeoutMs: Long
+    ): Boolean {
         return try {
             withTimeoutOrNull(timeoutMs) {
                 deferred.await()
@@ -100,11 +111,26 @@ object AccessibilityBridge {
     }
 
     /**
-     * توسيع الرسالة المقتطعة تلقائياً بمهلة زمنية كافية (ع٢٧-20، ع٤٣-1)
+     * إلغاء إشارة تغيّر المحتوى في حال عدم تنفيذ أي إجراء توسيع.
+     */
+    fun cancelContentChangeSignal(deferred: CompletableDeferred<Unit>) {
+        contentChangeSignal.compareAndSet(deferred, null)
+    }
+
+    /**
+     * انتظار لاتزامني غير حاجز حتى وصول إشعار تغيّر المحتوى أو انتهاء المهلة.
+     */
+    suspend fun waitForContentChange(timeoutMs: Long): Boolean {
+        val deferred = prepareContentChangeSignal()
+        return awaitContentChange(deferred, timeoutMs)
+    }
+
+    /**
+     * توسيع الرسالة المقتطعة تلقائياً بمهلة سريعة (ع٢٧-20، ع٤٣-1، ع٤٣-3)
      */
     suspend fun expandReadMore(
         prefix: String,
-        timeoutMs: Long = 2000L
+        timeoutMs: Long = 500L
     ): String? {
         val service = activeServiceRef.get() ?: return null
         return withTimeoutOrNull(timeoutMs) {

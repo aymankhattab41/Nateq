@@ -50,12 +50,13 @@ class PhoneSettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_phone_settings)
 
-        settingsRepo = SettingsRepository(this)
+        settingsRepo = SettingsRepository.create(this)
         title = getString(R.string.phone_settings_title)
 
         setupDefaultDialerSection()
         setupModeSection()
         setupActivationSection()
+        setupDialpadSizeSection()
         setupRecordingSection()
         setupHardwareSection()
     }
@@ -374,6 +375,34 @@ class PhoneSettingsActivity : AppCompatActivity() {
         swAnnounce.isChecked = settingsRepo.isPhoneAnnounceAfterLiftEnabled()
         swAnnounce.setOnCheckedChangeListener { _, isChecked ->
             settingsRepo.setPhoneAnnounceAfterLiftEnabled(isChecked)
+        }
+    }
+
+    private fun setupDialpadSizeSection() {
+        val rgSize = findViewById<RadioGroup>(R.id.rg_dialpad_size)
+        val rbNormal = findViewById<RadioButton>(R.id.rb_dialpad_size_normal)
+        val rbMedium = findViewById<RadioButton>(R.id.rb_dialpad_size_medium)
+        val rbLarge = findViewById<RadioButton>(R.id.rb_dialpad_size_large)
+
+        when (settingsRepo.getDialpadSizeLevel()) {
+            1 -> rbMedium.isChecked = true
+            2 -> rbLarge.isChecked = true
+            else -> rbNormal.isChecked = true
+        }
+
+        rgSize.setOnCheckedChangeListener { _, checkedId ->
+            val level = when (checkedId) {
+                R.id.rb_dialpad_size_medium -> 1
+                R.id.rb_dialpad_size_large -> 2
+                else -> 0
+            }
+            settingsRepo.setDialpadSizeLevel(level)
+            val msg = when (level) {
+                1 -> getString(R.string.phone_dialpad_size_medium)
+                2 -> getString(R.string.phone_dialpad_size_large)
+                else -> getString(R.string.phone_dialpad_size_normal)
+            }
+            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
         }
     }
 

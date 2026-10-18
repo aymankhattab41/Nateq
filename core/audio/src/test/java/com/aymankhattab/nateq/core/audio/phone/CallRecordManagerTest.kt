@@ -25,7 +25,7 @@ class CallRecordManagerTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
-        settingsRepo = SettingsRepository(context)
+        settingsRepo = SettingsRepository.create(context)
     }
 
     @Test

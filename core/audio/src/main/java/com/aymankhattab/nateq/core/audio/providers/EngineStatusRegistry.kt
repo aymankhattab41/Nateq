@@ -310,7 +310,8 @@ object EngineStatusRegistry {
 
         val bumpTime = EmbeddedStorage.lastBumpTime
 
-        // دالة مساعدة: هل الحالة المسجلة "مُنهية" (فشل/جاهز) وأقدم من الـ bump؟
+        // دالة مساعدة: هل الحالة المسجلة "مُنهية" (فشل/جاهز)
+        // وأقدم من الـ bump؟
         fun isStaleTerminal(rec: EngineStatus): Boolean =
             (rec.state == State.NATIVE_INIT_FAILED ||
              rec.state == State.CRASHED_LAST_RUN ||
