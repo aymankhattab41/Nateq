@@ -184,12 +184,12 @@ class KeyShortcutRouter(
         )
 
     private fun announce(context: Context, text: String) {
-        // ع٤١-ب11: التبديل التلقائي حسب التطبيق الأمامي (ملف التطبيق).
+        // ع٤١-ب11، ع٤٥: التبديل التلقائي حسب التطبيق الأمامي وصوت جهة الاتصال.
         val voice = A11yVoiceResolver.resolve(
             context = context,
             settings = settings,
-            packageName = AccessibilityBridge.foregroundPackage(),
-            senderName = null
+            packageName = AccessibilityBridge.resolveForegroundPackage(),
+            senderName = AccessibilityBridge.currentSenderHint()
         )
         A11ySpeechCoordinator.speakAnnouncement(
             context = context,

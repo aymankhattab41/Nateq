@@ -1,10 +1,12 @@
 package com.aymankhattab.nateq.core.data
 
+import android.app.ActivityManager
 import android.content.Context
-import android.content.SharedPreferences
+import android.os.Process
+import android.util.Log
 
 /**
- * إعدادات صوتٍ جُزئية مربوطة بمفتاح (جهة اتصال/تطبيق) — ع٤١-ب10، ب11.
+ * إعدادات صوتٍ جُزئية مربوطة بمفتاح (جهة اتصال/تطبيق) — ع٤١-ب10، ب11، ع٤٥.
  * الحقول الفارغة (null) تعني «لا تُغيِّر القيمة الأثقل منها».
  */
 data class VoiceProfile(
@@ -12,7 +14,9 @@ data class VoiceProfile(
     val voiceId: String? = null,
     val speechRate: Float? = null,
     val pitch: Float? = null,
-    val volume: Float? = null
+    val volume: Float? = null,
+    val displayName: String? = null,
+    val voiceLanguage: String? = null
 )
 
 /** معاملات النطق الفعلية بعد الحسم (كلها قابلة للإلغاء: null = ورث). */
@@ -21,15 +25,14 @@ data class EffectiveVoice(
     val voiceId: String? = null,
     val speechRate: Float? = null,
     val pitch: Float? = null,
-    val volume: Float? = null
+    val volume: Float? = null,
+    val displayName: String? = null,
+    val voiceLanguage: String? = null
 )
 
 /**
- * حاسم أولوية الأصوات (ع٤١-ب10.3، ب11.2، ع٤٢-11):
+ * حاسم أولوية الأصوات (ع٤١-ب10.3، ب11.2، ع٤٢-11، ع٤٥):
  * الافتراضي ← الفئة ← ملف التطبيق ← جهة الاتصال.
- * كل طبقةٍ تُمرَّر بعد الأثقل منها، والسرعة والنبرة تتضاعفان بدلاً
- * من الاستبدال المطلق، بينما يُلغي مستوى الصوت ما قبله عند التحديد.
- * دالة نقية قابلة للاختبار.
  */
 object VoiceProfileResolver {
 
@@ -63,12 +66,16 @@ object VoiceProfileResolver {
                 else -> out.pitch
             }
             val newVolume = layer.volume ?: out.volume
+            val newDisplayName = layer.displayName ?: out.displayName
+            val newLang = layer.voiceLanguage ?: out.voiceLanguage
             out = EffectiveVoice(
                 engine = newEngine,
                 voiceId = newVoiceId,
                 speechRate = newRate,
                 pitch = newPitch,
-                volume = newVolume
+                volume = newVolume,
+                displayName = newDisplayName,
+                voiceLanguage = newLang
             )
         }
         return out
@@ -77,7 +84,6 @@ object VoiceProfileResolver {
 
 /**
  * ترميز/فكّ ترميز خريطة أصواتٍ مربوطة بمفاتيح — نقيّ وقابل للاختبار.
- * فاصل الحقول 0x1F وفاصل السجلات 0x1E (غير قابلين للظهور في الأسماء).
  */
 object VoiceProfileCodec {
 
@@ -92,7 +98,9 @@ object VoiceProfileCodec {
                 v.voiceId.orEmpty(),
                 v.speechRate?.toString().orEmpty(),
                 v.pitch?.toString().orEmpty(),
-                v.volume?.toString().orEmpty()
+                v.volume?.toString().orEmpty(),
+                v.displayName.orEmpty(),
+                v.voiceLanguage.orEmpty()
             ).joinToString(FIELD.toString())
         }
 
@@ -105,12 +113,16 @@ object VoiceProfileCodec {
             if (parts.size < 6) continue
             val key = parts[0]
             if (key.isBlank()) continue
+            val disp = if (parts.size >= 7) parts[6].ifBlank { null } else null
+            val lang = if (parts.size >= 8) parts[7].ifBlank { null } else null
             result[key] = VoiceProfile(
                 engine = parts[1].ifBlank { null },
                 voiceId = parts[2].ifBlank { null },
                 speechRate = parts[3].toFloatOrNull(),
                 pitch = parts[4].toFloatOrNull(),
-                volume = parts[5].toFloatOrNull()
+                volume = parts[5].toFloatOrNull(),
+                displayName = disp,
+                voiceLanguage = lang
             )
         }
         return result
@@ -118,15 +130,15 @@ object VoiceProfileCodec {
 }
 
 /**
- * مخزن أصوات جهات الاتصال (ع٤١-ب10.1) — محليٌّ في `SharedPreferences`
- * بلا مزامنة. تُطبَّع المفاتيح عند القراءة والكتابة.
+ * مخزن أصوات جهات الاتصال — مشترك بين العمليات عبر SettingsRepository (ع٤٥).
  */
-class ContactVoiceStore(
-    private val prefs: SharedPreferences
+class ContactVoiceStore private constructor(
+    private val context: Context,
+    private val settings: SettingsRepository
 ) {
 
     val all: Map<String, VoiceProfile>
-        get() = VoiceProfileCodec.decode(prefs.getString(KEY, null))
+        get() = VoiceProfileCodec.decode(settings.getContactVoicesRaw())
 
     /** يبحث بأيٍّ من صِيغ الرقم حتى يجد أول تطابق. */
     fun find(keys: List<String>): VoiceProfile? {
@@ -135,42 +147,168 @@ class ContactVoiceStore(
             val normalized = key.trim()
             if (normalized.isEmpty()) continue
             map[normalized]?.let { return it }
+            val normName = ContactLookupNormalizer.normalizeName(normalized)
+            if (normName.isNotEmpty()) {
+                map[normName]?.let { return it }
+            }
         }
         return null
     }
 
-    fun get(key: String): VoiceProfile? = all[key.trim()]
+    fun get(key: String): VoiceProfile? {
+        val trimmed = key.trim()
+        val currentAll = all
+        var result = currentAll[trimmed]
+        if (result == null) {
+            val normName = ContactLookupNormalizer.normalizeName(trimmed)
+            if (normName.isNotEmpty()) {
+                result = currentAll[normName]
+            }
+        }
+        if (result == null && trimmed.any { it.isDigit() }) {
+            val forms = ContactLookupNormalizer.phoneLookupForms(trimmed)
+            for (f in forms) {
+                val found = currentAll[f]
+                if (found != null) {
+                    result = found
+                    break
+                }
+            }
+        }
 
-    fun put(key: String, profile: VoiceProfile) {
-        val normalized = key.trim()
-        if (normalized.isEmpty()) return
-        val map = LinkedHashMap(all)
-        map[normalized] = profile
-        prefs.edit()
-            .putString(KEY, VoiceProfileCodec.encode(map))
-            .apply()
+        val proc = detectProcessName(context)
+        Log.d(
+            TAG,
+            "ContactVoice.get: proc=$proc, key=$trimmed, " +
+                "found=${result != null}, count=${currentAll.size}"
+        )
+        return result
     }
 
-    /** حذف صوت جهة؛ @return هل أُزيل شيء؟ (ع٤١-ب10.4) */
-    fun remove(key: String): Boolean {
-        val normalized = key.trim()
+    /**
+     * حفظ صوت جهة اتصال مع تطبيع المفتاح وفهرسته (ع٤٥).
+     */
+    @Synchronized
+    fun put(key: String, profile: VoiceProfile) {
+        val trimmed = key.trim()
+        if (trimmed.isEmpty()) return
         val map = LinkedHashMap(all)
-        if (map.remove(normalized) == null) return false
-        prefs.edit()
-            .putString(KEY, VoiceProfileCodec.encode(map))
-            .apply()
+
+        val disp = profile.displayName ?: trimmed
+        val enriched = profile.copy(displayName = disp)
+        map[trimmed] = enriched
+
+        if (trimmed.any { it.isDigit() }) {
+            val forms = ContactLookupNormalizer.phoneLookupForms(trimmed)
+            for (f in forms) {
+                map[f] = enriched
+            }
+            if (!profile.displayName.isNullOrBlank()) {
+                val normDisp = ContactLookupNormalizer.normalizeName(
+                    profile.displayName
+                )
+                if (normDisp.isNotEmpty()) {
+                    map[normDisp] = enriched
+                }
+            }
+        } else {
+            val normName = ContactLookupNormalizer.normalizeName(trimmed)
+            if (normName.isNotEmpty()) {
+                map[normName] = enriched
+            }
+        }
+
+        settings.setContactVoicesRaw(VoiceProfileCodec.encode(map))
+    }
+
+    @Synchronized
+    fun remove(key: String): Boolean {
+        val trimmed = key.trim()
+        val map = LinkedHashMap(all)
+        val existing = map[trimmed] ?: get(trimmed) ?: return false
+
+        map.remove(trimmed)
+        if (trimmed.any { it.isDigit() }) {
+            val forms = ContactLookupNormalizer.phoneLookupForms(trimmed)
+            for (f in forms) {
+                map.remove(f)
+            }
+        }
+        val norm = ContactLookupNormalizer.normalizeName(trimmed)
+        if (norm.isNotEmpty()) {
+            map.remove(norm)
+        }
+        val disp = existing.displayName
+        if (!disp.isNullOrBlank()) {
+            map.remove(disp)
+            map.remove(ContactLookupNormalizer.normalizeName(disp))
+        }
+
+        settings.setContactVoicesRaw(VoiceProfileCodec.encode(map))
         return true
     }
 
     fun keys(): Set<String> = all.keys
 
-    companion object {
-        private const val KEY = "contact_voices"
-        private const val PREFS = "nateq_contact_voices"
+    /**
+     * قائمة السجلات الأساسية للعرض في الواجهة (استبعاد التكرار المفهرس).
+     */
+    fun displayEntries(): List<Pair<String, VoiceProfile>> {
+        val map = all
+        val seen = mutableSetOf<String>()
+        val result = mutableListOf<Pair<String, VoiceProfile>>()
 
-        fun create(context: Context): ContactVoiceStore =
-            ContactVoiceStore(
-                context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            )
+        for ((k, v) in map) {
+            val label = v.displayName ?: k
+            val id = "${v.voiceId}_${v.engine}_$label"
+            if (seen.add(id)) {
+                result.add(k to v)
+            }
+        }
+        return result
+    }
+
+    companion object {
+        private const val TAG = "ContactVoiceStore"
+
+        @Volatile
+        private var instance: ContactVoiceStore? = null
+
+        fun create(context: Context): ContactVoiceStore {
+            val app = context.applicationContext ?: context
+            val current = instance
+            if (current != null && current.context === app) {
+                return current
+            }
+            return synchronized(this) {
+                val existing = instance
+                if (existing != null && existing.context === app) {
+                    existing
+                } else {
+                    ContactVoiceStore(
+                        app,
+                        SettingsRepository.create(app)
+                    ).also { instance = it }
+                }
+            }
+        }
+
+        private fun detectProcessName(context: Context): String {
+            val pid = Process.myPid()
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE)
+                as? ActivityManager
+            val proc = am?.runningAppProcesses
+                ?.firstOrNull { it.pid == pid }?.processName
+            return when {
+                proc?.endsWith(":tts") == true -> "tts"
+                proc == context.packageName -> "main"
+                else -> proc ?: "unknown"
+            }
+        }
+
+        @androidx.annotation.VisibleForTesting
+        fun resetInstanceForTesting() {
+            instance = null
+        }
     }
 }

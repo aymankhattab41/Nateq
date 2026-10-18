@@ -12,7 +12,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * اختبارات مطابقة وتطبيع أسماء وأرقام جهات الاتصال (ع٤٢-11).
+ * اختبارات مطابقة وتطبيع أسماء وأرقام جهات الاتصال (ع٤٢-11، ع٤٥).
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [37])
@@ -69,6 +69,7 @@ class ContactVoiceLookupTest {
         val foundWithSpaces = ContactVoiceLookup.find(context, " أ ح م د ")
         assertNotNull(foundWithSpaces)
         assertEquals("ahmedVoice", foundWithSpaces!!.voiceId)
+        store.remove("أحمد")
     }
 
     @Test
@@ -84,6 +85,8 @@ class ContactVoiceLookupTest {
         )
         assertNotNull(found)
         assertEquals("convVoice", found!!.voiceId)
+        store.remove("conv_123")
+        store.remove("أحمد")
     }
 
     @Test
@@ -94,6 +97,30 @@ class ContactVoiceLookupTest {
         val found = ContactVoiceLookup.find(context, "01000000000")
         assertNotNull(found)
         assertEquals("numVoice", found!!.voiceId)
+        store.remove("+201000000000")
+    }
+
+    @Test
+    fun find_uniqueFirstNameMatching() {
+        val store = ContactVoiceStore.create(context)
+        store.put("طارق الشريف", VoiceProfile(voiceId = "tariqVoice"))
+
+        val match = ContactVoiceLookup.find(context, "طارق")
+        assertNotNull(match)
+        assertEquals("tariqVoice", match!!.voiceId)
+        store.remove("طارق الشريف")
+    }
+
+    @Test
+    fun find_ambiguousFirstNameDoesNotMatch() {
+        val store = ContactVoiceStore.create(context)
+        store.put("سامي علي", VoiceProfile(voiceId = "sami1"))
+        store.put("سامي كمال", VoiceProfile(voiceId = "sami2"))
+
+        val match = ContactVoiceLookup.find(context, "سامي")
+        assertNull(match)
+        store.remove("سامي علي")
+        store.remove("سامي كمال")
     }
 
     @Test

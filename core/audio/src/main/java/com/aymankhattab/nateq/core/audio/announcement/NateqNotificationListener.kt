@@ -12,10 +12,13 @@ import android.service.notification.StatusBarNotification
 import android.telecom.TelecomManager
 import android.telephony.TelephonyManager
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.core.audio.R
+import com.aymankhattab.nateq.core.audio.accessibility.A11yVoiceResolver
 import com.aymankhattab.nateq.core.audio.accessibility.FeatureFlags
 import com.aymankhattab.nateq.core.audio.accessibility.OtpReader
+import com.aymankhattab.nateq.core.data.EffectiveVoice
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.LanguageCode
@@ -409,38 +412,149 @@ class NateqNotificationListener : NotificationListenerService() {
             // — الطول والحزمة فقط.
             Log.d(TAG, "Notification from $pkg: ${speechText.length} chars")
 
-            // احترام إعدادات فئة "صوت الإشعارات"
-            // (سرعته/نبرته/مستواه) بدل ثوابت 1.0
-            val speechRate = settings.getSpeechRateForCategory(
+            val (senderName, senderKey) = extractNotificationSender(
+                sbn.notification
+            )
+            val resolvedVoice = A11yVoiceResolver.resolve(
+                context = applicationContext,
+                settings = settings,
+                packageName = pkg,
+                senderName = senderName,
+                conversationKey = senderKey
+            )
+            val isVoiceLangMatch = isVoiceMatchingLanguage(
+                resolvedVoice, locale.language
+            )
+
+            val baseRate = settings.getSpeechRateForCategory(
                 SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
             )
-            val pitch = settings.getPitchForCategory(
+            val basePitch = settings.getPitchForCategory(
                 SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
             )
-            val volume = settings.getVolumeForCategory(
+            val baseVolume = settings.getVolumeForCategory(
                 SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
             )
-            // بند 1.5: محرك فئة الإشعارات (إن ضُبط) بدل التلاؤم الصامت
-            // مع المحرك العام. **بند 2.2:** يُعاد ضبط صوتِ الفئة قبل
-            // النطق (مثل بقية الإعلانات) — كان النطق يعلق على صوت
-            // فئةٍ سابقة (متصل/رسائل) فيُقرأ الإشعار بالصوت الخطأ.
+
+            val speechRate = resolvedVoice?.speechRate ?: baseRate
+            val pitch = resolvedVoice?.pitch ?: basePitch
+            val volume = resolvedVoice?.volume ?: baseVolume
+
+            val defaultEngine = settings.getEngineForCategory(
+                SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+            )
+            val defaultVoice = settings.getPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+            )
+
+            val finalEngine = if (
+                isVoiceLangMatch && resolvedVoice?.engine != null
+            ) {
+                resolvedVoice.engine
+            } else {
+                defaultEngine
+            }
+            val finalVoice = if (
+                isVoiceLangMatch && resolvedVoice?.voiceId != null
+            ) {
+                resolvedVoice.voiceId
+            } else {
+                defaultVoice
+            }
+
             val speaker = AnnouncementSpeaker.getInstance(applicationContext)
-            speaker.resetVoice(
-                settings.getPreferredVoiceIdForCategory(
-                    SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
-                )
-            )
+            speaker.resetVoice(finalVoice)
             speaker.speak(
                 speechText, locale, speechRate, pitch, volume,
-                engineOverride = settings.getEngineForCategory(
-                    SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
-                ),
+                engineOverride = finalEngine,
                 category = SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+            )
+            Log.i(
+                TAG,
+                "Notification speech: pkg=$pkg, sender=$senderName, " +
+                    "matched=${resolvedVoice != null}, " +
+                    "voice=$finalVoice, engine=$finalEngine"
             )
 
         } catch (t: Throwable) {
             Log.e(TAG, "onNotificationPosted failed", t)
         }
+    }
+
+    internal fun extractNotificationSender(
+        notification: Notification?
+    ): Pair<String?, String?> {
+        if (notification == null) return Pair(null, null)
+        val messagingStyle = runCatching {
+            NotificationCompat.MessagingStyle
+                .extractMessagingStyleFromNotification(notification)
+        }.getOrNull()
+
+        if (messagingStyle != null) {
+            val lastMsg = messagingStyle.messages.lastOrNull()
+            if (lastMsg != null) {
+                val person = lastMsg.person
+                val name = person?.name?.toString()
+                    ?: lastMsg.sender?.toString()
+                val uri = person?.uri
+                val phone = if (uri != null && uri.startsWith("tel:")) {
+                    uri.removePrefix("tel:")
+                } else {
+                    uri
+                }
+                if (!name.isNullOrBlank() || !phone.isNullOrBlank()) {
+                    return Pair(name?.trim(), phone?.trim())
+                }
+            }
+        }
+
+        val extras = notification.extras ?: return Pair(null, null)
+        val title = extras.getCharSequence(Notification.EXTRA_TITLE)
+            ?.toString()?.trim()
+
+        var phone: String? = null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val person = extras.getParcelable<android.app.Person>(
+                Notification.EXTRA_MESSAGING_PERSON
+            )
+            val uri = person?.uri
+            if (uri != null && uri.startsWith("tel:")) {
+                phone = uri.removePrefix("tel:")
+            } else if (uri != null) {
+                phone = uri
+            }
+        }
+
+        return Pair(title, phone)
+    }
+
+    private fun isVoiceMatchingLanguage(
+        voice: EffectiveVoice?,
+        languageTag: String
+    ): Boolean {
+        if (voice == null) return false
+        val segRaw = languageTag.takeWhile { it.isLetter() }
+            .lowercase(Locale.ROOT)
+        val segLang = when (segRaw) {
+            "ara" -> "ar"
+            "eng" -> "en"
+            else -> segRaw
+        }
+        val voiceRaw = voice.voiceLanguage?.takeWhile { it.isLetter() }
+            ?.lowercase(Locale.ROOT)
+            ?: voice.voiceId?.let { id ->
+                val sub = id.substringBefore('-')
+                    .substringBefore('_')
+                    .takeWhile { it.isLetter() }
+                    .lowercase(Locale.ROOT)
+                if (sub.length in 2..3) sub else null
+            }
+        val voiceLang = when (voiceRaw) {
+            "ara" -> "ar"
+            "eng" -> "en"
+            else -> voiceRaw
+        }
+        return voiceLang == null || voiceLang == segLang
     }
 
     /**
@@ -830,17 +944,56 @@ class NateqNotificationListener : NotificationListenerService() {
 
         Log.d(TAG, "SMS via NLS: ${text.length} chars")
 
+        val (smsSenderName, smsSenderKey) =
+            extractNotificationSender(notification)
+        val effectiveSender = smsSenderName ?: displayAddress
+        val resolvedVoice = A11yVoiceResolver.resolve(
+            context = applicationContext,
+            settings = settings,
+            packageName = sbn.packageName,
+            senderName = effectiveSender,
+            conversationKey = smsSenderKey ?: displayAddress
+        )
+        val isVoiceLangMatch = isVoiceMatchingLanguage(
+            resolvedVoice, locale.language
+        )
+
+        val basePitch = settings.getSmsReadingPitchOrDefault(
+            locale.language
+        )
+        val finalRate = resolvedVoice?.speechRate ?: speechRate
+        val finalPitch = resolvedVoice?.pitch ?: basePitch
+        val finalVolume = resolvedVoice?.volume ?: volume
+        val defaultSmsEngine = settings.getEngineForCategory(
+            SettingsRepository.ANNOUNCE_CATEGORY_SMS
+        )
+        val finalEngine = if (
+            isVoiceLangMatch && resolvedVoice?.engine != null
+        ) {
+            resolvedVoice.engine
+        } else {
+            defaultSmsEngine
+        }
+        val finalVoice = if (
+            isVoiceLangMatch && resolvedVoice?.voiceId != null
+        ) {
+            resolvedVoice.voiceId
+        } else {
+            voiceId
+        }
+
         val speech = AnnouncementSpeaker.getInstance(applicationContext)
-        speech.resetVoice(voiceId)
-        // **بند 2.2:** نبرةُ «نطق الرسائل» المستقلة إن ضُبطت، أو نبرةُ
-        // نطق اللغة بديلاً + محرك فئة الرسائل — لا الثابت 1.0.
-        val pitch = settings.getSmsReadingPitchOrDefault(locale.language)
+        speech.resetVoice(finalVoice)
         speech.speak(
-            text, locale, speechRate, pitch, volume,
-            engineOverride = settings.getEngineForCategory(
-                SettingsRepository.ANNOUNCE_CATEGORY_SMS
-            ),
+            text, locale, finalRate, finalPitch, finalVolume,
+            engineOverride = finalEngine,
             category = SettingsRepository.ANNOUNCE_CATEGORY_SMS
+        )
+        Log.i(
+            TAG,
+            "SMS speech via NLS: sender=$effectiveSender, " +
+                "matched=${resolvedVoice != null}, " +
+                "voice=$finalVoice, engine=$finalEngine"
         )
     }
 

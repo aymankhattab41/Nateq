@@ -7,7 +7,7 @@ import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.VoiceProfileResolver
 
 /**
- * حسم تجاوزات الصوت لخدمات الشاشة (ع٤١-ب10.3، ب11.2، ع٤٢-11).
+ * حسم تجاوزات الصوت لخدمات الشاشة (ع٤١-ب10.3، ب11.2، ع٤٢-11، ع٤٥).
  * يجمع ملفَ التطبيق الأمامي وصوتَ جهة الاتصال (باسم المرسِل أو مفتاح المحادثة)
  * على أساس `EffectiveVoice` الافتراضي، ثم يُمرَّر إلى منسّق النطق.
  */
@@ -35,7 +35,7 @@ object A11yVoiceResolver {
 
         val targetPackage = when {
             !packageName.isNullOrBlank() -> packageName
-            autoSwitchEnabled -> AccessibilityBridge.foregroundPackage()
+            autoSwitchEnabled -> AccessibilityBridge.resolveForegroundPackage()
             else -> null
         }
 
@@ -45,24 +45,44 @@ object A11yVoiceResolver {
             null
         }
 
+        val effectiveSender = senderName
+            ?: AccessibilityBridge.currentSenderHint()
         val hasContactQuery =
-            !senderName.isNullOrBlank() || !conversationKey.isNullOrBlank()
+            !effectiveSender.isNullOrBlank() || !conversationKey.isNullOrBlank()
         val contact = if (contactEnabled && hasContactQuery) {
             ContactVoiceLookup.find(
                 context = context,
-                keyOrName = senderName.orEmpty(),
+                keyOrName = effectiveSender.orEmpty(),
                 conversationKey = conversationKey
             )
         } else {
             null
         }
 
-        if (app == null && contact == null) return null
+        val winningLayer = when {
+            contact != null -> "جهة اتصال"
+            app != null -> "ملف تطبيق"
+            else -> "افتراضي"
+        }
 
-        return VoiceProfileResolver.effective(
+        val effective = VoiceProfileResolver.effective(
             base = EffectiveVoice(),
             appProfile = app,
             contact = contact
         )
+
+        VoiceResolutionTracker.record(
+            packageName = targetPackage,
+            senderName = effectiveSender,
+            winningLayer = winningLayer,
+            engine = effective.engine,
+            voiceId = effective.voiceId,
+            speechRate = effective.speechRate,
+            pitch = effective.pitch,
+            volume = effective.volume
+        )
+
+        if (app == null && contact == null) return null
+        return effective
     }
 }

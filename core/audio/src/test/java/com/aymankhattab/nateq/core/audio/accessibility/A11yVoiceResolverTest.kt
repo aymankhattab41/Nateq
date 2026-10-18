@@ -9,6 +9,7 @@ import com.aymankhattab.nateq.core.data.VoiceProfile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -125,5 +126,53 @@ class A11yVoiceResolverTest {
         assertEquals("ahmedVoice", resolved!!.voiceId)
         assertNull(resolved.engine)
         assertNull(resolved.speechRate)
+        contactStore.remove("أحمد")
+    }
+
+    @Test
+    fun priority_contactOverridesAppProfileAndRecordsToTracker() {
+        settings.setAccessibilityFeatureEnabled(
+            FeatureFlags.FEATURE_APP_PROFILES, true
+        )
+        settings.setAccessibilityFeatureEnabled(
+            FeatureFlags.FEATURE_CONTACT_VOICES, true
+        )
+        val appStore = AppProfileStore.create(context)
+        appStore.put(
+            AppProfile(
+                packageName = "com.chat.app",
+                voiceId = "appVoice",
+                speechRate = 1.1f
+            )
+        )
+        val contactStore = ContactVoiceStore.create(context)
+        contactStore.put(
+            "سارة",
+            VoiceProfile(
+                voiceId = "sarahVoice",
+                speechRate = 1.5f
+            )
+        )
+
+        VoiceResolutionTracker.clear()
+        val resolved = A11yVoiceResolver.resolve(
+            context = context,
+            settings = settings,
+            packageName = "com.chat.app",
+            senderName = "سارة"
+        )
+        assertNotNull(resolved)
+        assertEquals("sarahVoice", resolved!!.voiceId)
+        assertEquals(1.65f, resolved.speechRate!!, 0.001f)
+
+        val recent = VoiceResolutionTracker.getRecent()
+        assertTrue(recent.isNotEmpty())
+        val last = recent.last()
+        assertEquals("com.chat.app", last.packageName)
+        assertEquals("سارة", last.senderName)
+        assertEquals("جهة اتصال", last.winningLayer)
+
+        appStore.remove("com.chat.app")
+        contactStore.remove("سارة")
     }
 }

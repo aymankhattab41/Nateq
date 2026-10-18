@@ -755,9 +755,43 @@ class NateqTtsService : TextToSpeechService() {
                 val effectCategory = request.params?.getString(
                     AudioEffectManager.PARAM_CATEGORY
                 ).orEmpty()
-                // ع٤٢-11: ملف التطبيق النشط لقراءة الشاشة العادية فقط
-                // (تُستثنى إعلانات النظام الحاملة لفئة صريحة).
-                val activeAppVoice = resolveActiveAppVoice(effectCategory)
+                val targetPkg =
+                    AccessibilityBridge.resolveForegroundPackage()
+                val senderHint =
+                    AccessibilityBridge.currentSenderHint()
+                val activeAppVoice = resolveActiveAppVoice(
+                    effectCategory = effectCategory,
+                    targetPackage = targetPkg,
+                    senderName = senderHint
+                )
+                val appProfilesOn = runCatching {
+                    settings.isAccessibilityFeatureEnabled(
+                        FeatureFlags.FEATURE_APP_PROFILES
+                    )
+                }.getOrDefault(false)
+                val contactVoicesOn = runCatching {
+                    settings.isAccessibilityFeatureEnabled(
+                        FeatureFlags.FEATURE_CONTACT_VOICES
+                    )
+                }.getOrDefault(false)
+                val diagReason = when {
+                    effectCategory.isNotEmpty() ->
+                        "الفئة غير فارغة ($effectCategory)"
+                    !appProfilesOn && !contactVoicesOn ->
+                        "الميزة مغلقة"
+                    targetPkg.isNullOrBlank() && senderHint.isNullOrBlank() ->
+                        "لا توجد حزمة أو مرسل"
+                    activeAppVoice == null ->
+                        "لا يوجد ملف للحزمة $targetPkg أو المرسل $senderHint"
+                    else ->
+                        "مطبّق: محرك=${activeAppVoice.engine}, " +
+                            "صوت=${activeAppVoice.voiceId}"
+                }
+                Log.i(
+                    "NateqTtsService",
+                    "TTS utterance voice: pkg=$targetPkg, " +
+                        "sender=$senderHint, $diagReason"
+                )
                 // الاستدعاءُ بلا شرطِ مستوى: الصدى قد يكون مفعّلاً
                 // والاتساع مُطفأً (فصلٌ تامّ بين المفتاحين).
                 if (audioSessionId > 0) {
@@ -1191,7 +1225,21 @@ class NateqTtsService : TextToSpeechService() {
             perLanguageVoiceName = settings.getVoiceForLanguage(languageTag),
             defaultEngine = defaultCategoryEngine
         )
-        val finalEngine = appVoice?.engine ?: routed.engine
+        val applyVoice = if (
+            isAppVoiceMatchingLanguage(appVoice, languageTag)
+        ) {
+            appVoice
+        } else {
+            if (appVoice != null) {
+                Log.i(
+                    "NateqTtsService",
+                    "App voice language mismatch for single segment: " +
+                        "voiceLang=${appVoice.voiceLanguage}, tag=$languageTag"
+                )
+            }
+            null
+        }
+        val finalEngine = applyVoice?.engine ?: routed.engine
         val finalLocale = if (matchesRequest) {
             convertTarget?.convertLocale
                 ?: Locale.forLanguageTag(languageTag)
@@ -1201,10 +1249,10 @@ class NateqTtsService : TextToSpeechService() {
         val preferredForEngine = finalEngine?.let {
             settings.getPreferredVoiceForEngine(it, languageTag)
         }
-        val finalVoiceName = if (appVoice?.engine != null &&
-            appVoice.engine != routed.engine
+        val finalVoiceName = if (applyVoice?.engine != null &&
+            applyVoice.engine != routed.engine
         ) {
-            appVoice.voiceId
+            applyVoice.voiceId
         } else if (finalEngine != null) {
             if (routed.engine == finalEngine &&
                 !routed.voiceName.isNullOrBlank()
@@ -1214,7 +1262,7 @@ class NateqTtsService : TextToSpeechService() {
                 preferredForEngine
             }
         } else {
-            appVoice?.voiceId
+            applyVoice?.voiceId
                 ?: routed.voiceName
                 ?: settings.getPreferredVoiceId(languageTag)
                 ?: VoiceIdContract.createId(languageTag)
@@ -1355,22 +1403,54 @@ class NateqTtsService : TextToSpeechService() {
     }
 
     /**
-     * حسم ملف التطبيق النشط لقراءة الشاشة (ع٤٢-11).
+     * حسم ملف التطبيق النشط لقراءة الشاشة (ع٤٢-11، ع٤٥).
      * يُستثنى إعلانات النظام الحاملة لفئة صريحة في effectCategory.
      */
     internal fun resolveActiveAppVoice(
         effectCategory: String,
-        targetPackage: String? = AccessibilityBridge.foregroundPackage()
+        targetPackage: String? =
+            AccessibilityBridge.resolveForegroundPackage(),
+        senderName: String? =
+            AccessibilityBridge.currentSenderHint()
     ): EffectiveVoice? = if (effectCategory.isEmpty()) {
         val ctx = runCatching { applicationContext }.getOrNull() ?: this
         A11yVoiceResolver.resolve(
             context = ctx,
             settings = settings,
             packageName = targetPackage,
-            senderName = null
+            senderName = senderName
         )
     } else {
         null
+    }
+
+    internal fun isAppVoiceMatchingLanguage(
+        appVoice: EffectiveVoice?,
+        languageTag: String
+    ): Boolean {
+        if (appVoice == null) return false
+        val segRaw = languageTag.takeWhile { it.isLetter() }
+            .lowercase(Locale.ROOT)
+        val segLang = when (segRaw) {
+            "ara" -> "ar"
+            "eng" -> "en"
+            else -> segRaw
+        }
+        val voiceRaw = appVoice.voiceLanguage?.takeWhile { it.isLetter() }
+            ?.lowercase(Locale.ROOT)
+            ?: appVoice.voiceId?.let { id ->
+                val sub = id.substringBefore('-')
+                    .substringBefore('_')
+                    .takeWhile { it.isLetter() }
+                    .lowercase(Locale.ROOT)
+                if (sub.length in 2..3) sub else null
+            }
+        val voiceLang = when (voiceRaw) {
+            "ara" -> "ar"
+            "eng" -> "en"
+            else -> voiceRaw
+        }
+        return voiceLang == null || voiceLang == segLang
     }
 
     /** وصفُ مقطعٍ محلول جاهز للتخليق (بعد تجهيز النص وحل الصوت والتحويل
@@ -1463,14 +1543,28 @@ class NateqTtsService : TextToSpeechService() {
             perLanguageVoiceName = settings.getVoiceForLanguage(segTag),
             defaultEngine = defaultCategoryEngine
         )
-        val targetEngine = appVoice?.engine ?: routed.engine
+        val applyVoice = if (
+            isAppVoiceMatchingLanguage(appVoice, segTag)
+        ) {
+            appVoice
+        } else {
+            if (appVoice != null) {
+                Log.i(
+                    "NateqTtsService",
+                    "App voice language mismatch for segment: " +
+                        "voiceLang=${appVoice.voiceLanguage}, tag=$segTag"
+                )
+            }
+            null
+        }
+        val targetEngine = applyVoice?.engine ?: routed.engine
         val preferredForEngine = targetEngine?.let {
             settings.getPreferredVoiceForEngine(it, segTag)
         }
-        val targetVoiceName = if (appVoice?.engine != null &&
-            appVoice.engine != routed.engine
+        val targetVoiceName = if (applyVoice?.engine != null &&
+            applyVoice.engine != routed.engine
         ) {
-            appVoice.voiceId
+            applyVoice.voiceId
         } else if (targetEngine != null) {
             if (routed.engine == targetEngine &&
                 !routed.voiceName.isNullOrBlank()
@@ -1480,7 +1574,7 @@ class NateqTtsService : TextToSpeechService() {
                 preferredForEngine
             }
         } else {
-            appVoice?.voiceId
+            applyVoice?.voiceId
                 ?: routed.voiceName
                 ?: settings.getPreferredVoiceId(segTag)
                 ?: VoiceIdContract.createId(segTag)

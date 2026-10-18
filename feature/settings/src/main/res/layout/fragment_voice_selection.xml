@@ -119,7 +119,11 @@
 
             <com.google.android.material.button.MaterialButton android:tag="btn_a11y_contact_voices" style="@style/Widget.MaterialComponents.Button.TextButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:layout_marginTop="8dp" android:gravity="start|center_vertical" android:text="@string/a11y_contact_voices_manage" />
 
+            <com.google.android.material.button.MaterialButton android:tag="btn_a11y_test_contact_voice" style="@style/Widget.MaterialComponents.Button.TextButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:gravity="start|center_vertical" android:text="@string/a11y_test_contact_voice" />
+
             <com.google.android.material.button.MaterialButton android:tag="btn_a11y_app_profiles" style="@style/Widget.MaterialComponents.Button.TextButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:layout_marginTop="8dp" android:gravity="start|center_vertical" android:text="@string/a11y_app_profiles_manage" />
+
+            <com.google.android.material.button.MaterialButton android:tag="btn_a11y_test_app_profile" style="@style/Widget.MaterialComponents.Button.TextButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:gravity="start|center_vertical" android:text="@string/a11y_test_app_profile" />
 
         </LinearLayout>
 

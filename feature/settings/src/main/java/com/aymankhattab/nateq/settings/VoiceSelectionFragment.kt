@@ -435,6 +435,50 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
     }
 
+    private var pendingContactPickerCallback: ((String?, String?) -> Unit)? =
+        null
+
+    internal val contactPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val uri = result.data?.data
+        if (result.resultCode == android.app.Activity.RESULT_OK &&
+            uri != null
+        ) {
+            val resolver = context?.contentResolver
+            val cursor = runCatching {
+                resolver?.query(
+                    uri,
+                    arrayOf(
+                        android.provider.ContactsContract.CommonDataKinds
+                            .Phone.NUMBER,
+                        android.provider.ContactsContract.CommonDataKinds
+                            .Phone.DISPLAY_NAME
+                    ),
+                    null,
+                    null,
+                    null
+                )
+            }.getOrNull()
+            cursor?.use { c ->
+                if (c.moveToFirst()) {
+                    val numIdx = c.getColumnIndex(
+                        android.provider.ContactsContract.CommonDataKinds
+                            .Phone.NUMBER
+                    )
+                    val nameIdx = c.getColumnIndex(
+                        android.provider.ContactsContract.CommonDataKinds
+                            .Phone.DISPLAY_NAME
+                    )
+                    val num = if (numIdx >= 0) c.getString(numIdx) else null
+                    val name = if (nameIdx >= 0) c.getString(nameIdx) else null
+                    pendingContactPickerCallback?.invoke(name, num)
+                }
+            }
+        }
+        pendingContactPickerCallback = null
+    }
+
     // ===== ضابط الأكورديون والتنقّل: بطاقات الأقسام وبناء أسطر الحالة =====
     private lateinit var accordion: SettingsAccordionController
 
@@ -760,7 +804,19 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         ).apply { setup(view) }
         a11yServicesSection = ScreenServicesCardController(
             requireContext(), settings
-        ) { accordion.updateSectionStatuses() }.apply { setup(view) }
+        ) { accordion.updateSectionStatuses() }.apply {
+            contactPickerLauncher = { callback ->
+                pendingContactPickerCallback = callback
+                val pickIntent = Intent(
+                    Intent.ACTION_PICK,
+                    android.provider.ContactsContract.CommonDataKinds
+                        .Phone.CONTENT_URI
+                )
+                this@VoiceSelectionFragment.contactPickerLauncher
+                    .launch(pickIntent)
+            }
+            setup(view)
+        }
         embeddedDownloaderSection = EmbeddedEngineDownloaderController(
             this, settings, voicePreview
         ).apply {
@@ -2277,6 +2333,19 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             val fgPkg = com.aymankhattab.nateq.core.audio.accessibility
                 .AccessibilityBridge.foregroundPackage()
             sb.appendLine("تطبيق الواجهة: ${fgPkg ?: "غير معروف"}")
+            sb.appendLine("")
+
+            // ── سجل حسم الصوت (ع٤٥) ──────────────────────────────────
+            sb.appendLine("--- سجل حسم الصوت (ع٤٥) ---")
+            val resolutions = com.aymankhattab.nateq.core.audio.accessibility
+                .VoiceResolutionTracker.getRecent()
+            if (resolutions.isEmpty()) {
+                sb.appendLine("• لا يوجد سجلات حسم بعد")
+            } else {
+                resolutions.forEach { res ->
+                    sb.appendLine(res.format())
+                }
+            }
 
             sb.toString()
         }

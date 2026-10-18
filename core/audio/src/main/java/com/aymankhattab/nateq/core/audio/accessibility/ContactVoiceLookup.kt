@@ -4,72 +4,33 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.ContactsContract
+import android.util.Log
 import androidx.core.content.ContextCompat
-import com.aymankhattab.nateq.core.audio.announcement.CallerAnnouncementReceiver
+import com.aymankhattab.nateq.core.data.ContactLookupNormalizer
 import com.aymankhattab.nateq.core.data.ContactVoiceStore
 import com.aymankhattab.nateq.core.data.VoiceProfile
 import java.util.Locale
 
 /**
- * البحث عن صوتٍ محفوظ لجهة اتصال برقمها الموحّد أو اسمها (ع٤١-ب10.3، ع٤٢-11).
+ * البحث عن صوتٍ محفوظ لجهة اتصال برقمها الموحّد أو اسمها (ع٤١-ب10.3، ع٤٥).
  * يطابق الرقم الموحّد أولاً، ثم الاسم مع تجاهل المسافات والتشكيل والتطويل
- * والبادئات الشائعة (د.، دكتور، م.، مهندس، أ.، أستاذ، الشيخ، السيد).
+ * والبادئات الشائعة، ثم مطابقة الاسم الأول إن كان وحيداً في المخزن.
  */
 object ContactVoiceLookup {
 
-    private val PREFIXES = listOf(
-        "دكتور ", "دكتورة ", "د.", "د/", "د ",
-        "مهندس ", "مهندسة ", "م.", "م/", "م ",
-        "أستاذ ", "أستاذة ", "استاذ ", "استاذه ",
-        "أ.", "ا.", "أ/", "ا/",
-        "الشيخ ", "شيخ ",
-        "السيد ", "السيدة ", "سيد ", "سيدة ",
-        "dr. ", "dr.", "dr ",
-        "eng. ", "eng.", "eng ",
-        "prof. ", "prof.", "prof ",
-        "mr. ", "mr.", "mr ",
-        "mrs. ", "mrs.", "mrs ",
-        "ms. ", "ms.", "ms "
-    )
+    private const val TAG = "ContactVoiceLookup"
 
     /**
-     * تطبيع اسم جهة الاتصال (نقي قابل للاختبار):
-     * تجريد التشكيل والتطويل، توحيد الألف والياء والتاء المربوطة،
-     * حذف البادئات والألقاب الشائعة، وتجريد علامات الترقيم.
+     * تطبيع اسم جهة الاتصال (يُفوَّض إلى
+     * [ContactLookupNormalizer.normalizeName]).
      */
-    fun normalizeContactName(name: String): String {
-        if (name.isBlank()) return ""
-        var text = name.trim().lowercase(Locale.ROOT)
-
-        // إزالة التشكيل (الحركات) والتطويل
-        text = text.replace(Regex("[\\u064B-\\u065F\\u0670\\u0640]"), "")
-
-        // توحيد الألف والياء والتاء المربوطة
-        text = text.replace(Regex("[إأآٱ]"), "ا")
-            .replace('ى', 'ي')
-            .replace('ة', 'ه')
-
-        // حذف البادئات والألقاب من البداية
-        var changed = true
-        while (changed) {
-            changed = false
-            for (p in PREFIXES) {
-                if (text.startsWith(p)) {
-                    text = text.substring(p.length).trim()
-                    changed = true
-                    break
-                }
-            }
-        }
-
-        // تجريد علامات الترقيم
-        text = text.replace(Regex("[.,/#!$%^&*;:{}=\\-_`~()?\\[\\]]"), "")
-        return text.trim()
-    }
+    fun normalizeContactName(name: String): String =
+        ContactLookupNormalizer.normalizeName(name)
 
     /**
      * البحث الشامل: بمفتاح المحادثة إن وُجد، ثم المطابقة المباشرة،
-     * ثم الرقم الموحّد، ثم الاسم المطبّع في المخزن، ثم مزود جهات الاتصال.
+     * ثم الرقم الموحّد، ثم الاسم المطبّع في المخزن، ثم الاسم الأول الوحيد،
+     * ثم مزود جهات الاتصال بالنظام (الأمر 3).
      */
     fun find(
         context: Context,
@@ -80,21 +41,30 @@ object ContactVoiceLookup {
 
         // 1. مفتاح المحادثة إن وُجد
         if (!conversationKey.isNullOrBlank()) {
-            store.get(conversationKey)?.let { return it }
+            store.get(conversationKey)?.let {
+                Log.d(TAG, "Matched by conversationKey: $conversationKey")
+                return it
+            }
         }
 
         if (keyOrName.isBlank()) return null
 
         // 2. مطابقة مباشرة في المخزن
-        store.get(keyOrName)?.let { return it }
+        store.get(keyOrName)?.let {
+            Log.d(TAG, "Matched by direct key: $keyOrName")
+            return it
+        }
 
         // 3. إن كان النص رقماً موحداً (يحوي أرقاماً): فحص الصيغ
         val country = Locale.getDefault().country
-        val forms = CallerAnnouncementReceiver.callerLookupForms(
+        val forms = ContactLookupNormalizer.phoneLookupForms(
             keyOrName, country
         )
         if (forms.isNotEmpty()) {
-            store.find(forms)?.let { return it }
+            store.find(forms)?.let {
+                Log.d(TAG, "Matched by phone forms for: $keyOrName")
+                return it
+            }
         }
 
         val queryDigits = keyOrName.filter { it.isDigit() }
@@ -107,6 +77,10 @@ object ContactVoiceLookup {
                     (storedDigits.endsWith(significantDigits) ||
                         queryDigits.endsWith(storedSig))
                 ) {
+                    Log.d(
+                        TAG,
+                        "Matched by significant digits: $keyOrName ~ $storedKey"
+                    )
                     return profile
                 }
             }
@@ -118,21 +92,65 @@ object ContactVoiceLookup {
         if (compactQuery.isNotEmpty()) {
             for ((storedKey, profile) in store.all) {
                 val normStored = normalizeContactName(storedKey)
+                val normDisp = profile.displayName?.let {
+                    normalizeContactName(it)
+                }.orEmpty()
                 if (normStored == normQuery ||
-                    normStored.replace(" ", "") == compactQuery
+                    normStored.replace(" ", "") == compactQuery ||
+                    normDisp == normQuery ||
+                    normDisp.replace(" ", "") == compactQuery
                 ) {
+                    Log.d(TAG, "Matched by normalized name: $keyOrName")
                     return profile
                 }
             }
         }
 
-        // 5. استعلام مزود جهات الاتصال بالنظام (يتطلب READ_CONTACTS)
+        // 5. مطابقة الاسم الأول إن كان وحيداً في المخزن (ع٤٥ - الأمر 3 بند 5)
+        val queryFirst = ContactLookupNormalizer.firstName(keyOrName)
+        if (queryFirst.length >= 2) {
+            val matchingProfiles = LinkedHashSet<VoiceProfile>()
+            for ((storedKey, profile) in store.all) {
+                val storedFirst = ContactLookupNormalizer.firstName(storedKey)
+                val dispFirst = profile.displayName?.let {
+                    ContactLookupNormalizer.firstName(it)
+                }.orEmpty()
+                if (storedFirst == queryFirst || dispFirst == queryFirst) {
+                    matchingProfiles.add(profile)
+                }
+            }
+            if (matchingProfiles.size == 1) {
+                val single = matchingProfiles.first()
+                Log.d(TAG, "Matched by unique first name: $queryFirst")
+                return single
+            } else if (matchingProfiles.size > 1) {
+                Log.d(
+                    TAG,
+                    "Ambiguous first name ($queryFirst): " +
+                        "${matchingProfiles.size} matches found"
+                )
+            }
+        }
+
+        // 6. استعلام مزود جهات الاتصال بالنظام (يتطلب READ_CONTACTS)
         val granted = ContextCompat.checkSelfPermission(
             context, Manifest.permission.READ_CONTACTS
         ) == PackageManager.PERMISSION_GRANTED
-        if (!granted) return null
+        if (!granted) {
+            Log.d(TAG, "No match for: $keyOrName (READ_CONTACTS not granted)")
+            return null
+        }
 
-        return querySystemContacts(context, store, keyOrName, compactQuery)
+        val sysMatch = querySystemContacts(
+            context, store, keyOrName, compactQuery
+        )
+        if (sysMatch != null) {
+            Log.d(TAG, "Matched via system contacts query: $keyOrName")
+            return sysMatch
+        }
+
+        Log.d(TAG, "ContactVoice lookup failed for: $keyOrName")
+        return null
     }
 
     /** توافقية مع الاستدعاءات القديمة. */
@@ -167,7 +185,7 @@ object ContactVoiceLookup {
                 )
                 while (cursor.moveToNext()) {
                     val number = cursor.getString(numIdx) ?: continue
-                    val forms = CallerAnnouncementReceiver.callerLookupForms(
+                    val forms = ContactLookupNormalizer.phoneLookupForms(
                         number, country
                     )
                     store.find(forms)?.let { return it }
@@ -198,7 +216,7 @@ object ContactVoiceLookup {
                         if (norm == compactQuery) {
                             val number = cursor.getString(numIdx) ?: continue
                             val forms =
-                                CallerAnnouncementReceiver.callerLookupForms(
+                                ContactLookupNormalizer.phoneLookupForms(
                                     number, country
                                 )
                             store.find(forms)?.let { return it }

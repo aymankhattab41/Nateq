@@ -49,4 +49,51 @@ class AppPolicyTest {
         assertTrue(AppPolicy.isAllowed("com.twitter.android", userSet))
         assertFalse(AppPolicy.isAllowed("com.whatsapp", userSet))
     }
+
+    @Test
+    fun automationSession_lifecycleAndPackageAllowance() {
+        assertFalse(AppPolicy.isAutomationActive())
+        assertFalse(
+            AppPolicy.AutomationSession.isPackageAllowedForAutomation(
+                "com.android.settings"
+            )
+        )
+
+        val token = "test_token"
+        AppPolicy.AutomationSession.start(token)
+        assertTrue(AppPolicy.isAutomationActive())
+        org.junit.Assert.assertEquals(
+            token, AppPolicy.AutomationSession.currentToken()
+        )
+
+        assertTrue(
+            AppPolicy.AutomationSession.isPackageAllowedForAutomation(
+                "com.android.settings"
+            )
+        )
+        assertTrue(
+            AppPolicy.AutomationSession.isPackageAllowedForAutomation(
+                "com.google.android.settings"
+            )
+        )
+        assertFalse(
+            AppPolicy.AutomationSession.isPackageAllowedForAutomation(
+                "com.whatsapp"
+            )
+        )
+        assertFalse(
+            AppPolicy.AutomationSession.isPackageAllowedForAutomation(null)
+        )
+
+        // تظل الحزم الحساسة محجوبة دائماً في isAllowed
+        assertFalse(AppPolicy.isAllowed("com.android.settings"))
+
+        AppPolicy.AutomationSession.stop(token)
+        assertFalse(AppPolicy.isAutomationActive())
+        assertFalse(
+            AppPolicy.AutomationSession.isPackageAllowedForAutomation(
+                "com.android.settings"
+            )
+        )
+    }
 }

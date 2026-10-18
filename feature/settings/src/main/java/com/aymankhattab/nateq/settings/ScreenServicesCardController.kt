@@ -12,7 +12,9 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.aymankhattab.nateq.core.audio.accessibility.A11yPauseScheduler
+import com.aymankhattab.nateq.core.audio.accessibility.A11ySpeechCoordinator
 import com.aymankhattab.nateq.core.audio.accessibility.A11yStateStore
+import com.aymankhattab.nateq.core.audio.accessibility.A11yVoiceResolver
 import com.aymankhattab.nateq.core.audio.accessibility.AppPolicy
 import com.aymankhattab.nateq.core.audio.accessibility.FeatureFlags
 import com.aymankhattab.nateq.core.data.AppProfile
@@ -52,6 +54,13 @@ class ScreenServicesCardController(
     private var btnPause: MaterialButton? = null
     private var btnAllowedApps: MaterialButton? = null
     private var switchesContainer: View? = null
+    private var btnContactVoices: MaterialButton? = null
+    private var btnTestContactVoice: MaterialButton? = null
+    private var btnAppProfiles: MaterialButton? = null
+    private var btnTestAppProfile: MaterialButton? = null
+    var contactPickerLauncher: ((
+        onPicked: (name: String?, number: String?) -> Unit
+    ) -> Unit)? = null
 
     fun isServiceEnabledInSystem(): Boolean {
         return AccessibilityUtils.isNateqAccessibilityServiceEnabled(
@@ -98,14 +107,27 @@ class ScreenServicesCardController(
         btnAllowedApps?.setOnClickListener {
             showAppPolicyDialog { updateUiState() }
         }
-        root.findViewWithTag<MaterialButton>("btn_a11y_contact_voices")
-            ?.setOnClickListener {
-                showContactVoicesDialog { updateUiState() }
-            }
-        root.findViewWithTag<MaterialButton>("btn_a11y_app_profiles")
-            ?.setOnClickListener {
-                showAppProfilesDialog { updateUiState() }
-            }
+        btnContactVoices =
+            root.findViewWithTag<MaterialButton>("btn_a11y_contact_voices")
+        btnContactVoices?.setOnClickListener {
+            showContactVoicesDialog { updateUiState() }
+        }
+        btnTestContactVoice =
+            root.findViewWithTag<MaterialButton>("btn_a11y_test_contact_voice")
+        btnTestContactVoice?.setOnClickListener {
+            testContactVoice()
+        }
+
+        btnAppProfiles =
+            root.findViewWithTag<MaterialButton>("btn_a11y_app_profiles")
+        btnAppProfiles?.setOnClickListener {
+            showAppProfilesDialog { updateUiState() }
+        }
+        btnTestAppProfile =
+            root.findViewWithTag<MaterialButton>("btn_a11y_test_app_profile")
+        btnTestAppProfile?.setOnClickListener {
+            testAppProfile()
+        }
 
         bindSwitch(
             root,
@@ -299,6 +321,29 @@ class ScreenServicesCardController(
 
     fun updateUiState() {
         tvStatus?.text = getServiceStatusText()
+        val appStore = AppProfileStore.create(context)
+        val appCount = appStore.packages().size
+        val appOn = settings.isAccessibilityFeatureEnabled(
+            FeatureFlags.FEATURE_APP_PROFILES
+        )
+        val appStatus = if (appOn) "مفعّل" else "مغلق"
+        val appManageText = context.getString(
+            R.string.a11y_app_profiles_manage
+        )
+        btnAppProfiles?.text = "$appManageText ($appStatus — $appCount)"
+
+        val contactStore = ContactVoiceStore.create(context)
+        val contactCount = contactStore.displayEntries().size
+        val contactOn = settings.isAccessibilityFeatureEnabled(
+            FeatureFlags.FEATURE_CONTACT_VOICES
+        )
+        val contactStatus = if (contactOn) "مفعّل" else "مغلق"
+        val contactManageText = context.getString(
+            R.string.a11y_contact_voices_manage
+        )
+        btnContactVoices?.text =
+            "$contactManageText ($contactStatus — $contactCount)"
+
         applyState()
     }
 
@@ -450,12 +495,25 @@ class ScreenServicesCardController(
      * إدارة أصوات جهات الاتصال (ع٤١-ب10.2، ب14): إضافة رقمٍ بمحرّر صوتٍ
      * كامل، وتعديل الموجود بالضغط عليه، وحذفه. المفتاح رقمٌ مطبَّع.
      */
+    /**
+     * إدارة أصوات جهات الاتصال (ع٤١-ب10.2، ب14، ع٤٥): إضافة اسم/رقم
+     * بمحرّر صوتٍ كامل، وتعديل الموجود بالضغط عليه، واختيار جهة اتصال.
+     */
     private fun showContactVoicesDialog(onUpdated: () -> Unit) {
         val store = ContactVoiceStore.create(context)
-        val existing = store.keys().toList()
+        val entries = store.displayEntries()
         val listItems = buildList {
             add(context.getString(R.string.a11y_voice_add))
-            addAll(existing)
+            addAll(
+                entries.map { (key, profile) ->
+                    val disp = profile.displayName
+                    if (!disp.isNullOrBlank() && disp != key) {
+                        "$disp ($key)"
+                    } else {
+                        key
+                    }
+                }
+            )
         }
         MaterialAlertDialogBuilder(context)
             .setTitle(R.string.a11y_contact_voices_title)
@@ -463,48 +521,83 @@ class ScreenServicesCardController(
                 if (which == 0) {
                     showAddContactVoice(store, onUpdated)
                 } else {
-                    val key = existing[which - 1]
+                    val entry = entries[which - 1]
                     showContactVoiceEditor(
-                        store,
-                        key,
-                        store.get(key) ?: currentDefaultVoiceProfile(),
-                        onUpdated
+                        store = store,
+                        key = entry.first,
+                        displayName = entry.second.displayName,
+                        initial = entry.second,
+                        onUpdated = onUpdated
                     )
                 }
             }
             .setNeutralButton(R.string.a11y_voice_remove) { _, _ ->
-                showRemoveContactVoiceDialog(store, existing, onUpdated)
+                val keys = entries.map { it.first }
+                showRemoveContactVoiceDialog(store, keys, onUpdated)
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
-    /** إدخال رقمٍ جديد ثم فتح المحرّر الكامل عليه. */
+    /** إدخال اسم أو رقمٍ جديد أو اختياره من جهات الاتصال. */
     private fun showAddContactVoice(
         store: ContactVoiceStore,
         onUpdated: () -> Unit
     ) {
-        val input = EditText(context).apply {
+        val inputName = EditText(context).apply {
+            hint = context.getString(R.string.a11y_voice_name_hint)
+        }
+        val inputPhone = EditText(context).apply {
             hint = context.getString(R.string.a11y_voice_phone_hint)
             inputType = android.text.InputType.TYPE_CLASS_PHONE
+        }
+        val btnPick = MaterialButton(
+            context,
+            null,
+            com.google.android.material.R.style
+                .Widget_MaterialComponents_Button_TextButton
+        ).apply {
+            text = context.getString(R.string.a11y_pick_contact)
+            setOnClickListener {
+                contactPickerLauncher?.invoke { pickedName, pickedNumber ->
+                    if (!pickedName.isNullOrBlank()) {
+                        inputName.setText(pickedName)
+                    }
+                    if (!pickedNumber.isNullOrBlank()) {
+                        inputPhone.setText(pickedNumber)
+                    }
+                }
+            }
         }
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             val pad = (16 * resources.displayMetrics.density).toInt()
             setPadding(pad, pad, pad, pad)
-            addView(input)
+            addView(btnPick)
+            addView(inputName)
+            addView(inputPhone)
         }
         MaterialAlertDialogBuilder(context)
             .setTitle(R.string.a11y_voice_add)
             .setView(container)
             .setPositiveButton(android.R.string.ok) { _, _ ->
-                val number = input.text?.toString().orEmpty().trim()
-                if (number.isNotEmpty()) {
+                val name = inputName.text?.toString().orEmpty().trim()
+                val phone = inputPhone.text?.toString().orEmpty().trim()
+                val key = when {
+                    phone.isNotEmpty() -> phone
+                    name.isNotEmpty() -> name
+                    else -> ""
+                }
+                if (key.isNotEmpty()) {
+                    val disp = if (name.isNotEmpty()) name else null
                     showContactVoiceEditor(
-                        store,
-                        number,
-                        currentDefaultVoiceProfile(),
-                        onUpdated
+                        store = store,
+                        key = key,
+                        displayName = disp,
+                        initial = currentDefaultVoiceProfile().copy(
+                            displayName = disp
+                        ),
+                        onUpdated = onUpdated
                     )
                 }
             }
@@ -515,19 +608,41 @@ class ScreenServicesCardController(
     private fun showContactVoiceEditor(
         store: ContactVoiceStore,
         key: String,
+        displayName: String?,
         initial: VoiceProfile,
         onUpdated: () -> Unit
     ) {
+        val contactTitle = displayName?.ifBlank { null } ?: key
         VoiceProfileEditorDialog.show(
             context = context,
-            title = context.getString(R.string.a11y_contact_voices_title),
+            title = contactTitle,
             initial = initial,
             sampleText = context.getString(
                 R.string.sample_text_caller_preview
             ),
             callerCategory = true
         ) { profile ->
-            store.put(key, profile)
+            val toSave = if (displayName != null) {
+                profile.copy(displayName = displayName)
+            } else {
+                profile
+            }
+            store.put(key, toSave)
+            val wasEnabled = settings.isAccessibilityFeatureEnabled(
+                FeatureFlags.FEATURE_CONTACT_VOICES
+            )
+            var autoMsg = ""
+            if (!wasEnabled) {
+                settings.setAccessibilityFeatureEnabled(
+                    FeatureFlags.FEATURE_CONTACT_VOICES, true
+                )
+                autoMsg = "، فُعّلت ميزة صوت جهات الاتصال"
+            }
+            A11ySpeechCoordinator.speakAnnouncement(
+                context = context,
+                text = "حُفظ صوت $contactTitle$autoMsg",
+                isInterruptAllowed = true
+            )
             onUpdated()
         }
     }
@@ -549,9 +664,8 @@ class ScreenServicesCardController(
     }
 
     /**
-     * إدارة ملفات التطبيقات (ع٤١-ب11.3، ب14): اختيار تطبيقٍ من المثبّتة
-     * ثم فتح المحرّر الكامل عليه (وإن كان له ملفٌّ سابق يُحمَّل للتحرير)،
-     * وحذف الموجود.
+     * إدارة ملفات التطبيقات (ع٤١-ب11.3، ب14، ع٤٥): اختيار تطبيقٍ من
+     * المثبّتة ثم فتح المحرّر الكامل عليه مع حفظ لغة الصوت وتفعيل الميزة.
      */
     private fun showAppProfilesDialog(onUpdated: () -> Unit) {
         val store = AppProfileStore.create(context)
@@ -582,8 +696,31 @@ class ScreenServicesCardController(
                             pitch = profile.pitch,
                             volume = profile.volume,
                             detailLevel = stored?.detailLevel,
-                            features = stored?.features.orEmpty()
+                            features = stored?.features.orEmpty(),
+                            voiceLanguage = profile.voiceLanguage
                         )
+                    )
+                    val wasAppOn = settings.isAccessibilityFeatureEnabled(
+                        FeatureFlags.FEATURE_APP_PROFILES
+                    )
+                    val wasAutoOn = settings.isAccessibilityFeatureEnabled(
+                        FeatureFlags.FEATURE_AUTO_PROFILE_SWITCH
+                    )
+                    var autoMsg = ""
+                    if (!wasAppOn || !wasAutoOn) {
+                        settings.setAccessibilityFeatureEnabled(
+                            FeatureFlags.FEATURE_APP_PROFILES, true
+                        )
+                        settings.setAccessibilityFeatureEnabled(
+                            FeatureFlags.FEATURE_AUTO_PROFILE_SWITCH, true
+                        )
+                        autoMsg = "، فُعّلت ميزة صوت التطبيقات"
+                    }
+                    val appLabel = apps[which].second
+                    A11ySpeechCoordinator.speakAnnouncement(
+                        context = context,
+                        text = "حُفظ ملف تطبيق $appLabel$autoMsg",
+                        isInterruptAllowed = true
                     )
                     onUpdated()
                 }
@@ -593,6 +730,129 @@ class ScreenServicesCardController(
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    private fun testContactVoice() {
+        val store = ContactVoiceStore.create(context)
+        val entries = store.displayEntries()
+        if (entries.isEmpty()) {
+            val input = EditText(context).apply {
+                hint = context.getString(R.string.a11y_voice_name_hint)
+            }
+            MaterialAlertDialogBuilder(context)
+                .setTitle(R.string.a11y_test_contact_voice)
+                .setView(input)
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    val query = input.text?.toString().orEmpty().trim()
+                    executeContactVoiceTest(query)
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+            return
+        }
+        val items = entries.map { (key, profile) ->
+            val disp = profile.displayName
+            if (!disp.isNullOrBlank() && disp != key) {
+                "$disp ($key)"
+            } else {
+                key
+            }
+        }.toTypedArray()
+        MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.a11y_test_contact_voice)
+            .setItems(items) { _, which ->
+                val entry = entries[which]
+                executeContactVoiceTest(
+                    entry.second.displayName ?: entry.first, entry.first
+                )
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun executeContactVoiceTest(
+        nameOrPhone: String,
+        key: String? = null
+    ) {
+        val resolved = A11yVoiceResolver.resolve(
+            context = context,
+            settings = settings,
+            senderName = nameOrPhone,
+            conversationKey = key ?: nameOrPhone
+        )
+        if (resolved != null) {
+            val eng = resolved.engine ?: "الافتراضي"
+            val voice = resolved.voiceId ?: "الافتراضي"
+            A11ySpeechCoordinator.speakAnnouncement(
+                context = context,
+                text = "اختبار صوت جهة الاتصال $nameOrPhone: الصوت مطبّق " +
+                    "بمحرك $eng وصوت $voice",
+                isInterruptAllowed = true,
+                voiceId = resolved.voiceId,
+                engineOverride = resolved.engine,
+                speechRate = resolved.speechRate,
+                pitch = resolved.pitch,
+                volume = resolved.volume
+            )
+        } else {
+            A11ySpeechCoordinator.speakAnnouncement(
+                context = context,
+                text = "لم يُطبَّق صوت جهة الاتصال لـ $nameOrPhone: " +
+                    "الميزة مغلقة أو لا يوجد صوت مطابق",
+                isInterruptAllowed = true
+            )
+        }
+    }
+
+    private fun testAppProfile() {
+        val store = AppProfileStore.create(context)
+        val pkgs = store.packages().toList()
+        val apps = launchableApps()
+        val targetApps = if (pkgs.isNotEmpty()) {
+            apps.filter { pkgs.contains(it.first) }.ifEmpty { apps }
+        } else {
+            apps
+        }
+        if (targetApps.isEmpty()) return
+        val items = targetApps.map { it.second }.toTypedArray()
+        MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.a11y_test_app_profile)
+            .setItems(items) { _, which ->
+                val app = targetApps[which]
+                executeAppProfileTest(app.first, app.second)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun executeAppProfileTest(pkg: String, label: String) {
+        val resolved = A11yVoiceResolver.resolve(
+            context = context,
+            settings = settings,
+            packageName = pkg
+        )
+        if (resolved != null) {
+            val eng = resolved.engine ?: "الافتراضي"
+            val voice = resolved.voiceId ?: "الافتراضي"
+            A11ySpeechCoordinator.speakAnnouncement(
+                context = context,
+                text = "اختبار صوت تطبيق $label: الصوت مطبّق " +
+                    "بمحرك $eng وصوت $voice",
+                isInterruptAllowed = true,
+                voiceId = resolved.voiceId,
+                engineOverride = resolved.engine,
+                speechRate = resolved.speechRate,
+                pitch = resolved.pitch,
+                volume = resolved.volume
+            )
+        } else {
+            A11ySpeechCoordinator.speakAnnouncement(
+                context = context,
+                text = "لم يُطبَّق ملف تطبيق $label: " +
+                    "الميزة مغلقة أو لا يوجد ملف لهذا التطبيق",
+                isInterruptAllowed = true
+            )
+        }
     }
 
     private fun showRemoveAppProfileDialog(

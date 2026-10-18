@@ -243,6 +243,10 @@ class SettingsRepository(context: Context) :
         const val KEY_PHONE_MODE = "phone_mode"
         const val KEY_PHONE_ACTIVATION = "phone_activation"
         const val KEY_DIALPAD_SIZE_LEVEL = "dialpad_size_level"
+        const val KEY_DIALPAD_LAYOUT_STYLE = "dialpad_layout_style"
+        const val DIALPAD_STYLE_GRID_WIDE = "GRID_WIDE"
+        const val DIALPAD_STYLE_GRID_5X2 = "GRID_5X2"
+        const val DIALPAD_STYLE_SINGLE_ROW = "SINGLE_ROW"
         const val KEY_PHONE_ANNOUNCE_AFTER_LIFT =
             "phone_announce_after_lift"
         const val KEY_PHONE_HAPTIC = "phone_haptic"
@@ -261,6 +265,8 @@ class SettingsRepository(context: Context) :
             "phone_launcher_icon_enabled"
         const val KEY_SPEED_DIAL_LAUNCHER_ICON =
             "speed_dial_launcher_icon_enabled"
+        const val KEY_APP_PROFILES = "app_profiles"
+        const val KEY_CONTACT_VOICES = "contact_voices"
 
         const val PHONE_MODE_BLIND = "blind"
         const val PHONE_MODE_LOW_VISION = "low_vision"
@@ -330,6 +336,7 @@ class SettingsRepository(context: Context) :
         migrateIfNeeded(it)
         migrateBatteryVoicePrefsIfNeeded(it)
         dropObsoleteCallerTemplateKey(it)
+        migrateAppProfilesAndContactVoicesIfNeeded(it)
     }
 
     /**
@@ -682,6 +689,52 @@ class SettingsRepository(context: Context) :
     internal fun dropObsoleteCallerTemplateKey(targetPrefs: SharedPreferences) {
         if (!targetPrefs.contains(KEY_CALLER_TEMPLATE_OBSOLETE)) return
         targetPrefs.edit().remove(KEY_CALLER_TEMPLATE_OBSOLETE).apply()
+    }
+
+    /**
+     * ترحيل ملفات التطبيقات وأصوات جهات الاتصال من ملفي SharedPreferences
+     * القديمين إلى مخزن الإعدادات الموحّد المشترك بين العمليات.
+     */
+    internal fun migrateAppProfilesAndContactVoicesIfNeeded(
+        targetPrefs: SharedPreferences = prefs
+    ) {
+        var changed = false
+        val edit = targetPrefs.edit()
+
+        if (!targetPrefs.contains(KEY_APP_PROFILES)) {
+            val oldAppPrefs = appContext.getSharedPreferences(
+                "nateq_app_profiles", Context.MODE_PRIVATE
+            )
+            val oldRaw = oldAppPrefs.getString("app_profiles", null)
+            if (!oldRaw.isNullOrBlank()) {
+                edit.putString(KEY_APP_PROFILES, oldRaw)
+                changed = true
+            }
+            runCatching {
+                oldAppPrefs.edit().clear().commit()
+                appContext.deleteSharedPreferences("nateq_app_profiles")
+            }
+        }
+
+        if (!targetPrefs.contains(KEY_CONTACT_VOICES)) {
+            val oldContactPrefs = appContext.getSharedPreferences(
+                "nateq_contact_voices", Context.MODE_PRIVATE
+            )
+            val oldRaw = oldContactPrefs.getString("contact_voices", null)
+            if (!oldRaw.isNullOrBlank()) {
+                edit.putString(KEY_CONTACT_VOICES, oldRaw)
+                changed = true
+            }
+            runCatching {
+                oldContactPrefs.edit().clear().commit()
+                appContext.deleteSharedPreferences("nateq_contact_voices")
+            }
+        }
+
+        if (changed) {
+            edit.commit()
+            notifySettingsChanged()
+        }
     }
 
     /** لغة التطبيق المختارة يدوياً: "ar"/"en"/null (null = تتبع لغة النظام) */
@@ -2582,6 +2635,13 @@ class SettingsRepository(context: Context) :
                 PHONE_RECORD_MODE_AUTO_UNSAVED
             )
         } ?: PHONE_RECORD_MODE_MANUAL
+        KEY_DIALPAD_LAYOUT_STYLE -> value.takeIf {
+            it in setOf(
+                DIALPAD_STYLE_GRID_WIDE,
+                DIALPAD_STYLE_GRID_5X2,
+                DIALPAD_STYLE_SINGLE_ROW
+            )
+        } ?: DIALPAD_STYLE_GRID_WIDE
         else -> if (key.startsWith("loudness_stream_mode_")) {
             StreamMode.fromId(value).id
         } else {
@@ -3226,5 +3286,31 @@ class SettingsRepository(context: Context) :
     fun setDialpadSizeLevel(level: Int) {
         val clamped = level.coerceIn(0, 2)
         prefs.edit().putInt(KEY_DIALPAD_SIZE_LEVEL, clamped).commit()
+    }
+
+    fun getDialpadLayoutStyle(): String =
+        prefs.getString(KEY_DIALPAD_LAYOUT_STYLE, DIALPAD_STYLE_GRID_WIDE)
+            ?: DIALPAD_STYLE_GRID_WIDE
+
+    fun setDialpadLayoutStyle(style: String) {
+        val effective = when (style) {
+            DIALPAD_STYLE_GRID_5X2, DIALPAD_STYLE_SINGLE_ROW -> style
+            else -> DIALPAD_STYLE_GRID_WIDE
+        }
+        prefs.edit().putString(KEY_DIALPAD_LAYOUT_STYLE, effective).commit()
+    }
+
+    fun getAppProfilesRaw(): String? =
+        prefs.getString(KEY_APP_PROFILES, null)
+
+    fun setAppProfilesRaw(raw: String): Boolean = synchronized(this) {
+        prefs.edit().putString(KEY_APP_PROFILES, raw).commit()
+    }
+
+    fun getContactVoicesRaw(): String? =
+        prefs.getString(KEY_CONTACT_VOICES, null)
+
+    fun setContactVoicesRaw(raw: String): Boolean = synchronized(this) {
+        prefs.edit().putString(KEY_CONTACT_VOICES, raw).commit()
     }
 }

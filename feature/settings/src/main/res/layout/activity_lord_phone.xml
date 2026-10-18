@@ -120,6 +120,12 @@
                     android:minWidth="64dp" />
             </LinearLayout>
 
+            <!-- عنصر فاصل مرن لدفع اللوحة وأزرار الاتصال إلى الأسفل -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
             <!-- لوحة الاتصال ذات الاستكشاف باللمس -->
             <com.aymankhattab.nateq.core.audio.phone.LordDialpadView
                 android:id="@+id/dialpad_view"

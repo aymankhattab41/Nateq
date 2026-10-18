@@ -12,10 +12,14 @@ import java.util.Locale
  */
 object A11ySpeechCoordinator {
 
+    @Volatile
+    var isSuppressed: Boolean = false
+
     /**
      * هل يُسمح بالنطق الفوري دون تعارض مع قارئ الشاشة؟
      */
     fun canSpeak(context: Context, isInterruptAllowed: Boolean): Boolean {
+        if (isSuppressed) return false
         val isScreenReaderActive =
             AccessibilityUtils.isScreenReaderEnabled(context)
         if (!isScreenReaderActive) return true

@@ -43,6 +43,7 @@ object ReadMoreExpander {
      * @return هل تم تنفيذ نقرة/إجراء توسيع بنجاح؟
      */
     fun tryExpand(focusedNode: AccessibilityNodeInfo?): Boolean {
+        if (AppPolicy.isAutomationActive()) return false
         if (focusedNode == null) {
             Log.w(TAG, "$LOG_TAG tryExpand: focusedNode is null")
             return false

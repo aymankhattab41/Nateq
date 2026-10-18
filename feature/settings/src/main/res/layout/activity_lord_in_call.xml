@@ -194,6 +194,12 @@
                 android:textColor="@android:color/white" />
         </LinearLayout>
 
+        <!-- عنصر فاصل مرن لدفع اللوحة إلى الأسفل -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
         <com.aymankhattab.nateq.core.audio.phone.LordDialpadView
             android:id="@+id/dialpad_incall"
             android:layout_width="match_parent"

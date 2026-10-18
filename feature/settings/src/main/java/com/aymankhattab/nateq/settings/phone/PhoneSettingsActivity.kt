@@ -57,6 +57,7 @@ class PhoneSettingsActivity : AppCompatActivity() {
         setupModeSection()
         setupActivationSection()
         setupDialpadSizeSection()
+        setupDialpadStyleSection()
         setupRecordingSection()
         setupHardwareSection()
     }
@@ -401,6 +402,46 @@ class PhoneSettingsActivity : AppCompatActivity() {
                 1 -> getString(R.string.phone_dialpad_size_medium)
                 2 -> getString(R.string.phone_dialpad_size_large)
                 else -> getString(R.string.phone_dialpad_size_normal)
+            }
+            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun setupDialpadStyleSection() {
+        val rgStyle = findViewById<RadioGroup>(R.id.rg_dialpad_style)
+        val rbGridWide =
+            findViewById<RadioButton>(R.id.rb_dialpad_style_grid_wide)
+        val rbGrid5x2 =
+            findViewById<RadioButton>(R.id.rb_dialpad_style_grid_5x2)
+        val rbSingleRow =
+            findViewById<RadioButton>(R.id.rb_dialpad_style_single_row)
+
+        when (settingsRepo.getDialpadLayoutStyle()) {
+            SettingsRepository.DIALPAD_STYLE_GRID_5X2 ->
+                rbGrid5x2.isChecked = true
+            SettingsRepository.DIALPAD_STYLE_SINGLE_ROW ->
+                rbSingleRow.isChecked = true
+            else ->
+                rbGridWide.isChecked = true
+        }
+
+        rgStyle.setOnCheckedChangeListener { _, checkedId ->
+            val style = when (checkedId) {
+                R.id.rb_dialpad_style_grid_5x2 ->
+                    SettingsRepository.DIALPAD_STYLE_GRID_5X2
+                R.id.rb_dialpad_style_single_row ->
+                    SettingsRepository.DIALPAD_STYLE_SINGLE_ROW
+                else ->
+                    SettingsRepository.DIALPAD_STYLE_GRID_WIDE
+            }
+            settingsRepo.setDialpadLayoutStyle(style)
+            val msg = when (style) {
+                SettingsRepository.DIALPAD_STYLE_GRID_5X2 ->
+                    getString(R.string.phone_dialpad_style_grid_5x2)
+                SettingsRepository.DIALPAD_STYLE_SINGLE_ROW ->
+                    getString(R.string.phone_dialpad_style_single_row)
+                else ->
+                    getString(R.string.phone_dialpad_style_grid_wide)
             }
             Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
         }
