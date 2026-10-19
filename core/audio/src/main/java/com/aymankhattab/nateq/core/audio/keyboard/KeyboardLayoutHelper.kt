@@ -23,7 +23,6 @@ object KeyboardLayoutHelper {
         ACTION_SYMBOLS,
         ACTION_TASHKEEL,
         ACTION_VOICE,
-        ACTION_CLIPBOARD,
         ACTION_HIDE
     }
 

@@ -17,7 +17,7 @@ import android.content.SharedPreferences
  * العملية الأخرى عبر [SettingsChangeProvider] بلا علاقةٍ هنا بآلية البث.
  */
 internal class SnapshotPrefs(
-    private val delegate: SharedPreferences,
+    @Volatile private var delegate: SharedPreferences,
     private val onChanged: () -> Unit = {}
 ) : SharedPreferences {
 
@@ -39,6 +39,24 @@ internal class SnapshotPrefs(
      *  الرحلة النظيفة في [SettingsRepository.reload]. */
     fun replaceSnapshot(values: Map<String, Any?>) {
         snapshot = values
+    }
+
+    /**
+     * يستبدل المخزن الحقيقي وينقل المراقبة إليه بعد فتح القفل (الأمر 6).
+     */
+    fun updateDelegate(newDelegate: SharedPreferences) {
+        runCatching {
+            delegate.unregisterOnSharedPreferenceChangeListener(
+                preferenceChangeListener
+            )
+        }
+        delegate = newDelegate
+        runCatching {
+            newDelegate.registerOnSharedPreferenceChangeListener(
+                preferenceChangeListener
+            )
+        }
+        snapshot = newDelegate.all
     }
 
     override fun getAll(): MutableMap<String, *> = HashMap(snapshot)

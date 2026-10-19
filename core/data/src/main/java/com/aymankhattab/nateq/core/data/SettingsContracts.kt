@@ -280,6 +280,24 @@ interface ReadingPrefs {
     /** يعيّن تفعيل نطق أسماء الإيموجي. */
     fun setEmojiPronunciationEnabled(enabled: Boolean)
 
+    /** حد أقصى لطول المفتاح لتطبيق قاعدة الحرف المنفرد (0..3، الافتراضي 1). */
+    fun getDictionaryStandaloneMaxLength(): Int = 1
+
+    /** يعيّن الحد الأقصى لطول المفتاح لقاعدة الحرف المنفرد. */
+    fun setDictionaryStandaloneMaxLength(len: Int)
+
+    /** لغة نطق الإيموجي: "AUTO", "AR", "EN" (الافتراضي "AUTO"). */
+    fun getEmojiPronunciationLanguage(): String = "AUTO"
+
+    /** يعيّن لغة نطق الإيموجي ("AUTO", "AR", "EN"). */
+    fun setEmojiPronunciationLanguage(lang: String)
+
+    /** تفعيل تشخيصات اللغات في Logcat (الأمر 3). */
+    fun isLanguageDiagnosticsEnabled(): Boolean = false
+
+    /** يعيّن تفعيل تشخيصات اللغات. */
+    fun setLanguageDiagnosticsEnabled(enabled: Boolean)
+
     /** تفعيل الإيقاف الفوري بالهزاز أثناء النطق. */
     fun isShakeToStopEnabled(): Boolean
 

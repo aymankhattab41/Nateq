@@ -742,7 +742,26 @@
 
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="16dp" android:layout_marginEnd="16dp" android:text="@string/number_reading_language_summary" android:textSize="12sp" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
 
-            
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_language_diagnostics"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/language_diagnostics_enabled"
+                android:textOff="@string/toggle_off"
+                android:textOn="@string/toggle_on" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/language_diagnostics_summary"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:importantForAccessibility="no" />
+
         </LinearLayout>
 
         <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginTop="16dp" android:layout_marginBottom="4dp" android:background="@color/divider_color" />
@@ -999,7 +1018,38 @@
 
             </LinearLayout>
 
-        <androidx.recyclerview.widget.RecyclerView android:id="@+id/rv_pronunciation_dict" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:nestedScrollingEnabled="true" android:minHeight="@dimen/dict_list_min_height" android:maxHeight="@dimen/dict_list_max_height" />
+        <TextView
+            android:id="@+id/tv_dict_help"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="4dp"
+            android:text="@string/dict_help_note"
+            android:textAppearance="?attr/textAppearanceBody2"
+            android:textColor="@color/text_secondary" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_dict_standalone_max_len"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:minHeight="48dp"
+            android:text="@string/dict_standalone_max_length_title" />
+
+        <TextView
+            android:id="@+id/tv_dict_standalone_summary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="8dp"
+            android:text="@string/dict_standalone_max_length_summary"
+            android:textSize="12sp"
+            android:textColor="@color/text_secondary"
+            android:importantForAccessibility="no" />
+
+        <androidx.recyclerview.widget.RecyclerView android:id="@+id/rv_pronunciation_dict" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:nestedScrollingEnabled="true" android:minHeight="@dimen/dict_list_min_height" android:maxHeight="@dimen/dict_list_max_height" />
         </LinearLayout>        <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginTop="16dp" android:layout_marginBottom="4dp" android:background="@color/divider_color" />
 <LinearLayout android:id="@+id/ll_tools_header" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="48dp" android:padding="4dp" android:layout_marginTop="16dp" android:background="?attr/selectableItemBackground" android:focusable="true" android:accessibilityHeading="true" android:importantForAccessibility="yes">
 
@@ -1146,6 +1196,15 @@
             <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switch_emoji_reading" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/emoji_reading_enabled" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="@string/emoji_reading_helper" android:textAppearance="?attr/textAppearanceBody2" android:textColor="@color/text_secondary" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_emoji_language"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/emoji_reading_language_title" />
         </LinearLayout>
         </LinearLayout>
 

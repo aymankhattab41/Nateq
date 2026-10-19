@@ -19,7 +19,7 @@
     <com.google.android.material.textfield.TextInputLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="12dp"
         android:hint="@string/dict_phonetic_hint">
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/et_dict_phonetic"
@@ -27,6 +27,48 @@
             android:layout_height="wrap_content"
             android:inputType="text" />
     </com.google.android.material.textfield.TextInputLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/dict_match_mode_title"
+        android:textAppearance="?attr/textAppearanceCaption"
+        android:textColor="@color/text_secondary" />
+
+    <androidx.appcompat.widget.AppCompatSpinner
+        android:id="@+id/spinner_dict_match_mode"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="48dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/dict_scope_title"
+        android:textAppearance="?attr/textAppearanceCaption"
+        android:textColor="@color/text_secondary" />
+
+    <androidx.appcompat.widget.AppCompatSpinner
+        android:id="@+id/spinner_dict_scope"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="48dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/dict_pronunciation_lang_title"
+        android:textAppearance="?attr/textAppearanceCaption"
+        android:textColor="@color/text_secondary" />
+
+    <androidx.appcompat.widget.AppCompatSpinner
+        android:id="@+id/spinner_dict_value_lang"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="48dp" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btn_test_dict_entry"

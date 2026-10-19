@@ -8,15 +8,6 @@ import com.aymankhattab.nateq.engine.PronunciationDictionary
 import com.aymankhattab.nateq.engine.SpeechPart
 import com.aymankhattab.nateq.util.LanguageCode
 
-/**
- * دور المقطع في خطة النطق الموحدة:
- * نص عادي، أو رقم، أو اسم إيموجي (بند ع٤٢-9).
- */
-enum class SpeechRole {
-    TEXT,
-    NUMBER,
-    EMOJI
-}
 
 /**
  * بند نطق فردي داخل خطة النطق الموحدة:
@@ -72,100 +63,102 @@ object SpeechPlanner {
                 .substringBefore('_').trim().lowercase()
         }
 
-        // 1. دور الإيموجي: فئة الإيموجي أولاً، فإن لم تُضبط فبصوت النص
-        if (role == SpeechRole.EMOJI) {
-            val emojiVoice = runCatching {
+        val categoryVoice = when (role) {
+            SpeechRole.EMOJI -> runCatching {
                 settings?.getPreferredVoiceIdForCategory(
                     SettingsRepository.VOICE_CATEGORY_EMOJI
                 )
             }.getOrNull()
-            if (emojiVoice != null) {
-                val emojiEngine = runCatching {
-                    settings?.getEngineForCategory(
-                        SettingsRepository.VOICE_CATEGORY_EMOJI
-                    )
-                }.getOrNull()
-                val rate = runCatching {
-                    settings?.getSpeechRateForCategory(
-                        SettingsRepository.VOICE_CATEGORY_EMOJI
-                    )
-                }.getOrNull() ?: defaultRate
-                val pitch = runCatching {
-                    settings?.getPitchForCategory(
-                        SettingsRepository.VOICE_CATEGORY_EMOJI
-                    )
-                }.getOrNull() ?: defaultPitch
-                val vol = runCatching {
-                    settings?.getVolumeForCategory(
-                        SettingsRepository.VOICE_CATEGORY_EMOJI
-                    )
-                }.getOrNull() ?: defaultVolume
-                return VoiceResolution(
-                    engine = emojiEngine ?: defaultEngine,
-                    voiceId = emojiVoice,
-                    rate = rate,
-                    pitch = pitch,
-                    volume = vol
-                )
-            }
-        }
-
-        // 2. دور الأرقام: فئة الأرقام أولاً، فإن لم تُضبط فبصوت النص
-        if (role == SpeechRole.NUMBER) {
-            val numVoice = runCatching {
+            SpeechRole.NUMBER -> runCatching {
                 settings?.getPreferredVoiceIdForCategory(
                     SettingsRepository.VOICE_CATEGORY_NUMBERS
                 )
             }.getOrNull()
-            if (numVoice != null) {
-                val numEngine = runCatching {
-                    settings?.getEngineForCategory(
-                        SettingsRepository.VOICE_CATEGORY_NUMBERS
-                    )
-                }.getOrNull()
-                val rate = runCatching {
-                    settings?.getSpeechRateForCategory(
-                        SettingsRepository.VOICE_CATEGORY_NUMBERS
-                    )
-                }.getOrNull() ?: defaultRate
-                val pitch = runCatching {
-                    settings?.getPitchForCategory(
-                        SettingsRepository.VOICE_CATEGORY_NUMBERS
-                    )
-                }.getOrNull() ?: defaultPitch
-                val vol = runCatching {
-                    settings?.getVolumeForCategory(
-                        SettingsRepository.VOICE_CATEGORY_NUMBERS
-                    )
-                }.getOrNull() ?: defaultVolume
-                return VoiceResolution(
-                    engine = numEngine ?: defaultEngine,
-                    voiceId = numVoice,
-                    rate = rate,
-                    pitch = pitch,
-                    volume = vol
-                )
-            }
+            SpeechRole.TEXT -> null
         }
-
-        // 3. النص العادي (أو سقوط الإيموجي/الأرقام): صوت اللغة الصريح
-        // مع التوحيد على مستوى العائلة اللغوية (ar/en) لمنع تشتت الأصوات
-        val langEngine = runCatching {
-            settings?.getEngineForLanguage(languageTag)
-                ?: settings?.getEngineForLanguage(canonicalTag)
-        }.getOrNull()
 
         val langVoice = runCatching {
             settings?.getVoiceForLanguage(languageTag)
                 ?: settings?.getVoiceForLanguage(canonicalTag)
         }.getOrNull()
 
+        val resolved = VoiceResolutionPolicy.resolve(
+            role = role,
+            languageTag = languageTag,
+            categoryVoice = categoryVoice,
+            appVoice = defaultVoiceId,
+            contactVoice = null,
+            languageDefaultVoice = langVoice
+        )
+
+        val targetEngine = when (resolved.source) {
+            VoiceResolutionPolicy.SOURCE_CATEGORY_EMOJI -> runCatching {
+                settings?.getEngineForCategory(
+                    SettingsRepository.VOICE_CATEGORY_EMOJI
+                )
+            }.getOrNull() ?: defaultEngine
+            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER -> runCatching {
+                settings?.getEngineForCategory(
+                    SettingsRepository.VOICE_CATEGORY_NUMBERS
+                )
+            }.getOrNull() ?: defaultEngine
+            else -> {
+                val langEngine = runCatching {
+                    settings?.getEngineForLanguage(languageTag)
+                        ?: settings?.getEngineForLanguage(canonicalTag)
+                }.getOrNull()
+                defaultEngine ?: langEngine
+            }
+        }
+
+        val rate = when (resolved.source) {
+            VoiceResolutionPolicy.SOURCE_CATEGORY_EMOJI -> runCatching {
+                settings?.getSpeechRateForCategory(
+                    SettingsRepository.VOICE_CATEGORY_EMOJI
+                )
+            }.getOrNull() ?: defaultRate
+            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER -> runCatching {
+                settings?.getSpeechRateForCategory(
+                    SettingsRepository.VOICE_CATEGORY_NUMBERS
+                )
+            }.getOrNull() ?: defaultRate
+            else -> defaultRate
+        }
+
+        val pitch = when (resolved.source) {
+            VoiceResolutionPolicy.SOURCE_CATEGORY_EMOJI -> runCatching {
+                settings?.getPitchForCategory(
+                    SettingsRepository.VOICE_CATEGORY_EMOJI
+                )
+            }.getOrNull() ?: defaultPitch
+            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER -> runCatching {
+                settings?.getPitchForCategory(
+                    SettingsRepository.VOICE_CATEGORY_NUMBERS
+                )
+            }.getOrNull() ?: defaultPitch
+            else -> defaultPitch
+        }
+
+        val volume = when (resolved.source) {
+            VoiceResolutionPolicy.SOURCE_CATEGORY_EMOJI -> runCatching {
+                settings?.getVolumeForCategory(
+                    SettingsRepository.VOICE_CATEGORY_EMOJI
+                )
+            }.getOrNull() ?: defaultVolume
+            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER -> runCatching {
+                settings?.getVolumeForCategory(
+                    SettingsRepository.VOICE_CATEGORY_NUMBERS
+                )
+            }.getOrNull() ?: defaultVolume
+            else -> defaultVolume
+        }
+
         return VoiceResolution(
-            engine = defaultEngine ?: langEngine,
-            voiceId = defaultVoiceId ?: langVoice,
-            rate = defaultRate,
-            pitch = defaultPitch,
-            volume = defaultVolume
+            engine = targetEngine,
+            voiceId = resolved.voiceId,
+            rate = rate,
+            pitch = pitch,
+            volume = volume
         )
     }
 
@@ -194,36 +187,46 @@ object SpeechPlanner {
     ): List<SpeechPlanItem> {
         if (rawText.isEmpty()) return emptyList()
 
-        // خطوة 1: القاموس يطبَّق أولاً على النص الخام قبل توسيع الإيموجي
-        val dictText = if (dictionary != null) {
-            runCatching {
-                dictionary.apply(rawText, fallbackLanguage)
-            }.getOrDefault(rawText)
-        } else {
-            rawText
-        }
+        @Suppress("UNUSED_VARIABLE")
+        val unusedDict = dictionary
 
-        val isArabicContext = LanguageCode.isArabic(fallbackLanguage)
+        val emojiSetting = runCatching {
+            settings?.getEmojiPronunciationLanguage()
+        }.getOrNull()
+        val emojiVoice = runCatching {
+            settings?.getPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_EMOJI
+            )
+        }.getOrNull()
+        val resolvedEmojiLang = EmojiLanguageResolver.resolve(
+            emojiSetting = emojiSetting,
+            contextLanguage = fallbackLanguage,
+            emojiVoiceId = emojiVoice,
+            fallbackLanguage = fallbackLanguage
+        )
+        val isArabicEmoji = LanguageCode.isArabic(resolvedEmojiLang)
 
         // خطوة 2: تقسيم الإيموجي إن كان مفعلاً
         val parts = if (emojiPronunciationEnabled) {
             runCatching {
-                EmojiSpeech.split(dictText, isArabicContext)
-            }.getOrDefault(listOf(SpeechPart(dictText, false)))
+                EmojiSpeech.split(rawText, isArabicEmoji)
+            }.getOrDefault(listOf(SpeechPart(rawText, false)))
         } else {
-            listOf(SpeechPart(dictText, false))
+            listOf(SpeechPart(rawText, false))
         }
 
         val activeSegmenter = segmenter ?: LanguageSegmenter { numberLanguage }
+        val diagnostics = runCatching {
+            settings?.isLanguageDiagnosticsEnabled() ?: false
+        }.getOrDefault(false)
+        LanguageSegmenter.diagnosticsEnabled = diagnostics
+        LatinLanguageDetector.diagnosticsEnabled = diagnostics
+
         val items = ArrayList<SpeechPlanItem>()
 
         for (part in parts) {
             if (part.isEmojiName) {
-                val emojiLang = if (isArabicContext) {
-                    LanguageCode.AR.tag
-                } else {
-                    LanguageCode.EN.tag
-                }
+                val emojiLang = resolvedEmojiLang
                 val resolved = resolveVoiceForSegment(
                     languageTag = emojiLang,
                     role = SpeechRole.EMOJI,

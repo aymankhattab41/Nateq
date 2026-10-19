@@ -867,10 +867,11 @@ class NateqTtsService : TextToSpeechService() {
                         )
                     }
                 }
-                // **بند التقسيم:** المعالجة الدلالية تُطبَّق قبل تقسيم اللغة
-                // حتى لا يفصل المقسمُ رمزَ العملة («USD»/«EUR») عن مبلغه
-                // فلينقطع «1500 USD» إلى مقطعٍ عربي وآخر إنجليزي؛ ناتجُها
-                // كلماتٌ عربية فيُقسَّم المبلغُ كله مقطعاً عربياً واحداً.
+                Log.d(TAG, "[DICT] Service before: $processedText")
+                processedText = textProcessor.applyDictionaryFirst(
+                    processedText, languageTag
+                )
+                Log.d(TAG, "[DICT] Service after: $processedText")
                 val semanticText = textProcessor.processSemantics(
                     processedText, languageTag
                 )
@@ -1274,7 +1275,8 @@ class NateqTtsService : TextToSpeechService() {
             rawText
         } else {
             textProcessor.process(
-                rawText, languageTag, finalEngine
+                rawText, languageTag, finalEngine,
+                applyDictionary = false
             )
         }
         val speechText = if (LanguageCode.isArabic(languageTag)) {
@@ -1512,21 +1514,33 @@ class NateqTtsService : TextToSpeechService() {
         val computedRate = computeFinalSpeechRate(
             readerRate, nateqMultiplier, currentSpeechBoost()
         )
-        val appRate = appVoice?.speechRate
+        val appRate = if (segment.role == SpeechRole.TEXT) {
+            appVoice?.speechRate
+        } else {
+            null
+        }
         val finalRate = if (appRate != null) {
             (computedRate * appRate).coerceIn(0.1f, 6.0f)
         } else {
             computedRate
         }
         val basePitch = convert?.convertPitch ?: segPitch
-        val appPitch = appVoice?.pitch
+        val appPitch = if (segment.role == SpeechRole.TEXT) {
+            appVoice?.pitch
+        } else {
+            null
+        }
         val finalPitch = if (appPitch != null) {
             (basePitch * appPitch).coerceIn(0.2f, 2.0f)
         } else {
             basePitch
         }
         val baseVolume = convert?.convertVolume ?: segVolume
-        val appVol = appVoice?.volume
+        val appVol = if (segment.role == SpeechRole.TEXT) {
+            appVoice?.volume
+        } else {
+            null
+        }
         val finalVolume = if (appVol != null) {
             computeFinalVolume(appVol, currentVolumeBoost())
         } else {
@@ -1544,11 +1558,12 @@ class NateqTtsService : TextToSpeechService() {
             defaultEngine = defaultCategoryEngine
         )
         val applyVoice = if (
+            segment.role == SpeechRole.TEXT &&
             isAppVoiceMatchingLanguage(appVoice, segTag)
         ) {
             appVoice
         } else {
-            if (appVoice != null) {
+            if (appVoice != null && segment.role == SpeechRole.TEXT) {
                 Log.i(
                     "NateqTtsService",
                     "App voice language mismatch for segment: " +
@@ -1557,28 +1572,49 @@ class NateqTtsService : TextToSpeechService() {
             }
             null
         }
-        val targetEngine = applyVoice?.engine ?: routed.engine
+        val categoryVoice = when (segment.role) {
+            SpeechRole.EMOJI -> settings.getPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_EMOJI
+            )
+            SpeechRole.NUMBER -> settings.getPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+            SpeechRole.TEXT -> null
+        }
+        val categoryEngine = when (segment.role) {
+            SpeechRole.EMOJI -> settings.getEngineForCategory(
+                SettingsRepository.VOICE_CATEGORY_EMOJI
+            )
+            SpeechRole.NUMBER -> settings.getEngineForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+            SpeechRole.TEXT -> null
+        }
+        val resolvedVoice = VoiceResolutionPolicy.resolve(
+            role = segment.role,
+            languageTag = segTag,
+            categoryVoice = categoryVoice,
+            appVoice = applyVoice?.voiceId,
+            contactVoice = null,
+            languageDefaultVoice = routed.voiceName
+                ?: settings.getPreferredVoiceId(segTag)
+        )
+        val targetEngine = when (resolvedVoice.source) {
+            VoiceResolutionPolicy.SOURCE_CATEGORY_EMOJI,
+            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER -> {
+                categoryEngine ?: defaultCategoryEngine ?: routed.engine
+            }
+            VoiceResolutionPolicy.SOURCE_APP -> {
+                applyVoice?.engine ?: routed.engine
+            }
+            else -> routed.engine
+        }
         val preferredForEngine = targetEngine?.let {
             settings.getPreferredVoiceForEngine(it, segTag)
         }
-        val targetVoiceName = if (applyVoice?.engine != null &&
-            applyVoice.engine != routed.engine
-        ) {
-            applyVoice.voiceId
-        } else if (targetEngine != null) {
-            if (routed.engine == targetEngine &&
-                !routed.voiceName.isNullOrBlank()
-            ) {
-                routed.voiceName
-            } else {
-                preferredForEngine
-            }
-        } else {
-            applyVoice?.voiceId
-                ?: routed.voiceName
-                ?: settings.getPreferredVoiceId(segTag)
-                ?: VoiceIdContract.createId(segTag)
-        }
+        val targetVoiceName = resolvedVoice.voiceId
+            ?: preferredForEngine
+            ?: VoiceIdContract.createId(segTag)
         // **بند التشكيل الشرطي:** تُمرَّر حزمةُ المحرك المحسومة إلى
         // [TextProcessor.process] — المحركات التي تفهم التشكيل العربي
         // تحتفظ به في الناتج (مسار الاستعادة) بدل تجريده دائماً.
@@ -1586,7 +1622,8 @@ class NateqTtsService : TextToSpeechService() {
             segment.text
         } else {
             textProcessor.process(
-                segment.text, segTag, targetEngine
+                segment.text, segTag, targetEngine,
+                applyDictionary = false
             )
         }
         val speechText = if (LanguageCode.isArabic(segTag)) {

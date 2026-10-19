@@ -352,6 +352,30 @@
 <string name="dict_phonetic_hint">النطق الصوتي</string>
 <string name="dict_removed">تم حذف الإدخال من القاموس</string>
 <string name="dict_word_hint">الكلمة</string>
+    <string name="dict_help_note">الأرقام والعملات بعد القاموس تمر بالمعالجة العادية؛ فالقيمة الحرفية تُكتب بالكلمات لا بالأرقام.</string>
+    <string name="dict_standalone_max_length_title">تطبيق الحرف المنفرد</string>
+    <string name="dict_standalone_max_length_summary">المفاتيح التي طولها %1$d أحرف أو أقل تُطبَّق فقط عندما تكون منفردة</string>
+    <string name="dict_match_mode_title">موضع التطبيق</string>
+    <string name="dict_match_mode_auto">تلقائي (حسب طول المفتاح)</string>
+    <string name="dict_match_mode_whole">كلمة منفردة فقط</string>
+    <string name="dict_match_mode_anywhere">في أي موضع</string>
+    <string name="dict_scope_title">نطاق اللغة</string>
+    <string name="dict_scope_global">عام (جميع اللغات)</string>
+    <string name="dict_scope_ar">العربية (ar)</string>
+    <string name="dict_scope_en">الإنجليزية (en)</string>
+    <string name="dict_scope_fr">الفرنسية (fr)</string>
+    <string name="dict_scope_de">الألمانية (de)</string>
+    <string name="dict_scope_es">الإسبانية (es)</string>
+    <string name="dict_pronunciation_lang_title">لغة النطق المقفلة</string>
+    <string name="dict_pronunciation_lang_auto">تلقائي (حسب السياق)</string>
+    <string name="number_reading_language_auto">تلقائي (حسب لغة الجملة)</string>
+    <string name="emoji_reading_language_title">لغة نطق الإيموجي</string>
+    <string name="emoji_reading_language_btn">لغة نطق الإيموجي: %1$s</string>
+    <string name="emoji_reading_language_auto">تلقائي (حسب صوت الإيموجي أو الجملة)</string>
+    <string name="emoji_reading_language_arabic">العربية دائماً</string>
+    <string name="emoji_reading_language_english">الإنجليزية دائماً</string>
+    <string name="language_diagnostics_enabled">تشخيص اللغات في Logcat</string>
+    <string name="language_diagnostics_summary">تسجيل أسباب تحديد اللغة والمقاطع في سجل النظام (NateqLang)</string>
 <string name="emoji_reading_enabled">نطق الإيموجي ورموز المشاعر</string>
 <string name="emoji_reading_helper">يُنطق اسم الإيموجي بدل حذفه من النص (مثال: 😀 تُنطق «وجه مبتسم»). عند الإيقاف تُحذف رموز المشاعر من النطق.</string>
 <string name="enter_word_and_pronunciation">أدخل الكلمة والنطق</string>
@@ -670,6 +694,7 @@
 <string name="time_alarm_max_precision_summary">تستخدم منبّه النظام الدقيق (setAlarmClock) متجاوزةً كل قيود Doze والبطارية فيعمل إعلان الوقت في اللحظة المضبوطة؛ أثرُها الجانبي أن أيقونة منبّه ثابتة تظهر في شريط الحالة.</string>
 <string name="changelog_title">آخر التحديثات</string>
 <string name="changelog_text">الإصدار %1$s
+- معمارية القاموس واللغات والأصوات والتوافقية: تطبيق قاموس النطق أولاً ومرة واحدة قبل أي معالجة في كل المسارات (القارئ والإعلانات وجميع اللغات) مع مطابقة النسخة المطبّعة وحفظ المواضع، وقاعدة الكلمة المنفردة للمفاتيح الحرفية القصيرة (standalone) مع معالجة الوصلات وخيارات أنماط المطابقة، ومنع التداخل اللغوي وعلامات تثبيت النطق وكاشف لاتيني محافظ وخيار القراءة التلقائية للأرقام وتشخيص اللغات (NateqLang)، وإعداد لغة نطق الإيموجي، وحصر تخصيص التطبيقات وجهات الاتصال على النصوص العادية مع الحفاظ الصارم على أصوات الفئات للأرقام والإيموجي، ودعم الإقلاع المباشر (Direct Boot) بمرآة التخزين المشفر بالعتاد ومصفوفة توافقية شاملة لأندرويد 24–37
 - تبديل محرك النظام بلا ADB وأرقام أفقية عريضة في الهاتف: أتمتة شاشة إعدادات النطق لاختيار المحرك الافتراضي عبر خدمة إمكانية الوصول مع مسار root السريع وحماية الجلسة والاحتياط الآمن، وترتيب أرقام لوحة الاتصال أفقياً (شبكة عريضة 3×4، صفان 5×2، صف واحد) مع مستويات الارتفاع وسقف 420dp وتثبيت الترتيب LTR والتطبيق الفوري ودعم تنقل الشبكة في TalkBack
 - صوت مستقل لكل تطبيق ولكل جهة اتصال: إمكانية تخصيص صوت ومحرك وسرعة ونبرة لكل تطبيق مع التبديل التلقائي عند فتح التطبيق، وتعيين صوت مخصص لكل جهة اتصال يُطبق على نطق مكالماتها ورسائلها مع تطبيع الأرقام والأسماء ومعاينة الصوت المباشرة
 - لوحة الاتصال والمفاتيح والمحركات: توحيد مدخل الاتصال المباشر (CallPlacer) مع دعم الشريحتين والرجوع الآمن، وبوابة الالتزام (CommitGate) لمنع تكرار الإدخال وكتم النطق أثناء استكشاف TalkBack، وصف مستقل للهمزات في لوحة المفاتيح وخيارات تكبير الأزرار، ودقة حصرية لتوسيع «قراءة المزيد»، والتبديل الفوري لمحرك تحويل النص لكلام على مستوى النظام (WRITE_SECURE_SETTINGS) مع شاشة إرشادية، والحفظ الذري المتزامن لتفضيلات اللغات لمنع فقدان البيانات

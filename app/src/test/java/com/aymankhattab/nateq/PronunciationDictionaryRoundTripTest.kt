@@ -217,8 +217,9 @@ class PronunciationDictionaryRoundTripTest {
      */
     @Test
     fun shortKeyAppliesInsideLongerWord() {
+        dict.setStandaloneMaxLength(0)
         dict.addEntry("م", "متر")
-        // «مرحبا» = م+رحبا ← «متر»+«رحبا»؛ الاستبدالُ يلصق ولا يقطع.
+        // «مرحبا» = م+رحبا ← «متر»+«رحبا» عند تعطيل قاعدة المنفرد (الحد = 0)
         assertEquals("متررحبا", dict.apply("مرحبا"))
         dict.addEntry("ت", "تن")
         assertEquals("تنواصل", dict.apply("تواصل"))

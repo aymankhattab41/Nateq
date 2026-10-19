@@ -86,6 +86,17 @@ class TextProcessor(
     }
 
     /**
+     * مدخل القاموس الوحيد — يُطبَّق مرة واحدة على النص الخام قبل أي معالجة:
+     * تطبيع NFC فقط ثم تطبيق القاموس وإرجاع النص (الأمر 1).
+     */
+    fun applyDictionaryFirst(text: String, languageTag: String): String {
+        if (text.isEmpty()) return text
+        pronunciationDict.reloadIfChanged()
+        val normalized = Normalizer.normalize(text, Normalizer.Form.NFC)
+        return pronunciationDict.apply(normalized, languageTag)
+    }
+
+    /**
      * هل نطق أسماء الإيموجي مفعّل؟ بلا حقنة Settings
      * (الاختبارات) يُفترض مفعّل.
      */
@@ -134,7 +145,6 @@ class TextProcessor(
         }
         steps += TashkeelStripStep
         steps += EmojiStripStep { emojiEnabled }
-        steps += DictionaryStep(pronunciationDict)
         return steps
     }
 
@@ -166,8 +176,7 @@ class TextProcessor(
 
     private fun buildEnglishPreamble(): List<TextProcessingStep> = listOf(
         IndicDigitsStep,
-        EmojiStripStep { emojiEnabled },
-        DictionaryStep(pronunciationDict)
+        EmojiStripStep { emojiEnabled }
     )
 
     private fun buildEnglishBaseSteps(): List<TextProcessingStep> {
@@ -200,19 +209,22 @@ class TextProcessor(
      *                      فتُنطق الحركات بوضوح — يحتفظ بنص المشكولة في
      *                      الإخراج عبر [restoreTashkeel]. القيمة null تعني
      *                      السلوك القائم.
+     * @param applyDictionary هل يُطبّق القاموس هنا؟ افتراضياً true لمن
+     *                        يستدعيها مباشرة (الاختبارات)؛ المسارات الحية
+     *                        تمرر false لأنها طبقت القاموس أولاً (الأمر 1).
      */
     fun process(
         text: String,
         languageTag: String = LanguageCode.AR.tag,
-        enginePackage: String? = null
+        enginePackage: String? = null,
+        applyDictionary: Boolean = true
     ): String {
         if (text.isBlank()) return text
 
-        // توحيد الترميز إلى NFC عند المدخل: نصٌ مفكوك الترميز (حرفٌ منفصل
-        // عن تشكيله/شدّته أو إيموجي مفكك المكونات) يُطوى إلى صورته المركّبة
-        // قبل أي خطوة — فتعمل التشكيل/الأرقام/الإيموجي على صيغة متطابقة
-        // بلا ازدواج بين شكلٍ مركّبٍ وشكلٍ مفكوكٍ يأتي من أي مصدر خارجي.
         var result = Normalizer.normalize(text, Normalizer.Form.NFC)
+        if (applyDictionary) {
+            result = applyDictionaryFirst(result, languageTag)
+        }
 
         // تفسير SSML المحدود (بند الأوامر د.3.7): يترجم <break> و<say-as>
         // والكيانات قبل كل الفروع (العربية والإنجليزية واللغات الأخرى) —

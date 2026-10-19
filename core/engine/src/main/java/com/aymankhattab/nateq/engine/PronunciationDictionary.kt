@@ -3,95 +3,56 @@ package com.aymankhattab.nateq.engine
 import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
-import com.aymankhattab.nateq.engine.pipeline.TashkeelStripStep
+import com.aymankhattab.nateq.core.audio.engine.LanguageSegmenter
+import com.aymankhattab.nateq.core.audio.engine.SegmentWithOffset
+import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.NateqJson
 import com.aymankhattab.nateq.util.optObject
 import java.lang.reflect.Type
 
 /**
- * قاموس النطق الشخصي - يسمح للمستخدم بتعريف نطق مخصص للكلمات/الاختصارات
- * أمثلة: "د." → "دكتور"، "ص" → "صفحة"، "HTTP" → "إتش تي تي بي"
- *
- * منذ بند الأوامر د.3.5 يدعم القاموس كلا النطاقَيْن: عام ([languageTag] =
- * null: يُخزَّن تحت المفتاح "dictionary" — السلوك القائم) وخاصٌّ بلغةٍ
- * ([languageTag] = "ar-EG" مثلًا: يُخزَّن مع بقية الطبقات تحت المفتاح
- * "dictionary_scopes"). عند النطق
- * بلغةٍ يُدمج العامُّ ثم الخاصُّ (الخاص يعلو العام) بآلةِ مطابقةٍ منفصلة
- * لكل وسم، والاستدعاءاتُ القائمة بلا وسمٍ تبقى سليمةً تماماً.
+ * مخرج مطابقة واحد في آلة Aho-Corasick الموحدة للقاموس (الأوامر 1 و2 و3).
+ */
+data class DictOutput(
+    val normalizedKey: String,
+    val originalKey: String,
+    val value: String,
+    val scope: String?,
+    val matchMode: String = "AUTO",
+    val valueLang: String? = null
+)
+
+/**
+ * قاموس النطق الشخصي الموحد — يطبق مرة واحدة على النص الخام قبل أي معالجة.
+ * يدعم النطاق العام والطبقات اللغوية حسب منطقة الكلمة (الأمر 1)،
+ * وتطبيق الحرف المنفرد فقط (الأمر 2)، وقفل لغة النطق (الأمر 3).
  */
 class PronunciationDictionary(
     private val context: Context,
-    /** الخنق بين فحصَين للقرص عند رصد تعديلات عملية الواجهة (نانوثانية).
-     *  الافتراضي ثانية ونصف؛ وقابل للحقن لاختباره حتمياً. */
-    private val diskCheckThrottleNanos: Long =
-        DISK_CHECK_THROTTLE_NANOS
+    private val diskCheckThrottleNanos: Long = DISK_CHECK_THROTTLE_NANOS
 ) {
 
     companion object {
-        /**
-         * بثّ داخلي يعيد تحميل قاموس عملية محرك TTS فور حفظ تعديلٍ من
-         * عملية الواجهة؛ لا نعتمد على دقة طابع ملف التفضيلات بين العمليتين.
-         */
         const val ACTION_DICTIONARY_CHANGED =
             "com.aymankhattab.nateq.action.DICTIONARY_CHANGED"
 
-        // حدود دفاعية ضد ملفات JSON ضخمة/خبيثة واردة من SAF. الملف
-        // يُقرأ كاملاً في الذاكرة قبل التجزئة، فالسقف ضروري: فوقه
-        // يَOOM التطبيق عند قراءة الملف قبل التحقق. 8 ميغابايت أوسعُ
-        // من احتياج القاموس الحقيقي بأضعاف (آلاف المدخلات = أقلّ من
-        // ميغابايت) مع بقائه آمناً على الأجهزة الضعيفة.
         const val MAX_IMPORT_BYTES = 8 * 1024 * 1024
-        // سقفٌ تقنيّ لا تقييد عملي: يحمي من قاموسٍ يُغرق بناءَ آلة
-        // Aho-Corasick في الذاكرة. **عامٌّ** ليبقى المرجعُ واحداً
-        // في القاموس وفي اختباره، فلا يتناقِثُ الحدّان (بند 3.7:
-        // حدٌّ في موضعين = قيمةٌ منفلتة في أحدهما).
         const val MAX_IMPORT_ENTRIES = 200_000
-        // طول المفتاح والقيمة: بلا سقف عملي — تُقصّ فقط حمايةً من
-        // مدخلٍ شارد يبني عقداً عملاقة بلا فائدة. 8 آلاف حرف أوسعُ
-        // من أي كلمة أو اختصار حقيقي.
         const val MAX_KEY_LENGTH = 8_000
         const val MAX_VALUE_LENGTH = 8_000
-        // الخنق بين فحصَي القرص في reloadIfChanged: استدعاء lastModified()
-        // على ملف التفضيلات المُنفَّذ لكل فقرة صوتية — الخنق يقلّص الـ I/O.
-        private const val DISK_CHECK_THROTTLE_NANOS =
-            1_500_000_000L // 1.5 ثانية
-        // مفتاح تتبّع هجرة حذف الإدخالات الافتراضية القديمة (تُنفَّذ مرة
-        // واحدة)
+
+        private const val DISK_CHECK_THROTTLE_NANOS = 1_500_000_000L
         private const val KEY_DEFAULTS_MIGRATED = "defaults_migrated_to_empty"
-        // مفتاح تخزين الطبقات اللغوية: كائن JSON واحد {وسم: {مفتاح: قيمة}}
-        // — لا نعدّ مفاتيح التفضيلات كلها ([SharedPreferences.all] غير مدعوم
-        // في EncryptedSharedPreferences على بعض البيئات) فلا مخاطرة ولا أطلال.
         private const val KEY_SCOPES = "dictionary_scopes"
-        // اسمُ التفضيلات نفسه للتشفيرِ وللتخزين العادي — فالملفُ واحدٌ
-        // فيقرؤه أيّهما: path واحد ولا ازدواج.
+        private const val KEY_MATCH_MODES = "dictionary_match_modes"
+        private const val KEY_VALUE_LANGS = "dictionary_value_lang"
+
         const val PREFS_NAME = "nateq_pronunciation_dict"
         private const val LOG_TAG = "NateqDict"
 
-        /**
-         * **المثّل الواحد على مستوى العملية — جذرُ عطل «القاموس لا يعمل».**
-         *
-         * كان لكلِّ مستهلكٍ نسختُه الخاصة: الواجهةُ تحقن Hilt نسخةً، و
-         * [AnnouncementSpeaker] (نطقُ الإعلانات والمعاينات) يبني نسخةً أخرى
-         * بـ`TextProcessor(appContext, settings)` بلا قاموسٍ محقون. ولا يجمع
-         * بينهما إلا **قراءةُ الملف من القرص** عبر `reloadIfChanged` — وهي
-         * تنهار بصمتٍ إن: تعذّر فتحُ التخزين المشفّر (Keystore معطوبٌ بعد
-         * استرجاع نسخة احتياطية، أو Tink مقطوع، أو بعضُ الأجهزة) فيصير
-         * القاموسُ **بالذاكرة فقط** لكل نسخة، فلا يرى النطقُ ما كتبته
-         * الواجهةُ أبداً؛ أو لم يتغيّر `lastModified()` على بعض الأنظمة؛ أو
-         * وقع الطلبُ داخل نافذةِ الخنق (1.5s). **والعَرَضُ واحدٌ في الحالات
-         * الثلاث: قائمةُ الإعدادات تُظهر المدخلات والنطقُ لا يطبّقها.**
-         *
-         * فالمثيلُ الواحد يُلغي المزامنةَ بين العملية الواحدة تماماً: لا
-         * استطلاعَ للقرص ولا نافذةَ انتظار. ويبقى الاستطلاعُ لعمليّة `:tts`
-         * وحدها لأنها genuinely منفصلة.
-         *
-         * ولا غموض: الاختباراتُ تستدعي [PronunciationDictionary] مباشرةً
-         * فتحصل كلٌّ على نسختها المعزولة (شرطُ عزلة الاختبار).
-         */
         @Volatile
         private var sharedInstance: PronunciationDictionary? = null
 
-        /** مثيلُ العملية الواحدة — انظر [sharedInstance] للسبب. */
         fun shared(context: Context): PronunciationDictionary =
             sharedInstance ?: synchronized(this) {
                 sharedInstance ?: PronunciationDictionary(
@@ -99,32 +60,42 @@ class PronunciationDictionary(
                 ).also { sharedInstance = it }
             }
 
-        /**
-         * يُصفّر المثّلَ المشترك — **للاختبارات وحدها** (عزلُ كل حالة JVM).
-         * في الإنتاج لا يفرّغه أبداً: إفراغُه ينسخ القاموسَ من حيٍّ إلى ميت
-         * ويُفقد النطقَ ما أضيفَ في-flight، فلا داعيَ لمساره في الكود الحقيقي.
-         */
         fun resetSharedForTests() {
             synchronized(this) { sharedInstance = null }
         }
+
+        fun normalizeKey(rawKey: String): String {
+            val sb = java.lang.StringBuilder(rawKey.length)
+            var i = 0
+            while (i < rawKey.length) {
+                val cp = rawKey.codePointAt(i)
+                val w = Character.charCount(cp)
+                i += w
+                if (isTashkeelOrTatweel(cp)) continue
+                val normCp = normalizeIndicDigit(cp)
+                sb.appendCodePoint(normCp)
+            }
+            return sb.toString().trim()
+        }
+
+        private fun isTashkeelOrTatweel(cp: Int): Boolean =
+            (cp in 0x064B..0x065F) || cp == 0x0670 || cp == 0x0640
+
+        private fun normalizeIndicDigit(cp: Int): Int = when (cp) {
+            in 0x0660..0x0669 -> '0'.code + (cp - 0x0660)
+            in 0x06F0..0x06F9 -> '0'.code + (cp - 0x06F0)
+            else -> cp
+        }
+
+        /**
+         * إزالة علامات قفل اللغة لأي نص لا يمر بالمقسم (الأمر 3).
+         */
+        fun stripLanguageLocks(text: String): String =
+            LanguageSegmenter.stripLockMarkers(text)
     }
 
-    /** نمطُ التخزين الساري — يُعرَض في شاشة التشخيص ليعرف المستخدمُ
-     *  أيَّ حالةٍ يعمل بها القاموس بدل أن يفشل صامتاً. */
     enum class StorageMode { ENCRYPTED, PLAIN, MEMORY_ONLY }
 
-    // **لا يجوزُ أبداً أن يرمي إنشاءُ التخزينِ خدمةَ :tts** فهي تنشئ هذا
-    // الكائن في onCreate()، وأي استثناء هنا (Keystore معطوب، Tink مقطوع،
-    // وضع محاكي…) يُسقطها فيرفض نظامُ سامسونج المحركَ برسالة «يستمر التطبيق
-    // في التوقف». فالاختيارُ تراتبٌ لا خيارات: مشفّرٌ أولاً، ثم عاديٌّ إن
-    // تعذّر، ثم الذاكرةُ وحدها.
-    //
-    // **ولماذا عاديٌّ لا ذاكرة؟** القاموسُ تفضيلاتُ نطقٍ لا سرّ: قيمةُ
-    // «ج = جنيه» ليست بياناتٍ يستحقّها التشفير. فالتشفيرُ هنا لا يضيفُ
-    // أماناً يُذكر، وإنّما يجعل الميزةَ **تفشل صامتاً** إن تعذّر فتحُ
-    // Keystore — وهو ما كان يُبطلُ القاموسَ كلَّه على جهاز المستخدم. أمّا
-    // الذاكرةُ وحدها فهي الخيارُ الأخير: عملٌ دون حفظٍ دائم، وهو
-    // أهونُ من ضياعٍ صامت.
     private val storageRef: StorageMode
     private val prefs: android.content.SharedPreferences?
 
@@ -136,9 +107,8 @@ class PronunciationDictionary(
                     PREFS_NAME, android.content.Context.MODE_PRIVATE
                 )
             }.getOrNull()
-        } else {
-            null
-        }
+        } else null
+
         when {
             encrypted != null -> {
                 storageRef = StorageMode.ENCRYPTED
@@ -150,7 +120,7 @@ class PronunciationDictionary(
                 android.util.Log.w(
                     LOG_TAG,
                     "تعذّر فتح التخزين المشفّر لقاموس النطق؛ التحويل إلى" +
-                        " تخزين عادي كي لا يفشل القاموس صامتاً"
+                        " تخزين عادي"
                 )
             }
             else -> {
@@ -158,20 +128,14 @@ class PronunciationDictionary(
                 prefs = null
                 android.util.Log.w(
                     LOG_TAG,
-                    "تعذّر فتح أيّ تخزين لقاموس النطق؛ سيعمل بالذاكرة" +
-                        " وحدها وستضيع المدخلاتُ بإعادة التشغيل"
+                    "تعذّر فتح أيّ تخزين لقاموس النطق؛ سيعمل بالذاكرة"
                 )
             }
-}
+        }
     }
 
-    /** نمطُ التخزين الساري — بعد [init] لا قبله، وإلا قُرئ غيرَ مهيّأ. */
     val storageMode: StorageMode get() = storageRef
 
-    /** يفتح مثيلاً جديداً من تخزين التفضيلات المشفّر. كل مكالمة تنشئ كائناً
-     *  جديداً بلا كاش داخلي سابق — تُستخدم للقراءة في [loadFromPrefs] لأن
-     *  الكائن العضو [prefs] يخزّن نواتج فك التشفير في ذاكرته فلا يرى
-     * تعديل عملية الواجهة الأجنبية حتى لو تغيّر طابع الملف. */
     private fun openEncryptedPrefs(): android.content.SharedPreferences? {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -185,13 +149,6 @@ class PronunciationDictionary(
         )
     }
 
-    /**
-     * نسخةٌ **طازجة** من التخزين الساري: الكائن العضو [prefs] يخزّن
-     * نواتج فك التشفير في
-     * ذاكرته فلا يرى تعديلَ كائنٍ آخر، فتن القراءةُ تُجرى بنسخةٍ جديدة
-     * كلّما ظهر تغيّرٌ على القرص. تأخذ النمطَ الساري (مشفّر/عادي) فلا
-     * تقرأ من تخزينٍ غير الذي كُتب فيه.
-     */
     private fun openFreshPrefs(): android.content.SharedPreferences? =
         when (storageRef) {
             StorageMode.ENCRYPTED -> runCatching { openEncryptedPrefs() }
@@ -204,98 +161,73 @@ class PronunciationDictionary(
             StorageMode.MEMORY_ONLY -> null
         }
 
-    // مظلة JSON الموحّدة (البند 3): كل JSON يمر عبر NateqJson في مكان واحد.
-    // «خريطة لقطة» تُستبدل مرجعاً ذرياً (Copy-on-Write) عند كل تغيير أو إعادة
-    // تحميل حتى لا ترى خيوط النطق المتزامنة قاموساً جزئياً أثناء القراءة.
     @Volatile
     private var entries: Map<String, String> = emptyMap()
 
-    // الطبقة الخاصة باللغات: وسم اللغة ← خرائطها الخاصة (Copy-on-Write مثل
-    // [entries]). تُخزَّن كل الطبقات معاً تحت المفتاح [KEY_SCOPES]، وخريطةُ
-    // النطق لأي لغة = العام [entries] فوقه الخاص (الخاص يعلو العام).
     @Volatile
     private var langEntries: Map<String, Map<String, String>> = emptyMap()
 
-    // عداد تغيير: يزداد مع كل تبديلِ مرجعٍ ذري — يُقيَّد به مخبأُ آلة
-    // Aho-Corasick مع وسم اللغة فلا تُبنى آلةٌ من قاموسٍ يتبدل أثناء البناء.
+    @Volatile
+    private var matchModes: Map<String, String> = emptyMap()
+
+    @Volatile
+    private var valueLangs: Map<String, String> = emptyMap()
+
     @Volatile
     private var version = 0L
 
-    // مخبأ آلة Aho-Corasick مقيّد بهوية لقطة المكتتبة: يُبنى من لقطة كاملة
-    // (العام أو المدمج لكل وسم) ويُعاد بناؤه عند تبديل [version] أو الوسم.
+    /**
+     * حقل لاختبار حد الحرف المنفرد برمجياً في اختبارات الوحدة.
+     */
+    var testStandaloneMaxLength: Int? = null
+
+    fun setStandaloneMaxLength(len: Int) {
+        testStandaloneMaxLength = len
+    }
+
     private data class MachineCache(
-        val langTag: String?,
         val version: Long,
-        val snapshot: Map<String, String>,
-        val machine: AhoCorasick
+        val machine: UnifiedAhoCorasick
     )
 
     @Volatile
     private var cache: MachineCache? = null
-    // نوع بالمفتاح النصي القيمة النصية — من مظلة NateqJson (لا TypeToken:
-    // مقاوم لقصّ R8 للتوقيعات العامة).
+
     private val typeToken: Type = NateqJson.mapStringOf(String::class.java)
 
-    // ملف التفضيلات المشفّر على القرص — يُرصد طابعه لاكتشاف تعديلات عملية
-    // الواجهة المنفصلة عن عملية :tts دون إعادة فتح التفضيلات في كل نطق.
     private val prefsFile: java.io.File? =
         if (prefs != null) context.filesDir?.parentFile
             ?.let {
                 java.io.File(it, "shared_prefs/nateq_pronunciation_dict.xml")
             }
         else null
-    // آخر طابع قرأه هذا المثيل من القرص؛ null = يجب إعادة القراءة.
+
     @Volatile
     private var lastStamp: Long? = null
-    // آخر فحص للقرص (ساعة رتية) — يُختنق به stat يُنفَّذ لكل فقرة.
+
     @Volatile
     private var lastDiskCheckNanos = 0L
 
     init {
-        val (global, langs) = loadFromPrefs(prefs)
-        entries = global
-        langEntries = langs
+        val loaded = loadFromPrefs(prefs)
+        entries = loaded.global
+        langEntries = loaded.scopes
+        matchModes = loaded.modes
+        valueLangs = loaded.vLangs
         removeLegacyDefaultsOnce()
         if (prefs != null) lastStamp = currentStamp()
     }
 
-    /** تطبيع وسم اللغة: يُجرد من الفراغات؛ فارغٌ/بلا وسم = النطاق العام. */
     private fun normalizeLangTag(raw: String?): String? {
         val trimmed = raw?.trim().orEmpty()
         return trimmed.ifEmpty { null }
     }
 
-    /** خريطة الدمج للوسم: العام أولاً ثم الخاص يعلوه (بلا تعديل [entries]). */
-    private fun mergedFor(lang: String?): Map<String, String> {
-        if (lang == null) return entries
-        val overlay = langEntries[lang] ?: return entries
-        if (overlay.isEmpty()) return entries
-        return LinkedHashMap(entries).apply { putAll(overlay) }
-    }
-
-    /**
-     * الإدخالات الافتراضية القديمة — فارغة ليبقى القاموس تحت تحكم المستخدم
-     * كاملاً بلا تحويلات افتراضية مفروضة.
-     */
-    private fun legacyDefaultEntries(): Map<String, String> = emptyMap()
-
-    /** هجرة لمرة واحدة: حذف الإدخالات الافتراضية القديمة
-     *  المخزّنة عند المستخدم.
-     *  تُحذف المزاوجات المطابقة للافتراضي فقط
-     *  (لا تُمسّ تعديلات المستخدم على نفس المفتاح). */
     private fun removeLegacyDefaultsOnce() {
         val sp = prefs ?: return
         if (sp.getBoolean(KEY_DEFAULTS_MIGRATED, false)) return
         var changed = false
         val updated = LinkedHashMap(entries)
-        for ((key, value) in legacyDefaultEntries()) {
-            if (updated[key] == value) {
-                updated.remove(key)
-                changed = true
-            }
-        }
-        // تنظيف إدخالات قديمة ضارة خُزّنت في نسخ سابقة على أجهزة المستخدمين
-        // (استُبدل لفظ كتابةً وفاق بحيث شوّهت «50 ريال قطري» و«500 جم»)
         for ((key, badValue) in mapOf(
             "ريال" to "ريال سعودي", "جم" to "الجمعة"
         )) {
@@ -308,33 +240,32 @@ class PronunciationDictionary(
             swapEntries(updated)
             save()
         }
-sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
+        sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
     }
 
-    /** هل التخزين المشفّر متاح فعلاً (Keystore سليم) أم يُعمل بالذاكرة فقط؟ */
     fun isPersistent(): Boolean = prefs != null
 
-    /** إعادة تحميل الإدخالات من القرص المشفّر — يلتقط التعديلات التي كتبتها
-     *  عملية الواجهة المنفصلة عن عملية :tts (الإنشاء يُحمّل مرة واحدة فقط).
-     *  إلى خريطة كاملة جديدة ثم تبديل المرجع ذرياً (بلا clear في المنتصف). */
     fun reload() {
         if (prefs == null) return
-        val (global, langs) = loadFromPrefs()
+        val loaded = loadFromPrefs()
         synchronized(this) {
-            entries = global
-            langEntries = langs
+            entries = loaded.global
+            langEntries = loaded.scopes
+            matchModes = loaded.modes
+            valueLangs = loaded.vLangs
             cache = null
             version++
         }
         lastStamp = currentStamp()
     }
 
-    /** مسح كل إدخالات القاموس (عامة ولغات) — يُستخدم لإعادة الضبط الكامل. */
     fun clearAll(): Boolean {
         if (prefs == null) return false
         synchronized(this) {
             entries = emptyMap()
             langEntries = emptyMap()
+            matchModes = emptyMap()
+            valueLangs = emptyMap()
             cache = null
             version++
         }
@@ -347,20 +278,11 @@ sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
         return ok
     }
 
-    /** تصفير مؤقت الخنق لإجبار [reloadIfChanged] على فحص القرص فوراً. */
     fun invalidate() {
         lastDiskCheckNanos = 0L
-        // لا تكتفِ بتصفير الخنق: أنظمة ملفاتٍ عدة لا تغيّر lastModified
-        // لكتابتين متقاربتين، فتظل عملية :tts على لقطة قديمة رغم وصول
-        // إشعار التغيير. null يجبر reloadIfChanged على قراءةٍ طازجة.
         lastStamp = null
     }
 
-    /** إعادة تحميل فورية فقط إذا تغيّر طابع الملف على القرص منذ آخر قراءة —
-     *  فحص طابع أرخص بكثير من إعادة فتح التفضيلات المشفّرة في كل نطق، ويُدعى
-     *  تلقائياً من [apply] ليلتقط تعديلات عملية
-     *  الواجهة دون إعادة تشغيل الخدمة. يُختنق فحص القرص بثانية ونصفٍ
-     *  على الأقل حتى لا يُنفَّذ stat على كل فقرة صوتية. */
     fun reloadIfChanged(): Boolean {
         if (prefs == null) return false
         val now = System.nanoTime()
@@ -370,10 +292,12 @@ sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
         lastDiskCheckNanos = now
         val stamp = currentStamp()
         if (lastStamp == stamp) return false
-        val (global, langs) = loadFromPrefs()
+        val loaded = loadFromPrefs()
         synchronized(this) {
-            entries = global
-            langEntries = langs
+            entries = loaded.global
+            langEntries = loaded.scopes
+            matchModes = loaded.modes
+            valueLangs = loaded.vLangs
             cache = null
             version++
         }
@@ -381,14 +305,12 @@ sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
         return true
     }
 
-    /** استبدال مرجع الخريطة ذرياً وإبطال مخبأ الآلة المقيّد به. */
     private fun swapEntries(updated: Map<String, String>) {
         entries = updated
         cache = null
         version++
     }
 
-    /** استبدال مرجع طبقة اللغة ذرياً — تُحذف الطبقة إذا أُفرغت كلياً. */
     private fun swapLangEntries(lang: String, updated: Map<String, String>) {
         val copy = LinkedHashMap(langEntries)
         if (updated.isEmpty()) copy.remove(lang) else copy[lang] = updated
@@ -400,49 +322,116 @@ sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
     private fun currentStamp(): Long =
         prefsFile?.let { if (it.exists()) it.lastModified() else 0L } ?: 0L
 
-    /** تطبيق القاموس على نص — بالدمج العام+الخاص إن حُدد [languageTag]. */
+    private fun getStandaloneMaxLength(): Int {
+        testStandaloneMaxLength?.let { return it }
+        return runCatching {
+            context.getSharedPreferences(
+                "nateq_settings", Context.MODE_PRIVATE
+            ).getInt("dictionary_standalone_max_length", 1)
+        }.getOrDefault(1)
+    }
+
+    /**
+     * تطبيق القاموس على النص الخام باستخدام آلة موحدة من إدخالات العام
+     * وكل الطبقات، مع تحديد لغة كل منطقة عبر LanguageSegmenter (الأمر 1).
+     */
     fun apply(text: String, languageTag: String? = null): String {
-        // اكتشاف تعديلات عملية الواجهة على القرص قبل كل تطبيق
+        if (text.isEmpty()) return text
         reloadIfChanged()
-        val lang = normalizeLangTag(languageTag)
+
         var held = cache
-        if (held == null || held.langTag != lang || held.version != version) {
+        if (held == null || held.version != version) {
             held = synchronized(this) {
                 val currentVersion = version
                 val cached = cache
-                if (cached != null && cached.langTag == lang &&
-                    cached.version == currentVersion
-                ) {
+                if (cached != null && cached.version == currentVersion) {
                     cached
                 } else {
-                    val merged = mergedFor(lang)
+                    val outputs = buildAllOutputs()
                     MachineCache(
-                        lang, currentVersion, merged, AhoCorasick(merged)
+                        currentVersion,
+                        UnifiedAhoCorasick(outputs)
                     ).also { cache = it }
                 }
             }
         }
-        return held.machine.apply(text)
+
+        val segmenter = LanguageSegmenter()
+        val segments = segmenter.segmentWithOffsets(
+            text,
+            fallbackLanguage = languageTag ?: LanguageCode.AR.tag
+        )
+
+        return held.machine.apply(text, segments, getStandaloneMaxLength())
     }
 
-    /** إضافة إدخال جديد — في النطاق العام أو طبقةِ [languageTag] الخاصة. */
+    private fun buildAllOutputs(): List<DictOutput> {
+        val list = ArrayList<DictOutput>()
+        // 1. الإدخالات العامة
+        for ((key, value) in entries) {
+            val normKey = normalizeKey(key)
+            if (normKey.isEmpty()) continue
+            val mode = matchModes["|$key"] ?: "AUTO"
+            val vLang = valueLangs["|$key"]
+            list.add(
+                DictOutput(
+                    normalizedKey = normKey,
+                    originalKey = key,
+                    value = value,
+                    scope = null,
+                    matchMode = mode,
+                    valueLang = vLang
+                )
+            )
+        }
+        // 2. إدخالات كل الطبقات اللغوية
+        for ((scopeTag, scopeMap) in langEntries) {
+            for ((key, value) in scopeMap) {
+                val normKey = normalizeKey(key)
+                if (normKey.isEmpty()) continue
+                val mode = matchModes["$scopeTag|$key"] ?: "AUTO"
+                val vLang = valueLangs["$scopeTag|$key"]
+                list.add(
+                    DictOutput(
+                        normalizedKey = normKey,
+                        originalKey = key,
+                        value = value,
+                        scope = scopeTag,
+                        matchMode = mode,
+                        valueLang = vLang
+                    )
+                )
+            }
+        }
+        return list
+    }
+
     fun addEntry(
         abbreviation: String,
         pronunciation: String,
         languageTag: String? = null
+    ): Boolean = addEntry(
+        abbreviation, pronunciation, languageTag, null, null
+    )
+
+    fun addEntry(
+        abbreviation: String,
+        pronunciation: String,
+        languageTag: String? = null,
+        matchMode: String? = null,
+        valueLang: String? = null
     ): Boolean {
         if (abbreviation.isBlank() || pronunciation.isBlank()) return false
         val key = abbreviation.trim()
-        val strippedKey = TashkeelStripStep.apply(key).trim()
+        val strippedKey = normalizeKey(key)
         if (strippedKey.isEmpty()) return false
         val value = pronunciation.trim()
-        if (key.length > MAX_KEY_LENGTH ||
-            value.length > MAX_VALUE_LENGTH
-        ) return false
+        if (key.length > MAX_KEY_LENGTH || value.length > MAX_VALUE_LENGTH) {
+            return false
+        }
         val lang = normalizeLangTag(languageTag)
-        // بند 3.13: تثبيت القراءة-التعديل-الكتابة داخل قفل حتى لا تضيع
-        // إدخالات من استدعاءات متزامنة من خيطين (كانا يقرآن نفس اللقطة
-        // فيستبدل كلٌّ منهما عملَ الآخر).
+        val modeKey = "${lang.orEmpty()}|$key"
+
         synchronized(this) {
             if (lang == null) {
                 val updated = LinkedHashMap(entries)
@@ -453,42 +442,89 @@ sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
                 overlay[key] = value
                 swapLangEntries(lang, overlay)
             }
+
+            val modes = LinkedHashMap(matchModes)
+            if (!matchMode.isNullOrBlank() && matchMode != "AUTO") {
+                modes[modeKey] = matchMode.uppercase()
+            } else {
+                modes.remove(modeKey)
+            }
+            matchModes = modes
+
+            val vLangs = LinkedHashMap(valueLangs)
+            if (!valueLang.isNullOrBlank()) {
+                vLangs[modeKey] = valueLang.trim()
+            } else {
+                vLangs.remove(modeKey)
+            }
+            valueLangs = vLangs
+
+            cache = null
+            version++
         }
         lastDiskCheckNanos = 0L
         return save()
     }
 
-    /** حذف إدخال — من النطاق العام أو طبقةِ [languageTag] الخاصة. */
     fun removeEntry(
         abbreviation: String,
         languageTag: String? = null
     ): Boolean {
         val lang = normalizeLangTag(languageTag)
+        val key = abbreviation.trim()
+        val modeKey = "${lang.orEmpty()}|$key"
         var changed = false
         synchronized(this) {
             if (lang == null) {
                 val updated = LinkedHashMap(entries)
-                changed = updated.remove(abbreviation.trim()) != null
+                changed = updated.remove(key) != null
                 if (changed) swapEntries(updated)
             } else {
-                val overlay = LinkedHashMap(
-                    langEntries[lang] ?: emptyMap()
-                )
-                changed = overlay.remove(abbreviation.trim()) != null
+                val overlay = LinkedHashMap(langEntries[lang] ?: emptyMap())
+                changed = overlay.remove(key) != null
                 if (changed) swapLangEntries(lang, overlay)
+            }
+            if (changed) {
+                val modes = LinkedHashMap(matchModes)
+                modes.remove(modeKey)
+                matchModes = modes
+
+                val vLangs = LinkedHashMap(valueLangs)
+                vLangs.remove(modeKey)
+                valueLangs = vLangs
+
+                cache = null
+                version++
             }
         }
         lastDiskCheckNanos = 0L
         return if (changed) save() else false
     }
 
-    /** تفريغ القاموس بالكامل (الذاكرة والقرص معاً) — يُستدعى عند «استعادة
-     *  الافتراضيات»: إن نُظّف الملف وحده بقي المخزون في الذاكرة، فيظل
-     *  يُقرأ من الخريطة وُيعاد كتابته للملف بمجرد إضافة أي كلمة جديدة. */
+    fun getMatchMode(
+        abbreviation: String,
+        languageTag: String? = null
+    ): String {
+        val lang = normalizeLangTag(languageTag)
+        val modeKey = "${lang.orEmpty()}|${abbreviation.trim()}"
+        return matchModes[modeKey] ?: "AUTO"
+    }
+
+    fun getValueLang(
+        abbreviation: String,
+        languageTag: String? = null
+    ): String? {
+        val lang = normalizeLangTag(languageTag)
+        val modeKey = "${lang.orEmpty()}|${abbreviation.trim()}"
+        return valueLangs[modeKey]
+    }
+
     fun clear() {
         synchronized(this) {
             swapEntries(emptyMap())
             langEntries = emptyMap()
+            matchModes = emptyMap()
+            valueLangs = emptyMap()
             cache = null
             version++
         }
@@ -496,45 +532,32 @@ sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
         save()
     }
 
-    /** الحصول على إدخالات نطاقٍ — العام أو طبقةِ [languageTag] وحدها. */
     fun getAllEntries(languageTag: String? = null): Map<String, String> {
         val lang = normalizeLangTag(languageTag)
         return if (lang == null) entries.toMap()
         else (langEntries[lang] ?: emptyMap()).toMap()
     }
 
-/**
-     * استيراد قاموس من JSON — **بلا تسامح مع أي خطأ** (قرار المدير):
-     * المدخلُ غير الصالح (قيمةٌ ليست نصّاً، أو مفتاحٌ/قيمةٌ فارغة، أو
-     * أطولُ من الحدّ) **يُفشل الملفَ كاملاً** ولا يُستورد منه شيء.
-     *
-     * **لماذا الفشلُ لا التخطّي؟** كان الصفُّ الفاسد يُتخطّى صامتاً
-     * فيخرج المستخدمُ بقاموسٍ ناقصٍ لا يعرف ما الذي ضاع منه، فيظنّ
-     * أن كل شيءٍ دخل — وصمتٌ يُقنعه بما لم يكن. الآن إمّا الملفُ كلُّه
-     * أو لا شيء.
-     *
-     * @param merge true: يُدمج مع الحالي (تتغلب الجديدات على المفاتيح
-     *               المكررة مع بقية الحالي)؛ false: يحل محله بالكامل.
-     * @return true إن طُبِّق الملفُ كاملاً وحُفظ؛ false عند أي خطأ.
-     */
+    fun findEntryScope(key: String): String? {
+        val trimmed = key.trim()
+        if (entries.containsKey(trimmed)) return null
+        for ((tag, map) in langEntries) {
+            if (map.containsKey(trimmed)) return tag
+        }
+        return null
+    }
+
     fun importFromJson(
         json: String,
         merge: Boolean = false,
         languageTag: String? = null
     ): Boolean {
         if (json.length > MAX_IMPORT_BYTES) return false
-        // **تحليلٌ إلى شجرة JSON لا إلى Map<String,String>**: Gson يُحوّل
-        // الرقمَ 5 إلى نصٍّ «5» فيمرّ مدخلٌ غيرُ نصّيٍّ بصفته نصّاً — وكان
-        // الاستيرادُ يقبل `{"أ": 5}` و`{"أ": true}`. الشجرةُ تُبقي نوعَ
-        // القيمة فيُتحقَّق منه صراحةً.
         val obj = NateqJson.parseObject(json) ?: return false
         if (obj.size() == 0) return false
 
-        // تحقّقٌ صارم: أي مدخلٍ فاسد يُفشل الملفَ كلَّه بلا استثناء،
-        // فلا استيراد جزئي ولا مدخلات مفقودة بلا إشعار.
         val valid = LinkedHashMap<String, String>()
         for ((rawKey, element) in obj.entrySet()) {
-            // يجب أن يكون نصّاً خاماً: لا رقمٌ ولا منطقيٌ ولا null.
             if (!element.isJsonPrimitive ||
                 !element.asJsonPrimitive.isString
             ) {
@@ -550,7 +573,6 @@ sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
         }
         if (valid.isEmpty()) return false
 
-        // السقف التراكمي: **تجاوزُه يُفشل الاستيراد** لا يقتطعُ صامتاً.
         val lang = normalizeLangTag(languageTag)
         val imported = synchronized(this) {
             val base = if (lang == null) entries
@@ -577,7 +599,6 @@ sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
         return save()
     }
 
-    /** تصدير نطاقٍ إلى JSON — العام أو طبقةِ [languageTag] وحدها. */
     fun exportToJson(languageTag: String? = null): String {
         val lang = normalizeLangTag(languageTag)
         val source = if (lang == null) entries
@@ -585,31 +606,65 @@ sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
         return NateqJson.toJson(source)
     }
 
+    fun exportModesToJson(): String = NateqJson.toJson(matchModes)
+
+    fun importModesFromJson(json: String): Boolean {
+        if (json.length > MAX_IMPORT_BYTES) return false
+        val parsed = parseEntries(json)
+        synchronized(this) {
+            val updated = LinkedHashMap(matchModes)
+            updated.putAll(parsed)
+            matchModes = updated
+            cache = null
+            version++
+        }
+        return save()
+    }
+
+    private data class LoadedData(
+        val global: Map<String, String>,
+        val scopes: Map<String, Map<String, String>>,
+        val modes: Map<String, String>,
+        val vLangs: Map<String, String>
+    )
+
     private fun loadFromPrefs(
         sourceSp: android.content.SharedPreferences? = null
-    ): Pair<Map<String, String>, Map<String, Map<String, String>>> {
-        // تُقرأ القيم من «مثيل طازج» (انظر [openFreshPrefs]) لا من الكائن
-        // العضو
-        // المخبئ — تصطاد تعديلات عملية الواجهة عبر الطابع. على فشل الفتح أو
-        // الفك نقف عند آخر ما رصدناه بدل مسح القاموس الحي (تفضيلُ مستخدمٍ
-        // حقيقي لا يجوز أن يُمحى بسبب خللٍ عابر). القراءة بمفتاحين معلومين
-        // فقط — بلا عدّ [SharedPreferences.all] غير المدعوم في التخزين
-        // المشفّر على بعض البيئات فيُسقط الحفظ كاملاً.
-        val sp = sourceSp ?: openFreshPrefs() ?: return entries to langEntries
+    ): LoadedData {
+        val sp = sourceSp ?: openFreshPrefs() ?: return LoadedData(
+            entries, langEntries, matchModes, valueLangs
+        )
         val globalJson = try {
             sp.getString("dictionary", "{}")
         } catch (t: Throwable) {
-            return entries to langEntries
+            return LoadedData(entries, langEntries, matchModes, valueLangs)
         }
         val scopesJson = try {
             sp.getString(KEY_SCOPES, "{}")
         } catch (t: Throwable) {
-            return parseEntries(globalJson) to langEntries
+            return LoadedData(
+                parseEntries(globalJson), langEntries, matchModes, valueLangs
+            )
         }
-        return parseEntries(globalJson) to parseScopes(scopesJson)
+        val modesJson = try {
+            sp.getString(KEY_MATCH_MODES, "{}")
+        } catch (t: Throwable) {
+            "{}"
+        }
+        val vLangsJson = try {
+            sp.getString(KEY_VALUE_LANGS, "{}")
+        } catch (t: Throwable) {
+            "{}"
+        }
+
+        return LoadedData(
+            global = parseEntries(globalJson),
+            scopes = parseScopes(scopesJson),
+            modes = parseEntries(modesJson),
+            vLangs = parseEntries(vLangsJson)
+        )
     }
 
-    /** تجزئة دفاعية بلا رمي: مفتاح/قيمة نصيان غير فارغين ضمن الحدود فقط. */
     private fun parseEntries(json: String?): Map<String, String> {
         val raw = if (json == null) emptyMap<Any, Any>()
         else (NateqJson.fromJson<Map<*, *>>(json, typeToken)
@@ -626,9 +681,9 @@ sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
         return fresh
     }
 
-    /** تجزئة طبقات اللغات دفاعياً بلا رمي: {وسم: {مفتاح: قيمة}} — يُتخطى
-     *  كل وسمٍ غير كائنٍ وكل صفٍّ غير نصيٍّ بدل إسقاط الطبقات كلها. */
-    private fun parseScopes(json: String?): Map<String, Map<String, String>> {
+    private fun parseScopes(
+        json: String?
+    ): Map<String, Map<String, String>> {
         val root = NateqJson.parseObject(json) ?: return emptyMap()
         val out = LinkedHashMap<String, Map<String, String>>()
         for ((rawTag, element) in root.entrySet()) {
@@ -654,18 +709,11 @@ sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
     private fun save(): Boolean {
         val sp = prefs ?: return false
         return try {
-            // **commit() لا apply()** — والسببُ هو نفسُ العطب لا غيره: مع
-            // `apply()` يبقى الكتابةُ في طريقها إلى القرص بعد عودة
-            // `addEntry`، فيقرأ القارئُ (عمليةُ `:tts` المستقلة، أو نسخةٌ
-            // أخرى تستجوب الطابع) طابعَ ما **قبل** أن يكتمل الملف فيقارن
-            // غيرَ المتغيّر فلا يستجدّ شيئاً… ثم يُصفّر [lastStamp] على
-            // الطابع القديم فيضيع التحديثُ نافذةً كاملة. وcommit() يُنهي
-            // الكتابةَ قبل العودة فيصحّ الطابعُ ويكون ما على القرش هو ما
-            // في الذاكرة. والكتابةُ صغيرة (JSON واحد) وتنتج عن فعلِ
-            // المستخدم، فحجبُ الخيطِ لحظاتٍ ثمنُ صحّة البيانات لا ترفٌّ.
             val ok = sp.edit()
                 .putString("dictionary", NateqJson.toJson(entries))
                 .putString(KEY_SCOPES, NateqJson.toJson(langEntries))
+                .putString(KEY_MATCH_MODES, NateqJson.toJson(matchModes))
+                .putString(KEY_VALUE_LANGS, NateqJson.toJson(valueLangs))
                 .commit()
             lastStamp = currentStamp()
             lastDiskCheckNanos = 0L
@@ -676,7 +724,6 @@ sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
         }
     }
 
-    /** يوقظ النسخ الحية في عملية :tts من دون تعريض البث لأي تطبيق خارجي. */
     private fun notifyChanged() {
         runCatching {
             context.sendBroadcast(
@@ -688,39 +735,37 @@ sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
 }
 
 /**
- * آلة Aho-Corasick — تبحث عن كل مفاتيح القاموس في النص في تمريرة واحدة
- * بزمن O(n+m) بدلاً من دورة لكل مفتاح، مع الحفاظ على قواعد حدود الكلمة
- * (لا تُستبدل إلا الكلمات الكاملة وليس داخل كلمات أطول).
+ * آلة Aho-Corasick موحدة تجمع إدخالات العام وكل الطبقات اللغوية،
+ * وتطبق قواعد قبول الحرف المنفرد (الأمر 2) والمطابقة بلا فقدان مواضع (الأمر 1).
  */
-private class AhoCorasick(entries: Map<String, String>) {
+private class UnifiedAhoCorasick(entries: List<DictOutput>) {
 
     private class Node {
         val children = HashMap<Char, Node>()
-        var key: String? = null      // أطول مفتاح ينتهي عند هذه العقدة
-        var value: String? = null    // نطقه
-        var fail: Node? = null       // رابط الفشل
+        val outputs = ArrayList<DictOutput>()
+        var fail: Node? = null
     }
 
-    private data class Match(val start: Int, val end: Int, val value: String)
+    private data class MatchCandidate(
+        val origStart: Int,
+        val origEnd: Int,
+        val output: DictOutput,
+        val replacement: String
+    )
 
     private val root = Node()
 
     init {
-        // إدخال المفاتيح الأطول أولاً حتى تُسجَّل المطابقة الأطول
-        // في العقد المشتركة
-        for ((rawKey, value) in
-            entries.entries.sortedByDescending { it.key.length }) {
-            val key = TashkeelStripStep.apply(rawKey).trim()
+        for (entry in entries) {
+            val key = entry.normalizedKey
             if (key.isEmpty()) continue
             var node = root
             for (ch in key) {
                 node = node.children.getOrPut(ch) { Node() }
             }
-            node.key = key
-            node.value = value
+            node.outputs.add(entry)
         }
 
-        // بناء روابط الفشل عبر BFS
         val queue = ArrayDeque<Node>()
         for (child in root.children.values) {
             child.fail = root
@@ -733,66 +778,252 @@ private class AhoCorasick(entries: Map<String, String>) {
                 while (fail != null && !fail.children.containsKey(ch)) {
                     fail = fail.fail
                 }
-                child.fail = if (fail != null) fail.children[ch] else root
-                if (child.value == null) {
-                    child.key = child.fail?.key
-                    child.value = child.fail?.value
+                val targetFail = if (fail != null) fail.children[ch] else root
+                child.fail = targetFail
+                if (targetFail != null && targetFail.outputs.isNotEmpty()) {
+                    child.outputs.addAll(targetFail.outputs)
                 }
                 queue.add(child)
             }
         }
     }
 
-/**
- * القاموس مفتوحٌ بلا حدود: يُطبَّق مفتاحُه **أينما ورد** في النص،
- * يميناً ويساراً، بلا شرط حدود الكلمة.
- *
- * **قرار المدير:** كان الحرفُ حدّاً (لا يُبدَّل داخل كلمةٍ أخرى)، فكان
- * القاموسُ صامتاً عن كل ما يُكتب ملتصقاً — «٥٠ج»، «٣٠٠جم»، «كم2» —
- * مع أن المستخدم أدخله بيده، وهو ما اشتكى منه. فلم يبقَ حدّ: لا
- * أيسرَ ولا أيمن، والرقمُ والعربيةُ والإنجليزيةُ سواء.
- *
- * **الأثرُ المقصود:** مفتاحٌ قصير يُطبَّق داخل كلماتٍ أطول فيشوّهها
- * («م»←«متر» يجعل «مرحبا»←«مترحبا») — عَمدُ المستخدم بمفتاحه القصير،
- * والقرارُ له. وما يخفّفه: **الأطولُ يُطبَّق أولاً** (ترتيبُ المطابقات
- * تنازلياً عند بدايةٍ واحدة)، فمفتاحُ «كجم» يحجبُ «كغ» داخله لا العكس.
- */
-fun apply(text: String): String {
-    if (text.isEmpty()) return text
-    val n = text.length
+    fun apply(
+        text: String,
+        segments: List<SegmentWithOffset>,
+        standaloneMaxLength: Int
+    ): String {
+        if (text.isEmpty()) return text
 
-    // تمريرة الفحص: كل تطابقٍ وارد، بلا شرط حدود
-    val matches = ArrayList<Match>()
-    var node = root
-    for (i in 0 until n) {
-        val ch = text[i]
-        while (node !== root && !node.children.containsKey(ch)) {
-            node = node.fail ?: root
+        // بناء النسخة المطبعة وجدول إرجاع المواضع (الأمر 1)
+        val normSb = StringBuilder(text.length)
+        val normToOrig = ArrayList<Int>(text.length)
+        var i = 0
+        while (i < text.length) {
+            val origIdx = i
+            val cp = text.codePointAt(i)
+            val w = Character.charCount(cp)
+            i += w
+            if (isTashkeelOrTatweel(cp)) continue
+            val normCp = normalizeIndicDigit(cp)
+            val startLen = normSb.length
+            normSb.appendCodePoint(normCp)
+            val addedLen = normSb.length - startLen
+            for (k in 0 until addedLen) {
+                normToOrig.add(origIdx)
+            }
         }
-        node = node.children[ch] ?: root
+        val normText = normSb.toString()
+        if (normText.isEmpty()) return text
 
-        val key = node.key ?: continue
-        val value = node.value ?: continue
-        val start = i - key.length + 1
-        if (start < 0) continue
-        matches.add(Match(start, i + 1, value))
+        fun origEndForNorm(normEnd: Int): Int =
+            if (normEnd < normToOrig.size) normToOrig[normEnd] else text.length
+
+        val candidates = ArrayList<MatchCandidate>()
+        var node = root
+        for (idx in 0 until normText.length) {
+            val ch = normText[idx]
+            while (node !== root && !node.children.containsKey(ch)) {
+                node = node.fail ?: root
+            }
+            node = node.children[ch] ?: root
+            if (node.outputs.isEmpty()) continue
+
+            val normEnd = idx + 1
+            for (out in node.outputs) {
+                val normStart = normEnd - out.normalizedKey.length
+                if (normStart < 0) continue
+                val origStart = normToOrig[normStart]
+                val origEnd = origEndForNorm(normEnd)
+
+                // 1. فحص لغة المنطقة (الأمر 1)
+                val regionLang = findRegionLanguage(segments, origStart)
+                if (!isScopeMatching(out.scope, regionLang)) {
+                    continue
+                }
+
+                // 2. فحص قبول المطابقة والحرف المنفرد (الأمر 2)
+                if (!isMatchAccepted(
+                        out, text, origStart, origEnd, standaloneMaxLength
+                    )
+                ) {
+                    continue
+                }
+
+                val replacement = if (!out.valueLang.isNullOrBlank()) {
+                    "${LanguageSegmenter.LOCK_START}${out.valueLang}" +
+                        "${LanguageSegmenter.LOCK_TAG_END}${out.value}" +
+                        "${LanguageSegmenter.LOCK_END}"
+                } else {
+                    out.value
+                }
+
+                candidates.add(
+                    MatchCandidate(origStart, origEnd, out, replacement)
+                )
+            }
+        }
+
+        if (candidates.isEmpty()) return text
+
+        // الأولوية: البداية أولاً، ثم الطبقة الخاصة تعلو العام، ثم الأطول
+        candidates.sortWith { a, b ->
+            if (a.origStart != b.origStart) {
+                a.origStart.compareTo(b.origStart)
+            } else {
+                val aScoped = if (a.output.scope != null) 1 else 0
+                val bScoped = if (b.output.scope != null) 1 else 0
+                if (aScoped != bScoped) {
+                    bScoped.compareTo(aScoped)
+                } else {
+                    b.origEnd.compareTo(a.origEnd)
+                }
+            }
+        }
+
+        val result = StringBuilder(text.length)
+        var cursor = 0
+        for (cand in candidates) {
+            if (cand.origStart < cursor) continue
+            result.append(text, cursor, cand.origStart)
+            result.append(cand.replacement)
+            cursor = cand.origEnd
+        }
+        if (cursor < text.length) {
+            result.append(text, cursor, text.length)
+        }
+        return result.toString()
     }
 
-    if (matches.isEmpty()) return text
-
-    // تمريرة الاستبدال: غير متداخل، والأطول أولاً لكل موضع بداية
-    matches.sortWith(
-        compareBy<Match> { it.start }.thenByDescending { it.end }
-    )
-    val result = StringBuilder(n)
-    var cursor = 0
-    for (m in matches) {
-        if (m.start < cursor) continue
-        result.append(text, cursor, m.start)
-        result.append(m.value)
-        cursor = m.end
+    private fun findRegionLanguage(
+        segments: List<SegmentWithOffset>,
+        origStart: Int
+    ): String {
+        for (seg in segments) {
+            if (origStart >= seg.start && origStart < seg.end) {
+                return seg.languageTag
+            }
+        }
+        return segments.lastOrNull()?.languageTag ?: LanguageCode.AR.tag
     }
-    if (cursor < n) result.append(text, cursor, n)
-    return result.toString()
-}
+
+    private fun isScopeMatching(
+        scope: String?,
+        regionLang: String
+    ): Boolean {
+        if (scope == null) return true
+        if (scope.equals(regionLang, ignoreCase = true)) return true
+        if (!scope.contains('-') && !scope.contains('_')) {
+            return LanguageCode.isSameFamily(scope, regionLang)
+        }
+        return false
+    }
+
+    private fun isMatchAccepted(
+        out: DictOutput,
+        text: String,
+        origStart: Int,
+        origEnd: Int,
+        standaloneMaxLength: Int
+    ): Boolean {
+        val mode = out.matchMode.uppercase()
+        if (mode == "ANYWHERE") return true
+
+        val requireStandalone = if (mode == "WHOLE") {
+            true
+        } else {
+            if (standaloneMaxLength <= 0) {
+                false
+            } else {
+                val stripped = out.normalizedKey
+                stripped.length <= standaloneMaxLength &&
+                    stripped.all { Character.isLetter(it) }
+            }
+        }
+
+        if (!requireStandalone) return true
+
+        if (hasLetterNeighborBefore(text, origStart)) return false
+        if (hasLetterNeighborAfter(text, origEnd)) return false
+
+        return true
+    }
+
+    private fun hasLetterNeighborBefore(text: String, origStart: Int): Boolean {
+        var i = origStart - 1
+        while (i >= 0) {
+            val cp = text.codePointBefore(i + 1)
+            val w = Character.charCount(cp)
+            if (isIgnoredNeighborMark(cp)) {
+                i -= w
+                continue
+            }
+            if (Character.isLetter(cp)) return true
+            if (isConnectorChar(cp)) {
+                var k = i - w
+                while (k >= 0) {
+                    val prevCp = text.codePointBefore(k + 1)
+                    val pw = Character.charCount(prevCp)
+                    if (isIgnoredNeighborMark(prevCp)) {
+                        k -= pw
+                        continue
+                    }
+                    return Character.isLetter(prevCp)
+                }
+                return false
+            }
+            return false
+        }
+        return false
+    }
+
+    private fun hasLetterNeighborAfter(text: String, origEnd: Int): Boolean {
+        var i = origEnd
+        while (i < text.length) {
+            val cp = text.codePointAt(i)
+            val w = Character.charCount(cp)
+            if (isIgnoredNeighborMark(cp)) {
+                i += w
+                continue
+            }
+            if (Character.isLetter(cp)) return true
+            if (isConnectorChar(cp)) {
+                var k = i + w
+                while (k < text.length) {
+                    val nextCp = text.codePointAt(k)
+                    val nw = Character.charCount(nextCp)
+                    if (isIgnoredNeighborMark(nextCp)) {
+                        k += nw
+                        continue
+                    }
+                    return Character.isLetter(nextCp)
+                }
+                return false
+            }
+            return false
+        }
+        return false
+    }
+
+    private fun isIgnoredNeighborMark(cp: Int): Boolean {
+        if (cp in 0x064B..0x065F || cp == 0x0670) return true
+        if (cp == 0x0640) return true
+        if (cp == 0x200E || cp == 0x200F || cp == 0x061C ||
+            cp in 0x202A..0x202E || cp in 0x2066..0x2069
+        ) return true
+        if (cp == 0x200C || cp == 0x200D) return true
+        return false
+    }
+
+    private fun isConnectorChar(cp: Int): Boolean =
+        cp == '\''.code || cp == '’'.code || cp == '-'.code || cp == '_'.code
+
+    private fun isTashkeelOrTatweel(cp: Int): Boolean =
+        (cp in 0x064B..0x065F) || cp == 0x0670 || cp == 0x0640
+
+    private fun normalizeIndicDigit(cp: Int): Int = when (cp) {
+        in 0x0660..0x0669 -> '0'.code + (cp - 0x0660)
+        in 0x06F0..0x06F9 -> '0'.code + (cp - 0x06F0)
+        else -> cp
+    }
 }

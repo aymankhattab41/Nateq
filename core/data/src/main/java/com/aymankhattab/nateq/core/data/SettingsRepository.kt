@@ -267,6 +267,13 @@ class SettingsRepository(context: Context) :
             "speed_dial_launcher_icon_enabled"
         const val KEY_APP_PROFILES = "app_profiles"
         const val KEY_CONTACT_VOICES = "contact_voices"
+        const val BOOT_MIRROR_PREFS = "nateq_boot_mirror"
+        const val KEY_DICTIONARY_STANDALONE_MAX_LENGTH =
+            "dictionary_standalone_max_length"
+        const val KEY_EMOJI_PRONUNCIATION_LANGUAGE =
+            "emoji_pronunciation_language"
+        const val KEY_LANGUAGE_DIAGNOSTICS_ENABLED =
+            "language_diagnostics_enabled"
 
         const val PHONE_MODE_BLIND = "blind"
         const val PHONE_MODE_LOW_VISION = "low_vision"
@@ -383,6 +390,32 @@ class SettingsRepository(context: Context) :
                 SettingsChangeProvider.uri(), false, settingsObserver
             )
         }
+        if (android.os.Build.VERSION.SDK_INT >=
+            android.os.Build.VERSION_CODES.N
+        ) {
+            try {
+                androidx.core.content.ContextCompat.registerReceiver(
+                    appContext,
+                    object : android.content.BroadcastReceiver() {
+                        override fun onReceive(
+                            context: Context?,
+                            intent: android.content.Intent?
+                        ) {
+                            if (intent?.action ==
+                                android.content.Intent.ACTION_USER_UNLOCKED
+                            ) {
+                                onUserUnlocked()
+                            }
+                        }
+                    },
+                    android.content.IntentFilter(
+                        android.content.Intent.ACTION_USER_UNLOCKED
+                    ),
+                    androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+                )
+            } catch (_: Exception) {}
+        }
+        updateBootMirrorIfNeeded()
     }
 
     /**
@@ -396,17 +429,77 @@ class SettingsRepository(context: Context) :
         }
     }
 
+    private fun isUserUnlocked(): Boolean {
+        if (android.os.Build.VERSION.SDK_INT >=
+            android.os.Build.VERSION_CODES.N
+        ) {
+            val um = appContext.getSystemService(
+                android.os.UserManager::class.java
+            )
+            return um?.isUserUnlocked ?: true
+        }
+        return true
+    }
+
     /**
-     * يفتح تفضيلات [NEW_PREFS] العادية.
-     *
-     * التطبيق يعمل في عمليتين (main و :tts) وSharedPreferences يحتفظ بكاش
-     * في الذاكرة لكل عملية، فلا يوجد «إعادة فتح» داخل نفس العملية. لذلك
-     * تُعالَج حداثة بيانات العملية الأخرى صراحةً في [reload] بقراءة ملف
-     * القرص الفعلي من جديد — بلا أي اعتماد على MODE_MULTI_PROCESS المكروه
-     * (API 23+) الذي يجعل الإطار يعيد قراءة المخزن داخلياً فيتعذّر اختباره.
+     * يفتح تفضيلات [NEW_PREFS] أو المرآة المحمية قبل فتح القفل (الأمر 6).
      */
-    private fun openSharedPrefs(): SharedPreferences =
-        appContext.getSharedPreferences(NEW_PREFS, Context.MODE_PRIVATE)
+    private fun openSharedPrefs(): SharedPreferences {
+        if (android.os.Build.VERSION.SDK_INT >=
+            android.os.Build.VERSION_CODES.N &&
+            !isUserUnlocked()
+        ) {
+            val deviceContext = appContext.createDeviceProtectedStorageContext()
+            return deviceContext.getSharedPreferences(
+                BOOT_MIRROR_PREFS, Context.MODE_PRIVATE
+            )
+        }
+        return appContext.getSharedPreferences(NEW_PREFS, Context.MODE_PRIVATE)
+    }
+
+    private fun updateBootMirrorIfNeeded() {
+        if (android.os.Build.VERSION.SDK_INT <
+            android.os.Build.VERSION_CODES.N
+        ) return
+        if (!isUserUnlocked()) return
+        runCatching {
+            val deviceContext = appContext.createDeviceProtectedStorageContext()
+            val mirror = deviceContext.getSharedPreferences(
+                BOOT_MIRROR_PREFS, Context.MODE_PRIVATE
+            )
+            val editor = mirror.edit()
+            for ((key, value) in prefs.all) {
+                if (key.startsWith("voice_") ||
+                    key.startsWith("rate_") ||
+                    key.startsWith("pitch_") ||
+                    key.startsWith("engine_") ||
+                    key == "app_language" ||
+                    key == "number_reading_language" ||
+                    key == "secondary_language" ||
+                    key == "speech_rate" ||
+                    key == "speech_pitch"
+                ) {
+                    when (value) {
+                        is String -> editor.putString(key, value)
+                        is Float -> editor.putFloat(key, value)
+                        is Int -> editor.putInt(key, value)
+                        is Boolean -> editor.putBoolean(key, value)
+                        is Long -> editor.putLong(key, value)
+                    }
+                }
+            }
+            editor.apply()
+        }
+    }
+
+    private fun onUserUnlocked() {
+        val normal = appContext.getSharedPreferences(
+            NEW_PREFS, Context.MODE_PRIVATE
+        )
+        prefs.updateDelegate(normal)
+        updateBootMirrorIfNeeded()
+        notifySettingsChanged()
+    }
 
     // أسماء المتصلين = بيانات شخصية (PII) تُخزَّن في ملف مشفَّر منفصل؛
     // عند تعذر التشفير (Keystore معطوب…) تُحتفظ في الذاكرة لهذه الجلسة فقط
@@ -475,6 +568,7 @@ class SettingsRepository(context: Context) :
      *  (ContentObserver) ويسترجع اللقطة فوراً بدل انتظار دورة
      *  reload التالية. */
     private fun notifySettingsChanged() {
+        updateBootMirrorIfNeeded()
         runCatching {
             appContext.contentResolver.notifyChange(
                 SettingsChangeProvider.uri(), null
@@ -766,13 +860,13 @@ class SettingsRepository(context: Context) :
     override fun setNumberReadingMode(mode: Int) =
         prefs.edit().putInt("number_reading_mode", mode.coerceIn(1, 8)).apply()
 
-    /** لغة نطق الأرقام: "ar" أو "en" فقط (لا تلقائي). */
+    /** لغة نطق الأرقام: "ar" أو "en" أو "auto" (تلقائي مع سياق الجملة). */
     override fun getNumberReadingLanguage(): String {
         val lang = prefs.getString("number_reading_language", "ar") ?: "ar"
-        return if (lang == "en") "en" else "ar"
+        return if (lang == "en" || lang == "auto") lang else "ar"
     }
     override fun setNumberReadingLanguage(lang: String) {
-        val safe = if (lang == "en") "en" else "ar"
+        val safe = if (lang == "en" || lang == "auto") lang else "ar"
         prefs.edit().putString("number_reading_language", safe).apply()
     }
 
@@ -965,6 +1059,14 @@ class SettingsRepository(context: Context) :
         runCatching {
             appContext.deleteSharedPreferences("nateq_battery_state")
         }
+        runCatching {
+            if (android.os.Build.VERSION.SDK_INT >=
+                android.os.Build.VERSION_CODES.N
+            ) {
+                appContext.createDeviceProtectedStorageContext()
+                    .deleteSharedPreferences(BOOT_MIRROR_PREFS)
+            }
+        }
     }
 
     // ============ المفتاح الرئيسي ووضع توفير الطاقة ============
@@ -989,6 +1091,42 @@ class SettingsRepository(context: Context) :
         prefs.getBoolean("emoji_pronunciation_enabled", true)
     override fun setEmojiPronunciationEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("emoji_pronunciation_enabled", enabled).apply()
+
+    override fun getDictionaryStandaloneMaxLength(): Int =
+        prefs.getInt(KEY_DICTIONARY_STANDALONE_MAX_LENGTH, 1).coerceIn(0, 3)
+
+    override fun setDictionaryStandaloneMaxLength(len: Int) {
+        val safe = len.coerceIn(0, 3)
+        prefs.edit().putInt(KEY_DICTIONARY_STANDALONE_MAX_LENGTH, safe).commit()
+    }
+
+    override fun getEmojiPronunciationLanguage(): String {
+        val raw = prefs.getString(KEY_EMOJI_PRONUNCIATION_LANGUAGE, "AUTO")
+            ?: "AUTO"
+        return when (raw.uppercase()) {
+            "AR" -> "AR"
+            "EN" -> "EN"
+            else -> "AUTO"
+        }
+    }
+
+    override fun setEmojiPronunciationLanguage(lang: String) {
+        val safe = when (lang.uppercase()) {
+            "AR" -> "AR"
+            "EN" -> "EN"
+            else -> "AUTO"
+        }
+        prefs.edit().putString(KEY_EMOJI_PRONUNCIATION_LANGUAGE, safe).apply()
+    }
+
+    override fun isLanguageDiagnosticsEnabled(): Boolean =
+        prefs.getBoolean(KEY_LANGUAGE_DIAGNOSTICS_ENABLED, false)
+
+    override fun setLanguageDiagnosticsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(
+            KEY_LANGUAGE_DIAGNOSTICS_ENABLED, enabled
+        ).apply()
+    }
 
     // ============ خصوصية قفل الشاشة ============
 
@@ -2601,6 +2739,7 @@ class SettingsRepository(context: Context) :
         key == "a11y_service_pause_level" -> value.coerceIn(1, 2)
         key == KEY_KEYBOARD_SIZE_LEVEL -> value.coerceIn(0, 2)
         key == KEY_DIALPAD_SIZE_LEVEL -> value.coerceIn(0, 2)
+        key == KEY_DICTIONARY_STANDALONE_MAX_LENGTH -> value.coerceIn(0, 3)
         key.startsWith("loudness_headset_cap_") -> value.coerceIn(0, 100)
         else -> value
     }
@@ -2617,7 +2756,13 @@ class SettingsRepository(context: Context) :
         "secondary_language" -> value.takeIf {
             it in VALID_SECONDARY_LANGUAGES
         } ?: LanguageCode.EN.tag
-        "number_reading_language" -> if (value == "en") "en" else "ar"
+        "number_reading_language" ->
+            if (value == "en" || value == "auto") value else "ar"
+        KEY_EMOJI_PRONUNCIATION_LANGUAGE -> when (value.uppercase()) {
+            "AR" -> "AR"
+            "EN" -> "EN"
+            else -> "AUTO"
+        }
         // جملتا «قبل» و«بعد»: تُقصّان إلى الفراغ عند كل مدخل (كتابةً
         // أو استيراداً) فمسافاتٌ فقط ليست جملةً تُنطق.
         "caller_prefix_text" -> value.trim()

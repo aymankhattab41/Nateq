@@ -46,6 +46,10 @@ class NateqNotificationListener : NotificationListenerService() {
         // يتحدث قائمة الحزم الشائعة، والحزم الجديدة تتسرب القديمة (LRU).
         private const val MAX_TRACKED_NOTIF_PACKAGES = 64
 
+        @Volatile
+        var isConnected: Boolean = false
+            internal set
+
         /** التحقق مما إذا كان التطبيق لديه إذن الاستماع للإشعارات. */
         fun isPermissionGranted(context: Context): Boolean {
             val flat = Settings.Secure.getString(
@@ -56,6 +60,31 @@ class NateqNotificationListener : NotificationListenerService() {
                 context, NateqNotificationListener::class.java
             )
             return flat.contains(cn.flattenToString())
+        }
+
+        /**
+         * إعادة تفعيل المكوّن برمجياً لإجبار النظام على ربطه دون تدخل
+         * (الأمر 6).
+         */
+        fun rebindIfDisabled(context: Context) {
+            if (isPermissionGranted(context) && !isConnected) {
+                runCatching {
+                    val cn = ComponentName(
+                        context, NateqNotificationListener::class.java
+                    )
+                    val pm = context.packageManager
+                    pm.setComponentEnabledSetting(
+                        cn,
+                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                        PackageManager.DONT_KILL_APP
+                    )
+                    pm.setComponentEnabledSetting(
+                        cn,
+                        PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                        PackageManager.DONT_KILL_APP
+                    )
+                }
+            }
         }
 
         /** مفتاحُ هوية مكالمة الإشعار: حزمةُ التطبيق + الرقم + الاسم — به
@@ -808,6 +837,7 @@ class NateqNotificationListener : NotificationListenerService() {
      */
     override fun onListenerConnected() {
         super.onListenerConnected()
+        isConnected = true
         val scope = (applicationContext as? AnnouncementAppContext)?.appScope
             ?: CoroutineScope(Dispatchers.Default)
         scope.launch {
@@ -861,6 +891,7 @@ class NateqNotificationListener : NotificationListenerService() {
 
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
+        isConnected = false
         AnnouncementSpeaker.getInstance(applicationContext).stop()
         Log.w(TAG, "NotificationListener disconnected — محاولة إعادة الربط")
         // إعادة الربط التلقائي بعد فصل النظام (توفير الطاقة/إيقاف مؤقت)
