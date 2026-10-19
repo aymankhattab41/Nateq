@@ -94,12 +94,15 @@ class OrdersFiveAndSixTest {
     @Test
     fun `order 6 - compat matrix documentation exists`() {
         val candidates = listOf(
+            File("compat-matrix.md"),
+            File("../../compat-matrix.md"),
+            File("../compat-matrix.md"),
             File("doc/compat-matrix.md"),
             File("../../doc/compat-matrix.md"),
             File("../doc/compat-matrix.md")
         )
         val docFile = candidates.firstOrNull { it.exists() }
-        assertNotNull("doc/compat-matrix.md must exist", docFile)
+        assertNotNull("compat-matrix.md must exist", docFile)
         val text = docFile!!.readText()
         assertTrue(text.contains("Direct Boot"))
         assertTrue(text.contains("nateq_boot_mirror"))
