@@ -43,6 +43,7 @@ class AnnouncementBootReceiver : BroadcastReceiver() {
                 if (!started) {
                     AnnouncementSchedulerService.ensureTimeAlarm(context)
                 }
+                NateqNotificationListener.rebindIfDisabled(context)
             } catch (t: Throwable) {
                 android.util.Log.e("NATEQ_ANNOUNCE", "restart failed", t)
             } finally {

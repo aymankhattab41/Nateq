@@ -350,6 +350,30 @@
 <string name="dict_phonetic_hint">Pronunciation</string>
 <string name="dict_removed">Dictionary entry deleted</string>
 <string name="dict_word_hint">Word</string>
+    <string name="dict_help_note">Numbers and currencies after the dictionary undergo standard processing; write literal desired values as words not numbers.</string>
+    <string name="dict_standalone_max_length_title">Standalone character matching</string>
+    <string name="dict_standalone_max_length_summary">Keys of %1$d characters or fewer only match when standalone</string>
+    <string name="dict_match_mode_title">Match position</string>
+    <string name="dict_match_mode_auto">Auto (based on key length)</string>
+    <string name="dict_match_mode_whole">Whole word only</string>
+    <string name="dict_match_mode_anywhere">Anywhere</string>
+    <string name="dict_scope_title">Language scope</string>
+    <string name="dict_scope_global">Global (all languages)</string>
+    <string name="dict_scope_ar">Arabic (ar)</string>
+    <string name="dict_scope_en">English (en)</string>
+    <string name="dict_scope_fr">French (fr)</string>
+    <string name="dict_scope_de">German (de)</string>
+    <string name="dict_scope_es">Spanish (es)</string>
+    <string name="dict_pronunciation_lang_title">Locked pronunciation language</string>
+    <string name="dict_pronunciation_lang_auto">Auto (context based)</string>
+    <string name="number_reading_language_auto">Auto (follows sentence)</string>
+    <string name="emoji_reading_language_title">Emoji pronunciation language</string>
+    <string name="emoji_reading_language_btn">Emoji pronunciation language: %1$s</string>
+    <string name="emoji_reading_language_auto">Auto (follows emoji voice or sentence)</string>
+    <string name="emoji_reading_language_arabic">Arabic always</string>
+    <string name="emoji_reading_language_english">English always</string>
+    <string name="language_diagnostics_enabled">Language diagnostics in Logcat</string>
+    <string name="language_diagnostics_summary">Log language detection and segmentation reasons in system log (NateqLang)</string>
 <string name="emoji_reading_enabled">Speak emoji and emoticon names</string>
 <string name="emoji_reading_helper">Emoji names are spoken instead of being removed from text (e.g. ðŸ˜€ is read as "beaming face"). When off, emoticon symbols are dropped from speech.</string>
 <string name="enter_word_and_pronunciation">Enter the word and its pronunciation</string>
@@ -660,6 +684,7 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+- Dictionary, Language, Voice Policy, and Compatibility Architecture: Apply pronunciation dictionary first and exactly once on raw text across all paths (reader, announcements, all languages) with normalized matching and exact offset preservation; standalone single-letter rule with connector handling and match modes; language lock markers and conservative Latin detector with automatic number language and diagnostics logging; emoji pronunciation language configuration; strict voice resolution policy reserving app/contact voices exclusively for body text while protecting category voices for numbers and emoji; Direct Boot aware engine with device-protected boot mirror and comprehensive Android 24-37 compatibility matrix
 - System TTS switching without ADB and wide horizontal dialpad: Automate system TTS settings to switch default engine via accessibility service with root/su fast path, session protection, and secure fallback; wide horizontal dialpad layouts (3x4 wide grid, 5x2, single row) with height levels, 420dp cap, LTR enforcement, instant settings updates, and TalkBack grid navigation
 - Custom voice per app and contact: Configure independent voice, engine, rate, and pitch per application with auto-switching when foregrounded; assign custom voices per contact for incoming calls and notifications with normalization and live testing
 - Dialpad, Keyboard, and Engine Switching: Direct call dispatching via unified CallPlacer with dual-SIM account resolution and safe fallback, CommitGate input debounce across lift-to-type and double-tap with TalkBack hover speech suppression, dedicated Arabic hamzas keyboard row and configurable button sizes for keyboard and dialpad, strict selector-based "Read More" expansion, system-wide TTS engine switching via WRITE_SECURE_SETTINGS with built-in ADB guide activity, and atomic batch persistence for auto-convert language preferences

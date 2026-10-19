@@ -635,6 +635,43 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         )
         btnClearDict.setOnClickListener { showClearDictConfirmDialog() }
 
+        val btnDictStandalone = view.findViewById<MaterialButton>(
+            R.id.btn_dict_standalone_max_len
+        )
+        fun updateDictStandaloneButton() {
+            val maxLen = runCatching {
+                settings.getDictionaryStandaloneMaxLength()
+            }.getOrDefault(1)
+            btnDictStandalone?.text = getString(
+                R.string.dict_standalone_max_length_summary, maxLen
+            )
+        }
+        updateDictStandaloneButton()
+        btnDictStandalone?.setOnClickListener {
+            val current = runCatching {
+                settings.getDictionaryStandaloneMaxLength()
+            }.getOrDefault(1)
+            val options = arrayOf(
+                "0 (معطّل - في أي موضع)",
+                "1 (حرف واحد أو أقل - الافتراضي)",
+                "2 (حرفان أو أقل)",
+                "3 (3 أحرف أو أقل)"
+            )
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.dict_standalone_max_length_title)
+                .setSingleChoiceItems(
+                    options, current.coerceIn(0, 3)
+                ) { dialog, which ->
+                    runCatching {
+                        settings.setDictionaryStandaloneMaxLength(which)
+                    }
+                    updateDictStandaloneButton()
+                    dialog.dismiss()
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .create().also(::trackDialog).show()
+        }
+
         // المفتاح الرئيسي لكل الإعلانات
         switchAllAnnouncements =
             view.findViewById(R.id.switch_all_announcements)
@@ -697,6 +734,52 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     else R.string.announcement_turned_off
                 )
             )
+        }
+
+        val btnEmojiLanguage = view.findViewById<MaterialButton>(
+            R.id.btn_emoji_language
+        )
+        fun updateEmojiLanguageButton() {
+            val current = runCatching {
+                settings.getEmojiPronunciationLanguage()
+            }.getOrDefault("AUTO")
+            val label = when (current.uppercase()) {
+                "AR" -> getString(R.string.emoji_reading_language_arabic)
+                "EN" -> getString(R.string.emoji_reading_language_english)
+                else -> getString(R.string.emoji_reading_language_auto)
+            }
+            btnEmojiLanguage?.text = getString(
+                R.string.emoji_reading_language_btn, label
+            )
+        }
+        updateEmojiLanguageButton()
+        btnEmojiLanguage?.setOnClickListener {
+            val current = runCatching {
+                settings.getEmojiPronunciationLanguage()
+            }.getOrDefault("AUTO")
+            val currentIdx = when (current.uppercase()) {
+                "AR" -> 1
+                "EN" -> 2
+                else -> 0
+            }
+            val options = arrayOf(
+                getString(R.string.emoji_reading_language_auto),
+                getString(R.string.emoji_reading_language_arabic),
+                getString(R.string.emoji_reading_language_english)
+            )
+            val codes = listOf("AUTO", "AR", "EN")
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.emoji_reading_language_title)
+                .setSingleChoiceItems(options, currentIdx) { dialog, which ->
+                    val chosen = codes[which]
+                    runCatching {
+                        settings.setEmojiPronunciationLanguage(chosen)
+                    }
+                    updateEmojiLanguageButton()
+                    dialog.dismiss()
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .create().also(::trackDialog).show()
         }
 
         // زر جعل ناطق المحرك الافتراضي (يفتح شاشة TTS النظامية لاختياره
@@ -1117,14 +1200,81 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         val etWord = dialogView.findViewById<EditText>(R.id.et_dict_word)
         val etPhonetic =
             dialogView.findViewById<EditText>(R.id.et_dict_phonetic)
+        val spinnerMatchMode =
+            dialogView.findViewById<Spinner>(R.id.spinner_dict_match_mode)
+        val spinnerScope =
+            dialogView.findViewById<Spinner>(R.id.spinner_dict_scope)
+        val spinnerValLang =
+            dialogView.findViewById<Spinner>(R.id.spinner_dict_value_lang)
         val tvTestResult =
             dialogView.findViewById<TextView>(R.id.tv_dict_test_result)
         val btnTest =
             dialogView.findViewById<View>(R.id.btn_test_dict_entry)
+
+        val matchModeCodes = listOf("AUTO", "WHOLE", "ANYWHERE")
+        val matchModeLabels = listOf(
+            getString(R.string.dict_match_mode_auto),
+            getString(R.string.dict_match_mode_whole),
+            getString(R.string.dict_match_mode_anywhere)
+        )
+        spinnerMatchMode.adapter = ArrayAdapter(
+            requireContext(),
+            android.R.layout.simple_spinner_dropdown_item,
+            matchModeLabels
+        )
+
+        val scopeCodes = listOf(null, "ar", "en", "fr", "de", "es")
+        val scopeLabels = listOf(
+            getString(R.string.dict_scope_global),
+            getString(R.string.dict_scope_ar),
+            getString(R.string.dict_scope_en),
+            getString(R.string.dict_scope_fr),
+            getString(R.string.dict_scope_de),
+            getString(R.string.dict_scope_es)
+        )
+        spinnerScope.adapter = ArrayAdapter(
+            requireContext(),
+            android.R.layout.simple_spinner_dropdown_item,
+            scopeLabels
+        )
+
+        val valLangCodes = listOf(null, "ar", "en", "fr", "de", "es")
+        val valLangLabels = listOf(
+            getString(R.string.dict_pronunciation_lang_auto),
+            getString(R.string.dict_scope_ar),
+            getString(R.string.dict_scope_en),
+            getString(R.string.dict_scope_fr),
+            getString(R.string.dict_scope_de),
+            getString(R.string.dict_scope_es)
+        )
+        spinnerValLang.adapter = ArrayAdapter(
+            requireContext(),
+            android.R.layout.simple_spinner_dropdown_item,
+            valLangLabels
+        )
+
         if (existing != null) {
             etWord.setText(existing.first)
             etPhonetic.setText(existing.second)
+            val currentScope = pronunciationDict.findEntryScope(existing.first)
+            val scopeIdx = scopeCodes.indexOf(currentScope).coerceAtLeast(0)
+            spinnerScope.setSelection(scopeIdx)
+
+            val currentMode = pronunciationDict.getMatchMode(
+                existing.first, currentScope
+            )
+            val modeIdx = matchModeCodes.indexOf(currentMode.uppercase())
+                .coerceAtLeast(0)
+            spinnerMatchMode.setSelection(modeIdx)
+
+            val currentValLang = pronunciationDict.getValueLang(
+                existing.first, currentScope
+            )
+            val valLangIdx = valLangCodes.indexOf(currentValLang)
+                .coerceAtLeast(0)
+            spinnerValLang.setSelection(valLangIdx)
         }
+
         btnTest?.setOnClickListener {
             val word = etWord.text.toString().trim()
             val phonetic = etPhonetic.text.toString().trim()
@@ -1136,11 +1286,26 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 ).show()
                 return@setOnClickListener
             }
+            val scope = scopeCodes.getOrNull(spinnerScope.selectedItemPosition)
+            val mode = matchModeCodes.getOrNull(
+                spinnerMatchMode.selectedItemPosition
+            ) ?: "AUTO"
+            val valLang = valLangCodes.getOrNull(
+                spinnerValLang.selectedItemPosition
+            )
             if (phonetic.isNotEmpty()) {
-                runCatching { pronunciationDict.addEntry(word, phonetic) }
+                runCatching {
+                    pronunciationDict.addEntry(
+                        abbreviation = word,
+                        pronunciation = phonetic,
+                        languageTag = scope,
+                        matchMode = mode,
+                        valueLang = valLang
+                    )
+                }
                 refreshDictAdapter()
             }
-            testDictionaryEntry(word, "ar", tvTestResult)
+            testDictionaryEntry(word, scope ?: "ar", tvTestResult)
         }
         builder.setView(dialogView)
             .setTitle(
@@ -1151,12 +1316,34 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 val word = etWord.text.toString().trim()
                 val phonetic = etPhonetic.text.toString().trim()
                 if (word.isNotEmpty() && phonetic.isNotEmpty()) {
-                    if (existing != null && existing.first != word) {
+                    val scope = scopeCodes.getOrNull(
+                        spinnerScope.selectedItemPosition
+                    )
+                    val mode = matchModeCodes.getOrNull(
+                        spinnerMatchMode.selectedItemPosition
+                    ) ?: "AUTO"
+                    val valLang = valLangCodes.getOrNull(
+                        spinnerValLang.selectedItemPosition
+                    )
+                    if (existing != null && (existing.first != word)) {
+                        val oldScope = pronunciationDict.findEntryScope(
+                            existing.first
+                        )
                         runCatching {
-                            pronunciationDict.removeEntry(existing.first)
+                            pronunciationDict.removeEntry(
+                                existing.first, oldScope
+                            )
                         }
                     }
-                    runCatching { pronunciationDict.addEntry(word, phonetic) }
+                    runCatching {
+                        pronunciationDict.addEntry(
+                            abbreviation = word,
+                            pronunciation = phonetic,
+                            languageTag = scope,
+                            matchMode = mode,
+                            valueLang = valLang
+                        )
+                    }
                     refreshDictAdapter()
                 } else {
                     Toast.makeText(

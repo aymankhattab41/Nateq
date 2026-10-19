@@ -58,4 +58,10 @@ interface VoicePrefsProvider {
 
     /** حفظ محرك TTS الاحتياطي للإعلانات (null = حذف). */
     fun setAnnouncementFallbackEngine(enginePackage: String?)
+
+    /** لغة نطق أسماء الإيموجي: "AUTO", "AR", "EN" (الافتراضي "AUTO"). */
+    fun getEmojiPronunciationLanguage(): String = "AUTO"
+
+    /** تفعيل تشخيصات اللغات في Logcat (الأمر 3). */
+    fun isLanguageDiagnosticsEnabled(): Boolean = false
 }

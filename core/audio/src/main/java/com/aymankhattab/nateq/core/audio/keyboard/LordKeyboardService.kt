@@ -28,6 +28,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -55,7 +56,8 @@ class LordKeyboardService : InputMethodService(),
 
     // أشرطة الأدوات
     private var tashkeelBar: LinearLayout? = null
-    private var clipboardBar: LinearLayout? = null
+    private var toolbarStrip: LinearLayout? = null
+    private val toolbarButtons = mutableListOf<Button>()
 
     // محرك النطق الخاص باللوحة للاستجابة اللحظية
     private var tts: TextToSpeech? = null
@@ -114,10 +116,6 @@ class LordKeyboardService : InputMethodService(),
         tashkeelBar?.visibility = View.GONE
         rootLayout.addView(tashkeelBar)
 
-        // شريط الحافظة السريع (مخفي افتراضياً)
-        clipboardBar = createClipboardBar()
-        clipboardBar?.visibility = View.GONE
-        rootLayout.addView(clipboardBar)
 
         // مسطح لوحة المفاتيح
         val kbView = LordKeyboardView(this).apply {
@@ -194,68 +192,102 @@ class LordKeyboardService : InputMethodService(),
             settingsRepo.getKeyboardMode() ==
                 SettingsRepository.KEYBOARD_MODE_LOW_VISION
 
-        val bar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+        val scroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            isFillViewport = true
             val heightPx = (46 * resources.displayMetrics.density).toInt()
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 heightPx
             )
+        }
+
+        val bar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
             setBackgroundColor(
                 if (isLowVision) Color.BLACK else Color.rgb(24, 24, 24)
             )
         }
+        toolbarStrip = bar
+        toolbarButtons.clear()
 
-        val btnLang = createToolbarButton("ع / En") {
+        val btnLang = createToolbarButton("ع / En", "تبديل اللغة") {
             toggleLanguage()
         }
-        val btnTashkeel = createToolbarButton("ً حركات") {
+        val btnTashkeel = createToolbarButton("ً حركات", "شريط التشكيل") {
             toggleTashkeelBar()
         }
-        val btnVoice = createToolbarButton("🎤 صوت") {
+        val btnVoice = createToolbarButton("🎤 صوت", "الكتابة بالصوت") {
             startVoiceTyping()
         }
-        val btnClip = createToolbarButton("📋 حافظة") {
-            toggleClipboardBar()
+        val btnCopy = createToolbarButton("نسخ", "نسخ النص المحدد") {
+            handleCopy()
         }
-        val btnClose = createToolbarButton("⬇ إغلاق") {
-            requestHideSelf(0)
+        val btnPaste = createToolbarButton("لصق", "لصق من الحافظة") {
+            handlePaste()
         }
+        val btnCut = createToolbarButton("قص", "قص النص المحدد") {
+            handleCut()
+        }
+        val btnSelectAll = createToolbarButton("تحديد الكل", "تحديد الكل") {
+            handleSelectAll()
+        }
+        val btnClose =
+            createToolbarButton("⬇ إغلاق", "إغلاق لوحة المفاتيح") {
+                requestHideSelf(0)
+                speakText("إغلاق لوحة المفاتيح")
+            }
 
         bar.addView(btnLang)
         bar.addView(btnTashkeel)
         bar.addView(btnVoice)
-        bar.addView(btnClip)
+        bar.addView(btnCopy)
+        bar.addView(btnPaste)
+        bar.addView(btnCut)
+        bar.addView(btnSelectAll)
         bar.addView(btnClose)
 
-        return bar
+        scroll.addView(bar)
+        return scroll
     }
 
     private fun createToolbarButton(
         title: String,
+        contentDesc: String,
         onClick: () -> Unit
     ): Button {
         val isLowVision =
             settingsRepo.getKeyboardMode() ==
                 SettingsRepository.KEYBOARD_MODE_LOW_VISION
 
-        return Button(this).apply {
+        val btn = Button(this).apply {
             text = title
+            contentDescription = contentDesc
             isAllCaps = false
+            maxLines = 1
             val textSize = if (isLowVision) 14f else 12f
             setTextSize(TypedValue.COMPLEX_UNIT_SP, textSize)
             setTextColor(
                 if (isLowVision) Color.rgb(255, 235, 59) else Color.WHITE
             )
             setBackgroundColor(Color.TRANSPARENT)
+            val padPx = (10 * resources.displayMetrics.density).toInt()
+            setPadding(padPx, 0, padPx, 0)
+            minWidth = 0
+            minimumWidth = (44 * resources.displayMetrics.density).toInt()
             layoutParams = LinearLayout.LayoutParams(
-                0,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                1.0f
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
             )
             setOnClickListener { onClick() }
         }
+        toolbarButtons.add(btn)
+        return btn
     }
 
     private fun updateToolbarTheme(mode: String) {
@@ -266,7 +298,12 @@ class LordKeyboardService : InputMethodService(),
             if (isLowVision) Color.BLACK else Color.rgb(24, 24, 24)
 
         tashkeelBar?.setBackgroundColor(bgColor)
-        clipboardBar?.setBackgroundColor(bgColor)
+        toolbarStrip?.setBackgroundColor(bgColor)
+        toolbarButtons.forEach { btn ->
+            btn.setTextColor(textColor)
+            val textSize = if (isLowVision) 14f else 12f
+            btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSize)
+        }
     }
 
     private fun createTashkeelBar(): LinearLayout {
@@ -305,33 +342,6 @@ class LordKeyboardService : InputMethodService(),
         return wrapper
     }
 
-    private fun createClipboardBar(): LinearLayout {
-        val bar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            val heightPx = (46 * resources.displayMetrics.density).toInt()
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                heightPx
-            )
-            setBackgroundColor(Color.rgb(32, 32, 32))
-        }
-
-        val btnPaste = createToolbarButton("لصق") { handlePaste() }
-        val btnCopy = createToolbarButton("نسخ") { handleCopy() }
-        val btnCut = createToolbarButton("قص") { handleCut() }
-        val btnSelectAll = createToolbarButton("تحديد الكل") {
-            handleSelectAll()
-        }
-
-        bar.addView(btnPaste)
-        bar.addView(btnCopy)
-        bar.addView(btnCut)
-        bar.addView(btnSelectAll)
-
-        return bar
-    }
-
     private fun toggleLanguage() {
         currentLayer = when (currentLayer) {
             KeyboardLayer.ARABIC -> {
@@ -361,20 +371,7 @@ class LordKeyboardService : InputMethodService(),
             speakText("إخفاء شريط التشكيل")
         } else {
             bar.visibility = View.VISIBLE
-            clipboardBar?.visibility = View.GONE
             speakText("إظهار شريط التشكيل")
-        }
-    }
-
-    private fun toggleClipboardBar() {
-        val bar = clipboardBar ?: return
-        if (bar.visibility == View.VISIBLE) {
-            bar.visibility = View.GONE
-            speakText("إخفاء الحافظة")
-        } else {
-            bar.visibility = View.VISIBLE
-            tashkeelBar?.visibility = View.GONE
-            speakText("إظهار الحافظة")
         }
     }
 
@@ -441,10 +438,6 @@ class LordKeyboardService : InputMethodService(),
             }
             KeyType.ACTION_VOICE -> {
                 startVoiceTyping()
-                return
-            }
-            KeyType.ACTION_CLIPBOARD -> {
-                toggleClipboardBar()
                 return
             }
             KeyType.ACTION_HIDE -> {
@@ -697,5 +690,9 @@ class LordKeyboardService : InputMethodService(),
         tts?.stop()
         tts?.shutdown()
         tts = null
+        toolbarButtons.clear()
+        toolbarStrip = null
+        tashkeelBar = null
+        keyboardView = null
     }
 }

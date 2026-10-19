@@ -169,11 +169,11 @@ class SettingsRepositoryTest {
         assertEquals("ar", repo.getNumberReadingLanguage())
         repo.setNumberReadingLanguage("en")
         assertEquals("en", repo.getNumberReadingLanguage())
-        // فقط "ar" أو "en" — أي قيمة أخرى تُثبّت كـ "ar"
+        // فقط "ar" أو "en" أو "auto" — أي قيمة أخرى تُثبّت كـ "ar"
         repo.setNumberReadingLanguage("fr")
         assertEquals("ar", repo.getNumberReadingLanguage())
         repo.setNumberReadingLanguage("auto")
-        assertEquals("ar", repo.getNumberReadingLanguage())
+        assertEquals("auto", repo.getNumberReadingLanguage())
     }
 
     @Test

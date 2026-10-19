@@ -119,22 +119,31 @@ internal class TextReadingController(
                 .show()
         }
 
-        // لغة نطق الأرقام: عربي / إنجليزي فقط
+        // لغة نطق الأرقام: تلقائي / عربي / إنجليزي
         btnNumberReadingLanguage =
             view.findViewById(R.id.btn_number_reading_language)
         updateNumberReadingLanguageLabel()
         btnNumberReadingLanguage?.setOnClickListener {
             val current = runCatching { settings.getNumberReadingLanguage() }
                 .getOrDefault("ar")
-            val currentIndex = if (current == "en") 1 else 0
+            val currentIndex = when (current.lowercase()) {
+                "auto" -> 0
+                "en" -> 2
+                else -> 1
+            }
             val options = arrayOf(
+                fragment.getString(R.string.number_reading_language_auto),
                 fragment.getString(R.string.number_reading_language_arabic),
                 fragment.getString(R.string.number_reading_language_english)
             )
             MaterialAlertDialogBuilder(fragment.requireContext())
                 .setTitle(R.string.number_reading_language_title)
                 .setSingleChoiceItems(options, currentIndex) { dialog, which ->
-                    val chosen = if (which == 1) "en" else "ar"
+                    val chosen = when (which) {
+                        0 -> "auto"
+                        2 -> "en"
+                        else -> "ar"
+                    }
                     runCatching { settings.setNumberReadingLanguage(chosen) }
                     updateNumberReadingLanguageLabel()
                     onStatusChanged()
@@ -150,16 +159,39 @@ internal class TextReadingController(
                 .also(fragment::trackDialog)
                 .show()
         }
+
+        val switchDiagnostics = view.findViewById<SwitchMaterial>(
+            R.id.switch_language_diagnostics
+        )
+        if (switchDiagnostics != null) {
+            switchDiagnostics.isChecked = runCatching {
+                settings.isLanguageDiagnosticsEnabled()
+            }.getOrDefault(false)
+            switchDiagnostics.setOnCheckedChangeListener { _, checked ->
+                runCatching { settings.setLanguageDiagnosticsEnabled(checked) }
+                val msg = fragment.getString(
+                    if (checked) R.string.announcement_turned_on
+                    else R.string.announcement_turned_off
+                )
+                fragment.view?.announceCompat(msg)
+            }
+        }
     }
 
     /** تحديث تسمية زر لغة نطق الأرقام. */
     private fun updateNumberReadingLanguageLabel() {
         val current = runCatching { settings.getNumberReadingLanguage() }
             .getOrDefault("ar")
-        val label = if (current == "en") {
-            fragment.getString(R.string.number_reading_language_english)
-        } else {
-            fragment.getString(R.string.number_reading_language_arabic)
+        val label = when (current.lowercase()) {
+            "auto" -> fragment.getString(
+                R.string.number_reading_language_auto
+            )
+            "en" -> fragment.getString(
+                R.string.number_reading_language_english
+            )
+            else -> fragment.getString(
+                R.string.number_reading_language_arabic
+            )
         }
         btnNumberReadingLanguage?.text =
             fragment.getString(R.string.number_reading_language_btn, label)

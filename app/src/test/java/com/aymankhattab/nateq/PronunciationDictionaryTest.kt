@@ -113,8 +113,9 @@ fun digitOnRightOfKey_appliesToo() {
  */
 @Test
 fun keyInsideWord_isApplied_notBlocked() {
+    dict.setStandaloneMaxLength(0)
     dict.addEntry("م", "متر")
-    // «مرحبا» = م + رحبا ← «متر» + «رحبا»؛ الاستبدالُ يلصقُ ولا يقطع.
+    // «مرحبا» = م + رحبا ← «متر» + «رحبا» عند تعطيل قاعدة المنفرد (الحد = 0)
     assertEquals("متررحبا", dict.apply("مرحبا"))
     // ولا حارسَ له يُعيد العمل؛ فالعقدُ الواحد يجب أن يبقى واحداً
     assertEquals("ألمتراً", dict.apply("ألماً"))
@@ -153,6 +154,7 @@ fun standaloneKey_stillReplaced() {
  */
 @Test
 fun letter_prevAndNext_noLongerBlockCompounding() {
+    dict.setStandaloneMaxLength(0)
     dict.addEntry("م", "متر")
     assertEquals("متررحبا", dict.apply("مرحبا"))
 }

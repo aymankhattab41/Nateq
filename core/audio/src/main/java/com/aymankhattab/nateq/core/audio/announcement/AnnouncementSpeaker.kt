@@ -22,6 +22,7 @@ import com.aymankhattab.nateq.core.audio.accessibility.RepeatSpellController
 import com.aymankhattab.nateq.core.audio.engine.AudioEffectManager
 import com.aymankhattab.nateq.core.audio.engine.SpeechChunker
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
+import com.aymankhattab.nateq.core.audio.engine.EmojiLanguageResolver
 import com.aymankhattab.nateq.core.audio.engine.LanguageSegmenter
 import com.aymankhattab.nateq.core.audio.announcement.CueSynth
 import com.aymankhattab.nateq.core.audio.announcement.CueType
@@ -1386,11 +1387,17 @@ class AnnouncementSpeaker(
         cue: AudioCue? = null,
         category: String? = null
     ) {
+        Log.d(TAG, "[DICT] Announcement before: $text")
+        val dictText = textProcessor.applyDictionaryFirst(
+            text, locale.toLanguageTag()
+        )
+        Log.d(TAG, "[DICT] Announcement after: $dictText")
+
         // ع٤١-ب4: تسجيل النص النهائي للإعلان في سجلّ
         // «ما قيل» قبل أي معالجة خاصة بالمحرك
         // — مع استثناء فئة المكالمات ورموز OTP.
         RepeatSpellController.updateLastSpokenText(
-            text,
+            dictText,
             source = RepeatSpellController.Source.ANNOUNCEMENT,
             isCall = isCallerCategory(category)
         )
@@ -1398,7 +1405,7 @@ class AnnouncementSpeaker(
         // للدورة (بلا قراءة متكررة للإعدادات عند كل عودة تركيز).
         val emojiCfg = resolveEmojiConfig(locale)
         val parts = if (emojiCfg != null) {
-            EmojiSpeech.split(text, emojiCfg.arabic)
+            EmojiSpeech.split(dictText, emojiCfg.arabic)
         } else {
             null
         }
@@ -1450,7 +1457,7 @@ class AnnouncementSpeaker(
         val isEvent = isEventCategory(category)
         val speakAction = {
             launchWithCue(
-                gen, text, locale, speechRate, pitch, volume,
+                gen, dictText, locale, speechRate, pitch, volume,
                 emojiCfg, parts, resolvedEngine, cue,
                 immediate = isEvent
             )
@@ -1679,15 +1686,18 @@ class AnnouncementSpeaker(
             val voiceId = settings.getPreferredVoiceIdForCategory(
                 SettingsRepository.VOICE_CATEGORY_EMOJI
             )
+            val emojiSetting = runCatching {
+                settings.getEmojiPronunciationLanguage()
+            }.getOrNull()
+            val resolvedLang = EmojiLanguageResolver.resolve(
+                emojiSetting = emojiSetting,
+                contextLanguage = baseLocale.language,
+                emojiVoiceId = voiceId,
+                fallbackLanguage = baseLocale.language
+            )
             EmojiSpeechConfig(
                 voiceId = voiceId,
-                // لغة التسمية: صوت الإيموجي المختار يحددها،
-                // وإلا فتمرّ للغة النص الفعلية
-                arabic = if (voiceId != null) {
-                    !isEnglishVoiceName(voiceId)
-                } else {
-                    baseLocale.language.let { LanguageCode.isArabic(it) }
-                },
+                arabic = LanguageCode.isArabic(resolvedLang),
                 rate = settings.getSpeechRateForCategory(
                     SettingsRepository.VOICE_CATEGORY_EMOJI
                 ),
@@ -2501,7 +2511,8 @@ speechCycle.incrementAndGet()
             // أي خطأ في المعالجة (قاموس مفقود...) يُسقط النص الخام لا الصمت.
             val readyText = runCatching {
                 textProcessor.process(
-                    segment.text, segment.languageTag, boundEngine
+                    segment.text, segment.languageTag, boundEngine,
+                    applyDictionary = false
                 )
             }.getOrDefault(segment.text)
             if (isResumableCategory(currentCategory)) {
