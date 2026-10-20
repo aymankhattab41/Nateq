@@ -260,6 +260,18 @@ interface ReadingPrefs {
     /** يعيّن إبقاء تشكيل النصوص العربية. */
     fun setTashkeelPreserved(enabled: Boolean)
 
+    /** وضع نطق الحرف المفرد («name»، «as_written»، «dictionary»). */
+    fun getSingleLetterMode(): String
+
+    /** يعيّن وضع نطق الحرف المفرد. */
+    fun setSingleLetterMode(mode: String)
+
+    /** تطبيق صوت فئة الأرقام على الأعداد المكتوبة بالحروف. */
+    fun isNumberVoiceSpelledWordsEnabled(): Boolean
+
+    /** يعيّن تطبيق صوت فئة الأرقام على الأعداد المكتوبة بالحروف. */
+    fun setNumberVoiceSpelledWordsEnabled(enabled: Boolean)
+
     /** اتباع سرعة قارئ الشاشة في نطق نصه (النسبة المئوية = 100 طبيعي):
      *  عند التفعيل تُهمل أشرطة سرعة LORD (مضروب 1.0) فيُنطق كما ضبطه
      *  المستخدم في النظام حرفياً. */

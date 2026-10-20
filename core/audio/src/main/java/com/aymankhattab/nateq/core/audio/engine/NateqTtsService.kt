@@ -20,6 +20,9 @@ import com.aymankhattab.nateq.core.audio.accessibility.FeatureFlags
 import com.aymankhattab.nateq.core.audio.accessibility.RepeatSpellController
 import com.aymankhattab.nateq.core.audio.accessibility.SelectorPacks
 import com.aymankhattab.nateq.core.audio.announcement.ArabicSpeechNormalizer
+import com.aymankhattab.nateq.core.audio.announcement.prepareArabicForEngine
+import com.aymankhattab.nateq.core.engine.EngineMarkers
+import com.aymankhattab.nateq.core.engine.SingleLetterGuard
 import com.aymankhattab.nateq.core.audio.announcement.InterruptionSensors
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
@@ -868,17 +871,33 @@ class NateqTtsService : TextToSpeechService() {
                     }
                 }
                 Log.d(TAG, "[DICT] Service before: $processedText")
-                processedText = textProcessor.applyDictionaryFirst(
-                    processedText, languageTag
-                )
+                val singleLetterMode = runCatching {
+                    settings.getSingleLetterMode()
+                }.getOrDefault("name")
+                val resolvedLetter =
+                    SingleLetterGuard.resolve(processedText, singleLetterMode)
+                val semanticText = if (resolvedLetter != null) {
+                    if (singleLetterMode == "name") {
+                        Log.d(TAG, "حرف مفرد: $processedText ← $resolvedLetter")
+                    }
+                    resolvedLetter
+                } else {
+                    val dictText = textProcessor.applyDictionaryFirst(
+                        processedText, languageTag
+                    )
+                    textProcessor.processSemantics(
+                        dictText, languageTag, markNumbers = true
+                    )
+                }
+                processedText = semanticText
                 Log.d(TAG, "[DICT] Service after: $processedText")
-                val semanticText = textProcessor.processSemantics(
-                    processedText, languageTag
-                )
                 // ع٤١-ب4: سجلّ «ما قيل» لمسار قارئ الشاشة (TalkBack) بعد
                 // تجهيز النص النهائي وقبل أي معالجة خاصة بالمحرك.
+                val cleanForHistory = semanticText
+                    .replace(EngineMarkers.NUMBER_MARK_START, "")
+                    .replace(EngineMarkers.NUMBER_MARK_END, "")
                 RepeatSpellController.updateLastSpokenText(
-                    semanticText,
+                    cleanForHistory,
                     source = RepeatSpellController.Source.READER
                 )
                 // **سرعة القارئ (معامل مُوحّد للمسارين):** نسبةُ
@@ -1250,7 +1269,11 @@ class NateqTtsService : TextToSpeechService() {
         val preferredForEngine = finalEngine?.let {
             settings.getPreferredVoiceForEngine(it, languageTag)
         }
-        val finalVoiceName = if (applyVoice?.engine != null &&
+        val finalVoiceName = if (
+            !convertTarget?.convertVoiceName.isNullOrBlank()
+        ) {
+            convertTarget!!.convertVoiceName
+        } else if (applyVoice?.engine != null &&
             applyVoice.engine != routed.engine
         ) {
             applyVoice.voiceId
@@ -1279,10 +1302,18 @@ class NateqTtsService : TextToSpeechService() {
                 applyDictionary = false
             )
         }
-        val speechText = if (LanguageCode.isArabic(languageTag)) {
-            ArabicSpeechNormalizer.normalize(processedText)
-        } else {
-            processedText
+        val speechText = prepareArabicForEngine(
+            processedText, languageTag, finalEngine
+        )
+        if (runCatching {
+            settings.isLanguageDiagnosticsEnabled()
+        }.getOrDefault(false)) {
+            Log.d(
+                "NateqLang",
+                "[TTS-SINGLE] text='$speechText', role=$role, " +
+                    "tag='$languageTag', engine='$finalEngine', " +
+                    "voice='$finalVoiceName'"
+            )
         }
 
         // تخليق الصوت الفعلي عبر المزوّد. يُبلّغنا التنسيق
@@ -1626,11 +1657,9 @@ class NateqTtsService : TextToSpeechService() {
                 applyDictionary = false
             )
         }
-        val speechText = if (LanguageCode.isArabic(segTag)) {
-            ArabicSpeechNormalizer.normalize(processed)
-        } else {
-            processed
-        }
+        val speechText = prepareArabicForEngine(
+            processed, segTag, targetEngine
+        )
         val (voice, foundProvider) = resolveVoiceWithFallback(segTag)
         val provider = if (targetEngine != null) {
             catalog.findProvider(targetEngine) ?: foundProvider
@@ -1667,6 +1696,17 @@ class NateqTtsService : TextToSpeechService() {
             }
         } else {
             targetVoiceName
+        }
+        if (runCatching {
+            settings.isLanguageDiagnosticsEnabled()
+        }.getOrDefault(false)) {
+            Log.d(
+                "NateqLang",
+                "[TTS-SEG] text='$speechText', role=${segment.role}, " +
+                    "tag='$segTag', engine='$targetEngine', " +
+                    "voice='$resolvedVoiceName', " +
+                    "source='${resolvedVoice.source}'"
+            )
         }
         return SegmentParams(
             speechText, voice, provider, finalRate, finalPitch,
@@ -2230,13 +2270,16 @@ class NateqTtsService : TextToSpeechService() {
         } else {
             Locale.forLanguageTag(segment.languageTag)
         }
+        val matches = VoiceResolutionPolicy.isVoiceLanguageMatch(
+            voiceId, segment.languageTag
+        )
         return ConvertTarget(
-            convertEngine = engine,
+            convertEngine = if (matches) engine else null,
             convertLocale = locale,
             convertRate = rate,
             convertPitch = pitch,
             convertVolume = volume,
-            convertVoiceName = voiceId
+            convertVoiceName = if (matches) voiceId else null
         )
     }
 

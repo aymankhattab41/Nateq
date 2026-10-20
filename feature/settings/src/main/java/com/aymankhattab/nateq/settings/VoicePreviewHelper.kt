@@ -14,6 +14,7 @@ import android.util.Log
 import android.widget.Toast
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
 import com.aymankhattab.nateq.core.audio.announcement.ArabicSpeechNormalizer
+import com.aymankhattab.nateq.core.audio.announcement.prepareArabicForEngine
 import com.aymankhattab.nateq.core.audio.announcement.EventLoudnessPolicy
 import com.aymankhattab.nateq.core.audio.announcement.ResolvedAudioRoute
 import com.aymankhattab.nateq.core.audio.engine.AudioEffectManager
@@ -215,20 +216,20 @@ internal fun preparePreviewText(
         stripped,
         java.text.Normalizer.Form.NFC
     )
-    val arabicNormalized = ArabicSpeechNormalizer.normalize(nfc)
     val textProcessor = TextProcessor(
         context.applicationContext,
         SettingsRepository.create(context),
         PronunciationDictionary.shared(context.applicationContext)
     )
+    val tag = languageTag.ifBlank { "ar" }
     val processed = runCatching {
         textProcessor.process(
-            arabicNormalized,
-            languageTag.ifBlank { "ar" },
+            nfc,
+            tag,
             enginePkg
         )
-    }.getOrDefault(arabicNormalized)
-    return ArabicSpeechNormalizer.normalize(processed)
+    }.getOrDefault(nfc)
+    return prepareArabicForEngine(processed, tag, enginePkg)
 }
 
 /**
@@ -639,6 +640,24 @@ internal class VoicePreviewHelper(private val context: Context) {
         currentPreviewTts = null
 
         val desiredEngine = params.enginePkg?.takeIf { it.isNotBlank() }
+        if (params.category == SettingsRepository.VOICE_CATEGORY_NUMBERS) {
+            val speaker = AnnouncementSpeaker(context.applicationContext)
+            val langTag = params.languageTag.ifEmpty { "ar" }
+            if (params.voiceName.isNotBlank()) {
+                speaker.resetVoice(params.voiceName)
+            }
+            speaker.speak(
+                params.sampleText,
+                Locale.forLanguageTag(langTag),
+                params.speechRate,
+                params.pitch,
+                params.volume,
+                engineOverride = desiredEngine,
+                category = params.category
+            )
+            onFinished()
+            return
+        }
         if (isEmbeddedEngine(desiredEngine) ||
             (desiredEngine == null && isVocalizerVoiceName(params.voiceName))
         ) {

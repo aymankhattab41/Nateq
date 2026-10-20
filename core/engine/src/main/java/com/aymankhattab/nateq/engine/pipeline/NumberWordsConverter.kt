@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.engine.pipeline
 
+import com.aymankhattab.nateq.engine.NumberSpeech
 import java.math.BigDecimal
 
 /**
@@ -29,7 +30,12 @@ internal object NumberWordsConverter {
     )
 
     /** تحويل رقم لكلمات عربية (يدعم حتى التريليونات، والكسور العشرية). */
-    fun numberToWords(number: Number): String {
+    fun numberToWords(number: Number, markNumbers: Boolean = false): String {
+        val result = computeNumberToWords(number)
+        return NumberSpeech.wrapNumber(result, markNumbers)
+    }
+
+    private fun computeNumberToWords(number: Number): String {
         // معالجة الكسور العشرية: فصل الجزء الصحيح والعشري ونطق "فاصلة" ثم
         // الأرقام — نعتمد التمثيل العشري المباشر (BigDecimal.valueOf) بدل
         // طرح الجزء الصحيح من الديبل — الطرح كان يُدخل أخطاء الفاصلة
@@ -59,12 +65,12 @@ internal object NumberWordsConverter {
                 // الكلمات («100» → مائة لا «100» خاماً)؛ والفوق-طويل فقط
                 // يُنطق رقماً-رقماً.
                 val integerText = plain.toLongOrNull()
-                    ?.let { numberToWords(it) }
+                    ?.let { computeNumberToWords(it) }
                     ?: spokenDigits(plain)
                 return "$base$integerText"
             }
             val decimalString = if (negative) "-$plain" else plain
-            return decimalStringToWords(decimalString)
+            return computeDecimalStringToWords(decimalString)
         }
 
         val num = number.toLong()
@@ -75,7 +81,7 @@ internal object NumberWordsConverter {
             if (num == Long.MIN_VALUE) {
                 return "ناقص ${positiveWordsFromDecimal("9223372036854775808")}"
             }
-            return "ناقص ${numberToWords(-num)}"
+            return "ناقص ${computeNumberToWords(-num)}"
         }
         return positiveWordsFromDecimal(num.toString())
     }
@@ -87,11 +93,19 @@ internal object NumberWordsConverter {
      * تُنطق صفراً واحداً («5.00» → خمسة فاصلة صِفْرْ) بلا
      * تكرارٍ ولا حذفٍ لدقة العدد.
      */
-    fun decimalStringToWords(plain: String): String {
+    fun decimalStringToWords(
+        plain: String,
+        markNumbers: Boolean = false
+    ): String {
+        val result = computeDecimalStringToWords(plain)
+        return NumberSpeech.wrapNumber(result, markNumbers)
+    }
+
+    private fun computeDecimalStringToWords(plain: String): String {
         val dot = plain.indexOf('.')
         if (dot < 0) {
             val integerText = plain.toLongOrNull()
-                ?.let { numberToWords(it) }
+                ?.let { computeNumberToWords(it) }
                 ?: spokenDigits(plain)
             return integerText
         }
@@ -102,7 +116,7 @@ internal object NumberWordsConverter {
 
         val integerPartStr = clean.substring(0, cleanDot)
         val integerPart = integerPartStr.toLongOrNull()
-        val intWord = integerPart?.let { numberToWords(it) }
+        val intWord = integerPart?.let { computeNumberToWords(it) }
             ?: spokenDigits(integerPartStr)
         val decimalDigits = clean.substring(cleanDot + 1)
         // العشرية الصفرية بالكامل («.0»/«.00») لا تُسقط: تُنطق صفراً
@@ -243,7 +257,11 @@ internal object NumberWordsConverter {
      * العدد يأخذ صيغة مؤنثة مع المعدود المذكر (خمسة كيلومترات)
      * وصيغة مذكرة مع المعدود المؤنث (خمس دقائق).
      */
-    fun unitNumberWord(digit: Int, isFeminine: Boolean): String {
+    fun unitNumberWord(
+        digit: Int,
+        isFeminine: Boolean,
+        markNumbers: Boolean = false
+    ): String {
         // الفهرس يعادل الرقم بالضبط (لا انزياح): كان المصفوفة تحذف منزلة
         // (خمسة → «ستة أمتار») لغياب العنصر الأول.
         val forMasculine = arrayOf(
@@ -255,7 +273,8 @@ internal object NumberWordsConverter {
             "ست", "سبع", "ثمان", "تسع", "عشر"
         )
         val table = if (isFeminine) forFeminine else forMasculine
-        return if (digit in 3..10) table[digit] else ""
+        val word = if (digit in 3..10) table[digit] else ""
+        return NumberSpeech.wrapNumber(word, markNumbers)
     }
 
     /**

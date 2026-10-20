@@ -1,5 +1,8 @@
 package com.aymankhattab.nateq.engine
 
+import com.aymankhattab.nateq.core.engine.EngineMarkers
+import com.aymankhattab.nateq.engine.pipeline.NumberWordsConverter
+
 /**
  * منطق نطق الأرقام بنمط التجميع المُختار (1=مفردة، 2=زوجي، 3..8=ثلاثي..ثماني)
  * وباللغة المطلوبة (عربية/إنجليزية).
@@ -14,6 +17,17 @@ object NumberSpeech {
         .getLogger("Nateq.NumberSpeech")
 
     /**
+     * يغلّف النص الناتج بعلامتي \uE030 و \uE031 عند تفعيل [markNumbers].
+     */
+    fun wrapNumber(text: String, markNumbers: Boolean): String =
+        if (markNumbers && text.isNotEmpty()) {
+            "${EngineMarkers.NUMBER_MARK_START}$text" +
+                "${EngineMarkers.NUMBER_MARK_END}"
+        } else {
+            text
+        }
+
+    /**
      * تحويل رقم إلى كلمات إنجليزية (للأرقام المنفصلة).
      * يدعم حتى 99,999,999 (8 خانات) لخدمة التجميع الخماسي..الثُماني.
      * معامل isFeminine غير مؤثر في الإنجليزية لكنه يبقى للتوافق مع
@@ -24,30 +38,68 @@ object NumberSpeech {
      * ويتكرر بلا سقف مهيلاً المكدس). `Int.MIN_VALUE` تُعالَج عبر مسار
      * Long آمن (نفيها يتجاوز Int فيبقى سالباً).
      */
-    fun toEnglishWords(number: Int, isFeminine: Boolean = false): String {
-        if (number == Int.MIN_VALUE) {
-            return "minus ${
+    fun toEnglishWords(
+        number: Int,
+        isFeminine: Boolean = false,
+        markNumbers: Boolean = false
+    ): String {
+        val result = if (number == Int.MIN_VALUE) {
+            "minus ${
                 englishFromDigits(Int.MIN_VALUE.toLongSize().toString())
             }"
+        } else if (number < 0) {
+            "minus ${toEnglishWords(-number, isFeminine, markNumbers = false)}"
+        } else {
+            toEnglishWordsPositive(number)
         }
-        if (number < 0) return "minus ${toEnglishWords(-number)}"
-        return toEnglishWordsPositive(number)
+        return wrapNumber(result, markNumbers)
     }
 
     /** نسخة Long عامة (لخدمة الأعداد الـ 19 خانة في NumberStep): تقولب
      *  أي قيمة حتى Long.MAX_VALUE بنمط تجميع ثلاثي (thousand/million/…)
      *  مع معالجة الإشارة وLong.MIN_VALUE. */
-    fun toEnglishWords(number: Long, isFeminine: Boolean = false): String {
-        if (number == Long.MIN_VALUE) {
-            // `Long.MAX_VALUE + 1L` كان يفيض حسابياً فيصبح -9223372036854775808
-            // نصاً يحوي إشارة سالبة تخرّب تجزئة
-            // الثلاثيات ورمزية toInt (انهيار).
-            return "minus ${englishFromDigits("9223372036854775808")}"
+    fun toEnglishWords(
+        number: Long,
+        isFeminine: Boolean = false,
+        markNumbers: Boolean = false
+    ): String {
+        val result = if (number == Long.MIN_VALUE) {
+            "minus ${englishFromDigits("9223372036854775808")}"
+        } else if (number < 0) {
+            "minus ${toEnglishWords(-number, isFeminine, markNumbers = false)}"
+        } else if (number < 1_000_000_000L) {
+            toEnglishWords(number.toInt(), isFeminine, markNumbers = false)
+        } else {
+            englishFromDigits(number.toString())
         }
-        if (number < 0) return "minus ${toEnglishWords(-number)}"
-        if (number < 1_000_000_000L) return toEnglishWords(number.toInt())
-        return englishFromDigits(number.toString())
+        return wrapNumber(result, markNumbers)
     }
+
+    /**
+     * تحويل رقم إلى كلمات (عربية أو إنجليزية) مع وسم اختياري بالأعلام.
+     */
+    fun toWords(
+        number: Long,
+        isEnglish: Boolean = false,
+        isFeminine: Boolean = false,
+        markNumbers: Boolean = false
+    ): String {
+        val result = if (isEnglish) {
+            toEnglishWords(number, isFeminine, markNumbers = false)
+        } else {
+            NumberWordsConverter.numberToWords(number, markNumbers = false)
+        }
+        return wrapNumber(result, markNumbers)
+    }
+
+    fun toWords(
+        number: Int,
+        isEnglish: Boolean = false,
+        isFeminine: Boolean = false,
+        markNumbers: Boolean = false
+    ): String = toWords(
+        number.toLong(), isEnglish, isFeminine, markNumbers
+    )
 
     /** قيمة Int.MIN_VALUE بلا إشارة مخزنة باعتبارها غير سالبة (2147483648). */
     private fun Int.toLongSize(): Long = (this.toLong() and 0xFFFFFFFFL)
@@ -150,20 +202,27 @@ object NumberSpeech {
      *   («خمسة»، «خمسون» كأرقام مجردة) — تناسب numberToWords في TextProcessor
      *   وتزيل التناقض الذي كان ينتج «خمس» عند نطق الرقم 5 منفرداً.
      */
-    fun toArabicWords(number: Int, isFeminine: Boolean = true): String {
+    fun toArabicWords(
+        number: Int,
+        isFeminine: Boolean = true,
+        markNumbers: Boolean = false
+    ): String {
         // **السالبة:** «سالب » + القيمة المطلقة — كانت القيمة السالبة تفلت
         // من كل نطاقات `when` وتسقط في فرع الملايين فتتكرر بلا سقف حتى
         // StackOverflow (وتُفهرَس مصفوفة الآحاد بفهرس سالب في نسخ سابقة).
         // `Int.MIN_VALUE` مستثناة لأن نفيها يفيض فيبقى سالباً — تُركَّب
         // يدوياً: ملياران + 147,483,648.
-        if (number == Int.MIN_VALUE) {
+        val result = if (number == Int.MIN_VALUE) {
             val leftover = 147_483_648
-            return "سالب ملياران و${toArabicWordsPositive(
+            "سالب ملياران و${toArabicWordsPositive(
                 leftover, isFeminine
             )}"
+        } else if (number < 0) {
+            "سالب ${toArabicWords(-number, isFeminine, markNumbers = false)}"
+        } else {
+            toArabicWordsPositive(number, isFeminine)
         }
-        if (number < 0) return "سالب ${toArabicWords(-number, isFeminine)}"
-        return toArabicWordsPositive(number, isFeminine)
+        return wrapNumber(result, markNumbers)
     }
 
     private fun toArabicWordsPositive(
@@ -334,20 +393,26 @@ object NumberSpeech {
      * الساعة تُنطق دائماً بهذه الصيغة لا بالأعداد الأصلية المذكرة/المؤنثة
      * («اثنان والنصف» خطأ، والصواب «الثانية والنصف»).
      */
-    fun toOrdinalHourWord(hour12: Int): String = when (hour12) {
-        1 -> "الواحدة"
-        2 -> "الثانية"
-        3 -> "الثالثة"
-        4 -> "الرابعة"
-        5 -> "الخامسة"
-        6 -> "السادسة"
-        7 -> "السابعة"
-        8 -> "الثامنة"
-        9 -> "التاسعة"
-        10 -> "العاشرة"
-        11 -> "الحادية عشرة"
-        12 -> "الثانية عشرة"
-        else -> toArabicWords(hour12)
+    fun toOrdinalHourWord(
+        hour12: Int,
+        markNumbers: Boolean = false
+    ): String {
+        val result = when (hour12) {
+            1 -> "الواحدة"
+            2 -> "الثانية"
+            3 -> "الثالثة"
+            4 -> "الرابعة"
+            5 -> "الخامسة"
+            6 -> "السادسة"
+            7 -> "السابعة"
+            8 -> "الثامنة"
+            9 -> "التاسعة"
+            10 -> "العاشرة"
+            11 -> "الحادية عشرة"
+            12 -> "الثانية عشرة"
+            else -> toArabicWords(hour12, markNumbers = false)
+        }
+        return wrapNumber(result, markNumbers)
     }
 
     /** حذف نون المثنى من «مائتان/مئتان» عند إضافتها فوق الاسم (التمييز):
@@ -372,7 +437,8 @@ object NumberSpeech {
     fun formatByMode(
         mode: Int,
         numberStr: String,
-        isEnglish: Boolean
+        isEnglish: Boolean,
+        markNumbers: Boolean = false
     ): String {
         val trimmed = numberStr.trim()
         if (trimmed.isEmpty()) return ""
@@ -406,40 +472,51 @@ object NumberSpeech {
             val fracSep = if (isEnglish) " point " else " فاصلة "
             val fracWords = fracDigits.map { ch ->
                 val d = ch.digitToInt()
-                if (isEnglish) toEnglishWords(d)
-                else toArabicWords(d, isFeminine = false)
+                if (isEnglish) toEnglishWords(d, markNumbers = false)
+                else toArabicWords(d, isFeminine = false, markNumbers = false)
             }.joinToString(" ")
             "$intWords$fracSep$fracWords"
         } else {
             intWords
         }
-        return (sign + result).trim()
+        val formatted = (sign + result).trim()
+        return wrapNumber(formatted, markNumbers)
     }
 
     /** نسخة Long عامة تحافظ على الأعداد الكبيرة السالبة وإشارتها. */
-    fun formatByMode(mode: Int, number: Long, isEnglish: Boolean): String {
+    fun formatByMode(
+        mode: Int,
+        number: Long,
+        isEnglish: Boolean,
+        markNumbers: Boolean = false
+    ): String {
         if (number == Long.MIN_VALUE) {
             val sign = if (isEnglish) "negative " else "سالب "
             val body = formatByMode(
-                mode, "9223372036854775808", isEnglish
+                mode, "9223372036854775808", isEnglish, markNumbers = false
             )
-            return sign + body
+            return wrapNumber(sign + body, markNumbers)
         }
         val sign = if (number < 0) {
             if (isEnglish) "negative " else "سالب "
         } else ""
         val absStr = if (number < 0) (-number).toString()
             else number.toString()
-        val body = formatByMode(mode, absStr, isEnglish)
-        return sign + body
+        val body = formatByMode(mode, absStr, isEnglish, markNumbers = false)
+        return wrapNumber(sign + body, markNumbers)
     }
 
     /**
      * تنسيق رقم في مجموعات أرقام حسب طريقة النطق (1..8).
      * 1=مفردة (رقم رقم)، 2=زوجي (رقمين كرقم واحد)، 3..8=ثلاثي..ثماني.
      */
-    fun formatByMode(mode: Int, number: Int, isEnglish: Boolean): String =
-        formatByMode(mode, number.toLong(), isEnglish)
+    fun formatByMode(
+        mode: Int,
+        number: Int,
+        isEnglish: Boolean,
+        markNumbers: Boolean = false
+    ): String =
+        formatByMode(mode, number.toLong(), isEnglish, markNumbers)
 
     private fun formatDigitsByMode(
         safeMode: Int,

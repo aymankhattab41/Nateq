@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.core.audio.engine
 
+import com.aymankhattab.nateq.core.engine.EngineMarkers
 import com.aymankhattab.nateq.util.LanguageCode
 
 /**
@@ -179,8 +180,10 @@ class LanguageSegmenter(
             )
         }
 
-        // معالجة مقاطع قفل اللغة المشفرة بـ \uE010..\uE012
-        if (text.contains(LOCK_START)) {
+        // معالجة مقاطع قفل اللغة وعلامات حجز الأرقام \uE030..\uE031
+        if (text.contains(LOCK_START) ||
+            text.contains(EngineMarkers.NUMBER_MARK_START_CHAR)
+        ) {
             return segmentWithLockedSections(
                 text, fallbackLanguage, secondaryLanguage, numberLanguage
             )
@@ -209,7 +212,12 @@ class LanguageSegmenter(
 
         while (cursor < text.length) {
             val startLock = text.indexOf(LOCK_START, cursor)
-            if (startLock == -1) {
+            val startNum = text.indexOf(
+                EngineMarkers.NUMBER_MARK_START_CHAR, cursor
+            )
+
+            // لا مزيد من العلامات الخاصة
+            if (startLock == -1 && startNum == -1) {
                 if (cursor < text.length) {
                     val sub = text.substring(cursor)
                     val unclosed = merge(
@@ -220,6 +228,55 @@ class LanguageSegmenter(
                 }
                 break
             }
+
+            // فحص أي العلامتين تسبق الأخرى
+            val handleNumber = startNum != -1 &&
+                (startLock == -1 || startNum < startLock)
+
+            if (handleNumber) {
+                if (startNum > cursor) {
+                    val sub = text.substring(cursor, startNum)
+                    val plainSegments = merge(
+                        sub, sFallback, nFallback, numberLanguage,
+                        fallbackLanguage, cursor
+                    )
+                    results.addAll(plainSegments)
+                }
+                val endNum = text.indexOf(
+                    EngineMarkers.NUMBER_MARK_END_CHAR, startNum + 1
+                )
+                if (endNum != -1) {
+                    val numContent = text.substring(startNum + 1, endNum)
+                    val cleanText = numContent
+                        .replace(EngineMarkers.NUMBER_MARK_START, "")
+                        .replace(EngineMarkers.NUMBER_MARK_END, "")
+                    val numTag = determineNumberLanguage(
+                        cleanText, sFallback, nFallback,
+                        numberLanguage, fallbackLanguage
+                    )
+                    if (diagnosticsEnabled) {
+                        android.util.Log.d(
+                            "NateqLang",
+                            "نص رقمي: '$cleanText' -> لغة: $numTag، " +
+                                "السبب: وسم رقم \uE030..\uE031"
+                        )
+                    }
+                    results.add(
+                        SegmentWithOffset(
+                            text = cleanText,
+                            languageTag = numTag,
+                            role = SpeechRole.NUMBER,
+                            start = startNum,
+                            end = endNum + 1
+                        )
+                    )
+                    cursor = endNum + 1
+                } else {
+                    cursor = startNum + 1
+                }
+                continue
+            }
+
             if (startLock > cursor) {
                 val sub = text.substring(cursor, startLock)
                 val plainSegments = merge(
@@ -268,6 +325,43 @@ class LanguageSegmenter(
             }
         }
         return results
+    }
+
+    private fun determineNumberLanguage(
+        text: String,
+        scriptFallback: String,
+        neutralFallback: String,
+        numberLanguage: String,
+        requestLanguage: String
+    ): String {
+        var hasArabic = false
+        var hasLatin = false
+        var i = 0
+        while (i < text.length) {
+            val cp = text.codePointAt(i)
+            i += Character.charCount(cp)
+            if (isArabic(cp)) hasArabic = true
+            if (Character.UnicodeScript.of(cp) ==
+                Character.UnicodeScript.LATIN
+            ) {
+                hasLatin = true
+            }
+        }
+        return when {
+            hasArabic -> if (LanguageCode.isArabic(requestLanguage)) {
+                requestLanguage
+            } else {
+                LanguageCode.AR.tag
+            }
+            hasLatin -> scriptFallback
+            else -> {
+                if (numberLanguage.equals(NUMBER_LANG_AUTO, true)) {
+                    neutralFallback
+                } else {
+                    numberLanguage
+                }
+            }
+        }
     }
 
     private fun merge(
@@ -519,7 +613,11 @@ class LanguageSegmenter(
                 Kind.SCRIPT to Character.UnicodeScript.of(codePoint)
             }
         }
-        if (Character.isWhitespace(codePoint)) {
+        if (Character.isWhitespace(codePoint) ||
+            codePoint == 0xE020 ||
+            codePoint == 0xE030 ||
+            codePoint == 0xE031
+        ) {
             return Kind.NEUTRAL to null
         }
         if ((NEUTRAL_CATEGORY_MASK and (1L shl Character.getType(codePoint)))

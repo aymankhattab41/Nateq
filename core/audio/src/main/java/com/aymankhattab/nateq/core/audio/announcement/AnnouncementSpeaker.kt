@@ -40,6 +40,7 @@ import com.aymankhattab.nateq.core.audio.providers.EngineBindVerifier
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
+import com.aymankhattab.nateq.core.engine.SingleLetterGuard
 import com.aymankhattab.nateq.core.data.SettingsChangeProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.CategoryLoudnessConfig
@@ -1388,9 +1389,19 @@ class AnnouncementSpeaker(
         category: String? = null
     ) {
         Log.d(TAG, "[DICT] Announcement before: $text")
-        val dictText = textProcessor.applyDictionaryFirst(
-            text, locale.toLanguageTag()
-        )
+        val singleLetterMode = runCatching {
+            settings?.getSingleLetterMode()
+        }.getOrNull() ?: "name"
+        val resolvedLetter =
+            SingleLetterGuard.resolve(text, singleLetterMode)
+        val dictText = if (resolvedLetter != null) {
+            if (singleLetterMode == "name") {
+                Log.d(TAG, "حرف مفرد: $text ← $resolvedLetter")
+            }
+            resolvedLetter
+        } else {
+            textProcessor.applyDictionaryFirst(text, locale.toLanguageTag())
+        }
         Log.d(TAG, "[DICT] Announcement after: $dictText")
 
         // ع٤١-ب4: تسجيل النص النهائي للإعلان في سجلّ
@@ -2179,11 +2190,13 @@ speechCycle.incrementAndGet()
             try {
                 for (unit in units) {
                     if (gen != speechGeneration.get() || !nowSpeaking) break
-                    val cleanText = ArabicSpeechNormalizer.normalize(
+                    val cleanText = prepareArabicForEngine(
                         java.text.Normalizer.normalize(
                             stripEmojis(unit.text),
                             java.text.Normalizer.Form.NFC
-                        )
+                        ),
+                        "ar",
+                        boundEngine
                     )
                     if (cleanText.isBlank()) continue
 
@@ -2467,7 +2480,9 @@ speechCycle.incrementAndGet()
             // عربيةً دائماً فتُنطق الإعلاناتُ الإنجليزية المختلطة معانٍ
             // عربيةً رغم لغةِ قراءتها الإنجليزية.
             val semanticText = runCatching {
-                textProcessor.processSemantics(text, baseLocale.language)
+                textProcessor.processSemantics(
+                    text, baseLocale.language, markNumbers = true
+                )
             }.getOrDefault(text)
         val languageSegments = runCatching {
             languageSegmenter.segment(
@@ -2490,7 +2505,9 @@ speechCycle.incrementAndGet()
             } else {
                 Locale.forLanguageTag(LanguageCode.EN.tag)
             }
-            val role = if (segment.isNumericOnly()) {
+            val role = if (segment.role == SpeechRole.NUMBER ||
+                segment.isNumericOnly()
+            ) {
                 SpeechRole.NUMBER
             } else {
                 SpeechRole.TEXT
@@ -2831,11 +2848,13 @@ speechCycle.incrementAndGet()
         // أصلاً) فالتنظيف هنا لا مساس به.
         // وتطبيع NFC يرمم النصوص القادمة مشكولةً
         // Bidi/NFD من الجذر (SMS/إشعارات).
-        val cleanText = ArabicSpeechNormalizer.normalize(
+        val cleanText = prepareArabicForEngine(
             java.text.Normalizer.normalize(
                 stripEmojis(text),
                 java.text.Normalizer.Form.NFC
-            )
+            ),
+            "ar",
+            boundEngine
         )
         if (cleanText.isBlank()) {
             if (assignedUtteranceId != null) {
