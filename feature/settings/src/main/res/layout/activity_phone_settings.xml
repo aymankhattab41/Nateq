@@ -432,7 +432,14 @@
                         android:id="@+id/switch_phone_record_boost_volume"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/phone_record_boost_volume_switch" />
+                        android:text="@string/phone_record_boost_volume_switch"
+                        android:layout_marginBottom="8dp" />
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/switch_phone_record_auto_speaker"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/phone_record_auto_speaker_switch" />
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>

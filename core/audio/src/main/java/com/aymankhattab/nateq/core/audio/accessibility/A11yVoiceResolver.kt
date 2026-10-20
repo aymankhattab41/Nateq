@@ -26,17 +26,19 @@ object A11yVoiceResolver {
         val appProfilesEnabled = settings.isAccessibilityFeatureEnabled(
             FeatureFlags.FEATURE_APP_PROFILES
         )
-        val autoSwitchEnabled = settings.isAccessibilityFeatureEnabled(
-            FeatureFlags.FEATURE_AUTO_PROFILE_SWITCH
-        )
         val contactEnabled = settings.isAccessibilityFeatureEnabled(
             FeatureFlags.FEATURE_CONTACT_VOICES
         )
 
-        val targetPackage = when {
-            !packageName.isNullOrBlank() -> packageName
-            autoSwitchEnabled -> AccessibilityBridge.resolveForegroundPackage()
-            else -> null
+        // الجولة 48 - الأمر 5: الاعتماد على FEATURE_APP_PROFILES وحده
+        val (targetPackage, source) = when {
+            !packageName.isNullOrBlank() -> packageName to "مباشر"
+            appProfilesEnabled -> {
+                val res =
+                    AccessibilityBridge.resolveForegroundPackageWithSource()
+                res.packageName to res.source
+            }
+            else -> null to "معطل"
         }
 
         val app = if (appProfilesEnabled && !targetPackage.isNullOrBlank()) {
@@ -71,6 +73,14 @@ object A11yVoiceResolver {
             contact = contact
         )
 
+        val reason = when {
+            contact != null -> "صوت جهة اتصال مطبق"
+            app != null -> "صوت تطبيق مطبق"
+            !appProfilesEnabled -> "ميزة صوت التطبيقات معطلة"
+            targetPackage.isNullOrBlank() -> "لم يتم تحديد حزمة تطبيق"
+            else -> "لا يوجد ملف صوتي محفوظ للتطبيق"
+        }
+
         VoiceResolutionTracker.record(
             packageName = targetPackage,
             senderName = effectiveSender,
@@ -79,7 +89,9 @@ object A11yVoiceResolver {
             voiceId = effective.voiceId,
             speechRate = effective.speechRate,
             pitch = effective.pitch,
-            volume = effective.volume
+            volume = effective.volume,
+            source = source,
+            reason = reason
         )
 
         if (app == null && contact == null) return null

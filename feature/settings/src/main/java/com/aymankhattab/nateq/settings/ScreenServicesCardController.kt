@@ -20,6 +20,7 @@ import com.aymankhattab.nateq.core.audio.accessibility.FeatureFlags
 import com.aymankhattab.nateq.core.data.AppProfile
 import com.aymankhattab.nateq.core.data.AppProfileStore
 import com.aymankhattab.nateq.core.data.ContactVoiceStore
+import com.aymankhattab.nateq.core.data.ProtectedApp
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.VoiceProfile
 import com.aymankhattab.nateq.feature.settings.R
@@ -58,6 +59,7 @@ class ScreenServicesCardController(
     private var btnTestContactVoice: MaterialButton? = null
     private var btnAppProfiles: MaterialButton? = null
     private var btnTestAppProfile: MaterialButton? = null
+    private var btnProtectedApps: MaterialButton? = null
     var contactPickerLauncher: ((
         onPicked: (name: String?, number: String?) -> Unit
     ) -> Unit)? = null
@@ -127,6 +129,12 @@ class ScreenServicesCardController(
             root.findViewWithTag<MaterialButton>("btn_a11y_test_app_profile")
         btnTestAppProfile?.setOnClickListener {
             testAppProfile()
+        }
+
+        btnProtectedApps =
+            root.findViewWithTag<MaterialButton>("btn_a11y_protected_apps")
+        btnProtectedApps?.setOnClickListener {
+            showProtectedAppsDialog { updateUiState() }
         }
 
         bindSwitch(
@@ -343,6 +351,12 @@ class ScreenServicesCardController(
         )
         btnContactVoices?.text =
             "$contactManageText ($contactStatus — $contactCount)"
+
+        val protectedCount = settings.getProtectedApps().size
+        val protectedManageText = context.getString(
+            R.string.a11y_protected_apps_manage
+        )
+        btnProtectedApps?.text = "$protectedManageText ($protectedCount)"
 
         applyState()
     }
@@ -667,68 +681,367 @@ class ScreenServicesCardController(
      * إدارة ملفات التطبيقات (ع٤١-ب11.3، ب14، ع٤٥): اختيار تطبيقٍ من
      * المثبّتة ثم فتح المحرّر الكامل عليه مع حفظ لغة الصوت وتفعيل الميزة.
      */
+    /**
+     * قائمة التطبيقات المتاحة لملفات الصوت (القابلة للإطلاق + المحفوظة سابقاً).
+     */
+    private fun getAvailableAppsForProfiles(
+        store: AppProfileStore
+    ): List<Pair<String, String>> {
+        val list = launchableApps().toMutableList()
+        val knownPkgs = list.map { it.first }.toSet()
+        val pm = context.packageManager
+        for (pkg in store.packages()) {
+            if (!knownPkgs.contains(pkg)) {
+                val label = runCatching {
+                    val info = pm.getApplicationInfo(pkg, 0)
+                    pm.getApplicationLabel(info).toString()
+                }.getOrNull() ?: pkg
+                list.add(pkg to label)
+            }
+        }
+        return list.sortedBy { it.second }
+    }
+
+    /**
+     * إدارة ملفات التطبيقات (الجولة 48 - الأمر 5): اختيار تطبيق أو إدخال
+     * الحزمة يدوياً أو التقاط التطبيق الحالي فوراً أو بعد 5 ثوانٍ.
+     */
     private fun showAppProfilesDialog(onUpdated: () -> Unit) {
         val store = AppProfileStore.create(context)
-        val apps = launchableApps()
-        if (apps.isEmpty()) return
-        val labels = apps.map { it.second }.toTypedArray()
+        val apps = getAvailableAppsForProfiles(store)
+        val options = mutableListOf<String>()
+        options.add("➕ إدخال اسم الحزمة يدوياً")
+        options.add("📍 التقاط التطبيق الحالي فوراً")
+        options.add("⏱️ التقاط التطبيق الحالي بعد 5 ثوانٍ")
+        apps.forEach { options.add(it.second) }
+
         MaterialAlertDialogBuilder(context)
             .setTitle(R.string.a11y_app_profiles_title)
-            .setItems(labels) { _, which ->
-                val pkg = apps[which].first
-                val stored = store.get(pkg)
-                val initial = stored?.toVoiceProfile()
-                    ?: currentDefaultVoiceProfile()
-                VoiceProfileEditorDialog.show(
-                    context = context,
-                    title = apps[which].second,
-                    initial = initial,
-                    sampleText = context.getString(
-                        R.string.sample_text_notification_preview
-                    )
-                ) { profile ->
-                    store.put(
-                        AppProfile(
-                            packageName = pkg,
-                            engine = profile.engine,
-                            voiceId = profile.voiceId,
-                            speechRate = profile.speechRate,
-                            pitch = profile.pitch,
-                            volume = profile.volume,
-                            detailLevel = stored?.detailLevel,
-                            features = stored?.features.orEmpty(),
-                            voiceLanguage = profile.voiceLanguage
-                        )
-                    )
-                    val wasAppOn = settings.isAccessibilityFeatureEnabled(
-                        FeatureFlags.FEATURE_APP_PROFILES
-                    )
-                    val wasAutoOn = settings.isAccessibilityFeatureEnabled(
-                        FeatureFlags.FEATURE_AUTO_PROFILE_SWITCH
-                    )
-                    var autoMsg = ""
-                    if (!wasAppOn || !wasAutoOn) {
-                        settings.setAccessibilityFeatureEnabled(
-                            FeatureFlags.FEATURE_APP_PROFILES, true
-                        )
-                        settings.setAccessibilityFeatureEnabled(
-                            FeatureFlags.FEATURE_AUTO_PROFILE_SWITCH, true
-                        )
-                        autoMsg = "، فُعّلت ميزة صوت التطبيقات"
+            .setItems(options.toTypedArray()) { _, which ->
+                when (which) {
+                    0 -> promptManualPackageEntry(store, onUpdated)
+                    1 -> captureCurrentPackage(store, onUpdated)
+                    2 -> captureDelayedPackage(store, onUpdated)
+                    else -> {
+                        val app = apps[which - 3]
+                        editAppProfile(app.first, app.second, store, onUpdated)
                     }
-                    val appLabel = apps[which].second
-                    A11ySpeechCoordinator.speakAnnouncement(
-                        context = context,
-                        text = "حُفظ ملف تطبيق $appLabel$autoMsg",
-                        isInterruptAllowed = true
-                    )
-                    onUpdated()
                 }
             }
             .setNeutralButton(R.string.a11y_voice_remove) { _, _ ->
                 showRemoveAppProfileDialog(store, onUpdated)
             }
             .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun promptManualPackageEntry(
+        store: AppProfileStore,
+        onUpdated: () -> Unit
+    ) {
+        val input = EditText(context).apply {
+            hint = "com.example.app"
+        }
+        MaterialAlertDialogBuilder(context)
+            .setTitle("إدخال اسم الحزمة يدوياً")
+            .setView(input)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val pkg = input.text?.toString().orEmpty().trim()
+                if (pkg.isNotEmpty()) {
+                    val label = runCatching {
+                        val pm = context.packageManager
+                        val appInfo = pm.getApplicationInfo(pkg, 0)
+                        pm.getApplicationLabel(appInfo).toString()
+                    }.getOrNull() ?: pkg
+                    editAppProfile(pkg, label, store, onUpdated)
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun captureCurrentPackage(
+        store: AppProfileStore,
+        onUpdated: () -> Unit
+    ) {
+        val pkg = com.aymankhattab.nateq.core.audio.accessibility
+            .AccessibilityBridge.resolveForegroundPackage()
+        if (pkg.isNullOrBlank() ||
+            com.aymankhattab.nateq.core.audio.accessibility
+                .AccessibilityBridge.isIgnoredPackage(pkg)
+        ) {
+            A11ySpeechCoordinator.speakAnnouncement(
+                context = context,
+                text = "تعذر تحديد التطبيق الحالي",
+                isInterruptAllowed = true
+            )
+            return
+        }
+        val label = runCatching {
+            val pm = context.packageManager
+            val appInfo = pm.getApplicationInfo(pkg, 0)
+            pm.getApplicationLabel(appInfo).toString()
+        }.getOrNull() ?: pkg
+        editAppProfile(pkg, label, store, onUpdated)
+    }
+
+    private fun captureDelayedPackage(
+        store: AppProfileStore,
+        onUpdated: () -> Unit
+    ) {
+        A11ySpeechCoordinator.speakAnnouncement(
+            context = context,
+            text = "انتقل إلى التطبيق المراد، سيتم التقاطه بعد خمس ثوانٍ",
+            isInterruptAllowed = true
+        )
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            val pkg = com.aymankhattab.nateq.core.audio.accessibility
+                .AccessibilityBridge.resolveForegroundPackage()
+            if (!pkg.isNullOrBlank() &&
+                !com.aymankhattab.nateq.core.audio.accessibility
+                    .AccessibilityBridge.isIgnoredPackage(pkg)
+            ) {
+                val label = runCatching {
+                    val pm = context.packageManager
+                    val appInfo = pm.getApplicationInfo(pkg, 0)
+                    pm.getApplicationLabel(appInfo).toString()
+                }.getOrNull() ?: pkg
+                A11ySpeechCoordinator.speakAnnouncement(
+                    context = context,
+                    text = "تم التقاط تطبيق $label",
+                    isInterruptAllowed = true
+                )
+                editAppProfile(pkg, label, store, onUpdated)
+            } else {
+                A11ySpeechCoordinator.speakAnnouncement(
+                    context = context,
+                    text = "تعذر التقاط التطبيق، حاول مرة أخرى",
+                    isInterruptAllowed = true
+                )
+            }
+        }, 5000L)
+    }
+
+    private fun editAppProfile(
+        pkg: String,
+        label: String,
+        store: AppProfileStore,
+        onUpdated: () -> Unit
+    ) {
+        val stored = store.get(pkg)
+        val initial = stored?.toVoiceProfile()
+            ?: currentDefaultVoiceProfile()
+        VoiceProfileEditorDialog.show(
+            context = context,
+            title = label,
+            initial = initial,
+            sampleText = context.getString(
+                R.string.sample_text_notification_preview
+            )
+        ) { profile ->
+            store.put(
+                AppProfile(
+                    packageName = pkg,
+                    engine = profile.engine,
+                    voiceId = profile.voiceId,
+                    speechRate = profile.speechRate,
+                    pitch = profile.pitch,
+                    volume = profile.volume,
+                    detailLevel = stored?.detailLevel,
+                    features = stored?.features.orEmpty(),
+                    voiceLanguage = profile.voiceLanguage
+                )
+            )
+            val wasAppOn = settings.isAccessibilityFeatureEnabled(
+                FeatureFlags.FEATURE_APP_PROFILES
+            )
+            val wasAutoOn = settings.isAccessibilityFeatureEnabled(
+                FeatureFlags.FEATURE_AUTO_PROFILE_SWITCH
+            )
+            var autoMsg = ""
+            if (!wasAppOn || !wasAutoOn) {
+                settings.setAccessibilityFeatureEnabled(
+                    FeatureFlags.FEATURE_APP_PROFILES, true
+                )
+                settings.setAccessibilityFeatureEnabled(
+                    FeatureFlags.FEATURE_AUTO_PROFILE_SWITCH, true
+                )
+                autoMsg = "، فُعّلت ميزة صوت التطبيقات"
+            }
+            A11ySpeechCoordinator.speakAnnouncement(
+                context = context,
+                text = "حُفظ ملف تطبيق $label$autoMsg",
+                isInterruptAllowed = true
+            )
+            onUpdated()
+        }
+    }
+
+    private fun showProtectedAppsDialog(onUpdated: () -> Unit) {
+        val apps = settings.getProtectedApps()
+        val items = mutableListOf<String>()
+        items.add("➕ ${context.getString(R.string.a11y_protected_apps_add)}")
+        for (app in apps) {
+            val modeStr = if (app.mode == ProtectedApp.MODE_PARTIAL_SUSPEND) {
+                "تعليق جزئي"
+            } else {
+                "إيقاف كامل"
+            }
+            items.add("🔒 ${app.label} ($modeStr)")
+        }
+
+        MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.a11y_protected_apps_title)
+            .setItems(items.toTypedArray()) { _, which ->
+                if (which == 0) {
+                    promptAddProtectedApp(onUpdated)
+                } else {
+                    val app = apps[which - 1]
+                    showProtectedAppOptionsDialog(app, onUpdated)
+                }
+            }
+            .setNeutralButton("أذونات الحماية") { _, _ ->
+                showProtectedAppsPermissionsDialog()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun promptAddProtectedApp(onUpdated: () -> Unit) {
+        val store = AppProfileStore.create(context)
+        val available = getAvailableAppsForProfiles(store)
+        val options = mutableListOf<String>()
+        options.add("➕ إدخال اسم الحزمة يدوياً")
+        available.forEach { options.add(it.second) }
+
+        MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.a11y_protected_apps_add)
+            .setItems(options.toTypedArray()) { _, which ->
+                if (which == 0) {
+                    val input = EditText(context).apply {
+                        hint = "com.instapay"
+                    }
+                    MaterialAlertDialogBuilder(context)
+                        .setTitle("إدخال اسم الحزمة")
+                        .setView(input)
+                        .setPositiveButton(android.R.string.ok) { _, _ ->
+                            val pkg = input.text?.toString().orEmpty().trim()
+                            if (pkg.isNotEmpty()) {
+                                val label = runCatching {
+                                    val pm = context.packageManager
+                                    val info = pm.getApplicationInfo(pkg, 0)
+                                    pm.getApplicationLabel(info).toString()
+                                }.getOrNull() ?: pkg
+                                promptProtectedAppMode(pkg, label, onUpdated)
+                            }
+                        }
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show()
+                } else {
+                    val selected = available[which - 1]
+                    promptProtectedAppMode(
+                        selected.first, selected.second, onUpdated
+                    )
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun promptProtectedAppMode(
+        pkg: String,
+        label: String,
+        onUpdated: () -> Unit
+    ) {
+        val modes = arrayOf(
+            context.getString(R.string.a11y_protected_mode_full),
+            context.getString(R.string.a11y_protected_mode_partial)
+        )
+        val defaultIndex = 0
+        MaterialAlertDialogBuilder(context)
+            .setTitle("اختر وضع الحماية لتطبيق $label")
+            .setSingleChoiceItems(modes, defaultIndex) { dialog, which ->
+                val mode = if (which == 1) {
+                    ProtectedApp.MODE_PARTIAL_SUSPEND
+                } else {
+                    ProtectedApp.MODE_FULL_DISABLE
+                }
+                settings.addProtectedApp(
+                    ProtectedApp(
+                        packageName = pkg,
+                        label = label,
+                        mode = mode
+                    )
+                )
+                dialog.dismiss()
+                onUpdated()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showProtectedAppOptionsDialog(
+        app: ProtectedApp,
+        onUpdated: () -> Unit
+    ) {
+        val toggleTarget =
+            if (app.mode == ProtectedApp.MODE_PARTIAL_SUSPEND) {
+                "إلى إيقاف كامل"
+            } else {
+                "إلى تعليق جزئي"
+            }
+        val options = arrayOf(
+            "تبديل الوضع ($toggleTarget)",
+            context.getString(R.string.a11y_protected_launch_via_lord),
+            "حذف من التطبيقات المحمية"
+        )
+        MaterialAlertDialogBuilder(context)
+            .setTitle(app.label)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> {
+                        val newMode =
+                            if (app.mode == ProtectedApp.MODE_PARTIAL_SUSPEND) {
+                                ProtectedApp.MODE_FULL_DISABLE
+                            } else {
+                                ProtectedApp.MODE_PARTIAL_SUSPEND
+                            }
+                        settings.addProtectedApp(app.copy(mode = newMode))
+                        onUpdated()
+                    }
+                    1 -> {
+                        val intent = ProtectedAppLauncherActivity
+                            .createIntent(context, app.packageName)
+                        context.startActivity(intent)
+                    }
+                    2 -> {
+                        settings.removeProtectedApp(app.packageName)
+                        onUpdated()
+                    }
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showProtectedAppsPermissionsDialog() {
+        val msg = "1. الوصول إلى بيانات الاستخدام: مطلوب لرصد الخروج " +
+            "من التطبيق المصرفي تلقائياً.\n\n" +
+            "2. إذن WRITE_SECURE_SETTINGS: مطلوب لإعادة تشغيل خدمة إمكانية " +
+            "الوصول تلقائياً بدون تدخل.\n\n" +
+            "بدون الإذن الثاني، سيصلك إشعار فوري ويمكنك الضغط على زرّي الصوت."
+        MaterialAlertDialogBuilder(context)
+            .setTitle("إرشادات أذونات التطبيقات المحمية")
+            .setMessage(msg)
+            .setPositiveButton("فتح إعدادات الاستخدام") { _, _ ->
+                val intent = Intent(
+                    Settings.ACTION_USAGE_ACCESS_SETTINGS
+                ).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                runCatching { context.startActivity(intent) }
+            }
+            .setNegativeButton(android.R.string.ok, null)
             .show()
     }
 

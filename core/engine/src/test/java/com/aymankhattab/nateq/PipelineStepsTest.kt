@@ -480,8 +480,12 @@ class PipelineStepsTest {
             "الساعة الآن الحادية عشرة صباحاً",
             TimeStep.apply("الساعة الآن 11 ص")
         )
-        // لصاق الحرف بالرقم بلا مسافة: «8م» صيغة وقت لا متر.
-        assertEquals("الثامنة مساءً", TimeStep.apply("8م"))
+        // لصاق الحرف بالرقم: في وضع مساءً دائماً يتحول، وفي السياق يترك
+        assertEquals(
+            "الثامنة مساءً",
+            TimeStep { TimeStep.MODE_EVENING }.apply("8م")
+        )
+        assertEquals("8م", TimeStep.apply("8م"))
         assertEquals("العاشرة صباحاً", TimeStep.apply("10ص"))
         // جملة كاملة حوله.
         assertEquals(

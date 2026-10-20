@@ -1,7 +1,9 @@
 package com.aymankhattab.nateq.core.audio.accessibility
 
+import android.os.Build
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.Locale
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicReference
 
@@ -11,6 +13,11 @@ import java.util.concurrent.atomic.AtomicReference
  * - لا يحتفظ بـ AccessibilityNodeInfo خارج المعالج لتفادي التسريب.
  */
 object AccessibilityBridge {
+
+    data class ResolvedPackageInfo(
+        val packageName: String?,
+        val source: String
+    )
 
     private val activeServiceRef =
         AtomicReference<NateqAccessibilityService?>()
@@ -43,26 +50,107 @@ object AccessibilityBridge {
     fun foregroundPackage(): String? = foregroundPackageRef.get()
 
     /**
-     * حساب الحزمة الأمامية بدقة من نوافذ التطبيق النشطة أو المفوكسة،
-     * والرجوع إلى [foregroundPackage] كاحتياط (ع٤٥ - الأمر 2).
+     * فحص ما إذا كانت الحزمة تنتمي لقارئ شاشة أو لوحة مفاتيح
+     * أو تراكب نظام (الأمر 5).
      */
-    fun resolveForegroundPackage(): String? {
+    fun isIgnoredPackage(pkg: String?): Boolean {
+        if (pkg.isNullOrBlank()) return true
+        val lower = pkg.lowercase(Locale.ROOT)
+        if (lower.contains("talkback") ||
+            lower.contains("accessibility") ||
+            lower.contains("screenreader") ||
+            lower.contains("espeak") ||
+            lower.contains("vocalizer") ||
+            lower == "com.aymankhattab.nateq" ||
+            lower == "com.android.systemui" ||
+            lower == "android" ||
+            lower.contains("inputmethod") ||
+            lower.contains("latin") ||
+            lower.contains("gboard") ||
+            lower.contains("swiftkey") ||
+            lower.contains("samsungime")
+        ) {
+            return true
+        }
+        return false
+    }
+
+    /**
+     * حسم الحزمة الأمامية مع المصدر بدقة (عقدة مفوكسة، نافذة، احتياط)
+     * — الجولة 48 (الأمر 5).
+     */
+    fun resolveForegroundPackageWithSource(): ResolvedPackageInfo {
         val service = activeServiceRef.get()
         if (service != null) {
-            val appPkg = runCatching {
-                service.windows?.firstOrNull { win ->
-                    win.type == android.view.accessibility
-                        .AccessibilityWindowInfo.TYPE_APPLICATION &&
-                        (win.isActive || win.isFocused)
-                }?.root?.packageName?.toString()
+            // 1) الأولوية لحزمة العقدة المفوكسة نفسها
+            val rootPkg = runCatching {
+                service.rootInActiveWindow?.packageName?.toString()
             }.getOrNull()
-            if (!appPkg.isNullOrBlank() &&
-                !appPkg.contains("talkback", ignoreCase = true)
-            ) {
-                return appPkg
+            if (!isIgnoredPackage(rootPkg)) {
+                return ResolvedPackageInfo(rootPkg, "عقدة مفوكسة")
+            }
+
+            val snapshotPkg = runCatching {
+                service.findCurrentAccessibilityFocusSnapshot()?.packageName
+            }.getOrNull()
+            if (!isIgnoredPackage(snapshotPkg)) {
+                return ResolvedPackageInfo(snapshotPkg, "عقدة مفوكسة")
+            }
+
+            val lastFocusPkg = service.lastFocusedPackage
+            if (!isIgnoredPackage(lastFocusPkg)) {
+                return ResolvedPackageInfo(lastFocusPkg, "عقدة مفوكسة")
+            }
+
+            // 2) نافذة isFocused ثم isActive
+            val wins = runCatching { service.windows }.getOrNull().orEmpty()
+            val focusedWinPkg = wins.firstOrNull { win ->
+                win.type == android.view.accessibility
+                    .AccessibilityWindowInfo.TYPE_APPLICATION && win.isFocused
+            }?.root?.packageName?.toString()
+            if (!isIgnoredPackage(focusedWinPkg)) {
+                return ResolvedPackageInfo(focusedWinPkg, "نافذة مفوكسة")
+            }
+
+            val activeWinPkg = wins.firstOrNull { win ->
+                win.type == android.view.accessibility
+                    .AccessibilityWindowInfo.TYPE_APPLICATION && win.isActive
+            }?.root?.packageName?.toString()
+            if (!isIgnoredPackage(activeWinPkg)) {
+                return ResolvedPackageInfo(activeWinPkg, "نافذة نشطة")
             }
         }
-        return foregroundPackage()
+
+        // 3) احتياط من foregroundPackage()
+        val fg = foregroundPackage()
+        if (!isIgnoredPackage(fg)) {
+            return ResolvedPackageInfo(fg, "احتياط")
+        }
+
+        return ResolvedPackageInfo(null, "غير محدد")
+    }
+
+    /**
+     * حساب الحزمة الأمامية بدقة من نوافذ التطبيق النشطة أو المفوكسة،
+     * والرجوع إلى [foregroundPackage] كاحتياط (ع٤٥، الجولة 48 - الأمر 5).
+     */
+    fun resolveForegroundPackage(): String? =
+        resolveForegroundPackageWithSource().packageName
+
+    /**
+     * تنفيذ نقرة إيماءة في إحداثيات محددة على الشاشة (الجولة 48 - الأمر 4).
+     */
+    fun dispatchClickGesture(x: Float, y: Float): Boolean {
+        val service = activeServiceRef.get() ?: return false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            val path = android.graphics.Path().apply { moveTo(x, y) }
+            val stroke = android.accessibilityservice
+                .GestureDescription.StrokeDescription(path, 0L, 50L)
+            val gesture = android.accessibilityservice
+                .GestureDescription.Builder().addStroke(stroke).build()
+            return service.dispatchGesture(gesture, null, null)
+        }
+        return false
     }
 
     /**

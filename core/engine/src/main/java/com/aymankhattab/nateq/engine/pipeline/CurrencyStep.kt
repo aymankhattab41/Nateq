@@ -449,7 +449,8 @@ internal object CurrencyStep : TextProcessingStep {
     // نمط كود العملة مسبوقاً بالمبلغ: «USD 100».
     private val PATTERN_CURRENCY_CODE = Pattern.compile(
         """\b(USD|EUR|GBP|SAR|AED|KWD|QAR|OMR|BHD|EGP|TND|""" +
-            """DZD|MAD|JPY|CNY|INR|KRW|RUB)\s+(""" + AMOUNT_REGEX + """)\b"""
+            """DZD|MAD|JPY|CNY|INR|KRW|RUB)\s+(""" + AMOUNT_REGEX +
+            """)(?![\p{N}_])"""
     )
     // نمط الكود المسبوق بمبلغه: «1500 USD» — يمنع انفصال «USD» مقطعاً
     // إنجليزياً في النص المختلط (تُطبَّق خطوة العملة قبل تقسيم اللغة).
@@ -487,7 +488,7 @@ internal object CurrencyStep : TextProcessingStep {
                 ""
             }
             val source = headGuard + Pattern.quote(symbol) + "\\s*(" +
-                AMOUNT_REGEX + ")\\b"
+                AMOUNT_REGEX + ")(?![\\p{N}_])"
             Pattern.compile(source) to info
         }
         // أنماط الرموز بعد المبلغ: «100$» مع مسافة اختيارية بين المبلغ

@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.Cursor
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
@@ -89,6 +90,8 @@ class LordPhoneActivity : AppCompatActivity() {
     private var tvCallLogEmpty: View? = null
     private var tvContactsEmpty: View? = null
     private var tvRecordingsEmpty: View? = null
+    private var tvRecordingsPath: TextView? = null
+    private var btnOpenRecordingsFolder: MaterialButton? = null
 
     private var mediaPlayer: MediaPlayer? = null
     private var tts: TextToSpeech? = null
@@ -188,6 +191,11 @@ class LordPhoneActivity : AppCompatActivity() {
         tvCallLogEmpty = findViewById(R.id.tv_call_log_empty)
         tvContactsEmpty = findViewById(R.id.tv_contacts_empty)
         tvRecordingsEmpty = findViewById(R.id.tv_recordings_empty)
+        tvRecordingsPath = findViewById(R.id.tv_recordings_path)
+        btnOpenRecordingsFolder = findViewById(R.id.btn_open_recordings_folder)
+        btnOpenRecordingsFolder?.setOnClickListener {
+            openRecordingsFolder()
+        }
 
         rvCallLog?.layoutManager = LinearLayoutManager(this)
         rvContacts?.layoutManager = LinearLayoutManager(this)
@@ -819,17 +827,110 @@ class LordPhoneActivity : AppCompatActivity() {
         val recordings = CallRecordManager.getRecordings(this)
         tvRecordingsEmpty?.visibility =
             if (recordings.isEmpty()) View.VISIBLE else View.GONE
+        val folderName = CallRecordManager.getRecordingFolderDisplayName()
+        tvRecordingsPath?.text = getString(
+            R.string.phone_record_folder_label,
+            folderName
+        )
         rvRecordings?.adapter = RecordingsAdapter(recordings)
     }
 
+    private fun openRecordingsFolder() {
+        val folderUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            Uri.parse(
+                "content://com.android.externalstorage.documents/document/" +
+                    "primary:Recordings%2FLord%20TTS"
+            )
+        } else {
+            Uri.parse(
+                "content://com.android.externalstorage.documents/document/" +
+                    "primary:Music%2FLord%20TTS"
+            )
+        }
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(folderUri, "vnd.android.document/directory")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+        }
+        try {
+            startActivity(intent)
+        } catch (_: Exception) {
+            try {
+                val fallback = Intent(Intent.ACTION_GET_CONTENT).apply {
+                    type = "*/*"
+                }
+                startActivity(
+                    Intent.createChooser(
+                        fallback,
+                        getString(R.string.phone_open_recordings_folder)
+                    )
+                )
+            } catch (_: Exception) {}
+        }
+    }
+
+    private var originalMusicVolume: Int? = null
+
     private fun playRecordingAtMaxVolume(file: File) {
-        if (!file.exists()) {
-            Toast.makeText(
-                this,
-                R.string.phone_recording_file_missing,
-                Toast.LENGTH_SHORT
-            ).show()
+        val item = CallRecordItem(
+            id = "",
+            phoneNumber = "",
+            callerName = "",
+            timestamp = file.lastModified(),
+            durationSeconds = 1L,
+            filePath = file.absolutePath,
+            fileSize = file.length()
+        )
+        playRecording(item)
+    }
+
+    private fun playRecording(item: CallRecordItem) {
+        if (item.isSilent) {
+            val msg = getString(R.string.phone_record_silent_warning)
+            Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+            speak(msg)
             return
+        }
+
+        val targetUri: Uri = if (!item.uriString.isNullOrEmpty()) {
+            Uri.parse(item.uriString)
+        } else {
+            val file = File(item.filePath)
+            if (!file.exists()) {
+                Toast.makeText(
+                    this,
+                    R.string.phone_recording_file_missing,
+                    Toast.LENGTH_SHORT
+                ).show()
+                return
+            }
+            Uri.fromFile(file)
+        }
+
+        val audioManager =
+            getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val currentVol =
+            audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val maxVol =
+            audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        if (currentVol < maxVol * 0.3) {
+            originalMusicVolume = currentVol
+            audioManager.setStreamVolume(
+                AudioManager.STREAM_MUSIC,
+                (maxVol * 0.6).toInt(),
+                0
+            )
+        }
+
+        fun restoreVolume() {
+            originalMusicVolume?.let { prev ->
+                audioManager.setStreamVolume(
+                    AudioManager.STREAM_MUSIC,
+                    prev,
+                    0
+                )
+                originalMusicVolume = null
+            }
         }
 
         try {
@@ -838,33 +939,63 @@ class LordPhoneActivity : AppCompatActivity() {
                 setAudioAttributes(
                     AudioAttributes.Builder()
                         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
                         .build()
                 )
-                setDataSource(file.absolutePath)
-                setVolume(1.0f, 1.0f)
-                prepare()
-                start()
+                setDataSource(this@LordPhoneActivity, targetUri)
+                setOnPreparedListener {
+                    start()
+                    speak(
+                        getString(
+                            R.string.phone_playing_recording_announcement
+                        )
+                    )
+                }
+                setOnCompletionListener {
+                    restoreVolume()
+                }
+                setOnErrorListener { _, what, extra ->
+                    restoreVolume()
+                    val reason = "$what / $extra"
+                    val msg = getString(
+                        R.string.phone_recording_play_failed_reason,
+                        reason
+                    )
+                    Toast.makeText(
+                        this@LordPhoneActivity,
+                        msg,
+                        Toast.LENGTH_LONG
+                    ).show()
+                    speak(msg)
+                    true
+                }
+                prepareAsync()
             }
-            speak(getString(R.string.phone_playing_recording_announcement))
-        } catch (_: Exception) {
-            Toast.makeText(
-                this,
-                R.string.phone_recording_play_failed,
-                Toast.LENGTH_SHORT
-            ).show()
+        } catch (e: Exception) {
+            restoreVolume()
+            val msg = getString(
+                R.string.phone_recording_play_failed_reason,
+                e.message ?: "error"
+            )
+            Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+            speak(msg)
         }
     }
 
     private fun shareRecording(item: CallRecordItem) {
-        val file = File(item.filePath)
-        if (!file.exists()) return
+        val uri: Uri? = if (!item.uriString.isNullOrEmpty()) {
+            Uri.parse(item.uriString)
+        } else {
+            val file = File(item.filePath)
+            if (!file.exists()) return
+            FileProvider.getUriForFile(
+                this,
+                "${packageName}.fileprovider",
+                file
+            )
+        }
+        if (uri == null) return
 
-        val uri = FileProvider.getUriForFile(
-            this,
-            "${packageName}.fileprovider",
-            file
-        )
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "audio/*"
             putExtra(Intent.EXTRA_STREAM, uri)
@@ -939,7 +1070,7 @@ class LordPhoneActivity : AppCompatActivity() {
             if (recs.isNotEmpty()) {
                 holder.btnPlayRec.visibility = View.VISIBLE
                 holder.btnPlayRec.setOnClickListener {
-                    playRecordingAtMaxVolume(File(recs.first().filePath))
+                    playRecording(recs.first())
                 }
             } else {
                 holder.btnPlayRec.visibility = View.GONE
@@ -1104,7 +1235,7 @@ class LordPhoneActivity : AppCompatActivity() {
             holder.tvDetails.text = "$dateStr • $durStr • $sizeKb KB"
 
             holder.btnPlay.setOnClickListener {
-                playRecordingAtMaxVolume(File(item.filePath))
+                playRecording(item)
             }
 
             holder.btnShare.setOnClickListener {

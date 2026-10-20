@@ -326,6 +326,10 @@ class NateqAccessibilityService : AccessibilityService() {
     private val emergencyHandler = Handler(Looper.getMainLooper())
     private val emergencyRunnable = Runnable { triggerEmergencyToggle() }
 
+    @Volatile
+    var lastFocusedPackage: String? = null
+        internal set
+
     // ع٢٩-16: مرجع المستمع لإزالته في onDestroy
     private var a11yStateListener: ((A11yStateStore) -> Unit)? = null
     private var accessibilityButtonCallback:
@@ -515,7 +519,10 @@ class NateqAccessibilityService : AccessibilityService() {
             return
         }
 
-        if (!store.isConnected() || store.isPaused()) {
+        if (!store.isConnected() ||
+            store.isPaused() ||
+            ProtectedAppManager.isPartiallySuspended
+        ) {
             info.eventTypes = 0
             info.packageNames = null
             serviceInfo = info
@@ -606,6 +613,45 @@ class NateqAccessibilityService : AccessibilityService() {
                 return
             }
             lastContentChangeAt = now
+        }
+
+        if (event.eventType == AccessibilityEvent.TYPE_VIEW_FOCUSED ||
+            event.eventType ==
+                AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED
+        ) {
+            val focusedPkg = event.packageName?.toString()
+            if (!focusedPkg.isNullOrBlank() &&
+                !AccessibilityBridge.isIgnoredPackage(focusedPkg)
+            ) {
+                lastFocusedPackage = focusedPkg
+            }
+        }
+
+        val eventPkg = event.packageName?.toString()
+
+        // الجولة 48 - الأمر 7: اكتشاف فتح التطبيق المحمي قبل أن يبدأ
+        if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED ||
+            event.eventType == AccessibilityEvent.TYPE_VIEW_FOCUSED
+        ) {
+            if (ProtectedAppManager.isHomeLauncher(this, eventPkg)) {
+                val candidate = event.text?.joinToString(" ")
+                    ?: event.contentDescription?.toString()
+                val matched =
+                    ProtectedAppManager.matchProtectedApp(this, candidate)
+                if (matched != null) {
+                    ProtectedAppManager.handleAppEntry(this, this, matched)
+                    return
+                }
+            }
+        }
+
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            val repoSettings = SettingsRepository.create(this)
+            val matched = eventPkg?.let { repoSettings.getProtectedApp(it) }
+            if (matched != null) {
+                ProtectedAppManager.handleAppEntry(this, this, matched)
+                return
+            }
         }
 
         // ع٢٩-11: توزيع الحدث عبر الموجّه المركزي
@@ -1025,7 +1071,12 @@ class NateqAccessibilityService : AccessibilityService() {
         val updatedSnapshot = findCurrentAccessibilityFocusSnapshot()
         val updatedText = updatedSnapshot?.readableText().orEmpty()
         if (updatedText.length > oldLen) {
-            ReadMoreExpander.onExpandAttemptResult(true)
+            ReadMoreExpander.onExpandAttemptResult(
+                pkg = appPkg,
+                increased = true,
+                oldLength = oldLen,
+                newLength = updatedText.length
+            )
             Log.w(
                 TAG,
                 "[READMORE] Expand successful: $oldLen -> " +
@@ -1041,7 +1092,12 @@ class NateqAccessibilityService : AccessibilityService() {
         val finalSnapshot = findCurrentAccessibilityFocusSnapshot()
         val finalText = finalSnapshot?.readableText().orEmpty()
         val didIncrease = finalText.length > oldLen
-        ReadMoreExpander.onExpandAttemptResult(didIncrease)
+        ReadMoreExpander.onExpandAttemptResult(
+            pkg = appPkg,
+            increased = didIncrease,
+            oldLength = oldLen,
+            newLength = finalText.length
+        )
 
         return if (didIncrease) {
             Log.w(

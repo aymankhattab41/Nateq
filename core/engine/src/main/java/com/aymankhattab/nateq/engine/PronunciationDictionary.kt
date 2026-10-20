@@ -8,10 +8,13 @@ import com.aymankhattab.nateq.core.audio.engine.SegmentWithOffset
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.NateqJson
 import com.aymankhattab.nateq.util.optObject
+import java.io.File
+import java.io.FileOutputStream
 import java.lang.reflect.Type
 
 /**
- * مخرج مطابقة واحد في آلة Aho-Corasick الموحدة للقاموس (الأوامر 1 و2 و3).
+ * مخرج مطابقة واحد في آلة Aho-Corasick الموحدة للقاموس
+ * (الأوامر 1 و2 و3).
  */
 data class DictOutput(
     val normalizedKey: String,
@@ -24,13 +27,16 @@ data class DictOutput(
 
 /**
  * قاموس النطق الشخصي الموحد — يطبق مرة واحدة على النص الخام قبل أي معالجة.
- * يدعم النطاق العام والطبقات اللغوية حسب منطقة الكلمة (الأمر 1)،
- * وتطبيق الحرف المنفرد فقط (الأمر 2)، وقفل لغة النطق (الأمر 3).
+ * يدعم النطاق العام والطبقات اللغوية، والمطابقة غير الحساسة للحالة
+ * اللاتينية، والتخزين بملف JSON موحد بين العمليتين بلا تشفير ولا انقسام.
  */
-class PronunciationDictionary(
-    private val context: Context,
-    private val diskCheckThrottleNanos: Long = DISK_CHECK_THROTTLE_NANOS
+open class PronunciationDictionary(
+    private val context: Context
 ) {
+
+    constructor(context: Context, throttleMs: Long) : this(context)
+
+    val storageMode: String = "JSON_V2"
 
     companion object {
         const val ACTION_DICTIONARY_CHANGED =
@@ -41,13 +47,14 @@ class PronunciationDictionary(
         const val MAX_KEY_LENGTH = 8_000
         const val MAX_VALUE_LENGTH = 8_000
 
-        private const val DISK_CHECK_THROTTLE_NANOS = 1_500_000_000L
+        private const val FILE_NAME_V2 = "dictionary_v2.json"
+        private const val FILE_NAME_TMP = "dictionary_v2.json.tmp"
+        private const val FILE_NAME_BACKUP = "dictionary_legacy_backup.json"
+        private const val PREFS_NAME = "nateq_pronunciation_dict"
         private const val KEY_DEFAULTS_MIGRATED = "defaults_migrated_to_empty"
         private const val KEY_SCOPES = "dictionary_scopes"
         private const val KEY_MATCH_MODES = "dictionary_match_modes"
         private const val KEY_VALUE_LANGS = "dictionary_value_lang"
-
-        const val PREFS_NAME = "nateq_pronunciation_dict"
         private const val LOG_TAG = "NateqDict"
 
         @Volatile
@@ -64,7 +71,10 @@ class PronunciationDictionary(
             synchronized(this) { sharedInstance = null }
         }
 
-        fun normalizeKey(rawKey: String): String {
+        fun normalizeKey(
+            rawKey: String,
+            caseInsensitive: Boolean = false
+        ): String {
             val sb = java.lang.StringBuilder(rawKey.length)
             var i = 0
             while (i < rawKey.length) {
@@ -73,7 +83,12 @@ class PronunciationDictionary(
                 i += w
                 if (isTashkeelOrTatweel(cp)) continue
                 val normCp = normalizeIndicDigit(cp)
-                sb.appendCodePoint(normCp)
+                val finalCp = if (caseInsensitive &&
+                    Character.isUpperCase(normCp)
+                ) {
+                    Character.toLowerCase(normCp)
+                } else normCp
+                sb.appendCodePoint(finalCp)
             }
             return sb.toString().trim()
         }
@@ -88,78 +103,16 @@ class PronunciationDictionary(
         }
 
         /**
-         * إزالة علامات قفل اللغة لأي نص لا يمر بالمقسم (الأمر 3).
+         * إزالة علامات قفل اللغة لأي نص لا يمر بالمقسم.
          */
         fun stripLanguageLocks(text: String): String =
             LanguageSegmenter.stripLockMarkers(text)
     }
 
-    enum class StorageMode { ENCRYPTED, PLAIN, MEMORY_ONLY }
-
-    private val storageRef: StorageMode
-    private val prefs: android.content.SharedPreferences?
-
-    init {
-        val encrypted = runCatching { openEncryptedPrefs() }.getOrNull()
-        val plain = if (encrypted == null) {
-            runCatching {
-                context.getSharedPreferences(
-                    PREFS_NAME, android.content.Context.MODE_PRIVATE
-                )
-            }.getOrNull()
-        } else null
-
-        when {
-            encrypted != null -> {
-                storageRef = StorageMode.ENCRYPTED
-                prefs = encrypted
-            }
-            plain != null -> {
-                storageRef = StorageMode.PLAIN
-                prefs = plain
-                android.util.Log.w(
-                    LOG_TAG,
-                    "تعذّر فتح التخزين المشفّر لقاموس النطق؛ التحويل إلى" +
-                        " تخزين عادي"
-                )
-            }
-            else -> {
-                storageRef = StorageMode.MEMORY_ONLY
-                prefs = null
-                android.util.Log.w(
-                    LOG_TAG,
-                    "تعذّر فتح أيّ تخزين لقاموس النطق؛ سيعمل بالذاكرة"
-                )
-            }
-        }
-    }
-
-    val storageMode: StorageMode get() = storageRef
-
-    private fun openEncryptedPrefs(): android.content.SharedPreferences? {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        return EncryptedSharedPreferences.create(
-            context,
-            PREFS_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    }
-
-    private fun openFreshPrefs(): android.content.SharedPreferences? =
-        when (storageRef) {
-            StorageMode.ENCRYPTED -> runCatching { openEncryptedPrefs() }
-                .getOrNull()
-            StorageMode.PLAIN -> runCatching {
-                context.getSharedPreferences(
-                    PREFS_NAME, android.content.Context.MODE_PRIVATE
-                )
-            }.getOrNull()
-            StorageMode.MEMORY_ONLY -> null
-        }
+    private val segmenter = LanguageSegmenter()
+    private val dictFile: File = File(context.filesDir, FILE_NAME_V2)
+    private val tmpFile: File = File(context.filesDir, FILE_NAME_TMP)
+    private val backupFile: File = File(context.filesDir, FILE_NAME_BACKUP)
 
     @Volatile
     private var entries: Map<String, String> = emptyMap()
@@ -176,10 +129,17 @@ class PronunciationDictionary(
     @Volatile
     private var version = 0L
 
-    /**
-     * حقل لاختبار حد الحرف المنفرد برمجياً في اختبارات الوحدة.
-     */
+    @Volatile
+    private var lastFileModified = -1L
+
+    @Volatile
+    private var lastFileLength = -1L
+
+    /** حقل لاختبار حد الحرف المنفرد برمجياً في اختبارات الوحدة. */
     var testStandaloneMaxLength: Int? = null
+
+    /** حقل لاختبار حساسية الحالة برمجياً في اختبارات الوحدة. */
+    var testCaseInsensitive: Boolean? = null
 
     fun setStandaloneMaxLength(len: Int) {
         testStandaloneMaxLength = len
@@ -187,6 +147,7 @@ class PronunciationDictionary(
 
     private data class MachineCache(
         val version: Long,
+        val caseInsensitive: Boolean,
         val machine: UnifiedAhoCorasick
     )
 
@@ -195,27 +156,114 @@ class PronunciationDictionary(
 
     private val typeToken: Type = NateqJson.mapStringOf(String::class.java)
 
-    private val prefsFile: java.io.File? =
-        if (prefs != null) context.filesDir?.parentFile
-            ?.let {
-                java.io.File(it, "shared_prefs/nateq_pronunciation_dict.xml")
-            }
-        else null
-
-    @Volatile
-    private var lastStamp: Long? = null
-
-    @Volatile
-    private var lastDiskCheckNanos = 0L
-
     init {
-        val loaded = loadFromPrefs(prefs)
-        entries = loaded.global
-        langEntries = loaded.scopes
-        matchModes = loaded.modes
-        valueLangs = loaded.vLangs
-        removeLegacyDefaultsOnce()
-        if (prefs != null) lastStamp = currentStamp()
+        loadInitialData()
+    }
+
+    private fun isCaseInsensitive(): Boolean {
+        testCaseInsensitive?.let { return it }
+        return runCatching {
+            val cls = Class.forName(
+                "com.aymankhattab.nateq.core.data.SettingsRepository"
+            )
+            val createM = cls.getMethod("create", Context::class.java)
+            val repo = createM.invoke(null, context)
+            val getM = cls.getMethod("isDictionaryCaseInsensitive")
+            getM.invoke(repo) as Boolean
+        }.getOrElse {
+            runCatching {
+                context.getSharedPreferences(
+                    "nateq_settings", Context.MODE_PRIVATE
+                ).getBoolean("dictionary_case_insensitive", true)
+            }.getOrDefault(true)
+        }
+    }
+
+    private fun getStandaloneMaxLength(): Int {
+        testStandaloneMaxLength?.let { return it }
+        return runCatching {
+            val cls = Class.forName(
+                "com.aymankhattab.nateq.core.data.SettingsRepository"
+            )
+            val createM = cls.getMethod("create", Context::class.java)
+            val repo = createM.invoke(null, context)
+            val getM = cls.getMethod("getDictionaryStandaloneMaxLength")
+            getM.invoke(repo) as Int
+        }.getOrElse {
+            runCatching {
+                context.getSharedPreferences(
+                    "nateq_settings", Context.MODE_PRIVATE
+                ).getInt("dictionary_standalone_max_length", 1)
+            }.getOrDefault(1)
+        }
+    }
+
+    private fun loadInitialData() {
+        if (dictFile.exists()) {
+            loadFromFile()
+            removeLegacyDefaultsOnce()
+        } else {
+            migrateFromLegacyStorage()
+            removeLegacyDefaultsOnce()
+        }
+    }
+
+    private fun migrateFromLegacyStorage() {
+        val encData = runCatching {
+            openEncryptedPrefs()?.let { loadFromPrefs(it) }
+        }.getOrNull()
+        val plainData = runCatching {
+            val plain = context.getSharedPreferences(
+                PREFS_NAME, Context.MODE_PRIVATE
+            )
+            loadFromPrefs(plain)
+        }.getOrNull()
+
+        val encCount = (encData?.global?.size ?: 0) +
+            (encData?.scopes?.values?.sumOf { it.size } ?: 0)
+        val plainCount = (plainData?.global?.size ?: 0) +
+            (plainData?.scopes?.values?.sumOf { it.size } ?: 0)
+
+        val best = if (encCount >= plainCount && encData != null) {
+            encData
+        } else if (plainData != null) {
+            plainData
+        } else {
+            LoadedData(emptyMap(), emptyMap(), emptyMap(), emptyMap())
+        }
+
+        synchronized(this) {
+            entries = best.global
+            langEntries = best.scopes
+            matchModes = best.modes
+            valueLangs = best.vLangs
+            version = 1L
+            cache = null
+        }
+
+        if (best.global.isNotEmpty() || best.scopes.isNotEmpty()) {
+            runCatching {
+                val json = serializeToJson(version, entries, langEntries,
+                    matchModes, valueLangs)
+                backupFile.writeText(json, Charsets.UTF_8)
+            }
+        }
+        save()
+    }
+
+    private fun openEncryptedPrefs(): android.content.SharedPreferences? {
+        return runCatching {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                context,
+                PREFS_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        }.getOrNull()
     }
 
     private fun normalizeLangTag(raw: String?): String? {
@@ -224,8 +272,6 @@ class PronunciationDictionary(
     }
 
     private fun removeLegacyDefaultsOnce() {
-        val sp = prefs ?: return
-        if (sp.getBoolean(KEY_DEFAULTS_MIGRATED, false)) return
         var changed = false
         val updated = LinkedHashMap(entries)
         for ((key, badValue) in mapOf(
@@ -237,30 +283,26 @@ class PronunciationDictionary(
             }
         }
         if (changed) {
-            swapEntries(updated)
+            synchronized(this) {
+                entries = updated
+                cache = null
+                version++
+            }
             save()
         }
-        sp.edit().putBoolean(KEY_DEFAULTS_MIGRATED, true).apply()
     }
 
-    fun isPersistent(): Boolean = prefs != null
+    open fun isPersistent(): Boolean = true
 
     fun reload() {
-        if (prefs == null) return
-        val loaded = loadFromPrefs()
         synchronized(this) {
-            entries = loaded.global
-            langEntries = loaded.scopes
-            matchModes = loaded.modes
-            valueLangs = loaded.vLangs
+            loadFromFile()
             cache = null
             version++
         }
-        lastStamp = currentStamp()
     }
 
     fun clearAll(): Boolean {
-        if (prefs == null) return false
         synchronized(this) {
             entries = emptyMap()
             langEntries = emptyMap()
@@ -269,40 +311,31 @@ class PronunciationDictionary(
             cache = null
             version++
         }
-        val ok = try {
-            prefs.edit().clear().commit()
-        } catch (e: Exception) {
-            false
+        return save()
+    }
+
+    open fun invalidate() {
+        lastFileModified = -1L
+        lastFileLength = -1L
+    }
+
+    open fun reloadIfChanged(): Boolean {
+        if (!dictFile.exists()) return false
+        val mod = dictFile.lastModified()
+        val len = dictFile.length()
+        if (mod == lastFileModified && len == lastFileLength) {
+            return false
         }
-        lastDiskCheckNanos = 0L
-        return ok
-    }
-
-    fun invalidate() {
-        lastDiskCheckNanos = 0L
-        lastStamp = null
-    }
-
-    fun reloadIfChanged(): Boolean {
-        if (prefs == null) return false
-        val now = System.nanoTime()
-        if (lastDiskCheckNanos != 0L &&
-            now - lastDiskCheckNanos < diskCheckThrottleNanos
-        ) return false
-        lastDiskCheckNanos = now
-        val stamp = currentStamp()
-        if (lastStamp == stamp) return false
-        val loaded = loadFromPrefs()
         synchronized(this) {
-            entries = loaded.global
-            langEntries = loaded.scopes
-            matchModes = loaded.modes
-            valueLangs = loaded.vLangs
+            if (mod == lastFileModified && len == lastFileLength) {
+                return false
+            }
+            val loaded = loadFromFile()
+            lastFileModified = mod
+            lastFileLength = len
             cache = null
-            version++
+            return loaded
         }
-        lastStamp = stamp
-        return true
     }
 
     private fun swapEntries(updated: Map<String, String>) {
@@ -319,44 +352,37 @@ class PronunciationDictionary(
         version++
     }
 
-    private fun currentStamp(): Long =
-        prefsFile?.let { if (it.exists()) it.lastModified() else 0L } ?: 0L
-
-    private fun getStandaloneMaxLength(): Int {
-        testStandaloneMaxLength?.let { return it }
-        return runCatching {
-            context.getSharedPreferences(
-                "nateq_settings", Context.MODE_PRIVATE
-            ).getInt("dictionary_standalone_max_length", 1)
-        }.getOrDefault(1)
-    }
-
     /**
      * تطبيق القاموس على النص الخام باستخدام آلة موحدة من إدخالات العام
-     * وكل الطبقات، مع تحديد لغة كل منطقة عبر LanguageSegmenter (الأمر 1).
+     * وكل الطبقات، مع تحديد لغة كل منطقة عبر [segmenter] المشترك.
      */
-    fun apply(text: String, languageTag: String? = null): String {
+    open fun apply(text: String, languageTag: String? = null): String {
         if (text.isEmpty()) return text
         reloadIfChanged()
 
+        val caseInsensitive = isCaseInsensitive()
         var held = cache
-        if (held == null || held.version != version) {
+        if (held == null || held.version != version ||
+            held.caseInsensitive != caseInsensitive
+        ) {
             held = synchronized(this) {
                 val currentVersion = version
                 val cached = cache
-                if (cached != null && cached.version == currentVersion) {
+                if (cached != null && cached.version == currentVersion &&
+                    cached.caseInsensitive == caseInsensitive
+                ) {
                     cached
                 } else {
-                    val outputs = buildAllOutputs()
+                    val outputs = buildAllOutputs(caseInsensitive)
                     MachineCache(
                         currentVersion,
-                        UnifiedAhoCorasick(outputs)
+                        caseInsensitive,
+                        UnifiedAhoCorasick(outputs, caseInsensitive)
                     ).also { cache = it }
                 }
             }
         }
 
-        val segmenter = LanguageSegmenter()
         val segments = segmenter.segmentWithOffsets(
             text,
             fallbackLanguage = languageTag ?: LanguageCode.AR.tag
@@ -365,11 +391,10 @@ class PronunciationDictionary(
         return held.machine.apply(text, segments, getStandaloneMaxLength())
     }
 
-    private fun buildAllOutputs(): List<DictOutput> {
+    private fun buildAllOutputs(caseInsensitive: Boolean): List<DictOutput> {
         val list = ArrayList<DictOutput>()
-        // 1. الإدخالات العامة
         for ((key, value) in entries) {
-            val normKey = normalizeKey(key)
+            val normKey = normalizeKey(key, caseInsensitive)
             if (normKey.isEmpty()) continue
             val mode = matchModes["|$key"] ?: "AUTO"
             val vLang = valueLangs["|$key"]
@@ -384,10 +409,9 @@ class PronunciationDictionary(
                 )
             )
         }
-        // 2. إدخالات كل الطبقات اللغوية
         for ((scopeTag, scopeMap) in langEntries) {
             for ((key, value) in scopeMap) {
-                val normKey = normalizeKey(key)
+                val normKey = normalizeKey(key, caseInsensitive)
                 if (normKey.isEmpty()) continue
                 val mode = matchModes["$scopeTag|$key"] ?: "AUTO"
                 val vLang = valueLangs["$scopeTag|$key"]
@@ -423,7 +447,7 @@ class PronunciationDictionary(
     ): Boolean {
         if (abbreviation.isBlank() || pronunciation.isBlank()) return false
         val key = abbreviation.trim()
-        val strippedKey = normalizeKey(key)
+        val strippedKey = normalizeKey(key, false)
         if (strippedKey.isEmpty()) return false
         val value = pronunciation.trim()
         if (key.length > MAX_KEY_LENGTH || value.length > MAX_VALUE_LENGTH) {
@@ -462,7 +486,6 @@ class PronunciationDictionary(
             cache = null
             version++
         }
-        lastDiskCheckNanos = 0L
         return save()
     }
 
@@ -497,7 +520,6 @@ class PronunciationDictionary(
                 version++
             }
         }
-        lastDiskCheckNanos = 0L
         return if (changed) save() else false
     }
 
@@ -528,7 +550,6 @@ class PronunciationDictionary(
             cache = null
             version++
         }
-        lastDiskCheckNanos = 0L
         save()
     }
 
@@ -594,8 +615,6 @@ class PronunciationDictionary(
             count
         }
         if (imported <= 0) return false
-
-        val sp = prefs ?: return true
         return save()
     }
 
@@ -628,32 +647,79 @@ class PronunciationDictionary(
         val vLangs: Map<String, String>
     )
 
+    private fun loadFromFile(): Boolean {
+        if (!dictFile.exists()) return false
+        return try {
+            val text = dictFile.readText(Charsets.UTF_8)
+            val root = NateqJson.parseObject(text) ?: return false
+            val fileVer = root.get("version")?.asLong ?: (version + 1)
+            val globalObj = root.get("entries")?.optObject()
+            val scopesObj = root.get("scopes")?.optObject()
+            val modesObj = root.get("modes")?.optObject()
+            val vLangsObj = root.get("value_langs")?.optObject()
+
+            val gMap = parseObjectToMap(globalObj)
+            val sMap = LinkedHashMap<String, Map<String, String>>()
+            if (scopesObj != null) {
+                for ((tag, element) in scopesObj.entrySet()) {
+                    val sub = parseObjectToMap(element.optObject())
+                    if (sub.isNotEmpty()) sMap[tag.trim()] = sub
+                }
+            }
+            val mMap = parseObjectToMap(modesObj)
+            val vMap = parseObjectToMap(vLangsObj)
+
+            synchronized(this) {
+                version = fileVer
+                entries = gMap
+                langEntries = sMap
+                matchModes = mMap
+                valueLangs = vMap
+                cache = null
+            }
+            lastFileModified = dictFile.lastModified()
+            lastFileLength = dictFile.length()
+            true
+        } catch (t: Throwable) {
+            android.util.Log.e(LOG_TAG, "فشل قراءة قاموس JSON", t)
+            false
+        }
+    }
+
+    private fun parseObjectToMap(
+        obj: com.google.gson.JsonObject?
+    ): Map<String, String> {
+        if (obj == null) return emptyMap()
+        val out = LinkedHashMap<String, String>()
+        for ((k, v) in obj.entrySet()) {
+            if (v.isJsonPrimitive && v.asJsonPrimitive.isString) {
+                out[k.trim()] = v.asString.trim()
+            }
+        }
+        return out
+    }
+
     private fun loadFromPrefs(
-        sourceSp: android.content.SharedPreferences? = null
+        sp: android.content.SharedPreferences
     ): LoadedData {
-        val sp = sourceSp ?: openFreshPrefs() ?: return LoadedData(
-            entries, langEntries, matchModes, valueLangs
-        )
         val globalJson = try {
             sp.getString("dictionary", "{}")
-        } catch (t: Throwable) {
-            return LoadedData(entries, langEntries, matchModes, valueLangs)
+        } catch (_: Throwable) {
+            "{}"
         }
         val scopesJson = try {
             sp.getString(KEY_SCOPES, "{}")
-        } catch (t: Throwable) {
-            return LoadedData(
-                parseEntries(globalJson), langEntries, matchModes, valueLangs
-            )
+        } catch (_: Throwable) {
+            "{}"
         }
         val modesJson = try {
             sp.getString(KEY_MATCH_MODES, "{}")
-        } catch (t: Throwable) {
+        } catch (_: Throwable) {
             "{}"
         }
         val vLangsJson = try {
             sp.getString(KEY_VALUE_LANGS, "{}")
-        } catch (t: Throwable) {
+        } catch (_: Throwable) {
             "{}"
         }
 
@@ -706,20 +772,62 @@ class PronunciationDictionary(
         return out
     }
 
+    private fun serializeToJson(
+        ver: Long,
+        g: Map<String, String>,
+        s: Map<String, Map<String, String>>,
+        m: Map<String, String>,
+        v: Map<String, String>
+    ): String {
+        val root = com.google.gson.JsonObject()
+        root.addProperty("version", ver)
+        val gObj = com.google.gson.JsonObject()
+        for ((k, value) in g) gObj.addProperty(k, value)
+        root.add("entries", gObj)
+
+        val sObj = com.google.gson.JsonObject()
+        for ((tag, map) in s) {
+            val subObj = com.google.gson.JsonObject()
+            for ((k, value) in map) subObj.addProperty(k, value)
+            sObj.add(tag, subObj)
+        }
+        root.add("scopes", sObj)
+
+        val mObj = com.google.gson.JsonObject()
+        for ((k, value) in m) mObj.addProperty(k, value)
+        root.add("modes", mObj)
+
+        val vObj = com.google.gson.JsonObject()
+        for ((k, value) in v) vObj.addProperty(k, value)
+        root.add("value_langs", vObj)
+
+        return root.toString()
+    }
+
     private fun save(): Boolean {
-        val sp = prefs ?: return false
         return try {
-            val ok = sp.edit()
-                .putString("dictionary", NateqJson.toJson(entries))
-                .putString(KEY_SCOPES, NateqJson.toJson(langEntries))
-                .putString(KEY_MATCH_MODES, NateqJson.toJson(matchModes))
-                .putString(KEY_VALUE_LANGS, NateqJson.toJson(valueLangs))
-                .commit()
-            lastStamp = currentStamp()
-            lastDiskCheckNanos = 0L
-            if (ok) notifyChanged()
+            val jsonStr = serializeToJson(
+                version, entries, langEntries, matchModes, valueLangs
+            )
+            val parent = tmpFile.parentFile
+            if (parent != null && !parent.exists()) parent.mkdirs()
+            FileOutputStream(tmpFile).use { fos ->
+                fos.write(jsonStr.toByteArray(Charsets.UTF_8))
+                fos.flush()
+                fos.fd.sync()
+            }
+            if (dictFile.exists()) {
+                dictFile.delete()
+            }
+            val ok = tmpFile.renameTo(dictFile)
+            if (ok) {
+                lastFileModified = dictFile.lastModified()
+                lastFileLength = dictFile.length()
+                notifyChanged()
+            }
             ok
         } catch (e: Exception) {
+            android.util.Log.e(LOG_TAG, "فشل حفظ القاموس الذري", e)
             false
         }
     }
@@ -736,9 +844,12 @@ class PronunciationDictionary(
 
 /**
  * آلة Aho-Corasick موحدة تجمع إدخالات العام وكل الطبقات اللغوية،
- * وتطبق قواعد قبول الحرف المنفرد (الأمر 2) والمطابقة بلا فقدان مواضع (الأمر 1).
+ * وتطبق قواعد قبول الحرف المنفرد والمطابقة الحساسة/غير الحساسة لحالة الأحرف.
  */
-private class UnifiedAhoCorasick(entries: List<DictOutput>) {
+private class UnifiedAhoCorasick(
+    entries: List<DictOutput>,
+    private val caseInsensitive: Boolean
+) {
 
     private class Node {
         val children = HashMap<Char, Node>()
@@ -795,7 +906,6 @@ private class UnifiedAhoCorasick(entries: List<DictOutput>) {
     ): String {
         if (text.isEmpty()) return text
 
-        // بناء النسخة المطبعة وجدول إرجاع المواضع (الأمر 1)
         val normSb = StringBuilder(text.length)
         val normToOrig = ArrayList<Int>(text.length)
         var i = 0
@@ -806,8 +916,14 @@ private class UnifiedAhoCorasick(entries: List<DictOutput>) {
             i += w
             if (isTashkeelOrTatweel(cp)) continue
             val normCp = normalizeIndicDigit(cp)
+            val matchCp = if (caseInsensitive &&
+                Character.isUpperCase(normCp)
+            ) {
+                Character.toLowerCase(normCp)
+            } else normCp
+
             val startLen = normSb.length
-            normSb.appendCodePoint(normCp)
+            normSb.appendCodePoint(matchCp)
             val addedLen = normSb.length - startLen
             for (k in 0 until addedLen) {
                 normToOrig.add(origIdx)
@@ -836,13 +952,11 @@ private class UnifiedAhoCorasick(entries: List<DictOutput>) {
                 val origStart = normToOrig[normStart]
                 val origEnd = origEndForNorm(normEnd)
 
-                // 1. فحص لغة المنطقة (الأمر 1)
                 val regionLang = findRegionLanguage(segments, origStart)
                 if (!isScopeMatching(out.scope, regionLang)) {
                     continue
                 }
 
-                // 2. فحص قبول المطابقة والحرف المنفرد (الأمر 2)
                 if (!isMatchAccepted(
                         out, text, origStart, origEnd, standaloneMaxLength
                     )
@@ -866,7 +980,6 @@ private class UnifiedAhoCorasick(entries: List<DictOutput>) {
 
         if (candidates.isEmpty()) return text
 
-        // الأولوية: البداية أولاً، ثم الطبقة الخاصة تعلو العام، ثم الأطول
         candidates.sortWith { a, b ->
             if (a.origStart != b.origStart) {
                 a.origStart.compareTo(b.origStart)

@@ -125,6 +125,8 @@
 
             <com.google.android.material.button.MaterialButton android:tag="btn_a11y_test_app_profile" style="@style/Widget.MaterialComponents.Button.TextButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:gravity="start|center_vertical" android:text="@string/a11y_test_app_profile" />
 
+            <com.google.android.material.button.MaterialButton android:tag="btn_a11y_protected_apps" style="@style/Widget.MaterialComponents.Button.TextButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:layout_marginTop="8dp" android:gravity="start|center_vertical" android:text="@string/a11y_protected_apps_manage" />
+
         </LinearLayout>
 
         </LinearLayout>
@@ -1048,6 +1050,33 @@
             android:textSize="12sp"
             android:textColor="@color/text_secondary"
             android:importantForAccessibility="no" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_test_dict_text"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:minHeight="48dp"
+            android:text="@string/dict_test_text_btn" />
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_dict_case_insensitive"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:minHeight="48dp"
+            android:text="@string/dict_case_insensitive_title" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_time_suffix_m_mode"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="8dp"
+            android:minHeight="48dp"
+            android:text="@string/time_suffix_m_title" />
 
         <androidx.recyclerview.widget.RecyclerView android:id="@+id/rv_pronunciation_dict" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:nestedScrollingEnabled="true" android:minHeight="@dimen/dict_list_min_height" android:maxHeight="@dimen/dict_list_max_height" />
         </LinearLayout>        <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginTop="16dp" android:layout_marginBottom="4dp" android:background="@color/divider_color" />

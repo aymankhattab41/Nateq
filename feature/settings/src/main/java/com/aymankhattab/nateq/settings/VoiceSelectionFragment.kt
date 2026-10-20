@@ -51,6 +51,9 @@ import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerServi
 import com.aymankhattab.nateq.engine.NumberSpeech
 import com.aymankhattab.nateq.engine.PronunciationDictionary
 import com.aymankhattab.nateq.engine.TextProcessor
+import com.aymankhattab.nateq.core.audio.engine.DictTestProvider
+import android.net.Uri
+import android.widget.LinearLayout
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.engine.DiscoveryResult
 import com.aymankhattab.nateq.core.audio.engine.UnavailableEngine
@@ -670,6 +673,66 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 }
                 .setNegativeButton(R.string.cancel, null)
                 .create().also(::trackDialog).show()
+        }
+
+        val switchCaseInsensitive = view.findViewById<SwitchMaterial>(
+            R.id.switch_dict_case_insensitive
+        )
+        switchCaseInsensitive?.isChecked = runCatching {
+            settings.isDictionaryCaseInsensitive()
+        }.getOrDefault(true)
+        switchCaseInsensitive?.setOnCheckedChangeListener { _, isChecked ->
+            runCatching {
+                settings.setDictionaryCaseInsensitive(isChecked)
+                pronunciationDict.invalidate()
+            }
+        }
+
+        val btnTimeSuffixM = view.findViewById<MaterialButton>(
+            R.id.btn_time_suffix_m_mode
+        )
+        val mModes = listOf(
+            SettingsRepository.TIME_SUFFIX_M_CONTEXT to
+                getString(R.string.time_suffix_m_context),
+            SettingsRepository.TIME_SUFFIX_M_LETTER to
+                getString(R.string.time_suffix_m_letter),
+            SettingsRepository.TIME_SUFFIX_M_EVENING to
+                getString(R.string.time_suffix_m_evening)
+        )
+        fun updateTimeSuffixMButton() {
+            val cur = runCatching {
+                settings.getTimeSuffixMMode()
+            }.getOrDefault(SettingsRepository.TIME_SUFFIX_M_CONTEXT)
+            val label = mModes.find { it.first == cur }?.second
+                ?: mModes[0].second
+            btnTimeSuffixM?.text = getString(R.string.time_suffix_m_btn, label)
+        }
+        updateTimeSuffixMButton()
+        btnTimeSuffixM?.setOnClickListener {
+            val cur = runCatching {
+                settings.getTimeSuffixMMode()
+            }.getOrDefault(SettingsRepository.TIME_SUFFIX_M_CONTEXT)
+            val curIdx = mModes.indexOfFirst { it.first == cur }
+                .coerceAtLeast(0)
+            val labels = mModes.map { it.second }.toTypedArray()
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.time_suffix_m_title)
+                .setSingleChoiceItems(labels, curIdx) { dialog, which ->
+                    runCatching {
+                        settings.setTimeSuffixMMode(mModes[which].first)
+                    }
+                    updateTimeSuffixMButton()
+                    dialog.dismiss()
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .create().also(::trackDialog).show()
+        }
+
+        val btnTestDictText = view.findViewById<MaterialButton>(
+            R.id.btn_test_dict_text
+        )
+        btnTestDictText?.setOnClickListener {
+            showDictProcessTestDialog()
         }
 
         // المفتاح الرئيسي لكل الإعلانات
@@ -1396,6 +1459,90 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 rvPronunciationDict.adapter = it
             }
         adapter.submitList(entries)
+    }
+
+    private fun showDictProcessTestDialog() {
+        val container = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 24)
+        }
+        val input = EditText(requireContext()).apply {
+            hint = getString(R.string.dict_test_hint)
+        }
+        val tvResult = TextView(requireContext()).apply {
+            setPadding(0, 24, 0, 0)
+            setTextIsSelectable(true)
+        }
+        container.addView(input)
+        container.addView(tvResult)
+
+        val builder = MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.dict_test_dialog_title)
+            .setView(container)
+            .setPositiveButton(R.string.dict_test_run_btn, null)
+            .setNegativeButton(R.string.cancel, null)
+
+        val dialog = builder.create().also(::trackDialog)
+        dialog.show()
+
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val raw = input.text.toString().trim()
+            if (raw.isEmpty()) return@setOnClickListener
+
+            val mainEntries = pronunciationDict.getAllEntries()
+            val mainCount = mainEntries.size
+
+            val bundle = runCatching {
+                val uri = Uri.parse(
+                    "content://${requireContext().packageName}" +
+                        ".dict_test_provider"
+                )
+                val extras = Bundle().apply {
+                    putString(DictTestProvider.KEY_TEXT, raw)
+                    putString(DictTestProvider.KEY_LANG, "ar")
+                    putInt(DictTestProvider.KEY_MAIN_COUNT, mainCount)
+                }
+                requireContext().contentResolver.call(
+                    uri,
+                    DictTestProvider.METHOD_TEST,
+                    raw,
+                    extras
+                )
+            }.getOrNull()
+
+            if (bundle != null) {
+                val orig = bundle.getString(
+                    DictTestProvider.KEY_ORIGINAL
+                ).orEmpty()
+                val proc = bundle.getString(
+                    DictTestProvider.KEY_PROCESSED
+                ).orEmpty()
+                val ttsCount = bundle.getInt(
+                    DictTestProvider.KEY_TTS_COUNT, 0
+                )
+                val matched = bundle.getInt(
+                    DictTestProvider.KEY_MATCHED_COUNT, 0
+                )
+
+                val splitAlert = if (mainCount != ttsCount) {
+                    "\n⚠️ تنبيه: انقسام بين العمليتين! " +
+                        "(الرئيسية: $mainCount | :tts: $ttsCount)"
+                } else {
+                    "\n✓ العمليتان متزامنتان (العدد: $mainCount)"
+                }
+
+                val text = "قبل: $orig\nبعد (عبر مسار :tts الحقيقي): $proc\n" +
+                    "إدخالات مطابقة: $matched" + splitAlert
+                tvResult.text = text
+            } else {
+                val localProc = TextProcessor(
+                    requireContext(), injectedDict = pronunciationDict
+                ).applyDictionaryFirst(raw, "ar")
+                tvResult.text = "قبل: $raw\nبعد (المسار المحلي): $localProc\n" +
+                    "إجمالي الإدخالات: $mainCount\n" +
+                    "(تعذّر الاتصال بمزود :tts؛ جرى استخدام النسخة المحلية)"
+            }
+        }
     }
 
     /** نطق الرقم المدخل في حقل المعاينة بنفس منطق النطق الفعلي للإعلانات */

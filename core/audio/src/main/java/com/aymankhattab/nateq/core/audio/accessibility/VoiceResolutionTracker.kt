@@ -22,18 +22,23 @@ object VoiceResolutionTracker {
         val voiceId: String?,
         val speechRate: Float?,
         val pitch: Float?,
-        val volume: Float?
+        val volume: Float?,
+        val source: String? = null,
+        val reason: String? = null
     ) {
         fun format(): String {
             val time = SimpleDateFormat(
                 "HH:mm:ss", Locale.US
             ).format(Date(timestamp))
             val pkg = packageName ?: "غير محدد"
+            val src = source ?: "—"
             val sender = senderName ?: "—"
             val eng = engine ?: "الافتراضي"
             val voice = voiceId ?: "—"
-            return "[$time] طبقة: $winningLayer | تطبيق: $pkg | " +
-                "مرسل: $sender | محرك: $eng | صوت: $voice"
+            val rsn = if (!reason.isNullOrBlank()) " | سبب: $reason" else ""
+            return "[$time] طبقة: $winningLayer | مصدر: $src | " +
+                "تطبيق: $pkg | مرسل: $sender | محرك: $eng | " +
+                "صوت: $voice$rsn"
         }
     }
 
@@ -47,7 +52,9 @@ object VoiceResolutionTracker {
         voiceId: String?,
         speechRate: Float?,
         pitch: Float?,
-        volume: Float?
+        volume: Float?,
+        source: String? = null,
+        reason: String? = null
     ) {
         entries.add(
             Entry(
@@ -58,7 +65,9 @@ object VoiceResolutionTracker {
                 voiceId = voiceId,
                 speechRate = speechRate,
                 pitch = pitch,
-                volume = volume
+                volume = volume,
+                source = source,
+                reason = reason
             )
         )
         while (entries.size > MAX_ENTRIES) {

@@ -15,6 +15,7 @@ import android.telecom.InCallService
 import android.telecom.VideoProfile
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlinx.coroutines.launch
 
 /**
  * خدمة إدارة المكالمات الهاتفية الجارية لنظام Telecom.
@@ -61,6 +62,7 @@ class LordInCallService : InCallService(), SensorEventListener {
     private var proximitySensor: Sensor? = null
     private var isProximityRegistered = false
     private var proximityWakeLock: PowerManager.WakeLock? = null
+    private var routeBeforeRecording: Int? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val callCallback = object : Call.Callback() {
@@ -124,6 +126,7 @@ class LordInCallService : InCallService(), SensorEventListener {
         if (currentCall == call) {
             stopProximityMonitoring()
             releaseProximityWakeLock()
+            restoreSpeakerAfterRecording()
             CallRecordManager.stopRecording(this)
             currentCall = null
             val intent = Intent(ACTION_FINISH_INCALL_UI).apply {
@@ -168,7 +171,9 @@ class LordInCallService : InCallService(), SensorEventListener {
                         this, handle, isKnown
                     )
                 ) {
-                    CallRecordManager.startRecording(this, handle, name)
+                    if (CallRecordManager.startRecording(this, handle, name)) {
+                        enableSpeakerForRecording()
+                    }
                 }
 
                 // تفعيل مستشعر التقارب لمكبر الصوت
@@ -182,6 +187,7 @@ class LordInCallService : InCallService(), SensorEventListener {
             Call.STATE_DISCONNECTED -> {
                 stopProximityMonitoring()
                 releaseProximityWakeLock()
+                restoreSpeakerAfterRecording()
                 CallRecordManager.stopRecording(this)
                 val finishIntent = Intent(ACTION_FINISH_INCALL_UI).apply {
                     setPackage(packageName)
@@ -190,6 +196,13 @@ class LordInCallService : InCallService(), SensorEventListener {
                 mainHandler.post {
                     for (listener in listeners) {
                         listener.onCallFinished()
+                    }
+                    kotlinx.coroutines.CoroutineScope(
+                        kotlinx.coroutines.Dispatchers.Main
+                    ).launch {
+                        com.aymankhattab.nateq.core.audio.accessibility
+                            .TtsSettingsAutomation
+                            .checkAndRunPendingSwitch(applicationContext)
                     }
                 }
             }
@@ -241,6 +254,22 @@ class LordInCallService : InCallService(), SensorEventListener {
         }
         setAudioRoute(targetRoute)
         return !isSpeaker
+    }
+
+    fun enableSpeakerForRecording() {
+        if (!settingsRepo.isPhoneRecordAutoSpeakerEnabled()) return
+        val currentRoute =
+            callAudioState?.route ?: CallAudioState.ROUTE_EARPIECE
+        routeBeforeRecording = currentRoute
+        setAudioRoute(CallAudioState.ROUTE_SPEAKER)
+    }
+
+    fun restoreSpeakerAfterRecording() {
+        val prev = routeBeforeRecording
+        if (prev != null) {
+            setAudioRoute(prev)
+            routeBeforeRecording = null
+        }
     }
 
     fun toggleMute(): Boolean {

@@ -461,6 +461,8 @@ class PhoneSettingsActivity : AppCompatActivity() {
             findViewById<SwitchMaterial>(R.id.switch_phone_show_record_button)
         val swBoost =
             findViewById<SwitchMaterial>(R.id.switch_phone_record_boost_volume)
+        val swRecordAutoSpeaker =
+            findViewById<SwitchMaterial>(R.id.switch_phone_record_auto_speaker)
 
         val isEnabled = settingsRepo.isPhoneRecordEnabled()
         swEnabled.isChecked = isEnabled
@@ -500,6 +502,12 @@ class PhoneSettingsActivity : AppCompatActivity() {
         swBoost.isChecked = settingsRepo.isPhoneRecordBoostVolumeEnabled()
         swBoost.setOnCheckedChangeListener { _, isChecked ->
             settingsRepo.setPhoneRecordBoostVolumeEnabled(isChecked)
+        }
+
+        swRecordAutoSpeaker.isChecked =
+            settingsRepo.isPhoneRecordAutoSpeakerEnabled()
+        swRecordAutoSpeaker.setOnCheckedChangeListener { _, isChecked ->
+            settingsRepo.setPhoneRecordAutoSpeakerEnabled(isChecked)
         }
     }
 
