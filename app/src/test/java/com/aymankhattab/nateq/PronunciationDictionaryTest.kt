@@ -273,28 +273,23 @@ fun importMerge_overridesDuplicates_andKeepsRest() {
         assertEquals("سمنة", engine.apply("زبدة"))
     }
 
-    // ===== خنق فحص القرص (≥1.5 ثانية) والتبديل الذرّي (البند 10-4) =====
+    // ===== فحص القرص الذري عبر JSON (الجولة 48) =====
 
     private fun prefsFile(): File {
-        val dir = context.filesDir.parentFile
-        return File(dir, "shared_prefs/nateq_pronunciation_dict.xml")
+        return File(context.filesDir, "dictionary_v2.json")
     }
 
     @Test
-    fun reloadIfChanged_diskCheckThrottledWithinWindow() {
+    fun reloadIfChanged_detectsStampChangeImmediately() {
         if (!dict.isPersistent()) return
-        // **الملفُ لا يُنشأ إلا بأول كتابة** — ولم يكن هذا الحارسُ يبلغ
-        // السطرَ أصلاً لأن prefs كان null. فكتبنا مدخلاً واحداً صراحةً
-        // بدل افتراض وجود الملف.
         dict.addEntry("زبدة", "سمنة")
         val file = prefsFile()
         assertTrue(file.exists())
         // الموضع الحر الأول: فحص القرص فوري (لا تغيير بعد ← false)
         assertFalse(dict.reloadIfChanged())
-        // تغيّر القرص، لكن ضمن نافذة الخنق (1.5 ثانية): لا يُكتشف الآن
+        // تغيّر القرص: يُكتشف فوراً بلا خنق في الجولة 48
         file.setLastModified(System.currentTimeMillis() + 100_000L)
-        assertFalse(dict.reloadIfChanged())
-        assertFalse(dict.reloadIfChanged())
+        assertTrue(dict.reloadIfChanged())
     }
 
     @Test

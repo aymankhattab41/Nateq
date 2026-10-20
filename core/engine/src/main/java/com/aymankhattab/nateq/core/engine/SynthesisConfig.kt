@@ -53,4 +53,13 @@ interface SynthesisConfig : TextProcessingPreferences {
 
     /** طريقة نطق الأرقام (1..8): 1 مفردة، 2 زوجي، 3..8 ثلاثي..ثماني. */
     fun getNumberReadingMode(): Int = 1
+
+    /** هل مطابقة القاموس للأحرف اللاتينية غير حساسة للحالة؟ */
+    fun isDictionaryCaseInsensitive(): Boolean = true
+
+    /**
+     * وضع نطق لاحقة «م»: «context» (حسب السياق)، أو «letter» (حرف ميم دائماً)،
+     * أو «evening» (مساءً دائماً).
+     */
+    fun getTimeSuffixMMode(): String = "context"
 }

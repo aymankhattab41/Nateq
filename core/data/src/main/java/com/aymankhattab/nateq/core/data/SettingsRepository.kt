@@ -270,6 +270,19 @@ class SettingsRepository(context: Context) :
         const val BOOT_MIRROR_PREFS = "nateq_boot_mirror"
         const val KEY_DICTIONARY_STANDALONE_MAX_LENGTH =
             "dictionary_standalone_max_length"
+        const val KEY_DICTIONARY_CASE_INSENSITIVE =
+            "dictionary_case_insensitive"
+        const val KEY_TIME_SUFFIX_M_MODE = "time_suffix_m_mode"
+        const val TIME_SUFFIX_M_CONTEXT = "context"
+        const val TIME_SUFFIX_M_LETTER = "letter"
+        const val TIME_SUFFIX_M_EVENING = "evening"
+        const val KEY_PHONE_RECORD_AUTO_SPEAKER =
+            "phone_record_auto_speaker"
+        const val KEY_READ_MORE_ALLOWED_PACKAGES =
+            "read_more_allowed_packages"
+        const val KEY_PROTECTED_APPS = "protected_apps"
+        const val KEY_PROTECTED_SUSPENDED_PKG = "protected_suspended_pkg"
+        const val KEY_PROTECTED_SUSPENDED_TIME = "protected_suspended_time"
         const val KEY_EMOJI_PRONUNCIATION_LANGUAGE =
             "emoji_pronunciation_language"
         const val KEY_LANGUAGE_DIAGNOSTICS_ENABLED =
@@ -1098,6 +1111,35 @@ class SettingsRepository(context: Context) :
     override fun setDictionaryStandaloneMaxLength(len: Int) {
         val safe = len.coerceIn(0, 3)
         prefs.edit().putInt(KEY_DICTIONARY_STANDALONE_MAX_LENGTH, safe).commit()
+    }
+
+    override fun isDictionaryCaseInsensitive(): Boolean =
+        prefs.getBoolean(KEY_DICTIONARY_CASE_INSENSITIVE, true)
+
+    fun setDictionaryCaseInsensitive(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_DICTIONARY_CASE_INSENSITIVE, enabled)
+            .commit()
+    }
+
+    override fun getTimeSuffixMMode(): String =
+        prefs.getString(KEY_TIME_SUFFIX_M_MODE, TIME_SUFFIX_M_CONTEXT)
+            ?: TIME_SUFFIX_M_CONTEXT
+
+    fun setTimeSuffixMMode(mode: String) {
+        val safe = if (mode in setOf(
+                TIME_SUFFIX_M_CONTEXT,
+                TIME_SUFFIX_M_LETTER,
+                TIME_SUFFIX_M_EVENING
+            )
+        ) mode else TIME_SUFFIX_M_CONTEXT
+        prefs.edit().putString(KEY_TIME_SUFFIX_M_MODE, safe).commit()
+    }
+
+    fun isPhoneRecordAutoSpeakerEnabled(): Boolean =
+        prefs.getBoolean(KEY_PHONE_RECORD_AUTO_SPEAKER, false)
+
+    fun setPhoneRecordAutoSpeakerEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_PHONE_RECORD_AUTO_SPEAKER, enabled).commit()
     }
 
     override fun getEmojiPronunciationLanguage(): String {
@@ -3002,17 +3044,104 @@ class SettingsRepository(context: Context) :
             "org.telegram.messenger.web",
             "org.thunderdog.challegram",
             "com.facebook.orca",
+            "com.facebook.katana",
+            "com.facebook.lite",
+            "com.instagram.android",
+            "com.twitter.android",
+            "com.google.android.gm",
             "com.google.android.apps.messaging",
-            "com.samsung.android.messaging"
+            "com.samsung.android.messaging",
+            "com.android.chrome"
         )
-        val saved = prefs.getStringSet("read_more_allowed_packages", null)
+        val saved = prefs.getStringSet(KEY_READ_MORE_ALLOWED_PACKAGES, null)
         return saved ?: defaultSet
     }
 
     fun setReadMoreAllowedPackages(packages: Set<String>) {
         prefs.edit()
-            .putStringSet("read_more_allowed_packages", packages)
+            .putStringSet(KEY_READ_MORE_ALLOWED_PACKAGES, packages)
             .apply()
+    }
+
+    fun getProtectedApps(): List<ProtectedApp> {
+        val raw = prefs.getString(KEY_PROTECTED_APPS, null)
+            ?: return emptyList()
+        return try {
+            val arr = org.json.JSONArray(raw)
+            val list = mutableListOf<ProtectedApp>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                list.add(
+                    ProtectedApp(
+                        packageName = obj.getString("packageName"),
+                        label = obj.optString(
+                            "label", obj.getString("packageName")
+                        ),
+                        mode = obj.optString(
+                            "mode", ProtectedApp.MODE_FULL_DISABLE
+                        )
+                    )
+                )
+            }
+            list
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun setProtectedApps(apps: List<ProtectedApp>) {
+        val arr = org.json.JSONArray()
+        for (app in apps) {
+            val obj = org.json.JSONObject().apply {
+                put("packageName", app.packageName)
+                put("label", app.label)
+                put("mode", app.mode)
+            }
+            arr.put(obj)
+        }
+        prefs.edit().putString(KEY_PROTECTED_APPS, arr.toString()).apply()
+    }
+
+    fun addProtectedApp(app: ProtectedApp) {
+        val list = getProtectedApps()
+            .filter { it.packageName != app.packageName }
+            .toMutableList()
+        list.add(app)
+        setProtectedApps(list)
+    }
+
+    fun removeProtectedApp(packageName: String) {
+        val list = getProtectedApps().filter { it.packageName != packageName }
+        setProtectedApps(list)
+    }
+
+    fun getProtectedApp(packageName: String): ProtectedApp? {
+        return getProtectedApps().firstOrNull { it.packageName == packageName }
+    }
+
+    fun isProtectedApp(packageName: String): Boolean {
+        return getProtectedApp(packageName) != null
+    }
+
+    fun getSuspendedProtectedApp(): String? {
+        return prefs.getString(KEY_PROTECTED_SUSPENDED_PKG, null)
+    }
+
+    fun setSuspendedProtectedApp(
+        pkg: String?,
+        timestamp: Long = System.currentTimeMillis()
+    ) {
+        prefs.edit()
+            .putString(KEY_PROTECTED_SUSPENDED_PKG, pkg)
+            .putLong(
+                KEY_PROTECTED_SUSPENDED_TIME,
+                if (pkg != null) timestamp else 0L
+            )
+            .apply()
+    }
+
+    fun getSuspendedProtectedAppTimestamp(): Long {
+        return prefs.getLong(KEY_PROTECTED_SUSPENDED_TIME, 0L)
     }
 
     override fun isA11yPaused(): Boolean =
@@ -3457,5 +3586,19 @@ class SettingsRepository(context: Context) :
 
     fun setContactVoicesRaw(raw: String): Boolean = synchronized(this) {
         prefs.edit().putString(KEY_CONTACT_VOICES, raw).commit()
+    }
+}
+
+/**
+ * بيانات التطبيق المحمي (إنستاباي والتطبيقات المصرفية) — الجولة 48 (الأمر 7).
+ */
+data class ProtectedApp(
+    val packageName: String,
+    val label: String,
+    val mode: String = MODE_FULL_DISABLE
+) {
+    companion object {
+        const val MODE_FULL_DISABLE = "full_disable"
+        const val MODE_PARTIAL_SUSPEND = "partial_suspend"
     }
 }

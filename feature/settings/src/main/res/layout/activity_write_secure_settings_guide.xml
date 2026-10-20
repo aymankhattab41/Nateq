@@ -63,6 +63,25 @@
                 android:text="@string/guide_btn_copy_command"
                 app:icon="@drawable/ic_copy" />
 
+            <TextView
+                android:id="@+id/tv_shizuku_label"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="@string/guide_shizuku_label"
+                android:textAppearance="?attr/textAppearanceSubtitle1"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tv_shizuku_desc"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:lineSpacingExtra="4dp"
+                android:text="@string/guide_shizuku_desc"
+                android:textAppearance="?attr/textAppearanceBody2"
+                android:textColor="?android:attr/textColorSecondary" />
+
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"

@@ -257,6 +257,7 @@ class LordInCallActivity : AppCompatActivity() {
         val name = call.details?.callerDisplayName ?: ""
 
         if (CallRecordManager.isRecording()) {
+            LordInCallService.instance?.restoreSpeakerAfterRecording()
             CallRecordManager.stopRecording(this)
             speak(getString(R.string.phone_record_stopped))
             updateRecordUi(isRecording = false)
@@ -264,6 +265,7 @@ class LordInCallActivity : AppCompatActivity() {
             val started =
                 CallRecordManager.startRecording(this, number, name)
             if (started) {
+                LordInCallService.instance?.enableSpeakerForRecording()
                 speak(getString(R.string.phone_record_started))
                 updateRecordUi(isRecording = true)
             }

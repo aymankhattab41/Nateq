@@ -89,6 +89,17 @@
     <!-- طلب تثبيت حزم من مصادر خارجية (تفعيل ميزة التحديث الذاتي).
          لا يثبّت شيئاً صمتاً: يعرض شاشة موافقة النظام دائماً. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- الخدمة الأمامية لتسجيل المكالمات بنوع الميكروفون (الأمر 6) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
+    <!-- مراقبة خروج التطبيقات المصرفية والمحمية (الأمر 7) -->
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+
     <!-- الكتابة بالصوت للوحة مفاتيح Lord TTS الميسّرة -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- مطلوب للتبديل بين محركات نطق النظام افتراضياً (يُمنح عبر adb pm grant) -->
@@ -100,6 +111,15 @@
          بدون هذا لا يرى ناطق إلا المحركات المدمجة (سامسونج/جوجل)،
          ويخفي eSpeak وMultiTTS وسائر محركات المستخدم. -->
     <queries>
+        <!-- استعلام عن تطبيقات الإطلاق لتغطية «صوت لكل تطبيق» والتطبيقات المحمية (الأمر 5 والأمر 7) -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
@@ -401,6 +421,13 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- مزود تشخيص القاموس في عملية :tts لاختبار المسار الحقيقي (الأمر 2) -->
+        <provider
+            android:name="com.aymankhattab.nateq.core.audio.engine.DictTestProvider"
+            android:authorities="${applicationId}.dict_test_provider"
+            android:process=":tts"
+            android:exported="false" />
         <!-- خدمة لوحة مفاتيح Lord TTS الميسّرة لذوي الإعاقة البصرية -->
         <service
             android:name="com.aymankhattab.nateq.core.audio.keyboard.LordKeyboardService"
@@ -485,6 +512,28 @@
             android:launchMode="singleTop"
             android:showOnLockScreen="true"
             android:turnScreenOn="true" />
+
+        <!-- الخدمة الأمامية لتسجيل المكالمات (الأمر 6) -->
+        <service
+            android:name="com.aymankhattab.nateq.core.audio.phone.CallRecordingForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- الخدمة الأمامية لمراقبة التطبيقات المحمية (الأمر 7) -->
+        <service
+            android:name="com.aymankhattab.nateq.core.audio.accessibility.ProtectedAppWatcherService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Protected bank and payment app watcher to safely restore accessibility" />
+        </service>
+
+        <!-- نشاط فتح التطبيق المحمي بضمان التعطيل المسبق (الأمر 7) -->
+        <activity
+            android:name="com.aymankhattab.nateq.settings.ProtectedAppLauncherActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <!-- شاشة إعدادات هاتف Lord TTS وتسجيل المكالمات -->
         <activity

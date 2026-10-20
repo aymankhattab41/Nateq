@@ -85,12 +85,66 @@ class A11yVoiceResolverTest {
     }
 
     @Test
-    fun autoSwitch_returnsNullWhenDisabledAndPackageNull() {
+    fun autoSwitch_resolvesWhenAppProfilesEnabledEvenIfAutoSwitchDisabled() {
         settings.setAccessibilityFeatureEnabled(
             FeatureFlags.FEATURE_APP_PROFILES, true
         )
         settings.setAccessibilityFeatureEnabled(
             FeatureFlags.FEATURE_AUTO_PROFILE_SWITCH, false
+        )
+        val store = AppProfileStore.create(context)
+        store.put(
+            AppProfile(
+                packageName = "com.foreground.app",
+                voiceId = "fgVoice"
+            )
+        )
+        AccessibilityBridge.updateForeground(
+            "com.foreground.app", "MainActivity"
+        )
+
+        val resolved = A11yVoiceResolver.resolve(
+            context = context,
+            settings = settings,
+            packageName = null,
+            senderName = null
+        )
+        assertNotNull(resolved)
+        assertEquals("fgVoice", resolved!!.voiceId)
+        store.remove("com.foreground.app")
+    }
+
+    @Test
+    fun manualAddedNonLauncherApp_resolvesSuccessfully() {
+        settings.setAccessibilityFeatureEnabled(
+            FeatureFlags.FEATURE_APP_PROFILES, true
+        )
+        val store = AppProfileStore.create(context)
+        store.put(
+            AppProfile(
+                packageName = "com.internal.daemon",
+                voiceId = "daemonVoice"
+            )
+        )
+        AccessibilityBridge.updateForeground(
+            "com.internal.daemon", "DaemonService"
+        )
+
+        val resolved = A11yVoiceResolver.resolve(
+            context = context,
+            settings = settings,
+            packageName = null,
+            senderName = null
+        )
+        assertNotNull(resolved)
+        assertEquals("daemonVoice", resolved!!.voiceId)
+        store.remove("com.internal.daemon")
+    }
+
+    @Test
+    fun autoSwitch_returnsNullWhenAppProfilesDisabledAndPackageNull() {
+        settings.setAccessibilityFeatureEnabled(
+            FeatureFlags.FEATURE_APP_PROFILES, false
         )
         AccessibilityBridge.updateForeground(
             "com.foreground.app", "MainActivity"

@@ -87,13 +87,22 @@ class TextProcessor(
 
     /**
      * مدخل القاموس الوحيد — يُطبَّق مرة واحدة على النص الخام قبل أي معالجة:
-     * تطبيع NFC فقط ثم تطبيق القاموس وإرجاع النص (الأمر 1).
+     * تطبيع NFC فقط ثم تطبيق القاموس وإرجاع النص (الأمر 1 و2).
      */
     fun applyDictionaryFirst(text: String, languageTag: String): String {
         if (text.isEmpty()) return text
-        pronunciationDict.reloadIfChanged()
-        val normalized = Normalizer.normalize(text, Normalizer.Form.NFC)
-        return pronunciationDict.apply(normalized, languageTag)
+        return try {
+            pronunciationDict.reloadIfChanged()
+            val normalized = Normalizer.normalize(text, Normalizer.Form.NFC)
+            pronunciationDict.apply(normalized, languageTag)
+        } catch (t: Throwable) {
+            android.util.Log.e(
+                "NateqDict",
+                "خطأ في تطبيق القاموس على: ${text.take(80)}",
+                t
+            )
+            text
+        }
     }
 
     /**
@@ -154,7 +163,9 @@ class TextProcessor(
         steps += IndicDigitsStep
         steps += UrlStep
         if (s?.isTimeConversionEnabled() != false) steps += DateStep()
-        if (s?.isTimeConversionEnabled() != false) steps += TimeStep
+        if (s?.isTimeConversionEnabled() != false) {
+            steps += TimeStep { s?.getTimeSuffixMMode() ?: "context" }
+        }
         if (s?.isCurrencyConversionEnabled() != false) steps += CurrencyStep
         if (s?.isUnitConversionEnabled() != false) steps += UnitStep
         steps += AcronymStep

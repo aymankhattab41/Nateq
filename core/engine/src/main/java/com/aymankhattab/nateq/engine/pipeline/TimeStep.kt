@@ -4,7 +4,22 @@ import com.aymankhattab.nateq.engine.NumberSpeech
 import java.util.regex.Pattern
 
 /** معالجة الأوقات: 14:30 → «الثانية والنصف ظهراً». */
-internal object TimeStep : TextProcessingStep {
+internal class TimeStep(
+    private val modeProvider: () -> String = { "context" }
+) : TextProcessingStep {
+
+    companion object : TextProcessingStep {
+        const val MODE_CONTEXT = "context"
+        const val MODE_LETTER = "letter"
+        const val MODE_EVENING = "evening"
+
+        private val defaultInstance = TimeStep()
+        override fun apply(input: String): String = defaultInstance.apply(input)
+        override fun applyEnglish(input: String): String =
+            defaultInstance.applyEnglish(input)
+        override fun apply(input: String, languageTag: String?): String =
+            defaultInstance.apply(input, languageTag)
+    }
 
     private val PATTERN_TIME = Pattern.compile(
         """(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*""" +
@@ -34,6 +49,7 @@ internal object TimeStep : TextProcessingStep {
     )
 
     override fun apply(input: String): String {
+        val mode = modeProvider()
         return replaceTime(input) { match ->
             val rawHour = match.group(1)!!.toInt()
             val minute = match.group(2)!!.toInt()
@@ -47,10 +63,10 @@ internal object TimeStep : TextProcessingStep {
                 val suffix = match.group(4)
                 formatTime(
                     rawHour, minute, seconds,
-                    periodFromSuffix(suffix), suffix
+                    periodFromSuffix(suffix, mode), suffix
                 )
             }
-        }.let { replaceHourSuffix(it) }
+        }.let { replaceHourSuffix(it, mode) }
     }
 
     /**
@@ -80,7 +96,7 @@ internal object TimeStep : TextProcessingStep {
      * يطبّق [PATTERN_HOUR_SUFFIX] — الساعة المجرّدة بلاحقتها.
      * يتحقق في الكود من شرطي الصيغة (ساعة 1..12 + كلمةُ وقتٍ أو لصاق).
      */
-    private fun replaceHourSuffix(input: String): String {
+    private fun replaceHourSuffix(input: String, mode: String): String {
         val matcher = PATTERN_HOUR_SUFFIX.matcher(input)
         if (!matcher.find()) return input
         matcher.reset()
@@ -89,12 +105,21 @@ internal object TimeStep : TextProcessingStep {
             val anchor = matcher.group(1)
             val hour = matcher.group(2)!!.toInt()
             val spaced = !matcher.group(3).isNullOrEmpty()
-            // صيغة الوقت: ساعة 1..12، ومعها كلمةُ وقتٍ أو لصاقُ الحرف.
-            if (hour !in 1..12 || (anchor == null && spaced)) continue
             val suffix = matcher.group(4)!!
+
+            val isMSuffix = suffix == "م" || suffix == "صم"
+            if (hour !in 1..12) continue
+            if (isMSuffix) {
+                if (mode == MODE_LETTER) continue
+                // لا يحوّل الحالة الملاصقة لـ«م» إلا في وضع «مساءً دائماً».
+                if (anchor == null && (spaced || mode != MODE_EVENING)) continue
+            } else {
+                if (anchor == null && spaced) continue
+            }
+
             val timeText = formatTime(
                 hour, 0, null,
-                periodFromSuffix(suffix), suffix
+                periodFromSuffix(suffix, mode), suffix
             )
             matcher.appendReplacement(
                 buffer,
@@ -112,8 +137,14 @@ internal object TimeStep : TextProcessingStep {
      * am/ص → morning، pm/م/ظهر → evening، و«صم» → مساءً (الحرف الأخير
      * هو المؤشر)، وغيابُ اللاحقة → null (تُحسب الفترة من الساعة).
      */
-    private fun periodFromSuffix(suffix: String?): Boolean? {
+    private fun periodFromSuffix(
+        suffix: String?,
+        mode: String = MODE_CONTEXT
+    ): Boolean? {
         if (suffix.isNullOrBlank()) return null
+        if (mode == MODE_LETTER && (suffix == "م" || suffix == "صم")) {
+            return null
+        }
         val lower = suffix.lowercase(java.util.Locale.ROOT)
         return when {
             lower.contains("p") ||

@@ -23,13 +23,19 @@ object ReadMoreExpander {
 
     private const val NODE_COOLDOWN_MS = 5000L
     private const val APP_WINDOW_MS = 60_000L
-    private const val MAX_CLICKS_PER_APP_MINUTE = 3
+    private const val MAX_CLICKS_PER_APP_MINUTE = 12
 
     // سجل أوقات النقر لكل عقدة: nodeKey -> timestamp
     private val lastNodeClickTime = ConcurrentHashMap<String, Long>()
 
     // سجل أوقات النقر لكل تطبيق: pkg -> list of timestamps
     private val appClickHistory = ConcurrentHashMap<String, MutableList<Long>>()
+
+    // قاطع الدائرة عند فشل 3 محاولات متتالية لتطبيق ما (الأمر 4)
+    private val appConsecutiveFailures = ConcurrentHashMap<String, Int>()
+    private val appCircuitCooldownUntil = ConcurrentHashMap<String, Long>()
+    private const val CIRCUIT_FAIL_THRESHOLD = 3
+    private const val CIRCUIT_COOLDOWN_MS = 60_000L
 
     // العقد التي نُقرت ولم يزد النص بعدها
     private val failedNodes = ConcurrentHashMap<String, Long>()
@@ -53,7 +59,7 @@ object ReadMoreExpander {
         if (!checkAppRateLimit(pkg)) {
             Log.w(
                 TAG,
-                "$LOG_TAG App rate limit reached for $pkg (max 3/min)"
+                "$LOG_TAG App rate limit or circuit breaker active for $pkg"
             )
             return false
         }
@@ -82,24 +88,60 @@ object ReadMoreExpander {
             return true
         }
 
+        // الاستراتيجية 5: نقر النص المقتطع (Gesture click على ClickableSpan)
+        if (tryExpandTruncatedText(focusedNode, pkg)) {
+            Log.i(TAG, "$LOG_TAG Strategy 5 (TRUNCATED_TEXT) executed")
+            return true
+        }
+
         return false
     }
 
     /**
      * إبلاغ بنتيجة محاولة التوسيع: هل زاد النص فعلاً؟
+     * مع قاطع الدائرة (الأمر 4).
      */
-    fun onExpandAttemptResult(increased: Boolean) {
-        val key = lastClickedNodeKey ?: return
+    fun onExpandAttemptResult(
+        pkg: String,
+        increased: Boolean,
+        oldLength: Int = 0,
+        newLength: Int = 0
+    ) {
+        val key = lastClickedNodeKey
         if (!increased) {
-            failedNodes[key] = SystemClock.uptimeMillis()
+            if (key != null) failedNodes[key] = SystemClock.uptimeMillis()
+            val fails = (appConsecutiveFailures[pkg] ?: 0) + 1
+            appConsecutiveFailures[pkg] = fails
             Log.w(
                 TAG,
-                "$LOG_TAG Text did not increase, marking node failed: $key"
+                "$LOG_TAG [READMORE_RESULT] Failed for $pkg (fails: $fails), " +
+                    "length: $oldLength -> $newLength"
             )
+            if (fails >= CIRCUIT_FAIL_THRESHOLD) {
+                appCircuitCooldownUntil[pkg] =
+                    SystemClock.uptimeMillis() + CIRCUIT_COOLDOWN_MS
+                appConsecutiveFailures[pkg] = 0
+                Log.w(
+                    TAG,
+                    "$LOG_TAG [READMORE_RESULT] Circuit breaker triggered " +
+                        "for $pkg: 3 consecutive failures, 60s cooldown"
+                )
+            }
         } else {
-            failedNodes.remove(key)
+            if (key != null) failedNodes.remove(key)
+            appConsecutiveFailures[pkg] = 0
+            Log.i(
+                TAG,
+                "$LOG_TAG [READMORE_RESULT] Succeeded for $pkg, " +
+                    "length: $oldLength -> $newLength"
+            )
         }
         lastClickedNodeKey = null
+    }
+
+    fun onExpandAttemptResult(increased: Boolean) {
+        val pkg = lastClickedNodeKey?.substringBefore('|').orEmpty()
+        onExpandAttemptResult(pkg, increased)
     }
 
     private fun tryExpandSelf(
@@ -406,11 +448,115 @@ object ReadMoreExpander {
     private fun checkAppRateLimit(pkg: String): Boolean {
         if (pkg.isBlank()) return true
         val now = SystemClock.uptimeMillis()
+        val cooldown = appCircuitCooldownUntil[pkg]
+        if (cooldown != null && now < cooldown) {
+            Log.w(
+                TAG,
+                "$LOG_TAG Circuit breaker active for $pkg " +
+                    "(${((cooldown - now) / 1000)}s remaining)"
+            )
+            return false
+        }
         val list = appClickHistory.getOrPut(pkg) { mutableListOf() }
         synchronized(list) {
             list.removeAll { now - it > APP_WINDOW_MS }
             return list.size < MAX_CLICKS_PER_APP_MINUTE
         }
+    }
+
+    private fun tryExpandTruncatedText(
+        node: AccessibilityNodeInfo,
+        pkg: String
+    ): Boolean {
+        val text = node.text?.toString() ?: return false
+        val matchingPattern = SelectorPacks.TRUNCATION_PATTERNS.firstOrNull {
+            text.trimEnd().endsWith(it)
+        } ?: return false
+
+        // لا تنفّذها إن كان للعقدة إجراء ACTION_EXPAND أو زر منفصل
+        val actions = runCatching { node.actionList }.getOrNull().orEmpty()
+        val hasExpand =
+            ((node.actions and AccessibilityNodeInfo.ACTION_EXPAND) != 0) ||
+                actions.any { it.id == AccessibilityNodeInfo.ACTION_EXPAND }
+        if (hasExpand) return false
+
+        val word = when {
+            matchingPattern.contains("المزيد") -> "المزيد"
+            matchingPattern.contains("more", ignoreCase = true) -> {
+                if (matchingPattern.contains("See", ignoreCase = true)) {
+                    "See more"
+                } else if (
+                    matchingPattern.contains("Show", ignoreCase = true)
+                ) {
+                    "Show more"
+                } else {
+                    "Read more"
+                }
+            }
+            matchingPattern.contains("Lire", ignoreCase = true) -> {
+                "Lire la suite"
+            }
+            matchingPattern.contains("Mehr", ignoreCase = true) -> {
+                "Mehr anzeigen"
+            }
+            else -> matchingPattern
+        }
+        val startIndex = text.lastIndexOf(word)
+        if (startIndex < 0) return false
+        val length = word.length
+
+        val key = getNodeKey(node, pkg)
+        if (!checkNodeRateLimit(key)) return false
+
+        if (android.os.Build.VERSION.SDK_INT >=
+            android.os.Build.VERSION_CODES.O
+        ) {
+            val args = android.os.Bundle().apply {
+                putInt(
+                    AccessibilityNodeInfo
+                        .EXTRA_DATA_TEXT_CHARACTER_LOCATION_ARG_START_INDEX,
+                    startIndex
+                )
+                putInt(
+                    AccessibilityNodeInfo
+                        .EXTRA_DATA_TEXT_CHARACTER_LOCATION_ARG_LENGTH,
+                    length
+                )
+            }
+            val refreshed = runCatching {
+                node.refreshWithExtraData(
+                    AccessibilityNodeInfo
+                        .EXTRA_DATA_TEXT_CHARACTER_LOCATION_KEY,
+                    args
+                )
+            }.getOrDefault(false)
+
+            if (refreshed) {
+                val locs = node.extras?.getParcelableArray(
+                    AccessibilityNodeInfo
+                        .EXTRA_DATA_TEXT_CHARACTER_LOCATION_KEY
+                )
+                val firstRect = locs?.firstOrNull() as? android.graphics.RectF
+                val lastRect = locs?.lastOrNull() as? android.graphics.RectF
+                if (firstRect != null && lastRect != null) {
+                    val clickX = (firstRect.left + lastRect.right) / 2f
+                    val clickY = (firstRect.top + lastRect.bottom) / 2f
+                    val bounds = android.graphics.Rect()
+                    node.getBoundsInScreen(bounds)
+                    if (bounds.contains(clickX.toInt(), clickY.toInt())) {
+                        val ok = AccessibilityBridge.dispatchClickGesture(
+                            clickX, clickY
+                        )
+                        recordClick(pkg, key)
+                        logClick(
+                            node, pkg, "STRATEGY_5_GESTURE", "GESTURE", ok
+                        )
+                        return ok
+                    }
+                }
+            }
+        }
+        return false
     }
 
     private fun checkNodeRateLimit(nodeKey: String): Boolean {
@@ -475,6 +621,8 @@ object ReadMoreExpander {
         lastNodeClickTime.clear()
         appClickHistory.clear()
         failedNodes.clear()
+        appConsecutiveFailures.clear()
+        appCircuitCooldownUntil.clear()
         lastClickedNodeKey = null
     }
 }

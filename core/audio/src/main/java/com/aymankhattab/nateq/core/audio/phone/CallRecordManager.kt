@@ -1,19 +1,29 @@
 package com.aymankhattab.nateq.core.audio.phone
 
+import android.content.ContentValues
 import android.content.Context
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.os.ParcelFileDescriptor
+import android.provider.MediaStore
+import android.util.Log
 import com.aymankhattab.nateq.core.data.SettingsRepository
-import org.json.JSONArray
-import org.json.JSONObject
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.util.UUID
+import kotlin.math.sqrt
+import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
- * بيانات تسجيل المكالمة الصوتية.
+ * بيانات تسجيل المكالمة الصوتية (متوافقة مع MediaStore وملفات النظام).
  */
 data class CallRecordItem(
     val id: String,
@@ -22,28 +32,45 @@ data class CallRecordItem(
     val timestamp: Long,
     var durationSeconds: Long,
     val filePath: String,
-    var fileSize: Long
+    var fileSize: Long,
+    val uriString: String? = null,
+    var isSilent: Boolean = false
 )
 
 /**
- * مدير تسجيل المكالمات وتضخيم الصوت البرمجي للمكفوفين.
+ * مدير تسجيل المكالمات الصوتي وتضخيم الصوت البرمجي للمكفوفين (الجولة 48).
  */
 object CallRecordManager {
 
+    private const val TAG = "CallRecordManager"
     private const val INDEX_FILE_NAME = "call_recordings_index.json"
-    private const val SAMPLE_RATE = 16000
+    const val SAMPLE_RATE = 16000
     private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
     private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
+
+    private val SOURCES_TO_TRY = listOf(
+        MediaRecorder.AudioSource.VOICE_RECOGNITION,
+        MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+        MediaRecorder.AudioSource.MIC
+    )
 
     @Volatile
     private var isRecordingActive = false
     private var recordingThread: Thread? = null
     private var currentItem: CallRecordItem? = null
+    private var currentTarget: RecordingTarget? = null
     private var recordingStartTime = 0L
 
     fun isRecording(): Boolean = isRecordingActive
 
     fun getCurrentItem(): CallRecordItem? = currentItem
+
+    fun getRecordingFolderDisplayName(): String =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            "Recordings/Lord TTS"
+        } else {
+            "Music/Lord TTS"
+        }
 
     /**
      * التحقق مما إذا كانت المكالمة تستحق التسجيل التلقائي.
@@ -64,7 +91,7 @@ object CallRecordManager {
     }
 
     /**
-     * بدء تسجيل المكالمة الحالية.
+     * بدء تسجيل المكالمة الحالية عبر MediaStore مع الخدمة الأمامية.
      */
     @Synchronized
     fun startRecording(
@@ -74,16 +101,17 @@ object CallRecordManager {
     ): Boolean {
         if (isRecordingActive) return false
 
-        val dir = getRecordingsDir(context)
-        if (!dir.exists()) {
-            dir.mkdirs()
-        }
+        migrateLegacyRecordings(context)
 
         val id = UUID.randomUUID().toString()
         val timestamp = System.currentTimeMillis()
         val safeNumber = phoneNumber.replace(Regex("[^0-9+]"), "")
-        val fileName = "rec_${safeNumber}_$timestamp.wav"
-        val outputFile = File(dir, fileName)
+
+        val target = createRecordingTarget(context, safeNumber, timestamp)
+        if (target == null) {
+            Log.e(TAG, "Failed to create recording destination target")
+            return false
+        }
 
         val item = CallRecordItem(
             id = id,
@@ -91,53 +119,25 @@ object CallRecordManager {
             callerName = callerName,
             timestamp = timestamp,
             durationSeconds = 0L,
-            filePath = outputFile.absolutePath,
-            fileSize = 0L
+            filePath = target.filePath,
+            fileSize = 0L,
+            uriString = target.uriString,
+            isSilent = false
         )
-
-        val minBufferSize = AudioRecord.getMinBufferSize(
-            SAMPLE_RATE,
-            CHANNEL_CONFIG,
-            AUDIO_FORMAT
-        )
-        val bufferSize = (minBufferSize * 2).coerceAtLeast(4096)
-
-        val recordSource = try {
-            MediaRecorder.AudioSource.VOICE_COMMUNICATION
-        } catch (_: Exception) {
-            MediaRecorder.AudioSource.MIC
-        }
-
-        val audioRecord = try {
-            AudioRecord(
-                recordSource,
-                SAMPLE_RATE,
-                CHANNEL_CONFIG,
-                AUDIO_FORMAT,
-                bufferSize
-            )
-        } catch (_: Exception) {
-            null
-        }
-
-        if (audioRecord == null ||
-            audioRecord.state != AudioRecord.STATE_INITIALIZED
-        ) {
-            audioRecord?.release()
-            return false
-        }
-
-        val repo = SettingsRepository.create(context)
-        val boostEnabled = repo.isPhoneRecordBoostVolumeEnabled()
-        // مضاعف تضخيم الصوت البرمجي للطرفين
-        val gainMultiplier = if (boostEnabled) 2.5f else 1.0f
 
         currentItem = item
-        recordingStartTime = System.currentTimeMillis()
+        currentTarget = target
+        recordingStartTime = timestamp
         isRecordingActive = true
 
+        CallRecordingForegroundService.start(context)
+
+        val repo = SettingsRepository.create(context)
+        val boost = repo.isPhoneRecordBoostVolumeEnabled()
+        val gain = if (boost) 2.5f else 1.0f
+
         recordingThread = Thread {
-            recordAudioLoop(audioRecord, outputFile, bufferSize, gainMultiplier)
+            recordAudioLoop(context, target, item, gain)
         }.apply {
             name = "LordCallRecordThread"
             start()
@@ -146,55 +146,297 @@ object CallRecordManager {
         return true
     }
 
+    private data class RecordingTarget(
+        val uri: Uri?,
+        val file: File?,
+        val tempFile: File,
+        val uriString: String,
+        val filePath: String
+    )
+
+    private fun createRecordingTarget(
+        context: Context,
+        safeNumber: String,
+        timestamp: Long
+    ): RecordingTarget? {
+        val nameNumber = if (safeNumber.isEmpty()) "غير_معروف" else safeNumber
+        val fileName = "مكالمة_${nameNumber}_$timestamp.wav"
+        val tempFile = File(context.cacheDir, "rec_tmp_$timestamp.wav")
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val relPath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                "Recordings/Lord TTS/"
+            } else {
+                "Music/Lord TTS/"
+            }
+            val values = ContentValues().apply {
+                put(MediaStore.Audio.Media.DISPLAY_NAME, fileName)
+                put(MediaStore.Audio.Media.MIME_TYPE, "audio/wav")
+                put(MediaStore.Audio.Media.RELATIVE_PATH, relPath)
+                put(MediaStore.Audio.Media.IS_PENDING, 1)
+            }
+            val uri = try {
+                context.contentResolver.insert(
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                    values
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Error inserting into MediaStore: ${e.message}")
+                null
+            }
+
+            if (uri != null) {
+                return RecordingTarget(
+                    uri = uri,
+                    file = null,
+                    tempFile = tempFile,
+                    uriString = uri.toString(),
+                    filePath = ""
+                )
+            }
+        }
+
+        // المسار العام في أندرويد 7-9 أو الاحتياط
+        val publicDir = File(
+            Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_MUSIC
+            ),
+            "Lord TTS"
+        )
+        if (!publicDir.exists()) {
+            publicDir.mkdirs()
+        }
+        val targetFile = File(publicDir, fileName)
+        return RecordingTarget(
+            uri = null,
+            file = targetFile,
+            tempFile = tempFile,
+            uriString = Uri.fromFile(targetFile).toString(),
+            filePath = targetFile.absolutePath
+        )
+    }
+
     private fun recordAudioLoop(
-        record: AudioRecord,
-        outputFile: File,
-        bufferSize: Int,
+        context: Context,
+        target: RecordingTarget,
+        item: CallRecordItem,
         gain: Float
     ) {
-        val fos = FileOutputStream(outputFile)
-        // كتابة ترويسة WAV مؤقتة
-        writeWavHeader(fos, 0L, SAMPLE_RATE, 1, 16)
+        val minBufferSize = AudioRecord.getMinBufferSize(
+            SAMPLE_RATE,
+            CHANNEL_CONFIG,
+            AUDIO_FORMAT
+        ).coerceAtLeast(4096)
+        val bufferSize = (minBufferSize * 2).coerceAtLeast(8192)
 
-        var totalAudioLen = 0L
+        val raf = try {
+            RandomAccessFile(target.tempFile, "rw")
+        } catch (e: Exception) {
+            Log.e(TAG, "Cannot open RandomAccessFile: ${e.message}")
+            null
+        }
+
+        if (raf == null) {
+            isRecordingActive = false
+            return
+        }
+
+        // كتابة ترويسة WAV أولية بحجم صفر
+        val initialHeader = buildWavHeader(0L, SAMPLE_RATE, 1, 16)
+        try {
+            raf.seek(0)
+            raf.write(initialHeader)
+        } catch (_: Exception) {}
+
         val shortBuffer = ShortArray(bufferSize / 2)
         val byteBuffer = ByteArray(bufferSize)
+        var totalAudioLen = 0L
+        var lastHeaderUpdate = System.currentTimeMillis()
+        var activeRecord: AudioRecord? = null
+        var sourceIndex = 0
+        var sourceConfirmed = false
+        var checkedSamples = 0L
+        var sumSquares = 0.0
 
         try {
-            record.startRecording()
             while (isRecordingActive) {
-                val readShorts = record.read(
+                if (activeRecord == null) {
+                    if (sourceIndex >= SOURCES_TO_TRY.size) {
+                        Log.e(TAG, "All audio sources failed or silent")
+                        item.isSilent = true
+                        speakAudioBlockedWarning(context)
+                        break
+                    }
+                    val src = SOURCES_TO_TRY[sourceIndex]
+                    Log.i(TAG, "Trying audio source: $src")
+                    activeRecord = try {
+                        AudioRecord(
+                            src,
+                            SAMPLE_RATE,
+                            CHANNEL_CONFIG,
+                            AUDIO_FORMAT,
+                            bufferSize
+                        )
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to create source $src: ${e.message}")
+                        null
+                    }
+
+                    if (activeRecord == null ||
+                        activeRecord.state != AudioRecord.STATE_INITIALIZED
+                    ) {
+                        activeRecord?.release()
+                        activeRecord = null
+                        sourceIndex++
+                        continue
+                    }
+
+                    try {
+                        activeRecord.startRecording()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Cannot start source $src: ${e.message}")
+                        activeRecord.release()
+                        activeRecord = null
+                        sourceIndex++
+                        continue
+                    }
+
+                    checkedSamples = 0L
+                    sumSquares = 0.0
+                    sourceConfirmed = false
+                }
+
+                val readCount = activeRecord.read(
                     shortBuffer,
                     0,
                     shortBuffer.size
                 )
-                if (readShorts > 0) {
-                    boostPcmSamples(shortBuffer, readShorts, gain)
+                if (readCount > 0) {
+                    // فحص RMS في أول 3 ثوانٍ
+                    if (!sourceConfirmed) {
+                        for (i in 0 until readCount) {
+                            val v = shortBuffer[i].toDouble()
+                            sumSquares += v * v
+                        }
+                        checkedSamples += readCount
+                        if (checkedSamples >= SAMPLE_RATE * 3) {
+                            val rms = sqrt(sumSquares / checkedSamples)
+                            Log.i(TAG, "RMS for source: $rms")
+                            if (rms < 1.0) {
+                                Log.w(
+                                    TAG,
+                                    "Source returned silence " +
+                                        "(RMS=$rms), fallback"
+                                )
+                                activeRecord.stop()
+                                activeRecord.release()
+                                activeRecord = null
+                                sourceIndex++
+                                continue
+                            } else {
+                                sourceConfirmed = true
+                            }
+                        }
+                    }
+
+                    boostPcmSamples(shortBuffer, readCount, gain)
 
                     var byteIdx = 0
-                    for (i in 0 until readShorts) {
+                    for (i in 0 until readCount) {
                         val s = shortBuffer[i].toInt()
                         byteBuffer[byteIdx++] = (s and 0xFF).toByte()
                         byteBuffer[byteIdx++] = ((s shr 8) and 0xFF).toByte()
                     }
 
-                    fos.write(byteBuffer, 0, byteIdx)
+                    raf.write(byteBuffer, 0, byteIdx)
                     totalAudioLen += byteIdx
+
+                    // تحديث الترويسة كل ثانيتين للحماية من قطع الطاقة
+                    val now = System.currentTimeMillis()
+                    if (now - lastHeaderUpdate >= 2000L) {
+                        val currentPos = raf.filePointer
+                        raf.seek(0)
+                        raf.write(
+                            buildWavHeader(totalAudioLen, SAMPLE_RATE, 1, 16)
+                        )
+                        raf.seek(currentPos)
+                        lastHeaderUpdate = now
+                    }
                 }
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception during recording loop: ${e.message}")
         } finally {
             try {
-                record.stop()
+                activeRecord?.stop()
             } catch (_: Exception) {}
-            record.release()
             try {
-                fos.close()
+                activeRecord?.release()
             } catch (_: Exception) {}
 
-            // تحديث ترويسة WAV بالأحجام الحقيقية
-            updateWavHeader(outputFile, totalAudioLen, SAMPLE_RATE, 1, 16)
+            try {
+                // كتابة الترويسة النهائية بالأحجام الصحيحة
+                if (totalAudioLen == 0L && raf.length() > 44L) {
+                    totalAudioLen = raf.length() - 44L
+                }
+                raf.seek(0)
+                raf.write(buildWavHeader(totalAudioLen, SAMPLE_RATE, 1, 16))
+                raf.close()
+            } catch (_: Exception) {}
+
+            try {
+                if (target.uri != null) {
+                    context.contentResolver.openOutputStream(
+                        target.uri
+                    )?.use { outStream ->
+                        FileInputStream(target.tempFile).use { inpStream ->
+                            inpStream.copyTo(outStream)
+                        }
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        val updateVals = ContentValues().apply {
+                            put(MediaStore.Audio.Media.IS_PENDING, 0)
+                        }
+                        context.contentResolver.update(
+                            target.uri,
+                            updateVals,
+                            null,
+                            null
+                        )
+                    }
+                } else if (target.file != null) {
+                    target.tempFile.copyTo(target.file, overwrite = true)
+                }
+            } catch (e: Exception) {
+                Log.e(
+                    TAG,
+                    "Error copying temp record to target: ${e.message}"
+                )
+            } finally {
+                try {
+                    target.tempFile.delete()
+                } catch (_: Exception) {}
+            }
         }
+    }
+
+    private fun speakAudioBlockedWarning(context: Context) {
+        val warning =
+            "لا يسمح النظام بتسجيل صوت المكالمة، " +
+                "فعّل مكبر الصوت ثم أعد المحاولة"
+        try {
+            val audioService =
+                Class.forName(
+                    "com.aymankhattab.nateq.core.audio.announcement" +
+                        ".AnnouncementSpeaker"
+                )
+            val method = audioService.getMethod(
+                "speakImmediate",
+                Context::class.java,
+                String::class.java
+            )
+            method.invoke(null, context, warning)
+        } catch (_: Exception) {}
     }
 
     /**
@@ -206,30 +448,62 @@ object CallRecordManager {
 
         isRecordingActive = false
         try {
-            recordingThread?.join(1500L)
+            // انتظار حتى 6 ثوانٍ لضمان اكتمال كتابة الملف والترويسة
+            recordingThread?.join(6000L)
         } catch (_: Exception) {}
         recordingThread = null
+
+        CallRecordingForegroundService.stop(context)
 
         val item = currentItem ?: return null
         val durationMs = System.currentTimeMillis() - recordingStartTime
         item.durationSeconds = (durationMs / 1000L).coerceAtLeast(1L)
 
-        val file = File(item.filePath)
-        if (file.exists()) {
-            item.fileSize = file.length()
-            saveRecordToHistory(context, item)
-        } else {
-            currentItem = null
-            return null
+        // حساب الحجم الفعلي
+        val target = currentTarget
+        var actualSize = 0L
+        if (target?.file != null && target.file.exists()) {
+            actualSize = target.file.length()
+        } else if (target?.uri != null) {
+            try {
+                context.contentResolver.openFileDescriptor(
+                    target.uri,
+                    "r"
+                )?.use {
+                    actualSize = it.statSize
+                }
+            } catch (_: Exception) {}
         }
+        item.fileSize = actualSize
+
+        saveRecordToHistory(context, item)
+
+        try {
+            val appCtx = context.applicationContext
+            kotlinx.coroutines.CoroutineScope(
+                kotlinx.coroutines.Dispatchers.Main
+            ).launch {
+                com.aymankhattab.nateq.core.audio.accessibility
+                    .TtsSettingsAutomation
+                    .checkAndRunPendingSwitch(appCtx)
+            }
+        } catch (_: Exception) {}
 
         currentItem = null
+        currentTarget = null
         return item
     }
 
-    /**
-     * تضخيم عينات الصوت البرمجية مع حماية ضد التشويش والقص (Clipping).
-     */
+    fun calculateRms(buffer: ShortArray, count: Int): Double {
+        if (count <= 0) return 0.0
+        var sum = 0.0
+        for (i in 0 until count) {
+            val v = buffer[i].toDouble()
+            sum += v * v
+        }
+        return sqrt(sum / count)
+    }
+
     fun boostPcmSamples(
         buffer: ShortArray,
         count: Int,
@@ -253,8 +527,26 @@ object CallRecordManager {
             val jsonArray = JSONArray(text)
             for (i in 0 until jsonArray.length()) {
                 val obj = jsonArray.getJSONObject(i)
-                val filePath = obj.getString("filePath")
-                if (File(filePath).exists()) {
+                val uriString = obj.optString("uriString", "")
+                val filePath = obj.optString("filePath", "")
+                val isSilent = obj.optBoolean("isSilent", false)
+
+                var exists = false
+                if (uriString.isNotEmpty()) {
+                    exists = try {
+                        context.contentResolver.openFileDescriptor(
+                            Uri.parse(uriString),
+                            "r"
+                        )?.use { true } ?: false
+                    } catch (_: Exception) {
+                        false
+                    }
+                }
+                if (!exists && filePath.isNotEmpty()) {
+                    exists = File(filePath).exists()
+                }
+
+                if (exists) {
                     list.add(
                         CallRecordItem(
                             id = obj.getString("id"),
@@ -263,7 +555,13 @@ object CallRecordManager {
                             timestamp = obj.getLong("timestamp"),
                             durationSeconds = obj.getLong("durationSeconds"),
                             filePath = filePath,
-                            fileSize = obj.optLong("fileSize", 0L)
+                            fileSize = obj.optLong("fileSize", 0L),
+                            uriString = if (uriString.isNotEmpty()) {
+                                uriString
+                            } else {
+                                null
+                            },
+                            isSilent = isSilent
                         )
                     )
                 }
@@ -279,9 +577,20 @@ object CallRecordManager {
         val all = getRecordings(context).toMutableList()
         val target = all.find { it.id == id } ?: return false
 
-        val file = File(target.filePath)
-        if (file.exists()) {
-            file.delete()
+        if (!target.uriString.isNullOrEmpty()) {
+            try {
+                context.contentResolver.delete(
+                    Uri.parse(target.uriString),
+                    null,
+                    null
+                )
+            } catch (_: Exception) {}
+        }
+        if (target.filePath.isNotEmpty()) {
+            val file = File(target.filePath)
+            if (file.exists()) {
+                file.delete()
+            }
         }
 
         all.removeAll { it.id == id }
@@ -323,6 +632,8 @@ object CallRecordManager {
                 put("durationSeconds", item.durationSeconds)
                 put("filePath", item.filePath)
                 put("fileSize", item.fileSize)
+                put("uriString", item.uriString ?: "")
+                put("isSilent", item.isSilent)
             }
             jsonArray.put(obj)
         }
@@ -334,16 +645,91 @@ object CallRecordManager {
 
     fun getRecordingsDir(context: Context): File {
         val external = context.getExternalFilesDir("call_recordings")
-        return external ?: File(context.filesDir, "call_recordings")
+        val dir = external ?: File(context.filesDir, "call_recordings")
+        if (!dir.exists()) dir.mkdirs()
+        return dir
     }
 
-    private fun writeWavHeader(
-        out: FileOutputStream,
+    /**
+     * ترحيل التسجيلات القديمة المخزنة في getExternalFilesDir إلى MediaStore.
+     */
+    fun migrateLegacyRecordings(context: Context) {
+        val ext = context.getExternalFilesDir("call_recordings")
+        val internal = File(context.filesDir, "call_recordings")
+        val candidateDirs = listOfNotNull(ext, internal).distinct()
+
+        for (legacyDir in candidateDirs) {
+            val files = legacyDir.listFiles { f ->
+                f.extension.equals("wav", ignoreCase = true)
+            } ?: continue
+
+            for (oldFile in files) {
+                try {
+                val target = createRecordingTarget(
+                    context,
+                    "قديم",
+                    oldFile.lastModified()
+                ) ?: continue
+
+                val outStream = if (target.uri != null) {
+                    context.contentResolver.openOutputStream(target.uri)
+                } else if (target.file != null) {
+                    FileOutputStream(target.file)
+                } else {
+                    null
+                }
+
+                if (outStream != null) {
+                    FileInputStream(oldFile).use { input ->
+                        outStream.use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                        target.uri != null
+                    ) {
+                        val vals = ContentValues().apply {
+                            put(MediaStore.Audio.Media.IS_PENDING, 0)
+                        }
+                        context.contentResolver.update(
+                            target.uri,
+                            vals,
+                            null,
+                            null
+                        )
+                    }
+                    val durSec =
+                        (oldFile.length() / (SAMPLE_RATE * 2))
+                            .coerceAtLeast(1L)
+                    val migratedItem = CallRecordItem(
+                        id = UUID.randomUUID().toString(),
+                        phoneNumber = "غير معروف",
+                        callerName = "تسجيل قديم",
+                        timestamp = oldFile.lastModified(),
+                        durationSeconds = durSec,
+                        filePath = target.filePath,
+                        fileSize = oldFile.length(),
+                        uriString = target.uriString
+                    )
+                    saveRecordToHistory(context, migratedItem)
+                    oldFile.delete()
+                }
+            } catch (e: Exception) {
+                Log.w(
+                    TAG,
+                    "Legacy migration error for ${oldFile.name}: ${e.message}"
+                )
+            }
+        }
+    }
+}
+
+    fun buildWavHeader(
         totalAudioLen: Long,
         sampleRate: Int,
         channels: Int,
         bitsPerSample: Int
-    ) {
+    ): ByteArray {
         val totalDataLen = totalAudioLen + 36
         val byteRate = sampleRate * channels * bitsPerSample / 8
         val header = ByteArray(44)
@@ -393,41 +779,6 @@ object CallRecordManager {
         header[42] = ((totalAudioLen shr 16) and 0xff).toByte()
         header[43] = ((totalAudioLen shr 24) and 0xff).toByte()
 
-        out.write(header, 0, 44)
-    }
-
-    private fun updateWavHeader(
-        file: File,
-        totalAudioLen: Long,
-        sampleRate: Int,
-        channels: Int,
-        bitsPerSample: Int
-    ) {
-        if (!file.exists()) return
-        val raf = RandomAccessFile(file, "rw")
-        try {
-            val totalDataLen = totalAudioLen + 36
-            raf.seek(4)
-            raf.write(
-                byteArrayOf(
-                    (totalDataLen and 0xff).toByte(),
-                    ((totalDataLen shr 8) and 0xff).toByte(),
-                    ((totalDataLen shr 16) and 0xff).toByte(),
-                    ((totalDataLen shr 24) and 0xff).toByte()
-                )
-            )
-            raf.seek(40)
-            raf.write(
-                byteArrayOf(
-                    (totalAudioLen and 0xff).toByte(),
-                    ((totalAudioLen shr 8) and 0xff).toByte(),
-                    ((totalAudioLen shr 16) and 0xff).toByte(),
-                    ((totalAudioLen shr 24) and 0xff).toByte()
-                )
-            )
-        } catch (_: Exception) {
-        } finally {
-            raf.close()
-        }
+        return header
     }
 }
