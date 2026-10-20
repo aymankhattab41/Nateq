@@ -882,7 +882,7 @@ class TextProcessorTest {
      *  [preamble] (إزالةُ تشكيلٍ قبل التحويل) — فالحروف وناتجُ التحويل
      *  ثابتان والوشمُ الزخرفي يزول؛ المقارنة على الحروف لا الشكل. */
     private fun stripDiacritics(text: String): String =
-        text.replace(Regex("[\u064B-\u0652\u0670\u0640]"), "")
+        text.replace(Regex("[\u064B-\u0652\u0670\u0640\uE020]"), "")
 
     // ============ بند 1.7: إبقاء تشكيل النصوص العربية ============
 

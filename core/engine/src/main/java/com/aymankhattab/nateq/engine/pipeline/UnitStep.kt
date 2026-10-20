@@ -167,7 +167,10 @@ internal object UnitStep : TextProcessingStep {
         UNIT_PATTERNS.joinToString("|") { "(" + it.first.pattern() + ")" }
     )
 
-    override fun apply(input: String): String {
+    override fun apply(input: String): String =
+        apply(input, markNumbers = false)
+
+    fun apply(input: String, markNumbers: Boolean): String {
         if (!UNIT_ANY_PATTERN.matcher(input).find()) return input
         var result = input
         for ((pattern, info) in UNIT_PATTERNS) {
@@ -175,7 +178,7 @@ internal object UnitStep : TextProcessingStep {
             val buffer = StringBuffer()
             while (matcher.find()) {
                 val number = AmountParser.parseAmount(matcher.group(1)!!)
-                val replacement = numberWithUnit(number, info)
+                val replacement = numberWithUnit(number, info, markNumbers)
                 matcher.appendReplacement(
                     buffer,
                     java.util.regex.Matcher.quoteReplacement(replacement)
@@ -194,24 +197,37 @@ internal object UnitStep : TextProcessingStep {
      *  3–10 ← الجمع مع اتفاق جنس العدد («خمسة كيلومترات» / «خمس دقائق»)،
      *  ما فوق ← العدد ثم الوحدة المفردة («خمسة وعشرون كيلومتر»).
      */
-    private fun numberWithUnit(value: Double, info: UnitInfo): String {
+    private fun numberWithUnit(
+        value: Double,
+        info: UnitInfo,
+        markNumbers: Boolean = false
+    ): String {
         if (value % 1.0 != 0.0 || value < 0.0) {
-            return "${NumberWordsConverter.numberToWords(value)} " +
-            info.singular
+            val words = NumberWordsConverter.numberToWords(
+                value, markNumbers = markNumbers
+            )
+            return "$words ${info.singular}"
         }
         val n = value.toLong()
         return when {
-            n == 0L ->
-                "${NumberWordsConverter.numberToWords(0.0)} ${info.singular}"
-            n == 1L ->
-                "${info.singular} ${if (info.isFeminine) "واحدة" else "واحد"}"
+            n == 0L -> {
+                val z = NumberWordsConverter.numberToWords(
+                    0.0, markNumbers = markNumbers
+                )
+                "$z ${info.singular}"
+            }
+            n == 1L -> {
+                val one = if (info.isFeminine) "واحدة" else "واحد"
+                val oneW = NumberSpeech.wrapNumber(one, markNumbers)
+                "${info.singular} $oneW"
+            }
             n == 2L -> info.dual
             n in 3L..10L -> {
-                val word =
-                    NumberWordsConverter.unitNumberWord(
-                        n.toInt(),
-                        info.isFeminine
-                    )
+                val word = NumberWordsConverter.unitNumberWord(
+                    n.toInt(),
+                    info.isFeminine,
+                    markNumbers = markNumbers
+                )
                 "$word ${info.plural}"
             }
             else -> {
@@ -221,9 +237,15 @@ internal object UnitStep : TextProcessingStep {
                 val numberText = if (info.isFeminine &&
                     n in 11L..99_999_999L
                 ) {
-                    NumberSpeech.toArabicWords(n.toInt(), isFeminine = true)
+                    NumberSpeech.toArabicWords(
+                        n.toInt(),
+                        isFeminine = true,
+                        markNumbers = markNumbers
+                    )
                 } else {
-                    NumberWordsConverter.numberToWords(value)
+                    NumberWordsConverter.numberToWords(
+                        value, markNumbers = markNumbers
+                    )
                 }
                 "$numberText ${info.singular}"
             }

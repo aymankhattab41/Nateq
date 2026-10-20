@@ -181,4 +181,72 @@ class ArabicSpeechNormalizerTest {
             out.contains(expectedMasa)
         )
     }
+
+    @Test
+    fun tableDriven_masaPrefixesAndSuffixes_allNormalizedToMasaAn() {
+        val prefixes = listOf(
+            "الخامسة", "والنصف", "النصف", "الربع", "خمسة", "5", "الساعة"
+        )
+        val suffixes = listOf(
+            "", "،", ".", ":", "؛", " والنصف", " سنلتقي",
+            " في المكتب", " جداً", " 5"
+        )
+        for (prefix in prefixes) {
+            for (suffix in suffixes) {
+                val input = "$prefix مساءً$suffix"
+                val out = ArabicSpeechNormalizer.prepareArabicForEngine(
+                    input, "ar"
+                )
+                assertTrue(
+                    "فشل نطق مساءً في '$input': الناتج كان '$out'",
+                    out.contains(ArabicSpeechNormalizer.MASA_AN)
+                )
+                assertTrue(
+                    "تسربت علامة الحفظ في '$input': '$out'",
+                    !out.contains('\uE020')
+                )
+            }
+        }
+    }
+
+    @Test
+    fun allTemporalTanweenWords_areNormalizedWithNunSakina() {
+        val temporalCases = listOf(
+            "الساعة 5 عصراً ثم نلتقي" to ArabicSpeechNormalizer.ASR_AN,
+            "عصرًا، سنلتقي" to ArabicSpeechNormalizer.ASR_AN,
+            "الساعة 10 ليلاً." to ArabicSpeechNormalizer.LAYL_AN,
+            "ليلًا في البيت" to ArabicSpeechNormalizer.LAYL_AN,
+            "الساعة 4 فجراً:" to ArabicSpeechNormalizer.FAJR_AN,
+            "فجرًا سنصلي" to ArabicSpeechNormalizer.FAJR_AN,
+            "طوال اليوم نهاراً؛" to ArabicSpeechNormalizer.NAHAR_AN,
+            "نهارًا سنعمل" to ArabicSpeechNormalizer.NAHAR_AN
+        )
+        for ((input, expected) in temporalCases) {
+            val out = ArabicSpeechNormalizer.prepareArabicForEngine(
+                input, "ar"
+            )
+            assertTrue(
+                "فشل تنوين '$input': الناتج كان '$out'",
+                out.contains(expected)
+            )
+            assertTrue(
+                "تسربت علامة الحفظ في '$input': '$out'",
+                !out.contains('\uE020')
+            )
+        }
+    }
+
+    @Test
+    fun tashkeelAwareEngine_retainsOriginalDiacriticsWithoutNunSakina() {
+        val input = "الساعة الخامسة مساءً\uE020 ثم نذهب"
+        val out = ArabicSpeechNormalizer.prepareArabicForEngine(
+            input, "ar", "com.google.android.tts"
+        )
+        assertTrue(
+            "يجب ألا يُدرج النون الصريحة: $out",
+            !out.contains(expectedMasa)
+        )
+        assertTrue("يجب إزالة علامة الحفظ: $out", !out.contains('\uE020'))
+        assertTrue("يجب بقاء مساءً كما هي: $out", out.contains("مساءً"))
+    }
 }

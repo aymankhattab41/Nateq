@@ -7,8 +7,17 @@ import java.util.regex.Pattern
  *  أو «one thousand two hundred thirty four» (إنجليزية). */
 internal class NumberStep(
     private val modeProvider: () -> Int = { 1 },
-    private val languageProvider: () -> String? = { null }
+    private val languageProvider: () -> String? = { null },
+    private val markNumbers: Boolean = false
 ) : TextProcessingStep {
+
+    constructor(
+        languageProvider: () -> String?
+    ) : this(
+        modeProvider = { 1 },
+        languageProvider = languageProvider,
+        markNumbers = false
+    )
 
     companion object : TextProcessingStep {
         private val defaultInstance = NumberStep()
@@ -16,6 +25,10 @@ internal class NumberStep(
             defaultInstance.apply(input)
         override fun applyEnglish(input: String): String =
             defaultInstance.applyEnglish(input)
+
+        operator fun invoke(
+            languageProvider: () -> String?
+        ): NumberStep = NumberStep(languageProvider)
     }
 
     // أنماط الأرقام: حدود واضحة تمنع شطر الأرقام وتسمح بالحرف العربي
@@ -102,7 +115,7 @@ internal class NumberStep(
                 (start == 1 || !input[start - 2].isLetterOrDigit())
             sb.append(input, cursor, if (minus) start - 1 else start)
             sb.append(if (minus) minusWord(english) else "")
-            sb.append(parseNumberText(numberStr, english))
+            sb.append(parseNumberText(numberStr, english, markNumbers))
             if (end < input.length && isLetterOrMark(input[end])) {
                 sb.append(' ')
             }
@@ -126,12 +139,16 @@ internal class NumberStep(
      *  - 1,234.56 → 1234.56 (فاصلة آلاف + فاصلة عشرية)
      *  - 3.14 → 3.14 (عشري)
      */
-    private fun parseNumberText(numberStr: String, english: Boolean): String {
+    private fun parseNumberText(
+        numberStr: String,
+        english: Boolean,
+        markNumbers: Boolean = false
+    ): String {
         // **رقم إصدار قبل أي تطبيع:** «1.6.1» تُعامل خانةً خانة. فـ
         // `sanitizeNumerals` في الأسفل تعتبر النقطة الأولى فاصلَ آلاف
         // فتصف «1.6.1» ← «16.1» (نطقٌ خطأ لاسم التطبيق نفسه).
         if (PATTERN_VERSION.matcher(numberStr).matches()) {
-            return versionWords(numberStr, english)
+            return versionWords(numberStr, english, markNumbers)
         }
         // الفصل بين فواصل الآلاف والفاصلة العشرية يتم عبر sanitizeNumerals
         // الذي لا يُهلك الأعداد العشرية ثلاثية الخانات (3.141 تبقى عشرية).
@@ -143,34 +160,53 @@ internal class NumberStep(
             // أرقام تبدأ بـ 0 ولها 7 إلى 15 خانة تُعامل حسب نمط قراءة الأرقام
             if (cleaned.startsWith("0") && cleaned.length in 7..15) {
                 val mode = modeProvider().coerceIn(1, 8)
-                return NumberSpeech.formatByMode(mode, cleaned, english)
+                return NumberSpeech.formatByMode(
+                    mode, cleaned, english, markNumbers
+                )
             }
             val longValue = cleaned.toLongOrNull()
             if (longValue != null) {
-                return if (english) NumberSpeech.toEnglishWords(longValue)
-                else NumberWordsConverter.numberToWords(longValue)
+                return if (english) {
+                    NumberSpeech.toEnglishWords(
+                        longValue, markNumbers = markNumbers
+                    )
+                } else {
+                    NumberWordsConverter.numberToWords(
+                        longValue, markNumbers = markNumbers
+                    )
+                }
             }
             // **بند 3.6:** سلسلة رقمية أعرض من Long (رقم وطني/حساب بنكي/
             // تسلسل 20+ خانة): toLongOrNull تعيد null فكانت تنتقل إلى
             // Double فتتشوه القيمة (دقته 2^53 فقط) — نقرأ الخانات حسب النمط.
             val mode = modeProvider().coerceIn(1, 8)
-            return NumberSpeech.formatByMode(mode, cleaned, english)
+            return NumberSpeech.formatByMode(
+                mode, cleaned, english, markNumbers
+            )
         }
-        if (english) return englishDecimalWords(cleaned)
-        if (cleaned.toDoubleOrNull() == null) return numberStr
-        return NumberWordsConverter.decimalStringToWords(cleaned)
+        if (english) return englishDecimalWords(cleaned, markNumbers)
+        if (cleaned.toDoubleOrNull() == null) {
+            return NumberSpeech.wrapNumber(numberStr, markNumbers)
+        }
+        return NumberWordsConverter.decimalStringToWords(
+            cleaned, markNumbers = markNumbers
+        )
     }
 
     /** كسر عشري إنجليزي: «3.141» → «three point one four one»،
      *  و«0.05» → «zero point zero five» (بلا «فاصلة» العربية). */
-    private fun englishDecimalWords(cleaned: String): String {
+    private fun englishDecimalWords(
+        cleaned: String,
+        markNumbers: Boolean = false
+    ): String {
         val dot = cleaned.indexOf('.')
         val intPart = cleaned.substring(0, dot)
         val fracPart = cleaned.substring(dot + 1)
         val intWords = intPart.toLongOrNull()
-            ?.let { NumberSpeech.toEnglishWords(it) }
+            ?.let { NumberSpeech.toEnglishWords(it, markNumbers = false) }
             ?: englishSpokenDigits(intPart)
-        return "$intWords point ${englishSpokenDigits(fracPart)}"
+        val result = "$intWords point ${englishSpokenDigits(fracPart)}"
+        return NumberSpeech.wrapNumber(result, markNumbers)
     }
 
     /** خانات رقمية إنجليزية متتالية («05» → «zero five»). */
@@ -181,13 +217,21 @@ internal class NumberStep(
     /** رقم إصدار خانةً خانة: «1.6.1» ← «واحد فاصلة ستة فاصلة واحد»،
      *  و«one point six point one» بالإنجليزية. الخانة الواحدة بأولها
      *  تُلفظ «واحد» لا «رقم واحد» لتبقى الصياغة سليمة. */
-    private fun versionWords(version: String, english: Boolean): String {
+    private fun versionWords(
+        version: String,
+        english: Boolean,
+        markNumbers: Boolean = false
+    ): String {
         val separator = if (english) " point " else " فاصلة "
-        return version.split('.').joinToString(separator) { part ->
+        val result = version.split('.').joinToString(separator) { part ->
             part.toLongOrNull()?.let {
-                if (english) NumberSpeech.toEnglishWords(it)
-                else NumberWordsConverter.numberToWords(it)
+                if (english) {
+                    NumberSpeech.toEnglishWords(it, markNumbers = false)
+                } else {
+                    NumberWordsConverter.numberToWords(it, markNumbers = false)
+                }
             } ?: englishSpokenDigits(part)
         }
+        return NumberSpeech.wrapNumber(result, markNumbers)
     }
 }

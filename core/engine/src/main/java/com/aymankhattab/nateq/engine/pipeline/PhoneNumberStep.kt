@@ -9,8 +9,17 @@ import java.util.regex.Pattern
  *  النطق ثابتة (عربية) داخل هذه الخطوة. */
 internal class PhoneNumberStep(
     private val modeProvider: () -> Int = { 1 },
-    private val languageProvider: () -> String? = { null }
+    private val languageProvider: () -> String? = { null },
+    private val markNumbers: Boolean = false
 ) : TextProcessingStep {
+
+    constructor(
+        languageProvider: () -> String?
+    ) : this(
+        modeProvider = { 1 },
+        languageProvider = languageProvider,
+        markNumbers = false
+    )
 
     companion object : TextProcessingStep {
         private val defaultInstance = PhoneNumberStep()
@@ -18,6 +27,10 @@ internal class PhoneNumberStep(
             defaultInstance.apply(input)
         override fun applyEnglish(input: String): String =
             defaultInstance.applyEnglish(input)
+
+        operator fun invoke(
+            languageProvider: () -> String?
+        ): PhoneNumberStep = PhoneNumberStep(languageProvider)
     }
 
     // أنماط أرقام الهواتف: بداية اختيارية + ثم 7-15 رقماً مع فواصل
@@ -125,7 +138,8 @@ internal class PhoneNumberStep(
             val spoken = NumberSpeech.formatByMode(
                 mode = mode,
                 numberStr = "$plusPrefix$digits",
-                isEnglish = !isArabic
+                isEnglish = !isArabic,
+                markNumbers = markNumbers
             )
             val quoted = java.util.regex.Matcher
                 .quoteReplacement(marker + spoken)

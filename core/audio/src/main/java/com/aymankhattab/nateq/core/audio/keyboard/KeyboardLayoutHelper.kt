@@ -1,5 +1,7 @@
 package com.aymankhattab.nateq.core.audio.keyboard
 
+import com.aymankhattab.nateq.core.engine.SingleLetterGuard
+
 /**
  * محددات وتخطيطات مفاتيح لوحة مفاتيح Lord TTS الميسّرة.
  * يحدد طبقات الحروف العربية، الإنجليزية، الرموز، والتشكيل،
@@ -102,7 +104,7 @@ object KeyboardLayoutHelper {
             "ض", "ص", "ث", "ق", "ف", "غ", "ع", "ه", "خ", "ح", "ج"
         )
         val row1 = row1Chars.map { ch ->
-            val spoken = ARABIC_SPOKEN_TEXTS[ch] ?: ch
+            val spoken = SingleLetterGuard.getLetterName(ch) ?: ch
             KeyModel(ch, spoken, ARABIC_PHONETICS[ch])
         }
 
@@ -110,19 +112,19 @@ object KeyboardLayoutHelper {
             "ش", "س", "ي", "ب", "ل", "ا", "ت", "ن", "م", "ك", "ط"
         )
         val row2 = row2Chars.map { ch ->
-            val spoken = ARABIC_SPOKEN_TEXTS[ch] ?: ch
+            val spoken = SingleLetterGuard.getLetterName(ch) ?: ch
             KeyModel(ch, spoken, ARABIC_PHONETICS[ch])
         }
 
         val row3Hamzas = listOf("أ", "إ", "آ", "ؤ", "ئ", "ء")
         val row3 = row3Hamzas.map { ch ->
-            val spoken = ARABIC_SPOKEN_TEXTS[ch] ?: ch
+            val spoken = SingleLetterGuard.getLetterName(ch) ?: ch
             KeyModel(ch, spoken, ARABIC_PHONETICS[ch])
         }
 
         val row4Chars = listOf("ذ", "د", "ز", "ر", "و", "ظ", "ة", "ى")
         val row4 = row4Chars.map { ch ->
-            val spoken = ARABIC_SPOKEN_TEXTS[ch] ?: ch
+            val spoken = SingleLetterGuard.getLetterName(ch) ?: ch
             KeyModel(ch, spoken, ARABIC_PHONETICS[ch])
         }.toMutableList()
         row4.add(
@@ -177,13 +179,15 @@ object KeyboardLayoutHelper {
         )
         val row1 = row1Chars.map { ch ->
             val label = if (isCaps) ch.uppercase() else ch
-            KeyModel(label, label, ENGLISH_PHONETICS[ch])
+            val spoken = SingleLetterGuard.getLetterName(ch) ?: label
+            KeyModel(label, spoken, ENGLISH_PHONETICS[ch])
         }
 
         val row2Chars = listOf("a", "s", "d", "f", "g", "h", "j", "k", "l")
         val row2 = row2Chars.map { ch ->
             val label = if (isCaps) ch.uppercase() else ch
-            KeyModel(label, label, ENGLISH_PHONETICS[ch])
+            val spoken = SingleLetterGuard.getLetterName(ch) ?: label
+            KeyModel(label, spoken, ENGLISH_PHONETICS[ch])
         }
 
         val row3 = mutableListOf<KeyModel>()
@@ -193,7 +197,8 @@ object KeyboardLayoutHelper {
         val row3Chars = listOf("z", "x", "c", "v", "b", "n", "m")
         row3Chars.forEach { ch ->
             val label = if (isCaps) ch.uppercase() else ch
-            row3.add(KeyModel(label, label, ENGLISH_PHONETICS[ch]))
+            val spoken = SingleLetterGuard.getLetterName(ch) ?: label
+            row3.add(KeyModel(label, spoken, ENGLISH_PHONETICS[ch]))
         }
         row3.add(
             KeyModel(

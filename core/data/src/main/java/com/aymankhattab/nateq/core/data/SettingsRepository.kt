@@ -1823,6 +1823,20 @@ class SettingsRepository(context: Context) :
     override fun setTashkeelPreserved(enabled: Boolean) =
         prefs.edit().putBoolean("tashkeel_preserved", enabled).apply()
 
+    override fun getSingleLetterMode(): String =
+        prefs.getString("single_letter_mode", "name") ?: "name"
+
+    override fun setSingleLetterMode(mode: String) {
+        val sanitized = sanitizeString("single_letter_mode", mode)
+        prefs.edit().putString("single_letter_mode", sanitized).apply()
+    }
+
+    override fun isNumberVoiceSpelledWordsEnabled(): Boolean =
+        prefs.getBoolean("number_voice_spelled_words", true)
+
+    override fun setNumberVoiceSpelledWordsEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean("number_voice_spelled_words", enabled).apply()
+
     // ============ مراحل تحويل معالجة النصوص ============
 
     override fun isTimeConversionEnabled(): Boolean =
@@ -2792,6 +2806,10 @@ class SettingsRepository(context: Context) :
         key: String,
         value: String
     ): String = when (key) {
+        "single_letter_mode" -> when (value) {
+            "as_written", "dictionary" -> value
+            else -> "name"
+        }
         "time_chime_sound" -> value.takeIf {
             it in validTimeChimeSounds()
         } ?: "classic_bell"

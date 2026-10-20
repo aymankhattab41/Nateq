@@ -9,9 +9,18 @@ import java.util.regex.Pattern
  * مع دعم صيغ YYYY-MM-DD / DD-MM-YYYY / DD.MM.YYYY بالتقويم الميلادي فقط
  * كمسار وحيد بلا تفرّع.
  */
-internal class DateStep : TextProcessingStep {
+internal class DateStep(
+    private val markNumbers: Boolean = false
+) : TextProcessingStep {
 
-    private companion object {
+    companion object : TextProcessingStep {
+        private val defaultInstance = DateStep()
+        override fun apply(input: String): String =
+            defaultInstance.apply(input)
+        override fun applyEnglish(input: String): String =
+            defaultInstance.applyEnglish(input)
+        override fun apply(input: String, languageTag: String?): String =
+            defaultInstance.apply(input, languageTag)
         // أنماط التواريخ: حدود الكلمات أو تأكيدات عدم الالتصاق بحروف/أرقام
         // تمنع التقاط تاريخ داخل متوالية أرقام لاصقة («x12.05.2024y» أو IP).
         val PATTERN_DATE_YMD = Pattern.compile(
@@ -103,8 +112,12 @@ internal class DateStep : TextProcessingStep {
     private fun formatDate(day: Int, month: Int, year: Int): String {
         if (month !in 1..12) return "التاريخ غير صالح"
         if (day !in 1..31) return "التاريخ غير صالح"
-        val dayText = NumberWordsConverter.numberToWords(day.toLong())
-        val yearText = NumberWordsConverter.numberToWords(year.toLong())
+        val dayText = NumberWordsConverter.numberToWords(
+            day.toLong(), markNumbers = markNumbers
+        )
+        val yearText = NumberWordsConverter.numberToWords(
+            year.toLong(), markNumbers = markNumbers
+        )
         return "$dayText ${MONTHS_AR[month]} $yearText"
     }
 
@@ -112,16 +125,22 @@ internal class DateStep : TextProcessingStep {
      *  («March fifteenth two thousand twenty four»). */
     private fun formatDateEnglish(day: Int, month: Int, year: Int): String {
         if (month !in 1..12 || day !in 1..31) return "invalid date"
-        val dayText = englishOrdinal(day)
-        val yearText = NumberSpeech.toEnglishWords(year)
+        val dayText = englishOrdinal(day, markNumbers = markNumbers)
+        val yearText = NumberSpeech.toEnglishWords(
+            year, markNumbers = markNumbers
+        )
         return "${MONTHS_EN[month]} $dayText $yearText"
     }
 
     /** اليوم بالصيغة الترتيبية («fifteenth»، «twenty first») — يُحوَّل آخر
      *  مكوّن من كلمات العدد الإنجليزية لا تُلحق به اللاحقة عشوائياً
      *  (كان «twenty one» + «st» ينتج «twenty onest»). */
-    private fun englishOrdinal(day: Int): String {
-        val parts = NumberSpeech.toEnglishWords(day).split(" ")
+    private fun englishOrdinal(
+        day: Int,
+        markNumbers: Boolean = false
+    ): String {
+        val parts = NumberSpeech.toEnglishWords(day, markNumbers = false)
+            .split(" ")
         val last = parts.last()
         val ordinalLast = when (last) {
             "one" -> "first"
@@ -141,7 +160,8 @@ internal class DateStep : TextProcessingStep {
             "ninety" -> "ninetieth"
             else -> "${last}th"
         }
-        return (parts.dropLast(1) + ordinalLast).joinToString(" ")
+        val joined = (parts.dropLast(1) + ordinalLast).joinToString(" ")
+        return NumberSpeech.wrapNumber(joined, markNumbers)
     }
 
 }

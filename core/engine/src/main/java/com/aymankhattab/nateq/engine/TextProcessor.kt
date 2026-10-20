@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.engine
 
 import android.content.Context
+import com.aymankhattab.nateq.core.engine.EngineMarkers
 import com.aymankhattab.nateq.core.engine.PunctuationLevels
 import com.aymankhattab.nateq.core.engine.SynthesisConfig
 import com.aymankhattab.nateq.engine.pipeline.AcronymStep
@@ -18,6 +19,7 @@ import com.aymankhattab.nateq.engine.pipeline.PhoneNumberStep
 import com.aymankhattab.nateq.engine.pipeline.PunctuationStep
 import com.aymankhattab.nateq.engine.pipeline.RomanNumeralStep
 import com.aymankhattab.nateq.engine.pipeline.SymbolStep
+import com.aymankhattab.nateq.engine.pipeline.TanweenProtectStep
 import com.aymankhattab.nateq.engine.pipeline.TashkeelStripStep
 import com.aymankhattab.nateq.engine.pipeline.TextProcessingStep
 import com.aymankhattab.nateq.engine.pipeline.TimeStep
@@ -34,7 +36,7 @@ import java.util.regex.Pattern
  * [TextProcessor.process]]) فلا تُنطق الحركاتُ حروفاً غريبة ولا يُجرد نصٌّ
  * يجيد المحركُ قراءته. الباقية (غير المعروفة) تُسلك السلوكَ القائم: تجريد.
  */
-internal val ARABIC_TASHKEEL_AWARE_ENGINES: Set<String> = setOf(
+val ARABIC_TASHKEEL_AWARE_ENGINES: Set<String> = setOf(
     "com.google.android.tts"
 )
 
@@ -44,7 +46,7 @@ internal val ARABIC_TASHKEEL_AWARE_ENGINES: Set<String> = setOf(
  * بفهمه التشكيل (انظر [ARABIC_TASHKEEL_AWARE_ENGINES]) وnull (غير معروف)
  * يُعالَجان بحذر: المعروف يُبقي التشكيل، وغير المعروف يُجرد (سلوك سابق).
  */
-internal fun stripTashkeelFor(enginePackage: String?): Boolean =
+fun stripTashkeelFor(enginePackage: String?): Boolean =
     enginePackage !in ARABIC_TASHKEEL_AWARE_ENGINES
 
 /**
@@ -152,36 +154,92 @@ class TextProcessor(
         if (s?.isArabicNormalizationEnabled() != false) {
             steps += FrancoArabicStep()
         }
+        steps += TanweenProtectStep
         steps += TashkeelStripStep
         steps += EmojiStripStep { emojiEnabled }
         return steps
     }
 
-    private fun buildBaseSteps(): List<TextProcessingStep> {
+    private fun buildBaseSteps(
+        markNumbers: Boolean = false
+    ): List<TextProcessingStep> {
         val steps = mutableListOf<TextProcessingStep>()
         val s = injectedSettings
         steps += IndicDigitsStep
         steps += UrlStep
-        if (s?.isTimeConversionEnabled() != false) steps += DateStep()
         if (s?.isTimeConversionEnabled() != false) {
-            steps += TimeStep { s?.getTimeSuffixMMode() ?: "context" }
+            steps += DateStep(markNumbers = markNumbers)
         }
-        if (s?.isCurrencyConversionEnabled() != false) steps += CurrencyStep
-        if (s?.isUnitConversionEnabled() != false) steps += UnitStep
+        if (s?.isTimeConversionEnabled() != false) {
+            steps += TimeStep(
+                modeProvider = { s?.getTimeSuffixMMode() ?: "context" },
+                markNumbers = markNumbers
+            )
+        }
+        if (s?.isCurrencyConversionEnabled() != false) {
+            if (markNumbers) {
+                steps += object : TextProcessingStep {
+                    override fun apply(input: String): String =
+                        CurrencyStep.apply(input, markNumbers = true)
+                    override fun applyEnglish(input: String): String =
+                        CurrencyStep.applyEnglish(input, markNumbers = true)
+                }
+            } else {
+                steps += CurrencyStep
+            }
+        }
+        if (s?.isUnitConversionEnabled() != false) {
+            if (markNumbers) {
+                steps += object : TextProcessingStep {
+                    override fun apply(input: String): String =
+                        UnitStep.apply(input, markNumbers = true)
+                }
+            } else {
+                steps += UnitStep
+            }
+        }
         steps += AcronymStep
         steps += ArabicSlashStep
         return steps
     }
 
-    private fun buildHeavySteps(): List<TextProcessingStep> {
+    private fun buildHeavySteps(
+        markNumbers: Boolean = false
+    ): List<TextProcessingStep> {
         val steps = mutableListOf<TextProcessingStep>()
         val s = injectedSettings
-        steps += buildBaseSteps()
+        steps += buildBaseSteps(markNumbers)
         steps += RomanNumeralStep
-        if (s?.isPhoneConversionEnabled() != false) steps += phoneNumberStep
+        if (s?.isPhoneConversionEnabled() != false) {
+            if (markNumbers) {
+                steps += PhoneNumberStep(
+                    languageProvider = {
+                        injectedSettings?.getNumberReadingLanguage()
+                    },
+                    modeProvider = {
+                        injectedSettings?.getNumberReadingMode() ?: 1
+                    },
+                    markNumbers = true
+                )
+            } else {
+                steps += phoneNumberStep
+            }
+        }
         if (s?.isSymbolConversionEnabled() != false) steps += SymbolStep
         steps += punctuationStep
-        steps += numberStep
+        if (markNumbers) {
+            steps += NumberStep(
+                languageProvider = {
+                    injectedSettings?.getNumberReadingLanguage()
+                },
+                modeProvider = {
+                    injectedSettings?.getNumberReadingMode() ?: 1
+                },
+                markNumbers = true
+            )
+        } else {
+            steps += numberStep
+        }
         return steps
     }
 
@@ -190,23 +248,66 @@ class TextProcessor(
         EmojiStripStep { emojiEnabled }
     )
 
-    private fun buildEnglishBaseSteps(): List<TextProcessingStep> {
+    private fun buildEnglishBaseSteps(
+        markNumbers: Boolean = false
+    ): List<TextProcessingStep> {
         val steps = mutableListOf<TextProcessingStep>()
         val s = injectedSettings
         steps += IndicDigitsStep
-        if (s?.isTimeConversionEnabled() != false) steps += DateStep()
-        if (s?.isCurrencyConversionEnabled() != false) steps += CurrencyStep
+        if (s?.isTimeConversionEnabled() != false) {
+            steps += DateStep(markNumbers = markNumbers)
+        }
+        if (s?.isCurrencyConversionEnabled() != false) {
+            if (markNumbers) {
+                steps += object : TextProcessingStep {
+                    override fun apply(input: String): String =
+                        CurrencyStep.apply(input, markNumbers = true)
+                    override fun applyEnglish(input: String): String =
+                        CurrencyStep.applyEnglish(input, markNumbers = true)
+                }
+            } else {
+                steps += CurrencyStep
+            }
+        }
         return steps
     }
 
-    private fun buildEnglishHeavySteps(): List<TextProcessingStep> {
+    private fun buildEnglishHeavySteps(
+        markNumbers: Boolean = false
+    ): List<TextProcessingStep> {
         val steps = mutableListOf<TextProcessingStep>()
         val s = injectedSettings
-        steps += buildEnglishBaseSteps()
-        if (s?.isPhoneConversionEnabled() != false) steps += phoneNumberStep
+        steps += buildEnglishBaseSteps(markNumbers)
+        if (s?.isPhoneConversionEnabled() != false) {
+            if (markNumbers) {
+                steps += PhoneNumberStep(
+                    languageProvider = {
+                        injectedSettings?.getNumberReadingLanguage()
+                    },
+                    modeProvider = {
+                        injectedSettings?.getNumberReadingMode() ?: 1
+                    },
+                    markNumbers = true
+                )
+            } else {
+                steps += phoneNumberStep
+            }
+        }
         if (s?.isSymbolConversionEnabled() != false) steps += SymbolStep
         steps += punctuationStep
-        steps += numberStep
+        if (markNumbers) {
+            steps += NumberStep(
+                languageProvider = {
+                    injectedSettings?.getNumberReadingLanguage()
+                },
+                modeProvider = {
+                    injectedSettings?.getNumberReadingMode() ?: 1
+                },
+                markNumbers = true
+            )
+        } else {
+            steps += numberStep
+        }
         return steps
     }
 
@@ -223,12 +324,14 @@ class TextProcessor(
      * @param applyDictionary هل يُطبّق القاموس هنا؟ افتراضياً true لمن
      *                        يستدعيها مباشرة (الاختبارات)؛ المسارات الحية
      *                        تمرر false لأنها طبقت القاموس أولاً (الأمر 1).
+     * @param markNumbers هل تُحاط الأرقام بعلامات الحجز \uE030..\uE031؟
      */
     fun process(
         text: String,
         languageTag: String = LanguageCode.AR.tag,
         enginePackage: String? = null,
-        applyDictionary: Boolean = true
+        applyDictionary: Boolean = true,
+        markNumbers: Boolean = false
     ): String {
         if (text.isBlank()) return text
 
@@ -256,19 +359,31 @@ class TextProcessor(
             for (step in buildEnglishPreamble()) out = step.applyEnglish(out)
             val urls = ArrayList<String>()
             out = maskUrls(out, urls)
-            if (requiresEnglishPipeline(out)) {
-                for (step in buildEnglishHeavySteps()) {
+            if (requiresEnglishPipeline(out) || markNumbers) {
+                for (step in buildEnglishHeavySteps(markNumbers)) {
                     out = step.applyEnglish(out)
                 }
             }
             out = unmaskUrls(out, urls)
-            return CleanupStep.apply(out)
+            if (markNumbers) {
+                val spelledEnabled = injectedSettings
+                    ?.isNumberVoiceSpelledWordsEnabled() ?: true
+                if (spelledEnabled) {
+                    out = NumberWordDetector.detectAndMark(out, languageTag)
+                }
+                out = markRemainingDigits(out)
+            }
+            val cleaned = CleanupStep.apply(out)
+            return stripNumberMarkersIfUnmarked(cleaned, markNumbers)
         }
 
         // اللغات الأخرى (fr/de/es…) تُعاد كما هي بعد توسيع الإيموجي فقط.
         if (!LanguageCode.isArabic(languageTag)) {
-            if (expanded != null) return CleanupStep.apply(expanded)
-            return result
+            if (expanded != null) {
+                val cleaned = CleanupStep.apply(expanded)
+                return stripNumberMarkersIfUnmarked(cleaned, markNumbers)
+            }
+            return stripNumberMarkersIfUnmarked(result, markNumbers)
         }
 
         // text قد يحوي إيموجي عُرضت أسماؤها (expanded) أو تُحذف لاحقاً
@@ -296,14 +411,26 @@ class TextProcessor(
         // عربي صافٍ بلا أرقام — نتخطى كل مراحل regex الثقيلة (التواريخ/
         // الأوقات/العملات/الروابط/الرومانية/الهواتف/الأرقام/الرموز) ونذهب
         // مباشرةً لتنظيف المسافات. يوفّر تريليونات المطابقات على كل إعلان.
-        if (!requiresRegexPipeline(out)) {
+        if (!requiresRegexPipeline(out) && !markNumbers) {
             out = unmaskUrls(out, urls)
-            return finalizeArabic(voweledSource, CleanupStep.apply(out))
+            val cleaned = CleanupStep.apply(out)
+            val finalized = finalizeArabic(voweledSource, cleaned)
+            return stripNumberMarkersIfUnmarked(finalized, markNumbers)
         }
 
-        for (step in buildHeavySteps()) out = step.apply(out)
+        for (step in buildHeavySteps(markNumbers)) out = step.apply(out)
         out = unmaskUrls(out, urls)
-        return finalizeArabic(voweledSource, CleanupStep.apply(out))
+        if (markNumbers) {
+            val spelledEnabled = injectedSettings
+                ?.isNumberVoiceSpelledWordsEnabled() ?: true
+            if (spelledEnabled) {
+                out = NumberWordDetector.detectAndMark(out, languageTag)
+            }
+            out = markRemainingDigits(out)
+        }
+        val cleaned = CleanupStep.apply(out)
+        val finalized = finalizeArabic(voweledSource, cleaned)
+        return stripNumberMarkersIfUnmarked(finalized, markNumbers)
     }
 
     /**
@@ -373,36 +500,57 @@ class TextProcessor(
      * يُكرر تحويل الأرقام هنا ولا يُستخدم الناتج إلا لتهيئة التقسيم.
      * @param languageTag كود اللغة (مثل "ar"، "en") — المعالجة مخصصة للعربية
      *                    فقط كـ[process]؛ غير العربية تُعاد كما هي.
+     * @param markNumbers هل تُحاط الأرقام والألفاظ العددية بعلامات الحجز؟
      */
     fun processSemantics(
         text: String,
-        languageTag: String = LanguageCode.AR.tag
+        languageTag: String = LanguageCode.AR.tag,
+        markNumbers: Boolean = false
     ): String {
         if (text.isBlank()) return text
         // توحيد NFC عند المدخل مطابقاً لـ[process] — يبقى الإخراج مطابقاً
         // لنمط التقسيم المعدَّ مسبقاً على صيغة موحَّدة.
         val normalized = Normalizer.normalize(text, Normalizer.Form.NFC)
+        val spelledWordsEnabled =
+            injectedSettings?.isNumberVoiceSpelledWordsEnabled() ?: true
+
         if (LanguageCode.isEnglish(languageTag)) {
             val urls = ArrayList<String>()
             var english = maskUrls(normalized, urls)
-            if (requiresEnglishPipeline(english)) {
-                for (step in buildEnglishBaseSteps()) {
+            if (requiresEnglishPipeline(english) || markNumbers) {
+                for (step in buildEnglishBaseSteps(markNumbers)) {
                     english = step.applyEnglish(english)
                 }
             }
             english = unmaskUrls(english, urls)
+            if (markNumbers) {
+                if (spelledWordsEnabled) {
+                    english = NumberWordDetector.detectAndMark(
+                        english, languageTag
+                    )
+                }
+                english = markRemainingDigits(english)
+            }
             return CleanupStep.apply(english)
         }
         if (!LanguageCode.isArabic(languageTag)) return normalized
         val urls = ArrayList<String>()
         var result = maskUrls(normalized, urls)
-        if (!requiresRegexPipeline(result)) {
-            result = unmaskUrls(result, urls)
-            return CleanupStep.apply(result)
+        if (requiresRegexPipeline(result) || markNumbers) {
+            for (step in buildBaseSteps(markNumbers)) {
+                result = step.apply(result)
+            }
         }
-        for (step in buildBaseSteps()) result = step.apply(result)
         result = unmaskUrls(result, urls)
-        return result
+        if (markNumbers) {
+            if (spelledWordsEnabled) {
+                result = NumberWordDetector.detectAndMark(
+                    result, languageTag
+                )
+            }
+            result = markRemainingDigits(result)
+        }
+        return CleanupStep.apply(result)
     }
 
     /**
@@ -655,11 +803,63 @@ class TextProcessor(
     fun numberToWords(number: Number): String =
         NumberWordsConverter.numberToWords(number)
 
+    /**
+     * إحاطة الأرقام الخام المتبقية (غير الموسومة سلفاً) بعلامات الحجز.
+     */
+    fun markRemainingDigits(text: String): String {
+        val matcher = PATTERN_UNMARKED_DIGITS.matcher(text)
+        if (!matcher.find()) return text
+        matcher.reset()
+        val sb = StringBuilder(text.length + 32)
+        while (matcher.find()) {
+            val marked = matcher.group(1)
+            val digits = matcher.group(2)
+            if (marked != null) {
+                matcher.appendReplacement(
+                    sb,
+                    Matcher.quoteReplacement(marked)
+                )
+            } else if (digits != null) {
+                val wrapped = "${EngineMarkers.NUMBER_MARK_START}$digits" +
+                    "${EngineMarkers.NUMBER_MARK_END}"
+                matcher.appendReplacement(
+                    sb,
+                    Matcher.quoteReplacement(wrapped)
+                )
+            }
+        }
+        matcher.appendTail(sb)
+        return sb.toString()
+    }
+
+    private fun stripNumberMarkersIfUnmarked(
+        text: String,
+        markNumbers: Boolean
+    ): String =
+        if (!markNumbers && (text.contains(EngineMarkers.NUMBER_MARK_START) ||
+            text.contains(EngineMarkers.NUMBER_MARK_END))) {
+            text.replace(EngineMarkers.NUMBER_MARK_START, "")
+                .replace(EngineMarkers.NUMBER_MARK_END, "")
+        } else {
+            text
+        }
+
     private companion object {
         /** نمط الروابط المحجوبة (نفس نمط [UrlStep]). */
         private val PATTERN_URL_EN = Pattern.compile(
             """(?i)\b(?:https?://|www\.)[^\s<>"']+|""" +
                 """\b[a-zA-Z0-9_.-]+\.[a-zA-Z]{2,}(?::\d+)?/[^\s<>"']*"""
+        )
+
+        /**
+         * نمط التقاط الأرقام الخام المتبقية دون وسمها مسبقاً بعلامات الحجز.
+         */
+        private val PATTERN_UNMARKED_DIGITS = Pattern.compile(
+            "(${EngineMarkers.NUMBER_MARK_START}" +
+                "[^${EngineMarkers.NUMBER_MARK_END}]*" +
+                "${EngineMarkers.NUMBER_MARK_END})|" +
+                "([0-9\u0660-\u0669\u06F0-\u06F9]+(?:[.,\u066B\u066C]" +
+                "[0-9\u0660-\u0669\u06F0-\u06F9]+)*)"
         )
 
         /** أول محرف في منطقة الاستخدام الخاص يُستخدم لحجز الروابط. */

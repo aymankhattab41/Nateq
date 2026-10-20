@@ -3,6 +3,7 @@ package com.aymankhattab.nateq.core.audio.engine
 import android.util.Log
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.VoicePrefsProvider
+import com.aymankhattab.nateq.core.engine.EngineMarkers
 import com.aymankhattab.nateq.engine.EmojiSpeech
 import com.aymankhattab.nateq.engine.PronunciationDictionary
 import com.aymankhattab.nateq.engine.SpeechPart
@@ -117,7 +118,8 @@ object SpeechPlanner {
                     SettingsRepository.VOICE_CATEGORY_EMOJI
                 )
             }.getOrNull() ?: defaultRate
-            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER -> runCatching {
+            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER,
+            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER_PARAMS -> runCatching {
                 settings?.getSpeechRateForCategory(
                     SettingsRepository.VOICE_CATEGORY_NUMBERS
                 )
@@ -131,7 +133,8 @@ object SpeechPlanner {
                     SettingsRepository.VOICE_CATEGORY_EMOJI
                 )
             }.getOrNull() ?: defaultPitch
-            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER -> runCatching {
+            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER,
+            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER_PARAMS -> runCatching {
                 settings?.getPitchForCategory(
                     SettingsRepository.VOICE_CATEGORY_NUMBERS
                 )
@@ -145,7 +148,8 @@ object SpeechPlanner {
                     SettingsRepository.VOICE_CATEGORY_EMOJI
                 )
             }.getOrNull() ?: defaultVolume
-            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER -> runCatching {
+            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER,
+            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER_PARAMS -> runCatching {
                 settings?.getVolumeForCategory(
                     SettingsRepository.VOICE_CATEGORY_NUMBERS
                 )
@@ -237,9 +241,12 @@ object SpeechPlanner {
                     defaultPitch = defaultPitch,
                     defaultVolume = defaultVolume
                 )
+                val cleanEmoji = part.text
+                    .replace(EngineMarkers.NUMBER_MARK_START, "")
+                    .replace(EngineMarkers.NUMBER_MARK_END, "")
                 items.add(
                     SpeechPlanItem(
-                        text = part.text,
+                        text = cleanEmoji,
                         languageTag = emojiLang,
                         role = SpeechRole.EMOJI,
                         engine = resolved.engine,
@@ -257,11 +264,16 @@ object SpeechPlanner {
                     numberLanguage = numberLanguage
                 )
                 for (seg in segs) {
-                    val role = if (seg.isNumericOnly()) {
+                    val role = if (seg.role == SpeechRole.NUMBER ||
+                        seg.isNumericOnly()
+                    ) {
                         SpeechRole.NUMBER
                     } else {
                         SpeechRole.TEXT
                     }
+                    val cleanText = seg.text
+                        .replace(EngineMarkers.NUMBER_MARK_START, "")
+                        .replace(EngineMarkers.NUMBER_MARK_END, "")
                     val resolved = resolveVoiceForSegment(
                         languageTag = seg.languageTag,
                         role = role,
@@ -274,7 +286,7 @@ object SpeechPlanner {
                     )
                     items.add(
                         SpeechPlanItem(
-                            text = seg.text,
+                            text = cleanText,
                             languageTag = seg.languageTag,
                             role = role,
                             engine = resolved.engine,
@@ -289,18 +301,20 @@ object SpeechPlanner {
         }
 
         // خطوة 5: تسجيل debug تفصيلي لكل مقطع (ع٤٢-8)
-        for (item in items) {
-            val preview = if (item.text.length > 25) {
-                item.text.take(25) + "…"
-            } else {
-                item.text
+        if (diagnostics) {
+            for (item in items) {
+                val preview = if (item.text.length > 25) {
+                    item.text.take(25) + "…"
+                } else {
+                    item.text
+                }
+                Log.d(
+                    "NateqLang",
+                    "[SpeechPlanner] seg: text='$preview', " +
+                        "tag='${item.languageTag}', role=${item.role}, " +
+                        "engine='${item.engine}', voice='${item.voiceId}'"
+                )
             }
-            Log.d(
-                TAG,
-                "[SpeechPlanner] seg: text='$preview', " +
-                    "tag='${item.languageTag}', role=${item.role}, " +
-                    "engine='${item.engine}', voice='${item.voiceId}'"
-            )
         }
 
         return items

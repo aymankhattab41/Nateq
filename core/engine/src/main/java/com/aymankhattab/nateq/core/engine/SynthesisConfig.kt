@@ -62,4 +62,15 @@ interface SynthesisConfig : TextProcessingPreferences {
      * أو «evening» (مساءً دائماً).
      */
     fun getTimeSuffixMMode(): String = "context"
+
+    /**
+     * وضع نطق الحرف المفرد: «name» (اسم الحرف، الافتراضي)،
+     * «as_written» (كما هو مكتوب)، «dictionary» (حسب القاموس).
+     */
+    fun getSingleLetterMode(): String = "name"
+
+    /**
+     * تطبيق صوت فئة الأرقام على الأعداد المكتوبة بالحروف (الافتراضي: true).
+     */
+    fun isNumberVoiceSpelledWordsEnabled(): Boolean = true
 }

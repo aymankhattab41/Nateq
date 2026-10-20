@@ -520,24 +520,38 @@ internal object CurrencyStep : TextProcessingStep {
     private val arabicPatterns = compilePatterns(CURRENCY_SYMBOLS)
     private val englishPatterns = compilePatterns(CURRENCY_SYMBOLS_EN)
 
-    override fun apply(input: String): String = process(
+    override fun apply(input: String): String =
+        apply(input, markNumbers = false)
+
+    fun apply(input: String, markNumbers: Boolean): String = process(
         input,
         arabicPatterns,
         CURRENCY_CODE_INFO,
-        phrase = { amount, info -> currencyAmountPhrase(amount, info) },
-        fallback = { amount -> NumberWordsConverter.numberToWords(amount) }
+        phrase = { amount, info ->
+            currencyAmountPhrase(amount, info, markNumbers)
+        },
+        fallback = { amount ->
+            NumberWordsConverter.numberToWords(amount, markNumbers)
+        }
     )
 
     /** النسخة الإنجليزية: أسماء العملات والكسور إنجليزية
      *  («one dollar and fifty cents»). */
-    override fun applyEnglish(input: String): String = process(
+    override fun applyEnglish(input: String): String =
+        applyEnglish(input, markNumbers = false)
+
+    fun applyEnglish(input: String, markNumbers: Boolean): String = process(
         input,
         englishPatterns,
         CURRENCY_CODE_INFO_EN,
         phrase = { amount, info ->
-            englishCurrencyAmountPhrase(amount, info)
+            englishCurrencyAmountPhrase(amount, info, markNumbers)
         },
-        fallback = { amount -> NumberSpeech.toEnglishWords(amount.toLong()) }
+        fallback = { amount ->
+            NumberSpeech.toEnglishWords(
+                amount.toLong(), markNumbers = markNumbers
+            )
+        }
     )
 
     /** التطبيق الموحّد للغتين: بوابة → رموز قبل/بعد → أكواد قبل/بعد. */
@@ -627,7 +641,8 @@ internal object CurrencyStep : TextProcessingStep {
      *  تمييز النصب لـ 11–99، والجنس المؤنث عبر [NumberSpeech]. */
     internal fun currencyAmountPhrase(
         amount: Double,
-        info: CurrencyInfo
+        info: CurrencyInfo,
+        markNumbers: Boolean = false
     ): String {
         val whole = amount.toLong()
         val isNeg = whole < 0L || (whole == 0L && amount < 0.0)
@@ -645,7 +660,9 @@ internal object CurrencyStep : TextProcessingStep {
         val carry = fracSubunitsRaw / info.subunitsPerUnit
         val absWhole = abs(whole) + carry
         val fracSubunits = fracSubunitsRaw % info.subunitsPerUnit
-        val fracPhrase = currencyFractionPhrase(fracSubunits, info)
+        val fracPhrase = currencyFractionPhrase(
+            fracSubunits, info, markNumbers
+        )
         // مبلغ كسري صرف (0.50$) → «خمسون سنت» بلا «و» افتتاحية.
         if (absWhole == 0L && fracPhrase.isNotEmpty()) {
             // بند 3.6: المبلغ الكسري السلبي يحافظ على إشارته
@@ -658,22 +675,27 @@ internal object CurrencyStep : TextProcessingStep {
         // المفرد الخاطئة («ناقص اثنان دولار»). وكما يسبق المحوّلُ الرقمي
         // الأعدادَ السالبة بكلمة «ناقص » يُسبق المبلغُ بها أيضاً.
         val wholePhrase = when {
-            absWhole == 0L -> "صِفْرْ ${info.name}"
+            absWhole == 0L -> {
+                val z = NumberSpeech.wrapNumber("صِفْرْ", markNumbers)
+                "$z ${info.name}"
+            }
             absWhole == 1L -> {
                 val unit = if (info.isFeminine) "واحدة" else "واحد"
-                "${info.name} $unit"
+                val u = NumberSpeech.wrapNumber(unit, markNumbers)
+                "${info.name} $u"
             }
             absWhole == 2L -> info.dual
             absWhole in 3..10 -> {
                 val units = NumberWordsConverter.unitNumberWord(
                     absWhole.toInt(),
-                    info.isFeminine
+                    info.isFeminine,
+                    markNumbers = markNumbers
                 )
                 "$units ${info.plural}"
             }
             else -> {
                 val words = numberToWordsForGender(
-                    absWhole, info.isFeminine
+                    absWhole, info.isFeminine, markNumbers
                 )
                 val rem100 = (absWhole % 100).toInt()
                 // **بند 3.2 (تنوين نصب):** العدد المركّب 11–99 يلزم
@@ -700,13 +722,15 @@ internal object CurrencyStep : TextProcessingStep {
      *  .50 ← «خمسون سنت». */
     private fun currencyFractionPhrase(
         subunits: Int,
-        info: CurrencyInfo
+        info: CurrencyInfo,
+        markNumbers: Boolean = false
     ): String {
         if (subunits <= 0) return ""
         return when (subunits) {
             1 -> {
                 val unit = if (info.subunitFeminine) "واحدة" else "واحد"
-                "${info.subunit} $unit"
+                val u = NumberSpeech.wrapNumber(unit, markNumbers)
+                "${info.subunit} $u"
             }
             // مثنى الوحدة الفرعية: المؤنثة تنتهي بتاء مربوطة (هللة/بيسة)
             // فتُفرد التاء وتُفتح بألف وتاء («هللتان»/«بيستان») بدل «هللةتان».
@@ -718,13 +742,14 @@ internal object CurrencyStep : TextProcessingStep {
             in 3..10 -> {
                 val units = NumberWordsConverter.unitNumberWord(
                     subunits,
-                    info.subunitFeminine
+                    info.subunitFeminine,
+                    markNumbers = markNumbers
                 )
                 "$units ${info.subunitPlural}"
             }
             else -> {
                 val words = NumberWordsConverter.numberToWords(
-                    subunits.toDouble()
+                    subunits.toDouble(), markNumbers
                 )
                 // **بند 3.2:** الوحدة الفرعية مثل الرئيسية: 11–99 منصوبة
                 // («تسعة وعشرون سنتاً» لا «تسعة وعشرون سنت»).
@@ -744,7 +769,8 @@ internal object CurrencyStep : TextProcessingStep {
      *  والسالب ← «minus …». لا جنس ولا مثنى في الإنجليزية. */
     internal fun englishCurrencyAmountPhrase(
         amount: Double,
-        info: CurrencyInfoEn
+        info: CurrencyInfoEn,
+        markNumbers: Boolean = false
     ): String {
         val whole = amount.toLong()
         val isNeg = whole < 0L || (whole == 0L && amount < 0.0)
@@ -755,15 +781,23 @@ internal object CurrencyStep : TextProcessingStep {
         val carry = fracSubunitsRaw / info.subunitsPerUnit
         val absWhole = abs(whole) + carry
         val fracSubunits = fracSubunitsRaw % info.subunitsPerUnit
-        val fracPhrase = englishFractionPhrase(fracSubunits, info)
+        val fracPhrase = englishFractionPhrase(
+            fracSubunits, info, markNumbers
+        )
         if (absWhole == 0L && fracPhrase.isNotEmpty()) {
             return if (isNeg) "minus $fracPhrase" else fracPhrase
         }
         val wholePhrase = when (absWhole) {
-            0L -> "zero ${info.plural}"
-            1L -> "one ${info.name}"
+            0L -> {
+                val z = NumberSpeech.wrapNumber("zero", markNumbers)
+                "$z ${info.plural}"
+            }
+            1L -> {
+                val o = NumberSpeech.wrapNumber("one", markNumbers)
+                "$o ${info.name}"
+            }
             else -> "${
-                NumberSpeech.toEnglishWords(absWhole)
+                NumberSpeech.toEnglishWords(absWhole, markNumbers = markNumbers)
             } ${info.plural}"
         }
         val base = if (isNeg) "minus $wholePhrase" else wholePhrase
@@ -778,13 +812,17 @@ internal object CurrencyStep : TextProcessingStep {
      *  .50 ← «fifty cents». */
     private fun englishFractionPhrase(
         subunits: Int,
-        info: CurrencyInfoEn
+        info: CurrencyInfoEn,
+        markNumbers: Boolean = false
     ): String {
         if (subunits <= 0) return ""
         return if (subunits == 1) {
-            "one ${info.subunit}"
+            "${NumberSpeech.wrapNumber("one", markNumbers)} ${info.subunit}"
         } else {
-            "${NumberSpeech.toEnglishWords(subunits)} ${info.subunitPlural}"
+            val words = NumberSpeech.toEnglishWords(
+                subunits, markNumbers = markNumbers
+            )
+            "$words ${info.subunitPlural}"
         }
     }
 
@@ -800,11 +838,14 @@ internal object CurrencyStep : TextProcessingStep {
      *  الكبيرة تذهب إلى [NumberWordsConverter]. */
     private fun numberToWordsForGender(
         n: Long,
-        isFeminine: Boolean
+        isFeminine: Boolean,
+        markNumbers: Boolean = false
     ): String {
         if (isFeminine && n <= Int.MAX_VALUE) {
-            return NumberSpeech.toArabicWords(n.toInt(), isFeminine)
+            return NumberSpeech.toArabicWords(
+                n.toInt(), isFeminine, markNumbers = markNumbers
+            )
         }
-        return NumberWordsConverter.numberToWords(n)
+        return NumberWordsConverter.numberToWords(n, markNumbers = markNumbers)
     }
 }

@@ -5,13 +5,18 @@ import java.util.regex.Pattern
 
 /** معالجة الأوقات: 14:30 → «الثانية والنصف ظهراً». */
 internal class TimeStep(
-    private val modeProvider: () -> String = { "context" }
+    private val modeProvider: () -> String = { "context" },
+    private val markNumbers: Boolean = false
 ) : TextProcessingStep {
 
     companion object : TextProcessingStep {
         const val MODE_CONTEXT = "context"
         const val MODE_LETTER = "letter"
         const val MODE_EVENING = "evening"
+
+        operator fun invoke(
+            modeProvider: () -> String
+        ): TimeStep = TimeStep(modeProvider)
 
         private val defaultInstance = TimeStep()
         override fun apply(input: String): String = defaultInstance.apply(input)
@@ -195,29 +200,46 @@ internal class TimeStep(
 
         // الساعة تُنطق بالصيغة الترتيبية المؤنثة المعرّفة بأل:
         // «الثانية والنصف مساءً» لا «اثنان والنصف مساءً».
-        val hourText = NumberSpeech.toOrdinalHourWord(hour12)
+        val hourText = NumberSpeech.toOrdinalHourWord(
+            hour12, markNumbers = markNumbers
+        )
 
-        fun minutesPart(count: Int): String = when (count) {
-            1 -> "دقيقة واحدة"
-            2 -> "دقيقتان"
-            in 3..10 -> "${NumberSpeech.toArabicWords(count)} دقائق"
-            else -> "${NumberSpeech.toArabicWords(count)} دقيقة"
+        fun minutesPart(count: Int): String {
+            val words = NumberSpeech.toArabicWords(
+                count, markNumbers = markNumbers
+            )
+            return when (count) {
+                1 -> "دقيقة واحدة"
+                2 -> "دقيقتان"
+                in 3..10 -> "$words دقائق"
+                else -> "$words دقيقة"
+            }
         }
 
         // صيغة دقائق سياق «إلا» (منصوبة): «إلا خمس دقائق»،
         // «إلا دقيقة واحدة»، «إلا دقيقتين»
-        fun minutesOmissionPart(count: Int): String = when (count) {
-            1 -> "دقيقة واحدة"
-            2 -> "دقيقتين"
-            in 3..10 -> "${NumberSpeech.toArabicWords(count)} دقائق"
-            else -> "${NumberSpeech.toArabicWords(count)} دقيقة"
+        fun minutesOmissionPart(count: Int): String {
+            val words = NumberSpeech.toArabicWords(
+                count, markNumbers = markNumbers
+            )
+            return when (count) {
+                1 -> "دقيقة واحدة"
+                2 -> "دقيقتين"
+                in 3..10 -> "$words دقائق"
+                else -> "$words دقيقة"
+            }
         }
 
-        fun secondsPart(count: Int): String = when (count) {
-            1 -> "ثانية واحدة"
-            2 -> "ثانيتان"
-            in 3..10 -> "${NumberSpeech.toArabicWords(count)} ثوانٍ"
-            else -> "${NumberSpeech.toArabicWords(count)} ثانية"
+        fun secondsPart(count: Int): String {
+            val words = NumberSpeech.toArabicWords(
+                count, markNumbers = markNumbers
+            )
+            return when (count) {
+                1 -> "ثانية واحدة"
+                2 -> "ثانيتان"
+                in 3..10 -> "$words ثوانٍ"
+                else -> "$words ثانية"
+            }
         }
 
         val body = if (seconds == null || seconds == 0) {
@@ -227,7 +249,9 @@ internal class TimeStep(
                 30 -> "$hourText والنصف"
                 45 -> {
                     val nextHour = if (hour12 == 12) 1 else hour12 + 1
-                    val nextHourText = NumberSpeech.toOrdinalHourWord(nextHour)
+                    val nextHourText = NumberSpeech.toOrdinalHourWord(
+                        nextHour, markNumbers = markNumbers
+                    )
                     "$nextHourText إلا ربع"
                 }
                 in 1..29 -> "$hourText و ${minutesPart(minute)}"
@@ -235,7 +259,9 @@ internal class TimeStep(
                 in 46..59 -> {
                     val remaining = 60 - minute
                     val nextHour = if (hour12 == 12) 1 else hour12 + 1
-                    val nextHourText = NumberSpeech.toOrdinalHourWord(nextHour)
+                    val nextHourText = NumberSpeech.toOrdinalHourWord(
+                        nextHour, markNumbers = markNumbers
+                    )
                     "$nextHourText إلا ${minutesOmissionPart(remaining)}"
                 }
                 else -> hourText
