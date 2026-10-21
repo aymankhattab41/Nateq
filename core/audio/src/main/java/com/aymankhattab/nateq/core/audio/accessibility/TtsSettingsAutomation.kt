@@ -107,8 +107,12 @@ object TtsSettingsAutomation {
     fun normalizeForMatch(s: String): String {
         if (s.isEmpty()) return ""
         var str = s
-        // حذف علامات الاتجاه
-        str = str.replace(Regex("[\u200E\u200F\u202A-\u202E\uFEFF]"), "")
+        // حذف علامات الاتجاه والمحارف غير المرئية (منها ZWNJ التي
+        // تفرّق «Insta‌Pay» في موارد إنستاباي فتُفشل مطابقة الاسم)
+        str = str.replace(
+            Regex("[\u200B-\u200F\u202A-\u202E\uFEFF\u00AD]"),
+            ""
+        )
         // حذف التشكيل والتطويل
         str = str.replace(Regex("[\u064B-\u065F\u0670\u0640]"), "")
         // توحيد الألف

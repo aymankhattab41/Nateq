@@ -75,6 +75,16 @@ class TtsSettingsAutomationRound48Test {
     }
 
     @Test
+    fun testNormalizeForMatch_stripsZwnjInsideAppLabel() {
+        // اسم إنستاباي في موارد أندرويد يحمل ZWNJ بين الحرفين
+        // («Insta‌Pay»)، فلو لم تُمحَ لم تُطابَق نقرة أيقونة المشغّل.
+        assertEquals(
+            "instapay",
+            TtsSettingsAutomation.normalizeForMatch("Insta\u200CPay")
+        )
+    }
+
+    @Test
     fun testShouldPostponeSwitch_inCallMode() {
         val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         am.mode = AudioManager.MODE_IN_CALL

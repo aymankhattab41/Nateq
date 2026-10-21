@@ -1,4 +1,4 @@
-<resources>
+﻿<resources>
     <string name="accessibility_service_label">Screen Services (Lord TTS)</string>
     <string name="accessibility_service_description">Accessibility and screen reading services to enhance speech experience and expand messages</string>
     <string name="a11y_tile_label">Screen Services</string>
@@ -58,6 +58,12 @@
     <string name="a11y_protected_mode_full">Full Disable (disableSelf &amp; restore)</string>
     <string name="a11y_protected_mode_partial">Partial Suspend (ignore events only)</string>
     <string name="a11y_protected_launch_via_lord">Open App via Lord (Guaranteed Timing)</string>
+    <string name="a11y_protected_proactive_toggle">Proactive monitoring of protected apps</string>
+    <string name="a11y_protected_proactive_title">Proactive Monitoring</string>
+    <string name="a11y_protected_proactive_warning">This feature disables the accessibility service automatically as soon as any protected app starts — before it reads its state — so banking apps open without crashing (e.g. InstaPay) without opening them via Lord.\n\nWarning: it polls usage events periodically, which consumes battery. When disabled, you can still open a protected app via “Open App via Lord”.\n\nEnable it only if you open banking apps frequently directly from their icons.</string>
+    <string name="a11y_protected_proactive_enable">Enable</string>
+    <string name="a11y_protected_proactive_enabled_toast">Proactive monitoring enabled</string>
+    <string name="a11y_protected_proactive_disabled_toast">Proactive monitoring disabled</string>
     <string name="a11y_voice_phone_hint">Phone number (e.g. 0500000000)</string>
     <string name="a11y_voice_name_hint">Contact name (optional)</string>
     <string name="a11y_pick_contact">Pick from contacts</string>
@@ -700,6 +706,8 @@
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">Version %1$s
+        - InstaPay: now opens and works properly while the accessibility service is on, without crashing
+        - InstaPay: new setting to enable compatibility with InstaPay, with a note that it uses battery
         - Round 49 (Number Voice, Single-Letter Guard, and Temporal Tanween): Pronouncing any number (digits or spelled-out words in Arabic &amp; English) in the selected numbers category voice in live screen reader path with intelligent language matching, zero marker leaks, spelled-out words setting (number_voice_spelled_words), and unified settings preview; SingleLetterGuard ensuring isolated characters are pronounced by their correct name in Arabic and Latin scripts during character navigation and keyboard touch with single_letter_mode configuration; and preserving tanween for temporal adverbs (مساءً, صباحاً, etc.) across sentences and punctuation via TanweenProtectStep with unified engine speech preparation (prepareArabicForEngine)
         - Round 48 (Engines, Dictionary, Number Speech, Read More, Call Recording and Protected Apps): Stealth automation overlay for system engine switching with name normalization, polling waits, bounded back navigation, call deferral, and diagnostics dump; Plaintext dictionary v2 with mtime/size change detection, case-insensitive Latin keys, time suffix (م) modes, and live testing tool; Precise regex boundaries for numerals with 64-case golden test suite; Read More expander with 12 clicks/min rate limiter, circuit breaker, and Strategy 5 character coordinate gesture dispatch; App-specific voices with launcher/web queries, manual package entry, immediate/delayed capture, and 4-tier resolution tracker; Call recording with scoped MediaStore storage, periodic WAV header flush, multi-source RMS silence detection, auto-speakerphone, and media boost playback; Protected banking apps (InstaPay) defense via accessibility disable/suspend, launcher click and window tracking, UsageStats watcher service, and auto-restore with alert notification
         - Documentation: Place comprehensive Android 24-37 compatibility matrix (compat-matrix.md) directly in the project root directory and update automated test paths
@@ -1085,4 +1093,96 @@
     <string name="guide_btn_open_dev_options">Open Developer Options</string>
     <string name="guide_btn_open_tts_settings">Open System TTS Settings</string>
     <string name="guide_toast_command_copied">ADB command copied to clipboard</string>
+
+    <!-- Banking app compatibility check (InstaPay) — ع٢٩-13 -->
+    <string name="title_banking_compat_check">Banking app compatibility check</string>
+    <string name="banking_screen_intro">This check lists every capability that may stop banking apps (such as InstaPay) from running, with its state on your device. Items marked “may block” are the suspects; the rest are usually harmless.</string>
+    <string name="banking_risk_high">May block banking apps</string>
+    <string name="banking_risk_low">Usually harmless</string>
+    <string name="banking_lord_header">Lord TTS capabilities on your device</string>
+    <string name="banking_items_header">Check items</string>
+    <string name="banking_lord_a11y_on">Accessibility service: enabled</string>
+    <string name="banking_lord_a11y_off">Accessibility service: disabled</string>
+    <string name="banking_lord_notif_on">Notification access: granted</string>
+    <string name="banking_lord_notif_off">Notification access: denied</string>
+    <string name="banking_lord_overlay_on">Display over other apps: granted</string>
+    <string name="banking_lord_overlay_off">Display over other apps: denied</string>
+
+    <!-- Check items -->
+    <string name="banking_item_a11y_none_label">Accessibility services</string>
+    <string name="banking_item_a11y_none_detail">No accessibility service is enabled on this device.</string>
+    <string name="banking_item_a11y_label">Accessibility: %1$s</string>
+    <string name="banking_item_a11y_detail_pkg">Package: %1$s</string>
+    <string name="banking_item_a11y_flags_unknown">Service flags could not be read</string>
+    <string name="banking_item_a11y_tool_yes">Is an accessibility tool</string>
+    <string name="banking_item_a11y_tool_no">Is not an accessibility tool</string>
+    <string name="banking_item_a11y_retrieve_yes">Can retrieve window content</string>
+    <string name="banking_item_a11y_retrieve_no">Cannot retrieve window content</string>
+    <string name="banking_item_a11y_is_lord">This service belongs to Lord TTS</string>
+    <string name="banking_item_notif_listener_label">Notification access</string>
+    <string name="banking_item_notif_listener_on">Lord TTS is allowed to read device notifications.</string>
+    <string name="banking_item_notif_listener_off">Lord TTS is not allowed to read device notifications.</string>
+    <string name="banking_item_overlay_label">Display over other apps</string>
+    <string name="banking_item_overlay_on">Lord TTS may display over other apps.</string>
+    <string name="banking_item_overlay_off">Lord TTS may not display over other apps.</string>
+    <string name="banking_item_adb_usb_label">USB debugging</string>
+    <string name="banking_item_adb_usb_on">USB debugging is on — observed not to block InstaPay.</string>
+    <string name="banking_item_adb_usb_off">USB debugging is off.</string>
+    <string name="banking_item_adb_wifi_label">Wireless debugging</string>
+    <string name="banking_item_adb_wifi_on">Wireless debugging is on — observed not to block InstaPay.</string>
+    <string name="banking_item_adb_wifi_off">Wireless debugging is off.</string>
+    <string name="banking_item_admin_label">Device administrators</string>
+    <string name="banking_item_admin_detail">Enabled device administrators: %1$d</string>
+    <string name="banking_item_dialer_label">Default phone app role</string>
+    <string name="banking_item_dialer_other">Another app holds the default phone role.</string>
+    <string name="banking_item_dialer_not_other">No other app holds the default phone role.</string>
+    <string name="banking_item_vpn_label">VPN connection</string>
+    <string name="banking_item_vpn_on">An active VPN connection exists on this device.</string>
+    <string name="banking_item_vpn_off">No active VPN connection.</string>
+    <string name="banking_item_su_label">Root binary (su)</string>
+    <string name="banking_item_su_found">Root binary found at: %1$s</string>
+    <string name="banking_item_su_none">No root binary was found.</string>
+    <string name="banking_item_shizuku_label">Shizuku</string>
+    <string name="banking_item_shizuku_on">The Shizuku package is installed.</string>
+    <string name="banking_item_shizuku_off">The Shizuku package is not installed.</string>
+    <string name="banking_item_install_label">Lord TTS install source</string>
+    <string name="banking_item_install_play">Installed from a trusted app store: %1$s</string>
+    <string name="banking_item_install_side">Installed outside any store (installer: %1$s)</string>
+
+    <!-- Isolate-the-cause wizard -->
+    <string name="banking_wizard_header">Isolate-the-cause wizard</string>
+    <string name="banking_wizard_intro">Run the steps in order. After each step, open the banking app and record whether it opened. Do not move on before recording a result; without the comparison no cause is proven.</string>
+    <string name="banking_wizard_choose_app">Choose the banking app</string>
+    <string name="banking_wizard_no_app_chosen">No banking app chosen yet — pick one first so the steps unlock.</string>
+    <string name="banking_wizard_app_chosen">Chosen banking app: %1$s</string>
+    <string name="banking_wizard_step_of">Step %1$d of %2$d</string>
+    <string name="banking_step_baseline_title">Current state (every capability on)</string>
+    <string name="banking_step_baseline_detail">Open the banking app exactly as it runs right now, then record whether it opened. This is the baseline every later step is compared against.</string>
+    <string name="banking_step_notif_title">Revoke notification access</string>
+    <string name="banking_step_notif_detail">Open the notification access screen and disable Lord TTS only (keep the screen reader on), then open the banking app and record the result.</string>
+    <string name="banking_step_a11y_title">Turn off the accessibility service</string>
+    <string name="banking_step_a11y_detail">Open the accessibility screen and disable the Lord TTS service, then open the banking app and record the result. Do not disable your screen reader.</string>
+    <string name="banking_step_overlay_title">Revoke display over other apps</string>
+    <string name="banking_step_overlay_detail">Open the display-over-other-apps screen and revoke Lord TTS, then open the banking app and record the result.</string>
+    <string name="banking_step_restore_title">Restore everything you revoked</string>
+    <string name="banking_step_restore_detail">Re-enable the Lord TTS accessibility service, notification access and display-over-other-apps. Then open the banking app to confirm it is back to normal.</string>
+    <string name="banking_wizard_open_target">Open the matching settings screen</string>
+    <string name="banking_wizard_open_app">Open the banking app now</string>
+    <string name="banking_wizard_result_opened">Record: the app opened</string>
+    <string name="banking_wizard_result_not_opened">Record: the app did not open</string>
+    <string name="banking_wizard_next">Next step</string>
+    <string name="banking_wizard_finish">Finish and show the summary</string>
+    <string name="banking_wizard_reset">Restart the wizard</string>
+    <string name="banking_wizard_results_header">Step results</string>
+    <string name="banking_wizard_summary_header">Summary</string>
+    <string name="banking_wizard_cause_none">No conflict: the app opened with every capability on, so Lord TTS is not the cause.</string>
+    <string name="banking_wizard_cause_notif_listener">Most likely cause: the notification access granted to Lord TTS. Keep it revoked if you need the banking app.</string>
+    <string name="banking_wizard_cause_accessibility">Most likely cause: the Lord TTS accessibility service. Keep it disabled if you need the banking app.</string>
+    <string name="banking_wizard_cause_overlay">Most likely cause: display over other apps granted to Lord TTS. Keep it revoked if you need the banking app.</string>
+    <string name="banking_wizard_cause_other_app">The app still did not open after every Lord TTS capability was revoked, so the cause most likely lies outside Lord TTS.</string>
+    <string name="banking_wizard_need_baseline">Step 1 (baseline) has not been recorded yet — record it first.</string>
+    <string name="banking_wizard_result_saved">Step result saved.</string>
+    <string name="banking_wizard_open_failed">That settings screen could not be opened on this device.</string>
+    <string name="banking_wizard_app_missing">The banking app did not open — make sure it is installed.</string>
+    <string name="btn_banking_compat_check">Banking app compatibility check</string>
 </resources>

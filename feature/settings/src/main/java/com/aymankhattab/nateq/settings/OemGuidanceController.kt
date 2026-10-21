@@ -12,6 +12,7 @@ import android.widget.Toast
 import com.aymankhattab.nateq.core.audio.announcement.CallerScreeningService
 import com.aymankhattab.nateq.core.audio.announcement.NateqNotificationListener
 import com.aymankhattab.nateq.feature.settings.R
+import com.aymankhattab.nateq.settings.banking.BankingCompatCheckActivity
 import com.google.android.material.button.MaterialButton
 import java.util.Locale
 
@@ -68,6 +69,21 @@ internal class OemGuidanceController(
         btnAutostart.setOnClickListener {
             openAutostartSettings(fragment.requireContext(), vendor)
         }
+
+        // فحص توافق التطبيقات المصرفية (إنستاباي): مكانه هنا لأنّه دليلُ
+        // توثيقٍ لتشخيص الجهاز لا خيارَ إعدادٍ — يُفتح شاشةً كاملةً
+        // تعرض كل قدرةٍ بحالتها ومعالجاً يعزل السبب خطوةً خطوةً.
+        view.findViewById<View>(R.id.btn_banking_compat_check)
+            ?.setOnClickListener {
+                runCatching {
+                    fragment.startActivity(
+                        Intent(
+                            fragment.requireContext(),
+                            BankingCompatCheckActivity::class.java
+                        )
+                    )
+                }
+            }
 
         btnInstantIdentity = view.findViewById(R.id.btn_caller_instant_identity)
         tvInstantIdentityStatus =

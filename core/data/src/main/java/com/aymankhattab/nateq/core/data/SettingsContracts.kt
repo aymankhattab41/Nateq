@@ -321,6 +321,16 @@ interface ReadingPrefs {
 
     /** يعيّن تفعيل الإسكات بمستشعر التقارب. */
     fun setProximitySilenceEnabled(enabled: Boolean)
+
+    /**
+     * مراقبةٌ استباقية للتطبيقات المحمية عبر UsageStats: تُعطّل خدمة
+     * إمكانية الوصول فور بدء التطبيق المحمي قبل أن يقرأ حالته.
+     * معطّلة افتراضياً لأنها تستهلك البطارية (استطلاع دوري).
+     */
+    fun isProactiveProtectedWatchEnabled(): Boolean
+
+    /** يعيّن تفعيل المراقبة الاستباقية للتطبيقات المحمية. */
+    fun setProactiveProtectedWatchEnabled(enabled: Boolean)
 }
 
 /**
