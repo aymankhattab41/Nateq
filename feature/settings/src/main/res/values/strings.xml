@@ -1,4 +1,4 @@
-<resources>
+﻿<resources>
     <string name="accessibility_service_label">خدمات الشاشة (Lord TTS)</string>
     <string name="accessibility_service_description">خدمات إمكانية الوصول وقراءة الشاشة لتحسين تجربة النطق وتوسيع الرسائل</string>
     <string name="a11y_tile_label">خدمات الشاشة</string>
@@ -58,6 +58,12 @@
     <string name="a11y_protected_mode_full">إيقاف كامل (disableSelf وإعادة التشغيل)</string>
     <string name="a11y_protected_mode_partial">تعليق جزئي (إيقاف معالجة الأحداث فقط)</string>
     <string name="a11y_protected_launch_via_lord">فتح التطبيق عبر Lord (مضمون التوقيت)</string>
+    <string name="a11y_protected_proactive_toggle">المراقبة الاستباقية للتطبيقات المحمية</string>
+    <string name="a11y_protected_proactive_title">المراقبة الاستباقية</string>
+    <string name="a11y_protected_proactive_warning">تُعطّل هذه الميزة خدمة إمكانية الوصول تلقائياً فور بدء أي تطبيق محمي — قبل أن يقرأ حالته — فتُفتح التطبيقات المصرفية بلا انهيار (مثل إنستاباي) دون فتحها عبر Lord.\n\nتحذير: تُراقب أحداث الاستخدام بشكل دوري، وهذا يستهلك البطارية. عند تعطيلها يبقى فتح التطبيق المحمي ممكناً عبر «فتح التطبيق عبر Lord».\n\nفعّلها فقط إن كنت تفتح التطبيقات المصرفية كثيراً من أيقوناتها مباشرة.</string>
+    <string name="a11y_protected_proactive_enable">تفعيل</string>
+    <string name="a11y_protected_proactive_enabled_toast">فُعّلت المراقبة الاستباقية</string>
+    <string name="a11y_protected_proactive_disabled_toast">أُلغيت المراقبة الاستباقية</string>
     <string name="a11y_voice_phone_hint">رقم الهاتف (مثال: 0500000000)</string>
     <string name="a11y_voice_name_hint">اسم جهة الاتصال (اختياري)</string>
     <string name="a11y_pick_contact">اختيار من جهات الاتصال</string>
@@ -710,6 +716,8 @@
 <string name="time_alarm_max_precision_summary">تستخدم منبّه النظام الدقيق (setAlarmClock) متجاوزةً كل قيود Doze والبطارية فيعمل إعلان الوقت في اللحظة المضبوطة؛ أثرُها الجانبي أن أيقونة منبّه ثابتة تظهر في شريط الحالة.</string>
 <string name="changelog_title">آخر التحديثات</string>
 <string name="changelog_text">الإصدار %1$s
+        - إنستاباي: صار يفتح ويعمل بشكل سليم مع تشغيل خدمة إمكانية الوصول، بلا انهيار
+        - إنستاباي: خيار جديد في الإعدادات لتفعيل التوافق مع إنستاباي، مع تنبيه أنه يستهلك البطارية
         - الجولة 49 (صوت الأرقام والحرف المفرد وتنوين الكلمات الزمنية): نطق أي رقم (مكتوباً بالأرقام أو الحروف العربية والإنجليزية) بصوت فئة الأرقام المختار في القراءة الحية بمطابقة لغوية ذكية مع وسم الأرقام بدقة ومنع تسرب العلامات، وإضافة إعداد الأعداد المكتوبة بالحروف (number_voice_spelled_words)، وتوحيد مسار المعاينة في الإعدادات؛ وحارس الحرف المفرد (SingleLetterGuard) لنطق الحرف المفرد باسمه الصحيح عربياً ولاتينياً عند القراءة بالحرف أو لمس مفاتيح لوحة Lord مع إضافة إعداد وضع الحرف المفرد (single_letter_mode)؛ وحماية تنوين الكلمات الزمنية الظرفية (مساءً، صباحاً، ظهراً، إلخ) بخطوة TanweenProtectStep لمنع سقوط التنوين وسط الجمل أو قبل الترقيم، وتوحيد مسار تجهيز النصوص للمحركات (prepareArabicForEngine)
         - الجولة 48 (المحركات والقاموس ونطق الأرقام وقراءة المزيد والتسجيل وحماية التطبيقات): تبديل خفي ومرن لمحرك النظام (Automation Overlay مع تطبيع الأسماء وحلقات انتظار وإرجاع مقيّد وتأجيل أثناء المكالمات)، وقاموس نطق بصيغة v2 وحساب تعديلات الملف ودعم إلحاق م المسائية وأداة اختبار فوري، وحدود دقيقة لربو الأرقام وقائمة فحص ذهبية (64 اختباراً)، ومعدل نقر وقاطع دورة وإيماءات للإحداثيات في قراءة المزيد، واستعلامات الحزم وإدخال يدوي والتقاط فوري ومؤجل لصوت التطبيقات مع تتبع الدقة، وتسجيل المكالمات بمسار MediaStore المناسب وكتابة دورية لرأس WAV واكتشاف الصمت ومكبر الصوت التلقائي، وحماية التطبيقات المصرفية (إنستاباي) بتعطيل الخدمة وتتبع الخروج ومراقبة الاستخدام وإعادة التفعيل التلقائي والإشعار الاهتزازي
         - توثيق: إتاحة مصفوفة التوافقية الشاملة (compat-matrix.md) مباشرة في مجلد المشروع الرئيسي وتحديث مسارات التحقق الآلي في الاختبارات
@@ -1096,4 +1104,96 @@
     <string name="guide_btn_open_dev_options">فتح خيارات المطور</string>
     <string name="guide_btn_open_tts_settings">فتح إعدادات تحويل النص إلى كلام في النظام</string>
     <string name="guide_toast_command_copied">تم نسخ أمر ADB إلى الحافظة</string>
+
+    <!-- فحص توافق التطبيقات المصرفية (إنستاباي) — ع٢٩-13 -->
+    <string name="title_banking_compat_check">فحص توافق التطبيقات المصرفية</string>
+    <string name="banking_screen_intro">يعرض هذا الفحص كل قدرةٍ قد تمنع التطبيقات المصرفية (مثل إنستاباي) من التشغيل، مع حالتها على جهازك الآن. البنود المُعلَّمة «قد يمنع» مشتبهٌ بها، والبقية غالباً غير مؤثرة.</string>
+    <string name="banking_risk_high">قد يمنع التطبيقات المصرفية</string>
+    <string name="banking_risk_low">غالباً غير مؤثر</string>
+    <string name="banking_lord_header">قدرات ناطق على جهازك الآن</string>
+    <string name="banking_items_header">بنود الفحص</string>
+    <string name="banking_lord_a11y_on">خدمة إمكانية الوصول: مُفعّلة</string>
+    <string name="banking_lord_a11y_off">خدمة إمكانية الوصول: مُعطّلة</string>
+    <string name="banking_lord_notif_on">الاستماع للإشعارات: مُسموح</string>
+    <string name="banking_lord_notif_off">الاستماع للإشعارات: مُنوع</string>
+    <string name="banking_lord_overlay_on">العرض فوق التطبيقات: مُسموح</string>
+    <string name="banking_lord_overlay_off">العرض فوق التطبيقات: مُنوع</string>
+
+    <!-- بنود الفحص -->
+    <string name="banking_item_a11y_none_label">خدمات إمكانية الوصول</string>
+    <string name="banking_item_a11y_none_detail">لا توجد أي خدمة إمكانية وصول مُفعّلة على الجهاز.</string>
+    <string name="banking_item_a11y_label">إمكانية الوصول: %1$s</string>
+    <string name="banking_item_a11y_detail_pkg">الحزمة: %1$s</string>
+    <string name="banking_item_a11y_flags_unknown">تعذّرت قراءة وسوم الخدمة</string>
+    <string name="banking_item_a11y_tool_yes">أداة إمكانية وصول</string>
+    <string name="banking_item_a11y_tool_no">ليست أداة إمكانية وصول</string>
+    <string name="banking_item_a11y_retrieve_yes">تقرأ محتوى النوافذ</string>
+    <string name="banking_item_a11y_retrieve_no">لا تقرأ محتوى النوافذ</string>
+    <string name="banking_item_a11y_is_lord">هذه الخدمة تابعةٌ لناطق</string>
+    <string name="banking_item_notif_listener_label">الاستماع للإشعارات</string>
+    <string name="banking_item_notif_listener_on">ناطق مُسموحٌ له بقراءة إشعارات الجهاز.</string>
+    <string name="banking_item_notif_listener_off">ناطق غير مُسموحٍ له بقراءة إشعارات الجهاز.</string>
+    <string name="banking_item_overlay_label">العرض فوق التطبيقات</string>
+    <string name="banking_item_overlay_on">ناطق مُسموحٌ له بالعرض فوق التطبيقات الأخرى.</string>
+    <string name="banking_item_overlay_off">ناطق غير مُسموحٍ له بالعرض فوق التطبيقات الأخرى.</string>
+    <string name="banking_item_adb_usb_label">تصحيح USB</string>
+    <string name="banking_item_adb_usb_on">تصحيح USB مُفعّل — رُصد أنه لا يمنع إنستاباي.</string>
+    <string name="banking_item_adb_usb_off">تصحيح USB مُعطّل.</string>
+    <string name="banking_item_adb_wifi_label">التصحيح اللاسلكي</string>
+    <string name="banking_item_adb_wifi_on">التصحيح اللاسلكي مُفعّل — رُصد أنه لا يمنع إنستاباي.</string>
+    <string name="banking_item_adb_wifi_off">التصحيح اللاسلكي مُعطّل.</string>
+    <string name="banking_item_admin_label">مديرو الجهاز</string>
+    <string name="banking_item_admin_detail">عدد مديري الجهاز المُفعّلين: %1$d</string>
+    <string name="banking_item_dialer_label">دور الهاتف الافتراضي</string>
+    <string name="banking_item_dialer_other">تطبيقٌ آخر هو الهاتف الافتراضي على الجهاز.</string>
+    <string name="banking_item_dialer_not_other">لا يوجد تطبيقٌ آخر يشغل دور الهاتف الافتراضي.</string>
+    <string name="banking_item_vpn_label">اتصال VPN</string>
+    <string name="banking_item_vpn_on">يوجد اتصال VPN نشط على الجهاز.</string>
+    <string name="banking_item_vpn_off">لا يوجد اتصال VPN نشط.</string>
+    <string name="banking_item_su_label">وجود مُنظِّم الجذر (su)</string>
+    <string name="banking_item_su_found">وُجد ملف تنفيذ الجذر في: %1$s</string>
+    <string name="banking_item_su_none">لم يُعثر على أي ملف تنفيذ للجذر.</string>
+    <string name="banking_item_shizuku_label">Shizuku</string>
+    <string name="banking_item_shizuku_on">حزمة Shizuku مُثبّتة على الجهاز.</string>
+    <string name="banking_item_shizuku_off">حزمة Shizuku غير مُثبّتة.</string>
+    <string name="banking_item_install_label">مصدر تثبيت ناطق</string>
+    <string name="banking_item_install_play">ثُبِّت من متجر تطبيقات موثوق: %1$s</string>
+    <string name="banking_item_install_side">ثُبِّت من خارج المتجر (المُثبِّت: %1$s)</string>
+
+    <!-- معالج «اعزل السبب» -->
+    <string name="banking_wizard_header">معالج «اعزل السبب»</string>
+    <string name="banking_wizard_intro">نفّذ الخطوات بالترتيب. بعد كل خطوةٍ افتح التطبيق المصرف وسجّل هل فتح أم لا. لا تتقدَّم إلى خطوةٍ قبل تسجيل نتيجةَها؛ فبدون المقارنة لا يُحسم سببٌ.</string>
+    <string name="banking_wizard_choose_app">اختر التطبيق المصرف</string>
+    <string name="banking_wizard_no_app_chosen">لم يُختر تطبيقٌ مصرف بعد — اختره أولاً حتى تُفتح الخطوات.</string>
+    <string name="banking_wizard_app_chosen">التطبيق المصرف المختار: %1$s</string>
+    <string name="banking_wizard_step_of">الخطوة %1$d من %2$d</string>
+    <string name="banking_step_baseline_title">الوضع الحالي (كل القدرات مُفعّلة)</string>
+    <string name="banking_step_baseline_detail">افتح التطبيق المصرف وهو في وضع التشغيل المعتاد الآن، ثم سجّل هل فتح أم لا. هذه خطوة الأساس التي تُقارن بها كل ما بعدها.</string>
+    <string name="banking_step_notif_title">سحب إذن «الاستماع للإشعارات»</string>
+    <string name="banking_step_notif_detail">افتح شاشة «الاستماع للإشعارات» وعطّل ناطق فقط (لا تُعطّل قارئ الشاشة)، ثم افتح التطبيق المصرف وسجّل النتيجة.</string>
+    <string name="banking_step_a11y_title">إيقاف خدمة إمكانية الوصول</string>
+    <string name="banking_step_a11y_detail">افتح شاشة إمكانية الوصول وعطّل خدمة ناطق، ثم افتح التطبيق المصرف وسجّل النتيجة. لا تُعطّل قارئ الشاشة المُفعَّل.</string>
+    <string name="banking_step_overlay_title">إبطال «العرض فوق التطبيقات»</string>
+    <string name="banking_step_overlay_detail">افتح شاشة «العرض فوق التطبيقات» وسحب الإذن عن ناطق، ثم افتح التطبيق المصرف وسجّل النتيجة.</string>
+    <string name="banking_step_restore_title">استعادة كل ما سُحِب</string>
+    <string name="banking_step_restore_detail">أعد تفعيل خدمة إمكانية الوصول في ناطق وإذن الاستماع و«العرض فوق التطبيقات». ثم افتح التطبيق المصرف للتأكد من عودته إلى وضعه المعتاد.</string>
+    <string name="banking_wizard_open_target">افتح الإعداد المناسب</string>
+    <string name="banking_wizard_open_app">افتح التطبيق المصرف الآن</string>
+    <string name="banking_wizard_result_opened">سجّل: فُتح التطبيق</string>
+    <string name="banking_wizard_result_not_opened">سجّل: لم يُفتح التطبيق</string>
+    <string name="banking_wizard_next">الخطوة التالية</string>
+    <string name="banking_wizard_finish">اختم المعالج واعرض الخلاصة</string>
+    <string name="banking_wizard_reset">ابدأ المعالج من جديد</string>
+    <string name="banking_wizard_results_header">نتائج الخطوات</string>
+    <string name="banking_wizard_summary_header">الخلاصة</string>
+    <string name="banking_wizard_cause_none">لا يوجد تعارض: فتح التطبيق مع كل القدرات مُفعّلة، فالسبب ليس في ناطق.</string>
+    <string name="banking_wizard_cause_notif_listener">السبب الأرجح: إذن «الاستماع للإشعارات» المُمنوح لناطق. ابقِه مُسحبًا إن أردت استخدام التطبيق المصرف.</string>
+    <string name="banking_wizard_cause_accessibility">السبب الأرجح: خدمة إمكانية الوصول في ناطق. ابقِها مُعطّلة إن أردت استخدام التطبيق المصرف.</string>
+    <string name="banking_wizard_cause_overlay">السبب الأرجح: إذن «العرض فوق التطبيقات» المُمنوح لناطق. ابقِه مُسحبًا إن أردت استخدام التطبيق المصرف.</string>
+    <string name="banking_wizard_cause_other_app">لم يُفتح التطبيق بعد سحب كل قدرات ناطق؛ فالسبب الأرجح خارج ناطق (تطبيقٌ آخر أو إعدادٌ من الجهاز).</string>
+    <string name="banking_wizard_need_baseline">الخطوة 1 (الوضع الحالي) لم تُسجَّل بعد — سجّل نتيجتها أولاً.</string>
+    <string name="banking_wizard_result_saved">حُفظت نتيجة الخطوة.</string>
+    <string name="banking_wizard_open_failed">تعذّر فتح الشاشة المطلوبة على هذا الجهاز.</string>
+    <string name="banking_wizard_app_missing">لم يُفتح التطبيق المصرف — تأكّد من تثبيته على الجهاز.</string>
+    <string name="btn_banking_compat_check">فحص توافق التطبيقات المصرفية</string>
 </resources>

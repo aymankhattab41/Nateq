@@ -302,6 +302,7 @@ class NateqAccessibilityService : AccessibilityService() {
 
     private var stateStore: A11yStateStore? = null
     private var screenOffReceiver: BroadcastReceiver? = null
+    private var protectedDisableReceiver: BroadcastReceiver? = null
     private var bluetoothReceiver: BroadcastReceiver? = null
     private var audioDeviceCallback: AudioDeviceCallback? = null
     private var shortcutTestReceiver: BroadcastReceiver? = null
@@ -354,6 +355,7 @@ class NateqAccessibilityService : AccessibilityService() {
         super.onCreate()
         stateStore = A11yStateStore.getInstance(this)
         registerScreenOffReceiver()
+        registerProtectedDisableReceiver()
         registerBluetoothReceiver()
         registerAudioRouteCallback()
 
@@ -398,6 +400,12 @@ class NateqAccessibilityService : AccessibilityService() {
         applyServiceInfo()
         applyAccessibilityButton()
         registerBluetoothReceiver()
+
+        // المراقبة الاستباقية للتطبيقات المحمية (اختيارية): تُعاد عند
+        // كل ارتباط إن كان المستخدم قد فعّلها، فتبقى بعد إعادة التشغيل.
+        if (repo.isProactiveProtectedWatchEnabled()) {
+            ProtectedAppWatcherService.startProactive(this)
+        }
 
         // ع٢٩-13: تهيئة موجّه الاختصارات
         keyShortcutRouter = KeyShortcutRouter(
@@ -573,6 +581,14 @@ class NateqAccessibilityService : AccessibilityService() {
             types = types or AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
         }
 
+        // التطبيقات المحمية: نقرة أيقونة المشغّل تسبق انطلاق التطبيق
+        // بمقدار تشغيل Process كامل، فبها نُعطل الخدمة قبل شاشة البداية
+        // — أما أحداث النافذة فتصل بعد بدء التطبيق ولا تمنع انهياره.
+        val protectedApps = repo.getProtectedApps()
+        if (protectedApps.isNotEmpty()) {
+            types = types or AccessibilityEvent.TYPE_VIEW_CLICKED
+        }
+
         info.eventTypes = types
         info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
         info.notificationTimeout = 50L
@@ -585,8 +601,13 @@ class NateqAccessibilityService : AccessibilityService() {
         val allowAll = repo.isA11yAllowAllApps()
         if (!allowAll) {
             val userPackages = repo.getA11yAllowedPackages()
-            val effectiveWhitelist = userPackages ?: AppPolicy.DEFAULT_WHITELIST
-            info.packageNames = effectiveWhitelist.toTypedArray()
+            val effective = ProtectedAppManager.effectiveEventPackages(
+                allowed = userPackages ?: AppPolicy.DEFAULT_WHITELIST,
+                protectedApps = protectedApps,
+                homeLauncher = ProtectedAppManager
+                    .homeLauncherPackage(this)
+            )
+            info.packageNames = effective.toTypedArray()
         } else {
             info.packageNames = null
         }
@@ -596,6 +617,7 @@ class NateqAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
+
         if (AppPolicy.isAutomationActive()) {
             TtsSettingsAutomation.onAccessibilityEvent(event)
             return
@@ -629,13 +651,12 @@ class NateqAccessibilityService : AccessibilityService() {
 
         val eventPkg = event.packageName?.toString()
 
-        // الجولة 48 - الأمر 7: اكتشاف فتح التطبيق المحمي قبل أن يبدأ
-        if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED ||
-            event.eventType == AccessibilityEvent.TYPE_VIEW_FOCUSED
-        ) {
+        // الجولة 48 - الأمر 7: نقرة أيقونة التطبيق المحمي في المشغّل
+        // تصل قبل انطلاقه — نعطل الخدمة هنا قبل شاشة البداية.
+        if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
             if (ProtectedAppManager.isHomeLauncher(this, eventPkg)) {
-                val candidate = event.text?.joinToString(" ")
-                    ?: event.contentDescription?.toString()
+                val candidate =
+                    ProtectedAppManager.launcherCandidateLabel(event)
                 val matched =
                     ProtectedAppManager.matchProtectedApp(this, candidate)
                 if (matched != null) {
@@ -649,7 +670,14 @@ class NateqAccessibilityService : AccessibilityService() {
             val repoSettings = SettingsRepository.create(this)
             val matched = eventPkg?.let { repoSettings.getProtectedApp(it) }
             if (matched != null) {
-                ProtectedAppManager.handleAppEntry(this, this, matched)
+                // النافذة ظهرت أصلاً: التعطيل يأتي متأخراً عن شاشة
+                // البداية، فنعيد فتح التطبيق بعد التعطيل حتى لا ينهار.
+                ProtectedAppManager.handleAppEntry(
+                    context = this,
+                    service = this,
+                    app = matched,
+                    relaunchIfForeground = true
+                )
                 return
             }
         }
@@ -1155,6 +1183,40 @@ class NateqAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * يسجّل مستقبِل طلب التعطيل الذاتي للتطبيقات المحمية: مسار
+     * «تشغيل عبر لورد» لا يحمل مثيل الخدمة، فيطلب التعطيل ببثٍّ
+     * تستقبله الخدمة هنا وتنفّذ disableSelf().
+     */
+    private fun registerProtectedDisableReceiver() {
+        if (protectedDisableReceiver != null) return
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action ==
+                    ProtectedAppManager.ACTION_DISABLE_SELF
+                ) {
+                    Log.i(TAG, "[A11yService] disable-self requested")
+                    disableSelf()
+                }
+            }
+        }
+        protectedDisableReceiver = receiver
+        val filter =
+            IntentFilter(ProtectedAppManager.ACTION_DISABLE_SELF)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(receiver, filter)
+        }
+    }
+
+    private fun unregisterProtectedDisableReceiver() {
+        protectedDisableReceiver?.let {
+            runCatching { unregisterReceiver(it) }
+            protectedDisableReceiver = null
+        }
+    }
+
+    /**
      * ع٤١-ب9: يسجّل مستقبل اتصال/فصل أجهزة البلوتوث. يتطلّب إذن
      * BLUETOOTH_CONNECT على API 31+؛ وإن غاب لا يُسجَّل (يُعاد المحاولة
      * عند كل اتصال خدمة)، فتقع الإعلانات باسمٍ عام دون اسم الجهاز.
@@ -1297,6 +1359,7 @@ class NateqAccessibilityService : AccessibilityService() {
         serviceJob.cancel()
         ContinuousReader.stopSilently()
         unregisterScreenOffReceiver()
+        unregisterProtectedDisableReceiver()
         unregisterBluetoothReceiver()
         unregisterAudioRouteCallback()
         deviceEventGate.clear()

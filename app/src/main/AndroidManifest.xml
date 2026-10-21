@@ -223,6 +223,13 @@
             android:exported="false"
             android:label="@string/title_write_secure_settings_guide" />
 
+        <!-- شاشة فحص توافق التطبيقات المصرفية (إنستاباي) + معالج «اعزل السبب» -->
+        <activity
+            android:name="com.aymankhattab.nateq.settings.banking.BankingCompatCheckActivity"
+            android:exported="false"
+            android:label="@string/title_banking_compat_check"
+            android:theme="@style/Theme.Nateq" />
+
         <!-- Activity لفحص بيانات TTS (اللغات/الأصوات المتاحة) — مطلوبة من سامسونج -->
         <activity
             android:name=".settings.CheckTtsDataActivity"

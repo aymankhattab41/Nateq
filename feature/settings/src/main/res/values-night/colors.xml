@@ -1,4 +1,5 @@
 <resources>
 <color name="text_secondary">#B3FFFFFF</color>
 <color name="divider_color">#33FFFFFF</color>
+<color name="banking_risk_high">#F2B8B5</color>
 </resources>

@@ -1201,6 +1201,8 @@
 
             <com.google.android.material.button.MaterialButton android:id="@+id/btn_open_autostart_settings" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/btn_open_autostart_settings" android:importantForAccessibility="yes" />
 
+            <com.google.android.material.button.MaterialButton android:id="@+id/btn_banking_compat_check" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/btn_banking_compat_check" android:contentDescription="@string/btn_banking_compat_check" android:importantForAccessibility="yes" />
+
             
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:layout_marginBottom="4dp" android:text="@string/caller_instant_identity_group_title" android:textAppearance="?attr/textAppearanceSubtitle2" android:accessibilityHeading="true" android:importantForAccessibility="yes" />
 

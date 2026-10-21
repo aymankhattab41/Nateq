@@ -190,7 +190,8 @@ class SettingsRepository(context: Context) :
         private val SAFE_DEFAULT_FALSE_KEYS = setOf(
             "shake_to_stop_enabled",
             "proximity_silence_enabled",
-            "long_text_speedup_enabled"
+            "long_text_speedup_enabled",
+            "proactive_protected_watch_enabled"
         )
 
         /** التطبيقات الافتراضية التي تُقرأ إشعاراتها قبل أي اختيار صريح. */
@@ -283,6 +284,23 @@ class SettingsRepository(context: Context) :
         const val KEY_PROTECTED_APPS = "protected_apps"
         const val KEY_PROTECTED_SUSPENDED_PKG = "protected_suspended_pkg"
         const val KEY_PROTECTED_SUSPENDED_TIME = "protected_suspended_time"
+
+        /**
+         * التطبيقات المحمية الافتراضية — تعمل من أول تشغيل بلا إعداد:
+         * خدمتنا في إمكانية الوصول هي ما يحبط التطبيقات المصرفية
+         * (قياسُ الجهاز: إنستاباي يتحطّم مع وجود الخدمة ويعمل بلاها)،
+         * فتُعطَّل تلقائياً أمام هذه الحزم ثم تعود فور الخروج.
+         * الاسم [label] هو اسم التطبيق الحقيقي كما يظهر في المشغّل،
+         * لأنه هو ما تصله نقرة الأيقونة وتُطابَق عليه.
+         * تُحذف هذه القائمة إذا حفظ المستخدم قائمته ولو كانت فارغة.
+         */
+        private val DEFAULT_PROTECTED_APPS = listOf(
+            ProtectedApp(
+                packageName = "com.egyptianbanks.instapay",
+                label = "InstaPay",
+                mode = ProtectedApp.MODE_FULL_DISABLE
+            )
+        )
         const val KEY_EMOJI_PRONUNCIATION_LANGUAGE =
             "emoji_pronunciation_language"
         const val KEY_LANGUAGE_DIAGNOSTICS_ENABLED =
@@ -1911,6 +1929,17 @@ class SettingsRepository(context: Context) :
     override fun setProximitySilenceEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("proximity_silence_enabled", enabled).apply()
 
+    /**
+     * المراقبة الاستباقية للتطبيقات المحمية (UsageStats). معطّلة
+     * افتراضياً: تستهلك البطارية باستطلاعٍ دوري لأحداث الاستخدام.
+     */
+    override fun isProactiveProtectedWatchEnabled(): Boolean =
+        prefs.getBoolean("proactive_protected_watch_enabled", false)
+    override fun setProactiveProtectedWatchEnabled(enabled: Boolean) =
+        prefs.edit()
+            .putBoolean("proactive_protected_watch_enabled", enabled)
+            .apply()
+
     // ============ إعدادات عامة ============
 
     /** السرعة العامة الافتراضية */
@@ -3083,7 +3112,7 @@ class SettingsRepository(context: Context) :
 
     fun getProtectedApps(): List<ProtectedApp> {
         val raw = prefs.getString(KEY_PROTECTED_APPS, null)
-            ?: return emptyList()
+            ?: return DEFAULT_PROTECTED_APPS
         return try {
             val arr = org.json.JSONArray(raw)
             val list = mutableListOf<ProtectedApp>()

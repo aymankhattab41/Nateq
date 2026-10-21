@@ -1715,4 +1715,27 @@ class SettingsRepositoryTest {
             fresh.getA11yShortcutBindings()
         )
     }
+
+    @Test
+    fun protectedApps_defaultIncludeInstaPay_whenNeverConfigured() {
+        // عقد «يعمل من أول تشغيل»: إنستاباي محميٌّ افتراضياً بلا إعداد.
+        val apps = repo.getProtectedApps()
+        assertTrue(
+            "إنستاباي يجب أن يكون محمياً افتراضياً",
+            apps.any { it.packageName == "com.egyptianbanks.instapay" }
+        )
+        assertTrue(
+            "الوضع الافتراضي إيقاف كامل أمام التطبيقات المصرفية",
+            apps.all { it.mode == ProtectedApp.MODE_FULL_DISABLE }
+        )
+        assertTrue(repo.isProtectedApp("com.egyptianbanks.instapay"))
+    }
+
+    @Test
+    fun protectedApps_userClearedList_staysEmpty() {
+        // اختيار المستخدم حذف القائمة يحترم ولا تعود القيم الافتراضية.
+        repo.setProtectedApps(emptyList())
+        assertTrue(repo.getProtectedApps().isEmpty())
+        assertFalse(repo.isProtectedApp("com.egyptianbanks.instapay"))
+    }
 }
