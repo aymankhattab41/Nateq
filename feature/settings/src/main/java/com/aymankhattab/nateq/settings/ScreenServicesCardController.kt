@@ -18,7 +18,6 @@ import com.aymankhattab.nateq.core.audio.accessibility.A11yStateStore
 import com.aymankhattab.nateq.core.audio.accessibility.A11yVoiceResolver
 import com.aymankhattab.nateq.core.audio.accessibility.AppPolicy
 import com.aymankhattab.nateq.core.audio.accessibility.FeatureFlags
-import com.aymankhattab.nateq.core.audio.accessibility.ProtectedAppWatcherService
 import com.aymankhattab.nateq.core.data.AppProfile
 import com.aymankhattab.nateq.core.data.AppProfileStore
 import com.aymankhattab.nateq.core.data.ContactVoiceStore
@@ -891,21 +890,12 @@ class ScreenServicesCardController(
             }
             items.add("🔒 ${app.label} ($modeStr)")
         }
-        val proactiveOn = settings.isProactiveProtectedWatchEnabled()
-        val proactiveMark = if (proactiveOn) "✅" else "⬜"
-        items.add(
-            "$proactiveMark " +
-                context.getString(R.string.a11y_protected_proactive_toggle)
-        )
-        val proactiveIndex = items.size - 1
 
         MaterialAlertDialogBuilder(context)
             .setTitle(R.string.a11y_protected_apps_title)
             .setItems(items.toTypedArray()) { _, which ->
                 if (which == 0) {
                     promptAddProtectedApp(onUpdated)
-                } else if (which == proactiveIndex) {
-                    showProactiveWatchConfirmDialog(onUpdated)
                 } else {
                     val app = apps[which - 1]
                     showProtectedAppOptionsDialog(app, onUpdated)
@@ -913,45 +903,6 @@ class ScreenServicesCardController(
             }
             .setNeutralButton("أذونات الحماية") { _, _ ->
                 showProtectedAppsPermissionsDialog()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
-    /**
-     * نافذة تفعيل المراقبة الاستباقية مع تحذير استهلاك البطارية.
-     * تُعرض دائماً قبل أي تغيير حتى يعلم المستخدم الثمن.
-     */
-    private fun showProactiveWatchConfirmDialog(onUpdated: () -> Unit) {
-        val enabled = settings.isProactiveProtectedWatchEnabled()
-        if (enabled) {
-            settings.setProactiveProtectedWatchEnabled(false)
-            ProtectedAppWatcherService.stopService(context)
-            Toast.makeText(
-                context,
-                context.getString(
-                    R.string.a11y_protected_proactive_disabled_toast
-                ),
-                Toast.LENGTH_SHORT
-            ).show()
-            onUpdated()
-            return
-        }
-        MaterialAlertDialogBuilder(context)
-            .setTitle(R.string.a11y_protected_proactive_title)
-            .setMessage(R.string.a11y_protected_proactive_warning)
-            .setPositiveButton(R.string.a11y_protected_proactive_enable) {
-                _, _ ->
-                settings.setProactiveProtectedWatchEnabled(true)
-                ProtectedAppWatcherService.startProactive(context)
-                Toast.makeText(
-                    context,
-                    context.getString(
-                        R.string.a11y_protected_proactive_enabled_toast
-                    ),
-                    Toast.LENGTH_SHORT
-                ).show()
-                onUpdated()
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()

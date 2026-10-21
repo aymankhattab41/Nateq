@@ -3455,7 +3455,7 @@ class SettingsRepository(context: Context) :
     }
 
     fun isKeyboardHapticEnabled(): Boolean =
-        prefs.getBoolean(KEY_KEYBOARD_HAPTIC, true)
+        prefs.getBoolean(KEY_KEYBOARD_HAPTIC, false)
 
     fun setKeyboardHapticEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_KEYBOARD_HAPTIC, enabled).commit()
@@ -3510,7 +3510,7 @@ class SettingsRepository(context: Context) :
     }
 
     fun isPhoneHapticEnabled(): Boolean =
-        prefs.getBoolean(KEY_PHONE_HAPTIC, true)
+        prefs.getBoolean(KEY_PHONE_HAPTIC, false)
 
     fun setPhoneHapticEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_PHONE_HAPTIC, enabled).commit()

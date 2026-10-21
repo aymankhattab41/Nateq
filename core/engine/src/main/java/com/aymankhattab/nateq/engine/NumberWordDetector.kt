@@ -96,6 +96,65 @@ object NumberWordDetector {
             """(?:\s+(?:and\s+)?$EN_ATOM)*(?![\p{L}\p{M}])"""
     )
 
+    private val AR_CANDIDATE_ROOTS = arrayOf(
+        "صفر", "واحد", "احد", "أحد", "إحد", "اثن", "إثن", "ثنت", "ثان",
+        "ثلاث", "أربع", "اربع", "رابع", "خمس", "ست", "سادس", "سبع",
+        "ثمان", "ثامن", "تسع", "عشر", "مائ", "مئ", "ألف", "الف",
+        "آلاف", "الاف", "مليون", "ملايين", "مليار", "تريليون", "أول",
+        "اول", "حادي"
+    )
+
+    private val EN_CANDIDATE_ROOTS = arrayOf(
+        "zero", "one", "two", "three", "four", "five", "six", "seven",
+        "eight", "nine", "ten", "eleven", "twelv", "thir", "fif",
+        "twent", "hund", "thous", "mill", "bill", "trill", "first", "second"
+    )
+
+    private fun hasArabicNumberCandidate(text: String): Boolean {
+        for (root in AR_CANDIDATE_ROOTS) {
+            if (text.contains(root)) return true
+        }
+        return false
+    }
+
+    private fun hasEnglishNumberCandidate(text: String): Boolean {
+        val lower = text.lowercase()
+        for (root in EN_CANDIDATE_ROOTS) {
+            if (lower.contains(root)) return true
+        }
+        return false
+    }
+
+    /**
+     * فحص سريع: هل يحوي النص أي عدد مكتوب بالحروف؟
+     */
+    fun hasNumberWord(text: String): Boolean {
+        if (text.isEmpty()) return false
+        if (hasArabicNumberCandidate(text)) {
+            val m = PATTERN_ARABIC_NUMBERS.matcher(text)
+            while (m.find()) {
+                val match = m.group(0)
+                if (match != null &&
+                    !isException(text, m.start(), m.end(), match, emptySet())
+                ) {
+                    return true
+                }
+            }
+        }
+        if (hasEnglishNumberCandidate(text)) {
+            val m = PATTERN_ENGLISH_NUMBERS.matcher(text)
+            while (m.find()) {
+                val match = m.group(0)
+                if (match != null &&
+                    !isException(text, m.start(), m.end(), match, emptySet())
+                ) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
     /**
      * يلتقط الأعداد المكتوبة بالحروف ويغلفها بالعلامات الخاصة.
      */
@@ -106,24 +165,40 @@ object NumberWordDetector {
         customExceptions: Set<String> = emptySet()
     ): String {
         if (!enabled || text.isEmpty()) return text
+
+        val isAr = LanguageCode.isArabic(languageTag)
+        val isEn = LanguageCode.isEnglish(languageTag)
+
+        val hasCandidate = when {
+            isAr -> hasArabicNumberCandidate(text)
+            isEn -> hasEnglishNumberCandidate(text)
+            else -> hasArabicNumberCandidate(text) ||
+                hasEnglishNumberCandidate(text)
+        }
+        if (!hasCandidate) return text
+
         val exceptions = DEFAULT_EXCEPTIONS + customExceptions
 
         var result = text
-        if (LanguageCode.isArabic(languageTag)) {
+        if (isAr) {
             result = markWithPattern(
                 result, PATTERN_ARABIC_NUMBERS, exceptions
             )
-        } else if (LanguageCode.isEnglish(languageTag)) {
+        } else if (isEn) {
             result = markWithPattern(
                 result, PATTERN_ENGLISH_NUMBERS, exceptions
             )
         } else {
-            result = markWithPattern(
-                result, PATTERN_ARABIC_NUMBERS, exceptions
-            )
-            result = markWithPattern(
-                result, PATTERN_ENGLISH_NUMBERS, exceptions
-            )
+            if (hasArabicNumberCandidate(result)) {
+                result = markWithPattern(
+                    result, PATTERN_ARABIC_NUMBERS, exceptions
+                )
+            }
+            if (hasEnglishNumberCandidate(result)) {
+                result = markWithPattern(
+                    result, PATTERN_ENGLISH_NUMBERS, exceptions
+                )
+            }
         }
         return result
     }

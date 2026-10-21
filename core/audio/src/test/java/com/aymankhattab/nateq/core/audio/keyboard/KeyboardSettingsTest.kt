@@ -69,13 +69,18 @@ class KeyboardSettingsTest {
     }
 
     @Test
-    fun keyboardHapticAndSoundAndPhonetic_defaultToTrue() {
+    fun keyboardHaptic_defaultsToFalse_andCanBeToggled() {
+        assertFalse(settings.isKeyboardHapticEnabled())
+        settings.setKeyboardHapticEnabled(true)
         assertTrue(settings.isKeyboardHapticEnabled())
-        assertTrue(settings.isKeyboardSoundEnabled())
-        assertTrue(settings.isKeyboardPhoneticEnabled())
-
         settings.setKeyboardHapticEnabled(false)
         assertFalse(settings.isKeyboardHapticEnabled())
+    }
+
+    @Test
+    fun keyboardSoundAndPhonetic_defaultToTrue() {
+        assertTrue(settings.isKeyboardSoundEnabled())
+        assertTrue(settings.isKeyboardPhoneticEnabled())
 
         settings.setKeyboardSoundEnabled(false)
         assertFalse(settings.isKeyboardSoundEnabled())

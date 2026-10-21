@@ -255,7 +255,7 @@ object AccessibilityBridge {
      */
     suspend fun expandReadMore(
         prefix: String,
-        timeoutMs: Long = 500L
+        timeoutMs: Long = 200L
     ): String? {
         val service = activeServiceRef.get() ?: return null
         return withTimeoutOrNull(timeoutMs) {

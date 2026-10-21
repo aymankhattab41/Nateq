@@ -2680,6 +2680,17 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     sb.appendLine(res.format())
                 }
             }
+            sb.appendLine("")
+
+            // ── استهلاك البطارية (الجولة 50) ───────────────────────────
+            val batteryReport = com.aymankhattab.nateq.core.audio.accessibility
+                .BatteryDiagnosticsTracker.buildBatteryReport(context)
+            sb.appendLine(batteryReport)
+
+            // ── تقرير السرعة (الجولة 50) ───────────────────────────────
+            val speedReport = com.aymankhattab.nateq.core.audio.engine
+                .SpeechLatencyTracker.formatSpeedReport()
+            sb.appendLine(speedReport)
 
             sb.toString()
         }

@@ -1607,7 +1607,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         if (!hasSpeakableIdentity(incomingNumber, contactName)) {
             Log.w(
                 TAG,
-                "no identity after grace — cue+vibration," +
+                "no identity after grace — cue," +
                     " waiting up to" +
                     " ${CALLER_IDENTITY_LATE_WAIT_MS}ms"
             )
@@ -1993,26 +1993,6 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 AudioCue(CueType.CALL_UNIDENTIFIED, volume = 0.7f)
             ) {}
         }.onFailure { Log.w(TAG, "unidentified call cue failed", it) }
-
-        runCatching {
-            val vibrator = if (
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-            ) {
-                context.getSystemService(
-                    android.os.VibratorManager::class.java
-                )?.defaultVibrator
-            } else {
-                @Suppress("DEPRECATION")
-                context.getSystemService(Context.VIBRATOR_SERVICE)
-                    as? android.os.Vibrator
-            }
-            if (vibrator?.hasVibrator() == true) {
-                @Suppress("DEPRECATION")
-                vibrator.vibrate(
-                    longArrayOf(0, 300, 150, 300, 150, 300), -1
-                )
-            }
-        }.onFailure { Log.w(TAG, "unidentified call vibration failed", it) }
     }
 
     private fun callerVoice(

@@ -23,6 +23,15 @@ import com.aymankhattab.nateq.core.audio.announcement.ArabicSpeechNormalizer
 import com.aymankhattab.nateq.core.audio.announcement.prepareArabicForEngine
 import com.aymankhattab.nateq.core.engine.EngineMarkers
 import com.aymankhattab.nateq.core.engine.SingleLetterGuard
+import android.database.ContentObserver
+import android.os.Handler
+import android.os.Looper
+import com.aymankhattab.nateq.core.data.SettingsChangeProvider
+import com.aymankhattab.nateq.engine.NumberWordDetector
+import java.util.Collections
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import com.aymankhattab.nateq.core.audio.announcement.InterruptionSensors
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
@@ -290,9 +299,33 @@ class NateqTtsService : TextToSpeechService() {
         "yes", "no", "open", "cancel", "next", "back"
     )
 
-    /** الرحلة اللاتزامنية للتخليق الحالي — تُلغى عند
-     *  إيقاف أو استباق طلبٍ جديد. */
-    @Volatile private var currentJob: kotlinx.coroutines.Job? = null
+    /** رقم الجيل التزايدي للطلبات — يمنع سباق onStop المتأخر
+     *  (الجولة 50 - الأمر 3 البند 7). */
+    private val requestGeneration = AtomicLong(0L)
+
+    /** الرحلة اللاتزامنية للتخليق النشط مع رقم جيلها. */
+    @Volatile private var activeJob: kotlinx.coroutines.Job? = null
+    @Volatile private var activeJobGeneration: Long = 0L
+
+    @androidx.annotation.VisibleForTesting
+    internal fun getRequestGenerationForTesting(): AtomicLong =
+        requestGeneration
+
+    @androidx.annotation.VisibleForTesting
+    internal fun setActiveJobForTesting(
+        gen: Long, job: kotlinx.coroutines.Job?
+    ) {
+        activeJobGeneration = gen
+        activeJob = job
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun getActiveJobForTesting(): kotlinx.coroutines.Job? =
+        activeJob
+
+    @androidx.annotation.VisibleForTesting
+    internal fun getActiveJobGenerationForTesting(): Long =
+        activeJobGeneration
 
     /** عملية الإقلاع الخلفية (اكتشاف اللغات + تدفئة الكاش، بند ب.txt 3.5-1)
      *  — تُلغى فور ورود أول onSynthesizeText حتى لا تزاحم التخليقَ الحقيقي
@@ -336,13 +369,18 @@ class NateqTtsService : TextToSpeechService() {
         }
     }
 
-    /** يُميّز سبب إلغاء [currentJob]: إيقاف صريح (onStop) أم استباق
-     *  بطلبٍ جديد.
-     *  عند الإيقاف لا نُنشئ خطأً زائفاً (النظام يعرف أنه أُوقف عمداً)، وعند
-     *  الاستباق نُنهي callback الطلب القديم حتى لا يعلق طابور النظام فينتقل
-     *  للطلب الجديد. */
-    @Volatile private var stopping = false
     @Volatile private var interruptedBySensor = false
+
+    /** مراقب تغييرات الإعدادات لتسخين صوت الأرقام عند تعديلها. */
+    private val settingsChangeObserver = object : ContentObserver(
+        Handler(Looper.getMainLooper())
+    ) {
+        override fun onChange(selfChange: Boolean) {
+            serviceScope.launch(AppDispatchers.io) {
+                warmNumberVoiceCache()
+            }
+        }
+    }
 
     /** **بند 8:** رصد الإسكات الفوري (هز/تقارب) أثناء دورة التخليق في مسار
      *  قارئ الشاشة (TalkBack عبر هذه الخدمة). كان الربط محصوراً في دورة
@@ -392,6 +430,7 @@ class NateqTtsService : TextToSpeechService() {
                 runCatching { textProcessor }
                 maybeRefreshDiscovery()
                 warmNavigationCache()
+                warmNumberVoiceCache()
             } catch (t: Throwable) {
                 Log.w(TAG, "اكتشاف اللغات وتدفئة الكاش الخلفي فشلا", t)
             }
@@ -427,12 +466,20 @@ class NateqTtsService : TextToSpeechService() {
             IntentFilter(PronunciationDictionary.ACTION_DICTIONARY_CHANGED),
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
+        runCatching {
+            contentResolver.registerContentObserver(
+                SettingsChangeProvider.uri(), false, settingsChangeObserver
+            )
+        }
     }
 
     override fun onDestroy() {
         // إلغاء كل العمليات اللاتزامنية المعلّقة للخدمة حتى لا تتسرب مع عمر
         // عملية المحرك، ثم إغلاق النطق الجاري إن وُجد.
-        currentJob?.cancel()
+        activeJob?.cancel()
+        runCatching {
+            contentResolver.unregisterContentObserver(settingsChangeObserver)
+        }
         warmupJob?.cancel()
         serviceScope.cancel()
         synthesisScope.cancel()
@@ -593,13 +640,13 @@ class NateqTtsService : TextToSpeechService() {
     }
 
     override fun onStop() {
-        // إيقاف صريح (يأتي على خيطٍ آخر غير خيط التخليق): نرفع العلم ثم
-        // نلغي التخليق الجاري. إلغاءٌ كهذا يُلتقط داخل الكوروتين فيُغلق
-        // الـ callback بأمان (بند 2.3) فلا يبقى PlaybackSynthesisCallback
-        // وAudioTrack معلقين يطبقون صمت TalkBack حتى إعادة تشغيل الخدمة.
-        stopping = true
+        // إيقاف صريح: نلغي جيل الطلب السابق فقط لمنع سباق الطلب الأحدث
+        val prevGen = requestGeneration.get()
+        requestGeneration.incrementAndGet()
         interruptedBySensor = false
-        currentJob?.cancel()
+        if (activeJobGeneration == prevGen) {
+            activeJob?.cancel()
+        }
     }
 
     /** رصد الهز/التقارب أثناء رحلة التخليق: يُسجَّل أثناء النطق النشط فقط
@@ -634,9 +681,12 @@ class NateqTtsService : TextToSpeechService() {
      *  (بند 2.3) دون خطأٍ زائف لأن النظام يعرف أنه أُوقف عمداً، ويبقى طابور
      *  TalkBack سليماً ليكمل الطلب التالي. */
     private fun interruptSynthesis() {
-        stopping = false
         interruptedBySensor = true
-        currentJob?.cancel()
+        val prevGen = requestGeneration.get()
+        requestGeneration.incrementAndGet()
+        if (activeJobGeneration == prevGen) {
+            activeJob?.cancel()
+        }
     }
 
     override fun onSynthesizeText(
@@ -644,6 +694,7 @@ class NateqTtsService : TextToSpeechService() {
         callback: SynthesisCallback?
     ) {
         if (request == null || callback == null) return
+        val myGen = requestGeneration.incrementAndGet()
         // طلبُ تخليقٍ حقيقيّ وصل — ألغِ التدفئة الخلفية الجارية (اكتشاف
         // اللغات/كاش كلمات التنقل) حتى تتفرغ منافذُها وأعمدتُها لهذا
         // النطق ولا تزاحمه على المحركات/المسبح (بند ب.txt 3.5-1).
@@ -679,7 +730,6 @@ class NateqTtsService : TextToSpeechService() {
         // والإيقاف (onStop) وحده يُلغي الرحلة الجارية بأمان. لو علِق المحرك
         // الطرفي تُنهي مهله الداخلية المتكيّفة (1.5–8 ث داخل
         // SystemVoiceProvider) الطلبَ بدل تعليق الخيط بلا سقف.
-        stopping = false
         interruptedBySensor = false
 
         // **بند قفل النطق العابر:** نرفع علم «نطق جارٍ» عبر content://…
@@ -711,11 +761,21 @@ class NateqTtsService : TextToSpeechService() {
         val startUptime = SystemClock.uptimeMillis()
         val lastProgressAt = AtomicLong(startUptime)
         val lastPieceDurationMs = AtomicLong(0L)
+        val ttfbMs = AtomicLong(0L)
+        val preprocessDurationMs = AtomicLong(0L)
+        val planningDurationMs = AtomicLong(0L)
+        val segmentMetrics =
+            Collections.synchronizedList(
+                ArrayList<SpeechLatencyTracker.SegmentMetric>()
+            )
         val monitoredCallback = MonitoredSynthesisCallback(callback) { bytes ->
             lastProgressAt.set(SystemClock.uptimeMillis())
             if (bytes > 0) {
                 val dur = (bytes * 1000L) / 44100L
                 lastPieceDurationMs.set(dur)
+                ttfbMs.compareAndSet(
+                    0L, SystemClock.uptimeMillis() - startUptime
+                )
             }
         }
         // **المهلة تُشتقّ من المقاطع الفعلية** بعد التفتيت أدناه لا من
@@ -822,6 +882,7 @@ class NateqTtsService : TextToSpeechService() {
                 }
                 // ع٢٩-12: توسيع «قراءة المزيد» تلقائياً قبل المعالجة الدلالية
                 var processedText = rawText
+                val startPreprocess = SystemClock.uptimeMillis()
                 val readMoreEnabled = runCatching {
                     FeatureFlags.isActive(
                         FeatureFlags.FEATURE_READ_MORE_EXPAND,
@@ -829,18 +890,22 @@ class NateqTtsService : TextToSpeechService() {
                         settings = settings
                     )
                 }.getOrDefault(false)
+                val fgPkg = AccessibilityBridge.foregroundPackage()
+                val isPkgAllowed = fgPkg != null &&
+                    settings.getReadMoreAllowedPackages().contains(fgPkg)
                 val isTruncated = SelectorPacks.looksTruncated(rawText)
                 if (isTruncated) {
                     Log.w(
                         TAG,
                         "[READMORE] Speech detected truncated text " +
-                            "(enabled=$readMoreEnabled, len=${rawText.length})"
+                            "(enabled=$readMoreEnabled, " +
+                            "allowed=$isPkgAllowed, len=${rawText.length})"
                     )
                 }
-                if (readMoreEnabled && isTruncated) {
+                if (readMoreEnabled && isPkgAllowed && isTruncated) {
                     val expanded = AccessibilityBridge.expandReadMore(
                         rawText,
-                        timeoutMs = 500L
+                        timeoutMs = 200L
                     )
                     val cleanRaw = SelectorPacks.cleanBidi(rawText).trim()
                     val isValid = if (expanded != null) {
@@ -890,6 +955,8 @@ class NateqTtsService : TextToSpeechService() {
                     )
                 }
                 processedText = semanticText
+                val endPreprocess = SystemClock.uptimeMillis()
+                preprocessDurationMs.set(endPreprocess - startPreprocess)
                 Log.d(TAG, "[DICT] Service after: $processedText")
                 // ع٤١-ب4: سجلّ «ما قيل» لمسار قارئ الشاشة (TalkBack) بعد
                 // تجهيز النص النهائي وقبل أي معالجة خاصة بالمحرك.
@@ -919,6 +986,7 @@ class NateqTtsService : TextToSpeechService() {
                     settings.isEmojiPronunciationEnabled()
                 }.getOrDefault(false)
 
+                val startPlanning = SystemClock.uptimeMillis()
                 val planItems = SpeechPlanner.plan(
                     rawText = semanticText,
                     fallbackLanguage = languageTag,
@@ -937,6 +1005,8 @@ class NateqTtsService : TextToSpeechService() {
                         Segment(item.text, item.languageTag, item.role)
                     }
                 }
+                val endPlanning = SystemClock.uptimeMillis()
+                planningDurationMs.set(endPlanning - startPlanning)
 
                 // **حارسُ المقطع الأحادي الطويل:** المقطعُ الواحد إن
                 // تجاوز عتبة تعثّر المحرّكات لا يُسلَّم كاملاً إلى
@@ -983,7 +1053,15 @@ class NateqTtsService : TextToSpeechService() {
                     )
                     synthesizeMixed(
                         segments, readerRate, monitoredCallback,
-                        effectCategory, activeAppVoice, reqVoiceName
+                        effectCategory, activeAppVoice, reqVoiceName,
+                        onFirstByteEmitted = {
+                            ttfbMs.compareAndSet(
+                                0L, SystemClock.uptimeMillis() - startUptime
+                            )
+                        },
+                        onSegmentMetric = { metric ->
+                            segmentMetrics.add(metric)
+                        }
                     )
                 }
             } catch (e: CancellationException) {
@@ -993,13 +1071,16 @@ class NateqTtsService : TextToSpeechService() {
                 if (interruptedBySensor) {
                     Log.d(TAG, "onSynthesizeText interrupted by sensor")
                     runCatching { callback.done() }
-                } else if (stopping) {
+                } else if (myGen < requestGeneration.get()) {
                     // بند 2.4: خروج صامت عند الإيقاف الحقيقي — استدعاء
                     // error() هنا خطأٌ زائف يخرق عقد AOSP (النظام ألغى
                     // الطلب بنفسه عبر onStop فلا ينتظر إخطاراً آخر).
-                    Log.d(TAG, "onSynthesizeText cancelled (stop)")
+                    Log.d(TAG, "onSynthesizeText cancelled (stop gen $myGen)")
                 } else {
-                    Log.d(TAG, "onSynthesizeText cancelled (preempt)")
+                    Log.d(
+                        TAG,
+                        "onSynthesizeText cancelled (preempt gen $myGen)"
+                    )
                     // بند 2.3: الاستباق وحده يُغلق الـ callback دائماً
                     // (تحوّط من رمي النظام InterruptedException/عدم تحلّه
                     // عند الإيقاف) حتى لا يعلق طابور النظام بطلبٍ ميت أو
@@ -1011,7 +1092,12 @@ class NateqTtsService : TextToSpeechService() {
                 runCatching { callback.error() }
             }
         }
-        currentJob = job
+        if (myGen < requestGeneration.get()) {
+            Log.d(TAG, "onSynthesizeText stopped before start ($myGen)")
+            return
+        }
+        activeJob = job
+        activeJobGeneration = myGen
         job.start()
         try {
             // انتظار متزامن على خيط التخليق حتى اكتمال التوليف (معيار AOSP)؛
@@ -1060,8 +1146,22 @@ class NateqTtsService : TextToSpeechService() {
         } catch (t: Throwable) {
             Log.w(TAG, "onSynthesizeText join interrupted", t)
         } finally {
+            val totalDurationMs = SystemClock.uptimeMillis() - startUptime
+            val ttfb = if (ttfbMs.get() > 0L) ttfbMs.get() else totalDurationMs
+            SpeechLatencyTracker.recordUtterance(
+                SpeechLatencyTracker.UtteranceMetric(
+                    text = rawText,
+                    preprocessDurationMs = preprocessDurationMs.get(),
+                    planningDurationMs = planningDurationMs.get(),
+                    segments = segmentMetrics.toList(),
+                    timeToFirstByteMs = ttfb,
+                    totalDurationMs = totalDurationMs
+                )
+            )
             stopInterruptionMonitoring()
-            currentJob = null
+            if (activeJobGeneration == myGen) {
+                activeJob = null
+            }
             if (audioSessionId > 0) {
                 audioEffectManager.detach(audioSessionId)
             }
@@ -1503,7 +1603,7 @@ class NateqTtsService : TextToSpeechService() {
 
     /** صوتُ مقطعٍ واحد مخلَّق (شريحاته PCM الخام بلا معاينة) — حصيلة
      *  [synthesizeSegmentRaw] للمسار المتوازي. */
-    private class SegmentAudio(
+    internal class SegmentAudio(
         val nativeRate: Int,
         val nativeChannels: Int,
         val chunks: List<ByteArray>
@@ -1731,33 +1831,34 @@ class NateqTtsService : TextToSpeechService() {
      *  1.6.1). الآن يُقسَّم المقطعُ المتعثّر إلى أنصاف عند الفشل
      *  ([splitOnFailureBoundary]) فيُنطق كلُّ ما يُنطق منه، ولا يُنسى
      *  نصٌّ إلا بخطأٍ صريح لغيره. */
-    private suspend fun synthesizeSegmentRaw(
+    /**
+     * تنفيذ تخليق المقطع الفعلي مع تقسيم الأجزاء عند الفشل.
+     */
+    private suspend fun doSynthesizeSegment(
         segment: Segment,
         readerRate: Float,
         effectCategory: String = "",
         appVoice: EffectiveVoice? = null,
-        reqVoiceName: String? = null
+        reqVoiceName: String? = null,
+        onResolved: ((engine: String?, voice: String?) -> Unit)? = null
     ): SegmentAudio? {
         val params = resolveSegmentParams(
             segment, readerRate, appVoice, reqVoiceName
         ) ?: return null
+        onResolved?.invoke(params.engine, params.voice.id)
         val chunks = ArrayList<ByteArray>()
         var nativeRate = 0
         var nativeChannels = 1
-        // **بند النص الطويل:** يُسلَّم النصُّ كلُّه طلباً واحداً بلا تقسيم
-        // مسبق (التقسيمُ المسبقُ كان حلّاً للعَرَض فأسقط كلماتٍ بصمت)،
-        // فالتقسيمُ الآن **عند الفشل فقط** — لا يُقسَّم إلا ما يعجز
-        // محرّكه فعلاً، فلا تقطيعٌ في النص السليم ولا إسقاطٌ صامت.
         val pieceBudgets = splitOnFailureBoundary(params.text)
         if (pieceBudgets.size > 1) {
-            Log.w(TAG,
+            Log.w(
+                TAG,
                 "synthesizeSegment: المقطع ${segment.languageTag}" +
-                " (${params.text.length} حرفاً) سيُقسَّم إلى" +
-                " ${pieceBudgets.size} عند الفشل فقط")
+                    " (${params.text.length} حرفاً) سيُقسَّم إلى" +
+                    " ${pieceBudgets.size} عند الفشل فقط"
+            )
         }
         for (piece in pieceBudgets) {
-            // **حارس الأجزاء:** المقطعُ الذي يفشل بعد تقسيمه يُتخطّى
-            // صراحةً (لا صمت) — ما يبقى منه يُنطق، وما لا يُنطق يُعلَن.
             val produced = try {
                 var pieceRate = 0
                 var pieceChannels = 1
@@ -1789,14 +1890,16 @@ class NateqTtsService : TextToSpeechService() {
             } catch (e: CancellationException) {
                 throw e
             } catch (t: Throwable) {
-                Log.w(TAG,
+                Log.w(
+                    TAG,
                     "synthesizeSegment: جزء ${piece.length} حرفاً" +
-                    " من مقطع ${segment.languageTag} فشل" +
-                    " — يُتخطّى صراحةً لا بصمت", t)
+                        " من مقطع ${segment.languageTag} فشل" +
+                        " — يُتخطّى صراحةً لا بصمت",
+                    t
+                )
                 false
             }
             if (!produced && pieceBudgets.size == 1) {
-                // فشل المقطعُ كاملاً ولا تقسيمَ بعدُ — لا حلّ.
                 return null
             }
         }
@@ -1804,29 +1907,85 @@ class NateqTtsService : TextToSpeechService() {
         else SegmentAudio(nativeRate, nativeChannels, chunks)
     }
 
-    /** يقسّم نصاً عند **أول حدٍّ آمن** (نقطة/تعجب/سطر) ليعاد التخليقُ جزءاً
-     *  جزءاً — انظر [splitOnFailureBoundary] (دالّةٌ مشتركة في
-     *  [SegmentFailureSplit.kt] لتفادي التكرار ولتسهيل الاختبار). */
-
     /**
-     * يعيد معاينة شريحةِ مقطعٍ محلي إلى المعيار الموحّد ويبثّها بالترتيب —
-     *  الشيفرة المشتركة بين المسارين المتسلسل والمتوازي. المخزنُ من المسبح
-     *  يُردّ في finally على كل المصائر (المتلقي ينسخ الشريحة عبر
-     *  audioAvailable).
-     *
-     *  [phase] يحمل الطورَ الكسري لإعادة العينات عبر دفعاتِ المقطع نفسه
-     *  (بند 2.7): نسخة [PcmResampler.convertInto] الحاملة للطور تكون
-     *  مستمرةً فلا تتقبّط عند حدود الدفعة، ويُمرّر المتصل [phase] نفسَه
-     *  لكلَّ دفعاتِ مقطعٍ واحدٍ (LongArray(2) طازج لكل مقطعٍ بعد ضبط
-     *  معدله وقنواته) فيبقى الاتساقُ موكولاً إليه.
-     *
-     *  [crossfader] يدمج رأسَ كل شريحة مع ذيل سابقتها بانحدارٍ خطي (مرحلة 7):
-     *  بلا قفزاتٍ حادّة يُسمع لها «كليك» عند حدود دفعاتِ البثّ — كلُّ مقاطعِ
-     *  النطق الواحد تشترك في كائنٍ واحد (ترانزيتيون سلس لا انقطاعٌ مجزَّأ)
-     *  ويبثّ ذيلُه المتبقي عند النهاية عبر [emitCrossfadeTail].
-     *
-     *  @return عدد البايتات المدمجة (قبل بثّ الذيل النهائي) — للفحص الآلي.
+     * تخليق مقطع مع إعادة المحاولة مرة واحدة بعد 120ms عند الفشل، ثم
+     * التراجع لصوت اللغة العادي، وتسجيل المقاطع المحذوفة
+     * (الجولة 50 - الأمر 3 البند 1).
      */
+    internal suspend fun synthesizeSegmentRaw(
+        segment: Segment,
+        readerRate: Float,
+        effectCategory: String = "",
+        appVoice: EffectiveVoice? = null,
+        reqVoiceName: String? = null,
+        onMetric: ((SpeechLatencyTracker.SegmentMetric) -> Unit)? = null
+    ): SegmentAudio? {
+        val startUptime = SystemClock.uptimeMillis()
+        var attempts = 1
+        var resolvedEngine: String? = null
+        var resolvedVoiceId: String? = null
+
+        var audio = doSynthesizeSegment(
+            segment, readerRate, effectCategory, appVoice, reqVoiceName
+        ) { eng, v ->
+            resolvedEngine = eng
+            resolvedVoiceId = v
+        }
+
+        if (audio == null) {
+            attempts = 2
+            delay(120L)
+            audio = doSynthesizeSegment(
+                segment, readerRate, effectCategory, appVoice, reqVoiceName
+            ) { eng, v ->
+                resolvedEngine = eng
+                resolvedVoiceId = v
+            }
+        }
+
+        if (audio == null) {
+            attempts = 3
+            val fallbackSegment = segment.copy(role = SpeechRole.TEXT)
+            audio = doSynthesizeSegment(
+                fallbackSegment, readerRate, "", null, null
+            ) { eng, v ->
+                resolvedEngine = eng
+                resolvedVoiceId = v
+            }
+        }
+
+        val endUptime = SystemClock.uptimeMillis()
+        val success = (audio != null)
+        if (!success) {
+            Log.w(TAG, "مقطع محذوف: ${segment.text}")
+            SpeechLatencyTracker.recordDroppedSegment(segment.text)
+        }
+
+        onMetric?.invoke(
+            SpeechLatencyTracker.SegmentMetric(
+                text = segment.text,
+                engine = resolvedEngine,
+                voiceId = resolvedVoiceId,
+                startUptimeMs = startUptime,
+                endUptimeMs = endUptime,
+                durationMs = endUptime - startUptime,
+                attempts = attempts,
+                success = success
+            )
+        )
+
+        return audio
+    }
+
+    private fun isCriticalNumericSegment(segment: Segment): Boolean {
+        if (segment.role == SpeechRole.NUMBER) return true
+        if (segment.isNumericOnly()) return true
+        if (segment.text.any { it.isDigit() || it in '\u0660'..'\u0669' }) {
+            return true
+        }
+        return NumberWordDetector.hasNumberWord(segment.text)
+    }
+
     private fun emitMixedChunk(
         chunk: ByteArray,
         validLength: Int,
@@ -1922,35 +2081,35 @@ class NateqTtsService : TextToSpeechService() {
         callback: SynthesisCallback,
         effectCategory: String = "",
         appVoice: EffectiveVoice? = null,
-        reqVoiceName: String? = null
+        reqVoiceName: String? = null,
+        onFirstByteEmitted: (() -> Unit)? = null,
+        onSegmentMetric: ((SpeechLatencyTracker.SegmentMetric) -> Unit)? = null
     ) {
         var started = false
-        // عدّادُ الأجزاء التي لم تُنطق: صفرٌ في المسار السليم، وأيُّ
-        // قيمةٍ تُعلَن في السجلّ كإٍ صريحٍ بدل الصمت.
         var skippedSegments = 0
+        var hadCriticalDrop = false
         val maxBytes = callback.maxBufferSize
         val crossfader = ChunkCrossfader(CROSSFADE_FRAMES)
         for (segment in segments) {
+            val segStart = SystemClock.uptimeMillis()
             val params = resolveSegmentParams(
                 segment, readerRate, appVoice, reqVoiceName
             )
             if (params == null) {
-                // **حارس عدم الإسقاط الصامت:** مقطعٌ بلا صوتٍ ولا
-                // محرّك لا يجوز أن يمرّ بلا أثر — يُعلَن الخلل صريحاً
-                // في السجلّ حتى لا يمرّ النصُّ الناقص بلا تفسير.
                 skippedSegments++
-                Log.w(TAG,
-                    "synthesizeMixed: لا مزود لمقطع" +
-                    " ${segment.languageTag} — يُعدّ متجاوَزاً")
+                if (isCriticalNumericSegment(segment)) {
+                    hadCriticalDrop = true
+                }
+                Log.w(
+                    TAG,
+                    "synthesizeMixed: لا مزود لمقطع " +
+                        "${segment.languageTag} — يُعدّ متجاوَزاً"
+                )
                 continue
             }
             var nativeRate = 0
             var nativeChannels = 1
             val phase = LongArray(2)
-            // **بند النص الطويل:** يُقسَّم المقطعُ عند حدوده اللغوية
-            // فقط إن تجاوز [SEGMENT_SPLIT_FALLBACK_CHARS]، فيُنطق كلُّ
-            // ما يُنطق منه بلا إسقاطٍ صامت. و[phase] و[crossfader]
-            // يظلّان كما هما لاستمرارية إعادة العينات بلا فجوة.
             for (piece in splitOnFailureBoundary(params.text)) {
                 var producedHere = false
                 try {
@@ -1970,7 +2129,11 @@ class NateqTtsService : TextToSpeechService() {
                                 chunk, validLength, nativeRate,
                                 nativeChannels, phase, crossfader,
                                 maxBytes, { started },
-                                { started = true }, callback
+                                {
+                                    started = true
+                                    onFirstByteEmitted?.invoke()
+                                },
+                                callback
                             )
                         },
                         params.engine,
@@ -1981,24 +2144,52 @@ class NateqTtsService : TextToSpeechService() {
                 } catch (e: CancellationException) {
                     throw e
                 } catch (t: Throwable) {
-                    Log.w(TAG,
+                    Log.w(
+                        TAG,
                         "synthesizeMixed: جزء ${piece.length} حرفاً من" +
-                        " مقطع ${segment.languageTag} فشل تخليقه" +
-                        " — يُتخطّى صراحةً", t)
+                            " مقطع ${segment.languageTag} فشل تخليقه",
+                        t
+                    )
                 }
                 if (!producedHere) {
                     skippedSegments++
+                    if (isCriticalNumericSegment(segment)) {
+                        hadCriticalDrop = true
+                    }
                 }
             }
+            val segEnd = SystemClock.uptimeMillis()
+            onSegmentMetric?.invoke(
+                SpeechLatencyTracker.SegmentMetric(
+                    text = segment.text,
+                    engine = params.engine,
+                    voiceId = params.voice.id,
+                    startUptimeMs = segStart,
+                    endUptimeMs = segEnd,
+                    durationMs = segEnd - segStart,
+                    attempts = 1,
+                    success = !hadCriticalDrop
+                )
+            )
         }
         if (skippedSegments > 0) {
-            Log.e(TAG,
+            Log.e(
+                TAG,
                 "synthesizeMixed: ${skippedSegments} جزءاً لم يُنطق" +
-                " — النصُّ الناطق ناقص (${segments.size} مقطعاً)")
+                    " — النصُّ الناطق ناقص (${segments.size} مقطعاً)"
+            )
+        }
+        if (hadCriticalDrop) {
+            callback.error()
+            return
         }
         emitCrossfadeTail(
             crossfader, maxBytes, { started },
-            { started = true }, callback
+            {
+                started = true
+                onFirstByteEmitted?.invoke()
+            },
+            callback
         )
         if (!started) {
             callback.error()
@@ -2007,110 +2198,139 @@ class NateqTtsService : TextToSpeechService() {
         callback.done()
     }
 
-    /**
-     * المسار المتوازي للنص المختلط القصير (بند ب.txt 3.3): تُخلَّق مقاطعُ
-     * النص في آنٍ واحد على خيوط مستقلة (المزوّدُ بقادرٍ على أكثر من لغة
-     * يخلّق كلَّ لغةٍ ضمن محركها ومثيلها — وجلساتُ المثيل الواحد تبقى
-     * متتاليةً بقفله فيأمن ناطقٌ واحد) ثم تُعرض النتائجُ مرتبةً بالترتيب
-     * بمعدلٍ موحّد فيختصر الزمنُ الكلي إلى أبطأِ مقطع بدل المجموع. الحارسُ
-     * في [synthesizeMixed] يُبقي النصوصَ الطويلة على المتسلسل فلا تتجمع
-     * مقاطعُها في الذاكرة على دفعة.
-     */
-    private suspend fun synthesizeParallel(
+    internal suspend fun synthesizeParallel(
         segments: List<Segment>,
         readerRate: Float,
         callback: SynthesisCallback,
         effectCategory: String = "",
         appVoice: EffectiveVoice? = null,
-        reqVoiceName: String? = null
-    ) {
-        val audios = coroutineScope {
-            segments.map { segment ->
-                async(AppDispatchers.io) {
+        reqVoiceName: String? = null,
+        onFirstByteEmitted: (() -> Unit)? = null,
+        onSegmentMetric: ((SpeechLatencyTracker.SegmentMetric) -> Unit)? = null
+    ): Unit = coroutineScope {
+        val semaphore = Semaphore(3)
+        val deferreds = segments.map { segment ->
+            async(AppDispatchers.io) {
+                semaphore.withPermit {
                     synthesizeSegmentRaw(
                         segment, readerRate, effectCategory,
-                        appVoice, reqVoiceName
+                        appVoice, reqVoiceName, onSegmentMetric
                     )
                 }
-            }.map { it.await() }
+            }
         }
         var started = false
         val maxBytes = callback.maxBufferSize
         val crossfader = ChunkCrossfader(CROSSFADE_FRAMES)
-        for (audio in audios) {
-            if (audio == null) continue
+        var hadCriticalDrop = false
+
+        for ((index, deferred) in deferreds.withIndex()) {
+            val segment = segments[index]
+            val audio = deferred.await()
+            if (audio == null) {
+                if (isCriticalNumericSegment(segment)) {
+                    hadCriticalDrop = true
+                    Log.w(
+                        TAG,
+                        "synthesizeParallel: dropped critical segment " +
+                            segment.text
+                    )
+                    break
+                }
+                continue
+            }
             val phase = LongArray(2)
             for (chunk in audio.chunks) {
                 emitMixedChunk(
                     chunk, chunk.size,
                     audio.nativeRate, audio.nativeChannels,
                     phase, crossfader, maxBytes,
-                    { started }, { started = true }, callback
+                    { started },
+                    {
+                        started = true
+                        onFirstByteEmitted?.invoke()
+                    },
+                    callback
                 )
             }
         }
+        if (hadCriticalDrop) {
+            callback.error()
+            return@coroutineScope
+        }
         emitCrossfadeTail(
             crossfader, maxBytes, { started },
-            { started = true }, callback
+            {
+                started = true
+                onFirstByteEmitted?.invoke()
+            },
+            callback
         )
         if (!started) {
             callback.error()
-            return
+            return@coroutineScope
         }
         callback.done()
     }
 
-    /** النص المختلط الكتابات: لكل مقطعٍ لغوي يُعالَج النص بدليل لغته (العربية
-     *  بقنواتها الكاملة وسواها بالتنظيف فقط)، ويُحل صوت المقطع من
-     *  كتالوجه أو من
-     *  تراجع الجهاز الافتراضي، ويُخلَّق بلغته ومحركِه — ثم تُعاد عينات كل مقطع
-     *  فور إنتاجه إلى معيارٍ صوتي موحّد ثابت
-     *  ([MIXED_UNIFIED_RATE]، مونو) وتُدفع
-     *  للـ callback مقطعاً مقطعاً بلا تجميع صوت المقرّأ كاملاً في الذاكرة.
-     *
-     * ## لماذا معيار ثابت بدل "المعدل الأعلى" كما كان؟
-     * المعيار القديم جمّع أولاً كل عينات المقاطع (بما يوازي كامل مدة النص) في
-     * الذاكرة ليعرف أعلى معدل ثم أعاد المعاينة وبثّ — فقراءة مقالٍ طويل متعدد
-     * اللغات قد تستهلك عشرات الميغابايت وتُسقط عملية :tts بـ OOM. مع المعيار
-     * الثابت يصح التدفق: كل مقطع يُعاد معاينته لحظ إنتاجه ويُدفع فوراً، فيبقى
-     * الذروة = أكبر مقطعٍ وحده لا مجمل النص (و44100 أعلى من المعيار التاريخي
-     * 22050 فلا يُخسر صوت — الخفض إلى أقل مستوى كان افتراضَ الدفع الأصلي).
-     *
-     * ## متوازٍ أم متسلسل؟
-     * النصُّ المختلط القصير (تحت [PARALLEL_MAX_CHARS]) يُخلَّق مقاطعه معاً
-     * على خيوط مستقلة ثم تُعرض مرتبةً (تسريع الزمن الكلي)، والطويل يبقى
-     * متسلسلاً متدفقاً فلا تتجمع مقاطعه في الذاكرة.
-     *
-     * مقطعٌ يعجز محركُه عن التخليق يُسقط وحده (يُسجَّل ويُكمل البقية) بدل قطع
-     * النطق كلياً؛ وإن فشل الكل تُرك callback.error() كملاذٍ أخير. */
     private suspend fun synthesizeMixed(
         segments: List<Segment>,
         readerRate: Float,
         callback: SynthesisCallback,
         effectCategory: String = "",
         appVoice: EffectiveVoice? = null,
-        reqVoiceName: String? = null
+        reqVoiceName: String? = null,
+        onFirstByteEmitted: (() -> Unit)? = null,
+        onSegmentMetric: ((SpeechLatencyTracker.SegmentMetric) -> Unit)? = null
     ) {
         val totalChars = segments.sumOf { it.text.length }
         if (segments.size > 1 && totalChars <= PARALLEL_MAX_CHARS) {
             synthesizeParallel(
                 segments, readerRate, callback, effectCategory,
-                appVoice, reqVoiceName
+                appVoice, reqVoiceName, onFirstByteEmitted,
+                onSegmentMetric
             )
         } else {
             synthesizeMixedSequential(
                 segments, readerRate, callback, effectCategory,
-                appVoice, reqVoiceName
+                appVoice, reqVoiceName, onFirstByteEmitted,
+                onSegmentMetric
             )
         }
     }
 
-    /** تدفئة كاش PCM بكلمات التنقل الشائعة لكل لغة مدعومة (بند ب.txt 3.5-1):
-     *  تشغيلُها عبر الوجهة الكاملة (محرك/أشرطة/صوت) يمنح الكاشَ ذات المفاتيح
-     *  التي سيبحثها النطقُ اللاحق فيُبثّ منها مباشرةً بلا قرص. لا يُؤخّر نطقاً
-     *  أبداً (خيط خلفية بلا حاجز)، وأي فشلٍ في كلمة يُسقطها وحدها، واللغةُ
-     *  بلا صوتٍ تُتجاوز صامتةً — والمجموعتان قصيرتان فلا يكدّسان الكاش
-     *  المحدود. */
+    private val commonNumberWords = listOf(
+        "صفر", "واحد", "اثنان", "ثلاثة", "أربعة", "خمسة",
+        "ستة", "سبعة", "ثمانية", "تسعة", "عشرة",
+        "0", "1", "2", "3", "010", "011", "012", "015"
+    )
+
+    private suspend fun warmNumberVoiceCache() {
+        val probe = Segment("واحد", LanguageCode.AR.tag, SpeechRole.NUMBER)
+        val params = resolveSegmentParams(probe, 1.0f) ?: return
+        for (word in commonNumberWords) {
+            try {
+                params.provider.synthesize(
+                    word,
+                    params.voice,
+                    params.speechRate,
+                    params.pitch,
+                    params.volume,
+                    { _, _ -> },
+                    { _, _ -> },
+                    params.engine,
+                    params.locale,
+                    params.voiceName,
+                    SettingsRepository.VOICE_CATEGORY_NUMBERS
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                Log.d(TAG, "warmNumberVoiceCache: word $word failed", t)
+            }
+        }
+    }
+
     private suspend fun warmNavigationCache() {
         val languages = listOf(LanguageCode.AR.tag, LanguageCode.EN.tag)
         for (lang in languages) {

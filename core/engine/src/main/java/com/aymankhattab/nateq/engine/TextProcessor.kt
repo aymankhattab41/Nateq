@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.engine
 
 import android.content.Context
+import com.aymankhattab.nateq.core.audio.engine.SegmentWithOffset
 import com.aymankhattab.nateq.core.engine.EngineMarkers
 import com.aymankhattab.nateq.core.engine.PunctuationLevels
 import com.aymankhattab.nateq.core.engine.SynthesisConfig
@@ -91,12 +92,20 @@ class TextProcessor(
      * مدخل القاموس الوحيد — يُطبَّق مرة واحدة على النص الخام قبل أي معالجة:
      * تطبيع NFC فقط ثم تطبيق القاموس وإرجاع النص (الأمر 1 و2).
      */
-    fun applyDictionaryFirst(text: String, languageTag: String): String {
+    fun applyDictionaryFirst(
+        text: String,
+        languageTag: String,
+        precomputedSegments: List<SegmentWithOffset>? = null
+    ): String {
         if (text.isEmpty()) return text
         return try {
             pronunciationDict.reloadIfChanged()
             val normalized = Normalizer.normalize(text, Normalizer.Form.NFC)
-            pronunciationDict.apply(normalized, languageTag)
+            pronunciationDict.apply(
+                normalized,
+                languageTag,
+                precomputedSegments
+            )
         } catch (t: Throwable) {
             android.util.Log.e(
                 "NateqDict",

@@ -23,8 +23,6 @@ import android.accessibilityservice.AccessibilityButtonController
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.os.VibrationEffect
-import android.os.Vibrator
 import android.text.TextUtils
 import android.view.KeyEvent
 import android.view.View
@@ -401,12 +399,6 @@ class NateqAccessibilityService : AccessibilityService() {
         applyAccessibilityButton()
         registerBluetoothReceiver()
 
-        // المراقبة الاستباقية للتطبيقات المحمية (اختيارية): تُعاد عند
-        // كل ارتباط إن كان المستخدم قد فعّلها، فتبقى بعد إعادة التشغيل.
-        if (repo.isProactiveProtectedWatchEnabled()) {
-            ProtectedAppWatcherService.startProactive(this)
-        }
-
         // ع٢٩-13: تهيئة موجّه الاختصارات
         keyShortcutRouter = KeyShortcutRouter(
             service = this,
@@ -591,7 +583,22 @@ class NateqAccessibilityService : AccessibilityService() {
 
         info.eventTypes = types
         info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-        info.notificationTimeout = 50L
+
+        val liveReading = FeatureFlags.isActive(
+            FeatureFlags.FEATURE_CHAT_LIVE_READING,
+            context = this,
+            settings = repo,
+            stateStore = store
+        )
+        val readMore = FeatureFlags.isActive(
+            FeatureFlags.FEATURE_READ_MORE_EXPAND,
+            context = this,
+            settings = repo,
+            stateStore = store
+        )
+        val fastRequired = liveReading || readMore
+        info.notificationTimeout = if (fastRequired) 50L else 150L
+
         info.flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
             AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
             AccessibilityServiceInfo.FLAG_REQUEST_ACCESSIBILITY_BUTTON or
@@ -618,12 +625,36 @@ class NateqAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
 
+        BatteryDiagnosticsTracker.recordAccessibilityEvent(event.eventType)
+
         if (AppPolicy.isAutomationActive()) {
             TtsSettingsAutomation.onAccessibilityEvent(event)
             return
         }
         val store = stateStore
         if (store != null && store.isPaused()) return
+
+        val eventPkg = event.packageName?.toString()
+
+        // خروج مبكر لأي حزمة غير مسموحة قبل أي عمل
+        val isLauncher = event.eventType ==
+            AccessibilityEvent.TYPE_VIEW_CLICKED &&
+            ProtectedAppManager.isHomeLauncher(this, eventPkg)
+        val isProtected = event.eventType ==
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            eventPkg != null &&
+            SettingsRepository.create(this).isProtectedApp(eventPkg)
+        val isOwnApp = eventPkg == packageName
+
+        val repoSettings = SettingsRepository.create(this)
+        val isAllowed = isLauncher || isProtected || isOwnApp ||
+            AppPolicy.isAllowed(
+                eventPkg,
+                repoSettings.getA11yAllowedPackages(),
+                repoSettings.isA11yAllowAllApps()
+            )
+
+        if (!isAllowed) return
 
         // ع٤١-ب0.4: خنق أحداث تغيّر محتوى النافذة (≥80ms) فلا تُغرق
         // الخيطَ الرئيسي بالمعالجة أثناء التمرير أو البثّ الحيّ.
@@ -648,8 +679,6 @@ class NateqAccessibilityService : AccessibilityService() {
                 lastFocusedPackage = focusedPkg
             }
         }
-
-        val eventPkg = event.packageName?.toString()
 
         // الجولة 48 - الأمر 7: نقرة أيقونة التطبيق المحمي في المشغّل
         // تصل قبل انطلاقه — نعطل الخدمة هنا قبل شاشة البداية.
@@ -827,26 +856,6 @@ class NateqAccessibilityService : AccessibilityService() {
         // ع٤١-ب1: استمرارُ المفتاحين إيماءةٌ قابلةٌ للتخصيص، الافتراضي
         // فيها تبديلُ الإيقاف (TOGGLE_PAUSE) مع الإعلان الصوتي.
         keyShortcutRouter?.executeGesture(ShortcutGesture.BOTH_HOLD)
-        vibrateEmergency()
-
-        // اهتزاز تأكيدي إضافي
-    }
-
-    private fun vibrateEmergency() {
-        runCatching {
-            val vibrator = getSystemService(Vibrator::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator?.vibrate(
-                    VibrationEffect.createOneShot(
-                        200L,
-                        VibrationEffect.DEFAULT_AMPLITUDE
-                    )
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                vibrator?.vibrate(200L)
-            }
-        }
     }
 
     /**

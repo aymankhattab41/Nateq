@@ -39,7 +39,7 @@ class PhoneSettingsSanitizationTest {
             repo.getPhoneActivation()
         )
         assertFalse(repo.isPhoneAnnounceAfterLiftEnabled())
-        assertTrue(repo.isPhoneHapticEnabled())
+        assertFalse(repo.isPhoneHapticEnabled())
         assertTrue(repo.isPhoneSoundEnabled())
         assertFalse(repo.isPhoneRecordEnabled())
         assertEquals(
