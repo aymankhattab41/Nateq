@@ -54,4 +54,39 @@ class NumberWordDetectorTest {
         val marked = NumberWordDetector.detectAndMark(input, "ar")
         assertEquals(input, marked)
     }
+
+    @Test
+    fun testHasNumberWord() {
+        val noNumbers = "نص عادي بدون أرقام إطلاقاً"
+        assertFalse(NumberWordDetector.hasNumberWord(noNumbers))
+        assertTrue(NumberWordDetector.hasNumberWord("خمسة عشر يوماً"))
+        assertTrue(NumberWordDetector.hasNumberWord("twenty days"))
+        assertFalse(NumberWordDetector.hasNumberWord("hello world store"))
+    }
+
+    @Test
+    fun testTextWithoutNumbersIsFast() {
+        val nonNumberText = "هذا نص عادي جداً للاختبار والتأكد من سرعة " +
+            "الفحص الخطي قبل تشغيل التعابير المنتظمة المعقدة في كاشف الأعداد " +
+            "بالحروف حتى نوفر البطارية والأداء على الأجهزة المختلفة بشكل " +
+            "ملحوظ وفعال ومؤكد دائماً دون أي تباطؤ."
+        assertTrue(nonNumberText.length >= 200)
+
+        // Warmup JIT
+        repeat(100) {
+            NumberWordDetector.detectAndMark(nonNumberText, "ar")
+        }
+
+        val iterations = 500
+        val start = System.nanoTime()
+        repeat(iterations) {
+            NumberWordDetector.detectAndMark(nonNumberText, "ar")
+        }
+        val elapsedNanos = System.nanoTime() - start
+        val avgMs = (elapsedNanos.toDouble() / iterations) / 1_000_000.0
+        assertTrue(
+            "Average time per call ($avgMs ms) should be < 0.2ms",
+            avgMs < 0.2
+        )
+    }
 }

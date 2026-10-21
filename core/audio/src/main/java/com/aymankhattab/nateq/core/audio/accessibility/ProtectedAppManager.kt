@@ -7,8 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
-import android.os.VibrationEffect
-import android.os.Vibrator
 import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
@@ -24,7 +22,7 @@ object ProtectedAppManager {
 
     private const val TAG = "ProtectedAppManager"
     const val NOTIFICATION_ID_REENABLE = 7001
-    const val CHANNEL_ID_PROTECTED = "protected_app_channel"
+    const val CHANNEL_ID_PROTECTED = "protected_app_channel_v2"
 
     /**
      * بثٌّداخليٌّ (من حزمتنا فقط) يطلب من الخدمة تعطيل نفسها — يُستخدم
@@ -460,6 +458,7 @@ object ProtectedAppManager {
             NotificationManager::class.java
         ) ?: return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            nm.deleteNotificationChannel("protected_app_channel")
             val channel = NotificationChannel(
                 CHANNEL_ID_PROTECTED,
                 "إعادة تشغيل إمكانية الوصول",
@@ -467,7 +466,9 @@ object ProtectedAppManager {
             ).apply {
                 description =
                     "تنبيه لإعادة تشغيل الخدمة بعد الخروج من التطبيق المحمي"
-                enableVibration(true)
+                enableVibration(false)
+                vibrationPattern = null
+                setSound(null, null)
             }
             nm.createNotificationChannel(channel)
         }
@@ -496,6 +497,8 @@ object ProtectedAppManager {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
+            .setVibrate(null)
+            .setDefaults(0)
             .addAction(
                 android.R.drawable.ic_menu_manage,
                 "فتح الإعدادات",
@@ -503,21 +506,6 @@ object ProtectedAppManager {
             )
 
         nm.notify(NOTIFICATION_ID_REENABLE, builder.build())
-
-        runCatching {
-            val v = context.getSystemService(Vibrator::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                v?.vibrate(
-                    VibrationEffect.createOneShot(
-                        350L,
-                        VibrationEffect.DEFAULT_AMPLITUDE
-                    )
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                v?.vibrate(350L)
-            }
-        }
     }
 
     @androidx.annotation.VisibleForTesting

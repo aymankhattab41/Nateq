@@ -151,11 +151,17 @@ class TimeAlarmReceiver : BroadcastReceiver() {
             return try {
                 val pm = context.getSystemService(PowerManager::class.java)
                     ?: return null
+                val safeTimeout = timeoutMs.coerceIn(1L, SHORT_WAKE_LOCK_MS)
+                com.aymankhattab.nateq.core.audio.accessibility
+                    .BatteryDiagnosticsTracker.recordWakeLockAcquired(
+                        "$TAG:speech",
+                        safeTimeout
+                    )
                 pm.newWakeLock(
                     PowerManager.PARTIAL_WAKE_LOCK, "$TAG:speech"
                 ).apply {
                     setReferenceCounted(false)
-                    acquire(timeoutMs)
+                    acquire(safeTimeout)
                 }
             } catch (t: Throwable) {
                 Log.w(TAG, "wake lock acquire failed", t)

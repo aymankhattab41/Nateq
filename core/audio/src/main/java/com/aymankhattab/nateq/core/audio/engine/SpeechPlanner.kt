@@ -264,19 +264,11 @@ object SpeechPlanner {
                     numberLanguage = numberLanguage
                 )
                 for (seg in segs) {
-                    val role = if (seg.role == SpeechRole.NUMBER ||
+                    val isNumCandidate = seg.role == SpeechRole.NUMBER ||
                         seg.isNumericOnly()
-                    ) {
-                        SpeechRole.NUMBER
-                    } else {
-                        SpeechRole.TEXT
-                    }
-                    val cleanText = seg.text
-                        .replace(EngineMarkers.NUMBER_MARK_START, "")
-                        .replace(EngineMarkers.NUMBER_MARK_END, "")
-                    val resolved = resolveVoiceForSegment(
+                    val textRes = resolveVoiceForSegment(
                         languageTag = seg.languageTag,
-                        role = role,
+                        role = SpeechRole.TEXT,
                         settings = settings,
                         defaultEngine = defaultEngine,
                         defaultVoiceId = defaultVoiceId,
@@ -284,6 +276,35 @@ object SpeechPlanner {
                         defaultPitch = defaultPitch,
                         defaultVolume = defaultVolume
                     )
+                    val numRes = if (isNumCandidate) {
+                        resolveVoiceForSegment(
+                            languageTag = seg.languageTag,
+                            role = SpeechRole.NUMBER,
+                            settings = settings,
+                            defaultEngine = defaultEngine,
+                            defaultVoiceId = defaultVoiceId,
+                            defaultRate = defaultRate,
+                            defaultPitch = defaultPitch,
+                            defaultVolume = defaultVolume
+                        )
+                    } else {
+                        textRes
+                    }
+
+                    val role = if (isNumCandidate && numRes != textRes) {
+                        SpeechRole.NUMBER
+                    } else {
+                        SpeechRole.TEXT
+                    }
+                    val resolved = if (role == SpeechRole.NUMBER) {
+                        numRes
+                    } else {
+                        textRes
+                    }
+
+                    val cleanText = seg.text
+                        .replace(EngineMarkers.NUMBER_MARK_START, "")
+                        .replace(EngineMarkers.NUMBER_MARK_END, "")
                     items.add(
                         SpeechPlanItem(
                             text = cleanText,
@@ -300,9 +321,50 @@ object SpeechPlanner {
             }
         }
 
+        // دمج المقاطع المتجاورة التي تتطابق كل إعداداتها (الجولة 50 - الأمر 3)
+        val mergedItems = ArrayList<SpeechPlanItem>()
+        for (item in items) {
+            val last = mergedItems.lastOrNull()
+            if (last != null &&
+                last.role == item.role &&
+                last.engine == item.engine &&
+                last.voiceId == item.voiceId &&
+                last.languageTag == item.languageTag &&
+                last.rate == item.rate &&
+                last.pitch == item.pitch &&
+                last.volume == item.volume
+            ) {
+                val mergedText = when {
+                    last.text.isEmpty() -> item.text
+                    item.text.isEmpty() -> last.text
+                    else -> "${last.text} ${item.text}"
+                }
+                mergedItems[mergedItems.size - 1] = last.copy(
+                    text = mergedText
+                )
+            } else {
+                mergedItems.add(item)
+            }
+        }
+
+        // تقسيم أرقام الهاتف الطويلة (> 40 حرفاً بعد تحويلها إلى كلمات)
+        // إلى مجموعات من 3 إلى 4 أرقام لتخرج بالترتيب فور جاهزيتها
+        // (الجولة 50 - الأمر 3 البند 5)
+        val finalItems = ArrayList<SpeechPlanItem>()
+        for (item in mergedItems) {
+            val chunks = splitPhoneNumberWords(item.text)
+            if (chunks.size > 1) {
+                for (chunk in chunks) {
+                    finalItems.add(item.copy(text = chunk))
+                }
+            } else {
+                finalItems.add(item)
+            }
+        }
+
         // خطوة 5: تسجيل debug تفصيلي لكل مقطع (ع٤٢-8)
         if (diagnostics) {
-            for (item in items) {
+            for (item in finalItems) {
                 val preview = if (item.text.length > 25) {
                     item.text.take(25) + "…"
                 } else {
@@ -317,6 +379,34 @@ object SpeechPlanner {
             }
         }
 
-        return items
+        return finalItems
+    }
+
+    private val DIGIT_WORDS = setOf(
+        "صفر", "واحد", "اثنان", "اثنين", "ثلاثة", "أربعة", "خمسة",
+        "ستة", "سبعة", "ثمانية", "تسعة", "عشرة",
+        "zero", "one", "two", "three", "four", "five",
+        "six", "seven", "eight", "nine", "ten", "plus", "موجب"
+    )
+
+    private fun isDigitWord(word: String): Boolean {
+        val clean = word.trim().lowercase().removePrefix("+")
+        return clean.all { it.isDigit() || it in '\u0660'..'\u0669' } ||
+            clean in DIGIT_WORDS
+    }
+
+    internal fun splitPhoneNumberWords(text: String): List<String> {
+        if (text.length <= 40) return listOf(text)
+        val words = text.split("\\s+".toRegex()).filter { it.isNotBlank() }
+        if (words.size < 6) return listOf(text)
+        val digitWordCount = words.count { isDigitWord(it) }
+        if (digitWordCount < words.size * 0.7) return listOf(text)
+
+        val result = ArrayList<String>()
+        val chunkSize = if (words.size % 4 == 0) 4 else 3
+        for (group in words.chunked(chunkSize)) {
+            result.add(group.joinToString(" "))
+        }
+        return result
     }
 }

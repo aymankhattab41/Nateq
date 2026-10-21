@@ -47,7 +47,7 @@ class AnnouncementSchedulerService : Service() {
 
     companion object {
         private const val TAG = "NATEQ_ANNOUNCE"
-        private const val CHANNEL_ID = "announcements"
+        private const val CHANNEL_ID = "announcements_v2"
         private const val NOTIFICATION_ID = 1001
         private const val PREFS_NAME = "nateq_announce_svc"
         private const val KEY_USER_STOPPED = "stopped_by_user"
@@ -255,6 +255,9 @@ class AnnouncementSchedulerService : Service() {
     override fun onCreate() {
         super.onCreate()
         isRunning = true
+        com.aymankhattab.nateq.core.audio.accessibility
+            .BatteryDiagnosticsTracker
+            .recordServiceStarted("AnnouncementSchedulerService")
         createNotificationChannel()
         startAsForeground(buildNotification())
 
@@ -458,6 +461,9 @@ class AnnouncementSchedulerService : Service() {
     }
 
     override fun onDestroy() {
+        com.aymankhattab.nateq.core.audio.accessibility
+            .BatteryDiagnosticsTracker
+            .recordServiceStopped("AnnouncementSchedulerService")
         mainHandler.removeCallbacksAndMessages(null)
         isRunning = false
         stopInternal()
@@ -493,6 +499,8 @@ class AnnouncementSchedulerService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(NotificationManager::class.java)
+            nm?.deleteNotificationChannel("announcements")
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 getString(R.string.announce_service_channel_name),
@@ -500,9 +508,10 @@ class AnnouncementSchedulerService : Service() {
             ).apply {
                 description =
                     getString(R.string.announce_service_channel_description)
+                enableVibration(false)
+                vibrationPattern = null
             }
-            getSystemService(NotificationManager::class.java)
-                ?.createNotificationChannel(channel)
+            nm?.createNotificationChannel(channel)
         }
     }
 
@@ -543,6 +552,8 @@ class AnnouncementSchedulerService : Service() {
             )
             .setSmallIcon(R.drawable.ic_number_reading)
             .setContentIntent(openSettings)
+            .setVibrate(null)
+            .setDefaults(0)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             // إشعار عام خالٍ من بيانات المتصلين (لا شيء حساس) — يظهر على
             // شاشة القفل دون تحجيم، ويُحسن ترتيبه في الإعدادات (بند 1).

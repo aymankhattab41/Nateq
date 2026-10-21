@@ -22,7 +22,7 @@ import androidx.core.content.ContextCompat
 class CallRecordingForegroundService : Service() {
 
     companion object {
-        private const val CHANNEL_ID = "lord_call_recording_channel"
+        private const val CHANNEL_ID = "lord_call_recording_channel_v2"
         private const val NOTIFICATION_ID = 10091
 
         fun start(context: Context) {
@@ -58,6 +58,20 @@ class CallRecordingForegroundService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        com.aymankhattab.nateq.core.audio.accessibility
+            .BatteryDiagnosticsTracker
+            .recordServiceStarted("CallRecordingForegroundService")
+    }
+
+    override fun onDestroy() {
+        com.aymankhattab.nateq.core.audio.accessibility
+            .BatteryDiagnosticsTracker
+            .recordServiceStopped("CallRecordingForegroundService")
+        super.onDestroy()
+    }
+
     override fun onStartCommand(
         intent: Intent?,
         flags: Int,
@@ -81,12 +95,15 @@ class CallRecordingForegroundService : Service() {
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = getSystemService(NotificationManager::class.java)
+            nm?.deleteNotificationChannel("lord_call_recording_channel")
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "تسجيل المكالمات",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "إشعار تسجيل المكالمة الصوتية النشط"
+                enableVibration(false)
+                vibrationPattern = null
             }
             nm?.createNotificationChannel(channel)
         }
@@ -100,6 +117,8 @@ class CallRecordingForegroundService : Service() {
             .setContentText("تسجيل المكالمة الصوتية نشط حالياً")
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setVibrate(null)
+            .setDefaults(0)
             .build()
     }
 }

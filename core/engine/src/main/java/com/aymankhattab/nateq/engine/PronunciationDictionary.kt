@@ -5,6 +5,7 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.aymankhattab.nateq.core.audio.engine.LanguageSegmenter
 import com.aymankhattab.nateq.core.audio.engine.SegmentWithOffset
+import com.aymankhattab.nateq.core.audio.engine.SpeechRole
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.NateqJson
 import com.aymankhattab.nateq.util.optObject
@@ -357,6 +358,25 @@ open class PronunciationDictionary(
      * وكل الطبقات، مع تحديد لغة كل منطقة عبر [segmenter] المشترك.
      */
     open fun apply(text: String, languageTag: String? = null): String {
+        return applyInternal(text, languageTag, null)
+    }
+
+    open fun apply(
+        text: String,
+        languageTag: String?,
+        precomputedSegments: List<SegmentWithOffset>?
+    ): String {
+        if (precomputedSegments == null) {
+            return apply(text, languageTag)
+        }
+        return applyInternal(text, languageTag, precomputedSegments)
+    }
+
+    private fun applyInternal(
+        text: String,
+        languageTag: String?,
+        precomputedSegments: List<SegmentWithOffset>?
+    ): String {
         if (text.isEmpty()) return text
         reloadIfChanged()
 
@@ -383,10 +403,25 @@ open class PronunciationDictionary(
             }
         }
 
-        val segments = segmenter.segmentWithOffsets(
-            text,
-            fallbackLanguage = languageTag ?: LanguageCode.AR.tag
-        )
+        val hasLangEntries = synchronized(this) { langEntries.isNotEmpty() }
+        val segments = if (precomputedSegments != null) {
+            precomputedSegments
+        } else if (hasLangEntries) {
+            segmenter.segmentWithOffsets(
+                text,
+                fallbackLanguage = languageTag ?: LanguageCode.AR.tag
+            )
+        } else {
+            listOf(
+                SegmentWithOffset(
+                    text = text,
+                    languageTag = languageTag ?: LanguageCode.AR.tag,
+                    role = SpeechRole.TEXT,
+                    start = 0,
+                    end = text.length
+                )
+            )
+        }
 
         return held.machine.apply(text, segments, getStandaloneMaxLength())
     }

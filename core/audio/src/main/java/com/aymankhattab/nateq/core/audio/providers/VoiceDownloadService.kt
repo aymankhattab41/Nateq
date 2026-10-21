@@ -22,7 +22,7 @@ class VoiceDownloadService : Service() {
 
     companion object {
         private const val TAG = "VoiceDownloadService"
-        const val CHANNEL_ID = "voice_download_channel"
+        const val CHANNEL_ID = "voice_download_channel_v2"
         const val NOTIFICATION_ID = 2002
 
         const val ACTION_START =
@@ -45,7 +45,17 @@ class VoiceDownloadService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        com.aymankhattab.nateq.core.audio.accessibility
+            .BatteryDiagnosticsTracker
+            .recordServiceStarted("VoiceDownloadService")
         createNotificationChannel()
+    }
+
+    override fun onDestroy() {
+        com.aymankhattab.nateq.core.audio.accessibility
+            .BatteryDiagnosticsTracker
+            .recordServiceStopped("VoiceDownloadService")
+        super.onDestroy()
     }
 
     override fun onStartCommand(
@@ -113,6 +123,8 @@ class VoiceDownloadService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(NotificationManager::class.java)
+            nm?.deleteNotificationChannel("voice_download_channel")
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 getString(R.string.voice_download_channel_name),
@@ -121,9 +133,10 @@ class VoiceDownloadService : Service() {
                 description = getString(
                     R.string.voice_download_channel_description
                 )
+                enableVibration(false)
+                vibrationPattern = null
             }
-            getSystemService(NotificationManager::class.java)
-                ?.createNotificationChannel(channel)
+            nm?.createNotificationChannel(channel)
         }
     }
 
@@ -175,6 +188,8 @@ class VoiceDownloadService : Service() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true)
             .setProgress(100, percent, false)
+            .setVibrate(null)
+            .setDefaults(0)
             .setForegroundServiceBehavior(
                 NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE
             )
