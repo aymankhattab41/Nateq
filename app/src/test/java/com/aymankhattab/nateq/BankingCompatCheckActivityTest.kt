@@ -1,10 +1,11 @@
-﻿package com.aymankhattab.nateq
+package com.aymankhattab.nateq
 
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.settings.banking.BankingCompatCheckActivity
+import com.aymankhattab.nateq.settings.banking.IsolateCauseWizard
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -56,7 +57,9 @@ class BankingCompatCheckActivityTest {
         assertEquals(
             "يبدأ المعالج عند الخطوة 1",
             activity.getString(
-                R.string.banking_wizard_step_of, 1, 5
+                R.string.banking_wizard_step_of,
+                1,
+                IsolateCauseWizard.stepCount()
             ),
             stepCounter.text
         )
@@ -93,7 +96,9 @@ class BankingCompatCheckActivityTest {
         assertEquals(
             "لا بدّ أن يبقى عند الخطوة 2 بعد العودة",
             reopened.getString(
-                R.string.banking_wizard_step_of, 2, 5
+                R.string.banking_wizard_step_of,
+                2,
+                IsolateCauseWizard.stepCount()
             ),
             counter.text
         )
@@ -170,7 +175,11 @@ class BankingCompatCheckActivityTest {
 
         val counter = activity.findViewById<TextView>(R.id.tv_step_counter)
         assertEquals(
-            activity.getString(R.string.banking_wizard_step_of, 1, 5),
+            activity.getString(
+                R.string.banking_wizard_step_of,
+                1,
+                IsolateCauseWizard.stepCount()
+            ),
             counter.text
         )
         val results =

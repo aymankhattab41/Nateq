@@ -51,6 +51,9 @@ class SettingsRepository(context: Context) :
          *  `audio_expansion_level` وافتراضياً false. */
         private const val KEY_AUDIO_REVERB_ENABLED = "audio_reverb_enabled"
 
+        const val KEY_ANDROID17_BANKING_HARDENING =
+            "android17_banking_hardening"
+
         /** **بند V3:** فئاتُ الإعلانات التي عُطّل فيها مؤثر الصوت. */
         private const val KEY_AUDIO_EFFECTS_DISABLED_CATEGORIES =
             "audio_effects_disabled_categories"
@@ -65,7 +68,8 @@ class SettingsRepository(context: Context) :
             ANNOUNCE_CATEGORY_CALLER_AR,
             ANNOUNCE_CATEGORY_CALLER_EN,
             ANNOUNCE_CATEGORY_SMS,
-            VOICE_CATEGORY_NOTIFICATIONS
+            VOICE_CATEGORY_NOTIFICATIONS,
+            VOICE_CATEGORY_LORD_SYSTEM
         )
 
         /** قالب إعلان المتصل المحذوف: كان يُخزَّن قبل إزالته، واسمه
@@ -93,6 +97,7 @@ class SettingsRepository(context: Context) :
         const val VOICE_CATEGORY_DEFAULT = "default"
         const val VOICE_CATEGORY_EMOJI = "emoji"
         const val VOICE_CATEGORY_BATTERY = "battery"
+        const val VOICE_CATEGORY_LORD_SYSTEM = "lord_system"
         const val ENGINE_LORD_TTS = "lord_tts"
 
         /** حدّا الفاصل الزمني بين تكرارات إعلان المتصل (بالثواني): ثلاث
@@ -142,6 +147,7 @@ class SettingsRepository(context: Context) :
             VOICE_CATEGORY_NUMBERS,
             VOICE_CATEGORY_NOTIFICATIONS,
             VOICE_CATEGORY_BATTERY,
+            VOICE_CATEGORY_LORD_SYSTEM,
             ANNOUNCE_CATEGORY_CALLER,
             ANNOUNCE_CATEGORY_CALLER_AR,
             ANNOUNCE_CATEGORY_CALLER_EN,
@@ -354,6 +360,10 @@ class SettingsRepository(context: Context) :
     private val prefsLock = Any()
     private val localWriteSeq = java.util.concurrent.atomic.AtomicLong(0)
     private val flushedSeq = java.util.concurrent.atomic.AtomicLong(0)
+    private var bootMirrorHandler: Handler? = null
+    private val bootMirrorRunnable = Runnable {
+        updateBootMirrorIfNeeded()
+    }
 
     /** سياق التطبيق العام لضمان عدم احتجاز سياق النشاط في المراقبين. */
     private val appContext: Context = context.applicationContext
@@ -492,7 +502,15 @@ class SettingsRepository(context: Context) :
         return appContext.getSharedPreferences(NEW_PREFS, Context.MODE_PRIVATE)
     }
 
-    private fun updateBootMirrorIfNeeded() {
+    fun scheduleBootMirrorUpdate() {
+        val handler = bootMirrorHandler ?: Handler(
+            Looper.getMainLooper()
+        ).also { bootMirrorHandler = it }
+        handler.removeCallbacks(bootMirrorRunnable)
+        handler.postDelayed(bootMirrorRunnable, 500L)
+    }
+
+    internal fun updateBootMirrorIfNeeded() {
         if (android.os.Build.VERSION.SDK_INT <
             android.os.Build.VERSION_CODES.N
         ) return
@@ -505,14 +523,24 @@ class SettingsRepository(context: Context) :
             val editor = mirror.edit()
             for ((key, value) in prefs.all) {
                 if (key.startsWith("voice_") ||
+                    key.startsWith("preferred_voice_") ||
+                    key.startsWith("primary_voice_") ||
                     key.startsWith("rate_") ||
+                    key.startsWith("speech_rate") ||
                     key.startsWith("pitch_") ||
+                    key.startsWith("speech_pitch") ||
+                    key.startsWith("volume_") ||
                     key.startsWith("engine_") ||
+                    key.startsWith("language_for_") ||
+                    key.startsWith("loudness_") ||
                     key == "app_language" ||
                     key == "number_reading_language" ||
                     key == "secondary_language" ||
-                    key == "speech_rate" ||
-                    key == "speech_pitch"
+                    key.contains("voice") ||
+                    key.contains("engine") ||
+                    key.contains("pitch") ||
+                    key.contains("rate") ||
+                    key.contains("volume")
                 ) {
                     when (value) {
                         is String -> editor.putString(key, value)
@@ -603,7 +631,7 @@ class SettingsRepository(context: Context) :
      *  (ContentObserver) ويسترجع اللقطة فوراً بدل انتظار دورة
      *  reload التالية. */
     private fun notifySettingsChanged() {
-        updateBootMirrorIfNeeded()
+        scheduleBootMirrorUpdate()
         runCatching {
             appContext.contentResolver.notifyChange(
                 SettingsChangeProvider.uri(), null
@@ -3216,6 +3244,15 @@ class SettingsRepository(context: Context) :
         prefs.edit().putInt(
             KEY_PROTECTED_APP_AUTO_RESTORE_TIMEOUT_MINUTES, sanitized
         ).apply()
+    }
+
+    fun isAndroid17BankingHardeningEnabled(): Boolean =
+        prefs.getBoolean(KEY_ANDROID17_BANKING_HARDENING, false)
+
+    fun setAndroid17BankingHardeningEnabled(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_ANDROID17_BANKING_HARDENING, enabled)
+            .apply()
     }
 
     fun getEngineSwitchRecipe(

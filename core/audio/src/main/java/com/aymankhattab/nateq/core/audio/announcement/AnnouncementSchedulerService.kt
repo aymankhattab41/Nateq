@@ -236,6 +236,14 @@ class AnnouncementSchedulerService : Service() {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .edit().putBoolean(KEY_USER_STOPPED, true).apply()
         }
+
+        fun stopService(context: Context) {
+            runCatching {
+                context.stopService(
+                    Intent(context, AnnouncementSchedulerService::class.java)
+                )
+            }
+        }
     }
 
     /** مصدر الإعدادات المحقون — يصبح الكائن الوحيد المشترك
@@ -254,11 +262,12 @@ class AnnouncementSchedulerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        val wasRunning = isRunning
+        createNotificationChannel(wasRunning)
         isRunning = true
         com.aymankhattab.nateq.core.audio.accessibility
             .BatteryDiagnosticsTracker
             .recordServiceStarted("AnnouncementSchedulerService")
-        createNotificationChannel()
         startAsForeground(buildNotification())
 
         // دفاعية: عند بدء النظام للخدمة مباشرة (STICKY) قد تكون الحقول المحقونة
@@ -497,10 +506,12 @@ class AnnouncementSchedulerService : Service() {
         }
     }
 
-    private fun createNotificationChannel() {
+    private fun createNotificationChannel(wasRunning: Boolean = isRunning) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = getSystemService(NotificationManager::class.java)
-            nm?.deleteNotificationChannel("announcements")
+            if (!wasRunning) {
+                nm?.deleteNotificationChannel("announcements")
+            }
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 getString(R.string.announce_service_channel_name),

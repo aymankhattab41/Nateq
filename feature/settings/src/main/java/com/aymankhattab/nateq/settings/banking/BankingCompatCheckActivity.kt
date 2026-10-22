@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq.settings.banking
+package com.aymankhattab.nateq.settings.banking
 
 import android.content.Intent
 import android.content.SharedPreferences
@@ -20,6 +20,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import com.aymankhattab.nateq.core.audio.accessibility.ProtectedAppTimelineTracker
+import com.aymankhattab.nateq.core.audio.announcement.EventVoiceTrace
 import com.aymankhattab.nateq.settings.OemGuidanceController
 import com.aymankhattab.nateq.settings.WriteSecureSettingsGuideActivity
 import com.aymankhattab.nateq.settings.OemVendor
@@ -92,6 +93,7 @@ class BankingCompatCheckActivity : AppCompatActivity() {
         refreshLordCapabilities()
         refreshTimeline()
         refreshRestoreReadinessAndLog()
+        refreshVoiceTrace()
     }
 
     override fun onDestroy() {
@@ -389,6 +391,11 @@ class BankingCompatCheckActivity : AppCompatActivity() {
             renderChosenApp()
             return
         }
+        if (currentStep() == IsolateStep.ISOLATE_ANDROID_17) {
+            ProtectedAppTimelineTracker.recordDeviceFingerprint(this)
+            ProtectedAppManager.disableAccessibilityServiceDirectly(this)
+            ProtectedAppManager.applyAndroid17Hardening(this)
+        }
         runCatching {
             val launch = packageManager
                 .getLaunchIntentForPackage(pkg)
@@ -494,6 +501,7 @@ class BankingCompatCheckActivity : AppCompatActivity() {
         IsolateCause.ACCESSIBILITY ->
             R.string.banking_wizard_cause_accessibility
         IsolateCause.OVERLAY -> R.string.banking_wizard_cause_overlay
+        IsolateCause.ANDROID_17 -> R.string.banking_wizard_cause_android17
         IsolateCause.OTHER_APP -> R.string.banking_wizard_cause_other_app
     }
 
@@ -504,6 +512,8 @@ class BankingCompatCheckActivity : AppCompatActivity() {
         IsolateStep.DISABLE_ACCESSIBILITY ->
             R.string.banking_step_a11y_title
         IsolateStep.REVOKE_OVERLAY -> R.string.banking_step_overlay_title
+        IsolateStep.ISOLATE_ANDROID_17 ->
+            R.string.banking_step_isolate_android17_title
         IsolateStep.RESTORE_SERVICES ->
             R.string.banking_step_restore_title
     }
@@ -515,6 +525,8 @@ class BankingCompatCheckActivity : AppCompatActivity() {
         IsolateStep.DISABLE_ACCESSIBILITY ->
             R.string.banking_step_a11y_detail
         IsolateStep.REVOKE_OVERLAY -> R.string.banking_step_overlay_detail
+        IsolateStep.ISOLATE_ANDROID_17 ->
+            R.string.banking_step_isolate_android17_detail
         IsolateStep.RESTORE_SERVICES ->
             R.string.banking_step_restore_detail
     }
@@ -534,6 +546,8 @@ class BankingCompatCheckActivity : AppCompatActivity() {
                     Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                     Uri.parse("package:" + packageName)
                 )
+            IsolateStep.ISOLATE_ANDROID_17 ->
+                Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
         }
 
     private fun setupTimelineAndReadinessControls() {
@@ -544,6 +558,29 @@ class BankingCompatCheckActivity : AppCompatActivity() {
                 Toast.makeText(
                     this, "تم نسخ المخطط الزمني", Toast.LENGTH_SHORT
                 ).show()
+            }
+
+        findViewById<MaterialButton?>(R.id.btn_share_timeline)
+            ?.setOnClickListener {
+                val report = ProtectedAppTimelineTracker.getTimelineReport()
+                val uri =
+                    ProtectedAppTimelineTracker.exportTimelineToFile(this)
+                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    if (uri != null) {
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    putExtra(Intent.EXTRA_TEXT, report)
+                }
+                runCatching {
+                    startActivity(
+                        Intent.createChooser(
+                            sendIntent,
+                            getString(R.string.banking_share_timeline_btn)
+                        )
+                    )
+                }
             }
 
         findViewById<MaterialButton?>(R.id.btn_clear_timeline)
@@ -574,6 +611,42 @@ class BankingCompatCheckActivity : AppCompatActivity() {
                     this, "تم مسح سجل الاسترجاع", Toast.LENGTH_SHORT
                 ).show()
             }
+
+        findViewById<MaterialButton?>(R.id.btn_share_voice_trace)
+            ?.setOnClickListener {
+                val report = EventVoiceTrace.formatReport()
+                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, report)
+                }
+                runCatching {
+                    startActivity(
+                        Intent.createChooser(
+                            sendIntent,
+                            getString(R.string.event_voice_trace_share_btn)
+                        )
+                    )
+                }
+            }
+
+        findViewById<MaterialButton?>(R.id.btn_clear_voice_trace)
+            ?.setOnClickListener {
+                EventVoiceTrace.clear()
+                refreshVoiceTrace()
+                Toast.makeText(
+                    this, "تم مسح سجل تتبع الأصوات", Toast.LENGTH_SHORT
+                ).show()
+            }
+    }
+
+    private fun refreshVoiceTrace() {
+        val tvTrace = findViewById<TextView?>(R.id.tv_voice_trace_log)
+        val report = EventVoiceTrace.formatReport()
+        tvTrace?.text = if (report.isBlank()) {
+            "لا توجد تسجيلات حتى الآن."
+        } else {
+            report
+        }
     }
 
     private fun refreshTimeline() {

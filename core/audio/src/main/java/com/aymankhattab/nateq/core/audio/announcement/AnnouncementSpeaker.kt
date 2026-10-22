@@ -219,7 +219,8 @@ class AnnouncementSpeaker(
             SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR,
             SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN,
             SettingsRepository.ANNOUNCE_CATEGORY_SMS,
-            SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+            SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS,
+            SettingsRepository.VOICE_CATEGORY_LORD_SYSTEM
         )
 
         fun isEventCategory(category: String?): Boolean =
@@ -1446,13 +1447,47 @@ class AnnouncementSpeaker(
         } else {
             null
         }
+
+        val isLordSys =
+            category == SettingsRepository.VOICE_CATEGORY_LORD_SYSTEM
+        val categoryVoice = if (category != null) {
+            settings?.getPreferredVoiceIdForCategory(category)
+                ?: if (isLordSys) {
+                    settings?.getPreferredVoiceIdForCategory(
+                        SettingsRepository.VOICE_CATEGORY_DEFAULT
+                    )
+                } else null
+        } else null
+        if (categoryVoice != null &&
+            (voiceId == null || category != currentCategory)
+        ) {
+            voiceId = categoryVoice
+        }
+
+        val categoryEngine = if (category != null) {
+            settings?.getEngineForCategory(category)
+                ?: if (isLordSys) {
+                    settings?.getEngineForCategory(
+                        SettingsRepository.VOICE_CATEGORY_DEFAULT
+                    )
+                } else null
+        } else null
+
         // محركُ الدورة المحسوم: الفئة الصريحة أو محركُ اللغة المضبوط —
         // يُربط المتحدثُ به في كل الفئات (تغطية شكوى «أصوات محددة لا تتغير»).
         val resolvedEngine = resolveAnnouncementEngine(
-            engineOverride,
+            engineOverride ?: categoryEngine,
             runCatching {
                 settings?.getEngineForLanguage(locale.language)
             }.getOrNull()
+        )
+
+        EventVoiceTrace.record(
+            category = category ?: "default",
+            savedVoiceId = categoryVoice,
+            resolvedEngine = resolvedEngine,
+            dispatchedVoiceId = voiceId ?: categoryVoice,
+            textSnippet = dictText
         )
 
         // نُفوض النطق دائماً لمحركٍ مثبّت (منهج MultiTTS):
@@ -2826,6 +2861,20 @@ speechCycle.incrementAndGet()
                 }
             }
         }
+
+        val executingEngine = runCatching { boundEngine }.getOrNull()
+            ?: "System TTS"
+        val chosenName = chosen?.name
+        val traceFallback = if (chosenName != partVoice && partVoice != null) {
+            "الصوت المطلوب $partVoice غير متاح، استُخدم $chosenName"
+        } else if (!voiceApplied && chosen == null) {
+            "لم يُعثر على صوت للمحرك للغة $locale"
+        } else null
+        EventVoiceTrace.updateExecutingProvider(
+            category = currentCategory ?: "default",
+            providerName = executingEngine,
+            fallbackReason = traceFallback
+        )
         if (!voiceApplied) {
             // بند الأوامر 2: عائد setLanguage كان مُهملاً — إن رجع
             // LANG_NOT_SUPPORTED/LANG_MISSING_DATA يبقى المحرك على آخر لغة
