@@ -20,6 +20,7 @@ object A11ySpeechCoordinator {
      */
     fun canSpeak(context: Context, isInterruptAllowed: Boolean): Boolean {
         if (isSuppressed) return false
+        if (ProtectedAppTimelineTracker.isInQuietPeriod()) return false
         val isScreenReaderActive =
             AccessibilityUtils.isScreenReaderEnabled(context)
         if (!isScreenReaderActive) return true

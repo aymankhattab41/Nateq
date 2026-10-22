@@ -42,7 +42,8 @@ internal val DictEntryDiff = object :
  * الحالي. أُخرج من الفصيل إلى مستوى الملف ليكون قابلًا لإعادة الاستخدام.
  */
 internal class PronunciationDictAdapter(
-    private val onRowClick: (Pair<String, String>) -> Unit
+    private val onRowClick: (Pair<String, String>) -> Unit,
+    private val getMatchMode: (String) -> String = { "AUTO" }
 ) : ListAdapter<Pair<String, String>, PronunciationDictAdapter.DictVH>(
     DictEntryDiff
 ) {
@@ -73,9 +74,16 @@ internal class PronunciationDictAdapter(
     override fun onBindViewHolder(holder: DictVH, position: Int) {
         val entry = getItem(position)
         holder.entry = entry
-        holder.tvWord.text = entry.first
+        val mode = getMatchMode(entry.first)
+        val modeLabel = when (mode.uppercase()) {
+            "WHOLE", "STANDALONE" -> "«كلمة منفردة»"
+            "ANYWHERE" -> "«أي موضع»"
+            else -> "«تلقائي»"
+        }
+        holder.tvWord.text = "${entry.first} $modeLabel"
         holder.tvPhonetic.text = entry.second
         // وصف مدمج لعقدة الصف الواحدة (الأطفال معطَّلون في XML)
-        holder.itemView.contentDescription = "${entry.first}. ${entry.second}"
+        holder.itemView.contentDescription =
+            "${entry.first} $modeLabel. ${entry.second}"
     }
 }

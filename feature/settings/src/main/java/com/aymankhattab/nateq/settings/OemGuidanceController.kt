@@ -219,97 +219,102 @@ internal class OemGuidanceController(
         }
     }
 
-    /** يفتح شاشة إدارة التشغيل التلقائي الخاصة بالمصنّع؛ عند التعذر
-     *  (مصنّع غير معروف أو تحرّكت الحزم) يهبط على صفحة معلومات التطبيق. */
     private fun openAutostartSettings(context: Context, vendor: OemVendor) {
-        for (intent in autostartIntents(context, vendor)) {
-            val opened = runCatching {
-                context.startActivity(intent)
-            }.isSuccess
-            if (opened) return
-        }
-        val openedDetails = runCatching {
-            context.startActivity(
-                Intent(
-                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                    Uri.parse("package:${context.packageName}")
-                )
-            )
-        }.isSuccess
-        if (!openedDetails) {
-            Toast.makeText(
-                context,
-                R.string.oem_screen_open_failed,
-                Toast.LENGTH_LONG
-            ).show()
-        }
+        Companion.openAutostartSettings(context, vendor)
     }
 
-    /** محاولات فتح إدارة التشغيل التلقائي حسب المصنّع (الأولوية للمكوّن
-     *  المباشر ثم أي إجراء بديل)، فتنتهي أخيراً بصفحة معلومات التطبيق. */
-    private fun autostartIntents(
-        context: Context,
-        vendor: OemVendor
-    ): List<Intent> {
-        val appDetails = Intent(
-            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-            Uri.parse("package:${context.packageName}")
-        )
-        return when (vendor) {
-            OemVendor.XIAOMI -> listOf(
-                Intent("miui.intent.action.OP_AUTO_START").apply {
-                    component = ComponentName(
-                        "com.miui.securitycenter",
-                        "com.miui.permcenter.autostart" +
-                            ".AutoStartManagementActivity"
-                    )
-                },
-                Intent().setComponent(
-                    ComponentName(
-                        "com.miui.securitycenter",
-                        "com.miui.permcenter.autostart" +
-                            ".AutoStartManagementActivity"
+    companion object {
+        fun openAutostartSettings(
+            context: Context,
+            vendor: OemVendor = OemVendor.detect(Build.MANUFACTURER)
+        ) {
+            for (intent in autostartIntents(context, vendor)) {
+                val opened = runCatching {
+                    context.startActivity(intent)
+                }.isSuccess
+                if (opened) return
+            }
+            val openedDetails = runCatching {
+                context.startActivity(
+                    Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:${context.packageName}")
                     )
                 )
+            }.isSuccess
+            if (!openedDetails) {
+                Toast.makeText(
+                    context,
+                    R.string.oem_screen_open_failed,
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+
+        private fun autostartIntents(
+            context: Context,
+            vendor: OemVendor
+        ): List<Intent> {
+            val appDetails = Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:${context.packageName}")
             )
-            OemVendor.HUAWEI -> listOf(
-                Intent().setComponent(
-                    ComponentName(
-                        "com.huawei.systemmanager",
-                        "com.huawei.systemmanager.startupmgr" +
-                            ".ui.StartupNormalAppListActivity"
-                    )
-                ),
-                Intent("huawei.intent.action.STARTUP_MANAGEMENT").apply {
-                    setPackage("com.huawei.systemmanager")
-                }
-            )
-            OemVendor.OPPO -> listOf(
-                Intent().setComponent(
-                    ComponentName(
-                        "com.coloros.safecenter",
-                        "com.coloros.safecenter.permission.startup" +
-                            ".StartupAppListActivity"
-                    )
-                ),
-                Intent().setComponent(
-                    ComponentName(
-                        "com.oppo.safe",
-                        "com.oppo.safe.permission.startup" +
-                            ".StartupAppListActivity"
-                    )
-                )
-            )
-            OemVendor.VIVO -> listOf(
-                Intent().setComponent(
-                    ComponentName(
-                        "com.vivo.permissionmanager",
-                        "com.vivo.permissionmanager.activity" +
-                            ".BgStartUpManagerActivity"
+            return when (vendor) {
+                OemVendor.XIAOMI -> listOf(
+                    Intent("miui.intent.action.OP_AUTO_START").apply {
+                        component = ComponentName(
+                            "com.miui.securitycenter",
+                            "com.miui.permcenter.autostart" +
+                                ".AutoStartManagementActivity"
+                        )
+                    },
+                    Intent().setComponent(
+                        ComponentName(
+                            "com.miui.securitycenter",
+                            "com.miui.permcenter.autostart" +
+                                ".AutoStartManagementActivity"
+                        )
                     )
                 )
-            )
-            OemVendor.SAMSUNG, OemVendor.GENERIC -> listOf(appDetails)
+                OemVendor.HUAWEI -> listOf(
+                    Intent().setComponent(
+                        ComponentName(
+                            "com.huawei.systemmanager",
+                            "com.huawei.systemmanager.startupmgr" +
+                                ".ui.StartupNormalAppListActivity"
+                        )
+                    ),
+                    Intent("huawei.intent.action.STARTUP_MANAGEMENT").apply {
+                        setPackage("com.huawei.systemmanager")
+                    }
+                )
+                OemVendor.OPPO -> listOf(
+                    Intent().setComponent(
+                        ComponentName(
+                            "com.coloros.safecenter",
+                            "com.coloros.safecenter.permission.startup" +
+                                ".StartupAppListActivity"
+                        )
+                    ),
+                    Intent().setComponent(
+                        ComponentName(
+                            "com.oppo.safe",
+                            "com.oppo.safe.permission.startup" +
+                                ".StartupAppListActivity"
+                        )
+                    )
+                )
+                OemVendor.VIVO -> listOf(
+                    Intent().setComponent(
+                        ComponentName(
+                            "com.vivo.permissionmanager",
+                            "com.vivo.permissionmanager.activity" +
+                                ".BgStartUpManagerActivity"
+                        )
+                    )
+                )
+                OemVendor.SAMSUNG, OemVendor.GENERIC -> listOf(appDetails)
+            }
         }
     }
 }

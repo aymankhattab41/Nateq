@@ -41,31 +41,34 @@ object ArabicSpeechNormalizer {
     private val protectedTanweenPatterns = listOf(
         Regex(
             """(?<![\p{L}\p{M}])م[\u064E-\u0652]?س[\u064E-\u0652]?""" +
-                """ا[\u064E-\u0652]?ء[ااًًا]?${EngineMarkers.TANWEEN_MARKER}"""
+                """ا[\u064E-\u0652]?ء[ا\u064B]*""" +
+                EngineMarkers.TANWEEN_MARKER
         ) to MASA_AN,
         Regex(
             """(?<![\p{L}\p{M}])ص[\u064E-\u0652]?ب[\u064E-\u0652]?""" +
-                """ا[\u064E-\u0652]?ح[ااًًا]?${EngineMarkers.TANWEEN_MARKER}"""
+                """ا[\u064E-\u0652]?ح[ا\u064B]*""" +
+                EngineMarkers.TANWEEN_MARKER
         ) to SABA_AN,
         Regex(
             """(?<![\p{L}\p{M}])ظ[\u064E-\u0652]?ه[\u064E-\u0652]?""" +
-                """ر[ااًًا]?${EngineMarkers.TANWEEN_MARKER}"""
+                """ر[ا\u064B]*${EngineMarkers.TANWEEN_MARKER}"""
         ) to DHUHR_AN,
         Regex(
             """(?<![\p{L}\p{M}])ع[\u064E-\u0652]?ص[\u064E-\u0652]?""" +
-                """ر[ااًًا]?${EngineMarkers.TANWEEN_MARKER}"""
+                """ر[ا\u064B]*${EngineMarkers.TANWEEN_MARKER}"""
         ) to ASR_AN,
         Regex(
             """(?<![\p{L}\p{M}])ل[\u064E-\u0652]?ي[\u064E-\u0652]?""" +
-                """ل[ااًًا]?${EngineMarkers.TANWEEN_MARKER}"""
+                """ل[ا\u064B]*${EngineMarkers.TANWEEN_MARKER}"""
         ) to LAYL_AN,
         Regex(
             """(?<![\p{L}\p{M}])ف[\u064E-\u0652]?ج[\u064E-\u0652]?""" +
-                """ر[ااًًا]?${EngineMarkers.TANWEEN_MARKER}"""
+                """ر[ا\u064B]*${EngineMarkers.TANWEEN_MARKER}"""
         ) to FAJR_AN,
         Regex(
             """(?<![\p{L}\p{M}])ن[\u064E-\u0652]?ه[\u064E-\u0652]?""" +
-                """ا[\u064E-\u0652]?ر[ااًًا]?${EngineMarkers.TANWEEN_MARKER}"""
+                """ا[\u064E-\u0652]?ر[ا\u064B]*""" +
+                EngineMarkers.TANWEEN_MARKER
         ) to NAHAR_AN
     )
 
@@ -142,9 +145,14 @@ object ArabicSpeechNormalizer {
     )
 
     /** يطبّق القاموس على النص كاملاً (لا يلمس غيرَ العربية). */
-    fun normalize(text: String, isTashkeelAware: Boolean = false): String {
+    fun normalize(
+        text: String,
+        isTashkeelAware: Boolean = false,
+        explicitNunForDayPeriod: Boolean = false
+    ): String {
         var out = text
-        if (!isTashkeelAware) {
+        val applyPeriodWords = !isTashkeelAware || explicitNunForDayPeriod
+        if (applyPeriodWords) {
             for ((pattern, to) in protectedTanweenPatterns) {
                 out = pattern.replace(out, to)
             }
@@ -152,11 +160,19 @@ object ArabicSpeechNormalizer {
                 out = pattern.replace(out, to)
             }
             for ((from, to) in replacements) {
-                out = out.replace(from, to)
+                if (from != "\u0648\u0627\u062d\u062f") {
+                    out = out.replace(from, to)
+                }
             }
             out = timeMasaRegex.replace(out) { m ->
                 m.groupValues[1] + MASA_AN
             }
+        }
+        if (!isTashkeelAware) {
+            out = out.replace(
+                "\u0648\u0627\u062d\u062f",
+                "\u0648\u064e\u0627\u062d\u0650\u062f"
+            )
         }
         if (out.contains(EngineMarkers.TANWEEN_MARKER)) {
             out = out.replace(EngineMarkers.TANWEEN_MARKER, "")
@@ -177,7 +193,8 @@ object ArabicSpeechNormalizer {
     fun prepareArabicForEngine(
         text: String,
         languageTag: String,
-        enginePackage: String? = null
+        enginePackage: String? = null,
+        explicitNunForDayPeriod: Boolean = false
     ): String {
         if (!LanguageCode.isArabic(languageTag)) {
             return text.replace(EngineMarkers.TANWEEN_MARKER, "")
@@ -185,7 +202,11 @@ object ArabicSpeechNormalizer {
                 .replace(EngineMarkers.NUMBER_MARK_END, "")
         }
         val isTashkeelAware = !stripTashkeelFor(enginePackage)
-        return normalize(text, isTashkeelAware = isTashkeelAware)
+        return normalize(
+            text = text,
+            isTashkeelAware = isTashkeelAware,
+            explicitNunForDayPeriod = explicitNunForDayPeriod
+        )
     }
 }
 
@@ -196,7 +217,8 @@ object ArabicSpeechNormalizer {
 fun prepareArabicForEngine(
     text: String,
     languageTag: String,
-    enginePackage: String? = null
+    enginePackage: String? = null,
+    explicitNunForDayPeriod: Boolean = false
 ): String = ArabicSpeechNormalizer.prepareArabicForEngine(
-    text, languageTag, enginePackage
+    text, languageTag, enginePackage, explicitNunForDayPeriod
 )

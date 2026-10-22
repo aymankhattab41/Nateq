@@ -17,9 +17,12 @@ import android.speech.tts.Voice
 import android.util.Log
 import androidx.annotation.VisibleForTesting
 import com.aymankhattab.nateq.engine.EmojiSpeech
+import com.aymankhattab.nateq.core.engine.EngineMarkers
+import com.aymankhattab.nateq.engine.stripTashkeelFor
 import com.aymankhattab.nateq.engine.PronunciationDictionary
 import com.aymankhattab.nateq.core.audio.accessibility.RepeatSpellController
 import com.aymankhattab.nateq.core.audio.engine.AudioEffectManager
+import com.aymankhattab.nateq.core.audio.engine.LastSpokenTextsTracker
 import com.aymankhattab.nateq.core.audio.engine.SpeechChunker
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.core.audio.engine.EmojiLanguageResolver
@@ -266,6 +269,22 @@ class AnnouncementSpeaker(
             SpeechRoute.MEDIA -> AudioManager.STREAM_MUSIC
         }
 
+        private fun isPeriodWordAtEnd(str: String): Boolean {
+            val t = str.trimEnd()
+            return t.endsWith("صباحاً") || t.endsWith("صباحا") ||
+                t.endsWith("مساءً") || t.endsWith("مساءا") ||
+                t.endsWith("مساء") || t.endsWith("ظهراً") ||
+                t.endsWith("ظهرا") || t.endsWith("عصراً") ||
+                t.endsWith("عصرا") || t.endsWith("ليلاً") ||
+                t.endsWith("ليلا") || t.endsWith("فجراً") ||
+                t.endsWith("فجرا") || t.endsWith("نهاراً") ||
+                t.endsWith("نهارا") ||
+                t.endsWith(EngineMarkers.TANWEEN_MARKER) ||
+                t.endsWith(ArabicSpeechNormalizer.SABA_AN) ||
+                t.endsWith(ArabicSpeechNormalizer.MASA_AN) ||
+                t.endsWith(ArabicSpeechNormalizer.DHUHR_AN)
+        }
+
         /** تجزئة نصوص الإشعارات والرسائل الطويلة إلى جمل طبيعية مستقلة
          *  لتمكين مقاطعتها بحدث آني واستئناف ما تبقى منها بسلاسة. */
         internal fun splitIntoSentences(text: String): List<String> {
@@ -279,9 +298,15 @@ class AnnouncementSpeaker(
                 val c = text[i]
                 current.append(c)
                 if (c in delimiters && current.length >= 25) {
-                    val s = current.toString().trim()
-                    if (s.isNotBlank()) result.add(s)
-                    current.setLength(0)
+                    val before = current.substring(0, current.length - 1)
+                    val nextChar = text.getOrNull(i + 1)
+                    val isMarkerNext = nextChar ==
+                        EngineMarkers.TANWEEN_MARKER.first()
+                    if (!isPeriodWordAtEnd(before) && !isMarkerNext) {
+                        val s = current.toString().trim()
+                        if (s.isNotBlank()) result.add(s)
+                        current.setLength(0)
+                    }
                 }
             }
             val remaining = current.toString().trim()
@@ -1388,6 +1413,7 @@ class AnnouncementSpeaker(
         cue: AudioCue? = null,
         category: String? = null
     ) {
+        LastSpokenTextsTracker.record(text)
         Log.d(TAG, "[DICT] Announcement before: $text")
         val singleLetterMode = runCatching {
             settings?.getSingleLetterMode()
@@ -2190,13 +2216,23 @@ speechCycle.incrementAndGet()
             try {
                 for (unit in units) {
                     if (gen != speechGeneration.get() || !nowSpeaking) break
+                    val explicitNun = runCatching {
+                        settings?.isDayPeriodExplicitNunEnabled() ?: true
+                    }.getOrDefault(true)
                     val cleanText = prepareArabicForEngine(
                         java.text.Normalizer.normalize(
                             stripEmojis(unit.text),
                             java.text.Normalizer.Form.NFC
                         ),
-                        "ar",
-                        boundEngine
+                        unit.locale.language,
+                        boundEngine,
+                        explicitNun
+                    )
+                    val isTashkeelAware = !stripTashkeelFor(boundEngine)
+                    logUnitDiagnosticsIfNeeded(
+                        cleanText,
+                        boundEngine,
+                        isTashkeelAware
                     )
                     if (cleanText.isBlank()) continue
 
@@ -2848,13 +2884,23 @@ speechCycle.incrementAndGet()
         // أصلاً) فالتنظيف هنا لا مساس به.
         // وتطبيع NFC يرمم النصوص القادمة مشكولةً
         // Bidi/NFD من الجذر (SMS/إشعارات).
+        val explicitNun = runCatching {
+            settings?.isDayPeriodExplicitNunEnabled() ?: true
+        }.getOrDefault(true)
         val cleanText = prepareArabicForEngine(
             java.text.Normalizer.normalize(
                 stripEmojis(text),
                 java.text.Normalizer.Form.NFC
             ),
-            "ar",
-            boundEngine
+            locale.language,
+            boundEngine,
+            explicitNun
+        )
+        val isTashkeelAware = !stripTashkeelFor(boundEngine)
+        logUnitDiagnosticsIfNeeded(
+            cleanText,
+            boundEngine,
+            isTashkeelAware
         )
         if (cleanText.isBlank()) {
             if (assignedUtteranceId != null) {
@@ -2908,6 +2954,32 @@ speechCycle.incrementAndGet()
             notifySpeechComplete()
             shutdownSafely()
         }
+    }
+
+    private fun logUnitDiagnosticsIfNeeded(
+        text: String,
+        enginePackage: String?,
+        isTashkeelAware: Boolean
+    ) {
+        val diagEnabled = runCatching {
+            settings?.isLanguageDiagnosticsEnabled() == true
+        }.getOrDefault(false)
+        if (!diagEnabled) return
+
+        val hex = text.map { ch ->
+            val code = ch.code
+            if (code in 0x064B..0x0652 || code == 0x06DF) {
+                "${ch}(U+%04X)".format(code)
+            } else {
+                ch.toString()
+            }
+        }.joinToString("")
+
+        Log.d(
+            TAG,
+            "[LanguageDiag] Text: \"$text\" | HexMarks: $hex | " +
+                "Engine: $enginePackage | TashkeelAware: $isTashkeelAware"
+        )
     }
 
     /** إيقاف أي نطق جارٍ وتحرير الموارد — يُسكت الصوت فوراً ويحرر التركيز

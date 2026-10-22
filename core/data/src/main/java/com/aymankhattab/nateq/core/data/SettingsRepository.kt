@@ -284,6 +284,8 @@ class SettingsRepository(context: Context) :
         const val KEY_PROTECTED_APPS = "protected_apps"
         const val KEY_PROTECTED_SUSPENDED_PKG = "protected_suspended_pkg"
         const val KEY_PROTECTED_SUSPENDED_TIME = "protected_suspended_time"
+        const val KEY_PROTECTED_APP_AUTO_RESTORE_TIMEOUT_MINUTES =
+            "protected_app_auto_restore_timeout_minutes"
 
         /**
          * التطبيقات المحمية الافتراضية — تعمل من أول تشغيل بلا إعداد:
@@ -305,6 +307,8 @@ class SettingsRepository(context: Context) :
             "emoji_pronunciation_language"
         const val KEY_LANGUAGE_DIAGNOSTICS_ENABLED =
             "language_diagnostics_enabled"
+        const val KEY_DAY_PERIOD_EXPLICIT_NUN =
+            "day_period_explicit_nun"
 
         const val PHONE_MODE_BLIND = "blind"
         const val PHONE_MODE_LOW_VISION = "low_vision"
@@ -1185,6 +1189,15 @@ class SettingsRepository(context: Context) :
     override fun setLanguageDiagnosticsEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(
             KEY_LANGUAGE_DIAGNOSTICS_ENABLED, enabled
+        ).apply()
+    }
+
+    override fun isDayPeriodExplicitNunEnabled(): Boolean =
+        prefs.getBoolean(KEY_DAY_PERIOD_EXPLICIT_NUN, true)
+
+    override fun setDayPeriodExplicitNunEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(
+            KEY_DAY_PERIOD_EXPLICIT_NUN, enabled
         ).apply()
     }
 
@@ -3189,6 +3202,44 @@ class SettingsRepository(context: Context) :
 
     fun getSuspendedProtectedAppTimestamp(): Long {
         return prefs.getLong(KEY_PROTECTED_SUSPENDED_TIME, 0L)
+    }
+
+    fun getProtectedAppAutoRestoreTimeoutMinutes(): Int {
+        val v = prefs.getInt(
+            KEY_PROTECTED_APP_AUTO_RESTORE_TIMEOUT_MINUTES, 15
+        )
+        return v.coerceIn(5, 60)
+    }
+
+    fun setProtectedAppAutoRestoreTimeoutMinutes(minutes: Int) {
+        val sanitized = minutes.coerceIn(5, 60)
+        prefs.edit().putInt(
+            KEY_PROTECTED_APP_AUTO_RESTORE_TIMEOUT_MINUTES, sanitized
+        ).apply()
+    }
+
+    fun getEngineSwitchRecipe(
+        model: String = android.os.Build.MODEL,
+        sdk: Int = android.os.Build.VERSION.SDK_INT
+    ): String? {
+        val safeModel = model.replace(Regex("[^a-zA-Z0-9_]"), "_")
+        return prefs.getString(
+            "engine_switch_recipe_${safeModel}_$sdk", null
+        )
+    }
+
+    fun setEngineSwitchRecipe(
+        model: String = android.os.Build.MODEL,
+        sdk: Int = android.os.Build.VERSION.SDK_INT,
+        recipe: String?
+    ) {
+        val safeModel = model.replace(Regex("[^a-zA-Z0-9_]"), "_")
+        val key = "engine_switch_recipe_${safeModel}_$sdk"
+        if (recipe == null) {
+            prefs.edit().remove(key).apply()
+        } else {
+            prefs.edit().putString(key, recipe).apply()
+        }
     }
 
     override fun isA11yPaused(): Boolean =

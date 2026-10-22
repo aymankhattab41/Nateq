@@ -310,6 +310,12 @@ interface ReadingPrefs {
     /** يعيّن تفعيل تشخيصات اللغات. */
     fun setLanguageDiagnosticsEnabled(enabled: Boolean)
 
+    /** تحويل كلمات الفترة في إعلانات الوقت لنون صريحة (الافتراضي true). */
+    fun isDayPeriodExplicitNunEnabled(): Boolean = true
+
+    /** يعيّن تحويل كلمات الفترة إلى نون صريحة. */
+    fun setDayPeriodExplicitNunEnabled(enabled: Boolean)
+
     /** تفعيل الإيقاف الفوري بالهزاز أثناء النطق. */
     fun isShakeToStopEnabled(): Boolean
 

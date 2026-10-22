@@ -702,6 +702,9 @@ class NateqTtsService : TextToSpeechService() {
         // سجلّ مجرّد: طول النص واللغة فقط
         // (النص قد يحوي OTP/حساسيات يقرؤها TalkBack).
         val reqText = request.charSequenceText?.toString()
+        if (reqText != null) {
+            LastSpokenTextsTracker.record(reqText)
+        }
         Log.d(TAG,
             "onSynthesizeText() len=${reqText?.length}" +
             " lang=${request.language}")

@@ -1060,6 +1060,15 @@
             android:minHeight="48dp"
             android:text="@string/dict_test_text_btn" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_trace_dict_text"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:minHeight="48dp"
+            android:text="@string/dict_trace_text_btn" />
+
         <com.google.android.material.switchmaterial.SwitchMaterial
             android:id="@+id/switch_dict_case_insensitive"
             android:layout_width="match_parent"

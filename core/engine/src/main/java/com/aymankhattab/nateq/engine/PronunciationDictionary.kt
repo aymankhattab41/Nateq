@@ -180,7 +180,7 @@ open class PronunciationDictionary(
         }
     }
 
-    private fun getStandaloneMaxLength(): Int {
+    fun getStandaloneMaxLength(): Int {
         testStandaloneMaxLength?.let { return it }
         return runCatching {
             val cls = Class.forName(
@@ -424,6 +424,58 @@ open class PronunciationDictionary(
         }
 
         return held.machine.apply(text, segments, getStandaloneMaxLength())
+    }
+
+    /**
+     * تتبع مطابقات القاموس على النص وتفصيل أسباب القبول والرفض
+     * (الجولة 50 - الأمر 4).
+     */
+    fun traceMatches(
+        text: String,
+        languageTag: String? = null
+    ): List<DictTraceEntry> {
+        if (text.isEmpty()) return emptyList()
+        reloadIfChanged()
+        val caseInsensitive = isCaseInsensitive()
+        var held = cache
+        if (held == null || held.version != version ||
+            held.caseInsensitive != caseInsensitive
+        ) {
+            held = synchronized(this) {
+                val currentVersion = version
+                val cached = cache
+                if (cached != null && cached.version == currentVersion &&
+                    cached.caseInsensitive == caseInsensitive
+                ) {
+                    cached
+                } else {
+                    val outputs = buildAllOutputs(caseInsensitive)
+                    MachineCache(
+                        currentVersion,
+                        caseInsensitive,
+                        UnifiedAhoCorasick(outputs, caseInsensitive)
+                    ).also { cache = it }
+                }
+            }
+        }
+        val hasLangEntries = synchronized(this) { langEntries.isNotEmpty() }
+        val segments = if (hasLangEntries) {
+            segmenter.segmentWithOffsets(
+                text,
+                fallbackLanguage = languageTag ?: LanguageCode.AR.tag
+            )
+        } else {
+            listOf(
+                SegmentWithOffset(
+                    text = text,
+                    languageTag = languageTag ?: LanguageCode.AR.tag,
+                    role = SpeechRole.TEXT,
+                    start = 0,
+                    end = text.length
+                )
+            )
+        }
+        return held.machine.trace(text, segments, getStandaloneMaxLength())
     }
 
     private fun buildAllOutputs(caseInsensitive: Boolean): List<DictOutput> {
@@ -878,6 +930,19 @@ open class PronunciationDictionary(
 }
 
 /**
+ * نتيجة فحص مطابقة واحدة في أداة تتبع القاموس (الجولة 50 - الأمر 4).
+ */
+data class DictTraceEntry(
+    val key: String,
+    val value: String,
+    val matchMode: String,
+    val accepted: Boolean,
+    val reason: String,
+    val origStart: Int,
+    val origEnd: Int
+)
+
+/**
  * آلة Aho-Corasick موحدة تجمع إدخالات العام وكل الطبقات اللغوية،
  * وتطبق قواعد قبول الحرف المنفرد والمطابقة الحساسة/غير الحساسة لحالة الأحرف.
  */
@@ -992,10 +1057,12 @@ private class UnifiedAhoCorasick(
                     continue
                 }
 
-                if (!isMatchAccepted(
-                        out, text, origStart, origEnd, standaloneMaxLength
-                    )
-                ) {
+                val (accepted, _) = evaluateMatch(
+                    out, text, origStart, origEnd,
+                    normText, normStart, normEnd,
+                    standaloneMaxLength
+                )
+                if (!accepted) {
                     continue
                 }
 
@@ -1043,6 +1110,97 @@ private class UnifiedAhoCorasick(
         return result.toString()
     }
 
+    fun trace(
+        text: String,
+        segments: List<SegmentWithOffset>,
+        standaloneMaxLength: Int
+    ): List<DictTraceEntry> {
+        if (text.isEmpty()) return emptyList()
+
+        val normSb = StringBuilder(text.length)
+        val normToOrig = ArrayList<Int>(text.length)
+        var i = 0
+        while (i < text.length) {
+            val origIdx = i
+            val cp = text.codePointAt(i)
+            val w = Character.charCount(cp)
+            i += w
+            if (isTashkeelOrTatweel(cp)) continue
+            val normCp = normalizeIndicDigit(cp)
+            val matchCp = if (caseInsensitive &&
+                Character.isUpperCase(normCp)
+            ) {
+                Character.toLowerCase(normCp)
+            } else normCp
+
+            val startLen = normSb.length
+            normSb.appendCodePoint(matchCp)
+            val addedLen = normSb.length - startLen
+            for (k in 0 until addedLen) {
+                normToOrig.add(origIdx)
+            }
+        }
+        val normText = normSb.toString()
+        if (normText.isEmpty()) return emptyList()
+
+        fun origEndForNorm(normEnd: Int): Int =
+            if (normEnd < normToOrig.size) normToOrig[normEnd] else text.length
+
+        val traceResults = ArrayList<DictTraceEntry>()
+        var node = root
+        for (idx in 0 until normText.length) {
+            val ch = normText[idx]
+            while (node !== root && !node.children.containsKey(ch)) {
+                node = node.fail ?: root
+            }
+            node = node.children[ch] ?: root
+            if (node.outputs.isEmpty()) continue
+
+            val normEnd = idx + 1
+            for (out in node.outputs) {
+                val normStart = normEnd - out.normalizedKey.length
+                if (normStart < 0) continue
+                val origStart = normToOrig[normStart]
+                val origEnd = origEndForNorm(normEnd)
+
+                val regionLang = findRegionLanguage(segments, origStart)
+                if (!isScopeMatching(out.scope, regionLang)) {
+                    traceResults.add(
+                        DictTraceEntry(
+                            key = out.originalKey,
+                            value = out.value,
+                            matchMode = out.matchMode,
+                            accepted = false,
+                            reason =
+                                "مرفوض: نطاق اللغة لا يطابق (${out.scope})",
+                            origStart = origStart,
+                            origEnd = origEnd
+                        )
+                    )
+                    continue
+                }
+
+                val (accepted, reason) = evaluateMatch(
+                    out, text, origStart, origEnd,
+                    normText, normStart, normEnd,
+                    standaloneMaxLength
+                )
+                traceResults.add(
+                    DictTraceEntry(
+                        key = out.originalKey,
+                        value = out.value,
+                        matchMode = out.matchMode,
+                        accepted = accepted,
+                        reason = reason,
+                        origStart = origStart,
+                        origEnd = origEnd
+                    )
+                )
+            }
+        }
+        return traceResults
+    }
+
     private fun findRegionLanguage(
         segments: List<SegmentWithOffset>,
         origStart: Int
@@ -1067,15 +1225,53 @@ private class UnifiedAhoCorasick(
         return false
     }
 
-    private fun isMatchAccepted(
+    private val PROTECTED_HIJRI_WORDS = listOf(
+        "محرم", "صفر", "ربيع الاول", "ربيع الاخر", "ربيع الأول",
+        "ربيع الآخر", "جمادى الاولى", "جمادى الاخرة", "جمادى الأولى",
+        "جمادى الآخرة", "جمادى", "رجب", "شعبان", "رمضان", "شوال",
+        "ذو القعدة", "ذو الحجة"
+    )
+
+    private fun isInsideProtectedWord(
+        normText: String,
+        normStart: Int,
+        normEnd: Int
+    ): Boolean {
+        for (word in PROTECTED_HIJRI_WORDS) {
+            var idx = 0
+            while (true) {
+                val pos = normText.indexOf(word, idx)
+                if (pos == -1) break
+                val wordEnd = pos + word.length
+                if (normStart >= pos && normEnd <= wordEnd) {
+                    return true
+                }
+                idx = pos + 1
+            }
+        }
+        return false
+    }
+
+    private fun evaluateMatch(
         out: DictOutput,
         text: String,
         origStart: Int,
         origEnd: Int,
+        normText: String,
+        normStart: Int,
+        normEnd: Int,
         standaloneMaxLength: Int
-    ): Boolean {
+    ): Pair<Boolean, String> {
         val mode = out.matchMode.uppercase()
-        if (mode == "ANYWHERE") return true
+        if (mode == "ANYWHERE") {
+            return true to "مقبول: وضع أي موضع (ANYWHERE)"
+        }
+
+        if (out.normalizedKey.length <= 2 &&
+            isInsideProtectedWord(normText, normStart, normEnd)
+        ) {
+            return false to "مرفوض: يقع داخل كلمة هجرية محمية"
+        }
 
         val requireStandalone = if (mode == "WHOLE") {
             true
@@ -1089,12 +1285,27 @@ private class UnifiedAhoCorasick(
             }
         }
 
-        if (!requireStandalone) return true
+        if (!requireStandalone) {
+            return true to "مقبول: لا يتطلب كلمة مستقلة"
+        }
 
-        if (hasLetterNeighborBefore(text, origStart)) return false
-        if (hasLetterNeighborAfter(text, origEnd)) return false
+        if (hasLetterNeighborBefore(text, origStart)) {
+            return false to "مرفوض: حرف جار قبله"
+        }
+        if (hasLetterNeighborAfter(text, origEnd)) {
+            return false to "مرفوض: حرف جار بعده"
+        }
 
-        return true
+        if (normStart > 0 && Character.isLetter(normText[normStart - 1])) {
+            return false to "مرفوض: حرف جار قبله في النص المطبّع"
+        }
+        if (normEnd < normText.length &&
+            Character.isLetter(normText[normEnd])
+        ) {
+            return false to "مرفوض: حرف جار بعده في النص المطبّع"
+        }
+
+        return true to "مقبول: كلمة مستقلة بلا أحرف جارة"
     }
 
     private fun hasLetterNeighborBefore(text: String, origStart: Int): Boolean {
@@ -1154,13 +1365,14 @@ private class UnifiedAhoCorasick(
     }
 
     private fun isIgnoredNeighborMark(cp: Int): Boolean {
-        if (cp in 0x064B..0x065F || cp == 0x0670) return true
-        if (cp == 0x0640) return true
-        if (cp == 0x200E || cp == 0x200F || cp == 0x061C ||
-            cp in 0x202A..0x202E || cp in 0x2066..0x2069
-        ) return true
-        if (cp == 0x200C || cp == 0x200D) return true
-        return false
+        if (isConnectorChar(cp)) return false
+        val type = Character.getType(cp)
+        return type == Character.NON_SPACING_MARK.toInt() ||
+            type == Character.ENCLOSING_MARK.toInt() ||
+            type == Character.COMBINING_SPACING_MARK.toInt() ||
+            type == Character.FORMAT.toInt() ||
+            type == Character.CONTROL.toInt() ||
+            cp == 0x0640
     }
 
     private fun isConnectorChar(cp: Int): Boolean =

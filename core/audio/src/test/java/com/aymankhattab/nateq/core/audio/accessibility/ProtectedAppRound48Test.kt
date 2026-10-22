@@ -38,6 +38,15 @@ class ProtectedAppRound48Test {
     @Before
     fun setUp() {
         ProtectedAppManager.resetForTesting()
+        ProtectedAppManager.readinessOverrideForTesting =
+            ProtectedAppManager.AutoRestoreReadiness(
+                hasWriteSecure = true,
+                hasUsageStats = true,
+                isBatteryOptimizationsIgnored = true,
+                hasNotificationPermission = true,
+                isNotificationListenerEnabled = true,
+                isAutostartGuided = true
+            )
         settings.setProtectedApps(emptyList())
         settings.setSuspendedProtectedApp(null)
     }
@@ -270,18 +279,30 @@ class ProtectedAppRound48Test {
 
     @Test
     fun fullDisable_recordsSuspendedAppAndRestoresState() {
-        val app = ProtectedApp(
-            packageName = "com.instapay",
-            label = "إنستاباي",
-            mode = ProtectedApp.MODE_FULL_DISABLE
-        )
-        ProtectedAppManager.handleAppEntry(context, null, app)
+        val service = org.robolectric.Robolectric.buildService(
+            NateqAccessibilityService::class.java
+        ).create().get()
+        AccessibilityBridge.registerService(service)
+        try {
+            val app = ProtectedApp(
+                packageName = "com.instapay",
+                label = "إنستاباي",
+                mode = ProtectedApp.MODE_FULL_DISABLE
+            )
+            ProtectedAppManager.handleAppEntry(context, null, app)
 
-        assertEquals("com.instapay", settings.getSuspendedProtectedApp())
-        assertTrue(settings.getSuspendedProtectedAppTimestamp() > 0L)
+            assertEquals("com.instapay", settings.getSuspendedProtectedApp())
+            assertTrue(settings.getSuspendedProtectedAppTimestamp() > 0L)
 
-        ProtectedAppManager.handleAppExit(context, "com.instapay", "إنستاباي")
-        assertEquals(null, settings.getSuspendedProtectedApp())
+            ProtectedAppManager.handleAppExit(
+                context,
+                "com.instapay",
+                "إنستاباي"
+            )
+            assertEquals(null, settings.getSuspendedProtectedApp())
+        } finally {
+            AccessibilityBridge.unregisterService(service)
+        }
     }
 
     @Test

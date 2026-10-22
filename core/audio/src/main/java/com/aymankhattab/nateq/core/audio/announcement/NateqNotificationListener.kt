@@ -2,10 +2,14 @@ package com.aymankhattab.nateq.core.audio.announcement
 
 import android.Manifest
 import android.app.Notification
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -18,6 +22,7 @@ import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.audio.accessibility.A11yVoiceResolver
 import com.aymankhattab.nateq.core.audio.accessibility.FeatureFlags
 import com.aymankhattab.nateq.core.audio.accessibility.OtpReader
+import com.aymankhattab.nateq.core.audio.accessibility.ProtectedAppManager
 import com.aymankhattab.nateq.core.data.EffectiveVoice
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LocaleUtils
@@ -29,6 +34,9 @@ import java.util.Locale
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -835,6 +843,83 @@ class NateqNotificationListener : NotificationListenerService() {
      * `activeNotifications` قراءةُ IPC على خيط الربط، و`postTime`
      * و`extras` قراءاتُ نظامٍ لا يصحّ أن تُحسَب على خيط الربط.
      */
+    private var screenReceiver: BroadcastReceiver? = null
+    private var protectedAppDetectionJob: Job? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        registerScreenStateReceiver()
+    }
+
+    override fun onDestroy() {
+        screenReceiver?.let {
+            runCatching { unregisterReceiver(it) }
+        }
+        screenReceiver = null
+        protectedAppDetectionJob?.cancel()
+        protectedAppDetectionJob = null
+        super.onDestroy()
+    }
+
+    private fun registerScreenStateReceiver() {
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val action = intent?.action ?: return
+                val scope =
+                    (applicationContext as? AnnouncementAppContext)?.appScope
+                        ?: CoroutineScope(Dispatchers.Default)
+                scope.launch {
+                    ProtectedAppManager.checkAndRestore(
+                        context = this@NateqNotificationListener,
+                        reason = action
+                    )
+                    checkStartProtectedAppDetectionLoop()
+                }
+            }
+        }
+        screenReceiver = receiver
+        runCatching { registerReceiver(receiver, filter) }
+    }
+
+    private fun checkStartProtectedAppDetectionLoop() {
+        if (!ProtectedAppManager.isSuspended(this)) {
+            protectedAppDetectionJob?.cancel()
+            protectedAppDetectionJob = null
+            return
+        }
+        if (protectedAppDetectionJob?.isActive == true) return
+
+        val scope = (applicationContext as? AnnouncementAppContext)?.appScope
+            ?: CoroutineScope(Dispatchers.Default)
+        protectedAppDetectionJob = scope.launch {
+            val startedAt = System.currentTimeMillis()
+            val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+            while (isActive && ProtectedAppManager.isSuspended(
+                    this@NateqNotificationListener
+                )
+            ) {
+                while (pm?.isInteractive == false && isActive) {
+                    delay(1000L)
+                }
+                val elapsed = System.currentTimeMillis() - startedAt
+                val pollIntervalMs = if (elapsed < 20_000L) 1500L else 3000L
+                delay(pollIntervalMs)
+
+                if (!isActive) break
+                val restored = ProtectedAppManager.checkAndRestore(
+                    context = this@NateqNotificationListener,
+                    reason = "listener"
+                )
+                if (restored) break
+            }
+        }
+    }
+
     override fun onListenerConnected() {
         super.onListenerConnected()
         isConnected = true
@@ -845,6 +930,15 @@ class NateqNotificationListener : NotificationListenerService() {
                 adoptLiveCallNotifications()
             } catch (t: Throwable) {
                 Log.e(TAG, "adoptLiveCallNotifications failed", t)
+            }
+            try {
+                ProtectedAppManager.checkAndRestore(
+                    context = this@NateqNotificationListener,
+                    reason = "listener_connected"
+                )
+                checkStartProtectedAppDetectionLoop()
+            } catch (t: Throwable) {
+                Log.e(TAG, "checkAndRestore failed", t)
             }
         }
     }
