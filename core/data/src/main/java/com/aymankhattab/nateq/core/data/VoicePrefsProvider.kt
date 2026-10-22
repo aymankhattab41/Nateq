@@ -64,4 +64,7 @@ interface VoicePrefsProvider {
 
     /** تفعيل تشخيصات اللغات في Logcat (الأمر 3). */
     fun isLanguageDiagnosticsEnabled(): Boolean = false
+
+    /** تحويل كلمات الفترة في إعلانات الوقت لنون صريحة (الافتراضي true). */
+    fun isDayPeriodExplicitNunEnabled(): Boolean = true
 }

@@ -14,6 +14,15 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import com.aymankhattab.nateq.core.audio.accessibility.ProtectedAppManager
+import com.aymankhattab.nateq.core.audio.accessibility.RestoreDiagnosticsTracker
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import com.aymankhattab.nateq.core.audio.accessibility.ProtectedAppTimelineTracker
+import com.aymankhattab.nateq.settings.OemGuidanceController
+import com.aymankhattab.nateq.settings.WriteSecureSettingsGuideActivity
+import com.aymankhattab.nateq.settings.OemVendor
 import com.aymankhattab.nateq.feature.settings.R
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
@@ -81,6 +90,8 @@ class BankingCompatCheckActivity : AppCompatActivity() {
         // على قارئ الشاشة صورةٌ قديمة بعد العودة.
         refreshCheckItems()
         refreshLordCapabilities()
+        refreshTimeline()
+        refreshRestoreReadinessAndLog()
     }
 
     override fun onDestroy() {
@@ -126,6 +137,7 @@ class BankingCompatCheckActivity : AppCompatActivity() {
             .setOnClickListener { resetWizard() }
         btnNext?.setOnClickListener { goToNextStep() }
         btnFinish?.setOnClickListener { finishWizard() }
+        setupTimelineAndReadinessControls()
         initSpeaker()
     }
 
@@ -524,7 +536,249 @@ class BankingCompatCheckActivity : AppCompatActivity() {
                 )
         }
 
+    private fun setupTimelineAndReadinessControls() {
+        findViewById<MaterialButton?>(R.id.btn_copy_timeline)
+            ?.setOnClickListener {
+                val report = ProtectedAppTimelineTracker.getTimelineReport()
+                copyTextToClipboard("سجل المخطط الزمني", report)
+                Toast.makeText(
+                    this, "تم نسخ المخطط الزمني", Toast.LENGTH_SHORT
+                ).show()
+            }
+
+        findViewById<MaterialButton?>(R.id.btn_clear_timeline)
+            ?.setOnClickListener {
+                ProtectedAppTimelineTracker.clear()
+                refreshTimeline()
+                Toast.makeText(
+                    this, "تم مسح المخطط الزمني", Toast.LENGTH_SHORT
+                ).show()
+            }
+
+        findViewById<MaterialButton?>(R.id.btn_copy_restore_log)
+            ?.setOnClickListener {
+                val history =
+                    RestoreDiagnosticsTracker.getRecentAttempts(this)
+                val text = history.joinToString("\n") { it.formatLine() }
+                copyTextToClipboard("سجل محاولات الاسترجاع", text)
+                Toast.makeText(
+                    this, "تم نسخ سجل الاسترجاع", Toast.LENGTH_SHORT
+                ).show()
+            }
+
+        findViewById<MaterialButton?>(R.id.btn_clear_restore_log)
+            ?.setOnClickListener {
+                RestoreDiagnosticsTracker.clear(this)
+                refreshRestoreReadinessAndLog()
+                Toast.makeText(
+                    this, "تم مسح سجل الاسترجاع", Toast.LENGTH_SHORT
+                ).show()
+            }
+    }
+
+    private fun refreshTimeline() {
+        val tvTimeline = findViewById<TextView?>(R.id.tv_banking_timeline)
+        val report = ProtectedAppTimelineTracker.getTimelineReport()
+        tvTimeline?.text = if (report.isBlank()) {
+            "لا توجد أحداث مسجلة حتى الآن."
+        } else {
+            report
+        }
+    }
+
+    private fun refreshRestoreReadinessAndLog() {
+        val readiness = ProtectedAppManager.checkReadiness(this)
+        val tvSummary =
+            findViewById<TextView?>(R.id.tv_restore_readiness_summary)
+        tvSummary?.text = if (readiness.canEnableFullDisable) {
+            "جاهز للإعادة التلقائية: المتطلبات الأساسية مكتملة."
+        } else {
+            "تنبيه: يجب منح الأذونات الموضحة بالأحمر لضمان الإعادة التلقائية."
+        }
+
+        val itemsContainer =
+            findViewById<LinearLayout?>(R.id.ll_restore_readiness_items)
+        if (itemsContainer != null) {
+            itemsContainer.removeAllViews()
+            itemsContainer.addView(
+                buildReadinessItem(
+                    title = "إذن WRITE_SECURE_SETTINGS",
+                    detail = "مطلوب للاسترجاع التلقائي لخدمة الوصول بعد " +
+                        "إنستاباي، والتبديل المباشر لمحركات النطق بلا شاشات.",
+                    granted = readiness.hasWriteSecure,
+                    actionTitle = "دليل منح الإذن عبر ADB",
+                    onAction = {
+                        startActivity(
+                            Intent(
+                                this,
+                                WriteSecureSettingsGuideActivity::class.java
+                            )
+                        )
+                    }
+                )
+            )
+            itemsContainer.addView(
+                buildReadinessItem(
+                    title = "الوصول إلى بيانات الاستخدام (Usage Stats)",
+                    detail = "مطلوب لاكتشاف لحظة الخروج من التطبيق المحمي " +
+                        "واستعادة خدمة إمكانية الوصول تلقائياً.",
+                    granted = readiness.hasUsageStats,
+                    actionTitle = "فتح إعدادات الوصول للاستخدام",
+                    onAction = {
+                        runCatching {
+                            startActivity(
+                                Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                            )
+                        }
+                    }
+                )
+            )
+            itemsContainer.addView(
+                buildReadinessItem(
+                    title = "استثناء من تحسين البطارية",
+                    detail = "يمنع النظام من قتل خدمة الكشف أثناء " +
+                        "إيقاف الوصول.",
+                    granted = readiness.isBatteryOptimizationsIgnored,
+                    actionTitle = "طلب استثناء البطارية",
+                    onAction = {
+                        runCatching {
+                            val intent = Intent(
+                                Settings
+                                    .ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+                            ).apply {
+                                data = Uri.parse("package:$packageName")
+                            }
+                            startActivity(intent)
+                        }
+                    }
+                )
+            )
+            itemsContainer.addView(
+                buildReadinessItem(
+                    title = "إذن الإشعارات",
+                    detail = "لإصدار إشعار تنبيهي بديل عند تعذر " +
+                        "التفعيل المباشر.",
+                    granted = readiness.hasNotificationPermission,
+                    actionTitle = "إعدادات الإشعارات",
+                    onAction = {
+                        runCatching {
+                            val intent = Intent(
+                                Settings.ACTION_APP_NOTIFICATION_SETTINGS
+                            ).apply {
+                                putExtra(
+                                    Settings.EXTRA_APP_PACKAGE, packageName
+                                )
+                            }
+                            startActivity(intent)
+                        }
+                    }
+                )
+            )
+            itemsContainer.addView(
+                buildReadinessItem(
+                    title = "التشغيل التلقائي OEM",
+                    detail = "إرشادات حماية التطبيق من الإيقاف بحسب " +
+                        "مصنّع الهاتف.",
+                    granted = readiness.isAutostartGuided,
+                    actionTitle = "عرض إرشادات الشركة المصنعة",
+                    onAction = {
+                        OemGuidanceController.openAutostartSettings(this)
+                    }
+                )
+            )
+            itemsContainer.addView(
+                buildReadinessItem(
+                    title = "خدمة الاستماع للإشعارات (مضيف احتياطي)",
+                    detail = "تعمل كمضيف احتياطي ثانٍ لكشف الخروج حتى لو " +
+                        "قُتلت الخدمة الأمامية.",
+                    granted = readiness.isNotificationListenerEnabled,
+                    actionTitle = "إعدادات الاستماع للإشعارات",
+                    onAction = {
+                        runCatching {
+                            startActivity(
+                                Intent(
+                                    Settings
+                                        .ACTION_NOTIFICATION_LISTENER_SETTINGS
+                                )
+                            )
+                        }
+                    }
+                )
+            )
+        }
+
+        // تحديث سجل المحاولات
+        val tvLog = findViewById<TextView?>(R.id.tv_restore_history_log)
+        val history = RestoreDiagnosticsTracker.getRecentAttempts(this)
+        tvLog?.text = if (history.isEmpty()) {
+            "لا توجد محاولات استرجاع مسجلة حتى الآن."
+        } else {
+            history.reversed().joinToString("\n") { it.formatLine() }
+        }
+    }
+
+    private fun buildReadinessItem(
+        title: String,
+        detail: String,
+        granted: Boolean,
+        actionTitle: String,
+        onAction: () -> Unit
+    ): View {
+        val dp8 = (8 * resources.displayMetrics.density).toInt()
+        val dp4 = (4 * resources.displayMetrics.density).toInt()
+        val wrapper = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp8, 0, dp8)
+        }
+        val tvTitle = TextView(this).apply {
+            text = (if (granted) "✓ " else "✗ ") + title
+            textSize = 14f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(
+                ContextCompat.getColor(
+                    this@BankingCompatCheckActivity,
+                    if (granted) android.R.color.holo_green_dark
+                    else android.R.color.holo_red_dark
+                )
+            )
+        }
+        val tvDetail = TextView(this).apply {
+            text = detail
+            textSize = 12f
+            setPadding(0, dp4, 0, dp4)
+            setTextColor(
+                ContextCompat.getColor(
+                    this@BankingCompatCheckActivity,
+                    R.color.text_secondary
+                )
+            )
+        }
+        wrapper.addView(tvTitle)
+        wrapper.addView(tvDetail)
+
+        if (!granted) {
+            val btn = MaterialButton(
+                this, null,
+                android.R.attr.borderlessButtonStyle
+            ).apply {
+                text = actionTitle
+                textSize = 12f
+                setOnClickListener { onAction() }
+            }
+            wrapper.addView(btn)
+        }
+        return wrapper
+    }
+
+    private fun copyTextToClipboard(label: String, text: String) {
+        val cm =
+            getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        val clip = ClipData.newPlainText(label, text)
+        cm?.setPrimaryClip(clip)
+    }
+
     companion object {
+
         private const val PREFS_NAME = "banking_compat_check"
         private const val KEY_BANKING_PACKAGE = "banking_package"
         private const val KEY_STEP_INDEX = "step_index"

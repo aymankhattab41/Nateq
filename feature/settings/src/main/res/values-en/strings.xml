@@ -1,4 +1,4 @@
-﻿<resources>
+<resources>
     <string name="accessibility_service_label">Screen Services (Lord TTS)</string>
     <string name="accessibility_service_description">Accessibility and screen reading services to enhance speech experience and expand messages</string>
     <string name="a11y_tile_label">Screen Services</string>
@@ -707,6 +707,10 @@
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">
 Version %1$s
+    - Round 51: Automatic accessibility service restore after exiting InstaPay and protected apps: 6-item readiness check with fix actions in banking compat screen, dual detection hosts (watcher service + notification listener), device protected storage persistence, 2-minute recurring backup alarm, service nudge on connection stall, 3s absence and 20s screen-off rules, and 20-attempt diagnostics history log
+    - Round 51: Stabilized TTS engine switching across all devices: TTS settings screen identity verification, full 2-session retry loop with route reordering, container parent scrolling (top reset + 8-step polling), isChecked status verification alongside secure settings, per-device switch recipe persistence, clear error announcements with tree dump path, and dump sharing &amp; retry UI actions
+    - Round 51: Full pipeline trace and Hijri month protection against Jumada dictionary corruption: complete 7-stage live trace tool in :tts process, 20-entry circular buffer of last spoken texts, generalized invisible character bypass (combining marks, format, control characters) in neighbor detection, Hijri month protection, ANYWHERE match warning for single letters, and match mode display
+    - Round 51: Fixed time announcement period tags (morning/afternoon/evening) in clock events and ensured clean pronunciation
     - Round 50: Eliminated all notification/alert vibrations, upgraded channels to v2 with vibration disabled, defaulted touch haptics to off
     - Round 50: Battery optimizations: removed 250ms polling and proactive mode, added adaptive stepped polling, throttled a11y events, added battery diagnostics
     - Round 50: Reduced latency by streaming segments as ready, avoided unnecessary number segments, split long phone numbers, pre-warmed number voice, prevented silent drops with retry and language fallback, added speech speed report

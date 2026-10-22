@@ -159,57 +159,33 @@ class ProtectedAppWatcherService : Service() {
 
     /** الوضع التفاعلي: استطلاع متدرج لخروج التطبيق المحمي ثم التوقف. */
     private fun startReactiveLoop() {
-        val targetPkg = watchingPackage ?: return
-        val targetLabel = watchingLabel
-
         scope.launch {
-            val settings =
-                SettingsRepository.create(this@ProtectedAppWatcherService)
-            var lastQueryTime = startedAt
-
             while (isActive) {
                 // أثناء إطفاء الشاشة: انتظر بلا استطلاع لحفظ البطارية
                 while (!isScreenOn && isActive) {
                     delay(1000L)
                 }
 
-                val elapsed = System.currentTimeMillis() - startedAt
-                val pollIntervalMs = when {
-                    elapsed < 20_000L -> 1500L
-                    elapsed < 60_000L -> 3000L
-                    else -> 5000L
+                if (!ProtectedAppManager.isSuspended(
+                        this@ProtectedAppWatcherService
+                    )
+                ) {
+                    stopSelf()
+                    break
                 }
 
+                val elapsed = System.currentTimeMillis() - startedAt
+                val pollIntervalMs = if (elapsed < 20_000L) 1500L else 3000L
                 delay(pollIntervalMs)
 
-                if (System.currentTimeMillis() - startedAt > TWO_HOURS_MS) {
-                    Log.w(TAG, "Safety timeout reached (2 hours). Stopping.")
-                    stopSelf()
-                    break
-                }
+                if (!isActive) break
 
-                if (!settings.isProtectedApp(targetPkg)) {
-                    Log.i(TAG, "App $targetPkg unlisted. Restoring now.")
-                    ProtectedAppManager.handleAppExit(
-                        this@ProtectedAppWatcherService,
-                        targetPkg,
-                        targetLabel
-                    )
-                    stopSelf()
-                    break
-                }
-
-                val now = System.currentTimeMillis()
-                val queryStart = maxOf(startedAt, lastQueryTime)
-                lastQueryTime = now
-
-                if (hasExited(targetPkg, queryStart, now)) {
-                    Log.i(TAG, "Protected app $targetPkg exited. Restoring.")
-                    ProtectedAppManager.handleAppExit(
-                        this@ProtectedAppWatcherService,
-                        targetPkg,
-                        targetLabel
-                    )
+                val restored = ProtectedAppManager.checkAndRestore(
+                    context = this@ProtectedAppWatcherService,
+                    reason = "watcher"
+                )
+                if (restored) {
+                    Log.i(TAG, "Restored successfully via watcher. Stopping.")
                     stopSelf()
                     break
                 }

@@ -735,6 +735,13 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             showDictProcessTestDialog()
         }
 
+        val btnTraceDictText = view.findViewById<MaterialButton>(
+            R.id.btn_trace_dict_text
+        )
+        btnTraceDictText?.setOnClickListener {
+            showDictTraceDialog()
+        }
+
         // المفتاح الرئيسي لكل الإعلانات
         switchAllAnnouncements =
             view.findViewById(R.id.switch_all_announcements)
@@ -1407,6 +1414,17 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                             valueLang = valLang
                         )
                     }
+                    if (word.length == 1 &&
+                        mode.equals("ANYWHERE", ignoreCase = true)
+                    ) {
+                        val warn = getString(
+                            R.string.dict_warning_single_char_anywhere
+                        )
+                        Toast.makeText(
+                            requireContext(), warn, Toast.LENGTH_LONG
+                        ).show()
+                        view?.announceCompat(warn)
+                    }
                     refreshDictAdapter()
                 } else {
                     Toast.makeText(
@@ -1454,11 +1472,203 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             .getOrDefault(emptyMap())
             .toList()
         val adapter = pronunciationDictAdapter
-            ?: PronunciationDictAdapter(::showDictRowOptions).also {
+            ?: PronunciationDictAdapter(
+                onRowClick = ::showDictRowOptions,
+                getMatchMode = { word ->
+                    val scope = pronunciationDict.findEntryScope(word)
+                    pronunciationDict.getMatchMode(word, scope)
+                }
+            ).also {
                 pronunciationDictAdapter = it
                 rvPronunciationDict.adapter = it
             }
         adapter.submitList(entries)
+    }
+
+    private fun showDictTraceDialog() {
+        val container = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 24)
+        }
+        val input = EditText(requireContext()).apply {
+            hint = getString(R.string.dict_trace_hint)
+        }
+        val btnRow = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 12, 0, 12)
+        }
+        val btnPickLast = MaterialButton(
+            requireContext(), null,
+            android.R.attr.borderlessButtonStyle
+        ).apply {
+            text = "آخر رسالة قُرئت"
+            setOnClickListener {
+                val uri = Uri.parse(
+                    "content://${requireContext().packageName}" +
+                        ".dict_test_provider"
+                )
+                val res = runCatching {
+                    requireContext().contentResolver.call(
+                        uri, DictTestProvider.METHOD_GET_LAST_SPOKEN, null, null
+                    )
+                }.getOrNull()
+                val list = res?.getStringArrayList(
+                    DictTestProvider.KEY_LAST_SPOKEN_LIST
+                ).orEmpty()
+                if (list.isEmpty()) {
+                    Toast.makeText(
+                        requireContext(),
+                        "لا توجد رسائل مسجلة بعد",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    val arr = list.toTypedArray()
+                    MaterialAlertDialogBuilder(requireContext())
+                        .setTitle("اختر رسالة للتتبع")
+                        .setItems(arr) { _, which ->
+                            input.setText(arr[which])
+                        }
+                        .show()
+                }
+            }
+        }
+        val btnFull = MaterialButton(
+            requireContext(), null,
+            android.R.attr.borderlessButtonStyle
+        ).apply {
+            text = "تتبّع المسار كاملاً"
+        }
+        btnRow.addView(btnPickLast)
+        btnRow.addView(btnFull)
+
+        val tvResult = TextView(requireContext()).apply {
+            setPadding(0, 24, 0, 0)
+            setTextIsSelectable(true)
+        }
+        val scroll = android.widget.ScrollView(requireContext()).apply {
+            addView(tvResult)
+        }
+        container.addView(input)
+        container.addView(btnRow)
+        container.addView(scroll)
+
+        btnFull.setOnClickListener {
+            val raw = input.text.toString().trim()
+            if (raw.isEmpty()) return@setOnClickListener
+            val uri = Uri.parse(
+                "content://${requireContext().packageName}.dict_test_provider"
+            )
+            val res = runCatching {
+                requireContext().contentResolver.call(
+                    uri, DictTestProvider.METHOD_FULL_TRACE, raw, null
+                )
+            }.getOrNull()
+            if (res != null) {
+                val names = res.getStringArrayList(
+                    DictTestProvider.KEY_FULL_TRACE_NAMES
+                ).orEmpty()
+                val values = res.getStringArrayList(
+                    DictTestProvider.KEY_FULL_TRACE_VALUES
+                ).orEmpty()
+                val sb = java.lang.StringBuilder()
+                for (i in names.indices) {
+                    val n = names[i]
+                    val v = if (i < values.size) values[i] else ""
+                    sb.append("══════════════════════════════\n")
+                    sb.append("$n:\n$v\n\n")
+                }
+                tvResult.text = sb.toString()
+            } else {
+                tvResult.text = "تعذر استدعاء تتبع المسار الكامل عبر :tts"
+            }
+        }
+
+        val builder = MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.dict_trace_dialog_title)
+            .setView(container)
+            .setPositiveButton(R.string.dict_trace_run_btn, null)
+            .setNegativeButton(R.string.cancel, null)
+
+        val dialog = builder.create().also(::trackDialog)
+        dialog.show()
+
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val raw = input.text.toString().trim()
+            if (raw.isEmpty()) return@setOnClickListener
+
+            val bundle = runCatching {
+                val uri = Uri.parse(
+                    "content://${requireContext().packageName}" +
+                        ".dict_test_provider"
+                )
+                val extras = Bundle().apply {
+                    putString(DictTestProvider.KEY_TEXT, raw)
+                    putString(DictTestProvider.KEY_LANG, "ar")
+                }
+                requireContext().contentResolver.call(
+                    uri,
+                    DictTestProvider.METHOD_TRACE,
+                    raw,
+                    extras
+                )
+            }.getOrNull()
+
+            if (bundle != null) {
+                val orig = bundle.getString(
+                    DictTestProvider.KEY_ORIGINAL
+                ).orEmpty()
+                val proc = bundle.getString(
+                    DictTestProvider.KEY_PROCESSED
+                ).orEmpty()
+                val standaloneMax = bundle.getInt(
+                    DictTestProvider.KEY_STANDALONE_MAX, 2
+                )
+                val traceLines = bundle.getStringArrayList(
+                    DictTestProvider.KEY_TRACE_LINES
+                ) ?: emptyList<String>()
+
+                val tracesText = if (traceLines.isEmpty()) {
+                    "• لا توجد مطابقات في القاموس لهذا النص"
+                } else {
+                    traceLines.joinToString("\n")
+                }
+
+                val text = "قبل القاموس: $orig\n" +
+                    "بعد القاموس (:tts): $proc\n" +
+                    "حد الكلمة المنفردة (:tts): $standaloneMax\n\n" +
+                    "المطابقات وأسباب القبول/الرفض:\n$tracesText"
+                tvResult.text = text
+            } else {
+                val dict = pronunciationDict
+                val standaloneMax = dict.getStandaloneMaxLength()
+                val traces = dict.traceMatches(raw, "ar")
+                val proc = TextProcessor(
+                    requireContext(),
+                    injectedDict = dict
+                ).applyDictionaryFirst(raw, "ar")
+                val traceLines = traces.map { tr ->
+                    val modeStr = when (tr.matchMode.uppercase()) {
+                        "WHOLE", "STANDALONE" -> "كلمة منفردة"
+                        "ANYWHERE" -> "أي موضع"
+                        else -> "تلقائي"
+                    }
+                    val status = if (tr.accepted) "✓ قُبلت"
+                    else "✗ رُفضت (${tr.reason})"
+                    "• المفتاح: «${tr.key}» ← «${tr.value}» | " +
+                        "الوضع: $modeStr | الحالة: $status"
+                }
+                val tracesText = if (traceLines.isEmpty()) {
+                    "• لا توجد مطابقات في القاموس لهذا النص"
+                } else {
+                    traceLines.joinToString("\n")
+                }
+                tvResult.text = "قبل القاموس: $raw\n" +
+                    "بعد القاموس (محلي): $proc\n" +
+                    "حد الكلمة المنفردة: $standaloneMax\n\n" +
+                    "المطابقات وأسباب القبول/الرفض:\n$tracesText\n" +
+                    "(تعذّر الاتصال بـ :tts؛ استُخدم المسار المحلي)"
+            }
+        }
     }
 
     private fun showDictProcessTestDialog() {
@@ -2290,6 +2500,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                         getString(R.string.diagnostics_copied)
                     )
                 }
+                .setNeutralButton("خيارات تبديل المحرك") { _, _ ->
+                    showEngineDiagnosticsActionsDialog(ctx)
+                }
                 .setNegativeButton(android.R.string.cancel, null)
                 .create()
                 .also(::trackDialog)
@@ -2331,6 +2544,14 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             }
 
             sb.appendLine("=== Lord TTS — التشخيص ===")
+            val buildTimeStr = runCatching {
+                java.text.SimpleDateFormat(
+                    "yyyy-MM-dd HH:mm:ss",
+                    java.util.Locale.US
+                ).format(java.util.Date(info.lastUpdateTime))
+            }.getOrDefault("غير معروف")
+            sb.appendLine("رقم الإصدار: $versionName | البناء: $versionCode")
+            sb.appendLine("وقت التثبيت/البناء: $buildTimeStr")
             sb.appendLine(
                 getString(
                     R.string.error_report_version,
@@ -2692,6 +2913,31 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 .SpeechLatencyTracker.formatSpeedReport()
             sb.appendLine(speedReport)
 
+            // ── تشخيص تبديل المحركات (الجولة 51 - الأمر 2) ───────────
+            sb.appendLine("--- تشخيص تبديل المحركات (الجولة 51) ---")
+            val autoStep = com.aymankhattab.nateq.core.audio.accessibility
+                .TtsSettingsAutomation.lastFailureStep
+            val autoDevice = com.aymankhattab.nateq.core.audio.accessibility
+                .TtsSettingsAutomation.lastFailureDevice
+            val autoDump = com.aymankhattab.nateq.core.audio.accessibility
+                .TtsSettingsAutomation.lastDumpPath
+            val savedRecipe = settings.getEngineSwitchRecipe(
+                android.os.Build.MODEL, android.os.Build.VERSION.SDK_INT
+            )
+            if (autoStep != null) {
+                sb.appendLine("آخر فشل تبديل: $autoStep")
+                sb.appendLine("الجهاز: ${autoDevice ?: "—"}")
+            } else {
+                sb.appendLine("حالة التبديل: لا يوجد فشل مسجل")
+            }
+            if (autoDump != null) {
+                sb.appendLine("ملف التفريغ: $autoDump")
+            }
+            if (savedRecipe != null) {
+                sb.appendLine("وصفة الجهاز المحفوظة: $savedRecipe")
+            }
+            sb.appendLine("")
+
             sb.toString()
         }
 
@@ -2703,6 +2949,102 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             "Lord TTS Diagnostics", text
         )
         clipboard.setPrimaryClip(clip)
+    }
+
+    private fun showEngineDiagnosticsActionsDialog(ctx: Context) {
+        val options = arrayOf(
+            "مشاركة ملف تفريغ تبديل المحرك",
+            "إعادة محاولة تبديل المحرك"
+        )
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle("خيارات تفريغ وتبديل المحركات")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> shareEngineSwitchDump(ctx)
+                    1 -> retryEngineSwitch(ctx)
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun shareEngineSwitchDump(ctx: Context) {
+        val uri = com.aymankhattab.nateq.core.audio.accessibility
+            .TtsSettingsAutomation.lastDumpUri
+        val path = com.aymankhattab.nateq.core.audio.accessibility
+            .TtsSettingsAutomation.lastDumpPath
+        if (uri != null) {
+            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(
+                Intent.createChooser(
+                    sendIntent, "مشاركة تفريغ تبديل المحرك"
+                )
+            )
+        } else if (path != null) {
+            val file = java.io.File(path)
+            if (file.exists()) {
+                val fileUri = androidx.core.content.FileProvider.getUriForFile(
+                    ctx,
+                    "${ctx.packageName}.fileprovider",
+                    file
+                )
+                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_STREAM, fileUri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(
+                    Intent.createChooser(
+                        sendIntent, "مشاركة تفريغ تبديل المحرك"
+                    )
+                )
+            } else {
+                Toast.makeText(
+                    ctx, "ملف التفريغ غير متوفر", Toast.LENGTH_SHORT
+                ).show()
+            }
+        } else {
+            Toast.makeText(
+                ctx,
+                "لا يوجد ملف تفريغ محفوظ لتبديل المحركات",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun retryEngineSwitch(ctx: Context) {
+        val target = com.aymankhattab.nateq.core.audio.accessibility
+            .TtsSettingsAutomation.lastFailureTargetPackage
+        viewLifecycleOwner.lifecycleScope.launch {
+            if (target != null) {
+                Toast.makeText(
+                    ctx, "جارٍ إعادة محاولة تبديل المحرك…", Toast.LENGTH_SHORT
+                ).show()
+                val res = com.aymankhattab.nateq.core.audio.accessibility
+                    .TtsSettingsAutomation.run(ctx, target)
+                if (res.success) {
+                    Toast.makeText(
+                        ctx, "نجح تبديل المحرك", Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    Toast.makeText(
+                        ctx, "فشلت المحاولة: ${res.reason}", Toast.LENGTH_LONG
+                    ).show()
+                }
+            } else {
+                val res = com.aymankhattab.nateq.core.audio.accessibility
+                    .NextEngineSwitcher.switchToNext(ctx)
+                if (res != null) {
+                    Toast.makeText(
+                        ctx, "تم التبديل إلى ${res.label}", Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
     }
 
     // ===== البحث عن تحديثات =====

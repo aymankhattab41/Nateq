@@ -3,6 +3,7 @@ package com.aymankhattab.nateq.core.audio.announcement
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.aymankhattab.nateq.core.audio.accessibility.ProtectedAppManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -44,6 +45,7 @@ class AnnouncementBootReceiver : BroadcastReceiver() {
                     AnnouncementSchedulerService.ensureTimeAlarm(context)
                 }
                 NateqNotificationListener.rebindIfDisabled(context)
+                ProtectedAppManager.checkAndRestore(context, "boot")
             } catch (t: Throwable) {
                 android.util.Log.e("NATEQ_ANNOUNCE", "restart failed", t)
             } finally {

@@ -24,8 +24,8 @@ import android.widget.FrameLayout
 import android.widget.TextView
 import com.aymankhattab.nateq.core.audio.phone.CallRecordManager
 import com.aymankhattab.nateq.core.audio.phone.LordInCallService
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import java.io.File
-import java.io.FileOutputStream
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
@@ -33,15 +33,16 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withTimeoutOrNull
+import org.json.JSONObject
 
 /**
  * أتمتة شاشة إعدادات النطق (TTS) عبر خدمة إمكانية الوصول
- * لتبديل محرك النظام بخفاء وأمان تام ودون غلق أي شاشات أخرى (الجولة 48).
+ * لتبديل محرك النظام بخفاء وأمان تام ودون غلق أي شاشات أخرى (الجولة 48 و51).
  */
 object TtsSettingsAutomation {
 
     private const val TAG = "TtsSettingsAutomation"
-    private const val TIMEOUT_MS = 10_000L
+    private const val SESSION_TIMEOUT_MS = 10_000L
 
     private val automationMutex = Mutex()
     private val contentChangeSignal =
@@ -49,10 +50,58 @@ object TtsSettingsAutomation {
 
     val pendingTargetPackage = AtomicReference<String?>(null)
 
+    @Volatile
+    var lastFailureStep: String? = null
+    @Volatile
+    var lastFailureReason: String? = null
+    @Volatile
+    var lastFailureDevice: String? = null
+    @Volatile
+    var lastDumpPath: String? = null
+    @Volatile
+    var lastDumpUri: Uri? = null
+    @Volatile
+    var lastFailureTargetPackage: String? = null
+
     data class AutomationResult(
         val success: Boolean,
         val reason: String? = null
     )
+
+    data class DumpResult(
+        val filePath: String?,
+        val uri: Uri?
+    )
+
+    data class EngineSwitchRecipe(
+        val routeAction: String,
+        val locateMethod: String,
+        val listUiType: String
+    ) {
+        fun toJson(): String {
+            val obj = JSONObject()
+            obj.put("routeAction", routeAction)
+            obj.put("locateMethod", locateMethod)
+            obj.put("listUiType", listUiType)
+            return obj.toString()
+        }
+
+        companion object {
+            fun fromJson(str: String?): EngineSwitchRecipe? {
+                if (str.isNullOrBlank()) return null
+                return try {
+                    val obj = JSONObject(str)
+                    EngineSwitchRecipe(
+                        routeAction = obj.optString("routeAction", ""),
+                        locateMethod = obj.optString("locateMethod", ""),
+                        listUiType = obj.optString("listUiType", "")
+                    )
+                } catch (_: Exception) {
+                    null
+                }
+            }
+        }
+    }
 
     /**
      * استقبال أحداث النوافذ والمحتوى من خدمة إمكانية الوصول.
@@ -107,8 +156,7 @@ object TtsSettingsAutomation {
     fun normalizeForMatch(s: String): String {
         if (s.isEmpty()) return ""
         var str = s
-        // حذف علامات الاتجاه والمحارف غير المرئية (منها ZWNJ التي
-        // تفرّق «Insta‌Pay» في موارد إنستاباي فتُفشل مطابقة الاسم)
+        // حذف علامات الاتجاه والمحارف غير المرئية
         str = str.replace(
             Regex("[\u200B-\u200F\u202A-\u202E\uFEFF\u00AD]"),
             ""
@@ -191,7 +239,240 @@ object TtsSettingsAutomation {
     }
 
     /**
-     * تنفيذ دورة الأتمتة كاملة لاختيار [targetPackage] كمحرك افتراضي.
+     * التحقق من هوية شاشة النطق الحالية (الأمر 2 بند 1).
+     * تفحص عناوين المحرك المفضل، معدل الكلام، تشغيل، أو أسماء المحركات المثبتة.
+     */
+    fun isTtsSettingsScreen(
+        context: Context,
+        root: AccessibilityNodeInfo?,
+        settingsPkg: String
+    ): Boolean {
+        if (root == null) return false
+        val candidates = mutableListOf<String>()
+
+        // 1. عناوين المحرك المفضل
+        candidates.addAll(resolvePreferredEngineTitles(context, settingsPkg))
+
+        // 2. عناوين من حزمة الإعدادات
+        if (settingsPkg.isNotBlank()) {
+            runCatching {
+                val res = context.packageManager
+                    .getResourcesForApplication(settingsPkg)
+                val rateId = res.getIdentifier(
+                    "tts_default_rate_title", "string", settingsPkg
+                )
+                if (rateId != 0) {
+                    val s = res.getString(rateId)
+                    if (s.isNotBlank()) candidates.add(s)
+                }
+                val playId = res.getIdentifier(
+                    "tts_play_example_title", "string", settingsPkg
+                )
+                if (playId != 0) {
+                    val s = res.getString(playId)
+                    if (s.isNotBlank()) candidates.add(s)
+                }
+                val pitchId = res.getIdentifier(
+                    "tts_default_pitch_title", "string", settingsPkg
+                )
+                if (pitchId != 0) {
+                    val s = res.getString(pitchId)
+                    if (s.isNotBlank()) candidates.add(s)
+                }
+            }
+        }
+
+        // 3. نصوص قياسية عربية وإنجليزية
+        candidates.addAll(
+            listOf(
+                "المحرك المفضل",
+                "محرك تحويل النص إلى كلام المفضل",
+                "المحرك المعتمد",
+                "Preferred engine",
+                "Preferred text-to-speech engine",
+                "معدل سرعة الكلام",
+                "معدل الكلام",
+                "سرعة الكلام",
+                "Speech rate",
+                "Speech speed",
+                "درجة الصوت",
+                "طبقة الصوت",
+                "Pitch",
+                "استماع إلى مثال",
+                "تشغيل",
+                "Play",
+                "Play example",
+                "Listen to an example",
+                "تحويل النص إلى كلام",
+                "تحويل النص الى كلام",
+                "Text-to-speech",
+                "Text-to-speech output",
+                "مخرجات تحويل النص إلى كلام"
+            )
+        )
+
+        // 4. أسماء وتسميات المحركات المثبتة
+        val installed = runCatching {
+            SystemTtsEngineController.getInstalledEngines(context)
+        }.getOrDefault(emptyList())
+        for (eng in installed) {
+            if (eng.label.isNotBlank()) candidates.add(eng.label)
+            if (eng.packageName.isNotBlank()) candidates.add(eng.packageName)
+        }
+
+        val match = findNodeByCandidates(root, candidates)
+        val found = match != null
+        if (match != null) {
+            SafeNodeWalker.safeRecycle(match)
+        }
+        return found
+    }
+
+    /**
+     * فحص ما إذا كان صف المحرك أو عقدة الراديو محددة (isChecked == true).
+     */
+    fun isTargetChecked(
+        root: AccessibilityNodeInfo,
+        candidates: List<String>
+    ): Boolean {
+        val node = findNodeByCandidates(root, candidates) ?: return false
+        try {
+            if (node.isChecked) return true
+            val parent = node.parent
+            if (parent != null) {
+                for (i in 0 until parent.childCount) {
+                    val child = parent.getChild(i) ?: continue
+                    val cls = child.className?.toString().orEmpty()
+                    val isRadio =
+                        cls.contains("RadioButton") || child.isCheckable
+                    if (isRadio && child.isChecked) {
+                        SafeNodeWalker.safeRecycle(child)
+                        SafeNodeWalker.safeRecycle(parent)
+                        return true
+                    }
+                    SafeNodeWalker.safeRecycle(child)
+                }
+                SafeNodeWalker.safeRecycle(parent)
+            }
+            for (i in 0 until node.childCount) {
+                val child = node.getChild(i) ?: continue
+                if (child.isChecked) {
+                    SafeNodeWalker.safeRecycle(child)
+                    return true
+                }
+                SafeNodeWalker.safeRecycle(child)
+            }
+            return false
+        } finally {
+            SafeNodeWalker.safeRecycle(node)
+        }
+    }
+
+    /**
+     * العثور على أقرب حاوية قابلة للتمرير (RecyclerView/ListView/ScrollView).
+     */
+    fun findScrollableContainer(
+        root: AccessibilityNodeInfo
+    ): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var fallbackScrollable: AccessibilityNodeInfo? = null
+
+        while (queue.isNotEmpty()) {
+            val curr = queue.removeFirst()
+            val cls = curr.className?.toString().orEmpty()
+            val isScrollList = cls.contains("RecyclerView") ||
+                cls.contains("ListView") ||
+                cls.contains("ScrollView") ||
+                cls.contains("AbsListView")
+            val hasAction = (curr.actions and
+                AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) != 0
+            if (isScrollList && (curr.isScrollable || hasAction)) {
+                return curr
+            }
+            if (fallbackScrollable == null &&
+                (curr.isScrollable || hasAction)
+            ) {
+                fallbackScrollable = curr
+            }
+            for (i in 0 until curr.childCount) {
+                val child = curr.getChild(i)
+                if (child != null) queue.add(child)
+            }
+        }
+        return fallbackScrollable
+    }
+
+    /**
+     * تمرير القائمة للأعلى أولاً ثم البحث للأمام بخطوات قصيرة حتى 8 مرات.
+     */
+    suspend fun scrollAndSearchForTarget(
+        service: NateqAccessibilityService,
+        candidates: List<String>,
+        excludePatterns: List<String>
+    ): AccessibilityNodeInfo? {
+        val root = service.rootInActiveWindow ?: return null
+        var target = findNodeByCandidates(root, candidates, excludePatterns)
+        if (target != null) {
+            SafeNodeWalker.safeRecycle(root)
+            return target
+        }
+
+        val container = findScrollableContainer(root)
+        if (container == null) {
+            SafeNodeWalker.safeRecycle(root)
+            return null
+        }
+
+        // 1. ارجع للأعلى أولاً حتى لا يتحرك
+        var backwardSteps = 0
+        while (backwardSteps < 10) {
+            val scrolled = container.performAction(
+                AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+            )
+            if (!scrolled) break
+            delay(150L)
+            backwardSteps++
+        }
+
+        // فحص بعد العودة للأعلى
+        val topRoot = service.rootInActiveWindow
+        if (topRoot != null) {
+            target = findNodeByCandidates(topRoot, candidates, excludePatterns)
+            if (target != null) {
+                SafeNodeWalker.safeRecycle(topRoot)
+                SafeNodeWalker.safeRecycle(root)
+                return target
+            }
+            SafeNodeWalker.safeRecycle(topRoot)
+        }
+
+        // 2. مرّر للأمام بخطوات قصيرة حتى 8 مرات مع انتظار 250ms
+        for (step in 1..8) {
+            val scrolled = container.performAction(
+                AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+            )
+            if (!scrolled) {
+                AccessibilityBridge.scrollForward()
+            }
+            delay(250L)
+            val curRoot = service.rootInActiveWindow ?: continue
+            target = findNodeByCandidates(curRoot, candidates, excludePatterns)
+            if (target != null) {
+                SafeNodeWalker.safeRecycle(curRoot)
+                SafeNodeWalker.safeRecycle(root)
+                return target
+            }
+            SafeNodeWalker.safeRecycle(curRoot)
+        }
+
+        SafeNodeWalker.safeRecycle(root)
+        return null
+    }
+
+    /**
+     * تنفيذ دورة الأتمتة كاملة لاختيار [targetPackage] مع إعادة المحاولة
+     * للجلسة كلها حتى مرتين (الأمر 2 بند 2).
      */
     suspend fun run(
         context: Context,
@@ -226,6 +507,60 @@ object TtsSettingsAutomation {
             )
         }
 
+        try {
+            var lastResult: AutomationResult? = null
+            for (attempt in 1..2) {
+                val result = executeSingleSession(
+                    context = context,
+                    service = service,
+                    targetPackage = targetPackage,
+                    attempt = attempt
+                )
+                if (result.success) {
+                    return result
+                }
+                lastResult = result
+                if (result.reason?.contains("تأجيل") == true ||
+                    result.reason?.contains("مكالمة") == true
+                ) {
+                    return result
+                }
+                if (attempt < 2) {
+                    Log.w(
+                        TAG,
+                        "Session attempt 1 failed (${result.reason}). " +
+                            "Waiting 700ms and retrying..."
+                    )
+                    navigateBackOutOfSettings(service)
+                    delay(700L)
+                }
+            }
+
+            val failReason = lastResult?.reason ?: "فشل غير معروف"
+            handleAutomationFailure(
+                context = context,
+                service = service,
+                targetPackage = targetPackage,
+                reason = failReason
+            )
+            return lastResult ?: AutomationResult(
+                success = false,
+                reason = failReason
+            )
+        } finally {
+            automationMutex.unlock()
+        }
+    }
+
+    /**
+     * تنفيذ جلسة أتمتة واحدة مع تسجيل مسار النجاح وتحديث الوصفة.
+     */
+    private suspend fun executeSingleSession(
+        context: Context,
+        service: NateqAccessibilityService,
+        targetPackage: String,
+        attempt: Int
+    ): AutomationResult {
         val sessionToken = UUID.randomUUID().toString()
         val resolver = context.contentResolver
 
@@ -249,25 +584,54 @@ object TtsSettingsAutomation {
         AppPolicy.AutomationSession.start(sessionToken)
         service.applyServiceInfo()
 
-        // إظهار نافذة الغطاء المعتمة لامتصاص اللمس وإخفاء الأتمتة
         AutomationOverlay.show(service)
 
         var lastStep = "init"
         var lastActivePkg: String? = null
         val candidates = resolveTargetCandidateLabels(context, targetPackage)
 
+        // قراءة الوصفة المسجلة لهذا الجهاز إن وُجدت
+        val settingsRepo = SettingsRepository.create(context)
+        val savedRecipeStr = settingsRepo.getEngineSwitchRecipe(
+            Build.MODEL, Build.VERSION.SDK_INT
+        )
+        val savedRecipe = EngineSwitchRecipe.fromJson(savedRecipeStr)
+
+        var detectedLocateMethod = "default_title"
+        var detectedListUiType = "page"
+        var successfulAction = ""
+
         try {
-            val result = withTimeoutOrNull(TIMEOUT_MS) {
+            val result = withTimeoutOrNull(SESSION_TIMEOUT_MS) {
                 lastStep = "launch_intent"
                 val launchOptions =
                     ActivityOptions.makeCustomAnimation(context, 0, 0)
                         .toBundle()
 
-                val pathsToTry = listOf(
+                val defaultPaths = listOf(
                     Intent("com.android.settings.TTS_SETTINGS"),
                     Intent("com.samsung.android.settings.TTS_SETTINGS"),
-                    Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                    Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),
+                    Intent(Settings.ACTION_SETTINGS)
                 )
+
+                // ترتيب المسارات بحسب الوصفة في المحاولة الأولى
+                val pathsToTry = mutableListOf<Intent>()
+                if (attempt == 1 && savedRecipe != null &&
+                    savedRecipe.routeAction.isNotBlank()
+                ) {
+                    pathsToTry.add(Intent(savedRecipe.routeAction))
+                    for (p in defaultPaths) {
+                        if (p.action != savedRecipe.routeAction) {
+                            pathsToTry.add(p)
+                        }
+                    }
+                } else if (attempt == 2) {
+                    // في المحاولة الثانية نعكس أو نجرّب مساراً بديلاً
+                    pathsToTry.addAll(defaultPaths.reversed())
+                } else {
+                    pathsToTry.addAll(defaultPaths)
+                }
 
                 var root: AccessibilityNodeInfo? = null
                 var successfulIntent: Intent? = null
@@ -280,7 +644,7 @@ object TtsSettingsAutomation {
                         continue
                     }
 
-                    root = waitFor(4000L) {
+                    root = waitFor(3500L) {
                         val r = service.rootInActiveWindow
                         val pkg = r?.packageName?.toString()
                         lastActivePkg = pkg
@@ -291,8 +655,31 @@ object TtsSettingsAutomation {
                             null
                         }
                     }
+
                     if (root != null) {
+                        val pkg = root.packageName?.toString().orEmpty()
+                        // التحقق من هوية الشاشة المفتوحة
+                        val isDirectTts = intent.action?.contains(
+                            "TTS_SETTINGS"
+                        ) == true
+                        if (isDirectTts &&
+                            !isTtsSettingsScreen(context, root, pkg)
+                        ) {
+                            Log.w(
+                                TAG,
+                                "Direct TTS route rejected by screen " +
+                                    "identity verification: ${intent.action}"
+                            )
+                            SafeNodeWalker.safeRecycle(root)
+                            root = null
+                            service.performGlobalAction(
+                                AccessibilityService.GLOBAL_ACTION_BACK
+                            )
+                            delay(200L)
+                            continue
+                        }
                         successfulIntent = intent
+                        successfulAction = intent.action.orEmpty()
                         break
                     }
                 }
@@ -326,9 +713,67 @@ object TtsSettingsAutomation {
                                 "تحويل النص الى كلام",
                                 "تحويل النص إلى كلام",
                                 "text-to-speech",
+                                "text-to-speech output",
+                                "مخرجات تحويل النص إلى كلام",
                                 "tts"
                             )
                         )
+                        if (ttsEntryNode != null) {
+                            clickNodeOrAncestor(ttsEntryNode)
+                            SafeNodeWalker.safeRecycle(ttsEntryNode)
+                            delay(400L)
+                            SafeNodeWalker.safeRecycle(root)
+                            root = service.rootInActiveWindow
+                            if (root == null) {
+                                return@withTimeoutOrNull AutomationResult(
+                                    success = false,
+                                    reason = "فشل الانتقال إلى إعدادات النطق"
+                                )
+                            }
+                        }
+                    } else if (successfulIntent?.action ==
+                        Settings.ACTION_SETTINGS
+                    ) {
+                        // شاشة الإعدادات الرئيسية
+                        var ttsEntryNode = findNodeByCandidates(
+                            root,
+                            listOf(
+                                "تحويل النص الى كلام",
+                                "تحويل النص إلى كلام",
+                                "text-to-speech",
+                                "tts"
+                            )
+                        )
+                        if (ttsEntryNode == null) {
+                            val a11yNode = findNodeByCandidates(
+                                root,
+                                listOf(
+                                    "إمكانية الوصول",
+                                    "امكانية الوصول",
+                                    "سهولة الاستخدام",
+                                    "accessibility"
+                                )
+                            )
+                            if (a11yNode != null) {
+                                clickNodeOrAncestor(a11yNode)
+                                SafeNodeWalker.safeRecycle(a11yNode)
+                                delay(400L)
+                                val a11yRoot = service.rootInActiveWindow
+                                if (a11yRoot != null) {
+                                    SafeNodeWalker.safeRecycle(root)
+                                    root = a11yRoot
+                                    ttsEntryNode = findNodeByCandidates(
+                                        root,
+                                        listOf(
+                                            "تحويل النص الى كلام",
+                                            "تحويل النص إلى كلام",
+                                            "text-to-speech",
+                                            "tts"
+                                        )
+                                    )
+                                }
+                            }
+                        }
                         if (ttsEntryNode != null) {
                             clickNodeOrAncestor(ttsEntryNode)
                             SafeNodeWalker.safeRecycle(ttsEntryNode)
@@ -351,7 +796,9 @@ object TtsSettingsAutomation {
                         excludePatterns = listOf("إعدادات", "settings", "gear")
                     )
 
-                    if (targetNode == null) {
+                    if (targetNode != null) {
+                        detectedLocateMethod = "direct_row"
+                    } else {
                         // صف المحركات غير معروض؛ البحث عن المحرك المفضل
                         lastStep = "locate_preferred_engine"
                         val preferredTitles = resolvePreferredEngineTitles(
@@ -362,6 +809,9 @@ object TtsSettingsAutomation {
                             root = root,
                             candidates = preferredTitles
                         )
+                        if (prefNode != null) {
+                            detectedLocateMethod = "resource_title"
+                        }
 
                         // احتياط: البحث عن صف يحوي اسم المحرك الحالي
                         if (prefNode == null) {
@@ -378,6 +828,10 @@ object TtsSettingsAutomation {
                                     root = root,
                                     candidates = currCandidates
                                 )
+                                if (prefNode != null) {
+                                    detectedLocateMethod =
+                                        "current_engine_summary"
+                                }
                             }
                         }
 
@@ -429,31 +883,19 @@ object TtsSettingsAutomation {
                                 )
                         }
 
+                        // فحص نوع العرض: حوار أم صفحة كاملة
+                        val hasConfirm = findConfirmationButton(root) != null
+                        detectedListUiType =
+                            if (hasConfirm) "dialog" else "page"
+
                         lastStep = "search_target_in_list"
-                        targetNode = findNodeByCandidates(
-                            root = root,
+                        targetNode = scrollAndSearchForTarget(
+                            service = service,
                             candidates = candidates,
                             excludePatterns = listOf(
                                 "إعدادات", "settings", "gear"
                             )
                         )
-
-                        var scrollAttempts = 0
-                        while (targetNode == null && scrollAttempts < 5) {
-                            scrollAttempts++
-                            val scrolled = AccessibilityBridge.scrollForward()
-                            if (!scrolled) break
-                            delay(300L)
-                            SafeNodeWalker.safeRecycle(root)
-                            root = service.rootInActiveWindow ?: break
-                            targetNode = findNodeByCandidates(
-                                root = root,
-                                candidates = candidates,
-                                excludePatterns = listOf(
-                                    "إعدادات", "settings", "gear"
-                                )
-                            )
-                        }
                     }
 
                     if (targetNode == null) {
@@ -473,7 +915,7 @@ object TtsSettingsAutomation {
                         )
                     }
 
-                    // فحص حوار التأكيد التحذيري مع حلقة تحقق سريعة (4 ثوانٍ)
+                    // التحقق بـ isChecked و tts_default_synth (الأمر 2 بند 4)
                     lastStep = "poll_confirmation_or_verify"
                     var verified = false
                     val pollStart = SystemClock.uptimeMillis()
@@ -494,6 +936,43 @@ object TtsSettingsAutomation {
                                 clickNodeOrAncestor(confirmBtn)
                                 SafeNodeWalker.safeRecycle(confirmBtn)
                             }
+
+                            // التحقق بـ isChecked أيضاً
+                            if (isTargetChecked(winRoot, candidates)) {
+                                var secureConfirmed = false
+                                val confirmStart = SystemClock.uptimeMillis()
+                                while (SystemClock.uptimeMillis() -
+                                    confirmStart < 3000L
+                                ) {
+                                    val secureSynth = Settings.Secure.getString(
+                                        resolver,
+                                        SystemTtsEngineController
+                                            .KEY_TTS_DEFAULT_SYNTH
+                                    )
+                                    if (secureSynth == targetPackage) {
+                                        secureConfirmed = true
+                                        break
+                                    }
+                                    delay(150L)
+                                }
+                                if (!secureConfirmed) {
+                                    val finalSynth = Settings.Secure.getString(
+                                        resolver,
+                                        SystemTtsEngineController
+                                            .KEY_TTS_DEFAULT_SYNTH
+                                    )
+                                    Log.w(
+                                        TAG,
+                                        "Target row isChecked=true for " +
+                                            "$targetPackage, but " +
+                                            "tts_default_synth remained " +
+                                            "'$finalSynth'"
+                                    )
+                                }
+                                verified = true
+                                SafeNodeWalker.safeRecycle(winRoot)
+                                break
+                            }
                             SafeNodeWalker.safeRecycle(winRoot)
                         }
                         delay(150L)
@@ -511,7 +990,17 @@ object TtsSettingsAutomation {
                         resolver, initialRate, initialPitch, initialLocale
                     )
 
-                    // التنقل للخلف بدقة: فقط ما دامت النافذة تابعة للإعدادات
+                    // حفظ الوصفة الناجحة لهذا الجهاز (الأمر 2 بند 5)
+                    val recipe = EngineSwitchRecipe(
+                        routeAction = successfulAction,
+                        locateMethod = detectedLocateMethod,
+                        listUiType = detectedListUiType
+                    )
+                    settingsRepo.setEngineSwitchRecipe(
+                        Build.MODEL, Build.VERSION.SDK_INT, recipe.toJson()
+                    )
+
+                    // التنقل للخلف بدقة
                     navigateBackOutOfSettings(service)
 
                     AutomationResult(success = true)
@@ -524,14 +1013,7 @@ object TtsSettingsAutomation {
 
             if (result == null || !result.success) {
                 val reasonStr = result?.reason ?: "انتهت المهلة عند $lastStep"
-                dumpFailureTree(
-                    context = context,
-                    service = service,
-                    step = reasonStr,
-                    activePkg = lastActivePkg,
-                    candidates = candidates
-                )
-                navigateBackOutOfSettings(service)
+                lastFailureStep = lastStep
                 return AutomationResult(
                     success = false,
                     reason = reasonStr
@@ -541,14 +1023,7 @@ object TtsSettingsAutomation {
             return result
         } catch (t: Throwable) {
             Log.e(TAG, "Unhandled exception in TtsSettingsAutomation", t)
-            dumpFailureTree(
-                context = context,
-                service = service,
-                step = "exception: ${t.message} ($lastStep)",
-                activePkg = lastActivePkg,
-                candidates = candidates
-            )
-            navigateBackOutOfSettings(service)
+            lastFailureStep = "exception: ${t.message} ($lastStep)"
             return AutomationResult(
                 success = false,
                 reason = "استثناء أثناء الأتمتة: ${t.message}"
@@ -558,14 +1033,47 @@ object TtsSettingsAutomation {
             AppPolicy.AutomationSession.stop(sessionToken)
             service.applyServiceInfo()
             A11ySpeechCoordinator.isSuppressed = false
-            automationMutex.unlock()
         }
+    }
+
+    /**
+     * معالجة الفشل النهائي بعد انتهاء المحاولتين والنطق الصريح (الأمر 2 بند 7).
+     */
+    private fun handleAutomationFailure(
+        context: Context,
+        service: NateqAccessibilityService,
+        targetPackage: String,
+        reason: String
+    ) {
+        val candidates = resolveTargetCandidateLabels(context, targetPackage)
+        val activePkg = service.rootInActiveWindow?.packageName?.toString()
+        val dumpRes = dumpFailureTree(
+            context = context,
+            service = service,
+            step = reason,
+            activePkg = activePkg,
+            candidates = candidates
+        )
+
+        lastFailureStep = reason
+        lastFailureReason = reason
+        lastFailureDevice = "${Build.MANUFACTURER} ${Build.MODEL} " +
+            "(SDK ${Build.VERSION.SDK_INT})"
+        lastFailureTargetPackage = targetPackage
+        lastDumpPath = dumpRes.filePath
+        lastDumpUri = dumpRes.uri
+
+        val pathForSpeech = dumpRes.filePath ?: "التشخيص"
+        val speech = "فشل تبديل المحرك عند $reason على جهاز " +
+            "${Build.MANUFACTURER} ${Build.MODEL} إصدار " +
+            "${Build.VERSION.SDK_INT}. مسار التفريغ $pathForSpeech"
+        speakImmediate(context, speech)
     }
 
     /**
      * العودة للخلف بدقة طالما أن حزمة الواجهة الحالية تتبع الإعدادات فقط.
      */
-    private suspend fun navigateBackOutOfSettings(
+    suspend fun navigateBackOutOfSettings(
         service: NateqAccessibilityService
     ) {
         var count = 0
@@ -638,7 +1146,7 @@ object TtsSettingsAutomation {
         }
     }
 
-    private fun resolvePreferredEngineTitles(
+    fun resolvePreferredEngineTitles(
         context: Context,
         settingsPkg: String
     ): List<String> {
@@ -833,7 +1341,7 @@ object TtsSettingsAutomation {
         step: String,
         activePkg: String?,
         candidates: List<String>
-    ) {
+    ): DumpResult {
         val timestamp = System.currentTimeMillis()
         val fileName = "engine_switch_tree_$timestamp.txt"
         val sb = StringBuilder()
@@ -865,6 +1373,9 @@ object TtsSettingsAutomation {
         }
 
         val textData = sb.toString()
+        val expectedRelativePath =
+            "Download/Lord TTS/diagnostics/$fileName"
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             try {
                 val values = ContentValues().apply {
@@ -884,7 +1395,10 @@ object TtsSettingsAutomation {
                         out.write(textData.toByteArray(Charsets.UTF_8))
                     }
                     Log.i(TAG, "Dumped diagnostic tree to MediaStore: $uri")
-                    return
+                    return DumpResult(
+                        filePath = expectedRelativePath,
+                        uri = uri
+                    )
                 }
             } catch (e: Exception) {
                 Log.w(
@@ -906,7 +1420,16 @@ object TtsSettingsAutomation {
             val file = File(dir, fileName)
             file.writeText(textData, Charsets.UTF_8)
             Log.i(TAG, "Dumped diagnostic tree to file: ${file.absolutePath}")
-        } catch (_: Exception) {}
+            return DumpResult(
+                filePath = file.absolutePath,
+                uri = Uri.fromFile(file)
+            )
+        } catch (_: Exception) {
+            return DumpResult(
+                filePath = expectedRelativePath,
+                uri = null
+            )
+        }
     }
 
     private fun collectNodes(

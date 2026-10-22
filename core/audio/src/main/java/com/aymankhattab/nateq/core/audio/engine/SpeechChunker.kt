@@ -1,5 +1,8 @@
 package com.aymankhattab.nateq.core.audio.engine
 
+import com.aymankhattab.nateq.core.audio.announcement.ArabicSpeechNormalizer
+import com.aymankhattab.nateq.core.engine.EngineMarkers
+
 /**
  * تقسيم النصوص الطويلة إلى وحدات نطق قصيرة — شبكةُ أمانٍ في
  * **مسار الإعلانات فقط** ([AnnouncementSpeaker]).
@@ -58,17 +61,48 @@ internal object SpeechChunker {
         return if (result.isEmpty()) listOf(text) else result
     }
 
+    private fun isPeriodWordAtEnd(str: String): Boolean {
+        val t = str.trimEnd()
+        return t.endsWith("صباحاً") || t.endsWith("صباحا") ||
+            t.endsWith("مساءً") || t.endsWith("مساءا") ||
+            t.endsWith("مساء") || t.endsWith("ظهراً") ||
+            t.endsWith("ظهرا") || t.endsWith("عصراً") ||
+            t.endsWith("عصرا") || t.endsWith("ليلاً") ||
+            t.endsWith("ليلا") || t.endsWith("فجراً") ||
+            t.endsWith("فجرا") || t.endsWith("نهاراً") ||
+            t.endsWith("نهارا") ||
+            t.endsWith(EngineMarkers.TANWEEN_MARKER) ||
+            t.endsWith(ArabicSpeechNormalizer.SABA_AN) ||
+            t.endsWith(ArabicSpeechNormalizer.MASA_AN) ||
+            t.endsWith(ArabicSpeechNormalizer.DHUHR_AN)
+    }
+
     /** موضع القطع داخل [rest]: بعد آخر علامة جملة ضمن النافذة، وإلا عند
      *  آخر مسافة، وإلا قطعٌ قسري عند [maxChars]. */
     private fun cutIndex(rest: String, maxChars: Int): Int {
         val windowEnd = minOf(maxChars + 1, rest.length)
         for (i in windowEnd - 1 downTo 0) {
             if (i < MIN_UNIT_CHARS) break
-            if (rest[i] in SENTENCE_DELIMITERS) return i + 1
+            if (rest[i] in SENTENCE_DELIMITERS) {
+                val before = rest.substring(0, i)
+                val nextChar = rest.getOrNull(i + 1)
+                val isMarkerNext = nextChar ==
+                    EngineMarkers.TANWEEN_MARKER.first()
+                if (!isPeriodWordAtEnd(before) && !isMarkerNext) {
+                    return i + 1
+                }
+            }
         }
         for (i in windowEnd - 1 downTo 0) {
             if (i < MIN_UNIT_CHARS) break
-            if (rest[i].isWhitespace()) return i
+            if (rest[i].isWhitespace()) {
+                val nextChar = rest.getOrNull(i + 1)
+                val isMarkerNext = nextChar ==
+                    EngineMarkers.TANWEEN_MARKER.first()
+                if (!isMarkerNext) {
+                    return i
+                }
+            }
         }
         return maxChars
     }

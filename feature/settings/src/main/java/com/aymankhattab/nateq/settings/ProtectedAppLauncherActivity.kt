@@ -1,23 +1,30 @@
 package com.aymankhattab.nateq.settings
 
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import android.view.accessibility.AccessibilityManager
 import android.widget.Toast
+import com.aymankhattab.nateq.core.audio.accessibility.A11ySpeechCoordinator
 import com.aymankhattab.nateq.core.audio.accessibility.ProtectedAppManager
+import com.aymankhattab.nateq.core.audio.accessibility.ProtectedAppTimelineTracker
 import com.aymankhattab.nateq.core.data.ProtectedApp
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /**
- * نشاط شفاف لفتح التطبيق المحمي بعد ضمان تعطيل إمكانية الوصول (الأمر 7).
+ * نشاط شفاف لفتح التطبيق المحمي بعد ضمان تعطيل إمكانية الوصول (الأمر 6).
  */
 class ProtectedAppLauncherActivity : Activity() {
 
     companion object {
         const val EXTRA_TARGET_PACKAGE = "extra_target_package"
+        private const val POLL_INTERVAL_MS = 80L
+        private const val MAX_WAIT_MS = 1500L
 
         fun createIntent(context: Context, targetPkg: String): Intent {
             return Intent(
@@ -47,17 +54,30 @@ class ProtectedAppLauncherActivity : Activity() {
             pm.getApplicationLabel(info).toString()
         }.getOrNull() ?: targetPkg
 
-        if (app != null) {
-            ProtectedAppManager.handleAppEntry(this, null, app)
-        } else {
-            val defApp = ProtectedApp(
-                packageName = targetPkg,
-                label = label
-            )
-            ProtectedAppManager.handleAppEntry(this, null, defApp)
-        }
+        // إعلان صوتي فوري للكفيف
+        A11ySpeechCoordinator.speakAnnouncement(
+            context = this,
+            text = "جارٍ فتح $label",
+            isInterruptAllowed = true
+        )
 
-        Handler(Looper.getMainLooper()).postDelayed({
+        // تسجيل البداية في الخط الزمني وبدء فترة الصمت التام
+        ProtectedAppTimelineTracker.recordLauncherClick(targetPkg)
+        ProtectedAppTimelineTracker.recordLordDetected(targetPkg)
+
+        // استدعاء التعطيل
+        ProtectedAppTimelineTracker.recordDisableSelfCalled(targetPkg)
+        val targetApp = app ?: ProtectedApp(
+            packageName = targetPkg,
+            label = label
+        )
+        ProtectedAppManager.handleAppEntry(this, null, targetApp)
+
+        // حلقة فحص كل 80ms بحد أقصى 1500ms
+        val startTime = SystemClock.uptimeMillis()
+        val handler = Handler(Looper.getMainLooper())
+
+        fun launchTarget() {
             val launchIntent = packageManager
                 .getLaunchIntentForPackage(targetPkg)
             if (launchIntent != null) {
@@ -71,6 +91,43 @@ class ProtectedAppLauncherActivity : Activity() {
                 ).show()
             }
             finish()
-        }, 400L)
+        }
+
+        val pollRunnable = object : Runnable {
+            override fun run() {
+                val elapsed = SystemClock.uptimeMillis() - startTime
+                val active = isLordServiceActive(
+                    this@ProtectedAppLauncherActivity
+                )
+                if (!active) {
+                    ProtectedAppTimelineTracker.recordDisabledConfirmed(
+                        targetPkg, elapsed
+                    )
+                    launchTarget()
+                } else if (elapsed >= MAX_WAIT_MS) {
+                    ProtectedAppTimelineTracker.recordWarning(
+                        targetPkg,
+                        "لم تتوقف الخدمة خلال 1500ms (انقضى ${elapsed}ms)"
+                    )
+                    launchTarget()
+                } else {
+                    handler.postDelayed(this, POLL_INTERVAL_MS)
+                }
+            }
+        }
+
+        handler.postDelayed(pollRunnable, POLL_INTERVAL_MS)
+    }
+
+    private fun isLordServiceActive(context: Context): Boolean {
+        val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE)
+            as? AccessibilityManager ?: return false
+        val enabled = am.getEnabledAccessibilityServiceList(
+            AccessibilityServiceInfo.FEEDBACK_ALL_MASK
+        ) ?: return false
+        val ourPkg = context.packageName
+        return enabled.any {
+            it.resolveInfo?.serviceInfo?.packageName == ourPkg
+        }
     }
 }

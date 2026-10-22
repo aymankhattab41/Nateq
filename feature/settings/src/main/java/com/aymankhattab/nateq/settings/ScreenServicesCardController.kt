@@ -18,6 +18,7 @@ import com.aymankhattab.nateq.core.audio.accessibility.A11yStateStore
 import com.aymankhattab.nateq.core.audio.accessibility.A11yVoiceResolver
 import com.aymankhattab.nateq.core.audio.accessibility.AppPolicy
 import com.aymankhattab.nateq.core.audio.accessibility.FeatureFlags
+import com.aymankhattab.nateq.core.audio.accessibility.ProtectedAppManager
 import com.aymankhattab.nateq.core.data.AppProfile
 import com.aymankhattab.nateq.core.data.AppProfileStore
 import com.aymankhattab.nateq.core.data.ContactVoiceStore
@@ -965,6 +966,16 @@ class ScreenServicesCardController(
                 val mode = if (which == 1) {
                     ProtectedApp.MODE_PARTIAL_SUSPEND
                 } else {
+                    val readiness = ProtectedAppManager.checkReadiness(context)
+                    if (!readiness.canEnableFullDisable) {
+                        val msg = "لا يمكن تفعيل الإيقاف الكامل: يلزم إذن " +
+                            "WRITE_SECURE_SETTINGS وإذن بيانات الاستخدام معاً"
+                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                        A11ySpeechCoordinator.speakAnnouncement(
+                            context, msg, true
+                        )
+                        return@setSingleChoiceItems
+                    }
                     ProtectedApp.MODE_FULL_DISABLE
                 }
                 settings.addProtectedApp(
@@ -1003,6 +1014,20 @@ class ScreenServicesCardController(
                     0 -> {
                         val newMode =
                             if (app.mode == ProtectedApp.MODE_PARTIAL_SUSPEND) {
+                                val readiness =
+                                    ProtectedAppManager.checkReadiness(context)
+                                if (!readiness.canEnableFullDisable) {
+                                    val msg = "لا يمكن تفعيل الإيقاف الكامل: " +
+                                        "يلزم إذن WRITE_SECURE_SETTINGS " +
+                                        "وإذن بيانات الاستخدام معاً"
+                                    Toast.makeText(
+                                        context, msg, Toast.LENGTH_LONG
+                                    ).show()
+                                    A11ySpeechCoordinator.speakAnnouncement(
+                                        context, msg, true
+                                    )
+                                    return@setItems
+                                }
                                 ProtectedApp.MODE_FULL_DISABLE
                             } else {
                                 ProtectedApp.MODE_PARTIAL_SUSPEND

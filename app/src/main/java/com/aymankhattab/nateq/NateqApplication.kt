@@ -10,6 +10,7 @@ import android.util.Log
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
+import com.aymankhattab.nateq.core.audio.accessibility.ProtectedAppManager
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementAppContext
 import com.aymankhattab.nateq.core.audio.announcement.EventLoudnessPolicy
 import com.aymankhattab.nateq.core.audio.announcement.TimeAnnouncementManager
@@ -185,6 +186,11 @@ class NateqApplication : Application(), AnnouncementAppContext {
                             settingsRepository
                         )
                     }
+                }
+                runCatching {
+                    ProtectedAppManager.checkAndRestore(
+                        applicationContext, "app_create"
+                    )
                 }
             }
         }

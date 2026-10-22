@@ -443,6 +443,90 @@ class TextProcessor(
     }
 
     /**
+     * تتبع المسار كاملاً مرحلة بمرحلة (الجولة 51 - الأمر 3).
+     */
+    fun processWithTrace(
+        text: String,
+        languageTag: String = LanguageCode.AR.tag,
+        enginePackage: String? = null
+    ): List<Pair<String, String>> {
+        val trace = mutableListOf<Pair<String, String>>()
+        if (text.isEmpty()) return trace
+
+        val hexRepr = buildHexRepresentation(text)
+        trace.add("1. النص الخام (مع المحارف الخاصة)" to hexRepr)
+
+        val afterDict = applyDictionaryFirst(text, languageTag)
+        val dictMatches = pronunciationDict.traceMatches(text, languageTag)
+        val dictSummary = if (dictMatches.isEmpty()) {
+            afterDict
+        } else {
+            val details = dictMatches.joinToString("\n") { m ->
+                val st = if (m.accepted) "مقبول" else "مرفوض"
+                "  • [${m.key} -> ${m.value}] (${m.matchMode}): " +
+                    "$st (${m.reason})"
+            }
+            "$afterDict\nمطابقات القاموس:\n$details"
+        }
+        trace.add("2. بعد تطبيق القاموس (applyDictionaryFirst)" to dictSummary)
+
+        var current = SsmlStep.apply(afterDict)
+        trace.add("3. بعد معالجة الدلالات (SSML/Semantics)" to current)
+
+        val expanded =
+            if (emojiEnabled) expandEmojis(current, languageTag) else null
+        if (expanded != null) {
+            current = expanded
+            trace.add("4. بعد توسيع الإيموجي" to current)
+        }
+
+        val voweledSource = if (tashkeelPreserved ||
+            !stripTashkeelFor(enginePackage)
+        ) {
+            current
+        } else {
+            null
+        }
+
+        val urls = ArrayList<String>()
+        current = maskUrls(current, urls)
+
+        for (step in buildPreamble()) {
+            val name = step.javaClass.simpleName.ifBlank { "PreambleStep" }
+            current = step.apply(current, languageTag)
+            trace.add("5. خطوة تمهيدية [$name]" to current)
+        }
+
+        for (step in buildHeavySteps(false)) {
+            val name = step.javaClass.simpleName.ifBlank { "HeavyStep" }
+            current = step.apply(current)
+            trace.add("5. خطوة معالجة [$name]" to current)
+        }
+
+        current = unmaskUrls(current, urls)
+        current = CleanupStep.apply(current)
+        val finalized = finalizeArabic(voweledSource, current)
+        trace.add("5. بعد تنظيف المسافات والتشكيل" to finalized)
+
+        return trace
+    }
+
+    private fun buildHexRepresentation(input: String): String {
+        val sb = StringBuilder()
+        for (cp in input.codePoints()) {
+            if (cp < 0x20 || (cp in 0x7F..0x9F) || cp in 0x200B..0x200F ||
+                cp == 0x061C || cp == 0xFEFF || cp == 0x00AD ||
+                cp in 0x202A..0x202E || cp in 0x2066..0x2069
+            ) {
+                sb.append(String.format("[U+%04X]", cp))
+            } else {
+                sb.append(String(Character.toChars(cp)))
+            }
+        }
+        return sb.toString()
+    }
+
+    /**
      * تُكمل الناتج العربي النهائي (بعد معالجته وتنظيفه) بأحد مسارين:
      * عند تعطيل حفظ التشكيل تُسلَّم مُنظّفة كما هي، وعند تفعيله تُمرَّر
      * عبر [restoreTashkeel] ليعود لكل كلمةٍ لم تحوّلها خطوةٌ تشكيلُها

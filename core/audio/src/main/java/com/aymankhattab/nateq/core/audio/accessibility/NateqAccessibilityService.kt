@@ -16,6 +16,7 @@ import android.os.Build
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import com.aymankhattab.nateq.core.data.SettingsChangeProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
@@ -636,6 +637,29 @@ class NateqAccessibilityService : AccessibilityService() {
 
         val eventPkg = event.packageName?.toString()
 
+        if (ProtectedAppTimelineTracker.isInQuietPeriod()) {
+            if (ProtectedAppTimelineTracker.isQuietPackage(eventPkg)) {
+                if (ProtectedAppTimelineTracker.isBiometricPackage(eventPkg)) {
+                    val txt = event.text.joinToString(" ")
+                    if (txt.contains("بصمة") ||
+                        txt.contains("fingerprint") ||
+                        txt.contains("تم") || txt.contains("خطأ") ||
+                        txt.contains("حاول") ||
+                        txt.contains("success") ||
+                        txt.contains("error")
+                    ) {
+                        val success = !txt.contains("خطأ") &&
+                            !txt.contains("error") &&
+                            !txt.contains("حاول")
+                        ProtectedAppTimelineTracker.recordBiometricFinished(
+                            eventPkg.orEmpty(), success
+                        )
+                    }
+                }
+                return
+            }
+        }
+
         // خروج مبكر لأي حزمة غير مسموحة قبل أي عمل
         val isLauncher = event.eventType ==
             AccessibilityEvent.TYPE_VIEW_CLICKED &&
@@ -689,6 +713,15 @@ class NateqAccessibilityService : AccessibilityService() {
                 val matched =
                     ProtectedAppManager.matchProtectedApp(this, candidate)
                 if (matched != null) {
+                    ProtectedAppTimelineTracker.recordLauncherClick(
+                        matched.packageName
+                    )
+                    ProtectedAppTimelineTracker.recordLordDetected(
+                        matched.packageName
+                    )
+                    ProtectedAppTimelineTracker.startQuietPeriod(
+                        matched.packageName
+                    )
                     ProtectedAppManager.handleAppEntry(this, this, matched)
                     return
                 }
@@ -696,9 +729,26 @@ class NateqAccessibilityService : AccessibilityService() {
         }
 
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            if (ProtectedAppTimelineTracker.isInQuietPeriod()) {
+                if (ProtectedAppTimelineTracker.isBiometricPackage(eventPkg)) {
+                    ProtectedAppTimelineTracker.recordBiometricWindowAppeared(
+                        eventPkg.orEmpty()
+                    )
+                    return
+                }
+            }
             val repoSettings = SettingsRepository.create(this)
             val matched = eventPkg?.let { repoSettings.getProtectedApp(it) }
             if (matched != null) {
+                ProtectedAppTimelineTracker.recordLordDetected(
+                    matched.packageName
+                )
+                ProtectedAppTimelineTracker.recordAppWindowAppeared(
+                    matched.packageName
+                )
+                ProtectedAppTimelineTracker.startQuietPeriod(
+                    matched.packageName
+                )
                 // النافذة ظهرت أصلاً: التعطيل يأتي متأخراً عن شاشة
                 // البداية، فنعيد فتح التطبيق بعد التعطيل حتى لا ينهار.
                 ProtectedAppManager.handleAppEntry(
@@ -709,6 +759,10 @@ class NateqAccessibilityService : AccessibilityService() {
                 )
                 return
             }
+        }
+
+        if (ProtectedAppTimelineTracker.isInQuietPeriod()) {
+            return
         }
 
         // ع٢٩-11: توزيع الحدث عبر الموجّه المركزي
@@ -954,6 +1008,20 @@ class NateqAccessibilityService : AccessibilityService() {
             if (focus != null) return focus
         }
         return null
+    }
+
+    override fun getRootInActiveWindow(): AccessibilityNodeInfo? {
+        if (ProtectedAppTimelineTracker.isInQuietPeriod()) {
+            return null
+        }
+        return super.getRootInActiveWindow()
+    }
+
+    override fun getWindows(): List<AccessibilityWindowInfo> {
+        if (ProtectedAppTimelineTracker.isInQuietPeriod()) {
+            return emptyList()
+        }
+        return super.getWindows()
     }
 
     /**
