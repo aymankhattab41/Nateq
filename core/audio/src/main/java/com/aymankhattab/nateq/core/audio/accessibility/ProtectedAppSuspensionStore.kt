@@ -16,11 +16,13 @@ object ProtectedAppSuspensionStore {
     private const val KEY_PACKAGE = "suspended_pkg"
     private const val KEY_TIMESTAMP = "suspended_timestamp"
     private const val KEY_MODE = "suspended_mode"
+    private const val KEY_FAILURE_ANNOUNCED = "failure_announced"
 
     data class SuspensionState(
         val packageName: String,
         val timestamp: Long,
-        val mode: String
+        val mode: String,
+        val failureAnnounced: Boolean = false
     )
 
     private fun getPrefs(context: Context): SharedPreferences {
@@ -48,6 +50,16 @@ object ProtectedAppSuspensionStore {
             .putString(KEY_PACKAGE, packageName)
             .putLong(KEY_TIMESTAMP, timestamp)
             .putString(KEY_MODE, mode)
+            .putBoolean(KEY_FAILURE_ANNOUNCED, false)
+            .apply()
+    }
+
+    fun isFailureAnnounced(context: Context): Boolean =
+        getPrefs(context).getBoolean(KEY_FAILURE_ANNOUNCED, false)
+
+    fun setFailureAnnounced(context: Context, announced: Boolean = true) {
+        getPrefs(context).edit()
+            .putBoolean(KEY_FAILURE_ANNOUNCED, announced)
             .apply()
     }
 
@@ -57,7 +69,8 @@ object ProtectedAppSuspensionStore {
         val time = prefs.getLong(KEY_TIMESTAMP, 0L)
         val mode = prefs.getString(KEY_MODE, ProtectedApp.MODE_FULL_DISABLE)
             ?: ProtectedApp.MODE_FULL_DISABLE
-        return SuspensionState(pkg, time, mode)
+        val announced = prefs.getBoolean(KEY_FAILURE_ANNOUNCED, false)
+        return SuspensionState(pkg, time, mode, announced)
     }
 
     fun clear(context: Context) {

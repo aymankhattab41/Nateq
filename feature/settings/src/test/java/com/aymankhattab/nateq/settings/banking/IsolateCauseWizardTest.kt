@@ -99,11 +99,27 @@ class IsolateCauseWizardTest {
                 IsolateStep.DISABLE_NOTIFICATION_LISTENER to false,
                 IsolateStep.DISABLE_ACCESSIBILITY to false,
                 IsolateStep.REVOKE_OVERLAY to false,
+                IsolateStep.ISOLATE_ANDROID_17 to false,
                 IsolateStep.RESTORE_SERVICES to true
             )
         )
         assertEquals(IsolateCause.OTHER_APP, summary.cause)
         assertNull(summary.causeStep)
+    }
+
+    @Test
+    fun android17IsCauseWhenAllLordCapabilitiesRevoked() {
+        val summary = IsolateCauseWizard.summarize(
+            stepResults(
+                IsolateStep.BASELINE to false,
+                IsolateStep.DISABLE_NOTIFICATION_LISTENER to false,
+                IsolateStep.DISABLE_ACCESSIBILITY to false,
+                IsolateStep.REVOKE_OVERLAY to false,
+                IsolateStep.ISOLATE_ANDROID_17 to true
+            )
+        )
+        assertEquals(IsolateCause.ANDROID_17, summary.cause)
+        assertEquals(IsolateStep.ISOLATE_ANDROID_17, summary.causeStep)
     }
 
     @Test
@@ -198,7 +214,8 @@ class IsolateCauseWizardTest {
                 IsolateCause.NOTIFICATION_LISTENER,
             IsolateStep.DISABLE_ACCESSIBILITY to
                 IsolateCause.ACCESSIBILITY,
-            IsolateStep.REVOKE_OVERLAY to IsolateCause.OVERLAY
+            IsolateStep.REVOKE_OVERLAY to IsolateCause.OVERLAY,
+            IsolateStep.ISOLATE_ANDROID_17 to IsolateCause.ANDROID_17
         )
         assertEquals(
             "خطوات الأسباب يجب أن تطابق خريطة الفحوص",
@@ -227,7 +244,8 @@ class IsolateCauseWizardTest {
 
         val full = partial + stepResults(
             IsolateStep.DISABLE_ACCESSIBILITY to false,
-            IsolateStep.REVOKE_OVERLAY to false
+            IsolateStep.REVOKE_OVERLAY to false,
+            IsolateStep.ISOLATE_ANDROID_17 to false
         )
         assertTrue(IsolateCauseWizard.hasCauseEvidence(full))
     }

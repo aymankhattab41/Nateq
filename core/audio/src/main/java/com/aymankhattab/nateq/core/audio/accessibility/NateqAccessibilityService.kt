@@ -408,6 +408,18 @@ class NateqAccessibilityService : AccessibilityService() {
         )
         registerShortcutTestReceiver()
         registerBindingsObserver()
+
+        val connIntent = Intent(ProtectedAppManager.ACTION_A11Y_CONNECTED)
+            .setPackage(packageName)
+        runCatching { sendBroadcast(connIntent) }
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        val disconnIntent = Intent(
+            ProtectedAppManager.ACTION_A11Y_DISCONNECTED
+        ).setPackage(packageName)
+        runCatching { sendBroadcast(disconnIntent) }
+        return super.onUnbind(intent)
     }
 
     /** ع٤١-ب1.6: يستقبل طلب «اختبار» إيماءةٍ من شاشة الإعدادات. */
@@ -1471,6 +1483,10 @@ class NateqAccessibilityService : AccessibilityService() {
         shortcutTestReceiver = null
 
         AccessibilityBridge.unregisterService(this)
+        val disconnIntent = Intent(
+            ProtectedAppManager.ACTION_A11Y_DISCONNECTED
+        ).setPackage(packageName)
+        runCatching { sendBroadcast(disconnIntent) }
         stateStore?.setConnected(false)
         stateStore = null
     }

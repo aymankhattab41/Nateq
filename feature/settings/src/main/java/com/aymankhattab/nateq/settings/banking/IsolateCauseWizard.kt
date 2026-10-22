@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq.settings.banking
+package com.aymankhattab.nateq.settings.banking
 
 /**
  * خطوات معالج «اعزل السبب» — تُنفَّذ بالترتيب المُعلن للمستخدم، ونتيجة
@@ -31,7 +31,13 @@ enum class IsolateStep {
     REVOKE_OVERLAY,
 
     /**
-     * خطوة 5: إعادة تفعيل كل ما سُحِب (لا تُختبر بها فتحة — استعادة فقط).
+     * خطوة 5: عزل أندرويد 17 الكامل (تعطيل ناطق وفحص قارئ الشاشة
+     * وخيارات المطور).
+     */
+    ISOLATE_ANDROID_17,
+
+    /**
+     * خطوة 6: إعادة تفعيل كل ما سُحِب (لا تُختبر بها فتحة — استعادة فقط).
      * بعد إتمامها يجب أن يعود التطبيق إلى حالته قبل المعالج.
      */
     RESTORE_SERVICES
@@ -56,6 +62,9 @@ enum class IsolateCause {
 
     /** «العرض فوق التطبيقات» هو السبب. */
     OVERLAY,
+
+    /** قيود نظام أندرويد 17 أو خيارات المطور وقارئ الشاشة. */
+    ANDROID_17,
 
     /** لم يفتح التطبيق بعد كل الخطوات → السبب خارج ناطق. */
     OTHER_APP
@@ -92,12 +101,13 @@ object IsolateCauseWizard {
     /** عدد الخطوات = عدد نتائج المعالج لازم لاحتساب الخلاصة. */
     fun stepCount(): Int = steps.size
 
-    /** الخطوات التي تُختم فيها كلُّ نتائجَها خلاصةً سببٍ (لا 5: استعادة). */
+    /** الخطوات التي تُختم فيها كلُّ نتائجَها خلاصةً سببٍ (لا استعادة). */
     val causeSteps: List<IsolateStep> = listOf(
         IsolateStep.BASELINE,
         IsolateStep.DISABLE_NOTIFICATION_LISTENER,
         IsolateStep.DISABLE_ACCESSIBILITY,
-        IsolateStep.REVOKE_OVERLAY
+        IsolateStep.REVOKE_OVERLAY,
+        IsolateStep.ISOLATE_ANDROID_17
     )
 
     /** تحويل النتيجة إلى سطر ملف (صيغة `STEP=boolean`). */
@@ -154,14 +164,16 @@ object IsolateCauseWizard {
             )
         }
 
-        // الخطوات 2/3/4: يُحسم بقفزة «لم يُفتح ← فُتح» مقابل الأساس.
+        // الخطوات 2/3/4/5: يُحسم بقفزة «لم يُفتح ← فُتح» مقابل الأساس.
         val flips: List<Pair<IsolateStep, IsolateCause>> = listOf(
             IsolateStep.DISABLE_NOTIFICATION_LISTENER to
                 IsolateCause.NOTIFICATION_LISTENER,
             IsolateStep.DISABLE_ACCESSIBILITY to
                 IsolateCause.ACCESSIBILITY,
             IsolateStep.REVOKE_OVERLAY to
-                IsolateCause.OVERLAY
+                IsolateCause.OVERLAY,
+            IsolateStep.ISOLATE_ANDROID_17 to
+                IsolateCause.ANDROID_17
         )
         for ((step, cause) in flips) {
             if (byStep[step]?.opened == true) {

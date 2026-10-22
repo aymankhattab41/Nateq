@@ -186,6 +186,7 @@ interface CategoryVoicePrefs {
 
     companion object {
         const val VOICE_CATEGORY_BATTERY = "battery"
+        const val VOICE_CATEGORY_LORD_SYSTEM = "lord_system"
     }
 
     /** الصوت المفضّل لمجموعة صوتية معيّنة. */

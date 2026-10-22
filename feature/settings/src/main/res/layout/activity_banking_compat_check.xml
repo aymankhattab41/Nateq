@@ -289,12 +289,21 @@
                     android:text="@string/banking_copy_timeline_btn" />
 
                 <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_share_timeline"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="4dp"
+                    android:minHeight="48dp"
+                    android:text="@string/banking_share_timeline_btn" />
+
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_clear_timeline"
                     style="@style/Widget.MaterialComponents.Button.TextButton"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:layout_marginStart="4dp"
                     android:minHeight="48dp"
                     android:text="@string/banking_clear_timeline_btn" />
             </LinearLayout>
@@ -368,6 +377,59 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_clear_restore_log"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="4dp"
+                    android:minHeight="48dp"
+                    android:text="مسح السجل" />
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="24dp"
+                android:layout_marginBottom="8dp"
+                android:background="#20000000" />
+
+            <TextView
+                android:id="@+id/tv_voice_trace_header"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:accessibilityHeading="true"
+                android:text="@string/event_voice_trace_title"
+                android:textAppearance="?attr/textAppearanceSubtitle1"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tv_voice_trace_log"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:lineSpacingExtra="4dp"
+                android:textIsSelectable="true"
+                android:textAppearance="?attr/textAppearanceBody2"
+                android:textColor="?android:attr/textColorPrimary" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_share_voice_trace"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="4dp"
+                    android:minHeight="48dp"
+                    android:text="@string/event_voice_trace_share_btn" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_clear_voice_trace"
                     style="@style/Widget.MaterialComponents.Button.TextButton"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"

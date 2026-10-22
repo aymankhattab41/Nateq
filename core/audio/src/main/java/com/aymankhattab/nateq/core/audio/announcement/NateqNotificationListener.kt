@@ -58,6 +58,31 @@ class NateqNotificationListener : NotificationListenerService() {
         var isConnected: Boolean = false
             internal set
 
+        @Volatile
+        var activeInstance: NateqNotificationListener? = null
+            private set
+
+        /** فك ربط خدمة الإشعارات بأمان أثناء جلسة التطبيق المصرفي. */
+        fun unbindSafely() {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                runCatching { activeInstance?.requestUnbind() }
+            }
+        }
+
+        /** إعادة ربط خدمة الإشعارات بأمان بعد انتهاء جلسة التطبيق المصرفي. */
+        fun rebindSafely(context: Context) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                runCatching {
+                    requestRebind(
+                        ComponentName(
+                            context,
+                            NateqNotificationListener::class.java
+                        )
+                    )
+                }
+            }
+        }
+
         /** التحقق مما إذا كان التطبيق لديه إذن الاستماع للإشعارات. */
         fun isPermissionGranted(context: Context): Boolean {
             val flat = Settings.Secure.getString(
@@ -852,6 +877,7 @@ class NateqNotificationListener : NotificationListenerService() {
     }
 
     override fun onDestroy() {
+        if (activeInstance == this) activeInstance = null
         screenReceiver?.let {
             runCatching { unregisterReceiver(it) }
         }
@@ -876,7 +902,7 @@ class NateqNotificationListener : NotificationListenerService() {
                 scope.launch {
                     ProtectedAppManager.checkAndRestore(
                         context = this@NateqNotificationListener,
-                        reason = action
+                        reason = "screen"
                     )
                     checkStartProtectedAppDetectionLoop()
                 }
@@ -922,6 +948,7 @@ class NateqNotificationListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
         super.onListenerConnected()
+        activeInstance = this
         isConnected = true
         val scope = (applicationContext as? AnnouncementAppContext)?.appScope
             ?: CoroutineScope(Dispatchers.Default)
@@ -985,6 +1012,7 @@ class NateqNotificationListener : NotificationListenerService() {
 
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
+        if (activeInstance == this) activeInstance = null
         isConnected = false
         AnnouncementSpeaker.getInstance(applicationContext).stop()
         Log.w(TAG, "NotificationListener disconnected — محاولة إعادة الربط")

@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.core.audio.accessibility
 
 import android.Manifest
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.AlarmManager
 import android.app.AppOpsManager
 import android.app.NotificationChannel
@@ -17,13 +18,21 @@ import android.os.Process
 import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityManager
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
+import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
 import com.aymankhattab.nateq.core.audio.announcement.NateqNotificationListener
 import com.aymankhattab.nateq.core.data.ProtectedApp
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * مدير التطبيقات المحمية (إنستاباي والتطبيقات المصرفية) —
@@ -36,7 +45,16 @@ object ProtectedAppManager {
     const val CHANNEL_ID_PROTECTED = "protected_app_channel_v2"
     const val ACTION_RESTORE_ALARM =
         "com.aymankhattab.nateq.action.RESTORE_ALARM"
+    const val ACTION_A11Y_CONNECTED =
+        "com.aymankhattab.nateq.action.A11Y_CONNECTED"
+    const val ACTION_A11Y_DISCONNECTED =
+        "com.aymankhattab.nateq.action.A11Y_DISCONNECTED"
     private const val ALARM_REQUEST_CODE = 7003
+
+    private val isRestoring = AtomicBoolean(false)
+    @Volatile private var nudgedThisSuspension = false
+    @Volatile private var lastNudgeTimeMs = 0L
+    @Volatile private var consecutiveFailures = 0
 
     private val absentSinceMap = ConcurrentHashMap<String, Long>()
     @Volatile private var screenOffSinceMs = 0L
@@ -118,6 +136,44 @@ object ProtectedAppManager {
         return !fromRepo.isNullOrBlank()
     }
 
+    /** فحص اتصال الخدمة عبر العمليات (الأمر 1 - البند 1). */
+    fun isServiceConnected(context: Context): Boolean {
+        if (AccessibilityBridge.activeService() != null) return true
+        val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE)
+            as? AccessibilityManager ?: return false
+        val enabled = am.getEnabledAccessibilityServiceList(
+            AccessibilityServiceInfo.FEEDBACK_ALL_MASK
+        ) ?: return false
+        val ourPkg = context.packageName
+        return enabled.any {
+            val sInfo = it.resolveInfo?.serviceInfo
+            sInfo?.packageName == ourPkg &&
+                (sInfo.name == NateqAccessibilityService::class.java.name ||
+                    sInfo.name.endsWith("NateqAccessibilityService"))
+        }
+    }
+
+    /** فحص وجود الخدمة في Settings.Secure (الأمر 1 - البند 1). */
+    fun isServiceEnabledInSettings(context: Context): Boolean {
+        return try {
+            val cr = context.contentResolver
+            val current = Settings.Secure.getString(
+                cr,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ).orEmpty()
+            current.split(":")
+                .filter { it.isNotBlank() }
+                .any { isOurService(it) }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun resetStateAfterRestore() {
+        nudgedThisSuspension = false
+        consecutiveFailures = 0
+    }
+
     /** جدولة المنبه الاحتياطي كل دقيقتين (البند 7). */
     fun scheduleBackupAlarm(context: Context) {
         val am = context.getSystemService(Context.ALARM_SERVICE)
@@ -156,6 +212,93 @@ object ProtectedAppManager {
             am.cancel(pi)
             pi.cancel()
         }
+    }
+
+    /** نطق رسائل Lord النظامية عبر مسار الأحداث (الأمر 3 - البند 2). */
+    fun speakLordSystem(context: Context, text: String) {
+        runCatching {
+            val speaker = AnnouncementSpeaker.getInstance(context)
+            val settings = SettingsRepository.create(context)
+            val cat = SettingsRepository.VOICE_CATEGORY_LORD_SYSTEM
+            val voiceId = settings.getPreferredVoiceIdForCategory(cat)
+                ?: settings.getPreferredVoiceIdForCategory(
+                    SettingsRepository.VOICE_CATEGORY_DEFAULT
+                )
+            val rate = settings.getSpeechRateForCategory(cat)
+            val pitch = settings.getPitchForCategory(cat)
+            val volume = settings.getVolumeForCategory(cat)
+            val engine = settings.getEngineForCategory(cat)
+                ?: settings.getEngineForCategory(
+                    SettingsRepository.VOICE_CATEGORY_DEFAULT
+                )
+            if (voiceId != null) {
+                speaker.resetVoice(voiceId)
+            }
+            speaker.speak(
+                text = text,
+                locale = java.util.Locale.getDefault(),
+                speechRate = rate,
+                pitch = pitch,
+                volume = volume,
+                engineOverride = engine,
+                category = cat
+            )
+        }.onFailure {
+            Log.w(TAG, "speakLordSystem failed", it)
+        }
+    }
+
+    /** تحصين أندرويد 17 أثناء جلسة التطبيق المحمي (الأمر 2 - البند 5). */
+    fun applyAndroid17Hardening(context: Context) {
+        NateqNotificationListener.unbindSafely()
+        AnnouncementSchedulerService.stopService(context)
+    }
+
+    /** استعادة ما عُطّل بتحصين أندرويد 17 (الأمر 2 - البند 5). */
+    fun revertAndroid17Hardening(context: Context) {
+        NateqNotificationListener.rebindSafely(context)
+        AnnouncementSchedulerService.startIfNeeded(context)
+    }
+
+    /** إعادة المحاولة التلقائية للتطبيق مرة واحدة (الأمر 2 - البند 4). */
+    fun scheduleAppAutoRetry(context: Context, targetPkg: String) {
+        CoroutineScope(Dispatchers.Default).launch {
+            var retried = false
+            delay(4000L)
+            val fg4s = getForegroundPackage(context)
+            if (isHomeLauncher(context, fg4s) && isSuspended(context)) {
+                retried = true
+                relaunchProtectedAppDirectly(
+                    context, targetPkg, "العودة للمشغل خلال 4s"
+                )
+                return@launch
+            }
+            delay(2000L)
+            val fg6s = getForegroundPackage(context)
+            if (fg6s != targetPkg && isSuspended(context) && !retried) {
+                relaunchProtectedAppDirectly(
+                    context, targetPkg, "لم تظهر النافذة خلال 6s"
+                )
+            }
+        }
+    }
+
+    private fun relaunchProtectedAppDirectly(
+        context: Context,
+        targetPkg: String,
+        reason: String
+    ) {
+        ProtectedAppTimelineTracker.recordWarning(
+            targetPkg, "إعادة فتح تلقائية واحدة: $reason"
+        )
+        val pm = context.packageManager
+        val launchIntent = pm.getLaunchIntentForPackage(targetPkg) ?: return
+        launchIntent.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+        )
+        runCatching { context.startActivity(launchIntent) }
     }
 
     /**
@@ -332,10 +475,9 @@ object ProtectedAppManager {
             isPartiallySuspended = true
             partiallySuspendedPkg = app.packageName
             service?.applyServiceInfo()
-            A11ySpeechCoordinator.speakAnnouncement(
+            speakLordSystem(
                 context = context,
-                text = "تعليق جزئي لإمكانية الوصول من أجل ${app.label}",
-                isInterruptAllowed = true
+                text = "تعليق جزئي لإمكانية الوصول من أجل ${app.label}"
             )
             return
         }
@@ -347,11 +489,10 @@ object ProtectedAppManager {
                 TAG,
                 "Cannot full disable: missing permissions. Falling back."
             )
-            A11ySpeechCoordinator.speakAnnouncement(
+            speakLordSystem(
                 context = context,
                 text = "تعذر الإيقاف الكامل لنقص الأذونات: " +
-                    "تحويل إلى تعليق جزئي",
-                isInterruptAllowed = true
+                    "تحويل إلى تعليق جزئي"
             )
             isPartiallySuspended = true
             partiallySuspendedPkg = app.packageName
@@ -369,11 +510,15 @@ object ProtectedAppManager {
         )
         settings.setSuspendedProtectedApp(app.packageName, now)
 
-        A11ySpeechCoordinator.speakAnnouncement(
+        speakLordSystem(
             context = context,
-            text = "تم تعطيل إمكانية الوصول لفتح ${app.label}",
-            isInterruptAllowed = true
+            text = "تم تعطيل إمكانية الوصول لفتح ${app.label}"
         )
+
+        // تطبيق تحصين أندرويد 17 أثناء الجلسة (الأمر 2 - البند 5)
+        if (settings.isAndroid17BankingHardeningEnabled()) {
+            applyAndroid17Hardening(context)
+        }
 
         // تشغيل مراقب الخروج والمنبه الاحتياطي
         ProtectedAppWatcherService.startForApp(
@@ -383,14 +528,12 @@ object ProtectedAppManager {
         )
         scheduleBackupAlarm(context)
 
-        val disabledDirectly =
-            disableAccessibilityServiceDirectly(context)
-        if (!disabledDirectly) {
-            if (service != null) {
-                service.disableSelf()
-            } else {
-                requestSelfDisable(context)
-            }
+        // الأمر 2 - البند 1: تعطيل حتمي متزامن يسبق أي شيء
+        disableAccessibilityServiceDirectly(context)
+        if (service != null) {
+            service.disableSelf()
+        } else {
+            requestSelfDisable(context)
         }
 
         if (relaunchIfForeground) {
@@ -413,7 +556,8 @@ object ProtectedAppManager {
         }
         launch.addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK or
-                Intent.FLAG_ACTIVITY_CLEAR_TOP
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
         )
         runCatching { context.startActivity(launch) }
             .onFailure {
@@ -446,199 +590,328 @@ object ProtectedAppManager {
 
     /**
      * الدالة الموحدة idempotent لكشف الخروج وإعادة تفعيل الخدمة
-     * (الجولة 51 - الأمر 1، البنود 2، 3، 5، 6).
+     * (الجولة 51 والجولة 52 - الأمر 1).
      */
-    fun checkAndRestore(
+    suspend fun checkAndRestore(
         context: Context,
         reason: String,
         pollIntervalMs: Long = 200L,
-        maxWaitMs: Long = 4000L,
+        maxWaitMs: Long = 6000L,
         nudgeWaitMs: Long = 400L,
         targetPkg: String? = null
     ): Boolean {
-        val suspension = ProtectedAppSuspensionStore.load(context)
-        val suspendedPkg = suspension?.packageName
-            ?: SettingsRepository.create(context).getSuspendedProtectedApp()
-            ?: targetPkg
-        if (suspendedPkg.isNullOrBlank()) {
-            cancelBackupAlarm(context)
-            ProtectedAppWatcherService.stopService(context)
-            return true
+        if (!isRestoring.compareAndSet(false, true)) {
+            Log.i(TAG, "checkAndRestore already running; skipping.")
+            return false
         }
+        try {
+            val suspension = ProtectedAppSuspensionStore.load(context)
+            val suspendedPkg = suspension?.packageName
+                ?: SettingsRepository.create(context).getSuspendedProtectedApp()
+                ?: targetPkg
+            if (suspendedPkg.isNullOrBlank()) {
+                cancelBackupAlarm(context)
+                ProtectedAppWatcherService.stopService(context)
+                resetStateAfterRestore()
+                return true
+            }
 
-        val now = System.currentTimeMillis()
-        val isForce = reason in setOf(
-            "force", "user", "boot", "settings", "exit"
-        )
+            val connectedBefore = isServiceConnected(context)
+            val enabledBefore = isServiceEnabledInSettings(context)
 
-        if (!isForce) {
-            val pm = context.getSystemService(Context.POWER_SERVICE)
-                as? PowerManager
-            val isScreenInteractive = pm?.isInteractive ?: true
-            val currentFg = getForegroundPackage(context)
-
-            // إن كان المستخدم لا يزال داخل التطبيق والشاشة مضاءة: لا يُعاد
-            if (isScreenInteractive && currentFg == suspendedPkg) {
+            // أول سطر في checkAndRestore (الأمر 1 - البند 5):
+            // إن كانت الخدمة متصلة ومفعّلة في الإعدادات فامسح حالة الإيقاف
+            // وألغِ المنبّه وأوقف المراقب واخرج دون كتابة على Settings.Secure
+            if (connectedBefore && enabledBefore) {
+                RestoreDiagnosticsTracker.record(
+                    context = context,
+                    reason = reason,
+                    readinessSummary = "Already connected & enabled",
+                    writeResult = false,
+                    serviceConnected = true,
+                    nudgeAttempts = 0,
+                    fallbackReason = null,
+                    connectedBefore = true,
+                    enabledBefore = true,
+                    connectedAfter = true,
+                    enabledAfter = true
+                )
+                ProtectedAppSuspensionStore.clear(context)
+                SettingsRepository.create(context)
+                    .setSuspendedProtectedApp(null)
+                cancelBackupAlarm(context)
+                ProtectedAppWatcherService.stopService(context)
                 absentSinceMap.remove(suspendedPkg)
                 screenOffSinceMs = 0L
+                resetStateAfterRestore()
+                if (SettingsRepository.create(context)
+                        .isAndroid17BankingHardeningEnabled()
+                ) {
+                    revertAndroid17Hardening(context)
+                }
+                return true
+            }
+
+            val now = System.currentTimeMillis()
+            val isForce = reason in setOf(
+                "force", "user", "boot", "settings", "exit"
+            )
+
+            if (!isForce) {
+                val pm = context.getSystemService(Context.POWER_SERVICE)
+                    as? PowerManager
+                val isScreenInteractive = pm?.isInteractive ?: true
+                val currentFg = getForegroundPackage(context)
+
+                // إن كان المستخدم لا يزال داخل التطبيق والشاشة مضاءة: لا يُعاد
+                if (isScreenInteractive && currentFg == suspendedPkg) {
+                    absentSinceMap.remove(suspendedPkg)
+                    screenOffSinceMs = 0L
+                    return false
+                }
+
+                var conditionMet = false
+
+                // قاعدة (أ): غاب التطبيق 3 ثوانٍ متصلة
+                if (currentFg != suspendedPkg) {
+                    val absentStart =
+                        absentSinceMap.getOrPut(suspendedPkg) { now }
+                    if (now - absentStart >= 3000L) {
+                        conditionMet = true
+                    }
+                } else {
+                    absentSinceMap.remove(suspendedPkg)
+                }
+
+                // قاعدة (ب): أطفئت الشاشة 20 ثانية متصلة
+                if (!isScreenInteractive) {
+                    if (screenOffSinceMs == 0L) screenOffSinceMs = now
+                    if (now - screenOffSinceMs >= 20_000L) {
+                        conditionMet = true
+                    }
+                } else {
+                    screenOffSinceMs = 0L
+                }
+
+                // قاعدة (ج): سقف مطلق قابل للضبط منذ الإيقاف
+                val suspendedAt = suspension?.timestamp
+                    ?: SettingsRepository.create(context)
+                        .getSuspendedProtectedAppTimestamp()
+                val timeoutMinutes = SettingsRepository.create(context)
+                    .getProtectedAppAutoRestoreTimeoutMinutes()
+                val timeoutMs = timeoutMinutes * 60_000L
+                if (suspendedAt > 0L && now - suspendedAt >= timeoutMs) {
+                    conditionMet = true
+                }
+
+                if (!conditionMet) {
+                    return false
+                }
+            }
+
+            // التحقق من الإذن وإعادة التفعيل
+            val readiness = checkReadiness(context)
+            if (!readiness.hasWriteSecure) {
+                handleRestoreFailure(
+                    context = context,
+                    suspendedPkg = suspendedPkg,
+                    reason = reason,
+                    readiness = readiness,
+                    connectedBefore = connectedBefore,
+                    enabledBefore = enabledBefore,
+                    connectedAfter = false,
+                    enabledAfter = enabledBefore,
+                    nudgeCount = 0,
+                    nudgeReason = null,
+                    error = "WRITE_SECURE_SETTINGS missing"
+                )
                 return false
             }
 
-            var conditionMet = false
+            var writePerformed = false
+            var connected = false
+            var nudgeCount = 0
+            var nudgeReasonTag: String? = null
 
-            // قاعدة (أ): غاب التطبيق 3 ثوانٍ متصلة
-            if (currentFg != suspendedPkg) {
-                val absentStart = absentSinceMap.getOrPut(suspendedPkg) { now }
-                if (now - absentStart >= 3000L) {
-                    conditionMet = true
+            if (!enabledBefore) {
+                // الأمر 1 - البند 7: حالة غير موجودة في الإعدادات
+                val writeOk = enableAccessibilityServiceDirectly(context)
+                writePerformed = true
+                if (!writeOk) {
+                    handleRestoreFailure(
+                        context = context,
+                        suspendedPkg = suspendedPkg,
+                        reason = reason,
+                        readiness = readiness,
+                        connectedBefore = connectedBefore,
+                        enabledBefore = false,
+                        connectedAfter = false,
+                        enabledAfter = false,
+                        nudgeCount = 0,
+                        nudgeReason = null,
+                        error = "enableAccessibilityServiceDirectly failed"
+                    )
+                    return false
                 }
+                // انتظر الاتصال (استطلاع) بلا تحريك قبل ذلك
+                connected = waitForActiveService(
+                    context, maxWaitMs, pollIntervalMs
+                )
             } else {
+                // الخدمة موجودة في الإعدادات ولكن غير متصلة
+                connected = waitForActiveService(
+                    context, maxWaitMs, pollIntervalMs
+                )
+                if (!connected) {
+                    // الأمر 1 - البند 6: «التحريك» محصور
+                    val currentFg = getForegroundPackage(context)
+                    val fgOk = currentFg != suspendedPkg
+                    val reasonOk = reason in setOf("exit", "alarm", "force")
+                    val timeOk = now - lastNudgeTimeMs >= 60_000L
+                    val countOk = !nudgedThisSuspension
+
+                    if (fgOk && reasonOk && timeOk && countOk) {
+                        nudgeCount = 1
+                        nudgedThisSuspension = true
+                        lastNudgeTimeMs = now
+                        nudgeReasonTag = "مكتوبة وغير متصلة بعد 4s ($reason)"
+                        disableAccessibilityServiceDirectly(context)
+                        delay(nudgeWaitMs)
+                        enableAccessibilityServiceDirectly(context)
+                        writePerformed = true
+                        connected = waitForActiveService(
+                            context, maxWaitMs, pollIntervalMs
+                        )
+                    }
+                }
+            }
+
+            val connectedAfter = isServiceConnected(context)
+            val enabledAfter = isServiceEnabledInSettings(context)
+
+            if (connected || connectedAfter) {
+                consecutiveFailures = 0
+                resetStateAfterRestore()
+                ProtectedAppSuspensionStore.clear(context)
+                SettingsRepository.create(context)
+                    .setSuspendedProtectedApp(null)
+                cancelBackupAlarm(context)
+                ProtectedAppWatcherService.stopService(context)
                 absentSinceMap.remove(suspendedPkg)
-            }
-
-            // قاعدة (ب): أطفئت الشاشة 20 ثانية متصلة
-            if (!isScreenInteractive) {
-                if (screenOffSinceMs == 0L) screenOffSinceMs = now
-                if (now - screenOffSinceMs >= 20_000L) {
-                    conditionMet = true
-                }
-            } else {
                 screenOffSinceMs = 0L
-            }
 
-            // قاعدة (ج): سقف مطلق قابل للضبط منذ الإيقاف
-            val suspendedAt = suspension?.timestamp
-                ?: SettingsRepository.create(context)
-                    .getSuspendedProtectedAppTimestamp()
-            val timeoutMinutes = SettingsRepository.create(context)
-                .getProtectedAppAutoRestoreTimeoutMinutes()
-            val timeoutMs = timeoutMinutes * 60_000L
-            if (suspendedAt > 0L && now - suspendedAt >= timeoutMs) {
-                conditionMet = true
-            }
+                if (SettingsRepository.create(context)
+                        .isAndroid17BankingHardeningEnabled()
+                ) {
+                    revertAndroid17Hardening(context)
+                }
 
-            if (!conditionMet) {
+                RestoreDiagnosticsTracker.record(
+                    context = context,
+                    reason = reason,
+                    readinessSummary = readiness.summaryString(),
+                    writeResult = writePerformed,
+                    serviceConnected = true,
+                    nudgeAttempts = nudgeCount,
+                    fallbackReason = null,
+                    connectedBefore = connectedBefore,
+                    enabledBefore = enabledBefore,
+                    connectedAfter = true,
+                    enabledAfter = enabledAfter,
+                    nudgeReason = nudgeReasonTag,
+                    failureAnnounced = false
+                )
+
+                if (reason != "screen") {
+                    speakLordSystem(context, "عادت إمكانية الوصول")
+                }
+                return true
+            } else {
+                val errMsg = if (nudgeCount > 0) {
+                    "لم تتصل الخدمة بعد $nudgeCount تحريك"
+                } else "لم تتصل الخدمة بعد الكتابة"
+                handleRestoreFailure(
+                    context = context,
+                    suspendedPkg = suspendedPkg,
+                    reason = reason,
+                    readiness = readiness,
+                    connectedBefore = connectedBefore,
+                    enabledBefore = enabledBefore,
+                    connectedAfter = false,
+                    enabledAfter = enabledAfter,
+                    nudgeCount = nudgeCount,
+                    nudgeReason = nudgeReasonTag,
+                    error = errMsg
+                )
                 return false
             }
-        }
-
-        // التحقق من الإذن وإعادة التفعيل
-        val readiness = checkReadiness(context)
-        if (!readiness.hasWriteSecure) {
-            RestoreDiagnosticsTracker.record(
-                context = context,
-                reason = reason,
-                readinessSummary = readiness.summaryString(),
-                writeResult = false,
-                serviceConnected = false,
-                nudgeAttempts = 0,
-                fallbackReason = "WRITE_SECURE_SETTINGS missing"
-            )
-            postReenableNotification(context, suspendedPkg)
-            A11ySpeechCoordinator.speakAnnouncement(
-                context = context,
-                text = "انتهيت من استخدام التطبيق، اضغط زرّي الصوت",
-                isInterruptAllowed = true
-            )
-            return false
-        }
-
-        val initialWrite = enableAccessibilityServiceDirectly(context)
-        if (!initialWrite) {
-            RestoreDiagnosticsTracker.record(
-                context = context,
-                reason = reason,
-                readinessSummary = readiness.summaryString(),
-                writeResult = false,
-                serviceConnected = false,
-                nudgeAttempts = 0,
-                fallbackReason = "enableAccessibilityServiceDirectly failed"
-            )
-            postReenableNotification(context, suspendedPkg)
-            return false
-        }
-
-        // تحقق الاتصال بعد الكتابة مع انتظار حتى 4 ثوانٍ (البند 5)
-        var connected = waitForActiveService(maxWaitMs, pollIntervalMs)
-        var nudgeCount = 0
-
-        if (!connected) {
-            // تحريك حتى مرتين: حذف، انتظار 400ms، إعادة إضافة، انتظار 4s
-            for (attempt in 1..2) {
-                nudgeCount = attempt
-                disableAccessibilityServiceDirectly(context)
-                if (nudgeWaitMs > 0) {
-                    try {
-                        Thread.sleep(nudgeWaitMs)
-                    } catch (_: InterruptedException) {}
-                }
-                enableAccessibilityServiceDirectly(context)
-                connected = waitForActiveService(maxWaitMs, pollIntervalMs)
-                if (connected) break
-            }
-        }
-
-        if (connected) {
-            RestoreDiagnosticsTracker.record(
-                context = context,
-                reason = reason,
-                readinessSummary = readiness.summaryString(),
-                writeResult = true,
-                serviceConnected = true,
-                nudgeAttempts = nudgeCount,
-                fallbackReason = null
-            )
-            ProtectedAppSuspensionStore.clear(context)
-            SettingsRepository.create(context).setSuspendedProtectedApp(null)
-            cancelBackupAlarm(context)
-            ProtectedAppWatcherService.stopService(context)
-            absentSinceMap.remove(suspendedPkg)
-            screenOffSinceMs = 0L
-
-            A11ySpeechCoordinator.speakAnnouncement(
-                context = context,
-                text = "عادت إمكانية الوصول",
-                isInterruptAllowed = true
-            )
-            return true
-        } else {
-            RestoreDiagnosticsTracker.record(
-                context = context,
-                reason = reason,
-                readinessSummary = readiness.summaryString(),
-                writeResult = true,
-                serviceConnected = false,
-                nudgeAttempts = nudgeCount,
-                fallbackReason = "لم تتصل الخدمة بعد $nudgeCount تحريك"
-            )
-            postReenableNotification(context, suspendedPkg)
-            A11ySpeechCoordinator.speakAnnouncement(
-                context = context,
-                text = "تعذر إعادة تفعيل الخدمة تلقائياً، اضغط زرّي الصوت",
-                isInterruptAllowed = true
-            )
-            return false
+        } finally {
+            isRestoring.set(false)
         }
     }
 
-    private fun waitForActiveService(
+    private fun handleRestoreFailure(
+        context: Context,
+        suspendedPkg: String,
+        reason: String,
+        readiness: AutoRestoreReadiness,
+        connectedBefore: Boolean,
+        enabledBefore: Boolean,
+        connectedAfter: Boolean,
+        enabledAfter: Boolean,
+        nudgeCount: Int,
+        nudgeReason: String?,
+        error: String
+    ) {
+        consecutiveFailures++
+        val alreadyAnnounced =
+            ProtectedAppSuspensionStore.isFailureAnnounced(context)
+        var newlyAnnounced = false
+        // الأمر 1 - البند 8 و9: إعلان الفشل مرة واحدة ولا نطق لأحداث الشاشة
+        if (reason != "screen" && !alreadyAnnounced) {
+            newlyAnnounced = true
+            ProtectedAppSuspensionStore.setFailureAnnounced(context, true)
+            postReenableNotification(context, suspendedPkg)
+            speakLordSystem(
+                context, "تعذر إعادة تفعيل الخدمة تلقائياً، اضغط زرّي الصوت"
+            )
+        }
+        // بعد 3 محاولات فاشلة متتالية أوقف المنبه الاحتياطي
+        if (consecutiveFailures >= 3) {
+            cancelBackupAlarm(context)
+        }
+        RestoreDiagnosticsTracker.record(
+            context = context,
+            reason = reason,
+            readinessSummary = readiness.summaryString(),
+            writeResult = true,
+            serviceConnected = false,
+            nudgeAttempts = nudgeCount,
+            fallbackReason = error,
+            connectedBefore = connectedBefore,
+            enabledBefore = enabledBefore,
+            connectedAfter = connectedAfter,
+            enabledAfter = enabledAfter,
+            nudgeReason = nudgeReason,
+            failureAnnounced = newlyAnnounced
+        )
+    }
+
+    private suspend fun waitForActiveService(
+        context: Context,
         maxWaitMs: Long,
         pollIntervalMs: Long
     ): Boolean {
         val deadline = System.currentTimeMillis() + maxWaitMs
         while (System.currentTimeMillis() <= deadline) {
-            if (AccessibilityBridge.activeService() != null) {
+            if (isServiceConnected(context)) {
                 return true
             }
             if (pollIntervalMs > 0) {
-                try {
-                    Thread.sleep(pollIntervalMs)
-                } catch (_: InterruptedException) {
-                    break
-                }
+                delay(pollIntervalMs)
             }
         }
-        return AccessibilityBridge.activeService() != null
+        return isServiceConnected(context)
     }
 
     /**
@@ -654,7 +927,16 @@ object ProtectedAppManager {
         }
 
         ProtectedAppWatcherService.stopService(context)
-        checkAndRestore(context, "exit", targetPkg = pkg)
+        kotlinx.coroutines.runBlocking {
+            checkAndRestore(
+                context = context,
+                reason = "exit",
+                pollIntervalMs = 50L,
+                maxWaitMs = 200L,
+                nudgeWaitMs = 50L,
+                targetPkg = pkg
+            )
+        }
     }
 
     /**
@@ -707,7 +989,9 @@ object ProtectedAppManager {
         return norm == ours ||
             norm == "com.aymankhattab.nateq" +
             ".com.aymankhattab.nateq.core.audio.accessibility" +
-            ".NateqAccessibilityService"
+            ".NateqAccessibilityService" ||
+            (norm.endsWith(".NateqAccessibilityService") &&
+                norm.contains("aymankhattab.nateq"))
     }
 
     fun disableAccessibilityServiceDirectly(context: Context): Boolean {
@@ -798,5 +1082,9 @@ object ProtectedAppManager {
         absentSinceMap.clear()
         screenOffSinceMs = 0L
         readinessOverrideForTesting = null
+        nudgedThisSuspension = false
+        lastNudgeTimeMs = 0L
+        consecutiveFailures = 0
+        isRestoring.set(false)
     }
 }

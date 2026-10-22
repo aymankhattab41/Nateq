@@ -536,12 +536,14 @@
                 android:value="Protected bank and payment app watcher to safely restore accessibility" />
         </service>
 
-        <!-- مستقبل المنبه الاحتياطي لإعادة تفعيل إمكانية الوصول (الجولة 51) -->
+        <!-- مستقبل المنبه الاحتياطي لإعادة تفعيل إمكانية الوصول (الجولة 51 و52) -->
         <receiver
             android:name="com.aymankhattab.nateq.core.audio.accessibility.ProtectedAppRestoreReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.aymankhattab.nateq.action.RESTORE_ALARM" />
+                <action android:name="com.aymankhattab.nateq.action.A11Y_CONNECTED" />
+                <action android:name="com.aymankhattab.nateq.action.A11Y_DISCONNECTED" />
             </intent-filter>
         </receiver>
 

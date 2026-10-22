@@ -707,6 +707,9 @@
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">
 Version %1$s
+    - Round 52: Automatic accessibility restore fix: cross-process active service check via system enabled services list, instant suspension clearing upon manual re-enablement and ACTION_A11Y_CONNECTED reception, single restore session lock, eliminated repetitive volume-key nudge notices, constrained nudge to a single attempt when disconnected after 4s while written in settings, canceled backup alarm and spoken failure notice upon exhaustion
+    - Round 52: InstaPay and banking app compatibility on Android 17: deterministic synchronous pre-launch disable, 300ms settle delay and 3000ms timeout aborting launch if service remains active, clean task flags, single-attempt auto-relaunch if window absent after 6s or returned to launcher within 4s, optional Android 17 hardening unbinding notification listener, stopping non-essential services and removing overlays, device fingerprinting and timeline export with sharing, and Android 17 isolation wizard step
+    - Round 52: Event voice trace, Lord system messages, and Direct Boot mirror sync: EventVoiceTrace 50-entry circular log with fallback reason and executing provider tracking and report sharing, routed Lord TTS system messages through AnnouncementSpeaker using lord_system category with default voice fallback, protected notification channels against deletion during foreground service runs, and expanded Direct Boot mirror sync to all category keys with 500ms debouncing
     - Round 51: Automatic accessibility service restore after exiting InstaPay and protected apps: 6-item readiness check with fix actions in banking compat screen, dual detection hosts (watcher service + notification listener), device protected storage persistence, 2-minute recurring backup alarm, service nudge on connection stall, 3s absence and 20s screen-off rules, and 20-attempt diagnostics history log
     - Round 51: Stabilized TTS engine switching across all devices: TTS settings screen identity verification, full 2-session retry loop with route reordering, container parent scrolling (top reset + 8-step polling), isChecked status verification alongside secure settings, per-device switch recipe persistence, clear error announcements with tree dump path, and dump sharing &amp; retry UI actions
     - Round 51: Full pipeline trace and Hijri month protection against Jumada dictionary corruption: complete 7-stage live trace tool in :tts process, 20-entry circular buffer of last spoken texts, generalized invisible character bypass (combining marks, format, control characters) in neighbor detection, Hijri month protection, ANYWHERE match warning for single letters, and match mode display
@@ -1173,6 +1176,8 @@ Version %1$s
     <string name="banking_step_a11y_detail">Open the accessibility screen and disable the Lord TTS service, then open the banking app and record the result. Do not disable your screen reader.</string>
     <string name="banking_step_overlay_title">Revoke display over other apps</string>
     <string name="banking_step_overlay_detail">Open the display-over-other-apps screen and revoke Lord TTS, then open the banking app and record the result.</string>
+    <string name="banking_step_isolate_android17_title">Full Android 17 isolation</string>
+    <string name="banking_step_isolate_android17_detail">Launch the banking app with Lord disabled, screen reader toggled, developer options off, and notification listener unbound to pinpoint the refusal reason.</string>
     <string name="banking_step_restore_title">Restore everything you revoked</string>
     <string name="banking_step_restore_detail">Re-enable the Lord TTS accessibility service, notification access and display-over-other-apps. Then open the banking app to confirm it is back to normal.</string>
     <string name="banking_wizard_open_target">Open the matching settings screen</string>
@@ -1189,6 +1194,12 @@ Version %1$s
     <string name="banking_wizard_cause_accessibility">Most likely cause: the Lord TTS accessibility service. Keep it disabled if you need the banking app.</string>
     <string name="banking_wizard_cause_overlay">Most likely cause: display over other apps granted to Lord TTS. Keep it revoked if you need the banking app.</string>
     <string name="banking_wizard_cause_other_app">The app still did not open after every Lord TTS capability was revoked, so the cause most likely lies outside Lord TTS.</string>
+    <string name="banking_wizard_cause_android17">Most likely cause: sensitive Android 17 system settings (developer options, screen reader, or notification listener).</string>
+    <string name="banking_share_timeline_btn">Share timeline</string>
+    <string name="banking_hardening_android17_title">Android 17 banking app hardening</string>
+    <string name="banking_hardening_android17_desc">During protected app sessions: unbind notification listener, stop non-essential services, and remove overlays (announcements are silenced during session).</string>
+    <string name="event_voice_trace_title">Event voice trace log</string>
+    <string name="event_voice_trace_share_btn">Share voice trace</string>
     <string name="banking_wizard_need_baseline">Step 1 (baseline) has not been recorded yet — record it first.</string>
     <string name="banking_wizard_result_saved">Step result saved.</string>
     <string name="banking_wizard_open_failed">That settings screen could not be opened on this device.</string>
