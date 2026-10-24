@@ -43,6 +43,24 @@ object EventVoiceTrace {
 
     private val entries = ConcurrentLinkedQueue<TraceEntry>()
 
+    fun formatWithTashkeelHex(text: String): String {
+        val sb = StringBuilder()
+        var i = 0
+        while (i < text.length) {
+            val cp = text.codePointAt(i)
+            val w = Character.charCount(cp)
+            i += w
+            if ((cp in 0x064B..0x0652) || cp == 0x0670 ||
+                (cp in 0xE000..0xF8FF)
+            ) {
+                sb.append(String.format("[U+%04X]", cp))
+            } else {
+                sb.appendCodePoint(cp)
+            }
+        }
+        return sb.toString()
+    }
+
     fun record(
         category: String,
         savedVoiceId: String?,
@@ -52,7 +70,7 @@ object EventVoiceTrace {
         fallbackReason: String? = null,
         textSnippet: String = ""
     ) {
-        val snippet = textSnippet.take(40).replace('\n', ' ')
+        val snippet = textSnippet.take(120).replace('\n', ' ')
         val entry = TraceEntry(
             timestampMs = System.currentTimeMillis(),
             category = category,

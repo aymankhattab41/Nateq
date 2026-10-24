@@ -48,6 +48,7 @@ internal class TimeAnnouncementController(
     private var spinnerTimeInterval: Spinner? = null
     private var llQuietSchedule: LinearLayout? = null
     private var spinnerTimeFormat: Spinner? = null
+    private var spinnerTimeDayPeriodStyle: Spinner? = null
     private var switchTime24h: SwitchMaterial? = null
     private var switchTimeDuringCalls: SwitchMaterial? = null
     private var seekTimeDuringCallsVolume: SeekBar? = null
@@ -128,6 +129,32 @@ internal class TimeAnnouncementController(
         spinnerTimeFormat?.setSelection(
             if (formatPref == "digital") 1 else 0
         )
+
+        spinnerTimeDayPeriodStyle =
+            view.findViewById(R.id.spinner_time_day_period_style)
+        val periodStyles = listOf(
+            fragment.getString(
+                R.string.time_day_period_style_explicit_nun_comma
+            ),
+            fragment.getString(
+                R.string.time_day_period_style_prepositional
+            ),
+            fragment.getString(
+                R.string.time_day_period_style_as_is
+            )
+        )
+        spinnerTimeDayPeriodStyle?.adapter =
+            fragment.simpleAdapter(periodStyles)
+        val currentStyle = runCatching { settings.getDayPeriodStyle() }
+            .getOrDefault(
+                SettingsRepository.DAY_PERIOD_STYLE_EXPLICIT_NUN_COMMA
+            )
+        val styleIndex = when (currentStyle) {
+            SettingsRepository.DAY_PERIOD_STYLE_PREPOSITIONAL -> 1
+            SettingsRepository.DAY_PERIOD_STYLE_AS_IS -> 2
+            else -> 0
+        }
+        spinnerTimeDayPeriodStyle?.setSelection(styleIndex)
         switchTimeAnnouncement?.isChecked =
             runCatching { settings.isTimeAnnouncementEnabled() }
                 .getOrDefault(true)
@@ -470,6 +497,26 @@ internal class TimeAnnouncementController(
                 val format = if (position == 1) "digital" else "arabic_natural"
                 runCatching { settings.setTimeAnnouncementFormat(format) }
                 onStatusChanged()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        spinnerTimeDayPeriodStyle?.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                val style = when (position) {
+                    1 -> SettingsRepository.DAY_PERIOD_STYLE_PREPOSITIONAL
+                    2 -> SettingsRepository.DAY_PERIOD_STYLE_AS_IS
+                    else ->
+                        SettingsRepository.DAY_PERIOD_STYLE_EXPLICIT_NUN_COMMA
+                }
+                runCatching { settings.setDayPeriodStyle(style) }
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}
@@ -1411,6 +1458,7 @@ internal class TimeAnnouncementController(
         spinnerTimeInterval = null
         llQuietSchedule = null
         spinnerTimeFormat = null
+        spinnerTimeDayPeriodStyle = null
         switchTime24h = null
         switchTimeDuringCalls = null
         seekTimeDuringCallsVolume = null

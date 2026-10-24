@@ -9,7 +9,8 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
- * سجل تشخيصي لمحاولات إعادة تفعيل خدمة إمكانية الوصول
+ * سجل تشخيصي لمحاولات إعادة تفعيل
+ * خدمة إمكانية الوصول
  * (الجولة 51 والجولة 52 - الأمر 1).
  */
 object RestoreDiagnosticsTracker {
@@ -32,28 +33,64 @@ object RestoreDiagnosticsTracker {
         val connectedAfter: Boolean = false,
         val enabledAfter: Boolean = false,
         val nudgeReason: String? = null,
-        val failureAnnounced: Boolean = false
+        val failureAnnounced: Boolean = false,
+        val tExitDetected: Long = 0L,
+        val tWriteDone: Long = 0L,
+        val tConnected: Long = 0L,
+        val tFeaturesReady: Long = 0L
     ) {
         fun formatLine(): String {
             val dateStr = SimpleDateFormat(
                 "HH:mm:ss", Locale.US
             ).format(Date(timestampMs))
-            val connStr = if (serviceConnected) "اتصلت" else "لم تتصل"
-            val writeStr = if (writeResult) "كتابة: نعم" else "كتابة: لا"
+            val connStr = if (serviceConnected) {
+                "اتصلت"
+            } else {
+                "لم تتصل"
+            }
+            val writeStr = if (writeResult) {
+                "كتابة: نعم"
+            } else {
+                "كتابة: لا"
+            }
             val nudgeStr = if (nudgeAttempts > 0) {
                 val reasonTag = if (!nudgeReason.isNullOrBlank()) {
                     ": $nudgeReason"
                 } else ""
                 " (تحريك: $nudgeAttempts$reasonTag)"
             } else ""
-            val failStr = if (failureAnnounced) " [أُعلن الفشل]" else ""
+            val failStr = if (failureAnnounced) {
+                " [أُعلن الفشل]"
+            } else ""
             val errStr = if (!fallbackReason.isNullOrBlank()) {
                 " [$fallbackReason]"
             } else ""
-            val stateStr = "قبل: متصل=$connectedBefore/مفعّل=$enabledBefore" +
-                " | بعد: متصل=$connectedAfter/مفعّل=$enabledAfter"
+            val stateStr = "قبل: متصل=$connectedBefore/" +
+                "مفعّل=$enabledBefore | " +
+                "بعد: متصل=$connectedAfter/" +
+                "مفعّل=$enabledAfter"
+            val timingsStr = if (tExitDetected > 0L || tWriteDone > 0L) {
+                val exitToWrite = if (tWriteDone >= tExitDetected &&
+                    tExitDetected > 0L
+                ) {
+                    "${tWriteDone - tExitDetected}ms"
+                } else "—"
+                val writeToConn = if (tConnected >= tWriteDone &&
+                    tWriteDone > 0L
+                ) {
+                    "${tConnected - tWriteDone}ms"
+                } else "—"
+                val connToReady = if (tFeaturesReady >= tConnected &&
+                    tConnected > 0L
+                ) {
+                    "${tFeaturesReady - tConnected}ms"
+                } else "—"
+                " | أطوار: كشف-كتابة=$exitToWrite, " +
+                    "كتابة-اتصال=$writeToConn, " +
+                    "جاهزية=$connToReady"
+            } else ""
             return "[$dateStr][$callingProcess] $reason | $connStr | " +
-                "$writeStr$nudgeStr$failStr$errStr | $stateStr | " +
+                "$writeStr$nudgeStr$failStr$errStr | $stateStr$timingsStr | " +
                 readinessSummary
         }
     }
@@ -83,7 +120,11 @@ object RestoreDiagnosticsTracker {
         connectedAfter: Boolean = serviceConnected,
         enabledAfter: Boolean = false,
         nudgeReason: String? = null,
-        failureAnnounced: Boolean = false
+        failureAnnounced: Boolean = false,
+        tExitDetected: Long = 0L,
+        tWriteDone: Long = 0L,
+        tConnected: Long = 0L,
+        tFeaturesReady: Long = 0L
     ) {
         val entry = AttemptRecord(
             timestampMs = System.currentTimeMillis(),
@@ -99,7 +140,11 @@ object RestoreDiagnosticsTracker {
             connectedAfter = connectedAfter,
             enabledAfter = enabledAfter,
             nudgeReason = nudgeReason,
-            failureAnnounced = failureAnnounced
+            failureAnnounced = failureAnnounced,
+            tExitDetected = tExitDetected,
+            tWriteDone = tWriteDone,
+            tConnected = tConnected,
+            tFeaturesReady = tFeaturesReady
         )
         memoryLog.add(entry)
         while (memoryLog.size > MAX_ENTRIES) {
@@ -107,6 +152,17 @@ object RestoreDiagnosticsTracker {
         }
         if (context != null) {
             persist(context)
+        }
+    }
+
+    fun recordFeaturesReady(context: Context? = null) {
+        val now = System.currentTimeMillis()
+        val last = memoryLog.lastOrNull() ?: return
+        if (last.tConnected > 0L && last.tFeaturesReady == 0L) {
+            val updated = last.copy(tFeaturesReady = now)
+            memoryLog.remove(last)
+            memoryLog.add(updated)
+            if (context != null) persist(context)
         }
     }
 
@@ -134,7 +190,8 @@ object RestoreDiagnosticsTracker {
                     "${it.callingProcess};${it.connectedBefore};" +
                     "${it.enabledBefore};${it.connectedAfter};" +
                     "${it.enabledAfter};${it.nudgeReason.orEmpty()};" +
-                    "${it.failureAnnounced}"
+                    "${it.failureAnnounced};${it.tExitDetected};" +
+                    "${it.tWriteDone};${it.tConnected};${it.tFeaturesReady}"
             }
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .edit()
@@ -177,7 +234,19 @@ object RestoreDiagnosticsTracker {
                         } else null,
                         failureAnnounced = if (p.size > 13) {
                             p[13].toBoolean()
-                        } else false
+                        } else false,
+                        tExitDetected = if (p.size > 14) {
+                            p[14].toLongOrNull() ?: 0L
+                        } else 0L,
+                        tWriteDone = if (p.size > 15) {
+                            p[15].toLongOrNull() ?: 0L
+                        } else 0L,
+                        tConnected = if (p.size > 16) {
+                            p[16].toLongOrNull() ?: 0L
+                        } else 0L,
+                        tFeaturesReady = if (p.size > 17) {
+                            p[17].toLongOrNull() ?: 0L
+                        } else 0L
                     )
                 } else null
             }.sortedBy { it.timestampMs }

@@ -23,6 +23,7 @@ import com.aymankhattab.nateq.engine.PronunciationDictionary
 import com.aymankhattab.nateq.core.audio.accessibility.RepeatSpellController
 import com.aymankhattab.nateq.core.audio.engine.AudioEffectManager
 import com.aymankhattab.nateq.core.audio.engine.LastSpokenTextsTracker
+import com.aymankhattab.nateq.core.audio.engine.SpeechEntryPoints
 import com.aymankhattab.nateq.core.audio.engine.SpeechChunker
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.core.audio.engine.EmojiLanguageResolver
@@ -50,6 +51,7 @@ import com.aymankhattab.nateq.core.data.CategoryLoudnessConfig
 import com.aymankhattab.nateq.core.data.SpeechLock
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.LocaleUtils
+import com.aymankhattab.nateq.util.VoiceIdContract
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -1412,24 +1414,31 @@ class AnnouncementSpeaker(
         volume: Float,
         engineOverride: String? = null,
         cue: AudioCue? = null,
-        category: String? = null
+        category: String? = null,
+        source: SpeechEntryPoints.Source? = null,
+        isPrepared: Boolean = false
     ) {
-        LastSpokenTextsTracker.record(text)
-        Log.d(TAG, "[DICT] Announcement before: $text")
-        val singleLetterMode = runCatching {
-            settings?.getSingleLetterMode()
-        }.getOrNull() ?: "name"
-        val resolvedLetter =
-            SingleLetterGuard.resolve(text, singleLetterMode)
-        val dictText = if (resolvedLetter != null) {
-            if (singleLetterMode == "name") {
-                Log.d(TAG, "حرف مفرد: $text ← $resolvedLetter")
-            }
-            resolvedLetter
-        } else {
-            textProcessor.applyDictionaryFirst(text, locale.toLanguageTag())
+        val effectiveSource = source ?: when (category) {
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER ->
+                SpeechEntryPoints.Source.CALLER
+            SettingsRepository.VOICE_CATEGORY_TIME ->
+                SpeechEntryPoints.Source.TIME_EVENT
+            SettingsRepository.VOICE_CATEGORY_BATTERY ->
+                SpeechEntryPoints.Source.BATTERY_EVENT
+            SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS ->
+                SpeechEntryPoints.Source.NOTIFICATION
+            else -> SpeechEntryPoints.Source.LORD_SYSTEM
         }
-        Log.d(TAG, "[DICT] Announcement after: $dictText")
+        val dictText = if (isPrepared) {
+            text
+        } else {
+            SpeechEntryPoints.prepare(
+                text,
+                effectiveSource,
+                appContext
+            )
+        }
+        Log.d(TAG, "[DICT] Announcement processed: $dictText")
 
         // ع٤١-ب4: تسجيل النص النهائي للإعلان في سجلّ
         // «ما قيل» قبل أي معالجة خاصة بالمحرك
@@ -1450,7 +1459,7 @@ class AnnouncementSpeaker(
 
         val isLordSys =
             category == SettingsRepository.VOICE_CATEGORY_LORD_SYSTEM
-        val categoryVoice = if (category != null) {
+        var categoryVoice = if (category != null) {
             settings?.getPreferredVoiceIdForCategory(category)
                 ?: if (isLordSys) {
                     settings?.getPreferredVoiceIdForCategory(
@@ -1458,12 +1467,7 @@ class AnnouncementSpeaker(
                     )
                 } else null
         } else null
-        if (categoryVoice != null &&
-            (voiceId == null || category != currentCategory)
-        ) {
-            voiceId = categoryVoice
-        }
-
+        val originalCategoryVoice = categoryVoice
         val categoryEngine = if (category != null) {
             settings?.getEngineForCategory(category)
                 ?: if (isLordSys) {
@@ -1482,12 +1486,40 @@ class AnnouncementSpeaker(
             }.getOrNull()
         )
 
+        var fallbackVoiceReason: String? = null
+        if (!categoryVoice.isNullOrBlank() &&
+            !resolvedEngine.isNullOrBlank()
+        ) {
+            if (!VoiceIdContract.isVoiceBelongingToEngine(
+                    resolvedEngine, categoryVoice
+                )
+            ) {
+                fallbackVoiceReason = "صوت لا يتبع المحرك"
+                categoryVoice = null
+                voiceId = null
+            }
+        }
+
+        if (categoryVoice != null &&
+            (voiceId == null || category != currentCategory)
+        ) {
+            voiceId = categoryVoice
+        }
+
+        val snippet = if (
+            category == SettingsRepository.VOICE_CATEGORY_TIME
+        ) {
+            EventVoiceTrace.formatWithTashkeelHex(dictText)
+        } else {
+            dictText
+        }
         EventVoiceTrace.record(
             category = category ?: "default",
-            savedVoiceId = categoryVoice,
+            savedVoiceId = originalCategoryVoice,
             resolvedEngine = resolvedEngine,
             dispatchedVoiceId = voiceId ?: categoryVoice,
-            textSnippet = dictText
+            fallbackReason = fallbackVoiceReason,
+            textSnippet = snippet
         )
 
         // نُفوض النطق دائماً لمحركٍ مثبّت (منهج MultiTTS):
@@ -1992,11 +2024,17 @@ class AnnouncementSpeaker(
         }
         ensureInit({ ready ->
             if (ready) {
-                Log.w(
+                val voicesInfo = if (
+                    HostProtocol.isEmbeddedEngine(boundEngine)
+                ) {
+                    "محرك مدمج (بلا TextToSpeech.voices)"
+                } else {
+                    "tts voices=${tts?.voices?.size ?: 0}"
+                }
+                Log.d(
                     TAG,
                     "[SpeakerDiag] boundEngine=$boundEngine, " +
-                        "tts voices=${tts?.voices?.size ?: 0}, " +
-                        "voiceId=$voiceId, locale=$locale"
+                        "$voicesInfo, voiceId=$voiceId, locale=$locale"
                 )
                 executeSpeech()
             } else {

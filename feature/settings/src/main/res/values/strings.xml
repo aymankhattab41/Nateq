@@ -613,6 +613,11 @@
 <string name="time_announcement_format">صيغة إعلان الوقت</string>
 <string name="time_announcement_interval">فاصل إعلان الوقت</string>
 <string name="time_display_24h">عرض الساعة بنظام 24 ساعة</string>
+<string name="time_day_period_style_title">صياغة فترة اليوم</string>
+<string name="time_day_period_style_explicit_nun_comma">بنون صريحة بعد فاصلة (تلقائي)</string>
+<string name="time_day_period_style_prepositional">في المساء/في الصباح/بعد الظهر</string>
+<string name="time_day_period_style_as_is">كما هي الآن</string>
+<string name="spinner_time_day_period_style_content">صياغة فترة اليوم في إعلان الوقت</string>
 <string name="time_format_digital">رقمية</string>
 <string name="time_format_natural">العربية الطبيعية</string>
 <string name="time_interval_format">كل %1$d دقيقة</string>
@@ -717,6 +722,13 @@
 <string name="changelog_title">آخر التحديثات</string>
 <string name="changelog_text">
 الإصدار %1$s
+    - الجولة 53: تسريع استرجاع إمكانية الوصول: خفض شرط الغياب إلى 1200ms، وتحريك الخدمة المعلقة بعد 3s، وتأجيل التهيئة الثقيلة 500ms، وتتبع تراكمي للمقدمة يمنع الاسترجاع المبكر أثناء فتح التطبيقات المحمية
+    - الجولة 53: تقارير تشخيص صادقة من عملية :tts عبر TtsDiagnosticsProvider مع التقاط سجلات العمليتين وتتبع خط زمني لآخر 3 جلسات للتطبيقات المحمية
+    - الجولة 53: كشف وتصحيح تعارض المحرك والصوت في أصوات الفئات ولغات نقطة الدخول، وحذف الصوت غير التابع للمحرك فوراً مع تسجيل تتبع الصوت EventVoiceTrace
+    - الجولة 53: توحيد مسار تحضير النطق (SpeechEntryPoints) وحماية نطق الحرف المفرد وضمان عدم تحويل حرف «ج» في جُمادى إلى «جنيه» في كافة المسارات
+    - الجولة 53: تحسين صياغة ونطق الوقت: فصل فترات اليوم بفاصلة لغوية طبيعية لنطق سليم لـ (مساءً وصباحاً)، وإضافة خيارات الصياغة (بالتنوين، بحرف الجر، أو بدون)
+    - الجولة 53: دعم أنماط عرض شاشة المكالمات الواردة (تلقائي، شاشة كاملة، إشعار فقط) مع خيار الإعدادات وتوافق تام مع شاشة القفل
+    - الجولة 53: تشخيص متقدم لتطبيق إنستاباي على أندرويد 17: تتبع زمني مفصل لأحداث الدخول والخروج والرفض وبصمة الجهاز ونظام التشغيل
     - الجولة 52: إصلاح إعادة تفعيل إمكانية الوصول: التحقق من الاتصال عبر العمليات بالقائمة الممكّنة في النظام، وإلغاء حماية الخدمة فورياً عند تشغيلها يدوياً واستقبال إشعار ACTION_A11Y_CONNECTED، وقفل جلسة الاسترجاع لمنع التداخل، وإيقاف تنبيهات زرّي الصوت المتكررة، وحصر وخز الخدمة بمحاولة واحدة عند بقائها غير متصلة 4 ثوانٍ بعد كتابتها في الإعدادات، وإلغاء المنبّه الاحتياطي وإعلان الفشل صوتياً عند استنفاد المحاولات
     - الجولة 52: توافق إنستاباي والتطبيقات المصرفية على أندرويد 17: تعطيل مسبق حتمي متزامن للخدمة قبل الفتح، وانتظار استقرار 300ms ومؤقت 3000ms يمنع فتح التطبيق إن لم تتوقف الخدمة، وأعلام مهام نظيفة، وإعادة محاولة تلقائية لمرة واحدة عند عدم ظهور النافذة خلال 6 ثوانٍ أو العودة للشاشة الرئيسية، وخيار تحصين أندرويد 17 بفصل مستمع الإشعارات وإيقاف الخدمات غير الضرورية وإزالة التراكبات أثناء الجلسة، وتصدير بصمة الجهاز والجدول الزمني ومشاركته، وخطوة عزل أندرويد 17 في معالج التوافق
     - الجولة 52: صوت أحداث ورسائل Lord النظامية ومطابقة Boot Mirror: سجل صوت الأحداث EventVoiceTrace لآخر 50 حدثاً يوضح سبب استخدام الصوت البديل ومزود النطق ومشاركته كتقرير، وتوجيه رسائل النظام الصادرة عن Lord TTS عبر AnnouncementSpeaker بفئة lord_system مع التراجع للصوت الافتراضي، وحماية قنوات الإشعارات من الحذف أثناء تشغيل الخدمات الأمامية، وتوسيع مزامنة مرآة الإقلاع المباشر لكافة مفاتيح الفئات مع تأخير مجمع 500ms
@@ -996,6 +1008,12 @@
     <string name="phone_app_name">هاتف Lord TTS</string>
     <string name="phone_settings_title">إعدادات الهاتف والتسجيل</string>
     <string name="phone_settings_desc">تخصيص لوحة الاتصال، إدارة المكالمات، وإعدادات تسجيل المكالمات للمكفوفين وضعاف البصر.</string>
+    <!-- طريقة عرض المكالمة الواردة (الجولة 53 - الأمر 6) -->
+    <string name="phone_incoming_call_ui_mode_title">طريقة عرض المكالمة الواردة</string>
+    <string name="phone_incoming_call_ui_mode_summary">تحديد طريقة تنبيه المكالمات الواردة أثناء استخدام الهاتف</string>
+    <string name="phone_incoming_call_ui_mode_auto">تلقائي (الافتراضي: إشعار عند استخدام الهاتف)</string>
+    <string name="phone_incoming_call_ui_mode_fullscreen">ملء الشاشة دائماً</string>
+    <string name="phone_incoming_call_ui_mode_notification">إشعار فقط</string>
     <string name="phone_default_dialer_section">تطبيق الهاتف الافتراضي</string>
     <string name="phone_status_is_default">✓ هاتف Lord TTS هو التطبيق الافتراضي للمكالمات.</string>
     <string name="phone_status_not_default">هاتف Lord TTS ليس التطبيق الافتراضي حالياً.</string>
@@ -1228,4 +1246,7 @@
     <string name="banking_copy_timeline_btn">نسخ التقرير</string>
     <string name="banking_clear_timeline_btn">مسح الخط الزمني</string>
     <string name="banking_timeline_copied">تم نسخ تقرير الخط الزمني للحافظة</string>
+    <string name="voice_mismatch_title">تناقض محرك وصوت الفئات</string>
+    <string name="voice_mismatch_fix">إصلاح</string>
+    <string name="voice_mismatch_fixed_toast">تم إصلاح الفئات المتناقضة ومسح الأصوات غير المطابقة</string>
 </resources>

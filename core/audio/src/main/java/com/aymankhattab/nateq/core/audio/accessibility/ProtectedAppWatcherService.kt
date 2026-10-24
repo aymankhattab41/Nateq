@@ -23,8 +23,10 @@ import kotlinx.coroutines.launch
 
 /**
  * مراقب التطبيقات المحمية (الجولة 50 - الأمر 2).
- * وضع تفاعلي حصري: يُشغَّل عند دخول تطبيق محمي لمراقبة خروجه ثم يتوقف.
- * استطلاع متدرج عبر UsageStats مع إيقاف كامل عند إطفاء الشاشة.
+ * وضع تفاعلي حصري: يُشغَّل عند دخول تطبيق محمي
+ * لمراقبة خروجه ثم يتوقف.
+ * استطلاع متدرج عبر UsageStats مع إيقاف كامل
+ * عند إطفاء الشاشة.
  */
 class ProtectedAppWatcherService : Service() {
 
@@ -49,8 +51,13 @@ class ProtectedAppWatcherService : Service() {
         private const val EXTRA_PKG = "extra_pkg"
         private const val EXTRA_LABEL = "extra_label"
         private const val TWO_HOURS_MS = 2 * 60 * 60 * 1000L
+        private const val INITIAL_FAST_WINDOW_MS = 120_000L
 
-        /** تشغيل المراقب التفاعلي عند دخول تطبيق محمي. */
+        /** حساب فاصل الاستطلاع: 500ms أول دقيقتين ثم 1000ms. */
+        fun computePollIntervalMs(elapsed: Long): Long =
+            if (elapsed < INITIAL_FAST_WINDOW_MS) 500L else 1000L
+
+        /** تشغيل المراقب عند دخول تطبيق محمي. */
         fun startForApp(context: Context, pkg: String, label: String) {
             val intent = Intent(
                 context, ProtectedAppWatcherService::class.java
@@ -134,7 +141,8 @@ class ProtectedAppWatcherService : Service() {
                 "مراقبة التطبيقات المحمية",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "مراقبة التطبيقات المحمية لضبط إمكانية الوصول"
+                description =
+                    "مراقبة التطبيقات المحمية لضبط إمكانية الوصول"
                 enableVibration(false)
                 vibrationPattern = null
             }
@@ -142,7 +150,8 @@ class ProtectedAppWatcherService : Service() {
         }
 
         val title = "مراقبة $watchingLabel"
-        val text = "سيتم استعادة إمكانية الوصول فور الخروج من التطبيق"
+        val text =
+            "سيتم استعادة إمكانية الوصول فور الخروج من التطبيق"
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
@@ -157,7 +166,7 @@ class ProtectedAppWatcherService : Service() {
         startForeground(NOTIFICATION_ID, notification)
     }
 
-    /** الوضع التفاعلي: استطلاع متدرج لخروج التطبيق المحمي ثم التوقف. */
+    /** وضع تفاعلي: استطلاع متدرج لخروج التطبيق ثم التوقف. */
     private fun startReactiveLoop() {
         scope.launch {
             while (isActive) {
@@ -175,7 +184,7 @@ class ProtectedAppWatcherService : Service() {
                 }
 
                 val elapsed = System.currentTimeMillis() - startedAt
-                val pollIntervalMs = if (elapsed < 20_000L) 1500L else 3000L
+                val pollIntervalMs = computePollIntervalMs(elapsed)
                 delay(pollIntervalMs)
 
                 if (!isActive) break
@@ -194,7 +203,7 @@ class ProtectedAppWatcherService : Service() {
     }
 
     /**
-     * هل خرج تطبيقٌ محمي؟ يستعلم أحداث الاستخدام بنافذة تزايدية.
+     * هل خرج تطبيقٌ محمي؟ يستعلم أحداث الاستخدام بنافذة.
      */
     private fun hasExited(
         targetPkg: String,

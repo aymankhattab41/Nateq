@@ -315,6 +315,15 @@ class SettingsRepository(context: Context) :
             "language_diagnostics_enabled"
         const val KEY_DAY_PERIOD_EXPLICIT_NUN =
             "day_period_explicit_nun"
+        const val KEY_DAY_PERIOD_STYLE = "day_period_style"
+        const val DAY_PERIOD_STYLE_EXPLICIT_NUN_COMMA = "explicit_nun_comma"
+        const val DAY_PERIOD_STYLE_PREPOSITIONAL = "prepositional"
+        const val DAY_PERIOD_STYLE_AS_IS = "as_is"
+
+        const val KEY_INCOMING_CALL_UI_MODE = "incoming_call_ui_mode"
+        const val INCOMING_CALL_UI_AUTO = "auto"
+        const val INCOMING_CALL_UI_FULLSCREEN = "fullscreen"
+        const val INCOMING_CALL_UI_NOTIFICATION = "notification"
 
         const val PHONE_MODE_BLIND = "blind"
         const val PHONE_MODE_LOW_VISION = "low_vision"
@@ -1229,6 +1238,26 @@ class SettingsRepository(context: Context) :
         ).apply()
     }
 
+    override fun getDayPeriodStyle(): String =
+        prefs.getString(
+            KEY_DAY_PERIOD_STYLE,
+            DAY_PERIOD_STYLE_EXPLICIT_NUN_COMMA
+        ) ?: DAY_PERIOD_STYLE_EXPLICIT_NUN_COMMA
+
+    override fun setDayPeriodStyle(style: String) {
+        prefs.edit().putString(KEY_DAY_PERIOD_STYLE, style).apply()
+    }
+
+    override fun getIncomingCallUiMode(): String =
+        prefs.getString(
+            KEY_INCOMING_CALL_UI_MODE,
+            INCOMING_CALL_UI_AUTO
+        ) ?: INCOMING_CALL_UI_AUTO
+
+    override fun setIncomingCallUiMode(mode: String) {
+        prefs.edit().putString(KEY_INCOMING_CALL_UI_MODE, mode).apply()
+    }
+
     // ============ خصوصية قفل الشاشة ============
 
     /**
@@ -1563,23 +1592,35 @@ class SettingsRepository(context: Context) :
     override fun getPreferredVoiceIdForCategory(category: String): String? =
         normalizeVoiceId(
             prefs.getString("preferred_voice_$category", null)
-        )
+        )?.takeIf { it.isNotBlank() }
+
     override fun setPreferredVoiceIdForCategory(
         category: String,
         voiceId: String
     ) {
+        if (voiceId.isBlank()) {
+            prefs.edit().remove("preferred_voice_$category").apply()
+            return
+        }
+        val engine = getEngineForCategory(category)
+        if (!engine.isNullOrBlank()) {
+            if (!VoiceIdContract.isVoiceBelongingToEngine(engine, voiceId)) {
+                Log.w(
+                    TAG,
+                    "رفض حفظ الصوت $voiceId للفئة $category: " +
+                        "لا يتبع المحرك $engine"
+                )
+                prefs.edit().remove("preferred_voice_$category").apply()
+                return
+            }
+            setPreferredVoiceForEngine(engine, category, voiceId)
+        } else if (category == VOICE_CATEGORY_DEFAULT) {
+            setPreferredVoiceForEngine(ENGINE_LORD_TTS, category, voiceId)
+            prefs.edit().putString("primary_voice_$category", voiceId).apply()
+        }
         val editor = prefs.edit().putString(
             "preferred_voice_$category", voiceId
         )
-        val engine = getEngineForCategory(category)
-        if (!engine.isNullOrBlank() && voiceId.isNotBlank()) {
-            setPreferredVoiceForEngine(engine, category, voiceId)
-        } else if (category == VOICE_CATEGORY_DEFAULT &&
-            voiceId.isNotBlank()
-        ) {
-            setPreferredVoiceForEngine(ENGINE_LORD_TTS, category, voiceId)
-            editor.putString("primary_voice_$category", voiceId)
-        }
         editor.apply()
     }
 
@@ -1623,7 +1664,21 @@ class SettingsRepository(context: Context) :
     override fun getEngineForCategory(category: String): String? =
         prefs.getString("engine_for_$category", null)
     override fun setEngineForCategory(category: String, engine: String?) {
+        val oldEngine = getEngineForCategory(category)
+        val changed = !oldEngine.isNullOrBlank() && oldEngine != engine
         val editor = prefs.edit().putString("engine_for_$category", engine)
+        if (changed) {
+            // مسح الصوت المحفوظ للفئة تلقائياً عند تغيير المحرك (الأمر 3)
+            val currentVoice = getPreferredVoiceIdForCategory(category)
+            if (!currentVoice.isNullOrBlank() &&
+                !VoiceIdContract.isVoiceBelongingToEngine(engine, currentVoice)
+            ) {
+                editor.remove("preferred_voice_$category")
+                if (category == VOICE_CATEGORY_DEFAULT) {
+                    editor.remove("primary_voice_$category")
+                }
+            }
+        }
         if (category == VOICE_CATEGORY_DEFAULT) {
             val isLord = engine.isNullOrBlank()
             if (!isLord) {
@@ -2917,6 +2972,15 @@ class SettingsRepository(context: Context) :
                 DIALPAD_STYLE_SINGLE_ROW
             )
         } ?: DIALPAD_STYLE_GRID_WIDE
+        KEY_DAY_PERIOD_STYLE -> when (value) {
+            DAY_PERIOD_STYLE_PREPOSITIONAL, DAY_PERIOD_STYLE_AS_IS -> value
+            else -> DAY_PERIOD_STYLE_EXPLICIT_NUN_COMMA
+        }
+        KEY_INCOMING_CALL_UI_MODE -> when (value) {
+            INCOMING_CALL_UI_FULLSCREEN,
+            INCOMING_CALL_UI_NOTIFICATION -> value
+            else -> INCOMING_CALL_UI_AUTO
+        }
         else -> if (key.startsWith("loudness_stream_mode_")) {
             StreamMode.fromId(value).id
         } else {

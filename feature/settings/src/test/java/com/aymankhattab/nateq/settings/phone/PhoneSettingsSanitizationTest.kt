@@ -50,6 +50,10 @@ class PhoneSettingsSanitizationTest {
         assertTrue(repo.isPhoneRecordBoostVolumeEnabled())
         assertFalse(repo.isPhoneAutoSpeakerProximityEnabled())
         assertTrue(repo.isPhoneHardwareKeysAnswerEnabled())
+        assertEquals(
+            SettingsRepository.INCOMING_CALL_UI_AUTO,
+            repo.getIncomingCallUiMode()
+        )
     }
 
     @Test
@@ -57,7 +61,8 @@ class PhoneSettingsSanitizationTest {
         val badMap = mapOf(
             SettingsRepository.KEY_PHONE_MODE to "invalid_mode",
             SettingsRepository.KEY_PHONE_ACTIVATION to "invalid_activation",
-            SettingsRepository.KEY_PHONE_RECORD_MODE to "invalid_record_mode"
+            SettingsRepository.KEY_PHONE_RECORD_MODE to "invalid_record_mode",
+            SettingsRepository.KEY_INCOMING_CALL_UI_MODE to "invalid_incoming"
         )
 
         repo.importSettings(badMap)
@@ -73,6 +78,10 @@ class PhoneSettingsSanitizationTest {
         assertEquals(
             SettingsRepository.PHONE_RECORD_MODE_MANUAL,
             repo.getPhoneRecordMode()
+        )
+        assertEquals(
+            SettingsRepository.INCOMING_CALL_UI_AUTO,
+            repo.getIncomingCallUiMode()
         )
     }
 

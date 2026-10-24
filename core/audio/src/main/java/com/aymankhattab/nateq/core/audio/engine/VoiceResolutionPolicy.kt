@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.core.audio.engine
 
+import com.aymankhattab.nateq.core.audio.announcement.EventVoiceTrace
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.VoiceIdContract
 
@@ -71,19 +72,55 @@ object VoiceResolutionPolicy {
         return voiceLang.equals(segCanonical, ignoreCase = true)
     }
 
+    /**
+     * هل ينتمي معرّف الصوت إلى المحرك المعين؟
+     */
+    fun isVoiceBelongingToEngine(
+        engine: String?,
+        voiceId: String?,
+        knownVoices: List<String>? = null
+    ): Boolean = VoiceIdContract.isVoiceBelongingToEngine(
+        engine,
+        voiceId,
+        knownVoices
+    )
+
     fun resolve(
         role: SpeechRole,
         languageTag: String,
         categoryVoice: String?,
         appVoice: String?,
         contactVoice: String?,
-        languageDefaultVoice: String?
+        languageDefaultVoice: String?,
+        categoryEngine: String? = null
     ): ResolvedVoice {
+        var effectiveCategoryVoice = categoryVoice
+        if (!categoryVoice.isNullOrBlank() &&
+            !categoryEngine.isNullOrBlank()
+        ) {
+            if (!isVoiceBelongingToEngine(categoryEngine, categoryVoice)) {
+                effectiveCategoryVoice = null
+                EventVoiceTrace.record(
+                    category = role.name.lowercase(),
+                    savedVoiceId = categoryVoice,
+                    resolvedEngine = categoryEngine,
+                    dispatchedVoiceId = null,
+                    fallbackReason = "صوت لا يتبع المحرك"
+                )
+            }
+        }
+
         return when (role) {
             SpeechRole.NUMBER -> {
-                val match = isVoiceLanguageMatch(categoryVoice, languageTag)
-                if (!categoryVoice.isNullOrBlank() && match) {
-                    ResolvedVoice(categoryVoice, SOURCE_CATEGORY_NUMBER)
+                val match = isVoiceLanguageMatch(
+                    effectiveCategoryVoice,
+                    languageTag
+                )
+                if (!effectiveCategoryVoice.isNullOrBlank() && match) {
+                    ResolvedVoice(
+                        effectiveCategoryVoice,
+                        SOURCE_CATEGORY_NUMBER
+                    )
                 } else if (!contactVoice.isNullOrBlank()) {
                     ResolvedVoice(contactVoice, SOURCE_CONTACT)
                 } else if (!appVoice.isNullOrBlank()) {
@@ -91,7 +128,7 @@ object VoiceResolutionPolicy {
                 } else {
                     ResolvedVoice(
                         languageDefaultVoice,
-                        if (!categoryVoice.isNullOrBlank()) {
+                        if (!effectiveCategoryVoice.isNullOrBlank()) {
                             SOURCE_CATEGORY_NUMBER_PARAMS
                         } else {
                             SOURCE_LANGUAGE_DEFAULT
@@ -101,8 +138,11 @@ object VoiceResolutionPolicy {
             }
             SpeechRole.EMOJI -> {
                 // صوت فئة الإيموجي دائماً ولا يعلوه صوت التطبيق أو جهة الاتصال
-                if (!categoryVoice.isNullOrBlank()) {
-                    ResolvedVoice(categoryVoice, SOURCE_CATEGORY_EMOJI)
+                if (!effectiveCategoryVoice.isNullOrBlank()) {
+                    ResolvedVoice(
+                        effectiveCategoryVoice,
+                        SOURCE_CATEGORY_EMOJI
+                    )
                 } else if (!contactVoice.isNullOrBlank()) {
                     ResolvedVoice(contactVoice, SOURCE_CONTACT)
                 } else if (!appVoice.isNullOrBlank()) {
@@ -121,8 +161,11 @@ object VoiceResolutionPolicy {
                     !appVoice.isNullOrBlank() -> {
                         ResolvedVoice(appVoice, SOURCE_APP)
                     }
-                    !categoryVoice.isNullOrBlank() -> {
-                        ResolvedVoice(categoryVoice, SOURCE_CATEGORY)
+                    !effectiveCategoryVoice.isNullOrBlank() -> {
+                        ResolvedVoice(
+                            effectiveCategoryVoice,
+                            SOURCE_CATEGORY
+                        )
                     }
                     else -> {
                         ResolvedVoice(

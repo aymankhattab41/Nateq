@@ -317,6 +317,16 @@ interface ReadingPrefs {
     /** يعيّن تحويل كلمات الفترة إلى نون صريحة. */
     fun setDayPeriodExplicitNunEnabled(enabled: Boolean)
 
+    /** طريقة صياغة فترة اليوم في إعلان الوقت (الجولة 53 - الأمر 5). */
+    fun getDayPeriodStyle(): String = "explicit_nun_comma"
+
+    fun setDayPeriodStyle(style: String) {}
+
+    /** طريقة عرض المكالمة الواردة (الجولة 53 - الأمر 6). */
+    fun getIncomingCallUiMode(): String = "auto"
+
+    fun setIncomingCallUiMode(mode: String) {}
+
     /** تفعيل الإيقاف الفوري بالهزاز أثناء النطق. */
     fun isShakeToStopEnabled(): Boolean
 

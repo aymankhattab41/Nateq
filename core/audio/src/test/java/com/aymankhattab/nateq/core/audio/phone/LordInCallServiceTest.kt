@@ -1,13 +1,22 @@
 package com.aymankhattab.nateq.core.audio.phone
 
+import android.app.KeyguardManager
+import android.content.Context
+import android.os.PowerManager
 import android.telecom.Call
 import android.telecom.CallAudioState
+import androidx.test.core.app.ApplicationProvider
+import com.aymankhattab.nateq.core.audio.accessibility.AccessibilityBridge
+import com.aymankhattab.nateq.core.audio.accessibility.ProtectedAppTimelineTracker
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
@@ -107,5 +116,88 @@ class LordInCallServiceTest {
             "com.aymankhattab.nateq.phone.ACTION_FINISH_INCALL_UI",
             LordInCallService.ACTION_FINISH_INCALL_UI
         )
+    }
+
+    @Test
+    fun autoMode_withNormalForegroundApp_producesNotificationWithoutActivity() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val settings = SettingsRepository(context)
+        settings.setIncomingCallUiMode(SettingsRepository.INCOMING_CALL_UI_AUTO)
+
+        val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val km = context
+            .getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+        shadowOf(pm).setIsInteractive(true)
+        shadowOf(km).setKeyguardLocked(false)
+
+        AccessibilityBridge.updateForeground(
+            "com.whatsapp",
+            "com.whatsapp.HomeActivity"
+        )
+        ProtectedAppTimelineTracker.endQuietPeriod()
+
+        val controller =
+            Robolectric.buildService(LordInCallService::class.java).create()
+        val service = controller.get()
+
+        service.handleIncomingCallUi(null)
+
+        assertEquals(false, service.lastNotificationFullScreenIntent)
+        assertFalse(service.lastActivityLaunched)
+        controller.destroy()
+    }
+
+    @Test
+    fun autoMode_withKeyguardLocked_producesFullScreenIntent() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val settings = SettingsRepository(context)
+        settings.setIncomingCallUiMode(SettingsRepository.INCOMING_CALL_UI_AUTO)
+
+        val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val km = context
+            .getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+        shadowOf(pm).setIsInteractive(true)
+        shadowOf(km).setKeyguardLocked(true)
+
+        AccessibilityBridge.updateForeground(
+            "com.whatsapp",
+            "com.whatsapp.HomeActivity"
+        )
+        ProtectedAppTimelineTracker.endQuietPeriod()
+
+        val controller =
+            Robolectric.buildService(LordInCallService::class.java).create()
+        val service = controller.get()
+
+        service.handleIncomingCallUi(null)
+
+        assertEquals(true, service.lastNotificationFullScreenIntent)
+        controller.destroy()
+    }
+
+    @Test
+    fun protectedApp_alwaysProducesNotificationOnly() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val settings = SettingsRepository(context)
+        // حتى لو اختار المستخدم ملء الشاشة دائماً
+        settings.setIncomingCallUiMode(
+            SettingsRepository.INCOMING_CALL_UI_FULLSCREEN
+        )
+
+        ProtectedAppTimelineTracker.startQuietPeriod(
+            "com.egyptianbanks.instapay"
+        )
+
+        val controller =
+            Robolectric.buildService(LordInCallService::class.java).create()
+        val service = controller.get()
+
+        service.handleIncomingCallUi(null)
+
+        assertEquals(false, service.lastNotificationFullScreenIntent)
+        assertFalse(service.lastActivityLaunched)
+
+        ProtectedAppTimelineTracker.endQuietPeriod()
+        controller.destroy()
     }
 }

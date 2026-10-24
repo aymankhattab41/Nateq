@@ -611,6 +611,11 @@
 <string name="time_announcement_format">Time announcement format</string>
 <string name="time_announcement_interval">Time announcement interval</string>
 <string name="time_display_24h">Use 24-hour clock</string>
+<string name="time_day_period_style_title">Day period style</string>
+<string name="time_day_period_style_explicit_nun_comma">With explicit nun after comma (Default)</string>
+<string name="time_day_period_style_prepositional">Prepositional (In the morning/afternoon/evening)</string>
+<string name="time_day_period_style_as_is">As is</string>
+<string name="spinner_time_day_period_style_content">Day period style in time announcement</string>
 <string name="time_format_digital">Digital</string>
 <string name="time_format_natural">Natural Arabic</string>
 <string name="time_interval_format">Every %1$d minutes</string>
@@ -707,6 +712,13 @@
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">
 Version %1$s
+    - Round 53: Faster accessibility restore: reduced absence timeout to 1200ms, prompt nudge for hung services after 3s, deferred heavy initialization by 500ms, and persistent foreground tracking preventing premature restores
+    - Round 53: Honest diagnostics reports from :tts process via TtsDiagnosticsProvider, combining dual-process logs and 3-session timeline for protected apps
+    - Round 53: Detection and automatic resolution of engine/voice conflicts across category voices and entrypoint languages with event voice tracing
+    - Round 53: Unified speech entry points (SpeechEntryPoints), fixing single letter spelling and protecting Hijri month names like Jumada from dictionary misinterpretation
+    - Round 53: Natural time announcement phrasing with natural punctuation before day periods (evening/morning) and configurable day period styles (as-is, prepositional)
+    - Round 53: Incoming call display mode support (auto, fullscreen, notification only) in phone settings with lockscreen compatibility
+    - Round 53: Android 17 InstaPay advanced diagnostics: detailed timeline tracking for launch, entry, rejection, and device fingerprint logging
     - Round 52: Automatic accessibility restore fix: cross-process active service check via system enabled services list, instant suspension clearing upon manual re-enablement and ACTION_A11Y_CONNECTED reception, single restore session lock, eliminated repetitive volume-key nudge notices, constrained nudge to a single attempt when disconnected after 4s while written in settings, canceled backup alarm and spoken failure notice upon exhaustion
     - Round 52: InstaPay and banking app compatibility on Android 17: deterministic synchronous pre-launch disable, 300ms settle delay and 3000ms timeout aborting launch if service remains active, clean task flags, single-attempt auto-relaunch if window absent after 6s or returned to launcher within 4s, optional Android 17 hardening unbinding notification listener, stopping non-essential services and removing overlays, device fingerprinting and timeline export with sharing, and Android 17 isolation wizard step
     - Round 52: Event voice trace, Lord system messages, and Direct Boot mirror sync: EventVoiceTrace 50-entry circular log with fallback reason and executing provider tracking and report sharing, routed Lord TTS system messages through AnnouncementSpeaker using lord_system category with default voice fallback, protected notification channels against deletion during foreground service runs, and expanded Direct Boot mirror sync to all category keys with 500ms debouncing
@@ -985,6 +997,12 @@ Version %1$s
     <string name="phone_app_name">Lord TTS Phone</string>
     <string name="phone_settings_title">Phone &amp; Recording Settings</string>
     <string name="phone_settings_desc">Customize dialpad, call management, and recording settings for visually impaired users.</string>
+    <!-- Incoming call display style (Round 53 - Command 6) -->
+    <string name="phone_incoming_call_ui_mode_title">Incoming Call Display Style</string>
+    <string name="phone_incoming_call_ui_mode_summary">Choose how incoming calls are alerted while phone is in use</string>
+    <string name="phone_incoming_call_ui_mode_auto">Auto (Default: notification heads-up while phone in use)</string>
+    <string name="phone_incoming_call_ui_mode_fullscreen">Always full screen</string>
+    <string name="phone_incoming_call_ui_mode_notification">Notification only</string>
     <string name="phone_default_dialer_section">Default Phone App</string>
     <string name="phone_status_is_default">✓ Lord TTS Phone is the default dialer.</string>
     <string name="phone_status_not_default">Lord TTS Phone is not currently the default dialer.</string>
@@ -1205,4 +1223,7 @@ Version %1$s
     <string name="banking_wizard_open_failed">That settings screen could not be opened on this device.</string>
     <string name="banking_wizard_app_missing">The banking app did not open — make sure it is installed.</string>
     <string name="btn_banking_compat_check">Banking app compatibility check</string>
+    <string name="voice_mismatch_title">Engine &amp; Voice Category Mismatch</string>
+    <string name="voice_mismatch_fix">Fix</string>
+    <string name="voice_mismatch_fixed_toast">Mismatched categories fixed and invalid voices cleared</string>
 </resources>

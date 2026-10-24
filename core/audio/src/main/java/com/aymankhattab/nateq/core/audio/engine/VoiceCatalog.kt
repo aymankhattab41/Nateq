@@ -78,6 +78,81 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
         /** سقف عدد استعلامات المحركات المتزامنة لمنع إغراق الموارد. */
         internal const val MAX_CONCURRENT_ENGINE_PROBES = 3
 
+        internal val engineProbeSemaphore =
+            Semaphore(MAX_CONCURRENT_ENGINE_PROBES)
+
+        private const val ENGINE_VOICE_CACHE_TTL_MS = 10 * 60 * 1000L
+
+        data class CachedVoiceEntry(
+            val timestampMs: Long,
+            val voices: List<Voice>
+        )
+
+        private val engineVoicesCache =
+            java.util.concurrent.ConcurrentHashMap<String, CachedVoiceEntry>()
+
+        fun getCachedEngineVoices(enginePackage: String): List<Voice>? {
+            val entry = engineVoicesCache[enginePackage] ?: return null
+            if (System.currentTimeMillis() - entry.timestampMs >
+                ENGINE_VOICE_CACHE_TTL_MS
+            ) {
+                engineVoicesCache.remove(enginePackage)
+                return null
+            }
+            return entry.voices
+        }
+
+        fun cacheEngineVoices(enginePackage: String, voices: List<Voice>) {
+            engineVoicesCache[enginePackage] = CachedVoiceEntry(
+                System.currentTimeMillis(),
+                voices
+            )
+        }
+
+        fun clearEngineVoicesCache() {
+            engineVoicesCache.clear()
+        }
+
+        suspend fun getVoicesForEngine(
+            context: Context,
+            enginePackage: String,
+            forceRefresh: Boolean = false
+        ): List<Voice> {
+            if (!forceRefresh) {
+                getCachedEngineVoices(enginePackage)?.let { return it }
+            }
+            if (isBlacklisted(enginePackage)) return emptyList()
+            if (enginePackage == VocalizerEmbeddedVoiceProvider.PROVIDER_ID) {
+                val list = runCatching {
+                    val vocalizer = EmbeddedProviders.vocalizer(context)
+                    if (vocalizer.isConfigured()) {
+                        vocalizer.listVoices(Locale.ROOT).map { d ->
+                            Voice(
+                                d.displayName,
+                                d.locale,
+                                Voice.QUALITY_HIGH,
+                                Voice.LATENCY_LOW,
+                                false,
+                                offlineFeature
+                            )
+                        }
+                    } else emptyList()
+                }.getOrDefault(emptyList())
+                if (list.isNotEmpty()) cacheEngineVoices(enginePackage, list)
+                return list
+            }
+            return engineProbeSemaphore.withPermit {
+                if (!forceRefresh) {
+                    getCachedEngineVoices(enginePackage)?.let { return it }
+                }
+                val voices = probeEngineVoices(context, enginePackage)
+                if (voices.isNotEmpty()) {
+                    cacheEngineVoices(enginePackage, voices)
+                }
+                voices
+            }
+        }
+
         /**
          * القائمة السوداء للمحركات التي فشلت تهيئتها —
          *  تُحدّث ديناميكياً وتتجاوزها في محاولات الاكتشاف اللاحقة.
@@ -124,7 +199,8 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
          * يحمل أصواته لهذه اللغة مجمّعةً تحت اللسان نفسه (بلا تكرار محركات).
          */
         suspend fun discoverAllLanguagesAcrossEngines(
-            context: Context
+            context: Context,
+            enginesToProbe: Set<String>? = null
         ): DiscoveryResult {
             // نستبعد قارئات الشاشة (TalkBack/Jieshuo/Talkman…)
             // من مساهمة اللغات: يسجّلون أنفسهم محركات TTS لكن
@@ -208,15 +284,27 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             }
             // الفحص بالتوازي مع سقف المحركات المتزامنة عبر Semaphore
             // لمنع فتح مثيلات غير محدودة في نفس اللحظة وإغراق الموارد.
-            val semaphore = Semaphore(MAX_CONCURRENT_ENGINE_PROBES)
+            val toProbe = if (enginesToProbe != null) {
+                externalEngines.filter {
+                    it.packageName in enginesToProbe ||
+                        getCachedEngineVoices(it.packageName) != null
+                }
+            } else {
+                externalEngines
+            }
+            val toProbePkgs = toProbe.map { it.packageName }.toSet()
             val voicesByEngine = try {
                 coroutineScope {
                     val externalResults = externalEngines
                         .map { engine ->
                             async(Dispatchers.IO) {
+                                if (engine.packageName !in toProbePkgs) {
+                                    return@async engine.packageName to
+                                        emptyList<Voice>()
+                                }
                                 val voices = try {
-                                    semaphore.withPermit {
-                                        probeEngineVoices(
+                                    run {
+                                        getVoicesForEngine(
                                             context, engine.packageName
                                         )
                                     }

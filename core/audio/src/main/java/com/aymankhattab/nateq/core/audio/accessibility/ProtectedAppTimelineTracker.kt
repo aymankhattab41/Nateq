@@ -30,6 +30,15 @@ object ProtectedAppTimelineTracker {
         val details: String = ""
     )
 
+    data class Session(
+        val packageName: String,
+        val startTimeMs: Long,
+        val events: MutableList<TimelineEvent> = mutableListOf()
+    )
+
+    private val sessions = mutableListOf<Session>()
+    private const val MAX_SESSIONS = 3
+
     private val events = mutableListOf<TimelineEvent>()
     private var startTimestamp = 0L
 
@@ -51,15 +60,23 @@ object ProtectedAppTimelineTracker {
     fun recordLauncherClick(pkg: String) {
         val now = System.currentTimeMillis()
         startTimestamp = now
-        events.clear()
-        events.add(
-            TimelineEvent(
-                eventName = "النقر على أيقونة الإطلاق",
-                packageName = pkg,
-                timestamp = now,
-                elapsedFromStartMs = 0L
-            )
+        val session = Session(
+            packageName = pkg,
+            startTimeMs = now
         )
+        if (sessions.size >= MAX_SESSIONS) {
+            sessions.removeAt(0)
+        }
+        sessions.add(session)
+        events.clear()
+        val firstEvent = TimelineEvent(
+            eventName = "النقر على أيقونة الإطلاق",
+            packageName = pkg,
+            timestamp = now,
+            elapsedFromStartMs = 0L
+        )
+        events.add(firstEvent)
+        session.events.add(firstEvent)
         startQuietPeriod(pkg)
     }
 
@@ -86,6 +103,11 @@ object ProtectedAppTimelineTracker {
     @Synchronized
     fun recordWarning(pkg: String, warning: String) {
         recordInternal("تحذير", pkg, warning)
+    }
+
+    @Synchronized
+    fun recordRestorePhase(name: String, pkg: String, details: String = "") {
+        recordInternal(name, pkg, details)
     }
 
     @Synchronized
@@ -225,34 +247,58 @@ object ProtectedAppTimelineTracker {
         val now = System.currentTimeMillis()
         if (startTimestamp == 0L) startTimestamp = now
         val elapsed = now - startTimestamp
-        events.add(
-            TimelineEvent(
-                eventName = name,
-                packageName = pkg,
-                timestamp = now,
-                elapsedFromStartMs = elapsed,
-                details = details
-            )
+        val ev = TimelineEvent(
+            eventName = name,
+            packageName = pkg,
+            timestamp = now,
+            elapsedFromStartMs = elapsed,
+            details = details
         )
+        events.add(ev)
+        val currentSession = sessions.lastOrNull()
+        if (currentSession != null) {
+            currentSession.events.add(ev)
+        } else {
+            val session = Session(
+                packageName = pkg,
+                startTimeMs = startTimestamp,
+                events = mutableListOf(ev)
+            )
+            sessions.add(session)
+        }
     }
 
     @Synchronized
     fun getTimelineReport(): String {
-        if (events.isEmpty()) {
+        if (sessions.isEmpty() && events.isEmpty()) {
             return "لا يوجد خط زمني مسجّل حتى الآن."
         }
         val sb = StringBuilder()
         val sdf = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
-        sb.appendLine("=== الخط الزمني لاستجابة التطبيقات المحمية ===")
-        events.forEachIndexed { i, ev ->
-            val timeStr = sdf.format(Date(ev.timestamp))
-            val detailStr = if (ev.details.isNotBlank()) {
-                " (${ev.details})"
-            } else ""
+        sb.appendLine(
+            "=== الخط الزمني لاستجابة التطبيقات المحمية " +
+                "(آخر ${sessions.size} جلسات) ==="
+        )
+        val list = if (sessions.isNotEmpty()) {
+            sessions
+        } else {
+            listOf(Session("protected", startTimestamp, events))
+        }
+        list.forEachIndexed { sIdx, s ->
+            val sessionTime = sdf.format(Date(s.startTimeMs))
             sb.appendLine(
-                "${i + 1}. [+$ev.elapsedFromStartMs ms | $timeStr] " +
-                    "${ev.eventName} - ${ev.packageName}$detailStr"
+                "--- الجلسة ${sIdx + 1} (${s.packageName} - $sessionTime) ---"
             )
+            s.events.forEachIndexed { i, ev ->
+                val timeStr = sdf.format(Date(ev.timestamp))
+                val detailStr = if (ev.details.isNotBlank()) {
+                    " (${ev.details})"
+                } else ""
+                sb.appendLine(
+                    "${i + 1}. [+$ev.elapsedFromStartMs ms | $timeStr] " +
+                        "${ev.eventName} - ${ev.packageName}$detailStr"
+                )
+            }
         }
         return sb.toString().trimEnd()
     }
@@ -299,6 +345,7 @@ object ProtectedAppTimelineTracker {
     @Synchronized
     fun clear() {
         events.clear()
+        sessions.clear()
         startTimestamp = 0L
         quietUntilUptimeMs = 0L
         activeProtectedPkg = null

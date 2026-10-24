@@ -46,9 +46,13 @@ val ARABIC_TASHKEEL_AWARE_ENGINES: Set<String> = setOf(
  * الإفتراض: نعم (تجريد — أغلب المحركات لا تنطق الحركات بوضوح). محركٌ معروف
  * بفهمه التشكيل (انظر [ARABIC_TASHKEEL_AWARE_ENGINES]) وnull (غير معروف)
  * يُعالَجان بحذر: المعروف يُبقي التشكيل، وغير المعروف يُجرد (سلوك سابق).
+ * للمحرك المدمج vocalizer_embedded (الجولة 53 - الأمر 5): يعيد true صريحاً
+ * لتجريد التشكيل العام وحفظ ما يضيفه مطبّع النون الصريحة.
  */
-fun stripTashkeelFor(enginePackage: String?): Boolean =
-    enginePackage !in ARABIC_TASHKEEL_AWARE_ENGINES
+fun stripTashkeelFor(enginePackage: String?): Boolean = when (enginePackage) {
+    "vocalizer_embedded" -> true
+    else -> enginePackage !in ARABIC_TASHKEEL_AWARE_ENGINES
+}
 
 /**
  * معالج النصوص الذكي — يحول النصوص الخام إلى نصوص قابلة للنطق طبيعياً.

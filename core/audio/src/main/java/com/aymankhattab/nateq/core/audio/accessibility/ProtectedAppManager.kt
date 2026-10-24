@@ -55,6 +55,7 @@ object ProtectedAppManager {
     @Volatile private var nudgedThisSuspension = false
     @Volatile private var lastNudgeTimeMs = 0L
     @Volatile private var consecutiveFailures = 0
+    @Volatile private var nonProtectedObservations = 0
 
     private val absentSinceMap = ConcurrentHashMap<String, Long>()
     @Volatile private var screenOffSinceMs = 0L
@@ -172,6 +173,7 @@ object ProtectedAppManager {
     fun resetStateAfterRestore() {
         nudgedThisSuspension = false
         consecutiveFailures = 0
+        nonProtectedObservations = 0
     }
 
     /** جدولة المنبه الاحتياطي كل دقيقتين (البند 7). */
@@ -460,6 +462,10 @@ object ProtectedAppManager {
             TAG,
             "handleAppEntry: pkg=${app.packageName}, mode=${app.mode}"
         )
+        ProtectedAppTimelineTracker.recordDeviceFingerprint(
+            context,
+            app.packageName
+        )
 
         val suspendedAt = settings.getSuspendedProtectedAppTimestamp()
         val isFreshSuspension =
@@ -502,6 +508,8 @@ object ProtectedAppManager {
 
         // إيقاف كامل: حفظ في التخزين المحمي بالجهاز وفي المستودع
         val now = System.currentTimeMillis()
+        ForegroundTracker.reset(app.packageName, now)
+        nonProtectedObservations = 0
         ProtectedAppSuspensionStore.save(
             context = context,
             packageName = app.packageName,
@@ -566,27 +574,84 @@ object ProtectedAppManager {
     }
 
     /**
-     * استعلام التطبيق الأمامي الحالي عبر UsageStatsManager أو Bridge.
+     * متتبع التطبيق الأمامي بحالة تراكمية مستمرة (الجولة 53 - الأمر 1).
+     * يمنع خطأ نافذة 10 ثوانٍ التي كانت تعيد null وتسبب استرجاعاً مبكراً.
      */
-    fun getForegroundPackage(context: Context): String? {
-        val bridgePkg = AccessibilityBridge.foregroundPackage()
-        if (!bridgePkg.isNullOrBlank()) return bridgePkg
-        val usage = context.getSystemService(Context.USAGE_STATS_SERVICE)
-            as? UsageStatsManager ?: return null
-        val now = System.currentTimeMillis()
-        val events = runCatching {
-            usage.queryEvents(now - 10_000L, now)
-        }.getOrNull() ?: return null
-        var lastResumed: String? = null
-        val ev = UsageEvents.Event()
-        while (events.hasNextEvent()) {
-            events.getNextEvent(ev)
-            if (ev.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
-                lastResumed = ev.packageName
-            }
+    object ForegroundTracker {
+        @Volatile private var currentForegroundPkg: String? = null
+        @Volatile private var lastQueryEndMs: Long = 0L
+        @Volatile private var isTemporarilyUnknown: Boolean = false
+
+        fun reset(
+            initialPkg: String? = null,
+            startTimeMs: Long = System.currentTimeMillis()
+        ) {
+            currentForegroundPkg = initialPkg
+            lastQueryEndMs = startTimeMs
+            isTemporarilyUnknown = false
         }
-        return lastResumed
+
+        fun getForegroundPackage(context: Context): String? {
+            val bridgePkg = AccessibilityBridge.foregroundPackage()
+            if (!bridgePkg.isNullOrBlank()) {
+                currentForegroundPkg = bridgePkg
+                isTemporarilyUnknown = false
+                return bridgePkg
+            }
+            val usage = context.getSystemService(Context.USAGE_STATS_SERVICE)
+                as? UsageStatsManager ?: return currentForegroundPkg
+
+            val now = System.currentTimeMillis()
+            val start = if (lastQueryEndMs > 0L) {
+                maxOf(lastQueryEndMs - 1000L, now - 300_000L)
+            } else {
+                now - 10_000L
+            }
+            lastQueryEndMs = now
+
+            val events = runCatching {
+                usage.queryEvents(start, now)
+            }.getOrNull()
+
+            if (events != null) {
+                val ev = UsageEvents.Event()
+                while (events.hasNextEvent()) {
+                    events.getNextEvent(ev)
+                    when (ev.eventType) {
+                        UsageEvents.Event.ACTIVITY_RESUMED -> {
+                            currentForegroundPkg = ev.packageName
+                            isTemporarilyUnknown = false
+                        }
+                        UsageEvents.Event.ACTIVITY_PAUSED,
+                        UsageEvents.Event.ACTIVITY_STOPPED -> {
+                            if (ev.packageName == currentForegroundPkg) {
+                                isTemporarilyUnknown = true
+                            }
+                        }
+                    }
+                }
+            }
+            return currentForegroundPkg
+        }
+
+        fun isForeground(pkg: String): Boolean =
+            currentForegroundPkg == pkg && !isTemporarilyUnknown
+
+        fun currentPackage(): String? = currentForegroundPkg
+        fun isUnknown(): Boolean = isTemporarilyUnknown
+
+        @androidx.annotation.VisibleForTesting
+        fun setForTesting(pkg: String?, isUnknown: Boolean = false) {
+            currentForegroundPkg = pkg
+            isTemporarilyUnknown = isUnknown
+        }
     }
+
+    /**
+     * استعلام التطبيق الأمامي الحالي عبر ForegroundTracker أو Bridge.
+     */
+    fun getForegroundPackage(context: Context): String? =
+        ForegroundTracker.getForegroundPackage(context)
 
     /**
      * الدالة الموحدة idempotent لكشف الخروج وإعادة تفعيل الخدمة
@@ -595,9 +660,9 @@ object ProtectedAppManager {
     suspend fun checkAndRestore(
         context: Context,
         reason: String,
-        pollIntervalMs: Long = 200L,
-        maxWaitMs: Long = 6000L,
-        nudgeWaitMs: Long = 400L,
+        pollIntervalMs: Long = 100L,
+        maxWaitMs: Long = 3000L,
+        nudgeWaitMs: Long = 250L,
         targetPkg: String? = null
     ): Boolean {
         if (!isRestoring.compareAndSet(false, true)) {
@@ -657,29 +722,46 @@ object ProtectedAppManager {
                 "force", "user", "boot", "settings", "exit"
             )
 
+            var tExitDetected = 0L
+            var tWriteDone = 0L
+            var tConnected = 0L
+
             if (!isForce) {
                 val pm = context.getSystemService(Context.POWER_SERVICE)
                     as? PowerManager
                 val isScreenInteractive = pm?.isInteractive ?: true
                 val currentFg = getForegroundPackage(context)
 
-                // إن كان المستخدم لا يزال داخل التطبيق والشاشة مضاءة: لا يُعاد
-                if (isScreenInteractive && currentFg == suspendedPkg) {
+                // الأمر 1 - البند 2: منع الاسترجاع ما دام التطبيق
+                // المحمي هو الأمامي
+                if (isScreenInteractive &&
+                    ForegroundTracker.isForeground(suspendedPkg)
+                ) {
                     absentSinceMap.remove(suspendedPkg)
                     screenOffSinceMs = 0L
+                    nonProtectedObservations = 0
                     return false
                 }
 
                 var conditionMet = false
 
-                // قاعدة (أ): غاب التطبيق 3 ثوانٍ متصلة
-                if (currentFg != suspendedPkg) {
+                // الأمر 1 - البند 4: انتقال فوري عند
+                // الانتقال إلى المشغل (Home Launcher)
+                if (isHomeLauncher(context, currentFg)) {
+                    conditionMet = true
+                } else if (currentFg != suspendedPkg) {
+                    nonProtectedObservations++
                     val absentStart =
                         absentSinceMap.getOrPut(suspendedPkg) { now }
-                    if (now - absentStart >= 3000L) {
+                    // الأمر 1 - البند 3: خفض شرط الغياب إلى 1200ms
+                    // مع ملاحظتين متتاليتين
+                    if (now - absentStart >= 1200L &&
+                        nonProtectedObservations >= 2
+                    ) {
                         conditionMet = true
                     }
                 } else {
+                    nonProtectedObservations = 0
                     absentSinceMap.remove(suspendedPkg)
                 }
 
@@ -707,6 +789,14 @@ object ProtectedAppManager {
                 if (!conditionMet) {
                     return false
                 }
+                tExitDetected = System.currentTimeMillis()
+                ProtectedAppTimelineTracker.recordRestorePhase(
+                    "تحقق شرط الخروج",
+                    suspendedPkg,
+                    "fg=$currentFg, reason=$reason"
+                )
+            } else {
+                tExitDetected = System.currentTimeMillis()
             }
 
             // التحقق من الإذن وإعادة التفعيل
@@ -723,7 +813,10 @@ object ProtectedAppManager {
                     enabledAfter = enabledBefore,
                     nudgeCount = 0,
                     nudgeReason = null,
-                    error = "WRITE_SECURE_SETTINGS missing"
+                    error = "WRITE_SECURE_SETTINGS missing",
+                    tExitDetected = tExitDetected,
+                    tWriteDone = tWriteDone,
+                    tConnected = tConnected
                 )
                 return false
             }
@@ -736,7 +829,13 @@ object ProtectedAppManager {
             if (!enabledBefore) {
                 // الأمر 1 - البند 7: حالة غير موجودة في الإعدادات
                 val writeOk = enableAccessibilityServiceDirectly(context)
+                tWriteDone = System.currentTimeMillis()
                 writePerformed = true
+                ProtectedAppTimelineTracker.recordRestorePhase(
+                    "كتابة Settings.Secure",
+                    suspendedPkg,
+                    "writeOk=$writeOk"
+                )
                 if (!writeOk) {
                     handleRestoreFailure(
                         context = context,
@@ -749,7 +848,10 @@ object ProtectedAppManager {
                         enabledAfter = false,
                         nudgeCount = 0,
                         nudgeReason = null,
-                        error = "enableAccessibilityServiceDirectly failed"
+                        error = "enableAccessibilityServiceDirectly failed",
+                        tExitDetected = tExitDetected,
+                        tWriteDone = tWriteDone,
+                        tConnected = tConnected
                     )
                     return false
                 }
@@ -757,16 +859,29 @@ object ProtectedAppManager {
                 connected = waitForActiveService(
                     context, maxWaitMs, pollIntervalMs
                 )
+                if (connected) {
+                    tConnected = System.currentTimeMillis()
+                    ProtectedAppTimelineTracker.recordRestorePhase(
+                        "اتصال الخدمة",
+                        suspendedPkg,
+                        "delay=${tConnected - tWriteDone}ms"
+                    )
+                }
             } else {
                 // الخدمة موجودة في الإعدادات ولكن غير متصلة
+                tWriteDone = System.currentTimeMillis()
                 connected = waitForActiveService(
                     context, maxWaitMs, pollIntervalMs
                 )
-                if (!connected) {
-                    // الأمر 1 - البند 6: «التحريك» محصور
+                if (connected) {
+                    tConnected = System.currentTimeMillis()
+                } else {
+                    // الأمر 1 - البند 5: «التحريك» فوراً بعد 3s
                     val currentFg = getForegroundPackage(context)
                     val fgOk = currentFg != suspendedPkg
-                    val reasonOk = reason in setOf("exit", "alarm", "force")
+                    val reasonOk = reason in setOf(
+                        "exit", "alarm", "force", "watcher"
+                    )
                     val timeOk = now - lastNudgeTimeMs >= 60_000L
                     val countOk = !nudgedThisSuspension
 
@@ -774,14 +889,23 @@ object ProtectedAppManager {
                         nudgeCount = 1
                         nudgedThisSuspension = true
                         lastNudgeTimeMs = now
-                        nudgeReasonTag = "مكتوبة وغير متصلة بعد 4s ($reason)"
+                        nudgeReasonTag = "مكتوبة وغير متصلة بعد 3s ($reason)"
                         disableAccessibilityServiceDirectly(context)
                         delay(nudgeWaitMs)
                         enableAccessibilityServiceDirectly(context)
+                        tWriteDone = System.currentTimeMillis()
                         writePerformed = true
-                        connected = waitForActiveService(
-                            context, maxWaitMs, pollIntervalMs
+                        ProtectedAppTimelineTracker.recordRestorePhase(
+                            "تحريك الخدمة",
+                            suspendedPkg,
+                            "nudgeWait=${nudgeWaitMs}ms"
                         )
+                        connected = waitForActiveService(
+                            context, 4000L, 100L
+                        )
+                        if (connected) {
+                            tConnected = System.currentTimeMillis()
+                        }
                     }
                 }
             }
@@ -790,6 +914,7 @@ object ProtectedAppManager {
             val enabledAfter = isServiceEnabledInSettings(context)
 
             if (connected || connectedAfter) {
+                if (tConnected == 0L) tConnected = System.currentTimeMillis()
                 consecutiveFailures = 0
                 resetStateAfterRestore()
                 ProtectedAppSuspensionStore.clear(context)
@@ -799,6 +924,7 @@ object ProtectedAppManager {
                 ProtectedAppWatcherService.stopService(context)
                 absentSinceMap.remove(suspendedPkg)
                 screenOffSinceMs = 0L
+                nonProtectedObservations = 0
 
                 if (SettingsRepository.create(context)
                         .isAndroid17BankingHardeningEnabled()
@@ -819,7 +945,10 @@ object ProtectedAppManager {
                     connectedAfter = true,
                     enabledAfter = enabledAfter,
                     nudgeReason = nudgeReasonTag,
-                    failureAnnounced = false
+                    failureAnnounced = false,
+                    tExitDetected = tExitDetected,
+                    tWriteDone = tWriteDone,
+                    tConnected = tConnected
                 )
 
                 if (reason != "screen") {
@@ -841,7 +970,10 @@ object ProtectedAppManager {
                     enabledAfter = enabledAfter,
                     nudgeCount = nudgeCount,
                     nudgeReason = nudgeReasonTag,
-                    error = errMsg
+                    error = errMsg,
+                    tExitDetected = tExitDetected,
+                    tWriteDone = tWriteDone,
+                    tConnected = tConnected
                 )
                 return false
             }
@@ -861,7 +993,10 @@ object ProtectedAppManager {
         enabledAfter: Boolean,
         nudgeCount: Int,
         nudgeReason: String?,
-        error: String
+        error: String,
+        tExitDetected: Long = 0L,
+        tWriteDone: Long = 0L,
+        tConnected: Long = 0L
     ) {
         consecutiveFailures++
         val alreadyAnnounced =
@@ -893,7 +1028,10 @@ object ProtectedAppManager {
             connectedAfter = connectedAfter,
             enabledAfter = enabledAfter,
             nudgeReason = nudgeReason,
-            failureAnnounced = newlyAnnounced
+            failureAnnounced = newlyAnnounced,
+            tExitDetected = tExitDetected,
+            tWriteDone = tWriteDone,
+            tConnected = tConnected
         )
     }
 
@@ -1085,6 +1223,8 @@ object ProtectedAppManager {
         nudgedThisSuspension = false
         lastNudgeTimeMs = 0L
         consecutiveFailures = 0
+        nonProtectedObservations = 0
+        ForegroundTracker.reset()
         isRestoring.set(false)
     }
 }

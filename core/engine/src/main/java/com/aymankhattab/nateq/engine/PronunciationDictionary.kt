@@ -1308,7 +1308,10 @@ private class UnifiedAhoCorasick(
         return true to "مقبول: كلمة مستقلة بلا أحرف جارة"
     }
 
-    private fun hasLetterNeighborBefore(text: String, origStart: Int): Boolean {
+    private fun hasLetterNeighborBefore(
+        text: String,
+        origStart: Int
+    ): Boolean {
         var i = origStart - 1
         while (i >= 0) {
             val cp = text.codePointBefore(i + 1)
@@ -1366,6 +1369,10 @@ private class UnifiedAhoCorasick(
 
     private fun isIgnoredNeighborMark(cp: Int): Boolean {
         if (isConnectorChar(cp)) return false
+        if (cp == 0x00A0 || cp == 0x202F || cp == 0x200B ||
+            cp == 0x2060 || cp == 0x200E || cp == 0x200F ||
+            cp == 0x061C || cp == 0xFEFF || cp == 0x00AD
+        ) return true
         val type = Character.getType(cp)
         return type == Character.NON_SPACING_MARK.toInt() ||
             type == Character.ENCLOSING_MARK.toInt() ||
