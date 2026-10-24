@@ -31,7 +31,9 @@ class DictTestProvider : ContentProvider() {
         const val METHOD_GET_LAST_SPOKEN = "get_last_spoken"
         const val KEY_FULL_TRACE_NAMES = "full_trace_names"
         const val KEY_FULL_TRACE_VALUES = "full_trace_values"
-        const val KEY_LAST_SPOKEN_LIST = "last_spoken_list" 
+        const val KEY_LAST_SPOKEN_LIST = "last_spoken_list"
+        const val KEY_LAST_SPOKEN_DISPLAYS = "last_spoken_displays"
+        const val KEY_LAST_SPOKEN_SOURCES = "last_spoken_sources"
     }
 
     override fun onCreate(): Boolean = true
@@ -117,9 +119,14 @@ class DictTestProvider : ContentProvider() {
         }
 
         if (method == METHOD_GET_LAST_SPOKEN) {
-            val recent = ArrayList(LastSpokenTextsTracker.getRecent())
+            val entries = LastSpokenTextsTracker.getRecentEntries()
+            val rawList = ArrayList(entries.map { it.rawText })
+            val displays = ArrayList(entries.map { it.formatDisplay() })
+            val sources = ArrayList(entries.map { it.source })
             return Bundle().apply {
-                putStringArrayList(KEY_LAST_SPOKEN_LIST, recent)
+                putStringArrayList(KEY_LAST_SPOKEN_LIST, rawList)
+                putStringArrayList(KEY_LAST_SPOKEN_DISPLAYS, displays)
+                putStringArrayList(KEY_LAST_SPOKEN_SOURCES, sources)
             }
         }
 

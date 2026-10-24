@@ -69,6 +69,18 @@ data class EngineQuirks(
                 tashkeelPolicy = TashkeelPolicy.UNKNOWN,
                 problematicLanguages = setOf("ar"),
                 problematicVoiceNames = emptySet()
+            ),
+            // vocalizer_embedded — محرك Vocalizer المدمج (الجولة 53 - الأمر 5)
+            "vocalizer_embedded" to EngineQuirks(
+                packageName = "vocalizer_embedded",
+                needsWarmupPolling = false,
+                requiresLocaleWithRegion = false,
+                rejectsVoiceSilently = false,
+                needsSetLanguageBeforeSetVoice = false,
+                maxSafeSpeechRate = 3.0f,
+                tashkeelPolicy = TashkeelPolicy.PARTIAL_TASHKEEL,
+                problematicLanguages = emptySet(),
+                problematicVoiceNames = emptySet()
             )
         )
 

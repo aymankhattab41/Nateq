@@ -5,6 +5,7 @@ import com.aymankhattab.nateq.core.common.AppDispatchers
 import com.aymankhattab.nateq.core.common.SystemTimeProvider
 import com.aymankhattab.nateq.core.common.TimeProvider
 import com.aymankhattab.nateq.core.common.readStickyBattery
+import com.aymankhattab.nateq.core.audio.engine.SpeechEntryPoints
 import com.aymankhattab.nateq.core.audio.engine.SynthesisRequestHandler
 import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
@@ -474,13 +475,20 @@ class TimeAnnouncementManager(
                 // يعلق على آخر فئةٍ نطقت (متصل/إشعار/رسالة) فيُقرأ الوقت
                 // بالصوت الخطأ — نفس نمط المتصل/الرسائل.
                 speaker.resetVoice(timePref)
+                val prepared = SpeechEntryPoints.prepare(
+                    timeText,
+                    SpeechEntryPoints.Source.TIME_EVENT,
+                    context
+                )
                 speaker.speak(
-                    timeText, locale, speechRate, pitch, volume,
+                    prepared, locale, speechRate, pitch, volume,
                     engineOverride = settings.getEngineForCategory(
                         SettingsRepository.VOICE_CATEGORY_TIME
                     ),
                     cue = hourlyChimeCue(),
-                    category = SettingsRepository.VOICE_CATEGORY_TIME
+                    category = SettingsRepository.VOICE_CATEGORY_TIME,
+                    source = SpeechEntryPoints.Source.TIME_EVENT,
+                    isPrepared = true
                 )
             } catch (t: Throwable) {
                 android.util.Log.e("NATEQ_TTS", "announce time failed", t)
@@ -699,6 +707,14 @@ class TimeAnnouncementManager(
         else -> "${NumberSpeech.toArabicWords(count)} دقيقة"
     }
 
+    /** فترة اليوم حسب ساعة 24 بصيغة المجرور (في الصباح/بعد الظهر/في المساء). */
+    private fun prepositionalPeriodFor(hour24: Int): String = when (hour24) {
+        12 -> "بعد الظهر"
+        in 0..11 -> "في الصباح"
+        in 13..20 -> "في المساء"
+        else -> "في الليل"
+    }
+
     /** فترة اليوم حسب ساعة 24 — صريحة تُستخدم في الصيغة الطبيعية ونظيرتها
      *  «إلا» (حيث يُحسب الوقت بإشارة إلى الساعة التالية). */
     private fun periodFor(hour24: Int): String = when (hour24) {
@@ -710,39 +726,54 @@ class TimeAnnouncementManager(
     /** تنسيق الوقت بالعربية الطبيعية: "الساعة الآن العاشرة والربع" */
     private fun formatArabicNaturalTime(hour: Int, minute: Int): String {
         val hour12 = if (hour == 0) 12 else if (hour > 12) hour - 12 else hour
-        // الساعة تُنطق بالصيغة الترتيبية المؤنثة المعرّفة بأل:
-        // «الثانية صباحاً» لا «اثنتين صباحاً».
         val arabicHour = NumberSpeech.toOrdinalHourWord(hour12)
-        // صبيحة/مساء للصيغة الطبيعية على نحو ما أعلنه
-        // TextProcessor للصيغة الرقمية.
-        val period = periodFor(hour)
+        val style = runCatching {
+            settings.getDayPeriodStyle()
+        }.getOrDefault(SettingsRepository.DAY_PERIOD_STYLE_AS_IS)
+
+        val isPrep = style == SettingsRepository.DAY_PERIOD_STYLE_PREPOSITIONAL
+        val isExplicitComma =
+            style == SettingsRepository.DAY_PERIOD_STYLE_EXPLICIT_NUN_COMMA
+
+        val period = if (isPrep) {
+            prepositionalPeriodFor(hour)
+        } else {
+            periodFor(hour)
+        }
+
+        val sep = if (isExplicitComma) "، " else " "
+
+        fun nextP(h: Int): String = if (isPrep) {
+            prepositionalPeriodFor(h)
+        } else {
+            periodFor(h)
+        }
 
         return when (minute) {
             0 -> "الساعة الآن $arabicHour $period"
-            15 -> "الساعة الآن $arabicHour والربع $period"
-            30 -> "الساعة الآن $arabicHour والنصف $period"
+            15 -> "الساعة الآن $arabicHour والربع$sep$period"
+            30 -> "الساعة الآن $arabicHour والنصف$sep$period"
             45 -> {
                 val nextHour = if (hour12 == 12) 1 else hour12 + 1
                 val nextArabicHour = NumberSpeech.toOrdinalHourWord(nextHour)
-                // **بند 5.3:** في صيغة «إلا» نُشير إلى الساعة التالية، فتُحسب
-                // الفترة من الساعة التالية لا الحالية: 11:45 ظهراً وليست
-                // صباحاً، و23:45 مساءً كما في منتصف الليل.
-                val nextPeriod = periodFor(if (hour == 23) 0 else hour + 1)
-                "الساعة الآن $nextArabicHour إلا ربع $nextPeriod"
+                val targetHour = if (hour == 23) 0 else hour + 1
+                val p = nextP(targetHour)
+                "الساعة الآن $nextArabicHour إلا ربع$sep$p"
             }
             in 1..14 -> "الساعة الآن $arabicHour و " +
-                "${arabicMinutePhrase(minute)} $period"
+                "${arabicMinutePhrase(minute)}$sep$period"
             in 16..29 -> "الساعة الآن $arabicHour و " +
-                "${arabicMinutePhrase(minute)} $period"
+                "${arabicMinutePhrase(minute)}$sep$period"
             in 31..44 -> "الساعة الآن $arabicHour و " +
-                "${arabicMinutePhrase(minute)} $period"
+                "${arabicMinutePhrase(minute)}$sep$period"
             in 46..59 -> {
                 val remaining = 60 - minute
                 val nextHour = if (hour12 == 12) 1 else hour12 + 1
                 val nextArabicHour = NumberSpeech.toOrdinalHourWord(nextHour)
-                val nextPeriod = periodFor(if (hour == 23) 0 else hour + 1)
+                val targetHour = if (hour == 23) 0 else hour + 1
+                val p = nextP(targetHour)
                 "الساعة الآن $nextArabicHour إلا " +
-                "${arabicMinuteOmissionPhrase(remaining)} $nextPeriod"
+                "${arabicMinuteOmissionPhrase(remaining)}$sep$p"
             }
             else -> "الساعة الآن $arabicHour $period"
         }
@@ -778,12 +809,20 @@ class TimeAnnouncementManager(
             )
             val speaker = AnnouncementSpeaker.getInstance(context)
             speaker.resetVoice(numPref)
+            val prepared = SpeechEntryPoints.prepare(
+                text,
+                SpeechEntryPoints.Source.LORD_SYSTEM,
+                context
+            )
             speaker.speak(
-                text, Locale.forLanguageTag(languageTag),
+                prepared, Locale.forLanguageTag(languageTag),
                 speechRate, pitch, volume,
                 engineOverride = settings.getEngineForCategory(
                     SettingsRepository.VOICE_CATEGORY_NUMBERS
-                )
+                ),
+                category = SettingsRepository.VOICE_CATEGORY_NUMBERS,
+                source = SpeechEntryPoints.Source.LORD_SYSTEM,
+                isPrepared = true
             )
         }
     }

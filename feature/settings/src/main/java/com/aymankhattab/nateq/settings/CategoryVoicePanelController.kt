@@ -20,13 +20,17 @@ import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedStorage
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.lifecycle.lifecycleScope
+import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
 import com.aymankhattab.nateq.core.common.AppDispatchers
 import java.util.Locale
+import com.aymankhattab.nateq.util.LocaleUtils
+import com.aymankhattab.nateq.util.VoiceIdContract
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import com.aymankhattab.nateq.core.audio.accessibility.A11ySpeechCoordinator
 
 /**
  * فئات السبnner العلوي في «الصوت الافتراضي»: خمس فئات صوتية + إعلان المتصل.
@@ -249,6 +253,7 @@ internal class CategoryVoicePanelController(
                             status.state !=
                             EngineStatusRegistry.State.VOICES_PRESENT
                         ) {
+
                             val reason = status.lastError
                                 ?: EngineStatusRegistry.labelAr(status.state)
                             Toast.makeText(
@@ -263,9 +268,7 @@ internal class CategoryVoicePanelController(
                         val existing = catalog.voicesFor(
                             currentPanelLanguage, engine.packageName
                         )
-                        if (existing.isEmpty() &&
-                            isEmbeddedEngine(engine.packageName)
-                        ) {
+                        if (existing.isEmpty()) {
                             fetchVoicesOnDemand(
                                 engine.packageName,
                                 engine.label,
@@ -273,11 +276,6 @@ internal class CategoryVoicePanelController(
                             ) {
                                 refreshVoiceSpinner()
                             }
-                        } else if (existing.isEmpty()) {
-                            (fragment as? VoiceSelectionFragment)
-                                ?.refreshVoiceCatalogDiscovery {
-                                    refreshVoiceSpinner()
-                                }
                         } else {
                             refreshVoiceSpinner()
                         }
@@ -285,7 +283,6 @@ internal class CategoryVoicePanelController(
                         refreshVoiceSpinner()
                     }
                 }
-
                 override fun onNothingSelected(parent: AdapterView<*>?) {}
             }
         spinnerVoice?.onItemSelectedListener =
@@ -609,10 +606,30 @@ if (!dirtyPanel) {
                                 EmbeddedProviders.vocalizer(context)
                             else -> null
                         }
-                        val loc = Locale.forLanguageTag(language)
-                        provider?.listVoices(loc)?.map { desc ->
-                            VoiceOption(desc.id, desc.displayName)
-                        } ?: emptyList()
+                        if (provider != null) {
+                            val loc = Locale.forLanguageTag(language)
+                            provider.listVoices(loc).map { desc ->
+                                VoiceOption(desc.id, desc.displayName)
+                            }
+                        } else {
+                            val locLang = Locale.forLanguageTag(
+                                language
+                            ).language
+                            val engineVoices =
+                                VoiceCatalog.getVoicesForEngine(
+                                    context, enginePkg
+                                )
+                            engineVoices
+                                .filter {
+                                    val l = LocaleUtils
+                                        .normalizeLanguageCode(
+                                            it.locale?.language
+                                        )
+                                    l == LocaleUtils
+                                        .normalizeLanguageCode(locLang)
+                                }
+                                .map { VoiceOption(it.name, it.name) }
+                        }
                     } catch (t: Throwable) {
                         // سجّل الفشل في EngineStatusRegistry لتظهر
                         // السبب في الواجهة
@@ -839,7 +856,7 @@ if (!dirtyPanel) {
                             "لا يمكن حفظ ${engine.label}: $reason",
                             Toast.LENGTH_LONG
                         ).show()
-                        return
+
                     }
                 }
                 runCatching {
@@ -867,14 +884,25 @@ if (!dirtyPanel) {
                     currentPanelLanguage,
                     selectedEngine
                 )
-                if (validVoices.isNotEmpty() &&
-                    validVoices.none { it.name == chosenVoice.name }
-                ) {
+                val belongs = if (validVoices.isNotEmpty()) {
+                    validVoices.any { it.name == chosenVoice.name }
+                } else {
+                    VoiceIdContract.isVoiceBelongingToEngine(
+                        selectedEngine,
+                        chosenVoice.name
+                    )
+                }
+                if (!belongs) {
                     Toast.makeText(
                         fragment.requireContext(),
-                        R.string.voice_cannot_save_invalid,
-                        Toast.LENGTH_SHORT
+                        "الصوت المختار لا يتبع هذا المحرك",
+                        Toast.LENGTH_LONG
                     ).show()
+            A11ySpeechCoordinator.speakAnnouncement(
+                context = fragment.requireContext(),
+                text = "الصوت المختار لا يتبع هذا المحرك",
+                isInterruptAllowed = true,
+            )
                     return
                 }
             }

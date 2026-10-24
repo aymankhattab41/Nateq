@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.util.Log
 import android.view.KeyEvent
+import com.aymankhattab.nateq.core.audio.engine.SpeechEntryPoints
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import java.util.concurrent.atomic.AtomicReference
 
@@ -199,7 +200,8 @@ class KeyShortcutRouter(
             engineOverride = voice?.engine,
             speechRate = voice?.speechRate,
             pitch = voice?.pitch,
-            volume = voice?.volume
+            volume = voice?.volume,
+            source = SpeechEntryPoints.Source.KEY_SHORTCUT
         )
     }
 
@@ -273,7 +275,8 @@ class KeyShortcutRouter(
         A11ySpeechCoordinator.speakAnnouncement(
             context = context,
             text = message,
-            isInterruptAllowed = true
+            isInterruptAllowed = true,
+            source = SpeechEntryPoints.Source.KEY_SHORTCUT
         )
     }
 
@@ -284,7 +287,8 @@ class KeyShortcutRouter(
         A11ySpeechCoordinator.speakAnnouncement(
             context = context,
             text = if (newPaused) "الخدمة موقوفة" else "الخدمة تعمل",
-            isInterruptAllowed = true
+            isInterruptAllowed = true,
+            source = SpeechEntryPoints.Source.KEY_SHORTCUT
         )
     }
 

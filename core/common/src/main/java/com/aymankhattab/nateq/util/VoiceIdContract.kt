@@ -97,4 +97,65 @@ object VoiceIdContract {
             norm
         }
     }
+
+    /**
+     * التحقق مما إذا كان اسم الصوت ينتمي للمحرك المعين (الجولة 53 - الأمر 3).
+     */
+    fun isVoiceBelongingToEngine(
+        engine: String?,
+        voiceId: String?,
+        knownVoices: List<String>? = null
+    ): Boolean {
+        if (engine.isNullOrBlank() || voiceId.isNullOrBlank()) return true
+        if (!knownVoices.isNullOrEmpty()) {
+            return voiceId in knownVoices
+        }
+        val lowerEng = engine.lowercase()
+        val isVocalizerEmbedded = lowerEng == "vocalizer_embedded" ||
+            (lowerEng.contains("vocalizer") &&
+                lowerEng.contains("embedded"))
+
+        if (isVocalizerEmbedded) {
+            val isGoogle = voiceId.contains("-x-") ||
+                voiceId.endsWith("-local")
+            val isAcapela = voiceId.startsWith("ar_") ||
+                voiceId.startsWith("en_")
+            val isSamsung = voiceId.contains("_f00") ||
+                voiceId.contains("_m00")
+            if (isGoogle || isAcapela || isSamsung) return false
+            return true
+        }
+
+        if (lowerEng == "com.google.android.tts") {
+            if (voiceId.startsWith("ara-") ||
+                voiceId.startsWith("eng-") ||
+                voiceId.startsWith("fra-") ||
+                voiceId.startsWith("ar_") ||
+                voiceId.startsWith("en_")
+            ) {
+                return false
+            }
+        }
+
+        if (lowerEng.contains("acapela")) {
+            if (voiceId.startsWith("ara-") ||
+                voiceId.startsWith("eng-") ||
+                voiceId.contains("-x-") ||
+                voiceId.endsWith("-local")
+            ) {
+                return false
+            }
+        }
+
+        if (lowerEng.contains("samsung")) {
+            if (voiceId.startsWith("ara-") ||
+                voiceId.startsWith("eng-") ||
+                voiceId.contains("-x-")
+            ) {
+                return false
+            }
+        }
+
+        return true
+    }
 }

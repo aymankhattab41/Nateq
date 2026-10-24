@@ -2,6 +2,7 @@ package com.aymankhattab.nateq.core.audio.accessibility
 
 import android.content.Context
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
+import com.aymankhattab.nateq.core.audio.engine.SpeechEntryPoints
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.AccessibilityUtils
 import java.util.Locale
@@ -40,19 +41,23 @@ object A11ySpeechCoordinator {
         engineOverride: String? = null,
         speechRate: Float? = null,
         pitch: Float? = null,
-        volume: Float? = null
+        volume: Float? = null,
+        source: SpeechEntryPoints.Source = SpeechEntryPoints.Source.LORD_SYSTEM
     ) {
         if (!canSpeak(context, isInterruptAllowed)) return
+        val prepared = SpeechEntryPoints.prepare(text, source, context)
         val speaker = AnnouncementSpeaker.getInstance(context)
         if (voiceId != null) speaker.resetVoice(voiceId)
         speaker.speak(
-            text = text,
+            text = prepared,
             locale = Locale.getDefault(),
             speechRate = speechRate ?: 1.0f,
             pitch = pitch ?: 1.0f,
             volume = volume ?: 1.0f,
             engineOverride = engineOverride,
-            category = SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+            category = SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS,
+            source = source,
+            isPrepared = true
         )
     }
 }

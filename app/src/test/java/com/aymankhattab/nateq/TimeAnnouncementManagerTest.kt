@@ -133,34 +133,43 @@ class TimeAnnouncementManagerTest {
 
     @Test
     fun formatArabic_quarterPast() {
-        assertEquals("الساعة الآن العاشرة والربع صباحاً", formatArabic(10, 15))
+        assertEquals(
+            "الساعة الآن العاشرة والربع، صباحاً",
+            formatArabic(10, 15)
+        )
     }
 
     @Test
     fun formatArabic_halfPast() {
-        assertEquals("الساعة الآن العاشرة والنصف صباحاً", formatArabic(10, 30))
+        assertEquals(
+            "الساعة الآن العاشرة والنصف، صباحاً",
+            formatArabic(10, 30)
+        )
     }
 
     @Test
     fun formatArabic_quarterTo() {
         assertEquals(
-            "الساعة الآن الحادية عشرة إلا ربع صباحاً",
+            "الساعة الآن الحادية عشرة إلا ربع، صباحاً",
             formatArabic(10, 45)
         )
     }
 
     @Test
     fun formatArabic_minutesToNextHour() {
-        // 10:55 → «الحادية عشرة إلا خمس دقائق صباحاً»
+        // 10:55 → «الحادية عشرة إلا خمس دقائق، صباحاً»
         assertEquals(
-            "الساعة الآن الحادية عشرة إلا خمس دقائق صباحاً",
+            "الساعة الآن الحادية عشرة إلا خمس دقائق، صباحاً",
             formatArabic(10, 55)
         )
     }
 
     @Test
     fun formatArabic_afternoon() {
-        assertEquals("الساعة الآن الواحدة والربع مساءً", formatArabic(13, 15))
+        assertEquals(
+            "الساعة الآن الواحدة والربع، مساءً",
+            formatArabic(13, 15)
+        )
     }
 
     @Test
@@ -177,7 +186,7 @@ class TimeAnnouncementManagerTest {
     @Test
     fun formatArabic_dualMinutes() {
         assertEquals(
-            "الساعة الآن العاشرة و دقيقتان صباحاً",
+            "الساعة الآن العاشرة و دقيقتان، صباحاً",
             formatArabic(10, 2)
         )
     }
@@ -185,8 +194,38 @@ class TimeAnnouncementManagerTest {
     @Test
     fun formatArabic_pluralMinutes() {
         assertEquals(
-            "الساعة الآن الثالثة و عشر دقائق مساءً",
+            "الساعة الآن الثالثة و عشر دقائق، مساءً",
             formatArabic(15, 10)
+        )
+    }
+
+    @Test
+    fun formatArabic_styles_prepositionalAndAsIs() {
+        settings.setDayPeriodStyle(SettingsRepository.DAY_PERIOD_STYLE_AS_IS)
+        assertEquals(
+            "الساعة الآن العاشرة والربع صباحاً",
+            formatArabic(10, 15)
+        )
+
+        settings.setDayPeriodStyle(
+            SettingsRepository.DAY_PERIOD_STYLE_PREPOSITIONAL
+        )
+        assertEquals(
+            "الساعة الآن العاشرة والربع في الصباح",
+            formatArabic(10, 15)
+        )
+        assertEquals(
+            "الساعة الآن الواحدة والربع في المساء",
+            formatArabic(13, 15)
+        )
+        assertEquals(
+            "الساعة الآن الثانية عشرة بعد الظهر",
+            formatArabic(12, 0)
+        )
+
+        // إعادة الوضع الافتراضي
+        settings.setDayPeriodStyle(
+            SettingsRepository.DAY_PERIOD_STYLE_EXPLICIT_NUN_COMMA
         )
     }
 

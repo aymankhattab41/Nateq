@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.core.audio.accessibility
 
 import android.content.Context
+import com.aymankhattab.nateq.core.audio.engine.SpeechEntryPoints
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -72,51 +73,42 @@ object RepeatSpellController {
     }
 
     /**
-     * هجاء النص خانةً خانة. [dictionaryApply] (اختياري) يمنح القاموس
-     * الأولوية: إن أعاد للخانة نطقاً مخالفاً لها استُعمل، وإلا اسمُها من
-     * [SpellTable].
+     * هجاء النص خانةً خانة بأسماء الحروف (الجولة 53 - الأمر 4).
      */
-    fun spellText(
-        text: String?,
-        dictionaryApply: ((String) -> String)? = null
-    ): String {
+    fun spellText(text: String?): String {
         if (text.isNullOrBlank()) return ""
-        return text.map { char -> spellChar(char, dictionaryApply) }
+        return text.map { char -> spellChar(char) }
             .joinToString(" ")
     }
 
-    private fun spellChar(
-        char: Char,
-        dictionaryApply: ((String) -> String)?
-    ): String {
+    private fun spellChar(char: Char): String {
         if (char.isWhitespace()) return "مسافة"
-        val raw = char.toString()
-        if (dictionaryApply != null) {
-            val custom = runCatching { dictionaryApply(raw) }.getOrNull()
-            if (!custom.isNullOrBlank() && custom != raw) return custom
-        }
         return SpellTable.nameOf(char)
     }
 
     /** نطق إعادة آخر عبارة منطوقة. */
     fun repeatLast(context: Context) {
         val last = getLastSpokenText() ?: return
-        speak(context, last)
+        speak(context, last, SpeechEntryPoints.Source.REPEAT_LAST)
     }
 
     /** هجاء آخر عبارة منطوقة بأسماء الحروف وليس بالحرف ذاته. */
     fun spellLast(context: Context) {
         val last = getLastSpokenText() ?: return
-        speak(context, spellText(last, dictionaryResolver(context)))
+        speak(context, spellText(last), SpeechEntryPoints.Source.SPELL_LAST)
     }
 
     /** «اقرأ ما قبله»: يرجع في السجل إلى المدخل السابق. */
     fun repeatPrevious(context: Context) {
         val previous = history().getOrNull(1)?.text
         if (previous == null) {
-            speak(context, "لا يوجد ما قبله")
+            speak(
+                context,
+                "لا يوجد ما قبله",
+                SpeechEntryPoints.Source.REPEAT_LAST
+            )
         } else {
-            speak(context, previous)
+            speak(context, previous, SpeechEntryPoints.Source.REPEAT_LAST)
         }
     }
 
@@ -125,28 +117,21 @@ object RepeatSpellController {
         val items = history().map { it.text }
         val text = if (items.isEmpty()) "السجل فارغ"
         else items.joinToString("، ")
-        speak(context, text)
+        speak(context, text, SpeechEntryPoints.Source.REPEAT_LAST)
     }
 
-    private fun speak(context: Context, text: String) {
+    private fun speak(
+        context: Context,
+        text: String,
+        source: SpeechEntryPoints.Source
+    ) {
         withoutRecording {
             A11ySpeechCoordinator.speakAnnouncement(
                 context = context,
                 text = text,
-                isInterruptAllowed = true
+                isInterruptAllowed = true,
+                source = source
             )
         }
     }
-
-    /** حاقل نطق القاموس لخانةٍ واحدة (الأولوية للقاموس في الهجاء). */
-    private fun dictionaryResolver(context: Context): ((String) -> String)? =
-        runCatching {
-            val dictionary =
-                com.aymankhattab.nateq.engine.PronunciationDictionary
-                    .shared(context)
-            val resolver: (String) -> String = { word ->
-                dictionary.apply(word)
-            }
-            resolver
-        }.getOrNull()
 }

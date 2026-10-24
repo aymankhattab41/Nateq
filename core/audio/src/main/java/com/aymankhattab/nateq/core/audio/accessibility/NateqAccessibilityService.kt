@@ -368,27 +368,6 @@ class NateqAccessibilityService : AccessibilityService() {
         AccessibilityBridge.registerService(this)
         stateStore?.setConnected(true)
 
-        // ع٢٩-15: تهيئة مراقب صحة الخدمة
-        AccessibilityHealthMonitor.checkHealth(this)
-
-        // ع٢٩-15: تهيئة متحكم الإيقاف الذكي (FEATURE_SMART_PAUSE_CALL/GAME)
-        val repo = SettingsRepository.create(this)
-        val isCallPause = FeatureFlags.isActive(
-            FeatureFlags.FEATURE_SMART_PAUSE_CALL,
-            context = this,
-            settings = repo,
-            stateStore = stateStore
-        )
-        val isGamePause = FeatureFlags.isActive(
-            FeatureFlags.FEATURE_SMART_PAUSE_GAME,
-            context = this,
-            settings = repo,
-            stateStore = stateStore
-        )
-        if (isCallPause || isGamePause) {
-            A11ySmartPauseController.getInstance(this)
-        }
-
         // ع٢٩-16: خزن المستمع لإزالته لاحقاً
         a11yStateListener = { store: A11yStateStore ->
             if (store.isPaused()) ContinuousReader.stopSilently()
@@ -397,21 +376,62 @@ class NateqAccessibilityService : AccessibilityService() {
         stateStore?.addListener(a11yStateListener!!)
 
         applyServiceInfo()
-        applyAccessibilityButton()
         registerBluetoothReceiver()
-
-        // ع٢٩-13: تهيئة موجّه الاختصارات
-        keyShortcutRouter = KeyShortcutRouter(
-            service = this,
-            settings = SettingsRepository.create(this),
-            stateStore = stateStore
-        )
         registerShortcutTestReceiver()
         registerBindingsObserver()
 
         val connIntent = Intent(ProtectedAppManager.ACTION_A11Y_CONNECTED)
             .setPackage(packageName)
         runCatching { sendBroadcast(connIntent) }
+
+        // الأمر 1 - البند 6: إرجاء كل تهيئة ثقيلة إلى خلفية تبدأ بعد 500ms
+        CoroutineScope(Dispatchers.Default).launch {
+            delay(500L)
+            AccessibilityHealthMonitor.checkHealth(
+                this@NateqAccessibilityService
+            )
+
+            val repo = SettingsRepository.create(
+                this@NateqAccessibilityService
+            )
+            val isCallPause = FeatureFlags.isActive(
+                FeatureFlags.FEATURE_SMART_PAUSE_CALL,
+                context = this@NateqAccessibilityService,
+                settings = repo,
+                stateStore = stateStore
+            )
+            val isGamePause = FeatureFlags.isActive(
+                FeatureFlags.FEATURE_SMART_PAUSE_GAME,
+                context = this@NateqAccessibilityService,
+                settings = repo,
+                stateStore = stateStore
+            )
+            if (isCallPause || isGamePause) {
+                A11ySmartPauseController.getInstance(
+                    this@NateqAccessibilityService
+                )
+            }
+
+            keyShortcutRouter = KeyShortcutRouter(
+                service = this@NateqAccessibilityService,
+                settings = repo,
+                stateStore = stateStore
+            )
+            applyAccessibilityButton()
+
+            runCatching {
+                com.aymankhattab.nateq.engine.PronunciationDictionary
+                    .shared(this@NateqAccessibilityService).reloadIfChanged()
+            }
+            RestoreDiagnosticsTracker.recordFeaturesReady(
+                this@NateqAccessibilityService
+            )
+        }
+    }
+
+    @androidx.annotation.VisibleForTesting
+    fun onServiceConnectedForTesting() {
+        onServiceConnected()
     }
 
     override fun onUnbind(intent: Intent?): Boolean {

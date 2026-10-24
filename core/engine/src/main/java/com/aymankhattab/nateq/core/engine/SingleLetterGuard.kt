@@ -75,6 +75,8 @@ object SingleLetterGuard {
                 cp == 0x200B || cp == 0x200C || // ZWSP, ZWNJ
                 cp == 0x200D || cp == 0x2060 || // ZWJ, WJ
                 cp == 0xFEFF || cp == 0x00AD || // BOM, Soft hyphen
+                cp == 0x00A0 || cp == 0x202F || // NBSP, NNBSP
+                cp == 0x061C || // ALM
                 ch.isWhitespace()
             ) continue
 

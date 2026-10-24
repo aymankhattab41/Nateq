@@ -64,6 +64,7 @@ import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvide
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.NetworkMetering
+import com.aymankhattab.nateq.util.VoiceIdContract
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
@@ -73,6 +74,7 @@ import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
 import com.aymankhattab.nateq.core.audio.engine.EngineWithVoices
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.settings.OemVendor
+import com.aymankhattab.nateq.core.audio.accessibility.A11ySpeechCoordinator
 import com.aymankhattab.nateq.settings.SettingsViewModel.SettingsOperation
 
 /**
@@ -1144,15 +1146,99 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
      * يلغي أي عملية جارية سابقة حتى لا تتسابق نتيجتان، ويسجل الأخطاء
      * دون ابتلاعها، ويمرر unavailableEngines إلى EngineVoicesCatalog.
      */
+    internal fun buildActiveEnginesSet(): Set<String> {
+        val set = mutableSetOf<String>()
+        val defaultEng = settings.getEnginePreferenceForLanguage("ar").engine
+        if (!defaultEng.isNullOrBlank()) set.add(defaultEng)
+        // «ع٤٠-2»: تفضيل اللغة الإنجليزية (الخريطة الديناميكية)
+        // يشارك في المحركات النشطة
+        val primaryFallbackEng =
+            settings.getEnginePreferenceForLanguage("en").engine
+        if (!primaryFallbackEng.isNullOrBlank()) set.add(primaryFallbackEng)
+
+        val categories = SettingsRepository.ALL_VOICE_CATEGORIES +
+            listOf("emoji")
+        for (cat in categories) {
+            val eng = settings.getEngineForCategory(cat)
+            if (!eng.isNullOrBlank()) set.add(eng)
+        }
+        for (lang in listOf("ar", "en")) {
+            val eng = settings.getEngineForLanguage(lang)
+            if (!eng.isNullOrBlank()) set.add(eng)
+        }
+        return set
+    }
+
+    /** ع٤٠-2: كشف عدم اتساق أزواج (محرك، صوت) في لغات نقطة الدخول. */
+    internal fun checkEntrypointVoicesConsistency():
+        List<Triple<String, String, String>> {
+        val entries = listOf("ar", "en").map { lang ->
+            val prefs = settings.getEnginePreferenceForLanguage(lang)
+            Triple(lang, prefs.engine, prefs.voiceName)
+        }
+        return EngineLanguageConsistency.mismatchedLanguages(entries)
+    }
+
+    internal fun checkMismatchedCategoryVoices():
+        List<Triple<String, String, String>> {
+        val result = mutableListOf<Triple<String, String, String>>()
+        val categories = SettingsRepository.ALL_VOICE_CATEGORIES +
+            listOf("emoji")
+        for (cat in categories) {
+            val eng = settings.getEngineForCategory(cat)
+            val voice = settings.getPreferredVoiceIdForCategory(cat)
+            if (!eng.isNullOrBlank() && !voice.isNullOrBlank()) {
+                if (!VoiceIdContract.isVoiceBelongingToEngine(eng, voice)) {
+                    result.add(Triple(cat, voice, eng))
+                }
+            }
+        }
+        return result
+    }
+
+    internal fun checkAndPromptVoiceMismatchFix() {
+        if (!isAdded) return
+        val mismatched = checkMismatchedCategoryVoices()
+        if (mismatched.isEmpty()) return
+        val msgList = mismatched.joinToString("\n") { (cat, voice, eng) ->
+            "فئة $cat: الصوت $voice لا يتبع المحرك $eng"
+        }
+        val announcement = "تنبيه: " + mismatched.joinToString("، ") {
+            (cat, voice, eng) -> "فئة $cat الصوت $voice لا يتبع المحرك $eng"
+        }
+        A11ySpeechCoordinator.speakAnnouncement(
+            requireContext(),
+            announcement
+        )
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.voice_mismatch_title)
+            .setMessage(msgList)
+            .setPositiveButton(R.string.voice_mismatch_fix) { _, _ ->
+                for ((cat, _, _) in mismatched) {
+                    settings.setPreferredVoiceIdForCategory(cat, "")
+                }
+                Toast.makeText(
+                    requireContext(),
+                    R.string.voice_mismatch_fixed_toast,
+                    Toast.LENGTH_LONG
+                ).show()
+                refreshVoiceCatalogDiscovery()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
     internal fun refreshVoiceCatalogDiscovery(
         onComplete: (() -> Unit)? = null
     ) {
         catalogDiscoveryJob?.cancel()
         catalogDiscoveryJob = viewLifecycleOwner.lifecycleScope.launch {
+            val active = buildActiveEnginesSet()
             val discovery = withContext(AppDispatchers.io) {
                 try {
                     VoiceCatalog.discoverAllLanguagesAcrossEngines(
-                        requireContext()
+                        requireContext(),
+                        active
                     )
                 } catch (t: Throwable) {
                     Log.w(
@@ -1193,6 +1279,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             if (::callerSection.isInitialized) {
                 callerSection.refreshCallerVoices()
             }
+            checkAndPromptVoiceMismatchFix()
             onComplete?.invoke()
         }
     }
@@ -1509,24 +1596,34 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 )
                 val res = runCatching {
                     requireContext().contentResolver.call(
-                        uri, DictTestProvider.METHOD_GET_LAST_SPOKEN, null, null
+                        uri,
+                        DictTestProvider.METHOD_GET_LAST_SPOKEN,
+                        null,
+                        null
                     )
                 }.getOrNull()
-                val list = res?.getStringArrayList(
+                val rawList = res?.getStringArrayList(
                     DictTestProvider.KEY_LAST_SPOKEN_LIST
                 ).orEmpty()
-                if (list.isEmpty()) {
+                val displays = res?.getStringArrayList(
+                    DictTestProvider.KEY_LAST_SPOKEN_DISPLAYS
+                ).orEmpty()
+                if (rawList.isEmpty()) {
                     Toast.makeText(
                         requireContext(),
                         "لا توجد رسائل مسجلة بعد",
                         Toast.LENGTH_SHORT
                     ).show()
                 } else {
-                    val arr = list.toTypedArray()
+                    val arrDisplays = displays.toTypedArray()
+                    val arrRaw = rawList.toTypedArray()
+                    val itemsToShow = if (arrDisplays.size == arrRaw.size) {
+                        arrDisplays
+                    } else arrRaw
                     MaterialAlertDialogBuilder(requireContext())
                         .setTitle("اختر رسالة للتتبع")
-                        .setItems(arr) { _, which ->
-                            input.setText(arr[which])
+                        .setItems(itemsToShow) { _, which ->
+                            input.setText(arrRaw[which])
                         }
                         .show()
                 }
@@ -2263,9 +2360,18 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         kotlinx.coroutines.withContext(AppDispatchers.io) {
             val diagnostics = buildDiagnosticsInfo(context)
             val logLines = capturedLines.toMutableList()
+            val ttsLogLines = mutableListOf<String>()
+
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE)
+                as? android.app.ActivityManager
+            val procs = am?.runningAppProcesses?.filter {
+                it.processName.startsWith(context.packageName)
+            }.orEmpty()
+            val ttsProc = procs.firstOrNull { it.processName.endsWith(":tts") }
+
             if (logLines.isEmpty()) {
                 // احتياط: لم تطلق المراقبة الحية أسطراً — سحب لحظة
-                // مباشر لأحدث 600 سطر (السلوك السابق).
+                // مباشر لأحدث 600 سطر للعملية الرئيسية.
                 try {
                     val process = Runtime.getRuntime().exec(
                         arrayOf(
@@ -2282,7 +2388,29 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     process.waitFor()
                 } catch (e: Exception) {
                     android.util.Log.e(
-                        "NATEQ_APP", "logcat collect failed", e
+                        "NATEQ_APP", "logcat collect main failed", e
+                    )
+                }
+            }
+
+            if (ttsProc != null) {
+                try {
+                    val process = Runtime.getRuntime().exec(
+                        arrayOf(
+                            "logcat", "-d",
+                            "-t", "600",
+                            "--pid", ttsProc.pid.toString()
+                        )
+                    )
+                    process.inputStream.bufferedReader().useLines { lines ->
+                        for (line in lines) {
+                            ttsLogLines.add(line)
+                        }
+                    }
+                    process.waitFor()
+                } catch (e: Exception) {
+                    android.util.Log.e(
+                        "NATEQ_APP", "logcat collect :tts failed", e
                     )
                 }
             }
@@ -2352,6 +2480,37 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                         "--- سجل نشاط التطبيق (${logLines.size} سطر) ---"
                     )
                     logLines.forEach { appendLine(it) }
+                }
+
+                // الأمر 2 - البند 4: قسم مستقل بعنوان «سجل :tts»
+                appendLine("")
+                appendLine("==========================================")
+                appendLine("=== سجل عملية :tts (Logcat) ===")
+                if (ttsLogLines.isEmpty()) {
+                    appendLine(
+                        "(لم يُعثر على أسطر logcat لعملية :tts " +
+                            "أو العملية متوقفة)"
+                    )
+                } else {
+                    val ttsFiltered = ttsLogLines.filter { line ->
+                        line.contains("NATEQ_TTS") ||
+                            line.contains("ProtectedApp") ||
+                            line.contains("A11y") ||
+                            line.contains("AndroidRuntime")
+                    }
+                    if (ttsFiltered.isNotEmpty()) {
+                        appendLine(
+                            "--- أسطر :tts المستهدفة " +
+                                "(${ttsFiltered.size}) ---"
+                        )
+                        ttsFiltered.takeLast(300).forEach { appendLine(it) }
+                        appendLine("")
+                    }
+                    appendLine(
+                        "--- أحدث أسطر عملية :tts " +
+                            "(${ttsLogLines.size}) ---"
+                    )
+                    ttsLogLines.takeLast(300).forEach { appendLine(it) }
                 }
             }
         }
@@ -2575,6 +2734,15 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             )
             sb.appendLine("")
 
+            val mismatched = checkMismatchedCategoryVoices()
+            if (mismatched.isNotEmpty()) {
+                sb.appendLine("=== تناقض محرك وصوت الفئات ===")
+                for ((cat, voice, eng) in mismatched) {
+                    sb.appendLine("فئة $cat: الصوت $voice لا يتبع المحرك $eng")
+                }
+                sb.appendLine("")
+            }
+
             // ── محركات TTS المثبَّتة ──────────────────────────────────
             sb.appendLine("--- محركات TTS المثبَّتة ---")
             val engines = EnginePicker.installedEngines(context)
@@ -2608,11 +2776,6 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     storageEngine =
                         com.aymankhattab.nateq.core.audio.providers
                             .EmbeddedStorage.Engine.VOCALIZER
-                ),
-                EmbeddedEngineDiag(
-                    id = VocalizerEmbeddedVoiceProvider.PROVIDER_ID,
-                    name = "Vocalizer Ex 2",
-                    storageEngine = EmbeddedStorage.Engine.VOCALIZER
                 )
             )
             embeddedEngines.forEach { diag ->
@@ -2858,48 +3021,91 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             )
             sb.appendLine("")
 
-            // ── خدمات الشاشة وإمكانية الوصول (ع٢٧-77) ─────────────────
-            sb.appendLine("--- خدمات الشاشة وإمكانية الوصول (ع٢٧-77) ---")
+            // ── خدمات الشاشة وإمكانية الوصول (الأمر 2) ─────────────────
+            sb.appendLine("--- خدمات الشاشة وإمكانية الوصول (الأمر 2) ---")
             val a11yEnabled = com.aymankhattab.nateq.util.AccessibilityUtils
                 .isNateqAccessibilityServiceEnabled(context)
-            val store = com.aymankhattab.nateq.core.audio.accessibility
-                .A11yStateStore.getInstance(context)
-            val isConnected = store?.isConnected() ?: false
-            val isPaused = store?.isPaused() ?: false
-            val untilEpoch = store?.getPausedUntilEpoch() ?: 0L
-            val pauseLevel = store?.getPauseLevel() ?: 1
+            val isConnected = com.aymankhattab.nateq.core.audio.accessibility
+                .ProtectedAppManager.isServiceConnected(context)
+
+            val connStatusText = when {
+                isConnected -> "متصلة ✓"
+                a11yEnabled && !isConnected -> "منفصلة ✗"
+                else -> "معطّلة في الإعدادات"
+            }
+
+            val ttsUri = android.net.Uri.parse(
+                "content://${context.packageName}.tts_diagnostics"
+            )
+            val ttsSnapshot = kotlinx.coroutines.withTimeoutOrNull(1500L) {
+                runCatching {
+                    context.contentResolver.call(
+                        ttsUri,
+                        com.aymankhattab.nateq.core.audio.engine
+                            .TtsDiagnosticsProvider.METHOD_SNAPSHOT,
+                        null,
+                        null
+                    )
+                }.getOrNull()
+            }
 
             sb.appendLine(
                 "الخدمة في الإعدادات: " +
                     if (a11yEnabled) "مفعّلة ✓" else "معطّلة ✗"
             )
-            sb.appendLine(
-                "حالة الاتصال: " +
-                    if (isConnected) "متصلة ✓" else "منفصلة ✗"
-            )
-            sb.appendLine(
-                "الإيقاف المؤقت: " +
-                    if (isPaused) {
-                        "نعم (مستوى $pauseLevel، حتى $untilEpoch)"
-                    } else {
-                        "لا (نشطة)"
-                    }
-            )
-            val fgPkg = com.aymankhattab.nateq.core.audio.accessibility
-                .AccessibilityBridge.foregroundPackage()
-            sb.appendLine("تطبيق الواجهة: ${fgPkg ?: "غير معروف"}")
+            sb.appendLine("حالة الاتصال: $connStatusText")
+
+            if (ttsSnapshot != null) {
+                val isPaused = ttsSnapshot.getBoolean(
+                    com.aymankhattab.nateq.core.audio.engine
+                        .TtsDiagnosticsProvider.KEY_A11Y_PAUSED,
+                    false
+                )
+                val pauseLevel = ttsSnapshot.getInt(
+                    com.aymankhattab.nateq.core.audio.engine
+                        .TtsDiagnosticsProvider.KEY_PAUSE_LEVEL,
+                    1
+                )
+                val untilEpoch = ttsSnapshot.getLong(
+                    com.aymankhattab.nateq.core.audio.engine
+                        .TtsDiagnosticsProvider.KEY_PAUSED_UNTIL,
+                    0L
+                )
+                val fgPkg = ttsSnapshot.getString(
+                    com.aymankhattab.nateq.core.audio.engine
+                        .TtsDiagnosticsProvider.KEY_FOREGROUND_PKG
+                )
+                sb.appendLine(
+                    "الإيقاف المؤقت: " +
+                        if (isPaused) {
+                            "نعم (مستوى $pauseLevel، حتى $untilEpoch)"
+                        } else {
+                            "لا (نشطة)"
+                        }
+                )
+                sb.appendLine("تطبيق الواجهة: ${fgPkg ?: "غير معروف"}")
+            } else {
+                sb.appendLine(
+                    "بيانات :tts: تعذر قراءة بيانات :tts (العملية متوقفة)"
+                )
+                sb.appendLine("تطبيق الواجهة: غير معروف (العملية متوقفة)")
+            }
             sb.appendLine("")
 
             // ── سجل حسم الصوت (ع٤٥) ──────────────────────────────────
             sb.appendLine("--- سجل حسم الصوت (ع٤٥) ---")
-            val resolutions = com.aymankhattab.nateq.core.audio.accessibility
-                .VoiceResolutionTracker.getRecent()
-            if (resolutions.isEmpty()) {
-                sb.appendLine("• لا يوجد سجلات حسم بعد")
-            } else {
-                resolutions.forEach { res ->
-                    sb.appendLine(res.format())
+            if (ttsSnapshot != null) {
+                val resolutions = ttsSnapshot.getStringArrayList(
+                    com.aymankhattab.nateq.core.audio.engine
+                        .TtsDiagnosticsProvider.KEY_VOICE_RESOLUTIONS
+                ).orEmpty()
+                if (resolutions.isEmpty()) {
+                    sb.appendLine("• لا يوجد سجلات حسم بعد")
+                } else {
+                    resolutions.forEach { res -> sb.appendLine(res) }
                 }
+            } else {
+                sb.appendLine("• تعذر قراءة بيانات :tts (العملية متوقفة)")
             }
             sb.appendLine("")
 
@@ -2907,11 +3113,35 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             val batteryReport = com.aymankhattab.nateq.core.audio.accessibility
                 .BatteryDiagnosticsTracker.buildBatteryReport(context)
             sb.appendLine(batteryReport)
+            if (ttsSnapshot != null) {
+                val a11yPerMin = ttsSnapshot.getInt(
+                    com.aymankhattab.nateq.core.audio.engine
+                        .TtsDiagnosticsProvider.KEY_A11Y_EVENTS_PER_MIN,
+                    0
+                )
+                val usagePolls = ttsSnapshot.getInt(
+                    com.aymankhattab.nateq.core.audio.engine
+                        .TtsDiagnosticsProvider.KEY_USAGE_STATS_POLLS,
+                    0
+                )
+                sb.appendLine("  أحداث إمكانية الوصول/د (:tts): $a11yPerMin")
+                if (usagePolls > 0) {
+                    sb.appendLine("  استطلاعات UsageStats (:tts): $usagePolls")
+                }
+            }
 
             // ── تقرير السرعة (الجولة 50) ───────────────────────────────
-            val speedReport = com.aymankhattab.nateq.core.audio.engine
-                .SpeechLatencyTracker.formatSpeedReport()
-            sb.appendLine(speedReport)
+            if (ttsSnapshot != null) {
+                val speedReport = ttsSnapshot.getString(
+                    com.aymankhattab.nateq.core.audio.engine
+                        .TtsDiagnosticsProvider.KEY_SPEED_REPORT
+                ) ?: com.aymankhattab.nateq.core.audio.engine
+                    .SpeechLatencyTracker.formatSpeedReport()
+                sb.appendLine(speedReport)
+            } else {
+                sb.appendLine("--- تقرير السرعة ---")
+                sb.appendLine("• تعذر قراءة بيانات :tts (العملية متوقفة)")
+            }
 
             // ── تشخيص تبديل المحركات (الجولة 51 - الأمر 2) ───────────
             sb.appendLine("--- تشخيص تبديل المحركات (الجولة 51) ---")
@@ -2935,6 +3165,31 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             }
             if (savedRecipe != null) {
                 sb.appendLine("وصفة الجهاز المحفوظة: $savedRecipe")
+            }
+            sb.appendLine("")
+
+            // ── الخط الزمني للتطبيق المحمي (الأمر 7) ───────────────────
+            sb.appendLine("--- الخط الزمني للتطبيق المحمي (الأمر 7) ---")
+            val localTimeline = com.aymankhattab.nateq.core.audio.accessibility
+                .ProtectedAppTimelineTracker.getTimelineReport()
+            val ttsTimeline = ttsSnapshot?.getString(
+                com.aymankhattab.nateq.core.audio.engine
+                    .TtsDiagnosticsProvider.KEY_TIMELINE_REPORT
+            )
+            val noDataMsg = "لا يوجد خط زمني مسجّل حتى الآن."
+            var hasTimeline = false
+            if (localTimeline != noDataMsg) {
+                sb.appendLine("العملية الرئيسية:")
+                sb.appendLine(localTimeline)
+                hasTimeline = true
+            }
+            if (!ttsTimeline.isNullOrBlank() && ttsTimeline != noDataMsg) {
+                sb.appendLine("عملية :tts:")
+                sb.appendLine(ttsTimeline)
+                hasTimeline = true
+            }
+            if (!hasTimeline) {
+                sb.appendLine(noDataMsg)
             }
             sb.appendLine("")
 

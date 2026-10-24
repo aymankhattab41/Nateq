@@ -33,13 +33,10 @@ class RepeatSpellControllerTest {
     }
 
     @Test
-    fun spellText_dictionaryTakesPrecedence() {
-        val resolver: (String) -> String = { word ->
-            if (word == "ا") "ألفٌ مخصص" else word
-        }
+    fun spellText_spellsEachCharacterByName() {
         assertEquals(
-            "ألفٌ مخصص باء",
-            RepeatSpellController.spellText("اب", resolver)
+            "ألف باء",
+            RepeatSpellController.spellText("اب")
         )
     }
 

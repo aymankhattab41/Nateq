@@ -702,9 +702,6 @@ class NateqTtsService : TextToSpeechService() {
         // سجلّ مجرّد: طول النص واللغة فقط
         // (النص قد يحوي OTP/حساسيات يقرؤها TalkBack).
         val reqText = request.charSequenceText?.toString()
-        if (reqText != null) {
-            LastSpokenTextsTracker.record(reqText)
-        }
         Log.d(TAG,
             "onSynthesizeText() len=${reqText?.length}" +
             " lang=${request.language}")
@@ -939,24 +936,11 @@ class NateqTtsService : TextToSpeechService() {
                     }
                 }
                 Log.d(TAG, "[DICT] Service before: $processedText")
-                val singleLetterMode = runCatching {
-                    settings.getSingleLetterMode()
-                }.getOrDefault("name")
-                val resolvedLetter =
-                    SingleLetterGuard.resolve(processedText, singleLetterMode)
-                val semanticText = if (resolvedLetter != null) {
-                    if (singleLetterMode == "name") {
-                        Log.d(TAG, "حرف مفرد: $processedText ← $resolvedLetter")
-                    }
-                    resolvedLetter
-                } else {
-                    val dictText = textProcessor.applyDictionaryFirst(
-                        processedText, languageTag
-                    )
-                    textProcessor.processSemantics(
-                        dictText, languageTag, markNumbers = true
-                    )
-                }
+                val semanticText = SpeechEntryPoints.prepare(
+                    processedText,
+                    SpeechEntryPoints.Source.SCREEN_READER,
+                    applicationContext
+                )
                 processedText = semanticText
                 val endPreprocess = SystemClock.uptimeMillis()
                 preprocessDurationMs.set(endPreprocess - startPreprocess)
@@ -1731,7 +1715,8 @@ class NateqTtsService : TextToSpeechService() {
             appVoice = applyVoice?.voiceId,
             contactVoice = null,
             languageDefaultVoice = routed.voiceName
-                ?: settings.getPreferredVoiceId(segTag)
+                ?: settings.getPreferredVoiceId(segTag),
+            categoryEngine = categoryEngine
         )
         val targetEngine = when (resolvedVoice.source) {
             VoiceResolutionPolicy.SOURCE_CATEGORY_EMOJI,

@@ -83,13 +83,28 @@ object SpeechPlanner {
                 ?: settings?.getVoiceForLanguage(canonicalTag)
         }.getOrNull()
 
+        val categoryEngine = when (role) {
+            SpeechRole.EMOJI -> runCatching {
+                settings?.getEngineForCategory(
+                    SettingsRepository.VOICE_CATEGORY_EMOJI
+                )
+            }.getOrNull()
+            SpeechRole.NUMBER -> runCatching {
+                settings?.getEngineForCategory(
+                    SettingsRepository.VOICE_CATEGORY_NUMBERS
+                )
+            }.getOrNull()
+            SpeechRole.TEXT -> null
+        }
+
         val resolved = VoiceResolutionPolicy.resolve(
             role = role,
             languageTag = languageTag,
             categoryVoice = categoryVoice,
             appVoice = defaultVoiceId,
             contactVoice = null,
-            languageDefaultVoice = langVoice
+            languageDefaultVoice = langVoice,
+            categoryEngine = categoryEngine
         )
 
         val targetEngine = when (resolved.source) {

@@ -435,6 +435,13 @@
             android:authorities="${applicationId}.dict_test_provider"
             android:process=":tts"
             android:exported="false" />
+
+        <!-- مزود تقارير التشخيص الصادقة في عملية :tts (الجولة 53 - الأمر 2) -->
+        <provider
+            android:name="com.aymankhattab.nateq.core.audio.engine.TtsDiagnosticsProvider"
+            android:authorities="${applicationId}.tts_diagnostics"
+            android:process=":tts"
+            android:exported="false" />
         <!-- خدمة لوحة مفاتيح Lord TTS الميسّرة لذوي الإعاقة البصرية -->
         <service
             android:name="com.aymankhattab.nateq.core.audio.keyboard.LordKeyboardService"

@@ -67,4 +67,10 @@ interface VoicePrefsProvider {
 
     /** تحويل كلمات الفترة في إعلانات الوقت لنون صريحة (الافتراضي true). */
     fun isDayPeriodExplicitNunEnabled(): Boolean = true
+
+    /** طريقة صياغة فترة اليوم في إعلان الوقت (الجولة 53 - الأمر 5). */
+    fun getDayPeriodStyle(): String = "explicit_nun_comma"
+
+    /** طريقة عرض المكالمة الواردة (الجولة 53 - الأمر 6). */
+    fun getIncomingCallUiMode(): String = "auto"
 }

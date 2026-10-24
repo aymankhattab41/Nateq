@@ -59,6 +59,7 @@ class PhoneSettingsActivity : AppCompatActivity() {
         setupDialpadSizeSection()
         setupDialpadStyleSection()
         setupRecordingSection()
+        setupIncomingCallUiModeSection()
         setupHardwareSection()
     }
 
@@ -508,6 +509,45 @@ class PhoneSettingsActivity : AppCompatActivity() {
             settingsRepo.isPhoneRecordAutoSpeakerEnabled()
         swRecordAutoSpeaker.setOnCheckedChangeListener { _, isChecked ->
             settingsRepo.setPhoneRecordAutoSpeakerEnabled(isChecked)
+        }
+    }
+
+    private fun setupIncomingCallUiModeSection() {
+        val rg = findViewById<RadioGroup>(R.id.rg_incoming_call_ui_mode)
+        val rbAuto = findViewById<RadioButton>(R.id.rb_incoming_call_auto)
+        val rbFullscreen =
+            findViewById<RadioButton>(R.id.rb_incoming_call_fullscreen)
+        val rbNotification =
+            findViewById<RadioButton>(R.id.rb_incoming_call_notification)
+
+        when (settingsRepo.getIncomingCallUiMode()) {
+            SettingsRepository.INCOMING_CALL_UI_FULLSCREEN ->
+                rbFullscreen.isChecked = true
+            SettingsRepository.INCOMING_CALL_UI_NOTIFICATION ->
+                rbNotification.isChecked = true
+            else ->
+                rbAuto.isChecked = true
+        }
+
+        rg?.setOnCheckedChangeListener { _, checkedId ->
+            val mode = when (checkedId) {
+                R.id.rb_incoming_call_fullscreen ->
+                    SettingsRepository.INCOMING_CALL_UI_FULLSCREEN
+                R.id.rb_incoming_call_notification ->
+                    SettingsRepository.INCOMING_CALL_UI_NOTIFICATION
+                else ->
+                    SettingsRepository.INCOMING_CALL_UI_AUTO
+            }
+            settingsRepo.setIncomingCallUiMode(mode)
+            val msg = when (mode) {
+                SettingsRepository.INCOMING_CALL_UI_FULLSCREEN ->
+                    getString(R.string.phone_incoming_call_ui_mode_fullscreen)
+                SettingsRepository.INCOMING_CALL_UI_NOTIFICATION ->
+                    getString(R.string.phone_incoming_call_ui_mode_notification)
+                else ->
+                    getString(R.string.phone_incoming_call_ui_mode_auto)
+            }
+            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
         }
     }
 

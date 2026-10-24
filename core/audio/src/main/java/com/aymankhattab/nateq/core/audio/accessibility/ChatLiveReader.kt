@@ -1,6 +1,7 @@
 package com.aymankhattab.nateq.core.audio.accessibility
 
 import android.content.Context
+import com.aymankhattab.nateq.core.audio.engine.SpeechEntryPoints
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -74,7 +75,8 @@ class ChatLiveReader private constructor() {
                 engineOverride = voice?.engine,
                 speechRate = voice?.speechRate,
                 pitch = voice?.pitch,
-                volume = voice?.volume
+                volume = voice?.volume,
+                source = SpeechEntryPoints.Source.CHAT_LIVE
             )
             return true
         }

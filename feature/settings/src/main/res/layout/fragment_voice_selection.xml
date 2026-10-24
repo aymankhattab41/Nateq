@@ -218,6 +218,10 @@
                 <androidx.appcompat.widget.AppCompatSpinner android:id="@+id/spinner_time_format" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:contentDescription="@string/spinner_time_format_content" />
             </com.google.android.material.textfield.TextInputLayout>
 
+            <com.google.android.material.textfield.TextInputLayout android:id="@+id/til_time_day_period_style" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:hint="@string/time_day_period_style_title">
+                <androidx.appcompat.widget.AppCompatSpinner android:id="@+id/spinner_time_day_period_style" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:contentDescription="@string/spinner_time_day_period_style_content" />
+            </com.google.android.material.textfield.TextInputLayout>
+
             
             <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switch_time_display_24h" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:layout_marginTop="16dp" android:text="@string/time_display_24h" android:textOff="@string/toggle_off" android:textOn="@string/toggle_on" />
 

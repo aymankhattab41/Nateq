@@ -60,6 +60,7 @@ class ProtectedAppLauncherActivity : Activity() {
 
         // تسجيل البداية في الخط الزمني وبدء فترة الصمت التام
         ProtectedAppTimelineTracker.recordLauncherClick(targetPkg)
+        ProtectedAppTimelineTracker.recordDeviceFingerprint(this, targetPkg)
         ProtectedAppTimelineTracker.recordLordDetected(targetPkg)
 
         // استدعاء التعطيل
@@ -109,9 +110,14 @@ class ProtectedAppLauncherActivity : Activity() {
                     )
                     handler.postDelayed({ launchTarget() }, SETTLE_DELAY_MS)
                 } else if (elapsed >= MAX_WAIT_MS) {
+                    ProtectedAppTimelineTracker.recordRestorePhase(
+                        "رفض الفتح",
+                        targetPkg,
+                        "لم تتوقف الخدمة خلال 3000ms"
+                    )
                     ProtectedAppTimelineTracker.recordWarning(
                         targetPkg,
-                        "لم تتوقف الخدمة خلال 3000ms — إلغاء الفتح"
+                        "رفض الفتح: لم تتوقف الخدمة خلال 3000ms — إلغاء الفتح"
                     )
                     ProtectedAppManager.speakLordSystem(
                         this@ProtectedAppLauncherActivity,
