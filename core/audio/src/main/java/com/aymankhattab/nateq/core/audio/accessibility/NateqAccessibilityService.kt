@@ -736,14 +736,31 @@ class NateqAccessibilityService : AccessibilityService() {
             }
         }
 
-        // الجولة 48 - الأمر 7: نقرة أيقونة التطبيق المحمي في المشغّل
+        // الجولة 48 و54: نقرة أيقونة التطبيق المحمي في المشغّل
         // تصل قبل انطلاقه — نعطل الخدمة هنا قبل شاشة البداية.
-        if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+        if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED ||
+            event.eventType ==
+            AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED
+        ) {
             if (ProtectedAppManager.isHomeLauncher(this, eventPkg)) {
                 val candidate =
                     ProtectedAppManager.launcherCandidateLabel(event)
                 val matched =
                     ProtectedAppManager.matchProtectedApp(this, candidate)
+                val typeName = if (event.eventType ==
+                    AccessibilityEvent.TYPE_VIEW_CLICKED
+                ) {
+                    "CLICK"
+                } else {
+                    "FOCUS"
+                }
+                ProtectedAppTimelineTracker.recordEvent(
+                    matched?.packageName ?: eventPkg.orEmpty(),
+                    "حدث مشغل ($typeName): نص='$candidate', " +
+                        "وصف='${event.contentDescription}', " +
+                        "صنف='${event.className}', " +
+                        "مطابقة='${matched?.packageName}'"
+                )
                 if (matched != null) {
                     ProtectedAppTimelineTracker.recordLauncherClick(
                         matched.packageName
@@ -754,7 +771,12 @@ class NateqAccessibilityService : AccessibilityService() {
                     ProtectedAppTimelineTracker.startQuietPeriod(
                         matched.packageName
                     )
-                    ProtectedAppManager.handleAppEntry(this, this, matched)
+                    ProtectedAppManager.handleAppEntry(
+                        context = this,
+                        service = this,
+                        app = matched,
+                        relaunchIfForeground = false
+                    )
                     return
                 }
             }

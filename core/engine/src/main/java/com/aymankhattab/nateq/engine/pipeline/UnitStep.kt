@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.engine.pipeline
 
+import com.aymankhattab.nateq.core.engine.EngineMarkers
 import com.aymankhattab.nateq.engine.NumberSpeech
 import java.util.regex.Pattern
 
@@ -250,5 +251,87 @@ internal object UnitStep : TextProcessingStep {
                 "$numberText ${info.singular}"
             }
         }
+    }
+
+    override fun applyEnglish(input: String): String =
+        applyEnglish(input, markNumbers = false)
+
+    fun applyEnglish(input: String, markNumbers: Boolean): String {
+        if (!UNIT_ANY_PATTERN.matcher(input).find()) return input
+        var result = input
+        for ((pattern, info) in UNIT_PATTERNS) {
+            val matcher = pattern.matcher(result)
+            if (!matcher.find()) continue
+            matcher.reset()
+            val buffer = StringBuffer()
+            while (matcher.find()) {
+                val value = matcher.group(1)!!
+                val enText = formatUnitEnglish(value, info, markNumbers)
+                matcher.appendReplacement(
+                    buffer, java.util.regex.Matcher.quoteReplacement(enText)
+                )
+            }
+            matcher.appendTail(buffer)
+            result = buffer.toString()
+        }
+        return result
+    }
+
+    private fun englishUnitNames(symbol: String): Pair<String, String> =
+        when (symbol) {
+            "km" -> "kilometer" to "kilometers"
+            "م" -> "meter" to "meters"
+            "سم" -> "centimeter" to "centimeters"
+            "مم" -> "millimeter" to "millimeters"
+            "inch" -> "inch" to "inches"
+            "ft" -> "foot" to "feet"
+            "yd" -> "yard" to "yards"
+            "mi" -> "mile" to "miles"
+            "kg" -> "kilogram" to "kilograms"
+            "غ" -> "gram" to "grams"
+            "ملغ" -> "milligram" to "milligrams"
+            "lb" -> "pound" to "pounds"
+            "oz" -> "ounce" to "ounces"
+            "KB" -> "kilobyte" to "kilobytes"
+            "MB" -> "megabyte" to "megabytes"
+            "GB" -> "gigabyte" to "gigabytes"
+            "TB" -> "terabyte" to "terabytes"
+            "KB/s" -> "kilobyte per second" to "kilobytes per second"
+            "MB/s" -> "megabyte per second" to "megabytes per second"
+            "GB/s" -> "gigabyte per second" to "gigabytes per second"
+            "كم/س" -> "kilometer per hour" to "kilometers per hour"
+            "م/ث" -> "meter per second" to "meters per second"
+            "°C" -> "degree Celsius" to "degrees Celsius"
+            "°F" -> "degree Fahrenheit" to "degrees Fahrenheit"
+            "K" -> "kelvin" to "kelvins"
+            "ث" -> "second" to "seconds"
+            "د" -> "minute" to "minutes"
+            "س" -> "hour" to "hours"
+            "ي" -> "day" to "days"
+            "أسبوع" -> "week" to "weeks"
+            "شهر" -> "month" to "months"
+            "سنة" -> "year" to "years"
+            "لتر" -> "liter" to "liters"
+            "مل" -> "milliliter" to "milliliters"
+            "غالون" -> "gallon" to "gallons"
+            else -> symbol to "${symbol}s"
+        }
+
+    private fun formatUnitEnglish(
+        value: String,
+        info: UnitInfo,
+        markNumbers: Boolean
+    ): String {
+        val (sing, plur) = englishUnitNames(info.symbol)
+        val clean = value.replace(",", "")
+        val num = clean.toDoubleOrNull()
+        val unitName = if (num == 1.0) sing else plur
+        val formattedVal = if (markNumbers) {
+            "${EngineMarkers.NUMBER_MARK_START}$value" +
+                "${EngineMarkers.NUMBER_MARK_END}"
+        } else {
+            value
+        }
+        return "$formattedVal $unitName"
     }
 }

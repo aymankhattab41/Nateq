@@ -3,6 +3,7 @@ package com.aymankhattab.nateq.core.audio.accessibility
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.aymankhattab.nateq.core.audio.announcement.NateqNotificationListener
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,15 +22,29 @@ class ProtectedAppRestoreReceiver : BroadcastReceiver() {
             try {
                 when (action) {
                     ProtectedAppManager.ACTION_RESTORE_ALARM -> {
+                        val chain = intent?.getIntExtra(
+                            ProtectedAppManager.EXTRA_ALARM_CHAIN_COUNT, 0
+                        ) ?: 0
                         val restored = ProtectedAppManager.checkAndRestore(
                             context = context,
-                            reason = "alarm"
+                            reason = "منبه دقيق متسلسل #$chain"
                         )
                         if (!restored &&
                             ProtectedAppManager.isSuspended(context)
                         ) {
-                            ProtectedAppManager.scheduleBackupAlarm(context)
+                            ProtectedAppManager.scheduleBackupAlarm(
+                                context, chain + 1
+                            )
                         }
+                    }
+                    ProtectedAppManager.ACTION_START_RESTORE_WATCH -> {
+                        val pkg = intent?.getStringExtra("pkg").orEmpty()
+                        val label = intent?.getStringExtra("label").orEmpty()
+                        NateqNotificationListener.startRestoreWatch(
+                            context = context,
+                            pkg = pkg,
+                            label = label
+                        )
                     }
                     ProtectedAppManager.ACTION_A11Y_CONNECTED -> {
                         if (ProtectedAppManager.isSuspended(context)) {
@@ -50,6 +65,7 @@ class ProtectedAppRestoreReceiver : BroadcastReceiver() {
                                     .setSuspendedProtectedApp(null)
                                 ProtectedAppManager.cancelBackupAlarm(context)
                                 ProtectedAppWatcherService.stopService(context)
+                                NateqNotificationListener.stopRestoreWatch()
                                 ProtectedAppManager.resetStateAfterRestore()
                             }
                         }

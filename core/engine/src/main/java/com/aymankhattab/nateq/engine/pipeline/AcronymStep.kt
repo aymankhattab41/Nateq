@@ -38,8 +38,8 @@ internal object AcronymStep : TextProcessingStep {
     private val ACRONYM_PATTERNS = ACRONYMS.map { (acronym, _) ->
         // حدود كلمات تامة: تدعم الحروف اللاتينية والعربية والنقاط الختامية
         Pattern.compile(
-            """(?<![\p{L}\p{N}_])""" + Pattern.quote(acronym) +
-                """(?![\p{L}\p{N}_])"""
+            """(?<![\p{L}\p{M}\p{N}_])""" + Pattern.quote(acronym) +
+                """(?![\p{L}\p{M}\p{N}_])"""
         ) to acronym
     }
 

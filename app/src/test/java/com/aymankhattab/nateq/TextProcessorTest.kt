@@ -1030,6 +1030,7 @@ class TextProcessorTest {
             "I have خمسة books",
             procAr.process("I have 5 books", "en")
         )
+        settings.setNumberReadingLanguage("auto")
     }
 
     @Test
@@ -1070,5 +1071,103 @@ class TextProcessorTest {
             "الملف خمسون ميجابايت",
             processor.process("الملف 50 مب", "ar")
         )
+    }
+
+    @Test
+    fun hijri_month_guard_system_date_not_mangled_to_currency() {
+        val vowelledInput = "اليوم، الأَحَد 13 جُمَادَى الأُولَى 1448"
+        val outVowelled = processor.processSemantics(vowelledInput, "ar")
+        assertFalse(outVowelled.contains("جنيه"))
+        assertFalse(outVowelled.contains("مساء"))
+        assertFalse(outVowelled.contains("متر"))
+        assertTrue(outVowelled.contains("جُمَادَى الأُولَى"))
+
+        val plainInput = "13 جمادى الأولى"
+        val outPlain = processor.processSemantics(plainInput, "ar")
+        assertFalse(outPlain.contains("جنيه"))
+        assertFalse(outPlain.contains("مساء"))
+        assertFalse(outPlain.contains("متر"))
+        assertTrue(outPlain.contains("جمادى الأولى"))
+
+        val fullSpoken = processor.process(vowelledInput, "ar")
+        assertFalse(fullSpoken.contains("جنيه"))
+        assertFalse(fullSpoken.contains("مساء"))
+        assertFalse(fullSpoken.contains("متر"))
+        assertTrue(fullSpoken.contains("ثلاثة عشر"))
+        assertTrue(
+            fullSpoken.contains("جمادى الأولى") ||
+                fullSpoken.contains("جُمَادَى الأُولَى")
+        )
+
+        val fullSpokenGoogle = processor.process(
+            vowelledInput, "ar", "com.google.android.tts"
+        )
+        assertTrue(fullSpokenGoogle.contains("جُمَادَى الأُولَى"))
+    }
+
+    @Test
+    fun hijri_all_twelve_months_after_day_numbers() {
+        val months = listOf(
+            "مُحَرَّم" to "محرم",
+            "صَفَر" to "صفر",
+            "رَبِيع الأَوَّل" to "ربيع الأول",
+            "رَبِيع الآخِر" to "ربيع الآخر",
+            "جُمَادَى الأُولَى" to "جمادى الأولى",
+            "جُمَادَى الآخِرَة" to "جمادى الآخرة",
+            "رَجَب" to "رجب",
+            "شَعْبَان" to "شعبان",
+            "رَمَضَان" to "رمضان",
+            "شَوَّال" to "شوال",
+            "ذُو القَعْدَة" to "ذو القعدة",
+            "ذُو الحِجَّة" to "ذو الحجة"
+        )
+        val days = listOf("1", "9", "13", "29")
+
+        for ((vowelledMonth, plainMonth) in months) {
+            for (day in days) {
+                val vowelledText = "$day $vowelledMonth"
+                val outV = processor.processSemantics(vowelledText, "ar")
+                assertFalse("Failed for $vowelledText", outV.contains("جنيه"))
+                assertFalse("Failed for $vowelledText", outV.contains("مساء"))
+                assertFalse("Failed for $vowelledText", outV.contains("متر"))
+                assertTrue(
+                    "Missing month in $outV",
+                    outV.contains(vowelledMonth)
+                )
+
+                val plainText = "$day $plainMonth"
+                val outP = processor.processSemantics(plainText, "ar")
+                assertFalse("Failed for $plainText", outP.contains("جنيه"))
+                assertFalse("Failed for $plainText", outP.contains("مساء"))
+                assertFalse("Failed for $plainText", outP.contains("متر"))
+                assertTrue("Missing month in $outP", outP.contains(plainMonth))
+            }
+        }
+    }
+
+    @Test
+    fun currency_and_units_not_broken_by_hijri_guard() {
+        val out13J = processor.process("13 ج", "ar")
+        assertTrue("Expected جنيه in $out13J", out13J.contains("جنيه"))
+
+        val out50J = processor.process("50ج", "ar")
+        assertTrue("Expected جنيه in $out50J", out50J.contains("جنيه"))
+
+        val out13Jm = processor.process("13جم", "ar")
+        assertFalse("13جم must not become جنيه", out13Jm.contains("جنيه"))
+
+        val out5M = processor.process("5 م", "ar")
+        val isMeter = out5M.contains("أمتار") || out5M.contains("متر")
+        assertTrue("Expected متر in $out5M", isMeter)
+
+        val outTime5M = processor.process("الساعة 5 م", "ar")
+        assertTrue("Expected مساء in $outTime5M", outTime5M.contains("مساء"))
+    }
+
+    @Test
+    fun fully_vowelled_arabic_text_regression() {
+        val text = "كَتَبَ الأُسْتَاذُ الرِّسَالَةَ فِي يَوْمِ الأَحَدِ"
+        val out = processor.processSemantics(text, "ar")
+        assertEquals(text, out)
     }
 }

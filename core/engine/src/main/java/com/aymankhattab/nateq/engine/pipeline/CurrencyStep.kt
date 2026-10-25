@@ -483,7 +483,7 @@ internal object CurrencyStep : TextProcessingStep {
         // أنماط الرموز قبل المبلغ: «$100» مع مسافة اختيارية بين الرمز والمبلغ.
         val before = sorted.map { (symbol, info) ->
             val headGuard = if (isBareArabicSymbol(symbol)) {
-                "(?<!\\p{IsArabic})"
+                "(?<![\\p{L}\\p{M}])"
             } else {
                 ""
             }
@@ -494,10 +494,10 @@ internal object CurrencyStep : TextProcessingStep {
         // أنماط الرموز بعد المبلغ: «100$» مع مسافة اختيارية بين المبلغ
         // والرمز. الحارس السالب للعدد يشمل الإشارة نفسها: لا تُلتقط «-2$»
         // كجزء من رقم أطول/رقمٍ سالبٍ سابق («12-2$» تُترك كما هي).
-        // الحرفُ العربي المفرد يُمنع بعده حرفٌ عربي («5 جيد» تبقى أرقاماً).
+        // الحرفُ العربي المفرد يُمنع بعده حرفٌ أو حركة («5 جيد» تبقى أرقاماً).
         val after = sorted.map { (symbol, info) ->
             val tailGuard = if (isBareArabicSymbol(symbol)) {
-                "(?!\\p{IsArabic})"
+                "(?![\\p{L}\\p{M}])"
             } else {
                 ""
             }

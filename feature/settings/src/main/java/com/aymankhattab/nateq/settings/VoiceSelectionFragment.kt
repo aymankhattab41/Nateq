@@ -1214,9 +1214,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             .setTitle(R.string.voice_mismatch_title)
             .setMessage(msgList)
             .setPositiveButton(R.string.voice_mismatch_fix) { _, _ ->
-                for ((cat, _, _) in mismatched) {
-                    settings.setPreferredVoiceIdForCategory(cat, "")
-                }
+                EngineLanguageConsistency.repairAllInconsistentVoices(
+                    settings, engineCatalog
+                )
                 Toast.makeText(
                     requireContext(),
                     R.string.voice_mismatch_fixed_toast,
@@ -1279,6 +1279,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             if (::callerSection.isInitialized) {
                 callerSection.refreshCallerVoices()
             }
+            EngineLanguageConsistency.repairAllInconsistentVoices(
+                settings, engineCatalog
+            )
             checkAndPromptVoiceMismatchFix()
             onComplete?.invoke()
         }

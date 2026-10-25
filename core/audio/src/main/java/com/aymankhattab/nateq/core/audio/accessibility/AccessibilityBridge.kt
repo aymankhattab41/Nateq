@@ -40,7 +40,12 @@ object AccessibilityBridge {
     fun isServiceConnected(): Boolean = activeServiceRef.get() != null
 
     fun updateForeground(packageName: String?, activityName: String?) {
-        if (packageName.isNullOrBlank()) return
+        if (packageName == null) {
+            foregroundPackageRef.set(null)
+            foregroundActivityRef.set(null)
+            return
+        }
+        if (packageName.isBlank()) return
         if (packageName.contains("talkback", ignoreCase = true)) return
         foregroundPackageRef.set(packageName)
         foregroundActivityRef.set(activityName)
@@ -265,4 +270,13 @@ object AccessibilityBridge {
 
     /** هل الجسر متصل بخدمة إمكانية الوصول الحية؟ */
     fun isConnected(): Boolean = activeServiceRef.get() != null
+
+    @androidx.annotation.VisibleForTesting
+    fun resetForTesting() {
+        activeServiceRef.set(null)
+        foregroundPackageRef.set(null)
+        foregroundActivityRef.set(null)
+        lastScreenTextsBuffer.clear()
+        contentChangeSignal.set(null)
+    }
 }

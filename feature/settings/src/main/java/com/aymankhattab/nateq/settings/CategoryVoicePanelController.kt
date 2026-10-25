@@ -907,9 +907,17 @@ if (!dirtyPanel) {
                 }
             }
         }
+        val voiceEngine = chosenVoice.enginePackage
+            ?: catalog.engineForVoice(chosenVoice.name)
+            ?: VoiceIdContract.inferEngineForVoice(chosenVoice.name)
+        if (categoryHasDedicatedEngine(key) && !voiceEngine.isNullOrBlank()) {
+            runCatching {
+                settings.setEngineForCategory(key, voiceEngine)
+            }
+        }
         runCatching {
             settings.setPreferredVoiceIdForCategory(
-                key, chosenVoice.name
+                key, chosenVoice.name, voiceEngine
             )
         }
         val voiceLang = catalog.languageForSavedVoice(chosenVoice.name)

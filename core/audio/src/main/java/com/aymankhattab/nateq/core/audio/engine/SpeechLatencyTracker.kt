@@ -33,14 +33,54 @@ object SpeechLatencyTracker {
         val timestamp: Long = System.currentTimeMillis()
     )
 
+    data class DroppedSegmentDetail(
+        val text: String,
+        val role: String,
+        val requestedEngine: String?,
+        val requestedVoice: String?,
+        val actualEngine: String?,
+        val actualVoice: String?,
+        val reason: String,
+        val attempts: Int,
+        val timestamp: Long = System.currentTimeMillis()
+    )
+
     private val history = ConcurrentLinkedDeque<UtteranceMetric>()
     private val droppedSegmentsCounter = AtomicInteger(0)
+    private val droppedDetails =
+        ConcurrentLinkedDeque<DroppedSegmentDetail>()
 
-    fun recordDroppedSegment(segmentText: String) {
+    fun recordDroppedSegment(
+        segmentText: String,
+        role: String = "text",
+        requestedEngine: String? = null,
+        requestedVoice: String? = null,
+        actualEngine: String? = null,
+        actualVoice: String? = null,
+        reason: String = "فشل التوليد بعد المحاولات",
+        attempts: Int = 1
+    ) {
         droppedSegmentsCounter.incrementAndGet()
+        droppedDetails.addLast(
+            DroppedSegmentDetail(
+                text = segmentText,
+                role = role,
+                requestedEngine = requestedEngine,
+                requestedVoice = requestedVoice,
+                actualEngine = actualEngine,
+                actualVoice = actualVoice,
+                reason = reason,
+                attempts = attempts
+            )
+        )
+        while (droppedDetails.size > 100) {
+            droppedDetails.pollFirst()
+        }
     }
 
     fun getDroppedSegmentsCount(): Int = droppedSegmentsCounter.get()
+    fun getDroppedSegmentDetails(): List<DroppedSegmentDetail> =
+        droppedDetails.toList()
 
     fun recordUtterance(metric: UtteranceMetric) {
         history.addLast(metric)
@@ -89,6 +129,18 @@ object SpeechLatencyTracker {
                 "${getDroppedSegmentsCount()}"
         )
 
+        val droppedList = droppedDetails.toList()
+        if (droppedList.isNotEmpty()) {
+            sb.appendLine("• أسباب الحذف الأكثر تكراراً:")
+            val reasonsCount = droppedList.groupBy { it.reason }
+                .mapValues { it.value.size }
+                .toList()
+                .sortedByDescending { it.second }
+            for ((r, cnt) in reasonsCount) {
+                sb.appendLine("  - $r: $cnt مقاطع")
+            }
+        }
+
         val top5 = getTop5Slowest()
         if (top5.isNotEmpty()) {
             sb.appendLine("• أطول 5 عبارات زمنياً:")
@@ -112,6 +164,7 @@ object SpeechLatencyTracker {
     @androidx.annotation.VisibleForTesting
     fun resetForTesting() {
         history.clear()
+        droppedDetails.clear()
         droppedSegmentsCounter.set(0)
     }
 }

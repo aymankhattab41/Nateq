@@ -29,13 +29,19 @@ internal class TimeStep(
             """(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*""" +
                 """([AaPp]\.?[Mm]\.?|صباح(?:اً|ا)?|""" +
                 """مساء(?:اً|ً|ا)?|ظهر(?:اً|ا)?|صم|""" +
-                """(?<!\p{L})[صم](?!\p{L})))?"""
+                """(?<![\p{L}\p{M}])[صم](?![\p{L}\p{M}])))?"""
         )
 
         private val PATTERN_HOUR_SUFFIX = Pattern.compile(
             """(الساعة(?:\s+الآن)?\s+)?""" +
-                """(?<![\p{L}\p{N}:.،])(\d{1,2})(\s*)""" +
-                """(صم|(?<!\p{L})[صم](?!\p{L}))(?![\p{L}\p{N}])"""
+                """(?<![\p{L}\p{M}\p{N}:.،])(\d{1,2})(\s*)""" +
+                """(صم|(?<![\p{L}\p{M}])[صم](?![\p{L}\p{M}]))""" +
+                """(?![\p{L}\p{M}\p{N}])"""
+        )
+
+        private val PATTERN_HOUR_SUFFIX_EN = Pattern.compile(
+            """(?<![\p{L}\p{M}\p{N}:.])(\d{1,2})\s*([AaPp]\.?[Mm]\.?)""" +
+                """(?![\p{L}\p{M}\p{N}])"""
         )
     }
 
@@ -58,6 +64,92 @@ internal class TimeStep(
                 )
             }
         }.let { replaceHourSuffix(it, mode) }
+    }
+
+    override fun applyEnglish(input: String): String {
+        return replaceTimeEnglish(input)
+    }
+
+    private fun replaceTimeEnglish(input: String): String {
+        val step1 = replaceTime(input) { match ->
+            val rawHour = match.group(1)!!.toInt()
+            val minute = match.group(2)!!.toInt()
+            val secondsGroup = match.group(3)
+            val seconds = secondsGroup?.toIntOrNull()
+            val validSeconds = secondsGroup == null ||
+                (seconds != null && seconds in 0..59)
+            if (rawHour !in 0..23 || minute !in 0..59 || !validSeconds) {
+                null
+            } else {
+                val suffix = match.group(4)
+                val isPm = periodFromSuffix(suffix, MODE_CONTEXT)
+                formatTimeEnglish(rawHour, minute, seconds, isPm)
+            }
+        }
+        val matcher = PATTERN_HOUR_SUFFIX_EN.matcher(step1)
+        if (!matcher.find()) return step1
+        matcher.reset()
+        val buffer = StringBuffer()
+        while (matcher.find()) {
+            val hour = matcher.group(1)!!.toInt()
+            val suffix = matcher.group(2)!!
+            if (hour !in 1..12) continue
+            val isPm = periodFromSuffix(suffix, MODE_CONTEXT)
+            val timeText = formatTimeEnglish(hour, 0, null, isPm)
+            matcher.appendReplacement(
+                buffer, java.util.regex.Matcher.quoteReplacement(timeText)
+            )
+        }
+        matcher.appendTail(buffer)
+        return buffer.toString()
+    }
+
+    private fun toEnglishWords(n: Int): String {
+        val ones = arrayOf(
+            "zero", "one", "two", "three", "four", "five", "six", "seven",
+            "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen",
+            "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"
+        )
+        val tens = arrayOf(
+            "", "", "twenty", "thirty", "forty", "fifty"
+        )
+        return when {
+            n < 20 -> ones[n]
+            n % 10 == 0 -> tens[n / 10]
+            else -> "${tens[n / 10]} ${ones[n % 10]}"
+        }
+    }
+
+    private fun formatTimeEnglish(
+        rawHour: Int,
+        minute: Int,
+        seconds: Int? = null,
+        isPm: Boolean? = null
+    ): String {
+        val hour12 = when {
+            rawHour == 0 || rawHour == 12 -> 12
+            rawHour > 12 -> rawHour - 12
+            else -> rawHour
+        }
+        val hourText = toEnglishWords(hour12)
+        val period = when {
+            isPm == false -> "AM"
+            isPm == true -> "PM"
+            rawHour < 12 -> "AM"
+            else -> "PM"
+        }
+        val minText = when {
+            minute == 0 -> ""
+            minute in 1..9 -> "oh ${toEnglishWords(minute)}"
+            else -> toEnglishWords(minute)
+        }
+        val secText = if (seconds != null && seconds > 0) {
+            " and ${toEnglishWords(seconds)} seconds"
+        } else {
+            ""
+        }
+        val timePart = if (minText.isEmpty()) hourText else "$hourText $minText"
+        return "$timePart$secText $period".trim()
     }
 
     /**

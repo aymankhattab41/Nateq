@@ -837,26 +837,43 @@ class TimeAnnouncementManager(
         )
     }
 
-    /** لغة نطق الوقت: لغة فئة الساعة المحفوظة ثم لغة الصوت المحفوظ ثم لغة
-     *  التطبيق الفعلية — عبر القارئ الموحّد. **لا يمرّر مفتاح اللغة العام
-     *  (announcement_speech_language) إطلاقاً** لأن ذلك المفتاح ملك فئة
-     *  الأرقام حصراً؛ إلزاماً باستقلال فئة الساعة عن إعدادات نطق الأرقام
-     *  (انتهاك التصميم — الجولة 11 — الذي كان يجعل لغة الأرقام تحكم
-     *  الساعة). */
+    /** لغة نطق الوقت: تتبع announcement_speech_language ثم لغة التطبيق
+     *  أولاً قبل لغة صوت الفئة (الأمر 4 - البند 3). */
     internal fun resolveTimeSpeechLanguage(): String {
         val categoryLang = runCatching {
             settings.getLanguageForCategory(
                 SettingsRepository.VOICE_CATEGORY_TIME
             )
         }.getOrNull()
+        if (!categoryLang.isNullOrBlank()) {
+            return if (LanguageCode.isEnglish(categoryLang)) {
+                AnnouncementLanguageResolver.ENGLISH
+            } else {
+                AnnouncementLanguageResolver.ARABIC
+            }
+        }
+        val speechLang = runCatching {
+            settings.getAnnouncementSpeechLanguage()
+        }.getOrNull()
+        if (!speechLang.isNullOrBlank()) {
+            return if (LanguageCode.isEnglish(speechLang)) {
+                AnnouncementLanguageResolver.ENGLISH
+            } else {
+                AnnouncementLanguageResolver.ARABIC
+            }
+        }
+        val appLang = effectiveAppLanguage()
+        if (LanguageCode.isEnglish(appLang)) {
+            return AnnouncementLanguageResolver.ENGLISH
+        }
         val timePref = settings.getPreferredVoiceIdForCategory(
             SettingsRepository.VOICE_CATEGORY_TIME
         )
         return AnnouncementLanguageResolver.resolve(
             forced = null,
-            categoryLang = categoryLang,
+            categoryLang = null,
             savedVoiceId = timePref,
-            appLanguage = effectiveAppLanguage()
+            appLanguage = appLang
         )
     }
 

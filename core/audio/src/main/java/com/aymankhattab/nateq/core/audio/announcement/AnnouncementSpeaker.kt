@@ -1459,14 +1459,28 @@ class AnnouncementSpeaker(
 
         val isLordSys =
             category == SettingsRepository.VOICE_CATEGORY_LORD_SYSTEM
+        val targetLang = if (LanguageCode.isEnglish(locale.language)) {
+            AnnouncementLanguageResolver.ENGLISH
+        } else {
+            AnnouncementLanguageResolver.ARABIC
+        }
         var categoryVoice = if (category != null) {
-            settings?.getPreferredVoiceIdForCategory(category)
+            settings?.getVoiceForCategoryAndLanguage(category, targetLang)
+                ?: settings?.getPreferredVoiceIdForCategory(category)
                 ?: if (isLordSys) {
                     settings?.getPreferredVoiceIdForCategory(
                         SettingsRepository.VOICE_CATEGORY_DEFAULT
                     )
                 } else null
         } else null
+
+        categoryVoice =
+            AnnouncementLanguageResolver.resolveVoiceWithConflictGuard(
+                resolvedLanguage = targetLang,
+                savedVoiceId = categoryVoice,
+                languageDefaultVoiceId =
+                    settings?.getPreferredVoiceId(targetLang)
+            )
         val originalCategoryVoice = categoryVoice
         val categoryEngine = if (category != null) {
             settings?.getEngineForCategory(category)

@@ -59,31 +59,35 @@ object AnnouncementLanguageResolver {
             }
         }
         languageOfVoiceId(savedVoiceId)?.let { return it }
-        return if (LanguageCode.isEnglish(appLanguage)) ENGLISH else ARABIC
+        if (LanguageCode.isEnglish(appLanguage)) {
+            return ENGLISH
+        }
+        return ARABIC
     }
 
     /**
-     * لغةُ معرّف صوتٍ محفوظ دون مفتاحٍ صريح ولا لغةِ فئة:
-     * - منطقي (ar-EG/en-US/nateq-* أو en-local/ar-local) عبر
-     *   تطبيع [VoiceIdContract] الموحّد،
-     * - صوتَ محركٍ مكتشف (com.google.android.tts:eng-usa) عبر وسم
-     *   اللسان بعد الفاصلة: الاصطلاح السائد في جوجل/سامسونج/ivona
-     *   (eng-usa/en-us/en_GB/arb/ara-…). غير المعروف يعيد null فيُحسم
-     *   القرارُ بالمصدر التالي.
+     * حارس تعارض لغة الصوت مع لغة الإعلان المحسومة (الأمر 2، البند 5):
+     * إن حُسمت لغة الإعلان ولم تطابق لغة صوت الفئة المحفوظ،
+     * يتم تجاهل صوت الفئة واستعمال صوت اللغة المحسومة.
      */
-    fun languageOfVoiceId(voiceId: String?): String? {
-        if (voiceId.isNullOrBlank()) return null
-        VoiceIdContract.normalize(voiceId)?.let { normalized ->
-            if (normalized.startsWith("en", ignoreCase = true)) {
-                return ENGLISH
-            }
-            if (normalized.startsWith("ar", ignoreCase = true)) {
-                return ARABIC
-            }
+    fun resolveVoiceWithConflictGuard(
+        resolvedLanguage: String,
+        savedVoiceId: String?,
+        languageDefaultVoiceId: String?
+    ): String? {
+        if (savedVoiceId.isNullOrBlank()) return languageDefaultVoiceId
+        val voiceLang = languageOfVoiceId(savedVoiceId)
+        if (voiceLang != null &&
+            !voiceLang.equals(resolvedLanguage, ignoreCase = true)
+        ) {
+            return languageDefaultVoiceId
         }
-        val raw = voiceId.substringAfter(':', missingDelimiterValue = "")
-        if (raw.startsWith("en", ignoreCase = true)) return ENGLISH
-        if (raw.startsWith("ar", ignoreCase = true)) return ARABIC
-        return null
+        return savedVoiceId
     }
+
+    /**
+     * لغةُ معرّف صوتٍ محفوظ عبر [VoiceIdContract].
+     */
+    fun languageOfVoiceId(voiceId: String?): String? =
+        VoiceIdContract.languageOfVoiceId(voiceId)
 }

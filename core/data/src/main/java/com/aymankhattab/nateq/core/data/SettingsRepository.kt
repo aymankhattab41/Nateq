@@ -1597,30 +1597,170 @@ class SettingsRepository(context: Context) :
     override fun setPreferredVoiceIdForCategory(
         category: String,
         voiceId: String
+    ) = setPreferredVoiceIdForCategory(category, voiceId, null)
+
+    fun setPreferredVoiceIdForCategory(
+        category: String,
+        voiceId: String,
+        explicitEngine: String? = null
     ) {
         if (voiceId.isBlank()) {
             prefs.edit().remove("preferred_voice_$category").apply()
             return
         }
-        val engine = getEngineForCategory(category)
-        if (!engine.isNullOrBlank()) {
-            if (!VoiceIdContract.isVoiceBelongingToEngine(engine, voiceId)) {
+        val currentEngine = getEngineForCategory(category)
+        val targetEngine = if (!explicitEngine.isNullOrBlank()) {
+            explicitEngine
+        } else {
+            currentEngine
+        }
+
+        if (!targetEngine.isNullOrBlank()) {
+            val belongs = VoiceIdContract.isVoiceBelongingToEngine(
+                targetEngine, voiceId
+            )
+            if (!belongs) {
                 Log.w(
                     TAG,
                     "رفض حفظ الصوت $voiceId للفئة $category: " +
-                        "لا يتبع المحرك $engine"
+                        "لا يتبع المحرك $targetEngine"
                 )
                 prefs.edit().remove("preferred_voice_$category").apply()
                 return
             }
-            setPreferredVoiceForEngine(engine, category, voiceId)
+            if (targetEngine != currentEngine) {
+                prefs.edit().putString(
+                    "engine_for_$category", targetEngine
+                ).apply()
+            }
+            setPreferredVoiceForEngine(targetEngine, category, voiceId)
         } else if (category == VOICE_CATEGORY_DEFAULT) {
             setPreferredVoiceForEngine(ENGINE_LORD_TTS, category, voiceId)
             prefs.edit().putString("primary_voice_$category", voiceId).apply()
         }
-        val editor = prefs.edit().putString(
-            "preferred_voice_$category", voiceId
-        )
+        prefs.edit().putString("preferred_voice_$category", voiceId).apply()
+    }
+
+    /**
+     * استرجاع صوت الفئة للغة محددة (عربي أو إنجليزي).
+     */
+    fun getVoiceForCategoryAndLanguage(
+        category: String,
+        language: String
+    ): String? {
+        val normLang = if (language.startsWith("en", ignoreCase = true)) {
+            "en"
+        } else {
+            "ar"
+        }
+        return prefs.getString("preferred_voice_${category}_$normLang", null)
+            ?: prefs.getString("preferred_voice_$category", null)
+    }
+
+    /**
+     * حفظ صوت الفئة للغة محددة مع محركه.
+     */
+    fun setVoiceForCategoryAndLanguage(
+        category: String,
+        language: String,
+        voiceId: String?,
+        explicitEngine: String? = null
+    ) {
+        val normLang = if (language.startsWith("en", ignoreCase = true)) {
+            "en"
+        } else {
+            "ar"
+        }
+        val key = "preferred_voice_${category}_$normLang"
+        if (voiceId.isNullOrBlank()) {
+            prefs.edit().remove(key).apply()
+        } else {
+            val engine = explicitEngine
+                ?: VoiceIdContract.inferEngineForVoice(voiceId)
+            if (!engine.isNullOrBlank()) {
+                setEngineForCategory("${category}_$normLang", engine)
+                setPreferredVoiceForEngine(
+                    engine, "${category}_$normLang", voiceId
+                )
+            }
+            prefs.edit().putString(key, voiceId).apply()
+        }
+    }
+
+    fun getTimeAnnouncementVoiceAr(): String? =
+        getVoiceForCategoryAndLanguage(VOICE_CATEGORY_TIME, "ar")
+    fun setTimeAnnouncementVoiceAr(
+        voiceId: String?, engine: String? = null
+    ) = setVoiceForCategoryAndLanguage(
+        VOICE_CATEGORY_TIME, "ar", voiceId, engine
+    )
+
+    fun getTimeAnnouncementVoiceEn(): String? =
+        getVoiceForCategoryAndLanguage(VOICE_CATEGORY_TIME, "en")
+    fun setTimeAnnouncementVoiceEn(
+        voiceId: String?, engine: String? = null
+    ) = setVoiceForCategoryAndLanguage(
+        VOICE_CATEGORY_TIME, "en", voiceId, engine
+    )
+
+    fun getBatteryAnnouncementVoiceAr(): String? =
+        getVoiceForCategoryAndLanguage(VOICE_CATEGORY_BATTERY, "ar")
+    fun setBatteryAnnouncementVoiceAr(
+        voiceId: String?, engine: String? = null
+    ) = setVoiceForCategoryAndLanguage(
+        VOICE_CATEGORY_BATTERY, "ar", voiceId, engine
+    )
+
+    fun getBatteryAnnouncementVoiceEn(): String? =
+        getVoiceForCategoryAndLanguage(VOICE_CATEGORY_BATTERY, "en")
+    fun setBatteryAnnouncementVoiceEn(
+        voiceId: String?, engine: String? = null
+    ) = setVoiceForCategoryAndLanguage(
+        VOICE_CATEGORY_BATTERY, "en", voiceId, engine
+    )
+
+    fun getNumberAnnouncementVoiceAr(): String? =
+        getVoiceForCategoryAndLanguage(VOICE_CATEGORY_NUMBERS, "ar")
+    fun setNumberAnnouncementVoiceAr(
+        voiceId: String?, engine: String? = null
+    ) = setVoiceForCategoryAndLanguage(
+        VOICE_CATEGORY_NUMBERS, "ar", voiceId, engine
+    )
+
+    fun getNumberAnnouncementVoiceEn(): String? =
+        getVoiceForCategoryAndLanguage(VOICE_CATEGORY_NUMBERS, "en")
+    fun setNumberAnnouncementVoiceEn(
+        voiceId: String?, engine: String? = null
+    ) = setVoiceForCategoryAndLanguage(
+        VOICE_CATEGORY_NUMBERS, "en", voiceId, engine
+    )
+
+    fun getGeneralAnnouncementVoiceAr(): String? =
+        getVoiceForCategoryAndLanguage(VOICE_CATEGORY_DEFAULT, "ar")
+    fun setGeneralAnnouncementVoiceAr(
+        voiceId: String?, engine: String? = null
+    ) = setVoiceForCategoryAndLanguage(
+        VOICE_CATEGORY_DEFAULT, "ar", voiceId, engine
+    )
+
+    fun getGeneralAnnouncementVoiceEn(): String? =
+        getVoiceForCategoryAndLanguage(VOICE_CATEGORY_DEFAULT, "en")
+    fun setGeneralAnnouncementVoiceEn(
+        voiceId: String?, engine: String? = null
+    ) = setVoiceForCategoryAndLanguage(
+        VOICE_CATEGORY_DEFAULT, "en", voiceId, engine
+    )
+
+    fun getVoiceRepairBackup(category: String): String? =
+        prefs.getString("voice_repair_backup_$category", null)
+
+    fun setVoiceRepairBackup(category: String, backup: String?) {
+        val editor = prefs.edit()
+        if (backup != null) {
+            editor.putString("voice_repair_backup_$category", backup)
+        } else {
+            editor.remove("voice_repair_backup_$category")
+        }
         editor.apply()
     }
 
@@ -2580,6 +2720,10 @@ class SettingsRepository(context: Context) :
      *  بحالة التحويل التلقائي)، null إن لم يُحدَّد محركٌ للغة. */
     override fun getEngineForLanguage(languageTag: String): String? =
         getEnginePreferenceForLanguage(languageTag).engine
+
+    fun setEngineForLanguage(languageTag: String, engine: String?) {
+        setEngineForAllLanguages(listOf(languageTag), engine)
+    }
 
     /** صوت المحرك الصريح (داخل محرك اللغة) للغة معيّنة، null إن لم يُحدَّد. */
     override fun getVoiceForLanguage(languageTag: String): String? =

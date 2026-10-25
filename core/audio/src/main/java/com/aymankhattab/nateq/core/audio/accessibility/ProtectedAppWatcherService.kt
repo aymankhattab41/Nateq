@@ -69,10 +69,25 @@ class ProtectedAppWatcherService : Service() {
         }
 
         private fun startSafely(context: Context, intent: Intent) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (e: Exception) {
+                val pkg = intent.getStringExtra(EXTRA_PKG).orEmpty()
+                Log.w(TAG, "ProtectedAppWatcherService startSafely failed", e)
+                RestoreDiagnosticsTracker.recordError(
+                    "WatcherServiceStart",
+                    "${e.javaClass.simpleName}: ${e.message}",
+                    context
+                )
+                ProtectedAppTimelineTracker.recordWarning(
+                    pkg,
+                    "تعذر تشغيل خدمة المراقب الأمامية " +
+                        "(${e.javaClass.simpleName}: ${e.message})"
+                )
             }
         }
 

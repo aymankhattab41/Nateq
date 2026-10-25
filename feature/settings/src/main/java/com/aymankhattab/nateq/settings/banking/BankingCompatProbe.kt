@@ -1,4 +1,4 @@
-﻿package com.aymankhattab.nateq.settings.banking
+package com.aymankhattab.nateq.settings.banking
 
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.admin.DevicePolicyManager
@@ -159,12 +159,18 @@ object BankingCompatProbe {
         return components.filterNotNull().mapNotNull { component ->
             val id = component.flattenToString()
             val info = runtime[id]
-            val label = runCatching {
-                context.packageManager
-                    .getServiceInfo(component, 0)
-                    .loadLabel(context.packageManager)
+            val pm = context.packageManager
+            val appLabel = runCatching {
+                val appInfo = pm.getApplicationInfo(component.packageName, 0)
+                pm.getApplicationLabel(appInfo).toString()
+            }.getOrNull()
+            val serviceLabel = runCatching {
+                pm.getServiceInfo(component, 0)
+                    .loadLabel(pm)
                     .toString()
             }.getOrDefault(component.className)
+            val displayName = appLabel?.let { "$it ($serviceLabel)" }
+                ?: serviceLabel
             val isLord = component.packageName == context.packageName
             val known = info != null
             val isTool = info?.isAccessibilityTool == true
@@ -181,10 +187,12 @@ object BankingCompatProbe {
             BankingCheckItem(
                 id = BankingCheckIds.ACCESSIBILITY_SERVICE,
                 label = context.getString(
-                    R.string.banking_item_a11y_label, label
+                    R.string.banking_item_a11y_label, displayName
                 ),
-                detail = a11yDetail(context, component, known, isTool,
-                    canRetrieve, isLord),
+                detail = a11yDetail(
+                    context, component, known, isTool,
+                    canRetrieve, isLord, displayName
+                ),
                 risk = risk
             )
         }
@@ -197,8 +205,18 @@ object BankingCompatProbe {
         known: Boolean,
         isTool: Boolean,
         canRetrieve: Boolean,
-        isLord: Boolean
+        isLord: Boolean,
+        displayName: String = ""
     ): String {
+        if (known && !isTool && !isLord) {
+            val name = if (displayName.isNotBlank()) {
+                displayName
+            } else {
+                component.packageName
+            }
+            return "هذه الخدمة غير مصنّفة أداة وصول " +
+                "وقد تمنع التطبيقات المصرفية: $name"
+        }
         val parts = mutableListOf<String>()
         parts += context.getString(
             R.string.banking_item_a11y_detail_pkg, component.packageName

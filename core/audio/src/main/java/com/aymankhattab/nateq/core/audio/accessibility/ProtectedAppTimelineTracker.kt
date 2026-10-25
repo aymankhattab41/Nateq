@@ -101,6 +101,11 @@ object ProtectedAppTimelineTracker {
     }
 
     @Synchronized
+    fun recordEvent(pkg: String, details: String) {
+        recordInternal("حدث", pkg, details)
+    }
+
+    @Synchronized
     fun recordWarning(pkg: String, warning: String) {
         recordInternal("تحذير", pkg, warning)
     }

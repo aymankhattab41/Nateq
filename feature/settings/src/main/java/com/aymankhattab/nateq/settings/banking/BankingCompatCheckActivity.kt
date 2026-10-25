@@ -210,6 +210,21 @@ class BankingCompatCheckActivity : AppCompatActivity() {
         wrapper.addView(label)
         wrapper.addView(detail)
         wrapper.addView(risk)
+        if (item.id == BankingCheckIds.ACCESSIBILITY_SERVICE &&
+            item.risk == BankingRisk.HIGH
+        ) {
+            val btnOpenSettings = MaterialButton(this).apply {
+                text = "فتح إعدادات إمكانية الوصول"
+                setOnClickListener {
+                    runCatching {
+                        startActivity(
+                            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        )
+                    }
+                }
+            }
+            wrapper.addView(btnOpenSettings)
+        }
         return wrapper
     }
 

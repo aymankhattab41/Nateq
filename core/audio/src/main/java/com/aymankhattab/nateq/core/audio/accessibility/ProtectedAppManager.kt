@@ -31,6 +31,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -45,11 +46,16 @@ object ProtectedAppManager {
     const val CHANNEL_ID_PROTECTED = "protected_app_channel_v2"
     const val ACTION_RESTORE_ALARM =
         "com.aymankhattab.nateq.action.RESTORE_ALARM"
+    const val ACTION_START_RESTORE_WATCH =
+        "com.aymankhattab.nateq.action.START_RESTORE_WATCH"
     const val ACTION_A11Y_CONNECTED =
         "com.aymankhattab.nateq.action.A11Y_CONNECTED"
     const val ACTION_A11Y_DISCONNECTED =
         "com.aymankhattab.nateq.action.A11Y_DISCONNECTED"
+    const val EXTRA_ALARM_CHAIN_COUNT = "extra_alarm_chain_count"
     private const val ALARM_REQUEST_CODE = 7003
+    private const val MAX_ALARM_CHAIN_COUNT = 45 // 45 * 20s = 15 minutes
+    private const val ALARM_INTERVAL_MS = 20_000L
 
     private val isRestoring = AtomicBoolean(false)
     @Volatile private var nudgedThisSuspension = false
@@ -176,25 +182,71 @@ object ProtectedAppManager {
         nonProtectedObservations = 0
     }
 
-    /** جدولة المنبه الاحتياطي كل دقيقتين (البند 7). */
-    fun scheduleBackupAlarm(context: Context) {
+    /** جدولة المنبه الاحتياطي المتسلسل كل 20 ثانية (الأمر 1 - البند 4). */
+    fun scheduleBackupAlarm(context: Context, chainCount: Int = 0) {
+        if (chainCount >= MAX_ALARM_CHAIN_COUNT) {
+            ProtectedAppTimelineTracker.recordWarning(
+                "BackupAlarm",
+                "بلغ المنبه الاحتياطي السقف الأقصى (15 دقيقة) وتوقف."
+            )
+            return
+        }
         val am = context.getSystemService(Context.ALARM_SERVICE)
             as? AlarmManager ?: return
-        val intent = Intent(context, ProtectedAppRestoreReceiver::class.java)
-            .apply { action = ACTION_RESTORE_ALARM }
+        val intent = Intent(
+            context, ProtectedAppRestoreReceiver::class.java
+        ).apply {
+            action = ACTION_RESTORE_ALARM
+            putExtra(EXTRA_ALARM_CHAIN_COUNT, chainCount)
+        }
         val pi = PendingIntent.getBroadcast(
             context,
             ALARM_REQUEST_CODE,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val triggerAtMillis = System.currentTimeMillis() + 2 * 60 * 1000L
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            am.setAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP, triggerAtMillis, pi
-            )
+        val triggerAtMillis = System.currentTimeMillis() + ALARM_INTERVAL_MS
+        val canExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            am.canScheduleExactAlarms()
         } else {
-            am.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi)
+            true
+        }
+        try {
+            if (canExact) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    am.setExactAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP, triggerAtMillis, pi
+                    )
+                } else {
+                    am.setExact(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi)
+                }
+            } else {
+                val showIntent = Intent(
+                    context, ProtectedAppRestoreReceiver::class.java
+                )
+                val showPi = PendingIntent.getBroadcast(
+                    context,
+                    ALARM_REQUEST_CODE + 1,
+                    showIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or
+                        PendingIntent.FLAG_IMMUTABLE
+                )
+                val info = AlarmManager.AlarmClockInfo(triggerAtMillis, showPi)
+                am.setAlarmClock(info, pi)
+            }
+            ProtectedAppTimelineTracker.recordEvent(
+                "BackupAlarm",
+                "جدولة منبه دقيق #$chainCount بعد 20 ثانية (canExact=$canExact)"
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "scheduleBackupAlarm fallback", e)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                am.setAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP, triggerAtMillis, pi
+                )
+            } else {
+                am.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi)
+            }
         }
     }
 
@@ -414,25 +466,50 @@ object ProtectedAppManager {
     }
 
     fun matchProtectedApp(context: Context, text: String?): ProtectedApp? {
-        if (text.isNullOrBlank()) return false.let { null }
+        if (text.isNullOrBlank()) return null
         val settings = SettingsRepository.create(context)
         val protectedApps = settings.getProtectedApps()
         if (protectedApps.isEmpty()) return null
 
-        val normText = TtsSettingsAutomation.normalizeForMatch(text)
+        val normText = normalizeAppLabel(text)
         for (app in protectedApps) {
-            val normLabel = TtsSettingsAutomation.normalizeForMatch(app.label)
-            val normPkg =
-                TtsSettingsAutomation.normalizeForMatch(app.packageName)
+            val normLabel = normalizeAppLabel(app.label)
+            val normPkg = normalizeAppLabel(app.packageName)
             if (normText == normLabel ||
                 normText == normPkg ||
                 normText.contains(normLabel) ||
-                normLabel.contains(normText)
+                normLabel.contains(normText) ||
+                isInstaPayAliasMatch(normText, app.packageName)
             ) {
                 return app
             }
         }
         return null
+    }
+
+    private fun normalizeAppLabel(input: String): String {
+        return input.lowercase(Locale.ROOT)
+            .replace(
+                Regex("[\\p{M}\\p{C}\\u200B-\\u200F\\uFEFF]"),
+                ""
+            )
+            .replace('أ', 'ا')
+            .replace('إ', 'ا')
+            .replace('آ', 'ا')
+            .replace(" ", "")
+            .trim()
+    }
+
+    private fun isInstaPayAliasMatch(normText: String, pkg: String): Boolean {
+        val lowerPkg = pkg.lowercase(Locale.ROOT)
+        if (!lowerPkg.contains("mwallet") && !lowerPkg.contains("instapay")) {
+            return false
+        }
+        val aliases = listOf("instapay", "انستاباي", "انستابى", "إنستاباي")
+        return aliases.any { alias ->
+            val normAlias = normalizeAppLabel(alias)
+            normText.contains(normAlias) || normAlias.contains(normText)
+        }
     }
 
     fun pickForegroundProtectedApp(
@@ -506,7 +583,19 @@ object ProtectedAppManager {
             return
         }
 
-        // إيقاف كامل: حفظ في التخزين المحمي بالجهاز وفي المستودع
+        // 1. التعطيل أولاً وقبل أي شيء آخر (الأمر 1 - البند 1)
+        disableAccessibilityServiceDirectly(context)
+        if (service != null) {
+            service.disableSelf()
+        } else {
+            requestSelfDisable(context)
+        }
+        ProtectedAppTimelineTracker.recordEvent(
+            app.packageName,
+            "تعطيل: تم طلب تعطيل خدمة إمكانية الوصول أولاً"
+        )
+
+        // 2. حفظ حالة الإيقاف في التخزين المحمي والمستودع
         val now = System.currentTimeMillis()
         ForegroundTracker.reset(app.packageName, now)
         nonProtectedObservations = 0
@@ -518,35 +607,92 @@ object ProtectedAppManager {
         )
         settings.setSuspendedProtectedApp(app.packageName, now)
 
-        speakLordSystem(
-            context = context,
-            text = "تم تعطيل إمكانية الوصول لفتح ${app.label}"
-        )
+        // 3. جدولة المنبه الاحتياطي المتسلسل
+        scheduleBackupAlarm(context, chainCount = 0)
 
-        // تطبيق تحصين أندرويد 17 أثناء الجلسة (الأمر 2 - البند 5)
-        if (settings.isAndroid17BankingHardeningEnabled()) {
-            applyAndroid17Hardening(context)
+        // 4. بث صريح لبدء مراقبة الخروج في العملية الرئيسية
+        val watchIntent = Intent(ACTION_START_RESTORE_WATCH).apply {
+            setPackage(context.packageName)
+            putExtra("pkg", app.packageName)
+            putExtra("label", app.label)
         }
+        context.sendBroadcast(watchIntent)
 
-        // تشغيل مراقب الخروج والمنبه الاحتياطي
+        // 5. محاولة تشغيل مراقب الخروج الثانوي بأمان
         ProtectedAppWatcherService.startForApp(
             context = context,
             pkg = app.packageName,
             label = app.label
         )
-        scheduleBackupAlarm(context)
 
-        // الأمر 2 - البند 1: تعطيل حتمي متزامن يسبق أي شيء
-        disableAccessibilityServiceDirectly(context)
-        if (service != null) {
-            service.disableSelf()
+        // 6. نطق الإعلان الصوتي وتحذير الخدمات غير المصنفة أداة
+        val nonTools = getNonToolAccessibilityServices(context)
+        val nonToolWarning = if (nonTools.isNotEmpty()) {
+            " — تحذير: توجد خدمات غير مصنفة كأداة وصول: " +
+                nonTools.joinToString("، ")
         } else {
-            requestSelfDisable(context)
+            ""
+        }
+        speakLordSystem(
+            context = context,
+            text = "تم تعطيل إمكانية الوصول لفتح ${app.label}$nonToolWarning"
+        )
+
+        // 7. تطبيق تحصين أندرويد 17 أثناء الجلسة
+        if (settings.isAndroid17BankingHardeningEnabled()) {
+            applyAndroid17Hardening(context)
         }
 
+        // 8. إعادة فتح التطبيق تلقائياً بعد تأكيد التعطيل
         if (relaunchIfForeground) {
-            relaunchProtectedApp(context, app)
+            CoroutineScope(Dispatchers.Default).launch {
+                val disconnected = waitForServiceDisconnected(
+                    context, maxWaitMs = 3000L
+                )
+                ProtectedAppTimelineTracker.recordEvent(
+                    app.packageName,
+                    "تأكيد التعطيل قبل الإعادة: disconnected=$disconnected"
+                )
+                relaunchProtectedApp(context, app)
+            }
         }
+    }
+
+    /** فحص الخدمات غير المصنفة كأداة وصول (الأمر 1 - البند 8). */
+    fun getNonToolAccessibilityServices(context: Context): List<String> {
+        return runCatching {
+            val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE)
+                as? AccessibilityManager ?: return emptyList()
+            val list = am.getEnabledAccessibilityServiceList(
+                AccessibilityServiceInfo.FEEDBACK_ALL_MASK
+            )
+            val pm = context.packageManager
+            list.filter { info ->
+                val pkg = info.resolveInfo?.serviceInfo?.packageName.orEmpty()
+                pkg != context.packageName && !info.isAccessibilityTool
+            }.map { info ->
+                val pkg = info.resolveInfo?.serviceInfo?.packageName.orEmpty()
+                val label = runCatching {
+                    val appInfo = pm.getApplicationInfo(pkg, 0)
+                    pm.getApplicationLabel(appInfo).toString()
+                }.getOrNull()
+                label ?: info.resolveInfo?.serviceInfo?.loadLabel(pm)
+                    ?.toString() ?: pkg
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    /** استطلاع حتى 3 ثوان لتأكيد انفصال الخدمة (الأمر 1 - البند 7). */
+    fun waitForServiceDisconnected(
+        context: Context,
+        maxWaitMs: Long = 3000L
+    ): Boolean {
+        val start = android.os.SystemClock.uptimeMillis()
+        while (android.os.SystemClock.uptimeMillis() - start < maxWaitMs) {
+            if (!isServiceConnected(context)) return true
+            android.os.SystemClock.sleep(100L)
+        }
+        return !isServiceConnected(context)
     }
 
     private fun relaunchProtectedApp(
@@ -644,6 +790,7 @@ object ProtectedAppManager {
         fun setForTesting(pkg: String?, isUnknown: Boolean = false) {
             currentForegroundPkg = pkg
             isTemporarilyUnknown = isUnknown
+            AccessibilityBridge.updateForeground(pkg, null)
         }
     }
 
@@ -1226,5 +1373,6 @@ object ProtectedAppManager {
         nonProtectedObservations = 0
         ForegroundTracker.reset()
         isRestoring.set(false)
+        AccessibilityBridge.resetForTesting()
     }
 }

@@ -103,7 +103,7 @@ internal class PunctuationStep(
             // @ لا تُنطق داخل بريد إلكتروني (حرف/رقم على طرفيها)، بل فقط
             // حين تكون معزولة (مثل «نلتقي @ 5»).
             val atPattern = Pattern.compile(
-                "(?<!\\p{L})(?<![0-9])@(?![0-9])(?!\\p{L})"
+                "(?<![\\p{L}\\p{M}])(?<![0-9])@(?![0-9])(?![\\p{L}\\p{M}])"
             )
             val some = listOf(atPattern to w.at) + listOf(
                 "#" to w.hash,

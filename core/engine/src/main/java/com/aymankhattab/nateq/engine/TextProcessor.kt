@@ -13,6 +13,7 @@ import com.aymankhattab.nateq.engine.pipeline.DateStep
 import com.aymankhattab.nateq.engine.pipeline.DictionaryStep
 import com.aymankhattab.nateq.engine.pipeline.EmojiStripStep
 import com.aymankhattab.nateq.engine.pipeline.FrancoArabicStep
+import com.aymankhattab.nateq.engine.pipeline.HijriMonthGuardStep
 import com.aymankhattab.nateq.engine.pipeline.IndicDigitsStep
 import com.aymankhattab.nateq.engine.pipeline.NumberStep
 import com.aymankhattab.nateq.engine.pipeline.NumberWordsConverter
@@ -269,6 +270,10 @@ class TextProcessor(
         steps += IndicDigitsStep
         if (s?.isTimeConversionEnabled() != false) {
             steps += DateStep(markNumbers = markNumbers)
+            steps += TimeStep(
+                modeProvider = { s?.getTimeSuffixMMode() ?: "context" },
+                markNumbers = markNumbers
+            )
         }
         if (s?.isCurrencyConversionEnabled() != false) {
             if (markNumbers) {
@@ -282,6 +287,19 @@ class TextProcessor(
                 steps += CurrencyStep
             }
         }
+        if (s?.isUnitConversionEnabled() != false) {
+            if (markNumbers) {
+                steps += object : TextProcessingStep {
+                    override fun apply(input: String): String =
+                        UnitStep.apply(input, markNumbers = true)
+                    override fun applyEnglish(input: String): String =
+                        UnitStep.applyEnglish(input, markNumbers = true)
+                }
+            } else {
+                steps += UnitStep
+            }
+        }
+        steps += AcronymStep
         return steps
     }
 
@@ -631,8 +649,10 @@ class TextProcessor(
             return CleanupStep.apply(english)
         }
         if (!LanguageCode.isArabic(languageTag)) return normalized
+        val hijriMonths = ArrayList<String>()
+        val guarded = HijriMonthGuardStep.mask(normalized, hijriMonths)
         val urls = ArrayList<String>()
-        var result = maskUrls(normalized, urls)
+        var result = maskUrls(guarded, urls)
         if (requiresRegexPipeline(result) || markNumbers) {
             for (step in buildBaseSteps(markNumbers)) {
                 result = step.apply(result)
@@ -647,6 +667,7 @@ class TextProcessor(
             }
             result = markRemainingDigits(result)
         }
+        result = HijriMonthGuardStep.unmask(result, hijriMonths)
         return CleanupStep.apply(result)
     }
 

@@ -1356,7 +1356,7 @@ class NateqTtsService : TextToSpeechService() {
         val preferredForEngine = finalEngine?.let {
             settings.getPreferredVoiceForEngine(it, languageTag)
         }
-        val finalVoiceName = if (
+        val candidateVoice = if (
             !convertTarget?.convertVoiceName.isNullOrBlank()
         ) {
             convertTarget!!.convertVoiceName
@@ -1379,18 +1379,31 @@ class NateqTtsService : TextToSpeechService() {
                 ?: VoiceIdContract.createId(languageTag)
         }
 
+        val owningEngine = VoiceIdContract.inferEngineForVoice(candidateVoice)
+        val finalEngineToUse = if (owningEngine != null &&
+            (finalEngine == null ||
+                !VoiceIdContract.isVoiceBelongingToEngine(
+                    finalEngine, candidateVoice
+                ))
+        ) {
+            owningEngine
+        } else {
+            finalEngine
+        }
+        val finalVoiceName = candidateVoice
+
         // Process text through TextProcessor
         // (numbers, dates, currencies, etc.)
         val processedText = if (role == SpeechRole.EMOJI) {
             rawText
         } else {
             textProcessor.process(
-                rawText, languageTag, finalEngine,
+                rawText, languageTag, finalEngineToUse,
                 applyDictionary = false
             )
         }
         val speechText = prepareArabicForEngine(
-            processedText, languageTag, finalEngine
+            processedText, languageTag, finalEngineToUse
         )
         if (runCatching {
             settings.isLanguageDiagnosticsEnabled()
@@ -1398,7 +1411,7 @@ class NateqTtsService : TextToSpeechService() {
             Log.d(
                 "NateqLang",
                 "[TTS-SINGLE] text='$speechText', role=$role, " +
-                    "tag='$languageTag', engine='$finalEngine', " +
+                    "tag='$languageTag', engine='$finalEngineToUse', " +
                     "voice='$finalVoiceName'"
             )
         }
@@ -1421,12 +1434,12 @@ class NateqTtsService : TextToSpeechService() {
         // v106. و`start` يُمرَّر مرّةً واحدة و`done()` بعد آخر شريحة.
         var started = false
         try {
-            val targetProvider = if (finalEngine != null) {
-                catalog.findProvider(finalEngine) ?: provider
+            val targetProvider = if (finalEngineToUse != null) {
+                catalog.findProvider(finalEngineToUse) ?: provider
             } else {
                 provider
             }
-            val isVoc = finalEngine ==
+            val isVoc = finalEngineToUse ==
                 VocalizerEmbeddedVoiceProvider.PROVIDER_ID ||
                 targetProvider.providerId ==
                 VocalizerEmbeddedVoiceProvider.PROVIDER_ID
@@ -1734,6 +1747,22 @@ class NateqTtsService : TextToSpeechService() {
         val targetVoiceName = resolvedVoice.voiceId
             ?: preferredForEngine
             ?: VoiceIdContract.createId(segTag)
+        val owningEngine = VoiceIdContract.inferEngineForVoice(targetVoiceName)
+        val finalTargetEngine = if (owningEngine != null &&
+            (targetEngine == null ||
+                !VoiceIdContract.isVoiceBelongingToEngine(
+                    targetEngine, targetVoiceName
+                ))
+        ) {
+            owningEngine
+        } else if (LanguageCode.isEnglish(segTag) &&
+            targetEngine != null &&
+            targetEngine == "com.autotts.engine"
+        ) {
+            settings.getEngineForLanguage("en") ?: "vocalizer_embedded"
+        } else {
+            targetEngine
+        }
         // **بند التشكيل الشرطي:** تُمرَّر حزمةُ المحرك المحسومة إلى
         // [TextProcessor.process] — المحركات التي تفهم التشكيل العربي
         // تحتفظ به في الناتج (مسار الاستعادة) بدل تجريده دائماً.
@@ -1741,16 +1770,16 @@ class NateqTtsService : TextToSpeechService() {
             segment.text
         } else {
             textProcessor.process(
-                segment.text, segTag, targetEngine,
+                segment.text, segTag, finalTargetEngine,
                 applyDictionary = false
             )
         }
         val speechText = prepareArabicForEngine(
-            processed, segTag, targetEngine
+            processed, segTag, finalTargetEngine
         )
         val (voice, foundProvider) = resolveVoiceWithFallback(segTag)
-        val provider = if (targetEngine != null) {
-            catalog.findProvider(targetEngine) ?: foundProvider
+        val provider = if (finalTargetEngine != null) {
+            catalog.findProvider(finalTargetEngine) ?: foundProvider
         } else {
             foundProvider
         }
@@ -1760,7 +1789,7 @@ class NateqTtsService : TextToSpeechService() {
             " يُسقط وحده: ${segment.text}")
             return null
         }
-        val isVoc = targetEngine ==
+        val isVoc = finalTargetEngine ==
             VocalizerEmbeddedVoiceProvider.PROVIDER_ID ||
             provider.providerId ==
             VocalizerEmbeddedVoiceProvider.PROVIDER_ID
@@ -1791,14 +1820,14 @@ class NateqTtsService : TextToSpeechService() {
             Log.d(
                 "NateqLang",
                 "[TTS-SEG] text='$speechText', role=${segment.role}, " +
-                    "tag='$segTag', engine='$targetEngine', " +
+                    "tag='$segTag', engine='$finalTargetEngine', " +
                     "voice='$resolvedVoiceName', " +
                     "source='${resolvedVoice.source}'"
             )
         }
         return SegmentParams(
             speechText, voice, provider, finalRate, finalPitch,
-            finalVolume, targetEngine,
+            finalVolume, finalTargetEngine,
             if (matches) {
                 convert?.convertLocale
                     ?: Locale.forLanguageTag(segTag)
@@ -1946,7 +1975,16 @@ class NateqTtsService : TextToSpeechService() {
         val success = (audio != null)
         if (!success) {
             Log.w(TAG, "مقطع محذوف: ${segment.text}")
-            SpeechLatencyTracker.recordDroppedSegment(segment.text)
+            SpeechLatencyTracker.recordDroppedSegment(
+                segmentText = segment.text,
+                role = segment.role.name,
+                requestedEngine = appVoice?.engine,
+                requestedVoice = reqVoiceName ?: appVoice?.voiceId,
+                actualEngine = resolvedEngine,
+                actualVoice = resolvedVoiceId,
+                reason = "فشل التوليد أو انتهاء المهلة",
+                attempts = attempts
+            )
         }
 
         onMetric?.invoke(

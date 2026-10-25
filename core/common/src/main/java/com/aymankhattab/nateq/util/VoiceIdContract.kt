@@ -158,4 +158,75 @@ object VoiceIdContract {
 
         return true
     }
+
+    /**
+     * يستنتج المحرك الطبيعي لاسم الصوت بناءً على بنيته الاصطلاحية
+     * (مثل أصوات Vocalizer التي تبدأ بترميز ISO-3 ara-/eng-).
+     */
+    fun inferEngineForVoice(voiceId: String?): String? {
+        if (voiceId.isNullOrBlank()) return null
+        val lower = voiceId.lowercase()
+        return when {
+            lower.contains("vocalizer") ||
+                lower.startsWith("ara-") || lower.startsWith("eng-") ||
+                lower.startsWith("fra-") || lower.startsWith("deu-") ||
+                lower.startsWith("spa-") ||
+                lower == "laila" || lower == "leila" || lower == "maged" ||
+                lower == "tarik" || lower == "karen" || lower == "oliver" ||
+                lower == "nathan" -> "vocalizer_embedded"
+            lower.startsWith("com.google.android.tts") ||
+                lower.contains("-x-") || lower.contains("google") ->
+                "com.google.android.tts"
+            lower.startsWith("com.acapelagroup.android.tts") ||
+                lower.contains("acapela") ||
+                lower.startsWith("ar_") || lower.startsWith("en_") ->
+                "com.acapelagroup.android.tts"
+            lower.startsWith("com.autotts.engine") ||
+                lower.contains("autotts") -> "com.autotts.engine"
+            lower.contains("_f00") || lower.contains("_m00") ||
+                lower.contains("samsung") -> "com.samsung.SMT"
+            else -> null
+        }
+    }
+
+    /**
+     * يستخرج لغة الصوت ("ar" أو "en") بناءً على معرف الصوت أو اسمه.
+     */
+    fun languageOfVoiceId(voiceId: String?): String? {
+        if (voiceId.isNullOrBlank()) return null
+        val lower = voiceId.lowercase()
+        val voiceName = if (lower.contains(':')) {
+            lower.substringAfter(':')
+        } else {
+            lower
+        }
+        if (voiceName.startsWith("ar-") || voiceName.startsWith("ar_") ||
+            voiceName == "ar" || voiceName.startsWith("ara-") ||
+            voiceName.startsWith("ara_") || voiceName == "ara" ||
+            voiceName.startsWith("arb") ||
+            voiceName.contains("tarik") || voiceName.contains("leila") ||
+            voiceName.contains("laila") || voiceName.contains("maged")
+        ) {
+            return "ar"
+        }
+        val tomAvaMatch = Regex("(^|[-_])(tom|ava)([-_]|$)")
+            .containsMatchIn(voiceName)
+        if (voiceName.startsWith("en-") || voiceName.startsWith("en_") ||
+            voiceName == "en" || voiceName.startsWith("eng-") ||
+            voiceName.startsWith("eng_") || voiceName == "eng" ||
+            voiceName.contains("karen") || voiceName.contains("oliver") ||
+            voiceName.contains("samantha") || voiceName.contains("nathan") ||
+            tomAvaMatch
+        ) {
+            return "en"
+        }
+        normalize(voiceId)?.let { norm ->
+            if (norm.startsWith("en", ignoreCase = true)) return "en"
+            if (norm.startsWith("ar", ignoreCase = true)) return "ar"
+        }
+        val raw = voiceId.substringAfter(':', missingDelimiterValue = "")
+        if (raw.startsWith("en", ignoreCase = true)) return "en"
+        if (raw.startsWith("ar", ignoreCase = true)) return "ar"
+        return null
+    }
 }

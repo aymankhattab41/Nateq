@@ -549,6 +549,7 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="com.aymankhattab.nateq.action.RESTORE_ALARM" />
+                <action android:name="com.aymankhattab.nateq.action.START_RESTORE_WATCH" />
                 <action android:name="com.aymankhattab.nateq.action.A11Y_CONNECTED" />
                 <action android:name="com.aymankhattab.nateq.action.A11Y_DISCONNECTED" />
             </intent-filter>

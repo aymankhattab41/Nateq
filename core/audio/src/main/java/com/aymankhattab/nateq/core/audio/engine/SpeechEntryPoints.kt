@@ -65,21 +65,42 @@ object SpeechEntryPoints {
         val normalized = Normalizer.normalize(rawText, Normalizer.Form.NFC)
         val dictText = dict.apply(normalized)
 
-        // 3. المعالجة الدلالية
+        // 3. المعالجة الدلالية: تقسيم أولاً ثم معالجة بلغة كل منطقة (الأمر 4)
         val processor = TextProcessor(context, settings, dict)
         val markNumbers = source == Source.SCREEN_READER
-        val semanticText = processor.processSemantics(
-            dictText,
-            LanguageCode.AR.tag,
-            markNumbers = markNumbers
-        )
+        val numberLanguage = runCatching {
+            settings.getNumberReadingLanguage()
+        }.getOrDefault(LanguageCode.AR.tag)
+        val secondaryLanguage = runCatching {
+            settings.getSecondaryLanguage()
+        }.getOrDefault(LanguageCode.EN.tag)
 
-        // 4. التخطيط
-        return if (source == Source.SCREEN_READER) {
-            semanticText
-        } else {
-            processor.process(semanticText, applyDictionary = false)
+        val segmenter = LanguageSegmenter { numberLanguage }
+        val segments = segmenter.segmentWithOffsets(
+            dictText,
+            fallbackLanguage = LanguageCode.AR.tag,
+            secondaryLanguage = secondaryLanguage,
+            numberLanguage = numberLanguage
+        )
+        val sb = StringBuilder()
+        for (seg in segments) {
+            val processedPart = if (source == Source.SCREEN_READER) {
+                processor.processSemantics(
+                    seg.text,
+                    seg.languageTag,
+                    markNumbers = markNumbers
+                )
+            } else {
+                processor.process(
+                    seg.text,
+                    seg.languageTag,
+                    applyDictionary = false,
+                    markNumbers = false
+                )
+            }
+            sb.append(processedPart)
         }
+        return sb.toString()
     }
 }
 

@@ -166,6 +166,16 @@ object RestoreDiagnosticsTracker {
         }
     }
 
+    fun recordError(tag: String, message: String, context: Context? = null) {
+        record(
+            reason = "$tag: $message",
+            readinessSummary = "Error",
+            writeResult = false,
+            serviceConnected = false,
+            context = context
+        )
+    }
+
     fun getRecentAttempts(context: Context? = null): List<AttemptRecord> {
         if (memoryLog.isEmpty() && context != null) {
             loadFromDisk(context)

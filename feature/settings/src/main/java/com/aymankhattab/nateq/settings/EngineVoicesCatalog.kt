@@ -7,7 +7,8 @@ import java.util.Locale
  *  المعروضة للمستخدم. */
 internal data class VoiceOption(
     val name: String,
-    val label: String
+    val label: String,
+    val enginePackage: String? = null
 )
 
 /** صف محرك يقدّم أصواتاً للغة — نسخة مبسطة خالية من أندرويد من
@@ -144,14 +145,28 @@ internal class EngineVoicesCatalog(
                 row.voices.map { voice ->
                     if (engine == null) {
                         voice.copy(
-                            label = "${row.engineLabel}: ${voice.label}"
+                            label = "${row.engineLabel}: ${voice.label}",
+                            enginePackage = row.enginePackage
                         )
                     } else {
-                        voice
+                        voice.copy(enginePackage = row.enginePackage)
                     }
                 }
             }
             .distinctBy { it.name }
+    }
+
+    /** يسترجع حزمة المحرك التي يتبع لها الصوت في الكتالوج */
+    internal fun engineForVoice(voiceName: String): String? {
+        if (voiceName.isBlank()) return null
+        for ((_, rows) in byLanguage) {
+            for (row in rows) {
+                if (row.voices.any { it.name == voiceName }) {
+                    return row.enginePackage
+                }
+            }
+        }
+        return null
     }
 
     /** لغة صوتٍ مكتشفٍ محفوظ عبر البحث في خريطة الاكتشاف (أو null إن لم

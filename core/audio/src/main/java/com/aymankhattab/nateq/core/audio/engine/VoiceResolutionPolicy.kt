@@ -29,33 +29,8 @@ object VoiceResolutionPolicy {
     /**
      * استخراج كود لغة معرّف الصوت لتحديد ما إذا كان متطابقاً مع لغة المقطع.
      */
-    fun languageOfVoiceId(voiceId: String?): String? {
-        if (voiceId.isNullOrBlank()) return null
-        val lower = voiceId.lowercase()
-        if (lower.startsWith("ar-") || lower.startsWith("ar_") ||
-            lower == "ar" || lower.contains(":ar-") ||
-            lower.contains(":ar_") || lower.contains(":ara")
-        ) {
-            return LanguageCode.AR.tag
-        }
-        if (lower.startsWith("en-") || lower.startsWith("en_") ||
-            lower == "en" || lower.contains(":en-") ||
-            lower.contains(":en_") || lower.contains(":eng")
-        ) {
-            return LanguageCode.EN.tag
-        }
-        if (lower.contains("laila") || lower.contains("maged") ||
-            lower.contains("tarik")
-        ) {
-            return LanguageCode.AR.tag
-        }
-        if (lower.contains("samantha") || lower.contains("ava") ||
-            lower.contains("tom")
-        ) {
-            return LanguageCode.EN.tag
-        }
-        return null
-    }
+    fun languageOfVoiceId(voiceId: String?): String? =
+        VoiceIdContract.languageOfVoiceId(voiceId)
 
     /**
      * هل تطابق لغة صوت الفئة لغة المقطع المطلوب؟

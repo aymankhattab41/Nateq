@@ -18,6 +18,7 @@ import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.aymankhattab.nateq.core.audio.accessibility.ProtectedAppTimelineTracker
 import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.audio.accessibility.A11yVoiceResolver
 import com.aymankhattab.nateq.core.audio.accessibility.FeatureFlags
@@ -61,6 +62,56 @@ class NateqNotificationListener : NotificationListenerService() {
         @Volatile
         var activeInstance: NateqNotificationListener? = null
             private set
+
+        private var staticWatchJob: Job? = null
+        private val staticWatchScope = CoroutineScope(Dispatchers.Default)
+
+        /**
+         * بدء مراقبة الخروج في العملية الرئيسية (الأمر 1 - البند 3).
+         * استطلاع UsageStats كل 500ms أول دقيقتين ثم كل 1000ms،
+         * يتوقف عند إطفاء الشاشة.
+         */
+        fun startRestoreWatch(
+            context: Context,
+            pkg: String,
+            label: String
+        ) {
+            staticWatchJob?.cancel()
+            staticWatchJob = staticWatchScope.launch {
+                val startedAt = System.currentTimeMillis()
+                ProtectedAppTimelineTracker.recordEvent(
+                    pkg,
+                    "بدء مراقبة الخروج في العملية الرئيسية (المستمع)"
+                )
+                val pm = context.getSystemService(Context.POWER_SERVICE)
+                    as? PowerManager
+                while (isActive && ProtectedAppManager.isSuspended(context)) {
+                    while (pm?.isInteractive == false && isActive) {
+                        delay(1000L)
+                    }
+                    val fg = ProtectedAppManager.getForegroundPackage(context)
+                    if (fg != null && fg != pkg) {
+                        ProtectedAppTimelineTracker.recordEvent(
+                            pkg,
+                            "كشف الخروج عبر UsageStats في المستمع: $fg"
+                        )
+                        ProtectedAppManager.checkAndRestore(
+                            context = context,
+                            reason = "مستمع الإشعارات (خروج إلى $fg)"
+                        )
+                        break
+                    }
+                    val elapsed = System.currentTimeMillis() - startedAt
+                    val pollInterval = if (elapsed < 120_000L) 500L else 1000L
+                    delay(pollInterval)
+                }
+            }
+        }
+
+        fun stopRestoreWatch() {
+            staticWatchJob?.cancel()
+            staticWatchJob = null
+        }
 
         /** فك ربط خدمة الإشعارات بأمان أثناء جلسة التطبيق المصرفي. */
         fun unbindSafely() {
@@ -933,7 +984,7 @@ class NateqNotificationListener : NotificationListenerService() {
                     delay(1000L)
                 }
                 val elapsed = System.currentTimeMillis() - startedAt
-                val pollIntervalMs = if (elapsed < 20_000L) 1500L else 3000L
+                val pollIntervalMs = if (elapsed < 120_000L) 500L else 1000L
                 delay(pollIntervalMs)
 
                 if (!isActive) break
