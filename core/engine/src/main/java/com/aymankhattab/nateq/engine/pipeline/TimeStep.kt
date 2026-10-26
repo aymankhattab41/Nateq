@@ -279,12 +279,12 @@ internal class TimeStep(
         // الساعة تُنطق بالصيغة الترتيبية المؤنثة المعرّفة بأل:
         // «الثانية والنصف مساءً» لا «اثنان والنصف مساءً».
         val hourText = NumberSpeech.toOrdinalHourWord(
-            hour12, markNumbers = markNumbers
+            hour12, markNumbers = false
         )
 
         fun minutesPart(count: Int): String {
             val words = NumberSpeech.toArabicWords(
-                count, markNumbers = markNumbers
+                count, markNumbers = false
             )
             return when (count) {
                 1 -> "دقيقة واحدة"
@@ -298,7 +298,7 @@ internal class TimeStep(
         // «إلا دقيقة واحدة»، «إلا دقيقتين»
         fun minutesOmissionPart(count: Int): String {
             val words = NumberSpeech.toArabicWords(
-                count, markNumbers = markNumbers
+                count, markNumbers = false
             )
             return when (count) {
                 1 -> "دقيقة واحدة"
@@ -310,7 +310,7 @@ internal class TimeStep(
 
         fun secondsPart(count: Int): String {
             val words = NumberSpeech.toArabicWords(
-                count, markNumbers = markNumbers
+                count, markNumbers = false
             )
             return when (count) {
                 1 -> "ثانية واحدة"
@@ -328,17 +328,17 @@ internal class TimeStep(
                 45 -> {
                     val nextHour = if (hour12 == 12) 1 else hour12 + 1
                     val nextHourText = NumberSpeech.toOrdinalHourWord(
-                        nextHour, markNumbers = markNumbers
+                        nextHour, markNumbers = false
                     )
                     "$nextHourText إلا ربع"
                 }
-                in 1..29 -> "$hourText و ${minutesPart(minute)}"
-                in 31..44 -> "$hourText و ${minutesPart(minute)}"
+                in 1..29 -> "$hourText و${minutesPart(minute)}"
+                in 31..44 -> "$hourText و${minutesPart(minute)}"
                 in 46..59 -> {
                     val remaining = 60 - minute
                     val nextHour = if (hour12 == 12) 1 else hour12 + 1
                     val nextHourText = NumberSpeech.toOrdinalHourWord(
-                        nextHour, markNumbers = markNumbers
+                        nextHour, markNumbers = false
                     )
                     "$nextHourText إلا ${minutesOmissionPart(remaining)}"
                 }
@@ -350,9 +350,9 @@ internal class TimeStep(
                 0 -> hourText
                 15 -> "$hourText والربع"
                 30 -> "$hourText والنصف"
-                else -> "$hourText و ${minutesPart(minute)}"
+                else -> "$hourText و${minutesPart(minute)}"
             }
-            "$minutesPhrase و ${secondsPart(seconds)}"
+            "$minutesPhrase و${secondsPart(seconds)}"
         }
         return "$body $period"
     }

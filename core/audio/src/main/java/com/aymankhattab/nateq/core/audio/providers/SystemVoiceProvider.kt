@@ -231,9 +231,22 @@ class SystemVoiceProvider(
                 RegexOption.IGNORE_CASE
             )
             val vidBase = desiredVoiceName.replace(suffixRegex, "")
-            return voices.firstOrNull { v ->
+            voices.firstOrNull { v ->
                 v.name.replace(suffixRegex, "")
                     .equals(vidBase, ignoreCase = true)
+            }?.let { return it }
+
+            // 4. تطابق بتجريد بادئات حزم المحركات الشائعة
+            // (مثل acapela_ أو vocalizer_)
+            val prefixRegex = Regex(
+                "^(acapela_|vocalizer_)",
+                RegexOption.IGNORE_CASE
+            )
+            val cleanDesired = vidBase.replace(prefixRegex, "")
+            return voices.firstOrNull { v ->
+                val cleanV = v.name.replace(suffixRegex, "")
+                    .replace(prefixRegex, "")
+                cleanV.equals(cleanDesired, ignoreCase = true)
             }
         }
 
@@ -1234,7 +1247,7 @@ class SystemVoiceProvider(
         }
     }
 
-    private fun prepareEngineParameters(
+    internal fun prepareEngineParameters(
         engine: TextToSpeech,
         voice: VoiceDescriptor,
         speechRate: Float,
@@ -1257,18 +1270,44 @@ class SystemVoiceProvider(
                     " (pitch=$pitch)"
             )
         }
-        val langResult = engine.setLanguage(voice.locale)
-        if (langResult == TextToSpeech.LANG_NOT_SUPPORTED ||
+
+        val isGenericVoice = desiredVoiceName.isNullOrBlank() ||
+            desiredVoiceName.equals("Device Default", ignoreCase = true) ||
+            desiredVoiceName.equals("ar-EG", ignoreCase = true) ||
+            desiredVoiceName.equals("en-US", ignoreCase = true) ||
+            desiredVoiceName.equals("ar", ignoreCase = true) ||
+            desiredVoiceName.equals("en", ignoreCase = true)
+
+        val normVoiceLang = LocaleUtils.normalizeLanguageCode(
+            voice.locale.language
+        )
+        val matchingDesired = if (!isGenericVoice) {
+            matchVoice(engine.voices, desiredVoiceName)
+        } else null
+
+        val hasVoiceForLanguage = matchingDesired != null || runCatching {
+            engine.voices?.any {
+                LocaleUtils.normalizeLanguageCode(it.locale?.language) ==
+                    normVoiceLang
+            } == true
+        }.getOrDefault(false)
+
+        val langResult = runCatching {
+            engine.setLanguage(voice.locale)
+        }.getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)
+
+        if (!hasVoiceForLanguage && (
+            langResult == TextToSpeech.LANG_NOT_SUPPORTED ||
             langResult == TextToSpeech.LANG_MISSING_DATA
-        ) {
+        )) {
             Log.w(
                 TAG,
                 "[Provider] engine lacks ${voice.locale}" +
-                    " (result=$langResult) — fallback"
+                    " (result=$langResult) & no voices — fallback"
             )
             enginePackage?.let {
                 EngineLanguageSupport.recordUnsupported(
-                    it, voice.locale.language
+                    it, normVoiceLang
                 )
             }
             return false
@@ -1282,7 +1321,9 @@ class SystemVoiceProvider(
         }
         val effectiveLocale = if (needsRegion) {
             engine.voices?.firstOrNull {
-                it.locale.language == voice.locale.language
+                LocaleUtils.normalizeLanguageCode(
+                    it.locale?.language
+                ) == normVoiceLang
             }?.locale ?: voice.locale
         } else {
             voice.locale
@@ -1291,17 +1332,12 @@ class SystemVoiceProvider(
             runCatching { engine.setLanguage(effectiveLocale) }
         }
 
-        val isGenericVoice = desiredVoiceName.isNullOrBlank() ||
-            desiredVoiceName.equals("Device Default", ignoreCase = true) ||
-            desiredVoiceName.equals("ar-EG", ignoreCase = true) ||
-            desiredVoiceName.equals("en-US", ignoreCase = true) ||
-            desiredVoiceName.equals("ar", ignoreCase = true) ||
-            desiredVoiceName.equals("en", ignoreCase = true)
-
         var voiceApplied = false
         if (!isGenericVoice) {
             runCatching {
-                val matching = matchVoice(engine.voices, desiredVoiceName)
+                val matching = matchingDesired ?: matchVoice(
+                    engine.voices, desiredVoiceName
+                )
                 if (matching != null) {
                     if (matching.isNetworkConnectionRequired &&
                         !connectivity.isOnlineNow()
@@ -1341,13 +1377,18 @@ class SystemVoiceProvider(
         if (!voiceApplied) {
             runCatching {
                 val current = engine.voice
+                val currentNormLang = LocaleUtils.normalizeLanguageCode(
+                    current?.locale?.language
+                )
                 if (current == null ||
-                    current.locale.language != voice.locale.language ||
+                    currentNormLang != normVoiceLang ||
                     !voiceApplied
                 ) {
-                    val matching = engine.voices
+                    val matching = matchingDesired ?: engine.voices
                         ?.filter {
-                            it.locale.language == voice.locale.language
+                            LocaleUtils.normalizeLanguageCode(
+                                it.locale?.language
+                            ) == normVoiceLang
                         }
                         ?.sortedWith(
                             compareBy(

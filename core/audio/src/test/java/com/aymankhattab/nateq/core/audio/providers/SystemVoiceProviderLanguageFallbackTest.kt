@@ -54,6 +54,35 @@ class SystemVoiceProviderLanguageFallbackTest {
         }
     }
 
+    /** محرك وهمي كـ MultiTTS يرجع LANG_NOT_SUPPORTED لكن يملك أصواتاً للغة */
+    private class MultiTtsMockEngine(
+        context: Context,
+        listener: TextToSpeech.OnInitListener,
+        engine: String,
+        private val voiceSet: Set<android.speech.tts.Voice>
+    ) : TextToSpeech(context, listener, engine) {
+        private var currentVoice: android.speech.tts.Voice? = null
+
+        override fun setLanguage(locale: Locale?): Int {
+            return TextToSpeech.LANG_NOT_SUPPORTED
+        }
+
+        override fun getVoices(): Set<android.speech.tts.Voice> = voiceSet
+
+        override fun getVoice(): android.speech.tts.Voice? = currentVoice
+
+        override fun setVoice(voice: android.speech.tts.Voice?): Int {
+            currentVoice = voice
+            return TextToSpeech.SUCCESS
+        }
+
+        override fun setSpeechRate(speechRate: Float): Int =
+            TextToSpeech.SUCCESS
+
+        override fun setPitch(pitch: Float): Int =
+            TextToSpeech.SUCCESS
+    }
+
     private val textEn = "A".repeat(200)
 
     private fun registerEngine(pkg: String) {
@@ -276,5 +305,105 @@ class SystemVoiceProviderLanguageFallbackTest {
             "vocalizer-Maged-enhanced",
             premiumMatch?.name
         )
+
+        // 4. Prefix normalized (acapela_ and vocalizer_)
+        val acapelaVoices = listOf(
+            android.speech.tts.Voice(
+                "acapela_ara-SAU-Leila",
+                Locale("ara", "SAU"),
+                android.speech.tts.Voice.QUALITY_HIGH, 0, false, emptySet()
+            ),
+            android.speech.tts.Voice(
+                "vocalizer_ara-SAU-Maged-compact",
+                Locale("ara", "SAU"),
+                android.speech.tts.Voice.QUALITY_HIGH, 0, false, emptySet()
+            )
+        )
+        val acapelaMatch = SystemVoiceProvider.matchVoice(
+            acapelaVoices, "ara-SAU-Leila"
+        )
+        org.junit.Assert.assertEquals(
+            "acapela_ara-SAU-Leila",
+            acapelaMatch?.name
+        )
+        val vocalizerMatch = SystemVoiceProvider.matchVoice(
+            acapelaVoices, "ara-SAU-Maged"
+        )
+        org.junit.Assert.assertEquals(
+            "vocalizer_ara-SAU-Maged-compact",
+            vocalizerMatch?.name
+        )
+    }
+
+    @Test
+    fun prepareEngineParameters_engineWithVoices_succeedsDespiteLangResult() {
+        EngineLanguageSupport.clear()
+        val pkg = "org.nobody.multitts"
+        val leilaVoice = android.speech.tts.Voice(
+            "acapela_ara-SAU-Leila",
+            Locale("ara", "SAU"),
+            android.speech.tts.Voice.QUALITY_HIGH, 0, false, emptySet()
+        )
+        val context = RuntimeEnvironment.getApplication()
+        val engine = MultiTtsMockEngine(
+            context, { }, pkg, setOf(leilaVoice)
+        )
+        val provider = SystemVoiceProvider(context)
+        val voiceDesc = VoiceDescriptor(
+            id = "nateq-ar-SA",
+            providerId = SystemVoiceProvider.SYSTEM_PROVIDER_ID,
+            displayName = "Arabic",
+            locale = Locale("ar")
+        )
+
+        val success = provider.prepareEngineParameters(
+            engine = engine,
+            voice = voiceDesc,
+            speechRate = 1.0f,
+            pitch = 1.0f,
+            desiredVoiceName = "ara-SAU-Leila",
+            enginePackage = pkg,
+            quirks = null
+        )
+
+        assertTrue(success)
+        org.junit.Assert.assertEquals(leilaVoice, engine.voice)
+        assertTrue(EngineLanguageSupport.isLanguageSupported(pkg, "ar"))
+    }
+
+    @Test
+    fun prepareEngineParameters_genericVoice_succeedsWhenEngineHasVoice() {
+        EngineLanguageSupport.clear()
+        val pkg = "org.nobody.multitts"
+        val leilaVoice = android.speech.tts.Voice(
+            "acapela_ara-SAU-Leila",
+            Locale("ara", "SAU"),
+            android.speech.tts.Voice.QUALITY_HIGH, 0, false, emptySet()
+        )
+        val context = RuntimeEnvironment.getApplication()
+        val engine = MultiTtsMockEngine(
+            context, { }, pkg, setOf(leilaVoice)
+        )
+        val provider = SystemVoiceProvider(context)
+        val voiceDesc = VoiceDescriptor(
+            id = "nateq-ar",
+            providerId = SystemVoiceProvider.SYSTEM_PROVIDER_ID,
+            displayName = "Arabic",
+            locale = Locale("ar")
+        )
+
+        val success = provider.prepareEngineParameters(
+            engine = engine,
+            voice = voiceDesc,
+            speechRate = 1.0f,
+            pitch = 1.0f,
+            desiredVoiceName = null,
+            enginePackage = pkg,
+            quirks = null
+        )
+
+        assertTrue(success)
+        org.junit.Assert.assertEquals(leilaVoice, engine.voice)
+        assertTrue(EngineLanguageSupport.isLanguageSupported(pkg, "ar"))
     }
 }

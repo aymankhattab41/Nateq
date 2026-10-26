@@ -407,7 +407,7 @@ class PipelineStepsTest {
 
     @Test
     fun time_morning_minutes() {
-        assertEquals("العاشرة و خمس دقائق صباحاً", TimeStep.apply("10:05"))
+        assertEquals("العاشرة وخمس دقائق صباحاً", TimeStep.apply("10:05"))
     }
 
     @Test
@@ -435,7 +435,7 @@ class PipelineStepsTest {
     @Test
     fun time_withSeconds_spoken() {
         assertEquals(
-            "الثانية والنصف و خمس وأربعون ثانية مساءً",
+            "الثانية والنصف وخمس وأربعون ثانية مساءً",
             TimeStep.apply("14:30:45")
         )
     }
@@ -456,7 +456,7 @@ class PipelineStepsTest {
     fun time_shortArabicSuffixes() {
         // الصيغة 24 ساعة تُنطق بصيغة 12 ساعة: 14:30 = الثانية بعد الظهر
         assertEquals("الثانية والنصف مساءً", TimeStep.apply("14:30م"))
-        assertEquals("الثامنة و خمس دقائق صباحاً", TimeStep.apply("8:05ص"))
+        assertEquals("الثامنة وخمس دقائق صباحاً", TimeStep.apply("8:05ص"))
         // «صم» لاحقة قصيرة ثنائية تُقرأ مساءً (المؤشر الأخير م = مساءً)
         assertEquals("الثانية والنصف مساءً", TimeStep.apply("14:30صم"))
         // حرف م داخل كلمة («من») لا يُلتقط لاحقةً
@@ -1406,8 +1406,9 @@ class PipelineStepsTest {
     }
 
     @Test
-    fun acronym_ok_in_arabic() {
-        assertEquals("موافق أو كي", AcronymStep.apply("موافق OK"))
+    fun acronym_ok_kept_as_latin() {
+        // يبقى ككتابة لاتينية ليُوجّه لمحرك الصوت الأجنبي
+        assertEquals("موافق OK", AcronymStep.apply("موافق OK"))
     }
 
     @Test

@@ -113,10 +113,10 @@ internal class DateStep(
         if (month !in 1..12) return "التاريخ غير صالح"
         if (day !in 1..31) return "التاريخ غير صالح"
         val dayText = NumberWordsConverter.numberToWords(
-            day.toLong(), markNumbers = markNumbers
+            day.toLong(), markNumbers = false
         )
         val yearText = NumberWordsConverter.numberToWords(
-            year.toLong(), markNumbers = markNumbers
+            year.toLong(), markNumbers = false
         )
         return "$dayText ${MONTHS_AR[month]} $yearText"
     }
@@ -125,9 +125,9 @@ internal class DateStep(
      *  («March fifteenth two thousand twenty four»). */
     private fun formatDateEnglish(day: Int, month: Int, year: Int): String {
         if (month !in 1..12 || day !in 1..31) return "invalid date"
-        val dayText = englishOrdinal(day, markNumbers = markNumbers)
+        val dayText = englishOrdinal(day, markNumbers = false)
         val yearText = NumberSpeech.toEnglishWords(
-            year, markNumbers = markNumbers
+            year, markNumbers = false
         )
         return "${MONTHS_EN[month]} $dayText $yearText"
     }
