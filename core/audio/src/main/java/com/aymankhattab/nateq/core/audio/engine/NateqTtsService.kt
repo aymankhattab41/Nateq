@@ -36,6 +36,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import com.aymankhattab.nateq.core.audio.announcement.InterruptionSensors
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
+import com.aymankhattab.nateq.core.audio.providers.EngineLanguageSupport
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
@@ -896,15 +897,13 @@ class NateqTtsService : TextToSpeechService() {
                 val isPkgAllowed = fgPkg != null &&
                     settings.getReadMoreAllowedPackages().contains(fgPkg)
                 val isTruncated = SelectorPacks.looksTruncated(rawText)
-                if (isTruncated) {
-                    Log.w(
+                if (readMoreEnabled && isPkgAllowed && isTruncated) {
+                    Log.d(
                         TAG,
                         "[READMORE] Speech detected truncated text " +
                             "(enabled=$readMoreEnabled, " +
                             "allowed=$isPkgAllowed, len=${rawText.length})"
                     )
-                }
-                if (readMoreEnabled && isPkgAllowed && isTruncated) {
                     val expanded = AccessibilityBridge.expandReadMore(
                         rawText,
                         timeoutMs = 200L
@@ -1765,6 +1764,36 @@ class NateqTtsService : TextToSpeechService() {
         } else {
             targetEngine
         }
+        val isVocCandidate = finalTargetEngine ==
+            VocalizerEmbeddedVoiceProvider.PROVIDER_ID
+        val vocConfigured = if (isVocCandidate) {
+            catalog.findProvider(
+                VocalizerEmbeddedVoiceProvider.PROVIDER_ID
+            )?.isConfigured() == true
+        } else false
+
+        val effectiveEngine = if (isVocCandidate && !vocConfigured) {
+            Log.w(
+                TAG,
+                "resolveSegmentParams: vocalizer_embedded غير مثبّت — " +
+                    "التراجع لمحرك بديل لمقطع $segTag"
+            )
+            findHealthyFallbackEngine(finalTargetEngine, segTag)
+        } else if (finalTargetEngine != null &&
+            !EngineLanguageSupport.isLanguageSupported(
+                finalTargetEngine, segTag
+            )
+        ) {
+            Log.w(
+                TAG,
+                "resolveSegmentParams: $finalTargetEngine لا يدعم $segTag — " +
+                    "التراجع لمحرك بديل"
+            )
+            findHealthyFallbackEngine(finalTargetEngine, segTag)
+        } else {
+            finalTargetEngine
+        }
+
         // **بند التشكيل الشرطي:** تُمرَّر حزمةُ المحرك المحسومة إلى
         // [TextProcessor.process] — المحركات التي تفهم التشكيل العربي
         // تحتفظ به في الناتج (مسار الاستعادة) بدل تجريده دائماً.
@@ -1772,26 +1801,31 @@ class NateqTtsService : TextToSpeechService() {
             segment.text
         } else {
             textProcessor.process(
-                segment.text, segTag, finalTargetEngine,
+                segment.text, segTag, effectiveEngine,
                 applyDictionary = false
             )
         }
         val speechText = prepareArabicForEngine(
-            processed, segTag, finalTargetEngine
+            processed, segTag, effectiveEngine
         )
         val (voice, foundProvider) = resolveVoiceWithFallback(segTag)
-        val provider = if (finalTargetEngine != null) {
-            catalog.findProvider(finalTargetEngine) ?: foundProvider
+        val matchedProvider = effectiveEngine?.let { catalog.findProvider(it) }
+        val provider = if (matchedProvider != null &&
+            matchedProvider.isConfigured()
+        ) {
+            matchedProvider
         } else {
             foundProvider
         }
         if (provider == null) {
-            Log.w(TAG,
-            "synthesizeMixed: لا مزود لمقطع $segTag —" +
-            " يُسقط وحده: ${segment.text}")
+            Log.w(
+                TAG,
+                "synthesizeMixed: لا مزود لمقطع $segTag — " +
+                    "يُسقط وحده: ${segment.text}"
+            )
             return null
         }
-        val isVoc = finalTargetEngine ==
+        val isVoc = effectiveEngine ==
             VocalizerEmbeddedVoiceProvider.PROVIDER_ID ||
             provider.providerId ==
             VocalizerEmbeddedVoiceProvider.PROVIDER_ID
@@ -1813,6 +1847,10 @@ class NateqTtsService : TextToSpeechService() {
             } else {
                 "Samantha"
             }
+        } else if (!isVoc && owningEngine ==
+            VocalizerEmbeddedVoiceProvider.PROVIDER_ID
+        ) {
+            preferredForEngine ?: VoiceIdContract.createId(segTag)
         } else {
             targetVoiceName
         }
@@ -1822,14 +1860,14 @@ class NateqTtsService : TextToSpeechService() {
             Log.d(
                 "NateqLang",
                 "[TTS-SEG] text='$speechText', role=${segment.role}, " +
-                    "tag='$segTag', engine='$finalTargetEngine', " +
+                    "tag='$segTag', engine='$effectiveEngine', " +
                     "voice='$resolvedVoiceName', " +
                     "source='${resolvedVoice.source}'"
             )
         }
         return SegmentParams(
             speechText, voice, provider, finalRate, finalPitch,
-            finalVolume, finalTargetEngine,
+            finalVolume, effectiveEngine,
             if (matches) {
                 convert?.convertLocale
                     ?: Locale.forLanguageTag(segTag)
@@ -1981,6 +2019,13 @@ class NateqTtsService : TextToSpeechService() {
             if (altEng != null) {
                 failedEng?.let { announceEngineFallbackOnce(it, altEng) }
                 val fallbackVoice = appVoice?.copy(engine = altEng)
+                    ?: EffectiveVoice(
+                        engine = altEng,
+                        voiceId = null,
+                        speechRate = readerRate,
+                        pitch = 1.0f,
+                        volume = 1.0f
+                    )
                 attempts = 4
                 audio = doSynthesizeSegment(
                     segment, readerRate, effectCategory,
@@ -2206,8 +2251,14 @@ class NateqTtsService : TextToSpeechService() {
                         params.engine?.let {
                             announceEngineFallbackOnce(it, altEngine)
                         }
+                        val fallbackProvider =
+                            catalog.findProvider(altEngine)
+                                ?: catalog.findProvider(
+                                    SystemVoiceProvider.SYSTEM_PROVIDER_ID
+                                )
+                                ?: params.provider
                         try {
-                            params.provider.synthesize(
+                            fallbackProvider.synthesize(
                                 piece,
                                 params.voice,
                                 params.speechRate,
@@ -2377,7 +2428,8 @@ class NateqTtsService : TextToSpeechService() {
         val installed = EnginePicker.installedEnginePackages(this)
         val perLang = settings.getEngineForLanguage(languageTag)
         if (perLang != null && perLang != failedEngine &&
-            perLang in installed
+            perLang in installed &&
+            EngineLanguageSupport.isLanguageSupported(perLang, languageTag)
         ) {
             return perLang
         }
@@ -2385,11 +2437,17 @@ class NateqTtsService : TextToSpeechService() {
             SettingsRepository.VOICE_CATEGORY_DEFAULT
         )
         if (defaultCategory != null && defaultCategory != failedEngine &&
-            defaultCategory in installed
+            defaultCategory in installed &&
+            EngineLanguageSupport.isLanguageSupported(
+                defaultCategory, languageTag
+            )
         ) {
             return defaultCategory
         }
-        return installed.firstOrNull { it != failedEngine }
+        return installed.firstOrNull {
+            it != failedEngine &&
+                EngineLanguageSupport.isLanguageSupported(it, languageTag)
+        }
     }
 
     private fun announceEngineFallbackOnce(

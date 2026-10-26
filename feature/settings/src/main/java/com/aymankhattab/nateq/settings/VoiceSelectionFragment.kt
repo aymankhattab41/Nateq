@@ -1243,7 +1243,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             .setMessage(msgList)
             .setPositiveButton(R.string.voice_mismatch_fix) { _, _ ->
                 EngineLanguageConsistency.repairAllInconsistentVoices(
-                    settings, engineCatalog
+                    settings, engineCatalog, getAvailableEnginesList()
                 )
                 Toast.makeText(
                     requireContext(),
@@ -1308,7 +1308,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 callerSection.refreshCallerVoices()
             }
             EngineLanguageConsistency.repairAllInconsistentVoices(
-                settings, engineCatalog
+                settings, engineCatalog, getAvailableEnginesList()
             )
             checkAndPromptVoiceMismatchFix()
             onComplete?.invoke()
@@ -1317,6 +1317,20 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
     internal fun ensureVoiceCatalogDiscovered() {
         refreshVoiceCatalogDiscovery()
+    }
+
+    private fun getAvailableEnginesList(): List<String> {
+        val installed =
+            EnginePicker.installedEnginePackages(requireContext())
+        val isVocalizerConfigured = EmbeddedStorage.inventory(
+            requireContext(),
+            EmbeddedStorage.Engine.VOCALIZER
+        ).isCompleteVoicePresent
+        return if (isVocalizerConfigured) {
+            installed + listOf("vocalizer_embedded")
+        } else {
+            installed
+        }
     }
 
     /** يعالج أحداث العمليات غير المتزامنة القادمة من الفي إم (تجري كلها على

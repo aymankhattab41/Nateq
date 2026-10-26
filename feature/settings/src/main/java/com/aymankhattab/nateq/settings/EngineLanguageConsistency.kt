@@ -60,6 +60,14 @@ internal object EngineLanguageConsistency {
     ): List<RepairResult> {
         val results = mutableListOf<RepairResult>()
 
+        val vocalizerAvailable =
+            availableEngines.contains("vocalizer_embedded") &&
+                (catalog == null ||
+                    catalog.voicesFor("ar", "vocalizer_embedded")
+                        .isNotEmpty() ||
+                    catalog.voicesFor("en", "vocalizer_embedded")
+                        .isNotEmpty())
+
         // 1. الحالة الراهنة الصريحة للأرقام
         val numberVoice = settings.getPreferredVoiceIdForCategory(
             SettingsRepository.VOICE_CATEGORY_NUMBERS
@@ -76,15 +84,42 @@ internal object EngineLanguageConsistency {
             (numberVoice == "ara-SAU-Leila" &&
                 numberEngine != "vocalizer_embedded")
 
-        if (isNumberMismatch || isNumberMissingOrAcapela) {
+        if (vocalizerAvailable) {
+            if (isNumberMismatch || isNumberMissingOrAcapela) {
+                settings.setEngineForCategory(
+                    SettingsRepository.VOICE_CATEGORY_NUMBERS,
+                    "vocalizer_embedded"
+                )
+                settings.setPreferredVoiceIdForCategory(
+                    SettingsRepository.VOICE_CATEGORY_NUMBERS,
+                    "ara-SAU-Leila",
+                    "vocalizer_embedded"
+                )
+                results.add(
+                    RepairResult(
+                        categoryOrLang =
+                            SettingsRepository.VOICE_CATEGORY_NUMBERS,
+                        oldEngine = numberEngine,
+                        oldVoice = numberVoice,
+                        newEngine = "vocalizer_embedded",
+                        newVoice = "ara-SAU-Leila",
+                        action = RepairResult.Action.RESTORED_KNOWN
+                    )
+                )
+                Log.i(
+                    TAG,
+                    "Restored numbers voice to ara-SAU-Leila on" +
+                        " vocalizer_embedded"
+                )
+            }
+        } else if (numberEngine == "vocalizer_embedded") {
             settings.setEngineForCategory(
                 SettingsRepository.VOICE_CATEGORY_NUMBERS,
-                "vocalizer_embedded"
+                null
             )
             settings.setPreferredVoiceIdForCategory(
                 SettingsRepository.VOICE_CATEGORY_NUMBERS,
-                "ara-SAU-Leila",
-                "vocalizer_embedded"
+                ""
             )
             results.add(
                 RepairResult(
@@ -92,36 +127,61 @@ internal object EngineLanguageConsistency {
                         SettingsRepository.VOICE_CATEGORY_NUMBERS,
                     oldEngine = numberEngine,
                     oldVoice = numberVoice,
-                    newEngine = "vocalizer_embedded",
-                    newVoice = "ara-SAU-Leila",
-                    action = RepairResult.Action.RESTORED_KNOWN
+                    newEngine = null,
+                    newVoice = null,
+                    action = RepairResult.Action.BACKED_UP_AND_CLEARED
                 )
             )
             Log.i(
                 TAG,
-                "Restored numbers voice to ara-SAU-Leila on vocalizer_embedded"
+                "Cleared unavailable vocalizer_embedded from numbers"
             )
         }
 
         // 2. الحالة الراهنة الصريحة للغة الإنجليزية
         val enVoice = settings.getPreferredVoiceId("en")
         val enEngine = settings.getEngineForLanguage("en")
-        if (enVoice == "eng-USA-Karen" && enEngine != "vocalizer_embedded") {
-            settings.setEngineForLanguage("en", "vocalizer_embedded")
-            settings.setPreferredVoiceId("en", "eng-USA-Karen")
+        if (vocalizerAvailable) {
+            if (enVoice == "eng-USA-Karen" &&
+                enEngine != "vocalizer_embedded"
+            ) {
+                settings.setEngineForLanguage("en", "vocalizer_embedded")
+                settings.setPreferredVoiceId("en", "eng-USA-Karen")
+                results.add(
+                    RepairResult(
+                        categoryOrLang = "lang_en",
+                        oldEngine = enEngine,
+                        oldVoice = enVoice,
+                        newEngine = "vocalizer_embedded",
+                        newVoice = "eng-USA-Karen",
+                        action = RepairResult.Action.RESTORED_KNOWN
+                    )
+                )
+                Log.i(
+                    TAG,
+                    "Restored English voice to eng-USA-Karen on" +
+                        " vocalizer_embedded"
+                )
+            }
+        } else if (enEngine == "vocalizer_embedded") {
+            settings.setEngineForLanguage("en", null)
+            if (enVoice == "eng-USA-Karen") {
+                settings.setPreferredVoiceId("en", "")
+            }
             results.add(
                 RepairResult(
                     categoryOrLang = "lang_en",
                     oldEngine = enEngine,
                     oldVoice = enVoice,
-                    newEngine = "vocalizer_embedded",
-                    newVoice = "eng-USA-Karen",
-                    action = RepairResult.Action.RESTORED_KNOWN
+                    newEngine = null,
+                    newVoice = if (enVoice == "eng-USA-Karen") null
+                    else enVoice,
+                    action = RepairResult.Action.BACKED_UP_AND_CLEARED
                 )
             )
             Log.i(
                 TAG,
-                "Restored English voice to eng-USA-Karen on vocalizer_embedded"
+                "Cleared unavailable vocalizer_embedded from English"
             )
         }
 

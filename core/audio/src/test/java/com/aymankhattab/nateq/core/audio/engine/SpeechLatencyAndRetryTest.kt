@@ -90,7 +90,9 @@ class SpeechLatencyAndRetryTest {
             if (chunk != null && chunk.isNotEmpty()) {
                 onAudioChunk(chunk, chunk.size)
             } else {
-                throw RuntimeException("Synthetic failure in MockVoiceProvider")
+                throw RuntimeException(
+                    "Synthetic failure in MockVoiceProvider"
+                )
             }
         }
     }
@@ -142,7 +144,9 @@ class SpeechLatencyAndRetryTest {
 
         assertNotNull("Audio should not be null after retry", audio)
         assertEquals("Chunks must be produced", 1, audio?.chunks?.size)
-        assertEquals("Should succeed on attempt 2", 2, capturedMetric?.attempts)
+        assertEquals(
+            "Should succeed on attempt 2", 2, capturedMetric?.attempts
+        )
         assertTrue(
             "Metric should mark success",
             capturedMetric?.success == true

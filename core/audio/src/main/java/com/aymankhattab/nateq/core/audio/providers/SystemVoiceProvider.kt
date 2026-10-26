@@ -757,15 +757,37 @@ class SystemVoiceProvider(
         voiceLocale: Locale?
     ): String? {
         val installed = EnginePicker.installedEnginePackages(context)
+        val lang = voiceLocale?.language?.takeIf { it.isNotEmpty() }
         if (enginePackage != null) {
             return if (installed.contains(enginePackage)) {
-                enginePackage
+                if (lang != null &&
+                    !EngineLanguageSupport.isLanguageSupported(
+                        enginePackage, lang
+                    )
+                ) {
+                    pickEnginePackage(lang) ?: installed.firstOrNull {
+                        it != enginePackage &&
+                            EngineLanguageSupport.isLanguageSupported(
+                                it, lang
+                            )
+                    }
+                } else {
+                    enginePackage
+                }
             } else {
                 null
             }
         }
-        val lang = voiceLocale?.language?.takeIf { it.isNotEmpty() }
-        return pickEnginePackage(lang)
+        val picked = pickEnginePackage(lang)
+        if (picked != null && lang != null &&
+            !EngineLanguageSupport.isLanguageSupported(picked, lang)
+        ) {
+            return installed.firstOrNull {
+                it != picked &&
+                    EngineLanguageSupport.isLanguageSupported(it, lang)
+            }
+        }
+        return picked
     }
 
     /** (المحور 6) عند انتقال المتحدث النشط إلى محركٍ مختلف يُحذف ملف
@@ -1244,6 +1266,11 @@ class SystemVoiceProvider(
                 "[Provider] engine lacks ${voice.locale}" +
                     " (result=$langResult) — fallback"
             )
+            enginePackage?.let {
+                EngineLanguageSupport.recordUnsupported(
+                    it, voice.locale.language
+                )
+            }
             return false
         }
 
@@ -1681,7 +1708,9 @@ class SystemVoiceProvider(
             0L
         }
         val isTestUtterance = reqState.receivedId.get() in setOf("a", "b")
-        val isTruncated = !isTestUtterance && nonWs >= 25 &&
+        val wasCancelled = cancelled.get() || reqState.stopped.get() ||
+            Thread.currentThread().isInterrupted
+        val isTruncated = !isTestUtterance && !wasCancelled && nonWs >= 25 &&
             producedMs < (expectedMs * 0.35)
 
         SynthesisDiagnosticsTracker.record(
