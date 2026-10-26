@@ -52,12 +52,39 @@ data class EngineQuirks(
 
     /** أسماء أصوات معروفة بأنها مشكلة لهذا المحرك. */
     val problematicVoiceNames: Set<String> = emptySet(),
+
+    /** مهلة انتظار استقرار حجم الملف بالمللي ثانية بعد onDone (الجولة 55). */
+    val lateWriteSettleMs: Long = 0L,
+
+    /** أقصى عدد أحرف للطلب الواحد قبل التقسيم (0 = غير محدود) (الجولة 55). */
+    val maxCharsPerRequest: Int = 0,
+
+    /** هل يحتاج المحرك تنقية خاصة من الإيموجي والمحارف الخاصة (الجولة 55). */
+    val sanitizeForEngine: Boolean = false,
+
+    /** هل تتطلب طلبات هذا المحرك تسلسلاً صارماً بلا توازٍ (الجولة 55). */
+    val serializeRequests: Boolean = true,
 ) {
     /**
      * يُعيد [EngineQuirks] للحزمة المعطاة، أو كائن افتراضي إن لم توجد قواعد.
      */
     companion object {
         private val QUIRKS_DB: Map<String, EngineQuirks> = mapOf(
+            // com.acapelagroup.android.tts — Acapela TTS (الجولة 55)
+            "com.acapelagroup.android.tts" to EngineQuirks(
+                packageName = "com.acapelagroup.android.tts",
+                lateWriteSettleMs = 350L,
+                maxCharsPerRequest = 320,
+                sanitizeForEngine = true,
+                needsSetLanguageBeforeSetVoice = true,
+                requiresLocaleWithRegion = true,
+                rejectsVoiceSilently = true,
+                maxSafeSpeechRate = 2.0f,
+                serializeRequests = true,
+                tashkeelPolicy = TashkeelPolicy.UNKNOWN,
+                problematicLanguages = emptySet(),
+                problematicVoiceNames = emptySet()
+            ),
             // es.codefactory.vocalizertts — Vocalizer TTS
             "es.codefactory.vocalizertts" to EngineQuirks(
                 packageName = "es.codefactory.vocalizertts",

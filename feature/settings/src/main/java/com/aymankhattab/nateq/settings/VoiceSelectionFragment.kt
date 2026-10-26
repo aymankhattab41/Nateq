@@ -560,6 +560,19 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             }
         engineSection.setupEngineDiscovery()
 
+        viewLifecycleOwner.lifecycleScope.launch(AppDispatchers.io) {
+            val installed = com.aymankhattab.nateq.core.audio.providers
+                .EnginePicker.installedEnginePackages(requireContext())
+            for (pkg in installed) {
+                val label = com.aymankhattab.nateq.core.audio.engine
+                    .EngineHealthProbe.getEngineLabel(requireContext(), pkg)
+                com.aymankhattab.nateq.core.audio.engine
+                    .EngineHealthProbe.probeEngine(
+                        requireContext(), pkg, label
+                    )
+            }
+        }
+
         // لوحة فئات الأصوات بعد إعادة التصميم: فئة واحدة معروضة في كل
         // مرة (لغة/محرك/صوت/أشرطة) تختارها من سبnner علوي واحد، أو لوحة
         // إعلان المتصل — والتعديلات لا تُحفظ إلا بضغط زر الحفظ أسفل
@@ -1058,6 +1071,21 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         EnginePicker.invalidateAfterStorageChange()
         if (::engineSection.isInitialized) {
             engineSection.setupEngineDiscovery()
+
+            viewLifecycleOwner.lifecycleScope.launch(AppDispatchers.io) {
+                val installed = com.aymankhattab.nateq.core.audio.providers
+                    .EnginePicker.installedEnginePackages(requireContext())
+                for (pkg in installed) {
+                    val label = com.aymankhattab.nateq.core.audio.engine
+                        .EngineHealthProbe.getEngineLabel(
+                            requireContext(), pkg
+                        )
+                    com.aymankhattab.nateq.core.audio.engine
+                        .EngineHealthProbe.probeEngine(
+                            requireContext(), pkg, label
+                        )
+                }
+            }
         }
         if (::categoryVoicePanel.isInitialized) {
             categoryVoicePanel.refreshCategoryEngines()
@@ -2662,8 +2690,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                         getString(R.string.diagnostics_copied)
                     )
                 }
-                .setNeutralButton("خيارات تبديل المحرك") { _, _ ->
-                    showEngineDiagnosticsActionsDialog(ctx)
+                .setNeutralButton("مشاركة / خيارات الفحص") { _, _ ->
+                    showEngineDiagnosticsActionsDialog(ctx, info)
                 }
                 .setNegativeButton(android.R.string.cancel, null)
                 .create()
@@ -3196,6 +3224,24 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             }
             sb.appendLine("")
 
+            // ── جاهزية محركات النطق (الجولة 55) ─────────────────────────
+            val healthReport = ttsSnapshot?.getString(
+                com.aymankhattab.nateq.core.audio.engine
+                    .TtsDiagnosticsProvider.KEY_ENGINE_HEALTH_REPORT
+            ) ?: com.aymankhattab.nateq.core.audio.engine
+                .EngineHealthProbe.formatReport(context)
+            sb.appendLine(healthReport)
+            sb.appendLine("")
+
+            // ── سجل التخليق التشخيصي (الجولة 55) ────────────────────────
+            val synthReport = ttsSnapshot?.getString(
+                com.aymankhattab.nateq.core.audio.engine
+                    .TtsDiagnosticsProvider.KEY_SYNTHESIS_DIAGNOSTICS
+            ) ?: com.aymankhattab.nateq.core.audio.engine
+                .SynthesisDiagnosticsTracker.formatReport()
+            sb.appendLine(synthReport)
+            sb.appendLine("")
+
             sb.toString()
         }
 
@@ -3209,21 +3255,75 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         clipboard.setPrimaryClip(clip)
     }
 
-    private fun showEngineDiagnosticsActionsDialog(ctx: Context) {
+    private fun showEngineDiagnosticsActionsDialog(
+        ctx: Context,
+        report: String? = null
+    ) {
         val options = arrayOf(
+            "مشاركة تقرير التشخيص الشامل",
+            "فحص جاهزية محركات النطق (Acapela والمحركات)",
             "مشاركة ملف تفريغ تبديل المحرك",
             "إعادة محاولة تبديل المحرك"
         )
         MaterialAlertDialogBuilder(ctx)
-            .setTitle("خيارات تفريغ وتبديل المحركات")
+            .setTitle("خيارات التشخيص والمحركات")
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> shareEngineSwitchDump(ctx)
-                    1 -> retryEngineSwitch(ctx)
+                    0 -> {
+                        viewLifecycleOwner.lifecycleScope.launch {
+                            val text = report ?: buildDiagnosticsInfo(ctx)
+                            shareDiagnostics(ctx, text)
+                        }
+                    }
+                    1 -> runEngineHealthProbe(ctx)
+                    2 -> shareEngineSwitchDump(ctx)
+                    3 -> retryEngineSwitch(ctx)
                 }
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    private fun shareDiagnostics(ctx: Context, text: String) {
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        startActivity(
+            Intent.createChooser(
+                sendIntent, "مشاركة تقرير التشخيص"
+            )
+        )
+    }
+
+    private fun runEngineHealthProbe(ctx: Context) {
+        Toast.makeText(
+            ctx, "جارٍ فحص جاهزية المحركات...", Toast.LENGTH_SHORT
+        ).show()
+        viewLifecycleOwner.lifecycleScope.launch(AppDispatchers.io) {
+            val installed = com.aymankhattab.nateq.core.audio.providers
+                .EnginePicker.installedEnginePackages(ctx)
+            for (pkg in installed) {
+                val label = com.aymankhattab.nateq.core.audio.engine
+                    .EngineHealthProbe.getEngineLabel(ctx, pkg)
+                com.aymankhattab.nateq.core.audio.engine
+                    .EngineHealthProbe.probeEngine(ctx, pkg, label)
+            }
+            val report = com.aymankhattab.nateq.core.audio.engine
+                .EngineHealthProbe.formatReport(ctx)
+            kotlinx.coroutines.withContext(AppDispatchers.main) {
+                if (isAdded && !isDetached) {
+                    MaterialAlertDialogBuilder(ctx)
+                        .setTitle("نتيجة فحص جاهزية المحركات")
+                        .setMessage(report)
+                        .setPositiveButton(android.R.string.ok, null)
+                        .setNeutralButton("مشاركة") { _, _ ->
+                            shareDiagnostics(ctx, report)
+                        }
+                        .show()
+                }
+            }
+        }
     }
 
     private fun shareEngineSwitchDump(ctx: Context) {

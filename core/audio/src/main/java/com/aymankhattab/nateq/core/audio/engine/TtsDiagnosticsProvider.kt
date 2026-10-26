@@ -29,6 +29,8 @@ class TtsDiagnosticsProvider : ContentProvider() {
         const val KEY_A11Y_EVENTS_PER_MIN = "a11y_events_per_min"
         const val KEY_USAGE_STATS_POLLS = "usage_stats_polls"
         const val KEY_TIMELINE_REPORT = "timeline_report"
+        const val KEY_SYNTHESIS_DIAGNOSTICS = "synthesis_diagnostics"
+        const val KEY_ENGINE_HEALTH_REPORT = "engine_health_report"
     }
 
     override fun onCreate(): Boolean = true
@@ -58,6 +60,10 @@ class TtsDiagnosticsProvider : ContentProvider() {
                 BatteryDiagnosticsTracker.getUsageStatsPollCount()
             val timelineReport =
                 ProtectedAppTimelineTracker.getTimelineReport()
+            val synthReport =
+                SynthesisDiagnosticsTracker.formatReport()
+            val engineHealth =
+                EngineHealthProbe.formatReport(ctx)
 
             return Bundle().apply {
                 putString(KEY_FOREGROUND_PKG, fg)
@@ -70,6 +76,8 @@ class TtsDiagnosticsProvider : ContentProvider() {
                 putInt(KEY_A11Y_EVENTS_PER_MIN, a11yEventsPerMin)
                 putInt(KEY_USAGE_STATS_POLLS, usageStatsPolls)
                 putString(KEY_TIMELINE_REPORT, timelineReport)
+                putString(KEY_SYNTHESIS_DIAGNOSTICS, synthReport)
+                putString(KEY_ENGINE_HEALTH_REPORT, engineHealth)
             }
         }
         return null

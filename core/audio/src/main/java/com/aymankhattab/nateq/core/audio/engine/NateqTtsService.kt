@@ -19,8 +19,10 @@ import com.aymankhattab.nateq.core.audio.accessibility.AccessibilityBridge
 import com.aymankhattab.nateq.core.audio.accessibility.FeatureFlags
 import com.aymankhattab.nateq.core.audio.accessibility.RepeatSpellController
 import com.aymankhattab.nateq.core.audio.accessibility.SelectorPacks
+import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
 import com.aymankhattab.nateq.core.audio.announcement.ArabicSpeechNormalizer
 import com.aymankhattab.nateq.core.audio.announcement.prepareArabicForEngine
+import com.aymankhattab.nateq.core.audio.engine.quirks.EngineQuirks
 import com.aymankhattab.nateq.core.engine.EngineMarkers
 import com.aymankhattab.nateq.core.engine.SingleLetterGuard
 import android.database.ContentObserver
@@ -1971,6 +1973,25 @@ class NateqTtsService : TextToSpeechService() {
             }
         }
 
+        if (audio == null) {
+            val failedEng = resolvedEngine
+            val altEng = findHealthyFallbackEngine(
+                failedEng, segment.languageTag
+            )
+            if (altEng != null) {
+                failedEng?.let { announceEngineFallbackOnce(it, altEng) }
+                val fallbackVoice = appVoice?.copy(engine = altEng)
+                attempts = 4
+                audio = doSynthesizeSegment(
+                    segment, readerRate, effectCategory,
+                    fallbackVoice, null
+                ) { eng, v ->
+                    resolvedEngine = eng
+                    resolvedVoiceId = v
+                }
+            }
+        }
+
         val endUptime = SystemClock.uptimeMillis()
         val success = (audio != null)
         if (!success) {
@@ -2178,6 +2199,53 @@ class NateqTtsService : TextToSpeechService() {
                     )
                 }
                 if (!producedHere) {
+                    val altEngine = findHealthyFallbackEngine(
+                        params.engine, segment.languageTag
+                    )
+                    if (altEngine != null) {
+                        params.engine?.let {
+                            announceEngineFallbackOnce(it, altEngine)
+                        }
+                        try {
+                            params.provider.synthesize(
+                                piece,
+                                params.voice,
+                                params.speechRate,
+                                params.pitch,
+                                params.volume,
+                                { sampleRateInHz, channelCount ->
+                                    nativeRate = sampleRateInHz
+                                    nativeChannels = channelCount
+                                },
+                                { chunk, validLength ->
+                                    producedHere = true
+                                    emitMixedChunk(
+                                        chunk, validLength, nativeRate,
+                                        nativeChannels, phase, crossfader,
+                                        maxBytes, { started },
+                                        {
+                                            started = true
+                                            onFirstByteEmitted?.invoke()
+                                        },
+                                        callback
+                                    )
+                                },
+                                altEngine,
+                                params.locale,
+                                null,
+                                effectCategory
+                            )
+                        } catch (t: Throwable) {
+                            Log.w(
+                                TAG,
+                                "synthesizeMixedSequential: fallback to" +
+                                    " $altEngine failed",
+                                t
+                            )
+                        }
+                    }
+                }
+                if (!producedHere) {
                     skippedSegments++
                     if (isCriticalNumericSegment(segment)) {
                         hadCriticalDrop = true
@@ -2299,6 +2367,58 @@ class NateqTtsService : TextToSpeechService() {
         callback.done()
     }
 
+    private val sessionFailedEnginesNotified =
+        Collections.synchronizedSet(HashSet<String>())
+
+    private fun findHealthyFallbackEngine(
+        failedEngine: String?,
+        languageTag: String
+    ): String? {
+        val installed = EnginePicker.installedEnginePackages(this)
+        val perLang = settings.getEngineForLanguage(languageTag)
+        if (perLang != null && perLang != failedEngine &&
+            perLang in installed
+        ) {
+            return perLang
+        }
+        val defaultCategory = settings.getEngineForCategory(
+            SettingsRepository.VOICE_CATEGORY_DEFAULT
+        )
+        if (defaultCategory != null && defaultCategory != failedEngine &&
+            defaultCategory in installed
+        ) {
+            return defaultCategory
+        }
+        return installed.firstOrNull { it != failedEngine }
+    }
+
+    private fun announceEngineFallbackOnce(
+        failedPkg: String,
+        fallbackPkg: String
+    ) {
+        if (sessionFailedEnginesNotified.add(failedPkg)) {
+            val failedName =
+                EngineHealthProbe.getEngineLabel(this, failedPkg)
+            val altName =
+                EngineHealthProbe.getEngineLabel(this, fallbackPkg)
+            val alert =
+                "محرك $failedName لا يعمل على هذا الجهاز، سأستعمل $altName"
+            try {
+                AnnouncementSpeaker.getInstance(this).speak(
+                    text = alert,
+                    locale = java.util.Locale.forLanguageTag("ar"),
+                    speechRate = 1.0f,
+                    pitch = 1.0f,
+                    volume = 1.0f,
+                    category = SettingsRepository.VOICE_CATEGORY_DEFAULT,
+                    source = SpeechEntryPoints.Source.LORD_SYSTEM
+                )
+            } catch (t: Throwable) {
+                Log.w(TAG, "announceEngineFallbackOnce failed", t)
+            }
+        }
+    }
+
     private suspend fun synthesizeMixed(
         segments: List<Segment>,
         readerRate: Float,
@@ -2310,7 +2430,25 @@ class NateqTtsService : TextToSpeechService() {
         onSegmentMetric: ((SpeechLatencyTracker.SegmentMetric) -> Unit)? = null
     ) {
         val totalChars = segments.sumOf { it.text.length }
-        if (segments.size > 1 && totalChars <= PARALLEL_MAX_CHARS) {
+        val allSameOrSerializedEngine = if (segments.size > 1) {
+            val resolvedList = segments.mapNotNull {
+                resolveSegmentParams(it, readerRate, appVoice, reqVoiceName)
+            }
+            if (resolvedList.size == segments.size) {
+                val firstEng = resolvedList[0].engine
+                val quirks = firstEng?.let { EngineQuirks.forPackage(it) }
+                quirks?.serializeRequests == true ||
+                    resolvedList.all { it.engine == firstEng }
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+
+        if (segments.size > 1 && totalChars <= PARALLEL_MAX_CHARS &&
+            !allSameOrSerializedEngine
+        ) {
             synthesizeParallel(
                 segments, readerRate, callback, effectCategory,
                 appVoice, reqVoiceName, onFirstByteEmitted,

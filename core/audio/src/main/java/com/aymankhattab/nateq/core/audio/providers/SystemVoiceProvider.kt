@@ -17,19 +17,28 @@ import com.aymankhattab.nateq.core.audio.engine.PcmEqualizer
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.core.audio.engine.quirks.EngineQuirks
 import com.aymankhattab.nateq.core.data.VoicePrefsProvider
+import com.aymankhattab.nateq.core.audio.engine.ChunkCrossfader
+import com.aymankhattab.nateq.core.audio.engine.SpeechChunker
+import com.aymankhattab.nateq.core.audio.engine.SynthesisDiagnosticsTracker
+import com.aymankhattab.nateq.core.audio.engine.quirks.EngineTextSanitizer
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.ConnectivityMonitor
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.VoiceIdContract
+import java.util.Collections
 import java.util.Locale
+import java.util.WeakHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 
@@ -326,6 +335,124 @@ class SystemVoiceProvider(
         val validLength: Int
     )
 
+    /** حالة طلب التخليق النشط الموجه بمعرف العبارة (الجولة 55). */
+    private data class UtteranceRequestState(
+        val utteranceId: String,
+        val done: CountDownLatch = CountDownLatch(1),
+        val failed: AtomicBoolean = AtomicBoolean(false),
+        val stopped: AtomicBoolean = AtomicBoolean(false),
+        val doneTimeMs: AtomicLong = AtomicLong(0L),
+        val receivedId: AtomicReference<String> =
+            AtomicReference(null)
+    ) {
+        fun onStart() {}
+        fun onDone(id: String?) {
+            receivedId.set(id)
+            doneTimeMs.set(SystemClock.elapsedRealtime())
+            done.countDown()
+        }
+        fun onError(id: String?) {
+            receivedId.set(id)
+            failed.set(true)
+            done.countDown()
+        }
+        fun onStop(id: String?) {
+            receivedId.set(id)
+            stopped.set(true)
+            done.countDown()
+        }
+    }
+
+    /** خريطة طلبات التخليق النشطة موجهة بمعرف العبارة (الجولة 55 - الأمر 2). */
+    private val activeRequests =
+        ConcurrentHashMap<String, UtteranceRequestState>()
+
+    /** المحركات التي تم ضبط مستمع التقدّم الموحد عليها (الجولة 55). */
+    private val configuredEngines = Collections.synchronizedSet(
+        Collections.newSetFromMap(WeakHashMap<TextToSpeech, Boolean>())
+    )
+
+    /** أقفال التسلسل لكل حزمة محرك (الجولة 55 - الأمر 3). */
+    private val engineSemaphores = ConcurrentHashMap<String, Semaphore>()
+
+    private val engineActiveRequests =
+        ConcurrentHashMap<TextToSpeech,
+            ConcurrentHashMap<String, UtteranceRequestState>>()
+
+    private fun getEngineLock(enginePackage: String): Semaphore =
+        engineSemaphores.computeIfAbsent(enginePackage) {
+            Semaphore(1, true)
+        }
+
+    private fun ensureUtteranceListenerAttached(engine: TextToSpeech) {
+        if (configuredEngines.add(engine)) {
+            val reqMap = engineActiveRequests.computeIfAbsent(engine) {
+                ConcurrentHashMap()
+            }
+            try {
+                engine.setOnUtteranceProgressListener(
+                    object : UtteranceProgressListener() {
+                        override fun onStart(utteranceId: String?) {
+                            findEngineRequest(reqMap, utteranceId)?.onStart()
+                        }
+
+                        @Deprecated("Java Deprecated")
+                        override fun onDone(utteranceId: String?) {
+                            findEngineRequest(
+                                reqMap, utteranceId
+                            )?.onDone(utteranceId)
+                        }
+
+                        @Deprecated("Java Deprecated")
+                        override fun onError(utteranceId: String?) {
+                            findEngineRequest(
+                                reqMap, utteranceId
+                            )?.onError(utteranceId)
+                        }
+
+                        override fun onError(
+                            utteranceId: String?,
+                            errorCode: Int
+                        ) {
+                            findEngineRequest(
+                                reqMap, utteranceId
+                            )?.onError(utteranceId)
+                        }
+
+                        override fun onStop(
+                            utteranceId: String?,
+                            interrupted: Boolean
+                        ) {
+                            findEngineRequest(
+                                reqMap, utteranceId
+                            )?.onStop(utteranceId)
+                        }
+                    }
+                )
+            } catch (e: Exception) {
+                Log.w(
+                    TAG,
+                    "[Provider] setOnUtteranceProgressListener threw",
+                    e
+                )
+            }
+        }
+    }
+
+    private fun findEngineRequest(
+        reqMap: ConcurrentHashMap<String, UtteranceRequestState>,
+        utteranceId: String?
+    ): UtteranceRequestState? {
+        if (utteranceId == null) return null
+        reqMap[utteranceId]?.let { return it }
+        if ((utteranceId == "a" || utteranceId == "b") &&
+            reqMap.size == 1
+        ) {
+            return reqMap.values.firstOrNull()
+        }
+        return null
+    }
+
     /** حزمة المحرك الذي أصبح «نشطاً» مؤخراً — علاّمة انتقال فقط لتنظيف ملف
      *  WAV المؤقت ذي الاسم الثابت عند التبديل بين محركين
      *  ([onActiveEngineSwitch]).
@@ -357,6 +484,10 @@ class SystemVoiceProvider(
             enginePool.clear()
             prewarmingEngines.clear()
             lastEnginePackage = null
+            activeRequests.clear()
+            configuredEngines.clear()
+            engineSemaphores.clear()
+            engineActiveRequests.clear()
         }
         pcmCache.evictAll()
         pcmPool.clear()
@@ -927,6 +1058,12 @@ class SystemVoiceProvider(
         }
     }
 
+    /** نتيجة محاولة التخليق الواحدة (الجولة 55). */
+    private data class AttemptResult(
+        val success: Boolean,
+        val isTruncated: Boolean
+    )
+
     /**
      * يُنفّذ النطق عبر المحرك المربوط ويُعيد true
      * عند النجاح (صَرْف بيانات صوتية)، أو false
@@ -946,52 +1083,176 @@ class SystemVoiceProvider(
         cacheKey: String?,
         enginePackage: String? = null
     ): Boolean {
-        // يُمرَّر المثيل من المسبح صراحةً (لا حقلٍ عام): بعد إدخال مسبح
-        // المحركات قد يتغير المحرك المُنطَق به أثناء تتابع نطقات لغات
-        // مختلفة — المثيل الملتقط يُضمن أن تُنفَّذ كل جولة على محركها
-        // الصحيح وإن قُطع على مثيلٍ آخر لنطقٍ تالٍ (المسبح يبقيها كلها
-        // حية).
-        // السرعة والنبرة تُمرَّران مباشرةً للمحرك
-        // (engine.setSpeechRate/setPitch)
-        // بدل التعديل الخطي الرقمي اليدوي الذي كان يلغي أثرهما بتشويه معدني
-        // (وفق توصية التقرير: إعادة أخذ العينات بنسبة p ثم عكسها ترك الصوت
-        //  بنفس النبرة والمدة مع تنعيم مضاعف مشوّه). مستوى الصوت (volume)
-        // يبقى رقمياً لأنه تطبيق معامل مضاعف محايد لا يشوّه.
-        // فشل ضبط السرعة/النبرة يجب ألا يُبتلع صامتاً: يُسجَّل ERROR
-        // (لا يُفشل النطق — عطلهما لا يمنع التخليق لكنه يشوّه الإخراج).
-        if (engine.setSpeechRate(speechRate) == TextToSpeech.ERROR) {
-            Log.e(TAG,
-                "[Provider] engine.setSpeechRate failed" +
-                " (rate=$speechRate)")
-        }
-        if (engine.setPitch(pitch) == TextToSpeech.ERROR) {
-            Log.e(TAG,
-                "[Provider] engine.setPitch failed" +
-                " (pitch=$pitch)")
-        }
-        // إن لم يدعم المحرك لغةَ النطق يبقى على لغته السابقة (العربية) فيقرأ
-        // الحروف اللاتينية بصوتٍ عربي — نعود فوراً (false) ليتولى المتصل
-        // التراجع على [speechLanguage] الفعلية (en) لمحركٍ يدعم اللغة.
-        val langResult = engine.setLanguage(voice.locale)
-        if (langResult == TextToSpeech.LANG_NOT_SUPPORTED
-            || langResult == TextToSpeech.LANG_MISSING_DATA
+        val quirks = enginePackage?.let { EngineQuirks.forPackage(it) }
+        val (sanitizedText, removedCharsCount) = if (
+            quirks?.sanitizeForEngine == true
         ) {
-            Log.w(TAG,
-                "[Provider] engine lacks ${voice.locale}" +
-                " (result=$langResult) — fallback")
+            EngineTextSanitizer.sanitizeWithCount(text, enginePackage)
+        } else {
+            EngineTextSanitizer.SanitizationResult(text, 0)
+        }
+
+        val maxChars = quirks?.maxCharsPerRequest ?: 0
+        if (maxChars > 0 && sanitizedText.length > maxChars) {
+            val chunks = SpeechChunker.split(sanitizedText, maxChars)
+            if (chunks.size > 1) {
+                val crossfader = ChunkCrossfader(64)
+                var allOk = true
+                var anyProduced = false
+                for (chunk in chunks) {
+                    if (cancelled.get()) break
+                    val ok = synthesizeSingleChunk(
+                        engine = engine,
+                        text = chunk,
+                        voice = voice,
+                        speechRate = speechRate,
+                        pitch = pitch,
+                        volume = volume,
+                        onFormatInfo = onFormatInfo,
+                        onAudioChunk = { pcm, len ->
+                            anyProduced = true
+                            val ready = crossfader.process(pcm, len)
+                            if (ready > 0) {
+                                onAudioChunk(pcm, ready)
+                            }
+                        },
+                        cancelled = cancelled,
+                        desiredVoiceName = desiredVoiceName,
+                        cacheKey = null,
+                        enginePackage = enginePackage,
+                        quirks = quirks,
+                        partsCount = chunks.size,
+                        sanitizedCharsCount = removedCharsCount
+                    )
+                    if (!ok) allOk = false
+                }
+                if (crossfader.pendingFrames > 0) {
+                    val tailBytes = crossfader.pendingFrames * 2
+                    val tailBuf = ByteArray(tailBytes)
+                    crossfader.copyPending(tailBuf, 0)
+                    onAudioChunk(tailBuf, tailBytes)
+                }
+                return allOk || anyProduced
+            }
+        }
+
+        return synthesizeSingleChunk(
+            engine = engine,
+            text = sanitizedText,
+            voice = voice,
+            speechRate = speechRate,
+            pitch = pitch,
+            volume = volume,
+            onFormatInfo = onFormatInfo,
+            onAudioChunk = onAudioChunk,
+            cancelled = cancelled,
+            desiredVoiceName = desiredVoiceName,
+            cacheKey = cacheKey,
+            enginePackage = enginePackage,
+            quirks = quirks,
+            partsCount = 1,
+            sanitizedCharsCount = removedCharsCount
+        )
+    }
+
+    private fun synthesizeSingleChunk(
+        engine: TextToSpeech,
+        text: String,
+        voice: VoiceDescriptor,
+        speechRate: Float,
+        pitch: Float,
+        volume: Float,
+        onFormatInfo: (sampleRateInHz: Int, channelCount: Int) -> Unit,
+        onAudioChunk: (ByteArray, Int) -> Unit,
+        cancelled: AtomicBoolean,
+        desiredVoiceName: String?,
+        cacheKey: String?,
+        enginePackage: String?,
+        quirks: EngineQuirks?,
+        partsCount: Int,
+        sanitizedCharsCount: Int
+    ): Boolean {
+        if (!prepareEngineParameters(
+                engine, voice, speechRate, pitch, desiredVoiceName,
+                enginePackage, quirks
+            )
+        ) {
             return false
         }
-        // ع٢٩-ج: تطبيق EngineQuirks قبل setVoice
-        val quirks = enginePackage?.let { EngineQuirks.forPackage(it) }
+
+        val lock = getEngineLock(enginePackage ?: "default")
+        lock.acquire()
+        try {
+            var retry = 0
+            var attempt = executeSingleAttempt(
+                engine, text, voice, speechRate, pitch, volume,
+                onFormatInfo, onAudioChunk, cancelled, desiredVoiceName,
+                cacheKey, enginePackage, quirks, partsCount,
+                sanitizedCharsCount, retry, extraSettleMs = 0L
+            )
+            if (attempt.isTruncated && retry == 0 && !cancelled.get()) {
+                retry++
+                try {
+                    Thread.sleep(200)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                }
+                val doubled = ((quirks?.lateWriteSettleMs ?: 0L) * 2L)
+                    .coerceAtLeast(700L)
+                attempt = executeSingleAttempt(
+                    engine, text, voice, speechRate, pitch, volume,
+                    onFormatInfo, onAudioChunk, cancelled, desiredVoiceName,
+                    cacheKey, enginePackage, quirks, partsCount,
+                    sanitizedCharsCount, retry, extraSettleMs = doubled
+                )
+            }
+            return attempt.success
+        } finally {
+            lock.release()
+        }
+    }
+
+    private fun prepareEngineParameters(
+        engine: TextToSpeech,
+        voice: VoiceDescriptor,
+        speechRate: Float,
+        pitch: Float,
+        desiredVoiceName: String?,
+        enginePackage: String?,
+        quirks: EngineQuirks?
+    ): Boolean {
+        if (engine.setSpeechRate(speechRate) == TextToSpeech.ERROR) {
+            Log.e(
+                TAG,
+                "[Provider] engine.setSpeechRate failed" +
+                    " (rate=$speechRate)"
+            )
+        }
+        if (engine.setPitch(pitch) == TextToSpeech.ERROR) {
+            Log.e(
+                TAG,
+                "[Provider] engine.setPitch failed" +
+                    " (pitch=$pitch)"
+            )
+        }
+        val langResult = engine.setLanguage(voice.locale)
+        if (langResult == TextToSpeech.LANG_NOT_SUPPORTED ||
+            langResult == TextToSpeech.LANG_MISSING_DATA
+        ) {
+            Log.w(
+                TAG,
+                "[Provider] engine lacks ${voice.locale}" +
+                    " (result=$langResult) — fallback"
+            )
+            return false
+        }
+
         val needsLangFirst = quirks?.needsSetLanguageBeforeSetVoice == true
         val needsRegion = quirks?.requiresLocaleWithRegion == true
-        val rejectsSilently = quirks?.rejectsVoiceSilently == true
 
-        // needsSetLanguageBeforeSetVoice: تعيين اللغة قبل الصوت
         if (needsLangFirst) {
             runCatching { engine.setLanguage(voice.locale) }
         }
-        // requiresLocaleWithRegion: استخدام ar-AE الفعلي من أصوات المحرك
         val effectiveLocale = if (needsRegion) {
             engine.voices?.firstOrNull {
                 it.locale.language == voice.locale.language
@@ -1003,9 +1264,6 @@ class SystemVoiceProvider(
             runCatching { engine.setLanguage(effectiveLocale) }
         }
 
-        // إن اختار المستخدم صوتاً محدداً من حوار التحويل (اسم صوت في محرك
-        // خارجي مثل MultiTTS) نطبّقه هنا عبر `voice`، مع التراجع الصامت إلى
-        // اللغة إذا لم يجده المحرك (تجنّباً لكسر النطق لمجرد اسم غير مطابق).
         val isGenericVoice = desiredVoiceName.isNullOrBlank() ||
             desiredVoiceName.equals("Device Default", ignoreCase = true) ||
             desiredVoiceName.equals("ar-EG", ignoreCase = true) ||
@@ -1018,11 +1276,6 @@ class SystemVoiceProvider(
             runCatching {
                 val matching = matchVoice(engine.voices, desiredVoiceName)
                 if (matching != null) {
-                    // صوتٌ يتطلب اتصالاً (جوجل السحابي)
-                    // مع غياب الإنترنت: تراجع فوري دون دفع
-                    // المحرك لانتظارِ مهلة التوليد كاملة عبثاً —
-                    // الحالة يُرسلها [connectivity] استباقياً
-                    // عبر NetworkCallback ومحسوبة حيّاً لحظياً.
                     if (matching.isNetworkConnectionRequired &&
                         !connectivity.isOnlineNow()
                     ) {
@@ -1034,8 +1287,6 @@ class SystemVoiceProvider(
                         return false
                     }
                     engine.voice = matching
-                    // ع٢٩-ج: تحقق من تطبيق الصوت فعلياً
-                    // (VoiceApplyMismatch)
                     val appliedVoice = runCatching {
                         engine.voice
                     }.getOrNull()?.name
@@ -1061,30 +1312,6 @@ class SystemVoiceProvider(
         }
 
         if (!voiceApplied) {
-            // ع٢٩-ج: تطبيق EngineQuirks قبل setVoice
-            val quirks = enginePackage?.let { EngineQuirks.forPackage(it) }
-            val needsLangFirst = quirks?.needsSetLanguageBeforeSetVoice == true
-            val needsRegion = quirks?.requiresLocaleWithRegion == true
-
-            // needsSetLanguageBeforeSetVoice: تعيين اللغة قبل الصوت
-            if (needsLangFirst) {
-                runCatching { engine.setLanguage(voice.locale) }
-            }
-            // requiresLocaleWithRegion: استخدام ar-AE الفعلي من أصوات المحرك
-            val effectiveLocale = if (needsRegion) {
-                engine.voices?.firstOrNull {
-                    it.locale.language == voice.locale.language
-                }?.locale ?: voice.locale
-            } else {
-                voice.locale
-            }
-            if (needsLangFirst) {
-                runCatching { engine.setLanguage(effectiveLocale) }
-            }
-
-            // إن لم يُحدد اسم صوت صريح، نتحقق أن صوت المحرك الحالي
-            // يطابق لغة النطق المطلوبة حتى لا يبقى المحرك على صوت لغة سابقة
-            // (كالإنجليزية) عند نطق مقطع عربي فيقرأ الحروف هجاءً مفرّقاً.
             runCatching {
                 val current = engine.voice
                 if (current == null ||
@@ -1103,7 +1330,6 @@ class SystemVoiceProvider(
                         )?.firstOrNull()
                     if (matching != null) {
                         engine.voice = matching
-                        // ع٢٩-ج: تحقق من تطبيق الصوت فعلياً
                         val appliedVoice = runCatching {
                             engine.voice
                         }.getOrNull()?.name
@@ -1124,131 +1350,158 @@ class SystemVoiceProvider(
                 }
             }
         }
-        // إن لم يُحدَّد اسم صوت (المحرك الافتراضي)
-        // لكن المحرك نفسه صوته الافتراضي سحابي
-        // (جوجل يعتمد الشبكة افتراضياً للعربية/الهندية
-        // مثلاً)، فالفحص نفسه: الإنترنت غائب → تركُ
-        // التوليد فوراً وإرجاع فوري (يتولى المتصل التراجع).
+
         if (!connectivity.isOnlineNow()) {
             val currentRequiresNetwork = runCatching {
                 engine.voice?.isNetworkConnectionRequired == true
             }.getOrDefault(false)
             if (currentRequiresNetwork) {
-                Log.w(TAG,
+                Log.w(
+                    TAG,
                     "[Provider] offline & default engine voice" +
-                    " requires network — فوري محلي")
+                        " requires network — فوري محلي"
+                )
                 return false
             }
         }
+        return true
+    }
 
-        val utteranceId = "nateq_${System.currentTimeMillis()}"
+    private fun executeSingleAttempt(
+        engine: TextToSpeech,
+        text: String,
+        voice: VoiceDescriptor,
+        speechRate: Float,
+        pitch: Float,
+        volume: Float,
+        onFormatInfo: (sampleRateInHz: Int, channelCount: Int) -> Unit,
+        onAudioChunk: (ByteArray, Int) -> Unit,
+        cancelled: AtomicBoolean,
+        desiredVoiceName: String?,
+        cacheKey: String?,
+        enginePackage: String?,
+        quirks: EngineQuirks?,
+        partsCount: Int,
+        sanitizedCharsCount: Int,
+        retryCount: Int,
+        extraSettleMs: Long
+    ): AttemptResult {
+        ensureUtteranceListenerAttached(engine)
+
+        val fileId = sessionFileCounter.incrementAndGet()
+        val utteranceId = "nateq_${System.currentTimeMillis()}_$fileId"
+        val reqState = UtteranceRequestState(utteranceId)
+        val engineReqs = engineActiveRequests.computeIfAbsent(engine) {
+            ConcurrentHashMap()
+        }
+        engineReqs[utteranceId] = reqState
+        activeRequests[utteranceId] = reqState
+
         val params = android.os.Bundle().apply {
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
         }
 
         val tempFile = sessionWavFile()
-
-        // توصية المراجعة 4: حذف الملف المؤقت قبل كل كتابة جديدة — لا تُقرأ
-        // بقايا كتابة سابقة مقطوعة/تالفة (محرك أُجهض في منتصف الكتابة ثم
-        // أعلن onDone خاصة) إن لم يبدأ المحرك الجديد كتابتَه من الصفر.
-        // التوليف متسلسل على [synthExecutor] أحادي الخيط فلا تنازع على
-        // هذا الحذف، وتكلفته عمليات نظام خفيفة على مسار لا يمرّ به إلا ما
-        // لا يغطيه كاش PCM.
-
-        // synthesizeToFile يُرجع SUCCESS فوراً قبل اكتمال الكتابة، لذلك ننتظر
-        // اكتمال الكتابة عبر UtteranceProgressListener قبل قراءة الملف — وإلا
-        // نقرأ ملفاً فارغاً/غير مكتمل ولا يُسمع أي صوت نهائياً.
-        val done = CountDownLatch(1)
-        // عمل غير ذرّي (var boolean) يتسابق بين خيط الاصطناع (على
-        // [synthExecutor]) وخيط الفحص هنا — سنجعله ذرياً عبر
-        // AtomicBoolean ليقرأ الخيطُ الحاصر قيمةً سليمة دائماً عند
-        // فحص الشرطي التالي.
-        val failed = AtomicBoolean(false)
-        try {
-            engine.setOnUtteranceProgressListener(
-                object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) {}
-
-                @Deprecated("Java Deprecated")
-                override fun onDone(utteranceId: String?) {
-                    done.countDown()
-                }
-
-                @Deprecated("Java Deprecated")
-                override fun onError(utteranceId: String?) {
-                    failed.set(true)
-                    done.countDown()
-                }
-            })
-        } catch (e: RuntimeException) {
-            Log.w(TAG, "[Provider] setOnUtteranceProgressListener threw", e)
-        }
-
-        // توصية المراجعة 4: حذف الملف المؤقت قبل كل كتابة جديدة — لا تُقرأ
-        // بقايا كتابة سابقة مقطوعة/تالفة (محرك أُجهض في منتصف الكتابة ثم
-        // أعلن onDone خاصة) إن لم يبدأ المحرك الجديد كتابتَه من الصفر.
-        // التوليف متسلسل على [synthExecutor] أحادي الخيط فلا تنازع على
-        // هذا الحذف، وتكلفته عمليات نظام خفيفة على مسار لا يمرّ به إلا ما
-        // لا يغطيه كاش PCM.
         runCatching { if (tempFile.exists()) tempFile.delete() }
 
+        val startTimeMs = SystemClock.elapsedRealtime()
         val status = engine.synthesizeToFile(
             text, params, tempFile, utteranceId
         )
 
         var success = false
+        var timeToFirstByteMs = 0L
+        var declaredBytes = 0L
+        var stallPolls = 0
+        var flushedAfterStall = false
+        val localChunks = ArrayList<ByteArray>()
+        var detectedSampleRate = FALLBACK_SAMPLE_RATE
+
+        val handleFormat: (Int, Int) -> Unit = { sr, _ ->
+            detectedSampleRate = sr
+            if (text.length < 25) {
+                onFormatInfo(sr, 1)
+            }
+        }
+        val handleChunk: (ByteArray, Int) -> Unit = { chunk, len ->
+            if (len > 0) {
+                if (timeToFirstByteMs == 0L) {
+                    timeToFirstByteMs =
+                        SystemClock.elapsedRealtime() - startTimeMs
+                }
+                localChunks.add(chunk.copyOf(len))
+                if (text.length < 25) {
+                    onAudioChunk(chunk, len)
+                }
+            }
+        }
+
         if (status == TextToSpeech.SUCCESS) {
-            // ننتظر فعلاً حتى يكتب المحرك الملف كاملاً
-            // (أو يُلغى الإعلان/النطق) مع فحص الإلغاء كل
-            // 100ms بدل القفل الأعمى — فإذا أوقف المستخدم
-            // النطق (onStop) نتحرر فوراً. المهلة متكيّفة
-            // مع طول النص ([synthesisTimeoutMs]): للنصوص
-            // القصيرة 1.5–3 ثوانٍ فقط (لا يحتمل قارئ
-            // الشاشة 30 ثانية انتظار) وللطويلة أوسع
-            // ليكتمل كتابة الملف.
             val waitMs = synthesisTimeoutMs(text.length)
             var deadline = SystemClock.elapsedRealtime() + waitMs
             var finished = false
-            // **بثّ مجزّأ أثناء الكتابة (بند ب.txt 3.2):** بدل انتظار اكتمال
-            // ملف WAV كاملاً ثم قراءته في دفعةٍ واحدة، تُقرأ الدفعاتُ
-            // المتراكمة حديثاً كل [CANCELLATION_POLL_MS] وتُدفع للمتلقي
-            // فوراً — يتسلم أول بايتات الصوت قبل نهاية كتابة المحرك فيختصر
-            // زمنَ أول صوتٍ لقارئ الشاشة. لا يجوز التفاعل مع ملفٍ لم تتضح
-            // خاناته بعد: [readWavStreamMeta] يرجع null حتى تظهر خانة data
-            // فيُحسم البث. أي تعثرٍ قبل بثّ شريحةٍ واحدة يُسقط البث هادئاً
-            // إلى المسار الكامل التقليدي (قراءة نهائية موحّدة) بالأسفل.
             var streamMeta: WavStreamMeta? = null
             var dataStart = -1L
             var readSoFar = 0L
             var emittedAny = false
             var streamReadFailed = false
-            // **تصريف الذيل عند جمود الكتابة (بند الجديد):** سامسونج يُعلِم
-            // onDone متأخراً عن نهاية كتابة المحرك للملف، فبعد بثّ آخر
-            // شريحةٍ يبقى الصوتُ معلقاً بانتظار onDone حتى المهلة ويبدو
-            // النطق "توقف لحظياً ثم عاد" بين رسائل التمرير. نتتبع استقرار
-            // حجم الملف (بلا نمو) جولاتٍ متوالية فيُصرف المتبقي الصغير
-            // فوراً ونسير في النجاح — يُرى [shouldFlushTailAfterStall].
             var lastLen = -1L
-            var stallPolls = 0
             var tailCompleted = false
             val cachedParts = ArrayList<ByteArray>()
             val totalCacheBytes = IntArray(1)
+
+            val settleTargetMs = if (extraSettleMs > 0L) {
+                extraSettleMs
+            } else {
+                quirks?.lateWriteSettleMs ?: 0L
+            }
+            var onDoneReceived = false
+            var stableDurationMs = 0L
+            var lastSettleLen = -1L
+
             try {
                 while (true) {
-                    if (done.await(
-                            CANCELLATION_POLL_MS,
+                    val waitInterval = if (onDoneReceived) {
+                        50L
+                    } else {
+                        CANCELLATION_POLL_MS
+                    }
+                    if (reqState.done.await(
+                            waitInterval,
                             TimeUnit.MILLISECONDS
                         )
                     ) {
-                        finished = true
-                        break
+                        onDoneReceived = true
                     }
-                    if (cancelled.get() ||
+                    if (cancelled.get() || reqState.stopped.get() ||
                         Thread.currentThread().isInterrupted ||
                         SystemClock.elapsedRealtime() >= deadline
                     ) {
                         break
                     }
+
+                    if (onDoneReceived) {
+                        if (settleTargetMs <= 0L) {
+                            finished = true
+                            break
+                        }
+                        val curLen = if (tempFile.exists()) {
+                            tempFile.length()
+                        } else {
+                            -1L
+                        }
+                        if (curLen == lastSettleLen && curLen > 0L) {
+                            stableDurationMs += waitInterval
+                            if (stableDurationMs >= settleTargetMs) {
+                                finished = true
+                                break
+                            }
+                        } else {
+                            lastSettleLen = curLen
+                            stableDurationMs = 0L
+                        }
+                    }
+
                     if (!streamReadFailed && streamMeta == null &&
                         tempFile.exists() && tempFile.length() >= 44L
                     ) {
@@ -1266,6 +1519,9 @@ class SystemVoiceProvider(
                         }
                         if (got > 0) {
                             streamMeta = readWavStreamMeta(head, got)
+                            if (streamMeta != null) {
+                                declaredBytes = streamMeta.declaredDataBytes
+                            }
                         }
                     }
                     if (!streamReadFailed && streamMeta != null) {
@@ -1275,12 +1531,6 @@ class SystemVoiceProvider(
                             dataStart
                         }
                         val available = tempFile.length() - start
-                        // نموٌّ بطيء: الملف يكبر دون أن يبلغ حجم
-                        // شريحةٍ صالحةٍ واحدة (محرّكٌ متريّد)، فكان
-                        // تمديدُ المهلة مقصوراً على إصدار الشريحة
-                        // فتنتهي وسطَ الكتابةِ فيُبتَر النص. تُرحَّل
-                        // المهلةُ على النموّ نفسه وتصفَّر عدّادُ
-                        // الجمود فيُعرف أنّ الكتابةَ حيّة.
                         if (available + start > lastLen) {
                             lastLen = available + start
                             stallPolls = 0
@@ -1295,47 +1545,23 @@ class SystemVoiceProvider(
                                 emitStreamChunk(
                                     tempFile, start + readSoFar,
                                     toRead.toInt(), volume, streamMeta,
-                                    onFormatInfo, onAudioChunk,
+                                    handleFormat, handleChunk,
                                     cacheKey, cachedParts,
                                     totalCacheBytes, enginePackage
                                 )
-                                // بند 1.1: readSoFar تراكمي؛ كان يُسند
-                                // إليه toRead (دلتا) فتتكرر الشريحةُ
-                                // ويتقطّع الصوت في البث.
                                 readSoFar = available
                                 emittedAny = true
-                                // مرحلة 7: كتابةٌ متقدمة تُرجئ الـ deadline
-                                // فلا تُقطع التخليقُ الطويل البطيءُ الذي ما
-                                // زال يُنتج صوتاً (كان يُقتَطع عند المهلة
-                                // الثابتة رغم التقدم).
                                 deadline = extendStreamDeadline(
                                     deadline, emittedAny,
                                     SystemClock.elapsedRealtime()
                                 )
                             } catch (e: Exception) {
-                                if (emittedAny) {
-                                    // قُرئ صوتٌ فعلاً: لا نُعيد بثّه كاملاً —
-                                    // يكفي أن يُكمل المتبقي في النهاية.
-                                    streamReadFailed = true
-                                } else {
-                                    // لم يتبدّأ البث أصلاً: التراجع للمسار
-                                    // الكامل التقليدي بالأسفل بلا ازدواج.
-                                    streamReadFailed = true
-                                }
-                                Log.w(TAG,
-                                    "[Provider] streaming read failed —" +
-                                    " " +
-                                    if (emittedAny) {
-                                        "إتمام المتبقي"
-                                    } else {
-                                        "المسار الكامل"
-                                    }, e)
+                                streamReadFailed = true
+                                Log.w(
+                                    TAG,
+                                    "[Provider] streaming read failed", e
+                                )
                             }
-                            // حسمُ اكتمال الكتابة: طولُ خانة البيانات
-                            // المُعلَن دليلٌ قاطعٌ يُنهي البثَّ فوراً،
-                            // وإعلام onDone دليلٌ قاطعٌ متأخر،
-                            // واستقرارُ حجم الملف بعد مهلة أمانٍ
-                            // أوّلًا، فلا يُقطعَ نصٌّ على توقّفٍ عابر.
                             if (!finished && tempFile.exists()) {
                                 val nowLen = tempFile.length()
                                 if (nowLen == lastLen) {
@@ -1349,13 +1575,12 @@ class SystemVoiceProvider(
                                         emittedAny, finished, stallPolls,
                                         remaining, STALL_GRACE_POLLS,
                                         STALL_TAIL_MAX_BYTES
+                                    ) || isWavWriteComplete(
+                                        streamMeta, nowLen
                                     )
-                                    || isWavWriteComplete(streamMeta, nowLen)
                                 ) {
                                     tailCompleted = true
-                                    Log.d(TAG,
-                                        "[Provider] stream tail flushed on" +
-                                        " stall (finished delayed)")
+                                    flushedAfterStall = true
                                     break
                                 }
                             }
@@ -1366,14 +1591,9 @@ class SystemVoiceProvider(
                 Thread.currentThread().interrupt()
             }
 
-            if ((finished || tailCompleted || emittedAny) && !failed.get() &&
-                streamMeta != null
+            if ((finished || tailCompleted || emittedAny) &&
+                !reqState.failed.get() && streamMeta != null
             ) {
-                // إتمام البث: يُقرأ ما تبقى بعد آخر دفعة ثم يُعلَّم
-                // النجاح — لا مسار القراءة الكاملة (تجنّب بثٍّ مكرر).
-                // والذيلُ المنجَز (بالجمود أو بالحجم المُعلَن أو
-                // بانتهاء المهلة مع صوتٍ صادر) يسلك المسار نفسه،
-                // فلا يُهدر صوتٌ بُثَّ فعلاً ولا يُبثّ مرّتين.
                 val start = if (dataStart < 0) 0L else dataStart
                 val remaining = tempFile.length() - start - readSoFar
                 if (remaining > 0) {
@@ -1381,13 +1601,15 @@ class SystemVoiceProvider(
                         emitStreamChunk(
                             tempFile, start + readSoFar,
                             remaining.toInt(), volume, streamMeta,
-                            onFormatInfo, onAudioChunk,
+                            handleFormat, handleChunk,
                             cacheKey, cachedParts, totalCacheBytes,
                             enginePackage
                         )
                     } catch (e: Exception) {
-                        Log.w(TAG,
-                            "[Provider] stream remainder flush failed", e)
+                        Log.w(
+                            TAG,
+                            "[Provider] stream remainder flush failed", e
+                        )
                     }
                 }
                 if (cacheKey != null && cachedParts.isNotEmpty() &&
@@ -1405,29 +1627,14 @@ class SystemVoiceProvider(
                     )
                 }
                 success = true
-            } else if (finished && !failed.get() && tempFile.exists()
-                && tempFile.length() > 44
+            } else if (finished && !reqState.failed.get() &&
+                tempFile.exists() && tempFile.length() > 44
             ) {
                 try {
-                    // المسار الكامل التقليدي: قراءة الصوت من ملف التخليق
-                    // (تخطّي رأس WAV وقائمة الخانات) دون تحميل الملف
-                    // كاملاً ثم نسخه — كان ذلك يرفع ذروة الذاكرة 2-3× حجم
-                    // الملف للنصوص الطويلة.
                     val extracted = extractPcm(tempFile)
-                    if (extracted.pcm.isEmpty() ||
-                        extracted.validLength == 0
+                    if (extracted.pcm.isNotEmpty() &&
+                        extracted.validLength > 0
                     ) {
-                        Log.e(TAG, "[Provider] extractPcm returned empty")
-                    } else {
-                        // إبلاغ المتصل بالتنسيق الفعلي
-                        // (معدل عينات/قنوات) قبل أي شريحة
-                        // حتى يبدأ callback.start() بهما
-                        // بدل 22050 الثابتة.
-                        onFormatInfo(extracted.sampleRateInHz, 1)
-                        // مستوى الصوت فقط يُعالج رقماً
-                        // (المعامل المضاعف المحايد): السرعة
-                        // والنبرة صارتا تخصان المحرك عبر
-                        // setSpeechRate/setPitch.
                         val validLength = extracted.validLength
                         val scaledData = if (volume != 1.0f) {
                             applyVolume(
@@ -1443,28 +1650,15 @@ class SystemVoiceProvider(
                             extracted.sampleRateInHz,
                             enginePackage
                         )
-                        // منح البثّ إلى الكاش نسخةً مستقلة
-                        // من البيانات (بند 19.1): المتلقي
-                        // والمسبح قد يعيدان استخدام المخزن،
-                        // فنسخة الكاش ثابتة.
                         cacheKey?.let {
                             storeInCache(
                                 it, scaledData,
                                 extracted.sampleRateInHz, validLength
                             )
                         }
-                        // الطول الصالح صريح عبر المعامل الثاني:
-                        // فقد يكون حجم مصفوفة الشريحة أكبر (مسبح
-                        // مُعاد استخدامه) — والبيانات الصحيحة
-                        // حتى validLength فقط.
-                        onAudioChunk(scaledData, validLength)
+                        handleFormat(extracted.sampleRateInHz, 1)
+                        handleChunk(scaledData, validLength)
                         success = true
-                        // المستهلك نسخ الشريحة (audioAvailable)
-                        // ولم يُمسك بمرجعها — فنعيد كل مسبَّحٍ صاحبَ
-                        // حقّ الردّ: `extracted.pcm` مسبَّح دائماً،
-                        // والناتجُ الجديد من applyVolume مسبَّح أيضاً
-                        // (يعيده إن اختلف عن المصدر) — وما لم يأتِ من
-                        // المسبح لا يُعاد إليه (بند السباقات).
                         if (scaledData !== extracted.pcm) {
                             pcmPool.release(scaledData)
                         }
@@ -1473,26 +1667,71 @@ class SystemVoiceProvider(
                 } catch (e: Exception) {
                     Log.e(TAG, "[Provider] read audio failed", e)
                 }
-            } else {
-                val fileSize = if (tempFile.exists()) {
-                    tempFile.length()
-                } else {
-                    -1
-                }
-                Log.e(
-                    TAG,
-                    "[Provider] synthesis not completed:" +
-                        " failed=${failed.get()} finished=$finished" +
-                        " size=$fileSize"
-                )
             }
-        } else {
-            Log.e(TAG, "[Provider] synthesizeToFile status=$status")
         }
-        // ملفُ الجلسة خاص بها فيُحذف في كل المصائر — لا بقايا تتراكم في
-        // الكاش بعد النطق، ولا يُمسّ ملفُ جلسةٍ أخرى (الأسماءُ فريدة).
-        runCatching { tempFile.delete() }
-        return success
+
+        val finalFileLen = if (tempFile.exists()) tempFile.length() else 0L
+        val totalAudioBytes = localChunks.sumOf { it.size.toLong() }
+        val nonWs = text.count { !it.isWhitespace() }
+        val effRate = if (speechRate > 0.1f) speechRate else 1.0f
+        val expectedMs = ((nonWs * 55L) / effRate).toLong()
+        val producedMs = if (detectedSampleRate > 0) {
+            (totalAudioBytes * 1000L) / (detectedSampleRate * 2L)
+        } else {
+            0L
+        }
+        val isTestUtterance = reqState.receivedId.get() in setOf("a", "b")
+        val isTruncated = !isTestUtterance && nonWs >= 25 &&
+            producedMs < (expectedMs * 0.35)
+
+        SynthesisDiagnosticsTracker.record(
+            SynthesisDiagnosticsTracker.DiagnosticRecord(
+                timestamp = System.currentTimeMillis(),
+                engine = enginePackage ?: "unknown",
+                voice = desiredVoiceName ?: voice.displayName,
+                textLength = text.length,
+                partsCount = partsCount,
+                status = status,
+                timeToFirstByteMs = timeToFirstByteMs,
+                onDoneTimestamp = reqState.doneTimeMs.get(),
+                expectedUtteranceId = utteranceId,
+                receivedUtteranceId = reqState.receivedId.get(),
+                fileBytes = finalFileLen,
+                declaredWavBytes = declaredBytes,
+                stallPolls = stallPolls,
+                flushedAfterStall = flushedAfterStall,
+                durationMs = producedMs,
+                expectedDurationMs = expectedMs,
+                isTruncated = isTruncated,
+                retryCount = retryCount,
+                sanitizedCharsRemoved = sanitizedCharsCount
+            )
+        )
+
+        try {
+            if (text.length >= 25 && (!isTruncated || retryCount > 0)) {
+                if (localChunks.isNotEmpty()) {
+                    onFormatInfo(detectedSampleRate, 1)
+                    for (c in localChunks) {
+                        onAudioChunk(c, c.size)
+                    }
+                }
+            }
+        } finally {
+            engineReqs.remove(utteranceId)
+            activeRequests.remove(utteranceId)
+            runCatching { tempFile.delete() }
+        }
+
+        val finalSuccess = if (isTruncated && retryCount == 0) {
+            false
+        } else {
+            success
+        }
+        return AttemptResult(
+            success = finalSuccess,
+            isTruncated = isTruncated
+        )
     }
 
     /** عدّاد تزايدي لأسماء ملفات WAV المؤقتة الفريدة لكل جلسة تخليق (بند
@@ -1960,8 +2199,16 @@ private fun parseWavChunks(
         val chunkSize = readLeInt(chunkHeader, 4).toLong() and 0xFFFFFFFFL
         if (chunkId == "data") {
             val dataStart = offset + 8
+            val actualRemaining = (fileLen - dataStart).coerceAtLeast(0L)
+            val effectiveChunkSize = if (chunkSize == 0L ||
+                chunkSize == 0xFFFFFFFFL
+            ) {
+                actualRemaining
+            } else {
+                chunkSize
+            }
             val dataLen = minOf(
-                chunkSize, fileLen - dataStart
+                effectiveChunkSize, actualRemaining
             ).coerceAtLeast(0L).toInt()
             if (dataLen <= 0) return emptyExtract(sampleRate)
             val out = readFromPoolOrNull(raf, dataStart, dataLen, pool)
@@ -2052,7 +2299,7 @@ internal fun isWavWriteComplete(
 ): Boolean {
     if (meta == null) return false
     val declared = meta.declaredDataBytes
-    if (declared <= 0L) return false
+    if (declared <= 0L || declared == 0xFFFFFFFFL) return false
     return fileLength >= meta.dataStart + declared
 }
 
