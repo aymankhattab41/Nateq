@@ -712,6 +712,10 @@
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">
 Version %1$s
+    - Round 59: Acapela TTS stability on Android 17: added voice warmup polling (needsWarmupPolling), injected regional metadata (ar-SA and en-US) into IPC request bundles, and prevented empty 44-byte WAV generation on blank text inputs to avoid false engine eviction
+    - Round 59: Prevent Google TTS interference and seamless English number speech: unified engine and voice for English text containing numbers to prevent Google TTS invocation when category number voice mismatches, and eliminated inter-segment pauses in numbers and dates across Arabic and English
+    - Round 59: English voice resolution for "OK": enforced strict voice-language compatibility checking in VoiceResolutionPolicy to fall back to English voice when an Arabic voice is selected for general text
+    - Round 59: Universal Arabic tashkeel stripping across all engines: stripped diacritics and tashkeel universally across TextProcessor and speech normalizers to eliminate awkward pronunciation of vowelized characters
     - Round 58: MultiTTS Arabic compatibility: enabled container engines with Arabic voices (e.g. Acapela Leila) to operate smoothly by bypassing false LANG_NOT_SUPPORTED results and stripping voice prefixes during voice matching, preventing silent fallback and false unsupported flags
     - Round 58: English pronunciation for "OK": removed "OK" from AcronymStep to route it strictly to English voice and engine via LanguageSegmenter according to its native Latin pronunciation
     - Round 58: Seamless time and date speech without pause: attached conjunction waw ("و") directly to the following word in time formatting to eliminate isolated token pauses, and removed number markers (markNumbers) from dates and times to prevent inter-chunk fragmentation and millisecond gaps

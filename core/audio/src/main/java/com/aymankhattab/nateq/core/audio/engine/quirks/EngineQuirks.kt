@@ -73,6 +73,7 @@ data class EngineQuirks(
             // com.acapelagroup.android.tts — Acapela TTS (الجولة 55)
             "com.acapelagroup.android.tts" to EngineQuirks(
                 packageName = "com.acapelagroup.android.tts",
+                needsWarmupPolling = true,
                 lateWriteSettleMs = 350L,
                 maxCharsPerRequest = 320,
                 sanitizeForEngine = true,
@@ -81,7 +82,7 @@ data class EngineQuirks(
                 rejectsVoiceSilently = true,
                 maxSafeSpeechRate = 2.0f,
                 serializeRequests = true,
-                tashkeelPolicy = TashkeelPolicy.UNKNOWN,
+                tashkeelPolicy = TashkeelPolicy.STRIP_TASHKEEL,
                 problematicLanguages = emptySet(),
                 problematicVoiceNames = emptySet()
             ),
@@ -93,7 +94,7 @@ data class EngineQuirks(
                 rejectsVoiceSilently = true,
                 needsSetLanguageBeforeSetVoice = true,
                 maxSafeSpeechRate = 2.5f,
-                tashkeelPolicy = TashkeelPolicy.UNKNOWN,
+                tashkeelPolicy = TashkeelPolicy.STRIP_TASHKEEL,
                 problematicLanguages = setOf("ar"),
                 problematicVoiceNames = emptySet()
             ),
@@ -105,7 +106,7 @@ data class EngineQuirks(
                 rejectsVoiceSilently = false,
                 needsSetLanguageBeforeSetVoice = false,
                 maxSafeSpeechRate = 3.0f,
-                tashkeelPolicy = TashkeelPolicy.PARTIAL_TASHKEEL,
+                tashkeelPolicy = TashkeelPolicy.STRIP_TASHKEEL,
                 problematicLanguages = emptySet(),
                 problematicVoiceNames = emptySet()
             )

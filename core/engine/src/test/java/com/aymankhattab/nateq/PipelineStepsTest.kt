@@ -1611,8 +1611,8 @@ class PipelineStepsTest {
 
     @Test
     fun tashkeelStrip_preservesForGoogleTts() {
-        // Google TTS يفهم التشكيل العربي → لا نجرد له.
-        assertFalse(stripTashkeelFor("com.google.android.tts"))
+        // التجريد شامل لكل المحركات بناءً على الأمر الصريح
+        assertTrue(stripTashkeelFor("com.google.android.tts"))
     }
 
     @Test
@@ -1625,7 +1625,7 @@ class PipelineStepsTest {
 
     @Test
     fun tashkeelStrip_aweareEnginesSetIsNonEmpty() {
-        assertTrue(ARABIC_TASHKEEL_AWARE_ENGINES.isNotEmpty())
+        assertTrue(ARABIC_TASHKEEL_AWARE_ENGINES.isEmpty())
     }
 
     @Test

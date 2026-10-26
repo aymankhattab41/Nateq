@@ -19,7 +19,7 @@ class EngineQuirksTest {
             q.needsSetLanguageBeforeSetVoice
         )
         assertEquals(2.5f, q.maxSafeSpeechRate, 0.001f)
-        assertEquals(TashkeelPolicy.UNKNOWN, q.tashkeelPolicy)
+        assertEquals(TashkeelPolicy.STRIP_TASHKEEL, q.tashkeelPolicy)
         assertTrue(
             "العربية في اللغات المشكلة",
             q.problematicLanguages.contains("ar")

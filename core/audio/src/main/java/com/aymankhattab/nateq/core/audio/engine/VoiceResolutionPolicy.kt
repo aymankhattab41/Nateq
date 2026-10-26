@@ -130,13 +130,18 @@ object VoiceResolutionPolicy {
             }
             SpeechRole.TEXT -> {
                 when {
-                    !contactVoice.isNullOrBlank() -> {
+                    !contactVoice.isNullOrBlank() &&
+                        isVoiceLanguageMatch(contactVoice, languageTag) -> {
                         ResolvedVoice(contactVoice, SOURCE_CONTACT)
                     }
-                    !appVoice.isNullOrBlank() -> {
+                    !appVoice.isNullOrBlank() &&
+                        isVoiceLanguageMatch(appVoice, languageTag) -> {
                         ResolvedVoice(appVoice, SOURCE_APP)
                     }
-                    !effectiveCategoryVoice.isNullOrBlank() -> {
+                    !effectiveCategoryVoice.isNullOrBlank() &&
+                        isVoiceLanguageMatch(
+                            effectiveCategoryVoice, languageTag
+                        ) -> {
                         ResolvedVoice(
                             effectiveCategoryVoice,
                             SOURCE_CATEGORY

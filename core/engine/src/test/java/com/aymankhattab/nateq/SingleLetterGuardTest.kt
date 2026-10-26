@@ -54,7 +54,7 @@ class SingleLetterGuardTest {
         assertEquals("ميم", SingleLetterGuard.getLetterName("م"))
         assertEquals("ألف همزة فوق", SingleLetterGuard.getLetterName("أ"))
         assertEquals("ألف همزة تحت", SingleLetterGuard.getLetterName("إ"))
-        assertEquals("ألف مدّة", SingleLetterGuard.getLetterName("آ"))
+        assertEquals("ألف مدة", SingleLetterGuard.getLetterName("آ"))
         assertEquals("همزة", SingleLetterGuard.getLetterName("ء"))
         assertEquals("لام ألف", SingleLetterGuard.getLetterName("لا"))
         assertEquals("kay", SingleLetterGuard.getLetterName("k"))

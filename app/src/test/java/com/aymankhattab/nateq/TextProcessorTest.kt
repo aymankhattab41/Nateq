@@ -963,15 +963,14 @@ class TextProcessorTest {
 
     @Test
     fun engineAware_tashkeelPreservedForGoogle() {
-        // Google TTS يفهم التشكيل → تُبقي معالج النص الحركات في الناتج
-        // بلا اشتراط تفضيل «حفظ التشكيل».
+        // تجريد التشكيل شامل لكل المحركات استجابة للأمر الصريح
         val ctx: Context = ApplicationProvider.getApplicationContext()
         val settings = SettingsRepository(ctx)
         settings.setTashkeelPreserved(false)
         val engineAware = TextProcessor(ctx, settings)
 
         assertEquals(
-            "السَّلَامُ عَلَيْكُمْ",
+            "السلام عليكم",
             engineAware.process(
                 "السَّلَامُ عَلَيْكُمْ", "ar",
                 "com.google.android.tts"
@@ -1036,19 +1035,19 @@ class TextProcessorTest {
     @Test
     fun data_units_case_insensitive_full_pipeline() {
         assertEquals(
-            "حمّل خمسون ميجابايت",
+            "حمل خمسون ميجابايت",
             processor.process("حمّل 50mb", "ar", "com.google.android.tts")
         )
         assertEquals(
-            "حمّل خمسون ميجابايت",
+            "حمل خمسون ميجابايت",
             processor.process("حمّل 50Mb", "ar", "com.google.android.tts")
         )
         assertEquals(
-            "حمّل خمسون ميجابايت",
+            "حمل خمسون ميجابايت",
             processor.process("حمّل 50MB", "ar", "com.google.android.tts")
         )
         assertEquals(
-            "حمّل خمسون ميجابايت",
+            "حمل خمسون ميجابايت",
             processor.process("حمّل 50mB", "ar", "com.google.android.tts")
         )
     }
@@ -1102,7 +1101,7 @@ class TextProcessorTest {
         val fullSpokenGoogle = processor.process(
             vowelledInput, "ar", "com.google.android.tts"
         )
-        assertTrue(fullSpokenGoogle.contains("جُمَادَى الأُولَى"))
+        assertTrue(fullSpokenGoogle.contains("جمادى الأولى"))
     }
 
     @Test

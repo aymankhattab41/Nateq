@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.util.Log
+import com.aymankhattab.nateq.core.audio.engine.quirks.EngineQuirks
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import java.io.File
 import java.util.Locale
@@ -92,11 +93,26 @@ object EngineHealthProbe {
             }
 
             // فحص الأصوات واللغات
+            val quirks = EngineQuirks.forPackage(enginePackage)
+            val needsRegion = quirks.requiresLocaleWithRegion
+            val needsLangFirst = quirks.needsSetLanguageBeforeSetVoice
+
+            val arLocale = if (needsRegion) {
+                Locale("ar", "SA")
+            } else {
+                Locale("ar")
+            }
+            val enLocale = if (needsRegion) {
+                Locale("en", "US")
+            } else {
+                Locale("en")
+            }
+
             val voices = runCatching { tts.voices.orEmpty() }.getOrDefault(
                 emptySet()
             )
-            val arStatus = tts.isLanguageAvailable(Locale("ar"))
-            val enStatus = tts.isLanguageAvailable(Locale("en"))
+            val arStatus = tts.isLanguageAvailable(arLocale)
+            val enStatus = tts.isLanguageAvailable(enLocale)
 
             if (arStatus == TextToSpeech.LANG_MISSING_DATA) {
                 val res = ProbeResult(
@@ -126,13 +142,32 @@ object EngineHealthProbe {
             } ?: voices.firstOrNull()
 
             if (chosenVoice != null) {
+                if (needsLangFirst) {
+                    val effLocale = if (needsRegion &&
+                        chosenVoice.locale.country.isNullOrEmpty()
+                    ) {
+                        if (chosenVoice.locale.language == "ar") {
+                            Locale("ar", "SA")
+                        } else {
+                            Locale("en", "US")
+                        }
+                    } else {
+                        chosenVoice.locale
+                    }
+                    runCatching { tts.language = effLocale }
+                }
                 val setRes = runCatching { tts.voice = chosenVoice }
                 if (setRes.isSuccess) {
                     val current = runCatching { tts.voice }.getOrNull()
                     voiceSetOk = (current?.name == chosenVoice.name)
                 }
             } else {
-                runCatching { tts.language = Locale("ar") }
+                val effLocale = if (needsRegion) {
+                    Locale("ar", "SA")
+                } else {
+                    Locale("ar")
+                }
+                runCatching { tts.language = effLocale }
                 voiceSetOk = true
             }
 
@@ -174,6 +209,13 @@ object EngineHealthProbe {
             )
 
             synthLatch.await(3000L, TimeUnit.MILLISECONDS)
+            if (quirks.lateWriteSettleMs > 0L) {
+                try {
+                    Thread.sleep(quirks.lateWriteSettleMs)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                }
+            }
             val fileSize = if (tempFile.exists()) tempFile.length() else 0L
             runCatching { tempFile.delete() }
 

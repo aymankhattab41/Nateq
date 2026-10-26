@@ -38,22 +38,13 @@ import java.util.regex.Pattern
  * [TextProcessor.process]]) فلا تُنطق الحركاتُ حروفاً غريبة ولا يُجرد نصٌّ
  * يجيد المحركُ قراءته. الباقية (غير المعروفة) تُسلك السلوكَ القائم: تجريد.
  */
-val ARABIC_TASHKEEL_AWARE_ENGINES: Set<String> = setOf(
-    "com.google.android.tts"
-)
+val ARABIC_TASHKEEL_AWARE_ENGINES: Set<String> = emptySet()
 
 /**
  * هل نجرد التشكيل العربي من النص قبل تسليمه للمحرك [enginePackage]؟
- * الإفتراض: نعم (تجريد — أغلب المحركات لا تنطق الحركات بوضوح). محركٌ معروف
- * بفهمه التشكيل (انظر [ARABIC_TASHKEEL_AWARE_ENGINES]) وnull (غير معروف)
- * يُعالَجان بحذر: المعروف يُبقي التشكيل، وغير المعروف يُجرد (سلوك سابق).
- * للمحرك المدمج vocalizer_embedded (الجولة 53 - الأمر 5): يعيد true صريحاً
- * لتجريد التشكيل العام وحفظ ما يضيفه مطبّع النون الصريحة.
+ * تجريد كامل وشامل لكل المحركات بلا استثناء استجابةً للأمر الصريح.
  */
-fun stripTashkeelFor(enginePackage: String?): Boolean = when (enginePackage) {
-    "vocalizer_embedded" -> true
-    else -> enginePackage !in ARABIC_TASHKEEL_AWARE_ENGINES
-}
+fun stripTashkeelFor(enginePackage: String?): Boolean = true
 
 /**
  * معالج النصوص الذكي — يحول النصوص الخام إلى نصوص قابلة للنطق طبيعياً.
@@ -182,12 +173,12 @@ class TextProcessor(
         steps += IndicDigitsStep
         steps += UrlStep
         if (s?.isTimeConversionEnabled() != false) {
-            steps += DateStep(markNumbers = markNumbers)
+            steps += DateStep(markNumbers = false)
         }
         if (s?.isTimeConversionEnabled() != false) {
             steps += TimeStep(
                 modeProvider = { s?.getTimeSuffixMMode() ?: "context" },
-                markNumbers = markNumbers
+                markNumbers = false
             )
         }
         if (s?.isCurrencyConversionEnabled() != false) {
@@ -269,10 +260,10 @@ class TextProcessor(
         val s = injectedSettings
         steps += IndicDigitsStep
         if (s?.isTimeConversionEnabled() != false) {
-            steps += DateStep(markNumbers = markNumbers)
+            steps += DateStep(markNumbers = false)
             steps += TimeStep(
                 modeProvider = { s?.getTimeSuffixMMode() ?: "context" },
-                markNumbers = markNumbers
+                markNumbers = false
             )
         }
         if (s?.isCurrencyConversionEnabled() != false) {

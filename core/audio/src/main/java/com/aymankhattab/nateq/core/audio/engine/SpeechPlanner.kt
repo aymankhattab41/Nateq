@@ -33,7 +33,8 @@ data class VoiceResolution(
     val voiceId: String?,
     val rate: Float = 1.0f,
     val pitch: Float = 1.0f,
-    val volume: Float = 1.0f
+    val volume: Float = 1.0f,
+    val source: String? = null
 )
 
 /**
@@ -177,7 +178,8 @@ object SpeechPlanner {
             voiceId = resolved.voiceId,
             rate = rate,
             pitch = pitch,
-            volume = volume
+            volume = volume,
+            source = resolved.source
         )
     }
 
@@ -292,7 +294,7 @@ object SpeechPlanner {
                         defaultVolume = defaultVolume
                     )
                     val numRes = if (isNumCandidate) {
-                        resolveVoiceForSegment(
+                        val candidate = resolveVoiceForSegment(
                             languageTag = seg.languageTag,
                             role = SpeechRole.NUMBER,
                             settings = settings,
@@ -302,6 +304,20 @@ object SpeechPlanner {
                             defaultPitch = defaultPitch,
                             defaultVolume = defaultVolume
                         )
+                        val isMismatchedNumCat = candidate.source ==
+                            VoiceResolutionPolicy
+                                .SOURCE_CATEGORY_NUMBER_PARAMS
+                        val isEnglishMismatch =
+                            LanguageCode.isEnglish(fallbackLanguage) &&
+                            LanguageCode.isEnglish(seg.languageTag) &&
+                            candidate.source !=
+                            VoiceResolutionPolicy
+                                .SOURCE_CATEGORY_NUMBER
+                        if (isMismatchedNumCat || isEnglishMismatch) {
+                            textRes
+                        } else {
+                            candidate
+                        }
                     } else {
                         textRes
                     }
@@ -336,7 +352,7 @@ object SpeechPlanner {
             }
         }
 
-        // دمج المقاطع المتجاورة التي تتطابق كل إعداداتها (الجولة 50 - الأمر 3)
+        // دمج المقاطع المتجاورة التي تتطابق كل إعداداتها لمنع السكتات
         val mergedItems = ArrayList<SpeechPlanItem>()
         for (item in items) {
             val last = mergedItems.lastOrNull()

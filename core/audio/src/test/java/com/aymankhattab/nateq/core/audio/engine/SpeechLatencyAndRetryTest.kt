@@ -116,7 +116,9 @@ class SpeechLatencyAndRetryTest {
         // يجب أن يُنطق الرقم كاملاً في المحاولة نفسها دون سحب.
         var phoneAttempts = 0
         val mockProvider = MockVoiceProvider { text, cat, _ ->
-            if (text.contains("صِفْرْ وَاحِد")) {
+            if (text.contains("صفر واحد") ||
+                text.contains("صِفْرْ وَاحِد")
+            ) {
                 phoneAttempts++
                 if (phoneAttempts == 1) {
                     null // يفشل في أول محاولة

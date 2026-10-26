@@ -10,7 +10,7 @@ object SingleLetterGuard {
     private val ARABIC_LETTER_NAMES = mapOf(
         "أ" to "ألف همزة فوق",
         "إ" to "ألف همزة تحت",
-        "آ" to "ألف مدّة",
+        "آ" to "ألف مدة",
         "ا" to "ألف",
         "ء" to "همزة",
         "ؤ" to "واو همزة",

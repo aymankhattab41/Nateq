@@ -16,7 +16,7 @@ package com.aymankhattab.nateq.engine.pipeline
  * - U+FDFD (﷽) وU+FDF2 وما يليها (أشكال عرض عربية مزخرفة) تُحذف.
  * - U+06AA (ڪ كاف مائلة شرقية) تُستبدل بـ ك (U+0643) الاعتيادية لا تُحذف.
  */
-internal object TashkeelStripStep : TextProcessingStep {
+object TashkeelStripStep : TextProcessingStep {
 
     override fun apply(input: String): String {
         if (input.isEmpty()) return input

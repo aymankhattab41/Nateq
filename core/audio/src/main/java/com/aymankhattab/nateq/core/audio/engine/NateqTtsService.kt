@@ -1406,6 +1406,9 @@ class NateqTtsService : TextToSpeechService() {
         val speechText = prepareArabicForEngine(
             processedText, languageTag, finalEngineToUse
         )
+        if (speechText.isBlank()) {
+            return
+        }
         if (runCatching {
             settings.isLanguageDiagnosticsEnabled()
         }.getOrDefault(false)) {
@@ -1912,6 +1915,9 @@ class NateqTtsService : TextToSpeechService() {
         val params = resolveSegmentParams(
             segment, readerRate, appVoice, reqVoiceName
         ) ?: return null
+        if (params.text.isBlank()) {
+            return SegmentAudio(22050, 1, emptyList<ByteArray>())
+        }
         onResolved?.invoke(params.engine, params.voice.id)
         val chunks = ArrayList<ByteArray>()
         var nativeRate = 0

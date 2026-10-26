@@ -1,42 +1,23 @@
 package com.aymankhattab.nateq.core.audio.announcement
 
 import com.aymankhattab.nateq.core.engine.EngineMarkers
+import com.aymankhattab.nateq.engine.pipeline.TashkeelStripStep
 import com.aymankhattab.nateq.engine.stripTashkeelFor
 import com.aymankhattab.nateq.util.LanguageCode
 
 /**
- * ضبطٌ لفظي محافظ يُطبَّق على كل نطقٍ في التطبيق (النصوص العامة والأحداث):
- * بعض المحركات العربية (ظاهرة في Vocalizer وأصناف أجهزة معينة) تفكّكُ
- * «واحد» حرفاً حرفاً («و ا ح د») وتُسقط نطقَ التنوين في «مساءً/صباحاً»
- * (كـ«مساء» أو «مساءا») عندما تصل الكلمة بلا ضبط — فأدرجنا هنا كلماتٍ
- * مشكولةً كاملةً تُلزم المحرك بقراءةٍ واحدةٍ سليمة بلا تغيير في النص أو
- * معنى اللفظ. وكلماتُ التنوين تُكتب بنونٍ ساكنة صريحة (مَسَاءَنْ) لا
- * بعلامة التنوين، لأن النون حرفٌ تقرؤه كل المحركات بينما التنوين
- * علامةٌ تُهمَل عند التجريد فيُفقد اللفظ (انظر [MASA_AN]).
- * يُستدعى بعد تطبيع NFC على النص المنطوق.
+ * ضبطٌ لفظي محافظ يُطبَّق على كل نطقٍ في التطبيق (النصوص العامة والأحداث).
+ * جُرِّد التشكيل كاملاً بناءً على الأمر الصريح لمنع أي نطق غريب للحروف.
  */
 object ArabicSpeechNormalizer {
 
-    // **نطق التنوين بنونٍ صريحة (لا بعلامة التنوين):** التنوين «ً» علامةُ
-    // تشكيلٍ فقط بلا حرف، فمحركٌ يجرّد الحركات (أو لا يفهمها) يهملها
-    // فيقرأ «صباحا» ألفاً ممدودةً: «صباحا» بدل «صباحن»/«سُبْحانًا».
-    // ونونٍ ساكنة (نْ) حرفٌ مستقلٌّ تقرؤه كل المحركات، فتنطق الكلمة
-    // «صباحن» قراءةً سليمةً بلا اعتمادٍ على فهم التشكيل — وهو ما يفشل
-    // فعلاً فتصبح النتيجة «غير منونة» مسموعةً.
-    const val MASA_AN =
-        "\u0645\u064e\u0633\u064e\u0627\u0621\u064e\u0646\u0652"
-    const val SABA_AN =
-        "\u0635\u064e\u0628\u064e\u0627\u062d\u064e\u0646\u0652"
-    const val DHUHR_AN =
-        "\u0638\u064e\u0647\u0652\u0631\u064e\u0646\u0652"
-    const val ASR_AN =
-        "\u0639\u064e\u0635\u0652\u0631\u064e\u0646\u0652"
-    const val LAYL_AN =
-        "\u0644\u064e\u064a\u0652\u0644\u064e\u0646\u0652"
-    const val FAJR_AN =
-        "\u0641\u064e\u062c\u0652\u0631\u064e\u0646\u0652"
-    const val NAHAR_AN =
-        "\u0646\u064e\u0647\u064e\u0627\u0631\u064e\u0646\u0652"
+    const val MASA_AN = "مساءن"
+    const val SABA_AN = "صباحن"
+    const val DHUHR_AN = "ظهرن"
+    const val ASR_AN = "عصرن"
+    const val LAYL_AN = "ليلن"
+    const val FAJR_AN = "فجرن"
+    const val NAHAR_AN = "نهارن"
 
     private val protectedTanweenPatterns = listOf(
         Regex(
@@ -100,12 +81,10 @@ object ArabicSpeechNormalizer {
         "\u0641\u062c\u0631\u0627\u064b" to FAJR_AN,
         // فجرًا
         "\u0641\u062c\u0631\u064b\u0627" to FAJR_AN,
-        // نهاراً ← نَهَارَنْ
+        // نهاراً ← نهارن
         "\u0646\u0647\u0627\u0631\u0627\u064b" to NAHAR_AN,
         // نهارًا
         "\u0646\u0647\u0627\u0631\u064b\u0627" to NAHAR_AN,
-        // واحد ← وَاحِد (فتحة الواو وكسرة الحاء).
-        "\u0648\u0627\u062d\u062f" to "\u0648\u064e\u0627\u062d\u0650\u062f",
         // مساءً (بتنوين الهمزة)
         "\u0645\u0633\u0627\u0621\u064b" to MASA_AN
     )
@@ -168,12 +147,6 @@ object ArabicSpeechNormalizer {
                 m.groupValues[1] + MASA_AN
             }
         }
-        if (!isTashkeelAware) {
-            out = out.replace(
-                "\u0648\u0627\u062d\u062f",
-                "\u0648\u064e\u0627\u062d\u0650\u062f"
-            )
-        }
         if (out.contains(EngineMarkers.TANWEEN_MARKER)) {
             out = out.replace(EngineMarkers.TANWEEN_MARKER, "")
         }
@@ -183,12 +156,16 @@ object ArabicSpeechNormalizer {
         if (out.contains(EngineMarkers.NUMBER_MARK_END)) {
             out = out.replace(EngineMarkers.NUMBER_MARK_END, "")
         }
-        return out
+        // وصل واو العطف المعزولة بالكلمة التالية لمنع سكتات النطق
+        out = out.replace(
+            Regex("""(?<=^|\s)و\s+(?=[\u0600-\u06FF])"""),
+            "و"
+        )
+        return TashkeelStripStep.apply(out)
     }
 
     /**
-     * تجهيز نص عربي للمحرك مع مراعاة قدرة المحرك على فهم التشكيل (بند 3.4):
-     * إن كان المحرك يفهم التشكيل تُحذف علامة الحفظ دون استبدال التنوين بنون.
+     * تجهيز نص عربي للمحرك مع تجريد كامل للتشكيل استجابةً للأمر الصريح.
      */
     fun prepareArabicForEngine(
         text: String,
@@ -197,16 +174,18 @@ object ArabicSpeechNormalizer {
         explicitNunForDayPeriod: Boolean = false
     ): String {
         if (!LanguageCode.isArabic(languageTag)) {
-            return text.replace(EngineMarkers.TANWEEN_MARKER, "")
+            val unmark = text.replace(EngineMarkers.TANWEEN_MARKER, "")
                 .replace(EngineMarkers.NUMBER_MARK_START, "")
                 .replace(EngineMarkers.NUMBER_MARK_END, "")
+            return TashkeelStripStep.apply(unmark)
         }
         val isTashkeelAware = !stripTashkeelFor(enginePackage)
-        return normalize(
+        val normalized = normalize(
             text = text,
             isTashkeelAware = isTashkeelAware,
             explicitNunForDayPeriod = explicitNunForDayPeriod
         )
+        return TashkeelStripStep.apply(normalized)
     }
 }
 

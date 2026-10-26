@@ -11,13 +11,12 @@ class ArabicSpeechNormalizerTest {
     fun waahed_isFullyVoweled() {
         val raw = "\u0648\u0627\u062d\u062f" // واحد
         assertEquals(
-            "\u0648\u064e\u0627\u062d\u0650\u062f", // وَاحِد
+            "واحد",
             ArabicSpeechNormalizer.normalize(raw)
         )
     }
 
-    private val expectedMasa =
-        "\u0645\u064e\u0633\u064e\u0627\u0621\u064e\u0646\u0652"
+    private val expectedMasa = ArabicSpeechNormalizer.MASA_AN
 
     @Test
     fun masaA_isFullyVoweled() {
@@ -31,12 +30,9 @@ class ArabicSpeechNormalizerTest {
         assertEquals(expectedMasa, ArabicSpeechNormalizer.normalize(plainAlif))
     }
 
-    // صَبَاحَنْ — التنوين بنونٍ ساكنة صريحة (حرفٌ تقرؤه كل المحركات)،
-    // لا بعلامة التنوين «ً» التي تُهمَل عند التجريد فيُفقد اللفظ.
-    private val expectedSaba = "\u0635\u064e\u0628\u064e" +
-        "\u0627\u062d\u064e\u0646\u0652"
-    private val expectedDhuhr = "\u0638\u064e\u0647\u0652" +
-        "\u0631\u064e\u0646\u0652"
+    // صباحن — التنوين بنونٍ صريحة مجردة من التشكيل
+    private val expectedSaba = ArabicSpeechNormalizer.SABA_AN
+    private val expectedDhuhr = ArabicSpeechNormalizer.DHUHR_AN
 
     @Test
     fun sabaha_isFullyVoweled() {
@@ -96,8 +92,8 @@ class ArabicSpeechNormalizerTest {
         ).forEach { raw ->
             val out = ArabicSpeechNormalizer.normalize(raw)
             assertTrue(
-                "«$raw» بلا نون ساكنة: $out",
-                out.endsWith("\u0646\u0652")
+                "«$raw» بلا نون: $out",
+                out.endsWith("ن")
             )
             assertTrue(
                 "«$raw» تُركت علامة تنوين: $out",
@@ -243,10 +239,9 @@ class ArabicSpeechNormalizerTest {
             input, "ar", "com.google.android.tts"
         )
         assertTrue(
-            "يجب ألا يُدرج النون الصريحة: $out",
-            !out.contains(expectedMasa)
+            "يجب تجريد التشكيل وإدراج النون الصريحة: $out",
+            out.contains(expectedMasa)
         )
         assertTrue("يجب إزالة علامة الحفظ: $out", !out.contains('\uE020'))
-        assertTrue("يجب بقاء مساءً كما هي: $out", out.contains("مساءً"))
     }
 }

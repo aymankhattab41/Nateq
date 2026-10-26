@@ -50,7 +50,20 @@ object EngineTextSanitizer {
 
             val isPrivateUseArea = (cp in 0xE000..0xF8FF)
 
-            if (isEmojiOrPictorial || isInvisibleFormat || isPrivateUseArea) {
+            val isTashkeel = (
+                cp in 0x0610..0x061A ||
+                cp == 0x0640 ||
+                cp == 0x0670 ||
+                cp in 0x064B..0x065F ||
+                cp in 0x06D6..0x06ED ||
+                cp in 0x08D3..0x08E1 ||
+                cp in 0x08E3..0x08FF ||
+                cp in 0xFDF2..0xFDFF
+            )
+
+            if (isEmojiOrPictorial || isInvisibleFormat ||
+                isPrivateUseArea || isTashkeel
+            ) {
                 removed += charCount
                 // إضافة مسافة عند حذف رمز رمزي أو إيموجي منعاً للالتصاق
                 if (isEmojiOrPictorial &&
@@ -59,6 +72,8 @@ object EngineTextSanitizer {
                 ) {
                     sb.append(' ')
                 }
+            } else if (cp == 0x06AA) {
+                sb.append('\u0643')
             } else {
                 sb.appendCodePoint(cp)
             }

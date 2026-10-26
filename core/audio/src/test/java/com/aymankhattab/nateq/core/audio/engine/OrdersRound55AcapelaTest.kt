@@ -1,10 +1,13 @@
 package com.aymankhattab.nateq.core.audio.engine
 
 import android.content.Context
+import android.speech.tts.Voice
 import androidx.test.core.app.ApplicationProvider
+import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
 import com.aymankhattab.nateq.core.audio.engine.quirks.EngineQuirks
 import com.aymankhattab.nateq.core.audio.engine.quirks.EngineTextSanitizer
 import java.io.File
+import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -208,7 +211,7 @@ class OrdersRound55AcapelaTest {
         assertFalse("يجب حذف U+FEFF", clean.contains("\uFEFF"))
         assertFalse("يجب حذف علامات PUA \\uE030", clean.contains("\uE030"))
         assertTrue("يجب رصد عدد المحارف المحذوفة", removed > 0)
-        assertTrue("النص الصالح يبقى كاملاً", clean.contains("مرحباً يا أخي"))
+        assertTrue("النص الصالح يبقى كاملاً", clean.contains("مرحبا يا أخي"))
         assertTrue("النص الصالح يبقى كاملاً", clean.contains("علامة داخلية"))
     }
 
@@ -234,5 +237,50 @@ class OrdersRound55AcapelaTest {
         assertTrue(result.summaryAr.contains("صامت ✗"))
         val report = result.summaryAr
         assertTrue(report.contains("Acapela"))
+    }
+
+    // (ح) مطابقة اسم الصوت مع اسم العرض «العربية» تعيد صوت Acapela العربي.
+    @Test
+    fun testScenarioH_acapelaVoiceResolvesForArabicDisplayName() {
+        val mehdi = Voice(
+            "ara-SAU-Mehdi", Locale("ar", "SA"),
+            Voice.QUALITY_HIGH, Voice.LATENCY_NORMAL, false, emptySet()
+        )
+        val salma = Voice(
+            "ara-EGY-Salma", Locale("ar", "EG"),
+            Voice.QUALITY_HIGH, Voice.LATENCY_NORMAL, false, emptySet()
+        )
+        val voices = listOf(mehdi, salma)
+
+        // مطابقة بالاسم العربي المعروض «العربية»
+        val resolved = AnnouncementSpeaker.voiceFor(
+            voices, "العربية", Locale("ar")
+        )
+        assertTrue(
+            "يجب أن يعيد صوتاً عربياً من أصوات Acapela",
+            resolved != null && resolved.locale.language == "ar"
+        )
+    }
+
+    // (ط) تنقية نص إيموجي بالكامل تعيد نصاً فارغاً دون تعليق أو فشل المحرك.
+    @Test
+    fun testScenarioI_sanitizingEmojiOnlyReturnsBlank() {
+        val emojiOnly = "😊👍🎉"
+        val (clean, removed) = EngineTextSanitizer.sanitizeWithCount(
+            emojiOnly,
+            "com.acapelagroup.android.tts"
+        )
+        assertTrue("يجب أن يكون النص المُنقّى فارغاً", clean.isBlank())
+        assertTrue("يجب حذف جميع المحارف", removed > 0)
+    }
+
+    // (ي) التأكد من أن quirks Acapela تشمل needsWarmupPolling.
+    @Test
+    fun testScenarioJ_acapelaHasWarmupPolling() {
+        val acapela = EngineQuirks.forPackage("com.acapelagroup.android.tts")
+        assertTrue(
+            "Acapela تتطلب needsWarmupPolling لتفادي فراغ الأصوات",
+            acapela.needsWarmupPolling
+        )
     }
 }

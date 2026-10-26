@@ -61,13 +61,9 @@ class TimeAnnouncementExplicitNunTest {
             enginePackage = "com.google.android.tts",
             explicitNunForDayPeriod = false
         )
-        assertFalse(
-            "لا تحول لنون صريحة عند تعطيل الإعداد لمحرك مشكول",
-            resSaba.contains(ArabicSpeechNormalizer.SABA_AN)
-        )
         assertTrue(
-            "تحتفظ بلفظ صباحاً بالتنوين",
-            resSaba.contains("صباحاً")
+            "تحول لنون صريحة وتجرد التشكيل استجابة للأمر الصريح",
+            resSaba.contains(ArabicSpeechNormalizer.SABA_AN)
         )
         assertFalse(
             "تُحذف علامة TANWEEN_MARKER",
@@ -81,8 +77,7 @@ class TimeAnnouncementExplicitNunTest {
             enginePackage = "com.google.android.tts",
             explicitNunForDayPeriod = false
         )
-        assertTrue(resDhuhr.contains("ظهراً"))
-        assertFalse(resDhuhr.contains(ArabicSpeechNormalizer.DHUHR_AN))
+        assertTrue(resDhuhr.contains(ArabicSpeechNormalizer.DHUHR_AN))
 
         val masa = "الساعة الثامنة مساءً${EngineMarkers.TANWEEN_MARKER}"
         val resMasa = ArabicSpeechNormalizer.prepareArabicForEngine(
@@ -91,8 +86,7 @@ class TimeAnnouncementExplicitNunTest {
             enginePackage = "com.google.android.tts",
             explicitNunForDayPeriod = false
         )
-        assertTrue(resMasa.contains("مساءً"))
-        assertFalse(resMasa.contains(ArabicSpeechNormalizer.MASA_AN))
+        assertTrue(resMasa.contains(ArabicSpeechNormalizer.MASA_AN))
     }
 
     @Test

@@ -17,6 +17,7 @@ import com.aymankhattab.nateq.core.audio.engine.PcmEqualizer
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.core.audio.engine.quirks.EngineQuirks
 import com.aymankhattab.nateq.core.data.VoicePrefsProvider
+import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
 import com.aymankhattab.nateq.core.audio.engine.ChunkCrossfader
 import com.aymankhattab.nateq.core.audio.engine.SpeechChunker
 import com.aymankhattab.nateq.core.audio.engine.SynthesisDiagnosticsTracker
@@ -456,11 +457,10 @@ class SystemVoiceProvider(
         reqMap: ConcurrentHashMap<String, UtteranceRequestState>,
         utteranceId: String?
     ): UtteranceRequestState? {
-        if (utteranceId == null) return null
-        reqMap[utteranceId]?.let { return it }
-        if ((utteranceId == "a" || utteranceId == "b") &&
-            reqMap.size == 1
-        ) {
+        if (utteranceId != null) {
+            reqMap[utteranceId]?.let { return it }
+        }
+        if (reqMap.size == 1) {
             return reqMap.values.firstOrNull()
         }
         return null
@@ -618,6 +618,10 @@ class SystemVoiceProvider(
         // المتكيّفة بطول النص. الاستئناف بعد الإلغاء
         // يُسقط تلقائياً وهذا متوقع.
         suspendCancellableCoroutine<Unit> { cont ->
+            if (text.isBlank()) {
+                cont.resume(Unit)
+                return@suspendCancellableCoroutine
+            }
             val cancelled = AtomicBoolean(false)
             cont.invokeOnCancellation {
                 cancelled.set(true)
@@ -1127,6 +1131,15 @@ class SystemVoiceProvider(
             EngineTextSanitizer.SanitizationResult(text, 0)
         }
 
+        if (sanitizedText.isBlank()) {
+            Log.d(
+                TAG,
+                "[Provider] sanitized text is blank for" +
+                    " $enginePackage, skipping"
+            )
+            return true
+        }
+
         val maxChars = quirks?.maxCharsPerRequest ?: 0
         if (maxChars > 0 && sanitizedText.length > maxChars) {
             val chunks = SpeechChunker.split(sanitizedText, maxChars)
@@ -1256,166 +1269,136 @@ class SystemVoiceProvider(
         enginePackage: String?,
         quirks: EngineQuirks?
     ): Boolean {
-        if (engine.setSpeechRate(speechRate) == TextToSpeech.ERROR) {
+        val safeRate = if (quirks != null && quirks.maxSafeSpeechRate > 0f) {
+            speechRate.coerceAtMost(quirks.maxSafeSpeechRate)
+        } else {
+            speechRate
+        }
+        if (engine.setSpeechRate(safeRate) == TextToSpeech.ERROR) {
             Log.e(
                 TAG,
-                "[Provider] engine.setSpeechRate failed" +
-                    " (rate=$speechRate)"
+                "[Provider] engine.setSpeechRate failed (rate=$safeRate)"
             )
         }
         if (engine.setPitch(pitch) == TextToSpeech.ERROR) {
             Log.e(
                 TAG,
-                "[Provider] engine.setPitch failed" +
-                    " (pitch=$pitch)"
+                "[Provider] engine.setPitch failed (pitch=$pitch)"
             )
         }
 
+        var voices = engine.voices
+        if (voices.isNullOrEmpty() && quirks?.needsWarmupPolling == true) {
+            for (p in 1..4) {
+                try {
+                    Thread.sleep(50)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    break
+                }
+                voices = engine.voices
+                if (!voices.isNullOrEmpty()) break
+            }
+        }
+
+        val normVoiceLang = LocaleUtils.normalizeLanguageCode(
+            voice.locale.language
+        )
+        val targetLocale = voice.locale
         val isGenericVoice = desiredVoiceName.isNullOrBlank() ||
             desiredVoiceName.equals("Device Default", ignoreCase = true) ||
             desiredVoiceName.equals("ar-EG", ignoreCase = true) ||
             desiredVoiceName.equals("en-US", ignoreCase = true) ||
             desiredVoiceName.equals("ar", ignoreCase = true) ||
-            desiredVoiceName.equals("en", ignoreCase = true)
+            desiredVoiceName.equals("en", ignoreCase = true) ||
+            desiredVoiceName.equals("العربية", ignoreCase = true) ||
+            desiredVoiceName.equals("الإنجليزية", ignoreCase = true)
 
-        val normVoiceLang = LocaleUtils.normalizeLanguageCode(
-            voice.locale.language
-        )
-        val matchingDesired = if (!isGenericVoice) {
-            matchVoice(engine.voices, desiredVoiceName)
-        } else null
-
-        val hasVoiceForLanguage = matchingDesired != null || runCatching {
-            engine.voices?.any {
-                LocaleUtils.normalizeLanguageCode(it.locale?.language) ==
-                    normVoiceLang
-            } == true
-        }.getOrDefault(false)
-
-        val langResult = runCatching {
-            engine.setLanguage(voice.locale)
-        }.getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)
-
-        if (!hasVoiceForLanguage && (
-            langResult == TextToSpeech.LANG_NOT_SUPPORTED ||
-            langResult == TextToSpeech.LANG_MISSING_DATA
-        )) {
-            Log.w(
-                TAG,
-                "[Provider] engine lacks ${voice.locale}" +
-                    " (result=$langResult) & no voices — fallback"
-            )
-            enginePackage?.let {
-                EngineLanguageSupport.recordUnsupported(
-                    it, normVoiceLang
-                )
-            }
-            return false
+        val directMatch = if (!isGenericVoice) {
+            matchVoice(voices, desiredVoiceName)
+        } else {
+            null
         }
+
+        val chosenVoice = directMatch ?: AnnouncementSpeaker.voiceFor(
+            voices, desiredVoiceName, targetLocale
+        )
 
         val needsLangFirst = quirks?.needsSetLanguageBeforeSetVoice == true
         val needsRegion = quirks?.requiresLocaleWithRegion == true
 
-        if (needsLangFirst) {
-            runCatching { engine.setLanguage(voice.locale) }
-        }
-        val effectiveLocale = if (needsRegion) {
-            engine.voices?.firstOrNull {
-                LocaleUtils.normalizeLanguageCode(
-                    it.locale?.language
-                ) == normVoiceLang
-            }?.locale ?: voice.locale
-        } else {
-            voice.locale
-        }
-        if (needsLangFirst) {
-            runCatching { engine.setLanguage(effectiveLocale) }
-        }
-
-        var voiceApplied = false
-        if (!isGenericVoice) {
-            runCatching {
-                val matching = matchingDesired ?: matchVoice(
-                    engine.voices, desiredVoiceName
+        if (chosenVoice != null) {
+            if (chosenVoice.isNetworkConnectionRequired &&
+                !connectivity.isOnlineNow()
+            ) {
+                Log.w(
+                    TAG,
+                    "[Provider] offline & voice requires network" +
+                        " (${chosenVoice.name}) — فوري محلي"
                 )
-                if (matching != null) {
-                    if (matching.isNetworkConnectionRequired &&
-                        !connectivity.isOnlineNow()
-                    ) {
-                        Log.w(
-                            TAG,
-                            "[Provider] offline & voice requires network" +
-                                " ($desiredVoiceName) — فوري محلي"
-                        )
-                        return false
-                    }
-                    engine.voice = matching
-                    val appliedVoice = runCatching {
-                        engine.voice
-                    }.getOrNull()?.name
-                    if (appliedVoice != null &&
-                        appliedVoice != matching.name
-                    ) {
-                        Log.w(
-                            TAG,
-                            "[VoiceApplyMismatch] requested=${matching.name} " +
-                                "applied=$appliedVoice — retry"
-                        )
-                        runCatching { engine.voice = matching }
-                    }
-                    voiceApplied = true
-                } else {
-                    Log.w(
-                        TAG,
-                        "[Provider] desired voice ($desiredVoiceName) " +
-                            "not found in engine $enginePackage — fallback"
+                return false
+            }
+
+            val chosenLocale = chosenVoice.locale ?: targetLocale
+            val effectiveLocale = if (needsRegion &&
+                chosenLocale.country.isNullOrEmpty()
+            ) {
+                when (normVoiceLang) {
+                    "ar" -> Locale("ar", "SA")
+                    "en" -> Locale("en", "US")
+                    else -> chosenLocale
+                }
+            } else {
+                chosenLocale
+            }
+
+            if (needsLangFirst) {
+                runCatching { engine.setLanguage(effectiveLocale) }
+            }
+
+            runCatching { engine.voice = chosenVoice }
+
+            val applied = runCatching { engine.voice?.name }.getOrNull()
+            if (applied != null && applied != chosenVoice.name) {
+                Log.w(
+                    TAG,
+                    "[VoiceApplyMismatch] requested=${chosenVoice.name} " +
+                        "applied=$applied — retry"
+                )
+                runCatching { engine.setLanguage(effectiveLocale) }
+                runCatching { engine.voice = chosenVoice }
+            }
+        } else {
+            val fallbackLocale = if (needsRegion &&
+                targetLocale.country.isNullOrEmpty()
+            ) {
+                when (normVoiceLang) {
+                    "ar" -> Locale("ar", "SA")
+                    "en" -> Locale("en", "US")
+                    else -> targetLocale
+                }
+            } else {
+                targetLocale
+            }
+
+            val langResult = runCatching {
+                engine.setLanguage(fallbackLocale)
+            }.getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)
+
+            if (langResult == TextToSpeech.LANG_NOT_SUPPORTED ||
+                langResult == TextToSpeech.LANG_MISSING_DATA
+            ) {
+                Log.w(
+                    TAG,
+                    "[Provider] engine lacks $fallbackLocale" +
+                        " (result=$langResult) & no voices — fallback"
+                )
+                enginePackage?.let {
+                    EngineLanguageSupport.recordUnsupported(
+                        it, normVoiceLang
                     )
                 }
-            }
-        }
-
-        if (!voiceApplied) {
-            runCatching {
-                val current = engine.voice
-                val currentNormLang = LocaleUtils.normalizeLanguageCode(
-                    current?.locale?.language
-                )
-                if (current == null ||
-                    currentNormLang != normVoiceLang ||
-                    !voiceApplied
-                ) {
-                    val matching = matchingDesired ?: engine.voices
-                        ?.filter {
-                            LocaleUtils.normalizeLanguageCode(
-                                it.locale?.language
-                            ) == normVoiceLang
-                        }
-                        ?.sortedWith(
-                            compareBy(
-                                { it.isNetworkConnectionRequired },
-                                { it.locale.country != voice.locale.country }
-                            )
-                        )?.firstOrNull()
-                    if (matching != null) {
-                        engine.voice = matching
-                        val appliedVoice = runCatching {
-                            engine.voice
-                        }.getOrNull()?.name
-                        if (appliedVoice != null &&
-                            appliedVoice != matching.name
-                        ) {
-                            Log.w(
-                                TAG,
-                                "[VoiceApplyMismatch] " +
-                                    "requested=${matching.name} " +
-                                    "applied=$appliedVoice — retry"
-                            )
-                            runCatching { engine.voice = matching }
-                        }
-                    } else {
-                        runCatching { engine.setLanguage(effectiveLocale) }
-                    }
-                }
+                return false
             }
         }
 
@@ -1467,6 +1450,33 @@ class SystemVoiceProvider(
 
         val params = android.os.Bundle().apply {
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
+            val effectiveVoiceName = desiredVoiceName?.takeIf {
+                !it.equals("Device Default", ignoreCase = true) &&
+                    !it.equals("ar-EG", ignoreCase = true) &&
+                    !it.equals("en-US", ignoreCase = true) &&
+                    !it.equals("ar", ignoreCase = true) &&
+                    !it.equals("en", ignoreCase = true) &&
+                    !it.equals("العربية", ignoreCase = true) &&
+                    !it.equals("الإنجليزية", ignoreCase = true)
+            } ?: voice.id.takeIf { it.isNotBlank() }
+            if (!effectiveVoiceName.isNullOrBlank()) {
+                putString("voiceName", effectiveVoiceName)
+            }
+            val loc = voice.locale
+            if (loc.language.isNotEmpty()) {
+                val needsRegion = quirks?.requiresLocaleWithRegion == true
+                val effLoc = if (needsRegion && loc.country.isNullOrEmpty()) {
+                    if (loc.language == "ar") Locale("ar", "SA")
+                    else if (loc.language == "en") Locale("en", "US")
+                    else loc
+                } else {
+                    loc
+                }
+                putString("language", effLoc.language)
+                if (effLoc.country.isNotEmpty()) {
+                    putString("country", effLoc.country)
+                }
+            }
         }
 
         val tempFile = sessionWavFile()

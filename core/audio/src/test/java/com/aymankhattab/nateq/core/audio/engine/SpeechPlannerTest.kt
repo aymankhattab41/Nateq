@@ -275,4 +275,57 @@ class SpeechPlannerTest {
             resolution.voiceId
         )
     }
+
+    @Test
+    fun englishWithNumbers_unifiesEngineAndVoice_preventingInterference() {
+        // نص إنجليزي مع أرقام: محرك الأرقام أو الفئات لا يتداخل
+        // ويُدمج النص كاملاً في مقطع واحد بنفس محرك وصوت النص الإنجليزي
+        val prefs = FakeVoicePrefs(
+            voices = mapOf("en" to "voice-english-heather"),
+            engines = mapOf("en" to "com.acapelagroup.android.tts"),
+            categoryEngines = mapOf(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS to
+                    "com.google.android.tts"
+            ),
+            categoryVoices = mapOf(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS to
+                    "ara-SAU-Mehdi"
+            )
+        )
+        val items = SpeechPlanner.plan(
+            rawText = "Password is 4829 now",
+            fallbackLanguage = "en",
+            numberLanguage = "en",
+            settings = prefs
+        )
+        assertEquals("مقطع موحد غير مجزأ", 1, items.size)
+        val item = items.first()
+        assertEquals("com.acapelagroup.android.tts", item.engine)
+        assertEquals("voice-english-heather", item.voiceId)
+        assertEquals("Password is 4829 now", item.text)
+    }
+
+    @Test
+    fun englishWordOk_withArabicVoiceSelected_resolvesToEnglishVoice() {
+        val prefs = FakeVoicePrefs(
+            voices = mapOf(
+                "ar" to "ara-SAU-Mehdi",
+                "en" to "eng-USA-Heather"
+            ),
+            engines = mapOf(
+                "ar" to "com.acapelagroup.android.tts",
+                "en" to "com.acapelagroup.android.tts"
+            )
+        )
+        val items = SpeechPlanner.plan(
+            rawText = "OK",
+            fallbackLanguage = "ar",
+            secondaryLanguage = "en",
+            settings = prefs
+        )
+        assertEquals(1, items.size)
+        val item = items.first()
+        assertEquals("en", item.languageTag)
+        assertEquals("eng-USA-Heather", item.voiceId)
+    }
 }
