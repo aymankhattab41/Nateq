@@ -1835,18 +1835,28 @@ class NateqTtsService : TextToSpeechService() {
             targetVoiceName.equals("en-US", true) ||
             targetVoiceName.equals("ar", true) ||
             targetVoiceName.equals("en", true)
-        val isVocVoice = if (isVoc && !targetVoiceName.isNullOrBlank()) {
-            VocalizerModelCatalog.ITEMS.any { item ->
-                item.voiceName.equals(targetVoiceName, ignoreCase = true) ||
-                    item.id.equals(targetVoiceName, ignoreCase = true)
-            }
-        } else false
+        val catalogItem = if (isVoc && !targetVoiceName.isNullOrBlank()) {
+            VocalizerModelCatalog.findItem(targetVoiceName)
+        } else null
+        val isVocVoice = catalogItem != null
         val resolvedVoiceName = if (isVoc && (isGeneric || !isVocVoice)) {
+            val vocProvider = catalog.findProvider(
+                VocalizerEmbeddedVoiceProvider.PROVIDER_ID
+            )
+            val installedVoices = if (vocProvider != null &&
+                vocProvider.isConfigured()
+            ) {
+                vocProvider.listVoices(
+                    Locale.forLanguageTag(segTag)
+                )
+            } else emptyList()
             if (LanguageCode.isArabic(segTag)) {
-                "Laila"
+                installedVoices.firstOrNull()?.displayName ?: "Laila"
             } else {
-                "Samantha"
+                installedVoices.firstOrNull()?.displayName ?: "Samantha"
             }
+        } else if (isVoc && catalogItem != null) {
+            catalogItem.voiceName
         } else if (!isVoc && owningEngine ==
             VocalizerEmbeddedVoiceProvider.PROVIDER_ID
         ) {

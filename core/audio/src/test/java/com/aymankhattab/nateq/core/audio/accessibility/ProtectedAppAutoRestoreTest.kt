@@ -54,10 +54,14 @@ class ProtectedAppAutoRestoreTest {
     }
 
     @Test
-    fun testWithoutUsageStats_preventsFullDisable() {
+    fun testWithoutWriteSecure_allowsFullDisableWithShortcutPrompt() {
         val readiness = ProtectedAppManager.checkReadiness(context)
         assertFalse(
-            "بدون إذن الاستخدام يجب ألا يُسمح بالإيقاف الكامل",
+            "بدون WRITE_SECURE لا يتوفر الاسترجاع الصامت",
+            readiness.canAutoRestoreSilently
+        )
+        assertTrue(
+            "الإيقاف الكامل مدعوم دائماً لحماية تطبيقات البنوك",
             readiness.canEnableFullDisable
         )
 
@@ -69,13 +73,9 @@ class ProtectedAppAutoRestoreTest {
 
         ProtectedAppManager.handleAppEntry(context, null, protectedApp)
 
-        assertTrue(ProtectedAppManager.isPartiallySuspended)
-        assertEquals(
-            "com.egyptianbanks.instapay",
-            ProtectedAppManager.partiallySuspendedPkg
-        )
-        assertFalse(
-            "يجب ألا تُسجل في التخزين كخدمة معطلة كلياً",
+        assertFalse(ProtectedAppManager.isPartiallySuspended)
+        assertTrue(
+            "يجب تسجيل التطبيق كمعطل لحمايته أمام تطبيق البنك",
             ProtectedAppManager.isSuspended(context)
         )
     }

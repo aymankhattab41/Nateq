@@ -967,14 +967,14 @@ class ScreenServicesCardController(
                     ProtectedApp.MODE_PARTIAL_SUSPEND
                 } else {
                     val readiness = ProtectedAppManager.checkReadiness(context)
-                    if (!readiness.canEnableFullDisable) {
-                        val msg = "لا يمكن تفعيل الإيقاف الكامل: يلزم إذن " +
-                            "WRITE_SECURE_SETTINGS وإذن بيانات الاستخدام معاً"
+                    if (!readiness.hasWriteSecure) {
+                        val msg = "تم تفعيل الإيقاف الكامل. سيلزمك " +
+                            "الضغط على زرّي الصوت لإعادة تشغيل الخدمة " +
+                            "بعد الخروج لعدم توفر إذن الاسترجاع التلقائي."
                         Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                         A11ySpeechCoordinator.speakAnnouncement(
                             context, msg, true
                         )
-                        return@setSingleChoiceItems
                     }
                     ProtectedApp.MODE_FULL_DISABLE
                 }
@@ -1016,17 +1016,17 @@ class ScreenServicesCardController(
                             if (app.mode == ProtectedApp.MODE_PARTIAL_SUSPEND) {
                                 val readiness =
                                     ProtectedAppManager.checkReadiness(context)
-                                if (!readiness.canEnableFullDisable) {
-                                    val msg = "لا يمكن تفعيل الإيقاف الكامل: " +
-                                        "يلزم إذن WRITE_SECURE_SETTINGS " +
-                                        "وإذن بيانات الاستخدام معاً"
+                                if (!readiness.hasWriteSecure) {
+                                    val msg = "تم تفعيل الإيقاف الكامل. " +
+                                        "سيلزمك الضغط على زرّي الصوت " +
+                                        "لإعادة تشغيل الخدمة بعد الخروج " +
+                                        "لعدم توفر إذن الاسترجاع التلقائي."
                                     Toast.makeText(
                                         context, msg, Toast.LENGTH_LONG
                                     ).show()
                                     A11ySpeechCoordinator.speakAnnouncement(
                                         context, msg, true
                                     )
-                                    return@setItems
                                 }
                                 ProtectedApp.MODE_FULL_DISABLE
                             } else {

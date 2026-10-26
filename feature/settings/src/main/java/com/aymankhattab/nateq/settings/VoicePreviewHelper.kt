@@ -300,7 +300,8 @@ internal fun isVocalizerVoiceName(voiceName: String?): Boolean {
     val name = voiceName?.trim()?.lowercase() ?: return false
     if (name.isEmpty()) return false
     if (name.startsWith("vocalizer")) return true
-    return name in VOCALIZER_VOICE_KEYS
+    if (name in VOCALIZER_VOICE_KEYS) return true
+    return VocalizerModelCatalog.findItem(voiceName) != null
 }
 
 /**

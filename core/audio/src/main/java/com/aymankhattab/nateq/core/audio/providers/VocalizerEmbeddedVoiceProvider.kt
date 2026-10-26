@@ -214,12 +214,9 @@ class VocalizerEmbeddedVoiceProvider(
             val rawName = (desiredVoiceName ?: voice.displayName)
                 .removePrefix("vocalizer_")
                 .trim()
-            val isKnownVoice = VocalizerModelCatalog.ITEMS.any { item ->
-                item.voiceName.equals(rawName, ignoreCase = true) ||
-                    item.id.equals(rawName, ignoreCase = true)
-            }
+            val catalogMatch = VocalizerModelCatalog.findItem(rawName)
             val targetVoiceName = when {
-                isKnownVoice -> rawName
+                catalogMatch != null -> catalogMatch.voiceName
                 voiceLocale?.language.equals("en", ignoreCase = true) ->
                     "Samantha"
                 else ->

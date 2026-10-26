@@ -5,6 +5,7 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.SystemClock
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
+import com.aymankhattab.nateq.util.VoiceIdContract
 import com.nuance.android.vocalizer.VocalizerAudioOutputListener
 import com.nuance.android.vocalizer.VocalizerAudioSettings
 import com.nuance.android.vocalizer.VocalizerEngine
@@ -111,9 +112,12 @@ internal class VocalizerHostSession(
         }
 
         /**
-         * مطابقة اسم الصوت المطلوب باسم صوت المحرك (ع٢٩-10):
-         * تُرفع بادئة vocalizer_ عن الطرفين وتُدعم
-         * معرّفات الكتالوج.
+         * مطابقة اسم الصوت المطلوب باسم
+         * صوت المحرك (ع٢٩-10): تُرفع
+         * بادئة vocalizer_ عن الطرفين
+         * وتُدعم معرّفات الكتالوج، مع
+         * توحيد أشكال التهجئة الشائعة
+         * (مثل Leila/Laila أو Tariq/Tarik).
          */
         internal fun matchesVoiceName(
             engineName: String?,
@@ -125,8 +129,24 @@ internal class VocalizerHostSession(
             val requested = requestedId.removePrefix("vocalizer_")
                 .removePrefix("vocalizer-").trim()
             if (engine.equals(requested, ignoreCase = true)) return true
+            val normEngine = normalizeVoiceToken(engine)
             val tokens = requested.split('-', '_', ' ')
-            return tokens.any { it.equals(engine, ignoreCase = true) }
+            return tokens.any {
+                it.equals(engine, ignoreCase = true) ||
+                    normalizeVoiceToken(it).equals(
+                        normEngine,
+                        ignoreCase = true
+                    )
+            }
+        }
+
+        private fun normalizeVoiceToken(token: String): String {
+            val t = token.lowercase(java.util.Locale.ROOT)
+            return when (t) {
+                "leila" -> "laila"
+                "tariq" -> "tarik"
+                else -> t
+            }
         }
 
         /**
@@ -154,8 +174,11 @@ internal class VocalizerHostSession(
                 ?.lowercase(java.util.Locale.ROOT).orEmpty()
             val tlw = voice.languageTLW
                 ?.lowercase(java.util.Locale.ROOT).orEmpty()
-            val isArabic = req.startsWith("ar") || req == "ara"
-            val isEnglish = req.startsWith("en") || req == "eng"
+            val detectedLang = VoiceIdContract.languageOfVoiceId(requestedId)
+            val isArabic = req.startsWith("ar") || req == "ara" ||
+                detectedLang == "ar"
+            val isEnglish = req.startsWith("en") || req == "eng" ||
+                detectedLang == "en"
             return when {
                 isArabic -> lang.startsWith("ar") || tlw.startsWith("ar")
                 isEnglish -> lang.startsWith("en") || tlw.startsWith("en")

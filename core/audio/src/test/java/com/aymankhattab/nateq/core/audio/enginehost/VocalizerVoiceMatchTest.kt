@@ -1,6 +1,9 @@
 package com.aymankhattab.nateq.core.audio.enginehost
 
+import com.aymankhattab.nateq.core.audio.providers.VocalizerModelCatalog
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -49,5 +52,22 @@ class VocalizerVoiceMatchTest {
         assertTrue(match("Laila", "vocalizer-ara-sau-laila-high"))
         assertTrue(match("Maged", "vocalizer-ara-sau-maged-compact"))
         assertFalse(match("Laila", "vocalizer-ara-sau-maged-compact"))
+    }
+
+    @Test
+    fun matchesCommonSpellingVariants() {
+        assertTrue(match("Laila", "ara-SAU-Leila"))
+        assertTrue(match("Laila", "Leila"))
+        assertTrue(match("Tarik", "ara-SAU-Tarik"))
+        assertTrue(match("Tarik", "ara-SAU-Tariq"))
+        assertTrue(match("Tarik", "Tariq"))
+
+        val leilaItem = VocalizerModelCatalog.findItem("ara-SAU-Leila")
+        assertNotNull(leilaItem)
+        assertEquals("Laila", leilaItem?.voiceName)
+
+        val tariqItem = VocalizerModelCatalog.findItem("ara-SAU-Tariq")
+        assertNotNull(tariqItem)
+        assertEquals("Tarik", tariqItem?.voiceName)
     }
 }

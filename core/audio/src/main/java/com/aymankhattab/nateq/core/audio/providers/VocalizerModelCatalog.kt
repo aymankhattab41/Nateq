@@ -506,6 +506,35 @@ object VocalizerModelCatalog {
     )
 
     /**
+     * يبحث عن صوت في الكتالوج بالاسم،
+     * بالمعرّف، أو بأجزاء الاسم (مثل
+     * "ara-SAU-Leila" أو
+     * "vocalizer-ara-sau-laila-compact").
+     */
+    fun findItem(nameOrId: String?): VocalizerCatalogItem? {
+        if (nameOrId.isNullOrBlank()) return null
+        val clean = nameOrId.removePrefix("vocalizer_")
+            .removePrefix("vocalizer-").trim()
+        val exact = ITEMS.firstOrNull {
+            it.voiceName.equals(clean, ignoreCase = true) ||
+                it.id.equals(clean, ignoreCase = true) ||
+                it.id.equals(nameOrId, ignoreCase = true)
+        }
+        if (exact != null) return exact
+
+        val tokens = clean.split('-', '_', ' ')
+        return ITEMS.firstOrNull { item ->
+            tokens.any { token ->
+                token.equals(item.voiceName, ignoreCase = true) ||
+                    (token.equals("leila", ignoreCase = true) &&
+                        item.voiceName.equals("laila", ignoreCase = true)) ||
+                    (token.equals("tariq", ignoreCase = true) &&
+                        item.voiceName.equals("tarik", ignoreCase = true))
+            }
+        }
+    }
+
+    /**
      * يُعيد ملف الرأس المُثبَّت فعلاً للصوت داخل [targetDir]، أو null.
      *
      * الحزم المنزّلة تُسمّي الرأس برقم إصدار قد يخالف رقمَ الكتالوج

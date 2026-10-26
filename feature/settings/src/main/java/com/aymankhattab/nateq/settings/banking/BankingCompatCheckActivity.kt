@@ -678,7 +678,7 @@ class BankingCompatCheckActivity : AppCompatActivity() {
         val readiness = ProtectedAppManager.checkReadiness(this)
         val tvSummary =
             findViewById<TextView?>(R.id.tv_restore_readiness_summary)
-        tvSummary?.text = if (readiness.canEnableFullDisable) {
+        tvSummary?.text = if (readiness.canAutoRestoreSilently) {
             "جاهز للإعادة التلقائية: المتطلبات الأساسية مكتملة."
         } else {
             "تنبيه: يجب منح الأذونات الموضحة بالأحمر لضمان الإعادة التلقائية."

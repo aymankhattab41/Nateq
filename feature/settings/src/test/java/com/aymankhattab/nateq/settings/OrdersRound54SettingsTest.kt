@@ -59,6 +59,47 @@ class OrdersRound54SettingsTest {
     }
 
     @Test
+    fun testOrder2_repairNumbersVoiceWhenOnlyTarikInstalled() {
+        context.getSharedPreferences("nateq_settings", Context.MODE_PRIVATE)
+            .edit()
+            .putString(
+                "preferred_voice_${SettingsRepository.VOICE_CATEGORY_NUMBERS}",
+                "ara-SAU-Leila"
+            )
+            .putString(
+                "engine_${SettingsRepository.VOICE_CATEGORY_NUMBERS}",
+                "vocalizer_embedded"
+            )
+            .commit()
+
+        val tarikCatalog = EngineVoicesCatalog(
+            mapOf(
+                "ar" to listOf(
+                    EngineVoicesRow(
+                        enginePackage = "vocalizer_embedded",
+                        engineLabel = "Vocalizer",
+                        voices = listOf(
+                            VoiceOption("ara-SAU-Tarik", "طارق")
+                        )
+                    )
+                )
+            ),
+            arabicVoiceLabel = "العربية",
+            englishVoiceLabel = "English"
+        )
+
+        EngineLanguageConsistency.repairAllInconsistentVoices(
+            settings,
+            catalog = tarikCatalog
+        )
+
+        val repairedVoice = settings.getPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS
+        )
+        assertEquals("ara-SAU-Tarik", repairedVoice)
+    }
+
+    @Test
     fun testOrder2_repairEnglishVoiceKaren() {
         // محاكاة الحالة في السجل: إنجليزية بمحرك AutoTTS وصوت Karen
         settings.setPreferredVoiceId("en", "eng-USA-Karen")

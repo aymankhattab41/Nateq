@@ -74,8 +74,11 @@ object ProtectedAppManager {
         val isNotificationListenerEnabled: Boolean,
         val isAutostartGuided: Boolean
     ) {
-        val canEnableFullDisable: Boolean
+        val canAutoRestoreSilently: Boolean
             get() = hasWriteSecure && hasUsageStats
+
+        val canEnableFullDisable: Boolean
+            get() = true
 
         fun summaryString(): String =
             "WS=$hasWriteSecure, US=$hasUsageStats, " +
@@ -565,23 +568,13 @@ object ProtectedAppManager {
             return
         }
 
-        // فحص جاهزية الإيقاف الكامل (الجولة 51 - الأمر 1، البند 1)
+        // فحص جاهزية الإيقاف الكامل وتحديد رسالة الإعلان
         val readiness = checkReadiness(context)
-        if (!readiness.canEnableFullDisable) {
-            Log.w(
-                TAG,
-                "Cannot full disable: missing permissions. Falling back."
-            )
-            speakLordSystem(
-                context = context,
-                text = "تعذر الإيقاف الكامل لنقص الأذونات: " +
-                    "تحويل إلى تعليق جزئي"
-            )
-            isPartiallySuspended = true
-            partiallySuspendedPkg = app.packageName
-            service?.applyServiceInfo()
-            return
-        }
+        Log.i(
+            TAG,
+            "handleAppEntry: full disable, " +
+                "readiness=${readiness.summaryString()}"
+        )
 
         // 1. التعطيل أولاً وقبل أي شيء آخر (الأمر 1 - البند 1)
         disableAccessibilityServiceDirectly(context)
@@ -633,9 +626,15 @@ object ProtectedAppManager {
         } else {
             ""
         }
+        val speechText = if (readiness.hasWriteSecure) {
+            "تم تعطيل إمكانية الوصول لفتح ${app.label}$nonToolWarning"
+        } else {
+            "تم تعطيل إمكانية الوصول لفتح ${app.label} " +
+                "(أعد تفعيلها بزرّي الصوت عند الانتهاء)$nonToolWarning"
+        }
         speakLordSystem(
             context = context,
-            text = "تم تعطيل إمكانية الوصول لفتح ${app.label}$nonToolWarning"
+            text = speechText
         )
 
         // 7. تطبيق تحصين أندرويد 17 أثناء الجلسة

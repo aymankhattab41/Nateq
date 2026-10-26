@@ -85,14 +85,37 @@ internal object EngineLanguageConsistency {
                 numberEngine != "vocalizer_embedded")
 
         if (vocalizerAvailable) {
-            if (isNumberMismatch || isNumberMissingOrAcapela) {
+            val availableArVoices = catalog?.voicesFor(
+                "ar", "vocalizer_embedded"
+            )?.map { it.name }.orEmpty()
+            val targetVoice: String = when {
+                availableArVoices.isNotEmpty() &&
+                    !availableArVoices.any { v ->
+                        v.equals("ara-SAU-Leila", ignoreCase = true) ||
+                            v.equals("Laila", ignoreCase = true)
+                    } -> availableArVoices.first()
+                else -> "ara-SAU-Leila"
+            }
+            val isNumberUnavailableInVocalizer = catalog != null &&
+                availableArVoices.isNotEmpty() &&
+                numberEngine == "vocalizer_embedded" &&
+                !numberVoice.isNullOrBlank() &&
+                !availableArVoices.any { v ->
+                    v.equals(numberVoice, ignoreCase = true) ||
+                        (numberVoice.contains("leila", ignoreCase = true) &&
+                            v.contains("laila", ignoreCase = true))
+                }
+
+            if (isNumberMismatch || isNumberMissingOrAcapela ||
+                isNumberUnavailableInVocalizer
+            ) {
                 settings.setEngineForCategory(
                     SettingsRepository.VOICE_CATEGORY_NUMBERS,
                     "vocalizer_embedded"
                 )
                 settings.setPreferredVoiceIdForCategory(
                     SettingsRepository.VOICE_CATEGORY_NUMBERS,
-                    "ara-SAU-Leila",
+                    targetVoice,
                     "vocalizer_embedded"
                 )
                 results.add(
@@ -102,13 +125,13 @@ internal object EngineLanguageConsistency {
                         oldEngine = numberEngine,
                         oldVoice = numberVoice,
                         newEngine = "vocalizer_embedded",
-                        newVoice = "ara-SAU-Leila",
+                        newVoice = targetVoice,
                         action = RepairResult.Action.RESTORED_KNOWN
                     )
                 )
                 Log.i(
                     TAG,
-                    "Restored numbers voice to ara-SAU-Leila on" +
+                    "Restored numbers voice to $targetVoice on" +
                         " vocalizer_embedded"
                 )
             }
