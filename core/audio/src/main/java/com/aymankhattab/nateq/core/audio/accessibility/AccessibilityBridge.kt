@@ -49,6 +49,12 @@ object AccessibilityBridge {
     /** التطبيق الأمامي الحالي النشط */
     fun foregroundPackage(): String? = foregroundPackageRef.get()
 
+    @androidx.annotation.VisibleForTesting
+    fun clearForegroundForTesting() {
+        foregroundPackageRef.set(null)
+        foregroundActivityRef.set(null)
+    }
+
     /**
      * فحص ما إذا كانت الحزمة تنتمي لقارئ شاشة أو لوحة مفاتيح
      * أو تراكب نظام (الأمر 5).
