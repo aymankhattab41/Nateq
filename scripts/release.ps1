@@ -23,7 +23,8 @@
 #>
 [CmdletBinding()]
 param(
-    [switch]$DryRun
+    [switch]$DryRun,
+    [string]$TargetVersionOverride
 )
 
 $ErrorActionPreference = 'Stop'
@@ -208,7 +209,12 @@ if ($newCommitCount -lt 1) {
 $targetMajor = 1
 $targetMinor = 6
 $targetPatch = 1
-if ($null -ne $latestVersion) {
+if ($TargetVersionOverride) {
+    $parts = @($TargetVersionOverride.TrimStart('v').Split('.') | ForEach-Object { [int]$_ })
+    $targetMajor = $parts[0]
+    $targetMinor = $parts[1]
+    $targetPatch = $parts[2]
+} elseif ($null -ne $latestVersion) {
     $latestParts = @($latestVersion.Split('.') | ForEach-Object { [int]$_ })
     if ($latestParts[0] -ne 0) {
         $targetMajor = $latestParts[0]
@@ -217,7 +223,7 @@ if ($null -ne $latestVersion) {
     }
 }
 $targetVersion = "$targetMajor.$targetMinor.$targetPatch"
-$targetTag = "v$targetVersion"
+$targetTag = "v$targetVersion" 
 
 # versionCode مشتقٌّ من النسخة (major*10000 + minor*100 + patch) — يكبر
 # دائماً مع كل إصدار (1.6.1 = 10601) فلا يتعارض مع 0.106.0 = 106،
