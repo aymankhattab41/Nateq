@@ -644,6 +644,11 @@ object ProtectedAppManager {
         fun setForTesting(pkg: String?, isUnknown: Boolean = false) {
             currentForegroundPkg = pkg
             isTemporarilyUnknown = isUnknown
+            if (pkg != null) {
+                AccessibilityBridge.updateForeground(pkg, null)
+            } else {
+                AccessibilityBridge.clearForegroundForTesting()
+            }
         }
     }
 
@@ -1226,5 +1231,6 @@ object ProtectedAppManager {
         nonProtectedObservations = 0
         ForegroundTracker.reset()
         isRestoring.set(false)
+        AccessibilityBridge.clearForegroundForTesting()
     }
 }
