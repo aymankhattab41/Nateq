@@ -1228,8 +1228,12 @@ private class UnifiedAhoCorasick(
     private val PROTECTED_HIJRI_WORDS = listOf(
         "محرم", "صفر", "ربيع الاول", "ربيع الاخر", "ربيع الأول",
         "ربيع الآخر", "جمادى الاولى", "جمادى الاخرة", "جمادى الأولى",
-        "جمادى الآخرة", "جمادى", "رجب", "شعبان", "رمضان", "شوال",
-        "ذو القعدة", "ذو الحجة"
+        "جمادى الآخرة", "جمادى الثانية", "جمادى", "جمادي",
+        "الجمادى الاولى", "الجمادى الاخرة", "الجمادى الأولى",
+        "الجمادى الآخرة", "الجمادى الثانية", "الجمادى", "الجمادي",
+        "جمادي الاولى", "جمادي الاخرة", "جمادي الأولى",
+        "جمادي الآخرة", "جمادي الثانية",
+        "رجب", "شعبان", "رمضان", "شوال", "ذو القعدة", "ذو الحجة"
     )
 
     private fun isInsideProtectedWord(
@@ -1263,14 +1267,16 @@ private class UnifiedAhoCorasick(
         standaloneMaxLength: Int
     ): Pair<Boolean, String> {
         val mode = out.matchMode.uppercase()
-        if (mode == "ANYWHERE") {
-            return true to "مقبول: وضع أي موضع (ANYWHERE)"
-        }
 
+        // الكلمات الهجرية المحمية محمية دائماً حتى في وضع ANYWHERE
         if (out.normalizedKey.length <= 2 &&
             isInsideProtectedWord(normText, normStart, normEnd)
         ) {
             return false to "مرفوض: يقع داخل كلمة هجرية محمية"
+        }
+
+        if (mode == "ANYWHERE") {
+            return true to "مقبول: وضع أي موضع (ANYWHERE)"
         }
 
         val requireStandalone = if (mode == "WHOLE") {

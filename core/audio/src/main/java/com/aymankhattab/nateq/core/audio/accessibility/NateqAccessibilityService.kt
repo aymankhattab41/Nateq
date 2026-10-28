@@ -400,6 +400,7 @@ class NateqAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        ScrollCuePlayer.appContext = applicationContext
         Log.i(TAG, "[A11yService] Connected in process :tts")
         AccessibilityBridge.registerService(this)
         stateStore?.setConnected(true)
@@ -941,7 +942,7 @@ class NateqAccessibilityService : AccessibilityService() {
                         maxScrollY = event.maxScrollY
                     )
                     val isSpk = SpeechLock.isSpeaking(this)
-                    ScrollCuePlayer.onScroll(ratio, isSpk)
+                    ScrollCuePlayer.onScroll(ratio, isSpk, context = this)
                 }
             }
             AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED -> {

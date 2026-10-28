@@ -33,24 +33,31 @@ object VoiceResolutionPolicy {
         if (voiceId.isNullOrBlank()) return null
         val lower = voiceId.lowercase()
         if (lower.startsWith("ar-") || lower.startsWith("ar_") ||
-            lower == "ar" || lower.contains(":ar-") ||
-            lower.contains(":ar_") || lower.contains(":ara")
+            lower.startsWith("ara-") || lower.startsWith("ara_") ||
+            lower == "ar" || lower == "ara" || lower.contains(":ar-") ||
+            lower.contains(":ar_") || lower.contains(":ara") ||
+            lower.contains("arabic")
         ) {
             return LanguageCode.AR.tag
         }
         if (lower.startsWith("en-") || lower.startsWith("en_") ||
-            lower == "en" || lower.contains(":en-") ||
-            lower.contains(":en_") || lower.contains(":eng")
+            lower.startsWith("eng-") || lower.startsWith("eng_") ||
+            lower == "en" || lower == "eng" || lower.contains(":en-") ||
+            lower.contains(":en_") || lower.contains(":eng") ||
+            lower.contains("english")
         ) {
             return LanguageCode.EN.tag
         }
-        if (lower.contains("laila") || lower.contains("maged") ||
-            lower.contains("tarik")
+        if (lower.contains("laila") || lower.contains("leila") ||
+            lower.contains("maged") || lower.contains("majed") ||
+            lower.contains("tarik") || lower.contains("tariq") ||
+            lower.contains("mariam") || lower.contains("maryam")
         ) {
             return LanguageCode.AR.tag
         }
         if (lower.contains("samantha") || lower.contains("ava") ||
-            lower.contains("tom")
+            lower.contains("tom") || lower.contains("serena") ||
+            lower.contains("daniel") || lower.contains("oliver")
         ) {
             return LanguageCode.EN.tag
         }

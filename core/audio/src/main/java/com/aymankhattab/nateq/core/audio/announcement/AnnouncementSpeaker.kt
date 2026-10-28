@@ -20,6 +20,7 @@ import com.aymankhattab.nateq.engine.EmojiSpeech
 import com.aymankhattab.nateq.core.engine.EngineMarkers
 import com.aymankhattab.nateq.engine.stripTashkeelFor
 import com.aymankhattab.nateq.engine.PronunciationDictionary
+import com.aymankhattab.nateq.core.audio.accessibility.AudioEnvironmentPolicy
 import com.aymankhattab.nateq.core.audio.accessibility.RepeatSpellController
 import com.aymankhattab.nateq.core.audio.engine.AudioEffectManager
 import com.aymankhattab.nateq.core.audio.engine.LastSpokenTextsTracker
@@ -1418,6 +1419,11 @@ class AnnouncementSpeaker(
         source: SpeechEntryPoints.Source? = null,
         isPrepared: Boolean = false
     ) {
+        if (AudioEnvironmentPolicy.isRecordingVoiceNote(appContext)) {
+            Log.i(TAG, "إسقاط الإعلان الصوتي: جاري تسجيل رسالة صوتية")
+            notifySpeechComplete()
+            return
+        }
         val effectiveSource = source ?: when (category) {
             SettingsRepository.ANNOUNCE_CATEGORY_CALLER ->
                 SpeechEntryPoints.Source.CALLER
