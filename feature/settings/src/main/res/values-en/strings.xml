@@ -712,11 +712,11 @@
 <string name="changelog_title">What\'s New</string>
 <string name="changelog_text">
 Version %1$s
-• Added Daily Tools & Speech Customization: custom battery level thresholds with hysteresis and quiet hours, element role earcons, quick dictionary add shortcut, dynamic reading rate for long texts, and table reader with column headers.
-• Added Chat & Social features: automatic video ad skipper, voice note inspector (duration & played state), message edit/delete alerts, group message burst limiter, contact status announcer, and social media image alt-text reader.
-• Added Privacy & Security features: password shield, camera and microphone usage indicator alerts, link inspector & phishing detector, and screen curtain overlay with quick settings tile.
-• Added Productivity & Typing features: smart clipboard stack, auto-copy OTP verification codes, keyboard language & Caps Lock guard, continuous deletion speech echo, typo & extra space whisper, quick calculator & currency converter, and offline screen glossary translator.
-• Added Screen Navigation features: screen rotor, on-screen text search & navigation, audible scroll cue, focus memory & restore, screen grid position announcer, loading detector, and continuous article reader.
+• Added Daily Tools &amp; Speech Customization: custom battery level thresholds with hysteresis and quiet hours, element role earcons, quick dictionary add shortcut, dynamic reading rate for long texts, and table reader with column headers.
+• Added Chat &amp; Social features: automatic video ad skipper, voice note inspector (duration &amp; played state), message edit/delete alerts, group message burst limiter, contact status announcer, and social media image alt-text reader.
+• Added Privacy &amp; Security features: password shield, camera and microphone usage indicator alerts, link inspector &amp; phishing detector, and screen curtain overlay with quick settings tile.
+• Added Productivity &amp; Typing features: smart clipboard stack, auto-copy OTP verification codes, keyboard language &amp; Caps Lock guard, continuous deletion speech echo, typo &amp; extra space whisper, quick calculator &amp; currency converter, and offline screen glossary translator.
+• Added Screen Navigation features: screen rotor, on-screen text search &amp; navigation, audible scroll cue, focus memory &amp; restore, screen grid position announcer, loading detector, and continuous article reader.
 • Established Advanced Extras architecture, feature registry, dedicated settings activity, and preference controls.
 • Reverted to version 52 to avoid errors and continue from where we left off in version 52
     </string>
