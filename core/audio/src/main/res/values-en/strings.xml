@@ -77,4 +77,17 @@
     <string name="calc_result">Result: %1$s</string>
     <string name="currency_result">%1$s equals %2$s %3$s</string>
     <string name="no_translation_found">No local translation available</string>
+
+    <!-- Round 56 - Extras 3: Privacy & Security -->
+    <string name="password_char_count">%1$d characters</string>
+    <string name="password_field_empty">Password field is empty</string>
+    <string name="mic_recording_started">An application started audio recording</string>
+    <string name="camera_in_use">Camera is in use</string>
+    <string name="link_shortened">Shortened link</string>
+    <string name="link_numeric_ip">Numeric IP link</string>
+    <string name="link_suspicious_punycode">Suspicious domain</string>
+    <string name="link_mismatch">Text does not match link destination</string>
+    <string name="curtain_enabled">Screen curtain enabled</string>
+    <string name="curtain_disabled">Screen curtain disabled</string>
+    <string name="curtain_tile_label">Screen Curtain</string>
 </resources>

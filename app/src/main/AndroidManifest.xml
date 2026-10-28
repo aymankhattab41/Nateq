@@ -425,6 +425,18 @@
             </intent-filter>
         </service>
 
+        <!-- بلاطة ستارة الشاشة (ع٥٦-إضافات 3) -->
+        <service
+            android:name="com.aymankhattab.nateq.settings.extras.CurtainTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_history"
+            android:label="@string/curtain_tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <!-- مستقبل استئناف خدمات الشاشة التلقائي (ع٢٧-14) -->
         <receiver
             android:name="com.aymankhattab.nateq.core.audio.accessibility.A11yResumeReceiver"

@@ -84,4 +84,17 @@
     <string name="calc_result">الناتج: %1$s</string>
     <string name="currency_result">%1$s يقابل %2$s %3$s</string>
     <string name="no_translation_found">لا توجد ترجمة متاحة محلياً</string>
+
+    <!-- الجولة 56 - إضافات 3: الخصوصية والأمان -->
+    <string name="password_char_count">%1$d أحرف</string>
+    <string name="password_field_empty">حقل كلمة المرور فارغ</string>
+    <string name="mic_recording_started">تطبيق ما بدأ تسجيل الصوت</string>
+    <string name="camera_in_use">الكاميرا قيد الاستعمال</string>
+    <string name="link_shortened">رابط مختصر</string>
+    <string name="link_numeric_ip">رابط بعنوان رقمي</string>
+    <string name="link_suspicious_punycode">رابط بنطاق مشبوه</string>
+    <string name="link_mismatch">النص لا يطابق وجهة الرابط</string>
+    <string name="curtain_enabled">الستارة مفعّلة</string>
+    <string name="curtain_disabled">الستارة موقوفة</string>
+    <string name="curtain_tile_label">ستارة الشاشة</string>
 </resources>

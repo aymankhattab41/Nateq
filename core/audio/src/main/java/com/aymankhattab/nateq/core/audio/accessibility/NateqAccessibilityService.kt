@@ -137,6 +137,9 @@ object TypingEchoHandler : A11yFeatureHandler {
             val current = event.text?.joinToString("") ?: ""
             TypoChecker.checkDoubleSpace(service, current)
         }
+        if (PasswordShield.shouldMuteTypingEcho(service, event.isPassword)) {
+            return
+        }
         val echoText = TypingEcho.getEchoText(
             event.beforeText,
             event.text?.map { it.toString() }?.joinToString("") ?: "",
@@ -419,6 +422,26 @@ class NateqAccessibilityService : AccessibilityService() {
             ClipboardStack.onPrimaryClipChanged(this)
         }
 
+        PrivacyIndicatorMonitor.register(this)
+
+        val curtainFilter = IntentFilter(
+            "com.aymankhattab.nateq.action.TOGGLE_SCREEN_CURTAIN"
+        )
+        val curtainReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                ScreenCurtain.toggle(this@NateqAccessibilityService)
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(
+                curtainReceiver,
+                curtainFilter,
+                RECEIVER_NOT_EXPORTED
+            )
+        } else {
+            registerReceiver(curtainReceiver, curtainFilter)
+        }
+
         val connIntent = Intent(ProtectedAppManager.ACTION_A11Y_CONNECTED)
             .setPackage(packageName)
         runCatching { sendBroadcast(connIntent) }
@@ -474,6 +497,8 @@ class NateqAccessibilityService : AccessibilityService() {
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
+        PrivacyIndicatorMonitor.unregister(this)
+        ScreenCurtain.disable(this)
         val disconnIntent = Intent(
             ProtectedAppManager.ACTION_A11Y_DISCONNECTED
         ).setPackage(packageName)
@@ -954,6 +979,14 @@ class NateqAccessibilityService : AccessibilityService() {
                         A11ySpeechCoordinator.speakAnnouncement(this, zone)
                     }
                 }
+                if (repo.isExtraEnabled("extra_link_inspector") &&
+                    source != null
+                ) {
+                    val txt = source.text?.toString().orEmpty()
+                    val cd = source.contentDescription?.toString().orEmpty()
+                    val full = if (txt.isNotBlank()) txt else cd
+                    LinkInspector.inspectAndAnnounce(this, full, full)
+                }
             }
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                 if (repo.isExtraEnabled("extra_focus_restore")) {
@@ -1039,6 +1072,17 @@ class NateqAccessibilityService : AccessibilityService() {
                 )
                 val text = node?.text?.toString().orEmpty()
                 ScreenGlossary.translateAndSpeak(this, text)
+            }
+            ShortcutAction.PASSWORD_COUNT -> {
+                val node = rootInActiveWindow?.findFocus(
+                    AccessibilityNodeInfo.FOCUS_INPUT
+                ) ?: rootInActiveWindow?.findFocus(
+                    AccessibilityNodeInfo.FOCUS_ACCESSIBILITY
+                )
+                PasswordShield.announceCharacterCount(this, node)
+            }
+            ShortcutAction.TOGGLE_SCREEN_CURTAIN -> {
+                ScreenCurtain.toggle(this)
             }
             else -> {
                 // باقي أفعال الجولات التالية
@@ -1715,6 +1759,8 @@ class NateqAccessibilityService : AccessibilityService() {
         shortcutTestReceiver = null
 
         AccessibilityBridge.unregisterService(this)
+        PrivacyIndicatorMonitor.unregister(this)
+        ScreenCurtain.disable(this)
         val disconnIntent = Intent(
             ProtectedAppManager.ACTION_A11Y_DISCONNECTED
         ).setPackage(packageName)
