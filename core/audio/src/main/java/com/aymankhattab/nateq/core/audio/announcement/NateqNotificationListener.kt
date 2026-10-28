@@ -21,6 +21,7 @@ import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.audio.accessibility.A11yVoiceResolver
 import com.aymankhattab.nateq.core.audio.accessibility.FeatureFlags
+import com.aymankhattab.nateq.core.audio.accessibility.OtpExtractor
 import com.aymankhattab.nateq.core.audio.accessibility.OtpReader
 import com.aymankhattab.nateq.core.audio.accessibility.ProtectedAppManager
 import com.aymankhattab.nateq.core.data.EffectiveVoice
@@ -231,6 +232,19 @@ class NateqNotificationListener : NotificationListenerService() {
             // بتفعيل إعلان المتصل (وإلا صار إشعارُ الهاتف قناةً
             // لقراءة إشعارات لم يطلبها).
             val notification = sbn.notification
+            if (settingsRepository.isExtraEnabled("extra_otp_copier")) {
+                val extras = notification?.extras
+                if (extras != null) {
+                    val t = extras.getCharSequence(Notification.EXTRA_TITLE)
+                        ?.toString()
+                    val b = notificationBodyText(extras)
+                    val fullText = "${t.orEmpty()} ${b.orEmpty()}"
+                    val otp = OtpExtractor.extractOtp(fullText)
+                    if (otp != null) {
+                        OtpExtractor.copyOtpToClipboard(this, otp)
+                    }
+                }
+            }
             if (notification != null &&
                 notification.category == Notification.CATEGORY_CALL
             ) {

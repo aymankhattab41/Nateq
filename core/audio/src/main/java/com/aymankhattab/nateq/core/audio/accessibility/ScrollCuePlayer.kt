@@ -84,7 +84,7 @@ object ScrollCuePlayer {
         return true
     }
 
-    private fun playTone(index: Int, volume: Float) {
+    fun playTone(index: Int, volume: Float = 0.5f) {
         val samples = tones.getOrNull(index) ?: return
         try {
             val audioAttributes = AudioAttributes.Builder()

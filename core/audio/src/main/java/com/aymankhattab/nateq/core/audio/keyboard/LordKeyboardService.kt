@@ -33,6 +33,7 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import com.aymankhattab.nateq.core.audio.accessibility.KeyboardGuard
 import com.aymankhattab.nateq.core.audio.keyboard.KeyboardLayoutHelper.KeyModel
 import com.aymankhattab.nateq.core.audio.keyboard.KeyboardLayoutHelper.KeyType
 import com.aymankhattab.nateq.core.audio.keyboard.KeyboardLayoutHelper.KeyboardLayer
@@ -141,6 +142,12 @@ class LordKeyboardService : InputMethodService(),
         isPasswordField = checkIsPasswordField(info)
         applySettingsToKeyboard()
         updateKeyboardLayout()
+        if (!restarting) {
+            KeyboardGuard.onInputStarted(
+                this,
+                currentLayer == KeyboardLayer.ARABIC
+            )
+        }
     }
 
     private fun checkIsPasswordField(info: EditorInfo?): Boolean {
@@ -361,6 +368,10 @@ class LordKeyboardService : InputMethodService(),
                 KeyboardLayer.ARABIC
             }
         }
+        KeyboardGuard.onLanguageToggled(
+            this,
+            currentLayer == KeyboardLayer.ARABIC
+        )
         updateKeyboardLayout()
     }
 
@@ -401,6 +412,7 @@ class LordKeyboardService : InputMethodService(),
                 if (key.label == "⇧" || key.label == "⇩") {
                     isEnglishCaps = !isEnglishCaps
                     speakText(if (isEnglishCaps) "أحرف كبيرة" else "أحرف صغيرة")
+                    KeyboardGuard.onCapsLockChanged(this, isEnglishCaps)
                     updateKeyboardLayout()
                     return
                 }
