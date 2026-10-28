@@ -1128,4 +1128,124 @@
     <string name="voice_mismatch_title">تناقض محرك وصوت الفئات</string>
     <string name="voice_mismatch_fix">إصلاح</string>
     <string name="voice_mismatch_fixed_toast">تم إصلاح الفئات المتناقضة ومسح الأصوات غير المطابقة</string>
+
+    <!-- إضافات Lord TTS (الجولة 56) -->
+    <string name="extras_settings_title">الإضافات</string>
+    <string name="extras_settings_subtitle">ميزات وإضافات ذكية متقدمة لـ Lord TTS</string>
+    <string name="extras_enable_all">تفعيل كل الإضافات</string>
+    <string name="extras_reset_all">إعادة ضبط الإضافات</string>
+    <string name="extras_reset_confirm">هل تريد إعادة ضبط جميع الإضافات وإيقافها؟</string>
+    <string name="extras_needs_a11y_warning">تحتاج تفعيل خدمة إمكانية الوصول</string>
+    <string name="extras_state_enabled">مفعّل</string>
+    <string name="extras_state_disabled">غير مفعّل</string>
+    <string name="extras_all_enabled_toast">تم تفعيل جميع الإضافات</string>
+    <string name="extras_all_reset_toast">تمت إعادة ضبط جميع الإضافات</string>
+    <string name="extras_subsettings_title">خيارات الميزة</string>
+
+    <string name="extra_group_navigation">التنقل في الشاشة</string>
+    <string name="extra_group_productivity">الإنتاجية والكتابة</string>
+    <string name="extra_group_privacy">الخصوصية والأمان</string>
+    <string name="extra_group_social">الدردشة والشبكات</string>
+    <string name="extra_group_daily_tools">أدوات يومية وتخصيص النطق</string>
+
+    <string name="extra_screen_rotor_title">دوّار العناصر</string>
+    <string name="extra_screen_rotor_desc">تصفح عناصر الشاشة حسب نوعها (أزرار، عناوين، روابط، حقول، صور)</string>
+
+    <string name="extra_screen_search_title">بحث في الشاشة</string>
+    <string name="extra_screen_search_desc">بحث نصي داخل الشاشة الحالية والتنقل بين النتائج</string>
+
+    <string name="extra_scroll_cue_title">نغمة موضع التمرير</string>
+    <string name="extra_scroll_cue_desc">نغمة صوتية متدرجة تدل على موضعك في القائمة أثناء التمرير</string>
+
+    <string name="extra_focus_restore_title">استعادة آخر تركيز</string>
+    <string name="extra_focus_restore_desc">استعادة موضع التركيز تلقائياً عند العودة إلى التطبيق خلال 10 دقائق</string>
+
+    <string name="extra_screen_grid_title">شبكة موضع العنصر</string>
+    <string name="extra_screen_grid_desc">نطق موضع العنصر على الشاشة مقسماً إلى 9 مناطق</string>
+
+    <string name="extra_loading_detector_title">كشف التحميل</string>
+    <string name="extra_loading_detector_desc">نغمة هادئة أثناء التحميل وإعلان صوتي عند انتهائه</string>
+
+    <string name="extra_article_reader_title">قارئ المقالات النظيف</string>
+    <string name="extra_article_reader_desc">استخراج وقراءة نص المقال الرئيسي متواصلاً دون القوائم والإعلانات</string>
+
+    <string name="extra_clipboard_stack_title">مكدّس الحافظة</string>
+    <string name="extra_clipboard_stack_desc">الاحتفاظ بآخر 10 عناصر منسوخة والتنقل بينها ولصقها</string>
+
+    <string name="extra_otp_copier_title">نسخ رمز التحقق (OTP)</string>
+    <string name="extra_otp_copier_desc">استخراج رمز التحقق تلقائياً من الإشعارات ونسخه للحافظة</string>
+
+    <string name="extra_keyboard_guard_title">حارس لوحة المفاتيح</string>
+    <string name="extra_keyboard_guard_desc">إعلان لغة اللوحة عند البدء والتبديل وحالة الحروف الكبيرة</string>
+
+    <string name="extra_word_eraser_title">إعلان النص المحذوف</string>
+    <string name="extra_word_eraser_desc">نطق الكلمة أو العبارة المحذوفة عند التراجع ومسح النص</string>
+
+    <string name="extra_typo_whisper_title">تنبيه الأخطاء الإملائية</string>
+    <string name="extra_typo_whisper_desc">تنبيه خافت عند كتابة كلمة خاطئة وكشف المسافة المزدوجة</string>
+
+    <string name="extra_currency_math_title">الحاسبة ومحوّل العملات</string>
+    <string name="extra_currency_math_desc">حساب التعابير الرياضية وتحويل مبالغ العملات محلياً بلا اتصال</string>
+
+    <string name="extra_screen_translator_title">مترجم الشاشة المحلي</string>
+    <string name="extra_screen_translator_desc">ترجمة مصطلحات الشاشة الإنجليزية إلى العربية بقاموس محلي بلا اتصال</string>
+
+    <string name="extra_password_shield_title">درع كلمات المرور</string>
+    <string name="extra_password_shield_desc">كتم صدى الكتابة في حقول كلمات المرور ومنع قراءتها نهائياً</string>
+
+    <string name="extra_camera_mic_alert_title">تنبيه الميكروفون والكاميرا</string>
+    <string name="extra_camera_mic_alert_desc">تنبيه صوتي عند بدء تطبيق خلفي بتسجيل الصوت أو استعمال الكاميرا</string>
+
+    <string name="extra_link_inspector_title">مفتش الروابط</string>
+    <string name="extra_link_inspector_desc">نطق النطاق الأصلي للرابط والتحذير من الروابط المختصرة أو المشبوهة</string>
+
+    <string name="extra_screen_curtain_title">ستارة الشاشة السوداء</string>
+    <string name="extra_screen_curtain_desc">إظلام الشاشة لحماية الخصوصية مع استمرار عمل اللمس واختصارات الصوت</string>
+
+    <string name="extra_skip_ads_title">تخطي إعلانات يوتيوب</string>
+    <string name="extra_skip_ads_desc">نقر زر تخطي الإعلانات تلقائياً في يوتيوب بضوابط آمنة ومحددة</string>
+
+    <string name="extra_voice_note_inspector_title">مفتش الرسائل الصوتية</string>
+    <string name="extra_voice_note_inspector_desc">نطق مدة الرسالة الصوتية وحالتها في واتساب وتيليجرام قبل التشغيل</string>
+
+    <string name="extra_message_change_alert_title">تنبيه تعديل أو حذف الرسائل</string>
+    <string name="extra_message_change_alert_desc">تنبيه صوتي عند تعديل أو حذف رسالة في المحادثة المفتوحة</string>
+
+    <string name="extra_group_limiter_title">محدد ازدحام المجموعات</string>
+    <string name="extra_group_limiter_desc">تلخيص إشعارات المجموعات المزدحمة بدلاً من نطق كل رسالة</string>
+
+    <string name="extra_contact_status_title">حالة جهة الاتصال في المحادثة</string>
+    <string name="extra_contact_status_desc">نطق حالة الاتصال (متصل/آخر ظهور) عند فتح المحادثة</string>
+
+    <string name="extra_alt_text_title">واصف صور المنشورات</string>
+    <string name="extra_alt_text_desc">قراءة النص البديل المرفق بالصور في تطبيقات التواصل الاجتماعي</string>
+
+    <string name="extra_battery_thresholds_title">حدود شحن البطارية المخصصة</string>
+    <string name="extra_battery_thresholds_desc">تنبيهات ونغمات عند وصول نسبة الشحن لحدود معينة صعوداً أو هبوطاً</string>
+
+    <string name="extra_role_earcons_title">أصوات أدوار العناصر</string>
+    <string name="extra_role_earcons_desc">نغمات صوتية قصيرة مميزة لكل دور (زر، رابط، عنوان، حقل) قبل نطقه</string>
+
+    <string name="extra_quick_dictionary_title">إضافة سريعة للقاموس</string>
+    <string name="extra_quick_dictionary_desc">اختصار سريع لإضافة الكلمة المنطوقة إلى قاموس النطق وتصحيحها</string>
+
+    <string name="extra_dynamic_rate_title">سرعة ديناميكية حسب طول النص</string>
+    <string name="extra_dynamic_rate_desc">زيادة طفيفة في سرعة نطق المقالات والنصوص الطويلة تلقائياً</string>
+
+    <string name="extra_table_reader_title">قارئ الجداول بالعناوين</string>
+    <string name="extra_table_reader_desc">نطق عنوان العمود ورقم الصف مع كل خلية عند تصفح الجداول</string>
+
+    <!-- أفعال الاختصارات الجديدة -->
+    <string name="a11y_action_screen_rotor">دوّار العناصر</string>
+    <string name="a11y_action_screen_search">بحث في الشاشة</string>
+    <string name="a11y_action_screen_search_nav">النتيجة التالية/السابقة</string>
+    <string name="a11y_action_read_article">اقرأ المقال</string>
+    <string name="a11y_action_read_clipboard_stack">قراءة عنصر من الحافظة</string>
+    <string name="a11y_action_paste_clipboard_stack">لصق العنصر المحدد</string>
+    <string name="a11y_action_typo_suggestions">اقتراحات الكلمة</string>
+    <string name="a11y_action_quick_calc">احسب/حوّل</string>
+    <string name="a11y_action_translate_element">ترجم العنصر</string>
+    <string name="a11y_action_password_count">كم حرفاً؟</string>
+    <string name="a11y_action_toggle_screen_curtain">ستارة الشاشة</string>
+    <string name="a11y_action_quick_dictionary">أضف للقاموس</string>
 </resources>

@@ -834,6 +834,11 @@ class NateqAccessibilityService : AccessibilityService() {
         ContinuousReader.stopSilently()
     }
 
+    /** معالجة أفعال الاختصارات الخاصة بالميزات الإضافية (ع٥٦). */
+    fun handleExtraShortcutAction(action: ShortcutAction) {
+        // تُوزَّع للمكونات المعنية عند تفعيلها
+    }
+
     override fun onKeyEvent(event: KeyEvent?): Boolean {
         if (event == null) return super.onKeyEvent(event)
 

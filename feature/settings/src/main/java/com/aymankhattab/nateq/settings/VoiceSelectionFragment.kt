@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.settings
 
+import com.aymankhattab.nateq.settings.extras.ExtrasSettingsActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.app.Dialog
@@ -900,6 +901,15 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         btnReportError = view.findViewById(R.id.btn_report_error)
         btnReportError.setOnClickListener { onReportErrorClicked() }
         syncReportErrorButtonText()
+
+        // زر الإضافات: يفتح شاشة إدارة الميزات الإضافية (ع٥٦)
+        view.findViewById<View>(R.id.btn_extras)?.setOnClickListener {
+            val intent = Intent(
+                requireContext(),
+                ExtrasSettingsActivity::class.java
+            )
+            startActivity(intent)
+        }
 
         // زر آخر التحديثات: يعرض ملخص أحدث إصدار وتغييراته في حوار
         btnChangelog = view.findViewById(R.id.btn_changelog)

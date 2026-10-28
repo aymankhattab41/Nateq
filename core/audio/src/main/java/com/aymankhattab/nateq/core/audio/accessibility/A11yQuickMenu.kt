@@ -142,6 +142,18 @@ object A11yQuickMenu {
         ShortcutAction.EXPAND_READ_MORE -> "قراءة المزيد"
         ShortcutAction.NEXT_ENGINE -> "المحرك التالي"
         ShortcutAction.PREVIOUS_ENGINE -> "المحرك السابق"
+        ShortcutAction.SCREEN_ROTOR -> "دوّار العناصر"
+        ShortcutAction.SCREEN_SEARCH -> "بحث في الشاشة"
+        ShortcutAction.SCREEN_SEARCH_NAV -> "النتيجة التالية/السابقة"
+        ShortcutAction.READ_ARTICLE -> "اقرأ المقال"
+        ShortcutAction.READ_CLIPBOARD_STACK -> "قراءة عنصر من الحافظة"
+        ShortcutAction.PASTE_CLIPBOARD_STACK -> "لصق العنصر المحدد"
+        ShortcutAction.TYPO_SUGGESTIONS -> "اقتراحات الكلمة"
+        ShortcutAction.QUICK_CALC -> "احسب/حوّل"
+        ShortcutAction.TRANSLATE_ELEMENT -> "ترجم العنصر"
+        ShortcutAction.PASSWORD_COUNT -> "كم حرفاً؟"
+        ShortcutAction.TOGGLE_SCREEN_CURTAIN -> "ستارة الشاشة"
+        ShortcutAction.QUICK_DICTIONARY -> "أضف للقاموس"
         ShortcutAction.NONE -> "بلا"
     }
 

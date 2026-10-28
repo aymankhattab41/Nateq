@@ -230,6 +230,13 @@
             android:label="@string/title_banking_compat_check"
             android:theme="@style/Theme.Nateq" />
 
+        <!-- شاشة إدارة الميزات الإضافية (ع٥٦) -->
+        <activity
+            android:name="com.aymankhattab.nateq.settings.extras.ExtrasSettingsActivity"
+            android:exported="false"
+            android:label="@string/extras_settings_title"
+            android:theme="@style/Theme.Nateq" />
+
         <!-- Activity لفحص بيانات TTS (اللغات/الأصوات المتاحة) — مطلوبة من سامسونج -->
         <activity
             android:name=".settings.CheckTtsDataActivity"

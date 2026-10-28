@@ -42,7 +42,10 @@ class ShortcutBindingsDialog(
         val table = ShortcutBindingTable.decode(
             settings.getA11yShortcutBindings()
         )
-        val actions = ShortcutAction.entries.toTypedArray()
+        val actions = ShortcutAction.entries.filter { action ->
+            val extraKey = associatedExtraKey(action)
+            extraKey == null || settings.isExtraEnabled(extraKey)
+        }.toTypedArray()
         val current = actions.indexOf(table.actionFor(gesture))
         var selected = if (current >= 0) current else actions.size - 1
         val labels = actions.map { actionLabel(it) }.toTypedArray()
@@ -121,5 +124,41 @@ class ShortcutBindingsDialog(
         ShortcutAction.NEXT_ENGINE -> R.string.a11y_action_next_engine
         ShortcutAction.PREVIOUS_ENGINE ->
             R.string.a11y_action_previous_engine
+        ShortcutAction.SCREEN_ROTOR -> R.string.a11y_action_screen_rotor
+        ShortcutAction.SCREEN_SEARCH -> R.string.a11y_action_screen_search
+        ShortcutAction.SCREEN_SEARCH_NAV ->
+            R.string.a11y_action_screen_search_nav
+        ShortcutAction.READ_ARTICLE -> R.string.a11y_action_read_article
+        ShortcutAction.READ_CLIPBOARD_STACK ->
+            R.string.a11y_action_read_clipboard_stack
+        ShortcutAction.PASTE_CLIPBOARD_STACK ->
+            R.string.a11y_action_paste_clipboard_stack
+        ShortcutAction.TYPO_SUGGESTIONS ->
+            R.string.a11y_action_typo_suggestions
+        ShortcutAction.QUICK_CALC -> R.string.a11y_action_quick_calc
+        ShortcutAction.TRANSLATE_ELEMENT ->
+            R.string.a11y_action_translate_element
+        ShortcutAction.PASSWORD_COUNT -> R.string.a11y_action_password_count
+        ShortcutAction.TOGGLE_SCREEN_CURTAIN ->
+            R.string.a11y_action_toggle_screen_curtain
+        ShortcutAction.QUICK_DICTIONARY ->
+            R.string.a11y_action_quick_dictionary
     }
+
+    private fun associatedExtraKey(action: ShortcutAction): String? =
+        when (action) {
+            ShortcutAction.SCREEN_ROTOR -> "extra_screen_rotor"
+            ShortcutAction.SCREEN_SEARCH,
+            ShortcutAction.SCREEN_SEARCH_NAV -> "extra_screen_search"
+            ShortcutAction.READ_ARTICLE -> "extra_article_reader"
+            ShortcutAction.READ_CLIPBOARD_STACK,
+            ShortcutAction.PASTE_CLIPBOARD_STACK -> "extra_clipboard_stack"
+            ShortcutAction.TYPO_SUGGESTIONS -> "extra_typo_whisper"
+            ShortcutAction.QUICK_CALC -> "extra_currency_math"
+            ShortcutAction.TRANSLATE_ELEMENT -> "extra_screen_translator"
+            ShortcutAction.PASSWORD_COUNT -> "extra_password_shield"
+            ShortcutAction.TOGGLE_SCREEN_CURTAIN -> "extra_screen_curtain"
+            ShortcutAction.QUICK_DICTIONARY -> "extra_quick_dictionary"
+            else -> null
+        }
 }
