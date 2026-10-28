@@ -8,6 +8,7 @@ import com.aymankhattab.nateq.engine.PronunciationDictionary
 import com.aymankhattab.nateq.engine.TextProcessor
 import com.aymankhattab.nateq.util.LanguageCode
 import java.text.Normalizer
+import java.util.Locale
 
 /**
  * المدخل الموحد لكل عمليات النطق في التطبيق (الجولة 53 - الأمر 4).
@@ -35,7 +36,8 @@ object SpeechEntryPoints {
     fun prepare(
         rawText: String,
         source: Source,
-        context: Context
+        context: Context,
+        languageTag: String? = null
     ): String {
         if (rawText.isBlank()) return rawText
 
@@ -62,15 +64,43 @@ object SpeechEntryPoints {
         // 2. القاموس أولاً
         val dict = PronunciationDictionary.shared(context)
         dict.reloadIfChanged()
-        val normalized = Normalizer.normalize(rawText, Normalizer.Form.NFC)
+        val cleanedRaw = TextProcessor.stripCommasBetweenDigits(rawText)
+        val normalized = Normalizer.normalize(cleanedRaw, Normalizer.Form.NFC)
         val dictText = dict.apply(normalized)
 
         // 3. المعالجة الدلالية
+        val isExplicitEnglish = languageTag != null &&
+            LanguageCode.isEnglish(languageTag)
+        val appLang = runCatching { settings.getAppLanguage() }.getOrNull()
+        val isAppEnglish = appLang != null && LanguageCode.isEnglish(appLang)
+        val isPhoneEnglish = LanguageCode.isEnglish(
+            Locale.getDefault().language
+        )
+        val numLang = runCatching { settings.getNumberReadingLanguage() }
+            .getOrDefault("ar")
+        val isUserEnglish = LanguageCode.isEnglish(numLang)
+        val announceLang = runCatching {
+            settings.getAnnouncementSpeechLanguage()
+        }.getOrNull()
+        val isAnnounceEnglish = announceLang != null &&
+            LanguageCode.isEnglish(announceLang)
+        val isTextLatin = !dictText.any { it in '\u0600'..'\u06FF' } &&
+            dictText.any { it in 'A'..'Z' || it in 'a'..'z' }
+
+        val targetLang = if (isExplicitEnglish || isAppEnglish ||
+            isPhoneEnglish || isUserEnglish || isAnnounceEnglish ||
+            isTextLatin
+        ) {
+            LanguageCode.EN.tag
+        } else {
+            LanguageCode.AR.tag
+        }
+
         val processor = TextProcessor(context, settings, dict)
         val markNumbers = source == Source.SCREEN_READER
         val semanticText = processor.processSemantics(
             dictText,
-            LanguageCode.AR.tag,
+            targetLang,
             markNumbers = markNumbers
         )
 
@@ -78,7 +108,11 @@ object SpeechEntryPoints {
         return if (source == Source.SCREEN_READER) {
             semanticText
         } else {
-            processor.process(semanticText, applyDictionary = false)
+            processor.process(
+                semanticText,
+                languageTag = targetLang,
+                applyDictionary = false
+            )
         }
     }
 }

@@ -348,7 +348,8 @@ class TextProcessor(
     ): String {
         if (text.isBlank()) return text
 
-        var result = Normalizer.normalize(text, Normalizer.Form.NFC)
+        val noCommas = stripCommasBetweenDigits(text)
+        var result = Normalizer.normalize(noCommas, Normalizer.Form.NFC)
         if (applyDictionary) {
             result = applyDictionaryFirst(result, languageTag)
         }
@@ -605,9 +606,11 @@ class TextProcessor(
         markNumbers: Boolean = false
     ): String {
         if (text.isBlank()) return text
+        // إزالة الفواصل بين الأرقام عربي أو إنجليزي
+        val cleaned = stripCommasBetweenDigits(text)
         // توحيد NFC عند المدخل مطابقاً لـ[process] — يبقى الإخراج مطابقاً
         // لنمط التقسيم المعدَّ مسبقاً على صيغة موحَّدة.
-        val normalized = Normalizer.normalize(text, Normalizer.Form.NFC)
+        val normalized = Normalizer.normalize(cleaned, Normalizer.Form.NFC)
         val spelledWordsEnabled =
             injectedSettings?.isNumberVoiceSpelledWordsEnabled() ?: true
 
@@ -941,7 +944,24 @@ class TextProcessor(
             text
         }
 
-    private companion object {
+    companion object {
+        private val COMMA_DIGITS_AR = Regex(
+            """(?<=[\d\u0660-\u0669\u06F0-\u06F9\uE031])\s*،\s*""" +
+                """(?=[\d\u0660-\u0669\u06F0-\u06F9\uE030])"""
+        )
+        private val COMMA_DIGITS_EN = Regex(
+            """(?<=[\d\u0660-\u0669\u06F0-\u06F9\uE031])""" +
+                """(?:\s*,\s+|\s+,\s*)""" +
+                """(?=[\d\u0660-\u0669\u06F0-\u06F9\uE030])"""
+        )
+
+        /** إزالة كل الفواصل بين الأرقام عربي أو إنجليزي. */
+        fun stripCommasBetweenDigits(input: String): String {
+            if (input.indexOf(',') < 0 && input.indexOf('،') < 0) return input
+            val res = input.replace(COMMA_DIGITS_AR, " ")
+            return res.replace(COMMA_DIGITS_EN, " ")
+        }
+
         /** نمط الروابط المحجوبة (نفس نمط [UrlStep]). */
         private val PATTERN_URL_EN = Pattern.compile(
             """(?i)\b(?:https?://|www\.)[^\s<>"']+|""" +

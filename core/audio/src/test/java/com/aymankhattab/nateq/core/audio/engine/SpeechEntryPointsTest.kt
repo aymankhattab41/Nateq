@@ -7,6 +7,7 @@ import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.engine.PronunciationDictionary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -93,5 +94,33 @@ class SpeechEntryPointsTest {
     fun repeatSpellController_spellText_spellsCharNamesNotDictionary() {
         val spelled = RepeatSpellController.spellText("ج")
         assertEquals("جيم", spelled)
+    }
+
+    @Test
+    fun englishDate_inEnglishContext_isSpokenInEnglish() {
+        val result = SpeechEntryPoints.prepare(
+            rawText = "Date is 2024-03-15",
+            source = SpeechEntryPoints.Source.SCREEN_READER,
+            context = context,
+            languageTag = "en"
+        )
+        assertTrue(
+            "يجب نطق التاريخ بالإنجليزية في السياق الإنجليزي: $result",
+            result.contains("March") && result.contains("fifteenth")
+        )
+    }
+
+    @Test
+    fun englishNumbers_withoutCommasBetweenThem() {
+        val result = SpeechEntryPoints.prepare(
+            rawText = "1, 2, 3",
+            source = SpeechEntryPoints.Source.SCREEN_READER,
+            context = context,
+            languageTag = "en"
+        )
+        assertFalse(
+            "لا يجب وجود فواصل بين الأرقام: $result",
+            result.contains(",") || result.contains("،")
+        )
     }
 }

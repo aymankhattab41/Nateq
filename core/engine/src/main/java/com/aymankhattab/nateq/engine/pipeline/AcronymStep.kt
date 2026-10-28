@@ -18,7 +18,6 @@ internal object AcronymStep : TextProcessingStep {
         "SMS" to "إس إم إس",
         "PDF" to "بي دي إف",
         "RAM" to "رام",
-        "OK" to "أو كي",
         "USB" to "يو إس بي",
         "GPS" to "جي بي إس",
         "م.ب." to "ميجابايت",

@@ -543,7 +543,7 @@ class SettingsRepository(context: Context) :
                     key.startsWith("language_for_") ||
                     key.startsWith("loudness_") ||
                     key == "app_language" ||
-                    key == "number_reading_language" ||
+                    key.startsWith("number_reading_") ||
                     key == "secondary_language" ||
                     key.contains("voice") ||
                     key.contains("engine") ||
@@ -929,8 +929,11 @@ class SettingsRepository(context: Context) :
     /** طريقة نطق الأرقام: 1=مفردة، 2=زوجي، 3=ثلاثي، ... 8=ثماني */
     override fun getNumberReadingMode(): Int =
         prefs.getInt("number_reading_mode", 1)
-    override fun setNumberReadingMode(mode: Int) =
-        prefs.edit().putInt("number_reading_mode", mode.coerceIn(1, 8)).apply()
+    override fun setNumberReadingMode(mode: Int) {
+        prefs.edit()
+            .putInt("number_reading_mode", mode.coerceIn(1, 8))
+            .commit()
+    }
 
     /** لغة نطق الأرقام: "ar" أو "en" أو "auto" (تلقائي مع سياق الجملة). */
     override fun getNumberReadingLanguage(): String {
@@ -939,7 +942,7 @@ class SettingsRepository(context: Context) :
     }
     override fun setNumberReadingLanguage(lang: String) {
         val safe = if (lang == "en" || lang == "auto") lang else "ar"
-        prefs.edit().putString("number_reading_language", safe).apply()
+        prefs.edit().putString("number_reading_language", safe).commit()
     }
 
     /** الصوت المفضّل لكل لغة (languageTag -> voiceId) */

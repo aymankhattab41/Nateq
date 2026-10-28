@@ -710,15 +710,13 @@
 <string name="time_alarm_max_precision_title">Maximum alarm precision (shows an alarm icon)</string>
 <string name="time_alarm_max_precision_summary">Uses the system exact alarm (setAlarmClock) to bypass all Doze and battery limits, so the time announcement fires at the exact minute; the side effect is a persistent alarm icon in the status bar.</string>
 <string name="changelog_title">What\'s New</string>
-<string name="changelog_text">
+    <string name="changelog_text">
 Version %1$s
-• Added Daily Tools &amp; Speech Customization: custom battery level thresholds with hysteresis and quiet hours, element role earcons, quick dictionary add shortcut, dynamic reading rate for long texts, and table reader with column headers.
-• Added Chat &amp; Social features: automatic video ad skipper, voice note inspector (duration &amp; played state), message edit/delete alerts, group message burst limiter, contact status announcer, and social media image alt-text reader.
-• Added Privacy &amp; Security features: password shield, camera and microphone usage indicator alerts, link inspector &amp; phishing detector, and screen curtain overlay with quick settings tile.
-• Added Productivity &amp; Typing features: smart clipboard stack, auto-copy OTP verification codes, keyboard language &amp; Caps Lock guard, continuous deletion speech echo, typo &amp; extra space whisper, quick calculator &amp; currency converter, and offline screen glossary translator.
-• Added Screen Navigation features: screen rotor, on-screen text search &amp; navigation, audible scroll cue, focus memory &amp; restore, screen grid position announcer, loading detector, and continuous article reader.
-• Established Advanced Extras architecture, feature registry, dedicated settings activity, and preference controls.
-• Reverted to version 52 to avoid errors and continue from where we left off in version 52
+• Kept pronunciation of &quot;OK&quot; in English/foreign voice and prevented Arabic transliteration.
+• Handled dates, currencies, and formula symbols in English when English is chosen or system/app is in English.
+• Removed all commas between numbers in Arabic and English, eliminating pauses or conjunctions.
+• Fully applied and synchronously persisted number reading mode to match live speech with settings preview.
+• Added Advanced Extras feature suites and preference controls: Daily Tools, Chat &amp; Social, Privacy &amp; Security, Productivity &amp; Typing, and Screen Navigation.
     </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
