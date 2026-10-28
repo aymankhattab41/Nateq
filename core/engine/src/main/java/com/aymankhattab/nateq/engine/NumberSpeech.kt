@@ -578,6 +578,6 @@ object NumberSpeech {
                     }.joinToString(" ")
                 }
             }
-        }.joinToString(", ")
+        }.joinToString(" ")
     }
 }

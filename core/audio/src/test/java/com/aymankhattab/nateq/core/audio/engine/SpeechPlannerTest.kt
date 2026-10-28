@@ -252,6 +252,32 @@ class SpeechPlannerTest {
     }
 
     @Test
+    fun plan_englishWordOk_routedToEnglishVoice() {
+        val prefs = FakeVoicePrefs(
+            voices = mapOf(
+                "ar" to "voice-ar",
+                "en" to "voice-en"
+            )
+        )
+        val plan = SpeechPlanner.plan(
+            rawText = "موافق OK",
+            fallbackLanguage = "ar",
+            secondaryLanguage = "en",
+            numberLanguage = "ar",
+            emojiPronunciationEnabled = false,
+            settings = prefs
+        )
+        assertEquals(2, plan.size)
+        assertEquals("موافق ", plan[0].text)
+        assertEquals("ar", plan[0].languageTag)
+        assertEquals("voice-ar", plan[0].voiceId)
+
+        assertEquals("OK", plan[1].text)
+        assertEquals("en", plan[1].languageTag)
+        assertEquals("voice-en", plan[1].voiceId)
+    }
+
+    @Test
     fun explicitCategoryVoiceAndEngine_notOverriddenByLanguageDefaults() {
         val prefs = FakeVoicePrefs(
             voices = mapOf("ar" to "voice-google-arabic"),

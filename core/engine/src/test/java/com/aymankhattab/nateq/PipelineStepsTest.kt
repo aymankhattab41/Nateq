@@ -1406,8 +1406,10 @@ class PipelineStepsTest {
     }
 
     @Test
-    fun acronym_ok_in_arabic() {
-        assertEquals("موافق أو كي", AcronymStep.apply("موافق OK"))
+    fun acronym_ok_kept_as_latin() {
+        // يبقى ككتابة لاتينية ليُوجّه لمحرك الصوت الأجنبي
+        assertEquals("موافق OK", AcronymStep.apply("موافق OK"))
+        assertEquals("OK", AcronymStep.apply("OK"))
     }
 
     @Test

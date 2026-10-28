@@ -1882,8 +1882,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             return
         }
         val forced =
-            runCatching { settings.getAnnouncementSpeechLanguage() }
-                .getOrNull()
+            runCatching { settings.getNumberReadingLanguage() }
+                .getOrNull()?.takeIf { it != "auto" }
+                ?: runCatching { settings.getAnnouncementSpeechLanguage() }
+                    .getOrNull()
         val appLang = runCatching { settings.getAppLanguage() }.getOrNull()
             ?: Locale.getDefault().language
         val isEnglish = if (forced != null) LanguageCode.isEnglish(forced)

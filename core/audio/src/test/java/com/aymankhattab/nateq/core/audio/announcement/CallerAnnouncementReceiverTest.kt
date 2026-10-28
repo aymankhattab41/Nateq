@@ -345,12 +345,12 @@ class CallerAnnouncementReceiverTest {
     fun `formatCallerNumberForSpeech respects reading mode`() {
         // نطق رقم المتصل في أزواج (mode 2)
         assertEquals(
-            " زائد عشرون, أحد عشر",
+            " زائد عشرون أحد عشر",
             formatCallerNumberForSpeech("+2011", isArabic = true, mode = 2)
         )
         // نطق رقم المتصل في مجموعات ثلاثية (mode 3)
         assertEquals(
-            " plus two, zero one one",
+            " plus two zero one one",
             formatCallerNumberForSpeech("+2011", isArabic = false, mode = 3)
         )
     }
@@ -399,8 +399,8 @@ class CallerAnnouncementReceiverTest {
         }
 
         // نمط التجميع الثنائي (mode 2) للأرقام الدولية
-        val expectedPairsAr = " زائد عشرون, عشرة, اثنا عشر, " +
-            "أربعة وثلاثون, ستة وخمسون, ثمانية وسبعون"
+        val expectedPairsAr = " زائد عشرون عشرة اثنا عشر " +
+            "أربعة وثلاثون ستة وخمسون ثمانية وسبعون"
         assertEquals(
             expectedPairsAr,
             formatCallerNumberForSpeech(
@@ -408,7 +408,7 @@ class CallerAnnouncementReceiverTest {
             )
         )
         assertEquals(
-            " plus twenty, ten, twelve, thirty four, fifty six, seventy eight",
+            " plus twenty ten twelve thirty four fifty six seventy eight",
             formatCallerNumberForSpeech(
                 "+201012345678", isArabic = false, mode = 2
             )

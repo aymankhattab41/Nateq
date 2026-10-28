@@ -939,7 +939,8 @@ class NateqTtsService : TextToSpeechService() {
                 val semanticText = SpeechEntryPoints.prepare(
                     processedText,
                     SpeechEntryPoints.Source.SCREEN_READER,
-                    applicationContext
+                    applicationContext,
+                    languageTag
                 )
                 processedText = semanticText
                 val endPreprocess = SystemClock.uptimeMillis()

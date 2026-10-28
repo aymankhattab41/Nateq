@@ -57,7 +57,7 @@ class NumberSpeechTest {
     @Test
     fun formatByMode_grouping() {
         assertEquals(
-            "اثنا عشر, ثلاثة وثلاثون, خمسة وأربعون",
+            "اثنا عشر ثلاثة وثلاثون خمسة وأربعون",
             NumberSpeech.formatByMode(2, 123345, false)
         )
     }
@@ -234,11 +234,11 @@ class NumberSpeechTest {
     fun formatByMode_groupingWithLeadingGroup() {
         // ungrouped تقسيم المجموعات مع مجموعة أولى أصغر (123 → 1, 23)
         assertEquals(
-            "واحد, ثلاثة وعشرون",
+            "واحد ثلاثة وعشرون",
             NumberSpeech.formatByMode(2, 123, false)
         )
         assertEquals(
-            "one, twenty three",
+            "one twenty three",
             NumberSpeech.formatByMode(2, 123, true)
         )
     }
@@ -277,7 +277,7 @@ class NumberSpeechTest {
     @Test
     fun formatByMode_largeGrouping() {
         assertEquals(
-            "مائة وثلاثة وعشرون, مائة وثلاثة وعشرون",
+            "مائة وثلاثة وعشرون مائة وثلاثة وعشرون",
             NumberSpeech.formatByMode(3, 123123, false)
         )
     }
@@ -285,16 +285,16 @@ class NumberSpeechTest {
     @Test
     fun formatByMode_leadingZerosPreserved() {
         // الرمز 102 في التجميع الزوجي: «02» صِفْرْ بادئ لا يُفقد
-        val expectedTwo = "واحد, صِفْرْ اثنان"
+        val expectedTwo = "واحد صِفْرْ اثنان"
         assertEquals(expectedTwo, NumberSpeech.formatByMode(2, 102, false))
-        assertEquals("one, zero two", NumberSpeech.formatByMode(2, 102, true))
+        assertEquals("one zero two", NumberSpeech.formatByMode(2, 102, true))
         // تجميع ثلاثي لـ 1002: «002» ثلاثة أصفار بادئة
         assertEquals(
-            "واحد, صِفْرْ صِفْرْ اثنان",
+            "واحد صِفْرْ صِفْرْ اثنان",
             NumberSpeech.formatByMode(3, 1002, false)
         )
         assertEquals(
-            "one, zero zero two",
+            "one zero zero two",
             NumberSpeech.formatByMode(3, 1002, true)
         )
     }
@@ -303,7 +303,7 @@ class NumberSpeechTest {
     fun formatByMode_groupingUpToEightDigits() {
         // تجميع خماسي/ثماني يدعم 8 خانات بلا انهيار (كان محدوداً بـ 9999)
         assertEquals(
-            "ألف ومائتان وأربعة وثلاثون, ستة وخمسون ألفاً" +
+            "ألف ومائتان وأربعة وثلاثون ستة وخمسون ألفاً" +
                 " وسبعمائة وتسعة وثمانون",
             NumberSpeech.formatByMode(5, 123456789, false)
         )
@@ -331,7 +331,7 @@ class NumberSpeechTest {
             NumberSpeech.formatByMode(5, "30496.00", false)
         )
         assertEquals(
-            "ثلاثة, صِفْرْ أربعة, ستة وتسعون فاصلة صِفْرْ صِفْرْ",
+            "ثلاثة صِفْرْ أربعة ستة وتسعون فاصلة صِفْرْ صِفْرْ",
             NumberSpeech.formatByMode(2, "30496.00", false)
         )
         assertEquals(
@@ -349,19 +349,19 @@ class NumberSpeechTest {
         )
         // ثلاثي: 01, 012, 345, 678
         assertEquals(
-            "صِفْرْ واحد, صِفْرْ واحد اثنان, ثلاثمائة وخمسة وأربعون, " +
+            "صِفْرْ واحد صِفْرْ واحد اثنان ثلاثمائة وخمسة وأربعون " +
                 "ستمائة وثمانية وسبعون",
             NumberSpeech.formatByMode(3, "01012345678", false)
         )
         // ثلاثي مع زائد: +20 11 5552442 -> 20, 115, 552, 442
         assertEquals(
-            "زائد عشرون, مائة وخمسة عشر, خمسمائة واثنان وخمسون, " +
+            "زائد عشرون مائة وخمسة عشر خمسمائة واثنان وخمسون " +
                 "أربعمائة واثنان وأربعون",
             NumberSpeech.formatByMode(3, "+20 11 5552442", false)
         )
         // رباعي إنجليزي مع زائد: +20 11 5552442 -> 201, 1555, 2442
         assertEquals(
-            "plus two hundred one, one thousand five hundred fifty five, " +
+            "plus two hundred one one thousand five hundred fifty five " +
                 "two thousand four hundred forty two",
             NumberSpeech.formatByMode(4, "+20 11 5552442", true)
         )
