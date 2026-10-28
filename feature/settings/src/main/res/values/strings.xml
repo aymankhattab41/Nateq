@@ -1248,4 +1248,39 @@
     <string name="a11y_action_password_count">كم حرفاً؟</string>
     <string name="a11y_action_toggle_screen_curtain">ستارة الشاشة</string>
     <string name="a11y_action_quick_dictionary">أضف للقاموس</string>
+
+    <!-- نصوص التنقل في الشاشة (الجولة 56 - إضافات 1) -->
+    <string name="rotor_title">دوّار العناصر</string>
+    <string name="rotor_activate">تفعيل</string>
+    <string name="rotor_empty_category">لا توجد عناصر في هذه الفئة</string>
+    <string name="rotor_cat_buttons">أزرار</string>
+    <string name="rotor_cat_headings">عناوين</string>
+    <string name="rotor_cat_links">روابط</string>
+    <string name="rotor_cat_inputs">حقول إدخال</string>
+    <string name="rotor_cat_images">صور</string>
+    <string name="rotor_cat_lists">قوائم وعناصرها</string>
+    <string name="rotor_cat_controls">خانات ومفاتيح تبديل</string>
+    <string name="rotor_categories_count">دوّار العناصر، %1$d فئات</string>
+    <string name="rotor_done">تم</string>
+
+    <string name="search_screen_title">بحث في الشاشة</string>
+    <string name="search_hint">اكتب نص البحث...</string>
+    <string name="search_btn">بحث</string>
+    <string name="search_result_announcement">النتيجة %1$d من %2$d: %3$s</string>
+    <string name="search_no_results">لا توجد نتائج لـ %1$s</string>
+    <string name="search_voice_input">إملاء صوتي</string>
+
+    <string name="grid_top_right">أعلى اليمين</string>
+    <string name="grid_top_center">أعلى الوسط</string>
+    <string name="grid_top_left">أعلى اليسار</string>
+    <string name="grid_mid_right">وسط اليمين</string>
+    <string name="grid_center">المركز</string>
+    <string name="grid_mid_left">وسط اليسار</string>
+    <string name="grid_bottom_right">أسفل اليمين</string>
+    <string name="grid_bottom_center">أسفل الوسط</string>
+    <string name="grid_bottom_left">أسفل اليسار</string>
+
+    <string name="loading_complete">اكتمل التحميل</string>
+    <string name="article_reader_no_content">لم أجد نصاً رئيسياً في هذه الشاشة</string>
+    <string name="article_reader_paragraph">فقرة %1$d: %2$s</string>
 </resources>

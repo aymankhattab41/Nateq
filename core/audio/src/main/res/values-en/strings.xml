@@ -52,4 +52,18 @@
     <string name="voice_download_notification_title">Downloading Embedded Voices</string>
     <string name="voice_download_notification_text">Downloading %1$s (%2$d%%)</string>
     <string name="voice_download_action_cancel">Cancel</string>
+
+    <string name="grid_top_right">Top right</string>
+    <string name="grid_top_center">Top center</string>
+    <string name="grid_top_left">Top left</string>
+    <string name="grid_mid_right">Middle right</string>
+    <string name="grid_center">Center</string>
+    <string name="grid_mid_left">Middle left</string>
+    <string name="grid_bottom_right">Bottom right</string>
+    <string name="grid_bottom_center">Bottom center</string>
+    <string name="grid_bottom_left">Bottom left</string>
+
+    <string name="loading_complete">Loading complete</string>
+    <string name="article_reader_no_content">No main text found on this screen</string>
+    <string name="article_reader_paragraph">Paragraph %1$d: %2$s</string>
 </resources>

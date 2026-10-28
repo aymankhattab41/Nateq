@@ -237,6 +237,20 @@
             android:label="@string/extras_settings_title"
             android:theme="@style/Theme.Nateq" />
 
+        <!-- نافذة دوّار العناصر الشفافة (ع٥٦-أمر 1) -->
+        <activity
+            android:name="com.aymankhattab.nateq.settings.extras.RotorActivity"
+            android:exported="false"
+            android:label="@string/rotor_title"
+            android:theme="@style/Theme.Nateq" />
+
+        <!-- نافذة البحث النصي داخل الشاشة (ع٥٦-أمر 2) -->
+        <activity
+            android:name="com.aymankhattab.nateq.settings.extras.ScreenSearchActivity"
+            android:exported="false"
+            android:label="@string/search_screen_title"
+            android:theme="@style/Theme.Nateq" />
+
         <!-- Activity لفحص بيانات TTS (اللغات/الأصوات المتاحة) — مطلوبة من سامسونج -->
         <activity
             android:name=".settings.CheckTtsDataActivity"
