@@ -216,16 +216,43 @@ class SystemVoiceProvider(
             voices.firstOrNull {
                 it.name.equals(desiredVoiceName, ignoreCase = true)
             }?.let { return it }
-            // 3. تطابق بعد حذف اللاحقة (compact/standard/enhanced/premium)
+            // 3. تطابق مع تجريد البادئات (اسم الحزمة أو vocalizer_)
+            val stripped = desiredVoiceName.substringAfter(':')
+                .removePrefix("vocalizer_").trim()
+            voices.firstOrNull { v ->
+                val vClean = v.name.substringAfter(':')
+                    .removePrefix("vocalizer_").trim()
+                vClean.equals(stripped, ignoreCase = true)
+            }?.let { return it }
+            // 4. تطابق بعد حذف اللاحقة (compact/standard/enhanced/premium)
             val suffixRegex = Regex(
                 "-(compact|standard|enhanced|premium)$",
                 RegexOption.IGNORE_CASE
             )
-            val vidBase = desiredVoiceName.replace(suffixRegex, "")
-            return voices.firstOrNull { v ->
-                v.name.replace(suffixRegex, "")
+            val vidBase = stripped.replace(suffixRegex, "")
+            voices.firstOrNull { v ->
+                val vClean = v.name.substringAfter(':')
+                    .removePrefix("vocalizer_").trim()
+                vClean.replace(suffixRegex, "")
                     .equals(vidBase, ignoreCase = true)
+            }?.let { return it }
+
+            // 5. تطابق جزئي أو عبر أجزاء الاسم (tokens)
+            if (vidBase.length >= 3) {
+                val tokens = vidBase.split('-', '_', ' ')
+                    .filter { it.length >= 3 }
+                voices.firstOrNull { v ->
+                    val vClean = v.name.substringAfter(':')
+                        .removePrefix("vocalizer_").trim()
+                        .replace(suffixRegex, "")
+                    vClean.contains(vidBase, ignoreCase = true) ||
+                        vidBase.contains(vClean, ignoreCase = true) ||
+                        tokens.any {
+                            vClean.contains(it, ignoreCase = true)
+                        }
+                }?.let { return it }
             }
+            return null
         }
 
 

@@ -1440,18 +1440,60 @@ class NateqTtsService : TextToSpeechService() {
             val isVocVoice = if (isVoc && !finalVoiceName.isNullOrBlank()) {
                 VocalizerModelCatalog.ITEMS.any { item ->
                     item.voiceName.equals(finalVoiceName, ignoreCase = true) ||
-                        item.id.equals(finalVoiceName, ignoreCase = true)
+                        item.id.equals(finalVoiceName, ignoreCase = true) ||
+                        finalVoiceName.contains(
+                            item.voiceName,
+                            ignoreCase = true
+                        ) ||
+                        (item.voiceName.equals("Laila", true) &&
+                            finalVoiceName.contains("leila", true)) ||
+                        (item.voiceName.equals("Tarik", true) &&
+                            finalVoiceName.contains("tariq", true))
                 }
             } else false
             val resolvedVoiceName = if (isVoc && (isGeneric || !isVocVoice)) {
+                val installedAr = VocalizerModelCatalog.ITEMS.firstOrNull {
+                    LanguageCode.isArabic(it.languageCategory) &&
+                        VocalizerModelCatalog.isVoiceInstalled(
+                            applicationContext, it
+                        )
+                }?.voiceName
+                val installedEn = VocalizerModelCatalog.ITEMS.firstOrNull {
+                    LanguageCode.isEnglish(it.languageCategory) &&
+                        VocalizerModelCatalog.isVoiceInstalled(
+                            applicationContext, it
+                        )
+                }?.voiceName
                 if (LanguageCode.isArabic(languageTag)) {
-                    "Laila"
+                    installedAr ?: "Tarik"
                 } else {
-                    "Samantha"
+                    installedEn ?: "Samantha"
                 }
+            } else if (isVoc && !finalVoiceName.isNullOrBlank()) {
+                val matchedItem = VocalizerModelCatalog.ITEMS.firstOrNull {
+                    it.voiceName.equals(finalVoiceName, ignoreCase = true) ||
+                        it.id.equals(finalVoiceName, ignoreCase = true) ||
+                        finalVoiceName.contains(
+                            it.voiceName,
+                            ignoreCase = true
+                        ) ||
+                        (it.voiceName.equals("Laila", true) &&
+                            finalVoiceName.contains("leila", true)) ||
+                        (it.voiceName.equals("Tarik", true) &&
+                            finalVoiceName.contains("tariq", true))
+                }
+                matchedItem?.voiceName ?: finalVoiceName
             } else {
                 finalVoiceName
             }
+            val singleCategory = effectCategory.takeIf { it.isNotEmpty() }
+                ?: when (role) {
+                    SpeechRole.NUMBER ->
+                        SettingsRepository.VOICE_CATEGORY_NUMBERS
+                    SpeechRole.EMOJI ->
+                        SettingsRepository.VOICE_CATEGORY_EMOJI
+                    else -> null
+                }
             targetProvider.synthesize(
                 speechText, voice, finalRate, finalPitch, finalVolume,
                 { sampleRateInHz, channelCount ->
@@ -1496,7 +1538,7 @@ class NateqTtsService : TextToSpeechService() {
                         offset += bytesToWrite
                     }
                 }, finalEngine, finalLocale, resolvedVoiceName,
-                effectCategory
+                singleCategory
             )
         } catch (e: CancellationException) {
             throw e
@@ -1586,7 +1628,8 @@ class NateqTtsService : TextToSpeechService() {
         val volume: Float,
         val engine: String?,
         val locale: Locale?,
-        val voiceName: String?
+        val voiceName: String?,
+        val category: String? = null
     )
 
     /** صوتُ مقطعٍ واحد مخلَّق (شريحاته PCM الخام بلا معاينة) — حصيلة
@@ -1606,7 +1649,8 @@ class NateqTtsService : TextToSpeechService() {
         segment: Segment,
         readerRate: Float,
         appVoice: EffectiveVoice? = null,
-        reqVoiceName: String? = null
+        reqVoiceName: String? = null,
+        effectCategory: String = ""
     ): SegmentParams? {
         val segTag = segment.languageTag
         val segRate = requestHandler.getSpeechRate(segTag)
@@ -1774,15 +1818,46 @@ class NateqTtsService : TextToSpeechService() {
         val isVocVoice = if (isVoc && !targetVoiceName.isNullOrBlank()) {
             VocalizerModelCatalog.ITEMS.any { item ->
                 item.voiceName.equals(targetVoiceName, ignoreCase = true) ||
-                    item.id.equals(targetVoiceName, ignoreCase = true)
+                    item.id.equals(targetVoiceName, ignoreCase = true) ||
+                    targetVoiceName.contains(
+                        item.voiceName,
+                        ignoreCase = true
+                    ) ||
+                    (item.voiceName.equals("Laila", true) &&
+                        targetVoiceName.contains("leila", true)) ||
+                    (item.voiceName.equals("Tarik", true) &&
+                        targetVoiceName.contains("tariq", true))
             }
         } else false
         val resolvedVoiceName = if (isVoc && (isGeneric || !isVocVoice)) {
+            val installedAr = VocalizerModelCatalog.ITEMS.firstOrNull {
+                LanguageCode.isArabic(it.languageCategory) &&
+                    VocalizerModelCatalog.isVoiceInstalled(
+                        applicationContext, it
+                    )
+            }?.voiceName
+            val installedEn = VocalizerModelCatalog.ITEMS.firstOrNull {
+                LanguageCode.isEnglish(it.languageCategory) &&
+                    VocalizerModelCatalog.isVoiceInstalled(
+                        applicationContext, it
+                    )
+            }?.voiceName
             if (LanguageCode.isArabic(segTag)) {
-                "Laila"
+                installedAr ?: "Tarik"
             } else {
-                "Samantha"
+                installedEn ?: "Samantha"
             }
+        } else if (isVoc && !targetVoiceName.isNullOrBlank()) {
+            val matchedItem = VocalizerModelCatalog.ITEMS.firstOrNull {
+                it.voiceName.equals(targetVoiceName, ignoreCase = true) ||
+                    it.id.equals(targetVoiceName, ignoreCase = true) ||
+                    targetVoiceName.contains(it.voiceName, ignoreCase = true) ||
+                    (it.voiceName.equals("Laila", true) &&
+                        targetVoiceName.contains("leila", true)) ||
+                    (it.voiceName.equals("Tarik", true) &&
+                        targetVoiceName.contains("tariq", true))
+            }
+            matchedItem?.voiceName ?: targetVoiceName
         } else {
             targetVoiceName
         }
@@ -1797,6 +1872,11 @@ class NateqTtsService : TextToSpeechService() {
                     "source='${resolvedVoice.source}'"
             )
         }
+        val segmentCategory = when (segment.role) {
+            SpeechRole.EMOJI -> SettingsRepository.VOICE_CATEGORY_EMOJI
+            SpeechRole.NUMBER -> SettingsRepository.VOICE_CATEGORY_NUMBERS
+            SpeechRole.TEXT -> effectCategory.takeIf { it.isNotEmpty() }
+        }
         return SegmentParams(
             speechText, voice, provider, finalRate, finalPitch,
             finalVolume, targetEngine,
@@ -1806,7 +1886,8 @@ class NateqTtsService : TextToSpeechService() {
             } else {
                 Locale.forLanguageTag(segTag)
             },
-            resolvedVoiceName
+            resolvedVoiceName,
+            segmentCategory
         )
     }
 
@@ -1832,9 +1913,9 @@ class NateqTtsService : TextToSpeechService() {
         onResolved: ((engine: String?, voice: String?) -> Unit)? = null
     ): SegmentAudio? {
         val params = resolveSegmentParams(
-            segment, readerRate, appVoice, reqVoiceName
+            segment, readerRate, appVoice, reqVoiceName, effectCategory
         ) ?: return null
-        onResolved?.invoke(params.engine, params.voice.id)
+        onResolved?.invoke(params.engine, params.voiceName ?: params.voice.id)
         val chunks = ArrayList<ByteArray>()
         var nativeRate = 0
         var nativeChannels = 1
@@ -1869,7 +1950,7 @@ class NateqTtsService : TextToSpeechService() {
                     params.engine,
                     params.locale,
                     params.voiceName,
-                    effectCategory
+                    params.category ?: effectCategory
                 )
                 if (pieceRate > 0) {
                     nativeRate = pieceRate
@@ -2082,7 +2163,7 @@ class NateqTtsService : TextToSpeechService() {
         for (segment in segments) {
             val segStart = SystemClock.uptimeMillis()
             val params = resolveSegmentParams(
-                segment, readerRate, appVoice, reqVoiceName
+                segment, readerRate, appVoice, reqVoiceName, effectCategory
             )
             if (params == null) {
                 skippedSegments++
@@ -2128,7 +2209,7 @@ class NateqTtsService : TextToSpeechService() {
                         params.engine,
                         params.locale,
                         params.voiceName,
-                        effectCategory
+                        params.category ?: effectCategory
                     )
                 } catch (e: CancellationException) {
                     throw e

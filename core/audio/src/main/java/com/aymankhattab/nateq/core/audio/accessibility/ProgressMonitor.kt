@@ -22,6 +22,7 @@ object ProgressMonitor {
         max: Int
     ) {
         if (max <= 0) return
+        if (AudioEnvironmentPolicy.shouldMuteCues(context)) return
         val percent = (current * 100) / max
         val last = lastAnnouncedPercent.getOrDefault(trackerKey, -1)
 

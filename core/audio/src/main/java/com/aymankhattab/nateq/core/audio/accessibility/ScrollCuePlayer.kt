@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.core.audio.accessibility
 
+import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
@@ -11,6 +12,9 @@ import kotlin.math.sin
  * يولد 12 نغمة PCM برمجياً بترددات 300Hz إلى 900Hz.
  */
 object ScrollCuePlayer {
+
+    @Volatile
+    var appContext: Context? = null
 
     const val RATE_LIMIT_MS = 150L
     private const val SAMPLE_RATE = 16000
@@ -65,8 +69,13 @@ object ScrollCuePlayer {
         ratio: Float,
         isSpeaking: Boolean = false,
         volume: Float = 0.8f,
-        now: Long = SystemClock.uptimeMillis()
+        now: Long = SystemClock.uptimeMillis(),
+        context: Context? = null
     ): Boolean {
+        val ctx = context ?: appContext
+        if (ctx != null && AudioEnvironmentPolicy.shouldMuteCues(ctx)) {
+            return false
+        }
         if (now - lastPlayTime < RATE_LIMIT_MS) {
             return false
         }
@@ -80,11 +89,19 @@ object ScrollCuePlayer {
         }
 
         lastPlayTime = now
-        playTone(toneIndex, volume)
+        playTone(toneIndex, volume, ctx)
         return true
     }
 
-    fun playTone(index: Int, volume: Float = 0.5f) {
+    fun playTone(
+        index: Int,
+        volume: Float = 0.5f,
+        context: Context? = null
+    ) {
+        val ctx = context ?: appContext
+        if (ctx != null && AudioEnvironmentPolicy.shouldMuteCues(ctx)) {
+            return
+        }
         val samples = tones.getOrNull(index) ?: return
         try {
             val audioAttributes = AudioAttributes.Builder()

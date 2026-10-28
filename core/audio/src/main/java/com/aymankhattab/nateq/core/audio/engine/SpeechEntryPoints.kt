@@ -69,6 +69,7 @@ object SpeechEntryPoints {
         val dictText = dict.apply(normalized)
 
         // 3. المعالجة الدلالية
+        val hasArabicLetters = dictText.any { it in '\u0600'..'\u06FF' }
         val isExplicitEnglish = languageTag != null &&
             LanguageCode.isEnglish(languageTag)
         val appLang = runCatching { settings.getAppLanguage() }.getOrNull()
@@ -84,10 +85,12 @@ object SpeechEntryPoints {
         }.getOrNull()
         val isAnnounceEnglish = announceLang != null &&
             LanguageCode.isEnglish(announceLang)
-        val isTextLatin = !dictText.any { it in '\u0600'..'\u06FF' } &&
+        val isTextLatin = !hasArabicLetters &&
             dictText.any { it in 'A'..'Z' || it in 'a'..'z' }
 
-        val targetLang = if (isExplicitEnglish || isAppEnglish ||
+        val targetLang = if (hasArabicLetters) {
+            LanguageCode.AR.tag
+        } else if (isExplicitEnglish || isAppEnglish ||
             isPhoneEnglish || isUserEnglish || isAnnounceEnglish ||
             isTextLatin
         ) {

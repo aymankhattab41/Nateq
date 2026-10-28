@@ -35,7 +35,9 @@ object LoadingDetector {
         now: Long = SystemClock.uptimeMillis()
     ) {
         if (packageName.isNullOrBlank() || root == null) return
-        if (AppPolicy.isSensitiveApp(packageName)) {
+        if (AudioEnvironmentPolicy.shouldMuteCues(context) ||
+            AppPolicy.isSensitiveApp(packageName)
+        ) {
             stopLoading(context, announced = false)
             return
         }
@@ -72,6 +74,10 @@ object LoadingDetector {
         val runnable = object : Runnable {
             override fun run() {
                 if (!isLoadingActive) return
+                if (AudioEnvironmentPolicy.shouldMuteCues(context)) {
+                    stopLoading(context, announced = false)
+                    return
+                }
                 val now = SystemClock.uptimeMillis()
                 if (now - loadingStartTime > MAX_LOADING_DURATION_MS) {
                     stopLoading(context, announced = false)
