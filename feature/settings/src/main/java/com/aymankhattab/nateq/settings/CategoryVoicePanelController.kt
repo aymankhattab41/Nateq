@@ -690,10 +690,21 @@ if (!dirtyPanel) {
             return
         }
 
+        val isEmbedded = isEmbeddedEngine(enginePkg)
+        if (isEmbedded && available.isNotEmpty()) {
+            val fallback = available.first().name
+            Log.i(
+                TAG,
+                "Reconciling missing embedded voice $savedName → $fallback " +
+                    "for $categoryKey"
+            )
+            settings.setPreferredVoiceIdForCategory(categoryKey, fallback)
+            return
+        }
+
         // ع٤٠-4: إذا لم تُعثر على مطابقة، والأصوات المتاحة فارغة لمحرك مدمج،
         // أزل الصوت المحفوظ الوهمي (مثل ar-EG) لتفشل المعاينة بوضوح بدل
         // استخدام صوت غير موجود.
-        val isEmbedded = isEmbeddedEngine(enginePkg)
         if (isEmbedded &&
             (savedName == "ar-EG" || savedName == "en-US") &&
             available.isEmpty()
