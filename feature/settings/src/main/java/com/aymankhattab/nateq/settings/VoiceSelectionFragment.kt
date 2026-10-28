@@ -2757,6 +2757,10 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
             // ── محركات TTS المثبَّتة ──────────────────────────────────
             sb.appendLine("--- محركات TTS المثبَّتة ---")
+            com.aymankhattab.nateq.core.audio.providers
+                .EngineRmsCalibrator.calibrateAll(
+                    context, settings, forceRecompute = false
+                )
             val engines = EnginePicker.installedEngines(context)
             if (engines.isEmpty()) {
                 sb.appendLine("• لم يُعثر على محركات TTS")
@@ -3220,19 +3224,39 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
     private fun showEngineDiagnosticsActionsDialog(ctx: Context) {
         val options = arrayOf(
+            "معايرة جهارة الصوت لجميع المحركات (RMS)",
             "مشاركة ملف تفريغ تبديل المحرك",
             "إعادة محاولة تبديل المحرك"
         )
         MaterialAlertDialogBuilder(ctx)
-            .setTitle("خيارات تفريغ وتبديل المحركات")
+            .setTitle("خيارات تفريغ وتبديل ومعايرة المحركات")
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> shareEngineSwitchDump(ctx)
-                    1 -> retryEngineSwitch(ctx)
+                    0 -> runRmsLoudnessCalibration(ctx)
+                    1 -> shareEngineSwitchDump(ctx)
+                    2 -> retryEngineSwitch(ctx)
                 }
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    private fun runRmsLoudnessCalibration(ctx: Context) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            Toast.makeText(
+                ctx,
+                "جاري معايرة جهارة الصوت للمحركات...",
+                Toast.LENGTH_SHORT
+            ).show()
+            val calibrated = com.aymankhattab.nateq.core.audio.providers
+                .EngineRmsCalibrator.calibrateAll(
+                    ctx, settings, forceRecompute = true
+                )
+            val msg = "تمت معايرة جهارة الصوت لـ $calibrated محرك بنجاح"
+            Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+            view?.announceCompat(msg)
+            showDiagnosticsDialog()
+        }
     }
 
     private fun shareEngineSwitchDump(ctx: Context) {

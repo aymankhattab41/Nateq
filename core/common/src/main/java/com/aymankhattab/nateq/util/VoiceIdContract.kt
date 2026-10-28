@@ -59,6 +59,11 @@ object VoiceIdContract {
     fun declaredVoiceNames(): List<String> =
         declaredLanguages().map { createId(it) }
 
+    private val LEGACY_LOCAL_TAG = Regex(
+        "^[a-zA-Z]{2,3}-local$",
+        RegexOption.IGNORE_CASE
+    )
+
     /**
      * يطبّع معرّفاً وارداً/مخزّناً إلى الصيغة الموحّدة:
      * - القديمان من نسخ ما قبل التسمية: "nateq-ar*"/"nateq-en*" و
@@ -78,7 +83,7 @@ object VoiceIdContract {
                 trimmed.equals("ar-local", ignoreCase = true) -> "ar-EG"
             trimmed.contains("nateq-en", ignoreCase = true) ||
                 trimmed.equals("en-local", ignoreCase = true) -> "en-US"
-            trimmed.endsWith("-local", ignoreCase = true) ->
+            LEGACY_LOCAL_TAG.matches(trimmed) ->
                 createId(trimmed.removeSuffix("-local"))
             else -> trimmed
         }
@@ -138,10 +143,17 @@ object VoiceIdContract {
         }
 
         if (lowerEng.contains("acapela")) {
-            if (voiceId.startsWith("ara-") ||
-                voiceId.startsWith("eng-") ||
+            val isVocVoice = voiceId.contains("leila", ignoreCase = true) ||
+                voiceId.contains("laila", ignoreCase = true) ||
+                voiceId.contains("maged", ignoreCase = true) ||
+                voiceId.contains("tarik", ignoreCase = true) ||
+                voiceId.contains("tarek", ignoreCase = true) ||
+                voiceId.contains("mariam", ignoreCase = true)
+            if (isVocVoice ||
                 voiceId.contains("-x-") ||
-                voiceId.endsWith("-local")
+                voiceId.endsWith("-local") ||
+                voiceId.contains("_f00") ||
+                voiceId.contains("_m00")
             ) {
                 return false
             }

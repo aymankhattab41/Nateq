@@ -1451,7 +1451,7 @@ class NateqTtsService : TextToSpeechService() {
                             finalVoiceName.contains("tariq", true))
                 }
             } else false
-            val resolvedVoiceName = if (isVoc && (isGeneric || !isVocVoice)) {
+            val resolvedVoiceName = if (isVoc) {
                 val installedAr = VocalizerModelCatalog.ITEMS.firstOrNull {
                     LanguageCode.isArabic(it.languageCategory) &&
                         VocalizerModelCatalog.isVoiceInstalled(
@@ -1464,25 +1464,38 @@ class NateqTtsService : TextToSpeechService() {
                             applicationContext, it
                         )
                 }?.voiceName
-                if (LanguageCode.isArabic(languageTag)) {
+                val fallbackVoice = if (LanguageCode.isArabic(languageTag)) {
                     installedAr ?: "Tarik"
                 } else {
                     installedEn ?: "Samantha"
                 }
-            } else if (isVoc && !finalVoiceName.isNullOrBlank()) {
-                val matchedItem = VocalizerModelCatalog.ITEMS.firstOrNull {
-                    it.voiceName.equals(finalVoiceName, ignoreCase = true) ||
-                        it.id.equals(finalVoiceName, ignoreCase = true) ||
-                        finalVoiceName.contains(
-                            it.voiceName,
-                            ignoreCase = true
+                if (isGeneric || !isVocVoice) {
+                    fallbackVoice
+                } else {
+                    val matchedItem = VocalizerModelCatalog.ITEMS.firstOrNull {
+                        it.voiceName.equals(
+                            finalVoiceName, ignoreCase = true
                         ) ||
-                        (it.voiceName.equals("Laila", true) &&
-                            finalVoiceName.contains("leila", true)) ||
-                        (it.voiceName.equals("Tarik", true) &&
-                            finalVoiceName.contains("tariq", true))
+                            it.id.equals(finalVoiceName, ignoreCase = true) ||
+                            finalVoiceName.contains(
+                                it.voiceName,
+                                ignoreCase = true
+                            ) ||
+                            (it.voiceName.equals("Laila", true) &&
+                                finalVoiceName.contains("leila", true)) ||
+                            (it.voiceName.equals("Tarik", true) &&
+                                finalVoiceName.contains("tariq", true))
+                    }
+                    val isInstalled = matchedItem != null &&
+                        VocalizerModelCatalog.isVoiceInstalled(
+                            applicationContext, matchedItem
+                        )
+                    if (isInstalled) {
+                        matchedItem?.voiceName ?: fallbackVoice
+                    } else {
+                        fallbackVoice
+                    }
                 }
-                matchedItem?.voiceName ?: finalVoiceName
             } else {
                 finalVoiceName
             }
@@ -1829,7 +1842,7 @@ class NateqTtsService : TextToSpeechService() {
                         targetVoiceName.contains("tariq", true))
             }
         } else false
-        val resolvedVoiceName = if (isVoc && (isGeneric || !isVocVoice)) {
+        val resolvedVoiceName = if (isVoc) {
             val installedAr = VocalizerModelCatalog.ITEMS.firstOrNull {
                 LanguageCode.isArabic(it.languageCategory) &&
                     VocalizerModelCatalog.isVoiceInstalled(
@@ -1842,22 +1855,36 @@ class NateqTtsService : TextToSpeechService() {
                         applicationContext, it
                     )
             }?.voiceName
-            if (LanguageCode.isArabic(segTag)) {
+            val fallbackVoice = if (LanguageCode.isArabic(segTag)) {
                 installedAr ?: "Tarik"
             } else {
                 installedEn ?: "Samantha"
             }
-        } else if (isVoc && !targetVoiceName.isNullOrBlank()) {
-            val matchedItem = VocalizerModelCatalog.ITEMS.firstOrNull {
-                it.voiceName.equals(targetVoiceName, ignoreCase = true) ||
-                    it.id.equals(targetVoiceName, ignoreCase = true) ||
-                    targetVoiceName.contains(it.voiceName, ignoreCase = true) ||
-                    (it.voiceName.equals("Laila", true) &&
-                        targetVoiceName.contains("leila", true)) ||
-                    (it.voiceName.equals("Tarik", true) &&
-                        targetVoiceName.contains("tariq", true))
+            if (isGeneric || !isVocVoice) {
+                fallbackVoice
+            } else {
+                val matchedItem = VocalizerModelCatalog.ITEMS.firstOrNull {
+                    it.voiceName.equals(targetVoiceName, ignoreCase = true) ||
+                        it.id.equals(targetVoiceName, ignoreCase = true) ||
+                        targetVoiceName.contains(
+                            it.voiceName,
+                            ignoreCase = true
+                        ) ||
+                        (it.voiceName.equals("Laila", true) &&
+                            targetVoiceName.contains("leila", true)) ||
+                        (it.voiceName.equals("Tarik", true) &&
+                            targetVoiceName.contains("tariq", true))
+                }
+                val isInstalled = matchedItem != null &&
+                    VocalizerModelCatalog.isVoiceInstalled(
+                        applicationContext, matchedItem
+                    )
+                if (isInstalled) {
+                    matchedItem?.voiceName ?: fallbackVoice
+                } else {
+                    fallbackVoice
+                }
             }
-            matchedItem?.voiceName ?: targetVoiceName
         } else {
             targetVoiceName
         }
@@ -2560,9 +2587,15 @@ class NateqTtsService : TextToSpeechService() {
         } else {
             Locale.forLanguageTag(segment.languageTag)
         }
-        val matches = VoiceResolutionPolicy.isVoiceLanguageMatch(
-            voiceId, segment.languageTag
-        )
+        val matches = if (
+            segment.role == SpeechRole.NUMBER || segment.isNumericOnly()
+        ) {
+            true
+        } else {
+            VoiceResolutionPolicy.isVoiceLanguageMatch(
+                voiceId, segment.languageTag
+            )
+        }
         return ConvertTarget(
             convertEngine = if (matches) engine else null,
             convertLocale = locale,

@@ -306,7 +306,7 @@ object SpeechPlanner {
                         textRes
                     }
 
-                    val role = if (isNumCandidate && numRes != textRes) {
+                    val role = if (isNumCandidate) {
                         SpeechRole.NUMBER
                     } else {
                         SpeechRole.TEXT

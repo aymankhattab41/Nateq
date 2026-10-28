@@ -1301,20 +1301,23 @@ class SystemVoiceProvider(
                         } else {
                             dataStart
                         }
-                        val available = tempFile.length() - start
+                        val nowLen = tempFile.length()
+                        val available = nowLen - start
                         // نموٌّ بطيء: الملف يكبر دون أن يبلغ حجم
                         // شريحةٍ صالحةٍ واحدة (محرّكٌ متريّد)، فكان
                         // تمديدُ المهلة مقصوراً على إصدار الشريحة
                         // فتنتهي وسطَ الكتابةِ فيُبتَر النص. تُرحَّل
                         // المهلةُ على النموّ نفسه وتصفَّر عدّادُ
                         // الجمود فيُعرف أنّ الكتابةَ حيّة.
-                        if (available + start > lastLen) {
-                            lastLen = available + start
+                        if (nowLen > lastLen) {
+                            lastLen = nowLen
                             stallPolls = 0
                             deadline = extendStreamDeadline(
                                 deadline, true,
                                 SystemClock.elapsedRealtime()
                             )
+                        } else if (lastLen > 0L) {
+                            stallPolls++
                         }
                         val toRead = available - readSoFar
                         if (toRead >= STREAM_CHUNK_BYTES) {
@@ -1350,41 +1353,43 @@ class SystemVoiceProvider(
                                     streamReadFailed = true
                                 }
                                 Log.w(TAG,
-                                    "[Provider] streaming read failed —" +
-                                    " " +
+                                    "[Provider] streaming read failed — " +
                                     if (emittedAny) {
                                         "إتمام المتبقي"
                                     } else {
                                         "المسار الكامل"
                                     }, e)
                             }
-                            // حسمُ اكتمال الكتابة: طولُ خانة البيانات
-                            // المُعلَن دليلٌ قاطعٌ يُنهي البثَّ فوراً،
-                            // وإعلام onDone دليلٌ قاطعٌ متأخر،
-                            // واستقرارُ حجم الملف بعد مهلة أمانٍ
-                            // أوّلًا، فلا يُقطعَ نصٌّ على توقّفٍ عابر.
-                            if (!finished && tempFile.exists()) {
-                                val nowLen = tempFile.length()
-                                if (nowLen == lastLen) {
-                                    stallPolls++
-                                } else {
-                                    lastLen = nowLen
-                                    stallPolls = 0
-                                }
-                                val remaining = nowLen - start - readSoFar
-                                if (shouldFlushTailAfterStall(
-                                        emittedAny, finished, stallPolls,
-                                        remaining, STALL_GRACE_POLLS,
-                                        STALL_TAIL_MAX_BYTES
-                                    )
-                                    || isWavWriteComplete(streamMeta, nowLen)
-                                ) {
-                                    tailCompleted = true
-                                    Log.d(TAG,
-                                        "[Provider] stream tail flushed on" +
-                                        " stall (finished delayed)")
-                                    break
-                                }
+                        }
+                        // حسمُ اكتمال الكتابة: طولُ خانة البيانات
+                        // المُعلَن دليلٌ قاطعٌ يُنهي البثَّ فوراً،
+                        // وإعلام onDone دليلٌ قاطعٌ متأخر،
+                        // واستقرارُ حجم الملف بعد مهلة أمانٍ
+                        // أوّلًا، فلا يُقطعَ نصٌّ على توقّفٍ عابر.
+                        if (!finished && tempFile.exists()) {
+                            val remaining = nowLen - start - readSoFar
+                            if (isWavWriteComplete(streamMeta, nowLen)) {
+                                tailCompleted = true
+                                Log.d(
+                                    TAG,
+                                    "[Provider] stream complete on declared" +
+                                        " wav data length"
+                                )
+                                break
+                            }
+                            if (shouldFlushTailAfterStall(
+                                    emittedAny, finished, stallPolls,
+                                    remaining, STALL_GRACE_POLLS,
+                                    STALL_TAIL_MAX_BYTES
+                                )
+                            ) {
+                                tailCompleted = true
+                                Log.d(
+                                    TAG,
+                                    "[Provider] stream tail flushed on" +
+                                        " stall (finished delayed)"
+                                )
+                                break
                             }
                         }
                     }
