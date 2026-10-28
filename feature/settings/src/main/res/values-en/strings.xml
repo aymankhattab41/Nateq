@@ -1106,4 +1106,124 @@ Version %1$s
     <string name="voice_mismatch_title">Engine &amp; Voice Category Mismatch</string>
     <string name="voice_mismatch_fix">Fix</string>
     <string name="voice_mismatch_fixed_toast">Mismatched categories fixed and invalid voices cleared</string>
+
+    <!-- Lord TTS Extras (Round 56) -->
+    <string name="extras_settings_title">Extras</string>
+    <string name="extras_settings_subtitle">Advanced smart features and extras for Lord TTS</string>
+    <string name="extras_enable_all">Enable all extras</string>
+    <string name="extras_reset_all">Reset extras</string>
+    <string name="extras_reset_confirm">Do you want to reset and disable all extras?</string>
+    <string name="extras_needs_a11y_warning">Requires Accessibility Service</string>
+    <string name="extras_state_enabled">Enabled</string>
+    <string name="extras_state_disabled">Disabled</string>
+    <string name="extras_all_enabled_toast">All extras enabled</string>
+    <string name="extras_all_reset_toast">All extras have been reset</string>
+    <string name="extras_subsettings_title">Feature Options</string>
+
+    <string name="extra_group_navigation">Screen Navigation</string>
+    <string name="extra_group_productivity">Productivity &amp; Typing</string>
+    <string name="extra_group_privacy">Privacy &amp; Security</string>
+    <string name="extra_group_social">Chat &amp; Social</string>
+    <string name="extra_group_daily_tools">Daily Tools &amp; Speech</string>
+
+    <string name="extra_screen_rotor_title">Element rotor</string>
+    <string name="extra_screen_rotor_desc">Browse screen elements by type (buttons, headings, links, fields, images)</string>
+
+    <string name="extra_screen_search_title">Screen search</string>
+    <string name="extra_screen_search_desc">Search text within current screen and navigate results</string>
+
+    <string name="extra_scroll_cue_title">Scroll position cue</string>
+    <string name="extra_scroll_cue_desc">Graduated audio tone indicating position in list during scrolling</string>
+
+    <string name="extra_focus_restore_title">Restore last focus</string>
+    <string name="extra_focus_restore_desc">Automatically restore focused element upon returning to app within 10 minutes</string>
+
+    <string name="extra_screen_grid_title">Screen position grid</string>
+    <string name="extra_screen_grid_desc">Announce element position on screen divided into 9 zones</string>
+
+    <string name="extra_loading_detector_title">Loading detector</string>
+    <string name="extra_loading_detector_desc">Gentle tone during loading and announcement upon completion</string>
+
+    <string name="extra_article_reader_title">Clean article reader</string>
+    <string name="extra_article_reader_desc">Extract and read main article text continuously without menus or ads</string>
+
+    <string name="extra_clipboard_stack_title">Clipboard stack</string>
+    <string name="extra_clipboard_stack_desc">Keep last 10 copied items to navigate and paste</string>
+
+    <string name="extra_otp_copier_title">Auto-copy OTP</string>
+    <string name="extra_otp_copier_desc">Automatically extract verification code from notifications and copy to clipboard</string>
+
+    <string name="extra_keyboard_guard_title">Keyboard guard</string>
+    <string name="extra_keyboard_guard_desc">Announce keyboard language on start/switch and Caps Lock state</string>
+
+    <string name="extra_word_eraser_title">Erasure announcer</string>
+    <string name="extra_word_eraser_desc">Announce deleted word or text when deleting</string>
+
+    <string name="extra_typo_whisper_title">Typo whisper</string>
+    <string name="extra_typo_whisper_desc">Subtle alert for spelling errors while typing and double spaces</string>
+
+    <string name="extra_currency_math_title">Quick calc &amp; currency converter</string>
+    <string name="extra_currency_math_desc">Evaluate math expressions and convert currencies offline</string>
+
+    <string name="extra_screen_translator_title">Offline screen translator</string>
+    <string name="extra_screen_translator_desc">Translate English UI terms to Arabic using local offline glossary</string>
+
+    <string name="extra_password_shield_title">Password shield</string>
+    <string name="extra_password_shield_desc">Mute typing echo in password fields and protect credentials</string>
+
+    <string name="extra_camera_mic_alert_title">Camera &amp; mic alert</string>
+    <string name="extra_camera_mic_alert_desc">Audio alert when a background app starts recording audio or uses camera</string>
+
+    <string name="extra_link_inspector_title">Link inspector</string>
+    <string name="extra_link_inspector_desc">Announce real link domain and warn about shortened or suspicious URLs</string>
+
+    <string name="extra_screen_curtain_title">Screen curtain</string>
+    <string name="extra_screen_curtain_desc">Blank screen for privacy while touch and voice shortcuts stay active</string>
+
+    <string name="extra_skip_ads_title">Skip YouTube ads</string>
+    <string name="extra_skip_ads_desc">Automatically click skip ad button in YouTube with strict safe limits</string>
+
+    <string name="extra_voice_note_inspector_title">Voice note inspector</string>
+    <string name="extra_voice_note_inspector_desc">Announce voice note duration and status in WhatsApp and Telegram</string>
+
+    <string name="extra_message_change_alert_title">Message edit &amp; deletion alert</string>
+    <string name="extra_message_change_alert_desc">Voice alert when a message is edited or deleted in active chat</string>
+
+    <string name="extra_group_limiter_title">Group burst limiter</string>
+    <string name="extra_group_limiter_desc">Summarize burst notifications in active groups instead of reading each</string>
+
+    <string name="extra_contact_status_title">Contact status announcer</string>
+    <string name="extra_contact_status_desc">Announce contact status (online / last seen) upon entering chat</string>
+
+    <string name="extra_alt_text_title">Social image alt text</string>
+    <string name="extra_alt_text_desc">Read image alt text in social media posts</string>
+
+    <string name="extra_battery_thresholds_title">Custom battery thresholds</string>
+    <string name="extra_battery_thresholds_desc">Chimes and announcements when battery crosses custom charge levels</string>
+
+    <string name="extra_role_earcons_title">Role earcons</string>
+    <string name="extra_role_earcons_desc">Distinct short audio tones for element roles before announcing</string>
+
+    <string name="extra_quick_dictionary_title">Quick dictionary add</string>
+    <string name="extra_quick_dictionary_desc">Quick shortcut to add spoken word to pronunciation dictionary</string>
+
+    <string name="extra_dynamic_rate_title">Dynamic text rate</string>
+    <string name="extra_dynamic_rate_desc">Slightly increase reading speed automatically for longer texts</string>
+
+    <string name="extra_table_reader_title">Table reader with headers</string>
+    <string name="extra_table_reader_desc">Announce column header and row number with each cell in tables</string>
+
+    <!-- New Shortcut Actions -->
+    <string name="a11y_action_screen_rotor">Screen rotor</string>
+    <string name="a11y_action_screen_search">Screen search</string>
+    <string name="a11y_action_screen_search_nav">Next/previous search result</string>
+    <string name="a11y_action_read_article">Read article</string>
+    <string name="a11y_action_read_clipboard_stack">Read clipboard item</string>
+    <string name="a11y_action_paste_clipboard_stack">Paste selected clipboard item</string>
+    <string name="a11y_action_typo_suggestions">Typo suggestions</string>
+    <string name="a11y_action_quick_calc">Calculate / Convert</string>
+    <string name="a11y_action_translate_element">Translate element</string>
+    <string name="a11y_action_password_count">Password character count</string>
+    <string name="a11y_action_toggle_screen_curtain">Screen curtain</string>
+    <string name="a11y_action_quick_dictionary">Add to dictionary</string>
 </resources>

@@ -3064,7 +3064,9 @@ class SettingsRepository(context: Context) :
                             key == "hijri_date_enabled") continue
                         // المفاتيح الحساسة تُثبَّت false على الاستيراد مهما
                         // وردت في النسخة (انظر SAFE_DEFAULT_FALSE_KEYS).
-                        val safe = if (key in SAFE_DEFAULT_FALSE_KEYS) {
+                        val safe = if (key in SAFE_DEFAULT_FALSE_KEYS ||
+                            key.startsWith("extra_")
+                        ) {
                             false
                         } else {
                             value
@@ -3186,6 +3188,67 @@ class SettingsRepository(context: Context) :
             editor.putBoolean("a11y_read_more", enabled)
         }
         editor.apply()
+    }
+
+    private fun normalizeExtraKey(key: String): String =
+        if (key.startsWith("extra_")) key else "extra_$key"
+
+    override fun isExtraEnabled(key: String): Boolean =
+        prefs.getBoolean(normalizeExtraKey(key), false)
+
+    override fun setExtraEnabled(key: String, enabled: Boolean) {
+        val normKey = normalizeExtraKey(key)
+        prefs.edit().putBoolean(normKey, enabled).apply()
+        notifySettingsChanged()
+    }
+
+    override fun getExtraString(key: String, defaultValue: String): String =
+        prefs.getString(normalizeExtraKey(key), defaultValue) ?: defaultValue
+
+    override fun setExtraString(key: String, value: String) {
+        prefs.edit().putString(normalizeExtraKey(key), value).apply()
+        notifySettingsChanged()
+    }
+
+    override fun getExtraInt(key: String, defaultValue: Int): Int =
+        prefs.getInt(normalizeExtraKey(key), defaultValue)
+
+    override fun setExtraInt(key: String, value: Int) {
+        prefs.edit().putInt(normalizeExtraKey(key), value).apply()
+        notifySettingsChanged()
+    }
+
+    override fun getExtraBoolean(
+        key: String,
+        defaultValue: Boolean
+    ): Boolean = prefs.getBoolean(normalizeExtraKey(key), defaultValue)
+
+    override fun setExtraBoolean(key: String, value: Boolean) {
+        prefs.edit().putBoolean(normalizeExtraKey(key), value).apply()
+        notifySettingsChanged()
+    }
+
+    fun resetAllExtras(keys: Collection<String> = emptyList()) {
+        val editor = prefs.edit()
+        val allKeys = if (keys.isNotEmpty()) {
+            keys
+        } else {
+            prefs.all.keys.filter { it.startsWith("extra_") }
+        }
+        for (k in allKeys) {
+            editor.putBoolean(normalizeExtraKey(k), false)
+        }
+        editor.apply()
+        notifySettingsChanged()
+    }
+
+    fun enableAllExtras(keys: Collection<String>) {
+        val editor = prefs.edit()
+        for (k in keys) {
+            editor.putBoolean(normalizeExtraKey(k), true)
+        }
+        editor.apply()
+        notifySettingsChanged()
     }
 
     fun getReadMoreAllowedPackages(): Set<String> {

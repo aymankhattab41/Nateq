@@ -894,6 +894,30 @@ interface AccessibilityPrefs {
     /** تعيين حالة تفعيل ميزة إمكانية الوصول. */
     fun setAccessibilityFeatureEnabled(featureKey: String, enabled: Boolean)
 
+    /** هل الإضافة المعطاة مفعّلة في الإعدادات؟ */
+    fun isExtraEnabled(key: String): Boolean
+
+    /** تعيين حالة تفعيل الإضافة. */
+    fun setExtraEnabled(key: String, enabled: Boolean)
+
+    /** قراءة إعداد نصي للإضافة. */
+    fun getExtraString(key: String, defaultValue: String): String
+
+    /** تعيين إعداد نصي للإضافة. */
+    fun setExtraString(key: String, value: String)
+
+    /** قراءة إعداد عددي للإضافة. */
+    fun getExtraInt(key: String, defaultValue: Int): Int
+
+    /** تعيين إعداد عددي للإضافة. */
+    fun setExtraInt(key: String, value: Int)
+
+    /** قراءة إعداد ثنائي للإضافة. */
+    fun getExtraBoolean(key: String, defaultValue: Boolean): Boolean
+
+    /** تعيين إعداد ثنائي للإضافة. */
+    fun setExtraBoolean(key: String, value: Boolean)
+
     /** هل خدمات الشاشة متوقفة مؤقتاً؟ */
     fun isA11yPaused(): Boolean
 

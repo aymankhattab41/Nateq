@@ -115,9 +115,27 @@ class KeyShortcutRouter(
             ShortcutAction.EXPAND_READ_MORE -> expandReadMoreExplicit(context)
             ShortcutAction.NEXT_ENGINE -> switchToNextEngine(context)
             ShortcutAction.PREVIOUS_ENGINE -> switchToPreviousEngine(context)
+            ShortcutAction.SCREEN_ROTOR,
+            ShortcutAction.SCREEN_SEARCH,
+            ShortcutAction.SCREEN_SEARCH_NAV,
+            ShortcutAction.READ_ARTICLE,
+            ShortcutAction.READ_CLIPBOARD_STACK,
+            ShortcutAction.PASTE_CLIPBOARD_STACK,
+            ShortcutAction.TYPO_SUGGESTIONS,
+            ShortcutAction.QUICK_CALC,
+            ShortcutAction.TRANSLATE_ELEMENT,
+            ShortcutAction.PASSWORD_COUNT,
+            ShortcutAction.TOGGLE_SCREEN_CURTAIN,
+            ShortcutAction.QUICK_DICTIONARY -> dispatchExtraAction(action)
             ShortcutAction.NONE ->
                 Log.i(TAG, "no action bound for gesture")
         }
+    }
+
+    private fun dispatchExtraAction(action: ShortcutAction) {
+        (service as? NateqAccessibilityService)?.handleExtraShortcutAction(
+            action
+        )
     }
 
     /** يبدّل محرك نطق النظام إلى المحرك التالي. */
