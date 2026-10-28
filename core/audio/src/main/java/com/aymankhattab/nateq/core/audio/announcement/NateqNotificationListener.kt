@@ -422,6 +422,26 @@ class NateqNotificationListener : NotificationListenerService() {
 
             if (title.isNullOrBlank() && text.isNullOrBlank()) return
 
+            val convTitle = extras.getCharSequence(
+                Notification.EXTRA_CONVERSATION_TITLE
+            )?.toString()
+            val isGroupConv = !convTitle.isNullOrBlank() ||
+                extras.getBoolean(Notification.EXTRA_IS_GROUP_CONVERSATION)
+            if (isGroupConv &&
+                settings.isExtraEnabled("extra_group_limiter")
+            ) {
+                val grpKey = sbn.groupKey ?: convTitle ?: pkg
+                if (GroupBurstLimiter.shouldSuppressSpeech(
+                        applicationContext,
+                        grpKey,
+                        convTitle ?: title,
+                        text
+                    )
+                ) {
+                    return
+                }
+            }
+
             val appName = getAppName(pkg)
             // خصوصية قفل الشاشة: عند القفل يُنطق اسم التطبيق فقط دون العنوان
             // والنص (حماية لكلمات تحقق OTP وغيرها من الحساسيات في الإشعارات).

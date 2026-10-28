@@ -97,4 +97,16 @@
     <string name="curtain_enabled">الستارة مفعّلة</string>
     <string name="curtain_disabled">الستارة موقوفة</string>
     <string name="curtain_tile_label">ستارة الشاشة</string>
+
+    <!-- الجولة 56 - إضافات 4: الدردشة والتواصل -->
+    <string name="ad_skipped">تم تخطي الإعلان</string>
+    <string name="voice_note_desc">رسالة صوتية، المدة: %1$s%2$s</string>
+    <string name="voice_note_unplayed">، غير مسموعة</string>
+    <string name="voice_note_played">، تم الاستماع</string>
+    <string name="message_deleted">حُذفت رسالة</string>
+    <string name="message_edited">عُدّلت رسالة</string>
+    <string name="group_burst_summary">%1$s: %2$d رسائل جديدة</string>
+    <string name="contact_status_online">متصل</string>
+    <string name="contact_status_typing">يكتب…</string>
+    <string name="image_alt_text">صورة: %1$s</string>
 </resources>

@@ -987,6 +987,16 @@ class NateqAccessibilityService : AccessibilityService() {
                     val full = if (txt.isNotBlank()) txt else cd
                     LinkInspector.inspectAndAnnounce(this, full, full)
                 }
+                if (repo.isExtraEnabled("extra_voice_note_inspector") &&
+                    source != null
+                ) {
+                    VoiceNoteInspector.inspectAndAnnounce(this, pkg, source)
+                }
+                if (repo.isExtraEnabled("extra_alt_text") &&
+                    source != null
+                ) {
+                    AltTextReader.inspectAndAnnounce(this, pkg, source)
+                }
             }
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                 if (repo.isExtraEnabled("extra_focus_restore")) {
@@ -999,6 +1009,13 @@ class NateqAccessibilityService : AccessibilityService() {
                 if (repo.isExtraEnabled("extra_keyboard_guard")) {
                     KeyboardGuard.checkExternalKeyboardSubtype(this)
                 }
+                if (repo.isExtraEnabled("extra_contact_status")) {
+                    ContactStatusAnnouncer.onWindowStateChanged(
+                        this,
+                        pkg,
+                        rootInActiveWindow
+                    )
+                }
             }
             AccessibilityEvent.TYPE_WINDOWS_CHANGED -> {
                 if (repo.isExtraEnabled("extra_keyboard_guard")) {
@@ -1008,6 +1025,20 @@ class NateqAccessibilityService : AccessibilityService() {
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
                 if (repo.isExtraEnabled("extra_loading_detector")) {
                     LoadingDetector.onContentChanged(
+                        this,
+                        pkg,
+                        rootInActiveWindow
+                    )
+                }
+                if (repo.isExtraEnabled("extra_skip_ads")) {
+                    AdSkipper.onWindowContentChanged(
+                        this,
+                        pkg,
+                        rootInActiveWindow
+                    )
+                }
+                if (repo.isExtraEnabled("extra_message_change_alert")) {
+                    ChatChangeWatcher.onWindowContentChanged(
                         this,
                         pkg,
                         rootInActiveWindow
