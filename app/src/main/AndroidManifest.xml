@@ -251,6 +251,13 @@
             android:label="@string/search_screen_title"
             android:theme="@style/Theme.Nateq" />
 
+        <!-- نافذة الإضافة السريعة للقاموس (ع٥٦-أمر 3) -->
+        <activity
+            android:name="com.aymankhattab.nateq.settings.extras.QuickDictionaryActivity"
+            android:exported="false"
+            android:label="@string/quick_dict_title"
+            android:theme="@style/Theme.Nateq" />
+
         <!-- Activity لفحص بيانات TTS (اللغات/الأصوات المتاحة) — مطلوبة من سامسونج -->
         <activity
             android:name=".settings.CheckTtsDataActivity"

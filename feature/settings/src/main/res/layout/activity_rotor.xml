@@ -15,7 +15,7 @@
         android:layout_height="wrap_content"
         android:text="@string/rotor_title"
         android:textAppearance="?attr/textAppearanceHeadline6"
-        android:isAccessibilityHeading="true"
+        android:accessibilityHeading="true"
         android:layout_marginBottom="12dp" />
 
     <HorizontalScrollView

@@ -102,4 +102,13 @@
     <string name="contact_status_online">Online</string>
     <string name="contact_status_typing">Typing…</string>
     <string name="image_alt_text">Image: %1$s</string>
+
+    <!-- Round 56 - Extras 5: Daily Tools & Speech Customization -->
+    <string name="battery_threshold_level">Battery at %1$d percent</string>
+    <string name="quick_dict_added">Word added to dictionary</string>
+    <string name="quick_dict_title">Quick Add to Dictionary</string>
+    <string name="quick_dict_word">Word or phrase</string>
+    <string name="quick_dict_pronunciation">Pronunciation</string>
+    <string name="quick_dict_save">Save to dictionary</string>
+    <string name="table_cell_format">%1$s: %2$s, Row %3$d</string>
 </resources>
