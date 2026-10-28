@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -105,6 +106,37 @@ object TypingEchoHandler : A11yFeatureHandler {
         stateStore: A11yStateStore?
     ) {
         val pkg = event.packageName?.toString()
+        if (settings.isExtraEnabled("extra_word_eraser") &&
+            !event.isPassword
+        ) {
+            val before = event.beforeText
+            val current = event.text?.joinToString("") ?: ""
+            val deleted = WordEraser.calculateDeletedText(before, current)
+            if (deleted != null) {
+                val minChars = settings.getExtraInt(
+                    "extra_word_eraser_min_chars",
+                    2
+                )
+                val msg = WordEraser.formatDeletedAnnouncement(
+                    service,
+                    deleted,
+                    minChars
+                )
+                if (msg != null) {
+                    A11ySpeechCoordinator.speakAnnouncement(
+                        context = service,
+                        text = msg,
+                        isInterruptAllowed = true
+                    )
+                }
+            }
+        }
+        if (settings.isExtraEnabled("extra_typo_whisper") &&
+            !event.isPassword
+        ) {
+            val current = event.text?.joinToString("") ?: ""
+            TypoChecker.checkDoubleSpace(service, current)
+        }
         val echoText = TypingEcho.getEchoText(
             event.beforeText,
             event.text?.map { it.toString() }?.joinToString("") ?: "",
@@ -380,6 +412,12 @@ class NateqAccessibilityService : AccessibilityService() {
         registerBluetoothReceiver()
         registerShortcutTestReceiver()
         registerBindingsObserver()
+
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE)
+            as? ClipboardManager
+        cm?.addPrimaryClipChangedListener {
+            ClipboardStack.onPrimaryClipChanged(this)
+        }
 
         val connIntent = Intent(ProtectedAppManager.ACTION_A11Y_CONNECTED)
             .setPackage(packageName)
@@ -925,6 +963,14 @@ class NateqAccessibilityService : AccessibilityService() {
                         rootInActiveWindow
                     )
                 }
+                if (repo.isExtraEnabled("extra_keyboard_guard")) {
+                    KeyboardGuard.checkExternalKeyboardSubtype(this)
+                }
+            }
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> {
+                if (repo.isExtraEnabled("extra_keyboard_guard")) {
+                    KeyboardGuard.checkExternalKeyboardSubtype(this)
+                }
             }
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
                 if (repo.isExtraEnabled("extra_loading_detector")) {
@@ -972,6 +1018,27 @@ class NateqAccessibilityService : AccessibilityService() {
             }
             ShortcutAction.READ_ARTICLE -> {
                 ArticleReader.startReading(this, rootInActiveWindow)
+            }
+            ShortcutAction.PASTE_CLIPBOARD_STACK -> {
+                ClipboardStack.pasteOrSpeak(this)
+            }
+            ShortcutAction.QUICK_CALC -> {
+                val node = rootInActiveWindow?.findFocus(
+                    AccessibilityNodeInfo.FOCUS_ACCESSIBILITY
+                ) ?: rootInActiveWindow?.findFocus(
+                    AccessibilityNodeInfo.FOCUS_INPUT
+                )
+                val text = node?.text?.toString().orEmpty()
+                QuickCalc.processQuery(this, text)
+            }
+            ShortcutAction.TRANSLATE_ELEMENT -> {
+                val node = rootInActiveWindow?.findFocus(
+                    AccessibilityNodeInfo.FOCUS_ACCESSIBILITY
+                ) ?: rootInActiveWindow?.findFocus(
+                    AccessibilityNodeInfo.FOCUS_INPUT
+                )
+                val text = node?.text?.toString().orEmpty()
+                ScreenGlossary.translateAndSpeak(this, text)
             }
             else -> {
                 // باقي أفعال الجولات التالية

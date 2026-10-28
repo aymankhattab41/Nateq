@@ -1,52 +1,47 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Strings for :core:audio (English) -->
 <resources>
     <string name="accessibility_service_label">Screen Services (Lord TTS)</string>
-    <string name="accessibility_service_description">Accessibility and screen reading services to enhance speech experience and expand messages</string>
-    <string name="voice_provider_system">System voice</string>
+    <string name="accessibility_service_description">Accessibility and screen reading services to improve speech experience</string>
+    <string name="voice_provider_system">System Voice</string>
     <string name="voice_provider_vocalizer_embedded">Vocalizer Expressive 2 (Embedded)</string>
     <string name="voice_name_arabic">Arabic</string>
     <string name="voice_name_english">English</string>
 
-    <!-- البند 5ب — طبقة الإعلانات: نسخ من :app (قيم :app مسيطرة عند الدمج) -->
-    <string name="announce_service_channel_name">Time and battery announcements</string>
-    <string name="announce_service_channel_description">Keeps Lord TTS running in the background to announce time and battery level</string>
-    <string name="announce_service_notification_title">Lord TTS announcements running</string>
-    <string name="announce_service_notification_text">Lord TTS is running in the background to announce time and battery</string>
-    <string name="announce_action_speak_now">Announce now</string>
+    <string name="announce_service_channel_name">Time and Battery Announcements</string>
+    <string name="announce_service_channel_description">Keeps Lord TTS running in background to announce time and battery</string>
+    <string name="announce_service_notification_title">Lord TTS Announcements Active</string>
+    <string name="announce_service_notification_text">Lord TTS is running in the background</string>
+    <string name="announce_action_speak_now">Speak now</string>
     <string name="announce_action_stop">Stop</string>
-    <string name="battery_connected">Charger connected, battery at {percent} percent</string>
-    <string name="battery_disconnected">Charger disconnected, battery at {percent} percent</string>
-    <string name="battery_full_unplug">Battery full, you can unplug the charger</string>
+    <string name="battery_connected">Charger connected, battery level {percent} percent</string>
+    <string name="battery_disconnected">Charger disconnected, battery level {percent} percent</string>
+    <string name="battery_full_unplug">Battery is full, you can unplug the charger</string>
     <string name="battery_full">Battery full</string>
     <string name="battery_level_50">Battery at fifty percent</string>
-    <string name="battery_level_20">Battery low, twenty percent, please charge</string>
-    <string name="battery_level_10">Battery critical, ten percent, charge immediately</string>
+    <string name="battery_level_20">Battery at twenty percent, charging recommended</string>
+    <string name="battery_level_10">Battery at ten percent, please connect charger</string>
     <string name="battery_reached">Battery reached {percent} percent</string>
     <string name="battery_at">Battery {percent} percent</string>
     <string name="sms_unknown_sender">Unknown sender</string>
     <string name="sms_from">Message from {name}</string>
-    <string name="sms_otp_safe">A message from {name} containing a secure verification code</string>
+    <string name="sms_otp_safe">Message from {name} containing a verification code</string>
     <string name="caller_unsaved_number">Unsaved number</string>
-    <!-- Answer-button label: matched against the posting app's own
-         translated strings (item 1) -->
     <string name="caller_answer">Answer</string>
     <string name="notif_new">New notification from {app}</string>
     <string name="notif_from_title_text">Notification from {app}: {title}. {text}</string>
     <string name="notif_from_title">Notification from {app}: {title}</string>
     <string name="notif_from_text">Notification from {app}: {text}</string>
-    <string name="notif_otp_safe">Notification from {app} containing a secure verification code</string>
+    <string name="notif_otp_safe">Notification from {app} containing a verification code</string>
     <string name="app_whatsapp">WhatsApp</string>
     <string name="app_whatsapp_business">WhatsApp Business</string>
     <string name="app_telegram">Telegram</string>
     <string name="app_messenger">Messenger</string>
     <string name="app_instagram">Instagram</string>
-    <!-- Item [29] — one-time spoken hint per process lifetime: notifications
-         are off so the foreground-service notification and its buttons can't be
-         seen (no nagging re-request) -->
-    <string name="fgs_notifications_disabled_hint">Notifications are off — you won\'t see the service notification or its Announce Now / Stop buttons, and announcements keep running in the background</string>
-    <string name="custom_chime_unavailable_fallback">Custom chime file is unavailable, switched to default chime</string>
 
-    <!-- ع٣٠-7 — Embedded voice download foreground service strings -->
+    <string name="fgs_notifications_disabled_hint">Notifications disabled — background announcements active</string>
+    <string name="custom_chime_unavailable_fallback">Failed to play custom chime, fallback to default</string>
+
     <string name="voice_download_channel_name">Lord TTS Voice Downloads</string>
     <string name="voice_download_channel_description">Download progress for embedded voice models</string>
     <string name="voice_download_notification_title">Downloading Embedded Voices</string>
@@ -66,4 +61,20 @@
     <string name="loading_complete">Loading complete</string>
     <string name="article_reader_no_content">No main text found on this screen</string>
     <string name="article_reader_paragraph">Paragraph %1$d: %2$s</string>
+
+    <!-- Round 56 - Extras 2: Productivity & Typing -->
+    <string name="otp_copied">Verification code copied</string>
+    <string name="clipboard_empty">Clipboard is empty</string>
+    <string name="clipboard_item_pasted">Pasted: %1$s</string>
+    <string name="caps_lock_enabled">Caps Lock enabled</string>
+    <string name="caps_lock_disabled">Caps Lock disabled</string>
+    <string name="keyboard_lang_ar">Arabic</string>
+    <string name="keyboard_lang_en">English</string>
+    <string name="deleted_announcement">Deleted: %1$s</string>
+    <string name="two_spaces">Two spaces</string>
+    <string name="spelling_error">Spelling error</string>
+    <string name="math_calc_failed">Calculation failed</string>
+    <string name="calc_result">Result: %1$s</string>
+    <string name="currency_result">%1$s equals %2$s %3$s</string>
+    <string name="no_translation_found">No local translation available</string>
 </resources>

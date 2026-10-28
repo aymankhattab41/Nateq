@@ -68,4 +68,20 @@
     <string name="loading_complete">اكتمل التحميل</string>
     <string name="article_reader_no_content">لم أجد نصاً رئيسياً في هذه الشاشة</string>
     <string name="article_reader_paragraph">فقرة %1$d: %2$s</string>
+
+    <!-- الجولة 56 - إضافات 2: الإنتاجية والكتابة -->
+    <string name="otp_copied">تم نسخ رمز التحقق</string>
+    <string name="clipboard_empty">الحافظة فارغة</string>
+    <string name="clipboard_item_pasted">تم لصق: %1$s</string>
+    <string name="caps_lock_enabled">الأحرف الكبيرة مفعلة</string>
+    <string name="caps_lock_disabled">الأحرف الكبيرة معطلة</string>
+    <string name="keyboard_lang_ar">عربي</string>
+    <string name="keyboard_lang_en">English</string>
+    <string name="deleted_announcement">حُذفت: %1$s</string>
+    <string name="two_spaces">مسافتان</string>
+    <string name="spelling_error">خطأ إملائي</string>
+    <string name="math_calc_failed">تعذّر الحساب</string>
+    <string name="calc_result">الناتج: %1$s</string>
+    <string name="currency_result">%1$s يقابل %2$s %3$s</string>
+    <string name="no_translation_found">لا توجد ترجمة متاحة محلياً</string>
 </resources>
