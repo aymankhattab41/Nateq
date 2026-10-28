@@ -997,6 +997,16 @@ class NateqAccessibilityService : AccessibilityService() {
                 ) {
                     AltTextReader.inspectAndAnnounce(this, pkg, source)
                 }
+                if (repo.isExtraEnabled("extra_role_earcons") &&
+                    source != null
+                ) {
+                    RoleEarcons.onNodeFocused(this, pkg, source)
+                }
+                if (repo.isExtraEnabled("extra_table_reader") &&
+                    source != null
+                ) {
+                    TableReader.onCellFocused(this, source)
+                }
             }
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                 if (repo.isExtraEnabled("extra_focus_restore")) {
@@ -1114,6 +1124,17 @@ class NateqAccessibilityService : AccessibilityService() {
             }
             ShortcutAction.TOGGLE_SCREEN_CURTAIN -> {
                 ScreenCurtain.toggle(this)
+            }
+            ShortcutAction.QUICK_DICTIONARY -> {
+                val intent = Intent().apply {
+                    setClassName(
+                        packageName,
+                        "com.aymankhattab.nateq.settings.extras." +
+                            "QuickDictionaryActivity"
+                    )
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(intent)
             }
             else -> {
                 // باقي أفعال الجولات التالية

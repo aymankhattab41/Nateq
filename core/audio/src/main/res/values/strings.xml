@@ -109,4 +109,13 @@
     <string name="contact_status_online">متصل</string>
     <string name="contact_status_typing">يكتب…</string>
     <string name="image_alt_text">صورة: %1$s</string>
+
+    <!-- الجولة 56 - إضافات 5: أدوات يومية وتخصيص النطق -->
+    <string name="battery_threshold_level">البطارية عند %1$d بالمئة</string>
+    <string name="quick_dict_added">تمت إضافة الكلمة إلى القاموس</string>
+    <string name="quick_dict_title">إضافة سريعة للقاموس</string>
+    <string name="quick_dict_word">الكلمة أو العبارة</string>
+    <string name="quick_dict_pronunciation">طريقة النطق البديلة</string>
+    <string name="quick_dict_save">حفظ في القاموس</string>
+    <string name="table_cell_format">%1$s: %2$s، الصف %3$d</string>
 </resources>
