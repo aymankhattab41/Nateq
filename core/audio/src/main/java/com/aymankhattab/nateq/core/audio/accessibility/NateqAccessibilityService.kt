@@ -18,6 +18,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import com.aymankhattab.nateq.core.data.SettingsChangeProvider
+import com.aymankhattab.nateq.core.data.SpeechLock
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
 import android.accessibilityservice.AccessibilityButtonController
@@ -614,6 +615,34 @@ class NateqAccessibilityService : AccessibilityService() {
             types = types or AccessibilityEvent.TYPE_VIEW_CLICKED
         }
 
+        // تسجيل أحداث الإضافات المفعّلة ديناميكياً (ع٥٦)
+        if (repo.isExtraEnabled("extra_scroll_cue")) {
+            types = types or AccessibilityEvent.TYPE_VIEW_SCROLLED
+        }
+        if (repo.isExtraEnabled("extra_focus_restore") ||
+            repo.isExtraEnabled("extra_screen_grid") ||
+            repo.isExtraEnabled("extra_voice_note_inspector") ||
+            repo.isExtraEnabled("extra_link_inspector") ||
+            repo.isExtraEnabled("extra_contact_status") ||
+            repo.isExtraEnabled("extra_alt_text") ||
+            repo.isExtraEnabled("extra_role_earcons") ||
+            repo.isExtraEnabled("extra_table_reader")
+        ) {
+            types = types or AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED
+        }
+        if (repo.isExtraEnabled("extra_loading_detector") ||
+            repo.isExtraEnabled("extra_skip_ads") ||
+            repo.isExtraEnabled("extra_message_change_alert")
+        ) {
+            types = types or AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+        }
+        if (repo.isExtraEnabled("extra_word_eraser") ||
+            repo.isExtraEnabled("extra_password_shield") ||
+            repo.isExtraEnabled("extra_typo_whisper")
+        ) {
+            types = types or AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
+        }
+
         info.eventTypes = types
         info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
 
@@ -827,6 +856,86 @@ class NateqAccessibilityService : AccessibilityService() {
                     ContinuousReader.onWindowChanged(pkg)
             }
         }
+
+        // توزيع أحداث الميزات الإضافية (ع٥٦)
+        dispatchExtraEvents(event, repo)
+    }
+
+    private fun dispatchExtraEvents(
+        event: AccessibilityEvent,
+        repo: SettingsRepository
+    ) {
+        val pkg = event.packageName?.toString()
+        if (AppPolicy.isSensitiveApp(pkg)) return
+
+        when (event.eventType) {
+            AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
+                if (repo.isExtraEnabled("extra_scroll_cue")) {
+                    val ratio = ScrollCuePlayer.calculateRatio(
+                        fromIndex = event.fromIndex,
+                        itemCount = event.itemCount,
+                        scrollY = event.scrollY,
+                        maxScrollY = event.maxScrollY
+                    )
+                    val isSpk = SpeechLock.isSpeaking(this)
+                    ScrollCuePlayer.onScroll(ratio, isSpk)
+                }
+            }
+            AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED -> {
+                val source = event.source
+                if (repo.isExtraEnabled("extra_focus_restore") &&
+                    source != null
+                ) {
+                    FocusMemory.onFocusEvent(pkg, source)
+                }
+                if (repo.isExtraEnabled("extra_screen_grid") &&
+                    source != null
+                ) {
+                    val elemBounds = android.graphics.Rect()
+                    source.getBoundsInScreen(elemBounds)
+                    val winBounds = android.graphics.Rect()
+                    rootInActiveWindow?.getBoundsInScreen(winBounds)
+                    if (winBounds.isEmpty) {
+                        winBounds.set(
+                            0,
+                            0,
+                            resources.displayMetrics.widthPixels,
+                            resources.displayMetrics.heightPixels
+                        )
+                    }
+                    val isRtl = resources.configuration.layoutDirection ==
+                        android.view.View.LAYOUT_DIRECTION_RTL
+                    val zone = ScreenGridAnnouncer.calculateZone(
+                        this, elemBounds, winBounds, isRtl
+                    )
+                    if (ScreenGridAnnouncer.shouldAnnounce(
+                            zone,
+                            ScreenGridAnnouncer.GridMode.ON_CHANGE
+                        )
+                    ) {
+                        A11ySpeechCoordinator.speakAnnouncement(this, zone)
+                    }
+                }
+            }
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                if (repo.isExtraEnabled("extra_focus_restore")) {
+                    FocusMemory.onWindowStateChanged(
+                        this,
+                        pkg,
+                        rootInActiveWindow
+                    )
+                }
+            }
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
+                if (repo.isExtraEnabled("extra_loading_detector")) {
+                    LoadingDetector.onContentChanged(
+                        this,
+                        pkg,
+                        rootInActiveWindow
+                    )
+                }
+            }
+        }
     }
 
     override fun onInterrupt() {
@@ -836,7 +945,38 @@ class NateqAccessibilityService : AccessibilityService() {
 
     /** معالجة أفعال الاختصارات الخاصة بالميزات الإضافية (ع٥٦). */
     fun handleExtraShortcutAction(action: ShortcutAction) {
-        // تُوزَّع للمكونات المعنية عند تفعيلها
+        when (action) {
+            ShortcutAction.SCREEN_ROTOR -> {
+                val intent = Intent().apply {
+                    setClassName(
+                        packageName,
+                        "com.aymankhattab.nateq.settings.extras.RotorActivity"
+                    )
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(intent)
+            }
+            ShortcutAction.SCREEN_SEARCH -> {
+                val intent = Intent().apply {
+                    setClassName(
+                        packageName,
+                        "com.aymankhattab.nateq.settings.extras." +
+                            "ScreenSearchActivity"
+                    )
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(intent)
+            }
+            ShortcutAction.SCREEN_SEARCH_NAV -> {
+                ScreenSearch.navigateNext(this)
+            }
+            ShortcutAction.READ_ARTICLE -> {
+                ArticleReader.startReading(this, rootInActiveWindow)
+            }
+            else -> {
+                // باقي أفعال الجولات التالية
+            }
+        }
     }
 
     override fun onKeyEvent(event: KeyEvent?): Boolean {

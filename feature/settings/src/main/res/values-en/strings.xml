@@ -1226,4 +1226,39 @@ Version %1$s
     <string name="a11y_action_password_count">Password character count</string>
     <string name="a11y_action_toggle_screen_curtain">Screen curtain</string>
     <string name="a11y_action_quick_dictionary">Add to dictionary</string>
+
+    <!-- Screen Navigation Strings (Round 56 - Extras 1) -->
+    <string name="rotor_title">Element rotor</string>
+    <string name="rotor_activate">Activate</string>
+    <string name="rotor_empty_category">No elements in this category</string>
+    <string name="rotor_cat_buttons">Buttons</string>
+    <string name="rotor_cat_headings">Headings</string>
+    <string name="rotor_cat_links">Links</string>
+    <string name="rotor_cat_inputs">Input fields</string>
+    <string name="rotor_cat_images">Images</string>
+    <string name="rotor_cat_lists">Lists and items</string>
+    <string name="rotor_cat_controls">Switches &amp; checkboxes</string>
+    <string name="rotor_categories_count">Element rotor, %1$d categories</string>
+    <string name="rotor_done">Done</string>
+
+    <string name="search_screen_title">Screen search</string>
+    <string name="search_hint">Enter search text...</string>
+    <string name="search_btn">Search</string>
+    <string name="search_result_announcement">Result %1$d of %2$d: %3$s</string>
+    <string name="search_no_results">No results for %1$s</string>
+    <string name="search_voice_input">Voice dictation</string>
+
+    <string name="grid_top_right">Top right</string>
+    <string name="grid_top_center">Top center</string>
+    <string name="grid_top_left">Top left</string>
+    <string name="grid_mid_right">Middle right</string>
+    <string name="grid_center">Center</string>
+    <string name="grid_mid_left">Middle left</string>
+    <string name="grid_bottom_right">Bottom right</string>
+    <string name="grid_bottom_center">Bottom center</string>
+    <string name="grid_bottom_left">Bottom left</string>
+
+    <string name="loading_complete">Loading complete</string>
+    <string name="article_reader_no_content">No main text found on this screen</string>
+    <string name="article_reader_paragraph">Paragraph %1$d: %2$s</string>
 </resources>
