@@ -712,15 +712,14 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Stripped pauses and conjunctions between numbers in Arabic and English, eliminating unintended speech pauses.
+• Unified number role in speech planner with general text when engine and voice match for seamless flow.
+• Cleaned attached commas while strictly preserving standard thousands separators in numbers.
+
+Previous Version
 • Added RMS loudness calibration tool for all 18 TTS engines to target loudness with one-click action in diagnostics.
 • Resolved audio file write stall and moved WAV completion and stall checks out of chunk gating for instant playback.
 • Fixed number voice routing via smart installed voice fallback and preservation of Google on-device and Acapela voices.
-
-Previous Version
-• Resolved number pronunciation using selected voice instead of fallback, with smart alias matching.
-• Muted download progress and screen gradient tones during voice notes, phone calls, and VoIP calls.
-• Suppressed all voice announcements during voice note recording to prevent recording interference.
-• Protected Hijri months (Jumada) from dictionary corruption across all match modes.
     </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>

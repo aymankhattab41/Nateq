@@ -945,21 +945,28 @@ class TextProcessor(
         }
 
     companion object {
-        private val COMMA_DIGITS_AR = Regex(
-            """(?<=[\d\u0660-\u0669\u06F0-\u06F9\uE031])\s*،\s*""" +
-                """(?=[\d\u0660-\u0669\u06F0-\u06F9\uE030])"""
-        )
-        private val COMMA_DIGITS_EN = Regex(
+        private val COMMA_OR_AND_DIGITS = Regex(
             """(?<=[\d\u0660-\u0669\u06F0-\u06F9\uE031])""" +
-                """(?:\s*,\s+|\s+,\s*)""" +
-                """(?=[\d\u0660-\u0669\u06F0-\u06F9\uE030])"""
+                """(?:\s*،\s*|\s*و\s*|\s+and\s+|\s*,\s+|\s+,\s*)""" +
+                """(?=[\d\u0660-\u0669\u06F0-\u06F9\uE030])""",
+            RegexOption.IGNORE_CASE
+        )
+        private val COMMA_ATTACHED_ARABIC = Regex(
+            """(?<=[\d\u0660-\u0669\u06F0-\u06F9\uE031])\s*،\s*|""" +
+                """\s*،\s*(?=[\d\u0660-\u0669\u06F0-\u06F9\uE030])"""
         )
 
-        /** إزالة كل الفواصل بين الأرقام عربي أو إنجليزي. */
+        /** إزالة كل الفواصل وواو العطف بين الأرقام عربي أو إنجليزي. */
         fun stripCommasBetweenDigits(input: String): String {
-            if (input.indexOf(',') < 0 && input.indexOf('،') < 0) return input
-            val res = input.replace(COMMA_DIGITS_AR, " ")
-            return res.replace(COMMA_DIGITS_EN, " ")
+            if (input.indexOf(',') < 0 && input.indexOf('،') < 0 &&
+                input.indexOf('و') < 0 &&
+                !input.contains("and", ignoreCase = true)
+            ) {
+                return input
+            }
+            var res = input.replace(COMMA_OR_AND_DIGITS, " ")
+            res = res.replace(COMMA_ATTACHED_ARABIC, " ")
+            return res
         }
 
         /** نمط الروابط المحجوبة (نفس نمط [UrlStep]). */

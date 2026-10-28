@@ -115,8 +115,16 @@ internal class NumberStep(
                 (start == 1 || !input[start - 2].isLetterOrDigit())
             val preEnd = if (minus) start - 1 else start
             val pre = input.substring(cursor, preEnd)
-            // إزالة الفواصل بين الأرقام عربي أو إنجليزي
-            val cleanedPre = pre.replace(Regex("""[,،]"""), " ")
+            // إزالة الفواصل وواو العطف بين الأرقام عربي أو إنجليزي
+            val trimmedPre = pre.trim()
+            val cleanedPre = if (cursor > 0 &&
+                (trimmedPre == "و" || trimmedPre == "," ||
+                    trimmedPre == "،" || trimmedPre.equals("and", true))
+            ) {
+                " "
+            } else {
+                pre.replace(Regex("""[,،]"""), " ")
+            }
             sb.append(cleanedPre)
             sb.append(if (minus) minusWord(english) else "")
             sb.append(parseNumberText(numberStr, english, markNumbers))
@@ -125,7 +133,8 @@ internal class NumberStep(
             }
             cursor = end
         }
-        sb.append(input, cursor, input.length)
+        val tail = input.substring(cursor)
+        sb.append(tail.replace(Regex("""[,،]"""), " "))
         return sb.toString()
     }
 
