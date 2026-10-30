@@ -28,6 +28,44 @@ interface LanguagePrefs {
 
     /** يعيّن لغة النطق الاحتياطية للنص اللاتيني غير المتحسَّم. */
     fun setSecondaryLanguage(language: String)
+
+    /** هل تصفية إظهار لغات محددة فقط مفعلة؟ (الأمر 2) */
+    fun isLanguageFilterEnabled(): Boolean
+
+    /** تعيين حالة تفعيل تصفية اللغات. */
+    fun setLanguageFilterEnabled(enabled: Boolean)
+
+    /** مجموعة رموز اللغات المسموح بإظهارها. */
+    fun getLanguageFilterSet(): Set<String>
+
+    /** تعيين مجموعة رموز اللغات المسموح بإظهارها. */
+    fun setLanguageFilterSet(languages: Set<String>)
+
+    /** هل تصفية إظهار محركات محددة فقط مفعلة؟ (الأمر 3) */
+    fun isEngineFilterEnabled(): Boolean
+
+    /** تعيين حالة تفعيل تصفية المحركات. */
+    fun setEngineFilterEnabled(enabled: Boolean)
+
+    /** مجموعة معرّفات وحزم المحركات المسموح بإظهارها. */
+    fun getEngineFilterSet(): Set<String>
+
+    /** تعيين مجموعة معرّفات وحزم المحركات المسموح بإظهارها. */
+    fun setEngineFilterSet(engines: Set<String>)
+
+    fun isFilterLanguagesEnabled(): Boolean = isLanguageFilterEnabled()
+    fun setFilterLanguagesEnabled(enabled: Boolean) =
+        setLanguageFilterEnabled(enabled)
+    fun getFilterLanguages(): Set<String> = getLanguageFilterSet()
+    fun setFilterLanguages(languages: Set<String>) =
+        setLanguageFilterSet(languages)
+
+    fun isFilterEnginesEnabled(): Boolean = isEngineFilterEnabled()
+    fun setFilterEnginesEnabled(enabled: Boolean) =
+        setEngineFilterEnabled(enabled)
+    fun getFilterEngines(): Set<String> = getEngineFilterSet()
+    fun setFilterEngines(engines: Set<String>) =
+        setEngineFilterSet(engines)
 }
 
 /**
@@ -227,6 +265,42 @@ interface CategoryVoicePrefs {
 
     /** هل ضُبط مستوى الصوت صراحةً لهذه الفئة؟ */
     fun hasExplicitVolumeForCategory(category: String): Boolean = false
+
+    /** محرك صوت الطوارئ (الأمر 1). */
+    fun getEmergencyEngine(): String? = null
+
+    /** تعيين محرك صوت الطوارئ. */
+    fun setEmergencyEngine(engine: String?) {}
+
+    /** معرّف صوت الطوارئ. */
+    fun getEmergencyVoice(): String? = null
+
+    /** تعيين معرّف صوت الطوارئ. */
+    fun setEmergencyVoice(voice: String?) {}
+
+    /** سرعة صوت الطوارئ (0.5..3.0). */
+    fun getEmergencyRate(): Float = 1.0f
+
+    /** تعيين سرعة صوت الطوارئ. */
+    fun setEmergencyRate(rate: Float) {}
+
+    /** نبرة صوت الطوارئ (0.5..2.0). */
+    fun getEmergencyPitch(): Float = 1.0f
+
+    /** تعيين نبرة صوت الطوارئ. */
+    fun setEmergencyPitch(pitch: Float) {}
+
+    /** مستوى صوت الطوارئ (0.0..1.0). */
+    fun getEmergencyVolume(): Float = 1.0f
+
+    /** تعيين مستوى صوت الطوارئ. */
+    fun setEmergencyVolume(volume: Float) {}
+
+    /** هل تم حفظ صوت الطوارئ صراحةً؟ */
+    fun isEmergencySaved(): Boolean = false
+
+    /** تعيين علم حفظ صوت الطوارئ. */
+    fun setEmergencySaved(saved: Boolean) {}
 }
 
 /**

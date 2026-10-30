@@ -12,6 +12,8 @@ import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
+import com.aymankhattab.nateq.core.common.VisibleEngines
+import com.aymankhattab.nateq.core.common.VisibleLanguages
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.VoiceIdContract
@@ -410,11 +412,13 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             String, MutableMap<String, MutableList<Voice>>
         >()
             for ((pkg, voices) in voicesByEngine) {
+                if (!VisibleEngines.isVisible(pkg)) continue
                 for (voice in voices) {
                     val lang = LocaleUtils.normalizeLanguageCode(
                         voice.locale?.language
                     )
                     if (lang.isBlank()) continue
+                    if (!VisibleLanguages.isVisible(lang)) continue
                     grouped.getOrPut(lang) { LinkedHashMap() }
                         .getOrPut(pkg) { mutableListOf() }
                         .add(voice)
@@ -738,6 +742,7 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             languages.add(name.substringBefore('-'))
         }
         return languages
+            .filter { VisibleLanguages.isVisible(it) }
             .map { localeWithCountryFor(it) }
             .sortedBy { it.language }
     }

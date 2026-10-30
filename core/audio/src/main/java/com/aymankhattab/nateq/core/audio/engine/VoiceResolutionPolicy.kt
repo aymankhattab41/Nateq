@@ -25,6 +25,7 @@ object VoiceResolutionPolicy {
     const val SOURCE_CATEGORY_EMOJI = "category_emoji"
     const val SOURCE_CATEGORY = "category"
     const val SOURCE_LANGUAGE_DEFAULT = "language_default"
+    const val SOURCE_EMERGENCY = "emergency"
 
     /**
      * استخراج كود لغة معرّف الصوت لتحديد ما إذا كان متطابقاً مع لغة المقطع.
@@ -99,7 +100,8 @@ object VoiceResolutionPolicy {
         appVoice: String?,
         contactVoice: String?,
         languageDefaultVoice: String?,
-        categoryEngine: String? = null
+        categoryEngine: String? = null,
+        emergencyVoice: String? = null
     ): ResolvedVoice {
         var effectiveCategoryVoice = categoryVoice
         if (!categoryVoice.isNullOrBlank() &&
@@ -132,9 +134,20 @@ object VoiceResolutionPolicy {
                     ResolvedVoice(contactVoice, SOURCE_CONTACT)
                 } else if (!appVoice.isNullOrBlank()) {
                     ResolvedVoice(appVoice, SOURCE_APP)
-                } else {
+                } else if (!languageDefaultVoice.isNullOrBlank()) {
                     ResolvedVoice(
                         languageDefaultVoice,
+                        if (!effectiveCategoryVoice.isNullOrBlank()) {
+                            SOURCE_CATEGORY_NUMBER_PARAMS
+                        } else {
+                            SOURCE_LANGUAGE_DEFAULT
+                        }
+                    )
+                } else if (!emergencyVoice.isNullOrBlank()) {
+                    ResolvedVoice(emergencyVoice, SOURCE_EMERGENCY)
+                } else {
+                    ResolvedVoice(
+                        null,
                         if (!effectiveCategoryVoice.isNullOrBlank()) {
                             SOURCE_CATEGORY_NUMBER_PARAMS
                         } else {
@@ -154,10 +167,14 @@ object VoiceResolutionPolicy {
                     ResolvedVoice(contactVoice, SOURCE_CONTACT)
                 } else if (!appVoice.isNullOrBlank()) {
                     ResolvedVoice(appVoice, SOURCE_APP)
-                } else {
+                } else if (!languageDefaultVoice.isNullOrBlank()) {
                     ResolvedVoice(
                         languageDefaultVoice, SOURCE_LANGUAGE_DEFAULT
                     )
+                } else if (!emergencyVoice.isNullOrBlank()) {
+                    ResolvedVoice(emergencyVoice, SOURCE_EMERGENCY)
+                } else {
+                    ResolvedVoice(null, SOURCE_LANGUAGE_DEFAULT)
                 }
             }
             SpeechRole.TEXT -> {
@@ -174,9 +191,21 @@ object VoiceResolutionPolicy {
                             SOURCE_CATEGORY
                         )
                     }
-                    else -> {
+                    !languageDefaultVoice.isNullOrBlank() -> {
                         ResolvedVoice(
                             languageDefaultVoice,
+                            SOURCE_LANGUAGE_DEFAULT
+                        )
+                    }
+                    !emergencyVoice.isNullOrBlank() -> {
+                        ResolvedVoice(
+                            emergencyVoice,
+                            SOURCE_EMERGENCY
+                        )
+                    }
+                    else -> {
+                        ResolvedVoice(
+                            null,
                             SOURCE_LANGUAGE_DEFAULT
                         )
                     }

@@ -73,4 +73,22 @@ interface VoicePrefsProvider {
 
     /** طريقة عرض المكالمة الواردة (الجولة 53 - الأمر 6). */
     fun getIncomingCallUiMode(): String = "auto"
+
+    /** محرك صوت الطوارئ (الأمر 1). */
+    fun getEmergencyEngine(): String? = null
+
+    /** معرّف صوت الطوارئ. */
+    fun getEmergencyVoice(): String? = null
+
+    /** سرعة صوت الطوارئ (0.5..3.0). */
+    fun getEmergencyRate(): Float = 1.0f
+
+    /** نبرة صوت الطوارئ (0.5..2.0). */
+    fun getEmergencyPitch(): Float = 1.0f
+
+    /** مستوى صوت الطوارئ (0.0..1.0). */
+    fun getEmergencyVolume(): Float = 1.0f
+
+    /** هل تم حفظ صوت الطوارئ صراحةً؟ */
+    fun isEmergencySaved(): Boolean = false
 }

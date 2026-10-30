@@ -712,14 +712,14 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Added Emergency Backup Voice and automatic CrashGuard to safeguard speech before device unlock and during crashes.
+• Added Language Filtering to show only selected languages, completely hiding unselected languages across the app.
+• Added Engine Filtering to show only selected engines, preventing hidden engines from binding or prewarming.
+
+Previous Version
 • Stripped pauses and conjunctions between numbers in Arabic and English, eliminating unintended speech pauses.
 • Unified number role in speech planner with general text when engine and voice match for seamless flow.
 • Cleaned attached commas while strictly preserving standard thousands separators in numbers.
-
-Previous Version
-• Added RMS loudness calibration tool for all 18 TTS engines to target loudness with one-click action in diagnostics.
-• Resolved audio file write stall and moved WAV completion and stall checks out of chunk gating for instant playback.
-• Fixed number voice routing via smart installed voice fallback and preservation of Google on-device and Acapela voices.
     </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
@@ -1268,4 +1268,35 @@ Previous Version
     <string name="loading_complete">Loading complete</string>
     <string name="article_reader_no_content">No main text found on this screen</string>
     <string name="article_reader_paragraph">Paragraph %1$d: %2$s</string>
+
+    <!-- Emergency Voice (Order 1) -->
+    <string name="emergency_voice_title">Emergency Voice</string>
+    <string name="emergency_voice_description">Used automatically if the app crashes or no other voice works</string>
+    <string name="emergency_voice_button">Emergency Voice</string>
+    <string name="emergency_voice_save">Save</string>
+    <string name="emergency_voice_saved">Emergency voice saved successfully</string>
+    <string name="emergency_voice_preview">Preview</string>
+    <string name="emergency_voice_sample_text">Emergency backup voice</string>
+    <string name="emergency_voice_exit_safe_mode">Exit Safe Mode</string>
+    <string name="emergency_voice_safe_mode_active">Safe mode is currently active</string>
+    <string name="emergency_voice_exit_success">Exited safe mode successfully</string>
+    <string name="emergency_voice_mode_announcement">Emergency mode</string>
+
+    <!-- Language & Engine Filters (Orders 2 & 3) -->
+    <string name="section_filter_title">Filter Languages and Engines</string>
+    <string name="filter_languages_switch">Show selected languages only</string>
+    <string name="filter_languages_btn">Choose languages…</string>
+    <string name="filter_languages_title">Choose Languages</string>
+    <string name="filter_languages_warning">Primary or secondary language is hidden among excluded languages</string>
+    <string name="filter_engines_switch">Show selected engines only</string>
+    <string name="filter_engines_btn">Choose engines…</string>
+    <string name="filter_engines_title">Choose Engines</string>
+    <string name="filter_engines_warning">Engine %1$s is hidden and will not be used</string>
+    <string name="filter_engine_default_warning">The default system engine will disappear from Lord menus (it will not be changed in system settings)</string>
+    <string name="filter_select_all">Select All</string>
+    <string name="filter_deselect_all">Deselect All</string>
+    <string name="filter_min_selection_error">At least one language must be selected</string>
+    <string name="filter_min_engine_selection_error">At least one engine must be selected</string>
+    <string name="filter_status_active">Active</string>
+    <string name="filter_status_inactive">Disabled</string>
 </resources>

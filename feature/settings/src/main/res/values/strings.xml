@@ -722,14 +722,14 @@
 <string name="changelog_title">آخر التحديثات</string>
     <string name="changelog_text">
 الإصدار %1$s
+• إضافة صوت الطوارئ الاحتياطي وحارس الانهيارات التلقائي (CrashGuard) لحماية النطق قبل فتح القفل وأثناء الأعطال.
+• إضافة ميزة تصفية اللغات لإظهار اللغات المحددة فقط وإخفاء غيرها بالكامل من القوائم والكواشف وواجهات النظام.
+• إضافة ميزة تصفية المحركات لإظهار المحركات المحددة فقط وحظر ربط أو تهيئة المحركات المخفية وتدوير التبديل عليها.
+
+الإصدار السابق
 • إزالة فواصل الأرقام وحرف العطف و بين الأرقام عربياً وإنجليزياً ومنع السكتات الصوتية غير المقصودة.
 • توحيد دور الأرقام في مخطط النطق مع النص العام عند تطابق الصوت والمحرك لضمان انسيابية وسلاسة القراءة.
 • تنظيف الفواصل الملتصقة وحماية فواصل الآلاف القياسية في الأرقام دون تشويه.
-
-الإصدار السابق
-• إضافة أداة معايرة جهارة الصوت (RMS) لجميع المحركات الـ 18 بمعايير الجهارة القياسية وخيار تشغيل فوري في التشخيص.
-• حل مشكلة الجمود في كتابة ملف الصوت وتحرير حسم اكتمال ملف WAV القاطع وفحص الاستقرار لتسريع نطق المقاطع القصيرة.
-• معالجة جذرية لانحراف صوت الأرقام بالتراجع الذكي للأصوات المثبتة ودعم أصوات Google وAcapela دون تشويه أو رفض.
     </string>
     <string name="diagnostics_title">معلومات التشخيص</string>
     <string name="diagnostics_desc">معلومات حول حالة التطبيق ومحركات النطق للمساعدة في حل المشاكل.</string>
@@ -1290,4 +1290,35 @@
     <string name="loading_complete">اكتمل التحميل</string>
     <string name="article_reader_no_content">لم أجد نصاً رئيسياً في هذه الشاشة</string>
     <string name="article_reader_paragraph">فقرة %1$d: %2$s</string>
+
+    <!-- صوت الطوارئ (الأمر 1) -->
+    <string name="emergency_voice_title">صوت الطوارئ</string>
+    <string name="emergency_voice_description">يُستعمل تلقائياً إذا تعطّل التطبيق أو لم يعمل أي صوت آخر</string>
+    <string name="emergency_voice_button">صوت الطوارئ</string>
+    <string name="emergency_voice_save">حفظ</string>
+    <string name="emergency_voice_saved">تم حفظ صوت الطوارئ بنجاح</string>
+    <string name="emergency_voice_preview">معاينة</string>
+    <string name="emergency_voice_sample_text">صوت الطوارئ الاحتياطي</string>
+    <string name="emergency_voice_exit_safe_mode">الخروج من وضع الطوارئ</string>
+    <string name="emergency_voice_safe_mode_active">وضع الأمان نشط حالياً</string>
+    <string name="emergency_voice_exit_success">تم الخروج من وضع الطوارئ</string>
+    <string name="emergency_voice_mode_announcement">وضع الطوارئ</string>
+
+    <!-- تصفية اللغات والمحركات (الأمران 2 و3) -->
+    <string name="section_filter_title">تصفية اللغات والمحركات</string>
+    <string name="filter_languages_switch">إظهار اللغات المحددة فقط</string>
+    <string name="filter_languages_btn">اختيار اللغات…</string>
+    <string name="filter_languages_title">اختيار اللغات</string>
+    <string name="filter_languages_warning">اللغة الأساسية أو الثانوية مخفية ضمن اللغات المستبعدة</string>
+    <string name="filter_engines_switch">إظهار المحركات المحددة فقط</string>
+    <string name="filter_engines_btn">اختيار المحركات…</string>
+    <string name="filter_engines_title">اختيار المحركات</string>
+    <string name="filter_engines_warning">المحرك %1$s مخفي فلا يُستعمل</string>
+    <string name="filter_engine_default_warning">محرك النظام الافتراضي سيختفي من قوائم Lord (لن يُغيَّر في النظام)</string>
+    <string name="filter_select_all">تحديد الكل</string>
+    <string name="filter_deselect_all">إلغاء الكل</string>
+    <string name="filter_min_selection_error">يجب تحديد لغة واحدة على الأقل</string>
+    <string name="filter_min_engine_selection_error">يجب تحديد محرك واحد على الأقل</string>
+    <string name="filter_status_active">مفعّلة</string>
+    <string name="filter_status_inactive">معطّلة</string>
 </resources>

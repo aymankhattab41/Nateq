@@ -1,5 +1,7 @@
 package com.aymankhattab.nateq.core.audio.engine
 
+import com.aymankhattab.nateq.core.common.VisibleLanguages
+
 /**
  * كاشف N-gram خفيف للغة النص المنقوش بالحروف اللاتينية القصيرة.
  * يميّز الإنجليزية والفرنسية والألمانية والإسبانية
@@ -141,31 +143,35 @@ object LatinLanguageDetector {
 
         if (words.size >= MIN_WORDS && !hasCommonWords) {
             val nonEnglish = listOf("fr", "de", "es")
+                .filter { VisibleLanguages.isVisible(it) }
             val bestOther = nonEnglish.maxByOrNull {
                 score(it, bigrams, words)
-            }!!
-            val otherScore = score(bestOther, bigrams, words)
-            val othersSorted = nonEnglish.map {
-                score(it, bigrams, words)
-            }.sortedDescending()
-            val secondOtherScore = othersSorted.getOrNull(1) ?: 0f
+            }
+            if (bestOther != null) {
+                val otherScore = score(bestOther, bigrams, words)
+                val othersSorted = nonEnglish.map {
+                    score(it, bigrams, words)
+                }.sortedDescending()
+                val secondOtherScore = othersSorted.getOrNull(1) ?: 0f
 
-            if (otherScore >= MIN_CONFIDENCE &&
-                otherScore - secondOtherScore >= MARGIN &&
-                otherScore - enScore >= MARGIN
-            ) {
-                if (diagnosticsEnabled) {
-                    android.util.Log.d(
-                        "NateqLang",
-                        "نص: '$text' -> لغة: $bestOther، " +
-                            "السبب: كاشف لاتيني (فارق: ${otherScore - enScore})"
-                    )
+                if (otherScore >= MIN_CONFIDENCE &&
+                    otherScore - secondOtherScore >= MARGIN &&
+                    otherScore - enScore >= MARGIN
+                ) {
+                    if (diagnosticsEnabled) {
+                        android.util.Log.d(
+                            "NateqLang",
+                            "نص: '$text' -> لغة: $bestOther، " +
+                                "السبب: كاشف لاتيني " +
+                                "(فارق: ${otherScore - enScore})"
+                        )
+                    }
+                    return bestOther
                 }
-                return bestOther
             }
         }
 
-        if (enScore >= MIN_CONFIDENCE) {
+        if (enScore >= MIN_CONFIDENCE && VisibleLanguages.isVisible("en")) {
             return "en"
         }
         return null
@@ -173,6 +179,7 @@ object LatinLanguageDetector {
 
     private fun decisiveLanguage(text: String): String? {
         for ((language, letters) in DECISIVE_LETTERS) {
+            if (!VisibleLanguages.isVisible(language)) continue
             if (text.any { it.lowercaseChar() in letters }) return language
         }
         return null

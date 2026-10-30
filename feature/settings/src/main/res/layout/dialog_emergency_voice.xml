@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:id="@+id/tv_emergency_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/emergency_voice_title"
+            android:textAppearance="?attr/textAppearanceHeadline6" />
+
+        <TextView
+            android:id="@+id/tv_emergency_desc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/emergency_voice_description"
+            android:textAppearance="?attr/textAppearanceBody2"
+            android:textColor="@color/text_secondary" />
+
+        <TextView
+            android:id="@+id/tv_safe_mode_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_slot_badge"
+            android:padding="8dp"
+            android:text="@string/emergency_voice_safe_mode_active"
+            android:textAppearance="?attr/textAppearanceCaption"
+            android:textColor="@color/text_error"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/tv_emergency_engine_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:labelFor="@id/spinner_emergency_engine"
+            android:text="@string/engine_for_category_label"
+            android:textAppearance="?attr/textAppearanceBody2" />
+
+        <androidx.appcompat.widget.AppCompatSpinner
+            android:id="@+id/spinner_emergency_engine"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp" />
+
+        <TextView
+            android:id="@+id/tv_emergency_voice_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:labelFor="@id/spinner_emergency_voice"
+            android:text="@string/a11y_voice_voice"
+            android:textAppearance="?attr/textAppearanceBody2" />
+
+        <androidx.appcompat.widget.AppCompatSpinner
+            android:id="@+id/spinner_emergency_voice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/speech_rate_label"
+                android:textAppearance="?attr/textAppearanceBody2" />
+
+            <TextView
+                android:id="@+id/tv_emergency_rate_val"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="1.0x"
+                android:textAppearance="?attr/textAppearanceBody2" />
+        </LinearLayout>
+
+        <SeekBar
+            android:id="@+id/seek_emergency_rate"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="25"
+            android:progress="5" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/pitch_label"
+                android:textAppearance="?attr/textAppearanceBody2" />
+
+            <TextView
+                android:id="@+id/tv_emergency_pitch_val"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="1.0"
+                android:textAppearance="?attr/textAppearanceBody2" />
+        </LinearLayout>
+
+        <SeekBar
+            android:id="@+id/seek_emergency_pitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="15"
+            android:progress="5" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/volume_label"
+                android:textAppearance="?attr/textAppearanceBody2" />
+
+            <TextView
+                android:id="@+id/tv_emergency_volume_val"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="100%"
+                android:textAppearance="?attr/textAppearanceBody2" />
+        </LinearLayout>
+
+        <SeekBar
+            android:id="@+id/seek_emergency_volume"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="20"
+            android:progress="20" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_emergency_preview"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:minHeight="48dp"
+            android:text="@string/emergency_voice_preview" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_emergency_save"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:minHeight="48dp"
+            android:text="@string/emergency_voice_save" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_exit_safe_mode"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:minHeight="48dp"
+            android:text="@string/emergency_voice_exit_safe_mode"
+            android:textColor="@color/text_error"
+            android:visibility="gone" />
+    </LinearLayout>
+</ScrollView>

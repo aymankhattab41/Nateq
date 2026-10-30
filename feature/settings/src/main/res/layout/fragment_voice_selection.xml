@@ -576,9 +576,30 @@
         <LinearLayout android:id="@+id/ll_categories_content" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:visibility="gone">
 
             
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/categories_selector_label" android:textAppearance="?attr/textAppearanceBody2" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="12dp">
 
-            
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/categories_selector_label"
+                    android:textAppearance="?attr/textAppearanceBody2" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_emergency_voice"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:text="@string/emergency_voice_button"
+                    android:importantForAccessibility="yes" />
+            </LinearLayout>
+
             <androidx.appcompat.widget.AppCompatSpinner android:tag="spinner_category_selector" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:contentDescription="@string/categories_selector_label" />
 
             
@@ -631,6 +652,83 @@
             <com.google.android.material.button.MaterialButton android:id="@+id/btn_save_categories" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:minHeight="48dp" android:text="@string/categories_save_button" android:importantForAccessibility="yes" />
 
             <com.google.android.material.button.MaterialButton android:id="@+id/btn_refresh_voices" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp" android:text="@string/btn_refresh_voices" android:importantForAccessibility="yes" />
+
+        </LinearLayout>
+
+        <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginTop="16dp" android:layout_marginBottom="4dp" android:background="@color/divider_color" />
+
+        <LinearLayout android:id="@+id/ll_filter_header" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="48dp" android:padding="4dp" android:background="?attr/selectableItemBackground" android:focusable="true" android:accessibilityHeading="true" android:importantForAccessibility="yes">
+
+            <TextView android:id="@+id/tv_filter_title" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:importantForAccessibility="no" android:text="@string/section_filter_title" android:textAppearance="?attr/textAppearanceHeadline6" />
+
+            <TextView android:id="@+id/tv_filter_arrow" android:layout_width="wrap_content" android:layout_height="wrap_content" android:drawableEnd="@drawable/ic_expand_more" android:textSize="14sp" android:paddingStart="8dp" android:importantForAccessibility="no" />
+        </LinearLayout>
+
+        <TextView android:id="@+id/tv_filter_status" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:textAppearance="?attr/textAppearanceCaption" android:textColor="@color/text_secondary" android:importantForAccessibility="no" />
+
+        <LinearLayout android:id="@+id/ll_filter_content" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:visibility="gone">
+
+            <androidx.appcompat.widget.SwitchCompat
+                android:id="@+id/switch_filter_languages"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:minHeight="48dp"
+                android:text="@string/filter_languages_switch"
+                android:textAppearance="?attr/textAppearanceSubtitle1" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_choose_languages"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/filter_languages_btn" />
+
+            <TextView
+                android:id="@+id/tv_filter_languages_warning"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/filter_languages_warning"
+                android:textAppearance="?attr/textAppearanceCaption"
+                android:textColor="@color/text_error"
+                android:visibility="gone" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="16dp"
+                android:layout_marginBottom="16dp"
+                android:background="@color/divider_color" />
+
+            <androidx.appcompat.widget.SwitchCompat
+                android:id="@+id/switch_filter_engines"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/filter_engines_switch"
+                android:textAppearance="?attr/textAppearanceSubtitle1" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_choose_engines"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="48dp"
+                android:text="@string/filter_engines_btn" />
+
+            <TextView
+                android:id="@+id/tv_filter_engines_warning"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/filter_engines_warning"
+                android:textAppearance="?attr/textAppearanceCaption"
+                android:textColor="@color/text_error"
+                android:visibility="gone" />
 
         </LinearLayout>
 
