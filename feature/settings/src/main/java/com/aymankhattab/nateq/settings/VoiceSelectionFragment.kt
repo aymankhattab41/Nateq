@@ -992,6 +992,30 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             embeddedDownloaderSection.buildStatusSummary()
         }
         oemGuidance = OemGuidanceController(this).apply { setup(view) }
+
+        view.findViewById<View>(R.id.btn_emergency_voice)?.setOnClickListener {
+            EmergencyVoiceController.show(
+                requireContext(),
+                settings,
+                engineCatalog,
+                voicePreview
+            )
+        }
+        LanguageFilterController(
+            requireContext(),
+            settings,
+            engineCatalog
+        ) {
+            accordion.updateSectionStatuses()
+        }.setup(view)
+
+        EngineFilterController(
+            requireContext(),
+            settings
+        ) {
+            accordion.updateSectionStatuses()
+        }.setup(view)
+
         setupLanguageToggle()
         setupCheckUpdates()
         engineSection.setupAutoConvertUI(view)

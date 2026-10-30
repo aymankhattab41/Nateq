@@ -6,6 +6,8 @@ import android.database.ContentObserver
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import com.aymankhattab.nateq.core.common.VisibleEngines
+import com.aymankhattab.nateq.core.common.VisibleLanguages
 import com.aymankhattab.nateq.core.data.VoicePrefsProvider
 import com.aymankhattab.nateq.core.engine.AudioExpansionLevels
 import com.aymankhattab.nateq.core.engine.PunctuationLevels
@@ -275,6 +277,16 @@ class SettingsRepository(context: Context) :
         const val KEY_APP_PROFILES = "app_profiles"
         const val KEY_CONTACT_VOICES = "contact_voices"
         const val BOOT_MIRROR_PREFS = "nateq_boot_mirror"
+        const val KEY_EMERGENCY_ENGINE = "emergency_engine"
+        const val KEY_EMERGENCY_VOICE = "emergency_voice"
+        const val KEY_EMERGENCY_RATE = "emergency_rate"
+        const val KEY_EMERGENCY_PITCH = "emergency_pitch"
+        const val KEY_EMERGENCY_VOLUME = "emergency_volume"
+        const val KEY_EMERGENCY_SAVED = "emergency_saved"
+        const val KEY_FILTER_LANGUAGES_ENABLED = "filter_languages_enabled"
+        const val KEY_FILTER_LANGUAGES_SET = "filter_languages_set"
+        const val KEY_FILTER_ENGINES_ENABLED = "filter_engines_enabled"
+        const val KEY_FILTER_ENGINES_SET = "filter_engines_set"
         const val KEY_DICTIONARY_STANDALONE_MAX_LENGTH =
             "dictionary_standalone_max_length"
         const val KEY_DICTIONARY_CASE_INSENSITIVE =
@@ -372,6 +384,14 @@ class SettingsRepository(context: Context) :
     private var bootMirrorHandler: Handler? = null
     private val bootMirrorRunnable = Runnable {
         updateBootMirrorIfNeeded()
+        VisibleLanguages.update(
+            isLanguageFilterEnabled(),
+            getLanguageFilterSet()
+        )
+        VisibleEngines.update(
+            isEngineFilterEnabled(),
+            getEngineFilterSet()
+        )
     }
 
     /** سياق التطبيق العام لضمان عدم احتجاز سياق النشاط في المراقبين. */
@@ -470,6 +490,14 @@ class SettingsRepository(context: Context) :
             } catch (_: Exception) {}
         }
         updateBootMirrorIfNeeded()
+        VisibleLanguages.update(
+            isLanguageFilterEnabled(),
+            getLanguageFilterSet()
+        )
+        VisibleEngines.update(
+            isEngineFilterEnabled(),
+            getEngineFilterSet()
+        )
     }
 
     /**
@@ -531,7 +559,9 @@ class SettingsRepository(context: Context) :
             )
             val editor = mirror.edit()
             for ((key, value) in prefs.all) {
-                if (key.startsWith("voice_") ||
+                if (key.startsWith("emergency_") ||
+                    key.startsWith("filter_") ||
+                    key.startsWith("voice_") ||
                     key.startsWith("preferred_voice_") ||
                     key.startsWith("primary_voice_") ||
                     key.startsWith("rate_") ||
@@ -557,6 +587,10 @@ class SettingsRepository(context: Context) :
                         is Int -> editor.putInt(key, value)
                         is Boolean -> editor.putBoolean(key, value)
                         is Long -> editor.putLong(key, value)
+                        is Set<*> -> {
+                            @Suppress("UNCHECKED_CAST")
+                            editor.putStringSet(key, value as Set<String>)
+                        }
                     }
                 }
             }
@@ -641,6 +675,16 @@ class SettingsRepository(context: Context) :
      *  reload التالية. */
     private fun notifySettingsChanged() {
         scheduleBootMirrorUpdate()
+        runCatching {
+            VisibleLanguages.update(
+                isLanguageFilterEnabled(),
+                getLanguageFilterSet()
+            )
+            VisibleEngines.update(
+                isEngineFilterEnabled(),
+                getEngineFilterSet()
+            )
+        }
         runCatching {
             appContext.contentResolver.notifyChange(
                 SettingsChangeProvider.uri(), null
@@ -920,11 +964,73 @@ class SettingsRepository(context: Context) :
      *  الثانية): تُمرَّر إلى [com.aymankhattab.nateq.core.audio.engine
      *  .LanguageSegmenter] فتُنطق بها الكلمة الأجنبية بدل الإنجليزية
      *  الافتراضية. الافتراضي "en". */
-    override fun getSecondaryLanguage(): String =
-        prefs.getString("secondary_language", LanguageCode.EN.tag)
+    override fun getSecondaryLanguage(): String {
+        val raw = prefs.getString("secondary_language", LanguageCode.EN.tag)
             ?: LanguageCode.EN.tag
+        if (!VisibleLanguages.isVisible(raw)) {
+            val visible = VisibleLanguages.visibleSet()
+            return when {
+                VisibleLanguages.isVisible(LanguageCode.EN.tag) ->
+                    LanguageCode.EN.tag
+                visible.isNotEmpty() -> visible.first()
+                else -> LanguageCode.EN.tag
+            }
+        }
+        return raw
+    }
     override fun setSecondaryLanguage(language: String) =
         prefs.edit().putString("secondary_language", language).apply()
+
+    override fun isLanguageFilterEnabled(): Boolean {
+        val p = runCatching { prefs }.getOrNull() ?: rawPrefs
+        return p?.getBoolean(KEY_FILTER_LANGUAGES_ENABLED, false) ?: false
+    }
+
+    override fun setLanguageFilterEnabled(enabled: Boolean) {
+        val p = runCatching { prefs }.getOrNull() ?: rawPrefs
+        p?.edit()?.putBoolean(KEY_FILTER_LANGUAGES_ENABLED, enabled)?.commit()
+        VisibleLanguages.update(enabled, getLanguageFilterSet())
+        notifySettingsChanged()
+    }
+
+    override fun getLanguageFilterSet(): Set<String> {
+        val p = runCatching { prefs }.getOrNull() ?: rawPrefs
+        return p?.getStringSet(KEY_FILTER_LANGUAGES_SET, null).orEmpty()
+    }
+
+    override fun setLanguageFilterSet(languages: Set<String>) {
+        val safe = languages.map { VisibleLanguages.normalize(it) }
+            .filter { it.isNotBlank() }.toSet()
+        val p = runCatching { prefs }.getOrNull() ?: rawPrefs
+        p?.edit()?.putStringSet(KEY_FILTER_LANGUAGES_SET, safe)?.commit()
+        VisibleLanguages.update(isLanguageFilterEnabled(), safe)
+        notifySettingsChanged()
+    }
+
+    override fun isEngineFilterEnabled(): Boolean {
+        val p = runCatching { prefs }.getOrNull() ?: rawPrefs
+        return p?.getBoolean(KEY_FILTER_ENGINES_ENABLED, false) ?: false
+    }
+
+    override fun setEngineFilterEnabled(enabled: Boolean) {
+        val p = runCatching { prefs }.getOrNull() ?: rawPrefs
+        p?.edit()?.putBoolean(KEY_FILTER_ENGINES_ENABLED, enabled)?.commit()
+        VisibleEngines.update(enabled, getEngineFilterSet())
+        notifySettingsChanged()
+    }
+
+    override fun getEngineFilterSet(): Set<String> {
+        val p = runCatching { prefs }.getOrNull() ?: rawPrefs
+        return p?.getStringSet(KEY_FILTER_ENGINES_SET, null).orEmpty()
+    }
+
+    override fun setEngineFilterSet(engines: Set<String>) {
+        val safe = engines.map { it.trim() }.filter { it.isNotBlank() }.toSet()
+        val p = runCatching { prefs }.getOrNull() ?: rawPrefs
+        p?.edit()?.putStringSet(KEY_FILTER_ENGINES_SET, safe)?.commit()
+        VisibleEngines.update(isEngineFilterEnabled(), safe)
+        notifySettingsChanged()
+    }
 
     /** طريقة نطق الأرقام: 1=مفردة، 2=زوجي، 3=ثلاثي، ... 8=ثماني */
     override fun getNumberReadingMode(): Int =
@@ -1140,8 +1246,14 @@ class SettingsRepository(context: Context) :
             ) {
                 appContext.createDeviceProtectedStorageContext()
                     .deleteSharedPreferences(BOOT_MIRROR_PREFS)
+                appContext.createDeviceProtectedStorageContext()
+                    .deleteSharedPreferences("nateq_emergency_voice")
+                appContext.createDeviceProtectedStorageContext()
+                    .deleteSharedPreferences("nateq_crash_guard")
             }
         }
+        VisibleLanguages.resetForTest()
+        VisibleEngines.resetForTest()
     }
 
     // ============ المفتاح الرئيسي ووضع توفير الطاقة ============
@@ -1664,8 +1776,13 @@ class SettingsRepository(context: Context) :
     /** محرك النطق الخاص بفئةٍ معيّنة (متصل/بطارية/وقت…)، null = تلقائي
      *  (يتبع محرك اللغة ثم المحرك المختار العام). يُخزَّن تحت
      *  `engine_for_<category>` ليستقل كل إعلانٍ بمحركه. */
-    override fun getEngineForCategory(category: String): String? =
-        prefs.getString("engine_for_$category", null)
+    override fun getEngineForCategory(category: String): String? {
+        val engine = prefs.getString("engine_for_$category", null)
+        if (!engine.isNullOrBlank() && !VisibleEngines.isVisible(engine)) {
+            return null
+        }
+        return engine
+    }
     override fun setEngineForCategory(category: String, engine: String?) {
         val oldEngine = getEngineForCategory(category)
         val changed = !oldEngine.isNullOrBlank() && oldEngine != engine
@@ -1740,6 +1857,62 @@ class SettingsRepository(context: Context) :
 
     override fun hasExplicitVolumeForCategory(category: String): Boolean =
         prefs.contains("volume_$category")
+
+    override fun getEmergencyEngine(): String? =
+        prefs.getString(KEY_EMERGENCY_ENGINE, null)
+
+    override fun setEmergencyEngine(engine: String?) {
+        if (engine.isNullOrBlank()) {
+            prefs.edit().remove(KEY_EMERGENCY_ENGINE).apply()
+        } else {
+            prefs.edit().putString(KEY_EMERGENCY_ENGINE, engine).apply()
+        }
+    }
+
+    override fun getEmergencyVoice(): String? =
+        prefs.getString(KEY_EMERGENCY_VOICE, null)
+
+    override fun setEmergencyVoice(voice: String?) {
+        if (voice.isNullOrBlank()) {
+            prefs.edit().remove(KEY_EMERGENCY_VOICE).apply()
+        } else {
+            prefs.edit().putString(KEY_EMERGENCY_VOICE, voice).apply()
+        }
+    }
+
+    override fun getEmergencyRate(): Float =
+        prefs.getFloat(KEY_EMERGENCY_RATE, 1.0f).coerceIn(0.5f, 3.0f)
+
+    override fun setEmergencyRate(rate: Float) {
+        prefs.edit()
+            .putFloat(KEY_EMERGENCY_RATE, rate.coerceIn(0.5f, 3.0f))
+            .apply()
+    }
+
+    override fun getEmergencyPitch(): Float =
+        prefs.getFloat(KEY_EMERGENCY_PITCH, 1.0f).coerceIn(0.5f, 2.0f)
+
+    override fun setEmergencyPitch(pitch: Float) {
+        prefs.edit()
+            .putFloat(KEY_EMERGENCY_PITCH, pitch.coerceIn(0.5f, 2.0f))
+            .apply()
+    }
+
+    override fun getEmergencyVolume(): Float =
+        prefs.getFloat(KEY_EMERGENCY_VOLUME, 1.0f).coerceIn(0.0f, 1.0f)
+
+    override fun setEmergencyVolume(volume: Float) {
+        prefs.edit()
+            .putFloat(KEY_EMERGENCY_VOLUME, volume.coerceIn(0.0f, 1.0f))
+            .apply()
+    }
+
+    override fun isEmergencySaved(): Boolean =
+        prefs.getBoolean(KEY_EMERGENCY_SAVED, false)
+
+    override fun setEmergencySaved(saved: Boolean) {
+        prefs.edit().putBoolean(KEY_EMERGENCY_SAVED, saved).apply()
+    }
 
     /** معايرة RMS الدائمة لكل محرك (بند الأوامر د.3.3): كسب التطبيع
      *  المستقر تحت `rms_calibration_<engine>` — تُصدَّر/تُستورَد تلقائياً
@@ -2509,9 +2682,16 @@ class SettingsRepository(context: Context) :
         languageTag: String
     ): LanguageSpeechPrefs {
         ensureConvertSlotsMigrated()
-        return readConvertPrefs()[
+        val p = readConvertPrefs()[
             ConvertPreferencesCodec.normalizeLanguageTag(languageTag)
         ] ?: LanguageSpeechPrefs()
+        return if (!p.engine.isNullOrBlank() &&
+            !VisibleEngines.isVisible(p.engine)
+        ) {
+            p.copy(engine = null, voiceName = null)
+        } else {
+            p
+        }
     }
 
     /**
@@ -3000,6 +3180,9 @@ class SettingsRepository(context: Context) :
             // الفرع تمرّ قيمتهما الجامحة من sanitizeFloat بلا قصّ أصلاً.
             key == "speech_boost_value" ||
                 key == "volume_boost_value" -> value.coerceIn(1f, 2.5f)
+            key == KEY_EMERGENCY_RATE -> value.coerceIn(0.5f, 3.0f)
+            key == KEY_EMERGENCY_PITCH -> value.coerceIn(0.5f, 2.0f)
+            key == KEY_EMERGENCY_VOLUME -> value.coerceIn(0.0f, 1.0f)
             // مستويا صوت الرنة ونغمة البطارية لا يهبطان تحت 0.1 — يُفحصان قبل
             // الفرع العام لـ _volume وإلا ابتلعه الفرعُ العامُ بمجرد احتوائهما
             // على المقطع (0..1) فسقط السقف الأدنى.
@@ -3029,6 +3212,11 @@ class SettingsRepository(context: Context) :
         KEY_AUDIO_EFFECTS_DISABLED_CATEGORIES -> value.filter {
             it in KNOWN_EFFECT_CATEGORIES
         }.toSet()
+        KEY_FILTER_LANGUAGES_SET -> value.map {
+            VisibleLanguages.normalize(it)
+        }.filter { it.isNotBlank() }.toSet()
+        KEY_FILTER_ENGINES_SET -> value.map { it.trim() }
+            .filter { it.isNotBlank() }.toSet()
         else -> value
     }
 

@@ -10,6 +10,7 @@ import android.util.Log
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
+import com.aymankhattab.nateq.core.audio.CrashGuard
 import com.aymankhattab.nateq.core.audio.accessibility.ProtectedAppManager
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementAppContext
 import com.aymankhattab.nateq.core.audio.announcement.EventLoudnessPolicy
@@ -62,6 +63,9 @@ class NateqApplication : Application(), AnnouncementAppContext {
 
     override fun onCreate() {
         super.onCreate()
+
+        // تثبيت حارس الانهيارات لتسجيل وقت الانهيار والدخول في وضع الأمان
+        CrashGuard.installUncaughtExceptionHandler(this)
 
         // ===== التحقق من سلامة التطبيق
         // (Anti-tamper / Anti-debug / Play Integrity) =====

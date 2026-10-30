@@ -1,6 +1,8 @@
 package com.aymankhattab.nateq.settings
 
 import java.util.Locale
+import com.aymankhattab.nateq.core.common.VisibleEngines
+import com.aymankhattab.nateq.core.common.VisibleLanguages
 
 /** خيار صوت معروض في قوائم الأصوات: الاسم الفعلي (يُخزَّن في الإعدادات
  *  ويُطابِق صوت الـ Voice الاسمَ في المحرك المربوط عند النطق) والتسمية
@@ -112,7 +114,8 @@ internal class EngineVoicesCatalog(
         val rest = byLanguage.keys
             .filterNot { it == LANGUAGE_AR || it == LANGUAGE_EN }
             .sorted()
-        return listOf(LANGUAGE_AR, LANGUAGE_EN) + rest
+        val all = listOf(LANGUAGE_AR, LANGUAGE_EN) + rest
+        return VisibleLanguages.filter(all)
     }
 
     /** تسمية اللغة المعروضة باسمها المحلي (العربية/English/…). */
@@ -133,7 +136,12 @@ internal class EngineVoicesCatalog(
         language: String,
         engine: String?
     ): List<VoiceOption> {
+        if (!VisibleLanguages.isVisible(language)) return emptyList()
+        if (engine != null && !VisibleEngines.isVisible(engine)) {
+            return emptyList()
+        }
         val engines = byLanguage[language].orEmpty()
+            .filter { VisibleEngines.isVisible(it.enginePackage) }
         val picked = if (engine != null) {
             engines.filter { it.enginePackage == engine }
         } else {

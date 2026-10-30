@@ -12,6 +12,7 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.VisibleForTesting
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
+import com.aymankhattab.nateq.core.common.VisibleEngines
 import java.io.BufferedInputStream
 import java.io.DataInputStream
 import java.io.FileInputStream
@@ -644,6 +645,10 @@ private class HostConnection(
     }
 
     private suspend fun bindLocked(): IEmbeddedEngineHost? {
+        if (!VisibleEngines.isVisible(engineId)) {
+            Log.d(TAG, "تجاوز ربط المحرك $engineId لأنه مخفي في التصفية")
+            return null
+        }
         if (bound) {
             runCatching { app.unbindService(callback) }
             bound = false

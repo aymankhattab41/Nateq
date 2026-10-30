@@ -467,6 +467,12 @@ internal class SettingsAccordionController(
             R.id.tv_categories_status, R.id.ll_categories_content,
             cats, 0
         )
+        val filterTitle = fragment.getString(R.string.section_filter_title)
+        accordionEntry(
+            view, R.id.ll_filter_header, R.id.tv_filter_arrow,
+            R.id.tv_filter_status, R.id.ll_filter_content,
+            filterTitle, 0
+        )
 
         // مجموعة «المحركات المدمجة وتنزيل الأصوات»: تنزيل وإدارة الأصوات
         val embeddedDownloader = fragment.getString(
@@ -589,6 +595,7 @@ internal class SettingsAccordionController(
     fun updateSectionStatuses() {
         setSectionStatus(R.id.ll_engine_content, buildEngineStatus())
         setSectionStatus(R.id.ll_categories_content, buildCategoriesStatus())
+        setSectionStatus(R.id.ll_filter_content, buildFilterStatus())
         setSectionStatus(R.id.ll_time_announcement_settings, buildTimeStatus())
         setSectionStatus(R.id.ll_numbers_content, buildNumberStatus())
         setSectionStatus(
@@ -700,6 +707,20 @@ internal class SettingsAccordionController(
         }
         return fragment.getString(R.string.voice_category_default) +
             ": " + label
+    }
+
+    private fun buildFilterStatus(): String {
+        val langOn = runCatching {
+            settings.isFilterLanguagesEnabled()
+        }.getOrDefault(false)
+        val engOn = runCatching {
+            settings.isFilterEnginesEnabled()
+        }.getOrDefault(false)
+        return if (langOn || engOn) {
+            fragment.getString(R.string.filter_status_active)
+        } else {
+            fragment.getString(R.string.filter_status_inactive)
+        }
     }
 
     /** تسمية صوتٍ محفوظٍ من محركٍ مكتشف (المحرك: الصوت) عبر لغته في

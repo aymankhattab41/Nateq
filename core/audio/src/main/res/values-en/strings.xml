@@ -111,4 +111,5 @@
     <string name="quick_dict_pronunciation">Pronunciation</string>
     <string name="quick_dict_save">Save to dictionary</string>
     <string name="table_cell_format">%1$s: %2$s, Row %3$d</string>
+    <string name="emergency_voice_mode_announcement">Emergency mode</string>
 </resources>

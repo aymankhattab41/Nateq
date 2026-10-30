@@ -118,4 +118,5 @@
     <string name="quick_dict_pronunciation">طريقة النطق البديلة</string>
     <string name="quick_dict_save">حفظ في القاموس</string>
     <string name="table_cell_format">%1$s: %2$s، الصف %3$d</string>
+    <string name="emergency_voice_mode_announcement">وضع الطوارئ</string>
 </resources>
