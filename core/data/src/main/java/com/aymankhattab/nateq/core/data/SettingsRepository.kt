@@ -3067,7 +3067,9 @@ class SettingsRepository(context: Context) :
     /** كل الإعدادات القابلة للنسخ (لا يُصدَّر أي وسم ترحيل داخلي). */
     fun exportSettings(): Map<String, Any> =
         prefs.all.entries
-            .filter { !it.key.startsWith("_") }
+            .filter {
+                !it.key.startsWith("_") && it.key != "screen_curtain_active"
+            }
             .mapNotNull { (k, v) -> v?.let { k to it } }
             .toMap()
 
@@ -3389,7 +3391,7 @@ class SettingsRepository(context: Context) :
 
     override fun setExtraEnabled(key: String, enabled: Boolean) {
         val normKey = normalizeExtraKey(key)
-        prefs.edit().putBoolean(normKey, enabled).apply()
+        prefs.edit().putBoolean(normKey, enabled).commit()
         notifySettingsChanged()
     }
 
@@ -3397,7 +3399,7 @@ class SettingsRepository(context: Context) :
         prefs.getString(normalizeExtraKey(key), defaultValue) ?: defaultValue
 
     override fun setExtraString(key: String, value: String) {
-        prefs.edit().putString(normalizeExtraKey(key), value).apply()
+        prefs.edit().putString(normalizeExtraKey(key), value).commit()
         notifySettingsChanged()
     }
 
@@ -3405,7 +3407,7 @@ class SettingsRepository(context: Context) :
         prefs.getInt(normalizeExtraKey(key), defaultValue)
 
     override fun setExtraInt(key: String, value: Int) {
-        prefs.edit().putInt(normalizeExtraKey(key), value).apply()
+        prefs.edit().putInt(normalizeExtraKey(key), value).commit()
         notifySettingsChanged()
     }
 
@@ -3415,7 +3417,15 @@ class SettingsRepository(context: Context) :
     ): Boolean = prefs.getBoolean(normalizeExtraKey(key), defaultValue)
 
     override fun setExtraBoolean(key: String, value: Boolean) {
-        prefs.edit().putBoolean(normalizeExtraKey(key), value).apply()
+        prefs.edit().putBoolean(normalizeExtraKey(key), value).commit()
+        notifySettingsChanged()
+    }
+
+    override fun isScreenCurtainActive(): Boolean =
+        prefs.getBoolean("screen_curtain_active", false)
+
+    override fun setScreenCurtainActive(active: Boolean) {
+        prefs.edit().putBoolean("screen_curtain_active", active).commit()
         notifySettingsChanged()
     }
 

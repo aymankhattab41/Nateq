@@ -89,7 +89,9 @@
     <string name="link_mismatch">Text does not match link destination</string>
     <string name="curtain_enabled">Screen curtain enabled</string>
     <string name="curtain_disabled">Screen curtain disabled</string>
+    <string name="curtain_failed">Failed to enable screen curtain</string>
     <string name="curtain_tile_label">Screen Curtain</string>
+    <string name="clipboard_item_read_format">%1$d of %2$d: %3$s</string>
 
     <!-- Round 56 - Extras 4: Chat & Social -->
     <string name="ad_skipped">Ad skipped</string>

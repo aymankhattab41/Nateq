@@ -32,11 +32,18 @@ object RoleEarcons {
     }
 
     /**
+     * تصفير الحالة والذاكرة عند التعطيل أو الاختبار.
+     */
+    fun clear() {
+        lastPlayUptimeMs = 0L
+        lastFocusedNodeHash = null
+    }
+
+    /**
      * تصفير الحالة للاختبارات.
      */
     fun resetForTesting() {
-        lastPlayUptimeMs = 0L
-        lastFocusedNodeHash = null
+        clear()
     }
 
     /**

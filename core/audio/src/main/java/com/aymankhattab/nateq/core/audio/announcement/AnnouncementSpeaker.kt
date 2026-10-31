@@ -43,6 +43,7 @@ import com.aymankhattab.nateq.engine.SpeechPart
 import com.aymankhattab.nateq.engine.TextProcessor
 import android.os.Bundle
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
+import com.aymankhattab.nateq.core.common.VisibleEngines
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
 import com.aymankhattab.nateq.core.audio.providers.EngineBindVerifier
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
@@ -3559,10 +3560,16 @@ speechCycle.incrementAndGet()
 internal fun resolveAnnouncementEngine(
     requested: String?,
     configuredEngine: String?
-): String? = if (!requested.isNullOrBlank()) {
+): String? = if (!requested.isNullOrBlank() &&
+    VisibleEngines.isVisible(requested)
+) {
     requested
-} else {
+} else if (!configuredEngine.isNullOrBlank() &&
+    VisibleEngines.isVisible(configuredEngine)
+) {
     configuredEngine
+} else {
+    null
 }
 
 /**
@@ -3586,26 +3593,30 @@ internal fun safeEngineForAnnouncement(
 ): String? {
     // 1. محرك الفئة الصريح
     if (!requestedCategoryEngine.isNullOrBlank() &&
-        requestedCategoryEngine != context.packageName
+        requestedCategoryEngine != context.packageName &&
+        VisibleEngines.isVisible(requestedCategoryEngine)
     ) {
         return requestedCategoryEngine
     }
     // 2. محرك "الافتراضي" العام
     if (!defaultEngine.isNullOrBlank() &&
-        defaultEngine != context.packageName
+        defaultEngine != context.packageName &&
+        VisibleEngines.isVisible(defaultEngine)
     ) {
         return defaultEngine
     }
     // 3. محرك اللغة
     if (!languageEngine.isNullOrBlank() &&
-        languageEngine != context.packageName
+        languageEngine != context.packageName &&
+        VisibleEngines.isVisible(languageEngine)
     ) {
         return languageEngine
     }
     // 4. محرك الاحتياط العام (fallback) إن وُجد — يُستخدم عند غياب
     // أي محرك صريح آخر، بحسب ترتيب الحسم الجديد.
     if (!announcementFallbackEngine.isNullOrBlank() &&
-        announcementFallbackEngine != context.packageName
+        announcementFallbackEngine != context.packageName &&
+        VisibleEngines.isVisible(announcementFallbackEngine)
     ) {
         return announcementFallbackEngine
     }

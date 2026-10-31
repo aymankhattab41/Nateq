@@ -3,12 +3,12 @@ package com.aymankhattab.nateq.settings.extras
 import android.content.Intent
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
-import com.aymankhattab.nateq.core.audio.accessibility.ScreenCurtain
+import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /**
- * بلاطة الإعدادات السريعة لستارة الشاشة (ع٥٦-أمر 19).
+ * بلاطة الإعدادات السريعة لستارة الشاشة (ع٥٦-أمر 19 / ع٥٧-أمر 3).
  * تتيح تشغيل/إيقاف ستارة الشاشة السوداء بضغطة زر واحدة
- * من لوحة الإعدادات السريعة.
+ * من لوحة الإعدادات السريعة وتقرأ الحالة عبر العمليات من SettingsRepository.
  */
 class CurtainTileService : TileService() {
 
@@ -40,7 +40,8 @@ class CurtainTileService : TileService() {
 
     private fun updateTileState() {
         val qsTile = qsTile ?: return
-        qsTile.state = if (ScreenCurtain.isActive()) {
+        val repo = SettingsRepository.create(this)
+        qsTile.state = if (repo.isScreenCurtainActive()) {
             Tile.STATE_ACTIVE
         } else {
             Tile.STATE_INACTIVE

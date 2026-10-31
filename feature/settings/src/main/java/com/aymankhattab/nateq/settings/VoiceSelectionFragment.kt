@@ -1007,6 +1007,14 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             engineCatalog
         ) {
             accordion.updateSectionStatuses()
+            if (::categoryVoicePanel.isInitialized) {
+                categoryVoicePanel.refreshLanguages()
+                categoryVoicePanel.refreshCategoryEngines()
+            }
+            if (::callerSection.isInitialized) {
+                callerSection.refreshCallerEngines()
+                callerSection.refreshCallerVoices()
+            }
         }.setup(view)
 
         EngineFilterController(
@@ -1014,6 +1022,14 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             settings
         ) {
             accordion.updateSectionStatuses()
+            if (::categoryVoicePanel.isInitialized) {
+                categoryVoicePanel.refreshLanguages()
+                categoryVoicePanel.refreshCategoryEngines()
+            }
+            if (::callerSection.isInitialized) {
+                callerSection.refreshCallerEngines()
+                callerSection.refreshCallerVoices()
+            }
         }.setup(view)
 
         setupLanguageToggle()
@@ -1095,6 +1111,9 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
         if (::categoryVoicePanel.isInitialized) {
             categoryVoicePanel.refreshCategoryEngines()
+        }
+        if (::callerSection.isInitialized) {
+            callerSection.refreshCallerEngines()
         }
         if (::accordion.isInitialized) accordion.updateSectionStatuses()
         view?.let { root ->
@@ -3232,6 +3251,28 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 sb.appendLine(noDataMsg)
             }
             sb.appendLine("")
+
+            val numTraces = ttsSnapshot?.getStringArrayList(
+                com.aymankhattab.nateq.core.audio.engine
+                    .TtsDiagnosticsProvider.KEY_NUMBER_SEGMENT_TRACES
+            )
+            if (!numTraces.isNullOrEmpty()) {
+                sb.appendLine(
+                    "--- سجل تتبع المقاطع الرقمية " +
+                        "(${numTraces.size}) ---"
+                )
+                numTraces.forEach { trace -> sb.appendLine(trace) }
+                sb.appendLine("")
+            }
+
+            val extrasDiag = ttsSnapshot?.getString(
+                com.aymankhattab.nateq.core.audio.engine
+                    .TtsDiagnosticsProvider.KEY_EXTRAS_DIAGNOSTICS
+            )
+            if (!extrasDiag.isNullOrBlank()) {
+                sb.appendLine(extrasDiag)
+                sb.appendLine("")
+            }
 
             sb.toString()
         }

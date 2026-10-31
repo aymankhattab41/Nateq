@@ -992,6 +992,12 @@ interface AccessibilityPrefs {
     /** تعيين إعداد ثنائي للإضافة. */
     fun setExtraBoolean(key: String, value: Boolean)
 
+    /** هل ستارة الشاشة مفعّلة حالياً؟ (ع٥٧-أمر 3) */
+    fun isScreenCurtainActive(): Boolean
+
+    /** تعيين حالة ستارة الشاشة. (ع٥٧-أمر 3) */
+    fun setScreenCurtainActive(active: Boolean)
+
     /** هل خدمات الشاشة متوقفة مؤقتاً؟ */
     fun isA11yPaused(): Boolean
 

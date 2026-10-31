@@ -96,7 +96,9 @@
     <string name="link_mismatch">النص لا يطابق وجهة الرابط</string>
     <string name="curtain_enabled">الستارة مفعّلة</string>
     <string name="curtain_disabled">الستارة موقوفة</string>
+    <string name="curtain_failed">تعذّر تفعيل الستارة</string>
     <string name="curtain_tile_label">ستارة الشاشة</string>
+    <string name="clipboard_item_read_format">%1$d من %2$d: %3$s</string>
 
     <!-- الجولة 56 - إضافات 4: الدردشة والتواصل -->
     <string name="ad_skipped">تم تخطي الإعلان</string>

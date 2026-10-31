@@ -208,9 +208,18 @@ object FocusMemory {
         }
     }
 
+    /**
+     * إفراغ الذاكرة فوراً عند تعطيل الإضافة.
+     */
+    fun clear() {
+        synchronized(memory) {
+            memory.clear()
+        }
+    }
+
     @androidx.annotation.VisibleForTesting
     fun clearForTesting() {
-        synchronized(memory) { memory.clear() }
+        clear()
     }
 
     @androidx.annotation.VisibleForTesting

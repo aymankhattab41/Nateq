@@ -17,6 +17,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.core.audio.R
 import com.aymankhattab.nateq.core.audio.accessibility.FeatureFlags
+import com.aymankhattab.nateq.core.common.VisibleEngines
 import com.aymankhattab.nateq.core.data.ContactVoiceStore
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.data.VoiceProfile
@@ -2540,7 +2541,7 @@ internal fun callerSpeechEngine(
     } else {
         SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
     }
-)
+)?.takeIf { VisibleEngines.isVisible(it) }
 
 /**
  * دمجُ هوية المتصل من المصادر الثلاثة: الحاوية المشتركة

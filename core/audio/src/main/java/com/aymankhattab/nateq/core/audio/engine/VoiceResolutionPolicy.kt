@@ -1,8 +1,21 @@
 package com.aymankhattab.nateq.core.audio.engine
 
+import android.content.Context
 import com.aymankhattab.nateq.core.audio.announcement.EventVoiceTrace
+import com.aymankhattab.nateq.core.data.EffectiveVoice
+import com.aymankhattab.nateq.core.common.VisibleEngines
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.VoiceIdContract
+
+/**
+ * نتيجة حسم صوت المقطع (محرك وصوت ومصدر) موحدة للمعاينة والقراءة الحية.
+ */
+data class ResolvedSegmentVoice(
+    val engine: String?,
+    val voiceName: String?,
+    val source: String
+)
 
 /**
  * نتيجة حل الصوت مع تحديد مصدر القرار (الأمر 5).
@@ -212,5 +225,115 @@ object VoiceResolutionPolicy {
                 }
             }
         }
+    }
+
+    @Volatile
+    private var defaultContext: Context? = null
+
+    fun init(context: Context) {
+        defaultContext = context.applicationContext
+    }
+
+    fun resolveSegmentVoice(
+        role: SpeechRole,
+        languageTag: String
+    ): ResolvedSegmentVoice {
+        val ctx = defaultContext
+        val repo = if (ctx != null) {
+            SettingsRepository.create(ctx)
+        } else {
+            null
+        }
+        return if (repo != null) {
+            resolveSegmentVoice(role, languageTag, repo)
+        } else {
+            ResolvedSegmentVoice(
+                engine = null,
+                voiceName = VoiceIdContract.createId(languageTag),
+                source = SOURCE_LANGUAGE_DEFAULT
+            )
+        }
+    }
+
+    fun resolveSegmentVoice(
+        role: SpeechRole,
+        languageTag: String,
+        context: Context
+    ): ResolvedSegmentVoice = resolveSegmentVoice(
+        role,
+        languageTag,
+        SettingsRepository.create(context)
+    )
+
+    fun resolveSegmentVoice(
+        role: SpeechRole,
+        languageTag: String,
+        settings: SettingsRepository,
+        appVoice: EffectiveVoice? = null,
+        contactVoice: String? = null,
+        emergencyVoice: String? = null
+    ): ResolvedSegmentVoice {
+        val categoryVoice = when (role) {
+            SpeechRole.EMOJI -> settings.getPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_EMOJI
+            )
+            SpeechRole.NUMBER -> settings.getPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+            SpeechRole.TEXT -> null
+        }
+        val categoryEngine = when (role) {
+            SpeechRole.EMOJI -> settings.getEngineForCategory(
+                SettingsRepository.VOICE_CATEGORY_EMOJI
+            )
+            SpeechRole.NUMBER -> settings.getEngineForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+            SpeechRole.TEXT -> null
+        }?.takeIf { VisibleEngines.isVisible(it) }
+        val defaultCategoryEngine = settings.getEngineForCategory(
+            SettingsRepository.VOICE_CATEGORY_DEFAULT
+        )?.takeIf { VisibleEngines.isVisible(it) }
+        val routed = LanguageSpeechRouter.route(
+            matchesRequest = true,
+            convertEngine = null,
+            convertVoiceName = null,
+            perLanguageEngine = settings.getEngineForLanguage(languageTag),
+            perLanguageVoiceName = settings.getVoiceForLanguage(languageTag),
+            defaultEngine = defaultCategoryEngine
+        )
+        val resolvedVoice = resolve(
+            role = role,
+            languageTag = languageTag,
+            categoryVoice = categoryVoice,
+            appVoice = appVoice?.voiceId,
+            contactVoice = contactVoice,
+            languageDefaultVoice = routed.voiceName
+                ?: settings.getPreferredVoiceId(languageTag),
+            categoryEngine = categoryEngine,
+            emergencyVoice = emergencyVoice
+        )
+        val targetEngine = when (resolvedVoice.source) {
+            SOURCE_CATEGORY_EMOJI,
+            SOURCE_CATEGORY_NUMBER -> {
+                categoryEngine ?: defaultCategoryEngine ?: routed.engine
+            }
+            SOURCE_APP -> {
+                appVoice?.engine ?: routed.engine
+            }
+            else -> routed.engine
+        }
+        val preferredForEngine = targetEngine?.let {
+            settings.getPreferredVoiceForEngine(it, languageTag)
+        }
+        val targetVoiceName = resolvedVoice.voiceId
+            ?: preferredForEngine
+            ?: VoiceIdContract.createId(languageTag)
+
+        return ResolvedSegmentVoice(
+            engine = targetEngine,
+            voiceName = targetVoiceName,
+            source = resolvedVoice.source
+        )
     }
 }

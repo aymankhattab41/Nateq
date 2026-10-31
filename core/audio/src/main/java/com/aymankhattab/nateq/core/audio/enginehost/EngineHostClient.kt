@@ -24,7 +24,11 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -59,6 +63,20 @@ object EngineHostClient {
     /** تذكر نجاح التهيئة لكل محرك (ع٣٠-9) لتفادي نداءات Binder المكررة. */
     private val initializedEngines = ConcurrentHashMap<String, String>()
 
+    /** آخر مسار بيانات تم تهيئة المحرك به لإعادة استخدامه عند إعادة الربط. */
+    private val lastDataDirs = ConcurrentHashMap<String, String>()
+
+    @Volatile
+    private var appContext: Context? = null
+
+    private val rebindScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO
+    )
+
+    fun setContext(context: Context) {
+        appContext = context.applicationContext
+    }
+
     /**
      * مهلة المعاينة المدمجة (ع٢٩-10 بند 2) للواجهة العامة خارج
      * الوحدة: ميزانية الطلب + هامش تفريغ AudioTrack، كلها من
@@ -89,6 +107,8 @@ object EngineHostClient {
         force: Boolean = false
     ): HostResult {
         val id = HostProtocol.normalizeEngineId(engineId)
+        setContext(context)
+        lastDataDirs[id] = dataDir
         if (!force && initializedEngines[id] == dataDir) {
             return HostResult(ok = true)
         }
@@ -284,6 +304,56 @@ object EngineHostClient {
     internal fun onHostDied(engineId: String) {
         val id = HostProtocol.normalizeEngineId(engineId)
         initializedEngines.remove(id)
+        Log.w(TAG, "مات مضيف $id — جدولة إعادة الربط بتراجع تكراري")
+        val ctx = appContext
+        if (ctx != null) {
+            scheduleRebind(ctx, id)
+        }
+    }
+
+    /**
+     * إعادة ربط المضيف بتأخير تراجعي [500ms, 1s, 2s] حتى 3 محاولات
+     * وإعادة تحميل بيانات الصوت (ع٥٧-أمر 4).
+     */
+    fun scheduleRebind(context: Context, engineId: String) {
+        val id = HostProtocol.normalizeEngineId(engineId)
+        setContext(context)
+        rebindScope.launch {
+            val backoffs = longArrayOf(500L, 1000L, 2000L)
+            for ((attempt, delayMs) in backoffs.withIndex()) {
+                delay(delayMs)
+                Log.i(
+                    TAG,
+                    "محاولة إعادة ربط $id (${attempt + 1}/3) " +
+                        "بعد ${delayMs}ms"
+                )
+                val conn = connection(context, id)
+                conn.invalidate()
+                val svc = conn.service()
+                if (svc != null) {
+                    Log.i(
+                        TAG,
+                        "نجحت إعادة ربط مضيف $id في المحاولة ${attempt + 1}"
+                    )
+                    val dataDir = lastDataDirs[id]
+                    if (!dataDir.isNullOrBlank()) {
+                        val initRes = init(
+                            context, id, dataDir, force = true
+                        )
+                        Log.i(
+                            TAG,
+                            "إعادة تحميل صوت $id: ok=${initRes.ok}"
+                        )
+                    }
+                    break
+                } else {
+                    Log.w(
+                        TAG,
+                        "فشلت محاولة إعادة ربط $id (${attempt + 1}/3)"
+                    )
+                }
+            }
+        }
     }
 
     /**
