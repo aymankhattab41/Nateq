@@ -712,14 +712,16 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Dynamically registered accessibility events for extras upon activation without restarting the service.
+• Added shortcut to cycle and read clipboard stack entries, paste the selected item, and ensured full shortcut coverage.
+• Fully fixed black screen curtain with complete system bar insets, cross-process persistence, and test tool in extras.
+• Unified number voice resolution between preview and speech, kept engine host alive with backoff, and added numeric trace tracking.
+• Filtered engines and languages for event voices (battery, caller, time, numbers, notifications, emoji) to hide excluded ones.
+
+Previous Version
 • Added Emergency Backup Voice and automatic CrashGuard to safeguard speech before device unlock and during crashes.
 • Added Language Filtering to show only selected languages, completely hiding unselected languages across the app.
 • Added Engine Filtering to show only selected engines, preventing hidden engines from binding or prewarming.
-
-Previous Version
-• Stripped pauses and conjunctions between numbers in Arabic and English, eliminating unintended speech pauses.
-• Unified number role in speech planner with general text when engine and voice match for seamless flow.
-• Cleaned attached commas while strictly preserving standard thousands separators in numbers.
     </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>
@@ -1186,6 +1188,10 @@ Previous Version
 
     <string name="extra_screen_curtain_title">Screen curtain</string>
     <string name="extra_screen_curtain_desc">Blank screen for privacy while touch and voice shortcuts stay active</string>
+    <string name="curtain_test_btn">Test Screen Curtain</string>
+    <string name="curtain_test_working">Screen curtain is working</string>
+    <string name="curtain_test_failed">Failed: %1$s</string>
+    <string name="curtain_service_disconnected">Service not connected</string>
 
     <string name="extra_skip_ads_title">Skip YouTube ads</string>
     <string name="extra_skip_ads_desc">Automatically click skip ad button in YouTube with strict safe limits</string>

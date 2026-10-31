@@ -1,13 +1,22 @@
 package com.aymankhattab.nateq.settings.extras
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import com.aymankhattab.nateq.core.audio.accessibility.ProtectedAppManager
+import com.aymankhattab.nateq.core.audio.accessibility.ScreenCurtain
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.feature.settings.R
 import com.google.android.material.appbar.MaterialToolbar
@@ -159,11 +168,72 @@ class ExtrasSettingsActivity : AppCompatActivity() {
                     updateMasterSwitchState()
                 }
 
+                if (feature.key == "extra_screen_curtain") {
+                    val btnTest = MaterialButton(this).apply {
+                        setText(R.string.curtain_test_btn)
+                        setOnClickListener {
+                            testCurtain()
+                        }
+                    }
+                    (itemView as? LinearLayout)?.addView(btnTest)
+                }
+
                 switchMap[feature.key] = sw
                 container.addView(itemView)
             }
         }
         updateMasterSwitchState()
+    }
+
+    private fun testCurtain() {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                unregisterReceiverSafely(this)
+                val success = intent?.getBooleanExtra(
+                    ScreenCurtain.EXTRA_SUCCESS, false
+                ) ?: false
+                val error = intent?.getStringExtra(ScreenCurtain.EXTRA_ERROR)
+                val msg = if (success) {
+                    getString(R.string.curtain_test_working)
+                } else {
+                    getString(
+                        R.string.curtain_test_failed,
+                        error ?: "unknown"
+                    )
+                }
+                Toast.makeText(
+                    this@ExtrasSettingsActivity,
+                    msg,
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+        val filter = IntentFilter(ScreenCurtain.ACTION_CURTAIN_RESULT)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(receiver, filter)
+        }
+        val intent = Intent(CurtainTileService.ACTION_TOGGLE_CURTAIN).apply {
+            setPackage(packageName)
+        }
+        sendBroadcast(intent)
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (unregisterReceiverSafely(receiver)) {
+                Toast.makeText(
+                    this,
+                    R.string.curtain_service_disconnected,
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }, 2000L)
+    }
+
+    private fun unregisterReceiverSafely(r: BroadcastReceiver): Boolean {
+        return runCatching {
+            unregisterReceiver(r)
+            true
+        }.getOrDefault(false)
     }
 
     private fun updateAccessibilityDescription(

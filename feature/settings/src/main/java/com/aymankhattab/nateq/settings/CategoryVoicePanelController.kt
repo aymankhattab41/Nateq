@@ -24,6 +24,8 @@ import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
 import com.aymankhattab.nateq.core.common.AppDispatchers
+import com.aymankhattab.nateq.core.common.VisibleEngines
+import com.aymankhattab.nateq.core.common.VisibleLanguages
 import java.util.Locale
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.VoiceIdContract
@@ -143,7 +145,9 @@ internal class CategoryVoicePanelController(
     private var dirtyPanel = false
 
     // لغات فئات الأصوات (عربية/إنجليزية ثم المكتشفة) ومحركات المتصّل.
-    private var languages: List<String> = catalog.languages()
+    private var languages: List<String> = catalog.languages().filter {
+        VisibleLanguages.isVisible(it)
+    }
     private var languageAdapter = simpleAdapter(
         fragment.requireContext(),
         languages.map { catalog.languageDisplayName(it) }
@@ -151,7 +155,9 @@ internal class CategoryVoicePanelController(
     private var categoryEngines: List<EnginePicker.InstalledEngine> =
         runCatching {
             EnginePicker.installedEngines(fragment.requireContext())
-        }.getOrDefault(emptyList())
+        }.getOrDefault(emptyList()).filter {
+            VisibleEngines.isVisible(it.packageName)
+        }
     private val categoryEngineLabels = mutableListOf<String>().apply {
         addAll(categoryEngines.map { it.label })
     }
@@ -160,6 +166,7 @@ internal class CategoryVoicePanelController(
         categoryEngineLabels
     )
     private var lastStorageVersion: Int = EmbeddedStorage.version
+    private var callerLanguages: List<Pair<String, String>> = emptyList()
 
     // **بند 6.2:** علم الربط البرمجي — يُسنَّع حول setSelection وsetProgress
     // حتى لا يُسجَّل اختيارٌ برمجي أو يُفسَّر إسنادُ الشريط تعديلَ مستخدم.
@@ -391,19 +398,47 @@ internal class CategoryVoicePanelController(
             }
     }
 
+    private fun updateCallerLanguages(viewContext: android.content.Context) {
+        val list = mutableListOf<Pair<String, String>>()
+        if (VisibleLanguages.isVisible(LanguageCode.AR.tag)) {
+            list.add(
+                LanguageCode.AR.tag to
+                    viewContext.getString(R.string.language_arabic)
+            )
+        }
+        if (VisibleLanguages.isVisible(LanguageCode.EN.tag)) {
+            list.add(
+                LanguageCode.EN.tag to
+                    viewContext.getString(R.string.language_english)
+            )
+        }
+        if (list.isEmpty()) {
+            list.add(
+                LanguageCode.AR.tag to
+                    viewContext.getString(R.string.language_arabic)
+            )
+        }
+        callerLanguages = list
+        spinnerCallerLang?.adapter = simpleAdapter(
+            viewContext,
+            callerLanguages.map { it.second }
+        )
+        val selectedIdx = callerLanguages.indexOfFirst {
+            it.first == currentCallerLang
+        }
+        if (selectedIdx >= 0) {
+            spinnerCallerLang?.setSelection(selectedIdx)
+        } else {
+            currentCallerLang = callerLanguages.first().first
+            spinnerCallerLang?.setSelection(0)
+            selectCallerLanguage(currentCallerLang)
+        }
+    }
+
     /** يربط لوحة إعلان المتصل: مُحدِّد اللغة (عربي/إنجليزي) يبدّل ترائية
      *  المجموعتين، وزر المعاينة يقرأ القيم المعروضة للغة المختارة. */
     private fun bindCallerPanel(view: View) {
-        spinnerCallerLang?.adapter = simpleAdapter(
-            view.context,
-            listOf(
-                view.context.getString(R.string.language_arabic),
-                view.context.getString(R.string.language_english)
-            )
-        )
-        spinnerCallerLang?.setSelection(
-            if (LanguageCode.isEnglish(currentCallerLang)) 1 else 0
-        )
+        updateCallerLanguages(view.context)
         spinnerCallerLang?.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(
@@ -412,10 +447,8 @@ internal class CategoryVoicePanelController(
                     pos: Int,
                     id: Long
                 ) {
-                    selectCallerLanguage(
-                        if (pos == 1) LanguageCode.EN.tag
-                        else LanguageCode.AR.tag
-                    )
+                    val tag = callerLanguages.getOrNull(pos)?.first ?: return
+                    selectCallerLanguage(tag)
                     // تغيير اللغة مجرد تنقّل داخل نفس الفئة —
                     // يُحافظ على حالة «متسخ» الحالية إن وجدت.
                 }
@@ -500,6 +533,11 @@ if (!dirtyPanel) {
         currentPanelLanguage = runCatching {
             settings.getLanguageForCategory(key)
         }.getOrNull() ?: defaultLanguageFor(key)
+        if (!VisibleLanguages.isVisible(currentPanelLanguage) ||
+            !languages.contains(currentPanelLanguage)
+        ) {
+            currentPanelLanguage = languages.firstOrNull() ?: "ar"
+        }
         tvCategoryName?.text = context.getString(entry.labelRes)
         tvCategoryDescription?.text = categoryDescription(context, key)
 
@@ -728,6 +766,7 @@ if (!dirtyPanel) {
                 categoryEngines[engineIdx].packageName
             } else {
                 runCatching { settings.getEngineForCategory(key) }.getOrNull()
+                    ?.takeIf { VisibleEngines.isVisible(it) }
             }
         } else {
             null
@@ -768,12 +807,23 @@ if (!dirtyPanel) {
     /** يعيد بناء قوائم اللغات بعد اكتمال الاكتشاف الخلفي ثم يعيد ربط
      *  الفئة المعروضة (المعادل لـ refreshLanguages القديم). */
     internal fun refreshLanguages() {
-        languages = catalog.languages()
+        languages = catalog.languages().filter {
+            VisibleLanguages.isVisible(it)
+        }
         languageAdapter = simpleAdapter(
             fragment.requireContext(),
             languages.map { catalog.languageDisplayName(it) }
         )
-        if (currentEntry.isCaller) return
+        spinnerLanguage?.adapter = languageAdapter
+        if (currentEntry.isCaller) {
+            updateCallerLanguages(fragment.requireContext())
+            return
+        }
+        if (!VisibleLanguages.isVisible(currentPanelLanguage) ||
+            !languages.contains(currentPanelLanguage)
+        ) {
+            currentPanelLanguage = languages.firstOrNull() ?: "ar"
+        }
         bindCategoryRow(currentEntry)
     }
 
@@ -805,22 +855,23 @@ if (!dirtyPanel) {
 
         categoryEngines = runCatching {
             EnginePicker.installedEngines(context)
-        }.getOrDefault(emptyList())
+        }.getOrDefault(emptyList()).filter {
+            VisibleEngines.isVisible(it.packageName)
+        }
 
         categoryEngineLabels.clear()
         categoryEngineLabels.addAll(categoryEngines.map { it.label })
         engineAdapter.notifyDataSetChanged()
 
-        if (currentSelectedPkg != null) {
-            val newIdx = engineIndexFor(categoryEngines, currentSelectedPkg)
-            bindingInputs = true
-            try {
-                spinnerEngine?.setSelection(newIdx)
-            } finally {
-                bindingInputs = false
-            }
+        val newIdx = engineIndexFor(categoryEngines, currentSelectedPkg)
+        bindingInputs = true
+        try {
+            spinnerEngine?.setSelection(newIdx)
+        } finally {
+            bindingInputs = false
         }
         lastStorageVersion = EmbeddedStorage.version
+        refreshVoiceSpinner()
     }
 
     /** يُستدعى في onResume لتحديث المحركات عند تغيّر التخزين (ع٣١-5). */

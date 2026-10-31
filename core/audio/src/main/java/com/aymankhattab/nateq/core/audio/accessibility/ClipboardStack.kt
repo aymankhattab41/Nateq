@@ -9,15 +9,21 @@ import com.aymankhattab.nateq.core.data.SettingsRepository
 import java.util.LinkedList
 
 /**
- * مكدس الحافظة (ع٥٦-أمر 8).
- * يحفظ آخر 10 نصوص منسوخة في الذاكرة لتسهيل التبديل بينها ولصقها.
+ * مكدس الحافظة (ع٥٦-أمر 8 / ع٥٧-أمر 2).
+ * يحفظ آخر 10 نصوص منسوخة في الذاكرة ويتنقل بينها دورياً ويسمح بلصقها.
  */
 object ClipboardStack {
 
     const val MAX_CAPACITY = 10
+    const val MAX_SNIPPET_CHARS = 120
 
     private val stack = LinkedList<String>()
     private val lock = Any()
+
+    @Volatile
+    private var selectedIndex = -1
+
+    fun getSelectedIndex(): Int = synchronized(lock) { selectedIndex }
 
     fun addEntry(text: String, isSensitive: Boolean = false): Boolean {
         if (isSensitive) return false
@@ -33,6 +39,7 @@ object ClipboardStack {
                 stack.removeLast()
             }
             stack.addFirst(trimmed)
+            selectedIndex = -1
             return true
         }
     }
@@ -51,6 +58,7 @@ object ClipboardStack {
 
     fun pop(): String? {
         synchronized(lock) {
+            selectedIndex = -1
             return if (stack.isNotEmpty()) stack.removeFirst() else null
         }
     }
@@ -58,6 +66,7 @@ object ClipboardStack {
     fun clear() {
         synchronized(lock) {
             stack.clear()
+            selectedIndex = -1
         }
     }
 
@@ -65,6 +74,39 @@ object ClipboardStack {
         synchronized(lock) {
             return stack.size
         }
+    }
+
+    /**
+     * قراءة العنصر التالي دورياً بين العناصر المخزنة (ع٥٧-أمر 2).
+     * ينطق «<ترتيبه> من <العدد>: <أول 120 حرفاً من النص>».
+     */
+    fun readNext(context: Context): String? {
+        val (item, ordinal, total) = synchronized(lock) {
+            if (stack.isEmpty()) {
+                null
+            } else {
+                selectedIndex = (selectedIndex + 1) % stack.size
+                Triple(stack[selectedIndex], selectedIndex + 1, stack.size)
+            }
+        } ?: run {
+            val emptyMsg = context.getString(R.string.clipboard_empty)
+            A11ySpeechCoordinator.speakAnnouncement(context, emptyMsg)
+            return null
+        }
+
+        val snippet = if (item.length > MAX_SNIPPET_CHARS) {
+            item.take(MAX_SNIPPET_CHARS)
+        } else {
+            item
+        }
+        val msg = context.getString(
+            R.string.clipboard_item_read_format,
+            ordinal,
+            total,
+            snippet
+        )
+        A11ySpeechCoordinator.speakAnnouncement(context, msg)
+        return item
     }
 
     fun onPrimaryClipChanged(context: Context) {
@@ -89,13 +131,33 @@ object ClipboardStack {
         addEntry(text)
     }
 
+    /**
+     * لصق العنصر المحدد حالياً في الحافظة والنطق به (ع٥٧-أمر 2).
+     */
     fun pasteOrSpeak(context: Context): String? {
-        val entry = peek()
+        val entry = synchronized(lock) {
+            if (stack.isEmpty()) {
+                null
+            } else if (selectedIndex in 0 until stack.size) {
+                stack[selectedIndex]
+            } else {
+                stack.peekFirst()
+            }
+        }
+
         if (entry.isNullOrBlank()) {
             val emptyMsg = context.getString(R.string.clipboard_empty)
             A11ySpeechCoordinator.speakAnnouncement(context, emptyMsg)
             return null
         }
+
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE)
+            as? ClipboardManager
+        cm?.let {
+            val clip = ClipData.newPlainText("nateq_clipboard_stack", entry)
+            it.setPrimaryClip(clip)
+        }
+
         val msg = context.getString(R.string.clipboard_item_pasted, entry)
         A11ySpeechCoordinator.speakAnnouncement(context, msg)
         return entry

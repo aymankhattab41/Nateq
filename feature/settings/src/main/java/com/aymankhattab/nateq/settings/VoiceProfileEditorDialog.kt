@@ -13,6 +13,8 @@ import androidx.core.view.isVisible
 import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
+import com.aymankhattab.nateq.core.common.VisibleEngines
+import com.aymankhattab.nateq.core.common.VisibleLanguages
 import com.aymankhattab.nateq.core.data.VoiceProfile
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.util.setSeekStateDescription
@@ -48,7 +50,9 @@ internal object VoiceProfileEditorDialog {
             setPadding(dp(20), dp(12), dp(20), dp(4))
         }
 
-        val engines = EnginePicker.installedEngines(context)
+        val engines = EnginePicker.installedEngines(context).filter {
+            VisibleEngines.isVisible(it.packageName)
+        }
         val engineLabels = buildList {
             add(context.getString(R.string.a11y_voice_system_engine))
             addAll(engines.map { it.label })
@@ -123,7 +127,9 @@ internal object VoiceProfileEditorDialog {
             voiceSpinner.adapter = simpleAdapter(context, emptyList())
 
             if (isEmbeddedEngine(enginePkg)) {
-                val declared = VoiceCatalog.declaredVoices()
+                val declared = VoiceCatalog.declaredVoices().filter {
+                    VisibleLanguages.isVisible(it.locale?.language)
+                }
                 val names = declared.map { it.name }
                 voiceNames[0] = names
                 val labels = declared.map { v ->
@@ -147,7 +153,12 @@ internal object VoiceProfileEditorDialog {
                 } else {
                     val names = runCatching {
                         instance.voices.orEmpty()
-                            .filter { it.name != null }
+                            .filter {
+                                it.name != null &&
+                                    VisibleLanguages.isVisible(
+                                        it.locale?.language
+                                    )
+                            }
                             .sortedWith(
                                 compareBy(
                                     { it.locale?.displayName.orEmpty() },

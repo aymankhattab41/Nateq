@@ -1,15 +1,32 @@
 package com.aymankhattab.nateq.settings
 
+import com.aymankhattab.nateq.core.audio.providers.EnginePicker
+import com.aymankhattab.nateq.core.common.VisibleEngines
+import com.aymankhattab.nateq.core.common.VisibleLanguages
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 /** اختبارات لوحة فئات الأصوات بعد إعادة التصميم (منطق نقي بلا أندرويد):
  *  محتوى سبnner الفئات العلوي وترتيبه، خريطة فئة المتصل الفرعية حسب اللغة،
  *  وقاعدة «المحرك المخصص» للفئات. */
 class CategoryPanelLogicTest {
+
+    @Before
+    fun setUp() {
+        VisibleEngines.resetForTest()
+        VisibleLanguages.resetForTest()
+    }
+
+    @After
+    fun tearDown() {
+        VisibleEngines.resetForTest()
+        VisibleLanguages.resetForTest()
+    }
 
     @Test
     fun categoryEntries_haveExpectedOrderAndKeys() {
@@ -102,5 +119,40 @@ class CategoryPanelLogicTest {
                 SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
             )
         )
+    }
+
+    @Test
+    fun visibleEngines_filtersEventAndCallerEngines() {
+        val eng1 = EnginePicker.InstalledEngine("pkg.google", "Google")
+        val eng2 = EnginePicker.InstalledEngine("pkg.vocalizer", "Vocalizer")
+        val eng3 = EnginePicker.InstalledEngine("pkg.hidden", "Hidden")
+        val all = listOf(eng1, eng2, eng3)
+
+        VisibleEngines.setFilter(true, setOf("pkg.google", "pkg.vocalizer"))
+
+        val filtered = all.filter { VisibleEngines.isVisible(it.packageName) }
+        assertEquals(listOf(eng1, eng2), filtered)
+        assertFalse(filtered.any { it.packageName == "pkg.hidden" })
+
+        // محرك محفوظ محجوب يعود إلى 0 (أول محرك مرئي)
+        val hiddenIdx = engineIndexFor(filtered, "pkg.hidden")
+        assertEquals(0, hiddenIdx)
+
+        val visibleIdx = engineIndexFor(filtered, "pkg.vocalizer")
+        assertEquals(1, visibleIdx)
+    }
+
+    @Test
+    fun visibleLanguages_filtersEventLanguages() {
+        VisibleLanguages.setFilter(true, setOf("ar", "en"))
+
+        val allLangs = listOf("ar", "en", "fr", "de")
+        val visible = VisibleLanguages.filter(allLangs)
+
+        assertEquals(listOf("ar", "en"), visible)
+        assertFalse(VisibleLanguages.isVisible("fr"))
+        assertFalse(VisibleLanguages.isVisible("de"))
+        assertTrue(VisibleLanguages.isVisible("ar-EG"))
+        assertTrue(VisibleLanguages.isVisible("en-US"))
     }
 }
