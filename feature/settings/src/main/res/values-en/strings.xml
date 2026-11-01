@@ -712,17 +712,16 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Fixed numbers reading and saving when selecting Acapela TTS or any external engine.
+• Prevented saved numbers voice deletion caused by cross-engine voice drift detection during announcements.
+• Enabled on-demand voice fetching for external engines in the category voice panel.
+• Ensured number speech routing to the configured category engine in both reader synthesis and preview.
+
+Previous Version
 • Fixed numbers category voice and engine saving, ensuring automatic engine synchronization upon selecting a voice.
 • Resolved false-alarm warnings for truncated text on UI elements and restricted inactive check log spam.
 • Prevented blank or whitespace segments from being counted as dropped segments in latency trackers.
 • Fixed numbers voice preview in category panel to accurately reflect the selected voice.
-
-Previous Version
-• Dynamically registered accessibility events for extras upon activation without restarting the service.
-• Added shortcut to cycle and read clipboard stack entries, paste the selected item, and ensured full shortcut coverage.
-• Fully fixed black screen curtain with complete system bar insets, cross-process persistence, and test tool in extras.
-• Unified number voice resolution between preview and speech, kept engine host alive with backoff, and added numeric trace tracking.
-• Filtered engines and languages for event voices (battery, caller, time, numbers, notifications, emoji) to hide excluded ones.
     </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>

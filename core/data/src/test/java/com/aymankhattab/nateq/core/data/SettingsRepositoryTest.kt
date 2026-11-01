@@ -1645,6 +1645,32 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun updateSavedVoiceNameIfNeeded_ignoresVoiceFromDifferentEngine() {
+        repo.setEngineForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS,
+            "com.acapelagroup.android.tts"
+        )
+        repo.setPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS,
+            "ara-SAU-Mehdi"
+        )
+
+        // محاولة تحديث الاسم بصوت Vocalizer لا يتبع محرك Acapela
+        repo.updateSavedVoiceNameIfNeeded(
+            "ara-SAU-Mehdi",
+            "ara-SAU-Leila"
+        )
+
+        // يجب أن يبقى الصوت كما هو دون حذف أو تعديل
+        assertEquals(
+            "ara-SAU-Mehdi",
+            repo.getPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+        )
+    }
+
+    @Test
     fun textProcessingPreferences_defaultsAreTrueAndSettersPersist() {
         assertTrue(repo.isTimeConversionEnabled())
         assertTrue(repo.isCurrencyConversionEnabled())

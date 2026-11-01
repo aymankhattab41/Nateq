@@ -194,4 +194,18 @@ class NateqTtsServiceConvertTest {
         assertNull(service.numbersCategoryTarget(Segment("1a2", "en")))
         assertNull(service.numbersCategoryTarget(Segment("", "en")))
     }
+
+    @Test
+    fun numbersCategoryTarget_withEngineOnly_returnsConvertTarget() {
+        val service = createService { repo ->
+            repo.setEngineForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS,
+                "com.acapelagroup.android.tts"
+            )
+        }
+        val target = service.numbersCategoryTarget(Segment("1500", "ar"))
+        assertNotNull(target)
+        assertEquals("com.acapelagroup.android.tts", target!!.convertEngine)
+        assertEquals(null, target.convertVoiceName)
+    }
 }

@@ -2688,7 +2688,20 @@ speechCycle.incrementAndGet()
                 defaultPitch = basePitch,
                 defaultVolume = baseVolume
             )
-            val segmentVoice = resolved.voiceId
+            val candidateVoice = resolved.voiceId
+            val knownVoices = runCatching { tts?.voices }
+                .getOrNull()?.map { it.name }
+            val segmentVoice = if (
+                candidateVoice != null &&
+                !boundEngine.isNullOrBlank() &&
+                !VoiceIdContract.isVoiceBelongingToEngine(
+                    boundEngine, candidateVoice, knownVoices
+                )
+            ) {
+                if (arabic) voiceId else enVoice
+            } else {
+                candidateVoice
+            }
             // بند الأوامر 1: معالجة نص المقطع عبر TextProcessor بلغته (أرقام،
             // أوقات، عملات، روابط...) قبل إرساله للمحرك — موحّداً مع القارئ.
             // أي خطأ في المعالجة (قاموس مفقود...) يُسقط النص الخام لا الصمت.
@@ -2928,7 +2941,19 @@ speechCycle.incrementAndGet()
                 } else {
                     voiceApplied = true
                     // تحديث الاسم المحفوظ إن اختلف (Vocalizer يُغيّر الأسماء)
-                    if (partVoice != null && chosen.name != partVoice) {
+                    val enginePkg = boundEngine
+                    val knownVoices = voices?.map { it.name }
+                    val partBelongsToEngine = enginePkg.isNullOrBlank() ||
+                        VoiceIdContract.isVoiceBelongingToEngine(
+                            enginePkg, partVoice, knownVoices
+                        )
+                    if (partVoice != null &&
+                        chosen.name != partVoice &&
+                        partBelongsToEngine &&
+                        VoiceIdContract.isVoiceBelongingToEngine(
+                            enginePkg, chosen.name, knownVoices
+                        )
+                    ) {
                         Log.w(
                             TAG,
                             "[doSpeak] voice name drift: saved=$partVoice → " +

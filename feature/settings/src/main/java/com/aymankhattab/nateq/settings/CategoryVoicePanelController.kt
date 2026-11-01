@@ -812,10 +812,7 @@ if (!dirtyPanel) {
             null
         }
         voiceOptions = catalog.voicesFor(currentPanelLanguage, engine)
-        if (engine != null &&
-            isEmbeddedEngine(engine) &&
-            voiceOptions.isEmpty()
-        ) {
+        if (engine != null && voiceOptions.isEmpty()) {
             val engineObj = categoryEngines
                 .firstOrNull { it.packageName == engine }
             val label = engineObj?.label ?: engine

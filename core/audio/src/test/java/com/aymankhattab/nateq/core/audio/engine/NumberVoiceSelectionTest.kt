@@ -231,4 +231,22 @@ class NumberVoiceSelectionTest {
         )
         assertEquals(categoryVoiceAr, resolvedAr.voiceId)
     }
+
+    @Test
+    fun resolve_numberWithCategoryEngineAndNullVoice() {
+        val resolved = VoiceResolutionPolicy.resolve(
+            role = SpeechRole.NUMBER,
+            languageTag = "ar",
+            categoryVoice = null,
+            appVoice = null,
+            contactVoice = null,
+            languageDefaultVoice = "ar-EG-default",
+            categoryEngine = "com.acapelagroup.android.tts"
+        )
+        assertEquals(
+            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER,
+            resolved.source
+        )
+        assertEquals(null, resolved.voiceId)
+    }
 }
