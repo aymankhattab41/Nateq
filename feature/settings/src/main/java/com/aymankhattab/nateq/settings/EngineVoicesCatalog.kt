@@ -174,6 +174,27 @@ internal class EngineVoicesCatalog(
         return null
     }
 
+    /**
+     * يعيد اسم حزمة المحرك الذي يملك هذا الصوت، أو null إن لم يُعثَر عليه.
+     */
+    internal fun engineOfVoice(
+        voiceName: String,
+        language: String? = null
+    ): String? {
+        if (voiceName.isBlank()) return null
+        val rowsList = if (language != null) {
+            byLanguage[language].orEmpty()
+        } else {
+            byLanguage.values.flatten()
+        }
+        for (row in rowsList) {
+            if (row.voices.any { it.name == voiceName }) {
+                return row.enginePackage
+            }
+        }
+        return null
+    }
+
     /** يستدل لغة صوتٍ محفوظ: الصيغ المنطقية (ar-EG/en-US/-local القديمة)
      *  تُحسم مباشرة، والأسماء المكتشفة تُبحث في الخريطة؛ null = مجهول. */
     internal fun languageForSavedVoice(savedVoice: String): String? =

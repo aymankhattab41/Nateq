@@ -643,7 +643,8 @@ internal class VoicePreviewHelper(private val context: Context) {
 
         val desiredEngine = params.enginePkg?.takeIf { it.isNotBlank() }
         val effectiveParams = if (
-            params.category == SettingsRepository.VOICE_CATEGORY_NUMBERS
+            params.category == SettingsRepository.VOICE_CATEGORY_NUMBERS &&
+            params.voiceName.isNullOrBlank()
         ) {
             val langTag = params.languageTag.ifEmpty { "ar" }
             val resolved = VoiceResolutionPolicy.resolveSegmentVoice(

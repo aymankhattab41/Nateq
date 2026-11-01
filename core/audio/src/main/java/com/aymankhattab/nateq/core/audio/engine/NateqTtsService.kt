@@ -949,12 +949,20 @@ class NateqTtsService : TextToSpeechService() {
                     settings.getReadMoreAllowedPackages().contains(fgPkg)
                 val isTruncated = SelectorPacks.looksTruncated(rawText)
                 if (isTruncated) {
-                    Log.w(
-                        TAG,
-                        "[READMORE] Speech detected truncated text " +
-                            "(enabled=$readMoreEnabled, " +
-                            "allowed=$isPkgAllowed, len=${rawText.length})"
-                    )
+                    if (readMoreEnabled && isPkgAllowed) {
+                        Log.i(
+                            TAG,
+                            "[READMORE] Speech detected truncated text " +
+                                "(len=${rawText.length})"
+                        )
+                    } else {
+                        Log.d(
+                            TAG,
+                            "[READMORE] Text looks truncated but expansion " +
+                                "is inactive (enabled=$readMoreEnabled, " +
+                                "allowed=$isPkgAllowed, len=${rawText.length})"
+                        )
+                    }
                 }
                 if (readMoreEnabled && isPkgAllowed && isTruncated) {
                     val expanded = AccessibilityBridge.expandReadMore(
@@ -2094,6 +2102,13 @@ class NateqTtsService : TextToSpeechService() {
         val params = resolveSegmentParams(
             segment, readerRate, appVoice, reqVoiceName, effectCategory
         ) ?: return null
+        if (params.text.isBlank()) {
+            return SegmentAudio(
+                nativeRate = 22050,
+                nativeChannels = 1,
+                chunks = emptyList()
+            )
+        }
         onResolved?.invoke(params.engine, params.voiceName ?: params.voice.id)
         val chunks = ArrayList<ByteArray>()
         var nativeRate = 0
@@ -2169,6 +2184,13 @@ class NateqTtsService : TextToSpeechService() {
         reqVoiceName: String? = null,
         onMetric: ((SpeechLatencyTracker.SegmentMetric) -> Unit)? = null
     ): SegmentAudio? {
+        if (segment.text.isBlank()) {
+            return SegmentAudio(
+                nativeRate = 22050,
+                nativeChannels = 1,
+                chunks = emptyList()
+            )
+        }
         val startUptime = SystemClock.uptimeMillis()
         var attempts = 1
         var resolvedEngine: String? = null
@@ -2205,7 +2227,7 @@ class NateqTtsService : TextToSpeechService() {
 
         val endUptime = SystemClock.uptimeMillis()
         val success = (audio != null)
-        if (!success) {
+        if (!success && !segment.text.isBlank()) {
             Log.w(TAG, "مقطع محذوف: ${segment.text}")
             SpeechLatencyTracker.recordDroppedSegment(segment.text)
         }
