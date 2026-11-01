@@ -2780,12 +2780,15 @@ class NateqTtsService : TextToSpeechService() {
             settings.getPreferredVoiceIdForCategory(
                 SettingsRepository.VOICE_CATEGORY_NUMBERS
             )
-        }.getOrNull() ?: return null
+        }.getOrNull()
         val engine = runCatching {
             settings.getEngineForCategory(
                 SettingsRepository.VOICE_CATEGORY_NUMBERS
             )
         }.getOrNull()
+        if (voiceId.isNullOrBlank() && engine.isNullOrBlank()) {
+            return null
+        }
         val rate = runCatching {
             settings.getSpeechRateForCategory(
                 SettingsRepository.VOICE_CATEGORY_NUMBERS
@@ -2811,9 +2814,11 @@ class NateqTtsService : TextToSpeechService() {
         ) {
             true
         } else {
-            VoiceResolutionPolicy.isVoiceLanguageMatch(
-                voiceId, segment.languageTag
-            )
+            voiceId?.let {
+                VoiceResolutionPolicy.isVoiceLanguageMatch(
+                    it, segment.languageTag
+                )
+            } ?: true
         }
         return ConvertTarget(
             convertEngine = if (matches) engine else null,

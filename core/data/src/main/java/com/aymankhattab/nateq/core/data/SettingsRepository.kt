@@ -1746,6 +1746,19 @@ class SettingsRepository(context: Context) :
         for (cat in categories) {
             val saved = getPreferredVoiceIdForCategory(cat)
             if (saved == oldName) {
+                val catEngine = getEngineForCategory(cat)
+                if (!catEngine.isNullOrBlank() &&
+                    !VoiceIdContract.isVoiceBelongingToEngine(
+                        catEngine, newName
+                    )
+                ) {
+                    Log.w(
+                        TAG,
+                        "تجاهل تحديث اسم الصوت للفئة $cat: " +
+                            "$newName لا يتبع المحرك $catEngine"
+                    )
+                    continue
+                }
                 setPreferredVoiceIdForCategory(cat, newName)
                 Log.i(
                     TAG,

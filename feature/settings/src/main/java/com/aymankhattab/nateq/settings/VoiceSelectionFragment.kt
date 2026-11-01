@@ -2236,16 +2236,18 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         // يُحترم صوت الفئة المحفوظ (قد يكون من محرك خارجي) فيُمرَّر
         // name المطابق إلى voiceId — resetVoice قصير الدارة بلا
         // إعادة تهيئة غير ضرورية.
-        runCatching {
+        val preferredVoice = runCatching {
             settings.getPreferredVoiceIdForCategory(category)
-        }.getOrNull()?.let { speaker.resetVoice(it) }
+        }.getOrNull()
+        speaker.resetVoice(preferredVoice)
         speaker.speak(
             text,
             Locale.forLanguageTag(languageTag),
             rate,
             1.0f,
             1.0f,
-            engineOverride = engine
+            engineOverride = engine,
+            category = category
         )
     }
 
