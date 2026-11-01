@@ -233,11 +233,11 @@ class NumberVoiceSelectionTest {
     }
 
     @Test
-    fun resolve_numberWithCategoryEngineAndNullVoice() {
+    fun resolve_numberWithAcapelaCategoryVoice_returnsSourceCategoryNumber() {
         val resolved = VoiceResolutionPolicy.resolve(
             role = SpeechRole.NUMBER,
             languageTag = "ar",
-            categoryVoice = null,
+            categoryVoice = "ara-SAU-Mehdi",
             appVoice = null,
             contactVoice = null,
             languageDefaultVoice = "ar-EG-default",
@@ -247,6 +247,6 @@ class NumberVoiceSelectionTest {
             VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER,
             resolved.source
         )
-        assertEquals(null, resolved.voiceId)
+        assertEquals("ara-SAU-Mehdi", resolved.voiceId)
     }
 }

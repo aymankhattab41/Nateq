@@ -143,16 +143,6 @@ object VoiceResolutionPolicy {
                         effectiveCategoryVoice,
                         SOURCE_CATEGORY_NUMBER
                     )
-                } else if (!effectiveCategoryVoice.isNullOrBlank()) {
-                    ResolvedVoice(
-                        languageDefaultVoice,
-                        SOURCE_CATEGORY_NUMBER_PARAMS
-                    )
-                } else if (!categoryEngine.isNullOrBlank()) {
-                    ResolvedVoice(
-                        null,
-                        SOURCE_CATEGORY_NUMBER
-                    )
                 } else if (!contactVoice.isNullOrBlank()) {
                     ResolvedVoice(contactVoice, SOURCE_CONTACT)
                 } else if (!appVoice.isNullOrBlank()) {
@@ -160,14 +150,22 @@ object VoiceResolutionPolicy {
                 } else if (!languageDefaultVoice.isNullOrBlank()) {
                     ResolvedVoice(
                         languageDefaultVoice,
-                        SOURCE_LANGUAGE_DEFAULT
+                        if (!effectiveCategoryVoice.isNullOrBlank()) {
+                            SOURCE_CATEGORY_NUMBER_PARAMS
+                        } else {
+                            SOURCE_LANGUAGE_DEFAULT
+                        }
                     )
                 } else if (!emergencyVoice.isNullOrBlank()) {
                     ResolvedVoice(emergencyVoice, SOURCE_EMERGENCY)
                 } else {
                     ResolvedVoice(
                         null,
-                        SOURCE_LANGUAGE_DEFAULT
+                        if (!effectiveCategoryVoice.isNullOrBlank()) {
+                            SOURCE_CATEGORY_NUMBER_PARAMS
+                        } else {
+                            SOURCE_LANGUAGE_DEFAULT
+                        }
                     )
                 }
             }
@@ -176,11 +174,6 @@ object VoiceResolutionPolicy {
                 if (!effectiveCategoryVoice.isNullOrBlank()) {
                     ResolvedVoice(
                         effectiveCategoryVoice,
-                        SOURCE_CATEGORY_EMOJI
-                    )
-                } else if (!categoryEngine.isNullOrBlank()) {
-                    ResolvedVoice(
-                        null,
                         SOURCE_CATEGORY_EMOJI
                     )
                 } else if (!contactVoice.isNullOrBlank()) {
