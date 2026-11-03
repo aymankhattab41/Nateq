@@ -59,7 +59,17 @@ object ScreenCurtain {
     }
 
     fun enable(service: AccessibilityService): Boolean {
-        if (isCurtainActive) return true
+        if (isCurtainActive) {
+            // **مصالحةُ الحالة المحفوظة:** الطبقةُ قد تكون قائمةً في الذاكرة
+            // بينما علمُ الإعدادات `false` (كتابةٌ خارجية أو لقطةُ إعداداتٍ
+            // بدّلت القيمة). بلا هذه المصالحة يظلّ الإبلاغ «مفعّلة» بلا أثرٍ
+            // بعد إعادة تشغيل العملية، فلا تُستعاد الستارة عند اتصال الخدمة.
+            val repo = SettingsRepository.create(service)
+            if (!repo.isScreenCurtainActive()) {
+                repo.setScreenCurtainActive(true)
+            }
+            return true
+        }
         val wm = service.getSystemService(Context.WINDOW_SERVICE)
             as? WindowManager
         if (wm == null) {
