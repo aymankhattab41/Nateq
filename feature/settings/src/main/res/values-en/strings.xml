@@ -719,6 +719,7 @@ Version %1$s
 • Unmeasured time-to-first-byte is now shown as "not measured" instead of a misleading value equal to the whole utterance duration.
 • The caller diagnostic line now records the name that was actually announced.
 • Clarified the "enabled extras" label in the dynamic event reapply log.
+• The screen curtain now reconciles its saved state when re-enabled, so its restore after a restart can never be lost.
 
 Previous Version
 • Fixed numbers reading and saving when selecting Acapela TTS or any external engine.

@@ -119,6 +119,32 @@ class ScreenCurtainTest {
     }
 
     @Test
+    fun `enable reconciles persisted flag when memory and settings drift`() {
+        val service = Robolectric.buildService(
+            NateqAccessibilityService::class.java
+        ).create().get()
+
+        val enabled = ScreenCurtain.enable(service)
+        if (enabled) {
+            // انجرافٌ خارجي: الطبقة قائمة في الذاكرة والعلم المحفوظ false.
+            settingsRepo.setScreenCurtainActive(false)
+
+            assertTrue(
+                "إعادة التمكين لا تُعيد بناء طبقة قائمة",
+                ScreenCurtain.enable(service)
+            )
+            assertTrue(
+                "الادّعاء «مفعّلة» يجب أن يُثبَّت في الإعدادات " +
+                    "وإلا فقدت الستارة استعادتها بعد إعادة التشغيل",
+                settingsRepo.isScreenCurtainActive()
+            )
+
+            ScreenCurtain.disable(service)
+            assertFalse(settingsRepo.isScreenCurtainActive())
+        }
+    }
+
+    @Test
     fun `service reconnect restores curtain when previously active`() {
         settingsRepo.setScreenCurtainActive(true)
         assertTrue(ScreenCurtain.isActive(context))
