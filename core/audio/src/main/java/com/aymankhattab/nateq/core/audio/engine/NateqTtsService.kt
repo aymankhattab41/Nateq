@@ -460,7 +460,7 @@ class NateqTtsService : TextToSpeechService() {
             com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
                 .getInstance(applicationContext).speak(
                     announcement,
-                    Locale("ar"),
+                    Locale.forLanguageTag("ar"),
                     1.0f,
                     1.0f,
                     1.0f
@@ -1197,7 +1197,14 @@ class NateqTtsService : TextToSpeechService() {
             Log.w(TAG, "onSynthesizeText join interrupted", t)
         } finally {
             val totalDurationMs = SystemClock.uptimeMillis() - startUptime
-            val ttfb = if (ttfbMs.get() > 0L) ttfbMs.get() else totalDurationMs
+            // **لا يُستبدل القياس الغائب بالزمن الكلي.** كان ذلك يجعل
+            // TTFB = مدة العبارة كاملة فيظهر «بطيئاً جداً» وهو لم يُقس
+            // أصلاً (رصد: 3148ms لعبارةٍ بلا بايت أول مُسجَّل).
+            val ttfb = if (ttfbMs.get() > 0L) {
+                ttfbMs.get()
+            } else {
+                SpeechLatencyTracker.TTFB_UNMEASURED_MS
+            }
             SpeechLatencyTracker.recordUtterance(
                 SpeechLatencyTracker.UtteranceMetric(
                     text = rawText,
@@ -1570,7 +1577,8 @@ class NateqTtsService : TextToSpeechService() {
                 finalVoiceName
             }
             val isSafe = CrashGuard.isSafeModeActive(applicationContext)
-            val isCatEm = singleCategory != null &&
+            // `singleCategory` غير قابل للعدم: له احتياطيٌّ في `when` أعلاه.
+            val isCatEm =
                 CategoryFailureTracker.isEmergencyActive(singleCategory)
             val isEmergency = isSafe || isCatEm
 

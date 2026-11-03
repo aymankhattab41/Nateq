@@ -67,6 +67,13 @@ class ExtrasDynamicRegistrationTest {
 
         val formatted = ExtrasDiagnosticsTracker.format()
         assertTrue(formatted.contains("SCROLLED"))
+        // **التسمية الصادقة:** كانت «المفعّلة (0)» تُقرأ كأنها أنواعُ
+        // أحداثٍ مفعّلة، والصحيح أنها **الإضافات** المفعّلة، وكانت 0
+        // لأن الإضافات الديناميكية لا تُسجَّل هنا في تلك اللحظة.
+        assertTrue(
+            "التسمية توضّح أن العدّاد للإضافات لا لأنواع الأحداث",
+            formatted.contains("الإضافات المفعّلة")
+        )
     }
 
     @Test

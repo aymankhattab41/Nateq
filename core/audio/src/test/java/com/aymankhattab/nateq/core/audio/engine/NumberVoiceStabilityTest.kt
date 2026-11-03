@@ -111,6 +111,44 @@ class NumberVoiceStabilityTest {
         assertTrue(formatted.contains("تتبع المقاطع الرقمية"))
     }
 
+    /**
+     * حارسُ إفصاح سطر التتبع المكثّف.
+     *
+     * **الكسرُ الذي يحرسه:** كان السطر بلا وقتٍ ولا أهميةٍ ولا انتظار،
+     * فتُقرأ أسطرُ متطابقة كأنها محاولاتٌ متعددة بينما قد تكون سجلاً
+     * واحداً مكرَّراً، ويستحيل تشخيص انحراف صوت الفئة.
+     */
+    @Test
+    fun `compact trace line exposes time importance and wait`() {
+        NumberSegmentTraceTracker.record(
+            text = "١٢٣٤",
+            requestedEngine = "vocalizer_embedded",
+            requestedVoice = "ara-SAU-Leila",
+            actualEngine = "com.google.android.tts",
+            actualVoice = "ar-xa-x-ard-local",
+            hostReady = false,
+            waitDurationMs = 1750L,
+            fallbackReason = "host not ready",
+            importance = 100
+        )
+
+        val lines = NumberSegmentTraceTracker.formatCompact()
+        assertEquals(1, lines.size)
+        val line = lines[0]
+        assertTrue(
+            "الوقت إلزامي لتمييز السجلات المكررة: $line",
+            Regex("^\\d{2}:\\d{2}:\\d{2}\\.\\d{3}\\|")
+                .containsMatchIn(line)
+        )
+        assertTrue("الانتظار مذكور: $line", line.contains("wait=1750"))
+        assertTrue("الأهمية مذكورة: $line", line.contains("imp=100"))
+        assertTrue(
+            "سبب التراجع مذكور: $line",
+            line.contains("fb=host not ready")
+        )
+        assertTrue("النص مذكور: $line", line.contains("١٢٣٤"))
+    }
+
     @Test
     fun `host not ready fallback records reason and maintains same language`() {
         val importance = NumberSegmentTraceTracker.currentImportance(context)

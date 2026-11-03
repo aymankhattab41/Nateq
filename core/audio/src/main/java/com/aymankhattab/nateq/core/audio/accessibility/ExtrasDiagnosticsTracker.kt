@@ -86,8 +86,9 @@ object ExtrasDiagnosticsTracker {
                 )
                 val hexTypes = Integer.toHexString(item.currentTypes)
                 appendLine(
-                    "   إجمالي الأنواع: 0x$hexTypes | " +
-                        "المفعّلة (${item.enabledExtras.size}): " +
+                    "   أنواع الأحداث المسجّلة: 0x$hexTypes | " +
+                        "الإضافات المفعّلة " +
+                        "(${item.enabledExtras.size}): " +
                         item.enabledExtras.joinToString(", ")
                 )
             }

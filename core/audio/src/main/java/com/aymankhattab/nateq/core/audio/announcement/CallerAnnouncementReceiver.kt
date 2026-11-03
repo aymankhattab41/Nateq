@@ -526,6 +526,17 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         internal var lastAnnouncedHadName = false
 
         /**
+         * الاسم الذي **نُطق فعلاً** في الجلسة، أو `null`.
+         *
+         * كان يُسجَّل عَلَمٌ منطقي فقط ([lastAnnouncedHadName])، فتظهر
+         * الرسالة `announced=?` وحدها ولا يُعرف **ماذا** قيل: اسمٌ أم
+         * رقم. هذا الحقل يجعل التشخيص صريحاً ويُميّز إعلاناً بالاسم
+         * عن إعلانٍ برقمٍ محفوظ.
+         */
+        @Volatile
+        internal var lastAnnouncedName: String? = null
+
+        /**
          * الرقم الذي **أُعلن به فعلاً** في جلسة الرنين الحالية — لا
          * «آخر رقم شوهد». الفرقُ حاسم: حين كان يُسجَّل الرقم الوارد
          * في [lastResolvedNumber] **قبل** المقارنة، كانت
@@ -701,6 +712,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             ringingStartTime = 0L
             ringingAnnounced = false
             lastAnnouncedHadName = false
+            lastAnnouncedName = null
             announcedNumber = null
             clearCallAnswered()
             pendingRingNumber = null
@@ -1241,6 +1253,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
         TAG,
         "RX state=$state prev=$previousState" +
             " num=${rawNumber ?: "?"} announced=$announcedNumber" +
+            " announcedName=${lastAnnouncedName ?: "?"}" +
             " flag=$ringingAnnounced" +
             " cycle=${activeCallCycle?.isActive}" +
             " t=${System.currentTimeMillis()}"
@@ -1311,6 +1324,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
             TAG,
             "suppressed duplicate ring announcement" +
                 " (announced=${announcedNumber ?: "?"}," +
+                " name=${lastAnnouncedName ?: "?"}," +
                 " incoming=${rawNumber ?: "?"})"
         )
         finish()
@@ -1768,9 +1782,14 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                     )
                     ringingAnnounced = true
                     lastAnnouncedHadName = !contactName.isNullOrBlank()
+                    lastAnnouncedName = contactName
                     pendingRingNumber = null
                     if (announcedNumber == null) {
-                        announcedNumber = lastResolvedNumber ?: rawNumber
+                        // الرقمُ المُعلَن هو المحلولُ في هذه الدورة لا
+                        // آخرَ رقمٍ شوهد قبلها.
+                        announcedNumber = incomingNumber
+                            ?: lastResolvedNumber
+                            ?: rawNumber
                     }
                     withTimeoutOrNull(SPEECH_COMPLETION_TIMEOUT_MS) {
                         speechDeferred.await()

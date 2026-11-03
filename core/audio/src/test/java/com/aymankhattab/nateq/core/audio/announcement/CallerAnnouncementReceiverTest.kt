@@ -778,6 +778,20 @@ fun `waiting call announces only once without repeat schedule`() {
         assertNull(CallerAnnouncementReceiver.announcedNumber)
     }
 
+    @Test
+    fun testResetRingingSession_clearsAnnouncedName() {
+        CallerAnnouncementReceiver.lastAnnouncedName = "أحمد"
+        CallerAnnouncementReceiver.lastAnnouncedHadName = true
+
+        CallerAnnouncementReceiver.resetRingingSession()
+
+        assertNull(
+            "اسمُ الإعلان السابق لا يجوز أن يتسرّب إلى مكالمةٍ تالية",
+            CallerAnnouncementReceiver.lastAnnouncedName
+        )
+        assertFalse(CallerAnnouncementReceiver.lastAnnouncedHadName)
+    }
+
     /**
      * حارسُ منع تكرار إعلان المتصل.
      *
