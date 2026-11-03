@@ -109,6 +109,61 @@ class SpeechLatencyAndRetryTest {
     }
 
     @Test
+    fun testUnmeasuredTtfb_isReportedAsUnmeasuredNotZero() {
+        // حارسُ صدق مؤشر أول بايت.
+        //
+        // **الكسرُ الذي يحرسه:** كان غيابُ القياس يُستبدَل بالزمن الكلي
+        // فيظهر TTFB = مدة العبارة كاملة (رُصد 3148ms لعبارةٍ لم تُقس)،
+        // كما كان المتوسط يشمل صفراً فينخفض كذباً. «غير مقيس» وحدها
+        // معلومةٌ صادقة.
+        assertEquals(
+            SpeechLatencyTracker.TTFB_UNMEASURED_MS,
+            SpeechLatencyTracker.getAverageTimeToFirstByteMs()
+        )
+
+        SpeechLatencyTracker.recordUtterance(
+            SpeechLatencyTracker.UtteranceMetric(
+                text = "بلا قياس",
+                preprocessDurationMs = 1L,
+                planningDurationMs = 1L,
+                segments = emptyList(),
+                timeToFirstByteMs =
+                    SpeechLatencyTracker.TTFB_UNMEASURED_MS,
+                totalDurationMs = 3148L
+            )
+        )
+        assertEquals(
+            "قياسٌ غائب لا يُحسب صفراً ولا يُستبدل بالزمن الكلي",
+            SpeechLatencyTracker.TTFB_UNMEASURED_MS,
+            SpeechLatencyTracker.getAverageTimeToFirstByteMs()
+        )
+        assertTrue(
+            "التقرير يعرض «غير مقيس» بدل رقم مضلّل",
+            SpeechLatencyTracker.formatSpeedReport().contains("غير مقيس")
+        )
+
+        SpeechLatencyTracker.recordUtterance(
+            SpeechLatencyTracker.UtteranceMetric(
+                text = "مقيس",
+                preprocessDurationMs = 1L,
+                planningDurationMs = 1L,
+                segments = emptyList(),
+                timeToFirstByteMs = 200L,
+                totalDurationMs = 900L
+            )
+        )
+        assertEquals(
+            "المتوسط للقياسات الحقيقية فقط",
+            200L,
+            SpeechLatencyTracker.getAverageTimeToFirstByteMs()
+        )
+        assertTrue(
+            "بعد وجود قياسٍ حقيقي يُعرض رقمه",
+            SpeechLatencyTracker.formatSpeedReport().contains("200 ms")
+        )
+    }
+
+    @Test
     fun testMockProviderFailsFirstNumericCallThenSucceeds() = runBlocking {
         // (أ) مزوّد وهمي يفشل أول استدعاء لمقطع رقمي ثم ينجح:
         // يجب أن يُنطق الرقم كاملاً في المحاولة نفسها دون سحب.

@@ -33,6 +33,9 @@ object HostProtocol {
     // محرّكات المضيف — أسماء ثابتة تمرّ عبر AIDL.
     const val ENGINE_VOCALIZER = "vocalizer"
 
+    /** رمز «انهار المحرّك في آخر تشغيل» — يمنع التهيئة حتى إعادة المحاولة. */
+    const val CODE_CRASHED_LAST_RUN = "CRASHED_LAST_RUN"
+
     /**
      * توحيد معرّف المحرك إلى الاسم القانوني المعتمد في المضيف:
      * vocalizer_embedded -> vocalizer
@@ -343,6 +346,18 @@ object HostProtocol {
     // ----------------------------------------------------------------
 
     /**
+     * أقصى عمرٍ تُعدّ بعده علامةُ الانهيار قديمةً فلا تُمنع التهيئة.
+     *
+     * العلامةُ تُكتب قبل `session.init` وتُمحى بعده، لكن قتلَ العملية
+     * من خارج مسار الاستثناء (LMK/ANR/إغلاقٌ قسري) يتركها إلى الأبد،
+     * فيُرفض كلُّ `init` لاحقٍ بـ`CRASHED_LAST_RUN` ويظهر المحرّك
+     * معطوباً **مع سلامة بياناته** — وهو العَرَض الذي يجعل Vocalizer
+     * يقول «فشل التهيئة» بعد أن كان يعمل. فبعد هذه المهلة لا تكون
+     * العلامة دليلاً على انهيارٍ حديث، وتُمسح لتُتاح محاولةٌ نظيفة.
+     */
+    const val MARKER_TTL_MS = 10 * 60 * 1000L
+
+    /**
      * ملف علامة الانهيار لمحرك: يُكتب قبل أي تهيئة أصلية ويُمحى
      * بعد رجوعها، فإن ماتت العملية أثناء التهيئة تبقى العلامة
      * فتقرؤها العملية التالية وتعيد `CRASHED_LAST_RUN`.
@@ -363,9 +378,27 @@ object HostProtocol {
         runCatching { markerFile(dir, engineId).delete() }
     }
 
-    /** هل ماتت العملية أثناء آخر تهيئة لهذا المحرك؟ */
-    fun hasMarker(dir: File, engineId: String): Boolean =
-        markerFile(dir, engineId).exists()
+    /**
+     * هل ماتت العملية أثناء آخر تهيئة لهذا المحرك؟
+     *
+     * [now] حقنةُ زمنٍ للاختبار. العلامةُ الأقدم من [MARKER_TTL_MS]
+     * تُمسح وتُعدّ غير موجودة: بقاؤها كان يحوّل انهياراً عارضاً إلى
+     * منعٍ دائم للتهيئة.
+     */
+    fun hasMarker(
+        dir: File,
+        engineId: String,
+        now: Long = System.currentTimeMillis()
+    ): Boolean {
+        val file = markerFile(dir, engineId)
+        if (!file.exists()) return false
+        val age = now - file.lastModified()
+        if (age > MARKER_TTL_MS) {
+            runCatching { file.delete() }
+            return false
+        }
+        return true
+    }
 
     /** محتوى العلامة (للتشخيص في السجلّ)، أو سلسلة فارغة. */
     fun readMarker(dir: File, engineId: String): String = runCatching {

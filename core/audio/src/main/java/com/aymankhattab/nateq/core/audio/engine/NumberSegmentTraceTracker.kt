@@ -96,6 +96,28 @@ object NumberSegmentTraceTracker {
         )
     }
 
+    /**
+     * سطرٌ واحد مكثّف لكل سجلّ — لتقرير التشخيص.
+     *
+     * **الوقت والأهمية والانتظار إلزامية:** بلا الطابع الزمني كانت
+     * الأسطر المتطابقة تُقرأ «26 محاولة فعلية» بينما قد تكون سجلاً
+     * واحداً مكرَّراً، فيستحيل تشخيص انحراف الصوت. والسطرُ يحفظ الشكل
+     * القديم في أوّله فلا تنكسر أدواتٌ تقرؤه.
+     */
+    fun formatCompact(): List<String> {
+        val sdf = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
+        return getRecent().map { t ->
+            "${sdf.format(Date(t.timestamp))}|" +
+                "${t.text}|" +
+                "${t.requestedEngine}/${t.requestedVoice}" +
+                "->${t.actualEngine}/${t.actualVoice}" +
+                " ready=${t.hostReady}" +
+                " wait=${t.waitDurationMs}" +
+                " imp=${t.importance}" +
+                " fb=${t.fallbackReason}"
+        }
+    }
+
     fun format(): String {
         val list = getRecent()
         if (list.isEmpty()) {

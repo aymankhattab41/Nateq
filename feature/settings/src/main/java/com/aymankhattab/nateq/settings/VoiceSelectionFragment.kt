@@ -3180,12 +3180,24 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                         .TtsDiagnosticsProvider.KEY_A11Y_EVENTS_PER_MIN,
                     0
                 )
+                val a11yTotal = ttsSnapshot.getInt(
+                    com.aymankhattab.nateq.core.audio.engine
+                        .TtsDiagnosticsProvider.KEY_A11Y_EVENTS_TOTAL,
+                    0
+                )
                 val usagePolls = ttsSnapshot.getInt(
                     com.aymankhattab.nateq.core.audio.engine
                         .TtsDiagnosticsProvider.KEY_USAGE_STATS_POLLS,
                     0
                 )
-                sb.appendLine("  أحداث إمكانية الوصول/د (:tts): $a11yPerMin")
+                sb.appendLine(
+                    "  أحداث إمكانية الوصول/د (:tts، آخر 60ث): " +
+                        "$a11yPerMin"
+                )
+                sb.appendLine(
+                    "  إجمالي أحداث إمكانية الوصول منذ الإقلاع: " +
+                        "$a11yTotal"
+                )
                 if (usagePolls > 0) {
                     sb.appendLine("  استطلاعات UsageStats (:tts): $usagePolls")
                 }

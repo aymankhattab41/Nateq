@@ -712,16 +712,19 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Fixed the misleading "Vocalizer initialization failed" message when data is intact: a stale crash marker now expires after 10 minutes and the engine retries once automatically.
+• The saved category voice is no longer erased when a voice from another engine is rejected, so a working choice is never lost.
+• Clarified the accessibility event counter in diagnostics: last-60-second rate plus a cumulative total since startup.
+• Each number segment trace now shows time, importance, wait duration, and fallback reason.
+• Unmeasured time-to-first-byte is now shown as "not measured" instead of a misleading value equal to the whole utterance duration.
+• The caller diagnostic line now records the name that was actually announced.
+• Clarified the "enabled extras" label in the dynamic event reapply log.
+
+Previous Version
 • Fixed numbers reading and saving when selecting Acapela TTS or any external engine.
 • Prevented saved numbers voice deletion caused by cross-engine voice drift detection during announcements.
 • Enabled on-demand voice fetching for external engines in the category voice panel.
 • Ensured number speech routing to the configured category engine in both reader synthesis and preview.
-
-Previous Version
-• Fixed numbers category voice and engine saving, ensuring automatic engine synchronization upon selecting a voice.
-• Resolved false-alarm warnings for truncated text on UI elements and restricted inactive check log spam.
-• Prevented blank or whitespace segments from being counted as dropped segments in latency trackers.
-• Fixed numbers voice preview in category panel to accurately reflect the selected voice.
     </string>
     <string name="diagnostics_title">Diagnostics Info</string>
     <string name="diagnostics_desc">Information about app state and TTS engines to help troubleshoot issues.</string>

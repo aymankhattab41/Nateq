@@ -314,6 +314,55 @@ class HostProtocolTest {
         )
     }
 
+    /**
+     * حارسُ الشفاء من علامة انهيارٍ عالقة.
+     *
+     * **الكسرُ الذي يحرسه:** علامةٌ كُتبت قبل `session.init` ثم قُتلت
+     * العملية قبل محوها (LMK/ANR) كانت تبقى للأبد فيُرفض كلُّ `init`
+     * لاحقٍ بـ`CRASHED_LAST_RUN`، فيظهر المحرّك «فشل التهيئة» مع سلامة
+     * بياناته. بعد [HostProtocol.MARKER_TTL_MS] تُمسح وتُعدّ غير موجودة.
+     */
+    @Test
+    fun marker_staleIsClearedSoInitCanRecover() {
+        val dir = tempFolder.newFolder("files3")
+        HostProtocol.writeMarker(dir, "vocalizer", "stale")
+        val written = System.currentTimeMillis()
+
+        assertFalse(
+            "علامة أقدم من المهلة ليست دليل انهيار حديث",
+            HostProtocol.hasMarker(
+                dir,
+                "vocalizer",
+                now = written + HostProtocol.MARKER_TTL_MS + 1
+            )
+        )
+        assertFalse(
+            "العلامة البائتة تُمسح فعلياً من القرص",
+            HostProtocol.markerFile(dir, "vocalizer").exists()
+        )
+        assertFalse(
+            "ومرة أخرى لا تمنع التهيئة",
+            HostProtocol.hasMarker(dir, "vocalizer")
+        )
+    }
+
+    @Test
+    fun marker_freshStillBlocksInit() {
+        val dir = tempFolder.newFolder("files4")
+        HostProtocol.writeMarker(dir, "vocalizer", "fresh")
+        val written = System.currentTimeMillis()
+
+        assertTrue(
+            "انهيار حديث يبقى مانعاً حتى تُعاد المحاولة صراحةً",
+            HostProtocol.hasMarker(
+                dir,
+                "vocalizer",
+                now = written + HostProtocol.MARKER_TTL_MS / 2
+            )
+        )
+        assertTrue(HostProtocol.markerFile(dir, "vocalizer").exists())
+    }
+
     // ----------------------------------------------------------------
     // توحيد معرّفات المحركات (ع٣١-1)
     // ----------------------------------------------------------------

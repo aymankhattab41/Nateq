@@ -50,6 +50,46 @@ class VoiceEngineConflictTest {
         assertNull("يجب رفض أو مسح الصوت غير التابع للمحرك", voice)
     }
 
+    /**
+     * حارسُ عدم فقدان صوتٍ محفوظ عند رفض بديلٍ دخيل.
+     *
+     * **الكسرُ الذي يحرسه:** كان الرفض يمسح القيمة المحفوظة، فرُصد في
+     * السجل «رفض حفظ الصوت ara-SAU-Leila للفئة numbers» ثم نُطقت
+     * الأرقام بالصوت الافتراضي `ara-SAU-Mehdi` — أي أن محاولةَ حفظٍ
+     * مرفوضةً أضاعت اختياراً كان يعمل. القيمةُ القديمة تبقى كما هي.
+     */
+    @Test
+    fun testRejectedVoice_keepsPreviouslySavedVoice() {
+        repository.setEngineForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS,
+            "com.acapelagroup.android.tts"
+        )
+        repository.setPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS,
+            "Salma"
+        )
+        assertEquals(
+            "Salma",
+            repository.getPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+        )
+
+        // محاولة حفظ صوتٍ من محرك آخر — تُرفض وحدها.
+        repository.setPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS,
+            "ara-SAU-Leila"
+        )
+
+        assertEquals(
+            "الرفض لا يمسح الصوت المحفوظ الصالح",
+            "Salma",
+            repository.getPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+        )
+    }
+
     @Test
     fun testChangingEngine_clearsCategorySavedVoice() {
         // نضبط محركاً مدمجاً يقبل صوت فوكلايزر

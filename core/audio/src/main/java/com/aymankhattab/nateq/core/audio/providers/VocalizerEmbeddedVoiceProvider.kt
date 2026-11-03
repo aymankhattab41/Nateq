@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * مزود صوت محرك Nuance Vocalizer Expressive 2 (Embedded Engine) —
@@ -26,6 +27,21 @@ class VocalizerEmbeddedVoiceProvider(
     companion object {
         private const val TAG = "VocalizerEmbedded"
         const val PROVIDER_ID = "vocalizer_embedded"
+
+        /**
+         * هل جُرّبت إعادةُ المحاولة التلقائية بعد علامة انهيارٍ في هذه
+         * العملية؟ **مرّة واحدة فقط:** العلامةُ الحقيقية تعني انهياراً
+         * أصلياً أثناء `init`، فتكرارُ المحاولة في كل نداء يُدخل المضيف
+         * في حلقة انهيار. أمّا العلامةُ البائتة (بعد [HostProtocol.
+         * MARKER_TTL_MS]) فقد مُسحت في [HostProtocol.hasMarker] فلم
+         * يصلنا رمزها أصلاً.
+         */
+        private val crashRetryDone = AtomicBoolean(false)
+
+        /** تصفير حارس إعادة المحاولة — للاختبارات فقط. */
+        internal fun resetCrashRetryForTest() {
+            crashRetryDone.set(false)
+        }
 
         fun resolveDataDir(context: Context): File? =
             VocalizerEmbeddedVoiceProvider(context).resolveDataDir()
@@ -115,11 +131,36 @@ class VocalizerEmbeddedVoiceProvider(
         }
         val prevState = EngineStatusRegistry.statusOf(PROVIDER_ID)?.state
         EngineStatusRegistry.noteInitPending(PROVIDER_ID)
-        val result = EngineHostClient.init(
+        val dataDir = cachedDataPath.orEmpty()
+        var result = EngineHostClient.init(
             context,
             HostProtocol.ENGINE_VOCALIZER,
-            cachedDataPath.orEmpty()
+            dataDir
         )
+        // **شفاءٌ تلقائي من علامة انهيارٍ عالقة:** علامةٌ كُتبت ثم قُتلت
+        // العملية قبل محوها (LMK/ANR/إغلاق قسري) كانت تُبقي المحرّك
+        // «فاشل التهيئة» أبداً مع سلامة بياناته. إن كانت العلامة حديثة
+        // فعلاً فإعادةُ المحاولة الواحدة تكشفها: ينهار المضيف وحده ولا
+        // تتكرر المحاولة في هذه العملية.
+        if (!result.ok &&
+            result.code == HostProtocol.CODE_CRASHED_LAST_RUN &&
+            crashRetryDone.compareAndSet(false, true)
+        ) {
+            Log.w(
+                TAG,
+                "علامة انهيار عالقة — محوها وإعادة محاولة واحدة"
+            )
+            HostProtocol.clearMarker(
+                context.filesDir,
+                HostProtocol.ENGINE_VOCALIZER
+            )
+            result = EngineHostClient.init(
+                context,
+                HostProtocol.ENGINE_VOCALIZER,
+                dataDir,
+                force = true
+            )
+        }
         if (!result.ok) {
             Log.e(
                 TAG,

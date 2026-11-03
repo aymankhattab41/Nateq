@@ -1720,12 +1720,16 @@ class SettingsRepository(context: Context) :
         val engine = getEngineForCategory(category)
         if (!engine.isNullOrBlank()) {
             if (!VoiceIdContract.isVoiceBelongingToEngine(engine, voiceId)) {
+                // **لا يُمسح الصوتُ المحفوظ عند الرفض.** كان الحذفُ هنا
+                // يُحوّل محاولةَ حفظٍ واحدةٍ دخيلةً إلى فقدانِ اختيارٍ
+                // كان يعمل (رُصد: رُفض `ara-SAU-Leila` لمحرك Acapela
+                // فصار النطق بالصوت الافتراضي `ara-SAU-Mehdi`). فالقيمةُ
+                // السابقة تبقى كما هي، والمحاولةُ الجديدة تُرفض وحدها.
                 Log.w(
                     TAG,
                     "رفض حفظ الصوت $voiceId للفئة $category: " +
-                        "لا يتبع المحرك $engine"
+                        "لا يتبع المحرك $engine — أُبقي المحفوظ"
                 )
-                prefs.edit().remove("preferred_voice_$category").apply()
                 return
             }
             setPreferredVoiceForEngine(engine, category, voiceId)
