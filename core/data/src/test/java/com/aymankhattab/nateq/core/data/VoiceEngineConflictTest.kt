@@ -39,7 +39,24 @@ class VoiceEngineConflictTest {
             SettingsRepository.VOICE_CATEGORY_NUMBERS,
             "com.acapelagroup.android.tts"
         )
-        // صوت ara-SAU-Leila لا يتبع أكابيلا
+        // صوت Tarik يتبع فوكلايزر ولا يتبع أكابيلا
+        repository.setPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS,
+            "Tarik"
+        )
+        val voice = repository.getPreferredVoiceIdForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS
+        )
+        assertNull("يجب رفض أو مسح الصوت غير التابع للمحرك", voice)
+    }
+
+    @Test
+    fun testSavingAcapelaVoice_underAcapela_isAccepted() {
+        repository.setEngineForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS,
+            "com.acapelagroup.android.tts"
+        )
+        // صوت ara-SAU-Leila يتبع أكابيلا صراحةً ويجب قبوله دون رفض
         repository.setPreferredVoiceIdForCategory(
             SettingsRepository.VOICE_CATEGORY_NUMBERS,
             "ara-SAU-Leila"
@@ -47,7 +64,7 @@ class VoiceEngineConflictTest {
         val voice = repository.getPreferredVoiceIdForCategory(
             SettingsRepository.VOICE_CATEGORY_NUMBERS
         )
-        assertNull("يجب رفض أو مسح الصوت غير التابع للمحرك", voice)
+        assertEquals("ara-SAU-Leila", voice)
     }
 
     @Test
@@ -59,10 +76,10 @@ class VoiceEngineConflictTest {
         )
         repository.setPreferredVoiceIdForCategory(
             SettingsRepository.VOICE_CATEGORY_NUMBERS,
-            "ara-SAU-Maged"
+            "Maged"
         )
         assertEquals(
-            "ara-SAU-Maged",
+            "Maged",
             repository.getPreferredVoiceIdForCategory(
                 SettingsRepository.VOICE_CATEGORY_NUMBERS
             )
@@ -88,14 +105,14 @@ class VoiceEngineConflictTest {
         assertFalse(
             VoiceIdContract.isVoiceBelongingToEngine(
                 "com.acapelagroup.android.tts",
-                "ara-SAU-Leila"
+                "Tarik"
             )
         )
         // صوت فوكلايزر تحت جوجل
         assertFalse(
             VoiceIdContract.isVoiceBelongingToEngine(
                 "com.google.android.tts",
-                "ara-SAU-Leila"
+                "Tarik"
             )
         )
         // صوت جوجل تحت فوكلايزر المدمج
@@ -105,11 +122,25 @@ class VoiceEngineConflictTest {
                 "ar-xa-x-ard-local"
             )
         )
-        // صوت متطابق
+        // صوت أكابيلا تحت أكابيلا
         assertTrue(
+            VoiceIdContract.isVoiceBelongingToEngine(
+                "com.acapelagroup.android.tts",
+                "ara-SAU-Leila"
+            )
+        )
+        // صوت أكابيلا تحت فوكلايزر المدمج
+        assertFalse(
             VoiceIdContract.isVoiceBelongingToEngine(
                 "vocalizer_embedded",
                 "ara-SAU-Leila"
+            )
+        )
+        // صوت فوكلايزر مدمج تحت فوكلايزر المدمج
+        assertTrue(
+            VoiceIdContract.isVoiceBelongingToEngine(
+                "vocalizer_embedded",
+                "Laila"
             )
         )
     }
@@ -120,13 +151,13 @@ class VoiceEngineConflictTest {
         context.getSharedPreferences("nateq_settings", Context.MODE_PRIVATE)
             .edit()
             .putString("engine_for_numbers", "com.acapelagroup.android.tts")
-            .putString("preferred_voice_numbers", "ara-SAU-Leila")
+            .putString("preferred_voice_numbers", "Tarik")
             .commit()
 
         val engine = repository.getEngineForCategory("numbers")
         val voice = repository.getPreferredVoiceIdForCategory("numbers")
         assertEquals("com.acapelagroup.android.tts", engine)
-        assertEquals("ara-SAU-Leila", voice)
+        assertEquals("Tarik", voice)
 
         // التحقق من كشف التناقض
         val mismatch = !VoiceIdContract.isVoiceBelongingToEngine(engine, voice)

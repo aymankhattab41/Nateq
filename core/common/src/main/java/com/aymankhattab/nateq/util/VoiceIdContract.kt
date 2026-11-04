@@ -119,7 +119,11 @@ object VoiceIdContract {
             val isGoogle = voiceId.contains("-x-") ||
                 voiceId.endsWith("-local")
             val isAcapela = voiceId.startsWith("ar_") ||
-                voiceId.startsWith("en_")
+                voiceId.startsWith("en_") ||
+                voiceId.startsWith("ara-") ||
+                voiceId.startsWith("eng-") ||
+                voiceId.startsWith("fra-") ||
+                voiceId.contains("acapela")
             val isSamsung = voiceId.contains("_f00") ||
                 voiceId.contains("_m00")
             if (isGoogle || isAcapela || isSamsung) return false
@@ -127,26 +131,38 @@ object VoiceIdContract {
         }
 
         if (lowerEng == "com.google.android.tts") {
-            if (voiceId.startsWith("ara-") ||
-                voiceId.startsWith("eng-") ||
-                voiceId.startsWith("fra-") ||
-                voiceId.startsWith("ar_") ||
-                voiceId.startsWith("en_")
+            if (voiceId.startsWith("ara-", ignoreCase = true) ||
+                voiceId.startsWith("eng-", ignoreCase = true) ||
+                voiceId.startsWith("fra-", ignoreCase = true) ||
+                voiceId.startsWith("ar_", ignoreCase = true) ||
+                voiceId.startsWith("en_", ignoreCase = true) ||
+                voiceId.contains("vocalizer", ignoreCase = true) ||
+                voiceId.contains("tarik", ignoreCase = true) ||
+                voiceId.contains("tarek", ignoreCase = true) ||
+                voiceId.contains("maged", ignoreCase = true) ||
+                voiceId.contains("mariam", ignoreCase = true) ||
+                voiceId.equals("laila", ignoreCase = true) ||
+                voiceId.equals("leila", ignoreCase = true)
             ) {
                 return false
             }
         }
 
         if (lowerEng.contains("acapela")) {
-            val isVocVoice = voiceId.contains("leila", ignoreCase = true) ||
-                voiceId.contains("laila", ignoreCase = true) ||
+            val isVocVoice = voiceId.startsWith("vocalizer") ||
+                voiceId.contains("vocalizer") ||
+                voiceId.contains("nuance") ||
                 voiceId.contains("maged", ignoreCase = true) ||
                 voiceId.contains("tarik", ignoreCase = true) ||
                 voiceId.contains("tarek", ignoreCase = true) ||
-                voiceId.contains("mariam", ignoreCase = true)
+                voiceId.contains("mariam", ignoreCase = true) ||
+                (voiceId.equals("laila", ignoreCase = true) &&
+                    !voiceId.startsWith("ara-", ignoreCase = true) &&
+                    !voiceId.startsWith("ar_", ignoreCase = true))
             if (isVocVoice ||
                 voiceId.contains("-x-") ||
                 voiceId.endsWith("-local") ||
+                voiceId.endsWith("-network") ||
                 voiceId.contains("_f00") ||
                 voiceId.contains("_m00")
             ) {
@@ -155,9 +171,14 @@ object VoiceIdContract {
         }
 
         if (lowerEng.contains("samsung")) {
-            if (voiceId.startsWith("ara-") ||
-                voiceId.startsWith("eng-") ||
-                voiceId.contains("-x-")
+            if (voiceId.startsWith("ara-", ignoreCase = true) ||
+                voiceId.startsWith("eng-", ignoreCase = true) ||
+                voiceId.contains("-x-") ||
+                voiceId.contains("vocalizer", ignoreCase = true) ||
+                voiceId.contains("tarik", ignoreCase = true) ||
+                voiceId.contains("tarek", ignoreCase = true) ||
+                voiceId.contains("maged", ignoreCase = true) ||
+                voiceId.contains("mariam", ignoreCase = true)
             ) {
                 return false
             }

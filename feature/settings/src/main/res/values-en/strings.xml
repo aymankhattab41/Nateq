@@ -712,6 +712,7 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Fixed mismatch validation for Acapela TTS Arabic voice (ara-SAU-Leila) and ensured proper saving and matching across all categories including numbers.
 • Fixed isolated Arabic letter Jeem to speak as letter name rather than Egyptian pound on Vocalizer.
 • Stripped pauses, conjunctions (and/waw), and commas separating numbers in time, date, and general text for fluent speech.
 • Ensured number pronunciation strictly uses selected engine and voice without incorrect fallback.
