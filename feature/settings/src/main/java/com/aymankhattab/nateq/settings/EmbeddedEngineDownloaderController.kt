@@ -18,6 +18,10 @@ import com.aymankhattab.nateq.core.audio.providers.DownloadError
 import com.aymankhattab.nateq.core.audio.providers.DownloadHttpHelper
 import com.aymankhattab.nateq.core.audio.providers.DownloadLog
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedStorage
+import com.aymankhattab.nateq.core.audio.providers.MicrosoftCatalogItem
+import com.aymankhattab.nateq.core.audio.providers.MicrosoftDownloader
+import com.aymankhattab.nateq.core.audio.providers.MicrosoftEmbeddedVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.MicrosoftModelCatalog
 import com.aymankhattab.nateq.core.audio.providers.VocalizerCatalogItem
 import com.aymankhattab.nateq.core.audio.providers.VocalizerDownloader
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
@@ -122,14 +126,19 @@ internal class EmbeddedEngineDownloaderController(
 
         engineToggle?.check(
             when (activeEngine) {
+                "microsoft" -> R.id.btn_engine_microsoft
                 else -> R.id.btn_engine_vocalizer
             }
         )
         engineToggle?.addOnButtonCheckedListener { _, checkedId, isChecked ->
             if (isChecked) {
                 activeEngine = when (checkedId) {
+                    R.id.btn_engine_microsoft -> "microsoft"
                     else -> "vocalizer"
                 }
+                navLevel = NavLevel.LANGUAGES
+                selectedLocale = null
+                selectedVoiceKey = null
                 renderVoicesList(root)
             }
         }
@@ -160,8 +169,13 @@ internal class EmbeddedEngineDownloaderController(
         val vocCount = VocalizerModelCatalog.ITEMS.count { item ->
             VocalizerModelCatalog.isVoiceInstalled(vocDir, item)
         }
+        val msDir = MicrosoftDownloader.getMicrosoftBaseDir(ctx)
+        val msItems = MicrosoftModelCatalog.getItems(ctx)
+        val msCount = msItems.count { item ->
+            MicrosoftModelCatalog.isVoiceInstalled(msDir, item)
+        }
 
-        val total = vocCount
+        val total = vocCount + msCount
         val isAr = LanguageCode.isArabic(Locale.getDefault().language)
         return if (total > 0) {
             if (isAr) {
@@ -189,6 +203,7 @@ internal class EmbeddedEngineDownloaderController(
         container.removeAllViews()
 
         when (activeEngine) {
+            "microsoft" -> renderMicrosoftNav(container, emptyView)
             else -> renderVocalizerNav(container, emptyView)
         }
         renderNavHeader(root)
@@ -359,9 +374,17 @@ internal class EmbeddedEngineDownloaderController(
         val locale = selectedLocale ?: return null
         val key = selectedVoiceKey ?: return null
         val isAr = LanguageCode.isArabic(Locale.getDefault().language)
-        val node = EmbeddedVoiceTree.vocalizerVoices(locale)
-            .firstOrNull { it.key == key } ?: return null
-        return if (isAr) node.titleAr else node.titleEn
+        return if (activeEngine == "microsoft") {
+            val ctx = fragment.requireContext()
+            val items = MicrosoftModelCatalog.getItems(ctx)
+            val node = EmbeddedVoiceTree.microsoftVoices(items, locale)
+                .firstOrNull { it.key == key } ?: return null
+            if (isAr) node.titleAr else node.titleEn
+        } else {
+            val node = EmbeddedVoiceTree.vocalizerVoices(locale)
+                .firstOrNull { it.key == key } ?: return null
+            if (isAr) node.titleAr else node.titleEn
+        }
     }
 
     /** الرجوع درجةً واحدة في الهرم. */
@@ -498,7 +521,7 @@ internal class EmbeddedEngineDownloaderController(
             }
 
             btnDownload.setOnClickListener {
-                startVocalizerDownload(item)
+                confirmAndStartVocalizerDownload(item)
             }
         }
     }
@@ -544,6 +567,34 @@ internal class EmbeddedEngineDownloaderController(
         }
     }
 
+    private fun confirmAndStartVocalizerDownload(
+        item: VocalizerCatalogItem
+    ) {
+        val ctx = fragment.requireContext()
+        val isAr = LanguageCode.isArabic(Locale.getDefault().language)
+        val voiceTitle = if (isAr) item.displayNameAr else item.displayNameEn
+        val engineLabel = ctx.getString(R.string.embedded_engine_vocalizer)
+        val sizeLabel = "${item.sizeMb} MB"
+        val specs = "${item.quality} (${item.voiceName})"
+
+        val msg = ctx.getString(
+            R.string.embedded_download_confirm_msg,
+            voiceTitle,
+            engineLabel,
+            sizeLabel,
+            specs
+        )
+
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.embedded_download_confirm_title)
+            .setMessage(msg)
+            .setPositiveButton(R.string.embedded_download_confirm_btn) { _, _ ->
+                startVocalizerDownload(item)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
     private fun startVocalizerDownload(item: VocalizerCatalogItem) {
         val ctx = fragment.requireContext()
         val root = fragment.view ?: return
@@ -551,23 +602,35 @@ internal class EmbeddedEngineDownloaderController(
         renderVoicesList(root)
     }
 
-    private fun updateProgressUi(root: View, itemId: String, percent: Int) {
+    private fun updateProgressUi(
+        root: View,
+        itemId: String,
+        percent: Int
+    ) {
         val container = root.findViewById<LinearLayout>(
             R.id.ll_embedded_voices_list
         ) ?: return
         val count = container.childCount
+        val ctx = root.context
+        val vocMatch = VocalizerModelCatalog.ITEMS.firstOrNull {
+            it.id == itemId
+        }
+        val msMatch = if (vocMatch == null) {
+            MicrosoftModelCatalog.getItems(ctx).firstOrNull {
+                it.id == itemId
+            }
+        } else null
+
+        val isAr = LanguageCode.isArabic(Locale.getDefault().language)
+        val matchingTitle = if (vocMatch != null) {
+            if (isAr) vocMatch.displayNameAr else vocMatch.displayNameEn
+        } else if (msMatch != null) {
+            if (isAr) msMatch.displayNameAr else msMatch.displayNameEn
+        } else null
+
         for (i in 0 until count) {
             val child = container.getChildAt(i)
             val tvTitle = child.findViewById<TextView>(R.id.tv_voice_title)
-            val match = VocalizerModelCatalog.ITEMS.firstOrNull {
-                it.id == itemId
-            }
-            val isAr = LanguageCode.isArabic(Locale.getDefault().language)
-            val matchingTitle = if (isAr) {
-                match?.displayNameAr
-            } else {
-                match?.displayNameEn
-            }
             if (matchingTitle != null && tvTitle?.text == matchingTitle) {
                 val pb = child.findViewById<ProgressBar>(R.id.pb_download)
                 val tvProg = child.findViewById<TextView>(
@@ -625,6 +688,339 @@ internal class EmbeddedEngineDownloaderController(
             .show()
     }
 
+    private fun renderMicrosoftNav(
+        container: LinearLayout,
+        emptyView: TextView?
+    ) {
+        when (navLevel) {
+            NavLevel.LANGUAGES -> renderMicrosoftLanguages(
+                container, emptyView
+            )
+            NavLevel.VOICES -> renderMicrosoftVoices(container, emptyView)
+            NavLevel.QUALITIES -> renderMicrosoftQualities(
+                container, emptyView
+            )
+        }
+    }
+
+    private fun renderMicrosoftLanguages(
+        container: LinearLayout,
+        emptyView: TextView?
+    ) {
+        val ctx = fragment.requireContext()
+        val items = MicrosoftModelCatalog.getItems(ctx)
+        val locales = EmbeddedVoiceTree.microsoftLanguages(items)
+        if (locales.isEmpty()) {
+            emptyView?.visibility = View.VISIBLE
+            return
+        }
+        emptyView?.visibility = View.GONE
+
+        val inflater = LayoutInflater.from(ctx)
+        for (locale in locales) {
+            val itemView = inflater.inflate(
+                R.layout.item_embedded_language,
+                container,
+                false
+            )
+            itemView.findViewById<TextView>(
+                R.id.tv_language_title
+            ).text = languageTitle(locale)
+            itemView.findViewById<TextView>(
+                R.id.tv_language_tag
+            ).text = locale.toLanguageTag()
+            itemView.setOnClickListener {
+                selectedLocale = locale
+                selectedVoiceKey = null
+                navLevel = NavLevel.VOICES
+                fragment.view?.let { renderVoicesList(it) }
+            }
+            container.addView(itemView)
+        }
+    }
+
+    private fun renderMicrosoftVoices(
+        container: LinearLayout,
+        emptyView: TextView?
+    ) {
+        val locale = selectedLocale ?: return
+        val ctx = fragment.requireContext()
+        val items = MicrosoftModelCatalog.getItems(ctx)
+        val voices = EmbeddedVoiceTree.microsoftVoices(items, locale)
+        if (voices.isEmpty()) {
+            emptyView?.visibility = View.VISIBLE
+            return
+        }
+        emptyView?.visibility = View.GONE
+
+        val isAr = LanguageCode.isArabic(Locale.getDefault().language)
+        val baseDir = MicrosoftDownloader.getMicrosoftBaseDir(ctx)
+        val inflater = LayoutInflater.from(ctx)
+        for (node in voices) {
+            val installed = node.variants.count {
+                MicrosoftModelCatalog.isVoiceInstalled(baseDir, it)
+            }
+            val itemView = inflater.inflate(
+                R.layout.item_embedded_voice_group,
+                container,
+                false
+            )
+            itemView.findViewById<TextView>(
+                R.id.tv_voice_group_title
+            ).text = if (isAr) node.titleAr else node.titleEn
+            itemView.findViewById<TextView>(
+                R.id.tv_voice_group_subtitle
+            ).text = fragment.getString(
+                R.string.embedded_voice_installed_count,
+                installed,
+                node.variants.size
+            )
+            itemView.setOnClickListener {
+                selectedVoiceKey = node.key
+                navLevel = NavLevel.QUALITIES
+                fragment.view?.let { renderVoicesList(it) }
+            }
+            container.addView(itemView)
+        }
+    }
+
+    private fun renderMicrosoftQualities(
+        container: LinearLayout,
+        emptyView: TextView?
+    ) {
+        val locale = selectedLocale ?: return
+        val key = selectedVoiceKey ?: return
+        val ctx = fragment.requireContext()
+        val items = MicrosoftModelCatalog.getItems(ctx)
+        val node = EmbeddedVoiceTree.microsoftVoices(items, locale)
+            .firstOrNull { it.key == key }
+        if (node == null || node.variants.isEmpty()) {
+            emptyView?.visibility = View.VISIBLE
+            return
+        }
+        emptyView?.visibility = View.GONE
+
+        val inflater = LayoutInflater.from(ctx)
+        for (item in node.variants) {
+            val itemView = inflater.inflate(
+                R.layout.item_embedded_voice,
+                container,
+                false
+            )
+            bindMicrosoftCard(itemView, item)
+            container.addView(itemView)
+        }
+    }
+
+    private fun bindMicrosoftCard(
+        view: View,
+        item: MicrosoftCatalogItem
+    ) {
+        val ctx = fragment.requireContext()
+        val isAr = LanguageCode.isArabic(Locale.getDefault().language)
+
+        val tvTitle = view.findViewById<TextView>(R.id.tv_voice_title)
+        val tvSubtitle = view.findViewById<TextView>(R.id.tv_voice_subtitle)
+        val badge = view.findViewById<TextView>(R.id.tv_voice_status_badge)
+        val btnDownload = view.findViewById<MaterialButton>(
+            R.id.btn_voice_download
+        )
+        val btnTestConn = view.findViewById<MaterialButton>(
+            R.id.btn_voice_test_connection
+        )
+        val btnPreview = view.findViewById<MaterialButton>(
+            R.id.btn_voice_preview
+        )
+        val btnDelete = view.findViewById<MaterialButton>(
+            R.id.btn_voice_delete
+        )
+        val llProgress = view.findViewById<LinearLayout>(
+            R.id.ll_download_progress
+        )
+        val pbDownload = view.findViewById<ProgressBar>(R.id.pb_download)
+        val tvProgress = view.findViewById<TextView>(
+            R.id.tv_download_progress_text
+        )
+        val btnCancel = view.findViewById<MaterialButton>(
+            R.id.btn_voice_cancel
+        )
+
+        tvTitle.text = if (isAr) item.displayNameAr else item.displayNameEn
+        val langTag = item.locale.toLanguageTag()
+
+        val baseDir = MicrosoftDownloader.getMicrosoftBaseDir(ctx)
+        val isInstalled = MicrosoftModelCatalog
+            .isVoiceInstalled(baseDir, item)
+        val isDownloading = VoiceDownloadManager.isDownloading(item.id)
+        val downloadState = VoiceDownloadManager.getState(item.id)
+        var partialBytes = VoiceDownloadManager.getPartialBytes(
+            ctx, item.id
+        )
+        val expectedBytes = item.sizeBytes
+        if (expectedBytes > 0 &&
+            partialBytes > expectedBytes + expectedBytes / 2
+        ) {
+            VoiceDownloadManager.deletePartial(ctx, item.id)
+            partialBytes = 0L
+        }
+
+        if (isDownloading) {
+            badge.visibility = View.GONE
+            btnDownload.visibility = View.GONE
+            btnTestConn?.visibility = View.GONE
+            btnPreview.visibility = View.GONE
+            btnDelete.visibility = View.GONE
+            llProgress.visibility = View.VISIBLE
+            val pct = when (downloadState) {
+                is VoiceDownloadManager.DownloadState.Downloading -> {
+                    downloadState.percent
+                }
+                else -> 0
+            }
+            pbDownload.progress = pct
+            tvProgress.text = fragment.getString(
+                R.string.embedded_downloading,
+                pct
+            )
+            btnCancel?.setOnClickListener {
+                VoiceDownloadManager.cancelDownload(ctx, item.id)
+            }
+        } else if (isInstalled) {
+            tvSubtitle.text =
+                "Microsoft Neural • $langTag • ${item.sizeMb} MB • " +
+                item.quality
+            badge.visibility = View.VISIBLE
+            btnDownload.visibility = View.GONE
+            btnTestConn?.visibility = View.GONE
+            btnPreview.visibility = View.VISIBLE
+            btnDelete.visibility = View.VISIBLE
+            llProgress.visibility = View.GONE
+
+            btnPreview.setOnClickListener {
+                previewMicrosoftVoice(item)
+            }
+
+            btnDelete.setOnClickListener {
+                confirmDeleteMicrosoftVoice(item)
+            }
+        } else {
+            badge.visibility = View.GONE
+            btnDownload.visibility = View.VISIBLE
+            btnTestConn?.visibility = View.VISIBLE
+            btnPreview.visibility = View.GONE
+            btnDelete.visibility = View.GONE
+            llProgress.visibility = View.GONE
+
+            if (partialBytes > 0) {
+                btnDownload.text = fragment.getString(
+                    R.string.embedded_resume_download_btn
+                )
+                val hint = fragment.getString(
+                    R.string.embedded_partial_download_hint,
+                    formatSize(partialBytes)
+                )
+                tvSubtitle.text =
+                    "Microsoft Neural • $langTag • ${item.sizeMb} MB • $hint"
+            } else {
+                btnDownload.text = fragment.getString(
+                    R.string.embedded_download_btn
+                )
+                tvSubtitle.text =
+                    "Microsoft Neural • $langTag • ${item.sizeMb} MB • " +
+                    item.quality
+            }
+
+            btnTestConn?.setOnClickListener {
+                testVoiceConnection(item.voiceName, item.downloadUrl)
+            }
+
+            btnDownload.setOnClickListener {
+                confirmAndStartMicrosoftDownload(item)
+            }
+        }
+    }
+
+    private fun confirmAndStartMicrosoftDownload(
+        item: MicrosoftCatalogItem
+    ) {
+        val ctx = fragment.requireContext()
+        val isAr = LanguageCode.isArabic(Locale.getDefault().language)
+        val voiceTitle = if (isAr) item.displayNameAr else item.displayNameEn
+        val engineLabel = ctx.getString(R.string.embedded_engine_microsoft)
+        val sizeLabel = "${item.sizeMb} MB"
+        val specs = "${item.modelName} (${item.gender})"
+
+        val msg = ctx.getString(
+            R.string.embedded_download_confirm_msg,
+            voiceTitle,
+            engineLabel,
+            sizeLabel,
+            specs
+        )
+
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.embedded_download_confirm_title)
+            .setMessage(msg)
+            .setPositiveButton(
+                R.string.embedded_download_confirm_btn
+            ) { _, _ ->
+                startMicrosoftDownload(item)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun startMicrosoftDownload(item: MicrosoftCatalogItem) {
+        val ctx = fragment.requireContext()
+        val root = fragment.view ?: return
+        VoiceDownloadManager.startMicrosoftDownload(ctx, item)
+        renderVoicesList(root)
+    }
+
+    private fun previewMicrosoftVoice(item: MicrosoftCatalogItem) {
+        val sampleText = if (LanguageCode.isArabic(item.locale.language)) {
+            "مرحباً بك، هذا نموذج صوت تجريبي " +
+                "لمحرك مايكروسوفت المدمج."
+        } else {
+            "Hello, this is a sample preview of the embedded Microsoft voice."
+        }
+        val params = PreviewParams(
+            enginePkg = MicrosoftEmbeddedVoiceProvider.PROVIDER_ID,
+            voiceName = item.voiceName,
+            languageTag = item.locale.toLanguageTag(),
+            speechRate = 1.0f,
+            pitch = 1.0f,
+            volume = 1.0f,
+            sampleText = sampleText
+        )
+        preview.play(params)
+    }
+
+    private fun confirmDeleteMicrosoftVoice(
+        item: MicrosoftCatalogItem
+    ) {
+        val ctx = fragment.requireContext()
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.embedded_delete_btn)
+            .setMessage(R.string.embedded_delete_confirm)
+            .setPositiveButton(R.string.embedded_delete_btn) { _, _ ->
+                val deleted = MicrosoftDownloader.deleteVoice(ctx, item)
+                VoiceDownloadManager.deletePartial(ctx, item.id)
+                if (deleted) {
+                    Toast.makeText(
+                        ctx,
+                        R.string.embedded_delete_success,
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    onStatusChanged()
+                    fragment.view?.let { renderVoicesList(it) }
+                    notifyCatalogChanged()
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
     // ===== ع٢٩-8 بند 2: قائمة حالة المحركات
     // + حوار التفاصيل =====
 
@@ -644,6 +1040,11 @@ internal class EmbeddedEngineDownloaderController(
                 id = VocalizerEmbeddedVoiceProvider.PROVIDER_ID,
                 name = ctx.getString(R.string.embedded_engine_vocalizer),
                 storageEngine = EmbeddedStorage.Engine.VOCALIZER
+            ),
+            EngineEntry(
+                id = MicrosoftEmbeddedVoiceProvider.PROVIDER_ID,
+                name = ctx.getString(R.string.embedded_engine_microsoft),
+                storageEngine = EmbeddedStorage.Engine.MICROSOFT
             )
         )
 
@@ -684,6 +1085,8 @@ internal class EmbeddedEngineDownloaderController(
         return when (HostProtocol.normalizeEngineId(engineId)) {
             HostProtocol.ENGINE_VOCALIZER ->
                 VocalizerEmbeddedVoiceProvider.resolveDataDir(ctx)
+            HostProtocol.ENGINE_MICROSOFT ->
+                MicrosoftEmbeddedVoiceProvider.resolveDataDir(ctx)
             else -> null
         }
     }
@@ -1279,6 +1682,12 @@ internal class EmbeddedEngineDownloaderController(
                 name = ctx.getString(R.string.embedded_engine_vocalizer),
                 storageEngine = EmbeddedStorage.Engine.VOCALIZER,
                 voiceProvider = "vocalizer"
+            ),
+            StorageEngineEntry(
+                id = MicrosoftEmbeddedVoiceProvider.PROVIDER_ID,
+                name = ctx.getString(R.string.embedded_engine_microsoft),
+                storageEngine = EmbeddedStorage.Engine.MICROSOFT,
+                voiceProvider = "microsoft"
             )
         )
 
@@ -1408,6 +1817,20 @@ internal class EmbeddedEngineDownloaderController(
                         )
                     }
             }
+            "microsoft" -> {
+                val baseDir = MicrosoftDownloader.getMicrosoftBaseDir(ctx)
+                val items = MicrosoftModelCatalog.getItems(ctx)
+                items
+                    .filter {
+                        MicrosoftModelCatalog.isVoiceInstalled(baseDir, it)
+                    }
+                    .map {
+                        VoiceInfo(
+                            it.displayNameEn,
+                            it.sizeBytes
+                        )
+                    }
+            }
             else -> emptyList()
         }
     }
@@ -1433,6 +1856,14 @@ internal class EmbeddedEngineDownloaderController(
                             .firstOrNull { it.displayNameEn == voice.name }
                         item?.let {
                             VocalizerDownloader.deleteVoice(ctx, it)
+                        }
+                    }
+                    "microsoft" -> {
+                        val items = MicrosoftModelCatalog.getItems(ctx)
+                        val item = items
+                            .firstOrNull { it.displayNameEn == voice.name }
+                        item?.let {
+                            MicrosoftDownloader.deleteVoice(ctx, it)
                         }
                     }
                 }

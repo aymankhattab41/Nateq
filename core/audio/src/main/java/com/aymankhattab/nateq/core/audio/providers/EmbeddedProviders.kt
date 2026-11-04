@@ -11,6 +11,9 @@ object EmbeddedProviders {
     private val vocalizerRef = AtomicReference<VocalizerEmbeddedVoiceProvider?>(
         null
     )
+    private val microsoftRef = AtomicReference<MicrosoftEmbeddedVoiceProvider?>(
+        null
+    )
 
     @Synchronized
     fun vocalizer(context: Context): VocalizerEmbeddedVoiceProvider {
@@ -22,8 +25,20 @@ object EmbeddedProviders {
     }
 
     @Synchronized
+    fun microsoft(context: Context): MicrosoftEmbeddedVoiceProvider {
+        val app = context.applicationContext
+        microsoftRef.get()?.let { return it }
+        val inst = MicrosoftEmbeddedVoiceProvider(app)
+        microsoftRef.set(inst)
+        return inst
+    }
+
+    @Synchronized
     fun shutdownAll() {
         vocalizerRef.getAndSet(null)?.let {
+            runCatching { it.shutdown() }
+        }
+        microsoftRef.getAndSet(null)?.let {
             runCatching { it.shutdown() }
         }
     }

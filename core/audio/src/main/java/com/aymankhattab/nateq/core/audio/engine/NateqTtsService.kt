@@ -45,6 +45,9 @@ import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.MicrosoftDownloader
+import com.aymankhattab.nateq.core.audio.providers.MicrosoftEmbeddedVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.MicrosoftModelCatalog
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VocalizerModelCatalog
 import com.aymankhattab.nateq.core.common.AppDispatchers
@@ -408,6 +411,7 @@ class NateqTtsService : TextToSpeechService() {
         val providers = listOf(
             SystemVoiceProvider(applicationContext, settings),
             EmbeddedProviders.vocalizer(applicationContext),
+            EmbeddedProviders.microsoft(applicationContext),
         )
         catalog = VoiceCatalog(providers)
         requestHandler = SynthesisRequestHandler(catalog, settings)
@@ -1522,6 +1526,12 @@ class NateqTtsService : TextToSpeechService() {
                 finalEngine == "vocalizer" ||
                 targetProvider.providerId ==
                 VocalizerEmbeddedVoiceProvider.PROVIDER_ID
+            val isMs = finalEngine ==
+                MicrosoftEmbeddedVoiceProvider.PROVIDER_ID ||
+                finalEngine == HostProtocol.ENGINE_MICROSOFT ||
+                finalEngine == "microsoft" ||
+                targetProvider.providerId ==
+                MicrosoftEmbeddedVoiceProvider.PROVIDER_ID
             val isGeneric = finalVoiceName.isNullOrBlank() ||
                 finalVoiceName.equals("Device Default", true) ||
                 finalVoiceName.equals("ar-EG", true) ||
@@ -1580,6 +1590,43 @@ class NateqTtsService : TextToSpeechService() {
                     val isInstalled = matchedItem != null &&
                         VocalizerModelCatalog.isVoiceInstalled(
                             applicationContext, matchedItem
+                        )
+                    if (isInstalled) {
+                        matchedItem?.voiceName ?: fallbackVoice
+                    } else {
+                        fallbackVoice
+                    }
+                }
+            } else if (isMs) {
+                val msBase = MicrosoftDownloader.getMicrosoftBaseDir(
+                    applicationContext
+                )
+                val msItems = MicrosoftModelCatalog.getItems(
+                    applicationContext
+                )
+                val installedAr = msItems.firstOrNull {
+                    LanguageCode.isArabic(it.languageCategory) &&
+                        MicrosoftModelCatalog.isVoiceInstalled(msBase, it)
+                }?.voiceName
+                val installedEn = msItems.firstOrNull {
+                    LanguageCode.isEnglish(it.languageCategory) &&
+                        MicrosoftModelCatalog.isVoiceInstalled(msBase, it)
+                }?.voiceName
+                val fallbackVoice = if (LanguageCode.isArabic(languageTag)) {
+                    installedAr ?: "Salma"
+                } else {
+                    installedEn ?: "Jenny"
+                }
+                if (isGeneric) {
+                    fallbackVoice
+                } else {
+                    val matchedItem = MicrosoftModelCatalog
+                        .findItemByNameOrModel(
+                            applicationContext, finalVoiceName.orEmpty()
+                        )
+                    val isInstalled = matchedItem != null &&
+                        MicrosoftModelCatalog.isVoiceInstalled(
+                            msBase, matchedItem
                         )
                     if (isInstalled) {
                         matchedItem?.voiceName ?: fallbackVoice
@@ -1891,6 +1938,12 @@ class NateqTtsService : TextToSpeechService() {
             targetEngine == "vocalizer" ||
             provider.providerId ==
             VocalizerEmbeddedVoiceProvider.PROVIDER_ID
+        val isMs = targetEngine ==
+            MicrosoftEmbeddedVoiceProvider.PROVIDER_ID ||
+            targetEngine == HostProtocol.ENGINE_MICROSOFT ||
+            targetEngine == "microsoft" ||
+            provider.providerId ==
+            MicrosoftEmbeddedVoiceProvider.PROVIDER_ID
         val isGeneric = targetVoiceName.isNullOrBlank() ||
             targetVoiceName.equals("Device Default", true) ||
             targetVoiceName.equals("ar-EG", true) ||
@@ -1954,6 +2007,43 @@ class NateqTtsService : TextToSpeechService() {
                     fallbackVoice
                 }
             }
+        } else if (isMs) {
+            val msBase = MicrosoftDownloader.getMicrosoftBaseDir(
+                applicationContext
+            )
+            val msItems = MicrosoftModelCatalog.getItems(
+                applicationContext
+            )
+            val installedAr = msItems.firstOrNull {
+                LanguageCode.isArabic(it.languageCategory) &&
+                    MicrosoftModelCatalog.isVoiceInstalled(msBase, it)
+            }?.voiceName
+            val installedEn = msItems.firstOrNull {
+                LanguageCode.isEnglish(it.languageCategory) &&
+                    MicrosoftModelCatalog.isVoiceInstalled(msBase, it)
+            }?.voiceName
+            val fallbackVoice = if (LanguageCode.isArabic(segTag)) {
+                installedAr ?: "Salma"
+            } else {
+                installedEn ?: "Jenny"
+            }
+            if (isGeneric) {
+                fallbackVoice
+            } else {
+                val matchedItem = MicrosoftModelCatalog
+                    .findItemByNameOrModel(
+                        applicationContext, targetVoiceName.orEmpty()
+                    )
+                val isInstalled = matchedItem != null &&
+                    MicrosoftModelCatalog.isVoiceInstalled(
+                        msBase, matchedItem
+                    )
+                if (isInstalled) {
+                    matchedItem?.voiceName ?: fallbackVoice
+                } else {
+                    fallbackVoice
+                }
+            }
         } else {
             targetVoiceName
         }
@@ -1968,9 +2058,12 @@ class NateqTtsService : TextToSpeechService() {
         var finalUsedEngine = targetEngine
         var finalUsedVoiceName = resolvedVoiceName
 
-        if (isNumericRole && isVoc) {
-            val eng = targetEngine ?:
+        if (isNumericRole && (isVoc || isMs)) {
+            val eng = targetEngine ?: if (isMs) {
+                MicrosoftEmbeddedVoiceProvider.PROVIDER_ID
+            } else {
                 VocalizerEmbeddedVoiceProvider.PROVIDER_ID
+            }
             hostReady = EngineHostClient.isBound(eng)
             if (!hostReady) {
                 val budget = SynthesisBudget.pieceTimeoutMs(
@@ -2605,6 +2698,26 @@ class NateqTtsService : TextToSpeechService() {
                 )
                 runCatching {
                     vocProvider.listVoices(Locale.getDefault())
+                }
+            }
+        }
+        val usesMs = settings.getEngineForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS
+        ) == MicrosoftEmbeddedVoiceProvider.PROVIDER_ID ||
+            settings.getEngineForCategory(
+                SettingsRepository.VOICE_CATEGORY_DEFAULT
+            ) == MicrosoftEmbeddedVoiceProvider.PROVIDER_ID ||
+            settings.getEngineForLanguage(LanguageCode.AR.tag) ==
+                MicrosoftEmbeddedVoiceProvider.PROVIDER_ID ||
+            settings.getEngineForLanguage(LanguageCode.EN.tag) ==
+                MicrosoftEmbeddedVoiceProvider.PROVIDER_ID
+        if (usesMs) {
+            val msProvider = EmbeddedProviders.microsoft(
+                applicationContext
+            )
+            if (msProvider.isConfigured()) {
+                runCatching {
+                    msProvider.listVoices(Locale.getDefault())
                 }
             }
         }

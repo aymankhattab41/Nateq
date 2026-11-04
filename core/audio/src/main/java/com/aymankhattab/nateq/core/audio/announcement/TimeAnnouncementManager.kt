@@ -65,6 +65,7 @@ class TimeAnnouncementManager(
                     val providers = listOf(
                         SystemVoiceProvider(appContext, sharedSettings),
                         EmbeddedProviders.vocalizer(appContext),
+                        EmbeddedProviders.microsoft(appContext),
                     )
                     val catalog = VoiceCatalog(providers)
                     val handler = SynthesisRequestHandler(

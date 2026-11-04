@@ -722,6 +722,10 @@
 <string name="changelog_title">آخر التحديثات</string>
     <string name="changelog_text">
 الإصدار %1$s
+• دمج محرك مايكروسوفت العصبي المدمج (Microsoft Neural Embedded) للعمل محلياً بالكامل دون اتصال بالإنترنت.
+• إضافة 336 صوتاً عصبياً عالي الجودة تغطي 146 لغة وإقليماً (بينها 32 صوتاً عربياً) مع ترجمة وتوطين كامل لأسماء الأصوات والبلدان.
+• واجهة متطورة لتنزيل وإدارة أصوات مايكروسوفت بالهيكلية الهرمية (لغة ← أصوات ← جودة) مع حوار تأكيد التنزيل وعرض حجم الملف ومواصفاته.
+• ربط محرك مايكروسوفت المدمج وأصواته العصبية بكافة فئات الأحداث والإعلانات (إعلان الوقت، المتصل، البطارية، قراءة الإشعارات، والافتراضي).
 • قصر اللغات المعروضة في كل فئة على لغات المحرك المختار فقط (المحرك ينبثق منه لغاته فقط)، وضمان عمل اللغة الإنجليزية في القراءة وتجاوز التصفية العالقة من الإصدارات السابقة.
 • قصر خيارات التصفية على المحركات فقط بحيث تنبثق اللغات تلقائياً من المحركات المحددة فقط وتختفي أي لغة غير مدعومة منها.
 • تصحيح نطق مئات الآلاف والملايين (مثل 500,000) لتُنطق بالتاء المفتوحة بالوصل «خمسمئت ألف» بدلاً من «خمس مائة ألف» منعاً للسكتات والوقف.
@@ -751,9 +755,14 @@
 
     <!-- المحركات المدمجة وتنزيل الأصوات -->
     <string name="group_embedded_engines_title">المحركات المدمجة وتنزيل الأصوات</string>
-    <string name="section_embedded_downloader_title">تنزيل وإدارة الأصوات المدمجة (Vocalizer)</string>
+    <string name="section_embedded_downloader_title">تنزيل وإدارة الأصوات المدمجة</string>
     <string name="section_embedded_downloader_summary">أصوات عصبية ومدمجة محلية تعمل بلا إنترنت وبأعلى جودة</string>
     <string name="embedded_engine_vocalizer">Vocalizer Ex 2</string>
+    <string name="embedded_engine_microsoft">Microsoft Neural</string>
+    <string name="voice_provider_microsoft_embedded">Microsoft (مدمج)</string>
+    <string name="embedded_download_confirm_title">تأكيد تنزيل الصوت</string>
+    <string name="embedded_download_confirm_msg">الصوت: %1$s&#10;المحرك: %2$s&#10;الحجم: %3$s&#10;المواصفات: %4$s&#10;&#10;هل ترغب في متابعة التنزيل؟</string>
+    <string name="embedded_download_confirm_btn">تأكيد التنزيل</string>
     <string name="embedded_engine_Vocalizer">Vocalizer TTS</string>
 
     <!-- ع٢٩-8 بند 2: حالة المحركات + حوار التفاصيل -->

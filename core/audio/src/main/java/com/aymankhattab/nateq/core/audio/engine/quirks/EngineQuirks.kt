@@ -81,6 +81,28 @@ data class EngineQuirks(
                 tashkeelPolicy = TashkeelPolicy.PARTIAL_TASHKEEL,
                 problematicLanguages = emptySet(),
                 problematicVoiceNames = emptySet()
+            ),
+            "microsoft_embedded" to EngineQuirks(
+                packageName = "microsoft_embedded",
+                needsWarmupPolling = false,
+                requiresLocaleWithRegion = false,
+                rejectsVoiceSilently = false,
+                needsSetLanguageBeforeSetVoice = false,
+                maxSafeSpeechRate = 3.0f,
+                tashkeelPolicy = TashkeelPolicy.UNKNOWN,
+                problematicLanguages = emptySet(),
+                problematicVoiceNames = emptySet()
+            ),
+            "microsoft" to EngineQuirks(
+                packageName = "microsoft",
+                needsWarmupPolling = false,
+                requiresLocaleWithRegion = false,
+                rejectsVoiceSilently = false,
+                needsSetLanguageBeforeSetVoice = false,
+                maxSafeSpeechRate = 3.0f,
+                tashkeelPolicy = TashkeelPolicy.UNKNOWN,
+                problematicLanguages = emptySet(),
+                problematicVoiceNames = emptySet()
             )
         )
 
