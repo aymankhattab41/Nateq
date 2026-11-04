@@ -348,7 +348,8 @@ class TextProcessor(
     ): String {
         if (text.isBlank()) return text
 
-        var result = Normalizer.normalize(text, Normalizer.Form.NFC)
+        val noCommas = stripCommasBetweenDigits(text)
+        var result = Normalizer.normalize(noCommas, Normalizer.Form.NFC)
         if (applyDictionary) {
             result = applyDictionaryFirst(result, languageTag)
         }
@@ -605,9 +606,11 @@ class TextProcessor(
         markNumbers: Boolean = false
     ): String {
         if (text.isBlank()) return text
+        // إزالة الفواصل بين الأرقام عربي أو إنجليزي
+        val cleaned = stripCommasBetweenDigits(text)
         // توحيد NFC عند المدخل مطابقاً لـ[process] — يبقى الإخراج مطابقاً
         // لنمط التقسيم المعدَّ مسبقاً على صيغة موحَّدة.
-        val normalized = Normalizer.normalize(text, Normalizer.Form.NFC)
+        val normalized = Normalizer.normalize(cleaned, Normalizer.Form.NFC)
         val spelledWordsEnabled =
             injectedSettings?.isNumberVoiceSpelledWordsEnabled() ?: true
 
@@ -941,7 +944,30 @@ class TextProcessor(
             text
         }
 
-    private companion object {
+    companion object {
+        private val COMMA_OR_AND_DIGITS = Regex(
+            """(?<=[\d\u0660-\u0669\u06F0-\u06F9\uE031])""" +
+                """(?:\s*،\s*|\s*و\s*|\s+and\s+|\s*,\s+|\s+,\s*)""" +
+                """(?=[\d\u0660-\u0669\u06F0-\u06F9\uE030])""",
+            RegexOption.IGNORE_CASE
+        )
+        private val COMMA_ATTACHED_ARABIC = Regex(
+            """(?<=[\d\u0660-\u0669\u06F0-\u06F9\uE031])\s*،\s*|""" +
+                """\s*،\s*(?=[\d\u0660-\u0669\u06F0-\u06F9\uE030])"""
+        )
+
+        /** إزالة كل الفواصل وواو العطف بين الأرقام عربي أو إنجليزي. */
+        fun stripCommasBetweenDigits(input: String): String {
+            if (input.indexOf(',') < 0 && input.indexOf('،') < 0 &&
+                input.indexOf('و') < 0 &&
+                !input.contains("and", ignoreCase = true)
+            ) {
+                return input
+            }
+            var res = input.replace(COMMA_OR_AND_DIGITS, " ")
+            res = res.replace(COMMA_ATTACHED_ARABIC, " ")
+            return res
+        }
         /** نمط الروابط المحجوبة (نفس نمط [UrlStep]). */
         private val PATTERN_URL_EN = Pattern.compile(
             """(?i)\b(?:https?://|www\.)[^\s<>"']+|""" +

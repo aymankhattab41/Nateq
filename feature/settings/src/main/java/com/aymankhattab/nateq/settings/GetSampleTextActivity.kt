@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
+import com.aymankhattab.nateq.core.common.VisibleLanguages
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.LocaleUtils
@@ -24,6 +25,10 @@ class GetSampleTextActivity : Activity() {
             // النص فبالثابت العام Engine.EXTRA_SAMPLE_TEXT ورمز التوافق
             // TextToSpeech.LANG_AVAILABLE.
             val lang = intent.getStringExtra("language")
+            if (lang != null && !VisibleLanguages.isVisible(lang)) {
+                setResult(TextToSpeech.LANG_NOT_SUPPORTED)
+                return
+            }
 
             val returnData = Intent()
 

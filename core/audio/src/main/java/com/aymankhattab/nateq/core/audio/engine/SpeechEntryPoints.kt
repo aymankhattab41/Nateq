@@ -62,7 +62,8 @@ object SpeechEntryPoints {
         // 2. القاموس أولاً
         val dict = PronunciationDictionary.shared(context)
         dict.reloadIfChanged()
-        val normalized = Normalizer.normalize(rawText, Normalizer.Form.NFC)
+        val cleanedRaw = TextProcessor.stripCommasBetweenDigits(rawText)
+        val normalized = Normalizer.normalize(cleanedRaw, Normalizer.Form.NFC)
         val dictText = dict.apply(normalized)
 
         // 3. المعالجة الدلالية

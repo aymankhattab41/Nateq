@@ -30,6 +30,7 @@ import com.aymankhattab.nateq.util.setSeekStateDescription
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.aymankhattab.nateq.core.data.SettingsRepository
+import com.aymankhattab.nateq.core.common.VisibleEngines
 import com.aymankhattab.nateq.util.LanguageCode
 
 /** شفافيةُ الضابط المعطّل — لا يُعتمَل على قيمة المنصّة فالتعتيم يختلف
@@ -220,7 +221,9 @@ etCallerPrefix =
         // محركات TTS المثبتة (قائمة واحدة مشتركة للسبنرين).
         callerEngineOptions = runCatching {
             EnginePicker.installedEngines(fragment.requireContext())
-        }.getOrDefault(emptyList())
+        }.getOrDefault(emptyList()).filter {
+            VisibleEngines.isVisible(it.packageName)
+        }
         setupCallerEngineSpinner(
             spinnerCallerEngineAr,
             tvCallerEngineArLabel,
@@ -1005,6 +1008,28 @@ etCallerPrefix =
         )
     }
 
+    /** إعادة بناء سبنري محركات المتصل وفقاً للتصفية المرئية. */
+    fun refreshCallerEngines() {
+        val context = fragment.context ?: return
+        callerEngineOptions = runCatching {
+            EnginePicker.installedEngines(context)
+        }.getOrDefault(emptyList()).filter {
+            VisibleEngines.isVisible(it.packageName)
+        }
+        setupCallerEngineSpinner(
+            spinnerCallerEngineAr,
+            tvCallerEngineArLabel,
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR,
+            refreshArabic = true
+        )
+        setupCallerEngineSpinner(
+            spinnerCallerEngineEn,
+            tvCallerEngineEnLabel,
+            SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN,
+            refreshEnglish = true
+        )
+    }
+
     /** إعادة بناء سبنري أصوات المتصل: كل لغة بمحركها الخاص (عربي ← محرك
      *  الأسماء العربية، إنجليزي ← محرك الأسماء الإنجليزية) — عند بدء
      *  الإعداد وعند اكتمال اكتشاف المحركات خلفياً
@@ -1016,11 +1041,17 @@ etCallerPrefix =
 
     /** يبني أصوات العربية المتاحة لمحرك الأسماء العربية. */
     private fun refreshCallerArabicVoices() {
-        val engine = runCatching {
-            settings.getEngineForCategory(
-                SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR
-            )
-        }.getOrNull()
+        val currentIdx = spinnerCallerEngineAr?.selectedItemPosition ?: -1
+        val engine = if (currentIdx in callerEngineOptions.indices) {
+            callerEngineOptions[currentIdx].packageName
+        } else {
+            runCatching {
+                settings.getEngineForCategory(
+                    SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR
+                )
+            }.getOrNull()?.takeIf { VisibleEngines.isVisible(it) }
+                ?: callerEngineOptions.firstOrNull()?.packageName
+        }
         callerVoiceOptionsAr = catalog.voicesFor("ar", engine)
         bindCallerVoices(
             spinnerCallerVoiceAr,
@@ -1033,11 +1064,17 @@ etCallerPrefix =
 
     /** يبني أصوات الإنجليزية المتاحة لمحرك الأسماء الإنجليزية. */
     private fun refreshCallerEnglishVoices() {
-        val engine = runCatching {
-            settings.getEngineForCategory(
-                SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
-            )
-        }.getOrNull()
+        val currentIdx = spinnerCallerEngineEn?.selectedItemPosition ?: -1
+        val engine = if (currentIdx in callerEngineOptions.indices) {
+            callerEngineOptions[currentIdx].packageName
+        } else {
+            runCatching {
+                settings.getEngineForCategory(
+                    SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
+                )
+            }.getOrNull()?.takeIf { VisibleEngines.isVisible(it) }
+                ?: callerEngineOptions.firstOrNull()?.packageName
+        }
         callerVoiceOptionsEn = catalog.voicesFor("en", engine)
         bindCallerVoices(
             spinnerCallerVoiceEn,

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
+import com.aymankhattab.nateq.core.common.VisibleLanguages
 import com.aymankhattab.nateq.util.LocaleUtils
 
 /**
@@ -41,6 +42,8 @@ class CheckTtsDataActivity : Activity() {
                 declared
             ) {
                 TextToSpeech.LANG_AVAILABLE
+            }.filter {
+                VisibleLanguages.isVisible(it.locale?.language)
             }
             val availableNames = availableVoices.map { it.name }
             val unavailableNames = declared

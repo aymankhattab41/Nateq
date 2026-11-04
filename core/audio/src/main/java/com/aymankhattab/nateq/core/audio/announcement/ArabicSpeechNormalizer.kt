@@ -144,6 +144,14 @@ object ArabicSpeechNormalizer {
         """((?:^|\s)$timeWords\s+)مساء(?![\p{L}\p{M}\p{N}])"""
     )
 
+    // ع٤٣: حرف «ج» المجرد/المعزول يُنطق باسمه («جيم») بدلاً من نطقه
+    // «جنيه مصري» الذي يفرضه معجم Vocalizer المدمج عند مصادفة حرف «ج»
+    // مفرداً/معزولاً (مثل خيارات الأسئلة «أ ب ج»، وقراءة الأحرف «ج»، ونحو ذلك).
+    private val bareJeemRegex = Regex(
+        """(?<![\p{IsArabic}\p{InArabic}\p{M}])ج(?!\.م)""" +
+            """(?![\p{IsArabic}\p{InArabic}\p{M}])"""
+    )
+
     /** يطبّق القاموس على النص كاملاً (لا يلمس غيرَ العربية). */
     fun normalize(
         text: String,
@@ -174,6 +182,7 @@ object ArabicSpeechNormalizer {
                 "\u0648\u064e\u0627\u062d\u0650\u062f"
             )
         }
+        out = bareJeemRegex.replace(out, "جيم")
         if (out.contains(EngineMarkers.TANWEEN_MARKER)) {
             out = out.replace(EngineMarkers.TANWEEN_MARKER, "")
         }

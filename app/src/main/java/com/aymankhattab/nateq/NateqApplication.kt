@@ -62,6 +62,8 @@ class NateqApplication : Application(), AnnouncementAppContext {
 
     override fun onCreate() {
         super.onCreate()
+        com.aymankhattab.nateq.core.audio.CrashGuard
+            .installUncaughtExceptionHandler(this)
 
         // ===== التحقق من سلامة التطبيق
         // (Anti-tamper / Anti-debug / Play Integrity) =====

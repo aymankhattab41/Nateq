@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * مزود صوت محرك Nuance Vocalizer Expressive 2 (Embedded Engine) —
@@ -26,6 +27,21 @@ class VocalizerEmbeddedVoiceProvider(
     companion object {
         private const val TAG = "VocalizerEmbedded"
         const val PROVIDER_ID = "vocalizer_embedded"
+
+        /**
+         * هل جُرّبت إعادةُ المحاولة التلقائية بعد علامة انهيارٍ في هذه
+         * العملية؟ **مرّة واحدة فقط:** العلامةُ الحقيقية تعني انهياراً
+         * أصلياً أثناء `init`، فتكرارُ المحاولة في كل نداء يُدخل المضيف
+         * في حلقة انهيار. أمّا العلامةُ البائتة (بعد [HostProtocol.
+         * MARKER_TTL_MS]) فقد مُسحت في [HostProtocol.hasMarker] فلم
+         * يصلنا رمزها أصلاً.
+         */
+        private val crashRetryDone = AtomicBoolean(false)
+
+        /** تصفير حارس إعادة المحاولة — للاختبارات فقط. */
+        internal fun resetCrashRetryForTest() {
+            crashRetryDone.set(false)
+        }
 
         fun resolveDataDir(context: Context): File? =
             VocalizerEmbeddedVoiceProvider(context).resolveDataDir()
@@ -115,11 +131,36 @@ class VocalizerEmbeddedVoiceProvider(
         }
         val prevState = EngineStatusRegistry.statusOf(PROVIDER_ID)?.state
         EngineStatusRegistry.noteInitPending(PROVIDER_ID)
-        val result = EngineHostClient.init(
+        val dataDir = cachedDataPath.orEmpty()
+        var result = EngineHostClient.init(
             context,
             HostProtocol.ENGINE_VOCALIZER,
-            cachedDataPath.orEmpty()
+            dataDir
         )
+        // **شفاءٌ تلقائي من علامة انهيارٍ عالقة:** علامةٌ كُتبت ثم قُتلت
+        // العملية قبل محوها (LMK/ANR/إغلاق قسري) كانت تُبقي المحرّك
+        // «فاشل التهيئة» أبداً مع سلامة بياناته. إن كانت العلامة حديثة
+        // فعلاً فإعادةُ المحاولة الواحدة تكشفها: ينهار المضيف وحده ولا
+        // تتكرر المحاولة في هذه العملية.
+        if (!result.ok &&
+            result.code == HostProtocol.CODE_CRASHED_LAST_RUN &&
+            crashRetryDone.compareAndSet(false, true)
+        ) {
+            Log.w(
+                TAG,
+                "علامة انهيار عالقة — محوها وإعادة محاولة واحدة"
+            )
+            HostProtocol.clearMarker(
+                context.filesDir,
+                HostProtocol.ENGINE_VOCALIZER
+            )
+            result = EngineHostClient.init(
+                context,
+                HostProtocol.ENGINE_VOCALIZER,
+                dataDir,
+                force = true
+            )
+        }
         if (!result.ok) {
             Log.e(
                 TAG,
@@ -214,16 +255,34 @@ class VocalizerEmbeddedVoiceProvider(
             val rawName = (desiredVoiceName ?: voice.displayName)
                 .removePrefix("vocalizer_")
                 .trim()
-            val isKnownVoice = VocalizerModelCatalog.ITEMS.any { item ->
+            val matchedItem = VocalizerModelCatalog.ITEMS.firstOrNull { item ->
                 item.voiceName.equals(rawName, ignoreCase = true) ||
-                    item.id.equals(rawName, ignoreCase = true)
+                    item.id.equals(rawName, ignoreCase = true) ||
+                    rawName.contains(item.voiceName, ignoreCase = true) ||
+                    (item.voiceName.equals("Laila", true) &&
+                        rawName.contains("leila", true)) ||
+                    (item.voiceName.equals("Tarik", true) &&
+                        rawName.contains("tariq", true))
             }
-            val targetVoiceName = when {
-                isKnownVoice -> rawName
-                voiceLocale?.language.equals("en", ignoreCase = true) ->
-                    "Samantha"
-                else ->
-                    "Laila"
+            val requestedLocale = voiceLocale ?: voice.locale
+            val targetVoiceName = if (matchedItem != null) {
+                matchedItem.voiceName
+            } else {
+                // لا سقوط على اسمٍ ثابت (Laila/Samantha) قد لا يكون منزّلاً:
+                // يُختار من الأصوات المثبَّتة فعلياً للغة المطلوبة.
+                val installed = runCatching {
+                    listVoices(requestedLocale)
+                }.getOrDefault(emptyList()).map {
+                    InstalledVocalizerVoice(
+                        name = it.displayName,
+                        language = it.locale.language
+                    )
+                }
+                chooseVocalizerVoiceName(
+                    requestedName = rawName,
+                    requestedLanguage = requestedLocale.language,
+                    installed = installed
+                )
             }
             val isEvent = LoudnessStage.isEventCategory(category)
             val chunkConsumer: (ByteArray, Int) -> Unit = if (isEvent) {
