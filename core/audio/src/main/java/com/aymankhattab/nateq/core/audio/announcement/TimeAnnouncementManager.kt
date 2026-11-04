@@ -644,12 +644,12 @@ class TimeAnnouncementManager(
                     }
                 } else {
                     if (midnightPhrase) {
-                        "الساعة الآن منتصف الليل و " +
+                        "الساعة الآن منتصف الليل " +
                         arabicMinutePhrase(minute)
                     } else {
                         "الساعة الآن " +
                         NumberSpeech.toOrdinalHourWord(displayedHour) +
-                        " و " + arabicMinutePhrase(minute)
+                        " " + arabicMinutePhrase(minute)
                     }
                 }
         }
@@ -760,11 +760,11 @@ class TimeAnnouncementManager(
                 val p = nextP(targetHour)
                 "الساعة الآن $nextArabicHour إلا ربع$sep$p"
             }
-            in 1..14 -> "الساعة الآن $arabicHour و " +
+            in 1..14 -> "الساعة الآن $arabicHour " +
                 "${arabicMinutePhrase(minute)}$sep$period"
-            in 16..29 -> "الساعة الآن $arabicHour و " +
+            in 16..29 -> "الساعة الآن $arabicHour " +
                 "${arabicMinutePhrase(minute)}$sep$period"
-            in 31..44 -> "الساعة الآن $arabicHour و " +
+            in 31..44 -> "الساعة الآن $arabicHour " +
                 "${arabicMinutePhrase(minute)}$sep$period"
             in 46..59 -> {
                 val remaining = 60 - minute

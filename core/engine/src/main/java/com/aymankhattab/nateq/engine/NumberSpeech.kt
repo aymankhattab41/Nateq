@@ -328,7 +328,7 @@ object NumberSpeech {
                         t in 11..99 -> "$w ألفاً"
                         t == 100 -> "مائة ألف"
                         t == 200 -> "مائتا ألف"
-                        t % 100 == 0 -> "$w ألف"
+                        t % 100 == 0 -> "${scaleHundreds(w)} ألف"
                         t % 100 in 1..2 -> "$w ألف"
                         t % 100 in 3..10 -> "$w آلاف"
                         else -> "$w ألفاً"
@@ -354,7 +354,7 @@ object NumberSpeech {
                         val w = toArabicWords(m, isFeminine = false)
                         when {
                             m % 100 == 0 -> "${
-                                terminalHundreds(w)
+                                scaleHundreds(w)
                             } مليون"
                             m % 100 in 1..2 -> "$w مليون"
                             m % 100 in 3..10 -> "$w ملايين"
@@ -427,6 +427,24 @@ object NumberSpeech {
         } else {
             word
         }
+
+    /** تحويل المئات قبل مقياس الآلاف/الملايين:
+     *  «خمسمئت ألف»، «ثلاثمئت ألف» */
+    private fun scaleHundreds(word: String): String {
+        val trimmed = terminalHundreds(word)
+        val prefixes = arrayOf(
+            "ثلاث", "أربع", "خمس", "ست", "سبع", "ثمان", "تسع"
+        )
+        for (prefix in prefixes) {
+            if (trimmed.endsWith("${prefix}مائة")) {
+                return trimmed.removeSuffix("مائة") + "مئت"
+            }
+            if (trimmed.endsWith("${prefix}مئة")) {
+                return trimmed.removeSuffix("مئة") + "مئت"
+            }
+        }
+        return trimmed
+    }
 
     /**
      * تنسيق رقم نصي (صحيح أو عشري أو طويل) في مجموعات أرقام (1..8).

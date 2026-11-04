@@ -3,6 +3,7 @@ package com.aymankhattab.nateq
 import com.aymankhattab.nateq.core.engine.PunctuationLevels
 import com.aymankhattab.nateq.engine.ARABIC_TASHKEEL_AWARE_ENGINES
 import com.aymankhattab.nateq.engine.EmojiSpeech
+import com.aymankhattab.nateq.engine.NumberSpeech
 import com.aymankhattab.nateq.engine.SpeechPart
 import com.aymankhattab.nateq.engine.stripTashkeelFor
 import com.aymankhattab.nateq.engine.pipeline.AcronymStep
@@ -407,7 +408,10 @@ class PipelineStepsTest {
 
     @Test
     fun time_morning_minutes() {
-        assertEquals("العاشرة و خمس دقائق صباحاً", TimeStep.apply("10:05"))
+        assertEquals(
+            "العاشرة خمس دقائق صباحاً",
+            TimeStep.apply("10:05")
+        )
     }
 
     @Test
@@ -435,7 +439,7 @@ class PipelineStepsTest {
     @Test
     fun time_withSeconds_spoken() {
         assertEquals(
-            "الثانية والنصف و خمس وأربعون ثانية مساءً",
+            "الثانية والنصف خمس وأربعون ثانية مساءً",
             TimeStep.apply("14:30:45")
         )
     }
@@ -456,7 +460,10 @@ class PipelineStepsTest {
     fun time_shortArabicSuffixes() {
         // الصيغة 24 ساعة تُنطق بصيغة 12 ساعة: 14:30 = الثانية بعد الظهر
         assertEquals("الثانية والنصف مساءً", TimeStep.apply("14:30م"))
-        assertEquals("الثامنة و خمس دقائق صباحاً", TimeStep.apply("8:05ص"))
+        assertEquals(
+            "الثامنة خمس دقائق صباحاً",
+            TimeStep.apply("8:05ص")
+        )
         // «صم» لاحقة قصيرة ثنائية تُقرأ مساءً (المؤشر الأخير م = مساءً)
         assertEquals("الثانية والنصف مساءً", TimeStep.apply("14:30صم"))
         // حرف م داخل كلمة («من») لا يُلتقط لاحقةً
@@ -718,6 +725,34 @@ class PipelineStepsTest {
     }
 
     @Test
+    fun numberToWords_hundredsOfThousands_scaleForm() {
+        assertEquals(
+            "خمسمئت ألف",
+            NumberWordsConverter.numberToWords(500000)
+        )
+        assertEquals(
+            "خمسمئت ألف",
+            NumberSpeech.toArabicWords(500000)
+        )
+        assertEquals(
+            "ثلاثمئت ألف",
+            NumberWordsConverter.numberToWords(300000)
+        )
+        assertEquals(
+            "أربعمئت ألف",
+            NumberWordsConverter.numberToWords(400000)
+        )
+        assertEquals(
+            "خمسمئت مليون",
+            NumberWordsConverter.numberToWords(500000000)
+        )
+        assertEquals(
+            "خمسمئت مليار",
+            NumberWordsConverter.numberToWords(500000000000L)
+        )
+    }
+
+    @Test
     fun numberToWords_101_102_thousandOwnUnit() {
         // **بند 3.4:** آحاد 1–2 معطوفة على مائة مع المقياس تُنطق مفرداً/
         // مثنّى بعد المقياس: «مائة ألف وألف» لا «مائة وواحد ألف».
@@ -944,7 +979,7 @@ class PipelineStepsTest {
         // بند 3.3: رفع الحد 9999→99,999,999 عبر NumberSpeech بصيغة المعدود
         // المؤنث («خمس» لا «خمسة») مع بقاء الوحدة مفردة.
         assertEquals(
-            "مليونان وخمسمائة ألف وخمس ساعة",
+            "مليونان وخمسمئت ألف وخمس ساعة",
             UnitStep.apply("2500005 س")
         )
     }

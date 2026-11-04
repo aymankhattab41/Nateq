@@ -710,13 +710,10 @@ internal class SettingsAccordionController(
     }
 
     private fun buildFilterStatus(): String {
-        val langOn = runCatching {
-            settings.isFilterLanguagesEnabled()
-        }.getOrDefault(false)
         val engOn = runCatching {
             settings.isFilterEnginesEnabled()
         }.getOrDefault(false)
-        return if (langOn || engOn) {
+        return if (engOn) {
             fragment.getString(R.string.filter_status_active)
         } else {
             fragment.getString(R.string.filter_status_inactive)

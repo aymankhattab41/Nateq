@@ -169,8 +169,7 @@ class LanguageAndEngineFilterTest {
         for (file in ktFiles) {
             val name = file.name
             // استثناء نوافذ الاختيار المخصصة المصرح بها
-            if (name == "LanguageFilterController.kt" ||
-                name == "VisibleLanguages.kt" ||
+            if (name == "VisibleLanguages.kt" ||
                 name == "VisibleEngines.kt"
             ) {
                 continue

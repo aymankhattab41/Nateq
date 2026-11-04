@@ -152,6 +152,21 @@ object ArabicSpeechNormalizer {
             """(?![\p{IsArabic}\p{InArabic}\p{M}])"""
     )
 
+    // مئات الآلاف والملايين: تُكتب بالتاء المفتوحة لمنع السكتات
+    // ونطق «خمس مائة» منفصلة: «خمسمئت ألف»، «ثلاثمئت ألف»...
+    private val compoundHundredsScaleRegex = Regex(
+        """(?<![\p{IsArabic}\p{InArabic}\p{M}])""" +
+            """(ثلاث|أربع|خمس|ست|سبع|ثمان|تسع)""" +
+            """(?:مائة|مئة|\s+مائة|\s+مئة)\s+""" +
+            """(ألف(?:اً)?|مليون(?:اً)?|مليار(?:اً)?|تريليون(?:اً)?)""" +
+            """(?![\p{IsArabic}\p{InArabic}\p{M}])"""
+    )
+    private val compoundHundredsSpaceRegex = Regex(
+        """(?<![\p{IsArabic}\p{InArabic}\p{M}])""" +
+            """(ثلاث|أربع|خمس|ست|سبع|ثمان|تسع)\s+(مائة|مئة)""" +
+            """(?![\p{IsArabic}\p{InArabic}\p{M}])"""
+    )
+
     /** يطبّق القاموس على النص كاملاً (لا يلمس غيرَ العربية). */
     fun normalize(
         text: String,
@@ -183,6 +198,15 @@ object ArabicSpeechNormalizer {
             )
         }
         out = bareJeemRegex.replace(out, "جيم")
+        out = compoundHundredsScaleRegex.replace(out) { m ->
+            "${m.groupValues[1]}مئت ${m.groupValues[2]}"
+        }
+        out = compoundHundredsSpaceRegex.replace(out) { m ->
+            "${m.groupValues[1]}${m.groupValues[2]}"
+        }
+        if (out.contains('\u0640')) {
+            out = out.replace("\u0640", "")
+        }
         if (out.contains(EngineMarkers.TANWEEN_MARKER)) {
             out = out.replace(EngineMarkers.TANWEEN_MARKER, "")
         }

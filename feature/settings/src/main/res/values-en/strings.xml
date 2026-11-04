@@ -712,14 +712,15 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Restrict filtering to TTS engines only so supported languages are dynamically derived from visible engines.
+• Fixed pronunciation of hundreds of thousands/millions (e.g. 500,000) to use connected form "خمسمئت ألف" to eliminate pauses and unnatural stops.
+• Stripped pauses, conjunctions, and commas separating numbers in time, date, and text for smooth continuous playback.
 • Fixed mismatch validation for Acapela TTS Arabic voice (ara-SAU-Leila) and ensured proper saving and matching across all categories including numbers.
 • Fixed isolated Arabic letter Jeem to speak as letter name rather than Egyptian pound on Vocalizer.
-• Stripped pauses, conjunctions (and/waw), and commas separating numbers in time, date, and general text for fluent speech.
 • Ensured number pronunciation strictly uses selected engine and voice without incorrect fallback.
 • Unified number role in speech planner with general text when engine and voice match to prevent sentence segmentation.
-• Added option to show selected languages only and filter all voice menus accordingly.
 • Added option to show selected TTS engines only and exclude unselected engines.
-• Applied language and engine filtering to default event voices (clock, battery, notifications, caller).
+• Applied engine filtering to default event voices (clock, battery, notifications, caller).
 • Added Emergency Voice fallback system and Crash Guard for automatic recovery.
 • Protected number category and Vocalizer / Acapela engines against voice reset or drift deletion.
     </string>
@@ -1129,8 +1130,8 @@ Version %1$s
     <string name="emergency_voice_exit_success">Exited emergency mode successfully</string>
     <string name="emergency_voice_mode_announcement">Emergency mode</string>
 
-    <!-- Language & Engine Filtering (Items 2 and 3) -->
-    <string name="section_filter_title">Language and Engine Filtering</string>
+    <!-- Engine Filtering (Item 3) -->
+    <string name="section_filter_title">Engines Filter</string>
     <string name="filter_languages_switch">Show selected languages only</string>
     <string name="filter_languages_btn">Choose languages…</string>
     <string name="filter_languages_title">Choose Languages</string>

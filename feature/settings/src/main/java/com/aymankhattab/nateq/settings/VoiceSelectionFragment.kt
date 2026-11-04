@@ -991,19 +991,14 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                 voicePreview
             )
         }
-        LanguageFilterController(
-            requireContext(),
-            settings,
-            engineCatalog
-        ) {
-            accordion.updateSectionStatuses()
-        }.setup(view)
-
         EngineFilterController(
             requireContext(),
             settings
         ) {
             accordion.updateSectionStatuses()
+            if (::categoryVoicePanel.isInitialized) {
+                categoryVoicePanel.refreshLanguages()
+            }
         }.setup(view)
         setupLanguageToggle()
         setupCheckUpdates()

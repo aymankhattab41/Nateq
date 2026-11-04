@@ -144,10 +144,9 @@ internal class CategoryVoicePanelController(
     /** تعديلات غير محفوظة على الفئة المعروضة (تُصفَّر بالتحميل/الحفظ). */
     private var dirtyPanel = false
 
-    // لغات فئات الأصوات (عربية/إنجليزية ثم المكتشفة) ومحركات المتصّل.
-    private var languages: List<String> = catalog.languages().filter {
-        VisibleLanguages.isVisible(it)
-    }
+    // لغات فئات الأصوات المنبثقة من المحركات المرئية ومحركات
+    // المتصّل.
+    private var languages: List<String> = catalog.languages()
     private var languageAdapter = simpleAdapter(
         fragment.requireContext(),
         languages.map { catalog.languageDisplayName(it) }
@@ -844,9 +843,7 @@ if (!dirtyPanel) {
     /** يعيد بناء قوائم اللغات بعد اكتمال الاكتشاف الخلفي ثم يعيد ربط
      *  الفئة المعروضة (المعادل لـ refreshLanguages القديم). */
     internal fun refreshLanguages() {
-        languages = catalog.languages().filter {
-            VisibleLanguages.isVisible(it)
-        }
+        languages = catalog.languages()
         languageAdapter = simpleAdapter(
             fragment.requireContext(),
             languages.map { catalog.languageDisplayName(it) }
@@ -856,9 +853,7 @@ if (!dirtyPanel) {
             updateCallerLanguages(fragment.requireContext())
             return
         }
-        if (!VisibleLanguages.isVisible(currentPanelLanguage) ||
-            !languages.contains(currentPanelLanguage)
-        ) {
+        if (!languages.contains(currentPanelLanguage)) {
             currentPanelLanguage = languages.firstOrNull() ?: "ar"
         }
         bindCategoryRow(currentEntry)

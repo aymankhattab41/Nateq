@@ -205,7 +205,8 @@ internal object NumberWordsConverter {
         return when {
             group == 100 -> "مائة ${scale.inHundred}"
             group == 200 -> "مائتا ${scale.inHundred}"
-            remainder == 0 -> "${convertHundreds(group)} ${scale.inHundred}"
+            remainder == 0 ->
+                "${scaleHundreds(convertHundreds(group))} ${scale.inHundred}"
             remainder in 3..10 -> "$groupText ${scale.plural}"
             remainder in 1..2 -> {
                 val base = convertHundreds(group - remainder)
@@ -218,6 +219,23 @@ internal object NumberWordsConverter {
             }
             else -> "$groupText ${scale.accusative}"
         }
+    }
+
+    /** تحويل المئات قبل مقياس الآلاف/الملايين:
+     *  «خمسمئت ألف»، «ثلاثمئت ألف» */
+    private fun scaleHundreds(word: String): String {
+        val prefixes = arrayOf(
+            "ثلاث", "أربع", "خمس", "ست", "سبع", "ثمان", "تسع"
+        )
+        for (prefix in prefixes) {
+            if (word.endsWith("${prefix}مائة")) {
+                return word.removeSuffix("مائة") + "مئت"
+            }
+            if (word.endsWith("${prefix}مئة")) {
+                return word.removeSuffix("مئة") + "مئت"
+            }
+        }
+        return word
     }
 
     /** تحويل جزء عددي (0–999) إلى كلمات. */
