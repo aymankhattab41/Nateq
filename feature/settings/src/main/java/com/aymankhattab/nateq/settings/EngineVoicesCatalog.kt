@@ -110,23 +110,58 @@ internal class EngineVoicesCatalog(
     }
 
     /** اللغات المعروضة: تنبثق ديناميكياً من المحركات المرئية
-     *  فقط. */
+     *  فقط مع بقاء العربية والإنجليزية دائماً كأساس للتطبيق. */
     internal fun languages(): List<String> {
         val supported = byLanguage.filter { (_, rows) ->
             rows.any { row ->
                 VisibleEngines.isVisible(row.enginePackage)
             }
         }.keys
-        val hasAr = supported.contains(LANGUAGE_AR)
-        val hasEn = supported.contains(LANGUAGE_EN)
         val rest = supported
             .filterNot { it == LANGUAGE_AR || it == LANGUAGE_EN }
             .sorted()
         val all = mutableListOf<String>()
-        if (hasAr || byLanguage.isEmpty()) all.add(LANGUAGE_AR)
-        if (hasEn || byLanguage.isEmpty()) all.add(LANGUAGE_EN)
+        all.add(LANGUAGE_AR)
+        all.add(LANGUAGE_EN)
         all.addAll(rest)
         return all
+    }
+
+    /**
+     * اللغات التي يدعمها محرك محدد (تنبثق منه لغاته فقط).
+     * إن كان المحرك null أُعيدت كل لغات المحركات المرئية.
+     */
+    internal fun languagesForEngine(enginePackage: String?): List<String> {
+        if (enginePackage.isNullOrBlank()) {
+            return languages()
+        }
+        val supported = byLanguage.filter { (_, rows) ->
+            rows.any { row ->
+                row.enginePackage == enginePackage && row.voices.isNotEmpty()
+            }
+        }.keys
+        if (supported.isNotEmpty()) {
+            val hasAr = supported.contains(LANGUAGE_AR)
+            val hasEn = supported.contains(LANGUAGE_EN)
+            val rest = supported
+                .filterNot { it == LANGUAGE_AR || it == LANGUAGE_EN }
+                .sorted()
+            val all = mutableListOf<String>()
+            if (hasAr) all.add(LANGUAGE_AR)
+            if (hasEn) all.add(LANGUAGE_EN)
+            all.addAll(rest)
+            return all
+        }
+        val inAr = byLanguage[LANGUAGE_AR].orEmpty().any {
+            it.enginePackage == enginePackage
+        }
+        val inEn = byLanguage[LANGUAGE_EN].orEmpty().any {
+            it.enginePackage == enginePackage
+        }
+        val fallback = mutableListOf<String>()
+        if (inAr) fallback.add(LANGUAGE_AR)
+        if (inEn) fallback.add(LANGUAGE_EN)
+        return if (fallback.isNotEmpty()) fallback else listOf(LANGUAGE_AR)
     }
 
     /** تسمية اللغة المعروضة باسمها المحلي (العربية/English/…). */

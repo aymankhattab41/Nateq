@@ -712,6 +712,7 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Restrict displayed languages in each category to only those supported by the selected engine, and ensure English speech works properly across all features.
 • Restrict filtering to TTS engines only so supported languages are dynamically derived from visible engines.
 • Fixed pronunciation of hundreds of thousands/millions (e.g. 500,000) to use connected form "خمسمئت ألف" to eliminate pauses and unnatural stops.
 • Stripped pauses, conjunctions, and commas separating numbers in time, date, and text for smooth continuous playback.

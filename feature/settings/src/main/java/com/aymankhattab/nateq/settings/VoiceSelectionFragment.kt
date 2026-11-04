@@ -44,6 +44,7 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.aymankhattab.nateq.core.common.AppDispatchers
+import com.aymankhattab.nateq.core.common.VisibleEngines
 import com.aymankhattab.nateq.core.data.UpdateChecker
 import androidx.recyclerview.widget.RecyclerView
 import com.aymankhattab.nateq.feature.settings.R
@@ -996,8 +997,17 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             settings
         ) {
             accordion.updateSectionStatuses()
-            if (::categoryVoicePanel.isInitialized) {
-                categoryVoicePanel.refreshLanguages()
+            refreshVoiceCatalogDiscovery {
+                if (::categoryVoicePanel.isInitialized) {
+                    categoryVoicePanel.refreshCategoryEngines()
+                    categoryVoicePanel.refreshLanguages()
+                }
+                if (::callerSection.isInitialized) {
+                    callerSection.refreshCallerVoices()
+                }
+                if (::smsSection.isInitialized) {
+                    smsSection.refreshSmsVoices()
+                }
             }
         }.setup(view)
         setupLanguageToggle()
@@ -1164,8 +1174,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
      * يلغي أي عملية جارية سابقة حتى لا تتسابق نتيجتان، ويسجل الأخطاء
      * دون ابتلاعها، ويمرر unavailableEngines إلى EngineVoicesCatalog.
      */
-    internal fun buildActiveEnginesSet(): Set<String> {
+    internal fun buildActiveEnginesSet(): Set<String>? {
+        if (!VisibleEngines.isFilterEnabled()) {
+            return null
+        }
         val set = mutableSetOf<String>()
+        set.addAll(VisibleEngines.visibleSet())
         val defaultEng = settings.getEnginePreferenceForLanguage("ar").engine
         if (!defaultEng.isNullOrBlank()) set.add(defaultEng)
         // «ع٤٠-2»: تفضيل اللغة الإنجليزية (الخريطة الديناميكية)
