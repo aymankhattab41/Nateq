@@ -33,11 +33,11 @@ class VoiceResolutionConflictTest {
 
     @Test
     fun testVoiceResolution_withMismatchedEngine_discardsVoiceAndLogsTrace() {
-        // فئة أرقام بمحرك أكابيلا ولكن الصوت المحفوظ فوكلايزر
+        // فئة أرقام بمحرك أكابيلا ولكن الصوت المحفوظ فوكلايزر صريح (Tarik)
         val resolved = VoiceResolutionPolicy.resolve(
             role = SpeechRole.NUMBER,
             languageTag = "ar",
-            categoryVoice = "ara-SAU-Leila",
+            categoryVoice = "Tarik",
             appVoice = null,
             contactVoice = null,
             languageDefaultVoice = "default_voice",
@@ -51,9 +51,29 @@ class VoiceResolutionConflictTest {
         assertTrue("يجب تسجيل تراجع في EventVoiceTrace", recent.isNotEmpty())
         val last = recent.last()
         assertEquals("number", last.category)
-        assertEquals("ara-SAU-Leila", last.savedVoiceId)
+        assertEquals("Tarik", last.savedVoiceId)
         assertEquals("com.acapelagroup.android.tts", last.resolvedEngine)
         assertEquals("صوت لا يتبع المحرك", last.fallbackReason)
+    }
+
+    @Test
+    fun testVoiceResolution_withMatchingAcapelaVoice_resolvesDirectly() {
+        // فئة أرقام بمحرك أكابيلا وصوت أكابيلا (ara-SAU-Leila)
+        val resolved = VoiceResolutionPolicy.resolve(
+            role = SpeechRole.NUMBER,
+            languageTag = "ar",
+            categoryVoice = "ara-SAU-Leila",
+            appVoice = null,
+            contactVoice = null,
+            languageDefaultVoice = "default_voice",
+            categoryEngine = "com.acapelagroup.android.tts"
+        )
+
+        assertEquals("ara-SAU-Leila", resolved.voiceId)
+        assertEquals(
+            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER,
+            resolved.source
+        )
     }
 
     @Test
