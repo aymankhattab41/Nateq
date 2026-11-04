@@ -712,6 +712,9 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Fixed appearance of Microsoft Embedded engine in event category selectors (Time, Battery, Caller, Notifications, Default) immediately upon voice download.
+• Fixed Microsoft voice preview playback in the embedded downloader card with model name extraction, proper neural license configuration, and clean PCM initialization.
+• Fixed Microsoft voice preview in "All Languages Setup" dialog by correctly passing the voice language tag instead of defaulting to English.
 • Integrated Microsoft Neural Embedded TTS engine for high-quality, completely offline speech synthesis.
 • Added 336 offline neural voices across 146 languages and locales (including 32 Arabic voices) with full name and country localization.
 • Advanced embedded downloader for Microsoft voices with hierarchical navigation (languages -> voices -> models) and download confirmation dialog displaying file size and specs.

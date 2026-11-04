@@ -207,6 +207,7 @@ internal class LanguageConvertDialogController(
     private val previewCallback: (
         enginePackage: String,
         voiceName: String,
+        languageTag: String,
         volume: Float,
         pitch: Float,
         rate: Float
@@ -520,7 +521,15 @@ internal class LanguageConvertDialogController(
         val volume = seekVol.progress / 100f
         val pitch = seekPitch.progress.speedFactor()
         val rate = seekRate.progress.speedFactor()
-        previewCallback?.invoke(engine, voice, volume, pitch, rate)
+        val langTag = currentRow.languageTag
+        previewCallback?.invoke(
+            engine,
+            voice,
+            langTag,
+            volume,
+            pitch,
+            rate
+        )
     }
 
     internal val volumeListener = object : SeekBar.OnSeekBarChangeListener {

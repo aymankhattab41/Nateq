@@ -322,7 +322,9 @@ internal fun isMicrosoftVoiceName(
                     it.voiceName,
                     it.id,
                     it.modelName,
-                    it.topDirName
+                    it.topDirName,
+                    it.displayNameAr,
+                    it.displayNameEn
                 )
             }
             .map { it.lowercase() }

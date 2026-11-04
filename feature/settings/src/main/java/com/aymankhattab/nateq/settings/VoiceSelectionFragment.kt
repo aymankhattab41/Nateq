@@ -1307,13 +1307,23 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             }
             engineCatalog.update(rows, unavailMap)
             if (!isAdded) return@launch
-            categoryVoicePanel.refreshLanguages()
+            if (::categoryVoicePanel.isInitialized) {
+                categoryVoicePanel.refreshCategoryEngines()
+                categoryVoicePanel.refreshLanguages()
+            }
             if (::smsSection.isInitialized) smsSection.refreshSmsVoices()
             if (::callerSection.isInitialized) {
+                callerSection.refreshCallerEngines()
                 callerSection.refreshCallerVoices()
             }
             checkAndPromptVoiceMismatchFix()
             onComplete?.invoke()
+        }
+    }
+
+    internal fun refreshCategoryEngines() {
+        if (::categoryVoicePanel.isInitialized) {
+            categoryVoicePanel.refreshCategoryEngines()
         }
     }
 

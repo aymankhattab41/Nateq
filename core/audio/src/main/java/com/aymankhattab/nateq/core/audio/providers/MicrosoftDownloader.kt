@@ -2,6 +2,8 @@ package com.aymankhattab.nateq.core.audio.providers
 
 import android.content.Context
 import android.util.Log
+import com.aymankhattab.nateq.core.common.VisibleEngines
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.BufferedInputStream
@@ -133,6 +135,14 @@ object MicrosoftDownloader {
             partZipFile.delete()
             EmbeddedStorage.bumpVersion()
             EnginePicker.invalidateAfterStorageChange()
+            val settings = SettingsRepository.create(context)
+            if (settings.isFilterEnginesEnabled()) {
+                val cur = settings.getFilterEngines().toMutableSet()
+                cur.add(MicrosoftEmbeddedVoiceProvider.PROVIDER_ID)
+                cur.add("microsoft")
+                settings.setFilterEngines(cur)
+                VisibleEngines.setFilter(true, cur)
+            }
             onProgress(100)
             Result.success(true)
         } catch (e: DownloadError) {

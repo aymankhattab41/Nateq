@@ -5,6 +5,7 @@ import android.util.Log
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftModelCatalog
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftVoiceManifest
 import com.microsoft.cognitiveservices.speech.EmbeddedSpeechConfig
+import com.microsoft.cognitiveservices.speech.PropertyId
 import com.microsoft.cognitiveservices.speech.ResultReason
 import com.microsoft.cognitiveservices.speech.SpeechSynthesisCancellationDetails
 import com.microsoft.cognitiveservices.speech.SpeechSynthesisOutputFormat
@@ -72,11 +73,14 @@ internal class MicrosoftHostSession(
             )
         }
 
+        val extractedModel = extractModelName(voiceDir)
         val catalogItem = MicrosoftModelCatalog.findItemByNameOrModel(
             context,
             req.voiceId
         )
-        val modelName = catalogItem?.modelName ?: req.voiceId
+        val modelName = extractedModel
+            ?: catalogItem?.modelName
+            ?: req.voiceId
         val langTag = catalogItem?.locale?.toLanguageTag() ?: "ar-EG"
 
         var config: EmbeddedSpeechConfig? = null
@@ -90,6 +94,10 @@ internal class MicrosoftHostSession(
                 listOf(voiceDir.absolutePath)
             )
             config.setSpeechSynthesisVoice(modelName, licenseKey)
+            config.setProperty(
+                PropertyId.SpeechServiceConnection_SynthModelKey,
+                licenseKey
+            )
             config.setSpeechSynthesisOutputFormat(
                 SpeechSynthesisOutputFormat.Raw24Khz16BitMonoPcm
             )
@@ -97,7 +105,6 @@ internal class MicrosoftHostSession(
             val pushCallback = object : PushAudioOutputStreamCallback() {
                 override fun write(data: ByteArray): Int {
                     if (cancelled.get()) return data.size
-                    sink.writeHeader(SAMPLE_RATE_HZ, 1)
                     sink.writePcm(data, data.size)
                     return data.size
                 }
@@ -115,10 +122,10 @@ internal class MicrosoftHostSession(
                 text = req.text,
                 modelName = modelName,
                 langTag = langTag,
-                rate = req.rate,
-                pitch = req.pitch
+                rate = req.rate
             )
 
+            sink.writeHeader(SAMPLE_RATE_HZ, 1)
             synthResult = synthesizer.SpeakSsml(ssml)
             activeSynthesizer = null
             activePushStream = null
@@ -202,39 +209,48 @@ internal class MicrosoftHostSession(
         return completeDirs.firstOrNull()
     }
 
+    private fun extractModelName(voiceDir: File): String? {
+        val directTokens = File(voiceDir, "Tokens.xml")
+        val tokensFile = if (directTokens.exists() && directTokens.isFile) {
+            directTokens
+        } else {
+            voiceDir.walkTopDown().maxDepth(3).firstOrNull {
+                it.name.equals("Tokens.xml", ignoreCase = true)
+            }
+        } ?: return null
+        return runCatching {
+            val content = tokensFile.readText(Charsets.UTF_8)
+            val pattern = java.util.regex.Pattern.compile(
+                "<String\\s+name=\"\"\\s+value=\"([^\"]+)\""
+            )
+            val matcher = pattern.matcher(content)
+            if (matcher.find()) matcher.group(1) else null
+        }.getOrNull()
+    }
+
     private fun buildSsml(
         text: String,
         modelName: String,
         langTag: String,
-        rate: Float,
-        pitch: Float
+        rate: Float
     ): String {
-        val ratePercent = ((rate - 1.0f) * 100f).toInt()
-        val rateStr = if (ratePercent >= 0) {
-            "+$ratePercent%"
-        } else {
-            "$ratePercent%"
-        }
-        val pitchPercent = ((pitch - 1.0f) * 100f).toInt()
-        val pitchStr = if (pitchPercent >= 0) {
-            "+$pitchPercent%"
-        } else {
-            "$pitchPercent%"
-        }
         val escaped = escapeXml(text)
+        val body = if (kotlin.math.abs(rate - 1.0f) < 0.05f) {
+            escaped
+        } else {
+            val ratePercent = ((rate - 1.0f) * 100f).toInt()
+            val rateStr = if (ratePercent >= 0) {
+                "+$ratePercent%"
+            } else {
+                "$ratePercent%"
+            }
+            "<prosody rate=\"$rateStr\">$escaped</prosody>"
+        }
 
         val header = "<speak version=\"1.0\" " +
             "xmlns=\"http://www.w3.org/2001/10/synthesis\" " +
             "xml:lang=\"$langTag\">"
-        return """
-$header
-    <voice name="$modelName">
-        <prosody rate="$rateStr" pitch="$pitchStr">
-            $escaped
-        </prosody>
-    </voice>
-</speak>
-        """.trimIndent()
+        return "$header<voice name=\"$modelName\">$body</voice></speak>"
     }
 
     private fun escapeXml(text: String): String {

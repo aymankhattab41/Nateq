@@ -672,6 +672,8 @@ if (!dirtyPanel) {
                         val provider = when (norm) {
                             HostProtocol.ENGINE_VOCALIZER ->
                                 EmbeddedProviders.vocalizer(context)
+                            HostProtocol.ENGINE_MICROSOFT ->
+                                EmbeddedProviders.microsoft(context)
                             else -> null
                         }
                         if (provider != null) {
