@@ -418,6 +418,7 @@ class SettingsRepository(context: Context) :
         migrateBatteryVoicePrefsIfNeeded(it)
         dropObsoleteCallerTemplateKey(it)
         migrateAppProfilesAndContactVoicesIfNeeded(it)
+        migrateLanguageFilterRemoval(it)
     }
 
     /**
@@ -957,6 +958,17 @@ class SettingsRepository(context: Context) :
         }
     }
 
+    private fun migrateLanguageFilterRemoval(p: SharedPreferences) {
+        if (p.contains(KEY_FILTER_LANGUAGES_ENABLED) ||
+            p.contains(KEY_FILTER_LANGUAGES_SET)
+        ) {
+            p.edit()
+                .remove(KEY_FILTER_LANGUAGES_ENABLED)
+                .remove(KEY_FILTER_LANGUAGES_SET)
+                .apply()
+        }
+    }
+
     /** لغة التطبيق المختارة يدوياً: "ar"/"en"/null (null = تتبع لغة النظام) */
     override fun getAppLanguage(): String? =
         prefs.getString("app_language", null)
@@ -977,6 +989,9 @@ class SettingsRepository(context: Context) :
     override fun getSecondaryLanguage(): String {
         val raw = prefs.getString("secondary_language", LanguageCode.EN.tag)
             ?: LanguageCode.EN.tag
+        if (raw == LanguageCode.AR.tag || raw.isBlank()) {
+            return LanguageCode.EN.tag
+        }
         if (!VisibleLanguages.isVisible(raw)) {
             val visible = VisibleLanguages.visibleSet()
             return when {

@@ -180,4 +180,25 @@ class EngineVoicesCatalogTest {
         assertEquals("fr", catalog.languageForSavedVoice("fr-FR-Sylvia"))
         assertNull(catalog.languageForSavedVoice("com.unknown:pitch"))
     }
+
+    @Test
+    fun `languagesForEngine returns only languages supported by that engine`() {
+        // المحرك ينبثق منه لغاته المدعومة فقط
+        assertEquals(
+            listOf("ar"),
+            catalog.languagesForEngine("com.acapella")
+        )
+        assertEquals(
+            listOf("ar", "en"),
+            catalog.languagesForEngine("com.google.android.tts")
+        )
+        assertEquals(
+            listOf("fr"),
+            catalog.languagesForEngine("com.vocalizer")
+        )
+        assertEquals(
+            listOf("ar", "en", "fr"),
+            catalog.languagesForEngine(null)
+        )
+    }
 }

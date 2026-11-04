@@ -12,6 +12,7 @@ import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
+import com.aymankhattab.nateq.core.common.VisibleEngines
 import com.aymankhattab.nateq.core.common.VisibleLanguages
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.LocaleUtils
@@ -798,4 +799,17 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
         supportedLocales()
             .firstOrNull { it.language == language }
             ?.let { voiceNameFor(it) }
+
+    /**
+     * يتحقق مما إذا كانت اللغة مرئية وفق محددات تصفية المحركات.
+     * العربية والإنجليزية مرئيتان دائماً كأساس للتطبيق.
+     */
+    fun isLanguageVisible(lang: String): Boolean {
+        if (!VisibleEngines.isFilterEnabled()) return true
+        if (lang == LanguageCode.AR.tag || lang == LanguageCode.EN.tag) {
+            return true
+        }
+        val engines = discoveredByLanguage?.get(lang) ?: return false
+        return engines.any { VisibleEngines.isVisible(it.enginePackage) }
+    }
 }

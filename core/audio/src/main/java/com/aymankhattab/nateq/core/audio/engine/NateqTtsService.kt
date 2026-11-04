@@ -540,7 +540,9 @@ class NateqTtsService : TextToSpeechService() {
         if (lang.isNullOrBlank()) return TextToSpeech.LANG_NOT_SUPPORTED
 
         val normLang = normalizeLanguageCode(lang)
-        if (!VisibleLanguages.isVisible(normLang)) {
+        if (!VisibleLanguages.isVisible(normLang) ||
+            !catalog.isLanguageVisible(normLang)
+        ) {
             return TextToSpeech.LANG_NOT_SUPPORTED
         }
         val normCountry = normalizeCountryCode(country)
@@ -588,7 +590,9 @@ class NateqTtsService : TextToSpeechService() {
             " country=$country variant=$variant")
         if (lang.isNullOrBlank()) return TextToSpeech.LANG_NOT_SUPPORTED
         val normLang = normalizeLanguageCode(lang)
-        if (!VisibleLanguages.isVisible(normLang)) {
+        if (!VisibleLanguages.isVisible(normLang) ||
+            !catalog.isLanguageVisible(normLang)
+        ) {
             return TextToSpeech.LANG_NOT_SUPPORTED
         }
         val normCountry = normalizeCountryCode(country)
@@ -626,9 +630,10 @@ class NateqTtsService : TextToSpeechService() {
     override fun onGetVoices(): MutableList<Voice> {
         Log.d(TAG, "onGetVoices() CALLED")
         refreshDiscoveryIfNeeded()
-        val voices = catalog.supportedVoices().filter {
-            VisibleLanguages.isVisible(it.locale?.language) &&
-                VisibleEngines.isVisible(it.name)
+        val voices = catalog.supportedVoices().filter { voice ->
+            val lang = voice.locale?.language.orEmpty()
+            VisibleLanguages.isVisible(lang) &&
+                catalog.isLanguageVisible(lang)
         }
         Log.d(TAG,
             "onGetVoices() returning ${voices.size} voices:" +
@@ -640,8 +645,12 @@ class NateqTtsService : TextToSpeechService() {
         Log.d(TAG, "onIsValidVoiceName() voiceName=$voiceName")
         if (voiceName == null) return TextToSpeech.ERROR
         val voiceLang = VoiceResolutionPolicy.languageOfVoiceId(voiceName)
-        if (voiceLang != null && !VisibleLanguages.isVisible(voiceLang)) {
-            return TextToSpeech.ERROR
+        if (voiceLang != null) {
+            if (!VisibleLanguages.isVisible(voiceLang) ||
+                !catalog.isLanguageVisible(voiceLang)
+            ) {
+                return TextToSpeech.ERROR
+            }
         }
         val inCatalog = catalog.supportedVoices().any { it.name == voiceName }
         val inContract = VoiceIdContract.declaredVoiceNames().any {
@@ -676,7 +685,9 @@ class NateqTtsService : TextToSpeechService() {
         val normLang = normalizeLanguageCode(lang).ifBlank {
             LanguageCode.AR.tag
         }
-        if (!VisibleLanguages.isVisible(normLang)) {
+        if (!VisibleLanguages.isVisible(normLang) ||
+            !catalog.isLanguageVisible(normLang)
+        ) {
             return null
         }
         val preferred = runCatching {
