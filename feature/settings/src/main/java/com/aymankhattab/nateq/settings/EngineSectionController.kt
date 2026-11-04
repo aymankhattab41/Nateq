@@ -191,8 +191,15 @@ internal class EngineSectionController(
                     ctx,
                     settings,
                     rows
-                ) { enginePkg, voiceName, volume, pitch, rate ->
-                    playbackPreview(enginePkg, voiceName, volume, pitch, rate)
+                ) { enginePkg, voiceName, langTag, volume, pitch, rate ->
+                    playbackPreview(
+                        enginePkg,
+                        voiceName,
+                        langTag,
+                        volume,
+                        pitch,
+                        rate
+                    )
                 }.bindTo(dialogView) {
                     // التفعيل التلقائي من الحوار (اختيار محرك للغة) قد يقلب
                     // المفتاح الرئيسي — تُزامَن الصناديق فوراً.
@@ -226,20 +233,21 @@ internal class EngineSectionController(
     private fun playbackPreview(
         enginePkg: String,
         voiceName: String,
+        languageTag: String,
         volume: Float,
         pitch: Float,
         rate: Float
     ) {
-        // نعرض عينة بنفس لغة الصوت: عربي إن كان الصوت
-        // عربياً وإلا إنجليزي.
-        // (سبق: كان النص التجريبي إنجليزياً دائماً فبدا
-        // للمستخدم أن الصوت إنجليزي.)
-        val isArabic = voiceName.lowercase().contains("ar") ||
+        val isArabic = LanguageCode.isArabic(languageTag) ||
+            voiceName.lowercase().contains("ar") ||
             voiceName.lowercase().contains("arab")
         val sampleText = if (isArabic) {
             fragment.getString(R.string.sample_text_preview_ar)
         } else {
             fragment.getString(R.string.sample_text_default_en)
+        }
+        val tag = languageTag.ifBlank {
+            if (isArabic) LanguageCode.AR.tag else LanguageCode.EN.tag
         }
         // نُعلن بداية ونهاية المعاينة لقارئ الشاشة (بند الأوامر 4) عبر
         // previewSpeech، وهو يشغّلها على المساعد المشترك نفسه.
@@ -247,11 +255,7 @@ internal class EngineSectionController(
             PreviewParams(
                 enginePkg = enginePkg,
                 voiceName = voiceName,
-                languageTag = if (isArabic) {
-                    LanguageCode.AR.tag
-                } else {
-                    LanguageCode.EN.tag
-                },
+                languageTag = tag,
                 speechRate = rate,
                 pitch = pitch,
                 volume = volume,

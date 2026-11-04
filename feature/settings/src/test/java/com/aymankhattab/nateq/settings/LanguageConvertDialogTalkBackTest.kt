@@ -48,7 +48,7 @@ class LanguageConvertDialogTalkBackTest {
             context,
             settings,
             listOf(LanguageRow("ar", "العربية", emptyList()))
-        ) { _, _, _, _, _ -> }
+        ) { _, _, _, _, _, _ -> }
         controller.bindTo(view) { }
     }
 

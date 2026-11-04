@@ -1929,7 +1929,9 @@ internal class EmbeddedEngineDownloaderController(
     }
 
     private fun notifyCatalogChanged() {
-        (fragment as? VoiceSelectionFragment)
-            ?.refreshVoiceCatalogDiscovery()
+        (fragment as? VoiceSelectionFragment)?.let { vsf ->
+            vsf.refreshCategoryEngines()
+            vsf.refreshVoiceCatalogDiscovery()
+        }
     }
 }

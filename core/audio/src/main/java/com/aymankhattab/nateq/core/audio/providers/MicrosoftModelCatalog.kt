@@ -164,24 +164,31 @@ object MicrosoftModelCatalog {
     fun isVoiceInstalled(
         baseDir: File,
         item: MicrosoftCatalogItem
-    ): Boolean {
-        if (!baseDir.exists() || !baseDir.isDirectory) return false
-        val dir = File(baseDir, item.topDirName)
-        if (File(dir, item.indicatorFileName).exists()) return true
-        val altDir = File(baseDir, item.id)
-        if (File(altDir, item.indicatorFileName).exists()) return true
-        return false
-    }
+    ): Boolean = findInstalledVoiceDir(baseDir, item) != null
 
     fun findInstalledVoiceDir(
         baseDir: File,
         item: MicrosoftCatalogItem
     ): File? {
+        if (!baseDir.exists() || !baseDir.isDirectory) return null
         val dir = File(baseDir, item.topDirName)
         if (File(dir, item.indicatorFileName).exists()) return dir
         val altDir = File(baseDir, item.id)
         if (File(altDir, item.indicatorFileName).exists()) return altDir
-        return null
+        val nameDir = File(baseDir, item.voiceName)
+        if (File(nameDir, item.indicatorFileName).exists()) return nameDir
+
+        val allDirs = MicrosoftVoiceManifest.completeVoiceDirs(baseDir)
+        return allDirs.firstOrNull { d ->
+            d.name.equals(item.topDirName, ignoreCase = true) ||
+                d.name.equals(item.id, ignoreCase = true) ||
+                d.name.equals(item.voiceName, ignoreCase = true) ||
+                d.name.contains(item.topDirName, ignoreCase = true) ||
+                d.name.startsWith(
+                    "${item.voiceName}-",
+                    ignoreCase = true
+                )
+        }
     }
 
     fun findItemByNameOrModel(
@@ -189,13 +196,18 @@ object MicrosoftModelCatalog {
         query: String
     ): MicrosoftCatalogItem? {
         val q = query.trim()
+        if (q.isEmpty()) return null
         val items = getItems(context)
         return items.firstOrNull {
             it.voiceName.equals(q, ignoreCase = true) ||
+                it.displayNameAr.equals(q, ignoreCase = true) ||
+                it.displayNameEn.equals(q, ignoreCase = true) ||
                 it.id.equals(q, ignoreCase = true) ||
                 it.modelName.equals(q, ignoreCase = true) ||
                 it.topDirName.equals(q, ignoreCase = true) ||
                 q.contains(it.voiceName, ignoreCase = true) ||
+                q.contains(it.displayNameAr, ignoreCase = true) ||
+                q.contains(it.displayNameEn, ignoreCase = true) ||
                 q.contains(it.topDirName, ignoreCase = true)
         }
     }
