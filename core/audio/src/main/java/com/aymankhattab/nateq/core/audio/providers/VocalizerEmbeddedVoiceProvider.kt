@@ -259,12 +259,25 @@ class VocalizerEmbeddedVoiceProvider(
                 item.voiceName.equals(rawName, ignoreCase = true) ||
                     item.id.equals(rawName, ignoreCase = true)
             }
-            val targetVoiceName = when {
-                isKnownVoice -> rawName
-                voiceLocale?.language.equals("en", ignoreCase = true) ->
-                    "Samantha"
-                else ->
-                    "Laila"
+            val requestedLocale = voiceLocale ?: voice.locale
+            val targetVoiceName = if (isKnownVoice) {
+                rawName
+            } else {
+                // لا سقوط على اسمٍ ثابت (Laila/Samantha) قد لا يكون منزّلاً:
+                // يُختار من الأصوات المثبَّتة فعلياً للغة المطلوبة.
+                val installed = runCatching {
+                    listVoices(requestedLocale)
+                }.getOrDefault(emptyList()).map {
+                    InstalledVocalizerVoice(
+                        name = it.displayName,
+                        language = it.locale.language
+                    )
+                }
+                chooseVocalizerVoiceName(
+                    requestedName = rawName,
+                    requestedLanguage = requestedLocale.language,
+                    installed = installed
+                )
             }
             val isEvent = LoudnessStage.isEventCategory(category)
             val chunkConsumer: (ByteArray, Int) -> Unit = if (isEvent) {

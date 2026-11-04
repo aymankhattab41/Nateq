@@ -143,15 +143,26 @@ internal fun buildCategoryPreviewParams(
     pitch: Float,
     volume: Float,
     sampleText: String,
-    category: String? = null
+    category: String? = null,
+    languageTag: String? = null
 ): PreviewParams {
     val voice = voices.firstOrNull { it.name == voiceId }
-        ?: voices.firstOrNull()
+    // الصوتُ المحفوظ لفئةٍ قد يكون صوتَ محركٍ مكتشَف (مثل Vocalizer) لا
+    // يرد في [voices] الثابتة (أصوات اللورد المنطقية)؛ كان السقوطُ إلى
+    // أول عنصرٍ يحوّله إلى صوت لورد فيُفقد اختيار المستخدم. يُحتفظ به
+    // وبِلغته الصريحة، والسقوطُ إلى [voices] عند غياب صوتٍ محفوظ فقط.
+    val resolvedName = voice?.name
+        ?: voiceId?.takeIf { it.isNotBlank() }
+        ?: voices.firstOrNull()?.name.orEmpty()
+    val resolvedLanguage = voice?.languageTag
+        ?.takeIf { it.isNotBlank() }
+        ?: languageTag?.takeIf { it.isNotBlank() }
+        ?: voices.firstOrNull()?.languageTag.orEmpty()
     val isCaller = AnnouncementSpeaker.isCallerCategory(category)
     return PreviewParams(
         enginePkg = enginePkg,
-        voiceName = voice?.name.orEmpty(),
-        languageTag = voice?.languageTag.orEmpty(),
+        voiceName = resolvedName,
+        languageTag = resolvedLanguage,
         speechRate = rate.coerceAtLeast(MIN_SPEED_PITCH_FACTOR),
         pitch = pitch.coerceAtLeast(MIN_SPEED_PITCH_FACTOR),
         volume = volume.coerceIn(0f, 1f),
