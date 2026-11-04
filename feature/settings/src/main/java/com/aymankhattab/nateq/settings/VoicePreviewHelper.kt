@@ -18,8 +18,6 @@ import com.aymankhattab.nateq.core.audio.announcement.prepareArabicForEngine
 import com.aymankhattab.nateq.core.audio.announcement.EventLoudnessPolicy
 import com.aymankhattab.nateq.core.audio.announcement.ResolvedAudioRoute
 import com.aymankhattab.nateq.core.audio.engine.AudioEffectManager
-import com.aymankhattab.nateq.core.audio.engine.SpeechRole
-import com.aymankhattab.nateq.core.audio.engine.VoiceResolutionPolicy
 import com.aymankhattab.nateq.core.audio.engine.quirks.EngineQuirks
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
@@ -143,26 +141,15 @@ internal fun buildCategoryPreviewParams(
     pitch: Float,
     volume: Float,
     sampleText: String,
-    category: String? = null,
-    languageTag: String? = null
+    category: String? = null
 ): PreviewParams {
     val voice = voices.firstOrNull { it.name == voiceId }
-    // الصوتُ المحفوظ لفئةٍ قد يكون صوتَ محركٍ مكتشَف (مثل Vocalizer) لا
-    // يرد في [voices] الثابتة (أصوات اللورد المنطقية)؛ كان السقوطُ إلى
-    // أول عنصرٍ يحوّله إلى صوت لورد فيُفقد اختيار المستخدم. يُحتفظ به
-    // وبِلغته الصريحة، والسقوطُ إلى [voices] عند غياب صوتٍ محفوظ فقط.
-    val resolvedName = voice?.name
-        ?: voiceId?.takeIf { it.isNotBlank() }
-        ?: voices.firstOrNull()?.name.orEmpty()
-    val resolvedLanguage = voice?.languageTag
-        ?.takeIf { it.isNotBlank() }
-        ?: languageTag?.takeIf { it.isNotBlank() }
-        ?: voices.firstOrNull()?.languageTag.orEmpty()
+        ?: voices.firstOrNull()
     val isCaller = AnnouncementSpeaker.isCallerCategory(category)
     return PreviewParams(
         enginePkg = enginePkg,
-        voiceName = resolvedName,
-        languageTag = resolvedLanguage,
+        voiceName = voice?.name.orEmpty(),
+        languageTag = voice?.languageTag.orEmpty(),
         speechRate = rate.coerceAtLeast(MIN_SPEED_PITCH_FACTOR),
         pitch = pitch.coerceAtLeast(MIN_SPEED_PITCH_FACTOR),
         volume = volume.coerceIn(0f, 1f),
@@ -653,35 +640,34 @@ internal class VoicePreviewHelper(private val context: Context) {
         currentPreviewTts = null
 
         val desiredEngine = params.enginePkg?.takeIf { it.isNotBlank() }
-        val effectiveParams = if (
-            params.category == SettingsRepository.VOICE_CATEGORY_NUMBERS &&
-            params.voiceName.isNullOrBlank()
-        ) {
+        if (params.category == SettingsRepository.VOICE_CATEGORY_NUMBERS) {
+            val speaker = AnnouncementSpeaker(context.applicationContext)
             val langTag = params.languageTag.ifEmpty { "ar" }
-            val resolved = VoiceResolutionPolicy.resolveSegmentVoice(
-                role = SpeechRole.NUMBER,
-                languageTag = langTag,
-                context = context
+            if (params.voiceName.isNotBlank()) {
+                speaker.resetVoice(params.voiceName)
+            }
+            speaker.speak(
+                params.sampleText,
+                Locale.forLanguageTag(langTag),
+                params.speechRate,
+                params.pitch,
+                params.volume,
+                engineOverride = desiredEngine,
+                category = params.category
             )
-            params.copy(
-                enginePkg = resolved.engine ?: desiredEngine,
-                voiceName = resolved.voiceName ?: params.voiceName
-            )
-        } else {
-            params
+            onFinished()
+            return
         }
-        val effEngine = effectiveParams.enginePkg?.takeIf { it.isNotBlank() }
-        if (isEmbeddedEngine(effEngine) ||
-            (effEngine == null &&
-                isVocalizerVoiceName(effectiveParams.voiceName))
+        if (isEmbeddedEngine(desiredEngine) ||
+            (desiredEngine == null && isVocalizerVoiceName(params.voiceName))
         ) {
-            val canon = if (isEmbeddedEngine(effEngine)) {
-                HostProtocol.normalizeEngineId(effEngine!!)
+            val canon = if (isEmbeddedEngine(desiredEngine)) {
+                HostProtocol.normalizeEngineId(desiredEngine!!)
             } else {
                 HostProtocol.ENGINE_VOCALIZER
             }
             currentEmbeddedJob = scope.launch {
-                playEmbeddedPreview(canon, effectiveParams, onFinished)
+                playEmbeddedPreview(canon, params, onFinished)
             }
             return
         }
@@ -693,13 +679,13 @@ internal class VoicePreviewHelper(private val context: Context) {
         // المثيل الدافئ لنفس المحرك يُعاد استخدامه مباشرةً — لا إعادة
         // ربط ولا تهيئة (بند الأداء). نتزحزحه من الدفء إلى الجاري.
         val warm = warmTts
-        if (warm != null && warmTtsEngine == effEngine) {
+        if (warm != null && warmTtsEngine == desiredEngine) {
             hold[0] = warm
             currentPreviewTts = warm
             warmTts = null
             warmTtsEngine = null
             mainHandler.post {
-                speakSample(warm, effectiveParams, onFinished)
+                speakSample(warm, params, onFinished)
             }
             return
         }
@@ -720,20 +706,20 @@ internal class VoicePreviewHelper(private val context: Context) {
                     runCatching { tts.shutdown() }
                     if (currentPreviewTts === tts) currentPreviewTts = null
                     postStatus(
-                        "تعذر تهيئة محرك النطق: ${effEngine ?: "النظامي"}"
+                        "تعذر تهيئة محرك النطق: ${desiredEngine ?: "النظامي"}"
                     )
                     onFinished()
                 } else {
-                    speakSample(tts, effectiveParams, onFinished)
+                    speakSample(tts, params, onFinished)
                 }
             }
         }
         val created = runCatching {
             @Suppress("DEPRECATION")
-            val instance = if (effEngine == null) {
+            val instance = if (desiredEngine == null) {
                 TextToSpeech(appContext, listener)
             } else {
-                TextToSpeech(appContext, listener, effEngine)
+                TextToSpeech(appContext, listener, desiredEngine)
             }
             hold[0] = instance
             currentPreviewTts = instance
@@ -744,7 +730,7 @@ internal class VoicePreviewHelper(private val context: Context) {
             currentPreviewTts = null
             postStatus(
                 "تعذر إنشاء TextToSpeech للمحرك: " +
-                    (effEngine ?: "النظامي")
+                    (desiredEngine ?: "النظامي")
             )
             onFinished()
         }

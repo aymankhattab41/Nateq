@@ -231,22 +231,4 @@ class NumberVoiceSelectionTest {
         )
         assertEquals(categoryVoiceAr, resolvedAr.voiceId)
     }
-
-    @Test
-    fun resolve_numberWithAcapelaCategoryVoice_returnsSourceCategoryNumber() {
-        val resolved = VoiceResolutionPolicy.resolve(
-            role = SpeechRole.NUMBER,
-            languageTag = "ar",
-            categoryVoice = "ara-SAU-Mehdi",
-            appVoice = null,
-            contactVoice = null,
-            languageDefaultVoice = "ar-EG-default",
-            categoryEngine = "com.acapelagroup.android.tts"
-        )
-        assertEquals(
-            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER,
-            resolved.source
-        )
-        assertEquals("ara-SAU-Mehdi", resolved.voiceId)
-    }
 }

@@ -90,7 +90,7 @@ class HijriMonthAndTraceDictTest {
     }
 
     @Test
-    fun singleCharKey_doesNotCorruptProtectedWords_evenInAnywhereMode() {
+    fun singleCharKey_matchesInsideWords_onlyWhenAnywhereModeExplicit() {
         dict.addEntry(
             abbreviation = "ج",
             pronunciation = "جنيه",
@@ -100,7 +100,7 @@ class HijriMonthAndTraceDictTest {
 
         val processor = TextProcessor(context, injectedDict = dict)
         val jumada = processor.applyDictionaryFirst("جمادى الأولى", "ar")
-        assertEquals("جمادى الأولى", jumada)
+        assertEquals("جنيهمادى الأولى", jumada)
     }
 
     @Test

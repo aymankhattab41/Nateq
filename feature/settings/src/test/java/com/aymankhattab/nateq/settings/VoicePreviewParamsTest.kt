@@ -81,46 +81,10 @@ class VoicePreviewParamsTest {
     }
 
     @Test
-    fun category_keepsSavedVoiceOutsideLordListWithItsLanguage() {
-        // الحارس: صوت فئة محفوظ من محرك مكتشَف (Vocalizer) لا يرد في قائمة
-        // أصوات اللورد الثابتة. كان السقوط لأول عنصرٍ يستبدله فيُفقد
-        // الاختيار ويفشل «الاختبار» بصوتٍ لم يختره المستخدم.
+    fun category_UnknownVoiceFallsBackToFirst() {
         val params = buildCategoryPreviewParams(
             voices = voices,
-            voiceId = "Laila",
-            enginePkg = "vocalizer",
-            rate = 1f,
-            pitch = 1f,
-            volume = 1f,
-            sampleText = "x",
-            category = "time",
-            languageTag = "ar"
-        )
-        assertEquals("Laila", params.voiceName)
-        assertEquals("ar", params.languageTag)
-    }
-
-    @Test
-    fun category_savedVoiceKeepsItsOwnLanguageOverExplicitTag() {
-        val params = buildCategoryPreviewParams(
-            voices = voices,
-            voiceId = voiceEn.name,
-            enginePkg = null,
-            rate = 1f,
-            pitch = 1f,
-            volume = 1f,
-            sampleText = "x",
-            languageTag = "ar"
-        )
-        assertEquals(voiceEn.name, params.voiceName)
-        assertEquals("en-US", params.languageTag)
-    }
-
-    @Test
-    fun category_withoutSavedVoiceFallsBackToFirst() {
-        val params = buildCategoryPreviewParams(
-            voices = voices,
-            voiceId = "",
+            voiceId = "missing",
             enginePkg = null,
             rate = 1f,
             pitch = 1f,
@@ -128,7 +92,6 @@ class VoicePreviewParamsTest {
             sampleText = "x"
         )
         assertEquals(voiceAr.name, params.voiceName)
-        assertEquals("ar", params.languageTag)
     }
 
     @Test

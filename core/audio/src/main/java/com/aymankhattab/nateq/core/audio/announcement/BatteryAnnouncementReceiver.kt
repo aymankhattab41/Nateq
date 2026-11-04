@@ -282,22 +282,12 @@ class BatteryAnnouncementReceiver(
             }
 
             else -> {
-                val isThresholdsEnabled =
-                    settings.isExtraEnabled("extra_battery_thresholds")
-                if (isThresholdsEnabled) {
-                    val thresholdFired =
-                        BatteryThresholdMonitor.onBatteryChanged(
-                            context, intent, settings
-                        )
-                    spoke = spoke || thresholdFired
-                }
-
                 val enabledLevels = settings.getBatteryAnnouncementLevels()
                     .mapNotNull { it.toIntOrNull() }
                 if (!settings.isBatteryAnnouncementEnabled() &&
                     enabledLevels.isEmpty()
                 ) {
-                    return spoke
+                    return false
                 }
 
                 val percentage = batteryPercent(intent) ?: return false

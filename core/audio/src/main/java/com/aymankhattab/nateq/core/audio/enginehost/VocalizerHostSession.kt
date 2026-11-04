@@ -5,7 +5,6 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.SystemClock
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
-import com.aymankhattab.nateq.core.audio.engine.VoiceResolutionPolicy
 import com.nuance.android.vocalizer.VocalizerAudioOutputListener
 import com.nuance.android.vocalizer.VocalizerAudioSettings
 import com.nuance.android.vocalizer.VocalizerEngine
@@ -126,22 +125,8 @@ internal class VocalizerHostSession(
             val requested = requestedId.removePrefix("vocalizer_")
                 .removePrefix("vocalizer-").trim()
             if (engine.equals(requested, ignoreCase = true)) return true
-            val normEngine = engine.lowercase()
-                .replace("leila", "laila")
-                .replace("tariq", "tarik")
-                .replace("majed", "maged")
-                .replace("maryam", "mariam")
-            val normReq = requested.lowercase()
-                .replace("leila", "laila")
-                .replace("tariq", "tarik")
-                .replace("majed", "maged")
-                .replace("maryam", "mariam")
-            if (normEngine == normReq) return true
-            val tokens = normReq.split('-', '_', ' ')
-            if (tokens.any { it.equals(normEngine, ignoreCase = true) }) {
-                return true
-            }
-            return false
+            val tokens = requested.split('-', '_', ' ')
+            return tokens.any { it.equals(engine, ignoreCase = true) }
         }
 
         /**
@@ -548,20 +533,12 @@ internal class VocalizerHostSession(
             matchesVoiceName(it.voiceName, req.voiceId)
         } ?: voices.firstOrNull { voice ->
             matchesLanguage(voice, req.voiceId)
-        } ?: voices.firstOrNull { voice ->
-            val lang = VoiceResolutionPolicy.languageOfVoiceId(req.voiceId)
-            if (!lang.isNullOrBlank()) {
-                matchesLanguage(voice, lang)
-            } else {
-                false
-            }
         } ?: if (req.voiceId.isBlank() ||
             req.voiceId.equals("Device Default", ignoreCase = true)
         ) {
             voices.firstOrNull()
         } else {
-            // تراجع آمن لأي صوت مثبت في المحرك بدل إسقاط النطق
-            voices.firstOrNull()
+            null
         } ?: return HostResult.failure(
             "VOICE_NOT_FOUND",
             "صوت Vocalizer غير موجود: ${req.voiceId}"

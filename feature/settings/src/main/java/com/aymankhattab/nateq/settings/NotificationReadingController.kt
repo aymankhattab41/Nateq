@@ -132,9 +132,6 @@ internal class NotificationReadingController(
         val volume = runCatching {
             settings.getVolumeForCategory(category)
         }.getOrDefault(1.0f)
-        val savedLanguage = runCatching {
-            settings.getLanguageForCategory(category)
-        }.getOrNull()
         val sample = fragment.getString(
             R.string.sample_text_notification_preview
         )
@@ -147,8 +144,7 @@ internal class NotificationReadingController(
                 pitch = pitch,
                 volume = volume,
                 sampleText = sample,
-                category = category,
-                languageTag = savedLanguage
+                category = category
             )
         )
     }

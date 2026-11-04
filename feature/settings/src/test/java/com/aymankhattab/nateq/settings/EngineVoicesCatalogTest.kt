@@ -160,24 +160,6 @@ class EngineVoicesCatalogTest {
     }
 
     @Test
-    fun `engineOfVoice resolves voice to its engine package`() {
-        assertEquals(
-            "com.acapella",
-            catalog.engineOfVoice("ar-EG-Wavenet-A")
-        )
-        assertEquals(
-            "com.google.android.tts",
-            catalog.engineOfVoice("ar-XA-Wavenet-C")
-        )
-        assertEquals(
-            "com.vocalizer",
-            catalog.engineOfVoice("fr-FR-Sylvia")
-        )
-        assertNull(catalog.engineOfVoice("non-existent-voice"))
-        assertNull(catalog.engineOfVoice(""))
-    }
-
-    @Test
     fun `languageForSavedVoice resolves logical identifiers directly`() {
         assertEquals("ar", catalog.languageForSavedVoice("ar-EG"))
         assertEquals("en", catalog.languageForSavedVoice("en-US"))

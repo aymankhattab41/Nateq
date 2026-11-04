@@ -1,8 +1,6 @@
 package com.aymankhattab.nateq.settings
 
 import java.util.Locale
-import com.aymankhattab.nateq.core.common.VisibleEngines
-import com.aymankhattab.nateq.core.common.VisibleLanguages
 
 /** خيار صوت معروض في قوائم الأصوات: الاسم الفعلي (يُخزَّن في الإعدادات
  *  ويُطابِق صوت الـ Voice الاسمَ في المحرك المربوط عند النطق) والتسمية
@@ -114,8 +112,7 @@ internal class EngineVoicesCatalog(
         val rest = byLanguage.keys
             .filterNot { it == LANGUAGE_AR || it == LANGUAGE_EN }
             .sorted()
-        val all = listOf(LANGUAGE_AR, LANGUAGE_EN) + rest
-        return VisibleLanguages.filter(all)
+        return listOf(LANGUAGE_AR, LANGUAGE_EN) + rest
     }
 
     /** تسمية اللغة المعروضة باسمها المحلي (العربية/English/…). */
@@ -136,12 +133,7 @@ internal class EngineVoicesCatalog(
         language: String,
         engine: String?
     ): List<VoiceOption> {
-        if (!VisibleLanguages.isVisible(language)) return emptyList()
-        if (engine != null && !VisibleEngines.isVisible(engine)) {
-            return emptyList()
-        }
         val engines = byLanguage[language].orEmpty()
-            .filter { VisibleEngines.isVisible(it.enginePackage) }
         val picked = if (engine != null) {
             engines.filter { it.enginePackage == engine }
         } else {
@@ -169,27 +161,6 @@ internal class EngineVoicesCatalog(
         for ((language, rows) in byLanguage) {
             if (rows.any { row -> row.voices.any { it.name == voiceName } }) {
                 return language
-            }
-        }
-        return null
-    }
-
-    /**
-     * يعيد اسم حزمة المحرك الذي يملك هذا الصوت، أو null إن لم يُعثَر عليه.
-     */
-    internal fun engineOfVoice(
-        voiceName: String,
-        language: String? = null
-    ): String? {
-        if (voiceName.isBlank()) return null
-        val rowsList = if (language != null) {
-            byLanguage[language].orEmpty()
-        } else {
-            byLanguage.values.flatten()
-        }
-        for (row in rowsList) {
-            if (row.voices.any { it.name == voiceName }) {
-                return row.enginePackage
             }
         }
         return null

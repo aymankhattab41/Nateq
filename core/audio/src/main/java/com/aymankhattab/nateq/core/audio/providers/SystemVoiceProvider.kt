@@ -216,43 +216,16 @@ class SystemVoiceProvider(
             voices.firstOrNull {
                 it.name.equals(desiredVoiceName, ignoreCase = true)
             }?.let { return it }
-            // 3. تطابق مع تجريد البادئات (اسم الحزمة أو vocalizer_)
-            val stripped = desiredVoiceName.substringAfter(':')
-                .removePrefix("vocalizer_").trim()
-            voices.firstOrNull { v ->
-                val vClean = v.name.substringAfter(':')
-                    .removePrefix("vocalizer_").trim()
-                vClean.equals(stripped, ignoreCase = true)
-            }?.let { return it }
-            // 4. تطابق بعد حذف اللاحقة (compact/standard/enhanced/premium)
+            // 3. تطابق بعد حذف اللاحقة (compact/standard/enhanced/premium)
             val suffixRegex = Regex(
                 "-(compact|standard|enhanced|premium)$",
                 RegexOption.IGNORE_CASE
             )
-            val vidBase = stripped.replace(suffixRegex, "")
-            voices.firstOrNull { v ->
-                val vClean = v.name.substringAfter(':')
-                    .removePrefix("vocalizer_").trim()
-                vClean.replace(suffixRegex, "")
+            val vidBase = desiredVoiceName.replace(suffixRegex, "")
+            return voices.firstOrNull { v ->
+                v.name.replace(suffixRegex, "")
                     .equals(vidBase, ignoreCase = true)
-            }?.let { return it }
-
-            // 5. تطابق جزئي أو عبر أجزاء الاسم (tokens)
-            if (vidBase.length >= 3) {
-                val tokens = vidBase.split('-', '_', ' ')
-                    .filter { it.length >= 3 }
-                voices.firstOrNull { v ->
-                    val vClean = v.name.substringAfter(':')
-                        .removePrefix("vocalizer_").trim()
-                        .replace(suffixRegex, "")
-                    vClean.contains(vidBase, ignoreCase = true) ||
-                        vidBase.contains(vClean, ignoreCase = true) ||
-                        tokens.any {
-                            vClean.contains(it, ignoreCase = true)
-                        }
-                }?.let { return it }
             }
-            return null
         }
 
 
@@ -1301,23 +1274,20 @@ class SystemVoiceProvider(
                         } else {
                             dataStart
                         }
-                        val nowLen = tempFile.length()
-                        val available = nowLen - start
+                        val available = tempFile.length() - start
                         // نموٌّ بطيء: الملف يكبر دون أن يبلغ حجم
                         // شريحةٍ صالحةٍ واحدة (محرّكٌ متريّد)، فكان
                         // تمديدُ المهلة مقصوراً على إصدار الشريحة
                         // فتنتهي وسطَ الكتابةِ فيُبتَر النص. تُرحَّل
                         // المهلةُ على النموّ نفسه وتصفَّر عدّادُ
                         // الجمود فيُعرف أنّ الكتابةَ حيّة.
-                        if (nowLen > lastLen) {
-                            lastLen = nowLen
+                        if (available + start > lastLen) {
+                            lastLen = available + start
                             stallPolls = 0
                             deadline = extendStreamDeadline(
                                 deadline, true,
                                 SystemClock.elapsedRealtime()
                             )
-                        } else if (lastLen > 0L) {
-                            stallPolls++
                         }
                         val toRead = available - readSoFar
                         if (toRead >= STREAM_CHUNK_BYTES) {
@@ -1353,43 +1323,41 @@ class SystemVoiceProvider(
                                     streamReadFailed = true
                                 }
                                 Log.w(TAG,
-                                    "[Provider] streaming read failed — " +
+                                    "[Provider] streaming read failed —" +
+                                    " " +
                                     if (emittedAny) {
                                         "إتمام المتبقي"
                                     } else {
                                         "المسار الكامل"
                                     }, e)
                             }
-                        }
-                        // حسمُ اكتمال الكتابة: طولُ خانة البيانات
-                        // المُعلَن دليلٌ قاطعٌ يُنهي البثَّ فوراً،
-                        // وإعلام onDone دليلٌ قاطعٌ متأخر،
-                        // واستقرارُ حجم الملف بعد مهلة أمانٍ
-                        // أوّلًا، فلا يُقطعَ نصٌّ على توقّفٍ عابر.
-                        if (!finished && tempFile.exists()) {
-                            val remaining = nowLen - start - readSoFar
-                            if (isWavWriteComplete(streamMeta, nowLen)) {
-                                tailCompleted = true
-                                Log.d(
-                                    TAG,
-                                    "[Provider] stream complete on declared" +
-                                        " wav data length"
-                                )
-                                break
-                            }
-                            if (shouldFlushTailAfterStall(
-                                    emittedAny, finished, stallPolls,
-                                    remaining, STALL_GRACE_POLLS,
-                                    STALL_TAIL_MAX_BYTES
-                                )
-                            ) {
-                                tailCompleted = true
-                                Log.d(
-                                    TAG,
-                                    "[Provider] stream tail flushed on" +
-                                        " stall (finished delayed)"
-                                )
-                                break
+                            // حسمُ اكتمال الكتابة: طولُ خانة البيانات
+                            // المُعلَن دليلٌ قاطعٌ يُنهي البثَّ فوراً،
+                            // وإعلام onDone دليلٌ قاطعٌ متأخر،
+                            // واستقرارُ حجم الملف بعد مهلة أمانٍ
+                            // أوّلًا، فلا يُقطعَ نصٌّ على توقّفٍ عابر.
+                            if (!finished && tempFile.exists()) {
+                                val nowLen = tempFile.length()
+                                if (nowLen == lastLen) {
+                                    stallPolls++
+                                } else {
+                                    lastLen = nowLen
+                                    stallPolls = 0
+                                }
+                                val remaining = nowLen - start - readSoFar
+                                if (shouldFlushTailAfterStall(
+                                        emittedAny, finished, stallPolls,
+                                        remaining, STALL_GRACE_POLLS,
+                                        STALL_TAIL_MAX_BYTES
+                                    )
+                                    || isWavWriteComplete(streamMeta, nowLen)
+                                ) {
+                                    tailCompleted = true
+                                    Log.d(TAG,
+                                        "[Provider] stream tail flushed on" +
+                                        " stall (finished delayed)")
+                                    break
+                                }
                             }
                         }
                     }

@@ -20,10 +20,6 @@ import com.aymankhattab.nateq.engine.EmojiSpeech
 import com.aymankhattab.nateq.core.engine.EngineMarkers
 import com.aymankhattab.nateq.engine.stripTashkeelFor
 import com.aymankhattab.nateq.engine.PronunciationDictionary
-import com.aymankhattab.nateq.core.audio.CategoryFailureTracker
-import com.aymankhattab.nateq.core.audio.CrashGuard
-import com.aymankhattab.nateq.core.audio.EmergencyVoice
-import com.aymankhattab.nateq.core.audio.accessibility.AudioEnvironmentPolicy
 import com.aymankhattab.nateq.core.audio.accessibility.RepeatSpellController
 import com.aymankhattab.nateq.core.audio.engine.AudioEffectManager
 import com.aymankhattab.nateq.core.audio.engine.LastSpokenTextsTracker
@@ -43,7 +39,6 @@ import com.aymankhattab.nateq.engine.SpeechPart
 import com.aymankhattab.nateq.engine.TextProcessor
 import android.os.Bundle
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
-import com.aymankhattab.nateq.core.common.VisibleEngines
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
 import com.aymankhattab.nateq.core.audio.providers.EngineBindVerifier
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
@@ -549,7 +544,6 @@ class AnnouncementSpeaker(
                 shared ?: AnnouncementSpeaker(context.applicationContext)
                     .also { shared = it }
                     .also { it.prewarm() }
-                    .also { it.checkStartupCrashGuard() }
             }
         }
 
@@ -594,17 +588,6 @@ class AnnouncementSpeaker(
     private var skippedFocusForMedia = false
     internal var speechDispatchedCount: Long = 0L
         private set
-    @Volatile private var isEmergencySpeechActive = false
-
-    internal fun checkStartupCrashGuard() {
-        if (CrashGuard.checkOnStartup(appContext)) {
-            val announcement = appContext.getString(
-                com.aymankhattab.nateq.core.audio.R.string
-                    .emergency_voice_mode_announcement
-            )
-            speak(announcement, Locale("ar"), 1.0f, 1.0f, 1.0f)
-        }
-    }
 
     // **رفع حجم القناة الصوتية مؤقتاً لفئات النطق التي يشكو الصوتُ عليها
     // (نطق المتصل ونطق الساعة):** يُحفظ مستوى حجم القناة التي سيُنطق عليها
@@ -1317,10 +1300,6 @@ class AnnouncementSpeaker(
                             if (isFinal) releaseAudioFocus()
                         }
                         if (isFinal) {
-                            currentCategory?.let {
-                                CategoryFailureTracker.recordSuccess(it)
-                            }
-                            isEmergencySpeechActive = false
                             notifySpeechComplete()
                             nowSpeaking = false
                             currentCategory = null
@@ -1396,10 +1375,6 @@ class AnnouncementSpeaker(
                             if (shouldClean) releaseAudioFocus()
                         }
                         if (shouldClean) {
-                            currentCategory?.let {
-                                CategoryFailureTracker.recordFailure(it)
-                            }
-                            isEmergencySpeechActive = false
                             notifySpeechComplete()
                             nowSpeaking = false
                             currentCategory = null
@@ -1443,11 +1418,6 @@ class AnnouncementSpeaker(
         source: SpeechEntryPoints.Source? = null,
         isPrepared: Boolean = false
     ) {
-        if (AudioEnvironmentPolicy.isRecordingVoiceNote(appContext)) {
-            Log.i(TAG, "إسقاط الإعلان الصوتي: جاري تسجيل رسالة صوتية")
-            notifySpeechComplete()
-            return
-        }
         val effectiveSource = source ?: when (category) {
             SettingsRepository.ANNOUNCE_CATEGORY_CALLER ->
                 SpeechEntryPoints.Source.CALLER
@@ -1536,33 +1506,6 @@ class AnnouncementSpeaker(
             voiceId = categoryVoice
         }
 
-        val isSafe = CrashGuard.isSafeModeActive(appContext)
-        val isCatEmergency = category != null &&
-            CategoryFailureTracker.isEmergencyActive(category)
-        val fallbackNeeded = !originalCategoryVoice.isNullOrBlank() &&
-            fallbackVoiceReason != null
-        val isEmergency = isSafe || isCatEmergency || fallbackNeeded
-        isEmergencySpeechActive = isEmergency
-
-        val effEngine: String?
-        val effRate: Float
-        val effPitch: Float
-        val effVolume: Float
-
-        if (isEmergency) {
-            val em = EmergencyVoice.load(appContext)
-            effEngine = if (em.isSaved) em.engine else null
-            voiceId = if (em.isSaved) em.voice else null
-            effRate = if (em.isSaved) em.rate else 1.0f
-            effPitch = if (em.isSaved) em.pitch else 1.0f
-            effVolume = if (em.isSaved) em.volume else 1.0f
-        } else {
-            effEngine = resolvedEngine
-            effRate = speechRate
-            effPitch = pitch
-            effVolume = volume
-        }
-
         val snippet = if (
             category == SettingsRepository.VOICE_CATEGORY_TIME
         ) {
@@ -1573,7 +1516,7 @@ class AnnouncementSpeaker(
         EventVoiceTrace.record(
             category = category ?: "default",
             savedVoiceId = originalCategoryVoice,
-            resolvedEngine = effEngine,
+            resolvedEngine = resolvedEngine,
             dispatchedVoiceId = voiceId ?: categoryVoice,
             fallbackReason = fallbackVoiceReason,
             textSnippet = snippet
@@ -1618,8 +1561,8 @@ class AnnouncementSpeaker(
         val isEvent = isEventCategory(category)
         val speakAction = {
             launchWithCue(
-                gen, dictText, locale, effRate, effPitch, effVolume,
-                emojiCfg, parts, effEngine, cue,
+                gen, dictText, locale, speechRate, pitch, volume,
+                emojiCfg, parts, resolvedEngine, cue,
                 immediate = isEvent
             )
         }
@@ -2688,20 +2631,7 @@ speechCycle.incrementAndGet()
                 defaultPitch = basePitch,
                 defaultVolume = baseVolume
             )
-            val candidateVoice = resolved.voiceId
-            val knownVoices = runCatching { tts?.voices }
-                .getOrNull()?.map { it.name }
-            val segmentVoice = if (
-                candidateVoice != null &&
-                !boundEngine.isNullOrBlank() &&
-                !VoiceIdContract.isVoiceBelongingToEngine(
-                    boundEngine, candidateVoice, knownVoices
-                )
-            ) {
-                if (arabic) voiceId else enVoice
-            } else {
-                candidateVoice
-            }
+            val segmentVoice = resolved.voiceId
             // بند الأوامر 1: معالجة نص المقطع عبر TextProcessor بلغته (أرقام،
             // أوقات، عملات، روابط...) قبل إرساله للمحرك — موحّداً مع القارئ.
             // أي خطأ في المعالجة (قاموس مفقود...) يُسقط النص الخام لا الصمت.
@@ -2830,38 +2760,28 @@ speechCycle.incrementAndGet()
         // مضاعف السرعة العام (إن فعّله المستخدم): يُضرب بالسرعة النهائية
         // قبل قصّها على الحد الآمن — كل الإعلانات (وقت/أرقام/بطارية/متصل/
         // رسائل/إشعارات) تمر من هنا فيُطبَّق تناسقياً على النطق كله.
-        val boost = if (isEmergencySpeechActive) {
-            1.0f
-        } else {
-            settings?.let { s ->
-                if (runCatching { s.isSpeechBoostEnabled() }
-                        .getOrDefault(false)
-                ) {
-                    runCatching { s.getSpeechBoostValue() }
-                        .getOrDefault(1.0f)
-                } else {
-                    1.0f
-                }
-            } ?: 1.0f
-        }
+        val boost = settings?.let { s ->
+            if (runCatching { s.isSpeechBoostEnabled() }
+                    .getOrDefault(false)
+            ) {
+                runCatching { s.getSpeechBoostValue() }.getOrDefault(1.0f)
+            } else {
+                1.0f
+            }
+        } ?: 1.0f
         tts.setSpeechRate(clampedSpeechRate(speechRate * boost))
         // مضاعف الصوت العام (إن فعّله المستخدم): يُضرب بمستوى الصوت
         // النهائي (يأتي من تفضيل الفئة أو الإعداد العام) قبل قصّه على
         // النطاق الكامل (0..1) — أعلى مستوى متاح للنظام بلا تشويه.
-        val volumeBoost = if (isEmergencySpeechActive) {
-            1.0f
-        } else {
-            settings?.let { s ->
-                if (runCatching { s.isVolumeBoostEnabled() }
-                        .getOrDefault(false)
-                ) {
-                    runCatching { s.getVolumeBoostValue() }
-                        .getOrDefault(1.0f)
-                } else {
-                    1.0f
-                }
-            } ?: 1.0f
-        }
+        val volumeBoost = settings?.let { s ->
+            if (runCatching { s.isVolumeBoostEnabled() }
+                    .getOrDefault(false)
+            ) {
+                runCatching { s.getVolumeBoostValue() }.getOrDefault(1.0f)
+            } else {
+                1.0f
+            }
+        } ?: 1.0f
         tts.setPitch(pitch.coerceAtLeast(MIN_RATE_OR_PITCH))
         // حلّ صوت الوحدة: المعرّف الصريح المخصص (مثل "ar-EG") إن أعرضه
         // المحرك المربوط؛ وإلا أول صوتٍ لسانه لسانُ الوحدة فيضمن تبديل
@@ -2941,19 +2861,7 @@ speechCycle.incrementAndGet()
                 } else {
                     voiceApplied = true
                     // تحديث الاسم المحفوظ إن اختلف (Vocalizer يُغيّر الأسماء)
-                    val enginePkg = boundEngine
-                    val knownVoices = voices?.map { it.name }
-                    val partBelongsToEngine = enginePkg.isNullOrBlank() ||
-                        VoiceIdContract.isVoiceBelongingToEngine(
-                            enginePkg, partVoice, knownVoices
-                        )
-                    if (partVoice != null &&
-                        chosen.name != partVoice &&
-                        partBelongsToEngine &&
-                        VoiceIdContract.isVoiceBelongingToEngine(
-                            enginePkg, chosen.name, knownVoices
-                        )
-                    ) {
+                    if (partVoice != null && chosen.name != partVoice) {
                         Log.w(
                             TAG,
                             "[doSpeak] voice name drift: saved=$partVoice → " +
@@ -3585,16 +3493,10 @@ speechCycle.incrementAndGet()
 internal fun resolveAnnouncementEngine(
     requested: String?,
     configuredEngine: String?
-): String? = if (!requested.isNullOrBlank() &&
-    VisibleEngines.isVisible(requested)
-) {
+): String? = if (!requested.isNullOrBlank()) {
     requested
-} else if (!configuredEngine.isNullOrBlank() &&
-    VisibleEngines.isVisible(configuredEngine)
-) {
-    configuredEngine
 } else {
-    null
+    configuredEngine
 }
 
 /**
@@ -3618,30 +3520,26 @@ internal fun safeEngineForAnnouncement(
 ): String? {
     // 1. محرك الفئة الصريح
     if (!requestedCategoryEngine.isNullOrBlank() &&
-        requestedCategoryEngine != context.packageName &&
-        VisibleEngines.isVisible(requestedCategoryEngine)
+        requestedCategoryEngine != context.packageName
     ) {
         return requestedCategoryEngine
     }
     // 2. محرك "الافتراضي" العام
     if (!defaultEngine.isNullOrBlank() &&
-        defaultEngine != context.packageName &&
-        VisibleEngines.isVisible(defaultEngine)
+        defaultEngine != context.packageName
     ) {
         return defaultEngine
     }
     // 3. محرك اللغة
     if (!languageEngine.isNullOrBlank() &&
-        languageEngine != context.packageName &&
-        VisibleEngines.isVisible(languageEngine)
+        languageEngine != context.packageName
     ) {
         return languageEngine
     }
     // 4. محرك الاحتياط العام (fallback) إن وُجد — يُستخدم عند غياب
     // أي محرك صريح آخر، بحسب ترتيب الحسم الجديد.
     if (!announcementFallbackEngine.isNullOrBlank() &&
-        announcementFallbackEngine != context.packageName &&
-        VisibleEngines.isVisible(announcementFallbackEngine)
+        announcementFallbackEngine != context.packageName
     ) {
         return announcementFallbackEngine
     }

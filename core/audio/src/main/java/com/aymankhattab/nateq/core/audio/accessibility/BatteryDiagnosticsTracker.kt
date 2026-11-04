@@ -38,13 +38,6 @@ object BatteryDiagnosticsTracker {
     private val serviceStartTimes = ConcurrentHashMap<String, Long>()
     private val usageStatsPolls = AtomicInteger(0)
 
-    /**
-     * عدّاد تراكمي لأحداث إمكانية الوصول في عمر العملية — لا يُقلَّم
-     * مع النافذة الدقيقة. يفرّق في التشخيص بين «لا أحداث البتّة»
-     * (خدمة غير مفعّلة/غير مستدعاة) و«لا أحداث في آخر دقيقة» فقط.
-     */
-    private val a11yEventsTotal = AtomicInteger(0)
-
     fun recordAlarmWakeup(tag: String) {
         val now = System.currentTimeMillis()
         wakeups.add(WakeupEvent(now, "ALARM", tag))
@@ -61,12 +54,8 @@ object BatteryDiagnosticsTracker {
     fun recordAccessibilityEvent(eventType: Int) {
         val now = System.currentTimeMillis()
         a11yEvents.add(A11yEventRecord(now, eventType))
-        a11yEventsTotal.incrementAndGet()
         trimA11yEvents(now)
     }
-
-    /** مجموع أحداث إمكانية الوصول منذ إقلاع العملية (لا يُقلَّم). */
-    fun getA11yEventsTotal(): Int = a11yEventsTotal.get()
 
     fun recordServiceStarted(serviceName: String) {
         serviceStartTimes[serviceName] = System.currentTimeMillis()

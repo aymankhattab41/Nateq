@@ -41,7 +41,6 @@ class TtsDiagnosticsProviderTest {
         )
         A11yStateStore.getInstance(context)?.setConnected(true)
         BatteryDiagnosticsTracker.recordUsageStatsPoll()
-        BatteryDiagnosticsTracker.recordAccessibilityEvent(0x20)
 
         VoiceResolutionTracker.record(
             packageName = "com.example.app",
@@ -80,14 +79,6 @@ class TtsDiagnosticsProviderTest {
         assertTrue(
             (bundle?.getInt(
                 TtsDiagnosticsProvider.KEY_USAGE_STATS_POLLS
-            ) ?: 0) >= 1
-        )
-        // **عدّاد تراكمي لا يُقلَّم:** يفرّق بين «لا أحداث البتّة» و«لا
-        // أحداث في آخر 60 ثانية» — وهو ما جعل تقرير «0/د» مضلّلاً.
-        assertTrue(
-            "العدّاد التراكمي يجب أن يعدّ الأحداث الملتقطة",
-            (bundle?.getInt(
-                TtsDiagnosticsProvider.KEY_A11Y_EVENTS_TOTAL
             ) ?: 0) >= 1
         )
     }

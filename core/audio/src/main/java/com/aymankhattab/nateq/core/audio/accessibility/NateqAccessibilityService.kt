@@ -4,7 +4,6 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -19,7 +18,6 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import com.aymankhattab.nateq.core.data.SettingsChangeProvider
-import com.aymankhattab.nateq.core.data.SpeechLock
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
 import android.accessibilityservice.AccessibilityButtonController
@@ -106,40 +104,6 @@ object TypingEchoHandler : A11yFeatureHandler {
         stateStore: A11yStateStore?
     ) {
         val pkg = event.packageName?.toString()
-        if (settings.isExtraEnabled("extra_word_eraser") &&
-            !event.isPassword
-        ) {
-            val before = event.beforeText
-            val current = event.text?.joinToString("") ?: ""
-            val deleted = WordEraser.calculateDeletedText(before, current)
-            if (deleted != null) {
-                val minChars = settings.getExtraInt(
-                    "extra_word_eraser_min_chars",
-                    2
-                )
-                val msg = WordEraser.formatDeletedAnnouncement(
-                    service,
-                    deleted,
-                    minChars
-                )
-                if (msg != null) {
-                    A11ySpeechCoordinator.speakAnnouncement(
-                        context = service,
-                        text = msg,
-                        isInterruptAllowed = true
-                    )
-                }
-            }
-        }
-        if (settings.isExtraEnabled("extra_typo_whisper") &&
-            !event.isPassword
-        ) {
-            val current = event.text?.joinToString("") ?: ""
-            TypoChecker.checkDoubleSpace(service, current)
-        }
-        if (PasswordShield.shouldMuteTypingEcho(service, event.isPassword)) {
-            return
-        }
         val echoText = TypingEcho.getEchoText(
             event.beforeText,
             event.text?.map { it.toString() }?.joinToString("") ?: "",
@@ -366,18 +330,6 @@ class NateqAccessibilityService : AccessibilityService() {
     var lastFocusedPackage: String? = null
         internal set
 
-    @Volatile
-    var lastEventTypes: Int = 0
-        internal set
-
-    private val serviceInfoHandler = Handler(Looper.getMainLooper())
-    private val applyServiceInfoRunnable = Runnable { applyServiceInfo() }
-
-    fun scheduleApplyServiceInfo() {
-        serviceInfoHandler.removeCallbacks(applyServiceInfoRunnable)
-        serviceInfoHandler.postDelayed(applyServiceInfoRunnable, 300L)
-    }
-
     // ع٢٩-16: مرجع المستمع لإزالته في onDestroy
     private var a11yStateListener: ((A11yStateStore) -> Unit)? = null
     private var accessibilityButtonCallback:
@@ -412,7 +364,6 @@ class NateqAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        ScrollCuePlayer.appContext = applicationContext
         Log.i(TAG, "[A11yService] Connected in process :tts")
         AccessibilityBridge.registerService(this)
         stateStore?.setConnected(true)
@@ -428,54 +379,6 @@ class NateqAccessibilityService : AccessibilityService() {
         registerBluetoothReceiver()
         registerShortcutTestReceiver()
         registerBindingsObserver()
-
-        val cm = getSystemService(Context.CLIPBOARD_SERVICE)
-            as? ClipboardManager
-        cm?.addPrimaryClipChangedListener {
-            ClipboardStack.onPrimaryClipChanged(this)
-        }
-
-        PrivacyIndicatorMonitor.register(this)
-
-        // ع٥٧-أمر 3: استعادة الستارة إن كانت مفعلة عند اتصال الخدمة
-        val curtainRepo = SettingsRepository.create(this)
-        if (curtainRepo.isScreenCurtainActive()) {
-            val enabled = ScreenCurtain.enable(this)
-            if (!enabled) {
-                curtainRepo.setScreenCurtainActive(false)
-            }
-        }
-
-        val curtainFilter = IntentFilter(
-            "com.aymankhattab.nateq.action.TOGGLE_SCREEN_CURTAIN"
-        )
-        val curtainReceiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent?) {
-                val active = ScreenCurtain.toggle(
-                    this@NateqAccessibilityService
-                )
-                val reply = Intent(
-                    ScreenCurtain.ACTION_CURTAIN_RESULT
-                ).apply {
-                    setPackage(packageName)
-                    putExtra(ScreenCurtain.EXTRA_SUCCESS, active)
-                    putExtra(
-                        ScreenCurtain.EXTRA_ERROR,
-                        ScreenCurtain.lastError
-                    )
-                }
-                sendBroadcast(reply)
-            }
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(
-                curtainReceiver,
-                curtainFilter,
-                RECEIVER_NOT_EXPORTED
-            )
-        } else {
-            registerReceiver(curtainReceiver, curtainFilter)
-        }
 
         val connIntent = Intent(ProtectedAppManager.ACTION_A11Y_CONNECTED)
             .setPackage(packageName)
@@ -532,8 +435,6 @@ class NateqAccessibilityService : AccessibilityService() {
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
-        PrivacyIndicatorMonitor.unregister(this)
-        ScreenCurtain.disable(this)
         val disconnIntent = Intent(
             ProtectedAppManager.ACTION_A11Y_DISCONNECTED
         ).setPackage(packageName)
@@ -577,8 +478,6 @@ class NateqAccessibilityService : AccessibilityService() {
                 applyAccessibilityButton()
                 // ع٤١-ب9: إعادة محاولة تسجيل مستقبل البلوتوث بعد منح الإذن
                 registerBluetoothReceiver()
-                // ع٥٧-أمر 1: إعادة تطبيق أحداث الإضافات ديناميكياً بتجميع 300ms
-                scheduleApplyServiceInfo()
             }
         }
         bindingsObserver = observer
@@ -637,24 +536,19 @@ class NateqAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * ضبط serviceInfo ديناميكياً (ع٢٧-6 / ع٥٧-أمر 1).
+     * ضبط serviceInfo ديناميكياً (ع٢٧-6).
      * عند الإيقاف المؤقت أو تعطيل الميزات يُضبط eventTypes = 0 لتصفير الحمل.
-     * ولا يُستدعى serviceInfo = info إلا إن اختلفت أنواع الأحداث (ع٥٧-أمر 1).
      */
     fun applyServiceInfo() {
         val store = stateStore ?: return
         val info = serviceInfo ?: AccessibilityServiceInfo()
 
         if (AppPolicy.isAutomationActive()) {
-            val autoTypes =
+            info.eventTypes =
                 AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
-                    AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
-            if (lastEventTypes != autoTypes || serviceInfo == null) {
-                info.eventTypes = autoTypes
-                info.packageNames = null
-                serviceInfo = info
-                lastEventTypes = autoTypes
-            }
+                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+            info.packageNames = null
+            serviceInfo = info
             return
         }
 
@@ -662,12 +556,9 @@ class NateqAccessibilityService : AccessibilityService() {
             store.isPaused() ||
             ProtectedAppManager.isPartiallySuspended
         ) {
-            if (lastEventTypes != 0 || serviceInfo == null) {
-                info.eventTypes = 0
-                info.packageNames = null
-                serviceInfo = info
-                lastEventTypes = 0
-            }
+            info.eventTypes = 0
+            info.packageNames = null
+            serviceInfo = info
             return
         }
 
@@ -675,15 +566,14 @@ class NateqAccessibilityService : AccessibilityService() {
 
         val repo = SettingsRepository.create(this)
 
+        // TYPE_WINDOW_STATE_CHANGED — لتتبع المقدمة والنوافذ المنبثقة
+        types = types or AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+
         // TYPE_NOTIFICATION_STATE_CHANGED — للإشعارات والتوست (ع٢٩-11)
         types = types or AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED
 
-        // TYPE_VIEW_SCROLLED — فقط عند تفعيل نغمة التمرير أو القراءة المستمرة
-        if (repo.isExtraEnabled("extra_scroll_cue") ||
-            ContinuousReader.isReading()
-        ) {
-            types = types or AccessibilityEvent.TYPE_VIEW_SCROLLED
-        }
+        // TYPE_VIEW_SCROLLED — لمراقبة أشرطة التقدم والقراءة المستمرة (ع٢٩-11)
+        types = types or AccessibilityEvent.TYPE_VIEW_SCROLLED
 
         if (FeatureFlags.isActive(
                 FeatureFlags.FEATURE_READ_MORE_EXPAND,
@@ -724,149 +614,45 @@ class NateqAccessibilityService : AccessibilityService() {
             types = types or AccessibilityEvent.TYPE_VIEW_CLICKED
         }
 
-        // تسجيل أحداث الإضافات المفعّلة ديناميكياً (ع٥٦)
-        if (repo.isExtraEnabled("extra_focus_restore") ||
-            repo.isExtraEnabled("extra_screen_grid") ||
-            repo.isExtraEnabled("extra_voice_note_inspector") ||
-            repo.isExtraEnabled("extra_link_inspector") ||
-            repo.isExtraEnabled("extra_contact_status") ||
-            repo.isExtraEnabled("extra_alt_text") ||
-            repo.isExtraEnabled("extra_role_earcons") ||
-            repo.isExtraEnabled("extra_table_reader")
-        ) {
-            types = types or AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED
-        }
-        if (repo.isExtraEnabled("extra_loading_detector") ||
-            repo.isExtraEnabled("extra_skip_ads") ||
-            repo.isExtraEnabled("extra_message_change_alert")
-        ) {
-            types = types or AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
-        }
-        if (repo.isExtraEnabled("extra_word_eraser") ||
-            repo.isExtraEnabled("extra_password_shield") ||
-            repo.isExtraEnabled("extra_typo_whisper")
-        ) {
-            types = types or AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
-        }
+        info.eventTypes = types
+        info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
 
-        val oldTypes = lastEventTypes
-        val typesChanged = (oldTypes != types) || (serviceInfo == null)
+        val liveReading = FeatureFlags.isActive(
+            FeatureFlags.FEATURE_CHAT_LIVE_READING,
+            context = this,
+            settings = repo,
+            stateStore = store
+        )
+        val readMore = FeatureFlags.isActive(
+            FeatureFlags.FEATURE_READ_MORE_EXPAND,
+            context = this,
+            settings = repo,
+            stateStore = store
+        )
+        val fastRequired = liveReading || readMore
+        info.notificationTimeout = if (fastRequired) 50L else 150L
 
-        if (typesChanged) {
-            val added = types and oldTypes.inv()
-            val removed = oldTypes and types.inv()
+        info.flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
+            AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
+            AccessibilityServiceInfo.FLAG_REQUEST_ACCESSIBILITY_BUTTON or
+            AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS or
+            AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
 
-            info.eventTypes = types
-            info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-
-            val liveReading = FeatureFlags.isActive(
-                FeatureFlags.FEATURE_CHAT_LIVE_READING,
-                context = this,
-                settings = repo,
-                stateStore = store
+        val allowAll = repo.isA11yAllowAllApps()
+        if (!allowAll) {
+            val userPackages = repo.getA11yAllowedPackages()
+            val effective = ProtectedAppManager.effectiveEventPackages(
+                allowed = userPackages ?: AppPolicy.DEFAULT_WHITELIST,
+                protectedApps = protectedApps,
+                homeLauncher = ProtectedAppManager
+                    .homeLauncherPackage(this)
             )
-            val readMore = FeatureFlags.isActive(
-                FeatureFlags.FEATURE_READ_MORE_EXPAND,
-                context = this,
-                settings = repo,
-                stateStore = store
-            )
-            val fastRequired = liveReading || readMore
-            info.notificationTimeout = if (fastRequired) 50L else 150L
-
-            info.flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
-                AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
-                AccessibilityServiceInfo.FLAG_REQUEST_ACCESSIBILITY_BUTTON or
-                AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS or
-                AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
-
-            val allowAll = repo.isA11yAllowAllApps()
-            if (!allowAll) {
-                val userPackages = repo.getA11yAllowedPackages()
-                val effective = ProtectedAppManager.effectiveEventPackages(
-                    allowed = userPackages ?: AppPolicy.DEFAULT_WHITELIST,
-                    protectedApps = protectedApps,
-                    homeLauncher = ProtectedAppManager
-                        .homeLauncherPackage(this)
-                )
-                info.packageNames = effective.toTypedArray()
-            } else {
-                info.packageNames = null
-            }
-
-            serviceInfo = info
-            lastEventTypes = types
-
-            val enabledExtras = listOf(
-                "extra_scroll_cue",
-                "extra_focus_restore",
-                "extra_screen_grid",
-                "extra_voice_note_inspector",
-                "extra_link_inspector",
-                "extra_contact_status",
-                "extra_alt_text",
-                "extra_role_earcons",
-                "extra_table_reader",
-                "extra_loading_detector",
-                "extra_skip_ads",
-                "extra_message_change_alert",
-                "extra_word_eraser",
-                "extra_password_shield",
-                "extra_typo_whisper",
-                "extra_camera_mic_alert",
-                "extra_clipboard_stack",
-                "extra_screen_curtain"
-            ).filter { repo.isExtraEnabled(it) }
-
-            ExtrasDiagnosticsTracker.record(
-                addedTypes = added,
-                removedTypes = removed,
-                currentTypes = types,
-                enabledExtras = enabledExtras
-            )
-        }
-
-        // ع٥٧-أمر 1: إعادة تهيئة الإضافات الحساسة فوراً
-        reapplySensitiveExtras(repo)
-    }
-
-    private fun reapplySensitiveExtras(repo: SettingsRepository) {
-        // 1. مراقب الكاميرا والميكروفون
-        if (repo.isExtraEnabled("extra_camera_mic_alert")) {
-            PrivacyIndicatorMonitor.register(this)
+            info.packageNames = effective.toTypedArray()
         } else {
-            PrivacyIndicatorMonitor.unregister(this)
+            info.packageNames = null
         }
 
-        // 2. مؤشر التمرير
-        if (!repo.isExtraEnabled("extra_scroll_cue")) {
-            ScrollCuePlayer.resetLastPlayTimeForTesting()
-        }
-
-        // 3. كاشف التحميل
-        if (!repo.isExtraEnabled("extra_loading_detector")) {
-            LoadingDetector.stopLoading(this, announced = false)
-        }
-
-        // 4. مكدس الحافظة
-        if (!repo.isExtraEnabled("extra_clipboard_stack")) {
-            ClipboardStack.clear()
-        }
-
-        // 5. أصوات الأدوار
-        if (!repo.isExtraEnabled("extra_role_earcons")) {
-            RoleEarcons.clear()
-        }
-
-        // 6. استعادة التركيز
-        if (!repo.isExtraEnabled("extra_focus_restore")) {
-            FocusMemory.clear()
-        }
-
-        // 7. مراقب تعديل وحذف الرسائل
-        if (!repo.isExtraEnabled("extra_message_change_alert")) {
-            ChatChangeWatcher.clearMemory()
-        }
+        serviceInfo = info
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -1041,233 +827,11 @@ class NateqAccessibilityService : AccessibilityService() {
                     ContinuousReader.onWindowChanged(pkg)
             }
         }
-
-        // توزيع أحداث الميزات الإضافية (ع٥٦)
-        dispatchExtraEvents(event, repo)
-    }
-
-    private fun dispatchExtraEvents(
-        event: AccessibilityEvent,
-        repo: SettingsRepository
-    ) {
-        val pkg = event.packageName?.toString()
-        if (AppPolicy.isSensitiveApp(pkg)) return
-
-        when (event.eventType) {
-            AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
-                if (repo.isExtraEnabled("extra_scroll_cue")) {
-                    val ratio = ScrollCuePlayer.calculateRatio(
-                        fromIndex = event.fromIndex,
-                        itemCount = event.itemCount,
-                        scrollY = event.scrollY,
-                        maxScrollY = event.maxScrollY
-                    )
-                    val isSpk = SpeechLock.isSpeaking(this)
-                    ScrollCuePlayer.onScroll(ratio, isSpk, context = this)
-                }
-            }
-            AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED -> {
-                val source = event.source
-                if (repo.isExtraEnabled("extra_focus_restore") &&
-                    source != null
-                ) {
-                    FocusMemory.onFocusEvent(pkg, source)
-                }
-                if (repo.isExtraEnabled("extra_screen_grid") &&
-                    source != null
-                ) {
-                    val elemBounds = android.graphics.Rect()
-                    source.getBoundsInScreen(elemBounds)
-                    val winBounds = android.graphics.Rect()
-                    rootInActiveWindow?.getBoundsInScreen(winBounds)
-                    if (winBounds.isEmpty) {
-                        winBounds.set(
-                            0,
-                            0,
-                            resources.displayMetrics.widthPixels,
-                            resources.displayMetrics.heightPixels
-                        )
-                    }
-                    val isRtl = resources.configuration.layoutDirection ==
-                        android.view.View.LAYOUT_DIRECTION_RTL
-                    val zone = ScreenGridAnnouncer.calculateZone(
-                        this, elemBounds, winBounds, isRtl
-                    )
-                    if (ScreenGridAnnouncer.shouldAnnounce(
-                            zone,
-                            ScreenGridAnnouncer.GridMode.ON_CHANGE
-                        )
-                    ) {
-                        A11ySpeechCoordinator.speakAnnouncement(this, zone)
-                    }
-                }
-                if (repo.isExtraEnabled("extra_link_inspector") &&
-                    source != null
-                ) {
-                    val txt = source.text?.toString().orEmpty()
-                    val cd = source.contentDescription?.toString().orEmpty()
-                    val full = if (txt.isNotBlank()) txt else cd
-                    LinkInspector.inspectAndAnnounce(this, full, full)
-                }
-                if (repo.isExtraEnabled("extra_voice_note_inspector") &&
-                    source != null
-                ) {
-                    VoiceNoteInspector.inspectAndAnnounce(this, pkg, source)
-                }
-                if (repo.isExtraEnabled("extra_alt_text") &&
-                    source != null
-                ) {
-                    AltTextReader.inspectAndAnnounce(this, pkg, source)
-                }
-                if (repo.isExtraEnabled("extra_role_earcons") &&
-                    source != null
-                ) {
-                    RoleEarcons.onNodeFocused(this, pkg, source)
-                }
-                if (repo.isExtraEnabled("extra_table_reader") &&
-                    source != null
-                ) {
-                    TableReader.onCellFocused(this, source)
-                }
-            }
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                if (repo.isExtraEnabled("extra_focus_restore")) {
-                    FocusMemory.onWindowStateChanged(
-                        this,
-                        pkg,
-                        rootInActiveWindow
-                    )
-                }
-                if (repo.isExtraEnabled("extra_keyboard_guard")) {
-                    KeyboardGuard.checkExternalKeyboardSubtype(this)
-                }
-                if (repo.isExtraEnabled("extra_contact_status")) {
-                    ContactStatusAnnouncer.onWindowStateChanged(
-                        this,
-                        pkg,
-                        rootInActiveWindow
-                    )
-                }
-            }
-            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> {
-                if (repo.isExtraEnabled("extra_keyboard_guard")) {
-                    KeyboardGuard.checkExternalKeyboardSubtype(this)
-                }
-            }
-            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
-                if (repo.isExtraEnabled("extra_loading_detector")) {
-                    LoadingDetector.onContentChanged(
-                        this,
-                        pkg,
-                        rootInActiveWindow
-                    )
-                }
-                if (repo.isExtraEnabled("extra_skip_ads")) {
-                    AdSkipper.onWindowContentChanged(
-                        this,
-                        pkg,
-                        rootInActiveWindow
-                    )
-                }
-                if (repo.isExtraEnabled("extra_message_change_alert")) {
-                    ChatChangeWatcher.onWindowContentChanged(
-                        this,
-                        pkg,
-                        rootInActiveWindow
-                    )
-                }
-            }
-        }
     }
 
     override fun onInterrupt() {
         Log.i(TAG, "[A11yService] onInterrupt called")
         ContinuousReader.stopSilently()
-    }
-
-    /** معالجة أفعال الاختصارات الخاصة بالميزات الإضافية (ع٥٦). */
-    fun handleExtraShortcutAction(action: ShortcutAction) {
-        when (action) {
-            ShortcutAction.SCREEN_ROTOR -> {
-                val intent = Intent().apply {
-                    setClassName(
-                        packageName,
-                        "com.aymankhattab.nateq.settings.extras.RotorActivity"
-                    )
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                startActivity(intent)
-            }
-            ShortcutAction.SCREEN_SEARCH -> {
-                val intent = Intent().apply {
-                    setClassName(
-                        packageName,
-                        "com.aymankhattab.nateq.settings.extras." +
-                            "ScreenSearchActivity"
-                    )
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                startActivity(intent)
-            }
-            ShortcutAction.SCREEN_SEARCH_NAV -> {
-                ScreenSearch.navigateNext(this)
-            }
-            ShortcutAction.READ_ARTICLE -> {
-                ArticleReader.startReading(this, rootInActiveWindow)
-            }
-            ShortcutAction.READ_CLIPBOARD_STACK -> {
-                ClipboardStack.readNext(this)
-            }
-            ShortcutAction.PASTE_CLIPBOARD_STACK -> {
-                ClipboardStack.pasteOrSpeak(this)
-            }
-            ShortcutAction.TYPO_SUGGESTIONS -> {
-                // ع٥٧-أمر 2: اقتراحات الكلمة (مُعرَّف بلا معالجة حالياً)
-            }
-            ShortcutAction.QUICK_CALC -> {
-                val node = rootInActiveWindow?.findFocus(
-                    AccessibilityNodeInfo.FOCUS_ACCESSIBILITY
-                ) ?: rootInActiveWindow?.findFocus(
-                    AccessibilityNodeInfo.FOCUS_INPUT
-                )
-                val text = node?.text?.toString().orEmpty()
-                QuickCalc.processQuery(this, text)
-            }
-            ShortcutAction.TRANSLATE_ELEMENT -> {
-                val node = rootInActiveWindow?.findFocus(
-                    AccessibilityNodeInfo.FOCUS_ACCESSIBILITY
-                ) ?: rootInActiveWindow?.findFocus(
-                    AccessibilityNodeInfo.FOCUS_INPUT
-                )
-                val text = node?.text?.toString().orEmpty()
-                ScreenGlossary.translateAndSpeak(this, text)
-            }
-            ShortcutAction.PASSWORD_COUNT -> {
-                val node = rootInActiveWindow?.findFocus(
-                    AccessibilityNodeInfo.FOCUS_INPUT
-                ) ?: rootInActiveWindow?.findFocus(
-                    AccessibilityNodeInfo.FOCUS_ACCESSIBILITY
-                )
-                PasswordShield.announceCharacterCount(this, node)
-            }
-            ShortcutAction.TOGGLE_SCREEN_CURTAIN -> {
-                ScreenCurtain.toggle(this)
-            }
-            ShortcutAction.QUICK_DICTIONARY -> {
-                val intent = Intent().apply {
-                    setClassName(
-                        packageName,
-                        "com.aymankhattab.nateq.settings.extras." +
-                            "QuickDictionaryActivity"
-                    )
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                startActivity(intent)
-            }
-            else -> {
-                // باقي أفعال الجولات التالية
-            }
-        }
     }
 
     override fun onKeyEvent(event: KeyEvent?): Boolean {
@@ -1702,32 +1266,17 @@ class NateqAccessibilityService : AccessibilityService() {
         if (screenOffReceiver != null) return
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
-                when (intent?.action) {
-                    Intent.ACTION_SCREEN_OFF -> {
-                        // مسح المخازن المؤقتة عند إطفاء الشاشة (ع٢٧-11، ع٤١-ب4)
-                        AccessibilityBridge.updateLastScreenTexts(emptyList())
-                        RepeatSpellController.clear()
-                        chatSummaryTracker.clear()
-                        ContinuousReader.stopSilently()
-                        ScreenCurtain.onScreenOff(
-                            this@NateqAccessibilityService
-                        )
-                    }
-                    Intent.ACTION_SCREEN_ON,
-                    Intent.ACTION_USER_PRESENT -> {
-                        ScreenCurtain.onScreenOn(
-                            this@NateqAccessibilityService
-                        )
-                    }
+                if (intent?.action == Intent.ACTION_SCREEN_OFF) {
+                    // مسح المخازن المؤقتة عند إطفاء الشاشة (ع٢٧-11، ع٤١-ب4)
+                    AccessibilityBridge.updateLastScreenTexts(emptyList())
+                    RepeatSpellController.clear()
+                    chatSummaryTracker.clear()
+                    ContinuousReader.stopSilently()
                 }
             }
         }
         screenOffReceiver = receiver
-        val filter = IntentFilter().apply {
-            addAction(Intent.ACTION_SCREEN_OFF)
-            addAction(Intent.ACTION_SCREEN_ON)
-            addAction(Intent.ACTION_USER_PRESENT)
-        }
+        val filter = IntentFilter(Intent.ACTION_SCREEN_OFF)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
         } else {
@@ -1954,8 +1503,6 @@ class NateqAccessibilityService : AccessibilityService() {
         shortcutTestReceiver = null
 
         AccessibilityBridge.unregisterService(this)
-        PrivacyIndicatorMonitor.unregister(this)
-        ScreenCurtain.disable(this)
         val disconnIntent = Intent(
             ProtectedAppManager.ACTION_A11Y_DISCONNECTED
         ).setPackage(packageName)

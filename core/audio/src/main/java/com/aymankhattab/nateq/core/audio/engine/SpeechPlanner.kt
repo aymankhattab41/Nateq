@@ -320,18 +320,6 @@ object SpeechPlanner {
                     val cleanText = seg.text
                         .replace(EngineMarkers.NUMBER_MARK_START, "")
                         .replace(EngineMarkers.NUMBER_MARK_END, "")
-                    val isDynamicRate = (settings as? SettingsRepository)
-                        ?.isExtraEnabled("extra_dynamic_rate") == true
-                    val effectiveRate = if (isDynamicRate) {
-                        DynamicRatePolicy.apply(
-                            baseRate = resolved.rate,
-                            textLength = cleanText.length,
-                            role = role,
-                            isEnabled = true
-                        )
-                    } else {
-                        resolved.rate
-                    }
                     items.add(
                         SpeechPlanItem(
                             text = cleanText,
@@ -339,7 +327,7 @@ object SpeechPlanner {
                             role = role,
                             engine = resolved.engine,
                             voiceId = resolved.voiceId,
-                            rate = effectiveRate,
+                            rate = resolved.rate,
                             pitch = resolved.pitch,
                             volume = resolved.volume
                         )
@@ -352,11 +340,8 @@ object SpeechPlanner {
         val mergedItems = ArrayList<SpeechPlanItem>()
         for (item in items) {
             val last = mergedItems.lastOrNull()
-            val canMergeRoles = last?.role == item.role ||
-                (last?.role != SpeechRole.EMOJI &&
-                    item.role != SpeechRole.EMOJI)
             if (last != null &&
-                canMergeRoles &&
+                last.role == item.role &&
                 last.engine == item.engine &&
                 last.voiceId == item.voiceId &&
                 last.languageTag == item.languageTag &&

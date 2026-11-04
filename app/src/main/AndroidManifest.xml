@@ -230,34 +230,6 @@
             android:label="@string/title_banking_compat_check"
             android:theme="@style/Theme.Nateq" />
 
-        <!-- شاشة إدارة الميزات الإضافية (ع٥٦) -->
-        <activity
-            android:name="com.aymankhattab.nateq.settings.extras.ExtrasSettingsActivity"
-            android:exported="false"
-            android:label="@string/extras_settings_title"
-            android:theme="@style/Theme.Nateq" />
-
-        <!-- نافذة دوّار العناصر الشفافة (ع٥٦-أمر 1) -->
-        <activity
-            android:name="com.aymankhattab.nateq.settings.extras.RotorActivity"
-            android:exported="false"
-            android:label="@string/rotor_title"
-            android:theme="@style/Theme.Nateq" />
-
-        <!-- نافذة البحث النصي داخل الشاشة (ع٥٦-أمر 2) -->
-        <activity
-            android:name="com.aymankhattab.nateq.settings.extras.ScreenSearchActivity"
-            android:exported="false"
-            android:label="@string/search_screen_title"
-            android:theme="@style/Theme.Nateq" />
-
-        <!-- نافذة الإضافة السريعة للقاموس (ع٥٦-أمر 3) -->
-        <activity
-            android:name="com.aymankhattab.nateq.settings.extras.QuickDictionaryActivity"
-            android:exported="false"
-            android:label="@string/quick_dict_title"
-            android:theme="@style/Theme.Nateq" />
-
         <!-- Activity لفحص بيانات TTS (اللغات/الأصوات المتاحة) — مطلوبة من سامسونج -->
         <activity
             android:name=".settings.CheckTtsDataActivity"
@@ -426,18 +398,6 @@
             android:exported="true"
             android:icon="@drawable/ic_number_reading"
             android:label="@string/tile_previous_engine_label"
-            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
-            <intent-filter>
-                <action android:name="android.service.quicksettings.action.QS_TILE" />
-            </intent-filter>
-        </service>
-
-        <!-- بلاطة ستارة الشاشة (ع٥٦-إضافات 3) -->
-        <service
-            android:name="com.aymankhattab.nateq.settings.extras.CurtainTileService"
-            android:exported="true"
-            android:icon="@drawable/ic_curtain"
-            android:label="@string/curtain_tile_label"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />

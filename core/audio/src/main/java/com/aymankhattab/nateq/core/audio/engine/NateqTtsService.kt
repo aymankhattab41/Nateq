@@ -21,12 +21,6 @@ import com.aymankhattab.nateq.core.audio.accessibility.RepeatSpellController
 import com.aymankhattab.nateq.core.audio.accessibility.SelectorPacks
 import com.aymankhattab.nateq.core.audio.announcement.ArabicSpeechNormalizer
 import com.aymankhattab.nateq.core.audio.announcement.prepareArabicForEngine
-import com.aymankhattab.nateq.core.audio.CategoryFailureTracker
-import com.aymankhattab.nateq.core.audio.CrashGuard
-import com.aymankhattab.nateq.core.audio.EmergencyVoice
-import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
-import com.aymankhattab.nateq.core.common.VisibleEngines
-import com.aymankhattab.nateq.core.common.VisibleLanguages
 import com.aymankhattab.nateq.core.engine.EngineMarkers
 import com.aymankhattab.nateq.core.engine.SingleLetterGuard
 import android.database.ContentObserver
@@ -401,8 +395,6 @@ class NateqTtsService : TextToSpeechService() {
 
     override fun onCreate() {
         settings = SettingsRepository.create(applicationContext)
-        EngineHostClient.setContext(applicationContext)
-        VoiceResolutionPolicy.init(applicationContext)
 
         val providers = listOf(
             SystemVoiceProvider(applicationContext, settings),
@@ -437,7 +429,6 @@ class NateqTtsService : TextToSpeechService() {
                 // حقيقي أثناء البناء أُلغيت التدفئة وبناه الطلب بنفسه.
                 runCatching { textProcessor }
                 maybeRefreshDiscovery()
-                prewarmEmbeddedHostIfNeeded()
                 warmNavigationCache()
                 warmNumberVoiceCache()
             } catch (t: Throwable) {
@@ -451,20 +442,6 @@ class NateqTtsService : TextToSpeechService() {
             super.onCreate()
         } catch (t: Throwable) {
             Log.e(TAG, "super.onCreate() threw", t)
-        }
-        if (CrashGuard.checkOnStartup(applicationContext)) {
-            val announcement = getString(
-                com.aymankhattab.nateq.core.audio.R.string
-                    .emergency_voice_mode_announcement
-            )
-            com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
-                .getInstance(applicationContext).speak(
-                    announcement,
-                    Locale.forLanguageTag("ar"),
-                    1.0f,
-                    1.0f,
-                    1.0f
-                )
         }
         // رصد الإسكات الفوري (هز/تقارب): يُسجَّل أثناء دورة النطق النشط
         // فقط في onSynthesizeText حفظاً للبطارية ويُلغى فور انتهائها.
@@ -539,9 +516,6 @@ class NateqTtsService : TextToSpeechService() {
         if (lang.isNullOrBlank()) return TextToSpeech.LANG_NOT_SUPPORTED
 
         val normLang = normalizeLanguageCode(lang)
-        if (!VisibleLanguages.isVisible(normLang)) {
-            return TextToSpeech.LANG_NOT_SUPPORTED
-        }
         val normCountry = normalizeCountryCode(country)
         val locales = catalog.supportedLocales()
 
@@ -560,22 +534,7 @@ class NateqTtsService : TextToSpeechService() {
         return TextToSpeech.LANG_NOT_SUPPORTED
     }
 
-    override fun onGetLanguage(): Array<String> {
-        val curr = currentLanguage
-        if (curr.isNotEmpty() && !VisibleLanguages.isVisible(curr[0])) {
-            val visible = VisibleLanguages.visibleSet()
-            val arVisible = VisibleLanguages.isVisible(LanguageCode.AR.tag)
-            val fallback = if (arVisible) {
-                LanguageCode.AR.tag
-            } else if (visible.isNotEmpty()) {
-                visible.first()
-            } else {
-                LanguageCode.AR.tag
-            }
-            return arrayOf(fallback, "", "")
-        }
-        return curr
-    }
+    override fun onGetLanguage(): Array<String> = currentLanguage
 
     override fun onLoadLanguage(
         lang: String?,
@@ -587,9 +546,6 @@ class NateqTtsService : TextToSpeechService() {
             " country=$country variant=$variant")
         if (lang.isNullOrBlank()) return TextToSpeech.LANG_NOT_SUPPORTED
         val normLang = normalizeLanguageCode(lang)
-        if (!VisibleLanguages.isVisible(normLang)) {
-            return TextToSpeech.LANG_NOT_SUPPORTED
-        }
         val normCountry = normalizeCountryCode(country)
         val result = onIsLanguageAvailable(normLang, normCountry, variant)
         if (result != TextToSpeech.LANG_NOT_SUPPORTED) {
@@ -625,10 +581,7 @@ class NateqTtsService : TextToSpeechService() {
     override fun onGetVoices(): MutableList<Voice> {
         Log.d(TAG, "onGetVoices() CALLED")
         refreshDiscoveryIfNeeded()
-        val voices = catalog.supportedVoices().filter {
-            VisibleLanguages.isVisible(it.locale?.language) &&
-                VisibleEngines.isVisible(it.name)
-        }
+        val voices = catalog.supportedVoices()
         Log.d(TAG,
             "onGetVoices() returning ${voices.size} voices:" +
             " ${voices.map { it.name }}")
@@ -638,10 +591,6 @@ class NateqTtsService : TextToSpeechService() {
     override fun onIsValidVoiceName(voiceName: String?): Int {
         Log.d(TAG, "onIsValidVoiceName() voiceName=$voiceName")
         if (voiceName == null) return TextToSpeech.ERROR
-        val voiceLang = VoiceResolutionPolicy.languageOfVoiceId(voiceName)
-        if (voiceLang != null && !VisibleLanguages.isVisible(voiceLang)) {
-            return TextToSpeech.ERROR
-        }
         val inCatalog = catalog.supportedVoices().any { it.name == voiceName }
         val inContract = VoiceIdContract.declaredVoiceNames().any {
             it.equals(voiceName, ignoreCase = true)
@@ -674,9 +623,6 @@ class NateqTtsService : TextToSpeechService() {
     ): String? {
         val normLang = normalizeLanguageCode(lang).ifBlank {
             LanguageCode.AR.tag
-        }
-        if (!VisibleLanguages.isVisible(normLang)) {
-            return null
         }
         val preferred = runCatching {
             settings.getPreferredVoiceId(normLang)
@@ -949,20 +895,12 @@ class NateqTtsService : TextToSpeechService() {
                     settings.getReadMoreAllowedPackages().contains(fgPkg)
                 val isTruncated = SelectorPacks.looksTruncated(rawText)
                 if (isTruncated) {
-                    if (readMoreEnabled && isPkgAllowed) {
-                        Log.i(
-                            TAG,
-                            "[READMORE] Speech detected truncated text " +
-                                "(len=${rawText.length})"
-                        )
-                    } else {
-                        Log.d(
-                            TAG,
-                            "[READMORE] Text looks truncated but expansion " +
-                                "is inactive (enabled=$readMoreEnabled, " +
-                                "allowed=$isPkgAllowed, len=${rawText.length})"
-                        )
-                    }
+                    Log.w(
+                        TAG,
+                        "[READMORE] Speech detected truncated text " +
+                            "(enabled=$readMoreEnabled, " +
+                            "allowed=$isPkgAllowed, len=${rawText.length})"
+                    )
                 }
                 if (readMoreEnabled && isPkgAllowed && isTruncated) {
                     val expanded = AccessibilityBridge.expandReadMore(
@@ -1001,8 +939,7 @@ class NateqTtsService : TextToSpeechService() {
                 val semanticText = SpeechEntryPoints.prepare(
                     processedText,
                     SpeechEntryPoints.Source.SCREEN_READER,
-                    applicationContext,
-                    languageTag
+                    applicationContext
                 )
                 processedText = semanticText
                 val endPreprocess = SystemClock.uptimeMillis()
@@ -1197,14 +1134,7 @@ class NateqTtsService : TextToSpeechService() {
             Log.w(TAG, "onSynthesizeText join interrupted", t)
         } finally {
             val totalDurationMs = SystemClock.uptimeMillis() - startUptime
-            // **لا يُستبدل القياس الغائب بالزمن الكلي.** كان ذلك يجعل
-            // TTFB = مدة العبارة كاملة فيظهر «بطيئاً جداً» وهو لم يُقس
-            // أصلاً (رصد: 3148ms لعبارةٍ بلا بايت أول مُسجَّل).
-            val ttfb = if (ttfbMs.get() > 0L) {
-                ttfbMs.get()
-            } else {
-                SpeechLatencyTracker.TTFB_UNMEASURED_MS
-            }
+            val ttfb = if (ttfbMs.get() > 0L) ttfbMs.get() else totalDurationMs
             SpeechLatencyTracker.recordUtterance(
                 SpeechLatencyTracker.UtteranceMetric(
                     text = rawText,
@@ -1489,14 +1419,6 @@ class NateqTtsService : TextToSpeechService() {
         // [SystemVoiceProvider] (إتمامٌ بالطول المُعلَن في رأس WAV)،
         // فيُسلَّم النصُّ كلُّه طلباً واحداً متّصلاً كما كان قبل
         // v106. و`start` يُمرَّر مرّةً واحدة و`done()` بعد آخر شريحة.
-        val singleCategory = effectCategory.takeIf { it.isNotEmpty() }
-            ?: when (role) {
-                SpeechRole.NUMBER ->
-                    SettingsRepository.VOICE_CATEGORY_NUMBERS
-                SpeechRole.EMOJI ->
-                    SettingsRepository.VOICE_CATEGORY_EMOJI
-                else -> SettingsRepository.VOICE_CATEGORY_DEFAULT
-            }
         var started = false
         try {
             val targetProvider = if (finalEngine != null) {
@@ -1517,99 +1439,20 @@ class NateqTtsService : TextToSpeechService() {
             val isVocVoice = if (isVoc && !finalVoiceName.isNullOrBlank()) {
                 VocalizerModelCatalog.ITEMS.any { item ->
                     item.voiceName.equals(finalVoiceName, ignoreCase = true) ||
-                        item.id.equals(finalVoiceName, ignoreCase = true) ||
-                        finalVoiceName.contains(
-                            item.voiceName,
-                            ignoreCase = true
-                        ) ||
-                        (item.voiceName.equals("Laila", true) &&
-                            finalVoiceName.contains("leila", true)) ||
-                        (item.voiceName.equals("Tarik", true) &&
-                            finalVoiceName.contains("tariq", true))
+                        item.id.equals(finalVoiceName, ignoreCase = true)
                 }
             } else false
-            val resolvedVoiceName = if (isVoc) {
-                val installedAr = VocalizerModelCatalog.ITEMS.firstOrNull {
-                    LanguageCode.isArabic(it.languageCategory) &&
-                        VocalizerModelCatalog.isVoiceInstalled(
-                            applicationContext, it
-                        )
-                }?.voiceName
-                val installedEn = VocalizerModelCatalog.ITEMS.firstOrNull {
-                    LanguageCode.isEnglish(it.languageCategory) &&
-                        VocalizerModelCatalog.isVoiceInstalled(
-                            applicationContext, it
-                        )
-                }?.voiceName
-                val fallbackVoice = if (LanguageCode.isArabic(languageTag)) {
-                    installedAr ?: "Tarik"
+            val resolvedVoiceName = if (isVoc && (isGeneric || !isVocVoice)) {
+                if (LanguageCode.isArabic(languageTag)) {
+                    "Laila"
                 } else {
-                    installedEn ?: "Samantha"
-                }
-                if (isGeneric || !isVocVoice) {
-                    fallbackVoice
-                } else {
-                    val matchedItem = VocalizerModelCatalog.ITEMS.firstOrNull {
-                        it.voiceName.equals(
-                            finalVoiceName, ignoreCase = true
-                        ) ||
-                            it.id.equals(finalVoiceName, ignoreCase = true) ||
-                            finalVoiceName.contains(
-                                it.voiceName,
-                                ignoreCase = true
-                            ) ||
-                            (it.voiceName.equals("Laila", true) &&
-                                finalVoiceName.contains("leila", true)) ||
-                            (it.voiceName.equals("Tarik", true) &&
-                                finalVoiceName.contains("tariq", true))
-                    }
-                    val isInstalled = matchedItem != null &&
-                        VocalizerModelCatalog.isVoiceInstalled(
-                            applicationContext, matchedItem
-                        )
-                    if (isInstalled) {
-                        matchedItem?.voiceName ?: fallbackVoice
-                    } else {
-                        fallbackVoice
-                    }
+                    "Samantha"
                 }
             } else {
                 finalVoiceName
             }
-            val isSafe = CrashGuard.isSafeModeActive(applicationContext)
-            // `singleCategory` غير قابل للعدم: له احتياطيٌّ في `when` أعلاه.
-            val isCatEm =
-                CategoryFailureTracker.isEmergencyActive(singleCategory)
-            val isEmergency = isSafe || isCatEm
-
-            val effEngine: String?
-            val effVoice: String?
-            val effRate: Float
-            val effPitch: Float
-            val effVolume: Float
-
-            if (isEmergency) {
-                val em = EmergencyVoice.load(applicationContext)
-                effEngine = if (em.isSaved) em.engine else null
-                effVoice = if (em.isSaved) em.voice else null
-                effRate = if (em.isSaved) em.rate else 1.0f
-                effPitch = if (em.isSaved) em.pitch else 1.0f
-                effVolume = if (em.isSaved) em.volume else 1.0f
-            } else {
-                effEngine = finalEngine
-                effVoice = resolvedVoiceName
-                effRate = finalRate
-                effPitch = finalPitch
-                effVolume = finalVolume
-            }
-            val effProvider = if (effEngine != null) {
-                catalog.findProvider(effEngine) ?: targetProvider
-            } else {
-                targetProvider
-            }
-
-            effProvider.synthesize(
-                speechText, voice, effRate, effPitch, effVolume,
+            targetProvider.synthesize(
+                speechText, voice, finalRate, finalPitch, finalVolume,
                 { sampleRateInHz, channelCount ->
                     if (!started) {
                         callback.start(
@@ -1631,6 +1474,16 @@ class NateqTtsService : TextToSpeechService() {
                         )
                         started = true
                     }
+                    // المنهج المُثبَت (كما في TtsService الرسمي
+                    // لـ espeak-ng/MultiTTS): لا يجوز تمرير كامل
+                    // المخزن المؤقت دفعةً واحدة؛ يُقسَّم إلى أجزاء
+                    // بمقدار callback.getMaxBufferSize() وإلا
+                    // يرفض النظام التخليق ويهبط الصوت. نقسّم كل
+                    // دفعة من المزوّد احتراماً لقيود الـ callback.
+                    // المعامل الثاني (validLength) هو طول البيانات
+                    // الصالح الصريح — فقد تكون مصفوفة الشريحة
+                    // بحجم أكبر من بياناتها الفعلية (مسبح مُعاد
+                    // استخدامه)، فيُمسح حتى length فقط.
                     val maxBytes = callback.maxBufferSize
                     var offset = 0
                     while (offset < validLength) {
@@ -1641,13 +1494,12 @@ class NateqTtsService : TextToSpeechService() {
                         )
                         offset += bytesToWrite
                     }
-                }, effEngine, finalLocale, effVoice,
-                singleCategory
+                }, finalEngine, finalLocale, resolvedVoiceName,
+                effectCategory
             )
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
-            singleCategory?.let { CategoryFailureTracker.recordFailure(it) }
             // تعذُّر التخليق: يُسقط النصُّ كلُّه بخطأٍ صريح أسفله
             // (فلا يُنسى`)started` صامتاً ولا يُبثّ ناقصاً.
             Log.w(
@@ -1657,11 +1509,15 @@ class NateqTtsService : TextToSpeechService() {
             )
         }
 
+        // **ضمانة انهيار:** done() قبل start() ترمي
+        // IllegalStateException في إطار أندرويد — إن فشل
+        // المحرك بصمت (لا تنسيق ولا شريحة) يبقى started=false
+        // فنُنهي بـ error() لا بـ done(). والاستثناءات الرامية
+        // قبل هذا الموضع تصل إلى catch في onSynthesizeText
+        // (إنهاءٌ واحد error() بلا ازدواج).
         if (started) {
-            singleCategory?.let { CategoryFailureTracker.recordSuccess(it) }
             callback.done()
         } else {
-            singleCategory?.let { CategoryFailureTracker.recordFailure(it) }
             callback.error()
         }
     }
@@ -1729,8 +1585,7 @@ class NateqTtsService : TextToSpeechService() {
         val volume: Float,
         val engine: String?,
         val locale: Locale?,
-        val voiceName: String?,
-        val category: String? = null
+        val voiceName: String?
     )
 
     /** صوتُ مقطعٍ واحد مخلَّق (شريحاته PCM الخام بلا معاينة) — حصيلة
@@ -1750,8 +1605,7 @@ class NateqTtsService : TextToSpeechService() {
         segment: Segment,
         readerRate: Float,
         appVoice: EffectiveVoice? = null,
-        reqVoiceName: String? = null,
-        effectCategory: String = ""
+        reqVoiceName: String? = null
     ): SegmentParams? {
         val segTag = segment.languageTag
         val segRate = requestHandler.getSpeechRate(segTag)
@@ -1836,15 +1690,50 @@ class NateqTtsService : TextToSpeechService() {
             }
             null
         }
-        val resolvedSegment = VoiceResolutionPolicy.resolveSegmentVoice(
+        val categoryVoice = when (segment.role) {
+            SpeechRole.EMOJI -> settings.getPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_EMOJI
+            )
+            SpeechRole.NUMBER -> settings.getPreferredVoiceIdForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+            SpeechRole.TEXT -> null
+        }
+        val categoryEngine = when (segment.role) {
+            SpeechRole.EMOJI -> settings.getEngineForCategory(
+                SettingsRepository.VOICE_CATEGORY_EMOJI
+            )
+            SpeechRole.NUMBER -> settings.getEngineForCategory(
+                SettingsRepository.VOICE_CATEGORY_NUMBERS
+            )
+            SpeechRole.TEXT -> null
+        }
+        val resolvedVoice = VoiceResolutionPolicy.resolve(
             role = segment.role,
             languageTag = segTag,
-            settings = settings,
-            appVoice = applyVoice,
-            contactVoice = null
+            categoryVoice = categoryVoice,
+            appVoice = applyVoice?.voiceId,
+            contactVoice = null,
+            languageDefaultVoice = routed.voiceName
+                ?: settings.getPreferredVoiceId(segTag),
+            categoryEngine = categoryEngine
         )
-        val targetEngine = resolvedSegment.engine
-        val targetVoiceName = resolvedSegment.voiceName
+        val targetEngine = when (resolvedVoice.source) {
+            VoiceResolutionPolicy.SOURCE_CATEGORY_EMOJI,
+            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER -> {
+                categoryEngine ?: defaultCategoryEngine ?: routed.engine
+            }
+            VoiceResolutionPolicy.SOURCE_APP -> {
+                applyVoice?.engine ?: routed.engine
+            }
+            else -> routed.engine
+        }
+        val preferredForEngine = targetEngine?.let {
+            settings.getPreferredVoiceForEngine(it, segTag)
+        }
+        val targetVoiceName = resolvedVoice.voiceId
+            ?: preferredForEngine
+            ?: VoiceIdContract.createId(segTag)
         // **بند التشكيل الشرطي:** تُمرَّر حزمةُ المحرك المحسومة إلى
         // [TextProcessor.process] — المحركات التي تفهم التشكيل العربي
         // تحتفظ به في الناتج (مسار الاستعادة) بدل تجريده دائماً.
@@ -1884,205 +1773,39 @@ class NateqTtsService : TextToSpeechService() {
         val isVocVoice = if (isVoc && !targetVoiceName.isNullOrBlank()) {
             VocalizerModelCatalog.ITEMS.any { item ->
                 item.voiceName.equals(targetVoiceName, ignoreCase = true) ||
-                    item.id.equals(targetVoiceName, ignoreCase = true) ||
-                    targetVoiceName.contains(
-                        item.voiceName,
-                        ignoreCase = true
-                    ) ||
-                    (item.voiceName.equals("Laila", true) &&
-                        targetVoiceName.contains("leila", true)) ||
-                    (item.voiceName.equals("Tarik", true) &&
-                        targetVoiceName.contains("tariq", true))
+                    item.id.equals(targetVoiceName, ignoreCase = true)
             }
         } else false
-        val resolvedVoiceName = if (isVoc) {
-            val installedAr = VocalizerModelCatalog.ITEMS.firstOrNull {
-                LanguageCode.isArabic(it.languageCategory) &&
-                    VocalizerModelCatalog.isVoiceInstalled(
-                        applicationContext, it
-                    )
-            }?.voiceName
-            val installedEn = VocalizerModelCatalog.ITEMS.firstOrNull {
-                LanguageCode.isEnglish(it.languageCategory) &&
-                    VocalizerModelCatalog.isVoiceInstalled(
-                        applicationContext, it
-                    )
-            }?.voiceName
-            val fallbackVoice = if (LanguageCode.isArabic(segTag)) {
-                installedAr ?: "Tarik"
+        val resolvedVoiceName = if (isVoc && (isGeneric || !isVocVoice)) {
+            if (LanguageCode.isArabic(segTag)) {
+                "Laila"
             } else {
-                installedEn ?: "Samantha"
-            }
-            if (isGeneric || !isVocVoice) {
-                fallbackVoice
-            } else {
-                val matchedItem = VocalizerModelCatalog.ITEMS.firstOrNull {
-                    it.voiceName.equals(targetVoiceName, ignoreCase = true) ||
-                        it.id.equals(targetVoiceName, ignoreCase = true) ||
-                        targetVoiceName.contains(
-                            it.voiceName,
-                            ignoreCase = true
-                        ) ||
-                        (it.voiceName.equals("Laila", true) &&
-                            targetVoiceName.contains("leila", true)) ||
-                        (it.voiceName.equals("Tarik", true) &&
-                            targetVoiceName.contains("tariq", true))
-                }
-                val isInstalled = matchedItem != null &&
-                    VocalizerModelCatalog.isVoiceInstalled(
-                        applicationContext, matchedItem
-                    )
-                if (isInstalled) {
-                    matchedItem?.voiceName ?: fallbackVoice
-                } else {
-                    fallbackVoice
-                }
+                "Samantha"
             }
         } else {
             targetVoiceName
         }
-
-        var fallbackReason: String? = null
-        var waitDurationMs = 0L
-        var hostReady = true
-
-        val isNumericRole = segment.role == SpeechRole.NUMBER ||
-            segment.role == SpeechRole.EMOJI
-
-        var finalUsedEngine = targetEngine
-        var finalUsedVoiceName = resolvedVoiceName
-
-        if (isNumericRole && isVoc) {
-            val eng = targetEngine ?:
-                VocalizerEmbeddedVoiceProvider.PROVIDER_ID
-            hostReady = EngineHostClient.isBound(eng)
-            if (!hostReady) {
-                val budget = SynthesisBudget.pieceTimeoutMs(
-                    segment.text.length
-                )
-                val waitStart = SystemClock.uptimeMillis()
-                while (!hostReady &&
-                    (SystemClock.uptimeMillis() - waitStart) < budget
-                ) {
-                    delay(50L)
-                    hostReady = EngineHostClient.isBound(eng)
-                }
-                waitDurationMs = SystemClock.uptimeMillis() - waitStart
-                if (!hostReady) {
-                    fallbackReason = "host_not_ready"
-                    finalUsedEngine = routed.engine
-                    finalUsedVoiceName = routed.voiceName ?:
-                        settings.getPreferredVoiceId(segTag) ?:
-                        VoiceIdContract.createId(segTag)
-                }
-            }
-        }
-
-        if (isNumericRole && fallbackReason == null) {
-            if (isVoc && !isVocVoice && !isGeneric) {
-                fallbackReason = "voice_missing"
-            } else if (
-                targetEngine != null &&
-                !VisibleEngines.isVisible(targetEngine)
-            ) {
-                fallbackReason = "engine_hidden"
-            }
-        }
-
-        if (isNumericRole) {
-            val reqEng = when (segment.role) {
-                SpeechRole.NUMBER -> settings.getEngineForCategory(
-                    SettingsRepository.VOICE_CATEGORY_NUMBERS
-                )
-                SpeechRole.EMOJI -> settings.getEngineForCategory(
-                    SettingsRepository.VOICE_CATEGORY_EMOJI
-                )
-                else -> null
-            }
-            val reqVoice = when (segment.role) {
-                SpeechRole.NUMBER -> settings.getPreferredVoiceIdForCategory(
-                    SettingsRepository.VOICE_CATEGORY_NUMBERS
-                )
-                SpeechRole.EMOJI -> settings.getPreferredVoiceIdForCategory(
-                    SettingsRepository.VOICE_CATEGORY_EMOJI
-                )
-                else -> null
-            }
-            val importance = NumberSegmentTraceTracker.currentImportance(
-                applicationContext
-            )
-            NumberSegmentTraceTracker.record(
-                text = segment.text,
-                requestedEngine = reqEng,
-                requestedVoice = reqVoice,
-                actualEngine = finalUsedEngine,
-                actualVoice = finalUsedVoiceName,
-                hostReady = hostReady,
-                waitDurationMs = waitDurationMs,
-                fallbackReason = fallbackReason,
-                importance = importance
-            )
-        }
-
         if (runCatching {
             settings.isLanguageDiagnosticsEnabled()
         }.getOrDefault(false)) {
             Log.d(
                 "NateqLang",
                 "[TTS-SEG] text='$speechText', role=${segment.role}, " +
-                    "tag='$segTag', engine='$finalUsedEngine', " +
-                    "voice='$finalUsedVoiceName', " +
-                    "source='${resolvedSegment.source}'"
+                    "tag='$segTag', engine='$targetEngine', " +
+                    "voice='$resolvedVoiceName', " +
+                    "source='${resolvedVoice.source}'"
             )
         }
-        val segmentCategory = when (segment.role) {
-            SpeechRole.EMOJI -> SettingsRepository.VOICE_CATEGORY_EMOJI
-            SpeechRole.NUMBER -> SettingsRepository.VOICE_CATEGORY_NUMBERS
-            SpeechRole.TEXT -> effectCategory.takeIf { it.isNotEmpty() }
-        }
-        val effCategory = segmentCategory ?:
-            SettingsRepository.VOICE_CATEGORY_DEFAULT
-
-        val isSafe = CrashGuard.isSafeModeActive(applicationContext)
-        val isCatEm = CategoryFailureTracker.isEmergencyActive(effCategory)
-        val isEmergency = isSafe || isCatEm
-
-        val effTargetEngine: String?
-        val effVoiceName: String?
-        val effRate: Float
-        val effPitch: Float
-        val effVol: Float
-
-        if (isEmergency) {
-            val em = EmergencyVoice.load(applicationContext)
-            effTargetEngine = if (em.isSaved) em.engine else null
-            effVoiceName = if (em.isSaved) em.voice else null
-            effRate = if (em.isSaved) em.rate else 1.0f
-            effPitch = if (em.isSaved) em.pitch else 1.0f
-            effVol = if (em.isSaved) em.volume else 1.0f
-        } else {
-            effTargetEngine = finalUsedEngine
-            effVoiceName = finalUsedVoiceName
-            effRate = finalRate
-            effPitch = finalPitch
-            effVol = finalVolume
-        }
-        val effProvider = if (effTargetEngine != null) {
-            catalog.findProvider(effTargetEngine) ?: provider
-        } else {
-            provider
-        }
         return SegmentParams(
-            speechText, voice, effProvider, effRate, effPitch,
-            effVol, effTargetEngine,
+            speechText, voice, provider, finalRate, finalPitch,
+            finalVolume, targetEngine,
             if (matches) {
                 convert?.convertLocale
                     ?: Locale.forLanguageTag(segTag)
             } else {
                 Locale.forLanguageTag(segTag)
             },
-            effVoiceName,
-            segmentCategory
+            resolvedVoiceName
         )
     }
 
@@ -2108,16 +1831,9 @@ class NateqTtsService : TextToSpeechService() {
         onResolved: ((engine: String?, voice: String?) -> Unit)? = null
     ): SegmentAudio? {
         val params = resolveSegmentParams(
-            segment, readerRate, appVoice, reqVoiceName, effectCategory
+            segment, readerRate, appVoice, reqVoiceName
         ) ?: return null
-        if (params.text.isBlank()) {
-            return SegmentAudio(
-                nativeRate = 22050,
-                nativeChannels = 1,
-                chunks = emptyList()
-            )
-        }
-        onResolved?.invoke(params.engine, params.voiceName ?: params.voice.id)
+        onResolved?.invoke(params.engine, params.voice.id)
         val chunks = ArrayList<ByteArray>()
         var nativeRate = 0
         var nativeChannels = 1
@@ -2152,7 +1868,7 @@ class NateqTtsService : TextToSpeechService() {
                     params.engine,
                     params.locale,
                     params.voiceName,
-                    params.category ?: effectCategory
+                    effectCategory
                 )
                 if (pieceRate > 0) {
                     nativeRate = pieceRate
@@ -2192,13 +1908,6 @@ class NateqTtsService : TextToSpeechService() {
         reqVoiceName: String? = null,
         onMetric: ((SpeechLatencyTracker.SegmentMetric) -> Unit)? = null
     ): SegmentAudio? {
-        if (segment.text.isBlank()) {
-            return SegmentAudio(
-                nativeRate = 22050,
-                nativeChannels = 1,
-                chunks = emptyList()
-            )
-        }
         val startUptime = SystemClock.uptimeMillis()
         var attempts = 1
         var resolvedEngine: String? = null
@@ -2235,7 +1944,7 @@ class NateqTtsService : TextToSpeechService() {
 
         val endUptime = SystemClock.uptimeMillis()
         val success = (audio != null)
-        if (!success && !segment.text.isBlank()) {
+        if (!success) {
             Log.w(TAG, "مقطع محذوف: ${segment.text}")
             SpeechLatencyTracker.recordDroppedSegment(segment.text)
         }
@@ -2372,7 +2081,7 @@ class NateqTtsService : TextToSpeechService() {
         for (segment in segments) {
             val segStart = SystemClock.uptimeMillis()
             val params = resolveSegmentParams(
-                segment, readerRate, appVoice, reqVoiceName, effectCategory
+                segment, readerRate, appVoice, reqVoiceName
             )
             if (params == null) {
                 skippedSegments++
@@ -2418,7 +2127,7 @@ class NateqTtsService : TextToSpeechService() {
                         params.engine,
                         params.locale,
                         params.voiceName,
-                        params.category ?: effectCategory
+                        effectCategory
                     )
                 } catch (e: CancellationException) {
                     throw e
@@ -2431,19 +2140,10 @@ class NateqTtsService : TextToSpeechService() {
                     )
                 }
                 if (!producedHere) {
-                    val cat = params.category ?: effectCategory.ifBlank {
-                        SettingsRepository.VOICE_CATEGORY_DEFAULT
-                    }
-                    CategoryFailureTracker.recordFailure(cat)
                     skippedSegments++
                     if (isCriticalNumericSegment(segment)) {
                         hadCriticalDrop = true
                     }
-                } else {
-                    val cat = params.category ?: effectCategory.ifBlank {
-                        SettingsRepository.VOICE_CATEGORY_DEFAULT
-                    }
-                    CategoryFailureTracker.recordSuccess(cat)
                 }
             }
             val segEnd = SystemClock.uptimeMillis()
@@ -2514,16 +2214,8 @@ class NateqTtsService : TextToSpeechService() {
 
         for ((index, deferred) in deferreds.withIndex()) {
             val segment = segments[index]
-            val cat = when (segment.role) {
-                SpeechRole.NUMBER -> SettingsRepository.VOICE_CATEGORY_NUMBERS
-                SpeechRole.EMOJI -> SettingsRepository.VOICE_CATEGORY_EMOJI
-                else -> effectCategory.ifBlank {
-                    SettingsRepository.VOICE_CATEGORY_DEFAULT
-                }
-            }
             val audio = deferred.await()
             if (audio == null) {
-                CategoryFailureTracker.recordFailure(cat)
                 if (isCriticalNumericSegment(segment)) {
                     hadCriticalDrop = true
                     Log.w(
@@ -2535,7 +2227,6 @@ class NateqTtsService : TextToSpeechService() {
                 }
                 continue
             }
-            CategoryFailureTracker.recordSuccess(cat)
             val phase = LongArray(2)
             for (chunk in audio.chunks) {
                 emitMixedChunk(
@@ -2601,33 +2292,6 @@ class NateqTtsService : TextToSpeechService() {
         "ستة", "سبعة", "ثمانية", "تسعة", "عشرة",
         "0", "1", "2", "3", "010", "011", "012", "015"
     )
-
-    private suspend fun prewarmEmbeddedHostIfNeeded() {
-        val usesVoc = settings.getEngineForCategory(
-            SettingsRepository.VOICE_CATEGORY_NUMBERS
-        ) == VocalizerEmbeddedVoiceProvider.PROVIDER_ID ||
-            settings.getEngineForCategory(
-                SettingsRepository.VOICE_CATEGORY_DEFAULT
-            ) == VocalizerEmbeddedVoiceProvider.PROVIDER_ID ||
-            settings.getEngineForLanguage(LanguageCode.AR.tag) ==
-                VocalizerEmbeddedVoiceProvider.PROVIDER_ID ||
-            settings.getEngineForLanguage(LanguageCode.EN.tag) ==
-                VocalizerEmbeddedVoiceProvider.PROVIDER_ID
-        if (usesVoc) {
-            val vocProvider = EmbeddedProviders.vocalizer(
-                applicationContext
-            )
-            if (vocProvider.isConfigured()) {
-                Log.i(
-                    TAG,
-                    "تدفئة مضيف الأصوات المدمجة في الخلفية بلا نطق"
-                )
-                runCatching {
-                    vocProvider.listVoices(Locale.getDefault())
-                }
-            }
-        }
-    }
 
     private suspend fun warmNumberVoiceCache() {
         val probe = Segment("واحد", LanguageCode.AR.tag, SpeechRole.NUMBER)
@@ -2788,15 +2452,12 @@ class NateqTtsService : TextToSpeechService() {
             settings.getPreferredVoiceIdForCategory(
                 SettingsRepository.VOICE_CATEGORY_NUMBERS
             )
-        }.getOrNull()
+        }.getOrNull() ?: return null
         val engine = runCatching {
             settings.getEngineForCategory(
                 SettingsRepository.VOICE_CATEGORY_NUMBERS
             )
         }.getOrNull()
-        if (voiceId.isNullOrBlank() && engine.isNullOrBlank()) {
-            return null
-        }
         val rate = runCatching {
             settings.getSpeechRateForCategory(
                 SettingsRepository.VOICE_CATEGORY_NUMBERS
@@ -2817,17 +2478,9 @@ class NateqTtsService : TextToSpeechService() {
         } else {
             Locale.forLanguageTag(segment.languageTag)
         }
-        val matches = if (
-            segment.role == SpeechRole.NUMBER || segment.isNumericOnly()
-        ) {
-            true
-        } else {
-            voiceId?.let {
-                VoiceResolutionPolicy.isVoiceLanguageMatch(
-                    it, segment.languageTag
-                )
-            } ?: true
-        }
+        val matches = VoiceResolutionPolicy.isVoiceLanguageMatch(
+            voiceId, segment.languageTag
+        )
         return ConvertTarget(
             convertEngine = if (matches) engine else null,
             convertLocale = locale,

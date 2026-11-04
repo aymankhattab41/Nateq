@@ -117,9 +117,6 @@ object AppPolicy {
     /**
      * هل التطبيق حساس للنظام أو الأمان؟
      */
-    fun isSensitiveApp(packageName: String?): Boolean =
-        isSystemSensitive(packageName)
-
     fun isSystemSensitive(packageName: String?): Boolean {
         if (packageName.isNullOrBlank()) return true
         val lower = packageName.lowercase()

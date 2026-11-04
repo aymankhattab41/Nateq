@@ -64,13 +64,10 @@ internal class NumberReadingController(
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
-        // مفتاح لغة نطق الأرقام والإعلانات (EN/AR) — يعرض الإجراء نحو
+        // مفتاح لغة نطق الإعلانات (EN/AR) — يعرض الإجراء نحو
         // اللغة المعاكسة للحالية
-        val numLang = runCatching { settings.getNumberReadingLanguage() }
-            .getOrNull()?.takeIf { it != "auto" }
-        val current = numLang ?: runCatching {
-            settings.getAnnouncementSpeechLanguage()
-        }.getOrNull()
+        val current = runCatching { settings.getAnnouncementSpeechLanguage() }
+            .getOrNull()
         val isArabic = if (current == null) {
             LanguageCode.isArabic(Locale.getDefault().language)
         } else {
@@ -84,11 +81,8 @@ internal class NumberReadingController(
         btnSpeechLanguage?.setOnClickListener {
             // يُقرأ الوضع الحالي في كل ضغطة (لا قيمة مأسورة)
             // ثم يُقلب نحو المعاكس
-            val nLang = runCatching { settings.getNumberReadingLanguage() }
-                .getOrNull()?.takeIf { it != "auto" }
-            val lang = nLang ?: runCatching {
-                settings.getAnnouncementSpeechLanguage()
-            }.getOrNull()
+            val lang = runCatching { settings.getAnnouncementSpeechLanguage() }
+                .getOrNull()
             val isArabicNow = if (lang == null) {
                 LanguageCode.isArabic(Locale.getDefault().language)
             } else {
@@ -97,7 +91,6 @@ internal class NumberReadingController(
             val next =
                 if (isArabicNow) LanguageCode.EN.tag else LanguageCode.AR.tag
             runCatching { settings.setAnnouncementSpeechLanguage(next) }
-            runCatching { settings.setNumberReadingLanguage(next) }
             // النص يعرض الإجراء نحو المعاكس للحالة الجديدة
             btnSpeechLanguage?.text = if (next == LanguageCode.AR.tag) {
                 fragment.getString(R.string.speech_language_to_en)

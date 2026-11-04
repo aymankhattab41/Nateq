@@ -80,16 +80,15 @@ class EmbeddedEngineHostService : Service() {
             if (!force && HostProtocol.hasMarker(filesDir, id)) {
                 val detail = HostProtocol.readMarker(filesDir, id)
                 Log.e(TAG, "$id انهار في آخر تشغيل: $detail")
-                val crashedCode = HostProtocol.CODE_CRASHED_LAST_RUN
                 val status = EngineStatusRegistry.EngineStatus(
                     engineId = id,
                     state = EngineStatusRegistry.State.CRASHED_LAST_RUN,
-                    code = crashedCode,
+                    code = "CRASHED_LAST_RUN",
                     lastError = detail,
                     updatedAt = System.currentTimeMillis()
                 )
                 EngineStatusRegistry.writeStatusFile(filesDir, status)
-                return HostProtocol.error(crashedCode, detail)
+                return HostProtocol.error("CRASHED_LAST_RUN", detail)
             }
             val session = sessionFor(id)
                 ?: return HostProtocol.error("UNKNOWN_ENGINE", id)
