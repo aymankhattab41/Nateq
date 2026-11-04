@@ -186,7 +186,7 @@ class TimeAnnouncementManagerTest {
     @Test
     fun formatArabic_dualMinutes() {
         assertEquals(
-            "الساعة الآن العاشرة و دقيقتان، صباحاً",
+            "الساعة الآن العاشرة دقيقتان، صباحاً",
             formatArabic(10, 2)
         )
     }
@@ -194,7 +194,7 @@ class TimeAnnouncementManagerTest {
     @Test
     fun formatArabic_pluralMinutes() {
         assertEquals(
-            "الساعة الآن الثالثة و عشر دقائق، مساءً",
+            "الساعة الآن الثالثة عشر دقائق، مساءً",
             formatArabic(15, 10)
         )
     }

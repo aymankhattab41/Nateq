@@ -947,7 +947,7 @@ class TextProcessor(
     companion object {
         private val COMMA_OR_AND_DIGITS = Regex(
             """(?<=[\d\u0660-\u0669\u06F0-\u06F9\uE031])""" +
-                """(?:\s*،\s*|\s*و\s*|\s+and\s+|\s*,\s+|\s+,\s*)""" +
+                """(?:\s*،\s*|\s*و\s*|\s+and\s+|\s+,\s*)""" +
                 """(?=[\d\u0660-\u0669\u06F0-\u06F9\uE030])""",
             RegexOption.IGNORE_CASE
         )

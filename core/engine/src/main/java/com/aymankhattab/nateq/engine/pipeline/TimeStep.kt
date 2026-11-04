@@ -240,8 +240,8 @@ internal class TimeStep(
                     )
                     "$nextHourText إلا ربع"
                 }
-                in 1..29 -> "$hourText و ${minutesPart(minute)}"
-                in 31..44 -> "$hourText و ${minutesPart(minute)}"
+                in 1..29 -> "$hourText ${minutesPart(minute)}"
+                in 31..44 -> "$hourText ${minutesPart(minute)}"
                 in 46..59 -> {
                     val remaining = 60 - minute
                     val nextHour = if (hour12 == 12) 1 else hour12 + 1
@@ -258,9 +258,9 @@ internal class TimeStep(
                 0 -> hourText
                 15 -> "$hourText والربع"
                 30 -> "$hourText والنصف"
-                else -> "$hourText و ${minutesPart(minute)}"
+                else -> "$hourText ${minutesPart(minute)}"
             }
-            "$minutesPhrase و ${secondsPart(seconds)}"
+            "$minutesPhrase ${secondsPart(seconds)}"
         }
         return "$body $period"
     }

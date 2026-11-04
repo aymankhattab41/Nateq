@@ -680,7 +680,8 @@ class TextProcessorTest {
         assertEquals("مائة مليون", processor.process("100,000,000", "ar"))
         assertEquals("مائتا مليون", processor.process("200,000,000", "ar"))
         // مئات مضبوطة:
-        assertEquals("ثلاثمائة ألف", processor.process("300,000", "ar"))
+        assertEquals("ثلاثمئت ألف", processor.process("300,000", "ar"))
+        assertEquals("خمسمئت ألف", processor.process("500,000", "ar"))
     }
 
     @Test

@@ -109,13 +109,24 @@ internal class EngineVoicesCatalog(
         return null
     }
 
-    /** اللغات المعروضة: العربية والإنجليزية أولاً ثم الباقي أبجدياً. */
+    /** اللغات المعروضة: تنبثق ديناميكياً من المحركات المرئية
+     *  فقط. */
     internal fun languages(): List<String> {
-        val rest = byLanguage.keys
+        val supported = byLanguage.filter { (_, rows) ->
+            rows.any { row ->
+                VisibleEngines.isVisible(row.enginePackage)
+            }
+        }.keys
+        val hasAr = supported.contains(LANGUAGE_AR)
+        val hasEn = supported.contains(LANGUAGE_EN)
+        val rest = supported
             .filterNot { it == LANGUAGE_AR || it == LANGUAGE_EN }
             .sorted()
-        val all = listOf(LANGUAGE_AR, LANGUAGE_EN) + rest
-        return VisibleLanguages.filter(all)
+        val all = mutableListOf<String>()
+        if (hasAr || byLanguage.isEmpty()) all.add(LANGUAGE_AR)
+        if (hasEn || byLanguage.isEmpty()) all.add(LANGUAGE_EN)
+        all.addAll(rest)
+        return all
     }
 
     /** تسمية اللغة المعروضة باسمها المحلي (العربية/English/…). */

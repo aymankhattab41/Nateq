@@ -656,44 +656,10 @@
         <LinearLayout android:id="@+id/ll_filter_content" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:visibility="gone">
 
             <androidx.appcompat.widget.SwitchCompat
-                android:id="@+id/switch_filter_languages"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:minHeight="48dp"
-                android:text="@string/filter_languages_switch"
-                android:textAppearance="?attr/textAppearanceSubtitle1" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_choose_languages"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:minHeight="48dp"
-                android:text="@string/filter_languages_btn" />
-
-            <TextView
-                android:id="@+id/tv_filter_languages_warning"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="@string/filter_languages_warning"
-                android:textAppearance="?attr/textAppearanceCaption"
-                android:textColor="@color/text_error"
-                android:visibility="gone" />
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginTop="16dp"
-                android:layout_marginBottom="16dp"
-                android:background="@color/divider_color" />
-
-            <androidx.appcompat.widget.SwitchCompat
                 android:id="@+id/switch_filter_engines"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
                 android:minHeight="48dp"
                 android:text="@string/filter_engines_switch"
                 android:textAppearance="?attr/textAppearanceSubtitle1" />

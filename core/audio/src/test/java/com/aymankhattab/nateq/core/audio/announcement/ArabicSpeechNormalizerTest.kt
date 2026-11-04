@@ -275,4 +275,28 @@ class ArabicSpeechNormalizerTest {
         // ج.م تبقى كما هي ولا تُمس
         assertEquals("ج.م", ArabicSpeechNormalizer.normalize("ج.م"))
     }
+
+    @Test
+    fun compoundHundreds_normalizesToOpenTaaBeforeScale() {
+        assertEquals(
+            "خمسمئت ألف",
+            ArabicSpeechNormalizer.normalize("خمسمائة ألف")
+        )
+        assertEquals(
+            "خمسمئت ألف",
+            ArabicSpeechNormalizer.normalize("خمس مائة ألف")
+        )
+        assertEquals(
+            "خمسمائة",
+            ArabicSpeechNormalizer.normalize("خمس مائة")
+        )
+        assertEquals(
+            "ثلاثمئت ألف",
+            ArabicSpeechNormalizer.normalize("ثلاثمائة ألف")
+        )
+        assertEquals(
+            "خمسمئت مليون",
+            ArabicSpeechNormalizer.normalize("خمسمائة مليون")
+        )
+    }
 }
