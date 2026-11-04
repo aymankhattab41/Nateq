@@ -37,6 +37,12 @@ object VisibleEngines {
         if (trimmed == "vocalizer_embedded" &&
             allowedEngines.contains("vocalizer")
         ) return true
+        if (trimmed == "microsoft" &&
+            allowedEngines.contains("microsoft_embedded")
+        ) return true
+        if (trimmed == "microsoft_embedded" &&
+            allowedEngines.contains("microsoft")
+        ) return true
         return false
     }
 

@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.settings
 
+import com.aymankhattab.nateq.core.audio.providers.MicrosoftCatalogItem
 import com.aymankhattab.nateq.core.audio.providers.VocalizerCatalogItem
 import com.aymankhattab.nateq.core.audio.providers.VocalizerModelCatalog
 import java.util.Locale
@@ -49,6 +50,42 @@ internal object EmbeddedVoiceTree {
     /** اسمُ صوت Vocalizer المعروض (بلا لاحقة الجودة). */
     fun vocalizerTitle(
         item: VocalizerCatalogItem,
+        isAr: Boolean
+    ): String {
+        val full = if (isAr) item.displayNameAr else item.displayNameEn
+        return full.substringBefore(" (").trim()
+    }
+
+    /** لغاتُ Microsoft المميّزة (بلا تكرار إقليمي) مرتّبةً بالرمز. */
+    fun microsoftLanguages(
+        items: List<MicrosoftCatalogItem>
+    ): List<Locale> =
+        items
+            .map { it.locale }
+            .distinctBy { it.language }
+            .sortedBy { it.language }
+
+    /** أصواتُ لغة Microsoft مجمّعةً؛ كلُّ صوتٍ يضمّ متغيّراته. */
+    fun microsoftVoices(
+        items: List<MicrosoftCatalogItem>,
+        locale: Locale
+    ): List<VoiceNode<MicrosoftCatalogItem>> =
+        items
+            .filter { it.locale.language == locale.language }
+            .groupBy { it.voiceName }
+            .map { (key, voiceItems) ->
+                val sample = voiceItems.first()
+                VoiceNode(
+                    key = key,
+                    titleAr = microsoftTitle(sample, true),
+                    titleEn = microsoftTitle(sample, false),
+                    variants = voiceItems
+                )
+            }
+
+    /** اسمُ صوت Microsoft المعروض (بلا لاحقة الإقليم). */
+    fun microsoftTitle(
+        item: MicrosoftCatalogItem,
         isAr: Boolean
     ): String {
         val full = if (isAr) item.displayNameAr else item.displayNameEn

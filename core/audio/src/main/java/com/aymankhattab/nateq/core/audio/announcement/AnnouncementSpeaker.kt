@@ -46,6 +46,7 @@ import com.aymankhattab.nateq.core.common.VisibleEngines
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
 import com.aymankhattab.nateq.core.audio.providers.EngineBindVerifier
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
+import com.aymankhattab.nateq.core.audio.providers.MicrosoftEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.engine.SingleLetterGuard
@@ -1167,7 +1168,14 @@ class AnnouncementSpeaker(
         if (HostProtocol.isEmbeddedEngine(engine)) {
             tts = null
             val isReady = runCatching {
-                EmbeddedProviders.vocalizer(appContext).isConfigured()
+                val prov = if (HostProtocol.normalizeEngineId(
+                    engine.orEmpty()
+                ) == HostProtocol.ENGINE_MICROSOFT) {
+                    EmbeddedProviders.microsoft(appContext)
+                } else {
+                    EmbeddedProviders.vocalizer(appContext)
+                }
+                prov.isConfigured()
             }.getOrDefault(false)
             val completion = initGate.complete(isReady)
             completion.served.forEach { cb -> cb(isReady) }
@@ -2312,7 +2320,13 @@ speechCycle.incrementAndGet()
         stopEmbeddedAudioTrack()
 
         embeddedSpeechJob = prewarmScope.launch {
-            val provider = EmbeddedProviders.vocalizer(appContext)
+            val provider = if (HostProtocol.normalizeEngineId(
+                boundEngine.orEmpty()
+            ) == HostProtocol.ENGINE_MICROSOFT) {
+                EmbeddedProviders.microsoft(appContext)
+            } else {
+                EmbeddedProviders.vocalizer(appContext)
+            }
             val boost = settings?.let { s ->
                 if (runCatching { s.isSpeechBoostEnabled() }
                         .getOrDefault(false)
@@ -2368,10 +2382,18 @@ speechCycle.incrementAndGet()
                     val effectivePitch =
                         unit.pitch.coerceAtLeast(MIN_RATE_OR_PITCH)
                     val rawVoice = unit.voiceId ?: voiceId
+                    val defaultEmb = if (
+                        HostProtocol.normalizeEngineId(
+                            boundEngine.orEmpty()
+                        ) == HostProtocol.ENGINE_MICROSOFT
+                    ) {
+                        MicrosoftEmbeddedVoiceProvider.PROVIDER_ID
+                    } else {
+                        VocalizerEmbeddedVoiceProvider.PROVIDER_ID
+                    }
                     val descriptor = VoiceDescriptor(
                         id = rawVoice.orEmpty(),
-                        providerId = boundEngine
-                            ?: VocalizerEmbeddedVoiceProvider.PROVIDER_ID,
+                        providerId = boundEngine ?: defaultEmb,
                         displayName = rawVoice.orEmpty(),
                         locale = unit.locale
                     )

@@ -32,6 +32,7 @@ object HostProtocol {
 
     // محرّكات المضيف — أسماء ثابتة تمرّ عبر AIDL.
     const val ENGINE_VOCALIZER = "vocalizer"
+    const val ENGINE_MICROSOFT = "microsoft"
 
     /** رمز «انهار المحرّك في آخر تشغيل» — يمنع التهيئة حتى إعادة المحاولة. */
     const val CODE_CRASHED_LAST_RUN = "CRASHED_LAST_RUN"
@@ -39,18 +40,21 @@ object HostProtocol {
     /**
      * توحيد معرّف المحرك إلى الاسم القانوني المعتمد في المضيف:
      * vocalizer_embedded -> vocalizer
+     * microsoft_embedded -> microsoft
      * الباقي كما هو بعد تحويله إلى أحرف صغيرة.
      */
     fun normalizeEngineId(id: String): String =
         when (val lower = id.lowercase()) {
             "vocalizer_embedded" -> ENGINE_VOCALIZER
+            "microsoft_embedded" -> ENGINE_MICROSOFT
             else -> lower
         }
 
     /** هل الحزمة أو المعرّف يتبع محرّكاً مدمجاً في التطبيق؟ */
     fun isEmbeddedEngine(pkg: String?): Boolean {
         if (pkg.isNullOrBlank()) return false
-        return normalizeEngineId(pkg) == ENGINE_VOCALIZER
+        val norm = normalizeEngineId(pkg)
+        return norm == ENGINE_VOCALIZER || norm == ENGINE_MICROSOFT
     }
 
     // أنواع الإطارات في الأنبوب.

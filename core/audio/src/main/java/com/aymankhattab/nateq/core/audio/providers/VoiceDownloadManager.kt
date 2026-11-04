@@ -74,8 +74,11 @@ object VoiceDownloadManager {
      */
     fun getPartialBytes(context: Context, voiceId: String): Long {
         val dir = DownloadHttpHelper.getDownloadsDir(context)
-        val file = File(dir, "vocalizer_${voiceId}.zip.part")
-        return if (file.exists() && file.length() > 0) file.length() else 0L
+        val voc = File(dir, "vocalizer_${voiceId}.zip.part")
+        if (voc.exists() && voc.length() > 0) return voc.length()
+        val ms = File(dir, "microsoft_${voiceId}.zip.part")
+        if (ms.exists() && ms.length() > 0) return ms.length()
+        return 0L
     }
 
     /**
@@ -83,8 +86,10 @@ object VoiceDownloadManager {
      */
     fun deletePartial(context: Context, voiceId: String) {
         val dir = DownloadHttpHelper.getDownloadsDir(context)
-        val f = File(dir, "vocalizer_${voiceId}.zip.part")
-        if (f.exists()) f.delete()
+        val voc = File(dir, "vocalizer_${voiceId}.zip.part")
+        if (voc.exists()) voc.delete()
+        val ms = File(dir, "microsoft_${voiceId}.zip.part")
+        if (ms.exists()) ms.delete()
     }
 
     private fun updateState(voiceId: String, state: DownloadState) {
@@ -168,6 +173,60 @@ object VoiceDownloadManager {
         }
         // التسجيل قبل الإطلاق يمنع سباقًا: لو انتهى الـ job فورًا (فشل
         // سريع) لأزال نفسه من activeJobs قبل تسجيله فيبقى معلّقًا.
+        activeJobs[item.id] = job
+        job.start()
+    }
+
+    /**
+     * بدء تنزيل صوت مايكروسوفت المدمج في الخلفية عبر الخدمة الأمامية.
+     */
+    fun startMicrosoftDownload(
+        context: Context,
+        item: MicrosoftCatalogItem
+    ) {
+        if (isDownloading(item.id)) return
+        val appContext = context.applicationContext
+        voiceTitles[item.id] = item.displayNameAr
+
+        ensureServiceRunning(appContext)
+
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            lastProgress[item.id] = 0
+            updateState(
+                item.id,
+                DownloadState.Downloading(0, 0L, -1L)
+            )
+            notifyServiceProgress(appContext, item.id, 0)
+
+            val result = MicrosoftDownloader.downloadVoice(appContext, item) {
+                percent ->
+                publishProgress(appContext, item.id, percent)
+            }
+
+            activeJobs.remove(item.id)
+            lastProgress.remove(item.id)
+
+            if (result.isSuccess) {
+                DownloadLog.clearError(item.id)
+                updateState(item.id, DownloadState.Success)
+            } else {
+                val ex = result.exceptionOrNull()
+                val err = if (ex is DownloadError) ex else {
+                    DownloadError(
+                        DownloadError.NETWORK,
+                        ex?.message ?: "Download failed"
+                    )
+                }
+                DownloadLog.recordError(
+                    voiceId = item.id,
+                    engineId = MicrosoftEmbeddedVoiceProvider.PROVIDER_ID,
+                    errorCode = err.code,
+                    errorMessage = err.details
+                )
+                updateState(item.id, DownloadState.Error(err))
+            }
+            checkAllCompleted(appContext)
+        }
         activeJobs[item.id] = job
         job.start()
     }

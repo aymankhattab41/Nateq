@@ -50,7 +50,9 @@ val ARABIC_TASHKEEL_AWARE_ENGINES: Set<String> = setOf(
  * لتجريد التشكيل العام وحفظ ما يضيفه مطبّع النون الصريحة.
  */
 fun stripTashkeelFor(enginePackage: String?): Boolean = when (enginePackage) {
-    "vocalizer_embedded" -> true
+    "vocalizer_embedded",
+    "microsoft_embedded",
+    "microsoft" -> true
     else -> enginePackage !in ARABIC_TASHKEEL_AWARE_ENGINES
 }
 

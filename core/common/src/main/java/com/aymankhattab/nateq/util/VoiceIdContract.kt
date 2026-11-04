@@ -130,6 +130,25 @@ object VoiceIdContract {
             return true
         }
 
+        val isMicrosoftEmbedded = lowerEng == "microsoft" ||
+            lowerEng == "microsoft_embedded" ||
+            lowerEng.contains("microsoft")
+
+        if (isMicrosoftEmbedded) {
+            val isGoogle = voiceId.contains("-x-") ||
+                voiceId.endsWith("-local")
+            val isAcapela = voiceId.startsWith("ar_") ||
+                voiceId.startsWith("en_") ||
+                voiceId.startsWith("ara-") ||
+                voiceId.startsWith("eng-") ||
+                voiceId.startsWith("fra-") ||
+                voiceId.contains("acapela")
+            val isSamsung = voiceId.contains("_f00") ||
+                voiceId.contains("_m00")
+            if (isGoogle || isAcapela || isSamsung) return false
+            return true
+        }
+
         if (lowerEng == "com.google.android.tts") {
             if (voiceId.startsWith("ara-", ignoreCase = true) ||
                 voiceId.startsWith("eng-", ignoreCase = true) ||

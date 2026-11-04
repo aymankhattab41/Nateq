@@ -305,6 +305,34 @@ private val VOCALIZER_VOICE_KEYS: Set<String> by lazy {
  * غيرها خطأً إلى المسار النظامي). مطابقة كاملة (غير جزئية) مع الاسم أو
  * المعرّف، أو بادئة معرّف `vocalizer`.
  */
+private var microsoftVoiceKeys: Set<String>? = null
+
+internal fun isMicrosoftVoiceName(
+    context: Context,
+    voiceName: String?
+): Boolean {
+    val name = voiceName?.trim()?.lowercase() ?: return false
+    if (name.isEmpty()) return false
+    if (name.startsWith("microsoft")) return true
+    val keys = microsoftVoiceKeys ?: run {
+        val loaded = com.aymankhattab.nateq.core.audio.providers
+            .MicrosoftModelCatalog.getItems(context)
+            .flatMap {
+                listOf(
+                    it.voiceName,
+                    it.id,
+                    it.modelName,
+                    it.topDirName
+                )
+            }
+            .map { it.lowercase() }
+            .toSet()
+        microsoftVoiceKeys = loaded
+        loaded
+    }
+    return name in keys
+}
+
 internal fun isVocalizerVoiceName(voiceName: String?): Boolean {
     val name = voiceName?.trim()?.lowercase() ?: return false
     if (name.isEmpty()) return false
@@ -380,6 +408,8 @@ internal class VoicePreviewHelper(private val context: Context) {
         return when (norm) {
             HostProtocol.ENGINE_VOCALIZER ->
                 EmbeddedProviders.vocalizer(context.applicationContext)
+            HostProtocol.ENGINE_MICROSOFT ->
+                EmbeddedProviders.microsoft(context.applicationContext)
             else ->
                 throw IllegalArgumentException("Unknown engine: $pkg")
         }
@@ -669,10 +699,20 @@ internal class VoicePreviewHelper(private val context: Context) {
         val effEngine = effectiveParams.enginePkg?.takeIf { it.isNotBlank() }
         if (isEmbeddedEngine(effEngine) ||
             (effEngine == null &&
-                isVocalizerVoiceName(effectiveParams.voiceName))
+                (isVocalizerVoiceName(effectiveParams.voiceName) ||
+                    isMicrosoftVoiceName(
+                        context,
+                        effectiveParams.voiceName
+                    )))
         ) {
             val canon = if (isEmbeddedEngine(effEngine)) {
                 HostProtocol.normalizeEngineId(effEngine!!)
+            } else if (isMicrosoftVoiceName(
+                    context,
+                    effectiveParams.voiceName
+                )
+            ) {
+                HostProtocol.ENGINE_MICROSOFT
             } else {
                 HostProtocol.ENGINE_VOCALIZER
             }

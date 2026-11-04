@@ -13,6 +13,7 @@ import com.aymankhattab.nateq.core.audio.CrashGuard
 import com.aymankhattab.nateq.core.audio.EmergencyVoice
 import com.aymankhattab.nateq.core.audio.EmergencyVoiceConfig
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
+import com.aymankhattab.nateq.core.audio.providers.MicrosoftEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.common.VisibleEngines
 import com.aymankhattab.nateq.core.common.VisibleLanguages
@@ -93,6 +94,8 @@ internal object EmergencyVoiceController {
         val allInstalled = EnginePicker.installedEngines(context)
         val systemEngines = allInstalled.filter {
             it.packageName != VocalizerEmbeddedVoiceProvider.PROVIDER_ID &&
+                it.packageName !=
+                MicrosoftEmbeddedVoiceProvider.PROVIDER_ID &&
                 VisibleEngines.isVisible(it.packageName)
         }
         val engineLabels = systemEngines.map { it.label }

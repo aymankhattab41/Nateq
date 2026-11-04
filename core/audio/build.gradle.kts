@@ -98,6 +98,9 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 
+    // محرك ميكروسوفت المدمج (Microsoft Embedded Cognitive Services Speech SDK)
+    implementation("com.microsoft.cognitiveservices.speech:client-sdk-embedded:1.51.2")
+
     // اختبارات الوحدة (JVM + Robolectric) — نفس طقم اختبارات :app.
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)

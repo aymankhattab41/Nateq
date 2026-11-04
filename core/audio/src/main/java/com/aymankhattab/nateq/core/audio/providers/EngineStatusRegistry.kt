@@ -91,6 +91,7 @@ object EngineStatusRegistry {
     /** توحيد معرف المحرك بين صيغ المضيف والمزود. */
     fun normalizeId(engineId: String): String = when (engineId.lowercase()) {
         "vocalizer", "vocalizer_embedded" -> "vocalizer_embedded"
+        "microsoft", "microsoft_embedded" -> "microsoft_embedded"
         else -> engineId.lowercase()
     }
 
@@ -298,6 +299,8 @@ object EngineStatusRegistry {
         val storageEngine = when (norm) {
             "vocalizer", "vocalizer_embedded" ->
                 EmbeddedStorage.Engine.VOCALIZER
+            "microsoft", "microsoft_embedded" ->
+                EmbeddedStorage.Engine.MICROSOFT
             else -> null
         }
 
@@ -375,6 +378,7 @@ object EngineStatusRegistry {
         if (context != null) {
             val canonicalEngines = listOf(
                 "vocalizer_embedded",
+                "microsoft_embedded",
             )
             return canonicalEngines.map { statusOf(context, it) }
         }

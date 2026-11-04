@@ -43,6 +43,10 @@ object EmbeddedStorage {
         VOCALIZER(
             "VocalizerEx2",
             listOf("VocalizerEx2")
+        ),
+        MICROSOFT(
+            "Microsoft",
+            listOf("Microsoft")
         )
     }
 
@@ -208,6 +212,28 @@ object EmbeddedStorage {
         val inventoryFiles = mutableListOf<InventoryFile>()
 
         when (engine) {
+            Engine.MICROSOFT -> {
+                for (dir in searchDirs) {
+                    val comp = MicrosoftVoiceManifest.completeVoiceDirs(dir)
+                    for (c in comp) {
+                        completedVoices.add(c.name)
+                    }
+                }
+                for (f in distinctFiles) {
+                    val ext = f.extension.lowercase()
+                    val isCatalogMatch = f.name == "am_v5_decoder.bin" ||
+                        ext in setOf("bin", "ini", "dat", "xml", "txt")
+                    inventoryFiles.add(
+                        InventoryFile(
+                            file = f,
+                            relativePath = f.name,
+                            name = f.name,
+                            size = f.length(),
+                            isRecognized = isCatalogMatch
+                        )
+                    )
+                }
+            }
             Engine.VOCALIZER -> {
                 for (dir in searchDirs) {
                     completedVoices.addAll(

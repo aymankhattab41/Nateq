@@ -712,6 +712,10 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Integrated Microsoft Neural Embedded TTS engine for high-quality, completely offline speech synthesis.
+• Added 336 offline neural voices across 146 languages and locales (including 32 Arabic voices) with full name and country localization.
+• Advanced embedded downloader for Microsoft voices with hierarchical navigation (languages -> voices -> models) and download confirmation dialog displaying file size and specs.
+• Full support for Microsoft voices across all event categories and announcements (Time, Caller, Battery, Notifications, and Default).
 • Restrict displayed languages in each category to only those supported by the selected engine, and ensure English speech works properly across all features.
 • Restrict filtering to TTS engines only so supported languages are dynamically derived from visible engines.
 • Fixed pronunciation of hundreds of thousands/millions (e.g. 500,000) to use connected form "خمسمئت ألف" to eliminate pauses and unnatural stops.
@@ -741,9 +745,14 @@ Version %1$s
 
     <!-- Embedded engines & voice downloads -->
     <string name="group_embedded_engines_title">Embedded Engines &amp; Voice Downloads</string>
-    <string name="section_embedded_downloader_title">Download &amp; Manage Embedded Voices (Vocalizer)</string>
+    <string name="section_embedded_downloader_title">Download &amp; Manage Embedded Voices</string>
     <string name="section_embedded_downloader_summary">High quality offline neural and embedded voices working completely without internet</string>
     <string name="embedded_engine_vocalizer">Vocalizer Ex 2</string>
+    <string name="embedded_engine_microsoft">Microsoft Neural</string>
+    <string name="voice_provider_microsoft_embedded">Microsoft (Embedded)</string>
+    <string name="embedded_download_confirm_title">Confirm Voice Download</string>
+    <string name="embedded_download_confirm_msg">Voice: %1$s&#10;Engine: %2$s&#10;Size: %3$s&#10;Specs: %4$s&#10;&#10;Do you want to proceed with downloading?</string>
+    <string name="embedded_download_confirm_btn">Confirm Download</string>
     <string name="embedded_engine_Vocalizer">Vocalizer TTS</string>
 
     <!-- ع٢٩-8 بند 2: Engine status + details dialog -->

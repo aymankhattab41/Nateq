@@ -152,6 +152,21 @@ object EnginePicker {
             )
         }
 
+        try {
+            val ms = EmbeddedProviders.microsoft(context)
+            scanOneEmbedded(
+                engines,
+                ms,
+                MicrosoftEmbeddedVoiceProvider.PROVIDER_ID
+            )
+        } catch (t: Throwable) {
+            EngineStatusRegistry.noteFailure(
+                MicrosoftEmbeddedVoiceProvider.PROVIDER_ID,
+                "SCAN_FAILED",
+                t.message ?: t.javaClass.simpleName
+            )
+        }
+
         return engines.distinctBy { it.packageName }
     }
 

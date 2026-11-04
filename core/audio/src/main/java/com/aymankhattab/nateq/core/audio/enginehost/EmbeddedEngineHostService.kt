@@ -42,6 +42,7 @@ class EmbeddedEngineHostService : Service() {
         /** المحركات المعروفة — أي معرّف آخر يُرفض برمز معنون. */
         private val KNOWN_ENGINES = setOf(
             HostProtocol.ENGINE_VOCALIZER,
+            HostProtocol.ENGINE_MICROSOFT
         )
     }
 
@@ -367,6 +368,8 @@ class EmbeddedEngineHostService : Service() {
         val created = when (normId) {
             HostProtocol.ENGINE_VOCALIZER ->
                 VocalizerHostSession(this)
+            HostProtocol.ENGINE_MICROSOFT ->
+                MicrosoftHostSession(this)
             else -> return null
         }
         return sessions.putIfAbsent(normId, created) ?: created

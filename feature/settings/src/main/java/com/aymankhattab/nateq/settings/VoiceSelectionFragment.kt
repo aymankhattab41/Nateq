@@ -61,6 +61,7 @@ import com.aymankhattab.nateq.core.audio.engine.UnavailableEngine
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
 import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
 import com.aymankhattab.nateq.core.audio.providers.VocalizerDownloader
+import com.aymankhattab.nateq.core.audio.providers.MicrosoftEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.util.announceCompat
 import com.aymankhattab.nateq.util.LanguageCode
@@ -2808,6 +2809,13 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     storageEngine =
                         com.aymankhattab.nateq.core.audio.providers
                             .EmbeddedStorage.Engine.VOCALIZER
+                ),
+                EmbeddedEngineDiag(
+                    id = MicrosoftEmbeddedVoiceProvider.PROVIDER_ID,
+                    name = "Microsoft Neural",
+                    storageEngine =
+                        com.aymankhattab.nateq.core.audio.providers
+                            .EmbeddedStorage.Engine.MICROSOFT
                 )
             )
             embeddedEngines.forEach { diag ->
