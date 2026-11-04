@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
-import com.aymankhattab.nateq.core.common.VisibleEngines
 import com.aymankhattab.nateq.core.data.SettingsRepository
 
 /**
@@ -31,11 +30,9 @@ object NextEngineSwitcher {
     ): List<EnginePicker.InstalledEngine> {
         val systemEngines =
             SystemTtsEngineController.getInstalledEngines(context)
-        return systemEngines
-            .filter { VisibleEngines.isVisible(it.packageName) }
-            .map {
-                EnginePicker.InstalledEngine(it.packageName, it.label)
-            }
+        return systemEngines.map {
+            EnginePicker.InstalledEngine(it.packageName, it.label)
+        }
     }
 
     /**

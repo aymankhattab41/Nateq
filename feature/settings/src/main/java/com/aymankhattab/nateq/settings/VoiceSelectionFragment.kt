@@ -1,6 +1,5 @@
 package com.aymankhattab.nateq.settings
 
-import com.aymankhattab.nateq.settings.extras.ExtrasSettingsActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.app.Dialog
@@ -902,15 +901,6 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         btnReportError.setOnClickListener { onReportErrorClicked() }
         syncReportErrorButtonText()
 
-        // زر الإضافات: يفتح شاشة إدارة الميزات الإضافية (ع٥٦)
-        view.findViewById<View>(R.id.btn_extras)?.setOnClickListener {
-            val intent = Intent(
-                requireContext(),
-                ExtrasSettingsActivity::class.java
-            )
-            startActivity(intent)
-        }
-
         // زر آخر التحديثات: يعرض ملخص أحدث إصدار وتغييراته في حوار
         btnChangelog = view.findViewById(R.id.btn_changelog)
         btnChangelog.setOnClickListener { showChangelogDialog() }
@@ -992,46 +982,6 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             embeddedDownloaderSection.buildStatusSummary()
         }
         oemGuidance = OemGuidanceController(this).apply { setup(view) }
-
-        view.findViewById<View>(R.id.btn_emergency_voice)?.setOnClickListener {
-            EmergencyVoiceController.show(
-                requireContext(),
-                settings,
-                engineCatalog,
-                voicePreview
-            )
-        }
-        LanguageFilterController(
-            requireContext(),
-            settings,
-            engineCatalog
-        ) {
-            accordion.updateSectionStatuses()
-            if (::categoryVoicePanel.isInitialized) {
-                categoryVoicePanel.refreshLanguages()
-                categoryVoicePanel.refreshCategoryEngines()
-            }
-            if (::callerSection.isInitialized) {
-                callerSection.refreshCallerEngines()
-                callerSection.refreshCallerVoices()
-            }
-        }.setup(view)
-
-        EngineFilterController(
-            requireContext(),
-            settings
-        ) {
-            accordion.updateSectionStatuses()
-            if (::categoryVoicePanel.isInitialized) {
-                categoryVoicePanel.refreshLanguages()
-                categoryVoicePanel.refreshCategoryEngines()
-            }
-            if (::callerSection.isInitialized) {
-                callerSection.refreshCallerEngines()
-                callerSection.refreshCallerVoices()
-            }
-        }.setup(view)
-
         setupLanguageToggle()
         setupCheckUpdates()
         engineSection.setupAutoConvertUI(view)
@@ -1111,9 +1061,6 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         }
         if (::categoryVoicePanel.isInitialized) {
             categoryVoicePanel.refreshCategoryEngines()
-        }
-        if (::callerSection.isInitialized) {
-            callerSection.refreshCallerEngines()
         }
         if (::accordion.isInitialized) accordion.updateSectionStatuses()
         view?.let { root ->
@@ -1925,10 +1872,8 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             return
         }
         val forced =
-            runCatching { settings.getNumberReadingLanguage() }
-                .getOrNull()?.takeIf { it != "auto" }
-                ?: runCatching { settings.getAnnouncementSpeechLanguage() }
-                    .getOrNull()
+            runCatching { settings.getAnnouncementSpeechLanguage() }
+                .getOrNull()
         val appLang = runCatching { settings.getAppLanguage() }.getOrNull()
             ?: Locale.getDefault().language
         val isEnglish = if (forced != null) LanguageCode.isEnglish(forced)
@@ -2236,18 +2181,16 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
         // يُحترم صوت الفئة المحفوظ (قد يكون من محرك خارجي) فيُمرَّر
         // name المطابق إلى voiceId — resetVoice قصير الدارة بلا
         // إعادة تهيئة غير ضرورية.
-        val preferredVoice = runCatching {
+        runCatching {
             settings.getPreferredVoiceIdForCategory(category)
-        }.getOrNull()
-        speaker.resetVoice(preferredVoice)
+        }.getOrNull()?.let { speaker.resetVoice(it) }
         speaker.speak(
             text,
             Locale.forLanguageTag(languageTag),
             rate,
             1.0f,
             1.0f,
-            engineOverride = engine,
-            category = category
+            engineOverride = engine
         )
     }
 
@@ -2802,10 +2745,6 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
             // ── محركات TTS المثبَّتة ──────────────────────────────────
             sb.appendLine("--- محركات TTS المثبَّتة ---")
-            com.aymankhattab.nateq.core.audio.providers
-                .EngineRmsCalibrator.calibrateAll(
-                    context, settings, forceRecompute = false
-                )
             val engines = EnginePicker.installedEngines(context)
             if (engines.isEmpty()) {
                 sb.appendLine("• لم يُعثر على محركات TTS")
@@ -3180,24 +3119,12 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                         .TtsDiagnosticsProvider.KEY_A11Y_EVENTS_PER_MIN,
                     0
                 )
-                val a11yTotal = ttsSnapshot.getInt(
-                    com.aymankhattab.nateq.core.audio.engine
-                        .TtsDiagnosticsProvider.KEY_A11Y_EVENTS_TOTAL,
-                    0
-                )
                 val usagePolls = ttsSnapshot.getInt(
                     com.aymankhattab.nateq.core.audio.engine
                         .TtsDiagnosticsProvider.KEY_USAGE_STATS_POLLS,
                     0
                 )
-                sb.appendLine(
-                    "  أحداث إمكانية الوصول/د (:tts، آخر 60ث): " +
-                        "$a11yPerMin"
-                )
-                sb.appendLine(
-                    "  إجمالي أحداث إمكانية الوصول منذ الإقلاع: " +
-                        "$a11yTotal"
-                )
+                sb.appendLine("  أحداث إمكانية الوصول/د (:tts): $a11yPerMin")
                 if (usagePolls > 0) {
                     sb.appendLine("  استطلاعات UsageStats (:tts): $usagePolls")
                 }
@@ -3266,28 +3193,6 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
             }
             sb.appendLine("")
 
-            val numTraces = ttsSnapshot?.getStringArrayList(
-                com.aymankhattab.nateq.core.audio.engine
-                    .TtsDiagnosticsProvider.KEY_NUMBER_SEGMENT_TRACES
-            )
-            if (!numTraces.isNullOrEmpty()) {
-                sb.appendLine(
-                    "--- سجل تتبع المقاطع الرقمية " +
-                        "(${numTraces.size}) ---"
-                )
-                numTraces.forEach { trace -> sb.appendLine(trace) }
-                sb.appendLine("")
-            }
-
-            val extrasDiag = ttsSnapshot?.getString(
-                com.aymankhattab.nateq.core.audio.engine
-                    .TtsDiagnosticsProvider.KEY_EXTRAS_DIAGNOSTICS
-            )
-            if (!extrasDiag.isNullOrBlank()) {
-                sb.appendLine(extrasDiag)
-                sb.appendLine("")
-            }
-
             sb.toString()
         }
 
@@ -3303,39 +3208,19 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
 
     private fun showEngineDiagnosticsActionsDialog(ctx: Context) {
         val options = arrayOf(
-            "معايرة جهارة الصوت لجميع المحركات (RMS)",
             "مشاركة ملف تفريغ تبديل المحرك",
             "إعادة محاولة تبديل المحرك"
         )
         MaterialAlertDialogBuilder(ctx)
-            .setTitle("خيارات تفريغ وتبديل ومعايرة المحركات")
+            .setTitle("خيارات تفريغ وتبديل المحركات")
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> runRmsLoudnessCalibration(ctx)
-                    1 -> shareEngineSwitchDump(ctx)
-                    2 -> retryEngineSwitch(ctx)
+                    0 -> shareEngineSwitchDump(ctx)
+                    1 -> retryEngineSwitch(ctx)
                 }
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
-    }
-
-    private fun runRmsLoudnessCalibration(ctx: Context) {
-        viewLifecycleOwner.lifecycleScope.launch {
-            Toast.makeText(
-                ctx,
-                "جاري معايرة جهارة الصوت للمحركات...",
-                Toast.LENGTH_SHORT
-            ).show()
-            val calibrated = com.aymankhattab.nateq.core.audio.providers
-                .EngineRmsCalibrator.calibrateAll(
-                    ctx, settings, forceRecompute = true
-                )
-            val msg = "تمت معايرة جهارة الصوت لـ $calibrated محرك بنجاح"
-            Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
-            view?.announceCompat(msg)
-            showDiagnosticsDialog()
-        }
     }
 
     private fun shareEngineSwitchDump(ctx: Context) {

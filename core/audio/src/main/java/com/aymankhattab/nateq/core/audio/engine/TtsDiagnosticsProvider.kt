@@ -9,7 +9,6 @@ import com.aymankhattab.nateq.core.audio.accessibility.A11yStateStore
 import com.aymankhattab.nateq.core.audio.accessibility.AccessibilityBridge
 import com.aymankhattab.nateq.core.audio.accessibility.BatteryDiagnosticsTracker
 import com.aymankhattab.nateq.core.audio.accessibility.ProtectedAppTimelineTracker
-import com.aymankhattab.nateq.core.audio.accessibility.ExtrasDiagnosticsTracker
 import com.aymankhattab.nateq.core.audio.accessibility.VoiceResolutionTracker
 
 /**
@@ -28,13 +27,8 @@ class TtsDiagnosticsProvider : ContentProvider() {
         const val KEY_VOICE_RESOLUTIONS = "voice_resolutions"
         const val KEY_SPEED_REPORT = "speed_report"
         const val KEY_A11Y_EVENTS_PER_MIN = "a11y_events_per_min"
-        const val KEY_A11Y_EVENTS_TOTAL = "a11y_events_total"
         const val KEY_USAGE_STATS_POLLS = "usage_stats_polls"
         const val KEY_TIMELINE_REPORT = "timeline_report"
-        const val KEY_NUMBER_SEGMENT_TRACES =
-            "number_segment_traces"
-        const val KEY_EXTRAS_DIAGNOSTICS =
-            "extras_diagnostics"
     }
 
     override fun onCreate(): Boolean = true
@@ -74,23 +68,8 @@ class TtsDiagnosticsProvider : ContentProvider() {
                 putStringArrayList(KEY_VOICE_RESOLUTIONS, resolutions)
                 putString(KEY_SPEED_REPORT, speedReport)
                 putInt(KEY_A11Y_EVENTS_PER_MIN, a11yEventsPerMin)
-                putInt(
-                    KEY_A11Y_EVENTS_TOTAL,
-                    BatteryDiagnosticsTracker.getA11yEventsTotal()
-                )
                 putInt(KEY_USAGE_STATS_POLLS, usageStatsPolls)
                 putString(KEY_TIMELINE_REPORT, timelineReport)
-                val numTraces = ArrayList(
-                    NumberSegmentTraceTracker.formatCompact()
-                )
-                putStringArrayList(
-                    KEY_NUMBER_SEGMENT_TRACES,
-                    numTraces
-                )
-                putString(
-                    KEY_EXTRAS_DIAGNOSTICS,
-                    ExtrasDiagnosticsTracker.format()
-                )
             }
         }
         return null

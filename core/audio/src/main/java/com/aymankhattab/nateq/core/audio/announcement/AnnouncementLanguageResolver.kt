@@ -1,6 +1,5 @@
 package com.aymankhattab.nateq.core.audio.announcement
 
-import com.aymankhattab.nateq.core.common.VisibleLanguages
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.VoiceIdContract
 
@@ -49,24 +48,18 @@ object AnnouncementLanguageResolver {
         savedVoiceId: String?,
         appLanguage: String
     ): String {
-        val candidate = when {
-            !forced.isNullOrBlank() ->
-                if (LanguageCode.isEnglish(forced)) ENGLISH else ARABIC
-            !categoryLang.isNullOrBlank() ->
-                if (LanguageCode.isEnglish(categoryLang)) ENGLISH else ARABIC
-            else -> languageOfVoiceId(savedVoiceId)
-                ?: if (LanguageCode.isEnglish(appLanguage)) ENGLISH else ARABIC
+        if (!forced.isNullOrBlank()) {
+            return if (LanguageCode.isEnglish(forced)) ENGLISH else ARABIC
         }
-        if (!VisibleLanguages.isVisible(candidate)) {
-            return when {
-                VisibleLanguages.isVisible(ARABIC) -> ARABIC
-                VisibleLanguages.isVisible(ENGLISH) -> ENGLISH
-                VisibleLanguages.visibleSet().isNotEmpty() ->
-                    VisibleLanguages.visibleSet().first()
-                else -> candidate
+        if (!categoryLang.isNullOrBlank()) {
+            return if (LanguageCode.isEnglish(categoryLang)) {
+                ENGLISH
+            } else {
+                ARABIC
             }
         }
-        return candidate
+        languageOfVoiceId(savedVoiceId)?.let { return it }
+        return if (LanguageCode.isEnglish(appLanguage)) ENGLISH else ARABIC
     }
 
     /**

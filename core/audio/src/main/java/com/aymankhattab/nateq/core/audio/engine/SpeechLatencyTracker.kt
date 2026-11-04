@@ -12,9 +12,6 @@ object SpeechLatencyTracker {
 
     private const val MAX_HISTORY = 50
 
-    /** قيمة «لم يُقس أول بايت» — لا تُخلط بمدةٍ حقيقية. */
-    const val TTFB_UNMEASURED_MS = -1L
-
     data class SegmentMetric(
         val text: String,
         val engine: String?,
@@ -65,21 +62,10 @@ object SpeechLatencyTracker {
         return list[index]
     }
 
-    /**
-     * متوسط زمن أول بايت **للقياسات الحقيقية فقط**، أو
-     * [TTFB_UNMEASURED_MS] إن لم يُقس أيُّ بايت.
-     *
-     * كان المتوسط يشمل 0 فينخفض كذباً، وكان غيابُ القياس في الخدمة
-     * يُستبدل بالزمن الكلي فيظهر TTFB = مدة العبارة كاملة (رُصد:
-     * 3148ms لعبارةٍ لم تُقَس أصلاً). «غير مقيس» معلومةٌ صادقة،
-     * والصفرُ ليس قياساً.
-     */
     fun getAverageTimeToFirstByteMs(): Long {
-        val measured = history.toList()
-            .map { it.timeToFirstByteMs }
-            .filter { it > 0L }
-        if (measured.isEmpty()) return TTFB_UNMEASURED_MS
-        return measured.average().toLong()
+        val list = history.toList()
+        if (list.isEmpty()) return 0L
+        return list.map { it.timeToFirstByteMs }.average().toLong()
     }
 
     fun getTop5Slowest(): List<UtteranceMetric> {
@@ -95,13 +81,9 @@ object SpeechLatencyTracker {
         sb.appendLine("• إجمالي العبارات المسجلة: $count (آخر $MAX_HISTORY)")
         sb.appendLine("• متوسط زمن النطق: ${getAverageDurationMs()} ms")
         sb.appendLine("• زمن p95 للنطق: ${getP95DurationMs()} ms")
-        val avgTtfb = getAverageTimeToFirstByteMs()
-        val ttfbText = if (avgTtfb == TTFB_UNMEASURED_MS) {
-            "غير مقيس"
-        } else {
-            "$avgTtfb ms"
-        }
-        sb.appendLine("• متوسط زمن أول بايت (TTFB): $ttfbText")
+        sb.appendLine(
+            "• متوسط زمن أول بايت (TTFB): ${getAverageTimeToFirstByteMs()} ms"
+        )
         sb.appendLine(
             "• عدد المقاطع المحذوفة (droppedSegments): " +
                 "${getDroppedSegmentsCount()}"
@@ -116,16 +98,10 @@ object SpeechLatencyTracker {
                 } else {
                     item.text
                 }
-                val itemTtfb =
-                    if (item.timeToFirstByteMs == TTFB_UNMEASURED_MS) {
-                        "غير مقيس"
-                    } else {
-                        "${item.timeToFirstByteMs}ms"
-                    }
                 sb.appendLine(
                     "  ${idx + 1}. \"$preview\" — إجمالي: " +
                         "${item.totalDurationMs}ms (أول بايت: " +
-                        "$itemTtfb, " +
+                        "${item.timeToFirstByteMs}ms, " +
                         "${item.segments.size} مقاطع)"
                 )
             }

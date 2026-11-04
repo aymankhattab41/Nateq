@@ -1,6 +1,5 @@
 package com.aymankhattab.nateq.core.audio.engine
 
-import com.aymankhattab.nateq.core.common.VisibleLanguages
 import com.aymankhattab.nateq.core.engine.EngineMarkers
 import com.aymankhattab.nateq.util.LanguageCode
 
@@ -548,20 +547,6 @@ class LanguageSegmenter(
                 "نص: '$segText' -> لغة: $tag، السبب: $reason"
             )
         }
-        val effectiveTag = if (!VisibleLanguages.isVisible(tag)) {
-            when {
-                VisibleLanguages.isVisible(scriptFallback) -> scriptFallback
-                VisibleLanguages.isVisible(LanguageCode.EN.tag) ->
-                    LanguageCode.EN.tag
-                VisibleLanguages.isVisible(LanguageCode.AR.tag) ->
-                    LanguageCode.AR.tag
-                VisibleLanguages.visibleSet().isNotEmpty() ->
-                    VisibleLanguages.visibleSet().first()
-                else -> tag
-            }
-        } else {
-            tag
-        }
         val role = if (openKind == Kind.NUMBER || isNumericOnlyText(segText)) {
             SpeechRole.NUMBER
         } else {
@@ -569,7 +554,7 @@ class LanguageSegmenter(
         }
         return SegmentWithOffset(
             text = segText,
-            languageTag = effectiveTag,
+            languageTag = tag,
             role = role,
             start = baseOffset + start,
             end = baseOffset + end

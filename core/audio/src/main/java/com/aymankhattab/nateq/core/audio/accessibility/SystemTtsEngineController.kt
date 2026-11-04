@@ -8,7 +8,6 @@ import android.content.pm.ResolveInfo
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.util.Log
-import com.aymankhattab.nateq.core.common.VisibleEngines
 
 /**
  * تحكم بمحرك نطق النظام الافتراضي (TTS) عبر إعدادات النظام الآمنة.
@@ -62,7 +61,7 @@ object SystemTtsEngineController {
      * قائمة بجميع محركات TTS المثبتة في النظام بالترتيب الفعلي للنظام.
      * تشمل Lord TTS نفسه بصفته محركاً معتمداً.
      */
-    fun getAllInstalledEngines(context: Context): List<EngineInfo> {
+    fun getInstalledEngines(context: Context): List<EngineInfo> {
         val pm = context.packageManager
         val intent = Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE)
         val resolveInfos: List<ResolveInfo> = try {
@@ -89,14 +88,6 @@ object SystemTtsEngineController {
                 label = "Lord TTS"
             )
         }
-    }
-
-    /**
-     * قائمة بمحركات TTS المثبتة الظاهرة في النظام.
-     */
-    fun getInstalledEngines(context: Context): List<EngineInfo> {
-        return getAllInstalledEngines(context)
-            .filter { VisibleEngines.isVisible(it.packageName) }
     }
 
     /**

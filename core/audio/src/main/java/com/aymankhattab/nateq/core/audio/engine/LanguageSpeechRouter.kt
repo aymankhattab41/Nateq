@@ -1,7 +1,5 @@
 package com.aymankhattab.nateq.core.audio.engine
 
-import com.aymankhattab.nateq.core.common.VisibleEngines
-
 /** نتيجة توجيه المحرك/الصوت للطلب الحالي (بلا أشرطة — تُدار منفصلة). */
 data class RoutedEngine(
     val engine: String?,
@@ -13,7 +11,14 @@ data class RoutedEngine(
  * ([NateqTtsService.synthesizeSingle]/[NateqTtsService.synthesizeMixed]):
  *
  * يهدف إلى جعل تفضيل المحرك/الصوت للغةٍ معيّنة سارياً **دائماً** وبشكلٍ
- * مستقل عن مفتاح «التحويل التلقائي»، لأنه تفضيلُ نطقٍ عام.
+ * مستقل عن مفتاح «التحويل التلقائي»، لأنه تفضيلُ نطقٍ عام (اللغة التي
+ * يقرأها التطبيق تُنطق بمحركها المحدد حتى لو عُطِّل التحويل). ترتيب القرار:
+ * 1) محرك/صوت هدف التحويل التلقائي إن طابقت لغتُه لغةَ النص الطالبة.
+ * 2) وإلا تفضيلُ المحرك/الصوت الصريح للغة الطلب نفسها.
+ * 3) وإلا null → يختار المزوّد محركَه العام (المحدَّد من المستخدم أو التلقائي).
+ *
+ * منطق نقي قابل للاختبار الآلي دون أجهزة؛ التحقق من تثبيت المحرك/صحة الصوت
+ * يبقى على المزوّد عند الربط.
  */
 object LanguageSpeechRouter {
 
@@ -25,23 +30,13 @@ object LanguageSpeechRouter {
         perLanguageVoiceName: String?,
         defaultEngine: String? = null
     ): RoutedEngine {
-        val safeDefault = defaultEngine.takeIf {
-            VisibleEngines.isVisible(it)
-        }
-        val safePerLang = perLanguageEngine.takeIf {
-            VisibleEngines.isVisible(it)
-        }
-        val safeConvert = convertEngine.takeIf {
-            VisibleEngines.isVisible(it)
-        }
-
-        val fallback = safePerLang ?: safeDefault
+        val fallback = perLanguageEngine ?: defaultEngine
         val engine = if (matchesRequest) {
-            safeConvert ?: fallback
+            convertEngine ?: fallback
         } else {
             fallback
         }
-        val voiceName = if (matchesRequest && safeConvert != null) {
+        val voiceName = if (matchesRequest) {
             convertVoiceName ?: perLanguageVoiceName
         } else {
             perLanguageVoiceName

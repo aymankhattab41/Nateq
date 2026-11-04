@@ -113,19 +113,7 @@ internal class NumberStep(
             // فتُترك كما كانت (ليست عدداً سالباً لغوياً).
             val minus = start > 0 && input[start - 1] == '-' &&
                 (start == 1 || !input[start - 2].isLetterOrDigit())
-            val preEnd = if (minus) start - 1 else start
-            val pre = input.substring(cursor, preEnd)
-            // إزالة الفواصل وواو العطف بين الأرقام عربي أو إنجليزي
-            val trimmedPre = pre.trim()
-            val cleanedPre = if (cursor > 0 &&
-                (trimmedPre == "و" || trimmedPre == "," ||
-                    trimmedPre == "،" || trimmedPre.equals("and", true))
-            ) {
-                " "
-            } else {
-                pre.replace(Regex("""[,،]"""), " ")
-            }
-            sb.append(cleanedPre)
+            sb.append(input, cursor, if (minus) start - 1 else start)
             sb.append(if (minus) minusWord(english) else "")
             sb.append(parseNumberText(numberStr, english, markNumbers))
             if (end < input.length && isLetterOrMark(input[end])) {
@@ -133,8 +121,7 @@ internal class NumberStep(
             }
             cursor = end
         }
-        val tail = input.substring(cursor)
-        sb.append(tail.replace(Regex("""[,،]"""), " "))
+        sb.append(input, cursor, input.length)
         return sb.toString()
     }
 
@@ -170,12 +157,9 @@ internal class NumberStep(
         // Double يتجاوز دقته 2^53 (≈9.007×10^15) فيشوّه البطاقات/الرموز الطويلة
         // (مثل 9999999999999999 التي كانت تنطق «عشرة كوادريليون» خطأً).
         if (cleaned.indexOf('.') < 0) {
-            val mode = modeProvider().coerceIn(1, 8)
-            // أرقام تبدأ بـ 0 ولها 7 إلى 15 خانة
-            // أو إذا اختار المستخدم نمطاً > 1
-            if ((cleaned.startsWith("0") && cleaned.length in 7..15) ||
-                mode > 1
-            ) {
+            // أرقام تبدأ بـ 0 ولها 7 إلى 15 خانة تُعامل حسب نمط قراءة الأرقام
+            if (cleaned.startsWith("0") && cleaned.length in 7..15) {
+                val mode = modeProvider().coerceIn(1, 8)
                 return NumberSpeech.formatByMode(
                     mode, cleaned, english, markNumbers
                 )
@@ -195,6 +179,7 @@ internal class NumberStep(
             // **بند 3.6:** سلسلة رقمية أعرض من Long (رقم وطني/حساب بنكي/
             // تسلسل 20+ خانة): toLongOrNull تعيد null فكانت تنتقل إلى
             // Double فتتشوه القيمة (دقته 2^53 فقط) — نقرأ الخانات حسب النمط.
+            val mode = modeProvider().coerceIn(1, 8)
             return NumberSpeech.formatByMode(
                 mode, cleaned, english, markNumbers
             )

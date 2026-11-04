@@ -649,9 +649,6 @@ internal class TimeAnnouncementController(
         val volume = runCatching {
             settings.getVolumeForCategory(category)
         }.getOrDefault(1.0f)
-        val savedLanguage = runCatching {
-            settings.getLanguageForCategory(category)
-        }.getOrNull()
         val canonEngine = engine?.let {
             HostProtocol.normalizeEngineId(it)
         } ?: engine
@@ -665,8 +662,7 @@ internal class TimeAnnouncementController(
                 pitch = pitch,
                 volume = volume,
                 sampleText = sample,
-                category = category,
-                languageTag = savedLanguage
+                category = category
             )
         )
     }
