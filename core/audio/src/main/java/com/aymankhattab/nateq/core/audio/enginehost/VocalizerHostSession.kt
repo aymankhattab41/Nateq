@@ -514,7 +514,14 @@ internal class VocalizerHostSession(
         sink: PcmSink,
         cancelled: AtomicBoolean
     ): HostResult {
-        val chunks = splitIntoVocalizerChunks(req.text)
+        val sanitizedText = req.text.replace(
+            Regex(
+                """(?<![\p{IsArabic}\p{InArabic}\p{M}])ج(?!\.م)""" +
+                    """(?![\p{IsArabic}\p{InArabic}\p{M}])"""
+            ),
+            "جيم"
+        )
+        val chunks = splitIntoVocalizerChunks(sanitizedText)
         if (chunks.isEmpty()) {
             return HostProtocol.success()
         }

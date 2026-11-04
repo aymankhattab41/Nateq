@@ -52,4 +52,5 @@
     <string name="voice_download_notification_title">Downloading Embedded Voices</string>
     <string name="voice_download_notification_text">Downloading %1$s (%2$d%%)</string>
     <string name="voice_download_action_cancel">Cancel</string>
+    <string name="emergency_voice_mode_announcement">Emergency voice mode</string>
 </resources>

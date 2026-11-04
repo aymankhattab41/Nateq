@@ -111,9 +111,9 @@ object VoiceIdContract {
             return voiceId in knownVoices
         }
         val lowerEng = engine.lowercase()
-        val isVocalizerEmbedded = lowerEng == "vocalizer_embedded" ||
-            (lowerEng.contains("vocalizer") &&
-                lowerEng.contains("embedded"))
+        val isVocalizerEmbedded = lowerEng == "vocalizer" ||
+            lowerEng == "vocalizer_embedded" ||
+            lowerEng.contains("vocalizer")
 
         if (isVocalizerEmbedded) {
             val isGoogle = voiceId.contains("-x-") ||
@@ -138,10 +138,17 @@ object VoiceIdContract {
         }
 
         if (lowerEng.contains("acapela")) {
-            if (voiceId.startsWith("ara-") ||
-                voiceId.startsWith("eng-") ||
+            val isVocVoice = voiceId.contains("leila", ignoreCase = true) ||
+                voiceId.contains("laila", ignoreCase = true) ||
+                voiceId.contains("maged", ignoreCase = true) ||
+                voiceId.contains("tarik", ignoreCase = true) ||
+                voiceId.contains("tarek", ignoreCase = true) ||
+                voiceId.contains("mariam", ignoreCase = true)
+            if (isVocVoice ||
                 voiceId.contains("-x-") ||
-                voiceId.endsWith("-local")
+                voiceId.endsWith("-local") ||
+                voiceId.contains("_f00") ||
+                voiceId.contains("_m00")
             ) {
                 return false
             }

@@ -487,8 +487,9 @@ internal object CurrencyStep : TextProcessingStep {
             } else {
                 ""
             }
-            val source = headGuard + Pattern.quote(symbol) + "\\s*(" +
-                AMOUNT_REGEX + ")(?![\\p{N}_])"
+            val spacePattern = if (symbol == "ج") "" else "\\s*"
+            val source = headGuard + Pattern.quote(symbol) + spacePattern +
+                "(" + AMOUNT_REGEX + ")(?![\\p{N}_])"
             Pattern.compile(source) to info
         }
         // أنماط الرموز بعد المبلغ: «100$» مع مسافة اختيارية بين المبلغ
@@ -501,7 +502,8 @@ internal object CurrencyStep : TextProcessingStep {
             } else {
                 ""
             }
-            val source = "(?<![-\\d])(" + AMOUNT_REGEX + ")\\s*" +
+            val spacePattern = if (symbol == "ج") "" else "\\s*"
+            val source = "(?<![-\\d])(" + AMOUNT_REGEX + ")" + spacePattern +
                 Pattern.quote(symbol) + tailGuard
             Pattern.compile(source) to info
         }

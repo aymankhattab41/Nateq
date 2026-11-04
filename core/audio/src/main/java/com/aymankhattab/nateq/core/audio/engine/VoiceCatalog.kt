@@ -12,6 +12,7 @@ import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
 import com.aymankhattab.nateq.core.audio.providers.VoiceProvider
+import com.aymankhattab.nateq.core.common.VisibleLanguages
 import com.aymankhattab.nateq.util.LanguageCode
 import com.aymankhattab.nateq.util.LocaleUtils
 import com.aymankhattab.nateq.util.VoiceIdContract
@@ -711,8 +712,20 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             .filter { it.isConfigured() }
             .flatMap { it.listVoices(locale) }
 
-    fun findProvider(providerId: String): VoiceProvider? =
-        providers.find { it.providerId == providerId }
+    fun findProvider(providerId: String): VoiceProvider? {
+        val norm = if (providerId == "vocalizer" ||
+            providerId == "vocalizer_embedded"
+        ) {
+            "vocalizer_embedded"
+        } else {
+            providerId
+        }
+        return providers.find {
+            it.providerId == norm ||
+                (norm == "vocalizer_embedded" &&
+                    it.providerId == "vocalizer")
+        }
+    }
 
     /** إغلاق نهائي لكل المزودين (الاتصالات الخارجية لمن يحتاجها) — يُستدعى من
      *  [NateqTtsService.onDestroy] حتى لا تبقى روابط Binder IPC معلقة بعد
@@ -738,6 +751,7 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             languages.add(name.substringBefore('-'))
         }
         return languages
+            .filter { VisibleLanguages.isVisible(it) }
             .map { localeWithCountryFor(it) }
             .sortedBy { it.language }
     }

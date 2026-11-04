@@ -249,4 +249,30 @@ class ArabicSpeechNormalizerTest {
         assertTrue("يجب إزالة علامة الحفظ: $out", !out.contains('\uE020'))
         assertTrue("يجب بقاء مساءً كما هي: $out", out.contains("مساءً"))
     }
+
+    @Test
+    fun bareJeem_isSpokenAsLetterNameJeem() {
+        // حرف «ج» المجرد يُنطق «جيم» لا «جنيه مصري»
+        assertEquals("جيم", ArabicSpeechNormalizer.normalize("ج"))
+        assertEquals(
+            "الخيار جيم",
+            ArabicSpeechNormalizer.normalize("الخيار ج")
+        )
+        assertEquals(
+            "أ ب جيم د",
+            ArabicSpeechNormalizer.normalize("أ ب ج د")
+        )
+        assertEquals("جيم.", ArabicSpeechNormalizer.normalize("ج."))
+        assertEquals("(جيم)", ArabicSpeechNormalizer.normalize("(ج)"))
+        assertEquals(
+            "جيم - أولاً",
+            ArabicSpeechNormalizer.normalize("ج - أولاً")
+        )
+        // الكلمات المحتوية على حرف الجيم لا تُمَس
+        assertEquals("جميل", ArabicSpeechNormalizer.normalize("جميل"))
+        assertEquals("دجاج", ArabicSpeechNormalizer.normalize("دجاج"))
+        assertEquals("ثلج", ArabicSpeechNormalizer.normalize("ثلج"))
+        // ج.م تبقى كما هي ولا تُمس
+        assertEquals("ج.م", ArabicSpeechNormalizer.normalize("ج.م"))
+    }
 }

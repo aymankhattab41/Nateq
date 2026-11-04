@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
+import com.aymankhattab.nateq.core.common.VisibleEngines
 
 /**
  * يكتشف محركات TTS الطرفية التي يثبّتها المستخدم (مثل eSpeak، MultiTTS)
@@ -77,7 +78,7 @@ object EnginePicker {
     }
 
     /** كل محركات TTS المثبتة في النظام (تُستعلم ديناميكياً) مع تسمياتها */
-    fun installedEngines(context: Context): List<InstalledEngine> {
+    fun allInstalledEngines(context: Context): List<InstalledEngine> {
         EngineStatusRegistry.setFilesDir(context.filesDir)
         val now = nowProvider()
 
@@ -96,6 +97,12 @@ object EnginePicker {
             }
 
         return (system + embedded).distinctBy { it.packageName }
+    }
+
+    /** كل محركات TTS المثبتة مع تصفية المحركات الظاهرة (الأمر 3) */
+    fun installedEngines(context: Context): List<InstalledEngine> {
+        return allInstalledEngines(context)
+            .filter { VisibleEngines.isVisible(it.packageName) }
     }
 
     /** مسح محركات النظام عبر PackageManager (مهلة 5 دقائق). */
@@ -169,6 +176,18 @@ object EnginePicker {
     /** كل حزم محركات TTS المثبتة في النظام (تُستعلم ديناميكياً) */
     fun installedEnginePackages(context: Context): List<String> {
         return installedEngines(context).map { it.packageName }
+    }
+
+    /** المحرك الافتراضي المحدد في إعدادات النظام */
+    fun defaultSystemEngine(context: Context): String? {
+        return try {
+            android.provider.Settings.Secure.getString(
+                context.contentResolver,
+                android.provider.Settings.Secure.TTS_DEFAULT_SYNTH
+            )
+        } catch (_: Throwable) {
+            null
+        }
     }
 
     /** تسخين الكاش في الخلفية — يُستدعى عند بدء التطبيق لتجنب الاستعلام

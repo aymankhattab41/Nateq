@@ -340,8 +340,11 @@ object SpeechPlanner {
         val mergedItems = ArrayList<SpeechPlanItem>()
         for (item in items) {
             val last = mergedItems.lastOrNull()
+            val canMergeRoles = last?.role == item.role ||
+                (last?.role != SpeechRole.EMOJI &&
+                    item.role != SpeechRole.EMOJI)
             if (last != null &&
-                last.role == item.role &&
+                canMergeRoles &&
                 last.engine == item.engine &&
                 last.voiceId == item.voiceId &&
                 last.languageTag == item.languageTag &&
