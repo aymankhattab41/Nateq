@@ -35,9 +35,7 @@ class ProtectedAppRound48Test {
         ApplicationProvider.getApplicationContext<Context>()
     private val settings = SettingsRepository.create(context)
 
-    @Before
-    fun setUp() {
-        ProtectedAppManager.resetForTesting()
+    private fun applyTestingReadiness() {
         ProtectedAppManager.readinessOverrideForTesting =
             ProtectedAppManager.AutoRestoreReadiness(
                 hasWriteSecure = true,
@@ -47,6 +45,16 @@ class ProtectedAppRound48Test {
                 isNotificationListenerEnabled = true,
                 isAutostartGuided = true
             )
+    }
+
+    @Before
+    fun setUp() {
+        ProtectedAppManager.resetForTesting()
+        applyTestingReadiness()
+        ProtectedAppSuspensionStore.clear(context)
+        RestoreDiagnosticsTracker.clear(context)
+        ProtectedAppTimelineTracker.endQuietPeriod()
+        ProtectedAppTimelineTracker.clear()
         settings.setProtectedApps(emptyList())
         settings.setSuspendedProtectedApp(null)
     }
@@ -54,6 +62,10 @@ class ProtectedAppRound48Test {
     @After
     fun tearDown() {
         ProtectedAppManager.resetForTesting()
+        ProtectedAppSuspensionStore.clear(context)
+        RestoreDiagnosticsTracker.clear(context)
+        ProtectedAppTimelineTracker.endQuietPeriod()
+        ProtectedAppTimelineTracker.clear()
         settings.setProtectedApps(emptyList())
         settings.setSuspendedProtectedApp(null)
     }
@@ -279,6 +291,7 @@ class ProtectedAppRound48Test {
 
     @Test
     fun fullDisable_recordsSuspendedAppAndRestoresState() {
+        applyTestingReadiness()
         val service = org.robolectric.Robolectric.buildService(
             NateqAccessibilityService::class.java
         ).create().get()
@@ -307,6 +320,7 @@ class ProtectedAppRound48Test {
 
     @Test
     fun fullDisable_recentSuspension_isNotHandledTwice() {
+        applyTestingReadiness()
         val app = ProtectedApp(
             packageName = "com.instapay",
             label = "إنستاباي",
@@ -327,6 +341,7 @@ class ProtectedAppRound48Test {
 
     @Test
     fun fullDisable_staleSuspension_isHandledAgain() {
+        applyTestingReadiness()
         // علامة قديمة تعني تعطيلًا لم يكتمل (تعذّر نشره)، فلا تمنع
         // معالجة جديدة وإلا بقيت الخدمة معطّلة للأبد.
         val stale = System.currentTimeMillis() - 60_000L
