@@ -643,6 +643,7 @@
 <string name="first_run_default_engine">Make Lord TTS the default engine</string>
 <string name="first_run_default_engine_hint">Open the speech settings and choose Lord TTS as the system default engine</string>
 <string name="voice_category_default">Default voice</string>
+<string name="voice_category_default_summary">Voice for general reading and apps</string>
 <string name="categories_selector_label">Choose a category</string>
 <string name="categories_unsaved_dialog_title">Unsaved changes</string>
 <string name="categories_unsaved_dialog_message">You have unsaved changes to this category. Discard them?</string>
@@ -712,6 +713,10 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Enabled engine and voice selection for the general "Default Voice" category directly within the voice categories panel.
+• Restricted category languages to only those supported by the selected engine, dynamically emerging upon engine change.
+• Guaranteed Arabic and English are permanently visible and immune to legacy filters, ensuring seamless English reading on all devices.
+• Enhanced Microsoft Neural synthesis resilience with automatic fallback to direct text synthesis if SSML is canceled.
 • Fixed Microsoft Embedded Neural voice preview across all dialogs by switching to in-memory synthesis, eliminating unsupported prosody tags, and streaming valid PCM frames.
 • Guaranteed embedded engines (Microsoft and Vocalizer) are always visible and exempt from external engine filters in event categories (Time, Battery, Notifications, Caller, Numbers, Default).
 • Fixed Microsoft voice discovery in VoiceCatalog and unified voice descriptor naming between catalog and on-demand fetch.

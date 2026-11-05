@@ -15,6 +15,7 @@ class CategoryPanelLogicTest {
     fun categoryEntries_haveExpectedOrderAndKeys() {
         assertEquals(
             listOf(
+                SettingsRepository.VOICE_CATEGORY_DEFAULT,
                 SettingsRepository.VOICE_CATEGORY_TIME,
                 SettingsRepository.VOICE_CATEGORY_BATTERY,
                 SettingsRepository.VOICE_CATEGORY_NUMBERS,
@@ -59,8 +60,8 @@ class CategoryPanelLogicTest {
     }
 
     @Test
-    fun onlyStaticDefaultHasNoDedicatedEngine() {
-        assertFalse(
+    fun allCategoriesHaveDedicatedEngine() {
+        assertTrue(
             categoryHasDedicatedEngine(
                 SettingsRepository.VOICE_CATEGORY_DEFAULT
             )

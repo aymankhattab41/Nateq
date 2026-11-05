@@ -77,7 +77,10 @@ internal class MicrosoftHostSession(
         val modelName = extractedModel
             ?: catalogItem?.modelName
             ?: req.voiceId
-        val langTag = catalogItem?.locale?.toLanguageTag() ?: "ar-EG"
+        val langTag = catalogItem?.locale?.toLanguageTag()
+            ?: Regex("""\(([a-zA-Z]{2,3}-[a-zA-Z]{2,3})""")
+                .find(modelName)?.groupValues?.get(1)
+            ?: "ar-EG"
 
         var config: EmbeddedSpeechConfig? = null
         var synthesizer: SpeechSynthesizer? = null
@@ -99,13 +102,30 @@ internal class MicrosoftHostSession(
             synthesizer = SpeechSynthesizer(config)
             activeSynthesizer = synthesizer
 
-            val ssml = buildSsml(
-                text = req.text,
-                modelName = modelName,
-                langTag = langTag
-            )
-
-            synthResult = synthesizer.SpeakSsml(ssml)
+            val isSsml = req.text.trimStart()
+                .startsWith("<speak", ignoreCase = true)
+            synthResult = if (isSsml) {
+                synthesizer.SpeakSsml(req.text)
+            } else {
+                val ssml = buildSsml(
+                    text = req.text,
+                    modelName = modelName,
+                    langTag = langTag
+                )
+                val res = synthesizer.SpeakSsml(ssml)
+                if (res.reason == ResultReason.Canceled) {
+                    val cancelDetails = SpeechSynthesisCancellationDetails
+                        .fromResult(res)
+                    Log.w(
+                        TAG,
+                        "SpeakSsml canceled: [${cancelDetails.errorCode}] " +
+                            "${cancelDetails.errorDetails}; trying SpeakText"
+                    )
+                    synthesizer.SpeakText(req.text)
+                } else {
+                    res
+                }
+            }
             activeSynthesizer = null
 
             val reason = synthResult.reason
