@@ -679,7 +679,10 @@ if (!dirtyPanel) {
                         if (provider != null) {
                             val loc = Locale.forLanguageTag(language)
                             provider.listVoices(loc).map { desc ->
-                                VoiceOption(desc.id, desc.displayName)
+                                VoiceOption(
+                                    desc.displayName,
+                                    desc.displayName
+                                )
                             }
                         } else {
                             val locLang = Locale.forLanguageTag(

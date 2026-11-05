@@ -11,9 +11,6 @@ import com.microsoft.cognitiveservices.speech.SpeechSynthesisCancellationDetails
 import com.microsoft.cognitiveservices.speech.SpeechSynthesisOutputFormat
 import com.microsoft.cognitiveservices.speech.SpeechSynthesisResult
 import com.microsoft.cognitiveservices.speech.SpeechSynthesizer
-import com.microsoft.cognitiveservices.speech.audio.AudioConfig
-import com.microsoft.cognitiveservices.speech.audio.PushAudioOutputStream
-import com.microsoft.cognitiveservices.speech.audio.PushAudioOutputStreamCallback
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -33,7 +30,6 @@ internal class MicrosoftHostSession(
 
     private var baseDataDir: File? = null
     @Volatile private var activeSynthesizer: SpeechSynthesizer? = null
-    @Volatile private var activePushStream: PushAudioOutputStream? = null
 
     override fun init(dataDir: String): HostResult {
         val dir = File(dataDir)
@@ -84,8 +80,6 @@ internal class MicrosoftHostSession(
         val langTag = catalogItem?.locale?.toLanguageTag() ?: "ar-EG"
 
         var config: EmbeddedSpeechConfig? = null
-        var pushStream: PushAudioOutputStream? = null
-        var audioConfig: AudioConfig? = null
         var synthesizer: SpeechSynthesizer? = null
         var synthResult: SpeechSynthesisResult? = null
 
@@ -102,45 +96,47 @@ internal class MicrosoftHostSession(
                 SpeechSynthesisOutputFormat.Raw24Khz16BitMonoPcm
             )
 
-            val pushCallback = object : PushAudioOutputStreamCallback() {
-                override fun write(data: ByteArray): Int {
-                    if (cancelled.get()) return data.size
-                    sink.writePcm(data, data.size)
-                    return data.size
-                }
-
-                override fun close() {}
-            }
-
-            pushStream = PushAudioOutputStream.create(pushCallback)
-            activePushStream = pushStream
-            audioConfig = AudioConfig.fromStreamOutput(pushStream)
-            synthesizer = SpeechSynthesizer(config, audioConfig)
+            synthesizer = SpeechSynthesizer(config)
             activeSynthesizer = synthesizer
 
             val ssml = buildSsml(
                 text = req.text,
                 modelName = modelName,
-                langTag = langTag,
-                rate = req.rate
+                langTag = langTag
             )
 
-            sink.writeHeader(SAMPLE_RATE_HZ, 1)
             synthResult = synthesizer.SpeakSsml(ssml)
             activeSynthesizer = null
-            activePushStream = null
 
             val reason = synthResult.reason
             when (reason) {
                 ResultReason.SynthesizingAudioCompleted -> {
-                    HostResult(ok = true)
+                    val pcm = synthResult.audioData
+                    if (pcm != null && pcm.isNotEmpty()) {
+                        sink.writeHeader(SAMPLE_RATE_HZ, 1)
+                        val chunkSize = 16384
+                        var offset = 0
+                        while (offset < pcm.size && !cancelled.get()) {
+                            val len = minOf(chunkSize, pcm.size - offset)
+                            val chunk = pcm.copyOfRange(offset, offset + len)
+                            sink.writePcm(chunk, len)
+                            offset += len
+                        }
+                        HostResult(ok = true)
+                    } else {
+                        HostResult.failure(
+                            "EMPTY_PCM",
+                            "لم يتم توليد أي بيانات صوتية"
+                        )
+                    }
                 }
                 ResultReason.Canceled -> {
                     val details = SpeechSynthesisCancellationDetails
                         .fromResult(synthResult)
                     Log.w(
                         TAG,
-                        "Synthesis canceled: ${details.errorDetails}"
+                        "Synthesis canceled: [${details.errorCode}] " +
+                            "${details.errorDetails}"
                     )
                     HostResult.failure(
                         "SYNTH_CANCELED",
@@ -157,11 +153,8 @@ internal class MicrosoftHostSession(
             HostResult.failure("SYNTH_EXCEPTION", t.message ?: "Unknown error")
         } finally {
             activeSynthesizer = null
-            activePushStream = null
             runCatching { synthResult?.close() }
             runCatching { synthesizer?.close() }
-            runCatching { audioConfig?.close() }
-            runCatching { pushStream?.close() }
             runCatching { config?.close() }
         }
     }
@@ -175,7 +168,6 @@ internal class MicrosoftHostSession(
     override fun shutdown() {
         stop()
         activeSynthesizer = null
-        activePushStream = null
     }
 
     private fun resolveVoiceDirectory(
@@ -231,26 +223,13 @@ internal class MicrosoftHostSession(
     private fun buildSsml(
         text: String,
         modelName: String,
-        langTag: String,
-        rate: Float
+        langTag: String
     ): String {
         val escaped = escapeXml(text)
-        val body = if (kotlin.math.abs(rate - 1.0f) < 0.05f) {
-            escaped
-        } else {
-            val ratePercent = ((rate - 1.0f) * 100f).toInt()
-            val rateStr = if (ratePercent >= 0) {
-                "+$ratePercent%"
-            } else {
-                "$ratePercent%"
-            }
-            "<prosody rate=\"$rateStr\">$escaped</prosody>"
-        }
-
         val header = "<speak version=\"1.0\" " +
             "xmlns=\"http://www.w3.org/2001/10/synthesis\" " +
             "xml:lang=\"$langTag\">"
-        return "$header<voice name=\"$modelName\">$body</voice></speak>"
+        return "$header<voice name=\"$modelName\">$escaped</voice></speak>"
     }
 
     private fun escapeXml(text: String): String {
