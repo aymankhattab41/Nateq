@@ -85,7 +85,19 @@ class SystemVoiceProvider(
                 installedEngineCount(context),
                 totalDeviceMemory(context)
             )
-        )
+        ) { runnable ->
+            Thread {
+                runCatching {
+                    android.os.Process.setThreadPriority(
+                        android.os.Process.THREAD_PRIORITY_AUDIO
+                    )
+                }
+                runnable.run()
+            }.apply {
+                name = "LordTTS-SynthWorker"
+                isDaemon = true
+            }
+        }
 
     /** مترادف استعلامي لعدد المحركات المثبّتة (يغذّي [resolvedPoolSize]). */
     private fun installedEngineCount(context: Context): Int =
@@ -1140,6 +1152,11 @@ class SystemVoiceProvider(
                 return false
             }
         }
+
+        // إعادة تأكيد السرعة والنبرة مباشرة قبل الكتابة لتفادي تصفيرهما
+        // عند تغيير الصوت أو اللغة في محرك النظام
+        engine.setSpeechRate(speechRate)
+        engine.setPitch(pitch)
 
         val utteranceId = "nateq_${System.currentTimeMillis()}"
         val params = android.os.Bundle().apply {

@@ -1049,20 +1049,29 @@ if (!dirtyPanel) {
         runCatching {
             settings.setLanguageForCategory(key, voiceLang)
         }
+        val chosenRate = seekRate?.progress?.speedFactor() ?: 1.0f
         runCatching {
-            settings.setSpeechRateForCategory(
-                key, seekRate?.progress?.speedFactor() ?: 1.0f
-            )
+            settings.setSpeechRateForCategory(key, chosenRate)
+            if (key == SettingsRepository.VOICE_CATEGORY_DEFAULT) {
+                settings.setDefaultSpeechRate(chosenRate)
+                settings.setSpeechRate("ar", chosenRate)
+            }
         }
+        val chosenPitch = seekPitch?.progress?.speedFactor() ?: 1.0f
         runCatching {
-            settings.setPitchForCategory(
-                key, seekPitch?.progress?.speedFactor() ?: 1.0f
-            )
+            settings.setPitchForCategory(key, chosenPitch)
+            if (key == SettingsRepository.VOICE_CATEGORY_DEFAULT) {
+                settings.setDefaultPitch(chosenPitch)
+                settings.setPitch("ar", chosenPitch)
+            }
         }
+        val chosenVol = (seekVolume?.progress ?: 100) / 100f
         runCatching {
-            settings.setVolumeForCategory(
-                key, (seekVolume?.progress ?: 100) / 100f
-            )
+            settings.setVolumeForCategory(key, chosenVol)
+            if (key == SettingsRepository.VOICE_CATEGORY_DEFAULT) {
+                settings.setDefaultVolume(chosenVol)
+                settings.setVolume("ar", chosenVol)
+            }
         }
     }
 

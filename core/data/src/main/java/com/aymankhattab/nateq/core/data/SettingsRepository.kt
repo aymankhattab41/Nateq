@@ -2532,6 +2532,13 @@ class SettingsRepository(context: Context) :
     override fun setCallerAnnouncementEnabled(enabled: Boolean) =
         prefs.edit().putBoolean("caller_announcement_enabled", enabled).apply()
 
+    override fun isCallerLockScreenPrivacyEnabled(): Boolean =
+        prefs.getBoolean("caller_lock_screen_privacy_enabled", false)
+    override fun setCallerLockScreenPrivacyEnabled(enabled: Boolean) =
+        prefs.edit()
+            .putBoolean("caller_lock_screen_privacy_enabled", enabled)
+            .apply()
+
     /** نطق اسم المتصل الثاني الوارد أثناء مكالمة نشطة (مكالمة انتظار) */
     override fun isCallerAnnouncementDuringCallEnabled(): Boolean =
         prefs.getBoolean("caller_announcement_during_call_enabled", false)

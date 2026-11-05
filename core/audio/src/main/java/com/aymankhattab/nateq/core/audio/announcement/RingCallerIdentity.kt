@@ -168,15 +168,45 @@ internal object RingCallerIdentity {
     fun extractFromCallNotification(
         title: String?,
         text: String?,
-        subText: String?
+        subText: String?,
+        extraCandidates: List<String?> = emptyList()
     ): Pair<String?, String?> {
-        val candidates = listOfNotNull(title, text, subText)
+        val allSources = listOfNotNull(title, text, subText) +
+            extraCandidates.filterNotNull()
+        val candidates = allSources
             .map { stripBidiControls(it).trim() }
             .filter { it.isNotEmpty() && !isGenericCallPhrase(it) }
         if (candidates.isEmpty()) return Pair(null, null)
         val number = candidates.firstOrNull { looksLikePhoneNumber(it) }
-        val name = candidates.firstOrNull { !looksLikePhoneNumber(it) }
+        val rawName = candidates.firstOrNull { !looksLikePhoneNumber(it) }
+        val name = rawName?.let { cleanCallerName(it) }?.takeIf {
+            it.isNotEmpty() && !isGenericCallPhrase(it)
+        }
         return Pair(number, name)
+    }
+
+    /**
+     * تنظيف اسم المتصل المستخرج من البوادئ الشائعة مثل «مكالمة واردة من».
+     */
+    internal fun cleanCallerName(rawName: String): String {
+        var cleaned = rawName.trim()
+        val prefixes = listOf(
+            "مكالمة واردة من ",
+            "مكالمه وارده من ",
+            "اتصال وارد من ",
+            "اتصال من ",
+            "مكالمة من ",
+            "مكالمه من ",
+            "incoming call from ",
+            "call from "
+        )
+        for (prefix in prefixes) {
+            if (cleaned.startsWith(prefix, ignoreCase = true)) {
+                cleaned = cleaned.substring(prefix.length).trim()
+                break
+            }
+        }
+        return cleaned
     }
 
     /**
