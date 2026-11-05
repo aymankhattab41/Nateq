@@ -233,61 +233,70 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             val engines = EnginePicker.installedEngines(context)
                 .filterNot { EnginePicker.isScreenReader(it.packageName) }
                 .filterNot { isBlacklisted(it.packageName) }
-            fun labelFor(pkg: String): String =
-                engines.firstOrNull { it.packageName == pkg }?.label ?: pkg
-
             val vocalizerPkg = VocalizerEmbeddedVoiceProvider.PROVIDER_ID
             val microsoftPkg = MicrosoftEmbeddedVoiceProvider.PROVIDER_ID
             val embeddedPkgs = setOf(vocalizerPkg, microsoftPkg)
             val externalEngines = engines.filterNot {
                 it.packageName in embeddedPkgs
             }
+
+            fun labelFor(pkg: String): String =
+                engines.firstOrNull { it.packageName == pkg }?.label
+                    ?: when (pkg) {
+                        vocalizerPkg ->
+                            EmbeddedProviders.vocalizer(context).displayName
+                        microsoftPkg ->
+                            EmbeddedProviders.microsoft(context).displayName
+                        else -> pkg
+                    }
+
             val embeddedVoicesMap = mutableMapOf<String, List<Voice>>()
             val unavailableEngines = mutableListOf<UnavailableEngine>()
 
             for (embPkg in listOf(vocalizerPkg, microsoftPkg)) {
-                if (engines.any { it.packageName == embPkg }) {
-                    try {
-                        val prov = if (embPkg == vocalizerPkg) {
-                            EmbeddedProviders.vocalizer(context)
-                        } else {
-                            EmbeddedProviders.microsoft(context)
-                        }
-                        if (prov.isConfigured()) {
-                            val vList = prov
-                                .listVoices(Locale.ROOT)
-                                .map { d ->
-                                    Voice(
-                                        d.displayName,
-                                        d.locale,
-                                        Voice.QUALITY_HIGH,
-                                        Voice.LATENCY_LOW,
-                                        false,
-                                        offlineFeature
-                                    )
-                                }
-                            if (vList.isNotEmpty()) {
-                                embeddedVoicesMap[embPkg] = vList
-                            } else {
-                                val st = EngineStatusRegistry.statusOf(
-                                    context, embPkg
-                                )
-                                unavailableEngines.add(
-                                    UnavailableEngine(
-                                        enginePackage = embPkg,
-                                        engineLabel = labelFor(embPkg),
-                                        code = st.code ?: "NO_VOICES",
-                                        message = st.lastError ?: (
-                                            "لم تُرجع أصواتاً " +
-                                            "رغم وجود الملفات"
-                                        )
-                                    )
+                try {
+                    val prov = if (embPkg == vocalizerPkg) {
+                        EmbeddedProviders.vocalizer(context)
+                    } else {
+                        EmbeddedProviders.microsoft(context)
+                    }
+                    if (prov.isConfigured() &&
+                        VisibleEngines.isVisible(embPkg)
+                    ) {
+                        val vList = prov
+                            .listVoices(Locale.ROOT)
+                            .map { d ->
+                                Voice(
+                                    d.displayName,
+                                    d.locale,
+                                    Voice.QUALITY_HIGH,
+                                    Voice.LATENCY_LOW,
+                                    false,
+                                    offlineFeature
                                 )
                             }
+                        if (vList.isNotEmpty()) {
+                            embeddedVoicesMap[embPkg] = vList
+                        } else {
+                            val st = EngineStatusRegistry.statusOf(
+                                context, embPkg
+                            )
+                            unavailableEngines.add(
+                                UnavailableEngine(
+                                    enginePackage = embPkg,
+                                    engineLabel = labelFor(embPkg),
+                                    code = st.code ?: "NO_VOICES",
+                                    message = st.lastError ?: (
+                                        "لم تُرجع أصواتاً " +
+                                        "رغم وجود الملفات"
+                                    )
+                                )
+                            )
                         }
-                    } catch (e: kotlinx.coroutines.CancellationException) {
-                        throw e
-                    } catch (t: Throwable) {
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
                         Log.w(
                             TAG,
                             "Failed to list voices for $embPkg: " +
@@ -312,7 +321,6 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                         )
                     }
                 }
-            }
             // الفحص بالتوازي مع سقف المحركات المتزامنة عبر Semaphore
             // لمنع فتح مثيلات غير محدودة في نفس اللحظة وإغراق الموارد.
             val toProbe = if (enginesToProbe != null) {
@@ -416,8 +424,13 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                 }
             }
 
+            val allEngineLabels = engines.map { it.packageName to it.label } +
+                listOf(
+                    vocalizerPkg to labelFor(vocalizerPkg),
+                    microsoftPkg to labelFor(microsoftPkg)
+                )
             val grouped = groupVoicesByLanguage(
-                engines.map { it.packageName to it.label },
+                allEngineLabels,
                 voicesByEngine
             )
             return DiscoveryResult(

@@ -24,25 +24,26 @@ object VisibleEngines {
         update(filterEnabled, engines)
     }
 
+    private val EMBEDDED_ENGINES = setOf(
+        "vocalizer",
+        "vocalizer_embedded",
+        "microsoft",
+        "microsoft_embedded"
+    )
+
+    fun isEmbeddedEngine(engineId: String?): Boolean {
+        if (engineId.isNullOrBlank()) return false
+        return EMBEDDED_ENGINES.contains(engineId.trim())
+    }
+
     fun isFilterEnabled(): Boolean = enabled
 
     fun isVisible(engineId: String?): Boolean {
         if (!enabled) return true
         if (engineId.isNullOrBlank()) return true
         val trimmed = engineId.trim()
+        if (isEmbeddedEngine(trimmed)) return true
         if (allowedEngines.contains(trimmed)) return true
-        if (trimmed == "vocalizer" &&
-            allowedEngines.contains("vocalizer_embedded")
-        ) return true
-        if (trimmed == "vocalizer_embedded" &&
-            allowedEngines.contains("vocalizer")
-        ) return true
-        if (trimmed == "microsoft" &&
-            allowedEngines.contains("microsoft_embedded")
-        ) return true
-        if (trimmed == "microsoft_embedded" &&
-            allowedEngines.contains("microsoft")
-        ) return true
         return false
     }
 
@@ -52,7 +53,7 @@ object VisibleEngines {
     }
 
     fun visibleSet(): Set<String> {
-        return if (enabled) allowedEngines else emptySet()
+        return if (enabled) allowedEngines + EMBEDDED_ENGINES else emptySet()
     }
 
     /** إعادة التعيين للاختبارات */

@@ -712,6 +712,9 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Fixed Microsoft Embedded Neural voice preview across all dialogs by switching to in-memory synthesis, eliminating unsupported prosody tags, and streaming valid PCM frames.
+• Guaranteed embedded engines (Microsoft and Vocalizer) are always visible and exempt from external engine filters in event categories (Time, Battery, Notifications, Caller, Numbers, Default).
+• Fixed Microsoft voice discovery in VoiceCatalog and unified voice descriptor naming between catalog and on-demand fetch.
 • Fixed appearance of Microsoft Embedded engine in event category selectors (Time, Battery, Caller, Notifications, Default) immediately upon voice download.
 • Fixed Microsoft voice preview playback in the embedded downloader card with model name extraction, proper neural license configuration, and clean PCM initialization.
 • Fixed Microsoft voice preview in "All Languages Setup" dialog by correctly passing the voice language tag instead of defaulting to English.
