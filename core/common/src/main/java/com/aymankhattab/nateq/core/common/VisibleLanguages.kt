@@ -35,10 +35,10 @@ object VisibleLanguages {
     }
 
     fun isVisible(tag: String?): Boolean {
-        if (!enabled) return true
         if (tag.isNullOrBlank()) return true
         val base = normalize(tag)
-        if (base.isBlank()) return true
+        if (base.isBlank() || base == "ar" || base == "en") return true
+        if (!enabled) return true
         return allowedLanguages.contains(base)
     }
 
@@ -48,7 +48,11 @@ object VisibleLanguages {
     }
 
     fun visibleSet(): Set<String> {
-        return if (enabled) allowedLanguages else emptySet()
+        return if (enabled) {
+            allowedLanguages + setOf("ar", "en")
+        } else {
+            emptySet()
+        }
     }
 
     /** إعادة التعيين للاختبارات */

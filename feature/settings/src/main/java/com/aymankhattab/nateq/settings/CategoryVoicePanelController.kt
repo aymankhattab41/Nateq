@@ -43,6 +43,10 @@ internal enum class CategoryPanelEntry(
     val categoryKey: String,
     val labelRes: Int
 ) {
+    DEFAULT(
+        SettingsRepository.VOICE_CATEGORY_DEFAULT,
+        R.string.voice_category_default
+    ),
     TIME(
         SettingsRepository.VOICE_CATEGORY_TIME,
         R.string.voice_category_time
@@ -82,11 +86,9 @@ internal fun callerSubCategory(languageTag: String): String =
     }
 
 /**
- * الفئات الصوتية النشطة تملك محركاً مخصصاً
- * (الافتراضية السابقة لم تكن تملكه).
+ * الفئات الصوتية تملك محركاً مخصصاً يختاره المستخدم لكل فئة.
  */
-internal fun categoryHasDedicatedEngine(categoryKey: String): Boolean =
-    categoryKey != SettingsRepository.VOICE_CATEGORY_DEFAULT
+internal fun categoryHasDedicatedEngine(categoryKey: String): Boolean = true
 
 /**
  * ضابط لوحة فئات الأصوات في شاشة «الصوت الافتراضي» بعد إعادة التصميم:
@@ -130,7 +132,7 @@ internal class CategoryVoicePanelController(
     private var btnTest: View? = null
 
     /** الفئة المعروضة حالياً. */
-    private var currentEntry: CategoryPanelEntry = CategoryPanelEntry.TIME
+    private var currentEntry: CategoryPanelEntry = CategoryPanelEntry.DEFAULT
 
     /** لغة اللوحة الصوتية الحالية (تُحدَّث من سبnner اللغة). */
     private var currentPanelLanguage: String = "ar"
@@ -189,7 +191,7 @@ internal class CategoryVoicePanelController(
         inflateVoicePanelRow()
         bindSelector(view)
         bindCallerPanel(view)
-        currentEntry = CategoryPanelEntry.TIME
+        currentEntry = CategoryPanelEntry.DEFAULT
         bindEntry(currentEntry)
     }
 
@@ -282,6 +284,7 @@ internal class CategoryVoicePanelController(
                                 engine?.label ?: enginePkg,
                                 currentPanelLanguage
                             ) {
+                                updateLanguagesForEngine(enginePkg)
                                 refreshVoiceSpinner(enginePkg)
                             }
                         } else {
@@ -587,7 +590,10 @@ if (!dirtyPanel) {
             bindingInputs = false
         }
 
-        val chosenEngine = if (hasEngine) effectiveEngine else null
+        val displayedEngine = effectiveEngine ?: categoryEngines.getOrNull(
+            spinnerEngine?.selectedItemPosition ?: 0
+        )?.packageName
+        val chosenEngine = if (hasEngine) displayedEngine else null
         updateLanguagesForEngine(chosenEngine)
 
         refreshVoiceSpinner(effectiveEngine)
@@ -619,6 +625,8 @@ if (!dirtyPanel) {
         key: String
     ): String =
         when (key) {
+            SettingsRepository.VOICE_CATEGORY_DEFAULT ->
+                context.getString(R.string.voice_category_default_summary)
             SettingsRepository.VOICE_CATEGORY_TIME ->
                 context.getString(R.string.voice_category_time_summary)
             SettingsRepository.VOICE_CATEGORY_NUMBERS ->
