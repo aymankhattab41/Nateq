@@ -122,6 +122,64 @@ class NateqNotificationListener : NotificationListenerService() {
 
         /** مفتاحُ هوية مكالمة الإشعار: حزمةُ التطبيق + الرقم + الاسم — به
          *  تُميَّز مكالمةٌ عن تحديثٍ لإشعار المكالمة ذاتها. خالص. */
+        internal fun collectCallNotificationCandidates(
+            notification: Notification
+        ): List<String> {
+            val list = mutableListOf<String>()
+            val extras = notification.extras ?: return list
+            extras.getCharSequence(
+                Notification.EXTRA_TITLE_BIG
+            )?.toString()?.trim()?.takeIf {
+                it.isNotEmpty()
+            }?.let { list.add(it) }
+            extras.getCharSequence(
+                "android.conversationTitle"
+            )?.toString()?.trim()?.takeIf {
+                it.isNotEmpty()
+            }?.let { list.add(it) }
+            notification.tickerText?.toString()?.trim()
+                ?.takeIf { it.isNotEmpty() }?.let { list.add(it) }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                runCatching {
+                    val person = extras.getParcelable<android.app.Person>(
+                        Notification.EXTRA_CALL_PERSON
+                    )
+                    person?.name?.toString()?.trim()
+                        ?.takeIf { it.isNotEmpty() }?.let { list.add(it) }
+                    person?.uri?.trim()?.let { uri ->
+                        val clean = if (uri.startsWith("tel:")) {
+                            uri.removePrefix("tel:").trim()
+                        } else uri
+                        if (clean.isNotEmpty()) list.add(clean)
+                    }
+                }
+                runCatching {
+                    extras.getParcelableArrayList<android.app.Person>(
+                        Notification.EXTRA_PEOPLE_LIST
+                    )?.forEach { person ->
+                        person.name?.toString()?.trim()
+                            ?.takeIf { it.isNotEmpty() }?.let { list.add(it) }
+                        person.uri?.trim()?.let { uri ->
+                            val clean = if (uri.startsWith("tel:")) {
+                                uri.removePrefix("tel:").trim()
+                            } else uri
+                            if (clean.isNotEmpty()) list.add(clean)
+                        }
+                    }
+                }
+            }
+            runCatching {
+                @Suppress("DEPRECATION")
+                extras.getStringArray(Notification.EXTRA_PEOPLE)?.forEach { u ->
+                    val clean = if (u.startsWith("tel:")) {
+                        u.removePrefix("tel:").trim()
+                    } else u.trim()
+                    if (clean.isNotEmpty()) list.add(clean)
+                }
+            }
+            return list
+        }
+
         fun notificationCallKey(
             pkg: String?,
             number: String?,
@@ -243,9 +301,14 @@ class NateqNotificationListener : NotificationListenerService() {
                     val rawSubText = extras.getCharSequence(
                         Notification.EXTRA_SUB_TEXT
                     )?.toString()?.trim()
+                    val extraCandidates =
+                        collectCallNotificationCandidates(notification)
                     val (callNumber, callName) =
                         RingCallerIdentity.extractFromCallNotification(
-                            rawTitle, rawText, rawSubText
+                            title = rawTitle,
+                            text = rawText,
+                            subText = rawSubText,
+                            extraCandidates = extraCandidates
                         )
                     Log.w(
                         TAG,
@@ -990,6 +1053,8 @@ class NateqNotificationListener : NotificationListenerService() {
                 return@mapNotNull null
             }
             val extras = notification.extras
+            val extraCandidates =
+                collectCallNotificationCandidates(notification)
             val (number, name) = RingCallerIdentity
                 .extractFromCallNotification(
                     title = extras.getCharSequence(
@@ -998,7 +1063,8 @@ class NateqNotificationListener : NotificationListenerService() {
                     text = notificationBodyText(extras),
                     subText = extras.getCharSequence(
                         Notification.EXTRA_SUB_TEXT
-                    )?.toString()?.trim()
+                    )?.toString()?.trim(),
+                    extraCandidates = extraCandidates
                 )
             if (number == null && name == null) return@mapNotNull null
             sbn.postTime to notificationCallKey(pkg, number, name)

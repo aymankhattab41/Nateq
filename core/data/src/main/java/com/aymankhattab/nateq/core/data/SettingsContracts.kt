@@ -621,6 +621,10 @@ interface AnnouncementPrefs {
     /** يعيّن تفعيل إعلان المتصل. */
     fun setCallerAnnouncementEnabled(enabled: Boolean)
 
+    fun isCallerLockScreenPrivacyEnabled(): Boolean
+
+    fun setCallerLockScreenPrivacyEnabled(enabled: Boolean)
+
     /** نطق اسم المتصل الثاني الوارد أثناء مكالمة نشطة (مكالمة انتظار). */
     fun isCallerAnnouncementDuringCallEnabled(): Boolean
 

@@ -1738,4 +1738,11 @@ class SettingsRepositoryTest {
         assertTrue(repo.getProtectedApps().isEmpty())
         assertFalse(repo.isProtectedApp("com.egyptianbanks.instapay"))
     }
+    @Test
+    fun callerLockScreenPrivacyDefaultsToFalse() {
+        val repo = newRepository()
+        assertFalse(repo.isCallerLockScreenPrivacyEnabled())
+        repo.setCallerLockScreenPrivacyEnabled(true)
+        assertTrue(repo.isCallerLockScreenPrivacyEnabled())
+    }
 }

@@ -713,6 +713,9 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Fixed caller announcement on the lock screen by extracting caller identity from CallStyle and Person notification extras, ensuring caller names are spoken when the screen is locked.
+• Added caller announcement test/preview button directly inside the Caller Name Announcement section, routing preview audio through media stream to ensure audibility in silent/vibrate modes.
+• Fixed sudden background speech rate drop by enforcing speech rate and pitch right before audio synthesis, synchronizing default category rate with system and language rates, and elevating synthesis thread priority to real-time audio.
 • Enabled engine and voice selection for the general "Default Voice" category directly within the voice categories panel.
 • Restricted category languages to only those supported by the selected engine, dynamically emerging upon engine change.
 • Guaranteed Arabic and English are permanently visible and immune to legacy filters, ensuring seamless English reading on all devices.

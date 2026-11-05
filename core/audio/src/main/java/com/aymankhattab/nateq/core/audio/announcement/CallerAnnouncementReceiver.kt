@@ -1887,7 +1887,7 @@ class CallerAnnouncementReceiver : BroadcastReceiver() {
                 "${hasSpeakableIdentity(incomingNumber, contactName)}"
         )
 
-        val privacyLocked = settings.isLockScreenPrivacyEnabled() &&
+        val privacyLocked = settings.isCallerLockScreenPrivacyEnabled() &&
             settings.isDeviceScreenLocked()
 
         // **بلا هوية: لا نطق.** المسار المُختبَر يُستدعى مباشرةً وقد

@@ -750,6 +750,10 @@ etCallerPrefix =
         }
         refreshCallerVoices()
 
+        view.findViewById<View>(R.id.btn_preview_caller)?.setOnClickListener {
+            previewCaller("ar")
+        }
+
         // استرداد ذكي: إذا كانت ميزة المتصّل مفعّلة لكن أذوناتها سُحبت (سحب
         // النظام التلقائي للأذونات غير المستخدمة، خصوصاً على أندرويد 11+)
         // نكتشف ذلك فور فتح الإعدادات ونعرض إعادة المنح بدل تركه صامتاً.
@@ -973,8 +977,19 @@ etCallerPrefix =
         } else {
             spinnerCallerEngineEn?.selectedItemPosition
         } ?: 0
+        val fallbackEngine = if (isArabic) {
+            settings.getEngineForCategory(
+                SettingsRepository.ANNOUNCE_CATEGORY_CALLER_AR
+            ) ?: settings.getEngineForLanguage("ar")
+        } else {
+            settings.getEngineForCategory(
+                SettingsRepository.ANNOUNCE_CATEGORY_CALLER_EN
+            ) ?: settings.getEngineForLanguage("en")
+        } ?: settings.getEngineForCategory(
+            SettingsRepository.VOICE_CATEGORY_DEFAULT
+        )
         val enginePkg = callerEngineOptions
-            .getOrNull(engineIdx)?.packageName
+            .getOrNull(engineIdx)?.packageName ?: fallbackEngine
         val voices = if (isArabic) {
             callerVoiceOptionsAr
         } else {
@@ -985,23 +1000,27 @@ etCallerPrefix =
         } else {
             spinnerCallerVoiceEn
         }
+        val fallbackVoice = if (isArabic) {
+            settings.getCallerAnnouncementArabicVoiceId()
+        } else {
+            settings.getCallerAnnouncementEnglishVoiceId()
+        }
+        val selectedVoice = voices.getOrNull(
+            voiceSpinner?.selectedItemPosition ?: 0
+        )?.name.takeUnless { it.isNullOrBlank() } ?: fallbackVoice.orEmpty()
         val sample = fragment.getString(R.string.sample_text_caller_preview)
         val canonEngine = enginePkg?.let {
             HostProtocol.normalizeEngineId(it)
         } ?: enginePkg
         fragment.previewSpeech(
             buildPreviewParamsFrom(
-                voiceName = voices.getOrNull(
-                    voiceSpinner?.selectedItemPosition ?: 0
-                )?.name.orEmpty(),
+                voiceName = selectedVoice,
                 languageTag = if (isArabic) "ar" else "en",
                 enginePkg = canonEngine,
                 rateProgress = seekCallerRate?.progress ?: 100,
                 pitchProgress = seekCallerPitch?.progress ?: 100,
                 volumePercent = seekCallerVolume?.progress ?: 100,
                 sampleText = sample,
-                // المعاينةُ على سماتِ الإشعار كالنطقِ الحقيقي، فتراها
-                // بالصوتِ والمجرى نفسيهما (شُكوى: صارت أعلى من النطق).
                 isCallerCategory = true,
                 category = SettingsRepository.ANNOUNCE_CATEGORY_CALLER
             )

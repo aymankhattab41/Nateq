@@ -35,9 +35,13 @@ class SynthesisRequestHandler(
 
     fun getSpeechRate(languageTag: String): Float {
         // تفضيل هذه اللغة الصريح إن حُفظ (حتى لو كان 1.0x)، وإلا الرجوع إلى
-        // السرعة العامة الافتراضية — لا يُعتبر 1.0x «غياباً» فيُفقد اختيار
-        // المستخدم ويُعاد تطبيق قيمة عامة أخرى فوق إرادته.
+        // سرعة الفئة الافتراضية ثم السرعة العامة الافتراضية
         return settings.getSpeechRateOrNull(languageTag)
+            ?: runCatching {
+                settings.getSpeechRateForCategory(
+                    SettingsRepository.VOICE_CATEGORY_DEFAULT
+                )
+            }.getOrNull()?.takeIf { it > 0f }
             ?: settings.getDefaultSpeechRate()
     }
 

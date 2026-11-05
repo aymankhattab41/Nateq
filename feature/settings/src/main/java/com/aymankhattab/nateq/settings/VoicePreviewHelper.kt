@@ -182,31 +182,16 @@ internal fun resolvePreviewAudioRoute(
     category: String?,
     isCallerCategory: Boolean = false
 ): ResolvedAudioRoute {
-    val audioManager = context.getSystemService(
-        Context.AUDIO_SERVICE
-    ) as? android.media.AudioManager
-    val inCall = runCatching {
-        val mode = audioManager?.mode
-        mode == android.media.AudioManager.MODE_IN_CALL ||
-            mode == android.media.AudioManager.MODE_IN_COMMUNICATION
-    }.getOrDefault(false)
-    val isSilent = runCatching {
-        val rm = audioManager?.ringerMode
-        rm == android.media.AudioManager.RINGER_MODE_SILENT ||
-            rm == android.media.AudioManager.RINGER_MODE_VIBRATE
-    }.getOrDefault(false)
-    val effectiveCat = category ?: if (isCallerCategory) {
-        SettingsRepository.ANNOUNCE_CATEGORY_CALLER
-    } else {
-        null
-    }
-    val settings = SettingsRepository.create(context)
-    val config = settings.getCategoryLoudnessConfig(effectiveCat)
-    return EventLoudnessPolicy.resolveTargetStreamAndAttributes(
-        category = effectiveCat,
-        config = config,
-        inCall = inCall,
-        isSilentOrVibrate = isSilent
+    // جميع المعاينات داخل واجهة الإعدادات تُوجّه لقناة الوسائط (Music)
+    // حتى تُسمع بوضوح ولا تُكتم بحالة الصامت/الاهتزاز أو مستوى إشعارات النظام.
+    val attr = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_MEDIA)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+        .build()
+    return ResolvedAudioRoute(
+        stream = android.media.AudioManager.STREAM_MUSIC,
+        audioAttributes = attr,
+        modeName = "PREVIEW_MEDIA"
     )
 }
 

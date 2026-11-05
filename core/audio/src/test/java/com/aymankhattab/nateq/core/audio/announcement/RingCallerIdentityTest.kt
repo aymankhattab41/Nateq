@@ -163,4 +163,27 @@ class RingCallerIdentityTest {
             CallerAnnouncementReceiver.hasSpeakableIdentity(number, name)
         )
     }
+    @Test
+    fun `extra candidates provide identity on lock screen`() {
+        val (number, name) = RingCallerIdentity.extractFromCallNotification(
+            title = "مكالمة واردة",
+            text = null,
+            subText = null,
+            extraCandidates = listOf("خالد محمود")
+        )
+        assertNull(number)
+        assertEquals("خالد محمود", name)
+    }
+
+    @Test
+    fun `cleanCallerName strips call prefix phrases`() {
+        val (number, name) = RingCallerIdentity.extractFromCallNotification(
+            title = "مكالمة واردة",
+            text = null,
+            subText = null,
+            extraCandidates = listOf("مكالمة واردة من محمود سمير")
+        )
+        assertNull(number)
+        assertEquals("محمود سمير", name)
+    }
 }
