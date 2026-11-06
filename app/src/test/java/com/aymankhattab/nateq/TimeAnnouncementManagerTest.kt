@@ -128,13 +128,13 @@ class TimeAnnouncementManagerTest {
 
     @Test
     fun formatArabic_oClockMorning() {
-        assertEquals("الساعة الآن العاشرة صباحاً", formatArabic(10, 0))
+        assertEquals("الساعة الآن العاشرة نهاراً", formatArabic(10, 0))
     }
 
     @Test
     fun formatArabic_quarterPast() {
         assertEquals(
-            "الساعة الآن العاشرة والربع، صباحاً",
+            "الساعة الآن العاشرة والربع، نهاراً",
             formatArabic(10, 15)
         )
     }
@@ -142,7 +142,7 @@ class TimeAnnouncementManagerTest {
     @Test
     fun formatArabic_halfPast() {
         assertEquals(
-            "الساعة الآن العاشرة والنصف، صباحاً",
+            "الساعة الآن العاشرة والنصف، نهاراً",
             formatArabic(10, 30)
         )
     }
@@ -150,16 +150,16 @@ class TimeAnnouncementManagerTest {
     @Test
     fun formatArabic_quarterTo() {
         assertEquals(
-            "الساعة الآن الحادية عشرة إلا ربع، صباحاً",
+            "الساعة الآن الحادية عشرة إلا ربع، نهاراً",
             formatArabic(10, 45)
         )
     }
 
     @Test
     fun formatArabic_minutesToNextHour() {
-        // 10:55 → «الحادية عشرة إلا خمس دقائق، صباحاً»
+        // 10:55 → «الحادية عشرة إلا خمس دقائق، نهاراً»
         assertEquals(
-            "الساعة الآن الحادية عشرة إلا خمس دقائق، صباحاً",
+            "الساعة الآن الحادية عشرة إلا خمس دقائق، نهاراً",
             formatArabic(10, 55)
         )
     }
@@ -167,26 +167,40 @@ class TimeAnnouncementManagerTest {
     @Test
     fun formatArabic_afternoon() {
         assertEquals(
-            "الساعة الآن الواحدة والربع، مساءً",
+            "الساعة الآن الواحدة والربع، ظهراً",
             formatArabic(13, 15)
         )
     }
 
     @Test
     fun formatArabic_midday() {
-        assertEquals("الساعة الآن الثانية عشرة ظهراً", formatArabic(12, 0))
+        // 12:00 تماماً → «منتصف النهار» فقط دون أي إضافات
+        assertEquals("منتصف النهار", formatArabic(12, 0))
     }
 
     @Test
     fun formatArabic_midnight() {
-        // 0:00 → الثانية عشرة صباحاً (الساعة 12 في الصباح)
-        assertEquals("الساعة الآن الثانية عشرة صباحاً", formatArabic(0, 0))
+        // 0:00 تماماً → «منتصف الليل» فقط دون أي إضافات
+        assertEquals("منتصف الليل", formatArabic(0, 0))
+    }
+
+    @Test
+    fun formatArabic_twelvePastMinutes_keepStandardFormat() {
+        // 12:15 و 0:15 تظلان بصيغتهما المعتادة بلا مساس
+        assertEquals(
+            "الساعة الآن الثانية عشرة والربع، ظهراً",
+            formatArabic(12, 15)
+        )
+        assertEquals(
+            "الساعة الآن الثانية عشرة والربع، ليلاً",
+            formatArabic(0, 15)
+        )
     }
 
     @Test
     fun formatArabic_dualMinutes() {
         assertEquals(
-            "الساعة الآن العاشرة دقيقتان، صباحاً",
+            "الساعة الآن العاشرة دقيقتان، نهاراً",
             formatArabic(10, 2)
         )
     }
@@ -194,7 +208,7 @@ class TimeAnnouncementManagerTest {
     @Test
     fun formatArabic_pluralMinutes() {
         assertEquals(
-            "الساعة الآن الثالثة عشر دقائق، مساءً",
+            "الساعة الآن الثالثة عشر دقائق، عصراً",
             formatArabic(15, 10)
         )
     }
@@ -203,7 +217,7 @@ class TimeAnnouncementManagerTest {
     fun formatArabic_styles_prepositionalAndAsIs() {
         settings.setDayPeriodStyle(SettingsRepository.DAY_PERIOD_STYLE_AS_IS)
         assertEquals(
-            "الساعة الآن العاشرة والربع صباحاً",
+            "الساعة الآن العاشرة والربع نهاراً",
             formatArabic(10, 15)
         )
 
@@ -211,16 +225,32 @@ class TimeAnnouncementManagerTest {
             SettingsRepository.DAY_PERIOD_STYLE_PREPOSITIONAL
         )
         assertEquals(
-            "الساعة الآن العاشرة والربع في الصباح",
+            "الساعة الآن العاشرة والربع في النهار",
             formatArabic(10, 15)
         )
         assertEquals(
-            "الساعة الآن الواحدة والربع في المساء",
+            "الساعة الآن الواحدة والربع بعد الظهر",
             formatArabic(13, 15)
         )
         assertEquals(
-            "الساعة الآن الثانية عشرة بعد الظهر",
+            "منتصف النهار",
             formatArabic(12, 0)
+        )
+        assertEquals(
+            "منتصف الليل",
+            formatArabic(0, 0)
+        )
+        assertEquals(
+            "الساعة الآن الرابعة في العصر",
+            formatArabic(16, 0)
+        )
+        assertEquals(
+            "الساعة الآن الثامنة في الليل",
+            formatArabic(20, 0)
+        )
+        assertEquals(
+            "الساعة الآن الرابعة في الفجر",
+            formatArabic(4, 0)
         )
 
         // إعادة الوضع الافتراضي
@@ -303,7 +333,7 @@ class TimeAnnouncementManagerTest {
     @Test
     fun formatDigital_arabic24h_midnightPhrase() {
         assertEquals(
-            "الساعة الآن منتصف الليل",
+            "منتصف الليل",
             formatDigital(0, 0, false, true)
         )
     }
@@ -344,9 +374,9 @@ class TimeAnnouncementManagerTest {
         assertEquals(
             "thirteen", formatDigital(13, 0, true, true)
         )
-        // العربية لم تتأثر: منتصف الليل 24h يبقى «الساعة الآن منتصف الليل».
+        // العربية: منتصف الليل 24h و 12h يبقى «منتصف الليل» فقط.
         assertEquals(
-            "الساعة الآن منتصف الليل",
+            "منتصف الليل",
             formatDigital(0, 0, false, true)
         )
     }
@@ -355,6 +385,13 @@ class TimeAnnouncementManagerTest {
     fun formatDigital_arabic12h_ordinalHour() {
         // 9:00 رقمي → «الساعة الآن التاسعة»
         assertEquals("الساعة الآن التاسعة", formatDigital(9, 0, false, false))
+        // 12:00 تماماً رقمي → «منتصف النهار»
+        assertEquals("منتصف النهار", formatDigital(12, 0, false, false))
+        // 12:15 رقمي → «الساعة الآن الثانية عشرة خمس عشرة دقيقة»
+        assertEquals(
+            "الساعة الآن الثانية عشرة خمس عشرة دقيقة",
+            formatDigital(12, 15, false, false)
+        )
     }
 
     // ═══════════════════════ حسابات ساعات الهدوء ═══════════════════════

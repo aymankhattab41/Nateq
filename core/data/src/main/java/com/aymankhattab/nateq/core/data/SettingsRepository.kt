@@ -1846,25 +1846,81 @@ class SettingsRepository(context: Context) :
 
     /** سرعة النطق لكل فئة */
     override fun getSpeechRateForCategory(category: String): Float =
-        prefs.getFloat("speech_rate_$category", 1.0f)
-    override fun setSpeechRateForCategory(category: String, rate: Float) =
-        prefs.edit()
-            .putFloat("speech_rate_$category", rate.coerceIn(0f, 2f))
-            .apply()
+        if (category == VOICE_CATEGORY_DEFAULT ||
+            hasExplicitSpeechRateForCategory(category)
+        ) {
+            prefs.getFloat(
+                "speech_rate_$category",
+                if (category == VOICE_CATEGORY_DEFAULT) {
+                    prefs.getFloat("default_speech_rate", 1.0f)
+                } else {
+                    1.0f
+                }
+            )
+        } else {
+            getSpeechRateForCategory(VOICE_CATEGORY_DEFAULT)
+        }
+
+    override fun setSpeechRateForCategory(category: String, rate: Float) {
+        val clamped = rate.coerceIn(0f, 2f)
+        val editor = prefs.edit().putFloat("speech_rate_$category", clamped)
+        if (category == VOICE_CATEGORY_DEFAULT) {
+            editor.putFloat("default_speech_rate", clamped)
+        }
+        editor.apply()
+    }
 
     /** نبرة الصوت لكل فئة */
     override fun getPitchForCategory(category: String): Float =
-        prefs.getFloat("pitch_$category", 1.0f)
-    override fun setPitchForCategory(category: String, pitch: Float) =
-        prefs.edit().putFloat("pitch_$category", pitch.coerceIn(0f, 2f)).apply()
+        if (category == VOICE_CATEGORY_DEFAULT ||
+            hasExplicitPitchForCategory(category)
+        ) {
+            prefs.getFloat(
+                "pitch_$category",
+                if (category == VOICE_CATEGORY_DEFAULT) {
+                    prefs.getFloat("default_pitch", 1.0f)
+                } else {
+                    1.0f
+                }
+            )
+        } else {
+            getPitchForCategory(VOICE_CATEGORY_DEFAULT)
+        }
+
+    override fun setPitchForCategory(category: String, pitch: Float) {
+        val clamped = pitch.coerceIn(0f, 2f)
+        val editor = prefs.edit().putFloat("pitch_$category", clamped)
+        if (category == VOICE_CATEGORY_DEFAULT) {
+            editor.putFloat("default_pitch", clamped)
+        }
+        editor.apply()
+    }
 
     /** مستوى الصوت لكل فئة */
     override fun getVolumeForCategory(category: String): Float =
-        prefs.getFloat("volume_$category", 1.0f)
-    override fun setVolumeForCategory(category: String, volume: Float) =
-        prefs.edit()
-            .putFloat("volume_$category", volume.coerceIn(0f, 1f))
-            .apply()
+        if (category == VOICE_CATEGORY_DEFAULT ||
+            hasExplicitVolumeForCategory(category)
+        ) {
+            prefs.getFloat(
+                "volume_$category",
+                if (category == VOICE_CATEGORY_DEFAULT) {
+                    prefs.getFloat("default_volume", 1.0f)
+                } else {
+                    1.0f
+                }
+            )
+        } else {
+            getVolumeForCategory(VOICE_CATEGORY_DEFAULT)
+        }
+
+    override fun setVolumeForCategory(category: String, volume: Float) {
+        val clamped = volume.coerceIn(0f, 1f)
+        val editor = prefs.edit().putFloat("volume_$category", clamped)
+        if (category == VOICE_CATEGORY_DEFAULT) {
+            editor.putFloat("default_volume", clamped)
+        }
+        editor.apply()
+    }
 
     override fun hasExplicitSpeechRateForCategory(category: String): Boolean =
         prefs.contains("speech_rate_$category")
@@ -2233,23 +2289,51 @@ class SettingsRepository(context: Context) :
 
     /** السرعة العامة الافتراضية */
     override fun getDefaultSpeechRate(): Float =
-        prefs.getFloat("default_speech_rate", 1.0f)
-    override fun setDefaultSpeechRate(rate: Float) =
+        if (prefs.contains("default_speech_rate")) {
+            prefs.getFloat("default_speech_rate", 1.0f)
+        } else {
+            getSpeechRateForCategory(VOICE_CATEGORY_DEFAULT)
+        }
+
+    override fun setDefaultSpeechRate(rate: Float) {
+        val clamped = rate.coerceIn(0f, 2f)
         prefs.edit()
-            .putFloat("default_speech_rate", rate.coerceIn(0f, 2f))
+            .putFloat("default_speech_rate", clamped)
+            .putFloat("speech_rate_$VOICE_CATEGORY_DEFAULT", clamped)
             .apply()
+    }
 
     /** النبرة العامة الافتراضية */
     override fun getDefaultPitch(): Float =
-        prefs.getFloat("default_pitch", 1.0f)
-    override fun setDefaultPitch(pitch: Float) =
-        prefs.edit().putFloat("default_pitch", pitch.coerceIn(0f, 2f)).apply()
+        if (prefs.contains("default_pitch")) {
+            prefs.getFloat("default_pitch", 1.0f)
+        } else {
+            getPitchForCategory(VOICE_CATEGORY_DEFAULT)
+        }
+
+    override fun setDefaultPitch(pitch: Float) {
+        val clamped = pitch.coerceIn(0f, 2f)
+        prefs.edit()
+            .putFloat("default_pitch", clamped)
+            .putFloat("pitch_$VOICE_CATEGORY_DEFAULT", clamped)
+            .apply()
+    }
 
     /** مستوى الصوت العام الافتراضي */
     override fun getDefaultVolume(): Float =
-        prefs.getFloat("default_volume", 1.0f)
-    override fun setDefaultVolume(volume: Float) =
-        prefs.edit().putFloat("default_volume", volume.coerceIn(0f, 1f)).apply()
+        if (prefs.contains("default_volume")) {
+            prefs.getFloat("default_volume", 1.0f)
+        } else {
+            getVolumeForCategory(VOICE_CATEGORY_DEFAULT)
+        }
+
+    override fun setDefaultVolume(volume: Float) {
+        val clamped = volume.coerceIn(0f, 1f)
+        prefs.edit()
+            .putFloat("default_volume", clamped)
+            .putFloat("volume_$VOICE_CATEGORY_DEFAULT", clamped)
+            .apply()
+    }
 
     /** مستوى اتساع الصوت (0 إيقاف، 1 خفيف، 2 متوسط) */
     override fun getAudioExpansionLevel(): Int =

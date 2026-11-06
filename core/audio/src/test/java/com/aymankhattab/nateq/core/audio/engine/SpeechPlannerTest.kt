@@ -44,13 +44,25 @@ class SpeechPlannerTest {
             category: String
         ): Float = categoryRates[category] ?: 1.0f
 
+        override fun hasExplicitSpeechRateForCategory(
+            category: String
+        ): Boolean = categoryRates.containsKey(category)
+
         override fun getPitchForCategory(
             category: String
         ): Float = categoryPitches[category] ?: 1.0f
 
+        override fun hasExplicitPitchForCategory(
+            category: String
+        ): Boolean = categoryPitches.containsKey(category)
+
         override fun getVolumeForCategory(
             category: String
         ): Float = categoryVolumes[category] ?: 1.0f
+
+        override fun hasExplicitVolumeForCategory(
+            category: String
+        ): Boolean = categoryVolumes.containsKey(category)
 
         override fun getAnnouncementFallbackEngine(): String? = null
         override fun setAnnouncementFallbackEngine(

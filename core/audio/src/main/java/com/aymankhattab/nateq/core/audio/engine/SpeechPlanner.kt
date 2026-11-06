@@ -128,47 +128,89 @@ object SpeechPlanner {
         }
 
         val rate = when (resolved.source) {
-            VoiceResolutionPolicy.SOURCE_CATEGORY_EMOJI -> runCatching {
-                settings?.getSpeechRateForCategory(
-                    SettingsRepository.VOICE_CATEGORY_EMOJI
-                )
-            }.getOrNull() ?: defaultRate
+            VoiceResolutionPolicy.SOURCE_CATEGORY_EMOJI -> {
+                if (settings?.hasExplicitSpeechRateForCategory(
+                        SettingsRepository.VOICE_CATEGORY_EMOJI
+                    ) == true
+                ) {
+                    settings?.getSpeechRateForCategory(
+                        SettingsRepository.VOICE_CATEGORY_EMOJI
+                    ) ?: defaultRate
+                } else {
+                    defaultRate
+                }
+            }
             VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER,
-            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER_PARAMS -> runCatching {
-                settings?.getSpeechRateForCategory(
-                    SettingsRepository.VOICE_CATEGORY_NUMBERS
-                )
-            }.getOrNull() ?: defaultRate
+            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER_PARAMS -> {
+                if (settings?.hasExplicitSpeechRateForCategory(
+                        SettingsRepository.VOICE_CATEGORY_NUMBERS
+                    ) == true
+                ) {
+                    settings?.getSpeechRateForCategory(
+                        SettingsRepository.VOICE_CATEGORY_NUMBERS
+                    ) ?: defaultRate
+                } else {
+                    defaultRate
+                }
+            }
             else -> defaultRate
         }
 
         val pitch = when (resolved.source) {
-            VoiceResolutionPolicy.SOURCE_CATEGORY_EMOJI -> runCatching {
-                settings?.getPitchForCategory(
-                    SettingsRepository.VOICE_CATEGORY_EMOJI
-                )
-            }.getOrNull() ?: defaultPitch
+            VoiceResolutionPolicy.SOURCE_CATEGORY_EMOJI -> {
+                if (settings?.hasExplicitPitchForCategory(
+                        SettingsRepository.VOICE_CATEGORY_EMOJI
+                    ) == true
+                ) {
+                    settings?.getPitchForCategory(
+                        SettingsRepository.VOICE_CATEGORY_EMOJI
+                    ) ?: defaultPitch
+                } else {
+                    defaultPitch
+                }
+            }
             VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER,
-            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER_PARAMS -> runCatching {
-                settings?.getPitchForCategory(
-                    SettingsRepository.VOICE_CATEGORY_NUMBERS
-                )
-            }.getOrNull() ?: defaultPitch
+            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER_PARAMS -> {
+                if (settings?.hasExplicitPitchForCategory(
+                        SettingsRepository.VOICE_CATEGORY_NUMBERS
+                    ) == true
+                ) {
+                    settings?.getPitchForCategory(
+                        SettingsRepository.VOICE_CATEGORY_NUMBERS
+                    ) ?: defaultPitch
+                } else {
+                    defaultPitch
+                }
+            }
             else -> defaultPitch
         }
 
         val volume = when (resolved.source) {
-            VoiceResolutionPolicy.SOURCE_CATEGORY_EMOJI -> runCatching {
-                settings?.getVolumeForCategory(
-                    SettingsRepository.VOICE_CATEGORY_EMOJI
-                )
-            }.getOrNull() ?: defaultVolume
+            VoiceResolutionPolicy.SOURCE_CATEGORY_EMOJI -> {
+                if (settings?.hasExplicitVolumeForCategory(
+                        SettingsRepository.VOICE_CATEGORY_EMOJI
+                    ) == true
+                ) {
+                    settings?.getVolumeForCategory(
+                        SettingsRepository.VOICE_CATEGORY_EMOJI
+                    ) ?: defaultVolume
+                } else {
+                    defaultVolume
+                }
+            }
             VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER,
-            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER_PARAMS -> runCatching {
-                settings?.getVolumeForCategory(
-                    SettingsRepository.VOICE_CATEGORY_NUMBERS
-                )
-            }.getOrNull() ?: defaultVolume
+            VoiceResolutionPolicy.SOURCE_CATEGORY_NUMBER_PARAMS -> {
+                if (settings?.hasExplicitVolumeForCategory(
+                        SettingsRepository.VOICE_CATEGORY_NUMBERS
+                    ) == true
+                ) {
+                    settings?.getVolumeForCategory(
+                        SettingsRepository.VOICE_CATEGORY_NUMBERS
+                    ) ?: defaultVolume
+                } else {
+                    defaultVolume
+                }
+            }
             else -> defaultVolume
         }
 

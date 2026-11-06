@@ -1161,6 +1161,12 @@ class SystemVoiceProvider(
         val utteranceId = "nateq_${System.currentTimeMillis()}"
         val params = android.os.Bundle().apply {
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
+            putFloat("rate", speechRate)
+            putInt("rate", (speechRate * 100).toInt())
+            putString("rate", (speechRate * 100).toInt().toString())
+            putFloat("pitch", pitch)
+            putInt("pitch", (pitch * 100).toInt())
+            putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume)
         }
 
         val tempFile = sessionWavFile()

@@ -23,11 +23,20 @@ interface VoicePrefsProvider {
     /** معدل الكلام لمجموعة صوتية معيّنة (نسبة من الطبيعي). */
     fun getSpeechRateForCategory(category: String): Float
 
+    /** هل للمجموعة الصوتية معدل كلام صريح مخصص؟ */
+    fun hasExplicitSpeechRateForCategory(category: String): Boolean = false
+
     /** درجة الصوت لمجموعة صوتية معيّنة (نصف نغمة). */
     fun getPitchForCategory(category: String): Float
 
+    /** هل للمجموعة الصوتية درجة صوت صريحة مخصصة؟ */
+    fun hasExplicitPitchForCategory(category: String): Boolean = false
+
     /** مستوى الصوت لمجموعة صوتية معيّنة (0..1). */
     fun getVolumeForCategory(category: String): Float
+
+    /** هل للمجموعة الصوتية مستوى صوت صريح مخصص؟ */
+    fun hasExplicitVolumeForCategory(category: String): Boolean = false
 
     /** معايرة RMS المحفوظة لمحرك (كسب التطبيع المستقر) — null إن لم توجد
      *  (بند الأوامر د.3.3). الافتراضي بلا ثبات لموفّرٍ لا يدعم الحفظ. */
