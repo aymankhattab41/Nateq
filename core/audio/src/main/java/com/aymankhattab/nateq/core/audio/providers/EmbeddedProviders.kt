@@ -14,6 +14,9 @@ object EmbeddedProviders {
     private val microsoftRef = AtomicReference<MicrosoftEmbeddedVoiceProvider?>(
         null
     )
+    private val acapelaRef = AtomicReference<AcapelaEmbeddedVoiceProvider?>(
+        null
+    )
 
     @Synchronized
     fun vocalizer(context: Context): VocalizerEmbeddedVoiceProvider {
@@ -34,11 +37,23 @@ object EmbeddedProviders {
     }
 
     @Synchronized
+    fun acapela(context: Context): AcapelaEmbeddedVoiceProvider {
+        val app = context.applicationContext
+        acapelaRef.get()?.let { return it }
+        val inst = AcapelaEmbeddedVoiceProvider(app)
+        acapelaRef.set(inst)
+        return inst
+    }
+
+    @Synchronized
     fun shutdownAll() {
         vocalizerRef.getAndSet(null)?.let {
             runCatching { it.shutdown() }
         }
         microsoftRef.getAndSet(null)?.let {
+            runCatching { it.shutdown() }
+        }
+        acapelaRef.getAndSet(null)?.let {
             runCatching { it.shutdown() }
         }
     }

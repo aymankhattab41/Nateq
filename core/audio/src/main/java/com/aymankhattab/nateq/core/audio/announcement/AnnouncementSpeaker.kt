@@ -43,6 +43,7 @@ import com.aymankhattab.nateq.engine.TextProcessor
 import android.os.Bundle
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import com.aymankhattab.nateq.core.common.VisibleEngines
+import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
 import com.aymankhattab.nateq.core.audio.providers.EngineBindVerifier
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
@@ -1168,12 +1169,15 @@ class AnnouncementSpeaker(
         if (HostProtocol.isEmbeddedEngine(engine)) {
             tts = null
             val isReady = runCatching {
-                val prov = if (HostProtocol.normalizeEngineId(
-                    engine.orEmpty()
-                ) == HostProtocol.ENGINE_MICROSOFT) {
-                    EmbeddedProviders.microsoft(appContext)
-                } else {
-                    EmbeddedProviders.vocalizer(appContext)
+                val prov = when (
+                    HostProtocol.normalizeEngineId(engine.orEmpty())
+                ) {
+                    HostProtocol.ENGINE_MICROSOFT ->
+                        EmbeddedProviders.microsoft(appContext)
+                    HostProtocol.ENGINE_ACAPELA ->
+                        EmbeddedProviders.acapela(appContext)
+                    else ->
+                        EmbeddedProviders.vocalizer(appContext)
                 }
                 prov.isConfigured()
             }.getOrDefault(false)
@@ -2320,12 +2324,15 @@ speechCycle.incrementAndGet()
         stopEmbeddedAudioTrack()
 
         embeddedSpeechJob = prewarmScope.launch {
-            val provider = if (HostProtocol.normalizeEngineId(
-                boundEngine.orEmpty()
-            ) == HostProtocol.ENGINE_MICROSOFT) {
-                EmbeddedProviders.microsoft(appContext)
-            } else {
-                EmbeddedProviders.vocalizer(appContext)
+            val provider = when (
+                HostProtocol.normalizeEngineId(boundEngine.orEmpty())
+            ) {
+                HostProtocol.ENGINE_MICROSOFT ->
+                    EmbeddedProviders.microsoft(appContext)
+                HostProtocol.ENGINE_ACAPELA ->
+                    EmbeddedProviders.acapela(appContext)
+                else ->
+                    EmbeddedProviders.vocalizer(appContext)
             }
             val boost = settings?.let { s ->
                 if (runCatching { s.isSpeechBoostEnabled() }
@@ -2382,14 +2389,15 @@ speechCycle.incrementAndGet()
                     val effectivePitch =
                         unit.pitch.coerceAtLeast(MIN_RATE_OR_PITCH)
                     val rawVoice = unit.voiceId ?: voiceId
-                    val defaultEmb = if (
-                        HostProtocol.normalizeEngineId(
-                            boundEngine.orEmpty()
-                        ) == HostProtocol.ENGINE_MICROSOFT
+                    val defaultEmb = when (
+                        HostProtocol.normalizeEngineId(boundEngine.orEmpty())
                     ) {
-                        MicrosoftEmbeddedVoiceProvider.PROVIDER_ID
-                    } else {
-                        VocalizerEmbeddedVoiceProvider.PROVIDER_ID
+                        HostProtocol.ENGINE_MICROSOFT ->
+                            MicrosoftEmbeddedVoiceProvider.PROVIDER_ID
+                        HostProtocol.ENGINE_ACAPELA ->
+                            AcapelaEmbeddedVoiceProvider.PROVIDER_ID
+                        else ->
+                            VocalizerEmbeddedVoiceProvider.PROVIDER_ID
                     }
                     val descriptor = VoiceDescriptor(
                         id = rawVoice.orEmpty(),

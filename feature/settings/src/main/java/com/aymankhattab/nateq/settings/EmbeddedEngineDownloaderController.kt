@@ -18,6 +18,8 @@ import com.aymankhattab.nateq.core.audio.providers.DownloadError
 import com.aymankhattab.nateq.core.audio.providers.DownloadHttpHelper
 import com.aymankhattab.nateq.core.audio.providers.DownloadLog
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedStorage
+import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceManifest
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftCatalogItem
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftDownloader
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftEmbeddedVoiceProvider
@@ -127,6 +129,7 @@ internal class EmbeddedEngineDownloaderController(
         engineToggle?.check(
             when (activeEngine) {
                 "microsoft" -> R.id.btn_engine_microsoft
+                "acapela" -> R.id.btn_engine_acapela
                 else -> R.id.btn_engine_vocalizer
             }
         )
@@ -134,6 +137,7 @@ internal class EmbeddedEngineDownloaderController(
             if (isChecked) {
                 activeEngine = when (checkedId) {
                     R.id.btn_engine_microsoft -> "microsoft"
+                    R.id.btn_engine_acapela -> "acapela"
                     else -> "vocalizer"
                 }
                 navLevel = NavLevel.LANGUAGES
@@ -141,6 +145,19 @@ internal class EmbeddedEngineDownloaderController(
                 selectedVoiceKey = null
                 renderVoicesList(root)
             }
+        }
+
+        val btnImport = root.findViewById<MaterialButton>(
+            R.id.btn_import_acapela_voice
+        )
+        btnImport?.setOnClickListener {
+            fragment.openAcapelaZipLauncher.launch(
+                arrayOf(
+                    "application/zip",
+                    "application/x-zip-compressed",
+                    "*/*"
+                )
+            )
         }
 
 
@@ -175,7 +192,12 @@ internal class EmbeddedEngineDownloaderController(
             MicrosoftModelCatalog.isVoiceInstalled(msDir, item)
         }
 
-        val total = vocCount + msCount
+        val acBase = EmbeddedStorage.baseDir(
+            ctx,
+            EmbeddedStorage.Engine.ACAPELA
+        )
+        val acCount = AcapelaVoiceManifest.listVoices(acBase).size
+        val total = vocCount + msCount + acCount
         val isAr = LanguageCode.isArabic(Locale.getDefault().language)
         return if (total > 0) {
             if (isAr) {
@@ -202,11 +224,121 @@ internal class EmbeddedEngineDownloaderController(
 
         container.removeAllViews()
 
+        val btnImport = root.findViewById<MaterialButton>(
+            R.id.btn_import_acapela_voice
+        )
+        btnImport?.visibility = if (activeEngine == "acapela") {
+            View.VISIBLE
+        } else {
+            View.GONE
+        }
+
         when (activeEngine) {
             "microsoft" -> renderMicrosoftNav(container, emptyView)
+            "acapela" -> renderAcapelaVoices(container, emptyView)
             else -> renderVocalizerNav(container, emptyView)
         }
         renderNavHeader(root)
+    }
+
+    private fun renderAcapelaVoices(
+        container: LinearLayout,
+        emptyView: TextView?
+    ) {
+        val ctx = fragment.requireContext()
+        val baseDir = EmbeddedStorage.baseDir(
+            ctx,
+            EmbeddedStorage.Engine.ACAPELA
+        )
+        val voices = AcapelaVoiceManifest.listVoices(baseDir)
+        if (voices.isEmpty()) {
+            emptyView?.text = ctx.getString(R.string.acapela_no_voices_found)
+            emptyView?.visibility = View.VISIBLE
+            return
+        }
+        emptyView?.visibility = View.GONE
+        val inflater = LayoutInflater.from(ctx)
+        for (voice in voices) {
+            val itemView = inflater.inflate(
+                R.layout.item_embedded_voice,
+                container,
+                false
+            )
+            bindAcapelaCard(itemView, voice)
+            container.addView(itemView)
+        }
+    }
+
+    private fun bindAcapelaCard(
+        view: View,
+        voice: AcapelaVoiceManifest.VoiceInfo
+    ) {
+        val ctx = fragment.requireContext()
+        val tvTitle = view.findViewById<TextView>(R.id.tv_voice_title)
+        val tvSubtitle = view.findViewById<TextView>(R.id.tv_voice_subtitle)
+        val badge = view.findViewById<TextView>(R.id.tv_voice_status_badge)
+        val btnDownload = view.findViewById<MaterialButton>(
+            R.id.btn_voice_download
+        )
+        val btnTestConn = view.findViewById<MaterialButton>(
+            R.id.btn_voice_test_connection
+        )
+        val btnPreview = view.findViewById<MaterialButton>(
+            R.id.btn_voice_preview
+        )
+        val btnDelete = view.findViewById<MaterialButton>(
+            R.id.btn_voice_delete
+        )
+
+        tvTitle.text = voice.displayName
+        val langName = voice.locale.displayLanguage
+        tvSubtitle.text = "$langName • ${voice.sampleRate} Hz"
+
+        badge.visibility = View.VISIBLE
+        btnDownload.visibility = View.GONE
+        btnTestConn.visibility = View.GONE
+        btnPreview.visibility = View.VISIBLE
+        btnDelete.visibility = View.VISIBLE
+
+        btnPreview.setOnClickListener {
+            val sample = if (LanguageCode.isArabic(voice.locale.language)) {
+                "أهلاً بك، هذه معاينة لصوت ${voice.voiceName} عبر محرك أكابيلا"
+            } else {
+                "Hello, this is a voice preview for ${voice.voiceName}"
+            }
+            val params = PreviewParams(
+                enginePkg = AcapelaEmbeddedVoiceProvider.PROVIDER_ID,
+                voiceName = voice.voiceName,
+                languageTag = voice.locale.toLanguageTag(),
+                speechRate = 1.0f,
+                pitch = 1.0f,
+                volume = 1.0f,
+                sampleText = sample
+            )
+            preview.play(params)
+        }
+
+        btnDelete.setOnClickListener {
+            MaterialAlertDialogBuilder(ctx)
+                .setTitle(R.string.acapela_delete_voice_confirm_title)
+                .setMessage(
+                    ctx.getString(
+                        R.string.acapela_delete_voice_confirm_msg,
+                        voice.displayName
+                    )
+                )
+                .setPositiveButton(R.string.embedded_delete_btn) { _, _ ->
+                    voice.dir.deleteRecursively()
+                    EmbeddedStorage.bumpVersion()
+                    EnginePicker.invalidateAfterStorageChange()
+                    fragment.view?.let { root ->
+                        renderVoicesList(root)
+                        renderEngineStatusList(root)
+                    }
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
     }
 
     /** توزيع المستوى الحالي في الهرم: لغة ← صوت ← جودة. */
@@ -1045,6 +1177,11 @@ internal class EmbeddedEngineDownloaderController(
                 id = MicrosoftEmbeddedVoiceProvider.PROVIDER_ID,
                 name = ctx.getString(R.string.embedded_engine_microsoft),
                 storageEngine = EmbeddedStorage.Engine.MICROSOFT
+            ),
+            EngineEntry(
+                id = AcapelaEmbeddedVoiceProvider.PROVIDER_ID,
+                name = ctx.getString(R.string.embedded_engine_acapela),
+                storageEngine = EmbeddedStorage.Engine.ACAPELA
             )
         )
 
@@ -1087,6 +1224,8 @@ internal class EmbeddedEngineDownloaderController(
                 VocalizerEmbeddedVoiceProvider.resolveDataDir(ctx)
             HostProtocol.ENGINE_MICROSOFT ->
                 MicrosoftEmbeddedVoiceProvider.resolveDataDir(ctx)
+            HostProtocol.ENGINE_ACAPELA ->
+                AcapelaEmbeddedVoiceProvider.resolveDataDir(ctx)
             else -> null
         }
     }

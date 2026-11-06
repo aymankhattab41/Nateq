@@ -47,6 +47,10 @@ object EmbeddedStorage {
         MICROSOFT(
             "Microsoft",
             listOf("Microsoft")
+        ),
+        ACAPELA(
+            "Acapela",
+            listOf("Acapela", "acapela", "voices", "voice")
         )
     }
 
@@ -230,6 +234,30 @@ object EmbeddedStorage {
                             name = f.name,
                             size = f.length(),
                             isRecognized = isCatalogMatch
+                        )
+                    )
+                }
+            }
+            Engine.ACAPELA -> {
+                for (dir in searchDirs) {
+                    val comp = AcapelaVoiceManifest.completeVoiceDirs(dir)
+                    for (c in comp) {
+                        completedVoices.add(c.name)
+                    }
+                }
+                for (f in distinctFiles) {
+                    val ext = f.extension.lowercase()
+                    val isMatch = ext in setOf(
+                        "ini", "inf", "bvcu", "dat", "hdr",
+                        "bnf", "pho", "dic", "mdd", "cfg", "txt"
+                    )
+                    inventoryFiles.add(
+                        InventoryFile(
+                            file = f,
+                            relativePath = f.name,
+                            name = f.name,
+                            size = f.length(),
+                            isRecognized = isMatch
                         )
                     )
                 }

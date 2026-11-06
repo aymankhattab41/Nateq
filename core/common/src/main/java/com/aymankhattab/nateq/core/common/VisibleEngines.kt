@@ -28,7 +28,9 @@ object VisibleEngines {
         "vocalizer",
         "vocalizer_embedded",
         "microsoft",
-        "microsoft_embedded"
+        "microsoft_embedded",
+        "acapela",
+        "acapela_embedded"
     )
 
     fun isEmbeddedEngine(engineId: String?): Boolean {

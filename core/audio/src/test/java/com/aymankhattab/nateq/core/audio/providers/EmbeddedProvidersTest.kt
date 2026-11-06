@@ -44,6 +44,13 @@ class EmbeddedProvidersTest {
     }
 
     @Test
+    fun acapela_returnsSingleInstancePerProcess() {
+        val first = EmbeddedProviders.acapela(context)
+        val second = EmbeddedProviders.acapela(context)
+        assertSame(first, second)
+    }
+
+    @Test
     fun sharedInstance_ignoresDifferentContextWrappers() {
         val direct = EmbeddedProviders.vocalizer(context)
         val viaOther = EmbeddedProviders.vocalizer(

@@ -397,6 +397,8 @@ internal class VoicePreviewHelper(private val context: Context) {
                 EmbeddedProviders.vocalizer(context.applicationContext)
             HostProtocol.ENGINE_MICROSOFT ->
                 EmbeddedProviders.microsoft(context.applicationContext)
+            HostProtocol.ENGINE_ACAPELA ->
+                EmbeddedProviders.acapela(context.applicationContext)
             else ->
                 throw IllegalArgumentException("Unknown engine: $pkg")
         }

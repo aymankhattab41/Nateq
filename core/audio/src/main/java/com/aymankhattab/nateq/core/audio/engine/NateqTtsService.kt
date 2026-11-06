@@ -40,7 +40,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import com.aymankhattab.nateq.core.audio.announcement.InterruptionSensors
+import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
+import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceManifest
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
+import com.aymankhattab.nateq.core.audio.providers.EmbeddedStorage
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VoiceDescriptor
@@ -412,6 +415,7 @@ class NateqTtsService : TextToSpeechService() {
             SystemVoiceProvider(applicationContext, settings),
             EmbeddedProviders.vocalizer(applicationContext),
             EmbeddedProviders.microsoft(applicationContext),
+            EmbeddedProviders.acapela(applicationContext),
         )
         catalog = VoiceCatalog(providers)
         requestHandler = SynthesisRequestHandler(catalog, settings)
@@ -1532,6 +1536,12 @@ class NateqTtsService : TextToSpeechService() {
                 finalEngine == "microsoft" ||
                 targetProvider.providerId ==
                 MicrosoftEmbeddedVoiceProvider.PROVIDER_ID
+            val isAcapela = finalEngine ==
+                AcapelaEmbeddedVoiceProvider.PROVIDER_ID ||
+                finalEngine == HostProtocol.ENGINE_ACAPELA ||
+                finalEngine == "acapela" ||
+                targetProvider.providerId ==
+                AcapelaEmbeddedVoiceProvider.PROVIDER_ID
             val isGeneric = finalVoiceName.isNullOrBlank() ||
                 finalVoiceName.equals("Device Default", true) ||
                 finalVoiceName.equals("ar-EG", true) ||
@@ -1633,6 +1643,36 @@ class NateqTtsService : TextToSpeechService() {
                     } else {
                         fallbackVoice
                     }
+                }
+            } else if (isAcapela) {
+                val acBase = EmbeddedStorage.baseDir(
+                    applicationContext,
+                    EmbeddedStorage.Engine.ACAPELA
+                )
+                val acVoices = AcapelaVoiceManifest.listVoices(acBase)
+                val installedAr = acVoices.firstOrNull {
+                    LanguageCode.isArabic(it.locale.language)
+                }?.voiceName
+                val installedEn = acVoices.firstOrNull {
+                    LanguageCode.isEnglish(it.locale.language)
+                }?.voiceName
+                val fallbackVoice = if (LanguageCode.isArabic(languageTag)) {
+                    installedAr ?: acVoices.firstOrNull()?.voiceName ?: "Mehdi"
+                } else {
+                    installedEn ?: acVoices.firstOrNull()?.voiceName ?: "Ryan"
+                }
+                if (isGeneric) {
+                    fallbackVoice
+                } else {
+                    val matched = acVoices.firstOrNull {
+                        it.voiceName.equals(finalVoiceName, true) ||
+                            it.id.equals(finalVoiceName, true) ||
+                            it.displayName.contains(
+                                finalVoiceName.orEmpty(),
+                                true
+                            )
+                    }
+                    matched?.voiceName ?: fallbackVoice
                 }
             } else {
                 finalVoiceName
@@ -1944,6 +1984,12 @@ class NateqTtsService : TextToSpeechService() {
             targetEngine == "microsoft" ||
             provider.providerId ==
             MicrosoftEmbeddedVoiceProvider.PROVIDER_ID
+        val isAcapela = targetEngine ==
+            AcapelaEmbeddedVoiceProvider.PROVIDER_ID ||
+            targetEngine == HostProtocol.ENGINE_ACAPELA ||
+            targetEngine == "acapela" ||
+            provider.providerId ==
+            AcapelaEmbeddedVoiceProvider.PROVIDER_ID
         val isGeneric = targetVoiceName.isNullOrBlank() ||
             targetVoiceName.equals("Device Default", true) ||
             targetVoiceName.equals("ar-EG", true) ||
@@ -2044,6 +2090,36 @@ class NateqTtsService : TextToSpeechService() {
                     fallbackVoice
                 }
             }
+        } else if (isAcapela) {
+            val acBase = EmbeddedStorage.baseDir(
+                applicationContext,
+                EmbeddedStorage.Engine.ACAPELA
+            )
+            val acVoices = AcapelaVoiceManifest.listVoices(acBase)
+            val installedAr = acVoices.firstOrNull {
+                LanguageCode.isArabic(it.locale.language)
+            }?.voiceName
+            val installedEn = acVoices.firstOrNull {
+                LanguageCode.isEnglish(it.locale.language)
+            }?.voiceName
+            val fallbackVoice = if (LanguageCode.isArabic(segTag)) {
+                installedAr ?: acVoices.firstOrNull()?.voiceName ?: "Mehdi"
+            } else {
+                installedEn ?: acVoices.firstOrNull()?.voiceName ?: "Ryan"
+            }
+            if (isGeneric) {
+                fallbackVoice
+            } else {
+                val matched = acVoices.firstOrNull {
+                    it.voiceName.equals(targetVoiceName, true) ||
+                        it.id.equals(targetVoiceName, true) ||
+                        it.displayName.contains(
+                            targetVoiceName.orEmpty(),
+                            true
+                        )
+                }
+                matched?.voiceName ?: fallbackVoice
+            }
         } else {
             targetVoiceName
         }
@@ -2058,9 +2134,11 @@ class NateqTtsService : TextToSpeechService() {
         var finalUsedEngine = targetEngine
         var finalUsedVoiceName = resolvedVoiceName
 
-        if (isNumericRole && (isVoc || isMs)) {
+        if (isNumericRole && (isVoc || isMs || isAcapela)) {
             val eng = targetEngine ?: if (isMs) {
                 MicrosoftEmbeddedVoiceProvider.PROVIDER_ID
+            } else if (isAcapela) {
+                AcapelaEmbeddedVoiceProvider.PROVIDER_ID
             } else {
                 VocalizerEmbeddedVoiceProvider.PROVIDER_ID
             }
@@ -2718,6 +2796,26 @@ class NateqTtsService : TextToSpeechService() {
             if (msProvider.isConfigured()) {
                 runCatching {
                     msProvider.listVoices(Locale.getDefault())
+                }
+            }
+        }
+        val usesAcapela = settings.getEngineForCategory(
+            SettingsRepository.VOICE_CATEGORY_NUMBERS
+        ) == AcapelaEmbeddedVoiceProvider.PROVIDER_ID ||
+            settings.getEngineForCategory(
+                SettingsRepository.VOICE_CATEGORY_DEFAULT
+            ) == AcapelaEmbeddedVoiceProvider.PROVIDER_ID ||
+            settings.getEngineForLanguage(LanguageCode.AR.tag) ==
+                AcapelaEmbeddedVoiceProvider.PROVIDER_ID ||
+            settings.getEngineForLanguage(LanguageCode.EN.tag) ==
+                AcapelaEmbeddedVoiceProvider.PROVIDER_ID
+        if (usesAcapela) {
+            val acProvider = EmbeddedProviders.acapela(
+                applicationContext
+            )
+            if (acProvider.isConfigured()) {
+                runCatching {
+                    acProvider.listVoices(Locale.getDefault())
                 }
             }
         }

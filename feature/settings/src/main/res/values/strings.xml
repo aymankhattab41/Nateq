@@ -723,6 +723,9 @@
 <string name="changelog_title">آخر التحديثات</string>
     <string name="changelog_text">
 الإصدار %1$s
+• إضافة دعم محرك الأصوات المدمجة Acapela للعمل محلياً بالكامل بجانب Vocalizer وMicrosoft Neural.
+• إضافة ميزة استيراد أصوات Acapela من ملفات الأرشيف المضغوطة (ZIP) وحفظها تلقائياً في التخزين المدمج المشترك.
+• إتاحة معاينة واختبار أصوات Acapela المستوردة وحذفها، وتكامل المحرك وأصواته فوراً مع كافة فئات النطق وقارئ الشاشة وإعداد جميع اللغات.
 • تحديث شامل لصيغ إعلان الوقت: إزالة «صباحاً» و«مساءً» نهائياً واستبدالها بالفترات العربية الطبيعية («نهاراً»، «ظهراً»، «عصراً»، «ليلاً»، «فجراً»)، وتخصيص رأس الساعة الثانية عشرة لتُنطق «منتصف النهار» (12:00) و«منتصف الليل» (00:00) حصراً دون أي إضافات، مع بقاء أجزاء الساعة 12 بصيغتها الطبيعية.
 • تحصين شامل ومتعدد الطبقات للاحتفاظ بسرعة النطق في الخلفية: توريث سرعة الفئة الافتراضية لكافة الفئات غير المخصصة صراحة (الوقت، البطارية، المتصل، الأرقام، الإيموجي) لمنع هبوطها إلى 1.0x، وإعادة فرض السرعة والنبرة فوراً قبل النطق المباشر في المتحدث لمنع تصفيرهما عند تغيير الصوت أو اللغة، وحقن معلمات السرعة والنبرة عبر حزم Binder IPC للمحركات الخارجية، وضمان عدم انخفاض سرعة قارئ الشاشة عند قراءة الأرقام والإيموجي.
 • حل مشكلة عدم نطق المتصل عند قفل الشاشة واستخراج اسم ورقم المتصل بدقة من إشعارات المكالمات وCallStyle والـ Person وتجاوز حجب شاشة القفل عند تفعيل إعلان المتصل.
@@ -775,7 +778,16 @@
     <string name="section_embedded_downloader_summary">أصوات عصبية ومدمجة محلية تعمل بلا إنترنت وبأعلى جودة</string>
     <string name="embedded_engine_vocalizer">Vocalizer Ex 2</string>
     <string name="embedded_engine_microsoft">Microsoft Neural</string>
+    <string name="embedded_engine_acapela">Acapela</string>
     <string name="voice_provider_microsoft_embedded">Microsoft (مدمج)</string>
+    <string name="voice_provider_acapela_embedded">Acapela (مدمج)</string>
+    <string name="btn_import_acapela_voice">استيراد صوت Acapela (.zip)</string>
+    <string name="acapela_no_voices_found">لم يتم استيراد أي صوت Acapela بعد. اضغط على زر الاستيراد لاختيار حزمة صوت (.zip).</string>
+    <string name="acapela_import_success">تم استيراد الصوت بنجاح: %1$s</string>
+    <string name="acapela_import_error">فشل استيراد الصوت: %1$s</string>
+    <string name="acapela_import_select_file">اختر ملف صوت Acapela (.zip)</string>
+    <string name="acapela_delete_voice_confirm_title">حذف صوت Acapela</string>
+    <string name="acapela_delete_voice_confirm_msg">هل أنت متأكد من حذف صوت \"%1$s\"؟</string>
     <string name="embedded_download_confirm_title">تأكيد تنزيل الصوت</string>
     <string name="embedded_download_confirm_msg">الصوت: %1$s&#10;المحرك: %2$s&#10;الحجم: %3$s&#10;المواصفات: %4$s&#10;&#10;هل ترغب في متابعة التنزيل؟</string>
     <string name="embedded_download_confirm_btn">تأكيد التنزيل</string>

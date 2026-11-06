@@ -6,6 +6,7 @@ import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
 import android.util.Log
+import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedProviders
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
 import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
@@ -163,6 +164,25 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                 if (list.isNotEmpty()) cacheEngineVoices(enginePackage, list)
                 return list
             }
+            if (enginePackage == AcapelaEmbeddedVoiceProvider.PROVIDER_ID) {
+                val list = runCatching {
+                    val acapela = EmbeddedProviders.acapela(context)
+                    if (acapela.isConfigured()) {
+                        acapela.listVoices(Locale.ROOT).map { d ->
+                            Voice(
+                                d.displayName,
+                                d.locale,
+                                Voice.QUALITY_HIGH,
+                                Voice.LATENCY_LOW,
+                                false,
+                                offlineFeature
+                            )
+                        }
+                    } else emptyList()
+                }.getOrDefault(emptyList())
+                if (list.isNotEmpty()) cacheEngineVoices(enginePackage, list)
+                return list
+            }
             return engineProbeSemaphore.withPermit {
                 if (!forceRefresh) {
                     getCachedEngineVoices(enginePackage)?.let { return it }
@@ -235,7 +255,8 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                 .filterNot { isBlacklisted(it.packageName) }
             val vocalizerPkg = VocalizerEmbeddedVoiceProvider.PROVIDER_ID
             val microsoftPkg = MicrosoftEmbeddedVoiceProvider.PROVIDER_ID
-            val embeddedPkgs = setOf(vocalizerPkg, microsoftPkg)
+            val acapelaPkg = AcapelaEmbeddedVoiceProvider.PROVIDER_ID
+            val embeddedPkgs = setOf(vocalizerPkg, microsoftPkg, acapelaPkg)
             val externalEngines = engines.filterNot {
                 it.packageName in embeddedPkgs
             }
@@ -247,18 +268,20 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                             EmbeddedProviders.vocalizer(context).displayName
                         microsoftPkg ->
                             EmbeddedProviders.microsoft(context).displayName
+                        acapelaPkg ->
+                            EmbeddedProviders.acapela(context).displayName
                         else -> pkg
                     }
 
             val embeddedVoicesMap = mutableMapOf<String, List<Voice>>()
             val unavailableEngines = mutableListOf<UnavailableEngine>()
 
-            for (embPkg in listOf(vocalizerPkg, microsoftPkg)) {
+            for (embPkg in listOf(vocalizerPkg, microsoftPkg, acapelaPkg)) {
                 try {
-                    val prov = if (embPkg == vocalizerPkg) {
-                        EmbeddedProviders.vocalizer(context)
-                    } else {
-                        EmbeddedProviders.microsoft(context)
+                    val prov = when (embPkg) {
+                        vocalizerPkg -> EmbeddedProviders.vocalizer(context)
+                        microsoftPkg -> EmbeddedProviders.microsoft(context)
+                        else -> EmbeddedProviders.acapela(context)
                     }
                     if (prov.isConfigured() &&
                         VisibleEngines.isVisible(embPkg)
@@ -764,6 +787,10 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             providerId == "microsoft_embedded"
         ) {
             "microsoft_embedded"
+        } else if (providerId == "acapela" ||
+            providerId == "acapela_embedded"
+        ) {
+            "acapela_embedded"
         } else {
             providerId
         }
@@ -772,7 +799,9 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
                 (norm == "vocalizer_embedded" &&
                     it.providerId == "vocalizer") ||
                 (norm == "microsoft_embedded" &&
-                    it.providerId == "microsoft")
+                    it.providerId == "microsoft") ||
+                (norm == "acapela_embedded" &&
+                    it.providerId == "acapela")
         }
     }
 
