@@ -173,7 +173,10 @@ internal class GeneralSettingsController(
                 )
                 // **بند 6.3:** الحفظ عند كل تغيير (لا عند رفع الإصبع فقط) —
                 // تعديل TalkBack لا يصل إلى onStopTrackingTouch أبداً.
-                runCatching { settings.setDefaultSpeechRate(value) }
+                runCatching {
+                    settings.setDefaultSpeechRate(value)
+                    settings.setSpeechRate("ar", value)
+                }
                 onStatusChanged()
             }
 
@@ -181,7 +184,10 @@ internal class GeneralSettingsController(
             override fun onStopTrackingTouch(seekBar: SeekBar) {
                 seekBar.snapSpeedMin()
                 val value = seekBar.progress.speedFactor()
-                runCatching { settings.setDefaultSpeechRate(value) }
+                runCatching {
+                    settings.setDefaultSpeechRate(value)
+                    settings.setSpeechRate("ar", value)
+                }
                 seekBar.announceCompat(
                     RateLabel.of(fragment.requireContext(), value)
                 )
@@ -208,7 +214,10 @@ internal class GeneralSettingsController(
                 )
                 // **بند 6.3:** الحفظ عند كل تغيير — تعديل TalkBack لا تصل
                 // نهايته إلى onStopTrackingTouch أبداً.
-                runCatching { settings.setDefaultPitch(value) }
+                runCatching {
+                    settings.setDefaultPitch(value)
+                    settings.setPitch("ar", value)
+                }
                 onStatusChanged()
             }
 
@@ -216,7 +225,10 @@ internal class GeneralSettingsController(
             override fun onStopTrackingTouch(seekBar: SeekBar) {
                 seekBar.snapSpeedMin()
                 val value = seekBar.progress.speedFactor()
-                runCatching { settings.setDefaultPitch(value) }
+                runCatching {
+                    settings.setDefaultPitch(value)
+                    settings.setPitch("ar", value)
+                }
                 seekBar.announceCompat(
                     RateLabel.of(fragment.requireContext(), value)
                 )

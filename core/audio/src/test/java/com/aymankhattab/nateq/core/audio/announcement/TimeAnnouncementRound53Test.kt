@@ -7,6 +7,7 @@ import com.aymankhattab.nateq.core.audio.engine.VoiceCatalog
 import com.aymankhattab.nateq.core.audio.providers.SystemVoiceProvider
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.core.engine.EngineMarkers
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -72,15 +73,24 @@ class TimeAnnouncementRound53Test {
                     explicitNunForDayPeriod = true
                 )
 
-                // 1. يحتوي على النون الصريحة
+                // 1. يحتوي على النون الصريحة (إلا 12:00 منتصف النهار)
+                val isMiddayExact = h == 12 && m == 0
                 val hasExplicitNun =
                     finalSpeech.contains(ArabicSpeechNormalizer.SABA_AN) ||
                         finalSpeech.contains(ArabicSpeechNormalizer.DHUHR_AN) ||
-                        finalSpeech.contains(ArabicSpeechNormalizer.MASA_AN)
-                assertTrue(
-                    "يجب أن يحوي نوناً صريحة لـ $h:$m: $finalSpeech",
-                    hasExplicitNun
-                )
+                        finalSpeech.contains(ArabicSpeechNormalizer.MASA_AN) ||
+                        finalSpeech.contains(ArabicSpeechNormalizer.NAHAR_AN) ||
+                        finalSpeech.contains(ArabicSpeechNormalizer.ASR_AN) ||
+                        finalSpeech.contains(ArabicSpeechNormalizer.LAYL_AN) ||
+                        finalSpeech.contains(ArabicSpeechNormalizer.FAJR_AN)
+                if (isMiddayExact) {
+                    assertEquals("منتصف النهار", finalSpeech)
+                } else {
+                    assertTrue(
+                        "يجب أن يحوي نوناً صريحة لـ $h:$m: $finalSpeech",
+                        hasExplicitNun
+                    )
+                }
 
                 // 2. فاصلة قبل الفترة في غير الساعة التامة
                 if (m != 0) {
@@ -129,9 +139,13 @@ class TimeAnnouncementRound53Test {
                 )
 
                 // يحتوي على الصيغة المجرورة المناسبة
-                val hasPrep = finalSpeech.contains("في الصباح") ||
+                // (أو منتصف النهار عند 12:00)
+                val hasPrep = finalSpeech.contains("في النهار") ||
                     finalSpeech.contains("بعد الظهر") ||
-                    finalSpeech.contains("في المساء")
+                    finalSpeech.contains("في العصر") ||
+                    finalSpeech.contains("في الليل") ||
+                    finalSpeech.contains("في الفجر") ||
+                    finalSpeech == "منتصف النهار"
                 assertTrue(
                     "يجب أن يحوي صيغة مجرورة لـ $h:$m: $finalSpeech",
                     hasPrep

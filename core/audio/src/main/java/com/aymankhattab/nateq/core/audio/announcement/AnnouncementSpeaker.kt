@@ -2860,7 +2860,9 @@ speechCycle.incrementAndGet()
                 }
             } ?: 1.0f
         }
-        tts.setSpeechRate(clampedSpeechRate(speechRate * boost))
+        val finalSpeechRate = clampedSpeechRate(speechRate * boost)
+        val finalPitch = pitch.coerceAtLeast(MIN_RATE_OR_PITCH)
+        tts.setSpeechRate(finalSpeechRate)
         // مضاعف الصوت العام (إن فعّله المستخدم): يُضرب بمستوى الصوت
         // النهائي (يأتي من تفضيل الفئة أو الإعداد العام) قبل قصّه على
         // النطاق الكامل (0..1) — أعلى مستوى متاح للنظام بلا تشويه.
@@ -2878,7 +2880,7 @@ speechCycle.incrementAndGet()
                 }
             } ?: 1.0f
         }
-        tts.setPitch(pitch.coerceAtLeast(MIN_RATE_OR_PITCH))
+        tts.setPitch(finalPitch)
         // حلّ صوت الوحدة: المعرّف الصريح المخصص (مثل "ar-EG") إن أعرضه
         // المحرك المربوط؛ وإلا أول صوتٍ لسانه لسانُ الوحدة فيضمن تبديل
         // لغة النطق فعلياً للوحدة الإنجليزية المفردة (بند 18) بدل الاعتماد
@@ -3056,6 +3058,14 @@ speechCycle.incrementAndGet()
                 TextToSpeech.Engine.KEY_PARAM_VOLUME,
                 boostedVolume
             )
+            putFloat("rate", finalSpeechRate)
+            putInt("rate", (finalSpeechRate * 100).toInt())
+            putString(
+                "rate",
+                (finalSpeechRate * 100).toInt().toString()
+            )
+            putFloat("pitch", finalPitch)
+            putInt("pitch", (finalPitch * 100).toInt())
             // القناة من قرارِ المسار نفسه — الإشعارُ للمتصل خارج
             // المكالمة، و**قناةُ المكالمةِ لمكالمةِ الانتظار** (بند 5)،
             // والوسائطُ لغيره. **يجب أن تتطابق مع السمات** وإلا تجاهل
@@ -3125,6 +3135,10 @@ speechCycle.incrementAndGet()
         if (assignedUtteranceId == null) {
             lastQueuedUtteranceId = utteranceId
         }
+        // إعادة تأكيد السرعة والنبرة مباشرة قبل speak لتفادي تصفيرهما
+        // عند تغيير الصوت أو اللغة عبر setVoice / setLanguage
+        tts.setSpeechRate(finalSpeechRate)
+        tts.setPitch(finalPitch)
         val status = tts.speak(cleanText, queueMode, params, utteranceId)
         // المحركُ رفض المعرّفَ فلن يُشعِر بعودته لاحقاً، فأخرجه من السجل
         if (status == TextToSpeech.ERROR) {

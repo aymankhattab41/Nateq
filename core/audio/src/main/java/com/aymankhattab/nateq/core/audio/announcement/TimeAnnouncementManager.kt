@@ -637,22 +637,24 @@ class TimeAnnouncementManager(
             // الساعة تُنطق بالصيغة الترتيبية المؤنثة المعرّفة بأل:
             // «الساعة الآن الثانية» لا «اثنتين».
             if (minute == 0) {
-                    if (midnightPhrase) {
-                        "الساعة الآن منتصف الليل"
-                    } else {
-                        "الساعة الآن " +
-                        NumberSpeech.toOrdinalHourWord(displayedHour)
-                    }
+                if (hour == 0) {
+                    "منتصف الليل"
+                } else if (hour == 12) {
+                    "منتصف النهار"
                 } else {
-                    if (midnightPhrase) {
-                        "الساعة الآن منتصف الليل " +
-                        arabicMinutePhrase(minute)
-                    } else {
-                        "الساعة الآن " +
-                        NumberSpeech.toOrdinalHourWord(displayedHour) +
-                        " " + arabicMinutePhrase(minute)
-                    }
+                    "الساعة الآن " +
+                    NumberSpeech.toOrdinalHourWord(displayedHour)
                 }
+            } else {
+                if (midnightPhrase) {
+                    "الساعة الآن منتصف الليل " +
+                    arabicMinutePhrase(minute)
+                } else {
+                    "الساعة الآن " +
+                    NumberSpeech.toOrdinalHourWord(displayedHour) +
+                    " " + arabicMinutePhrase(minute)
+                }
+            }
         }
     }
 
@@ -708,24 +710,34 @@ class TimeAnnouncementManager(
         else -> "${NumberSpeech.toArabicWords(count)} دقيقة"
     }
 
-    /** فترة اليوم حسب ساعة 24 بصيغة المجرور (في الصباح/بعد الظهر/في المساء). */
+    /** فترة اليوم حسب ساعة 24 بصيغة المجرور
+     *  (في النهار/بعد الظهر/في العصر/في الليل). */
     private fun prepositionalPeriodFor(hour24: Int): String = when (hour24) {
-        12 -> "بعد الظهر"
-        in 0..11 -> "في الصباح"
-        in 13..20 -> "في المساء"
+        in 0..3 -> "في الليل"
+        in 4..5 -> "في الفجر"
+        in 6..11 -> "في النهار"
+        in 12..14 -> "بعد الظهر"
+        in 15..17 -> "في العصر"
         else -> "في الليل"
     }
 
     /** فترة اليوم حسب ساعة 24 — صريحة تُستخدم في الصيغة الطبيعية ونظيرتها
      *  «إلا» (حيث يُحسب الوقت بإشارة إلى الساعة التالية). */
     private fun periodFor(hour24: Int): String = when (hour24) {
-        12 -> "ظهراً"
-        in 0..11 -> "صباحاً"
-        else -> "مساءً"
+        in 0..3 -> "ليلاً"
+        in 4..5 -> "فجراً"
+        in 6..11 -> "نهاراً"
+        in 12..14 -> "ظهراً"
+        in 15..17 -> "عصراً"
+        else -> "ليلاً"
     }
 
     /** تنسيق الوقت بالعربية الطبيعية: "الساعة الآن العاشرة والربع" */
     private fun formatArabicNaturalTime(hour: Int, minute: Int): String {
+        if (minute == 0) {
+            if (hour == 0) return "منتصف الليل"
+            if (hour == 12) return "منتصف النهار"
+        }
         val hour12 = if (hour == 0) 12 else if (hour > 12) hour - 12 else hour
         val arabicHour = NumberSpeech.toOrdinalHourWord(hour12)
         val style = runCatching {

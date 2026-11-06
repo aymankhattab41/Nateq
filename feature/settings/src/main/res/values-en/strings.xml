@@ -713,6 +713,8 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Comprehensive overhaul of time announcement phrasing: completely eliminated "صباحاً" (morning) and "مساءً" (evening) in favor of natural Arabic day periods ("نهاراً", "ظهراً", "عصراً", "ليلاً", "فجراً"), and streamlined 12:00 to announce exclusively as "منتصف النهار" (noon) and "منتصف الليل" (midnight) without prefixes or additions, while preserving standard natural phrasing for other minutes of the hour.
+• Multi-layer fortification of speech rate retention in background: automatic inheritance of default category rate across all uncustomized categories (Time, Battery, Caller, Numbers, Emoji) preventing sudden drops to 1.0x, re-asserting speech rate and pitch immediately prior to speech invocation to protect against engine reset on voice/language switch, injecting IPC rate/pitch parameters into engine request bundles, and ensuring TalkBack reading speed never decelerates on numbers and emojis.
 • Fixed caller announcement on the lock screen by extracting caller identity from CallStyle and Person notification extras, ensuring caller names are spoken when the screen is locked.
 • Added caller announcement test/preview button directly inside the Caller Name Announcement section, routing preview audio through media stream to ensure audibility in silent/vibrate modes.
 • Fixed sudden background speech rate drop by enforcing speech rate and pitch right before audio synthesis, synchronizing default category rate with system and language rates, and elevating synthesis thread priority to real-time audio.
