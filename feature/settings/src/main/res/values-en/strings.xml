@@ -713,6 +713,9 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Integrated embedded Acapela TTS engine running completely offline alongside Vocalizer and Microsoft Neural.
+• Added direct Acapela voice package import from ZIP archives with automated unpacking into shared embedded storage.
+• Enabled voice preview, testing, and deletion for imported Acapela voices, with immediate integration into all speech categories, TalkBack reader, and All Languages Setup.
 • Comprehensive overhaul of time announcement phrasing: completely eliminated "صباحاً" (morning) and "مساءً" (evening) in favor of natural Arabic day periods ("نهاراً", "ظهراً", "عصراً", "ليلاً", "فجراً"), and streamlined 12:00 to announce exclusively as "منتصف النهار" (noon) and "منتصف الليل" (midnight) without prefixes or additions, while preserving standard natural phrasing for other minutes of the hour.
 • Multi-layer fortification of speech rate retention in background: automatic inheritance of default category rate across all uncustomized categories (Time, Battery, Caller, Numbers, Emoji) preventing sudden drops to 1.0x, re-asserting speech rate and pitch immediately prior to speech invocation to protect against engine reset on voice/language switch, injecting IPC rate/pitch parameters into engine request bundles, and ensuring TalkBack reading speed never decelerates on numbers and emojis.
 • Fixed caller announcement on the lock screen by extracting caller identity from CallStyle and Person notification extras, ensuring caller names are spoken when the screen is locked.
@@ -765,7 +768,16 @@ Version %1$s
     <string name="section_embedded_downloader_summary">High quality offline neural and embedded voices working completely without internet</string>
     <string name="embedded_engine_vocalizer">Vocalizer Ex 2</string>
     <string name="embedded_engine_microsoft">Microsoft Neural</string>
+    <string name="embedded_engine_acapela">Acapela</string>
     <string name="voice_provider_microsoft_embedded">Microsoft (Embedded)</string>
+    <string name="voice_provider_acapela_embedded">Acapela (Embedded)</string>
+    <string name="btn_import_acapela_voice">Import Acapela voice (.zip)</string>
+    <string name="acapela_no_voices_found">No Acapela voices imported yet. Tap import to select a voice (.zip) package.</string>
+    <string name="acapela_import_success">Voice imported successfully: %1$s</string>
+    <string name="acapela_import_error">Failed to import voice: %1$s</string>
+    <string name="acapela_import_select_file">Select Acapela voice file (.zip)</string>
+    <string name="acapela_delete_voice_confirm_title">Delete Acapela Voice</string>
+    <string name="acapela_delete_voice_confirm_msg">Are you sure you want to delete voice \"%1$s\"?</string>
     <string name="embedded_download_confirm_title">Confirm Voice Download</string>
     <string name="embedded_download_confirm_msg">Voice: %1$s&#10;Engine: %2$s&#10;Size: %3$s&#10;Specs: %4$s&#10;&#10;Do you want to proceed with downloading?</string>
     <string name="embedded_download_confirm_btn">Confirm Download</string>

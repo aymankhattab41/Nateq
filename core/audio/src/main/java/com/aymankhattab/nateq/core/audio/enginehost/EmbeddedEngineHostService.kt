@@ -42,7 +42,8 @@ class EmbeddedEngineHostService : Service() {
         /** المحركات المعروفة — أي معرّف آخر يُرفض برمز معنون. */
         private val KNOWN_ENGINES = setOf(
             HostProtocol.ENGINE_VOCALIZER,
-            HostProtocol.ENGINE_MICROSOFT
+            HostProtocol.ENGINE_MICROSOFT,
+            HostProtocol.ENGINE_ACAPELA
         )
     }
 
@@ -144,6 +145,10 @@ class EmbeddedEngineHostService : Service() {
             val voices = when (id) {
                 HostProtocol.ENGINE_VOCALIZER -> {
                     val session = sessions[id] as? VocalizerHostSession
+                    session?.listVoices() ?: emptyList()
+                }
+                HostProtocol.ENGINE_ACAPELA -> {
+                    val session = sessions[id] as? AcapelaHostSession
                     session?.listVoices() ?: emptyList()
                 }
                 else -> emptyList()
@@ -370,6 +375,8 @@ class EmbeddedEngineHostService : Service() {
                 VocalizerHostSession(this)
             HostProtocol.ENGINE_MICROSOFT ->
                 MicrosoftHostSession(this)
+            HostProtocol.ENGINE_ACAPELA ->
+                AcapelaHostSession(this)
             else -> return null
         }
         return sessions.putIfAbsent(normId, created) ?: created

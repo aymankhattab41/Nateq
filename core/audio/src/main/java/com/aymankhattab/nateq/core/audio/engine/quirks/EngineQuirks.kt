@@ -103,6 +103,28 @@ data class EngineQuirks(
                 tashkeelPolicy = TashkeelPolicy.UNKNOWN,
                 problematicLanguages = emptySet(),
                 problematicVoiceNames = emptySet()
+            ),
+            "acapela_embedded" to EngineQuirks(
+                packageName = "acapela_embedded",
+                needsWarmupPolling = false,
+                requiresLocaleWithRegion = false,
+                rejectsVoiceSilently = false,
+                needsSetLanguageBeforeSetVoice = false,
+                maxSafeSpeechRate = 3.0f,
+                tashkeelPolicy = TashkeelPolicy.UNKNOWN,
+                problematicLanguages = emptySet(),
+                problematicVoiceNames = emptySet()
+            ),
+            "acapela" to EngineQuirks(
+                packageName = "acapela",
+                needsWarmupPolling = false,
+                requiresLocaleWithRegion = false,
+                rejectsVoiceSilently = false,
+                needsSetLanguageBeforeSetVoice = false,
+                maxSafeSpeechRate = 3.0f,
+                tashkeelPolicy = TashkeelPolicy.UNKNOWN,
+                problematicLanguages = emptySet(),
+                problematicVoiceNames = emptySet()
             )
         )
 

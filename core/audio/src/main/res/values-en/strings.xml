@@ -5,6 +5,8 @@
     <string name="voice_provider_system">System voice</string>
     <string name="voice_provider_vocalizer_embedded">Vocalizer Expressive 2 (Embedded)</string>
     <string name="voice_provider_microsoft_embedded">Microsoft (Embedded)</string>
+    <string name="voice_provider_acapela_embedded">Acapela (Embedded)</string>
+    <string name="embedded_engine_acapela">Acapela</string>
     <string name="voice_name_arabic">Arabic</string>
     <string name="voice_name_english">English</string>
 

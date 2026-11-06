@@ -59,6 +59,7 @@ import android.util.Log
 import com.aymankhattab.nateq.core.audio.engine.DiscoveryResult
 import com.aymankhattab.nateq.core.audio.engine.UnavailableEngine
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
+import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceImporter
 import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
 import com.aymankhattab.nateq.core.audio.providers.VocalizerDownloader
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftEmbeddedVoiceProvider
@@ -428,6 +429,59 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
     ) { result ->
         if (::timeSection.isInitialized) {
             timeSection.onCustomChimeResult(result)
+        }
+    }
+
+    /** منتقي ملفات أصوات Acapela المضغوطة (.zip) */
+    internal val openAcapelaZipLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            val ctx = context ?: return@registerForActivityResult
+            val fileName = runCatching {
+                ctx.contentResolver.query(
+                    uri, null, null, null, null
+                )?.use { cur ->
+                    val idx = cur.getColumnIndex(
+                        android.provider.OpenableColumns.DISPLAY_NAME
+                    )
+                    if (idx >= 0 && cur.moveToFirst()) cur.getString(idx)
+                    else null
+                }
+            }.getOrNull()
+
+            lifecycleScope.launch(AppDispatchers.main) {
+                Toast.makeText(
+                    ctx,
+                    R.string.acapela_import_select_file,
+                    Toast.LENGTH_SHORT
+                ).show()
+
+                val result = withContext(AppDispatchers.io) {
+                    AcapelaVoiceImporter.importFromZip(ctx, uri, fileName)
+                }
+
+                if (!isAdded) return@launch
+                if (result.success) {
+                    val voicesNames = result.importedVoices.joinToString("، ")
+                    val msg = getString(
+                        R.string.acapela_import_success,
+                        voicesNames
+                    )
+                    Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                } else {
+                    val err = result.errorMessage ?: getString(
+                        R.string.acapela_import_error,
+                        ""
+                    )
+                    Toast.makeText(ctx, err, Toast.LENGTH_LONG).show()
+                }
+                view?.let { root ->
+                    if (::embeddedDownloaderSection.isInitialized) {
+                        embeddedDownloaderSection.refresh(root)
+                    }
+                }
+            }
         }
     }
 

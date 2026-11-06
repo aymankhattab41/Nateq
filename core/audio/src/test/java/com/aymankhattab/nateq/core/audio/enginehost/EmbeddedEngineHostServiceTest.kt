@@ -47,10 +47,10 @@ class EmbeddedEngineHostServiceTest {
     }
 
     @Test
-    fun init_withAcapelaEmbeddedAlias_returnsUnknownEngine() {
+    fun init_withAcapelaEmbeddedAlias_doesNotReturnUnknownEngine() {
         val raw = binder.init("acapela_embedded", "/dummy/dir", false)
         val res = HostProtocol.decodeResult(raw)
-        assertEquals("UNKNOWN_ENGINE", res.code)
+        assertNotEquals("UNKNOWN_ENGINE", res.code)
     }
 
     @Test

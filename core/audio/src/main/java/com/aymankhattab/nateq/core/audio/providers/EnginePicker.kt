@@ -167,6 +167,21 @@ object EnginePicker {
             )
         }
 
+        try {
+            val acapela = EmbeddedProviders.acapela(context)
+            scanOneEmbedded(
+                engines,
+                acapela,
+                AcapelaEmbeddedVoiceProvider.PROVIDER_ID
+            )
+        } catch (t: Throwable) {
+            EngineStatusRegistry.noteFailure(
+                AcapelaEmbeddedVoiceProvider.PROVIDER_ID,
+                "SCAN_FAILED",
+                t.message ?: t.javaClass.simpleName
+            )
+        }
+
         return engines.distinctBy { it.packageName }
     }
 

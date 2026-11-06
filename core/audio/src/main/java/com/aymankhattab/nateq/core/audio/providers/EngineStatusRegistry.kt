@@ -92,6 +92,7 @@ object EngineStatusRegistry {
     fun normalizeId(engineId: String): String = when (engineId.lowercase()) {
         "vocalizer", "vocalizer_embedded" -> "vocalizer_embedded"
         "microsoft", "microsoft_embedded" -> "microsoft_embedded"
+        "acapela", "acapela_embedded" -> "acapela_embedded"
         else -> engineId.lowercase()
     }
 
@@ -301,6 +302,8 @@ object EngineStatusRegistry {
                 EmbeddedStorage.Engine.VOCALIZER
             "microsoft", "microsoft_embedded" ->
                 EmbeddedStorage.Engine.MICROSOFT
+            "acapela", "acapela_embedded" ->
+                EmbeddedStorage.Engine.ACAPELA
             else -> null
         }
 
@@ -379,6 +382,7 @@ object EngineStatusRegistry {
             val canonicalEngines = listOf(
                 "vocalizer_embedded",
                 "microsoft_embedded",
+                "acapela_embedded",
             )
             return canonicalEngines.map { statusOf(context, it) }
         }

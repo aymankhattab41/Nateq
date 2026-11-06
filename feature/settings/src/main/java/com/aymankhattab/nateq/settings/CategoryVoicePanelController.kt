@@ -682,6 +682,8 @@ if (!dirtyPanel) {
                                 EmbeddedProviders.vocalizer(context)
                             HostProtocol.ENGINE_MICROSOFT ->
                                 EmbeddedProviders.microsoft(context)
+                            HostProtocol.ENGINE_ACAPELA ->
+                                EmbeddedProviders.acapela(context)
                             else -> null
                         }
                         if (provider != null) {
