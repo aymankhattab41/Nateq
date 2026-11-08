@@ -11,6 +11,7 @@ import com.microsoft.cognitiveservices.speech.SpeechSynthesisCancellationDetails
 import com.microsoft.cognitiveservices.speech.SpeechSynthesisOutputFormat
 import com.microsoft.cognitiveservices.speech.SpeechSynthesisResult
 import com.microsoft.cognitiveservices.speech.SpeechSynthesizer
+import com.microsoft.cognitiveservices.speech.audio.AudioConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -99,7 +100,15 @@ internal class MicrosoftHostSession(
                 SpeechSynthesisOutputFormat.Raw24Khz16BitMonoPcm
             )
 
-            synthesizer = SpeechSynthesizer(config)
+            // تمرير `null` كـ AudioConfig مقصود: البانية ذات المعامل الواحد
+            // تُنشئ `AudioConfig.fromDefaultSpeakerOutput()` داخلياً فينطق
+            // SDK إلى مكبّر الصوت، ثم نكتب نحن نفس PCM إلى AudioTrack
+            // فنسمع العبارة مرتين (الازدواج المُبلَّغ عنه). غياب مخرج
+            // الصوت يجعل SDK يكتفي بإرجاع `audioData` للتشغيل عندنا.
+            synthesizer = SpeechSynthesizer(
+                config,
+                null as AudioConfig?
+            )
             activeSynthesizer = synthesizer
 
             val isSsml = req.text.trimStart()
@@ -107,10 +116,11 @@ internal class MicrosoftHostSession(
             synthResult = if (isSsml) {
                 synthesizer.SpeakSsml(req.text)
             } else {
-                val ssml = buildSsml(
+                val ssml = MicrosoftSsml.build(
                     text = req.text,
                     modelName = modelName,
-                    langTag = langTag
+                    langTag = langTag,
+                    rate = req.rate
                 )
                 val res = synthesizer.SpeakSsml(ssml)
                 if (res.reason == ResultReason.Canceled) {
@@ -240,30 +250,4 @@ internal class MicrosoftHostSession(
         }.getOrNull()
     }
 
-    private fun buildSsml(
-        text: String,
-        modelName: String,
-        langTag: String
-    ): String {
-        val escaped = escapeXml(text)
-        val header = "<speak version=\"1.0\" " +
-            "xmlns=\"http://www.w3.org/2001/10/synthesis\" " +
-            "xml:lang=\"$langTag\">"
-        return "$header<voice name=\"$modelName\">$escaped</voice></speak>"
-    }
-
-    private fun escapeXml(text: String): String {
-        val sb = StringBuilder(text.length + 16)
-        for (c in text) {
-            when (c) {
-                '&' -> sb.append("&amp;")
-                '<' -> sb.append("&lt;")
-                '>' -> sb.append("&gt;")
-                '"' -> sb.append("&quot;")
-                '\'' -> sb.append("&apos;")
-                else -> sb.append(c)
-            }
-        }
-        return sb.toString()
-    }
 }

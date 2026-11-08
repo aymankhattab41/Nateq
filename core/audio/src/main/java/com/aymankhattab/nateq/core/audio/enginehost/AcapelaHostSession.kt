@@ -66,7 +66,11 @@ internal class AcapelaHostSession(
                 Log.w(TAG, "nInitCallbacks returned $resInit")
             }
             inst.nSetLog(false)
-            val licRes = inst.nSetLicense(AcapelaLicense.LICENSE)
+            val licRes = inst.nSetLicense(
+                AcapelaLicense.USER_ID,
+                AcapelaLicense.PASSWORD,
+                AcapelaLicense.LICENSE
+            )
             if (licRes != 0) {
                 Log.w(TAG, "nSetLicense returned $licRes")
             }
