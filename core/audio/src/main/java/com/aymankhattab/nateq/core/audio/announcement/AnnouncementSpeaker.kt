@@ -2317,6 +2317,16 @@ speechCycle.incrementAndGet()
 
     private fun speakEmbeddedUnits(units: List<SpeakUnit>) {
         val gen = speechGeneration.get()
+        // مسار المحركات المدمجة لا يمرّ بحلقة doSpeak، فكانت لائحة
+        // الوحدات المعلّقة تبقى من نطقٍ سابق (إشعار/رسالة) وتُستأنف لاحقاً
+        // فيُسمع نصٌّ قديم. نُصفّرها هنا ونملؤها بوحدات النطق الحالي، ثم
+        // نحذف كل وحدة فور إتمامها ليبقى المتبقي فقط عند المقاطعة.
+        pendingUnitsForResume.clear()
+        if (isResumableCategory(currentCategory)) {
+            units.forEach { unit ->
+                pendingUnitsForResume.add(nextUtteranceId() to unit)
+            }
+        }
         nowSpeaking = true
         armSpeechWatchdog(units)
 
@@ -2379,7 +2389,10 @@ speechCycle.incrementAndGet()
                         boundEngine,
                         isTashkeelAware
                     )
-                    if (cleanText.isBlank()) continue
+                    if (cleanText.isBlank()) {
+                        removePendingEmbeddedUnit(unit)
+                        continue
+                    }
 
                     val effectiveRate = clampedSpeechRate(unit.rate * boost)
                     val effectiveVolume = (
@@ -2493,6 +2506,7 @@ speechCycle.incrementAndGet()
                         }
                     }
                     stopEmbeddedAudioTrack()
+                    removePendingEmbeddedUnit(unit)
                 }
             } catch (t: Throwable) {
                 if (t !is kotlinx.coroutines.CancellationException) {
@@ -2512,6 +2526,18 @@ speechCycle.incrementAndGet()
                     }
                 }
             }
+        }
+    }
+
+    /** يحذف وحدةً أُتمّت من لائحة الاستئناف بهوية المرجع لا بالتساوي
+     *  القيمي (فـ [SpeakUnit] متساوية القيم قد تكون وحدةً أخرى)، ويُبطل
+     *  الاستئناف حين لا يبقى ما يُستأنف. */
+    private fun removePendingEmbeddedUnit(unit: SpeakUnit) {
+        pendingUnitsForResume.removeAll { it.second === unit }
+        if (pendingUnitsForResume.isEmpty() &&
+            isResumableCategory(currentCategory)
+        ) {
+            resumableAnnouncement = null
         }
     }
 

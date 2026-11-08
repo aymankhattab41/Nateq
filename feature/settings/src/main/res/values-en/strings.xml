@@ -713,6 +713,12 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Full 64-bit architecture (arm64-v8a) support for embedded Acapela TTS engine with bundled native runtime libraries.
+• Corrected Acapela JNI native license signature (nSetLicense) and passed proper encoded userId, password, and license key parameters.
+• Enhanced embedded Acapela voice package importer with zip path normalization and robust installation verification.
+• Fixed Microsoft Neural embedded voice double-speaking in event announcements and cleared stale resumed units in AnnouncementSpeaker.
+• Added Microsoft Neural embedded speech rate adjustment via SSML prosody rate tags and eliminated background rate drop by forcing settings reload on change.
+• Excluded unused speech recognition and keyword spotting native libraries from APK packaging to optimize app size.
 • Integrated embedded Acapela TTS engine running completely offline alongside Vocalizer and Microsoft Neural.
 • Added direct Acapela voice package import from ZIP archives with automated unpacking into shared embedded storage.
 • Enabled voice preview, testing, and deletion for imported Acapela voices, with immediate integration into all speech categories, TalkBack reader, and All Languages Setup.

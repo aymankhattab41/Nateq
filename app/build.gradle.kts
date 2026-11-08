@@ -99,6 +99,17 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = false
+            // خفض وزن التطبيق: استبعاد مكتبات التعرّف الصوتي المدمج
+            // (embedded.sr) والكلمة المنبّهة (kws) — لا يستخدمهما ناطق
+            // إطلاقاً؛ سلسلة التخليق المدمج تحتاج onnxruntime فقط.
+            // الفحص ELF أكّد أن embedded.tts.runtime لا يعتمد عليهما.
+            // التوفير ≈ 11.95 MB لكل معمارية.
+            excludes += listOf(
+                "**/libMicrosoft.CognitiveServices.Speech" +
+                    ".extension.embedded.sr*.so",
+                "**/libMicrosoft.CognitiveServices.Speech" +
+                    ".extension.kws*.so"
+            )
         }
     }
 

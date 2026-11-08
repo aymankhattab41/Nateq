@@ -116,7 +116,7 @@ object AcapelaVoiceImporter {
             ZipInputStream(tempZip.inputStream()).use { zis ->
                 var entry: ZipEntry? = zis.nextEntry
                 while (entry != null) {
-                    val entryName = entry.name
+                    val entryName = entry.name.replace('\\', '/')
                     val outFile = File(targetDir, entryName)
                     val canonicalOut = outFile.canonicalPath
                     if (!canonicalOut.startsWith(canonicalBase)) {
@@ -155,10 +155,9 @@ object AcapelaVoiceImporter {
                 )
             } else {
                 ImportResult(
-                    success = true,
-                    importedVoices = listOf(
-                        voiceCandidateName ?: "Acapela Voice"
-                    )
+                    success = false,
+                    errorMessage =
+                        "لم يتم العثور على أصوات Acapela صالحة بعد فك الضغط"
                 )
             }
         } catch (t: Throwable) {

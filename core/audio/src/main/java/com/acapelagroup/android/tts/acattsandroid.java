@@ -66,7 +66,7 @@ public class acattsandroid {
 
     // Native JNI functions:
     public native int nInitCallbacks();
-    public native int nSetLicense(String license);
+    public native int nSetLicense(long userId, long password, String license);
     public native void nSetLog(boolean enable);
     public native int nGetVoiceList(String[] paths);
     public native String nGetVoiceInfo(String path, String key);
@@ -75,7 +75,7 @@ public class acattsandroid {
     public native int nGetShape();
     public native int nSetSpeechRate(float rate);
     public native int nGetSpeechRate();
-    public native int nSetTTSSetting(int setting, int value);
+    public native int nSetTTSSetting(String setting, int value);
     public native String nGetLanguage();
     public native int nSpeak(String text);
     public native int nSpeakToFile(String text, String path);
@@ -87,4 +87,11 @@ public class acattsandroid {
     public native int nShutdown();
     public native String nGetVersion();
     public native int nGetLastError();
+    public native int nGetAudioBufferSize();
+    public native int nGetTextIndex();
+    public native int nQueueText(String text);
+
+    public int setLicense(String license) {
+        return nSetLicense(0x46515867L, 0x0030ab63L, license);
+    }
 }

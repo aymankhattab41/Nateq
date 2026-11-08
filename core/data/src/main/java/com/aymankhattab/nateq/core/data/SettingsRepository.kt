@@ -444,13 +444,13 @@ class SettingsRepository(context: Context) :
     ) {
         override fun onChange(selfChange: Boolean) {
             reloadExecutor.execute {
-                reload()
+                reload(force = true)
                 // إن كانت الكتابة عبر apply() في العملية الأخرى، قد
                 // يستغرق تفريغ القرص بضع ميلي ثوانٍ؛ نعيد المحاولة
                 // لضمان التقاط التعديل فور استقرار القرص.
                 try {
                     Thread.sleep(60)
-                    reload()
+                    reload(force = true)
                 } catch (_: InterruptedException) {}
             }
         }
@@ -617,13 +617,16 @@ class SettingsRepository(context: Context) :
     private val memoryCallerNames =
         java.util.concurrent.ConcurrentHashMap<String, String>()
 
-    fun reload() {
+    fun reload(force: Boolean = false) {
         if (localWriteSeq.get() != flushedSeq.get()) return
         // التطبيق يعمل في عمليتين (main و :tts) وSharedPreferences يحتفظ
         // بكاش في الذاكرة لكل عملية ولا يعيد قراءة القرص تلقائياً. لتخفيف
         // عبء I/O لا نعيد القراءة إلا عندما يتغيّر توقيت الملف الفعلي (أي
         // كتابة من العملية الأخرى) بدل قراءة قرص دائمة مع كل نطق.
-        if (!prefsFileChanged()) return
+        // `force` يتجاوز بوابة التوقيت/الطول لأن تعديلاتٍ متتالية في نفس
+        // الثانية وبالطول نفسه (مثل تحريك سرعة النطق) لا تغيّر العلامة،
+        // فكان الإعداد الجديد يبدو كأنه لم يُحفظ في العملية الأخرى.
+        if (!force && !prefsFileChanged()) return
         // **بند 5.1:** نثبّت زمن الدخول (التوقيت والطول معاً — زمنٌ واحد
         // قد يتطابق لكتابةٍ ثانيةٍ في نفس الثانية) لنكتشف لاحقاً أيَّ كتابةٍ
         // متزامنةٍ من العملية الأخرى حدثت أثناء قراءتنا للملف — إن تغيّرت
