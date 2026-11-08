@@ -64,8 +64,13 @@ android {
             // تجعل الاستدعاء صامتاً كما في الأندرويد، فلا يفقد الحارسُ
             // معناه.
             isReturnDefaultValues = true
-            all {
-                it.maxHeapSize = "2048m"
+            all { testTask ->
+                testTask.maxHeapSize = "3072m"
+                testTask.jvmArgs(
+                    "-Xmx3072m",
+                    "--add-opens=java.base/java.lang=ALL-UNNAMED",
+                    "--add-opens=java.base/jdk.internal.access=ALL-UNNAMED"
+                )
             }
         }
     }

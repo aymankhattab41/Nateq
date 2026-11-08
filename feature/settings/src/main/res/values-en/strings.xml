@@ -713,6 +713,8 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Fixed embedded Acapela speech rate control using native in-stream relative speed (\\rspd=) and pitch (\\vct=) tags.
+• Optimized Acapela synthesis latency by caching loaded voice and avoiding redundant disk reloads per phrase.
 • Added Acapela voice folder import via SAF directory picker for convenient importing of uncompressed and multi-voice packages.
 • Updated Acapela engine state label to \"Awaiting voice import\" with clear guidance confirming that 64-bit native libraries are ready.
 • Ensured embedded Acapela engine visibility and correct display label in all voice lists, categories, and caller announcements.
