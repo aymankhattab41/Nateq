@@ -713,6 +713,9 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Added Acapela voice folder import via SAF directory picker for convenient importing of uncompressed and multi-voice packages.
+• Updated Acapela engine state label to \"Awaiting voice import\" with clear guidance confirming that 64-bit native libraries are ready.
+• Ensured embedded Acapela engine visibility and correct display label in all voice lists, categories, and caller announcements.
 • Full 64-bit architecture (arm64-v8a) support for embedded Acapela TTS engine with bundled native runtime libraries.
 • Corrected Acapela JNI native license signature (nSetLicense) and passed proper encoded userId, password, and license key parameters.
 • Enhanced embedded Acapela voice package importer with zip path normalization and robust installation verification.
@@ -777,11 +780,15 @@ Version %1$s
     <string name="embedded_engine_acapela">Acapela</string>
     <string name="voice_provider_microsoft_embedded">Microsoft (Embedded)</string>
     <string name="voice_provider_acapela_embedded">Acapela (Embedded)</string>
-    <string name="btn_import_acapela_voice">Import Acapela voice (.zip)</string>
-    <string name="acapela_no_voices_found">No Acapela voices imported yet. Tap import to select a voice (.zip) package.</string>
+    <string name="btn_import_acapela_voice">Import Acapela voice package (.zip)</string>
+    <string name="btn_import_acapela_folder">Import Acapela voice folder</string>
+    <string name="acapela_no_voices_found">No Acapela voices imported yet. Tap \"Import package (.zip)\" or \"Import folder\" to select an Acapela voice package from your device.</string>
     <string name="acapela_import_success">Voice imported successfully: %1$s</string>
     <string name="acapela_import_error">Failed to import voice: %1$s</string>
     <string name="acapela_import_select_file">Select Acapela voice file (.zip)</string>
+    <string name="acapela_import_folder_select">Select Acapela voice folder from device</string>
+    <string name="engine_state_awaiting_voices">Awaiting voice import</string>
+    <string name="acapela_engine_details_ready_note">64-bit/32-bit native runtime libraries are ready. The engine requires importing voice files (.zip or folder) to begin synthesis.</string>
     <string name="acapela_delete_voice_confirm_title">Delete Acapela Voice</string>
     <string name="acapela_delete_voice_confirm_msg">Are you sure you want to delete voice \"%1$s\"?</string>
     <string name="embedded_download_confirm_title">Confirm Voice Download</string>

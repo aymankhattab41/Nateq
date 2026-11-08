@@ -450,7 +450,8 @@ class VoiceCatalog(private val providers: List<VoiceProvider>) {
             val allEngineLabels = engines.map { it.packageName to it.label } +
                 listOf(
                     vocalizerPkg to labelFor(vocalizerPkg),
-                    microsoftPkg to labelFor(microsoftPkg)
+                    microsoftPkg to labelFor(microsoftPkg),
+                    acapelaPkg to labelFor(acapelaPkg)
                 )
             val grouped = groupVoicesByLanguage(
                 allEngineLabels,

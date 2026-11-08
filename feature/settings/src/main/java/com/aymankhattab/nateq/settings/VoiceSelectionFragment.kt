@@ -476,11 +476,46 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     )
                     Toast.makeText(ctx, err, Toast.LENGTH_LONG).show()
                 }
-                view?.let { root ->
-                    if (::embeddedDownloaderSection.isInitialized) {
-                        embeddedDownloaderSection.refresh(root)
-                    }
+                refreshEmbeddedUiIfStorageChanged()
+                refreshVoiceCatalogDiscovery()
+            }
+        }
+    }
+
+    /** منتقي مجلد أصوات Acapela عبر SAF */
+    internal val openAcapelaFolderLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            val ctx = context ?: return@registerForActivityResult
+            lifecycleScope.launch(AppDispatchers.main) {
+                Toast.makeText(
+                    ctx,
+                    R.string.acapela_import_folder_select,
+                    Toast.LENGTH_SHORT
+                ).show()
+
+                val result = withContext(AppDispatchers.io) {
+                    AcapelaVoiceImporter.importFromTreeUri(ctx, uri)
                 }
+
+                if (!isAdded) return@launch
+                if (result.success) {
+                    val voicesNames = result.importedVoices.joinToString("، ")
+                    val msg = getString(
+                        R.string.acapela_import_success,
+                        voicesNames
+                    )
+                    Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                } else {
+                    val err = result.errorMessage ?: getString(
+                        R.string.acapela_import_error,
+                        ""
+                    )
+                    Toast.makeText(ctx, err, Toast.LENGTH_LONG).show()
+                }
+                refreshEmbeddedUiIfStorageChanged()
+                refreshVoiceCatalogDiscovery()
             }
         }
     }

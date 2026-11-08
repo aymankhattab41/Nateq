@@ -147,10 +147,10 @@ internal class EmbeddedEngineDownloaderController(
             }
         }
 
-        val btnImport = root.findViewById<MaterialButton>(
+        val btnImportZip = root.findViewById<MaterialButton>(
             R.id.btn_import_acapela_voice
         )
-        btnImport?.setOnClickListener {
+        btnImportZip?.setOnClickListener {
             fragment.openAcapelaZipLauncher.launch(
                 arrayOf(
                     "application/zip",
@@ -158,6 +158,13 @@ internal class EmbeddedEngineDownloaderController(
                     "*/*"
                 )
             )
+        }
+
+        val btnImportFolder = root.findViewById<MaterialButton>(
+            R.id.btn_import_acapela_folder
+        )
+        btnImportFolder?.setOnClickListener {
+            fragment.openAcapelaFolderLauncher.launch(null)
         }
 
 
@@ -192,11 +199,13 @@ internal class EmbeddedEngineDownloaderController(
             MicrosoftModelCatalog.isVoiceInstalled(msDir, item)
         }
 
-        val acBase = EmbeddedStorage.baseDir(
+        val acSearch = EmbeddedStorage.allSearchDirs(
             ctx,
             EmbeddedStorage.Engine.ACAPELA
         )
-        val acCount = AcapelaVoiceManifest.listVoices(acBase).size
+        val acCount = acSearch.flatMap {
+            AcapelaVoiceManifest.listVoices(it)
+        }.distinctBy { it.id }.size
         val total = vocCount + msCount + acCount
         val isAr = LanguageCode.isArabic(Locale.getDefault().language)
         return if (total > 0) {
@@ -224,14 +233,13 @@ internal class EmbeddedEngineDownloaderController(
 
         container.removeAllViews()
 
-        val btnImport = root.findViewById<MaterialButton>(
+        val isAcapela = activeEngine == "acapela"
+        root.findViewById<MaterialButton>(
             R.id.btn_import_acapela_voice
-        )
-        btnImport?.visibility = if (activeEngine == "acapela") {
-            View.VISIBLE
-        } else {
-            View.GONE
-        }
+        )?.visibility = if (isAcapela) View.VISIBLE else View.GONE
+        root.findViewById<MaterialButton>(
+            R.id.btn_import_acapela_folder
+        )?.visibility = if (isAcapela) View.VISIBLE else View.GONE
 
         when (activeEngine) {
             "microsoft" -> renderMicrosoftNav(container, emptyView)
@@ -246,11 +254,13 @@ internal class EmbeddedEngineDownloaderController(
         emptyView: TextView?
     ) {
         val ctx = fragment.requireContext()
-        val baseDir = EmbeddedStorage.baseDir(
+        val searchDirs = EmbeddedStorage.allSearchDirs(
             ctx,
             EmbeddedStorage.Engine.ACAPELA
         )
-        val voices = AcapelaVoiceManifest.listVoices(baseDir)
+        val voices = searchDirs.flatMap {
+            AcapelaVoiceManifest.listVoices(it)
+        }.distinctBy { it.id }
         if (voices.isEmpty()) {
             emptyView?.text = ctx.getString(R.string.acapela_no_voices_found)
             emptyView?.visibility = View.VISIBLE
@@ -1198,9 +1208,16 @@ internal class EmbeddedEngineDownloaderController(
                 R.id.tv_engine_state_badge
             )
             tvName.text = entry.name
-            val stateLabel = status?.state?.let {
-                EngineStatusRegistry.labelAr(it)
-            } ?: ctx.getString(R.string.engine_state_unknown)
+            val stateLabel = if (
+                entry.id == AcapelaEmbeddedVoiceProvider.PROVIDER_ID &&
+                status?.state == EngineStatusRegistry.State.NOT_INSTALLED
+            ) {
+                ctx.getString(R.string.engine_state_awaiting_voices)
+            } else {
+                status?.state?.let {
+                    EngineStatusRegistry.labelAr(it)
+                } ?: ctx.getString(R.string.engine_state_unknown)
+            }
             tvBadge.text = stateLabel
             view.setOnClickListener {
                 showEngineDetailsDialog(entry)
@@ -1473,13 +1490,23 @@ internal class EmbeddedEngineDownloaderController(
         hostLog: String
     ) {
         val ctx = dialogView.context
-        val stateLabel = status?.state?.let {
-            EngineStatusRegistry.labelAr(it)
-        } ?: ctx.getString(R.string.engine_state_unknown)
+        val stateLabel = if (
+            entry.id == AcapelaEmbeddedVoiceProvider.PROVIDER_ID &&
+            status?.state == EngineStatusRegistry.State.NOT_INSTALLED
+        ) {
+            ctx.getString(R.string.engine_state_awaiting_voices)
+        } else {
+            status?.state?.let {
+                EngineStatusRegistry.labelAr(it)
+            } ?: ctx.getString(R.string.engine_state_unknown)
+        }
 
         val code = status?.code ?: ctx.getString(R.string.no_code)
 
         val rawError = when {
+            entry.id == AcapelaEmbeddedVoiceProvider.PROVIDER_ID &&
+                status?.state == EngineStatusRegistry.State.NOT_INSTALLED ->
+                ctx.getString(R.string.acapela_engine_details_ready_note)
             status?.lastError != null -> status.lastError
             status?.state == EngineStatusRegistry.State.READY ->
                 ctx.getString(R.string.engine_no_errors)
@@ -1694,13 +1721,23 @@ internal class EmbeddedEngineDownloaderController(
         status: EngineStatusRegistry.EngineStatus?,
         hostLog: String
     ): String {
-        val stateLabel = status?.state?.let {
-            EngineStatusRegistry.labelAr(it)
-        } ?: ctx.getString(R.string.engine_state_unknown)
+        val stateLabel = if (
+            entry.id == AcapelaEmbeddedVoiceProvider.PROVIDER_ID &&
+            status?.state == EngineStatusRegistry.State.NOT_INSTALLED
+        ) {
+            ctx.getString(R.string.engine_state_awaiting_voices)
+        } else {
+            status?.state?.let {
+                EngineStatusRegistry.labelAr(it)
+            } ?: ctx.getString(R.string.engine_state_unknown)
+        }
 
         val code = status?.code ?: ctx.getString(R.string.no_code)
 
         val rawError = when {
+            entry.id == AcapelaEmbeddedVoiceProvider.PROVIDER_ID &&
+                status?.state == EngineStatusRegistry.State.NOT_INSTALLED ->
+                ctx.getString(R.string.acapela_engine_details_ready_note)
             status?.lastError != null -> status.lastError
             status?.state == EngineStatusRegistry.State.READY ->
                 ctx.getString(R.string.engine_no_errors)
