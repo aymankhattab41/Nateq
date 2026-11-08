@@ -1058,6 +1058,9 @@ if (!dirtyPanel) {
                 settings.setDefaultSpeechRate(chosenRate)
                 settings.setSpeechRate("ar", chosenRate)
             }
+            if (chosenRate != 1.0f && settings.isFollowReaderRateEnabled()) {
+                settings.setFollowReaderRateEnabled(false)
+            }
         }
         val chosenPitch = seekPitch?.progress?.speedFactor() ?: 1.0f
         runCatching {

@@ -723,6 +723,10 @@
 <string name="changelog_title">آخر التحديثات</string>
     <string name="changelog_text">
 الإصدار %1$s
+• إتاحة فتح واستيراد حزم الأصوات المضغوطة (.zip) مباشرة من مديري الملفات وتطبيقات المراسلة بنقرة واحدة عبر «فتح بواسطة Lord TTS» أو قائمة المشاركة.
+• حل مشكلة مسح وتحميل أصوات Acapela المدمجة عبر تجميع وتمرير كافة المسارات الفرعية للمكتبة الأصلية تلقائياً واكتشاف جميع ملفات التهيئة في أي عمق مجلد.
+• إصلاح عدم استجابة أشرطة السرعة في التطبيق بتعطيل قفل سرعة القارئ تلقائياً فور تحريك المستخدم لأشرطة سرعة النطق الافتراضية أو سرعات الفئات.
+• ضبط سرعة نطق ونبرة محرك Acapela أصلياً عبر القناة الصوتية المباشرة (nSetSpeechRate) فور تحميل الصوت المختار.
 • إصلاح سرعة نطق محرك Acapela المدمج وتطبيق وسوم السرعة النسبية (\\rspd=) والنبرة (\\vct=) فورياً على تدفق النص.
 • تحسين أداء استجابة Acapela وتفادي إعادة تحميل قاعدة بيانات الصوت من القرص في كل عبارة.
 • إضافة ميزة استيراد مجلد أصوات Acapela مباشرة عبر منتقي المجلدات (SAF) لتسهيل استيراد حزم الأصوات المفرغة أو المتعددة من ذاكرة الهاتف.
@@ -799,6 +803,13 @@
     <string name="acapela_import_error">فشل استيراد الصوت: %1$s</string>
     <string name="acapela_import_select_file">اختر ملف صوت Acapela (.zip)</string>
     <string name="acapela_import_folder_select">اختر مجلد أصوات Acapela من جهازك</string>
+    <string name="zip_import_title">استيراد حزمة الأصوات</string>
+    <string name="zip_import_in_progress">جارٍ استيراد حزمة الأصوات: %1$s…</string>
+    <string name="zip_import_success_title">اكتمل الاستيراد</string>
+    <string name="zip_import_success_msg">تم استيراد الأصوات بنجاح:\n%1$s\n\nأصبحت جاهزة للاستخدام والمعاينة فوراً.</string>
+    <string name="zip_import_error_title">تعذر استيراد الحزمة</string>
+    <string name="zip_import_unsupported_format">الملف المحدد لا يحتوي على حزمة أصوات مدعومة (مثل أصوات Acapela أو Vocalizer بتنسيق ZIP).</string>
+    <string name="voice_package_zip_label">حزمة أصوات ZIP</string>
     <string name="engine_state_awaiting_voices">بانتظار استيراد الأصوات</string>
     <string name="acapela_engine_details_ready_note">المكتبات البرمجية الأصلية (64-bit / 32-bit) مدمجة وجاهزة. يتطلب المحرك استيراد ملفات صوتية (.zip أو مجلد) لبدء الاستخدام.</string>
     <string name="acapela_delete_voice_confirm_title">حذف صوت Acapela</string>

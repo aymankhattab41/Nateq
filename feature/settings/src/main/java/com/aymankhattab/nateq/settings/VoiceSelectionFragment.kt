@@ -1166,7 +1166,7 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
      * (تنزيل/حذف/هجرة حدثت وهي في الخلفية) يُبطل الكاش وتُعاد قوائم
      * المحركات فوراً بدل انتظار مهلة الكاش.
      */
-    private fun refreshEmbeddedUiIfStorageChanged() {
+    internal fun refreshEmbeddedUiIfStorageChanged() {
         val version = EmbeddedStorage.version
         if (version == lastSeenStorageVersion) return
         val isFirstRead = lastSeenStorageVersion == -1
