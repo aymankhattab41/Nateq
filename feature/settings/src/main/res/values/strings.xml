@@ -723,6 +723,9 @@
 <string name="changelog_title">آخر التحديثات</string>
     <string name="changelog_text">
 الإصدار %1$s
+• إضافة ميزة استيراد مجلد أصوات Acapela مباشرة عبر منتقي المجلدات (SAF) لتسهيل استيراد حزم الأصوات المفرغة أو المتعددة من ذاكرة الهاتف.
+• تصحيح حالة محرك Acapela إلى «بانتظار استيراد الأصوات» بدلاً من «غير مثبّت» مع إضافة إرشادات واضحة لبيان جاهزية مكتبات 64-بت المدمجة.
+• ضمان ظهور محرك Acapela وتسميته الصحيحة في قوائم المحركات والأصوات وفئات الأحداث وتحديث الواجهة فور استيراد أي صوت.
 • دعم كامل لمحرك Acapela المدمج على معمارية 64-بت (arm64-v8a) وتوفير المكتبات الثنائية الأصلية.
 • تصحيح توقيع دالة ترخيص Acapela الأصلية (nSetLicense) وتمرير المعاملات الثلاثة المرمزة المطابقة لـ JNI.
 • تحسين مستورد أصوات Acapela وتطبيع مسارات المجلدات داخل ملفات ZIP وضمان التحقق من التثبيت.
@@ -787,11 +790,15 @@
     <string name="embedded_engine_acapela">Acapela</string>
     <string name="voice_provider_microsoft_embedded">Microsoft (مدمج)</string>
     <string name="voice_provider_acapela_embedded">Acapela (مدمج)</string>
-    <string name="btn_import_acapela_voice">استيراد صوت Acapela (.zip)</string>
-    <string name="acapela_no_voices_found">لم يتم استيراد أي صوت Acapela بعد. اضغط على زر الاستيراد لاختيار حزمة صوت (.zip).</string>
+    <string name="btn_import_acapela_voice">استيراد حزمة صوت Acapela (.zip)</string>
+    <string name="btn_import_acapela_folder">استيراد مجلد أصوات Acapela</string>
+    <string name="acapela_no_voices_found">لم يتم استيراد أي صوت Acapela بعد. اضغط على «استيراد حزمة صوت (.zip)» أو «استيراد مجلد أصوات» لاختيار حزمة أصوات Acapela من هاتفك.</string>
     <string name="acapela_import_success">تم استيراد الصوت بنجاح: %1$s</string>
     <string name="acapela_import_error">فشل استيراد الصوت: %1$s</string>
     <string name="acapela_import_select_file">اختر ملف صوت Acapela (.zip)</string>
+    <string name="acapela_import_folder_select">اختر مجلد أصوات Acapela من جهازك</string>
+    <string name="engine_state_awaiting_voices">بانتظار استيراد الأصوات</string>
+    <string name="acapela_engine_details_ready_note">المكتبات البرمجية الأصلية (64-bit / 32-bit) مدمجة وجاهزة. يتطلب المحرك استيراد ملفات صوتية (.zip أو مجلد) لبدء الاستخدام.</string>
     <string name="acapela_delete_voice_confirm_title">حذف صوت Acapela</string>
     <string name="acapela_delete_voice_confirm_msg">هل أنت متأكد من حذف صوت \"%1$s\"؟</string>
     <string name="embedded_download_confirm_title">تأكيد تنزيل الصوت</string>

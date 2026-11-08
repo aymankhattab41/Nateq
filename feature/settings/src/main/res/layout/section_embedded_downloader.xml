@@ -158,6 +158,17 @@
                 android:visibility="gone"
                 android:text="@string/btn_import_acapela_voice" />
 
+            <!-- زر استيراد أصوات Acapela من مجلد كامل -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_import_acapela_folder"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:layout_marginBottom="8dp"
+                android:visibility="gone"
+                android:text="@string/btn_import_acapela_folder" />
+
 
             <!-- شريط التنقّل الهرمي: اللغة ← الصوت ← الجودة -->
             <LinearLayout
