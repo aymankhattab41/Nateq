@@ -713,6 +713,10 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Added system-wide support for opening and importing voice ZIP packages directly from file managers and messaging apps via \"Open with Lord TTS\" and Share.
+• Fixed Acapela voice discovery and loading by dynamically scanning nested voice directories and passing all paths to the native engine runtime.
+• Fixed speech rate sliders responsiveness by automatically disengaging reader rate lock when adjusting default or category speed sliders.
+• Native Acapela channel speech rate and pitch control via direct engine parameters upon voice load.
 • Fixed embedded Acapela speech rate control using native in-stream relative speed (\\rspd=) and pitch (\\vct=) tags.
 • Optimized Acapela synthesis latency by caching loaded voice and avoiding redundant disk reloads per phrase.
 • Added Acapela voice folder import via SAF directory picker for convenient importing of uncompressed and multi-voice packages.
@@ -789,6 +793,13 @@ Version %1$s
     <string name="acapela_import_error">Failed to import voice: %1$s</string>
     <string name="acapela_import_select_file">Select Acapela voice file (.zip)</string>
     <string name="acapela_import_folder_select">Select Acapela voice folder from device</string>
+    <string name="zip_import_title">Import Voice Package</string>
+    <string name="zip_import_in_progress">Importing voice package: %1$s…</string>
+    <string name="zip_import_success_title">Import Completed</string>
+    <string name="zip_import_success_msg">Voices successfully imported:\n%1$s\n\nReady for immediate preview and use.</string>
+    <string name="zip_import_error_title">Import Failed</string>
+    <string name="zip_import_unsupported_format">The selected file does not contain a supported voice package (such as Acapela or Vocalizer in ZIP format).</string>
+    <string name="voice_package_zip_label">ZIP Voice Package</string>
     <string name="engine_state_awaiting_voices">Awaiting voice import</string>
     <string name="acapela_engine_details_ready_note">64-bit/32-bit native runtime libraries are ready. The engine requires importing voice files (.zip or folder) to begin synthesis.</string>
     <string name="acapela_delete_voice_confirm_title">Delete Acapela Voice</string>

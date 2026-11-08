@@ -1,10 +1,12 @@
 package com.aymankhattab.nateq.settings
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.view.View
 import androidx.activity.enableEdgeToEdge
@@ -15,9 +17,11 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.commit
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.aymankhattab.nateq.feature.settings.R
 import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSchedulerService
 import com.aymankhattab.nateq.core.audio.providers.EnginePicker
+import com.aymankhattab.nateq.core.audio.providers.VoicePackageImporter
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import com.aymankhattab.nateq.util.announceCompat
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -106,12 +110,139 @@ class SettingsActivity : AppCompatActivity(R.layout.activity_settings) {
                     AnnouncementSchedulerService.ensureTimeAlarm(this)
                 }
             }
+            handleZipImportIntent(intent)
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        handleZipImportIntent(intent)
+    }
+
+    private fun handleZipImportIntent(intent: Intent?) {
+        if (intent == null) return
+        val action = intent.action
+        if (action != Intent.ACTION_VIEW && action != Intent.ACTION_SEND) {
+            return
+        }
+
+        val uri: Uri? = if (action == Intent.ACTION_SEND) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(
+                    Intent.EXTRA_STREAM,
+                    Uri::class.java
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(Intent.EXTRA_STREAM)
+            }
+        } else {
+            intent.data
+        }
+
+        if (uri == null) return
+
+        val fileName = queryDisplayName(uri)
+        val mimeType = intent.type ?: runCatching {
+            contentResolver.getType(uri)
+        }.getOrNull()
+
+        val hasZipExtension =
+            fileName?.endsWith(".zip", ignoreCase = true) == true ||
+            uri.path?.endsWith(".zip", ignoreCase = true) == true
+
+        val isZipMime =
+            mimeType?.contains("zip", ignoreCase = true) == true
+
+        val isOctetStream = mimeType == "application/octet-stream"
+
+        val isZip = hasZipExtension || isZipMime ||
+            (isOctetStream && fileName == null)
+
+        if (!isZip) {
+            return
+        }
+
+        // مسح بيانات النية لمنع إعادة التنفيذ التلقائي عند استدارة الشاشة
+        intent.data = null
+        intent.removeExtra(Intent.EXTRA_STREAM)
+
+        importZipVoicePackage(uri, fileName)
+    }
+
+    private fun queryDisplayName(uri: Uri): String? {
+        if (uri.scheme == "file") {
+            return uri.lastPathSegment
+        }
+        return runCatching {
+            contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(
+                        OpenableColumns.DISPLAY_NAME
+                    )
+                    if (idx >= 0) cursor.getString(idx) else null
+                } else null
+            }
+        }.getOrNull() ?: uri.lastPathSegment
+    }
+
+    private fun importZipVoicePackage(uri: Uri, fileName: String?) {
+        val displayName = fileName
+            ?: getString(R.string.voice_package_zip_label)
+
+        val progress = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.zip_import_title)
+            .setMessage(
+                getString(R.string.zip_import_in_progress, displayName)
+            )
+            .setCancelable(false)
+            .create()
+        progress.show()
+
+        lifecycleScope.launch(Dispatchers.Main) {
+            val result = withContext(Dispatchers.IO) {
+                VoicePackageImporter.importZip(
+                    applicationContext,
+                    uri,
+                    fileName
+                )
+            }
+
+            if (isFinishing || isDestroyed) return@launch
+            runCatching { progress.dismiss() }
+
+            if (result.success) {
+                val voices = result.importedVoices.joinToString("، ")
+                MaterialAlertDialogBuilder(this@SettingsActivity)
+                    .setTitle(R.string.zip_import_success_title)
+                    .setMessage(
+                        getString(R.string.zip_import_success_msg, voices)
+                    )
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+
+                val frag = supportFragmentManager
+                    .findFragmentById(R.id.settings_container)
+                    as? VoiceSelectionFragment
+                frag?.refreshEmbeddedUiIfStorageChanged()
+                frag?.refreshVoiceCatalogDiscovery()
+            } else {
+                val err = result.errorMessage
+                    ?: getString(R.string.zip_import_unsupported_format)
+                MaterialAlertDialogBuilder(this@SettingsActivity)
+                    .setTitle(R.string.zip_import_error_title)
+                    .setMessage(err)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+            }
+        }
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())

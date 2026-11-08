@@ -37,6 +37,22 @@ internal class AcapelaHostSession(
             val p = calculatePitchPercent(pitch)
             return "\\rspd=$speed\\ \\vct=$p\\ $text"
         }
+
+        internal fun collectVoiceSearchPaths(baseDir: File): Array<String> {
+            val paths = mutableSetOf<String>()
+            if (baseDir.exists() && baseDir.isDirectory) {
+                paths.add(baseDir.absolutePath)
+                baseDir.walkTopDown().maxDepth(6).forEach { f ->
+                    if (f.isFile && (
+                        f.extension.equals("inf", ignoreCase = true) ||
+                        f.extension.equals("ini", ignoreCase = true))
+                    ) {
+                        f.parentFile?.absolutePath?.let { paths.add(it) }
+                    }
+                }
+            }
+            return paths.toTypedArray()
+        }
     }
 
     private var acatts: acattsandroid? = null
@@ -94,7 +110,13 @@ internal class AcapelaHostSession(
             if (licRes != 0) {
                 Log.w(TAG, "nSetLicense returned $licRes")
             }
-            inst.nGetVoiceList(arrayOf(dir.absolutePath))
+            val paths = collectVoiceSearchPaths(dir)
+            val voiceCount = inst.nGetVoiceList(paths)
+            Log.d(
+                TAG,
+                "nGetVoiceList: $voiceCount voice(s) across " +
+                    "${paths.size} dir(s)"
+            )
             acatts = inst
             currentVoiceId = null
             HostResult(ok = true)
@@ -143,7 +165,15 @@ internal class AcapelaHostSession(
         try {
             // تحميل الصوت المحدد إن لم يكن محملاً مسبقاً لتفادي إعادة القراءة
             if (currentVoiceId != req.voiceId) {
-                val loadRes = inst.nLoadVoice(req.voiceId)
+                var loadRes = inst.nLoadVoice(req.voiceId)
+                if (loadRes != 0) {
+                    val dir = dataDirectory
+                    if (dir != null) {
+                        val paths = collectVoiceSearchPaths(dir)
+                        inst.nGetVoiceList(paths)
+                        loadRes = inst.nLoadVoice(req.voiceId)
+                    }
+                }
                 if (loadRes == 0) {
                     currentVoiceId = req.voiceId
                     val dir = dataDirectory
@@ -163,7 +193,19 @@ internal class AcapelaHostSession(
                         }
                     }
                 } else {
-                    Log.w(TAG, "nLoadVoice(${req.voiceId}) returned $loadRes")
+                    Log.e(
+                        TAG,
+                        "فشل تحميل صوت Acapela (${req.voiceId}): كود $loadRes"
+                    )
+                    sink.end(
+                        HostProtocol.STATUS_ERROR,
+                        "VOICE_LOAD_FAILED",
+                        "تعذر تحميل الصوت: ${req.voiceId}"
+                    )
+                    return HostResult.failure(
+                        "VOICE_LOAD_FAILED",
+                        "تعذر تحميل الصوت: ${req.voiceId}"
+                    )
                 }
             }
 
@@ -171,26 +213,24 @@ internal class AcapelaHostSession(
             val speedPercent = calculateSpeedPercent(req.rate)
             val pitchPercent = calculatePitchPercent(req.pitch)
 
-            // ضبط سرعة النطق والشكل احتياطياً على مستوى القناة
+            // ضبط سرعة النطق والشكل مباشرة على مستوى المحرك عبر nSetSpeechRate
             inst.nSetSpeechRate(speedPercent.toFloat())
             val shapeFloat = pitchPercent.toFloat().coerceIn(70f, 130f)
             inst.nSetShape(shapeFloat)
 
-            // تطبيق وسوم السرعة (\rspd=) والنبرة (\vct=) على تدفق النص
-            val taggedText = formatAcapelaText(
-                req.text,
-                req.rate,
-                req.pitch
-            )
-
-            // نطق النص (يتم بث العينات عبر samplesCallback)
-            val speakRes = inst.nSpeak(taggedText)
+            // نطق النص (السرعة والنبرة مطبقتان عبر nSetSpeechRate)
+            var speakRes = inst.nSpeak(req.text)
             if (speakRes != 0 && !cancelled.get()) {
                 Log.w(
                     TAG,
-                    "nSpeak with tags returned $speakRes, fallback to raw"
+                    "nSpeak raw returned $speakRes, retrying with tags"
                 )
-                inst.nSpeak(req.text)
+                val tagged = formatAcapelaText(
+                    req.text,
+                    req.rate,
+                    req.pitch
+                )
+                speakRes = inst.nSpeak(tagged)
             }
 
             // كتابة نهاية التدفق بنجاح

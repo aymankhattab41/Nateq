@@ -88,7 +88,8 @@ object AcapelaVoiceImporter {
 
             if (!hasConfig && entryNames.none {
                 val l = it.lowercase()
-                l.endsWith(".bvcu") || l.endsWith(".dat")
+                l.endsWith(".bvcu") || l.endsWith(".dat") ||
+                    l.endsWith(".mdd")
             }) {
                 tempZip.delete()
                 return@withContext ImportResult(

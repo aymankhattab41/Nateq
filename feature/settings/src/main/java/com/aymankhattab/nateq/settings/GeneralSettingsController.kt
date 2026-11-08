@@ -176,6 +176,10 @@ internal class GeneralSettingsController(
                 runCatching {
                     settings.setDefaultSpeechRate(value)
                     settings.setSpeechRate("ar", value)
+                    if (settings.isFollowReaderRateEnabled()) {
+                        settings.setFollowReaderRateEnabled(false)
+                        switchFollowReaderRate?.isChecked = false
+                    }
                 }
                 onStatusChanged()
             }
@@ -187,6 +191,10 @@ internal class GeneralSettingsController(
                 runCatching {
                     settings.setDefaultSpeechRate(value)
                     settings.setSpeechRate("ar", value)
+                    if (settings.isFollowReaderRateEnabled()) {
+                        settings.setFollowReaderRateEnabled(false)
+                        switchFollowReaderRate?.isChecked = false
+                    }
                 }
                 seekBar.announceCompat(
                     RateLabel.of(fragment.requireContext(), value)
