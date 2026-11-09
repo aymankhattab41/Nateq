@@ -283,20 +283,64 @@ object AcapelaVoiceManifest {
                         append("frequency = \" 22050\"\n")
                     }
 
-                    val baseNames = mutableSetOf<String>()
-                    infFiles.forEach { baseNames.add(it.nameWithoutExtension) }
+                    // تنظيف أي ملفات .inf و .ini مولدة تلقائياً زائفة
+                    val primaryName = if (infFiles.size > 1) {
+                        infFiles.firstOrNull {
+                            it.nameWithoutExtension.equals(
+                                speaker,
+                                ignoreCase = true
+                            ) || it.nameWithoutExtension.equals(
+                                dir.name,
+                                ignoreCase = true
+                            )
+                        }?.nameWithoutExtension
+                            ?: infFiles.first().nameWithoutExtension
+                    } else {
+                        null
+                    }
+
+                    val validInfFiles = mutableListOf<File>()
+                    for (inf in infFiles) {
+                        if (primaryName != null &&
+                            !inf.nameWithoutExtension.equals(
+                                primaryName,
+                                ignoreCase = true
+                            )
+                        ) {
+                            val corrIni = File(
+                                dir,
+                                "${inf.nameWithoutExtension}.ini"
+                            )
+                            val iniLines = runCatching {
+                                corrIni.readLines(
+                                    StandardCharsets.ISO_8859_1
+                                )
+                            }.getOrDefault(emptyList())
+                            if (iniLines.size <= 5) {
+                                inf.delete()
+                                corrIni.delete()
+                            } else {
+                                validInfFiles.add(inf)
+                            }
+                        } else {
+                            validInfFiles.add(inf)
+                        }
+                    }
+
                     val iniFiles = dir.listFiles { f ->
                         f.isFile && f.extension.equals("ini", ignoreCase = true)
                     } ?: emptyArray()
-                    iniFiles.forEach { baseNames.add(it.nameWithoutExtension) }
-                    baseNames.add(speaker.lowercase(Locale.ROOT))
 
-                    val dataFiles = dir.listFiles { f ->
-                        f.isFile && f.extension.lowercase(
-                            Locale.ROOT
-                        ) in setOf("bvcu", "dat")
-                    } ?: emptyArray()
-                    dataFiles.forEach { baseNames.add(it.nameWithoutExtension) }
+                    val baseNames = mutableSetOf<String>()
+                    if (validInfFiles.isNotEmpty()) {
+                        validInfFiles.forEach {
+                            baseNames.add(it.nameWithoutExtension)
+                        }
+                    } else if (iniFiles.isNotEmpty()) {
+                        baseNames.add(iniFiles.first().nameWithoutExtension)
+                    } else {
+                        baseNames.add(speaker.lowercase(Locale.ROOT))
+                    }
 
                     for (baseName in baseNames) {
                         val targetInf = File(dir, "$baseName.inf")
