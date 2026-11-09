@@ -1343,14 +1343,12 @@ class NateqTtsService : TextToSpeechService() {
             requestHandler.getExplicitLanguageRate(languageTag)
         val lordRate = requestHandler.getSpeechRate(languageTag)
         val nateqMultiplier: Float =
-            if (settings.isFollowReaderRateEnabled()) {
-                1.0f
-            } else {
-                convertTarget?.convertRate
-                    ?: explicitLordRate ?: lordRate ?: 1.0f
-            }
+            convertTarget?.convertRate
+                ?: explicitLordRate ?: lordRate ?: 1.0f
+        val effectiveReaderRate =
+            if (settings.isFollowReaderRateEnabled()) readerRate else 1.0f
         val speechRate = computeFinalSpeechRate(
-            readerRate, nateqMultiplier, currentSpeechBoost()
+            effectiveReaderRate, nateqMultiplier, currentSpeechBoost()
         )
         val pitch = requestHandler.getPitch(languageTag)
         val volume = requestHandler.getVolume(languageTag)
@@ -1871,13 +1869,11 @@ class NateqTtsService : TextToSpeechService() {
         // (لم يكن المسار المختلط يرى request إطلاقاً فتُنطق مقاطعه دائماً
         //  بسرعة LORD المطلقة ويُخالف المسار الأحادي — كان عيباً متوارثاً.)
         val nateqMultiplier: Float =
-            if (settings.isFollowReaderRateEnabled()) {
-                1.0f
-            } else {
-                convert?.convertRate ?: segRate ?: 1.0f
-            }
+            convert?.convertRate ?: segRate ?: 1.0f
+        val effectiveReaderRate =
+            if (settings.isFollowReaderRateEnabled()) readerRate else 1.0f
         val computedRate = computeFinalSpeechRate(
-            readerRate, nateqMultiplier, currentSpeechBoost()
+            effectiveReaderRate, nateqMultiplier, currentSpeechBoost()
         )
         val appRate = if (segment.role == SpeechRole.TEXT) {
             appVoice?.speechRate

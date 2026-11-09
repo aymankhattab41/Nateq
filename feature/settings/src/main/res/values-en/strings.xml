@@ -713,6 +713,9 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Fixed embedded Acapela voice synthesis and preview by awaiting native async completion and streaming all audio frames.
+• Normalized Acapela voice IDs by stripping language suffixes for reliable loading in categories and default voice.
+• Fixed speech rate sliders responsiveness across general settings and voice categories to work alongside reader rate.
 • Added system-wide support for opening and importing voice ZIP packages directly from file managers and messaging apps via \"Open with Lord TTS\" and Share.
 • Fixed Acapela voice discovery and loading by dynamically scanning nested voice directories and passing all paths to the native engine runtime.
 • Fixed speech rate sliders responsiveness by automatically disengaging reader rate lock when adjusting default or category speed sliders.
