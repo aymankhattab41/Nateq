@@ -1162,10 +1162,7 @@ class SystemVoiceProvider(
         val params = android.os.Bundle().apply {
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
             putFloat("rate", speechRate)
-            putInt("rate", (speechRate * 100).toInt())
-            putString("rate", (speechRate * 100).toInt().toString())
             putFloat("pitch", pitch)
-            putInt("pitch", (pitch * 100).toInt())
             putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume)
         }
 
@@ -1214,6 +1211,10 @@ class SystemVoiceProvider(
         // هذا الحذف، وتكلفته عمليات نظام خفيفة على مسار لا يمرّ به إلا ما
         // لا يغطيه كاش PCM.
         runCatching { if (tempFile.exists()) tempFile.delete() }
+
+        // إعادة تأكيد السرعة والنبرة مباشرة قبل التوليد لتفادي تصفيرهما
+        engine.setSpeechRate(speechRate)
+        engine.setPitch(pitch)
 
         val status = engine.synthesizeToFile(
             text, params, tempFile, utteranceId

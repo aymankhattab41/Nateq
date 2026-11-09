@@ -3093,13 +3093,7 @@ speechCycle.incrementAndGet()
                 boostedVolume
             )
             putFloat("rate", finalSpeechRate)
-            putInt("rate", (finalSpeechRate * 100).toInt())
-            putString(
-                "rate",
-                (finalSpeechRate * 100).toInt().toString()
-            )
             putFloat("pitch", finalPitch)
-            putInt("pitch", (finalPitch * 100).toInt())
             // القناة من قرارِ المسار نفسه — الإشعارُ للمتصل خارج
             // المكالمة، و**قناةُ المكالمةِ لمكالمةِ الانتظار** (بند 5)،
             // والوسائطُ لغيره. **يجب أن تتطابق مع السمات** وإلا تجاهل

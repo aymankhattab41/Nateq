@@ -353,8 +353,7 @@ internal class CategoryVoicePanelController(
         btnTest?.setOnClickListener { previewCurrentCategory() }
     }
 
-    /** مثبّت مشترك لأشرطة اللوحة: تحديث القيمة الظاهرة ثم «متسخ» عند
-     *  تحرّك المستخدم، وحفظ غير مباشر (الكتابة تنتظر الزر). */
+    /** مثبّت مشترك لأشرطة اللوحة: تحديث القيمة وتطبيقها وحفظها فورياً. */
     private fun bindSeekBar(
         seekBar: SeekBar?,
         valueView: TextView?,
@@ -372,18 +371,61 @@ internal class CategoryVoicePanelController(
                     val text = format(progress)
                     valueView?.text = text
                     seekBar.setSeekStateDescription(text)
-                    if (fromUser) markDirty()
+                    if (fromUser) {
+                        applyCategorySliderChange(descriptionRes, progress)
+                        markDirty()
+                    }
                 }
 
                 override fun onStartTrackingTouch(seekBar: SeekBar) {}
 
                 override fun onStopTrackingTouch(seekBar: SeekBar) {
                     if (bindingInputs) return
-                    markDirty()
                     bindSeekBarSnap(seekBar, descriptionRes, format)
+                    applyCategorySliderChange(descriptionRes, seekBar.progress)
+                    markDirty()
                 }
             }
         )
+    }
+
+    private fun applyCategorySliderChange(
+        descriptionRes: Int,
+        progress: Int
+    ) {
+        if (currentEntry.isCaller) return
+        val catKey = currentEntry.categoryKey
+        runCatching {
+            when (descriptionRes) {
+                R.string.seek_category_speech_rate -> {
+                    val factor = progress.speedFactor()
+                    settings.setSpeechRateForCategory(catKey, factor)
+                    if (catKey == SettingsRepository.VOICE_CATEGORY_DEFAULT) {
+                        settings.setDefaultSpeechRate(factor)
+                        settings.setSpeechRate("ar", factor)
+                    }
+                    if (settings.isFollowReaderRateEnabled()) {
+                        settings.setFollowReaderRateEnabled(false)
+                    }
+                }
+                R.string.seek_category_pitch -> {
+                    val factor = progress.speedFactor()
+                    settings.setPitchForCategory(catKey, factor)
+                    if (catKey == SettingsRepository.VOICE_CATEGORY_DEFAULT) {
+                        settings.setDefaultPitch(factor)
+                        settings.setPitch("ar", factor)
+                    }
+                }
+                R.string.seek_category_volume -> {
+                    val vol = progress / 100f
+                    settings.setVolumeForCategory(catKey, vol)
+                    if (catKey == SettingsRepository.VOICE_CATEGORY_DEFAULT) {
+                        settings.setDefaultVolume(vol)
+                        settings.setVolume("ar", vol)
+                    }
+                }
+            }
+        }
     }
 
     /** لقطة نهاية اللمس: تثبيت الحد الأدنى وإعلان القيمة لقارئ الشاشة. */

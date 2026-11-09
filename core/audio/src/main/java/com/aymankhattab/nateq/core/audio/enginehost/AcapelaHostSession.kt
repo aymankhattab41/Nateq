@@ -7,6 +7,7 @@ import com.acapelagroup.android.tts.acattsandroid
 import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.core.audio.providers.AcapelaLicense
 import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceManifest
+import com.aymankhattab.nateq.core.audio.providers.EmbeddedStorage
 import kotlinx.coroutines.delay
 import java.io.File
 import java.nio.ByteBuffer
@@ -42,15 +43,25 @@ internal class AcapelaHostSession(
             return "\\rspd=$speed\\ \\vct=$p\\ $text"
         }
 
-        internal fun collectVoiceSearchPaths(baseDir: File): Array<String> {
-            val paths = mutableSetOf<String>()
-            if (baseDir.exists() && baseDir.isDirectory) {
-                paths.add(baseDir.absolutePath)
-                baseDir.walkTopDown().maxDepth(6).forEach { f ->
-                    if (f.isFile && (
-                        f.extension.equals("inf", ignoreCase = true) ||
-                        f.extension.equals("ini", ignoreCase = true))
+        internal fun collectVoiceSearchPaths(
+            baseDir: File,
+            extraDirs: List<File> = emptyList()
+        ): Array<String> {
+            val paths = LinkedHashSet<String>()
+            val allBases = (listOf(baseDir) + extraDirs).filter {
+                it.exists() && it.isDirectory
+            }
+            for (base in allBases) {
+                paths.add(base.absolutePath)
+                AcapelaVoiceManifest.ensureVoiceInfFiles(base)
+                base.walkTopDown().maxDepth(6).forEach { f ->
+                    if (f.isDirectory &&
+                        AcapelaVoiceManifest.isCompleteVoiceDir(f)
                     ) {
+                        paths.add(f.absolutePath)
+                    } else if (f.isFile && f.extension.lowercase() in setOf(
+                        "inf", "ini", "bvcu", "dat", "mdd", "pho", "bnf"
+                    )) {
                         f.parentFile?.absolutePath?.let { paths.add(it) }
                     }
                 }
@@ -118,7 +129,11 @@ internal class AcapelaHostSession(
             if (licRes != 0) {
                 Log.w(TAG, "nSetLicense returned $licRes")
             }
-            val paths = collectVoiceSearchPaths(dir)
+            val extraDirs = EmbeddedStorage.allSearchDirs(
+                context,
+                EmbeddedStorage.Engine.ACAPELA
+            )
+            val paths = collectVoiceSearchPaths(dir, extraDirs)
             val voiceCount = inst.nGetVoiceList(paths)
             Log.d(
                 TAG,
@@ -180,29 +195,60 @@ internal class AcapelaHostSession(
                 .removePrefix("acapela_")
                 .substringBefore('(')
                 .trim()
+            val cleanSpeaker = AcapelaVoiceManifest
+                .cleanAcapelaSpeaker(cleanVoiceId)
 
             val dir = dataDirectory
             val voiceInfo = dir?.let {
                 AcapelaVoiceManifest.listVoices(it).firstOrNull { v ->
-                    v.id.equals(cleanVoiceId, ignoreCase = true) ||
+                    v.id.equals(cleanSpeaker, ignoreCase = true) ||
+                        v.voiceName.equals(cleanSpeaker, ignoreCase = true) ||
+                        v.id.equals(cleanVoiceId, ignoreCase = true) ||
                         v.voiceName.equals(cleanVoiceId, ignoreCase = true) ||
                         v.displayName.startsWith(
-                            cleanVoiceId,
+                            cleanSpeaker,
                             ignoreCase = true
                         )
                 }
             }
-            val targetName = voiceInfo?.voiceName ?: cleanVoiceId
+            val targetName = voiceInfo?.voiceName ?: cleanSpeaker
+            val candidates = listOfNotNull(
+                targetName,
+                cleanSpeaker,
+                cleanVoiceId,
+                cleanSpeaker.lowercase(),
+                cleanSpeaker.uppercase()
+            ).distinct()
 
-            if (currentVoiceId != targetName) {
-                var loadRes = inst.nLoadVoice(targetName)
+            if (currentVoiceId != targetName &&
+                currentVoiceId != cleanSpeaker
+            ) {
+                var loadRes = -1
+                var loadedName: String? = null
+                for (cand in candidates) {
+                    loadRes = inst.nLoadVoice(cand)
+                    if (loadRes == 0) {
+                        loadedName = cand
+                        break
+                    }
+                }
                 if (loadRes != 0 && dir != null) {
-                    val paths = collectVoiceSearchPaths(dir)
+                    val extraDirs = EmbeddedStorage.allSearchDirs(
+                        context,
+                        EmbeddedStorage.Engine.ACAPELA
+                    )
+                    val paths = collectVoiceSearchPaths(dir, extraDirs)
                     inst.nGetVoiceList(paths)
-                    loadRes = inst.nLoadVoice(targetName)
+                    for (cand in candidates) {
+                        loadRes = inst.nLoadVoice(cand)
+                        if (loadRes == 0) {
+                            loadedName = cand
+                            break
+                        }
+                    }
                 }
                 if (loadRes == 0) {
-                    currentVoiceId = targetName
+                    currentVoiceId = loadedName ?: targetName
                     if (voiceInfo != null && voiceInfo.sampleRate > 0) {
                         currentSampleRate = voiceInfo.sampleRate
                     }
