@@ -38,6 +38,15 @@ interface VoicePrefsProvider {
     /** هل للمجموعة الصوتية مستوى صوت صريح مخصص؟ */
     fun hasExplicitVolumeForCategory(category: String): Boolean = false
 
+    /** معدل الكلام للغة معيّنة أو null إن لم يُضبط صراحةً. */
+    fun getSpeechRateOrNull(languageTag: String): Float? = null
+
+    /** درجة الصوت للغة معيّنة أو null إن لم تُضبط صراحةً. */
+    fun getPitchOrNull(languageTag: String): Float? = null
+
+    /** مستوى الصوت للغة معيّنة أو null إن لم يُضبط صراحةً. */
+    fun getVolumeOrNull(languageTag: String): Float? = null
+
     /** معايرة RMS المحفوظة لمحرك (كسب التطبيع المستقر) — null إن لم توجد
      *  (بند الأوامر د.3.3). الافتراضي بلا ثبات لموفّرٍ لا يدعم الحفظ. */
     fun getEngineRmsCalibration(enginePackage: String): Float? = null

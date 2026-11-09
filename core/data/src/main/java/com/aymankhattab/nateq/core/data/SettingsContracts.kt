@@ -105,13 +105,13 @@ interface SynthesisPrefs :
     fun setVolume(languageTag: String, volume: Float)
 
     /** معدل الكلام للغة معيّنة أو null إن لم يُضبط صراحةً. */
-    fun getSpeechRateOrNull(languageTag: String): Float?
+    override fun getSpeechRateOrNull(languageTag: String): Float?
 
     /** درجة الصوت للغة معيّنة أو null إن لم تُضبط صراحةً. */
-    fun getPitchOrNull(languageTag: String): Float?
+    override fun getPitchOrNull(languageTag: String): Float?
 
     /** مستوى الصوت للغة معيّنة أو null إن لم يُضبط صراحةً. */
-    fun getVolumeOrNull(languageTag: String): Float?
+    override fun getVolumeOrNull(languageTag: String): Float?
 
     /** معدل الكلام الافتراضي (للغات بلا تفضيل صريح). */
     fun getDefaultSpeechRate(): Float

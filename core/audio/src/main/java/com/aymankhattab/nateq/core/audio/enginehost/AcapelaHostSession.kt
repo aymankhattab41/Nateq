@@ -129,10 +129,14 @@ internal class AcapelaHostSession(
             if (licRes != 0) {
                 Log.w(TAG, "nSetLicense returned $licRes")
             }
+            AcapelaVoiceManifest.ensureVoiceInfFiles(dir)
             val extraDirs = EmbeddedStorage.allSearchDirs(
                 context,
                 EmbeddedStorage.Engine.ACAPELA
             )
+            for (ed in extraDirs) {
+                AcapelaVoiceManifest.ensureVoiceInfFiles(ed)
+            }
             val paths = collectVoiceSearchPaths(dir, extraDirs)
             val voiceCount = inst.nGetVoiceList(paths)
             Log.d(
@@ -223,6 +227,8 @@ internal class AcapelaHostSession(
                 add(cleanVoiceId)
                 add(cleanSpeaker.lowercase())
                 add(cleanSpeaker.uppercase())
+                voiceInfo?.dir?.name?.let(::add)
+                voiceInfo?.configFile?.nameWithoutExtension?.let(::add)
             }.distinct()
 
             if (currentVoiceId != targetName &&
@@ -238,10 +244,14 @@ internal class AcapelaHostSession(
                     }
                 }
                 if (loadRes != 0 && dir != null) {
+                    AcapelaVoiceManifest.ensureVoiceInfFiles(dir)
                     val extraDirs = EmbeddedStorage.allSearchDirs(
                         context,
                         EmbeddedStorage.Engine.ACAPELA
                     )
+                    for (ed in extraDirs) {
+                        AcapelaVoiceManifest.ensureVoiceInfFiles(ed)
+                    }
                     val paths = collectVoiceSearchPaths(dir, extraDirs)
                     inst.nGetVoiceList(paths)
                     for (cand in candidates) {

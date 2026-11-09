@@ -149,4 +149,20 @@ class SpeechRateMathTest {
             NateqTtsService.synthesisTimeoutMs(100_000)
         )
     }
+
+    @Test
+    fun followReaderRate_preservesReaderSpeedWithoutMultiplication() {
+        val readerRate = readerRateFromPercent(150f)
+        val nateqMultiplier = 1.0f
+        val finalRate = computeFinalSpeechRate(readerRate, nateqMultiplier)
+        assertEquals(1.5f, finalRate)
+    }
+
+    @Test
+    fun unFollowReaderRate_multipliesReaderSpeedByAppPreference() {
+        val readerRate = readerRateFromPercent(150f)
+        val nateqMultiplier = 1.5f
+        val finalRate = computeFinalSpeechRate(readerRate, nateqMultiplier)
+        assertEquals(2.25f, finalRate)
+    }
 }

@@ -102,8 +102,26 @@ class AcapelaVoiceManifestTest {
 
         val inf = File(voiceFolder, "salma.inf")
         assertTrue(inf.exists())
+        val ini = File(voiceFolder, "salma.ini")
+        assertTrue(ini.exists())
         val content = inf.readText()
         assertTrue(content.contains("speaker = \" Salma\""))
         assertTrue(content.contains("codepage = \" utf-8\""))
+    }
+
+    @Test
+    fun ensureVoiceInfFiles_updatesExistingInfWithoutSpaceAndCreatesIni() {
+        val baseDir = tempFolder.newFolder("voices_unspaced_inf")
+        val voiceFolder = File(baseDir, "mehdi").apply { mkdirs() }
+        val inf = File(voiceFolder, "mehdi.inf")
+        inf.writeText("[Voice]\nspeaker=\"Mehdi\"\nfrequency=22050\n")
+
+        AcapelaVoiceManifest.ensureVoiceInfFiles(baseDir)
+
+        val updatedInf = inf.readText()
+        assertTrue(updatedInf.contains("speaker = \" Mehdi\""))
+        val ini = File(voiceFolder, "mehdi.ini")
+        assertTrue(ini.exists())
+        assertTrue(ini.readText().contains("speaker = \" Mehdi\""))
     }
 }
