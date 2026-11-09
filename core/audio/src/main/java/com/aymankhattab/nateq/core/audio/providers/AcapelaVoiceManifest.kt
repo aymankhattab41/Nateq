@@ -5,7 +5,8 @@ import java.nio.charset.StandardCharsets
 import java.util.Locale
 
 /**
- * فحص وتعداد أصوات Acapela على القرص دون الحاجة لمكتبات أصلية.
+ * فحص وتعداد أصوات Acapela على القرص
+ * دون الحاجة لمكتبات أصلية.
  */
 object AcapelaVoiceManifest {
 
@@ -24,7 +25,8 @@ object AcapelaVoiceManifest {
 
     /**
      * هل يحوي المجلد صوتاً مكتملاً لـ Acapela؟
-     * يتطلب وجود ملف تهيئة (.ini أو .inf) أو ملف بيانات واحد على الأقل.
+     * يتطلب وجود ملف تهيئة (.ini أو .inf)
+     * أو ملف بيانات واحد على الأقل.
      */
     fun isCompleteVoiceDir(dir: File): Boolean {
         if (!dir.exists() || !dir.isDirectory) return false
@@ -43,7 +45,8 @@ object AcapelaVoiceManifest {
     }
 
     /**
-     * قائمة المجلدات التي تحوي أصوات Acapela تحت المجلد الأساسي.
+     * قائمة المجلدات التي تحوي أصوات Acapela
+     * تحت المجلد الأساسي.
      */
     fun completeVoiceDirs(baseDir: File): List<File> {
         if (!baseDir.exists() || !baseDir.isDirectory) return emptyList()
@@ -62,7 +65,136 @@ object AcapelaVoiceManifest {
     }
 
     /**
-     * استخراج بيانات الصوت من ملف التهيئة (.inf أو .ini).
+     * تطبيع اسم المتحدث واستخراج الاسم النقي
+     * بدون لاحقات أو بادئات.
+     */
+    fun cleanAcapelaSpeaker(raw: String): String {
+        var s = raw.removePrefix("acapela_")
+            .substringBefore('(')
+            .trim()
+        s = s.removeSuffix(".bvcu").removeSuffix(".dat")
+            .removeSuffix(".inf").removeSuffix(".ini")
+            .removeSuffix(".mdd").removeSuffix(".pho")
+            .removeSuffix(".bnf")
+        val langPrefixRegex = Regex(
+            "^[a-z]{2,3}_[a-z]{2,3}_",
+            RegexOption.IGNORE_CASE
+        )
+        s = s.replace(langPrefixRegex, "")
+        val suffixRegex = Regex(
+            "_(22k_ns|22k|8k|16k|44k|HM|HQ|LF|ns)",
+            RegexOption.IGNORE_CASE
+        )
+        s = s.replace(suffixRegex, "")
+        val cleaned = s.trim()
+        return if (cleaned.isNotEmpty()) {
+            cleaned.replaceFirstChar {
+                if (it.isLowerCase()) it.titlecase(Locale.ROOT)
+                else it.toString()
+            }
+        } else {
+            raw.trim()
+        }
+    }
+
+    /**
+     * التحقق من وجود ملف تهيئة .inf متوافق مع
+     * متطلبات مكتبة Acapela الأصلية لكل مجلد صوت،
+     * وإنشائه أو تحديثه بصيغة `speaker = " Name"`
+     * إذا لزم الأمر.
+     */
+    fun ensureVoiceInfFiles(baseDir: File) {
+        if (!baseDir.exists() || !baseDir.isDirectory) return
+        val dirs = completeVoiceDirs(baseDir)
+        for (dir in dirs) {
+            runCatching {
+                val infFiles = dir.listFiles { f ->
+                    f.isFile && f.extension.equals("inf", ignoreCase = true)
+                } ?: emptyArray()
+
+                var validInfFound = false
+                var detectedSpeaker: String? = null
+
+                for (inf in infFiles) {
+                    val lines = inf.readLines(StandardCharsets.ISO_8859_1)
+                    for (line in lines) {
+                        val trimmed = line.trim()
+                        if (trimmed.startsWith("speaker", ignoreCase = true)) {
+                            val eq = trimmed.indexOf('=')
+                            if (eq > 0) {
+                                val value = trimmed.substring(eq + 1)
+                                    .trim()
+                                    .removeSurrounding("\"")
+                                    .trim()
+                                if (value.isNotBlank()) {
+                                    detectedSpeaker = cleanAcapelaSpeaker(value)
+                                }
+                            }
+                            if (trimmed.matches(
+                                Regex(
+                                    "^speaker\\s*=\\s*\"\\s*[^\"\\s]+.*",
+                                    RegexOption.IGNORE_CASE
+                                )
+                            )) {
+                                validInfFound = true
+                            }
+                        }
+                    }
+                }
+
+                if (!validInfFound) {
+                    val speaker = detectedSpeaker?.ifBlank { null }
+                        ?: run {
+                            val dataFiles = dir.listFiles { f ->
+                                f.isFile && f.extension.lowercase() in setOf(
+                                    "bvcu", "dat", "bnf", "pho", "mdd"
+                                )
+                            } ?: emptyArray()
+                            val name = dataFiles.firstOrNull()
+                                ?.nameWithoutExtension ?: dir.name
+                            cleanAcapelaSpeaker(name)
+                        }
+
+                    if (speaker.isNotBlank()) {
+                        val targetInf = if (infFiles.isNotEmpty()) {
+                            infFiles.first()
+                        } else {
+                            File(dir, "${speaker.lowercase()}.inf")
+                        }
+                        val header = buildString {
+                            append("[Voice]\n")
+                            append("speaker = \" $speaker\"\n")
+                            append("codepage = \" utf-8\"\n")
+                            append("frequency = \" 22050\"\n")
+                        }
+                        if (targetInf.exists()) {
+                            val existing = targetInf.readText(
+                                StandardCharsets.ISO_8859_1
+                            )
+                            if (!existing.contains(
+                                "speaker = \"",
+                                ignoreCase = true
+                            )) {
+                                targetInf.writeText(
+                                    header + "\n" + existing,
+                                    StandardCharsets.ISO_8859_1
+                                )
+                            }
+                        } else {
+                            targetInf.writeText(
+                                header,
+                                StandardCharsets.ISO_8859_1
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * استخراج بيانات الصوت من ملف التهيئة
+     * (.inf أو .ini).
      */
     fun parseConfigFile(cf: File): VoiceInfo {
         var speakerName: String? = null
@@ -83,7 +215,7 @@ object AcapelaVoiceManifest {
                         val value = rawVal.removeSurrounding("\"").trim()
 
                         when (key) {
-                            "speaker", "voicename", "name" ->
+                            "speaker", "voicename", "name", "voice" ->
                                 if (speakerName == null) speakerName = value
                             "isocode", "lang", "language" ->
                                 if (isoCode == null) isoCode = value
@@ -96,7 +228,8 @@ object AcapelaVoiceManifest {
         }
 
         val fallbackName = cf.nameWithoutExtension
-        val finalName = speakerName?.ifBlank { null } ?: fallbackName
+        val rawName = speakerName?.ifBlank { null } ?: fallbackName
+        val finalName = cleanAcapelaSpeaker(rawName)
         val locale = resolveLocale(isoCode, finalName)
         val display = "$finalName (${locale.displayLanguage})"
         val parentDir = cf.parentFile ?: cf
@@ -130,8 +263,9 @@ object AcapelaVoiceManifest {
             )
         } ?: emptyArray()
 
-        val voiceName = dataFiles.firstOrNull()?.nameWithoutExtension
+        val rawName = dataFiles.firstOrNull()?.nameWithoutExtension
             ?: dir.name
+        val voiceName = cleanAcapelaSpeaker(rawName)
         val locale = resolveLocale(null, voiceName)
         val display = "$voiceName (${locale.displayLanguage})"
 
@@ -177,13 +311,15 @@ object AcapelaVoiceManifest {
     }
 
     /**
-     * قائمة الأصوات المفروزة من كل المجلدات والمجلدات الفرعية.
+     * قائمة الأصوات المفروزة من كل المجلدات
+     * والمجلدات الفرعية.
      */
     fun listVoices(baseDir: File): List<VoiceInfo> {
         if (!baseDir.exists() || !baseDir.isDirectory) return emptyList()
+        ensureVoiceInfFiles(baseDir)
         val result = mutableListOf<VoiceInfo>()
 
-        // 1. مسح كل ملفات التهيئة (.inf / .ini) في أي عمق حتى 6 مستويات
+        // 1. مسح كل ملفات التهيئة (.inf / .ini) في أي عمق
         baseDir.walkTopDown().maxDepth(6).forEach { f ->
             if (f.isFile && (f.extension.equals("inf", ignoreCase = true) ||
                 f.extension.equals("ini", ignoreCase = true))
@@ -194,7 +330,7 @@ object AcapelaVoiceManifest {
             }
         }
 
-        // 2. إذا لم توجد ملفات تهيئة، فحص المجلدات التي تحوي ملفات بيانات
+        // 2. إذا لم توجد ملفات تهيئة، فحص المجلدات التي تحوي بيانات
         if (result.isEmpty()) {
             val dirs = completeVoiceDirs(baseDir)
             for (d in dirs) {

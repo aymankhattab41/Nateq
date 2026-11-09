@@ -64,4 +64,46 @@ class AcapelaVoiceManifestTest {
         assertTrue(voices.any { it.voiceName == "Mehdi" })
         assertTrue(voices.any { it.voiceName == "Salma" })
     }
+
+    @Test
+    fun cleanAcapelaSpeaker_normalizesRealWorldNames() {
+        assertEquals(
+            "Salma",
+            AcapelaVoiceManifest.cleanAcapelaSpeaker(
+                "ar_sa_salma_22k_ns.bvcu"
+            )
+        )
+        assertEquals(
+            "Salma",
+            AcapelaVoiceManifest.cleanAcapelaSpeaker("Salma_HM")
+        )
+        assertEquals(
+            "Mehdi",
+            AcapelaVoiceManifest.cleanAcapelaSpeaker("ar_sa_mehdi_22k_ns")
+        )
+        assertEquals(
+            "Leila",
+            AcapelaVoiceManifest.cleanAcapelaSpeaker("acapela_leila")
+        )
+        assertEquals(
+            "Salma",
+            AcapelaVoiceManifest.cleanAcapelaSpeaker("Salma (العربية)")
+        )
+    }
+
+    @Test
+    fun ensureVoiceInfFiles_createsProperNativeInfFormat() {
+        val baseDir = tempFolder.newFolder("voices_without_inf")
+        val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
+        val bvcu = File(voiceFolder, "ar_sa_salma_22k_ns.bvcu")
+        bvcu.writeBytes(ByteArray(10_000))
+
+        AcapelaVoiceManifest.ensureVoiceInfFiles(baseDir)
+
+        val inf = File(voiceFolder, "salma.inf")
+        assertTrue(inf.exists())
+        val content = inf.readText()
+        assertTrue(content.contains("speaker = \" Salma\""))
+        assertTrue(content.contains("codepage = \" utf-8\""))
+    }
 }

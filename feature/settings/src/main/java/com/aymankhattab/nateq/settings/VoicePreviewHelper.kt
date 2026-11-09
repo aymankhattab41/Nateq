@@ -327,6 +327,16 @@ internal fun isVocalizerVoiceName(voiceName: String?): Boolean {
     return name in VOCALIZER_VOICE_KEYS
 }
 
+internal fun isAcapelaVoiceName(voiceName: String?): Boolean {
+    val name = voiceName?.trim()?.lowercase() ?: return false
+    if (name.isEmpty()) return false
+    if (name.startsWith("acapela")) return true
+    val acapelaNames = setOf(
+        "salma", "mehdi", "leila", "nizar", "youssef", "tarik", "mariam"
+    )
+    return acapelaNames.any { name.contains(it) }
+}
+
 /**
  * معاينة نطق مشتركة لكل أقسام الشاشة (بند الأوامر 4): تُشغّل عيّنة عبر
  * محرك TTS مؤقت بقيم (محرك، صوت، سرعة، نبرة، مستوى صوت، نص) مع إغلاق
@@ -692,7 +702,8 @@ internal class VoicePreviewHelper(private val context: Context) {
                     isMicrosoftVoiceName(
                         context,
                         effectiveParams.voiceName
-                    )))
+                    ) ||
+                    isAcapelaVoiceName(effectiveParams.voiceName)))
         ) {
             val canon = if (isEmbeddedEngine(effEngine)) {
                 HostProtocol.normalizeEngineId(effEngine!!)
@@ -702,6 +713,8 @@ internal class VoicePreviewHelper(private val context: Context) {
                 )
             ) {
                 HostProtocol.ENGINE_MICROSOFT
+            } else if (isAcapelaVoiceName(effectiveParams.voiceName)) {
+                HostProtocol.ENGINE_ACAPELA
             } else {
                 HostProtocol.ENGINE_VOCALIZER
             }

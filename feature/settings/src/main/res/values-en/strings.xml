@@ -713,6 +713,11 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Resolved embedded Acapela voice loading failures (e.g. Salma and Mehdi) by normalizing speaker IDs and auto-generating native .inf files matching native binary engine requirements.
+• Extended recursive voice directory discovery for embedded Acapela packages with dynamic fallback rescanning upon speech synthesis requests.
+• Corrected voice preview routing for Acapela voices (Salma, Mehdi, Leila, etc.) to target the Acapela engine host directly instead of Vocalizer.
+• Enforced speech rate and pitch retention on external TTS engines immediately prior to file synthesis, preventing engine resets on language/voice assignment and cleaning IPC audio parameter bundles.
+• Enabled immediate auto-save and application of category speech rate slider adjustments on user drag (fully compatible with TalkBack screen reader gestures), seamlessly disabling reader rate lock.
 • Fixed embedded Acapela voice synthesis and preview by awaiting native async completion and streaming all audio frames.
 • Normalized Acapela voice IDs by stripping language suffixes for reliable loading in categories and default voice.
 • Fixed speech rate sliders responsiveness across general settings and voice categories to work alongside reader rate.
