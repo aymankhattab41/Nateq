@@ -1055,6 +1055,12 @@ class NateqTtsService : TextToSpeechService() {
                     settings.isEmojiPronunciationEnabled()
                 }.getOrDefault(false)
 
+                val defaultLordRate = requestHandler.getSpeechRateFor(
+                    languageTag, SettingsRepository.VOICE_CATEGORY_DEFAULT
+                )
+                val effectiveDefaultRate = computeFinalSpeechRate(
+                    readerRate, defaultLordRate, currentSpeechBoost()
+                )
                 val startPlanning = SystemClock.uptimeMillis()
                 val planItems = SpeechPlanner.plan(
                     rawText = semanticText,
@@ -1064,7 +1070,7 @@ class NateqTtsService : TextToSpeechService() {
                     emojiPronunciationEnabled = emojiEnabled,
                     dictionary = pronunciationDictionary,
                     settings = settings,
-                    defaultRate = readerRate,
+                    defaultRate = effectiveDefaultRate,
                     segmenter = segmenter
                 )
                 val segments = if (planItems.isEmpty()) {
@@ -1352,10 +1358,8 @@ class NateqTtsService : TextToSpeechService() {
         )
         val convertRate = convertTarget?.convertRate?.takeIf { it != 1.0f }
         val nateqMultiplier: Float = if (settings.isFollowReaderRateEnabled()) {
-            if (singleCategory != SettingsRepository.VOICE_CATEGORY_DEFAULT &&
-                settings.hasExplicitSpeechRateForCategory(singleCategory)
-            ) {
-                lordRate
+            if (lordRate != 1.0f) {
+                convertRate ?: lordRate
             } else {
                 convertRate ?: 1.0f
             }
@@ -1886,10 +1890,8 @@ class NateqTtsService : TextToSpeechService() {
         //  بسرعة LORD المطلقة ويُخالف المسار الأحادي — كان عيباً متوارثاً.)
         val convertRate = convert?.convertRate?.takeIf { it != 1.0f }
         val nateqMultiplier: Float = if (settings.isFollowReaderRateEnabled()) {
-            if (effCategory != SettingsRepository.VOICE_CATEGORY_DEFAULT &&
-                settings.hasExplicitSpeechRateForCategory(effCategory)
-            ) {
-                segRate
+            if (segRate != 1.0f) {
+                convertRate ?: segRate
             } else {
                 convertRate ?: 1.0f
             }

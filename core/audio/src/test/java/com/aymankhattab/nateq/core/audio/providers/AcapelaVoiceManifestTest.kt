@@ -107,6 +107,9 @@ class AcapelaVoiceManifestTest {
         val content = inf.readText()
         assertTrue(content.contains("speaker = \" Salma\""))
         assertTrue(content.contains("codepage = \" utf-8\""))
+        assertTrue(
+            content.contains("FILE \"ar_sa_salma_22k_ns.bvcu\" [ RAM ]")
+        )
     }
 
     @Test

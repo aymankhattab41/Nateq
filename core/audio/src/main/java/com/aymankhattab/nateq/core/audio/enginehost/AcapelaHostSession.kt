@@ -267,6 +267,17 @@ internal class AcapelaHostSession(
                 add(cleanSpeaker.uppercase())
                 voiceInfo?.dir?.name?.let(::add)
                 voiceInfo?.configFile?.nameWithoutExtension?.let(::add)
+                voiceInfo?.dir?.listFiles { f ->
+                    f.isFile && (f.extension.equals("inf", true) ||
+                        f.extension.equals("ini", true))
+                }?.forEach { f ->
+                    add(f.nameWithoutExtension)
+                    add(
+                        AcapelaVoiceManifest.cleanAcapelaSpeaker(
+                            f.nameWithoutExtension
+                        )
+                    )
+                }
             }.distinct()
 
             if (currentVoiceId != targetName &&
@@ -318,19 +329,25 @@ internal class AcapelaHostSession(
                         )
                         collectVoiceSearchPaths(it, extraDirs).toList()
                     } ?: emptyList()
+                    val targetDir = voiceInfo?.dir ?: dir
+                    val dirFiles = targetDir?.walkTopDown()?.maxDepth(2)
+                        ?.filter { it.isFile }
+                        ?.map { "${it.name} (${it.length()}B)" }
+                        ?.toList() ?: emptyList()
                     Log.e(
                         TAG,
                         "فشل تحميل صوت Acapela ($targetName): كود $loadRes, " +
-                            "مرشحات=$candidates, مسارات=$searchPaths"
+                            "مرشحات=$candidates, مسارات=$searchPaths, " +
+                            "ملفات=$dirFiles"
                     )
                     sink.end(
                         HostProtocol.STATUS_ERROR,
                         "VOICE_LOAD_FAILED",
-                        "تعذر تحميل الصوت: $targetName"
+                        "تعذر تحميل الصوت: $targetName (كود $loadRes)"
                     )
                     return HostResult.failure(
                         "VOICE_LOAD_FAILED",
-                        "تعذر تحميل الصوت: $targetName"
+                        "تعذر تحميل الصوت: $targetName (كود $loadRes)"
                     )
                 }
             }

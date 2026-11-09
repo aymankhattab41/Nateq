@@ -68,6 +68,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.roundToInt
 
 /**
  * إعدادات نطق أسماء الإيموجي (فئة «نطق الإيموجي») — تُقرأ من الإعدادات مرة
@@ -3092,8 +3093,12 @@ speechCycle.incrementAndGet()
                 TextToSpeech.Engine.KEY_PARAM_VOLUME,
                 boostedVolume
             )
-            putFloat("rate", finalSpeechRate)
-            putFloat("pitch", finalPitch)
+            val rateInt = (finalSpeechRate * 100f).roundToInt()
+                .coerceIn(10, 600)
+            val pitchInt = (finalPitch * 100f).roundToInt()
+                .coerceIn(20, 400)
+            putInt("rate", rateInt)
+            putInt("pitch", pitchInt)
             // القناة من قرارِ المسار نفسه — الإشعارُ للمتصل خارج
             // المكالمة، و**قناةُ المكالمةِ لمكالمةِ الانتظار** (بند 5)،
             // والوسائطُ لغيره. **يجب أن تتطابق مع السمات** وإلا تجاهل

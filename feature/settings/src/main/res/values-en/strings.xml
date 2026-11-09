@@ -713,6 +713,8 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Unified speech rate and pitch application between preview and background reading by sending rate and pitch as integer percentages via Binder IPC to prevent ClassCastException in MultiTTS and system engines, and ensuring Lord TTS configured default rates are preserved in the speech planner.
+• Resolved embedded Acapela voice loading failure (e.g. Salma init error -7) by extracting and writing full native database file directives (FILE, BNF, PHM, FILEMAP) into both .inf and .ini files matching the native C library requirements.
 • Fixed embedded Acapela voice loading (e.g. Salma and Mehdi) by passing nested voice directories directly to native nGetVoiceList to bypass Android filesystem readdir recursion limitations and prevent error code -2, cleaning up duplicate stub config files, and including Acapela in embedded engine diagnostics.
 • Unified speech rate calculation across TalkBack, service, and preview paths: screen-reader speed is fully preserved and accurately multiplied by app preferences when reader follow mode is disabled, preventing speed drops outside preview.
 • Resolved Acapela embedded engine playback by ensuring both .inf and .ini configuration files are created with the exact native C-library spacing format upon startup, import, and in the isolated synthesis session.
