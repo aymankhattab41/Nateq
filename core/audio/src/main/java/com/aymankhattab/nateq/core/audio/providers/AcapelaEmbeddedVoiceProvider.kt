@@ -124,6 +124,7 @@ class AcapelaEmbeddedVoiceProvider(
 
             val targetVoiceName = (desiredVoiceName ?: voice.id)
                 .removePrefix("acapela_")
+                .substringBefore('(')
                 .trim()
 
             val isEvent = LoudnessStage.isEventCategory(category)

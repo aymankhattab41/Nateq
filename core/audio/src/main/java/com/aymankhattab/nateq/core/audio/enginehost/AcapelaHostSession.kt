@@ -1,14 +1,18 @@
 package com.aymankhattab.nateq.core.audio.enginehost
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import com.acapelagroup.android.tts.acattsandroid
+import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.core.audio.providers.AcapelaLicense
 import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceManifest
+import kotlinx.coroutines.delay
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.roundToInt
 
 /**
@@ -73,6 +77,11 @@ internal class AcapelaHostSession(
     @Volatile
     private var isSpeaking = false
 
+    private val headerWritten = AtomicBoolean(false)
+    private val audioReceived = AtomicBoolean(false)
+    private val speechCompleted = AtomicBoolean(false)
+    private val lastAudioTime = AtomicLong(0L)
+
     override fun init(dataDir: String): HostResult {
         return try {
             val dir = File(dataDir)
@@ -84,7 +93,6 @@ internal class AcapelaHostSession(
                 )
             }
 
-            // تحميل المكتبة الأصلية مع معالجة غيابها بسلاسة
             try {
                 System.loadLibrary("acattsandroid")
             } catch (e: Throwable) {
@@ -162,49 +170,55 @@ internal class AcapelaHostSession(
         activeCancelled = cancelled
         isSpeaking = true
 
+        headerWritten.set(false)
+        audioReceived.set(false)
+        speechCompleted.set(false)
+        lastAudioTime.set(SystemClock.uptimeMillis())
+
         try {
-            // تحميل الصوت المحدد إن لم يكن محملاً مسبقاً لتفادي إعادة القراءة
-            if (currentVoiceId != req.voiceId) {
-                var loadRes = inst.nLoadVoice(req.voiceId)
-                if (loadRes != 0) {
-                    val dir = dataDirectory
-                    if (dir != null) {
-                        val paths = collectVoiceSearchPaths(dir)
-                        inst.nGetVoiceList(paths)
-                        loadRes = inst.nLoadVoice(req.voiceId)
-                    }
+            val cleanVoiceId = req.voiceId
+                .removePrefix("acapela_")
+                .substringBefore('(')
+                .trim()
+
+            val dir = dataDirectory
+            val voiceInfo = dir?.let {
+                AcapelaVoiceManifest.listVoices(it).firstOrNull { v ->
+                    v.id.equals(cleanVoiceId, ignoreCase = true) ||
+                        v.voiceName.equals(cleanVoiceId, ignoreCase = true) ||
+                        v.displayName.startsWith(
+                            cleanVoiceId,
+                            ignoreCase = true
+                        )
+                }
+            }
+            val targetName = voiceInfo?.voiceName ?: cleanVoiceId
+
+            if (currentVoiceId != targetName) {
+                var loadRes = inst.nLoadVoice(targetName)
+                if (loadRes != 0 && dir != null) {
+                    val paths = collectVoiceSearchPaths(dir)
+                    inst.nGetVoiceList(paths)
+                    loadRes = inst.nLoadVoice(targetName)
                 }
                 if (loadRes == 0) {
-                    currentVoiceId = req.voiceId
-                    val dir = dataDirectory
-                    if (dir != null) {
-                        val voiceInfo = AcapelaVoiceManifest.listVoices(dir)
-                            .firstOrNull {
-                                it.id.equals(
-                                    req.voiceId,
-                                    ignoreCase = true
-                                ) || it.voiceName.equals(
-                                    req.voiceId,
-                                    ignoreCase = true
-                                )
-                            }
-                        if (voiceInfo != null && voiceInfo.sampleRate > 0) {
-                            currentSampleRate = voiceInfo.sampleRate
-                        }
+                    currentVoiceId = targetName
+                    if (voiceInfo != null && voiceInfo.sampleRate > 0) {
+                        currentSampleRate = voiceInfo.sampleRate
                     }
                 } else {
                     Log.e(
                         TAG,
-                        "فشل تحميل صوت Acapela (${req.voiceId}): كود $loadRes"
+                        "فشل تحميل صوت Acapela ($targetName): كود $loadRes"
                     )
                     sink.end(
                         HostProtocol.STATUS_ERROR,
                         "VOICE_LOAD_FAILED",
-                        "تعذر تحميل الصوت: ${req.voiceId}"
+                        "تعذر تحميل الصوت: $targetName"
                     )
                     return HostResult.failure(
                         "VOICE_LOAD_FAILED",
-                        "تعذر تحميل الصوت: ${req.voiceId}"
+                        "تعذر تحميل الصوت: $targetName"
                     )
                 }
             }
@@ -218,7 +232,7 @@ internal class AcapelaHostSession(
             val shapeFloat = pitchPercent.toFloat().coerceIn(70f, 130f)
             inst.nSetShape(shapeFloat)
 
-            // نطق النص (السرعة والنبرة مطبقتان عبر nSetSpeechRate)
+            // بدء النطق (يتم تسليم العينات عبر samplesCallback غير المتزامنة)
             var speakRes = inst.nSpeak(req.text)
             if (speakRes != 0 && !cancelled.get()) {
                 Log.w(
@@ -233,8 +247,49 @@ internal class AcapelaHostSession(
                 speakRes = inst.nSpeak(tagged)
             }
 
-            // كتابة نهاية التدفق بنجاح
-            sink.writeHeader(currentSampleRate, 1)
+            if (speakRes != 0) {
+                sink.end(
+                    HostProtocol.STATUS_ERROR,
+                    "SPEAK_ERROR",
+                    "فشل استدعاء nSpeak: $speakRes"
+                )
+                return HostResult.failure(
+                    "SPEAK_ERROR",
+                    "فشل استدعاء nSpeak: $speakRes"
+                )
+            }
+
+            // انتظار اكتمال التخليق وبث العينات الصوتية بالكامل
+            val startTime = SystemClock.uptimeMillis()
+            val timeoutMs = SynthesisBudget.pieceTimeoutMs(req.text.length)
+            while (!cancelled.get() && !speechCompleted.get()) {
+                val now = SystemClock.uptimeMillis()
+                if (now - startTime > timeoutMs) {
+                    Log.w(TAG, "تجاوز مهلة تخليق Acapela (${timeoutMs}ms)")
+                    break
+                }
+                if (audioReceived.get()) {
+                    val speaking = runCatching {
+                        inst.nIsSpeaking()
+                    }.getOrDefault(0)
+                    if (speaking == 0 && now - lastAudioTime.get() > 150L) {
+                        break
+                    }
+                } else if (now - startTime > 2500L) {
+                    val speaking = runCatching {
+                        inst.nIsSpeaking()
+                    }.getOrDefault(0)
+                    if (speaking == 0) {
+                        break
+                    }
+                }
+                delay(15L)
+            }
+
+            // ضمان كتابة الترويسة إن لم يُستلم أي صوت لمنع تعليق العميل
+            if (!headerWritten.get()) {
+                sink.writeHeader(currentSampleRate, 1)
+            }
             sink.end(HostProtocol.STATUS_OK, "OK", "")
             return HostResult(ok = true)
         } catch (t: Throwable) {
@@ -264,6 +319,10 @@ internal class AcapelaHostSession(
         }
         if (length <= 0) return
 
+        if (!headerWritten.getAndSet(true)) {
+            sink.writeHeader(currentSampleRate, 1)
+        }
+
         val byteBuffer = ByteBuffer.allocate(length * 2)
             .order(ByteOrder.LITTLE_ENDIAN)
         for (i in 0 until length) {
@@ -271,8 +330,9 @@ internal class AcapelaHostSession(
         }
         val bytes = byteBuffer.array()
 
-        sink.writeHeader(currentSampleRate, 1)
         sink.writePcm(bytes, bytes.size)
+        audioReceived.set(true)
+        lastAudioTime.set(SystemClock.uptimeMillis())
     }
 
     override fun onSpeechEvent(
@@ -282,10 +342,14 @@ internal class AcapelaHostSession(
         p3: Long,
         p4: Long
     ): Long {
+        if (eventId == 2L || eventId == 5L) {
+            speechCompleted.set(true)
+        }
         return 0L
     }
 
     override fun stop() {
+        speechCompleted.set(true)
         runCatching {
             acatts?.nStop()
         }
