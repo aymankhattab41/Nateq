@@ -713,6 +713,9 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Fixed embedded Acapela voice filtering when selecting Arabic by correcting ISO code and language name resolution, preventing foreign voices from being incorrectly categorized as Arabic.
+• Fixed embedded Acapela voice synthesis and playback after import by restricting search paths to base roots, prioritizing raw speaker names for nLoadVoice, and preserving native .inf generation.
+• Enforced instantaneous speech rate, pitch, and volume routing per voice category and language in TTS service (lord_system events, notifications, time, battery, etc.) without ignoring explicit category sliders.
 • Resolved embedded Acapela voice loading failures (e.g. Salma and Mehdi) by normalizing speaker IDs and auto-generating native .inf files matching native binary engine requirements.
 • Extended recursive voice directory discovery for embedded Acapela packages with dynamic fallback rescanning upon speech synthesis requests.
 • Corrected voice preview routing for Acapela voices (Salma, Mehdi, Leila, etc.) to target the Acapela engine host directly instead of Vocalizer.

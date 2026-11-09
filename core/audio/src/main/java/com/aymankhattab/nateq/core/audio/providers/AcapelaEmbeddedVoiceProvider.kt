@@ -72,13 +72,17 @@ class AcapelaEmbeddedVoiceProvider(
             for (dir in searchDirs) {
                 val voices = AcapelaVoiceManifest.listVoices(dir)
                 for (v in voices) {
-                    if (locale == Locale.ROOT ||
+                    // لغةٌ غير معروفة (ROOT) تظهر في القائمة العامة فقط،
+                    // ولا تُعرض تحت لغةٍ صريحة كي لا تبدو كل الأصوات
+                    // عربية عند اختيار العربية.
+                    val matches = locale == Locale.ROOT ||
                         locale.language.isBlank() ||
-                        v.locale.language.equals(
-                            locale.language,
-                            ignoreCase = true
-                        )
-                    ) {
+                        (v.locale.language.isNotEmpty() &&
+                            v.locale.language.equals(
+                                locale.language,
+                                ignoreCase = true
+                            ))
+                    if (matches) {
                         result.add(
                             VoiceDescriptor(
                                 id = v.id,
@@ -90,7 +94,7 @@ class AcapelaEmbeddedVoiceProvider(
                     }
                 }
             }
-            result.distinctBy { it.id }
+            result.distinctBy { "${it.id}|${it.locale.language}" }
         }
 
     private suspend fun ensureInitialized(): Boolean {

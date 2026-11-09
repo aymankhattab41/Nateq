@@ -8,6 +8,7 @@ import com.aymankhattab.nateq.core.audio.engine.SynthesisBudget
 import com.aymankhattab.nateq.core.audio.providers.AcapelaLicense
 import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceManifest
 import com.aymankhattab.nateq.core.audio.providers.EmbeddedStorage
+import com.aymankhattab.nateq.core.data.SettingsRepository
 import kotlinx.coroutines.delay
 import java.io.File
 import java.nio.ByteBuffer
@@ -47,27 +48,24 @@ internal class AcapelaHostSession(
             baseDir: File,
             extraDirs: List<File> = emptyList()
         ): Array<String> {
-            val paths = LinkedHashSet<String>()
-            val allBases = (listOf(baseDir) + extraDirs).filter {
-                it.exists() && it.isDirectory
-            }
-            for (base in allBases) {
-                paths.add(base.absolutePath)
-                AcapelaVoiceManifest.ensureVoiceInfFiles(base)
-                base.walkTopDown().maxDepth(6).forEach { f ->
-                    if (f.isDirectory &&
-                        AcapelaVoiceManifest.isCompleteVoiceDir(f)
-                    ) {
-                        paths.add(f.absolutePath)
-                    } else if (f.isFile && f.extension.lowercase() in setOf(
-                        "inf", "ini", "bvcu", "dat", "mdd", "pho", "bnf"
-                    )) {
-                        f.parentFile?.absolutePath?.let { paths.add(it) }
-                    }
-                }
-            }
-            return paths.toTypedArray()
+            // تُمرَّر الجذور فقط: دالة find_voices الأصلية تتكرّر داخل
+            // المجلدات، فتمرير كل مجلد فرعي كان يسجّل الصوت نفسه مرات
+            // عديدة (وفهرس nLoadVoice يفسد).
+            return (listOf(baseDir) + extraDirs)
+                .filter { it.exists() && it.isDirectory }
+                .distinctBy { it.absolutePath }
+                .map { it.absolutePath }
+                .toTypedArray()
         }
+
+        private fun matchesVoice(
+            v: AcapelaVoiceManifest.VoiceInfo,
+            query: String
+        ): Boolean =
+            v.rawSpeaker.equals(query, ignoreCase = true) ||
+                v.voiceName.equals(query, ignoreCase = true) ||
+                v.id.equals(query, ignoreCase = true) ||
+                v.displayName.startsWith(query, ignoreCase = true)
     }
 
     private var acatts: acattsandroid? = null
@@ -120,7 +118,9 @@ internal class AcapelaHostSession(
             if (resInit != 0) {
                 Log.w(TAG, "nInitCallbacks returned $resInit")
             }
-            inst.nSetLog(false)
+            // سجلات المكتبة الأصلية مفيدة للتشخيص فقط؛ تُترك معطّلة
+            // افتراضياً كي لا تُغرق Logcat في النطق العادي.
+            inst.nSetLog(diagnosticsEnabled())
             val licRes = inst.nSetLicense(
                 AcapelaLicense.USER_ID,
                 AcapelaLicense.PASSWORD,
@@ -167,6 +167,10 @@ internal class AcapelaHostSession(
         }
     }
 
+    private fun diagnosticsEnabled(): Boolean = runCatching {
+        SettingsRepository.create(context).isLanguageDiagnosticsEnabled()
+    }.getOrDefault(false)
+
     override suspend fun speak(
         req: SpeakRequest,
         sink: PcmSink,
@@ -199,26 +203,27 @@ internal class AcapelaHostSession(
                 .cleanAcapelaSpeaker(cleanVoiceId)
 
             val dir = dataDirectory
-            val voiceInfo = dir?.let {
-                AcapelaVoiceManifest.listVoices(it).firstOrNull { v ->
-                    v.id.equals(cleanSpeaker, ignoreCase = true) ||
-                        v.voiceName.equals(cleanSpeaker, ignoreCase = true) ||
-                        v.id.equals(cleanVoiceId, ignoreCase = true) ||
-                        v.voiceName.equals(cleanVoiceId, ignoreCase = true) ||
-                        v.displayName.startsWith(
-                            cleanSpeaker,
-                            ignoreCase = true
-                        )
-                }
+            val voices = dir?.let {
+                AcapelaVoiceManifest.listVoices(it)
+            }.orEmpty()
+            // الاسمُ الخام لحقل speaker هو ما تقارنه المكتبة الأصلية
+            // في nLoadVoice، فتُجرَّب أولاً قبل الاسم المطبّع.
+            val voiceInfo = voices.firstOrNull { v ->
+                matchesVoice(v, cleanVoiceId) ||
+                    matchesVoice(v, cleanSpeaker)
             }
-            val targetName = voiceInfo?.voiceName ?: cleanSpeaker
-            val candidates = listOfNotNull(
-                targetName,
-                cleanSpeaker,
-                cleanVoiceId,
-                cleanSpeaker.lowercase(),
-                cleanSpeaker.uppercase()
-            ).distinct()
+            val targetName = voiceInfo?.rawSpeaker
+                ?: voiceInfo?.voiceName
+                ?: cleanSpeaker
+            val candidates = buildList {
+                voiceInfo?.rawSpeaker?.let(::add)
+                voiceInfo?.voiceName?.let(::add)
+                add(targetName)
+                add(cleanSpeaker)
+                add(cleanVoiceId)
+                add(cleanSpeaker.lowercase())
+                add(cleanSpeaker.uppercase())
+            }.distinct()
 
             if (currentVoiceId != targetName &&
                 currentVoiceId != cleanSpeaker
@@ -274,9 +279,23 @@ internal class AcapelaHostSession(
             val pitchPercent = calculatePitchPercent(req.pitch)
 
             // ضبط سرعة النطق والشكل مباشرة على مستوى المحرك عبر nSetSpeechRate
-            inst.nSetSpeechRate(speedPercent.toFloat())
+            val rateCode = inst.nSetSpeechRate(speedPercent.toFloat())
+            if (rateCode != 0) {
+                Log.w(
+                    TAG,
+                    "nSetSpeechRate($speedPercent) فشل: $rateCode"
+                )
+            }
             val shapeFloat = pitchPercent.toFloat().coerceIn(70f, 130f)
             inst.nSetShape(shapeFloat)
+            if (diagnosticsEnabled()) {
+                Log.d(
+                    TAG,
+                    "speak voice=$targetName rate=${req.rate}" +
+                        " speedPercent=$speedPercent" +
+                        " rateCode=$rateCode"
+                )
+            }
 
             // بدء النطق (يتم تسليم العينات عبر samplesCallback غير المتزامنة)
             var speakRes = inst.nSpeak(req.text)

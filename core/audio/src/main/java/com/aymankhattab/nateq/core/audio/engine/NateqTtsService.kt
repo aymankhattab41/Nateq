@@ -1339,19 +1339,26 @@ class NateqTtsService : TextToSpeechService() {
         //   مهما كانت التفضيلات المحفوظة، فيُنطق كما ضبطه النظام حرفياً.
         // - عند تعطيله يُضرب تفضيل التحويل الصريح لهذه اللغة أولاً، ثم
         //   التفضيل الصريح، ثم السرعة العامة فعلاً فوق سرعة القارئ.
-        val explicitLordRate =
-            requestHandler.getExplicitLanguageRate(languageTag)
-        val lordRate = requestHandler.getSpeechRate(languageTag)
+        val singleCategory = effectCategory.takeIf { it.isNotEmpty() }
+            ?: when (role) {
+                SpeechRole.NUMBER ->
+                    SettingsRepository.VOICE_CATEGORY_NUMBERS
+                SpeechRole.EMOJI ->
+                    SettingsRepository.VOICE_CATEGORY_EMOJI
+                else -> SettingsRepository.VOICE_CATEGORY_DEFAULT
+            }
+        val lordRate = requestHandler.getSpeechRateFor(
+            languageTag, singleCategory
+        )
         val nateqMultiplier: Float =
-            convertTarget?.convertRate
-                ?: explicitLordRate ?: lordRate ?: 1.0f
+            convertTarget?.convertRate ?: lordRate
         val effectiveReaderRate =
             if (settings.isFollowReaderRateEnabled()) readerRate else 1.0f
         val speechRate = computeFinalSpeechRate(
             effectiveReaderRate, nateqMultiplier, currentSpeechBoost()
         )
-        val pitch = requestHandler.getPitch(languageTag)
-        val volume = requestHandler.getVolume(languageTag)
+        val pitch = requestHandler.getPitchFor(languageTag, singleCategory)
+        val volume = requestHandler.getVolumeFor(languageTag, singleCategory)
 
         // عند التفعيل نغلب إعدادات التحويل (السرعة/النبرة/الصوت) ونتجاهل
         // صوت كتالوج LORD ضمنياً — نقدّم للمزوّد محركاً ولغةً محددين.
@@ -1507,14 +1514,6 @@ class NateqTtsService : TextToSpeechService() {
         // [SystemVoiceProvider] (إتمامٌ بالطول المُعلَن في رأس WAV)،
         // فيُسلَّم النصُّ كلُّه طلباً واحداً متّصلاً كما كان قبل
         // v106. و`start` يُمرَّر مرّةً واحدة و`done()` بعد آخر شريحة.
-        val singleCategory = effectCategory.takeIf { it.isNotEmpty() }
-            ?: when (role) {
-                SpeechRole.NUMBER ->
-                    SettingsRepository.VOICE_CATEGORY_NUMBERS
-                SpeechRole.EMOJI ->
-                    SettingsRepository.VOICE_CATEGORY_EMOJI
-                else -> SettingsRepository.VOICE_CATEGORY_DEFAULT
-            }
         var started = false
         try {
             val targetProvider = if (finalEngine != null) {
@@ -1853,9 +1852,16 @@ class NateqTtsService : TextToSpeechService() {
         effectCategory: String = ""
     ): SegmentParams? {
         val segTag = segment.languageTag
-        val segRate = requestHandler.getSpeechRate(segTag)
-        val segPitch = requestHandler.getPitch(segTag)
-        val segVolume = requestHandler.getVolume(segTag)
+        val segmentCategory = when (segment.role) {
+            SpeechRole.EMOJI -> SettingsRepository.VOICE_CATEGORY_EMOJI
+            SpeechRole.NUMBER -> SettingsRepository.VOICE_CATEGORY_NUMBERS
+            SpeechRole.TEXT -> effectCategory.takeIf { it.isNotEmpty() }
+        }
+        val effCategory = segmentCategory ?:
+            SettingsRepository.VOICE_CATEGORY_DEFAULT
+        val segRate = requestHandler.getSpeechRateFor(segTag, effCategory)
+        val segPitch = requestHandler.getPitchFor(segTag, effCategory)
+        val segVolume = requestHandler.getVolumeFor(segTag, effCategory)
         // الرقم البحت أو الإيموجي مع صوتٍ محفوظ لفئته
         val convert = emojiCategoryTarget(segment)
             ?: numbersCategoryTarget(segment)
@@ -2183,14 +2189,6 @@ class NateqTtsService : TextToSpeechService() {
                     "source='${resolvedSegment.source}'"
             )
         }
-        val segmentCategory = when (segment.role) {
-            SpeechRole.EMOJI -> SettingsRepository.VOICE_CATEGORY_EMOJI
-            SpeechRole.NUMBER -> SettingsRepository.VOICE_CATEGORY_NUMBERS
-            SpeechRole.TEXT -> effectCategory.takeIf { it.isNotEmpty() }
-        }
-        val effCategory = segmentCategory ?:
-            SettingsRepository.VOICE_CATEGORY_DEFAULT
-
         val isSafe = CrashGuard.isSafeModeActive(applicationContext)
         val isCatEm = CategoryFailureTracker.isEmergencyActive(effCategory)
         val isEmergency = isSafe || isCatEm
