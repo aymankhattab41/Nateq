@@ -184,6 +184,23 @@ object AcapelaVoiceManifest {
         }
     }
 
+    private fun isRichConfig(f: File): Boolean {
+        if (!f.exists() || !f.isFile) return false
+        val lines = runCatching {
+            f.readLines(StandardCharsets.ISO_8859_1)
+        }.getOrDefault(emptyList())
+        return lines.size > 5 || lines.any { l ->
+            val t = l.trim()
+            t.startsWith("FILE", ignoreCase = true) ||
+                t.startsWith("FILEMAP", ignoreCase = true) ||
+                t.startsWith("PATH", ignoreCase = true) ||
+                t.startsWith("BNF", ignoreCase = true) ||
+                t.startsWith("PHM", ignoreCase = true) ||
+                t.contains(".bvcu", ignoreCase = true) ||
+                t.contains(".dat", ignoreCase = true)
+        }
+    }
+
     /**
      * التحقق من وجود ملفات تهيئة .inf و .ini متوافقة مع
      * متطلبات مكتبة Acapela الأصلية لكل مجلد صوت،
@@ -276,12 +293,58 @@ object AcapelaVoiceManifest {
                     }
 
                 if (speaker.isNotBlank()) {
+                    val allConfigs = dir.listFiles { f ->
+                        f.isFile && (f.extension.equals("ini", true) ||
+                            f.extension.equals("inf", true))
+                    } ?: emptyArray()
+
+                    val richConfig = allConfigs.filter { isRichConfig(it) }
+                        .maxByOrNull { it.length() }
+
+                    val richDirectives = richConfig?.readLines(
+                        StandardCharsets.ISO_8859_1
+                    )?.filterNot { l ->
+                        val t = l.trim()
+                        t.startsWith("speaker", ignoreCase = true) ||
+                            t.equals("[Voice]", ignoreCase = true)
+                    }?.joinToString("\n").orEmpty()
+
+                    val allDataFiles = dir.listFiles { f -> f.isFile }
+                        ?: emptyArray()
+                    val synthDirectives = buildString {
+                        for (df in allDataFiles) {
+                            val ext = df.extension.lowercase(Locale.ROOT)
+                            when (ext) {
+                                "bvcu" ->
+                                    append("FILE \"${df.name}\" [ RAM ]\n")
+                                "bnf" ->
+                                    append("BNF \"${df.name}\" [ RAM ]\n")
+                                "phm", "pho" ->
+                                    append("PHM \"${df.name}\" [ RAM ]\n")
+                                "dat" ->
+                                    append(
+                                        "FILEMAP \"${df.name}\"" +
+                                            " [ FILEMAP ]\n"
+                                    )
+                            }
+                        }
+                    }
+
+                    val extraDirectives = if (richDirectives.isNotBlank()) {
+                        richDirectives
+                    } else {
+                        synthDirectives
+                    }
+
                     val header = buildString {
                         append("[Voice]\n")
                         append("speaker = \" $speaker\"\n")
                         append("codepage = \" utf-8\"\n")
                         append("frequency = \" 22050\"\n")
                     }
+
+                    val fullConfig = (header + "\n" + extraDirectives)
+                        .trimEnd() + "\n"
 
                     // تنظيف أي ملفات .inf و .ini مولدة تلقائياً زائفة
                     val primaryName = if (infFiles.size > 1) {
@@ -311,12 +374,7 @@ object AcapelaVoiceManifest {
                                 dir,
                                 "${inf.nameWithoutExtension}.ini"
                             )
-                            val iniLines = runCatching {
-                                corrIni.readLines(
-                                    StandardCharsets.ISO_8859_1
-                                )
-                            }.getOrDefault(emptyList())
-                            if (iniLines.size <= 5) {
+                            if (!isRichConfig(inf) && !isRichConfig(corrIni)) {
                                 inf.delete()
                                 corrIni.delete()
                             } else {
@@ -332,14 +390,19 @@ object AcapelaVoiceManifest {
                     } ?: emptyArray()
 
                     val baseNames = mutableSetOf<String>()
-                    if (validInfFiles.isNotEmpty()) {
-                        validInfFiles.forEach {
+                    baseNames.add(speaker.lowercase(Locale.ROOT))
+                    baseNames.add(speaker)
+                    baseNames.add(
+                        cleanAcapelaSpeaker(dir.name).lowercase(Locale.ROOT)
+                    )
+                    richConfig?.let { baseNames.add(it.nameWithoutExtension) }
+                    validInfFiles.forEach {
+                        baseNames.add(it.nameWithoutExtension)
+                    }
+                    iniFiles.forEach {
+                        if (isRichConfig(it)) {
                             baseNames.add(it.nameWithoutExtension)
                         }
-                    } else if (iniFiles.isNotEmpty()) {
-                        baseNames.add(iniFiles.first().nameWithoutExtension)
-                    } else {
-                        baseNames.add(speaker.lowercase(Locale.ROOT))
                     }
 
                     for (baseName in baseNames) {
@@ -351,29 +414,20 @@ object AcapelaVoiceManifest {
                                 val existing = target.readText(
                                     StandardCharsets.ISO_8859_1
                                 )
-                                if (!existing.contains(
+                                val hasSpeaker = existing.contains(
                                     "speaker = \" $speaker\"",
                                     ignoreCase = true
-                                )) {
-                                    val filtered = existing.lines()
-                                        .filterNot { l ->
-                                            val t = l.trim()
-                                            t.startsWith(
-                                                "speaker",
-                                                ignoreCase = true
-                                            ) || t.equals(
-                                                "[Voice]",
-                                                ignoreCase = true
-                                            )
-                                        }.joinToString("\n")
+                                )
+                                val hasData = isRichConfig(target)
+                                if (!hasSpeaker || !hasData) {
                                     target.writeText(
-                                        header + "\n" + filtered,
+                                        fullConfig,
                                         StandardCharsets.ISO_8859_1
                                     )
                                 }
                             } else {
                                 target.writeText(
-                                    header,
+                                    fullConfig,
                                     StandardCharsets.ISO_8859_1
                                 )
                             }

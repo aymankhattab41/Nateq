@@ -31,6 +31,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
+import kotlin.math.roundToInt
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
@@ -1159,10 +1160,15 @@ class SystemVoiceProvider(
         engine.setPitch(pitch)
 
         val utteranceId = "nateq_${System.currentTimeMillis()}"
+        val rateInt = (speechRate * 100f).roundToInt().coerceIn(10, 600)
+        val pitchInt = (pitch * 100f).roundToInt().coerceIn(20, 400)
         val params = android.os.Bundle().apply {
-            putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
-            putFloat("rate", speechRate)
-            putFloat("pitch", pitch)
+            putString(
+                TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID,
+                utteranceId
+            )
+            putInt("rate", rateInt)
+            putInt("pitch", pitchInt)
             putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume)
         }
 
