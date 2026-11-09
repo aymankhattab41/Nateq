@@ -153,7 +153,11 @@ object SpeechPlanner {
                     defaultRate
                 }
             }
-            else -> defaultRate
+            else -> {
+                val langRate = settings?.getSpeechRateOrNull(languageTag)
+                    ?: settings?.getSpeechRateOrNull(canonicalTag)
+                langRate ?: defaultRate
+            }
         }
 
         val pitch = when (resolved.source) {
@@ -182,7 +186,11 @@ object SpeechPlanner {
                     defaultPitch
                 }
             }
-            else -> defaultPitch
+            else -> {
+                val langPitch = settings?.getPitchOrNull(languageTag)
+                    ?: settings?.getPitchOrNull(canonicalTag)
+                langPitch ?: defaultPitch
+            }
         }
 
         val volume = when (resolved.source) {
@@ -211,7 +219,11 @@ object SpeechPlanner {
                     defaultVolume
                 }
             }
-            else -> defaultVolume
+            else -> {
+                val langVol = settings?.getVolumeOrNull(languageTag)
+                    ?: settings?.getVolumeOrNull(canonicalTag)
+                langVol ?: defaultVolume
+            }
         }
 
         return VoiceResolution(

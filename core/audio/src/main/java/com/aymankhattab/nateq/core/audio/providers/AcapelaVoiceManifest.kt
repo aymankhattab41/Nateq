@@ -185,10 +185,9 @@ object AcapelaVoiceManifest {
     }
 
     /**
-     * التحقق من وجود ملف تهيئة .inf متوافق مع
+     * التحقق من وجود ملفات تهيئة .inf و .ini متوافقة مع
      * متطلبات مكتبة Acapela الأصلية لكل مجلد صوت،
-     * وإنشائه أو تحديثه بصيغة `speaker = " Name"`
-     * إذا لزم الأمر.
+     * بصيغة `speaker = " Name"` المحددة لدوال C الأصلية.
      */
     fun ensureVoiceInfFiles(baseDir: File) {
         if (!baseDir.exists() || !baseDir.isDirectory) return
@@ -199,7 +198,6 @@ object AcapelaVoiceManifest {
                     f.isFile && f.extension.equals("inf", ignoreCase = true)
                 } ?: emptyArray()
 
-                var validInfFound = false
                 var detectedSpeaker: String? = null
 
                 for (inf in infFiles) {
@@ -221,95 +219,124 @@ object AcapelaVoiceManifest {
                                         cleanAcapelaSpeaker(value)
                                 }
                             }
-                            validInfFound = true
                             break
                         }
                     }
-                    if (validInfFound) break
+                    if (detectedSpeaker != null) break
                 }
 
-                if (!validInfFound) {
-                    val speaker = detectedSpeaker
-                        ?: run {
-                            val iniFiles = dir.listFiles { f ->
-                                f.isFile && f.extension.equals(
-                                    "ini",
+                val speaker = detectedSpeaker
+                    ?: run {
+                        val iniFiles = dir.listFiles { f ->
+                            f.isFile && f.extension.equals(
+                                "ini",
+                                ignoreCase = true
+                            )
+                        } ?: emptyArray()
+                        var fromIni: String? = null
+                        for (ini in iniFiles) {
+                            for (l in ini.readLines(
+                                StandardCharsets.ISO_8859_1
+                            )) {
+                                val trimmed = l.trim()
+                                if (trimmed.startsWith(
+                                    "speaker",
                                     ignoreCase = true
-                                )
-                            } ?: emptyArray()
-                            var fromIni: String? = null
-                            for (ini in iniFiles) {
-                                for (l in ini.readLines(
-                                    StandardCharsets.ISO_8859_1
+                                ) || trimmed.startsWith(
+                                    "voicename",
+                                    ignoreCase = true
                                 )) {
-                                    val trimmed = l.trim()
-                                    if (trimmed.startsWith(
-                                        "speaker",
-                                        ignoreCase = true
-                                    ) || trimmed.startsWith(
-                                        "voicename",
-                                        ignoreCase = true
-                                    )) {
-                                        val eq = trimmed.indexOf('=')
-                                        if (eq > 0) {
-                                            fromIni = cleanAcapelaSpeaker(
-                                                trimmed.substring(eq + 1)
-                                                    .trim()
-                                                    .removeSurrounding("\"")
-                                                    .trim()
-                                            )
-                                            break
-                                        }
+                                    val eq = trimmed.indexOf('=')
+                                    if (eq > 0) {
+                                        fromIni = cleanAcapelaSpeaker(
+                                            trimmed.substring(eq + 1)
+                                                .trim()
+                                                .removeSurrounding("\"")
+                                                .trim()
+                                        )
+                                        break
                                     }
                                 }
-                                if (fromIni != null) break
                             }
-                            fromIni
+                            if (fromIni != null) break
                         }
-                        ?: run {
-                            val dataFiles = dir.listFiles { f ->
-                                f.isFile && f.extension.lowercase(
-                                    Locale.ROOT
-                                ) in setOf(
-                                    "bvcu", "dat", "bnf", "pho", "mdd"
-                                )
-                            } ?: emptyArray()
-                            val name = dataFiles.firstOrNull()
-                                ?.nameWithoutExtension ?: dir.name
-                            cleanAcapelaSpeaker(name)
-                        }
-
-                    if (speaker.isNotBlank()) {
-                        val targetInf = if (infFiles.isNotEmpty()) {
-                            infFiles.first()
-                        } else {
-                            File(dir, "${speaker.lowercase(Locale.ROOT)}.inf")
-                        }
-                        val header = buildString {
-                            append("[Voice]\n")
-                            append("speaker = \" $speaker\"\n")
-                            append("codepage = \" utf-8\"\n")
-                            append("frequency = \" 22050\"\n")
-                        }
-                        if (targetInf.exists()) {
-                            val existing = targetInf.readText(
-                                StandardCharsets.ISO_8859_1
+                        fromIni
+                    }
+                    ?: run {
+                        val dataFiles = dir.listFiles { f ->
+                            f.isFile && f.extension.lowercase(
+                                Locale.ROOT
+                            ) in setOf(
+                                "bvcu", "dat", "bnf", "pho", "mdd"
                             )
-                            if (!existing.contains(
-                                "speaker = \"",
-                                ignoreCase = true
-                            )) {
-                                targetInf.writeText(
-                                    header + "\n" + existing,
+                        } ?: emptyArray()
+                        val name = dataFiles.firstOrNull()
+                            ?.nameWithoutExtension ?: dir.name
+                        cleanAcapelaSpeaker(name)
+                    }
+
+                if (speaker.isNotBlank()) {
+                    val header = buildString {
+                        append("[Voice]\n")
+                        append("speaker = \" $speaker\"\n")
+                        append("codepage = \" utf-8\"\n")
+                        append("frequency = \" 22050\"\n")
+                    }
+
+                    val baseNames = mutableSetOf<String>()
+                    infFiles.forEach { baseNames.add(it.nameWithoutExtension) }
+                    val iniFiles = dir.listFiles { f ->
+                        f.isFile && f.extension.equals("ini", ignoreCase = true)
+                    } ?: emptyArray()
+                    iniFiles.forEach { baseNames.add(it.nameWithoutExtension) }
+                    baseNames.add(speaker.lowercase(Locale.ROOT))
+
+                    val dataFiles = dir.listFiles { f ->
+                        f.isFile && f.extension.lowercase(
+                            Locale.ROOT
+                        ) in setOf("bvcu", "dat")
+                    } ?: emptyArray()
+                    dataFiles.forEach { baseNames.add(it.nameWithoutExtension) }
+
+                    for (baseName in baseNames) {
+                        val targetInf = File(dir, "$baseName.inf")
+                        val targetIni = File(dir, "$baseName.ini")
+
+                        fun writeConfig(target: File) {
+                            if (target.exists()) {
+                                val existing = target.readText(
+                                    StandardCharsets.ISO_8859_1
+                                )
+                                if (!existing.contains(
+                                    "speaker = \" $speaker\"",
+                                    ignoreCase = true
+                                )) {
+                                    val filtered = existing.lines()
+                                        .filterNot { l ->
+                                            val t = l.trim()
+                                            t.startsWith(
+                                                "speaker",
+                                                ignoreCase = true
+                                            ) || t.equals(
+                                                "[Voice]",
+                                                ignoreCase = true
+                                            )
+                                        }.joinToString("\n")
+                                    target.writeText(
+                                        header + "\n" + filtered,
+                                        StandardCharsets.ISO_8859_1
+                                    )
+                                }
+                            } else {
+                                target.writeText(
+                                    header,
                                     StandardCharsets.ISO_8859_1
                                 )
                             }
-                        } else {
-                            targetInf.writeText(
-                                header,
-                                StandardCharsets.ISO_8859_1
-                            )
                         }
+
+                        writeConfig(targetInf)
+                        writeConfig(targetIni)
                     }
                 }
             }

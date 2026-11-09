@@ -48,14 +48,25 @@ object A11ySpeechCoordinator {
         val prepared = SpeechEntryPoints.prepare(text, source, context)
         val speaker = AnnouncementSpeaker.getInstance(context)
         if (voiceId != null) speaker.resetVoice(voiceId)
+        val settings = SettingsRepository.create(context)
+        val notifCat = SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS
+        val effRate = speechRate ?: runCatching {
+            settings.getSpeechRateForCategory(notifCat)
+        }.getOrDefault(1.0f)
+        val effPitch = pitch ?: runCatching {
+            settings.getPitchForCategory(notifCat)
+        }.getOrDefault(1.0f)
+        val effVolume = volume ?: runCatching {
+            settings.getVolumeForCategory(notifCat)
+        }.getOrDefault(1.0f)
         speaker.speak(
             text = prepared,
             locale = Locale.getDefault(),
-            speechRate = speechRate ?: 1.0f,
-            pitch = pitch ?: 1.0f,
-            volume = volume ?: 1.0f,
+            speechRate = effRate,
+            pitch = effPitch,
+            volume = effVolume,
             engineOverride = engineOverride,
-            category = SettingsRepository.VOICE_CATEGORY_NOTIFICATIONS,
+            category = notifCat,
             source = source,
             isPrepared = true
         )

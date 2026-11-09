@@ -157,6 +157,7 @@ object AcapelaVoiceImporter {
                 VisibleEngines.setFilter(true, cur)
             }
 
+            AcapelaVoiceManifest.ensureVoiceInfFiles(baseDir)
             val installedVoices = AcapelaVoiceManifest.listVoices(baseDir)
             if (installedVoices.isNotEmpty()) {
                 EngineStatusRegistry.noteFilesPresent(
@@ -263,6 +264,7 @@ object AcapelaVoiceImporter {
                 VisibleEngines.setFilter(true, cur)
             }
 
+            AcapelaVoiceManifest.ensureVoiceInfFiles(baseDir)
             val installedVoices = AcapelaVoiceManifest.listVoices(baseDir)
             if (installedVoices.isNotEmpty()) {
                 EngineStatusRegistry.noteFilesPresent(
@@ -364,6 +366,7 @@ object AcapelaVoiceImporter {
                 VisibleEngines.setFilter(true, cur)
             }
 
+            AcapelaVoiceManifest.ensureVoiceInfFiles(baseDir)
             val installedVoices = AcapelaVoiceManifest.listVoices(baseDir)
             if (installedVoices.isNotEmpty()) {
                 EngineStatusRegistry.noteFilesPresent(

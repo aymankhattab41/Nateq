@@ -1350,12 +1350,20 @@ class NateqTtsService : TextToSpeechService() {
         val lordRate = requestHandler.getSpeechRateFor(
             languageTag, singleCategory
         )
-        val nateqMultiplier: Float =
-            convertTarget?.convertRate ?: lordRate
-        val effectiveReaderRate =
-            if (settings.isFollowReaderRateEnabled()) readerRate else 1.0f
+        val convertRate = convertTarget?.convertRate?.takeIf { it != 1.0f }
+        val nateqMultiplier: Float = if (settings.isFollowReaderRateEnabled()) {
+            if (singleCategory != SettingsRepository.VOICE_CATEGORY_DEFAULT &&
+                settings.hasExplicitSpeechRateForCategory(singleCategory)
+            ) {
+                lordRate
+            } else {
+                convertRate ?: 1.0f
+            }
+        } else {
+            convertRate ?: lordRate
+        }
         val speechRate = computeFinalSpeechRate(
-            effectiveReaderRate, nateqMultiplier, currentSpeechBoost()
+            readerRate, nateqMultiplier, currentSpeechBoost()
         )
         val pitch = requestHandler.getPitchFor(languageTag, singleCategory)
         val volume = requestHandler.getVolumeFor(languageTag, singleCategory)
@@ -1391,8 +1399,10 @@ class NateqTtsService : TextToSpeechService() {
             || (normLanguage == LanguageCode.EN.tag
             && convertLang == "eng")
 
-        val basePitch = convertTarget?.let { it.convertPitch } ?: pitch
-        val baseVolume = convertTarget?.let { it.convertVolume } ?: volume
+        val basePitch = convertTarget?.convertPitch?.takeIf { it != 1.0f }
+            ?: pitch
+        val baseVolume = convertTarget?.convertVolume?.takeIf { it != 1.0f }
+            ?: volume
         val appRate = appVoice?.speechRate
         val finalRate = if (appRate != null) {
             (speechRate * appRate).coerceIn(0.1f, 6.0f)
@@ -1874,12 +1884,20 @@ class NateqTtsService : TextToSpeechService() {
         // يُضرب في معامل LORD؛ وعند تفعيل «اتبع سرعة القارئ» المعامل = 1.0.
         // (لم يكن المسار المختلط يرى request إطلاقاً فتُنطق مقاطعه دائماً
         //  بسرعة LORD المطلقة ويُخالف المسار الأحادي — كان عيباً متوارثاً.)
-        val nateqMultiplier: Float =
-            convert?.convertRate ?: segRate ?: 1.0f
-        val effectiveReaderRate =
-            if (settings.isFollowReaderRateEnabled()) readerRate else 1.0f
+        val convertRate = convert?.convertRate?.takeIf { it != 1.0f }
+        val nateqMultiplier: Float = if (settings.isFollowReaderRateEnabled()) {
+            if (effCategory != SettingsRepository.VOICE_CATEGORY_DEFAULT &&
+                settings.hasExplicitSpeechRateForCategory(effCategory)
+            ) {
+                segRate
+            } else {
+                convertRate ?: 1.0f
+            }
+        } else {
+            convertRate ?: segRate
+        }
         val computedRate = computeFinalSpeechRate(
-            effectiveReaderRate, nateqMultiplier, currentSpeechBoost()
+            readerRate, nateqMultiplier, currentSpeechBoost()
         )
         val appRate = if (segment.role == SpeechRole.TEXT) {
             appVoice?.speechRate
@@ -1891,7 +1909,7 @@ class NateqTtsService : TextToSpeechService() {
         } else {
             computedRate
         }
-        val basePitch = convert?.convertPitch ?: segPitch
+        val basePitch = convert?.convertPitch?.takeIf { it != 1.0f } ?: segPitch
         val appPitch = if (segment.role == SpeechRole.TEXT) {
             appVoice?.pitch
         } else {
@@ -1902,7 +1920,8 @@ class NateqTtsService : TextToSpeechService() {
         } else {
             basePitch
         }
-        val baseVolume = convert?.convertVolume ?: segVolume
+        val baseVolume = convert?.convertVolume?.takeIf { it != 1.0f }
+            ?: segVolume
         val appVol = if (segment.role == SpeechRole.TEXT) {
             appVoice?.volume
         } else {
