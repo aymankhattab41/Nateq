@@ -48,14 +48,38 @@ internal class AcapelaHostSession(
             baseDir: File,
             extraDirs: List<File> = emptyList()
         ): Array<String> {
-            // تُمرَّر الجذور فقط: دالة find_voices الأصلية تتكرّر داخل
-            // المجلدات، فتمرير كل مجلد فرعي كان يسجّل الصوت نفسه مرات
-            // عديدة (وفهرس nLoadVoice يفسد).
-            return (listOf(baseDir) + extraDirs)
+            val paths = LinkedHashSet<String>()
+            val allBases = (listOf(baseDir) + extraDirs)
                 .filter { it.exists() && it.isDirectory }
-                .distinctBy { it.absolutePath }
-                .map { it.absolutePath }
-                .toTypedArray()
+                .distinctBy { it.canonicalPath }
+
+            for (base in allBases) {
+                AcapelaVoiceManifest.ensureVoiceInfFiles(base)
+                // جمع كل المجلدات الفرعية التي تحوي ملفات .inf مباشرة
+                base.walkTopDown().maxDepth(6).forEach { f ->
+                    if (f.isDirectory) {
+                        val hasInf = f.listFiles { child ->
+                            child.isFile && child.extension.equals(
+                                "inf",
+                                ignoreCase = true
+                            )
+                        }?.isNotEmpty() == true
+                        if (hasInf) {
+                            paths.add(f.absolutePath)
+                        }
+                    }
+                }
+                val baseHasInf = base.listFiles { child ->
+                    child.isFile && child.extension.equals(
+                        "inf",
+                        ignoreCase = true
+                    )
+                }?.isNotEmpty() == true
+                if (baseHasInf || paths.isEmpty()) {
+                    paths.add(base.absolutePath)
+                }
+            }
+            return paths.toTypedArray()
         }
 
         private fun matchesVoice(
@@ -139,10 +163,10 @@ internal class AcapelaHostSession(
             }
             val paths = collectVoiceSearchPaths(dir, extraDirs)
             val voiceCount = inst.nGetVoiceList(paths)
-            Log.d(
+            Log.i(
                 TAG,
                 "nGetVoiceList: $voiceCount voice(s) across " +
-                    "${paths.size} dir(s)"
+                    "${paths.size} dir(s): ${paths.toList()}"
             )
             acatts = inst
             currentVoiceId = null
@@ -161,7 +185,16 @@ internal class AcapelaHostSession(
      */
     fun listVoices(): List<HostVoice> {
         val dir = dataDirectory ?: return emptyList()
-        val manifestVoices = AcapelaVoiceManifest.listVoices(dir)
+        val allDirs = (listOf(dir) + EmbeddedStorage.allSearchDirs(
+            context,
+            EmbeddedStorage.Engine.ACAPELA
+        )).distinctBy { it.absolutePath }
+
+        val manifestVoices = allDirs.flatMap {
+            AcapelaVoiceManifest.listVoices(it)
+        }.distinctBy {
+            "${it.dir.absolutePath}|${it.id.lowercase(java.util.Locale.ROOT)}"
+        }
         return manifestVoices.map { v ->
             HostVoice(
                 id = v.id,
@@ -207,9 +240,14 @@ internal class AcapelaHostSession(
                 .cleanAcapelaSpeaker(cleanVoiceId)
 
             val dir = dataDirectory
-            val voices = dir?.let {
+            val allDirs = (listOfNotNull(dir) + EmbeddedStorage.allSearchDirs(
+                context,
+                EmbeddedStorage.Engine.ACAPELA
+            )).distinctBy { it.absolutePath }
+
+            val voices = allDirs.flatMap {
                 AcapelaVoiceManifest.listVoices(it)
-            }.orEmpty()
+            }
             // الاسمُ الخام لحقل speaker هو ما تقارنه المكتبة الأصلية
             // في nLoadVoice، فتُجرَّب أولاً قبل الاسم المطبّع.
             val voiceInfo = voices.firstOrNull { v ->
@@ -244,16 +282,17 @@ internal class AcapelaHostSession(
                     }
                 }
                 if (loadRes != 0 && dir != null) {
-                    AcapelaVoiceManifest.ensureVoiceInfFiles(dir)
                     val extraDirs = EmbeddedStorage.allSearchDirs(
                         context,
                         EmbeddedStorage.Engine.ACAPELA
                     )
-                    for (ed in extraDirs) {
-                        AcapelaVoiceManifest.ensureVoiceInfFiles(ed)
-                    }
                     val paths = collectVoiceSearchPaths(dir, extraDirs)
-                    inst.nGetVoiceList(paths)
+                    val count = inst.nGetVoiceList(paths)
+                    Log.i(
+                        TAG,
+                        "إعادة فحص أصوات Acapela: عُثر على $count في " +
+                            "${paths.size} مسار"
+                    )
                     for (cand in candidates) {
                         loadRes = inst.nLoadVoice(cand)
                         if (loadRes == 0) {
@@ -267,10 +306,22 @@ internal class AcapelaHostSession(
                     if (voiceInfo != null && voiceInfo.sampleRate > 0) {
                         currentSampleRate = voiceInfo.sampleRate
                     }
+                    Log.i(
+                        TAG,
+                        "تم تحميل صوت Acapela [$currentVoiceId] بنجاح"
+                    )
                 } else {
+                    val searchPaths = dir?.let {
+                        val extraDirs = EmbeddedStorage.allSearchDirs(
+                            context,
+                            EmbeddedStorage.Engine.ACAPELA
+                        )
+                        collectVoiceSearchPaths(it, extraDirs).toList()
+                    } ?: emptyList()
                     Log.e(
                         TAG,
-                        "فشل تحميل صوت Acapela ($targetName): كود $loadRes"
+                        "فشل تحميل صوت Acapela ($targetName): كود $loadRes, " +
+                            "مرشحات=$candidates, مسارات=$searchPaths"
                     )
                     sink.end(
                         HostProtocol.STATUS_ERROR,

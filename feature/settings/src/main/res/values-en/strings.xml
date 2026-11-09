@@ -713,6 +713,7 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Fixed embedded Acapela voice loading (e.g. Salma and Mehdi) by passing nested voice directories directly to native nGetVoiceList to bypass Android filesystem readdir recursion limitations and prevent error code -2, cleaning up duplicate stub config files, and including Acapela in embedded engine diagnostics.
 • Unified speech rate calculation across TalkBack, service, and preview paths: screen-reader speed is fully preserved and accurately multiplied by app preferences when reader follow mode is disabled, preventing speed drops outside preview.
 • Resolved Acapela embedded engine playback by ensuring both .inf and .ini configuration files are created with the exact native C-library spacing format upon startup, import, and in the isolated synthesis session.
 • Fixed embedded Acapela voice filtering when selecting Arabic by correcting ISO code and language name resolution, preventing foreign voices from being incorrectly categorized as Arabic.

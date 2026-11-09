@@ -124,4 +124,56 @@ class AcapelaVoiceManifestTest {
         assertTrue(ini.exists())
         assertTrue(ini.readText().contains("speaker = \" Mehdi\""))
     }
+
+    @Test
+    fun collectVoiceSearchPaths_findsNestedVoiceFoldersDirectly() {
+        val baseDir = tempFolder.newFolder("search_bases")
+        val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
+        File(voiceFolder, "salma.inf").writeText(
+            "[Voice]\nspeaker = \" Salma\"\n"
+        )
+        File(voiceFolder, "salma.ini").writeText(
+            "[Voice]\nspeaker = \" Salma\"\n"
+        )
+
+        val paths = com.aymankhattab.nateq.core.audio.enginehost
+            .AcapelaHostSession.collectVoiceSearchPaths(baseDir)
+
+        assertEquals(1, paths.size)
+        assertEquals(voiceFolder.absolutePath, paths[0])
+    }
+
+    @Test
+    fun ensureVoiceInfFiles_cleansUpStubDuplicateInfs() {
+        val baseDir = tempFolder.newFolder("voices_with_stubs")
+        val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
+        val mainInf = File(voiceFolder, "salma.inf")
+        mainInf.writeText(
+            "[Voice]\n" +
+                "speaker = \" Salma\"\n" +
+                "frequency = 22050\n" +
+                "name = salma\n" +
+                "language = Arabic\n"
+        )
+        val mainIni = File(voiceFolder, "salma.ini")
+        mainIni.writeText(
+            "[Voice]\n" +
+                "speaker = \" Salma\"\n" +
+                "frequency = 22050\n" +
+                "name = salma\n" +
+                "language = Arabic\n"
+        )
+
+        val stubInf = File(voiceFolder, "salma_22k.inf")
+        stubInf.writeText("[Voice]\nspeaker = \" Salma\"\n")
+        val stubIni = File(voiceFolder, "salma_22k.ini")
+        stubIni.writeText("[Voice]\nspeaker = \" Salma\"\n")
+
+        AcapelaVoiceManifest.ensureVoiceInfFiles(baseDir)
+
+        assertTrue(mainInf.exists())
+        assertTrue(mainIni.exists())
+        assertFalse(stubInf.exists())
+        assertFalse(stubIni.exists())
+    }
 }

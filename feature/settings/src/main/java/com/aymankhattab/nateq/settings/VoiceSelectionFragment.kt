@@ -62,6 +62,7 @@ import com.aymankhattab.nateq.core.audio.announcement.AnnouncementSpeaker
 import com.aymankhattab.nateq.core.audio.providers.AcapelaVoiceImporter
 import com.aymankhattab.nateq.core.audio.providers.EngineStatusRegistry
 import com.aymankhattab.nateq.core.audio.providers.VocalizerDownloader
+import com.aymankhattab.nateq.core.audio.providers.AcapelaEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.MicrosoftEmbeddedVoiceProvider
 import com.aymankhattab.nateq.core.audio.providers.VocalizerEmbeddedVoiceProvider
 import com.aymankhattab.nateq.util.announceCompat
@@ -2915,6 +2916,13 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                     storageEngine =
                         com.aymankhattab.nateq.core.audio.providers
                             .EmbeddedStorage.Engine.MICROSOFT
+                ),
+                EmbeddedEngineDiag(
+                    id = AcapelaEmbeddedVoiceProvider.PROVIDER_ID,
+                    name = "Acapela",
+                    storageEngine =
+                        com.aymankhattab.nateq.core.audio.providers
+                            .EmbeddedStorage.Engine.ACAPELA
                 )
             )
             embeddedEngines.forEach { diag ->
