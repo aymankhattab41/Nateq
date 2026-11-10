@@ -258,4 +258,34 @@ class SynthesisBudgetTest {
             SynthesisBudget.ABSOLUTE_REQUEST_TIMEOUT_MS
         )
     }
+
+    /** **حارسُ خمول المحرك:** نصٌّ قصيرٌ لا يمنح المحرّك مهلةً أقصرَ من
+     *  أرضية الحارس (وإلا قُطع نطقٌ سليم)، والنصُّ الطويلُ يُشتقّ من
+     *  ميزانية تخليقه. */
+    @Test
+    fun inactivityBudget_neverDropsBelowTheFloor() {
+        assertEquals(15_000L, SynthesisBudget.inactivityBudgetMs(0))
+        assertEquals(15_000L, SynthesisBudget.inactivityBudgetMs(10))
+        assertEquals(15_000L, SynthesisBudget.inactivityBudgetMs(300))
+        assertEquals(15_000L, SynthesisBudget.inactivityBudgetMs(301))
+        // 8s + 30ms/char منذ 300 حرف: 600 حرفاً = 17s.
+        assertEquals(17_000L, SynthesisBudget.inactivityBudgetMs(600))
+        // فوق الأرضية: مساوٍ لميزانية القطعة نفسها.
+        assertEquals(
+            SynthesisBudget.pieceTimeoutMs(20_000),
+            SynthesisBudget.inactivityBudgetMs(20_000)
+        )
+        for (chars in charCounts) {
+            assertTrue(
+                "خمول المحرك عند $chars حرفاً أقصر من الأرضية",
+                SynthesisBudget.inactivityBudgetMs(chars) >=
+                    SynthesisBudget.IDLE_TIMEOUT_FLOOR_MS
+            )
+            assertTrue(
+                "خمول المحرك عند $chars حرفاً أقصر من ميزانية القطعة",
+                SynthesisBudget.inactivityBudgetMs(chars) >=
+                    SynthesisBudget.pieceTimeoutMs(chars)
+            )
+        }
+    }
 }

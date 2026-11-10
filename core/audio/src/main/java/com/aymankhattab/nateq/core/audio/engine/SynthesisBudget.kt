@@ -54,6 +54,18 @@ internal object SynthesisBudget {
         maxOf(IDLE_TIMEOUT_FLOOR_MS, 3L * lastPieceDurationMs)
 
     /**
+     * ميزانية **خمول المحرك** لنصٍّ طوله [chars] حرفاً: أرضيةُ
+     * [IDLE_TIMEOUT_FLOOR_MS] أو ميزانية تخليقه، أيّهما أطول.
+     *
+     * يحتاجها حارسُ المضيف ([pieceTimeoutMs] وحدها تقصّر عن نصٍّ
+     * قصيرٍ لمحركٍ بارد)، ونافذةُ النداء الأصليّ المتزامن التي
+     * تُرسَل فيها نبضاتُ التقدّم. مصدرٌ واحد للرقمين فلا تختلف
+     * نافذتان على الميزانية نفسها.
+     */
+    fun inactivityBudgetMs(chars: Int): Long =
+        maxOf(IDLE_TIMEOUT_FLOOR_MS, pieceTimeoutMs(chars))
+
+    /**
      * ميزانية تخليق **نصٍّ واحد** بطول [chars] حرفاً: تُنتظر فيها
      * كتابةُ ملف WAV كاملاً من المحرك.
      *

@@ -66,6 +66,10 @@ object HostProtocol {
     private const val FRAME_FORMAT: Byte = 1
     private const val FRAME_PCM: Byte = 2
     private const val FRAME_END: Byte = 3
+    private const val FRAME_PING: Byte = 4
+
+    /** حمولة فارغة تُعاد استخدامها في النبضة. */
+    private val EMPTY_PAYLOAD = ByteArray(0)
 
     /** حالات نهاية الطلب (تُرمَّز في الإطار الأخير). */
     const val STATUS_OK = 0
@@ -214,6 +218,14 @@ object HostProtocol {
 
         class Pcm(val bytes: ByteArray) : HostFrame()
 
+        /**
+         * نبضةُ تقدّم: لا تحمل صوتاً ولا تُعرَض للمُستمع، لكنها تُحدّث
+         * زمن آخر تقدّم عند العميل. تُرسَل أثناء عملٍ أصليّ متزامن
+         * (تحميل صوت Acapela وتوليده) لا يبثّ إطاراتٍ في أثناءه،
+         * فتمنع حارسَي الخمول (في المضيف والعميل) من قطع نطقٍ سليم.
+         */
+        object Ping : HostFrame()
+
         data class End(
             val status: Int,
             val code: String,
@@ -248,6 +260,14 @@ object HostProtocol {
             )
         }
         writeFrame(out, FRAME_PCM, payload)
+    }
+
+    /**
+     * كتابة نبضة تقدّم فارغة. لا تُخلط بالصوت: العميل يتجاهل حمولتها
+     * ويكتفي بتحديث زمن التقدّم، فلا يتأثر تشغيل الـPCM ولا الترويسة.
+     */
+    fun writePing(out: DataOutputStream) {
+        writeFrame(out, FRAME_PING, EMPTY_PAYLOAD)
     }
 
     /** كتابة إطار النهاية: حالة + رمز خطأ معنون + رسالة. */
@@ -307,6 +327,12 @@ object HostProtocol {
             }
             FRAME_PCM -> HostFrame.Pcm(payload)
             FRAME_END -> decodeEndPayload(payload)
+            FRAME_PING -> {
+                if (payload.isNotEmpty()) {
+                    throw IOException("نبضة بلا حمولة متوقّعة")
+                }
+                HostFrame.Ping
+            }
             else -> throw IOException("نوع إطار غير معروف: $type")
         }
     }

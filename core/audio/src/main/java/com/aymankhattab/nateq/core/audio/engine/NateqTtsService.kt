@@ -1704,9 +1704,12 @@ class NateqTtsService : TextToSpeechService() {
                 val em = EmergencyVoice.load(applicationContext)
                 effEngine = if (em.isSaved) em.engine else null
                 effVoice = if (em.isSaved) em.voice else null
-                effRate = if (em.isSaved) em.rate else 1.0f
-                effPitch = if (em.isSaved) em.pitch else 1.0f
-                effVolume = if (em.isSaved) em.volume else 1.0f
+                // بلا صوت طوارئ محفوظ لا تُسقَط السرعة إلى 1.0:
+                // إسقاطها كان يجعل النطق يبدو «بطيئاً» كلما تعثّر
+                // المحرك ودخل مسار الطوارئ.
+                effRate = if (em.isSaved) em.rate else finalRate
+                effPitch = if (em.isSaved) em.pitch else finalPitch
+                effVolume = if (em.isSaved) em.volume else finalVolume
             } else {
                 effEngine = finalEngine
                 effVoice = resolvedVoiceName
@@ -2224,9 +2227,11 @@ class NateqTtsService : TextToSpeechService() {
             val em = EmergencyVoice.load(applicationContext)
             effTargetEngine = if (em.isSaved) em.engine else null
             effVoiceName = if (em.isSaved) em.voice else null
-            effRate = if (em.isSaved) em.rate else 1.0f
-            effPitch = if (em.isSaved) em.pitch else 1.0f
-            effVol = if (em.isSaved) em.volume else 1.0f
+            // بلا صوت طوارئ محفوظ يبقى معدل الطلب كما هو، فلا
+            // يهبط إلى 1.0 عند تعثّر المحرك (وهو عَرَض «البطء»).
+            effRate = if (em.isSaved) em.rate else finalRate
+            effPitch = if (em.isSaved) em.pitch else finalPitch
+            effVol = if (em.isSaved) em.volume else finalVolume
         } else {
             effTargetEngine = finalUsedEngine
             effVoiceName = finalUsedVoiceName

@@ -207,10 +207,7 @@ class EmbeddedEngineHostService : Service() {
                     runCatching { session.stop() }
                 }
             }
-            val budgetMs = maxOf(
-                SynthesisBudget.IDLE_TIMEOUT_FLOOR_MS,
-                SynthesisBudget.pieceTimeoutMs(content.length)
-            )
+            val budgetMs = SynthesisBudget.inactivityBudgetMs(content.length)
             executor.execute {
                 var guard: ScheduledFuture<*>? = null
                 var gateHeld = false
@@ -219,6 +216,10 @@ class EmbeddedEngineHostService : Service() {
                     // بعد الانتظار، فلا تستهلك مهلتها في الطابور.
                     speakGate.acquire()
                     gateHeld = true
+                    // انتظار الطابور ليس خمولاً للمحرك: نبضةٌ فورية
+                    // تُعلم الطرفين (المضيف والعميل) ببدء الميزانية
+                    // من هنا لا من لحظة بناء الطلب.
+                    runCatching { sink.ping() }
                     if (cancelled.get()) {
                         val skipped = HostResult.failure(
                             "CANCELLED",
@@ -237,9 +238,20 @@ class EmbeddedEngineHostService : Service() {
                     // وإن انقطع لمدّة الميزانية فهو خمولٌ حقيقي.
                     guard = watchdog.scheduleWithFixedDelay(
                         {
-                            if (!speakDone.get() &&
-                                HostWatchdog.expired(
-                                    SystemClock.uptimeMillis(),
+                            if (speakDone.get()) {
+                                return@scheduleWithFixedDelay
+                            }
+                            val now = SystemClock.uptimeMillis()
+                            if (sink.nativeWindowOpen(now)) {
+                                // نداء أصليّ متزامن (تحميل صوت Acapela
+                                // أو توليده) لا يبثّ إطاراتٍ في أثنائه،
+                                // فالنبضة تُبقي حارسَي المضيف والعميل
+                                // على علم بأن العمل جارٍ فيُكمل النطق.
+                                runCatching { sink.ping() }
+                                return@scheduleWithFixedDelay
+                            }
+                            if (HostWatchdog.expired(
+                                    now,
                                     sink.lastProgressAtMs(),
                                     budgetMs
                                 )
@@ -248,7 +260,7 @@ class EmbeddedEngineHostService : Service() {
                                 runCatching { session.stop() }
                             }
                         },
-                        budgetMs,
+                        HostWatchdog.DEFAULT_POLL_MS,
                         HostWatchdog.DEFAULT_POLL_MS,
                         TimeUnit.MILLISECONDS
                     )
