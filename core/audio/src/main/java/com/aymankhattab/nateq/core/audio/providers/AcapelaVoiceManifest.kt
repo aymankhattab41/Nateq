@@ -272,14 +272,12 @@ object AcapelaVoiceManifest {
                         DATA_EXTENSIONS
                 } ?: emptyArray()
 
-                val bvcuFile = dataFiles.firstOrNull {
+                val bvcuFiles = dataFiles.filter {
                     it.extension.equals("bvcu", ignoreCase = true)
                 }
-                val datFile = dataFiles.firstOrNull {
+                val datFiles = dataFiles.filter {
                     it.extension.equals("dat", ignoreCase = true)
                 }
-                val primaryData = bvcuFile ?: dataFiles.firstOrNull()
-
                 val infFiles = dir.listFiles { f ->
                     f.isFile && f.extension.equals("inf", ignoreCase = true)
                 } ?: emptyArray()
@@ -287,7 +285,7 @@ object AcapelaVoiceManifest {
                     f.isFile && f.extension.equals("ini", ignoreCase = true)
                 } ?: emptyArray()
 
-                if (primaryData == null && infFiles.isEmpty() &&
+                if (dataFiles.isEmpty() && infFiles.isEmpty() &&
                     iniFiles.isEmpty()
                 ) {
                     return@runCatching
@@ -299,7 +297,9 @@ object AcapelaVoiceManifest {
                 var detectedRate: Int? = null
 
                 for (cf in infFiles + iniFiles) {
-                    val info = runCatching { parseConfigFile(cf) }.getOrNull()
+                    val info = runCatching {
+                        parseConfigFile(cf)
+                    }.getOrNull()
                     if (info != null) {
                         if (detectedSpeaker == null &&
                             info.rawSpeaker != null
@@ -309,9 +309,7 @@ object AcapelaVoiceManifest {
                         if (detectedIso == null &&
                             info.locale != Locale.ROOT
                         ) {
-                            val loc = info.locale
-                            val c = loc.country.ifEmpty { "SAU" }
-                            detectedIso = "${loc.language}-$c"
+                            detectedIso = info.locale.language
                         }
                         if (detectedRate == null && info.sampleRate > 0) {
                             detectedRate = info.sampleRate
@@ -319,6 +317,8 @@ object AcapelaVoiceManifest {
                     }
                 }
 
+                val primaryData = bvcuFiles.firstOrNull()
+                    ?: dataFiles.firstOrNull()
                 if (detectedSpeaker.isNullOrBlank()) {
                     val rawDataName = primaryData?.nameWithoutExtension
                     detectedSpeaker = rawDataName?.let {
@@ -335,133 +335,205 @@ object AcapelaVoiceManifest {
                     detectedSpeaker,
                     primaryData?.nameWithoutExtension
                 )
-                val isoCode = if (detectedIso != null &&
-                    detectedIso.length >= 2
-                ) {
-                    detectedIso
-                } else if (loc.language == "ar") {
-                    "ara-SAU"
-                } else if (loc.language.isNotEmpty()) {
-                    "${loc.language}-${loc.country.ifEmpty { "US" }}"
-                } else {
-                    "ara-SAU"
+
+                // جدول رموز ISO لمكتبة Acapela (دالّة 0x5bb30):
+                // العربية "ar-sa" حصراً، والإنجليزية "en-us" أو "en-gb".
+                val isoCode = when (loc.language.lowercase(Locale.ROOT)) {
+                    "ar" -> "ar-sa"
+                    "en" -> if (loc.country.equals("GB", ignoreCase = true)) {
+                        "en-gb"
+                    } else {
+                        "en-us"
+                    }
+                    "fr" -> if (loc.country.equals("CA", ignoreCase = true)) {
+                        "fr-ca"
+                    } else {
+                        "fr-fr"
+                    }
+                    "es" -> if (loc.country.equals("US", ignoreCase = true) ||
+                        loc.country.equals("MX", ignoreCase = true)
+                    ) {
+                        "es-us"
+                    } else {
+                        "es-es"
+                    }
+                    "de" -> "de-de"
+                    "it" -> "it-it"
+                    "ru" -> "ru-ru"
+                    "pt" -> if (loc.country.equals("PT", ignoreCase = true)) {
+                        "pt-pt"
+                    } else {
+                        "pt-br"
+                    }
+                    "nl" -> if (loc.country.equals("BE", ignoreCase = true)) {
+                        "nl-be"
+                    } else {
+                        "nl-nl"
+                    }
+                    "tr" -> "tr-tr"
+                    "sv" -> if (loc.country.equals("FI", ignoreCase = true)) {
+                        "sv-fi"
+                    } else {
+                        "sv-se"
+                    }
+                    "da" -> "da-dk"
+                    "nb", "no" -> "nb-no"
+                    "pl" -> "pl-pl"
+                    "el" -> "el-gr"
+                    "ja" -> "ja-jp"
+                    "zh" -> "zh-cn"
+                    "ko" -> "ko-kr"
+                    else -> "ar-sa"
                 }
 
                 val langName = when {
                     isoCode.startsWith("ar", ignoreCase = true) -> "Arabic"
                     isoCode.startsWith("en", ignoreCase = true) -> "English"
                     isoCode.startsWith("fr", ignoreCase = true) -> "French"
+                    isoCode.startsWith("de", ignoreCase = true) -> "German"
+                    isoCode.startsWith("es", ignoreCase = true) -> "Spanish"
+                    isoCode.startsWith("ru", ignoreCase = true) -> "Russian"
+                    isoCode.startsWith("it", ignoreCase = true) -> "Italian"
                     else -> "Arabic"
                 }
 
                 val cleanSpk = cleanAcapelaSpeaker(detectedSpeaker)
-                val baseNames = LinkedHashSet<String>()
-                baseNames.add(cleanSpk)
-                baseNames.add(cleanSpk.lowercase(Locale.ROOT))
-                baseNames.add(detectedSpeaker)
-                primaryData?.nameWithoutExtension?.let { baseNames.add(it) }
-                baseNames.add(cleanAcapelaSpeaker(dir.name))
-                baseNames.add(dir.name)
-                infFiles.forEach { baseNames.add(it.nameWithoutExtension) }
-                iniFiles.forEach { baseNames.add(it.nameWithoutExtension) }
 
-                val dataName = bvcuFile?.name
+                // الاسم المعتمد الوحيد لملف التهيئة لتجنب تكرار .inf
+                // في readdir عند البحث nGetVoiceList
+                val richInf = infFiles.firstOrNull { isRichConfig(it) }
+                val canonicalName = richInf?.nameWithoutExtension
+                    ?: infFiles.firstOrNull()?.nameWithoutExtension
+                    ?: cleanSpk.ifBlank { detectedSpeaker }
+
+                // حذف أي ملفات .inf / .ini / .cfg بديلة في المجلد نفسه
+                // لمنع التكرار والتعارض
+                for (f in infFiles) {
+                    if (!f.nameWithoutExtension.equals(canonicalName, false)) {
+                        runCatching { f.delete() }
+                    }
+                }
+                for (f in iniFiles) {
+                    if (!f.nameWithoutExtension.equals(canonicalName, false) &&
+                        !isRichConfig(f)
+                    ) {
+                        runCatching { f.delete() }
+                    }
+                }
+                dir.listFiles { f ->
+                    f.isFile && f.extension.equals("cfg", ignoreCase = true) &&
+                        !f.nameWithoutExtension.equals(canonicalName, false)
+                }?.forEach { runCatching { it.delete() } }
+
+                val dataName = bvcuFiles.firstOrNull()?.name
                     ?: primaryData?.name.orEmpty()
-                val datName = datFile?.name.orEmpty()
+                val datName = datFiles.firstOrNull()?.name.orEmpty()
 
-                for (bName in baseNames) {
-                    if (bName.isBlank()) continue
-                    val targetInf = File(dir, "$bName.inf")
-                    val targetIni = File(dir, "$bName.ini")
-                    val targetCfg = File(dir, "$bName.cfg")
+                val targetInf = File(dir, "$canonicalName.inf")
+                val targetIni = File(dir, "$canonicalName.ini")
+                val targetCfg = File(dir, "$canonicalName.cfg")
 
-                    // 1) كتابة أو استكمال .inf بصيغة sscanf الصارمة
-                    val infHeader = buildString {
+                // 1) كتابة .inf بتنسيق sscanf الصارم: %s = " %[^"]" 
+                val infHeader = buildString {
+                    append("[Voice]\n")
+                    append("speaker = \" $cleanSpk\"\n")
+                    append("language = \" $langName\"\n")
+                    append("ISOCode = \" $isoCode\"\n")
+                    append("frequency = \" $sampleRate\"\n")
+                }
+                if (!targetInf.exists() || targetInf.length() == 0L ||
+                    !isRichConfig(targetInf)
+                ) {
+                    targetInf.writeText(
+                        infHeader,
+                        StandardCharsets.ISO_8859_1
+                    )
+                } else {
+                    val text = targetInf.readText(
+                        StandardCharsets.ISO_8859_1
+                    )
+                    var updated = text
+                    if (!updated.contains("speaker = \" $cleanSpk\"")) {
+                        updated += "\nspeaker = \" $cleanSpk\"\n"
+                    }
+                    if (updated.contains("ara-SAU") ||
+                        updated.contains("ar-SAU")
+                    ) {
+                        updated = updated.replace("ara-SAU", "ar-sa")
+                            .replace("ar-SAU", "ar-sa")
+                    }
+                    if (!updated.contains("ISOCode = \" $isoCode\"")) {
+                        updated += "\nISOCode = \" $isoCode\"\n"
+                    }
+                    if (updated != text) {
+                        targetInf.writeText(
+                            updated,
+                            StandardCharsets.ISO_8859_1
+                        )
+                    }
+                }
+
+                // 2) كتابة .ini لضمان التوافق مع ini_loader و cfg_loader
+                // تتطلب المكتبة MBR "..." [ RAM ] لعدّ السجلات في الدورة
+                // الأولى (0x5b1a4) و MBR = ... للقراءة في 0x5b548.
+                val mbrDirectives = buildString {
+                    if (dataName.isNotEmpty()) {
+                        append("MBR \"$dataName\" [ RAM ]\n")
+                        append("MBR \"$dataName\"\n")
+                        append("MBR = \"$dataName\"\n")
+                        append("MBR = $dataName\"\n")
+                        append("MBR = $dataName\n")
+                        append("FILE \"$dataName\" [ RAM ]\n")
+                    }
+                    if (datName.isNotEmpty()) {
+                        append("FILEMAP \"$datName\" [ FILEMAP ]\n")
+                    }
+                }
+
+                if (!targetIni.exists() || targetIni.length() == 0L) {
+                    val iniContent = buildString {
                         append("[Voice]\n")
                         append("speaker = \" $cleanSpk\"\n")
+                        append("speaker = \"$cleanSpk\"\n")
+                        append("speaker \"$cleanSpk\"\n")
                         append("language = \" $langName\"\n")
+                        append("language \"$langName\"\n")
                         append("ISOCode = \" $isoCode\"\n")
+                        append("ISOCode \"$isoCode\"\n")
                         append("frequency = \" $sampleRate\"\n")
+                        append("frequency \"$sampleRate\"\n")
+                        append(mbrDirectives)
                     }
-                    if (!targetInf.exists() || targetInf.length() == 0L) {
-                        targetInf.writeText(
-                            infHeader,
+                    targetIni.writeText(
+                        iniContent,
+                        StandardCharsets.ISO_8859_1
+                    )
+                } else {
+                    val text = targetIni.readText(
+                        StandardCharsets.ISO_8859_1
+                    )
+                    if (!text.contains("MBR \"$dataName\"") &&
+                        dataName.isNotEmpty()
+                    ) {
+                        targetIni.appendText(
+                            "\n$mbrDirectives",
                             StandardCharsets.ISO_8859_1
                         )
-                    } else {
-                        val text = targetInf.readText(
-                            StandardCharsets.ISO_8859_1
-                        )
-                        val spkRegex = Regex(
-                            """speaker\s+=\s*"""",
-                            RegexOption.IGNORE_CASE
-                        )
-                        if (!text.contains(spkRegex)) {
-                            targetInf.appendText(
-                                "\nspeaker = \" $cleanSpk\"\n",
-                                StandardCharsets.ISO_8859_1
-                            )
-                        }
                     }
+                }
 
-                    // 2) كتابة أو استكمال .ini لضمان وجود MBR
-                    if (!targetIni.exists() || targetIni.length() == 0L) {
-                        val iniContent = buildString {
-                            append("[Voice]\n")
-                            append("speaker = $cleanSpk\n")
-                            append("speaker = \" $cleanSpk\"\n")
-                            append("language = $langName\n")
-                            append("ISOCode = $isoCode\n")
-                            append("frequency = $sampleRate\n")
-                            if (dataName.isNotEmpty()) {
-                                append("MBR = $dataName\n")
-                                append("MBR = \"$dataName\"\n")
-                                append("FILE \"$dataName\" [ RAM ]\n")
-                            }
-                            if (datName.isNotEmpty()) {
-                                append("FILEMAP \"$datName\" [ FILEMAP ]\n")
-                            }
-                        }
-                        targetIni.writeText(
-                            iniContent,
-                            StandardCharsets.ISO_8859_1
-                        )
-                    } else {
-                        val text = targetIni.readText(
-                            StandardCharsets.ISO_8859_1
-                        )
-                        val mbrRegex = Regex(
-                            """\b(MBR|SLV|SLL|ALF|ERF)\b""",
-                            RegexOption.IGNORE_CASE
-                        )
-                        if (!text.contains(mbrRegex) &&
-                            dataName.isNotEmpty()
-                        ) {
-                            val appendMbr = buildString {
-                                append("\nMBR = $dataName\n")
-                                append("MBR = \"$dataName\"\n")
-                                append("FILE \"$dataName\" [ RAM ]\n")
-                            }
-                            targetIni.appendText(
-                                appendMbr,
-                                StandardCharsets.ISO_8859_1
-                            )
+                // 3) كتابة .cfg إن لم يوجد
+                if (!targetCfg.exists() && dataName.isNotEmpty()) {
+                    val cfgContent = buildString {
+                        append("FILE \"$dataName\" [ RAM ]\n")
+                        if (datName.isNotEmpty()) {
+                            append("FILEMAP \"$datName\" [ FILEMAP ]\n")
                         }
                     }
-
-                    // 3) كتابة .cfg إن لم يوجد
-                    if (!targetCfg.exists() && dataName.isNotEmpty()) {
-                        val cfgContent = buildString {
-                            append("FILE \"$dataName\" [ RAM ]\n")
-                            if (datName.isNotEmpty()) {
-                                append("FILEMAP \"$datName\" [ FILEMAP ]\n")
-                            }
-                        }
-                        targetCfg.writeText(
-                            cfgContent,
-                            StandardCharsets.ISO_8859_1
-                        )
-                    }
+                    targetCfg.writeText(
+                        cfgContent,
+                        StandardCharsets.ISO_8859_1
+                    )
                 }
             }
         }
