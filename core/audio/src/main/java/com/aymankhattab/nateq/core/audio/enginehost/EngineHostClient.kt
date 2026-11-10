@@ -504,6 +504,12 @@ object EngineHostClient {
                                     frame.bytes.size
                                 )
                             }
+                            is HostProtocol.HostFrame.Ping -> {
+                                // نبضة تقدّم أثناء عملٍ أصليّ متزامن:
+                                // لا صوت فيها، لكنها تمنع حارس الخمول
+                                // من قطع نطقٍ سليم لا يبثّ إطارات.
+                                lastProgressAt.set(SystemClock.uptimeMillis())
+                            }
                             is HostProtocol.HostFrame.End -> {
                                 lastProgressAt.set(SystemClock.uptimeMillis())
                                 captured.set(frame.toResult())

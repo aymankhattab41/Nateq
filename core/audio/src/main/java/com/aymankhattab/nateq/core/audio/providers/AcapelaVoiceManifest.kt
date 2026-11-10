@@ -164,6 +164,11 @@ object AcapelaVoiceManifest {
             RegexOption.IGNORE_CASE
         )
         s = s.replace(langPrefixRegex, "")
+        val qualityPrefixRegex = Regex(
+            "^(hd|hq|hm)_",
+            RegexOption.IGNORE_CASE
+        )
+        s = s.replace(qualityPrefixRegex, "")
         val suffixRegex = Regex(
             "_(22k_ns|22k|44k|16k|8k|hm|hq|lf|ns)(?=_|$)",
             RegexOption.IGNORE_CASE
@@ -202,244 +207,272 @@ object AcapelaVoiceManifest {
     }
 
     /**
-     * التحقق من وجود ملفات تهيئة .inf و .ini متوافقة مع
-     * متطلبات مكتبة Acapela الأصلية لكل مجلد صوت،
-     * بصيغة `speaker = " Name"` المحددة لدوال C الأصلية.
+     * إزالة ملفات التهيئة **المصطنعة** التي ثُبِت أنها بلا أي توجيه
+     * صوتي، وعند وجود ملف `.inf` غنيّ سليم في المجلد نفسه فقط.
+     *
+     * **لماذا الحذف لا الكتابة:** المكتبة الأصلية تبني مسار `.ini` من
+     * اسم `.inf`؛ فإن سبق سجلٌّ مصطنع (speaker فقط، بلا FILE/FILEMAP)
+     * الصوتَ الحقيقي في `find_voices` فشل تحميل الصوت بصمت. وكانت
+     * النسخة السابقة **تكتب** تهيئة مصطنعة وتستبدل الصالح، فتفقد
+     * الصوت توجيهه — وهو مسار الصمت الأقوى. هنا قراءةٌ للتمييز
+     * وحذفٌ للمصطنع المثبت فقط.
+     *
+     * **حماية الصوت العامل:** لا يُحذف `.ini` غنيّ أبداً، ولا يُحذف
+     * شيء إذا لم يوجد `.inf` غنيّ في المجلد نفسه.
      */
-    fun ensureVoiceInfFiles(baseDir: File) {
+    fun pruneSyntheticConfigs(baseDir: File) {
         if (!baseDir.exists() || !baseDir.isDirectory) return
-        val dirs = completeVoiceDirs(baseDir)
-        for (dir in dirs) {
+        for (dir in completeVoiceDirs(baseDir)) {
             runCatching {
                 val infFiles = dir.listFiles { f ->
                     f.isFile && f.extension.equals("inf", ignoreCase = true)
                 } ?: emptyArray()
-
-                var detectedSpeaker: String? = null
-
+                if (infFiles.size < 2) return@runCatching
+                // لا حذف بلا بديل سليم في المجلد نفسه.
+                if (infFiles.none { isRichConfig(it) }) return@runCatching
                 for (inf in infFiles) {
-                    val lines = inf.readLines(StandardCharsets.ISO_8859_1)
-                    for (line in lines) {
-                        val trimmed = line.trim()
-                        if (trimmed.startsWith(
-                            "speaker",
-                            ignoreCase = true
-                        )) {
-                            val eq = trimmed.indexOf('=')
-                            if (eq > 0) {
-                                val value = trimmed.substring(eq + 1)
-                                    .trim()
-                                    .removeSurrounding("\"")
-                                    .trim()
-                                if (value.isNotBlank()) {
-                                    detectedSpeaker =
-                                        cleanAcapelaSpeaker(value)
-                                }
-                            }
-                            break
-                        }
-                    }
-                    if (detectedSpeaker != null) break
-                }
-
-                val speaker = detectedSpeaker
-                    ?: run {
-                        val iniFiles = dir.listFiles { f ->
-                            f.isFile && f.extension.equals(
-                                "ini",
-                                ignoreCase = true
-                            )
-                        } ?: emptyArray()
-                        var fromIni: String? = null
-                        for (ini in iniFiles) {
-                            for (l in ini.readLines(
-                                StandardCharsets.ISO_8859_1
-                            )) {
-                                val trimmed = l.trim()
-                                if (trimmed.startsWith(
-                                    "speaker",
-                                    ignoreCase = true
-                                ) || trimmed.startsWith(
-                                    "voicename",
-                                    ignoreCase = true
-                                )) {
-                                    val eq = trimmed.indexOf('=')
-                                    if (eq > 0) {
-                                        fromIni = cleanAcapelaSpeaker(
-                                            trimmed.substring(eq + 1)
-                                                .trim()
-                                                .removeSurrounding("\"")
-                                                .trim()
-                                        )
-                                        break
-                                    }
-                                }
-                            }
-                            if (fromIni != null) break
-                        }
-                        fromIni
-                    }
-                    ?: run {
-                        val dataFiles = dir.listFiles { f ->
-                            f.isFile && f.extension.lowercase(
-                                Locale.ROOT
-                            ) in setOf(
-                                "bvcu", "dat", "bnf", "pho", "mdd"
-                            )
-                        } ?: emptyArray()
-                        val name = dataFiles.firstOrNull()
-                            ?.nameWithoutExtension ?: dir.name
-                        cleanAcapelaSpeaker(name)
-                    }
-
-                if (speaker.isNotBlank()) {
-                    val allConfigs = dir.listFiles { f ->
-                        f.isFile && (f.extension.equals("ini", true) ||
-                            f.extension.equals("inf", true))
-                    } ?: emptyArray()
-
-                    val richConfig = allConfigs.filter { isRichConfig(it) }
-                        .maxByOrNull { it.length() }
-
-                    val richDirectives = richConfig?.readLines(
-                        StandardCharsets.ISO_8859_1
-                    )?.filterNot { l ->
-                        val t = l.trim()
-                        t.startsWith("speaker", ignoreCase = true) ||
-                            t.equals("[Voice]", ignoreCase = true)
-                    }?.joinToString("\n").orEmpty()
-
-                    val allDataFiles = dir.listFiles { f -> f.isFile }
-                        ?: emptyArray()
-                    val synthDirectives = buildString {
-                        for (df in allDataFiles) {
-                            val ext = df.extension.lowercase(Locale.ROOT)
-                            when (ext) {
-                                "bvcu" ->
-                                    append("FILE \"${df.name}\" [ RAM ]\n")
-                                "bnf" ->
-                                    append("BNF \"${df.name}\" [ RAM ]\n")
-                                "phm", "pho" ->
-                                    append("PHM \"${df.name}\" [ RAM ]\n")
-                                "dat" ->
-                                    append(
-                                        "FILEMAP \"${df.name}\"" +
-                                            " [ FILEMAP ]\n"
-                                    )
-                            }
-                        }
-                    }
-
-                    val extraDirectives = if (richDirectives.isNotBlank()) {
-                        richDirectives
-                    } else {
-                        synthDirectives
-                    }
-
-                    val header = buildString {
-                        append("[Voice]\n")
-                        append("speaker = \" $speaker\"\n")
-                        append("codepage = \" utf-8\"\n")
-                        append("frequency = \" 22050\"\n")
-                    }
-
-                    val fullConfig = (header + "\n" + extraDirectives)
-                        .trimEnd() + "\n"
-
-                    // تنظيف أي ملفات .inf و .ini مولدة تلقائياً زائفة
-                    val primaryName = if (infFiles.size > 1) {
-                        infFiles.firstOrNull {
-                            it.nameWithoutExtension.equals(
-                                speaker,
-                                ignoreCase = true
-                            ) || it.nameWithoutExtension.equals(
-                                dir.name,
-                                ignoreCase = true
-                            )
-                        }?.nameWithoutExtension
-                            ?: infFiles.first().nameWithoutExtension
-                    } else {
-                        null
-                    }
-
-                    val validInfFiles = mutableListOf<File>()
-                    for (inf in infFiles) {
-                        if (primaryName != null &&
-                            !inf.nameWithoutExtension.equals(
-                                primaryName,
-                                ignoreCase = true
-                            )
-                        ) {
-                            val corrIni = File(
-                                dir,
-                                "${inf.nameWithoutExtension}.ini"
-                            )
-                            if (!isRichConfig(inf) && !isRichConfig(corrIni)) {
-                                inf.delete()
-                                corrIni.delete()
-                            } else {
-                                validInfFiles.add(inf)
-                            }
-                        } else {
-                            validInfFiles.add(inf)
-                        }
-                    }
-
-                    val iniFiles = dir.listFiles { f ->
-                        f.isFile && f.extension.equals("ini", ignoreCase = true)
-                    } ?: emptyArray()
-
-                    val baseNames = mutableSetOf<String>()
-                    baseNames.add(speaker.lowercase(Locale.ROOT))
-                    baseNames.add(speaker)
-                    baseNames.add(
-                        cleanAcapelaSpeaker(dir.name).lowercase(Locale.ROOT)
+                    if (!isContentlessConfig(inf)) continue
+                    val corrIni = File(
+                        dir,
+                        "${inf.nameWithoutExtension}.ini"
                     )
-                    richConfig?.let { baseNames.add(it.nameWithoutExtension) }
-                    validInfFiles.forEach {
-                        baseNames.add(it.nameWithoutExtension)
-                    }
-                    iniFiles.forEach {
-                        if (isRichConfig(it)) {
-                            baseNames.add(it.nameWithoutExtension)
-                        }
-                    }
-
-                    for (baseName in baseNames) {
-                        val targetInf = File(dir, "$baseName.inf")
-                        val targetIni = File(dir, "$baseName.ini")
-
-                        fun writeConfig(target: File) {
-                            if (target.exists()) {
-                                val existing = target.readText(
-                                    StandardCharsets.ISO_8859_1
-                                )
-                                val hasSpeaker = existing.contains(
-                                    "speaker = \" $speaker\"",
-                                    ignoreCase = true
-                                )
-                                val hasData = isRichConfig(target)
-                                if (!hasSpeaker || !hasData) {
-                                    target.writeText(
-                                        fullConfig,
-                                        StandardCharsets.ISO_8859_1
-                                    )
-                                }
-                            } else {
-                                target.writeText(
-                                    fullConfig,
-                                    StandardCharsets.ISO_8859_1
-                                )
-                            }
-                        }
-
-                        writeConfig(targetInf)
-                        writeConfig(targetIni)
+                    if (corrIni.exists() && isRichConfig(corrIni)) continue
+                    runCatching { inf.delete() }
+                    if (corrIni.exists() &&
+                        isContentlessConfig(corrIni)
+                    ) {
+                        runCatching { corrIni.delete() }
                     }
                 }
             }
         }
     }
+
+    /**
+     * التحقق من وجود ملفات تهيئة .inf و .ini و .cfg متوافقة تماماً مع
+     * متطلبات مكتبة Acapela الأصلية (libacattsandroid.so):
+     *
+     * 1. دوال البحث [tts_function_find_voices] تبحث حصراً عن ملفات
+     *    `.inf` وتستخرج `speaker` عبر sscanf: `%s = " %[^"]" `
+     *    التي تتطلب حتماً مسافة قبل علامة المساواة (`speaker = " ..."`).
+     *
+     * 2. دالة التحميل [tts_function_load_voice] تفتح ملف `.ini` المطابق
+     *    لاسم `.inf`، وتقرأ عبر sscanf: `%s = %[^"] ` وتبحث عن مفتاح
+     *    [MBR]؛ فإن لم تجده انهارت بـ ERROR_BABILE_INITLANGDBAEX (-7).
+     *
+     * 3. لا يُمسّ أي ملف تهيئة غنيّ يحوي توجيهات أصلية، بل يُستكمل
+     *    بإضافة [MBR] وتنسيق speaker إن كانا ناقصين.
+     */
+    fun ensureVoiceConfigs(baseDir: File) {
+        if (!baseDir.exists() || !baseDir.isDirectory) return
+        for (dir in completeVoiceDirs(baseDir)) {
+            runCatching {
+                val dataFiles = dir.listFiles { f ->
+                    f.isFile && f.extension.lowercase(Locale.ROOT) in
+                        DATA_EXTENSIONS
+                } ?: emptyArray()
+
+                val bvcuFile = dataFiles.firstOrNull {
+                    it.extension.equals("bvcu", ignoreCase = true)
+                }
+                val datFile = dataFiles.firstOrNull {
+                    it.extension.equals("dat", ignoreCase = true)
+                }
+                val primaryData = bvcuFile ?: dataFiles.firstOrNull()
+
+                val infFiles = dir.listFiles { f ->
+                    f.isFile && f.extension.equals("inf", ignoreCase = true)
+                } ?: emptyArray()
+                val iniFiles = dir.listFiles { f ->
+                    f.isFile && f.extension.equals("ini", ignoreCase = true)
+                } ?: emptyArray()
+
+                if (primaryData == null && infFiles.isEmpty() &&
+                    iniFiles.isEmpty()
+                ) {
+                    return@runCatching
+                }
+
+                // كشف المتحدث واللغة ومعدل العينات من الملفات الحالية
+                var detectedSpeaker: String? = null
+                var detectedIso: String? = null
+                var detectedRate: Int? = null
+
+                for (cf in infFiles + iniFiles) {
+                    val info = runCatching { parseConfigFile(cf) }.getOrNull()
+                    if (info != null) {
+                        if (detectedSpeaker == null &&
+                            info.rawSpeaker != null
+                        ) {
+                            detectedSpeaker = info.rawSpeaker
+                        }
+                        if (detectedIso == null &&
+                            info.locale != Locale.ROOT
+                        ) {
+                            val loc = info.locale
+                            val c = loc.country.ifEmpty { "SAU" }
+                            detectedIso = "${loc.language}-$c"
+                        }
+                        if (detectedRate == null && info.sampleRate > 0) {
+                            detectedRate = info.sampleRate
+                        }
+                    }
+                }
+
+                if (detectedSpeaker.isNullOrBlank()) {
+                    val rawDataName = primaryData?.nameWithoutExtension
+                    detectedSpeaker = rawDataName?.let {
+                        cleanAcapelaSpeaker(it)
+                    } ?: cleanAcapelaSpeaker(dir.name)
+                }
+                if (detectedSpeaker.isNullOrBlank()) {
+                    detectedSpeaker = "Voice"
+                }
+
+                val sampleRate = detectedRate ?: DEFAULT_SAMPLE_RATE
+                val loc = resolveLocale(
+                    detectedIso,
+                    detectedSpeaker,
+                    primaryData?.nameWithoutExtension
+                )
+                val isoCode = if (detectedIso != null &&
+                    detectedIso.length >= 2
+                ) {
+                    detectedIso
+                } else if (loc.language == "ar") {
+                    "ara-SAU"
+                } else if (loc.language.isNotEmpty()) {
+                    "${loc.language}-${loc.country.ifEmpty { "US" }}"
+                } else {
+                    "ara-SAU"
+                }
+
+                val langName = when {
+                    isoCode.startsWith("ar", ignoreCase = true) -> "Arabic"
+                    isoCode.startsWith("en", ignoreCase = true) -> "English"
+                    isoCode.startsWith("fr", ignoreCase = true) -> "French"
+                    else -> "Arabic"
+                }
+
+                val cleanSpk = cleanAcapelaSpeaker(detectedSpeaker)
+                val baseNames = LinkedHashSet<String>()
+                baseNames.add(cleanSpk)
+                baseNames.add(cleanSpk.lowercase(Locale.ROOT))
+                baseNames.add(detectedSpeaker)
+                primaryData?.nameWithoutExtension?.let { baseNames.add(it) }
+                baseNames.add(cleanAcapelaSpeaker(dir.name))
+                baseNames.add(dir.name)
+                infFiles.forEach { baseNames.add(it.nameWithoutExtension) }
+                iniFiles.forEach { baseNames.add(it.nameWithoutExtension) }
+
+                val dataName = bvcuFile?.name
+                    ?: primaryData?.name.orEmpty()
+                val datName = datFile?.name.orEmpty()
+
+                for (bName in baseNames) {
+                    if (bName.isBlank()) continue
+                    val targetInf = File(dir, "$bName.inf")
+                    val targetIni = File(dir, "$bName.ini")
+                    val targetCfg = File(dir, "$bName.cfg")
+
+                    // 1) كتابة أو استكمال .inf بصيغة sscanf الصارمة
+                    val infHeader = buildString {
+                        append("[Voice]\n")
+                        append("speaker = \" $cleanSpk\"\n")
+                        append("language = \" $langName\"\n")
+                        append("ISOCode = \" $isoCode\"\n")
+                        append("frequency = \" $sampleRate\"\n")
+                    }
+                    if (!targetInf.exists() || targetInf.length() == 0L) {
+                        targetInf.writeText(
+                            infHeader,
+                            StandardCharsets.ISO_8859_1
+                        )
+                    } else {
+                        val text = targetInf.readText(
+                            StandardCharsets.ISO_8859_1
+                        )
+                        val spkRegex = Regex(
+                            """speaker\s+=\s*"""",
+                            RegexOption.IGNORE_CASE
+                        )
+                        if (!text.contains(spkRegex)) {
+                            targetInf.appendText(
+                                "\nspeaker = \" $cleanSpk\"\n",
+                                StandardCharsets.ISO_8859_1
+                            )
+                        }
+                    }
+
+                    // 2) كتابة أو استكمال .ini لضمان وجود MBR
+                    if (!targetIni.exists() || targetIni.length() == 0L) {
+                        val iniContent = buildString {
+                            append("[Voice]\n")
+                            append("speaker = $cleanSpk\n")
+                            append("speaker = \" $cleanSpk\"\n")
+                            append("language = $langName\n")
+                            append("ISOCode = $isoCode\n")
+                            append("frequency = $sampleRate\n")
+                            if (dataName.isNotEmpty()) {
+                                append("MBR = $dataName\n")
+                                append("MBR = \"$dataName\"\n")
+                                append("FILE \"$dataName\" [ RAM ]\n")
+                            }
+                            if (datName.isNotEmpty()) {
+                                append("FILEMAP \"$datName\" [ FILEMAP ]\n")
+                            }
+                        }
+                        targetIni.writeText(
+                            iniContent,
+                            StandardCharsets.ISO_8859_1
+                        )
+                    } else {
+                        val text = targetIni.readText(
+                            StandardCharsets.ISO_8859_1
+                        )
+                        val mbrRegex = Regex(
+                            """\b(MBR|SLV|SLL|ALF|ERF)\b""",
+                            RegexOption.IGNORE_CASE
+                        )
+                        if (!text.contains(mbrRegex) &&
+                            dataName.isNotEmpty()
+                        ) {
+                            val appendMbr = buildString {
+                                append("\nMBR = $dataName\n")
+                                append("MBR = \"$dataName\"\n")
+                                append("FILE \"$dataName\" [ RAM ]\n")
+                            }
+                            targetIni.appendText(
+                                appendMbr,
+                                StandardCharsets.ISO_8859_1
+                            )
+                        }
+                    }
+
+                    // 3) كتابة .cfg إن لم يوجد
+                    if (!targetCfg.exists() && dataName.isNotEmpty()) {
+                        val cfgContent = buildString {
+                            append("FILE \"$dataName\" [ RAM ]\n")
+                            if (datName.isNotEmpty()) {
+                                append("FILEMAP \"$datName\" [ FILEMAP ]\n")
+                            }
+                        }
+                        targetCfg.writeText(
+                            cfgContent,
+                            StandardCharsets.ISO_8859_1
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * ملف تهيئة بلا أي توجيه صوتي فعلي: قصير ولا يذكر أي ملف بيانات
+     * أو مسار (FILE/FILEMAP/PATH/BNF/PHM). هذا هو المصطنع الذي يُفسد
+     * تحميل الصوت الحقيقي، وليس التهيئة الغنية التي توجّه العينات.
+     */
+    private fun isContentlessConfig(f: File): Boolean = !isRichConfig(f)
 
     /**
      * استخراج بيانات الصوت من ملف التهيئة

@@ -89,43 +89,62 @@ class AcapelaVoiceManifestTest {
             "Salma",
             AcapelaVoiceManifest.cleanAcapelaSpeaker("Salma (العربية)")
         )
-    }
-
-    @Test
-    fun ensureVoiceInfFiles_createsProperNativeInfFormat() {
-        val baseDir = tempFolder.newFolder("voices_without_inf")
-        val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
-        val bvcu = File(voiceFolder, "ar_sa_salma_22k_ns.bvcu")
-        bvcu.writeBytes(ByteArray(10_000))
-
-        AcapelaVoiceManifest.ensureVoiceInfFiles(baseDir)
-
-        val inf = File(voiceFolder, "salma.inf")
-        assertTrue(inf.exists())
-        val ini = File(voiceFolder, "salma.ini")
-        assertTrue(ini.exists())
-        val content = inf.readText()
-        assertTrue(content.contains("speaker = \" Salma\""))
-        assertTrue(content.contains("codepage = \" utf-8\""))
-        assertTrue(
-            content.contains("FILE \"ar_sa_salma_22k_ns.bvcu\" [ RAM ]")
+        assertEquals(
+            "Salma",
+            AcapelaVoiceManifest.cleanAcapelaSpeaker(
+                "ar_sa_hd_salma_22k_lf.bvcu"
+            )
         )
     }
 
     @Test
-    fun ensureVoiceInfFiles_updatesExistingInfWithoutSpaceAndCreatesIni() {
+    fun pruneSyntheticConfigs_neverCreatesConfigFiles() {
+        val baseDir = tempFolder.newFolder("voices_without_inf")
+        val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
+        File(voiceFolder, "ar_sa_salma_22k_ns.bvcu")
+            .writeBytes(ByteArray(10_000))
+
+        AcapelaVoiceManifest.pruneSyntheticConfigs(baseDir)
+
+        // لا كتابة إطلاقاً: الملف المصطنع كان يُفسد تحميل الصوت.
+        assertFalse(File(voiceFolder, "salma.inf").exists())
+        assertFalse(File(voiceFolder, "salma.ini").exists())
+        // الصوت ما زال يُعدّ من البيانات الخام.
+        assertEquals(1, AcapelaVoiceManifest.listVoices(baseDir).size)
+    }
+
+    @Test
+    fun pruneSyntheticConfigs_neverRewritesRichInf() {
         val baseDir = tempFolder.newFolder("voices_unspaced_inf")
         val voiceFolder = File(baseDir, "mehdi").apply { mkdirs() }
+        File(voiceFolder, "mehdi.bvcu").writeBytes(ByteArray(10_000))
         val inf = File(voiceFolder, "mehdi.inf")
-        inf.writeText("[Voice]\nspeaker=\"Mehdi\"\nfrequency=22050\n")
+        val original = "[Voice]\n" +
+            "speaker=\"Mehdi\"\n" +
+            "frequency=22050\n" +
+            "FILE \"mehdi.bvcu\" [ RAM ]\n"
+        inf.writeText(original)
 
-        AcapelaVoiceManifest.ensureVoiceInfFiles(baseDir)
+        AcapelaVoiceManifest.pruneSyntheticConfigs(baseDir)
 
-        val updatedInf = inf.readText()
-        assertTrue(updatedInf.contains("speaker = \" Mehdi\""))
-        val ini = File(voiceFolder, "mehdi.ini")
+        assertEquals(original, inf.readText())
+        assertFalse(File(voiceFolder, "mehdi.ini").exists())
+    }
+
+    @Test
+    fun pruneSyntheticConfigs_keepsOnlyConfigWhenNoRichAlternative() {
+        val baseDir = tempFolder.newFolder("voices_only_plain")
+        val voiceFolder = File(baseDir, "nizar").apply { mkdirs() }
+        val inf = File(voiceFolder, "nizar.inf")
+        inf.writeText("[Voice]\nspeaker = \" Nizar\"\n")
+        val ini = File(voiceFolder, "nizar.ini")
+        ini.writeText("[Voice]\nspeaker = \" Nizar\"\n")
+
+        AcapelaVoiceManifest.pruneSyntheticConfigs(baseDir)
+
+        // بلا بديل غنيّ في المجلد نفسه لا يُحذف شيء.
+        assertTrue(inf.exists())
         assertTrue(ini.exists())
-        assertTrue(ini.readText().contains("speaker = \" Mehdi\""))
     }
 
     @Test
@@ -147,36 +166,90 @@ class AcapelaVoiceManifestTest {
     }
 
     @Test
-    fun ensureVoiceInfFiles_cleansUpStubDuplicateInfs() {
+    fun pruneSyntheticConfigs_removesContentlessDuplicateInfs() {
         val baseDir = tempFolder.newFolder("voices_with_stubs")
         val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
+        File(voiceFolder, "salma.bvcu").writeBytes(ByteArray(10_000))
+        val richBody = "[Voice]\n" +
+            "speaker = \" Salma\"\n" +
+            "frequency = 22050\n" +
+            "FILE \"salma.bvcu\" [ RAM ]\n"
         val mainInf = File(voiceFolder, "salma.inf")
-        mainInf.writeText(
-            "[Voice]\n" +
-                "speaker = \" Salma\"\n" +
-                "frequency = 22050\n" +
-                "name = salma\n" +
-                "language = Arabic\n"
-        )
+        mainInf.writeText(richBody)
         val mainIni = File(voiceFolder, "salma.ini")
-        mainIni.writeText(
-            "[Voice]\n" +
-                "speaker = \" Salma\"\n" +
-                "frequency = 22050\n" +
-                "name = salma\n" +
-                "language = Arabic\n"
-        )
+        mainIni.writeText(richBody)
 
         val stubInf = File(voiceFolder, "salma_22k.inf")
         stubInf.writeText("[Voice]\nspeaker = \" Salma\"\n")
         val stubIni = File(voiceFolder, "salma_22k.ini")
         stubIni.writeText("[Voice]\nspeaker = \" Salma\"\n")
 
-        AcapelaVoiceManifest.ensureVoiceInfFiles(baseDir)
+        AcapelaVoiceManifest.pruneSyntheticConfigs(baseDir)
 
         assertTrue(mainInf.exists())
         assertTrue(mainIni.exists())
         assertFalse(stubInf.exists())
         assertFalse(stubIni.exists())
+    }
+
+    @Test
+    fun ensureVoiceConfigs_createsInfAndIniWithMbrForBvcuOnly() {
+        val baseDir = tempFolder.newFolder("bvcu_only")
+        val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
+        File(voiceFolder, "ar_sa_hd_salma_22k_lf.bvcu")
+            .writeBytes(ByteArray(10_000))
+        File(voiceFolder, "ar_sa_hd_salma_22k_lf.dat")
+            .writeBytes(ByteArray(10_000))
+
+        AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
+
+        val inf = File(voiceFolder, "Salma.inf")
+        val ini = File(voiceFolder, "Salma.ini")
+        val cfg = File(voiceFolder, "Salma.cfg")
+        assertTrue(inf.exists())
+        assertTrue(ini.exists())
+        assertTrue(cfg.exists())
+
+        val infText = inf.readText()
+        assertTrue(infText.contains("speaker = \" Salma\""))
+
+        val iniText = ini.readText()
+        assertTrue(iniText.contains("MBR = ar_sa_hd_salma_22k_lf.bvcu"))
+        assertTrue(iniText.contains("FILE \"ar_sa_hd_salma_22k_lf.bvcu\""))
+        assertTrue(iniText.contains("FILEMAP \"ar_sa_hd_salma_22k_lf.dat\""))
+    }
+
+    @Test
+    fun ensureVoiceConfigs_preservesRichDirectivesWithoutOverwriting() {
+        val baseDir = tempFolder.newFolder("rich_existing")
+        val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
+        File(voiceFolder, "salma.bvcu").writeBytes(ByteArray(10_000))
+        val richBody = "[Voice]\n" +
+            "speaker = \" Salma\"\n" +
+            "frequency = 22050\n" +
+            "PATH my_special_path\n" +
+            "BNF \"salma.bnf\" [ RAM ]\n"
+        val ini = File(voiceFolder, "Salma.ini")
+        ini.writeText(richBody)
+
+        AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
+
+        val newIniText = ini.readText()
+        assertTrue(newIniText.contains("PATH my_special_path"))
+        assertTrue(newIniText.contains("BNF \"salma.bnf\""))
+        assertTrue(newIniText.contains("MBR = salma.bvcu"))
+    }
+
+    @Test
+    fun collectVoiceSearchPaths_discoversVoiceFoldersEvenWithoutExistingInf() {
+        val baseDir = tempFolder.newFolder("no_prior_inf")
+        val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
+        File(voiceFolder, "ar_sa_salma_22k_ns.bvcu")
+            .writeBytes(ByteArray(10_000))
+
+        val paths = com.aymankhattab.nateq.core.audio.enginehost
+            .AcapelaHostSession.collectVoiceSearchPaths(baseDir)
+
+        assertTrue(paths.contains(voiceFolder.absolutePath))
     }
 }

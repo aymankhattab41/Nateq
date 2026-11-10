@@ -4,10 +4,13 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
+import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
+import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import com.aymankhattab.nateq.core.common.VisibleEngines
 import com.aymankhattab.nateq.core.data.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.FileOutputStream
 import java.util.zip.ZipEntry
@@ -16,17 +19,60 @@ import java.util.zip.ZipInputStream
 /**
  * مستورد أصوات Acapela من حزم ZIP.
  * يستخرج الملفات إلى مجلد الأصوات المدمجة لـ Acapela بأمان كامل.
+ *
+ * **يتحقق من النطق فعلياً:** نجاح الاستخراج وحده لا يكفي — صوتٌ
+ * موجود على القرص قد تفشل مكتبة Acapela في تحميله أو لا يصدر عنه
+ * أي عيّنة، فيبدو «مستورداً بنجاح» وهو صامت. لذلك يُشغَّل المحرك
+ * بعد الاستيراد ويُنطق بكل صوتٍ نصٌّ قصير، ولا يُعلَن النجاح إلا
+ * بعيّنة صوتية حقيقية. وإن تعذّر تشغيل المضيف أصلاً (بيئة بلا
+ * مكتبة أصلية) بقي الاستيراد ناجحاً مع تحذير.
  */
 object AcapelaVoiceImporter {
 
     private const val TAG = "AcapelaVoiceImporter"
     private const val BUFFER_SIZE = 8192
 
+    /** النصّ الذي يُنطق للتحقق: أقصر ما يُنتج عيّنة صوتية. */
+    private const val VERIFY_TEXT = "1"
+
+    /** سقف انتظار ربط المضيف عند التحقق (لا يعلّق الاستيراد). */
+    private const val VERIFY_INIT_TIMEOUT_MS = 4_000L
+
+    /**
+     * رموز تعني «تعذّر التحقق لسببٍ بيئي» لا «الصوت تالف»، فلا تُفشل
+     * الاستيراد (ومنها بيئة الاختبارات بلا مكتبة أصلية).
+     */
+    private val UNVERIFIABLE_CODES = setOf(
+        "NATIVE_LOAD_ERROR",
+        "HOST_UNAVAILABLE",
+        "HOST_EOF",
+        "HOST_ERROR",
+        "HOST_DIED",
+        "BAD_ENGINE",
+        "UNKNOWN_ENGINE",
+        "NOT_INITIALIZED",
+        "CRASHED_LAST_RUN"
+    )
+
     data class ImportResult(
         val success: Boolean,
         val importedVoices: List<String> = emptyList(),
-        val errorMessage: String? = null
+        val verifiedVoices: List<String> = emptyList(),
+        val errorMessage: String? = null,
+        val warning: String? = null
     )
+
+    /** نتيجة التحقق الأصلي بعد الاستيراد. */
+    private sealed class NativeVerification {
+        data class Passed(
+            val voices: List<String>,
+            val failed: List<String>
+        ) : NativeVerification()
+
+        data class Failed(val message: String) : NativeVerification()
+
+        data class Unavailable(val reason: String) : NativeVerification()
+    }
 
     /**
      * استيراد صوت Acapela من ملف ZIP عبر [Uri].
@@ -157,23 +203,12 @@ object AcapelaVoiceImporter {
                 VisibleEngines.setFilter(true, cur)
             }
 
-            AcapelaVoiceManifest.ensureVoiceInfFiles(baseDir)
-            val installedVoices = AcapelaVoiceManifest.listVoices(baseDir)
-            if (installedVoices.isNotEmpty()) {
-                EngineStatusRegistry.noteFilesPresent(
-                    AcapelaEmbeddedVoiceProvider.PROVIDER_ID
-                )
-                ImportResult(
-                    success = true,
-                    importedVoices = installedVoices.map { it.displayName }
-                )
-            } else {
-                ImportResult(
-                    success = false,
-                    errorMessage =
-                        "لم يتم العثور على أصوات Acapela صالحة بعد فك الضغط"
-                )
-            }
+            finishImport(
+                context = context,
+                baseDir = baseDir,
+                emptyMessage =
+                    "لم يتم العثور على أصوات Acapela صالحة بعد فك الضغط"
+            )
         } catch (t: Throwable) {
             Log.e(TAG, "فشل استخراج ملف ZIP لـ Acapela", t)
             ImportResult(
@@ -264,29 +299,139 @@ object AcapelaVoiceImporter {
                 VisibleEngines.setFilter(true, cur)
             }
 
-            AcapelaVoiceManifest.ensureVoiceInfFiles(baseDir)
-            val installedVoices = AcapelaVoiceManifest.listVoices(baseDir)
-            if (installedVoices.isNotEmpty()) {
-                EngineStatusRegistry.noteFilesPresent(
-                    AcapelaEmbeddedVoiceProvider.PROVIDER_ID
-                )
-                ImportResult(
-                    success = true,
-                    importedVoices = installedVoices.map { it.displayName }
-                )
-            } else {
-                ImportResult(
-                    success = false,
-                    errorMessage =
-                        "تم نسخ الملفات ولكن لم تكتمل بنية صوت Acapela"
-                )
-            }
+            finishImport(
+                context = context,
+                baseDir = baseDir,
+                emptyMessage =
+                    "تم نسخ الملفات ولكن لم تكتمل بنية صوت Acapela"
+            )
         } catch (t: Throwable) {
             Log.e(TAG, "فشل استيراد مجلد أصوات Acapela", t)
             ImportResult(
                 success = false,
                 errorMessage =
                     t.message ?: "حدث خطأ غير متوقع أثناء استيراد المجلد"
+            )
+        }
+    }
+
+    /**
+     * إنهاء الاستيراد: إزالة التهيئة المصطنعة فقط، ثم تعداد الأصوات
+     * والتحقق الأصلي من نطقها.
+     *
+     * تعذّر تشغيل المضيف (بيئة بلا مكتبة أصلية) لا يُفشل الاستيراد
+     * لأنه بيئي، وأي فشل صريح في تحميل الصوت أو صمته يُفشله فلا
+     * يُعلَن صوتٌ صامت جاهزاً.
+     */
+    private suspend fun finishImport(
+        context: Context,
+        baseDir: File,
+        emptyMessage: String
+    ): ImportResult {
+        AcapelaVoiceManifest.pruneSyntheticConfigs(baseDir)
+        AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
+        val voices = AcapelaVoiceManifest.listVoices(baseDir)
+        if (voices.isEmpty()) {
+            return ImportResult(success = false, errorMessage = emptyMessage)
+        }
+        EngineStatusRegistry.noteFilesPresent(
+            AcapelaEmbeddedVoiceProvider.PROVIDER_ID
+        )
+        val imported = voices.map { it.displayName }
+        return when (val check = verifyNative(context, baseDir, voices)) {
+            is NativeVerification.Passed -> ImportResult(
+                success = true,
+                importedVoices = imported,
+                verifiedVoices = check.voices,
+                warning = if (check.failed.isEmpty()) {
+                    null
+                } else {
+                    "أصوات لم تُثبت نطقها: ${check.failed.joinToString(", ")}"
+                }
+            )
+
+            is NativeVerification.Unavailable -> ImportResult(
+                success = true,
+                importedVoices = imported,
+                warning = "لم يُتحقق من النطق الآن (${check.reason})"
+            )
+
+            is NativeVerification.Failed -> ImportResult(
+                success = false,
+                errorMessage = check.message
+            )
+        }
+    }
+
+    /**
+     * تشغيل المضيف ثم نطق نصٍّ قصير بكل صوت: الصوت الصامت يُكتشف
+     * هنا لا عند أول استخدام.
+     */
+    private suspend fun verifyNative(
+        context: Context,
+        baseDir: File,
+        voices: List<AcapelaVoiceManifest.VoiceInfo>
+    ): NativeVerification {
+        val engineId = HostProtocol.ENGINE_ACAPELA
+        val init = withTimeoutOrNull(VERIFY_INIT_TIMEOUT_MS) {
+            EngineHostClient.init(
+                context,
+                engineId,
+                baseDir.absolutePath,
+                force = true
+            )
+        }
+        if (init == null) {
+            return NativeVerification.Unavailable("انتهت مهلة ربط المحرك")
+        }
+        if (!init.ok) {
+            val code = init.code.orEmpty()
+            if (code in UNVERIFIABLE_CODES || code.isBlank()) {
+                return NativeVerification.Unavailable(
+                    code.ifBlank { "HOST_UNAVAILABLE" }
+                )
+            }
+            return NativeVerification.Failed(
+                init.message?.takeIf { it.isNotBlank() }
+                    ?: "تعذر تحميل محرك Acapela [$code]"
+            )
+        }
+
+        val verified = mutableListOf<String>()
+        val failed = mutableListOf<String>()
+        var lastFailure: String? = null
+        for (voice in voices) {
+            var bytes = 0
+            val res = EngineHostClient.synthesize(
+                context = context,
+                engineId = engineId,
+                voiceId = voice.id,
+                text = VERIFY_TEXT,
+                rate = 1f,
+                pitch = 1f,
+                volume = 1f,
+                onFormatInfo = { _, _ -> },
+                onAudioChunk = { _, length -> bytes += length }
+            )
+            if (res.ok && bytes > 0) {
+                verified.add(voice.displayName)
+            } else {
+                failed.add(voice.displayName)
+                lastFailure = res.message?.takeIf { it.isNotBlank() }
+                    ?: res.code ?: "فشل التحقق"
+                Log.w(
+                    TAG,
+                    "تحقق Acapela [${voice.id}]: ${res.code} " +
+                        "${res.message}"
+                )
+            }
+        }
+        return if (verified.isNotEmpty()) {
+            NativeVerification.Passed(verified, failed)
+        } else {
+            NativeVerification.Failed(
+                lastFailure
+                    ?: "لم يُنتج أي صوت Acapela عيّنة صوتية"
             )
         }
     }
@@ -366,22 +511,11 @@ object AcapelaVoiceImporter {
                 VisibleEngines.setFilter(true, cur)
             }
 
-            AcapelaVoiceManifest.ensureVoiceInfFiles(baseDir)
-            val installedVoices = AcapelaVoiceManifest.listVoices(baseDir)
-            if (installedVoices.isNotEmpty()) {
-                EngineStatusRegistry.noteFilesPresent(
-                    AcapelaEmbeddedVoiceProvider.PROVIDER_ID
-                )
-                ImportResult(
-                    success = true,
-                    importedVoices = installedVoices.map { it.displayName }
-                )
-            } else {
-                ImportResult(
-                    success = false,
-                    errorMessage = "فشل التعرف على الأصوات بعد نسخها"
-                )
-            }
+            finishImport(
+                context = context,
+                baseDir = baseDir,
+                emptyMessage = "فشل التعرف على الأصوات بعد نسخها"
+            )
         } catch (t: Throwable) {
             Log.e(TAG, "فشل نسخ مجلد أصوات Acapela", t)
             ImportResult(

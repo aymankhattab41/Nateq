@@ -604,7 +604,13 @@ class AnnouncementSpeaker(
                 com.aymankhattab.nateq.core.audio.R.string
                     .emergency_voice_mode_announcement
             )
-            speak(announcement, Locale("ar"), 1.0f, 1.0f, 1.0f)
+            speak(
+                announcement,
+                Locale.forLanguageTag("ar"),
+                1.0f,
+                1.0f,
+                1.0f
+            )
         }
     }
 
@@ -1560,9 +1566,11 @@ class AnnouncementSpeaker(
             val em = EmergencyVoice.load(appContext)
             effEngine = if (em.isSaved) em.engine else null
             voiceId = if (em.isSaved) em.voice else null
-            effRate = if (em.isSaved) em.rate else 1.0f
-            effPitch = if (em.isSaved) em.pitch else 1.0f
-            effVolume = if (em.isSaved) em.volume else 1.0f
+            // بلا صوت طوارئ محفوظ يبقى معدل الطلب كما هو، فلا يهبط
+            // إلى 1.0 فيبدو النطق بطيئاً عند تعثّر المحرك.
+            effRate = if (em.isSaved) em.rate else speechRate
+            effPitch = if (em.isSaved) em.pitch else pitch
+            effVolume = if (em.isSaved) em.volume else volume
         } else {
             effEngine = resolvedEngine
             effRate = speechRate
@@ -2445,7 +2453,10 @@ speechCycle.incrementAndGet()
                                 channelConfig,
                                 AudioFormat.ENCODING_PCM_16BIT
                             )
-                            val bufSize = maxOf(minBuf, 8192)
+                            // مخزنٌ مضاعف (بحدٍّ أدنى 16KB): التخليق
+                            // قد يتوقّف لحظياً أثناء نداءٍ أصليّ، فمخزنٌ
+                            // صغير يُحدث تقطيعاً في الصوت المسموع.
+                            val bufSize = maxOf(minBuf * 2, 16_384)
                             val format = AudioFormat.Builder()
                                 .setSampleRate(sampleRateInHz)
                                 .setEncoding(AudioFormat.ENCODING_PCM_16BIT)

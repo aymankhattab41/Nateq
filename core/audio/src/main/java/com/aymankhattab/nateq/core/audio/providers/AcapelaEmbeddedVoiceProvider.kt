@@ -97,14 +97,44 @@ class AcapelaEmbeddedVoiceProvider(
             result.distinctBy { "${it.id}|${it.locale.language}" }
         }
 
+    /**
+     * علامة الانهيار القديمة (`CRASHED_LAST_RUN`) كانت تحجب التهيئة
+     * إلى الأبد: كل نداء يعود بالفشل نفسه فيبقى المحرك معطلاً حتى
+     * مسح البيانات. تُشفى الحالة بإعادة **واحدة** قسرية، فلا تكرار
+     * بلا نهاية إن كان العطل حقيقياً.
+     */
+    @Volatile
+    private var crashRetryDone = false
+
     private suspend fun ensureInitialized(): Boolean {
         val base = resolveDataDir() ?: return false
+        val engineId = HostProtocol.ENGINE_ACAPELA
+        val dir = base.absolutePath
         val res = EngineHostClient.init(
             context = context,
-            engineId = HostProtocol.ENGINE_ACAPELA,
-            dataDir = base.absolutePath
+            engineId = engineId,
+            dataDir = dir
         )
-        return res.ok
+        if (res.ok) return true
+        if (res.code == "CRASHED_LAST_RUN" && !crashRetryDone) {
+            crashRetryDone = true
+            Log.w(TAG, "شفاء Acapela بعد انهيار سابق: إعادة قسرية")
+            val retried = EngineHostClient.init(
+                context = context,
+                engineId = engineId,
+                dataDir = dir,
+                force = true
+            )
+            if (retried.ok) return true
+            EngineStatusRegistry.noteFailure(
+                PROVIDER_ID,
+                retried.code,
+                retried.message
+            )
+            return false
+        }
+        EngineStatusRegistry.noteFailure(PROVIDER_ID, res.code, res.message)
+        return false
     }
 
     override suspend fun synthesize(

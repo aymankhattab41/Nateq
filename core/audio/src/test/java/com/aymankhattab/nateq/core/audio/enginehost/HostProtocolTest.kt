@@ -181,6 +181,48 @@ class HostProtocolTest {
     }
 
     @Test
+    fun frames_pingRoundTripsWithoutPayload() {
+        val out = ByteArrayOutputStream()
+        val data = DataOutputStream(out)
+        HostProtocol.writeFormat(data, 22050, 1)
+        HostProtocol.writePing(data)
+
+        val input = DataInputStream(
+            ByteArrayInputStream(out.toByteArray())
+        )
+        assertTrue(
+            HostProtocol.readFrame(input) is HostProtocol.HostFrame.Format
+        )
+        assertEquals(
+            HostProtocol.HostFrame.Ping,
+            HostProtocol.readFrame(input)
+        )
+        assertNull(
+            "لا إطار بعد النبضة",
+            HostProtocol.readFrame(input)
+        )
+    }
+
+    @Test
+    fun frames_pingWithPayloadIsRejected() {
+        val out = ByteArrayOutputStream()
+        val data = DataOutputStream(out)
+        data.writeByte(4)
+        data.writeInt(2)
+        data.writeByte(1)
+        data.writeByte(2)
+        data.flush()
+        try {
+            HostProtocol.readFrame(
+                DataInputStream(ByteArrayInputStream(out.toByteArray()))
+            )
+            fail("نبضة بحمولة يجب أن تُرفض")
+        } catch (expected: IOException) {
+            // مطلوب: حمولة النبضة ليست صوتاً فلا تُفسَّر خطأً.
+        }
+    }
+
+    @Test
     fun frames_endCarriesNamedError() {
         val out = ByteArrayOutputStream()
         HostProtocol.writeEnd(
