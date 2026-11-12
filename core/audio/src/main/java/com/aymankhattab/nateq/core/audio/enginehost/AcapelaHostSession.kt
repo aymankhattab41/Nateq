@@ -350,14 +350,23 @@ internal class AcapelaHostSession(
         var loadedCount = 0
         var audioCount = 0
         for (voice in voices) {
-            val reg = if (voice.registration.isNotEmpty()) {
+            AcapelaVoiceManifest.normalizeExtensionsCase(voice.dir)
+            val reg: String = if (voice.registration.isNotEmpty()) {
                 voice.registration
             } else {
-                AcapelaVoiceManifest.findHexRegistrationFile(
-                    voice.dir
-                )?.name.orEmpty()
+                val fromVoice = AcapelaVoiceManifest
+                    .resolveRegistration(voice.dir)
+                val fromData = dataDirectory?.let {
+                    AcapelaVoiceManifest.resolveRegistration(it)
+                }.orEmpty()
+                fromVoice.ifEmpty { fromData }
             }
-            if (reg.isNotEmpty()) {
+            val hasExtendedIdentity = reg.isNotEmpty() ||
+                AcapelaVoiceManifest.hasVoiceIdentity(voice.dir) ||
+                voice.dir.listFiles { f ->
+                    f.name.endsWith(".inf", ignoreCase = true)
+                }?.isNotEmpty() == true
+            if (hasExtendedIdentity) {
                 val ok = verifyExtendedVoice(voice.copy(registration = reg))
                 if (ok) {
                     loadedCount++
@@ -450,33 +459,44 @@ internal class AcapelaHostSession(
         voice: AcapelaVoiceManifest.VoiceInfo
     ): Boolean {
         return try {
+            AcapelaVoiceManifest.normalizeExtensionsCase(voice.dir)
             File(voice.dir, "userdicos").mkdirs()
-            if (voice.registration.isNotEmpty() &&
-                !File(voice.dir, voice.registration).exists()
+            val fromVoice = AcapelaVoiceManifest
+                .resolveRegistration(voice.dir)
+            val fromData = dataDirectory?.let {
+                AcapelaVoiceManifest.resolveRegistration(it)
+            }.orEmpty()
+            val effectiveReg: String = voice.registration.ifEmpty {
+                fromVoice.ifEmpty { fromData }
+            }
+            if (effectiveReg.isNotEmpty() &&
+                !File(voice.dir, effectiveReg).exists()
             ) {
                 val hexFile = AcapelaVoiceManifest.findHexRegistrationFile(
                     voice.dir
-                )
-                if (hexFile != null && hexFile.name == voice.registration) {
+                ) ?: dataDirectory?.let {
+                    AcapelaVoiceManifest.findHexRegistrationFile(it)
+                }
+                if (hexFile != null && hexFile.name == effectiveReg) {
                     runCatching {
                         hexFile.copyTo(
-                            File(voice.dir, voice.registration),
+                            File(voice.dir, effectiveReg),
                             overwrite = true
                         )
                     }
-                } else if (voice.registration.matches(
+                } else if (effectiveReg.matches(
                         AcapelaVoiceManifest.HEX_REGISTRATION_REGEX
                     )
                 ) {
                     runCatching {
-                        File(voice.dir, voice.registration).createNewFile()
+                        File(voice.dir, effectiveReg).createNewFile()
                     }
                 }
             }
 
             val srv = AcattsandroidService({ bArr, len ->
                 if (len > 0) verifyAudio.set(true)
-            }, voice.registration)
+            }, effectiveReg)
             val vDir = if (voice.dir.absolutePath.endsWith(File.separator)) {
                 voice.dir.absolutePath
             } else {
@@ -542,7 +562,7 @@ internal class AcapelaHostSession(
             if (speakRes == 0) {
                 val startWait = SystemClock.uptimeMillis()
                 while (!verifyAudio.get() &&
-                    (SystemClock.uptimeMillis() - startWait) < 300L
+                    (SystemClock.uptimeMillis() - startWait) < 600L
                 ) {
                     Thread.sleep(20L)
                 }
@@ -652,17 +672,28 @@ internal class AcapelaHostSession(
 
             val chunks = splitAcapelaChunks(req.text, 200)
 
-            val effectiveReg = if (
+            val effectiveReg: String = if (
                 voiceInfo?.registration?.isNotEmpty() == true
             ) {
                 voiceInfo.registration
             } else {
-                voiceInfo?.let {
-                    AcapelaVoiceManifest.findHexRegistrationFile(it.dir)?.name
-                } ?: AcapelaVoiceManifest.findHexRegistrationFile(dir)?.name
-            }.orEmpty()
+                val fromInfo = voiceInfo?.let {
+                    AcapelaVoiceManifest.resolveRegistration(it.dir)
+                }
+                val fromDir = dir?.let {
+                    AcapelaVoiceManifest.resolveRegistration(it)
+                }.orEmpty()
+                fromInfo?.ifEmpty { fromDir } ?: fromDir
+            }
 
-            if (effectiveReg.isNotEmpty()) {
+            val isExtended = effectiveReg.isNotEmpty() ||
+                (voiceInfo != null &&
+                    AcapelaVoiceManifest.hasVoiceIdentity(voiceInfo.dir)) ||
+                (voiceInfo?.dir?.listFiles { f ->
+                    f.name.endsWith(".inf", ignoreCase = true)
+                }?.isNotEmpty() == true)
+
+            if (isExtended) {
                 val targetInfo = voiceInfo?.copy(registration = effectiveReg)
                     ?: AcapelaVoiceManifest.VoiceInfo(
                         id = cleanVoiceId,
@@ -740,6 +771,7 @@ internal class AcapelaHostSession(
             extendedService?.let { runCatching { it.nShutdown() } }
             extendedService = null
 
+            AcapelaVoiceManifest.normalizeExtensionsCase(voiceInfo.dir)
             File(voiceInfo.dir, "userdicos").mkdirs()
             if (voiceInfo.registration.isNotEmpty() &&
                 !File(voiceInfo.dir, voiceInfo.registration).exists()

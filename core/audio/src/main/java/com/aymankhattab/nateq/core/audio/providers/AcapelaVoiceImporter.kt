@@ -230,6 +230,7 @@ object AcapelaVoiceImporter {
                         )
                     }
                 }
+                AcapelaVoiceManifest.normalizeExtensionsCase(targetDir)
             }
 
             if (hexFile != null) {
@@ -310,6 +311,7 @@ object AcapelaVoiceImporter {
                 val voiceDirName = rootDoc.name?.ifBlank { "voice" } ?: "voice"
                 val targetDir = File(baseDir, voiceDirName).apply { mkdirs() }
                 copiedFilesCount += copyDocFiles(context, children, targetDir)
+                AcapelaVoiceManifest.normalizeExtensionsCase(targetDir)
             } else {
                 for (subDoc in children) {
                     if (subDoc.isDirectory) {
@@ -328,6 +330,8 @@ object AcapelaVoiceImporter {
                             copiedFilesCount += copyDocFiles(
                                 context, subFiles, targetDir
                             )
+                            AcapelaVoiceManifest
+                                .normalizeExtensionsCase(targetDir)
                         }
                     }
                 }
@@ -409,6 +413,11 @@ object AcapelaVoiceImporter {
         val imported = voices.map { it.displayName }
         val check = verifyNative(context, baseDir, voices)
         CategoryFailureTracker.reset()
+        if (check is NativeVerification.Passed) {
+            EngineStatusRegistry.noteReady(
+                AcapelaEmbeddedVoiceProvider.PROVIDER_ID
+            )
+        }
         return when (check) {
             is NativeVerification.Passed -> ImportResult(
                 success = true,

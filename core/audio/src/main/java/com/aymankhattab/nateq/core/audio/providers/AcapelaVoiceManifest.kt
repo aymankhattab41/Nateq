@@ -124,6 +124,18 @@ object AcapelaVoiceManifest {
         }?.firstOrNull()
         if (direct != null) return direct
 
+        val regTxt = File(dir, "registration.txt")
+        if (regTxt.exists()) {
+            val text = runCatching {
+                regTxt.readText(StandardCharsets.ISO_8859_1).trim()
+            }.getOrNull()
+            if (text != null && text.matches(HEX_REGISTRATION_REGEX)) {
+                val f = File(dir, text)
+                if (!f.exists()) runCatching { f.createNewFile() }
+                return f
+            }
+        }
+
         var cur = dir.parentFile
         var depth = 0
         while (cur != null && depth < 4) {
@@ -131,6 +143,17 @@ object AcapelaVoiceManifest {
                 f.isFile && f.name.matches(HEX_REGISTRATION_REGEX)
             }?.firstOrNull()
             if (parentFile != null) return parentFile
+            val parentReg = File(cur, "registration.txt")
+            if (parentReg.exists()) {
+                val text = runCatching {
+                    parentReg.readText(StandardCharsets.ISO_8859_1).trim()
+                }.getOrNull()
+                if (text != null && text.matches(HEX_REGISTRATION_REGEX)) {
+                    val f = File(cur, text)
+                    if (!f.exists()) runCatching { f.createNewFile() }
+                    return f
+                }
+            }
             cur = cur.parentFile
             depth++
         }
@@ -268,6 +291,37 @@ object AcapelaVoiceManifest {
         }
     }
 
+    fun hasVoiceIdentity(f: File): Boolean {
+        if (!f.exists() || !f.isFile) return false
+        val text = runCatching {
+            f.readText(StandardCharsets.ISO_8859_1)
+        }.getOrDefault("")
+        val lower = text.lowercase(Locale.ROOT)
+        return lower.contains("speaker") || lower.contains("isocode") ||
+            lower.contains("voicename") || lower.contains("voice")
+    }
+
+    fun normalizeExtensionsCase(dir: File) {
+        val files = dir.listFiles() ?: return
+        for (f in files) {
+            if (f.isFile) {
+                val ext = f.extension
+                val lowerExt = ext.lowercase(Locale.ROOT)
+                if (ext != lowerExt && (lowerExt in CONFIG_EXTENSIONS ||
+                        lowerExt in DATA_EXTENSIONS)
+                ) {
+                    val target = File(
+                        dir,
+                        "${f.nameWithoutExtension}.$lowerExt"
+                    )
+                    if (!target.exists()) {
+                        runCatching { f.copyTo(target, overwrite = false) }
+                    }
+                }
+            }
+        }
+    }
+
     /**
      * إزالة ملفات التهيئة **المصطنعة** التي ثُبِت أنها بلا أي توجيه
      * صوتي، وعند وجود ملف `.inf` غنيّ سليم في المجلد نفسه فقط.
@@ -329,6 +383,7 @@ object AcapelaVoiceManifest {
         if (!baseDir.exists() || !baseDir.isDirectory) return
         for (dir in completeVoiceDirs(baseDir)) {
             runCatching {
+                normalizeExtensionsCase(dir)
                 val dataFiles = dir.listFiles { f ->
                     f.isFile && f.extension.lowercase(Locale.ROOT) in
                         DATA_EXTENSIONS
@@ -485,10 +540,12 @@ object AcapelaVoiceManifest {
 
                 val cleanSpk = cleanAcapelaSpeaker(detectedSpeaker)
 
-                // الاسم المعتمد الوحيد لملف التهيئة لتجنب تكرار .inf
-                // في readdir عند البحث nGetVoiceList
-                val richInf = infFiles.firstOrNull { isRichConfig(it) }
-                if (richInf != null) {
+                normalizeExtensionsCase(dir)
+                // إن وُجد ملف .inf أصلي صالح، نكتفي بتطبيع الحالة ونحفظه
+                val validInf = infFiles.firstOrNull {
+                    isRichConfig(it) || hasVoiceIdentity(it)
+                }
+                if (validInf != null) {
                     return@runCatching
                 }
                 val canonicalName =
