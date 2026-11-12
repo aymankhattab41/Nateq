@@ -713,6 +713,9 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Fixed speech rate delay and fluctuations on long sentences by smoothly chunking text at punctuation and whitespace boundaries for seamless audio streaming.
+• Fixed auto language switching loss where a single voice was used across languages by normalizing language tags, explicitly assigning matching voices in system engines, and gracefully falling back when embedded engine voices are unavailable.
+• Fully enabled the embedded Acapela engine based on native engineering by integrating AcattsandroidService bridge, parameter decryption, runtime.dat license configuration, and robust path handling.
 • Comprehensive stability improvements for embedded voice directory scanning, configuration handling, cleanup of redundant files, and preserving active audio pipeline health during synchronous native processing.
 • Unified speech rate and pitch application between preview and background reading by sending rate and pitch as integer percentages via Binder IPC to prevent ClassCastException in MultiTTS and system engines, and ensuring Lord TTS configured default rates are preserved in the speech planner.
 • Resolved embedded Acapela voice loading failure (e.g. Salma init error -7) by extracting and writing full native database file directives (FILE, BNF, PHM, FILEMAP) into both .inf and .ini files matching the native C library requirements.

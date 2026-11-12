@@ -37,7 +37,8 @@ object AcapelaVoiceManifest {
         val sampleRate: Int = DEFAULT_SAMPLE_RATE,
         val dir: File,
         val rawSpeaker: String? = null,
-        val configFile: File? = null
+        val configFile: File? = null,
+        val registration: String = ""
     )
 
     /**
@@ -402,8 +403,11 @@ object AcapelaVoiceManifest {
                 // الاسم المعتمد الوحيد لملف التهيئة لتجنب تكرار .inf
                 // في readdir عند البحث nGetVoiceList
                 val richInf = infFiles.firstOrNull { isRichConfig(it) }
-                val canonicalName = richInf?.nameWithoutExtension
-                    ?: infFiles.firstOrNull()?.nameWithoutExtension
+                if (richInf != null) {
+                    return@runCatching
+                }
+                val canonicalName =
+                    infFiles.firstOrNull()?.nameWithoutExtension
                     ?: cleanSpk.ifBlank { detectedSpeaker }
 
                 // حذف أي ملفات .inf / .ini / .cfg بديلة في المجلد نفسه
@@ -578,6 +582,10 @@ object AcapelaVoiceManifest {
             isoCode, finalName, cf.nameWithoutExtension
         )
         val display = displayNameOf(finalName, locale)
+        val rawReg = firstValue(pairs, "registration")
+        val rawParam = firstValue(pairs, "param")
+        val parentDir = cf.parentFile ?: cf
+        val reg = resolveRegistration(parentDir, rawReg, rawParam)
 
         return VoiceInfo(
             id = finalName,
@@ -585,9 +593,10 @@ object AcapelaVoiceManifest {
             displayName = display,
             locale = locale,
             sampleRate = sampleRate,
-            dir = cf.parentFile ?: cf,
+            dir = parentDir,
             rawSpeaker = rawSpeaker,
-            configFile = cf
+            configFile = cf,
+            registration = reg
         )
     }
 
@@ -614,14 +623,95 @@ object AcapelaVoiceManifest {
             ?: dir.name
         val voiceName = cleanAcapelaSpeaker(rawName)
         val locale = resolveLocale(null, voiceName, rawName)
+        val reg = resolveRegistration(dir, null, null)
 
         return VoiceInfo(
             id = voiceName,
             voiceName = voiceName,
             displayName = displayNameOf(voiceName, locale),
             locale = locale,
-            dir = dir
+            dir = dir,
+            registration = reg
         )
+    }
+
+    /**
+     * حل رمز التسجيل لمحرك Acapela من الحقول المباشرة أو ملفات JSON.
+     */
+    fun resolveRegistration(
+        dir: File,
+        rawReg: String? = null,
+        rawParam: String? = null
+    ): String {
+        if (!rawReg.isNullOrBlank()) return rawReg.trim()
+        val jsonReg = findRegistrationInJson(dir)
+        if (!jsonReg.isNullOrBlank()) return jsonReg.trim()
+        val paramCandidate = rawParam?.takeIf { it.isNotBlank() }
+            ?: findParamInJson(dir)
+        if (!paramCandidate.isNullOrBlank()) {
+            val decoded = runCatching {
+                AcapelaMetadataCodec.fromAssets().decode(paramCandidate)
+            }.getOrNull()
+            if (!decoded.isNullOrBlank()) {
+                val parts = decoded.split(',')
+                return if (parts.size >= 3) {
+                    parts[1].trim() + parts[2].trim()
+                } else {
+                    decoded.trim()
+                }
+            }
+        }
+        val regFile = File(dir, "registration.txt")
+        if (regFile.exists()) {
+            return runCatching {
+                regFile.readText(StandardCharsets.ISO_8859_1).trim()
+            }.getOrDefault("")
+        }
+        return ""
+    }
+
+    private fun findParamInJson(dir: File): String? {
+        val candidates = listOf("voice.json", "config.json", "multivoice.json")
+        val dirs = listOfNotNull(dir, dir.parentFile)
+        val regex = Regex("\"param\"\\s*:\\s*\"([^\"]+)\"")
+        for (d in dirs) {
+            for (name in candidates) {
+                val f = File(d, name)
+                if (f.isFile && f.exists()) {
+                    val content = runCatching {
+                        f.readText(StandardCharsets.UTF_8)
+                    }.getOrNull()
+                    if (content != null && content.contains("\"param\"")) {
+                        val m = regex.find(content)
+                        if (m != null) return m.groupValues[1]
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    private fun findRegistrationInJson(dir: File): String? {
+        val candidates = listOf("voice.json", "config.json", "multivoice.json")
+        val dirs = listOfNotNull(dir, dir.parentFile)
+        val regex = Regex("\"registration\"\\s*:\\s*\"([^\"]+)\"")
+        for (d in dirs) {
+            for (name in candidates) {
+                val f = File(d, name)
+                if (f.isFile && f.exists()) {
+                    val content = runCatching {
+                        f.readText(StandardCharsets.UTF_8)
+                    }.getOrNull()
+                    if (content != null &&
+                        content.contains("\"registration\"")
+                    ) {
+                        val m = regex.find(content)
+                        if (m != null) return m.groupValues[1]
+                    }
+                }
+            }
+        }
+        return null
     }
 
     /**

@@ -1078,10 +1078,14 @@ class SettingsRepository(context: Context) :
     }
 
     /** الصوت المفضّل لكل لغة (languageTag -> voiceId) */
-    override fun getPreferredVoiceId(languageTag: String): String? =
-        normalizeVoiceId(
-            prefs.getString("preferred_voice_$languageTag", null)
-        )
+    override fun getPreferredVoiceId(languageTag: String): String? {
+        val norm = ConvertPreferencesCodec.normalizeLanguageTag(languageTag)
+        val direct = prefs.getString("preferred_voice_$languageTag", null)
+            ?: prefs.getString("preferred_voice_$norm", null)
+            ?: prefs.getString("primary_voice_$languageTag", null)
+            ?: prefs.getString("primary_voice_$norm", null)
+        return normalizeVoiceId(direct)
+    }
     override fun setPreferredVoiceId(languageTag: String, voiceId: String) {
         val key = ConvertPreferencesCodec.normalizeLanguageTag(languageTag)
         val editor = prefs.edit()
@@ -2870,16 +2874,38 @@ class SettingsRepository(context: Context) :
         }
     }
 
-    /** محرك النطق الصريح للغة معيّنة (سارٍ في النطق العام بلا ربط
-     *  بحالة التحويل التلقائي)، null إن لم يُحدَّد محركٌ للغة. */
-    override fun getEngineForLanguage(languageTag: String): String? =
-        getEnginePreferenceForLanguage(languageTag).engine
+    /**
+     * محرك النطق الصريح للغة معيّنة (سارٍ في النطق العام
+     * بلا ربط بحالة التحويل التلقائي)، null إن لم يُحدَّد.
+     */
+    override fun getEngineForLanguage(languageTag: String): String? {
+        val direct = getEnginePreferenceForLanguage(languageTag).engine
+        if (!direct.isNullOrBlank()) return direct
+        val norm = ConvertPreferencesCodec.normalizeLanguageTag(languageTag)
+        if (norm != languageTag) {
+            return getEnginePreferenceForLanguage(norm).engine
+        }
+        return null
+    }
 
-    /** صوت المحرك الصريح (داخل محرك اللغة) للغة معيّنة، null إن لم يُحدَّد. */
-    override fun getVoiceForLanguage(languageTag: String): String? =
-        getEnginePreferenceForLanguage(languageTag).voiceName
+    /**
+     * صوت المحرك الصريح (داخل محرك اللغة) للغة معيّنة،
+     * null إن لم يُحدَّد.
+     */
+    override fun getVoiceForLanguage(languageTag: String): String? {
+        val direct = getEnginePreferenceForLanguage(languageTag).voiceName
+        if (!direct.isNullOrBlank()) return direct
+        val norm = ConvertPreferencesCodec.normalizeLanguageTag(languageTag)
+        if (norm != languageTag) {
+            return getEnginePreferenceForLanguage(norm).voiceName
+        }
+        return null
+    }
 
-    /** كل تفضيلات التحويل الحالية (لغة -> مدخل) للعرض في قائمة الإعدادات. */
+    /**
+     * كل تفضيلات التحويل الحالية (لغة -> مدخل)
+     * للعرض في قائمة الإعدادات.
+     */
     override fun allConvertLanguagePreferences():
         Map<String, LanguageSpeechPrefs> {
         ensureConvertSlotsMigrated()
@@ -2891,9 +2917,13 @@ class SettingsRepository(context: Context) :
         languageTag: String
     ): String? {
         val key = ConvertPreferencesCodec.normalizeLanguageTag(languageTag)
-        return normalizeVoiceId(
-            prefs.getString("preferred_voice_${engine}_$key", null)
+        val fromKey = prefs.getString("preferred_voice_${engine}_$key", null)
+        if (!fromKey.isNullOrBlank()) return normalizeVoiceId(fromKey)
+        val direct = prefs.getString(
+            "preferred_voice_${engine}_$languageTag",
+            null
         )
+        return normalizeVoiceId(direct)
     }
 
     override fun setPreferredVoiceForEngine(

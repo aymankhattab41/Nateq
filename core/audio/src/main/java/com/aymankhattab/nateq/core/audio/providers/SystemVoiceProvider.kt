@@ -1019,6 +1019,7 @@ class SystemVoiceProvider(
         // إن اختار المستخدم صوتاً محدداً من حوار التحويل (اسم صوت في محرك
         // خارجي مثل MultiTTS) نطبّقه هنا عبر `voice`، مع التراجع الصامت إلى
         // اللغة إذا لم يجده المحرك (تجنّباً لكسر النطق لمجرد اسم غير مطابق).
+        val targetLang = normalizeLanguage(voice.locale.language)
         val isGenericVoice = desiredVoiceName.isNullOrBlank() ||
             desiredVoiceName.equals("Device Default", ignoreCase = true) ||
             desiredVoiceName.equals("ar-EG", ignoreCase = true) ||
@@ -1027,15 +1028,12 @@ class SystemVoiceProvider(
             desiredVoiceName.equals("en", ignoreCase = true)
 
         var voiceApplied = false
-        if (!isGenericVoice) {
+        if (!desiredVoiceName.isNullOrBlank() &&
+            !desiredVoiceName.equals("Device Default", ignoreCase = true)
+        ) {
             runCatching {
                 val matching = matchVoice(engine.voices, desiredVoiceName)
                 if (matching != null) {
-                    // صوتٌ يتطلب اتصالاً (جوجل السحابي)
-                    // مع غياب الإنترنت: تراجع فوري دون دفع
-                    // المحرك لانتظارِ مهلة التوليد كاملة عبثاً —
-                    // الحالة يُرسلها [connectivity] استباقياً
-                    // عبر NetworkCallback ومحسوبة حيّاً لحظياً.
                     if (matching.isNetworkConnectionRequired &&
                         !connectivity.isOnlineNow()
                     ) {
@@ -1047,8 +1045,6 @@ class SystemVoiceProvider(
                         return false
                     }
                     engine.voice = matching
-                    // ع٢٩-ج: تحقق من تطبيق الصوت فعلياً
-                    // (VoiceApplyMismatch)
                     val appliedVoice = runCatching {
                         engine.voice
                     }.getOrNull()?.name
@@ -1063,7 +1059,7 @@ class SystemVoiceProvider(
                         runCatching { engine.voice = matching }
                     }
                     voiceApplied = true
-                } else {
+                } else if (!isGenericVoice) {
                     Log.w(
                         TAG,
                         "[Provider] desired voice ($desiredVoiceName) " +
@@ -1074,19 +1070,16 @@ class SystemVoiceProvider(
         }
 
         if (!voiceApplied) {
-            // ع٢٩-ج: تطبيق EngineQuirks قبل setVoice
             val quirks = enginePackage?.let { EngineQuirks.forPackage(it) }
             val needsLangFirst = quirks?.needsSetLanguageBeforeSetVoice == true
             val needsRegion = quirks?.requiresLocaleWithRegion == true
 
-            // needsSetLanguageBeforeSetVoice: تعيين اللغة قبل الصوت
             if (needsLangFirst) {
                 runCatching { engine.setLanguage(voice.locale) }
             }
-            // requiresLocaleWithRegion: استخدام ar-AE الفعلي من أصوات المحرك
             val effectiveLocale = if (needsRegion) {
                 engine.voices?.firstOrNull {
-                    it.locale.language == voice.locale.language
+                    normalizeLanguage(it.locale.language) == targetLang
                 }?.locale ?: voice.locale
             } else {
                 voice.locale
@@ -1095,28 +1088,30 @@ class SystemVoiceProvider(
                 runCatching { engine.setLanguage(effectiveLocale) }
             }
 
-            // إن لم يُحدد اسم صوت صريح، نتحقق أن صوت المحرك الحالي
-            // يطابق لغة النطق المطلوبة حتى لا يبقى المحرك على صوت لغة سابقة
-            // (كالإنجليزية) عند نطق مقطع عربي فيقرأ الحروف هجاءً مفرّقاً.
             runCatching {
                 val current = engine.voice
+                val curLang = current?.locale?.language?.let {
+                    normalizeLanguage(it)
+                }
                 if (current == null ||
-                    current.locale.language != voice.locale.language ||
+                    curLang != targetLang ||
                     !voiceApplied
                 ) {
                     val matching = engine.voices
                         ?.filter {
-                            it.locale.language == voice.locale.language
+                            normalizeLanguage(it.locale.language) == targetLang
                         }
                         ?.sortedWith(
                             compareBy(
                                 { it.isNetworkConnectionRequired },
-                                { it.locale.country != voice.locale.country }
+                                {
+                                    normalizeLanguage(it.locale.country) !=
+                                        normalizeLanguage(voice.locale.country)
+                                }
                             )
                         )?.firstOrNull()
                     if (matching != null) {
                         engine.voice = matching
-                        // ع٢٩-ج: تحقق من تطبيق الصوت فعلياً
                         val appliedVoice = runCatching {
                             engine.voice
                         }.getOrNull()?.name
@@ -1131,6 +1126,7 @@ class SystemVoiceProvider(
                             )
                             runCatching { engine.voice = matching }
                         }
+                        voiceApplied = true
                     } else {
                         runCatching { engine.setLanguage(effectiveLocale) }
                     }

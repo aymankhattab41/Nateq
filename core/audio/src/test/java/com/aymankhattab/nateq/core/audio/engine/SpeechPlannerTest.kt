@@ -287,4 +287,32 @@ class SpeechPlannerTest {
             resolution.voiceId
         )
     }
+
+    @Test
+    fun splitLongSentenceChunks_shortText_remainsSingle() {
+        val short = "هذه جملة قصيرة عادية."
+        val chunks = SpeechPlanner.splitLongSentenceChunks(short, 220)
+        assertEquals(1, chunks.size)
+        assertEquals(short, chunks[0])
+    }
+
+    @Test
+    fun splitLongSentenceChunks_longTextWithDelimiters_splitsCorrectly() {
+        val s1 = "هذه هي الجملة الأولى الطويلة التي تحتوي على تفاصيل كثيرة " +
+            "لتوضيح الأمر للقارئ بشكل كامل ومفصل."
+        val s2 = "وهذه هي الجملة الثانية التي تلي الأولى وتوضح فكرة جديدة " +
+            "ومفيدة في سياق الحديث والنطق."
+        val s3 = "أما الجملة الثالثة فهي خاتمة هذا النص الطويل المنطوق."
+        val full = "$s1 $s2 $s3"
+        assertTrue("النص أطول من 220 حرفاً", full.length > 220)
+
+        val chunks = SpeechPlanner.splitLongSentenceChunks(full, 220)
+        assertTrue("تم التقسيم إلى مقاطع متعددة", chunks.size > 1)
+        for (chunk in chunks) {
+            assertTrue(
+                "طول كل مقطع أقل من أو يساوي 220 حرفاً: ${chunk.length}",
+                chunk.length <= 220
+            )
+        }
+    }
 }
