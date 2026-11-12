@@ -364,9 +364,12 @@ internal class AcapelaHostSession(
             for (cand in candidates) {
                 val code = runCatching { inst.nLoadVoice(cand) }
                     .getOrDefault(-1)
-                if (code == 0) {
+                if (code >= 0) {
                     loadedName = cand
-                    loadCode = 0
+                    loadCode = code
+                    if (code > 0) {
+                        currentSampleRate = code
+                    }
                     break
                 }
                 loadCode = code
@@ -435,8 +438,12 @@ internal class AcapelaHostSession(
                 return false
             }
             srv.nSetVoiceMode("MODE=prep_hd")
-            val iso3Lang = voice.locale.isO3Language
-            val iso3Country = voice.locale.isO3Country
+            val iso3Lang = runCatching { voice.locale.isO3Language }
+                .getOrDefault("")
+                .ifEmpty { "ara" }
+            val iso3Country = runCatching { voice.locale.isO3Country }
+                .getOrDefault("")
+            srv.nUtf8Mode(iso3Lang, iso3Country)
             srv.nSetLanguage(iso3Lang, iso3Country, "")
             val spk = voice.rawSpeaker ?: voice.voiceName
             val setVoiceRes = srv.nSetCurrentVoice(spk)
@@ -636,8 +643,12 @@ internal class AcapelaHostSession(
                 )
             }
             srv.nSetVoiceMode("MODE=prep_hd")
-            val iso3Lang = voiceInfo.locale.isO3Language
-            val iso3Country = voiceInfo.locale.isO3Country
+            val iso3Lang = runCatching { voiceInfo.locale.isO3Language }
+                .getOrDefault("")
+                .ifEmpty { "ara" }
+            val iso3Country = runCatching { voiceInfo.locale.isO3Country }
+                .getOrDefault("")
+            srv.nUtf8Mode(iso3Lang, iso3Country)
             srv.nSetLanguage(iso3Lang, iso3Country, "")
             val spk = voiceInfo.rawSpeaker ?: voiceInfo.voiceName
             val voiceRes = srv.nSetCurrentVoice(spk)
@@ -828,12 +839,15 @@ internal class AcapelaHostSession(
         try {
             for (cand in candidates) {
                 loadRes = inst.nLoadVoice(cand)
-                if (loadRes == 0) {
+                if (loadRes >= 0) {
                     loadedName = cand
+                    if (loadRes > 0) {
+                        currentSampleRate = loadRes
+                    }
                     break
                 }
             }
-            if (loadRes != 0) {
+            if (loadRes < 0) {
                 // المكتبة لم تسجّل الأصوات بعد (أو نُسيت قائمتها):
                 // أعد مسح المسارات ثم أعد المحاولة.
                 val extraDirs = EmbeddedStorage.allSearchDirs(
@@ -849,8 +863,11 @@ internal class AcapelaHostSession(
                 )
                 for (cand in candidates) {
                     loadRes = inst.nLoadVoice(cand)
-                    if (loadRes == 0) {
+                    if (loadRes >= 0) {
                         loadedName = cand
+                        if (loadRes > 0) {
+                            currentSampleRate = loadRes
+                        }
                         break
                     }
                 }
@@ -859,7 +876,7 @@ internal class AcapelaHostSession(
             sink.exitNativeCall()
         }
 
-        if (loadRes == 0) {
+        if (loadRes >= 0) {
             currentVoiceId = loadedName ?: targetName
             Log.i(TAG, "تم تحميل صوت Acapela [$currentVoiceId] بنجاح")
             return null

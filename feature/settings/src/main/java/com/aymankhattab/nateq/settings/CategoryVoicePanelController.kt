@@ -306,17 +306,17 @@ internal class CategoryVoicePanelController(
                 ) {
                     if (bindingInputs) return
                     val chosen = voiceOptions.getOrNull(pos) ?: return
-                    val owningEngine = catalog.engineOfVoice(
-                        chosen.name,
-                        currentPanelLanguage
-                    )
-                    if (owningEngine != null) {
-                        val currentEngPos =
-                            spinnerEngine?.selectedItemPosition ?: -1
-                        val currentEng =
-                            categoryEngines.getOrNull(currentEngPos)
-                                ?.packageName
-                        if (currentEng != owningEngine) {
+                    val currentEngPos =
+                        spinnerEngine?.selectedItemPosition ?: -1
+                    val currentEng =
+                        categoryEngines.getOrNull(currentEngPos)
+                            ?.packageName
+                    if (currentEng == null) {
+                        val owningEngine = catalog.engineOfVoice(
+                            chosen.name,
+                            currentPanelLanguage
+                        )
+                        if (owningEngine != null) {
                             val newEngIdx = categoryEngines.indexOfFirst {
                                 it.packageName == owningEngine
                             }
@@ -606,13 +606,26 @@ if (!dirtyPanel) {
             settings.getEngineForCategory(key)
         }.getOrNull()
         val voiceEngine = savedVoice?.let {
-            catalog.engineOfVoice(it, currentPanelLanguage)
+            catalog.engineOfVoice(
+                it,
+                currentPanelLanguage,
+                preferredEngine = storedEngine
+            )
         }
-        val effectiveEngine = if (
-            storedEngine != null &&
-            savedVoice != null &&
-            !VoiceIdContract.isVoiceBelongingToEngine(storedEngine, savedVoice)
-        ) {
+        val storedBelongs = if (storedEngine != null && savedVoice != null) {
+            val valid = catalog.voicesFor(currentPanelLanguage, storedEngine)
+            if (valid.isNotEmpty()) {
+                valid.any { it.name == savedVoice }
+            } else {
+                VoiceIdContract.isVoiceBelongingToEngine(
+                    storedEngine,
+                    savedVoice
+                )
+            }
+        } else {
+            true
+        }
+        val effectiveEngine = if (storedEngine != null && !storedBelongs) {
             voiceEngine ?: storedEngine
         } else {
             storedEngine ?: voiceEngine
@@ -1029,9 +1042,10 @@ if (!dirtyPanel) {
                 categoryEngines.getOrNull(engineIdx)?.packageName
             val owningEngine = catalog.engineOfVoice(
                 chosenVoice.name,
-                currentPanelLanguage
+                currentPanelLanguage,
+                preferredEngine = selectedEngine
             )
-            val effectiveEngine = owningEngine ?: selectedEngine
+            val effectiveEngine = selectedEngine ?: owningEngine
             if (effectiveEngine != null && isEmbeddedEngine(effectiveEngine)) {
                 val status = EngineStatusRegistry.statusOf(
                     fragment.requireContext(), effectiveEngine
@@ -1225,15 +1239,18 @@ if (!dirtyPanel) {
         val voiceName = voiceOptions
             .getOrNull(voiceIndex)?.name.orEmpty()
         val enginePkg = if (categoryHasDedicatedEngine(entry.categoryKey)) {
-            val owningEngine = catalog.engineOfVoice(
+            val selected = categoryEngines
+                .getOrNull(spinnerEngine?.selectedItemPosition ?: 0)
+                ?.packageName
+            selected ?: catalog.engineOfVoice(
                 voiceName,
                 currentPanelLanguage
             )
-            owningEngine ?: categoryEngines
-                .getOrNull(spinnerEngine?.selectedItemPosition ?: 0)
-                ?.packageName
         } else {
-            null
+            catalog.engineOfVoice(
+                voiceName,
+                currentPanelLanguage
+            )
         }
         val canonEngine = enginePkg?.let {
             HostProtocol.normalizeEngineId(it)

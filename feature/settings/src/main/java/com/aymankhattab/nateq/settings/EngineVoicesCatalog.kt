@@ -222,16 +222,25 @@ internal class EngineVoicesCatalog(
 
     /**
      * يعيد اسم حزمة المحرك الذي يملك هذا الصوت، أو null إن لم يُعثَر عليه.
+     * يُفضَّل [preferredEngine] إن كان يملك الصوت لمنع الخلط بين المحركات.
      */
     internal fun engineOfVoice(
         voiceName: String,
-        language: String? = null
+        language: String? = null,
+        preferredEngine: String? = null
     ): String? {
         if (voiceName.isBlank()) return null
         val rowsList = if (language != null) {
             byLanguage[language].orEmpty()
         } else {
             byLanguage.values.flatten()
+        }
+        if (preferredEngine != null) {
+            val prefRow = rowsList.firstOrNull {
+                it.enginePackage == preferredEngine &&
+                    it.voices.any { v -> v.name == voiceName }
+            }
+            if (prefRow != null) return prefRow.enginePackage
         }
         for (row in rowsList) {
             if (row.voices.any { it.name == voiceName }) {

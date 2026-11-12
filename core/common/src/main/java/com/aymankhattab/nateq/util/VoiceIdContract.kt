@@ -167,7 +167,12 @@ object VoiceIdContract {
             }
         }
 
-        if (lowerEng.contains("acapela")) {
+        val isAcapelaEmbedded = lowerEng == "acapela" ||
+            lowerEng == "acapela_embedded"
+        val isAcapelaExternal = lowerEng.contains("acapela") &&
+            !isAcapelaEmbedded
+
+        if (isAcapelaEmbedded || isAcapelaExternal) {
             val isVocVoice = voiceId.startsWith("vocalizer") ||
                 voiceId.contains("vocalizer") ||
                 voiceId.contains("nuance") ||
@@ -178,14 +183,21 @@ object VoiceIdContract {
                 (voiceId.equals("laila", ignoreCase = true) &&
                     !voiceId.startsWith("ara-", ignoreCase = true) &&
                     !voiceId.startsWith("ar_", ignoreCase = true))
-            if (isVocVoice ||
-                voiceId.contains("-x-") ||
-                voiceId.endsWith("-local") ||
-                voiceId.endsWith("-network") ||
-                voiceId.contains("_f00") ||
-                voiceId.contains("_m00")
-            ) {
-                return false
+            if (isVocVoice) return false
+
+            if (isAcapelaEmbedded) {
+                if (voiceId.contains("-x-") ||
+                    voiceId.endsWith("-local") ||
+                    voiceId.endsWith("-network") ||
+                    voiceId.contains("_f00") ||
+                    voiceId.contains("_m00")
+                ) {
+                    return false
+                }
+            } else {
+                if (voiceId.contains("_f00") || voiceId.contains("_m00")) {
+                    return false
+                }
             }
         }
 

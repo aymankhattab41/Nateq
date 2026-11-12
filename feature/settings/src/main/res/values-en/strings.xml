@@ -713,6 +713,7 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Fix Acapela embedded engine initialization by recognizing valid native load codes (>=0), and clearly separate embedded Acapela from external/system Acapela engine to prevent voice and engine hijacking.
 • Fixed speech rate delay and fluctuations on long sentences by smoothly chunking text at punctuation and whitespace boundaries for seamless audio streaming.
 • Fixed auto language switching loss where a single voice was used across languages by normalizing language tags, explicitly assigning matching voices in system engines, and gracefully falling back when embedded engine voices are unavailable.
 • Fully enabled the embedded Acapela engine based on native engineering by integrating AcattsandroidService bridge, parameter decryption, runtime.dat license configuration, and robust path handling.
