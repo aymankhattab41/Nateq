@@ -65,20 +65,20 @@ object CategoryResolver {
 
             // Acapela embedded
             lower.startsWith("acapela_embedded:") ||
-                lower.startsWith("acapela:") ||
-                (lower.contains("(") && lower.contains(")") &&
-                    (lower.contains("mehdi") || lower.contains("salma") ||
-                        lower.contains("nizar") || lower.contains("youssef") ||
-                        lower.contains("leila"))) ->
+                lower.startsWith("acapela:") ->
                 "acapela_embedded"
 
-            // Acapela voices (e.g. ara-SAU-Mehdi, ara-EGY-Salma...)
+            // Acapela external system engines
             lower.startsWith("com.acapelagroup.") ->
                 "com.acapelagroup.android.tts"
 
             lower.startsWith("ara-sau-") || lower.startsWith("ara-egy-") ||
                 lower.startsWith("ara-") || lower.contains("-acapela") ||
                 lower.startsWith("com.acapela.") ||
+                (lower.contains("(") && lower.contains(")") &&
+                    (lower.contains("mehdi") || lower.contains("salma") ||
+                        lower.contains("nizar") || lower.contains("youssef") ||
+                        lower.contains("leila"))) ||
                 lower.startsWith("ar_") ->
                 "com.acapela.tts"
 

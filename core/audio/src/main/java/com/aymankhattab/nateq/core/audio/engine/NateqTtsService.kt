@@ -2266,38 +2266,7 @@ class NateqTtsService : TextToSpeechService() {
 
         var finalUsedVoiceName = resolvedVoiceName
 
-        if (isNumericRole && (isVoc || isMs || isAcapela)) {
-            val eng = targetEngine ?: if (isMs) {
-                MicrosoftEmbeddedVoiceProvider.PROVIDER_ID
-            } else if (isAcapela) {
-                AcapelaEmbeddedVoiceProvider.PROVIDER_ID
-            } else {
-                VocalizerEmbeddedVoiceProvider.PROVIDER_ID
-            }
-            hostReady = EngineHostClient.isBound(eng)
-            if (!hostReady) {
-                val budget = SynthesisBudget.pieceTimeoutMs(
-                    segment.text.length
-                )
-                val waitStart = SystemClock.uptimeMillis()
-                while (!hostReady &&
-                    (SystemClock.uptimeMillis() - waitStart) < budget
-                ) {
-                    delay(50L)
-                    hostReady = EngineHostClient.isBound(eng)
-                }
-                waitDurationMs = SystemClock.uptimeMillis() - waitStart
-                if (!hostReady) {
-                    fallbackReason = "host_not_ready"
-                    finalUsedEngine = routed.engine
-                    finalUsedVoiceName = routed.voiceName ?:
-                        settings.getPreferredVoiceId(segTag) ?:
-                        VoiceIdContract.createId(segTag)
-                }
-            }
-        }
-
-        if (isNumericRole && fallbackReason == null) {
+        if (isNumericRole) {
             if (isVoc && !isVocVoice && !isGeneric) {
                 fallbackReason = "voice_missing"
             } else if (
@@ -2305,6 +2274,12 @@ class NateqTtsService : TextToSpeechService() {
                 !VisibleEngines.isVisible(targetEngine)
             ) {
                 fallbackReason = "engine_hidden"
+            }
+            if (fallbackReason != null) {
+                finalUsedEngine = routed.engine
+                finalUsedVoiceName = routed.voiceName ?:
+                    settings.getPreferredVoiceId(segTag) ?:
+                    VoiceIdContract.createId(segTag)
             }
         }
 

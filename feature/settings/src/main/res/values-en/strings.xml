@@ -713,6 +713,9 @@
 <string name="changelog_title">What\'s New</string>
     <string name="changelog_text">
 Version %1$s
+• Comprehensive fix for Acapela embedded engine import, initialization, and voice preview matching the reverse-engineered reference: support extended engine initialization, auto-load registration keys and userdicos, and normalize file extension casing for native C libraries.
+• Resolved speech delay, speed drop, and loss of automatic multi-language switching (\"slows down then recovers\"): removed blocking delay loop on numeric/emoji segments and prevented false emergency lock.
+• Strict isolation between embedded Acapela and external Play Store Acapela to eliminate voice confusion and route each voice accurately to its respective engine.
 • Comprehensive overhaul of embedded Acapela voice import and engine session: eliminated double-nested unpack directories, auto-staged hex license files and userdicos folders, stripped prefix identifiers from speaker queries, reset failure emergency locks immediately to prevent speed drops and preserve multi-language switching, and established strict isolation between embedded and external Acapela engines.
 • Fix Acapela embedded engine initialization by recognizing valid native load codes (>=0), and clearly separate embedded Acapela from external/system Acapela engine to prevent voice and engine hijacking.
 • Fixed speech rate delay and fluctuations on long sentences by smoothly chunking text at punctuation and whitespace boundaries for seamless audio streaming.
