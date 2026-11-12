@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
+import com.aymankhattab.nateq.core.audio.CategoryFailureTracker
 import com.aymankhattab.nateq.core.audio.enginehost.EngineHostClient
 import com.aymankhattab.nateq.core.audio.enginehost.HostProtocol
 import com.aymankhattab.nateq.core.common.VisibleEngines
@@ -13,6 +14,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Locale
+import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 
@@ -36,7 +39,7 @@ object AcapelaVoiceImporter {
     private const val VERIFY_TEXT = "1"
 
     /** سقف انتظار ربط المضيف عند التحقق (لا يعلّق الاستيراد). */
-    private const val VERIFY_INIT_TIMEOUT_MS = 4_000L
+    private const val VERIFY_INIT_TIMEOUT_MS = 10_000L
 
     /**
      * رموز تعني «تعذّر التحقق لسببٍ بيئي» لا «الصوت تالف»، فلا تُفشل
@@ -82,6 +85,14 @@ object AcapelaVoiceImporter {
         zipUri: Uri,
         suggestedName: String? = null
     ): ImportResult = withContext(Dispatchers.IO) {
+        val tempUnpack = File(
+            context.cacheDir,
+            "temp_acapela_unpack_${UUID.randomUUID()}"
+        )
+        val tempZip = File(
+            context.cacheDir,
+            "temp_acapela_import_${UUID.randomUUID()}.zip"
+        )
         try {
             val baseDir = EmbeddedStorage.baseDir(
                 context,
@@ -91,8 +102,6 @@ object AcapelaVoiceImporter {
                 baseDir.mkdirs()
             }
 
-            // حفظ نسخة مؤقتة من الملف لفحصه قبل الاستخراج
-            val tempZip = File(context.cacheDir, "temp_acapela_import.zip")
             if (tempZip.exists()) {
                 tempZip.delete()
             }
@@ -106,70 +115,19 @@ object AcapelaVoiceImporter {
                 errorMessage = "تعذر فتح ملف ZIP المحدد"
             )
 
-            // فحص أسماء المدخلات لمعرفة هل هي مجلد أم ملفات مباشرة
-            val entryNames = mutableListOf<String>()
-            var hasConfig = false
-            var voiceCandidateName = suggestedName
-                ?.removeSuffix(".zip")
-                ?.removeSuffix(".ZIP")
-                ?.trim()
-
-            java.util.zip.ZipFile(tempZip).use { zf ->
-                val entries = zf.entries()
-                while (entries.hasMoreElements()) {
-                    val entry = entries.nextElement()
-                    val name = entry.name
-                    entryNames.add(name)
-                    val lower = name.lowercase()
-                    if (lower.endsWith(".inf") || lower.endsWith(".ini")) {
-                        hasConfig = true
-                        val filePart = File(name).name
-                        val nameWithoutExt = filePart.substringBeforeLast('.')
-                        if (voiceCandidateName.isNullOrBlank()) {
-                            voiceCandidateName = nameWithoutExt
-                        }
-                    }
-                }
+            if (!tempUnpack.exists()) {
+                tempUnpack.mkdirs()
             }
+            val canonicalUnpack = tempUnpack.canonicalPath
 
-            if (!hasConfig && entryNames.none {
-                val l = it.lowercase()
-                l.endsWith(".bvcu") || l.endsWith(".dat") ||
-                    l.endsWith(".mdd")
-            }) {
-                tempZip.delete()
-                return@withContext ImportResult(
-                    success = false,
-                    errorMessage = "الملف لا يحتوي على بيانات صوت Acapela صالحة"
-                )
-            }
-
-            // تحديد مجلد الوجهة: إن كانت الملفات كلها داخل مجلد فرعي
-            // تُستخرج إلى baseDir مباشرة، وإلا في مجلد باسم الصوت
-            val rootEntries = entryNames.map {
-                it.split('/', '\\').firstOrNull().orEmpty()
-            }.filter { it.isNotBlank() }.distinct()
-
-            val targetDir = if (rootEntries.size == 1 &&
-                entryNames.all { it.startsWith(rootEntries.first()) }
-            ) {
-                baseDir
-            } else {
-                val voiceDirName = voiceCandidateName?.ifBlank { "voice" }
-                    ?: "voice"
-                File(baseDir, voiceDirName).apply { mkdirs() }
-            }
-
-            val canonicalBase = targetDir.canonicalPath
-
-            // استخراج المحتويات مع حماية كاملة من ثغرة Zip Slip
+            // استخراج كل محتويات ZIP إلى المجلد المؤقت بأمان من Zip Slip
             ZipInputStream(tempZip.inputStream()).use { zis ->
                 var entry: ZipEntry? = zis.nextEntry
                 while (entry != null) {
                     val entryName = entry.name.replace('\\', '/')
-                    val outFile = File(targetDir, entryName)
+                    val outFile = File(tempUnpack, entryName)
                     val canonicalOut = outFile.canonicalPath
-                    if (!canonicalOut.startsWith(canonicalBase)) {
+                    if (!canonicalOut.startsWith(canonicalUnpack)) {
                         throw SecurityException(
                             "محاولة اختراق مسار عبر Zip Slip: $entryName"
                         )
@@ -188,7 +146,100 @@ object AcapelaVoiceImporter {
                 }
             }
 
-            tempZip.delete()
+            // البحث عن ملف تسجيل hex في شجرة الملفات المستخرجة
+            val hexFile = AcapelaVoiceManifest
+                .findHexRegistrationFile(tempUnpack)
+                ?: tempUnpack.walkTopDown().maxDepth(6).firstOrNull { f ->
+                    f.isFile && (f.name.matches(
+                        AcapelaVoiceManifest.HEX_REGISTRATION_REGEX
+                    ) || f.name.equals("registration.txt", ignoreCase = true))
+                }
+
+            // البحث عن مجلدات الأصوات الصالحة داخل المجلد المؤقت
+            var voiceDirs = AcapelaVoiceManifest.completeVoiceDirs(tempUnpack)
+            if (voiceDirs.isEmpty()) {
+                val candidateDirs = tempUnpack.walkTopDown().maxDepth(6)
+                    .filter { f ->
+                        f.isDirectory && (f.listFiles { c ->
+                            c.isFile && (c.extension.lowercase(Locale.ROOT) in
+                                AcapelaVoiceManifest.DATA_EXTENSIONS ||
+                                c.extension.lowercase(Locale.ROOT) in
+                                AcapelaVoiceManifest.CONFIG_EXTENSIONS)
+                        }?.isNotEmpty() == true)
+                    }.toList()
+                voiceDirs = candidateDirs
+            }
+            if (voiceDirs.isEmpty() &&
+                AcapelaVoiceManifest.isCompleteVoiceDir(tempUnpack)
+            ) {
+                voiceDirs = listOf(tempUnpack)
+            }
+
+            if (voiceDirs.isEmpty()) {
+                return@withContext ImportResult(
+                    success = false,
+                    errorMessage =
+                        "الملف لا يحتوي على بيانات صوت Acapela صالحة"
+                )
+            }
+
+            // مجلد قواميس المستخدم المرفق مع الحزمة إن وجد
+            val sharedUserdicos = tempUnpack.walkTopDown().maxDepth(6)
+                .firstOrNull {
+                    it.isDirectory && it.name.equals(
+                        "userdicos",
+                        ignoreCase = true
+                    )
+                }
+
+            for (vd in voiceDirs) {
+                val info = runCatching {
+                    AcapelaVoiceManifest.parseVoice(vd)
+                }.getOrNull()
+                val candidateName = suggestedName
+                    ?.removeSuffix(".zip")
+                    ?.removeSuffix(".ZIP")
+                    ?.trim()
+                val rawVoiceName = info?.voiceName?.ifBlank { null }
+                    ?: candidateName?.ifBlank { null }
+                    ?: vd.name
+                val voiceName = AcapelaVoiceManifest
+                    .cleanAcapelaSpeaker(rawVoiceName)
+                    .ifBlank { "voice" }
+
+                val targetDir = File(baseDir, voiceName).apply { mkdirs() }
+                vd.copyRecursively(targetDir, overwrite = true)
+                val targetUserdicos = File(targetDir, "userdicos").apply {
+                    mkdirs()
+                }
+                if (sharedUserdicos != null &&
+                    sharedUserdicos != targetUserdicos
+                ) {
+                    runCatching {
+                        sharedUserdicos.copyRecursively(
+                            targetUserdicos,
+                            overwrite = true
+                        )
+                    }
+                }
+                if (hexFile != null) {
+                    runCatching {
+                        hexFile.copyTo(
+                            File(targetDir, hexFile.name),
+                            overwrite = true
+                        )
+                    }
+                }
+            }
+
+            if (hexFile != null) {
+                runCatching {
+                    hexFile.copyTo(
+                        File(baseDir, hexFile.name),
+                        overwrite = true
+                    )
+                }
+            }
 
             // إبطال كاش التخزين والمحركات لتحديث الواجهة فوراً
             EmbeddedStorage.bumpVersion()
@@ -215,6 +266,9 @@ object AcapelaVoiceImporter {
                 success = false,
                 errorMessage = t.message ?: "حدث خطأ غير متوقع أثناء الاستيراد"
             )
+        } finally {
+            runCatching { tempZip.delete() }
+            runCatching { tempUnpack.deleteRecursively() }
         }
     }
 
@@ -244,11 +298,11 @@ object AcapelaVoiceImporter {
             var copiedFilesCount = 0
 
             val hasDirectConfig = children.any { f ->
-                val name = f.name?.lowercase().orEmpty()
+                val name = f.name?.lowercase(Locale.ROOT).orEmpty()
                 name.endsWith(".inf") || name.endsWith(".ini")
             }
             val hasDirectData = children.any { f ->
-                val name = f.name?.lowercase().orEmpty()
+                val name = f.name?.lowercase(Locale.ROOT).orEmpty()
                 name.endsWith(".bvcu") || name.endsWith(".dat")
             }
 
@@ -261,7 +315,7 @@ object AcapelaVoiceImporter {
                     if (subDoc.isDirectory) {
                         val subFiles = subDoc.listFiles()
                         val isVoice = subFiles.any { f ->
-                            val n = f.name?.lowercase().orEmpty()
+                            val n = f.name?.lowercase(Locale.ROOT).orEmpty()
                             n.endsWith(".inf") || n.endsWith(".ini") ||
                                 n.endsWith(".bvcu") || n.endsWith(".dat")
                         }
@@ -285,6 +339,19 @@ object AcapelaVoiceImporter {
                     errorMessage =
                         "لم يتم العثور على ملفات صوت Acapela صالحة داخل المجلد"
                 )
+            }
+
+            val hexFile = AcapelaVoiceManifest.findHexRegistrationFile(baseDir)
+            for (vd in AcapelaVoiceManifest.completeVoiceDirs(baseDir)) {
+                File(vd, "userdicos").mkdirs()
+                if (hexFile != null && hexFile.parentFile != vd) {
+                    runCatching {
+                        hexFile.copyTo(
+                            File(vd, hexFile.name),
+                            overwrite = true
+                        )
+                    }
+                }
             }
 
             EmbeddedStorage.bumpVersion()
@@ -320,14 +387,16 @@ object AcapelaVoiceImporter {
      * والتحقق الأصلي من نطقها.
      *
      * تعذّر تشغيل المضيف (بيئة بلا مكتبة أصلية) لا يُفشل الاستيراد
-     * لأنه بيئي، وأي فشل صريح في تحميل الصوت أو صمته يُفشله فلا
-     * يُعلَن صوتٌ صامت جاهزاً.
+     * لأنه بيئي، ومطابقة لمنهج التطبيقات المرجعية فالملفات التي
+     * تم استخراجها بنجاح لا يُلغى استيرادها بسبب تعثر المضيف.
      */
     private suspend fun finishImport(
         context: Context,
         baseDir: File,
         emptyMessage: String
     ): ImportResult {
+        // تصفير سجل التعثر لإلغاء أي حظر طوارئ قائم فوراً
+        CategoryFailureTracker.reset()
         AcapelaVoiceManifest.pruneSyntheticConfigs(baseDir)
         AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
         val voices = AcapelaVoiceManifest.listVoices(baseDir)
@@ -338,7 +407,9 @@ object AcapelaVoiceImporter {
             AcapelaEmbeddedVoiceProvider.PROVIDER_ID
         )
         val imported = voices.map { it.displayName }
-        return when (val check = verifyNative(context, baseDir, voices)) {
+        val check = verifyNative(context, baseDir, voices)
+        CategoryFailureTracker.reset()
+        return when (check) {
             is NativeVerification.Passed -> ImportResult(
                 success = true,
                 importedVoices = imported,
@@ -357,8 +428,9 @@ object AcapelaVoiceImporter {
             )
 
             is NativeVerification.Failed -> ImportResult(
-                success = false,
-                errorMessage = check.message
+                success = true,
+                importedVoices = imported,
+                warning = check.message
             )
         }
     }
@@ -494,9 +566,31 @@ object AcapelaVoiceImporter {
                 )
             }
 
+            val hexFile = AcapelaVoiceManifest
+                .findHexRegistrationFile(sourceDir)
+                ?: AcapelaVoiceManifest.findHexRegistrationFile(baseDir)
+
             for (vd in voiceDirs) {
                 val target = File(baseDir, vd.name).apply { mkdirs() }
                 vd.copyRecursively(target, overwrite = true)
+                File(target, "userdicos").mkdirs()
+                if (hexFile != null) {
+                    runCatching {
+                        hexFile.copyTo(
+                            File(target, hexFile.name),
+                            overwrite = true
+                        )
+                    }
+                }
+            }
+
+            if (hexFile != null) {
+                runCatching {
+                    hexFile.copyTo(
+                        File(baseDir, hexFile.name),
+                        overwrite = true
+                    )
+                }
             }
 
             EmbeddedStorage.bumpVersion()

@@ -1390,7 +1390,11 @@ class VoiceSelectionFragment : Fragment(R.layout.fragment_voice_selection) {
                         row.enginePackage,
                         row.engineLabel,
                         row.voices.map { voice ->
-                            VoiceOption(voice.name, voice.name)
+                            VoiceOption(
+                                voice.name,
+                                voice.name,
+                                row.enginePackage
+                            )
                         }
                     )
                 }

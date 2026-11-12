@@ -63,13 +63,23 @@ object CategoryResolver {
                 lower.startsWith("com.nuance.") ->
                 "com.vocalizer.tts"
 
+            // Acapela embedded
+            lower.startsWith("acapela_embedded:") ||
+                lower.startsWith("acapela:") ||
+                (lower.contains("(") && lower.contains(")") &&
+                    (lower.contains("mehdi") || lower.contains("salma") ||
+                        lower.contains("nizar") || lower.contains("youssef") ||
+                        lower.contains("leila"))) ->
+                "acapela_embedded"
+
             // Acapela voices (e.g. ara-SAU-Mehdi, ara-EGY-Salma...)
             lower.startsWith("com.acapelagroup.") ->
                 "com.acapelagroup.android.tts"
 
             lower.startsWith("ara-sau-") || lower.startsWith("ara-egy-") ||
                 lower.startsWith("ara-") || lower.contains("-acapela") ||
-                lower.startsWith("com.acapela.") ->
+                lower.startsWith("com.acapela.") ||
+                lower.startsWith("ar_") ->
                 "com.acapela.tts"
 
             // eSpeak

@@ -2235,11 +2235,18 @@ class NateqTtsService : TextToSpeechService() {
                 if (isGeneric) {
                     fallbackVoice
                 } else {
+                    val cleanTarget = targetVoiceName
+                        ?.removePrefix("acapela_embedded:")
+                        ?.removePrefix("acapela:")
+                        ?.removePrefix("acapela_")
+                        ?.substringBefore('(')
+                        ?.trim()
                     val matched = acVoices.firstOrNull {
-                        it.voiceName.equals(targetVoiceName, true) ||
-                            it.id.equals(targetVoiceName, true) ||
+                        it.voiceName.equals(cleanTarget, true) ||
+                            it.id.equals(cleanTarget, true) ||
+                            it.rawSpeaker.equals(cleanTarget, true) ||
                             it.displayName.contains(
-                                targetVoiceName.orEmpty(),
+                                cleanTarget.orEmpty(),
                                 true
                             )
                     }

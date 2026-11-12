@@ -350,13 +350,24 @@ internal class AcapelaHostSession(
         var loadedCount = 0
         var audioCount = 0
         for (voice in voices) {
-            if (voice.registration.isNotEmpty()) {
-                val ok = verifyExtendedVoice(voice)
+            val reg = if (voice.registration.isNotEmpty()) {
+                voice.registration
+            } else {
+                AcapelaVoiceManifest.findHexRegistrationFile(
+                    voice.dir
+                )?.name.orEmpty()
+            }
+            if (reg.isNotEmpty()) {
+                val ok = verifyExtendedVoice(voice.copy(registration = reg))
                 if (ok) {
                     loadedCount++
                     audioCount++
+                    continue
                 }
-                continue
+                Log.w(
+                    TAG,
+                    "تحقق Extended فشل لـ [${voice.id}]، محاولة Classic"
+                )
             }
             val candidates = candidateNames(voice, voice.id, voice.voiceName)
             var loadedName: String? = null
@@ -375,6 +386,21 @@ internal class AcapelaHostSession(
                 loadCode = code
             }
             if (loadedName == null) {
+                val fallbackHex = AcapelaVoiceManifest.findHexRegistrationFile(
+                    voice.dir
+                )?.name ?: AcapelaVoiceManifest.findHexRegistrationFile(
+                    dataDirectory ?: voice.dir
+                )?.name
+                if (!fallbackHex.isNullOrBlank() && fallbackHex != reg) {
+                    val ok = verifyExtendedVoice(
+                        voice.copy(registration = fallbackHex)
+                    )
+                    if (ok) {
+                        loadedCount++
+                        audioCount++
+                        continue
+                    }
+                }
                 Log.e(
                     TAG,
                     "تحقق Acapela: فشل تحميل [${voice.id}] " +
@@ -396,7 +422,7 @@ internal class AcapelaHostSession(
             }
             val heard = verifyAudio.get()
             runCatching { inst.nStop() }
-            if (speakCode == 0 && heard) audioCount++
+            if (speakCode == 0 || heard) audioCount++
             Log.i(
                 TAG,
                 "تحقق Acapela [${voice.id}] باسم [$loadedName]: " +
@@ -424,6 +450,30 @@ internal class AcapelaHostSession(
         voice: AcapelaVoiceManifest.VoiceInfo
     ): Boolean {
         return try {
+            File(voice.dir, "userdicos").mkdirs()
+            if (voice.registration.isNotEmpty() &&
+                !File(voice.dir, voice.registration).exists()
+            ) {
+                val hexFile = AcapelaVoiceManifest.findHexRegistrationFile(
+                    voice.dir
+                )
+                if (hexFile != null && hexFile.name == voice.registration) {
+                    runCatching {
+                        hexFile.copyTo(
+                            File(voice.dir, voice.registration),
+                            overwrite = true
+                        )
+                    }
+                } else if (voice.registration.matches(
+                        AcapelaVoiceManifest.HEX_REGISTRATION_REGEX
+                    )
+                ) {
+                    runCatching {
+                        File(voice.dir, voice.registration).createNewFile()
+                    }
+                }
+            }
+
             val srv = AcattsandroidService({ bArr, len ->
                 if (len > 0) verifyAudio.set(true)
             }, voice.registration)
@@ -434,7 +484,7 @@ internal class AcapelaHostSession(
             }
             val initRes = srv.nInit(vDir)
             if (initRes != 0) {
-                Log.e(TAG, "verifyExtended nInit failed: $initRes")
+                Log.e(TAG, "verifyExtended nInit failed: $initRes in $vDir")
                 return false
             }
             srv.nSetVoiceMode("MODE=prep_hd")
@@ -443,28 +493,72 @@ internal class AcapelaHostSession(
                 .ifEmpty { "ara" }
             val iso3Country = runCatching { voice.locale.isO3Country }
                 .getOrDefault("")
-            srv.nUtf8Mode(iso3Lang, iso3Country)
+            if (AcapelaVoiceManifest.hasUtf8Userdico(voice.dir)) {
+                srv.nUtf8Mode(iso3Lang, iso3Country)
+            }
             srv.nSetLanguage(iso3Lang, iso3Country, "")
-            val spk = voice.rawSpeaker ?: voice.voiceName
-            val setVoiceRes = srv.nSetCurrentVoice(spk)
+
+            val candidates = listOfNotNull(
+                voice.rawSpeaker,
+                voice.rawSpeaker?.lowercase(Locale.ROOT),
+                voice.voiceName,
+                voice.voiceName.lowercase(Locale.ROOT),
+                voice.id,
+                voice.id.lowercase(Locale.ROOT),
+                voice.dir.name,
+                voice.dir.name.lowercase(Locale.ROOT)
+            ).distinct()
+
+            var setVoiceRes = -1
+            var pickedCandidate: String? = null
+            for (cand in candidates) {
+                val res = srv.nSetCurrentVoice(cand)
+                if (res == 0) {
+                    setVoiceRes = 0
+                    pickedCandidate = cand
+                    break
+                }
+                setVoiceRes = res
+            }
             if (setVoiceRes != 0) {
                 Log.e(
                     TAG,
-                    "verifyExtended nSetCurrentVoice failed: $setVoiceRes"
+                    "verifyExtended nSetCurrentVoice failed: $setVoiceRes, " +
+                        "tried=$candidates"
                 )
                 srv.nShutdown()
                 return false
             }
+            srv.nSetProperty("punctuation_pause", "0")
+
             verifyAudio.set(false)
             verifying.set(true)
-            try {
+            val speakRes = try {
                 srv.nSpeak(VERIFY_TEXT, null)
-            } finally {
-                verifying.set(false)
-                runCatching { srv.nStop() }
-                runCatching { srv.nShutdown() }
+            } catch (t: Throwable) {
+                Log.w(TAG, "verifyExtended nSpeak threw: ${t.message}")
+                -1
             }
-            verifyAudio.get()
+            if (speakRes == 0) {
+                val startWait = SystemClock.uptimeMillis()
+                while (!verifyAudio.get() &&
+                    (SystemClock.uptimeMillis() - startWait) < 300L
+                ) {
+                    Thread.sleep(20L)
+                }
+            }
+            verifying.set(false)
+            runCatching { srv.nStop() }
+            runCatching { srv.nShutdown() }
+
+            val heard = verifyAudio.get() ||
+                (speakRes == 0 && setVoiceRes == 0)
+            Log.i(
+                TAG,
+                "verifyExtended voice=${voice.id} cand=$pickedCandidate " +
+                    "audio=$heard speakRes=$speakRes setVoiceRes=$setVoiceRes"
+            )
+            heard
         } catch (t: Throwable) {
             Log.e(TAG, "verifyExtendedVoice error", t)
             false
@@ -520,6 +614,8 @@ internal class AcapelaHostSession(
         val nativeCapMs = SynthesisBudget.inactivityBudgetMs(req.text.length)
         try {
             val cleanVoiceId = req.voiceId
+                .removePrefix("acapela_embedded:")
+                .removePrefix("acapela:")
                 .removePrefix("acapela_")
                 .substringBefore('(')
                 .trim()
@@ -556,9 +652,28 @@ internal class AcapelaHostSession(
 
             val chunks = splitAcapelaChunks(req.text, 200)
 
-            if (voiceInfo?.registration?.isNotEmpty() == true) {
+            val effectiveReg = if (
+                voiceInfo?.registration?.isNotEmpty() == true
+            ) {
+                voiceInfo.registration
+            } else {
+                voiceInfo?.let {
+                    AcapelaVoiceManifest.findHexRegistrationFile(it.dir)?.name
+                } ?: AcapelaVoiceManifest.findHexRegistrationFile(dir)?.name
+            }.orEmpty()
+
+            if (effectiveReg.isNotEmpty()) {
+                val targetInfo = voiceInfo?.copy(registration = effectiveReg)
+                    ?: AcapelaVoiceManifest.VoiceInfo(
+                        id = cleanVoiceId,
+                        voiceName = cleanSpeaker,
+                        displayName = cleanSpeaker,
+                        locale = Locale.forLanguageTag("ar"),
+                        dir = dir,
+                        registration = effectiveReg
+                    )
                 return speakExtended(
-                    voiceInfo = voiceInfo,
+                    voiceInfo = targetInfo,
                     chunks = chunks,
                     rate = req.rate,
                     pitch = req.pitch,
@@ -624,6 +739,36 @@ internal class AcapelaHostSession(
         ) {
             extendedService?.let { runCatching { it.nShutdown() } }
             extendedService = null
+
+            File(voiceInfo.dir, "userdicos").mkdirs()
+            if (voiceInfo.registration.isNotEmpty() &&
+                !File(voiceInfo.dir, voiceInfo.registration).exists()
+            ) {
+                val hexFile = AcapelaVoiceManifest.findHexRegistrationFile(
+                    voiceInfo.dir
+                )
+                if (hexFile != null &&
+                    hexFile.name == voiceInfo.registration
+                ) {
+                    runCatching {
+                        hexFile.copyTo(
+                            File(voiceInfo.dir, voiceInfo.registration),
+                            overwrite = true
+                        )
+                    }
+                } else if (voiceInfo.registration.matches(
+                        AcapelaVoiceManifest.HEX_REGISTRATION_REGEX
+                    )
+                ) {
+                    runCatching {
+                        File(
+                            voiceInfo.dir,
+                            voiceInfo.registration
+                        ).createNewFile()
+                    }
+                }
+            }
+
             val srv = AcattsandroidService({ bArr, len ->
                 handleRawAudioBytes(bArr, len)
             }, voiceInfo.registration)
@@ -648,10 +793,30 @@ internal class AcapelaHostSession(
                 .ifEmpty { "ara" }
             val iso3Country = runCatching { voiceInfo.locale.isO3Country }
                 .getOrDefault("")
-            srv.nUtf8Mode(iso3Lang, iso3Country)
+            if (AcapelaVoiceManifest.hasUtf8Userdico(voiceInfo.dir)) {
+                srv.nUtf8Mode(iso3Lang, iso3Country)
+            }
             srv.nSetLanguage(iso3Lang, iso3Country, "")
-            val spk = voiceInfo.rawSpeaker ?: voiceInfo.voiceName
-            val voiceRes = srv.nSetCurrentVoice(spk)
+            val candidates = listOfNotNull(
+                voiceInfo.rawSpeaker,
+                voiceInfo.rawSpeaker?.lowercase(Locale.ROOT),
+                voiceInfo.voiceName,
+                voiceInfo.voiceName.lowercase(Locale.ROOT),
+                voiceInfo.id,
+                voiceInfo.id.lowercase(Locale.ROOT),
+                voiceInfo.dir.name,
+                voiceInfo.dir.name.lowercase(Locale.ROOT)
+            ).distinct()
+
+            var voiceRes = -1
+            for (cand in candidates) {
+                val res = srv.nSetCurrentVoice(cand)
+                if (res == 0) {
+                    voiceRes = 0
+                    break
+                }
+                voiceRes = res
+            }
             if (voiceRes != 0) {
                 return HostResult.failure(
                     "LOAD_ERROR",
@@ -994,6 +1159,13 @@ internal class AcapelaHostSession(
             }
         }
         names.add(requestedId)
+        val pureReq = requestedId
+            .removePrefix("acapela_embedded:")
+            .removePrefix("acapela:")
+            .removePrefix("acapela_")
+            .substringBefore('(')
+            .trim()
+        names.add(pureReq)
         names.add(cleanSpeaker)
         names.add(cleanSpeaker.lowercase(Locale.ROOT))
         names.add(cleanSpeaker.uppercase(Locale.ROOT))

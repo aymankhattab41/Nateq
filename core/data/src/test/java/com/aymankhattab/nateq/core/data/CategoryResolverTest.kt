@@ -186,6 +186,14 @@ class CategoryResolverTest {
             CategoryResolver.inferEngineFromVoice("ara-EGY-Salma")
         )
         assertEquals(
+            "acapela_embedded",
+            CategoryResolver.inferEngineFromVoice("Mehdi (العربية)")
+        )
+        assertEquals(
+            "acapela_embedded",
+            CategoryResolver.inferEngineFromVoice("acapela_embedded:Salma")
+        )
+        assertEquals(
             "com.vocalizer.tts",
             CategoryResolver.inferEngineFromVoice("ar-xa-x-laila")
         )

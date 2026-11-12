@@ -311,22 +311,23 @@ internal class CategoryVoicePanelController(
                     val currentEng =
                         categoryEngines.getOrNull(currentEngPos)
                             ?.packageName
-                    if (currentEng == null) {
-                        val owningEngine = catalog.engineOfVoice(
-                            chosen.name,
-                            currentPanelLanguage
-                        )
-                        if (owningEngine != null) {
-                            val newEngIdx = categoryEngines.indexOfFirst {
-                                it.packageName == owningEngine
-                            }
-                            if (newEngIdx >= 0) {
-                                bindingInputs = true
-                                try {
-                                    spinnerEngine?.setSelection(newEngIdx)
-                                } finally {
-                                    bindingInputs = false
-                                }
+                    val owningEngine = chosen.enginePackage
+                        ?: (if (currentEng == null) {
+                            catalog.engineOfVoice(
+                                chosen.name,
+                                currentPanelLanguage
+                            )
+                        } else null)
+                    if (currentEng == null && owningEngine != null) {
+                        val newEngIdx = categoryEngines.indexOfFirst {
+                            it.packageName == owningEngine
+                        }
+                        if (newEngIdx >= 0) {
+                            bindingInputs = true
+                            try {
+                                spinnerEngine?.setSelection(newEngIdx)
+                            } finally {
+                                bindingInputs = false
                             }
                         }
                     }
@@ -745,8 +746,9 @@ if (!dirtyPanel) {
                             val loc = Locale.forLanguageTag(language)
                             provider.listVoices(loc).map { desc ->
                                 VoiceOption(
-                                    desc.displayName,
-                                    desc.displayName
+                                    name = desc.displayName,
+                                    label = desc.displayName,
+                                    enginePackage = enginePkg
                                 )
                             }
                         } else {
@@ -766,7 +768,13 @@ if (!dirtyPanel) {
                                     l == LocaleUtils
                                         .normalizeLanguageCode(locLang)
                                 }
-                                .map { VoiceOption(it.name, it.name) }
+                                .map {
+                                    VoiceOption(
+                                        name = it.name,
+                                        label = it.name,
+                                        enginePackage = enginePkg
+                                    )
+                                }
                         }
                     } catch (t: Throwable) {
                         // سجّل الفشل في EngineStatusRegistry لتظهر
@@ -1040,11 +1048,12 @@ if (!dirtyPanel) {
             val engineIdx = spinnerEngine?.selectedItemPosition ?: -1
             val selectedEngine =
                 categoryEngines.getOrNull(engineIdx)?.packageName
-            val owningEngine = catalog.engineOfVoice(
-                chosenVoice.name,
-                currentPanelLanguage,
-                preferredEngine = selectedEngine
-            )
+            val owningEngine = chosenVoice.enginePackage
+                ?: catalog.engineOfVoice(
+                    chosenVoice.name,
+                    currentPanelLanguage,
+                    preferredEngine = selectedEngine
+                )
             val effectiveEngine = selectedEngine ?: owningEngine
             if (effectiveEngine != null && isEmbeddedEngine(effectiveEngine)) {
                 val status = EngineStatusRegistry.statusOf(
@@ -1238,16 +1247,17 @@ if (!dirtyPanel) {
         val voiceIndex = spinnerVoice?.selectedItemPosition ?: 0
         val voiceName = voiceOptions
             .getOrNull(voiceIndex)?.name.orEmpty()
+        val chosenOpt = voiceOptions.getOrNull(voiceIndex)
         val enginePkg = if (categoryHasDedicatedEngine(entry.categoryKey)) {
             val selected = categoryEngines
                 .getOrNull(spinnerEngine?.selectedItemPosition ?: 0)
                 ?.packageName
-            selected ?: catalog.engineOfVoice(
+            selected ?: chosenOpt?.enginePackage ?: catalog.engineOfVoice(
                 voiceName,
                 currentPanelLanguage
             )
         } else {
-            catalog.engineOfVoice(
+            chosenOpt?.enginePackage ?: catalog.engineOfVoice(
                 voiceName,
                 currentPanelLanguage
             )

@@ -157,6 +157,8 @@ class AcapelaEmbeddedVoiceProvider(
             }
 
             val targetVoiceName = (desiredVoiceName ?: voice.id)
+                .removePrefix("acapela_embedded:")
+                .removePrefix("acapela:")
                 .removePrefix("acapela_")
                 .substringBefore('(')
                 .trim()
