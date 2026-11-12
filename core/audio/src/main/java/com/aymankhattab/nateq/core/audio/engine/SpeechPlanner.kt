@@ -422,12 +422,30 @@ object SpeechPlanner {
         // تقسيم أرقام الهاتف الطويلة (> 40 حرفاً بعد تحويلها إلى كلمات)
         // إلى مجموعات من 3 إلى 4 أرقام لتخرج بالترتيب فور جاهزيتها
         // (الجولة 50 - الأمر 3 البند 5)
-        val finalItems = ArrayList<SpeechPlanItem>()
+        val phoneSplitItems = ArrayList<SpeechPlanItem>()
         for (item in mergedItems) {
             val chunks = splitPhoneNumberWords(item.text)
             if (chunks.size > 1) {
                 for (chunk in chunks) {
-                    finalItems.add(item.copy(text = chunk))
+                    phoneSplitItems.add(item.copy(text = chunk))
+                }
+            } else {
+                phoneSplitItems.add(item)
+            }
+        }
+
+        // تقسيم المقاطع الطويلة (> 220 حرفاً) عند الحدود اللغوية
+        // أو الفواصل لتسريع زمن أول شريحة صوتية وتفادي تأخير وبطء الجمل الطويلة
+        val finalItems = ArrayList<SpeechPlanItem>()
+        for (item in phoneSplitItems) {
+            if (item.text.length > 220) {
+                val sentenceChunks = splitLongSentenceChunks(item.text, 220)
+                if (sentenceChunks.size > 1) {
+                    for (chunk in sentenceChunks) {
+                        finalItems.add(item.copy(text = chunk))
+                    }
+                } else {
+                    finalItems.add(item)
                 }
             } else {
                 finalItems.add(item)
@@ -480,5 +498,47 @@ object SpeechPlanner {
             result.add(group.joinToString(" "))
         }
         return result
+    }
+
+    internal fun splitLongSentenceChunks(
+        text: String,
+        maxChars: Int = 220
+    ): List<String> {
+        if (text.length <= maxChars) return listOf(text)
+        val result = ArrayList<String>()
+        val delimiters = setOf('.', '!', '?', '…', '؛', '؟', '\n', '\r')
+        var start = 0
+        while (start < text.length) {
+            val remaining = text.length - start
+            if (remaining <= maxChars) {
+                val lastPart = text.substring(start).trim()
+                if (lastPart.isNotEmpty()) result.add(lastPart)
+                break
+            }
+            var cut = -1
+            val searchLimit = (start + maxChars).coerceAtMost(text.length)
+            for (i in (start + 60) until searchLimit) {
+                if (text[i] in delimiters) {
+                    cut = i + 1
+                }
+            }
+            if (cut == -1) {
+                val lastSpace = text.lastIndexOf(' ', searchLimit - 1)
+                if (lastSpace > start + 60) {
+                    cut = lastSpace + 1
+                } else {
+                    cut = searchLimit
+                }
+            }
+            val chunk = text.substring(start, cut).trim()
+            if (chunk.isNotEmpty()) {
+                result.add(chunk)
+            }
+            start = cut
+            while (start < text.length && text[start] == ' ') {
+                start++
+            }
+        }
+        return if (result.isEmpty()) listOf(text) else result
     }
 }

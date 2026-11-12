@@ -252,4 +252,39 @@ class AcapelaVoiceManifestTest {
 
         assertTrue(paths.contains(voiceFolder.absolutePath))
     }
+
+    @Test
+    fun acapelaParameters_rateAndPitchCalculations() {
+        assertEquals(30, AcapelaParameters.sdkRate(10))
+        assertEquals(100, AcapelaParameters.sdkRate(100))
+        assertEquals(400, AcapelaParameters.sdkRate(500))
+
+        assertEquals(70, AcapelaParameters.sdkPitch(50))
+        assertEquals(100, AcapelaParameters.sdkPitch(100))
+        assertEquals(130, AcapelaParameters.sdkPitch(150))
+
+        assertEquals(100, AcapelaParameters.registeredPitch(100))
+        assertEquals(40, AcapelaParameters.registeredPitch(70))
+        assertEquals(160, AcapelaParameters.registeredPitch(130))
+
+        val map = mutableMapOf<String, String>()
+        val code = AcapelaParameters.applyRegistered(120, 100) { k, v ->
+            map[k] = v
+            0
+        }
+        assertEquals(0, code)
+        assertEquals("120", map["rate"])
+        assertEquals("100", map["pitch"])
+        assertEquals("0", map["volume"])
+    }
+
+    @Test
+    fun resolveRegistration_readsDirectRegistrationField() {
+        val baseDir = tempFolder.newFolder("voice_json_test")
+        val jsonFile = File(baseDir, "voice.json")
+        jsonFile.writeText("{\"registration\": \"test-license-1234\"}")
+
+        val reg = AcapelaVoiceManifest.resolveRegistration(baseDir)
+        assertEquals("test-license-1234", reg)
+    }
 }

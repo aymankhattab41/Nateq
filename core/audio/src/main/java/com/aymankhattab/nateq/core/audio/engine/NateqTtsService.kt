@@ -1573,6 +1573,9 @@ class NateqTtsService : TextToSpeechService() {
                             finalVoiceName.contains("tariq", true))
                 }
             } else false
+            var activeEngine = finalEngine
+            var activeTargetProvider = targetProvider
+
             val resolvedVoiceName = if (isVoc) {
                 val installedAr = VocalizerModelCatalog.ITEMS.firstOrNull {
                     LanguageCode.isArabic(it.languageCategory) &&
@@ -1586,36 +1589,57 @@ class NateqTtsService : TextToSpeechService() {
                             applicationContext, it
                         )
                 }?.voiceName
-                val fallbackVoice = if (LanguageCode.isArabic(languageTag)) {
-                    installedAr ?: "Tarik"
+                val hasVocVoice = if (LanguageCode.isArabic(languageTag)) {
+                    installedAr != null
+                } else if (LanguageCode.isEnglish(languageTag)) {
+                    installedEn != null
+                } else false
+                if (!hasVocVoice) {
+                    activeEngine = null
+                    activeTargetProvider = provider
+                    finalVoiceName
                 } else {
-                    installedEn ?: "Samantha"
-                }
-                if (isGeneric || !isVocVoice) {
-                    fallbackVoice
-                } else {
-                    val matchedItem = VocalizerModelCatalog.ITEMS.firstOrNull {
-                        it.voiceName.equals(
-                            finalVoiceName, ignoreCase = true
-                        ) ||
-                            it.id.equals(finalVoiceName, ignoreCase = true) ||
-                            finalVoiceName.contains(
-                                it.voiceName,
-                                ignoreCase = true
-                            ) ||
-                            (it.voiceName.equals("Laila", true) &&
-                                finalVoiceName.contains("leila", true)) ||
-                            (it.voiceName.equals("Tarik", true) &&
-                                finalVoiceName.contains("tariq", true))
-                    }
-                    val isInstalled = matchedItem != null &&
-                        VocalizerModelCatalog.isVoiceInstalled(
-                            applicationContext, matchedItem
+                    val fallbackVoice = if (LanguageCode.isArabic(
+                            languageTag
                         )
-                    if (isInstalled) {
-                        matchedItem?.voiceName ?: fallbackVoice
+                    ) {
+                        installedAr ?: "Tarik"
                     } else {
+                        installedEn ?: "Samantha"
+                    }
+                    if (isGeneric || !isVocVoice) {
                         fallbackVoice
+                    } else {
+                        val matchedItem = VocalizerModelCatalog.ITEMS
+                            .firstOrNull {
+                                it.voiceName.equals(
+                                    finalVoiceName, ignoreCase = true
+                                ) ||
+                                    it.id.equals(
+                                        finalVoiceName, ignoreCase = true
+                                    ) ||
+                                    finalVoiceName.contains(
+                                        it.voiceName,
+                                        ignoreCase = true
+                                    ) ||
+                                    (it.voiceName.equals("Laila", true) &&
+                                        finalVoiceName.contains(
+                                            "leila", true
+                                        )) ||
+                                    (it.voiceName.equals("Tarik", true) &&
+                                        finalVoiceName.contains(
+                                            "tariq", true
+                                        ))
+                            }
+                        val isInstalled = matchedItem != null &&
+                            VocalizerModelCatalog.isVoiceInstalled(
+                                applicationContext, matchedItem
+                            )
+                        if (isInstalled) {
+                            matchedItem?.voiceName ?: fallbackVoice
+                        } else {
+                            fallbackVoice
+                        }
                     }
                 }
             } else if (isMs) {
@@ -1633,26 +1657,40 @@ class NateqTtsService : TextToSpeechService() {
                     LanguageCode.isEnglish(it.languageCategory) &&
                         MicrosoftModelCatalog.isVoiceInstalled(msBase, it)
                 }?.voiceName
-                val fallbackVoice = if (LanguageCode.isArabic(languageTag)) {
-                    installedAr ?: "Salma"
+                val hasMsVoice = if (LanguageCode.isArabic(languageTag)) {
+                    installedAr != null
+                } else if (LanguageCode.isEnglish(languageTag)) {
+                    installedEn != null
+                } else false
+                if (!hasMsVoice) {
+                    activeEngine = null
+                    activeTargetProvider = provider
+                    finalVoiceName
                 } else {
-                    installedEn ?: "Jenny"
-                }
-                if (isGeneric) {
-                    fallbackVoice
-                } else {
-                    val matchedItem = MicrosoftModelCatalog
-                        .findItemByNameOrModel(
-                            applicationContext, finalVoiceName.orEmpty()
+                    val fallbackVoice = if (LanguageCode.isArabic(
+                            languageTag
                         )
-                    val isInstalled = matchedItem != null &&
-                        MicrosoftModelCatalog.isVoiceInstalled(
-                            msBase, matchedItem
-                        )
-                    if (isInstalled) {
-                        matchedItem?.voiceName ?: fallbackVoice
+                    ) {
+                        installedAr ?: "Salma"
                     } else {
+                        installedEn ?: "Jenny"
+                    }
+                    if (isGeneric) {
                         fallbackVoice
+                    } else {
+                        val matchedItem = MicrosoftModelCatalog
+                            .findItemByNameOrModel(
+                                applicationContext, finalVoiceName.orEmpty()
+                            )
+                        val isInstalled = matchedItem != null &&
+                            MicrosoftModelCatalog.isVoiceInstalled(
+                                msBase, matchedItem
+                            )
+                        if (isInstalled) {
+                            matchedItem?.voiceName ?: fallbackVoice
+                        } else {
+                            fallbackVoice
+                        }
                     }
                 }
             } else if (isAcapela) {
@@ -1667,27 +1705,48 @@ class NateqTtsService : TextToSpeechService() {
                 val installedEn = acVoices.firstOrNull {
                     LanguageCode.isEnglish(it.locale.language)
                 }?.voiceName
-                val fallbackVoice = if (LanguageCode.isArabic(languageTag)) {
-                    installedAr ?: acVoices.firstOrNull()?.voiceName ?: "Mehdi"
+                val hasAcapelaVoice = if (LanguageCode.isArabic(languageTag)) {
+                    installedAr != null
+                } else if (LanguageCode.isEnglish(languageTag)) {
+                    installedEn != null
                 } else {
-                    installedEn ?: acVoices.firstOrNull()?.voiceName ?: "Ryan"
-                }
-                if (isGeneric) {
-                    fallbackVoice
-                } else {
-                    val matched = acVoices.firstOrNull {
-                        it.voiceName.equals(finalVoiceName, true) ||
-                            it.id.equals(finalVoiceName, true) ||
-                            it.displayName.contains(
-                                finalVoiceName.orEmpty(),
-                                true
-                            )
+                    acVoices.any {
+                        it.locale.language.equals(languageTag, true)
                     }
-                    matched?.voiceName ?: fallbackVoice
+                }
+                if (!hasAcapelaVoice) {
+                    activeEngine = null
+                    activeTargetProvider = provider
+                    finalVoiceName
+                } else {
+                    val fallbackVoice = if (LanguageCode.isArabic(
+                            languageTag
+                        )
+                    ) {
+                        installedAr ?: acVoices.firstOrNull()?.voiceName ?:
+                            "Mehdi"
+                    } else {
+                        installedEn ?: acVoices.firstOrNull()?.voiceName ?:
+                            "Ryan"
+                    }
+                    if (isGeneric) {
+                        fallbackVoice
+                    } else {
+                        val matched = acVoices.firstOrNull {
+                            it.voiceName.equals(finalVoiceName, true) ||
+                                it.id.equals(finalVoiceName, true) ||
+                                it.displayName.contains(
+                                    finalVoiceName.orEmpty(),
+                                    true
+                                )
+                        }
+                        matched?.voiceName ?: fallbackVoice
+                    }
                 }
             } else {
                 finalVoiceName
             }
+
             val isSafe = CrashGuard.isSafeModeActive(applicationContext)
             // `singleCategory` غير قابل للعدم: له احتياطيٌّ في `when` أعلاه.
             val isCatEm =
@@ -1711,16 +1770,16 @@ class NateqTtsService : TextToSpeechService() {
                 effPitch = if (em.isSaved) em.pitch else finalPitch
                 effVolume = if (em.isSaved) em.volume else finalVolume
             } else {
-                effEngine = finalEngine
+                effEngine = activeEngine
                 effVoice = resolvedVoiceName
                 effRate = finalRate
                 effPitch = finalPitch
                 effVolume = finalVolume
             }
             val effProvider = if (effEngine != null) {
-                catalog.findProvider(effEngine) ?: targetProvider
+                catalog.findProvider(effEngine) ?: activeTargetProvider
             } else {
-                targetProvider
+                activeTargetProvider
             }
 
             effProvider.synthesize(
@@ -2036,6 +2095,9 @@ class NateqTtsService : TextToSpeechService() {
                         targetVoiceName.contains("tariq", true))
             }
         } else false
+        var finalUsedEngine = targetEngine
+        var finalProvider: VoiceProvider = provider
+
         val resolvedVoiceName = if (isVoc) {
             val installedAr = VocalizerModelCatalog.ITEMS.firstOrNull {
                 LanguageCode.isArabic(it.languageCategory) &&
@@ -2049,34 +2111,48 @@ class NateqTtsService : TextToSpeechService() {
                         applicationContext, it
                     )
             }?.voiceName
-            val fallbackVoice = if (LanguageCode.isArabic(segTag)) {
-                installedAr ?: "Tarik"
+            val hasVocVoice = if (LanguageCode.isArabic(segTag)) {
+                installedAr != null
+            } else if (LanguageCode.isEnglish(segTag)) {
+                installedEn != null
+            } else false
+            if (!hasVocVoice) {
+                finalUsedEngine = null
+                finalProvider = foundProvider ?: provider
+                targetVoiceName
             } else {
-                installedEn ?: "Samantha"
-            }
-            if (isGeneric || !isVocVoice) {
-                fallbackVoice
-            } else {
-                val matchedItem = VocalizerModelCatalog.ITEMS.firstOrNull {
-                    it.voiceName.equals(targetVoiceName, ignoreCase = true) ||
-                        it.id.equals(targetVoiceName, ignoreCase = true) ||
-                        targetVoiceName.contains(
-                            it.voiceName,
-                            ignoreCase = true
-                        ) ||
-                        (it.voiceName.equals("Laila", true) &&
-                            targetVoiceName.contains("leila", true)) ||
-                        (it.voiceName.equals("Tarik", true) &&
-                            targetVoiceName.contains("tariq", true))
-                }
-                val isInstalled = matchedItem != null &&
-                    VocalizerModelCatalog.isVoiceInstalled(
-                        applicationContext, matchedItem
-                    )
-                if (isInstalled) {
-                    matchedItem?.voiceName ?: fallbackVoice
+                val fallbackVoice = if (LanguageCode.isArabic(segTag)) {
+                    installedAr ?: "Tarik"
                 } else {
+                    installedEn ?: "Samantha"
+                }
+                if (isGeneric || !isVocVoice) {
                     fallbackVoice
+                } else {
+                    val matchedItem = VocalizerModelCatalog.ITEMS
+                        .firstOrNull {
+                            it.voiceName.equals(
+                                targetVoiceName, ignoreCase = true
+                            ) ||
+                            it.id.equals(targetVoiceName, ignoreCase = true) ||
+                            targetVoiceName.contains(
+                                it.voiceName,
+                                ignoreCase = true
+                            ) ||
+                            (it.voiceName.equals("Laila", true) &&
+                                targetVoiceName.contains("leila", true)) ||
+                            (it.voiceName.equals("Tarik", true) &&
+                                targetVoiceName.contains("tariq", true))
+                    }
+                    val isInstalled = matchedItem != null &&
+                        VocalizerModelCatalog.isVoiceInstalled(
+                            applicationContext, matchedItem
+                        )
+                    if (isInstalled) {
+                        matchedItem?.voiceName ?: fallbackVoice
+                    } else {
+                        fallbackVoice
+                    }
                 }
             }
         } else if (isMs) {
@@ -2094,26 +2170,37 @@ class NateqTtsService : TextToSpeechService() {
                 LanguageCode.isEnglish(it.languageCategory) &&
                     MicrosoftModelCatalog.isVoiceInstalled(msBase, it)
             }?.voiceName
-            val fallbackVoice = if (LanguageCode.isArabic(segTag)) {
-                installedAr ?: "Salma"
+            val hasMsVoice = if (LanguageCode.isArabic(segTag)) {
+                installedAr != null
+            } else if (LanguageCode.isEnglish(segTag)) {
+                installedEn != null
+            } else false
+            if (!hasMsVoice) {
+                finalUsedEngine = null
+                finalProvider = foundProvider ?: provider
+                targetVoiceName
             } else {
-                installedEn ?: "Jenny"
-            }
-            if (isGeneric) {
-                fallbackVoice
-            } else {
-                val matchedItem = MicrosoftModelCatalog
-                    .findItemByNameOrModel(
-                        applicationContext, targetVoiceName.orEmpty()
-                    )
-                val isInstalled = matchedItem != null &&
-                    MicrosoftModelCatalog.isVoiceInstalled(
-                        msBase, matchedItem
-                    )
-                if (isInstalled) {
-                    matchedItem?.voiceName ?: fallbackVoice
+                val fallbackVoice = if (LanguageCode.isArabic(segTag)) {
+                    installedAr ?: "Salma"
                 } else {
+                    installedEn ?: "Jenny"
+                }
+                if (isGeneric) {
                     fallbackVoice
+                } else {
+                    val matchedItem = MicrosoftModelCatalog
+                        .findItemByNameOrModel(
+                            applicationContext, targetVoiceName.orEmpty()
+                        )
+                    val isInstalled = matchedItem != null &&
+                        MicrosoftModelCatalog.isVoiceInstalled(
+                            msBase, matchedItem
+                        )
+                    if (isInstalled) {
+                        matchedItem?.voiceName ?: fallbackVoice
+                    } else {
+                        fallbackVoice
+                    }
                 }
             }
         } else if (isAcapela) {
@@ -2128,23 +2215,36 @@ class NateqTtsService : TextToSpeechService() {
             val installedEn = acVoices.firstOrNull {
                 LanguageCode.isEnglish(it.locale.language)
             }?.voiceName
-            val fallbackVoice = if (LanguageCode.isArabic(segTag)) {
-                installedAr ?: acVoices.firstOrNull()?.voiceName ?: "Mehdi"
+            val hasAcapelaVoice = if (LanguageCode.isArabic(segTag)) {
+                installedAr != null
+            } else if (LanguageCode.isEnglish(segTag)) {
+                installedEn != null
             } else {
-                installedEn ?: acVoices.firstOrNull()?.voiceName ?: "Ryan"
+                acVoices.any { it.locale.language.equals(segTag, true) }
             }
-            if (isGeneric) {
-                fallbackVoice
+            if (!hasAcapelaVoice) {
+                finalUsedEngine = null
+                finalProvider = foundProvider ?: provider
+                targetVoiceName
             } else {
-                val matched = acVoices.firstOrNull {
-                    it.voiceName.equals(targetVoiceName, true) ||
-                        it.id.equals(targetVoiceName, true) ||
-                        it.displayName.contains(
-                            targetVoiceName.orEmpty(),
-                            true
-                        )
+                val fallbackVoice = if (LanguageCode.isArabic(segTag)) {
+                    installedAr ?: acVoices.firstOrNull()?.voiceName ?: "Mehdi"
+                } else {
+                    installedEn ?: acVoices.firstOrNull()?.voiceName ?: "Ryan"
                 }
-                matched?.voiceName ?: fallbackVoice
+                if (isGeneric) {
+                    fallbackVoice
+                } else {
+                    val matched = acVoices.firstOrNull {
+                        it.voiceName.equals(targetVoiceName, true) ||
+                            it.id.equals(targetVoiceName, true) ||
+                            it.displayName.contains(
+                                targetVoiceName.orEmpty(),
+                                true
+                            )
+                    }
+                    matched?.voiceName ?: fallbackVoice
+                }
             }
         } else {
             targetVoiceName
@@ -2157,7 +2257,6 @@ class NateqTtsService : TextToSpeechService() {
         val isNumericRole = segment.role == SpeechRole.NUMBER ||
             segment.role == SpeechRole.EMOJI
 
-        var finalUsedEngine = targetEngine
         var finalUsedVoiceName = resolvedVoiceName
 
         if (isNumericRole && (isVoc || isMs || isAcapela)) {
@@ -2240,9 +2339,9 @@ class NateqTtsService : TextToSpeechService() {
             effVol = finalVolume
         }
         val effProvider = if (effTargetEngine != null) {
-            catalog.findProvider(effTargetEngine) ?: provider
+            catalog.findProvider(effTargetEngine) ?: finalProvider
         } else {
-            provider
+            finalProvider
         }
         return SegmentParams(
             speechText, voice, effProvider, effRate, effPitch,
