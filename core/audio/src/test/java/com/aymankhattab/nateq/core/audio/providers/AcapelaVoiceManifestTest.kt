@@ -7,6 +7,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.util.Locale
 
 class AcapelaVoiceManifestTest {
 
@@ -193,7 +194,7 @@ class AcapelaVoiceManifestTest {
     }
 
     @Test
-    fun ensureVoiceConfigs_createsInfAndIniWithMbrForBvcuOnly() {
+    fun ensureVoiceConfigs_neverGeneratesConfigForBvcuOnlyVoice() {
         val baseDir = tempFolder.newFolder("bvcu_only")
         val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
         File(voiceFolder, "ar_sa_hd_salma_22k_lf.bvcu")
@@ -203,41 +204,53 @@ class AcapelaVoiceManifestTest {
 
         AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
 
-        val inf = File(voiceFolder, "Salma.inf")
-        val ini = File(voiceFolder, "Salma.ini")
-        val cfg = File(voiceFolder, "Salma.cfg")
-        assertTrue(inf.exists())
-        assertTrue(ini.exists())
-        assertTrue(cfg.exists())
-
-        val infText = inf.readText()
-        assertTrue(infText.contains("speaker = \" Salma\""))
-
-        val iniText = ini.readText()
-        assertTrue(iniText.contains("MBR = ar_sa_hd_salma_22k_lf.bvcu"))
-        assertTrue(iniText.contains("FILE \"ar_sa_hd_salma_22k_lf.bvcu\""))
-        assertTrue(iniText.contains("FILEMAP \"ar_sa_hd_salma_22k_lf.dat\""))
+        // لا يُولَّد أي ملف تهيئة: المصطنع بلا مسارات بيانات يُفشل nInit.
+        assertFalse(File(voiceFolder, "Salma.inf").exists())
+        assertFalse(File(voiceFolder, "Salma.ini").exists())
+        assertFalse(File(voiceFolder, "Salma.cfg").exists())
+        assertTrue(File(voiceFolder, "userdicos").isDirectory)
     }
 
     @Test
-    fun ensureVoiceConfigs_preservesRichDirectivesWithoutOverwriting() {
+    fun ensureVoiceConfigs_completesOnlyMissingInfKeys() {
         val baseDir = tempFolder.newFolder("rich_existing")
         val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
         File(voiceFolder, "salma.bvcu").writeBytes(ByteArray(10_000))
-        val richBody = "[Voice]\n" +
-            "speaker = \" Salma\"\n" +
-            "frequency = 22050\n" +
-            "PATH my_special_path\n" +
-            "BNF \"salma.bnf\" [ RAM ]\n"
-        val ini = File(voiceFolder, "Salma.ini")
-        ini.writeText(richBody)
+        val inf = File(voiceFolder, "salma.inf")
+        inf.writeText(
+            "[Voice]\n" +
+                "speaker = \" Salma\"\n" +
+                "frequency = 22050\n" +
+                "PATH my_special_path\n" +
+                "BNF \"salma.bnf\" [ RAM ]\n"
+        )
 
         AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
 
-        val newIniText = ini.readText()
-        assertTrue(newIniText.contains("PATH my_special_path"))
-        assertTrue(newIniText.contains("BNF \"salma.bnf\""))
-        assertTrue(newIniText.contains("MBR = salma.bvcu"))
+        val text = inf.readText()
+        // المحتوى الأصلي لا يُمحى ولا يُعاد كتابته.
+        assertTrue(text.contains("PATH my_special_path"))
+        assertTrue(text.contains("BNF \"salma.bnf\""))
+        assertTrue(text.contains("speaker = \" Salma\""))
+        // المفاتيح الناقصة وحدها تُضاف.
+        assertTrue(text.contains("ISOCode = \"ar-SA\""))
+        assertTrue(text.contains("NAME = \"Salma\""))
+        assertTrue(text.contains("freq = \"22050\""))
+        assertEquals(1, Regex("speaker\\s*=").findAll(text).count())
+    }
+
+    @Test
+    fun ensureVoiceConfigs_copiesRegistrationKeyIntoVoiceFolder() {
+        val baseDir = tempFolder.newFolder("pack_root")
+        File(baseDir, "0x1A2B3C4D").writeText("key")
+        val voiceFolder = File(baseDir, "salma").apply { mkdirs() }
+        File(voiceFolder, "salma.inf").writeText(
+            "[Voice]\nspeaker = \"Salma\"\nISOCode = \"ara-SAU\"\n"
+        )
+
+        AcapelaVoiceManifest.ensureVoiceConfigs(baseDir)
+
+        assertTrue(File(voiceFolder, "0x1A2B3C4D").isFile)
     }
 
     @Test
@@ -286,5 +299,54 @@ class AcapelaVoiceManifestTest {
 
         val reg = AcapelaVoiceManifest.resolveRegistration(baseDir)
         assertEquals("test-license-1234", reg)
+    }
+
+    @Test
+    fun resolveRegistration_rejectsHexFileNameAsMetadata() {
+        val baseDir = tempFolder.newFolder("hex_only")
+        File(baseDir, "0x1A2B3C4D").writeText("key")
+
+        // اسم الملف ليس بيانات تسجيل: تمريره للمحرك الممتد يُفسد بناؤه.
+        assertEquals("", AcapelaVoiceManifest.resolveRegistration(baseDir))
+    }
+
+    @Test
+    fun parseVoice_keepsCountryFromIsoCode() {
+        val voiceDir = tempFolder.newFolder("iso3_country")
+        File(voiceDir, "mehdi.inf").writeText(
+            "[Voice]\n" +
+                "speaker = \"Mehdi\"\n" +
+                "ISOCode = \"ara-SAU\"\n"
+        )
+
+        val info = AcapelaVoiceManifest.parseVoice(voiceDir)
+        assertEquals(Locale("ar", "SA"), info.locale)
+    }
+
+    @Test
+    fun parseVoice_mapsKhzFreqToRealSampleRate() {
+        val voiceDir = tempFolder.newFolder("khz_22")
+        File(voiceDir, "mehdi.inf").writeText(
+            "[Voice]\n" +
+                "speaker = \"Mehdi\"\n" +
+                "ISOCode = \"ara-SAU\"\n" +
+                "freq = \"22.0\"\n"
+        )
+        assertEquals(
+            22050,
+            AcapelaVoiceManifest.parseVoice(voiceDir).sampleRate
+        )
+
+        val second = tempFolder.newFolder("khz_11")
+        File(second, "salma.inf").writeText(
+            "[Voice]\n" +
+                "speaker = \"Salma\"\n" +
+                "ISOCode = \"ara-SAU\"\n" +
+                "freq = \"11.0\"\n"
+        )
+        assertEquals(
+            11025,
+            AcapelaVoiceManifest.parseVoice(second).sampleRate
+        )
     }
 }

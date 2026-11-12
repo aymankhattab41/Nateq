@@ -346,6 +346,7 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw 'فشلت الاختبارات — أُلغيت عملية الإصدار.'
     }
+    & .\gradlew.bat --stop
     & .\gradlew.bat :app:assembleRelease --console=plain
     if ($LASTEXITCODE -ne 0) {
         throw 'فشل بناء Release — أُلغيت عملية الإصدار.'

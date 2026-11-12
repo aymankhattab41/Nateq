@@ -25,15 +25,27 @@ import kotlin.math.roundToInt
 /**
  * جلسة محرك Acapela داخل عملية :engine_host المعزولة.
  *
- * **قاعدة الصدق في النتيجة:** لا يعود [init] ولا [speak] بنجاحٍ إلا
- * بعد سماع عيّنة صوتية فعلية من المكتبة الأصلية. فحصُ القرص وحده
- * كان يُعلن نجاحاً لصوتٍ لا يُنطق، وهو جذر «استُورد بنجاح لكنه صامت».
+ * **تسلسل MultiTTS المُحاكى حرفياً** — وهو مرجع التشغيل المؤكد:
  *
- * **قاعدة التقدّم:** [speak] يستدعي دوالاً أصلية متزامنة بالكامل
- * ([acattsandroid.nLoadVoice] و[nSpeak]) لا تبثّ إطاراتٍ في أثناء
- * الاستدعاء، فيبدو المحرك «خاملاً» لحارسَي المضيف والعميل فيُقطع
- * نطقٌ سليم. لذلك تُفتح نافذة نداءٍ أصليّ ([PcmSink.enterNativeCall])
- * يُرسَل فيها نبضة تقدّم دورياً، والنبضات مقيّدة بسقف الميزانية.
+ * 1. تهيئة كلاسيكية: `nInitCallbacks` ← `nSetLicense` ←
+ *    `nGetVoiceList(المجلدات)`.
+ * 2. كلاسيكي (بلا تسجيل): `nLoadVoice(speaker)` يعيد معدل العينات
+ *    (> 0 نجاح) ← `nSetSpeechRate` ← `nSetShape` (إن نجحت السرعة)
+ *    ← `nSpeak(نص خام)` لكل قطعة 200 حرف.
+ * 3. ممتد (حزمة مسجلة): `nInit(المجلد + فاصل)` ←
+ *    `nSetVoiceMode("MODE=prep_hd")` ← `nUtf8Mode` إن وُجد قاموس
+ *    UTF-8 ← `nSetLanguage(ISO3 لغة, ISO3 دولة, "")` ←
+ *    `nSetCurrentVoice(speaker)` ←
+ *    `nSetProperty("punctuation_pause", "0")` ← ثم النطق
+ *    `nSpeak(text, null)` مع `pitch`/`volume`/`rate`.
+ *
+ * **لا تحقّق نطقيّ في [init]:** تجربة أصوات المكتبة عند التهيئة كانت
+ * تُفشل التهيئة كلها إذا صمت صوتٌ واحد، فتُحجب الأصوات السليمة.
+ * العطل يُكشف عند النطق برمزٍ معنون يسمّي الخطوة الفاشلة.
+ *
+ * **قاعدة التقدّم:** الدوال الأصلية المتزامنة لا تبثّ إطارات تقدّم،
+ * فتُفتح نافذة نداءٍ أصليّ ([PcmSink.enterNativeCall]) يُرسَل فيها
+ * نبضة دورية، وإلا عدّ الحارسان المحرك خاملاً فقطعا نطقاً سليماً.
  */
 internal class AcapelaHostSession(
     private val context: Context
@@ -43,17 +55,27 @@ internal class AcapelaHostSession(
         private const val TAG = "AcapelaHostSession"
         private const val DEFAULT_SAMPLE_RATE = 22050
 
-        /** نصّ التحقق: أقصر ما يُنتج عيّنة صوتية. */
-        private const val VERIFY_TEXT = "1"
+        /** نمط الصوت الممتد الذي يفرضه MultiTTS قبل تحميل الحزمة. */
+        private const val VOICE_MODE_HD = "MODE=prep_hd"
 
-        /** فاصل انتظار حلقة اكتمال النطق. */
+        /** وقفة علامات الترقيم: صفر كما في MultiTTS. */
+        private const val PUNCTUATION_PAUSE_KEY = "punctuation_pause"
+        private const val PUNCTUATION_PAUSE_VALUE = "0"
+
+        /** فاصل انتظار حلقة اكتمال القطعة. */
         private const val WAIT_STEP_MS = 15L
 
-        /** مهلة توقّف الصوت بعد آخر عيّنة (كما كان تاريخياً). */
+        /** فاصل نبضات التقدّم أثناء انتظار اكتمال النطق. */
+        private const val PING_INTERVAL_MS = 500L
+
+        /** صمتٌ بعد آخر عيّنة يدل على انتهاء القطعة. */
         private const val TAIL_SILENCE_MS = 150L
 
         /** مهلة بدء الصوت قبل اعتبار المحرك عاجزاً عن النطق. */
         private const val START_SILENCE_MS = 2_500L
+
+        /** عدد أحرف القطعة الواحدة — مطابق لتقسيم MultiTTS. */
+        private const val CHUNK_CHARS = 200
 
         internal fun calculateSpeedPercent(rate: Float): Int =
             (rate * 100f).roundToInt().coerceIn(30, 400)
@@ -61,19 +83,10 @@ internal class AcapelaHostSession(
         internal fun calculatePitchPercent(pitch: Float): Int =
             (pitch * 100f).roundToInt().coerceIn(50, 200)
 
-        internal fun formatAcapelaText(
-            text: String,
-            rate: Float,
-            pitch: Float
-        ): String {
-            val speed = calculateSpeedPercent(rate)
-            val p = calculatePitchPercent(pitch)
-            return "\\rspd=$speed\\ \\vct=$p\\ $text"
-        }
-
         /**
-         * مسارات البحث عن الأصوات. يُستكمل إنشاء وتهيئة ملفات
-         * .inf و .ini لضمان تعرّف مكتبة Acapela عليها.
+         * مسارات البحث عن الأصوات، مع تجهيز المجلدات بما تحتاجه
+         * المكتبة (بلا توليد تهيئة مصطنعة — انظر
+         * [AcapelaVoiceManifest.ensureVoiceConfigs]).
          */
         internal fun collectVoiceSearchPaths(
             baseDir: File,
@@ -114,9 +127,13 @@ internal class AcapelaHostSession(
             return paths.toTypedArray()
         }
 
+        /**
+         * تقسيم النص إلى قطع 200 حرف على حدود الكلمات (نهج MultiTTS).
+         * الضمُّ يستعيد الأصل فلا تُبتَر كلمة.
+         */
         internal fun splitAcapelaChunks(
             text: String,
-            maxChars: Int = 200
+            maxChars: Int = CHUNK_CHARS
         ): List<String> {
             if (text.length <= maxChars) return listOf(text)
             val chunks = ArrayList<String>()
@@ -153,10 +170,14 @@ internal class AcapelaHostSession(
 
     private var acatts: acattsandroid? = null
     private var extendedService: AcattsandroidService? = null
+
+    /** مفتاح الحزمة المحمّلة في [extendedService] (مجلد + تسجيل). */
     @Volatile
-    private var extendedRegistration: String? = null
+    private var extendedKey: String? = null
+
     private var dataDirectory: File? = null
 
+    /** الاسم الذي نجح تحميله في [acatts] (الاسم الخام لا المطبّع). */
     @Volatile
     private var currentVoiceId: String? = null
 
@@ -172,17 +193,8 @@ internal class AcapelaHostSession(
     @Volatile
     private var isSpeaking = false
 
-    /**
-     * وضع التحقق الأصلي: لا صوت يُمرَّر إلى أي أنبوب، بل يُكتفى
-     * بإثبات أن المكتبة أصدرت عيّنة. [init] يعتمد عليه فلا يعلن
-     * نجاحاً لصوتٍ صامت.
-     */
-    private val verifying = AtomicBoolean(false)
-    private val verifyAudio = AtomicBoolean(false)
-
     private val headerWritten = AtomicBoolean(false)
     private val audioReceived = AtomicBoolean(false)
-    private val speechCompleted = AtomicBoolean(false)
     private val lastAudioTime = AtomicLong(0L)
 
     override fun init(dataDir: String): HostResult {
@@ -214,9 +226,8 @@ internal class AcapelaHostSession(
             )
         }
 
-        // إعادةُ التهيئة بلا إغلاق السابقة تُبقي محرّكاً أصلياً حيّاً
-        // وصوتاً محمّلاً من مسارٍ قديم (فتضيع الذاكرة ويختلط الحالة)؛
-        // فيُغلق السابق أولاً.
+        // إعادة التهيئة بلا إغلاق السابقة تُبقي محركاً أصلياً حياً
+        // وصوتاً محمّلاً من مسار قديم، فيُغلق السابق أولاً.
         releaseEngine()
 
         var pending: acattsandroid? = null
@@ -224,9 +235,9 @@ internal class AcapelaHostSession(
             val inst = acattsandroid()
             pending = inst
             inst.setAudioListener(this)
-            val resInit = inst.nInitCallbacks()
-            if (resInit != 0) {
-                Log.w(TAG, "nInitCallbacks returned $resInit")
+            val callbacksRes = inst.nInitCallbacks()
+            if (callbacksRes != 0) {
+                Log.w(TAG, "nInitCallbacks returned $callbacksRes")
             }
             // سجلات المكتبة الأصلية مفيدة للتشخيص فقط؛ تُترك معطّلة
             // افتراضياً كي لا تُغرق Logcat في النطق العادي.
@@ -236,14 +247,14 @@ internal class AcapelaHostSession(
                 Log.w(TAG, "nSetLicense returned $licRes")
             }
 
+            // تسجيل الأصوات قبل أي تحميل: `nGetVoiceList` هو ما يبني
+            // فهرس المكتبة، وقيمته المرجعة 0 دائماً في هذا الإصدار
+            // فلا تُستخدم دليل عدد.
             val extraDirs = EmbeddedStorage.allSearchDirs(
                 context,
                 EmbeddedStorage.Engine.ACAPELA
             )
             val paths = collectVoiceSearchPaths(dir, extraDirs)
-            // تُسجّل المكتبة الأصوات في قائمة find_voices. قيمتها
-            // المرجعة تعود 0 دائماً في هذا الإصدار، فلا تُستخدم
-            // دليلَ عدد؛ العدد من القرص لا من قيمة غير موثوقة.
             val listed = inst.nGetVoiceList(paths)
             val voices = manifestVoices(dir, extraDirs)
             Log.i(
@@ -251,18 +262,16 @@ internal class AcapelaHostSession(
                 "تهيئة Acapela: nGetVoiceList=$listed, " +
                     "أصوات القرص=${voices.size}, مسارات=${paths.size}"
             )
-            when {
-                voices.isEmpty() -> HostResult.failure(
+            if (voices.isEmpty()) {
+                HostResult.failure(
                     "NO_VOICES",
                     "لا يوجد صوت Acapela صالح في ${dir.absolutePath}"
                 )
-
-                else -> verifyVoices(inst, voices) ?: run {
-                    acatts = inst
-                    pending = null
-                    currentVoiceId = null
-                    HostResult(ok = true)
-                }
+            } else {
+                acatts = inst
+                pending = null
+                currentVoiceId = null
+                HostResult(ok = true)
             }
         } catch (t: Throwable) {
             Log.e(TAG, "خطأ أثناء تهيئة محرك Acapela", t)
@@ -271,7 +280,6 @@ internal class AcapelaHostSession(
                 t.message ?: "خطأ أثناء تهيئة Acapela"
             )
         }
-        // فشلُ التحقق لا يترك محرّكاً أصلياً مفتوحاً بلا مُستخدِم.
         pending?.let { shutdownQuietly(it) }
         return result
     }
@@ -301,11 +309,8 @@ internal class AcapelaHostSession(
         }
     }
 
+    /** بايتات PCM من المحرك الممتد (16 بت، قناة واحدة). */
     internal fun handleRawAudioBytes(bytes: ByteArray?, length: Int) {
-        if (verifying.get()) {
-            if (length > 0) verifyAudio.set(true)
-            return
-        }
         val sink = activeSink ?: return
         val cancelled = activeCancelled
         if (cancelled != null && cancelled.get()) {
@@ -328,265 +333,24 @@ internal class AcapelaHostSession(
         runCatching { inst.nShutdown() }
     }
 
-    /** تحرير المحرك الحالي وتصفير حالته (يُستدعى قبل إعادة التهيئة). */
+    /** إغلاق المحرك الممتد الحالي (إن وُجد) وتصفير مفتاحه. */
+    private fun closeExtended() {
+        extendedService?.let { runCatching { it.nStop() } }
+        extendedService?.let { runCatching { it.nShutdown() } }
+        extendedService = null
+        extendedKey = null
+    }
+
+    /** تحرير المحركات الحالية وتصفير حالتها (قبل إعادة التهيئة). */
     private fun releaseEngine() {
         acatts?.let { shutdownQuietly(it) }
         acatts = null
-        extendedService?.let { runCatching { it.nShutdown() } }
-        extendedService = null
-        extendedRegistration = null
+        closeExtended()
         currentVoiceId = null
     }
 
     /**
-     * تحقّق أصليّ فعلي: يُحمَّل كل صوت وتُنطق به عيّنة قصيرة.
-     * فشلُ كل عمليات التحميل أو صمتُ المحرك كلّياً سببٌ معنون يُفشل
-     * التهيئة، فلا يُعلَن صوتٌ صامت جاهزاً.
-     */
-    private fun verifyVoices(
-        inst: acattsandroid,
-        voices: List<AcapelaVoiceManifest.VoiceInfo>
-    ): HostResult? {
-        var loadedCount = 0
-        var audioCount = 0
-        for (voice in voices) {
-            AcapelaVoiceManifest.normalizeExtensionsCase(voice.dir)
-            val reg: String = if (voice.registration.isNotEmpty()) {
-                voice.registration
-            } else {
-                val fromVoice = AcapelaVoiceManifest
-                    .resolveRegistration(voice.dir)
-                val fromData = dataDirectory?.let {
-                    AcapelaVoiceManifest.resolveRegistration(it)
-                }.orEmpty()
-                fromVoice.ifEmpty { fromData }
-            }
-            val hasExtendedIdentity = reg.isNotEmpty() ||
-                AcapelaVoiceManifest.hasVoiceIdentity(voice.dir) ||
-                voice.dir.listFiles { f ->
-                    f.name.endsWith(".inf", ignoreCase = true)
-                }?.isNotEmpty() == true
-            if (hasExtendedIdentity) {
-                val ok = verifyExtendedVoice(voice.copy(registration = reg))
-                if (ok) {
-                    loadedCount++
-                    audioCount++
-                    continue
-                }
-                Log.w(
-                    TAG,
-                    "تحقق Extended فشل لـ [${voice.id}]، محاولة Classic"
-                )
-            }
-            val candidates = candidateNames(voice, voice.id, voice.voiceName)
-            var loadedName: String? = null
-            var loadCode = -1
-            for (cand in candidates) {
-                val code = runCatching { inst.nLoadVoice(cand) }
-                    .getOrDefault(-1)
-                if (code >= 0) {
-                    loadedName = cand
-                    loadCode = code
-                    if (code > 0) {
-                        currentSampleRate = code
-                    }
-                    break
-                }
-                loadCode = code
-            }
-            if (loadedName == null) {
-                val fallbackHex = AcapelaVoiceManifest.findHexRegistrationFile(
-                    voice.dir
-                )?.name ?: AcapelaVoiceManifest.findHexRegistrationFile(
-                    dataDirectory ?: voice.dir
-                )?.name
-                if (!fallbackHex.isNullOrBlank() && fallbackHex != reg) {
-                    val ok = verifyExtendedVoice(
-                        voice.copy(registration = fallbackHex)
-                    )
-                    if (ok) {
-                        loadedCount++
-                        audioCount++
-                        continue
-                    }
-                }
-                Log.e(
-                    TAG,
-                    "تحقق Acapela: فشل تحميل [${voice.id}] " +
-                        "(${voice.dir.absolutePath}) آخر كود=$loadCode" +
-                        " lastError=${lastErrorOf(inst)}"
-                )
-                continue
-            }
-            loadedCount++
-            verifyAudio.set(false)
-            verifying.set(true)
-            val speakCode = try {
-                inst.nSpeak(VERIFY_TEXT)
-            } catch (t: Throwable) {
-                Log.e(TAG, "تحقق Acapela: nSpeak انهار", t)
-                -1
-            } finally {
-                verifying.set(false)
-            }
-            val heard = verifyAudio.get()
-            runCatching { inst.nStop() }
-            if (speakCode == 0 || heard) audioCount++
-            Log.i(
-                TAG,
-                "تحقق Acapela [${voice.id}] باسم [$loadedName]: " +
-                    "load=ok speak=$speakCode audio=$heard" +
-                    " lang=${lastLanguageOf(inst)}"
-            )
-        }
-        if (loadedCount == 0) {
-            return HostResult.failure(
-                "NO_VOICE_LOADED",
-                "وُجدت ملفات صوت لكن المكتبة لم تحمّل أياً منها " +
-                    "(${voices.size} صوتاً)"
-            )
-        }
-        if (audioCount == 0) {
-            return HostResult.failure(
-                "NO_AUDIO_OUTPUT",
-                "حُمّل الصوت لكن المكتبة لم تصدر أي عيّنة صوتية"
-            )
-        }
-        return null
-    }
-
-    private fun verifyExtendedVoice(
-        voice: AcapelaVoiceManifest.VoiceInfo
-    ): Boolean {
-        return try {
-            AcapelaVoiceManifest.normalizeExtensionsCase(voice.dir)
-            File(voice.dir, "userdicos").mkdirs()
-            val fromVoice = AcapelaVoiceManifest
-                .resolveRegistration(voice.dir)
-            val fromData = dataDirectory?.let {
-                AcapelaVoiceManifest.resolveRegistration(it)
-            }.orEmpty()
-            val effectiveReg: String = voice.registration.ifEmpty {
-                fromVoice.ifEmpty { fromData }
-            }
-            if (effectiveReg.isNotEmpty() &&
-                !File(voice.dir, effectiveReg).exists()
-            ) {
-                val hexFile = AcapelaVoiceManifest.findHexRegistrationFile(
-                    voice.dir
-                ) ?: dataDirectory?.let {
-                    AcapelaVoiceManifest.findHexRegistrationFile(it)
-                }
-                if (hexFile != null && hexFile.name == effectiveReg) {
-                    runCatching {
-                        hexFile.copyTo(
-                            File(voice.dir, effectiveReg),
-                            overwrite = true
-                        )
-                    }
-                } else if (effectiveReg.matches(
-                        AcapelaVoiceManifest.HEX_REGISTRATION_REGEX
-                    )
-                ) {
-                    runCatching {
-                        File(voice.dir, effectiveReg).createNewFile()
-                    }
-                }
-            }
-
-            val srv = AcattsandroidService({ bArr, len ->
-                if (len > 0) verifyAudio.set(true)
-            }, effectiveReg)
-            val vDir = if (voice.dir.absolutePath.endsWith(File.separator)) {
-                voice.dir.absolutePath
-            } else {
-                voice.dir.absolutePath + File.separator
-            }
-            val initRes = srv.nInit(vDir)
-            if (initRes != 0) {
-                Log.e(TAG, "verifyExtended nInit failed: $initRes in $vDir")
-                return false
-            }
-            srv.nSetVoiceMode("MODE=prep_hd")
-            val iso3Lang = runCatching { voice.locale.isO3Language }
-                .getOrDefault("")
-                .ifEmpty { "ara" }
-            val iso3Country = runCatching { voice.locale.isO3Country }
-                .getOrDefault("")
-            if (AcapelaVoiceManifest.hasUtf8Userdico(voice.dir)) {
-                srv.nUtf8Mode(iso3Lang, iso3Country)
-            }
-            srv.nSetLanguage(iso3Lang, iso3Country, "")
-
-            val candidates = listOfNotNull(
-                voice.rawSpeaker,
-                voice.rawSpeaker?.lowercase(Locale.ROOT),
-                voice.voiceName,
-                voice.voiceName.lowercase(Locale.ROOT),
-                voice.id,
-                voice.id.lowercase(Locale.ROOT),
-                voice.dir.name,
-                voice.dir.name.lowercase(Locale.ROOT)
-            ).distinct()
-
-            var setVoiceRes = -1
-            var pickedCandidate: String? = null
-            for (cand in candidates) {
-                val res = srv.nSetCurrentVoice(cand)
-                if (res == 0) {
-                    setVoiceRes = 0
-                    pickedCandidate = cand
-                    break
-                }
-                setVoiceRes = res
-            }
-            if (setVoiceRes != 0) {
-                Log.e(
-                    TAG,
-                    "verifyExtended nSetCurrentVoice failed: $setVoiceRes, " +
-                        "tried=$candidates"
-                )
-                srv.nShutdown()
-                return false
-            }
-            srv.nSetProperty("punctuation_pause", "0")
-
-            verifyAudio.set(false)
-            verifying.set(true)
-            val speakRes = try {
-                srv.nSpeak(VERIFY_TEXT, null)
-            } catch (t: Throwable) {
-                Log.w(TAG, "verifyExtended nSpeak threw: ${t.message}")
-                -1
-            }
-            if (speakRes == 0) {
-                val startWait = SystemClock.uptimeMillis()
-                while (!verifyAudio.get() &&
-                    (SystemClock.uptimeMillis() - startWait) < 600L
-                ) {
-                    Thread.sleep(20L)
-                }
-            }
-            verifying.set(false)
-            runCatching { srv.nStop() }
-            runCatching { srv.nShutdown() }
-
-            val heard = verifyAudio.get() ||
-                (speakRes == 0 && setVoiceRes == 0)
-            Log.i(
-                TAG,
-                "verifyExtended voice=${voice.id} cand=$pickedCandidate " +
-                    "audio=$heard speakRes=$speakRes setVoiceRes=$setVoiceRes"
-            )
-            heard
-        } catch (t: Throwable) {
-            Log.e(TAG, "verifyExtendedVoice error", t)
-            false
-        }
-    }
-
-    /**
-     * سرد الأصوات المتوفرة لـ Acapela من القرص والمحرك.
+     * سرد الأصوات المتوفرة لـ Acapela من القرص (قراءة خالصة).
      */
     fun listVoices(): List<HostVoice> {
         val dir = dataDirectory ?: return emptyList()
@@ -628,121 +392,72 @@ internal class AcapelaHostSession(
 
         headerWritten.set(false)
         audioReceived.set(false)
-        speechCompleted.set(false)
         lastAudioTime.set(SystemClock.uptimeMillis())
 
-        val nativeCapMs = SynthesisBudget.inactivityBudgetMs(req.text.length)
         try {
-            val cleanVoiceId = req.voiceId
-                .removePrefix("acapela_embedded:")
-                .removePrefix("acapela:")
-                .removePrefix("acapela_")
-                .substringBefore('(')
-                .trim()
-            val cleanSpeaker = AcapelaVoiceManifest
-                .cleanAcapelaSpeaker(cleanVoiceId)
-
-            val dir = dataDirectory
-            if (dir == null) {
-                return HostResult.failure(
-                    "DIR_NOT_FOUND",
-                    "مجلد بيانات Acapela لم يُضبط"
-                )
-            }
-            val extraDirs = EmbeddedStorage.allSearchDirs(
-                context,
-                EmbeddedStorage.Engine.ACAPELA
+            val dir = dataDirectory ?: return HostResult.failure(
+                "DIR_NOT_FOUND",
+                "مجلد بيانات Acapela لم يُضبط"
             )
-            val voices = manifestVoices(dir, extraDirs)
-            // الاسمُ الخام لحقل speaker هو ما تقارنه المكتبة الأصلية
-            // في nLoadVoice، فتُجرَّب أولاً قبل الاسم المطبّع.
-            val voiceInfo = voices.firstOrNull { v ->
-                matchesVoice(v, cleanVoiceId) ||
-                    matchesVoice(v, cleanSpeaker)
-            }
-            val targetName = voiceInfo?.rawSpeaker
-                ?: voiceInfo?.voiceName
-                ?: cleanSpeaker
-            if (voiceInfo != null && voiceInfo.sampleRate > 0) {
-                currentSampleRate = voiceInfo.sampleRate
-            }
+            val voice = resolveVoice(req.voiceId, dir)
+                ?: return HostResult.failure(
+                    "VOICE_NOT_FOUND",
+                    "لا يوجد صوت Acapela مطابق: ${req.voiceId}"
+                )
 
-            sink.writeHeader(currentSampleRate, 1)
-            headerWritten.set(true)
+            // معدل العينات من `.inf` (`freq`) هو ما يخرج به المحرك
+            // الممتد؛ والكلاسيكي يصحّحه بناتج `nLoadVoice` قبل أول
+            // شريحة، لأن الترويسة تُكتب عند أول صوت لا قبله.
+            currentSampleRate = voice.sampleRate
 
-            val chunks = splitAcapelaChunks(req.text, 200)
-
-            val effectiveReg: String = if (
-                voiceInfo?.registration?.isNotEmpty() == true
-            ) {
-                voiceInfo.registration
-            } else {
-                val fromInfo = voiceInfo?.let {
-                    AcapelaVoiceManifest.resolveRegistration(it.dir)
-                }
-                val fromDir = dir?.let {
-                    AcapelaVoiceManifest.resolveRegistration(it)
-                }.orEmpty()
-                fromInfo?.ifEmpty { fromDir } ?: fromDir
+            val chunks = splitAcapelaChunks(
+                req.text,
+                CHUNK_CHARS
+            ).filter { it.isNotBlank() }
+            if (chunks.isEmpty()) {
+                return HostResult.failure(
+                    "EMPTY_TEXT",
+                    "النص المطلوب نطقه فارغ"
+                )
             }
 
-            val isExtended = effectiveReg.isNotEmpty() ||
-                (voiceInfo != null &&
-                    AcapelaVoiceManifest.hasVoiceIdentity(voiceInfo.dir)) ||
-                (voiceInfo?.dir?.listFiles { f ->
-                    f.name.endsWith(".inf", ignoreCase = true)
-                }?.isNotEmpty() == true)
-
-            if (isExtended) {
-                val targetInfo = voiceInfo?.copy(registration = effectiveReg)
-                    ?: AcapelaVoiceManifest.VoiceInfo(
-                        id = cleanVoiceId,
-                        voiceName = cleanSpeaker,
-                        displayName = cleanSpeaker,
-                        locale = Locale.forLanguageTag("ar"),
-                        dir = dir,
-                        registration = effectiveReg
-                    )
-                return speakExtended(
-                    voiceInfo = targetInfo,
+            if (voice.registration.isNotEmpty()) {
+                val extended = speakExtended(
+                    voice = voice,
                     chunks = chunks,
                     rate = req.rate,
                     pitch = req.pitch,
                     sink = sink,
-                    cancelled = cancelled,
-                    nativeCapMs = nativeCapMs
+                    cancelled = cancelled
                 )
-            } else {
-                val inst = acatts ?: return HostResult.failure(
-                    "NOT_INITIALIZED",
-                    "محرك Acapela غير مهيأ"
+                if (extended.ok) return extended
+                if (!isSetupFailure(extended.code)) return extended
+                // فشل تجهيز الممتد لا يعني فشل الصوت نفسه: يُجرَّب
+                // المسار الكلاسيكي قبل إعلان العطل (لا صوت صدر بعد).
+                Log.w(
+                    TAG,
+                    "فشل المسار الممتد (${extended.code}): " +
+                        "${extended.message} — محاولة الكلاسيكي"
                 )
-                if (currentVoiceId != targetName &&
-                    currentVoiceId != cleanSpeaker
-                ) {
-                    val loadResult = loadVoice(
-                        inst = inst,
-                        sink = sink,
-                        dir = dir,
-                        voiceInfo = voiceInfo,
-                        requestedId = cleanVoiceId,
-                        cleanSpeaker = cleanSpeaker,
-                        targetName = targetName,
-                        nativeCapMs = nativeCapMs
-                    )
-                    if (loadResult != null) return loadResult
-                }
-                return speakNative(
-                    inst = inst,
-                    targetName = targetName,
+                val native = speakNative(
+                    voice = voice,
                     chunks = chunks,
                     rate = req.rate,
                     pitch = req.pitch,
                     sink = sink,
-                    cancelled = cancelled,
-                    nativeCapMs = nativeCapMs
+                    cancelled = cancelled
                 )
+                return if (native.ok) native else extended
             }
+
+            return speakNative(
+                voice = voice,
+                chunks = chunks,
+                rate = req.rate,
+                pitch = req.pitch,
+                sink = sink,
+                cancelled = cancelled
+            )
         } catch (t: Throwable) {
             Log.e(TAG, "خطأ أثناء نطق Acapela", t)
             return HostResult.failure(
@@ -756,123 +471,256 @@ internal class AcapelaHostSession(
         }
     }
 
-    private suspend fun speakExtended(
-        voiceInfo: AcapelaVoiceManifest.VoiceInfo,
+    /**
+     * أخطاء تجهيزٍ تسبق أي صوت: يجوز بعدها تجريب مسار آخر دون أن
+     * يتكرر نطقٌ مسموع.
+     */
+    private fun isSetupFailure(code: String?): Boolean = code in setOf(
+        "ENGINE_INIT_FAILED",
+        "VOICE_MODE_FAILED",
+        "VOICE_LOCALE_UNKNOWN",
+        "UTF8_MODE_FAILED",
+        "LANGUAGE_FAILED",
+        "VOICE_LOAD_FAILED",
+        "PROPERTY_FAILED",
+        "NOT_INITIALIZED"
+    )
+
+    /** الصوت المطابق للطلب من كل مجلدات البحث. */
+    private fun resolveVoice(
+        rawVoiceId: String,
+        dir: File
+    ): AcapelaVoiceManifest.VoiceInfo? {
+        val cleanVoiceId = rawVoiceId
+            .removePrefix("acapela_embedded:")
+            .removePrefix("acapela:")
+            .removePrefix("acapela_")
+            .substringBefore('(')
+            .trim()
+        val cleanSpeaker = AcapelaVoiceManifest
+            .cleanAcapelaSpeaker(cleanVoiceId)
+        val extraDirs = EmbeddedStorage.allSearchDirs(
+            context,
+            EmbeddedStorage.Engine.ACAPELA
+        )
+        val voices = manifestVoices(dir, extraDirs)
+        return voices.firstOrNull { v ->
+            matchesVoice(v, cleanVoiceId) || matchesVoice(v, cleanSpeaker)
+        }
+    }
+
+    /**
+     * المسار الكلاسيكي: تحميل الصوت ثم ضبط السرعة والنبرة ثم نطق
+     * كل قطعة نداءً واحداً (كما يفعل MultiTTS).
+     */
+    private suspend fun speakNative(
+        voice: AcapelaVoiceManifest.VoiceInfo,
         chunks: List<String>,
         rate: Float,
         pitch: Float,
         sink: PcmSink,
-        cancelled: AtomicBoolean,
-        nativeCapMs: Long
+        cancelled: AtomicBoolean
     ): HostResult {
-        if (extendedRegistration != voiceInfo.registration ||
-            extendedService == null
-        ) {
-            extendedService?.let { runCatching { it.nShutdown() } }
-            extendedService = null
+        val inst = acatts ?: return HostResult.failure(
+            "NOT_INITIALIZED",
+            "محرك Acapela الكلاسيكي غير مهيأ"
+        )
+        val nativeCapMs = SynthesisBudget.inactivityBudgetMs(
+            chunks.sumOf { it.length }
+        )
 
-            AcapelaVoiceManifest.normalizeExtensionsCase(voiceInfo.dir)
-            File(voiceInfo.dir, "userdicos").mkdirs()
-            if (voiceInfo.registration.isNotEmpty() &&
-                !File(voiceInfo.dir, voiceInfo.registration).exists()
-            ) {
-                val hexFile = AcapelaVoiceManifest.findHexRegistrationFile(
-                    voiceInfo.dir
-                )
-                if (hexFile != null &&
-                    hexFile.name == voiceInfo.registration
-                ) {
-                    runCatching {
-                        hexFile.copyTo(
-                            File(voiceInfo.dir, voiceInfo.registration),
-                            overwrite = true
-                        )
-                    }
-                } else if (voiceInfo.registration.matches(
-                        AcapelaVoiceManifest.HEX_REGISTRATION_REGEX
-                    )
-                ) {
-                    runCatching {
-                        File(
-                            voiceInfo.dir,
-                            voiceInfo.registration
-                        ).createNewFile()
-                    }
-                }
+        if (currentVoiceId != voice.rawSpeaker) {
+            val loadFailure = loadVoice(inst, voice, sink, nativeCapMs)
+            if (loadFailure != null) return loadFailure
+        }
+        applyClassicParameters(inst, rate, pitch)
+
+        for (chunk in chunks) {
+            if (cancelled.get()) {
+                return HostResult.failure("CANCELLED", "أُلغي الطلب")
             }
 
-            val srv = AcattsandroidService({ bArr, len ->
-                handleRawAudioBytes(bArr, len)
-            }, voiceInfo.registration)
-            val vDir = if (voiceInfo.dir.absolutePath.endsWith(
-                    File.separator
-                )
-            ) {
-                voiceInfo.dir.absolutePath
-            } else {
-                voiceInfo.dir.absolutePath + File.separator
+            sink.enterNativeCall(nativeCapMs)
+            val speakRes = try {
+                inst.nSpeak(chunk)
+            } finally {
+                sink.exitNativeCall()
             }
-            val initRes = srv.nInit(vDir)
-            if (initRes != 0) {
+            if (speakRes != 0) {
+                Log.e(
+                    TAG,
+                    "فشل nSpeak: $speakRes" +
+                        " voice=${voice.rawSpeaker}" +
+                        " lastError=${lastErrorOf(inst)}"
+                )
                 return HostResult.failure(
-                    "INIT_ERROR",
-                    "AcattsandroidService nInit failed: $initRes"
+                    "SPEAK_ERROR",
+                    "فشل استدعاء nSpeak: $speakRes"
                 )
             }
-            srv.nSetVoiceMode("MODE=prep_hd")
-            val iso3Lang = runCatching { voiceInfo.locale.isO3Language }
-                .getOrDefault("")
-                .ifEmpty { "ara" }
-            val iso3Country = runCatching { voiceInfo.locale.isO3Country }
-                .getOrDefault("")
-            if (AcapelaVoiceManifest.hasUtf8Userdico(voiceInfo.dir)) {
-                srv.nUtf8Mode(iso3Lang, iso3Country)
-            }
-            srv.nSetLanguage(iso3Lang, iso3Country, "")
-            val candidates = listOfNotNull(
-                voiceInfo.rawSpeaker,
-                voiceInfo.rawSpeaker?.lowercase(Locale.ROOT),
-                voiceInfo.voiceName,
-                voiceInfo.voiceName.lowercase(Locale.ROOT),
-                voiceInfo.id,
-                voiceInfo.id.lowercase(Locale.ROOT),
-                voiceInfo.dir.name,
-                voiceInfo.dir.name.lowercase(Locale.ROOT)
-            ).distinct()
+            awaitChunkEnd(inst, chunk.length, sink, cancelled)
+        }
 
-            var voiceRes = -1
+        if (!audioReceived.get()) {
+            Log.e(
+                TAG,
+                "Acapela لم يصدر صوتاً: voice=${voice.rawSpeaker}" +
+                    " lang=${lastLanguageOf(inst)}" +
+                    " lastError=${lastErrorOf(inst)}"
+            )
+            return HostResult.failure(
+                "SPEAK_NO_AUDIO",
+                "لم يصدر المحرك أي صوت للصوت ${voice.voiceName}"
+            )
+        }
+        return HostResult(ok = true)
+    }
+
+    /**
+     * تحميل الصوت داخل نافذة نداءٍ أصليّ. نجاح `nLoadVoice` هو كود
+     * **أكبر من صفر** (= معدل العينات)، والصفر والفشل ليسا نجاحاً.
+     */
+    private fun loadVoice(
+        inst: acattsandroid,
+        voice: AcapelaVoiceManifest.VoiceInfo,
+        sink: PcmSink,
+        nativeCapMs: Long
+    ): HostResult? {
+        val candidates = candidateNames(voice)
+        var loadRes = -1
+        var loadedName: String? = null
+        sink.enterNativeCall(nativeCapMs)
+        try {
             for (cand in candidates) {
-                val res = srv.nSetCurrentVoice(cand)
-                if (res == 0) {
-                    voiceRes = 0
+                loadRes = inst.nLoadVoice(cand)
+                if (loadRes > 0) {
+                    loadedName = cand
                     break
                 }
-                voiceRes = res
             }
-            if (voiceRes != 0) {
-                return HostResult.failure(
-                    "LOAD_ERROR",
-                    "AcattsandroidService nSetCurrentVoice failed: $voiceRes"
-                )
-            }
-            srv.nSetProperty("punctuation_pause", "0")
-            extendedService = srv
-            extendedRegistration = voiceInfo.registration
+        } finally {
+            sink.exitNativeCall()
         }
+
+        if (loadedName == null) {
+            val dir = dataDirectory ?: voice.dir
+            Log.e(
+                TAG,
+                "فشل تحميل صوت Acapela (${voice.id}): كود $loadRes, " +
+                    "مرشحات=$candidates, lastError=${lastErrorOf(inst)}, " +
+                    "lang=${lastLanguageOf(inst)}, ملفات=${dirFiles(dir)}"
+            )
+            return HostResult.failure(
+                "VOICE_LOAD_FAILED",
+                "تعذر تحميل الصوت: ${voice.rawSpeaker ?: voice.id}" +
+                    " (كود $loadRes)"
+            )
+        }
+
+        currentVoiceId = loadedName
+        currentSampleRate = loadRes
+        Log.i(TAG, "تم تحميل صوت Acapela [$loadedName] بمعدل $loadRes")
+        return null
+    }
+
+    /**
+     * السرعة ثم النبرة — ترتيب MultiTTS: لا تُضبط النبرة إن فشلت
+     * السرعة (فالفشل هنا يعني أن المكتبة لم تقبل الجلسة بعد).
+     */
+    private fun applyClassicParameters(
+        inst: acattsandroid,
+        rate: Float,
+        pitch: Float
+    ) {
+        val speed = AcapelaParameters.sdkRate(calculateSpeedPercent(rate))
+        val shape = AcapelaParameters.sdkPitch(calculatePitchPercent(pitch))
+        val rateCode = runCatching {
+            inst.nSetSpeechRate(speed.toFloat())
+        }.getOrDefault(-1)
+        if (rateCode != 0) {
+            Log.w(TAG, "nSetSpeechRate($speed) فشل: $rateCode")
+            return
+        }
+        val shapeCode = runCatching { inst.nSetShape(shape.toFloat()) }
+            .getOrDefault(-1)
+        if (shapeCode != 0) {
+            Log.w(TAG, "nSetShape($shape) فشل: $shapeCode")
+        }
+        if (diagnosticsEnabled()) {
+            Log.d(
+                TAG,
+                "معاملات Acapela: speed=$speed shape=$shape"
+            )
+        }
+    }
+
+    /**
+     * انتظار انتهاء القطعة: صمتٌ بعد آخر عيّنة، مع نبضات تقدّم حتى
+     * لا يعدّ الحارس المحرك خاملاً. السقف ميزانية القطعة نفسها.
+     */
+    private suspend fun awaitChunkEnd(
+        inst: acattsandroid,
+        chars: Int,
+        sink: PcmSink,
+        cancelled: AtomicBoolean
+    ) {
+        val started = SystemClock.uptimeMillis()
+        val budget = SynthesisBudget.pieceTimeoutMs(chars)
+        var lastPing = started
+        while (!cancelled.get()) {
+            val now = SystemClock.uptimeMillis()
+            if (now - started >= budget) break
+            val speaking = runCatching { inst.nIsSpeaking() }.getOrDefault(0)
+            if (speaking == 0) {
+                val silentFor = now - lastAudioTime.get()
+                val quiet = if (audioReceived.get()) {
+                    silentFor > TAIL_SILENCE_MS
+                } else {
+                    now - started > START_SILENCE_MS
+                }
+                if (quiet) break
+            }
+            if (now - lastPing >= PING_INTERVAL_MS) {
+                runCatching { sink.ping() }
+                lastPing = now
+            }
+            delay(WAIT_STEP_MS)
+        }
+    }
+
+    /**
+     * المسار الممتد: تهيئة الخدمة بحزمةٍ مسجّلة ثم نطق كل قطعة.
+     */
+    private suspend fun speakExtended(
+        voice: AcapelaVoiceManifest.VoiceInfo,
+        chunks: List<String>,
+        rate: Float,
+        pitch: Float,
+        sink: PcmSink,
+        cancelled: AtomicBoolean
+    ): HostResult {
+        openExtendedEngine(voice)?.let { return it }
         val srv = extendedService ?: return HostResult.failure(
             "NOT_INITIALIZED",
-            "AcattsandroidService not available"
+            "خدمة Acapela الممتدة غير مهيأة"
         )
-        val speedPercent = calculateSpeedPercent(rate)
+
+        val speed = calculateSpeedPercent(rate)
         val pitchPercent = calculatePitchPercent(pitch)
-        AcapelaParameters.applyRegistered(
-            speedPercent,
+        val paramCode = AcapelaParameters.applyRegistered(
+            speed,
             pitchPercent,
             AcapelaParameters.PropertyWriter { k, v ->
                 srv.nSetProperty(k, v)
             }
         )
+        if (paramCode != 0) {
+            Log.w(TAG, "فشل ضبط معاملات الحزمة الممتدة: $paramCode")
+        }
 
+        val nativeCapMs = SynthesisBudget.inactivityBudgetMs(
+            chunks.sumOf { it.length }
+        )
         for (chunk in chunks) {
             if (cancelled.get()) {
                 return HostResult.failure("CANCELLED", "أُلغي الطلب")
@@ -884,218 +732,172 @@ internal class AcapelaHostSession(
                 sink.exitNativeCall()
             }
             if (speakRes != 0) {
-                Log.e(TAG, "فشل nSpeak في Acapela Extended: $speakRes")
+                Log.e(TAG, "فشل nSpeak في Acapela الممتد: $speakRes")
                 return HostResult.failure(
                     "SPEAK_ERROR",
-                    "فشل استدعاء nSpeak: $speakRes"
+                    "فشل استدعاء nSpeak الممتد: $speakRes"
                 )
             }
-            val startTime = SystemClock.uptimeMillis()
-            val timeoutMs = SynthesisBudget.pieceTimeoutMs(chunk.length)
-            while (!cancelled.get() &&
-                (SystemClock.uptimeMillis() - startTime) < timeoutMs
-            ) {
-                if (audioReceived.get() &&
-                    SystemClock.uptimeMillis() - lastAudioTime.get() >
-                    TAIL_SILENCE_MS
-                ) {
-                    break
-                }
-                delay(WAIT_STEP_MS)
-            }
+            awaitExtendedChunkEnd(chunk.length, sink, cancelled)
         }
+
         if (!audioReceived.get()) {
             return HostResult.failure(
                 "SPEAK_NO_AUDIO",
-                "لم يصدر محرك Acapela Extended أي صوت"
-            )
-        }
-        return HostResult(ok = true)
-    }
-
-    private suspend fun speakNative(
-        inst: acattsandroid,
-        targetName: String,
-        chunks: List<String>,
-        rate: Float,
-        pitch: Float,
-        sink: PcmSink,
-        cancelled: AtomicBoolean,
-        nativeCapMs: Long
-    ): HostResult {
-        val speedPercent = calculateSpeedPercent(rate)
-        val pitchPercent = calculatePitchPercent(pitch)
-
-        val rateCode = inst.nSetSpeechRate(speedPercent.toFloat())
-        if (rateCode != 0) {
-            Log.w(
-                TAG,
-                "nSetSpeechRate($speedPercent) فشل: $rateCode"
-            )
-        }
-        val shapeFloat = pitchPercent.toFloat().coerceIn(70f, 130f)
-        inst.nSetShape(shapeFloat)
-        if (diagnosticsEnabled()) {
-            Log.d(
-                TAG,
-                "speakNative voice=$targetName rate=$rate" +
-                    " speedPercent=$speedPercent rateCode=$rateCode"
-            )
-        }
-
-        for (chunk in chunks) {
-            if (cancelled.get()) {
-                return HostResult.failure("CANCELLED", "أُلغي الطلب")
-            }
-
-            sink.enterNativeCall(nativeCapMs)
-            val speakRes = try {
-                var code = inst.nSpeak(chunk)
-                if (code != 0 && !cancelled.get()) {
-                    Log.w(
-                        TAG,
-                        "nSpeak raw returned $code, retrying with tags"
-                    )
-                    code = inst.nSpeak(
-                        formatAcapelaText(chunk, rate, pitch)
-                    )
-                }
-                code
-            } finally {
-                sink.exitNativeCall()
-            }
-
-            if (speakRes != 0) {
-                Log.e(
-                    TAG,
-                    "فشل nSpeak: $speakRes" +
-                        " lastError=${lastErrorOf(inst)}"
-                )
-                return HostResult.failure(
-                    "SPEAK_ERROR",
-                    "فشل استدعاء nSpeak: $speakRes"
-                )
-            }
-
-            val startTime = SystemClock.uptimeMillis()
-            val timeoutMs = SynthesisBudget.pieceTimeoutMs(chunk.length)
-            while (!cancelled.get() && !speechCompleted.get()) {
-                val now = SystemClock.uptimeMillis()
-                if (now - startTime > timeoutMs) break
-                if (audioReceived.get()) {
-                    val speaking = runCatching {
-                        inst.nIsSpeaking()
-                    }.getOrDefault(0)
-                    if (speaking == 0 &&
-                        now - lastAudioTime.get() > TAIL_SILENCE_MS
-                    ) {
-                        break
-                    }
-                } else if (now - startTime > START_SILENCE_MS) {
-                    val speaking = runCatching {
-                        inst.nIsSpeaking()
-                    }.getOrDefault(0)
-                    if (speaking == 0) break
-                }
-                delay(WAIT_STEP_MS)
-            }
-        }
-
-        if (!audioReceived.get()) {
-            Log.e(
-                TAG,
-                "Acapela لم يصدر صوتاً: voice=$targetName" +
-                    " lastError=${lastErrorOf(inst)}"
-            )
-            return HostResult.failure(
-                "SPEAK_NO_AUDIO",
-                "لم يصدر المحرك أي صوت للصوت $targetName"
+                "لم يصدر محرك Acapela الممتد أي صوت"
             )
         }
         return HostResult(ok = true)
     }
 
     /**
-     * تحميل الصوت المطلوب داخل نافذة نداءٍ أصليّ. يعود `null` عند
-     * النجاح أو فشلاً معنوناً عند تعذّر التحميل.
+     * انتظار القطعة الممتدة: الخدمة لا تكشف `nIsSpeaking`، فيُعتمد
+     * على الصمت بعد آخر عيّنة وبمهلة القطعة كسقف.
      */
-    private fun loadVoice(
-        inst: acattsandroid,
+    private suspend fun awaitExtendedChunkEnd(
+        chars: Int,
         sink: PcmSink,
-        dir: File,
-        voiceInfo: AcapelaVoiceManifest.VoiceInfo?,
-        requestedId: String,
-        cleanSpeaker: String,
-        targetName: String,
-        nativeCapMs: Long
+        cancelled: AtomicBoolean
+    ) {
+        val started = SystemClock.uptimeMillis()
+        val budget = SynthesisBudget.pieceTimeoutMs(chars)
+        var lastPing = started
+        while (!cancelled.get()) {
+            val now = SystemClock.uptimeMillis()
+            if (now - started >= budget) break
+            val silentFor = now - lastAudioTime.get()
+            val quiet = if (audioReceived.get()) {
+                silentFor > TAIL_SILENCE_MS
+            } else {
+                now - started > START_SILENCE_MS
+            }
+            if (quiet) break
+            if (now - lastPing >= PING_INTERVAL_MS) {
+                runCatching { sink.ping() }
+                lastPing = now
+            }
+            delay(WAIT_STEP_MS)
+        }
+    }
+
+    /**
+     * فتح خدمة الحزمة الممتدة بالتسلسل الذي يفرضه MultiTTS حرفياً.
+     * يعود `null` عند الجاهزية أو فشلاً معنوناً يسمّي الخطوة.
+     */
+    private fun openExtendedEngine(
+        voice: AcapelaVoiceManifest.VoiceInfo
     ): HostResult? {
-        val candidates = candidateNames(voiceInfo, requestedId, cleanSpeaker)
-        var loadRes = -1
-        var loadedName: String? = null
-        sink.enterNativeCall(nativeCapMs)
+        val key = "${voice.dir.absolutePath}|${voice.registration}"
+        if (extendedKey == key && extendedService != null) return null
+        closeExtended()
+
+        val iso3 = iso3Of(voice.locale) ?: return HostResult.failure(
+            "VOICE_LOCALE_UNKNOWN",
+            "لغة/دولة الصوت غير معروفة: ${voice.locale.toLanguageTag()}" +
+                " (${voice.configFile?.name ?: voice.dir.name})"
+        )
+
+        AcapelaVoiceManifest.normalizeExtensionsCase(voice.dir)
+        File(voice.dir, "userdicos").mkdirs()
+
+        val srv = AcattsandroidService(
+            { bytes, len -> handleRawAudioBytes(bytes, len) },
+            voice.registration
+        )
+        var opened = false
         try {
-            for (cand in candidates) {
-                loadRes = inst.nLoadVoice(cand)
-                if (loadRes >= 0) {
-                    loadedName = cand
-                    if (loadRes > 0) {
-                        currentSampleRate = loadRes
-                    }
-                    break
-                }
-            }
-            if (loadRes < 0) {
-                // المكتبة لم تسجّل الأصوات بعد (أو نُسيت قائمتها):
-                // أعد مسح المسارات ثم أعد المحاولة.
-                val extraDirs = EmbeddedStorage.allSearchDirs(
-                    context,
-                    EmbeddedStorage.Engine.ACAPELA
+            val initRes = srv.nInit(directoryArgument(voice.dir))
+            if (initRes != 0) {
+                Log.e(TAG, "nInit فشل ($initRes) في ${voice.dir.path}")
+                return HostResult.failure(
+                    "ENGINE_INIT_FAILED",
+                    "nInit فشل بالكود $initRes في ${voice.dir.name}"
                 )
-                val paths = collectVoiceSearchPaths(dir, extraDirs)
-                val count = inst.nGetVoiceList(paths)
-                Log.i(
-                    TAG,
-                    "إعادة فحص أصوات Acapela: عُثر على $count في " +
-                        "${paths.size} مسار"
-                )
-                for (cand in candidates) {
-                    loadRes = inst.nLoadVoice(cand)
-                    if (loadRes >= 0) {
-                        loadedName = cand
-                        if (loadRes > 0) {
-                            currentSampleRate = loadRes
-                        }
-                        break
-                    }
-                }
             }
-        } finally {
-            sink.exitNativeCall()
-        }
 
-        if (loadRes >= 0) {
-            currentVoiceId = loadedName ?: targetName
-            Log.i(TAG, "تم تحميل صوت Acapela [$currentVoiceId] بنجاح")
+            val modeRes = srv.nSetVoiceMode(VOICE_MODE_HD)
+            if (modeRes != 0) {
+                return HostResult.failure(
+                    "VOICE_MODE_FAILED",
+                    "nSetVoiceMode($VOICE_MODE_HD) فشل: $modeRes"
+                )
+            }
+
+            if (AcapelaVoiceManifest.hasUtf8Userdico(voice.dir)) {
+                val utf8Res = srv.nUtf8Mode(iso3.language, iso3.country)
+                if (utf8Res < 0) {
+                    return HostResult.failure(
+                        "UTF8_MODE_FAILED",
+                        "nUtf8Mode فشل: $utf8Res"
+                    )
+                }
+            }
+
+            val langRes = srv.nSetLanguage(iso3.language, iso3.country, "")
+            if (langRes != 0) {
+                return HostResult.failure(
+                    "LANGUAGE_FAILED",
+                    "nSetLanguage(${iso3.language}, ${iso3.country})" +
+                        " فشل: $langRes"
+                )
+            }
+
+            val speaker = voice.rawSpeaker ?: voice.voiceName
+            val voiceRes = srv.nSetCurrentVoice(speaker)
+            if (voiceRes != 0) {
+                return HostResult.failure(
+                    "VOICE_LOAD_FAILED",
+                    "nSetCurrentVoice($speaker) فشل: $voiceRes"
+                )
+            }
+
+            val pauseRes = srv.nSetProperty(
+                PUNCTUATION_PAUSE_KEY,
+                PUNCTUATION_PAUSE_VALUE
+            )
+            if (pauseRes != 0) {
+                return HostResult.failure(
+                    "PROPERTY_FAILED",
+                    "nSetProperty($PUNCTUATION_PAUSE_KEY) فشل: $pauseRes"
+                )
+            }
+
+            opened = true
+            extendedService = srv
+            extendedKey = key
+            Log.i(
+                TAG,
+                "حزمة Acapela ممتدة جاهزة: $speaker " +
+                    "(${iso3.language}-${iso3.country})"
+            )
             return null
+        } finally {
+            if (!opened) runCatching { srv.nShutdown() }
         }
+    }
 
-        Log.e(
-            TAG,
-            "فشل تحميل صوت Acapela ($targetName): كود $loadRes, " +
-                "مرشحات=$candidates, lastError=${lastErrorOf(inst)}, " +
-                "lang=${lastLanguageOf(inst)}, ملفات=${dirFiles(dir)}"
-        )
-        return HostResult.failure(
-            "VOICE_LOAD_FAILED",
-            "تعذر تحميل الصوت: $targetName (كود $loadRes)"
-        )
+    /** وسيط `nInit`: مسار المجلد منتهياً بفاصل، كما يفعل MultiTTS. */
+    private fun directoryArgument(dir: File): String {
+        val path = dir.absolutePath
+        return if (path.endsWith(File.separator)) path
+        else path + File.separator
+    }
+
+    private data class Iso3(val language: String, val country: String)
+
+    /**
+     * رمز ISO3 للغة وللدولة معاً. الدولة ليست ترفاً: المكتبة ترفض
+     * `nSetLanguage` إن غابت، وMultiTTS يشترط `ll-CC` في `.inf`.
+     */
+    private fun iso3Of(locale: Locale): Iso3? {
+        val language = runCatching { locale.isO3Language }
+            .getOrDefault("")
+        val country = runCatching { locale.isO3Country }.getOrDefault("")
+        if (language.length != 3 || country.length != 3) return null
+        return Iso3(language, country)
     }
 
     override fun onAudioAvailable(samples: ShortArray, length: Int) {
-        if (verifying.get()) {
-            if (length > 0) verifyAudio.set(true)
-            return
-        }
         val sink = activeSink ?: return
         val cancelled = activeCancelled
         if (cancelled != null && cancelled.get()) {
@@ -1127,14 +929,15 @@ internal class AcapelaHostSession(
         p3: Long,
         p4: Long
     ): Long {
+        // أحداث المكتبة ليست موثوقة في هذا الإصدار (تعود 0 دائماً في
+        // MultiTTS)، فالاكتمال يُقاس بالصمت لا بالحدث.
         if (eventId == 2L || eventId == 5L) {
-            speechCompleted.set(true)
+            lastAudioTime.set(SystemClock.uptimeMillis())
         }
         return 0L
     }
 
     override fun stop() {
-        speechCompleted.set(true)
         runCatching { acatts?.nStop() }
         runCatching { extendedService?.nStop() }
     }
@@ -1161,52 +964,31 @@ internal class AcapelaHostSession(
             }
 
     /**
-     * أسماء مرشَّحة للتحميل: الاسم الخام أولاً، ثم أسماء التهيئة
-     * والملفات. لا تطبيع للاسم الخام قبل تمريره للمكتبة.
+     * أسماء مرشّحة للتحميل: الاسم الخام من `.inf` أولاً لأنه ما
+     * تقارنه المكتبة داخل `nLoadVoice`، ثم أسماء التهيئة والملفات.
      */
     private fun candidateNames(
-        voice: AcapelaVoiceManifest.VoiceInfo?,
-        requestedId: String,
-        cleanSpeaker: String
+        voice: AcapelaVoiceManifest.VoiceInfo
     ): List<String> {
         val names = LinkedHashSet<String>()
-        if (voice != null) {
-            voice.rawSpeaker?.let(names::add)
-            names.add(voice.voiceName)
-            names.add(voice.id)
-            names.add(voice.dir.name)
-            voice.configFile?.nameWithoutExtension?.let(names::add)
-            voice.dir.listFiles { f ->
-                f.isFile && (f.extension.equals("inf", true) ||
-                    f.extension.equals("ini", true) ||
-                    f.extension.equals("bvcu", true) ||
-                    f.extension.equals("dat", true))
-            }?.forEach { f ->
-                names.add(f.nameWithoutExtension)
-                names.add(
-                    AcapelaVoiceManifest.cleanAcapelaSpeaker(
-                        f.nameWithoutExtension
-                    )
+        voice.rawSpeaker?.let(names::add)
+        names.add(voice.voiceName)
+        names.add(voice.id)
+        names.add(voice.dir.name)
+        voice.configFile?.nameWithoutExtension?.let(names::add)
+        voice.dir.listFiles { f ->
+            f.isFile && (f.extension.equals("inf", true) ||
+                f.extension.equals("ini", true) ||
+                f.extension.equals("bvcu", true) ||
+                f.extension.equals("dat", true))
+        }?.forEach { f ->
+            names.add(f.nameWithoutExtension)
+            names.add(
+                AcapelaVoiceManifest.cleanAcapelaSpeaker(
+                    f.nameWithoutExtension
                 )
-            }
+            )
         }
-        names.add(requestedId)
-        val pureReq = requestedId
-            .removePrefix("acapela_embedded:")
-            .removePrefix("acapela:")
-            .removePrefix("acapela_")
-            .substringBefore('(')
-            .trim()
-        names.add(pureReq)
-        names.add(cleanSpeaker)
-        names.add(cleanSpeaker.lowercase(Locale.ROOT))
-        names.add(cleanSpeaker.uppercase(Locale.ROOT))
-        names.add(
-            cleanSpeaker.replaceFirstChar {
-                if (it.isLowerCase()) it.titlecase(Locale.ROOT)
-                else it.toString()
-            }
-        )
         return names.filter { it.isNotBlank() }.distinct()
     }
 
@@ -1219,6 +1001,6 @@ internal class AcapelaHostSession(
     private fun dirFiles(dir: File): List<String> =
         dir.walkTopDown().maxDepth(2)
             .filter { it.isFile }
-            .map { "${it.name} (${it.length()}B)" }
+            .map { "${it.name}:${it.length()}" }
             .toList()
 }
