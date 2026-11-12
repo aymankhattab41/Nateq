@@ -3,6 +3,7 @@ package com.aymankhattab.nateq.core.audio.providers
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /**
  * فحص وتعداد أصوات Acapela على القرص
@@ -38,6 +39,11 @@ object AcapelaVoiceManifest {
         val dir: File,
         val rawSpeaker: String? = null,
         val configFile: File? = null,
+        /**
+         * بيانات التسجيل (metadata) للحزمة الممتدة — لا اسم ملف
+         * `0x...` إطلاقاً. الفراغ يعني حزمة كلاسيكية تُشغَّل
+         * بمحرك `libacattsandroid` ورخصة `runtime.dat`.
+         */
         val registration: String = ""
     )
 
@@ -96,6 +102,57 @@ object AcapelaVoiceManifest {
 
     private val NAME_PREFIX_REGEX = Regex("^([a-z]{2,3})[_-]")
 
+    /** بادئةٌ تحمل اللغة والدولة معاً: `ar_sa_...` أو `ara-SAU-...`. */
+    private val NAME_LOCALE_REGEX = Regex(
+        "^([a-z]{2,3})[_-]([a-z]{2,3})(?:[_-]|$)"
+    )
+
+    /** رمز الدولة بثلاثة أحرف (ISO-3166-1 alpha-3) إلى حرفين. */
+    private val ISO3_COUNTRY_TO_ISO2 = mapOf(
+        "sau" to "SA", "usa" to "US", "gbr" to "GB", "fra" to "FR",
+        "deu" to "DE", "esp" to "ES", "rus" to "RU", "ita" to "IT",
+        "nld" to "NL", "bra" to "BR", "prt" to "PT", "tur" to "TR",
+        "swe" to "SE", "dnk" to "DK", "nor" to "NO", "pol" to "PL",
+        "grc" to "GR", "jpn" to "JP", "chn" to "CN", "kor" to "KR",
+        "ind" to "IN", "pak" to "PK", "irn" to "IR", "isr" to "IL",
+        "cze" to "CZ", "svk" to "SK", "hun" to "HU", "rou" to "RO",
+        "ukr" to "UA", "bgr" to "BG", "hrv" to "HR", "srb" to "RS",
+        "svn" to "SI", "ltu" to "LT", "lva" to "LV", "est" to "EE",
+        "fin" to "FI", "isl" to "IS", "can" to "CA", "aus" to "AU",
+        "mex" to "MX", "egy" to "EG", "mar" to "MA", "dza" to "DZ",
+        "tun" to "TN", "jor" to "JO", "lbn" to "LB", "kwt" to "KW",
+        "qat" to "QA", "are" to "AE", "irq" to "IQ", "syr" to "SY",
+        "yem" to "YE", "sdn" to "SD", "lby" to "LY", "omn" to "OM",
+        "bhr" to "BH", "pse" to "PS", "bel" to "BY", "kaz" to "KZ",
+        "uzb" to "UZ", "ken" to "KE", "eth" to "ET", "som" to "SO",
+        "zaf" to "ZA", "mys" to "MY", "tha" to "TH", "vnm" to "VN"
+    )
+
+    /**
+     * دولةٌ افتراضية للغةٍ لا يذكر رمزها دولة. المحرك الممتد
+     * يحتاج ISO3 للغة **والدولة** معاً (`ara` + `SAU`)، فإغفال
+     * الدولة يُفشل `nSetLanguage`.
+     */
+    private val DEFAULT_COUNTRY = mapOf(
+        "ar" to "SA", "en" to "US", "fr" to "FR", "de" to "DE",
+        "es" to "ES", "ru" to "RU", "it" to "IT", "nl" to "NL",
+        "pt" to "BR", "tr" to "TR", "sv" to "SE", "da" to "DK",
+        "nb" to "NO", "nn" to "NO", "no" to "NO", "pl" to "PL",
+        "el" to "GR", "ja" to "JP", "zh" to "CN", "ko" to "KR",
+        "hi" to "IN", "ur" to "PK", "fa" to "IR", "he" to "IL",
+        "cs" to "CZ", "sk" to "SK", "hu" to "HU", "ro" to "RO",
+        "uk" to "UA", "bg" to "BG", "hr" to "HR", "sr" to "RS",
+        "sl" to "SI", "lt" to "LT", "lv" to "LV", "et" to "EE",
+        "fi" to "FI", "is" to "IS", "ca" to "ES", "gl" to "ES",
+        "eu" to "ES", "af" to "ZA", "sq" to "AL", "mk" to "MK",
+        "ka" to "GE", "hy" to "AM", "az" to "AZ", "kk" to "KZ",
+        "uz" to "UZ", "sw" to "KE", "am" to "ET", "so" to "SO",
+        "be" to "BY", "cy" to "GB", "id" to "ID", "ms" to "MY",
+        "th" to "TH", "vi" to "VN", "bn" to "BD", "ta" to "IN",
+        "te" to "IN", "mr" to "IN", "gu" to "IN", "kn" to "IN",
+        "ml" to "IN", "pa" to "IN"
+    )
+
     /**
      * أزواج `KEY = "value"` — قد يرد عشراتٌ منها في سطر واحد،
      * وكل تحليل سطري يفشل حتماً معها.
@@ -111,6 +168,11 @@ object AcapelaVoiceManifest {
     val HEX_REGISTRATION_REGEX = Regex(
         "^0x[0-9A-Fa-f]{8,16}$",
         RegexOption.IGNORE_CASE
+    )
+
+    /** عقد MultiTTS لبيانات تسجيل الحزمة الممتدة. */
+    private val REGISTRATION_METADATA_REGEX = Regex(
+        "[A-Za-z0-9@._+-]{1,288}"
     )
 
     /**
@@ -291,16 +353,6 @@ object AcapelaVoiceManifest {
         }
     }
 
-    fun hasVoiceIdentity(f: File): Boolean {
-        if (!f.exists() || !f.isFile) return false
-        val text = runCatching {
-            f.readText(StandardCharsets.ISO_8859_1)
-        }.getOrDefault("")
-        val lower = text.lowercase(Locale.ROOT)
-        return lower.contains("speaker") || lower.contains("isocode") ||
-            lower.contains("voicename") || lower.contains("voice")
-    }
-
     fun normalizeExtensionsCase(dir: File) {
         val files = dir.listFiles() ?: return
         for (f in files) {
@@ -365,324 +417,143 @@ object AcapelaVoiceManifest {
     }
 
     /**
-     * التحقق من وجود ملفات تهيئة .inf و .ini و .cfg متوافقة تماماً مع
-     * متطلبات مكتبة Acapela الأصلية (libacattsandroid.so):
+     * تجهيز مجلدات الأصوات بما تحتاجه المكتبة الأصلية **دون توليد أي
+     * ملف تهيئة من الصفر**:
      *
-     * 1. دوال البحث [tts_function_find_voices] تبحث حصراً عن ملفات
-     *    `.inf` وتستخرج `speaker` عبر sscanf: `%s = " %[^"]" `
-     *    التي تتطلب حتماً مسافة قبل علامة المساواة (`speaker = " ..."`).
+     * 1. تطبيع امتدادات الملفات (`Inf` ← `inf`) بنسخةٍ لا تحذف الأصل.
+     * 2. إنشاء `userdicos` لأن المكتبة تكتب فيه قواميس المستخدم.
+     * 3. نسخ ملف مفتاح الحزمة `0x...` إلى مجلد الصوت نفسه؛ عقد
+     *    MultiTTS يفحص مجلد ملف `.inf` بحثاً عنه، وهو مسار ملفٍ لا
+     *    بيانات تسجيل.
+     * 4. إكمال مفاتيح `.inf` الناقصة فقط (`speaker` و`ISOCode`
+     *    و`NAME` و`freq`) بصيغة `KEY = "value"` التي يقرأها المحمّل.
      *
-     * 2. دالة التحميل [tts_function_load_voice] تفتح ملف `.ini` المطابق
-     *    لاسم `.inf`، وتقرأ عبر sscanf: `%s = %[^"] ` وتبحث عن مفتاح
-     *    [MBR]؛ فإن لم تجده انهارت بـ ERROR_BABILE_INITLANGDBAEX (-7).
-     *
-     * 3. لا يُمسّ أي ملف تهيئة غنيّ يحوي توجيهات أصلية، بل يُستكمل
-     *    بإضافة [MBR] وتنسيق speaker إن كانا ناقصين.
+     * **لماذا لا يُولَّد `.inf` أو `.ini` أو `.cfg`:** عقد MultiTTS
+     * يبني `.ini` من اسم `.inf`، ويجمع من كل قيمة مقتبسة فيه مسار
+     * ملفٍ نسبيّ لينسخه إلى مجلد التهيئة. فملف `.inf` مصطنعٌ بمفاتيح
+     * وصفية فقط لا يحمل أي مسار بيانات، فيُشغّل المكتبة على مجلدٍ
+     * خالٍ من `.bvcu`/`.dat` فيفشل `nInit` — وهو جذر «فشل تهيئة
+     * المحرك». الحزم الحقيقية تحمل مفاتيحها ومساراتها بنفسها.
      */
     fun ensureVoiceConfigs(baseDir: File) {
         if (!baseDir.exists() || !baseDir.isDirectory) return
         for (dir in completeVoiceDirs(baseDir)) {
             runCatching {
                 normalizeExtensionsCase(dir)
-                val dataFiles = dir.listFiles { f ->
-                    f.isFile && f.extension.lowercase(Locale.ROOT) in
-                        DATA_EXTENSIONS
-                } ?: emptyArray()
-
-                val bvcuFiles = dataFiles.filter {
-                    it.extension.equals("bvcu", ignoreCase = true)
-                }
-                val datFiles = dataFiles.filter {
-                    it.extension.equals("dat", ignoreCase = true)
-                }
+                File(dir, "userdicos").mkdirs()
+                copyRegistrationKeyInto(dir)
                 val infFiles = dir.listFiles { f ->
                     f.isFile && f.extension.equals("inf", ignoreCase = true)
                 } ?: emptyArray()
-                val iniFiles = dir.listFiles { f ->
-                    f.isFile && f.extension.equals("ini", ignoreCase = true)
-                } ?: emptyArray()
-
-                if (dataFiles.isEmpty() && infFiles.isEmpty() &&
-                    iniFiles.isEmpty()
-                ) {
-                    return@runCatching
-                }
-
-                // 0) التحقق من ملفات الترخيص ومجلد قواميس المستخدم
-                File(dir, "userdicos").mkdirs()
-                val hexFile = findHexRegistrationFile(dir)
-                if (hexFile != null && hexFile.parentFile != dir) {
-                    val targetHex = File(dir, hexFile.name)
-                    if (!targetHex.exists()) {
-                        runCatching {
-                            hexFile.copyTo(targetHex, overwrite = true)
-                        }
-                    }
-                }
-                val regTxt = File(dir, "registration.txt")
-                if (regTxt.exists()) {
-                    val text = runCatching {
-                        regTxt.readText(StandardCharsets.ISO_8859_1).trim()
-                    }.getOrNull()
-                    if (text != null && text.matches(HEX_REGISTRATION_REGEX)) {
-                        val targetReg = File(dir, text)
-                        if (!targetReg.exists()) {
-                            runCatching { targetReg.createNewFile() }
-                        }
-                    }
-                }
-
-                // كشف المتحدث واللغة ومعدل العينات من الملفات الحالية
-                var detectedSpeaker: String? = null
-                var detectedIso: String? = null
-                var detectedRate: Int? = null
-
-                for (cf in infFiles + iniFiles) {
-                    val info = runCatching {
-                        parseConfigFile(cf)
-                    }.getOrNull()
-                    if (info != null) {
-                        if (detectedSpeaker == null &&
-                            info.rawSpeaker != null
-                        ) {
-                            detectedSpeaker = info.rawSpeaker
-                        }
-                        if (detectedIso == null &&
-                            info.locale != Locale.ROOT
-                        ) {
-                            detectedIso = info.locale.language
-                        }
-                        if (detectedRate == null && info.sampleRate > 0) {
-                            detectedRate = info.sampleRate
-                        }
-                    }
-                }
-
-                val primaryData = bvcuFiles.firstOrNull()
-                    ?: dataFiles.firstOrNull()
-                if (detectedSpeaker.isNullOrBlank()) {
-                    val rawDataName = primaryData?.nameWithoutExtension
-                    detectedSpeaker = rawDataName?.let {
-                        cleanAcapelaSpeaker(it)
-                    } ?: cleanAcapelaSpeaker(dir.name)
-                }
-                if (detectedSpeaker.isNullOrBlank()) {
-                    detectedSpeaker = "Voice"
-                }
-
-                val sampleRate = detectedRate ?: DEFAULT_SAMPLE_RATE
-                val loc = resolveLocale(
-                    detectedIso,
-                    detectedSpeaker,
-                    primaryData?.nameWithoutExtension
-                )
-
-                // جدول رموز ISO لمكتبة Acapela (دالّة 0x5bb30):
-                // العربية "ar-sa" حصراً، والإنجليزية "en-us" أو "en-gb".
-                val isoCode = when (loc.language.lowercase(Locale.ROOT)) {
-                    "ar" -> "ar-sa"
-                    "en" -> if (loc.country.equals("GB", ignoreCase = true)) {
-                        "en-gb"
-                    } else {
-                        "en-us"
-                    }
-                    "fr" -> if (loc.country.equals("CA", ignoreCase = true)) {
-                        "fr-ca"
-                    } else {
-                        "fr-fr"
-                    }
-                    "es" -> if (loc.country.equals("US", ignoreCase = true) ||
-                        loc.country.equals("MX", ignoreCase = true)
-                    ) {
-                        "es-us"
-                    } else {
-                        "es-es"
-                    }
-                    "de" -> "de-de"
-                    "it" -> "it-it"
-                    "ru" -> "ru-ru"
-                    "pt" -> if (loc.country.equals("PT", ignoreCase = true)) {
-                        "pt-pt"
-                    } else {
-                        "pt-br"
-                    }
-                    "nl" -> if (loc.country.equals("BE", ignoreCase = true)) {
-                        "nl-be"
-                    } else {
-                        "nl-nl"
-                    }
-                    "tr" -> "tr-tr"
-                    "sv" -> if (loc.country.equals("FI", ignoreCase = true)) {
-                        "sv-fi"
-                    } else {
-                        "sv-se"
-                    }
-                    "da" -> "da-dk"
-                    "nb", "no" -> "nb-no"
-                    "pl" -> "pl-pl"
-                    "el" -> "el-gr"
-                    "ja" -> "ja-jp"
-                    "zh" -> "zh-cn"
-                    "ko" -> "ko-kr"
-                    else -> "ar-sa"
-                }
-
-                val langName = when {
-                    isoCode.startsWith("ar", ignoreCase = true) -> "Arabic"
-                    isoCode.startsWith("en", ignoreCase = true) -> "English"
-                    isoCode.startsWith("fr", ignoreCase = true) -> "French"
-                    isoCode.startsWith("de", ignoreCase = true) -> "German"
-                    isoCode.startsWith("es", ignoreCase = true) -> "Spanish"
-                    isoCode.startsWith("ru", ignoreCase = true) -> "Russian"
-                    isoCode.startsWith("it", ignoreCase = true) -> "Italian"
-                    else -> "Arabic"
-                }
-
-                val cleanSpk = cleanAcapelaSpeaker(detectedSpeaker)
-
-                normalizeExtensionsCase(dir)
-                // إن وُجد ملف .inf أصلي صالح، نكتفي بتطبيع الحالة ونحفظه
-                val validInf = infFiles.firstOrNull {
-                    isRichConfig(it) || hasVoiceIdentity(it)
-                }
-                if (validInf != null) {
-                    return@runCatching
-                }
-                val canonicalName =
-                    infFiles.firstOrNull()?.nameWithoutExtension
-                    ?: cleanSpk.ifBlank { detectedSpeaker }
-
-                // حذف أي ملفات .inf / .ini / .cfg بديلة في المجلد نفسه
-                // لمنع التكرار والتعارض
-                for (f in infFiles) {
-                    if (!f.nameWithoutExtension.equals(canonicalName, false)) {
-                        runCatching { f.delete() }
-                    }
-                }
-                for (f in iniFiles) {
-                    if (!f.nameWithoutExtension.equals(canonicalName, false) &&
-                        !isRichConfig(f)
-                    ) {
-                        runCatching { f.delete() }
-                    }
-                }
-                dir.listFiles { f ->
-                    f.isFile && f.extension.equals("cfg", ignoreCase = true) &&
-                        !f.nameWithoutExtension.equals(canonicalName, false)
-                }?.forEach { runCatching { it.delete() } }
-
-                val dataName = bvcuFiles.firstOrNull()?.name
-                    ?: primaryData?.name.orEmpty()
-                val datName = datFiles.firstOrNull()?.name.orEmpty()
-
-                val targetInf = File(dir, "$canonicalName.inf")
-                val targetIni = File(dir, "$canonicalName.ini")
-                val targetCfg = File(dir, "$canonicalName.cfg")
-
-                // 1) كتابة .inf بتنسيق sscanf الصارم: %s = " %[^"]" 
-                val infHeader = buildString {
-                    append("[Voice]\n")
-                    append("speaker = \" $cleanSpk\"\n")
-                    append("language = \" $langName\"\n")
-                    append("ISOCode = \" $isoCode\"\n")
-                    append("frequency = \" $sampleRate\"\n")
-                }
-                if (!targetInf.exists() || targetInf.length() == 0L ||
-                    !isRichConfig(targetInf)
-                ) {
-                    targetInf.writeText(
-                        infHeader,
-                        StandardCharsets.ISO_8859_1
-                    )
-                } else {
-                    val text = targetInf.readText(
-                        StandardCharsets.ISO_8859_1
-                    )
-                    var updated = text
-                    if (!updated.contains("speaker = \" $cleanSpk\"")) {
-                        updated += "\nspeaker = \" $cleanSpk\"\n"
-                    }
-                    if (updated.contains("ara-SAU") ||
-                        updated.contains("ar-SAU")
-                    ) {
-                        updated = updated.replace("ara-SAU", "ar-sa")
-                            .replace("ar-SAU", "ar-sa")
-                    }
-                    if (!updated.contains("ISOCode = \" $isoCode\"")) {
-                        updated += "\nISOCode = \" $isoCode\"\n"
-                    }
-                    if (updated != text) {
-                        targetInf.writeText(
-                            updated,
-                            StandardCharsets.ISO_8859_1
-                        )
-                    }
-                }
-
-                // 2) كتابة .ini لضمان التوافق مع ini_loader و cfg_loader
-                // تتطلب المكتبة MBR "..." [ RAM ] لعدّ السجلات في الدورة
-                // الأولى (0x5b1a4) و MBR = ... للقراءة في 0x5b548.
-                val mbrDirectives = buildString {
-                    if (dataName.isNotEmpty()) {
-                        append("MBR \"$dataName\" [ RAM ]\n")
-                        append("MBR \"$dataName\"\n")
-                        append("MBR = \"$dataName\"\n")
-                        append("MBR = $dataName\"\n")
-                        append("MBR = $dataName\n")
-                        append("FILE \"$dataName\" [ RAM ]\n")
-                    }
-                    if (datName.isNotEmpty()) {
-                        append("FILEMAP \"$datName\" [ FILEMAP ]\n")
-                    }
-                }
-
-                if (!targetIni.exists() || targetIni.length() == 0L) {
-                    val iniContent = buildString {
-                        append("[Voice]\n")
-                        append("speaker = \" $cleanSpk\"\n")
-                        append("speaker = \"$cleanSpk\"\n")
-                        append("speaker \"$cleanSpk\"\n")
-                        append("language = \" $langName\"\n")
-                        append("language \"$langName\"\n")
-                        append("ISOCode = \" $isoCode\"\n")
-                        append("ISOCode \"$isoCode\"\n")
-                        append("frequency = \" $sampleRate\"\n")
-                        append("frequency \"$sampleRate\"\n")
-                        append(mbrDirectives)
-                    }
-                    targetIni.writeText(
-                        iniContent,
-                        StandardCharsets.ISO_8859_1
-                    )
-                } else {
-                    val text = targetIni.readText(
-                        StandardCharsets.ISO_8859_1
-                    )
-                    if (!text.contains("MBR \"$dataName\"") &&
-                        dataName.isNotEmpty()
-                    ) {
-                        targetIni.appendText(
-                            "\n$mbrDirectives",
-                            StandardCharsets.ISO_8859_1
-                        )
-                    }
-                }
-
-                // 3) كتابة .cfg إن لم يوجد
-                if (!targetCfg.exists() && dataName.isNotEmpty()) {
-                    val cfgContent = buildString {
-                        append("FILE \"$dataName\" [ RAM ]\n")
-                        if (datName.isNotEmpty()) {
-                            append("FILEMAP \"$datName\" [ FILEMAP ]\n")
-                        }
-                    }
-                    targetCfg.writeText(
-                        cfgContent,
-                        StandardCharsets.ISO_8859_1
-                    )
+                for (inf in infFiles) {
+                    completeInfProperties(inf)
                 }
             }
         }
+    }
+
+    /** نسخ ملف المفتاح `0x...` إلى مجلد الصوت نفسه (عقد MultiTTS). */
+    private fun copyRegistrationKeyInto(dir: File) {
+        val hex = findHexRegistrationFile(dir) ?: return
+        if (hex.parentFile?.canonicalPath == dir.canonicalPath) return
+        val target = File(dir, hex.name)
+        if (target.exists()) return
+        runCatching { hex.copyTo(target, overwrite = false) }
+    }
+
+    /**
+     * إكمال مفاتيح `.inf` الناقصة وحدها. وجود المفتاح أصلاً يمنع أي
+     * كتابة، فلا يتغير محتوى حزمةٍ سليمة أبداً.
+     */
+    private fun completeInfProperties(inf: File) {
+        val text = runCatching {
+            inf.readText(StandardCharsets.ISO_8859_1)
+        }.getOrNull() ?: return
+        val pairs = readPairs(text)
+        val speaker = firstValue(pairs, "speaker")
+        val isoValue = firstValue(pairs, "isocode")
+        val nameValue = firstValue(pairs, "name")
+        val freqValue = firstValue(pairs, "freq")
+        // المكتبة تقرأ `freq` وحده؛ فإن غاب ووُجد معدلٌ بصيغة أخرى
+        // (`frequency`/`SampleRate`) اشتُقّ منه بدل افتراض 22k.
+        val rateText = freqValue
+            ?: firstValue(pairs, "samplerate", "frequency")
+
+        val stem = inf.nameWithoutExtension
+        val locale = resolveLocale(isoValue, speaker ?: stem, stem)
+        val cleanSpeaker = cleanAcapelaSpeaker(speaker ?: stem).take(80)
+        val isoCode = if (locale == Locale.ROOT) "" else isoCodeOf(locale)
+        val freq = parseSampleRate(rateText)
+            ?: sampleRateFromName(stem)
+            ?: DEFAULT_SAMPLE_RATE
+
+        val additions = buildString {
+            if (speaker.isNullOrBlank()) {
+                append("speaker = \"$cleanSpeaker\"\n")
+            }
+            if (isoValue.isNullOrBlank() && isoCode.isNotEmpty()) {
+                append("ISOCode = \"$isoCode\"\n")
+            }
+            if (nameValue.isNullOrBlank()) {
+                append("NAME = \"${asciiResourceName(cleanSpeaker)}\"\n")
+            }
+            if (freqValue.isNullOrBlank()) {
+                append("freq = \"$freq\"\n")
+            }
+        }
+        if (additions.isEmpty()) return
+        val prefix = if (text.isEmpty() || text.endsWith("\n")) "" else "\n"
+        runCatching {
+            inf.appendText(prefix + additions, StandardCharsets.ISO_8859_1)
+        }
+    }
+
+    /**
+     * اسم موردٍ مطابق لعقد `[A-Za-z0-9_.-]{1,127}`: مكتبة MultiTTS
+     * ترفض أي اسم فيه محارف غير لاتينية.
+     */
+    private fun asciiResourceName(raw: String): String {
+        val cleaned = raw.map { c ->
+            if (c.code in 32..126 && !c.isWhitespace()) c else '_'
+        }.joinToString("").trim('_', '.', '-')
+        return cleaned.take(127).ifBlank { "voice" }
+    }
+
+    /** معدل العينات من اسم ملف الصوت (`_22k_` ← 22050). */
+    private fun sampleRateFromName(stem: String): Int? {
+        val match = Regex(
+            "(?:^|[_-])(\\d{2,3})k(?:[_-]|$)",
+            RegexOption.IGNORE_CASE
+        ).find(stem) ?: return null
+        val khz = match.groupValues[1].toIntOrNull() ?: return null
+        val rate = when (khz) {
+            11 -> 11025
+            22 -> 22050
+            else -> khz * 1000
+        }
+        return rate.takeIf { it in MIN_SAMPLE_RATE..MAX_SAMPLE_RATE }
+    }
+
+    /**
+     * قراءة معدل العينات من `.inf` بمرونة: قد يرد عدداً صحيحاً
+     * (`22050`) أو عشرياً (`22050.0`) أو بالكيلوهرتز (`22.0`).
+     *
+     * **ثوابت MultiTTS الحاكمة:** `22.0` ← `22050`، `44.0` ← `44100`،
+     * `11.0` ← `11025`؛ وما دون `1000` يُضرَب بألف. القيمة الخام
+     * `22` تعني 22 كيلوهرتز لا 22 هرتزاً.
+     */
+    private fun parseSampleRate(text: String?): Int? {
+        val value = text?.trim()?.toDoubleOrNull() ?: return null
+        if (value <= 0.0) return null
+        val hz = when {
+            value == 22.0 -> 22050.0
+            value == 44.0 -> 44100.0
+            value == 11.0 -> 11025.0
+            value < 1000.0 -> value * 1000.0
+            else -> value
+        }
+        return hz.roundToInt()
+            .takeIf { it in MIN_SAMPLE_RATE..MAX_SAMPLE_RATE }
     }
 
     /**
@@ -717,8 +588,7 @@ object AcapelaVoiceManifest {
         val rateText = firstValue(
             pairs, "samplerate", "frequency", "freq"
         )
-        val sampleRate = rateText?.toIntOrNull()
-            ?.takeIf { it in MIN_SAMPLE_RATE..MAX_SAMPLE_RATE }
+        val sampleRate = parseSampleRate(rateText)
             ?: DEFAULT_SAMPLE_RATE
         val locale = resolveLocale(
             isoCode, finalName, cf.nameWithoutExtension
@@ -778,16 +648,26 @@ object AcapelaVoiceManifest {
     }
 
     /**
-     * حل رمز التسجيل لمحرك Acapela من الحقول المباشرة أو ملفات JSON.
+     * بيانات تسجيل الحزمة الممتدة (metadata) — **لا اسم ملف `0x...`**.
+     *
+     * المحرك الممتد `AcattsandroidService(audio, registration)` يقرأ هذه
+     * السلسلة كبياناتٍ موقّعة؛ وتمرير اسم ملف المفتاح هنا يُفسد بناؤه.
+     * لذلك يُرفض أي مرشح يطابق [HEX_REGISTRATION_REGEX]، ويُنسخ ملف
+     * المفتاح نفسه إلى مجلد الصوت بواسطة [ensureVoiceConfigs].
+     *
+     * المرجع: MultiTTS يشترط `[A-Za-z0-9@._+-]{1,288}` لبيانات
+     * التسجيل، ويقرأها من `voice.json` أو من `param` المفكوك.
      */
     fun resolveRegistration(
         dir: File,
         rawReg: String? = null,
         rawParam: String? = null
     ): String {
-        if (!rawReg.isNullOrBlank()) return rawReg.trim()
-        val jsonReg = findRegistrationInJson(dir)
-        if (!jsonReg.isNullOrBlank()) return jsonReg.trim()
+        rawReg?.let { value ->
+            val trimmed = value.trim()
+            if (isRegistrationMetadata(trimmed)) return trimmed
+        }
+        findRegistrationInJson(dir)?.let { return it }
         val paramCandidate = rawParam?.takeIf { it.isNotBlank() }
             ?: findParamInJson(dir)
         if (!paramCandidate.isNullOrBlank()) {
@@ -796,34 +676,35 @@ object AcapelaVoiceManifest {
             }.getOrNull()
             if (!decoded.isNullOrBlank()) {
                 val parts = decoded.split(',')
-                return if (parts.size >= 3) {
+                val meta = if (parts.size >= 3) {
                     parts[1].trim() + parts[2].trim()
                 } else {
                     decoded.trim()
                 }
+                if (isRegistrationMetadata(meta)) return meta
             }
         }
-        val regFile = File(dir, "registration.txt")
-        if (regFile.exists()) {
-            val text = runCatching {
-                regFile.readText(StandardCharsets.ISO_8859_1).trim()
-            }.getOrDefault("")
-            if (text.isNotBlank()) return text
-        }
-        dir.parentFile?.let { p ->
-            val pReg = File(p, "registration.txt")
-            if (pReg.exists()) {
-                val text = runCatching {
-                    pReg.readText(StandardCharsets.ISO_8859_1).trim()
-                }.getOrDefault("")
-                if (text.isNotBlank()) return text
-            }
-        }
-        val hex = findHexRegistrationFile(dir)
-        if (hex != null) {
-            return hex.name
+        readRegistrationTxt(dir)?.let { return it }
+        dir.parentFile?.let { parent ->
+            readRegistrationTxt(parent)?.let { return it }
         }
         return ""
+    }
+
+    /** عقد MultiTTS لبيانات التسجيل: محارف آمنة فقط بلا مسافات. */
+    private fun isRegistrationMetadata(value: String): Boolean =
+        value.isNotBlank() &&
+            !value.matches(HEX_REGISTRATION_REGEX) &&
+            value.matches(REGISTRATION_METADATA_REGEX)
+
+    /** قراءة `registration.txt` إن كانت بيانات metadata لا اسم ملف. */
+    private fun readRegistrationTxt(dir: File): String? {
+        val regTxt = File(dir, "registration.txt")
+        if (!regTxt.isFile) return null
+        val text = runCatching {
+            regTxt.readText(StandardCharsets.ISO_8859_1).trim()
+        }.getOrNull().orEmpty()
+        return text.takeIf { isRegistrationMetadata(it) }
     }
 
     private fun findParamInJson(dir: File): String? {
@@ -854,17 +735,14 @@ object AcapelaVoiceManifest {
         for (d in dirs) {
             for (name in candidates) {
                 val f = File(d, name)
-                if (f.isFile && f.exists()) {
-                    val content = runCatching {
-                        f.readText(StandardCharsets.UTF_8)
-                    }.getOrNull()
-                    if (content != null &&
-                        content.contains("\"registration\"")
-                    ) {
-                        val m = regex.find(content)
-                        if (m != null) return m.groupValues[1]
-                    }
-                }
+                if (!f.isFile || !f.exists()) continue
+                val content = runCatching {
+                    f.readText(StandardCharsets.UTF_8)
+                }.getOrNull() ?: continue
+                if (!content.contains("\"registration\"")) continue
+                val value = regex.find(content)?.groupValues
+                    ?.getOrNull(1)?.trim().orEmpty()
+                if (isRegistrationMetadata(value)) return value
             }
         }
         return null
@@ -981,7 +859,10 @@ object AcapelaVoiceManifest {
     }
 
     /**
-     * تحويل رمز اللغة أو اسم الصوت إلى Locale مناسب.
+     * تحويل رمز اللغة أو اسم الصوت إلى Locale مناسب مع **حفظ الدولة**.
+     *
+     * الدولة ليست ترفاً: المحرك الممتد يطلب ISO3 للغة **والدولة** معاً
+     * (`nSetLanguage("ara", "SAU", "")`)، فإسقاط الدولة يُفشل التحميل.
      * المجهول يُعاد بـ[Locale.ROOT] (لا بالعربية) حتى لا يُصنَّف كل
      * صوتٍ عربياً فيُفشل فلترة اللغة.
      */
@@ -990,35 +871,86 @@ object AcapelaVoiceManifest {
         voiceName: String,
         fileName: String? = null
     ): Locale {
-        val iso = isoCode?.trim()?.lowercase(Locale.ROOT).orEmpty()
-        if (iso.isNotEmpty()) {
-            LANGUAGE_NAMES[iso]?.let {
-                return Locale.forLanguageTag(it)
-            }
-            val head = iso.substringBefore('-').substringBefore('_')
-            if (head.length == 2) return Locale.forLanguageTag(head)
-            ISO3_TO_ISO1[head]?.let {
-                return Locale.forLanguageTag(it)
-            }
-        }
+        localeFromIso(isoCode)?.let { return it }
 
         for (candidate in listOfNotNull(fileName, voiceName)) {
-            val match = NAME_PREFIX_REGEX.find(
-                candidate.lowercase(Locale.ROOT)
-            ) ?: continue
-            val prefix = match.groupValues[1]
-            if (prefix.length == 2) {
-                return Locale.forLanguageTag(prefix)
+            val lower = candidate.lowercase(Locale.ROOT)
+            val full = NAME_LOCALE_REGEX.find(lower)
+            if (full != null) {
+                localeOf(
+                    full.groupValues[1],
+                    full.groupValues[2]
+                )?.let { return it }
             }
-            ISO3_TO_ISO1[prefix]?.let {
-                return Locale.forLanguageTag(it)
-            }
+            val match = NAME_PREFIX_REGEX.find(lower) ?: continue
+            val lang = isoLanguageOf(match.groupValues[1]) ?: continue
+            return localeWithDefaultCountry(lang)
         }
 
         val lowerName = voiceName.lowercase(Locale.ROOT)
         if (ARABIC_VOICE_NAMES.any { lowerName.contains(it) }) {
-            return Locale.forLanguageTag("ar")
+            return localeWithDefaultCountry("ar")
         }
         return Locale.ROOT
+    }
+
+    /** تحويل رمز ISO (`ar-sa` أو `ara-SAU` أو `Arabic`) إلى Locale. */
+    private fun localeFromIso(isoCode: String?): Locale? {
+        val normalized = isoCode?.trim()?.lowercase(Locale.ROOT)
+            ?.replace('_', '-').orEmpty()
+        if (normalized.isEmpty()) return null
+        val head = normalized.substringBefore('-')
+        val lang = isoLanguageOf(head) ?: return null
+        val countryToken = normalized.substringAfter('-', "")
+        return localeOf(lang, countryToken)
+    }
+
+    /** تركيب Locale من رمزَي لغةٍ ودولة، والدولة الافتراضية عند غيابها. */
+    private fun localeOf(langToken: String, countryToken: String): Locale? {
+        val lang = isoLanguageOf(langToken) ?: return null
+        val country = countryIso2(countryToken)
+            ?: DEFAULT_COUNTRY[lang].orEmpty()
+        return if (country.isEmpty()) {
+            Locale.forLanguageTag(lang)
+        } else {
+            Locale(lang, country)
+        }
+    }
+
+    private fun localeWithDefaultCountry(lang: String): Locale {
+        val country = DEFAULT_COUNTRY[lang].orEmpty()
+        return if (country.isEmpty()) {
+            Locale.forLanguageTag(lang)
+        } else {
+            Locale(lang, country)
+        }
+    }
+
+    /** رمز لغةٍ ثنائي الحرف من رمز ISO-639 أو من اسم اللغة. */
+    private fun isoLanguageOf(token: String): String? {
+        val t = token.trim().lowercase(Locale.ROOT)
+        if (t.isEmpty()) return null
+        LANGUAGE_NAMES[t]?.let { return it }
+        if (t.length == 2 && t.all { it in 'a'..'z' }) return t
+        return ISO3_TO_ISO1[t]
+    }
+
+    /** رمز دولةٍ ثنائي الحرف من `SA` أو `SAU`. */
+    private fun countryIso2(token: String): String? {
+        val t = token.trim().lowercase(Locale.ROOT)
+        if (t.isEmpty()) return null
+        if (t.length == 2 && t.all { it in 'a'..'z' }) {
+            return t.uppercase(Locale.ROOT)
+        }
+        return ISO3_COUNTRY_TO_ISO2[t]
+    }
+
+    /** رمز ISO ثنائي الحرفين `ll-CC` كما تقبله مكتبة Acapela. */
+    private fun isoCodeOf(locale: Locale): String {
+        val lang = isoLanguageOf(locale.language) ?: return ""
+        val country = countryIso2(locale.country)
+            ?: DEFAULT_COUNTRY[lang].orEmpty()
+        if (country.isEmpty()) return ""
+        return "$lang-${country.uppercase(Locale.ROOT)}"
     }
 }

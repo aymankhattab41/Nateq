@@ -5,7 +5,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * اختبارات التحقق من صحة وسوم سرعة ونبرة النطق لمحرك Acapela.
+ * اختبارات تحويل السرعة/النبرة وتقسيم النص لقطع محرك Acapela.
+ *
+ * **عقد التقسيم (MultiTTS):** قطعٌ بطول 200 حرف على حدود الكلمات؛
+ * فلا تُبتَر كلمة ولا يُسقَط نص. الضمُّ يستعيد الكلمات كلها بالترتيب.
  */
 class AcapelaSpeechTagTest {
 
@@ -29,31 +32,33 @@ class AcapelaSpeechTagTest {
     }
 
     @Test
-    fun formatAcapelaText_prependsNativeTags() {
-        val result = AcapelaHostSession.formatAcapelaText(
-            text = "مرحبا بالعالم",
-            rate = 1.75f,
-            pitch = 1.0f
+    fun splitAcapelaChunks_keepsShortTextWhole() {
+        val text = "نصٌّ قصير"
+        assertEquals(
+            listOf(text),
+            AcapelaHostSession.splitAcapelaChunks(text, 200)
         )
-        val expected = "\\rspd=175\\ \\vct=100\\ مرحبا بالعالم"
-        assertEquals(expected, result)
-        assertTrue(result.startsWith("\\rspd=175\\ \\vct=100\\ "))
     }
 
     @Test
-    fun formatAcapelaText_respectsBoundaries() {
-        val slow = AcapelaHostSession.formatAcapelaText(
-            text = "نص تجريبي",
-            rate = 0.1f,
-            pitch = 0.1f
-        )
-        assertEquals("\\rspd=30\\ \\vct=50\\ نص تجريبي", slow)
+    fun splitAcapelaChunks_keepsEveryWordForLongText() {
+        val words = (1..120).map { "كلمة$it" }
+        val text = words.joinToString(" ")
 
-        val fast = AcapelaHostSession.formatAcapelaText(
-            text = "نص سريع",
-            rate = 10.0f,
-            pitch = 10.0f
-        )
-        assertEquals("\\rspd=400\\ \\vct=200\\ نص سريع", fast)
+        val chunks = AcapelaHostSession.splitAcapelaChunks(text, 200)
+
+        assertTrue(chunks.size > 1)
+        assertTrue(chunks.all { it.length <= 200 })
+        // لا فقدان كلمة ولا بتر: الضمُّ يستعيد الكلمات بالترتيب.
+        assertEquals(words, chunks.joinToString(" ").split(" "))
+    }
+
+    @Test
+    fun splitAcapelaChunks_neverStartsChunkWithSpace() {
+        val text = (1..60).joinToString(" ") { "word$it" }
+
+        val chunks = AcapelaHostSession.splitAcapelaChunks(text, 120)
+
+        assertTrue(chunks.all { !it.startsWith(" ") && !it.endsWith(" ") })
     }
 }
