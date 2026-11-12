@@ -125,4 +125,33 @@ class VoiceIdContractTest {
         assertEquals("de", VoiceIdContract.normalize("de-local"))
         assertNull(VoiceIdContract.normalize(null))
     }
+
+    @Test
+    fun isVoiceBelongingToEngine_differentiatesEmbeddedAndExternalAcapela() {
+        val embEng = "acapela_embedded"
+        val extEng = "com.acapela.tts"
+
+        // Embedded Acapela rejects -x- and -local (presumed Google/system)
+        org.junit.Assert.assertFalse(
+            VoiceIdContract.isVoiceBelongingToEngine(embEng, "ara-x-salma")
+        )
+        assertTrue(
+            VoiceIdContract.isVoiceBelongingToEngine(embEng, "Salma")
+        )
+
+        // External Acapela accepts system-style voice names with -x- / -local
+        assertTrue(
+            VoiceIdContract.isVoiceBelongingToEngine(extEng, "ara-x-salma")
+        )
+        assertTrue(
+            VoiceIdContract.isVoiceBelongingToEngine(extEng, "Salma")
+        )
+
+        // But external Acapela rejects obvious other engines like vocalizer
+        org.junit.Assert.assertFalse(
+            VoiceIdContract.isVoiceBelongingToEngine(
+                extEng, "vocalizer.maged"
+            )
+        )
+    }
 }

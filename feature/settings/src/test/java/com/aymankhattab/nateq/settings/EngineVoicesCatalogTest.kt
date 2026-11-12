@@ -201,4 +201,40 @@ class EngineVoicesCatalogTest {
             catalog.languagesForEngine(null)
         )
     }
+
+    @Test
+    fun `engineOfVoice prefers preferredEngine for shared voice name`() {
+        val sharedVoice = VoiceOption("Salma", "سلمى")
+        val embAcapela = EngineVoicesRow(
+            enginePackage = "acapela_embedded",
+            engineLabel = "Acapela Embedded",
+            voices = listOf(sharedVoice)
+        )
+        val extAcapela = EngineVoicesRow(
+            enginePackage = "com.acapela.tts",
+            engineLabel = "Acapela TTS",
+            voices = listOf(sharedVoice)
+        )
+        val testCat = EngineVoicesCatalog(
+            initial = mapOf("ar" to listOf(embAcapela, extAcapela)),
+            arabicVoiceLabel = "العربية",
+            englishVoiceLabel = "English"
+        )
+        assertEquals(
+            "com.acapela.tts",
+            testCat.engineOfVoice(
+                "Salma", "ar", preferredEngine = "com.acapela.tts"
+            )
+        )
+        assertEquals(
+            "acapela_embedded",
+            testCat.engineOfVoice(
+                "Salma", "ar", preferredEngine = "acapela_embedded"
+            )
+        )
+        assertEquals(
+            "acapela_embedded",
+            testCat.engineOfVoice("Salma", "ar")
+        )
+    }
 }
