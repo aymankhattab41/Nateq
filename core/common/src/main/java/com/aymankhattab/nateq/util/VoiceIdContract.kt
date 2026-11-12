@@ -186,7 +186,14 @@ object VoiceIdContract {
             if (isVocVoice) return false
 
             if (isAcapelaEmbedded) {
-                if (voiceId.contains("-x-") ||
+                if (voiceId.startsWith("ara-", ignoreCase = true) ||
+                    voiceId.startsWith("eng-", ignoreCase = true) ||
+                    voiceId.startsWith("fra-", ignoreCase = true) ||
+                    voiceId.startsWith("ar_", ignoreCase = true) ||
+                    voiceId.startsWith("en_", ignoreCase = true) ||
+                    voiceId.contains("com.acapela", ignoreCase = true) ||
+                    voiceId.contains("acapelagroup", ignoreCase = true) ||
+                    voiceId.contains("-x-") ||
                     voiceId.endsWith("-local") ||
                     voiceId.endsWith("-network") ||
                     voiceId.contains("_f00") ||
@@ -195,7 +202,15 @@ object VoiceIdContract {
                     return false
                 }
             } else {
-                if (voiceId.contains("_f00") || voiceId.contains("_m00")) {
+                if (voiceId.startsWith(
+                        "acapela_embedded:",
+                        ignoreCase = true
+                    ) ||
+                    voiceId.startsWith("acapela:", ignoreCase = true) ||
+                    (voiceId.contains("(") && voiceId.contains(")")) ||
+                    voiceId.contains("_f00") ||
+                    voiceId.contains("_m00")
+                ) {
                     return false
                 }
             }

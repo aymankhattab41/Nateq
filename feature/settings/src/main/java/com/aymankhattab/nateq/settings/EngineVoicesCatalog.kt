@@ -9,7 +9,8 @@ import com.aymankhattab.nateq.core.common.VisibleLanguages
  *  المعروضة للمستخدم. */
 internal data class VoiceOption(
     val name: String,
-    val label: String
+    val label: String,
+    val enginePackage: String? = null
 )
 
 /** صف محرك يقدّم أصواتاً للغة — نسخة مبسطة خالية من أندرويد من
@@ -196,16 +197,25 @@ internal class EngineVoicesCatalog(
         return picked
             .flatMap { row ->
                 row.voices.map { voice ->
+                    val withEng = voice.copy(
+                        enginePackage = voice.enginePackage ?: row.enginePackage
+                    )
                     if (engine == null) {
-                        voice.copy(
+                        withEng.copy(
                             label = "${row.engineLabel}: ${voice.label}"
                         )
                     } else {
-                        voice
+                        withEng
                     }
                 }
             }
-            .distinctBy { it.name }
+            .distinctBy {
+                if (engine == null) {
+                    "${it.enginePackage}|${it.name}"
+                } else {
+                    it.name
+                }
+            }
     }
 
     /** لغة صوتٍ مكتشفٍ محفوظ عبر البحث في خريطة الاكتشاف (أو null إن لم
@@ -241,6 +251,27 @@ internal class EngineVoicesCatalog(
                     it.voices.any { v -> v.name == voiceName }
             }
             if (prefRow != null) return prefRow.enginePackage
+        }
+        if (voiceName.startsWith("acapela_embedded:", ignoreCase = true) ||
+            voiceName.startsWith("acapela:", ignoreCase = true) ||
+            (voiceName.contains("(") && voiceName.contains(")"))
+        ) {
+            val emb = rowsList.firstOrNull {
+                it.enginePackage == "acapela_embedded" &&
+                    it.voices.any { v -> v.name == voiceName }
+            }
+            if (emb != null) return emb.enginePackage
+        }
+        if (voiceName.startsWith("ara-", ignoreCase = true) ||
+            voiceName.startsWith("ar_", ignoreCase = true) ||
+            voiceName.startsWith("com.acapela", ignoreCase = true)
+        ) {
+            val ext = rowsList.firstOrNull {
+                it.enginePackage.contains("acapela") &&
+                    it.enginePackage != "acapela_embedded" &&
+                    it.voices.any { v -> v.name == voiceName }
+            }
+            if (ext != null) return ext.enginePackage
         }
         for (row in rowsList) {
             if (row.voices.any { it.name == voiceName }) {

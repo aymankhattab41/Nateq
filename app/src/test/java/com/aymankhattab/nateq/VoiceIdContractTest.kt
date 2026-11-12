@@ -146,6 +146,26 @@ class VoiceIdContractTest {
         assertTrue(
             VoiceIdContract.isVoiceBelongingToEngine(extEng, "Salma")
         )
+        org.junit.Assert.assertFalse(
+            VoiceIdContract.isVoiceBelongingToEngine(
+                embEng, "ara-sau-salma"
+            )
+        )
+        assertTrue(
+            VoiceIdContract.isVoiceBelongingToEngine(
+                embEng, "Salma (العربية)"
+            )
+        )
+        assertTrue(
+            VoiceIdContract.isVoiceBelongingToEngine(
+                extEng, "ara-sau-salma"
+            )
+        )
+        org.junit.Assert.assertFalse(
+            VoiceIdContract.isVoiceBelongingToEngine(
+                extEng, "Salma (العربية)"
+            )
+        )
 
         // But external Acapela rejects obvious other engines like vocalizer
         org.junit.Assert.assertFalse(

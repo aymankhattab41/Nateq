@@ -17,8 +17,8 @@ object AcapelaVoiceManifest {
     private const val MAX_SAMPLE_RATE = 96000
     private const val MIN_DATA_FILE_BYTES = 5_000L
 
-    private val CONFIG_EXTENSIONS = setOf("inf", "ini")
-    private val DATA_EXTENSIONS = setOf(
+    internal val CONFIG_EXTENSIONS = setOf("inf", "ini")
+    internal val DATA_EXTENSIONS = setOf(
         "bvcu", "dat", "bnf", "pho", "mdd", "hdr"
     )
 
@@ -108,6 +108,65 @@ object AcapelaVoiceManifest {
         "mehdi", "salma", "leila", "nizar", "youssef", "tarik", "mariam"
     )
 
+    val HEX_REGISTRATION_REGEX = Regex(
+        "^0x[0-9A-Fa-f]{8,16}$",
+        RegexOption.IGNORE_CASE
+    )
+
+    /**
+     * البحث عن ملف ترخيص Acapela المسمى بصيغة 0x...
+     * في مجلد الصوت أو المجلدات الأب حتى 4 مستويات.
+     */
+    fun findHexRegistrationFile(dir: File): File? {
+        if (!dir.exists()) return null
+        val direct = dir.listFiles { f ->
+            f.isFile && f.name.matches(HEX_REGISTRATION_REGEX)
+        }?.firstOrNull()
+        if (direct != null) return direct
+
+        var cur = dir.parentFile
+        var depth = 0
+        while (cur != null && depth < 4) {
+            val parentFile = cur.listFiles { f ->
+                f.isFile && f.name.matches(HEX_REGISTRATION_REGEX)
+            }?.firstOrNull()
+            if (parentFile != null) return parentFile
+            cur = cur.parentFile
+            depth++
+        }
+
+        val subFiles = dir.listFiles { f -> f.isDirectory } ?: emptyArray()
+        for (sub in subFiles) {
+            val subHex = sub.listFiles { f ->
+                f.isFile && f.name.matches(HEX_REGISTRATION_REGEX)
+            }?.firstOrNull()
+            if (subHex != null) return subHex
+        }
+        return null
+    }
+
+    /**
+     * فحص ما إذا كان المجلد يحوي قاموس مستخدم (.userdico) بنمط UTF-8.
+     */
+    fun hasUtf8Userdico(dir: File): Boolean {
+        val files = dir.listFiles() ?: return false
+        return files.any { f ->
+            if (!f.isFile || !f.name.endsWith(
+                    ".userdico",
+                    ignoreCase = true
+                )
+            ) {
+                return@any false
+            }
+            val firstLine = runCatching {
+                f.bufferedReader(StandardCharsets.UTF_8).use { reader ->
+                    reader.readLine()
+                }
+            }.getOrNull().orEmpty()
+            firstLine.contains("UTF-8")
+        }
+    }
+
     /**
      * هل يحوي المجلد صوتاً مكتملاً لـ Acapela؟
      * يتطلب وجود ملف تهيئة (.ini أو .inf)
@@ -152,7 +211,9 @@ object AcapelaVoiceManifest {
      * بدون لاحقات أو بادئات.
      */
     fun cleanAcapelaSpeaker(raw: String): String {
-        var s = raw.removePrefix("acapela_")
+        var s = raw.removePrefix("acapela_embedded:")
+            .removePrefix("acapela:")
+            .removePrefix("acapela_")
             .substringBefore('(')
             .trim()
         for (ext in listOf(
@@ -290,6 +351,30 @@ object AcapelaVoiceManifest {
                     iniFiles.isEmpty()
                 ) {
                     return@runCatching
+                }
+
+                // 0) التحقق من ملفات الترخيص ومجلد قواميس المستخدم
+                File(dir, "userdicos").mkdirs()
+                val hexFile = findHexRegistrationFile(dir)
+                if (hexFile != null && hexFile.parentFile != dir) {
+                    val targetHex = File(dir, hexFile.name)
+                    if (!targetHex.exists()) {
+                        runCatching {
+                            hexFile.copyTo(targetHex, overwrite = true)
+                        }
+                    }
+                }
+                val regTxt = File(dir, "registration.txt")
+                if (regTxt.exists()) {
+                    val text = runCatching {
+                        regTxt.readText(StandardCharsets.ISO_8859_1).trim()
+                    }.getOrNull()
+                    if (text != null && text.matches(HEX_REGISTRATION_REGEX)) {
+                        val targetReg = File(dir, text)
+                        if (!targetReg.exists()) {
+                            runCatching { targetReg.createNewFile() }
+                        }
+                    }
                 }
 
                 // كشف المتحدث واللغة ومعدل العينات من الملفات الحالية
@@ -663,9 +748,23 @@ object AcapelaVoiceManifest {
         }
         val regFile = File(dir, "registration.txt")
         if (regFile.exists()) {
-            return runCatching {
+            val text = runCatching {
                 regFile.readText(StandardCharsets.ISO_8859_1).trim()
             }.getOrDefault("")
+            if (text.isNotBlank()) return text
+        }
+        dir.parentFile?.let { p ->
+            val pReg = File(p, "registration.txt")
+            if (pReg.exists()) {
+                val text = runCatching {
+                    pReg.readText(StandardCharsets.ISO_8859_1).trim()
+                }.getOrDefault("")
+                if (text.isNotBlank()) return text
+            }
+        }
+        val hex = findHexRegistrationFile(dir)
+        if (hex != null) {
+            return hex.name
         }
         return ""
     }

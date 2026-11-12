@@ -237,4 +237,31 @@ class EngineVoicesCatalogTest {
             testCat.engineOfVoice("Salma", "ar")
         )
     }
+
+    @Test
+    fun `voicesFor with null engine retains shared names across engines`() {
+        val embVoice = VoiceOption("Salma", "سلمى", "acapela_embedded")
+        val extVoice = VoiceOption("Salma", "سلمى", "com.acapela.tts")
+        val embRow = EngineVoicesRow(
+            enginePackage = "acapela_embedded",
+            engineLabel = "Acapela Embedded",
+            voices = listOf(embVoice)
+        )
+        val extRow = EngineVoicesRow(
+            enginePackage = "com.acapela.tts",
+            engineLabel = "Acapela TTS",
+            voices = listOf(extVoice)
+        )
+        val testCat = EngineVoicesCatalog(
+            initial = mapOf("ar" to listOf(embRow, extRow)),
+            arabicVoiceLabel = "العربية",
+            englishVoiceLabel = "English"
+        )
+        val flattened = testCat.voicesFor("ar", null)
+        assertEquals(2, flattened.size)
+        assertEquals(
+            listOf("acapela_embedded", "com.acapela.tts"),
+            flattened.map { it.enginePackage }
+        )
+    }
 }
