@@ -83,6 +83,27 @@ class SynthesisBudgetTest {
         )
     }
 
+    /**
+     * **حارسُ فحص تسجيل المحرك المدمج:** ميزانيةُ الفحص + مهلةُ الطلب
+     * يجب أن تبقى داخل مهلة المعاينة. كسرُ هذا العقد هو ما جعل المعاينة
+     * تنتهي بعد ثلاثين ثانية بلا كودٍ واحد يُشخَّص: كان الفحص يمنح كل
+     * مرشحٍ ستّ ثوانٍ كاملة (خمسة مرشحات = مهلة المعاينة كلُّها).
+     */
+    @Test
+    fun registrationProbeBudget_fitsInsideThePreviewMargin() {
+        val probe = SynthesisBudget.registrationProbeBudgetMs()
+        assertTrue("ميزانية الفحص $probe ms غير موجبة", probe > 0L)
+        for (chars in charCounts) {
+            val request = SynthesisBudget.requestTimeoutMs(chars)
+            val preview = SynthesisBudget.previewTimeoutMs(chars)
+            assertTrue(
+                "فحص التسجيل $probe ms + الطلب $request ms يتجاوز" +
+                    " المعاينة $preview ms عند $chars حرفاً",
+                probe + request <= preview
+            )
+        }
+    }
+
     @Test
     fun announcementBudget_neverBelowSumOfUnitBudgets() {
         // قائمة وحدات إعلانات: مجموع ميزانياتها لا يجوز أن يتجاوز
