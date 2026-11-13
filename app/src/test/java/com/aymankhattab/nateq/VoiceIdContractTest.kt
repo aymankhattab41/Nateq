@@ -146,7 +146,7 @@ class VoiceIdContractTest {
         assertTrue(
             VoiceIdContract.isVoiceBelongingToEngine(extEng, "Salma")
         )
-        assertTrue(
+        org.junit.Assert.assertFalse(
             VoiceIdContract.isVoiceBelongingToEngine(
                 embEng, "ara-sau-salma"
             )
@@ -157,6 +157,11 @@ class VoiceIdContractTest {
             )
         )
         assertTrue(
+            VoiceIdContract.isVoiceBelongingToEngine(
+                embEng, "Salma (العربية)"
+            )
+        )
+        org.junit.Assert.assertFalse(
             VoiceIdContract.isVoiceBelongingToEngine(
                 extEng, "Salma (العربية)"
             )

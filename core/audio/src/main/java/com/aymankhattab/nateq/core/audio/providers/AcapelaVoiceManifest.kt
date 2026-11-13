@@ -153,6 +153,9 @@ object AcapelaVoiceManifest {
         "ml" to "IN", "pa" to "IN"
     )
 
+    fun defaultCountryForLanguage(lang: String): String? =
+        DEFAULT_COUNTRY[lang.lowercase(Locale.ROOT)]
+
     /**
      * أزواج `KEY = "value"` — قد يرد عشراتٌ منها في سطر واحد،
      * وكل تحليل سطري يفشل حتماً معها.

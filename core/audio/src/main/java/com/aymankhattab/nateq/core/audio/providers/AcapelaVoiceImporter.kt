@@ -417,6 +417,10 @@ object AcapelaVoiceImporter {
             EngineStatusRegistry.noteReady(
                 AcapelaEmbeddedVoiceProvider.PROVIDER_ID
             )
+        } else if (check is NativeVerification.Unavailable) {
+            EngineStatusRegistry.noteFilesPresent(
+                AcapelaEmbeddedVoiceProvider.PROVIDER_ID
+            )
         }
         return when (check) {
             is NativeVerification.Passed -> ImportResult(

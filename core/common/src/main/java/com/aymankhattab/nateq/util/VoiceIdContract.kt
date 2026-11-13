@@ -188,6 +188,8 @@ object VoiceIdContract {
             if (isAcapelaEmbedded) {
                 if (voiceId.contains("com.acapela", ignoreCase = true) ||
                     voiceId.contains("acapelagroup", ignoreCase = true) ||
+                    voiceId.startsWith("ara-sau-", ignoreCase = true) ||
+                    voiceId.startsWith("ara-egy-", ignoreCase = true) ||
                     voiceId.contains("-x-") ||
                     voiceId.endsWith("-local") ||
                     voiceId.endsWith("-network") ||
@@ -202,6 +204,7 @@ object VoiceIdContract {
                         ignoreCase = true
                     ) ||
                     voiceId.startsWith("acapela:", ignoreCase = true) ||
+                    (voiceId.contains("(") && voiceId.contains(")")) ||
                     voiceId.contains("_f00") ||
                     voiceId.contains("_m00")
                 ) {

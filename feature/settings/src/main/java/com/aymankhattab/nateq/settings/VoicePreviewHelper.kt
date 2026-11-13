@@ -330,6 +330,11 @@ internal fun isVocalizerVoiceName(voiceName: String?): Boolean {
 internal fun isAcapelaVoiceName(voiceName: String?): Boolean {
     val name = voiceName?.trim()?.lowercase() ?: return false
     if (name.isEmpty()) return false
+    if (name.startsWith("ara-") || name.startsWith("ar_") ||
+        name.startsWith("com.acapela")
+    ) {
+        return false
+    }
     if (name.startsWith("acapela")) return true
     val acapelaNames = setOf(
         "salma", "mehdi", "leila", "nizar", "youssef", "tarik", "mariam"
