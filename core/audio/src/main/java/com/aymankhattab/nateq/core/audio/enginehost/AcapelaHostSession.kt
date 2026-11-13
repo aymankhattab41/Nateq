@@ -186,6 +186,9 @@ internal class AcapelaHostSession(
                     paths.add(base.absolutePath)
                 }
             }
+            // `ensureVoiceConfigs` قد تكتب ملفات `.inf` جديدة، فأي لقطة
+            // تعداد سابقة صارت قديمة وتُبطَل قبل أول قراءة لاحقة.
+            AcapelaVoiceManifest.invalidateVoicesCache()
             return paths.toTypedArray()
         }
 

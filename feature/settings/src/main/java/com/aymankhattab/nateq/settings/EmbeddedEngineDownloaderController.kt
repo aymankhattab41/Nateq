@@ -60,6 +60,13 @@ internal class EmbeddedEngineDownloaderController(
     /** يمنع تكرار إضافة المستمع ويكفل إزالته عند التدمير. */
     private var listenerAttached = false
 
+    /** رسم Acapela الجاري — يُلغى عند طلب رسم أحدث فلا تتكرر البطاقات. */
+    private var acapelaRenderJob: Job? = null
+    private var acapelaRenderGeneration = 0
+
+    /** ملء ذاكرة تعداد Acapela في الخلفية (طلب واحد في كل مرة). */
+    private var acapelaWarmJob: Job? = null
+
     private enum class NavLevel { LANGUAGES, VOICES, QUALITIES }
     private var navLevel = NavLevel.LANGUAGES
     private var selectedLocale: Locale? = null
@@ -171,9 +178,11 @@ internal class EmbeddedEngineDownloaderController(
 
 
         renderVoicesList(root)
+        warmAcapelaCache()
     }
 
     fun refresh(root: View) {
+        warmAcapelaCache()
         renderVoicesList(root)
     }
 
@@ -183,6 +192,8 @@ internal class EmbeddedEngineDownloaderController(
             VoiceDownloadManager.removeListener(downloadListener)
             listenerAttached = false
         }
+        acapelaRenderJob?.cancel()
+        acapelaWarmJob?.cancel()
     }
 
     /**
@@ -205,9 +216,15 @@ internal class EmbeddedEngineDownloaderController(
             ctx,
             EmbeddedStorage.Engine.ACAPELA
         )
-        val acCount = acSearch.flatMap {
-            AcapelaVoiceManifest.listVoices(it)
-        }.distinctBy { it.id }.size
+        // لقطة من التخزين المؤقت فقط: هذا الملخص يُطلب من الخيط الرئيسي
+        // في كل تحديث لحالة الأقسام، وقراءة المانيفست هنا كانت تشقّ شجرة
+        // الملفات كاملة عند كل طلب.
+        val acSnapshots = acSearch.map {
+            AcapelaVoiceManifest.voicesSnapshot(it)
+        }
+        val acCount = acSnapshots.flatMap { it.voices }
+            .distinctBy { it.id }.size
+        if (acSnapshots.any { !it.fresh }) warmAcapelaCache()
         val total = vocCount + msCount + acCount
         val isAr = LanguageCode.isArabic(Locale.getDefault().language)
         return if (total > 0) {
@@ -255,14 +272,36 @@ internal class EmbeddedEngineDownloaderController(
         container: LinearLayout,
         emptyView: TextView?
     ) {
-        val ctx = fragment.requireContext()
+        val ctx = fragment.context ?: return
         val searchDirs = EmbeddedStorage.allSearchDirs(
             ctx,
             EmbeddedStorage.Engine.ACAPELA
         )
-        val voices = searchDirs.flatMap {
-            AcapelaVoiceManifest.listVoices(it)
-        }.distinctBy { it.id }
+        // قراءة المانيفست على IO: كانت تُنفَّذ على الخيط الرئيسي عند كل
+        // تحديث (Skipped frames أثناء النطق). أي طلب أحدث يُلغي السابق
+        // فيمنع ازدواج البطاقات، والتخزين المؤقت يجعل التكرار بلا قراءة.
+        acapelaRenderJob?.cancel()
+        val generation = ++acapelaRenderGeneration
+        acapelaRenderJob = fragment.viewLifecycleOwner.lifecycleScope.launch {
+            val voices = searchDirs
+                .flatMap { AcapelaVoiceManifest.cachedVoices(it) }
+                .distinctBy { it.id }
+            if (generation != acapelaRenderGeneration) return@launch
+            if (!fragment.isAdded) return@launch
+            paintAcapelaVoices(container, emptyView, voices)
+            // صار التخزين دافئاً: يُحدَّث ملخص البطاقة بلا قراءة إضافية.
+            onStatusChanged()
+        }
+    }
+
+    /** يرسم بطاقات Acapela بعد قراءة أصواتها على الخيط الخلفي. */
+    private fun paintAcapelaVoices(
+        container: LinearLayout,
+        emptyView: TextView?,
+        voices: List<AcapelaVoiceManifest.VoiceInfo>
+    ) {
+        val ctx = fragment.context ?: return
+        container.removeAllViews()
         if (voices.isEmpty()) {
             emptyView?.text = ctx.getString(R.string.acapela_no_voices_found)
             emptyView?.visibility = View.VISIBLE
@@ -278,6 +317,26 @@ internal class EmbeddedEngineDownloaderController(
             )
             bindAcapelaCard(itemView, voice)
             container.addView(itemView)
+        }
+    }
+
+    /**
+     * يملأ ذاكرة تعداد Acapela على IO ثم يُحدّث ملخص البطاقة.
+     *
+     * لا يتكرر ما دام طلب سابق جارياً، فاستدعاؤه من ملخص الحالة (كل
+     * تحديث واجهة) لا يُنشئ قراءات متوازية.
+     */
+    private fun warmAcapelaCache() {
+        val ctx = fragment.context ?: return
+        if (acapelaWarmJob?.isActive == true) return
+        if (fragment.view == null) return
+        val searchDirs = EmbeddedStorage.allSearchDirs(
+            ctx,
+            EmbeddedStorage.Engine.ACAPELA
+        )
+        acapelaWarmJob = fragment.viewLifecycleOwner.lifecycleScope.launch {
+            searchDirs.forEach { AcapelaVoiceManifest.cachedVoices(it) }
+            onStatusChanged()
         }
     }
 

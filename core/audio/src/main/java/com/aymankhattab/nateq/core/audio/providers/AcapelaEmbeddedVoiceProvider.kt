@@ -70,7 +70,7 @@ class AcapelaEmbeddedVoiceProvider(
             val result = mutableListOf<VoiceDescriptor>()
 
             for (dir in searchDirs) {
-                val voices = AcapelaVoiceManifest.listVoices(dir)
+                val voices = AcapelaVoiceManifest.cachedVoices(dir)
                 for (v in voices) {
                     // لغةٌ غير معروفة (ROOT) تظهر في القائمة العامة فقط،
                     // ولا تُعرض تحت لغةٍ صريحة كي لا تبدو كل الأصوات

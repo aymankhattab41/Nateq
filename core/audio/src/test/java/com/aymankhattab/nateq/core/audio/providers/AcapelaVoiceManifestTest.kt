@@ -1,5 +1,6 @@
 package com.aymankhattab.nateq.core.audio.providers
 
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -477,5 +478,125 @@ class AcapelaVoiceManifestTest {
             11025,
             AcapelaVoiceManifest.parseVoice(second).sampleRate
         )
+    }
+
+    /**
+     * حارس التخزين المؤقت: النداء الثاني لا يعيد قراءة القرص.
+     *
+     * حذف ملف الصوت بين النداءين دليلٌ قاطع: لو أُعيد التعداد لعادت
+     * القائمة فارغة، وبقاؤها صوتاً واحداً يثبت أنها لقطة مخزَّنة.
+     * وبعد انتهاء المدة يعود التعداد للقرص فتصير فارغة فعلاً.
+     */
+    @Test
+    fun readVoicesCached_reusesSnapshotWithoutReadingDiskAgain() = runTest {
+        EmbeddedStorage.resetBumpTimeForTest(1_000L)
+        AcapelaVoiceManifest.invalidateVoicesCache()
+        val baseDir = tempFolder.newFolder("cache_hit")
+        val inf = File(baseDir, "salma.inf")
+        inf.writeText("[Voice]\nspeaker = \"Salma\"\nISOCode = \"ara-SAU\"\n")
+
+        var clock = 0L
+        val first = AcapelaVoiceManifest.readVoicesCached(
+            baseDir, 30_000L
+        ) { clock }
+        assertEquals(1, first.size)
+
+        assertTrue(inf.delete())
+
+        val second = AcapelaVoiceManifest.readVoicesCached(
+            baseDir, 30_000L
+        ) { clock }
+        assertEquals(1, second.size)
+
+        clock = 30_001L
+        val expired = AcapelaVoiceManifest.readVoicesCached(
+            baseDir, 30_000L
+        ) { clock }
+        assertTrue(expired.isEmpty())
+    }
+
+    /** رفع بصمة التخزين (استيراد/تنزيل/حذف) يُبطل اللقطة فوراً. */
+    @Test
+    fun readVoicesCached_invalidatesWhenStorageBumps() = runTest {
+        EmbeddedStorage.resetBumpTimeForTest(5_000L)
+        AcapelaVoiceManifest.invalidateVoicesCache()
+        val baseDir = tempFolder.newFolder("cache_bump")
+        val inf = File(baseDir, "salma.inf")
+        inf.writeText("[Voice]\nspeaker = \"Salma\"\n")
+
+        val clock = { 0L }
+        val cached = AcapelaVoiceManifest.readVoicesCached(
+            baseDir, 30_000L, clock
+        )
+        assertEquals(1, cached.size)
+
+        assertTrue(inf.delete())
+        EmbeddedStorage.resetBumpTimeForTest(6_000L)
+
+        val afterBump = AcapelaVoiceManifest.readVoicesCached(
+            baseDir, 30_000L, clock
+        )
+        assertTrue(afterBump.isEmpty())
+    }
+
+    /** الإبطال الصريح يكسر اللقطة حتى لو بقيت البصمة والمدة صالحتين. */
+    @Test
+    fun invalidateVoicesCache_forcesFreshReadAfterFileChanges() = runTest {
+        EmbeddedStorage.resetBumpTimeForTest(7_000L)
+        AcapelaVoiceManifest.invalidateVoicesCache()
+        val baseDir = tempFolder.newFolder("cache_invalidate")
+        val inf = File(baseDir, "salma.inf")
+        inf.writeText("[Voice]\nspeaker = \"Salma\"\n")
+
+        val clock = { 0L }
+        assertEquals(
+            1,
+            AcapelaVoiceManifest.readVoicesCached(
+                baseDir, 30_000L, clock
+            ).size
+        )
+
+        assertTrue(inf.delete())
+        AcapelaVoiceManifest.invalidateVoicesCache()
+
+        assertTrue(
+            AcapelaVoiceManifest.readVoicesCached(
+                baseDir, 30_000L, clock
+            ).isEmpty()
+        )
+    }
+
+    /**
+     * لقطة الخيط الرئيسي: طزاجة صحيحة، وآخر تعداد معروف يبقى معروضاً
+     * بعد رفع البصمة حتى يكتمل التحديث الخلفي (لا يعود الملخص صفراً).
+     */
+    @Test
+    fun voicesSnapshot_freshOnlyWithinTtlAndBump() = runTest {
+        EmbeddedStorage.resetBumpTimeForTest(9_000L)
+        AcapelaVoiceManifest.invalidateVoicesCache()
+        val baseDir = tempFolder.newFolder("snapshot")
+        File(baseDir, "salma.inf")
+            .writeText("[Voice]\nspeaker = \"Salma\"\n")
+
+        var clock = 1_000L
+        assertFalse(
+            AcapelaVoiceManifest.readVoicesSnapshot(baseDir) { clock }.fresh
+        )
+
+        AcapelaVoiceManifest.readVoicesCached(baseDir, 30_000L) { clock }
+        val fresh = AcapelaVoiceManifest.readVoicesSnapshot(baseDir) { clock }
+        assertTrue(fresh.fresh)
+        assertEquals(1, fresh.voices.size)
+
+        clock = 31_001L
+        assertFalse(
+            AcapelaVoiceManifest.readVoicesSnapshot(baseDir) { clock }.fresh
+        )
+
+        EmbeddedStorage.resetBumpTimeForTest(10_000L)
+        clock = 1_500L
+        val bumped = AcapelaVoiceManifest.readVoicesSnapshot(baseDir) { clock }
+        assertFalse(bumped.fresh)
+        assertEquals(1, bumped.voices.size)
     }
 }
