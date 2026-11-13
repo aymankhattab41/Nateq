@@ -66,6 +66,8 @@ object CategoryResolver {
             // Acapela embedded
             lower.startsWith("acapela_embedded:") ||
                 lower.startsWith("acapela:") ||
+                lower == "mehdi" || lower == "salma" || lower == "nizar" ||
+                lower == "youssef" || lower == "leila" || lower == "tarik" ||
                 (lower.contains("(") && lower.contains(")") &&
                     (lower.contains("mehdi") || lower.contains("salma") ||
                         lower.contains("nizar") || lower.contains("youssef") ||

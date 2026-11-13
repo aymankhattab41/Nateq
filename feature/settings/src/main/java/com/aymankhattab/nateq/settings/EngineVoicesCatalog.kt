@@ -248,17 +248,22 @@ internal class EngineVoicesCatalog(
         if (preferredEngine != null) {
             val prefRow = rowsList.firstOrNull {
                 it.enginePackage == preferredEngine &&
-                    it.voices.any { v -> v.name == voiceName }
+                    it.voices.any { v -> v.name.equals(voiceName, true) }
             }
             if (prefRow != null) return prefRow.enginePackage
         }
-        if (voiceName.startsWith("acapela_embedded:", ignoreCase = true) ||
-            voiceName.startsWith("acapela:", ignoreCase = true) ||
-            (voiceName.contains("(") && voiceName.contains(")"))
-        ) {
+        val isAcapelaVoice = voiceName.startsWith(
+            "acapela_embedded:", ignoreCase = true
+        ) || voiceName.startsWith("acapela:", ignoreCase = true) ||
+            (voiceName.contains("(") && voiceName.contains(")")) ||
+            rowsList.any {
+                it.enginePackage == "acapela_embedded" &&
+                    it.voices.any { v -> v.name.equals(voiceName, true) }
+            }
+        if (isAcapelaVoice) {
             val emb = rowsList.firstOrNull {
                 it.enginePackage == "acapela_embedded" &&
-                    it.voices.any { v -> v.name == voiceName }
+                    it.voices.any { v -> v.name.equals(voiceName, true) }
             }
             if (emb != null) return emb.enginePackage
         }
@@ -269,12 +274,12 @@ internal class EngineVoicesCatalog(
             val ext = rowsList.firstOrNull {
                 it.enginePackage.contains("acapela") &&
                     it.enginePackage != "acapela_embedded" &&
-                    it.voices.any { v -> v.name == voiceName }
+                    it.voices.any { v -> v.name.equals(voiceName, true) }
             }
             if (ext != null) return ext.enginePackage
         }
         for (row in rowsList) {
-            if (row.voices.any { it.name == voiceName }) {
+            if (row.voices.any { it.name.equals(voiceName, true) }) {
                 return row.enginePackage
             }
         }

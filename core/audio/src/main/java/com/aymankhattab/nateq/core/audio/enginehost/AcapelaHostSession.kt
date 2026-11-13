@@ -164,12 +164,17 @@ internal class AcapelaHostSession(
         private fun matchesVoice(
             v: AcapelaVoiceManifest.VoiceInfo,
             query: String
-        ): Boolean =
-            v.rawSpeaker.equals(query, ignoreCase = true) ||
+        ): Boolean {
+            val clean = AcapelaVoiceManifest.cleanAcapelaSpeaker(query)
+            return v.rawSpeaker.equals(query, ignoreCase = true) ||
+                v.rawSpeaker.equals(clean, ignoreCase = true) ||
                 v.voiceName.equals(query, ignoreCase = true) ||
+                v.voiceName.equals(clean, ignoreCase = true) ||
                 v.id.equals(query, ignoreCase = true) ||
                 v.dir.name.equals(query, ignoreCase = true) ||
-                v.displayName.startsWith(query, ignoreCase = true)
+                v.displayName.startsWith(query, ignoreCase = true) ||
+                v.displayName.startsWith(clean, ignoreCase = true)
+        }
     }
 
     private var acatts: acattsandroid? = null
@@ -439,9 +444,9 @@ internal class AcapelaHostSession(
                     cancelled = cancelled
                 )
                 if (extended.ok) return extended
-                if (!isSetupFailure(extended.code)) return extended
-                // فشل تجهيز الممتد لا يعني فشل الصوت نفسه: يُجرَّب
-                // المسار الكلاسيكي قبل إعلان العطل (لا صوت صدر بعد).
+                if (audioReceived.get()) return extended
+                // فشل المسار الممتد دون أي صوت مسموع: يُجرَّب
+                // المسار الكلاسيكي فوراً قبل إعلان العطل.
                 Log.w(
                     TAG,
                     "فشل المسار الممتد (${extended.code}): " +
@@ -479,23 +484,8 @@ internal class AcapelaHostSession(
         }
     }
 
-    /**
-     * أخطاء تجهيزٍ تسبق أي صوت: يجوز بعدها تجريب مسار آخر دون أن
-     * يتكرر نطقٌ مسموع.
-     */
-    private fun isSetupFailure(code: String?): Boolean = code in setOf(
-        "ENGINE_INIT_FAILED",
-        "VOICE_MODE_FAILED",
-        "VOICE_LOCALE_UNKNOWN",
-        "UTF8_MODE_FAILED",
-        "LANGUAGE_FAILED",
-        "VOICE_LOAD_FAILED",
-        "PROPERTY_FAILED",
-        "NOT_INITIALIZED"
-    )
-
     /** الصوت المطابق للطلب من كل مجلدات البحث. */
-    private fun resolveVoice(
+    internal fun resolveVoice(
         rawVoiceId: String,
         dir: File
     ): AcapelaVoiceManifest.VoiceInfo? {
@@ -512,9 +502,27 @@ internal class AcapelaHostSession(
             EmbeddedStorage.Engine.ACAPELA
         )
         val voices = manifestVoices(dir, extraDirs)
-        return voices.firstOrNull { v ->
-            matchesVoice(v, cleanVoiceId) || matchesVoice(v, cleanSpeaker)
+        if (voices.isEmpty()) return null
+
+        if (cleanVoiceId.isNotBlank() &&
+            !cleanVoiceId.equals("default", ignoreCase = true)
+        ) {
+            val matched = voices.firstOrNull { v ->
+                matchesVoice(v, cleanVoiceId) || matchesVoice(v, cleanSpeaker)
+            }
+            if (matched != null) return matched
+
+            val lang = cleanVoiceId.substringBefore('-')
+                .lowercase(Locale.ROOT)
+            val langMatch = voices.firstOrNull { v ->
+                v.locale.language.equals(lang, ignoreCase = true)
+            }
+            if (langMatch != null) return langMatch
         }
+
+        return voices.firstOrNull {
+            it.locale.language.equals("ar", ignoreCase = true)
+        } ?: voices.firstOrNull()
     }
 
     /**
@@ -594,12 +602,6 @@ internal class AcapelaHostSession(
         sink: PcmSink,
         nativeCapMs: Long
     ): HostResult? {
-        val voicePaths = arrayOf(
-            withTrailingSlash(voice.dir.canonicalPath),
-            withTrailingSlash(voice.dir.absolutePath)
-        )
-        runCatching { inst.nGetVoiceList(voicePaths) }
-
         val candidates = candidateNames(voice)
         var loadRes = -1
         var loadedName: String? = null
@@ -610,6 +612,20 @@ internal class AcapelaHostSession(
                 if (loadRes > 0) {
                     loadedName = cand
                     break
+                }
+            }
+            if (loadedName == null) {
+                val voicePaths = arrayOf(
+                    withTrailingSlash(voice.dir.canonicalPath),
+                    withTrailingSlash(voice.dir.absolutePath)
+                )
+                runCatching { inst.nGetVoiceList(voicePaths) }
+                for (cand in candidates) {
+                    loadRes = inst.nLoadVoice(cand)
+                    if (loadRes > 0) {
+                        loadedName = cand
+                        break
+                    }
                 }
             }
         } finally {
@@ -1000,7 +1016,7 @@ internal class AcapelaHostSession(
      * أسماء مرشّحة للتحميل: الاسم الخام من `.inf` أولاً لأنه ما
      * تقارنه المكتبة داخل `nLoadVoice`، ثم أسماء التهيئة والملفات.
      */
-    private fun candidateNames(
+    internal fun candidateNames(
         voice: AcapelaVoiceManifest.VoiceInfo
     ): List<String> {
         val names = LinkedHashSet<String>()
@@ -1022,6 +1038,8 @@ internal class AcapelaHostSession(
                 )
             )
         }
+        val lowercased = names.map { it.lowercase(Locale.ROOT) }
+        names.addAll(lowercased)
         return names.filter { it.isNotBlank() }.distinct()
     }
 

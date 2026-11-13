@@ -1694,11 +1694,15 @@ class NateqTtsService : TextToSpeechService() {
                     }
                 }
             } else if (isAcapela) {
-                val acBase = EmbeddedStorage.baseDir(
+                val acDirs = EmbeddedStorage.allSearchDirs(
                     applicationContext,
                     EmbeddedStorage.Engine.ACAPELA
                 )
-                val acVoices = AcapelaVoiceManifest.listVoices(acBase)
+                val acVoices = acDirs.flatMap {
+                    AcapelaVoiceManifest.listVoices(it)
+                }.distinctBy {
+                    "${it.dir.absolutePath}|${it.id.lowercase(Locale.ROOT)}"
+                }
                 val installedAr = acVoices.firstOrNull {
                     LanguageCode.isArabic(it.locale.language)
                 }?.voiceName
@@ -1732,11 +1736,18 @@ class NateqTtsService : TextToSpeechService() {
                     if (isGeneric) {
                         fallbackVoice
                     } else {
+                        val cleanTarget = finalVoiceName
+                            ?.removePrefix("acapela_embedded:")
+                            ?.removePrefix("acapela:")
+                            ?.removePrefix("acapela_")
+                            ?.substringBefore('(')
+                            ?.trim()
                         val matched = acVoices.firstOrNull {
-                            it.voiceName.equals(finalVoiceName, true) ||
-                                it.id.equals(finalVoiceName, true) ||
+                            it.voiceName.equals(cleanTarget, true) ||
+                                it.id.equals(cleanTarget, true) ||
+                                it.rawSpeaker.equals(cleanTarget, true) ||
                                 it.displayName.contains(
-                                    finalVoiceName.orEmpty(),
+                                    cleanTarget.orEmpty(),
                                     true
                                 )
                         }
@@ -2204,11 +2215,15 @@ class NateqTtsService : TextToSpeechService() {
                 }
             }
         } else if (isAcapela) {
-            val acBase = EmbeddedStorage.baseDir(
+            val acDirs = EmbeddedStorage.allSearchDirs(
                 applicationContext,
                 EmbeddedStorage.Engine.ACAPELA
             )
-            val acVoices = AcapelaVoiceManifest.listVoices(acBase)
+            val acVoices = acDirs.flatMap {
+                AcapelaVoiceManifest.listVoices(it)
+            }.distinctBy {
+                "${it.dir.absolutePath}|${it.id.lowercase(Locale.ROOT)}"
+            }
             val installedAr = acVoices.firstOrNull {
                 LanguageCode.isArabic(it.locale.language)
             }?.voiceName

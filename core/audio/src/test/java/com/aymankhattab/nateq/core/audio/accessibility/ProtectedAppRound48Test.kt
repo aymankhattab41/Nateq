@@ -302,6 +302,7 @@ class ProtectedAppRound48Test {
                 label = "إنستاباي",
                 mode = ProtectedApp.MODE_FULL_DISABLE
             )
+            settings.setSuspendedProtectedApp(null)
             ProtectedAppManager.handleAppEntry(context, null, app)
 
             assertEquals("com.instapay", settings.getSuspendedProtectedApp())
