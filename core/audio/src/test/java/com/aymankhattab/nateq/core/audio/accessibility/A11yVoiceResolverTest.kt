@@ -229,4 +229,57 @@ class A11yVoiceResolverTest {
         appStore.remove("com.chat.app")
         contactStore.remove("سارة")
     }
+
+    @Test
+    fun voiceResolutionTracker_dedupesConsecutiveIdenticalEntries() {
+        VoiceResolutionTracker.clear()
+        for (i in 0 until 5) {
+            VoiceResolutionTracker.record(
+                packageName = "com.test.app",
+                senderName = "user",
+                winningLayer = "افتراضي",
+                engine = null,
+                voiceId = null,
+                speechRate = null,
+                pitch = null,
+                volume = null,
+                reason = "ميزة صوت التطبيقات معطلة"
+            )
+        }
+        val recent = VoiceResolutionTracker.getRecent()
+        assertEquals(1, recent.size)
+
+        VoiceResolutionTracker.record(
+            packageName = "com.test.app",
+            senderName = "user",
+            winningLayer = "ملف تطبيق",
+            engine = "vocalizer",
+            voiceId = "maged",
+            speechRate = 1.0f,
+            pitch = 1.0f,
+            volume = 1.0f,
+            reason = "صوت تطبيق مطبق"
+        )
+        assertEquals(2, VoiceResolutionTracker.getRecent().size)
+    }
+
+    @Test
+    fun resolve_skipsTrackerWhenFeatureDisabledAndNoLayerResolved() {
+        VoiceResolutionTracker.clear()
+        settings.setAccessibilityFeatureEnabled(
+            FeatureFlags.FEATURE_APP_PROFILES, false
+        )
+        settings.setAccessibilityFeatureEnabled(
+            FeatureFlags.FEATURE_CONTACT_VOICES, false
+        )
+
+        val resolved = A11yVoiceResolver.resolve(
+            context = context,
+            settings = settings,
+            packageName = "com.chat.app",
+            senderName = null
+        )
+        assertNull(resolved)
+        assertTrue(VoiceResolutionTracker.getRecent().isEmpty())
+    }
 }

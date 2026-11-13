@@ -304,9 +304,61 @@ class AcapelaVoiceManifestTest {
     @Test
     fun resolveRegistration_rejectsHexFileNameAsMetadata() {
         val baseDir = tempFolder.newFolder("hex_only")
-        File(baseDir, "0x1A2B3C4D").writeText("key")
+        File(baseDir, "0x1A2B3C4D").writeText("invalid spaces key")
 
         // اسم الملف ليس بيانات تسجيل: تمريره للمحرك الممتد يُفسد بناؤه.
+        assertEquals("", AcapelaVoiceManifest.resolveRegistration(baseDir))
+    }
+
+    @Test
+    fun resolveRegistration_readsHexFileContentAsMetadata() {
+        val baseDir = tempFolder.newFolder("hex_content_valid")
+        File(baseDir, "0x00169729").writeText("valid-meta-string@123")
+
+        val reg = AcapelaVoiceManifest.resolveRegistration(baseDir)
+        assertEquals("valid-meta-string@123", reg)
+    }
+
+    @Test
+    fun resolveRegistration_rejectsInvalidHexFileContent() {
+        val dirSpaces = tempFolder.newFolder("hex_spaces")
+        File(dirSpaces, "0x00112233").writeText("has spaces invalid")
+        assertEquals("", AcapelaVoiceManifest.resolveRegistration(dirSpaces))
+
+        val dirHexContent = tempFolder.newFolder("hex_itself")
+        File(dirHexContent, "0x00445566").writeText("0x00169729")
+        val hexReg = AcapelaVoiceManifest
+            .resolveRegistration(dirHexContent)
+        assertEquals("", hexReg)
+
+        val dirTooLong = tempFolder.newFolder("hex_too_long")
+        File(dirTooLong, "0x00778899").writeText("a".repeat(300))
+        assertEquals("", AcapelaVoiceManifest.resolveRegistration(dirTooLong))
+    }
+
+    @Test
+    fun resolveRegistration_readsYamlRegistration() {
+        val baseDir = tempFolder.newFolder("yaml_valid")
+        File(baseDir, "config.yaml").writeText(
+            "name: Salma\nregistration: \"yaml-meta-token_456\"\n"
+        )
+        val reg = AcapelaVoiceManifest.resolveRegistration(baseDir)
+        assertEquals("yaml-meta-token_456", reg)
+
+        val enginesDir = tempFolder.newFolder("yaml_engines")
+        File(enginesDir, "engines.yaml").writeText(
+            "registration: engines_meta_789\n"
+        )
+        val regEngines = AcapelaVoiceManifest.resolveRegistration(enginesDir)
+        assertEquals("engines_meta_789", regEngines)
+    }
+
+    @Test
+    fun resolveRegistration_rejectsInvalidYamlRegistration() {
+        val baseDir = tempFolder.newFolder("yaml_invalid")
+        File(baseDir, "config.yaml").writeText(
+            "registration: \"invalid spaces token\"\n"
+        )
         assertEquals("", AcapelaVoiceManifest.resolveRegistration(baseDir))
     }
 

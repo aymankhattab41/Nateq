@@ -97,4 +97,34 @@ class AcapelaHostSessionVoiceResolutionTest {
         assertNotNull(byUnknown)
         assertEquals("ar", byUnknown?.locale?.language)
     }
+
+    @Test
+    fun resolveVoice_cachesVoicesUntilBump() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val session = AcapelaHostSession(context)
+        val baseDir = tempFolder.newFolder("CacheTest")
+        val mehdiDir = File(baseDir, "mehdi").apply { mkdirs() }
+        File(mehdiDir, "mehdi.inf").writeText(
+            "speaker = \"mehdi22k\"\nISOCode = \"ar-SA\"\nfreq = \"22050\""
+        )
+        File(mehdiDir, "mehdi.dat").writeBytes(ByteArray(10_000))
+
+        val first = session.resolveVoice("Mehdi", baseDir)
+        assertNotNull(first)
+
+        val laylaDir = File(baseDir, "layla").apply { mkdirs() }
+        File(laylaDir, "layla.inf").writeText(
+            "speaker = \"layla22k\"\nISOCode = \"ar-EG\"\nfreq = \"22050\""
+        )
+        File(laylaDir, "layla.dat").writeBytes(ByteArray(10_000))
+
+        val beforeBump = session.resolveVoice("Layla", baseDir)
+        assertEquals("Mehdi", beforeBump?.voiceName)
+
+        com.aymankhattab.nateq.core.audio.providers.EmbeddedStorage
+            .bumpVersion()
+        val afterBump = session.resolveVoice("Layla", baseDir)
+        assertNotNull(afterBump)
+        assertEquals("Layla", afterBump?.voiceName)
+    }
 }

@@ -212,6 +212,13 @@ class AcapelaEmbeddedVoiceProvider(
                     result.code,
                     result.message
                 )
+                EngineStatusRegistry.noteSpeakFailure(
+                    PROVIDER_ID,
+                    result.code,
+                    result.message
+                )
+            } else {
+                EngineStatusRegistry.noteSpeakSuccess(PROVIDER_ID)
             }
         }
     }

@@ -192,7 +192,16 @@ object AcapelaVoiceImporter {
                     )
                 }
 
-            for (vd in voiceDirs) {
+            val dedupedVoiceDirs = voiceDirs.distinctBy { vd ->
+                val info = runCatching {
+                    AcapelaVoiceManifest.parseVoice(vd)
+                }.getOrNull()
+                val rawVoiceName = info?.voiceName?.ifBlank { null } ?: vd.name
+                AcapelaVoiceManifest.cleanAcapelaSpeaker(rawVoiceName)
+                    .lowercase(Locale.ROOT)
+            }
+
+            for (vd in dedupedVoiceDirs) {
                 val info = runCatching {
                     AcapelaVoiceManifest.parseVoice(vd)
                 }.getOrNull()
@@ -207,7 +216,16 @@ object AcapelaVoiceImporter {
                     .cleanAcapelaSpeaker(rawVoiceName)
                     .ifBlank { "voice" }
 
-                val targetDir = File(baseDir, voiceName).apply { mkdirs() }
+                val existingDir = baseDir.listFiles { f ->
+                    f.isDirectory && AcapelaVoiceManifest.cleanAcapelaSpeaker(
+                        f.name
+                    ).equals(voiceName, ignoreCase = true)
+                }?.firstOrNull()
+
+                val targetDir =
+                    (existingDir ?: File(baseDir, voiceName)).apply {
+                        mkdirs()
+                    }
                 vd.copyRecursively(targetDir, overwrite = true)
                 val targetUserdicos = File(targetDir, "userdicos").apply {
                     mkdirs()

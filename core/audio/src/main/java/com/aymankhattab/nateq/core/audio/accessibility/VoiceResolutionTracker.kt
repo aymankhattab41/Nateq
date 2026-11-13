@@ -44,6 +44,7 @@ object VoiceResolutionTracker {
 
     private val entries = ConcurrentLinkedQueue<Entry>()
 
+    @Synchronized
     fun record(
         packageName: String?,
         senderName: String?,
@@ -56,6 +57,15 @@ object VoiceResolutionTracker {
         source: String? = null,
         reason: String? = null
     ) {
+        val last = entries.lastOrNull()
+        if (last != null &&
+            last.packageName == packageName &&
+            last.senderName == senderName &&
+            last.winningLayer == winningLayer &&
+            last.reason == reason
+        ) {
+            return
+        }
         entries.add(
             Entry(
                 packageName = packageName,

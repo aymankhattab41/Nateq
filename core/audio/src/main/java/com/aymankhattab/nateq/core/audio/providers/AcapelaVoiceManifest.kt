@@ -671,6 +671,8 @@ object AcapelaVoiceManifest {
             if (isRegistrationMetadata(trimmed)) return trimmed
         }
         findRegistrationInJson(dir)?.let { return it }
+        findRegistrationInHexFile(dir)?.let { return it }
+        findRegistrationInYaml(dir)?.let { return it }
         val paramCandidate = rawParam?.takeIf { it.isNotBlank() }
             ?: findParamInJson(dir)
         if (!paramCandidate.isNullOrBlank()) {
@@ -744,6 +746,37 @@ object AcapelaVoiceManifest {
                 }.getOrNull() ?: continue
                 if (!content.contains("\"registration\"")) continue
                 val value = regex.find(content)?.groupValues
+                    ?.getOrNull(1)?.trim().orEmpty()
+                if (isRegistrationMetadata(value)) return value
+            }
+        }
+        return null
+    }
+
+    private fun findRegistrationInHexFile(dir: File): String? {
+        val hexFile = findHexRegistrationFile(dir) ?: return null
+        val text = runCatching {
+            hexFile.readText(StandardCharsets.ISO_8859_1).trim()
+        }.getOrNull().orEmpty()
+        return text.takeIf { isRegistrationMetadata(it) }
+    }
+
+    private val YAML_REGISTRATION_REGEX = Regex(
+        "registration[\"']?\\s*[:=]\\s*[\"']?([^\"'\\r\\n#]+)[\"']?"
+    )
+
+    private fun findRegistrationInYaml(dir: File): String? {
+        val candidates = listOf("config.yaml", "engines.yaml")
+        val dirs = listOfNotNull(dir, dir.parentFile)
+        for (d in dirs) {
+            for (name in candidates) {
+                val f = File(d, name)
+                if (!f.isFile || !f.exists()) continue
+                val content = runCatching {
+                    f.readText(StandardCharsets.UTF_8)
+                }.getOrNull() ?: continue
+                if (!content.contains("registration")) continue
+                val value = YAML_REGISTRATION_REGEX.find(content)?.groupValues
                     ?.getOrNull(1)?.trim().orEmpty()
                 if (isRegistrationMetadata(value)) return value
             }

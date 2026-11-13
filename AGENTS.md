@@ -178,6 +178,9 @@
   مع إضافة `--add-opens=java.base/jdk.internal.access=ALL-UNNAMED` في `build.gradle.kts`
   (لأن محاكاة `FileDescriptor` لـ `ApplicationSharedMemory` في SDK 37 تستدعي
   `jdk.internal.access.SharedSecrets` عبر Reflection). تم تثبيتها وتعمل بكفاءة 100%.
+  وإن تطلب تثبيت مسار JDK محلياً يُضبط في `local.properties` أو في
+  `~/.gradle/gradle.properties` عبر `org.gradle.java.home` تجنباً للمسارات
+  الخاصة بالجهاز في المستودع.
 - أي اختبار يكتشف خطأً حقيقياً = أصلح الخطأ مع إبقاء الاختبار (لا تجمّده ولا تحذفه).
 
 ### لا «لاحقاً» في المهام المحلية أيضاً

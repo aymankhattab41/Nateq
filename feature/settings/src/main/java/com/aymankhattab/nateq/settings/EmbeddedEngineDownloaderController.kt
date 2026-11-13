@@ -3,6 +3,8 @@ package com.aymankhattab.nateq.settings
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import java.text.SimpleDateFormat
+import java.util.Date
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.LinearLayout
@@ -1528,7 +1530,16 @@ internal class EmbeddedEngineDownloaderController(
             null
         }
 
-        val fullErrorDisplay = if (downloadErrorsText != null) {
+        val speakFailureText = status?.lastSpeakFailure?.let { sf ->
+            val timeStr = SimpleDateFormat(
+                "HH:mm:ss",
+                Locale.getDefault()
+            ).format(Date(sf.timestamp))
+            val msg = if (!sf.message.isNullOrBlank()) " ${sf.message}" else ""
+            "آخر فشل نطق: [${sf.code}]$msg — $timeStr"
+        }
+
+        val baseError = if (downloadErrorsText != null) {
             if (status?.lastError != null) {
                 "$rawError\n\n$downloadErrorsText"
             } else {
@@ -1536,6 +1547,18 @@ internal class EmbeddedEngineDownloaderController(
             }
         } else {
             rawError
+        }
+
+        val fullErrorDisplay = if (speakFailureText != null) {
+            if (!baseError.isNullOrBlank() &&
+                baseError != ctx.getString(R.string.no_failure_recorded)
+            ) {
+                "$baseError\n$speakFailureText"
+            } else {
+                speakFailureText
+            }
+        } else {
+            baseError
         }
 
         val searchDirs = EmbeddedStorage.allSearchDirs(
@@ -1759,7 +1782,16 @@ internal class EmbeddedEngineDownloaderController(
             null
         }
 
-        val fullErrorDisplay = if (downloadErrorsText != null) {
+        val speakFailureText = status?.lastSpeakFailure?.let { sf ->
+            val timeStr = SimpleDateFormat(
+                "HH:mm:ss",
+                Locale.getDefault()
+            ).format(Date(sf.timestamp))
+            val msg = if (!sf.message.isNullOrBlank()) " ${sf.message}" else ""
+            "آخر فشل نطق: [${sf.code}]$msg — $timeStr"
+        }
+
+        val baseError = if (downloadErrorsText != null) {
             if (status?.lastError != null) {
                 "$rawError\n\n$downloadErrorsText"
             } else {
@@ -1767,6 +1799,18 @@ internal class EmbeddedEngineDownloaderController(
             }
         } else {
             rawError
+        }
+
+        val fullErrorDisplay = if (speakFailureText != null) {
+            if (!baseError.isNullOrBlank() &&
+                baseError != ctx.getString(R.string.no_failure_recorded)
+            ) {
+                "$baseError\n$speakFailureText"
+            } else {
+                speakFailureText
+            }
+        } else {
+            baseError
         }
 
         val searchDirs = EmbeddedStorage.allSearchDirs(

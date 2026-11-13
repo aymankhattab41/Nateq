@@ -191,6 +191,14 @@ internal class AcapelaHostSession(
     private var currentVoiceId: String? = null
 
     @Volatile
+    private var currentVoiceKey: String? = null
+
+    private var cachedVoices: Pair<
+        Long,
+        List<AcapelaVoiceManifest.VoiceInfo>
+    >? = null
+
+    @Volatile
     private var activeSink: PcmSink? = null
 
     @Volatile
@@ -284,6 +292,8 @@ internal class AcapelaHostSession(
                 acatts = inst
                 pending = null
                 currentVoiceId = null
+                currentVoiceKey = null
+                cachedVoices = EmbeddedStorage.lastBumpTime to voices
                 HostResult(ok = true)
             }
         } catch (t: Throwable) {
@@ -360,6 +370,8 @@ internal class AcapelaHostSession(
         acatts = null
         closeExtended()
         currentVoiceId = null
+        currentVoiceKey = null
+        cachedVoices = null
     }
 
     /**
@@ -367,16 +379,7 @@ internal class AcapelaHostSession(
      */
     fun listVoices(): List<HostVoice> {
         val dir = dataDirectory ?: return emptyList()
-        val allDirs = (listOf(dir) + EmbeddedStorage.allSearchDirs(
-            context,
-            EmbeddedStorage.Engine.ACAPELA
-        )).distinctBy { it.absolutePath }
-
-        val manifestVoices = allDirs.flatMap {
-            AcapelaVoiceManifest.listVoices(it)
-        }.distinctBy {
-            "${it.dir.absolutePath}|${it.id.lowercase(Locale.ROOT)}"
-        }
+        val manifestVoices = getCachedVoices(dir)
         return manifestVoices.map { v ->
             HostVoice(
                 id = v.id,
@@ -417,6 +420,18 @@ internal class AcapelaHostSession(
                     "VOICE_NOT_FOUND",
                     "لا يوجد صوت Acapela مطابق: ${req.voiceId}"
                 )
+
+            val chosenPath = if (voice.registration.isNotEmpty()) {
+                "extended"
+            } else {
+                "classic"
+            }
+            Log.i(
+                TAG,
+                "مسار النطق: $chosenPath, regLen=" +
+                    "${voice.registration.length}, id=${voice.id}, " +
+                    "raw=${voice.rawSpeaker}, dir=${voice.dir.name}"
+            )
 
             // معدل العينات من `.inf` (`freq`) هو ما يخرج به المحرك
             // الممتد؛ والكلاسيكي يصحّحه بناتج `nLoadVoice` قبل أول
@@ -463,6 +478,14 @@ internal class AcapelaHostSession(
                 return if (native.ok) native else extended
             }
 
+            if (isHdPackageWithoutRegistration(voice)) {
+                return HostResult.failure(
+                    "HD_REGISTRATION_MISSING",
+                    "حزمة الصوت عالية الجودة (HD) تفتقر إلى بيانات " +
+                        "التسجيل، يرجى إعادة استيراد الحزمة كاملة"
+                )
+            }
+
             return speakNative(
                 voice = voice,
                 chunks = chunks,
@@ -497,11 +520,7 @@ internal class AcapelaHostSession(
             .trim()
         val cleanSpeaker = AcapelaVoiceManifest
             .cleanAcapelaSpeaker(cleanVoiceId)
-        val extraDirs = EmbeddedStorage.allSearchDirs(
-            context,
-            EmbeddedStorage.Engine.ACAPELA
-        )
-        val voices = manifestVoices(dir, extraDirs)
+        val voices = getCachedVoices(dir)
         if (voices.isEmpty()) return null
 
         if (cleanVoiceId.isNotBlank() &&
@@ -545,7 +564,7 @@ internal class AcapelaHostSession(
             chunks.sumOf { it.length }
         )
 
-        if (currentVoiceId != voice.rawSpeaker) {
+        if (currentVoiceKey != voice.id) {
             val loadFailure = loadVoice(inst, voice, sink, nativeCapMs)
             if (loadFailure != null) return loadFailure
         }
@@ -648,6 +667,7 @@ internal class AcapelaHostSession(
         }
 
         currentVoiceId = loadedName
+        currentVoiceKey = voice.id
         currentSampleRate = loadRes
         Log.i(TAG, "تم تحميل صوت Acapela [$loadedName] بمعدل $loadRes")
         return null
@@ -729,7 +749,16 @@ internal class AcapelaHostSession(
         sink: PcmSink,
         cancelled: AtomicBoolean
     ): HostResult {
-        openExtendedEngine(voice)?.let { return it }
+        val openResult = runCatching {
+            openExtendedEngine(voice)
+        }.getOrElse { t ->
+            Log.w(TAG, "فشل تهيئة المحرك الممتد باستثناء", t)
+            HostResult.failure(
+                "EXTENDED_EXCEPTION",
+                t.message ?: "استثناء أثناء فتح المحرك الممتد"
+            )
+        }
+        if (openResult != null) return openResult
         val srv = extendedService ?: return HostResult.failure(
             "NOT_INITIALIZED",
             "خدمة Acapela الممتدة غير مهيأة"
@@ -997,6 +1026,41 @@ internal class AcapelaHostSession(
         activeCancelled = null
         releaseEngine()
         dataDirectory = null
+    }
+
+    @Synchronized
+    private fun getCachedVoices(
+        dir: File
+    ): List<AcapelaVoiceManifest.VoiceInfo> {
+        val bump = EmbeddedStorage.lastBumpTime
+        val current = cachedVoices
+        if (current != null && current.first == bump) {
+            return current.second
+        }
+        val extraDirs = EmbeddedStorage.allSearchDirs(
+            context,
+            EmbeddedStorage.Engine.ACAPELA
+        )
+        val fresh = manifestVoices(dir, extraDirs)
+        cachedVoices = bump to fresh
+        return fresh
+    }
+
+    private fun isHdPackageWithoutRegistration(
+        voice: AcapelaVoiceManifest.VoiceInfo
+    ): Boolean {
+        if (voice.registration.isNotEmpty()) return false
+        val hasNuul = voice.dir.listFiles()?.any {
+            it.name.contains(".nuul", ignoreCase = true)
+        } == true
+        if (hasNuul) return true
+        if (voice.id.contains("_hd_", ignoreCase = true)) return true
+        if (voice.configFile?.name?.contains(
+                "_hd_",
+                ignoreCase = true
+            ) == true
+        ) return true
+        return false
     }
 
     /** أصوات القرص من كل المجلدات (قراءة خالصة، بلا كتابة). */

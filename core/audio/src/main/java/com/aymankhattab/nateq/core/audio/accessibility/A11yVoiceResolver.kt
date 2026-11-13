@@ -81,6 +81,10 @@ object A11yVoiceResolver {
             else -> "لا يوجد ملف صوتي محفوظ للتطبيق"
         }
 
+        if (app == null && contact == null && !appProfilesEnabled) {
+            return null
+        }
+
         VoiceResolutionTracker.record(
             packageName = targetPackage,
             senderName = effectiveSender,
