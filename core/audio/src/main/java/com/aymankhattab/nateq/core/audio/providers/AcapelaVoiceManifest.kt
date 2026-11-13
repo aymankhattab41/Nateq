@@ -320,7 +320,7 @@ object AcapelaVoiceManifest {
         )
         s = s.replace(qualityPrefixRegex, "")
         val suffixRegex = Regex(
-            "_(22k_ns|22k|44k|16k|8k|hm|hq|lf|ns)(?=_|$)",
+            "(?:_)?(22k_ns|22k|44k|16k|8k|hm|hq|lf|ns)(?=_|$)",
             RegexOption.IGNORE_CASE
         )
         while (true) {
@@ -916,7 +916,7 @@ object AcapelaVoiceManifest {
         return if (country.isEmpty()) {
             Locale.forLanguageTag(lang)
         } else {
-            Locale(lang, country)
+            Locale.Builder().setLanguage(lang).setRegion(country).build()
         }
     }
 
@@ -925,7 +925,7 @@ object AcapelaVoiceManifest {
         return if (country.isEmpty()) {
             Locale.forLanguageTag(lang)
         } else {
-            Locale(lang, country)
+            Locale.Builder().setLanguage(lang).setRegion(country).build()
         }
     }
 
